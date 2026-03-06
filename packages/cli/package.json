@@ -1,0 +1,30 @@
+{
+  "name": "@signalfire/cli",
+  "version": "0.1.0",
+  "description": "SignalFire developer CLI: run, validate, replay, inspect",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "signalfire": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@signalfire/core": "*",
+    "@signalfire/modules": "*",
+    "@signalfire/content-schema": "*",
+    "@signalfire/terminal-ui": "*",
+    "@signalfire/starter-fantasy": "*"
+  },
+  "license": "MIT"
+}

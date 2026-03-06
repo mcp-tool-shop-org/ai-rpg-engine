@@ -1,0 +1,20 @@
+{
+  "name": "@signalfire/core",
+  "version": "0.1.0",
+  "description": "SignalFire engine core: state, entities, actions, events, rules, RNG, persistence",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "license": "MIT"
+}
