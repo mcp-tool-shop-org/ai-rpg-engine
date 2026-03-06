@@ -10,6 +10,7 @@ import type {
   PersistenceRegistry,
   UIRegistry,
   DebugRegistry,
+  FormulaRegistryAccess,
   VerbHandler,
   RuleCheck,
   RuleEffect,
@@ -22,14 +23,17 @@ import type {
 import type { WorldStore } from './world.js';
 import type { ActionDispatcher } from './actions.js';
 import { EventBus } from './events.js';
+import { FormulaRegistry } from './formulas.js';
 
 export class ModuleManager {
   private modules: Map<string, EngineModule> = new Map();
+  private moduleContexts: Map<string, ModuleRegistrationContext> = new Map();
   private ruleChecks: RuleCheck[] = [];
   private ruleEffects: RuleEffect[] = [];
   private panels: PanelDefinition[] = [];
   private inspectors: DebugInspector[] = [];
   private namespaceDefaults: Map<string, unknown> = new Map();
+  readonly formulas: FormulaRegistry = new FormulaRegistry();
 
   constructor(
     private dispatcher: ActionDispatcher,
@@ -50,6 +54,7 @@ export class ModuleManager {
     const ctx = this.createContext(module.id, store);
     module.register(ctx);
     this.modules.set(module.id, module);
+    this.moduleContexts.set(module.id, ctx);
   }
 
   /** Check if a module is registered */
@@ -86,6 +91,23 @@ export class ModuleManager {
     return additional;
   }
 
+  /** Call init() on all modules (after all are registered, before first tick) */
+  initAll(): void {
+    for (const [id, mod] of this.modules) {
+      if (mod.init) {
+        const ctx = this.moduleContexts.get(id);
+        if (ctx) mod.init(ctx);
+      }
+    }
+  }
+
+  /** Call teardown() on all modules (on shutdown) */
+  teardownAll(): void {
+    for (const mod of this.modules.values()) {
+      if (mod.teardown) mod.teardown();
+    }
+  }
+
   /** Initialize module state namespaces in world */
   initializeNamespaces(store: WorldStore): void {
     for (const [moduleId, defaults] of this.namespaceDefaults) {
@@ -115,7 +137,11 @@ export class ModuleManager {
 
     const events: EventRegistry = {
       on(eventType: string, handler: EventHandler): void {
-        self.eventBus.on(eventType, handler);
+        if (eventType === '*') {
+          self.eventBus.onAny(handler);
+        } else {
+          self.eventBus.on(eventType, handler);
+        }
       },
       emit(event: ResolvedEvent): void {
         store.recordEvent(event);
@@ -146,6 +172,12 @@ export class ModuleManager {
       },
     };
 
-    return { actions, rules, events, content, persistence, ui, debug };
+    const formulas: FormulaRegistryAccess = {
+      register: (id, fn) => self.formulas.register(id, fn),
+      get: (id) => self.formulas.get(id),
+      has: (id) => self.formulas.has(id),
+    };
+
+    return { actions, rules, events, content, persistence, ui, debug, formulas };
   }
 }

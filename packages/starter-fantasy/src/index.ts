@@ -1,4 +1,5 @@
 // @signalfire/starter-fantasy — The Chapel Threshold
 
 export { createGame } from './setup.js';
-export { manifest } from './content.js';
+export { manifest, combatMasteryTree } from './content.js';
+export { fantasyMinimalRuleset } from './ruleset.js';

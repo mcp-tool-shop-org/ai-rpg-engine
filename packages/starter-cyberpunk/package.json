@@ -1,0 +1,26 @@
+{
+  "name": "@signalfire/starter-cyberpunk",
+  "version": "0.1.0",
+  "description": "SignalFire cyberpunk starter: Neon Lockbox",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@signalfire/core": "*",
+    "@signalfire/content-schema": "*",
+    "@signalfire/modules": "*",
+    "@signalfire/starter-fantasy": "*"
+  },
+  "license": "MIT"
+}

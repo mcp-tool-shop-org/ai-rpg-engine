@@ -56,6 +56,7 @@ export const ashGhoul: EntityState = {
   resources: { hp: 12, stamina: 4 },
   statuses: [],
   zoneId: 'crypt-chamber',
+  ai: { profileId: 'aggressive', goals: ['guard-crypt'], fears: ['fire', 'sacred'], alertLevel: 0, knowledge: {} },
 };
 
 // --- Zones ---
@@ -179,6 +180,40 @@ export const pilgrimDialogue: DialogueDefinition = {
       text: 'Be careful, wanderer. The dead here do not rest easily.',
     },
   },
+};
+
+// --- Progression Trees ---
+
+import type { ProgressionTreeDefinition } from '@signalfire/content-schema';
+
+export const combatMasteryTree: ProgressionTreeDefinition = {
+  id: 'combat-mastery',
+  name: 'Combat Mastery',
+  currency: 'xp',
+  nodes: [
+    {
+      id: 'toughened',
+      name: 'Toughened',
+      cost: 10,
+      effects: [{ type: 'resource-boost', params: { resource: 'hp', amount: 5 } }],
+    },
+    {
+      id: 'keen-eye',
+      name: 'Keen Eye',
+      cost: 15,
+      effects: [{ type: 'stat-boost', params: { stat: 'instinct', amount: 1 } }],
+    },
+    {
+      id: 'battle-fury',
+      name: 'Battle Fury',
+      cost: 25,
+      requires: ['toughened'],
+      effects: [
+        { type: 'stat-boost', params: { stat: 'vigor', amount: 2 } },
+        { type: 'grant-tag', params: { tag: 'battle-fury' } },
+      ],
+    },
+  ],
 };
 
 // --- Items ---

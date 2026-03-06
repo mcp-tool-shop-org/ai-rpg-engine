@@ -211,6 +211,10 @@ export type EngineModule = {
   version: string;
   dependsOn?: string[];
   register(ctx: ModuleRegistrationContext): void;
+  /** Called after all modules are registered, before first tick */
+  init?(ctx: ModuleRegistrationContext): void;
+  /** Called on engine shutdown */
+  teardown?(): void;
 };
 
 export type ModuleRegistrationContext = {
@@ -221,6 +225,7 @@ export type ModuleRegistrationContext = {
   persistence: PersistenceRegistry;
   ui: UIRegistry;
   debug: DebugRegistry;
+  formulas: FormulaRegistryAccess;
 };
 
 // Registry interfaces — will be fleshed out in Step 5
@@ -252,6 +257,12 @@ export interface UIRegistry {
 
 export interface DebugRegistry {
   registerInspector(inspector: DebugInspector): void;
+}
+
+export interface FormulaRegistryAccess {
+  register(id: string, fn: (...args: unknown[]) => unknown): void;
+  get(id: string): (...args: unknown[]) => unknown;
+  has(id: string): boolean;
 }
 
 // Handler types
@@ -302,11 +313,22 @@ export type VerbDefinition = {
   description?: string;
 };
 
+export type FormulaDeclaration = {
+  id: string;
+  name: string;
+  description?: string;
+  inputs: string[];
+  output: string;
+};
+
 export type RulesetDefinition = {
   id: string;
+  name: string;
+  version: string;
   stats: StatDefinition[];
   resources: ResourceDefinition[];
   verbs: VerbDefinition[];
+  formulas: FormulaDeclaration[];
   defaultModules: string[];
   progressionModels: string[];
   contentConventions?: Record<string, unknown>;

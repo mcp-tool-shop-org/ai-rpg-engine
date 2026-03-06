@@ -5,26 +5,32 @@ import type {
   EngineModule,
   ActionIntent,
   ResolvedEvent,
+  RulesetDefinition,
 } from './types.js';
 import { WorldStore } from './world.js';
 import { ActionDispatcher } from './actions.js';
 import { ModuleManager } from './modules.js';
+import type { FormulaRegistry } from './formulas.js';
 import { nextId } from './id.js';
 
 export type EngineOptions = {
   manifest: GameManifest;
   seed?: number;
   modules?: EngineModule[];
+  ruleset?: RulesetDefinition;
 };
 
 export class Engine {
   readonly store: WorldStore;
   readonly dispatcher: ActionDispatcher;
   readonly moduleManager: ModuleManager;
+  readonly ruleset?: RulesetDefinition;
 
   private actionLog: ActionIntent[] = [];
 
   constructor(options: EngineOptions) {
+    this.ruleset = options.ruleset;
+
     this.store = new WorldStore({
       manifest: options.manifest,
       seed: options.seed,
@@ -39,6 +45,7 @@ export class Engine {
         this.moduleManager.register(mod, this.store);
       }
       this.moduleManager.initializeNamespaces(this.store);
+      this.moduleManager.initAll();
     }
 
     // Register global validator that runs module rule checks
@@ -107,5 +114,10 @@ export class Engine {
   /** Get current world state (read-only access) */
   get world() {
     return this.store.state;
+  }
+
+  /** Get the formula registry */
+  get formulas(): FormulaRegistry {
+    return this.moduleManager.formulas;
   }
 }

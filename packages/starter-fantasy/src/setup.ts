@@ -7,6 +7,10 @@ import {
   combatCore,
   createInventoryCore,
   createDialogueCore,
+  createCognitionCore,
+  createPerceptionFilter,
+  createProgressionCore,
+  createEnvironmentCore,
   giveItem,
 } from '@signalfire/modules';
 import {
@@ -17,18 +21,43 @@ import {
   zones,
   pilgrimDialogue,
   healingDraughtEffect,
+  combatMasteryTree,
 } from './content.js';
+import { fantasyMinimalRuleset } from './ruleset.js';
 
 export function createGame(seed?: number): Engine {
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
+    ruleset: fantasyMinimalRuleset,
     modules: [
       traversalCore,
       statusCore,
       combatCore,
       createInventoryCore([healingDraughtEffect]),
       createDialogueCore([pilgrimDialogue]),
+      createCognitionCore(),
+      createPerceptionFilter(),
+      createProgressionCore({
+        trees: [combatMasteryTree],
+        rewards: [{
+          eventPattern: 'combat.entity.defeated',
+          currencyId: 'xp',
+          amount: 15,
+          recipient: 'actor',
+        }],
+      }),
+      createEnvironmentCore({
+        hazards: [{
+          id: 'unstable-floor',
+          triggerOn: 'world.zone.entered',
+          condition: (zone) => zone.hazards?.includes('unstable floor') ?? false,
+          effect: (zone, entity, _world, tick) => {
+            entity.resources.stamina = Math.max(0, (entity.resources.stamina ?? 0) - 1);
+            return [];
+          },
+        }],
+      }),
     ],
   });
 
