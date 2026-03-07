@@ -265,3 +265,24 @@ export type {
 
 // CLI entry
 export { runCli } from './cli.js';
+
+// v1.9.0 — Studio UX
+export {
+  setDisplayMode, getDisplayMode,
+  buildStudioSnapshot, formatStudioDashboard,
+  filterHistory, formatHistoryBrowser,
+  filterIssues, formatIssueBrowser,
+  gatherFindings, formatFindingBrowser,
+  buildExperimentEntry, formatExperimentBrowser,
+  resolveAlias, formatGroupedHelp,
+  formatOnboarding,
+  detectStateSummaryKind, buildStateSummary,
+  formatHeading, formatSection, paginate, truncate,
+  COMMAND_GROUPS, COMMAND_ALIASES, ONBOARDING_STEPS,
+} from './chat-studio.js';
+export type {
+  DisplayMode, StudioSnapshot,
+  HistoryFilter, IssueFilter, FindingFilter,
+  CombinedFinding, ExperimentEntry,
+  CommandGroup, OnboardingStep, StateSummaryKind,
+} from './chat-studio.js';

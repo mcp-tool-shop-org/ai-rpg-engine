@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/ollama",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "Optional local AI layer for content scaffolding, validation repair, and inspector summarization",
   "type": "module",
   "main": "./dist/index.js",

@@ -41,6 +41,14 @@ import {
   compareExperiments, isTunableParam,
   type ExperimentSummary,
 } from './chat-experiments.js';
+import {
+  buildStudioSnapshot, formatStudioDashboard,
+  filterHistory, formatHistoryBrowser,
+  filterIssues, formatIssueBrowser,
+  gatherFindings, formatFindingBrowser,
+  formatExperimentBrowser,
+  type HistoryFilter, type IssueFilter, type FindingFilter,
+} from './chat-studio.js';
 
 // --- Helper ---
 
@@ -1027,6 +1035,133 @@ const experimentPlanTool: ChatTool = {
   },
 };
 
+// --- Tool: studio-status (P1 Dashboard) ---
+
+const studioStatusTool: ChatTool = {
+  name: 'studio-status',
+  description: 'Show the Studio UX dashboard: session overview, issues, experiments, suggested actions',
+  intents: ['studio_status'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const snapshot = buildStudioSnapshot(p.session ?? null, {
+      lastExperiment: p.engineState?.lastExperiment ?? null,
+      baselineExperiment: p.engineState?.baselineExperiment ?? null,
+      lastAnalysis: p.engineState?.lastAnalysis ?? null,
+      activeBuild: p.engineState?.activeBuild ?? null,
+      activeTuning: p.engineState?.activeTuning ?? null,
+    });
+    return {
+      ok: true,
+      summary: formatStudioDashboard(snapshot),
+      actions: [executed(action('studio-status', 'Show studio dashboard', false))],
+      sessionEvents: [{ kind: 'studio_dashboard_viewed', detail: 'Studio dashboard' }],
+    };
+  },
+};
+
+// --- Tool: studio-history (P2 History Browser) ---
+
+const studioHistoryTool: ChatTool = {
+  name: 'studio-history',
+  description: 'Browse session event history with filters',
+  intents: ['studio_history'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    if (!p.session) {
+      return { ok: true, summary: 'No active session.', actions: [] };
+    }
+    const filter: HistoryFilter = {
+      tail: p.params.tail ? parseInt(p.params.tail, 10) : undefined,
+      type: p.params.type as HistoryFilter['type'],
+      grep: p.params.grep,
+      group: p.params.group as HistoryFilter['group'],
+    };
+    const events = filterHistory(p.session, filter);
+    return {
+      ok: true,
+      summary: formatHistoryBrowser(events, p.session, filter),
+      actions: [executed(action('studio-history', 'Browse session history', false))],
+    };
+  },
+};
+
+// --- Tool: studio-issues (P3 Issue Browser) ---
+
+const studioIssuesTool: ChatTool = {
+  name: 'studio-issues',
+  description: 'Browse session issues with severity/status filters',
+  intents: ['studio_issues'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    if (!p.session) {
+      return { ok: true, summary: 'No active session.', actions: [] };
+    }
+    const filter: IssueFilter = {
+      status: (p.params.status as 'open' | 'resolved') ?? 'open',
+      severity: p.params.severity as IssueFilter['severity'],
+      bucket: p.params.bucket,
+      grep: p.params.grep,
+    };
+    const issues = filterIssues(p.session, filter);
+    return {
+      ok: true,
+      summary: formatIssueBrowser(issues, p.session, filter),
+      actions: [executed(action('studio-issues', 'Browse session issues', false))],
+    };
+  },
+};
+
+// --- Tool: studio-findings (P3 Finding Browser) ---
+
+const studioFindingsTool: ChatTool = {
+  name: 'studio-findings',
+  description: 'Browse combined balance and experiment findings',
+  intents: ['studio_findings'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const filter: FindingFilter = {
+      source: p.params.source as FindingFilter['source'],
+      severity: p.params.severity as FindingFilter['severity'],
+      artifact: p.params.artifact,
+      recent: p.params.recent === 'true' || p.params.recent === '1' || undefined,
+    };
+    const findings = gatherFindings(
+      p.engineState?.lastAnalysis ?? null,
+      p.engineState?.lastExperiment ?? null,
+      filter,
+    );
+    return {
+      ok: true,
+      summary: formatFindingBrowser(findings),
+      actions: [executed(action('studio-findings', 'Browse findings', false))],
+    };
+  },
+};
+
+// --- Tool: studio-experiments (P4 Experiment Browser) ---
+
+const studioExperimentsTool: ChatTool = {
+  name: 'studio-experiments',
+  description: 'Browse experiment results and comparisons',
+  intents: ['studio_experiments'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const experiments: ExperimentSummary[] = [];
+    if (p.engineState?.lastExperiment) experiments.push(p.engineState.lastExperiment);
+    if (p.engineState?.baselineExperiment) experiments.push(p.engineState.baselineExperiment);
+
+    const comparison = (experiments.length >= 2)
+      ? compareExperiments(experiments[0], experiments[1])
+      : undefined;
+
+    return {
+      ok: true,
+      summary: formatExperimentBrowser(experiments, comparison ?? undefined),
+      actions: [executed(action('studio-experiments', 'Browse experiments', false))],
+    };
+  },
+};
+
 // --- Registry ---
 
 const ALL_TOOLS: ChatTool[] = [
@@ -1059,6 +1194,11 @@ const ALL_TOOLS: ChatTool[] = [
   experimentSweepTool,
   experimentCompareTool,
   experimentPlanTool,
+  studioStatusTool,
+  studioHistoryTool,
+  studioIssuesTool,
+  studioFindingsTool,
+  studioExperimentsTool,
 ];
 
 /**

@@ -1150,8 +1150,8 @@ describe('tool integration', () => {
     getAllTools = mod.getAllTools;
   });
 
-  it('has 29 tools total', () => {
-    expect(getAllTools().length).toBe(29);
+  it('has 34 tools total', () => {
+    expect(getAllTools().length).toBe(34);
   });
 
   it('finds tool for tune_preview', () => {

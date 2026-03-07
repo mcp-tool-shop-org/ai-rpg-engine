@@ -5,6 +5,70 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] - 2025-07-16
+
+### Added — Studio UX (ollama)
+
+- **chat-studio.ts** — single-module Studio UX layer: dashboard, browsers, onboarding, command discovery, display modes. No LLM calls, no file I/O.
+
+- **P1 — Studio Dashboard**
+  - `StudioSnapshot` type (15 fields: session overview, artifact counts, issues, experiments, findings, active workflows, suggested actions)
+  - `buildStudioSnapshot(session, opts)` — assembles snapshot from session + engine state
+  - `deriveSuggestedActions()` — contextual next-action recommendations
+  - `formatStudioDashboard(snapshot)` — compact/verbose rendering
+  - Shell: `/studio` (alias `/dash`)
+
+- **P2 — Session History Browser**
+  - `HistoryFilter` type (tail, type, grep, group)
+  - `filterHistory(session, filter)` — combinable filters with 4 event groups (build, tuning, experiment, content)
+  - `formatHistoryBrowser(events, session, filter)` — shows total/showing counts and active filters
+  - Shell: `/history [--tail N] [--type T] [--grep G] [--group G]`
+
+- **P3 — Issue & Finding Navigation**
+  - `IssueFilter` / `FindingFilter` types
+  - `filterIssues(session, filter)` — status/severity/bucket/grep with defaults
+  - `gatherFindings(analysis, experiment, filter)` — merges balance + experiment findings into `CombinedFinding[]`
+  - `formatIssueBrowser()` / `formatFindingBrowser()` — source tags (BAL/EXP), severity icons
+  - Shell: `/issues [--status S] [--severity S] [--bucket B] [--grep G]`, `/findings [--source S] [--severity S] [--artifact A] [--recent]`
+
+- **P4 — Experiment Browser**
+  - `ExperimentEntry` type, `buildExperimentEntry(summary)`, `formatExperimentBrowser(experiments, comparison?)`
+  - Shows runs, focus metrics, rates, variance findings count, comparison verdict
+  - Shell: `/experiments` (alias `/exp`)
+
+- **P5 — Command Discovery**
+  - `COMMAND_GROUPS` — 7 groups (Studio, Scaffold, Diagnose, Tune, Experiment, Context, General), 41 total commands
+  - `COMMAND_ALIASES` — 8 aliases (studio, dash, exp, fx, ctx, src, next, plan)
+  - `resolveAlias(cmd)` — alias expansion before command dispatch
+  - `formatGroupedHelp(topic?)` — full grouped listing or drill into group/command
+  - Shell: `/help [topic]` (replaces flat help list)
+
+- **P6 — Guided Onboarding**
+  - `ONBOARDING_STEPS` — 8-step walkthrough from session creation through studio check
+  - `formatOnboarding()` — step-by-step guide with examples and workflow group references
+  - Shell: `/onboard`
+
+- **P7 — Chat State Summaries**
+  - `StateSummaryKind` (focus/changes/issues/picture/next)
+  - `detectStateSummaryKind(message)` — regex detection for natural-language state queries
+  - `buildStateSummary(kind, session, opts)` — targeted informational summaries
+
+- **P8 — Output Polish**
+  - `DisplayMode` (compact/verbose), `setDisplayMode()`, `getDisplayMode()`
+  - `formatHeading()`, `formatSection()`, `paginate()`, `truncate()` — reusable formatting utilities
+  - Shell: `/display compact|verbose`
+
+- **Chat integration**
+  - 5 new intents: `studio_status`, `studio_history`, `studio_issues`, `studio_findings`, `studio_experiments` (35 total)
+  - 5 new tools: `studio-status`, `studio-history`, `studio-issues`, `studio-findings`, `studio-experiments` (34 total)
+  - 5 new router patterns with `/studio`, `/history`, `/issues`, `/findings`, `/experiments` slash commands
+  - `ChatToolParams.engineState` — tools can now access engine state (analysis, experiments, builds, tuning)
+  - 2 new session events: `studio_dashboard_viewed`, `onboarding_started` (35 total)
+  - 8 new shell commands: `/studio`, `/history`, `/issues`, `/findings`, `/experiments`, `/onboard`, `/display`, grouped `/help`
+  - Personality mappings: studio_status/history→WORLDBUILDER, issues/findings/experiments→ANALYST
+
+- 147 new tests (1301 total): dashboard (14+8), history browser (10+3), issues (10+3), findings (7+3), experiment browser (4+4), command groups (5), aliases (5+3), grouped help (6), onboarding (4+3), state summaries (6+10), display modes (3), output polish (2+1+7+4), router integration (11), personality integration (5), tool registry integration (7)
+
 ## [1.8.0] - 2025-07-15
 
 ### Added — Scenario Experiments (ollama)

@@ -57,7 +57,9 @@ export type SessionEventKind =
   | 'experiment_run_completed'
   | 'experiment_sweep_completed'
   | 'experiment_compared'
-  | 'experiment_findings_added';
+  | 'experiment_findings_added'
+  | 'studio_dashboard_viewed'
+  | 'onboarding_started';
 
 export type SessionEvent = {
   timestamp: string;

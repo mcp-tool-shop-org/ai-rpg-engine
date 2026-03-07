@@ -222,6 +222,50 @@ const INTENT_PATTERNS: IntentPattern[] = [
     },
   },
   {
+    intent: 'studio_status',
+    patterns: [
+      /^\/(studio|dashboard|dash)\b/i,
+      /\b(studio|dashboard)\s*(status|overview|summary)?\b/i,
+      /\bshow\s+(me\s+)?the\s+(studio|dashboard)\b/i,
+    ],
+  },
+  {
+    intent: 'studio_history',
+    patterns: [
+      /^\/history\b/i,
+      /\b(session|event)\s+history\b/i,
+      /\bshow\s+(me\s+)?(the\s+)?history\b/i,
+      /\brecent\s+events?\b/i,
+    ],
+  },
+  {
+    intent: 'studio_issues',
+    patterns: [
+      /^\/issues\b/i,
+      /\b(open|all)\s+issues\b/i,
+      /\bshow\s+(me\s+)?(the\s+)?issues\b/i,
+      /\bissue\s+(list|browser|overview)\b/i,
+    ],
+  },
+  {
+    intent: 'studio_findings',
+    patterns: [
+      /^\/findings\b/i,
+      /\b(balance|experiment)\s+findings\b/i,
+      /\bshow\s+(me\s+)?(the\s+)?findings\b/i,
+      /\bfinding\s+(list|browser|overview)\b/i,
+    ],
+  },
+  {
+    intent: 'studio_experiments',
+    patterns: [
+      /^\/experiments\b/i,
+      /\blist\s+experiments\b/i,
+      /\bshow\s+(me\s+)?(the\s+)?experiments\b/i,
+      /\bexperiment\s+(list|browser|overview|results?)\b/i,
+    ],
+  },
+  {
     intent: 'critique',
     patterns: [
       /\b(critique|review|check|evaluate|assess)\s+(this|the|my)?\s*(content|room|faction|district|quest|pack|yaml)?\b/i,
@@ -407,6 +451,7 @@ export async function classifyByLLM(
       'analyze_balance', 'compare_intent', 'analyze_window',
       'suggest_fixes', 'compare_scenarios', 'tune_goal',
       'experiment_run', 'experiment_sweep', 'experiment_compare', 'experiment_plan',
+      'studio_status', 'studio_history', 'studio_issues', 'studio_findings', 'studio_experiments',
       'unknown',
     ];
     const intent = validIntents.includes(parsed.intent as ChatIntent)

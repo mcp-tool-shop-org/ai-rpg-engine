@@ -599,3 +599,111 @@ Four new tools (29 total), four new intents (30 total), six new shell commands. 
 4. **Compare**: `/experiment-compare` → Improved: encounter duration (8.2 → 6.1), survival rate (0.45 → 0.70); Variance findings reduced from 2 to 0; verdict: clear improvement
 5. **Sweep**: `/experiment-sweep rumorClarity from 0.3 to 0.9 step 0.1` → 7×20=140 runs → optimal at 0.6, diminishing returns above 0.7
 6. **Findings**: `/experiment-findings` → lists any remaining variance issues with severity and suggestions
+
+## Studio UX (v1.9.0)
+
+Studio UX makes the existing stack feel cohesive and fast. No new simulation mechanics — it surfaces what's already there through dashboards, browsers, guided onboarding, and improved command discovery.
+
+### Pipeline
+
+```
+/studio → buildStudioSnapshot(session, engineState)
+    → deriveSuggestedActions → formatStudioDashboard (compact|verbose)
+/history → filterHistory(session, filter) → formatHistoryBrowser
+/issues → filterIssues(session, filter) → formatIssueBrowser
+/findings → gatherFindings(analysis, experiment, filter) → formatFindingBrowser
+/experiments → formatExperimentBrowser(experiments, comparison?)
+/help [topic] → formatGroupedHelp(topic?) → grouped commands or drill-down
+/onboard → formatOnboarding → 8-step walkthrough
+/display → setDisplayMode(compact|verbose) → affects all formatters
+```
+
+### Eight Pillars
+
+#### P1 — Studio Dashboard
+
+`buildStudioSnapshot(session, opts)` assembles a 15-field snapshot: session name, artifact/issue/experiment counts, active workflows (builds, tuning), last activity timestamp, and contextual suggested actions. `deriveSuggestedActions()` recommends next steps based on current state (open issues → `/issues`, no experiments → `/experiments`, no balance analysis → `/analyze-balance`).
+
+Shell: `/studio` (alias `/dash`)
+
+#### P2 — Session History Browser
+
+`filterHistory(session, filter)` supports combinable filters: `--tail N`, `--type kind`, `--group name` (build/tuning/experiment/content), `--grep pattern`. `EVENT_GROUPS` maps 4 group names to their constituent `SessionEventKind` values. Case-insensitive grep matches against event kind + detail text.
+
+Shell: `/history [--tail N] [--type T] [--grep G] [--group G]`
+
+#### P3 — Issue & Finding Navigation
+
+Two independent browsers:
+
+- **Issues**: `filterIssues(session, filter)` — status (open by default), severity, bucket, grep. `formatIssueBrowser()` shows filter summary + issue list.
+- **Findings**: `gatherFindings(analysis, experiment, filter)` — merges balance findings (`[BAL]`) and experiment variance findings (`[EXP]`) into `CombinedFinding[]`. Filter by source, severity, artifact, or `--recent` (boolean).
+
+Shell: `/issues [--status S] [--severity S] [--bucket B] [--grep G]`
+Shell: `/findings [--source S] [--severity S] [--artifact A] [--recent]`
+
+#### P4 — Experiment Browser
+
+`formatExperimentBrowser(experiments, comparison?)` displays experiment summaries: run count, focus metric, rates (survival, escalation), variance finding count. When a comparison is available, shows verdict (improved/regressed/mixed/unchanged).
+
+Shell: `/experiments` (alias `/exp`)
+
+#### P5 — Command Discovery
+
+`COMMAND_GROUPS` organizes 41 commands into 7 groups: Studio, Scaffold, Diagnose, Tune, Experiment, Context, General. `COMMAND_ALIASES` provides 8 shortcuts (dash→studio, exp→experiments, fx→findings, ctx→context, src→sources, next→suggest-next, plan→show-plan). `resolveAlias()` expands aliases before dispatch.
+
+`formatGroupedHelp(topic?)` supports three modes:
+- No topic: full grouped listing with all commands
+- Group name: drill into that group's commands
+- Command name: show specific command description
+
+Shell: `/help [topic]` (replaces flat help list)
+
+#### P6 — Guided Onboarding
+
+`ONBOARDING_STEPS` provides an 8-step walkthrough: create session → scaffold content → diagnose → set intent → analyze balance → tune → experiment → check studio. Each step has a description, example command, and reference to related command groups.
+
+Shell: `/onboard`
+
+#### P7 — Chat State Summaries
+
+`detectStateSummaryKind(message)` recognizes 5 natural-language query patterns: focus ("what am I working on"), changes ("what changed"), issues ("what's broken"), picture ("big picture"), next ("what should I do next"). `buildStateSummary()` returns targeted informational text — no LLM calls needed.
+
+#### P8 — Output Polish
+
+`DisplayMode` (compact/verbose) affects all Studio formatters. `formatHeading()`, `formatSection()`, `paginate(lines, page, pageSize)`, `truncate(str, maxLen)` are shared utilities. Display mode persists within a session.
+
+Shell: `/display compact|verbose`
+
+### Chat Integration
+
+- 5 new intents: `studio_status`, `studio_history`, `studio_issues`, `studio_findings`, `studio_experiments` (35 total)
+- 5 new tools (34 total), all `mutates: false`
+- `ChatToolParams.engineState` gives tools access to analysis, experiments, builds, and tuning state
+- 2 new session events: `studio_dashboard_viewed`, `onboarding_started` (35 total)
+- Personality: studio/history → WORLDBUILDER, issues/findings/experiments → ANALYST
+
+### Shell Commands
+
+| Command | Description |
+|---------|-------------|
+| `/studio` | Studio dashboard (snapshot + suggested actions) |
+| `/history` | Session history browser with filters |
+| `/issues` | Issue browser with status/severity/bucket/grep filters |
+| `/findings` | Combined balance + experiment findings browser |
+| `/experiments` | Experiment summary browser with comparison |
+| `/onboard` | 8-step guided onboarding walkthrough |
+| `/display` | Toggle compact/verbose output mode |
+| `/help [topic]` | Grouped command help with drill-down |
+
+### Worked Example
+
+> New user opens a session for the first time:
+
+1. **Onboard**: `/onboard` → 8-step walkthrough from session creation to studio check
+2. **Build content**: Follow steps — `/build a harbor district`, `/analyze-balance`, `/tune increase paranoia`
+3. **Studio check**: `/studio` → Dashboard shows: 4 artifacts, 2 open issues, 1 experiment run, suggested actions: "Try `/issues` to review warnings"
+4. **Drill in**: `/issues --severity warning` → 2 open warnings with bucket tags
+5. **Cross-reference**: `/findings --source balance --recent` → Recent balance findings with actionable context
+6. **History**: `/history --group build --tail 5` → Last 5 build events
+7. **Help**: `/help tune` → All tuning-related commands with descriptions

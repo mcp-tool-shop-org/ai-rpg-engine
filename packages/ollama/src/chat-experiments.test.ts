@@ -991,8 +991,8 @@ describe('Pillar 8 — Chat integration', () => {
       expect(tool!.name).toBe('experiment-plan');
     });
 
-    it('total tool count is 29', () => {
-      expect(getAllTools().length).toBe(29);
+    it('total tool count is 34', () => {
+      expect(getAllTools().length).toBe(34);
     });
 
     it('no experiment tools mutate', () => {

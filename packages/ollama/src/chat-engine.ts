@@ -343,6 +343,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       projectRoot,
       params,
       userMessage,
+      engineState: { lastAnalysis, lastExperiment, baselineExperiment, activeBuild, activeTuning },
     });
 
     // Track pending write from tool result
@@ -519,6 +520,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     const toolResult = await tool.execute({
       client, session, sessionContext: sessionCtx,
       projectRoot, params, userMessage: step.description,
+      engineState: { lastAnalysis, lastExperiment, baselineExperiment, activeBuild, activeTuning },
     });
 
     if (toolResult.ok) {
@@ -616,6 +618,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     const toolResult = await tool.execute({
       client, session, sessionContext: sessionCtx,
       projectRoot, params: step.params, userMessage: step.description,
+      engineState: { lastAnalysis, lastExperiment, baselineExperiment, activeBuild, activeTuning },
     });
 
     if (toolResult.ok) {

@@ -49,6 +49,11 @@ export type ChatIntent =
   | 'experiment_sweep'  // "Sweep rumor clarity from 0.4 to 0.8."
   | 'experiment_compare' // "Compare baseline vs tuned."
   | 'experiment_plan'   // "Plan an experiment." / "experiment plan paranoia-test"
+  | 'studio_status'     // "Show me the studio dashboard." / "/studio"
+  | 'studio_history'    // "Show session history." / "/history"
+  | 'studio_issues'     // "Show open issues." / "/issues"
+  | 'studio_findings'   // "Show findings." / "/findings"
+  | 'studio_experiments' // "Show experiments." / "/experiments"
   | 'unknown';          // Fallback — ask for clarification.
 
 export type IntentClassification = {
@@ -95,6 +100,14 @@ export type ChatToolParams = {
   params: Record<string, string>;
   /** Raw user message for context. */
   userMessage: string;
+  /** Engine state snapshot for studio tools. */
+  engineState?: {
+    lastAnalysis?: import('./chat-balance-analyzer.js').BalanceAnalysis | null;
+    lastExperiment?: import('./chat-experiments.js').ExperimentSummary | null;
+    baselineExperiment?: import('./chat-experiments.js').ExperimentSummary | null;
+    activeBuild?: import('./chat-build-planner.js').BuildState | null;
+    activeTuning?: import('./chat-balance-analyzer.js').TuningState | null;
+  };
 };
 
 export type ChatToolResult = {

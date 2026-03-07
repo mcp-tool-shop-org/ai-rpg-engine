@@ -35,6 +35,17 @@ import {
   type ReplayProducer, type ExperimentSummary,
 } from './chat-experiments.js';
 import { loadSession } from './session.js';
+import {
+  resolveAlias, formatGroupedHelp,
+  buildStudioSnapshot, formatStudioDashboard,
+  filterHistory, formatHistoryBrowser,
+  filterIssues, formatIssueBrowser,
+  gatherFindings, formatFindingBrowser,
+  formatExperimentBrowser,
+  formatOnboarding,
+  setDisplayMode, getDisplayMode,
+  type HistoryFilter, type IssueFilter, type FindingFilter, type DisplayMode,
+} from './chat-studio.js';
 
 export type ChatShellOptions = {
   client: OllamaTextClient;
@@ -117,7 +128,7 @@ async function handleSlashCommand(
   saveTranscripts: boolean,
 ): Promise<'quit' | 'handled'> {
   const parts = input.slice(1).split(/\s+/);
-  const cmd = parts[0].toLowerCase();
+  const cmd = resolveAlias(parts[0].toLowerCase());
 
   switch (cmd) {
     case 'quit':
@@ -128,40 +139,7 @@ async function handleSlashCommand(
     case 'help':
     case 'h':
       console.log('');
-      console.log('/help           Show this help');
-      console.log('/quit           Exit chat');
-      console.log('/save           Save transcript now');
-      console.log('/memory         Show conversation memory stats');
-      console.log('/clear          Clear conversation memory');
-      console.log('/pending        Show pending write, if any');
-      console.log('/context        Show what context the last response used');
-      console.log('/sources        Show condensed source list from last retrieval');
-      console.log('/loadout        Show loadout routing from last response');
-      console.log('/loadout-history Show recent loadout routing decisions');
-      console.log('/build <goal>   Create a build plan from a goal');
-      console.log('/preview        Preview the active build plan');
-      console.log('/step           Execute the next build step');
-      console.log('/execute        Execute all remaining build steps');
-      console.log('/status         Show build status');
-      console.log('/diagnostics    Show post-build diagnostics');
-      console.log('/analyze-balance <replay>  Analyze balance from replay data');
-      console.log('/compare-intent <intent> <replay>  Compare intent vs outcome');
-      console.log('/analyze-window <start> <end> [replay]  Analyze tick window');
-      console.log('/suggest-fixes  Suggest fixes from last balance analysis');
-      console.log('/compare-scenarios <before> <after>  Compare scenario revisions');
-      console.log('/tune <goal>    Create a tuning plan');
-      console.log('/tune-preview   Preview patches + predicted impact');
-      console.log('/tune-apply     Apply next patch bundle (with confirmation)');
-      console.log('/tune-bundles   Show fix bundles from last analysis');
-      console.log('/tune-impact    Show predicted replay impact');
-      console.log('/tune-step      Execute next tuning step');
-      console.log('/tune-execute   Execute all tuning steps');
-      console.log('/tune-status    Show tuning status');
-      console.log('/experiment-plan <goal>  Plan an experiment workflow');
-      console.log('/experiment-run <runs>   Show experiment run plan');
-      console.log('/experiment-sweep <param> <from> <to> <step>  Plan parameter sweep');
-      console.log('/experiment-compare  Compare last two experiment summaries');
-      console.log('/experiment-findings  Show variance findings from last experiment');
+      console.log(formatGroupedHelp(parts[1]));
       console.log('');
       return 'handled';
 
@@ -618,6 +596,134 @@ async function handleSlashCommand(
         if (f.suggestion) console.log(`    → ${f.suggestion}`);
       }
       console.log('');
+      return 'handled';
+    }
+
+    // --- Studio UX commands (v1.9.0) ---
+
+    case 'studio':
+    case 'dashboard': {
+      const session = await loadSession(projectRoot);
+      const snapshot = buildStudioSnapshot(session, {
+        lastExperiment: engine.lastExperiment,
+        baselineExperiment: engine.baselineExperiment,
+        lastAnalysis: engine.lastAnalysis,
+        activeBuild: engine.activeBuild,
+        activeTuning: engine.activeTuning,
+      });
+      console.log('');
+      console.log(formatStudioDashboard(snapshot));
+      console.log('');
+      return 'handled';
+    }
+
+    case 'history': {
+      const session = await loadSession(projectRoot);
+      if (!session) {
+        console.log('No active session.');
+        return 'handled';
+      }
+      const filter: HistoryFilter = {};
+      // Parse flags: --tail N, --type T, --grep G, --group G
+      for (let i = 1; i < parts.length; i++) {
+        if (parts[i] === '--tail' && parts[i + 1]) {
+          filter.tail = parseInt(parts[++i], 10);
+        } else if (parts[i] === '--type' && parts[i + 1]) {
+          filter.type = parts[++i] as HistoryFilter['type'];
+        } else if (parts[i] === '--grep' && parts[i + 1]) {
+          filter.grep = parts[++i];
+        } else if (parts[i] === '--group' && parts[i + 1]) {
+          filter.group = parts[++i] as HistoryFilter['group'];
+        }
+      }
+      const events = filterHistory(session, filter);
+      console.log('');
+      console.log(formatHistoryBrowser(events, session, filter));
+      console.log('');
+      return 'handled';
+    }
+
+    case 'issues': {
+      const session = await loadSession(projectRoot);
+      if (!session) {
+        console.log('No active session.');
+        return 'handled';
+      }
+      const filter: IssueFilter = {};
+      for (let i = 1; i < parts.length; i++) {
+        if (parts[i] === '--status' && parts[i + 1]) {
+          filter.status = parts[++i] as 'open' | 'resolved';
+        } else if (parts[i] === '--severity' && parts[i + 1]) {
+          filter.severity = parts[++i] as IssueFilter['severity'];
+        } else if (parts[i] === '--bucket' && parts[i + 1]) {
+          filter.bucket = parts[++i];
+        } else if (parts[i] === '--grep' && parts[i + 1]) {
+          filter.grep = parts[++i];
+        }
+      }
+      const issues = filterIssues(session, filter);
+      console.log('');
+      console.log(formatIssueBrowser(issues, session, filter));
+      console.log('');
+      return 'handled';
+    }
+
+    case 'findings': {
+      const filter: FindingFilter = {};
+      for (let i = 1; i < parts.length; i++) {
+        if (parts[i] === '--source' && parts[i + 1]) {
+          filter.source = parts[++i] as FindingFilter['source'];
+        } else if (parts[i] === '--severity' && parts[i + 1]) {
+          filter.severity = parts[++i] as FindingFilter['severity'];
+        } else if (parts[i] === '--artifact' && parts[i + 1]) {
+          filter.artifact = parts[++i];
+        } else if (parts[i] === '--recent') {
+          filter.recent = true;
+        }
+      }
+      const findings = gatherFindings(
+        engine.lastAnalysis ?? null,
+        engine.lastExperiment ?? null,
+        filter,
+      );
+      console.log('');
+      console.log(formatFindingBrowser(findings));
+      console.log('');
+      return 'handled';
+    }
+
+    case 'experiments': {
+      const experiments: ExperimentSummary[] = [];
+      if (engine.lastExperiment) experiments.push(engine.lastExperiment);
+      if (engine.baselineExperiment) experiments.push(engine.baselineExperiment);
+      if (experiments.length === 0) {
+        console.log('No experiment results available. Run an experiment first.');
+        return 'handled';
+      }
+      const comparison = (experiments.length >= 2)
+        ? compareExperiments(experiments[0], experiments[1])
+        : undefined;
+      console.log('');
+      console.log(formatExperimentBrowser(experiments, comparison ?? undefined));
+      console.log('');
+      return 'handled';
+    }
+
+    case 'onboard':
+      console.log('');
+      console.log(formatOnboarding());
+      console.log('');
+      return 'handled';
+
+    case 'display': {
+      const mode = parts[1]?.toLowerCase();
+      if (mode === 'compact' || mode === 'verbose') {
+        setDisplayMode(mode);
+        console.log(`Display mode: ${mode}`);
+      } else {
+        console.log(`Current display mode: ${getDisplayMode()}`);
+        console.log('Usage: /display compact | /display verbose');
+      }
       return 'handled';
     }
 
