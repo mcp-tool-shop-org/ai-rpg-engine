@@ -10,6 +10,7 @@
     { "path": "../modules" },
     { "path": "../content-schema" },
     { "path": "../starter-fantasy" },
-    { "path": "../pack-registry" }
+    { "path": "../pack-registry" },
+    { "path": "../character-creation" }
   ]
 }

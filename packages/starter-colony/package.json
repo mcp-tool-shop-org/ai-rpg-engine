@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/starter-colony",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "AI RPG Engine sci-fi colony starter: Signal Loss",
   "type": "module",
   "main": "./dist/index.js",
@@ -11,7 +11,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run"
@@ -30,7 +32,15 @@
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
     "directory": "packages/starter-colony"
   },
-  "keywords": ["rpg", "sci-fi", "colony", "survival", "starter", "worldbuilding", "content-pack"],
+  "keywords": [
+    "rpg",
+    "sci-fi",
+    "colony",
+    "survival",
+    "starter",
+    "worldbuilding",
+    "content-pack"
+  ],
   "bugs": {
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues"
   },

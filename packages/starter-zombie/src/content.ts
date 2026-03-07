@@ -5,6 +5,7 @@ import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
+import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 
 // --- Manifest ---
 
@@ -331,4 +332,137 @@ export const packMeta: PackMetadata = {
   version: '2.0.0',
   description: 'Survive in a zombie-ravaged city. Manage infection, scavenge supplies, and make impossible choices about who lives.',
   narratorTone: 'survival horror, desperate, tense, bleak',
+};
+
+// --- Build Catalog ---
+
+export const buildCatalog: BuildCatalog = {
+  packId: 'ashfall-dead',
+  statBudget: 3,
+  maxTraits: 3,
+  requiredFlaws: 1,
+  archetypes: [
+    {
+      id: 'survivor',
+      name: 'Survivor',
+      description: 'Endurance machine, never stops moving',
+      statPriorities: { fitness: 7, wits: 4, nerve: 3 },
+      startingTags: ['survivor', 'endurance'],
+      progressionTreeId: 'survival',
+      grantedVerbs: ['barricade'],
+    },
+    {
+      id: 'scavenger',
+      name: 'Scavenger',
+      description: 'Finds resources where others see trash',
+      statPriorities: { fitness: 3, wits: 7, nerve: 4 },
+      startingTags: ['scavenger', 'resourceful'],
+      progressionTreeId: 'survival',
+      grantedVerbs: ['scavenge'],
+    },
+    {
+      id: 'warden',
+      name: 'Warden',
+      description: 'Holds the line, keeps people together',
+      statPriorities: { fitness: 4, wits: 3, nerve: 7 },
+      startingTags: ['leader', 'warden'],
+      progressionTreeId: 'survival',
+      grantedVerbs: ['barricade'],
+    },
+  ],
+  backgrounds: [
+    {
+      id: 'former-soldier',
+      name: 'Former Soldier',
+      description: 'Military training keeps you alive, but the orders stopped coming',
+      statModifiers: { fitness: 1, wits: -1 },
+      startingTags: ['military-trained'],
+    },
+    {
+      id: 'hospital-staff',
+      name: 'Hospital Staff',
+      description: 'Knows anatomy — useful for healing and for headshots',
+      statModifiers: { wits: 1, nerve: -1 },
+      startingTags: ['medical-knowledge'],
+    },
+    {
+      id: 'firefighter',
+      name: 'Firefighter',
+      description: 'Ran into burning buildings. This is worse, but the instinct holds',
+      statModifiers: { nerve: 1 },
+      startingTags: ['first-responder'],
+    },
+  ],
+  traits: [
+    {
+      id: 'iron-stomach',
+      name: 'Iron Stomach',
+      description: 'Resistant to the early stages of infection',
+      category: 'perk',
+      effects: [{ type: 'resource-modifier', resource: 'infection', amount: -10 }],
+    },
+    {
+      id: 'resourceful',
+      name: 'Resourceful',
+      description: 'Always has something useful in a pocket',
+      category: 'perk',
+      effects: [
+        { type: 'stat-modifier', stat: 'wits', amount: 1 },
+        { type: 'grant-tag', tag: 'pack-rat' },
+      ],
+    },
+    {
+      id: 'trauma-response',
+      name: 'Trauma Response',
+      description: 'The body remembers what the mind tries to forget',
+      category: 'flaw',
+      effects: [{ type: 'resource-modifier', resource: 'stamina', amount: -3 }],
+    },
+    {
+      id: 'bite-scar',
+      name: 'Bite Scar',
+      description: 'A healed bite that never fully healed',
+      category: 'flaw',
+      effects: [
+        { type: 'resource-modifier', resource: 'infection', amount: 15 },
+        { type: 'grant-tag', tag: 'scarred' },
+      ],
+      incompatibleWith: ['iron-stomach'],
+    },
+  ],
+  disciplines: [
+    {
+      id: 'field-medic',
+      name: 'Field Medic',
+      description: 'Patches wounds under fire',
+      grantedVerb: 'scan',
+      passive: { type: 'stat-modifier', stat: 'wits', amount: 1 },
+      drawback: { type: 'stat-modifier', stat: 'fitness', amount: -1 },
+    },
+    {
+      id: 'raider',
+      name: 'Raider',
+      description: 'Takes what others defend',
+      grantedVerb: 'plunder',
+      passive: { type: 'stat-modifier', stat: 'fitness', amount: 1 },
+      drawback: { type: 'faction-modifier', faction: 'survivors', amount: -10 },
+    },
+  ],
+  crossTitles: [
+    { archetypeId: 'survivor', disciplineId: 'field-medic', title: 'Grave Surgeon', tags: ['grave-surgeon'] },
+    { archetypeId: 'survivor', disciplineId: 'raider', title: 'Road Warlord', tags: ['road-warlord'] },
+    { archetypeId: 'scavenger', disciplineId: 'field-medic', title: 'Pharmacy Runner', tags: ['pharmacy-runner'] },
+    { archetypeId: 'scavenger', disciplineId: 'raider', title: 'Vulture King', tags: ['vulture-king'] },
+    { archetypeId: 'warden', disciplineId: 'field-medic', title: 'Quarantine Marshal', tags: ['quarantine-marshal'] },
+    { archetypeId: 'warden', disciplineId: 'raider', title: 'Iron Shepherd', tags: ['iron-shepherd'] },
+  ],
+  entanglements: [
+    {
+      id: 'warden-raider',
+      archetypeId: 'warden',
+      disciplineId: 'raider',
+      description: 'A leader who raids erodes the trust they built — the group fractures',
+      effects: [{ type: 'resource-modifier', resource: 'stamina', amount: -2 }],
+    },
+  ],
 };

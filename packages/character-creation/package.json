@@ -1,7 +1,7 @@
 {
-  "name": "@ai-rpg-engine/starter-weird-west",
-  "version": "2.0.1",
-  "description": "AI RPG Engine weird west starter: Dust Devil's Bargain",
+  "name": "@ai-rpg-engine/character-creation",
+  "version": "2.0.0",
+  "description": "Headless character creation system — archetypes, backgrounds, traits, multiclassing, and build validation for AI RPG Engine",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -11,18 +11,10 @@
       "import": "./dist/index.js"
     }
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "build": "tsc",
     "test": "vitest run"
-  },
-  "dependencies": {
-    "@ai-rpg-engine/core": "*",
-    "@ai-rpg-engine/content-schema": "*",
-    "@ai-rpg-engine/modules": "*",
-    "@ai-rpg-engine/pack-registry": "*"
   },
   "license": "MIT",
   "author": "mcp-tool-shop",
@@ -30,21 +22,16 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
-    "directory": "packages/starter-weird-west"
+    "directory": "packages/character-creation"
   },
-  "keywords": [
-    "rpg",
-    "western",
-    "weird-west",
-    "supernatural",
-    "starter",
-    "worldbuilding",
-    "content-pack"
-  ],
+  "keywords": ["rpg", "character", "creation", "archetype", "multiclass", "traits", "game-engine"],
   "bugs": {
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "@ai-rpg-engine/core": "^2.0.0"
   }
 }

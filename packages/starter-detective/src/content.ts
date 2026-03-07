@@ -5,6 +5,7 @@ import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
+import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 
 // --- Manifest ---
 
@@ -313,4 +314,136 @@ export const packMeta: PackMetadata = {
   version: '2.0.0',
   description: 'Investigate a locked-room murder at Ashford Estate. Interrogate suspects, gather evidence, and survive the back alleys.',
   narratorTone: 'victorian noir, measured, atmospheric, suspenseful',
+};
+
+// --- Build Catalog ---
+
+export const buildCatalog: BuildCatalog = {
+  packId: 'gaslight-detective',
+  statBudget: 3,
+  maxTraits: 3,
+  requiredFlaws: 1,
+  archetypes: [
+    {
+      id: 'inspector',
+      name: 'Inspector',
+      description: 'Methodical observer, sees everything',
+      statPriorities: { perception: 7, eloquence: 4, grit: 3 },
+      startingTags: ['investigator', 'inspector'],
+      progressionTreeId: 'deduction-mastery',
+      grantedVerbs: ['interrogate', 'deduce'],
+    },
+    {
+      id: 'raconteur',
+      name: 'Raconteur',
+      description: 'Charming liar, silver-tongued',
+      statPriorities: { perception: 3, eloquence: 7, grit: 4 },
+      startingTags: ['socialite', 'raconteur'],
+      progressionTreeId: 'deduction-mastery',
+      grantedVerbs: ['interrogate'],
+    },
+    {
+      id: 'bruiser',
+      name: 'Bruiser',
+      description: 'Fists first, questions later',
+      statPriorities: { perception: 4, eloquence: 3, grit: 7 },
+      startingTags: ['enforcer', 'bruiser'],
+      progressionTreeId: 'deduction-mastery',
+    },
+  ],
+  backgrounds: [
+    {
+      id: 'scotland-yard',
+      name: 'Scotland Yard',
+      description: 'Trained by the Metropolitan Police',
+      statModifiers: { perception: 1, eloquence: -1 },
+      startingTags: ['badge-carrier'],
+    },
+    {
+      id: 'theatre-district',
+      name: 'Theatre District',
+      description: 'Trained on the stage, reads people like scripts',
+      statModifiers: { eloquence: 1, grit: -1 },
+      startingTags: ['stage-trained'],
+    },
+    {
+      id: 'dockside',
+      name: 'Dockside',
+      description: 'Grew up near the wharves, hard as iron',
+      statModifiers: { grit: 1 },
+      startingTags: ['dock-hardened'],
+    },
+  ],
+  traits: [
+    {
+      id: 'eidetic-memory',
+      name: 'Eidetic Memory',
+      description: 'Remembers every detail, every face',
+      category: 'perk',
+      effects: [
+        { type: 'stat-modifier', stat: 'perception', amount: 1 },
+        { type: 'grant-tag', tag: 'photographic' },
+      ],
+    },
+    {
+      id: 'honeyed-words',
+      name: 'Honeyed Words',
+      description: 'People trust that voice',
+      category: 'perk',
+      effects: [{ type: 'stat-modifier', stat: 'eloquence', amount: 1 }],
+    },
+    {
+      id: 'haunted-past',
+      name: 'Haunted Past',
+      description: 'The cases that got away still visit at night',
+      category: 'flaw',
+      effects: [{ type: 'resource-modifier', resource: 'composure', amount: -3 }],
+    },
+    {
+      id: 'brash-temper',
+      name: 'Brash Temper',
+      description: 'Patience is not a virtue you possess',
+      category: 'flaw',
+      effects: [
+        { type: 'stat-modifier', stat: 'eloquence', amount: -1 },
+        { type: 'grant-tag', tag: 'hot-headed' },
+      ],
+      incompatibleWith: ['honeyed-words'],
+    },
+  ],
+  disciplines: [
+    {
+      id: 'occultist',
+      name: 'Occultist',
+      description: 'Studies the supernatural underbelly of Victorian London',
+      grantedVerb: 'commune',
+      passive: { type: 'stat-modifier', stat: 'perception', amount: 1 },
+      drawback: { type: 'resource-modifier', resource: 'composure', amount: -2 },
+    },
+    {
+      id: 'underworld-contact',
+      name: 'Underworld Contact',
+      description: 'Knows the criminal element personally',
+      grantedVerb: 'plunder',
+      passive: { type: 'stat-modifier', stat: 'grit', amount: 1 },
+      drawback: { type: 'faction-modifier', faction: 'scotland-yard', amount: -10 },
+    },
+  ],
+  crossTitles: [
+    { archetypeId: 'inspector', disciplineId: 'occultist', title: 'Seance Detective', tags: ['seance-detective'] },
+    { archetypeId: 'inspector', disciplineId: 'underworld-contact', title: 'Grave Barrister', tags: ['grave-barrister'] },
+    { archetypeId: 'raconteur', disciplineId: 'occultist', title: 'Ink-Seer', tags: ['ink-seer'] },
+    { archetypeId: 'raconteur', disciplineId: 'underworld-contact', title: 'Velvet Fence', tags: ['velvet-fence'] },
+    { archetypeId: 'bruiser', disciplineId: 'occultist', title: 'Exorcist', tags: ['exorcist'] },
+    { archetypeId: 'bruiser', disciplineId: 'underworld-contact', title: 'Knuckle Prophet', tags: ['knuckle-prophet'] },
+  ],
+  entanglements: [
+    {
+      id: 'inspector-underworld',
+      archetypeId: 'inspector',
+      disciplineId: 'underworld-contact',
+      description: 'Inspectors who consort with criminals risk their badge',
+      effects: [{ type: 'grant-tag', tag: 'compromised' }],
+    },
+  ],
 };

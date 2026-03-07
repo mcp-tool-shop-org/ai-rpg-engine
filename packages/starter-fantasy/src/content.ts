@@ -5,6 +5,7 @@ import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, Re
 import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
+import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 
 export const manifest: GameManifest = {
   id: 'chapel-threshold',
@@ -276,4 +277,137 @@ export const packMeta: PackMetadata = {
   version: '2.0.0',
   description: 'Explore a ruined chapel and descend into its cursed crypt. Face an ash ghoul, speak with a suspicious pilgrim, and survive the threshold.',
   narratorTone: 'dark fantasy, concise, atmospheric, foreboding',
+};
+
+// --- Build Catalog ---
+
+export const buildCatalog: BuildCatalog = {
+  packId: 'chapel-threshold',
+  statBudget: 3,
+  maxTraits: 3,
+  requiredFlaws: 1,
+  archetypes: [
+    {
+      id: 'penitent-knight',
+      name: 'Penitent Knight',
+      description: 'A warrior burdened by an oath',
+      statPriorities: { vigor: 6, instinct: 4, will: 2 },
+      startingTags: ['martial', 'penitent'],
+      progressionTreeId: 'combat-mastery',
+    },
+    {
+      id: 'gravewalker',
+      name: 'Gravewalker',
+      description: 'Stalker of the dead, sharp and quiet',
+      statPriorities: { vigor: 3, instinct: 5, will: 4 },
+      startingTags: ['shadow', 'gravewalker'],
+      startingInventory: ['torch'],
+      progressionTreeId: 'combat-mastery',
+    },
+    {
+      id: 'chapel-seer',
+      name: 'Chapel Seer',
+      description: 'Vessel of divine whispers',
+      statPriorities: { vigor: 2, instinct: 4, will: 6 },
+      resourceOverrides: { stamina: 10 },
+      startingTags: ['divine', 'seer'],
+      progressionTreeId: 'combat-mastery',
+      grantedVerbs: ['pray'],
+    },
+  ],
+  backgrounds: [
+    {
+      id: 'oath-breaker',
+      name: 'Oath-Breaker',
+      description: 'Once swore a holy vow, then shattered it',
+      statModifiers: { vigor: 1, will: -1 },
+      startingTags: ['oath-broken'],
+    },
+    {
+      id: 'temple-orphan',
+      name: 'Temple Orphan',
+      description: 'Raised by chapel priests, steeped in ritual',
+      statModifiers: { will: 1, vigor: -1 },
+      startingTags: ['chapel-raised'],
+    },
+    {
+      id: 'gravedigger',
+      name: 'Gravedigger',
+      description: 'Buried the dead for years — knows what comes back',
+      statModifiers: { instinct: 1 },
+      startingTags: ['corpse-familiar'],
+    },
+  ],
+  traits: [
+    {
+      id: 'iron-frame',
+      name: 'Iron Frame',
+      description: 'Unusually resilient body',
+      category: 'perk',
+      effects: [{ type: 'resource-modifier', resource: 'hp', amount: 3 }],
+    },
+    {
+      id: 'second-sight',
+      name: 'Second Sight',
+      description: 'Sees what others cannot',
+      category: 'perk',
+      effects: [
+        { type: 'stat-modifier', stat: 'instinct', amount: 1 },
+        { type: 'grant-tag', tag: 'spirit-sensitive' },
+      ],
+    },
+    {
+      id: 'glass-faith',
+      name: 'Glass Faith',
+      description: 'Faith cracks under pressure',
+      category: 'flaw',
+      effects: [{ type: 'resource-modifier', resource: 'stamina', amount: -2 }],
+    },
+    {
+      id: 'cursed-blood',
+      name: 'Cursed Blood',
+      description: 'Dark lineage seeps through',
+      category: 'flaw',
+      effects: [
+        { type: 'stat-modifier', stat: 'will', amount: -1 },
+        { type: 'grant-tag', tag: 'curse-touched' },
+      ],
+      incompatibleWith: ['second-sight'],
+    },
+  ],
+  disciplines: [
+    {
+      id: 'occultist',
+      name: 'Occultist',
+      description: 'Dabbles in forbidden knowledge beyond the chapel walls',
+      grantedVerb: 'commune',
+      passive: { type: 'stat-modifier', stat: 'will', amount: 1 },
+      drawback: { type: 'resource-modifier', resource: 'stamina', amount: -2 },
+    },
+    {
+      id: 'smuggler',
+      name: 'Smuggler',
+      description: 'Moves relics through back channels',
+      grantedVerb: 'scavenge',
+      passive: { type: 'stat-modifier', stat: 'instinct', amount: 1 },
+      drawback: { type: 'faction-modifier', faction: 'chapel-undead', amount: -10 },
+    },
+  ],
+  crossTitles: [
+    { archetypeId: 'penitent-knight', disciplineId: 'occultist', title: 'Grave Warden', tags: ['grave-warden'] },
+    { archetypeId: 'penitent-knight', disciplineId: 'smuggler', title: 'Chapel Smuggler', tags: ['chapel-smuggler'] },
+    { archetypeId: 'gravewalker', disciplineId: 'occultist', title: 'Ink-Seer', tags: ['ink-seer'] },
+    { archetypeId: 'gravewalker', disciplineId: 'smuggler', title: 'Bone Fence', tags: ['bone-fence'] },
+    { archetypeId: 'chapel-seer', disciplineId: 'occultist', title: 'Doomcaller', tags: ['doomcaller'] },
+    { archetypeId: 'chapel-seer', disciplineId: 'smuggler', title: 'Relic Runner', tags: ['relic-runner'] },
+  ],
+  entanglements: [
+    {
+      id: 'divine-smuggler',
+      archetypeId: 'chapel-seer',
+      disciplineId: 'smuggler',
+      description: 'Divine seers who smuggle relics lose the trust of the chapel spirits',
+      effects: [{ type: 'grant-tag', tag: 'distrusted' }],
+    },
+  ],
 };

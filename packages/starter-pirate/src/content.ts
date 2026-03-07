@@ -5,6 +5,7 @@ import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
+import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 
 // --- Manifest ---
 
@@ -324,4 +325,137 @@ export const packMeta: PackMetadata = {
   version: '2.0.0',
   description: 'Captain a pirate vessel through port towns and cursed waters. Strike deals, fight the navy, and brave a sunken shrine.',
   narratorTone: 'pirate adventure, salty, atmospheric, treacherous',
+};
+
+// --- Build Catalog ---
+
+export const buildCatalog: BuildCatalog = {
+  packId: 'black-flag-requiem',
+  statBudget: 3,
+  maxTraits: 3,
+  requiredFlaws: 1,
+  archetypes: [
+    {
+      id: 'corsair',
+      name: 'Corsair',
+      description: 'Boarding specialist, fear incarnate',
+      statPriorities: { brawn: 7, cunning: 4, 'sea-legs': 3 },
+      startingTags: ['raider', 'corsair'],
+      progressionTreeId: 'seamanship',
+      grantedVerbs: ['plunder'],
+    },
+    {
+      id: 'privateer',
+      name: 'Privateer',
+      description: 'Schemer with a letter of marque',
+      statPriorities: { brawn: 3, cunning: 7, 'sea-legs': 4 },
+      startingTags: ['schemer', 'privateer'],
+      progressionTreeId: 'seamanship',
+      grantedVerbs: ['navigate'],
+    },
+    {
+      id: 'helmsman',
+      name: 'Helmsman',
+      description: 'Born on the waves, reads the wind',
+      statPriorities: { brawn: 4, cunning: 3, 'sea-legs': 7 },
+      startingTags: ['sailor', 'helmsman'],
+      progressionTreeId: 'seamanship',
+      grantedVerbs: ['navigate'],
+    },
+  ],
+  backgrounds: [
+    {
+      id: 'navy-deserter',
+      name: 'Navy Deserter',
+      description: 'Trained by the Crown, then betrayed it',
+      statModifiers: { brawn: 1, cunning: -1 },
+      startingTags: ['deserter'],
+    },
+    {
+      id: 'merchants-son',
+      name: "Merchant's Son",
+      description: 'Knows the price of everything and the value of nothing',
+      statModifiers: { cunning: 1, brawn: -1 },
+      startingTags: ['merchant-blood'],
+    },
+    {
+      id: 'island-born',
+      name: 'Island Born',
+      description: 'Salt in the blood from birth',
+      statModifiers: { 'sea-legs': 1 },
+      startingTags: ['islander'],
+    },
+  ],
+  traits: [
+    {
+      id: 'sea-devil',
+      name: 'Sea Devil',
+      description: 'The crew trusts you in any storm',
+      category: 'perk',
+      effects: [{ type: 'resource-modifier', resource: 'morale', amount: 3 }],
+    },
+    {
+      id: 'cutthroat',
+      name: 'Cutthroat',
+      description: 'A reputation that enters the room before you do',
+      category: 'perk',
+      effects: [
+        { type: 'stat-modifier', stat: 'brawn', amount: 1 },
+        { type: 'grant-tag', tag: 'feared' },
+      ],
+    },
+    {
+      id: 'superstitious',
+      name: 'Superstitious',
+      description: 'Sees omens in every wave and gull',
+      category: 'flaw',
+      effects: [
+        { type: 'stat-modifier', stat: 'cunning', amount: -1 },
+        { type: 'grant-tag', tag: 'superstitious' },
+      ],
+    },
+    {
+      id: 'landlubber',
+      name: 'Landlubber',
+      description: 'Still gets seasick in calm waters',
+      category: 'flaw',
+      effects: [{ type: 'stat-modifier', stat: 'sea-legs', amount: -1 }],
+      incompatibleWith: ['sea-devil'],
+    },
+  ],
+  disciplines: [
+    {
+      id: 'occultist',
+      name: 'Occultist',
+      description: 'Communes with drowned spirits and cursed relics',
+      grantedVerb: 'commune',
+      passive: { type: 'stat-modifier', stat: 'cunning', amount: 1 },
+      drawback: { type: 'resource-modifier', resource: 'morale', amount: -2 },
+    },
+    {
+      id: 'surgeon',
+      name: 'Surgeon',
+      description: 'Ship sawbones, keeps the crew breathing',
+      grantedVerb: 'scan',
+      passive: { type: 'stat-modifier', stat: 'sea-legs', amount: 1 },
+      drawback: { type: 'stat-modifier', stat: 'brawn', amount: -1 },
+    },
+  ],
+  crossTitles: [
+    { archetypeId: 'corsair', disciplineId: 'occultist', title: 'Storm Gunner', tags: ['storm-gunner'] },
+    { archetypeId: 'corsair', disciplineId: 'surgeon', title: 'Sawbones Raider', tags: ['sawbones-raider'] },
+    { archetypeId: 'privateer', disciplineId: 'occultist', title: 'Hex Broker', tags: ['hex-broker'] },
+    { archetypeId: 'privateer', disciplineId: 'surgeon', title: 'Plague Merchant', tags: ['plague-merchant'] },
+    { archetypeId: 'helmsman', disciplineId: 'occultist', title: 'Tide Caller', tags: ['tide-caller'] },
+    { archetypeId: 'helmsman', disciplineId: 'surgeon', title: 'Salvage Prophet', tags: ['salvage-prophet'] },
+  ],
+  entanglements: [
+    {
+      id: 'corsair-surgeon',
+      archetypeId: 'corsair',
+      disciplineId: 'surgeon',
+      description: 'A raider who heals draws suspicion from the crew — mercy is weakness at sea',
+      effects: [{ type: 'resource-modifier', resource: 'morale', amount: -2 }],
+    },
+  ],
 };

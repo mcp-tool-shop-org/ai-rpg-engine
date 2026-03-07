@@ -5,6 +5,7 @@ import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, Re
 import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
+import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 
 export const manifest: GameManifest = {
   id: 'neon-lockbox',
@@ -261,4 +262,132 @@ export const packMeta: PackMetadata = {
   version: '2.0.0',
   description: 'Meet a fixer in a neon-lit alley, breach a server corridor, and crack a data vault defended by an ICE sentry.',
   narratorTone: 'cyberpunk noir, terse, neon-lit, paranoid',
+};
+
+// --- Build Catalog ---
+
+export const buildCatalog: BuildCatalog = {
+  packId: 'neon-lockbox',
+  statBudget: 3,
+  maxTraits: 3,
+  requiredFlaws: 1,
+  archetypes: [
+    {
+      id: 'netrunner',
+      name: 'Netrunner',
+      description: 'Data thief, fast and fragile',
+      statPriorities: { chrome: 2, reflex: 4, netrunning: 8 },
+      startingTags: ['hacker', 'netrunner'],
+      progressionTreeId: 'netrunning-skills',
+      grantedVerbs: ['hack', 'jack-in'],
+    },
+    {
+      id: 'street-razor',
+      name: 'Street Razor',
+      description: 'Chrome-heavy enforcer',
+      statPriorities: { chrome: 7, reflex: 5, netrunning: 2 },
+      startingTags: ['enforcer', 'chromed'],
+      progressionTreeId: 'netrunning-skills',
+    },
+    {
+      id: 'ghost-fixer',
+      name: 'Ghost Fixer',
+      description: 'Broker who never stays in one place',
+      statPriorities: { chrome: 3, reflex: 7, netrunning: 4 },
+      startingTags: ['fixer', 'ghost'],
+      progressionTreeId: 'netrunning-skills',
+    },
+  ],
+  backgrounds: [
+    {
+      id: 'corporate-dropout',
+      name: 'Corporate Dropout',
+      description: 'Left the corp towers with secrets and enemies',
+      statModifiers: { netrunning: 1, chrome: -1 },
+      startingTags: ['ex-corp'],
+    },
+    {
+      id: 'gutter-rat',
+      name: 'Gutter Rat',
+      description: 'Grew up in the neon gutters',
+      statModifiers: { reflex: 1, netrunning: -1 },
+      startingTags: ['street-born'],
+    },
+    {
+      id: 'lab-escapee',
+      name: 'Lab Escapee',
+      description: 'Experimental chrome, unstable but powerful',
+      statModifiers: { chrome: 1 },
+      startingTags: ['chrome-unstable'],
+    },
+  ],
+  traits: [
+    {
+      id: 'hardwired-reflexes',
+      name: 'Hardwired Reflexes',
+      description: 'Synaptic accelerators wired at birth',
+      category: 'perk',
+      effects: [{ type: 'stat-modifier', stat: 'reflex', amount: 1 }],
+    },
+    {
+      id: 'ice-familiarity',
+      name: 'ICE Familiarity',
+      description: 'Knows how intrusion countermeasures think',
+      category: 'perk',
+      effects: [{ type: 'resource-modifier', resource: 'ice', amount: 3 }],
+    },
+    {
+      id: 'glitch-cascade',
+      name: 'Glitch Cascade',
+      description: 'Neural implants occasionally misfire',
+      category: 'flaw',
+      effects: [{ type: 'resource-modifier', resource: 'bandwidth', amount: -2 }],
+    },
+    {
+      id: 'chrome-rejection',
+      name: 'Chrome Rejection',
+      description: 'Body fights its own augmentations',
+      category: 'flaw',
+      effects: [
+        { type: 'stat-modifier', stat: 'chrome', amount: -1 },
+        { type: 'grant-tag', tag: 'rejection-syndrome' },
+      ],
+      incompatibleWith: ['hardwired-reflexes'],
+    },
+  ],
+  disciplines: [
+    {
+      id: 'medtech',
+      name: 'Medtech',
+      description: 'Field medic with scanner implants',
+      grantedVerb: 'scan',
+      passive: { type: 'stat-modifier', stat: 'chrome', amount: 1 },
+      drawback: { type: 'resource-modifier', resource: 'bandwidth', amount: -2 },
+    },
+    {
+      id: 'saboteur',
+      name: 'Saboteur',
+      description: 'Demolitions and infrastructure disruption',
+      grantedVerb: 'barricade',
+      passive: { type: 'stat-modifier', stat: 'reflex', amount: 1 },
+      drawback: { type: 'faction-modifier', faction: 'vault-ice', amount: -10 },
+    },
+  ],
+  crossTitles: [
+    { archetypeId: 'netrunner', disciplineId: 'medtech', title: 'Synapse Surgeon', tags: ['synapse-surgeon'] },
+    { archetypeId: 'netrunner', disciplineId: 'saboteur', title: 'Codebreaker', tags: ['codebreaker'] },
+    { archetypeId: 'street-razor', disciplineId: 'medtech', title: 'Chrome Doc', tags: ['chrome-doc'] },
+    { archetypeId: 'street-razor', disciplineId: 'saboteur', title: 'Wrecking Crew', tags: ['wrecking-crew'] },
+    { archetypeId: 'ghost-fixer', disciplineId: 'medtech', title: 'Pulse Dealer', tags: ['pulse-dealer'] },
+    { archetypeId: 'ghost-fixer', disciplineId: 'saboteur', title: 'Shadow Arsonist', tags: ['shadow-arsonist'] },
+  ],
+  entanglements: [
+    {
+      id: 'netrunner-saboteur',
+      archetypeId: 'netrunner',
+      disciplineId: 'saboteur',
+      description: 'Netrunners who sabotage infrastructure risk bricking their own access nodes',
+      effects: [{ type: 'grant-tag', tag: 'node-risky' }],
+    },
+  ],
 };

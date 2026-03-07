@@ -5,6 +5,7 @@ import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
+import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 
 // --- Manifest ---
 
@@ -319,4 +320,137 @@ export const packMeta: PackMetadata = {
   version: '2.0.0',
   description: 'Command a struggling colony on an alien world. Manage dwindling power, navigate political fractures, and investigate a signal from beneath the surface.',
   narratorTone: 'hard sci-fi, clinical, tense, vast',
+};
+
+// --- Build Catalog ---
+
+export const buildCatalog: BuildCatalog = {
+  packId: 'signal-loss',
+  statBudget: 3,
+  maxTraits: 3,
+  requiredFlaws: 1,
+  archetypes: [
+    {
+      id: 'field-engineer',
+      name: 'Field Engineer',
+      description: 'Keeps the colony running with wire and will',
+      statPriorities: { engineering: 7, command: 3, awareness: 4 },
+      startingTags: ['engineer', 'field-engineer'],
+      progressionTreeId: 'commander-path',
+      grantedVerbs: ['allocate'],
+    },
+    {
+      id: 'colony-commander',
+      name: 'Colony Commander',
+      description: 'Holds the crew together, makes the calls',
+      statPriorities: { engineering: 3, command: 7, awareness: 4 },
+      startingTags: ['leader', 'colony-commander'],
+      progressionTreeId: 'commander-path',
+      grantedVerbs: ['scan'],
+    },
+    {
+      id: 'outrider',
+      name: 'Outrider',
+      description: 'Scouts the perimeter, reads the signals',
+      statPriorities: { engineering: 4, command: 3, awareness: 7 },
+      startingTags: ['scout', 'outrider'],
+      progressionTreeId: 'commander-path',
+      grantedVerbs: ['scan'],
+    },
+  ],
+  backgrounds: [
+    {
+      id: 'terraform-corps',
+      name: 'Terraform Corps',
+      description: 'Trained to shape hostile worlds into homes',
+      statModifiers: { engineering: 1, awareness: -1 },
+      startingTags: ['terra-trained'],
+    },
+    {
+      id: 'command-academy',
+      name: 'Command Academy',
+      description: 'Fleet-trained leadership, by the book',
+      statModifiers: { command: 1, engineering: -1 },
+      startingTags: ['academy-graduate'],
+    },
+    {
+      id: 'frontier-scout',
+      name: 'Frontier Scout',
+      description: 'First boots on alien soil, every time',
+      statModifiers: { awareness: 1 },
+      startingTags: ['pathfinder'],
+    },
+  ],
+  traits: [
+    {
+      id: 'power-efficiency',
+      name: 'Power Efficiency',
+      description: 'Runs systems lean, wastes nothing',
+      category: 'perk',
+      effects: [{ type: 'resource-modifier', resource: 'power', amount: 10 }],
+    },
+    {
+      id: 'keen-sensors',
+      name: 'Keen Sensors',
+      description: 'Notices what the instruments miss',
+      category: 'perk',
+      effects: [
+        { type: 'stat-modifier', stat: 'awareness', amount: 1 },
+        { type: 'grant-tag', tag: 'enhanced-sensors' },
+      ],
+    },
+    {
+      id: 'system-dependency',
+      name: 'System Dependency',
+      description: 'Cannot function without full infrastructure',
+      category: 'flaw',
+      effects: [{ type: 'resource-modifier', resource: 'power', amount: -10 }],
+      incompatibleWith: ['power-efficiency'],
+    },
+    {
+      id: 'crew-friction',
+      name: 'Crew Friction',
+      description: 'Abrasive personality that grinds on the crew',
+      category: 'flaw',
+      effects: [
+        { type: 'resource-modifier', resource: 'morale', amount: -5 },
+        { type: 'grant-tag', tag: 'abrasive' },
+      ],
+    },
+  ],
+  disciplines: [
+    {
+      id: 'xenobiologist',
+      name: 'Xenobiologist',
+      description: 'Studies the alien presence with fascination, not fear',
+      grantedVerb: 'commune',
+      passive: { type: 'stat-modifier', stat: 'awareness', amount: 1 },
+      drawback: { type: 'stat-modifier', stat: 'command', amount: -1 },
+    },
+    {
+      id: 'salvage-specialist',
+      name: 'Salvage Specialist',
+      description: 'Strips derelict systems for parts and power',
+      grantedVerb: 'scavenge',
+      passive: { type: 'stat-modifier', stat: 'engineering', amount: 1 },
+      drawback: { type: 'resource-modifier', resource: 'morale', amount: -3 },
+    },
+  ],
+  crossTitles: [
+    { archetypeId: 'field-engineer', disciplineId: 'xenobiologist', title: 'Resonance Technician', tags: ['resonance-technician'] },
+    { archetypeId: 'field-engineer', disciplineId: 'salvage-specialist', title: 'Junk Architect', tags: ['junk-architect'] },
+    { archetypeId: 'colony-commander', disciplineId: 'xenobiologist', title: 'First Contact Officer', tags: ['first-contact-officer'] },
+    { archetypeId: 'colony-commander', disciplineId: 'salvage-specialist', title: 'Resource Czar', tags: ['resource-czar'] },
+    { archetypeId: 'outrider', disciplineId: 'xenobiologist', title: 'Signal Prophet', tags: ['signal-prophet'] },
+    { archetypeId: 'outrider', disciplineId: 'salvage-specialist', title: 'Perimeter Hawk', tags: ['perimeter-hawk'] },
+  ],
+  entanglements: [
+    {
+      id: 'commander-salvage',
+      archetypeId: 'colony-commander',
+      disciplineId: 'salvage-specialist',
+      description: 'A commander who strips systems for parts undermines crew confidence in the colony infrastructure',
+      effects: [{ type: 'resource-modifier', resource: 'morale', amount: -3 }],
+    },
+  ],
 };

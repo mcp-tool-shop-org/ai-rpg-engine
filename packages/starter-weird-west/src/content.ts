@@ -5,6 +5,7 @@ import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
+import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 
 // --- Manifest ---
 
@@ -320,4 +321,139 @@ export const packMeta: PackMetadata = {
   version: '2.0.0',
   description: 'Drift into a cursed frontier town. Investigate a mesa cult, duel undead gunslingers, and commune with spirits before the dust takes you.',
   narratorTone: 'weird western, laconic, sun-bleached, haunted',
+};
+
+// --- Build Catalog ---
+
+export const buildCatalog: BuildCatalog = {
+  packId: 'dust-devils-bargain',
+  statBudget: 3,
+  maxTraits: 3,
+  requiredFlaws: 1,
+  archetypes: [
+    {
+      id: 'gunslinger',
+      name: 'Gunslinger',
+      description: 'Fastest hand in the territory',
+      statPriorities: { grit: 4, 'draw-speed': 7, lore: 3 },
+      startingTags: ['gunslinger', 'quick-draw'],
+      progressionTreeId: 'gunslinger-path',
+      grantedVerbs: ['draw'],
+    },
+    {
+      id: 'spirit-walker',
+      name: 'Spirit Walker',
+      description: 'Speaks to what shouldn\'t speak back',
+      statPriorities: { grit: 3, 'draw-speed': 3, lore: 8 },
+      startingTags: ['mystic', 'spirit-walker'],
+      progressionTreeId: 'gunslinger-path',
+      grantedVerbs: ['commune'],
+    },
+    {
+      id: 'lawkeeper',
+      name: 'Lawkeeper',
+      description: 'Badge and backbone, but whose law?',
+      statPriorities: { grit: 7, 'draw-speed': 4, lore: 3 },
+      startingTags: ['law', 'lawkeeper'],
+      progressionTreeId: 'gunslinger-path',
+    },
+  ],
+  backgrounds: [
+    {
+      id: 'drifter',
+      name: 'Drifter',
+      description: 'No home, no ties, no one waiting',
+      statModifiers: { 'draw-speed': 1, lore: -1 },
+      startingTags: ['rootless'],
+    },
+    {
+      id: 'preachers-child',
+      name: "Preacher's Child",
+      description: 'Raised on scripture and superstition',
+      statModifiers: { lore: 1, 'draw-speed': -1 },
+      startingTags: ['scripture-raised'],
+    },
+    {
+      id: 'outlaw',
+      name: 'Outlaw',
+      description: 'Wanted poster in three counties',
+      statModifiers: { grit: 1 },
+      startingTags: ['wanted'],
+    },
+  ],
+  traits: [
+    {
+      id: 'desert-hardened',
+      name: 'Desert-Hardened',
+      description: 'The sun tried to kill you and failed',
+      category: 'perk',
+      effects: [{ type: 'resource-modifier', resource: 'resolve', amount: 3 }],
+    },
+    {
+      id: 'spirit-touched',
+      name: 'Spirit-Touched',
+      description: 'The dead whisper your name',
+      category: 'perk',
+      effects: [
+        { type: 'stat-modifier', stat: 'lore', amount: 1 },
+        { type: 'grant-tag', tag: 'spirit-sensitive' },
+      ],
+    },
+    {
+      id: 'dust-cursed',
+      name: 'Dust-Cursed',
+      description: 'The desert has already marked you',
+      category: 'flaw',
+      effects: [
+        { type: 'resource-modifier', resource: 'dust', amount: 15 },
+        { type: 'grant-tag', tag: 'dust-marked' },
+      ],
+    },
+    {
+      id: 'twitchy',
+      name: 'Twitchy',
+      description: 'Jumps at shadows, second-guesses every choice',
+      category: 'flaw',
+      effects: [
+        { type: 'stat-modifier', stat: 'grit', amount: -1 },
+        { type: 'grant-tag', tag: 'nervous' },
+      ],
+      incompatibleWith: ['desert-hardened'],
+    },
+  ],
+  disciplines: [
+    {
+      id: 'occultist',
+      name: 'Occultist',
+      description: 'Studies the mesa rituals and spirit bindings',
+      grantedVerb: 'commune',
+      passive: { type: 'stat-modifier', stat: 'lore', amount: 1 },
+      drawback: { type: 'resource-modifier', resource: 'dust', amount: 10 },
+    },
+    {
+      id: 'bounty-hunter',
+      name: 'Bounty Hunter',
+      description: 'Tracks down the wanted, dead or alive',
+      grantedVerb: 'interrogate',
+      passive: { type: 'stat-modifier', stat: 'grit', amount: 1 },
+      drawback: { type: 'faction-modifier', faction: 'red-congregation', amount: -10 },
+    },
+  ],
+  crossTitles: [
+    { archetypeId: 'gunslinger', disciplineId: 'occultist', title: 'Hex Pistol', tags: ['hex-pistol'] },
+    { archetypeId: 'gunslinger', disciplineId: 'bounty-hunter', title: 'Dead-Eye Marshal', tags: ['dead-eye-marshal'] },
+    { archetypeId: 'spirit-walker', disciplineId: 'occultist', title: 'Doomcaller', tags: ['doomcaller'] },
+    { archetypeId: 'spirit-walker', disciplineId: 'bounty-hunter', title: 'Ghost Tracker', tags: ['ghost-tracker'] },
+    { archetypeId: 'lawkeeper', disciplineId: 'occultist', title: 'Witch Sheriff', tags: ['witch-sheriff'] },
+    { archetypeId: 'lawkeeper', disciplineId: 'bounty-hunter', title: 'Iron Judge', tags: ['iron-judge'] },
+  ],
+  entanglements: [
+    {
+      id: 'spirit-walker-bounty-hunter',
+      archetypeId: 'spirit-walker',
+      disciplineId: 'bounty-hunter',
+      description: 'Spirits distrust those who hunt the living — commune checks suffer',
+      effects: [{ type: 'stat-modifier', stat: 'lore', amount: -1 }],
+    },
+  ],
 };
