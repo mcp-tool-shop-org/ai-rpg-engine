@@ -1,21 +1,23 @@
 #!/usr/bin/env node
 // AI RPG Engine CLI — run, save, load, replay
 
-import * as readline from 'node:readline';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { createGame } from '@ai-rpg-engine/starter-fantasy';
 import {
   renderFullScreen,
   parseActionSelection,
   parseTextInput,
 } from '@ai-rpg-engine/terminal-ui';
+import { resolveEntity } from '@ai-rpg-engine/character-creation';
 import type { Engine } from '@ai-rpg-engine/core';
+import { allPacks, type PackInfo } from './packs.js';
+import { promptMenu, promptConfirm, getReadline, closeReadline } from './prompts.js';
+import { buildCharacter } from './character-builder.js';
 
 const SAVE_DIR = '.ai-rpg-engine';
 const SAVE_FILE = path.join(SAVE_DIR, 'save.json');
 
-function main() {
+async function main() {
   const args = process.argv.slice(2);
   const command = args[0] ?? 'run';
 
@@ -23,45 +25,63 @@ function main() {
     case 'run':
       return runGame();
     case 'replay':
-      return replayGame();
+      replayGame();
+      closeReadline();
+      return;
     case 'inspect-save':
-      return inspectSave();
+      inspectSave();
+      closeReadline();
+      return;
     default:
-      console.log('AI RPG Engine CLI v0.1.0');
+      console.log('AI RPG Engine CLI v2.0.0');
       console.log('Commands: run, replay, inspect-save');
+      closeReadline();
       process.exit(0);
   }
 }
 
-function runGame() {
-  let engine: Engine;
-
-  // Try to load save
-  if (fs.existsSync(SAVE_FILE)) {
-    console.log('  Save file found. Loading...');
-    try {
-      const data = JSON.parse(fs.readFileSync(SAVE_FILE, 'utf-8'));
-      engine = createGame(data.world?.state?.meta?.seed);
-      // Replay actions from save to restore state
-      // For now, just start fresh — full save/load in Step 14
-      engine = createGame();
-      console.log('  (Starting fresh — full save/load coming soon)');
-    } catch {
-      engine = createGame();
-    }
-  } else {
-    engine = createGame();
-  }
-
+async function selectPack(): Promise<PackInfo> {
   console.log('\n  ═══════════════════════════════════════');
-  console.log('  THE CHAPEL THRESHOLD');
-  console.log('  An AI RPG Engine Starter');
+  console.log('  AI RPG ENGINE');
+  console.log('  Choose your adventure');
   console.log('  ═══════════════════════════════════════\n');
 
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
+  const idx = await promptMenu(
+    allPacks.map((p) => ({
+      label: p.meta.name,
+      detail: p.meta.tagline,
+    })),
+  );
+
+  return allPacks[idx];
+}
+
+async function runGame() {
+  // --- Pack Selection ---
+  const pack = await selectPack();
+
+  // --- Character Creation ---
+  console.log('\n  ═══════════════════════════════════════');
+  console.log(`  CHARACTER CREATION — ${pack.meta.name}`);
+  console.log('  ═══════════════════════════════════════\n');
+
+  const build = await buildCharacter(pack.buildCatalog, pack.ruleset);
+  const playerEntity = resolveEntity(build, pack.buildCatalog, pack.ruleset);
+
+  // --- Create Game ---
+  const engine = pack.createGame();
+
+  // Replace the default player with the custom character
+  const defaultPlayer = engine.store.state.entities['player'];
+  playerEntity.zoneId = defaultPlayer?.zoneId;
+  engine.store.state.entities['player'] = playerEntity;
+
+  console.log(`\n  ═══════════════════════════════════════`);
+  console.log(`  ${pack.meta.name.toUpperCase()}`);
+  console.log(`  An AI RPG Engine Starter`);
+  console.log(`  ═══════════════════════════════════════\n`);
+
+  const rl = getReadline();
 
   function render() {
     const recentEvents = engine.world.eventLog.slice(-8);
@@ -80,7 +100,7 @@ function runGame() {
       // Meta commands
       if (trimmed === 'quit' || trimmed === 'exit') {
         console.log('\n  Farewell, wanderer.\n');
-        rl.close();
+        closeReadline();
         process.exit(0);
       }
 
@@ -159,9 +179,11 @@ function replayGame() {
   const data = JSON.parse(fs.readFileSync(SAVE_FILE, 'utf-8'));
   const actionLog = data.actionLog ?? [];
 
+  // Use the first pack for replay (TODO: save pack ID in save file)
+  const pack = allPacks[0];
   console.log(`  Replaying ${actionLog.length} actions...`);
 
-  const engine = createGame(data.world?.state?.meta?.seed ?? 42);
+  const engine = pack.createGame(data.world?.state?.meta?.seed ?? 42);
   for (const action of actionLog) {
     engine.processAction(action);
   }
@@ -171,7 +193,10 @@ function replayGame() {
   console.log(`  Player location: ${engine.world.locationId}`);
   const player = engine.world.entities['player'];
   if (player) {
-    console.log(`  HP: ${player.resources.hp}  Stamina: ${player.resources.stamina}`);
+    const resDisplay = Object.entries(player.resources)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join('  ');
+    console.log(`  ${resDisplay}`);
   }
 }
 

@@ -10,6 +10,14 @@
     { "path": "../modules" },
     { "path": "../content-schema" },
     { "path": "../terminal-ui" },
-    { "path": "../starter-fantasy" }
+    { "path": "../pack-registry" },
+    { "path": "../character-creation" },
+    { "path": "../starter-fantasy" },
+    { "path": "../starter-cyberpunk" },
+    { "path": "../starter-detective" },
+    { "path": "../starter-pirate" },
+    { "path": "../starter-zombie" },
+    { "path": "../starter-weird-west" },
+    { "path": "../starter-colony" }
   ]
 }

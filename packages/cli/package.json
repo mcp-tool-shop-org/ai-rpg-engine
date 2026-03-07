@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/cli",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "AI RPG Engine developer CLI: run, validate, replay, inspect",
   "type": "module",
   "main": "./dist/index.js",
@@ -14,7 +14,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run"
@@ -24,7 +26,15 @@
     "@ai-rpg-engine/modules": "*",
     "@ai-rpg-engine/content-schema": "*",
     "@ai-rpg-engine/terminal-ui": "*",
-    "@ai-rpg-engine/starter-fantasy": "*"
+    "@ai-rpg-engine/pack-registry": "*",
+    "@ai-rpg-engine/character-creation": "*",
+    "@ai-rpg-engine/starter-fantasy": "*",
+    "@ai-rpg-engine/starter-cyberpunk": "*",
+    "@ai-rpg-engine/starter-detective": "*",
+    "@ai-rpg-engine/starter-pirate": "*",
+    "@ai-rpg-engine/starter-zombie": "*",
+    "@ai-rpg-engine/starter-weird-west": "*",
+    "@ai-rpg-engine/starter-colony": "*"
   },
   "license": "MIT",
   "author": "mcp-tool-shop",
@@ -34,7 +44,14 @@
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
     "directory": "packages/cli"
   },
-  "keywords": ["rpg", "cli", "game-engine", "simulation", "worldbuilding", "ai"],
+  "keywords": [
+    "rpg",
+    "cli",
+    "game-engine",
+    "simulation",
+    "worldbuilding",
+    "ai"
+  ],
   "bugs": {
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues"
   },
