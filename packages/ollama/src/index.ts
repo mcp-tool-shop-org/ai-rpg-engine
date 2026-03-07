@@ -45,6 +45,21 @@ export type { DistrictStateInput } from './commands/explain-district-state.js';
 export { explainFactionAlert } from './commands/explain-faction-alert.js';
 export type { FactionAlertInput } from './commands/explain-faction-alert.js';
 
+export { improveContent } from './commands/improve-content.js';
+export type { ImproveContentInput, ImproveContentResult } from './commands/improve-content.js';
+
+export { expandPack } from './commands/expand-pack.js';
+export type { ExpandPackInput, ExpandPackResult } from './commands/expand-pack.js';
+
+export { critiqueContent } from './commands/critique-content.js';
+export type { CritiqueContentInput, CritiqueContentResult } from './commands/critique-content.js';
+
+export { normalizeContent } from './commands/normalize-content.js';
+export type { NormalizeContentInput, NormalizeContentResult } from './commands/normalize-content.js';
+
+export { diffSummary } from './commands/diff-summary.js';
+export type { DiffSummaryInput, DiffSummaryResult } from './commands/diff-summary.js';
+
 // Parsers (useful for custom prompt workflows)
 export { extractYaml, extractJson, extractText } from './parsers.js';
 

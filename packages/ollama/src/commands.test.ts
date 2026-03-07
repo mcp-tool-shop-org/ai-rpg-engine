@@ -14,6 +14,11 @@ import { createLocationPack } from './commands/create-location-pack.js';
 import { createEncounterPack } from './commands/create-encounter-pack.js';
 import { explainDistrictState } from './commands/explain-district-state.js';
 import { explainFactionAlert } from './commands/explain-faction-alert.js';
+import { improveContent } from './commands/improve-content.js';
+import { expandPack } from './commands/expand-pack.js';
+import { critiqueContent } from './commands/critique-content.js';
+import { normalizeContent } from './commands/normalize-content.js';
+import { diffSummary } from './commands/diff-summary.js';
 
 function mockClient(response: string): OllamaTextClient {
   return {
@@ -582,6 +587,221 @@ describe('explainFactionAlert', () => {
       factionId: 'x',
       alertLevel: 50,
       cohesion: 0.5,
+    });
+    expect(result.ok).toBe(false);
+  });
+});
+
+// --- v0.5.0 Iteration Loop ---
+
+describe('improveContent', () => {
+  it('returns revised YAML from model', async () => {
+    const revised = 'id: market_quarter\nname: Market Quarter\ntags:\n  - paranoid\n  - commerce';
+    const client = mockClient(revised);
+    const result = await improveContent(client, {
+      content: 'id: market_quarter\nname: Market Quarter\ntags:\n  - commerce',
+      goal: 'make this district feel more paranoid',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.yaml).toContain('paranoid');
+      expect(result.yaml).toContain('market_quarter');
+    }
+  });
+
+  it('passes content type to prompt', async () => {
+    let capturedPrompt = '';
+    const client: OllamaTextClient = {
+      async generate(input: PromptInput): Promise<PromptResult> {
+        capturedPrompt = input.prompt;
+        return { ok: true, text: 'id: test\nname: Test' };
+      },
+    };
+    await improveContent(client, {
+      content: 'id: test\nname: Test',
+      goal: 'add traps',
+      contentType: 'room',
+    });
+    expect(capturedPrompt).toContain('room');
+    expect(capturedPrompt).toContain('add traps');
+  });
+
+  it('propagates client failure', async () => {
+    const client = failingClient('model not loaded');
+    const result = await improveContent(client, {
+      content: 'id: x',
+      goal: 'improve',
+    });
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe('expandPack', () => {
+  it('returns expanded pack YAML from model', async () => {
+    const expanded = [
+      'district:',
+      '  id: harbor_quarter',
+      '  name: Harbor Quarter',
+      'rooms:',
+      '  - id: tavern',
+      '    name: Tavern',
+      '  - id: dock_warehouse',
+      '    name: Dock Warehouse',
+    ].join('\n');
+    const client = mockClient(expanded);
+    const result = await expandPack(client, {
+      content: 'district:\n  id: harbor_quarter\n  name: Harbor Quarter\nrooms:\n  - id: tavern\n    name: Tavern',
+      goal: 'add a warehouse room',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.yaml).toContain('dock_warehouse');
+      expect(result.yaml).toContain('tavern');
+    }
+  });
+
+  it('passes constraints to prompt', async () => {
+    let capturedPrompt = '';
+    const client: OllamaTextClient = {
+      async generate(input: PromptInput): Promise<PromptResult> {
+        capturedPrompt = input.prompt;
+        return { ok: true, text: 'district:\n  id: t\n  name: T' };
+      },
+    };
+    await expandPack(client, {
+      content: 'district:\n  id: t\n  name: T',
+      goal: 'add rooms',
+      constraints: ['max 3 rooms', 'no combat zones'],
+    });
+    expect(capturedPrompt).toContain('max 3 rooms');
+    expect(capturedPrompt).toContain('no combat zones');
+  });
+
+  it('propagates client failure', async () => {
+    const client = failingClient('gpu oom');
+    const result = await expandPack(client, {
+      content: 'id: x',
+      goal: 'expand',
+    });
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe('critiqueContent', () => {
+  it('returns critique text from model', async () => {
+    const critique = 'Strengths: The room has good connectivity. Weaknesses: The hazard list is empty. Simulation risks: None. Missed opportunities: Add ambient sounds.';
+    const client = mockClient(critique);
+    const result = await critiqueContent(client, {
+      content: 'id: ruined_chapel\nname: Ruined Chapel\nzones:\n  - id: nave\n    name: Nave',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.text).toContain('Strengths');
+      expect(result.text).toContain('Weaknesses');
+    }
+  });
+
+  it('passes focus and content type to prompt', async () => {
+    let capturedPrompt = '';
+    const client: OllamaTextClient = {
+      async generate(input: PromptInput): Promise<PromptResult> {
+        capturedPrompt = input.prompt;
+        return { ok: true, text: 'Looks good overall.' };
+      },
+    };
+    await critiqueContent(client, {
+      content: 'id: test\nname: Test',
+      contentType: 'quest',
+      focus: 'fail conditions',
+    });
+    expect(capturedPrompt).toContain('quest');
+    expect(capturedPrompt).toContain('fail conditions');
+  });
+
+  it('propagates client failure', async () => {
+    const client = failingClient('timeout');
+    const result = await critiqueContent(client, {
+      content: 'id: x\nname: X',
+    });
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe('normalizeContent', () => {
+  it('returns normalized YAML from model', async () => {
+    const clean = 'id: market_quarter\nname: Market Quarter\ntags:\n  - commerce\n  - trade';
+    const client = mockClient(clean);
+    const result = await normalizeContent(client, {
+      content: 'id: Market_Quarter\nnaem: Market Quarter\ntags:\n  - trade\n  - commerce\n  - trade',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.yaml).toContain('market_quarter');
+    }
+  });
+
+  it('passes content type to prompt', async () => {
+    let capturedPrompt = '';
+    const client: OllamaTextClient = {
+      async generate(input: PromptInput): Promise<PromptResult> {
+        capturedPrompt = input.prompt;
+        return { ok: true, text: 'id: test\nname: Test' };
+      },
+    };
+    await normalizeContent(client, {
+      content: 'id: test\nname: Test',
+      contentType: 'district',
+    });
+    expect(capturedPrompt).toContain('district');
+  });
+
+  it('propagates client failure', async () => {
+    const client = failingClient('connection refused');
+    const result = await normalizeContent(client, {
+      content: 'id: x',
+    });
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe('diffSummary', () => {
+  it('returns diff analysis text from model', async () => {
+    const analysis = 'Changes: Added paranoid tag to district. Simulation impact: District metrics will skew toward higher alert pressure. Risk: None.';
+    const client = mockClient(analysis);
+    const result = await diffSummary(client, {
+      before: 'id: market_quarter\ntags:\n  - commerce',
+      after: 'id: market_quarter\ntags:\n  - commerce\n  - paranoid',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.text).toContain('Changes');
+      expect(result.text).toContain('paranoid');
+    }
+  });
+
+  it('passes labels to prompt', async () => {
+    let capturedPrompt = '';
+    const client: OllamaTextClient = {
+      async generate(input: PromptInput): Promise<PromptResult> {
+        capturedPrompt = input.prompt;
+        return { ok: true, text: 'No significant changes.' };
+      },
+    };
+    await diffSummary(client, {
+      before: 'id: a',
+      after: 'id: a',
+      labelBefore: 'v1.0',
+      labelAfter: 'v1.1',
+    });
+    expect(capturedPrompt).toContain('v1.0');
+    expect(capturedPrompt).toContain('v1.1');
+  });
+
+  it('propagates client failure', async () => {
+    const client = failingClient('model unavailable');
+    const result = await diffSummary(client, {
+      before: 'id: x',
+      after: 'id: x',
     });
     expect(result.ok).toBe(false);
   });

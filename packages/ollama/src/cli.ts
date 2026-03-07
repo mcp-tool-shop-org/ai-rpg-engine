@@ -17,6 +17,11 @@ import { createLocationPack } from './commands/create-location-pack.js';
 import { createEncounterPack } from './commands/create-encounter-pack.js';
 import { explainDistrictState } from './commands/explain-district-state.js';
 import { explainFactionAlert } from './commands/explain-faction-alert.js';
+import { improveContent } from './commands/improve-content.js';
+import { expandPack } from './commands/expand-pack.js';
+import { critiqueContent } from './commands/critique-content.js';
+import { normalizeContent } from './commands/normalize-content.js';
+import { diffSummary } from './commands/diff-summary.js';
 
 type CliFlags = {
   model?: string;
@@ -26,9 +31,15 @@ type CliFlags = {
   ruleset?: string;
   district?: string;
   difficulty?: string;
+  goal?: string;
+  contentType?: string;
+  focus?: string;
+  labelBefore?: string;
+  labelAfter?: string;
   factions?: string[];
   districts?: string[];
   zones?: string[];
+  constraints?: string[];
   repair?: boolean;
   stdin?: boolean;
   write?: string;
@@ -53,6 +64,12 @@ function parseFlags(args: string[]): { command: string; flags: CliFlags } {
       case '--districts': flags.districts = next?.split(','); i++; break;
       case '--zones': flags.zones = next?.split(','); i++; break;
       case '--difficulty': flags.difficulty = next; i++; break;
+      case '--goal': flags.goal = next; i++; break;
+      case '--content-type': flags.contentType = next; i++; break;
+      case '--focus': flags.focus = next; i++; break;
+      case '--label-before': flags.labelBefore = next; i++; break;
+      case '--label-after': flags.labelAfter = next; i++; break;
+      case '--constraints': flags.constraints = next?.split(','); i++; break;
       case '--write': flags.write = next; i++; break;
       case '--repair': flags.repair = true; break;
       case '--stdin': flags.stdin = true; break;
@@ -430,8 +447,142 @@ export async function runCli(args: string[]): Promise<void> {
       break;
     }
 
+    case 'improve-content': {
+      let input: string;
+      if (flags.stdin || !process.stdin.isTTY) {
+        input = await readStdin();
+      } else {
+        console.error('Pipe content YAML via stdin, or use --stdin');
+        process.exit(1);
+      }
+
+      const goal = flags.goal;
+      if (!goal) {
+        console.error('--goal is required');
+        process.exit(1);
+      }
+
+      const result = await improveContent(client, {
+        content: input,
+        goal,
+        contentType: flags.contentType,
+      });
+      if (!result.ok) {
+        console.error(result.error);
+        process.exit(1);
+      }
+      await emit(result.yaml, flags.write);
+      break;
+    }
+
+    case 'expand-pack': {
+      let input: string;
+      if (flags.stdin || !process.stdin.isTTY) {
+        input = await readStdin();
+      } else {
+        console.error('Pipe pack YAML via stdin, or use --stdin');
+        process.exit(1);
+      }
+
+      const goal = flags.goal;
+      if (!goal) {
+        console.error('--goal is required');
+        process.exit(1);
+      }
+
+      const result = await expandPack(client, {
+        content: input,
+        goal,
+        constraints: flags.constraints,
+      });
+      if (!result.ok) {
+        console.error(result.error);
+        process.exit(1);
+      }
+      await emit(result.yaml, flags.write);
+      break;
+    }
+
+    case 'critique-content': {
+      let input: string;
+      if (flags.stdin || !process.stdin.isTTY) {
+        input = await readStdin();
+      } else {
+        console.error('Pipe content YAML via stdin, or use --stdin');
+        process.exit(1);
+      }
+
+      const result = await critiqueContent(client, {
+        content: input,
+        contentType: flags.contentType,
+        focus: flags.focus,
+      });
+      if (!result.ok) {
+        console.error(result.error);
+        process.exit(1);
+      }
+      await emit(result.text, flags.write);
+      break;
+    }
+
+    case 'normalize-content': {
+      let input: string;
+      if (flags.stdin || !process.stdin.isTTY) {
+        input = await readStdin();
+      } else {
+        console.error('Pipe content YAML via stdin, or use --stdin');
+        process.exit(1);
+      }
+
+      const result = await normalizeContent(client, {
+        content: input,
+        contentType: flags.contentType,
+      });
+      if (!result.ok) {
+        console.error(result.error);
+        process.exit(1);
+      }
+      await emit(result.yaml, flags.write);
+      break;
+    }
+
+    case 'diff-summary': {
+      let input: string;
+      if (flags.stdin || !process.stdin.isTTY) {
+        input = await readStdin();
+      } else {
+        console.error('Pipe JSON with before and after fields, or use --stdin');
+        process.exit(1);
+      }
+
+      let before: string;
+      let after: string;
+      try {
+        const parsed = JSON.parse(input);
+        before = parsed.before;
+        after = parsed.after;
+        if (!before || !after) throw new Error('missing before or after');
+      } catch {
+        console.error('Input must be JSON with before and after string fields');
+        process.exit(1);
+      }
+
+      const result = await diffSummary(client, {
+        before,
+        after,
+        labelBefore: flags.labelBefore,
+        labelAfter: flags.labelAfter,
+      });
+      if (!result.ok) {
+        console.error(result.error);
+        process.exit(1);
+      }
+      await emit(result.text, flags.write);
+      break;
+    }
+
     default:
-      console.log('@ai-rpg-engine/ollama v0.4.0');
+      console.log('@ai-rpg-engine/ollama v0.5.0');
       console.log('');
       console.log('Scaffold:');
       console.log('  create-room                 Generate a room definition');
@@ -440,6 +591,13 @@ export async function runCli(args: string[]): Promise<void> {
       console.log('  create-district             Generate a district configuration');
       console.log('  create-location-pack        Generate district + rooms bundle');
       console.log('  create-encounter-pack       Generate room + entities + quest bundle');
+      console.log('');
+      console.log('Iterate:');
+      console.log('  improve-content             Revise content toward a goal (pipe YAML)');
+      console.log('  expand-pack                 Add content to an existing pack (pipe YAML)');
+      console.log('  critique-content            Senior designer review (pipe YAML)');
+      console.log('  normalize-content           Clean up style + schema conformance (pipe YAML)');
+      console.log('  diff-summary                Explain changes between two versions (pipe JSON)');
       console.log('');
       console.log('Diagnose:');
       console.log('  explain-validation-error    Explain validation errors (pipe JSON)');
@@ -453,12 +611,18 @@ export async function runCli(args: string[]): Promise<void> {
       console.log('  --model <name>       Ollama model (default: qwen2.5-coder)');
       console.log('  --url <url>          Ollama base URL (default: http://localhost:11434)');
       console.log('  --theme <text>       Theme for content generation');
+      console.log('  --goal <text>        Improvement/expansion goal');
+      console.log('  --content-type <t>   Content type hint (room, district, quest, etc.)');
+      console.log('  --focus <text>       Focus area for critique');
       console.log('  --ruleset <id>       Ruleset ID for context');
       console.log('  --district <id>      District ID for context');
       console.log('  --factions <ids>     Comma-separated faction IDs');
       console.log('  --districts <ids>    Comma-separated district IDs');
       console.log('  --zones <ids>        Comma-separated existing zone IDs');
+      console.log('  --constraints <c>    Comma-separated constraints');
       console.log('  --difficulty <level>  Encounter difficulty hint');
+      console.log('  --label-before <t>   Label for "before" version in diff');
+      console.log('  --label-after <t>    Label for "after" version in diff');
       console.log('  --repair             Attempt to fix invalid generated content');
       console.log('  --write <path>       Write output to file instead of stdout');
       console.log('  --format <fmt>       Output format: plain, forensic, author');
