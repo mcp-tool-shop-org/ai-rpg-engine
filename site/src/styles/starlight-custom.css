@@ -1,0 +1,18 @@
+/* Align Starlight with @mcptoolshop/site-theme dark palette */
+/* Accent: emerald (default site-theme) */
+:root {
+  --sl-color-accent-low: #022c22;
+  --sl-color-accent: #34d399;
+  --sl-color-accent-high: #6ee7b7;
+  --sl-color-bg-nav: #09090b;
+  --sl-color-bg-sidebar: #09090b;
+  --sl-color-bg: #09090b;
+  --sl-color-black: #09090b;
+  --sl-color-hairline-light: #27272a;
+  --sl-color-hairline: #27272a;
+  --sl-color-gray-6: #18181b;
+  --sl-color-gray-5: #27272a;
+  --sl-color-white: #fafafa;
+  --sl-color-text: #e4e4e7;
+  --sl-color-text-accent: #6ee7b7;
+}

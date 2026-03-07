@@ -14,7 +14,7 @@ export const config: SiteConfig = {
     headlineAccent: 'Simulation truth, first.',
     description: 'A modular runtime for terminal RPGs where actions create information, information distorts, and consequences emerge from what characters believe happened.',
     primaryCta: { href: '#usage', label: 'Get started' },
-    secondaryCta: { href: '#modules', label: 'Explore modules' },
+    secondaryCta: { href: 'handbook/', label: 'Read the Handbook' },
     previews: [
       { label: 'Install', code: 'npm install @ai-rpg-engine/core @ai-rpg-engine/modules' },
       { label: 'Import', code: "import { Engine } from '@ai-rpg-engine/core'" },
