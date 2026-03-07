@@ -24,6 +24,25 @@ export type SessionIssue = {
   summary: string;
 };
 
+export type SessionEventKind =
+  | 'session_start'
+  | 'theme_added'
+  | 'constraint_added'
+  | 'artifact_created'
+  | 'issue_opened'
+  | 'issue_resolved'
+  | 'suggestion_accepted'
+  | 'suggestion_generated'
+  | 'replay_compared'
+  | 'plan_generated'
+  | 'content_applied';
+
+export type SessionEvent = {
+  timestamp: string;
+  kind: SessionEventKind;
+  detail: string;
+};
+
 export type DesignSession = {
   name: string;
   createdAt: string;
@@ -33,6 +52,7 @@ export type DesignSession = {
   artifacts: SessionArtifacts;
   issues: SessionIssue[];
   acceptedSuggestions: string[];
+  history: SessionEvent[];
   modelConfig?: {
     model?: string;
     baseUrl?: string;
@@ -89,26 +109,45 @@ export function createSession(name: string): DesignSession {
     },
     issues: [],
     acceptedSuggestions: [],
+    history: [{ timestamp: now, kind: 'session_start', detail: `Session "${name}" started` }],
   };
+}
+
+// --- History recording ---
+
+export function recordEvent(session: DesignSession, kind: SessionEventKind, detail: string): void {
+  session.history = session.history ?? [];
+  session.history.push({
+    timestamp: new Date().toISOString(),
+    kind,
+    detail,
+  });
 }
 
 // --- Mutators ---
 
 export function addThemes(session: DesignSession, themes: string[]): void {
   for (const t of themes) {
-    if (!session.themes.includes(t)) session.themes.push(t);
+    if (!session.themes.includes(t)) {
+      session.themes.push(t);
+      recordEvent(session, 'theme_added', t);
+    }
   }
 }
 
 export function addConstraints(session: DesignSession, constraints: string[]): void {
   for (const c of constraints) {
-    if (!session.constraints.includes(c)) session.constraints.push(c);
+    if (!session.constraints.includes(c)) {
+      session.constraints.push(c);
+      recordEvent(session, 'constraint_added', c);
+    }
   }
 }
 
 export function addArtifact(session: DesignSession, kind: keyof SessionArtifacts, id: string): void {
   if (!session.artifacts[kind].includes(id)) {
     session.artifacts[kind].push(id);
+    recordEvent(session, 'artifact_created', `${kind}/${id}`);
   }
 }
 
@@ -123,6 +162,7 @@ export function addCritiqueIssues(session: DesignSession, issues: CritiqueIssue[
         status: 'open',
         summary: issue.summary,
       });
+      recordEvent(session, 'issue_opened', `${issue.code}: ${issue.summary}`);
     }
   }
 }
@@ -130,6 +170,7 @@ export function addCritiqueIssues(session: DesignSession, issues: CritiqueIssue[
 export function acceptSuggestion(session: DesignSession, code: string): void {
   if (!session.acceptedSuggestions.includes(code)) {
     session.acceptedSuggestions.push(code);
+    recordEvent(session, 'suggestion_accepted', code);
   }
 }
 
@@ -137,6 +178,7 @@ export function resolveIssue(session: DesignSession, code: string): boolean {
   const issue = session.issues.find(i => i.code === code);
   if (issue) {
     issue.status = 'resolved';
+    recordEvent(session, 'issue_resolved', code);
     return true;
   }
   return false;
@@ -173,6 +215,16 @@ export function renderSessionContext(session: DesignSession): string {
 
   if (session.acceptedSuggestions.length > 0) {
     lines.push(`Accepted suggestions: ${session.acceptedSuggestions.join(', ')}`);
+  }
+
+  // Include recent history (last 10 events) for guided design context
+  const history = session.history ?? [];
+  if (history.length > 0) {
+    const recent = history.slice(-10);
+    lines.push(`Recent activity (${recent.length} of ${history.length} events):`);
+    for (const e of recent) {
+      lines.push(`  ${e.kind}: ${e.detail}`);
+    }
   }
 
   return lines.join('\n');
@@ -215,6 +267,31 @@ export function formatSessionStatus(session: DesignSession): string {
 
   if (session.acceptedSuggestions.length > 0) {
     lines.push(`Accepted suggestions: ${session.acceptedSuggestions.join(', ')}`);
+  }
+
+  return lines.join('\n');
+}
+
+// --- History formatting ---
+
+export function formatSessionHistory(session: DesignSession, limit = 20): string {
+  const history = session.history ?? [];
+  if (history.length === 0) return 'No events recorded.';
+
+  const lines: string[] = [];
+  lines.push(`Session: ${session.name}`);
+  lines.push(`Total events: ${history.length}`);
+  lines.push('');
+
+  const shown = limit > 0 ? history.slice(-limit) : history;
+  if (limit > 0 && history.length > limit) {
+    lines.push(`(showing last ${limit} of ${history.length})`);
+    lines.push('');
+  }
+
+  for (const event of shown) {
+    const ts = event.timestamp.replace('T', ' ').replace(/\.\d+Z$/, 'Z');
+    lines.push(`  ${ts}  ${event.kind}: ${event.detail}`);
   }
 
   return lines.join('\n');

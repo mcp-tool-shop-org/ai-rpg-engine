@@ -28,9 +28,15 @@ import { suggestNext } from './commands/suggest-next.js';
 import { planDistrict } from './commands/plan-district.js';
 import { compareReplays } from './commands/compare-replays.js';
 import {
+  scaffoldAndCritique, compareAndFix, planAndGenerate,
+  type MacroProgress, type ScaffoldKind,
+} from './macros.js';
+import { generatePreview, applyConfirmed } from './apply-preview.js';
+import {
   loadSession, saveSession, deleteSession, createSession,
   addThemes, addConstraints, addArtifact, addCritiqueIssues,
-  resolveIssue, renderSessionContext, formatSessionStatus,
+  resolveIssue, recordEvent, renderSessionContext, formatSessionStatus,
+  formatSessionHistory,
 } from './session.js';
 import { sessionDoctor, formatDoctorReport } from './session-doctor.js';
 import type { DesignSession } from './session.js';
@@ -58,6 +64,9 @@ type CliFlags = {
   targetId?: string;
   tickRange?: string;
   repair?: boolean;
+  confirm?: boolean;
+  autoExecute?: number;
+  kind?: string;
   stdin?: boolean;
   write?: string;
   session?: string;
@@ -96,6 +105,9 @@ function parseFlags(args: string[]): { command: string; flags: CliFlags } {
       case '--target-id': flags.targetId = next; i++; break;
       case '--tick-range': flags.tickRange = next; i++; break;
       case '--repair': flags.repair = true; break;
+      case '--confirm': flags.confirm = true; break;
+      case '--auto-execute': flags.autoExecute = parseInt(next ?? '1', 10); i++; break;
+      case '--kind': flags.kind = next; i++; break;
       case '--stdin': flags.stdin = true; break;
     }
   }
@@ -207,6 +219,14 @@ export async function runCli(args: string[]): Promise<void> {
         console.log(`Resolved issue: ${code}`);
         return;
       }
+      case 'history': {
+        const session = await loadSession(projectRoot);
+        if (!session) { console.error('No active session.'); process.exit(1); }
+        const limitArg = args[2] ? parseInt(args[2], 10) : 20;
+        const limit = isNaN(limitArg) ? 20 : limitArg;
+        console.log(formatSessionHistory(session, limit));
+        return;
+      }
       default:
         console.log('Session commands:');
         console.log('  session start <name>       Start a new design session');
@@ -216,6 +236,7 @@ export async function runCli(args: string[]): Promise<void> {
         console.log('  session add-constraint <c> Add constraint(s) to session');
         console.log('  session doctor             Health check the session file');
         console.log('  session resolve <code>     Resolve an open issue by code');
+        console.log('  session history [limit]    Show session event timeline');
         return;
     }
   }
@@ -873,8 +894,10 @@ export async function runCli(args: string[]): Promise<void> {
       if (result.actions.length > 0) {
         console.error(`\n--- ${result.actions.length} recommendation(s) ---`);
         for (const action of result.actions) {
-          console.error(`  [${action.priority}] ${action.command}`);
+          console.error(`  [${action.priority}] ${action.code}: ${action.command}`);
           if (action.reason) console.error(`         ${action.reason}`);
+          if (action.expectedImpact) console.error(`         Impact: ${action.expectedImpact}`);
+          if (action.dependsOn.length) console.error(`         After: ${action.dependsOn.join(', ')}`);
         }
       }
       if (result.summary) {
@@ -975,8 +998,174 @@ export async function runCli(args: string[]): Promise<void> {
       break;
     }
 
+    case 'scaffold-and-critique': {
+      const theme = flags.theme;
+      if (!theme) {
+        console.error('--theme is required');
+        process.exit(1);
+      }
+      const kind = (flags.kind ?? flags.contentType ?? 'room') as ScaffoldKind;
+      const validKinds: ScaffoldKind[] = ['room', 'faction', 'district', 'location-pack', 'encounter-pack'];
+      if (!validKinds.includes(kind)) {
+        console.error(`--kind must be one of: ${validKinds.join(', ')}`);
+        process.exit(1);
+      }
+
+      const onProgress = (p: MacroProgress) => {
+        const step = p.steps[Math.min(p.currentStep, p.totalSteps - 1)];
+        console.error(`[${p.currentStep}/${p.totalSteps}] ${step.label}: ${step.status}`);
+      };
+
+      const result = await scaffoldAndCritique(client, {
+        kind,
+        theme,
+        sessionContext: sessionCtx,
+        rulesetId: flags.ruleset,
+        districtId: flags.district,
+        factions: flags.factions,
+        difficulty: flags.difficulty,
+      }, onProgress);
+
+      // Output the first step's content (the generated YAML)
+      const scaffoldStep = result.steps[0];
+      if (scaffoldStep?.output) {
+        await emit(scaffoldStep.output, flags.write);
+      }
+
+      // Critique and suggestions to stderr
+      for (const step of result.steps.slice(1)) {
+        if (step.output) console.error(`\n--- ${step.label} ---\n${step.output}`);
+      }
+
+      console.error(`\n${result.summary}`);
+      if (session) {
+        recordEvent(session, 'suggestion_generated', `scaffold-and-critique: ${kind} "${theme}"`);
+        await saveSession(projectRoot, session);
+      }
+      if (!result.ok) process.exit(1);
+      break;
+    }
+
+    case 'compare-and-fix': {
+      let input: string;
+      if (flags.stdin || !process.stdin.isTTY) {
+        input = await readStdin();
+      } else {
+        console.error('Pipe JSON with before and after fields, or use --stdin');
+        process.exit(1);
+      }
+
+      let before: string;
+      let after: string;
+      try {
+        const parsed = JSON.parse(input);
+        before = parsed.before;
+        after = parsed.after;
+        if (!before || !after) throw new Error('missing before or after');
+      } catch {
+        console.error('Input must be JSON with before and after string fields');
+        process.exit(1);
+      }
+
+      const onProgress = (p: MacroProgress) => {
+        const step = p.steps[Math.min(p.currentStep, p.totalSteps - 1)];
+        console.error(`[${p.currentStep}/${p.totalSteps}] ${step.label}: ${step.status}`);
+      };
+
+      const result = await compareAndFix(client, {
+        before,
+        after,
+        labelBefore: flags.labelBefore,
+        labelAfter: flags.labelAfter,
+        focus: flags.focus,
+        sessionContext: sessionCtx,
+      }, onProgress);
+
+      for (const step of result.steps) {
+        if (step.output) console.error(`\n--- ${step.label} ---\n${step.output}`);
+      }
+      console.error(`\n${result.summary}`);
+      if (session) {
+        recordEvent(session, 'replay_compared', `compare-and-fix: ${flags.labelBefore ?? 'before'} vs ${flags.labelAfter ?? 'after'}`);
+        await saveSession(projectRoot, session);
+      }
+      if (!result.ok) process.exit(1);
+      break;
+    }
+
+    case 'plan-and-generate': {
+      const theme = flags.theme;
+      if (!theme) {
+        console.error('--theme is required');
+        process.exit(1);
+      }
+
+      const onProgress = (p: MacroProgress) => {
+        const step = p.steps[Math.min(p.currentStep, p.totalSteps - 1)];
+        console.error(`[${p.currentStep}/${p.totalSteps}] ${step.label}: ${step.status}`);
+      };
+
+      const result = await planAndGenerate(client, {
+        theme,
+        existingFactions: flags.factions?.join(', '),
+        existingDistricts: flags.districts?.join(', '),
+        constraints: flags.constraints?.join(', '),
+        sessionContext: sessionCtx,
+        rulesetId: flags.ruleset,
+        autoExecute: flags.autoExecute ?? 1,
+      }, onProgress);
+
+      for (const step of result.steps) {
+        if (step.output) {
+          console.error(`\n--- ${step.label} ---`);
+          // Only emit YAML-looking output to stdout (from scaffold steps)
+          if (step.output.includes('id:') && step.label.startsWith('Execute')) {
+            await emit(step.output, flags.write);
+          } else {
+            console.error(step.output);
+          }
+        }
+      }
+      console.error(`\n${result.summary}`);
+      if (session) {
+        recordEvent(session, 'plan_generated', `plan-and-generate: "${theme}"`);
+        await saveSession(projectRoot, session);
+      }
+      if (!result.ok) process.exit(1);
+      break;
+    }
+
+    case 'apply-preview': {
+      let input: string;
+      if (flags.stdin || !process.stdin.isTTY) {
+        input = await readStdin();
+      } else {
+        console.error('Pipe content via stdin, or use --stdin');
+        process.exit(1);
+      }
+
+      const targetPath = flags.write;
+      if (!targetPath) {
+        console.error('--write <path> is required for apply-preview');
+        process.exit(1);
+      }
+
+      if (flags.confirm) {
+        const msg = await applyConfirmed({ content: input, targetPath, label: flags.contentType });
+        console.log(msg);
+        if (session) {
+          recordEvent(session, 'content_applied', targetPath);
+          await saveSession(projectRoot, session);
+        }
+      } else {
+        const preview = await generatePreview({ content: input, targetPath, label: flags.contentType });
+        console.log(preview.preview);
+      }
+      break;
+    }
+
     default:
-      console.log('@ai-rpg-engine/ollama v0.8.0');
+      console.log('@ai-rpg-engine/ollama v0.9.0');
       console.log('');
       console.log('Session:');
       console.log('  session start <name>        Start a named design session');
@@ -986,6 +1175,7 @@ export async function runCli(args: string[]): Promise<void> {
       console.log('  session add-constraint <t>  Add a constraint to the active session');
       console.log('  session doctor              Health check the session file');
       console.log('  session resolve <code>      Resolve an open issue by code');
+      console.log('  session history [limit]     Show session event timeline');
       console.log('');
       console.log('Scaffold:');
       console.log('  create-room                 Generate a room definition');
@@ -1019,6 +1209,15 @@ export async function runCli(args: string[]): Promise<void> {
       console.log('  plan-district               Multi-step district design plan');
       console.log('  compare-replays             Before/after simulation comparison (pipe JSON)');
       console.log('');
+      console.log('Workflow:');
+      console.log('  scaffold-and-critique       Generate + critique + suggest-next');
+      console.log('  compare-and-fix             Compare replays + suggest fixes');
+      console.log('  plan-and-generate           Plan district + auto-execute steps + critique');
+      console.log('');
+      console.log('Apply:');
+      console.log('  apply-preview               Preview a file write (pipe content, --write <path>)');
+      console.log('                              Add --confirm to actually write');
+      console.log('');
       console.log('Flags:');
       console.log('  --model <name>       Ollama model (default: qwen2.5-coder)');
       console.log('  --url <url>          Ollama base URL (default: http://localhost:11434)');
@@ -1042,6 +1241,9 @@ export async function runCli(args: string[]): Promise<void> {
       console.log('  --label-before <t>   Label for "before" version in diff');
       console.log('  --label-after <t>    Label for "after" version in diff');
       console.log('  --repair             Attempt to fix invalid generated content');
+      console.log('  --confirm            Confirm apply-preview (actually write the file)');
+      console.log('  --kind <type>        Scaffold kind: room, faction, district, location-pack, encounter-pack');
+      console.log('  --auto-execute <n>   Plan-and-generate: steps to auto-execute (1-3, default 1)');
       console.log('  --write <path>       Write output to file instead of stdout');
       console.log('  --format <fmt>       Output format: plain, forensic, author');
       console.log('  --stdin              Read input from stdin');

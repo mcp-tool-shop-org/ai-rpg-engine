@@ -20,6 +20,9 @@ export type SuggestNextResult = {
   error: string;
 };
 
+// Re-export for convenience
+export type { NextAction } from '../parsers.js';
+
 export async function suggestNext(
   client: OllamaTextClient,
   input: SuggestNextInput,

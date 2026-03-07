@@ -254,9 +254,12 @@ function normalizeStructuredCritique(obj: Record<string, unknown>): StructuredCr
 // --- Guided design types ---
 
 export type NextAction = {
+  code: string;
   priority: 'low' | 'medium' | 'high';
   command: string;
   reason: string;
+  dependsOn: string[];
+  expectedImpact: string;
 };
 
 export type GuidedSuggestions = {
@@ -345,10 +348,16 @@ function flushAction(result: GuidedSuggestions, item: Record<string, string>): v
   const priority = (['low', 'medium', 'high'] as const).includes(item['priority'] as 'low' | 'medium' | 'high')
     ? item['priority'] as 'low' | 'medium' | 'high'
     : 'medium';
+  const dependsOn = item['dependsOn']
+    ? item['dependsOn'].replace(/[\[\]]/g, '').split(',').map(s => s.trim()).filter(Boolean)
+    : [];
   result.actions.push({
+    code: item['code'] ?? `ACTION_${String(result.actions.length + 1).padStart(3, '0')}`,
     priority,
     command: item['command'],
     reason: item['reason'] ?? '',
+    dependsOn,
+    expectedImpact: item['expectedImpact'] ?? '',
   });
 }
 

@@ -1023,6 +1023,8 @@ describe('suggestNext', () => {
       expect(result.actions).toHaveLength(3);
       expect(result.actions[0].priority).toBe('high');
       expect(result.actions[0].command).toContain('create-quest');
+      expect(result.actions[0].code).toBe('ACTION_001');
+      expect(result.actions[0].dependsOn).toEqual([]);
       expect(result.actions[1].priority).toBe('medium');
       expect(result.actions[2].priority).toBe('low');
       expect(result.summary).toContain('quests first');

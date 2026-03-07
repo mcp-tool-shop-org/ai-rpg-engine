@@ -103,18 +103,45 @@ export {
   addCritiqueIssues,
   acceptSuggestion,
   resolveIssue,
+  recordEvent,
   renderSessionContext,
   formatSessionStatus,
+  formatSessionHistory,
 } from './session.js';
 export type {
   DesignSession,
   SessionArtifacts,
   SessionIssue,
+  SessionEvent,
+  SessionEventKind,
 } from './session.js';
 
 // Session doctor
 export { sessionDoctor, formatDoctorReport } from './session-doctor.js';
 export type { SessionDiagnostic, SessionDoctorResult } from './session-doctor.js';
+
+// Workflow macros
+export {
+  scaffoldAndCritique,
+  compareAndFix,
+  planAndGenerate,
+  createMacroProgress,
+  buildMacroResult,
+} from './macros.js';
+export type {
+  MacroStep,
+  MacroProgress,
+  MacroResult,
+  ProgressCallback,
+  ScaffoldKind,
+  ScaffoldAndCritiqueInput,
+  CompareAndFixInput,
+  PlanAndGenerateInput,
+} from './macros.js';
+
+// Apply preview
+export { generatePreview, applyConfirmed } from './apply-preview.js';
+export type { ApplyPreviewInput, ApplyPreviewResult } from './apply-preview.js';
 
 // CLI entry
 export { runCli } from './cli.js';

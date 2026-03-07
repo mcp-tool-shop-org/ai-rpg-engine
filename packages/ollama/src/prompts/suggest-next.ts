@@ -42,12 +42,18 @@ PART 2: Structured recommendations as a YAML block:
 
 \`\`\`yaml
 actions:
-  - priority: high | medium | low
+  - code: "ACTION_001"
+    priority: high | medium | low
     command: "exact CLI command with flags"
     reason: "why this matters"
-  - priority: high | medium | low
+    dependsOn: []  # codes of actions that must run first
+    expectedImpact: "what this will improve in the simulation or content"
+  - code: "ACTION_002"
+    priority: high | medium | low
     command: "exact CLI command with flags"
     reason: "why this matters"
+    dependsOn: ["ACTION_001"]
+    expectedImpact: "expected measurable outcome"
 summary: "one-line overall guidance"
 \`\`\`
 

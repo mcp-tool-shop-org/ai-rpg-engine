@@ -15,8 +15,10 @@ import {
   resolveIssue,
   renderSessionContext,
   formatSessionStatus,
+  recordEvent,
+  formatSessionHistory,
 } from './session.js';
-import type { DesignSession } from './session.js';
+import type { DesignSession, SessionEvent } from './session.js';
 import type { CritiqueIssue } from './parsers.js';
 
 describe('session', () => {
@@ -43,6 +45,8 @@ describe('session', () => {
       expect(s.artifacts.packs).toEqual([]);
       expect(s.issues).toEqual([]);
       expect(s.acceptedSuggestions).toEqual([]);
+      expect(s.history).toHaveLength(1);
+      expect(s.history[0].kind).toBe('session_start');
       expect(s.createdAt).toBeTruthy();
       expect(s.updatedAt).toBeTruthy();
     });
@@ -104,10 +108,24 @@ describe('session', () => {
       expect(session.themes).toEqual(['gothic', 'mystery', 'horror']);
     });
 
+    it('addThemes records history events', () => {
+      const before = session.history.length;
+      addThemes(session, ['gothic']);
+      expect(session.history.length).toBe(before + 1);
+      expect(session.history[session.history.length - 1].kind).toBe('theme_added');
+    });
+
     it('addConstraints deduplicates', () => {
       addConstraints(session, ['no-magic', 'low-tech']);
       addConstraints(session, ['low-tech', 'permadeath']);
       expect(session.constraints).toEqual(['no-magic', 'low-tech', 'permadeath']);
+    });
+
+    it('addConstraints records history events', () => {
+      const before = session.history.length;
+      addConstraints(session, ['no-magic']);
+      expect(session.history.length).toBe(before + 1);
+      expect(session.history[session.history.length - 1].kind).toBe('constraint_added');
     });
 
     it('addArtifact registers by kind and deduplicates', () => {
@@ -115,6 +133,14 @@ describe('session', () => {
       addArtifact(session, 'rooms', 'crypt_02');
       addArtifact(session, 'rooms', 'crypt_01');
       expect(session.artifacts.rooms).toEqual(['crypt_01', 'crypt_02']);
+    });
+
+    it('addArtifact records history events', () => {
+      const before = session.history.length;
+      addArtifact(session, 'rooms', 'crypt_01');
+      expect(session.history.length).toBe(before + 1);
+      expect(session.history[session.history.length - 1].kind).toBe('artifact_created');
+      expect(session.history[session.history.length - 1].detail).toContain('crypt_01');
     });
 
     it('addArtifact works for all kinds', () => {
@@ -158,6 +184,7 @@ describe('session', () => {
       const result = resolveIssue(session, 'FIX_01');
       expect(result).toBe(true);
       expect(session.issues[0].status).toBe('resolved');
+      expect(session.history.some(e => e.kind === 'issue_resolved')).toBe(true);
     });
 
     it('resolveIssue returns false for unknown code', () => {
@@ -205,6 +232,64 @@ describe('session', () => {
       expect(status).toContain('cellar');
       expect(status).toContain('Districts: (none)');
       expect(status).toContain('Issues: 0 open, 0 resolved');
+    });
+  });
+
+  describe('recordEvent', () => {
+    it('appends event to session history', () => {
+      const s = createSession('event-test');
+      const before = s.history.length;
+      recordEvent(s, 'plan_generated', 'Generated a 3-step plan');
+      expect(s.history.length).toBe(before + 1);
+      const last = s.history[s.history.length - 1];
+      expect(last.kind).toBe('plan_generated');
+      expect(last.detail).toBe('Generated a 3-step plan');
+      expect(last.timestamp).toBeTruthy();
+    });
+
+    it('defensively initializes history if missing', () => {
+      const s = createSession('defensive-test');
+      // Simulate a session loaded from old format without history
+      (s as Record<string, unknown>).history = undefined;
+      recordEvent(s, 'content_applied', 'Wrote room to disk');
+      expect(s.history).toHaveLength(1);
+      expect(s.history[0].kind).toBe('content_applied');
+    });
+  });
+
+  describe('formatSessionHistory', () => {
+    it('returns no-events message for empty history', () => {
+      const s = createSession('empty-hist');
+      s.history = [];
+      expect(formatSessionHistory(s)).toBe('No events recorded.');
+    });
+
+    it('formats events with truncated timestamps', () => {
+      const s = createSession('fmt-test');
+      // createSession adds session_start event
+      recordEvent(s, 'theme_added', 'gothic');
+      recordEvent(s, 'artifact_created', 'rooms: crypt_01');
+
+      const output = formatSessionHistory(s);
+      expect(output).toContain('Session: fmt-test');
+      expect(output).toContain('Total events:');
+      expect(output).toContain('session_start');
+      expect(output).toContain('theme_added: gothic');
+      expect(output).toContain('artifact_created: rooms: crypt_01');
+    });
+
+    it('respects limit parameter', () => {
+      const s = createSession('limit-test');
+      s.history = [];
+      for (let i = 0; i < 10; i++) {
+        recordEvent(s, 'theme_added', `theme_${i}`);
+      }
+      const output = formatSessionHistory(s, 3);
+      expect(output).toContain('showing last 3 of 10');
+      expect(output).toContain('theme_7');
+      expect(output).toContain('theme_8');
+      expect(output).toContain('theme_9');
+      expect(output).not.toContain('theme_0');
     });
   });
 });

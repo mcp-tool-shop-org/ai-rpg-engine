@@ -212,7 +212,49 @@ describe('parseSuggestNextOutput', () => {
     expect(structured.actions[1].priority).toBe('medium');
     expect(structured.actions[2].priority).toBe('low');
 
+    // Auto-generated codes
+    expect(structured.actions[0].code).toBe('ACTION_001');
+    expect(structured.actions[1].code).toBe('ACTION_002');
+    expect(structured.actions[2].code).toBe('ACTION_003');
+    // Default empty dependsOn and expectedImpact
+    expect(structured.actions[0].dependsOn).toEqual([]);
+    expect(structured.actions[0].expectedImpact).toBe('');
+
     expect(structured.summary).toContain('quest creation');
+  });
+
+  it('parses enriched NextAction fields (code, dependsOn, expectedImpact)', () => {
+    const raw = [
+      'Recommendations for your session.',
+      '',
+      '```yaml',
+      'actions:',
+      '  - code: QUEST_001',
+      '    priority: high',
+      '    command: "create-quest --theme heist"',
+      '    reason: "No quests in session."',
+      '    dependsOn: [ACTION_001, ACTION_002]',
+      '    expectedImpact: "Activates faction goals and rivalry dynamics."',
+      '  - code: SIM_002',
+      '    priority: medium',
+      '    command: "analyze-replay < market.json"',
+      '    reason: "Market district untested."',
+      '    dependsOn: []',
+      '    expectedImpact: "Validates trade route mechanics."',
+      'summary: "Quests first, then simulate."',
+      '```',
+    ].join('\n');
+
+    const { structured } = parseSuggestNextOutput(raw);
+    expect(structured.actions).toHaveLength(2);
+
+    expect(structured.actions[0].code).toBe('QUEST_001');
+    expect(structured.actions[0].dependsOn).toEqual(['ACTION_001', 'ACTION_002']);
+    expect(structured.actions[0].expectedImpact).toBe('Activates faction goals and rivalry dynamics.');
+
+    expect(structured.actions[1].code).toBe('SIM_002');
+    expect(structured.actions[1].dependsOn).toEqual([]);
+    expect(structured.actions[1].expectedImpact).toBe('Validates trade route mechanics.');
   });
 
   it('degrades gracefully with no YAML block', () => {
