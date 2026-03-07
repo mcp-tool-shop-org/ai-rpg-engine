@@ -53,3 +53,5 @@ Pre-built worlds that wire all 15 modules with genre-specific rulesets, content,
 | @ai-rpg-engine/starter-detective | Victorian mystery | perception, eloquence, grit | interrogate, deduce |
 | @ai-rpg-engine/starter-pirate | High-seas pirate | brawn, cunning, sea-legs | plunder, navigate |
 | @ai-rpg-engine/starter-zombie | Zombie survival | fitness, wits, nerve | barricade, scavenge |
+| @ai-rpg-engine/starter-weird-west | Weird west | grit, draw-speed, lore | draw, commune |
+| @ai-rpg-engine/starter-colony | Sci-fi colony | engineering, command, awareness | scan, allocate |
