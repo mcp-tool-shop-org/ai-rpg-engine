@@ -51,7 +51,13 @@ export type SessionEventKind =
   | 'tune_plan_completed'
   | 'tuning_step_previewed'
   | 'tuning_step_applied'
-  | 'tuning_bundle_created';
+  | 'tuning_bundle_created'
+  | 'experiment_plan_created'
+  | 'experiment_started'
+  | 'experiment_run_completed'
+  | 'experiment_sweep_completed'
+  | 'experiment_compared'
+  | 'experiment_findings_added';
 
 export type SessionEvent = {
   timestamp: string;

@@ -5,6 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.8.0] - 2025-07-15
+
+### Added — Scenario Experiments (ollama)
+
+- **chat-experiments.ts** — deterministic experiment engine: batch runs, sweeps, variance analysis, comparisons
+  - `ExperimentSpec`, `ExperimentRunResult`, `AggregateMetrics`, `VarianceFinding`, `ExperimentSummary`, `ExperimentComparison`, `ParameterSweepSpec`, `SweepPoint`, `ParameterSweepResult`, `ExperimentPlanStep`, `ExperimentPlan`, `ReplayProducer` types
+
+- **P1 — Deterministic Experiment Runner**
+  - `runExperiment(spec, producer)` — batch-runs a scenario N times with deterministic seeds
+  - `deriveSeeds(spec)` — seeds from `seedList` or `seedStart` with defensive copy
+  - Seed isolation: each run gets its own seed, results are reproducible across machines
+  - Graceful failure: failed runs recorded with error, non-failures still aggregate
+
+- **P2 — Scenario Metrics Extraction**
+  - `extractScenarioMetrics(replayData)` — tick-level metric extraction from replay JSON
+  - Handles raw tick arrays, wrapped objects (`{ ticks: [...] }`), empty/single-tick replays
+  - Extracts: totalTicks, escalationTick, rumorSpreadReach, encounterDuration, factionHostilityPeak, encounterTicks, escalationPhases
+
+- **P3 — Variance Analysis**
+  - `computeAggregate(metrics[])` — means, mins, maxes, variances, rates across all runs
+  - `detectVarianceFindings(aggregate, runCount)` — 6 variance rules with severity levels
+  - Rules: high_variance_encounter_duration, rare_escalation_trigger, unstable_rumor_spread, survival_outcomes_too_swingy, high_variance_hostility_peak, escalation_timing_unstable
+  - Each finding includes code, severity (low/medium/high), metric, summary, likelyCause, suggestion
+
+- **P4 — Parameter Sweeps**
+  - `runParameterSweep(sweepSpec, producer)` — sweep a tunable parameter across values
+  - `generateSweepValues(from, to, step)` — float-safe range generation
+  - `isTunableParam(name)` / `getTunableParams()` — 7-param whitelist with ranges
+  - Tunables: rumorClarity, alertGain, hostilityDecay, escalationThreshold, stabilityReactivity, escalationGain, encounterDifficulty
+  - Each sweep point runs the full experiment, recommendation generated from results
+
+- **P5 — Experiment Comparison**
+  - `compareExperiments(before, after)` — structured comparison with improvements, regressions, unchanged
+  - `isImprovementDirection` heuristic: lower-is-better for durations/peaks, higher for survival/reach
+  - Metric diffs with before/after/delta, variance findings delta
+
+- **P6 — Experiment Plans**
+  - `generateExperimentPlan(goal, session?)` — 3 plan templates: compare (40 runs), sweep (60 runs), default batch (20 runs)
+  - Goal keyword detection: "compare"→compare template, "sweep"→sweep template
+  - Each step has id, description, command, params, status
+
+- **P7 — Session Integration**
+  - 6 new `SessionEventKind` values: `experiment_plan_created`, `experiment_started`, `experiment_run_completed`, `experiment_sweep_completed`, `experiment_compared`, `experiment_findings_added` (33 total)
+  - Engine tracks `lastExperiment` and `baselineExperiment` state
+
+- **P8 — Chat Integration**
+  - 4 new intents: `experiment_run`, `experiment_sweep`, `experiment_compare`, `experiment_plan` (30 total)
+  - 4 new tools: `experiment-run`, `experiment-sweep`, `experiment-compare`, `experiment-plan` (29 total)
+  - 4 new router patterns with extractParams (run count, sweep param/range/step, plan goal)
+  - 6 new shell commands: `/experiment-plan`, `/experiment-run`, `/experiment-sweep`, `/experiment-compare`, `/experiment-findings`
+  - Personality mappings: experiment_run/sweep/compare→ANALYST, experiment_plan→WORLDBUILDER
+
+- **5 formatting functions**: `formatExperimentSummary`, `formatExperimentComparison`, `formatParameterSweepResult`, `formatExperimentPlan`, `formatRunResults`
+
+- 114 new tests (1154 total): seed derivation (5), experiment runner (10), metrics extraction (7), aggregate computation (8), variance detection (9), parameter sweeps (12), experiment comparison (7), experiment plans (7), session integration (2), chat router patterns (14), tool registry (6), formatting (18), edge cases (9)
+
 ## [1.7.0] - 2026-07-14
 
 ### Added — Guided Tuning (ollama)

@@ -34,6 +34,13 @@ import {
   formatTuningBundles, formatPatchPreview, formatReplayImpact,
   generateOperationalPlan,
 } from './chat-tuning-engine.js';
+import {
+  generateExperimentPlan, formatExperimentPlan,
+  formatExperimentSummary, formatExperimentComparison,
+  formatParameterSweepResult,
+  compareExperiments, isTunableParam,
+  type ExperimentSummary,
+} from './chat-experiments.js';
 
 // --- Helper ---
 
@@ -870,6 +877,156 @@ const tuneApplyTool: ChatTool = {
   },
 };
 
+// --- Tool: experiment-run ---
+
+const experimentRunTool: ChatTool = {
+  name: 'experiment-run',
+  description: 'Run a deterministic experiment batch across multiple seeds',
+  intents: ['experiment_run'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const runs = parseInt(p.params.runs ?? '20', 10);
+    const label = p.params.label ?? 'experiment';
+    const seedStart = parseInt(p.params.seedStart ?? '1', 10);
+
+    if (runs < 1 || runs > 1000) {
+      return { ok: false, summary: 'Run count must be between 1 and 1000.', actions: [] };
+    }
+
+    const a = action('experiment-run', `Run ${runs} experiment(s) as "${label}"`, false);
+
+    // In tool context we don't have a real replay producer. Generate a plan instead.
+    const plan = generateExperimentPlan(`batch run ${runs}x`, p.session);
+    return {
+      ok: true,
+      summary: [
+        `Experiment plan: "${label}" — ${runs} runs from seed ${seedStart}`,
+        '',
+        formatExperimentPlan(plan),
+        '',
+        'Use the experiment runner API with a ReplayProducer to execute.',
+      ].join('\n'),
+      output: JSON.stringify({ label, runs, seedStart, plan }),
+      actions: [executed(a, `${runs}-run experiment planned`)],
+      sessionEvents: [
+        { kind: 'experiment_plan_created', detail: `Experiment: ${label} (${runs} runs)` },
+      ],
+    };
+  },
+};
+
+// --- Tool: experiment-sweep ---
+
+const experimentSweepTool: ChatTool = {
+  name: 'experiment-sweep',
+  description: 'Sweep a tunable parameter across a range with experiment batches',
+  intents: ['experiment_sweep'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const param = p.params.param;
+    if (!param) {
+      return { ok: false, summary: 'I need a parameter name to sweep. Example: "sweep rumorClarity from 0.4 to 0.8"', actions: [] };
+    }
+    if (!isTunableParam(param)) {
+      return { ok: false, summary: `Parameter "${param}" is not in the tunable whitelist. Tunable params: rumorClarity, alertGain, hostilityDecay, escalationThreshold, stabilityReactivity, escalationGain, encounterDifficulty.`, actions: [] };
+    }
+
+    const from = parseFloat(p.params.from ?? '0.3');
+    const to = parseFloat(p.params.to ?? '0.8');
+    const step = parseFloat(p.params.step ?? '0.1');
+    const runs = parseInt(p.params.runs ?? '10', 10);
+
+    const a = action('experiment-sweep', `Sweep ${param} from ${from} to ${to} step ${step}`, false);
+
+    const plan = generateExperimentPlan(`sweep ${param}`, p.session);
+    const pointCount = Math.floor((to - from) / step) + 1;
+
+    return {
+      ok: true,
+      summary: [
+        `Parameter sweep: ${param}`,
+        `Range: ${from} → ${to} (step ${step}, ${pointCount} points)`,
+        `Runs per point: ${runs}`,
+        `Total estimated runs: ${pointCount * runs}`,
+        '',
+        formatExperimentPlan(plan),
+        '',
+        'Use the sweep runner API with a ReplayProducer to execute.',
+      ].join('\n'),
+      output: JSON.stringify({ param, from, to, step, runs, pointCount }),
+      actions: [executed(a, `${pointCount}-point sweep planned`)],
+      sessionEvents: [
+        { kind: 'experiment_started', detail: `Sweep: ${param} (${from}→${to}, ${pointCount} points)` },
+      ],
+    };
+  },
+};
+
+// --- Tool: experiment-compare ---
+
+const experimentCompareTool: ChatTool = {
+  name: 'experiment-compare',
+  description: 'Compare two experiment summaries (baseline vs tuned)',
+  intents: ['experiment_compare'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const beforeRaw = p.params.before ?? p.params.content;
+    const afterRaw = p.params.after;
+    if (!beforeRaw || !afterRaw) {
+      return { ok: false, summary: 'I need both before and after experiment summaries to compare.', actions: [] };
+    }
+
+    let before: ExperimentSummary;
+    let after: ExperimentSummary;
+    try {
+      before = JSON.parse(beforeRaw) as ExperimentSummary;
+      after = JSON.parse(afterRaw) as ExperimentSummary;
+    } catch {
+      return { ok: false, summary: 'Could not parse experiment summaries. Provide valid JSON.', actions: [] };
+    }
+
+    const a = action('experiment-compare', 'Compare experiment summaries', false);
+    const comparison = compareExperiments(before, after);
+
+    return {
+      ok: true,
+      summary: formatExperimentComparison(comparison),
+      output: JSON.stringify(comparison),
+      actions: [executed(a, comparison.verdict)],
+      sessionEvents: [
+        { kind: 'experiment_compared', detail: `Comparison: ${comparison.verdict}` },
+      ],
+    };
+  },
+};
+
+// --- Tool: experiment-plan ---
+
+const experimentPlanTool: ChatTool = {
+  name: 'experiment-plan',
+  description: 'Generate an experiment plan from a goal',
+  intents: ['experiment_plan'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const goal = p.params.goal ?? p.userMessage;
+    if (!goal) {
+      return { ok: false, summary: 'I need an experiment goal. Example: "experiment plan compare baseline vs tuned"', actions: [] };
+    }
+    const a = action('experiment-plan', `Plan experiment: "${goal}"`, false);
+    const plan = generateExperimentPlan(goal, p.session);
+
+    return {
+      ok: true,
+      summary: formatExperimentPlan(plan),
+      output: JSON.stringify(plan),
+      actions: [executed(a, `${plan.steps.length}-step experiment plan`)],
+      sessionEvents: [
+        { kind: 'experiment_plan_created', detail: `Experiment plan: ${goal} (${plan.steps.length} steps)` },
+      ],
+    };
+  },
+};
+
 // --- Registry ---
 
 const ALL_TOOLS: ChatTool[] = [
@@ -898,6 +1055,10 @@ const ALL_TOOLS: ChatTool[] = [
   tuneBundlesTool,
   tunePreviewTool,
   tuneApplyTool,
+  experimentRunTool,
+  experimentSweepTool,
+  experimentCompareTool,
+  experimentPlanTool,
 ];
 
 /**

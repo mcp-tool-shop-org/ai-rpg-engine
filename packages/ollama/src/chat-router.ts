@@ -155,6 +155,73 @@ const INTENT_PATTERNS: IntentPattern[] = [
     ],
   },
   {
+    intent: 'experiment_run',
+    patterns: [
+      /\b(run|execute)\s+(this\s+)?(district|scenario|experiment|simulation)\s+\d+\s+times\b/i,
+      /\bexperiment\s+run\b/i,
+      /\brun\s+(\d+)\s+(experiments?|simulations?|replays?)\b/i,
+      /^\/experiment-run\b/i,
+      /^\/experiment\s+run\b/i,
+    ],
+    extractParams: (msg) => {
+      const runsMatch = msg.match(/(\d+)\s+times\b/i) ?? msg.match(/run\s+(\d+)/i);
+      const params: Record<string, string> = {};
+      if (runsMatch) params.runs = runsMatch[1];
+      const labelMatch = msg.match(/(?:--label|label[=:]?)\s*(\S+)/i);
+      if (labelMatch) params.label = labelMatch[1];
+      return params;
+    },
+  },
+  {
+    intent: 'experiment_sweep',
+    patterns: [
+      /\bsweep\s+\w+/i,
+      /\bexperiment\s+sweep\b/i,
+      /\bparameter\s+sweep\b/i,
+      /^\/experiment-sweep\b/i,
+      /^\/experiment\s+sweep\b/i,
+    ],
+    extractParams: (msg) => {
+      const paramMatch = msg.match(/sweep\s+(\w+)/i);
+      const fromMatch = msg.match(/(?:from|--from)\s+([\d.]+)/i);
+      const toMatch = msg.match(/(?:to|--to)\s+([\d.]+)/i);
+      const stepMatch = msg.match(/(?:step|--step)\s+([\d.]+)/i);
+      const runsMatch = msg.match(/(?:--runs)\s+(\d+)/i);
+      const params: Record<string, string> = {};
+      if (paramMatch) params.param = paramMatch[1];
+      if (fromMatch) params.from = fromMatch[1];
+      if (toMatch) params.to = toMatch[1];
+      if (stepMatch) params.step = stepMatch[1];
+      if (runsMatch) params.runs = runsMatch[1];
+      return params;
+    },
+  },
+  {
+    intent: 'experiment_compare',
+    patterns: [
+      /\bexperiment\s+compare\b/i,
+      /\bcompare\s+(the\s+)?(experiments?|batche?s?|baselines?.*tuned)\b/i,
+      /\bcompare\s+tuned\b/i,
+      /^\/experiment-compare\b/i,
+      /^\/experiment\s+compare\b/i,
+    ],
+  },
+  {
+    intent: 'experiment_plan',
+    patterns: [
+      /\bexperiment\s+plan\b/i,
+      /\bplan\s+(an?\s+)?experiment\b/i,
+      /^\/experiment-plan\b/i,
+      /^\/experiment\s+plan\b/i,
+    ],
+    extractParams: (msg) => {
+      const goalMatch = msg.match(/experiment\s+plan\s+(.+)/i) ?? msg.match(/plan\s+(?:an?\s+)?experiment\s*(?:for|about|:)?\s*(.+)/i);
+      const params: Record<string, string> = {};
+      if (goalMatch) params.goal = (goalMatch[1] ?? goalMatch[2] ?? '').trim();
+      return params;
+    },
+  },
+  {
     intent: 'critique',
     patterns: [
       /\b(critique|review|check|evaluate|assess)\s+(this|the|my)?\s*(content|room|faction|district|quest|pack|yaml)?\b/i,
@@ -298,6 +365,10 @@ Valid intents:
 - suggest_fixes: user wants suggested fixes or adjustments based on analysis findings
 - compare_scenarios: user wants to compare two scenario revisions to see if changes helped
 - tune_goal: user wants a guided tuning plan to adjust world behavior (e.g. "tune increase paranoia")
+- experiment_run: user wants to run a deterministic experiment batch (e.g. "run this district 50 times")
+- experiment_sweep: user wants to sweep a parameter across a range (e.g. "sweep rumor clarity from 0.4 to 0.8")
+- experiment_compare: user wants to compare two experiment results (baseline vs tuned)
+- experiment_plan: user wants to plan an experiment workflow
 - unknown: can't determine intent
 
 Response format (JSON only, no markdown):
@@ -335,6 +406,7 @@ export async function classifyByLLM(
       'show_plan', 'recommend', 'build_goal',
       'analyze_balance', 'compare_intent', 'analyze_window',
       'suggest_fixes', 'compare_scenarios', 'tune_goal',
+      'experiment_run', 'experiment_sweep', 'experiment_compare', 'experiment_plan',
       'unknown',
     ];
     const intent = validIntents.includes(parsed.intent as ChatIntent)

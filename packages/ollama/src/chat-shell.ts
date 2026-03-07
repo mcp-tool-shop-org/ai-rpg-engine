@@ -26,6 +26,14 @@ import {
   formatPatchPreview, formatTuningBundles, formatReplayImpact,
   predictImpact, generateOperationalPlan,
 } from './chat-tuning-engine.js';
+import {
+  generateExperimentPlan, formatExperimentPlan,
+  formatExperimentSummary, formatExperimentComparison,
+  formatParameterSweepResult, formatRunResults,
+  compareExperiments, isTunableParam, generateSweepValues,
+  runExperiment, runParameterSweep,
+  type ReplayProducer, type ExperimentSummary,
+} from './chat-experiments.js';
 import { loadSession } from './session.js';
 
 export type ChatShellOptions = {
@@ -149,6 +157,11 @@ async function handleSlashCommand(
       console.log('/tune-step      Execute next tuning step');
       console.log('/tune-execute   Execute all tuning steps');
       console.log('/tune-status    Show tuning status');
+      console.log('/experiment-plan <goal>  Plan an experiment workflow');
+      console.log('/experiment-run <runs>   Show experiment run plan');
+      console.log('/experiment-sweep <param> <from> <to> <step>  Plan parameter sweep');
+      console.log('/experiment-compare  Compare last two experiment summaries');
+      console.log('/experiment-findings  Show variance findings from last experiment');
       console.log('');
       return 'handled';
 
@@ -523,6 +536,90 @@ async function handleSlashCommand(
         console.log('No active tuning plan.');
       }
       return 'handled';
+
+    case 'experiment-plan': {
+      const goal = parts.slice(1).join(' ').trim();
+      if (!goal) {
+        console.log('Usage: /experiment-plan <goal>');
+        console.log('Example: /experiment-plan compare baseline vs tuned');
+        return 'handled';
+      }
+      const session = await loadSession(projectRoot);
+      const plan = generateExperimentPlan(goal, session);
+      console.log('');
+      console.log(formatExperimentPlan(plan));
+      console.log('');
+      return 'handled';
+    }
+
+    case 'experiment-run': {
+      const runs = parseInt(parts[1] ?? '20', 10);
+      if (runs < 1 || runs > 1000) {
+        console.log('Run count must be between 1 and 1000.');
+        return 'handled';
+      }
+      const label = parts[2] ?? 'experiment';
+      console.log(`Experiment plan: ${runs} runs as "${label}"`);
+      console.log('Use the experiment runner API with a ReplayProducer to execute batches.');
+      const plan = generateExperimentPlan(`batch run ${runs}x`, null);
+      console.log('');
+      console.log(formatExperimentPlan(plan));
+      console.log('');
+      return 'handled';
+    }
+
+    case 'experiment-sweep': {
+      const param = parts[1];
+      if (!param) {
+        console.log('Usage: /experiment-sweep <param> <from> <to> <step>');
+        console.log('Example: /experiment-sweep rumorClarity 0.4 0.8 0.1');
+        return 'handled';
+      }
+      if (!isTunableParam(param)) {
+        console.log(`Parameter "${param}" is not tunable.`);
+        console.log('Tunable: rumorClarity, alertGain, hostilityDecay, escalationThreshold, stabilityReactivity, escalationGain, encounterDifficulty');
+        return 'handled';
+      }
+      const from = parseFloat(parts[2] ?? '0.3');
+      const to = parseFloat(parts[3] ?? '0.8');
+      const step = parseFloat(parts[4] ?? '0.1');
+      const values = generateSweepValues(from, to, step);
+      console.log(`Sweep: ${param} from ${from} to ${to} step ${step} (${values.length} points)`);
+      console.log('Use the sweep runner API with a ReplayProducer to execute.');
+      return 'handled';
+    }
+
+    case 'experiment-compare': {
+      if (!engine.lastExperiment || !engine.baselineExperiment) {
+        console.log('Need two experiment summaries to compare. Run experiments first.');
+        return 'handled';
+      }
+      const comparison = compareExperiments(engine.baselineExperiment, engine.lastExperiment);
+      console.log('');
+      console.log(formatExperimentComparison(comparison));
+      console.log('');
+      return 'handled';
+    }
+
+    case 'experiment-findings': {
+      if (!engine.lastExperiment) {
+        console.log('No experiment results available. Run an experiment first.');
+        return 'handled';
+      }
+      const findings = engine.lastExperiment.varianceFindings;
+      if (findings.length === 0) {
+        console.log('No variance findings in last experiment.');
+        return 'handled';
+      }
+      console.log('');
+      console.log(`Variance Findings (${findings.length}):`);
+      for (const f of findings) {
+        console.log(`  [${f.severity}] ${f.code}: ${f.summary}`);
+        if (f.suggestion) console.log(`    → ${f.suggestion}`);
+      }
+      console.log('');
+      return 'handled';
+    }
 
     default:
       console.log(`Unknown command: /${cmd}. Type /help for available commands.`);

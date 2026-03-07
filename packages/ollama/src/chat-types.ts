@@ -45,6 +45,10 @@ export type ChatIntent =
   | 'tune_preview'      // "Preview tuning patches." / "What will change?"
   | 'tune_apply'        // "Apply tuning patches." / "Confirm changes."
   | 'tune_bundles'      // "Show fix bundles." / "Bundle the fixes."
+  | 'experiment_run'    // "Run this district 50 times."
+  | 'experiment_sweep'  // "Sweep rumor clarity from 0.4 to 0.8."
+  | 'experiment_compare' // "Compare baseline vs tuned."
+  | 'experiment_plan'   // "Plan an experiment." / "experiment plan paranoia-test"
   | 'unknown';          // Fallback — ask for clarification.
 
 export type IntentClassification = {

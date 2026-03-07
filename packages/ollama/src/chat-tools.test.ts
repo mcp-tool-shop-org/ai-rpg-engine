@@ -148,9 +148,9 @@ describe('findToolForIntent', () => {
 });
 
 describe('getAllTools', () => {
-  it('returns all 25 registered tools', () => {
+  it('returns all 29 registered tools', () => {
     const tools = getAllTools();
-    expect(tools.length).toBe(25);
+    expect(tools.length).toBe(29);
   });
 
   it('returns a copy (not the internal array)', () => {

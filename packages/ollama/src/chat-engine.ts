@@ -47,6 +47,7 @@ import {
   type TuningState, type TuningPlan, type BalanceAnalysis,
 } from './chat-balance-analyzer.js';
 import { generateOperationalPlan } from './chat-tuning-engine.js';
+import type { ExperimentSummary } from './chat-experiments.js';
 
 // --- Chat memory ---
 
@@ -144,6 +145,10 @@ export type ChatEngine = {
   activeTuning: TuningState | null;
   /** Last balance analysis result (v1.7.0). */
   lastAnalysis: BalanceAnalysis | null;
+  /** Last experiment summary (v1.8.0). */
+  lastExperiment: ExperimentSummary | null;
+  /** Baseline experiment for comparison (v1.8.0). */
+  baselineExperiment: ExperimentSummary | null;
   /** Process a user message and return the assistant response. */
   process: (message: string) => Promise<string>;
   /** Execute the next pending build step. Returns formatted result. */
@@ -186,6 +191,8 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
   let activeBuild: BuildState | null = null;
   let activeTuning: TuningState | null = null;
   let lastAnalysis: BalanceAnalysis | null = null;
+  let lastExperiment: ExperimentSummary | null = null;
+  let baselineExperiment: ExperimentSummary | null = null;
 
   async function process(userMessage: string): Promise<string> {
     const now = new Date().toISOString();
@@ -368,6 +375,23 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
           : rawPlan;
         activeTuning = createTuningState(plan);
       } catch { /* output wasn't valid plan JSON — ignore */ }
+    }
+
+    // Capture experiment summary/plan (v1.8.0)
+    if (
+      (classification.intent === 'experiment_run' || classification.intent === 'experiment_compare')
+      && toolResult.ok && toolResult.output
+    ) {
+      try {
+        const parsed = JSON.parse(toolResult.output);
+        if (parsed.spec && parsed.runs) {
+          // It's an ExperimentSummary
+          if (lastExperiment) {
+            baselineExperiment = lastExperiment;
+          }
+          lastExperiment = parsed as ExperimentSummary;
+        }
+      } catch { /* ignore */ }
     }
 
     // Apply session events
@@ -660,6 +684,10 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     set activeTuning(v) { activeTuning = v; },
     get lastAnalysis() { return lastAnalysis; },
     set lastAnalysis(v) { lastAnalysis = v; },
+    get lastExperiment() { return lastExperiment; },
+    set lastExperiment(v) { lastExperiment = v; },
+    get baselineExperiment() { return baselineExperiment; },
+    set baselineExperiment(v) { baselineExperiment = v; },
     process,
     executeBuildStep,
     executeAllBuildSteps,

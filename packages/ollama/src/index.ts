@@ -243,5 +243,25 @@ export type {
   DesignImpactSection, DesignImpactComparison,
 } from './chat-tuning-engine.js';
 
+// Experiment engine — deterministic experiment batches, sweeps, variance analysis (v1.8.0)
+export {
+  runExperiment, runParameterSweep,
+  computeAggregate, detectVarianceFindings,
+  compareExperiments, generateExperimentPlan,
+  deriveSeeds, extractScenarioMetrics,
+  generateSweepValues, isTunableParam, getTunableParams,
+  formatExperimentSummary, formatExperimentComparison,
+  formatParameterSweepResult, formatExperimentPlan,
+  formatRunResults,
+} from './chat-experiments.js';
+export type {
+  ExperimentSpec, ExperimentRunResult, ExperimentSummary,
+  AggregateMetrics, VarianceFinding,
+  ExperimentComparison, ParameterSweepSpec,
+  SweepPoint, ParameterSweepResult,
+  ExperimentPlanStep, ExperimentPlan,
+  ReplayProducer,
+} from './chat-experiments.js';
+
 // CLI entry
 export { runCli } from './cli.js';

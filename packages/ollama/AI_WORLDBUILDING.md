@@ -513,3 +513,89 @@ Three new tools (25 total), three new intents (26 total), four new/enhanced shel
 3. **Preview**: `/tune-preview` → shows `district.escalation.alertGain: 0.25 → 0.40`, `faction.guild.rumorClarity: 0.55 → 0.70`, predicted impact: improvement (65% confidence)
 4. **Apply**: `/tune-apply` → stages Escalation Tuning patches as pending write → user confirms → YAML written
 5. **Verify**: After re-simulation, `/compare-scenarios before|after` → Improved: escalation pacing, rumor spread; Unchanged: encounter duration; verdict: improved
+
+## Scenario Experiments (v1.8.0)
+
+One replay tells you what happened once. An experiment tells you what *usually* happens. Scenario Experiments turn single runs into statistically meaningful batches with deterministic seed control, variance analysis, parameter sweeps, and structured comparisons.
+
+### Pipeline
+
+```
+experiment-plan <goal> → plan with steps + estimated runs
+    → experiment-run → N runs with deterministic seeds → aggregate metrics
+    → detectVarianceFindings → high/medium/low severity findings
+    → experiment-sweep <param> → sweep tunable across range
+    → experiment-compare → before/after with improvements/regressions/unchanged
+```
+
+### Eight Pillars
+
+#### P1 — Deterministic Experiment Runner
+
+`runExperiment(spec, producer)` batch-runs a scenario N times. Each run gets its own seed via `deriveSeeds()` (from `seedList` or `seedStart`). Results are reproducible across machines. Failed runs are recorded with errors; successful runs still aggregate.
+
+#### P2 — Scenario Metrics Extraction
+
+`extractScenarioMetrics(replayData)` pulls tick-level metrics from replay JSON. Handles raw tick arrays, wrapped objects, empty replays. Extracts: totalTicks, escalationTick, rumorSpreadReach, encounterDuration, factionHostilityPeak, encounterTicks, escalationPhases.
+
+#### P3 — Variance Analysis
+
+`computeAggregate(metrics[])` computes means, mins, maxes, variances, and rates across all runs. `detectVarianceFindings(aggregate, runCount)` applies 6 rules:
+
+| Rule | Metric | Condition | Severity |
+|------|--------|-----------|----------|
+| `high_variance_encounter_duration` | encounterDuration | CV > 0.5 | high |
+| `rare_escalation_trigger` | escalationRate | rate < 0.3 | medium |
+| `unstable_rumor_spread` | rumorSpreadReach | CV > 0.4 | medium |
+| `survival_outcomes_too_swingy` | survivalRate | 0.3 < rate < 0.7 | high |
+| `high_variance_hostility_peak` | factionHostilityPeak | CV > 0.45 | medium |
+| `escalation_timing_unstable` | escalationTick | CV > 0.4 | medium |
+
+#### P4 — Parameter Sweeps
+
+`runParameterSweep(sweepSpec, producer)` sweeps a tunable parameter across values. Seven tunables are whitelisted:
+
+| Parameter | Range | Unit |
+|-----------|-------|------|
+| `rumorClarity` | 0.0–1.0 | ratio |
+| `alertGain` | 0.0–1.0 | ratio |
+| `hostilityDecay` | 0.0–1.0 | ratio |
+| `escalationThreshold` | 0.0–1.0 | ratio |
+| `stabilityReactivity` | 0.0–1.0 | ratio |
+| `escalationGain` | 0.0–1.0 | ratio |
+| `encounterDifficulty` | 0.0–1.0 | ratio |
+
+`generateSweepValues(from, to, step)` produces float-safe ranges. Each point runs the full experiment and a recommendation is generated from results.
+
+#### P5 — Experiment Comparison
+
+`compareExperiments(before, after)` produces structured comparisons: improvements, regressions, unchanged metrics. `isImprovementDirection` heuristic determines which direction is better (lower for durations/peaks, higher for survival/reach). Includes metric diffs with before/after/delta and variance findings delta.
+
+#### P6 — Experiment Plans
+
+`generateExperimentPlan(goal, session?)` uses 3 templates:
+
+| Template | Trigger | Steps | Estimated Runs |
+|----------|---------|-------|----------------|
+| Compare | "compare" in goal | 5 | 40 |
+| Sweep | "sweep" in goal | 3 | 60 |
+| Default batch | anything else | 3 | 20 |
+
+#### P7 — Session Integration
+
+Six new event kinds (33 total): `experiment_plan_created`, `experiment_started`, `experiment_run_completed`, `experiment_sweep_completed`, `experiment_compared`, `experiment_findings_added`. Engine tracks `lastExperiment` and `baselineExperiment` state.
+
+#### P8 — Chat Integration
+
+Four new tools (29 total), four new intents (30 total), six new shell commands. Router patterns extract run count, sweep parameters/range/step, and plan goals. Personality maps experiment intents to ANALYST (run/sweep/compare) and WORLDBUILDER (plan).
+
+### Worked Example
+
+> You've tuned rumor mechanics (v1.7.0) and want to verify the change is statistically significant:
+
+1. **Plan**: `/experiment-plan compare baseline vs tuned` → 5-step plan: baseline run → save → tuned run → save → compare (40 runs total)
+2. **Baseline**: `/experiment-run 20` → 20 deterministic runs, seed 1–20 → aggregate: meanEncounterDuration=8.2, survivalRate=0.45, 2 variance findings
+3. **Tuned**: `/experiment-run 20` with overrides → meanEncounterDuration=6.1, survivalRate=0.70, 0 variance findings
+4. **Compare**: `/experiment-compare` → Improved: encounter duration (8.2 → 6.1), survival rate (0.45 → 0.70); Variance findings reduced from 2 to 0; verdict: clear improvement
+5. **Sweep**: `/experiment-sweep rumorClarity from 0.3 to 0.9 step 0.1` → 7×20=140 runs → optimal at 0.6, diminishing returns above 0.7
+6. **Findings**: `/experiment-findings` → lists any remaining variance issues with severity and suggestions
