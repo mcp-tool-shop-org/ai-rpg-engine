@@ -6,6 +6,7 @@
 import type { RetrievedSnippet, RetrievalResult } from './chat-rag.js';
 import type { ShapedContext, ShapedMemory, MemoryClass } from './chat-memory-shaper.js';
 import type { PersonalityProfile } from './chat-personality.js';
+import type { LoadoutRoutePlan, RoutedEntry } from './chat-loadout.js';
 
 // --- Types ---
 
@@ -24,6 +25,22 @@ export type ContextSnapshot = {
   activeProfile: ProfileSummary;
   /** Budget accounting. */
   budget: BudgetSummary;
+  /** Loadout routing info (present when loadout is active). */
+  loadout?: LoadoutSummary;
+};
+
+export type LoadoutSummary = {
+  active: boolean;
+  preloadCount: number;
+  onDemandCount: number;
+  manualCount: number;
+  allowedSources: string[];
+  preloadTokens: number;
+  onDemandTokens: number;
+  layers: string[];
+  taskString: string;
+  /** Top entries from preload + onDemand for display. */
+  topEntries: Array<{ id: string; score: number; reason: string; mode: string }>;
 };
 
 export type RetrievalSummary = {
@@ -96,12 +113,14 @@ export function buildContextSnapshot(options: {
   intentForProfile: string;
   retrievalBudget?: number;
   shapingBudget?: number;
+  loadoutPlan?: LoadoutRoutePlan;
 }): ContextSnapshot {
   const {
     query, keywords, retrievalResult, shapedContext, profile,
     intentForProfile,
     retrievalBudget = 4000,
     shapingBudget = 4000,
+    loadoutPlan,
   } = options;
 
   // Build retrieval summary
@@ -162,6 +181,28 @@ export function buildContextSnapshot(options: {
     utilizationPercent: totalBudget > 0 ? Math.round((totalUsed / totalBudget) * 100) : 0,
   };
 
+  // Build loadout summary if present
+  let loadout: LoadoutSummary | undefined;
+  if (loadoutPlan) {
+    const topEntries = [
+      ...loadoutPlan.preload.map(e => ({ id: e.id, score: e.score, reason: e.reason, mode: e.mode })),
+      ...loadoutPlan.onDemand.map(e => ({ id: e.id, score: e.score, reason: e.reason, mode: e.mode })),
+    ].slice(0, 8);
+
+    loadout = {
+      active: loadoutPlan.active,
+      preloadCount: loadoutPlan.preload.length,
+      onDemandCount: loadoutPlan.onDemand.length,
+      manualCount: loadoutPlan.manualCount,
+      allowedSources: loadoutPlan.allowedSources,
+      preloadTokens: loadoutPlan.preloadTokens,
+      onDemandTokens: loadoutPlan.onDemandTokens,
+      layers: loadoutPlan.layers,
+      taskString: loadoutPlan.taskString,
+      topEntries,
+    };
+  }
+
   return {
     timestamp: new Date().toISOString(),
     query,
@@ -170,6 +211,7 @@ export function buildContextSnapshot(options: {
     shaping,
     activeProfile,
     budget,
+    loadout,
   };
 }
 
@@ -183,6 +225,29 @@ export function formatContextSnapshot(snapshot: ContextSnapshot): string {
   lines.push(`Keywords: ${snapshot.keywords.join(', ') || '(none)'}`);
   lines.push(`Time: ${snapshot.timestamp}`);
   lines.push('');
+
+  // Loadout routing (if active)
+  if (snapshot.loadout) {
+    if (snapshot.loadout.active) {
+      lines.push('## Loadout Routing');
+      lines.push(`  Task: "${snapshot.loadout.taskString.length > 100 ? snapshot.loadout.taskString.slice(0, 100) + '…' : snapshot.loadout.taskString}"`);
+      lines.push(`  Layers: ${snapshot.loadout.layers.join(' → ') || '(none)'}`);
+      lines.push(`  Allowed sources: ${snapshot.loadout.allowedSources.join(', ')}`);
+      lines.push(`  Entries: ${snapshot.loadout.preloadCount} preload, ${snapshot.loadout.onDemandCount} on-demand, ${snapshot.loadout.manualCount} manual`);
+      lines.push(`  Tokens: ${snapshot.loadout.preloadTokens} preload + ${snapshot.loadout.onDemandTokens} on-demand`);
+      if (snapshot.loadout.topEntries.length > 0) {
+        lines.push('  Top entries:');
+        for (const e of snapshot.loadout.topEntries) {
+          lines.push(`    [${e.mode}] ${e.id} (score: ${e.score.toFixed(2)}) — ${e.reason}`);
+        }
+      }
+      lines.push('');
+    } else {
+      lines.push('## Loadout Routing');
+      lines.push('  Not active (ai-loadout not installed or no index found)');
+      lines.push('');
+    }
+  }
 
   // Retrieval
   lines.push('## Retrieval');
@@ -235,13 +300,19 @@ export function formatContextSnapshot(snapshot: ContextSnapshot): string {
 // --- Format for /sources command (condensed) ---
 
 export function formatSources(snapshot: ContextSnapshot): string {
-  if (snapshot.retrieval.snippetsSelected === 0) {
+  if (snapshot.retrieval.snippetsSelected === 0 && !snapshot.loadout?.active) {
     return 'No sources were retrieved for the last query.';
   }
 
   const lines: string[] = [];
   lines.push(`Sources for: "${snapshot.query}"`);
   lines.push('');
+
+  // Loadout gating info
+  if (snapshot.loadout?.active) {
+    lines.push(`Loadout: ${snapshot.loadout.allowedSources.join(', ')} (${snapshot.loadout.preloadCount} preload, ${snapshot.loadout.onDemandCount} on-demand)`);
+    lines.push('');
+  }
 
   for (const s of snapshot.retrieval.topSnippets) {
     lines.push(`[${s.source}] ${s.origin}`);

@@ -327,3 +327,140 @@ describe('buildContextSnapshot — profile', () => {
     expect(snapshot.activeProfile.reason).toContain('scaffold');
   });
 });
+
+// --- Loadout integration ---
+
+describe('buildContextSnapshot — loadout', () => {
+  it('snapshot has no loadout field when not provided', () => {
+    const snapshot = buildContextSnapshot({
+      query: 'test',
+      keywords: [],
+      retrievalResult: makeRetrieval([]),
+      shapedContext: makeShaped([]),
+      profile: makeProfile(),
+      intentForProfile: 'help',
+    });
+
+    expect(snapshot.loadout).toBeUndefined();
+  });
+
+  it('snapshot includes loadout summary when plan provided', () => {
+    const snapshot = buildContextSnapshot({
+      query: 'test loadout',
+      keywords: ['loadout'],
+      retrievalResult: makeRetrieval([]),
+      shapedContext: makeShaped([]),
+      profile: makeProfile(),
+      intentForProfile: 'scaffold',
+      loadoutPlan: {
+        active: true,
+        preload: [
+          { id: 'schema-rules', reason: 'matched schema', matchedTerms: ['schema'], score: 0.9, mode: 'eager', tokensEst: 800, layer: 'project' },
+        ],
+        onDemand: [
+          { id: 'doc-guide', reason: 'matched guide', matchedTerms: ['guide'], score: 0.6, mode: 'lazy', tokensEst: 300, layer: 'org' },
+        ],
+        manualCount: 1,
+        allowedSources: ['session', 'artifact'],
+        preloadTokens: 800,
+        onDemandTokens: 300,
+        layers: ['project', 'org'],
+        taskString: 'intent: scaffold | task: test loadout',
+      },
+    });
+
+    expect(snapshot.loadout).toBeDefined();
+    expect(snapshot.loadout!.active).toBe(true);
+    expect(snapshot.loadout!.preloadCount).toBe(1);
+    expect(snapshot.loadout!.onDemandCount).toBe(1);
+    expect(snapshot.loadout!.manualCount).toBe(1);
+    expect(snapshot.loadout!.allowedSources).toEqual(['session', 'artifact']);
+    expect(snapshot.loadout!.preloadTokens).toBe(800);
+    expect(snapshot.loadout!.topEntries).toHaveLength(2);
+  });
+
+  it('formats loadout section in context snapshot output', () => {
+    const snapshot = buildContextSnapshot({
+      query: 'test',
+      keywords: [],
+      retrievalResult: makeRetrieval([]),
+      shapedContext: makeShaped([]),
+      profile: makeProfile(),
+      intentForProfile: 'help',
+      loadoutPlan: {
+        active: true,
+        preload: [
+          { id: 'schema-rules', reason: 'matched', matchedTerms: ['test'], score: 0.9, mode: 'eager', tokensEst: 500, layer: 'project' },
+        ],
+        onDemand: [],
+        manualCount: 0,
+        allowedSources: ['session', 'artifact'],
+        preloadTokens: 500,
+        onDemandTokens: 0,
+        layers: ['project'],
+        taskString: 'intent: help | task: test',
+      },
+    });
+
+    const formatted = formatContextSnapshot(snapshot);
+    expect(formatted).toContain('Loadout Routing');
+    expect(formatted).toContain('session, artifact');
+    expect(formatted).toContain('schema-rules');
+    expect(formatted).toContain('project');
+  });
+
+  it('shows inactive loadout message when plan is not active', () => {
+    const snapshot = buildContextSnapshot({
+      query: 'test',
+      keywords: [],
+      retrievalResult: makeRetrieval([]),
+      shapedContext: makeShaped([]),
+      profile: makeProfile(),
+      intentForProfile: 'help',
+      loadoutPlan: {
+        active: false,
+        preload: [],
+        onDemand: [],
+        manualCount: 0,
+        allowedSources: ['session', 'artifact', 'critique', 'replay', 'transcript', 'doc', 'decision'],
+        preloadTokens: 0,
+        onDemandTokens: 0,
+        layers: [],
+        taskString: 'test',
+      },
+    });
+
+    const formatted = formatContextSnapshot(snapshot);
+    expect(formatted).toContain('Not active');
+  });
+
+  it('formatSources shows loadout gating info', () => {
+    const snapshot = buildContextSnapshot({
+      query: 'test',
+      keywords: [],
+      retrievalResult: makeRetrieval([
+        makeSnippet('artifact', 'a.yaml', 'content'),
+      ]),
+      shapedContext: makeShaped([]),
+      profile: makeProfile(),
+      intentForProfile: 'help',
+      loadoutPlan: {
+        active: true,
+        preload: [
+          { id: 'test', reason: 'test', matchedTerms: [], score: 0.8, mode: 'eager', tokensEst: 100, layer: 'project' },
+        ],
+        onDemand: [],
+        manualCount: 0,
+        allowedSources: ['session', 'artifact'],
+        preloadTokens: 100,
+        onDemandTokens: 0,
+        layers: ['project'],
+        taskString: 'test',
+      },
+    });
+
+    const formatted = formatSources(snapshot);
+    expect(formatted).toContain('Loadout:');
+    expect(formatted).toContain('session, artifact');
+  });
+});

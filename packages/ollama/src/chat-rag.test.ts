@@ -310,3 +310,65 @@ describe('retrieve — budget enforcement', () => {
     expect(totalChars).toBeLessThanOrEqual(500);
   });
 });
+
+describe('retrieve — allowedSources filtering', () => {
+  it('skips artifact retrieval when not in allowedSources', async () => {
+    const tmpDir = await mkdtemp(join(tmpdir(), 'rag-filter-test-'));
+    try {
+      // Create a YAML artifact that would normally match
+      const roomsDir = join(tmpDir, 'rooms');
+      await mkdir(roomsDir, { recursive: true });
+      await writeFile(
+        join(roomsDir, 'dark-chapel.yaml'),
+        'id: dark-chapel\ntype: room\nname: Dark Chapel\ntags: [horror]\ndescription: A dark chapel.',
+      );
+
+      const session = makeSession();
+
+      // Without filter: should find artifacts
+      const allResult = await retrieve(
+        { userMessage: 'horror chapel dark' },
+        session,
+        tmpDir,
+      );
+      const hasArtifact = allResult.snippets.some(s => s.source === 'artifact');
+      expect(hasArtifact).toBe(true);
+
+      // With filter: only session allowed, no artifacts
+      const filtered = await retrieve(
+        { userMessage: 'horror chapel dark', allowedSources: ['session'] },
+        session,
+        tmpDir,
+      );
+      const hasFilteredArtifact = filtered.snippets.some(s => s.source === 'artifact');
+      expect(hasFilteredArtifact).toBe(false);
+      // But session snippets should still be there
+      const hasSession = filtered.snippets.some(s => s.source === 'session');
+      expect(hasSession).toBe(true);
+    } finally {
+      await rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('skips session retrieval when not in allowedSources', async () => {
+    const session = makeSession();
+    const result = await retrieve(
+      { userMessage: 'horror themes', allowedSources: ['artifact', 'doc'] },
+      session,
+      '/tmp/nonexistent-rag-filter-test',
+    );
+    const hasSession = result.snippets.some(s => s.source === 'session');
+    expect(hasSession).toBe(false);
+  });
+
+  it('allows all sources when allowedSources is undefined', async () => {
+    const session = makeSession();
+    const result = await retrieve(
+      { userMessage: 'horror themes pacing' },
+      session,
+      '/tmp/nonexistent-rag-filter-test',
+    );
+    // Should find session-based snippets (session is default-allowed)
+    expect(result.snippets.length).toBeGreaterThan(0);
+  });
+});

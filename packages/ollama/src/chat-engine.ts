@@ -28,6 +28,11 @@ import {
   buildContextSnapshot, formatContextSnapshot, formatSources,
   type ContextSnapshot,
 } from './chat-context-browser.js';
+import {
+  buildTaskString, routeContext, recordContextLoads,
+  formatLoadoutRoute,
+  type LoadoutRoutePlan,
+} from './chat-loadout.js';
 
 // --- Chat memory ---
 
@@ -106,6 +111,8 @@ export type ChatEngine = {
   pendingWrite: { content: string; suggestedPath: string; label: string } | null;
   /** Last context snapshot from RAG + shaping. Available after first process() call. */
   lastContextSnapshot: ContextSnapshot | null;
+  /** Last loadout routing plan. Available when loadoutEnabled and after first process() call. */
+  lastLoadoutPlan: LoadoutRoutePlan | null;
   /** Process a user message and return the assistant response. */
   process: (message: string) => Promise<string>;
 };
@@ -120,6 +127,8 @@ export type ChatEngineOptions = {
   ragEnabled?: boolean;
   /** Enable webfetch for explicit URL requests. Default false. */
   webfetchEnabled?: boolean;
+  /** Enable loadout-guided context routing (requires @mcptoolshop/ai-loadout). Default false. */
+  loadoutEnabled?: boolean;
   /** Override the personality profile. */
   profile?: PersonalityProfile;
 };
@@ -127,12 +136,13 @@ export type ChatEngineOptions = {
 export function createChatEngine(options: ChatEngineOptions): ChatEngine {
   const {
     client, projectRoot, maxMemory = 50, rawMode = false,
-    ragEnabled = true, webfetchEnabled = false,
+    ragEnabled = true, webfetchEnabled = false, loadoutEnabled = false,
     profile = WORLDBUILDER_PROFILE,
   } = options;
   const memory = createChatMemory(maxMemory, null);
   let pendingWrite: { content: string; suggestedPath: string; label: string } | null = null;
   let lastContextSnapshot: ContextSnapshot | null = null;
+  let lastLoadoutPlan: LoadoutRoutePlan | null = null;
 
   async function process(userMessage: string): Promise<string> {
     const now = new Date().toISOString();
@@ -169,15 +179,34 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     // Classify intent
     const classification = await classifyIntent(client, userMessage);
 
+    // Loadout routing — pre-retrieval source gating (optional)
+    let loadoutPlan: LoadoutRoutePlan | null = null;
+    if (loadoutEnabled && ragEnabled) {
+      const taskString = buildTaskString(userMessage, classification.intent, session);
+      loadoutPlan = await routeContext(taskString, projectRoot);
+      lastLoadoutPlan = loadoutPlan;
+    }
+
     // RAG retrieval — ground chat in project context
     let shapedContextStr = '';
     if (ragEnabled) {
       const keywords = extractKeywords(userMessage);
       const ragResult = await retrieve(
-        { userMessage, maxSnippets: 6, maxChars: 4000 },
+        {
+          userMessage,
+          maxSnippets: 6,
+          maxChars: 4000,
+          allowedSources: loadoutPlan?.active ? loadoutPlan.allowedSources : undefined,
+        },
         session,
         projectRoot,
       );
+
+      // Record which loadout entries were used for observability
+      if (loadoutPlan?.active && loadoutPlan.preload.length > 0) {
+        await recordContextLoads(loadoutPlan.preload, projectRoot);
+      }
+
       const shaped = shapeMemory({
         session,
         ragSnippets: ragResult.snippets,
@@ -197,6 +226,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
         intentForProfile: classification.intent,
         retrievalBudget: 4000,
         shapingBudget: 4000,
+        loadoutPlan: loadoutPlan ?? undefined,
       });
     }
 
@@ -332,6 +362,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     get pendingWrite() { return pendingWrite; },
     set pendingWrite(v) { pendingWrite = v; },
     get lastContextSnapshot() { return lastContextSnapshot; },
+    get lastLoadoutPlan() { return lastLoadoutPlan; },
     process,
   };
 }

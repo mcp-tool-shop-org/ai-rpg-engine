@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-06-13
+
+### Added — Loadout-Guided Context (ollama)
+
+- **chat-loadout.ts** — adapter wrapping `@mcptoolshop/ai-loadout` as a pre-retrieval routing layer
+  - `buildTaskString()` — composites user message + classified intent + session summary into a routing signal
+  - `routeContext()` — calls `planLoad()`, maps loadout entries to `SourceKind` values for RAG gating
+  - `recordContextLoads()` — observability via `recordLoad()` JSONL usage log
+  - `formatLoadoutRoute()` — human-readable loadout routing display for `/loadout` command
+  - Graceful fallback: returns passthrough plan (all sources allowed) when ai-loadout is not installed
+- **RetrievalQuery.allowedSources** — new optional field gates which `SourceKind` retrievers run
+- **ChatEngineOptions.loadoutEnabled** — opt-in flag to activate loadout routing before RAG
+- **ChatEngine.lastLoadoutPlan** — exposes last routing plan for introspection
+- **ContextSnapshot.loadout** / **LoadoutSummary** — loadout routing info in context browser
+- **`/loadout`** shell command — shows last loadout routing plan in the REPL
+- **formatContextSnapshot** / **formatSources** — now show loadout gating info when active
+- Optional peer dep: `@mcptoolshop/ai-loadout >= 0.1.0`
+- 26 new tests (chat-loadout: 18, chat-rag allowedSources: 3, chat-context-browser loadout: 5)
+
+## [1.2.0] - 2026-06-12
+
+### Added — Action Intelligence + Context Browser (ollama)
+
+- **chat-planner.ts** — session-aware multi-step planning (`planFromSession`, `formatPlan`, `validatePlan`)
+- **chat-recommendations.ts** — leverage-scored structural recommendations (`generateRecommendations`)
+- **replay-classifier.ts** — deeper replay diff classification (`classifyReplayChanges`, `formatClassification`)
+- **chat-context-browser.ts** — inspectable view of RAG/shaping/profile decisions (`buildContextSnapshot`)
+- 3 new intents: `context_info`, `show_plan`, `recommend`
+- 3 new tools: `context-info`, `smart-plan`, `recommend` (15 total)
+- `/context` and `/sources` slash commands in chat shell
+- 92 new tests (682 total)
+
+## [1.1.0] - 2026-06-10
+
+### Added — Context Teeth (ollama)
+
+- **chat-rag.ts** — file-system-based RAG retrieval (session, artifacts, docs, transcripts)
+- **chat-memory-shaper.ts** — memory class shaping (current session, open issues, relevant artifacts, etc.)
+- **chat-personality.ts** — 3 profiles (Worldbuilder, Analyst, Generator) + intent-based routing
+- **chat-webfetch.ts** — URL fetching with domain allowlist
+- Webfetch integration in chat engine
+
 ## [1.0.0] - 2026-03-06
 
 ### Added

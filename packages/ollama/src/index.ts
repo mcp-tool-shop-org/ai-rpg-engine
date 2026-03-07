@@ -188,7 +188,11 @@ export type { ChangeClassification, ClassifiedChange, ClassificationResult, Clas
 
 // Context browser — introspection into RAG/shaping/profile decisions
 export { buildContextSnapshot, formatContextSnapshot, formatSources } from './chat-context-browser.js';
-export type { ContextSnapshot, RetrievalSummary, SnippetSummary, ShapingSummary, BudgetSummary } from './chat-context-browser.js';
+export type { ContextSnapshot, RetrievalSummary, SnippetSummary, ShapingSummary, BudgetSummary, LoadoutSummary } from './chat-context-browser.js';
+
+// Loadout — pre-retrieval context routing via @mcptoolshop/ai-loadout (optional)
+export { buildTaskString, routeContext, recordContextLoads, formatLoadoutRoute } from './chat-loadout.js';
+export type { LoadoutRoutePlan, RoutedEntry, ContextLoadMode } from './chat-loadout.js';
 
 // CLI entry
 export { runCli } from './cli.js';

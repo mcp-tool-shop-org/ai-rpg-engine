@@ -39,6 +39,8 @@ export type RetrievalQuery = {
   maxSnippets?: number;
   /** Max total characters across all snippets. */
   maxChars?: number;
+  /** If set, only retrieve from these source kinds (loadout-gated). */
+  allowedSources?: SourceKind[];
 };
 
 export type RetrievalResult = {
@@ -320,12 +322,16 @@ export async function retrieve(
     return { snippets: [], sourcesScanned: 0 };
   }
 
-  // Gather snippets from all sources in parallel
+  // Which sources are allowed? (loadout-gated or all)
+  const allowed = query.allowedSources ? new Set(query.allowedSources) : null;
+  const sourceAllowed = (kind: SourceKind) => !allowed || allowed.has(kind);
+
+  // Gather snippets from allowed sources in parallel
   const [sessionSnippets, artifactSnippets, docSnippets, transcriptSnippets] = await Promise.all([
-    session ? Promise.resolve(retrieveFromSession(session, keywords)) : Promise.resolve([]),
-    retrieveFromArtifacts(projectRoot, keywords),
-    retrieveFromDocs(projectRoot, keywords),
-    retrieveFromTranscripts(projectRoot, keywords),
+    session && sourceAllowed('session') ? Promise.resolve(retrieveFromSession(session, keywords)) : Promise.resolve([]),
+    sourceAllowed('artifact') ? retrieveFromArtifacts(projectRoot, keywords) : Promise.resolve([]),
+    sourceAllowed('doc') ? retrieveFromDocs(projectRoot, keywords) : Promise.resolve([]),
+    sourceAllowed('transcript') ? retrieveFromTranscripts(projectRoot, keywords) : Promise.resolve([]),
   ]);
 
   const all = [

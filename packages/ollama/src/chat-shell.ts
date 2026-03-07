@@ -8,6 +8,7 @@ import { createChatEngine, type ChatEngine } from './chat-engine.js';
 import { createTranscript, addToTranscript, saveTranscript, defaultTranscriptPath } from './chat-transcript.js';
 import type { ChatTranscript } from './chat-types.js';
 import { formatContextSnapshot, formatSources } from './chat-context-browser.js';
+import { formatLoadoutRoute } from './chat-loadout.js';
 
 export type ChatShellOptions = {
   client: OllamaTextClient;
@@ -15,12 +16,14 @@ export type ChatShellOptions = {
   maxMemory?: number;
   saveTranscripts?: boolean;
   transcriptDir?: string;
+  /** Enable loadout-guided context routing. */
+  loadoutEnabled?: boolean;
 };
 
 export async function runChatShell(options: ChatShellOptions): Promise<void> {
-  const { client, projectRoot, maxMemory, saveTranscripts = false } = options;
+  const { client, projectRoot, maxMemory, saveTranscripts = false, loadoutEnabled = false } = options;
 
-  const engine = createChatEngine({ client, projectRoot, maxMemory });
+  const engine = createChatEngine({ client, projectRoot, maxMemory, loadoutEnabled });
   const transcript = createTranscript(null);
 
   const rl = createInterface({
@@ -107,6 +110,7 @@ async function handleSlashCommand(
       console.log('/pending        Show pending write, if any');
       console.log('/context        Show what context the last response used');
       console.log('/sources        Show condensed source list from last retrieval');
+      console.log('/loadout        Show loadout routing from last response');
       console.log('');
       return 'handled';
 
@@ -157,6 +161,14 @@ async function handleSlashCommand(
         console.log(formatSources(engine.lastContextSnapshot));
       } else {
         console.log('No context snapshot yet. Send a message first.');
+      }
+      return 'handled';
+
+    case 'loadout':
+      if (engine.lastLoadoutPlan) {
+        console.log(formatLoadoutRoute(engine.lastLoadoutPlan));
+      } else {
+        console.log('No loadout plan yet. Send a message first (loadout must be enabled).');
       }
       return 'handled';
 
