@@ -27,6 +27,8 @@
     { "path": "packages/ollama" },
     { "path": "packages/presentation" },
     { "path": "packages/audio-director" },
-    { "path": "packages/soundpack-core" }
+    { "path": "packages/soundpack-core" },
+    { "path": "packages/campaign-memory" },
+    { "path": "packages/rumor-system" }
   ]
 }

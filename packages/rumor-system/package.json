@@ -1,0 +1,34 @@
+{
+  "name": "@ai-rpg-engine/rumor-system",
+  "version": "2.0.0",
+  "description": "Rumor lifecycle engine with mutation mechanics, spread tracking, and faction uptake for AI RPG Engine",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "license": "MIT",
+  "author": "mcp-tool-shop",
+  "homepage": "https://mcp-tool-shop-org.github.io/ai-rpg-engine/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
+    "directory": "packages/rumor-system"
+  },
+  "keywords": ["rpg", "rumor", "gossip", "mutation", "faction", "npc", "game-engine"],
+  "bugs": {
+    "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
