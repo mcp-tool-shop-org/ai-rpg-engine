@@ -24,6 +24,9 @@
     { "path": "packages/cli" },
     { "path": "packages/starter-fantasy" },
     { "path": "packages/starter-cyberpunk" },
-    { "path": "packages/ollama" }
+    { "path": "packages/ollama" },
+    { "path": "packages/presentation" },
+    { "path": "packages/audio-director" },
+    { "path": "packages/soundpack-core" }
   ]
 }
