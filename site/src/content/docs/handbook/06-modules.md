@@ -33,3 +33,17 @@ How mechanics plug into the engine.
 | narrative-authority | Truth concealment and distortion |
 
 Modules extend the engine without modifying core. Each module is self-contained, registering its verbs, event handlers, and formulas during initialization.
+
+## Standalone Packages
+
+These packages provide types and logic that work independently or alongside the built-in modules. Install them separately from npm.
+
+| Package | Purpose |
+|---------|---------|
+| @ai-rpg-engine/presentation | Narration plan schema, render contracts, voice profiles |
+| @ai-rpg-engine/audio-director | Cue scheduling, priority, ducking, cooldown logic |
+| @ai-rpg-engine/soundpack-core | Sound pack manifests, content-addressable registry |
+| @ai-rpg-engine/campaign-memory | Persistent NPC memory, relationship axes, campaign journal |
+| @ai-rpg-engine/rumor-system | Rumor lifecycle, mutation mechanics, spread tracking |
+
+Standalone packages have no engine dependency — they define types and logic that game runtimes consume. The built-in modules handle engine integration (event listeners, world state mutation), while standalone packages handle domain logic (how memories decay, how rumors mutate).

@@ -88,3 +88,57 @@ Top-level game definition containing metadata, ruleset reference, and content re
 | resources | string[] | yes | Available resource names |
 | verbs | string[] | yes | Available action verbs |
 | formulas | FormulaMap | yes | Named formula definitions |
+
+## CampaignRecord (@ai-rpg-engine/campaign-memory)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| id | string | yes | Auto-generated identifier |
+| tick | number | yes | When the event occurred |
+| category | RecordCategory | yes | action, combat, kill, betrayal, gift, theft, debt, discovery, alliance, insult, rescue, death |
+| actorId | string | yes | Who performed the action |
+| targetId | string | no | Who was affected |
+| zoneId | string | no | Where it happened |
+| description | string | yes | What happened |
+| significance | number (0-1) | yes | How important this event is |
+| witnesses | string[] | yes | Entity IDs who observed it |
+| data | Record | yes | Additional event-specific data |
+
+## RelationshipAxes (@ai-rpg-engine/campaign-memory)
+
+| Field | Type | Range | Description |
+|-------|------|-------|-------------|
+| trust | number | -1 to 1 | Distrust → Trust |
+| fear | number | 0 to 1 | Unafraid → Terrified |
+| admiration | number | -1 to 1 | Contempt → Admiration |
+| familiarity | number | 0 to 1 | Stranger → Intimate |
+
+## MemoryFragment (@ai-rpg-engine/campaign-memory)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| recordId | string | yes | Links to CampaignRecord |
+| salience | number (0-1) | yes | How vivid/important to this NPC |
+| emotionalCharge | number (-1 to 1) | yes | Negative to positive sentiment |
+| consolidation | enum | yes | vivid, faded, dim |
+| tick | number | yes | When this memory was formed |
+
+## Rumor (@ai-rpg-engine/rumor-system)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| id | string | yes | Auto-generated identifier |
+| claim | string | yes | Human-readable claim |
+| subject | string | yes | Entity/topic the rumor is about |
+| key | string | yes | Belief key |
+| value | unknown | yes | Current claimed value (may have mutated) |
+| originalValue | unknown | yes | What was originally claimed |
+| sourceId | string | yes | Original witness entity ID |
+| originTick | number | yes | When the rumor was created |
+| confidence | number (0-1) | yes | How confident spreaders are |
+| emotionalCharge | number (-1 to 1) | yes | Outrage to admiration |
+| spreadPath | string[] | yes | Entity IDs it passed through |
+| mutationCount | number | yes | How many times value changed |
+| factionUptake | string[] | yes | Factions that absorbed this |
+| status | enum | yes | spreading, established, fading, dead |
+| lastSpreadTick | number | yes | Last tick this rumor was spread |

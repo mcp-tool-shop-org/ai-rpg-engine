@@ -40,6 +40,18 @@ Pure query module that reconstructs end-to-end belief traces. Answers "why does 
 
 Subjective event rendering per observer. The same event is presented differently based on perception clarity, faction allegiance, and cognitive bias. Built-in rules handle low clarity, partial visibility, hostile faction framing, paranoid suspicion, and environmental distortion. Custom rules are authorable per genre — undead see trespassers, ICE agents see intrusions.
 
+## Shipped as Standalone Packages
+
+The following systems shipped as standalone npm packages, designed to work independently or integrate with the engine's existing modules.
+
+### Campaign Memory (@ai-rpg-engine/campaign-memory)
+
+Persistent NPC memory with multi-axis relationships and a campaign journal. NPCs track trust, fear, admiration, and familiarity across every interaction — replacing the binary "hostile: true/false" model with graduated relationship axes. Memories fade through consolidation stages (vivid → faded → dim → forgotten), with salience decay driven by configurable rates. The campaign journal records significant events across sessions with 12 categories (combat, kill, betrayal, gift, theft, rescue, etc.), enabling NPCs to ground their behavior in what actually happened. Default relationship effects map each event category to axis deltas — a rescue builds trust (+0.4) and admiration (+0.3), a betrayal destroys trust (-0.5).
+
+### Rumor System (@ai-rpg-engine/rumor-system)
+
+Rumor lifecycle engine with mutation mechanics. Rumors now mutate as they spread — five built-in mutation rules fire probabilistically per hop: exaggeration (numbers grow), minimization (numbers shrink), inversion (booleans flip), attribution shift (who did it changes), and embellishment (emotional charge intensifies). The engine tracks full spread paths, faction uptake, confidence decay per hop, and lifecycle states (spreading → established → fading → dead). Environment instability multiplies mutation probabilities, making chaotic zones breed wilder rumors.
+
 ## Planned
 
 ### Companion AI
@@ -56,4 +68,4 @@ Scheduled world events, environmental cascades, and economic simulation. The wor
 
 ---
 
-These planned systems build on the foundations laid in Phases 1–5. The architecture supports them because cognition, perception, environment, faction cognition, rumor propagation, districts, and observer presentation were designed as composable layers rather than isolated features.
+These planned systems build on the foundations laid in Phases 1–5 and the standalone packages shipped since. The architecture supports them because cognition, perception, environment, faction cognition, rumor propagation, campaign memory, districts, and observer presentation were designed as composable layers rather than isolated features.

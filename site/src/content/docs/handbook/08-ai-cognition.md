@@ -45,3 +45,24 @@ Cognition receives input from:
 - **combat events** — direct experience updates beliefs immediately
 
 This means AI behavior emerges from the simulation rather than being scripted per encounter.
+
+## Campaign Memory
+
+The `@ai-rpg-engine/campaign-memory` package extends cognition with persistent, cross-session NPC memory. While cognition-core tracks real-time beliefs and decay, campaign memory tracks long-term relationships and significant events.
+
+**Relationship Axes** replace boolean hostility with four graduated dimensions:
+
+| Axis | Range | Meaning |
+|------|-------|---------|
+| trust | -1 to 1 | Distrust → Trust |
+| fear | 0 to 1 | Unafraid → Terrified |
+| admiration | -1 to 1 | Contempt → Admiration |
+| familiarity | 0 to 1 | Stranger → Intimate |
+
+**Memory Consolidation** models how memories fade:
+
+```
+vivid → faded → dim → forgotten
+```
+
+Each NPC's memory bank tracks salience (how important the memory is to them) and emotional charge (positive or negative). Salience decays over time; when it drops below thresholds, memories shift consolidation stages. The campaign journal persists significant events with 12 categories, enabling NPCs to reference past interactions during dialogue and decision-making.
