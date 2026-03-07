@@ -6,6 +6,7 @@ import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engi
 import type { DistrictDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
+import type { ItemCatalog } from '@ai-rpg-engine/equipment';
 
 // --- Manifest ---
 
@@ -456,6 +457,78 @@ export const buildCatalog: BuildCatalog = {
       disciplineId: 'surgeon',
       description: 'A raider who heals draws suspicion from the crew — mercy is weakness at sea',
       effects: [{ type: 'resource-modifier', resource: 'morale', amount: -2 }],
+    },
+  ],
+};
+
+// --- Item Catalog ---
+
+export const itemCatalog: ItemCatalog = {
+  items: [
+    {
+      id: 'cutlass',
+      name: 'Cutlass',
+      description: 'A curved blade, balanced for boarding actions.',
+      slot: 'weapon',
+      rarity: 'common',
+      statModifiers: { brawn: 1 },
+      grantedTags: ['armed'],
+      grantedVerbs: ['slash'],
+    },
+    {
+      id: 'spyglass',
+      name: 'Spyglass',
+      description: 'A brass telescope for spotting sails on the horizon.',
+      slot: 'tool',
+      rarity: 'common',
+      statModifiers: { cunning: 1 },
+      grantedVerbs: ['scout'],
+    },
+    {
+      id: 'sea-leather',
+      name: 'Sea Leather Coat',
+      description: 'Salt-hardened leather that turns blades and rain alike.',
+      slot: 'armor',
+      rarity: 'common',
+      resourceModifiers: { morale: 3 },
+    },
+    {
+      id: 'compass-charm',
+      name: 'Compass Charm',
+      description: 'A lodestone pendant said to guide the lost home.',
+      slot: 'trinket',
+      rarity: 'uncommon',
+      statModifiers: { 'sea-legs': 1 },
+      grantedTags: ['navigation'],
+    },
+    {
+      id: 'flintlock-pistol',
+      name: 'Flintlock Pistol',
+      description: 'One shot — make it count.',
+      slot: 'weapon',
+      rarity: 'uncommon',
+      statModifiers: { cunning: 1 },
+      grantedVerbs: ['shoot'],
+      grantedTags: ['armed'],
+    },
+    {
+      id: 'captains-signet',
+      name: "Captain's Signet",
+      description: 'A heavy ring bearing the mark of a lost captain.',
+      slot: 'accessory',
+      rarity: 'uncommon',
+      grantedTags: ['captain-authority'],
+      statModifiers: { brawn: 1 },
+    },
+    {
+      id: 'kraken-tooth',
+      name: 'Kraken Tooth Dagger',
+      description: 'A jagged blade carved from a sea beast\'s fang.',
+      slot: 'weapon',
+      rarity: 'rare',
+      statModifiers: { brawn: 2, 'sea-legs': 1 },
+      grantedTags: ['armed', 'sea-blessed'],
+      grantedVerbs: ['rend'],
     },
   ],
 };

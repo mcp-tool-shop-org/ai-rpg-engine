@@ -10,6 +10,7 @@
     { "path": "../content-schema" },
     { "path": "../modules" },
     { "path": "../pack-registry" },
-    { "path": "../character-creation" }
+    { "path": "../character-creation" },
+    { "path": "../equipment" }
   ]
 }

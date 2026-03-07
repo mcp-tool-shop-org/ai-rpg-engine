@@ -38,6 +38,8 @@
     { "path": "packages/starter-colony" },
     { "path": "packages/character-creation" },
     { "path": "packages/asset-registry" },
-    { "path": "packages/image-gen" }
+    { "path": "packages/image-gen" },
+    { "path": "packages/equipment" },
+    { "path": "packages/character-profile" }
   ]
 }

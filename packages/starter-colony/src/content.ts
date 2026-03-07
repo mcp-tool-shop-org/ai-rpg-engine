@@ -6,6 +6,7 @@ import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engi
 import type { DistrictDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
+import type { ItemCatalog } from '@ai-rpg-engine/equipment';
 
 // --- Manifest ---
 
@@ -451,6 +452,80 @@ export const buildCatalog: BuildCatalog = {
       disciplineId: 'salvage-specialist',
       description: 'A commander who strips systems for parts undermines crew confidence in the colony infrastructure',
       effects: [{ type: 'resource-modifier', resource: 'morale', amount: -3 }],
+    },
+  ],
+};
+
+// --- Item Catalog ---
+
+export const itemCatalog: ItemCatalog = {
+  items: [
+    {
+      id: 'plasma-cutter',
+      name: 'Plasma Cutter',
+      description: 'An industrial cutting tool repurposed for defense.',
+      slot: 'weapon',
+      rarity: 'common',
+      statModifiers: { engineering: 1 },
+      grantedTags: ['armed'],
+      grantedVerbs: ['cut'],
+    },
+    {
+      id: 'diagnostic-scanner',
+      name: 'Diagnostic Scanner',
+      description: 'A handheld device that reads colony system health.',
+      slot: 'tool',
+      rarity: 'common',
+      statModifiers: { awareness: 1 },
+      grantedVerbs: ['scan'],
+    },
+    {
+      id: 'enviro-suit',
+      name: 'Enviro-Suit',
+      description: 'Pressurized suit for hostile atmosphere exposure.',
+      slot: 'armor',
+      rarity: 'common',
+      resourceModifiers: { hp: 5 },
+      grantedTags: ['sealed'],
+    },
+    {
+      id: 'command-tablet',
+      name: 'Command Tablet',
+      description: 'A ruggedized tablet linked to colony systems.',
+      slot: 'accessory',
+      rarity: 'uncommon',
+      statModifiers: { command: 2 },
+      grantedTags: ['command-link'],
+    },
+    {
+      id: 'arc-welder',
+      name: 'Arc Welder',
+      description: 'A heavy welding tool — builds and burns.',
+      slot: 'weapon',
+      rarity: 'common',
+      statModifiers: { engineering: 1 },
+      grantedVerbs: ['weld'],
+      grantedTags: ['armed'],
+    },
+    {
+      id: 'signal-booster',
+      name: 'Signal Booster',
+      description: 'Amplifies comms range beyond normal parameters.',
+      slot: 'trinket',
+      rarity: 'uncommon',
+      grantedTags: ['signal-boosted'],
+      statModifiers: { awareness: 1 },
+    },
+    {
+      id: 'xeno-sample-kit',
+      name: 'Xeno-Sample Kit',
+      description: 'Collection tools for alien biological specimens.',
+      slot: 'tool',
+      rarity: 'rare',
+      statModifiers: { awareness: 2 },
+      grantedVerbs: ['collect'],
+      grantedTags: ['xeno-researcher'],
+      requiredTags: ['pathfinder'],
     },
   ],
 };

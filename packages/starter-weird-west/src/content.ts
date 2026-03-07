@@ -6,6 +6,7 @@ import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engi
 import type { DistrictDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
+import type { ItemCatalog } from '@ai-rpg-engine/equipment';
 
 // --- Manifest ---
 
@@ -454,6 +455,79 @@ export const buildCatalog: BuildCatalog = {
       disciplineId: 'bounty-hunter',
       description: 'Spirits distrust those who hunt the living — commune checks suffer',
       effects: [{ type: 'stat-modifier', stat: 'lore', amount: -1 }],
+    },
+  ],
+};
+
+// --- Item Catalog ---
+
+export const itemCatalog: ItemCatalog = {
+  items: [
+    {
+      id: 'six-shooter',
+      name: 'Six-Shooter',
+      description: 'A worn revolver, well-oiled and eager.',
+      slot: 'weapon',
+      rarity: 'common',
+      statModifiers: { 'draw-speed': 1 },
+      grantedTags: ['armed'],
+      grantedVerbs: ['shoot'],
+    },
+    {
+      id: 'spirit-pouch',
+      name: 'Spirit Pouch',
+      description: 'A leather pouch of bone dust and sage.',
+      slot: 'tool',
+      rarity: 'common',
+      statModifiers: { lore: 1 },
+      grantedVerbs: ['commune'],
+      grantedTags: ['spirit-touched'],
+    },
+    {
+      id: 'duster-coat',
+      name: 'Duster Coat',
+      description: 'A long trail coat that turns dust and buckshot.',
+      slot: 'armor',
+      rarity: 'common',
+      resourceModifiers: { resolve: 3 },
+    },
+    {
+      id: 'silver-star',
+      name: 'Silver Star Badge',
+      description: 'A tarnished badge of frontier law.',
+      slot: 'accessory',
+      rarity: 'uncommon',
+      grantedTags: ['badge-carrier'],
+      statModifiers: { grit: 1 },
+    },
+    {
+      id: 'bowie-knife',
+      name: 'Bowie Knife',
+      description: 'A heavy blade forged for the frontier.',
+      slot: 'weapon',
+      rarity: 'common',
+      statModifiers: { grit: 1 },
+      grantedVerbs: ['slash'],
+      grantedTags: ['armed'],
+    },
+    {
+      id: 'rattlesnake-fang',
+      name: 'Rattlesnake Fang Charm',
+      description: 'A dried fang on a cord — wards off the Dust.',
+      slot: 'trinket',
+      rarity: 'uncommon',
+      grantedTags: ['dust-warded'],
+      resourceModifiers: { dust: -5 },
+    },
+    {
+      id: 'hellfire-rounds',
+      name: 'Hellfire Rounds',
+      description: 'Bullets etched with sigils that burn what they hit.',
+      slot: 'trinket',
+      rarity: 'rare',
+      statModifiers: { 'draw-speed': 1, lore: 1 },
+      grantedTags: ['hex-armed'],
+      requiredTags: ['spirit-sensitive'],
     },
   ],
 };

@@ -6,6 +6,7 @@ import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
+import type { ItemCatalog } from '@ai-rpg-engine/equipment';
 
 export const manifest: GameManifest = {
   id: 'chapel-threshold',
@@ -408,6 +409,75 @@ export const buildCatalog: BuildCatalog = {
       disciplineId: 'smuggler',
       description: 'Divine seers who smuggle relics lose the trust of the chapel spirits',
       effects: [{ type: 'grant-tag', tag: 'distrusted' }],
+    },
+  ],
+};
+
+export const itemCatalog: ItemCatalog = {
+  items: [
+    {
+      id: 'rusted-mace',
+      name: 'Rusted Mace',
+      description: 'A pitted mace found near a collapsed grave.',
+      slot: 'weapon',
+      rarity: 'common',
+      statModifiers: { vigor: 1 },
+      grantedTags: ['armed'],
+      grantedVerbs: ['strike'],
+    },
+    {
+      id: 'chapel-lantern',
+      name: 'Chapel Lantern',
+      description: 'A flickering lantern blessed by a forgotten saint.',
+      slot: 'tool',
+      rarity: 'common',
+      grantedTags: ['light-bearer'],
+      grantedVerbs: ['illuminate'],
+    },
+    {
+      id: 'penitent-mail',
+      name: 'Penitent Mail',
+      description: 'Chain links inscribed with prayers of atonement.',
+      slot: 'armor',
+      rarity: 'common',
+      resourceModifiers: { hp: 5 },
+    },
+    {
+      id: 'bone-talisman',
+      name: 'Bone Talisman',
+      description: 'A charm carved from the rib of a restless dead.',
+      slot: 'trinket',
+      rarity: 'uncommon',
+      grantedTags: ['ward-undead'],
+      statModifiers: { will: 1 },
+    },
+    {
+      id: 'gravedigger-spade',
+      name: 'Gravedigger\'s Spade',
+      description: 'A sturdy spade — tool and weapon in equal measure.',
+      slot: 'weapon',
+      rarity: 'common',
+      statModifiers: { vigor: 1 },
+      grantedVerbs: ['dig'],
+      provenance: 'Chapel groundskeeper',
+    },
+    {
+      id: 'sigil-ring',
+      name: 'Sigil Ring',
+      description: 'A ring bearing the chapel\'s lost seal.',
+      slot: 'accessory',
+      rarity: 'uncommon',
+      grantedTags: ['chapel-authority'],
+    },
+    {
+      id: 'veil-shroud',
+      name: 'Veil Shroud',
+      description: 'A threadbare funeral shroud that dulls the senses of the dead.',
+      slot: 'armor',
+      rarity: 'rare',
+      resourceModifiers: { hp: 3 },
+      grantedTags: ['veil-touched'],
+      statModifiers: { instinct: 1 },
     },
   ],
 };

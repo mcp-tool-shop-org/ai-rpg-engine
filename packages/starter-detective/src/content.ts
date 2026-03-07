@@ -6,6 +6,7 @@ import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engi
 import type { DistrictDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
+import type { ItemCatalog } from '@ai-rpg-engine/equipment';
 
 // --- Manifest ---
 
@@ -444,6 +445,77 @@ export const buildCatalog: BuildCatalog = {
       disciplineId: 'underworld-contact',
       description: 'Inspectors who consort with criminals risk their badge',
       effects: [{ type: 'grant-tag', tag: 'compromised' }],
+    },
+  ],
+};
+
+// --- Item Catalog ---
+
+export const itemCatalog: ItemCatalog = {
+  items: [
+    {
+      id: 'magnifying-glass',
+      name: 'Magnifying Glass',
+      description: 'A well-polished lens for examining clues.',
+      slot: 'tool',
+      rarity: 'common',
+      statModifiers: { perception: 1 },
+      grantedVerbs: ['examine'],
+    },
+    {
+      id: 'walking-cane',
+      name: 'Walking Cane',
+      description: 'A gentleman\'s cane with a weighted head.',
+      slot: 'weapon',
+      rarity: 'common',
+      statModifiers: { grit: 1 },
+      grantedVerbs: ['strike'],
+      grantedTags: ['armed'],
+    },
+    {
+      id: 'overcoat',
+      name: 'Wool Overcoat',
+      description: 'A heavy overcoat that conceals and protects.',
+      slot: 'armor',
+      rarity: 'common',
+      resourceModifiers: { composure: 3 },
+    },
+    {
+      id: 'pocket-watch',
+      name: 'Pocket Watch',
+      description: 'An heirloom timepiece — steady as its owner.',
+      slot: 'trinket',
+      rarity: 'uncommon',
+      resourceModifiers: { composure: 2 },
+      grantedTags: ['punctual'],
+    },
+    {
+      id: 'lockpick-set',
+      name: 'Lockpick Set',
+      description: 'A set of fine picks in a leather roll.',
+      slot: 'tool',
+      rarity: 'common',
+      grantedVerbs: ['pick-lock'],
+      requiredTags: ['dock-hardened'],
+    },
+    {
+      id: 'press-badge',
+      name: 'Press Badge',
+      description: 'A journalist\'s credentials — opens doors, loosens lips.',
+      slot: 'accessory',
+      rarity: 'uncommon',
+      statModifiers: { eloquence: 1 },
+      grantedTags: ['press-access'],
+    },
+    {
+      id: 'spirit-compass',
+      name: 'Spirit Compass',
+      description: 'A brass compass that points toward restless spirits.',
+      slot: 'trinket',
+      rarity: 'rare',
+      statModifiers: { perception: 2 },
+      grantedTags: ['spirit-sensitive'],
+      requiredTags: ['photographic'],
     },
   ],
 };

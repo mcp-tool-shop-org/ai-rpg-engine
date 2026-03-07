@@ -6,6 +6,7 @@ import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engi
 import type { DistrictDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
+import type { ItemCatalog } from '@ai-rpg-engine/equipment';
 
 // --- Manifest ---
 
@@ -463,6 +464,78 @@ export const buildCatalog: BuildCatalog = {
       disciplineId: 'raider',
       description: 'A leader who raids erodes the trust they built — the group fractures',
       effects: [{ type: 'resource-modifier', resource: 'stamina', amount: -2 }],
+    },
+  ],
+};
+
+// --- Item Catalog ---
+
+export const itemCatalog: ItemCatalog = {
+  items: [
+    {
+      id: 'fire-axe',
+      name: 'Fire Axe',
+      description: 'Heavy, reliable, and already covered in something dark.',
+      slot: 'weapon',
+      rarity: 'common',
+      statModifiers: { fitness: 1 },
+      grantedTags: ['armed'],
+      grantedVerbs: ['chop'],
+    },
+    {
+      id: 'first-aid-kit',
+      name: 'First Aid Kit',
+      description: 'Bandages, antiseptic, and a prayer.',
+      slot: 'tool',
+      rarity: 'common',
+      grantedVerbs: ['treat'],
+      resourceModifiers: { infection: -5 },
+    },
+    {
+      id: 'riot-vest',
+      name: 'Riot Vest',
+      description: 'Ballistic vest scavenged from a precinct.',
+      slot: 'armor',
+      rarity: 'common',
+      resourceModifiers: { hp: 5 },
+    },
+    {
+      id: 'duct-tape-roll',
+      name: 'Duct Tape Roll',
+      description: 'Fixes everything. Almost.',
+      slot: 'trinket',
+      rarity: 'common',
+      grantedTags: ['resourceful'],
+      grantedVerbs: ['repair'],
+    },
+    {
+      id: 'crowbar',
+      name: 'Crowbar',
+      description: 'Opens doors, crates, and skulls with equal ease.',
+      slot: 'weapon',
+      rarity: 'common',
+      statModifiers: { fitness: 1 },
+      grantedVerbs: ['pry'],
+      grantedTags: ['armed'],
+    },
+    {
+      id: 'gas-mask',
+      name: 'Gas Mask',
+      description: 'Filters out the worst of the air — and the smell.',
+      slot: 'accessory',
+      rarity: 'uncommon',
+      grantedTags: ['filtered'],
+      resourceModifiers: { infection: -10 },
+    },
+    {
+      id: 'military-radio',
+      name: 'Military Radio',
+      description: 'A handheld radio tuned to survivor frequencies.',
+      slot: 'tool',
+      rarity: 'rare',
+      statModifiers: { wits: 2 },
+      grantedTags: ['comms-active'],
+      grantedVerbs: ['broadcast'],
     },
   ],
 };

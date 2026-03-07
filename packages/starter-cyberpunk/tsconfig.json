@@ -11,6 +11,7 @@
     { "path": "../content-schema" },
     { "path": "../starter-fantasy" },
     { "path": "../pack-registry" },
-    { "path": "../character-creation" }
+    { "path": "../character-creation" },
+    { "path": "../equipment" }
   ]
 }

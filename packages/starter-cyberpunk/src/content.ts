@@ -6,6 +6,7 @@ import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
+import type { ItemCatalog } from '@ai-rpg-engine/equipment';
 
 export const manifest: GameManifest = {
   id: 'neon-lockbox',
@@ -388,6 +389,75 @@ export const buildCatalog: BuildCatalog = {
       disciplineId: 'saboteur',
       description: 'Netrunners who sabotage infrastructure risk bricking their own access nodes',
       effects: [{ type: 'grant-tag', tag: 'node-risky' }],
+    },
+  ],
+};
+
+export const itemCatalog: ItemCatalog = {
+  items: [
+    {
+      id: 'mono-blade',
+      name: 'Mono-Blade',
+      description: 'A monomolecular-edged street knife.',
+      slot: 'weapon',
+      rarity: 'common',
+      statModifiers: { reflex: 1 },
+      grantedTags: ['armed'],
+      grantedVerbs: ['slash'],
+    },
+    {
+      id: 'ice-breaker',
+      name: 'ICE Breaker',
+      description: 'A portable intrusion countermeasure cracker.',
+      slot: 'tool',
+      rarity: 'common',
+      grantedVerbs: ['hack'],
+      grantedTags: ['net-armed'],
+    },
+    {
+      id: 'synth-vest',
+      name: 'Synth-Weave Vest',
+      description: 'Lightweight ballistic mesh under a street jacket.',
+      slot: 'armor',
+      rarity: 'common',
+      resourceModifiers: { hp: 5 },
+    },
+    {
+      id: 'neural-link',
+      name: 'Neural Uplink',
+      description: 'A cranial interface for direct net access.',
+      slot: 'accessory',
+      rarity: 'uncommon',
+      statModifiers: { netrunning: 2 },
+      grantedTags: ['jacked-in'],
+    },
+    {
+      id: 'chrome-knuckles',
+      name: 'Chrome Knuckles',
+      description: 'Reinforced titanium hand augments.',
+      slot: 'weapon',
+      rarity: 'common',
+      statModifiers: { chrome: 1 },
+      grantedVerbs: ['pummel'],
+    },
+    {
+      id: 'scrambler-chip',
+      name: 'Scrambler Chip',
+      description: 'Implanted chip that masks biometric signatures.',
+      slot: 'trinket',
+      rarity: 'uncommon',
+      grantedTags: ['ghost-signal'],
+      statModifiers: { reflex: 1 },
+    },
+    {
+      id: 'military-exo',
+      name: 'Military Exoskeleton',
+      description: 'Salvaged powered frame from a corporate PMC.',
+      slot: 'armor',
+      rarity: 'rare',
+      resourceModifiers: { hp: 8 },
+      statModifiers: { chrome: 2 },
+      requiredTags: ['chrome-compatible'],
     },
   ],
 };
