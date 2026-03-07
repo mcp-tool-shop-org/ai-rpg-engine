@@ -1,7 +1,8 @@
 // Chat engine — the core orchestrator.
-// Routes user messages through: intent → tool → execute → present.
+// Routes user messages through: intent → RAG → shape memory → tool → present.
 // Manages bounded conversational memory and pending writes.
 // Never invents hidden state or writes without explicit consent.
+// v1.1: integrates RAG retrieval, memory shaping, personality profiles, webfetch.
 
 import type { OllamaTextClient } from './client.js';
 import type {
@@ -15,6 +16,13 @@ import {
 } from './session.js';
 import { classifyIntent } from './chat-router.js';
 import { findToolForIntent } from './chat-tools.js';
+import { retrieve, formatRetrievedContext, extractKeywords } from './chat-rag.js';
+import { shapeMemory, formatShapedContext } from './chat-memory-shaper.js';
+import {
+  WORLDBUILDER_PROFILE, getProfileForIntent, buildSystemPrompt,
+  type PersonalityProfile,
+} from './chat-personality.js';
+import { webfetch, formatWebfetchForPrompt, isAllowedUrl } from './chat-webfetch.js';
 
 // --- Chat memory ---
 
@@ -47,17 +55,12 @@ export function getRecentContext(memory: ChatMemory, n = 6): string {
 
 // --- Presentation layer ---
 
-const PRESENT_SYSTEM = `You are a helpful game world design assistant for ai-rpg-engine.
-You present command results conversationally while staying grounded in facts.
-Keep responses concise, direct, and helpful. Do not embellish or invent information.
-When showing content, quote it accurately. When suggesting actions, use real engine commands.
-Never say "Certainly!" or add filler prose. Be the sharp aide, not the decorative narrator.`;
-
 export async function presentResult(
   client: OllamaTextClient,
   toolResult: ChatToolResult,
   userMessage: string,
   recentContext: string,
+  systemPrompt: string,
 ): Promise<string> {
   // For simple responses, skip the LLM presentation layer
   if (!toolResult.output && toolResult.summary.length < 500) {
@@ -82,7 +85,7 @@ export async function presentResult(
     'If there are actions to take, list them clearly.',
   ].join('\n');
 
-  const result = await client.generate({ system: PRESENT_SYSTEM, prompt });
+  const result = await client.generate({ system: systemPrompt, prompt });
   if (!result.ok) {
     // Fallback to raw summary
     return toolResult.summary;
@@ -106,10 +109,20 @@ export type ChatEngineOptions = {
   maxMemory?: number;
   /** If true, skip LLM presentation (return raw tool output). Useful for testing. */
   rawMode?: boolean;
+  /** Enable RAG retrieval from project files. Default true. */
+  ragEnabled?: boolean;
+  /** Enable webfetch for explicit URL requests. Default false. */
+  webfetchEnabled?: boolean;
+  /** Override the personality profile. */
+  profile?: PersonalityProfile;
 };
 
 export function createChatEngine(options: ChatEngineOptions): ChatEngine {
-  const { client, projectRoot, maxMemory = 50, rawMode = false } = options;
+  const {
+    client, projectRoot, maxMemory = 50, rawMode = false,
+    ragEnabled = true, webfetchEnabled = false,
+    profile = WORLDBUILDER_PROFILE,
+  } = options;
   const memory = createChatMemory(maxMemory, null);
   let pendingWrite: { content: string; suggestedPath: string; label: string } | null = null;
 
@@ -137,8 +150,43 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       return msg;
     }
 
+    // Handle explicit webfetch requests
+    if (webfetchEnabled) {
+      const fetchUrl = extractFetchUrl(userMessage);
+      if (fetchUrl) {
+        return await handleWebfetch(fetchUrl, session);
+      }
+    }
+
     // Classify intent
     const classification = await classifyIntent(client, userMessage);
+
+    // RAG retrieval — ground chat in project context
+    let shapedContextStr = '';
+    if (ragEnabled) {
+      const ragResult = await retrieve(
+        { userMessage, maxSnippets: 6, maxChars: 4000 },
+        session,
+        projectRoot,
+      );
+      const shaped = shapeMemory({
+        session,
+        ragSnippets: ragResult.snippets,
+        maxChars: 4000,
+        includeSessionBaseline: true,
+      });
+      shapedContextStr = formatShapedContext(shaped);
+    }
+
+    // Select personality profile for this intent
+    const intentProfile = rawMode ? profile : getProfileForIntent(classification.intent);
+
+    // Build system prompt with shaped context
+    const systemPrompt = buildSystemPrompt({
+      profile: intentProfile,
+      projectMemory: shapedContextStr || undefined,
+      recentConversation: getRecentContext(memory, 4),
+    });
 
     // Find tool
     const tool = findToolForIntent(classification.intent);
@@ -159,11 +207,16 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       params.targetPath = pendingWrite.suggestedPath;
     }
 
+    // Inject shaped context into session context for tools that use it
+    const enrichedSessionCtx = shapedContextStr
+      ? [sessionCtx ?? '', '', shapedContextStr].join('\n').trim()
+      : sessionCtx;
+
     // Execute tool
     const toolResult = await tool.execute({
       client,
       session,
-      sessionContext: sessionCtx,
+      sessionContext: enrichedSessionCtx,
       projectRoot,
       params,
       userMessage,
@@ -190,7 +243,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       response = parts.join('\n');
     } else {
       response = await presentResult(
-        client, toolResult, userMessage, getRecentContext(memory),
+        client, toolResult, userMessage, getRecentContext(memory), systemPrompt,
       );
     }
 
@@ -229,6 +282,29 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     return response;
   }
 
+  async function handleWebfetch(url: string, session: DesignSession | null): Promise<string> {
+    const result = await webfetch(url);
+    let response: string;
+    if (!result.ok) {
+      response = `Fetch failed for ${url}: ${result.error}`;
+    } else {
+      response = formatWebfetchForPrompt(result);
+    }
+    addMessage(memory, {
+      role: 'assistant',
+      content: response,
+      timestamp: new Date().toISOString(),
+      actions: [{
+        command: 'webfetch',
+        description: `Fetch external URL: ${url}`,
+        requiresConfirmation: false,
+        status: result.ok ? 'executed' : 'failed',
+        result: result.ok ? `${result.title} (${result.truncatedTo} chars)` : result.error,
+      }],
+    });
+    return response;
+  }
+
   return {
     memory,
     get pendingWrite() { return pendingWrite; },
@@ -247,4 +323,12 @@ function isConfirmation(msg: string): boolean {
 function isRejection(msg: string): boolean {
   const normalized = msg.trim().toLowerCase();
   return /^(no|n|cancel|nevermind|never mind|nope|skip|don't|abort)$/i.test(normalized);
+}
+
+function extractFetchUrl(message: string): string | null {
+  const urlMatch = message.match(/https?:\/\/[^\s)>\]]+/i);
+  if (!urlMatch) return null;
+  const triggers = /\b(fetch|look at|read|grab|get|check|open|visit|browse|pull)\b/i;
+  if (triggers.test(message)) return urlMatch[0];
+  return null;
 }

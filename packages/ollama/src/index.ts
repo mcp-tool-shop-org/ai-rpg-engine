@@ -158,5 +158,21 @@ export { createTranscript, addToTranscript, saveTranscript, loadTranscript, defa
 export { runChatShell } from './chat-shell.js';
 export type { ChatShellOptions } from './chat-shell.js';
 
+// RAG — project-grounded retrieval
+export { retrieve, extractKeywords, formatRetrievedContext } from './chat-rag.js';
+export type { SourceKind, RetrievedSnippet, RetrievalQuery, RetrievalResult } from './chat-rag.js';
+
+// Memory shaping
+export { shapeMemory, formatShapedContext } from './chat-memory-shaper.js';
+export type { MemoryClass, ShapedMemory, ShapedContext } from './chat-memory-shaper.js';
+
+// Personality profiles
+export { WORLDBUILDER_PROFILE, ANALYST_PROFILE, GENERATOR_PROFILE, ROUTER_PROFILE, getProfileForIntent, buildSystemPrompt } from './chat-personality.js';
+export type { PersonalityProfile } from './chat-personality.js';
+
+// Webfetch adapter
+export { webfetch, isAllowedUrl, formatWebfetchForPrompt } from './chat-webfetch.js';
+export type { WebfetchResult, WebfetchOptions } from './chat-webfetch.js';
+
 // CLI entry
 export { runCli } from './cli.js';
