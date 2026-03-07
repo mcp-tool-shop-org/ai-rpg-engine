@@ -1,0 +1,49 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mcp-tool-shop-org/brand/main/logos/ai-rpg-engine/readme.png" width="400" alt="AI RPG Engine">
+</p>
+
+<p align="center">
+  <a href="https://github.com/mcp-tool-shop-org/ai-rpg-engine/actions/workflows/ci.yml"><img src="https://github.com/mcp-tool-shop-org/ai-rpg-engine/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/mcp-tool-shop-org/ai-rpg-engine/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://mcp-tool-shop-org.github.io/ai-rpg-engine/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
+</p>
+
+# @ai-rpg-engine/content-schema
+
+Content schemas and validators for AI RPG Engine — define rooms, entities, dialogue, items, and quests as data.
+
+## Install
+
+```bash
+npm install @ai-rpg-engine/content-schema
+```
+
+## What's Inside
+
+- **Room schemas** — zones with exits, properties, and environmental state
+- **Entity schemas** — NPCs, creatures, and player character definitions
+- **Dialogue schemas** — graph-based dialogue trees with conditions and effects
+- **Item schemas** — equipment, consumables, quest items with stat modifiers
+- **Content pack loader** — validate and load JSON/TypeScript content packs
+- **Schema validators** — runtime validation with structured error messages
+
+## Usage
+
+```typescript
+import { validateContentPack, RoomSchema, EntitySchema } from '@ai-rpg-engine/content-schema';
+
+const result = validateContentPack(myContentData);
+if (!result.valid) {
+  console.error(result.errors);
+}
+```
+
+## Documentation
+
+- [Content Files (Ch. 13)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/13-content-files/) — authoring content packs
+- [Handbook](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/)
+- [GitHub](https://github.com/mcp-tool-shop-org/ai-rpg-engine)
+
+---
+
+Built by <a href="https://mcp-tool-shop.github.io/">MCP Tool Shop</a>

@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/content-schema",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AI RPG Engine content schemas and validators",
   "type": "module",
   "main": "./dist/index.js",
