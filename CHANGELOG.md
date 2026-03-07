@@ -40,6 +40,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - Shell command reference table for `/context`, `/sources`, `/loadout`, `/loadout-history`
 
 - 37 new tests (745 total): issue buckets, profile influence, retrieval transparency, budget tracking, loadout history, repeated-context detection
+## [1.6.0] - 2026-07-14
+
+### Added — Simulation-Guided Balancing (ollama)
+
+- **chat-balance-analyzer.ts** — deterministic simulation analysis, intent comparison, and tuning workflows
+  - `DesignIntent`, `BalanceFinding`, `BalanceAnalysis`, `IntentComparison`, `WindowAnalysis`, `SuggestedFix`, `ScenarioComparison`, `TuningStep`, `TuningPlan`, `TuningState` types
+  - `parseReplayData()` — flexible replay parser (array, object with ticks, single tick)
+  - `extractMetrics()` — builds metric curves, detects escalation, counts rumor reach, hostility peak, escalation phases
+
+- **P1 — Balance Analysis**
+  - `analyzeBalance(replayData, session)` → structured `BalanceAnalysis` with metrics + findings
+  - 7 deterministic balance checks: `DIFFICULTY_FLAT`, `ESCALATION_TOO_FAST`, `RUMOR_NO_SPREAD`, `HOSTILITY_PINNED`, `STABILITY_INERT`, `ENCOUNTER_NO_ESCALATION`, `SHORT_SIMULATION`
+  - Session cross-reference: `SESSION_ESCALATION_ISSUES` correlates open session issues with replay data
+
+- **P2 — Intent vs Outcome**
+  - `parseDesignIntent(text)` — parses YAML-like `targetMood`, `desiredOutcomes`, `notes` declarations
+  - `compareIntent(intent, replayData, session)` → `IntentComparison` with per-outcome status (achieved/partial/missed)
+  - Outcome evaluation patterns: escalation-by-tick, rumor-reach, avoid-combat/dialogue, generic-byTick
+  - Mood assessment: paranoia/suspicion/tension, calm/peace, danger/lethal, mystery/intrigue
+
+- **P3 — Replay Window Analysis**
+  - `analyzeWindow(replayData, startTick, endTick, focus?)` — tick-range slicing with optional category filter
+
+- **P4 — Auto-Suggested Fixes**
+  - `suggestFixes(findings)` → structured `SuggestedFix[]` with confidence scores, sorted by confidence
+  - 7 fix templates: `increase_alert_sensitivity`, `reduce_alert_gain`, `add_rumor_path`, `increase_hostility_decay`, `connect_stability_events`, `lower_escalation_threshold`, `review_escalation_mechanics`
+  - No changes applied without explicit confirmation — suggestions only
+
+- **P5 — Compare Scenarios**
+  - `compareScenarios(beforeData, afterData, intent?)` → `ScenarioComparison` with 6 dimensions
+  - Dimensions: escalation pacing, rumor spread, encounter duration, faction hostility peak, escalation phases, district stability variance
+  - Intent-aware verdict: improved/regressed/mixed/unchanged relative to design goals
+
+- **P6 — Guided Tuning Plans**
+  - `generateTuningPlan(goal, session)` with 4 built-in templates: paranoia (5 steps), lethality (5 steps), rumor speed (5 steps), escalation (5 steps)
+  - `detectTuningTemplate()` — keyword-based template matching
+  - State management: `createTuningState()`, `nextPendingTuningStep()`, `markTuningStepExecuted()`, `markTuningStepFailed()` with cascading failure
+  - Tuning execution in ChatEngine: `executeTuningStep()`, `executeAllTuningSteps()`
+
+- **8 formatting functions**: `formatBalanceAnalysis`, `formatIntentComparison` (●/◐/○ icons), `formatWindowAnalysis`, `formatSuggestedFixes`, `formatScenarioComparison` (+/-/= directions), `formatTuningPlan`, `formatTuningStatus` (○/●/✗/– icons), `formatTuningPlan`
+
+- **Chat integration**
+  - 6 new intents: `analyze_balance`, `compare_intent`, `analyze_window`, `suggest_fixes`, `compare_scenarios`, `tune_goal`
+  - 6 new tools registered (22 total)
+  - 11 new shell commands: `/analyze-balance`, `/compare-intent`, `/analyze-window`, `/suggest-fixes`, `/compare-scenarios`, `/tune`, `/tune-preview`, `/tune-step`, `/tune-execute`, `/tune-status`
+  - 9 new `SessionEventKind` values for balance/tuning lifecycle tracking
+  - Router pattern ordering fix: `suggest_fixes` now matches before `suggest_next`
+
+- 100 new tests (926 total): replay parsing, metric extraction, all 7 balance checks, intent parsing, outcome evaluation (escalation/rumor/mood), window analysis, fix suggestions, scenario comparison (6 dimensions + intent-aware verdict), tuning plan generation (4 templates + generic), state management (create/execute/fail/cascade/complete), formatting, router integration, tool registration, session events, edge cases
+
 ## [1.5.0] - 2026-07-03
 
 ### Added — Guided Build Mode (ollama)

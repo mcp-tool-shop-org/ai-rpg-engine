@@ -205,5 +205,27 @@ export type {
   BuildStep, BuildStepStatus, BuildPlan, BuildState,
 } from './chat-build-planner.js';
 
+// Balance analyzer — simulation-guided balancing
+export {
+  parseReplayData, extractMetrics,
+  analyzeBalance, formatBalanceAnalysis,
+  parseDesignIntent, compareIntent, formatIntentComparison,
+  analyzeWindow, formatWindowAnalysis,
+  suggestFixes, formatSuggestedFixes,
+  compareScenarios, formatScenarioComparison,
+  generateTuningPlan, createTuningState, nextPendingTuningStep,
+  markTuningStepExecuted, markTuningStepFailed, isTuningComplete, finalizeTuning,
+  formatTuningPlan, formatTuningStatus,
+  detectTuningTemplate,
+} from './chat-balance-analyzer.js';
+export type {
+  DesignIntent, DesiredOutcome, ScenarioMetrics, MetricCurve,
+  BalanceFinding, FindingSeverity, FindingCategory, BalanceAnalysis,
+  OutcomeStatus, OutcomeResult, IntentComparison,
+  WindowAnalysis, SuggestedFix,
+  DimensionChange, ScenarioComparison,
+  TuningStep, TuningStepStatus, TuningPlan, TuningState,
+} from './chat-balance-analyzer.js';
+
 // CLI entry
 export { runCli } from './cli.js';

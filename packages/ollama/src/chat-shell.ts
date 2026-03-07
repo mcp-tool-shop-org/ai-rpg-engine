@@ -13,6 +13,14 @@ import {
   generateBuildPlan, createBuildState, formatBuildPlan,
   formatBuildPreview, formatBuildStatus, buildDiagnostics, formatBuildDiagnostics,
 } from './chat-build-planner.js';
+import {
+  analyzeBalance, formatBalanceAnalysis,
+  parseDesignIntent, compareIntent, formatIntentComparison,
+  analyzeWindow, formatWindowAnalysis,
+  suggestFixes, formatSuggestedFixes,
+  compareScenarios, formatScenarioComparison,
+  generateTuningPlan, createTuningState, formatTuningPlan, formatTuningStatus,
+} from './chat-balance-analyzer.js';
 import { loadSession } from './session.js';
 
 export type ChatShellOptions = {
@@ -123,6 +131,16 @@ async function handleSlashCommand(
       console.log('/execute        Execute all remaining build steps');
       console.log('/status         Show build status');
       console.log('/diagnostics    Show post-build diagnostics');
+      console.log('/analyze-balance <replay>  Analyze balance from replay data');
+      console.log('/compare-intent <intent> <replay>  Compare intent vs outcome');
+      console.log('/analyze-window <start> <end> [replay]  Analyze tick window');
+      console.log('/suggest-fixes  Suggest fixes from last balance analysis');
+      console.log('/compare-scenarios <before> <after>  Compare scenario revisions');
+      console.log('/tune <goal>    Create a tuning plan');
+      console.log('/tune-preview   Preview active tuning plan');
+      console.log('/tune-step      Execute next tuning step');
+      console.log('/tune-execute   Execute all tuning steps');
+      console.log('/tune-status    Show tuning status');
       console.log('');
       return 'handled';
 
@@ -266,6 +284,161 @@ async function handleSlashCommand(
       console.log('');
       return 'handled';
     }
+
+    case 'analyze-balance': {
+      const replay = parts.slice(1).join(' ').trim();
+      if (!replay) {
+        console.log('Usage: /analyze-balance <replay-json>');
+        return 'handled';
+      }
+      const session = await loadSession(projectRoot);
+      const analysis = analyzeBalance(replay, session);
+      console.log('');
+      console.log(formatBalanceAnalysis(analysis));
+      console.log('');
+      return 'handled';
+    }
+
+    case 'compare-intent': {
+      const args = parts.slice(1).join(' ').trim();
+      if (!args) {
+        console.log('Usage: /compare-intent <intent-yaml> | <replay-json>');
+        console.log('Separate intent and replay with " | "');
+        return 'handled';
+      }
+      const [intentPart, replayPart] = args.split('|').map(s => s.trim());
+      if (!intentPart || !replayPart) {
+        console.log('Provide both intent and replay separated by " | ".');
+        return 'handled';
+      }
+      const intent = parseDesignIntent(intentPart);
+      const session = await loadSession(projectRoot);
+      const comparison = compareIntent(intent, replayPart, session);
+      console.log('');
+      console.log(formatIntentComparison(comparison));
+      console.log('');
+      return 'handled';
+    }
+
+    case 'analyze-window': {
+      const startTick = parseInt(parts[1] ?? '0', 10);
+      const endTick = parseInt(parts[2] ?? '0', 10);
+      const replay = parts.slice(3).join(' ').trim();
+      if (endTick <= startTick) {
+        console.log('Usage: /analyze-window <startTick> <endTick> <replay-json>');
+        return 'handled';
+      }
+      if (!replay) {
+        console.log('Provide replay JSON data after the tick range.');
+        return 'handled';
+      }
+      const analysis = analyzeWindow(replay, startTick, endTick);
+      console.log('');
+      console.log(formatWindowAnalysis(analysis));
+      console.log('');
+      return 'handled';
+    }
+
+    case 'suggest-fixes': {
+      // Use last balance analysis if available
+      const argsText = parts.slice(1).join(' ').trim();
+      if (!argsText) {
+        console.log('Usage: /suggest-fixes <findings-json>');
+        console.log('Pass the findings from /analyze-balance.');
+        return 'handled';
+      }
+      try {
+        const parsed = JSON.parse(argsText);
+        const findings = parsed.findings ?? parsed;
+        const fixes = suggestFixes(findings);
+        console.log('');
+        console.log(formatSuggestedFixes(fixes));
+        console.log('');
+      } catch {
+        console.log('Could not parse findings JSON.');
+      }
+      return 'handled';
+    }
+
+    case 'compare-scenarios': {
+      const args = parts.slice(1).join(' ').trim();
+      if (!args) {
+        console.log('Usage: /compare-scenarios <before-json> | <after-json>');
+        return 'handled';
+      }
+      const [beforePart, afterPart] = args.split('|').map(s => s.trim());
+      if (!beforePart || !afterPart) {
+        console.log('Provide before and after replay JSON separated by " | ".');
+        return 'handled';
+      }
+      const comparison = compareScenarios(beforePart, afterPart);
+      console.log('');
+      console.log(formatScenarioComparison(comparison));
+      console.log('');
+      return 'handled';
+    }
+
+    case 'tune': {
+      const goal = parts.slice(1).join(' ').trim();
+      if (!goal) {
+        console.log('Usage: /tune <goal>');
+        console.log('Example: /tune increase paranoia');
+        return 'handled';
+      }
+      const session = await loadSession(projectRoot);
+      const plan = generateTuningPlan(goal, session);
+      engine.activeTuning = createTuningState(plan);
+      console.log('');
+      console.log(formatTuningPlan(plan));
+      console.log('');
+      return 'handled';
+    }
+
+    case 'tune-preview':
+      if (engine.activeTuning) {
+        console.log('');
+        console.log(formatTuningPlan(engine.activeTuning.plan));
+        console.log('');
+      } else {
+        console.log('No active tuning plan. Use /tune <goal> to create one.');
+      }
+      return 'handled';
+
+    case 'tune-step': {
+      if (!engine.activeTuning) {
+        console.log('No active tuning plan. Use /tune <goal> to create one.');
+        return 'handled';
+      }
+      console.log('Executing next tuning step...');
+      const result = await engine.executeTuningStep();
+      console.log('');
+      console.log(result);
+      console.log('');
+      return 'handled';
+    }
+
+    case 'tune-execute': {
+      if (!engine.activeTuning) {
+        console.log('No active tuning plan. Use /tune <goal> to create one.');
+        return 'handled';
+      }
+      console.log('Executing all remaining tuning steps...');
+      const result = await engine.executeAllTuningSteps();
+      console.log('');
+      console.log(result);
+      console.log('');
+      return 'handled';
+    }
+
+    case 'tune-status':
+      if (engine.activeTuning) {
+        console.log('');
+        console.log(formatTuningStatus(engine.activeTuning));
+        console.log('');
+      } else {
+        console.log('No active tuning plan.');
+      }
+      return 'handled';
 
     default:
       console.log(`Unknown command: /${cmd}. Type /help for available commands.`);

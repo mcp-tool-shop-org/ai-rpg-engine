@@ -348,3 +348,101 @@ After a build completes (or on demand via `/diagnostics`), a post-build analysis
 | `/execute` | Execute all remaining steps with diagnostics |
 | `/status` | Show build progress with status icons (○ ● ✗ –) |
 | `/diagnostics` | Run post-build analysis on the current build |
+
+## Simulation-Guided Balancing (v1.6.0)
+
+Simulation-Guided Balancing turns ai-rpg-engine from a world generator into a world tuning environment. Authors can compare what they wanted, what they built, and what the simulation actually did — then get actionable, structured recommendations.
+
+### Pipeline
+
+```
+replay data → parseReplayData → extractMetrics → analyzeBalance
+    → findings + suggestFixes → structured recommendations
+    → compareIntent (design goals vs outcomes)
+    → compareScenarios (before vs after revision)
+    → generateTuningPlan → step-by-step tuning execution
+```
+
+### Six Pillars
+
+#### P1 — Balance Analysis
+
+`analyzeBalance(replayData, session)` parses replay data and runs 7 deterministic balance checks:
+
+| Check Code | Detects |
+|------------|---------|
+| `DIFFICULTY_FLAT` | No escalation phases across entire run |
+| `ESCALATION_TOO_FAST` | Escalation happens in first 10% of ticks |
+| `RUMOR_NO_SPREAD` | Zero rumor spread events reached any faction |
+| `HOSTILITY_PINNED` | Faction hostility stays above 0.85 for >50% of ticks |
+| `STABILITY_INERT` | District stability variance < 0.01 (nothing changes) |
+| `ENCOUNTER_NO_ESCALATION` | Encounters present but no escalation |
+| `SHORT_SIMULATION` | Fewer than 5 ticks (insufficient data) |
+
+When a session is available, `SESSION_ESCALATION_ISSUES` cross-references open escalation issues with replay data.
+
+#### P2 — Intent vs Outcome
+
+Authors declare design intent in YAML-like format:
+
+```yaml
+targetMood: "paranoia"
+desiredOutcomes:
+  - guards escalate by tick 20
+  - rumors reach second faction within one encounter
+```
+
+`compareIntent(intent, replayData, session)` evaluates each outcome (achieved ●, partial ◐, missed ○) using pattern matching for escalation timing, rumor reach, combat avoidance, and mood assessment (paranoia, calm, danger, mystery).
+
+#### P3 — Replay Window Analysis
+
+`analyzeWindow(replayData, startTick, endTick, focus?)` slices replay data to a specific tick range and runs balance checks on just that window. Optional focus parameter filters findings to a specific category.
+
+#### P4 — Auto-Suggested Fixes
+
+`suggestFixes(findings)` maps each balance finding to a structured `SuggestedFix` with a target, reason, expected impact, and confidence score (0–1). Fixes are sorted by confidence. **No changes are ever applied without explicit confirmation.**
+
+#### P5 — Compare Scenarios
+
+`compareScenarios(beforeData, afterData, intent?)` compares two replay runs across 6 dimensions (escalation pacing, rumor spread, encounter duration, faction hostility peak, escalation phases, district stability variance). When design intent is provided, the comparison is intent-aware — higher hostility is "improvement" when the target mood is paranoia.
+
+Verdict: `improved` | `regressed` | `mixed` | `unchanged`
+
+#### P6 — Guided Tuning Plans
+
+`generateTuningPlan(goal, session)` creates a multi-step tuning plan from natural language goals. Four built-in templates:
+
+| Template | Trigger Keywords | Steps |
+|----------|-----------------|-------|
+| **increase paranoia** | paranoia, suspicion, tension | 5 |
+| **reduce lethality** | lethality, survivability, danger | 5 |
+| **increase rumor speed** | rumor, gossip, propagation | 5 |
+| **adjust escalation** | escalation, alert, pressure | 5 |
+
+Tuning state management mirrors build mode: `createTuningState()`, `nextPendingTuningStep()`, step execution with cascading failure.
+
+### Worked Example
+
+> User types: `/analyze-balance` after running a 30-tick simulation
+
+1. **Analysis**: 3 findings — `DIFFICULTY_FLAT` (warning), `RUMOR_NO_SPREAD` (warning), `SHORT_SIMULATION` (info)
+2. **Fixes**: `/suggest-fixes` → 2 structured recommendations with confidence scores
+3. **Intent check**: `/compare-intent` with `targetMood: "paranoia"` → mood: missed, 0/2 outcomes achieved
+4. **Tuning**: `/tune increase paranoia` → 5-step plan (analyze → create faction → adjust encounters → re-simulate → verify)
+5. **Execute**: `/tune-step` runs each step, `/tune-status` shows progress (● ○ ○ ○ ○)
+6. **Compare**: After tuning, `/compare-scenarios before|after` → escalation pacing: improved, rumor spread: improved, verdict: improved
+
+### Shell Commands
+
+| Command | Description |
+|---------|-------------|
+| `/analyze-balance` | Run balance analysis on last replay |
+| `/compare-intent` | Compare design intent vs replay outcomes |
+| `/analyze-window <start> <end>` | Analyze specific tick range |
+| `/suggest-fixes` | Get suggested fixes from last analysis |
+| `/compare-scenarios` | Compare two replay runs |
+| `/tune <goal>` | Generate a tuning plan |
+| `/tune-preview` | Preview the current tuning plan |
+| `/tune-step` | Execute next tuning step |
+| `/tune-execute` | Execute all remaining tuning steps |
+| `/tune-status` | Show tuning progress |

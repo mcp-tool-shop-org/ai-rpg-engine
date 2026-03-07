@@ -21,6 +21,14 @@ import { generatePreview } from './apply-preview.js';
 import { planFromSession, formatPlan } from './chat-planner.js';
 import { generateRecommendations, formatRecommendations } from './chat-recommendations.js';
 import { generateBuildPlan, formatBuildPlan } from './chat-build-planner.js';
+import {
+  analyzeBalance, formatBalanceAnalysis,
+  parseDesignIntent, compareIntent, formatIntentComparison,
+  analyzeWindow, formatWindowAnalysis,
+  suggestFixes, formatSuggestedFixes,
+  compareScenarios, formatScenarioComparison,
+  generateTuningPlan, formatTuningPlan,
+} from './chat-balance-analyzer.js';
 
 // --- Helper ---
 
@@ -589,6 +597,172 @@ const buildPlanTool: ChatTool = {
   },
 };
 
+// --- Tool: analyze-balance ---
+
+const analyzeBalanceTool: ChatTool = {
+  name: 'analyze-balance',
+  description: 'Analyze replay data for balance issues (difficulty, pacing, escalation)',
+  intents: ['analyze_balance'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const replay = p.params.replay ?? p.params.content;
+    if (!replay) {
+      return { ok: false, summary: 'I need replay data to analyze balance. Pipe JSON replay output.', actions: [] };
+    }
+    const a = action('analyze-balance', 'Analyze replay for balance issues', false);
+    const analysis = analyzeBalance(replay, p.session);
+    return {
+      ok: true,
+      summary: formatBalanceAnalysis(analysis),
+      output: JSON.stringify(analysis),
+      actions: [executed(a, `${analysis.findings.length} finding(s)`)],
+      sessionEvents: [{ kind: 'balance_analyzed', detail: `Balance: ${analysis.findings.length} finding(s)` }],
+    };
+  },
+};
+
+// --- Tool: compare-intent ---
+
+const compareIntentTool: ChatTool = {
+  name: 'compare-intent',
+  description: 'Compare design intent against actual simulation outcomes',
+  intents: ['compare_intent'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const replay = p.params.replay ?? p.params.content;
+    const intentText = p.params.intent ?? p.params.designIntent;
+    if (!replay) {
+      return { ok: false, summary: 'I need replay data to compare against intent. Pipe JSON replay output.', actions: [] };
+    }
+    if (!intentText) {
+      return { ok: false, summary: 'I need a design intent specification. Provide targetMood and desiredOutcomes.', actions: [] };
+    }
+    const a = action('compare-intent', 'Compare design intent vs replay outcomes', false);
+    const intent = parseDesignIntent(intentText);
+    const comparison = compareIntent(intent, replay, p.session);
+    return {
+      ok: true,
+      summary: formatIntentComparison(comparison),
+      output: JSON.stringify(comparison),
+      actions: [executed(a, comparison.overallStatus.replace(/_/g, ' '))],
+      sessionEvents: [{ kind: 'intent_compared', detail: `Intent: ${comparison.overallStatus}` }],
+    };
+  },
+};
+
+// --- Tool: analyze-window ---
+
+const analyzeWindowTool: ChatTool = {
+  name: 'analyze-window',
+  description: 'Analyze a specific tick range in replay data',
+  intents: ['analyze_window'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const replay = p.params.replay ?? p.params.content;
+    const startTick = parseInt(p.params.startTick ?? '0', 10);
+    const endTick = parseInt(p.params.endTick ?? '0', 10);
+    if (!replay) {
+      return { ok: false, summary: 'I need replay data and a tick range. Example: "analyze ticks 1-20"', actions: [] };
+    }
+    if (endTick <= startTick) {
+      return { ok: false, summary: 'Invalid tick range. Provide startTick and endTick (e.g. ticks 1-20).', actions: [] };
+    }
+    const a = action('analyze-window', `Analyze ticks ${startTick}–${endTick}`, false);
+    const analysis = analyzeWindow(replay, startTick, endTick, p.params.focus);
+    return {
+      ok: true,
+      summary: formatWindowAnalysis(analysis),
+      output: JSON.stringify(analysis),
+      actions: [executed(a, `${analysis.findings.length} finding(s)`)],
+      sessionEvents: [{ kind: 'window_analyzed', detail: `Window ${startTick}–${endTick}: ${analysis.findings.length} finding(s)` }],
+    };
+  },
+};
+
+// --- Tool: suggest-fixes ---
+
+const suggestFixesTool: ChatTool = {
+  name: 'suggest-fixes',
+  description: 'Suggest actionable fixes based on balance findings',
+  intents: ['suggest_fixes'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    // Try to get findings from params or from a prior analysis
+    let findings;
+    const raw = p.params.findings ?? p.params.content;
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        findings = parsed.findings ?? parsed;
+      } catch {
+        return { ok: false, summary: 'Could not parse balance findings. Run analyze-balance first.', actions: [] };
+      }
+    }
+    if (!findings || !Array.isArray(findings)) {
+      return { ok: false, summary: 'I need balance findings to suggest fixes. Run analyze-balance first.', actions: [] };
+    }
+    const a = action('suggest-fixes', 'Generate suggested fixes from findings', false);
+    const fixes = suggestFixes(findings);
+    return {
+      ok: true,
+      summary: formatSuggestedFixes(fixes),
+      output: JSON.stringify(fixes),
+      actions: [executed(a, `${fixes.length} fix(es) suggested`)],
+      sessionEvents: [{ kind: 'fixes_suggested', detail: `Fixes: ${fixes.length} suggestion(s)` }],
+    };
+  },
+};
+
+// --- Tool: compare-scenarios ---
+
+const compareScenariosTool: ChatTool = {
+  name: 'compare-scenarios',
+  description: 'Compare before/after scenario revisions for balance changes',
+  intents: ['compare_scenarios'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const { before, after } = p.params;
+    if (!before || !after) {
+      return { ok: false, summary: 'I need before and after replay data to compare scenarios.', actions: [] };
+    }
+    const a = action('compare-scenarios', 'Compare scenario revisions', false);
+    const intentText = p.params.intent ?? p.params.designIntent;
+    const intent = intentText ? parseDesignIntent(intentText) : undefined;
+    const comparison = compareScenarios(before, after, intent);
+    return {
+      ok: true,
+      summary: formatScenarioComparison(comparison),
+      output: JSON.stringify(comparison),
+      actions: [executed(a, comparison.verdict)],
+      sessionEvents: [{ kind: 'scenarios_compared', detail: `Comparison: ${comparison.verdict}` }],
+    };
+  },
+};
+
+// --- Tool: tune-plan ---
+
+const tunePlanTool: ChatTool = {
+  name: 'tune-plan',
+  description: 'Generate a guided tuning plan from a tuning goal',
+  intents: ['tune_goal'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const goal = p.params.goal ?? p.userMessage;
+    if (!goal) {
+      return { ok: false, summary: 'I need a tuning goal. Example: "tune increase paranoia"', actions: [] };
+    }
+    const a = action('tune-plan', `Generate tuning plan: "${goal}"`, false);
+    const plan = generateTuningPlan(goal, p.session);
+    return {
+      ok: true,
+      summary: formatTuningPlan(plan),
+      output: JSON.stringify(plan),
+      actions: [executed(a, `${plan.steps.length}-step plan`)],
+      sessionEvents: [{ kind: 'tune_plan_created', detail: `Tune: ${goal} (${plan.steps.length} steps)` }],
+    };
+  },
+};
+
 // --- Registry ---
 
 const ALL_TOOLS: ChatTool[] = [
@@ -608,6 +782,12 @@ const ALL_TOOLS: ChatTool[] = [
   smartPlanTool,
   recommendTool,
   buildPlanTool,
+  analyzeBalanceTool,
+  compareIntentTool,
+  analyzeWindowTool,
+  suggestFixesTool,
+  compareScenariosTool,
+  tunePlanTool,
 ];
 
 /**

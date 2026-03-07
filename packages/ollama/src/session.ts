@@ -39,7 +39,16 @@ export type SessionEventKind =
   | 'build_plan_created'
   | 'build_step_executed'
   | 'build_step_failed'
-  | 'build_plan_completed';
+  | 'build_plan_completed'
+  | 'balance_analyzed'
+  | 'intent_compared'
+  | 'window_analyzed'
+  | 'fixes_suggested'
+  | 'scenarios_compared'
+  | 'tune_plan_created'
+  | 'tune_step_executed'
+  | 'tune_step_failed'
+  | 'tune_plan_completed';
 
 export type SessionEvent = {
   timestamp: string;

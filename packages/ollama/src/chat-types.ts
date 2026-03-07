@@ -36,6 +36,12 @@ export type ChatIntent =
   | 'show_plan'         // "What's the plan?" / "Make a plan"
   | 'recommend'         // "What should I prioritize?" / "Recommendations"
   | 'build_goal'        // "Build a rumor-driven market district."
+  | 'analyze_balance'   // "Analyze balance" / "Check balance."
+  | 'compare_intent'    // "Compare intent vs outcome."
+  | 'analyze_window'    // "Analyze ticks 1–20."
+  | 'suggest_fixes'     // "Suggest fixes" / "What should I change?"
+  | 'compare_scenarios' // "Compare scenarios" / "Did the revision help?"
+  | 'tune_goal'         // "Tune: make this more paranoid."
   | 'unknown';          // Fallback — ask for clarification.
 
 export type IntentClassification = {

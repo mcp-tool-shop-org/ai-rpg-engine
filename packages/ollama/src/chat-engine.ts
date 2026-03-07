@@ -40,6 +40,12 @@ import {
   buildDiagnostics, formatBuildDiagnostics,
   type BuildState, type BuildPlan,
 } from './chat-build-planner.js';
+import {
+  generateTuningPlan, createTuningState, nextPendingTuningStep,
+  markTuningStepExecuted, markTuningStepFailed, isTuningComplete, finalizeTuning,
+  formatTuningPlan, formatTuningStatus,
+  type TuningState, type TuningPlan,
+} from './chat-balance-analyzer.js';
 
 // --- Chat memory ---
 
@@ -133,12 +139,18 @@ export type ChatEngine = {
   loadoutHistory: LoadoutHistoryEntry[];
   /** Active build plan state, if any. */
   activeBuild: BuildState | null;
+  /** Active tuning plan state, if any. */
+  activeTuning: TuningState | null;
   /** Process a user message and return the assistant response. */
   process: (message: string) => Promise<string>;
   /** Execute the next pending build step. Returns formatted result. */
   executeBuildStep: () => Promise<string>;
   /** Execute all remaining build steps. Returns formatted result. */
   executeAllBuildSteps: () => Promise<string>;
+  /** Execute the next pending tuning step. Returns formatted result. */
+  executeTuningStep: () => Promise<string>;
+  /** Execute all remaining tuning steps. Returns formatted result. */
+  executeAllTuningSteps: () => Promise<string>;
 };
 
 export type ChatEngineOptions = {
@@ -169,6 +181,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
   let lastLoadoutPlan: LoadoutRoutePlan | null = null;
   const loadoutHistory: LoadoutHistoryEntry[] = [];
   let activeBuild: BuildState | null = null;
+  let activeTuning: TuningState | null = null;
 
   async function process(userMessage: string): Promise<string> {
     const now = new Date().toISOString();
@@ -331,6 +344,14 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       try {
         const plan = JSON.parse(toolResult.output) as BuildPlan;
         activeBuild = createBuildState(plan);
+      } catch { /* output wasn't valid plan JSON — ignore */ }
+    }
+
+    // Capture tuning plan if the tune tool generated one
+    if (classification.intent === 'tune_goal' && toolResult.ok && toolResult.output) {
+      try {
+        const plan = JSON.parse(toolResult.output) as TuningPlan;
+        activeTuning = createTuningState(plan);
       } catch { /* output wasn't valid plan JSON — ignore */ }
     }
 
@@ -518,6 +539,99 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     return results.join('\n\n') + '\n\n' + formatBuildDiagnostics(diag);
   }
 
+  // --- Tuning execution ---
+
+  async function executeTuningStep(): Promise<string> {
+    if (!activeTuning) return 'No active tuning plan. Use "tune <goal>" to create one.';
+
+    const step = nextPendingTuningStep(activeTuning);
+    if (!step) {
+      if (isTuningComplete(activeTuning)) {
+        finalizeTuning(activeTuning);
+        const session = await loadSession(projectRoot);
+        if (session) {
+          recordEvent(session, 'tune_plan_completed', `Tuning completed: ${activeTuning.plan.goal}`);
+          await saveSession(projectRoot, session);
+        }
+        return formatTuningStatus(activeTuning);
+      }
+      return 'No pending tuning steps.';
+    }
+
+    activeTuning.status = 'executing';
+
+    const tool = findToolForIntent(step.intent);
+    if (!tool) {
+      markTuningStepFailed(activeTuning, step.id, `No tool for intent: ${step.intent}`);
+      const session = await loadSession(projectRoot);
+      if (session) {
+        recordEvent(session, 'tune_step_failed', `${step.command}: no tool`);
+        await saveSession(projectRoot, session);
+      }
+      return `Step ${step.id} failed: no tool for ${step.intent}`;
+    }
+
+    const session = await loadSession(projectRoot);
+    const sessionCtx = session ? renderSessionContext(session) : undefined;
+
+    const toolResult = await tool.execute({
+      client, session, sessionContext: sessionCtx,
+      projectRoot, params: step.params, userMessage: step.description,
+    });
+
+    if (toolResult.ok) {
+      markTuningStepExecuted(activeTuning, step.id, toolResult.summary);
+      if (session) {
+        recordEvent(session, 'tune_step_executed', `${step.command}: ${step.description}`);
+        if (toolResult.sessionEvents) {
+          for (const event of toolResult.sessionEvents) {
+            recordEvent(session, event.kind, event.detail);
+          }
+        }
+        await saveSession(projectRoot, session);
+      }
+    } else {
+      markTuningStepFailed(activeTuning, step.id, toolResult.summary);
+      if (session) {
+        recordEvent(session, 'tune_step_failed', `${step.command}: ${toolResult.summary}`);
+        await saveSession(projectRoot, session);
+      }
+    }
+
+    if (isTuningComplete(activeTuning)) {
+      finalizeTuning(activeTuning);
+      if (session) {
+        recordEvent(session, 'tune_plan_completed', `Tuning: ${activeTuning.plan.goal}`);
+        await saveSession(projectRoot, session);
+      }
+    }
+
+    const icon = toolResult.ok ? '●' : '✗';
+    return `${icon} Step ${step.id}: ${step.description}\n${toolResult.summary}`;
+  }
+
+  async function executeAllTuningSteps(): Promise<string> {
+    if (!activeTuning) return 'No active tuning plan. Use "tune <goal>" to create one.';
+
+    const results: string[] = [];
+    const maxSteps = activeTuning.plan.steps.length;
+    let executedCount = 0;
+
+    while (executedCount < maxSteps) {
+      const step = nextPendingTuningStep(activeTuning);
+      if (!step) break;
+      const result = await executeTuningStep();
+      results.push(result);
+      executedCount++;
+    }
+
+    if (results.length === 0) {
+      return 'No pending tuning steps to execute.';
+    }
+
+    return results.join('\n\n') + '\n\n' + formatTuningStatus(activeTuning);
+  }
+
   return {
     memory,
     get pendingWrite() { return pendingWrite; },
@@ -527,9 +641,13 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     loadoutHistory,
     get activeBuild() { return activeBuild; },
     set activeBuild(v) { activeBuild = v; },
+    get activeTuning() { return activeTuning; },
+    set activeTuning(v) { activeTuning = v; },
     process,
     executeBuildStep,
     executeAllBuildSteps,
+    executeTuningStep,
+    executeAllTuningSteps,
   };
 }
 

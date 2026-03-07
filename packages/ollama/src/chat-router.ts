@@ -31,6 +31,14 @@ const INTENT_PATTERNS: IntentPattern[] = [
     ],
   },
   {
+    intent: 'suggest_fixes',
+    patterns: [
+      /\b(suggest|recommend|propose)\s*(some\s+)?(fix|fixes|changes?|adjustments?)\b/i,
+      /\bwhat should I (change|fix|adjust)\b/i,
+      /^\/suggest-fixes$/i,
+    ],
+  },
+  {
     intent: 'suggest_next',
     patterns: [
       /\b(what (should|could) I do|next step|suggest|what now)\b/i,
@@ -60,6 +68,61 @@ const INTENT_PATTERNS: IntentPattern[] = [
     ],
     extractParams: (msg) => {
       const goalMatch = msg.match(/(?:\/build|build)\s+(?:a |an |the )?(.+)/i);
+      const params: Record<string, string> = {};
+      if (goalMatch) params.goal = goalMatch[1].trim();
+      return params;
+    },
+  },
+  {
+    intent: 'analyze_balance',
+    patterns: [
+      /\b(analyze|analyse|check|assess)\s*(the\s+)?(balance|balancing)\b/i,
+      /^\/analyze-balance$/i,
+    ],
+  },
+  {
+    intent: 'compare_intent',
+    patterns: [
+      /\b(compare|check)\s*(design\s+)?intent\b/i,
+      /\bintent\s+vs\s+(outcome|result|replay)\b/i,
+      /^\/compare-intent$/i,
+    ],
+  },
+  {
+    intent: 'analyze_window',
+    patterns: [
+      /\b(analyze|analyse)\s*(tick|window|phase)\b/i,
+      /\bticks?\s+\d+\s*[-–]\s*\d+\b/i,
+      /^\/analyze-window\b/i,
+    ],
+    extractParams: (msg) => {
+      const rangeMatch = msg.match(/ticks?\s+(\d+)\s*[-–]\s*(\d+)/i);
+      const focusMatch = msg.match(/(?:focus|about|for)\s+(.+)/i);
+      const params: Record<string, string> = {};
+      if (rangeMatch) {
+        params.startTick = rangeMatch[1];
+        params.endTick = rangeMatch[2];
+      }
+      if (focusMatch) params.focus = focusMatch[1].trim();
+      return params;
+    },
+  },
+  {
+    intent: 'compare_scenarios',
+    patterns: [
+      /\bcompare\s*(the\s+)?(scenario|revision|version)s?\b/i,
+      /\bdid\s+the\s+revision\s+(help|improve|work)\b/i,
+      /^\/compare-scenarios$/i,
+    ],
+  },
+  {
+    intent: 'tune_goal',
+    patterns: [
+      /\btune\s+(?:the\s+)?(?!plan\b|status\b|preview\b)\w+/i,
+      /^\/tune\s+/i,
+    ],
+    extractParams: (msg) => {
+      const goalMatch = msg.match(/(?:\/tune|tune)\s+(?:the\s+)?(.+)/i);
       const params: Record<string, string> = {};
       if (goalMatch) params.goal = goalMatch[1].trim();
       return params;
@@ -203,6 +266,12 @@ Valid intents:
 - show_plan: user wants a smart action plan based on session state
 - recommend: user wants prioritized recommendations
 - build_goal: user wants to build a complete scenario, district, or faction network from a high-level goal
+- analyze_balance: user wants balance analysis of replay data (difficulty, pacing, escalation)
+- compare_intent: user wants to compare design intent vs actual simulation outcomes
+- analyze_window: user wants to analyze a specific tick range or phase in replay data
+- suggest_fixes: user wants suggested fixes or adjustments based on analysis findings
+- compare_scenarios: user wants to compare two scenario revisions to see if changes helped
+- tune_goal: user wants a guided tuning plan to adjust world behavior (e.g. "tune increase paranoia")
 - unknown: can't determine intent
 
 Response format (JSON only, no markdown):
@@ -237,7 +306,10 @@ export async function classifyByLLM(
       'suggest_next', 'explain_state', 'scaffold', 'critique', 'improve',
       'compare_replays', 'analyze_replay', 'plan', 'explain_why',
       'session_info', 'apply_content', 'help', 'context_info',
-      'show_plan', 'recommend', 'build_goal', 'unknown',
+      'show_plan', 'recommend', 'build_goal',
+      'analyze_balance', 'compare_intent', 'analyze_window',
+      'suggest_fixes', 'compare_scenarios', 'tune_goal',
+      'unknown',
     ];
     const intent = validIntents.includes(parsed.intent as ChatIntent)
       ? parsed.intent as ChatIntent
