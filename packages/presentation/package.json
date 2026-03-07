@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/presentation",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Narration plan schema, render contracts, and presentation state types for AI RPG Engine",
   "type": "module",
   "main": "./dist/index.js",
