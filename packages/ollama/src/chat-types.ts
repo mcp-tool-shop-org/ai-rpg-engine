@@ -42,6 +42,9 @@ export type ChatIntent =
   | 'suggest_fixes'     // "Suggest fixes" / "What should I change?"
   | 'compare_scenarios' // "Compare scenarios" / "Did the revision help?"
   | 'tune_goal'         // "Tune: make this more paranoid."
+  | 'tune_preview'      // "Preview tuning patches." / "What will change?"
+  | 'tune_apply'        // "Apply tuning patches." / "Confirm changes."
+  | 'tune_bundles'      // "Show fix bundles." / "Bundle the fixes."
   | 'unknown';          // Fallback — ask for clarification.
 
 export type IntentClassification = {

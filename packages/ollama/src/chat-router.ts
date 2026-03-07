@@ -129,6 +129,32 @@ const INTENT_PATTERNS: IntentPattern[] = [
     },
   },
   {
+    intent: 'tune_preview',
+    patterns: [
+      /\b(preview|show)\s+(the\s+)?(tuning|patch|config)\s*(changes?|patches?|plan)?\b/i,
+      /\btune[\s-]*preview\b/i,
+      /\bwhat will change\b/i,
+      /^\/tune-preview$/i,
+    ],
+  },
+  {
+    intent: 'tune_apply',
+    patterns: [
+      /\b(apply|confirm)\s+(the\s+)?(tuning|patch|config)\s*(changes?|patches?)?\b/i,
+      /\btune[\s-]*apply\b/i,
+      /^\/tune-apply$/i,
+    ],
+  },
+  {
+    intent: 'tune_bundles',
+    patterns: [
+      /\b(show|list|create|view)\s+(the\s+)?(fix\s+)?bundles?\b/i,
+      /\bbundle\s+(the\s+)?fix(es)?\b/i,
+      /\bfix\s+bundles?\b/i,
+      /^\/tune-bundles$/i,
+    ],
+  },
+  {
     intent: 'critique',
     patterns: [
       /\b(critique|review|check|evaluate|assess)\s+(this|the|my)?\s*(content|room|faction|district|quest|pack|yaml)?\b/i,

@@ -952,9 +952,9 @@ describe('router integration', () => {
 // ========================================
 
 describe('tool integration', () => {
-  it('has 22 tools registered', async () => {
+  it('has 25 tools registered', async () => {
     const { getAllTools } = await import('./chat-tools.js');
-    expect(getAllTools()).toHaveLength(22);
+    expect(getAllTools()).toHaveLength(25);
   });
 
   it('tools exist for all new intents', async () => {

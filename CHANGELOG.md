@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] - 2026-07-14
+
+### Added — Guided Tuning (ollama)
+
+- **chat-tuning-engine.ts** — operational tuning engine: bundles, patches, previews, impact predictions
+  - `ConfigPatch`, `ReplayImpactPrediction`, `TuningBundle`, `PatchPreview`, `DesignImpactSection`, `DesignImpactComparison` types
+
+- **P1 — Tuning Plans (operational)**
+  - `generateOperationalPlan(goal, session, analysis)` — concrete config-level tuning plans grounded in analysis findings
+  - Falls back to content-creation plans (v1.6.0) when no analysis available
+  - Steps include preview → apply per bundle → verify via compare-scenarios
+  - Each apply step stores serialized patches and impact predictions in params
+
+- **P2 — Fix Bundles**
+  - `bundleFindings(findings, fixes)` → groups related findings into systemic `TuningBundle[]`
+  - 5 bundle templates: escalation_tuning, rumor_flow_fix, faction_dynamics_fix, district_stability_fix, encounter_design_fix
+  - Each bundle includes finding codes, fix codes, config patches, and predicted impact
+
+- **P3 — Patch Preview**
+  - `generateConfigPatches(fix)` → concrete `ConfigPatch[]` with path, field, oldValue, newValue, unit
+  - 7 patch templates mapping fix codes to config changes with default values and deltas
+  - `buildPatchPreview(goal, findings, fixes, session)` → full `PatchPreview` with aggregate impact
+  - `previewTuningStep(state, stepId)` → preview a specific step's patches and impact
+  - `generatePatchYaml(bundle, goal)` → YAML config content grouped by path with comments
+
+- **P4 — Replay Impact Modeling**
+  - `predictImpact(patches, fixCodes?)` → heuristic `ReplayImpactPrediction` per patch set
+  - 7 impact rules mapping fix codes to predicted metric changes (rumor reach, escalation timing, encounter duration, hostility curve)
+  - Confidence scaling: 0.50 base + 0.10 per patch, capped at 0.85
+
+- **P5 — Compare Before/After (design emphasis)**
+  - `buildDesignImpact(comparison, intent?)` → Improved / Unchanged / Regression sections
+  - Fills in unmeasured dimensions as unchanged; includes intent target mood when provided
+
+- **P6 — Session Tracking**
+  - 3 new `SessionEventKind` values: `tuning_step_previewed`, `tuning_step_applied`, `tuning_bundle_created` (27 total)
+  - Engine captures `lastAnalysis` from analyze-balance runs for operational tuning
+
+- **P7 — Chat Integration**
+  - 3 new intents: `tune_preview`, `tune_apply`, `tune_bundles` (26 total)
+  - 3 new tools: `tune-preview`, `tune-apply` (mutates), `tune-bundles` (25 total)
+  - 3 new router patterns with keyword/regex matching
+  - 4 new/enhanced shell commands: `/tune-preview` (now shows patches+impact), `/tune-apply`, `/tune-bundles`, `/tune-impact`
+  - `/tune` now uses operational plan when prior analysis is available
+
+- **5 formatting functions**: `formatConfigPatch`, `formatPatchPreview`, `formatTuningBundles`, `formatReplayImpact`, `formatDesignImpact`
+
+- 114 new tests (1040 total): config patch generation (10), impact prediction (11), fix bundling (12), patch preview (8), operational plan generation (14), design impact comparison (10), step preview (6), YAML generation (6), formatting (12), router integration (8), tool integration (5), session events (3), edge cases (9)
+
 ## [1.4.0] - 2026-06-14
 
 ### Added — Adaptive Context (ollama)

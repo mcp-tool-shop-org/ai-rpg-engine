@@ -29,6 +29,11 @@ import {
   compareScenarios, formatScenarioComparison,
   generateTuningPlan, formatTuningPlan,
 } from './chat-balance-analyzer.js';
+import {
+  bundleFindings, buildPatchPreview,
+  formatTuningBundles, formatPatchPreview, formatReplayImpact,
+  generateOperationalPlan,
+} from './chat-tuning-engine.js';
 
 // --- Helper ---
 
@@ -763,6 +768,108 @@ const tunePlanTool: ChatTool = {
   },
 };
 
+// --- Tool: tune-bundles ---
+
+const tuneBundlesTool: ChatTool = {
+  name: 'tune-bundles',
+  description: 'Group balance findings into systemic fix bundles with config patches',
+  intents: ['tune_bundles'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const findingsRaw = p.params.findings ?? p.params.content;
+    if (!findingsRaw) {
+      return { ok: false, summary: 'I need balance findings to create bundles. Run analyze-balance first.', actions: [] };
+    }
+    let findings;
+    try { findings = JSON.parse(findingsRaw); } catch { findings = null; }
+    if (!findings || !Array.isArray(findings)) {
+      return { ok: false, summary: 'I need balance findings to create bundles. Run analyze-balance first.', actions: [] };
+    }
+    const a = action('tune-bundles', 'Create fix bundles from findings', false);
+    const fixes = suggestFixes(findings);
+    const bundles = bundleFindings(findings, fixes);
+    return {
+      ok: true,
+      summary: formatTuningBundles(bundles),
+      output: JSON.stringify(bundles),
+      actions: [executed(a, `${bundles.length} bundle(s) created`)],
+      sessionEvents: [{ kind: 'tuning_bundle_created', detail: `Bundles: ${bundles.length}` }],
+    };
+  },
+};
+
+// --- Tool: tune-preview ---
+
+const tunePreviewTool: ChatTool = {
+  name: 'tune-preview',
+  description: 'Preview proposed config patches from a tuning plan',
+  intents: ['tune_preview'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const goal = p.params.goal ?? 'tuning';
+    const findingsRaw = p.params.findings ?? p.params.content;
+    if (!findingsRaw) {
+      return { ok: false, summary: 'No findings available. Run analyze-balance first, then preview patches.', actions: [] };
+    }
+    let findings;
+    try { findings = JSON.parse(findingsRaw); } catch { findings = null; }
+    if (!findings || !Array.isArray(findings)) {
+      return { ok: false, summary: 'No findings available. Run analyze-balance first, then preview patches.', actions: [] };
+    }
+    const a = action('tune-preview', 'Preview config patches', false);
+    const fixes = suggestFixes(findings);
+    const preview = buildPatchPreview(goal, findings, fixes, p.session);
+    return {
+      ok: true,
+      summary: formatPatchPreview(preview),
+      output: JSON.stringify(preview),
+      actions: [executed(a, `${preview.patches.length} patch(es) previewed`)],
+      sessionEvents: [{ kind: 'tuning_step_previewed', detail: `Preview: ${preview.patches.length} patch(es)` }],
+    };
+  },
+};
+
+// --- Tool: tune-apply ---
+
+const tuneApplyTool: ChatTool = {
+  name: 'tune-apply',
+  description: 'Apply a tuning patch bundle as pending write (requires confirmation)',
+  intents: ['tune_apply'],
+  mutates: true,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const patchesRaw = p.params.patches;
+    const bundleName = p.params.bundleName ?? 'tuning patch';
+    if (!patchesRaw) {
+      return { ok: false, summary: 'No patches to apply. Run tune-preview first.', actions: [] };
+    }
+    let patches;
+    try { patches = JSON.parse(patchesRaw); } catch { patches = null; }
+    if (!patches || !Array.isArray(patches) || patches.length === 0) {
+      return { ok: false, summary: 'No valid patches to apply.', actions: [] };
+    }
+    const a = action('tune-apply', `Apply ${bundleName}`, true);
+    const yamlLines: string[] = [`# Config patch: ${bundleName}`];
+    for (const patch of patches) {
+      const unit = patch.unit ? ` ${patch.unit}` : '';
+      yamlLines.push(`${patch.path}:`);
+      yamlLines.push(`  ${patch.field}: ${patch.newValue}  # was: ${patch.oldValue}${unit}`);
+    }
+    const content = yamlLines.join('\n');
+    return {
+      ok: true,
+      summary: `Patch ready: ${patches.length} config change(s) for ${bundleName}.\nSay "yes" to apply.`,
+      output: content,
+      actions: [executed(a, `${patches.length} patch(es) staged`)],
+      pendingWrite: {
+        content,
+        suggestedPath: `tuning-${bundleName.toLowerCase().replace(/\s+/g, '-')}.yaml`,
+        label: bundleName,
+      },
+      sessionEvents: [{ kind: 'tuning_step_applied', detail: `Applied: ${bundleName} (${patches.length} patches)` }],
+    };
+  },
+};
+
 // --- Registry ---
 
 const ALL_TOOLS: ChatTool[] = [
@@ -788,6 +895,9 @@ const ALL_TOOLS: ChatTool[] = [
   suggestFixesTool,
   compareScenariosTool,
   tunePlanTool,
+  tuneBundlesTool,
+  tunePreviewTool,
+  tuneApplyTool,
 ];
 
 /**

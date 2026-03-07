@@ -227,5 +227,21 @@ export type {
   TuningStep, TuningStepStatus, TuningPlan, TuningState,
 } from './chat-balance-analyzer.js';
 
+// Tuning engine — operational tuning: bundles, patches, previews, impact predictions (v1.7.0)
+export {
+  generateConfigPatches, predictImpact,
+  bundleFindings, buildPatchPreview,
+  generateOperationalPlan, buildDesignImpact,
+  previewTuningStep, generatePatchYaml,
+  formatConfigPatch, formatPatchPreview,
+  formatTuningBundles, formatReplayImpact,
+  formatDesignImpact,
+} from './chat-tuning-engine.js';
+export type {
+  ConfigPatch, ReplayImpactPrediction,
+  TuningBundle, PatchPreview,
+  DesignImpactSection, DesignImpactComparison,
+} from './chat-tuning-engine.js';
+
 // CLI entry
 export { runCli } from './cli.js';

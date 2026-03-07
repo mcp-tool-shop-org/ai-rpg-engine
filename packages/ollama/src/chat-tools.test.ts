@@ -148,9 +148,9 @@ describe('findToolForIntent', () => {
 });
 
 describe('getAllTools', () => {
-  it('returns all 22 registered tools', () => {
+  it('returns all 25 registered tools', () => {
     const tools = getAllTools();
-    expect(tools.length).toBe(22);
+    expect(tools.length).toBe(25);
   });
 
   it('returns a copy (not the internal array)', () => {
@@ -170,10 +170,11 @@ describe('getAllTools', () => {
     }
   });
 
-  it('only apply-content declares mutates=true', () => {
+  it('only apply-content and tune-apply declare mutates=true', () => {
     const mutating = getAllTools().filter(t => t.mutates);
-    expect(mutating.length).toBe(1);
-    expect(mutating[0].name).toBe('apply-content');
+    expect(mutating.length).toBe(2);
+    const names = mutating.map(t => t.name).sort();
+    expect(names).toEqual(['apply-content', 'tune-apply']);
   });
 });
 

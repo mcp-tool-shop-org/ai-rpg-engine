@@ -21,6 +21,11 @@ import {
   compareScenarios, formatScenarioComparison,
   generateTuningPlan, createTuningState, formatTuningPlan, formatTuningStatus,
 } from './chat-balance-analyzer.js';
+import {
+  bundleFindings, buildPatchPreview, generatePatchYaml,
+  formatPatchPreview, formatTuningBundles, formatReplayImpact,
+  predictImpact, generateOperationalPlan,
+} from './chat-tuning-engine.js';
 import { loadSession } from './session.js';
 
 export type ChatShellOptions = {
@@ -137,7 +142,10 @@ async function handleSlashCommand(
       console.log('/suggest-fixes  Suggest fixes from last balance analysis');
       console.log('/compare-scenarios <before> <after>  Compare scenario revisions');
       console.log('/tune <goal>    Create a tuning plan');
-      console.log('/tune-preview   Preview active tuning plan');
+      console.log('/tune-preview   Preview patches + predicted impact');
+      console.log('/tune-apply     Apply next patch bundle (with confirmation)');
+      console.log('/tune-bundles   Show fix bundles from last analysis');
+      console.log('/tune-impact    Show predicted replay impact');
       console.log('/tune-step      Execute next tuning step');
       console.log('/tune-execute   Execute all tuning steps');
       console.log('/tune-status    Show tuning status');
@@ -386,7 +394,10 @@ async function handleSlashCommand(
         return 'handled';
       }
       const session = await loadSession(projectRoot);
-      const plan = generateTuningPlan(goal, session);
+      // v1.7.0: use operational plan when prior analysis is available
+      const plan = engine.lastAnalysis
+        ? generateOperationalPlan(goal, session, engine.lastAnalysis)
+        : generateTuningPlan(goal, session);
       engine.activeTuning = createTuningState(plan);
       console.log('');
       console.log(formatTuningPlan(plan));
@@ -395,7 +406,19 @@ async function handleSlashCommand(
     }
 
     case 'tune-preview':
-      if (engine.activeTuning) {
+      if (engine.activeTuning && engine.lastAnalysis) {
+        // v1.7.0: show patch preview with impact predictions
+        const fixes = suggestFixes(engine.lastAnalysis.findings);
+        const preview = buildPatchPreview(
+          engine.activeTuning.plan.goal,
+          engine.lastAnalysis.findings,
+          fixes,
+          await loadSession(projectRoot),
+        );
+        console.log('');
+        console.log(formatPatchPreview(preview));
+        console.log('');
+      } else if (engine.activeTuning) {
         console.log('');
         console.log(formatTuningPlan(engine.activeTuning.plan));
         console.log('');
@@ -403,6 +426,67 @@ async function handleSlashCommand(
         console.log('No active tuning plan. Use /tune <goal> to create one.');
       }
       return 'handled';
+
+    case 'tune-apply': {
+      if (!engine.activeTuning) {
+        console.log('No active tuning plan. Use /tune <goal> to create one.');
+        return 'handled';
+      }
+      if (!engine.lastAnalysis) {
+        console.log('No analysis available. Run /analyze-balance first.');
+        return 'handled';
+      }
+      const fixes = suggestFixes(engine.lastAnalysis.findings);
+      const bundles = bundleFindings(engine.lastAnalysis.findings, fixes);
+      if (bundles.length === 0) {
+        console.log('No fix bundles available to apply.');
+        return 'handled';
+      }
+      // Apply the first unapplied bundle
+      const bundle = bundles[0];
+      const yaml = generatePatchYaml(bundle, engine.activeTuning.plan.goal);
+      engine.pendingWrite = {
+        content: yaml,
+        suggestedPath: `tuning-${bundle.code}.yaml`,
+        label: bundle.name,
+      };
+      console.log('');
+      console.log(`Patch bundle: ${bundle.name}`);
+      console.log(yaml);
+      console.log('');
+      console.log('Say "yes" to apply, or "no" to cancel.');
+      return 'handled';
+    }
+
+    case 'tune-bundles': {
+      if (!engine.lastAnalysis) {
+        console.log('No analysis available. Run /analyze-balance first.');
+        return 'handled';
+      }
+      const fixes = suggestFixes(engine.lastAnalysis.findings);
+      const bundles = bundleFindings(engine.lastAnalysis.findings, fixes);
+      console.log('');
+      console.log(formatTuningBundles(bundles));
+      console.log('');
+      return 'handled';
+    }
+
+    case 'tune-impact': {
+      if (!engine.lastAnalysis) {
+        console.log('No analysis available. Run /analyze-balance first.');
+        return 'handled';
+      }
+      const fixes = suggestFixes(engine.lastAnalysis.findings);
+      const bundles = bundleFindings(engine.lastAnalysis.findings, fixes);
+      const allPatches = bundles.flatMap(b => b.patches);
+      const allFixCodes = bundles.flatMap(b => b.fixCodes);
+      const impact = predictImpact(allPatches, allFixCodes);
+      console.log('');
+      console.log('Predicted Replay Impact:');
+      console.log(formatReplayImpact(impact));
+      console.log('');
+      return 'handled';
+    }
 
     case 'tune-step': {
       if (!engine.activeTuning) {

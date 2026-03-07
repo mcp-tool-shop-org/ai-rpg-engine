@@ -442,7 +442,74 @@ Tuning state management mirrors build mode: `createTuningState()`, `nextPendingT
 | `/suggest-fixes` | Get suggested fixes from last analysis |
 | `/compare-scenarios` | Compare two replay runs |
 | `/tune <goal>` | Generate a tuning plan |
-| `/tune-preview` | Preview the current tuning plan |
+| `/tune-preview` | Preview patches + predicted impact |
+| `/tune-apply` | Apply next patch bundle (requires confirmation) |
+| `/tune-bundles` | Show fix bundles from last analysis |
+| `/tune-impact` | Show predicted replay impact |
 | `/tune-step` | Execute next tuning step |
 | `/tune-execute` | Execute all remaining tuning steps |
 | `/tune-status` | Show tuning progress |
+
+## Guided Tuning (v1.7.0)
+
+Guided Tuning makes the balancing loop operational instead of analytical. v1.6.0 told you what was wrong. v1.7.0 tells you exactly what to change, shows you the before and after, and tracks whether it worked.
+
+### Pipeline
+
+```
+analyze-balance → findings + suggestFixes
+    → bundleFindings → systemic fix bundles
+    → generateConfigPatches → concrete config patches per fix
+    → buildPatchPreview → preview all changes + predicted impact
+    → tune <goal> → operational plan (preview → apply per bundle → verify)
+    → /tune-apply → pending write → confirm → YAML written
+    → compare-scenarios → buildDesignImpact → Improved/Unchanged/Regression
+```
+
+### Seven Pillars
+
+#### P1 — Operational Tuning Plans
+
+`generateOperationalPlan(goal, session, analysis)` produces config-level tuning plans when prior analysis is available. Steps are concrete: preview patches, apply bundle-by-bundle, verify with replay comparison. Falls back to v1.6.0 content-creation plans when no analysis exists.
+
+#### P2 — Fix Bundles
+
+`bundleFindings(findings, fixes)` groups related balance findings into systemic bundles. Five bundle categories:
+
+| Bundle | Categories | Description |
+|--------|------------|-------------|
+| `escalation_tuning` | escalation, difficulty | Adjust escalation mechanics for pacing |
+| `rumor_flow_fix` | rumor_flow | Improve rumor propagation paths |
+| `faction_dynamics_fix` | faction_dynamics | Rebalance faction hostility mechanics |
+| `district_stability_fix` | district_stability | Connect stability to game events |
+| `encounter_design_fix` | encounter_design | Adjust encounter escalation thresholds |
+
+#### P3 — Patch Preview
+
+`generateConfigPatches(fix)` turns a `SuggestedFix` into concrete `ConfigPatch[]` with path, field, old value, new value, and unit. Seven patch templates produce specific parameter adjustments (e.g., alertGain 0.25 → 0.40 per tick). `buildPatchPreview()` aggregates all patches with predicted impact and advisory warnings. **Nothing is applied without explicit confirmation.**
+
+#### P4 — Replay Impact Modeling
+
+`predictImpact(patches, fixCodes?)` produces heuristic `ReplayImpactPrediction` for a set of patches: predicted changes in rumor reach, escalation timing, encounter duration, and hostility curve. Confidence scales from 0.50 base + 0.10 per patch, capped at 0.85.
+
+#### P5 — Design Impact Comparison
+
+`buildDesignImpact(comparison, intent?)` transforms a `ScenarioComparison` into Improved / Unchanged / Regression sections. Unmeasured dimensions are explicitly listed as unchanged. When design intent is provided, the summary includes target mood evaluation.
+
+#### P6 — Session Tracking
+
+Three new event kinds: `tuning_step_previewed`, `tuning_step_applied`, `tuning_bundle_created`. The engine captures `lastAnalysis` from analyze-balance runs, enabling operational tuning without re-running analysis.
+
+#### P7 — Chat Integration
+
+Three new tools (25 total), three new intents (26 total), four new/enhanced shell commands. The `/tune` command now automatically uses operational plans when prior analysis is available.
+
+### Worked Example
+
+> After running `/analyze-balance` (v1.6.0) which found `DIFFICULTY_FLAT` and `RUMOR_NO_SPREAD`:
+
+1. **Bundle**: `/tune-bundles` → 2 systemic bundles: Escalation Tuning, Rumor Flow Fix
+2. **Plan**: `/tune increase paranoia` → operational plan: preview → apply escalation → apply rumor → verify
+3. **Preview**: `/tune-preview` → shows `district.escalation.alertGain: 0.25 → 0.40`, `faction.guild.rumorClarity: 0.55 → 0.70`, predicted impact: improvement (65% confidence)
+4. **Apply**: `/tune-apply` → stages Escalation Tuning patches as pending write → user confirms → YAML written
+5. **Verify**: After re-simulation, `/compare-scenarios before|after` → Improved: escalation pacing, rumor spread; Unchanged: encounter duration; verdict: improved

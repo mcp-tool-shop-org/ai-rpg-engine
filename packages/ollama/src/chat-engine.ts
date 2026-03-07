@@ -44,8 +44,9 @@ import {
   generateTuningPlan, createTuningState, nextPendingTuningStep,
   markTuningStepExecuted, markTuningStepFailed, isTuningComplete, finalizeTuning,
   formatTuningPlan, formatTuningStatus,
-  type TuningState, type TuningPlan,
+  type TuningState, type TuningPlan, type BalanceAnalysis,
 } from './chat-balance-analyzer.js';
+import { generateOperationalPlan } from './chat-tuning-engine.js';
 
 // --- Chat memory ---
 
@@ -141,6 +142,8 @@ export type ChatEngine = {
   activeBuild: BuildState | null;
   /** Active tuning plan state, if any. */
   activeTuning: TuningState | null;
+  /** Last balance analysis result (v1.7.0). */
+  lastAnalysis: BalanceAnalysis | null;
   /** Process a user message and return the assistant response. */
   process: (message: string) => Promise<string>;
   /** Execute the next pending build step. Returns formatted result. */
@@ -182,6 +185,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
   const loadoutHistory: LoadoutHistoryEntry[] = [];
   let activeBuild: BuildState | null = null;
   let activeTuning: TuningState | null = null;
+  let lastAnalysis: BalanceAnalysis | null = null;
 
   async function process(userMessage: string): Promise<string> {
     const now = new Date().toISOString();
@@ -339,6 +343,13 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       pendingWrite = toolResult.pendingWrite;
     }
 
+    // Capture balance analysis result (v1.7.0: enables operational tuning)
+    if (classification.intent === 'analyze_balance' && toolResult.ok && toolResult.output) {
+      try {
+        lastAnalysis = JSON.parse(toolResult.output) as BalanceAnalysis;
+      } catch { /* ignore */ }
+    }
+
     // Capture build plan if the build tool generated one
     if (classification.intent === 'build_goal' && toolResult.ok && toolResult.output) {
       try {
@@ -348,9 +359,13 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     }
 
     // Capture tuning plan if the tune tool generated one
+    // v1.7.0: use operational plan when prior analysis is available
     if (classification.intent === 'tune_goal' && toolResult.ok && toolResult.output) {
       try {
-        const plan = JSON.parse(toolResult.output) as TuningPlan;
+        const rawPlan = JSON.parse(toolResult.output) as TuningPlan;
+        const plan = lastAnalysis
+          ? generateOperationalPlan(rawPlan.goal, session, lastAnalysis)
+          : rawPlan;
         activeTuning = createTuningState(plan);
       } catch { /* output wasn't valid plan JSON — ignore */ }
     }
@@ -643,6 +658,8 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     set activeBuild(v) { activeBuild = v; },
     get activeTuning() { return activeTuning; },
     set activeTuning(v) { activeTuning = v; },
+    get lastAnalysis() { return lastAnalysis; },
+    set lastAnalysis(v) { lastAnalysis = v; },
     process,
     executeBuildStep,
     executeAllBuildSteps,
