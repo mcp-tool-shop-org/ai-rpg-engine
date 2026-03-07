@@ -36,6 +36,7 @@
     { "path": "packages/pack-registry" },
     { "path": "packages/starter-weird-west" },
     { "path": "packages/starter-colony" },
-    { "path": "packages/character-creation" }
+    { "path": "packages/character-creation" },
+    { "path": "packages/asset-registry" }
   ]
 }

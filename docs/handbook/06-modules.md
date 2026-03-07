@@ -40,6 +40,7 @@ These packages provide types and logic that work independently or alongside the 
 | @ai-rpg-engine/campaign-memory | Persistent NPC memory, relationship axes, campaign journal |
 | @ai-rpg-engine/rumor-system | Rumor lifecycle, mutation mechanics, spread tracking |
 | @ai-rpg-engine/character-creation | Archetypes, backgrounds, traits, multiclassing, build validation |
+| @ai-rpg-engine/asset-registry | Content-addressed storage for portraits, icons, and media |
 
 Standalone packages have no engine dependency — they define types and logic that game runtimes consume. The built-in modules handle engine integration (event listeners, world state mutation), while standalone packages handle domain logic (how memories decay, how rumors mutate).
 
