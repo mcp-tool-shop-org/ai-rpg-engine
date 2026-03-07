@@ -61,11 +61,33 @@ export { diffSummary } from './commands/diff-summary.js';
 export type { DiffSummaryInput, DiffSummaryResult } from './commands/diff-summary.js';
 
 // Parsers (useful for custom prompt workflows)
-export { extractYaml, extractJson, extractText } from './parsers.js';
+export { extractYaml, extractJson, extractText, parseCritiqueOutput } from './parsers.js';
+export type { CritiqueIssue, CritiqueSuggestion, StructuredCritique } from './parsers.js';
 
 // Validators
 export { parseYamlish, validateGeneratedRoom, validateGeneratedQuest } from './validators.js';
 export type { GeneratedContentResult } from './validators.js';
+
+// Session
+export {
+  loadSession,
+  saveSession,
+  deleteSession,
+  createSession,
+  addThemes,
+  addConstraints,
+  addArtifact,
+  addCritiqueIssues,
+  acceptSuggestion,
+  resolveIssue,
+  renderSessionContext,
+  formatSessionStatus,
+} from './session.js';
+export type {
+  DesignSession,
+  SessionArtifacts,
+  SessionIssue,
+} from './session.js';
 
 // CLI entry
 export { runCli } from './cli.js';

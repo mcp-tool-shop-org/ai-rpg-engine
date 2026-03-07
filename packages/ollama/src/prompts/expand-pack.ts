@@ -23,11 +23,14 @@ Rules:
     const goal = ctx['goal'] as string;
     const constraints = ctx['constraints'] as string[] | undefined;
 
+    const sessionContext = ctx['sessionContext'] as string | undefined;
+
     let prompt = `Expansion goal: ${goal}\n\n`;
     prompt += `Existing pack:\n${content}\n\n`;
     if (constraints?.length) {
       prompt += `Constraints:\n${constraints.map(c => `- ${c}`).join('\n')}\n\n`;
     }
+    if (sessionContext) prompt += `Session context:\n${sessionContext}\n\n`;
     prompt += `Expand the pack above according to the goal. Output the complete expanded pack as YAML.`;
     return prompt;
   },

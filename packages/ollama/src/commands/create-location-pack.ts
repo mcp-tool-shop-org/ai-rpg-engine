@@ -9,6 +9,7 @@ export type CreateLocationPackInput = {
   rulesetId?: string;
   factions?: string[];
   constraints?: string[];
+  sessionContext?: string;
 };
 
 export type GeneratedLocationPackResult = {
@@ -30,6 +31,7 @@ export async function createLocationPack(
       rulesetId: input.rulesetId,
       factions: input.factions,
       constraints: input.constraints,
+      sessionContext: input.sessionContext,
     }),
   });
 

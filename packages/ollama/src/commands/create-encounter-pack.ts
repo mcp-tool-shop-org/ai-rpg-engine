@@ -11,6 +11,7 @@ export type CreateEncounterPackInput = {
   factions?: string[];
   difficulty?: string;
   constraints?: string[];
+  sessionContext?: string;
 };
 
 export type GeneratedEncounterPackResult = {
@@ -34,6 +35,7 @@ export async function createEncounterPack(
       factions: input.factions,
       difficulty: input.difficulty,
       constraints: input.constraints,
+      sessionContext: input.sessionContext,
     }),
   });
 

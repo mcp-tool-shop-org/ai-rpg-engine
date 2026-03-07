@@ -10,6 +10,7 @@ export type CreateDistrictInput = {
   factions?: string[];
   existingZones?: string[];
   constraints?: string[];
+  sessionContext?: string;
 };
 
 export type GeneratedDistrictResult = {
@@ -32,6 +33,7 @@ export async function createDistrict(
       factions: input.factions,
       existingZones: input.existingZones,
       constraints: input.constraints,
+      sessionContext: input.sessionContext,
     }),
   });
 

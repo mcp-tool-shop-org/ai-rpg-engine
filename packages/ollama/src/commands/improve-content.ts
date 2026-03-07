@@ -8,6 +8,7 @@ export type ImproveContentInput = {
   content: string;
   goal: string;
   contentType?: string;
+  sessionContext?: string;
 };
 
 export type ImproveContentResult = {
@@ -28,6 +29,7 @@ export async function improveContent(
       content: input.content,
       goal: input.goal,
       contentType: input.contentType,
+      sessionContext: input.sessionContext,
     }),
   });
 

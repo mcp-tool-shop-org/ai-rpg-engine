@@ -13,6 +13,7 @@ export type CreateQuestInput = {
   districts?: string[];
   constraints?: string[];
   repair?: boolean;
+  sessionContext?: string;
 };
 
 export type GeneratedQuestResult = {
@@ -38,6 +39,7 @@ export async function createQuest(
       factions: input.factions,
       districts: input.districts,
       constraints: input.constraints,
+      sessionContext: input.sessionContext,
     }),
   });
 

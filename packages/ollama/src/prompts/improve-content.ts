@@ -21,8 +21,11 @@ Rules:
     const goal = ctx['goal'] as string;
     const contentType = ctx['contentType'] as string | undefined;
 
+    const sessionContext = ctx['sessionContext'] as string | undefined;
+
     let prompt = `Goal: ${goal}\n\n`;
     if (contentType) prompt += `Content type: ${contentType}\n\n`;
+    if (sessionContext) prompt += `Session context:\n${sessionContext}\n\n`;
     prompt += `Existing content:\n${content}\n\n`;
     prompt += `Revise the content above to fulfill the stated goal. Output only the revised YAML.`;
     return prompt;

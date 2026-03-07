@@ -15,6 +15,7 @@ export type CreateRoomInput = {
   existingZones?: string[];
   constraints?: string[];
   repair?: boolean;
+  sessionContext?: string;
 };
 
 export type GeneratedTextResult = {
@@ -40,6 +41,7 @@ export async function createRoom(
       districtId: input.districtId,
       existingZones: input.existingZones,
       constraints: input.constraints,
+      sessionContext: input.sessionContext,
     }),
   });
 

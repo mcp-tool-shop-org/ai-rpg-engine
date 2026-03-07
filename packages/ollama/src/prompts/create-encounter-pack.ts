@@ -64,6 +64,7 @@ General rules:
     const factions = ctx['factions'] as string[] | undefined;
     const difficulty = ctx['difficulty'] as string | undefined;
     const constraints = ctx['constraints'] as string[] | undefined;
+    const sessionContext = ctx['sessionContext'] as string | undefined;
 
     let prompt = `Generate an encounter pack with theme: "${theme}"`;
     if (rulesetId) prompt += `\nRuleset: ${rulesetId}`;
@@ -75,6 +76,7 @@ General rules:
     if (constraints?.length) {
       prompt += `\nConstraints:\n${constraints.map((c) => `- ${c}`).join('\n')}`;
     }
+    if (sessionContext) prompt += `\n\nSession context:\n${sessionContext}`;
     prompt += `\n\nOutput only YAML.`;
     return prompt;
   },

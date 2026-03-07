@@ -37,6 +37,7 @@ Rules:
     const rulesetId = ctx['rulesetId'] as string | undefined;
     const districtIds = ctx['districtIds'] as string[] | undefined;
     const constraints = ctx['constraints'] as string[] | undefined;
+    const sessionContext = ctx['sessionContext'] as string | undefined;
 
     let prompt = `Generate a faction configuration with theme: "${theme}"`;
     if (rulesetId) prompt += `\nRuleset: ${rulesetId}`;
@@ -46,6 +47,7 @@ Rules:
     if (constraints?.length) {
       prompt += `\nConstraints:\n${constraints.map((c) => `- ${c}`).join('\n')}`;
     }
+    if (sessionContext) prompt += `\n\nSession context:\n${sessionContext}`;
     prompt += `\n\nOutput only YAML.`;
     return prompt;
   },

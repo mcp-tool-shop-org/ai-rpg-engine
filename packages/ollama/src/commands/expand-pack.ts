@@ -8,6 +8,7 @@ export type ExpandPackInput = {
   content: string;
   goal: string;
   constraints?: string[];
+  sessionContext?: string;
 };
 
 export type ExpandPackResult = {
@@ -28,6 +29,7 @@ export async function expandPack(
       content: input.content,
       goal: input.goal,
       constraints: input.constraints,
+      sessionContext: input.sessionContext,
     }),
   });
 

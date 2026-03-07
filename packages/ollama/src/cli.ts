@@ -22,6 +22,12 @@ import { expandPack } from './commands/expand-pack.js';
 import { critiqueContent } from './commands/critique-content.js';
 import { normalizeContent } from './commands/normalize-content.js';
 import { diffSummary } from './commands/diff-summary.js';
+import {
+  loadSession, saveSession, deleteSession, createSession,
+  addThemes, addConstraints, addArtifact, addCritiqueIssues,
+  renderSessionContext, formatSessionStatus,
+} from './session.js';
+import type { DesignSession } from './session.js';
 
 type CliFlags = {
   model?: string;
@@ -40,9 +46,11 @@ type CliFlags = {
   districts?: string[];
   zones?: string[];
   constraints?: string[];
+  themes?: string[];
   repair?: boolean;
   stdin?: boolean;
   write?: string;
+  session?: string;
 };
 
 function parseFlags(args: string[]): { command: string; flags: CliFlags } {
@@ -70,7 +78,9 @@ function parseFlags(args: string[]): { command: string; flags: CliFlags } {
       case '--label-before': flags.labelBefore = next; i++; break;
       case '--label-after': flags.labelAfter = next; i++; break;
       case '--constraints': flags.constraints = next?.split(','); i++; break;
+      case '--themes': flags.themes = next?.split(','); i++; break;
       case '--write': flags.write = next; i++; break;
+      case '--session': flags.session = next; i++; break;
       case '--repair': flags.repair = true; break;
       case '--stdin': flags.stdin = true; break;
     }
@@ -107,8 +117,92 @@ async function emit(text: string, writePath: string | undefined): Promise<void> 
 
 export async function runCli(args: string[]): Promise<void> {
   const { command, flags } = parseFlags(args);
+  const projectRoot = process.cwd();
+
+  // --- Session subcommands (no client needed) ---
+  if (command === 'session') {
+    const sub = args[1] ?? '';
+    switch (sub) {
+      case 'start': {
+        const name = args[2] ?? flags.session ?? 'untitled';
+        const existing = await loadSession(projectRoot);
+        if (existing) {
+          console.error(`Session "${existing.name}" already active. End it first with: ai session end`);
+          process.exit(1);
+        }
+        const session = createSession(name);
+        if (flags.themes?.length) addThemes(session, flags.themes);
+        if (flags.constraints?.length) addConstraints(session, flags.constraints);
+        await saveSession(projectRoot, session);
+        console.log(`Session "${name}" started.`);
+        return;
+      }
+      case 'status': {
+        const session = await loadSession(projectRoot);
+        if (!session) {
+          console.log('No active session.');
+          return;
+        }
+        console.log(formatSessionStatus(session));
+        return;
+      }
+      case 'end': {
+        const deleted = await deleteSession(projectRoot);
+        console.log(deleted ? 'Session ended.' : 'No active session to end.');
+        return;
+      }
+      case 'add-theme': {
+        const session = await loadSession(projectRoot);
+        if (!session) { console.error('No active session.'); process.exit(1); }
+        const newThemes = args.slice(2);
+        if (newThemes.length === 0) { console.error('Provide theme(s) to add.'); process.exit(1); }
+        addThemes(session, newThemes);
+        await saveSession(projectRoot, session);
+        console.log(`Themes added: ${newThemes.join(', ')}`);
+        return;
+      }
+      case 'add-constraint': {
+        const session = await loadSession(projectRoot);
+        if (!session) { console.error('No active session.'); process.exit(1); }
+        const newConstraints = args.slice(2);
+        if (newConstraints.length === 0) { console.error('Provide constraint(s) to add.'); process.exit(1); }
+        addConstraints(session, newConstraints);
+        await saveSession(projectRoot, session);
+        console.log(`Constraints added: ${newConstraints.join(', ')}`);
+        return;
+      }
+      default:
+        console.log('Session commands:');
+        console.log('  session start <name>       Start a new design session');
+        console.log('  session status             Show current session state');
+        console.log('  session end                End the current session');
+        console.log('  session add-theme <t>      Add theme(s) to session');
+        console.log('  session add-constraint <c> Add constraint(s) to session');
+        return;
+    }
+  }
+
   const config = buildConfig(flags);
   const client = createClient(config);
+
+  // Load session context (advisory — null if no session active)
+  const session: DesignSession | null = await loadSession(projectRoot);
+  const sessionCtx = session ? renderSessionContext(session) : undefined;
+
+  if (session) {
+    const n = session.artifacts;
+    const counts = [
+      n.districts.length && `${n.districts.length} districts`,
+      n.factions.length && `${n.factions.length} factions`,
+      n.quests.length && `${n.quests.length} quests`,
+      n.rooms.length && `${n.rooms.length} rooms`,
+      n.packs.length && `${n.packs.length} packs`,
+    ].filter(Boolean);
+    const openIssues = session.issues.filter(i => i.status === 'open').length;
+    const parts = [session.name, ...counts];
+    if (openIssues) parts.push(`${openIssues} open issues`);
+    console.error(`Using session context: ${parts.join(', ')}.`);
+  }
 
   switch (command) {
     case 'explain-validation-error': {
@@ -183,6 +277,7 @@ export async function runCli(args: string[]): Promise<void> {
         rulesetId: flags.ruleset,
         districtId: flags.district,
         repair: flags.repair,
+        sessionContext: sessionCtx,
       });
 
       if (!result.ok) {
@@ -203,6 +298,11 @@ export async function runCli(args: string[]): Promise<void> {
           console.error(`  ${err.path}: ${err.message}`);
         }
       }
+      if (session) {
+        const idMatch = result.yaml.match(/^id:\s*(\S+)/m);
+        if (idMatch) addArtifact(session, 'rooms', idMatch[1]);
+        await saveSession(projectRoot, session);
+      }
       break;
     }
 
@@ -217,6 +317,7 @@ export async function runCli(args: string[]): Promise<void> {
         theme,
         rulesetId: flags.ruleset,
         districtIds: flags.districts,
+        sessionContext: sessionCtx,
       });
 
       if (!result.ok) {
@@ -225,6 +326,11 @@ export async function runCli(args: string[]): Promise<void> {
       }
 
       await emit(result.yaml, flags.write);
+      if (session) {
+        const idMatch = result.yaml.match(/^id:\s*(\S+)/m);
+        if (idMatch) addArtifact(session, 'factions', idMatch[1]);
+        await saveSession(projectRoot, session);
+      }
       break;
     }
 
@@ -241,6 +347,7 @@ export async function runCli(args: string[]): Promise<void> {
         factions: flags.factions,
         districts: flags.districts,
         repair: flags.repair,
+        sessionContext: sessionCtx,
       });
 
       if (!result.ok) {
@@ -260,6 +367,11 @@ export async function runCli(args: string[]): Promise<void> {
         for (const err of result.validation.validation.errors) {
           console.error(`  ${err.path}: ${err.message}`);
         }
+      }
+      if (session) {
+        const idMatch = result.yaml.match(/^id:\s*(\S+)/m);
+        if (idMatch) addArtifact(session, 'quests', idMatch[1]);
+        await saveSession(projectRoot, session);
       }
       break;
     }
@@ -303,6 +415,7 @@ export async function runCli(args: string[]): Promise<void> {
         rulesetId: flags.ruleset,
         factions: flags.factions,
         existingZones: flags.zones,
+        sessionContext: sessionCtx,
       });
 
       if (!result.ok) {
@@ -311,6 +424,11 @@ export async function runCli(args: string[]): Promise<void> {
       }
 
       await emit(result.yaml, flags.write);
+      if (session) {
+        const idMatch = result.yaml.match(/^id:\s*(\S+)/m);
+        if (idMatch) addArtifact(session, 'districts', idMatch[1]);
+        await saveSession(projectRoot, session);
+      }
       break;
     }
 
@@ -358,6 +476,7 @@ export async function runCli(args: string[]): Promise<void> {
         theme,
         rulesetId: flags.ruleset,
         factions: flags.factions,
+        sessionContext: sessionCtx,
       });
 
       if (!result.ok) {
@@ -366,6 +485,11 @@ export async function runCli(args: string[]): Promise<void> {
       }
 
       await emit(result.yaml, flags.write);
+      if (session) {
+        const idMatch = result.yaml.match(/^id:\s*(\S+)/m);
+        if (idMatch) addArtifact(session, 'packs', idMatch[1]);
+        await saveSession(projectRoot, session);
+      }
       break;
     }
 
@@ -382,6 +506,7 @@ export async function runCli(args: string[]): Promise<void> {
         districtId: flags.district,
         factions: flags.factions,
         difficulty: flags.difficulty,
+        sessionContext: sessionCtx,
       });
 
       if (!result.ok) {
@@ -390,6 +515,11 @@ export async function runCli(args: string[]): Promise<void> {
       }
 
       await emit(result.yaml, flags.write);
+      if (session) {
+        const idMatch = result.yaml.match(/^id:\s*(\S+)/m);
+        if (idMatch) addArtifact(session, 'packs', idMatch[1]);
+        await saveSession(projectRoot, session);
+      }
       break;
     }
 
@@ -466,6 +596,7 @@ export async function runCli(args: string[]): Promise<void> {
         content: input,
         goal,
         contentType: flags.contentType,
+        sessionContext: sessionCtx,
       });
       if (!result.ok) {
         console.error(result.error);
@@ -494,6 +625,7 @@ export async function runCli(args: string[]): Promise<void> {
         content: input,
         goal,
         constraints: flags.constraints,
+        sessionContext: sessionCtx,
       });
       if (!result.ok) {
         console.error(result.error);
@@ -516,12 +648,36 @@ export async function runCli(args: string[]): Promise<void> {
         content: input,
         contentType: flags.contentType,
         focus: flags.focus,
+        sessionContext: sessionCtx,
       });
       if (!result.ok) {
         console.error(result.error);
         process.exit(1);
       }
+
+      // Prose critique to stdout/write
       await emit(result.text, flags.write);
+
+      // Structured findings to stderr for visibility
+      if (result.issues.length > 0) {
+        console.error(`\n--- ${result.issues.length} issue(s) found ---`);
+        for (const issue of result.issues) {
+          console.error(`  [${issue.severity}] ${issue.code}: ${issue.summary}`);
+        }
+      }
+      if (result.suggestions.length > 0) {
+        console.error(`\n--- ${result.suggestions.length} suggestion(s) ---`);
+        for (const sug of result.suggestions) {
+          console.error(`  [${sug.priority}] ${sug.code}: ${sug.action}`);
+        }
+      }
+      if (result.summary) {
+        console.error(`\n--- Summary ---\n  ${result.summary}`);
+      }
+      if (session && result.issues.length > 0) {
+        addCritiqueIssues(session, result.issues);
+        await saveSession(projectRoot, session);
+      }
       break;
     }
 
@@ -582,7 +738,14 @@ export async function runCli(args: string[]): Promise<void> {
     }
 
     default:
-      console.log('@ai-rpg-engine/ollama v0.5.0');
+      console.log('@ai-rpg-engine/ollama v0.6.0');
+      console.log('');
+      console.log('Session:');
+      console.log('  session start <name>        Start a named design session');
+      console.log('  session status              Show current session state');
+      console.log('  session end                 End the current session');
+      console.log('  session add-theme <text>    Add a theme to the active session');
+      console.log('  session add-constraint <t>  Add a constraint to the active session');
       console.log('');
       console.log('Scaffold:');
       console.log('  create-room                 Generate a room definition');
@@ -611,9 +774,11 @@ export async function runCli(args: string[]): Promise<void> {
       console.log('  --model <name>       Ollama model (default: qwen2.5-coder)');
       console.log('  --url <url>          Ollama base URL (default: http://localhost:11434)');
       console.log('  --theme <text>       Theme for content generation');
+      console.log('  --themes <texts>     Comma-separated themes (for session start)');
       console.log('  --goal <text>        Improvement/expansion goal');
       console.log('  --content-type <t>   Content type hint (room, district, quest, etc.)');
       console.log('  --focus <text>       Focus area for critique');
+      console.log('  --session <name>     Session name (for session start)');
       console.log('  --ruleset <id>       Ruleset ID for context');
       console.log('  --district <id>      District ID for context');
       console.log('  --factions <ids>     Comma-separated faction IDs');

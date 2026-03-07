@@ -62,3 +62,191 @@ export function extractText(raw: string): string {
   if (fenced) return fenced[1].trim();
   return raw.trim();
 }
+
+// --- Structured critique types ---
+
+export type CritiqueIssue = {
+  code: string;
+  severity: 'low' | 'medium' | 'high';
+  location: string;
+  summary: string;
+  simulation_impact: string;
+};
+
+export type CritiqueSuggestion = {
+  code: string;
+  priority: 'low' | 'medium' | 'high';
+  action: string;
+};
+
+export type StructuredCritique = {
+  issues: CritiqueIssue[];
+  suggestions: CritiqueSuggestion[];
+  summary: string;
+};
+
+/**
+ * Parse structured critique output from dual-format model response.
+ * Returns the prose text and a structured findings object.
+ * Gracefully degrades: if no YAML block is found, returns empty structured data.
+ */
+export function parseCritiqueOutput(raw: string): {
+  prose: string;
+  structured: StructuredCritique;
+} {
+  // Find the YAML fenced block
+  const fenceMatch = /```(?:ya?ml)?\s*\n([\s\S]*?)```/.exec(raw);
+
+  if (!fenceMatch) {
+    return {
+      prose: raw.trim(),
+      structured: { issues: [], suggestions: [], summary: '' },
+    };
+  }
+
+  // Prose = everything before the fence
+  const prose = raw.slice(0, fenceMatch.index).trim();
+  const yamlBlock = fenceMatch[1].trim();
+
+  // Parse the YAML block using the inline parser
+  const structured = parseStructuredCritiqueYaml(yamlBlock);
+
+  return { prose, structured };
+}
+
+function parseStructuredCritiqueYaml(text: string): StructuredCritique {
+  // Try JSON first (some models emit JSON inside YAML fences)
+  try {
+    const parsed = JSON.parse(text);
+    return normalizeStructuredCritique(parsed);
+  } catch { /* not JSON */ }
+
+  // Minimal state-machine parser for the critique YAML shape
+  const result: StructuredCritique = { issues: [], suggestions: [], summary: '' };
+  const lines = text.split('\n');
+
+  let section: 'none' | 'issues' | 'suggestions' | 'summary' = 'none';
+  let currentItem: Record<string, string> = {};
+  let inItem = false;
+
+  for (const line of lines) {
+    const trimmed = line.trimEnd();
+
+    // Top-level section headers
+    if (/^issues:\s*$/.test(trimmed)) {
+      if (inItem && section === 'suggestions') flushSuggestion(result, currentItem);
+      if (inItem && section === 'issues') flushIssue(result, currentItem);
+      section = 'issues';
+      currentItem = {};
+      inItem = false;
+      continue;
+    }
+    if (/^suggestions:\s*$/.test(trimmed)) {
+      if (inItem && section === 'issues') flushIssue(result, currentItem);
+      if (inItem && section === 'suggestions') flushSuggestion(result, currentItem);
+      section = 'suggestions';
+      currentItem = {};
+      inItem = false;
+      continue;
+    }
+    if (/^summary:\s*(.*)$/.test(trimmed)) {
+      if (inItem && section === 'issues') flushIssue(result, currentItem);
+      if (inItem && section === 'suggestions') flushSuggestion(result, currentItem);
+      const match = /^summary:\s*>?\s*$/.exec(trimmed);
+      if (match) {
+        section = 'summary';
+        continue;
+      }
+      // Inline summary
+      const inline = /^summary:\s*>?\s*(.+)$/.exec(trimmed);
+      if (inline) {
+        result.summary = inline[1].trim();
+        section = 'summary';
+        continue;
+      }
+    }
+
+    // Summary continuation lines
+    if (section === 'summary' && trimmed.startsWith('  ')) {
+      result.summary += (result.summary ? ' ' : '') + trimmed.trim();
+      continue;
+    }
+
+    // List item start (- code: ...)
+    if ((section === 'issues' || section === 'suggestions') && /^\s+-\s+\w+:/.test(trimmed)) {
+      if (inItem) {
+        if (section === 'issues') flushIssue(result, currentItem);
+        else flushSuggestion(result, currentItem);
+      }
+      currentItem = {};
+      inItem = true;
+      const kv = /^\s+-\s+(\w[\w_]*)\s*:\s*(.*)$/.exec(trimmed);
+      if (kv) currentItem[kv[1]] = kv[2].trim();
+      continue;
+    }
+
+    // Continuation fields within a list item
+    if (inItem && /^\s{4,}\w[\w_]*\s*:/.test(trimmed)) {
+      const kv = /^\s+(\w[\w_]*)\s*:\s*(.*)$/.exec(trimmed);
+      if (kv) currentItem[kv[1]] = kv[2].trim();
+    }
+  }
+
+  // Flush last item
+  if (inItem && section === 'issues') flushIssue(result, currentItem);
+  if (inItem && section === 'suggestions') flushSuggestion(result, currentItem);
+
+  return result;
+}
+
+function flushIssue(result: StructuredCritique, item: Record<string, string>): void {
+  if (!item['code']) return;
+  const severity = (['low', 'medium', 'high'] as const).includes(item['severity'] as 'low' | 'medium' | 'high')
+    ? item['severity'] as 'low' | 'medium' | 'high'
+    : 'medium';
+  result.issues.push({
+    code: item['code'],
+    severity,
+    location: item['location'] ?? '',
+    summary: item['summary'] ?? '',
+    simulation_impact: item['simulation_impact'] ?? '',
+  });
+}
+
+function flushSuggestion(result: StructuredCritique, item: Record<string, string>): void {
+  if (!item['code']) return;
+  const priority = (['low', 'medium', 'high'] as const).includes(item['priority'] as 'low' | 'medium' | 'high')
+    ? item['priority'] as 'low' | 'medium' | 'high'
+    : 'medium';
+  result.suggestions.push({
+    code: item['code'],
+    priority,
+    action: item['action'] ?? '',
+  });
+}
+
+function normalizeStructuredCritique(obj: Record<string, unknown>): StructuredCritique {
+  const result: StructuredCritique = { issues: [], suggestions: [], summary: '' };
+
+  if (typeof obj['summary'] === 'string') result.summary = obj['summary'];
+
+  if (Array.isArray(obj['issues'])) {
+    for (const item of obj['issues']) {
+      if (item && typeof item === 'object' && 'code' in item) {
+        const i = item as Record<string, string>;
+        flushIssue(result, i);
+      }
+    }
+  }
+
+  if (Array.isArray(obj['suggestions'])) {
+    for (const item of obj['suggestions']) {
+      if (item && typeof item === 'object' && 'code' in item) {
+        const s = item as Record<string, string>;
+        flushSuggestion(result, s);
+      }
+    }
+  }
+
+  return result;
+}

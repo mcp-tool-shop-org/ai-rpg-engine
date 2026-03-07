@@ -688,20 +688,69 @@ describe('expandPack', () => {
 });
 
 describe('critiqueContent', () => {
-  it('returns critique text from model', async () => {
-    const critique = 'Strengths: The room has good connectivity. Weaknesses: The hazard list is empty. Simulation risks: None. Missed opportunities: Add ambient sounds.';
-    const client = mockClient(critique);
+  const structuredResponse = [
+    'Strengths: The room has good connectivity between zones.',
+    '',
+    'Weaknesses: The hazard list is empty, leaving no environmental tension.',
+    '',
+    'Simulation risks: Without hazards, the district alert pressure may never rise.',
+    '',
+    '```yaml',
+    'issues:',
+    '  - code: empty_hazard_list',
+    '    severity: medium',
+    '    location: rooms.ruined_chapel.hazards',
+    '    summary: No hazards defined for the room.',
+    '    simulation_impact: District alert pressure stays flat.',
+    'suggestions:',
+    '  - code: add_ambient_hazard',
+    '    priority: high',
+    '    action: Add a crumbling_ceiling or unstable_floor hazard.',
+    '  - code: add_rumor_hook',
+    '    priority: medium',
+    '    action: Connect chapel events to a faction rumor path.',
+    'summary: >',
+    '  The room is flavorful but lacks mechanical depth.',
+    '```',
+  ].join('\n');
+
+  it('returns prose and structured findings from dual-output model', async () => {
+    const client = mockClient(structuredResponse);
     const result = await critiqueContent(client, {
       content: 'id: ruined_chapel\nname: Ruined Chapel\nzones:\n  - id: nave\n    name: Nave',
     });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.text).toContain('Strengths');
-      expect(result.text).toContain('Weaknesses');
+      expect(result.text).toContain('connectivity');
+      expect(result.issues).toHaveLength(1);
+      expect(result.issues[0].code).toBe('empty_hazard_list');
+      expect(result.issues[0].severity).toBe('medium');
+      expect(result.issues[0].location).toBe('rooms.ruined_chapel.hazards');
+      expect(result.suggestions).toHaveLength(2);
+      expect(result.suggestions[0].code).toBe('add_ambient_hazard');
+      expect(result.suggestions[0].priority).toBe('high');
+      expect(result.suggestions[1].code).toBe('add_rumor_hook');
+      expect(result.summary).toContain('flavorful');
     }
   });
 
-  it('passes focus and content type to prompt', async () => {
+  it('degrades gracefully when model returns prose only', async () => {
+    const proseOnly = 'Strengths: The room has good connectivity. Weaknesses: The hazard list is empty.';
+    const client = mockClient(proseOnly);
+    const result = await critiqueContent(client, {
+      content: 'id: ruined_chapel\nname: Ruined Chapel',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.text).toContain('Strengths');
+      expect(result.issues).toHaveLength(0);
+      expect(result.suggestions).toHaveLength(0);
+      expect(result.summary).toBe('');
+    }
+  });
+
+  it('passes focus, content type, and session context to prompt', async () => {
     let capturedPrompt = '';
     const client: OllamaTextClient = {
       async generate(input: PromptInput): Promise<PromptResult> {
@@ -713,9 +762,11 @@ describe('critiqueContent', () => {
       content: 'id: test\nname: Test',
       contentType: 'quest',
       focus: 'fail conditions',
+      sessionContext: 'Themes: paranoia, decay',
     });
     expect(capturedPrompt).toContain('quest');
     expect(capturedPrompt).toContain('fail conditions');
+    expect(capturedPrompt).toContain('paranoia');
   });
 
   it('propagates client failure', async () => {

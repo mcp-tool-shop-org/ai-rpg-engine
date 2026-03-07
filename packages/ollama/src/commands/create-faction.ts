@@ -9,6 +9,7 @@ export type CreateFactionInput = {
   rulesetId?: string;
   districtIds?: string[];
   constraints?: string[];
+  sessionContext?: string;
 };
 
 export type GeneratedFactionResult = {
@@ -30,6 +31,7 @@ export async function createFaction(
       rulesetId: input.rulesetId,
       districtIds: input.districtIds,
       constraints: input.constraints,
+      sessionContext: input.sessionContext,
     }),
   });
 
