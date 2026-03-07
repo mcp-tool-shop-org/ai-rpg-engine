@@ -4,6 +4,7 @@
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
+import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 
 export const manifest: GameManifest = {
   id: 'chapel-threshold',
@@ -259,4 +260,20 @@ export const healingDraughtEffect = {
       },
     }];
   },
+};
+
+// --- Pack Metadata ---
+
+export const packMeta: PackMetadata = {
+  id: 'chapel-threshold',
+  name: 'The Chapel Threshold',
+  tagline: 'A ruined chapel conceals horrors beneath its crumbling stones.',
+  genres: ['fantasy'],
+  difficulty: 'beginner',
+  tones: ['dark', 'atmospheric'],
+  tags: ['undead', 'dungeon', 'sacred', 'combat'],
+  engineVersion: '2.0.0',
+  version: '2.0.0',
+  description: 'Explore a ruined chapel and descend into its cursed crypt. Face an ash ghoul, speak with a suspicious pilgrim, and survive the threshold.',
+  narratorTone: 'dark fantasy, concise, atmospheric, foreboding',
 };

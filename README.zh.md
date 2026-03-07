@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="README.ja.md">日本語</a> | <a href="README.md">English</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.pt-BR.md">Português (BR)</a>
+  <a href="README.ja.md">日本語</a> | <a href="README.md">English</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a>
 </p>
 
 <p align="center">
@@ -12,136 +12,168 @@
   <a href="https://mcp-tool-shop-org.github.io/ai-rpg-engine/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
 </p>
 
-<p align="center">A simulation-first terminal RPG engine for worlds shaped by perception, cognition, and consequence.</p>
+# AI 角色扮演游戏引擎
+
+专为构建、分析和平衡角色扮演游戏世界的模拟原生工具包。
+
+AI 角色扮演游戏引擎结合了确定性模拟运行时和 AI 辅助设计工作室，让创作者可以构建世界、通过模拟进行测试，并根据证据进行改进，而不是凭空猜测。
+
+> 传统的工具可以帮助你编写故事。
+> AI 角色扮演游戏引擎可以帮助你**测试世界**。
 
 ---
 
-## 它的定义/ 它的含义
+## 主要功能
 
-AI RPG 引擎是一个模块化的运行时环境，用于构建基于终端的角色扮演游戏。在这个游戏中，行动会产生信息，信息会产生扭曲，而角色的行为后果则源于他们所认为的事件。
+```
+build → critique → simulate → analyze → tune → experiment
+```
 
-该引擎在保持客观世界真实性的同时，支持不可靠的叙述、不同角色之间的感知差异，以及多层次的叙事结构。它不局限于特定类型——相同的核心机制可以驱动黑暗奇幻、赛博朋克或其他任何类型的世界，只需通过可替换的规则集进行调整。
+你可以生成世界内容，评估设计，运行确定性模拟，分析游戏行为，调整机制，在大量不同的初始状态下运行实验，并比较结果。 每一个结果都是可重现、可检查和可解释的。
 
-## 安装
+---
+
+## 核心功能
+
+### 确定性模拟
+
+一个基于时间步进的模拟引擎，用于角色扮演游戏世界。 包括世界状态、事件系统、感知和认知层、派系信仰传播、谣言系统、区域指标、可重复的游戏记录以及确定性随机数生成器。 每次运行都可以完全重现。
+
+### AI 辅助世界构建
+
+一个可选的 AI 层，可以根据主题生成房间、派系、任务和区域。 它可以评估设计，纠正模式错误，提出改进建议，并指导多步骤的世界构建流程。 AI 永远不会直接修改模拟状态，它只生成内容或建议。
+
+### 引导式设计流程
+
+具有会话感知、以计划为先的流程，用于世界构建、设计评估、设计迭代、引导式构建和结构化调整计划。 结合确定性工具和 AI 辅助。
+
+### 模拟分析
+
+一种可以解释事件发生原因、机制失效的地方、未触发的事件以及导致系统不稳定之处的回放分析。 结构化的发现结果可以直接用于调整。
+
+### 引导式调整
+
+平衡分析会生成结构化的调整计划，其中包含建议的修复方案、预期的影响、置信度估计以及预览的更改。 采用分步方式进行，并提供完整的可追溯性。
+
+### 场景实验
+
+在不同的初始状态下运行大量模拟，以了解典型的行为。 提取场景指标，检测方差，调整参数，并比较调整后的世界和基准世界。 将世界设计转化为一个可测试的过程。
+
+### 工作室环境
+
+一个命令行设计工作室，具有项目仪表板、问题浏览、实验检查、会话历史记录、引导式入门以及上下文感知的命令发现功能。 这是一个用于构建和测试世界的环境。
+
+---
+
+## 快速入门
 
 ```bash
-npm install @ai-rpg-engine/core @ai-rpg-engine/modules @ai-rpg-engine/content-schema
+# Install the CLI
+npm install -g @ai-rpg-engine/cli
+
+# Start the interactive studio
+ai chat
+
+# Run onboarding
+/onboard
+
+# Create your first content
+create-room haunted chapel
+
+# Run a simulation
+simulate
+
+# Analyze the results
+analyze-balance
+
+# Tune the design
+tune paranoia
+
+# Run an experiment
+experiment run --runs 50
 ```
 
-## 快速入门指南
+---
 
-```typescript
-import { Engine } from '@ai-rpg-engine/core';
-import {
-  combatCore, dialogueCore, inventoryCore, traversalCore,
-  statusCore, environmentCore, cognitionCore, perceptionFilter,
-} from '@ai-rpg-engine/modules';
+## 示例流程
 
-const engine = new Engine({
-  manifest: {
-    id: 'my-game', title: 'My Game', version: '1.0.0',
-    engineVersion: '1.0.0', ruleset: 'fantasy',
-    modules: ['combat-core', 'dialogue-core', 'cognition-core'],
-    contentPacks: [],
-  },
-  seed: 42,
-  modules: [
-    combatCore(), dialogueCore(), inventoryCore(),
-    traversalCore(), statusCore(), environmentCore(),
-    cognitionCore(), perceptionFilter(),
-  ],
-});
+```bash
+ai chat
 
-// Submit an action
-const events = engine.submitAction('attack', {
-  targetIds: ['guard-01'],
-});
-
-// Every action produces structured events
-for (const event of events) {
-  console.log(event.type, event.payload);
-}
+/onboard
+create-location-pack haunted chapel district
+critique-content
+simulate
+analyze-balance
+tune rumor propagation
+experiment run --runs 50
+compare-replays
 ```
+
+构建一个世界，并通过模拟证据对其进行改进。
+
+---
 
 ## 架构
 
-```
-Engine
-  WorldStore      — entities, zones, quests, factions, RNG, event log
-  ActionDispatcher — verb handlers, validators
-  ModuleManager   — modules, formulas, rules, persistence
-  Presentation    — channels that route (and can distort) events
-```
+该系统具有四层结构。
 
-每个状态变化都经过一个单一的流水线：
+| 层级 | 角色 |
+|-------|------|
+| **Simulation** | 确定性引擎 — 世界状态、事件、动作、感知、认知、派系、谣言传播、区域指标、回放 |
+| **Authoring** | 内容生成 — 骨架构建、评估、标准化、修复循环、内容生成器 |
+| **AI Cognition** | 可选的 AI 辅助 — 聊天界面、上下文路由、检索、记忆塑造、工具编排 |
+| **Studio UX** | 命令行设计环境 — 仪表板、问题跟踪、实验浏览、会话历史记录、引导式工作流程 |
 
-```
-action --> validation --> resolution --> events --> presentation
-```
+---
 
-## 套餐
+## 软件包
 
-| 包装。 | 目的。 |
+| 软件包 | 用途 |
 |---------|---------|
-| `@ai-rpg-engine/core` | 状态、实体、行为、事件、规则、随机数生成 (RNG)、持久性。 |
-| `@ai-rpg-engine/modules` | 17个内置模拟模块。 |
-| `@ai-rpg-engine/content-schema` | 内容模式和验证器。 |
-| `@ai-rpg-engine/terminal-ui` | 终端渲染器和输入层。 |
-| `@ai-rpg-engine/cli` | 开发者命令行工具：运行、重放、检查。 |
-| `@ai-rpg-engine/starter-fantasy` | 圣殿入口（奇幻游戏试玩版） |
-| `@ai-rpg-engine/starter-cyberpunk` | 霓虹色保险箱（赛博朋克演示版） |
+| [`@ai-rpg-engine/core`](packages/core) | 确定性模拟运行时 — 世界状态、事件、随机数生成器、时间步进、动作解析 |
+| [`@ai-rpg-engine/modules`](packages/modules) | 17 个内置模块 — 战斗、感知、认知、派系、谣言、区域 |
+| [`@ai-rpg-engine/content-schema`](packages/content-schema) | 世界内容的规范模式和验证器 |
+| [`@ai-rpg-engine/ollama`](packages/ollama) | 可选的 AI 内容创作 — 骨架构建、评估、引导式工作流程、调整、实验 |
+| [`@ai-rpg-engine/cli`](packages/cli) | 命令行设计工作室——聊天界面、工作流程、实验工具 |
+| [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | 终端渲染器和输入层 |
+| [`@ai-rpg-engine/starter-fantasy`](packages/starter-fantasy) | Chapel Threshold——奇幻世界入门 |
+| [`@ai-rpg-engine/starter-cyberpunk`](packages/starter-cyberpunk) | Neon Lockbox——赛博朋克世界入门 |
 
-## 内置模块
-
-| 模块。 | 它的功能。 |
-|--------|-------------|
-| 战斗核心 (zhàn dì hé xīn) | 攻击/防御、伤害、击败、体力。 |
-| 对话核心。 | 基于图的、带有条件的对话流程图。 |
-| 库存核心模块。 | 物品、设备、使用/配备/取消配备。 |
-| 遍历核心模块。 | 区域移动和出口验证。 |
-| 状态核心。 | 具有持续时间和可叠加效果的状态。 |
-| 环境核心组件。 | 动态区域属性、风险、衰减。 |
-| 认知核心。 | 人工智能的信念、意图、士气、记忆。 |
-| 感知过滤器 | 感官通道、清晰度、跨区域听觉。 |
-| 叙事权威。 | 真相与呈现、隐瞒、歪曲。 |
-| 进展核心。 | 基于货币的技能提升系统，技能树。 |
-| 派系认知 | 派系信仰、信任、派系间的知识。 |
-| 谣言传播。 | 信息传播过程中，可信度会逐渐降低。 |
-| 知识衰退。 | 基于时间的置信度下降。 |
-| 区域核心。 | 空间记忆、区域指标、警报阈值。 |
-| 信念来源。 | 追踪信息在感知、认知和传言中的传播和演变。 |
-| 观察者呈现 (或：观察者展示) | 针对每个观察者的事件过滤，以及偏差跟踪。 |
-| 模拟检查器 | 运行时检查、健康状况检测、诊断。 |
-
-## 关键设计决策
-
-- **模拟的真实性至关重要**——引擎保持客观状态。表现层可能会出现偏差，但世界的真实状态是标准化的。
-- **操作会产生事件**——任何有意义的状态改变都不会悄无声息地发生。所有操作都会产生结构化、可查询的事件。
-- **确定性回放**——通过使用种子随机数生成器和操作流水线，可以保证从相同输入获得完全相同的结果。
-- **内容是数据**——房间、实体、对话、物品等都被定义为数据，而不是代码。
-- **游戏类型属于规则集**——引擎对剑与激光枪没有明确的偏好。
-
-## 安全与信任
-
-AI RPG 引擎是一个仅支持本地模拟的软件库。
-
-- **涉及的数据：** 仅限于内存中的游戏状态。当使用命令行保存功能时，会保存文件到 `.ai-rpg-engine/` 目录下。
-- **未涉及的数据：** 除了保存文件之外，不访问任何文件系统，不使用网络，不读取任何环境变量，也不使用任何系统资源。
-- **无任何数据收集。** 不会收集或发送任何数据。
-- **无任何敏感信息。** 引擎不会读取、存储或传输任何凭据。
-
-请参阅 [SECURITY.md](SECURITY.md) 文件，了解完整的安全策略。
-
-## 需求
-
-- Node.js >= 20
-- TypeScript (ESM 模块)
+---
 
 ## 文档
 
-- [手册](docs/handbook/index.md) — 25 章 + 4 个附录
-- [设计概述](docs/DESIGN.md) — 深入了解架构
-- [更新日志](CHANGELOG.md)
+| 资源 | 描述 |
+|----------|-------------|
+| [Handbook](docs/handbook/index.md) | 26 章 + 4 个附录，涵盖所有系统 |
+| [Design Document](docs/DESIGN.md) | 架构深入分析——动作流水线、真实与呈现、模拟层 |
+| [AI Worldbuilding Guide](packages/ollama/AI_WORLDBUILDING.md) | 脚手架、诊断、调优、实验工作流程 |
+| [Philosophy](PHILOSOPHY.md) | 为什么是确定性世界、基于证据的设计以及人工智能作为助手 |
+| [Changelog](CHANGELOG.md) | 发布历史 |
+
+---
+
+## 理念
+
+AI RPG 引擎围绕以下三个理念构建：
+
+1. **确定性世界**——模拟结果必须可重复。
+2. **基于证据的设计**——世界机制应通过模拟进行测试。
+3. **人工智能作为助手，而非权威**——人工智能工具用于生成和评估设计，但不能替代确定性系统。
+
+请参阅 [PHILOSOPHY.md](PHILOSOPHY.md) 以获取完整说明。
+
+---
+
+## 安全
+
+AI RPG 引擎是一个**仅本地模拟的库**。没有遥测数据，没有网络连接，没有敏感信息。保存文件仅在明确请求时才会保存到 `.ai-rpg-engine/` 目录。详情请参阅 [SECURITY.md](SECURITY.md)。
+
+## 要求
+
+- Node.js >= 20
+- TypeScript (ESM 模块)
 
 ## 许可证
 

@@ -4,6 +4,7 @@ import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, Re
 import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition } from '@ai-rpg-engine/modules';
+import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 
 // --- Manifest ---
 
@@ -307,4 +308,20 @@ export const rumBarrelEffect = {
       },
     }];
   },
+};
+
+// --- Pack Metadata ---
+
+export const packMeta: PackMetadata = {
+  id: 'black-flag-requiem',
+  name: 'Black Flag Requiem',
+  tagline: 'Your ship is your kingdom, and beneath the waves the drowned dead wait.',
+  genres: ['pirate'],
+  difficulty: 'intermediate',
+  tones: ['gritty', 'atmospheric'],
+  tags: ['naval', 'treasure', 'cursed', 'exploration'],
+  engineVersion: '2.0.0',
+  version: '2.0.0',
+  description: 'Captain a pirate vessel through port towns and cursed waters. Strike deals, fight the navy, and brave a sunken shrine.',
+  narratorTone: 'pirate adventure, salty, atmospheric, treacherous',
 };

@@ -1,0 +1,72 @@
+// Dust Devil's Bargain — ruleset definition
+
+import type { RulesetDefinition } from '@ai-rpg-engine/core';
+
+export const weirdWestMinimalRuleset: RulesetDefinition = {
+  id: 'weird-west-minimal',
+  name: 'Weird West Minimal',
+  version: '0.1.0',
+
+  stats: [
+    { id: 'grit', name: 'Grit', min: 1, max: 20, default: 5 },
+    { id: 'draw-speed', name: 'Draw Speed', min: 1, max: 20, default: 5 },
+    { id: 'lore', name: 'Lore', min: 1, max: 20, default: 4 },
+  ],
+
+  resources: [
+    { id: 'hp', name: 'HP', min: 0, max: 30, default: 18 },
+    { id: 'resolve', name: 'Resolve', min: 0, max: 20, default: 15, regenRate: 1 },
+    { id: 'dust', name: 'Dust', min: 0, max: 100, default: 0 },
+  ],
+
+  verbs: [
+    { id: 'move', name: 'Move', description: 'Move to an adjacent area' },
+    { id: 'inspect', name: 'Survey', description: 'Survey an area for clues or threats' },
+    { id: 'attack', name: 'Shoot', tags: ['combat'], description: 'Firearms or melee combat' },
+    { id: 'use', name: 'Use', description: 'Use an item from inventory' },
+    { id: 'speak', name: 'Speak', tags: ['dialogue'], description: 'Talk to another character' },
+    { id: 'choose', name: 'Choose', tags: ['dialogue'], description: 'Select a dialogue option' },
+    { id: 'draw', name: 'Draw', tags: ['combat', 'duel'], description: 'Quick-draw duel — reflexes determine who fires first' },
+    { id: 'commune', name: 'Commune', tags: ['supernatural'], description: 'Speak with spirits or read ley lines' },
+  ],
+
+  formulas: [
+    {
+      id: 'hit-chance',
+      name: 'Hit Chance',
+      description: 'Attacker draw-speed vs target draw-speed',
+      inputs: ['attacker.draw-speed', 'target.draw-speed'],
+      output: 'number (0-100)',
+    },
+    {
+      id: 'damage',
+      name: 'Damage',
+      description: 'Base: attacker grit, minimum 1',
+      inputs: ['attacker.grit'],
+      output: 'number',
+    },
+    {
+      id: 'commune-success',
+      name: 'Commune Success',
+      description: 'Lore vs spirit difficulty',
+      inputs: ['actor.lore', 'difficulty'],
+      output: 'number (0-100)',
+    },
+  ],
+
+  defaultModules: [
+    'traversal-core',
+    'status-core',
+    'combat-core',
+    'inventory-core',
+    'dialogue-core',
+  ],
+
+  progressionModels: [],
+
+  contentConventions: {
+    entityTypes: ['player', 'npc', 'drifter', 'enemy', 'spirit'],
+    statusTags: ['buff', 'debuff', 'cursed', 'blessed', 'dust-sick'],
+    combatTags: ['firearm', 'melee', 'supernatural'],
+  },
+};

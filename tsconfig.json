@@ -32,6 +32,9 @@
     { "path": "packages/rumor-system" },
     { "path": "packages/starter-detective" },
     { "path": "packages/starter-pirate" },
-    { "path": "packages/starter-zombie" }
+    { "path": "packages/starter-zombie" },
+    { "path": "packages/pack-registry" },
+    { "path": "packages/starter-weird-west" },
+    { "path": "packages/starter-colony" }
   ]
 }

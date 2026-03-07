@@ -9,6 +9,7 @@
     { "path": "../core" },
     { "path": "../modules" },
     { "path": "../content-schema" },
-    { "path": "../starter-fantasy" }
+    { "path": "../starter-fantasy" },
+    { "path": "../pack-registry" }
   ]
 }

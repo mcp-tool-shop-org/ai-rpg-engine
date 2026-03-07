@@ -4,6 +4,7 @@
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
+import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 
 export const manifest: GameManifest = {
   id: 'neon-lockbox',
@@ -244,4 +245,20 @@ export const iceBreaker = {
       },
     }];
   },
+};
+
+// --- Pack Metadata ---
+
+export const packMeta: PackMetadata = {
+  id: 'neon-lockbox',
+  name: 'Neon Lockbox',
+  tagline: 'A rain-slicked alley hides a data vault guarded by autonomous ICE.',
+  genres: ['cyberpunk'],
+  difficulty: 'beginner',
+  tones: ['noir', 'gritty'],
+  tags: ['hacking', 'neon', 'corporate', 'netrunning'],
+  engineVersion: '2.0.0',
+  version: '2.0.0',
+  description: 'Meet a fixer in a neon-lit alley, breach a server corridor, and crack a data vault defended by an ICE sentry.',
+  narratorTone: 'cyberpunk noir, terse, neon-lit, paranoid',
 };

@@ -1,0 +1,323 @@
+// Dust Devil's Bargain — content definitions
+
+import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
+import { nextId } from '@ai-rpg-engine/core';
+import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
+import type { DistrictDefinition } from '@ai-rpg-engine/modules';
+import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
+
+// --- Manifest ---
+
+export const manifest: GameManifest = {
+  id: 'dust-devils-bargain',
+  title: "Dust Devil's Bargain",
+  version: '0.1.0',
+  engineVersion: '0.1.0',
+  ruleset: 'weird-west-minimal',
+  modules: [
+    'traversal-core',
+    'status-core',
+    'combat-core',
+    'inventory-core',
+    'dialogue-core',
+  ],
+  contentPacks: ['dust-devils-bargain'],
+};
+
+// --- Player ---
+
+export const player: EntityState = {
+  id: 'drifter',
+  blueprintId: 'drifter',
+  type: 'player',
+  name: 'The Drifter',
+  tags: ['player', 'human', 'drifter', 'gunslinger'],
+  stats: { grit: 5, 'draw-speed': 6, lore: 4 },
+  resources: { hp: 18, resolve: 15, dust: 0 },
+  statuses: [],
+  inventory: [],
+  zoneId: 'crossroads',
+};
+
+// --- NPCs ---
+
+export const bartender: EntityState = {
+  id: 'bartender_silas',
+  blueprintId: 'bartender',
+  type: 'npc',
+  name: 'Silas',
+  tags: ['npc', 'townsfolk', 'informant', 'male'],
+  stats: { grit: 3, 'draw-speed': 2, lore: 5 },
+  resources: { hp: 10, resolve: 12, dust: 0 },
+  statuses: [],
+  zoneId: 'saloon',
+};
+
+export const sheriff: EntityState = {
+  id: 'sheriff_hale',
+  blueprintId: 'sheriff',
+  type: 'npc',
+  name: 'Sheriff Hale',
+  tags: ['npc', 'law', 'secretive', 'male'],
+  stats: { grit: 6, 'draw-speed': 5, lore: 3 },
+  resources: { hp: 16, resolve: 14, dust: 0 },
+  statuses: [],
+  zoneId: 'sheriffs-office',
+};
+
+// --- Enemies ---
+
+export const revenant: EntityState = {
+  id: 'dust_revenant',
+  blueprintId: 'revenant',
+  type: 'enemy',
+  name: 'Dust Revenant',
+  tags: ['enemy', 'undead', 'cursed', 'gunslinger'],
+  stats: { grit: 6, 'draw-speed': 7, lore: 1 },
+  resources: { hp: 14, resolve: 20, dust: 0 },
+  statuses: [],
+  zoneId: 'red-mesa-trail',
+  ai: {
+    profileId: 'aggressive',
+    goals: ['guard-mesa', 'duel-intruders'],
+    fears: ['sacred-symbols'],
+    alertLevel: 0,
+    knowledge: {},
+  },
+};
+
+export const crawler: EntityState = {
+  id: 'mesa_crawler',
+  blueprintId: 'crawler',
+  type: 'enemy',
+  name: 'Mesa Crawler',
+  tags: ['enemy', 'spirit', 'beast', 'supernatural'],
+  stats: { grit: 4, 'draw-speed': 3, lore: 8 },
+  resources: { hp: 10, resolve: 25, dust: 0 },
+  statuses: [],
+  zoneId: 'spirit-hollow',
+  ai: {
+    profileId: 'territorial',
+    goals: ['guard-hollow', 'consume-resolve'],
+    fears: [],
+    alertLevel: 0,
+    knowledge: {},
+  },
+};
+
+// --- Zones ---
+
+export const zones: ZoneState[] = [
+  {
+    id: 'crossroads',
+    roomId: 'town',
+    name: "Drifter's Crossroads",
+    tags: ['outdoor', 'neutral', 'dusty'],
+    neighbors: ['saloon', 'sheriffs-office', 'red-mesa-trail'],
+    light: 5,
+    interactables: ['signpost', 'hitching-post', 'wanted-poster'],
+  },
+  {
+    id: 'saloon',
+    roomId: 'town',
+    name: 'The Dusty Spur Saloon',
+    tags: ['indoor', 'social', 'safe'],
+    neighbors: ['crossroads'],
+    light: 3,
+    interactables: ['bar', 'piano', 'notice-board'],
+  },
+  {
+    id: 'sheriffs-office',
+    roomId: 'town',
+    name: "Sheriff's Office",
+    tags: ['indoor', 'law', 'safe'],
+    neighbors: ['crossroads'],
+    light: 4,
+    interactables: ['desk', 'gun-rack', 'cell-door', 'lockbox'],
+  },
+  {
+    id: 'red-mesa-trail',
+    roomId: 'badlands',
+    name: 'Red Mesa Trail',
+    tags: ['outdoor', 'hostile', 'cursed'],
+    neighbors: ['crossroads', 'spirit-hollow'],
+    light: 6,
+    noise: 2,
+    stability: 3,
+    hazards: ['dust-storm', 'cursed-ground'],
+    interactables: ['petroglyphs', 'bone-cairn'],
+  },
+  {
+    id: 'spirit-hollow',
+    roomId: 'badlands',
+    name: 'Spirit Hollow',
+    tags: ['outdoor', 'supernatural', 'sacred'],
+    neighbors: ['red-mesa-trail'],
+    light: 1,
+    noise: 1,
+    stability: 2,
+    hazards: ['spirit-drain'],
+    interactables: ['ley-line-crack', 'ancient-altar', 'whispering-stones'],
+  },
+];
+
+// --- Dialogue ---
+
+export const bartenderDialogue: DialogueDefinition = {
+  id: 'bartender-intel',
+  speakers: ['Silas'],
+  entryNodeId: 'greeting',
+  nodes: {
+    greeting: {
+      id: 'greeting',
+      speaker: 'Silas',
+      text: "Stranger. You've got the look of someone who doesn't plan on staying long. Smart. This town's got a sickness, and it ain't the kind a doctor fixes.",
+      choices: [
+        {
+          id: 'ask-mesa',
+          text: "What's out at Red Mesa?",
+          nextNodeId: 'mesa-info',
+        },
+        {
+          id: 'ask-sheriff',
+          text: 'What can you tell me about the sheriff?',
+          nextNodeId: 'sheriff-info',
+        },
+      ],
+    },
+    'mesa-info': {
+      id: 'mesa-info',
+      speaker: 'Silas',
+      text: "Cult moved in three months back. Call themselves the Red Congregation. They do things out there at night — chanting, fires. Folks who go looking don't come back right. Some don't come back at all.",
+      choices: [
+        {
+          id: 'volunteer-mesa',
+          text: "I'll check it out. What should I watch for?",
+          nextNodeId: 'mesa-warning',
+        },
+        { id: 'leave-mesa', text: "Not my problem.", nextNodeId: 'end' },
+      ],
+    },
+    'sheriff-info': {
+      id: 'sheriff-info',
+      speaker: 'Silas',
+      text: "Hale's been sheriff longer than anyone can remember. Good man, or was. Lately he locks himself in that office. Won't talk about the mesa. Won't talk about the disappearances. Something's eating at him.",
+      choices: [
+        { id: 'to-mesa', text: 'And the mesa?', nextNodeId: 'mesa-info' },
+        { id: 'leave-sheriff', text: "I'll keep that in mind.", nextNodeId: 'end' },
+      ],
+    },
+    'mesa-warning': {
+      id: 'mesa-warning',
+      speaker: 'Silas',
+      text: "The dust out there — it gets inside you. Not your lungs. Your head. Sage helps. Burns it out, slows it down. Take this bundle. And if you see a dead man walking with a gun on his hip... shoot first.",
+      effects: [
+        { type: 'set-global', target: 'actor', params: { key: 'mesa-mission', value: true } },
+      ],
+    },
+    end: {
+      id: 'end',
+      speaker: 'Silas',
+      text: "Suit yourself, stranger. Whiskey's two bits if you're staying.",
+    },
+  },
+};
+
+// --- Districts ---
+
+export const districts: DistrictDefinition[] = [
+  {
+    id: 'town',
+    name: 'Perdition',
+    zoneIds: ['crossroads', 'saloon', 'sheriffs-office'],
+    tags: ['civilized', 'frontier'],
+    controllingFaction: 'townsfolk',
+  },
+  {
+    id: 'badlands',
+    name: 'The Badlands',
+    zoneIds: ['red-mesa-trail', 'spirit-hollow'],
+    tags: ['cursed', 'supernatural', 'hostile'],
+    controllingFaction: 'red-congregation',
+  },
+];
+
+// --- Progression ---
+
+export const gunslingerTree: ProgressionTreeDefinition = {
+  id: 'gunslinger',
+  name: 'Gunslinger',
+  currency: 'xp',
+  nodes: [
+    {
+      id: 'quick-hand',
+      name: 'Quick Hand',
+      cost: 10,
+      effects: [
+        { type: 'stat-boost', params: { stat: 'draw-speed', amount: 1 } },
+      ],
+    },
+    {
+      id: 'iron-will',
+      name: 'Iron Will',
+      cost: 12,
+      effects: [
+        { type: 'stat-boost', params: { stat: 'grit', amount: 1 } },
+        { type: 'resource-boost', params: { resource: 'resolve', amount: 3 } },
+      ],
+    },
+    {
+      id: 'dead-eye',
+      name: 'Dead Eye',
+      cost: 25,
+      requires: ['quick-hand', 'iron-will'],
+      effects: [
+        { type: 'stat-boost', params: { stat: 'draw-speed', amount: 2 } },
+        { type: 'grant-tag', params: { tag: 'dead-eye' } },
+      ],
+    },
+  ],
+};
+
+// --- Item Effect ---
+
+export const sageBundleEffect = {
+  itemId: 'sage-bundle',
+  use: (action: ActionIntent, world: WorldState): ResolvedEvent[] => {
+    const actor = world.entities[action.actorId];
+    if (!actor) return [];
+
+    const previous = actor.resources.dust ?? 0;
+    actor.resources.dust = Math.max(0, previous - 20);
+
+    return [{
+      id: nextId('evt'),
+      tick: action.issuedAtTick,
+      type: 'resource.changed',
+      actorId: action.actorId,
+      payload: {
+        entityId: actor.id,
+        resource: 'dust',
+        previous,
+        current: actor.resources.dust,
+        delta: actor.resources.dust - previous,
+      },
+    }];
+  },
+};
+
+// --- Pack Metadata ---
+
+export const packMeta: PackMetadata = {
+  id: 'dust-devils-bargain',
+  name: "Dust Devil's Bargain",
+  tagline: 'A haunted frontier town where the dead still draw.',
+  genres: ['western'],
+  difficulty: 'intermediate',
+  tones: ['eerie', 'gritty'],
+  tags: ['supernatural', 'frontier', 'duel', 'spirits', 'cult'],
+  engineVersion: '2.0.0',
+  version: '2.0.0',
+  description: 'Drift into a cursed frontier town. Investigate a mesa cult, duel undead gunslingers, and commune with spirits before the dust takes you.',
+  narratorTone: 'weird western, laconic, sun-bleached, haunted',
+};

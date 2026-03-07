@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/starter-pirate",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "AI RPG Engine pirate starter: Black Flag Requiem",
   "type": "module",
   "main": "./dist/index.js",
@@ -11,7 +11,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run"
@@ -29,6 +31,16 @@
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
     "directory": "packages/starter-pirate"
   },
-  "keywords": ["rpg", "pirate", "adventure", "game-engine", "starter", "worldbuilding", "content-pack"],
-  "engines": { "node": ">=20" }
+  "keywords": [
+    "rpg",
+    "pirate",
+    "adventure",
+    "game-engine",
+    "starter",
+    "worldbuilding",
+    "content-pack"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
 }

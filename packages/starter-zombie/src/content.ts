@@ -4,6 +4,7 @@ import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, Re
 import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition } from '@ai-rpg-engine/modules';
+import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 
 // --- Manifest ---
 
@@ -314,4 +315,20 @@ export const antibioticsEffect = {
       },
     }];
   },
+};
+
+// --- Pack Metadata ---
+
+export const packMeta: PackMetadata = {
+  id: 'ashfall-dead',
+  name: 'Ashfall Dead',
+  tagline: 'Society has snapped in half. You decide who gets saved.',
+  genres: ['horror', 'post-apocalyptic'],
+  difficulty: 'intermediate',
+  tones: ['tense', 'gritty'],
+  tags: ['zombie', 'survival', 'scavenging', 'infection'],
+  engineVersion: '2.0.0',
+  version: '2.0.0',
+  description: 'Survive in a zombie-ravaged city. Manage infection, scavenge supplies, and make impossible choices about who lives.',
+  narratorTone: 'survival horror, desperate, tense, bleak',
 };

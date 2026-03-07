@@ -12,136 +12,168 @@
   <a href="https://mcp-tool-shop-org.github.io/ai-rpg-engine/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
 </p>
 
-<p align="center">A simulation-first terminal RPG engine for worlds shaped by perception, cognition, and consequence.</p>
+# AI RPG Engine
+
+Kit de ferramentas nativo de simulação para construir, analisar e balancear mundos de RPG.
+
+AI RPG Engine combina um ambiente de execução de simulação determinística com um estúdio de design assistido por IA, permitindo que autores criem mundos, os testem por simulação e os melhorem com base em evidências, não em suposições.
+
+> Ferramentas tradicionais ajudam a escrever histórias.
+> AI RPG Engine ajuda a **testar mundos**.
 
 ---
 
-## O que é
+## O Que Ele Faz
 
-AI RPG Engine é um ambiente de execução modular para a criação de RPGs para terminal, onde as ações geram informações, as informações são distorcidas e as consequências surgem do que os personagens acreditam ter acontecido.
-
-O ambiente mantém a verdade objetiva do mundo, ao mesmo tempo que suporta narrativas não confiáveis, diferenças de percepção entre os personagens e narrativas em camadas. É agnóstico em relação ao gênero — o mesmo núcleo pode ser usado para fantasia sombria, cyberpunk ou qualquer outro cenário, através de conjuntos de regras personalizáveis.
-
-## Instalação
-
-```bash
-npm install @ai-rpg-engine/core @ai-rpg-engine/modules @ai-rpg-engine/content-schema
 ```
+construir → criticar → simular → analisar → ajustar → experimentar
+```
+
+Você pode gerar conteúdo de mundo, criticar designs, executar simulações determinísticas, analisar comportamento de replays, ajustar mecânicas, executar experimentos com múltiplas sementes e comparar resultados. Cada resultado é reproduzível, inspecionável e explicável.
+
+---
+
+## Capacidades Principais
+
+### Simulação Determinística
+
+Um motor de simulação baseado em ticks para mundos de RPG. Estado do mundo, sistema de eventos, camadas de percepção e cognição, propagação de crenças de facções, sistemas de rumores, métricas de distritos, logs de ações reproduzíveis e RNG determinístico. Cada execução pode ser reproduzida exatamente.
+
+### Construção de Mundos Assistida por IA
+
+Camada opcional de IA que gera salas, facções, missões e distritos a partir de um tema. Critica designs, normaliza erros de esquema, propõe melhorias e guia fluxos de trabalho de construção de mundos em múltiplas etapas. A IA nunca altera diretamente o estado da simulação — ela apenas gera conteúdo ou sugestões.
+
+### Fluxos de Trabalho Guiados de Design
+
+Fluxos de trabalho com reconhecimento de sessão e planejamento prévio para scaffolding de mundos, ciclos de crítica, iteração de design, construções guiadas e planos estruturados de ajuste. Combina ferramentas determinísticas com assistência de IA.
+
+### Análise de Simulação
+
+Análise de replays que explica por que eventos aconteceram, onde mecânicas falham, quais gatilhos nunca disparam e quais sistemas criam instabilidade. Descobertas estruturadas alimentam diretamente o ajuste.
+
+### Ajuste Guiado
+
+Descobertas de balanceamento geram planos de ajuste estruturados com correções propostas, impacto esperado, estimativas de confiança e pré-visualização de mudanças. Aplicados passo a passo com rastreabilidade total.
+
+### Experimentos de Cenário
+
+Execute lotes de simulações com diferentes sementes para entender o comportamento típico. Extraia métricas de cenários, detecte variância, faça varredura de parâmetros e compare mundos ajustados vs. linha de base. Transforma o design de mundos em um processo testável.
+
+### Shell do Estúdio
+
+Estúdio de design via CLI com painéis de projeto, navegação de problemas, inspeção de experimentos, histórico de sessões, integração guiada e descoberta de comandos contextual. Um espaço de trabalho para construir e testar mundos.
+
+---
 
 ## Início Rápido
 
-```typescript
-import { Engine } from '@ai-rpg-engine/core';
-import {
-  combatCore, dialogueCore, inventoryCore, traversalCore,
-  statusCore, environmentCore, cognitionCore, perceptionFilter,
-} from '@ai-rpg-engine/modules';
+```bash
+# Instalar o CLI
+npm install -g @ai-rpg-engine/cli
 
-const engine = new Engine({
-  manifest: {
-    id: 'my-game', title: 'My Game', version: '1.0.0',
-    engineVersion: '1.0.0', ruleset: 'fantasy',
-    modules: ['combat-core', 'dialogue-core', 'cognition-core'],
-    contentPacks: [],
-  },
-  seed: 42,
-  modules: [
-    combatCore(), dialogueCore(), inventoryCore(),
-    traversalCore(), statusCore(), environmentCore(),
-    cognitionCore(), perceptionFilter(),
-  ],
-});
+# Iniciar o estúdio interativo
+ai chat
 
-// Submit an action
-const events = engine.submitAction('attack', {
-  targetIds: ['guard-01'],
-});
+# Executar a integração
+/onboard
 
-// Every action produces structured events
-for (const event of events) {
-  console.log(event.type, event.payload);
-}
+# Criar seu primeiro conteúdo
+create-room haunted chapel
+
+# Executar uma simulação
+simulate
+
+# Analisar os resultados
+analyze-balance
+
+# Ajustar o design
+tune paranoia
+
+# Executar um experimento
+experiment run --runs 50
 ```
+
+---
+
+## Exemplo de Fluxo de Trabalho
+
+```bash
+ai chat
+
+/onboard
+create-location-pack haunted chapel district
+critique-content
+simulate
+analyze-balance
+tune rumor propagation
+experiment run --runs 50
+compare-replays
+```
+
+Construa um mundo e melhore-o através de evidências de simulação.
+
+---
 
 ## Arquitetura
 
-```
-Engine
-  WorldStore      — entities, zones, quests, factions, RNG, event log
-  ActionDispatcher — verb handlers, validators
-  ModuleManager   — modules, formulas, rules, persistence
-  Presentation    — channels that route (and can distort) events
-```
+O sistema possui quatro camadas.
 
-Cada mudança de estado flui por um único pipeline:
+| Camada | Função |
+|--------|--------|
+| **Simulação** | Motor determinístico — estado do mundo, eventos, ações, percepção, cognição, facções, propagação de rumores, métricas de distritos, replay |
+| **Autoria** | Geração de conteúdo — scaffolding, crítica, normalização, ciclos de reparo, geradores de pacotes |
+| **Cognição IA** | Assistência opcional de IA — shell de chat, roteamento de contexto, recuperação, modelagem de memória, orquestração de ferramentas |
+| **UX do Estúdio** | Ambiente de design via CLI — painéis, rastreamento de problemas, navegação de experimentos, histórico de sessões, fluxos guiados |
 
-```
-action --> validation --> resolution --> events --> presentation
-```
+---
 
 ## Pacotes
 
 | Pacote | Propósito |
-|---------|---------|
-| `@ai-rpg-engine/core` | Estado, entidades, ações, eventos, regras, RNG (gerador de números aleatórios), persistência |
-| `@ai-rpg-engine/modules` | 17 módulos de simulação integrados |
-| `@ai-rpg-engine/content-schema` | Esquemas e validadores de conteúdo |
-| `@ai-rpg-engine/terminal-ui` | Renderizador de terminal e camada de entrada |
-| `@ai-rpg-engine/cli` | CLI (interface de linha de comando) para desenvolvedores: executar, reproduzir, inspecionar |
-| `@ai-rpg-engine/starter-fantasy` | The Chapel Threshold (demonstração de fantasia) |
-| `@ai-rpg-engine/starter-cyberpunk` | Neon Lockbox (demonstração de cyberpunk) |
+|--------|-----------|
+| [`@ai-rpg-engine/core`](packages/core) | Ambiente de execução de simulação determinística — estado do mundo, eventos, RNG, ticks, resolução de ações |
+| [`@ai-rpg-engine/modules`](packages/modules) | 17 módulos integrados — combate, percepção, cognição, facções, rumores, distritos |
+| [`@ai-rpg-engine/content-schema`](packages/content-schema) | Esquemas canônicos e validadores para conteúdo de mundos |
+| [`@ai-rpg-engine/ollama`](packages/ollama) | Autoria com IA opcional — scaffolding, crítica, fluxos guiados, ajuste, experimentos |
+| [`@ai-rpg-engine/cli`](packages/cli) | Estúdio de design via linha de comando — shell de chat, fluxos de trabalho, ferramentas de experimento |
+| [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | Renderizador de terminal e camada de entrada |
+| [`@ai-rpg-engine/starter-fantasy`](packages/starter-fantasy) | The Chapel Threshold — mundo inicial de fantasia |
+| [`@ai-rpg-engine/starter-cyberpunk`](packages/starter-cyberpunk) | Neon Lockbox — mundo inicial de cyberpunk |
 
-## Módulos Integrados
+---
 
-| Módulo | O que ele faz |
-|--------|-------------|
-| combat-core | Ataque/defesa, dano, derrota, resistência |
-| dialogue-core | Árvores de diálogo baseadas em gráficos com condições |
-| inventory-core | Itens, equipamentos, usar/equipar/desequipar |
-| traversal-core | Movimentação e validação de saída de áreas |
-| status-core | Efeitos de status com duração e empilhamento |
-| environment-core | Propriedades dinâmicas de áreas, perigos, decadência |
-| cognition-core | Crenças, intenções, moral, memória da IA |
-| perception-filter | Canais sensoriais, clareza, audição entre áreas |
-| narrative-authority | Verdade versus apresentação, ocultação, distorção |
-| progression-core | Avanço baseado em moeda, árvores de habilidades |
-| faction-cognition | Crenças de facções, confiança, conhecimento entre facções |
-| rumor-propagation | Disseminação de informações com decaimento da confiança |
-| knowledge-decay | Erosão da confiança baseada no tempo |
-| district-core | Memória espacial, métricas de áreas, limites de alerta |
-| belief-provenance | Rastreamento da origem das crenças através de percepção/cognição/rumor |
-| observer-presentation | Filtragem de eventos por observador, rastreamento de divergências |
-| simulation-inspector | Inspeção em tempo de execução, verificações de saúde, diagnósticos |
+## Documentação
 
-## Decisões de Design Chave
+| Recurso | Descrição |
+|---------|-----------|
+| [Manual](docs/handbook/index.md) | 26 capítulos + 4 apêndices cobrindo todos os sistemas |
+| [Documento de Design](docs/DESIGN.md) | Análise aprofundada da arquitetura — pipeline de ações, verdade vs. apresentação, camadas de simulação |
+| [Guia de Construção de Mundos com IA](packages/ollama/AI_WORLDBUILDING.md) | Fluxos de scaffolding, diagnóstico, ajuste e experimento |
+| [Filosofia](PHILOSOPHY.md) | Por que mundos determinísticos, design baseado em evidências e IA como assistente |
+| [Histórico de Alterações](CHANGELOG.md) | Histórico de versões |
 
-- **A verdade da simulação é sagrada** — o ambiente mantém o estado objetivo. As camadas de apresentação podem mentir, mas a verdade do mundo é canônica.
-- **As ações geram eventos** — nenhuma mudança de estado significativa ocorre silenciosamente. Tudo emite eventos estruturados e pesquisáveis.
-- **Reprodução determinística** — o RNG (gerador de números aleatórios) com semente e o pipeline de ações garantem resultados idênticos a partir de entradas idênticas.
-- **O conteúdo é dados** — salas, entidades, diálogos, itens são definidos como dados, não como código.
-- **O gênero pertence aos conjuntos de regras** — o ambiente não tem opinião sobre espadas versus lasers.
+---
 
-## Segurança e Confiança
+## Filosofia
 
-AI RPG Engine é uma **biblioteca de simulação local**.
+AI RPG Engine é construído em torno de três ideias:
 
-- **Dados acessados:** apenas o estado do jogo na memória. Arquivos de salvamento são gravados em `.ai-rpg-engine/` quando o CLI de salvamento é usado.
-- **Dados NÃO acessados:** nenhum acesso ao sistema de arquivos além dos arquivos de salvamento, nenhuma rede, nenhuma variável de ambiente, nenhum recurso do sistema.
-- **Sem telemetria.** Nenhum dado é coletado ou enviado para lugar nenhum.
-- **Sem segredos.** O ambiente não lê, armazena ou transmite credenciais.
+1. **Mundos determinísticos** — os resultados da simulação devem ser reproduzíveis.
+2. **Design baseado em evidências** — as mecânicas do mundo devem ser testadas por simulação.
+3. **IA como assistente, não autoridade** — ferramentas de IA ajudam a gerar e criticar designs, mas não substituem sistemas determinísticos.
 
-Consulte o arquivo [SECURITY.md](SECURITY.md) para a política de segurança completa.
+Consulte [PHILOSOPHY.md](PHILOSOPHY.md) para a explicação completa.
+
+---
+
+## Segurança
+
+AI RPG Engine é uma **biblioteca de simulação exclusivamente local**. Sem telemetria, sem rede, sem segredos. Arquivos de salvamento vão para `.ai-rpg-engine/` apenas quando explicitamente solicitado. Consulte [SECURITY.md](SECURITY.md) para detalhes.
 
 ## Requisitos
 
 - Node.js >= 20
 - TypeScript (módulos ESM)
-
-## Documentação
-
-- [Manual](docs/handbook/index.md) — 25 capítulos + 4 apêndices
-- [Visão Geral do Design](docs/DESIGN.md) — análise aprofundada da arquitetura
-- [Histórico de Alterações](CHANGELOG.md)
 
 ## Licença
 

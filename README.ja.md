@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="README.md">English</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.pt-BR.md">Português (BR)</a>
+  <a href="README.md">English</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a>
 </p>
 
 <p align="center">
@@ -12,139 +12,168 @@
   <a href="https://mcp-tool-shop-org.github.io/ai-rpg-engine/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
 </p>
 
-<p align="center">A simulation-first terminal RPG engine for worlds shaped by perception, cognition, and consequence.</p>
+# AI RPG エンジン
+
+RPGの世界を構築、分析し、バランス調整するための、シミュレーションに特化したツールキット。
+
+AI RPG エンジンは、決定論的なシミュレーション実行環境と、AIを活用したデザインスタジオを組み合わせることで、開発者が世界を構築し、シミュレーションを通じてテストし、推測ではなく、データに基づいて改善することができます。
+
+> 従来のツールは、物語の作成を支援します。
+> AI RPG エンジンは、**世界のテスト**を支援します。
 
 ---
 
-## それが何であるか
+## その機能・役割
 
-AI RPG Engineは、ターミナル上で動作するロールプレイングゲームを開発するためのモジュール式の実行環境です。この環境では、キャラクターの行動が情報を生成し、その情報が歪められ、キャラクターが信じている事に基づいて結果が生まれます。
-
-このシステムは、客観的な世界の真実を維持しながら、信頼できない語り口、登場人物間の認識のずれ、そして多層的な物語構造をサポートします。また、特定のジャンルに限定されず、ダークファンタジー、サイバーパンク、その他あらゆる設定に対応しており、プラグイン可能なルールセットによって柔軟に対応できます。
-
-## インストールする
-
-```bash
-npm install @ai-rpg-engine/core @ai-rpg-engine/modules @ai-rpg-engine/content-schema
 ```
+build → critique → simulate → analyze → tune → experiment
+```
+
+世界の内容を生成したり、デザインを評価したり、決定論的なシミュレーションを実行したり、リプレイの挙動を分析したり、ゲームの仕組みを調整したり、多数のパラメータで実験を実行したり、結果を比較したりすることができます。すべての結果は、再現可能で、検証可能で、説明可能です。
+
+---
+
+## 主要機能
+
+### 決定論的なシミュレーション
+
+RPGの世界のための、ティックベースのシミュレーションエンジン。世界の状態、イベントシステム、知覚と認知のレイヤー、派閥の信念伝播、噂システム、地区の指標、リプレイ可能なアクションログ、および決定論的な乱数生成。すべての実行は、完全に再現可能です。
+
+### AIを活用した世界構築
+
+オプションのAIレイヤーが、テーマに基づいて、部屋、派閥、クエスト、地区などを自動生成します。デザインを評価し、スキーマのエラーを修正し、改善案を提示し、段階的な世界構築のワークフローを支援します。AIは、シミュレーションの状態を直接変更することはありません。コンテンツの生成や提案のみを行います。
+
+### ガイド付きのデザインワークフロー
+
+セッションを意識し、計画を優先するワークフローにより、世界の構築、デザインの評価、デザインの反復、ガイド付きのビルド、および構造化された調整計画を実現します。決定論的なツールとAIの支援を組み合わせます。
+
+### シミュレーション分析
+
+リプレイ分析により、イベントが発生した理由、ゲームの仕組みがどこで破綻しているか、どのトリガーが発火しないか、どのシステムが不安定を引き起こしているかを説明します。分析結果は、調整に直接反映されます。
+
+### ガイド付きの調整
+
+バランスの分析結果に基づいて、構造化された調整計画が生成されます。計画には、提案された修正、予想される影響、信頼度、およびプレビューされた変更が含まれます。段階的に適用され、完全なトレーサビリティが確保されます。
+
+### シナリオ実験
+
+多数のパラメータでシミュレーションを実行し、典型的な挙動を理解します。シナリオの指標を抽出し、ばらつきを検出し、パラメータを調整し、調整された世界とベースラインの世界を比較します。世界のデザインをテスト可能なプロセスに変えます。
+
+### スタジオシェル
+
+プロジェクトのダッシュボード、問題の閲覧、実験の検査、セッション履歴、ガイド付きのオンボーディング、およびコンテキストに応じたコマンドの発見機能を備えた、CLIデザインスタジオ。世界を構築およびテストするためのワークスペースです。
+
+---
 
 ## クイックスタートガイド
 
-```typescript
-import { Engine } from '@ai-rpg-engine/core';
-import {
-  combatCore, dialogueCore, inventoryCore, traversalCore,
-  statusCore, environmentCore, cognitionCore, perceptionFilter,
-} from '@ai-rpg-engine/modules';
+```bash
+# Install the CLI
+npm install -g @ai-rpg-engine/cli
 
-const engine = new Engine({
-  manifest: {
-    id: 'my-game', title: 'My Game', version: '1.0.0',
-    engineVersion: '1.0.0', ruleset: 'fantasy',
-    modules: ['combat-core', 'dialogue-core', 'cognition-core'],
-    contentPacks: [],
-  },
-  seed: 42,
-  modules: [
-    combatCore(), dialogueCore(), inventoryCore(),
-    traversalCore(), statusCore(), environmentCore(),
-    cognitionCore(), perceptionFilter(),
-  ],
-});
+# Start the interactive studio
+ai chat
 
-// Submit an action
-const events = engine.submitAction('attack', {
-  targetIds: ['guard-01'],
-});
+# Run onboarding
+/onboard
 
-// Every action produces structured events
-for (const event of events) {
-  console.log(event.type, event.payload);
-}
+# Create your first content
+create-room haunted chapel
+
+# Run a simulation
+simulate
+
+# Analyze the results
+analyze-balance
+
+# Tune the design
+tune paranoia
+
+# Run an experiment
+experiment run --runs 50
 ```
+
+---
+
+## ワークフローの例
+
+```bash
+ai chat
+
+/onboard
+create-location-pack haunted chapel district
+critique-content
+simulate
+analyze-balance
+tune rumor propagation
+experiment run --runs 50
+compare-replays
+```
+
+世界を構築し、シミュレーションのデータに基づいて改善します。
+
+---
 
 ## アーキテクチャ
 
-```
-Engine
-  WorldStore      — entities, zones, quests, factions, RNG, event log
-  ActionDispatcher — verb handlers, validators
-  ModuleManager   — modules, formulas, rules, persistence
-  Presentation    — channels that route (and can distort) events
-```
+このシステムは、4つのレイヤーで構成されています。
 
-すべての状態変化は、単一のパイプラインを経由して処理されます。
+| レイヤー | 役割 |
+|-------|------|
+| **Simulation** | 決定論的なエンジン — 世界の状態、イベント、アクション、知覚、認知、派閥、噂の伝播、地区の指標、リプレイ |
+| **Authoring** | コンテンツ生成 — スキャフォールディング、評価、正規化、修正ループ、パックジェネレーター |
+| **AI Cognition** | オプションのAIアシスタンス — チャットシェル、コンテキストルーティング、検索、メモリ整形、ツールオーケストレーション |
+| **Studio UX** | CLIデザイン環境 — ダッシュボード、問題追跡、実験の閲覧、セッション履歴、ガイド付きワークフロー |
 
-```
-action --> validation --> resolution --> events --> presentation
-```
+---
 
 ## パッケージ
 
 | パッケージ | 目的。 |
 |---------|---------|
-| `@ai-rpg-engine/core` | 状態、エンティティ、アクション、イベント、ルール、乱数生成、永続性。 |
-| `@ai-rpg-engine/modules` | 17種類の組み込みシミュレーション機能。 |
-| `@ai-rpg-engine/content-schema` | コンテンツスキーマとバリデータ。 |
-| `@ai-rpg-engine/terminal-ui` | ターミナルレンダラーと入力レイヤー。 |
-| `@ai-rpg-engine/cli` | 開発者向けコマンドラインインターフェース：実行、リプレイ、検査。 |
-| `@ai-rpg-engine/starter-fantasy` | 「チャペル・スレッショルド」（ファンタジー体験版） |
-| `@ai-rpg-engine/starter-cyberpunk` | ネオン・ロックボックス（サイバーパンク体験版） |
+| [`@ai-rpg-engine/core`](packages/core) | 決定論的なシミュレーション実行環境 — 世界の状態、イベント、乱数生成、ティック、アクションの解決 |
+| [`@ai-rpg-engine/modules`](packages/modules) | 17の組み込みモジュール — 戦闘、知覚、認知、派閥、噂、地区 |
+| [`@ai-rpg-engine/content-schema`](packages/content-schema) | 世界のコンテンツのための標準的なスキーマとバリデータ |
+| [`@ai-rpg-engine/ollama`](packages/ollama) | オプションのAIによるコンテンツ作成 — スキャフォールディング、評価、ガイド付きワークフロー、調整、実験 |
+| [`@ai-rpg-engine/cli`](packages/cli) | コマンドラインデザインスタジオ — チャットシェル、ワークフロー、実験ツール |
+| [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | ターミナルレンダラーと入力レイヤー。 |
+| [`@ai-rpg-engine/starter-fantasy`](packages/starter-fantasy) | The Chapel Threshold — ファンタジーのスターターワールド |
+| [`@ai-rpg-engine/starter-cyberpunk`](packages/starter-cyberpunk) | Neon Lockbox — サイバーパンクのスターターワールド |
 
-## 内蔵モジュール
+---
 
-| モジュール | その機能・役割. |
-|--------|-------------|
-| 戦闘スタイル、または戦闘をテーマにしたファッション。 | 攻撃/防御、ダメージ、敗北、スタミナ。 |
-| 対話コア (または 対話の中核) | 条件付きのグラフベースの対話フロー。 |
-| 在庫管理コア機能 | アイテム、装備、使用/装備/装備解除。 |
-| トラバーサルコア (または、トラバーサルの中核部分) | エリアの移動と、エリアからの退出の確認。 |
-| ステータス・コア | 持続時間と重ね掛け可能な状態異常効果。 |
-| 環境コア機能。 | 動的なゾーンの特性、危険性、および減衰。 |
-| 認知機能の中核部分。 | AIの信念、意図、士気、記憶。 |
-| 知覚フィルター | 感覚伝達、鮮明さ、広範囲の聴取機能。 |
-| 物語の権威。
-物語における権威。
-語り手の権威。
-（文脈によっては）物語の信頼性。 | 真実と、提示、隠蔽、歪曲の関係。 |
-| プログレッシブ・コア (音楽ジャンル) | 通貨に基づくレベルアップ、スキルツリー。 |
-| 派閥認識 | 派閥の信条、信頼、派閥間の知識。 |
-| 噂の拡散 | 情報が伝播する際に、信頼性が徐々に低下する現象。 |
-| 知識の陳腐化。 | 時間経過に伴う信頼度の低下。 |
-| 地区の中心部 | 空間記憶、エリア指標、アラート閾値。 |
-| 信念の根拠、または信念の出所。 | 知覚、認知、噂といった様々な経路を通じた情報伝達の追跡。 |
-| 観察者向けプレゼンテーション。 | 各観測者ごとのイベントフィルタリング、およびデータ変動の追跡。 |
-| シミュレーション検査ツール | 実行時検査、ヘルスチェック、診断機能。 |
+## ドキュメント
 
-## 主要な設計上の決定事項
+| リソース | 説明 |
+|----------|-------------|
+| [Handbook](docs/handbook/index.md) | すべてのシステムを網羅する26章と4つの付録 |
+| [Design Document](docs/DESIGN.md) | アーキテクチャの詳細解説：アクションパイプライン、真実と表現、シミュレーションレイヤー |
+| [AI Worldbuilding Guide](packages/ollama/AI_WORLDBUILDING.md) | 構築、診断、調整、実験のワークフロー |
+| [Philosophy](PHILOSOPHY.md) | 決定論的な世界、データに基づいた設計、そしてAIをアシスタントとして |
+| [Changelog](CHANGELOG.md) | リリース履歴 |
 
-- **シミュレーションの真実は絶対である** - エンジンは客観的な状態を維持します。表示レイヤーは誤った情報を表示する可能性がありますが、世界の真実は常に正しい状態です。
-- **アクションはイベントを発生させる** - 意味のある状態の変化は、常に何らかのイベントを伴います。すべての操作は、構造化された、問い合わせ可能なイベントを発生させます。
-- **決定的なリプレイ** - シード値が設定された乱数生成器とアクションパイプラインにより、同一の入力に対して常に同一の結果が得られます。
-- **コンテンツはデータである** - 部屋、エンティティ、会話、アイテムなどは、コードではなくデータとして定義されます。
-- **ジャンルはルールセットに依存する** - エンジンは、剣とレーザーのどちらが良いかについては意見を持っていません。
+---
 
-## セキュリティと信頼性
+## 哲学
 
-AI RPG Engineは、ローカル環境でのみ動作するシミュレーションライブラリです。
+AI RPG Engineは、以下の3つのアイデアに基づいて構築されています。
 
-- **アクセスされるデータ:** メモリ上のゲームの状態のみ。 コマンドラインインターフェース（CLI）によるセーブ機能を使用した場合、`.ai-rpg-engine/` フォルダにセーブファイルが書き込まれます。
-- **アクセスされないデータ:** セーブファイル以外のファイルシステムへのアクセス、ネットワーク接続、環境変数、システムリソースは一切使用しません。
-- **テレメトリー機能はありません。** データの収集や送信は一切行いません。
-- **機密情報は保護されています。** エンジンは、認証情報などを読み込んだり、保存したり、送信したりすることはありません。
+1. **決定論的な世界**：シミュレーションの結果は再現可能でなければなりません。
+2. **データに基づいた設計**：世界の仕組みは、シミュレーションを通じてテストされるべきです。
+3. **AIをアシスタントとして、権威としてではない**：AIツールは、設計の生成と評価を支援しますが、決定論的なシステムに取って代わるものではありません。
 
-セキュリティポリシーの詳細については、[SECURITY.md](SECURITY.md) を参照してください。
+詳細については、[PHILOSOPHY.md](PHILOSOPHY.md) を参照してください。
+
+---
+
+## セキュリティ
+
+AI RPG Engineは、**ローカルでのみ動作するシミュレーションライブラリ**です。テレメトリー、ネットワーク接続、機密情報は一切使用しません。セーブファイルは、明示的に要求された場合にのみ `.ai-rpg-engine/` フォルダに保存されます。詳細は、[SECURITY.md](SECURITY.md) を参照してください。
 
 ## 要件
 
 - Node.js >= 20
 - TypeScript (ESM モジュール)
-
-## ドキュメント
-
-- [ハンドブック](docs/handbook/index.md) - 25章 + 4つの付録
-- [設計概要](docs/DESIGN.md) - アーキテクチャの詳細解説
-- [変更履歴](CHANGELOG.md)
 
 ## ライセンス
 

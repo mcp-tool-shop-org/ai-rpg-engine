@@ -4,6 +4,7 @@ import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, Re
 import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition } from '@ai-rpg-engine/modules';
+import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 
 // --- Manifest ---
 
@@ -296,4 +297,20 @@ export const smellingSaltsEffect = {
       },
     }];
   },
+};
+
+// --- Pack Metadata ---
+
+export const packMeta: PackMetadata = {
+  id: 'gaslight-detective',
+  name: 'Gaslight Detective',
+  tagline: 'A locked-room murder in a fog-choked Victorian estate.',
+  genres: ['mystery'],
+  difficulty: 'intermediate',
+  tones: ['noir', 'dark'],
+  tags: ['investigation', 'victorian', 'interrogation', 'deduction'],
+  engineVersion: '2.0.0',
+  version: '2.0.0',
+  description: 'Investigate a locked-room murder at Ashford Estate. Interrogate suspects, gather evidence, and survive the back alleys.',
+  narratorTone: 'victorian noir, measured, atmospheric, suspenseful',
 };
