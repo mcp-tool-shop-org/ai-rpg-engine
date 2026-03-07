@@ -1,7 +1,7 @@
 // Content schema types — author-facing definitions
 // These are the stable contracts for content packs.
 
-import type { ScalarValue } from '@signalfire/core';
+import type { ScalarValue } from '@ai-rpg-engine/core';
 
 // --- Entity Blueprint ---
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { Engine } from '@signalfire/core';
-import type { GameManifest, ZoneState, EntityState } from '@signalfire/core';
+import { Engine } from '@ai-rpg-engine/core';
+import type { GameManifest, ZoneState, EntityState } from '@ai-rpg-engine/core';
 import {
   traversalCore,
   combatCore,

@@ -1,4 +1,4 @@
-# Signalfire Handbook
+# AI RPG Engine Handbook
 
 A guide to building simulation-driven terminal RPGs.
 
@@ -6,7 +6,7 @@ A guide to building simulation-driven terminal RPGs.
 
 ## Part I — Orientation
 
-1. [What Signalfire Is](./01-what-signalfire-is.md)
+1. [What AI RPG Engine Is](./01-what-ai-rpg-engine-is.md)
 2. [Engine Philosophy](./02-engine-philosophy.md)
 3. [Quick Start](./03-quick-start.md)
 
@@ -62,9 +62,9 @@ A guide to building simulation-driven terminal RPGs.
 
 ---
 
-## Building Worlds with Signalfire
+## Building Worlds with AI RPG Engine
 
-Signalfire is built to support simulation-driven storytelling, reactive worlds, modular design, and terminal-native games.
+AI RPG Engine is built to support simulation-driven storytelling, reactive worlds, modular design, and terminal-native games.
 
 The engine does not tell you what kind of world to build. It gives you the systems to build one that behaves.
 

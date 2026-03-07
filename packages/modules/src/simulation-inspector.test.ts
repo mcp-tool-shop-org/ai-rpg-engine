@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'vitest';
-import { createTestEngine } from '@signalfire/core';
+import { createTestEngine } from '@ai-rpg-engine/core';
 import { createCognitionCore, getCognition, setBelief, addMemory } from './cognition-core.js';
 import { createPerceptionFilter } from './perception-filter.js';
 import { createEnvironmentCore, setZoneProperty } from './environment-core.js';

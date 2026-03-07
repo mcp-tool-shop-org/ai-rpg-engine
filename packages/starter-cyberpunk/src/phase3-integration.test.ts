@@ -1,7 +1,7 @@
 // Phase 3 integration tests — both starters with cognition, perception, progression, environment
 
 import { describe, it, expect } from 'vitest';
-import { resetIdCounter } from '@signalfire/core';
+import { resetIdCounter } from '@ai-rpg-engine/core';
 import {
   getCognition,
   believes,
@@ -11,8 +11,8 @@ import {
   addCurrency,
   isNodeUnlocked,
   getZoneProperty,
-} from '@signalfire/modules';
-import { createGame as createFantasyGame } from '@signalfire/starter-fantasy';
+} from '@ai-rpg-engine/modules';
+import { createGame as createFantasyGame } from '@ai-rpg-engine/starter-fantasy';
 import { createGame } from './setup.js';
 
 describe('Fantasy — Phase 3 cognition', () => {

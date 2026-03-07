@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createGame as createFantasy } from '@signalfire/starter-fantasy';
+import { createGame as createFantasy } from '@ai-rpg-engine/starter-fantasy';
 import { createGame as createCyberpunk } from './setup.js';
 import {
   getDistrictState,
@@ -16,7 +16,7 @@ import {
   inspectAllDistricts,
   formatDistrictInspection,
   createSnapshot,
-} from '@signalfire/modules';
+} from '@ai-rpg-engine/modules';
 
 describe('Phase 5 — Fantasy integration', () => {
   it('chapel zones belong to correct districts', () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { createTestEngine } from '@signalfire/core';
-import type { EntityState } from '@signalfire/core';
-import type { ProgressionTreeDefinition } from '@signalfire/content-schema';
+import { createTestEngine } from '@ai-rpg-engine/core';
+import type { EntityState } from '@ai-rpg-engine/core';
+import type { ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
 import {
   createProgressionCore,
   getCurrency,

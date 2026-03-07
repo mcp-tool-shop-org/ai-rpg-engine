@@ -8,8 +8,8 @@ import type {
   WorldState,
   ResolvedEvent,
   ScalarValue,
-} from '@signalfire/core';
-import { nextId } from '@signalfire/core';
+} from '@ai-rpg-engine/core';
+import { nextId } from '@ai-rpg-engine/core';
 import { getCognition, getBelief } from './cognition-core.js';
 import type { Belief } from './cognition-core.js';
 import { getEntityFaction } from './faction-cognition.js';

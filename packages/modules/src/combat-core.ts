@@ -6,8 +6,8 @@ import type {
   WorldState,
   ResolvedEvent,
   EntityState,
-} from '@signalfire/core';
-import { nextId } from '@signalfire/core';
+} from '@ai-rpg-engine/core';
+import { nextId } from '@ai-rpg-engine/core';
 
 export type CombatFormulas = {
   /** Calculate hit chance (0-100). Default: 50 + attacker.instinct * 5 - target.instinct * 3 */

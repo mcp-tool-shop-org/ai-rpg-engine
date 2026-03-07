@@ -7,7 +7,7 @@ import type {
   WorldState,
   ResolvedEvent,
   ScalarValue,
-} from '@signalfire/core';
+} from '@ai-rpg-engine/core';
 import { getCognition, getBelief } from './cognition-core.js';
 import type { Belief, CognitionState } from './cognition-core.js';
 import { getPerceptionLog } from './perception-filter.js';

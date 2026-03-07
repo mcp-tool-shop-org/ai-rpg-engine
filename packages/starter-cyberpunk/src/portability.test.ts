@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { validateRulesetDefinition } from '@signalfire/content-schema';
-import { resetIdCounter } from '@signalfire/core';
+import { validateRulesetDefinition } from '@ai-rpg-engine/content-schema';
+import { resetIdCounter } from '@ai-rpg-engine/core';
 import { createGame } from './setup.js';
 import { cyberpunkMinimalRuleset } from './ruleset.js';
-import { createGame as createFantasyGame } from '@signalfire/starter-fantasy';
+import { createGame as createFantasyGame } from '@ai-rpg-engine/starter-fantasy';
 
 describe('Neon Lockbox — cyberpunk micro-demo', () => {
   it('ruleset validates', () => {

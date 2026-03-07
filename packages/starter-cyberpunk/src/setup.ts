@@ -1,6 +1,6 @@
 // Game setup — wire cyberpunk content into engine
 
-import { Engine } from '@signalfire/core';
+import { Engine } from '@ai-rpg-engine/core';
 import {
   traversalCore,
   statusCore,
@@ -18,8 +18,8 @@ import {
   createBeliefProvenance,
   createObserverPresentation,
   giveItem,
-} from '@signalfire/modules';
-import type { PresentationRule } from '@signalfire/modules';
+} from '@ai-rpg-engine/modules';
+import type { PresentationRule } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,

@@ -1,4 +1,4 @@
-// @signalfire/terminal-ui — terminal renderer and input
+// @ai-rpg-engine/terminal-ui — terminal renderer and input
 
 export {
   renderScene,

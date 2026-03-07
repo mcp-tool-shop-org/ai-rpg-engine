@@ -6,9 +6,9 @@ import type {
   WorldState,
   ResolvedEvent,
   ScalarValue,
-} from '@signalfire/core';
-import { nextId } from '@signalfire/core';
-import type { DialogueDefinition, DialogueNode, EffectDefinition } from '@signalfire/content-schema';
+} from '@ai-rpg-engine/core';
+import { nextId } from '@ai-rpg-engine/core';
+import type { DialogueDefinition, DialogueNode, EffectDefinition } from '@ai-rpg-engine/content-schema';
 
 export type DialogueState = {
   activeDialogue: string | null;
@@ -210,7 +210,7 @@ function applyDialogueEffect(
 }
 
 function evaluateCondition(
-  condition: import('@signalfire/content-schema').ConditionSpec,
+  condition: import('@ai-rpg-engine/content-schema').ConditionSpec,
   world: WorldState,
 ): boolean {
   if (condition.type === 'global-equals') {

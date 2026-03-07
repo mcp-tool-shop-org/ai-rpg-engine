@@ -5,8 +5,8 @@ import type {
   ActionIntent,
   WorldState,
   ResolvedEvent,
-} from '@signalfire/core';
-import { nextId } from '@signalfire/core';
+} from '@ai-rpg-engine/core';
+import { nextId } from '@ai-rpg-engine/core';
 
 export type ItemEffect = {
   itemId: string;
@@ -72,7 +72,7 @@ function useHandler(
 }
 
 /** Helper: add an item to an entity's inventory */
-export function giveItem(entity: import('@signalfire/core').EntityState, itemId: string, tick: number): ResolvedEvent {
+export function giveItem(entity: import('@ai-rpg-engine/core').EntityState, itemId: string, tick: number): ResolvedEvent {
   if (!entity.inventory) entity.inventory = [];
   entity.inventory.push(itemId);
   return {

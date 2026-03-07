@@ -1,6 +1,6 @@
 // Fantasy Minimal Ruleset — declarative contract for chapel-threshold and similar content
 
-import type { RulesetDefinition } from '@signalfire/core';
+import type { RulesetDefinition } from '@ai-rpg-engine/core';
 
 export const fantasyMinimalRuleset: RulesetDefinition = {
   id: 'fantasy-minimal',

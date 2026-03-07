@@ -1,6 +1,6 @@
-# SignalFire Design Overview
+# AI RPG Engine Design Overview
 
-SignalFire is a simulation-first narrative engine for terminal RPGs. It maintains objective world truth, routes events through presentation channels that can lie, and supports pluggable genres through modular rulesets.
+AI RPG Engine is a simulation-first narrative engine for terminal RPGs. It maintains objective world truth, routes events through presentation channels that can lie, and supports pluggable genres through modular rulesets.
 
 ## Core Architecture
 
@@ -125,7 +125,7 @@ The engine is genre-ignorant. It doesn't know what "vigor" means. The ruleset + 
 
 ## Truth vs Presentation
 
-This is SignalFire's defining feature.
+This is AI RPG Engine's defining feature.
 
 ```
 Objective Truth (WorldStore)
@@ -465,7 +465,7 @@ packages/
   content-schema/   — Author-facing types, validators, reference checker, loader
   modules/          — Built-in mechanical modules
   terminal-ui/      — Terminal renderer (scene, events, actions, dialogue)
-  cli/              — signalfire run|replay|inspect-save
+  cli/              — ai-rpg-engine run|replay|inspect-save
   starter-fantasy/  — The Chapel Threshold (fantasy demo)
   starter-cyberpunk/— Neon Lockbox (cyberpunk demo)
 ```
@@ -476,6 +476,6 @@ packages/
 2. Write content (entities, zones, dialogues) using content-schema types
 3. Select modules or write custom ones
 4. Wire everything in a `createGame()` function
-5. Run with `signalfire run` or embed the Engine directly
+5. Run with `ai-rpg-engine run` or embed the Engine directly
 
 No core edits required. The engine doesn't know your genre exists until you tell it.

@@ -2,7 +2,7 @@
 
 > Part VIII — Future Directions
 
-SignalFire is evolving. Some systems that were planned have shipped; others remain under consideration.
+AI RPG Engine is evolving. Some systems that were planned have shipped; others remain under consideration.
 
 ## Shipped in Phase 4
 

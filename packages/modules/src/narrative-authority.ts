@@ -4,8 +4,8 @@ import type {
   EngineModule,
   ResolvedEvent,
   EventChannel,
-} from '@signalfire/core';
-import { PresentationChannels, type ChannelFilter, type PresentedEvent } from '@signalfire/core';
+} from '@ai-rpg-engine/core';
+import { PresentationChannels, type ChannelFilter, type PresentedEvent } from '@ai-rpg-engine/core';
 
 export type NarratorPersonality = {
   /** Narrator voice name */

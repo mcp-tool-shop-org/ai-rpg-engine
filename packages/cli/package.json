@@ -1,12 +1,12 @@
 {
-  "name": "@signalfire/cli",
+  "name": "@ai-rpg-engine/cli",
   "version": "0.1.0",
-  "description": "SignalFire developer CLI: run, validate, replay, inspect",
+  "description": "AI RPG Engine developer CLI: run, validate, replay, inspect",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "signalfire": "./dist/bin.js"
+    "ai-rpg-engine": "./dist/bin.js"
   },
   "exports": {
     ".": {
@@ -20,11 +20,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@signalfire/core": "*",
-    "@signalfire/modules": "*",
-    "@signalfire/content-schema": "*",
-    "@signalfire/terminal-ui": "*",
-    "@signalfire/starter-fantasy": "*"
+    "@ai-rpg-engine/core": "*",
+    "@ai-rpg-engine/modules": "*",
+    "@ai-rpg-engine/content-schema": "*",
+    "@ai-rpg-engine/terminal-ui": "*",
+    "@ai-rpg-engine/starter-fantasy": "*"
   },
   "license": "MIT"
 }

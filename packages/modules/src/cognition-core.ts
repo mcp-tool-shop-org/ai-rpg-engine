@@ -8,8 +8,8 @@ import type {
   ScalarValue,
   ActionIntent,
   ZoneState,
-} from '@signalfire/core';
-import { nextId } from '@signalfire/core';
+} from '@ai-rpg-engine/core';
+import { nextId } from '@ai-rpg-engine/core';
 
 // --- Knowledge Model ---
 

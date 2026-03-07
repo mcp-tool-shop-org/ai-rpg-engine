@@ -1,6 +1,6 @@
 // Cyberpunk Minimal Ruleset — for Neon Lockbox and similar content
 
-import type { RulesetDefinition } from '@signalfire/core';
+import type { RulesetDefinition } from '@ai-rpg-engine/core';
 
 export const cyberpunkMinimalRuleset: RulesetDefinition = {
   id: 'cyberpunk-minimal',

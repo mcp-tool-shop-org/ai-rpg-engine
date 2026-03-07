@@ -2,7 +2,7 @@
 // knowledge decay, and simulation inspector across both starters
 
 import { describe, test, expect } from 'vitest';
-import { createTestEngine } from '@signalfire/core';
+import { createTestEngine } from '@ai-rpg-engine/core';
 import {
   createCognitionCore,
   createPerceptionFilter,
@@ -26,7 +26,7 @@ import {
   createSnapshot,
   formatEntityInspection,
   setZoneProperty,
-} from '@signalfire/modules';
+} from '@ai-rpg-engine/modules';
 import { combatMasteryTree } from '../../starter-fantasy/src/content.js';
 import { netrunningTree } from './content.js';
 

@@ -6,8 +6,8 @@ import type {
   WorldState,
   AppliedStatus,
   EntityState,
-} from '@signalfire/core';
-import { nextId } from '@signalfire/core';
+} from '@ai-rpg-engine/core';
+import { nextId } from '@ai-rpg-engine/core';
 
 export const statusCore: EngineModule = {
   id: 'status-core',
@@ -31,7 +31,7 @@ export function applyStatus(
     maxStacks?: number;
     duration?: number;
     sourceId?: string;
-    data?: Record<string, import('@signalfire/core').ScalarValue>;
+    data?: Record<string, import('@ai-rpg-engine/core').ScalarValue>;
   },
 ): ResolvedEvent {
   const stacking = options?.stacking ?? 'replace';
@@ -117,7 +117,7 @@ export function getStatusStacks(entity: EntityState, statusId: string): number {
 
 function processExpirations(
   world: WorldState,
-  ctx: import('@signalfire/core').ModuleRegistrationContext,
+  ctx: import('@ai-rpg-engine/core').ModuleRegistrationContext,
 ): void {
   const tick = world.meta.tick;
   for (const entity of Object.values(world.entities)) {

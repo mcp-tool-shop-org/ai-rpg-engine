@@ -1,4 +1,4 @@
-// @signalfire/core — engine nucleus
+// @ai-rpg-engine/core — engine nucleus
 
 export * from './types.js';
 export * from './id.js';

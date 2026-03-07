@@ -1,7 +1,7 @@
 {
-  "name": "@signalfire/content-schema",
+  "name": "@ai-rpg-engine/content-schema",
   "version": "0.1.0",
-  "description": "SignalFire content schemas and validators",
+  "description": "AI RPG Engine content schemas and validators",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,7 +17,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@signalfire/core": "*"
+    "@ai-rpg-engine/core": "*"
   },
   "license": "MIT"
 }

@@ -1,6 +1,6 @@
 // Terminal renderer — scene, event log, command display
 
-import type { WorldState, ResolvedEvent, ZoneState, EntityState } from '@signalfire/core';
+import type { WorldState, ResolvedEvent, ZoneState, EntityState } from '@ai-rpg-engine/core';
 
 const DIVIDER = '─'.repeat(60);
 const THIN_DIVIDER = '·'.repeat(60);
@@ -137,12 +137,12 @@ export function renderActions(verbs: string[], world: WorldState): string {
 export function parseActionSelection(
   input: string,
   world: WorldState,
-): { verb: string; targetIds?: string[]; toolId?: string; parameters?: Record<string, import('@signalfire/core').ScalarValue> } | null {
+): { verb: string; targetIds?: string[]; toolId?: string; parameters?: Record<string, import('@ai-rpg-engine/core').ScalarValue> } | null {
   const zone = world.zones[world.locationId];
   if (!zone) return null;
 
   // Build the same action list to map index → action
-  const actions: Array<{ verb: string; targetIds?: string[]; toolId?: string; parameters?: Record<string, import('@signalfire/core').ScalarValue> }> = [];
+  const actions: Array<{ verb: string; targetIds?: string[]; toolId?: string; parameters?: Record<string, import('@ai-rpg-engine/core').ScalarValue> }> = [];
 
   for (const neighborId of zone.neighbors) {
     actions.push({ verb: 'move', targetIds: [neighborId] });
@@ -183,7 +183,7 @@ export function parseActionSelection(
 export function parseTextInput(
   input: string,
   world: WorldState,
-): { verb: string; targetIds?: string[]; toolId?: string; parameters?: Record<string, import('@signalfire/core').ScalarValue> } | null {
+): { verb: string; targetIds?: string[]; toolId?: string; parameters?: Record<string, import('@ai-rpg-engine/core').ScalarValue> } | null {
   const parts = input.trim().toLowerCase().split(/\s+/);
   if (parts.length === 0) return null;
 

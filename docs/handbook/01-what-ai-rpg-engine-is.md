@@ -1,10 +1,10 @@
-# Chapter 1 — What Signalfire Is
+# Chapter 1 — What AI RPG Engine Is
 
-Signalfire is a terminal RPG simulation engine.
+AI RPG Engine is a terminal RPG simulation engine.
 
 It provides the systems needed to build interactive worlds that run entirely in the terminal. These worlds can contain characters that think, environments that change, and events that unfold according to simulation rules rather than rigid scripts.
 
-Signalfire is designed around a simple idea:
+AI RPG Engine is designed around a simple idea:
 
 > A believable world comes from systems interacting with each other.
 
@@ -30,7 +30,7 @@ Because the engine separates simulation truth from presentation, it can support 
 
 ## Genre-Agnostic by Design
 
-Signalfire is genre-agnostic.
+AI RPG Engine is genre-agnostic.
 
 The same engine can power very different worlds because genre assumptions live in rulesets and content, not in the core runtime.
 
@@ -58,4 +58,4 @@ simulation truth
 = reactive narrative worlds
 ```
 
-That is the purpose of Signalfire: a reusable foundation for building many kinds of simulation-driven terminal RPGs.
+That is the purpose of AI RPG Engine: a reusable foundation for building many kinds of simulation-driven terminal RPGs.

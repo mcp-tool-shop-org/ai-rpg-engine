@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateRulesetDefinition } from '@signalfire/content-schema';
+import { validateRulesetDefinition } from '@ai-rpg-engine/content-schema';
 import { fantasyMinimalRuleset } from './ruleset.js';
 
 describe('fantasyMinimalRuleset', () => {

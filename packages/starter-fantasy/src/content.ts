@@ -1,9 +1,9 @@
 // The Chapel Threshold — fantasy starter content
 // 2 rooms, 5 zones, 1 NPC, 1 enemy, 1 item, 1 dialogue, 1 status
 
-import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@signalfire/core';
-import { nextId } from '@signalfire/core';
-import type { DialogueDefinition } from '@signalfire/content-schema';
+import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
+import { nextId } from '@ai-rpg-engine/core';
+import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
 
 export const manifest: GameManifest = {
   id: 'chapel-threshold',
@@ -184,7 +184,7 @@ export const pilgrimDialogue: DialogueDefinition = {
 
 // --- Districts ---
 
-import type { DistrictDefinition } from '@signalfire/modules';
+import type { DistrictDefinition } from '@ai-rpg-engine/modules';
 
 export const districts: DistrictDefinition[] = [
   {
@@ -204,7 +204,7 @@ export const districts: DistrictDefinition[] = [
 
 // --- Progression Trees ---
 
-import type { ProgressionTreeDefinition } from '@signalfire/content-schema';
+import type { ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
 
 export const combatMasteryTree: ProgressionTreeDefinition = {
   id: 'combat-mastery',

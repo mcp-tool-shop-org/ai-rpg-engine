@@ -2,7 +2,7 @@
 
 > Part II — Engine Architecture
 
-The runtime engine that powers every Signalfire world.
+The runtime engine that powers every AI RPG Engine world.
 
 ## Topics
 
@@ -23,4 +23,4 @@ Every player command follows this pipeline. The engine validates the action agai
 
 ## Deterministic Replay
 
-Because the simulation loop is deterministic and seeded, any sequence of actions can be replayed to produce the exact same events. This is the foundation of Signalfire's debugging and testing workflow.
+Because the simulation loop is deterministic and seeded, any sequence of actions can be replayed to produce the exact same events. This is the foundation of AI RPG Engine's debugging and testing workflow.

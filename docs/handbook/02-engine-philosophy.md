@@ -1,6 +1,6 @@
 # Chapter 2 — Engine Philosophy
 
-Signalfire is guided by a small set of design principles. These principles shape how the engine is structured and how games are authored.
+AI RPG Engine is guided by a small set of design principles. These principles shape how the engine is structured and how games are authored.
 
 Understanding them will help you understand the rest of the system.
 
@@ -8,7 +8,7 @@ Understanding them will help you understand the rest of the system.
 
 ## Worlds Are Simulations, Not Scripts
 
-Traditional narrative engines often rely on scripted sequences. Signalfire takes a different approach.
+Traditional narrative engines often rely on scripted sequences. AI RPG Engine takes a different approach.
 
 You define the pieces of the world:
 
@@ -42,13 +42,13 @@ Different presentation layers can interpret events differently:
 
 The engine tracks both the objective truth and the presented version of events.
 
-This allows games built with Signalfire to experiment with perception, misinformation, and discovery without breaking the underlying simulation.
+This allows games built with AI RPG Engine to experiment with perception, misinformation, and discovery without breaking the underlying simulation.
 
 ---
 
 ## Events Drive Everything
 
-Signalfire is an event-driven system.
+AI RPG Engine is an event-driven system.
 
 Every meaningful change in the world produces an event.
 
@@ -68,7 +68,7 @@ Because events are structured and deterministic, they can also be recorded and r
 
 ## Modules Extend the Engine
 
-Signalfire's core runtime stays intentionally small.
+AI RPG Engine's core runtime stays intentionally small.
 
 Most gameplay systems are implemented as modules that plug into the engine.
 
@@ -122,7 +122,7 @@ The engine runs both worlds using the same simulation loop.
 
 ## Content Is Data
 
-Games built with Signalfire rely heavily on structured content files.
+Games built with AI RPG Engine rely heavily on structured content files.
 
 These files define things such as:
 

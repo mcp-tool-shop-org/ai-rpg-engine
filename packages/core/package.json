@@ -1,7 +1,7 @@
 {
-  "name": "@signalfire/core",
+  "name": "@ai-rpg-engine/core",
   "version": "0.1.0",
-  "description": "SignalFire engine core: state, entities, actions, events, rules, RNG, persistence",
+  "description": "AI RPG Engine core: state, entities, actions, events, rules, RNG, persistence",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

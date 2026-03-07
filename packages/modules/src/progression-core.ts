@@ -8,9 +8,9 @@ import type {
   ResolvedEvent,
   EntityState,
   ScalarValue,
-} from '@signalfire/core';
-import { nextId } from '@signalfire/core';
-import type { ProgressionTreeDefinition, ProgressionNode, EffectDefinition } from '@signalfire/content-schema';
+} from '@ai-rpg-engine/core';
+import { nextId } from '@ai-rpg-engine/core';
+import type { ProgressionTreeDefinition, ProgressionNode, EffectDefinition } from '@ai-rpg-engine/content-schema';
 
 // --- Types ---
 

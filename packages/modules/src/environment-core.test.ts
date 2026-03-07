@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createTestEngine } from '@signalfire/core';
-import type { EntityState } from '@signalfire/core';
+import { createTestEngine } from '@ai-rpg-engine/core';
+import type { EntityState } from '@ai-rpg-engine/core';
 import {
   createEnvironmentCore,
   getZoneProperty,

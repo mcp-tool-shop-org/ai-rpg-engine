@@ -3,7 +3,7 @@ import {
   PresentationChannels,
   createTestEngine,
   type ResolvedEvent,
-} from '@signalfire/core';
+} from '@ai-rpg-engine/core';
 import {
   createNarrativeAuthority,
   recordPresentation,

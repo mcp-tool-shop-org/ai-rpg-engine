@@ -1,4 +1,4 @@
-// @signalfire/modules — built-in mechanical systems
+// @ai-rpg-engine/modules — built-in mechanical systems
 
 export { traversalCore } from './traversal-core.js';
 export { statusCore, applyStatus, removeStatus, hasStatus, getStatusStacks } from './status-core.js';

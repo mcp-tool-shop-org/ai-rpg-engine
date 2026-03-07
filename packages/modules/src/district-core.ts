@@ -8,7 +8,7 @@ import type {
   WorldState,
   ResolvedEvent,
   ScalarValue,
-} from '@signalfire/core';
+} from '@ai-rpg-engine/core';
 import { getZoneProperty } from './environment-core.js';
 import { getEntityFaction, getFactionCognition } from './faction-cognition.js';
 

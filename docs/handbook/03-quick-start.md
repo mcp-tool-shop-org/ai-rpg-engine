@@ -1,6 +1,6 @@
 # Chapter 3 — Quick Start
 
-This section shows how to run Signalfire and explore the included example worlds.
+This section shows how to run AI RPG Engine and explore the included example worlds.
 
 The examples are intentionally small, but they demonstrate how the engine works.
 
@@ -24,7 +24,7 @@ npx tsc --build
 
 ## Running a Game
 
-To run a Signalfire game, use the CLI:
+To run an AI RPG Engine game, use the CLI:
 
 ```bash
 node packages/cli/dist/bin.js run
@@ -95,7 +95,7 @@ The engine can serialize the entire world state.
 Save files are generated automatically during play and can be inspected using the CLI.
 
 ```bash
-signalfire inspect-save
+ai-rpg-engine inspect-save
 ```
 
 This command prints the saved state in a readable format.
@@ -104,14 +104,14 @@ This command prints the saved state in a readable format.
 
 ## Replay
 
-Signalfire supports deterministic replay.
+AI RPG Engine supports deterministic replay.
 
 Every player action is recorded, and the engine can replay those actions using the same random seed to reproduce the exact same sequence of events.
 
 Run a replay using:
 
 ```bash
-signalfire replay
+ai-rpg-engine replay
 ```
 
 Replay is extremely useful for debugging and automated testing.
@@ -130,4 +130,4 @@ You will learn how to:
 - create new modules
 - design new rulesets
 
-Once you understand these pieces, you can build entirely new RPG worlds using the Signalfire engine.
+Once you understand these pieces, you can build entirely new RPG worlds using the AI RPG Engine engine.

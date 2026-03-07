@@ -4,12 +4,12 @@ All commands and flags.
 
 ## Commands
 
-### `signalfire run`
+### `ai-rpg-engine run`
 
 Start a game session.
 
 ```bash
-signalfire run [--starter <name>] [--seed <number>]
+ai-rpg-engine run [--starter <name>] [--seed <number>]
 ```
 
 | Flag | Description |
@@ -17,12 +17,12 @@ signalfire run [--starter <name>] [--seed <number>]
 | `--starter` | Starter world to load (default: fantasy) |
 | `--seed` | Random seed for deterministic sessions |
 
-### `signalfire replay`
+### `ai-rpg-engine replay`
 
 Replay a recorded session.
 
 ```bash
-signalfire replay [--file <path>] [--verbose]
+ai-rpg-engine replay [--file <path>] [--verbose]
 ```
 
 | Flag | Description |
@@ -30,12 +30,12 @@ signalfire replay [--file <path>] [--verbose]
 | `--file` | Path to action log file |
 | `--verbose` | Print all events during replay |
 
-### `signalfire inspect-save`
+### `ai-rpg-engine inspect-save`
 
 Print a save file in readable format.
 
 ```bash
-signalfire inspect-save [--file <path>] [--section <name>]
+ai-rpg-engine inspect-save [--file <path>] [--section <name>]
 ```
 
 | Flag | Description |

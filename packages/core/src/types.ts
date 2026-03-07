@@ -1,4 +1,4 @@
-// Canonical runtime types — SignalFire Engine Constitution v0.1
+// Canonical runtime types — AI RPG Engine Engine Constitution v0.1
 // Rulesets may extend these, not break them.
 
 export type ScalarValue = string | number | boolean;

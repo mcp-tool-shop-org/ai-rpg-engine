@@ -26,7 +26,7 @@ The engine serializes the complete `WorldState`:
 Use the CLI to print a save file in readable format:
 
 ```bash
-signalfire inspect-save
+ai-rpg-engine inspect-save
 ```
 
 This outputs the full world state as structured text, making it easy to verify entity positions, belief states, progression unlocks, and environmental conditions without loading the game.

@@ -1,7 +1,7 @@
 // traversal-core — movement between zones
 
-import type { EngineModule, ActionIntent, WorldState, ResolvedEvent } from '@signalfire/core';
-import { nextId } from '@signalfire/core';
+import type { EngineModule, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
+import { nextId } from '@ai-rpg-engine/core';
 
 export const traversalCore: EngineModule = {
   id: 'traversal-core',

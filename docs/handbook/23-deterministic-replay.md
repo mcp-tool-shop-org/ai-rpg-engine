@@ -11,14 +11,14 @@ Every player action is recorded in an action log alongside the random seed used 
 ## Running a Replay
 
 ```bash
-signalfire replay
+ai-rpg-engine replay
 ```
 
 The engine re-executes every recorded action and verifies that the resulting events match the original session.
 
 ## Debugging Workflows
 
-Replay is the primary debugging tool for Signalfire:
+Replay is the primary debugging tool for AI RPG Engine:
 
 1. **Reproduce a bug** — replay the session that triggered it
 2. **Isolate the cause** — add logging or breakpoints and replay again

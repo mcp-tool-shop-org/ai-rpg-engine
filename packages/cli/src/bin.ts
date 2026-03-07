@@ -1,18 +1,18 @@
 #!/usr/bin/env node
-// SignalFire CLI — run, save, load, replay
+// AI RPG Engine CLI — run, save, load, replay
 
 import * as readline from 'node:readline';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { createGame } from '@signalfire/starter-fantasy';
+import { createGame } from '@ai-rpg-engine/starter-fantasy';
 import {
   renderFullScreen,
   parseActionSelection,
   parseTextInput,
-} from '@signalfire/terminal-ui';
-import type { Engine } from '@signalfire/core';
+} from '@ai-rpg-engine/terminal-ui';
+import type { Engine } from '@ai-rpg-engine/core';
 
-const SAVE_DIR = '.signalfire';
+const SAVE_DIR = '.ai-rpg-engine';
 const SAVE_FILE = path.join(SAVE_DIR, 'save.json');
 
 function main() {
@@ -27,7 +27,7 @@ function main() {
     case 'inspect-save':
       return inspectSave();
     default:
-      console.log('SignalFire CLI v0.1.0');
+      console.log('AI RPG Engine CLI v0.1.0');
       console.log('Commands: run, replay, inspect-save');
       process.exit(0);
   }
@@ -55,7 +55,7 @@ function runGame() {
 
   console.log('\n  ═══════════════════════════════════════');
   console.log('  THE CHAPEL THRESHOLD');
-  console.log('  A SignalFire Starter');
+  console.log('  An AI RPG Engine Starter');
   console.log('  ═══════════════════════════════════════\n');
 
   const rl = readline.createInterface({

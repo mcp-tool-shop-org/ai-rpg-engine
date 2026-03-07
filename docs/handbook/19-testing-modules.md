@@ -6,10 +6,10 @@ Use the test harness for deterministic module testing.
 
 ## The Test Harness
 
-Signalfire provides `createTestEngine()` to spin up isolated engine instances for testing:
+AI RPG Engine provides `createTestEngine()` to spin up isolated engine instances for testing:
 
 ```typescript
-import { createTestEngine } from '@signalfire/core';
+import { createTestEngine } from '@ai-rpg-engine/core';
 
 const engine = createTestEngine({
   modules: [createMyModule()],

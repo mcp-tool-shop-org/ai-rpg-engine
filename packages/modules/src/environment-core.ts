@@ -9,8 +9,8 @@ import type {
   EntityState,
   ResolvedEvent,
   ScalarValue,
-} from '@signalfire/core';
-import { nextId } from '@signalfire/core';
+} from '@ai-rpg-engine/core';
+import { nextId } from '@ai-rpg-engine/core';
 
 // --- Types ---
 

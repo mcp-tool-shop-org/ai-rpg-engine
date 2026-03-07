@@ -2,7 +2,7 @@
 
 > Part II — Engine Architecture
 
-Events are the bloodstream of Signalfire.
+Events are the bloodstream of AI RPG Engine.
 
 ## Topics
 

@@ -1,7 +1,7 @@
 {
-  "name": "@signalfire/starter-fantasy",
+  "name": "@ai-rpg-engine/starter-fantasy",
   "version": "0.1.0",
-  "description": "SignalFire fantasy starter: The Chapel Threshold",
+  "description": "AI RPG Engine fantasy starter: The Chapel Threshold",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,9 +17,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@signalfire/core": "*",
-    "@signalfire/content-schema": "*",
-    "@signalfire/modules": "*"
+    "@ai-rpg-engine/core": "*",
+    "@ai-rpg-engine/content-schema": "*",
+    "@ai-rpg-engine/modules": "*"
   },
   "license": "MIT"
 }

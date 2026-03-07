@@ -1,7 +1,7 @@
 {
-  "name": "@signalfire/terminal-ui",
+  "name": "@ai-rpg-engine/terminal-ui",
   "version": "0.1.0",
-  "description": "SignalFire terminal renderer and input layer",
+  "description": "AI RPG Engine terminal renderer and input layer",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,7 +17,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@signalfire/core": "*"
+    "@ai-rpg-engine/core": "*"
   },
   "license": "MIT"
 }

@@ -9,7 +9,7 @@ import type {
   EntityState,
   ResolvedEvent,
   ScalarValue,
-} from '@signalfire/core';
+} from '@ai-rpg-engine/core';
 import { getCognition, getBelief } from './cognition-core.js';
 import { getEntityFaction, getFactionCognition } from './faction-cognition.js';
 import type { FactionCognitionState } from './faction-cognition.js';

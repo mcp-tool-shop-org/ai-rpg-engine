@@ -1,7 +1,7 @@
 {
-  "name": "@signalfire/modules",
+  "name": "@ai-rpg-engine/modules",
   "version": "0.1.0",
-  "description": "SignalFire built-in modules: combat, dialogue, inventory, traversal, status",
+  "description": "AI RPG Engine built-in modules: combat, dialogue, inventory, traversal, status",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,8 +17,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@signalfire/core": "*",
-    "@signalfire/content-schema": "*"
+    "@ai-rpg-engine/core": "*",
+    "@ai-rpg-engine/content-schema": "*"
   },
   "license": "MIT"
 }
