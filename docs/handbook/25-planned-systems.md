@@ -24,11 +24,23 @@ Beliefs degrade over time based on environmental stability, time since last conf
 
 Full observability layer with entity, faction, and zone inspection. Snapshot capture for state comparison. Text formatters for CLI output. Five debug inspectors registered for tooling integration.
 
+## Shipped in Phase 5
+
+The following systems shipped as built-in modules in Phase 5 — Spatial Memory.
+
+### District Simulation (district-core)
+
+Zone-level events aggregate into persistent district metrics: alert pressure, intruder likelihood, rumor density, surveillance, and stability. Districts decay toward baseline each tick. Faction-controlled districts boost faction alertLevel when intruder likelihood rises. Threat level is a weighted composite across metrics.
+
+### Belief Provenance (belief-provenance)
+
+Pure query module that reconstructs end-to-end belief traces. Answers "why does this entity/faction believe X about Y?" by correlating perception logs, cognition state, rumor records, and faction beliefs. No new state — reads existing module data. Produces human-readable forensic narratives.
+
+### Observer Presentation (observer-presentation)
+
+Subjective event rendering per observer. The same event is presented differently based on perception clarity, faction allegiance, and cognitive bias. Built-in rules handle low clarity, partial visibility, hostile faction framing, paranoid suspicion, and environmental distortion. Custom rules are authorable per genre — undead see trespassers, ICE agents see intrusions.
+
 ## Planned
-
-### Procedural Districts
-
-Region-level simulation where district conditions (patrol frequency, noise levels, faction control) evolve based on cumulative player actions and world events.
 
 ### Companion AI
 
@@ -44,4 +56,4 @@ Scheduled world events, environmental cascades, and economic simulation. The wor
 
 ---
 
-These planned systems build on the foundations laid in Phases 1–4. The architecture supports them because cognition, perception, environment, faction cognition, and rumor propagation were designed as composable layers rather than isolated features.
+These planned systems build on the foundations laid in Phases 1–5. The architecture supports them because cognition, perception, environment, faction cognition, rumor propagation, districts, and observer presentation were designed as composable layers rather than isolated features.

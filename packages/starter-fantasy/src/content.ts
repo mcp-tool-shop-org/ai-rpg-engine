@@ -182,6 +182,26 @@ export const pilgrimDialogue: DialogueDefinition = {
   },
 };
 
+// --- Districts ---
+
+import type { DistrictDefinition } from '@signalfire/modules';
+
+export const districts: DistrictDefinition[] = [
+  {
+    id: 'chapel-grounds',
+    name: 'Chapel Grounds',
+    zoneIds: ['chapel-entrance', 'chapel-nave', 'chapel-alcove'],
+    tags: ['sacred', 'aboveground'],
+  },
+  {
+    id: 'crypt-depths',
+    name: 'Crypt Depths',
+    zoneIds: ['vestry-door', 'crypt-chamber'],
+    tags: ['cursed', 'underground'],
+    controllingFaction: 'chapel-undead',
+  },
+];
+
 // --- Progression Trees ---
 
 import type { ProgressionTreeDefinition } from '@signalfire/content-schema';

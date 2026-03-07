@@ -66,3 +66,48 @@ Creates an isolated engine instance for testing.
 | distort | `(world, eventId, replacement) → void` | Replace event in presentation |
 | getContradictions | `(world) → Contradiction[]` | List recorded contradictions |
 | reveal | `(world, contradictionId) → void` | Expose a hidden truth |
+
+## District Core — `createDistrictCore(config)`
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| getDistrictForZone | `(world, zoneId) → string \| undefined` | Find which district a zone belongs to |
+| getDistrictState | `(world, districtId) → DistrictMetrics \| undefined` | Get district aggregate metrics |
+| getDistrictDefinition | `(world, districtId) → DistrictDefinition \| undefined` | Get district config |
+| getAllDistrictIds | `(world) → string[]` | List all district IDs |
+| getDistrictMetric | `(world, districtId, metric) → number` | Get a specific metric value |
+| modifyDistrictMetric | `(world, districtId, metric, delta) → void` | Modify a metric by delta (clamped 0-100) |
+| isDistrictOnAlert | `(world, districtId) → boolean` | Check if alertPressure > 30 |
+| getDistrictThreatLevel | `(world, districtId) → number` | Weighted composite of all metrics |
+
+## Belief Provenance — `createBeliefProvenance()`
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| traceEntityBelief | `(world, entityId, subject, key) → BeliefTrace` | Trace an entity belief's provenance |
+| traceFactionBelief | `(world, factionId, subject, key) → BeliefTrace` | Trace a faction belief through rumor chain |
+| traceSubject | `(world, subject) → BeliefTrace[]` | Find all beliefs about a subject |
+| formatBeliefTrace | `(trace) → string` | Human-readable forensic narrative |
+
+## Observer Presentation — `createObserverPresentation(config?)`
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| presentForObserver | `(event, observerId, world, rules?) → ObserverPresentedEvent` | Present event from observer's perspective |
+| presentForAllObservers | `(event, world) → ObserverPresentedEvent[]` | One version per AI entity |
+| getDivergences | `(world) → DivergenceRecord[]` | All recorded divergences |
+| getEventDivergences | `(world, eventId) → DivergenceRecord[]` | Divergences for a specific event |
+
+## Simulation Inspector — `createSimulationInspector()`
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| inspectEntity | `(world, entityId) → EntityInspection` | Full entity cognitive state |
+| inspectFaction | `(world, factionId) → FactionInspection` | Faction beliefs and alert level |
+| inspectZone | `(world, zoneId) → ZoneInspection` | Zone environment state |
+| inspectDistrict | `(world, districtId) → DistrictInspection` | District aggregate metrics |
+| inspectAllDistricts | `(world) → Record<string, DistrictInspection>` | All district inspections |
+| createSnapshot | `(world) → SimulationSnapshot` | Full world snapshot |
+| formatEntityInspection | `(inspection) → string` | Text format for entity |
+| formatFactionInspection | `(inspection) → string` | Text format for faction |
+| formatDistrictInspection | `(inspection) → string` | Text format for district |

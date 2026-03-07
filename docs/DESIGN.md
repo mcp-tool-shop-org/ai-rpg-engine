@@ -101,7 +101,7 @@ const myModule: EngineModule = {
 - `debug` — register inspectors
 - `formulas` — register/query named formula implementations
 
-**Built-in modules:** traversal-core, status-core, combat-core, inventory-core, dialogue-core, narrative-authority, cognition-core, perception-filter, progression-core, environment-core, faction-cognition, rumor-propagation, simulation-inspector.
+**Built-in modules:** traversal-core, status-core, combat-core, inventory-core, dialogue-core, narrative-authority, cognition-core, perception-filter, progression-core, environment-core, faction-cognition, rumor-propagation, district-core, belief-provenance, observer-presentation, simulation-inspector.
 
 ## Ruleset Model
 
@@ -325,6 +325,92 @@ The selected intent maps to a verb (attack, defend, move) which enters the actio
 
 Every step is traceable. Every decision has a cause. No magic flags, no scripted triggers.
 
+### District Layer (district-core)
+
+Districts group zones into spatial memory surfaces — persistent aggregate metrics that evolve from zone-level events.
+
+```
+Zone events (combat, entry, rumors)
+       │
+       ▼
+  District aggregation:
+       │
+       ├─ combat.*          → alertPressure ↑
+       ├─ world.zone.entered → intruderLikelihood ↑ (non-faction entities)
+       └─ rumor.propagated   → rumorDensity ↑
+       │
+       ▼
+  district-tick verb:
+       │
+       ├─ Decay all metrics toward baseline
+       ├─ Update surveillance from faction member presence
+       ├─ Sync stability from constituent zone averages
+       └─ Boost faction alertLevel when intruderLikelihood > 20
+```
+
+Key mechanics:
+- **Alert pressure** — cumulative combat intensity across a district's zones. Decays by 1 per tick.
+- **Intruder likelihood** — rises when non-faction entities enter faction-controlled districts. Drives faction AI reactions.
+- **Surveillance** — faction member count × 15 per member present. Represents active monitoring.
+- **Stability** — average stability from constituent zones. Feeds into cognition decay and rumor distortion.
+- **Threat level** — weighted composite: alertPressure × 0.4 + intruderLikelihood × 0.35 + rumorDensity × 0.25.
+
+All metrics clamp to 0–100. A district is "on alert" when alertPressure > 30.
+
+### Belief Provenance (belief-provenance)
+
+A pure query module that answers "why does X believe Y?" by correlating existing logs from perception, cognition, rumor, and faction modules. No new state — reads what's already there.
+
+```
+traceEntityBelief(world, entityId, subject, key)
+       │
+       ▼
+  1. Find source events involving subject
+  2. Check entity's perception log for each event
+  3. Find matching belief in entity's cognition
+  4. Check for rumor propagation from this entity
+       │
+       ▼
+  BeliefTrace { chain: TraceStep[], currentValue, currentConfidence }
+```
+
+Trace step types: `source-event`, `perceived`, `missed`, `belief-formed`, `rumor-scheduled`, `rumor-delivered`, `faction-belief-updated`, `decayed`, `reinforced`, `pruned`.
+
+`traceFactionBelief` extends this by following rumors from contributing entities through to faction belief formation. `traceSubject` finds all beliefs about a subject across all entities and factions.
+
+`formatBeliefTrace` produces human-readable forensic narratives with step icons (EVENT, SEEN, MISSED, BELIEF, RUMOR>, RUMOR<, FACTION).
+
+### Observer Presentation (observer-presentation)
+
+The same event described differently depending on who observes it. Connects perception clarity, faction allegiance, and cognitive bias to presentation.
+
+```
+ResolvedEvent
+       │
+       ▼
+  For each observer:
+       │
+       ├─ Build ObserverContext (clarity, faction, hostility, stability, suspicion)
+       │
+       ├─ Apply matching PresentationRules (sorted by priority)
+       │   ├─ low-clarity-identity (10): clarity < 0.4 → "a shadowed figure"
+       │   ├─ medium-clarity-partial (5): clarity 0.4-0.7 → "someone in dim light"
+       │   ├─ hostile-faction-bias (3): hostile actor → "an enemy combatant"
+       │   ├─ high-suspicion-paranoia (2): suspicion > 60 → "a suspicious figure"
+       │   └─ unstable-environment-glitch (1): stability < 2 → environmental distortion
+       │
+       └─ Record DivergenceRecord if rules applied
+       │
+       ▼
+  ObserverPresentedEvent { _observerId, _clarity, _appliedRules }
+```
+
+Custom rules are authorable per genre:
+- Fantasy: undead entities see all living as "warm blood encroaching upon the sacred dead"
+- Cyberpunk: ICE agents see all non-ICE as "unauthorized network entity detected"
+
+`presentForAllObservers` generates one version per AI entity. `getDivergences` queries the divergence log for debugging or narrative replay.
+
 ## Observability
 
 The simulation-inspector module provides debugging tools for every layer.
@@ -346,11 +432,22 @@ The simulation-inspector module provides debugging tools for every layer.
 - Active hazards
 - Entities present
 
+**District inspection** shows spatial memory state:
+- Alert pressure, intruder likelihood, surveillance, stability
+- Threat level (composite score)
+- Controlling faction and zone membership
+- Event count
+
 **Simulation snapshot** captures the entire world state for comparison:
 - All entity inspections
 - All faction inspections
 - All zone inspections
+- All district inspections
 - Current tick and event count
+
+**Belief provenance traces** answer "why does X think Y?" by reconstructing the causal chain from source events through perception, cognition, and rumor propagation.
+
+**Presentation divergences** show how the same event was described differently to different observers, including which rules fired and at what clarity levels.
 
 The inspector registers debug inspectors accessible through the engine's debug registry, making these available to CLI tools and future UI panels.
 

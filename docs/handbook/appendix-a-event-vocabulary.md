@@ -82,6 +82,13 @@ Events follow the pattern: `domain.object.verb`
 | `rumor.belief.propagated` | rumor-propagation | Rumor delivered to faction |
 | `rumor.scheduled` | rumor-propagation | Rumor queued for delayed delivery |
 
+## District Events
+
+| Event | Source | Description |
+|-------|--------|-------------|
+| `district.metric.changed` | district-core | District metric modified |
+| `district.alert.triggered` | district-core | District intruder likelihood boosted faction alert |
+
 ## Presentation Events
 
 | Event | Source | Description |

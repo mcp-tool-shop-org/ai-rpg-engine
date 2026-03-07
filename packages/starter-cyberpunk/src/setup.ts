@@ -14,19 +14,41 @@ import {
   createFactionCognition,
   createRumorPropagation,
   createSimulationInspector,
+  createDistrictCore,
+  createBeliefProvenance,
+  createObserverPresentation,
   giveItem,
 } from '@signalfire/modules';
+import type { PresentationRule } from '@signalfire/modules';
 import {
   manifest,
   player,
   fixer,
   iceAgent,
   zones,
+  districts,
   fixerDialogue,
   iceBreaker,
   netrunningTree,
 } from './content.js';
 import { cyberpunkMinimalRuleset } from './ruleset.js';
+
+// Cyberpunk presentation rule: ICE agents flag all non-ICE as intrusion
+const iceSecurityFraming: PresentationRule = {
+  id: 'ice-security-framing',
+  eventPatterns: ['world.zone.entered'],
+  priority: 5,
+  condition: (_event, ctx) => ctx.observer.tags.includes('ice-agent'),
+  transform: (event, _ctx) => ({
+    ...event,
+    payload: {
+      ...event.payload,
+      _subjectiveDescription: 'unauthorized network entity detected in secure zone',
+      _actorDescription: 'intrusion signature',
+      _securityFraming: true,
+    },
+  }),
+};
 
 export function createGame(seed?: number): Engine {
   const engine = new Engine({
@@ -72,6 +94,11 @@ export function createGame(seed?: number): Engine {
         }],
       }),
       createRumorPropagation({ propagationDelay: 1, distortionPerHop: 0.03 }),
+      createDistrictCore({ districts }),
+      createBeliefProvenance(),
+      createObserverPresentation({
+        rules: [iceSecurityFraming],
+      }),
       createSimulationInspector(),
     ],
   });

@@ -14,19 +14,41 @@ import {
   createFactionCognition,
   createRumorPropagation,
   createSimulationInspector,
+  createDistrictCore,
+  createBeliefProvenance,
+  createObserverPresentation,
   giveItem,
 } from '@signalfire/modules';
+import type { PresentationRule } from '@signalfire/modules';
 import {
   manifest,
   player,
   pilgrim,
   ashGhoul,
   zones,
+  districts,
   pilgrimDialogue,
   healingDraughtEffect,
   combatMasteryTree,
 } from './content.js';
 import { fantasyMinimalRuleset } from './ruleset.js';
+
+// Fantasy-specific presentation rule: undead perceive all living as threats
+const undeadHostilePerception: PresentationRule = {
+  id: 'undead-threat-framing',
+  eventPatterns: ['world.zone.entered'],
+  priority: 5,
+  condition: (_event, ctx) => ctx.observer.tags.includes('undead'),
+  transform: (event, _ctx) => ({
+    ...event,
+    payload: {
+      ...event.payload,
+      _subjectiveDescription: 'warm blood encroaches upon the sacred dead',
+      _actorDescription: 'a living trespasser',
+      _undeadPerception: true,
+    },
+  }),
+};
 
 export function createGame(seed?: number): Engine {
   const engine = new Engine({
@@ -69,6 +91,11 @@ export function createGame(seed?: number): Engine {
         }],
       }),
       createRumorPropagation({ propagationDelay: 2 }),
+      createDistrictCore({ districts }),
+      createBeliefProvenance(),
+      createObserverPresentation({
+        rules: [undeadHostilePerception],
+      }),
       createSimulationInspector(),
     ],
   });

@@ -115,6 +115,49 @@ export type {
   RumorPropagationConfig,
 } from './rumor-propagation.js';
 export {
+  createDistrictCore,
+  getDistrictForZone,
+  getDistrictState,
+  getDistrictDefinition,
+  getAllDistrictIds,
+  getDistrictMetric,
+  modifyDistrictMetric,
+  isDistrictOnAlert,
+  getDistrictThreatLevel,
+} from './district-core.js';
+export type {
+  DistrictMetrics,
+  DistrictDefinition,
+  DistrictState,
+  DistrictDecayConfig,
+  DistrictCoreConfig,
+} from './district-core.js';
+export {
+  createBeliefProvenance,
+  traceEntityBelief,
+  traceFactionBelief,
+  traceSubject,
+  formatBeliefTrace,
+} from './belief-provenance.js';
+export type {
+  TraceStep,
+  BeliefTrace,
+} from './belief-provenance.js';
+export {
+  createObserverPresentation,
+  presentForObserver,
+  presentForAllObservers,
+  getDivergences,
+  getEventDivergences,
+} from './observer-presentation.js';
+export type {
+  ObserverContext,
+  PresentationRule,
+  ObserverPresentedEvent,
+  ObserverPresentationConfig,
+  DivergenceRecord,
+} from './observer-presentation.js';
+export {
   createSimulationInspector,
   inspectEntity,
   inspectAllEntities,
@@ -122,13 +165,17 @@ export {
   inspectAllFactions,
   inspectZone,
   inspectAllZones,
+  inspectDistrict,
+  inspectAllDistricts,
   createSnapshot,
   formatEntityInspection,
   formatFactionInspection,
+  formatDistrictInspection,
 } from './simulation-inspector.js';
 export type {
   EntityInspection,
   FactionInspection,
   ZoneInspection,
+  DistrictInspection,
   SimulationSnapshot,
 } from './simulation-inspector.js';

@@ -1,6 +1,6 @@
 // simulation-inspector — observability layer for the simulation
 // Registers debug inspectors that expose entity cognition, faction beliefs,
-// perception events, rumor traces, and environmental state.
+// perception events, rumor traces, environmental state, and district memory.
 
 import type {
   EngineModule,
@@ -17,6 +17,8 @@ import type { FactionCognitionState, FactionBelief } from './faction-cognition.j
 import { getRumorLog, getRumorsToFaction } from './rumor-propagation.js';
 import type { RumorRecord } from './rumor-propagation.js';
 import { getZoneProperty } from './environment-core.js';
+import { getDistrictState, getDistrictDefinition, getAllDistrictIds, getDistrictThreatLevel } from './district-core.js';
+import type { DistrictState, DistrictDefinition, DistrictMetrics } from './district-core.js';
 
 // --- Types ---
 
@@ -51,11 +53,22 @@ export type ZoneInspection = {
   entities: string[];
 };
 
+export type DistrictInspection = {
+  id: string;
+  name: string;
+  zoneIds: string[];
+  controllingFaction: string | undefined;
+  metrics: DistrictMetrics;
+  threatLevel: number;
+  eventCount: number;
+};
+
 export type SimulationSnapshot = {
   tick: number;
   entities: Record<string, EntityInspection>;
   factions: Record<string, FactionInspection>;
   zones: Record<string, ZoneInspection>;
+  districts: Record<string, DistrictInspection>;
   rumorCount: number;
   eventLogSize: number;
 };
@@ -90,6 +103,12 @@ export function createSimulationInspector(): EngineModule {
         id: 'rumor-trace',
         label: 'Rumor Trace',
         inspect: (world) => getRumorLog(world),
+      });
+
+      ctx.debug.registerInspector({
+        id: 'district-state',
+        label: 'District State',
+        inspect: (world) => inspectAllDistricts(world),
       });
 
       ctx.debug.registerInspector({
@@ -219,6 +238,45 @@ export function inspectAllZones(world: WorldState): Record<string, ZoneInspectio
   return result;
 }
 
+// --- District Inspection ---
+
+/** Inspect a single district */
+export function inspectDistrict(world: WorldState, districtId: string): DistrictInspection | null {
+  if (!world.modules['district-core']) return null;
+
+  const state = getDistrictState(world, districtId);
+  const def = getDistrictDefinition(world, districtId);
+  if (!state || !def) return null;
+
+  return {
+    id: districtId,
+    name: def.name,
+    zoneIds: def.zoneIds,
+    controllingFaction: def.controllingFaction,
+    metrics: {
+      alertPressure: state.alertPressure,
+      rumorDensity: state.rumorDensity,
+      intruderLikelihood: state.intruderLikelihood,
+      surveillance: state.surveillance,
+      stability: state.stability,
+    },
+    threatLevel: getDistrictThreatLevel(world, districtId),
+    eventCount: state.eventCount,
+  };
+}
+
+/** Inspect all districts */
+export function inspectAllDistricts(world: WorldState): Record<string, DistrictInspection> {
+  if (!world.modules['district-core']) return {};
+
+  const result: Record<string, DistrictInspection> = {};
+  for (const districtId of getAllDistrictIds(world)) {
+    const inspection = inspectDistrict(world, districtId);
+    if (inspection) result[districtId] = inspection;
+  }
+  return result;
+}
+
 // --- Full Snapshot ---
 
 /** Create a complete simulation snapshot */
@@ -228,6 +286,7 @@ export function createSnapshot(world: WorldState): SimulationSnapshot {
     entities: inspectAllEntities(world),
     factions: inspectAllFactions(world),
     zones: inspectAllZones(world),
+    districts: inspectAllDistricts(world),
     rumorCount: getRumorLog(world).length,
     eventLogSize: world.eventLog.length,
   };
@@ -282,5 +341,22 @@ export function formatFactionInspection(inspection: FactionInspection): string {
     }
   }
 
+  return lines.join('\n');
+}
+
+/** Format district inspection as readable text */
+export function formatDistrictInspection(inspection: DistrictInspection): string {
+  const lines: string[] = [];
+  lines.push(`District: ${inspection.name} (${inspection.id})`);
+  lines.push(`  Zones: ${inspection.zoneIds.join(', ')}`);
+  lines.push(`  Controlling Faction: ${inspection.controllingFaction ?? 'none'}`);
+  lines.push(`  Threat Level: ${inspection.threatLevel}`);
+  lines.push(`  Metrics:`);
+  lines.push(`    Alert Pressure: ${inspection.metrics.alertPressure.toFixed(1)}`);
+  lines.push(`    Rumor Density: ${inspection.metrics.rumorDensity.toFixed(1)}`);
+  lines.push(`    Intruder Likelihood: ${inspection.metrics.intruderLikelihood.toFixed(1)}`);
+  lines.push(`    Surveillance: ${inspection.metrics.surveillance.toFixed(1)}`);
+  lines.push(`    Stability: ${inspection.metrics.stability.toFixed(1)}`);
+  lines.push(`  Events Recorded: ${inspection.eventCount}`);
   return lines.join('\n');
 }

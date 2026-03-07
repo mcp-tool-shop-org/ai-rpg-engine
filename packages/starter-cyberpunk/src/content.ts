@@ -165,6 +165,26 @@ export const fixerDialogue: DialogueDefinition = {
   },
 };
 
+// --- Districts ---
+
+import type { DistrictDefinition } from '@signalfire/modules';
+
+export const districts: DistrictDefinition[] = [
+  {
+    id: 'neon-street',
+    name: 'Neon Street Block',
+    zoneIds: ['street-level'],
+    tags: ['exterior', 'public'],
+  },
+  {
+    id: 'vault-complex',
+    name: 'Vault Complex',
+    zoneIds: ['server-room', 'data-vault'],
+    tags: ['secure', 'networked'],
+    controllingFaction: 'vault-ice',
+  },
+];
+
 // --- Progression Trees ---
 
 import type { ProgressionTreeDefinition } from '@signalfire/content-schema';
