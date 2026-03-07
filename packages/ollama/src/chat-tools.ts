@@ -1,0 +1,517 @@
+// Chat tool registry — maps intents to engine commands.
+// Each tool wraps an existing command with chat-friendly input/output.
+// Tools declare whether they mutate (require confirmation).
+
+import type { ChatTool, ChatToolParams, ChatToolResult, PlannedAction } from './chat-types.js';
+import { suggestNext } from './commands/suggest-next.js';
+import { critiqueContent } from './commands/critique-content.js';
+import { improveContent } from './commands/improve-content.js';
+import { compareReplays } from './commands/compare-replays.js';
+import { analyzeReplay } from './commands/analyze-replay.js';
+import { planDistrict } from './commands/plan-district.js';
+import { explainWhy } from './commands/explain-why.js';
+import { createRoom } from './commands/create-room.js';
+import { createFaction } from './commands/create-faction.js';
+import { createDistrict } from './commands/create-district.js';
+import { createQuest } from './commands/create-quest.js';
+import { createLocationPack } from './commands/create-location-pack.js';
+import { createEncounterPack } from './commands/create-encounter-pack.js';
+import { formatSessionStatus, renderSessionContext } from './session.js';
+import { generatePreview } from './apply-preview.js';
+
+// --- Helper ---
+
+function action(command: string, description: string, mutates: boolean): PlannedAction {
+  return { command, description, requiresConfirmation: mutates, status: 'pending' };
+}
+
+function executed(a: PlannedAction, result?: string): PlannedAction {
+  return { ...a, status: 'executed', result };
+}
+
+function failed(a: PlannedAction, result: string): PlannedAction {
+  return { ...a, status: 'failed', result };
+}
+
+// --- Tool: suggest-next ---
+
+const suggestNextTool: ChatTool = {
+  name: 'suggest-next',
+  description: 'Analyze session state and recommend next design actions',
+  intents: ['suggest_next'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    if (!p.session) {
+      return {
+        ok: false,
+        summary: 'No active session. Start one with `ai session start <name>` first.',
+        actions: [],
+      };
+    }
+    const a = action('suggest-next', 'Analyze session and recommend next actions', false);
+    const result = await suggestNext(p.client, {
+      sessionState: p.sessionContext ?? renderSessionContext(p.session),
+      recentActivity: p.params.recentActivity,
+    });
+    if (!result.ok) {
+      return { ok: false, summary: result.error, actions: [failed(a, result.error)] };
+    }
+    const lines = [result.text];
+    if (result.actions.length > 0) {
+      lines.push('', 'Recommended actions:');
+      for (const act of result.actions) {
+        lines.push(`  [${act.priority}] ${act.code}: ${act.command}`);
+        if (act.reason) lines.push(`    ${act.reason}`);
+      }
+    }
+    if (result.summary) lines.push('', result.summary);
+    return {
+      ok: true,
+      summary: lines.join('\n'),
+      actions: [executed(a)],
+      sessionEvents: [{ kind: 'suggestion_generated', detail: 'Chat: suggest-next' }],
+    };
+  },
+};
+
+// --- Tool: session-info ---
+
+const sessionInfoTool: ChatTool = {
+  name: 'session-info',
+  description: 'Show current session status, artifacts, issues, and history',
+  intents: ['session_info'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    if (!p.session) {
+      return { ok: true, summary: 'No active session. Start one with `ai session start <name>`.', actions: [] };
+    }
+    return {
+      ok: true,
+      summary: formatSessionStatus(p.session),
+      actions: [executed(action('session status', 'Show session state', false))],
+    };
+  },
+};
+
+// --- Tool: scaffold ---
+
+const SCAFFOLD_KINDS = ['room', 'faction', 'district', 'quest', 'location-pack', 'encounter-pack'] as const;
+
+const scaffoldTool: ChatTool = {
+  name: 'scaffold',
+  description: 'Generate new content (room, faction, district, quest, pack)',
+  intents: ['scaffold'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const kind = p.params.kind ?? 'room';
+    const theme = p.params.theme ?? p.userMessage;
+    if (!theme) {
+      return { ok: false, summary: 'I need a theme or description to generate content. What should it be about?', actions: [] };
+    }
+
+    const cmdName = `create-${kind}`;
+    const a = action(cmdName, `Generate a ${kind} with theme "${theme}"`, false);
+
+    let yaml: string;
+    let idMatch: RegExpMatchArray | null = null;
+
+    switch (kind) {
+      case 'room': {
+        const r = await createRoom(p.client, { theme, sessionContext: p.sessionContext });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        break;
+      }
+      case 'faction': {
+        const r = await createFaction(p.client, { theme, sessionContext: p.sessionContext });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        break;
+      }
+      case 'district': {
+        const r = await createDistrict(p.client, { theme, sessionContext: p.sessionContext });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        break;
+      }
+      case 'quest': {
+        const r = await createQuest(p.client, { theme, sessionContext: p.sessionContext });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        break;
+      }
+      case 'location-pack': {
+        const r = await createLocationPack(p.client, { theme, sessionContext: p.sessionContext });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        break;
+      }
+      case 'encounter-pack': {
+        const r = await createEncounterPack(p.client, { theme, sessionContext: p.sessionContext });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        break;
+      }
+      default:
+        return { ok: false, summary: `Unknown kind "${kind}". Use: ${SCAFFOLD_KINDS.join(', ')}`, actions: [] };
+    }
+
+    idMatch = yaml.match(/^id:\s*(\S+)/m);
+    const artifactId = idMatch?.[1] ?? kind;
+    const artifactKind = kind === 'quest' ? 'quests'
+      : kind === 'room' ? 'rooms'
+      : kind === 'faction' ? 'factions'
+      : kind === 'district' ? 'districts'
+      : 'packs';
+
+    return {
+      ok: true,
+      summary: `Generated ${kind}: ${artifactId}\n\nYou can save this with: "write this to <filename>.yaml"`,
+      output: yaml,
+      actions: [executed(a, `Generated ${kind}: ${artifactId}`)],
+      sessionEvents: [{ kind: 'artifact_created', detail: `${artifactKind}/${artifactId}` }],
+      pendingWrite: {
+        content: yaml,
+        suggestedPath: `${artifactId}.yaml`,
+        label: `${kind}: ${artifactId}`,
+      },
+    };
+  },
+};
+
+// --- Tool: critique ---
+
+const critiqueTool: ChatTool = {
+  name: 'critique',
+  description: 'Review content with senior designer critique',
+  intents: ['critique'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const content = p.params.content;
+    if (!content) {
+      return { ok: false, summary: 'I need content to critique. Pipe YAML or reference an artifact.', actions: [] };
+    }
+    const a = action('critique-content', 'Review content for design issues', false);
+    const result = await critiqueContent(p.client, {
+      content,
+      contentType: p.params.contentType,
+      sessionContext: p.sessionContext,
+    });
+    if (!result.ok) return { ok: false, summary: result.error, actions: [failed(a, result.error)] };
+
+    const lines = [result.text];
+    if (result.issues.length > 0) {
+      lines.push('', `${result.issues.length} issue(s) found:`);
+      for (const issue of result.issues) {
+        lines.push(`  [${issue.severity}] ${issue.code}: ${issue.summary}`);
+      }
+    }
+    if (result.summary) lines.push('', result.summary);
+
+    return {
+      ok: true,
+      summary: lines.join('\n'),
+      actions: [executed(a)],
+      sessionEvents: result.issues.length > 0
+        ? [{ kind: 'issue_opened', detail: `Chat critique: ${result.issues.length} issue(s)` }]
+        : undefined,
+    };
+  },
+};
+
+// --- Tool: improve ---
+
+const improveTool: ChatTool = {
+  name: 'improve',
+  description: 'Revise content toward a specific goal',
+  intents: ['improve'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const content = p.params.content;
+    const goal = p.params.goal ?? p.userMessage;
+    if (!content) {
+      return { ok: false, summary: 'I need content to improve. Pipe YAML or reference an artifact.', actions: [] };
+    }
+    const a = action('improve-content', `Improve content: "${goal}"`, false);
+    const result = await improveContent(p.client, {
+      content,
+      goal,
+      sessionContext: p.sessionContext,
+    });
+    if (!result.ok) return { ok: false, summary: result.error, actions: [failed(a, result.error)] };
+
+    return {
+      ok: true,
+      summary: `Improved content toward: "${goal}"`,
+      output: result.yaml,
+      actions: [executed(a)],
+      pendingWrite: {
+        content: result.yaml,
+        suggestedPath: 'improved.yaml',
+        label: `Improved: ${goal}`,
+      },
+    };
+  },
+};
+
+// --- Tool: compare-replays ---
+
+const compareReplaysTool: ChatTool = {
+  name: 'compare-replays',
+  description: 'Compare before/after simulation replays',
+  intents: ['compare_replays'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const { before, after } = p.params;
+    if (!before || !after) {
+      return { ok: false, summary: 'I need before and after replay data to compare. Provide them as JSON.', actions: [] };
+    }
+    const a = action('compare-replays', 'Compare two simulation replays', false);
+    const result = await compareReplays(p.client, {
+      before, after, sessionContext: p.sessionContext,
+    });
+    if (!result.ok) return { ok: false, summary: result.error, actions: [failed(a, result.error)] };
+
+    const lines = [result.text, '', `Verdict: ${result.verdict}`];
+    if (result.improvements.length) {
+      lines.push(`${result.improvements.length} improvement(s):`);
+      for (const c of result.improvements) lines.push(`  + ${c.area}: ${c.description}`);
+    }
+    if (result.regressions.length) {
+      lines.push(`${result.regressions.length} regression(s):`);
+      for (const c of result.regressions) lines.push(`  - ${c.area}: ${c.description}`);
+    }
+    if (result.summary) lines.push('', result.summary);
+
+    return {
+      ok: true,
+      summary: lines.join('\n'),
+      actions: [executed(a)],
+      sessionEvents: [{ kind: 'replay_compared', detail: `Chat: ${result.verdict}` }],
+    };
+  },
+};
+
+// --- Tool: analyze-replay ---
+
+const analyzeReplayTool: ChatTool = {
+  name: 'analyze-replay',
+  description: 'Analyze simulation replay for design insights',
+  intents: ['analyze_replay'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const replay = p.params.replay;
+    if (!replay) {
+      return { ok: false, summary: 'I need replay data to analyze. Pipe JSON or reference a file.', actions: [] };
+    }
+    const a = action('analyze-replay', 'Analyze replay output', false);
+    const result = await analyzeReplay(p.client, {
+      replay, focus: p.params.focus, sessionContext: p.sessionContext,
+    });
+    if (!result.ok) return { ok: false, summary: result.error, actions: [failed(a, result.error)] };
+
+    const lines = [result.text];
+    if (result.issues.length) {
+      lines.push('', `${result.issues.length} issue(s):`);
+      for (const i of result.issues) lines.push(`  [${i.severity}] ${i.code}: ${i.summary}`);
+    }
+    if (result.summary) lines.push('', result.summary);
+
+    return {
+      ok: true,
+      summary: lines.join('\n'),
+      actions: [executed(a)],
+    };
+  },
+};
+
+// --- Tool: plan ---
+
+const planTool: ChatTool = {
+  name: 'plan-district',
+  description: 'Create a multi-step design plan for a district',
+  intents: ['plan'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const theme = p.params.theme ?? p.userMessage;
+    if (!theme) {
+      return { ok: false, summary: 'I need a theme to plan around. What kind of district?', actions: [] };
+    }
+    const a = action('plan-district', `Plan district: "${theme}"`, false);
+    const result = await planDistrict(p.client, {
+      theme, sessionContext: p.sessionContext,
+    });
+    if (!result.ok) return { ok: false, summary: result.error, actions: [failed(a, result.error)] };
+
+    const lines = [result.text];
+    if (result.steps.length) {
+      lines.push('', `${result.steps.length}-step plan:`);
+      for (const s of result.steps) {
+        const deps = s.dependsOn.length ? ` (after ${s.dependsOn.join(', ')})` : '';
+        lines.push(`  ${s.order}. ${s.command}${deps}`);
+        if (s.description) lines.push(`     ${s.description}`);
+      }
+    }
+    if (result.rationale) lines.push('', `Rationale: ${result.rationale}`);
+    lines.push('', 'Say "execute this plan" or run individual steps.');
+
+    return {
+      ok: true,
+      summary: lines.join('\n'),
+      actions: [executed(a)],
+      sessionEvents: [{ kind: 'plan_generated', detail: `Chat: plan "${theme}"` }],
+    };
+  },
+};
+
+// --- Tool: explain-why ---
+
+const explainWhyTool: ChatTool = {
+  name: 'explain-why',
+  description: 'Explain causal reasons for simulation behavior',
+  intents: ['explain_why'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const question = p.params.question ?? p.userMessage;
+    const state = p.params.state;
+    if (!state) {
+      return {
+        ok: false,
+        summary: 'I need simulation state data to explain causality. Pipe the relevant JSON.',
+        actions: [],
+      };
+    }
+    const a = action('explain-why', `Explain: "${question}"`, false);
+    const result = await explainWhy(p.client, {
+      question, state, sessionContext: p.sessionContext,
+    });
+    if (!result.ok) return { ok: false, summary: result.error, actions: [failed(a, result.error)] };
+    return { ok: true, summary: result.text, actions: [executed(a)] };
+  },
+};
+
+// --- Tool: explain-state ---
+
+const explainStateTool: ChatTool = {
+  name: 'explain-state',
+  description: 'Explain the current state of artifacts or simulation',
+  intents: ['explain_state'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    // If we have session context, use suggest-next as the best "state explainer"
+    if (!p.session) {
+      return { ok: false, summary: 'No active session to explain.', actions: [] };
+    }
+    const a = action('suggest-next', 'Analyze session state', false);
+    const result = await suggestNext(p.client, {
+      sessionState: p.sessionContext ?? renderSessionContext(p.session),
+      recentActivity: `User asked: ${p.userMessage}`,
+    });
+    if (!result.ok) return { ok: false, summary: result.error, actions: [failed(a, result.error)] };
+    return { ok: true, summary: result.text, actions: [executed(a)] };
+  },
+};
+
+// --- Tool: apply-content ---
+
+const applyContentTool: ChatTool = {
+  name: 'apply-content',
+  description: 'Preview and write content to disk (requires confirmation)',
+  intents: ['apply_content'],
+  mutates: true,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const content = p.params.content;
+    const targetPath = p.params.targetPath;
+    if (!content) {
+      return { ok: false, summary: 'No content to write. Generate something first.', actions: [] };
+    }
+    if (!targetPath) {
+      return { ok: false, summary: 'Where should I write it? Specify a file path.', actions: [] };
+    }
+
+    const a = action('apply-preview', `Preview write to ${targetPath}`, true);
+    const preview = await generatePreview({ content, targetPath });
+    return {
+      ok: true,
+      summary: preview.preview,
+      actions: [executed(a, 'Preview generated')],
+      pendingWrite: {
+        content,
+        suggestedPath: targetPath,
+        label: p.params.label ?? targetPath,
+      },
+    };
+  },
+};
+
+// --- Tool: help ---
+
+const helpTool: ChatTool = {
+  name: 'help',
+  description: 'Show what chat can do',
+  intents: ['help'],
+  mutates: false,
+  async execute(): Promise<ChatToolResult> {
+    const help = [
+      'I can help you design game worlds. Here\'s what I can do:',
+      '',
+      'Design:',
+      '  "Generate a room about a haunted library"',
+      '  "Create a faction of paranoid librarians"',
+      '  "Plan a new district around smuggling"',
+      '',
+      'Iterate:',
+      '  "Critique this content" (with YAML)',
+      '  "Improve this quest — make it harder"',
+      '',
+      'Analyze:',
+      '  "What should I do next?"',
+      '  "Why did the guards never escalate?"',
+      '  "Compare these two replays"',
+      '  "Analyze this replay"',
+      '',
+      'Session:',
+      '  "What\'s in my session?"',
+      '  "Show me open issues"',
+      '',
+      'Apply:',
+      '  "Write this to chapel.yaml"',
+      '  (Always previews first, writes only with confirmation)',
+      '',
+      'Everything I do maps to an explicit engine command.',
+      'I\'ll always tell you what I\'m running before doing it.',
+    ];
+    return { ok: true, summary: help.join('\n'), actions: [] };
+  },
+};
+
+// --- Registry ---
+
+const ALL_TOOLS: ChatTool[] = [
+  suggestNextTool,
+  sessionInfoTool,
+  scaffoldTool,
+  critiqueTool,
+  improveTool,
+  compareReplaysTool,
+  analyzeReplayTool,
+  planTool,
+  explainWhyTool,
+  explainStateTool,
+  applyContentTool,
+  helpTool,
+];
+
+/**
+ * Find the best tool for a given intent.
+ */
+export function findToolForIntent(intent: string): ChatTool | undefined {
+  return ALL_TOOLS.find(t => t.intents.includes(intent as never));
+}
+
+/**
+ * Get all registered tools.
+ */
+export function getAllTools(): ChatTool[] {
+  return [...ALL_TOOLS];
+}

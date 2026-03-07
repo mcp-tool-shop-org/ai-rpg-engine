@@ -1164,8 +1164,19 @@ export async function runCli(args: string[]): Promise<void> {
       break;
     }
 
+    case 'chat': {
+      const { runChatShell } = await import('./chat-shell.js');
+      await runChatShell({
+        client,
+        projectRoot,
+        maxMemory: 50,
+        saveTranscripts: flags.write !== undefined,
+      });
+      break;
+    }
+
     default:
-      console.log('@ai-rpg-engine/ollama v0.9.0');
+      console.log('@ai-rpg-engine/ollama v1.0.0');
       console.log('');
       console.log('Session:');
       console.log('  session start <name>        Start a named design session');
@@ -1217,6 +1228,9 @@ export async function runCli(args: string[]): Promise<void> {
       console.log('Apply:');
       console.log('  apply-preview               Preview a file write (pipe content, --write <path>)');
       console.log('                              Add --confirm to actually write');
+      console.log('');
+      console.log('Chat:');
+      console.log('  chat                        Interactive conversational design assistant');
       console.log('');
       console.log('Flags:');
       console.log('  --model <name>       Ollama model (default: qwen2.5-coder)');

@@ -143,5 +143,20 @@ export type {
 export { generatePreview, applyConfirmed } from './apply-preview.js';
 export type { ApplyPreviewInput, ApplyPreviewResult } from './apply-preview.js';
 
+// Chat
+export type {
+  ChatRole, ChatMessage, ChatIntent, IntentClassification,
+  PlannedAction, ChatTool, ChatToolParams, ChatToolResult,
+  ChatMemory, ChatTranscript, ChatConfig,
+} from './chat-types.js';
+export { DEFAULT_CHAT_CONFIG } from './chat-types.js';
+export { classifyIntent, classifyByKeywords, classifyByLLM } from './chat-router.js';
+export { findToolForIntent, getAllTools } from './chat-tools.js';
+export { createChatEngine, createChatMemory, addMessage, getRecentContext } from './chat-engine.js';
+export type { ChatEngine, ChatEngineOptions } from './chat-engine.js';
+export { createTranscript, addToTranscript, saveTranscript, loadTranscript, defaultTranscriptPath } from './chat-transcript.js';
+export { runChatShell } from './chat-shell.js';
+export type { ChatShellOptions } from './chat-shell.js';
+
 // CLI entry
 export { runCli } from './cli.js';
