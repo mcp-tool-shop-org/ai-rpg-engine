@@ -9,7 +9,7 @@ export const config: SiteConfig = {
   footerText: 'MIT Licensed — built by <a href="https://github.com/mcp-tool-shop-org" style="color:var(--color-muted);text-decoration:underline">mcp-tool-shop-org</a>',
 
   hero: {
-    badge: 'v1.0.0',
+    badge: 'v1.0.1',
     headline: 'AI RPG Engine',
     headlineAccent: 'Simulation truth, first.',
     description: 'A modular runtime for terminal RPGs where actions create information, information distorts, and consequences emerge from what characters believe happened.',
@@ -52,6 +52,10 @@ export const config: SiteConfig = {
         {
           title: 'Content Is Data',
           desc: 'Rooms, entities, dialogue, items, and quests are defined as data, not code. Ship whole games without touching engine internals.',
+        },
+        {
+          title: 'AI-Assisted Authoring',
+          desc: 'Optional Ollama integration scaffolds rooms, districts, factions, quests, and encounter packs from a theme. Validates against engine schemas, repairs on failure, explains what the simulation is doing.',
         },
       ],
     },
@@ -102,7 +106,7 @@ console.log(guard?.resources); // HP, stamina, etc.`,
       kind: 'data-table',
       id: 'modules',
       title: 'Built-In Modules',
-      subtitle: '17 composable simulation modules.',
+      subtitle: '17 composable simulation modules + AI authoring layer.',
       columns: ['Module', 'Description'],
       rows: [
         ['combat-core', 'Attack/defend, damage, defeat, stamina'],
@@ -122,6 +126,32 @@ console.log(guard?.resources); // HP, stamina, etc.`,
         ['belief-provenance', 'Trace reconstruction across perception/cognition/rumor'],
         ['observer-presentation', 'Per-observer event filtering, divergence tracking'],
         ['simulation-inspector', 'Runtime inspection, health checks, diagnostics'],
+      ],
+    },
+    {
+      kind: 'code-cards',
+      id: 'ai-authoring',
+      title: 'AI Authoring Layer',
+      cards: [
+        {
+          title: 'Scaffold a location',
+          code: `ai create-location-pack --theme "abandoned dwarven mine" \\
+  --factions miners_guild,deep_crawlers`,
+        },
+        {
+          title: 'Scaffold an encounter',
+          code: `ai create-encounter-pack --theme "goblin ambush" \\
+  --difficulty medium \\
+  --write content/encounters/goblin.yaml`,
+        },
+        {
+          title: 'Diagnose simulation state',
+          code: `cat district-state.json | ai explain-district-state\ncat belief-traces.json  | ai explain-belief-divergence`,
+        },
+        {
+          title: 'Auto-repair invalid content',
+          code: `ai create-room --theme "haunted library" --repair\n# Repaired: 3 validation error(s) fixed.`,
+        },
       ],
     },
   ],

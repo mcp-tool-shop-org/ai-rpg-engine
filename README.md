@@ -90,6 +90,7 @@ action --> validation --> resolution --> events --> presentation
 | `@ai-rpg-engine/cli` | Developer CLI: run, replay, inspect |
 | `@ai-rpg-engine/starter-fantasy` | The Chapel Threshold (fantasy demo) |
 | `@ai-rpg-engine/starter-cyberpunk` | Neon Lockbox (cyberpunk demo) |
+| `@ai-rpg-engine/ollama` | AI authoring layer — scaffold, diagnose, repair |
 
 ## Built-In Modules
 
@@ -113,6 +114,30 @@ action --> validation --> resolution --> events --> presentation
 | observer-presentation | Per-observer event filtering, divergence tracking |
 | simulation-inspector | Runtime inspection, health checks, diagnostics |
 
+## AI Authoring Layer
+
+`@ai-rpg-engine/ollama` is an optional package that connects to a local [Ollama](https://ollama.ai) instance for AI-assisted content creation and simulation inspection. It never mutates engine state directly — all output goes to stdout by default.
+
+**Scaffold** — generate content from a theme:
+```bash
+ai create-location-pack --theme "abandoned dwarven mine" --factions miners_guild,deep_crawlers
+ai create-encounter-pack --theme "goblin ambush" --difficulty medium --write content/encounters/goblin.yaml
+```
+
+**Diagnose** — explain what the simulation is doing:
+```bash
+cat district-state.json | ai explain-district-state
+cat belief-traces.json  | ai explain-belief-divergence
+```
+
+**Repair** — fix invalid generated content:
+```bash
+ai create-room --theme "haunted library" --repair
+# Repaired: 3 validation error(s) fixed.
+```
+
+12 commands across scaffold, diagnose, and repair workflows. See the [AI Worldbuilding Handbook](packages/ollama/AI_WORLDBUILDING.md) for full documentation.
+
 ## Key Design Decisions
 
 - **Simulation truth is sacred** — the engine maintains objective state. Presentation layers may lie, but world truth is canonical.
@@ -120,6 +145,7 @@ action --> validation --> resolution --> events --> presentation
 - **Deterministic replay** — seeded RNG and the action pipeline guarantee identical results from identical inputs.
 - **Content is data** — rooms, entities, dialogue, items are defined as data, not code.
 - **Genre belongs to rulesets** — the engine has no opinion about swords vs lasers.
+- **AI assists, never governs** — the ollama package helps humans create and understand worlds. The engine remains the lawful keeper of reality.
 
 ## Security and Trust
 
@@ -139,7 +165,8 @@ See [SECURITY.md](SECURITY.md) for the full security policy.
 
 ## Documentation
 
-- [Handbook](docs/handbook/index.md) — 25 chapters + 4 appendices
+- [Handbook](docs/handbook/index.md) — 26 chapters + 4 appendices
+- [AI Worldbuilding Handbook](packages/ollama/AI_WORLDBUILDING.md) — scaffold, diagnose, repair workflows
 - [Design Overview](docs/DESIGN.md) — architecture deep-dive
 - [Changelog](CHANGELOG.md)
 

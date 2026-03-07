@@ -58,6 +58,7 @@ A guide to building simulation-driven terminal RPGs.
 ## Part VIII — Future Directions
 
 25. [Planned Systems](./25-planned-systems.md)
+26. [AI-Assisted Worldbuilding](./26-ai-worldbuilding.md)
 
 ## Appendix
 
