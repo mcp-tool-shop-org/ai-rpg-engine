@@ -1,0 +1,56 @@
+// @ai-rpg-engine/ollama — optional local AI layer
+
+// Config
+export { resolveConfig } from './config.js';
+export type { OllamaConfig } from './config.js';
+
+// Client
+export { createClient } from './client.js';
+export type { OllamaTextClient, PromptInput, PromptResult } from './client.js';
+
+// Commands
+export { explainValidationError } from './commands/explain-validation-error.js';
+export type { ValidationExplainInput } from './commands/explain-validation-error.js';
+
+export { summarizeBeliefTrace } from './commands/summarize-belief-trace.js';
+export type { BeliefTraceSummaryInput } from './commands/summarize-belief-trace.js';
+
+export { createRoom } from './commands/create-room.js';
+export type { CreateRoomInput, GeneratedTextResult } from './commands/create-room.js';
+
+export { createFaction } from './commands/create-faction.js';
+export type { CreateFactionInput, GeneratedFactionResult } from './commands/create-faction.js';
+
+export { createQuest } from './commands/create-quest.js';
+export type { CreateQuestInput, GeneratedQuestResult } from './commands/create-quest.js';
+
+export { explainLint } from './commands/explain-lint.js';
+export type { LintExplainInput } from './commands/explain-lint.js';
+
+export { createDistrict } from './commands/create-district.js';
+export type { CreateDistrictInput, GeneratedDistrictResult } from './commands/create-district.js';
+
+export { explainBeliefDivergence } from './commands/explain-belief-divergence.js';
+export type { BeliefDivergenceInput } from './commands/explain-belief-divergence.js';
+
+export { createLocationPack } from './commands/create-location-pack.js';
+export type { CreateLocationPackInput, GeneratedLocationPackResult } from './commands/create-location-pack.js';
+
+export { createEncounterPack } from './commands/create-encounter-pack.js';
+export type { CreateEncounterPackInput, GeneratedEncounterPackResult } from './commands/create-encounter-pack.js';
+
+export { explainDistrictState } from './commands/explain-district-state.js';
+export type { DistrictStateInput } from './commands/explain-district-state.js';
+
+export { explainFactionAlert } from './commands/explain-faction-alert.js';
+export type { FactionAlertInput } from './commands/explain-faction-alert.js';
+
+// Parsers (useful for custom prompt workflows)
+export { extractYaml, extractJson, extractText } from './parsers.js';
+
+// Validators
+export { parseYamlish, validateGeneratedRoom, validateGeneratedQuest } from './validators.js';
+export type { GeneratedContentResult } from './validators.js';
+
+// CLI entry
+export { runCli } from './cli.js';

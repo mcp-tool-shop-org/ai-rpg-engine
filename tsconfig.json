@@ -23,6 +23,7 @@
     { "path": "packages/terminal-ui" },
     { "path": "packages/cli" },
     { "path": "packages/starter-fantasy" },
-    { "path": "packages/starter-cyberpunk" }
+    { "path": "packages/starter-cyberpunk" },
+    { "path": "packages/ollama" }
   ]
 }

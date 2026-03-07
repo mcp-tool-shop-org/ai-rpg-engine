@@ -1,0 +1,35 @@
+{
+  "name": "@ai-rpg-engine/ollama",
+  "version": "0.4.0",
+  "description": "Optional local AI layer for content scaffolding, validation repair, and inspector summarization",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ai-rpg-engine/core": "*",
+    "@ai-rpg-engine/content-schema": "*",
+    "@ai-rpg-engine/modules": "*"
+  },
+  "license": "MIT",
+  "author": "mcp-tool-shop",
+  "homepage": "https://mcp-tool-shop-org.github.io/ai-rpg-engine/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
+    "directory": "packages/ollama"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
