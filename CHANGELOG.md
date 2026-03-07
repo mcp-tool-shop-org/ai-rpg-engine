@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] - 2025-07-17
+
+### Release Polish & Public Surface
+
+v2.0.0 is a presentation and packaging release — no new engine mechanics. It turns the workshop into a storefront: clearer docs, richer examples, polished metadata, a cohesive landing page, and proper npm packaging. Every feature from v1.0–v1.9 is now discoverable and well-explained.
+
+### Changed
+
+- **README overhaul** — complete rewrite positioning the engine as a simulation-native RPG design studio. Organized by capabilities (simulation, AI worldbuilding, analysis, tuning, experiments, studio UX). Includes architecture table, package listing, and documentation links.
+- **Landing page** — hero, features, quick start, and design workflow sections rewritten for v2. Badge bumped to v2.0.0. CLI-first onboarding flow.
+- **Handbook navigation** — new index.md with "Start Here" section, topic-based navigation, three pipeline diagrams (simulation, AI authoring, studio workflow), and full table of contents.
+- **Starter world READMEs** — Chapel Threshold and Neon Lockbox READMEs rewritten as teaching tools with "What You'll Learn" tables, accurate content inventories, comparison table, and simplified `createGame()` usage.
+- **Package READMEs** — added ollama package README (was missing). All existing package READMEs verified.
+- **npm metadata** — keywords and bugs.url added to all 9 package.json files. Root package.json gets homepage, repository, and updated description.
+
+### Added
+
+- **PHILOSOPHY.md** — standalone design philosophy document covering deterministic worlds, evidence-driven design, AI-as-assistant boundaries, truth vs presentation layer.
+
+### Upgraded
+
+- All packages bumped from v1.x to v2.0.0.
+
 ## [1.9.0] - 2025-07-16
 
 ### Added — Studio UX (ollama)

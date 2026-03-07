@@ -18,30 +18,45 @@
 npm install @ai-rpg-engine/starter-fantasy
 ```
 
+## What You'll Learn
+
+This starter demonstrates the full engine stack in a compact world:
+
+| Feature | What the Chapel shows |
+|---|---|
+| **Rulesets** | `fantasyMinimalRuleset` — stats (vigor/instinct/will), resources (hp/stamina), verbs, formulas |
+| **Zones & traversal** | 5 zones across 2 rooms with adjacency, light levels, interactables, hazards |
+| **Districts** | Chapel Grounds (sacred) vs Crypt Depths (cursed, faction-controlled) |
+| **Dialogue** | Branching pilgrim conversation with 3 paths and global-flag effects |
+| **Combat** | Ash Ghoul with aggressive AI profile, fear tags, guard goal |
+| **Cognition & perception** | Memory decay, perception filter, undead presentation rule |
+| **Progression** | 3-node Combat Mastery tree with XP rewards on entity defeat |
+| **Environment** | Unstable-floor hazard draining stamina on zone entry |
+| **Factions** | Chapel-undead faction with cohesion setting |
+| **Belief provenance** | Rumor propagation with delay, belief tracking |
+| **Inventory** | Healing draught with scripted item-use effect |
+| **Simulation inspector** | Full inspection wired for replay analysis |
+
 ## What's Inside
 
-A complete content pack featuring:
-
-- **The Chapel** — a ruined chapel with interconnected rooms and hidden passages
-- **NPCs** — guards, ghouls, and spirits with distinct AI cognition profiles
-- **Items** — weapons, armor, potions, and quest items
-- **Dialogue** — branching conversations with condition-gated options
-- **Combat encounters** — enemies with varied tactics driven by the cognition system
+- **5 zones** — Ruined Chapel Entrance, Nave, Shadowed Alcove, Vestry Passage, Crypt Antechamber
+- **1 NPC** — Suspicious Pilgrim (branching dialogue, 3 conversation paths)
+- **1 enemy** — Ash Ghoul (aggressive AI, fear of fire and sacred)
+- **1 item** — Healing Draught (scripted use-effect restoring 8 HP)
+- **1 progression tree** — Combat Mastery (Toughened → Keen Eye → Battle Fury)
+- **1 presentation rule** — undead perceive all living as threats
+- **15 modules wired** — traversal, status, combat, inventory, dialogue, cognition, perception, progression, environment, factions, rumors, districts, belief, observer presentation, inspector
 
 ## Usage
 
 ```typescript
-import { Engine } from '@ai-rpg-engine/core';
-import { combatCore, dialogueCore, cognitionCore } from '@ai-rpg-engine/modules';
-import { chapelThreshold } from '@ai-rpg-engine/starter-fantasy';
+import { createGame } from '@ai-rpg-engine/starter-fantasy';
 
-const engine = new Engine({
-  manifest: chapelThreshold.manifest,
-  seed: 42,
-  modules: [combatCore(), dialogueCore(), cognitionCore()],
-});
+// One line — all 15 modules, content, and ruleset pre-wired
+const engine = createGame(42);
 
-engine.loadContentPack(chapelThreshold);
+// Or import pieces individually:
+import { manifest, zones, pilgrimDialogue, fantasyMinimalRuleset } from '@ai-rpg-engine/starter-fantasy';
 ```
 
 ## Documentation

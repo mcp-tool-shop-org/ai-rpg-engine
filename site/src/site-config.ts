@@ -2,23 +2,23 @@ import type { SiteConfig } from '@mcptoolshop/site-theme';
 
 export const config: SiteConfig = {
   title: 'AI RPG Engine',
-  description: 'A simulation-first terminal RPG engine for worlds shaped by perception, cognition, and consequence',
+  description: 'Simulation-native toolkit for building, analyzing, and balancing RPG worlds',
   logoBadge: 'AR',
   brandName: 'AI RPG Engine',
   repoUrl: 'https://github.com/mcp-tool-shop-org/ai-rpg-engine',
   footerText: 'MIT Licensed — built by <a href="https://github.com/mcp-tool-shop-org" style="color:var(--color-muted);text-decoration:underline">mcp-tool-shop-org</a>',
 
   hero: {
-    badge: 'v1.0.1',
+    badge: 'v2.0.0',
     headline: 'AI RPG Engine',
-    headlineAccent: 'Simulation truth, first.',
-    description: 'A modular runtime for terminal RPGs where actions create information, information distorts, and consequences emerge from what characters believe happened.',
+    headlineAccent: 'Build worlds. Simulate them. Improve them.',
+    description: 'The first RPG engine designed for experimentation. Deterministic simulation runtime + AI-assisted design studio.',
     primaryCta: { href: '#usage', label: 'Get started' },
     secondaryCta: { href: 'handbook/', label: 'Read the Handbook' },
     previews: [
-      { label: 'Install', code: 'npm install @ai-rpg-engine/core @ai-rpg-engine/modules' },
-      { label: 'Import', code: "import { Engine } from '@ai-rpg-engine/core'" },
-      { label: 'Run', code: "engine.submitAction('attack', { targetIds: ['guard-01'] })" },
+      { label: 'Install', code: 'npm install -g @ai-rpg-engine/cli' },
+      { label: 'Studio', code: 'ai chat' },
+      { label: 'Onboard', code: '/onboard' },
     ],
   },
 
@@ -30,32 +30,32 @@ export const config: SiteConfig = {
       subtitle: 'What makes AI RPG Engine different.',
       features: [
         {
-          title: 'Simulation Truth',
-          desc: 'The engine maintains objective world state. Presentation layers may lie, narrators may distort, but truth is sacred and queryable.',
+          title: 'Deterministic Simulation',
+          desc: 'Tick-based engine with world state, events, perception, cognition, faction beliefs, rumor propagation, and seeded RNG. Every run can be replayed exactly.',
         },
         {
-          title: 'Perception & Cognition',
-          desc: 'Every character perceives the world differently. AI actors reason from beliefs, not omniscience. Ambushes, deception, and misinformation emerge naturally.',
+          title: 'AI-Assisted Worldbuilding',
+          desc: 'Scaffold rooms, factions, quests, and districts from a theme. Critique designs, repair schema errors, and guide multi-step builds. AI suggests — you decide.',
         },
         {
-          title: 'Deterministic Replay',
-          desc: 'Seeded RNG and structured action pipeline guarantee identical results from identical inputs. Debug, replay, and inspect any game session.',
+          title: 'Replay Analysis',
+          desc: 'Structured findings explain why events happened, where mechanics break down, and which systems create instability. Analysis feeds directly into tuning.',
+        },
+        {
+          title: 'Experiment-Driven Balancing',
+          desc: 'Run batches of simulations across seeds. Detect variance, sweep parameters, compare tuned vs baseline. Turn world design into a testable process.',
+        },
+        {
+          title: 'Studio Workflow',
+          desc: 'CLI design studio with dashboards, issue tracking, experiment browsing, session history, guided onboarding, and context-aware command discovery.',
         },
         {
           title: '17 Built-In Modules',
-          desc: 'Combat, dialogue, inventory, traversal, status effects, environment, cognition, perception, factions, rumors, districts, and more — all composable.',
+          desc: 'Combat, dialogue, cognition, perception, factions, rumors, districts, progression, environment, and more. All composable, all deterministic.',
         },
         {
           title: 'Genre-Agnostic',
-          desc: 'Same core runs dark fantasy, cyberpunk, or cosmic horror. Genre belongs to rulesets and content packs, not the engine.',
-        },
-        {
-          title: 'Content Is Data',
-          desc: 'Rooms, entities, dialogue, items, and quests are defined as data, not code. Ship whole games without touching engine internals.',
-        },
-        {
-          title: 'AI-Assisted Authoring',
-          desc: 'Optional Ollama integration scaffolds rooms, districts, factions, quests, and encounter packs from a theme. Validates against engine schemas, repairs on failure, explains what the simulation is doing.',
+          desc: 'Same core runs dark fantasy, cyberpunk, or any setting. Genre belongs to rulesets and content packs, not the engine.',
         },
       ],
     },
@@ -66,39 +66,19 @@ export const config: SiteConfig = {
       cards: [
         {
           title: 'Install',
-          code: 'npm install @ai-rpg-engine/core @ai-rpg-engine/modules @ai-rpg-engine/content-schema',
+          code: 'npm install -g @ai-rpg-engine/cli',
         },
         {
-          title: 'Create an engine',
-          code: `import { Engine } from '@ai-rpg-engine/core';
-import { combatCore, dialogueCore, cognitionCore, perceptionFilter } from '@ai-rpg-engine/modules';
-
-const engine = new Engine({
-  manifest: {
-    id: 'my-game', title: 'My Game',
-    version: '1.0.0', engineVersion: '1.0.0',
-    ruleset: 'fantasy', modules: ['combat-core'],
-    contentPacks: [],
-  },
-  seed: 42,
-  modules: [combatCore(), dialogueCore(), cognitionCore(), perceptionFilter()],
-});`,
+          title: 'Start the studio',
+          code: `ai chat\n/onboard`,
         },
         {
-          title: 'Submit actions',
-          code: `const events = engine.submitAction('attack', {
-  targetIds: ['guard-01'],
-});
-
-for (const event of events) {
-  console.log(event.type, event.payload);
-}`,
+          title: 'Build a world',
+          code: `create-location-pack haunted chapel district\ncritique-content\nsimulate`,
         },
         {
-          title: 'Inspect state',
-          code: `const state = engine.getState();
-const guard = state.entities.get('guard-01');
-console.log(guard?.resources); // HP, stamina, etc.`,
+          title: 'Analyze and improve',
+          code: `analyze-balance\ntune paranoia\nexperiment run --runs 50`,
         },
       ],
     },
@@ -106,7 +86,7 @@ console.log(guard?.resources); // HP, stamina, etc.`,
       kind: 'data-table',
       id: 'modules',
       title: 'Built-In Modules',
-      subtitle: '17 composable simulation modules + AI authoring layer.',
+      subtitle: '17 composable simulation modules.',
       columns: ['Module', 'Description'],
       rows: [
         ['combat-core', 'Attack/defend, damage, defeat, stamina'],
@@ -131,26 +111,24 @@ console.log(guard?.resources); // HP, stamina, etc.`,
     {
       kind: 'code-cards',
       id: 'ai-authoring',
-      title: 'AI Authoring Layer',
+      title: 'Design Workflow',
       cards: [
         {
-          title: 'Scaffold a location',
-          code: `ai create-location-pack --theme "abandoned dwarven mine" \\
+          title: 'Scaffold content',
+          code: `create-location-pack --theme "abandoned mine" \\
   --factions miners_guild,deep_crawlers`,
         },
         {
-          title: 'Scaffold an encounter',
-          code: `ai create-encounter-pack --theme "goblin ambush" \\
-  --difficulty medium \\
-  --write content/encounters/goblin.yaml`,
+          title: 'Analyze balance',
+          code: `simulate\nanalyze-balance\nsuggest-fixes`,
         },
         {
-          title: 'Diagnose simulation state',
-          code: `cat district-state.json | ai explain-district-state\ncat belief-traces.json  | ai explain-belief-divergence`,
+          title: 'Tune mechanics',
+          code: `tune rumor propagation\ntune-step\ntune-status`,
         },
         {
-          title: 'Auto-repair invalid content',
-          code: `ai create-room --theme "haunted library" --repair\n# Repaired: 3 validation error(s) fixed.`,
+          title: 'Run experiments',
+          code: `experiment run --runs 50\nexperiment compare baseline tuned\n/findings`,
         },
       ],
     },

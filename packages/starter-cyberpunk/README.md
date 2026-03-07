@@ -18,30 +18,56 @@
 npm install @ai-rpg-engine/starter-cyberpunk
 ```
 
+## What You'll Learn
+
+This starter demonstrates genre flexibility — the same engine stack with a completely different stat model:
+
+| Feature | What the Lockbox shows |
+|---|---|
+| **Rulesets** | `cyberpunkMinimalRuleset` — stats (chrome/reflex/netrunning), resources (hp/ice/bandwidth), 8 verbs incl. `hack` & `jack-in` |
+| **Zones & traversal** | 3 zones (street → server room → vault) with light, hazards, interactables |
+| **Districts** | Neon Street Block (public) vs Vault Complex (secure, faction-controlled) |
+| **Dialogue** | Fixer briefing with 3 branches and global-flag effects |
+| **Combat** | ICE Sentry with aggressive AI, guard-vault goal |
+| **Cognition & perception** | Higher decay + instability, `reflex`-based perception with `netrunning` sense stat |
+| **Progression** | 3-node Netrunning Skills tree (Packet Sniffer → ICE Hardening → Neural Boost) |
+| **Environment** | Exposed-wiring hazard dealing 2 HP damage on zone entry |
+| **Factions** | Vault-ICE faction at 0.95 cohesion |
+| **Belief provenance** | Faster rumor propagation (delay=1) with 3% distortion per hop |
+| **Inventory** | ICE Breaker program — reduces target ICE by 8 |
+| **Presentation rules** | ICE agents flag all non-ICE as intrusion |
+
+### Fantasy vs Cyberpunk — same engine, different rulesets
+
+| | Chapel Threshold | Neon Lockbox |
+|---|---|---|
+| Stats | vigor / instinct / will | chrome / reflex / netrunning |
+| Resources | hp, stamina | hp, ice, bandwidth |
+| Unique verbs | — | hack, jack-in |
+| Perception | default | reflex-based + netrunning sense |
+| Cognition decay | 0.02 base | 0.03 base, 0.8 instability |
+| Rumor propagation | delay=2, no distortion | delay=1, 3% distortion |
+
 ## What's Inside
 
-A complete content pack featuring:
-
-- **The Lockbox** — a neon-lit district with clubs, back alleys, and corporate zones
-- **NPCs** — fixers, corporate agents, street gangs with faction-aware AI
-- **Items** — cyberware, weapons, hacking tools, data chips
-- **Dialogue** — faction-gated conversations, reputation checks, bribe options
-- **District system** — spatial memory, alert levels, faction territory control
+- **3 zones** — Neon Block Street Level, Abandoned Server Room, Data Vault
+- **1 NPC** — Kira the Fixer (briefing dialogue, 3 conversation paths)
+- **1 enemy** — ICE Sentry (aggressive AI, guard-vault goal)
+- **1 item** — ICE Breaker program (reduces target ICE resource)
+- **1 progression tree** — Netrunning Skills (Packet Sniffer → ICE Hardening → Neural Boost)
+- **1 presentation rule** — ICE agents frame all non-ICE entities as intrusion
+- **15 modules wired** — same full stack as Chapel Threshold, different configuration
 
 ## Usage
 
 ```typescript
-import { Engine } from '@ai-rpg-engine/core';
-import { combatCore, factionCognition, districtCore } from '@ai-rpg-engine/modules';
-import { neonLockbox } from '@ai-rpg-engine/starter-cyberpunk';
+import { createGame } from '@ai-rpg-engine/starter-cyberpunk';
 
-const engine = new Engine({
-  manifest: neonLockbox.manifest,
-  seed: 42,
-  modules: [combatCore(), factionCognition(), districtCore()],
-});
+// One line — all 15 modules, content, and ruleset pre-wired
+const engine = createGame(77);
 
-engine.loadContentPack(neonLockbox);
+// Or import pieces individually:
+import { manifest, zones, fixerDialogue, cyberpunkMinimalRuleset } from '@ai-rpg-engine/starter-cyberpunk';
 ```
 
 ## Documentation

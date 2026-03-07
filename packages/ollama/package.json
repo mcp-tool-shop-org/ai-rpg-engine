@@ -1,7 +1,7 @@
 {
   "name": "@ai-rpg-engine/ollama",
-  "version": "1.9.0",
-  "description": "Optional local AI layer for content scaffolding, validation repair, and inspector summarization",
+  "version": "2.0.0",
+  "description": "AI design studio for AI RPG Engine — scaffolding, critique, guided workflows, tuning, experiments, studio UX",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -36,6 +36,10 @@
     "type": "git",
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
     "directory": "packages/ollama"
+  },
+  "keywords": ["rpg", "ai", "worldbuilding", "game-engine", "simulation", "ollama", "tuning", "experiments"],
+  "bugs": {
+    "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues"
   },
   "engines": {
     "node": ">=20"

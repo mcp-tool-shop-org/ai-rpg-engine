@@ -12,163 +12,168 @@
   <a href="https://mcp-tool-shop-org.github.io/ai-rpg-engine/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
 </p>
 
-<p align="center">A simulation-first terminal RPG engine for worlds shaped by perception, cognition, and consequence.</p>
+# AI RPG Engine
+
+Simulation-native toolkit for building, analyzing, and balancing RPG worlds.
+
+AI RPG Engine combines a deterministic simulation runtime with an AI-assisted design studio so authors can build worlds, test them through simulation, and improve them based on evidence instead of guesswork.
+
+> Traditional tools help you write stories.
+> AI RPG Engine helps you **test worlds**.
 
 ---
 
-## What It Is
+## What It Does
 
-AI RPG Engine is a modular runtime for building terminal RPGs where actions create information, information distorts, and consequences emerge from what characters believe happened.
-
-The engine maintains objective world truth while supporting unreliable narration, perception differences between characters, and layered storytelling. It is genre-agnostic — the same core runs dark fantasy, cyberpunk, or any other setting through pluggable rulesets.
-
-## Install
-
-```bash
-npm install @ai-rpg-engine/core @ai-rpg-engine/modules @ai-rpg-engine/content-schema
 ```
+build → critique → simulate → analyze → tune → experiment
+```
+
+You can generate world content, critique designs, run deterministic simulations, analyze replay behavior, tune mechanics, run experiments across many seeds, and compare outcomes. Every result is reproducible, inspectable, and explainable.
+
+---
+
+## Core Capabilities
+
+### Deterministic Simulation
+
+A tick-based simulation engine for RPG worlds. World state, event system, perception and cognition layers, faction belief propagation, rumor systems, district metrics, replayable action logs, and deterministic RNG. Every run can be replayed exactly.
+
+### AI-Assisted Worldbuilding
+
+Optional AI layer that scaffolds rooms, factions, quests, and districts from a theme. Critiques designs, normalizes schema errors, proposes improvements, and guides multi-step worldbuilding workflows. The AI never mutates simulation state directly — it only generates content or suggestions.
+
+### Guided Design Workflows
+
+Session-aware, plan-first workflows for world scaffolding, critique loops, design iteration, guided builds, and structured tuning plans. Combines deterministic tools with AI assistance.
+
+### Simulation Analysis
+
+Replay analysis that explains why events happened, where mechanics break down, which triggers never fire, and which systems create instability. Structured findings feed directly into tuning.
+
+### Guided Tuning
+
+Balance findings generate structured tuning plans with proposed fixes, expected impact, confidence estimates, and previewed changes. Applied step-by-step with full traceability.
+
+### Scenario Experiments
+
+Run batches of simulations across seeds to understand typical behavior. Extract scenario metrics, detect variance, sweep parameters, and compare tuned vs baseline worlds. Turns world design into a testable process.
+
+### Studio Shell
+
+CLI design studio with project dashboards, issue browsing, experiment inspection, session history, guided onboarding, and context-aware command discovery. A workspace for building and testing worlds.
+
+---
 
 ## Quick Start
 
-```typescript
-import { Engine } from '@ai-rpg-engine/core';
-import {
-  combatCore, dialogueCore, inventoryCore, traversalCore,
-  statusCore, environmentCore, cognitionCore, perceptionFilter,
-} from '@ai-rpg-engine/modules';
+```bash
+# Install the CLI
+npm install -g @ai-rpg-engine/cli
 
-const engine = new Engine({
-  manifest: {
-    id: 'my-game', title: 'My Game', version: '1.0.0',
-    engineVersion: '1.0.0', ruleset: 'fantasy',
-    modules: ['combat-core', 'dialogue-core', 'cognition-core'],
-    contentPacks: [],
-  },
-  seed: 42,
-  modules: [
-    combatCore(), dialogueCore(), inventoryCore(),
-    traversalCore(), statusCore(), environmentCore(),
-    cognitionCore(), perceptionFilter(),
-  ],
-});
+# Start the interactive studio
+ai chat
 
-// Submit an action
-const events = engine.submitAction('attack', {
-  targetIds: ['guard-01'],
-});
+# Run onboarding
+/onboard
 
-// Every action produces structured events
-for (const event of events) {
-  console.log(event.type, event.payload);
-}
+# Create your first content
+create-room haunted chapel
+
+# Run a simulation
+simulate
+
+# Analyze the results
+analyze-balance
+
+# Tune the design
+tune paranoia
+
+# Run an experiment
+experiment run --runs 50
 ```
+
+---
+
+## Example Workflow
+
+```bash
+ai chat
+
+/onboard
+create-location-pack haunted chapel district
+critique-content
+simulate
+analyze-balance
+tune rumor propagation
+experiment run --runs 50
+compare-replays
+```
+
+Build a world and improve it through simulation evidence.
+
+---
 
 ## Architecture
 
-```
-Engine
-  WorldStore      — entities, zones, quests, factions, RNG, event log
-  ActionDispatcher — verb handlers, validators
-  ModuleManager   — modules, formulas, rules, persistence
-  Presentation    — channels that route (and can distort) events
-```
+The system has four layers.
 
-Every state change flows through a single pipeline:
+| Layer | Role |
+|-------|------|
+| **Simulation** | Deterministic engine — world state, events, actions, perception, cognition, factions, rumor propagation, district metrics, replay |
+| **Authoring** | Content generation — scaffolding, critique, normalization, repair loops, pack generators |
+| **AI Cognition** | Optional AI assistance — chat shell, context routing, retrieval, memory shaping, tool orchestration |
+| **Studio UX** | CLI design environment — dashboards, issue tracking, experiment browsing, session history, guided workflows |
 
-```
-action --> validation --> resolution --> events --> presentation
-```
+---
 
 ## Packages
 
 | Package | Purpose |
 |---------|---------|
-| `@ai-rpg-engine/core` | State, entities, actions, events, rules, RNG, persistence |
-| `@ai-rpg-engine/modules` | 17 built-in simulation modules |
-| `@ai-rpg-engine/content-schema` | Content schemas and validators |
-| `@ai-rpg-engine/terminal-ui` | Terminal renderer and input layer |
-| `@ai-rpg-engine/cli` | Developer CLI: run, replay, inspect |
-| `@ai-rpg-engine/starter-fantasy` | The Chapel Threshold (fantasy demo) |
-| `@ai-rpg-engine/starter-cyberpunk` | Neon Lockbox (cyberpunk demo) |
-| `@ai-rpg-engine/ollama` | AI authoring layer — scaffold, diagnose, repair |
+| [`@ai-rpg-engine/core`](packages/core) | Deterministic simulation runtime — world state, events, RNG, ticks, action resolution |
+| [`@ai-rpg-engine/modules`](packages/modules) | 17 built-in modules — combat, perception, cognition, factions, rumors, districts |
+| [`@ai-rpg-engine/content-schema`](packages/content-schema) | Canonical schemas and validators for world content |
+| [`@ai-rpg-engine/ollama`](packages/ollama) | Optional AI authoring — scaffolding, critique, guided workflows, tuning, experiments |
+| [`@ai-rpg-engine/cli`](packages/cli) | Command-line design studio — chat shell, workflows, experiment tools |
+| [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | Terminal renderer and input layer |
+| [`@ai-rpg-engine/starter-fantasy`](packages/starter-fantasy) | The Chapel Threshold — fantasy starter world |
+| [`@ai-rpg-engine/starter-cyberpunk`](packages/starter-cyberpunk) | Neon Lockbox — cyberpunk starter world |
 
-## Built-In Modules
+---
 
-| Module | What It Does |
-|--------|-------------|
-| combat-core | Attack/defend, damage, defeat, stamina |
-| dialogue-core | Graph-based dialogue trees with conditions |
-| inventory-core | Items, equipment, use/equip/unequip |
-| traversal-core | Zone movement and exit validation |
-| status-core | Status effects with duration and stacking |
-| environment-core | Dynamic zone properties, hazards, decay |
-| cognition-core | AI beliefs, intent, morale, memory |
-| perception-filter | Sensory channels, clarity, cross-zone hearing |
-| narrative-authority | Truth vs presentation, concealment, distortion |
-| progression-core | Currency-based advancement, skill trees |
-| faction-cognition | Faction beliefs, trust, inter-faction knowledge |
-| rumor-propagation | Information spread with confidence decay |
-| knowledge-decay | Time-based confidence erosion |
-| district-core | Spatial memory, zone metrics, alert thresholds |
-| belief-provenance | Trace reconstruction across perception/cognition/rumor |
-| observer-presentation | Per-observer event filtering, divergence tracking |
-| simulation-inspector | Runtime inspection, health checks, diagnostics |
+## Documentation
 
-## AI Authoring Layer
+| Resource | Description |
+|----------|-------------|
+| [Handbook](docs/handbook/index.md) | 26 chapters + 4 appendices covering every system |
+| [Design Document](docs/DESIGN.md) | Architecture deep-dive — action pipeline, truth vs presentation, simulation layers |
+| [AI Worldbuilding Guide](packages/ollama/AI_WORLDBUILDING.md) | Scaffold, diagnose, tune, experiment workflows |
+| [Philosophy](PHILOSOPHY.md) | Why deterministic worlds, evidence-driven design, and AI as assistant |
+| [Changelog](CHANGELOG.md) | Release history |
 
-`@ai-rpg-engine/ollama` is an optional package that connects to a local [Ollama](https://ollama.ai) instance for AI-assisted content creation and simulation inspection. It never mutates engine state directly — all output goes to stdout by default.
+---
 
-**Scaffold** — generate content from a theme:
-```bash
-ai create-location-pack --theme "abandoned dwarven mine" --factions miners_guild,deep_crawlers
-ai create-encounter-pack --theme "goblin ambush" --difficulty medium --write content/encounters/goblin.yaml
-```
+## Philosophy
 
-**Diagnose** — explain what the simulation is doing:
-```bash
-cat district-state.json | ai explain-district-state
-cat belief-traces.json  | ai explain-belief-divergence
-```
+AI RPG Engine is built around three ideas:
 
-**Repair** — fix invalid generated content:
-```bash
-ai create-room --theme "haunted library" --repair
-# Repaired: 3 validation error(s) fixed.
-```
+1. **Deterministic worlds** — simulation results must be reproducible.
+2. **Evidence-driven design** — world mechanics should be tested through simulation.
+3. **AI as assistant, not authority** — AI tools help generate and critique designs but do not replace deterministic systems.
 
-12 commands across scaffold, diagnose, and repair workflows. See the [AI Worldbuilding Handbook](packages/ollama/AI_WORLDBUILDING.md) for full documentation.
+See [PHILOSOPHY.md](PHILOSOPHY.md) for the full explanation.
 
-## Key Design Decisions
+---
 
-- **Simulation truth is sacred** — the engine maintains objective state. Presentation layers may lie, but world truth is canonical.
-- **Actions create events** — no meaningful state change happens silently. Everything emits structured, queryable events.
-- **Deterministic replay** — seeded RNG and the action pipeline guarantee identical results from identical inputs.
-- **Content is data** — rooms, entities, dialogue, items are defined as data, not code.
-- **Genre belongs to rulesets** — the engine has no opinion about swords vs lasers.
-- **AI assists, never governs** — the ollama package helps humans create and understand worlds. The engine remains the lawful keeper of reality.
+## Security
 
-## Security and Trust
-
-AI RPG Engine is a **local-only simulation library**.
-
-- **Data touched:** in-memory game state only. Save files written to `.ai-rpg-engine/` when CLI save is used.
-- **Data NOT touched:** no filesystem access beyond save files, no network, no environment variables, no system resources.
-- **No telemetry.** No data is collected or sent anywhere.
-- **No secrets.** The engine does not read, store, or transmit credentials.
-
-See [SECURITY.md](SECURITY.md) for the full security policy.
+AI RPG Engine is a **local-only simulation library**. No telemetry, no network, no secrets. Save files go to `.ai-rpg-engine/` only when explicitly requested. See [SECURITY.md](SECURITY.md) for details.
 
 ## Requirements
 
 - Node.js >= 20
 - TypeScript (ESM modules)
-
-## Documentation
-
-- [Handbook](docs/handbook/index.md) — 26 chapters + 4 appendices
-- [AI Worldbuilding Handbook](packages/ollama/AI_WORLDBUILDING.md) — scaffold, diagnose, repair workflows
-- [Design Overview](docs/DESIGN.md) — architecture deep-dive
-- [Changelog](CHANGELOG.md)
 
 ## License
 

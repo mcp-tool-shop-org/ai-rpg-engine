@@ -1,9 +1,18 @@
 {
   "name": "ai-rpg-engine",
   "private": true,
-  "version": "1.0.1",
+  "version": "2.0.0",
   "type": "module",
-  "description": "A simulation-first terminal RPG engine for worlds shaped by perception, cognition, and consequence",
+  "description": "Simulation-native toolkit for building, analyzing, and balancing RPG worlds",
+  "keywords": ["rpg", "game-engine", "simulation", "worldbuilding", "procedural", "ai", "text-rpg", "deterministic"],
+  "bugs": {
+    "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues"
+  },
+  "homepage": "https://mcp-tool-shop-org.github.io/ai-rpg-engine/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git"
+  },
   "author": "mcp-tool-shop",
   "license": "MIT",
   "workspaces": [

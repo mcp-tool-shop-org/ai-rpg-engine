@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/cli",
-  "version": "1.0.1",
+  "version": "2.0.0",
   "description": "AI RPG Engine developer CLI: run, validate, replay, inspect",
   "type": "module",
   "main": "./dist/index.js",
@@ -33,6 +33,10 @@
     "type": "git",
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
     "directory": "packages/cli"
+  },
+  "keywords": ["rpg", "cli", "game-engine", "simulation", "worldbuilding", "ai"],
+  "bugs": {
+    "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues"
   },
   "engines": {
     "node": ">=20"
