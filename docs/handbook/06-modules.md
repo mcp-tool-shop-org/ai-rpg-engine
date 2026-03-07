@@ -41,3 +41,15 @@ These packages provide types and logic that work independently or alongside the 
 | @ai-rpg-engine/rumor-system | Rumor lifecycle, mutation mechanics, spread tracking |
 
 Standalone packages have no engine dependency — they define types and logic that game runtimes consume. The built-in modules handle engine integration (event listeners, world state mutation), while standalone packages handle domain logic (how memories decay, how rumors mutate).
+
+## Starter Packs
+
+Pre-built worlds that wire all 15 modules with genre-specific rulesets, content, and progression. Each is a single `createGame()` call.
+
+| Package | Genre | Stats | Unique Verbs |
+|---------|-------|-------|--------------|
+| @ai-rpg-engine/starter-fantasy | Dark fantasy | vigor, instinct, will | pray, rest |
+| @ai-rpg-engine/starter-cyberpunk | Cyberpunk | chrome, reflex, netrunning | jack-in |
+| @ai-rpg-engine/starter-detective | Victorian mystery | perception, eloquence, grit | interrogate, deduce |
+| @ai-rpg-engine/starter-pirate | High-seas pirate | brawn, cunning, sea-legs | plunder, navigate |
+| @ai-rpg-engine/starter-zombie | Zombie survival | fitness, wits, nerve | barricade, scavenge |

@@ -2,7 +2,7 @@
 title: "Chapter 24 — Observability"
 description: "Observability"
 sidebar:
-  order: 24
+  order: 27
 ---
 
 
