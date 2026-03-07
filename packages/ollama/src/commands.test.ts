@@ -21,6 +21,9 @@ import { normalizeContent } from './commands/normalize-content.js';
 import { diffSummary } from './commands/diff-summary.js';
 import { analyzeReplay } from './commands/analyze-replay.js';
 import { explainWhy } from './commands/explain-why.js';
+import { suggestNext } from './commands/suggest-next.js';
+import { planDistrict } from './commands/plan-district.js';
+import { compareReplays } from './commands/compare-replays.js';
 
 function mockClient(response: string): OllamaTextClient {
   return {
@@ -985,6 +988,243 @@ describe('explainWhy', () => {
     const result = await explainWhy(client, {
       question: 'Why?',
       state: '{}',
+    });
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe('suggestNext', () => {
+  const suggestResponse = [
+    'Session has good district coverage but lacks quests and simulation testing.',
+    '',
+    '```yaml',
+    'actions:',
+    '  - priority: high',
+    '    command: "create-quest --theme smuggling"',
+    '    reason: "No quests in session, factions have no goals."',
+    '  - priority: medium',
+    '    command: "analyze-replay < old_quarter_replay.json"',
+    '    reason: "District was never tested in simulation."',
+    '  - priority: low',
+    '    command: "normalize-content < chapel.yaml"',
+    '    reason: "Minor style drift in room definition."',
+    'summary: "Create quests first, then simulate to validate dynamics."',
+    '```',
+  ].join('\n');
+
+  it('returns prose and structured actions from session analysis', async () => {
+    const client = mockClient(suggestResponse);
+    const result = await suggestNext(client, {
+      sessionState: 'Themes: paranoia\nArtifacts: 2 districts, 0 quests\nIssues: 1 open',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.text).toContain('district coverage');
+      expect(result.actions).toHaveLength(3);
+      expect(result.actions[0].priority).toBe('high');
+      expect(result.actions[0].command).toContain('create-quest');
+      expect(result.actions[1].priority).toBe('medium');
+      expect(result.actions[2].priority).toBe('low');
+      expect(result.summary).toContain('quests first');
+    }
+  });
+
+  it('passes recent activity to prompt', async () => {
+    let capturedPrompt = '';
+    const client: OllamaTextClient = {
+      async generate(input: PromptInput): Promise<PromptResult> {
+        capturedPrompt = input.prompt;
+        return { ok: true, text: 'No recommendations.' };
+      },
+    };
+    await suggestNext(client, {
+      sessionState: 'Themes: paranoia',
+      recentActivity: 'Created chapel room',
+    });
+    expect(capturedPrompt).toContain('paranoia');
+    expect(capturedPrompt).toContain('Created chapel room');
+  });
+
+  it('degrades gracefully with prose-only response', async () => {
+    const client = mockClient('Everything looks good, keep going.');
+    const result = await suggestNext(client, {
+      sessionState: 'Themes: medieval',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.text).toContain('looks good');
+      expect(result.actions).toHaveLength(0);
+    }
+  });
+
+  it('propagates client failure', async () => {
+    const client = failingClient('connection refused');
+    const result = await suggestNext(client, {
+      sessionState: '{}',
+    });
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe('planDistrict', () => {
+  const planResponse = [
+    'This plan builds a thieves quarter with hidden passages and a fence.',
+    '',
+    '```yaml',
+    'steps:',
+    '  - order: 1',
+    '    command: "create-district --theme thieves_quarter"',
+    '    produces: "district YAML"',
+    '    description: "Foundation district"',
+    '  - order: 2',
+    '    command: "create-faction --theme thieves_guild"',
+    '    produces: "faction config"',
+    '    description: "Controlling faction"',
+    '    dependsOn: [1]',
+    '  - order: 3',
+    '    command: "create-room --theme hidden_passage --district thieves_quarter"',
+    '    produces: "room definition"',
+    '    description: "Secret route through the district"',
+    '    dependsOn: [1, 2]',
+    '  - order: 4',
+    '    command: "critique-content < thieves_quarter.yaml"',
+    '    produces: "critique report"',
+    '    description: "Review pass on the district"',
+    '    dependsOn: [1, 2, 3]',
+    'rationale: "Build structure first, add faction control, then infill rooms."',
+    '```',
+  ].join('\n');
+
+  it('returns prose and structured plan from theme', async () => {
+    const client = mockClient(planResponse);
+    const result = await planDistrict(client, {
+      theme: 'thieves quarter',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.text).toContain('thieves quarter');
+      expect(result.steps).toHaveLength(4);
+      expect(result.steps[0].order).toBe(1);
+      expect(result.steps[0].command).toContain('create-district');
+      expect(result.steps[0].dependsOn).toHaveLength(0);
+      expect(result.steps[2].dependsOn).toEqual([1, 2]);
+      expect(result.rationale).toContain('structure first');
+    }
+  });
+
+  it('passes context flags to prompt', async () => {
+    let capturedPrompt = '';
+    const client: OllamaTextClient = {
+      async generate(input: PromptInput): Promise<PromptResult> {
+        capturedPrompt = input.prompt;
+        return { ok: true, text: 'Plan.' };
+      },
+    };
+    await planDistrict(client, {
+      theme: 'market square',
+      existingFactions: 'merchants_guild, thieves_guild',
+      existingDistricts: 'old_quarter',
+      constraints: 'no magic, medieval only',
+      sessionContext: 'Themes: trade',
+    });
+    expect(capturedPrompt).toContain('market square');
+    expect(capturedPrompt).toContain('merchants_guild');
+    expect(capturedPrompt).toContain('old_quarter');
+    expect(capturedPrompt).toContain('no magic');
+    expect(capturedPrompt).toContain('trade');
+  });
+
+  it('propagates client failure', async () => {
+    const client = failingClient('model not found');
+    const result = await planDistrict(client, {
+      theme: 'anything',
+    });
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe('compareReplays', () => {
+  const compareResponse = [
+    'After the content revision, rumor flow improved significantly in old_quarter.',
+    '',
+    '```yaml',
+    'improvements:',
+    '  - area: old_quarter',
+    '    description: "Alert pressure rose from 5 to 35 over 50 ticks."',
+    '  - area: thieves_guild',
+    '    description: "Faction now receives rumors from adjacent zones."',
+    'regressions:',
+    '  - area: chapel',
+    '    description: "Room stability dropped from 80 to 40."',
+    'unchanged:',
+    '  - area: merchants_guild',
+    '    description: "Faction alertLevel stayed at 0."',
+    'verdict: improved',
+    'summary: "Net improvement in simulation dynamics."',
+    '```',
+  ].join('\n');
+
+  it('returns prose and structured comparison', async () => {
+    const client = mockClient(compareResponse);
+    const result = await compareReplays(client, {
+      before: '{"tick":50,"events":[]}',
+      after: '{"tick":50,"events":[{"type":"rumor.spread"}]}',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.text).toContain('rumor flow improved');
+      expect(result.improvements).toHaveLength(2);
+      expect(result.improvements[0].area).toBe('old_quarter');
+      expect(result.regressions).toHaveLength(1);
+      expect(result.regressions[0].area).toBe('chapel');
+      expect(result.unchanged).toHaveLength(1);
+      expect(result.verdict).toBe('improved');
+      expect(result.summary).toContain('Net improvement');
+    }
+  });
+
+  it('passes labels, focus, and session context to prompt', async () => {
+    let capturedPrompt = '';
+    const client: OllamaTextClient = {
+      async generate(input: PromptInput): Promise<PromptResult> {
+        capturedPrompt = input.prompt;
+        return { ok: true, text: 'No significant changes.' };
+      },
+    };
+    await compareReplays(client, {
+      before: '{"tick":10}',
+      after: '{"tick":10}',
+      labelBefore: 'v1',
+      labelAfter: 'v2',
+      focus: 'alert escalation',
+      sessionContext: 'Themes: paranoia',
+    });
+    expect(capturedPrompt).toContain('v1');
+    expect(capturedPrompt).toContain('v2');
+    expect(capturedPrompt).toContain('alert escalation');
+    expect(capturedPrompt).toContain('paranoia');
+  });
+
+  it('degrades gracefully with prose-only response', async () => {
+    const client = mockClient('Both runs are identical. No meaningful differences.');
+    const result = await compareReplays(client, {
+      before: '{}',
+      after: '{}',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.text).toContain('identical');
+      expect(result.improvements).toHaveLength(0);
+      expect(result.regressions).toHaveLength(0);
+      expect(result.verdict).toBe('neutral');
+    }
+  });
+
+  it('propagates client failure', async () => {
+    const client = failingClient('timeout');
+    const result = await compareReplays(client, {
+      before: '{}',
+      after: '{}',
     });
     expect(result.ok).toBe(false);
   });

@@ -250,3 +250,403 @@ function normalizeStructuredCritique(obj: Record<string, unknown>): StructuredCr
 
   return result;
 }
+
+// --- Guided design types ---
+
+export type NextAction = {
+  priority: 'low' | 'medium' | 'high';
+  command: string;
+  reason: string;
+};
+
+export type GuidedSuggestions = {
+  actions: NextAction[];
+  summary: string;
+};
+
+/**
+ * Parse suggest-next output: prose + YAML block with actions[] and summary.
+ */
+export function parseSuggestNextOutput(raw: string): {
+  prose: string;
+  structured: GuidedSuggestions;
+} {
+  const fenceMatch = /```(?:ya?ml)?\s*\n([\s\S]*?)```/.exec(raw);
+
+  if (!fenceMatch) {
+    return { prose: raw.trim(), structured: { actions: [], summary: '' } };
+  }
+
+  const prose = raw.slice(0, fenceMatch.index).trim();
+  const yamlBlock = fenceMatch[1].trim();
+  const structured = parseSuggestNextYaml(yamlBlock);
+
+  return { prose, structured };
+}
+
+function parseSuggestNextYaml(text: string): GuidedSuggestions {
+  try {
+    const parsed = JSON.parse(text);
+    return normalizeGuidedSuggestions(parsed);
+  } catch { /* not JSON */ }
+
+  const result: GuidedSuggestions = { actions: [], summary: '' };
+  const lines = text.split('\n');
+
+  let section: 'none' | 'actions' | 'summary' = 'none';
+  let currentItem: Record<string, string> = {};
+  let inItem = false;
+
+  for (const line of lines) {
+    const trimmed = line.trimEnd();
+
+    if (/^actions:\s*$/.test(trimmed)) {
+      if (inItem) flushAction(result, currentItem);
+      section = 'actions';
+      currentItem = {};
+      inItem = false;
+      continue;
+    }
+    if (/^summary:\s*(.*)$/.test(trimmed) && !trimmed.startsWith(' ')) {
+      if (inItem) flushAction(result, currentItem);
+      const inline = /^summary:\s*>?\s*(.+)$/.exec(trimmed);
+      if (inline) result.summary = inline[1].trim();
+      section = 'summary';
+      inItem = false;
+      continue;
+    }
+
+    if (section === 'summary' && trimmed.startsWith('  ')) {
+      result.summary += (result.summary ? ' ' : '') + trimmed.trim();
+      continue;
+    }
+
+    if (section === 'actions' && /^\s+-\s+\w+:/.test(trimmed)) {
+      if (inItem) flushAction(result, currentItem);
+      currentItem = {};
+      inItem = true;
+      const kv = /^\s+-\s+(\w[\w_]*)\s*:\s*(.*)$/.exec(trimmed);
+      if (kv) currentItem[kv[1]] = unquote(kv[2]);
+      continue;
+    }
+
+    if (inItem && /^\s{4,}\w[\w_]*\s*:/.test(trimmed)) {
+      const kv = /^\s+(\w[\w_]*)\s*:\s*(.*)$/.exec(trimmed);
+      if (kv) currentItem[kv[1]] = unquote(kv[2]);
+    }
+  }
+
+  if (inItem) flushAction(result, currentItem);
+  return result;
+}
+
+function flushAction(result: GuidedSuggestions, item: Record<string, string>): void {
+  if (!item['command']) return;
+  const priority = (['low', 'medium', 'high'] as const).includes(item['priority'] as 'low' | 'medium' | 'high')
+    ? item['priority'] as 'low' | 'medium' | 'high'
+    : 'medium';
+  result.actions.push({
+    priority,
+    command: item['command'],
+    reason: item['reason'] ?? '',
+  });
+}
+
+function normalizeGuidedSuggestions(obj: Record<string, unknown>): GuidedSuggestions {
+  const result: GuidedSuggestions = { actions: [], summary: '' };
+  if (typeof obj['summary'] === 'string') result.summary = obj['summary'];
+  if (Array.isArray(obj['actions'])) {
+    for (const item of obj['actions']) {
+      if (item && typeof item === 'object' && 'command' in item) {
+        flushAction(result, item as Record<string, string>);
+      }
+    }
+  }
+  return result;
+}
+
+// --- Design plan types ---
+
+export type PlanStep = {
+  order: number;
+  command: string;
+  produces: string;
+  description: string;
+  dependsOn: number[];
+};
+
+export type DesignPlan = {
+  steps: PlanStep[];
+  rationale: string;
+};
+
+/**
+ * Parse plan-district output: prose + YAML block with steps[] and rationale.
+ */
+export function parsePlanOutput(raw: string): {
+  prose: string;
+  structured: DesignPlan;
+} {
+  const fenceMatch = /```(?:ya?ml)?\s*\n([\s\S]*?)```/.exec(raw);
+
+  if (!fenceMatch) {
+    return { prose: raw.trim(), structured: { steps: [], rationale: '' } };
+  }
+
+  const prose = raw.slice(0, fenceMatch.index).trim();
+  const yamlBlock = fenceMatch[1].trim();
+  const structured = parsePlanYaml(yamlBlock);
+
+  return { prose, structured };
+}
+
+function parsePlanYaml(text: string): DesignPlan {
+  try {
+    const parsed = JSON.parse(text);
+    return normalizePlan(parsed);
+  } catch { /* not JSON */ }
+
+  const result: DesignPlan = { steps: [], rationale: '' };
+  const lines = text.split('\n');
+
+  let section: 'none' | 'steps' | 'rationale' = 'none';
+  let currentItem: Record<string, string> = {};
+  let inItem = false;
+
+  for (const line of lines) {
+    const trimmed = line.trimEnd();
+
+    if (/^steps:\s*$/.test(trimmed)) {
+      if (inItem) flushStep(result, currentItem);
+      section = 'steps';
+      currentItem = {};
+      inItem = false;
+      continue;
+    }
+    if (/^rationale:\s*(.*)$/.test(trimmed)) {
+      if (inItem) flushStep(result, currentItem);
+      const inline = /^rationale:\s*>?\s*(.+)$/.exec(trimmed);
+      if (inline) result.rationale = inline[1].trim();
+      section = 'rationale';
+      inItem = false;
+      continue;
+    }
+
+    if (section === 'rationale' && trimmed.startsWith('  ')) {
+      result.rationale += (result.rationale ? ' ' : '') + trimmed.trim();
+      continue;
+    }
+
+    if (section === 'steps' && /^\s+-\s+\w+:/.test(trimmed)) {
+      if (inItem) flushStep(result, currentItem);
+      currentItem = {};
+      inItem = true;
+      const kv = /^\s+-\s+(\w[\w_]*)\s*:\s*(.*)$/.exec(trimmed);
+      if (kv) currentItem[kv[1]] = unquote(kv[2]);
+      continue;
+    }
+
+    if (inItem && /^\s{4,}\w[\w_]*\s*:/.test(trimmed)) {
+      const kv = /^\s+(\w[\w_]*)\s*:\s*(.*)$/.exec(trimmed);
+      if (kv) currentItem[kv[1]] = unquote(kv[2]);
+    }
+  }
+
+  if (inItem) flushStep(result, currentItem);
+  return result;
+}
+
+function flushStep(result: DesignPlan, item: Record<string, string>): void {
+  if (!item['command']) return;
+  const order = parseInt(item['order'] ?? '0', 10) || result.steps.length + 1;
+  const dependsOn = item['dependsOn']
+    ? item['dependsOn'].replace(/[\[\]]/g, '').split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n))
+    : [];
+  result.steps.push({
+    order,
+    command: item['command'],
+    produces: item['produces'] ?? '',
+    description: item['description'] ?? '',
+    dependsOn,
+  });
+}
+
+function normalizePlan(obj: Record<string, unknown>): DesignPlan {
+  const result: DesignPlan = { steps: [], rationale: '' };
+  if (typeof obj['rationale'] === 'string') result.rationale = obj['rationale'];
+  if (Array.isArray(obj['steps'])) {
+    for (const item of obj['steps']) {
+      if (item && typeof item === 'object' && 'command' in item) {
+        flushStep(result, item as Record<string, string>);
+      }
+    }
+  }
+  return result;
+}
+
+// --- Replay comparison types ---
+
+export type ReplayChange = {
+  area: string;
+  description: string;
+};
+
+export type ReplayComparison = {
+  improvements: ReplayChange[];
+  regressions: ReplayChange[];
+  unchanged: ReplayChange[];
+  verdict: string;
+  summary: string;
+};
+
+/**
+ * Parse compare-replays output: prose + YAML block with improvements/regressions/unchanged.
+ */
+export function parseCompareOutput(raw: string): {
+  prose: string;
+  structured: ReplayComparison;
+} {
+  const fenceMatch = /```(?:ya?ml)?\s*\n([\s\S]*?)```/.exec(raw);
+
+  if (!fenceMatch) {
+    return {
+      prose: raw.trim(),
+      structured: { improvements: [], regressions: [], unchanged: [], verdict: 'neutral', summary: '' },
+    };
+  }
+
+  const prose = raw.slice(0, fenceMatch.index).trim();
+  const yamlBlock = fenceMatch[1].trim();
+  const structured = parseCompareYaml(yamlBlock);
+
+  return { prose, structured };
+}
+
+function parseCompareYaml(text: string): ReplayComparison {
+  try {
+    const parsed = JSON.parse(text);
+    return normalizeComparison(parsed);
+  } catch { /* not JSON */ }
+
+  const result: ReplayComparison = {
+    improvements: [],
+    regressions: [],
+    unchanged: [],
+    verdict: 'neutral',
+    summary: '',
+  };
+  const lines = text.split('\n');
+
+  let section: 'none' | 'improvements' | 'regressions' | 'unchanged' | 'verdict' | 'summary' = 'none';
+  let currentItem: Record<string, string> = {};
+  let inItem = false;
+
+  for (const line of lines) {
+    const trimmed = line.trimEnd();
+
+    if (/^improvements:\s*$/.test(trimmed)) {
+      if (inItem) flushChange(result, section as 'improvements' | 'regressions' | 'unchanged', currentItem);
+      section = 'improvements';
+      currentItem = {};
+      inItem = false;
+      continue;
+    }
+    if (/^regressions:\s*$/.test(trimmed)) {
+      if (inItem) flushChange(result, section as 'improvements' | 'regressions' | 'unchanged', currentItem);
+      section = 'regressions';
+      currentItem = {};
+      inItem = false;
+      continue;
+    }
+    if (/^unchanged:\s*$/.test(trimmed)) {
+      if (inItem) flushChange(result, section as 'improvements' | 'regressions' | 'unchanged', currentItem);
+      section = 'unchanged';
+      currentItem = {};
+      inItem = false;
+      continue;
+    }
+    if (/^verdict:\s*(.+)$/.test(trimmed)) {
+      if (inItem) flushChange(result, section as 'improvements' | 'regressions' | 'unchanged', currentItem);
+      const match = /^verdict:\s*(.+)$/.exec(trimmed);
+      if (match) result.verdict = match[1].trim();
+      inItem = false;
+      continue;
+    }
+    if (/^summary:\s*(.*)$/.test(trimmed)) {
+      if (inItem) flushChange(result, section as 'improvements' | 'regressions' | 'unchanged', currentItem);
+      const inline = /^summary:\s*>?\s*(.+)$/.exec(trimmed);
+      if (inline) result.summary = inline[1].trim();
+      section = 'summary';
+      inItem = false;
+      continue;
+    }
+
+    if (section === 'summary' && trimmed.startsWith('  ')) {
+      result.summary += (result.summary ? ' ' : '') + trimmed.trim();
+      continue;
+    }
+
+    if ((section === 'improvements' || section === 'regressions' || section === 'unchanged') &&
+      /^\s+-\s+\w+:/.test(trimmed)) {
+      if (inItem) flushChange(result, section, currentItem);
+      currentItem = {};
+      inItem = true;
+      const kv = /^\s+-\s+(\w[\w_]*)\s*:\s*(.*)$/.exec(trimmed);
+      if (kv) currentItem[kv[1]] = unquote(kv[2]);
+      continue;
+    }
+
+    if (inItem && /^\s{4,}\w[\w_]*\s*:/.test(trimmed)) {
+      const kv = /^\s+(\w[\w_]*)\s*:\s*(.*)$/.exec(trimmed);
+      if (kv) currentItem[kv[1]] = unquote(kv[2]);
+    }
+  }
+
+  if (inItem && (section === 'improvements' || section === 'regressions' || section === 'unchanged')) {
+    flushChange(result, section, currentItem);
+  }
+  return result;
+}
+
+function flushChange(
+  result: ReplayComparison,
+  section: 'improvements' | 'regressions' | 'unchanged',
+  item: Record<string, string>,
+): void {
+  if (!item['area'] && !item['description']) return;
+  result[section].push({
+    area: item['area'] ?? '',
+    description: item['description'] ?? '',
+  });
+}
+
+function normalizeComparison(obj: Record<string, unknown>): ReplayComparison {
+  const result: ReplayComparison = {
+    improvements: [],
+    regressions: [],
+    unchanged: [],
+    verdict: 'neutral',
+    summary: '',
+  };
+  if (typeof obj['verdict'] === 'string') result.verdict = obj['verdict'];
+  if (typeof obj['summary'] === 'string') result.summary = obj['summary'];
+
+  for (const key of ['improvements', 'regressions', 'unchanged'] as const) {
+    if (Array.isArray(obj[key])) {
+      for (const item of obj[key]) {
+        if (item && typeof item === 'object') {
+          flushChange(result, key, item as Record<string, string>);
+        }
+      }
+    }
+  }
+  return result;
+}
+
+/** Strip surrounding quotes from a YAML string value. */
+function unquote(s: string): string {
+  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+    return s.slice(1, -1);
+  }
+  return s;
+}

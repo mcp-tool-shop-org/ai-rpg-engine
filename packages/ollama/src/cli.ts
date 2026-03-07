@@ -24,10 +24,13 @@ import { normalizeContent } from './commands/normalize-content.js';
 import { diffSummary } from './commands/diff-summary.js';
 import { analyzeReplay } from './commands/analyze-replay.js';
 import { explainWhy } from './commands/explain-why.js';
+import { suggestNext } from './commands/suggest-next.js';
+import { planDistrict } from './commands/plan-district.js';
+import { compareReplays } from './commands/compare-replays.js';
 import {
   loadSession, saveSession, deleteSession, createSession,
   addThemes, addConstraints, addArtifact, addCritiqueIssues,
-  renderSessionContext, formatSessionStatus,
+  resolveIssue, renderSessionContext, formatSessionStatus,
 } from './session.js';
 import { sessionDoctor, formatDoctorReport } from './session-doctor.js';
 import type { DesignSession } from './session.js';
@@ -190,6 +193,20 @@ export async function runCli(args: string[]): Promise<void> {
         process.exit(result.healthy ? 0 : 1);
         return;
       }
+      case 'resolve': {
+        const session = await loadSession(projectRoot);
+        if (!session) { console.error('No active session.'); process.exit(1); }
+        const code = args[2];
+        if (!code) { console.error('Provide an issue code to resolve (e.g. STRUCT_001).'); process.exit(1); }
+        const resolved = resolveIssue(session, code);
+        if (!resolved) {
+          console.error(`No open issue with code "${code}" found.`);
+          process.exit(1);
+        }
+        await saveSession(projectRoot, session);
+        console.log(`Resolved issue: ${code}`);
+        return;
+      }
       default:
         console.log('Session commands:');
         console.log('  session start <name>       Start a new design session');
@@ -198,6 +215,7 @@ export async function runCli(args: string[]): Promise<void> {
         console.log('  session add-theme <t>      Add theme(s) to session');
         console.log('  session add-constraint <c> Add constraint(s) to session');
         console.log('  session doctor             Health check the session file');
+        console.log('  session resolve <code>     Resolve an open issue by code');
         return;
     }
   }
@@ -835,8 +853,130 @@ export async function runCli(args: string[]): Promise<void> {
       break;
     }
 
+    case 'suggest-next': {
+      if (!session) {
+        console.error('No active session. Start one with: ai session start <name>');
+        process.exit(1);
+      }
+
+      const result = await suggestNext(client, {
+        sessionState: renderSessionContext(session),
+        recentActivity: undefined,
+      });
+      if (!result.ok) {
+        console.error(result.error);
+        process.exit(1);
+      }
+
+      await emit(result.text, flags.write);
+
+      if (result.actions.length > 0) {
+        console.error(`\n--- ${result.actions.length} recommendation(s) ---`);
+        for (const action of result.actions) {
+          console.error(`  [${action.priority}] ${action.command}`);
+          if (action.reason) console.error(`         ${action.reason}`);
+        }
+      }
+      if (result.summary) {
+        console.error(`\n--- Guidance ---\n  ${result.summary}`);
+      }
+      break;
+    }
+
+    case 'plan-district': {
+      const theme = flags.theme;
+      if (!theme) {
+        console.error('--theme is required');
+        process.exit(1);
+      }
+
+      const result = await planDistrict(client, {
+        theme,
+        existingFactions: flags.factions?.join(', '),
+        existingDistricts: flags.districts?.join(', '),
+        constraints: flags.constraints?.join(', '),
+        sessionContext: sessionCtx,
+      });
+      if (!result.ok) {
+        console.error(result.error);
+        process.exit(1);
+      }
+
+      await emit(result.text, flags.write);
+
+      if (result.steps.length > 0) {
+        console.error(`\n--- ${result.steps.length}-step design plan ---`);
+        for (const step of result.steps) {
+          const deps = step.dependsOn.length ? ` (after step ${step.dependsOn.join(', ')})` : '';
+          console.error(`  ${step.order}. ${step.command}${deps}`);
+          if (step.description) console.error(`     ${step.description}`);
+        }
+      }
+      if (result.rationale) {
+        console.error(`\n--- Rationale ---\n  ${result.rationale}`);
+      }
+      break;
+    }
+
+    case 'compare-replays': {
+      let input: string;
+      if (flags.stdin || !process.stdin.isTTY) {
+        input = await readStdin();
+      } else {
+        console.error('Pipe JSON with before and after fields, or use --stdin');
+        process.exit(1);
+      }
+
+      let before: string;
+      let after: string;
+      try {
+        const parsed = JSON.parse(input);
+        before = parsed.before;
+        after = parsed.after;
+        if (!before || !after) throw new Error('missing before or after');
+      } catch {
+        console.error('Input must be JSON with before and after string fields');
+        process.exit(1);
+      }
+
+      const result = await compareReplays(client, {
+        before,
+        after,
+        labelBefore: flags.labelBefore,
+        labelAfter: flags.labelAfter,
+        focus: flags.focus,
+        sessionContext: sessionCtx,
+      });
+      if (!result.ok) {
+        console.error(result.error);
+        process.exit(1);
+      }
+
+      await emit(result.text, flags.write);
+
+      if (result.improvements.length > 0) {
+        console.error(`\n--- ${result.improvements.length} improvement(s) ---`);
+        for (const c of result.improvements) {
+          console.error(`  + [${c.area}] ${c.description}`);
+        }
+      }
+      if (result.regressions.length > 0) {
+        console.error(`\n--- ${result.regressions.length} regression(s) ---`);
+        for (const c of result.regressions) {
+          console.error(`  - [${c.area}] ${c.description}`);
+        }
+      }
+      if (result.verdict) {
+        console.error(`\n--- Verdict: ${result.verdict} ---`);
+      }
+      if (result.summary) {
+        console.error(`  ${result.summary}`);
+      }
+      break;
+    }
+
     default:
-      console.log('@ai-rpg-engine/ollama v0.7.0');
+      console.log('@ai-rpg-engine/ollama v0.8.0');
       console.log('');
       console.log('Session:');
       console.log('  session start <name>        Start a named design session');
@@ -845,6 +985,7 @@ export async function runCli(args: string[]): Promise<void> {
       console.log('  session add-theme <text>    Add a theme to the active session');
       console.log('  session add-constraint <t>  Add a constraint to the active session');
       console.log('  session doctor              Health check the session file');
+      console.log('  session resolve <code>      Resolve an open issue by code');
       console.log('');
       console.log('Scaffold:');
       console.log('  create-room                 Generate a room definition');
@@ -872,6 +1013,11 @@ export async function runCli(args: string[]): Promise<void> {
       console.log('Simulate:');
       console.log('  analyze-replay              Analyze replay output for design issues (pipe JSON)');
       console.log('  explain-why                 Causal explanation for simulation state (pipe JSON)');
+      console.log('');
+      console.log('Guide:');
+      console.log('  suggest-next                Session-aware next-action recommendations');
+      console.log('  plan-district               Multi-step district design plan');
+      console.log('  compare-replays             Before/after simulation comparison (pipe JSON)');
       console.log('');
       console.log('Flags:');
       console.log('  --model <name>       Ollama model (default: qwen2.5-coder)');

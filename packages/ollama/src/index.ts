@@ -66,9 +66,26 @@ export type { AnalyzeReplayInput, AnalyzeReplayResult } from './commands/analyze
 export { explainWhy } from './commands/explain-why.js';
 export type { ExplainWhyInput } from './commands/explain-why.js';
 
+export { suggestNext } from './commands/suggest-next.js';
+export type { SuggestNextInput, SuggestNextResult } from './commands/suggest-next.js';
+
+export { planDistrict } from './commands/plan-district.js';
+export type { PlanDistrictInput, PlanDistrictResult } from './commands/plan-district.js';
+
+export { compareReplays } from './commands/compare-replays.js';
+export type { CompareReplaysInput, CompareReplaysResult } from './commands/compare-replays.js';
+
 // Parsers (useful for custom prompt workflows)
-export { extractYaml, extractJson, extractText, parseCritiqueOutput } from './parsers.js';
-export type { CritiqueIssue, CritiqueSuggestion, StructuredCritique } from './parsers.js';
+export {
+  extractYaml, extractJson, extractText,
+  parseCritiqueOutput, parseSuggestNextOutput, parsePlanOutput, parseCompareOutput,
+} from './parsers.js';
+export type {
+  CritiqueIssue, CritiqueSuggestion, StructuredCritique,
+  NextAction, GuidedSuggestions,
+  PlanStep, DesignPlan,
+  ReplayChange, ReplayComparison,
+} from './parsers.js';
 
 // Validators
 export { parseYamlish, validateGeneratedRoom, validateGeneratedQuest } from './validators.js';
