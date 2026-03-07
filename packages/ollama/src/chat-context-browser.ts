@@ -27,6 +27,8 @@ export type ContextSnapshot = {
   budget: BudgetSummary;
   /** Loadout routing info (present when loadout is active). */
   loadout?: LoadoutSummary;
+  /** Advisory warnings (e.g. repeated-context). */
+  warnings: string[];
 };
 
 export type LoadoutSummary = {
@@ -39,6 +41,8 @@ export type LoadoutSummary = {
   onDemandTokens: number;
   layers: string[];
   taskString: string;
+  /** How the personality profile influenced source selection. */
+  profileInfluence: string;
   /** Top entries from preload + onDemand for display. */
   topEntries: Array<{ id: string; score: number; reason: string; mode: string }>;
 };
@@ -52,6 +56,14 @@ export type RetrievalSummary = {
   bySource: Record<string, number>;
   /** Top snippets with relevance reasoning. */
   topSnippets: SnippetSummary[];
+  /** Sources that were gated out by allowedSources. */
+  excludedSources: string[];
+  /** Candidate snippets before budget filtering. */
+  totalCandidates: number;
+  /** Snippets dropped because budget was exhausted. */
+  droppedByBudget: number;
+  /** Snippets that were truncated to fit remaining budget. */
+  truncatedCount: number;
 };
 
 export type SnippetSummary = {
@@ -78,8 +90,10 @@ export type ClassBreakdown = {
   label: string;
   sourceCount: number;
   charCount: number;
-  /** Percentage of total budget used by this class. */
+  /** Percentage of total shaped output used by this class. */
   budgetPercent: number;
+  /** Percentage of total shaping budget consumed by this class. */
+  budgetSharePercent: number;
 };
 
 export type ProfileSummary = {
@@ -102,6 +116,35 @@ export type BudgetSummary = {
   utilizationPercent: number;
 };
 
+// --- Repeated-context detection (D2) ---
+
+/**
+ * Detect when loadout routing repeatedly selects the same source set
+ * while open issues remain unresolved.
+ * Returns a warning string if the pattern is detected, empty array otherwise.
+ * Deterministic: same inputs → same output.
+ */
+export function detectRepeatedContext(
+  history: LoadoutHistoryRow[],
+  openIssueCount: number,
+): string[] {
+  if (history.length < 3 || openIssueCount === 0) return [];
+
+  // Check last 3 entries for identical source sets
+  const recent = history.slice(-3);
+  const key = (r: LoadoutHistoryRow) => [...r.allowedSources].sort().join(',');
+  const keys = recent.map(key);
+
+  const warnings: string[] = [];
+  if (keys[0] === keys[1] && keys[1] === keys[2]) {
+    warnings.push(
+      `Same source set (${recent[0].allowedSources.join(', ')}) routed 3× in a row with ${openIssueCount} open issue(s). Consider broadening context or addressing open issues.`
+    );
+  }
+
+  return warnings;
+}
+
 // --- Build a context snapshot ---
 
 export function buildContextSnapshot(options: {
@@ -114,6 +157,10 @@ export function buildContextSnapshot(options: {
   retrievalBudget?: number;
   shapingBudget?: number;
   loadoutPlan?: LoadoutRoutePlan;
+  /** Loadout history for repeated-context detection. */
+  loadoutHistory?: LoadoutHistoryRow[];
+  /** Number of open issues in current session. */
+  openIssueCount?: number;
 }): ContextSnapshot {
   const {
     query, keywords, retrievalResult, shapedContext, profile,
@@ -121,6 +168,8 @@ export function buildContextSnapshot(options: {
     retrievalBudget = 4000,
     shapingBudget = 4000,
     loadoutPlan,
+    loadoutHistory = [],
+    openIssueCount = 0,
   } = options;
 
   // Build retrieval summary
@@ -142,6 +191,10 @@ export function buildContextSnapshot(options: {
     snippetsSelected: retrievalResult.snippets.length,
     bySource,
     topSnippets,
+    excludedSources: retrievalResult.excludedSources ?? [],
+    totalCandidates: retrievalResult.totalCandidates ?? 0,
+    droppedByBudget: retrievalResult.droppedByBudget ?? 0,
+    truncatedCount: retrievalResult.truncatedCount ?? 0,
   };
 
   // Build shaping summary
@@ -152,6 +205,9 @@ export function buildContextSnapshot(options: {
     charCount: m.content.length,
     budgetPercent: shapedContext.totalChars > 0
       ? Math.round((m.content.length / shapedContext.totalChars) * 100)
+      : 0,
+    budgetSharePercent: shapingBudget > 0
+      ? Math.round((m.content.length / shapingBudget) * 100)
       : 0,
   }));
 
@@ -199,9 +255,13 @@ export function buildContextSnapshot(options: {
       onDemandTokens: loadoutPlan.onDemandTokens,
       layers: loadoutPlan.layers,
       taskString: loadoutPlan.taskString,
+      profileInfluence: loadoutPlan.profileInfluence ?? '',
       topEntries,
     };
   }
+
+  // Repeated-context warnings (D2)
+  const warnings = detectRepeatedContext(loadoutHistory, openIssueCount);
 
   return {
     timestamp: new Date().toISOString(),
@@ -212,6 +272,7 @@ export function buildContextSnapshot(options: {
     activeProfile,
     budget,
     loadout,
+    warnings,
   };
 }
 
@@ -233,6 +294,9 @@ export function formatContextSnapshot(snapshot: ContextSnapshot): string {
       lines.push(`  Task: "${snapshot.loadout.taskString.length > 100 ? snapshot.loadout.taskString.slice(0, 100) + '…' : snapshot.loadout.taskString}"`);
       lines.push(`  Layers: ${snapshot.loadout.layers.join(' → ') || '(none)'}`);
       lines.push(`  Allowed sources: ${snapshot.loadout.allowedSources.join(', ')}`);
+      if (snapshot.loadout.profileInfluence) {
+        lines.push(`  Profile influence: ${snapshot.loadout.profileInfluence}`);
+      }
       lines.push(`  Entries: ${snapshot.loadout.preloadCount} preload, ${snapshot.loadout.onDemandCount} on-demand, ${snapshot.loadout.manualCount} manual`);
       lines.push(`  Tokens: ${snapshot.loadout.preloadTokens} preload + ${snapshot.loadout.onDemandTokens} on-demand`);
       if (snapshot.loadout.topEntries.length > 0) {
@@ -252,7 +316,17 @@ export function formatContextSnapshot(snapshot: ContextSnapshot): string {
   // Retrieval
   lines.push('## Retrieval');
   lines.push(`  Sources scanned: ${snapshot.retrieval.sourcesScanned}`);
+  lines.push(`  Candidates found: ${snapshot.retrieval.totalCandidates}`);
   lines.push(`  Snippets selected: ${snapshot.retrieval.snippetsSelected}`);
+  if (snapshot.retrieval.droppedByBudget > 0) {
+    lines.push(`  Dropped by budget: ${snapshot.retrieval.droppedByBudget}`);
+  }
+  if (snapshot.retrieval.truncatedCount > 0) {
+    lines.push(`  Truncated to fit: ${snapshot.retrieval.truncatedCount}`);
+  }
+  if (snapshot.retrieval.excludedSources.length > 0) {
+    lines.push(`  Excluded sources: ${snapshot.retrieval.excludedSources.join(', ')}`);
+  }
   if (Object.keys(snapshot.retrieval.bySource).length > 0) {
     lines.push('  By source:');
     for (const [source, count] of Object.entries(snapshot.retrieval.bySource)) {
@@ -273,9 +347,9 @@ export function formatContextSnapshot(snapshot: ContextSnapshot): string {
   lines.push(`  Classes: ${snapshot.shaping.classesPresent.join(', ') || '(none)'}`);
   lines.push(`  Total chars: ${snapshot.shaping.totalChars}`);
   if (snapshot.shaping.byClass.length > 0) {
-    lines.push('  Budget allocation:');
+    lines.push('  Per-class budget:');
     for (const c of snapshot.shaping.byClass) {
-      lines.push(`    ${c.class} (${c.label}): ${c.charCount} chars (${c.budgetPercent}%) — ${c.sourceCount} source(s)`);
+      lines.push(`    ${c.class} (${c.label}): ${c.charCount} chars — ${c.budgetPercent}% of output, ${c.budgetSharePercent}% of budget — ${c.sourceCount} source(s)`);
     }
   }
   lines.push('');
@@ -292,6 +366,25 @@ export function formatContextSnapshot(snapshot: ContextSnapshot): string {
   lines.push(`  Retrieval: ${snapshot.budget.retrievalUsed} / ${snapshot.budget.retrievalBudget} chars`);
   lines.push(`  Shaping: ${snapshot.budget.shapingUsed} / ${snapshot.budget.shapingBudget} chars`);
   lines.push(`  Utilization: ${snapshot.budget.utilizationPercent}%`);
+  lines.push('');
+
+  // Pipeline utilization summary (C3)
+  const routedSources = snapshot.loadout?.active
+    ? `${snapshot.loadout.allowedSources.length} source types routed`
+    : 'no loadout';
+  const retrievedInfo = `${snapshot.retrieval.snippetsSelected}/${snapshot.retrieval.totalCandidates} candidates kept`;
+  const shapedInfo = `${snapshot.shaping.byClass.length} classes → ${snapshot.shaping.totalChars} chars`;
+  const budgetInfo = `${snapshot.budget.utilizationPercent}% budget used`;
+  lines.push(`Pipeline: ${routedSources} → ${retrievedInfo} → ${shapedInfo} → ${budgetInfo}`);
+
+  // Warnings (D2)
+  if (snapshot.warnings.length > 0) {
+    lines.push('');
+    lines.push('## Warnings');
+    for (const w of snapshot.warnings) {
+      lines.push(`  ⚠ ${w}`);
+    }
+  }
 
   lines.push('--- End Context Snapshot ---');
   return lines.join('\n');
@@ -311,7 +404,17 @@ export function formatSources(snapshot: ContextSnapshot): string {
   // Loadout gating info
   if (snapshot.loadout?.active) {
     lines.push(`Loadout: ${snapshot.loadout.allowedSources.join(', ')} (${snapshot.loadout.preloadCount} preload, ${snapshot.loadout.onDemandCount} on-demand)`);
+    if (snapshot.loadout.profileInfluence) {
+      lines.push(`Profile: ${snapshot.loadout.profileInfluence}`);
+    }
     lines.push('');
+  }
+
+  if (snapshot.retrieval.excludedSources.length > 0) {
+    lines.push(`Excluded: ${snapshot.retrieval.excludedSources.join(', ')}`);
+  }
+  if (snapshot.retrieval.droppedByBudget > 0) {
+    lines.push(`Dropped by budget: ${snapshot.retrieval.droppedByBudget} snippet(s)`);
   }
 
   for (const s of snapshot.retrieval.topSnippets) {
@@ -345,4 +448,32 @@ function buildMatchReason(snippet: RetrievedSnippet, keywords: string[]): string
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// --- Loadout history (D1) ---
+
+export type LoadoutHistoryRow = {
+  timestamp: string;
+  query: string;
+  allowedSources: string[];
+  profileName: string;
+  snippetsSelected: number;
+  droppedByBudget: number;
+};
+
+export function formatLoadoutHistory(entries: LoadoutHistoryRow[]): string {
+  if (entries.length === 0) return 'No loadout history yet.';
+
+  const lines: string[] = [];
+  lines.push(`--- Loadout History (${entries.length} entries) ---`);
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const e = entries[i];
+    const time = e.timestamp.slice(11, 19); // HH:MM:SS
+    const sources = e.allowedSources.join(',');
+    const dropped = e.droppedByBudget > 0 ? `, ${e.droppedByBudget} dropped` : '';
+    lines.push(`  ${time} [${e.profileName}] ${sources} → ${e.snippetsSelected} snippets${dropped}`);
+    lines.push(`         "${e.query}"`);
+  }
+  lines.push('--- End Loadout History ---');
+  return lines.join('\n');
 }

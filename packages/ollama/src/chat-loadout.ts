@@ -8,9 +8,10 @@
 // Design rule: loadout-selected, retrieved snippets, and external web context
 // are three distinct layers — never mixed.
 
-import type { DesignSession } from './session.js';
+import type { DesignSession, SessionIssue, SessionEvent } from './session.js';
 import type { ChatIntent } from './chat-types.js';
 import type { SourceKind } from './chat-rag.js';
+import type { PersonalityProfile } from './chat-personality.js';
 
 // --- Types ---
 
@@ -53,24 +54,159 @@ export type LoadoutRoutePlan = {
   layers: string[];
   /** The task string that was sent to planLoad(). */
   taskString: string;
+  /** How the personality profile influenced source selection (B2). */
+  profileInfluence: string;
 };
 
-// --- Task string builder ---
+// --- Issue/finding summarization buckets (A2) ---
+
+/** Route-friendly issue categories. Same issue set always maps to same buckets. */
+export type IssueBucket =
+  | 'schema'              // Schema/validation issues
+  | 'rumor_flow'          // Rumor propagation or information flow issues
+  | 'faction_isolation'   // Faction isolation or relationship issues
+  | 'district_alert'      // District alert/stability issues
+  | 'replay_regression'   // Replay-detected regressions
+  | 'content_gap'         // Missing content or coverage gaps
+  | 'pacing'              // Pacing or flow issues
+  | 'quality';            // General quality issues
+
+const CODE_TO_BUCKET: Record<string, IssueBucket> = {
+  SCHEMA: 'schema', VALIDATION: 'schema', PARSE: 'schema', FORMAT: 'schema',
+  RUMOR: 'rumor_flow', PROPAGATION: 'rumor_flow', INFO_FLOW: 'rumor_flow',
+  FACTION: 'faction_isolation', TRUST: 'faction_isolation', ISOLATION: 'faction_isolation',
+  DISTRICT: 'district_alert', ALERT: 'district_alert', STABILITY: 'district_alert',
+  REGRESSION: 'replay_regression', DIVERGENCE: 'replay_regression', REPLAY: 'replay_regression',
+  CONTENT_GAP: 'content_gap', MISSING: 'content_gap', COVERAGE: 'content_gap',
+  PACING: 'pacing', FLOW: 'pacing', TEMPO: 'pacing',
+  THEME: 'quality', TONE: 'quality', QUALITY: 'quality', DEPTH: 'quality',
+};
+
+/**
+ * Compress issues into route-friendly buckets.
+ * Deterministic: same issues always produce same buckets.
+ */
+export function summarizeIssueBuckets(issues: SessionIssue[]): Map<IssueBucket, number> {
+  const buckets = new Map<IssueBucket, number>();
+  for (const issue of issues) {
+    const bucket = CODE_TO_BUCKET[issue.code] ?? 'quality';
+    buckets.set(bucket, (buckets.get(bucket) ?? 0) + 1);
+  }
+  return buckets;
+}
+
+/**
+ * Extract recent replay findings from session history.
+ */
+function extractReplaySignals(history: SessionEvent[]): { verdict: string | null; categories: string[] } {
+  // Find the most recent replay_compared events
+  const replayEvents = history
+    .filter(e => e.kind === 'replay_compared')
+    .slice(-3);
+
+  if (replayEvents.length === 0) return { verdict: null, categories: [] };
+
+  // Extract categories from replay detail strings
+  const categories = new Set<string>();
+  let lastVerdict: string | null = null;
+  for (const e of replayEvents) {
+    const detail = e.detail.toLowerCase();
+    if (detail.includes('divergence')) categories.add('divergence');
+    if (detail.includes('regression')) categories.add('regression');
+    if (detail.includes('pacing')) categories.add('pacing');
+    if (detail.includes('faction')) categories.add('faction');
+    if (detail.includes('stable')) lastVerdict = 'stable';
+    else if (detail.includes('regression')) lastVerdict = 'regression';
+    else if (detail.includes('divergence')) lastVerdict = 'divergence';
+    else lastVerdict = 'mixed';
+  }
+  return { verdict: lastVerdict, categories: [...categories] };
+}
+
+/**
+ * Identify recently changed artifact types from session history.
+ */
+function recentArtifactTypes(history: SessionEvent[]): string[] {
+  const recentTypes = new Set<string>();
+  // Last 10 artifact creation events
+  const recent = history
+    .filter(e => e.kind === 'artifact_created' || e.kind === 'content_applied')
+    .slice(-10);
+
+  for (const e of recent) {
+    const detail = e.detail.toLowerCase();
+    if (detail.includes('room')) recentTypes.add('room');
+    if (detail.includes('faction')) recentTypes.add('faction');
+    if (detail.includes('district')) recentTypes.add('district');
+    if (detail.includes('quest')) recentTypes.add('quest');
+    if (detail.includes('pack')) recentTypes.add('pack');
+  }
+  return [...recentTypes];
+}
+
+/**
+ * Count stale issues — open issues not referenced in recent history.
+ */
+function countStaleIssues(session: DesignSession): number {
+  const openIssues = session.issues.filter(i => i.status === 'open');
+  const recentTargets = new Set(
+    session.history.slice(-20).map(e => e.detail.toLowerCase()),
+  );
+  return openIssues.filter(i =>
+    !recentTargets.has(i.target.toLowerCase()) &&
+    !recentTargets.has(i.code.toLowerCase()),
+  ).length;
+}
+
+// --- Profile bias for routing (B1) ---
+
+/** Source emphasis by profile family. Shapes, not overrides. */
+const PROFILE_SOURCE_BIAS: Record<string, SourceKind[]> = {
+  analyst: ['replay', 'critique', 'decision'],
+  generator: ['artifact', 'doc'],
+  worldbuilder: ['artifact', 'doc', 'session', 'decision'],
+  router: ['session'],
+};
+
+/**
+ * Describe how the profile influenced source selection.
+ * Returns a compact, deterministic explanation string.
+ */
+export function explainProfileInfluence(profile: PersonalityProfile, allowedSources: SourceKind[]): string {
+  const bias = PROFILE_SOURCE_BIAS[profile.name.toLowerCase()];
+  if (!bias) return `Profile "${profile.name}": no source bias applied`;
+
+  const emphasized = bias.filter(s => allowedSources.includes(s));
+  if (emphasized.length === 0) return `Profile "${profile.name}": bias sources [${bias.join(', ')}] not in allowed set`;
+
+  return `Profile "${profile.name}" emphasized: ${emphasized.join(', ')}`;
+}
+
+// --- Task string builder (A1 enriched) ---
 
 /**
  * Build a task description string for planLoad() from the chat context.
- * Combines user message, classified intent, and session summary into
- * a dense routing signal.
+ * Combines user message, classified intent, session signals, and profile
+ * into a dense routing signal.
+ *
+ * v1.3: intent + message + basic session counts
+ * v1.4: adds issue buckets, replay signals, artifact types, stale count, profile
  */
 export function buildTaskString(
   userMessage: string,
   intent: ChatIntent,
   session: DesignSession | null,
+  profile?: PersonalityProfile,
 ): string {
   const parts: string[] = [];
 
   // Intent as a routing signal
   parts.push(`intent: ${intent}`);
+
+  // Profile as a routing signal (B1)
+  if (profile) {
+    parts.push(`profile: ${profile.name}`);
+  }
 
   // User message (truncated for routing efficiency)
   const truncated = userMessage.length > 200
@@ -78,16 +214,50 @@ export function buildTaskString(
     : userMessage;
   parts.push(`task: ${truncated}`);
 
-  // Session summary for context-aware routing
+  // Session signals — structured, not raw prose
   if (session) {
-    const { artifacts, issues, themes } = session;
+    const { artifacts, issues, themes, history } = session;
     const artCount =
       artifacts.districts.length + artifacts.factions.length +
       artifacts.quests.length + artifacts.rooms.length + artifacts.packs.length;
-    const openIssueCount = issues.filter(i => i.status === 'open').length;
+    const openIssues = issues.filter(i => i.status === 'open');
     const themeStr = themes.slice(0, 3).join(', ');
 
-    parts.push(`session: ${session.name} (${artCount} artifacts, ${openIssueCount} open issues, themes: ${themeStr})`);
+    parts.push(`session: ${session.name} (${artCount} artifacts, ${openIssues.length} open issues, themes: ${themeStr})`);
+
+    // Issue buckets (A2)
+    if (openIssues.length > 0) {
+      const buckets = summarizeIssueBuckets(openIssues);
+      const bucketStr = [...buckets.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, v]) => `${k}:${v}`)
+        .join(', ');
+      parts.push(`issues: ${bucketStr}`);
+    }
+
+    // Replay signals
+    const replay = extractReplaySignals(history);
+    if (replay.verdict) {
+      const catStr = replay.categories.length > 0 ? ` [${replay.categories.join(', ')}]` : '';
+      parts.push(`replay: ${replay.verdict}${catStr}`);
+    }
+
+    // Recently changed artifact types
+    const recentTypes = recentArtifactTypes(history);
+    if (recentTypes.length > 0) {
+      parts.push(`recent: ${recentTypes.join(', ')}`);
+    }
+
+    // Stale issue count
+    const stale = countStaleIssues(session);
+    if (stale > 0) {
+      parts.push(`stale: ${stale}`);
+    }
+
+    // Unresolved suggestion count
+    if (session.acceptedSuggestions.length > 0) {
+      parts.push(`suggestions: ${session.acceptedSuggestions.length}`);
+    }
   }
 
   return parts.join(' | ');
@@ -248,15 +418,18 @@ async function tryImportLoadout(): Promise<LoadoutModule | null> {
  *
  * If ai-loadout is not installed, returns a pass-through plan that allows
  * all sources (preserving existing behavior).
+ *
+ * v1.4: accepts optional profile for source emphasis.
  */
 export async function routeContext(
   taskString: string,
   projectRoot: string,
+  profile?: PersonalityProfile,
 ): Promise<LoadoutRoutePlan> {
   const mod = await tryImportLoadout();
 
   if (!mod) {
-    return makePassthroughPlan(taskString);
+    return makePassthroughPlan(taskString, profile);
   }
 
   try {
@@ -296,20 +469,29 @@ export async function routeContext(
       })),
     ];
 
+    const allowedSources = applyProfileBias(
+      deriveAllowedSources(routedEntries),
+      profile,
+    );
+    const profileInfluence = profile
+      ? explainProfileInfluence(profile, allowedSources)
+      : '';
+
     return {
       active: true,
       preload,
       onDemand,
       manualCount: plan.manual.length,
-      allowedSources: deriveAllowedSources(routedEntries),
+      allowedSources,
       preloadTokens: plan.preloadTokens,
       onDemandTokens: plan.onDemandTokens,
       layers: plan.layerNames,
       taskString,
+      profileInfluence,
     };
   } catch {
     // If planLoad fails, fall back to passthrough
-    return makePassthroughPlan(taskString);
+    return makePassthroughPlan(taskString, profile);
   }
 }
 
@@ -337,18 +519,43 @@ export async function recordContextLoads(
 
 // --- Passthrough plan ---
 
-function makePassthroughPlan(taskString: string): LoadoutRoutePlan {
+function makePassthroughPlan(taskString: string, profile?: PersonalityProfile): LoadoutRoutePlan {
+  const allowedSources = applyProfileBias(ALL_SOURCES, profile);
   return {
     active: false,
     preload: [],
     onDemand: [],
     manualCount: 0,
-    allowedSources: ALL_SOURCES,
+    allowedSources,
     preloadTokens: 0,
     onDemandTokens: 0,
     layers: [],
     taskString,
+    profileInfluence: profile
+      ? explainProfileInfluence(profile, allowedSources)
+      : '',
   };
+}
+
+/**
+ * Apply profile-based source bias to an allowed source list.
+ * Profile bias adds sources, never removes. It shapes emphasis, not law.
+ */
+function applyProfileBias(
+  baseSources: SourceKind[],
+  profile?: PersonalityProfile,
+): SourceKind[] {
+  if (!profile) return baseSources;
+
+  const bias = PROFILE_SOURCE_BIAS[profile.name.toLowerCase()];
+  if (!bias) return baseSources;
+
+  // Add profile-biased sources that aren't already present
+  const result = new Set(baseSources);
+  for (const s of bias) {
+    result.add(s);
+  }
+  return [...result];
 }
 
 // --- Format for display ---
@@ -367,6 +574,9 @@ export function formatLoadoutRoute(plan: LoadoutRoutePlan): string {
   lines.push(`  Layers: ${plan.layers.join(' → ') || '(none)'}`);
   lines.push(`  Allowed sources: ${plan.allowedSources.join(', ')}`);
   lines.push(`  Token budget: ${plan.preloadTokens} preload + ${plan.onDemandTokens} on-demand`);
+  if (plan.profileInfluence) {
+    lines.push(`  Profile: ${plan.profileInfluence}`);
+  }
 
   if (plan.preload.length > 0) {
     lines.push('  Preload:');

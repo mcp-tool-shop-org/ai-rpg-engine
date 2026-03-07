@@ -153,7 +153,7 @@ export { DEFAULT_CHAT_CONFIG } from './chat-types.js';
 export { classifyIntent, classifyByKeywords, classifyByLLM } from './chat-router.js';
 export { findToolForIntent, getAllTools } from './chat-tools.js';
 export { createChatEngine, createChatMemory, addMessage, getRecentContext } from './chat-engine.js';
-export type { ChatEngine, ChatEngineOptions } from './chat-engine.js';
+export type { ChatEngine, ChatEngineOptions, LoadoutHistoryEntry } from './chat-engine.js';
 export { createTranscript, addToTranscript, saveTranscript, loadTranscript, defaultTranscriptPath } from './chat-transcript.js';
 export { runChatShell } from './chat-shell.js';
 export type { ChatShellOptions } from './chat-shell.js';
@@ -187,8 +187,8 @@ export { classifyReplayChanges, formatClassification } from './replay-classifier
 export type { ChangeClassification, ClassifiedChange, ClassificationResult, ClassificationSummary } from './replay-classifier.js';
 
 // Context browser — introspection into RAG/shaping/profile decisions
-export { buildContextSnapshot, formatContextSnapshot, formatSources } from './chat-context-browser.js';
-export type { ContextSnapshot, RetrievalSummary, SnippetSummary, ShapingSummary, BudgetSummary, LoadoutSummary } from './chat-context-browser.js';
+export { buildContextSnapshot, formatContextSnapshot, formatSources, formatLoadoutHistory } from './chat-context-browser.js';
+export type { ContextSnapshot, RetrievalSummary, SnippetSummary, ShapingSummary, BudgetSummary, LoadoutSummary, LoadoutHistoryRow } from './chat-context-browser.js';
 
 // Loadout — pre-retrieval context routing via @mcptoolshop/ai-loadout (optional)
 export { buildTaskString, routeContext, recordContextLoads, formatLoadoutRoute } from './chat-loadout.js';

@@ -105,6 +105,15 @@ export async function presentResult(
 
 // --- Chat engine ---
 
+export type LoadoutHistoryEntry = {
+  timestamp: string;
+  query: string;
+  allowedSources: string[];
+  profileName: string;
+  snippetsSelected: number;
+  droppedByBudget: number;
+};
+
 export type ChatEngine = {
   memory: ChatMemory;
   /** Last generated content available for write. */
@@ -113,6 +122,8 @@ export type ChatEngine = {
   lastContextSnapshot: ContextSnapshot | null;
   /** Last loadout routing plan. Available when loadoutEnabled and after first process() call. */
   lastLoadoutPlan: LoadoutRoutePlan | null;
+  /** Rolling history of loadout routing decisions (most recent last). */
+  loadoutHistory: LoadoutHistoryEntry[];
   /** Process a user message and return the assistant response. */
   process: (message: string) => Promise<string>;
 };
@@ -143,6 +154,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
   let pendingWrite: { content: string; suggestedPath: string; label: string } | null = null;
   let lastContextSnapshot: ContextSnapshot | null = null;
   let lastLoadoutPlan: LoadoutRoutePlan | null = null;
+  const loadoutHistory: LoadoutHistoryEntry[] = [];
 
   async function process(userMessage: string): Promise<string> {
     const now = new Date().toISOString();
@@ -179,12 +191,27 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     // Classify intent
     const classification = await classifyIntent(client, userMessage);
 
+    // Select personality profile for this intent (moved earlier for routing)
+    const intentProfile = rawMode ? profile : getProfileForIntent(classification.intent);
+
     // Loadout routing — pre-retrieval source gating (optional)
     let loadoutPlan: LoadoutRoutePlan | null = null;
     if (loadoutEnabled && ragEnabled) {
-      const taskString = buildTaskString(userMessage, classification.intent, session);
-      loadoutPlan = await routeContext(taskString, projectRoot);
+      const taskString = buildTaskString(userMessage, classification.intent, session, intentProfile);
+      loadoutPlan = await routeContext(taskString, projectRoot, intentProfile);
       lastLoadoutPlan = loadoutPlan;
+      if (loadoutPlan) {
+        loadoutHistory.push({
+          timestamp: now,
+          query: userMessage.length > 80 ? userMessage.slice(0, 80) + '…' : userMessage,
+          allowedSources: loadoutPlan.allowedSources,
+          profileName: intentProfile.name,
+          snippetsSelected: 0, // updated after retrieval
+          droppedByBudget: 0,
+        });
+        // Keep max 20 entries
+        if (loadoutHistory.length > 20) loadoutHistory.shift();
+      }
     }
 
     // RAG retrieval — ground chat in project context
@@ -215,6 +242,13 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       });
       shapedContextStr = formatShapedContext(shaped);
 
+      // Backfill loadout history with actual retrieval stats
+      if (loadoutHistory.length > 0 && loadoutPlan) {
+        const last = loadoutHistory[loadoutHistory.length - 1];
+        last.snippetsSelected = ragResult.snippets.length;
+        last.droppedByBudget = ragResult.droppedByBudget;
+      }
+
       // Build context snapshot for /context and /sources commands
       const snapshotProfile = rawMode ? profile : getProfileForIntent(classification.intent);
       lastContextSnapshot = buildContextSnapshot({
@@ -227,11 +261,10 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
         retrievalBudget: 4000,
         shapingBudget: 4000,
         loadoutPlan: loadoutPlan ?? undefined,
+        loadoutHistory,
+        openIssueCount: session?.issues.filter(i => i.status === 'open').length ?? 0,
       });
     }
-
-    // Select personality profile for this intent
-    const intentProfile = rawMode ? profile : getProfileForIntent(classification.intent);
 
     // Build system prompt with shaped context
     const systemPrompt = buildSystemPrompt({
@@ -363,6 +396,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     set pendingWrite(v) { pendingWrite = v; },
     get lastContextSnapshot() { return lastContextSnapshot; },
     get lastLoadoutPlan() { return lastLoadoutPlan; },
+    loadoutHistory,
     process,
   };
 }

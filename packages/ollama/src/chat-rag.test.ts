@@ -372,3 +372,93 @@ describe('retrieve — allowedSources filtering', () => {
     expect(result.snippets.length).toBeGreaterThan(0);
   });
 });
+
+// --- v1.4.0: RetrievalResult transparency fields ---
+
+describe('retrieve — transparency fields', () => {
+  it('returns all new fields', async () => {
+    const session = makeSession();
+    const result = await retrieve(
+      { userMessage: 'horror themes' },
+      session,
+      '/tmp/nonexistent-rag-test',
+    );
+    expect(typeof result.sourcesScanned).toBe('number');
+    expect(Array.isArray(result.excludedSources)).toBe(true);
+    expect(typeof result.droppedByBudget).toBe('number');
+    expect(typeof result.truncatedCount).toBe('number');
+    expect(typeof result.totalCandidates).toBe('number');
+  });
+
+  it('reports excludedSources when allowedSources filters them', async () => {
+    const session = makeSession();
+    const result = await retrieve(
+      { userMessage: 'horror themes', allowedSources: ['session'] },
+      session,
+      '/tmp/nonexistent-rag-filter-test',
+    );
+    // critique, replay, decision, artifact, doc, transcript should be excluded
+    expect(result.excludedSources.length).toBeGreaterThan(0);
+  });
+
+  it('returns zero excluded when no allowedSources filter', async () => {
+    const session = makeSession();
+    const result = await retrieve(
+      { userMessage: 'horror themes' },
+      session,
+      '/tmp/nonexistent-rag-test',
+    );
+    expect(result.excludedSources).toEqual([]);
+  });
+
+  it('reports empty result with zero transparency fields', async () => {
+    const result = await retrieve(
+      { userMessage: 'a an if' },
+      null,
+      '/tmp/nonexistent-rag-test',
+    );
+    expect(result.snippets).toEqual([]);
+    expect(result.excludedSources).toEqual([]);
+    expect(result.droppedByBudget).toBe(0);
+    expect(result.truncatedCount).toBe(0);
+    expect(result.totalCandidates).toBe(0);
+  });
+});
+
+describe('retrieve — budget tracking', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), 'rag-budget-track-test-'));
+    for (let i = 0; i < 10; i++) {
+      await writeFile(
+        join(tmpDir, `doc-${i}.md`),
+        `# Document ${i}\n${'keyword '.repeat(100)}\nThis is document about the dark chapel horror faction number ${i}.`,
+      );
+    }
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('tracks dropped snippets when maxSnippets is hit', async () => {
+    const result = await retrieve(
+      { userMessage: 'dark chapel horror faction', maxSnippets: 2, maxChars: 100_000 },
+      null,
+      tmpDir,
+    );
+    expect(result.snippets.length).toBeLessThanOrEqual(2);
+    expect(result.totalCandidates).toBeGreaterThan(2);
+    expect(result.droppedByBudget).toBeGreaterThan(0);
+  });
+
+  it('totalCandidates >= snippets selected', async () => {
+    const result = await retrieve(
+      { userMessage: 'dark chapel horror', maxSnippets: 3 },
+      null,
+      tmpDir,
+    );
+    expect(result.totalCandidates).toBeGreaterThanOrEqual(result.snippets.length);
+  });
+});

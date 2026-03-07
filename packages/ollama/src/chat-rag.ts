@@ -47,6 +47,14 @@ export type RetrievalResult = {
   snippets: RetrievedSnippet[];
   /** Total sources scanned (for transparency). */
   sourcesScanned: number;
+  /** Sources that were gated out by allowedSources. */
+  excludedSources: SourceKind[];
+  /** How many snippets were dropped due to budget limits. */
+  droppedByBudget: number;
+  /** How many snippets were truncated to fit budget. */
+  truncatedCount: number;
+  /** Total candidate snippets before budget filtering. */
+  totalCandidates: number;
 };
 
 // --- Keyword extraction ---
@@ -319,12 +327,18 @@ export async function retrieve(
   const maxChars = query.maxChars ?? 6000;
 
   if (keywords.length === 0) {
-    return { snippets: [], sourcesScanned: 0 };
+    return { snippets: [], sourcesScanned: 0, excludedSources: [], droppedByBudget: 0, truncatedCount: 0, totalCandidates: 0 };
   }
 
   // Which sources are allowed? (loadout-gated or all)
   const allowed = query.allowedSources ? new Set(query.allowedSources) : null;
   const sourceAllowed = (kind: SourceKind) => !allowed || allowed.has(kind);
+
+  // Track which sources were excluded
+  const allSourceKinds: SourceKind[] = ['session', 'artifact', 'doc', 'transcript'];
+  const excludedSources: SourceKind[] = allowed
+    ? allSourceKinds.filter(k => !allowed.has(k))
+    : [];
 
   // Gather snippets from allowed sources in parallel
   const [sessionSnippets, artifactSnippets, docSnippets, transcriptSnippets] = await Promise.all([
@@ -341,21 +355,31 @@ export async function retrieve(
     ...transcriptSnippets,
   ];
 
+  const totalCandidates = all.length;
+
   // Sort by score descending, take top N within budget
   all.sort((a, b) => b.score - a.score);
 
   const selected: RetrievedSnippet[] = [];
   let totalChars = 0;
+  let droppedByBudget = 0;
+  let truncatedCount = 0;
   for (const snippet of all) {
-    if (selected.length >= maxSnippets) break;
+    if (selected.length >= maxSnippets) {
+      droppedByBudget++;
+      continue;
+    }
     if (totalChars + snippet.content.length > maxChars) {
       // Try to include a truncated version if there's room
       const remaining = maxChars - totalChars;
       if (remaining > 200) {
         selected.push({ ...snippet, content: snippet.content.slice(0, remaining) });
         totalChars += remaining;
+        truncatedCount++;
+      } else {
+        droppedByBudget++;
       }
-      break;
+      continue;
     }
     selected.push(snippet);
     totalChars += snippet.content.length;
@@ -367,7 +391,7 @@ export async function retrieve(
     docSnippets.length +
     transcriptSnippets.length;
 
-  return { snippets: selected, sourcesScanned };
+  return { snippets: selected, sourcesScanned, excludedSources, droppedByBudget, truncatedCount, totalCandidates };
 }
 
 // --- Format for prompt injection ---

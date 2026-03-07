@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-06-14
+
+### Added — Adaptive Context (ollama)
+
+- **Richer session-aware routing (A1-A2)**
+  - `buildTaskString()` now includes issue buckets, replay signals, recent artifact types, stale issues, profile name
+  - `IssueBucket` type with 8 route-friendly categories; `CODE_TO_BUCKET` mapping (25+ issue codes)
+  - `summarizeIssueBuckets()` — deterministic issue compression for routing signals
+  - Internal helpers: `extractReplaySignals()`, `recentArtifactTypes()`, `countStaleIssues()`
+
+- **Personality-aware loadout routing (B1-B2)**
+  - `PROFILE_SOURCE_BIAS` table: analyst→[replay,critique,decision], generator→[artifact,doc], worldbuilder→[artifact,doc,session,decision], router→[session]
+  - `applyProfileBias()` — adds profile-biased sources (never removes)
+  - `explainProfileInfluence()` — deterministic explanation of profile's effect on source selection
+  - `routeContext()` and `buildTaskString()` now accept optional `PersonalityProfile`
+  - `LoadoutRoutePlan.profileInfluence` field
+
+- **Context budget transparency (C1-C3)**
+  - `RetrievalResult` expanded: `excludedSources`, `droppedByBudget`, `truncatedCount`, `totalCandidates`
+  - `RetrievalSummary` updated with excluded/dropped/truncated data
+  - `ClassBreakdown.budgetSharePercent` — per-class share of total shaping budget
+  - Pipeline utilization summary line in `/context` output
+  - Loadout profile influence shown in `/context` when present
+
+- **Telemetry-aware affordances (D1-D2)**
+  - `LoadoutHistoryEntry` / `loadoutHistory` on `ChatEngine` — rolling history of routing decisions (max 20)
+  - `/loadout-history` shell command with `formatLoadoutHistory()`
+  - `detectRepeatedContext()` — warns when same source set is routed 3× with open issues
+  - `ContextSnapshot.warnings` array shown in `/context` output
+
+- **Documentation (E1-E2)**
+  - "Adaptive Context" section in AI_WORLDBUILDING.md with pipeline overview and worked example
+  - Shell command reference table for `/context`, `/sources`, `/loadout`, `/loadout-history`
+
+- 37 new tests (745 total): issue buckets, profile influence, retrieval transparency, budget tracking, loadout history, repeated-context detection
+
 ## [1.3.0] - 2026-06-13
 
 ### Added — Loadout-Guided Context (ollama)

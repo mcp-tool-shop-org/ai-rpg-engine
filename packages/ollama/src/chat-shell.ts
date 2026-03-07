@@ -7,7 +7,7 @@ import type { OllamaTextClient } from './client.js';
 import { createChatEngine, type ChatEngine } from './chat-engine.js';
 import { createTranscript, addToTranscript, saveTranscript, defaultTranscriptPath } from './chat-transcript.js';
 import type { ChatTranscript } from './chat-types.js';
-import { formatContextSnapshot, formatSources } from './chat-context-browser.js';
+import { formatContextSnapshot, formatSources, formatLoadoutHistory } from './chat-context-browser.js';
 import { formatLoadoutRoute } from './chat-loadout.js';
 
 export type ChatShellOptions = {
@@ -111,6 +111,7 @@ async function handleSlashCommand(
       console.log('/context        Show what context the last response used');
       console.log('/sources        Show condensed source list from last retrieval');
       console.log('/loadout        Show loadout routing from last response');
+      console.log('/loadout-history Show recent loadout routing decisions');
       console.log('');
       return 'handled';
 
@@ -169,6 +170,14 @@ async function handleSlashCommand(
         console.log(formatLoadoutRoute(engine.lastLoadoutPlan));
       } else {
         console.log('No loadout plan yet. Send a message first (loadout must be enabled).');
+      }
+      return 'handled';
+
+    case 'loadout-history':
+      if (engine.loadoutHistory.length > 0) {
+        console.log(formatLoadoutHistory(engine.loadoutHistory));
+      } else {
+        console.log('No loadout history yet. Send a message first (loadout must be enabled).');
       }
       return 'handled';
 

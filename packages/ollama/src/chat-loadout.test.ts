@@ -6,10 +6,14 @@ import {
   routeContext,
   recordContextLoads,
   formatLoadoutRoute,
+  summarizeIssueBuckets,
+  explainProfileInfluence,
 } from './chat-loadout.js';
 import type { LoadoutRoutePlan, RoutedEntry } from './chat-loadout.js';
 import type { DesignSession } from './session.js';
 import type { ChatIntent } from './chat-types.js';
+import { ANALYST_PROFILE, GENERATOR_PROFILE, WORLDBUILDER_PROFILE, ROUTER_PROFILE } from './chat-personality.js';
+import type { PersonalityProfile } from './chat-personality.js';
 
 // --- Helpers ---
 
@@ -169,6 +173,7 @@ describe('formatLoadoutRoute', () => {
       onDemandTokens: 0,
       layers: [],
       taskString: 'test',
+      profileInfluence: '',
     };
     const output = formatLoadoutRoute(plan);
     expect(output).toContain('not active');
@@ -190,6 +195,7 @@ describe('formatLoadoutRoute', () => {
       onDemandTokens: 300,
       layers: ['global', 'org', 'project'],
       taskString: 'intent: scaffold | task: build a chapel',
+      profileInfluence: '',
     };
 
     const output = formatLoadoutRoute(plan);
@@ -215,6 +221,7 @@ describe('formatLoadoutRoute', () => {
       onDemandTokens: 0,
       layers: ['project'],
       taskString: 'x'.repeat(200),
+      profileInfluence: '',
     };
     const output = formatLoadoutRoute(plan);
     expect(output).toContain('…');
@@ -231,6 +238,7 @@ describe('formatLoadoutRoute', () => {
       onDemandTokens: 0,
       layers: [],
       taskString: 'test',
+      profileInfluence: '',
     };
     const output = formatLoadoutRoute(plan);
     expect(output).toContain('(none)');
@@ -273,5 +281,165 @@ describe('buildTaskString → routeContext integration', () => {
     const plan = await routeContext(taskString, '/tmp/test');
     expect(plan.active).toBe(false);
     expect(plan.taskString).toContain('intent: unknown');
+  });
+});
+
+// --- v1.4.0: Issue bucket summarization (A2) ---
+
+describe('summarizeIssueBuckets', () => {
+  it('maps known issue codes to buckets', () => {
+    const issues = [
+      { severity: 'warning', code: 'SCHEMA', target: 't', summary: 's', status: 'open' },
+      { severity: 'warning', code: 'RUMOR', target: 't', summary: 's', status: 'open' },
+      { severity: 'warning', code: 'FACTION', target: 't', summary: 's', status: 'open' },
+    ] as any;
+    const buckets = summarizeIssueBuckets(issues);
+    expect(buckets.get('schema')).toBe(1);
+    expect(buckets.get('rumor_flow')).toBe(1);
+    expect(buckets.get('faction_isolation')).toBe(1);
+  });
+
+  it('groups multiple issues into same bucket', () => {
+    const issues = [
+      { severity: 'warning', code: 'SCHEMA', target: 't1', summary: 's', status: 'open' },
+      { severity: 'warning', code: 'VALIDATION', target: 't2', summary: 's', status: 'open' },
+    ] as any;
+    const buckets = summarizeIssueBuckets(issues);
+    expect(buckets.get('schema')).toBe(2);
+  });
+
+  it('maps unknown codes to quality bucket', () => {
+    const issues = [
+      { severity: 'warning', code: 'UNKNOWN_CODE', target: 't', summary: 's', status: 'open' },
+    ] as any;
+    const buckets = summarizeIssueBuckets(issues);
+    expect(buckets.get('quality')).toBe(1);
+  });
+
+  it('returns empty map for empty issues', () => {
+    const buckets = summarizeIssueBuckets([]);
+    expect(buckets.size).toBe(0);
+  });
+
+  it('is deterministic — same input always gives same output', () => {
+    const issues = [
+      { severity: 'high', code: 'DISTRICT', target: 't', summary: 's', status: 'open' },
+      { severity: 'low', code: 'PACING', target: 't2', summary: 's', status: 'open' },
+    ] as any;
+    const a = summarizeIssueBuckets(issues);
+    const b = summarizeIssueBuckets(issues);
+    expect([...a.entries()]).toEqual([...b.entries()]);
+  });
+});
+
+// --- v1.4.0: Profile-aware task strings (A1 + B1) ---
+
+describe('buildTaskString — with profile', () => {
+  it('includes profile name when profile is provided', () => {
+    const result = buildTaskString('test', 'scaffold', null, ANALYST_PROFILE);
+    expect(result).toContain('profile: analyst');
+  });
+
+  it('omits profile when not provided', () => {
+    const result = buildTaskString('test', 'scaffold', null);
+    expect(result).not.toContain('profile:');
+  });
+
+  it('includes issue buckets when session has issues', () => {
+    const session = makeSession({
+      issues: [
+        { severity: 'high', code: 'SCHEMA', target: 't', summary: 's', status: 'open' },
+        { severity: 'medium', code: 'RUMOR', target: 't', summary: 's', status: 'open' },
+      ],
+    });
+    const result = buildTaskString('test', 'explain_state', session, ANALYST_PROFILE);
+    expect(result).toContain('issues:');
+    expect(result).toContain('schema');
+    expect(result).toContain('rumor_flow');
+  });
+});
+
+// --- v1.4.0: Profile influence explanation (B2) ---
+
+describe('explainProfileInfluence', () => {
+  it('returns explanation for analyst profile', () => {
+    const explanation = explainProfileInfluence(ANALYST_PROFILE, ['session', 'artifact']);
+    expect(explanation).toContain('analyst');
+    expect(explanation.length).toBeGreaterThan(0);
+  });
+
+  it('returns explanation for generator profile', () => {
+    const explanation = explainProfileInfluence(GENERATOR_PROFILE, ['session', 'artifact']);
+    expect(explanation).toContain('generator');
+  });
+
+  it('returns explanation for worldbuilder profile', () => {
+    const explanation = explainProfileInfluence(WORLDBUILDER_PROFILE, ['session']);
+    expect(explanation).toContain('worldbuilder');
+  });
+
+  it('is deterministic for same inputs', () => {
+    const a = explainProfileInfluence(ANALYST_PROFILE, ['session', 'artifact']);
+    const b = explainProfileInfluence(ANALYST_PROFILE, ['session', 'artifact']);
+    expect(a).toBe(b);
+  });
+});
+
+// --- v1.4.0: routeContext with profile (B1) ---
+
+describe('routeContext — with profile', () => {
+  it('passthrough plan includes profileInfluence when profile provided', async () => {
+    const plan = await routeContext('test', '/tmp/test', ANALYST_PROFILE);
+    expect(typeof plan.profileInfluence).toBe('string');
+    expect(plan.profileInfluence).toContain('analyst');
+  });
+
+  it('passthrough plan has empty profileInfluence without profile', async () => {
+    const plan = await routeContext('test', '/tmp/test');
+    expect(plan.profileInfluence).toBe('');
+  });
+
+  it('different profiles produce different influence strings', async () => {
+    const analystPlan = await routeContext('test', '/tmp/test', ANALYST_PROFILE);
+    const generatorPlan = await routeContext('test', '/tmp/test', GENERATOR_PROFILE);
+    expect(analystPlan.profileInfluence).not.toBe(generatorPlan.profileInfluence);
+  });
+});
+
+// --- v1.4.0: formatLoadoutRoute shows profile influence ---
+
+describe('formatLoadoutRoute — profile influence', () => {
+  it('shows profile influence line when present', () => {
+    const plan: LoadoutRoutePlan = {
+      active: true,
+      preload: [],
+      onDemand: [],
+      manualCount: 0,
+      allowedSources: ['session', 'artifact'],
+      preloadTokens: 0,
+      onDemandTokens: 0,
+      layers: ['project'],
+      taskString: 'test',
+      profileInfluence: 'Analyst adds replay, critique, decision',
+    };
+    const output = formatLoadoutRoute(plan);
+    expect(output).toContain('Analyst adds replay, critique, decision');
+  });
+
+  it('omits profile line when influence is empty', () => {
+    const plan: LoadoutRoutePlan = {
+      active: true,
+      preload: [],
+      onDemand: [],
+      manualCount: 0,
+      allowedSources: ['session'],
+      preloadTokens: 0,
+      onDemandTokens: 0,
+      layers: ['project'],
+      taskString: 'test',
+      profileInfluence: '',
+    };
+    const output = formatLoadoutRoute(plan);
+    expect(output).not.toContain('Profile');
   });
 });

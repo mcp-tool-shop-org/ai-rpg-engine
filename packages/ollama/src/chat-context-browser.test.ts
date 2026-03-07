@@ -3,8 +3,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildContextSnapshot, formatContextSnapshot, formatSources,
+  formatLoadoutHistory, detectRepeatedContext,
 } from './chat-context-browser.js';
-import type { ContextSnapshot } from './chat-context-browser.js';
+import type { ContextSnapshot, LoadoutHistoryRow } from './chat-context-browser.js';
 import type { RetrievalResult, RetrievedSnippet } from './chat-rag.js';
 import type { ShapedContext, ShapedMemory, MemoryClass } from './chat-memory-shaper.js';
 import type { PersonalityProfile } from './chat-personality.js';
@@ -24,7 +25,14 @@ function makeSnippet(source: string, origin: string, content: string, score = 0.
 }
 
 function makeRetrieval(snippets: RetrievedSnippet[], sourcesScanned = 5): RetrievalResult {
-  return { snippets, sourcesScanned };
+  return {
+    snippets,
+    sourcesScanned,
+    excludedSources: [],
+    droppedByBudget: 0,
+    truncatedCount: 0,
+    totalCandidates: snippets.length,
+  };
 }
 
 function makeMemory(cls: MemoryClass, label: string, content: string, sourceCount = 1): ShapedMemory {
@@ -366,6 +374,7 @@ describe('buildContextSnapshot — loadout', () => {
         onDemandTokens: 300,
         layers: ['project', 'org'],
         taskString: 'intent: scaffold | task: test loadout',
+        profileInfluence: '',
       },
     });
 
@@ -399,6 +408,7 @@ describe('buildContextSnapshot — loadout', () => {
         onDemandTokens: 0,
         layers: ['project'],
         taskString: 'intent: help | task: test',
+        profileInfluence: '',
       },
     });
 
@@ -427,6 +437,7 @@ describe('buildContextSnapshot — loadout', () => {
         onDemandTokens: 0,
         layers: [],
         taskString: 'test',
+        profileInfluence: '',
       },
     });
 
@@ -456,11 +467,253 @@ describe('buildContextSnapshot — loadout', () => {
         onDemandTokens: 0,
         layers: ['project'],
         taskString: 'test',
+        profileInfluence: '',
       },
     });
 
     const formatted = formatSources(snapshot);
     expect(formatted).toContain('Loadout:');
     expect(formatted).toContain('session, artifact');
+  });
+});
+
+// --- v1.4.0: Retrieval transparency (C1) ---
+
+describe('buildContextSnapshot — retrieval transparency', () => {
+  it('passes through excludedSources from retrieval result', () => {
+    const retrieval: RetrievalResult = {
+      snippets: [makeSnippet('artifact', 'a.yaml', 'content')],
+      sourcesScanned: 5,
+      excludedSources: ['transcript', 'doc'],
+      droppedByBudget: 2,
+      truncatedCount: 1,
+      totalCandidates: 6,
+    };
+    const snapshot = buildContextSnapshot({
+      query: 'test',
+      keywords: [],
+      retrievalResult: retrieval,
+      shapedContext: makeShaped([]),
+      profile: makeProfile(),
+      intentForProfile: 'help',
+    });
+
+    expect(snapshot.retrieval.excludedSources).toEqual(['transcript', 'doc']);
+    expect(snapshot.retrieval.droppedByBudget).toBe(2);
+    expect(snapshot.retrieval.truncatedCount).toBe(1);
+    expect(snapshot.retrieval.totalCandidates).toBe(6);
+  });
+
+  it('formats excluded sources in snapshot output', () => {
+    const retrieval: RetrievalResult = {
+      snippets: [],
+      sourcesScanned: 3,
+      excludedSources: ['transcript'],
+      droppedByBudget: 1,
+      truncatedCount: 0,
+      totalCandidates: 2,
+    };
+    const snapshot = buildContextSnapshot({
+      query: 'test',
+      keywords: [],
+      retrievalResult: retrieval,
+      shapedContext: makeShaped([]),
+      profile: makeProfile(),
+      intentForProfile: 'help',
+    });
+
+    const formatted = formatContextSnapshot(snapshot);
+    expect(formatted).toContain('Excluded sources: transcript');
+    expect(formatted).toContain('Dropped by budget: 1');
+    expect(formatted).toContain('Candidates found: 2');
+  });
+});
+
+// --- v1.4.0: Per-class budget share (C2) ---
+
+describe('buildContextSnapshot — per-class budget share', () => {
+  it('calculates budgetSharePercent relative to shaping budget', () => {
+    const memories = [
+      makeMemory('current_session', 'session', 'a'.repeat(2000)),
+      makeMemory('open_issues', 'issues', 'b'.repeat(1000)),
+    ];
+    const shaped = makeShaped(memories);
+
+    const snapshot = buildContextSnapshot({
+      query: 'test',
+      keywords: [],
+      retrievalResult: makeRetrieval([]),
+      shapedContext: shaped,
+      profile: makeProfile(),
+      intentForProfile: 'help',
+      shapingBudget: 4000,
+    });
+
+    const sessionClass = snapshot.shaping.byClass.find(c => c.class === 'current_session')!;
+    expect(sessionClass.budgetSharePercent).toBe(50); // 2000/4000 = 50%
+    const issuesClass = snapshot.shaping.byClass.find(c => c.class === 'open_issues')!;
+    expect(issuesClass.budgetSharePercent).toBe(25); // 1000/4000 = 25%
+  });
+
+  it('shows budget share in formatted output', () => {
+    const memories = [
+      makeMemory('current_session', 'session', 'a'.repeat(1000)),
+    ];
+    const shaped = makeShaped(memories);
+
+    const snapshot = buildContextSnapshot({
+      query: 'test',
+      keywords: [],
+      retrievalResult: makeRetrieval([]),
+      shapedContext: shaped,
+      profile: makeProfile(),
+      intentForProfile: 'help',
+      shapingBudget: 2000,
+    });
+
+    const formatted = formatContextSnapshot(snapshot);
+    expect(formatted).toContain('Per-class budget');
+    expect(formatted).toContain('% of budget');
+  });
+});
+
+// --- v1.4.0: Pipeline summary (C3) ---
+
+describe('formatContextSnapshot — pipeline summary', () => {
+  it('shows pipeline utilization line', () => {
+    const snapshot = buildContextSnapshot({
+      query: 'test',
+      keywords: [],
+      retrievalResult: makeRetrieval([
+        makeSnippet('artifact', 'a.yaml', 'content a'),
+      ]),
+      shapedContext: makeShaped([
+        makeMemory('project_facts', 'facts', 'data'),
+      ]),
+      profile: makeProfile(),
+      intentForProfile: 'help',
+    });
+
+    const formatted = formatContextSnapshot(snapshot);
+    expect(formatted).toContain('Pipeline:');
+    expect(formatted).toContain('candidates kept');
+    expect(formatted).toContain('budget used');
+  });
+
+  it('pipeline shows loadout info when active', () => {
+    const snapshot = buildContextSnapshot({
+      query: 'test',
+      keywords: [],
+      retrievalResult: makeRetrieval([]),
+      shapedContext: makeShaped([]),
+      profile: makeProfile(),
+      intentForProfile: 'help',
+      loadoutPlan: {
+        active: true,
+        preload: [],
+        onDemand: [],
+        manualCount: 0,
+        allowedSources: ['session', 'artifact'],
+        preloadTokens: 0,
+        onDemandTokens: 0,
+        layers: ['project'],
+        taskString: 'test',
+        profileInfluence: '',
+      },
+    });
+
+    const formatted = formatContextSnapshot(snapshot);
+    expect(formatted).toContain('2 source types routed');
+  });
+});
+
+// --- v1.4.0: Loadout history (D1) ---
+
+describe('formatLoadoutHistory', () => {
+  it('returns message when no entries', () => {
+    const result = formatLoadoutHistory([]);
+    expect(result).toContain('No loadout history');
+  });
+
+  it('formats entries in reverse chronological order', () => {
+    const entries: LoadoutHistoryRow[] = [
+      { timestamp: '2025-01-01T10:00:00Z', query: 'first', allowedSources: ['session'], profileName: 'Analyst', snippetsSelected: 3, droppedByBudget: 0 },
+      { timestamp: '2025-01-01T11:00:00Z', query: 'second', allowedSources: ['session', 'artifact'], profileName: 'Generator', snippetsSelected: 5, droppedByBudget: 1 },
+    ];
+    const result = formatLoadoutHistory(entries);
+    expect(result).toContain('Loadout History (2 entries)');
+    // second should appear before first in output (reverse chron)
+    const secondIdx = result.indexOf('second');
+    const firstIdx = result.indexOf('first');
+    expect(secondIdx).toBeLessThan(firstIdx);
+  });
+
+  it('shows dropped count when non-zero', () => {
+    const entries: LoadoutHistoryRow[] = [
+      { timestamp: '2025-01-01T10:00:00Z', query: 'test', allowedSources: ['session'], profileName: 'Analyst', snippetsSelected: 3, droppedByBudget: 2 },
+    ];
+    const result = formatLoadoutHistory(entries);
+    expect(result).toContain('2 dropped');
+  });
+});
+
+// --- v1.4.0: Repeated-context detection (D2) ---
+
+describe('detectRepeatedContext', () => {
+  it('returns empty when fewer than 3 entries', () => {
+    const history: LoadoutHistoryRow[] = [
+      { timestamp: '2025-01-01T10:00:00Z', query: 'test', allowedSources: ['session'], profileName: 'Analyst', snippetsSelected: 3, droppedByBudget: 0 },
+    ];
+    expect(detectRepeatedContext(history, 2)).toEqual([]);
+  });
+
+  it('returns empty when no open issues', () => {
+    const history: LoadoutHistoryRow[] = Array.from({ length: 3 }, (_, i) => ({
+      timestamp: `2025-01-01T1${i}:00:00Z`, query: `q${i}`, allowedSources: ['session'],
+      profileName: 'Analyst', snippetsSelected: 3, droppedByBudget: 0,
+    }));
+    expect(detectRepeatedContext(history, 0)).toEqual([]);
+  });
+
+  it('warns when same sources repeated 3x with open issues', () => {
+    const history: LoadoutHistoryRow[] = Array.from({ length: 3 }, (_, i) => ({
+      timestamp: `2025-01-01T1${i}:00:00Z`, query: `q${i}`, allowedSources: ['session', 'artifact'],
+      profileName: 'Analyst', snippetsSelected: 3, droppedByBudget: 0,
+    }));
+    const warnings = detectRepeatedContext(history, 2);
+    expect(warnings.length).toBe(1);
+    expect(warnings[0]).toContain('3×');
+    expect(warnings[0]).toContain('2 open issue');
+  });
+
+  it('does not warn when sources differ', () => {
+    const history: LoadoutHistoryRow[] = [
+      { timestamp: 'a', query: 'q1', allowedSources: ['session'], profileName: 'Analyst', snippetsSelected: 1, droppedByBudget: 0 },
+      { timestamp: 'b', query: 'q2', allowedSources: ['session', 'artifact'], profileName: 'Analyst', snippetsSelected: 2, droppedByBudget: 0 },
+      { timestamp: 'c', query: 'q3', allowedSources: ['session'], profileName: 'Analyst', snippetsSelected: 1, droppedByBudget: 0 },
+    ];
+    expect(detectRepeatedContext(history, 5)).toEqual([]);
+  });
+
+  it('shows warnings in context snapshot', () => {
+    const history: LoadoutHistoryRow[] = Array.from({ length: 3 }, (_, i) => ({
+      timestamp: `2025-01-01T1${i}:00:00Z`, query: `q${i}`, allowedSources: ['session'],
+      profileName: 'Analyst', snippetsSelected: 3, droppedByBudget: 0,
+    }));
+
+    const snapshot = buildContextSnapshot({
+      query: 'test',
+      keywords: [],
+      retrievalResult: makeRetrieval([]),
+      shapedContext: makeShaped([]),
+      profile: makeProfile(),
+      intentForProfile: 'help',
+      loadoutHistory: history,
+      openIssueCount: 3,
+    });
+
+    expect(snapshot.warnings.length).toBeGreaterThan(0);
+    const formatted = formatContextSnapshot(snapshot);
+    expect(formatted).toContain('Warnings');
   });
 });

@@ -212,3 +212,53 @@ Environment variables:
 |---------|------|----------|
 | `create-room` | `--repair` | Single repair pass on validation failure |
 | `create-quest` | `--repair` | Single repair pass on validation failure |
+
+---
+
+## Adaptive Context (v1.4.0)
+
+The chat engine uses a multi-stage pipeline to select and present project context. Every stage is deterministic, transparent, and inspectable.
+
+### Pipeline
+
+```
+user message → intent classification → personality profile selection
+    → loadout routing (source gating) → RAG retrieval → memory shaping → prompt
+```
+
+### Loadout Routing
+
+When `ai-loadout` is installed, the engine builds a **task string** from the current message + session state (issue buckets, replay signals, recent artifact types, stale issues). The loadout resolver gates which `SourceKind` values are allowed for RAG retrieval.
+
+**Profile bias**: The active personality profile adds source types to the routed set (never removes). For example, `ANALYST` adds `replay`, `critique`, `decision`; `GENERATOR` adds `artifact`, `doc`. This shapes emphasis without limiting what the engine can find.
+
+### Context Transparency
+
+The `/context` command shows a full breakdown:
+
+- **Retrieval**: sources scanned, candidates found, snippets selected, dropped by budget, truncated, excluded sources
+- **Memory shaping**: per-class breakdown showing chars, budget share, source counts
+- **Pipeline summary**: compact one-liner showing route → retrieve → shape → budget utilization
+- **Warnings**: advisory alerts (e.g. repeated source routing with open issues)
+
+### Worked Example
+
+> User asks: "Are there problems with rumors in the market district?"
+
+1. **Intent**: `diagnose` → profile `ANALYST` (balanced inference, adds replay + critique + decision sources)
+2. **Task string**: `"diagnose | buckets: rumor_flow(2), district_alert(1) | replay: pass(rumor,district) | artifacts: district,room | stale: 0 | profile: ANALYST"`
+3. **Loadout**: routes sources `[session, artifact, critique, replay, decision]` — excludes `transcript`, `doc`
+4. **Retrieval**: scans 12 sources → 8 candidates → selects 5 (1 dropped by budget) → 0 truncated
+5. **Shaping**: `open_issues` (320 chars, 18%) + `recent_changes` (540 chars, 30%) + `project_facts` (940 chars, 52%)
+6. **Pipeline**: `5 source types routed → 5/8 candidates kept → 3 classes → 1800 chars → 45% budget used`
+
+Use `/sources` for a condensed view, `/loadout` for routing details, and `/loadout-history` to see how routing evolves across queries.
+
+### Shell Commands
+
+| Command | Description |
+|---------|-------------|
+| `/context` | Full context snapshot (retrieval + shaping + budget + warnings) |
+| `/sources` | Condensed source list with scores and match reasons |
+| `/loadout` | Current loadout routing plan and profile influence |
+| `/loadout-history` | Rolling history of loadout routing decisions (last 20) |
