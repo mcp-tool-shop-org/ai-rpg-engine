@@ -1,4 +1,10 @@
-# Chapter 24 — Observability
+---
+title: "Chapter 24 — Observability"
+description: "Observability"
+sidebar:
+  order: 30
+---
+
 
 > Part VII — Debugging and Tools
 

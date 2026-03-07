@@ -1,4 +1,4 @@
-# Chapter 25 — Planned Systems
+# Chapter 26 — Planned Systems
 
 > Part VIII — Future Directions
 

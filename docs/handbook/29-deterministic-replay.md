@@ -1,4 +1,4 @@
-# Chapter 23 — Deterministic Replay
+# Chapter 24 — Deterministic Replay
 
 > Part VII — Debugging and Tools
 

@@ -1,10 +1,4 @@
----
-title: "Chapter 22 — Save Files"
-description: "Save Files"
-sidebar:
-  order: 27
----
-
+# Chapter 23 — Save Files
 
 > Part VII — Debugging and Tools
 
