@@ -22,11 +22,14 @@ import { expandPack } from './commands/expand-pack.js';
 import { critiqueContent } from './commands/critique-content.js';
 import { normalizeContent } from './commands/normalize-content.js';
 import { diffSummary } from './commands/diff-summary.js';
+import { analyzeReplay } from './commands/analyze-replay.js';
+import { explainWhy } from './commands/explain-why.js';
 import {
   loadSession, saveSession, deleteSession, createSession,
   addThemes, addConstraints, addArtifact, addCritiqueIssues,
   renderSessionContext, formatSessionStatus,
 } from './session.js';
+import { sessionDoctor, formatDoctorReport } from './session-doctor.js';
 import type { DesignSession } from './session.js';
 
 type CliFlags = {
@@ -47,6 +50,10 @@ type CliFlags = {
   zones?: string[];
   constraints?: string[];
   themes?: string[];
+  question?: string;
+  targetType?: string;
+  targetId?: string;
+  tickRange?: string;
   repair?: boolean;
   stdin?: boolean;
   write?: string;
@@ -81,6 +88,10 @@ function parseFlags(args: string[]): { command: string; flags: CliFlags } {
       case '--themes': flags.themes = next?.split(','); i++; break;
       case '--write': flags.write = next; i++; break;
       case '--session': flags.session = next; i++; break;
+      case '--question': flags.question = next; i++; break;
+      case '--target-type': flags.targetType = next; i++; break;
+      case '--target-id': flags.targetId = next; i++; break;
+      case '--tick-range': flags.tickRange = next; i++; break;
       case '--repair': flags.repair = true; break;
       case '--stdin': flags.stdin = true; break;
     }
@@ -171,6 +182,14 @@ export async function runCli(args: string[]): Promise<void> {
         console.log(`Constraints added: ${newConstraints.join(', ')}`);
         return;
       }
+      case 'doctor': {
+        const session = await loadSession(projectRoot);
+        if (!session) { console.error('No active session.'); process.exit(1); }
+        const result = sessionDoctor(session);
+        console.log(formatDoctorReport(result));
+        process.exit(result.healthy ? 0 : 1);
+        return;
+      }
       default:
         console.log('Session commands:');
         console.log('  session start <name>       Start a new design session');
@@ -178,6 +197,7 @@ export async function runCli(args: string[]): Promise<void> {
         console.log('  session end                End the current session');
         console.log('  session add-theme <t>      Add theme(s) to session');
         console.log('  session add-constraint <c> Add constraint(s) to session');
+        console.log('  session doctor             Health check the session file');
         return;
     }
   }
@@ -737,8 +757,86 @@ export async function runCli(args: string[]): Promise<void> {
       break;
     }
 
+    case 'analyze-replay': {
+      let input: string;
+      if (flags.stdin || !process.stdin.isTTY) {
+        input = await readStdin();
+      } else {
+        console.error('Pipe replay data (event log, snapshot JSON, or summary) via stdin');
+        process.exit(1);
+      }
+
+      const result = await analyzeReplay(client, {
+        replay: input,
+        focus: flags.focus,
+        tickRange: flags.tickRange,
+        sessionContext: sessionCtx,
+      });
+      if (!result.ok) {
+        console.error(result.error);
+        process.exit(1);
+      }
+
+      // Prose analysis to stdout/write
+      await emit(result.text, flags.write);
+
+      // Structured findings to stderr
+      if (result.issues.length > 0) {
+        console.error(`\n--- ${result.issues.length} issue(s) found ---`);
+        for (const issue of result.issues) {
+          console.error(`  [${issue.severity}] ${issue.code}: ${issue.summary}`);
+        }
+      }
+      if (result.suggestions.length > 0) {
+        console.error(`\n--- ${result.suggestions.length} suggestion(s) ---`);
+        for (const sug of result.suggestions) {
+          console.error(`  [${sug.priority}] ${sug.code}: ${sug.action}`);
+        }
+      }
+      if (result.summary) {
+        console.error(`\n--- Summary ---\n  ${result.summary}`);
+      }
+
+      // Ingest findings into session
+      if (session && result.issues.length > 0) {
+        addCritiqueIssues(session, result.issues);
+        await saveSession(projectRoot, session);
+      }
+      break;
+    }
+
+    case 'explain-why': {
+      let input: string;
+      if (flags.stdin || !process.stdin.isTTY) {
+        input = await readStdin();
+      } else {
+        console.error('Pipe simulation state as JSON, or use --stdin');
+        process.exit(1);
+      }
+
+      const question = flags.question;
+      if (!question) {
+        console.error('--question is required (e.g. --question "why did the ghoul attack?")');
+        process.exit(1);
+      }
+
+      const result = await explainWhy(client, {
+        question,
+        state: input,
+        targetType: flags.targetType,
+        targetId: flags.targetId,
+        sessionContext: sessionCtx,
+      });
+      if (!result.ok) {
+        console.error(result.error);
+        process.exit(1);
+      }
+      await emit(result.text, flags.write);
+      break;
+    }
+
     default:
-      console.log('@ai-rpg-engine/ollama v0.6.0');
+      console.log('@ai-rpg-engine/ollama v0.7.0');
       console.log('');
       console.log('Session:');
       console.log('  session start <name>        Start a named design session');
@@ -746,6 +844,7 @@ export async function runCli(args: string[]): Promise<void> {
       console.log('  session end                 End the current session');
       console.log('  session add-theme <text>    Add a theme to the active session');
       console.log('  session add-constraint <t>  Add a constraint to the active session');
+      console.log('  session doctor              Health check the session file');
       console.log('');
       console.log('Scaffold:');
       console.log('  create-room                 Generate a room definition');
@@ -770,6 +869,10 @@ export async function runCli(args: string[]): Promise<void> {
       console.log('  explain-faction-alert       Explain faction alert level (pipe JSON)');
       console.log('  summarize-belief-trace      Summarize a belief trace (pipe JSON)');
       console.log('');
+      console.log('Simulate:');
+      console.log('  analyze-replay              Analyze replay output for design issues (pipe JSON)');
+      console.log('  explain-why                 Causal explanation for simulation state (pipe JSON)');
+      console.log('');
       console.log('Flags:');
       console.log('  --model <name>       Ollama model (default: qwen2.5-coder)');
       console.log('  --url <url>          Ollama base URL (default: http://localhost:11434)');
@@ -777,7 +880,11 @@ export async function runCli(args: string[]): Promise<void> {
       console.log('  --themes <texts>     Comma-separated themes (for session start)');
       console.log('  --goal <text>        Improvement/expansion goal');
       console.log('  --content-type <t>   Content type hint (room, district, quest, etc.)');
-      console.log('  --focus <text>       Focus area for critique');
+      console.log('  --focus <text>       Focus area for critique/analysis');
+      console.log('  --question <text>    Question for explain-why');
+      console.log('  --target-type <t>    Target kind for explain-why (entity, faction, district)');
+      console.log('  --target-id <id>     Target ID for explain-why');
+      console.log('  --tick-range <r>     Tick range for analyze-replay (e.g. "0-50")');
       console.log('  --session <name>     Session name (for session start)');
       console.log('  --ruleset <id>       Ruleset ID for context');
       console.log('  --district <id>      District ID for context');

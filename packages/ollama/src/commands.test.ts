@@ -19,6 +19,8 @@ import { expandPack } from './commands/expand-pack.js';
 import { critiqueContent } from './commands/critique-content.js';
 import { normalizeContent } from './commands/normalize-content.js';
 import { diffSummary } from './commands/diff-summary.js';
+import { analyzeReplay } from './commands/analyze-replay.js';
+import { explainWhy } from './commands/explain-why.js';
 
 function mockClient(response: string): OllamaTextClient {
   return {
@@ -853,6 +855,136 @@ describe('diffSummary', () => {
     const result = await diffSummary(client, {
       before: 'id: x',
       after: 'id: x',
+    });
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe('analyzeReplay', () => {
+  const replayAnalysis = [
+    'The simulation ran for 50 ticks. District old_quarter saw no alert escalation',
+    'despite 3 combat events because decay outpaced inflow.',
+    '',
+    '```yaml',
+    'issues:',
+    '  - code: REPLAY_001',
+    '    severity: high',
+    '    location: old_quarter',
+    '    summary: District alert never rises above 5.',
+    '    simulation_impact: Faction patrols never trigger, content unreachable.',
+    '  - code: REPLAY_002',
+    '    severity: medium',
+    '    location: thieves_guild',
+    '    summary: Rumor propagation never reached thieves_guild faction.',
+    '    simulation_impact: Faction stays inert, no alert escalation.',
+    'suggestions:',
+    '  - code: REPLAY_S001',
+    '    priority: high',
+    '    action: Reduce alert decay rate or increase combat event frequency.',
+    'summary: >',
+    '  Simulation is structurally sound but alert/rumor flow is too weak.',
+    '```',
+  ].join('\n');
+
+  it('returns prose and structured findings from replay analysis', async () => {
+    const client = mockClient(replayAnalysis);
+    const result = await analyzeReplay(client, {
+      replay: '{"tick":50,"events":[{"type":"combat.contact.hit","tick":10}]}',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.text).toContain('50 ticks');
+      expect(result.issues).toHaveLength(2);
+      expect(result.issues[0].code).toBe('REPLAY_001');
+      expect(result.issues[0].severity).toBe('high');
+      expect(result.issues[1].code).toBe('REPLAY_002');
+      expect(result.suggestions).toHaveLength(1);
+      expect(result.suggestions[0].code).toBe('REPLAY_S001');
+      expect(result.summary).toContain('structurally sound');
+    }
+  });
+
+  it('passes focus, tick-range, and session context to prompt', async () => {
+    let capturedPrompt = '';
+    const client: OllamaTextClient = {
+      async generate(input: PromptInput): Promise<PromptResult> {
+        capturedPrompt = input.prompt;
+        return { ok: true, text: 'No significant issues found.' };
+      },
+    };
+    await analyzeReplay(client, {
+      replay: '{"tick":20}',
+      focus: 'rumor propagation',
+      tickRange: '0-20',
+      sessionContext: 'Themes: paranoia',
+    });
+    expect(capturedPrompt).toContain('rumor propagation');
+    expect(capturedPrompt).toContain('0-20');
+    expect(capturedPrompt).toContain('paranoia');
+  });
+
+  it('degrades gracefully with prose-only response', async () => {
+    const client = mockClient('The simulation looks healthy. No obvious issues.');
+    const result = await analyzeReplay(client, {
+      replay: '{"tick":10}',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.text).toContain('healthy');
+      expect(result.issues).toHaveLength(0);
+    }
+  });
+
+  it('propagates client failure', async () => {
+    const client = failingClient('connection refused');
+    const result = await analyzeReplay(client, {
+      replay: '{}',
+    });
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe('explainWhy', () => {
+  it('returns causal explanation from model', async () => {
+    const explanation = 'The ghoul attacked because its suspicion exceeded 60 at tick 12, triggered by a partial detection (clarity: 0.3) of the player entering the crypt.';
+    const client = mockClient(explanation);
+    const result = await explainWhy(client, {
+      question: 'Why did the ghoul attack?',
+      state: '{"entities":{"ghoul_01":{"suspicion":65,"morale":80}}}',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.text).toContain('suspicion');
+      expect(result.text).toContain('partial detection');
+    }
+  });
+
+  it('passes target type, target id, and session context to prompt', async () => {
+    let capturedPrompt = '';
+    const client: OllamaTextClient = {
+      async generate(input: PromptInput): Promise<PromptResult> {
+        capturedPrompt = input.prompt;
+        return { ok: true, text: 'Because cohesion was too low.' };
+      },
+    };
+    await explainWhy(client, {
+      question: 'Why is the faction still hostile?',
+      state: '{"factions":{"raiders":{"alertLevel":80}}}',
+      targetType: 'faction',
+      targetId: 'raiders',
+      sessionContext: 'Themes: survival',
+    });
+    expect(capturedPrompt).toContain('faction');
+    expect(capturedPrompt).toContain('raiders');
+    expect(capturedPrompt).toContain('survival');
+    expect(capturedPrompt).toContain('still hostile');
+  });
+
+  it('propagates client failure', async () => {
+    const client = failingClient('timeout');
+    const result = await explainWhy(client, {
+      question: 'Why?',
+      state: '{}',
     });
     expect(result.ok).toBe(false);
   });

@@ -60,6 +60,12 @@ export type { NormalizeContentInput, NormalizeContentResult } from './commands/n
 export { diffSummary } from './commands/diff-summary.js';
 export type { DiffSummaryInput, DiffSummaryResult } from './commands/diff-summary.js';
 
+export { analyzeReplay } from './commands/analyze-replay.js';
+export type { AnalyzeReplayInput, AnalyzeReplayResult } from './commands/analyze-replay.js';
+
+export { explainWhy } from './commands/explain-why.js';
+export type { ExplainWhyInput } from './commands/explain-why.js';
+
 // Parsers (useful for custom prompt workflows)
 export { extractYaml, extractJson, extractText, parseCritiqueOutput } from './parsers.js';
 export type { CritiqueIssue, CritiqueSuggestion, StructuredCritique } from './parsers.js';
@@ -88,6 +94,10 @@ export type {
   SessionArtifacts,
   SessionIssue,
 } from './session.js';
+
+// Session doctor
+export { sessionDoctor, formatDoctorReport } from './session-doctor.js';
+export type { SessionDiagnostic, SessionDoctorResult } from './session-doctor.js';
 
 // CLI entry
 export { runCli } from './cli.js';
