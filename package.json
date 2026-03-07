@@ -1,9 +1,9 @@
 {
   "name": "ai-rpg-engine",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
-  "description": "A modular terminal narrative simulation runtime",
+  "description": "A simulation-first terminal RPG engine for worlds shaped by perception, cognition, and consequence",
   "author": "mcp-tool-shop",
   "license": "MIT",
   "workspaces": [
@@ -15,10 +15,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint packages/*/src/**/*.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run build && npm run test"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^3.2.4",
     "eslint": "^9.0.0",
     "typescript": "^5.7.0",
     "vitest": "^3.0.0"

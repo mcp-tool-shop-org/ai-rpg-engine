@@ -11,3 +11,7 @@ coverage/
 /vitest.config.js.map
 /vitest.config.d.ts
 /vitest.config.d.ts.map
+site/.astro/
+site/dist/
+site/node_modules/
+.polyglot-cache.json
