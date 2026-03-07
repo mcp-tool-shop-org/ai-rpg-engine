@@ -101,7 +101,7 @@ const myModule: EngineModule = {
 - `debug` — register inspectors
 - `formulas` — register/query named formula implementations
 
-**Built-in modules:** traversal-core, status-core, combat-core, inventory-core, dialogue-core, narrative-authority.
+**Built-in modules:** traversal-core, status-core, combat-core, inventory-core, dialogue-core, narrative-authority, cognition-core, perception-filter, progression-core, environment-core, faction-cognition, rumor-propagation, simulation-inspector.
 
 ## Ruleset Model
 
@@ -168,6 +168,191 @@ const result = loadContent({
 });
 // result.ok, result.errors, result.summary
 ```
+
+## Simulation Pipeline
+
+The engine's simulation systems form a causal chain. Understanding this chain answers "why did this NPC do that?" without reading source code.
+
+```
+Environment → Perception → Cognition → Intent → Action → Events
+     ↑                                                      │
+     └──────────────────────────────────────────────────────┘
+```
+
+Each layer feeds the next. Environment sets the stage (noise, light, hazards). Perception filters what entities detect. Cognition forms beliefs from perceptions. Intent selects actions from beliefs. Actions produce events. Events modify the environment. The loop closes.
+
+### Environment Layer (environment-core)
+
+Zones have dynamic properties that change during play:
+
+- **Noise** — affects perception rolls and rumor distortion. Combat raises noise; it decays over time.
+- **Light** — affects sight-based perception. Low light reduces detection clarity.
+- **Stability** — abstract environmental coherence. Low stability accelerates knowledge decay and increases rumor distortion.
+- **Hazards** — triggered effects that fire when conditions are met.
+
+Environment ticks every turn. Noise decays toward baseline. Hazard timers count down. Zone properties propagate to all perception and cognition calculations in that zone.
+
+### Perception Layer (perception-filter)
+
+Perception determines what an entity actually detects from the events around it.
+
+```
+Event occurs in zone
+       │
+       ▼
+  For each entity in zone:
+       │
+       ├─ Calculate clarity (perception stat + sense bonuses − noise penalty)
+       │
+       ├─ clarity ≥ threshold → perception.detected (belief formed)
+       │
+       └─ clarity < threshold → perception.missed (entity unaware)
+```
+
+Key mechanics:
+- **Sense types** — sight, hearing, network (cyberpunk), etc. Each maps to a stat.
+- **Clarity** — continuous value (0–1) representing detection quality. Higher clarity means more accurate beliefs.
+- **Zone noise** — reduces clarity. A loud fight in a noisy alley is harder to perceive than combat in a silent crypt.
+
+The perception stat is configurable per genre. Fantasy uses `instinct`, cyberpunk uses `reflex`. Sense stats are also configurable (`network: 'netrunning'`).
+
+### Cognition Layer (cognition-core)
+
+Every AI entity maintains a belief graph — a set of typed beliefs about the world.
+
+```
+Belief {
+  subject: 'player'      // who/what
+  key: 'hostile'          // what about them
+  value: true             // what they believe
+  confidence: 0.8         // how sure (0–1)
+  source: 'observed'      // how they know
+  tick: 42                // when last confirmed
+}
+```
+
+Beliefs drive intent selection. An entity that believes the player is hostile and present will choose aggressive actions. An entity that believes the player fled will search or return to patrol.
+
+**Knowledge decay** erodes beliefs over time:
+
+```
+confidence -= baseRate × elapsed × (1 + instability × instabilityFactor)
+```
+
+Where `elapsed` is ticks since last confirmation, and `instability` comes from the zone's environment (noise + low stability). Beliefs that drop below `pruneThreshold` are removed entirely.
+
+**Reinforcement** resets a belief's tick counter, preventing decay. Seeing the player again reinforces the belief they're present. This creates natural "last known position" behavior without explicit tracking code.
+
+### Faction Cognition (faction-cognition)
+
+Factions maintain shared belief graphs separate from individual entities.
+
+```
+Entity belief → rumor → faction belief
+                          │
+                          ├─ Cohesion scales confidence
+                          ├─ Corroboration boosts confidence (+0.05 per source)
+                          └─ Hostile beliefs raise faction alertLevel
+```
+
+A faction with high cohesion (tight coordination, like cyberpunk ICE at 0.95) retains rumor confidence well. A faction with low cohesion (loose undead at 0.7) loses information fidelity.
+
+Alert level rises when hostile rumors arrive and decays by 2 per faction-tick. This creates natural escalation and cooldown without scripted timers.
+
+### Rumor Propagation (rumor-propagation)
+
+Rumors are the transport layer for information between entities and factions.
+
+```
+Combat event in zone
+       │
+       ▼
+  AI entities in zone with faction membership
+       │
+       ▼
+  Extract beliefs (hostile, alive, present)
+       │
+       ▼
+  Schedule PendingEffect (delay = propagationDelay ticks)
+       │
+       ▼
+  [time passes]
+       │
+       ▼
+  rumor.belief.propagated event fires
+       │
+       ▼
+  Faction-cognition handler updates shared beliefs
+```
+
+**Distortion** degrades information quality:
+
+```
+distortion = baseDistortion + (instability × instabilityDistortionFactor)
+```
+
+Environmental noise and low stability increase distortion. A rumor from a chaotic firefight arrives less accurate than one from a quiet observation. Distortion reduces the confidence of the resulting faction belief.
+
+**Deduplication** prevents rumor spam. The same entity can't propagate the same belief about the same subject within `delay × 2` ticks.
+
+**Confidence threshold** filters out weak beliefs. An entity with only 0.1 confidence about something won't bother reporting it.
+
+### Intent and Action
+
+The cognition layer's intent selector evaluates beliefs against profiles:
+
+```
+Intent profiles define conditions:
+  "aggressive" → requires: target believed hostile + in same zone
+  "defensive"  → requires: self HP < 50% + nearby allies
+  "patrol"     → default when no threats believed
+```
+
+The selected intent maps to a verb (attack, defend, move) which enters the action pipeline. The pipeline validates, resolves, records events, and the cycle continues.
+
+### Worked Example: Why Did the Ghoul Attack?
+
+1. Player enters the crypt (`world.zone.entered`)
+2. Environment: noise is low, stability is high
+3. Ghoul's perception check: instinct 6, sight sense, low noise → high clarity (0.9)
+4. `perception.detected` → ghoul forms belief: `{subject: 'player', key: 'present', value: true, confidence: 0.9}`
+5. Ghoul already has belief from prior combat: `{subject: 'player', key: 'hostile', value: true, confidence: 0.7}`
+6. Intent selector: hostile target + present → "aggressive" profile matches
+7. Ghoul dispatches `attack` verb targeting player
+8. Combat resolves → `combat.contact.hit` event
+9. Rumor system: ghoul is in faction `crypt-undead`, schedules rumor with 2-tick delay
+10. Two ticks later: faction `crypt-undead` believes player is hostile → other undead in connected zones become alert
+
+Every step is traceable. Every decision has a cause. No magic flags, no scripted triggers.
+
+## Observability
+
+The simulation-inspector module provides debugging tools for every layer.
+
+**Entity inspection** shows an entity's complete cognitive state:
+- Current beliefs with confidence and source
+- Perception log (what they detected and missed)
+- Faction membership
+- Stats and resources
+
+**Faction inspection** shows collective state:
+- Shared beliefs with confidence and contributing sources
+- Alert level and cohesion
+- Member list
+- Recent rumors received
+
+**Zone inspection** shows environmental state:
+- Dynamic properties (noise, light, stability)
+- Active hazards
+- Entities present
+
+**Simulation snapshot** captures the entire world state for comparison:
+- All entity inspections
+- All faction inspections
+- All zone inspections
+- Current tick and event count
+
+The inspector registers debug inspectors accessible through the engine's debug registry, making these available to CLI tools and future UI panels.
 
 ## Save/Load and Replay
 

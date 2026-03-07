@@ -11,6 +11,9 @@ import {
   createPerceptionFilter,
   createProgressionCore,
   createEnvironmentCore,
+  createFactionCognition,
+  createRumorPropagation,
+  createSimulationInspector,
   giveItem,
 } from '@signalfire/modules';
 import {
@@ -36,7 +39,7 @@ export function createGame(seed?: number): Engine {
       combatCore,
       createInventoryCore([iceBreaker]),
       createDialogueCore([fixerDialogue]),
-      createCognitionCore(),
+      createCognitionCore({ decay: { baseRate: 0.03, pruneThreshold: 0.05, instabilityFactor: 0.8 } }),
       createPerceptionFilter({
         perceptionStat: 'reflex',
         senseStats: { network: 'netrunning' },
@@ -61,6 +64,15 @@ export function createGame(seed?: number): Engine {
           },
         }],
       }),
+      createFactionCognition({
+        factions: [{
+          factionId: 'vault-ice',
+          entityIds: ['ice-sentry'],
+          cohesion: 0.95,
+        }],
+      }),
+      createRumorPropagation({ propagationDelay: 1, distortionPerHop: 0.03 }),
+      createSimulationInspector(),
     ],
   });
 

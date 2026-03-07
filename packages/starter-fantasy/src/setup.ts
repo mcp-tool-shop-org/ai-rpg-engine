@@ -11,6 +11,9 @@ import {
   createPerceptionFilter,
   createProgressionCore,
   createEnvironmentCore,
+  createFactionCognition,
+  createRumorPropagation,
+  createSimulationInspector,
   giveItem,
 } from '@signalfire/modules';
 import {
@@ -36,7 +39,7 @@ export function createGame(seed?: number): Engine {
       combatCore,
       createInventoryCore([healingDraughtEffect]),
       createDialogueCore([pilgrimDialogue]),
-      createCognitionCore(),
+      createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
       createPerceptionFilter(),
       createProgressionCore({
         trees: [combatMasteryTree],
@@ -58,6 +61,15 @@ export function createGame(seed?: number): Engine {
           },
         }],
       }),
+      createFactionCognition({
+        factions: [{
+          factionId: 'chapel-undead',
+          entityIds: ['ash-ghoul'],
+          cohesion: 0.7,
+        }],
+      }),
+      createRumorPropagation({ propagationDelay: 2 }),
+      createSimulationInspector(),
     ],
   });
 

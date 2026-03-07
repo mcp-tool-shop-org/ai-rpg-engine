@@ -22,6 +22,8 @@ export {
   getRecentMemories,
   checkPerception,
   selectIntent,
+  reinforceBelief,
+  processBeliefDecay,
   aggressiveProfile,
   cautiousProfile,
 } from './cognition-core.js';
@@ -29,6 +31,8 @@ export type {
   Belief,
   Memory,
   CognitionState,
+  CognitionCoreConfig,
+  BeliefDecayConfig,
   PerceptionCheck,
   PerceptionResult,
   IntentOption,
@@ -84,3 +88,47 @@ export type {
   EnvironmentState,
   HazardEvent,
 } from './environment-core.js';
+export {
+  createFactionCognition,
+  getFactionCognition,
+  getEntityFaction,
+  getFactionMembers,
+  setFactionBelief,
+  getFactionBelief,
+  factionBelieves,
+  getFactionBeliefsAbout,
+} from './faction-cognition.js';
+export type {
+  FactionBelief,
+  FactionCognitionState,
+  FactionMembership,
+  FactionCognitionConfig,
+} from './faction-cognition.js';
+export {
+  createRumorPropagation,
+  getRumorsFrom,
+  getRumorsToFaction,
+  getRumorLog,
+} from './rumor-propagation.js';
+export type {
+  RumorRecord,
+  RumorPropagationConfig,
+} from './rumor-propagation.js';
+export {
+  createSimulationInspector,
+  inspectEntity,
+  inspectAllEntities,
+  inspectFaction,
+  inspectAllFactions,
+  inspectZone,
+  inspectAllZones,
+  createSnapshot,
+  formatEntityInspection,
+  formatFactionInspection,
+} from './simulation-inspector.js';
+export type {
+  EntityInspection,
+  FactionInspection,
+  ZoneInspection,
+  SimulationSnapshot,
+} from './simulation-inspector.js';

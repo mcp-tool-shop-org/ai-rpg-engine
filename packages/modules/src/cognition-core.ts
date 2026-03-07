@@ -31,6 +31,15 @@ export type Memory = {
   data: Record<string, ScalarValue>;
 };
 
+export type BeliefDecayConfig = {
+  /** Base decay rate per tick (default: 0.02) */
+  baseRate: number;
+  /** Minimum confidence before belief is pruned (default: 0.05) */
+  pruneThreshold: number;
+  /** Environmental instability multiplier (default: 0.5) */
+  instabilityFactor: number;
+};
+
 export type CognitionState = {
   beliefs: Belief[];
   memories: Memory[];
@@ -81,15 +90,33 @@ export type IntentProfile = {
 const DEFAULT_MORALE = 70;
 const DEFAULT_SUSPICION = 0;
 
-export function createCognitionCore(profiles?: IntentProfile[]): EngineModule {
+export type CognitionCoreConfig = {
+  profiles?: IntentProfile[];
+  decay?: Partial<BeliefDecayConfig>;
+};
+
+const DEFAULT_DECAY: BeliefDecayConfig = {
+  baseRate: 0.02,
+  pruneThreshold: 0.05,
+  instabilityFactor: 0.5,
+};
+
+export function createCognitionCore(configOrProfiles?: CognitionCoreConfig | IntentProfile[]): EngineModule {
+  // Support both old (profiles array) and new (config object) signatures
+  const config: CognitionCoreConfig = Array.isArray(configOrProfiles)
+    ? { profiles: configOrProfiles }
+    : (configOrProfiles ?? {});
+
   const profileMap = new Map<string, IntentProfile>();
-  for (const p of profiles ?? []) {
+  for (const p of config.profiles ?? []) {
     profileMap.set(p.id, p);
   }
 
+  const decayConfig: BeliefDecayConfig = { ...DEFAULT_DECAY, ...config.decay };
+
   return {
     id: 'cognition-core',
-    version: '0.1.0',
+    version: '0.2.0',
 
     register(ctx) {
       ctx.persistence.registerNamespace('cognition-core', {
@@ -114,6 +141,12 @@ export function createCognitionCore(profiles?: IntentProfile[]): EngineModule {
         if (world.modules['perception-filter']) return;
         const cogState = getModuleState(world);
         broadcastBelief(world, cogState, event.payload.entityId as string, 'alive', false, event.tick);
+      });
+
+      // Knowledge decay — process on tick
+      ctx.actions.registerVerb('cognition-tick', (_action, world) => {
+        processBeliefDecay(world, decayConfig);
+        return [];
       });
     },
   };
@@ -471,4 +504,71 @@ function deterministicRoll(tick: number, id1: string, id2: string): number {
     hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
   }
   return (Math.abs(hash) % 50) + 1; // 1-50
+}
+
+// --- Knowledge Decay ---
+
+/** Reinforce a belief by resetting its tick to current (prevents decay) */
+export function reinforceBelief(
+  cognition: CognitionState,
+  subject: string,
+  key: string,
+  tick: number,
+  confidenceBoost: number = 0,
+): boolean {
+  const belief = getBelief(cognition, subject, key);
+  if (!belief) return false;
+  belief.tick = tick;
+  belief.confidence = Math.min(1, belief.confidence + confidenceBoost);
+  return true;
+}
+
+/** Process belief decay for all entities */
+export function processBeliefDecay(world: WorldState, decayConfig: BeliefDecayConfig): void {
+  const cogStates = getModuleState(world);
+  const tick = world.meta.tick;
+
+  for (const [entityId, cog] of Object.entries(cogStates)) {
+    const entity = world.entities[entityId];
+    if (!entity) continue;
+
+    // Get environmental instability for the entity's zone
+    let instability = 0;
+    if (entity.zoneId && world.modules['environment-core']) {
+      const envState = world.modules['environment-core'] as {
+        dynamics: Record<string, Record<string, number>>;
+      };
+      const dynamics = envState.dynamics?.[entity.zoneId];
+      const noise = dynamics?.noise ?? 0;
+      const stability = dynamics?.stability ?? 5;
+      instability = Math.min(1, noise * 0.1 + Math.max(0, (5 - stability) * 0.1));
+    }
+
+    // Decay each belief
+    const toRemove: number[] = [];
+    for (let i = 0; i < cog.beliefs.length; i++) {
+      const belief = cog.beliefs[i];
+      const elapsed = tick - belief.tick;
+      if (elapsed <= 0) continue;
+
+      // Decay formula: confidence -= baseRate * elapsed * (1 + instability * instabilityFactor)
+      const decayAmount = decayConfig.baseRate * elapsed
+        * (1 + instability * decayConfig.instabilityFactor);
+      belief.confidence = Math.max(0, belief.confidence - decayAmount);
+
+      if (belief.confidence < decayConfig.pruneThreshold) {
+        toRemove.push(i);
+      }
+    }
+
+    // Prune dead beliefs (reverse order)
+    for (let i = toRemove.length - 1; i >= 0; i--) {
+      cog.beliefs.splice(toRemove[i], 1);
+    }
+
+    // Suspicion also decays (slowly)
+    if (cog.suspicion > 0) {
+      cog.suspicion = Math.max(0, cog.suspicion - 1);
+    }
+  }
 }
