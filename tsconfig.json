@@ -29,6 +29,9 @@
     { "path": "packages/audio-director" },
     { "path": "packages/soundpack-core" },
     { "path": "packages/campaign-memory" },
-    { "path": "packages/rumor-system" }
+    { "path": "packages/rumor-system" },
+    { "path": "packages/starter-detective" },
+    { "path": "packages/starter-pirate" },
+    { "path": "packages/starter-zombie" }
   ]
 }
