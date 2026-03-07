@@ -19,5 +19,15 @@
   "dependencies": {
     "@ai-rpg-engine/core": "*"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "author": "mcp-tool-shop",
+  "homepage": "https://mcp-tool-shop-org.github.io/ai-rpg-engine/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
+    "directory": "packages/content-schema"
+  },
+  "engines": {
+    "node": ">=20"
+  }
 }
