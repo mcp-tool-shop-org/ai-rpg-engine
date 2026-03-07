@@ -1,0 +1,37 @@
+{
+  "name": "@ai-rpg-engine/image-gen",
+  "version": "2.0.0",
+  "description": "Headless image generation pipeline — portrait prompts, provider abstraction, and asset storage for AI RPG Engine",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ai-rpg-engine/asset-registry": "*"
+  },
+  "license": "MIT",
+  "author": "mcp-tool-shop",
+  "homepage": "https://mcp-tool-shop-org.github.io/ai-rpg-engine/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
+    "directory": "packages/image-gen"
+  },
+  "keywords": ["rpg", "image-generation", "portraits", "pipeline", "game-engine", "ai"],
+  "bugs": {
+    "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

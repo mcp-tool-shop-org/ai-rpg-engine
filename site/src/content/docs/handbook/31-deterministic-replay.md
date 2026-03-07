@@ -2,7 +2,7 @@
 title: "Chapter 23 — Deterministic Replay"
 description: "Deterministic Replay"
 sidebar:
-  order: 30
+  order: 31
 ---
 
 

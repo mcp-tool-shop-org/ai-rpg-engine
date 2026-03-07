@@ -2,7 +2,7 @@
 title: "Chapter 25 — Planned Systems"
 description: "Planned Systems"
 sidebar:
-  order: 32
+  order: 33
 ---
 
 
