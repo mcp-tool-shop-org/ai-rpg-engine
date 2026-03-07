@@ -156,8 +156,11 @@ export function deriveSeeds(spec: ExperimentSpec): number[] {
  * Delegates to the existing extractMetrics/parseReplayData from balance analyzer.
  */
 export function extractScenarioMetrics(replayData: string): ScenarioMetrics {
-  const ticks = parseReplayData(replayData);
-  return extractMetrics(ticks);
+  const parsed = parseReplayData(replayData);
+  if (!parsed) {
+    return { totalTicks: 0, escalationTick: null, rumorSpreadReach: 0, encounterDuration: 0, factionHostilityPeak: 0, curves: [], encounterTicks: 0, escalationPhases: 0 };
+  }
+  return extractMetrics(parsed);
 }
 
 /**
@@ -651,8 +654,8 @@ const PLAN_TEMPLATES: PlanTemplate[] = [
         { id: 1, description: 'Run baseline experiment', command: 'experiment run --label baseline --runs 20', params: { label: 'baseline', runs: '20' }, status: 'pending' },
         { id: 2, description: 'Run tuned experiment', command: 'experiment run --label tuned --runs 20', params: { label: 'tuned', runs: '20' }, status: 'pending' },
         { id: 3, description: 'Compare aggregate metrics', command: 'experiment compare baseline tuned', params: { before: 'baseline', after: 'tuned' }, status: 'pending' },
-        { id: 4, description: 'Surface variance findings', command: 'experiment findings', params: {}, status: 'pending' },
-        { id: 5, description: 'Suggest next tuning action', command: 'tune', params: {}, status: 'pending' },
+        { id: 4, description: 'Surface variance findings', command: 'experiment findings', params: {} as Record<string, string>, status: 'pending' },
+        { id: 5, description: 'Suggest next tuning action', command: 'tune', params: {} as Record<string, string>, status: 'pending' },
       ],
       estimatedRuns: 40,
       expectedOutputs: ['baseline summary', 'tuned summary', 'comparison report', 'variance findings'],
@@ -667,8 +670,8 @@ const PLAN_TEMPLATES: PlanTemplate[] = [
         goal,
         steps: [
           { id: 1, description: `Sweep ${param} across range`, command: `experiment sweep --param ${param} --from 0.3 --to 0.8 --step 0.1 --runs 10`, params: { param, from: '0.3', to: '0.8', step: '0.1', runs: '10' }, status: 'pending' },
-          { id: 2, description: 'Review per-value aggregates', command: 'experiment sweep-results', params: {}, status: 'pending' },
-          { id: 3, description: 'Identify stable range', command: 'experiment findings', params: {}, status: 'pending' },
+          { id: 2, description: 'Review per-value aggregates', command: 'experiment sweep-results', params: {} as Record<string, string>, status: 'pending' },
+          { id: 3, description: 'Identify stable range', command: 'experiment findings', params: {} as Record<string, string>, status: 'pending' },
         ],
         estimatedRuns: 60,
         expectedOutputs: ['sweep results', 'per-value aggregates', 'stable range recommendation'],
@@ -682,8 +685,8 @@ const PLAN_TEMPLATES: PlanTemplate[] = [
       goal,
       steps: [
         { id: 1, description: 'Run experiment batch', command: 'experiment run --runs 20', params: { runs: '20' }, status: 'pending' },
-        { id: 2, description: 'Analyze aggregate metrics', command: 'experiment summary', params: {}, status: 'pending' },
-        { id: 3, description: 'Detect variance findings', command: 'experiment findings', params: {}, status: 'pending' },
+        { id: 2, description: 'Analyze aggregate metrics', command: 'experiment summary', params: {} as Record<string, string>, status: 'pending' },
+        { id: 3, description: 'Detect variance findings', command: 'experiment findings', params: {} as Record<string, string>, status: 'pending' },
       ],
       estimatedRuns: 20,
       expectedOutputs: ['experiment summary', 'aggregate metrics', 'variance findings'],

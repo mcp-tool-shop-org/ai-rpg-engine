@@ -37,12 +37,11 @@ function makeSession(overrides: Partial<DesignSession> = {}): DesignSession {
     themes: ['paranoia', 'noir'],
     constraints: ['low-magic'],
     artifacts: {
-      rooms: [{ id: 'r1', yaml: '' }],
+      rooms: ['r1'],
       factions: [],
-      districts: [{ id: 'd1', yaml: '' }],
+      districts: ['d1'],
       quests: [],
-      locationPacks: [],
-      encounterPacks: [],
+      packs: [],
     },
     issues: [],
     acceptedSuggestions: [],
@@ -72,13 +71,13 @@ function makeIssue(overrides: Partial<SessionIssue> = {}): SessionIssue {
 
 function makeExperimentSummary(overrides: Partial<ExperimentSummary> = {}): ExperimentSummary {
   return {
-    spec: { id: 'exp-1', label: 'Baseline', runsRequested: 20 },
+    spec: { id: 'exp-1', label: 'Baseline', runs: 20 },
     completedRuns: 20,
     failedRuns: 0,
     runs: [],
     aggregate: {
       means: { paranoia: 0.6, stability: 0.4 },
-      stddevs: { paranoia: 0.1, stability: 0.08 },
+      variances: { paranoia: 0.1, stability: 0.08 },
       mins: { paranoia: 0.3, stability: 0.2 },
       maxes: { paranoia: 0.9, stability: 0.7 },
       rates: { escalation: 0.25 },
@@ -91,10 +90,17 @@ function makeExperimentSummary(overrides: Partial<ExperimentSummary> = {}): Expe
 function makeBalanceAnalysis(overrides: Partial<BalanceAnalysis> = {}): BalanceAnalysis {
   return {
     metrics: {
-      paranoia: { mean: 0.6, stddev: 0.1, min: 0.3, max: 0.9 },
+      totalTicks: 30,
+      escalationTick: 10,
+      rumorSpreadReach: 2,
+      encounterDuration: 5,
+      factionHostilityPeak: 0.7,
+      curves: [],
+      encounterTicks: 10,
+      escalationPhases: 2,
     },
     findings: [],
-    overallVerdict: 'stable',
+    summary: 'stable',
     ...overrides,
   };
 }
@@ -177,7 +183,7 @@ describe('buildStudioSnapshot', () => {
   it('includes balance findings from last analysis', () => {
     const session = makeSession();
     const analysis = makeBalanceAnalysis({
-      findings: [{ severity: 'warning', code: 'bal_1', summary: 'Test', area: 'combat', category: 'drift', detail: '' }],
+      findings: [{ severity: 'warning', code: 'bal_1', summary: 'Test', area: 'combat', category: 'difficulty', likelyCause: 'flat curve' }],
     });
     const snap = buildStudioSnapshot(session, { lastAnalysis: analysis });
     expect(snap.balanceFindings).toHaveLength(1);
@@ -205,7 +211,7 @@ describe('buildStudioSnapshot', () => {
 
   it('suggests creating content when empty', () => {
     const session = makeSession({
-      artifacts: { rooms: [], factions: [], districts: [], quests: [], locationPacks: [], encounterPacks: [] },
+      artifacts: { rooms: [], factions: [], districts: [], quests: [], packs: [] },
     });
     const snap = buildStudioSnapshot(session);
     expect(snap.suggestedActions.some(a => a.includes('/build'))).toBe(true);
@@ -507,14 +513,14 @@ describe('formatIssueBrowser', () => {
 describe('gatherFindings', () => {
   const analysis = makeBalanceAnalysis({
     findings: [
-      { severity: 'warning', code: 'bal_1', summary: 'Paranoia drift', area: 'district-1', category: 'drift', detail: '' },
-      { severity: 'critical', code: 'bal_2', summary: 'Combat spike', area: 'district-2', category: 'spike', detail: '' },
+      { severity: 'warning', code: 'bal_1', summary: 'Paranoia drift', area: 'district-1', category: 'difficulty', likelyCause: 'flat curve' },
+      { severity: 'warning', code: 'bal_2', summary: 'Combat spike', area: 'district-2', category: 'escalation', likelyCause: 'fast ramp' },
     ],
   });
   const experiment = makeExperimentSummary({
     varianceFindings: [
-      { severity: 'warning', code: 'var_1', summary: 'High variance paranoia', suggestion: 'Lower gain' },
-      { severity: 'info', code: 'var_2', summary: 'Stable escalation', suggestion: '' },
+      { severity: 'high', code: 'var_1', metric: 'paranoia', summary: 'High variance paranoia', suggestion: 'Lower gain' },
+      { severity: 'low', code: 'var_2', metric: 'escalation', summary: 'Stable escalation', suggestion: '' },
     ],
   });
 
@@ -553,8 +559,8 @@ describe('gatherFindings', () => {
         code: `bal_${i}`,
         summary: `Finding ${i}`,
         area: 'x',
-        category: 'drift' as const,
-        detail: '',
+        category: 'difficulty' as const,
+        likelyCause: 'unknown',
       })),
     });
     const findings = gatherFindings(bigAnalysis, null, { recent: true });
@@ -570,7 +576,7 @@ describe('gatherFindings', () => {
 describe('formatFindingBrowser', () => {
   it('shows finding count', () => {
     const findings = gatherFindings(
-      makeBalanceAnalysis({ findings: [{ severity: 'warning', code: 'x', summary: 'Test', area: '', category: 'drift', detail: '' }] }),
+      makeBalanceAnalysis({ findings: [{ severity: 'warning', code: 'x', summary: 'Test', area: '', category: 'difficulty', likelyCause: 'unknown' }] }),
       null,
     );
     const output = formatFindingBrowser(findings);
@@ -585,8 +591,8 @@ describe('formatFindingBrowser', () => {
 
   it('shows source tags', () => {
     const findings = gatherFindings(
-      makeBalanceAnalysis({ findings: [{ severity: 'warning', code: 'x', summary: 'T', area: '', category: 'drift', detail: '' }] }),
-      makeExperimentSummary({ varianceFindings: [{ severity: 'info', code: 'y', summary: 'V' }] }),
+      makeBalanceAnalysis({ findings: [{ severity: 'warning', code: 'x', summary: 'T', area: '', category: 'difficulty', likelyCause: 'unknown' }] }),
+      makeExperimentSummary({ varianceFindings: [{ severity: 'low', code: 'y', metric: 'stability', summary: 'V' }] }),
     );
     const output = formatFindingBrowser(findings);
     expect(output).toContain('[BAL]');
@@ -626,8 +632,8 @@ describe('buildExperimentEntry', () => {
   it('counts variance findings', () => {
     const summary = makeExperimentSummary({
       varianceFindings: [
-        { severity: 'warning', code: 'v1', summary: 'Test' },
-        { severity: 'info', code: 'v2', summary: 'Test 2' },
+        { severity: 'high', code: 'v1', metric: 'paranoia', summary: 'Test' },
+        { severity: 'low', code: 'v2', metric: 'stability', summary: 'Test 2' },
       ],
     });
     const entry = buildExperimentEntry(summary);
