@@ -194,5 +194,16 @@ export type { ContextSnapshot, RetrievalSummary, SnippetSummary, ShapingSummary,
 export { buildTaskString, routeContext, recordContextLoads, formatLoadoutRoute } from './chat-loadout.js';
 export type { LoadoutRoutePlan, RoutedEntry, ContextLoadMode } from './chat-loadout.js';
 
+// Build planner — session-aware plan-first build workflows
+export {
+  generateBuildPlan, createBuildState, nextPendingStep,
+  markStepExecuted, markStepFailed, isBuildComplete, finalizeBuild,
+  formatBuildPlan, formatBuildPreview, formatBuildStatus,
+  buildDiagnostics, formatBuildDiagnostics, detectTemplate,
+} from './chat-build-planner.js';
+export type {
+  BuildStep, BuildStepStatus, BuildPlan, BuildState,
+} from './chat-build-planner.js';
+
 // CLI entry
 export { runCli } from './cli.js';

@@ -53,6 +53,19 @@ const INTENT_PATTERNS: IntentPattern[] = [
     },
   },
   {
+    intent: 'build_goal',
+    patterns: [
+      /\bbuild\s+(?:a |an |the )?(?!(?:room|faction|district|quest|location.?pack|encounter.?pack)\b)\w+/i,
+      /^\/build\s+/i,
+    ],
+    extractParams: (msg) => {
+      const goalMatch = msg.match(/(?:\/build|build)\s+(?:a |an |the )?(.+)/i);
+      const params: Record<string, string> = {};
+      if (goalMatch) params.goal = goalMatch[1].trim();
+      return params;
+    },
+  },
+  {
     intent: 'critique',
     patterns: [
       /\b(critique|review|check|evaluate|assess)\s+(this|the|my)?\s*(content|room|faction|district|quest|pack|yaml)?\b/i,
@@ -189,6 +202,7 @@ Valid intents:
 - context_info: user asks what context/sources chat is using
 - show_plan: user wants a smart action plan based on session state
 - recommend: user wants prioritized recommendations
+- build_goal: user wants to build a complete scenario, district, or faction network from a high-level goal
 - unknown: can't determine intent
 
 Response format (JSON only, no markdown):
@@ -223,7 +237,7 @@ export async function classifyByLLM(
       'suggest_next', 'explain_state', 'scaffold', 'critique', 'improve',
       'compare_replays', 'analyze_replay', 'plan', 'explain_why',
       'session_info', 'apply_content', 'help', 'context_info',
-      'show_plan', 'recommend', 'unknown',
+      'show_plan', 'recommend', 'build_goal', 'unknown',
     ];
     const intent = validIntents.includes(parsed.intent as ChatIntent)
       ? parsed.intent as ChatIntent

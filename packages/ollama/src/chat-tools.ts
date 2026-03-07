@@ -20,6 +20,7 @@ import { formatSessionStatus, renderSessionContext } from './session.js';
 import { generatePreview } from './apply-preview.js';
 import { planFromSession, formatPlan } from './chat-planner.js';
 import { generateRecommendations, formatRecommendations } from './chat-recommendations.js';
+import { generateBuildPlan, formatBuildPlan } from './chat-build-planner.js';
 
 // --- Helper ---
 
@@ -561,6 +562,33 @@ const recommendTool: ChatTool = {
   },
 };
 
+// --- Tool: build-plan ---
+
+const buildPlanTool: ChatTool = {
+  name: 'build-plan',
+  description: 'Generate a session-aware build plan from a high-level goal',
+  intents: ['build_goal'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const goal = p.params.goal ?? p.userMessage;
+    if (!goal) {
+      return { ok: false, summary: 'I need a build goal. Example: "build a rumor-driven market district"', actions: [] };
+    }
+
+    const a = action('build-plan', `Generate build plan: "${goal}"`, false);
+    const plan = generateBuildPlan(goal, p.session);
+    const formatted = formatBuildPlan(plan);
+
+    return {
+      ok: true,
+      summary: formatted,
+      output: JSON.stringify(plan),
+      actions: [executed(a, `${plan.steps.length}-step plan generated`)],
+      sessionEvents: [{ kind: 'build_plan_created', detail: `Build: ${goal} (${plan.steps.length} steps)` }],
+    };
+  },
+};
+
 // --- Registry ---
 
 const ALL_TOOLS: ChatTool[] = [
@@ -579,6 +607,7 @@ const ALL_TOOLS: ChatTool[] = [
   contextInfoTool,
   smartPlanTool,
   recommendTool,
+  buildPlanTool,
 ];
 
 /**

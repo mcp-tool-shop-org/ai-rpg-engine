@@ -40,7 +40,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   - Shell command reference table for `/context`, `/sources`, `/loadout`, `/loadout-history`
 
 - 37 new tests (745 total): issue buckets, profile influence, retrieval transparency, budget tracking, loadout history, repeated-context detection
+## [1.5.0] - 2026-07-03
 
+### Added — Guided Build Mode (ollama)
+
+- **chat-build-planner.ts** — session-aware, plan-first build workflows
+  - `BuildStep`, `BuildPlan`, `BuildState` types — full build lifecycle tracking
+  - `generateBuildPlan(goal, session)` — deterministic plan generation from natural language goals
+  - Three build templates: district, scenario, faction network — auto-detected from goal keywords
+  - `detectTemplate()` — keyword-based template matching exported for testing
+  - Smart artifact skip: if session already has matching artifacts, those steps are omitted
+  - Issue-aware injection: open `RUMOR_*`, `FACTION_*`, `GAP_*` issues inject extra steps or warnings
+  - Replay-aware injection: `never_triggered` / `regression` replay findings inject encounter-pack steps
+  - Dependency ordering: steps carry `dependencies[]` and `usePriorContent` for critique injection
+
+- **Build state management**
+  - `createBuildState()`, `nextPendingStep()`, `markStepExecuted()`, `markStepFailed()`
+  - `isBuildComplete()`, `finalizeBuild()` — lifecycle with cascading failure (dependent steps auto-skip)
+  - `BuildState.generatedContent[]` accumulates YAML from scaffold steps for critique injection
+
+- **Formatting**
+  - `formatBuildPlan()` — numbered steps with warnings and available commands
+  - `formatBuildPreview()` — detailed step view with kind/theme/artifact outputs
+  - `formatBuildStatus()` — status icons (○/●/✗/–) with progress fraction
+  - `formatBuildDiagnostics()` — post-build diagnostics (step counts, issues, missing artifacts)
+
+- **Build execution in ChatEngine**
+  - `activeBuild: BuildState | null` on engine — tracks active build plan
+  - `executeBuildStep()` — executes next pending step through existing tool registry
+  - `executeAllBuildSteps()` — runs all remaining steps with post-build diagnostics
+  - Build plan captured automatically when `build_goal` tool returns
+
+- **Session integration**
+  - 4 new `SessionEventKind` values: `build_plan_created`, `build_step_executed`, `build_step_failed`, `build_plan_completed`
+  - Every build action records events in session history
+
+- **Chat + shell integration**
+  - `build_goal` intent added to `ChatIntent` with keyword pattern + LLM fallback
+  - `build-plan` tool registered in tool registry (non-mutating)
+  - 6 new shell commands: `/build <goal>`, `/preview`, `/step`, `/execute`, `/status`, `/diagnostics`
+  - Help text updated with all build commands
+
+- 81 new tests (826 total): template detection, plan generation, artifact skipping, issue/replay injection, build state lifecycle, formatting, router integration, tool registration, edge cases, session event types
 ## [1.3.0] - 2026-06-13
 
 ### Added — Loadout-Guided Context (ollama)

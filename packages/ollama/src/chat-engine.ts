@@ -33,6 +33,13 @@ import {
   formatLoadoutRoute,
   type LoadoutRoutePlan,
 } from './chat-loadout.js';
+import {
+  generateBuildPlan, createBuildState, nextPendingStep,
+  markStepExecuted, markStepFailed, isBuildComplete, finalizeBuild,
+  formatBuildPlan, formatBuildPreview, formatBuildStatus,
+  buildDiagnostics, formatBuildDiagnostics,
+  type BuildState, type BuildPlan,
+} from './chat-build-planner.js';
 
 // --- Chat memory ---
 
@@ -124,8 +131,14 @@ export type ChatEngine = {
   lastLoadoutPlan: LoadoutRoutePlan | null;
   /** Rolling history of loadout routing decisions (most recent last). */
   loadoutHistory: LoadoutHistoryEntry[];
+  /** Active build plan state, if any. */
+  activeBuild: BuildState | null;
   /** Process a user message and return the assistant response. */
   process: (message: string) => Promise<string>;
+  /** Execute the next pending build step. Returns formatted result. */
+  executeBuildStep: () => Promise<string>;
+  /** Execute all remaining build steps. Returns formatted result. */
+  executeAllBuildSteps: () => Promise<string>;
 };
 
 export type ChatEngineOptions = {
@@ -155,6 +168,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
   let lastContextSnapshot: ContextSnapshot | null = null;
   let lastLoadoutPlan: LoadoutRoutePlan | null = null;
   const loadoutHistory: LoadoutHistoryEntry[] = [];
+  let activeBuild: BuildState | null = null;
 
   async function process(userMessage: string): Promise<string> {
     const now = new Date().toISOString();
@@ -312,6 +326,14 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       pendingWrite = toolResult.pendingWrite;
     }
 
+    // Capture build plan if the build tool generated one
+    if (classification.intent === 'build_goal' && toolResult.ok && toolResult.output) {
+      try {
+        const plan = JSON.parse(toolResult.output) as BuildPlan;
+        activeBuild = createBuildState(plan);
+      } catch { /* output wasn't valid plan JSON — ignore */ }
+    }
+
     // Apply session events
     if (session && toolResult.sessionEvents) {
       for (const event of toolResult.sessionEvents) {
@@ -390,6 +412,112 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     return response;
   }
 
+  // --- Build execution ---
+
+  async function executeBuildStep(): Promise<string> {
+    if (!activeBuild) return 'No active build. Use "build <goal>" to create one.';
+
+    const step = nextPendingStep(activeBuild);
+    if (!step) {
+      if (isBuildComplete(activeBuild)) {
+        finalizeBuild(activeBuild);
+        const session = await loadSession(projectRoot);
+        const diag = buildDiagnostics(activeBuild, session);
+        if (session) {
+          recordEvent(session, 'build_plan_completed', `Build completed: ${activeBuild.plan.goal}`);
+          await saveSession(projectRoot, session);
+        }
+        return formatBuildStatus(activeBuild) + '\n\n' + formatBuildDiagnostics(diag);
+      }
+      return 'No pending steps.';
+    }
+
+    activeBuild.status = 'executing';
+
+    // Resolve tool
+    const tool = findToolForIntent(step.intent);
+    if (!tool) {
+      markStepFailed(activeBuild, step.id, `No tool for intent: ${step.intent}`);
+      const session = await loadSession(projectRoot);
+      if (session) {
+        recordEvent(session, 'build_step_failed', `${step.command}: no tool`);
+        await saveSession(projectRoot, session);
+      }
+      return `Step ${step.id} failed: no tool for ${step.intent}`;
+    }
+
+    // Prepare params — inject accumulated content for critique steps
+    const params = { ...step.params };
+    if (step.usePriorContent && activeBuild.generatedContent.length > 0) {
+      params.content = activeBuild.generatedContent.join('\n---\n');
+    }
+
+    // Load session for execution
+    const session = await loadSession(projectRoot);
+    const sessionCtx = session ? renderSessionContext(session) : undefined;
+
+    const toolResult = await tool.execute({
+      client, session, sessionContext: sessionCtx,
+      projectRoot, params, userMessage: step.description,
+    });
+
+    if (toolResult.ok) {
+      markStepExecuted(activeBuild, step.id, toolResult.summary, toolResult.output);
+      if (session) {
+        recordEvent(session, 'build_step_executed', `${step.command}: ${step.description}`);
+        if (toolResult.sessionEvents) {
+          for (const event of toolResult.sessionEvents) {
+            recordEvent(session, event.kind, event.detail);
+          }
+        }
+        await saveSession(projectRoot, session);
+      }
+    } else {
+      markStepFailed(activeBuild, step.id, toolResult.summary);
+      if (session) {
+        recordEvent(session, 'build_step_failed', `${step.command}: ${toolResult.summary}`);
+        await saveSession(projectRoot, session);
+      }
+    }
+
+    // Check if build is now complete
+    if (isBuildComplete(activeBuild)) {
+      finalizeBuild(activeBuild);
+      if (session) {
+        recordEvent(session, 'build_plan_completed', `Build: ${activeBuild.plan.goal}`);
+        await saveSession(projectRoot, session);
+      }
+    }
+
+    const icon = toolResult.ok ? '●' : '✗';
+    return `${icon} Step ${step.id}: ${step.description}\n${toolResult.summary}`;
+  }
+
+  async function executeAllBuildSteps(): Promise<string> {
+    if (!activeBuild) return 'No active build. Use "build <goal>" to create one.';
+
+    const results: string[] = [];
+    let maxSteps = activeBuild.plan.steps.length;
+    let executed = 0;
+
+    while (executed < maxSteps) {
+      const step = nextPendingStep(activeBuild);
+      if (!step) break;
+      const result = await executeBuildStep();
+      results.push(result);
+      executed++;
+    }
+
+    if (results.length === 0) {
+      return 'No pending steps to execute.';
+    }
+
+    const session = await loadSession(projectRoot);
+    const diag = buildDiagnostics(activeBuild, session);
+
+    return results.join('\n\n') + '\n\n' + formatBuildDiagnostics(diag);
+  }
+
   return {
     memory,
     get pendingWrite() { return pendingWrite; },
@@ -397,7 +525,11 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     get lastContextSnapshot() { return lastContextSnapshot; },
     get lastLoadoutPlan() { return lastLoadoutPlan; },
     loadoutHistory,
+    get activeBuild() { return activeBuild; },
+    set activeBuild(v) { activeBuild = v; },
     process,
+    executeBuildStep,
+    executeAllBuildSteps,
   };
 }
 

@@ -9,6 +9,11 @@ import { createTranscript, addToTranscript, saveTranscript, defaultTranscriptPat
 import type { ChatTranscript } from './chat-types.js';
 import { formatContextSnapshot, formatSources, formatLoadoutHistory } from './chat-context-browser.js';
 import { formatLoadoutRoute } from './chat-loadout.js';
+import {
+  generateBuildPlan, createBuildState, formatBuildPlan,
+  formatBuildPreview, formatBuildStatus, buildDiagnostics, formatBuildDiagnostics,
+} from './chat-build-planner.js';
+import { loadSession } from './session.js';
 
 export type ChatShellOptions = {
   client: OllamaTextClient;
@@ -112,6 +117,12 @@ async function handleSlashCommand(
       console.log('/sources        Show condensed source list from last retrieval');
       console.log('/loadout        Show loadout routing from last response');
       console.log('/loadout-history Show recent loadout routing decisions');
+      console.log('/build <goal>   Create a build plan from a goal');
+      console.log('/preview        Preview the active build plan');
+      console.log('/step           Execute the next build step');
+      console.log('/execute        Execute all remaining build steps');
+      console.log('/status         Show build status');
+      console.log('/diagnostics    Show post-build diagnostics');
       console.log('');
       return 'handled';
 
@@ -180,6 +191,81 @@ async function handleSlashCommand(
         console.log('No loadout history yet. Send a message first (loadout must be enabled).');
       }
       return 'handled';
+
+    case 'build': {
+      const goal = parts.slice(1).join(' ').trim();
+      if (!goal) {
+        console.log('Usage: /build <goal>');
+        console.log('Example: /build rumor-driven market district');
+        return 'handled';
+      }
+      const session = await loadSession(projectRoot);
+      const plan = generateBuildPlan(goal, session);
+      engine.activeBuild = createBuildState(plan);
+      console.log('');
+      console.log(formatBuildPlan(plan));
+      console.log('');
+      return 'handled';
+    }
+
+    case 'preview':
+      if (engine.activeBuild) {
+        console.log('');
+        console.log(formatBuildPreview(engine.activeBuild.plan));
+        console.log('');
+      } else {
+        console.log('No active build. Use /build <goal> to create one.');
+      }
+      return 'handled';
+
+    case 'step': {
+      if (!engine.activeBuild) {
+        console.log('No active build. Use /build <goal> to create one.');
+        return 'handled';
+      }
+      console.log('Executing next step...');
+      const result = await engine.executeBuildStep();
+      console.log('');
+      console.log(result);
+      console.log('');
+      return 'handled';
+    }
+
+    case 'execute': {
+      if (!engine.activeBuild) {
+        console.log('No active build. Use /build <goal> to create one.');
+        return 'handled';
+      }
+      console.log('Executing all remaining steps...');
+      const result = await engine.executeAllBuildSteps();
+      console.log('');
+      console.log(result);
+      console.log('');
+      return 'handled';
+    }
+
+    case 'status':
+      if (engine.activeBuild) {
+        console.log('');
+        console.log(formatBuildStatus(engine.activeBuild));
+        console.log('');
+      } else {
+        console.log('No active build.');
+      }
+      return 'handled';
+
+    case 'diagnostics': {
+      if (!engine.activeBuild) {
+        console.log('No active build to diagnose.');
+        return 'handled';
+      }
+      const session = await loadSession(projectRoot);
+      const diag = buildDiagnostics(engine.activeBuild, session);
+      console.log('');
+      console.log(formatBuildDiagnostics(diag));
+      console.log('');
+      return 'handled';
+    }
 
     default:
       console.log(`Unknown command: /${cmd}. Type /help for available commands.`);

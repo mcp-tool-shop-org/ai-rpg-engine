@@ -87,7 +87,7 @@ export type ChatIntentForProfile =
   | 'suggest_next' | 'explain_state' | 'scaffold' | 'critique'
   | 'improve' | 'compare_replays' | 'analyze_replay' | 'plan'
   | 'explain_why' | 'session_info' | 'apply_content' | 'help' | 'unknown'
-  | 'context_info' | 'show_plan' | 'recommend';
+  | 'context_info' | 'show_plan' | 'recommend' | 'build_goal';
 
 const INTENT_PROFILES: Record<ChatIntentForProfile, PersonalityProfile> = {
   suggest_next: WORLDBUILDER_PROFILE,
@@ -106,6 +106,7 @@ const INTENT_PROFILES: Record<ChatIntentForProfile, PersonalityProfile> = {
   context_info: ANALYST_PROFILE,
   show_plan: WORLDBUILDER_PROFILE,
   recommend: WORLDBUILDER_PROFILE,
+  build_goal: WORLDBUILDER_PROFILE,
 };
 
 export function getProfileForIntent(intent: ChatIntentForProfile): PersonalityProfile {

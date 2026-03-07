@@ -35,7 +35,11 @@ export type SessionEventKind =
   | 'suggestion_generated'
   | 'replay_compared'
   | 'plan_generated'
-  | 'content_applied';
+  | 'content_applied'
+  | 'build_plan_created'
+  | 'build_step_executed'
+  | 'build_step_failed'
+  | 'build_plan_completed';
 
 export type SessionEvent = {
   timestamp: string;

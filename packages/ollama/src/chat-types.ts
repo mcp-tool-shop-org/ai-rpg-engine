@@ -35,6 +35,7 @@ export type ChatIntent =
   | 'context_info'      // "What context are you using?" / "/context"
   | 'show_plan'         // "What's the plan?" / "Make a plan"
   | 'recommend'         // "What should I prioritize?" / "Recommendations"
+  | 'build_goal'        // "Build a rumor-driven market district."
   | 'unknown';          // Fallback — ask for clarification.
 
 export type IntentClassification = {

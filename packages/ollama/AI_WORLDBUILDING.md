@@ -262,3 +262,89 @@ Use `/sources` for a condensed view, `/loadout` for routing details, and `/loado
 | `/sources` | Condensed source list with scores and match reasons |
 | `/loadout` | Current loadout routing plan and profile influence |
 | `/loadout-history` | Rolling history of loadout routing decisions (last 20) |
+
+## Guided Build Mode (v1.5.0)
+
+Guided Build Mode is a session-aware, plan-first workflow that orchestrates existing commands into multi-step build plans. It acts as a planner and conductor — every step is previewable, confirmable, traceable in session history, and reproducible from CLI commands.
+
+### Pipeline
+
+```
+"build a market district" → build_goal intent → template detection
+    → smart step generation (skip existing, inject issues, inject replays)
+    → BuildPlan → preview → step-by-step or batch execution → diagnostics
+```
+
+### Build Templates
+
+Three built-in templates cover common worldbuilding goals:
+
+| Template | Steps | Sequence |
+|----------|-------|----------|
+| **district** | 7 | district → 2 factions → location-pack → encounter-pack → critique → suggest-next |
+| **scenario** | 7 | district → quest → 2 encounter-packs → room → critique → suggest-next |
+| **faction network** | 6 | 3 factions → encounter-pack → critique → suggest-next |
+
+Template detection uses keyword matching against the goal string. If no template matches, a single-step exploratory plan is generated with a warning.
+
+### Smart Step Generation
+
+Plans are tailored to the current session state:
+
+- **Artifact skipping**: If the session already has a matching artifact (fuzzy slug match against goal words), the step is skipped and a warning is emitted
+- **Issue injection**: Open session issues trigger additional steps — `RUMOR_`/`GOSSIP_` → create-faction, `FACTION_`/`ALLIANCE_` → create-encounter-pack, `GAP_`/`MISSING_` → create-location-pack — with dedup checks against existing template steps
+- **Replay injection**: Replay runs with `never_triggered` or `regression` details add encounter-pack steps to address coverage gaps
+- **Content threading**: Steps with `usePriorContent: true` receive accumulated output from prior steps, enabling coherent multi-step builds
+
+### Execution Controls
+
+Build execution supports three modes:
+
+1. **Preview** (`/preview`): See the full plan formatted with step descriptions, commands, and dependency chains before executing anything
+2. **Step-by-step** (`/step`): Execute one step at a time — review output, then decide whether to continue
+3. **Batch** (`/execute`): Run all remaining steps automatically, with diagnostics appended at the end
+
+Each executed step is recorded as a session event (`build_step_executed` or `build_step_failed`). Failed steps cascade — dependent steps are automatically skipped with an explanation.
+
+### Session Integration
+
+Four new session event kinds track build lifecycle:
+
+| Event Kind | When |
+|------------|------|
+| `build_plan_created` | Plan generated from goal |
+| `build_step_executed` | Step completed successfully |
+| `build_step_failed` | Step failed (cascades to dependents) |
+| `build_plan_completed` | All steps resolved (executed, failed, or skipped) |
+
+### Guided Diagnostics
+
+After a build completes (or on demand via `/diagnostics`), a post-build analysis reports:
+
+- **Step summary**: executed / failed / skipped counts
+- **Open issues**: session issues that remain unaddressed
+- **Generated content**: character count of accumulated build output
+- **Missing categories**: artifact categories (districts, factions, quests, rooms, packs) not covered by the build
+
+### Worked Example
+
+> User types: `/build a rumor-driven market district`
+
+1. **Intent**: `build_goal` — routed by regex pattern (negative lookahead avoids scaffold conflict)
+2. **Template**: `district` detected via "district" keyword → 7-step plan
+3. **Smart generation**: Session has 2 `RUMOR_` issues → no extra injection needed (template already includes create-faction). Session has an existing "market" district artifact → first step skipped with warning.
+4. **Preview**: User sees 6 remaining steps with ○ pending icons
+5. **Step execution**: `/step` runs next pending step (create-faction for market district). Output recorded in session history.
+6. **Status**: `/status` shows ● completed, ○ pending, – skipped steps
+7. **Completion**: After all steps, diagnostics show 5 executed, 0 failed, 1 skipped, 0 open issues
+
+### Shell Commands
+
+| Command | Description |
+|---------|-------------|
+| `/build <goal>` | Generate a build plan from a natural-language goal |
+| `/preview` | Show the current build plan with step details |
+| `/step` | Execute the next pending step |
+| `/execute` | Execute all remaining steps with diagnostics |
+| `/status` | Show build progress with status icons (○ ● ✗ –) |
+| `/diagnostics` | Run post-build analysis on the current build |
