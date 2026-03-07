@@ -36,8 +36,8 @@ describe('classifyByKeywords', () => {
     expect(r!.intent).toBe('suggest_next');
   });
 
-  it('detects suggest_next from "recommend something"', () => {
-    const r = classifyByKeywords('recommend something');
+  it('detects suggest_next from "suggest something"', () => {
+    const r = classifyByKeywords('suggest something');
     expect(r).not.toBeNull();
     expect(r!.intent).toBe('suggest_next');
   });
@@ -192,6 +192,68 @@ describe('classifyByKeywords', () => {
   it('returns null for empty string', () => {
     const r = classifyByKeywords('');
     expect(r).toBeNull();
+  });
+
+  // --- v1.2 new intents ---
+
+  it('detects context_info from /context', () => {
+    const r = classifyByKeywords('/context');
+    expect(r).not.toBeNull();
+    expect(r!.intent).toBe('context_info');
+  });
+
+  it('detects context_info from /sources', () => {
+    const r = classifyByKeywords('/sources');
+    expect(r).not.toBeNull();
+    expect(r!.intent).toBe('context_info');
+  });
+
+  it('detects context_info from "what context are you using"', () => {
+    const r = classifyByKeywords('what context are you using');
+    expect(r).not.toBeNull();
+    expect(r!.intent).toBe('context_info');
+  });
+
+  it('detects show_plan from /plan', () => {
+    const r = classifyByKeywords('/plan');
+    expect(r).not.toBeNull();
+    expect(r!.intent).toBe('show_plan');
+  });
+
+  it('detects show_plan from "make a plan"', () => {
+    const r = classifyByKeywords('make a plan');
+    expect(r).not.toBeNull();
+    expect(r!.intent).toBe('show_plan');
+  });
+
+  it('detects show_plan from "what\'s the plan"', () => {
+    const r = classifyByKeywords("what's the plan");
+    expect(r).not.toBeNull();
+    expect(r!.intent).toBe('show_plan');
+  });
+
+  it('detects recommend from /recommend', () => {
+    const r = classifyByKeywords('/recommend');
+    expect(r).not.toBeNull();
+    expect(r!.intent).toBe('recommend');
+  });
+
+  it('detects recommend from /rec', () => {
+    const r = classifyByKeywords('/rec');
+    expect(r).not.toBeNull();
+    expect(r!.intent).toBe('recommend');
+  });
+
+  it('detects recommend from "what should I prioritize"', () => {
+    const r = classifyByKeywords('what should I prioritize');
+    expect(r).not.toBeNull();
+    expect(r!.intent).toBe('recommend');
+  });
+
+  it('detects recommend from "highest leverage"', () => {
+    const r = classifyByKeywords('highest leverage');
+    expect(r).not.toBeNull();
+    expect(r!.intent).toBe('recommend');
   });
 });
 

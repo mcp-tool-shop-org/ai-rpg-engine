@@ -86,7 +86,8 @@ Be imaginative but grounded in the engine's structure.`,
 export type ChatIntentForProfile =
   | 'suggest_next' | 'explain_state' | 'scaffold' | 'critique'
   | 'improve' | 'compare_replays' | 'analyze_replay' | 'plan'
-  | 'explain_why' | 'session_info' | 'apply_content' | 'help' | 'unknown';
+  | 'explain_why' | 'session_info' | 'apply_content' | 'help' | 'unknown'
+  | 'context_info' | 'show_plan' | 'recommend';
 
 const INTENT_PROFILES: Record<ChatIntentForProfile, PersonalityProfile> = {
   suggest_next: WORLDBUILDER_PROFILE,
@@ -102,6 +103,9 @@ const INTENT_PROFILES: Record<ChatIntentForProfile, PersonalityProfile> = {
   apply_content: WORLDBUILDER_PROFILE,
   help: WORLDBUILDER_PROFILE,
   unknown: WORLDBUILDER_PROFILE,
+  context_info: ANALYST_PROFILE,
+  show_plan: WORLDBUILDER_PROFILE,
+  recommend: WORLDBUILDER_PROFILE,
 };
 
 export function getProfileForIntent(intent: ChatIntentForProfile): PersonalityProfile {

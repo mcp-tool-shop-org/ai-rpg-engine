@@ -100,11 +100,25 @@ describe('getProfileForIntent', () => {
     expect(getProfileForIntent('unknown')).toBe(WORLDBUILDER_PROFILE);
   });
 
-  it('covers all 13 intents', () => {
+  // v1.2: new intents
+  it('maps context_info to analyst', () => {
+    expect(getProfileForIntent('context_info')).toBe(ANALYST_PROFILE);
+  });
+
+  it('maps show_plan to worldbuilder', () => {
+    expect(getProfileForIntent('show_plan')).toBe(WORLDBUILDER_PROFILE);
+  });
+
+  it('maps recommend to worldbuilder', () => {
+    expect(getProfileForIntent('recommend')).toBe(WORLDBUILDER_PROFILE);
+  });
+
+  it('covers all 16 intents', () => {
     const intents: ChatIntentForProfile[] = [
       'suggest_next', 'explain_state', 'scaffold', 'critique',
       'improve', 'compare_replays', 'analyze_replay', 'plan',
       'explain_why', 'session_info', 'apply_content', 'help', 'unknown',
+      'context_info', 'show_plan', 'recommend',
     ];
     for (const intent of intents) {
       const profile = getProfileForIntent(intent);

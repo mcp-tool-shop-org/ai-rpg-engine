@@ -174,5 +174,21 @@ export type { PersonalityProfile } from './chat-personality.js';
 export { webfetch, isAllowedUrl, formatWebfetchForPrompt } from './chat-webfetch.js';
 export type { WebfetchResult, WebfetchOptions } from './chat-webfetch.js';
 
+// Planner — session-aware multi-step planning
+export { planFromSession, formatPlan, validatePlan } from './chat-planner.js';
+export type { PlanStep as ActionPlanStep, ActionPlan, PlanSignal } from './chat-planner.js';
+
+// Recommendations — leverage-scored structured suggestions
+export { generateRecommendations, formatRecommendations } from './chat-recommendations.js';
+export type { Recommendation, RecommendationSet } from './chat-recommendations.js';
+
+// Replay classifier — deeper replay diff classification
+export { classifyReplayChanges, formatClassification } from './replay-classifier.js';
+export type { ChangeClassification, ClassifiedChange, ClassificationResult, ClassificationSummary } from './replay-classifier.js';
+
+// Context browser — introspection into RAG/shaping/profile decisions
+export { buildContextSnapshot, formatContextSnapshot, formatSources } from './chat-context-browser.js';
+export type { ContextSnapshot, RetrievalSummary, SnippetSummary, ShapingSummary, BudgetSummary } from './chat-context-browser.js';
+
 // CLI entry
 export { runCli } from './cli.js';

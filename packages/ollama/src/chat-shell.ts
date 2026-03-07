@@ -7,6 +7,7 @@ import type { OllamaTextClient } from './client.js';
 import { createChatEngine, type ChatEngine } from './chat-engine.js';
 import { createTranscript, addToTranscript, saveTranscript, defaultTranscriptPath } from './chat-transcript.js';
 import type { ChatTranscript } from './chat-types.js';
+import { formatContextSnapshot, formatSources } from './chat-context-browser.js';
 
 export type ChatShellOptions = {
   client: OllamaTextClient;
@@ -104,6 +105,8 @@ async function handleSlashCommand(
       console.log('/memory         Show conversation memory stats');
       console.log('/clear          Clear conversation memory');
       console.log('/pending        Show pending write, if any');
+      console.log('/context        Show what context the last response used');
+      console.log('/sources        Show condensed source list from last retrieval');
       console.log('');
       return 'handled';
 
@@ -138,6 +141,22 @@ async function handleSlashCommand(
         console.log(`Content length: ${engine.pendingWrite.content.length} chars`);
       } else {
         console.log('No pending write.');
+      }
+      return 'handled';
+
+    case 'context':
+      if (engine.lastContextSnapshot) {
+        console.log(formatContextSnapshot(engine.lastContextSnapshot));
+      } else {
+        console.log('No context snapshot yet. Send a message first.');
+      }
+      return 'handled';
+
+    case 'sources':
+      if (engine.lastContextSnapshot) {
+        console.log(formatSources(engine.lastContextSnapshot));
+      } else {
+        console.log('No context snapshot yet. Send a message first.');
       }
       return 'handled';
 

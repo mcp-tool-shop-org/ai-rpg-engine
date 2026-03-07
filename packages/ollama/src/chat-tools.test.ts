@@ -126,12 +126,31 @@ describe('findToolForIntent', () => {
     const tool = findToolForIntent('dance_party');
     expect(tool).toBeUndefined();
   });
+
+  // v1.2 new tools
+  it('finds context-info tool', () => {
+    const tool = findToolForIntent('context_info');
+    expect(tool).toBeDefined();
+    expect(tool!.name).toBe('context-info');
+  });
+
+  it('finds smart-plan tool', () => {
+    const tool = findToolForIntent('show_plan');
+    expect(tool).toBeDefined();
+    expect(tool!.name).toBe('smart-plan');
+  });
+
+  it('finds recommend tool', () => {
+    const tool = findToolForIntent('recommend');
+    expect(tool).toBeDefined();
+    expect(tool!.name).toBe('recommend');
+  });
 });
 
 describe('getAllTools', () => {
-  it('returns all 12 registered tools', () => {
+  it('returns all 15 registered tools', () => {
     const tools = getAllTools();
-    expect(tools.length).toBe(12);
+    expect(tools.length).toBe(15);
   });
 
   it('returns a copy (not the internal array)', () => {

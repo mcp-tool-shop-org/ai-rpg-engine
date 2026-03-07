@@ -32,6 +32,9 @@ export type ChatIntent =
   | 'session_info'      // "What's in my session?" / "Show me open issues."
   | 'apply_content'     // "Write this to disk."
   | 'help'              // "What can you do?"
+  | 'context_info'      // "What context are you using?" / "/context"
+  | 'show_plan'         // "What's the plan?" / "Make a plan"
+  | 'recommend'         // "What should I prioritize?" / "Recommendations"
   | 'unknown';          // Fallback — ask for clarification.
 
 export type IntentClassification = {

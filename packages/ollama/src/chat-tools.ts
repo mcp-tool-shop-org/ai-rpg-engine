@@ -18,6 +18,8 @@ import { createLocationPack } from './commands/create-location-pack.js';
 import { createEncounterPack } from './commands/create-encounter-pack.js';
 import { formatSessionStatus, renderSessionContext } from './session.js';
 import { generatePreview } from './apply-preview.js';
+import { planFromSession, formatPlan } from './chat-planner.js';
+import { generateRecommendations, formatRecommendations } from './chat-recommendations.js';
 
 // --- Helper ---
 
@@ -485,6 +487,80 @@ const helpTool: ChatTool = {
   },
 };
 
+// --- Tool: context-info ---
+
+const contextInfoTool: ChatTool = {
+  name: 'context-info',
+  description: 'Show what context and sources chat is currently using',
+  intents: ['context_info'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    // This tool returns a message directing users to /context and /sources
+    // The actual snapshot display is handled by the engine/shell
+    const a = action('context-info', 'Show context transparency', false);
+    return {
+      ok: true,
+      summary: [
+        'Context transparency:',
+        '',
+        'Use /context in chat to see a full breakdown of:',
+        '  - What was retrieved and from where',
+        '  - Which memory classes are active',
+        '  - Budget allocation across sources',
+        '  - Which personality profile is active',
+        '',
+        'Use /sources for a condensed list of retrieved sources.',
+        '',
+        'The last context snapshot is updated with every message you send.',
+      ].join('\n'),
+      actions: [executed(a)],
+    };
+  },
+};
+
+// --- Tool: smart-plan ---
+
+const smartPlanTool: ChatTool = {
+  name: 'smart-plan',
+  description: 'Generate a session-aware action plan based on current state',
+  intents: ['show_plan'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const a = action('smart-plan', 'Generate session-aware action plan', false);
+    const plan = planFromSession(p.session, p.params.goal ?? undefined);
+    const formatted = formatPlan(plan);
+
+    return {
+      ok: true,
+      summary: formatted,
+      actions: [executed(a, `${plan.steps.length}-step plan generated`)],
+      sessionEvents: plan.steps.length > 0
+        ? [{ kind: 'plan_generated', detail: `Smart plan: ${plan.goal} (${plan.steps.length} steps)` }]
+        : undefined,
+    };
+  },
+};
+
+// --- Tool: recommend ---
+
+const recommendTool: ChatTool = {
+  name: 'recommend',
+  description: 'Generate prioritized recommendations based on session state',
+  intents: ['recommend'],
+  mutates: false,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const a = action('recommend', 'Generate session-aware recommendations', false);
+    const recSet = generateRecommendations(p.session);
+    const formatted = formatRecommendations(recSet);
+
+    return {
+      ok: true,
+      summary: formatted,
+      actions: [executed(a, `${recSet.recommendations.length} recommendation(s)`)],
+    };
+  },
+};
+
 // --- Registry ---
 
 const ALL_TOOLS: ChatTool[] = [
@@ -500,6 +576,9 @@ const ALL_TOOLS: ChatTool[] = [
   explainStateTool,
   applyContentTool,
   helpTool,
+  contextInfoTool,
+  smartPlanTool,
+  recommendTool,
 ];
 
 /**

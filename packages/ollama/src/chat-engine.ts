@@ -3,6 +3,7 @@
 // Manages bounded conversational memory and pending writes.
 // Never invents hidden state or writes without explicit consent.
 // v1.1: integrates RAG retrieval, memory shaping, personality profiles, webfetch.
+// v1.2: adds context snapshots, planner integration, recommendation awareness.
 
 import type { OllamaTextClient } from './client.js';
 import type {
@@ -23,6 +24,10 @@ import {
   type PersonalityProfile,
 } from './chat-personality.js';
 import { webfetch, formatWebfetchForPrompt, isAllowedUrl } from './chat-webfetch.js';
+import {
+  buildContextSnapshot, formatContextSnapshot, formatSources,
+  type ContextSnapshot,
+} from './chat-context-browser.js';
 
 // --- Chat memory ---
 
@@ -99,6 +104,8 @@ export type ChatEngine = {
   memory: ChatMemory;
   /** Last generated content available for write. */
   pendingWrite: { content: string; suggestedPath: string; label: string } | null;
+  /** Last context snapshot from RAG + shaping. Available after first process() call. */
+  lastContextSnapshot: ContextSnapshot | null;
   /** Process a user message and return the assistant response. */
   process: (message: string) => Promise<string>;
 };
@@ -125,6 +132,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
   } = options;
   const memory = createChatMemory(maxMemory, null);
   let pendingWrite: { content: string; suggestedPath: string; label: string } | null = null;
+  let lastContextSnapshot: ContextSnapshot | null = null;
 
   async function process(userMessage: string): Promise<string> {
     const now = new Date().toISOString();
@@ -164,6 +172,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     // RAG retrieval — ground chat in project context
     let shapedContextStr = '';
     if (ragEnabled) {
+      const keywords = extractKeywords(userMessage);
       const ragResult = await retrieve(
         { userMessage, maxSnippets: 6, maxChars: 4000 },
         session,
@@ -176,6 +185,19 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
         includeSessionBaseline: true,
       });
       shapedContextStr = formatShapedContext(shaped);
+
+      // Build context snapshot for /context and /sources commands
+      const snapshotProfile = rawMode ? profile : getProfileForIntent(classification.intent);
+      lastContextSnapshot = buildContextSnapshot({
+        query: userMessage,
+        keywords,
+        retrievalResult: ragResult,
+        shapedContext: shaped,
+        profile: snapshotProfile,
+        intentForProfile: classification.intent,
+        retrievalBudget: 4000,
+        shapingBudget: 4000,
+      });
     }
 
     // Select personality profile for this intent
@@ -309,6 +331,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     memory,
     get pendingWrite() { return pendingWrite; },
     set pendingWrite(v) { pendingWrite = v; },
+    get lastContextSnapshot() { return lastContextSnapshot; },
     process,
   };
 }

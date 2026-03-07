@@ -33,7 +33,7 @@ const INTENT_PATTERNS: IntentPattern[] = [
   {
     intent: 'suggest_next',
     patterns: [
-      /\b(what (should|could) I do|next step|suggest|recommend|what now)\b/i,
+      /\b(what (should|could) I do|next step|suggest|what now)\b/i,
       /\b(what('s| is) next)\b/i,
     ],
   },
@@ -110,6 +110,29 @@ const INTENT_PATTERNS: IntentPattern[] = [
     ],
   },
   {
+    intent: 'context_info',
+    patterns: [
+      /^\/(context|sources)$/i,
+      /\b(what context|what sources|what('s| are) (you|chat) (using|relying|basing)|show.*(context|sources))\b/i,
+    ],
+  },
+  {
+    intent: 'show_plan',
+    patterns: [
+      /^\/(plan|smartplan)$/i,
+      /\b(make|build|create|show|give) (me )?(a |the )?(smart )?plan\b/i,
+      /\bwhat('s| is) the plan\b/i,
+    ],
+  },
+  {
+    intent: 'recommend',
+    patterns: [
+      /^\/(recommend|recs?)$/i,
+      /\b(what should I prioritize|top priorities|highest.?leverage)\b/i,
+      /\bgive.+recommendations?\b/i,
+    ],
+  },
+  {
     intent: 'apply_content',
     patterns: [
       /\b(write|save|apply|commit)\s+(this|it|the|that)\b/i,
@@ -163,6 +186,9 @@ Valid intents:
 - session_info: user asks about session status, artifacts, issues
 - apply_content: user wants to write/save content to disk
 - help: user asks what the tool can do
+- context_info: user asks what context/sources chat is using
+- show_plan: user wants a smart action plan based on session state
+- recommend: user wants prioritized recommendations
 - unknown: can't determine intent
 
 Response format (JSON only, no markdown):
@@ -196,7 +222,8 @@ export async function classifyByLLM(
     const validIntents: ChatIntent[] = [
       'suggest_next', 'explain_state', 'scaffold', 'critique', 'improve',
       'compare_replays', 'analyze_replay', 'plan', 'explain_why',
-      'session_info', 'apply_content', 'help', 'unknown',
+      'session_info', 'apply_content', 'help', 'context_info',
+      'show_plan', 'recommend', 'unknown',
     ];
     const intent = validIntents.includes(parsed.intent as ChatIntent)
       ? parsed.intent as ChatIntent
