@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/modules",
-  "version": "2.0.0",
+  "version": "2.0.4",
   "description": "AI RPG Engine built-in modules: combat, dialogue, inventory, traversal, status",
   "type": "module",
   "main": "./dist/index.js",
@@ -11,7 +11,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run"
@@ -28,7 +30,15 @@
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
     "directory": "packages/modules"
   },
-  "keywords": ["rpg", "game-engine", "simulation", "combat", "perception", "cognition", "factions"],
+  "keywords": [
+    "rpg",
+    "game-engine",
+    "simulation",
+    "combat",
+    "perception",
+    "cognition",
+    "factions"
+  ],
   "bugs": {
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues"
   },

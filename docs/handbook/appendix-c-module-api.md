@@ -98,6 +98,54 @@ Creates an isolated engine instance for testing.
 | getDivergences | `(world) → DivergenceRecord[]` | All recorded divergences |
 | getEventDivergences | `(world, eventId) → DivergenceRecord[]` | Divergences for a specific event |
 
+## Player Leverage — `player-leverage.ts`
+
+Pure functions for structured social play. 4 compound verbs (social, rumor, diplomacy, sabotage) with 24 sub-actions, resolved deterministically.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| getLeverageState | `(custom) → LeverageState` | Extract leverage currencies from profile |
+| adjustLeverage | `(custom, currency, delta) → custom` | Modify a single currency |
+| applyLeverageDeltas | `(custom, deltas) → custom` | Apply multiple currency changes |
+| canAfford | `(state, costs) → boolean` | Check if player can pay action costs |
+| isCooldownReady | `(custom, verb, subAction, tick, turns) → boolean` | Check cooldown elapsed |
+| setCooldown | `(custom, verb, subAction, tick) → custom` | Record cooldown timestamp |
+| resolveSocialAction | `(subAction, targetId, factionId, state, rep, factionCog?, tick) → LeverageResolution` | Resolve social verb |
+| resolveRumorAction | `(subAction, factionId, state, tick) → LeverageResolution` | Resolve rumor verb |
+| resolveDiplomacyAction | `(subAction, factionId, state, rep, factionCog?, tick) → LeverageResolution` | Resolve diplomacy verb |
+| resolveSabotageAction | `(subAction, targetId, factionId, state, tick) → LeverageResolution` | Resolve sabotage verb |
+| tickLeverage | `(custom, reputations) → custom` | Passive tick: heat decay, influence calc |
+| computeLeverageGains | `(hints) → Record<string, number>` | Natural gains from game events |
+| formatLeverageForDirector | `(state) → string` | Director-mode leverage display |
+| formatLeverageStatus | `(state) → string` | Compact one-line status |
+
+## Strategic Map — `strategic-map.ts`
+
+Aggregates world state into a strategic overview of districts, factions, and hotspots.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| buildStrategicMap | `(world, rumors, pressures, reputation, actions?) → StrategicMap` | Build complete strategic view |
+| formatStrategicMapForDirector | `(map) → string` | Director-mode map display |
+| formatStrategicMapForPlayer | `(map) → string` | Player-facing map display |
+
+## Move Advisor — `move-advisor.ts`
+
+Deterministic scoring engine that evaluates all 24 leverage sub-actions against current state. Drives contextual suggestions and `/status` command.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| recommendMoves | `(inputs: AdvisorInputs) → MoveRecommendation` | Score all actions, return top 3 + situation tag |
+| scoreAction | `(category, subAction, targetFactionId, inputs) → ScoredMove` | Score a single action |
+| deriveSituation | `(inputs) → 'safe' \| 'pressured' \| 'crisis' \| 'opportunity'` | Derive situation tag from state |
+
+**Scoring formula:** `score = (urgency × 0.3 + feasibility × 0.3 + impact × 0.25 + (1 - risk) × 0.15) × 100`
+
+- **Urgency:** Active pressure urgency, faction hostility, threat levels
+- **Feasibility:** Binary gate (can afford? cooldown ready?) then surplus ratio
+- **Impact:** Static table from resolution effect magnitudes, boosted by pressure relevance
+- **Risk:** Heat generation + alert escalation, scaled by current heat
+
 ## Simulation Inspector — `createSimulationInspector()`
 
 | Function | Signature | Description |

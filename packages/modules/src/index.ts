@@ -179,3 +179,139 @@ export type {
   DistrictInspection,
   SimulationSnapshot,
 } from './simulation-inspector.js';
+export {
+  deriveStance,
+  getReputationConsequence,
+  evolveTitle,
+  buildPlayerDescriptor,
+} from './social-consequence.js';
+export type {
+  Stance,
+  ReputationConsequence,
+  TitleEvolution,
+} from './social-consequence.js';
+export {
+  spawnPlayerRumor,
+  spawnReputationRumor,
+  spawnIntentionalRumor,
+  denyRumor,
+  buryRumor,
+  propagateRumor,
+  shouldMutate,
+  mutateRumorClaim,
+  deriveRumorValence,
+  getRumorsKnownToFaction,
+  getRumorsInDistrict,
+  formatRumorForDirector,
+} from './player-rumor.js';
+export type {
+  PlayerRumor,
+  RumorValence,
+  RumorMutation,
+  MilestoneHint,
+} from './player-rumor.js';
+export {
+  evaluatePressures,
+  tickPressures,
+  getPressuresForFaction,
+  getVisiblePressures,
+  formatPressureForDirector,
+  formatPressureForNarrator,
+  formatPressureForDialogue,
+  makePressure,
+} from './pressure-system.js';
+export type {
+  PressureKind,
+  PressureVisibility,
+  WorldPressure,
+  PressureInputs,
+  PressureSpawnResult,
+  PressureTickResult,
+} from './pressure-system.js';
+export {
+  computeFallout,
+  formatFalloutForDirector,
+  formatFalloutForNarrator,
+} from './pressure-resolution.js';
+export type {
+  ResolutionType,
+  PressureResolution,
+  FalloutEffect,
+  PressureFallout,
+  FalloutContext,
+} from './pressure-resolution.js';
+export {
+  buildFactionProfile,
+  evaluateFactionActions,
+  resolveFactionAction,
+  runFactionAgencyTick,
+  formatFactionProfilesForDirector,
+  formatFactionAgencyForNarrator,
+} from './faction-agency.js';
+export type {
+  FactionActionVerb,
+  FactionGoal,
+  FactionProfile,
+  FactionAction,
+  FactionEffect,
+  FactionActionResult,
+} from './faction-agency.js';
+export {
+  getLeverageState,
+  adjustLeverage,
+  applyLeverageDeltas,
+  canAfford,
+  isCooldownReady,
+  setCooldown,
+  getSocialRequirements,
+  getRumorRequirements,
+  getDiplomacyRequirements,
+  getSabotageRequirements,
+  isPlayerSocialVerb,
+  isPlayerRumorVerb,
+  isPlayerDiplomacyVerb,
+  isPlayerSabotageVerb,
+  resolveSocialAction,
+  resolveRumorAction,
+  resolveDiplomacyAction,
+  resolveSabotageAction,
+  tickLeverage,
+  computeLeverageGains,
+  formatLeverageForDirector,
+  formatLeverageActionForNarrator,
+  formatLeverageStatus,
+} from './player-leverage.js';
+export type {
+  LeverageCurrency,
+  LeverageState,
+  PlayerSocialVerb,
+  PlayerRumorVerb,
+  PlayerDiplomacyVerb,
+  PlayerSabotageVerb,
+  LeverageCost,
+  LeverageRequirement,
+  LeverageEffect,
+  LeverageResolution,
+  LeverageHints,
+} from './player-leverage.js';
+export {
+  buildStrategicMap,
+  formatStrategicMapForDirector,
+  formatStrategicMapForPlayer,
+} from './strategic-map.js';
+export type {
+  DistrictStrategicView,
+  FactionStrategicView,
+  StrategicMap,
+} from './strategic-map.js';
+export {
+  recommendMoves,
+  scoreAction,
+  deriveSituation,
+} from './move-advisor.js';
+export type {
+  MoveCategory,
+  ScoredMove,
+  AdvisorInputs,
+  MoveRecommendation,
+} from './move-advisor.js';
