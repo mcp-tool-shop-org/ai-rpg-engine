@@ -313,6 +313,15 @@ export function buildNpcProfile(
     breakpoint,
   );
 
+  // Supply crisis: merchant NPCs prioritize bargaining with shifted urgency
+  if (entity.tags.includes('merchant') && activePressures.some((p) => p.kind === 'supply-crisis')) {
+    const bargainGoal = goals.find((g) => g.verb === 'bargain');
+    if (bargainGoal) {
+      bargainGoal.priority = Math.min(1, bargainGoal.priority + 0.25);
+      bargainGoal.reason = 'supply crisis — desperate to trade';
+    }
+  }
+
   return {
     npcId,
     name: entity.name,

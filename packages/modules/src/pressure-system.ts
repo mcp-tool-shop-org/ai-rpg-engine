@@ -5,6 +5,8 @@
 
 import type { PlayerRumor } from './player-rumor.js';
 import type { PressureResolution } from './pressure-resolution.js';
+import type { DistrictEconomy } from './economy-core.js';
+import { getSupplyLevel, isBlackMarketCondition } from './economy-core.js';
 
 // --- Types ---
 
@@ -29,7 +31,11 @@ export type PressureKind =
   | 'camp-panic'
   // Cyberpunk
   | 'corp-manhunt'
-  | 'ice-escalation';
+  | 'ice-escalation'
+  // Economy (v1.7)
+  | 'supply-crisis'
+  | 'trade-war'
+  | 'black-market-boom';
 
 export type PressureVisibility = 'hidden' | 'rumored' | 'known' | 'public';
 
@@ -75,6 +81,8 @@ export type PressureInputs = {
   genre: string;
   /** Current engine tick for timestamps */
   currentTick: number;
+  /** District economies for economy-driven pressures (v1.7) */
+  districtEconomies?: Map<string, DistrictEconomy>;
 };
 
 export type PressureSpawnResult = {
@@ -161,6 +169,10 @@ export function evaluatePressures(inputs: PressureInputs): PressureSpawnResult |
   // Try universal rules first
   const universal = evaluateUniversalRules(inputs, activeKinds);
   if (universal) return universal;
+
+  // Try economy rules
+  const economy = evaluateEconomyRules(inputs, activeKinds);
+  if (economy) return economy;
 
   // Try genre-specific rules
   return evaluateGenreRules(inputs, activeKinds);
@@ -318,6 +330,106 @@ function evaluateUniversalRules(
           currentTick,
         }),
         reason: `Fearsome rumor "${trigger.claim}" spread to ${trigger.spreadTo.length} factions`,
+      };
+    }
+  }
+
+  return null;
+}
+
+// --- Economy Rules (v1.7) ---
+
+function evaluateEconomyRules(
+  inputs: PressureInputs,
+  activeKinds: Set<PressureKind>,
+): PressureSpawnResult | null {
+  const { districtEconomies, currentTick, districtMetrics } = inputs;
+  if (!districtEconomies || districtEconomies.size === 0) return null;
+
+  // Supply crisis: any district has a supply below 15
+  if (!activeKinds.has('supply-crisis')) {
+    for (const [districtId, economy] of districtEconomies) {
+      const essentials = ['food', 'medicine', 'fuel'] as const;
+      for (const cat of essentials) {
+        if (getSupplyLevel(economy, cat) < 15) {
+          return {
+            pressure: makePressure({
+              kind: 'supply-crisis',
+              sourceFactionId: 'market',
+              description: `${cat} supplies critically low in ${districtId}`,
+              triggeredBy: `economy:${cat}:${getSupplyLevel(economy, cat)}`,
+              urgency: 0.7,
+              visibility: 'known',
+              turnsRemaining: 10,
+              potentialOutcomes: [
+                `Rationing begins — NPCs become desperate for ${cat}`,
+                `Smugglers offer ${cat} at premium prices`,
+                `Restoring supply earns significant goodwill`,
+              ],
+              tags: ['economic', 'crisis', districtId],
+              currentTick,
+            }),
+            reason: `${cat} at ${getSupplyLevel(economy, cat)} in ${districtId}`,
+          };
+        }
+      }
+    }
+  }
+
+  // Black market boom: 2+ districts have active black markets
+  if (!activeKinds.has('black-market-boom')) {
+    let bmCount = 0;
+    for (const [, economy] of districtEconomies) {
+      if (isBlackMarketCondition(economy)) bmCount++;
+    }
+    if (bmCount >= 2) {
+      return {
+        pressure: makePressure({
+          kind: 'black-market-boom',
+          sourceFactionId: 'market',
+          description: `black market activity is spreading across multiple districts`,
+          triggeredBy: `economy:black-market:${bmCount}`,
+          urgency: 0.5,
+          visibility: 'rumored',
+          turnsRemaining: 12,
+          potentialOutcomes: [
+            'Contraband becomes more available but authorities crack down',
+            'Faction smuggling operations intensify',
+            'Stability drops in affected districts',
+          ],
+          tags: ['economic', 'black-market'],
+          currentTick,
+        }),
+        reason: `${bmCount} districts have active black markets`,
+      };
+    }
+  }
+
+  // Trade war: competing blockade + open-trade factions detected via district metrics
+  if (!activeKinds.has('trade-war') && districtMetrics) {
+    let lowCommerceCount = 0;
+    for (const [, metrics] of Object.entries(districtMetrics)) {
+      if (metrics.stability < 30) lowCommerceCount++;
+    }
+    if (lowCommerceCount >= 2) {
+      return {
+        pressure: makePressure({
+          kind: 'trade-war',
+          sourceFactionId: 'market',
+          description: `trade disruptions have escalated into a factional trade war`,
+          triggeredBy: `economy:trade-disruption:${lowCommerceCount}`,
+          urgency: 0.6,
+          visibility: 'known',
+          turnsRemaining: 10,
+          potentialOutcomes: [
+            'Prices spike across all districts',
+            'Factions compete for control of trade routes',
+            'Broker a deal to earn leverage',
+          ],
+          tags: ['economic', 'trade-war'],
+          currentTick,
+        }),
+        reason: `${lowCommerceCount} districts with disrupted stability`,
       };
     }
   }

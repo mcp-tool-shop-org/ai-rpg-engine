@@ -5,6 +5,8 @@ import type { WorldState } from '@ai-rpg-engine/core';
 import type { PlayerRumor, RumorValence } from './player-rumor.js';
 import type { WorldPressure, PressureKind } from './pressure-system.js';
 import type { FactionActionResult } from './faction-agency.js';
+import type { DistrictEconomy } from './economy-core.js';
+import { deriveEconomyDescriptor, getScarcestSupply, getMostSurplusSupply } from './economy-core.js';
 import {
   getAllDistrictIds,
   getDistrictDefinition,
@@ -29,6 +31,11 @@ export type DistrictStrategicView = {
   activePressureKinds: PressureKind[];
   factionPresence: { factionId: string; strength: 'dominant' | 'present' | 'weak' }[];
   hotspotTags: string[];
+  /** Economy fields (v1.7) */
+  scarcities: string[];
+  surpluses: string[];
+  blackMarketActive: boolean;
+  economyTone: string;
 };
 
 export type FactionStrategicView = {
@@ -46,6 +53,8 @@ export type StrategicMap = {
   factions: FactionStrategicView[];
   hotRumors: { claim: string; spreadCount: number; valence: RumorValence }[];
   activePressureSummary: string[];
+  /** Hot trade goods: scarce items that command premiums (v1.7) */
+  hotGoods: { category: string; reason: string }[];
 };
 
 // --- Build ---
@@ -56,6 +65,7 @@ export function buildStrategicMap(
   activePressures: WorldPressure[],
   playerReputations: { factionId: string; value: number }[],
   lastFactionActions: FactionActionResult[],
+  districtEconomies?: Map<string, DistrictEconomy>,
 ): StrategicMap {
   // Districts
   const districts: DistrictStrategicView[] = [];
@@ -85,6 +95,20 @@ export function buildStrategicMap(
 
     const mood = computeDistrictMood(state, def.tags);
 
+    // Economy data (v1.7)
+    const economy = districtEconomies?.get(districtId);
+    let scarcities: string[] = [];
+    let surpluses: string[] = [];
+    let blackMarketActive = false;
+    let economyTone = 'normal';
+    if (economy) {
+      const desc = deriveEconomyDescriptor(economy);
+      scarcities = desc.scarcities.map(s => s.category);
+      surpluses = desc.surpluses.map(s => s.category);
+      blackMarketActive = economy.blackMarketActive;
+      economyTone = desc.overallTone;
+    }
+
     districts.push({
       districtId,
       name: def.name,
@@ -96,6 +120,10 @@ export function buildStrategicMap(
       activePressureKinds: districtPressures.map((p) => p.kind),
       factionPresence,
       hotspotTags,
+      scarcities,
+      surpluses,
+      blackMarketActive,
+      economyTone,
     });
   }
 
@@ -144,7 +172,27 @@ export function buildStrategicMap(
     (p) => `${p.kind}: ${p.description} (${p.turnsRemaining} turns)`,
   );
 
-  return { districts, factions, hotRumors, activePressureSummary };
+  // Hot goods — scarce items across all districts that command premiums (v1.7)
+  const hotGoods: { category: string; reason: string }[] = [];
+  if (districtEconomies) {
+    const scarcityCounts = new Map<string, string[]>();
+    for (const [districtId, economy] of districtEconomies) {
+      const scarcest = getScarcestSupply(economy);
+      if (scarcest) {
+        const arr = scarcityCounts.get(scarcest) ?? [];
+        arr.push(districtId);
+        scarcityCounts.set(scarcest, arr);
+      }
+    }
+    for (const [category, districtIds] of scarcityCounts) {
+      hotGoods.push({
+        category,
+        reason: `scarce in ${districtIds.join(', ')}`,
+      });
+    }
+  }
+
+  return { districts, factions, hotRumors, activePressureSummary, hotGoods };
 }
 
 // --- Formatting ---
@@ -172,6 +220,13 @@ export function formatStrategicMapForDirector(map: StrategicMap): string {
       if (d.activePressureKinds.length > 0) {
         lines.push(`      Active pressures: ${d.activePressureKinds.join(', ')}`);
       }
+      if (d.scarcities.length > 0 || d.surpluses.length > 0) {
+        const econ: string[] = [];
+        if (d.scarcities.length > 0) econ.push(`Scarce: ${d.scarcities.join(', ')}`);
+        if (d.surpluses.length > 0) econ.push(`Surplus: ${d.surpluses.join(', ')}`);
+        if (d.blackMarketActive) econ.push('BLACK MARKET');
+        lines.push(`      Economy: ${econ.join(' | ')} (${d.economyTone})`);
+      }
     }
   }
 
@@ -197,6 +252,15 @@ export function formatStrategicMapForDirector(map: StrategicMap): string {
     lines.push('  HOT RUMORS');
     for (const r of map.hotRumors) {
       lines.push(`    "${r.claim}" (${r.valence}, spread: ${r.spreadCount})`);
+    }
+  }
+
+  // Hot goods
+  if (map.hotGoods.length > 0) {
+    lines.push('');
+    lines.push('  HOT GOODS');
+    for (const g of map.hotGoods) {
+      lines.push(`    ${g.category}: ${g.reason}`);
     }
   }
 

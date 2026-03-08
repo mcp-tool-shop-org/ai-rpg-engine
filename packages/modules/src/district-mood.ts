@@ -35,6 +35,8 @@ export type DistrictModifiers = {
   npcCooperationBias: number;
   /** Pressure spawn urgency modifier (0-0.15) */
   pressureUrgencyBias: number;
+  /** Trade price scale from scarcity/surplus balance (0.8-2.0) */
+  tradePriceScale: number;
 };
 
 // --- Tag Weights ---
@@ -134,7 +136,13 @@ export function computeDistrictModifiers(mood: DistrictMood): DistrictModifiers 
   // Pressure urgency: degraded districts spawn more urgent pressures
   const pressureUrgencyBias = (mood.safety < 30 && mood.spirit < 30) ? 0.15 : 0;
 
-  return { leverageCostScale, rumorSpreadScale, npcCooperationBias, pressureUrgencyBias };
+  // Trade price scale: low prosperity = inflated, high prosperity = fair
+  const tradePriceScale = mood.prosperity < 30 ? 2.0
+    : mood.prosperity < 50 ? 1.3
+    : mood.prosperity > 70 ? 0.8
+    : 1.0;
+
+  return { leverageCostScale, rumorSpreadScale, npcCooperationBias, pressureUrgencyBias, tradePriceScale };
 }
 
 // --- Formatting ---

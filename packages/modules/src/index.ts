@@ -417,3 +417,48 @@ export type {
   NpcObligation,
   NpcObligationLedger,
 } from './npc-agency.js';
+
+// --- Economy Core (v1.7) ---
+export {
+  createDistrictEconomy,
+  tickDistrictEconomy,
+  applyEconomyShift,
+  deriveEconomyDescriptor,
+  deriveSupplyTrend,
+  isBlackMarketCondition,
+  getSupplyLevel,
+  getScarcestSupply,
+  getMostSurplusSupply,
+  formatEconomyForNarrator,
+  formatEconomyForDirector,
+  formatAllDistrictEconomiesForDirector,
+} from './economy-core.js';
+export type {
+  SupplyCategory,
+  SupplyLevel,
+  DistrictEconomy,
+  ScarcitySeverity,
+  SurplusDegree,
+  EconomyDescriptor,
+  EconomyShift,
+} from './economy-core.js';
+
+// --- Trade Value (v1.7) ---
+export {
+  computeItemValue,
+  computeScarcityMultiplier,
+  computeFactionAttitudeMultiplier,
+  computeProvenanceMultiplier,
+  computeContrabandFactor,
+  computePressureModifier,
+  deriveTradeAdvice,
+  formatValueBreakdownForDirector,
+  formatTradeAdviceForNarrator,
+} from './trade-value.js';
+export type {
+  TradeContext,
+  ValueModifiers,
+  TradeAdvice,
+  ItemValueResult,
+  TradeEffect,
+} from './trade-value.js';

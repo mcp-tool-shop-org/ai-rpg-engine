@@ -72,6 +72,7 @@ const IMPACT_TABLE: Record<string, number> = {
   'diplomacy.improve-standing': 0.6,
   'diplomacy.cash-milestone': 0.7,
   'diplomacy.negotiate-access': 0.5,
+  'diplomacy.negotiate-trade': 0.5,
   'diplomacy.trade-secret': 0.5,
   'diplomacy.temporary-alliance': 0.9,
   'diplomacy.broker-truce': 0.8,
@@ -142,6 +143,9 @@ const REASON_TEMPLATES: Record<string, (ctx: ReasonContext) => string> = {
   'diplomacy.negotiate-access': (ctx) => ctx.targetFactionId
     ? `Negotiate access with ${ctx.targetFactionId}`
     : 'Negotiate access to restricted areas',
+  'diplomacy.negotiate-trade': (ctx) => ctx.targetFactionId
+    ? `Negotiate trade deal with ${ctx.targetFactionId}`
+    : 'Negotiate trade to address supply needs',
   'diplomacy.trade-secret': (ctx) => ctx.targetFactionId
     ? `Trade secrets with ${ctx.targetFactionId}`
     : 'Trade a secret for reputation',
@@ -193,6 +197,7 @@ const ALL_ACTIONS: { category: MoveCategory; subAction: string }[] = [
   { category: 'diplomacy', subAction: 'improve-standing' },
   { category: 'diplomacy', subAction: 'cash-milestone' },
   { category: 'diplomacy', subAction: 'negotiate-access' },
+  { category: 'diplomacy', subAction: 'negotiate-trade' },
   { category: 'diplomacy', subAction: 'trade-secret' },
   { category: 'diplomacy', subAction: 'temporary-alliance' },
   { category: 'diplomacy', subAction: 'broker-truce' },
@@ -244,6 +249,12 @@ function computeUrgency(
   if ((subAction === 'deny' || subAction === 'bury-scandal') && inputs.activePressures.some((p) =>
     p.kind === 'revenge-attempt' || p.kind === 'investigation-opened')) {
     urgency += 0.2;
+  }
+
+  // Trade negotiation urgency when supply-crisis or trade-war active
+  if (subAction === 'negotiate-trade' && inputs.activePressures.some((p) =>
+    p.kind === 'supply-crisis' || p.kind === 'trade-war')) {
+    urgency += 0.3;
   }
 
   return Math.min(1, urgency);

@@ -37,7 +37,8 @@ export type FalloutEffect =
   | { type: 'spawn-pressure'; kind: PressureKind; sourceFactionId: string;
       description: string; urgency: number; tags: string[] }
   | { type: 'milestone-tag'; tag: string }
-  | { type: 'title-trigger'; tag: string };
+  | { type: 'title-trigger'; tag: string }
+  | { type: 'economy-shift'; districtId: string; category: string; delta: number; cause: string };
 
 export type PressureFallout = {
   resolution: PressureResolution;
@@ -217,6 +218,63 @@ function getUniversalFallout(
         case 'expired-ignored':
           effects.push({ type: 'alert', factionId: faction, delta: -5 });
           break;
+      }
+      break;
+
+    // Economy pressures (v1.7)
+    case 'supply-crisis':
+      if (resolutionType === 'resolved-by-player') {
+        effects.push({ type: 'reputation', factionId: faction, delta: 15 });
+        effects.push({
+          type: 'rumor', claim: 'restored supplies during the crisis',
+          valence: 'heroic', spreadTo: [faction],
+        });
+        if (ctx.playerDistrictId) {
+          effects.push({ type: 'economy-shift', districtId: ctx.playerDistrictId, category: 'food', delta: 15, cause: 'crisis resolved' });
+          effects.push({ type: 'economy-shift', districtId: ctx.playerDistrictId, category: 'medicine', delta: 10, cause: 'crisis resolved' });
+        }
+      } else if (resolutionType === 'expired-ignored') {
+        if (ctx.playerDistrictId) {
+          effects.push({ type: 'district', districtId: ctx.playerDistrictId, metric: 'stability', delta: -10 });
+          effects.push({ type: 'economy-shift', districtId: ctx.playerDistrictId, category: 'food', delta: -10, cause: 'crisis worsened' });
+          effects.push({ type: 'economy-shift', districtId: ctx.playerDistrictId, category: 'medicine', delta: -5, cause: 'crisis worsened' });
+        }
+      }
+      break;
+
+    case 'trade-war':
+      if (resolutionType === 'resolved-by-player') {
+        if (ctx.playerDistrictId) {
+          effects.push({ type: 'district', districtId: ctx.playerDistrictId, metric: 'commerce', delta: 10 });
+        }
+        effects.push({
+          type: 'rumor', claim: 'brokered a trade agreement',
+          valence: 'heroic', spreadTo: [faction],
+        });
+        effects.push({ type: 'title-trigger', tag: 'trade-broker' });
+      } else if (resolutionType === 'expired-ignored') {
+        if (ctx.playerDistrictId) {
+          effects.push({ type: 'district', districtId: ctx.playerDistrictId, metric: 'commerce', delta: -5 });
+          effects.push({ type: 'district', districtId: ctx.playerDistrictId, metric: 'stability', delta: -5 });
+        }
+      }
+      break;
+
+    case 'black-market-boom':
+      if (resolutionType === 'resolved-by-player') {
+        effects.push({
+          type: 'rumor', claim: 'shut down the black market networks',
+          valence: 'heroic', spreadTo: [faction],
+        });
+        if (ctx.playerDistrictId) {
+          effects.push({ type: 'economy-shift', districtId: ctx.playerDistrictId, category: 'contraband', delta: -20, cause: 'crackdown' });
+          effects.push({ type: 'district', districtId: ctx.playerDistrictId, metric: 'stability', delta: 5 });
+        }
+      } else if (resolutionType === 'expired-ignored') {
+        if (ctx.playerDistrictId) {
+          effects.push({ type: 'district', districtId: ctx.playerDistrictId, metric: 'stability', delta: -8 });
+          effects.push({ type: 'economy-shift', districtId: ctx.playerDistrictId, category: 'contraband', delta: 10, cause: 'unchecked boom' });
+        }
       }
       break;
   }
@@ -535,6 +593,8 @@ function formatEffectBrief(effect: FalloutEffect): string {
       return `milestone tag: ${effect.tag}`;
     case 'title-trigger':
       return `title trigger: ${effect.tag}`;
+    case 'economy-shift':
+      return `${effect.category} ${effect.delta > 0 ? '+' : ''}${effect.delta} in ${effect.districtId} (${effect.cause})`;
   }
 }
 

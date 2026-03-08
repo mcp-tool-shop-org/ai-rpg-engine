@@ -6,6 +6,8 @@ import type { WorldState } from '@ai-rpg-engine/core';
 import type { DistrictMetrics, DistrictDefinition } from './district-core.js';
 import type { RumorValence } from './player-rumor.js';
 import type { PressureKind, WorldPressure } from './pressure-system.js';
+import type { DistrictEconomy } from './economy-core.js';
+import { getSupplyLevel } from './economy-core.js';
 import { getFactionCognition, getFactionMembers } from './faction-cognition.js';
 import {
   getAllDistrictIds,
@@ -28,7 +30,10 @@ export type FactionActionVerb =
   | 'patrol'
   | 'smuggle'
   | 'hoard'
-  | 'declare-claim';
+  | 'declare-claim'
+  | 'blockade'
+  | 'raid-supply'
+  | 'open-trade';
 
 export type FactionGoal = {
   id: string;
@@ -64,7 +69,8 @@ export type FactionEffect =
   | { type: 'pressure'; kind: PressureKind; sourceFactionId: string; description: string; urgency: number }
   | { type: 'cohesion'; factionId: string; delta: number }
   | { type: 'alert'; factionId: string; delta: number }
-  | { type: 'member-count'; factionId: string; delta: number };
+  | { type: 'member-count'; factionId: string; delta: number }
+  | { type: 'economy-shift'; districtId: string; category: string; delta: number; cause: string };
 
 export type FactionActionResult = {
   action: FactionAction;
@@ -89,6 +95,7 @@ export function buildFactionProfile(
   world: WorldState,
   playerReputation: number,
   activePressures: WorldPressure[],
+  districtEconomies?: Map<string, DistrictEconomy>,
 ): FactionProfile {
   const cognition = getFactionCognition(world, factionId);
   const members = getFactionMembers(world, factionId);
@@ -135,6 +142,7 @@ export function buildFactionProfile(
     controlledDistricts,
     activePressures,
     world,
+    districtEconomies,
   );
 
   return {
@@ -157,6 +165,7 @@ function deriveGoals(
   controlledDistricts: string[],
   activePressures: WorldPressure[],
   world: WorldState,
+  districtEconomies?: Map<string, DistrictEconomy>,
 ): FactionGoal[] {
   const goals: FactionGoal[] = [];
   const factionPressures = getPressuresForFaction(activePressures, factionId);
@@ -262,6 +271,57 @@ function deriveGoals(
     });
   }
 
+  // 8. Economy-driven goals: supply crisis → smuggle/open-trade, enemy prosperous → blockade/raid
+  if (districtEconomies) {
+    for (const districtId of controlledDistricts) {
+      const economy = districtEconomies.get(districtId);
+      if (!economy) continue;
+
+      // Any supply below 25 in controlled district → smuggle or open-trade
+      const scarcestLevel = Math.min(
+        ...(['food', 'medicine', 'ammunition', 'fuel'] as const).map(
+          (cat) => getSupplyLevel(economy, cat),
+        ),
+      );
+      if (scarcestLevel < 25) {
+        const verb: FactionActionVerb = cognition.cohesion > 0.6 ? 'open-trade' : 'smuggle';
+        goals.push({
+          id: `${factionId}-supply-${districtId}`,
+          label: `Resupply ${districtId}`,
+          priority: Math.min(1, (25 - scarcestLevel) / 25 * 0.8),
+          verb,
+          targetDistrictId: districtId,
+        });
+      }
+      break; // One economy goal per controlled district
+    }
+
+    // Enemy prosperous districts → blockade or raid-supply
+    for (const districtId of getAllDistrictIds(world)) {
+      if (controlledDistricts.includes(districtId)) continue;
+      const def = getDistrictDefinition(world, districtId);
+      if (!def?.controllingFaction) continue;
+      // Skip if controlling faction is not an enemy
+      const isEnemy = cognition.alertLevel >= 40 && playerReputation <= -20;
+      if (!isEnemy) continue;
+
+      const economy = districtEconomies.get(districtId);
+      if (!economy) continue;
+      const state = getDistrictState(world, districtId);
+      if (state && state.commerce > 60) {
+        const verb: FactionActionVerb = cognition.cohesion > 0.5 ? 'blockade' : 'raid-supply';
+        goals.push({
+          id: `${factionId}-disrupt-${districtId}`,
+          label: `Disrupt ${districtId}`,
+          priority: 0.55,
+          verb,
+          targetDistrictId: districtId,
+        });
+        break; // One disruption target
+      }
+    }
+  }
+
   // Sort by priority descending, take top MAX_GOALS
   goals.sort((a, b) => b.priority - a.priority);
   return goals.slice(0, MAX_GOALS);
@@ -330,6 +390,9 @@ function buildActionDescription(
     case 'smuggle': return `${factionName} runs a smuggling operation in ${district}`;
     case 'hoard': return `${factionName} consolidates internal power`;
     case 'declare-claim': return `${factionName} declares control over ${district}`;
+    case 'blockade': return `${factionName} blockades trade routes to ${district}`;
+    case 'raid-supply': return `${factionName} raids supply stores in ${district}`;
+    case 'open-trade': return `${factionName} opens trade channels in ${district}`;
   }
 }
 
@@ -487,6 +550,37 @@ export function resolveFactionAction(
       });
       narratorHint = `The ${action.factionId} have made a bold claim over ${action.targetDistrictId ?? 'new territory'}`;
       break;
+
+    case 'blockade':
+      if (action.targetDistrictId) {
+        effects.push({ type: 'district-metric', districtId: action.targetDistrictId, metric: 'commerce', delta: -8 });
+        effects.push({ type: 'economy-shift', districtId: action.targetDistrictId, category: 'food', delta: -10, cause: 'blockade' });
+        effects.push({ type: 'economy-shift', districtId: action.targetDistrictId, category: 'luxuries', delta: -8, cause: 'blockade' });
+      }
+      effects.push({ type: 'alert', factionId: action.factionId, delta: 10 });
+      narratorHint = `Trade to ${action.targetDistrictId ?? 'the district'} has been choked by the ${action.factionId}`;
+      break;
+
+    case 'raid-supply':
+      if (action.targetDistrictId) {
+        effects.push({ type: 'district-metric', districtId: action.targetDistrictId, metric: 'stability', delta: -5 });
+        effects.push({ type: 'district-metric', districtId: action.targetDistrictId, metric: 'commerce', delta: -5 });
+        effects.push({ type: 'economy-shift', districtId: action.targetDistrictId, category: 'food', delta: -8, cause: 'raid' });
+        effects.push({ type: 'economy-shift', districtId: action.targetDistrictId, category: 'medicine', delta: -5, cause: 'raid' });
+      }
+      effects.push({ type: 'cohesion', factionId: action.factionId, delta: 0.03 });
+      narratorHint = `${action.factionId} raiders hit supply stores in ${action.targetDistrictId ?? 'the district'}`;
+      break;
+
+    case 'open-trade':
+      if (action.targetDistrictId) {
+        effects.push({ type: 'district-metric', districtId: action.targetDistrictId, metric: 'commerce', delta: 5 });
+        effects.push({ type: 'economy-shift', districtId: action.targetDistrictId, category: 'food', delta: 5, cause: 'trade' });
+        effects.push({ type: 'economy-shift', districtId: action.targetDistrictId, category: 'components', delta: 5, cause: 'trade' });
+      }
+      effects.push({ type: 'cohesion', factionId: action.factionId, delta: 0.05 });
+      narratorHint = `The ${action.factionId} have opened trade channels in ${action.targetDistrictId ?? 'the district'}`;
+      break;
   }
 
   return {
@@ -508,6 +602,7 @@ export function runFactionAgencyTick(
   playerReputations: { factionId: string; value: number }[],
   activePressures: WorldPressure[],
   currentTick: number,
+  districtEconomies?: Map<string, DistrictEconomy>,
 ): FactionActionResult[] {
   const factionIds = Object.keys(world.factions);
   if (factionIds.length === 0) return [];
@@ -516,7 +611,7 @@ export function runFactionAgencyTick(
   const profiles: FactionProfile[] = [];
   for (const factionId of factionIds) {
     const rep = playerReputations.find((r) => r.factionId === factionId)?.value ?? 0;
-    const profile = buildFactionProfile(factionId, world, rep, activePressures);
+    const profile = buildFactionProfile(factionId, world, rep, activePressures, districtEconomies);
     profiles.push(profile);
   }
 
