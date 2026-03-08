@@ -76,6 +76,8 @@ const IMPACT_TABLE: Record<string, number> = {
   'diplomacy.trade-secret': 0.5,
   'diplomacy.temporary-alliance': 0.9,
   'diplomacy.broker-truce': 0.8,
+  'diplomacy.negotiate-materials': 0.5,
+  'social.commission-craft': 0.4,
   'sabotage.sabotage': 0.6,
   'sabotage.plant-evidence': 0.7,
   'sabotage.blackmail-target': 0.7,
@@ -89,6 +91,8 @@ const HEAT_TABLE: Record<string, number> = {
   'rumor.frame': 15,
   'rumor.claim-false-credit': 5,
   'rumor.spread-counter-rumor': 5,
+  'diplomacy.negotiate-materials': 0,
+  'social.commission-craft': 0,
   'sabotage.sabotage': 20,
   'sabotage.plant-evidence': 15,
   'sabotage.blackmail-target': 20,
@@ -153,6 +157,10 @@ const REASON_TEMPLATES: Record<string, (ctx: ReasonContext) => string> = {
     ? `Form temporary alliance with ${ctx.targetFactionId}`
     : 'Propose a temporary alliance',
   'diplomacy.broker-truce': () => 'Broker a truce between warring factions',
+  'diplomacy.negotiate-materials': (ctx) => ctx.targetFactionId
+    ? `Negotiate materials supply with ${ctx.targetFactionId}`
+    : 'Negotiate for crafting materials',
+  'social.commission-craft': () => 'Commission a craftsman to produce an item',
   'sabotage.sabotage': (ctx) => ctx.districtName
     ? `Sabotage infrastructure in ${ctx.districtName}`
     : 'Sabotage to destabilize a district',
@@ -201,6 +209,8 @@ const ALL_ACTIONS: { category: MoveCategory; subAction: string }[] = [
   { category: 'diplomacy', subAction: 'trade-secret' },
   { category: 'diplomacy', subAction: 'temporary-alliance' },
   { category: 'diplomacy', subAction: 'broker-truce' },
+  { category: 'diplomacy', subAction: 'negotiate-materials' },
+  { category: 'social', subAction: 'commission-craft' },
   { category: 'sabotage', subAction: 'sabotage' },
   { category: 'sabotage', subAction: 'plant-evidence' },
   { category: 'sabotage', subAction: 'blackmail-target' },
@@ -254,6 +264,12 @@ function computeUrgency(
   // Trade negotiation urgency when supply-crisis or trade-war active
   if (subAction === 'negotiate-trade' && inputs.activePressures.some((p) =>
     p.kind === 'supply-crisis' || p.kind === 'trade-war')) {
+    urgency += 0.3;
+  }
+
+  // Crafting-shortage boosts material negotiation and commission urgency (v1.8)
+  if ((subAction === 'negotiate-materials' || subAction === 'commission-craft') &&
+    inputs.activePressures.some((p) => p.kind === 'crafting-shortage')) {
     urgency += 0.3;
   }
 

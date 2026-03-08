@@ -146,6 +146,72 @@ Deterministic scoring engine that evaluates all 24 leverage sub-actions against 
 - **Impact:** Static table from resolution effect magnitudes, boosted by pressure relevance
 - **Risk:** Heat generation + alert escalation, scaled by current heat
 
+## Economy Core — `economy-core.ts`
+
+Pure functions for category-level supply tracking per district. No module registration — import and call directly.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| createDistrictEconomy | `(genre?, districtTags?) → DistrictEconomy` | Initialize with genre defaults + tag modifiers |
+| tickDistrictEconomy | `(economy, commerce, stability, tick) → DistrictEconomy` | Baseline-seeking decay, stability modulation |
+| applyEconomyShift | `(economy, shift) → DistrictEconomy` | Adjust single supply, clamp 0-100 |
+| deriveEconomyDescriptor | `(economy) → EconomyDescriptor` | Identify scarcities, surpluses, overall tone |
+| isBlackMarketCondition | `(economy) → boolean` | True when contraband > 30 or any supply < 20 |
+| getSupplyLevel | `(economy, category) → number` | Get level for a single category |
+| getScarcestSupply | `(economy) → SupplyCategory \| undefined` | Lowest supply below baseline |
+| getMostSurplusSupply | `(economy) → SupplyCategory \| undefined` | Highest supply above baseline |
+| formatEconomyForDirector | `(districtId, districtName, economy, descriptor) → string` | Detailed director view |
+| formatEconomyForNarrator | `(descriptor) → string` | Compact phrase (~10 tokens) |
+| formatAllDistrictEconomiesForDirector | `(economies) → string` | Market overview of all districts |
+
+## Crafting Core — `crafting-core.ts`
+
+Material tracking, salvage computation, and inventory management. Pure functions, no module registration.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| getMaterialInventory | `(custom) → MaterialInventory` | Read `materials.*` from profile.custom |
+| adjustMaterial | `(custom, category, delta) → custom` | Modify single material, clamp 0-50 |
+| applyMaterialDeltas | `(custom, deltas) → custom` | Apply multiple material changes |
+| hasMaterials | `(custom) → boolean` | True if any material > 0 |
+| computeSalvageYield | `(item) → MaterialYield[]` | Pure yield lookup by slot × rarity |
+| salvageItem | `(item, context?) → SalvageResult` | Full salvage: yields + byproducts + economy shifts |
+| formatMaterialsForDirector | `(inventory) → string` | Detailed multi-line view |
+| formatMaterialsCompact | `(inventory) → string` | One-line status |
+| formatSalvagePreview | `(item, result) → string` | Preview salvage yields |
+
+## Crafting Recipes — `crafting-recipes.ts`
+
+Recipe lookup, crafting resolution, repair, and modification. Pure functions, genre-aware.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| getAvailableRecipes | `(genre, playerTags?, districtTags?) → CraftingRecipe[]` | Filter recipes by genre + tags |
+| getRecipeById | `(genre, recipeId) → CraftingRecipe \| undefined` | Single recipe lookup |
+| canCraft | `(recipe, materials, context?) → CraftCheck` | Material + context requirement check |
+| resolveCraft | `(recipe, context) → CraftResult` | Execute craft: output item + side effects |
+| resolveRepair | `(item, recipe, context) → RepairResult` | Restore item stats |
+| resolveModify | `(item, recipe, context) → ModifyResult` | Apply modification: stat deltas + provenance |
+| computeQualityBonus | `(context) → number` | Prosperity/stability quality modifier |
+| formatRecipeForDirector | `(recipe, materials) → string` | Single recipe with can-craft status |
+| formatAvailableRecipesForDirector | `(recipes, materials) → string` | All recipes grouped by category |
+
+## Trade Value — `trade-value.ts`
+
+Context-sensitive item valuation. Pure functions, lookup-table driven.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| computeItemValue | `(baseValue, supplyCategory, ctx) → ItemValueResult` | Full contextual valuation |
+| computeScarcityMultiplier | `(supplyLevel) → number` | 0.5-3.0 based on supply level |
+| computeFactionAttitudeMultiplier | `(reputation) → number` | 0.85-1.5 based on faction rep |
+| computeProvenanceMultiplier | `(provenance?, heat?) → number` | 1.0-2.0 based on item history |
+| computeContrabandFactor | `(isContraband, blackMarketActive, reputation) → number` | 0.0-1.0 |
+| computePressureModifier | `(pressureKinds, category) → number` | 0.8-1.5 from active pressures |
+| deriveTradeAdvice | `(modifiers, isContraband) → TradeAdvice` | sell-here/elsewhere/hold/risky/untradeable |
+| formatValueBreakdownForDirector | `(result) → string` | Detailed value breakdown |
+| formatTradeAdviceForNarrator | `(result) → string` | Compact narrator advice |
+
 ## Simulation Inspector — `createSimulationInspector()`
 
 | Function | Signature | Description |

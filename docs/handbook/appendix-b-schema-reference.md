@@ -117,6 +117,112 @@ Top-level game definition containing metadata, ruleset reference, and content re
 | consolidation | enum | yes | vivid, faded, dim |
 | tick | number | yes | When this memory was formed |
 
+## DistrictEconomy (@ai-rpg-engine/modules)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| supplies | Record<SupplyCategory, SupplyLevel> | yes | 8 category supply levels |
+| tradeVolume | number (0-100) | yes | Aggregate trade activity |
+| blackMarketActive | boolean | yes | True when contraband > 30 or any supply < 20 |
+| lastUpdateTick | number | yes | Tick of last update |
+
+## SupplyLevel (@ai-rpg-engine/modules)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| category | SupplyCategory | yes | medicine, weapons, ammunition, food, fuel, luxuries, components, contraband |
+| level | number (0-100) | yes | Current supply level. <30 = scarce, >70 = surplus |
+| trend | enum | yes | rising, falling, stable |
+| cause | string | no | Most recent modifier source |
+
+## EconomyShift (@ai-rpg-engine/modules)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| districtId | string | yes | Target district |
+| category | SupplyCategory | yes | Which supply to modify |
+| delta | number | yes | Amount to change (positive or negative) |
+| cause | string | yes | What caused the shift |
+| sourceFactionId | string | no | Faction responsible |
+
+## MaterialYield (@ai-rpg-engine/modules)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| category | SupplyCategory | yes | medicine, weapons, etc. |
+| quantity | number | yes | Amount yielded |
+| quality | enum | yes | poor, standard, fine |
+
+## SalvageResult (@ai-rpg-engine/modules)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| yields | MaterialYield[] | yes | Materials produced |
+| byproducts | string[] | yes | Special byproducts (occult-residue, etc.) |
+| economyShifts | EconomyShift[] | yes | District supply changes |
+| chronicleDetail | string | yes | Human-readable description |
+
+## CraftingRecipe (@ai-rpg-engine/modules)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| id | string | yes | Recipe identifier |
+| name | string | yes | Display name |
+| category | enum | yes | craft, repair, modify |
+| inputs | { category, quantity }[] | yes | Required materials |
+| outputSlot | EquipmentSlot | yes | Slot of crafted item |
+| outputRarity | ItemRarity | yes | Base rarity of output |
+| requiredTags | string[] | no | District/player tags required |
+| genreFilter | string[] | no | Genres this recipe appears in |
+| modificationKind | string | no | For modify recipes: enhancement, blessed, cursed, etc. |
+
+## CraftingContext (@ai-rpg-engine/modules)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| districtEconomy | DistrictEconomy | yes | Local economy state |
+| districtId | string | yes | Current district |
+| districtTags | string[] | yes | District tags |
+| prosperity | number | yes | District commerce level |
+| stability | number | yes | District stability |
+| playerHeat | number | yes | Player heat level |
+| isBlackMarket | boolean | yes | Black market active in district |
+| factionAccess | string | no | Faction ID if player has access |
+
+## CraftEffect (@ai-rpg-engine/modules)
+
+Discriminated union of crafting side effects:
+
+| Type | Fields | Description |
+|------|--------|-------------|
+| economy-shift | districtId, category, delta, cause | Adjust district supply |
+| rumor | claim, valence | Generate player rumor |
+| heat | delta | Adjust player heat |
+| reputation | factionId, delta | Adjust faction reputation |
+| suspicion | districtId, delta | Raise district alert |
+
+## TradeContext (@ai-rpg-engine/modules)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| districtEconomy | DistrictEconomy | yes | District economy state |
+| factionId | string | no | Seller/buyer faction |
+| playerReputation | number (-100 to 100) | yes | Player rep with relevant faction |
+| playerHeat | number (0-100) | yes | Player heat level |
+| isContraband | boolean | yes | Whether the item is contraband |
+| itemProvenance | object | no | isStolen, isRelic, notoriety (0-100) |
+| activePressureKinds | PressureKind[] | yes | Active pressure kinds in district |
+
+## ItemValueResult (@ai-rpg-engine/modules)
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| baseValue | number | yes | Original item value |
+| finalValue | number | yes | Contextually adjusted value |
+| modifiers | ValueModifiers | yes | Breakdown of all multipliers |
+| tradeAdvice | enum | yes | sell-here, sell-elsewhere, hold, risky, untradeable |
+| reason | string | yes | Human-readable explanation |
+
 ## Rumor (@ai-rpg-engine/rumor-system)
 
 | Field | Type | Required | Description |

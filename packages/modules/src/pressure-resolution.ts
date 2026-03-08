@@ -277,6 +277,25 @@ function getUniversalFallout(
         }
       }
       break;
+
+    // Crafting (v1.8)
+    case 'crafting-shortage':
+      if (resolutionType === 'resolved-by-player') {
+        effects.push({ type: 'reputation', factionId: faction, delta: 5 });
+        effects.push({
+          type: 'rumor', claim: 'restored the workshop',
+          valence: 'heroic', spreadTo: [faction],
+        });
+        if (ctx.playerDistrictId) {
+          effects.push({ type: 'economy-shift', districtId: ctx.playerDistrictId, category: 'components', delta: 15, cause: 'workshop restored' });
+        }
+      } else if (resolutionType === 'expired-ignored') {
+        if (ctx.playerDistrictId) {
+          effects.push({ type: 'economy-shift', districtId: ctx.playerDistrictId, category: 'components', delta: -5, cause: 'workshop collapsed' });
+          effects.push({ type: 'district', districtId: ctx.playerDistrictId, metric: 'commerce', delta: -3 });
+        }
+      }
+      break;
   }
 
   return effects;

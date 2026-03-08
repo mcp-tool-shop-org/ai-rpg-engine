@@ -462,3 +462,49 @@ export type {
   ItemValueResult,
   TradeEffect,
 } from './trade-value.js';
+
+// --- Crafting Core (v1.8) ---
+export {
+  getMaterialInventory,
+  adjustMaterial,
+  applyMaterialDeltas,
+  hasMaterials,
+  getTotalMaterials,
+  getNonZeroMaterials,
+  computeSalvageYield,
+  salvageItem,
+  wouldGenerateSuspicion,
+  getSalvageRumorClaim,
+  formatMaterialsForDirector,
+  formatMaterialsCompact,
+  formatSalvagePreview,
+} from './crafting-core.js';
+export type {
+  MaterialQuality,
+  MaterialYield,
+  SalvageResult,
+  SalvageContext,
+  MaterialInventory,
+} from './crafting-core.js';
+
+// --- Crafting Recipes (v1.8) ---
+export {
+  getAvailableRecipes,
+  getRecipeById,
+  canCraft,
+  computeQualityBonus,
+  resolveCraft,
+  resolveRepair,
+  resolveModify,
+  formatRecipeForDirector,
+  formatAvailableRecipesForDirector,
+} from './crafting-recipes.js';
+export type {
+  RecipeCategory,
+  ModificationKind,
+  CraftingRecipe,
+  CraftingContext,
+  CraftEffect,
+  CraftResult,
+  ModifyResult,
+} from './crafting-recipes.js';

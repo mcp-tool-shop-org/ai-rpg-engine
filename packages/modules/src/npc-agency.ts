@@ -322,6 +322,15 @@ export function buildNpcProfile(
     }
   }
 
+  // Crafting shortage: merchant NPCs prioritize bargaining for materials
+  if (entity.tags.includes('merchant') && activePressures.some((p) => p.kind === 'crafting-shortage')) {
+    const bargainGoal = goals.find((g) => g.verb === 'bargain');
+    if (bargainGoal) {
+      bargainGoal.priority = Math.min(1, bargainGoal.priority + 0.2);
+      bargainGoal.reason = 'crafting shortage — desperate for materials';
+    }
+  }
+
   return {
     npcId,
     name: entity.name,

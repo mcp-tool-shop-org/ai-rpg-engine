@@ -35,7 +35,9 @@ export type PressureKind =
   // Economy (v1.7)
   | 'supply-crisis'
   | 'trade-war'
-  | 'black-market-boom';
+  | 'black-market-boom'
+  // Crafting (v1.8)
+  | 'crafting-shortage';
 
 export type PressureVisibility = 'hidden' | 'rumored' | 'known' | 'public';
 
@@ -402,6 +404,33 @@ function evaluateEconomyRules(
         }),
         reason: `${bmCount} districts have active black markets`,
       };
+    }
+  }
+
+  // Crafting shortage: components critically low in any district (v1.8)
+  if (!activeKinds.has('crafting-shortage')) {
+    for (const [districtId, economy] of districtEconomies) {
+      if (getSupplyLevel(economy, 'components') < 15) {
+        return {
+          pressure: makePressure({
+            kind: 'crafting-shortage',
+            sourceFactionId: 'market',
+            description: `crafting materials critically scarce in ${districtId}`,
+            triggeredBy: `economy:components:${getSupplyLevel(economy, 'components')}`,
+            urgency: 0.5,
+            visibility: 'known',
+            turnsRemaining: 8,
+            potentialOutcomes: [
+              'Workshops close — repairs and crafting become unavailable',
+              'Smugglers offer components at premium prices',
+              'Restoring the workshop earns local gratitude',
+            ],
+            tags: ['economic', 'crafting', districtId],
+            currentTick,
+          }),
+          reason: `components at ${getSupplyLevel(economy, 'components')} in ${districtId}`,
+        };
+      }
     }
   }
 

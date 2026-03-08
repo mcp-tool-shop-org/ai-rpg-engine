@@ -37,6 +37,8 @@ export type DistrictModifiers = {
   pressureUrgencyBias: number;
   /** Trade price scale from scarcity/surplus balance (0.8-2.0) */
   tradePriceScale: number;
+  /** Crafting efficiency multiplier (0.7-1.3) — prosperity > 60 + stability > 50 → 1.2, stability < 30 → 0.7 */
+  craftingEfficiency: number;
 };
 
 // --- Tag Weights ---
@@ -142,7 +144,12 @@ export function computeDistrictModifiers(mood: DistrictMood): DistrictModifiers 
     : mood.prosperity > 70 ? 0.8
     : 1.0;
 
-  return { leverageCostScale, rumorSpreadScale, npcCooperationBias, pressureUrgencyBias, tradePriceScale };
+  // Crafting efficiency: prosperous + stable districts boost quality (v1.8)
+  const craftingEfficiency = (mood.prosperity > 60 && mood.safety > 50) ? 1.2
+    : mood.safety < 30 ? 0.7
+    : 1.0;
+
+  return { leverageCostScale, rumorSpreadScale, npcCooperationBias, pressureUrgencyBias, tradePriceScale, craftingEfficiency };
 }
 
 // --- Formatting ---

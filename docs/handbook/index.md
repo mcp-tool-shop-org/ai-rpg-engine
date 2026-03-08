@@ -47,6 +47,8 @@ NPC agency, districts, companions, leverage, and strategic play.
 - [NPC Agency](./37-npc-agency.md) — goals, obligations, loyalty breakpoints, consequence chains
 - [District Life](./38-district-life.md) — commerce, morale, safety, mood derivation
 - [Companions & Party Dynamics](./39-companions.md) — recruitment, morale, departure risk
+- [Economy, Scarcity & Trade](./40-economy-trade.md) — supply categories, contextual value, faction economic agency
+- [Crafting, Salvage & Item Transformation](./41-crafting-salvage.md) — materials, recipes, repair, modification, quality bonuses
 
 ### Balancing Worlds
 
@@ -69,7 +71,7 @@ The interactive design studio.
 ### Simulation Pipeline
 
 ```
-action → validation → resolution → events → perception → cognition → faction beliefs → district metrics → NPC agency → companion reactions
+action → validation → resolution → events → perception → cognition → faction beliefs → district metrics → economy tick → crafting/salvage → NPC agency → companion reactions
 ```
 
 ### AI Authoring Pipeline
@@ -153,6 +155,8 @@ build → simulate → analyze → tune → experiment
 37. [NPC Agency](./37-npc-agency.md)
 38. [District Life](./38-district-life.md)
 39. [Companions & Party Dynamics](./39-companions.md)
+40. [Economy, Scarcity & Trade](./40-economy-trade.md)
+41. [Crafting, Salvage & Item Transformation](./41-crafting-salvage.md)
 
 ### Appendix
 
