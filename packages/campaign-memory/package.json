@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/campaign-memory",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Persistent NPC memory, relationship axes, and campaign journal for AI RPG Engine",
   "type": "module",
   "main": "./dist/index.js",
@@ -11,7 +11,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run"
@@ -24,7 +26,15 @@
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
     "directory": "packages/campaign-memory"
   },
-  "keywords": ["rpg", "npc", "memory", "relationship", "campaign", "journal", "game-engine"],
+  "keywords": [
+    "rpg",
+    "npc",
+    "memory",
+    "relationship",
+    "campaign",
+    "journal",
+    "game-engine"
+  ],
   "bugs": {
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues"
   },
