@@ -154,7 +154,7 @@ function scoreRisingPower(inputs: ArcInputs): { strength: number; drivers: strin
   else if (allied >= 1) { score += 0.15; drivers.push(`${allied} allied faction`); }
 
   const { influence, heat } = inputs.playerLeverage;
-  if (influence > 40) { score += 0.25; drivers.push(`influence: ${influence}`); }
+  if (influence > 50) { score += 0.25; drivers.push(`influence: ${influence}`); }
   if (heat < 30) { score += 0.15; drivers.push(`heat controlled: ${heat}`); }
 
   const completed = completedOpportunityCount(inputs.resolvedOpportunities);
@@ -268,7 +268,7 @@ function scoreMerchantPrince(inputs: ArcInputs): { strength: number; drivers: st
   else if (legitimacy > 30) { score += 0.15; }
 
   const avgSupply = avgDistrictStability(inputs.districtEconomies);
-  if (avgSupply > 60) { score += 0.25; drivers.push(`avg supply: ${Math.round(avgSupply)}`); }
+  if (avgSupply > 45) { score += 0.25; drivers.push(`avg supply: ${Math.round(avgSupply)}`); }
 
   const supplyRuns = completedOpportunityCount(inputs.resolvedOpportunities, 'supply-run');
   if (supplyRuns >= 2) { score += 0.2; drivers.push(`${supplyRuns} supply runs completed`); }

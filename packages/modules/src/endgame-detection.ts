@@ -2,6 +2,26 @@
 // v2.0: one-shot threshold detection, no LLM calls, deterministic
 // Returns at most one trigger per evaluation. Triggers are persisted.
 
+// --- Starter Pack Campaign Pacing Audit (v2.1) ---
+//
+// Pack                | Zones | Districts | Factions | NPCs | Reachable Arcs                                    | Plausible Endgames
+// --------------------|-------|-----------|----------|------|---------------------------------------------------|--------------------------------------------
+// Chapel Threshold    |   5   |     2     |    1     |  3   | last-stand, descent, reckoning                    | tragic-stab, martyrdom, quiet-retire
+// Neon Lockbox        |   3   |     2     |    1     |  2   | last-stand, descent, reckoning                    | tragic-stab, exile, martyrdom
+// Gaslight Detective  |   5   |     2     |    1     |  3   | descent, reckoning, last-stand                    | tragic-stab, exile, quiet-retire
+// Black Flag Requiem  |   5   |     2     |    1     |  3   | last-stand, descent, reckoning                    | tragic-stab, exile, martyrdom, overthrow(border)
+// Ashfall Dead        |   5   |     2     |    1     |  3   | community-builder, last-stand, descent, reckoning | tragic-stab, martyrdom, quiet-retire(border)
+// Dust Devil's Bargain|   5   |     2     |    2     |  2   | resistance, last-stand, descent, community-builder| tragic-stab, exile, overthrow, martyrdom
+// Signal Loss         |   5   |     2     |    1     |  2   | community-builder, last-stand, descent, reckoning | tragic-stab, exile, collapse(border)
+//
+// Key findings:
+// - 6/7 packs have only 1 faction → rising-power, hunted, kingmaker, victory unreachable
+// - Only Dust Devil's Bargain (2 factions) supports political arcs
+// - All packs have exactly 2 districts → collapse needs both unstable (tight)
+// - puppet-master unreachable in all packs (no blackmail content hooks)
+// - last-stand, descent, reckoning are universally reachable (combat-driven)
+// - Each pack has only 1 dialogue tree → obligation pressure is thin
+
 import type {
   ArcKind,
   ArcSnapshot,
@@ -63,7 +83,7 @@ function checkVictory(inputs: EndgameInputs): EndgameTrigger | null {
   if (alliedFactions.length === 0) return null;
 
   const { influence, heat } = playerLeverage;
-  if (influence < 60) return null;
+  if (influence < 50) return null;
   if (heat > 20) return null;
   if (activePressures.length > 2) return null;
 
@@ -90,7 +110,7 @@ function checkVictory(inputs: EndgameInputs): EndgameTrigger | null {
 function checkTragicStabilization(inputs: EndgameInputs): EndgameTrigger | null {
   const { activePressures, totalTurns, playerReputations, playerHp, playerMaxHp, playerLeverage } = inputs;
 
-  if (totalTurns < 60) return null;
+  if (totalTurns < 45) return null;
   if (activePressures.length > 1) return null;
 
   // Average rep near 0 (nobody cares about you)
@@ -228,9 +248,9 @@ function checkQuietRetirement(inputs: EndgameInputs): EndgameTrigger | null {
   const { activePressures, playerLeverage, companions, totalTurns } = inputs;
 
   if (totalTurns < 40) return null;
-  if (activePressures.length > 0) return null;
+  if (activePressures.length > 1) return null;
   if (playerLeverage.heat > 10) return null;
-  if (playerLeverage.legitimacy < 50) return null;
+  if (playerLeverage.legitimacy < 40) return null;
 
   // All companions content
   const activeCompanions = companions.filter((c) => c.active);
@@ -259,8 +279,8 @@ function checkQuietRetirement(inputs: EndgameInputs): EndgameTrigger | null {
 function checkPuppetMaster(inputs: EndgameInputs): EndgameTrigger | null {
   const { playerLeverage, playerReputations, npcObligations } = inputs;
 
-  if (playerLeverage.blackmail < 40) return null;
-  if (playerLeverage.influence < 50) return null;
+  if (playerLeverage.blackmail < 30) return null;
+  if (playerLeverage.influence < 40) return null;
   if (playerLeverage.heat > 30) return null;
 
   // Reputation is mixed — not clearly allied (no strong allies)
@@ -303,7 +323,7 @@ function checkCollapse(inputs: EndgameInputs): EndgameTrigger | null {
     const avgLevel = supplies.reduce((s, v) => s + v.level, 0) / supplies.length;
     if (avgLevel < 15) unstableDistricts++;
   }
-  if (unstableDistricts < 3) return null;
+  if (unstableDistricts < 2) return null;
 
   // Average faction cohesion low
   if (factionStates.length > 0) {

@@ -51,7 +51,8 @@ export type PlayerDiplomacyVerb =
 export type PlayerSabotageVerb =
   | 'sabotage'
   | 'plant-evidence'
-  | 'blackmail-target';
+  | 'blackmail-target'
+  | 'incite-riot';
 
 export type LeverageCost = Partial<Record<LeverageCurrency, number>>;
 
@@ -225,6 +226,7 @@ const SABOTAGE_REQUIREMENTS: Record<PlayerSabotageVerb, LeverageRequirement> = {
   'sabotage': { costs: { blackmail: 10 }, cooldownTurns: 4 },
   'plant-evidence': { costs: { blackmail: 20 }, cooldownTurns: 5 },
   'blackmail-target': { costs: { blackmail: 25 }, cooldownTurns: 5 },
+  'incite-riot': { costs: { blackmail: 15, influence: 10 }, cooldownTurns: 6 },
 };
 
 export function getSocialRequirements(subAction: PlayerSocialVerb): LeverageRequirement {
@@ -618,7 +620,7 @@ export function resolveDiplomacyAction(
 // --- Resolution: Sabotage ---
 
 const SABOTAGE_VERBS: Set<string> = new Set([
-  'sabotage', 'plant-evidence', 'blackmail-target',
+  'sabotage', 'plant-evidence', 'blackmail-target', 'incite-riot',
 ]);
 
 export function isPlayerSabotageVerb(s: string): s is PlayerSabotageVerb {
@@ -701,6 +703,26 @@ export function resolveSabotageAction(
       }
       narratorHint = 'Compliance comes at a price';
       break;
+
+    case 'incite-riot': {
+      effects.push({ type: 'heat', delta: 25 });
+      const riotDistrict = targetId;
+      if (riotDistrict) {
+        effects.push({
+          type: 'district-metric',
+          districtId: riotDistrict,
+          metric: 'stability',
+          delta: -10,
+        });
+      }
+      if (targetFactionId) {
+        effects.push({ type: 'alert', factionId: targetFactionId, delta: 20 });
+        effects.push({ type: 'cohesion', factionId: targetFactionId, delta: -0.15 });
+        effects.push({ type: 'reputation', factionId: targetFactionId, delta: -10 });
+      }
+      narratorHint = 'The streets erupt in fury';
+      break;
+    }
   }
 
   return {
