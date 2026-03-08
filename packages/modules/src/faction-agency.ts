@@ -349,6 +349,9 @@ export function resolveFactionAction(
     case 'recruit':
       effects.push({ type: 'member-count', factionId: action.factionId, delta: 1 });
       effects.push({ type: 'cohesion', factionId: action.factionId, delta: 0.05 });
+      if (action.targetDistrictId) {
+        effects.push({ type: 'district-metric', districtId: action.targetDistrictId, metric: 'morale', delta: 2 });
+      }
       narratorHint = `The ${action.factionId} have been seen recruiting in ${action.targetDistrictId ?? 'the district'}`;
       break;
 
@@ -450,6 +453,7 @@ export function resolveFactionAction(
           metric: 'stability',
           delta: -3,
         });
+        effects.push({ type: 'district-metric', districtId: action.targetDistrictId, metric: 'commerce', delta: 3 });
       }
       effects.push({ type: 'cohesion', factionId: action.factionId, delta: 0.03 });
       narratorHint = `Something is moving through ${action.targetDistrictId ?? 'the district'} at odd hours`;
@@ -458,6 +462,9 @@ export function resolveFactionAction(
     case 'hoard':
       effects.push({ type: 'cohesion', factionId: action.factionId, delta: 0.1 });
       effects.push({ type: 'reputation', factionId: action.factionId, delta: -3 });
+      if (action.targetDistrictId) {
+        effects.push({ type: 'district-metric', districtId: action.targetDistrictId, metric: 'commerce', delta: -3 });
+      }
       narratorHint = `The ${action.factionId} have gone quiet — consolidating`;
       break;
 

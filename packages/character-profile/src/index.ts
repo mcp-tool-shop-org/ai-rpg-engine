@@ -9,6 +9,9 @@ export type {
   CharacterProfile,
 } from './types.js';
 
+// Re-export item chronicle types from equipment (canonical home)
+export type { ItemChronicleEvent, ItemChronicleEntry } from '@ai-rpg-engine/equipment';
+
 export {
   PROFILE_VERSION,
   XP_THRESHOLDS,

@@ -25,6 +25,8 @@ Create rooms, entities, factions, quests, and content packs.
 - [Entities](./15-entities.md) — NPCs, creatures, players
 - [Dialogue Trees](./16-dialogue-trees.md) — branching conversations
 - [Items and Status Effects](./17-items-and-status-effects.md) — equipment, consumables, buffs
+- [Equipment](./30-equipment.md) — gear types, item provenance, relic growth
+- [Character Profiles](./31-character-profiles.md) — progression state, injuries, reputation
 - [The Chapel Threshold](./20-chapel-threshold.md) — fantasy starter walkthrough
 - [Neon Lockbox](./21-neon-lockbox.md) — cyberpunk starter walkthrough
 
@@ -38,19 +40,27 @@ How the engine processes actions, events, perception, and cognition.
 - [Perception Layers](./09-perception-layers.md) — sensory channels, clarity, distortion
 - [Narrative Authority](./12-narrative-authority.md) — truth vs presentation, unreliable narration
 
+### Living Systems
+
+NPC agency, districts, companions, leverage, and strategic play.
+
+- [NPC Agency](./37-npc-agency.md) — goals, obligations, loyalty breakpoints, consequence chains
+- [District Life](./38-district-life.md) — commerce, morale, safety, mood derivation
+- [Companions & Party Dynamics](./39-companions.md) — recruitment, morale, departure risk
+
 ### Balancing Worlds
 
 Analyze replay data, tune mechanics, run experiments.
 
-- [AI-Assisted Worldbuilding](./26-ai-worldbuilding.md) — scaffold, critique, tune, experiment workflows
-- [Deterministic Replay](./23-deterministic-replay.md) — reproduce and inspect any session
-- [Observability](./24-observability.md) — runtime inspection, health checks
+- [AI-Assisted Worldbuilding](./36-ai-worldbuilding.md) — scaffold, critique, tune, experiment workflows
+- [Deterministic Replay](./33-deterministic-replay.md) — reproduce and inspect any session
+- [Observability](./34-observability.md) — runtime inspection, health checks
 
 ### Using Chat Mode
 
 The interactive design studio.
 
-- [AI-Assisted Worldbuilding](./26-ai-worldbuilding.md) — chat shell commands, guided workflows, studio UX
+- [AI-Assisted Worldbuilding](./36-ai-worldbuilding.md) — chat shell commands, guided workflows, studio UX
 
 ---
 
@@ -59,7 +69,7 @@ The interactive design studio.
 ### Simulation Pipeline
 
 ```
-action → validation → resolution → events → perception → cognition → faction beliefs → district metrics
+action → validation → resolution → events → perception → cognition → faction beliefs → district metrics → NPC agency → companion reactions
 ```
 
 ### AI Authoring Pipeline
@@ -116,17 +126,33 @@ build → simulate → analyze → tune → experiment
 
 20. [The Chapel Threshold (Fantasy)](./20-chapel-threshold.md)
 21. [Neon Lockbox (Cyberpunk)](./21-neon-lockbox.md)
+22. [Gaslight Detective (Victorian Mystery)](./22-gaslight-detective.md)
+23. [Black Flag Requiem (Pirate)](./23-black-flag-requiem.md)
+24. [Ashfall Dead (Zombie Survival)](./24-ashfall-dead.md)
+25. [Dust Devil's Bargain (Weird West)](./25-dust-devils-bargain.md)
+26. [Signal Loss (Sci-Fi Colony)](./26-signal-loss.md)
 
-### Part VII — Debugging and Tools
+### Part VII — Character Systems
 
-22. [Save Files](./22-save-files.md)
-23. [Deterministic Replay](./23-deterministic-replay.md)
-24. [Observability](./24-observability.md)
+27. [Character Creation](./27-character-creation.md)
+28. [Asset Registry](./28-asset-registry.md)
+29. [Image Generation](./29-image-generation.md)
+30. [Equipment](./30-equipment.md)
+31. [Character Profiles](./31-character-profiles.md)
 
-### Part VIII — AI Authoring
+### Part VIII — Debugging and Tools
 
-25. [Planned Systems](./25-planned-systems.md)
-26. [AI-Assisted Worldbuilding](./26-ai-worldbuilding.md)
+32. [Save Files](./32-save-files.md)
+33. [Deterministic Replay](./33-deterministic-replay.md)
+34. [Observability](./34-observability.md)
+
+### Part IX — Live Systems
+
+35. [Planned Systems](./35-planned-systems.md)
+36. [AI-Assisted Worldbuilding](./36-ai-worldbuilding.md)
+37. [NPC Agency](./37-npc-agency.md)
+38. [District Life](./38-district-life.md)
+39. [Companions & Party Dynamics](./39-companions.md)
 
 ### Appendix
 

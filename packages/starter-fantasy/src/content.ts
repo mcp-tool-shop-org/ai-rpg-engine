@@ -47,6 +47,40 @@ export const pilgrim: EntityState = {
   zoneId: 'chapel-entrance',
 };
 
+export const brotherAldric: EntityState = {
+  id: 'brother-aldric',
+  blueprintId: 'brother-aldric',
+  type: 'npc',
+  name: 'Brother Aldric',
+  tags: ['npc', 'recruitable', 'healer'],
+  stats: { vigor: 3, instinct: 3, will: 7 },
+  resources: { hp: 12 },
+  statuses: [],
+  zoneId: 'chapel-nave',
+  custom: {
+    companionRole: 'healer',
+    companionAbilities: 'medical-support,witness-calming',
+    personalGoal: 'Redeem the fallen brothers of the chapel',
+  },
+};
+
+export const sisterMaren: EntityState = {
+  id: 'sister-maren',
+  blueprintId: 'sister-maren',
+  type: 'npc',
+  name: 'Sister Maren',
+  tags: ['npc', 'recruitable', 'diplomat'],
+  stats: { vigor: 2, instinct: 5, will: 5 },
+  resources: { hp: 10 },
+  statuses: [],
+  zoneId: 'chapel-entrance',
+  custom: {
+    companionRole: 'diplomat',
+    companionAbilities: 'faction-route,scholarly-insight',
+    personalGoal: 'Recover the chapel archives from the crypt',
+  },
+};
+
 // --- Enemies ---
 
 export const ashGhoul: EntityState = {
@@ -433,6 +467,7 @@ export const itemCatalog: ItemCatalog = {
       rarity: 'common',
       grantedTags: ['light-bearer'],
       grantedVerbs: ['illuminate'],
+      provenance: { origin: 'Chapel reliquary', flags: ['blessed', 'heirloom'], lore: 'Lit by a saint whose name has been forgotten' },
     },
     {
       id: 'penitent-mail',
@@ -450,6 +485,7 @@ export const itemCatalog: ItemCatalog = {
       rarity: 'uncommon',
       grantedTags: ['ward-undead'],
       statModifiers: { will: 1 },
+      provenance: { flags: ['cursed', 'trophy'], lore: 'Carved from the rib of something that refused to stay buried' },
     },
     {
       id: 'gravedigger-spade',
@@ -459,7 +495,7 @@ export const itemCatalog: ItemCatalog = {
       rarity: 'common',
       statModifiers: { vigor: 1 },
       grantedVerbs: ['dig'],
-      provenance: 'Chapel groundskeeper',
+      provenance: { origin: 'Chapel groundskeeper', lore: 'A well-worn spade used to tend the chapel grounds' },
     },
     {
       id: 'sigil-ring',
@@ -468,6 +504,7 @@ export const itemCatalog: ItemCatalog = {
       slot: 'accessory',
       rarity: 'uncommon',
       grantedTags: ['chapel-authority'],
+      provenance: { origin: 'Chapel inner sanctum', factionId: 'chapel-order', flags: ['heirloom'], lore: 'The lost seal of the Chapel Order' },
     },
     {
       id: 'veil-shroud',

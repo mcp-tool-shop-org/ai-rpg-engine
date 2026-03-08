@@ -29,6 +29,7 @@ export function createProfile(
     resources: { ...resources },
     tags: [...tags],
     loadout: createEmptyLoadout(),
+    itemChronicle: {},
     progression: {
       xp: 0,
       level: 1,

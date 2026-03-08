@@ -17,6 +17,15 @@ export const DEFAULT_RELATIONSHIP_EFFECTS: Record<RecordCategory, Partial<Relati
   insult:    { trust: -0.1, admiration: -0.2 },
   rescue:    { trust: 0.4, admiration: 0.3, fear: -0.1 },
   death:     { fear: 0.3 },
+  'companion-joined':       { trust: 0.2, familiarity: 0.2, admiration: 0.1 },
+  'companion-departed':     { trust: -0.2, familiarity: 0.1 },
+  'companion-betrayed':     { trust: -0.5, admiration: -0.2, fear: 0.1 },
+  'companion-saved-player': { trust: 0.4, admiration: 0.4, familiarity: 0.2 },
+  'companion-died':         { fear: 0.2, admiration: 0.1 },
+  'item-acquired':          {},
+  'item-lost':              {},
+  'item-recognized':        { familiarity: 0.1 },
+  'item-transformed':       { admiration: 0.1 },
 };
 
 /**

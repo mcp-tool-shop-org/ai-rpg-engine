@@ -37,7 +37,7 @@ You can generate world content, critique designs, run deterministic simulations,
 
 ### Deterministic Simulation
 
-A tick-based simulation engine for RPG worlds. World state, event system, perception and cognition layers, faction belief propagation, rumor systems, district metrics, replayable action logs, and deterministic RNG. Every run can be replayed exactly.
+A tick-based simulation engine for RPG worlds. World state, event system, perception and cognition layers, faction belief propagation, rumor systems, district metrics with mood derivation, NPC agency with loyalty breakpoints and consequence chains, companions with morale and departure risk, player leverage and political action, strategic map analysis, move advisor, item recognition and equipment provenance, relic growth milestones, replayable action logs, and deterministic RNG. Every run can be replayed exactly.
 
 ### AI-Assisted Worldbuilding
 
@@ -132,13 +132,22 @@ The system has four layers.
 | Package | Purpose |
 |---------|---------|
 | [`@ai-rpg-engine/core`](packages/core) | Deterministic simulation runtime — world state, events, RNG, ticks, action resolution |
-| [`@ai-rpg-engine/modules`](packages/modules) | 17 built-in modules — combat, perception, cognition, factions, rumors, districts |
+| [`@ai-rpg-engine/modules`](packages/modules) | 29 built-in modules — combat, perception, cognition, factions, rumors, districts, NPC agency, companions, player leverage, strategic map, move advisor, item recognition |
 | [`@ai-rpg-engine/content-schema`](packages/content-schema) | Canonical schemas and validators for world content |
+| [`@ai-rpg-engine/character-profile`](packages/character-profile) | Character progression state, injuries, milestones, reputation |
+| [`@ai-rpg-engine/character-creation`](packages/character-creation) | Archetype selection, build generation, starter gear |
+| [`@ai-rpg-engine/equipment`](packages/equipment) | Equipment types, item provenance, relic growth, item chronicles |
+| [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | Cross-session memory, relationship effects, campaign state |
 | [`@ai-rpg-engine/ollama`](packages/ollama) | Optional AI authoring — scaffolding, critique, guided workflows, tuning, experiments |
 | [`@ai-rpg-engine/cli`](packages/cli) | Command-line design studio — chat shell, workflows, experiment tools |
 | [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | Terminal renderer and input layer |
 | [`@ai-rpg-engine/starter-fantasy`](packages/starter-fantasy) | The Chapel Threshold — fantasy starter world |
 | [`@ai-rpg-engine/starter-cyberpunk`](packages/starter-cyberpunk) | Neon Lockbox — cyberpunk starter world |
+| [`@ai-rpg-engine/starter-detective`](packages/starter-detective) | Gaslight Detective — Victorian mystery starter world |
+| [`@ai-rpg-engine/starter-pirate`](packages/starter-pirate) | Black Flag Requiem — pirate starter world |
+| [`@ai-rpg-engine/starter-zombie`](packages/starter-zombie) | Ashfall Dead — zombie survival starter world |
+| [`@ai-rpg-engine/starter-weird-west`](packages/starter-weird-west) | Dust Devil's Bargain — weird west starter world |
+| [`@ai-rpg-engine/starter-colony`](packages/starter-colony) | Signal Loss — sci-fi colony starter world |
 
 ---
 
@@ -146,7 +155,7 @@ The system has four layers.
 
 | Resource | Description |
 |----------|-------------|
-| [Handbook](docs/handbook/index.md) | 26 chapters + 4 appendices covering every system |
+| [Handbook](docs/handbook/index.md) | 39 chapters + 4 appendices covering every system |
 | [Design Document](docs/DESIGN.md) | Architecture deep-dive — action pipeline, truth vs presentation, simulation layers |
 | [AI Worldbuilding Guide](packages/ollama/AI_WORLDBUILDING.md) | Scaffold, diagnose, tune, experiment workflows |
 | [Philosophy](PHILOSOPHY.md) | Why deterministic worlds, evidence-driven design, and AI as assistant |

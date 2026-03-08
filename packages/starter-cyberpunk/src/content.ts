@@ -40,11 +40,33 @@ export const fixer: EntityState = {
   blueprintId: 'fixer',
   type: 'npc',
   name: 'Kira',
-  tags: ['npc', 'fixer'],
+  tags: ['npc', 'fixer', 'recruitable', 'fighter'],
   stats: { chrome: 2, reflex: 4, netrunning: 3 },
   resources: { hp: 10 },
   statuses: [],
   zoneId: 'street-level',
+  custom: {
+    companionRole: 'fighter',
+    companionAbilities: 'intimidation-backup,trade-advantage',
+    personalGoal: 'Track down the source of the lockbox data',
+  },
+};
+
+export const rez: EntityState = {
+  id: 'rez',
+  blueprintId: 'rez',
+  type: 'npc',
+  name: 'Rez',
+  tags: ['npc', 'recruitable', 'scout'],
+  stats: { chrome: 1, reflex: 6, netrunning: 5 },
+  resources: { hp: 8 },
+  statuses: [],
+  zoneId: 'server-room',
+  custom: {
+    companionRole: 'scout',
+    companionAbilities: 'smuggling-contact,rumor-suppression',
+    personalGoal: 'Erase his identity from the corporate databases',
+  },
 };
 
 // --- Enemies ---
@@ -413,6 +435,7 @@ export const itemCatalog: ItemCatalog = {
       rarity: 'common',
       grantedVerbs: ['hack'],
       grantedTags: ['net-armed'],
+      provenance: { factionId: 'syndicate', flags: ['contraband'], lore: 'Stripped from a corporate courier' },
     },
     {
       id: 'synth-vest',
@@ -448,6 +471,7 @@ export const itemCatalog: ItemCatalog = {
       rarity: 'uncommon',
       grantedTags: ['ghost-signal'],
       statModifiers: { reflex: 1 },
+      provenance: { flags: ['stolen'], lore: 'Serial number filed off — previous owner unknown' },
     },
     {
       id: 'military-exo',
@@ -458,6 +482,7 @@ export const itemCatalog: ItemCatalog = {
       resourceModifiers: { hp: 8 },
       statModifiers: { chrome: 2 },
       requiredTags: ['chrome-compatible'],
+      provenance: { origin: 'Corporate PMC unit', factionId: 'corpo-sec', flags: ['trophy', 'contraband'], lore: 'Salvaged from a fallen corporate soldier' },
     },
   ],
 };

@@ -69,7 +69,16 @@ export function deserializeProfile(json: string): {
     return { profile: null, errors };
   }
 
-  return { profile: parsed as CharacterProfile, errors: [] };
+  // Migrate v1 profiles: add itemChronicle if missing
+  const profile = parsed as CharacterProfile;
+  if (!profile.itemChronicle) {
+    (profile as Record<string, unknown>).itemChronicle = {};
+  }
+  if (profile.version < PROFILE_VERSION) {
+    (profile as Record<string, unknown>).version = PROFILE_VERSION;
+  }
+
+  return { profile, errors: [] };
 }
 
 /** Validate a serialized profile string. */

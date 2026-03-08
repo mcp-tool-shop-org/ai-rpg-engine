@@ -24,6 +24,8 @@ import {
   manifest,
   player,
   pilgrim,
+  brotherAldric,
+  sisterMaren,
   ashGhoul,
   zones,
   districts,
@@ -108,6 +110,8 @@ export function createGame(seed?: number): Engine {
   // Add entities
   engine.store.addEntity({ ...player });
   engine.store.addEntity({ ...pilgrim });
+  engine.store.addEntity({ ...brotherAldric });
+  engine.store.addEntity({ ...sisterMaren });
   engine.store.addEntity({ ...ashGhoul });
 
   // Set player

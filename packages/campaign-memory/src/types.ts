@@ -24,7 +24,16 @@ export type RecordCategory =
   | 'alliance'
   | 'insult'
   | 'rescue'
-  | 'death';
+  | 'death'
+  | 'companion-joined'
+  | 'companion-departed'
+  | 'companion-betrayed'
+  | 'companion-saved-player'
+  | 'companion-died'
+  | 'item-acquired'
+  | 'item-lost'
+  | 'item-recognized'
+  | 'item-transformed';
 
 /** Persistent record of a significant action/event */
 export type CampaignRecord = {
@@ -94,6 +103,9 @@ export type CampaignMemoryConfig = {
 export const VALID_CATEGORIES: readonly RecordCategory[] = [
   'action', 'combat', 'kill', 'betrayal', 'gift', 'theft',
   'debt', 'discovery', 'alliance', 'insult', 'rescue', 'death',
+  'companion-joined', 'companion-departed', 'companion-betrayed',
+  'companion-saved-player', 'companion-died',
+  'item-acquired', 'item-lost', 'item-recognized', 'item-transformed',
 ] as const;
 
 export const VALID_CONSOLIDATIONS: readonly Consolidation[] = [

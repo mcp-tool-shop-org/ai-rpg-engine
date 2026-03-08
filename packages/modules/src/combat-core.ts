@@ -14,6 +14,8 @@ export type CombatFormulas = {
   hitChance?: (attacker: EntityState, target: EntityState, world: WorldState) => number;
   /** Calculate damage. Default: attacker.vigor + weapon bonus */
   damage?: (attacker: EntityState, target: EntityState, world: WorldState) => number;
+  /** Check if an entity is the player's ally (companion). Used for interception. */
+  isAlly?: (entityId: string) => boolean;
 };
 
 export function createCombatCore(formulas?: CombatFormulas): EngineModule {
@@ -107,6 +109,60 @@ function attackHandler(
   const damage = formulas?.damage
     ? formulas.damage(attacker, target, world)
     : defaultDamage(attacker);
+
+  // Ally interception: if the target is the player and has companion allies in the same zone,
+  // there's a 30% chance a companion intercepts the damage
+  if (formulas?.isAlly && target.id === world.playerId) {
+    const allies = Object.values(world.entities).filter(
+      (e) => e.zoneId === target.zoneId && e.id !== target.id && e.id !== attacker.id
+        && formulas.isAlly!(e.id)
+        && (e.resources.hp ?? 0) > 0,
+    );
+    if (allies.length > 0) {
+      const interceptRoll = simpleRoll(world.meta.tick, target.id, allies[0].id);
+      if (interceptRoll <= 30) {
+        // Companion intercepts
+        const interceptor = allies[0];
+        const interceptorPrevHp = interceptor.resources.hp ?? 0;
+        interceptor.resources.hp = Math.max(0, interceptorPrevHp - damage);
+
+        events.push(makeEvent(action, 'combat.companion.intercepted', {
+          interceptorId: interceptor.id,
+          interceptorName: interceptor.name,
+          targetId: target.id,
+          attackerId: attacker.id,
+          damage,
+          interceptorHpBefore: interceptorPrevHp,
+          interceptorHpAfter: interceptor.resources.hp,
+        }, {
+          targetIds: [interceptor.id, target.id],
+          presentation: { channels: ['objective', 'narrator'], priority: 'high' },
+        }));
+
+        events.push(makeEvent(action, 'resource.changed', {
+          entityId: interceptor.id,
+          resource: 'hp',
+          previous: interceptorPrevHp,
+          current: interceptor.resources.hp,
+          delta: -damage,
+        }));
+
+        // Check interceptor defeat
+        if (interceptor.resources.hp <= 0) {
+          events.push(makeEvent(action, 'combat.entity.defeated', {
+            entityId: interceptor.id,
+            entityName: interceptor.name,
+            defeatedBy: attacker.id,
+          }, {
+            targetIds: [interceptor.id],
+            presentation: { channels: ['objective', 'narrator'], priority: 'critical', soundCues: ['combat.defeat'] },
+          }));
+        }
+
+        return events;
+      }
+    }
+  }
 
   const previousHp = target.resources.hp ?? 0;
   target.resources.hp = Math.max(0, previousHp - damage);

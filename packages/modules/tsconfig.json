@@ -7,6 +7,7 @@
   "include": ["src"],
   "references": [
     { "path": "../core" },
-    { "path": "../content-schema" }
+    { "path": "../content-schema" },
+    { "path": "../character-profile" }
   ]
 }

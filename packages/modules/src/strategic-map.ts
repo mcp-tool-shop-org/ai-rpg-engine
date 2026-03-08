@@ -11,6 +11,7 @@ import {
   getDistrictState,
   getDistrictThreatLevel,
 } from './district-core.js';
+import { computeDistrictMood } from './district-mood.js';
 import { getFactionCognition } from './faction-cognition.js';
 import { getRumorsInDistrict } from './player-rumor.js';
 import { deriveStance } from './social-consequence.js';
@@ -24,6 +25,7 @@ export type DistrictStrategicView = {
   threatLevel: number;
   stability: number;
   surveillance: number;
+  moodDescriptor: string;
   activePressureKinds: PressureKind[];
   factionPresence: { factionId: string; strength: 'dominant' | 'present' | 'weak' }[];
   hotspotTags: string[];
@@ -81,6 +83,8 @@ export function buildStrategicMap(
     if (state.alertPressure > 30) hotspotTags.push('high-alert');
     if (state.surveillance > 40) hotspotTags.push('heavily-watched');
 
+    const mood = computeDistrictMood(state, def.tags);
+
     districts.push({
       districtId,
       name: def.name,
@@ -88,6 +92,7 @@ export function buildStrategicMap(
       threatLevel,
       stability: state.stability,
       surveillance: state.surveillance,
+      moodDescriptor: mood.descriptor,
       activePressureKinds: districtPressures.map((p) => p.kind),
       factionPresence,
       hotspotTags,
@@ -159,7 +164,7 @@ export function formatStrategicMapForDirector(map: StrategicMap): string {
     lines.push('  DISTRICTS');
     for (const d of map.districts) {
       const tags = d.hotspotTags.length > 0 ? ` [${d.hotspotTags.join(', ')}]` : '';
-      lines.push(`    ${d.name} (${d.districtId})`);
+      lines.push(`    ${d.name} (${d.districtId}) — "${d.moodDescriptor}"`);
       lines.push(`      Threat: ${d.threatLevel} | Stability: ${d.stability} | Surveillance: ${d.surveillance}${tags}`);
       if (d.controllingFaction) {
         lines.push(`      Controlled by: ${d.controllingFaction}`);

@@ -1,7 +1,8 @@
 // district-core — spatial memory layer
 // Districts aggregate zone-level signals into persistent informational state.
-// Alert pressure, rumor density, intruder likelihood, and surveillance
-// rise from events and decay over time, giving the world spatial memory.
+// Alert pressure, rumor density, intruder likelihood, surveillance, commerce,
+// and morale rise from events and decay over time, giving the world spatial memory.
+// v1.4: commerce + morale metrics with baseline-seeking decay
 
 import type {
   EngineModule,
@@ -25,6 +26,10 @@ export type DistrictMetrics = {
   surveillance: number;
   /** Aggregated environmental stability from constituent zones */
   stability: number;
+  /** Economic activity — decays toward 50 baseline */
+  commerce: number;
+  /** Populace spirit — decays toward 50 baseline */
+  morale: number;
 };
 
 export type DistrictDefinition = {
@@ -65,6 +70,8 @@ const DEFAULT_METRICS: DistrictMetrics = {
   intruderLikelihood: 0,
   surveillance: 0,
   stability: 5,
+  commerce: 50,
+  morale: 50,
 };
 
 const DEFAULT_DECAY: DistrictDecayConfig = {
@@ -142,6 +149,37 @@ export function createDistrictCore(config: DistrictCoreConfig): EngineModule {
 
         district.eventCount++;
         district.lastUpdateTick = event.tick;
+      });
+
+      // Combat defeats depress morale
+      ctx.events.on('combat.entity.defeated', (event, world) => {
+        const districtId = getEventDistrictId(event, world);
+        if (!districtId) return;
+        const state = getModuleState(world);
+        const district = state.districts[districtId];
+        if (!district) return;
+        district.morale = Math.max(0, district.morale - 3);
+      });
+
+      // Trade activity boosts commerce
+      ctx.events.on('inventory.item.received', (event, world) => {
+        const districtId = getEventDistrictId(event, world);
+        if (!districtId) return;
+        const state = getModuleState(world);
+        const district = state.districts[districtId];
+        if (!district) return;
+        district.commerce = Math.min(100, district.commerce + 3);
+        district.lastUpdateTick = event.tick;
+      });
+
+      // Social interaction lifts morale
+      ctx.events.on('dialogue.choice.selected', (event, world) => {
+        const districtId = getEventDistrictId(event, world);
+        if (!districtId) return;
+        const state = getModuleState(world);
+        const district = state.districts[districtId];
+        if (!district) return;
+        district.morale = Math.min(100, district.morale + 1);
       });
 
       // Rumor events raise rumor density
@@ -239,11 +277,12 @@ export function isDistrictOnAlert(world: WorldState, districtId: string): boolea
 export function getDistrictThreatLevel(world: WorldState, districtId: string): number {
   const state = getModuleState(world).districts[districtId];
   if (!state) return 0;
-  return Math.min(100, Math.round(
-    state.alertPressure * 0.4 +
+  const base = state.alertPressure * 0.4 +
     state.intruderLikelihood * 0.35 +
-    state.rumorDensity * 0.25,
-  ));
+    state.rumorDensity * 0.25;
+  // Low morale amplifies perceived threat
+  const moralePenalty = state.morale < 30 ? (30 - state.morale) * 0.1 : 0;
+  return Math.min(100, Math.round(base + moralePenalty));
 }
 
 // --- Tick Processing ---
@@ -268,6 +307,22 @@ function processDistrictTick(world: WorldState, decayConfig: DistrictDecayConfig
       decayConfig.floor,
       district.intruderLikelihood - decayConfig.decayRate * 0.8,
     );
+
+    // Commerce: baseline-seeking decay toward 50
+    const commerceDecay = decayConfig.decayRate * 0.5;
+    if (district.commerce > 50) {
+      district.commerce = Math.max(50, district.commerce - commerceDecay);
+    } else if (district.commerce < 50) {
+      district.commerce = Math.min(50, district.commerce + commerceDecay);
+    }
+
+    // Morale: baseline-seeking decay toward 50
+    const moraleDecay = decayConfig.decayRate * 0.5;
+    if (district.morale > 50) {
+      district.morale = Math.max(50, district.morale - moraleDecay);
+    } else if (district.morale < 50) {
+      district.morale = Math.min(50, district.morale + moraleDecay);
+    }
 
     // Surveillance: count faction members present in district zones
     if (def.controllingFaction) {

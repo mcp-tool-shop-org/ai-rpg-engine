@@ -58,6 +58,8 @@ export type WorldPressure = {
   resolution?: PressureResolution;
   /** If this pressure was spawned by fallout from another pressure */
   chainedFrom?: string;
+  /** NPC who originated this pressure (if NPC-driven) */
+  sourceNpcId?: string;
 };
 
 export type PressureInputs = {
@@ -710,7 +712,7 @@ export function formatPressureForDirector(pressure: WorldPressure): string {
   const turns = pressure.turnsRemaining !== null ? `${pressure.turnsRemaining} turns` : 'permanent';
   const parts = [
     `  [${pressure.kind}] ${pressure.description}`,
-    `    Source: ${pressure.sourceFactionId} | Urgency: ${urgencyPct}% | Visibility: ${pressure.visibility}`,
+    `    Source: ${pressure.sourceFactionId}${pressure.sourceNpcId ? ` (via ${pressure.sourceNpcId})` : ''} | Urgency: ${urgencyPct}% | Visibility: ${pressure.visibility}`,
     `    Expires: ${turns} | Triggered by: ${pressure.triggeredBy}`,
     `    Tags: ${pressure.tags.join(', ')}`,
     `    Outcomes:`,
@@ -744,8 +746,9 @@ export function makePressure(opts: {
   potentialOutcomes: string[];
   tags: string[];
   currentTick: number;
+  sourceNpcId?: string;
 }): WorldPressure {
-  return {
+  const pressure: WorldPressure = {
     id: nextPressureId(),
     kind: opts.kind,
     sourceFactionId: opts.sourceFactionId,
@@ -758,6 +761,8 @@ export function makePressure(opts: {
     tags: opts.tags,
     createdAtTick: opts.currentTick,
   };
+  if (opts.sourceNpcId) pressure.sourceNpcId = opts.sourceNpcId;
+  return pressure;
 }
 
 function isMerchantFaction(factionId: string): boolean {

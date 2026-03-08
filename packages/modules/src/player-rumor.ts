@@ -246,6 +246,41 @@ function exaggerateClaim(claim: string): string {
   return claim;
 }
 
+// --- NPC-Originated Rumors ---
+
+export type NpcRumorSource = 'npc-accusation' | 'npc-betrayal' | 'npc-warning'
+  | 'npc-concealment' | 'npc-gossip';
+
+/**
+ * Spawn a rumor originating from an NPC action (not player-initiated).
+ * Lower initial confidence than player-spawned rumors; slight NPC perspective bias.
+ */
+export function spawnNpcOriginatedRumor(
+  claim: string,
+  valence: RumorValence,
+  sourceEvent: NpcRumorSource,
+  originNpcId: string,
+  originFactionId: string | undefined,
+  originDistrictId: string | undefined,
+  tick: number,
+  confidence: number = 0.75,
+): PlayerRumor {
+  return {
+    id: nextRumorId(),
+    claim,
+    subjectDescriptor: `word from ${originNpcId}`,
+    sourceEvent,
+    originFactionId,
+    originDistrictId,
+    confidence,
+    distortion: 0.05,
+    mutationCount: 0,
+    valence,
+    spreadTo: originFactionId ? [originFactionId] : [],
+    originTick: tick,
+  };
+}
+
 // --- Player-Initiated Rumor Manipulation ---
 
 /**

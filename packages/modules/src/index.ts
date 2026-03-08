@@ -133,6 +133,17 @@ export type {
   DistrictCoreConfig,
 } from './district-core.js';
 export {
+  computeDistrictMood,
+  computeDistrictModifiers,
+  formatDistrictMoodForNarrator,
+  formatDistrictForDirector,
+  formatAllDistrictsForDirector,
+} from './district-mood.js';
+export type {
+  DistrictMood,
+  DistrictModifiers,
+} from './district-mood.js';
+export {
   createBeliefProvenance,
   traceEntityBelief,
   traceFactionBelief,
@@ -194,6 +205,7 @@ export {
   spawnPlayerRumor,
   spawnReputationRumor,
   spawnIntentionalRumor,
+  spawnNpcOriginatedRumor,
   denyRumor,
   buryRumor,
   propagateRumor,
@@ -209,6 +221,7 @@ export type {
   RumorValence,
   RumorMutation,
   MilestoneHint,
+  NpcRumorSource,
 } from './player-rumor.js';
 export {
   evaluatePressures,
@@ -315,3 +328,92 @@ export type {
   AdvisorInputs,
   MoveRecommendation,
 } from './move-advisor.js';
+export {
+  createPartyState,
+  addCompanion,
+  removeCompanion,
+  getCompanion,
+  isCompanion,
+  getActiveCompanions,
+  setCompanionActive,
+  adjustCompanionMorale,
+  computePartyCohesion,
+  computePartyAbilities,
+  isCompanionRecruitable,
+  computeAbilityModifiers,
+  formatPartyForDirector,
+  formatPartyStatusLine,
+  formatPartyPresence,
+} from './companion-core.js';
+export type {
+  CompanionRole,
+  CompanionState,
+  PartyState,
+  AbilityModifiers,
+} from './companion-core.js';
+export {
+  evaluateCompanionReactions,
+  evaluateDepartureRisk,
+} from './companion-reactions.js';
+export type {
+  CompanionReaction,
+  DepartureRisk,
+  DepartureAssessment,
+} from './companion-reactions.js';
+export {
+  evaluateItemRecognition,
+  shouldRecognize,
+  recognitionProbability,
+} from './item-recognition.js';
+export type {
+  ItemRecognitionType,
+  ItemRecognitionResult,
+} from './item-recognition.js';
+export {
+  isNamedNpc,
+  deriveNpcRelationship,
+  deriveLoyaltyBreakpoint,
+  deriveDominantAxis,
+  deriveBestLeverageAngle,
+  buildNpcProfile,
+  buildAllNpcProfiles,
+  evaluateNpcActions,
+  resolveNpcAction,
+  runNpcAgencyTick,
+  formatNpcProfileForDirector,
+  formatNpcPeopleForDirector,
+  formatNpcAgencyForNarrator,
+  generateNpcTextures,
+  createObligation,
+  addObligation,
+  tickObligations,
+  getObligationsToward,
+  getNetObligationWeight,
+  formatObligationsForDirector,
+  computeRelationshipModifiers,
+  evaluateConsequenceChainTrigger,
+  buildConsequenceChain,
+  shouldResolveChainStep,
+  resolveConsequenceChainStep,
+  tickConsequenceChain,
+  computeNpcRecapEntries,
+} from './npc-agency.js';
+export type {
+  LoyaltyBreakpoint,
+  RelationshipModifiers,
+  ConsequenceKind,
+  ConsequenceStep,
+  ConsequenceChain,
+  NpcRecapEntry,
+  NpcActionVerb,
+  NpcRelationship,
+  NpcGoal,
+  NpcProfile,
+  NpcAction,
+  NpcEffect,
+  NpcActionResult,
+  ObligationKind,
+  ObligationDirection,
+  NpcObligation,
+  NpcObligationLedger,
+} from './npc-agency.js';

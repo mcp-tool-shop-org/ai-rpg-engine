@@ -20,7 +20,8 @@
   },
   "dependencies": {
     "@ai-rpg-engine/core": "*",
-    "@ai-rpg-engine/content-schema": "*"
+    "@ai-rpg-engine/content-schema": "*",
+    "@ai-rpg-engine/character-profile": "*"
   },
   "license": "MIT",
   "author": "mcp-tool-shop",

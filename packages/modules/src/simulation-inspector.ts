@@ -259,6 +259,8 @@ export function inspectDistrict(world: WorldState, districtId: string): District
       intruderLikelihood: state.intruderLikelihood,
       surveillance: state.surveillance,
       stability: state.stability,
+      commerce: state.commerce,
+      morale: state.morale,
     },
     threatLevel: getDistrictThreatLevel(world, districtId),
     eventCount: state.eventCount,

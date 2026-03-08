@@ -1,7 +1,7 @@
 // Character profile types — persistent identity across sessions
 
 import type { CharacterBuild } from '@ai-rpg-engine/character-creation';
-import type { Loadout } from '@ai-rpg-engine/equipment';
+import type { Loadout, ItemChronicleEntry } from '@ai-rpg-engine/equipment';
 
 // --- Progression ---
 
@@ -83,6 +83,8 @@ export type CharacterProfile = {
   tags: string[];
   /** Equipment and inventory state. */
   loadout: Loadout;
+  /** Per-item chronicle — runtime history accumulated during play. Key is item ID. */
+  itemChronicle: Record<string, ItemChronicleEntry[]>;
   /** Progression (XP, level, ranks). */
   progression: ProgressionState;
   /** Active and healed injuries. */
@@ -106,7 +108,7 @@ export type CharacterProfile = {
 };
 
 /** Current schema version. */
-export const PROFILE_VERSION = 1;
+export const PROFILE_VERSION = 2;
 
 /** XP required to reach a given level. */
 export const XP_THRESHOLDS: readonly number[] = [

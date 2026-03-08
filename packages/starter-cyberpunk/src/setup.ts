@@ -24,6 +24,7 @@ import {
   manifest,
   player,
   fixer,
+  rez,
   iceAgent,
   zones,
   districts,
@@ -111,6 +112,7 @@ export function createGame(seed?: number): Engine {
   // Add entities
   engine.store.addEntity({ ...player });
   engine.store.addEntity({ ...fixer });
+  engine.store.addEntity({ ...rez });
   engine.store.addEntity({ ...iceAgent });
 
   // Set player
