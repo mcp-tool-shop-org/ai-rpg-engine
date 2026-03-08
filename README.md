@@ -37,7 +37,7 @@ You can generate world content, critique designs, run deterministic simulations,
 
 ### Deterministic Simulation
 
-A tick-based simulation engine for RPG worlds. World state, event system, perception and cognition layers, faction belief propagation, rumor systems, district metrics with mood derivation, NPC agency with loyalty breakpoints and consequence chains, companions with morale and departure risk, player leverage and political action, strategic map analysis, move advisor, item recognition and equipment provenance, relic growth milestones, replayable action logs, and deterministic RNG. Every run can be replayed exactly.
+A tick-based simulation engine for RPG worlds. World state, event system, perception and cognition layers, faction belief propagation, rumor systems, district metrics with mood derivation, NPC agency with loyalty breakpoints and consequence chains, companions with morale and departure risk, player leverage and political action, strategic map analysis, move advisor, item recognition and equipment provenance, relic growth milestones, emergent opportunities (contracts, bounties, favors, supply runs, investigations) generated from world conditions, campaign arc detection (10 arc kinds derived from accumulated state), endgame trigger detection (8 resolution classes), and deterministic finale rendering with structured epilogues. Replayable action logs and deterministic RNG. Every run can be replayed exactly.
 
 ### AI-Assisted Worldbuilding
 
@@ -132,7 +132,7 @@ The system has four layers.
 | Package | Purpose |
 |---------|---------|
 | [`@ai-rpg-engine/core`](packages/core) | Deterministic simulation runtime — world state, events, RNG, ticks, action resolution |
-| [`@ai-rpg-engine/modules`](packages/modules) | 29 built-in modules — combat, perception, cognition, factions, rumors, districts, NPC agency, companions, player leverage, strategic map, move advisor, item recognition |
+| [`@ai-rpg-engine/modules`](packages/modules) | 29 built-in modules — combat, perception, cognition, factions, rumors, districts, NPC agency, companions, player leverage, strategic map, move advisor, item recognition, emergent opportunities, arc detection, endgame triggers |
 | [`@ai-rpg-engine/content-schema`](packages/content-schema) | Canonical schemas and validators for world content |
 | [`@ai-rpg-engine/character-profile`](packages/character-profile) | Character progression state, injuries, milestones, reputation |
 | [`@ai-rpg-engine/character-creation`](packages/character-creation) | Archetype selection, build generation, starter gear |
@@ -155,7 +155,7 @@ The system has four layers.
 
 | Resource | Description |
 |----------|-------------|
-| [Handbook](docs/handbook/index.md) | 39 chapters + 4 appendices covering every system |
+| [Handbook](docs/handbook/index.md) | 43 chapters + 4 appendices covering every system |
 | [Design Document](docs/DESIGN.md) | Architecture deep-dive — action pipeline, truth vs presentation, simulation layers |
 | [AI Worldbuilding Guide](packages/ollama/AI_WORLDBUILDING.md) | Scaffold, diagnose, tune, experiment workflows |
 | [Philosophy](PHILOSOPHY.md) | Why deterministic worlds, evidence-driven design, and AI as assistant |

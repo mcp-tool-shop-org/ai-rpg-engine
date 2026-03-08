@@ -16,7 +16,7 @@
 
 Kit de ferramentas nativo de simulação para construir, analisar e balancear mundos de RPG.
 
-AI RPG Engine combina um ambiente de execução de simulação determinística com um estúdio de design assistido por IA, permitindo que autores criem mundos, os testem por simulação e os melhorem com base em evidências, não em suposições.
+AI RPG Engine combina um runtime de simulação determinística com um estúdio de design assistido por IA, permitindo que autores criem mundos, os testem por simulação e os melhorem com base em evidências, não em suposições.
 
 > Ferramentas tradicionais ajudam a escrever histórias.
 > AI RPG Engine ajuda a **testar mundos**.
@@ -37,7 +37,7 @@ Você pode gerar conteúdo de mundo, criticar designs, executar simulações det
 
 ### Simulação Determinística
 
-Um motor de simulação baseado em ticks para mundos de RPG. Estado do mundo, sistema de eventos, camadas de percepção e cognição, propagação de crenças de facções, sistemas de rumores, métricas de distritos, logs de ações reproduzíveis e RNG determinístico. Cada execução pode ser reproduzida exatamente.
+Um motor de simulação baseado em ticks para mundos de RPG. Estado do mundo, sistema de eventos, camadas de percepção e cognição, propagação de crenças de facções, sistemas de rumores, métricas de distritos com derivação de humor, agência de NPCs com pontos de ruptura de lealdade e cadeias de consequências, companheiros com moral e risco de partida, influência do jogador e ação política, análise estratégica de mapa, conselheiro de movimentos, reconhecimento de itens e procedência de equipamentos, marcos de crescimento de relíquias, oportunidades emergentes (contratos, recompensas, favores, missões de suprimento, investigações) geradas a partir das condições do mundo, detecção de arcos de campanha (10 tipos de arco derivados do estado acumulado), detecção de gatilhos de final de jogo (8 classes de resolução) e renderização determinística de finale com epílogos estruturados. Logs de ações reproduzíveis e RNG determinístico. Cada execução pode ser reproduzida exatamente.
 
 ### Construção de Mundos Assistida por IA
 
@@ -131,14 +131,23 @@ O sistema possui quatro camadas.
 
 | Pacote | Propósito |
 |--------|-----------|
-| [`@ai-rpg-engine/core`](packages/core) | Ambiente de execução de simulação determinística — estado do mundo, eventos, RNG, ticks, resolução de ações |
-| [`@ai-rpg-engine/modules`](packages/modules) | 17 módulos integrados — combate, percepção, cognição, facções, rumores, distritos |
+| [`@ai-rpg-engine/core`](packages/core) | Runtime de simulação determinística — estado do mundo, eventos, RNG, ticks, resolução de ações |
+| [`@ai-rpg-engine/modules`](packages/modules) | 29 módulos integrados — combate, percepção, cognição, facções, rumores, distritos, agência de NPCs, companheiros, influência do jogador, mapa estratégico, conselheiro de movimentos, reconhecimento de itens, oportunidades emergentes, detecção de arcos, gatilhos de final de jogo |
 | [`@ai-rpg-engine/content-schema`](packages/content-schema) | Esquemas canônicos e validadores para conteúdo de mundos |
+| [`@ai-rpg-engine/character-profile`](packages/character-profile) | Estado de progressão de personagem, ferimentos, marcos, reputação |
+| [`@ai-rpg-engine/character-creation`](packages/character-creation) | Seleção de arquétipos, geração de builds, equipamento inicial |
+| [`@ai-rpg-engine/equipment`](packages/equipment) | Tipos de equipamento, procedência de itens, crescimento de relíquias, crônicas de itens |
+| [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | Memória entre sessões, efeitos de relacionamento, estado de campanha |
 | [`@ai-rpg-engine/ollama`](packages/ollama) | Autoria com IA opcional — scaffolding, crítica, fluxos guiados, ajuste, experimentos |
 | [`@ai-rpg-engine/cli`](packages/cli) | Estúdio de design via linha de comando — shell de chat, fluxos de trabalho, ferramentas de experimento |
 | [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | Renderizador de terminal e camada de entrada |
 | [`@ai-rpg-engine/starter-fantasy`](packages/starter-fantasy) | The Chapel Threshold — mundo inicial de fantasia |
 | [`@ai-rpg-engine/starter-cyberpunk`](packages/starter-cyberpunk) | Neon Lockbox — mundo inicial de cyberpunk |
+| [`@ai-rpg-engine/starter-detective`](packages/starter-detective) | Gaslight Detective — mundo inicial de mistério vitoriano |
+| [`@ai-rpg-engine/starter-pirate`](packages/starter-pirate) | Black Flag Requiem — mundo inicial de piratas |
+| [`@ai-rpg-engine/starter-zombie`](packages/starter-zombie) | Ashfall Dead — mundo inicial de sobrevivência zumbi |
+| [`@ai-rpg-engine/starter-weird-west`](packages/starter-weird-west) | Dust Devil's Bargain — mundo inicial de faroeste sobrenatural |
+| [`@ai-rpg-engine/starter-colony`](packages/starter-colony) | Signal Loss — mundo inicial de colônia sci-fi |
 
 ---
 
@@ -146,7 +155,7 @@ O sistema possui quatro camadas.
 
 | Recurso | Descrição |
 |---------|-----------|
-| [Manual](docs/handbook/index.md) | 26 capítulos + 4 apêndices cobrindo todos os sistemas |
+| [Manual](docs/handbook/index.md) | 43 capítulos + 4 apêndices cobrindo todos os sistemas |
 | [Documento de Design](docs/DESIGN.md) | Análise aprofundada da arquitetura — pipeline de ações, verdade vs. apresentação, camadas de simulação |
 | [Guia de Construção de Mundos com IA](packages/ollama/AI_WORLDBUILDING.md) | Fluxos de scaffolding, diagnóstico, ajuste e experimento |
 | [Filosofia](PHILOSOPHY.md) | Por que mundos determinísticos, design baseado em evidências e IA como assistente |

@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="README.ja.md">日本語</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.md">English</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a>
+  <a href="README.ja.md">日本語</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.md">English</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.pt-BR.md">Português</a>
 </p>
 
 <p align="center">
@@ -14,12 +14,12 @@
 
 # AI RPG Engine
 
-Une boîte à outils conçue pour la simulation, permettant de créer, d'analyser et d'équilibrer des mondes de jeux de rôle.
+Boîte à outils native pour la simulation, permettant de créer, analyser et équilibrer des mondes de jeux de rôle.
 
-L'AI RPG Engine combine un moteur de simulation déterministe avec un studio de conception assisté par l'IA, permettant aux créateurs de construire des mondes, de les tester par simulation et de les améliorer sur la base de données plutôt que de suppositions.
+AI RPG Engine combine un moteur de simulation déterministe avec un studio de conception assisté par IA, permettant aux auteurs de construire des mondes, de les tester par simulation et de les améliorer sur la base de preuves plutôt que de suppositions.
 
 > Les outils traditionnels vous aident à écrire des histoires.
-> L'AI RPG Engine vous aide à **tester des mondes**.
+> AI RPG Engine vous aide à **tester des mondes**.
 
 ---
 
@@ -29,7 +29,7 @@ L'AI RPG Engine combine un moteur de simulation déterministe avec un studio de 
 build → critique → simulate → analyze → tune → experiment
 ```
 
-Vous pouvez générer du contenu pour le monde, évaluer les conceptions, exécuter des simulations déterministes, analyser le comportement des parties, ajuster les mécanismes, effectuer des expériences sur de nombreuses configurations et comparer les résultats. Chaque résultat est reproductible, inspectable et explicable.
+Vous pouvez générer du contenu pour le monde, évaluer les conceptions, exécuter des simulations déterministes, analyser le comportement des parties, ajuster les mécaniques, mener des expériences sur de nombreuses graines aléatoires et comparer les résultats. Chaque résultat est reproductible, inspectable et explicable.
 
 ---
 
@@ -37,59 +37,59 @@ Vous pouvez générer du contenu pour le monde, évaluer les conceptions, exécu
 
 ### Simulation déterministe
 
-Un moteur de simulation basé sur des cycles pour les mondes de jeux de rôle. Il comprend l'état du monde, le système d'événements, les couches de perception et de cognition, la propagation des croyances des factions, les systèmes de rumeurs, les métriques des districts, les journaux d'actions reproductibles et un générateur de nombres aléatoires déterministe. Chaque exécution peut être rejouée exactement.
+Un moteur de simulation basé sur des cycles pour les mondes de jeux de rôle. État du monde, système d'événements, couches de perception et de cognition, propagation des croyances des factions, systèmes de rumeurs, métriques des districts avec dérivation de l'humeur, agentivité des PNJ avec seuils de loyauté et chaînes de conséquences, compagnons avec moral et risque de départ, levier du joueur et action politique, analyse stratégique de la carte, conseiller de déplacement, reconnaissance d'objets et provenance de l'équipement, jalons de croissance des reliques, opportunités émergentes (contrats, primes, faveurs, missions de ravitaillement, enquêtes) générées à partir des conditions du monde, détection d'arcs de campagne (10 types d'arcs dérivés de l'état accumulé), détection de déclencheurs de fin de partie (8 classes de résolution) et rendu déterministe du final avec épilogue structuré. Journaux d'actions reproductibles et générateur de nombres aléatoires déterministe. Chaque exécution peut être rejouée exactement.
 
-### Conception de mondes assistée par l'IA
+### Conception de mondes assistée par IA
 
-Une couche d'IA optionnelle qui crée des salles, des factions, des quêtes et des districts à partir d'un thème. Elle évalue les conceptions, corrige les erreurs de schéma, propose des améliorations et guide les processus de conception de mondes en plusieurs étapes. L'IA ne modifie jamais directement l'état de la simulation ; elle génère uniquement du contenu ou des suggestions.
+Couche d'IA optionnelle qui génère des salles, des factions, des quêtes et des districts à partir d'un thème. Elle évalue les conceptions, normalise les erreurs de schéma, propose des améliorations et guide les processus de conception de mondes en plusieurs étapes. L'IA ne modifie jamais directement l'état de la simulation — elle génère uniquement du contenu ou des suggestions.
 
 ### Flux de travail de conception guidés
 
-Des flux de travail sensibles aux sessions et axés sur la planification pour la création de mondes, les boucles d'évaluation, l'itération de la conception, la création guidée et les plans d'ajustement structurés. Combine des outils déterministes avec une assistance de l'IA.
+Des flux de travail contextuels et axés sur la planification pour la création de mondes, les boucles d'évaluation, l'itération de la conception, la construction guidée et les plans d'ajustement structurés. Combine des outils déterministes avec une assistance IA.
 
 ### Analyse de simulation
 
-Analyse des parties qui explique pourquoi certains événements se sont produits, où les mécanismes ne fonctionnent pas, quels déclencheurs ne se déclenchent jamais et quels systèmes créent de l'instabilité. Les résultats structurés sont directement intégrés à l'ajustement.
+Analyse des parties rejouées qui explique pourquoi certains événements se sont produits, où les mécaniques échouent, quels déclencheurs ne s'activent jamais et quels systèmes créent de l'instabilité. Les résultats structurés alimentent directement l'ajustement.
 
 ### Ajustement guidé
 
-Les résultats de l'équilibrage génèrent des plans d'ajustement structurés avec des corrections proposées, l'impact attendu, des estimations de confiance et des modifications prévues. Appliqués étape par étape avec une traçabilité complète.
+Les résultats de l'équilibrage génèrent des plans d'ajustement structurés avec des corrections proposées, l'impact attendu, des estimations de confiance et des modifications prévisualisées. Appliqués étape par étape avec une traçabilité complète.
 
 ### Expériences de scénarios
 
-Exécutez des lots de simulations sur différentes configurations pour comprendre le comportement typique. Extrayez les métriques des scénarios, détectez les variations, ajustez les paramètres et comparez les mondes optimisés aux mondes de référence. Transforme la conception de mondes en un processus testable.
+Exécutez des lots de simulations sur différentes graines aléatoires pour comprendre le comportement typique. Extrayez les métriques des scénarios, détectez les variations, balayez les paramètres et comparez les mondes ajustés aux mondes de référence. Transforme la conception de mondes en un processus testable.
 
 ### Studio en ligne de commande
 
-Studio de conception en ligne de commande avec des tableaux de bord de projet, la navigation des problèmes, l'inspection des expériences, l'historique des sessions, l'intégration guidée et la découverte de commandes contextuelle. Un espace de travail pour créer et tester des mondes.
+Studio de conception en ligne de commande avec tableaux de bord de projet, navigation des problèmes, inspection des expériences, historique des sessions, intégration guidée et découverte de commandes contextuelle. Un espace de travail pour créer et tester des mondes.
 
 ---
 
 ## Démarrage rapide
 
 ```bash
-# Install the CLI
+# Installer le CLI
 npm install -g @ai-rpg-engine/cli
 
-# Start the interactive studio
+# Lancer le studio interactif
 ai chat
 
-# Run onboarding
+# Lancer l'intégration
 /onboard
 
-# Create your first content
+# Créer votre premier contenu
 create-room haunted chapel
 
-# Run a simulation
+# Exécuter une simulation
 simulate
 
-# Analyze the results
+# Analyser les résultats
 analyze-balance
 
-# Tune the design
+# Ajuster la conception
 tune paranoia
 
-# Run an experiment
+# Lancer une expérience
 experiment run --runs 50
 ```
 
@@ -110,7 +110,7 @@ experiment run --runs 50
 compare-replays
 ```
 
-Créez un monde et améliorez-le grâce aux données issues de la simulation.
+Créez un monde et améliorez-le grâce aux preuves issues de la simulation.
 
 ---
 
@@ -122,7 +122,7 @@ Le système comporte quatre couches.
 |-------|------|
 | **Simulation** | Moteur déterministe — état du monde, événements, actions, perception, cognition, factions, propagation des rumeurs, métriques des districts, relecture |
 | **Authoring** | Génération de contenu — création de modèles, évaluation, normalisation, boucles de réparation, générateurs de packs |
-| **AI Cognition** | Assistance de l'IA optionnelle — interface de discussion, routage contextuel, récupération, formation de la mémoire, orchestration des outils |
+| **AI Cognition** | Assistance IA optionnelle — interface de discussion, routage contextuel, récupération, formation de la mémoire, orchestration des outils |
 | **Studio UX** | Environnement de conception en ligne de commande — tableaux de bord, suivi des problèmes, navigation des expériences, historique des sessions, flux de travail guidés |
 
 ---
@@ -132,13 +132,22 @@ Le système comporte quatre couches.
 | Paquet | Objectif |
 |---------|---------|
 | [`@ai-rpg-engine/core`](packages/core) | Exécution de simulation déterministe — état du monde, événements, générateur de nombres aléatoires, cycles, résolution des actions |
-| [`@ai-rpg-engine/modules`](packages/modules) | 17 modules intégrés — combat, perception, cognition, factions, rumeurs, districts |
+| [`@ai-rpg-engine/modules`](packages/modules) | 29 modules intégrés — combat, perception, cognition, factions, rumeurs, districts, agentivité des PNJ, compagnons, levier du joueur, carte stratégique, conseiller de déplacement, reconnaissance d'objets, opportunités émergentes, détection d'arcs, déclencheurs de fin de partie |
 | [`@ai-rpg-engine/content-schema`](packages/content-schema) | Schémas et validateurs canoniques pour le contenu du monde |
-| [`@ai-rpg-engine/ollama`](packages/ollama) | Création de contenu assistée par l'IA optionnelle — création de modèles, évaluation, flux de travail guidés, ajustement, expériences |
+| [`@ai-rpg-engine/character-profile`](packages/character-profile) | État de progression du personnage, blessures, jalons, réputation |
+| [`@ai-rpg-engine/character-creation`](packages/character-creation) | Sélection d'archétype, génération de build, équipement de départ |
+| [`@ai-rpg-engine/equipment`](packages/equipment) | Types d'équipement, provenance des objets, croissance des reliques, chroniques d'objets |
+| [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | Mémoire inter-sessions, effets relationnels, état de campagne |
+| [`@ai-rpg-engine/ollama`](packages/ollama) | Création de contenu assistée par IA optionnelle — modèles, évaluation, flux de travail guidés, ajustement, expériences |
 | [`@ai-rpg-engine/cli`](packages/cli) | Studio de conception en ligne de commande — interface de discussion, flux de travail, outils d'expérimentation |
-| [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | Rendu pour terminaux et couche d'entrée |
+| [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | Rendu pour terminal et couche d'entrée |
 | [`@ai-rpg-engine/starter-fantasy`](packages/starter-fantasy) | The Chapel Threshold — monde de démarrage fantastique |
 | [`@ai-rpg-engine/starter-cyberpunk`](packages/starter-cyberpunk) | Neon Lockbox — monde de démarrage cyberpunk |
+| [`@ai-rpg-engine/starter-detective`](packages/starter-detective) | Gaslight Detective — monde de démarrage mystère victorien |
+| [`@ai-rpg-engine/starter-pirate`](packages/starter-pirate) | Black Flag Requiem — monde de démarrage pirate |
+| [`@ai-rpg-engine/starter-zombie`](packages/starter-zombie) | Ashfall Dead — monde de démarrage survie zombie |
+| [`@ai-rpg-engine/starter-weird-west`](packages/starter-weird-west) | Dust Devil's Bargain — monde de démarrage western étrange |
+| [`@ai-rpg-engine/starter-colony`](packages/starter-colony) | Signal Loss — monde de démarrage colonie sci-fi |
 
 ---
 
@@ -146,29 +155,29 @@ Le système comporte quatre couches.
 
 | Ressource | Description |
 |----------|-------------|
-| [Handbook](docs/handbook/index.md) | 26 chapitres + 4 annexes couvrant tous les systèmes. |
-| [Design Document](docs/DESIGN.md) | Analyse approfondie de l'architecture : pipeline d'actions, distinction entre données et présentation, couches de simulation. |
-| [AI Worldbuilding Guide](packages/ollama/AI_WORLDBUILDING.md) | Flux de travail pour la création de prototypes, le diagnostic, l'optimisation et l'expérimentation. |
-| [Philosophy](PHILOSOPHY.md) | Pourquoi des mondes déterministes, une conception basée sur des preuves et l'IA comme assistant. |
+| [Handbook](docs/handbook/index.md) | 43 chapitres + 4 annexes couvrant chaque système |
+| [Design Document](docs/DESIGN.md) | Analyse approfondie de l'architecture — pipeline d'actions, vérité vs présentation, couches de simulation |
+| [AI Worldbuilding Guide](packages/ollama/AI_WORLDBUILDING.md) | Flux de travail pour la création de modèles, le diagnostic, l'ajustement et l'expérimentation |
+| [Philosophy](PHILOSOPHY.md) | Pourquoi des mondes déterministes, une conception basée sur les preuves et l'IA comme assistant |
 | [Changelog](CHANGELOG.md) | Historique des versions |
 
 ---
 
 ## Philosophie
 
-Le moteur AI RPG est construit autour de trois idées :
+AI RPG Engine est construit autour de trois idées :
 
-1. **Mondes déterministes** : les résultats de la simulation doivent être reproductibles.
-2. **Conception basée sur des preuves** : les mécanismes du monde doivent être testés par simulation.
-3. **L'IA comme assistant, et non comme autorité** : les outils d'IA aident à générer et à évaluer les conceptions, mais ne remplacent pas les systèmes déterministes.
+1. **Mondes déterministes** — les résultats de la simulation doivent être reproductibles.
+2. **Conception basée sur les preuves** — les mécaniques du monde doivent être testées par simulation.
+3. **L'IA comme assistant, et non comme autorité** — les outils d'IA aident à générer et à évaluer les conceptions, mais ne remplacent pas les systèmes déterministes.
 
-Consultez [PHILOSOPHY.md](PHILOSOPHY.md) pour une explication complète.
+Consultez [PHILOSOPHY.md](PHILOSOPHY.md) pour l'explication complète.
 
 ---
 
 ## Sécurité
 
-Le moteur AI RPG est une **bibliothèque de simulation locale uniquement**. Aucune télémétrie, aucun réseau, aucun secret. Les fichiers de sauvegarde sont enregistrés dans le dossier `.ai-rpg-engine/` uniquement lorsqu'ils sont explicitement demandés. Consultez [SECURITY.md](SECURITY.md) pour plus de détails.
+AI RPG Engine est une **bibliothèque de simulation locale uniquement**. Aucune télémétrie, aucun réseau, aucun secret. Les fichiers de sauvegarde sont enregistrés dans `.ai-rpg-engine/` uniquement sur demande explicite. Consultez [SECURITY.md](SECURITY.md) pour plus de détails.
 
 ## Prérequis
 
