@@ -1,10 +1,4 @@
----
-title: "Appendix C — Module API Reference"
-description: "Appendix C — Module API Reference"
-sidebar:
-  order: 28
----
-
+# Appendix C — Module API Reference
 
 Function signatures and hooks for built-in modules.
 
@@ -103,6 +97,153 @@ Creates an isolated engine instance for testing.
 | presentForAllObservers | `(event, world) → ObserverPresentedEvent[]` | One version per AI entity |
 | getDivergences | `(world) → DivergenceRecord[]` | All recorded divergences |
 | getEventDivergences | `(world, eventId) → DivergenceRecord[]` | Divergences for a specific event |
+
+## Player Leverage — `player-leverage.ts`
+
+Pure functions for structured social play. 4 compound verbs (social, rumor, diplomacy, sabotage) with 24 sub-actions, resolved deterministically.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| getLeverageState | `(custom) → LeverageState` | Extract leverage currencies from profile |
+| adjustLeverage | `(custom, currency, delta) → custom` | Modify a single currency |
+| applyLeverageDeltas | `(custom, deltas) → custom` | Apply multiple currency changes |
+| canAfford | `(state, costs) → boolean` | Check if player can pay action costs |
+| isCooldownReady | `(custom, verb, subAction, tick, turns) → boolean` | Check cooldown elapsed |
+| setCooldown | `(custom, verb, subAction, tick) → custom` | Record cooldown timestamp |
+| resolveSocialAction | `(subAction, targetId, factionId, state, rep, factionCog?, tick) → LeverageResolution` | Resolve social verb |
+| resolveRumorAction | `(subAction, factionId, state, tick) → LeverageResolution` | Resolve rumor verb |
+| resolveDiplomacyAction | `(subAction, factionId, state, rep, factionCog?, tick) → LeverageResolution` | Resolve diplomacy verb |
+| resolveSabotageAction | `(subAction, targetId, factionId, state, tick) → LeverageResolution` | Resolve sabotage verb |
+| tickLeverage | `(custom, reputations) → custom` | Passive tick: heat decay, influence calc |
+| computeLeverageGains | `(hints) → Record<string, number>` | Natural gains from game events |
+| formatLeverageForDirector | `(state) → string` | Director-mode leverage display |
+| formatLeverageStatus | `(state) → string` | Compact one-line status |
+
+## Strategic Map — `strategic-map.ts`
+
+Aggregates world state into a strategic overview of districts, factions, and hotspots.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| buildStrategicMap | `(world, rumors, pressures, reputation, actions?) → StrategicMap` | Build complete strategic view |
+| formatStrategicMapForDirector | `(map) → string` | Director-mode map display |
+| formatStrategicMapForPlayer | `(map) → string` | Player-facing map display |
+
+## Move Advisor — `move-advisor.ts`
+
+Deterministic scoring engine that evaluates all 24 leverage sub-actions against current state. Drives contextual suggestions and `/status` command.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| recommendMoves | `(inputs: AdvisorInputs) → MoveRecommendation` | Score all actions, return top 3 + situation tag |
+| scoreAction | `(category, subAction, targetFactionId, inputs) → ScoredMove` | Score a single action |
+| deriveSituation | `(inputs) → 'safe' \| 'pressured' \| 'crisis' \| 'opportunity'` | Derive situation tag from state |
+
+**Scoring formula:** `score = (urgency × 0.3 + feasibility × 0.3 + impact × 0.25 + (1 - risk) × 0.15) × 100`
+
+- **Urgency:** Active pressure urgency, faction hostility, threat levels
+- **Feasibility:** Binary gate (can afford? cooldown ready?) then surplus ratio
+- **Impact:** Static table from resolution effect magnitudes, boosted by pressure relevance
+- **Risk:** Heat generation + alert escalation, scaled by current heat
+
+## Economy Core — `economy-core.ts`
+
+Pure functions for category-level supply tracking per district. No module registration — import and call directly.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| createDistrictEconomy | `(genre?, districtTags?) → DistrictEconomy` | Initialize with genre defaults + tag modifiers |
+| tickDistrictEconomy | `(economy, commerce, stability, tick) → DistrictEconomy` | Baseline-seeking decay, stability modulation |
+| applyEconomyShift | `(economy, shift) → DistrictEconomy` | Adjust single supply, clamp 0-100 |
+| deriveEconomyDescriptor | `(economy) → EconomyDescriptor` | Identify scarcities, surpluses, overall tone |
+| isBlackMarketCondition | `(economy) → boolean` | True when contraband > 30 or any supply < 20 |
+| getSupplyLevel | `(economy, category) → number` | Get level for a single category |
+| getScarcestSupply | `(economy) → SupplyCategory \| undefined` | Lowest supply below baseline |
+| getMostSurplusSupply | `(economy) → SupplyCategory \| undefined` | Highest supply above baseline |
+| formatEconomyForDirector | `(districtId, districtName, economy, descriptor) → string` | Detailed director view |
+| formatEconomyForNarrator | `(descriptor) → string` | Compact phrase (~10 tokens) |
+| formatAllDistrictEconomiesForDirector | `(economies) → string` | Market overview of all districts |
+
+## Crafting Core — `crafting-core.ts`
+
+Material tracking, salvage computation, and inventory management. Pure functions, no module registration.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| getMaterialInventory | `(custom) → MaterialInventory` | Read `materials.*` from profile.custom |
+| adjustMaterial | `(custom, category, delta) → custom` | Modify single material, clamp 0-50 |
+| applyMaterialDeltas | `(custom, deltas) → custom` | Apply multiple material changes |
+| hasMaterials | `(custom) → boolean` | True if any material > 0 |
+| computeSalvageYield | `(item) → MaterialYield[]` | Pure yield lookup by slot × rarity |
+| salvageItem | `(item, context?) → SalvageResult` | Full salvage: yields + byproducts + economy shifts |
+| formatMaterialsForDirector | `(inventory) → string` | Detailed multi-line view |
+| formatMaterialsCompact | `(inventory) → string` | One-line status |
+| formatSalvagePreview | `(item, result) → string` | Preview salvage yields |
+
+## Crafting Recipes — `crafting-recipes.ts`
+
+Recipe lookup, crafting resolution, repair, and modification. Pure functions, genre-aware.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| getAvailableRecipes | `(genre, playerTags?, districtTags?) → CraftingRecipe[]` | Filter recipes by genre + tags |
+| getRecipeById | `(genre, recipeId) → CraftingRecipe \| undefined` | Single recipe lookup |
+| canCraft | `(recipe, materials, context?) → CraftCheck` | Material + context requirement check |
+| resolveCraft | `(recipe, context) → CraftResult` | Execute craft: output item + side effects |
+| resolveRepair | `(item, recipe, context) → RepairResult` | Restore item stats |
+| resolveModify | `(item, recipe, context) → ModifyResult` | Apply modification: stat deltas + provenance |
+| computeQualityBonus | `(context) → number` | Prosperity/stability quality modifier |
+| formatRecipeForDirector | `(recipe, materials) → string` | Single recipe with can-craft status |
+| formatAvailableRecipesForDirector | `(recipes, materials) → string` | All recipes grouped by category |
+
+## Trade Value — `trade-value.ts`
+
+Context-sensitive item valuation. Pure functions, lookup-table driven.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| computeItemValue | `(baseValue, supplyCategory, ctx) → ItemValueResult` | Full contextual valuation |
+| computeScarcityMultiplier | `(supplyLevel) → number` | 0.5-3.0 based on supply level |
+| computeFactionAttitudeMultiplier | `(reputation) → number` | 0.85-1.5 based on faction rep |
+| computeProvenanceMultiplier | `(provenance?, heat?) → number` | 1.0-2.0 based on item history |
+| computeContrabandFactor | `(isContraband, blackMarketActive, reputation) → number` | 0.0-1.0 |
+| computePressureModifier | `(pressureKinds, category) → number` | 0.8-1.5 from active pressures |
+| deriveTradeAdvice | `(modifiers, isContraband) → TradeAdvice` | sell-here/elsewhere/hold/risky/untradeable |
+| formatValueBreakdownForDirector | `(result) → string` | Detailed value breakdown |
+| formatTradeAdviceForNarrator | `(result) → string` | Compact narrator advice |
+
+## Opportunity Core — `opportunity-core.ts`
+
+Emergent opportunity generation and lifecycle. Pure functions, no module registration.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| evaluateOpportunities | `(inputs: OpportunityInputs) → OpportunitySpawnResult \| null` | Evaluate and spawn a new opportunity |
+| tickOpportunities | `(opps, currentTick) → OpportunityTickResult` | Decrement timers, expire overdue, escalate visibility |
+| getAvailableOpportunities | `(opps) → OpportunityState[]` | Filter to available opportunities |
+| getAcceptedOpportunities | `(opps) → OpportunityState[]` | Filter to accepted opportunities |
+| getOpportunityById | `(opps, id) → OpportunityState \| undefined` | Find by ID |
+| getOpportunitiesForNpc | `(opps, npcId) → OpportunityState[]` | Filter by source NPC |
+| getOpportunitiesForFaction | `(opps, factionId) → OpportunityState[]` | Filter by source faction |
+| makeOpportunity | `(overrides) → OpportunityState` | Create opportunity with defaults |
+| formatOpportunityForDirector | `(opp) → string` | Detailed single opportunity view |
+| formatOpportunityListForDirector | `(opps) → string` | Multi-opportunity director list |
+| formatOpportunityForNarrator | `(opp) → string` | Compact narrator context |
+| formatOpportunityForDialogue | `(opp) → string` | Dialogue context for quest-giver NPCs |
+
+## Opportunity Resolution — `opportunity-resolution.ts`
+
+Compute fallout effects when opportunities resolve. Pure functions, deterministic.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| computeOpportunityFallout | `(opp, resolutionType, ctx) → OpportunityFallout` | Compute all fallout effects for a resolution |
+| formatOpportunityFalloutForDirector | `(fallout) → string` | Detailed fallout breakdown |
+| formatOpportunityFalloutForNarrator | `(fallout) → string` | Compact narrator summary |
+
+**Resolution types:** `completed`, `failed`, `abandoned`, `betrayed`, `expired`, `declined`
+
+**Fallout effects (14 variants):** reputation, leverage, materials, economy-shift, rumor, obligation, spawn-pressure, spawn-opportunity, heat, alert, npc-relationship, companion-morale, milestone-tag, title-trigger
 
 ## Simulation Inspector — `createSimulationInspector()`
 

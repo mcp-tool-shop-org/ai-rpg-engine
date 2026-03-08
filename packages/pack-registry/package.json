@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/pack-registry",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Starter pack registry, discovery, and quality rubric for AI RPG Engine",
   "type": "module",
   "main": "./dist/index.js",

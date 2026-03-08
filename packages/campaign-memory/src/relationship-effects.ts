@@ -26,6 +26,12 @@ export const DEFAULT_RELATIONSHIP_EFFECTS: Record<RecordCategory, Partial<Relati
   'item-lost':              {},
   'item-recognized':        { familiarity: 0.1 },
   'item-transformed':       { admiration: 0.1 },
+  'opportunity-accepted':   { trust: 0.1, familiarity: 0.1 },
+  'opportunity-completed':  { trust: 0.2, admiration: 0.2 },
+  'opportunity-failed':     { trust: -0.1 },
+  'opportunity-abandoned':  { trust: -0.2, admiration: -0.1 },
+  'endgame-detected':       {},
+  'campaign-concluded':     {},
 };
 
 /**

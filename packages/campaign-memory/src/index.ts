@@ -28,6 +28,23 @@ export {
   applyRelationshipEffect,
 } from './relationship-effects.js';
 
+// --- Finale (v2.0) ---
+export {
+  buildFinaleOutline,
+  formatFinaleForDirector,
+  formatFinaleForTerminal,
+} from './finale.js';
+export type {
+  NpcFate,
+  FactionFate,
+  DistrictFate,
+  LegacyEntry,
+  FinaleNpcInput,
+  FinaleFactionInput,
+  FinaleDistrictInput,
+  FinaleOutline,
+} from './finale.js';
+
 export type { ValidationError } from './validate.js';
 export {
   validateCampaignRecord,

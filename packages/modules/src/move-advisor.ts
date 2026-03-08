@@ -44,6 +44,7 @@ export type AdvisorInputs = {
   currentTick: number;
   cooldowns: Record<string, number>;  // "verb.subAction" -> lastUsedTick
   playerHeat: number;
+  activeOpportunities?: import('./opportunity-core.js').OpportunityState[];
 };
 
 export type MoveRecommendation = {
@@ -417,6 +418,9 @@ export function deriveSituation(inputs: AdvisorInputs): MoveRecommendation['situ
   if (maxPressureUrgency >= 0.7 || inputs.playerHeat >= 70) return 'crisis';
   if (maxPressureUrgency >= 0.4) return 'pressured';
   if (inputs.factionViews.some((f) => f.vulnerability != null)) return 'opportunity';
+  // High-value available opportunities count as opportunity situation
+  const opps = inputs.activeOpportunities ?? [];
+  if (opps.some((o) => o.status === 'available' && o.urgency >= 0.5)) return 'opportunity';
   return 'safe';
 }
 

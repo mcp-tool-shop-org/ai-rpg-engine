@@ -55,6 +55,8 @@ export type StrategicMap = {
   activePressureSummary: string[];
   /** Hot trade goods: scarce items that command premiums (v1.7) */
   hotGoods: { category: string; reason: string }[];
+  /** Active opportunity summaries for director/player view (v1.9) */
+  activeOpportunitySummary: string[];
 };
 
 // --- Build ---
@@ -66,6 +68,7 @@ export function buildStrategicMap(
   playerReputations: { factionId: string; value: number }[],
   lastFactionActions: FactionActionResult[],
   districtEconomies?: Map<string, DistrictEconomy>,
+  activeOpportunities?: import('./opportunity-core.js').OpportunityState[],
 ): StrategicMap {
   // Districts
   const districts: DistrictStrategicView[] = [];
@@ -192,7 +195,18 @@ export function buildStrategicMap(
     }
   }
 
-  return { districts, factions, hotRumors, activePressureSummary, hotGoods };
+  // Opportunity summaries (v1.9)
+  const activeOpportunitySummary: string[] = [];
+  if (activeOpportunities) {
+    for (const opp of activeOpportunities) {
+      if (opp.status === 'available' || opp.status === 'accepted') {
+        const deadline = opp.turnsRemaining != null ? ` (${opp.turnsRemaining} turns)` : '';
+        activeOpportunitySummary.push(`${opp.kind}: ${opp.title}${deadline} [${opp.status}]`);
+      }
+    }
+  }
+
+  return { districts, factions, hotRumors, activePressureSummary, hotGoods, activeOpportunitySummary };
 }
 
 // --- Formatting ---
@@ -270,6 +284,15 @@ export function formatStrategicMapForDirector(map: StrategicMap): string {
     lines.push('  ACTIVE PRESSURES');
     for (const p of map.activePressureSummary) {
       lines.push(`    ${p}`);
+    }
+  }
+
+  // Opportunities (v1.9)
+  if (map.activeOpportunitySummary.length > 0) {
+    lines.push('');
+    lines.push('  OPPORTUNITIES');
+    for (const o of map.activeOpportunitySummary) {
+      lines.push(`    ${o}`);
     }
   }
 

@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/ollama",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "AI design studio for AI RPG Engine — scaffolding, critique, guided workflows, tuning, experiments, studio UX",
   "type": "module",
   "main": "./dist/index.js",
@@ -11,7 +11,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run"
@@ -37,7 +39,16 @@
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
     "directory": "packages/ollama"
   },
-  "keywords": ["rpg", "ai", "worldbuilding", "game-engine", "simulation", "ollama", "tuning", "experiments"],
+  "keywords": [
+    "rpg",
+    "ai",
+    "worldbuilding",
+    "game-engine",
+    "simulation",
+    "ollama",
+    "tuning",
+    "experiments"
+  ],
   "bugs": {
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues"
   },

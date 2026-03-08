@@ -85,7 +85,8 @@ export type NpcEffect =
       sourceTag: string; decayTurns: number | null }
   | { type: 'npc-rumor'; claim: string; valence: RumorValence;
       sourceEvent: string; originNpcId: string; targetFactionIds: string[] }
-  | { type: 'companion-departure'; npcId: string; reason: string };
+  | { type: 'companion-departure'; npcId: string; reason: string }
+  | { type: 'spawn-opportunity'; kind: import('./opportunity-core.js').OpportunityKind; targetNpcId?: string; description: string };
 
 export type NpcActionResult = {
   action: NpcAction;
@@ -874,6 +875,15 @@ export function resolveNpcAction(
           type: 'obligation', kind: 'debt', direction: 'player-owes-npc',
           npcId: action.npcId, counterpartyId: action.targetEntityId,
           magnitude: 3, sourceTag: 'bargain', decayTurns: 15,
+        });
+      }
+      // Favorable NPC bargaining can spawn a contract opportunity (v1.9)
+      if (factionId) {
+        effects.push({
+          type: 'spawn-opportunity',
+          kind: 'contract',
+          targetNpcId: action.npcId,
+          description: `${npcName} offers a contract on behalf of ${factionId}`,
         });
       }
       narratorHint = `${npcName} leans in with a proposition`;

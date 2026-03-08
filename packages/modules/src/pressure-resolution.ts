@@ -38,7 +38,8 @@ export type FalloutEffect =
       description: string; urgency: number; tags: string[] }
   | { type: 'milestone-tag'; tag: string }
   | { type: 'title-trigger'; tag: string }
-  | { type: 'economy-shift'; districtId: string; category: string; delta: number; cause: string };
+  | { type: 'economy-shift'; districtId: string; category: string; delta: number; cause: string }
+  | { type: 'spawn-opportunity'; kind: import('./opportunity-core.js').OpportunityKind; sourceNpcId?: string; sourceFactionId?: string; description: string };
 
 export type PressureFallout = {
   resolution: PressureResolution;
@@ -614,6 +615,8 @@ function formatEffectBrief(effect: FalloutEffect): string {
       return `title trigger: ${effect.tag}`;
     case 'economy-shift':
       return `${effect.category} ${effect.delta > 0 ? '+' : ''}${effect.delta} in ${effect.districtId} (${effect.cause})`;
+    case 'spawn-opportunity':
+      return `spawns ${effect.kind} opportunity: ${effect.description}`;
   }
 }
 

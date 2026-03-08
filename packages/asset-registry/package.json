@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/asset-registry",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Content-addressed asset registry for portraits, icons, and media in AI RPG Engine",
   "type": "module",
   "main": "./dist/index.js",
@@ -11,7 +11,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run"
@@ -25,7 +27,14 @@
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
     "directory": "packages/asset-registry"
   },
-  "keywords": ["rpg", "assets", "content-addressed", "registry", "portraits", "game-engine"],
+  "keywords": [
+    "rpg",
+    "assets",
+    "content-addressed",
+    "registry",
+    "portraits",
+    "game-engine"
+  ],
   "bugs": {
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues"
   },

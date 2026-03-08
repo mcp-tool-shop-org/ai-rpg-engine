@@ -49,6 +49,8 @@ NPC agency, districts, companions, leverage, and strategic play.
 - [Companions & Party Dynamics](./39-companions.md) — recruitment, morale, departure risk
 - [Economy, Scarcity & Trade](./40-economy-trade.md) — supply categories, contextual value, faction economic agency
 - [Crafting, Salvage & Item Transformation](./41-crafting-salvage.md) — materials, recipes, repair, modification, quality bonuses
+- [Quest Webs & Emergent Opportunities](./42-quest-webs.md) — contracts, bounties, favors, supply runs, investigations
+- [Endgames & Campaign Conclusions](./43-endgames.md) — arc detection, endgame triggers, resolution classes, finale rendering
 
 ### Balancing Worlds
 
@@ -71,7 +73,7 @@ The interactive design studio.
 ### Simulation Pipeline
 
 ```
-action → validation → resolution → events → perception → cognition → faction beliefs → district metrics → economy tick → crafting/salvage → NPC agency → companion reactions
+action → validation → resolution → events → perception → cognition → faction beliefs → district metrics → economy tick → crafting/salvage → opportunity evaluation → arc detection → endgame evaluation → NPC agency → companion reactions
 ```
 
 ### AI Authoring Pipeline
@@ -157,6 +159,7 @@ build → simulate → analyze → tune → experiment
 39. [Companions & Party Dynamics](./39-companions.md)
 40. [Economy, Scarcity & Trade](./40-economy-trade.md)
 41. [Crafting, Salvage & Item Transformation](./41-crafting-salvage.md)
+42. [Quest Webs & Emergent Opportunities](./42-quest-webs.md)
 
 ### Appendix
 

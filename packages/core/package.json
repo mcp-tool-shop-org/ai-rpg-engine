@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/core",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "AI RPG Engine core: state, entities, actions, events, rules, RNG, persistence",
   "type": "module",
   "main": "./dist/index.js",
@@ -11,7 +11,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run"
@@ -24,7 +26,14 @@
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
     "directory": "packages/core"
   },
-  "keywords": ["rpg", "game-engine", "simulation", "worldbuilding", "deterministic", "text-rpg"],
+  "keywords": [
+    "rpg",
+    "game-engine",
+    "simulation",
+    "worldbuilding",
+    "deterministic",
+    "text-rpg"
+  ],
   "bugs": {
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues"
   },

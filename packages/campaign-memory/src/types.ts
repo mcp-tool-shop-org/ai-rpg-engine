@@ -33,7 +33,13 @@ export type RecordCategory =
   | 'item-acquired'
   | 'item-lost'
   | 'item-recognized'
-  | 'item-transformed';
+  | 'item-transformed'
+  | 'opportunity-accepted'
+  | 'opportunity-completed'
+  | 'opportunity-failed'
+  | 'opportunity-abandoned'
+  | 'endgame-detected'
+  | 'campaign-concluded';
 
 /** Persistent record of a significant action/event */
 export type CampaignRecord = {
@@ -106,6 +112,8 @@ export const VALID_CATEGORIES: readonly RecordCategory[] = [
   'companion-joined', 'companion-departed', 'companion-betrayed',
   'companion-saved-player', 'companion-died',
   'item-acquired', 'item-lost', 'item-recognized', 'item-transformed',
+  'opportunity-accepted', 'opportunity-completed', 'opportunity-failed', 'opportunity-abandoned',
+  'endgame-detected', 'campaign-concluded',
 ] as const;
 
 export const VALID_CONSOLIDATIONS: readonly Consolidation[] = [

@@ -508,3 +508,75 @@ export type {
   CraftResult,
   ModifyResult,
 } from './crafting-recipes.js';
+
+// --- Opportunity Core (v1.9) ---
+export {
+  evaluateOpportunities,
+  tickOpportunities,
+  getAvailableOpportunities,
+  getAcceptedOpportunities,
+  getOpportunityById,
+  getOpportunitiesForNpc,
+  getOpportunitiesForFaction,
+  formatOpportunityForDirector,
+  formatOpportunityListForDirector,
+  formatOpportunityForNarrator,
+  formatOpportunityForDialogue,
+  makeOpportunity,
+  resetOpportunityCounter,
+} from './opportunity-core.js';
+export type {
+  OpportunityKind,
+  OpportunityStatus,
+  OpportunityVisibility,
+  OpportunityReward,
+  OpportunityRisk,
+  OpportunityState,
+  OpportunityInputs,
+  OpportunitySpawnResult,
+  OpportunityTickResult,
+} from './opportunity-core.js';
+
+// --- Opportunity Resolution (v1.9) ---
+export {
+  computeOpportunityFallout,
+  formatOpportunityFalloutForDirector,
+  formatOpportunityFalloutForNarrator,
+} from './opportunity-resolution.js';
+export type {
+  OpportunityResolutionType,
+  OpportunityFalloutEffect,
+  OpportunityResolution,
+  OpportunityFallout,
+  OpportunityResolutionContext,
+} from './opportunity-resolution.js';
+
+// --- Arc Detection (v2.0) ---
+export {
+  evaluateArcs,
+  buildArcSnapshot,
+  formatArcForDirector,
+  formatArcForNarrator,
+} from './arc-detection.js';
+export type {
+  ArcKind,
+  ArcMomentum,
+  ArcSignal,
+  ArcSnapshot,
+  ArcInputs,
+  ReputationEntry,
+  FactionStateEntry,
+} from './arc-detection.js';
+
+// --- Endgame Detection (v2.0) ---
+export {
+  evaluateEndgame,
+  formatEndgameForDirector,
+  formatEndgameForNarrator,
+  resetEndgameCounter,
+} from './endgame-detection.js';
+export type {
+  ResolutionClass,
+  EndgameTrigger,
+  EndgameInputs,
+} from './endgame-detection.js';

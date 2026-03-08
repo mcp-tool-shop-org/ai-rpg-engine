@@ -212,6 +212,39 @@ Context-sensitive item valuation. Pure functions, lookup-table driven.
 | formatValueBreakdownForDirector | `(result) → string` | Detailed value breakdown |
 | formatTradeAdviceForNarrator | `(result) → string` | Compact narrator advice |
 
+## Opportunity Core — `opportunity-core.ts`
+
+Emergent opportunity generation and lifecycle. Pure functions, no module registration.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| evaluateOpportunities | `(inputs: OpportunityInputs) → OpportunitySpawnResult \| null` | Evaluate and spawn a new opportunity |
+| tickOpportunities | `(opps, currentTick) → OpportunityTickResult` | Decrement timers, expire overdue, escalate visibility |
+| getAvailableOpportunities | `(opps) → OpportunityState[]` | Filter to available opportunities |
+| getAcceptedOpportunities | `(opps) → OpportunityState[]` | Filter to accepted opportunities |
+| getOpportunityById | `(opps, id) → OpportunityState \| undefined` | Find by ID |
+| getOpportunitiesForNpc | `(opps, npcId) → OpportunityState[]` | Filter by source NPC |
+| getOpportunitiesForFaction | `(opps, factionId) → OpportunityState[]` | Filter by source faction |
+| makeOpportunity | `(overrides) → OpportunityState` | Create opportunity with defaults |
+| formatOpportunityForDirector | `(opp) → string` | Detailed single opportunity view |
+| formatOpportunityListForDirector | `(opps) → string` | Multi-opportunity director list |
+| formatOpportunityForNarrator | `(opp) → string` | Compact narrator context |
+| formatOpportunityForDialogue | `(opp) → string` | Dialogue context for quest-giver NPCs |
+
+## Opportunity Resolution — `opportunity-resolution.ts`
+
+Compute fallout effects when opportunities resolve. Pure functions, deterministic.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| computeOpportunityFallout | `(opp, resolutionType, ctx) → OpportunityFallout` | Compute all fallout effects for a resolution |
+| formatOpportunityFalloutForDirector | `(fallout) → string` | Detailed fallout breakdown |
+| formatOpportunityFalloutForNarrator | `(fallout) → string` | Compact narrator summary |
+
+**Resolution types:** `completed`, `failed`, `abandoned`, `betrayed`, `expired`, `declined`
+
+**Fallout effects (14 variants):** reputation, leverage, materials, economy-shift, rumor, obligation, spawn-pressure, spawn-opportunity, heat, alert, npc-relationship, companion-morale, milestone-tag, title-trigger
+
 ## Simulation Inspector — `createSimulationInspector()`
 
 | Function | Signature | Description |
