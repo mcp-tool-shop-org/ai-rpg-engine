@@ -61,6 +61,7 @@ const spiritPerception: PresentationRule = {
 
 // Weird West combat formulas — grit for damage + guard, draw-speed for hit/dodge
 const weirdWestFormulas: CombatFormulas = {
+  statMapping: { attack: 'grit', precision: 'draw-speed', resolve: 'grit' },
   hitChance: (attacker, target) => {
     const atkSpeed = attacker.stats['draw-speed'] ?? 5;
     const tgtSpeed = target.stats['draw-speed'] ?? 5;

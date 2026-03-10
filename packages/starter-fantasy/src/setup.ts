@@ -70,7 +70,7 @@ export function createGame(seed?: number): Engine {
       statusCore,
       createEngagementCore({ playerId: 'player' }),
       review.module,
-      createCombatCore(review.explain(withEngagement({}))),
+      createCombatCore(review.explain(withEngagement({ statMapping: { attack: 'vigor', precision: 'instinct', resolve: 'will' } }))),
       createInventoryCore([healingDraughtEffect]),
       createDialogueCore([pilgrimDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),

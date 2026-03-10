@@ -62,6 +62,7 @@ const assassinPerception: PresentationRule = {
 
 // Ronin combat formulas — discipline for damage, perception for hit/dodge, composure for guard
 const roninFormulas: CombatFormulas = {
+  statMapping: { attack: 'discipline', precision: 'perception', resolve: 'composure' },
   hitChance: (attacker, target) => {
     const atkPerception = attacker.stats.perception ?? 5;
     const tgtPerception = target.stats.perception ?? 5;

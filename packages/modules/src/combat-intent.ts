@@ -13,7 +13,8 @@ import type {
 } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
 import { hasStatus } from './status-core.js';
-import { COMBAT_STATES } from './combat-core.js';
+import { COMBAT_STATES, DEFAULT_STAT_MAPPING } from './combat-core.js';
+import type { CombatStatMapping } from './combat-core.js';
 import { ENGAGEMENT_STATES } from './engagement-core.js';
 import { getCognition } from './cognition-core.js';
 
@@ -60,6 +61,7 @@ export type PackBias = {
 
 export type CombatIntentConfig = {
   packBiases?: PackBias[];
+  statMapping?: CombatStatMapping;
 };
 
 export type ScoringContext = {
@@ -125,9 +127,11 @@ function buildContext(entity: EntityState, world: WorldState, config?: CombatInt
     }
   }
 
+  const mapping = config?.statMapping ?? DEFAULT_STAT_MAPPING;
+
   return {
     morale: cognition.morale,
-    will: entity.stats.will ?? 3,
+    will: entity.stats[mapping.resolve] ?? 3,
     hpRatio: entityHpRatio(entity),
     enemies,
     allies,

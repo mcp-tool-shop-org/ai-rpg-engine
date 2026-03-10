@@ -473,3 +473,145 @@ describe('combat-recovery: narrative events', () => {
     expect(survivors[0].hpRatio).toBe(0.5);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Group 7: Edge Cases (Phase 7)
+// ---------------------------------------------------------------------------
+
+describe('combat-recovery: edge cases', () => {
+  it('morale exactly 0 applies shaken', () => {
+    const player = makeEntity('player', 'player', ['player']);
+    const npc = makeEntity('npc-ally', 'npc', ['npc'], {
+      ai: { profile: 'aggressive' },
+      resources: { hp: 20, maxHp: 20, stamina: 5, maxStamina: 5 },
+    } as Partial<EntityState>);
+    const enemy = makeEntity('enemy1', 'enemy', ['enemy']);
+    const engine = buildEngine([player, npc, enemy]);
+
+    const cog = getCognition(engine.store.state, 'npc-ally');
+    cog.morale = 0;
+
+    engine.drainEvents();
+
+    engine.store.state.entities.enemy1.resources.hp = 0;
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'enemy1',
+      entityName: 'enemy1',
+      defeatedBy: 'player',
+    });
+
+    const events = engine.drainEvents();
+    const moraleEvent = events.find(
+      e => e.type === 'combat.aftermath.morale' && e.payload.entityId === 'npc-ally',
+    );
+    expect(moraleEvent).toBeDefined();
+    expect(moraleEvent!.payload.tier).toBe('shaken');
+  });
+
+  it('HP exactly at wound boundary (0.15 → critical, 0.16 → serious)', () => {
+    // 3/20 = 0.15 → critical
+    const critPlayer = makeEntity('player', 'player', ['player'], {
+      resources: { hp: 3, maxHp: 20, stamina: 5, maxStamina: 5 },
+    });
+    const enemy = makeEntity('enemy1', 'enemy', ['enemy']);
+    const engine1 = buildEngine([critPlayer, enemy]);
+    engine1.drainEvents();
+
+    engine1.store.state.entities.enemy1.resources.hp = 0;
+    engine1.store.emitEvent('combat.entity.defeated', {
+      entityId: 'enemy1', entityName: 'enemy1', defeatedBy: 'player',
+    });
+
+    let events = engine1.drainEvents();
+    let injury = events.find(e => e.type === 'combat.aftermath.injury' && e.payload.entityId === 'player');
+    expect(injury!.payload.severity).toBe('critical');
+
+    // 4/20 = 0.20 → serious (above 0.15 threshold)
+    const seriousPlayer = makeEntity('player', 'player', ['player'], {
+      resources: { hp: 4, maxHp: 20, stamina: 5, maxStamina: 5 },
+    });
+    const enemy2 = makeEntity('enemy1', 'enemy', ['enemy']);
+    const engine2 = buildEngine([seriousPlayer, enemy2]);
+    engine2.drainEvents();
+
+    engine2.store.state.entities.enemy1.resources.hp = 0;
+    engine2.store.emitEvent('combat.entity.defeated', {
+      entityId: 'enemy1', entityName: 'enemy1', defeatedBy: 'player',
+    });
+
+    events = engine2.drainEvents();
+    injury = events.find(e => e.type === 'combat.aftermath.injury' && e.payload.entityId === 'player');
+    expect(injury!.payload.severity).toBe('serious');
+  });
+
+  it('full HP/stamina entity generates no recovery entry', () => {
+    const player = makeEntity('player', 'player', ['player'], {
+      resources: { hp: 20, maxHp: 20, stamina: 5, maxStamina: 5 },
+    });
+    const enemy = makeEntity('enemy1', 'enemy', ['enemy']);
+    const engine = buildEngine([player, enemy]);
+    engine.drainEvents();
+
+    engine.store.state.entities.enemy1.resources.hp = 0;
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'enemy1', entityName: 'enemy1', defeatedBy: 'player',
+    });
+    engine.drainEvents();
+
+    // Emit action.resolved — if no recovery entry, no hp-tick or recovery-complete should fire
+    engine.store.emitEvent('action.resolved', { verb: 'wait', actorId: 'player', eventCount: 0 });
+    const events = engine.drainEvents();
+
+    const hpTick = events.find(e => e.type === 'combat.aftermath.hp-tick' && e.payload.entityId === 'player');
+    const recoveryComplete = events.find(e => e.type === 'combat.aftermath.recovery-complete' && e.payload.entityId === 'player');
+    expect(hpTick).toBeUndefined();
+    expect(recoveryComplete).toBeUndefined();
+  });
+
+  it('multiple combats in different zones track independently', () => {
+    const zones2 = [
+      { id: 'zone-a', roomId: 'test', name: 'Zone A', tags: ['safe'] as string[], neighbors: ['zone-b'] },
+      { id: 'zone-b', roomId: 'test', name: 'Zone B', tags: ['safe'] as string[], neighbors: ['zone-a'] },
+    ];
+    const player = makeEntity('player', 'player', ['player'], {
+      resources: { hp: 15, maxHp: 20, stamina: 5, maxStamina: 5 },
+    });
+    const e1 = makeEntity('enemy1', 'enemy', ['enemy'], { zoneId: 'zone-a' });
+    const e2 = makeEntity('enemy2', 'enemy', ['enemy'], { zoneId: 'zone-b' });
+
+    const engine = createTestEngine({
+      modules: [
+        statusCore,
+        createCognitionCore(),
+        createCombatCore(),
+        createCombatRecovery(),
+      ],
+      entities: [player, e1, e2],
+      zones: zones2,
+    });
+    engine.drainEvents();
+
+    // Kill enemy in zone-a
+    engine.store.state.entities.enemy1.resources.hp = 0;
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'enemy1', entityName: 'enemy1', defeatedBy: 'player',
+    });
+
+    let events = engine.drainEvents();
+    const aftermathA = events.find(e => e.type === 'combat.aftermath.started' && e.payload.zoneId === 'zone-a');
+    expect(aftermathA).toBeDefined();
+
+    // Move player to zone-b, kill enemy there
+    engine.store.state.entities.player.zoneId = 'zone-b';
+    engine.store.state.meta.tick = 5; // different tick
+
+    engine.store.state.entities.enemy2.resources.hp = 0;
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'enemy2', entityName: 'enemy2', defeatedBy: 'player',
+    });
+
+    events = engine.drainEvents();
+    const aftermathB = events.find(e => e.type === 'combat.aftermath.started' && e.payload.zoneId === 'zone-b');
+    expect(aftermathB).toBeDefined();
+  });
+});

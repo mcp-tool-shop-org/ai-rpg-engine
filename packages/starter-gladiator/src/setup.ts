@@ -62,6 +62,7 @@ const patronPerception: PresentationRule = {
 
 // Gladiator combat formulas — might for damage, agility for hit/dodge, showmanship for guard
 const gladiatorFormulas: CombatFormulas = {
+  statMapping: { attack: 'might', precision: 'agility', resolve: 'showmanship' },
   hitChance: (attacker, target) => {
     const atkAgility = attacker.stats.agility ?? 5;
     const tgtAgility = target.stats.agility ?? 5;

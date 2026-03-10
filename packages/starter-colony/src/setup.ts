@@ -61,6 +61,7 @@ const alienPerception: PresentationRule = {
 
 // Colony combat formulas — engineering for damage, awareness for hit/dodge, command for guard
 const colonyFormulas: CombatFormulas = {
+  statMapping: { attack: 'engineering', precision: 'awareness', resolve: 'command' },
   hitChance: (attacker, target) => {
     const atkAwareness = attacker.stats.awareness ?? 5;
     const tgtAwareness = target.stats.awareness ?? 5;

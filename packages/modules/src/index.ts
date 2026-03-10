@@ -2,8 +2,8 @@
 
 export { traversalCore } from './traversal-core.js';
 export { statusCore, applyStatus, removeStatus, hasStatus, getStatusStacks } from './status-core.js';
-export { combatCore, createCombatCore, COMBAT_STATES, simpleRoll } from './combat-core.js';
-export type { CombatFormulas } from './combat-core.js';
+export { combatCore, createCombatCore, COMBAT_STATES, simpleRoll, DEFAULT_STAT_MAPPING } from './combat-core.js';
+export type { CombatFormulas, CombatStatMapping } from './combat-core.js';
 export { inventoryCore, createInventoryCore, giveItem } from './inventory-core.js';
 export type { ItemEffect } from './inventory-core.js';
 export { createDialogueCore } from './dialogue-core.js';

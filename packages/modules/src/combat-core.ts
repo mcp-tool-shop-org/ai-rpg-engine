@@ -10,16 +10,34 @@ import type {
 import { nextId } from '@ai-rpg-engine/core';
 import { applyStatus, removeStatus, hasStatus } from './status-core.js';
 
+/** Maps generic combat roles to starter-specific stat names */
+export type CombatStatMapping = {
+  /** Stat governing attack power / damage (default: 'vigor') */
+  attack: string;
+  /** Stat governing accuracy / evasion (default: 'instinct') */
+  precision: string;
+  /** Stat governing defense / mental resilience (default: 'will') */
+  resolve: string;
+};
+
+export const DEFAULT_STAT_MAPPING: CombatStatMapping = {
+  attack: 'vigor',
+  precision: 'instinct',
+  resolve: 'will',
+};
+
 export type CombatFormulas = {
-  /** Calculate hit chance (0-100). Default: 50 + attacker.instinct * 5 - target.instinct * 3 */
+  /** Maps generic combat roles to starter-specific stat names */
+  statMapping?: CombatStatMapping;
+  /** Calculate hit chance (0-100). Default: 50 + attacker.precision * 5 - target.precision * 3 */
   hitChance?: (attacker: EntityState, target: EntityState, world: WorldState) => number;
-  /** Calculate damage. Default: attacker.vigor + weapon bonus */
+  /** Calculate damage. Default: attacker.attack stat */
   damage?: (attacker: EntityState, target: EntityState, world: WorldState) => number;
   /** Check if an entity is the player's ally (companion). Used for interception. */
   isAlly?: (entityId: string) => boolean;
-  /** Fraction of damage absorbed when guarded (0-1). Default: 0.5 + will bonus (cap 0.75) */
+  /** Fraction of damage absorbed when guarded (0-1). Default: 0.5 + resolve bonus (cap 0.75) */
   guardReduction?: (defender: EntityState, world: WorldState) => number;
-  /** Success chance for disengage (0-100). Default: 40 + instinct*5 + will*2 */
+  /** Success chance for disengage (0-100). Default: 40 + precision*5 + resolve*2 */
   disengageChance?: (actor: EntityState, world: WorldState) => number;
   /** Companion interception chance (0-100). Called per ally; first ally whose roll passes intercepts. */
   interceptChance?: (ally: EntityState, target: EntityState, world: WorldState) => number;
@@ -108,9 +126,10 @@ function attackHandler(
   }
 
   // Hit check with state modifiers
+  const mapping = formulas?.statMapping ?? DEFAULT_STAT_MAPPING;
   let hitChance = formulas?.hitChance
     ? formulas.hitChance(attacker, target, world)
-    : defaultHitChance(attacker, target);
+    : defaultHitChance(attacker, target, mapping);
   if (hasStatus(target, COMBAT_STATES.EXPOSED)) hitChance += 20;
   if (hasStatus(target, COMBAT_STATES.FLEEING)) hitChance += 10;
   hitChance = Math.min(95, Math.max(5, hitChance));
@@ -134,7 +153,7 @@ function attackHandler(
   // Damage
   const damage = formulas?.damage
     ? formulas.damage(attacker, target, world)
-    : defaultDamage(attacker);
+    : defaultDamage(attacker, mapping);
 
   // Ally interception: if the target is the player and has companion allies in the same zone,
   // check if a companion intercepts the damage
@@ -206,11 +225,11 @@ function attackHandler(
   // Apply combat state modifiers to damage
   let finalDamage = damage;
   if (hasStatus(target, COMBAT_STATES.GUARDED)) {
-    const targetWill = target.stats.will ?? 3;
-    const willBonus = Math.max(0, (targetWill - 3) * 0.03);
+    const targetResolve = getStat(target, mapping, 'resolve', 3);
+    const resolveBonus = Math.max(0, (targetResolve - 3) * 0.03);
     const reduction = formulas?.guardReduction
       ? formulas.guardReduction(target, world)
-      : Math.min(0.75, 0.5 + willBonus);
+      : Math.min(0.75, 0.5 + resolveBonus);
     const originalDamage = finalDamage;
     finalDamage = Math.max(1, Math.floor(finalDamage * (1 - reduction)));
     // Guard absorbs one hit then clears
@@ -290,7 +309,7 @@ function attackHandler(
 function guardHandler(
   action: ActionIntent,
   world: WorldState,
-  formulas?: CombatFormulas,
+  _formulas?: CombatFormulas,
 ): ResolvedEvent[] {
   const events: ResolvedEvent[] = [];
   const actor = world.entities[action.actorId];
@@ -383,11 +402,12 @@ function disengageHandler(
   }));
 
   // Roll disengage chance
-  const instinct = actor.stats.instinct ?? 5;
-  const will = actor.stats.will ?? 3;
+  const mapping = formulas?.statMapping ?? DEFAULT_STAT_MAPPING;
+  const precision = getStat(actor, mapping, 'precision', 5);
+  const resolve = getStat(actor, mapping, 'resolve', 3);
   const chance = formulas?.disengageChance
     ? formulas.disengageChance(actor, world)
-    : Math.min(90, Math.max(15, 40 + instinct * 5 + will * 2));
+    : Math.min(90, Math.max(15, 40 + precision * 5 + resolve * 2));
   const roll = simpleRoll(world.meta.tick, actor.id, 'disengage');
 
   if (roll <= chance) {
@@ -429,15 +449,20 @@ function disengageHandler(
   return events;
 }
 
-function defaultHitChance(attacker: EntityState, target: EntityState): number {
-  const attackerInstinct = attacker.stats.instinct ?? 5;
-  const targetInstinct = target.stats.instinct ?? 5;
-  return Math.min(95, Math.max(5, 50 + attackerInstinct * 5 - targetInstinct * 3));
+/** Read a mapped stat from an entity, with fallback */
+function getStat(entity: EntityState, mapping: CombatStatMapping, role: keyof CombatStatMapping, fallback: number): number {
+  return entity.stats[mapping[role]] ?? fallback;
 }
 
-function defaultDamage(attacker: EntityState): number {
-  const vigor = attacker.stats.vigor ?? 3;
-  return Math.max(1, vigor);
+function defaultHitChance(attacker: EntityState, target: EntityState, mapping: CombatStatMapping): number {
+  const attackerPrecision = getStat(attacker, mapping, 'precision', 5);
+  const targetPrecision = getStat(target, mapping, 'precision', 5);
+  return Math.min(95, Math.max(5, 50 + attackerPrecision * 5 - targetPrecision * 3));
+}
+
+function defaultDamage(attacker: EntityState, mapping: CombatStatMapping): number {
+  const attack = getStat(attacker, mapping, 'attack', 3);
+  return Math.max(1, attack);
 }
 
 /** Simple deterministic roll 1-100 based on tick and IDs */

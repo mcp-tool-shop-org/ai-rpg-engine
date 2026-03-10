@@ -62,6 +62,7 @@ const vampireHungerPerception: PresentationRule = {
 
 // Vampire combat formulas — vitality for damage, cunning for hit/dodge, presence for guard
 const vampireFormulas: CombatFormulas = {
+  statMapping: { attack: 'vitality', precision: 'cunning', resolve: 'presence' },
   hitChance: (attacker, target) => {
     const atkCunning = attacker.stats.cunning ?? 5;
     const tgtCunning = target.stats.cunning ?? 5;

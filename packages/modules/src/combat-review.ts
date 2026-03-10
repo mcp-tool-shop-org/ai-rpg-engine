@@ -548,13 +548,14 @@ export function formatCombatTrace(trace: CombatTrace): string {
 
   for (const ft of trace.formulas) {
     const rollInfo = ft.name === 'hitChance' && trace.roll != null
-      ? `  (roll: ${trace.roll} \u2192 ${trace.outcome === 'hit' || trace.outcome === 'intercepted' ? 'HIT' : 'MISS'})`
+      ? `  (roll ${trace.roll} ${trace.roll <= ft.final ? '\u2264' : '>'} ${ft.final}% \u2192 ${trace.outcome === 'hit' || trace.outcome === 'intercepted' ? 'HIT' : 'MISS'})`
       : ft.name === 'disengageChance' && trace.roll != null
-        ? `  (roll: ${trace.roll} \u2192 ${trace.outcome === 'disengage-success' ? 'SUCCESS' : 'FAIL'})`
+        ? `  (roll ${trace.roll} ${trace.roll <= ft.final ? '\u2264' : '>'} ${ft.final}% \u2192 ${trace.outcome === 'disengage-success' ? 'SUCCESS' : 'FAIL'})`
         : '';
-    lines.push(`${ft.name}: ${ft.final}${ft.name.includes('Chance') || ft.name === 'hitChance' ? '%' : ''}${rollInfo}`);
+    lines.push(`${ft.name}: ${ft.final}${ft.name.includes('Chance') || ft.name === 'hitChance' || ft.name === 'disengageChance' ? '%' : ''}${rollInfo}`);
     for (const step of ft.steps) {
-      lines.push(`  [${step.source}] ${step.label} = ${step.value}`);
+      const deltaStr = step.delta !== 0 ? ` (${step.delta > 0 ? '+' : ''}${step.delta})` : '';
+      lines.push(`  [${step.source}] ${step.label} = ${step.value}${deltaStr}`);
     }
   }
 

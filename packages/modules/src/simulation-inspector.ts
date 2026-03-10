@@ -5,11 +5,9 @@
 import type {
   EngineModule,
   WorldState,
-  DebugInspector,
-  ScalarValue,
 } from '@ai-rpg-engine/core';
 import { getCognition } from './cognition-core.js';
-import type { CognitionState, Belief, Memory } from './cognition-core.js';
+import type { Belief, Memory } from './cognition-core.js';
 import { getPerceptionLog } from './perception-filter.js';
 import type { PerceivedEvent } from './perception-filter.js';
 import { getFactionCognition, getEntityFaction, getFactionMembers } from './faction-cognition.js';
@@ -18,7 +16,11 @@ import { getRumorLog, getRumorsToFaction } from './rumor-propagation.js';
 import type { RumorRecord } from './rumor-propagation.js';
 import { getZoneProperty } from './environment-core.js';
 import { getDistrictState, getDistrictDefinition, getAllDistrictIds, getDistrictThreatLevel } from './district-core.js';
-import type { DistrictState, DistrictDefinition, DistrictMetrics } from './district-core.js';
+import type { DistrictMetrics } from './district-core.js';
+import { hasStatus } from './status-core.js';
+import { COMBAT_STATES } from './combat-core.js';
+import { ENGAGEMENT_STATES } from './engagement-core.js';
+import { WOUND_STATUSES, MORALE_AFTERMATH_STATUSES } from './combat-recovery.js';
 
 // --- Types ---
 
@@ -35,6 +37,17 @@ export type EntityInspection = {
     currentIntent: string | null;
   };
   perceptions: PerceivedEvent[];
+  combatState: {
+    hp: number;
+    maxHp: number;
+    hpRatio: number;
+    stamina: number;
+    maxStamina: number;
+    engagementStatuses: string[];
+    combatStatuses: string[];
+    woundStatus: string | null;
+    moraleStatus: string | null;
+  };
 };
 
 export type FactionInspection = {
@@ -132,6 +145,32 @@ export function inspectEntity(world: WorldState, entityId: string): EntityInspec
     ? getPerceptionLog(world, entityId)
     : [];
 
+  // Combat state
+  const hp = entity.resources.hp ?? 0;
+  const maxHp = entity.resources.maxHp ?? hp;
+  const stamina = entity.resources.stamina ?? 0;
+  const maxStamina = entity.resources.maxStamina ?? stamina;
+
+  const engagementStatuses: string[] = [];
+  if (hasStatus(entity, ENGAGEMENT_STATES.ENGAGED)) engagementStatuses.push('ENGAGED');
+  if (hasStatus(entity, ENGAGEMENT_STATES.PROTECTED)) engagementStatuses.push('PROTECTED');
+  if (hasStatus(entity, ENGAGEMENT_STATES.BACKLINE)) engagementStatuses.push('BACKLINE');
+  if (hasStatus(entity, ENGAGEMENT_STATES.ISOLATED)) engagementStatuses.push('ISOLATED');
+
+  const combatStatuses: string[] = [];
+  if (hasStatus(entity, COMBAT_STATES.GUARDED)) combatStatuses.push('GUARDED');
+  if (hasStatus(entity, COMBAT_STATES.EXPOSED)) combatStatuses.push('EXPOSED');
+  if (hasStatus(entity, COMBAT_STATES.FLEEING)) combatStatuses.push('FLEEING');
+
+  const woundStatus = hasStatus(entity, WOUND_STATUSES.CRITICAL) ? WOUND_STATUSES.CRITICAL
+    : hasStatus(entity, WOUND_STATUSES.SERIOUS) ? WOUND_STATUSES.SERIOUS
+    : hasStatus(entity, WOUND_STATUSES.LIGHT) ? WOUND_STATUSES.LIGHT
+    : null;
+
+  const moraleStatus = hasStatus(entity, MORALE_AFTERMATH_STATUSES.SHAKEN) ? MORALE_AFTERMATH_STATUSES.SHAKEN
+    : hasStatus(entity, MORALE_AFTERMATH_STATUSES.EMBOLDENED) ? MORALE_AFTERMATH_STATUSES.EMBOLDENED
+    : null;
+
   return {
     id: entity.id,
     name: entity.name,
@@ -145,6 +184,17 @@ export function inspectEntity(world: WorldState, entityId: string): EntityInspec
       currentIntent: cog.currentIntent,
     },
     perceptions: perceptions.slice(-20),
+    combatState: {
+      hp,
+      maxHp,
+      hpRatio: maxHp > 0 ? hp / maxHp : 0,
+      stamina,
+      maxStamina,
+      engagementStatuses,
+      combatStatuses,
+      woundStatus,
+      moraleStatus,
+    },
   };
 }
 
@@ -302,6 +352,12 @@ export function formatEntityInspection(inspection: EntityInspection): string {
   lines.push(`Entity: ${inspection.name} (${inspection.id})`);
   lines.push(`  Zone: ${inspection.zone ?? 'none'}`);
   lines.push(`  Faction: ${inspection.faction ?? 'none'}`);
+  const cs = inspection.combatState;
+  lines.push(`  HP: ${cs.hp}/${cs.maxHp} (${(cs.hpRatio * 100).toFixed(0)}%)  Stamina: ${cs.stamina}/${cs.maxStamina}`);
+  if (cs.engagementStatuses.length > 0) lines.push(`  Engagement: ${cs.engagementStatuses.join(', ')}`);
+  if (cs.combatStatuses.length > 0) lines.push(`  Combat: ${cs.combatStatuses.join(', ')}`);
+  if (cs.woundStatus) lines.push(`  Wound: ${cs.woundStatus}`);
+  if (cs.moraleStatus) lines.push(`  Morale Effect: ${cs.moraleStatus}`);
   lines.push(`  Morale: ${inspection.cognition.morale}  Suspicion: ${inspection.cognition.suspicion}`);
   lines.push(`  Intent: ${inspection.cognition.currentIntent ?? 'none'}`);
 

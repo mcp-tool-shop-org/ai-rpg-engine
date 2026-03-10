@@ -62,6 +62,7 @@ const undeadHunger: PresentationRule = {
 
 // Zombie combat formulas — fitness for damage, wits for hit/dodge, nerve for guard
 const zombieFormulas: CombatFormulas = {
+  statMapping: { attack: 'fitness', precision: 'wits', resolve: 'nerve' },
   hitChance: (attacker, target) => {
     const atkWits = attacker.stats.wits ?? 5;
     const tgtWits = target.stats.wits ?? 5;

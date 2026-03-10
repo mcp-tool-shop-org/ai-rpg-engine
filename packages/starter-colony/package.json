@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/starter-colony",
-  "version": "2.0.13",
+  "version": "2.0.14",
   "description": "AI RPG Engine sci-fi colony starter: Signal Loss",
   "type": "module",
   "main": "./dist/index.js",

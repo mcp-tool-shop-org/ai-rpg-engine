@@ -62,6 +62,7 @@ const cursedGuardianPerception: PresentationRule = {
 
 // Pirate combat formulas — brawn for damage, cunning for hit/dodge, sea-legs for guard
 const pirateFormulas: CombatFormulas = {
+  statMapping: { attack: 'brawn', precision: 'cunning', resolve: 'sea-legs' },
   hitChance: (attacker, target) => {
     const atkCunning = attacker.stats.cunning ?? 5;
     const tgtCunning = target.stats.cunning ?? 5;

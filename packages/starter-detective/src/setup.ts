@@ -61,6 +61,7 @@ const suspectParanoia: PresentationRule = {
 
 // Detective combat formulas — grit for damage + guard, perception for hit/dodge
 const detectiveFormulas: CombatFormulas = {
+  statMapping: { attack: 'grit', precision: 'perception', resolve: 'grit' },
   hitChance: (attacker, target) => {
     const atkPerception = attacker.stats.perception ?? 5;
     const tgtPerception = target.stats.perception ?? 5;

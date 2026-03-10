@@ -60,6 +60,7 @@ const iceSecurityFraming: PresentationRule = {
 
 // Cyberpunk combat formulas — chrome for damage, reflex for hit/dodge, netrunning for guard
 const cyberpunkFormulas: CombatFormulas = {
+  statMapping: { attack: 'chrome', precision: 'reflex', resolve: 'netrunning' },
   hitChance: (attacker, target) => {
     const atkReflex = attacker.stats.reflex ?? 5;
     const tgtReflex = target.stats.reflex ?? 5;

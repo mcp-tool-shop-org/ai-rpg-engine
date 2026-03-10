@@ -394,3 +394,123 @@ describe('combat-intent: explainability', () => {
     expect(text).toContain('Summary:');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Group 7: Edge Cases (Phase 7)
+// ---------------------------------------------------------------------------
+
+describe('combat-intent: edge cases', () => {
+  it('morale 0 strongly prefers disengage', () => {
+    const npc = makeEntity('npc', 'enemy', ['enemy'], {
+      resources: { hp: 5, maxHp: 20, stamina: 5 },
+    });
+    const target = makeEntity('target', 'player', ['player']);
+    const engine = buildEngine([npc, target]);
+
+    // Force morale to 0
+    const cog = getCognition(engine.store.state, 'npc');
+    cog.morale = 0;
+
+    const decision = selectNpcCombatAction(npc, engine.store.state);
+    expect(decision.chosen.intent).toBe('disengage');
+  });
+
+  it('morale 100 prefers attack aggressively', () => {
+    const npc = makeEntity('npc', 'enemy', ['enemy'], {
+      resources: { hp: 20, maxHp: 20, stamina: 5 },
+    });
+    const target = makeEntity('target', 'player', ['player']);
+    const engine = buildEngine([npc, target]);
+
+    const cog = getCognition(engine.store.state, 'npc');
+    cog.morale = 100;
+
+    const decision = selectNpcCombatAction(npc, engine.store.state);
+    expect(decision.chosen.intent).toBe('attack');
+    // High morale should boost attack score significantly
+    expect(decision.chosen.score).toBeGreaterThan(60);
+  });
+
+  it('no exit suppresses disengage score', () => {
+    const npc = makeEntity('npc', 'enemy', ['enemy'], {
+      zoneId: 'zone-dead-end',
+      resources: { hp: 3, maxHp: 20, stamina: 5 },
+    });
+    const target = makeEntity('target', 'player', ['player'], {
+      zoneId: 'zone-dead-end',
+    });
+    const engine = buildEngine([npc, target]);
+
+    // Low morale + low HP would normally trigger disengage
+    const cog = getCognition(engine.store.state, 'npc');
+    cog.morale = 5;
+
+    const decision = selectNpcCombatAction(npc, engine.store.state);
+    // With no exit, disengage should be heavily penalized
+    const disengageScore = decision.alternatives.find(a => a.intent === 'disengage');
+    expect(disengageScore?.score ?? decision.chosen.score).toBeLessThan(10);
+    expect(decision.chosen.intent).not.toBe('disengage');
+  });
+
+  it('will 1 reduces disengage penalty near minimum', () => {
+    const npc = makeEntity('npc', 'enemy', ['enemy'], {
+      stats: { will: 1 },
+    });
+    const target = makeEntity('target', 'player', ['player']);
+    const engine = buildEngine([npc, target]);
+
+    const d1 = selectNpcCombatAction(npc, engine.store.state);
+
+    // Compare with will 10
+    const npc2 = makeEntity('npc2', 'enemy', ['enemy'], {
+      stats: { will: 10 },
+    });
+    engine.store.state.entities.npc2 = npc2;
+
+    const d2 = selectNpcCombatAction(npc2, engine.store.state);
+
+    // Higher will should reduce disengage propensity (will adds penalty to disengage)
+    const d1Disengage = [...(d1.chosen.intent === 'disengage' ? [d1.chosen] : []), ...d1.alternatives].find(a => a.intent === 'disengage');
+    const d2Disengage = [...(d2.chosen.intent === 'disengage' ? [d2.chosen] : []), ...d2.alternatives].find(a => a.intent === 'disengage');
+
+    // Higher will = lower disengage score (will penalizes disengage)
+    expect(d2Disengage!.score).toBeLessThan(d1Disengage!.score);
+  });
+
+  it('multi-tag entity uses first matching pack bias', () => {
+    const npc = makeEntity('npc', 'enemy', ['enemy', 'samurai', 'vampire']);
+    const target = makeEntity('target', 'player', ['player']);
+    const engine = buildEngine([npc, target]);
+
+    const config: CombatIntentConfig = {
+      packBiases: biasesFor('samurai', 'vampire'),
+    };
+
+    const decision = selectNpcCombatAction(npc, engine.store.state, config);
+    // samurai comes first in the biases array, so it should be the one applied
+    expect(decision.packBias).toBe('samurai-discipline');
+  });
+
+  it('stat mapping reads correct resolve stat for scoring', () => {
+    const npc = makeEntity('npc', 'enemy', ['enemy'], {
+      stats: { composure: 10 }, // high resolve via ronin mapping
+    });
+    const target = makeEntity('target', 'player', ['player']);
+    const engine = buildEngine([npc, target]);
+
+    const config: CombatIntentConfig = {
+      statMapping: { attack: 'discipline', precision: 'perception', resolve: 'composure' },
+    };
+
+    const decisionMapped = selectNpcCombatAction(npc, engine.store.state, config);
+    const decisionDefault = selectNpcCombatAction(npc, engine.store.state);
+
+    // With composure=10 mapped to resolve, the will contributions should differ
+    // Guard score should be higher with high resolve
+    const mappedGuard = [...(decisionMapped.chosen.intent === 'guard' ? [decisionMapped.chosen] : []), ...decisionMapped.alternatives].find(a => a.intent === 'guard');
+    const defaultGuard = [...(decisionDefault.chosen.intent === 'guard' ? [decisionDefault.chosen] : []), ...decisionDefault.alternatives].find(a => a.intent === 'guard');
+
+    // Mapped guard (composure=10) should score higher than default (will=undefined → 3)
+    expect(mappedGuard!.score).toBeGreaterThan(defaultGuard!.score);
+  });
+});

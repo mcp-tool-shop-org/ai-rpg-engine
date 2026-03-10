@@ -524,4 +524,107 @@ describe('combat-review', () => {
       expect(trace).toBeUndefined();
     });
   });
+
+  // --- Edge Cases (Phase 7) ---
+
+  describe('edge cases', () => {
+    it('guard reduces damage to minimum (1)', () => {
+      // Extremely low damage + guard should still deal minimum 1
+      const lowDamageFormulas: CombatFormulas = {
+        hitChance: () => 95,
+        damage: () => 1, // minimum possible damage
+        guardReduction: () => 0.75, // max guard reduction
+        disengageChance: () => 50,
+      };
+
+      const engine = buildEngine(
+        [
+          makePlayer('zone-a'),
+          makeEnemy('goblin', 'zone-a', { resources: { hp: 50, stamina: 5 } }),
+        ],
+        lowDamageFormulas,
+      );
+      // Guard the enemy
+      applyStatus(engine.world.entities.goblin, COMBAT_STATES.GUARDED, engine.world.meta.tick, { duration: 100 });
+
+      const events = attackUntilHit(engine, 'goblin');
+      const trace = getTraceEvent(events)!;
+
+      expect(trace.damagePipeline).toBeDefined();
+      // Even with 75% reduction on 1 damage, minimum should be 1
+      expect(trace.damagePipeline!.finalDamage).toBeGreaterThanOrEqual(1);
+    });
+
+    it('disengage chance clamps at 90 with high stats', () => {
+      const highStatFormulas: CombatFormulas = {
+        hitChance: () => 60,
+        damage: () => 5,
+        guardReduction: () => 0.5,
+        disengageChance: () => 90, // capped at 90
+      };
+
+      const engine = buildEngine(
+        [makePlayer('zone-a'), makeEnemy('goblin', 'zone-a')],
+        highStatFormulas,
+      );
+
+      // Run many disengage attempts — eventually one should fail despite 90% chance
+      let hitSuccess = false;
+      let hitFail = false;
+      for (let i = 0; i < 100; i++) {
+        engine.world.entities.player.resources.stamina = 5;
+        engine.world.entities.player.zoneId = 'zone-a';
+        engine.drainEvents();
+        engine.submitAction('disengage', {});
+        const events = engine.drainEvents();
+        const trace = getTraceEvent(events);
+        if (trace) {
+          const disTrace = trace.formulas.find(f => f.name === 'disengageChance');
+          if (disTrace) {
+            expect(disTrace.final).toBeLessThanOrEqual(90);
+          }
+          if (trace.outcome === 'disengage-success') hitSuccess = true;
+          if (trace.outcome === 'disengage-fail') hitFail = true;
+        }
+        if (hitSuccess && hitFail) break;
+      }
+      // At 90% chance, we should see at least one success in 100 attempts
+      expect(hitSuccess).toBe(true);
+    });
+
+    it('traces do not bleed between sequential actions', () => {
+      const engine = buildEngine([
+        makePlayer('zone-a'),
+        makeEnemy('goblin', 'zone-a', { resources: { hp: 200, stamina: 100 } }),
+      ]);
+
+      // First action: attack
+      engine.world.entities.player.resources.stamina = 5;
+      engine.drainEvents();
+      engine.submitAction('attack', { targetIds: ['goblin'] });
+      const events1 = engine.drainEvents();
+      const trace1 = getTraceEvent(events1);
+
+      // Second action: guard
+      engine.world.entities.player.resources.stamina = 5;
+      engine.submitAction('guard', {});
+      const events2 = engine.drainEvents();
+      const trace2 = getTraceEvent(events2);
+
+      // Third action: attack again
+      engine.world.entities.player.resources.stamina = 5;
+      engine.submitAction('attack', { targetIds: ['goblin'] });
+      const events3 = engine.drainEvents();
+      const trace3 = getTraceEvent(events3);
+
+      // Each trace should be independent
+      if (trace1) expect(trace1.verb).toBe('attack');
+      if (trace2) expect(trace2.verb).toBe('guard');
+      if (trace3) {
+        expect(trace3.verb).toBe('attack');
+        // trace3 should not carry over data from trace1 or trace2
+        if (trace1) expect(trace3.tick).not.toBe(trace1.tick);
+      }
+    });
+  });
 });

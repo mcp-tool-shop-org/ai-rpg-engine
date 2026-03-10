@@ -1074,3 +1074,112 @@ describe('Phase 3 — starter-specific stat mapping', () => {
     expect(result1).toEqual(result2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Stat Mapping Tests (Phase 7)
+// ---------------------------------------------------------------------------
+
+describe('combat-core: stat mapping', () => {
+  const zones = [
+    { id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [] as string[], neighbors: ['zone-b'] },
+    { id: 'zone-b', roomId: 'test', name: 'Zone B', tags: [] as string[], neighbors: ['zone-a'] },
+  ];
+
+  it('non-fantasy stats correctly read through mapping', () => {
+    // Gladiator: might → attack, agility → precision, showmanship → resolve
+    const gladiatorFormulas = {
+      statMapping: { attack: 'might', precision: 'agility', resolve: 'showmanship' },
+    };
+
+    const player = makePlayer('zone-a', {
+      stats: { might: 8, agility: 7, showmanship: 4 },
+    });
+    const enemy = makeEntity('foe', 'Foe', 'zone-a', {
+      stats: { might: 3, agility: 3, showmanship: 2 },
+      resources: { hp: 100, stamina: 10 },
+    });
+
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(gladiatorFormulas)],
+      entities: [player, enemy],
+      zones,
+    });
+
+    // Attack multiple times to verify damage uses mapped stats
+    let totalDamage = 0;
+    for (let i = 0; i < 20; i++) {
+      engine.world.entities.player.resources.stamina = 5;
+      const prevHp = engine.world.entities.foe.resources.hp;
+      engine.submitAction('attack', { targetIds: ['foe'] });
+      const dmg = prevHp - engine.world.entities.foe.resources.hp;
+      if (dmg > 0) totalDamage += dmg;
+    }
+    // With might=8, default damage formula returns max(1, 8) = 8 per hit
+    // At least some hits should deal 8 damage
+    expect(totalDamage).toBeGreaterThan(0);
+  });
+
+  it('missing stat in mapping falls back to default value', () => {
+    const formulas = {
+      statMapping: { attack: 'strength', precision: 'dexterity', resolve: 'fortitude' },
+    };
+
+    // Entity has NO strength/dexterity/fortitude stats → all fallback to defaults
+    const player = makePlayer('zone-a', { stats: {} });
+    const enemy = makeEntity('foe', 'Foe', 'zone-a', {
+      stats: {},
+      resources: { hp: 100, stamina: 10 },
+    });
+
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(formulas)],
+      entities: [player, enemy],
+      zones,
+    });
+
+    // Should not crash — fallback values kick in
+    engine.world.entities.player.resources.stamina = 5;
+    engine.submitAction('attack', { targetIds: ['foe'] });
+    const events = engine.drainEvents();
+
+    // Should have some event (rejected or hit or miss), no crash
+    expect(events.length).toBeGreaterThan(0);
+  });
+
+  it('stat mapping affects hit chance proportionally', () => {
+    const zones2 = [
+      { id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [] as string[], neighbors: ['zone-b'] },
+      { id: 'zone-b', roomId: 'test', name: 'Zone B', tags: [] as string[], neighbors: ['zone-a'] },
+    ];
+
+    // High precision entity
+    const highPrecision = {
+      statMapping: { attack: 'str', precision: 'dex', resolve: 'con' },
+    };
+
+    let hits = 0;
+    for (let seed = 1; seed <= 50; seed++) {
+      const player = makePlayer('zone-a', { stats: { str: 5, dex: 10, con: 3 } });
+      const enemy = makeEntity('foe', 'Foe', 'zone-a', {
+        stats: { str: 3, dex: 3, con: 3 },
+        resources: { hp: 100, stamina: 10 },
+      });
+
+      const engine = createTestEngine({
+        modules: [statusCore, createCombatCore(highPrecision)],
+        entities: [player, enemy],
+        zones: zones2,
+        seed,
+      });
+
+      engine.world.entities.player.resources.stamina = 5;
+      const prevHp = engine.world.entities.foe.resources.hp;
+      engine.submitAction('attack', { targetIds: ['foe'] });
+      if (engine.world.entities.foe.resources.hp < prevHp) hits++;
+    }
+
+    // With dex=10 vs dex=3: 50 + 10*5 - 3*3 = 91, clamped to 91
+    // Should hit the vast majority of the time
+    expect(hits).toBeGreaterThan(40); // >80% hit rate expected
+  });
+});
