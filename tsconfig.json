@@ -40,6 +40,9 @@
     { "path": "packages/asset-registry" },
     { "path": "packages/image-gen" },
     { "path": "packages/equipment" },
-    { "path": "packages/character-profile" }
+    { "path": "packages/character-profile" },
+    { "path": "packages/starter-vampire" },
+    { "path": "packages/starter-gladiator" },
+    { "path": "packages/starter-ronin" }
   ]
 }

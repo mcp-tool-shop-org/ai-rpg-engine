@@ -25,6 +25,8 @@ export const fantasyMinimalRuleset: RulesetDefinition = {
     { id: 'use', name: 'Use', description: 'Use an item from your inventory' },
     { id: 'speak', name: 'Speak', tags: ['dialogue'], description: 'Initiate dialogue with an NPC' },
     { id: 'choose', name: 'Choose', tags: ['dialogue'], description: 'Select a dialogue option' },
+    { id: 'pray', name: 'Pray', tags: ['divine', 'ritual'], description: 'Channel divine will for guidance or protection' },
+    { id: 'consecrate', name: 'Consecrate', tags: ['divine', 'purification'], description: 'Purify cursed ground or objects with sacred rites' },
   ],
 
   formulas: [
@@ -41,6 +43,13 @@ export const fantasyMinimalRuleset: RulesetDefinition = {
       description: 'Base: attacker.vigor, minimum 1',
       inputs: ['attacker.vigor'],
       output: 'number',
+    },
+    {
+      id: 'consecrate-chance',
+      name: 'Consecrate Chance',
+      description: 'Base: 40 + actor.will*5, clamped 10-95',
+      inputs: ['actor.will'],
+      output: 'number (0-100)',
     },
   ],
 

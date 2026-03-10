@@ -1,13 +1,10 @@
 {
-  "name": "@ai-rpg-engine/cli",
-  "version": "2.0.3",
-  "description": "AI RPG Engine developer CLI: run, validate, replay, inspect",
+  "name": "@ai-rpg-engine/starter-gladiator",
+  "version": "2.1.0",
+  "description": "AI RPG Engine historical arena starter: Iron Colosseum",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "ai-rpg-engine": "./dist/bin.js"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -23,21 +20,10 @@
   },
   "dependencies": {
     "@ai-rpg-engine/core": "*",
-    "@ai-rpg-engine/modules": "*",
     "@ai-rpg-engine/content-schema": "*",
-    "@ai-rpg-engine/terminal-ui": "*",
+    "@ai-rpg-engine/modules": "*",
     "@ai-rpg-engine/pack-registry": "*",
-    "@ai-rpg-engine/character-creation": "*",
-    "@ai-rpg-engine/starter-fantasy": "*",
-    "@ai-rpg-engine/starter-cyberpunk": "*",
-    "@ai-rpg-engine/starter-detective": "*",
-    "@ai-rpg-engine/starter-pirate": "*",
-    "@ai-rpg-engine/starter-zombie": "*",
-    "@ai-rpg-engine/starter-weird-west": "*",
-    "@ai-rpg-engine/starter-colony": "*",
-    "@ai-rpg-engine/starter-vampire": "*",
-    "@ai-rpg-engine/starter-gladiator": "*",
-    "@ai-rpg-engine/starter-ronin": "*"
+    "@ai-rpg-engine/equipment": "*"
   },
   "license": "MIT",
   "author": "mcp-tool-shop",
@@ -45,15 +31,16 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
-    "directory": "packages/cli"
+    "directory": "packages/starter-gladiator"
   },
   "keywords": [
     "rpg",
-    "cli",
-    "game-engine",
-    "simulation",
+    "historical",
+    "gladiator",
+    "arena",
+    "starter",
     "worldbuilding",
-    "ai"
+    "content-pack"
   ],
   "bugs": {
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues"

@@ -46,6 +46,15 @@
     },
     {
       "path": "../starter-colony"
+    },
+    {
+      "path": "../starter-vampire"
+    },
+    {
+      "path": "../starter-gladiator"
+    },
+    {
+      "path": "../starter-ronin"
     }
   ],
   "exclude": [

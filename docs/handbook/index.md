@@ -135,6 +135,9 @@ build → simulate → analyze → tune → experiment
 24. [Ashfall Dead (Zombie Survival)](./24-ashfall-dead.md)
 25. [Dust Devil's Bargain (Weird West)](./25-dust-devils-bargain.md)
 26. [Signal Loss (Sci-Fi Colony)](./26-signal-loss.md)
+44. [Crimson Court (Vampire Horror)](./44-crimson-court.md)
+45. [Iron Colosseum (Gladiator Historical)](./45-iron-colosseum.md)
+46. [Jade Veil (Feudal Mystery)](./46-jade-veil.md)
 
 ### Part VII — Character Systems
 

@@ -11,6 +11,9 @@ import * as pirate from '@ai-rpg-engine/starter-pirate';
 import * as zombie from '@ai-rpg-engine/starter-zombie';
 import * as weirdWest from '@ai-rpg-engine/starter-weird-west';
 import * as colony from '@ai-rpg-engine/starter-colony';
+import * as vampire from '@ai-rpg-engine/starter-vampire';
+import * as gladiator from '@ai-rpg-engine/starter-gladiator';
+import * as ronin from '@ai-rpg-engine/starter-ronin';
 
 export type PackInfo = {
   meta: PackMetadata;
@@ -61,5 +64,23 @@ export const allPacks: PackInfo[] = [
     buildCatalog: colony.buildCatalog,
     ruleset: colony.colonyMinimalRuleset,
     createGame: colony.createGame,
+  },
+  {
+    meta: vampire.packMeta,
+    buildCatalog: vampire.buildCatalog,
+    ruleset: vampire.vampireMinimalRuleset,
+    createGame: vampire.createGame,
+  },
+  {
+    meta: gladiator.packMeta,
+    buildCatalog: gladiator.buildCatalog,
+    ruleset: gladiator.gladiatorMinimalRuleset,
+    createGame: gladiator.createGame,
+  },
+  {
+    meta: ronin.packMeta,
+    buildCatalog: ronin.buildCatalog,
+    ruleset: ronin.roninMinimalRuleset,
+    createGame: ronin.createGame,
   },
 ];
