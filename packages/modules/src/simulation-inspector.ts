@@ -145,6 +145,78 @@ export function createSimulationInspector(): EngineModule {
       });
 
       ctx.debug.registerInspector({
+        id: 'entity-role-summary',
+        label: 'Entity Role Summary',
+        inspect: (world) => {
+          const roleCounts: Partial<Record<CombatRole, number>> = {};
+          let bossCount = 0;
+          let totalEnemies = 0;
+          let unroled = 0;
+          for (const entity of Object.values(world.entities)) {
+            if (entity.type !== 'enemy') continue;
+            totalEnemies++;
+            const role = getEntityRole(entity);
+            if (role) {
+              roleCounts[role] = (roleCounts[role] ?? 0) + 1;
+              if (role === 'boss') bossCount++;
+            } else {
+              unroled++;
+            }
+          }
+          return { roleCounts, bossCount, totalEnemies, unroled };
+        },
+      });
+
+      ctx.debug.registerInspector({
+        id: 'encounter-audit',
+        label: 'Combat Role Health',
+        inspect: (world) => {
+          const warnings: string[] = [];
+          const enemies = Object.values(world.entities).filter(e => e.type === 'enemy');
+          const roleCounts: Partial<Record<CombatRole, number>> = {};
+          let totalRoled = 0;
+          let unroled = 0;
+          for (const e of enemies) {
+            const role = getEntityRole(e);
+            if (role) {
+              roleCounts[role] = (roleCounts[role] ?? 0) + 1;
+              totalRoled++;
+            } else {
+              unroled++;
+            }
+          }
+          if (unroled > 0) warnings.push(`${unroled} enemies have no combat role`);
+          if (totalRoled > 2) {
+            for (const [role, count] of Object.entries(roleCounts)) {
+              if (count > totalRoled * 0.5) {
+                warnings.push(`Role '${role}' is overrepresented (${count}/${totalRoled})`);
+              }
+            }
+          }
+          return { roleCounts, unroled, warnings };
+        },
+      });
+
+      ctx.debug.registerInspector({
+        id: 'boss-phases',
+        label: 'Boss Phase Status',
+        inspect: (world) => {
+          const bosses: Record<string, { hpRatio: number; tags: string[] }> = {};
+          for (const entity of Object.values(world.entities)) {
+            if (getEntityRole(entity) === 'boss') {
+              const hp = entity.resources.hp ?? 0;
+              const maxHp = entity.resources.maxHp ?? hp;
+              bosses[entity.id] = {
+                hpRatio: maxHp > 0 ? hp / maxHp : 0,
+                tags: entity.tags.filter(t => !t.startsWith('role:')),
+              };
+            }
+          }
+          return bosses;
+        },
+      });
+
+      ctx.debug.registerInspector({
         id: 'simulation-snapshot',
         label: 'Full Simulation Snapshot',
         inspect: (world) => createSnapshot(world),

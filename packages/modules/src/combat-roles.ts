@@ -574,6 +574,149 @@ export function getRoleBiases(entities: EntityState[]): PackBias[] {
   return biases;
 }
 
+// ---------------------------------------------------------------------------
+// Tactical Expectations (Role Vocabulary)
+// ---------------------------------------------------------------------------
+
+export type TacticalExpectation = {
+  role: CombatRole;
+  /** What this role likely does in combat */
+  likelyBehavior: string;
+  /** What the player should expect facing this role */
+  playerThreat: string;
+  /** Advisory: how to counter this role */
+  counterHint: string;
+  /** Engagement position tendency */
+  positionTendency: 'frontline' | 'backline' | 'flanker' | 'variable';
+  /** Morale behavior */
+  moraleProfile: 'stands-firm' | 'breaks-early' | 'never-flees' | 'unpredictable';
+};
+
+const TACTICAL_EXPECTATIONS: Record<CombatRole, TacticalExpectation> = {
+  brute: {
+    role: 'brute',
+    likelyBehavior: 'Aggressive frontline pressure, rarely retreats, finishes wounded targets.',
+    playerThreat: 'High damage, hard to dislodge, absorbs a lot of punishment.',
+    counterHint: 'Focus fire before support arrives. Low precision makes guard effective.',
+    positionTendency: 'frontline',
+    moraleProfile: 'stands-firm',
+  },
+  skirmisher: {
+    role: 'skirmisher',
+    likelyBehavior: 'Pressures backline, repositions frequently, disengages when cornered.',
+    playerThreat: 'Disrupts positioning, hard to pin down, chips away at vulnerable targets.',
+    counterHint: 'Force engagement — once cornered, low HP makes them fragile.',
+    positionTendency: 'flanker',
+    moraleProfile: 'unpredictable',
+  },
+  backliner: {
+    role: 'backliner',
+    likelyBehavior: 'Stays behind allies, guards cautiously, disengages immediately if threatened.',
+    playerThreat: 'Steady ranged damage from safety. Protected by bodyguards and frontline.',
+    counterHint: 'Pressure or flank to force engagement. Very fragile once exposed.',
+    positionTendency: 'backline',
+    moraleProfile: 'breaks-early',
+  },
+  bodyguard: {
+    role: 'bodyguard',
+    likelyBehavior: 'Shields allies, absorbs damage, rarely attacks offensively.',
+    playerThreat: 'Prevents targeting key enemies. Must be removed or bypassed.',
+    counterHint: 'Ignore or overwhelm — focusing the bodyguard wastes damage on high HP.',
+    positionTendency: 'frontline',
+    moraleProfile: 'stands-firm',
+  },
+  coward: {
+    role: 'coward',
+    likelyBehavior: 'Attacks only when safe, flees at the first sign of real danger.',
+    playerThreat: 'Low direct threat. May waste player actions chasing.',
+    counterHint: 'Ignore unless blocking an objective. Will flee on its own.',
+    positionTendency: 'variable',
+    moraleProfile: 'breaks-early',
+  },
+  boss: {
+    role: 'boss',
+    likelyBehavior: 'Balanced aggression with phase shifts at HP thresholds. Changes tactics mid-fight.',
+    playerThreat: 'Massive HP pool, multiple behavior states, often spawns reinforcements.',
+    counterHint: 'Prepare for phase transitions. Clear support first when possible.',
+    positionTendency: 'frontline',
+    moraleProfile: 'never-flees',
+  },
+  minion: {
+    role: 'minion',
+    likelyBehavior: 'Swarms aggressively, ignores defense, flees when isolated.',
+    playerThreat: 'Dangerous in numbers. Individually weak but collectively overwhelming.',
+    counterHint: 'AoE or focus fire to thin the pack. Isolated minions flee quickly.',
+    positionTendency: 'frontline',
+    moraleProfile: 'breaks-early',
+  },
+  elite: {
+    role: 'elite',
+    likelyBehavior: 'Well-rounded tactics, adapts to situation, finishes wounded targets.',
+    playerThreat: 'No obvious weakness. High HP and consistent damage output.',
+    counterHint: 'Treat as a priority target. No single counter — requires sustained focus.',
+    positionTendency: 'frontline',
+    moraleProfile: 'stands-firm',
+  },
+};
+
+/** Get tactical expectations for a combat role (advisory, not deterministic) */
+export function getTacticalExpectation(role: CombatRole): TacticalExpectation {
+  return TACTICAL_EXPECTATIONS[role];
+}
+
+/** Validate a BossDefinition, returning warning strings */
+export function validateBossDefinition(
+  bossDef: BossDefinition,
+  entities?: Record<string, EntityState>,
+): string[] {
+  const warnings: string[] = [];
+
+  if (bossDef.phases.length === 0) {
+    warnings.push('Boss definition has no phases');
+    return warnings;
+  }
+
+  const seenThresholds = new Set<number>();
+  let prevThreshold = Infinity;
+
+  for (let i = 0; i < bossDef.phases.length; i++) {
+    const phase = bossDef.phases[i];
+
+    if (phase.hpThreshold < 0 || phase.hpThreshold > 1) {
+      warnings.push(`Phase ${i}: hpThreshold ${phase.hpThreshold} out of range (0-1)`);
+    }
+
+    if (seenThresholds.has(phase.hpThreshold)) {
+      warnings.push(`Phase ${i}: duplicate hpThreshold ${phase.hpThreshold}`);
+    }
+    seenThresholds.add(phase.hpThreshold);
+
+    if (phase.hpThreshold > prevThreshold) {
+      warnings.push(`Phase ${i}: thresholds not in descending order (${phase.hpThreshold} > ${prevThreshold})`);
+    }
+    prevThreshold = phase.hpThreshold;
+
+    if (!phase.narrativeKey || phase.narrativeKey.trim() === '') {
+      warnings.push(`Phase ${i}: missing narrativeKey`);
+    }
+  }
+
+  if (entities) {
+    const entity = entities[bossDef.entityId];
+    if (!entity) {
+      warnings.push(`Entity '${bossDef.entityId}' not found`);
+    } else if (!entity.tags.includes('role:boss')) {
+      warnings.push(`Entity '${bossDef.entityId}' missing 'role:boss' tag`);
+    }
+  }
+
+  return warnings;
+}
+
+// ---------------------------------------------------------------------------
+// Authoring Helpers
+// ---------------------------------------------------------------------------
+
 /** Create an enemy entity with role template applied (HP/stamina multipliers, tags) */
 export function createRoledEnemy(
   base: EntityState,

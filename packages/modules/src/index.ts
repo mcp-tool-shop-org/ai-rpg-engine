@@ -603,6 +603,8 @@ export {
   getEntityRole,
   getRoleBiases,
   createRoledEnemy,
+  getTacticalExpectation,
+  validateBossDefinition,
 } from './combat-roles.js';
 export type {
   CombatRole,
@@ -614,7 +616,42 @@ export type {
   BossDefinition,
   DangerRating,
   EncounterAnalysis,
+  TacticalExpectation,
 } from './combat-roles.js';
+
+// --- Combat Summary & Authoring (Phase 9) ---
+export {
+  findEncounters,
+  getEncountersByZone,
+  getEncountersByDistrict,
+  getEncounterBosses,
+  buildBossProfile,
+  buildEncounterDetail,
+  summarizeCombatContent,
+  summarizeRegionCombat,
+  auditEncounters,
+  auditProjectCombat,
+  formatEncounterDetailForDirector,
+  formatEncounterDetailForNarrator,
+  formatBossProfileForDirector,
+  formatTacticalExpectation,
+  formatCombatSummaryForDirector,
+  formatCombatSummaryForNarrator,
+  formatRegionCombatForDirector,
+  formatAuditForDirector,
+  formatCombatSummaryMarkdown,
+  formatCombatSummaryJSON,
+} from './combat-summary.js';
+export type {
+  EncounterFilter,
+  EncounterDetail,
+  BossProfile,
+  CombatContentSummary,
+  RegionCombatOverview,
+  EncounterAuditWarning,
+  EncounterAuditResult,
+  ProjectCombatAudit,
+} from './combat-summary.js';
 
 // --- Endgame Detection (v2.0) ---
 export {
