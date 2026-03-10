@@ -21,6 +21,7 @@ import {
   createDefeatFallout,
   createEngagementCore,
   withEngagement,
+  createCombatReview,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -75,6 +76,7 @@ const cyberpunkFormulas: CombatFormulas = {
 };
 
 export function createGame(seed?: number): Engine {
+  const review = createCombatReview({ baseFormulas: cyberpunkFormulas });
   const engine = new Engine({
     manifest,
     seed: seed ?? 77,
@@ -83,7 +85,8 @@ export function createGame(seed?: number): Engine {
       traversalCore,
       statusCore,
       createEngagementCore({ playerId: 'runner', backlineTags: ['ranged', 'caster', 'netrunner'] }),
-      createCombatCore(withEngagement(cyberpunkFormulas)),
+      review.module,
+      createCombatCore(review.explain(withEngagement(cyberpunkFormulas))),
       createInventoryCore([iceBreaker]),
       createDialogueCore([fixerDialogue]),
       createCognitionCore({ decay: { baseRate: 0.03, pruneThreshold: 0.05, instabilityFactor: 0.8 } }),

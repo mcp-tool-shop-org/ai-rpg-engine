@@ -21,6 +21,7 @@ import {
   createDefeatFallout,
   createEngagementCore,
   withEngagement,
+  createCombatReview,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -76,6 +77,7 @@ const weirdWestFormulas: CombatFormulas = {
 };
 
 export function createGame(seed?: number): Engine {
+  const review = createCombatReview({ baseFormulas: weirdWestFormulas });
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -84,7 +86,8 @@ export function createGame(seed?: number): Engine {
       traversalCore,
       statusCore,
       createEngagementCore({ playerId: 'drifter' }),
-      createCombatCore(withEngagement(weirdWestFormulas)),
+      review.module,
+      createCombatCore(review.explain(withEngagement(weirdWestFormulas))),
       createInventoryCore([sageBundleEffect]),
       createDialogueCore([bartenderDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),

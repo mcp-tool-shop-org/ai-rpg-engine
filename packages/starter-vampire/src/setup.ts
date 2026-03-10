@@ -21,6 +21,7 @@ import {
   createDefeatFallout,
   createEngagementCore,
   withEngagement,
+  createCombatReview,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -77,6 +78,7 @@ const vampireFormulas: CombatFormulas = {
 };
 
 export function createGame(seed?: number): Engine {
+  const review = createCombatReview({ baseFormulas: vampireFormulas });
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -85,7 +87,8 @@ export function createGame(seed?: number): Engine {
       traversalCore,
       statusCore,
       createEngagementCore({ playerId: 'player', backlineTags: ['ranged', 'caster', 'thrall'] }),
-      createCombatCore(withEngagement(vampireFormulas)),
+      review.module,
+      createCombatCore(review.explain(withEngagement(vampireFormulas))),
       createInventoryCore([bloodVialEffect]),
       createDialogueCore([duchessDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),

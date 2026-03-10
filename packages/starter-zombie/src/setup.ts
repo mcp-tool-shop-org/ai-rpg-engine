@@ -21,6 +21,7 @@ import {
   createDefeatFallout,
   createEngagementCore,
   withEngagement,
+  createCombatReview,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -77,6 +78,7 @@ const zombieFormulas: CombatFormulas = {
 };
 
 export function createGame(seed?: number): Engine {
+  const review = createCombatReview({ baseFormulas: zombieFormulas });
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -85,7 +87,8 @@ export function createGame(seed?: number): Engine {
       traversalCore,
       statusCore,
       createEngagementCore({ playerId: 'survivor' }),
-      createCombatCore(withEngagement(zombieFormulas)),
+      review.module,
+      createCombatCore(review.explain(withEngagement(zombieFormulas))),
       createInventoryCore([antibioticsEffect]),
       createDialogueCore([medicDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),

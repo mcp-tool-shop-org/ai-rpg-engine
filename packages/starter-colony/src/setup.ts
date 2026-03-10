@@ -21,6 +21,7 @@ import {
   createDefeatFallout,
   createEngagementCore,
   withEngagement,
+  createCombatReview,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -76,6 +77,7 @@ const colonyFormulas: CombatFormulas = {
 };
 
 export function createGame(seed?: number): Engine {
+  const review = createCombatReview({ baseFormulas: colonyFormulas });
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -84,7 +86,8 @@ export function createGame(seed?: number): Engine {
       traversalCore,
       statusCore,
       createEngagementCore({ playerId: 'commander' }),
-      createCombatCore(withEngagement(colonyFormulas)),
+      review.module,
+      createCombatCore(review.explain(withEngagement(colonyFormulas))),
       createInventoryCore([emergencyCellEffect]),
       createDialogueCore([scientistDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),

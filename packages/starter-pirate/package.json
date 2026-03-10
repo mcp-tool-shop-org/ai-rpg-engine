@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/starter-pirate",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "AI RPG Engine pirate starter: Black Flag Requiem",
   "type": "module",
   "main": "./dist/index.js",

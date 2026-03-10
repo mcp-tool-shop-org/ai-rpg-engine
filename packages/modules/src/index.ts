@@ -576,6 +576,10 @@ export type { DefeatFalloutConfig } from './defeat-fallout.js';
 export { createEngagementCore, withEngagement, ENGAGEMENT_STATES, isEngaged, isProtected, isBackline, isIsolated } from './engagement-core.js';
 export type { EngagementConfig } from './engagement-core.js';
 
+// --- Combat Review (Phase 6A) ---
+export { createCombatReview, formatCombatTrace } from './combat-review.js';
+export type { CombatTrace, FormulaTrace, FormulaStep, FormulaSource, DamageTrace, InterceptionTrace, CombatOutcome, CombatReviewConfig } from './combat-review.js';
+
 // --- Endgame Detection (v2.0) ---
 export {
   evaluateEndgame,

@@ -21,6 +21,7 @@ import {
   createDefeatFallout,
   createEngagementCore,
   withEngagement,
+  createCombatReview,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule } from '@ai-rpg-engine/modules';
 import {
@@ -56,6 +57,7 @@ const undeadHostilePerception: PresentationRule = {
 };
 
 export function createGame(seed?: number): Engine {
+  const review = createCombatReview({ baseFormulas: {} });
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -64,7 +66,8 @@ export function createGame(seed?: number): Engine {
       traversalCore,
       statusCore,
       createEngagementCore({ playerId: 'player' }),
-      createCombatCore(withEngagement({})),
+      review.module,
+      createCombatCore(review.explain(withEngagement({}))),
       createInventoryCore([healingDraughtEffect]),
       createDialogueCore([pilgrimDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
