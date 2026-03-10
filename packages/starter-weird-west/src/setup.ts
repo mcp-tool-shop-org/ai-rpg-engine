@@ -4,7 +4,7 @@ import { Engine } from '@ai-rpg-engine/core';
 import {
   traversalCore,
   statusCore,
-  combatCore,
+  createCombatCore,
   createInventoryCore,
   createDialogueCore,
   createCognitionCore,
@@ -19,7 +19,7 @@ import {
   createObserverPresentation,
   giveItem,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -52,6 +52,26 @@ const spiritPerception: PresentationRule = {
   }),
 };
 
+// Weird West combat formulas — grit for damage + guard, draw-speed for hit/dodge
+const weirdWestFormulas: CombatFormulas = {
+  hitChance: (attacker, target) => {
+    const atkSpeed = attacker.stats['draw-speed'] ?? 5;
+    const tgtSpeed = target.stats['draw-speed'] ?? 5;
+    return Math.min(95, Math.max(5, 50 + atkSpeed * 5 - tgtSpeed * 3));
+  },
+  damage: (attacker) => Math.max(1, attacker.stats.grit ?? 3),
+  guardReduction: (defender) => {
+    const grit = defender.stats.grit ?? 3;
+    const bonus = Math.max(0, (grit - 3) * 0.03);
+    return Math.min(0.75, 0.5 + bonus);
+  },
+  disengageChance: (actor) => {
+    const speed = actor.stats['draw-speed'] ?? 5;
+    const grit = actor.stats.grit ?? 3;
+    return Math.min(90, Math.max(15, 40 + speed * 5 + grit * 2));
+  },
+};
+
 export function createGame(seed?: number): Engine {
   const engine = new Engine({
     manifest,
@@ -60,7 +80,7 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      combatCore,
+      createCombatCore(weirdWestFormulas),
       createInventoryCore([sageBundleEffect]),
       createDialogueCore([bartenderDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -168,6 +188,29 @@ export function createGame(seed?: number): Engine {
       channel: 'stinger',
       priority: 'high',
     });
+  });
+
+  // --- Resolve + Dust combat hooks ---
+  engine.store.events.on('combat.damage.applied', (event) => {
+    if (event.payload.targetId === 'drifter') {
+      const p = engine.store.state.entities['drifter'];
+      if (p) {
+        p.resources.resolve = Math.max(0, (p.resources.resolve ?? 0) - 1);
+        p.resources.dust = Math.min(100, (p.resources.dust ?? 0) + 1);
+      }
+    }
+  });
+  engine.store.events.on('combat.entity.defeated', (event) => {
+    if (event.payload.defeatedBy === 'drifter') {
+      const p = engine.store.state.entities['drifter'];
+      if (p) p.resources.resolve = Math.min(100, (p.resources.resolve ?? 0) + 3);
+    }
+  });
+  engine.store.events.on('combat.guard.absorbed', (event) => {
+    if (event.payload.entityId === 'drifter') {
+      const p = engine.store.state.entities['drifter'];
+      if (p) p.resources.resolve = Math.min(100, (p.resources.resolve ?? 0) + 1);
+    }
   });
 
   return engine;

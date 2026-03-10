@@ -35,7 +35,7 @@ export const player: EntityState = {
   name: 'Captain',
   tags: ['player', 'pirate', 'captain'],
   stats: { brawn: 5, cunning: 6, 'sea-legs': 5 },
-  resources: { hp: 20, morale: 15 },
+  resources: { hp: 20, stamina: 5, morale: 15 },
   statuses: [],
   inventory: [],
   zoneId: 'ship-deck',
@@ -50,7 +50,7 @@ export const quartermaster: EntityState = {
   name: 'Quartermaster Bly',
   tags: ['npc', 'pirate', 'crew', 'male'],
   stats: { brawn: 4, cunning: 5, 'sea-legs': 6 },
-  resources: { hp: 16, morale: 12 },
+  resources: { hp: 16, stamina: 4, morale: 12 },
   statuses: [],
   zoneId: 'ship-deck',
 };
@@ -62,7 +62,7 @@ export const cartographer: EntityState = {
   name: 'Mara the Cartographer',
   tags: ['npc', 'neutral', 'knowledge', 'female'],
   stats: { brawn: 2, cunning: 7, 'sea-legs': 4 },
-  resources: { hp: 8, morale: 10 },
+  resources: { hp: 8, stamina: 2, morale: 10 },
   statuses: [],
   zoneId: 'port-tavern',
 };
@@ -74,7 +74,7 @@ export const governor: EntityState = {
   name: 'Governor Vane',
   tags: ['npc', 'colonial', 'authority', 'male'],
   stats: { brawn: 3, cunning: 6, 'sea-legs': 2 },
-  resources: { hp: 10, morale: 18 },
+  resources: { hp: 10, stamina: 2, morale: 18 },
   statuses: [],
   zoneId: 'governors-fort',
 };
@@ -88,7 +88,7 @@ export const navySailor: EntityState = {
   name: 'Navy Sailor',
   tags: ['enemy', 'colonial', 'navy', 'male'],
   stats: { brawn: 5, cunning: 3, 'sea-legs': 4 },
-  resources: { hp: 16, morale: 14 },
+  resources: { hp: 16, stamina: 5, morale: 14 },
   statuses: [],
   zoneId: 'governors-fort',
   ai: {
@@ -107,7 +107,7 @@ export const seaBeast: EntityState = {
   name: 'Drowned Guardian',
   tags: ['enemy', 'cursed', 'creature', 'aquatic'],
   stats: { brawn: 7, cunning: 2, 'sea-legs': 8 },
-  resources: { hp: 22, morale: 30 },
+  resources: { hp: 22, stamina: 6, morale: 30 },
   statuses: [],
   zoneId: 'sunken-shrine',
   ai: {

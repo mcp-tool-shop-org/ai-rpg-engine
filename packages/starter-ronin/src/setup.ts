@@ -4,7 +4,7 @@ import { Engine } from '@ai-rpg-engine/core';
 import {
   traversalCore,
   statusCore,
-  combatCore,
+  createCombatCore,
   createInventoryCore,
   createDialogueCore,
   createCognitionCore,
@@ -19,7 +19,7 @@ import {
   createObserverPresentation,
   giveItem,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -53,6 +53,26 @@ const assassinPerception: PresentationRule = {
   }),
 };
 
+// Ronin combat formulas — discipline for damage, perception for hit/dodge, composure for guard
+const roninFormulas: CombatFormulas = {
+  hitChance: (attacker, target) => {
+    const atkPerception = attacker.stats.perception ?? 5;
+    const tgtPerception = target.stats.perception ?? 5;
+    return Math.min(95, Math.max(5, 50 + atkPerception * 5 - tgtPerception * 3));
+  },
+  damage: (attacker) => Math.max(1, attacker.stats.discipline ?? 3),
+  guardReduction: (defender) => {
+    const composure = defender.stats.composure ?? 3;
+    const bonus = Math.max(0, (composure - 3) * 0.03);
+    return Math.min(0.75, 0.5 + bonus);
+  },
+  disengageChance: (actor) => {
+    const perception = actor.stats.perception ?? 5;
+    const composure = actor.stats.composure ?? 3;
+    return Math.min(90, Math.max(15, 40 + perception * 5 + composure * 2));
+  },
+};
+
 export function createGame(seed?: number): Engine {
   const engine = new Engine({
     manifest,
@@ -61,7 +81,7 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      combatCore,
+      createCombatCore(roninFormulas),
       createInventoryCore([incenseKitEffect]),
       createDialogueCore([magistrateDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -170,6 +190,41 @@ export function createGame(seed?: number): Engine {
       channel: 'stinger',
       priority: 'high',
     });
+  });
+
+  // --- Ki + Honor combat hooks ---
+  engine.store.events.on('combat.damage.applied', (event) => {
+    if (event.payload.attackerId === 'player') {
+      const p = engine.store.state.entities['player'];
+      if (p) p.resources.ki = Math.max(0, (p.resources.ki ?? 0) - 1);
+    }
+  });
+  engine.store.events.on('combat.guard.absorbed', (event) => {
+    if (event.payload.entityId === 'player') {
+      const p = engine.store.state.entities['player'];
+      if (p) p.resources.ki = Math.min(50, (p.resources.ki ?? 0) + 2);
+    }
+  });
+  engine.store.events.on('combat.entity.defeated', (event) => {
+    if (event.payload.defeatedBy === 'player') {
+      const p = engine.store.state.entities['player'];
+      if (p) {
+        p.resources.honor = Math.min(100, (p.resources.honor ?? 0) + 3);
+        p.resources.ki = Math.min(50, (p.resources.ki ?? 0) + 5);
+      }
+    }
+  });
+  engine.store.events.on('combat.disengage.success', (event) => {
+    if (event.payload.entityId === 'player') {
+      const p = engine.store.state.entities['player'];
+      if (p) p.resources.honor = Math.max(0, (p.resources.honor ?? 0) - 5);
+    }
+  });
+  engine.store.events.on('combat.contact.miss', (event) => {
+    if (event.payload.attackerId === 'player') {
+      const p = engine.store.state.entities['player'];
+      if (p) p.resources.ki = Math.max(0, (p.resources.ki ?? 0) - 1);
+    }
   });
 
   return engine;

@@ -4,7 +4,7 @@ import { Engine } from '@ai-rpg-engine/core';
 import {
   traversalCore,
   statusCore,
-  combatCore,
+  createCombatCore,
   createInventoryCore,
   createDialogueCore,
   createCognitionCore,
@@ -19,7 +19,7 @@ import {
   createObserverPresentation,
   giveItem,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -52,6 +52,26 @@ const alienPerception: PresentationRule = {
   }),
 };
 
+// Colony combat formulas — engineering for damage, awareness for hit/dodge, command for guard
+const colonyFormulas: CombatFormulas = {
+  hitChance: (attacker, target) => {
+    const atkAwareness = attacker.stats.awareness ?? 5;
+    const tgtAwareness = target.stats.awareness ?? 5;
+    return Math.min(95, Math.max(5, 50 + atkAwareness * 5 - tgtAwareness * 3));
+  },
+  damage: (attacker) => Math.max(1, attacker.stats.engineering ?? 3),
+  guardReduction: (defender) => {
+    const command = defender.stats.command ?? 3;
+    const bonus = Math.max(0, (command - 3) * 0.03);
+    return Math.min(0.75, 0.5 + bonus);
+  },
+  disengageChance: (actor) => {
+    const awareness = actor.stats.awareness ?? 5;
+    const command = actor.stats.command ?? 3;
+    return Math.min(90, Math.max(15, 40 + awareness * 5 + command * 2));
+  },
+};
+
 export function createGame(seed?: number): Engine {
   const engine = new Engine({
     manifest,
@@ -60,7 +80,7 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      combatCore,
+      createCombatCore(colonyFormulas),
       createInventoryCore([emergencyCellEffect]),
       createDialogueCore([scientistDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -160,6 +180,27 @@ export function createGame(seed?: number): Engine {
       channel: 'stinger',
       priority: 'high',
     });
+  });
+
+  // --- Colony Morale combat hooks ---
+  engine.store.events.on('combat.damage.applied', (event) => {
+    if (event.payload.targetId === 'commander') {
+      const p = engine.store.state.entities['commander'];
+      if (p) p.resources.morale = Math.max(0, (p.resources.morale ?? 0) - 2);
+    }
+  });
+  engine.store.events.on('combat.entity.defeated', (event) => {
+    if (event.payload.defeatedBy === 'commander') {
+      const p = engine.store.state.entities['commander'];
+      if (p) p.resources.morale = Math.min(100, (p.resources.morale ?? 0) + 4);
+    }
+    // Ally defeated — morale drops
+    const defeatedId = event.payload.entityId as string;
+    const defeated = engine.store.state.entities[defeatedId];
+    if (defeated?.tags.includes('ally') && event.payload.defeatedBy !== 'commander') {
+      const p = engine.store.state.entities['commander'];
+      if (p) p.resources.morale = Math.max(0, (p.resources.morale ?? 0) - 5);
+    }
   });
 
   return engine;

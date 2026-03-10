@@ -35,7 +35,7 @@ export const player: EntityState = {
   name: 'Inspector',
   tags: ['player', 'law', 'investigator'],
   stats: { perception: 7, eloquence: 5, grit: 4 },
-  resources: { hp: 15, composure: 12 },
+  resources: { hp: 15, stamina: 4, composure: 12 },
   statuses: [],
   inventory: [],
   zoneId: 'crime-scene',
@@ -50,7 +50,7 @@ export const widow: EntityState = {
   name: 'Lady Ashford',
   tags: ['npc', 'aristocracy', 'suspect', 'female'],
   stats: { perception: 3, eloquence: 7, grit: 2 },
-  resources: { hp: 8, composure: 18 },
+  resources: { hp: 8, stamina: 2, composure: 18 },
   statuses: [],
   zoneId: 'parlour',
 };
@@ -62,7 +62,7 @@ export const constable: EntityState = {
   name: 'Constable Pike',
   tags: ['npc', 'law', 'police', 'male'],
   stats: { perception: 4, eloquence: 3, grit: 6 },
-  resources: { hp: 18, composure: 10 },
+  resources: { hp: 18, stamina: 4, composure: 10 },
   statuses: [],
   zoneId: 'crime-scene',
 };
@@ -74,7 +74,7 @@ export const servant: EntityState = {
   name: 'Mrs Calloway',
   tags: ['npc', 'servant', 'witness', 'female'],
   stats: { perception: 5, eloquence: 4, grit: 3 },
-  resources: { hp: 8, composure: 8 },
+  resources: { hp: 8, stamina: 2, composure: 8 },
   statuses: [],
   zoneId: 'servants-hall',
 };
@@ -88,7 +88,7 @@ export const thug: EntityState = {
   name: 'Dock Thug',
   tags: ['enemy', 'criminal', 'male'],
   stats: { perception: 3, eloquence: 2, grit: 6 },
-  resources: { hp: 14, composure: 6 },
+  resources: { hp: 14, stamina: 5, composure: 6 },
   statuses: [],
   zoneId: 'back-alley',
   ai: {

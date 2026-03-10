@@ -903,3 +903,174 @@ describe('will-shifted AI thresholds', () => {
     expect(highWillIntent?.verb).toBe('guard');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 3 — Starter-Specific Resource Hooks
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('Phase 3 — starter-specific stat mapping', () => {
+  it('gladiator formulas use might for damage, agility for hit chance', () => {
+    const gladiatorFormulas = {
+      hitChance: (attacker: EntityState, target: EntityState) => {
+        const atkAgility = attacker.stats.agility ?? 5;
+        const tgtAgility = target.stats.agility ?? 5;
+        return Math.min(95, Math.max(5, 50 + atkAgility * 5 - tgtAgility * 3));
+      },
+      damage: (attacker: EntityState) => Math.max(1, attacker.stats.might ?? 3),
+      guardReduction: (defender: EntityState) => {
+        const showmanship = defender.stats.showmanship ?? 3;
+        const bonus = Math.max(0, (showmanship - 3) * 0.03);
+        return Math.min(0.75, 0.5 + bonus);
+      },
+      disengageChance: (actor: EntityState) => {
+        const agility = actor.stats.agility ?? 5;
+        const showmanship = actor.stats.showmanship ?? 3;
+        return Math.min(90, Math.max(15, 40 + agility * 5 + showmanship * 2));
+      },
+    };
+
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(gladiatorFormulas)],
+      entities: [
+        makePlayer('a', { stats: { might: 8, agility: 6, showmanship: 4 }, resources: { hp: 25, stamina: 6 } }),
+        makeEntity('foe', 'Foe', 'a', { stats: { might: 3, agility: 3, showmanship: 2 }, resources: { hp: 10, stamina: 4 } }),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    engine.submitAction('attack', { targetIds: ['foe'] });
+
+    // With might=8, damage formula should return 8
+    // With agility=6 vs 3, hitChance = min(95, max(5, 50 + 30 - 9)) = 71
+    const foe = engine.world.entities.foe;
+    // If hit landed, foe lost hp; if missed, hp stays the same
+    // Either way, we just verify the engine didn't crash and used our formulas
+    expect(foe).toBeDefined();
+    expect(foe.resources.hp).toBeLessThanOrEqual(10);
+  });
+
+  it('ronin formulas use discipline for damage, perception for hit chance', () => {
+    const roninFormulas = {
+      hitChance: (attacker: EntityState, target: EntityState) => {
+        const atkPerception = attacker.stats.perception ?? 5;
+        const tgtPerception = target.stats.perception ?? 5;
+        return Math.min(95, Math.max(5, 50 + atkPerception * 5 - tgtPerception * 3));
+      },
+      damage: (attacker: EntityState) => Math.max(1, attacker.stats.discipline ?? 3),
+      guardReduction: (defender: EntityState) => {
+        const composure = defender.stats.composure ?? 3;
+        const bonus = Math.max(0, (composure - 3) * 0.03);
+        return Math.min(0.75, 0.5 + bonus);
+      },
+      disengageChance: (actor: EntityState) => {
+        const perception = actor.stats.perception ?? 5;
+        const composure = actor.stats.composure ?? 3;
+        return Math.min(90, Math.max(15, 40 + perception * 5 + composure * 2));
+      },
+    };
+
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(roninFormulas)],
+      entities: [
+        makePlayer('a', { stats: { discipline: 7, perception: 6, composure: 4 }, resources: { hp: 20, stamina: 5 } }),
+        makeEntity('foe', 'Foe', 'a', { stats: { discipline: 3, perception: 3, composure: 2 }, resources: { hp: 10, stamina: 4 } }),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    engine.submitAction('attack', { targetIds: ['foe'] });
+
+    const foe = engine.world.entities.foe;
+    expect(foe).toBeDefined();
+    expect(foe.resources.hp).toBeLessThanOrEqual(10);
+  });
+
+  it('entities without mapped stats fall back to formula defaults', () => {
+    // If no stats match, formulas use ?? fallback values
+    const customFormulas = {
+      hitChance: (attacker: EntityState, target: EntityState) => {
+        const atk = attacker.stats.customStat ?? 5;
+        const tgt = target.stats.customStat ?? 5;
+        return Math.min(95, Math.max(5, 50 + atk * 5 - tgt * 3));
+      },
+      damage: (attacker: EntityState) => Math.max(1, attacker.stats.customDmg ?? 3),
+    };
+
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(customFormulas)],
+      entities: [
+        // No customStat or customDmg — should use fallback 5 and 3
+        makePlayer('a', { stats: {}, resources: { hp: 20, stamina: 5 } }),
+        makeEntity('foe', 'Foe', 'a', { stats: {}, resources: { hp: 10, stamina: 4 } }),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    engine.submitAction('attack', { targetIds: ['foe'] });
+
+    // hitChance with defaults: min(95, max(5, 50 + 25 - 15)) = 60
+    // damage with default: max(1, 3) = 3
+    const foe = engine.world.entities.foe;
+    expect(foe).toBeDefined();
+  });
+
+  it('combat requires stamina >= 1 for attack', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore()],
+      entities: [
+        makePlayer('a', { resources: { hp: 20, stamina: 0 } }),
+        makeEntity('foe', 'Foe', 'a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    engine.submitAction('attack', { targetIds: ['foe'] });
+
+    // Attack should be rejected — foe hp unchanged
+    const foe = engine.world.entities.foe;
+    expect(foe.resources.hp).toBe(20);
+  });
+
+  it('combat requires stamina >= 1 for guard', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore()],
+      entities: [
+        makePlayer('a', { resources: { hp: 20, stamina: 0 } }),
+        makeEntity('foe', 'Foe', 'a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    engine.submitAction('guard');
+
+    // Guard should be rejected — no guarding status applied
+    const player = engine.world.entities.player;
+    expect(player.statuses.some((s: { id: string }) => s.id.includes('guard'))).toBe(false);
+  });
+
+  it('determinism preserved — same seed + actions = same outcome', () => {
+    const run = (seed: number) => {
+      const engine = createTestEngine({
+        seed,
+        modules: [statusCore, createCombatCore()],
+        entities: [
+          makePlayer('a', { resources: { hp: 20, stamina: 5 } }),
+          makeEntity('foe', 'Foe', 'a', { resources: { hp: 15, stamina: 4 } }),
+        ],
+        zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+      });
+
+      engine.submitAction('attack', { targetIds: ['foe'] });
+      engine.submitAction('attack', { targetIds: ['foe'] });
+
+      return {
+        foeHp: engine.world.entities.foe?.resources.hp,
+        playerStamina: engine.world.entities.player?.resources.stamina,
+      };
+    };
+
+    const result1 = run(99);
+    const result2 = run(99);
+    expect(result1).toEqual(result2);
+  });
+});

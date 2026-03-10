@@ -4,7 +4,7 @@ import { Engine } from '@ai-rpg-engine/core';
 import {
   traversalCore,
   statusCore,
-  combatCore,
+  createCombatCore,
   createInventoryCore,
   createDialogueCore,
   createCognitionCore,
@@ -19,7 +19,7 @@ import {
   createObserverPresentation,
   giveItem,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -52,6 +52,26 @@ const suspectParanoia: PresentationRule = {
   }),
 };
 
+// Detective combat formulas — grit for damage + guard, perception for hit/dodge
+const detectiveFormulas: CombatFormulas = {
+  hitChance: (attacker, target) => {
+    const atkPerception = attacker.stats.perception ?? 5;
+    const tgtPerception = target.stats.perception ?? 5;
+    return Math.min(95, Math.max(5, 50 + atkPerception * 5 - tgtPerception * 3));
+  },
+  damage: (attacker) => Math.max(1, attacker.stats.grit ?? 3),
+  guardReduction: (defender) => {
+    const grit = defender.stats.grit ?? 3;
+    const bonus = Math.max(0, (grit - 3) * 0.03);
+    return Math.min(0.75, 0.5 + bonus);
+  },
+  disengageChance: (actor) => {
+    const perception = actor.stats.perception ?? 5;
+    const grit = actor.stats.grit ?? 3;
+    return Math.min(90, Math.max(15, 40 + perception * 5 + grit * 2));
+  },
+};
+
 export function createGame(seed?: number): Engine {
   const engine = new Engine({
     manifest,
@@ -60,7 +80,7 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      combatCore,
+      createCombatCore(detectiveFormulas),
       createInventoryCore([smellingSaltsEffect]),
       createDialogueCore([widowDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -150,6 +170,26 @@ export function createGame(seed?: number): Engine {
       channel: 'stinger',
       priority: 'high',
     });
+  });
+
+  // --- Composure combat hooks ---
+  engine.store.events.on('combat.damage.applied', (event) => {
+    if (event.payload.targetId === 'inspector') {
+      const p = engine.store.state.entities['inspector'];
+      if (p) p.resources.composure = Math.max(0, (p.resources.composure ?? 0) - 2);
+    }
+  });
+  engine.store.events.on('combat.guard.absorbed', (event) => {
+    if (event.payload.entityId === 'inspector') {
+      const p = engine.store.state.entities['inspector'];
+      if (p) p.resources.composure = Math.min(50, (p.resources.composure ?? 0) + 1);
+    }
+  });
+  engine.store.events.on('combat.contact.miss', (event) => {
+    if (event.payload.attackerId === 'inspector') {
+      const p = engine.store.state.entities['inspector'];
+      if (p) p.resources.composure = Math.max(0, (p.resources.composure ?? 0) - 1);
+    }
   });
 
   return engine;

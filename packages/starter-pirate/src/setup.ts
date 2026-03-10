@@ -4,7 +4,7 @@ import { Engine } from '@ai-rpg-engine/core';
 import {
   traversalCore,
   statusCore,
-  combatCore,
+  createCombatCore,
   createInventoryCore,
   createDialogueCore,
   createCognitionCore,
@@ -19,7 +19,7 @@ import {
   createObserverPresentation,
   giveItem,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -53,6 +53,26 @@ const cursedGuardianPerception: PresentationRule = {
   }),
 };
 
+// Pirate combat formulas — brawn for damage, cunning for hit/dodge, sea-legs for guard
+const pirateFormulas: CombatFormulas = {
+  hitChance: (attacker, target) => {
+    const atkCunning = attacker.stats.cunning ?? 5;
+    const tgtCunning = target.stats.cunning ?? 5;
+    return Math.min(95, Math.max(5, 50 + atkCunning * 5 - tgtCunning * 3));
+  },
+  damage: (attacker) => Math.max(1, attacker.stats.brawn ?? 3),
+  guardReduction: (defender) => {
+    const seaLegs = defender.stats['sea-legs'] ?? 3;
+    const bonus = Math.max(0, (seaLegs - 3) * 0.03);
+    return Math.min(0.75, 0.5 + bonus);
+  },
+  disengageChance: (actor) => {
+    const cunning = actor.stats.cunning ?? 5;
+    const seaLegs = actor.stats['sea-legs'] ?? 3;
+    return Math.min(90, Math.max(15, 40 + cunning * 5 + seaLegs * 2));
+  },
+};
+
 export function createGame(seed?: number): Engine {
   const engine = new Engine({
     manifest,
@@ -61,7 +81,7 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      combatCore,
+      createCombatCore(pirateFormulas),
       createInventoryCore([rumBarrelEffect]),
       createDialogueCore([cartographerDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -161,6 +181,32 @@ export function createGame(seed?: number): Engine {
       channel: 'stinger',
       priority: 'high',
     });
+  });
+
+  // --- Morale combat hooks ---
+  engine.store.events.on('combat.contact.hit', (event) => {
+    if (event.payload.attackerId === 'captain') {
+      const p = engine.store.state.entities['captain'];
+      if (p) p.resources.morale = Math.min(100, (p.resources.morale ?? 0) + 1);
+    }
+  });
+  engine.store.events.on('combat.entity.defeated', (event) => {
+    if (event.payload.defeatedBy === 'captain') {
+      const p = engine.store.state.entities['captain'];
+      if (p) p.resources.morale = Math.min(100, (p.resources.morale ?? 0) + 3);
+    }
+  });
+  engine.store.events.on('combat.contact.miss', (event) => {
+    if (event.payload.attackerId === 'captain') {
+      const p = engine.store.state.entities['captain'];
+      if (p) p.resources.morale = Math.max(0, (p.resources.morale ?? 0) - 1);
+    }
+  });
+  engine.store.events.on('combat.disengage.success', (event) => {
+    if (event.payload.entityId === 'captain') {
+      const p = engine.store.state.entities['captain'];
+      if (p) p.resources.morale = Math.max(0, (p.resources.morale ?? 0) - 2);
+    }
   });
 
   return engine;

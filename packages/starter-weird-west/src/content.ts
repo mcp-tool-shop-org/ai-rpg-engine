@@ -35,7 +35,7 @@ export const player: EntityState = {
   name: 'The Drifter',
   tags: ['player', 'human', 'drifter', 'gunslinger'],
   stats: { grit: 5, 'draw-speed': 6, lore: 4 },
-  resources: { hp: 18, resolve: 15, dust: 0 },
+  resources: { hp: 18, stamina: 5, resolve: 15, dust: 0 },
   statuses: [],
   inventory: [],
   zoneId: 'crossroads',
@@ -50,7 +50,7 @@ export const bartender: EntityState = {
   name: 'Silas',
   tags: ['npc', 'townsfolk', 'informant', 'male'],
   stats: { grit: 3, 'draw-speed': 2, lore: 5 },
-  resources: { hp: 10, resolve: 12, dust: 0 },
+  resources: { hp: 10, stamina: 2, resolve: 12, dust: 0 },
   statuses: [],
   zoneId: 'saloon',
 };
@@ -62,7 +62,7 @@ export const sheriff: EntityState = {
   name: 'Sheriff Hale',
   tags: ['npc', 'law', 'secretive', 'male'],
   stats: { grit: 6, 'draw-speed': 5, lore: 3 },
-  resources: { hp: 16, resolve: 14, dust: 0 },
+  resources: { hp: 16, stamina: 4, resolve: 14, dust: 0 },
   statuses: [],
   zoneId: 'sheriffs-office',
 };
@@ -76,7 +76,7 @@ export const revenant: EntityState = {
   name: 'Dust Revenant',
   tags: ['enemy', 'undead', 'cursed', 'gunslinger'],
   stats: { grit: 6, 'draw-speed': 7, lore: 1 },
-  resources: { hp: 14, resolve: 20, dust: 0 },
+  resources: { hp: 14, stamina: 6, resolve: 20, dust: 0 },
   statuses: [],
   zoneId: 'red-mesa-trail',
   ai: {
@@ -95,7 +95,7 @@ export const crawler: EntityState = {
   name: 'Mesa Crawler',
   tags: ['enemy', 'spirit', 'beast', 'supernatural'],
   stats: { grit: 4, 'draw-speed': 3, lore: 8 },
-  resources: { hp: 10, resolve: 25, dust: 0 },
+  resources: { hp: 10, stamina: 4, resolve: 25, dust: 0 },
   statuses: [],
   zoneId: 'spirit-hollow',
   ai: {

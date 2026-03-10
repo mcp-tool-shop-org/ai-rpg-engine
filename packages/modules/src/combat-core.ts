@@ -441,7 +441,7 @@ function defaultDamage(attacker: EntityState): number {
 }
 
 /** Simple deterministic roll 1-100 based on tick and IDs */
-function simpleRoll(tick: number, attackerId: string, targetId: string): number {
+export function simpleRoll(tick: number, attackerId: string, targetId: string): number {
   let hash = tick * 2654435761;
   for (const char of attackerId + targetId) {
     hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;

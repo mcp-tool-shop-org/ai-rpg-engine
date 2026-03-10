@@ -4,7 +4,7 @@ import { Engine } from '@ai-rpg-engine/core';
 import {
   traversalCore,
   statusCore,
-  combatCore,
+  createCombatCore,
   createInventoryCore,
   createDialogueCore,
   createCognitionCore,
@@ -19,7 +19,7 @@ import {
   createObserverPresentation,
   giveItem,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -51,6 +51,26 @@ const iceSecurityFraming: PresentationRule = {
   }),
 };
 
+// Cyberpunk combat formulas — chrome for damage, reflex for hit/dodge, netrunning for guard
+const cyberpunkFormulas: CombatFormulas = {
+  hitChance: (attacker, target) => {
+    const atkReflex = attacker.stats.reflex ?? 5;
+    const tgtReflex = target.stats.reflex ?? 5;
+    return Math.min(95, Math.max(5, 50 + atkReflex * 5 - tgtReflex * 3));
+  },
+  damage: (attacker) => Math.max(1, attacker.stats.chrome ?? 3),
+  guardReduction: (defender) => {
+    const netrunning = defender.stats.netrunning ?? 3;
+    const bonus = Math.max(0, (netrunning - 3) * 0.03);
+    return Math.min(0.75, 0.5 + bonus);
+  },
+  disengageChance: (actor) => {
+    const reflex = actor.stats.reflex ?? 5;
+    const netrunning = actor.stats.netrunning ?? 3;
+    return Math.min(90, Math.max(15, 40 + reflex * 5 + netrunning * 2));
+  },
+};
+
 export function createGame(seed?: number): Engine {
   const engine = new Engine({
     manifest,
@@ -59,7 +79,7 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      combatCore,
+      createCombatCore(cyberpunkFormulas),
       createInventoryCore([iceBreaker]),
       createDialogueCore([fixerDialogue]),
       createCognitionCore({ decay: { baseRate: 0.03, pruneThreshold: 0.05, instabilityFactor: 0.8 } }),
@@ -141,6 +161,26 @@ export function createGame(seed?: number): Engine {
         channel: 'stinger',
         priority: 'high',
       });
+    }
+  });
+
+  // --- ICE + Bandwidth combat hooks ---
+  engine.store.events.on('combat.contact.hit', (event) => {
+    if (event.payload.attackerId === 'runner') {
+      const p = engine.store.state.entities['runner'];
+      if (p) p.resources.ice = Math.max(0, (p.resources.ice ?? 0) - 1);
+    }
+  });
+  engine.store.events.on('combat.damage.applied', (event) => {
+    if (event.payload.targetId === 'runner') {
+      const p = engine.store.state.entities['runner'];
+      if (p) p.resources.bandwidth = Math.max(0, (p.resources.bandwidth ?? 0) - 1);
+    }
+  });
+  engine.store.events.on('combat.guard.absorbed', (event) => {
+    if (event.payload.entityId === 'runner') {
+      const p = engine.store.state.entities['runner'];
+      if (p) p.resources.ice = Math.min(100, (p.resources.ice ?? 0) + 1);
     }
   });
 

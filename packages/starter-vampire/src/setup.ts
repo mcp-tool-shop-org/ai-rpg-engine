@@ -4,7 +4,7 @@ import { Engine } from '@ai-rpg-engine/core';
 import {
   traversalCore,
   statusCore,
-  combatCore,
+  createCombatCore,
   createInventoryCore,
   createDialogueCore,
   createCognitionCore,
@@ -19,7 +19,7 @@ import {
   createObserverPresentation,
   giveItem,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -53,6 +53,26 @@ const vampireHungerPerception: PresentationRule = {
   }),
 };
 
+// Vampire combat formulas — vitality for damage, cunning for hit/dodge, presence for guard
+const vampireFormulas: CombatFormulas = {
+  hitChance: (attacker, target) => {
+    const atkCunning = attacker.stats.cunning ?? 5;
+    const tgtCunning = target.stats.cunning ?? 5;
+    return Math.min(95, Math.max(5, 50 + atkCunning * 5 - tgtCunning * 3));
+  },
+  damage: (attacker) => Math.max(1, attacker.stats.vitality ?? 3),
+  guardReduction: (defender) => {
+    const presence = defender.stats.presence ?? 3;
+    const bonus = Math.max(0, (presence - 3) * 0.03);
+    return Math.min(0.75, 0.5 + bonus);
+  },
+  disengageChance: (actor) => {
+    const cunning = actor.stats.cunning ?? 5;
+    const presence = actor.stats.presence ?? 3;
+    return Math.min(90, Math.max(15, 40 + cunning * 5 + presence * 2));
+  },
+};
+
 export function createGame(seed?: number): Engine {
   const engine = new Engine({
     manifest,
@@ -61,7 +81,7 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      combatCore,
+      createCombatCore(vampireFormulas),
       createInventoryCore([bloodVialEffect]),
       createDialogueCore([duchessDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -172,6 +192,33 @@ export function createGame(seed?: number): Engine {
       channel: 'stinger',
       priority: 'high',
     });
+  });
+
+  // --- Bloodlust + Humanity combat hooks ---
+  engine.store.events.on('combat.damage.applied', (event) => {
+    const p = engine.store.state.entities['player'];
+    if (!p) return;
+    if (event.payload.attackerId === 'player') {
+      p.resources.bloodlust = Math.min(100, (p.resources.bloodlust ?? 0) + 2);
+    }
+    if (event.payload.targetId === 'player') {
+      p.resources.bloodlust = Math.min(100, (p.resources.bloodlust ?? 0) + 3);
+    }
+  });
+  engine.store.events.on('combat.entity.defeated', (event) => {
+    if (event.payload.defeatedBy === 'player') {
+      const p = engine.store.state.entities['player'];
+      if (p) {
+        p.resources.bloodlust = Math.min(100, (p.resources.bloodlust ?? 0) + 5);
+        p.resources.humanity = Math.max(0, (p.resources.humanity ?? 0) - 3);
+      }
+    }
+  });
+  engine.store.events.on('combat.guard.absorbed', (event) => {
+    if (event.payload.entityId === 'player') {
+      const p = engine.store.state.entities['player'];
+      if (p) p.resources.humanity = Math.min(100, (p.resources.humanity ?? 0) + 1);
+    }
   });
 
   return engine;

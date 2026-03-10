@@ -35,7 +35,7 @@ export const player: EntityState = {
   name: 'Commander',
   tags: ['player', 'human', 'colonist', 'officer'],
   stats: { engineering: 4, command: 6, awareness: 5 },
-  resources: { hp: 18, power: 60, morale: 20 },
+  resources: { hp: 18, stamina: 5, power: 60, morale: 20 },
   statuses: [],
   inventory: [],
   zoneId: 'command-module',
@@ -50,7 +50,7 @@ export const scientist: EntityState = {
   name: 'Dr. Vasquez',
   tags: ['npc', 'colonist', 'scientist', 'female'],
   stats: { engineering: 3, command: 2, awareness: 7 },
-  resources: { hp: 12, power: 60, morale: 16 },
+  resources: { hp: 12, stamina: 2, power: 60, morale: 16 },
   statuses: [],
   zoneId: 'signal-tower',
 };
@@ -62,7 +62,7 @@ export const security: EntityState = {
   name: 'Chief Okafor',
   tags: ['npc', 'colonist', 'security', 'male'],
   stats: { engineering: 5, command: 5, awareness: 4 },
-  resources: { hp: 20, power: 60, morale: 18 },
+  resources: { hp: 20, stamina: 4, power: 60, morale: 18 },
   statuses: [],
   zoneId: 'perimeter-fence',
 };
@@ -76,7 +76,7 @@ export const drone: EntityState = {
   name: 'Breached Drone',
   tags: ['enemy', 'drone', 'mechanical', 'malfunctioning'],
   stats: { engineering: 6, command: 1, awareness: 5 },
-  resources: { hp: 10, power: 30, morale: 0 },
+  resources: { hp: 10, stamina: 4, power: 30, morale: 0 },
   statuses: [],
   zoneId: 'perimeter-fence',
   ai: {
@@ -95,7 +95,7 @@ export const resonance: EntityState = {
   name: 'Resonance Entity',
   tags: ['enemy', 'alien', 'energy', 'enigmatic'],
   stats: { engineering: 2, command: 1, awareness: 9 },
-  resources: { hp: 8, power: 80, morale: 0 },
+  resources: { hp: 8, stamina: 4, power: 80, morale: 0 },
   statuses: [],
   zoneId: 'alien-cavern',
   ai: {

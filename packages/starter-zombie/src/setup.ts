@@ -4,7 +4,7 @@ import { Engine } from '@ai-rpg-engine/core';
 import {
   traversalCore,
   statusCore,
-  combatCore,
+  createCombatCore,
   createInventoryCore,
   createDialogueCore,
   createCognitionCore,
@@ -19,7 +19,7 @@ import {
   createObserverPresentation,
   giveItem,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -53,6 +53,26 @@ const undeadHunger: PresentationRule = {
   }),
 };
 
+// Zombie combat formulas — fitness for damage, wits for hit/dodge, nerve for guard
+const zombieFormulas: CombatFormulas = {
+  hitChance: (attacker, target) => {
+    const atkWits = attacker.stats.wits ?? 5;
+    const tgtWits = target.stats.wits ?? 5;
+    return Math.min(95, Math.max(5, 50 + atkWits * 5 - tgtWits * 3));
+  },
+  damage: (attacker) => Math.max(1, attacker.stats.fitness ?? 3),
+  guardReduction: (defender) => {
+    const nerve = defender.stats.nerve ?? 3;
+    const bonus = Math.max(0, (nerve - 3) * 0.03);
+    return Math.min(0.75, 0.5 + bonus);
+  },
+  disengageChance: (actor) => {
+    const wits = actor.stats.wits ?? 5;
+    const nerve = actor.stats.nerve ?? 3;
+    return Math.min(90, Math.max(15, 40 + wits * 5 + nerve * 2));
+  },
+};
+
 export function createGame(seed?: number): Engine {
   const engine = new Engine({
     manifest,
@@ -61,7 +81,7 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      combatCore,
+      createCombatCore(zombieFormulas),
       createInventoryCore([antibioticsEffect]),
       createDialogueCore([medicDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -163,6 +183,22 @@ export function createGame(seed?: number): Engine {
       channel: 'stinger',
       priority: 'high',
     });
+  });
+
+  // --- Infection combat hooks ---
+  engine.store.events.on('combat.damage.applied', (event) => {
+    if (event.payload.targetId === 'survivor') {
+      const attackerId = event.payload.attackerId as string;
+      const attacker = engine.store.state.entities[attackerId];
+      if (attacker?.tags.includes('zombie')) {
+        const p = engine.store.state.entities['survivor'];
+        if (p) {
+          const dmg = (event.payload.damage as number) ?? 0;
+          const amount = dmg >= 5 ? 2 : 1;
+          p.resources.infection = Math.min(100, (p.resources.infection ?? 0) + amount);
+        }
+      }
+    }
   });
 
   return engine;
