@@ -12,90 +12,90 @@
   <a href="https://mcp-tool-shop-org.github.io/ai-rpg-engine/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
 </p>
 
-# AI RPG Engine
+# Motor de RPG com Inteligência Artificial
 
-Kit de ferramentas nativo de simulação para construir, analisar e balancear mundos de RPG.
+Um conjunto de ferramentas para a criação, análise e balanceamento de mundos de RPG, com foco em simulação.
 
-AI RPG Engine combina um runtime de simulação determinística com um estúdio de design assistido por IA, permitindo que autores criem mundos, os testem por simulação e os melhorem com base em evidências, não em suposições.
+O Motor de RPG com Inteligência Artificial combina um ambiente de simulação determinística com um estúdio de design assistido por IA, permitindo que os criadores construam mundos, os testem por meio de simulações e os aprimorem com base em evidências, em vez de suposições.
 
-> Ferramentas tradicionais ajudam a escrever histórias.
-> AI RPG Engine ajuda a **testar mundos**.
-
----
-
-## O Que Ele Faz
-
-```
-construir → criticar → simular → analisar → ajustar → experimentar
-```
-
-Você pode gerar conteúdo de mundo, criticar designs, executar simulações determinísticas, analisar comportamento de replays, ajustar mecânicas, executar experimentos com múltiplas sementes e comparar resultados. Cada resultado é reproduzível, inspecionável e explicável.
+> As ferramentas tradicionais ajudam você a escrever histórias.
+> O Motor de RPG com Inteligência Artificial ajuda você a **testar mundos**.
 
 ---
 
-## Capacidades Principais
+## O que ele faz
+
+```
+build → critique → simulate → analyze → tune → experiment
+```
+
+Você pode gerar conteúdo para o mundo, analisar projetos, executar simulações determinísticas, analisar o comportamento em diferentes jogadas, ajustar as mecânicas, realizar experimentos em diversas configurações e comparar os resultados. Cada resultado é reproduzível, inspecionável e explicável.
+
+---
+
+## Funcionalidades Principais
 
 ### Simulação Determinística
 
-Um motor de simulação baseado em ticks para mundos de RPG. Estado do mundo, sistema de eventos, camadas de percepção e cognição, propagação de crenças de facções, sistemas de rumores, métricas de distritos com derivação de humor, agência de NPCs com pontos de ruptura de lealdade e cadeias de consequências, companheiros com moral e risco de partida, influência do jogador e ação política, análise estratégica de mapa, conselheiro de movimentos, reconhecimento de itens e procedência de equipamentos, marcos de crescimento de relíquias, oportunidades emergentes (contratos, recompensas, favores, missões de suprimento, investigações) geradas a partir das condições do mundo, detecção de arcos de campanha (10 tipos de arco derivados do estado acumulado), detecção de gatilhos de final de jogo (8 classes de resolução) e renderização determinística de finale com epílogos estruturados. Logs de ações reproduzíveis e RNG determinístico. Cada execução pode ser reproduzida exatamente.
+Um motor de simulação baseado em ciclos para mundos de RPG. Inclui o estado do mundo, sistema de eventos, camadas de percepção e cognição, propagação de crenças de facções, sistemas de rumores, métricas de distritos com derivação de humor, agência de NPCs com pontos de fidelidade e cadeias de consequências, companheiros com moral e risco de deserção, influência do jogador e ações políticas, análise de mapas estratégicos, consultor de movimentos, reconhecimento de itens e rastreamento de origem de equipamentos, marcos de desenvolvimento de relíquias, oportunidades emergentes (contratos, recompensas, favores, missões de suprimento, investigações) geradas a partir das condições do mundo, detecção de arcos de campanha (10 tipos de arcos derivados do estado acumulado), detecção de gatilhos de final de jogo (8 classes de resolução) e renderização de finais determinísticos com epílogos estruturados. Registros de ações reproduzíveis e RNG determinístico. Cada execução pode ser reproduzida exatamente.
 
-### Construção de Mundos Assistida por IA
+### Criação de Mundos Assistida por IA
 
-Camada opcional de IA que gera salas, facções, missões e distritos a partir de um tema. Critica designs, normaliza erros de esquema, propõe melhorias e guia fluxos de trabalho de construção de mundos em múltiplas etapas. A IA nunca altera diretamente o estado da simulação — ela apenas gera conteúdo ou sugestões.
+Uma camada de IA opcional que cria salas, facções, missões e distritos a partir de um tema. Analisa projetos, corrige erros de esquema, propõe melhorias e orienta fluxos de trabalho de criação de mundos. A IA nunca modifica diretamente o estado da simulação; ela apenas gera conteúdo ou sugestões.
 
-### Fluxos de Trabalho Guiados de Design
+### Fluxos de Trabalho de Design Guiados
 
-Fluxos de trabalho com reconhecimento de sessão e planejamento prévio para scaffolding de mundos, ciclos de crítica, iteração de design, construções guiadas e planos estruturados de ajuste. Combina ferramentas determinísticas com assistência de IA.
+Fluxos de trabalho conscientes da sessão e orientados por planos para a criação de mundos, ciclos de análise, iteração de design, construções guiadas e planos de ajuste estruturados. Combina ferramentas determinísticas com assistência de IA.
 
 ### Análise de Simulação
 
-Análise de replays que explica por que eventos aconteceram, onde mecânicas falham, quais gatilhos nunca disparam e quais sistemas criam instabilidade. Descobertas estruturadas alimentam diretamente o ajuste.
+Análise de jogadas que explica por que os eventos ocorreram, onde as mecânicas falham, quais gatilhos nunca são acionados e quais sistemas criam instabilidade. Os resultados estruturados são integrados diretamente no ajuste.
 
 ### Ajuste Guiado
 
-Descobertas de balanceamento geram planos de ajuste estruturados com correções propostas, impacto esperado, estimativas de confiança e pré-visualização de mudanças. Aplicados passo a passo com rastreabilidade total.
+Os resultados de balanceamento geram planos de ajuste estruturados com correções propostas, impacto esperado, estimativas de confiança e alterações previstas. Aplicados passo a passo, com total rastreabilidade.
 
 ### Experimentos de Cenário
 
-Execute lotes de simulações com diferentes sementes para entender o comportamento típico. Extraia métricas de cenários, detecte variância, faça varredura de parâmetros e compare mundos ajustados vs. linha de base. Transforma o design de mundos em um processo testável.
+Execute várias simulações em diferentes configurações para entender o comportamento típico. Extraia métricas de cenário, detecte variações, ajuste parâmetros e compare mundos ajustados com mundos de referência. Transforma o design de mundos em um processo testável.
 
-### Shell do Estúdio
+### Ambiente de Desenvolvimento (Studio Shell)
 
-Estúdio de design via CLI com painéis de projeto, navegação de problemas, inspeção de experimentos, histórico de sessões, integração guiada e descoberta de comandos contextual. Um espaço de trabalho para construir e testar mundos.
+Ambiente de desenvolvimento de linha de comando com painéis de projetos, navegação de problemas, inspeção de experimentos, histórico de sessões, integração guiada e descoberta de comandos com base no contexto. Um espaço de trabalho para construir e testar mundos.
 
 ---
 
 ## Início Rápido
 
 ```bash
-# Instalar o CLI
+# Install the CLI
 npm install -g @ai-rpg-engine/cli
 
-# Iniciar o estúdio interativo
+# Start the interactive studio
 ai chat
 
-# Executar a integração
+# Run onboarding
 /onboard
 
-# Criar seu primeiro conteúdo
+# Create your first content
 create-room haunted chapel
 
-# Executar uma simulação
+# Run a simulation
 simulate
 
-# Analisar os resultados
+# Analyze the results
 analyze-balance
 
-# Ajustar o design
+# Tune the design
 tune paranoia
 
-# Executar um experimento
+# Run an experiment
 experiment run --runs 50
 ```
 
 ---
 
-## Exemplo de Fluxo de Trabalho
+## Fluxo de Trabalho de Exemplo
 
 ```bash
 ai chat
@@ -110,7 +110,7 @@ experiment run --runs 50
 compare-replays
 ```
 
-Construa um mundo e melhore-o através de evidências de simulação.
+Crie um mundo e aprimore-o por meio de evidências de simulação.
 
 ---
 
@@ -119,65 +119,65 @@ Construa um mundo e melhore-o através de evidências de simulação.
 O sistema possui quatro camadas.
 
 | Camada | Função |
-|--------|--------|
-| **Simulação** | Motor determinístico — estado do mundo, eventos, ações, percepção, cognição, facções, propagação de rumores, métricas de distritos, replay |
-| **Autoria** | Geração de conteúdo — scaffolding, crítica, normalização, ciclos de reparo, geradores de pacotes |
-| **Cognição IA** | Assistência opcional de IA — shell de chat, roteamento de contexto, recuperação, modelagem de memória, orquestração de ferramentas |
-| **UX do Estúdio** | Ambiente de design via CLI — painéis, rastreamento de problemas, navegação de experimentos, histórico de sessões, fluxos guiados |
+|-------|------|
+| **Simulation** | Motor determinístico — estado do mundo, eventos, ações, percepção, cognição, facções, propagação de rumores, métricas de distritos, reprodução |
+| **Authoring** | Geração de conteúdo — criação de estruturas, análise, normalização, ciclos de reparo, geradores de pacotes |
+| **AI Cognition** | Assistência de IA opcional — shell de chat, roteamento de contexto, recuperação, modelagem de memória, orquestração de ferramentas |
+| **Studio UX** | Ambiente de design de linha de comando — painéis, rastreamento de problemas, navegação de experimentos, histórico de sessões, fluxos de trabalho guiados |
 
 ---
 
 ## Pacotes
 
 | Pacote | Propósito |
-|--------|-----------|
-| [`@ai-rpg-engine/core`](packages/core) | Runtime de simulação determinística — estado do mundo, eventos, RNG, ticks, resolução de ações |
-| [`@ai-rpg-engine/modules`](packages/modules) | 29 módulos integrados — combate, percepção, cognição, facções, rumores, distritos, agência de NPCs, companheiros, influência do jogador, mapa estratégico, conselheiro de movimentos, reconhecimento de itens, oportunidades emergentes, detecção de arcos, gatilhos de final de jogo |
-| [`@ai-rpg-engine/content-schema`](packages/content-schema) | Esquemas canônicos e validadores para conteúdo de mundos |
-| [`@ai-rpg-engine/character-profile`](packages/character-profile) | Estado de progressão de personagem, ferimentos, marcos, reputação |
-| [`@ai-rpg-engine/character-creation`](packages/character-creation) | Seleção de arquétipos, geração de builds, equipamento inicial |
-| [`@ai-rpg-engine/equipment`](packages/equipment) | Tipos de equipamento, procedência de itens, crescimento de relíquias, crônicas de itens |
-| [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | Memória entre sessões, efeitos de relacionamento, estado de campanha |
-| [`@ai-rpg-engine/ollama`](packages/ollama) | Autoria com IA opcional — scaffolding, crítica, fluxos guiados, ajuste, experimentos |
-| [`@ai-rpg-engine/cli`](packages/cli) | Estúdio de design via linha de comando — shell de chat, fluxos de trabalho, ferramentas de experimento |
+|---------|---------|
+| [`@ai-rpg-engine/core`](packages/core) | Simulação determinística em tempo de execução — estado do mundo, eventos, gerador de números aleatórios, ciclos, resolução de ações. |
+| [`@ai-rpg-engine/modules`](packages/modules) | 29 módulos integrados — combate, percepção, cognição, facções, rumores, distritos, agência de NPCs, companheiros, influência do jogador, mapa estratégico, consultor de movimento, reconhecimento de itens, oportunidades emergentes, detecção de arcos narrativos, gatilhos para o final do jogo. |
+| [`@ai-rpg-engine/content-schema`](packages/content-schema) | Esquemas e validadores canônicos para o conteúdo do mundo. |
+| [`@ai-rpg-engine/character-profile`](packages/character-profile) | Estado de progressão do personagem, ferimentos, marcos, reputação. |
+| [`@ai-rpg-engine/character-creation`](packages/character-creation) | Seleção de arquétipos, geração de personagens, equipamentos iniciais. |
+| [`@ai-rpg-engine/equipment`](packages/equipment) | Tipos de equipamentos, origem dos itens, crescimento de relíquias, registros de itens. |
+| [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | Memória entre sessões, efeitos de relacionamento, estado da campanha. |
+| [`@ai-rpg-engine/ollama`](packages/ollama) | Criação de IA opcional — estruturas de base, análise crítica, fluxos de trabalho guiados, ajuste fino, experimentos. |
+| [`@ai-rpg-engine/cli`](packages/cli) | Estúdio de design em linha de comando — shell de chat, fluxos de trabalho, ferramentas de experimentação. |
 | [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | Renderizador de terminal e camada de entrada |
-| [`@ai-rpg-engine/starter-fantasy`](packages/starter-fantasy) | The Chapel Threshold — mundo inicial de fantasia |
-| [`@ai-rpg-engine/starter-cyberpunk`](packages/starter-cyberpunk) | Neon Lockbox — mundo inicial de cyberpunk |
-| [`@ai-rpg-engine/starter-detective`](packages/starter-detective) | Gaslight Detective — mundo inicial de mistério vitoriano |
-| [`@ai-rpg-engine/starter-pirate`](packages/starter-pirate) | Black Flag Requiem — mundo inicial de piratas |
-| [`@ai-rpg-engine/starter-zombie`](packages/starter-zombie) | Ashfall Dead — mundo inicial de sobrevivência zumbi |
-| [`@ai-rpg-engine/starter-weird-west`](packages/starter-weird-west) | Dust Devil's Bargain — mundo inicial de faroeste sobrenatural |
-| [`@ai-rpg-engine/starter-colony`](packages/starter-colony) | Signal Loss — mundo inicial de colônia sci-fi |
+| [`@ai-rpg-engine/starter-fantasy`](packages/starter-fantasy) | Chapel Threshold — mundo de fantasia para iniciantes. |
+| [`@ai-rpg-engine/starter-cyberpunk`](packages/starter-cyberpunk) | Neon Lockbox — mundo cyberpunk para iniciantes. |
+| [`@ai-rpg-engine/starter-detective`](packages/starter-detective) | Gaslight Detective — mundo de mistério vitoriano para iniciantes. |
+| [`@ai-rpg-engine/starter-pirate`](packages/starter-pirate) | Black Flag Requiem — mundo de piratas para iniciantes. |
+| [`@ai-rpg-engine/starter-zombie`](packages/starter-zombie) | Ashfall Dead — mundo de sobrevivência zumbi para iniciantes. |
+| [`@ai-rpg-engine/starter-weird-west`](packages/starter-weird-west) | Dust Devil's Bargain — mundo de faroeste estranho para iniciantes. |
+| [`@ai-rpg-engine/starter-colony`](packages/starter-colony) | Signal Loss — mundo de colônia de ficção científica para iniciantes. |
 
 ---
 
 ## Documentação
 
 | Recurso | Descrição |
-|---------|-----------|
-| [Manual](docs/handbook/index.md) | 43 capítulos + 4 apêndices cobrindo todos os sistemas |
-| [Documento de Design](docs/DESIGN.md) | Análise aprofundada da arquitetura — pipeline de ações, verdade vs. apresentação, camadas de simulação |
-| [Guia de Construção de Mundos com IA](packages/ollama/AI_WORLDBUILDING.md) | Fluxos de scaffolding, diagnóstico, ajuste e experimento |
-| [Filosofia](PHILOSOPHY.md) | Por que mundos determinísticos, design baseado em evidências e IA como assistente |
-| [Histórico de Alterações](CHANGELOG.md) | Histórico de versões |
+|----------|-------------|
+| [Handbook](docs/handbook/index.md) | 43 capítulos + 4 apêndices que cobrem todos os sistemas. |
+| [Design Document](docs/DESIGN.md) | Análise aprofundada da arquitetura — pipeline de ações, verdade versus apresentação, camadas de simulação. |
+| [AI Worldbuilding Guide](packages/ollama/AI_WORLDBUILDING.md) | Fluxos de trabalho para estruturação, diagnóstico, ajuste fino e experimentação. |
+| [Philosophy](PHILOSOPHY.md) | Por que mundos determinísticos, design baseado em evidências e IA como assistente. |
+| [Changelog](CHANGELOG.md) | Histórico de lançamentos |
 
 ---
 
 ## Filosofia
 
-AI RPG Engine é construído em torno de três ideias:
+O motor de RPG com IA é construído em torno de três ideias:
 
 1. **Mundos determinísticos** — os resultados da simulação devem ser reproduzíveis.
-2. **Design baseado em evidências** — as mecânicas do mundo devem ser testadas por simulação.
-3. **IA como assistente, não autoridade** — ferramentas de IA ajudam a gerar e criticar designs, mas não substituem sistemas determinísticos.
+2. **Design baseado em evidências** — as mecânicas do mundo devem ser testadas por meio de simulação.
+3. **IA como assistente, não como autoridade** — as ferramentas de IA ajudam a gerar e analisar projetos, mas não substituem os sistemas determinísticos.
 
-Consulte [PHILOSOPHY.md](PHILOSOPHY.md) para a explicação completa.
+Consulte [PHILOSOPHY.md](PHILOSOPHY.md) para uma explicação completa.
 
 ---
 
 ## Segurança
 
-AI RPG Engine é uma **biblioteca de simulação exclusivamente local**. Sem telemetria, sem rede, sem segredos. Arquivos de salvamento vão para `.ai-rpg-engine/` apenas quando explicitamente solicitado. Consulte [SECURITY.md](SECURITY.md) para detalhes.
+O motor de RPG com IA é uma **biblioteca de simulação local**. Não há telemetria, não há rede, não há segredos. Os arquivos de salvamento são gravados apenas em `.ai-rpg-engine/` quando solicitado explicitamente. Consulte [SECURITY.md](SECURITY.md) para obter detalhes.
 
 ## Requisitos
 

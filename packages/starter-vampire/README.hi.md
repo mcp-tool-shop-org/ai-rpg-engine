@@ -1,0 +1,66 @@
+<p align="center">
+  <a href="README.ja.md">日本語</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.md">English</a> | <a href="README.it.md">Italiano</a> | <a href="README.pt-BR.md">Português (BR)</a>
+</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mcp-tool-shop-org/brand/main/logos/ai-rpg-engine/readme.png" width="400" alt="AI RPG Engine">
+</p>
+
+<p align="center">
+  <a href="https://github.com/mcp-tool-shop-org/ai-rpg-engine/actions/workflows/ci.yml"><img src="https://github.com/mcp-tool-shop-org/ai-rpg-engine/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/mcp-tool-shop-org/ai-rpg-engine/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://mcp-tool-shop-org.github.io/ai-rpg-engine/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
+</p>
+
+# @ai-rpg-engine/starter-vampire
+
+**क्रिमसन कोर्ट** — एक जीर्ण-शीर्ण अभिजात वर्ग का हवेली, जो एक मुखौटा पार्टी के दौरान है। तीन वैम्पायर परिवार प्रभुत्व के लिए प्रतिस्पर्धा कर रहे हैं, जबकि भूख आपको निगलने की धमकी दे रही है।
+
+[एआई आरपीजी इंजन](https://github.com/mcp-tool-shop-org/ai-rpg-engine) स्टार्टर पैक कैटलॉग का हिस्सा।
+
+## विषय-वस्तु
+
+गॉथिक हॉरर + वैम्पायर दरबार की राजनीति। रक्तपिपास बढ़ता है, और यदि यह 100 तक पहुँच जाता है, तो खिलाड़ी नियंत्रण खो देता है। भोजन करने से रक्तपिपास कम होता है, लेकिन यह मानवता को कम करता है। वैम्पायर मनुष्यों को "गर्मी के वाहक" मानते हैं।
+
+## त्वरित शुरुआत
+
+```typescript
+import { createGame } from '@ai-rpg-engine/starter-vampire';
+
+const engine = createGame();
+engine.start();
+```
+
+## सामग्री
+
+- **5 क्षेत्र:** भव्य बॉलरूम, पूर्वी गैलरी, वाइन सेलर, चांदनी उद्यान, घंटी टॉवर
+- **3 एनपीसी:** डचेस मोरवेन (वरिष्ठ वैम्पायर), कैसियस (प्रतिद्वंद्वी नवजात), नौकरानी एला (मानव)
+- **2 दुश्मन:** चुड़ैल शिकारी, जंगली गुलाम
+- **1 संवाद वृक्ष:** दरबार की राजनीति और भूख को नियंत्रित करने पर डचेस का संवाद
+- **1 प्रगति वृक्ष:** ब्लड मास्टरी (आयरन विल → मेसमराइजर → एपेक्स प्रीडेटर)
+- **1 वस्तु:** ब्लड वियाल (रक्तपिपास को 15 से कम करता है)
+
+## अद्वितीय यांत्रिकी
+
+| क्रिया | विवरण |
+|------|-------------|
+| `enthrall` | उपस्थिति का उपयोग करके अलौकिक सामाजिक वर्चस्व। |
+| `feed` | मानवता की कीमत पर रक्तपिपास को कम करने के लिए रक्त निकालें। |
+
+## आंकड़े और संसाधन
+
+| आंकड़ा | भूमिका |
+|------|------|
+| उपस्थिति | सामाजिक वर्चस्व, अलौकिक अधिकार। |
+| जीवन शक्ति | शारीरिक क्षमता, भोजन करने की दक्षता। |
+| चतुरता | धोखा, धारणा, दरबार की साजिश। |
+
+| संसाधन | रेंज | टिप्पणियाँ |
+|----------|-------|-------|
+| HP | 0–30 | मानक स्वास्थ्य |
+| रक्तपिपास | 0–100 | विपरीत दबाव - प्रत्येक टिक पर बढ़ता है, 100 पर नियंत्रण खो जाता है। |
+| मानवता | 0–30 | नैतिक आधार - 10 से नीचे होने पर संवाद विकल्प सीमित हो जाते हैं। |
+
+## लाइसेंस
+
+एमआईटी

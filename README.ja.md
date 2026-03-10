@@ -1,5 +1,5 @@
 <p align="center">
-  <a href="README.md">English</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.pt-BR.md">Português</a>
+  <a href="README.md">English</a> | <a href="README.zh.md">中文</a> | <a href="README.es.md">Español</a> | <a href="README.fr.md">Français</a> | <a href="README.hi.md">हिन्दी</a> | <a href="README.it.md">Italiano</a> | <a href="README.pt-BR.md">Português (BR)</a>
 </p>
 
 <p align="center">
@@ -12,90 +12,90 @@
   <a href="https://mcp-tool-shop-org.github.io/ai-rpg-engine/"><img src="https://img.shields.io/badge/Landing_Page-live-blue" alt="Landing Page"></a>
 </p>
 
-# AI RPG Engine
+# AI RPG エンジン
 
-RPGの世界を構築・分析し、バランスを調整するための、シミュレーションネイティブなツールキット。
+RPGの世界を構築、分析し、バランス調整するための、シミュレーションに特化したツールキット。
 
-AI RPG Engineは、決定論的なシミュレーション実行環境とAI支援デザインスタジオを組み合わせることで、作者が世界を構築し、シミュレーションを通じてテストし、推測ではなくエビデンスに基づいて改善できるようにします。
+AI RPG エンジンは、決定論的なシミュレーション実行環境と、AIを活用したデザインスタジオを組み合わせることで、開発者が世界を構築し、シミュレーションを通じてテストし、推測ではなく、データに基づいて改善することができます。
 
-> 従来のツールは物語を書くことを支援します。
-> AI RPG Engineは**世界をテストすること**を支援します。
+> 従来のツールは、物語の作成を支援します。
+> AI RPG エンジンは、**世界のテスト**を支援します。
 
 ---
 
-## 機能概要
+## その機能・役割
 
 ```
 build → critique → simulate → analyze → tune → experiment
 ```
 
-世界のコンテンツを生成し、デザインを批評し、決定論的シミュレーションを実行し、リプレイの挙動を分析し、メカニクスを調整し、多数のシードで実験を行い、結果を比較できます。すべての結果は再現可能で、検証可能で、説明可能です。
+世界の内容を生成したり、デザインを評価したり、決定論的なシミュレーションを実行したり、リプレイの挙動を分析したり、ゲームの仕組みを調整したり、多数のパラメータで実験を実行したり、結果を比較したりすることができます。すべての結果は、再現可能で、検証可能で、説明可能です。
 
 ---
 
-## コア機能
+## 主要機能
 
-### 決定論的シミュレーション
+### 決定論的なシミュレーション
 
-RPG世界のためのティックベースシミュレーションエンジン。世界の状態管理、イベントシステム、知覚・認知レイヤー、派閥の信念伝播、噂システム、ムード導出を含む地区メトリクス、忠誠度の閾値と結果連鎖を持つNPCの自律行動、士気と離脱リスクを持つ仲間システム、プレイヤーの影響力と政治的行動、戦略マップ分析、行動アドバイザー、アイテム認識と装備の来歴、レリック成長マイルストーン、世界の状況から生成される創発的機会（契約、賞金首、依頼、補給任務、調査）、蓄積された状態から導出されるキャンペーンアーク検出（10種類のアーク）、エンドゲームトリガー検出（8種類の解決クラス）、構造化されたエピローグを持つ決定論的フィナーレ描画。リプレイ可能なアクションログと決定論的RNG。すべての実行は正確に再現可能です。
+RPGの世界をシミュレーションする、時間経過に基づくエンジン。世界の状態、イベントシステム、知覚と認知のレイヤー、派閥の信念伝播、噂システム、地区の指標（感情に基づいて算出）、NPCの行動（忠誠心に基づく分岐点と結果連鎖）、仲間（士気と離脱リスク）、プレイヤーの行動力と政治的行動、戦略マップ分析、移動アドバイザー、アイテム認識と装備の由来、遺物の成長段階、世界の状況に基づいて生成される機会（契約、賞金、好意、物資調達、調査）、キャンペーンの展開検出（累積状態から派生する10種類の展開）、ゲーム終盤のトリガー検出（8つの解決段階）、そして構造化されたエピローグによる決定的な結末。アクションログは再利用可能で、決定的な乱数生成。すべてのプレイは完全に再現可能です。
 
-### AI支援による世界構築
+### AIを活用した世界構築
 
-テーマから部屋、派閥、クエスト、地区を自動生成するオプションのAIレイヤー。デザインを批評し、スキーマエラーを正規化し、改善案を提示し、段階的な世界構築ワークフローをガイドします。AIがシミュレーションの状態を直接変更することはなく、コンテンツや提案の生成のみを行います。
+オプションのAIレイヤーが、テーマに基づいて、部屋、派閥、クエスト、地区などを自動生成します。デザインを評価し、スキーマのエラーを修正し、改善案を提示し、段階的な世界構築のワークフローを支援します。AIは、シミュレーションの状態を直接変更することはありません。コンテンツの生成や提案のみを行います。
 
-### ガイド付きデザインワークフロー
+### ガイド付きのデザインワークフロー
 
-世界の構築、批評ループ、デザインの反復、ガイド付きビルド、構造化された調整計画のための、セッション対応・計画優先型のワークフロー。決定論的ツールとAI支援を組み合わせます。
+セッションを意識し、計画を優先するワークフローにより、世界の構築、デザインの評価、デザインの反復、ガイド付きのビルド、および構造化された調整計画を実現します。決定論的なツールとAIの支援を組み合わせます。
 
 ### シミュレーション分析
 
-イベントが発生した理由、メカニクスがどこで破綻しているか、どのトリガーが発火しないか、どのシステムが不安定を引き起こしているかを説明するリプレイ分析。構造化された分析結果は調整に直接反映されます。
+リプレイ分析により、イベントが発生した理由、ゲームの仕組みがどこで破綻しているか、どのトリガーが発火しないか、どのシステムが不安定を引き起こしているかを説明します。分析結果は、調整に直接反映されます。
 
-### ガイド付き調整
+### ガイド付きの調整
 
-バランス分析の結果から、提案される修正、予想される影響、信頼度の見積もり、プレビューされた変更を含む構造化された調整計画が生成されます。完全なトレーサビリティを備え、段階的に適用されます。
+バランスの分析結果に基づいて、構造化された調整計画が生成されます。計画には、提案された修正、予想される影響、信頼度、およびプレビューされた変更が含まれます。段階的に適用され、完全なトレーサビリティが確保されます。
 
 ### シナリオ実験
 
-多数のシードでシミュレーションをバッチ実行し、典型的な挙動を把握します。シナリオメトリクスの抽出、分散の検出、パラメータのスイープ、調整済みの世界とベースラインの世界の比較を行います。世界のデザインをテスト可能なプロセスに変えます。
+多数のパラメータでシミュレーションを実行し、典型的な挙動を理解します。シナリオの指標を抽出し、ばらつきを検出し、パラメータを調整し、調整された世界とベースラインの世界を比較します。世界のデザインをテスト可能なプロセスに変えます。
 
 ### スタジオシェル
 
-プロジェクトダッシュボード、課題ブラウジング、実験のインスペクション、セッション履歴、ガイド付きオンボーディング、コンテキスト対応のコマンド発見機能を備えたCLIデザインスタジオ。世界を構築しテストするためのワークスペースです。
+プロジェクトのダッシュボード、問題の閲覧、実験の検査、セッション履歴、ガイド付きのオンボーディング、およびコンテキストに応じたコマンドの発見機能を備えた、CLIデザインスタジオ。世界を構築およびテストするためのワークスペースです。
 
 ---
 
-## クイックスタート
+## クイックスタートガイド
 
 ```bash
-# CLIをインストール
+# Install the CLI
 npm install -g @ai-rpg-engine/cli
 
-# インタラクティブスタジオを起動
+# Start the interactive studio
 ai chat
 
-# オンボーディングを実行
+# Run onboarding
 /onboard
 
-# 最初のコンテンツを作成
+# Create your first content
 create-room haunted chapel
 
-# シミュレーションを実行
+# Run a simulation
 simulate
 
-# 結果を分析
+# Analyze the results
 analyze-balance
 
-# デザインを調整
+# Tune the design
 tune paranoia
 
-# 実験を実行
+# Run an experiment
 experiment run --runs 50
 ```
 
 ---
 
-## ワークフロー例
+## ワークフローの例
 
 ```bash
 ai chat
@@ -110,44 +110,44 @@ experiment run --runs 50
 compare-replays
 ```
 
-世界を構築し、シミュレーションのエビデンスに基づいて改善します。
+世界を構築し、シミュレーションのデータに基づいて改善します。
 
 ---
 
 ## アーキテクチャ
 
-このシステムは4つのレイヤーで構成されています。
+このシステムは、4つのレイヤーで構成されています。
 
 | レイヤー | 役割 |
 |-------|------|
-| **Simulation** | 決定論的エンジン — 世界の状態、イベント、アクション、知覚、認知、派閥、噂の伝播、地区メトリクス、リプレイ |
-| **Authoring** | コンテンツ生成 — スキャフォールディング、批評、正規化、修復ループ、パックジェネレーター |
-| **AI Cognition** | オプションのAI支援 — チャットシェル、コンテキストルーティング、検索、メモリ整形、ツールオーケストレーション |
-| **Studio UX** | CLIデザイン環境 — ダッシュボード、課題追跡、実験ブラウジング、セッション履歴、ガイド付きワークフロー |
+| **Simulation** | 決定論的なエンジン — 世界の状態、イベント、アクション、知覚、認知、派閥、噂の伝播、地区の指標、リプレイ |
+| **Authoring** | コンテンツ生成 — スキャフォールディング、評価、正規化、修正ループ、パックジェネレーター |
+| **AI Cognition** | オプションのAIアシスタンス — チャットシェル、コンテキストルーティング、検索、メモリ整形、ツールオーケストレーション |
+| **Studio UX** | CLIデザイン環境 — ダッシュボード、問題追跡、実験の閲覧、セッション履歴、ガイド付きワークフロー |
 
 ---
 
 ## パッケージ
 
-| パッケージ | 目的 |
+| パッケージ | 目的。 |
 |---------|---------|
-| [`@ai-rpg-engine/core`](packages/core) | 決定論的シミュレーション実行環境 — 世界の状態、イベント、RNG、ティック、アクション解決 |
-| [`@ai-rpg-engine/modules`](packages/modules) | 29の組み込みモジュール — 戦闘、知覚、認知、派閥、噂、地区、NPCの自律行動、仲間、プレイヤーの影響力、戦略マップ、行動アドバイザー、アイテム認識、創発的機会、アーク検出、エンドゲームトリガー |
-| [`@ai-rpg-engine/content-schema`](packages/content-schema) | 世界コンテンツの標準スキーマとバリデーター |
-| [`@ai-rpg-engine/character-profile`](packages/character-profile) | キャラクターの成長状態、負傷、マイルストーン、評判 |
-| [`@ai-rpg-engine/character-creation`](packages/character-creation) | アーキタイプの選択、ビルド生成、初期装備 |
-| [`@ai-rpg-engine/equipment`](packages/equipment) | 装備の種類、アイテムの来歴、レリック成長、アイテム年代記 |
-| [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | クロスセッションメモリ、関係性の影響、キャンペーン状態 |
-| [`@ai-rpg-engine/ollama`](packages/ollama) | オプションのAIオーサリング — スキャフォールディング、批評、ガイド付きワークフロー、調整、実験 |
+| [`@ai-rpg-engine/core`](packages/core) | 決定論的なシミュレーション実行環境 — 世界の状態、イベント、乱数生成、ティック、アクションの解決 |
+| [`@ai-rpg-engine/modules`](packages/modules) | 29個の組み込みモジュール：戦闘、知覚、認知、派閥、噂、地区、NPCの行動、仲間、プレイヤーの行動力、戦略マップ、移動アドバイザー、アイテム認識、機会、展開検出、ゲーム終盤のトリガー。 |
+| [`@ai-rpg-engine/content-schema`](packages/content-schema) | 世界のコンテンツのための標準的なスキーマとバリデータ |
+| [`@ai-rpg-engine/character-profile`](packages/character-profile) | キャラクターの成長状態、負傷、成長段階、評判。 |
+| [`@ai-rpg-engine/character-creation`](packages/character-creation) | アーキタイプの選択、ビルド生成、初期装備。 |
+| [`@ai-rpg-engine/equipment`](packages/equipment) | 装備の種類、アイテムの由来、遺物の成長、アイテムの記録。 |
+| [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | セッション間の記憶、関係性の影響、キャンペーンの状態。 |
+| [`@ai-rpg-engine/ollama`](packages/ollama) | オプションのAIによるコンテンツ作成 — スキャフォールディング、評価、ガイド付きワークフロー、調整、実験 |
 | [`@ai-rpg-engine/cli`](packages/cli) | コマンドラインデザインスタジオ — チャットシェル、ワークフロー、実験ツール |
-| [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | ターミナルレンダラーと入力レイヤー |
+| [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | ターミナルレンダラーと入力レイヤー。 |
 | [`@ai-rpg-engine/starter-fantasy`](packages/starter-fantasy) | The Chapel Threshold — ファンタジーのスターターワールド |
 | [`@ai-rpg-engine/starter-cyberpunk`](packages/starter-cyberpunk) | Neon Lockbox — サイバーパンクのスターターワールド |
-| [`@ai-rpg-engine/starter-detective`](packages/starter-detective) | Gaslight Detective — ヴィクトリア朝ミステリーのスターターワールド |
-| [`@ai-rpg-engine/starter-pirate`](packages/starter-pirate) | Black Flag Requiem — 海賊のスターターワールド |
-| [`@ai-rpg-engine/starter-zombie`](packages/starter-zombie) | Ashfall Dead — ゾンビサバイバルのスターターワールド |
-| [`@ai-rpg-engine/starter-weird-west`](packages/starter-weird-west) | Dust Devil's Bargain — ウィアードウェストのスターターワールド |
-| [`@ai-rpg-engine/starter-colony`](packages/starter-colony) | Signal Loss — SFコロニーのスターターワールド |
+| [`@ai-rpg-engine/starter-detective`](packages/starter-detective) | Gaslight Detective：ヴィクトリア朝のミステリーを舞台にした初期の世界。 |
+| [`@ai-rpg-engine/starter-pirate`](packages/starter-pirate) | Black Flag Requiem：海賊を舞台にした初期の世界。 |
+| [`@ai-rpg-engine/starter-zombie`](packages/starter-zombie) | Ashfall Dead：ゾンビサバイバルを舞台にした初期の世界。 |
+| [`@ai-rpg-engine/starter-weird-west`](packages/starter-weird-west) | Dust Devil's Bargain：西部劇を舞台にした初期の世界。 |
+| [`@ai-rpg-engine/starter-colony`](packages/starter-colony) | Signal Loss：SFコロニーを舞台にした初期の世界。 |
 
 ---
 
@@ -155,29 +155,29 @@ compare-replays
 
 | リソース | 説明 |
 |----------|-------------|
-| [Handbook](docs/handbook/index.md) | すべてのシステムを網羅する43章と4つの付録 |
-| [Design Document](docs/DESIGN.md) | アーキテクチャの詳細解説 — アクションパイプライン、真実と表現、シミュレーションレイヤー |
-| [AI Worldbuilding Guide](packages/ollama/AI_WORLDBUILDING.md) | スキャフォールド、診断、調整、実験のワークフロー |
-| [Philosophy](PHILOSOPHY.md) | 決定論的な世界、エビデンス駆動設計、AIをアシスタントとして活用する理由 |
+| [Handbook](docs/handbook/index.md) | すべてのシステムを網羅する26章と4つの付録 |
+| [Design Document](docs/DESIGN.md) | アーキテクチャの詳細解説：アクションパイプライン、真実と表現、シミュレーションレイヤー |
+| [AI Worldbuilding Guide](packages/ollama/AI_WORLDBUILDING.md) | 構築、診断、調整、実験のワークフロー |
+| [Philosophy](PHILOSOPHY.md) | 決定論的な世界、データに基づいた設計、そしてAIをアシスタントとして |
 | [Changelog](CHANGELOG.md) | リリース履歴 |
 
 ---
 
-## フィロソフィー
+## 哲学
 
-AI RPG Engineは3つの理念に基づいて構築されています。
+AI RPG Engineは、以下の3つのアイデアに基づいて構築されています。
 
-1. **決定論的な世界** — シミュレーションの結果は再現可能でなければなりません。
-2. **エビデンス駆動設計** — 世界のメカニクスはシミュレーションを通じてテストされるべきです。
-3. **AIはアシスタントであり、権威ではない** — AIツールはデザインの生成と批評を支援しますが、決定論的システムに取って代わるものではありません。
+1. **決定論的な世界**：シミュレーションの結果は再現可能でなければなりません。
+2. **データに基づいた設計**：世界の仕組みは、シミュレーションを通じてテストされるべきです。
+3. **AIをアシスタントとして、権威としてではない**：AIツールは、設計の生成と評価を支援しますが、決定論的なシステムに取って代わるものではありません。
 
-詳細については [PHILOSOPHY.md](PHILOSOPHY.md) を参照してください。
+詳細については、[PHILOSOPHY.md](PHILOSOPHY.md) を参照してください。
 
 ---
 
 ## セキュリティ
 
-AI RPG Engineは**ローカル専用のシミュレーションライブラリ**です。テレメトリ、ネットワーク通信、機密情報は一切ありません。セーブファイルは明示的に要求された場合にのみ `.ai-rpg-engine/` に保存されます。詳細は [SECURITY.md](SECURITY.md) を参照してください。
+AI RPG Engineは、**ローカルでのみ動作するシミュレーションライブラリ**です。テレメトリー、ネットワーク接続、機密情報は一切使用しません。セーブファイルは、明示的に要求された場合にのみ `.ai-rpg-engine/` フォルダに保存されます。詳細は、[SECURITY.md](SECURITY.md) を参照してください。
 
 ## 要件
 
@@ -190,4 +190,4 @@ AI RPG Engineは**ローカル専用のシミュレーションライブラリ**
 
 ---
 
-<a href="https://mcp-tool-shop.github.io/">MCP Tool Shop</a> が開発
+<a href="https://mcp-tool-shop.github.io/">MCP Tool Shop</a> が作成しました。
