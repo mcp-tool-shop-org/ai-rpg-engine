@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/terminal-ui",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "AI RPG Engine terminal renderer and input layer",
   "type": "module",
   "main": "./dist/index.js",
