@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/starter-detective",
-  "version": "2.1.6",
+  "version": "2.1.7",
   "description": "AI RPG Engine detective starter: Gaslight Detective",
   "type": "module",
   "main": "./dist/index.js",
