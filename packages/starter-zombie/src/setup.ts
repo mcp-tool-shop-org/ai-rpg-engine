@@ -25,6 +25,7 @@ import {
   createCombatIntent,
   BUILTIN_PACK_BIASES,
   createCombatRecovery,
+  createBossPhaseListener,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -35,6 +36,8 @@ import {
   leader,
   shambler,
   runner,
+  bloaterAlpha,
+  bloaterAlphaBoss,
   zones,
   districts,
   medicDialogue,
@@ -147,6 +150,7 @@ export function createGame(seed?: number): Engine {
       }),
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['zombie', 'undead'].includes(b.tag)) }),
       createCombatRecovery({ safeZoneTags: ['safe', 'home-base'] }),
+      createBossPhaseListener(bloaterAlphaBoss),
       createSimulationInspector(),
     ],
   });
@@ -163,6 +167,7 @@ export function createGame(seed?: number): Engine {
   engine.store.addEntity({ ...leader });
   engine.store.addEntity({ ...shambler });
   engine.store.addEntity({ ...runner });
+  engine.store.addEntity({ ...bloaterAlpha });
 
   // Set player
   engine.store.state.playerId = 'survivor';

@@ -588,6 +588,34 @@ export type { CombatIntentType, IntentScore, IntentScoreContribution, CombatDeci
 export { createCombatRecovery, WOUND_STATUSES, MORALE_AFTERMATH_STATUSES } from './combat-recovery.js';
 export type { WoundSeverity, WoundThreshold, MoraleAftermathTier, AftermathSurvivor, AftermathSummaryPayload, CombatRecoveryConfig } from './combat-recovery.js';
 
+// --- Combat Roles & Encounters (Phase 8) ---
+export {
+  BUILTIN_COMBAT_ROLES,
+  COMBAT_ROLES,
+  createEncounter,
+  validateEncounter,
+  collectEncounterBiases,
+  createBossPhaseListener,
+  calculateDangerRating,
+  formatDangerForNarrator,
+  analyzeEncounter,
+  formatEncounterForDirector,
+  getEntityRole,
+  getRoleBiases,
+  createRoledEnemy,
+} from './combat-roles.js';
+export type {
+  CombatRole,
+  CombatRoleTemplate,
+  EncounterComposition,
+  EncounterParticipant,
+  EncounterDefinition,
+  BossPhaseTransition,
+  BossDefinition,
+  DangerRating,
+  EncounterAnalysis,
+} from './combat-roles.js';
+
 // --- Endgame Detection (v2.0) ---
 export {
   evaluateEndgame,

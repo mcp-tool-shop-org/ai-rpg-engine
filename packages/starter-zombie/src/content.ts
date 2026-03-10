@@ -3,7 +3,7 @@
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
-import type { DistrictDefinition } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -86,7 +86,7 @@ export const shambler: EntityState = {
   blueprintId: 'shambler',
   type: 'enemy',
   name: 'Shambler',
-  tags: ['enemy', 'zombie', 'undead', 'slow'],
+  tags: ['enemy', 'zombie', 'undead', 'slow', 'role:minion'],
   stats: { fitness: 3, wits: 1, nerve: 10 },
   resources: { hp: 12, stamina: 20, infection: 0 },
   statuses: [],
@@ -105,7 +105,7 @@ export const runner: EntityState = {
   blueprintId: 'runner',
   type: 'enemy',
   name: 'Runner',
-  tags: ['enemy', 'zombie', 'undead', 'fast'],
+  tags: ['enemy', 'zombie', 'undead', 'fast', 'role:skirmisher'],
   stats: { fitness: 7, wits: 1, nerve: 10 },
   resources: { hp: 8, stamina: 25, infection: 0 },
   statuses: [],
@@ -116,6 +116,60 @@ export const runner: EntityState = {
     fears: [],
     alertLevel: 0,
     knowledge: {},
+  },
+};
+
+export const bloaterAlpha: EntityState = {
+  id: 'bloater-alpha',
+  blueprintId: 'bloater-alpha',
+  type: 'enemy',
+  name: 'Bloater Alpha',
+  tags: ['enemy', 'zombie', 'undead', 'role:boss'],
+  stats: { fitness: 8, wits: 2, nerve: 10 },
+  resources: { hp: 50, maxHp: 50, stamina: 30, maxStamina: 30, infection: 0 },
+  statuses: [],
+  zoneId: 'hospital-wing',
+  ai: {
+    profileId: 'aggressive',
+    goals: ['destroy-all-living'],
+    fears: [],
+    alertLevel: 0,
+    knowledge: {},
+  },
+};
+
+export const bloaterAlphaBoss: BossDefinition = {
+  entityId: 'bloater-alpha',
+  phases: [
+    {
+      hpThreshold: 0.5,
+      narrativeKey: 'rupturing',
+      addTags: ['toxic-cloud'],
+    },
+    {
+      hpThreshold: 0.2,
+      narrativeKey: 'death-throes',
+      addTags: ['frenzied'],
+      removeTags: ['toxic-cloud'],
+    },
+  ],
+  immovable: true,
+};
+
+export const hordeEncounter: EncounterDefinition = {
+  id: 'hospital-horde',
+  name: 'Hospital Horde',
+  participants: [
+    { entityId: 'bloater-alpha', role: 'boss' },
+    { entityId: 'shambler_1', role: 'minion' },
+    { entityId: 'runner_1', role: 'skirmisher' },
+  ],
+  composition: 'boss-fight',
+  validZoneIds: ['hospital-wing'],
+  narrativeHooks: {
+    tone: 'overwhelming dread, nowhere to run',
+    trigger: 'Deep within the abandoned hospital',
+    stakes: 'Medical supplies and survival',
   },
 };
 

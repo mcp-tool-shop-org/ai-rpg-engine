@@ -25,6 +25,7 @@ import {
   createCombatIntent,
   BUILTIN_PACK_BIASES,
   createCombatRecovery,
+  createBossPhaseListener,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule } from '@ai-rpg-engine/modules';
 import {
@@ -34,6 +35,8 @@ import {
   brotherAldric,
   sisterMaren,
   ashGhoul,
+  cryptWarden,
+  cryptWardenBoss,
   zones,
   districts,
   pilgrimDialogue,
@@ -98,7 +101,7 @@ export function createGame(seed?: number): Engine {
       createFactionCognition({
         factions: [{
           factionId: 'chapel-undead',
-          entityIds: ['ash-ghoul'],
+          entityIds: ['ash-ghoul', 'crypt-warden'],
           cohesion: 0.7,
         }],
       }),
@@ -109,11 +112,12 @@ export function createGame(seed?: number): Engine {
         rules: [undeadHostilePerception],
       }),
       createDefeatFallout({
-        factions: [{ factionId: 'chapel-undead', entityIds: ['ash-ghoul'] }],
+        factions: [{ factionId: 'chapel-undead', entityIds: ['ash-ghoul', 'crypt-warden'] }],
         playerId: 'player',
       }),
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['undead'].includes(b.tag)) }),
       createCombatRecovery({ safeZoneTags: ['safe', 'sacred'] }),
+      createBossPhaseListener(cryptWardenBoss),
       createSimulationInspector(),
     ],
   });
@@ -129,6 +133,7 @@ export function createGame(seed?: number): Engine {
   engine.store.addEntity({ ...brotherAldric });
   engine.store.addEntity({ ...sisterMaren });
   engine.store.addEntity({ ...ashGhoul });
+  engine.store.addEntity({ ...cryptWarden });
 
   // Set player
   engine.store.state.playerId = 'player';

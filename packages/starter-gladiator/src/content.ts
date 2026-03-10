@@ -7,7 +7,7 @@ import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engi
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
-import type { DistrictDefinition } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
 
 export const manifest: GameManifest = {
   id: 'iron-colosseum',
@@ -89,7 +89,7 @@ export const arenaChampion: EntityState = {
   blueprintId: 'arena-champion',
   type: 'enemy',
   name: 'Arena Champion',
-  tags: ['enemy', 'gladiator', 'champion'],
+  tags: ['enemy', 'gladiator', 'champion', 'role:elite'],
   stats: { might: 7, agility: 6, showmanship: 5 },
   resources: { hp: 30, stamina: 8, fatigue: 0, 'crowd-favor': 70 },
   statuses: [],
@@ -102,12 +102,65 @@ export const warBeast: EntityState = {
   blueprintId: 'war-beast',
   type: 'enemy',
   name: 'War Beast',
-  tags: ['enemy', 'beast', 'feral'],
+  tags: ['enemy', 'beast', 'feral', 'role:brute'],
   stats: { might: 8, agility: 4, showmanship: 0 },
   resources: { hp: 22, stamina: 6 },
   statuses: [],
   zoneId: 'arena-floor',
   ai: { profileId: 'aggressive', goals: ['kill-prey'], fears: ['fire'], alertLevel: 0, knowledge: {} },
+};
+
+export const arenaOverlord: EntityState = {
+  id: 'arena-overlord',
+  blueprintId: 'arena-overlord',
+  type: 'enemy',
+  name: 'The Overlord',
+  tags: ['enemy', 'gladiator', 'role:boss'],
+  stats: { might: 9, agility: 5, showmanship: 6 },
+  resources: { hp: 60, maxHp: 60, stamina: 15, maxStamina: 15, fatigue: 0, 'crowd-favor': 90 },
+  statuses: [],
+  zoneId: 'arena-floor',
+  ai: { profileId: 'territorial', goals: ['dominate-arena'], fears: ['rebellion'], alertLevel: 0, knowledge: {} },
+};
+
+export const arenaOverlordBoss: BossDefinition = {
+  entityId: 'arena-overlord',
+  phases: [
+    {
+      hpThreshold: 0.75,
+      narrativeKey: 'calls-reinforcements',
+      addTags: ['rallying'],
+    },
+    {
+      hpThreshold: 0.5,
+      narrativeKey: 'berserker',
+      addTags: ['enraged'],
+      removeTags: ['rallying'],
+    },
+    {
+      hpThreshold: 0.25,
+      narrativeKey: 'desperate-last-stand',
+      addTags: ['desperate'],
+      removeTags: ['enraged'],
+    },
+  ],
+  immovable: true,
+};
+
+export const championshipBout: EncounterDefinition = {
+  id: 'championship-bout',
+  name: 'The Championship Bout',
+  participants: [
+    { entityId: 'arena-overlord', role: 'boss' },
+    { entityId: 'war-beast', role: 'brute' },
+  ],
+  composition: 'boss-fight',
+  validZoneIds: ['arena-floor'],
+  narrativeHooks: {
+    tone: 'spectacle, roaring crowd, blood and glory',
+    trigger: 'The final challenge for freedom',
+    stakes: 'Freedom or death in the arena',
+  },
 };
 
 // --- Zones ---

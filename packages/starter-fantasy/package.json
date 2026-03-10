@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/starter-fantasy",
-  "version": "2.0.14",
+  "version": "2.0.15",
   "description": "AI RPG Engine fantasy starter: The Chapel Threshold",
   "type": "module",
   "main": "./dist/index.js",

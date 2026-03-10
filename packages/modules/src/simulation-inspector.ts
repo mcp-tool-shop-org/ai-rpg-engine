@@ -21,6 +21,8 @@ import { hasStatus } from './status-core.js';
 import { COMBAT_STATES } from './combat-core.js';
 import { ENGAGEMENT_STATES } from './engagement-core.js';
 import { WOUND_STATUSES, MORALE_AFTERMATH_STATUSES } from './combat-recovery.js';
+import { getEntityRole, BUILTIN_COMBAT_ROLES } from './combat-roles.js';
+import type { CombatRole } from './combat-roles.js';
 
 // --- Types ---
 
@@ -29,6 +31,7 @@ export type EntityInspection = {
   name: string;
   zone: string | undefined;
   faction: string | undefined;
+  combatRole: CombatRole | undefined;
   cognition: {
     beliefs: Belief[];
     recentMemories: Memory[];
@@ -125,6 +128,23 @@ export function createSimulationInspector(): EngineModule {
       });
 
       ctx.debug.registerInspector({
+        id: 'combat-roles',
+        label: 'Combat Role Analysis',
+        inspect: (world) => {
+          const results: Record<string, { role: CombatRole | undefined; biasName: string | undefined }> = {};
+          for (const entity of Object.values(world.entities)) {
+            if (entity.type !== 'enemy') continue;
+            const role = getEntityRole(entity);
+            results[entity.id] = {
+              role,
+              biasName: role ? BUILTIN_COMBAT_ROLES[role]?.bias.name : undefined,
+            };
+          }
+          return results;
+        },
+      });
+
+      ctx.debug.registerInspector({
         id: 'simulation-snapshot',
         label: 'Full Simulation Snapshot',
         inspect: (world) => createSnapshot(world),
@@ -176,6 +196,7 @@ export function inspectEntity(world: WorldState, entityId: string): EntityInspec
     name: entity.name,
     zone: entity.zoneId,
     faction: getEntityFaction(world, entityId),
+    combatRole: getEntityRole(entity),
     cognition: {
       beliefs: cog.beliefs,
       recentMemories: cog.memories.slice(-10),
@@ -352,6 +373,7 @@ export function formatEntityInspection(inspection: EntityInspection): string {
   lines.push(`Entity: ${inspection.name} (${inspection.id})`);
   lines.push(`  Zone: ${inspection.zone ?? 'none'}`);
   lines.push(`  Faction: ${inspection.faction ?? 'none'}`);
+  if (inspection.combatRole) lines.push(`  Role: ${inspection.combatRole}`);
   const cs = inspection.combatState;
   lines.push(`  HP: ${cs.hp}/${cs.maxHp} (${(cs.hpRatio * 100).toFixed(0)}%)  Stamina: ${cs.stamina}/${cs.maxStamina}`);
   if (cs.engagementStatuses.length > 0) lines.push(`  Engagement: ${cs.engagementStatuses.join(', ')}`);

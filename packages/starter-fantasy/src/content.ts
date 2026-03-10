@@ -7,6 +7,7 @@ import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
+import type { EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
 
 export const manifest: GameManifest = {
   id: 'chapel-threshold',
@@ -88,12 +89,61 @@ export const ashGhoul: EntityState = {
   blueprintId: 'ash-ghoul',
   type: 'enemy',
   name: 'Ash Ghoul',
-  tags: ['enemy', 'undead'],
+  tags: ['enemy', 'undead', 'role:brute'],
   stats: { vigor: 4, instinct: 3, will: 1 },
   resources: { hp: 12, stamina: 4 },
   statuses: [],
   zoneId: 'crypt-chamber',
   ai: { profileId: 'aggressive', goals: ['guard-crypt'], fears: ['fire', 'sacred'], alertLevel: 0, knowledge: {} },
+};
+
+export const cryptWarden: EntityState = {
+  id: 'crypt-warden',
+  blueprintId: 'crypt-warden',
+  type: 'enemy',
+  name: 'Crypt Warden',
+  tags: ['enemy', 'undead', 'role:boss'],
+  stats: { vigor: 7, instinct: 4, will: 5 },
+  resources: { hp: 45, maxHp: 45, stamina: 12, maxStamina: 12 },
+  statuses: [],
+  zoneId: 'crypt-chamber',
+  ai: { profileId: 'territorial', goals: ['protect-crypt', 'destroy-intruders'], fears: ['sacred'], alertLevel: 0, knowledge: {} },
+};
+
+export const cryptWardenBoss: BossDefinition = {
+  entityId: 'crypt-warden',
+  phases: [
+    {
+      hpThreshold: 0.5,
+      narrativeKey: 'enraged',
+      addTags: ['enraged'],
+    },
+    {
+      hpThreshold: 0.25,
+      narrativeKey: 'desperate',
+      addTags: ['desperate'],
+      removeTags: ['enraged'],
+    },
+  ],
+  immovable: true,
+};
+
+// --- Encounters ---
+
+export const cryptEncounter: EncounterDefinition = {
+  id: 'crypt-descent',
+  name: 'The Crypt Descent',
+  participants: [
+    { entityId: 'ash-ghoul', role: 'brute' },
+    { entityId: 'crypt-warden', role: 'boss' },
+  ],
+  composition: 'boss-fight',
+  validZoneIds: ['crypt-chamber'],
+  narrativeHooks: {
+    tone: 'dread, oppressive darkness',
+    trigger: 'Entering the crypt antechamber',
+    stakes: 'The Ember Sigil and escape from the crypt',
+  },
 };
 
 // --- Zones ---

@@ -17,6 +17,8 @@ import { COMBAT_STATES, DEFAULT_STAT_MAPPING } from './combat-core.js';
 import type { CombatStatMapping } from './combat-core.js';
 import { ENGAGEMENT_STATES } from './engagement-core.js';
 import { getCognition } from './cognition-core.js';
+import { BUILTIN_COMBAT_ROLES } from './combat-roles.js';
+import type { CombatRole } from './combat-roles.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -116,7 +118,7 @@ function buildContext(entity: EntityState, world: WorldState, config?: CombatInt
     }
   }
 
-  // Find first matching pack bias
+  // Find first matching pack bias (explicit config > role tag > none)
   let packBias: PackBias | null = null;
   if (config?.packBiases) {
     for (const bias of config.packBiases) {
@@ -124,6 +126,14 @@ function buildContext(entity: EntityState, world: WorldState, config?: CombatInt
         packBias = bias;
         break;
       }
+    }
+  }
+  if (!packBias) {
+    const roleTag = entity.tags.find(t => t.startsWith('role:'));
+    if (roleTag) {
+      const role = roleTag.slice(5) as CombatRole;
+      const template = BUILTIN_COMBAT_ROLES[role];
+      if (template) packBias = template.bias;
     }
   }
 

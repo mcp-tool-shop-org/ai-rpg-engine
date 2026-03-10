@@ -25,6 +25,7 @@ import {
   createCombatIntent,
   BUILTIN_PACK_BIASES,
   createCombatRecovery,
+  createBossPhaseListener,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -35,6 +36,8 @@ import {
   nerva,
   arenaChampion,
   warBeast,
+  arenaOverlord,
+  arenaOverlordBoss,
   zones,
   districts,
   patronDialogue,
@@ -132,7 +135,7 @@ export function createGame(seed?: number): Engine {
         factions: [
           {
             factionId: 'arena-stable',
-            entityIds: ['lanista-brutus', 'nerva', 'arena-champion'],
+            entityIds: ['lanista-brutus', 'nerva', 'arena-champion', 'arena-overlord'],
             cohesion: 0.5,
           },
           {
@@ -150,13 +153,14 @@ export function createGame(seed?: number): Engine {
       }),
       createDefeatFallout({
         factions: [
-          { factionId: 'arena-stable', entityIds: ['lanista-brutus', 'nerva', 'arena-champion'] },
+          { factionId: 'arena-stable', entityIds: ['lanista-brutus', 'nerva', 'arena-champion', 'arena-overlord'] },
           { factionId: 'patron-circle', entityIds: ['domina-valeria'] },
         ],
         playerId: 'player',
       }),
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['feral', 'beast'].includes(b.tag)) }),
       createCombatRecovery(),
+      createBossPhaseListener(arenaOverlordBoss),
       createSimulationInspector(),
     ],
   });
@@ -173,6 +177,7 @@ export function createGame(seed?: number): Engine {
   engine.store.addEntity({ ...nerva });
   engine.store.addEntity({ ...arenaChampion });
   engine.store.addEntity({ ...warBeast });
+  engine.store.addEntity({ ...arenaOverlord });
 
   // Set player
   engine.store.state.playerId = 'player';
