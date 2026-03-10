@@ -19,6 +19,8 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
+  createEngagementCore,
+  withEngagement,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -82,7 +84,8 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      createCombatCore(roninFormulas),
+      createEngagementCore({ playerId: 'player', protectorTags: ['bodyguard', 'samurai'] }),
+      createCombatCore(withEngagement(roninFormulas)),
       createInventoryCore([incenseKitEffect]),
       createDialogueCore([magistrateDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),

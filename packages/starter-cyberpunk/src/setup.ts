@@ -19,6 +19,8 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
+  createEngagementCore,
+  withEngagement,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -80,7 +82,8 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      createCombatCore(cyberpunkFormulas),
+      createEngagementCore({ playerId: 'runner', backlineTags: ['ranged', 'caster', 'netrunner'] }),
+      createCombatCore(withEngagement(cyberpunkFormulas)),
       createInventoryCore([iceBreaker]),
       createDialogueCore([fixerDialogue]),
       createCognitionCore({ decay: { baseRate: 0.03, pruneThreshold: 0.05, instabilityFactor: 0.8 } }),

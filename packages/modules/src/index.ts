@@ -572,6 +572,10 @@ export type {
 export { createDefeatFallout } from './defeat-fallout.js';
 export type { DefeatFalloutConfig } from './defeat-fallout.js';
 
+// --- Engagement Core (Phase 5) ---
+export { createEngagementCore, withEngagement, ENGAGEMENT_STATES, isEngaged, isProtected, isBackline, isIsolated } from './engagement-core.js';
+export type { EngagementConfig } from './engagement-core.js';
+
 // --- Endgame Detection (v2.0) ---
 export {
   evaluateEndgame,

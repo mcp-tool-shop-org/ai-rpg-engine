@@ -19,6 +19,8 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
+  createEngagementCore,
+  withEngagement,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -82,7 +84,8 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      createCombatCore(vampireFormulas),
+      createEngagementCore({ playerId: 'player', backlineTags: ['ranged', 'caster', 'thrall'] }),
+      createCombatCore(withEngagement(vampireFormulas)),
       createInventoryCore([bloodVialEffect]),
       createDialogueCore([duchessDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),

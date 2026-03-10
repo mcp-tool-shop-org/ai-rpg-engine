@@ -19,6 +19,8 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
+  createEngagementCore,
+  withEngagement,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -81,7 +83,8 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      createCombatCore(colonyFormulas),
+      createEngagementCore({ playerId: 'commander' }),
+      createCombatCore(withEngagement(colonyFormulas)),
       createInventoryCore([emergencyCellEffect]),
       createDialogueCore([scientistDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),

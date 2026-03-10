@@ -19,6 +19,8 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
+  createEngagementCore,
+  withEngagement,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -82,7 +84,8 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      createCombatCore(zombieFormulas),
+      createEngagementCore({ playerId: 'survivor' }),
+      createCombatCore(withEngagement(zombieFormulas)),
       createInventoryCore([antibioticsEffect]),
       createDialogueCore([medicDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
