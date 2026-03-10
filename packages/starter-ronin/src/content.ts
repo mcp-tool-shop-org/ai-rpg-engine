@@ -7,7 +7,7 @@ import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engi
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
-import type { DistrictDefinition } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
 
 export const manifest: GameManifest = {
   id: 'jade-veil',
@@ -89,7 +89,7 @@ export const shadowAssassin: EntityState = {
   blueprintId: 'shadow-assassin',
   type: 'enemy',
   name: 'Shadow Assassin',
-  tags: ['enemy', 'assassin', 'hidden'],
+  tags: ['enemy', 'assassin', 'hidden', 'role:skirmisher'],
   stats: { discipline: 7, perception: 5, composure: 6 },
   resources: { hp: 14, stamina: 6, ki: 20 },
   statuses: [],
@@ -102,12 +102,82 @@ export const corruptSamurai: EntityState = {
   blueprintId: 'corrupt-samurai',
   type: 'enemy',
   name: 'Corrupt Samurai',
-  tags: ['enemy', 'samurai', 'traitor'],
+  tags: ['enemy', 'samurai', 'traitor', 'role:boss'],
   stats: { discipline: 6, perception: 4, composure: 3 },
-  resources: { hp: 18, stamina: 5, honor: 5 },
+  resources: { hp: 18, maxHp: 18, stamina: 5, maxStamina: 5, honor: 5 },
   statuses: [],
   zoneId: 'castle-gate',
   ai: { profileId: 'defensive', goals: ['guard-passage', 'conceal-guilt'], fears: ['accusation'], alertLevel: 0, knowledge: {} },
+};
+
+export const castleGuard: EntityState = {
+  id: 'castle-guard',
+  blueprintId: 'castle-guard',
+  type: 'enemy',
+  name: 'Castle Guard',
+  tags: ['enemy', 'samurai', 'loyal', 'role:bodyguard'],
+  stats: { discipline: 5, perception: 4, composure: 5 },
+  resources: { hp: 18, stamina: 4, honor: 20 },
+  statuses: [],
+  zoneId: 'castle-gate',
+  ai: { profileId: 'defensive', goals: ['protect-castle', 'challenge-intruders'], fears: ['dishonor'], alertLevel: 0, knowledge: {} },
+};
+
+// --- Boss Definition ---
+
+export const corruptSamuraiBoss: BossDefinition = {
+  entityId: 'corrupt-samurai',
+  phases: [
+    {
+      hpThreshold: 0.5,
+      narrativeKey: 'fury-unleashed',
+      addTags: ['enraged', 'reckless'],
+    },
+    {
+      hpThreshold: 0.25,
+      narrativeKey: 'final-stance',
+      addTags: ['desperate', 'cornered'],
+      removeTags: ['enraged'],
+    },
+  ],
+};
+
+// --- Encounters ---
+
+export const gatePatrol: EncounterDefinition = {
+  id: 'gate-patrol',
+  name: 'Gate Patrol',
+  participants: [
+    { entityId: 'castle-guard', role: 'bodyguard' },
+    { entityId: 'corrupt-samurai', role: 'boss' },
+  ],
+  composition: 'patrol',
+  validZoneIds: ['castle-gate', 'great-hall'],
+  narrativeHooks: { tone: 'formal', trigger: 'Armored guards patrol the castle corridors.', stakes: 'Suspicion falls on the masterless.' },
+};
+
+export const teaGardenAmbush: EncounterDefinition = {
+  id: 'tea-garden-ambush',
+  name: 'Tea Garden Ambush',
+  participants: [
+    { entityId: 'shadow-assassin', role: 'skirmisher' },
+    { entityId: 'shadow-assassin', role: 'skirmisher' },
+  ],
+  composition: 'ambush',
+  validZoneIds: ['tea-garden'],
+  narrativeHooks: { tone: 'sudden', trigger: 'Shadows move among the cherry blossoms.', stakes: 'The assassin strikes without warning.' },
+};
+
+export const lordsChamberShowdown: EncounterDefinition = {
+  id: 'lords-chamber-showdown',
+  name: "Lord's Chamber Showdown",
+  participants: [
+    { entityId: 'corrupt-samurai', role: 'boss' },
+    { entityId: 'castle-guard', role: 'bodyguard' },
+  ],
+  composition: 'boss-fight',
+  validZoneIds: ['lords-chamber'],
+  narrativeHooks: { tone: 'climactic', trigger: 'The traitor reveals himself at last.', stakes: 'Justice or death in the lord\'s own chamber.' },
 };
 
 // --- Zones ---

@@ -7,7 +7,7 @@ import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engi
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
-import type { DistrictDefinition } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
 
 export const manifest: GameManifest = {
   id: 'crimson-court',
@@ -89,7 +89,7 @@ export const witchHunter: EntityState = {
   blueprintId: 'witch-hunter',
   type: 'enemy',
   name: 'Witch Hunter',
-  tags: ['enemy', 'human', 'hunter'],
+  tags: ['enemy', 'human', 'hunter', 'role:elite'],
   stats: { presence: 3, vitality: 6, cunning: 5 },
   resources: { hp: 18, stamina: 5 },
   statuses: [],
@@ -102,12 +102,83 @@ export const feralThrall: EntityState = {
   blueprintId: 'feral-thrall',
   type: 'enemy',
   name: 'Feral Thrall',
-  tags: ['enemy', 'vampire', 'feral'],
+  tags: ['enemy', 'vampire', 'feral', 'role:minion'],
   stats: { presence: 1, vitality: 7, cunning: 2 },
   resources: { hp: 14, stamina: 6, bloodlust: 95 },
   statuses: [],
   zoneId: 'wine-cellar',
   ai: { profileId: 'aggressive', goals: ['feed'], fears: ['fire', 'sunlight'], alertLevel: 0, knowledge: {} },
+};
+
+export const elderVampire: EntityState = {
+  id: 'elder-vampire',
+  blueprintId: 'elder-vampire',
+  type: 'enemy',
+  name: 'Elder Vampire',
+  tags: ['enemy', 'vampire', 'elder', 'role:boss'],
+  stats: { presence: 8, vitality: 7, cunning: 6 },
+  resources: { hp: 50, maxHp: 50, stamina: 14, maxStamina: 14, bloodlust: 5, humanity: 2 },
+  statuses: [],
+  zoneId: 'grand-ballroom',
+  ai: { profileId: 'calculating', goals: ['dominate-court', 'feed-selectively'], fears: ['sunlight', 'fire'], alertLevel: 0, knowledge: {} },
+};
+
+// --- Boss Definition ---
+
+export const elderVampireBoss: BossDefinition = {
+  entityId: 'elder-vampire',
+  phases: [
+    {
+      hpThreshold: 0.5,
+      narrativeKey: 'mesmerize',
+      addTags: ['mesmerizing', 'dominating'],
+    },
+    {
+      hpThreshold: 0.25,
+      narrativeKey: 'blood-frenzy',
+      addTags: ['frenzied', 'desperate'],
+      removeTags: ['mesmerizing'],
+    },
+  ],
+};
+
+// --- Encounters ---
+
+export const cellarPatrol: EncounterDefinition = {
+  id: 'cellar-patrol',
+  name: 'Cellar Patrol',
+  participants: [
+    { entityId: 'feral-thrall', role: 'minion' },
+    { entityId: 'feral-thrall', role: 'minion' },
+    { entityId: 'witch-hunter', role: 'elite' },
+  ],
+  composition: 'patrol',
+  validZoneIds: ['wine-cellar', 'moonlit-garden'],
+  narrativeHooks: { tone: 'stalking', trigger: 'Shadows shift in the candlelight.', stakes: 'Blood or dust — someone feeds tonight.' },
+};
+
+export const galleryAmbush: EncounterDefinition = {
+  id: 'gallery-ambush',
+  name: 'Gallery Ambush',
+  participants: [
+    { entityId: 'witch-hunter', role: 'elite' },
+    { entityId: 'witch-hunter', role: 'elite' },
+  ],
+  composition: 'ambush',
+  validZoneIds: ['east-gallery'],
+  narrativeHooks: { tone: 'sudden', trigger: 'Silver glints from behind the portraits.', stakes: 'The hunters have found their prey.' },
+};
+
+export const ballroomReckoning: EncounterDefinition = {
+  id: 'ballroom-reckoning',
+  name: 'Ballroom Reckoning',
+  participants: [
+    { entityId: 'elder-vampire', role: 'boss' },
+    { entityId: 'feral-thrall', role: 'minion' },
+  ],
+  composition: 'boss-fight',
+  validZoneIds: ['grand-ballroom'],
+  narrativeHooks: { tone: 'climactic', trigger: 'The elder drops the masquerade.', stakes: 'The court will have a new master — or a new corpse.' },
 };
 
 // --- Zones ---

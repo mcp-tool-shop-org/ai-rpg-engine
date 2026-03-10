@@ -653,6 +653,26 @@ export type {
   ProjectCombatAudit,
 } from './combat-summary.js';
 
+// --- Encounter Library (Phase 10) ---
+export {
+  createPatrolEncounter,
+  createAmbushEncounter,
+  createBossFightEncounter,
+  createHordeEncounter,
+  createDuelEncounter,
+  createEscalatingBoss,
+  createSummonerBoss,
+  createPhaseShiftBoss,
+  auditPackCoverage,
+} from './encounter-library.js';
+export type {
+  EncounterArchetype,
+  EncounterArchetypeConfig,
+  BossPattern,
+  BossTemplateConfig,
+  PackCoverageResult,
+} from './encounter-library.js';
+
 // --- Endgame Detection (v2.0) ---
 export {
   evaluateEndgame,

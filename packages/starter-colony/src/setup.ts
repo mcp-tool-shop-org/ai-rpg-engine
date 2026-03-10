@@ -25,6 +25,7 @@ import {
   createCombatIntent,
   BUILTIN_PACK_BIASES,
   createCombatRecovery,
+  createBossPhaseListener,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -34,6 +35,8 @@ import {
   security,
   drone,
   resonance,
+  swarmLarva,
+  resonanceBoss,
   zones,
   districts,
   scientistDialogue,
@@ -145,6 +148,7 @@ export function createGame(seed?: number): Engine {
       }),
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['drone', 'alien'].includes(b.tag)) }),
       createCombatRecovery({ safeZoneTags: ['safe', 'colony-core'] }),
+      createBossPhaseListener(resonanceBoss),
       createSimulationInspector(),
     ],
   });
@@ -160,6 +164,7 @@ export function createGame(seed?: number): Engine {
   engine.store.addEntity({ ...security });
   engine.store.addEntity({ ...drone });
   engine.store.addEntity({ ...resonance });
+  engine.store.addEntity({ ...swarmLarva });
 
   // Set player
   engine.store.state.playerId = 'commander';

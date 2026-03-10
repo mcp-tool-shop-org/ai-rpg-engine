@@ -25,6 +25,7 @@ import {
   createCombatIntent,
   BUILTIN_PACK_BIASES,
   createCombatRecovery,
+  createBossPhaseListener,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -34,6 +35,9 @@ import {
   constable,
   servant,
   thug,
+  hiredMuscle,
+  crimeBoss,
+  crimeBossDef,
   zones,
   districts,
   widowDialogue,
@@ -135,6 +139,7 @@ export function createGame(seed?: number): Engine {
       }),
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['criminal'].includes(b.tag)) }),
       createCombatRecovery(),
+      createBossPhaseListener(crimeBossDef),
       createSimulationInspector(),
     ],
   });
@@ -150,6 +155,8 @@ export function createGame(seed?: number): Engine {
   engine.store.addEntity({ ...constable });
   engine.store.addEntity({ ...servant });
   engine.store.addEntity({ ...thug });
+  engine.store.addEntity({ ...hiredMuscle });
+  engine.store.addEntity({ ...crimeBoss });
 
   // Set player
   engine.store.state.playerId = 'inspector';

@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/starter-zombie",
-  "version": "2.1.6",
+  "version": "2.1.7",
   "description": "AI RPG Engine zombie survival starter: Ashfall Dead",
   "type": "module",
   "main": "./dist/index.js",

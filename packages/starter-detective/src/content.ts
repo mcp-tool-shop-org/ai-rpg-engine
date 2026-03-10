@@ -3,7 +3,7 @@
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
-import type { DistrictDefinition } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -86,7 +86,7 @@ export const thug: EntityState = {
   blueprintId: 'thug',
   type: 'enemy',
   name: 'Dock Thug',
-  tags: ['enemy', 'criminal', 'male'],
+  tags: ['enemy', 'criminal', 'male', 'role:minion'],
   stats: { perception: 3, eloquence: 2, grit: 6 },
   resources: { hp: 14, stamina: 5, composure: 6 },
   statuses: [],
@@ -98,6 +98,91 @@ export const thug: EntityState = {
     alertLevel: 0,
     knowledge: {},
   },
+};
+
+export const hiredMuscle: EntityState = {
+  id: 'hired-muscle',
+  blueprintId: 'hired-muscle',
+  type: 'enemy',
+  name: 'Hired Muscle',
+  tags: ['enemy', 'criminal', 'enforcer', 'role:brute'],
+  stats: { perception: 3, eloquence: 2, grit: 6 },
+  resources: { hp: 18, stamina: 5, composure: 8 },
+  statuses: [],
+  zoneId: 'back-alley',
+  ai: { profileId: 'aggressive', goals: ['protect-boss', 'intimidate'], fears: ['law'], alertLevel: 0, knowledge: {} },
+};
+
+export const crimeBoss: EntityState = {
+  id: 'crime-boss',
+  blueprintId: 'crime-boss',
+  type: 'enemy',
+  name: 'Mr. Hargreaves',
+  tags: ['enemy', 'criminal', 'mastermind', 'role:boss'],
+  stats: { perception: 6, eloquence: 7, grit: 5 },
+  resources: { hp: 40, maxHp: 40, stamina: 10, maxStamina: 10, composure: 20 },
+  statuses: [],
+  zoneId: 'back-alley',
+  ai: { profileId: 'calculating', goals: ['eliminate-witnesses', 'control-docks'], fears: ['exposure'], alertLevel: 0, knowledge: {} },
+};
+
+// --- Boss Definition ---
+
+export const crimeBossDef: BossDefinition = {
+  entityId: 'crime-boss',
+  phases: [
+    {
+      hpThreshold: 0.5,
+      narrativeKey: 'calculating',
+      addTags: ['scheming', 'calling-reinforcements'],
+    },
+    {
+      hpThreshold: 0.25,
+      narrativeKey: 'cornered',
+      addTags: ['desperate', 'violent'],
+      removeTags: ['scheming'],
+    },
+  ],
+};
+
+// --- Encounters ---
+
+export const alleyPatrol: EncounterDefinition = {
+  id: 'alley-patrol',
+  name: 'Alley Patrol',
+  participants: [
+    { entityId: 'dock_thug', role: 'minion' },
+    { entityId: 'hired-muscle', role: 'brute' },
+  ],
+  composition: 'patrol',
+  validZoneIds: ['back-alley', 'front-entrance'],
+  narrativeHooks: { tone: 'threatening', trigger: 'Heavy footsteps echo through the fog.', stakes: 'The docks are watched.' },
+};
+
+export const docksideAmbush: EncounterDefinition = {
+  id: 'dockside-ambush',
+  name: 'Dockside Ambush',
+  participants: [
+    { entityId: 'dock_thug', role: 'minion' },
+    { entityId: 'dock_thug', role: 'minion' },
+    { entityId: 'hired-muscle', role: 'brute' },
+  ],
+  composition: 'ambush',
+  validZoneIds: ['back-alley'],
+  narrativeHooks: { tone: 'sudden', trigger: 'A whistle cuts the fog — you are surrounded.', stakes: 'Fight or lose the case forever.' },
+};
+
+export const crimeLordConfrontation: EncounterDefinition = {
+  id: 'crime-lord-confrontation',
+  name: 'Crime Lord Confrontation',
+  participants: [
+    { entityId: 'crime-boss', role: 'boss' },
+    { entityId: 'hired-muscle', role: 'brute' },
+    { entityId: 'dock_thug', role: 'minion' },
+  ],
+  composition: 'boss-fight',
+  validZoneIds: ['back-alley'],
+  narrativeHooks: { tone: 'climactic', trigger: 'Hargreaves steps from the shadows.', stakes: 'Justice or silence — only one walks away.' },
 };
 
 // --- Zones ---

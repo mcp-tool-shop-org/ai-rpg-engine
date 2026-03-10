@@ -163,6 +163,38 @@ export const championshipBout: EncounterDefinition = {
   },
 };
 
+export const arenaPatrol: EncounterDefinition = {
+  id: 'arena-patrol',
+  name: 'Arena Patrol',
+  participants: [
+    { entityId: 'arena-champion', role: 'elite' },
+    { entityId: 'war-beast', role: 'brute' },
+  ],
+  composition: 'patrol',
+  validZoneIds: ['arena-floor', 'armory'],
+  narrativeHooks: {
+    tone: 'tension, sizing up the competition',
+    trigger: 'The champion stalks the arena grounds between bouts',
+    stakes: 'Reputation and readiness',
+  },
+};
+
+export const beastAmbush: EncounterDefinition = {
+  id: 'beast-ambush',
+  name: 'Beast Pen Ambush',
+  participants: [
+    { entityId: 'war-beast', role: 'brute' },
+    { entityId: 'war-beast', role: 'brute' },
+  ],
+  composition: 'ambush',
+  validZoneIds: ['tunnel-exit', 'holding-cells'],
+  narrativeHooks: {
+    tone: 'feral rage, echoing roars in confined tunnels',
+    trigger: 'War beasts escape their pens during a bout',
+    stakes: 'Survival in the underground passages',
+  },
+};
+
 // --- Zones ---
 
 export const zones: ZoneState[] = [

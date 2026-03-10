@@ -3,7 +3,7 @@
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
-import type { DistrictDefinition } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -74,7 +74,7 @@ export const revenant: EntityState = {
   blueprintId: 'revenant',
   type: 'enemy',
   name: 'Dust Revenant',
-  tags: ['enemy', 'undead', 'cursed', 'gunslinger'],
+  tags: ['enemy', 'undead', 'cursed', 'gunslinger', 'role:elite'],
   stats: { grit: 6, 'draw-speed': 7, lore: 1 },
   resources: { hp: 14, stamina: 6, resolve: 20, dust: 0 },
   statuses: [],
@@ -93,9 +93,9 @@ export const crawler: EntityState = {
   blueprintId: 'crawler',
   type: 'enemy',
   name: 'Mesa Crawler',
-  tags: ['enemy', 'spirit', 'beast', 'supernatural'],
+  tags: ['enemy', 'spirit', 'beast', 'supernatural', 'role:boss'],
   stats: { grit: 4, 'draw-speed': 3, lore: 8 },
-  resources: { hp: 10, stamina: 4, resolve: 25, dust: 0 },
+  resources: { hp: 10, maxHp: 10, stamina: 4, maxStamina: 4, resolve: 25, dust: 0 },
   statuses: [],
   zoneId: 'spirit-hollow',
   ai: {
@@ -105,6 +105,76 @@ export const crawler: EntityState = {
     alertLevel: 0,
     knowledge: {},
   },
+};
+
+export const banditRider: EntityState = {
+  id: 'bandit-rider',
+  blueprintId: 'bandit-rider',
+  type: 'enemy',
+  name: 'Bandit Rider',
+  tags: ['enemy', 'human', 'outlaw', 'role:skirmisher'],
+  stats: { grit: 4, 'draw-speed': 5, lore: 2 },
+  resources: { hp: 10, stamina: 5, resolve: 10, dust: 0 },
+  statuses: [],
+  zoneId: 'red-mesa-trail',
+  ai: { profileId: 'aggressive', goals: ['rob-travelers', 'ambush'], fears: ['law', 'spirits'], alertLevel: 0, knowledge: {} },
+};
+
+// --- Boss Definition ---
+
+export const mesaCrawlerBoss: BossDefinition = {
+  entityId: 'mesa_crawler',
+  phases: [
+    {
+      hpThreshold: 0.5,
+      narrativeKey: 'feeding-frenzy',
+      addTags: ['frenzied', 'spirit-charged'],
+    },
+    {
+      hpThreshold: 0.25,
+      narrativeKey: 'death-wail',
+      addTags: ['desperate', 'wailing'],
+      removeTags: ['frenzied'],
+    },
+  ],
+};
+
+// --- Encounters ---
+
+export const trailPatrol: EncounterDefinition = {
+  id: 'trail-patrol',
+  name: 'Trail Patrol',
+  participants: [
+    { entityId: 'bandit-rider', role: 'skirmisher' },
+    { entityId: 'dust_revenant', role: 'elite' },
+  ],
+  composition: 'patrol',
+  validZoneIds: ['red-mesa-trail', 'crossroads'],
+  narrativeHooks: { tone: 'ominous', trigger: 'Hoofbeats and the rattle of dry bones.', stakes: 'The trail takes its toll.' },
+};
+
+export const saloonAmbush: EncounterDefinition = {
+  id: 'saloon-ambush',
+  name: 'Saloon Ambush',
+  participants: [
+    { entityId: 'bandit-rider', role: 'skirmisher' },
+    { entityId: 'bandit-rider', role: 'skirmisher' },
+  ],
+  composition: 'ambush',
+  validZoneIds: ['saloon'],
+  narrativeHooks: { tone: 'sudden', trigger: 'The piano stops. Hands move to holsters.', stakes: 'Draw or die.' },
+};
+
+export const spiritHollowShowdown: EncounterDefinition = {
+  id: 'spirit-hollow-showdown',
+  name: 'Spirit Hollow Showdown',
+  participants: [
+    { entityId: 'mesa_crawler', role: 'boss' },
+    { entityId: 'dust_revenant', role: 'elite' },
+  ],
+  composition: 'boss-fight',
+  validZoneIds: ['spirit-hollow'],
+  narrativeHooks: { tone: 'dread', trigger: 'The hollow screams with spirit fire.', stakes: 'Banish the crawler or join the dead.' },
 };
 
 // --- Zones ---

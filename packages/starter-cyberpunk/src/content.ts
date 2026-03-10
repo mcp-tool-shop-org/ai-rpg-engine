@@ -76,12 +76,96 @@ export const iceAgent: EntityState = {
   blueprintId: 'ice-sentry',
   type: 'enemy',
   name: 'ICE Sentry',
-  tags: ['enemy', 'ice-agent', 'autonomous'],
+  tags: ['enemy', 'ice-agent', 'autonomous', 'role:bodyguard'],
   stats: { chrome: 6, reflex: 4, netrunning: 2 },
   resources: { hp: 10, ice: 15 },
   statuses: [],
   zoneId: 'data-vault',
   ai: { profileId: 'aggressive', goals: ['guard-vault'], fears: [], alertLevel: 0, knowledge: {} },
+};
+
+export const streetRunner: EntityState = {
+  id: 'street-runner',
+  blueprintId: 'street-runner',
+  type: 'enemy',
+  name: 'Street Runner',
+  tags: ['enemy', 'gang', 'netrunner', 'role:skirmisher'],
+  stats: { chrome: 3, reflex: 6, netrunning: 4 },
+  resources: { hp: 10, stamina: 5, ice: 5 },
+  statuses: [],
+  zoneId: 'street-level',
+  ai: { profileId: 'aggressive', goals: ['defend-turf', 'hack-intruders'], fears: ['ice-overload'], alertLevel: 0, knowledge: {} },
+};
+
+export const vaultOverseer: EntityState = {
+  id: 'vault-overseer',
+  blueprintId: 'vault-overseer',
+  type: 'enemy',
+  name: 'Vault Overseer',
+  tags: ['enemy', 'corporate', 'ai-construct', 'role:boss'],
+  stats: { chrome: 7, reflex: 5, netrunning: 8 },
+  resources: { hp: 45, maxHp: 45, stamina: 12, maxStamina: 12, ice: 30 },
+  statuses: [],
+  zoneId: 'data-vault',
+  ai: { profileId: 'calculating', goals: ['protect-data', 'eliminate-intruders'], fears: [], alertLevel: 0, knowledge: {} },
+};
+
+// --- Boss Definition ---
+
+export const vaultOverseerBoss: BossDefinition = {
+  entityId: 'vault-overseer',
+  phases: [
+    {
+      hpThreshold: 0.5,
+      narrativeKey: 'firewall-up',
+      addTags: ['shielded', 'counter-hacking'],
+    },
+    {
+      hpThreshold: 0.25,
+      narrativeKey: 'system-crash',
+      addTags: ['glitching', 'desperate'],
+      removeTags: ['shielded'],
+    },
+  ],
+  immovable: true,
+};
+
+// --- Encounters ---
+
+export const streetSweep: EncounterDefinition = {
+  id: 'street-sweep',
+  name: 'Street Sweep',
+  participants: [
+    { entityId: 'street-runner', role: 'skirmisher' },
+    { entityId: 'ice-sentry', role: 'bodyguard' },
+  ],
+  composition: 'patrol',
+  validZoneIds: ['street-level'],
+  narrativeHooks: { tone: 'tense', trigger: 'Neon shadows shift — someone is scanning.', stakes: 'Get spotted and the whole block locks down.' },
+};
+
+export const serverBreach: EncounterDefinition = {
+  id: 'server-breach',
+  name: 'Server Breach',
+  participants: [
+    { entityId: 'street-runner', role: 'skirmisher' },
+    { entityId: 'street-runner', role: 'skirmisher' },
+  ],
+  composition: 'ambush',
+  validZoneIds: ['server-room'],
+  narrativeHooks: { tone: 'urgent', trigger: 'Alarms blare — ICE countermeasures activate.', stakes: 'Jack out or get flatlined.' },
+};
+
+export const vaultLockdown: EncounterDefinition = {
+  id: 'vault-lockdown',
+  name: 'Vault Lockdown',
+  participants: [
+    { entityId: 'vault-overseer', role: 'boss' },
+    { entityId: 'ice-sentry', role: 'bodyguard' },
+  ],
+  composition: 'boss-fight',
+  validZoneIds: ['data-vault'],
+  narrativeHooks: { tone: 'climactic', trigger: 'The Overseer manifests in the datastream.', stakes: 'Crack the vault or lose everything.' },
 };
 
 // --- Zones ---
@@ -192,7 +276,7 @@ export const fixerDialogue: DialogueDefinition = {
 
 // --- Districts ---
 
-import type { DistrictDefinition } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
 
 export const districts: DistrictDefinition[] = [
   {

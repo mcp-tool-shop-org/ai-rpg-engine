@@ -25,6 +25,7 @@ import {
   createCombatIntent,
   BUILTIN_PACK_BIASES,
   createCombatRecovery,
+  createBossPhaseListener,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -35,6 +36,8 @@ import {
   governor,
   navySailor,
   seaBeast,
+  boardingMarine,
+  drownedGuardianBoss,
   zones,
   districts,
   cartographerDialogue,
@@ -145,6 +148,7 @@ export function createGame(seed?: number): Engine {
       }),
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['pirate', 'colonial', 'beast'].includes(b.tag)) }),
       createCombatRecovery({ safeZoneTags: ['safe', 'ship', 'home-base', 'tavern'] }),
+      createBossPhaseListener(drownedGuardianBoss),
       createSimulationInspector(),
     ],
   });
@@ -161,6 +165,7 @@ export function createGame(seed?: number): Engine {
   engine.store.addEntity({ ...governor });
   engine.store.addEntity({ ...navySailor });
   engine.store.addEntity({ ...seaBeast });
+  engine.store.addEntity({ ...boardingMarine });
 
   // Set player
   engine.store.state.playerId = 'captain';

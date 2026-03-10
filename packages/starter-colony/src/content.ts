@@ -3,7 +3,7 @@
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
-import type { DistrictDefinition } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -74,7 +74,7 @@ export const drone: EntityState = {
   blueprintId: 'drone',
   type: 'enemy',
   name: 'Breached Drone',
-  tags: ['enemy', 'drone', 'mechanical', 'malfunctioning'],
+  tags: ['enemy', 'drone', 'mechanical', 'malfunctioning', 'role:bodyguard'],
   stats: { engineering: 6, command: 1, awareness: 5 },
   resources: { hp: 10, stamina: 4, power: 30, morale: 0 },
   statuses: [],
@@ -93,9 +93,9 @@ export const resonance: EntityState = {
   blueprintId: 'resonance',
   type: 'enemy',
   name: 'Resonance Entity',
-  tags: ['enemy', 'alien', 'energy', 'enigmatic'],
+  tags: ['enemy', 'alien', 'energy', 'enigmatic', 'role:boss'],
   stats: { engineering: 2, command: 1, awareness: 9 },
-  resources: { hp: 8, stamina: 4, power: 80, morale: 0 },
+  resources: { hp: 8, maxHp: 8, stamina: 4, maxStamina: 4, power: 80, morale: 0 },
   statuses: [],
   zoneId: 'alien-cavern',
   ai: {
@@ -105,6 +105,78 @@ export const resonance: EntityState = {
     alertLevel: 0,
     knowledge: {},
   },
+};
+
+export const swarmLarva: EntityState = {
+  id: 'swarm-larva',
+  blueprintId: 'swarm-larva',
+  type: 'enemy',
+  name: 'Swarm Larva',
+  tags: ['enemy', 'alien', 'swarm', 'role:minion'],
+  stats: { engineering: 2, command: 1, awareness: 3 },
+  resources: { hp: 6, stamina: 3, power: 10, morale: 0 },
+  statuses: [],
+  zoneId: 'alien-cavern',
+  ai: { profileId: 'aggressive', goals: ['swarm-intruders'], fears: ['fire'], alertLevel: 0, knowledge: {} },
+};
+
+// --- Boss Definition ---
+
+export const resonanceBoss: BossDefinition = {
+  entityId: 'resonance_entity',
+  phases: [
+    {
+      hpThreshold: 0.5,
+      narrativeKey: 'harmonic-shift',
+      addTags: ['resonating', 'amplified'],
+    },
+    {
+      hpThreshold: 0.25,
+      narrativeKey: 'signal-overload',
+      addTags: ['overloading', 'desperate'],
+      removeTags: ['resonating'],
+    },
+  ],
+};
+
+// --- Encounters ---
+
+export const perimeterSweep: EncounterDefinition = {
+  id: 'perimeter-sweep',
+  name: 'Perimeter Sweep',
+  participants: [
+    { entityId: 'breached_drone', role: 'bodyguard' },
+    { entityId: 'swarm-larva', role: 'minion' },
+  ],
+  composition: 'patrol',
+  validZoneIds: ['perimeter-fence', 'hydroponics'],
+  narrativeHooks: { tone: 'tense', trigger: 'The perimeter sensors flicker.', stakes: 'The breach widens with every patrol cycle.' },
+};
+
+export const cavernAmbush: EncounterDefinition = {
+  id: 'cavern-ambush',
+  name: 'Cavern Ambush',
+  participants: [
+    { entityId: 'swarm-larva', role: 'minion' },
+    { entityId: 'swarm-larva', role: 'minion' },
+    { entityId: 'swarm-larva', role: 'minion' },
+  ],
+  composition: 'ambush',
+  validZoneIds: ['alien-cavern'],
+  narrativeHooks: { tone: 'dread', trigger: 'Bioluminescence pulses in the dark.', stakes: 'The swarm closes in.' },
+};
+
+export const signalConfrontation: EncounterDefinition = {
+  id: 'signal-confrontation',
+  name: 'Signal Confrontation',
+  participants: [
+    { entityId: 'resonance_entity', role: 'boss' },
+    { entityId: 'swarm-larva', role: 'minion' },
+    { entityId: 'breached_drone', role: 'bodyguard' },
+  ],
+  composition: 'boss-fight',
+  validZoneIds: ['signal-tower'],
+  narrativeHooks: { tone: 'climactic', trigger: 'The signal reaches deafening intensity.', stakes: 'First contact — or last stand.' },
 };
 
 // --- Zones ---

@@ -25,6 +25,7 @@ import {
   createCombatIntent,
   BUILTIN_PACK_BIASES,
   createCombatRecovery,
+  createBossPhaseListener,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -35,6 +36,8 @@ import {
   magistrateSato,
   shadowAssassin,
   corruptSamurai,
+  castleGuard,
+  corruptSamuraiBoss,
   zones,
   districts,
   magistrateDialogue,
@@ -157,6 +160,7 @@ export function createGame(seed?: number): Engine {
       }),
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['assassin', 'samurai'].includes(b.tag)) }),
       createCombatRecovery({ safeZoneTags: ['safe', 'tranquil'] }),
+      createBossPhaseListener(corruptSamuraiBoss),
       createSimulationInspector(),
     ],
   });
@@ -173,6 +177,7 @@ export function createGame(seed?: number): Engine {
   engine.store.addEntity({ ...magistrateSato });
   engine.store.addEntity({ ...shadowAssassin });
   engine.store.addEntity({ ...corruptSamurai });
+  engine.store.addEntity({ ...castleGuard });
 
   // Set player
   engine.store.state.playerId = 'player';

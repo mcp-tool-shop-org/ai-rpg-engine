@@ -36,6 +36,7 @@ import {
   sisterMaren,
   ashGhoul,
   cryptWarden,
+  cryptStalker,
   cryptWardenBoss,
   zones,
   districts,
@@ -133,6 +134,7 @@ export function createGame(seed?: number): Engine {
   engine.store.addEntity({ ...brotherAldric });
   engine.store.addEntity({ ...sisterMaren });
   engine.store.addEntity({ ...ashGhoul });
+  engine.store.addEntity({ ...cryptStalker });
   engine.store.addEntity({ ...cryptWarden });
 
   // Set player

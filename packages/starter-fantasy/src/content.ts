@@ -110,6 +110,19 @@ export const cryptWarden: EntityState = {
   ai: { profileId: 'territorial', goals: ['protect-crypt', 'destroy-intruders'], fears: ['sacred'], alertLevel: 0, knowledge: {} },
 };
 
+export const cryptStalker: EntityState = {
+  id: 'crypt-stalker',
+  blueprintId: 'crypt-stalker',
+  type: 'enemy',
+  name: 'Crypt Stalker',
+  tags: ['enemy', 'undead', 'role:skirmisher'],
+  stats: { vigor: 3, instinct: 5, will: 2 },
+  resources: { hp: 8, stamina: 6 },
+  statuses: [],
+  zoneId: 'vestry-door',
+  ai: { profileId: 'cautious', goals: ['ambush-intruders'], fears: ['sacred', 'light'], alertLevel: 0, knowledge: {} },
+};
+
 export const cryptWardenBoss: BossDefinition = {
   entityId: 'crypt-warden',
   phases: [
@@ -143,6 +156,38 @@ export const cryptEncounter: EncounterDefinition = {
     tone: 'dread, oppressive darkness',
     trigger: 'Entering the crypt antechamber',
     stakes: 'The Ember Sigil and escape from the crypt',
+  },
+};
+
+export const chapelPatrol: EncounterDefinition = {
+  id: 'chapel-patrol',
+  name: 'Chapel Patrol',
+  participants: [
+    { entityId: 'ash-ghoul', role: 'brute' },
+    { entityId: 'crypt-stalker', role: 'skirmisher' },
+  ],
+  composition: 'patrol',
+  validZoneIds: ['chapel-nave', 'vestry-door'],
+  narrativeHooks: {
+    tone: 'creeping unease, faint scratching',
+    trigger: 'Sounds echo from the vestry passage',
+    stakes: 'Safe passage through the chapel',
+  },
+};
+
+export const cryptAmbush: EncounterDefinition = {
+  id: 'crypt-ambush',
+  name: 'Crypt Ambush',
+  participants: [
+    { entityId: 'crypt-stalker', role: 'skirmisher' },
+    { entityId: 'crypt-stalker', role: 'skirmisher' },
+  ],
+  composition: 'ambush',
+  validZoneIds: ['crypt-chamber'],
+  narrativeHooks: {
+    tone: 'sudden terror, shadows lunging',
+    trigger: 'Disturbing the bone altar',
+    stakes: 'Survival before the warden arrives',
   },
 };
 

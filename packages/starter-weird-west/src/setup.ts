@@ -25,6 +25,7 @@ import {
   createCombatIntent,
   BUILTIN_PACK_BIASES,
   createCombatRecovery,
+  createBossPhaseListener,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -34,6 +35,8 @@ import {
   sheriff,
   revenant,
   crawler,
+  banditRider,
+  mesaCrawlerBoss,
   zones,
   districts,
   bartenderDialogue,
@@ -156,6 +159,7 @@ export function createGame(seed?: number): Engine {
       }),
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['undead', 'spirit', 'beast'].includes(b.tag)) }),
       createCombatRecovery(),
+      createBossPhaseListener(mesaCrawlerBoss),
       createSimulationInspector(),
     ],
   });
@@ -171,6 +175,7 @@ export function createGame(seed?: number): Engine {
   engine.store.addEntity({ ...sheriff });
   engine.store.addEntity({ ...revenant });
   engine.store.addEntity({ ...crawler });
+  engine.store.addEntity({ ...banditRider });
 
   // Set player
   engine.store.state.playerId = 'drifter';

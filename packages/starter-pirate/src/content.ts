@@ -3,7 +3,7 @@
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
-import type { DistrictDefinition } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -86,7 +86,7 @@ export const navySailor: EntityState = {
   blueprintId: 'navy-sailor',
   type: 'enemy',
   name: 'Navy Sailor',
-  tags: ['enemy', 'colonial', 'navy', 'male'],
+  tags: ['enemy', 'colonial', 'navy', 'male', 'role:brute'],
   stats: { brawn: 5, cunning: 3, 'sea-legs': 4 },
   resources: { hp: 16, stamina: 5, morale: 14 },
   statuses: [],
@@ -105,9 +105,9 @@ export const seaBeast: EntityState = {
   blueprintId: 'sea-beast',
   type: 'enemy',
   name: 'Drowned Guardian',
-  tags: ['enemy', 'cursed', 'creature', 'aquatic'],
+  tags: ['enemy', 'cursed', 'creature', 'aquatic', 'role:boss'],
   stats: { brawn: 7, cunning: 2, 'sea-legs': 8 },
-  resources: { hp: 22, stamina: 6, morale: 30 },
+  resources: { hp: 22, maxHp: 22, stamina: 6, maxStamina: 6, morale: 30 },
   statuses: [],
   zoneId: 'sunken-shrine',
   ai: {
@@ -117,6 +117,83 @@ export const seaBeast: EntityState = {
     alertLevel: 0,
     knowledge: {},
   },
+};
+
+export const boardingMarine: EntityState = {
+  id: 'boarding_marine',
+  blueprintId: 'boarding-marine',
+  type: 'enemy',
+  name: 'Boarding Marine',
+  tags: ['enemy', 'colonial', 'navy', 'role:skirmisher'],
+  stats: { brawn: 4, cunning: 5, 'sea-legs': 5 },
+  resources: { hp: 12, stamina: 5, morale: 12 },
+  statuses: [],
+  zoneId: 'ship-deck',
+  ai: {
+    profileId: 'aggressive',
+    goals: ['board-enemy-ships', 'enforce-law'],
+    fears: ['outnumbered'],
+    alertLevel: 0,
+    knowledge: {},
+  },
+};
+
+// --- Boss Definition ---
+
+export const drownedGuardianBoss: BossDefinition = {
+  entityId: 'drowned_guardian',
+  phases: [
+    {
+      hpThreshold: 0.5,
+      narrativeKey: 'rising-tide',
+      addTags: ['enraged', 'tidal-surge'],
+    },
+    {
+      hpThreshold: 0.2,
+      narrativeKey: 'abyssal-fury',
+      addTags: ['desperate', 'abyssal'],
+      removeTags: ['enraged'],
+    },
+  ],
+  immovable: true,
+};
+
+// --- Encounters ---
+
+export const portPatrol: EncounterDefinition = {
+  id: 'port-patrol',
+  name: 'Port Patrol',
+  participants: [
+    { entityId: 'navy_sailor', role: 'brute' },
+    { entityId: 'boarding_marine', role: 'skirmisher' },
+  ],
+  composition: 'patrol',
+  validZoneIds: ['ship-deck', 'governors-fort'],
+  narrativeHooks: { tone: 'tense', trigger: 'The navy patrol tightens its grip on the port.', stakes: 'Discovery means the noose.' },
+};
+
+export const openWaterAmbush: EncounterDefinition = {
+  id: 'open-water-ambush',
+  name: 'Open Water Ambush',
+  participants: [
+    { entityId: 'boarding_marine', role: 'skirmisher' },
+    { entityId: 'boarding_marine', role: 'skirmisher' },
+  ],
+  composition: 'ambush',
+  validZoneIds: ['open-water'],
+  narrativeHooks: { tone: 'urgent', trigger: 'Sails on the horizon — navy colors.', stakes: 'Outrun them or face boarding.' },
+};
+
+export const shrineGuardian: EncounterDefinition = {
+  id: 'shrine-guardian',
+  name: 'Shrine Guardian',
+  participants: [
+    { entityId: 'drowned_guardian', role: 'boss' },
+    { entityId: 'navy_sailor', role: 'brute' },
+  ],
+  composition: 'boss-fight',
+  validZoneIds: ['sunken-shrine'],
+  narrativeHooks: { tone: 'dread', trigger: 'The shrine groans with ancient fury.', stakes: 'Treasure or a watery grave.' },
 };
 
 // --- Zones ---

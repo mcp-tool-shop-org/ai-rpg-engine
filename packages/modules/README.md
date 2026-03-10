@@ -22,7 +22,7 @@ npm install @ai-rpg-engine/modules
 
 | Module | Description |
 |--------|-------------|
-| `combatCore` | Attack/defend, damage, defeat, stamina |
+| `combatCore` | Attack/defend, damage, defeat, stamina, guard, disengage |
 | `dialogueCore` | Graph-based dialogue trees with conditions |
 | `inventoryCore` | Items, equipment, use/equip/unequip |
 | `traversalCore` | Zone movement and exit validation |
@@ -39,6 +39,20 @@ npm install @ai-rpg-engine/modules
 | `beliefProvenance` | Trace reconstruction across perception/cognition/rumor |
 | `observerPresentation` | Per-observer event filtering, divergence tracking |
 | `simulationInspector` | Runtime inspection, health checks, diagnostics |
+| `combatIntent` | AI decision-making biases, morale, flee logic |
+| `engagementCore` | Frontline/backline positioning, bodyguard interception |
+| `combatRecovery` | Post-combat wound statuses, safe-zone healing |
+| `combatReview` | Formula explanation, hit-chance breakdown |
+| `defeatFallout` | Post-combat faction consequences, reputation shifts |
+| `bossPhaseListener` | Boss HP-threshold phase transitions |
+
+### Combat Authoring (Pure Functions)
+
+| Export | Purpose |
+|--------|---------|
+| `combat-roles` | 8 role templates, encounter composition types, danger rating, boss definitions |
+| `encounter-library` | 5 encounter archetype factories, 3 boss template factories, pack audit |
+| `combat-summary` | Query, audit, format, and inspect combat content |
 
 ## Usage
 
@@ -58,6 +72,7 @@ const engine = new Engine({
 - [Modules (Ch. 6)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/06-modules/)
 - [AI Cognition (Ch. 8)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/08-ai-cognition/)
 - [Perception (Ch. 9)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/09-perception-layers/)
+- [Combat System (Ch. 47)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/47-combat-system/)
 - [Handbook](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/)
 - [GitHub](https://github.com/mcp-tool-shop-org/ai-rpg-engine)
 

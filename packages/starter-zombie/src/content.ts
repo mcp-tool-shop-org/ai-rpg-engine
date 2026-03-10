@@ -173,6 +173,38 @@ export const hordeEncounter: EncounterDefinition = {
   },
 };
 
+export const streetPatrol: EncounterDefinition = {
+  id: 'street-patrol',
+  name: 'Street Patrol',
+  participants: [
+    { entityId: 'shambler_1', role: 'minion' },
+    { entityId: 'runner_1', role: 'skirmisher' },
+  ],
+  composition: 'patrol',
+  validZoneIds: ['overrun-street', 'gas-station'],
+  narrativeHooks: {
+    tone: 'shambling shadows, sudden bursts of speed',
+    trigger: 'Noise attracts the dead from nearby blocks',
+    stakes: 'Safe passage to the gas station',
+  },
+};
+
+export const runnerAmbush: EncounterDefinition = {
+  id: 'runner-ambush',
+  name: 'Runner Ambush',
+  participants: [
+    { entityId: 'runner_1', role: 'skirmisher' },
+    { entityId: 'runner_1', role: 'skirmisher' },
+  ],
+  composition: 'ambush',
+  validZoneIds: ['hospital-wing'],
+  narrativeHooks: {
+    tone: 'blinding speed, no time to react',
+    trigger: 'Entering the east wing corridor',
+    stakes: 'Access to the medicine cabinet',
+  },
+};
+
 // --- Zones ---
 
 export const zones: ZoneState[] = [

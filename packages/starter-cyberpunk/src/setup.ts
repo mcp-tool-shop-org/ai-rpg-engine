@@ -25,6 +25,7 @@ import {
   createCombatIntent,
   BUILTIN_PACK_BIASES,
   createCombatRecovery,
+  createBossPhaseListener,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -33,6 +34,9 @@ import {
   fixer,
   rez,
   iceAgent,
+  streetRunner,
+  vaultOverseer,
+  vaultOverseerBoss,
   zones,
   districts,
   fixerDialogue,
@@ -137,6 +141,7 @@ export function createGame(seed?: number): Engine {
       }),
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['ice-agent'].includes(b.tag)) }),
       createCombatRecovery(),
+      createBossPhaseListener(vaultOverseerBoss),
       createSimulationInspector(),
     ],
   });
@@ -151,6 +156,8 @@ export function createGame(seed?: number): Engine {
   engine.store.addEntity({ ...fixer });
   engine.store.addEntity({ ...rez });
   engine.store.addEntity({ ...iceAgent });
+  engine.store.addEntity({ ...streetRunner });
+  engine.store.addEntity({ ...vaultOverseer });
 
   // Set player
   engine.store.state.playerId = 'runner';

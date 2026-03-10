@@ -25,6 +25,7 @@ import {
   createCombatIntent,
   BUILTIN_PACK_BIASES,
   createCombatRecovery,
+  createBossPhaseListener,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -35,6 +36,8 @@ import {
   servantElara,
   witchHunter,
   feralThrall,
+  elderVampire,
+  elderVampireBoss,
   zones,
   districts,
   duchessDialogue,
@@ -159,6 +162,7 @@ export function createGame(seed?: number): Engine {
       }),
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['vampire', 'feral', 'hunter'].includes(b.tag)) }),
       createCombatRecovery({ safeZoneTags: ['safe', 'opulent'] }),
+      createBossPhaseListener(elderVampireBoss),
       createSimulationInspector(),
     ],
   });
@@ -175,6 +179,7 @@ export function createGame(seed?: number): Engine {
   engine.store.addEntity({ ...servantElara });
   engine.store.addEntity({ ...witchHunter });
   engine.store.addEntity({ ...feralThrall });
+  engine.store.addEntity({ ...elderVampire });
 
   // Set player
   engine.store.state.playerId = 'player';
