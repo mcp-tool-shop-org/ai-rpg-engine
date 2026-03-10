@@ -3,7 +3,7 @@
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
-import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
+import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -94,6 +94,7 @@ export const arenaChampion: EntityState = {
   resources: { hp: 30, stamina: 8, fatigue: 0, 'crowd-favor': 70 },
   statuses: [],
   zoneId: 'arena-floor',
+  resistances: { control: 'resistant' },
   ai: { profileId: 'aggressive', goals: ['defend-title'], fears: ['crowd-turning'], alertLevel: 0, knowledge: {} },
 };
 
@@ -120,6 +121,7 @@ export const arenaOverlord: EntityState = {
   resources: { hp: 60, maxHp: 60, stamina: 15, maxStamina: 15, fatigue: 0, 'crowd-favor': 90 },
   statuses: [],
   zoneId: 'arena-floor',
+  resistances: { fear: 'immune', control: 'resistant' },
   ai: { profileId: 'territorial', goals: ['dominate-arena'], fears: ['rebellion'], alertLevel: 0, knowledge: {} },
 };
 
@@ -408,6 +410,117 @@ export const patronTokenEffect = {
     }];
   },
 };
+
+// --- Abilities ---
+
+export const crowdCleave: AbilityDefinition = {
+  id: 'crowd-cleave',
+  name: 'Crowd Cleave',
+  verb: 'use-ability',
+  tags: ['spectacle', 'combat', 'damage'],
+  costs: [{ resourceId: 'stamina', amount: 3 }],
+  target: { type: 'single' },
+  checks: [{ stat: 'might', difficulty: 7, onFail: 'half-damage' }],
+  effects: [
+    { type: 'damage', target: 'target', params: { amount: 5, damageType: 'melee' } },
+    { type: 'resource-modify', target: 'actor', params: { resource: 'crowd-favor', amount: 10 } },
+  ],
+  cooldown: 2,
+  requirements: [{ type: 'has-tag', params: { tag: 'gladiator' } }],
+  ui: {
+    text: 'A sweeping strike designed to thrill the crowd.',
+    hitText: 'The blade arcs wide — the crowd roars approval!',
+    missText: 'The swing goes wide. A gasp, then silence.',
+    soundCue: 'ability.crowd-cleave',
+  },
+};
+
+export const rallyCrowd: AbilityDefinition = {
+  id: 'rally-crowd',
+  name: 'Rally the Crowd',
+  verb: 'use-ability',
+  tags: ['spectacle', 'buff', 'support'],
+  costs: [
+    { resourceId: 'stamina', amount: 2 },
+    { resourceId: 'crowd-favor', amount: 15 },
+  ],
+  target: { type: 'self' },
+  checks: [{ stat: 'showmanship', difficulty: 7, onFail: 'abort' }],
+  effects: [
+    { type: 'heal', target: 'actor', params: { amount: 5, resource: 'hp' } },
+    { type: 'resource-modify', target: 'actor', params: { resource: 'fatigue', amount: -5 } },
+    { type: 'stat-modify', target: 'actor', params: { stat: 'might', amount: 2 } },
+  ],
+  cooldown: 4,
+  ui: {
+    text: 'Raise your weapon and let the crowd fuel your second wind.',
+    hitText: 'The arena shakes with their chant. Strength returns!',
+    missText: 'The crowd is unmoved. You stand alone.',
+    soundCue: 'ability.rally-crowd',
+  },
+};
+
+export const gladiatorChallenge: AbilityDefinition = {
+  id: 'gladiators-challenge',
+  name: "Gladiator's Challenge",
+  verb: 'use-ability',
+  tags: ['spectacle', 'combat', 'debuff'],
+  costs: [{ resourceId: 'stamina', amount: 2 }],
+  target: { type: 'single' },
+  checks: [{ stat: 'showmanship', difficulty: 6, onFail: 'half-damage' }],
+  effects: [
+    { type: 'apply-status', target: 'target', params: { statusId: 'challenged', duration: 3, stacking: 'replace' } },
+    { type: 'stat-modify', target: 'target', params: { stat: 'agility', amount: -2 } },
+    { type: 'resource-modify', target: 'actor', params: { resource: 'crowd-favor', amount: 5 } },
+  ],
+  cooldown: 3,
+  requirements: [{ type: 'has-tag', params: { tag: 'gladiator' } }],
+  ui: {
+    text: 'Point your weapon and declare your challenge — the crowd holds its breath.',
+    hitText: 'The challenge is accepted! The crowd loves a duel.',
+    missText: 'Your opponent scoffs — the crowd murmurs.',
+    soundCue: 'ability.gladiator-challenge',
+  },
+};
+
+export const ironResolve: AbilityDefinition = {
+  id: 'iron-resolve',
+  name: 'Iron Resolve',
+  verb: 'use-ability',
+  tags: ['spectacle', 'support', 'cleanse'],
+  costs: [
+    { resourceId: 'stamina', amount: 2 },
+    { resourceId: 'fatigue', amount: 3 },
+  ],
+  target: { type: 'self' },
+  checks: [{ stat: 'might', difficulty: 6, onFail: 'abort' }],
+  effects: [
+    { type: 'remove-status-by-tag', target: 'actor', params: { tags: 'control,fear' } },
+  ],
+  cooldown: 4,
+  requirements: [{ type: 'has-tag', params: { tag: 'gladiator' } }],
+  ui: {
+    text: 'Clench your fists and shake off the fear — the crowd demands strength.',
+    hitText: 'Iron will surges through you. The crowd roars at your defiance!',
+    missText: 'You stumble — the crowd murmurs with doubt.',
+    soundCue: 'ability.iron-resolve',
+  },
+};
+
+export const gladiatorAbilities: AbilityDefinition[] = [crowdCleave, rallyCrowd, gladiatorChallenge, ironResolve];
+
+// --- Status Definitions ---
+
+export const gladiatorStatusDefinitions: StatusDefinition[] = [
+  {
+    id: 'challenged',
+    name: 'Challenged',
+    tags: ['control', 'debuff'],
+    stacking: 'replace',
+    duration: { type: 'ticks', value: 3 },
+    ui: { icon: '⚔️', color: '#e67e22', description: 'Called out before the crowd — honor demands you answer' },
+  },
+];
 
 // --- Pack Metadata ---
 

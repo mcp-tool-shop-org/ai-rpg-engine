@@ -47,6 +47,24 @@ Une couche d'IA optionnelle qui crée des salles, des factions, des quêtes et d
 
 Des flux de travail sensibles aux sessions et axés sur la planification pour la création de mondes, les boucles d'évaluation, l'itération de la conception, la création guidée et les plans d'ajustement structurés. Combine des outils déterministes avec une assistance de l'IA.
 
+### Capacités et pouvoirs
+
+Système de capacités intrinsèques au genre, avec une couverture inter-genre regroupant 10 éléments. Les capacités ont des coûts, des tests de statistiques, des temps de recharge et des effets de type (dommages, soins, application de statut, purification). Les effets de statut utilisent un vocabulaire sémantique avec 11 étiquettes, ainsi que des profils de résistance/vulnérabilité pour les entités. Le système de sélection des capacités, conscient de l'IA, évalue les options de dégâts directs/de zone/ciblés, en tenant compte de la résistance et de l'efficacité de la purification. Des outils d'audit de l'équilibre et de résumé des ensembles permettent de détecter les anomalies lors de la création.
+
+```typescript
+const warCry: AbilityDefinition = {
+  id: 'war-cry', name: 'War Cry', verb: 'use-ability',
+  tags: ['combat', 'debuff', 'aoe'],
+  costs: [{ resourceId: 'stamina', amount: 3 }, { resourceId: 'infection', amount: 5 }],
+  target: { type: 'all-enemies' },
+  checks: [{ stat: 'nerve', difficulty: 6, onFail: 'abort' }],
+  effects: [
+    { type: 'apply-status', target: 'target', params: { statusId: 'rattled', duration: 2 } },
+  ],
+  cooldown: 4,
+};
+```
+
 ### Analyse de simulation
 
 Une analyse des parties qui explique pourquoi certains événements se sont produits, où les mécanismes ne fonctionnent pas, quels déclencheurs ne se déclenchent jamais et quels systèmes créent de l'instabilité. Les résultats structurés sont directement intégrés aux ajustements.

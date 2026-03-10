@@ -29,6 +29,7 @@ npm install @ai-rpg-engine/content-schema
 - **Dialogue schemas** — graph-based dialogue trees with conditions and effects
 - **Item schemas** — equipment, consumables, quest items with stat modifiers
 - **Content pack loader** — validate and load JSON/TypeScript content packs
+- **Ability schemas** — ability definitions, status definitions, and pack validation with balance advisories
 - **Schema validators** — runtime validation with structured error messages
 
 ## Usage

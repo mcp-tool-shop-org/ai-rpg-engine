@@ -50,6 +50,23 @@ npm install @ai-rpg-engine/modules
 | `defeatFallout` | Consecuencias de la facción después del combate, cambios de reputación. |
 | `bossPhaseListener` | Transiciones de fase basadas en el umbral de HP del jefe. |
 
+### Módulos de Habilidades
+
+| Módulo | Descripción |
+|--------|-------------|
+| `abilityCore` | Resolución de habilidades: costos, pruebas, selección de objetivos, aplicación de efectos, tiempos de reutilización. |
+| `abilityEffects` | Manejadores de efectos: daño, curación, modificación de estadísticas, aplicación/eliminación de estados. |
+| `abilityReview` | Seguimiento en tiempo real: análisis detallados por uso, inspector, salida formateada. |
+| `abilityIntent` | Evaluación de la IA: rutas de ataque (individual, área, etc.), conciencia de resistencias, valoración de la purificación. |
+
+### Creación de habilidades (funciones puras)
+
+| Exportación | Propósito |
+|--------|---------|
+| `ability-summary` | Resumen del paquete, auditoría de equilibrio, exportación a Markdown/JSON. |
+| `ability-builders` | Funciones de creación simplificadas: buildDamageAbility (crear habilidad de daño), buildHealAbility (crear habilidad de curación), buildStatusAbility (crear habilidad de estado), buildCleanseAbility (crear habilidad de purificación), buildAbilitySuite (crear conjunto de habilidades). |
+| `status-semantics` | Vocabulario de 11 etiquetas, registro de estados, aplicación consciente de resistencias. |
+
 ### Creación de combate (funciones puras)
 
 | Exportación | Propósito |
@@ -76,7 +93,8 @@ const engine = new Engine({
 - [Módulos (Cap. 6)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/06-modules/)
 - [Cognición de la IA (Cap. 8)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/08-ai-cognition/)
 - [Percepción (Cap. 9)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/09-perception-layers/)
-- [Sistema de combate (Cap. 47)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/47-combat-system/)
+- [Sistema de Combate (Cap. 47)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/47-combat-system/)
+- [Sistema de Habilidades (Cap. 48)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/48-abilities-system/)
 - [Manual](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/)
 - [GitHub](https://github.com/mcp-tool-shop-org/ai-rpg-engine)
 

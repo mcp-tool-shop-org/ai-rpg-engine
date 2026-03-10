@@ -47,6 +47,24 @@ Uma camada de IA opcional que cria salas, facções, missões e distritos a part
 
 Fluxos de trabalho conscientes da sessão e orientados por planos para a criação de mundos, ciclos de análise, iteração de design, construções guiadas e planos de ajuste estruturados. Combina ferramentas determinísticas com assistência de IA.
 
+### Habilidades e Poderes
+
+Sistema de habilidades nativo do gênero, com cobertura abrangente em 10 categorias. As habilidades têm custos, testes de atributos, tempos de recarga e efeitos de diferentes tipos (dano, cura, aplicação de status, purificação). Os efeitos de status utilizam um vocabulário semântico com 11 categorias, com perfis de resistência/vulnerabilidade para cada entidade. O sistema de seleção de habilidades, que considera a inteligência artificial, avalia diferentes caminhos (ataque direto, área de efeito, alvo único) levando em conta a resistência e a eficácia da purificação. Ferramentas de auditoria de equilíbrio e resumos de categorias ajudam a identificar valores discrepantes durante a criação.
+
+```typescript
+const warCry: AbilityDefinition = {
+  id: 'war-cry', name: 'War Cry', verb: 'use-ability',
+  tags: ['combat', 'debuff', 'aoe'],
+  costs: [{ resourceId: 'stamina', amount: 3 }, { resourceId: 'infection', amount: 5 }],
+  target: { type: 'all-enemies' },
+  checks: [{ stat: 'nerve', difficulty: 6, onFail: 'abort' }],
+  effects: [
+    { type: 'apply-status', target: 'target', params: { statusId: 'rattled', duration: 2 } },
+  ],
+  cooldown: 4,
+};
+```
+
 ### Análise de Simulação
 
 Análise de jogadas que explica por que os eventos ocorreram, onde as mecânicas falham, quais gatilhos nunca são acionados e quais sistemas criam instabilidade. Os resultados estruturados são integrados diretamente no ajuste.

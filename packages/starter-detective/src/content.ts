@@ -2,7 +2,7 @@
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
-import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
+import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
@@ -110,6 +110,7 @@ export const hiredMuscle: EntityState = {
   resources: { hp: 18, stamina: 5, composure: 8 },
   statuses: [],
   zoneId: 'back-alley',
+  resistances: { fear: 'resistant' },
   ai: { profileId: 'aggressive', goals: ['protect-boss', 'intimidate'], fears: ['law'], alertLevel: 0, knowledge: {} },
 };
 
@@ -123,6 +124,7 @@ export const crimeBoss: EntityState = {
   resources: { hp: 40, maxHp: 40, stamina: 10, maxStamina: 10, composure: 20 },
   statuses: [],
   zoneId: 'back-alley',
+  resistances: { control: 'resistant', fear: 'immune' },
   ai: { profileId: 'calculating', goals: ['eliminate-witnesses', 'control-docks'], fears: ['exposure'], alertLevel: 0, knowledge: {} },
 };
 
@@ -385,6 +387,113 @@ export const smellingSaltsEffect = {
     }];
   },
 };
+
+// --- Abilities ---
+
+export const deductiveStrike: AbilityDefinition = {
+  id: 'deductive-strike',
+  name: 'Deductive Strike',
+  verb: 'use-ability',
+  tags: ['combat', 'damage'],
+  costs: [{ resourceId: 'stamina', amount: 3 }],
+  target: { type: 'single' },
+  checks: [{ stat: 'grit', difficulty: 5, onFail: 'half-damage' }],
+  effects: [
+    { type: 'damage', target: 'target', params: { amount: 4, damageType: 'melee' } },
+  ],
+  cooldown: 2,
+  requirements: [{ type: 'has-tag', params: { tag: 'investigator' } }],
+  ui: {
+    text: 'A measured blow — precisely where it will hurt most.',
+    hitText: 'The strike lands clean. Training meets instinct.',
+    missText: 'They sidestep — faster than expected.',
+    soundCue: 'ability.deductive-strike',
+  },
+};
+
+export const composureShield: AbilityDefinition = {
+  id: 'composure-shield',
+  name: 'Composure Shield',
+  verb: 'use-ability',
+  tags: ['support', 'buff'],
+  costs: [{ resourceId: 'stamina', amount: 2 }],
+  target: { type: 'self' },
+  checks: [{ stat: 'perception', difficulty: 5, onFail: 'abort' }],
+  effects: [
+    { type: 'heal', target: 'actor', params: { amount: 4, resource: 'composure' } },
+    { type: 'stat-modify', target: 'actor', params: { stat: 'perception', amount: 1 } },
+  ],
+  cooldown: 3,
+  ui: {
+    text: 'Steady the nerves. Focus sharpens. The case comes into clarity.',
+    hitText: 'A deep breath. The fog lifts — every detail snaps into focus.',
+    missText: 'The mind races. Too many threads, too little time.',
+    soundCue: 'ability.composure-shield',
+  },
+};
+
+export const exposeWeakness: AbilityDefinition = {
+  id: 'expose-weakness',
+  name: 'Expose Weakness',
+  verb: 'use-ability',
+  tags: ['combat', 'debuff', 'social'],
+  costs: [
+    { resourceId: 'stamina', amount: 2 },
+    { resourceId: 'composure', amount: 3 },
+  ],
+  target: { type: 'single' },
+  checks: [{ stat: 'perception', difficulty: 6, onFail: 'abort' }],
+  effects: [
+    { type: 'apply-status', target: 'target', params: { statusId: 'exposed', duration: 2, stacking: 'replace' } },
+    { type: 'stat-modify', target: 'target', params: { stat: 'grit', amount: -2 } },
+  ],
+  cooldown: 4,
+  requirements: [{ type: 'has-tag', params: { tag: 'investigator' } }],
+  ui: {
+    text: 'Read them like a case file. Find the crack. Exploit it.',
+    hitText: 'There — a flinch. You see right through them.',
+    missText: 'They hold steady. Poker face, this one.',
+    soundCue: 'ability.expose-weakness',
+  },
+};
+
+export const clearHeaded: AbilityDefinition = {
+  id: 'clear-headed',
+  name: 'Clear-Headed',
+  verb: 'use-ability',
+  tags: ['support', 'cleanse'],
+  costs: [
+    { resourceId: 'stamina', amount: 2 },
+    { resourceId: 'composure', amount: 2 },
+  ],
+  target: { type: 'self' },
+  checks: [{ stat: 'perception', difficulty: 5, onFail: 'abort' }],
+  effects: [
+    { type: 'remove-status-by-tag', target: 'actor', params: { tags: 'fear,control' } },
+  ],
+  cooldown: 3,
+  ui: {
+    text: 'Steady the mind. The facts are still there — find them.',
+    hitText: 'A deep breath. The fog lifts. Clarity returns.',
+    missText: 'The mind races. Too many threads, too much noise.',
+    soundCue: 'ability.clear-headed',
+  },
+};
+
+export const detectiveAbilities: AbilityDefinition[] = [deductiveStrike, composureShield, exposeWeakness, clearHeaded];
+
+// --- Status Definitions ---
+
+export const detectiveStatusDefinitions: StatusDefinition[] = [
+  {
+    id: 'exposed',
+    name: 'Exposed',
+    tags: ['breach', 'debuff'],
+    stacking: 'replace',
+    duration: { type: 'ticks', value: 2 },
+    ui: { icon: '🔍', color: '#e74c3c', description: 'Weakness laid bare — defenses compromised' },
+  },
+];
 
 // --- Pack Metadata ---
 

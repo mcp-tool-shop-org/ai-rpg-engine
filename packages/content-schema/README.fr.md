@@ -24,11 +24,12 @@ npm install @ai-rpg-engine/content-schema
 
 ## Contenu
 
-- **Schémas de pièces** — zones avec entrées/sorties, propriétés et état de l'environnement.
-- **Schémas d'entités** — définitions des PNJ, des créatures et des personnages joueurs.
-- **Schémas de dialogues** — arbres de dialogues basés sur des graphes, avec conditions et effets.
-- **Schémas d'objets** — équipements, consommables, objets de quête avec modificateurs de statistiques.
-- **Chargeur de paquets de contenu** — valide et charge les paquets de contenu JSON/TypeScript.
+- **Schémas des pièces** — zones définies par des sorties, des propriétés et un état environnemental.
+- **Schémas des entités** — définitions des personnages non joueurs (PNJ), des créatures et des personnages jouables.
+- **Schémas des dialogues** — arbres de dialogue basés sur des graphes, avec des conditions et des effets.
+- **Schémas des objets** — équipements, consommables, objets de quête, avec des modificateurs de statistiques.
+- **Chargeur de paquets de contenu** — validation et chargement des paquets de contenu JSON/TypeScript.
+- **Schémas des compétences** — définitions des compétences, des états, et validation des paquets avec des avertissements concernant l'équilibre du jeu.
 - **Validateurs de schémas** — validation en temps réel avec des messages d'erreur structurés.
 
 ## Utilisation

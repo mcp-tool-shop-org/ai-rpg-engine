@@ -63,3 +63,5 @@ npm install @ai-rpg-engine/starter-gladiator
 import { createGame } from '@ai-rpg-engine/starter-gladiator';
 const engine = createGame(42);
 ```
+
+This pack includes 4 abilities (savage-strike, shield-bash, crowd-roar, iron-resolve), the `challenged` status with control tag, and resistance profiles on arena-champion and arena-overlord entities. See [Chapter 48: Abilities System](./48-abilities-system.md).

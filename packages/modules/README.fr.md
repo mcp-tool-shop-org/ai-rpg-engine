@@ -14,7 +14,7 @@
 
 # @ai-rpg-engine/modules
 
-17 modules de simulation composables pour le moteur de jeu de rôle IA — combat, dialogue, cognition, perception, factions, et plus encore.
+29 modules de simulation composables pour le moteur de jeu de rôle IA — combat, compétences, dialogues, cognition, perception, factions, et plus encore.
 
 ## Installation
 
@@ -27,36 +27,53 @@ npm install @ai-rpg-engine/modules
 | Module | Description |
 |--------|-------------|
 | `combatCore` | Attaque/défense, dégâts, défaite, endurance, garde, désengagement |
-| `dialogueCore` | Arbres de dialogue basés sur des graphes, avec conditions |
-| `inventoryCore` | Objets, équipement, utilisation/équipement/déséquipement |
-| `traversalCore` | Déplacement et validation de sortie des zones |
-| `statusCore` | Effets de statut avec durée et cumul |
-| `environmentCore` | Propriétés dynamiques des zones, dangers, dégradation |
-| `cognitionCore` | Croyances, intentions, moral, mémoire de l'IA |
-| `perceptionFilter` | Canaux sensoriels, clarté, audition inter-zones |
-| `narrativeAuthority` | Vérité vs présentation, dissimulation, distorsion |
-| `progressionCore` | Progression basée sur la monnaie, arbres de compétences |
-| `factionCognition` | Croyances des factions, confiance, connaissances inter-factions |
-| `rumorPropagation` | Propagation de l'information avec diminution de la confiance |
-| `knowledgeDecay` | Érosion de la confiance basée sur le temps |
-| `districtCore` | Mémoire spatiale, métriques des zones, seuils d'alerte |
-| `beliefProvenance` | Reconstruction de la trace à travers la perception/cognition/rumeur |
-| `observerPresentation` | Filtrage des événements par observateur, suivi des divergences |
-| `simulationInspector` | Inspection en temps réel, vérifications de santé, diagnostics |
-| `combatIntent` | Biais de prise de décision de l'IA, moral, logique de fuite |
-| `engagementCore` | Positionnement en première/dernière ligne, interception des gardes du corps |
-| `combatRecovery` | Statuts de blessures après le combat, guérison dans les zones sûres |
-| `combatReview` | Explication des formules, décomposition des chances de toucher |
-| `defeatFallout` | Conséquences pour les factions après le combat, changements de réputation |
-| `bossPhaseListener` | Transitions de phase basées sur les seuils de points de vie du boss |
+| `dialogueCore` | Arbres de dialogues basés sur des graphes, avec conditions. |
+| `inventoryCore` | Objets, équipement, utilisation/équipement/déséquipement. |
+| `traversalCore` | Déplacement et validation de sortie des zones. |
+| `statusCore` | Effets de statut avec durée et accumulation. |
+| `environmentCore` | Propriétés dynamiques des zones, dangers, dégradation. |
+| `cognitionCore` | Croyances, intentions, moral, mémoire de l'IA. |
+| `perceptionFilter` | Canaux sensoriels, clarté, audition inter-zones. |
+| `narrativeAuthority` | Vérité vs présentation, dissimulation, distorsion. |
+| `progressionCore` | Progression basée sur la monnaie, arbres de compétences. |
+| `factionCognition` | Croyances des factions, confiance, connaissance inter-factions. |
+| `rumorPropagation` | Propagation de l'information avec dégradation de la confiance. |
+| `knowledgeDecay` | Érosion de la confiance basée sur le temps. |
+| `districtCore` | Mémoire spatiale, métriques des zones, seuils d'alerte. |
+| `beliefProvenance` | Reconstruction de la trace à travers la perception/cognition/rumeur. |
+| `observerPresentation` | Filtrage des événements par observateur, suivi des divergences. |
+| `simulationInspector` | Inspection en temps réel, vérifications de santé, diagnostics. |
+| `combatIntent` | Biais de prise de décision de l'IA, moral, logique de fuite. |
+| `engagementCore` | Positionnement en première/dernière ligne, interception par les gardes du corps. |
+| `combatRecovery` | Statuts de blessures post-combat, guérison dans les zones sûres. |
+| `combatReview` | Explication des formules, décomposition des chances de toucher. |
+| `defeatFallout` | Conséquences post-combat pour les factions, changements de réputation. |
+| `bossPhaseListener` | Transitions de phase basées sur le seuil de PV du boss. |
+
+### Modules de compétences
+
+| Module | Description |
+|--------|-------------|
+| `abilityCore` | Résolution des compétences — coûts, vérifications, ciblage, envoi d'effets, temps de recharge. |
+| `abilityEffects` | Gestionnaires d'effets — dégâts, soins, modification des statistiques, application/suppression des effets de statut. |
+| `abilityReview` | Suivi en temps réel — décompositions par utilisation, inspecteur, sortie formatée. |
+| `abilityIntent` | Notation de l'IA — chemins directs/AoE/simples, conscience de la résistance, évaluation de la purification. |
+
+### Création de compétences (fonctions pures)
+
+| Exportation | Objectif |
+|--------|---------|
+| `ability-summary` | Résumé du paquet, audit de l'équilibre, exportation Markdown/JSON. |
+| `ability-builders` | Fabriques pratiques : buildDamageAbility, buildHealAbility, buildStatusAbility, buildCleanseAbility, buildAbilitySuite. |
+| `status-semantics` | Vocabulaire à 11 balises, registre des états, application sensible à la résistance. |
 
 ### Création de combats (fonctions pures)
 
 | Exportation | Objectif |
 |--------|---------|
-| `combat-roles` | 8 modèles de rôles, types de composition d'événements, niveau de danger, définitions de boss |
-| `encounter-library` | 5 usines de création d'archétypes d'événements, 3 usines de création de modèles de boss, audit des groupes |
-| `combat-summary` | Requête, audit, formatage et inspection du contenu des combats |
+| `combat-roles` | 8 modèles de rôles, types de composition de rencontres, niveau de danger, définitions de boss. |
+| `encounter-library` | 5 fabriques d'archétypes de rencontres, 3 fabriques de modèles de boss, audit du paquet. |
+| `combat-summary` | Requête, audit, formatage et inspection du contenu des combats. |
 
 ## Utilisation
 
@@ -77,9 +94,10 @@ const engine = new Engine({
 - [Cognition de l'IA (Chap. 8)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/08-ai-cognition/)
 - [Perception (Chap. 9)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/09-perception-layers/)
 - [Système de combat (Chap. 47)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/47-combat-system/)
+- [Système de compétences (Chap. 48)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/48-abilities-system/)
 - [Manuel](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/)
 - [GitHub](https://github.com/mcp-tool-shop-org/ai-rpg-engine)
 
 ---
 
-Créé par <a href="https://mcp-tool-shop.github.io/">MCP Tool Shop</a>
+Créé par <a href="https://mcp-tool-shop.github.io/">MCP Tool Shop</a

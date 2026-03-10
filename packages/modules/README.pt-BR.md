@@ -50,6 +50,23 @@ npm install @ai-rpg-engine/modules
 | `defeatFallout` | Consequências para as facções após o combate, mudanças na reputação. |
 | `bossPhaseListener` | Transições de fase baseadas no limite de HP do chefe. |
 
+### Módulos de Habilidade
+
+| Módulo | Descrição |
+|--------|-------------|
+| `abilityCore` | Resolução de habilidades — custos, testes, alvos, aplicação de efeitos, tempos de recarga. |
+| `abilityEffects` | Manipuladores de efeitos — dano, cura, modificação de atributos, aplicação/remoção de estados. |
+| `abilityReview` | Rastreamento em tempo de execução — detalhamento por uso, inspetor, saída formatada. |
+| `abilityIntent` | Sistema de pontuação da IA — caminhos de ataque (próprio/área/único), consciência de resistência, avaliação de purificação. |
+
+### Criação de Habilidades (Funções Puras)
+
+| Exportação | Propósito |
+|--------|---------|
+| `ability-summary` | Resumo do pacote, auditoria de balanceamento, exportação em Markdown/JSON. |
+| `ability-builders` | Fábricas de conveniência: buildDamageAbility, buildHealAbility, buildStatusAbility, buildCleanseAbility, buildAbilitySuite. |
+| `status-semantics` | Vocabulário de 11 tags, registro de estados, aplicação com consciência de resistência. |
+
 ### Criação de Combates (Funções Puras)
 
 | Exportação | Propósito |
@@ -77,6 +94,7 @@ const engine = new Engine({
 - [Cognição da IA (Cap. 8)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/08-ai-cognition/)
 - [Percepção (Cap. 9)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/09-perception-layers/)
 - [Sistema de Combate (Cap. 47)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/47-combat-system/)
+- [Sistema de Habilidades (Cap. 48)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/48-abilities-system/)
 - [Manual](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/)
 - [GitHub](https://github.com/mcp-tool-shop-org/ai-rpg-engine)
 

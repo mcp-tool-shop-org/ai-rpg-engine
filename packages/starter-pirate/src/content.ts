@@ -2,7 +2,7 @@
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
-import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
+import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
@@ -110,6 +110,7 @@ export const seaBeast: EntityState = {
   resources: { hp: 22, maxHp: 22, stamina: 6, maxStamina: 6, morale: 30 },
   statuses: [],
   zoneId: 'sunken-shrine',
+  resistances: { fear: 'immune' },
   ai: {
     profileId: 'aggressive',
     goals: ['guard-shrine', 'destroy-trespassers'],
@@ -129,6 +130,7 @@ export const boardingMarine: EntityState = {
   resources: { hp: 12, stamina: 5, morale: 12 },
   statuses: [],
   zoneId: 'ship-deck',
+  resistances: { blind: 'resistant' },
   ai: {
     profileId: 'aggressive',
     goals: ['board-enemy-ships', 'enforce-law'],
@@ -388,6 +390,116 @@ export const rumBarrelEffect = {
     }];
   },
 };
+
+// --- Abilities ---
+
+export const broadside: AbilityDefinition = {
+  id: 'broadside',
+  name: 'Broadside',
+  verb: 'use-ability',
+  tags: ['naval', 'combat', 'damage', 'aoe'],
+  costs: [{ resourceId: 'stamina', amount: 4 }],
+  target: { type: 'all-enemies' },
+  checks: [{ stat: 'cunning', difficulty: 8, onFail: 'half-damage' }],
+  effects: [
+    { type: 'damage', target: 'target', params: { amount: 4, damageType: 'cannon' } },
+    { type: 'resource-modify', target: 'actor', params: { resource: 'morale', amount: 3 } },
+  ],
+  cooldown: 4,
+  requirements: [{ type: 'has-tag', params: { tag: 'pirate' } }],
+  ui: {
+    text: 'Order the cannons to fire! Every gun bears on the enemy.',
+    hitText: 'Thunder and splinter! The broadside tears through!',
+    missText: 'The shots go wide — the sea claims the cannonballs.',
+    soundCue: 'ability.broadside',
+  },
+};
+
+export const dirtyFighting: AbilityDefinition = {
+  id: 'dirty-fighting',
+  name: 'Dirty Fighting',
+  verb: 'use-ability',
+  tags: ['combat', 'damage', 'debuff'],
+  costs: [{ resourceId: 'stamina', amount: 2 }],
+  target: { type: 'single' },
+  checks: [{ stat: 'cunning', difficulty: 6, onFail: 'half-damage' }],
+  effects: [
+    { type: 'damage', target: 'target', params: { amount: 4, damageType: 'melee' } },
+    { type: 'apply-status', target: 'target', params: { statusId: 'blinded', duration: 2, stacking: 'replace' } },
+  ],
+  cooldown: 2,
+  requirements: [{ type: 'has-tag', params: { tag: 'pirate' } }],
+  ui: {
+    text: 'Sand in the eyes, a kick to the shin — pirates fight to win.',
+    hitText: 'A handful of grit finds its mark. They stagger, blinded.',
+    missText: 'They see it coming and duck aside.',
+    soundCue: 'ability.dirty-fighting',
+  },
+};
+
+export const seaShanty: AbilityDefinition = {
+  id: 'sea-shanty',
+  name: 'Sea Shanty',
+  verb: 'use-ability',
+  tags: ['support', 'buff', 'morale'],
+  costs: [
+    { resourceId: 'stamina', amount: 2 },
+    { resourceId: 'morale', amount: 5 },
+  ],
+  target: { type: 'self' },
+  checks: [{ stat: 'sea-legs', difficulty: 6, onFail: 'abort' }],
+  effects: [
+    { type: 'heal', target: 'actor', params: { amount: 4, resource: 'hp' } },
+    { type: 'stat-modify', target: 'actor', params: { stat: 'brawn', amount: 1 } },
+    { type: 'stat-modify', target: 'actor', params: { stat: 'sea-legs', amount: 1 } },
+  ],
+  cooldown: 4,
+  ui: {
+    text: 'Belt out a working song — the crew finds their rhythm.',
+    hitText: 'The shanty rings out! Hearts lift, arms find new strength.',
+    missText: 'The words catch in your throat. The crew looks away.',
+    soundCue: 'ability.sea-shanty',
+  },
+};
+
+export const rumCourage: AbilityDefinition = {
+  id: 'rum-courage',
+  name: 'Rum Courage',
+  verb: 'use-ability',
+  tags: ['support', 'cleanse', 'morale'],
+  costs: [
+    { resourceId: 'stamina', amount: 2 },
+    { resourceId: 'morale', amount: 5 },
+  ],
+  target: { type: 'self' },
+  checks: [{ stat: 'sea-legs', difficulty: 6, onFail: 'abort' }],
+  effects: [
+    { type: 'remove-status-by-tag', target: 'actor', params: { tags: 'fear,blind' } },
+  ],
+  cooldown: 4,
+  requirements: [{ type: 'has-tag', params: { tag: 'pirate' } }],
+  ui: {
+    text: 'Take a pull from the flask — liquid courage against the dark.',
+    hitText: 'The rum burns away the fear. Eyes clear, hands steady.',
+    missText: 'The rum hits wrong — you choke and sputter.',
+    soundCue: 'ability.rum-courage',
+  },
+};
+
+export const pirateAbilities: AbilityDefinition[] = [broadside, dirtyFighting, seaShanty, rumCourage];
+
+// --- Status Definitions ---
+
+export const pirateStatusDefinitions: StatusDefinition[] = [
+  {
+    id: 'blinded',
+    name: 'Blinded',
+    tags: ['blind', 'debuff'],
+    stacking: 'replace',
+    duration: { type: 'ticks', value: 2 },
+    ui: { icon: '🏴‍☠️', color: '#2c3e50', description: 'Sand in the eyes — can\'t see a thing' },
+  },
+];
 
 // --- Pack Metadata ---
 

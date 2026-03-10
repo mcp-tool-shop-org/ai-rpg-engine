@@ -3,7 +3,7 @@
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
-import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
+import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -107,6 +107,7 @@ export const corruptSamurai: EntityState = {
   resources: { hp: 18, maxHp: 18, stamina: 5, maxStamina: 5, honor: 5 },
   statuses: [],
   zoneId: 'castle-gate',
+  resistances: { fear: 'immune' },
   ai: { profileId: 'defensive', goals: ['guard-passage', 'conceal-guilt'], fears: ['accusation'], alertLevel: 0, knowledge: {} },
 };
 
@@ -120,6 +121,7 @@ export const castleGuard: EntityState = {
   resources: { hp: 18, stamina: 4, honor: 20 },
   statuses: [],
   zoneId: 'castle-gate',
+  resistances: { stance: 'resistant' },
   ai: { profileId: 'defensive', goals: ['protect-castle', 'challenge-intruders'], fears: ['dishonor'], alertLevel: 0, knowledge: {} },
 };
 
@@ -390,6 +392,120 @@ export const incenseKitEffect = {
     }];
   },
 };
+
+// --- Abilities ---
+
+export const iaijutsuStrike: AbilityDefinition = {
+  id: 'iaijutsu-strike',
+  name: 'Iaijutsu Strike',
+  verb: 'use-ability',
+  tags: ['martial', 'combat', 'damage'],
+  costs: [
+    { resourceId: 'stamina', amount: 3 },
+    { resourceId: 'ki', amount: 5 },
+  ],
+  target: { type: 'single' },
+  checks: [{ stat: 'discipline', difficulty: 8, onFail: 'half-damage' }],
+  effects: [
+    { type: 'damage', target: 'target', params: { amount: 7, damageType: 'blade' } },
+  ],
+  cooldown: 3,
+  requirements: [{ type: 'has-tag', params: { tag: 'ronin' } }],
+  ui: {
+    text: 'Draw, cut, sheathe. One motion. One chance.',
+    hitText: 'The blade whispers. A line of crimson blooms.',
+    missText: 'The draw is slow. The moment passes.',
+    soundCue: 'ability.iaijutsu-strike',
+  },
+};
+
+export const innerCalm: AbilityDefinition = {
+  id: 'inner-calm',
+  name: 'Inner Calm',
+  verb: 'use-ability',
+  tags: ['spiritual', 'buff', 'support'],
+  costs: [{ resourceId: 'stamina', amount: 2 }],
+  target: { type: 'self' },
+  checks: [{ stat: 'composure', difficulty: 6, onFail: 'abort' }],
+  effects: [
+    { type: 'resource-modify', target: 'actor', params: { resource: 'ki', amount: 8 } },
+    { type: 'heal', target: 'actor', params: { amount: 3, resource: 'hp' } },
+    { type: 'stat-modify', target: 'actor', params: { stat: 'perception', amount: 1 } },
+  ],
+  cooldown: 4,
+  requirements: [{ type: 'has-tag', params: { tag: 'ronin' } }],
+  ui: {
+    text: 'Center your breathing. Let the world fall silent.',
+    hitText: 'Ki flows. The mind sharpens.',
+    missText: 'The mind is too turbulent. Calm does not come.',
+    soundCue: 'ability.inner-calm',
+  },
+};
+
+export const bladeWard: AbilityDefinition = {
+  id: 'blade-ward',
+  name: 'Blade Ward',
+  verb: 'use-ability',
+  tags: ['martial', 'combat', 'debuff', 'defensive'],
+  costs: [
+    { resourceId: 'stamina', amount: 2 },
+    { resourceId: 'ki', amount: 3 },
+  ],
+  target: { type: 'single' },
+  checks: [{ stat: 'perception', difficulty: 7, onFail: 'abort' }],
+  effects: [
+    { type: 'apply-status', target: 'target', params: { statusId: 'off-balance', duration: 2, stacking: 'replace' } },
+    { type: 'stat-modify', target: 'target', params: { stat: 'discipline', amount: -2 } },
+    { type: 'resource-modify', target: 'actor', params: { resource: 'honor', amount: 2 } },
+  ],
+  cooldown: 3,
+  requirements: [{ type: 'has-tag', params: { tag: 'ronin' } }],
+  ui: {
+    text: "Read the opponent's intent. Deflect and disrupt.",
+    hitText: 'The parry finds its mark — your opponent stumbles.',
+    missText: 'You misread the strike. The ward fails.',
+    soundCue: 'ability.blade-ward',
+  },
+};
+
+export const centeredMind: AbilityDefinition = {
+  id: 'centered-mind',
+  name: 'Centered Mind',
+  verb: 'use-ability',
+  tags: ['discipline', 'support', 'cleanse'],
+  costs: [
+    { resourceId: 'stamina', amount: 2 },
+    { resourceId: 'ki', amount: 3 },
+  ],
+  target: { type: 'self' },
+  checks: [{ stat: 'composure', difficulty: 6, onFail: 'abort' }],
+  effects: [
+    { type: 'remove-status-by-tag', target: 'actor', params: { tags: 'fear,control' } },
+  ],
+  cooldown: 3,
+  requirements: [{ type: 'has-tag', params: { tag: 'ronin' } }],
+  ui: {
+    text: 'Still the mind. Let the storm pass through you.',
+    hitText: 'Inner calm restores — clarity returns like morning light.',
+    missText: 'The turmoil runs deeper than meditation can reach.',
+    soundCue: 'ability.centered-mind',
+  },
+};
+
+export const roninAbilities: AbilityDefinition[] = [iaijutsuStrike, innerCalm, bladeWard, centeredMind];
+
+// --- Status Definitions ---
+
+export const roninStatusDefinitions: StatusDefinition[] = [
+  {
+    id: 'off-balance',
+    name: 'Off-Balance',
+    tags: ['stance', 'debuff'],
+    stacking: 'replace',
+    duration: { type: 'ticks', value: 2 },
+    ui: { icon: '⚖️', color: '#3498db', description: 'Footing disrupted — vulnerable to follow-up' },
+  },
+];
 
 // --- Pack Metadata ---
 

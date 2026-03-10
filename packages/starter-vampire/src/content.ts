@@ -3,7 +3,7 @@
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
-import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
+import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -95,6 +95,7 @@ export const witchHunter: EntityState = {
   statuses: [],
   zoneId: 'bell-tower',
   ai: { profileId: 'stalker', goals: ['purge-vampires'], fears: ['outnumbered'], alertLevel: 0, knowledge: {} },
+  resistances: { supernatural: 'resistant' },
 };
 
 export const feralThrall: EntityState = {
@@ -121,6 +122,7 @@ export const elderVampire: EntityState = {
   statuses: [],
   zoneId: 'grand-ballroom',
   ai: { profileId: 'calculating', goals: ['dominate-court', 'feed-selectively'], fears: ['sunlight', 'fire'], alertLevel: 0, knowledge: {} },
+  resistances: { fear: 'immune', control: 'resistant' },
 };
 
 // --- Boss Definition ---
@@ -391,6 +393,128 @@ export const bloodVialEffect = {
     }];
   },
 };
+
+// --- Abilities ---
+
+export const bloodDrain: AbilityDefinition = {
+  id: 'blood-drain',
+  name: 'Blood Drain',
+  verb: 'use-ability',
+  tags: ['predatory', 'combat', 'damage', 'heal'],
+  costs: [{ resourceId: 'stamina', amount: 2 }],
+  target: { type: 'single' },
+  checks: [{ stat: 'vitality', difficulty: 7, onFail: 'half-damage' }],
+  effects: [
+    { type: 'damage', target: 'target', params: { amount: 4, damageType: 'predatory' } },
+    { type: 'heal', target: 'actor', params: { amount: 3, resource: 'hp' } },
+    { type: 'resource-modify', target: 'actor', params: { resource: 'bloodlust', amount: 8 } },
+  ],
+  cooldown: 2,
+  requirements: [{ type: 'has-tag', params: { tag: 'vampire' } }],
+  ui: {
+    text: 'Sink your fangs into the target, draining their vitality.',
+    hitText: 'Blood flows — the hunger is briefly sated.',
+    missText: 'The bite finds only a glancing wound.',
+    soundCue: 'ability.blood-drain',
+  },
+};
+
+export const mesmerize: AbilityDefinition = {
+  id: 'mesmerize',
+  name: 'Mesmerize',
+  verb: 'use-ability',
+  tags: ['supernatural', 'debuff', 'social'],
+  costs: [
+    { resourceId: 'stamina', amount: 3 },
+    { resourceId: 'humanity', amount: 2 },
+  ],
+  target: { type: 'single' },
+  checks: [{ stat: 'presence', difficulty: 8, onFail: 'abort' }],
+  effects: [
+    { type: 'apply-status', target: 'target', params: { statusId: 'mesmerized', duration: 3, stacking: 'replace' } },
+    { type: 'stat-modify', target: 'target', params: { stat: 'cunning', amount: -2 } },
+  ],
+  cooldown: 4,
+  requirements: [{ type: 'has-tag', params: { tag: 'vampire' } }],
+  ui: {
+    text: 'Lock eyes with your prey — bend their will to yours.',
+    hitText: 'Their gaze goes glassy. They are yours, for a moment.',
+    missText: 'They resist — your presence is not yet commanding enough.',
+    soundCue: 'ability.mesmerize',
+  },
+};
+
+export const crimsonFury: AbilityDefinition = {
+  id: 'crimson-fury',
+  name: 'Crimson Fury',
+  verb: 'use-ability',
+  tags: ['predatory', 'combat', 'damage', 'aoe'],
+  costs: [
+    { resourceId: 'stamina', amount: 4 },
+    { resourceId: 'bloodlust', amount: 20 },
+  ],
+  target: { type: 'all-enemies' },
+  checks: [{ stat: 'vitality', difficulty: 9, onFail: 'half-damage' }],
+  effects: [
+    { type: 'damage', target: 'target', params: { amount: 5, damageType: 'predatory' } },
+    { type: 'apply-status', target: 'target', params: { statusId: 'terrified', duration: 2, stacking: 'replace' } },
+  ],
+  cooldown: 5,
+  requirements: [{ type: 'has-tag', params: { tag: 'vampire' } }],
+  ui: {
+    text: 'Unleash the beast within — bloodlust fuels a savage frenzy.',
+    hitText: 'A whirlwind of fangs and fury. None are spared.',
+    missText: 'The beast surges but cannot find its mark.',
+    soundCue: 'ability.crimson-fury',
+  },
+};
+
+export const bloodPurge: AbilityDefinition = {
+  id: 'blood-purge',
+  name: 'Blood Purge',
+  verb: 'use-ability',
+  tags: ['supernatural', 'support', 'cleanse'],
+  costs: [
+    { resourceId: 'stamina', amount: 2 },
+    { resourceId: 'humanity', amount: 3 },
+  ],
+  target: { type: 'self' },
+  checks: [{ stat: 'vitality', difficulty: 7, onFail: 'abort' }],
+  effects: [
+    { type: 'remove-status-by-tag', target: 'actor', params: { tags: 'control,blind' } },
+  ],
+  cooldown: 4,
+  requirements: [{ type: 'has-tag', params: { tag: 'vampire' } }],
+  ui: {
+    text: 'Burn away impurities with the fire in your blood.',
+    hitText: 'The tainted blood boils away. Clarity returns.',
+    missText: 'The corruption runs too deep to purge.',
+    soundCue: 'ability.blood-purge',
+  },
+};
+
+export const vampireAbilities: AbilityDefinition[] = [bloodDrain, mesmerize, crimsonFury, bloodPurge];
+
+// --- Status Definitions ---
+
+export const vampireStatusDefinitions: StatusDefinition[] = [
+  {
+    id: 'mesmerized',
+    name: 'Mesmerized',
+    tags: ['control', 'supernatural', 'debuff'],
+    stacking: 'replace',
+    duration: { type: 'ticks', value: 3 },
+    ui: { icon: '🌀', color: '#9b59b6', description: 'Mind locked by vampiric presence' },
+  },
+  {
+    id: 'terrified',
+    name: 'Terrified',
+    tags: ['fear', 'supernatural', 'debuff'],
+    stacking: 'replace',
+    duration: { type: 'ticks', value: 2 },
+    ui: { icon: '😱', color: '#e74c3c', description: 'Overcome with primal terror' },
+  },
+];
 
 // --- Pack Metadata ---
 

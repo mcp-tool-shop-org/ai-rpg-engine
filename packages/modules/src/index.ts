@@ -685,3 +685,111 @@ export type {
   EndgameTrigger,
   EndgameInputs,
 } from './endgame-detection.js';
+
+// --- Ability Core (Abilities & Powers) ---
+export {
+  createAbilityCore,
+  DEFAULT_ABILITY_STAT_MAPPING,
+  UNIVERSAL_ABILITIES,
+  GENRE_ABILITIES,
+  getAbilitiesForGenre,
+  isAbilityOnCooldown,
+  getAbilityCooldown,
+  isAbilityReady,
+  getAvailableAbilities,
+} from './ability-core.js';
+export type {
+  AbilityStatMapping,
+  AbilityCooldownState,
+  AbilityUseState,
+  AbilityModuleState,
+  AbilityCheckResult,
+  AbilityCoreConfig,
+} from './ability-core.js';
+
+// --- Ability Effects (Abilities & Powers) ---
+export {
+  createAbilityEffects,
+  resolveEffects,
+  registerEffectHandler,
+  getEffectHandler,
+} from './ability-effects.js';
+export type {
+  EffectContext,
+  AbilityEffectHandler,
+  AbilityEffectsConfig,
+} from './ability-effects.js';
+
+// --- Ability Review (Abilities & Powers) ---
+export {
+  createAbilityReview,
+  formatAbilityTrace,
+} from './ability-review.js';
+export type {
+  AbilityCheckTrace,
+  AbilityEffectTrace,
+  AbilityCostTrace,
+  AbilityTrace,
+  AbilityReviewConfig,
+} from './ability-review.js';
+
+// --- Ability Intent (Abilities & Powers) ---
+export {
+  scoreAbilityUse,
+  selectNpcAbilityAction,
+  formatAbilityDecision,
+} from './ability-intent.js';
+export type {
+  AbilityScoreContribution,
+  AbilityScore,
+  AbilityDecision,
+} from './ability-intent.js';
+
+// --- Status Semantics (Abilities Phase 3) ---
+export {
+  STATUS_SEMANTIC_TAGS,
+  isKnownStatusTag,
+  registerStatusDefinitions,
+  getStatusDefinition,
+  getStatusTags,
+  getRegisteredStatusIds,
+  clearStatusRegistry,
+  checkResistance,
+  applyResistanceToDuration,
+} from './status-semantics.js';
+export type { StatusSemanticTag } from './status-semantics.js';
+
+// --- Ability Summary & Audit (Abilities Phase 2+5) ---
+export {
+  summarizeAbilityPack,
+  formatAbilityPackMarkdown,
+  formatAbilityPackJSON,
+  auditAbilityBalance,
+  compareAbilityPacks,
+  formatPackComparisonMarkdown,
+} from './ability-summary.js';
+export type {
+  CooldownBand,
+  AbilityPackSummary,
+  BalanceFlag,
+  BalanceAudit,
+  PackIdentityProfile,
+  StatusEcosystemSummary,
+  PackComparisonMatrix,
+} from './ability-summary.js';
+
+// --- Ability Builders (Abilities Phase 4) ---
+export {
+  buildDamageAbility,
+  buildHealAbility,
+  buildStatusAbility,
+  buildCleanseAbility,
+  buildAbilitySuite,
+} from './ability-builders.js';
+export type {
+  DamageAbilityOpts,
+  HealAbilityOpts,
+  StatusAbilityOpts,
+  CleanseAbilityOpts,
+  AbilitySuiteResult,
+} from './ability-builders.js';

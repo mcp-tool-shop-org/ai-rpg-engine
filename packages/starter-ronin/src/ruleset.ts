@@ -30,6 +30,7 @@ export const roninMinimalRuleset: RulesetDefinition = {
     { id: 'choose', name: 'Choose', tags: ['dialogue'], description: 'Select a dialogue option' },
     { id: 'duel', name: 'Duel', tags: ['martial', 'formal'], description: 'Challenge an opponent to an honorable duel' },
     { id: 'meditate', name: 'Meditate', tags: ['recovery', 'spiritual'], description: 'Center yourself to restore ki and focus' },
+    { id: 'use-ability', name: 'Use Ability', tags: ['ability'], description: 'Activate a martial technique or spiritual power' },
   ],
 
   formulas: [

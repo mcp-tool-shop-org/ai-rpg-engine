@@ -30,6 +30,7 @@ export const cyberpunkMinimalRuleset: RulesetDefinition = {
     { id: 'speak', name: 'Speak', tags: ['dialogue'], description: 'Talk to an NPC' },
     { id: 'choose', name: 'Choose', tags: ['dialogue'], description: 'Select a dialogue option' },
     { id: 'jack-in', name: 'Jack In', tags: ['netrunning'], description: 'Connect to a network node' },
+    { id: 'use-ability', name: 'Use Ability', tags: ['ability'], description: 'Activate a special ability or program' },
   ],
 
   formulas: [

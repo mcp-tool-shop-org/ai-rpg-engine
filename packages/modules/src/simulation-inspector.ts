@@ -23,6 +23,7 @@ import { ENGAGEMENT_STATES } from './engagement-core.js';
 import { WOUND_STATUSES, MORALE_AFTERMATH_STATUSES } from './combat-recovery.js';
 import { getEntityRole, BUILTIN_COMBAT_ROLES } from './combat-roles.js';
 import type { CombatRole } from './combat-roles.js';
+import type { AbilityModuleState } from './ability-core.js';
 
 // --- Types ---
 
@@ -50,6 +51,14 @@ export type EntityInspection = {
     combatStatuses: string[];
     woundStatus: string | null;
     moraleStatus: string | null;
+  };
+  abilityState: {
+    /** abilityId → expiresAtTick (0 if not on cooldown) */
+    cooldowns: Record<string, number>;
+    /** abilityId → use count */
+    useCounts: Record<string, number>;
+    /** Ability IDs currently available (off cooldown) */
+    availableAbilities: string[];
   };
 };
 
@@ -263,6 +272,21 @@ export function inspectEntity(world: WorldState, entityId: string): EntityInspec
     : hasStatus(entity, MORALE_AFTERMATH_STATUSES.EMBOLDENED) ? MORALE_AFTERMATH_STATUSES.EMBOLDENED
     : null;
 
+  // Ability state
+  const abilityMod = (world.modules['ability-core'] ?? { cooldowns: {}, useCounts: {} }) as AbilityModuleState;
+  const entityCooldowns = abilityMod.cooldowns[entityId] ?? {};
+  const entityUseCounts = abilityMod.useCounts[entityId] ?? {};
+  const currentTick = world.meta.tick;
+  const availableAbilities = Object.entries(entityCooldowns)
+    .filter(([, expiresAt]) => currentTick >= expiresAt)
+    .map(([abilityId]) => abilityId);
+  // Also include abilities that have use counts but no cooldown entry (never used or cooldown expired)
+  for (const abilityId of Object.keys(entityUseCounts)) {
+    if (!entityCooldowns[abilityId] && !availableAbilities.includes(abilityId)) {
+      availableAbilities.push(abilityId);
+    }
+  }
+
   return {
     id: entity.id,
     name: entity.name,
@@ -287,6 +311,11 @@ export function inspectEntity(world: WorldState, entityId: string): EntityInspec
       combatStatuses,
       woundStatus,
       moraleStatus,
+    },
+    abilityState: {
+      cooldowns: { ...entityCooldowns },
+      useCounts: { ...entityUseCounts },
+      availableAbilities,
     },
   };
 }
@@ -466,6 +495,21 @@ export function formatEntityInspection(inspection: EntityInspection): string {
     lines.push(`  Recent Perceptions (${inspection.perceptions.length}):`);
     for (const p of inspection.perceptions.slice(-5)) {
       lines.push(`    [tick ${p.tick}] ${p.detected ? 'detected' : 'missed'} via ${p.sense} (clarity: ${p.clarity.toFixed(2)})`);
+    }
+  }
+
+  // Ability state
+  const ab = inspection.abilityState;
+  const cdEntries = Object.entries(ab.cooldowns);
+  const useEntries = Object.entries(ab.useCounts);
+  if (cdEntries.length > 0 || useEntries.length > 0) {
+    lines.push(`  Abilities:`);
+    if (ab.availableAbilities.length > 0) {
+      lines.push(`    Available: ${ab.availableAbilities.join(', ')}`);
+    }
+    for (const [abilityId, expiresAt] of cdEntries) {
+      const uses = ab.useCounts[abilityId] ?? 0;
+      lines.push(`    ${abilityId}: cooldown expires tick ${expiresAt}, uses: ${uses}`);
     }
   }
 

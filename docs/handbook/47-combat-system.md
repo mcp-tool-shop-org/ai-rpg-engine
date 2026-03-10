@@ -344,3 +344,7 @@ All 10 starters meet the minimum content bar:
 5. **Boss pacing** — Two phases is the minimum. Place the first threshold at 50% and the second at 25% for natural escalation. Use `addTags`/`removeTags` to shift behavior rather than just damage.
 
 6. **Validation** — Run `validateBossDefinition()` and `validateEncounter()` in tests. Both return arrays of warning strings — empty means valid.
+
+## Ability Layer
+
+Combat entities can also use abilities — powers with costs, checks, cooldowns, and status effects. The ability system layers on top of combat core, adding tactical depth through genre-native powers, resistance profiles, and AI-aware decision making. See [Chapter 48: Abilities System](./48-abilities-system.md) for the full reference.

@@ -29,6 +29,7 @@ export const pirateMinimalRuleset: RulesetDefinition = {
     { id: 'choose', name: 'Choose', tags: ['dialogue'], description: 'Select a dialogue option' },
     { id: 'plunder', name: 'Plunder', tags: ['loot'], description: 'Loot a defeated area or ship' },
     { id: 'navigate', name: 'Navigate', tags: ['exploration'], description: 'Chart a course between islands' },
+    { id: 'use-ability', name: 'Use Ability', tags: ['ability'], description: 'Activate a pirate trick or crew maneuver' },
   ],
 
   formulas: [

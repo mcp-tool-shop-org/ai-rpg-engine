@@ -7,6 +7,7 @@ import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
+import type { AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
 
 export const manifest: GameManifest = {
   id: 'neon-lockbox',
@@ -81,6 +82,7 @@ export const iceAgent: EntityState = {
   resources: { hp: 10, ice: 15 },
   statuses: [],
   zoneId: 'data-vault',
+  resistances: { control: 'resistant' },
   ai: { profileId: 'aggressive', goals: ['guard-vault'], fears: [], alertLevel: 0, knowledge: {} },
 };
 
@@ -107,6 +109,7 @@ export const vaultOverseer: EntityState = {
   resources: { hp: 45, maxHp: 45, stamina: 12, maxStamina: 12, ice: 30 },
   statuses: [],
   zoneId: 'data-vault',
+  resistances: { breach: 'resistant' },
   ai: { profileId: 'calculating', goals: ['protect-data', 'eliminate-intruders'], fears: [], alertLevel: 0, knowledge: {} },
 };
 
@@ -354,6 +357,91 @@ export const iceBreaker = {
     }];
   },
 };
+
+// --- Abilities ---
+
+export const iceBreakAbility: AbilityDefinition = {
+  id: 'ice-breaker-hack',
+  name: 'ICE Breaker',
+  verb: 'use-ability',
+  tags: ['netrunning', 'combat', 'damage'],
+  costs: [{ resourceId: 'bandwidth', amount: 4 }],
+  target: { type: 'single' },
+  checks: [{ stat: 'netrunning', difficulty: 7, onFail: 'half-damage' }],
+  effects: [
+    { type: 'damage', target: 'target', params: { amount: 5, damageType: 'net' } },
+    { type: 'apply-status', target: 'target', params: { statusId: 'system-breach', duration: 2, stacking: 'replace' } },
+  ],
+  cooldown: 2,
+  ui: {
+    text: 'Deploy an intrusion package to shatter ICE defenses.',
+    hitText: 'ICE barriers fracture — system breach detected.',
+    missText: 'The intrusion script bounces — firewall holds.',
+    soundCue: 'ability.ice-breaker',
+  },
+};
+
+export const debugProtocol: AbilityDefinition = {
+  id: 'debug-protocol',
+  name: 'Debug Protocol',
+  verb: 'use-ability',
+  tags: ['netrunning', 'support', 'cleanse'],
+  costs: [
+    { resourceId: 'stamina', amount: 2 },
+    { resourceId: 'ice', amount: 2 },
+  ],
+  target: { type: 'self' },
+  checks: [{ stat: 'netrunning', difficulty: 6, onFail: 'abort' }],
+  effects: [
+    { type: 'remove-status-by-tag', target: 'actor', params: { tags: 'breach' } },
+  ],
+  cooldown: 3,
+  ui: {
+    text: 'Run emergency diagnostics to patch system vulnerabilities.',
+    hitText: 'Firewall restored — breach contained.',
+    missText: 'Debug protocol failed — system too compromised.',
+    soundCue: 'ability.debug-protocol',
+  },
+};
+
+export const nanoRepair: AbilityDefinition = {
+  id: 'nano-repair',
+  name: 'Nano-Repair',
+  verb: 'use-ability',
+  tags: ['netrunning', 'support', 'heal'],
+  costs: [
+    { resourceId: 'stamina', amount: 2 },
+    { resourceId: 'ice', amount: 2 },
+  ],
+  target: { type: 'self' },
+  checks: [{ stat: 'netrunning', difficulty: 5, onFail: 'abort' }],
+  effects: [
+    { type: 'heal', target: 'actor', params: { amount: 3 } },
+    { type: 'resource-modify', target: 'actor', params: { resource: 'bandwidth', amount: 4 } },
+  ],
+  cooldown: 3,
+  ui: {
+    text: 'Activate nanite swarm — repair tissue, restore bandwidth.',
+    hitText: 'Nanites surge through your system. Damage patched, bandwidth restored.',
+    missText: 'Nanite injection rejected — system too degraded.',
+    soundCue: 'ability.nano-repair',
+  },
+};
+
+export const cyberpunkAbilities: AbilityDefinition[] = [iceBreakAbility, debugProtocol, nanoRepair];
+
+// --- Status Definitions ---
+
+export const cyberpunkStatusDefinitions: StatusDefinition[] = [
+  {
+    id: 'system-breach',
+    name: 'System Breach',
+    tags: ['breach', 'debuff'],
+    stacking: 'replace',
+    duration: { type: 'ticks', value: 2 },
+    ui: { icon: '⚡', color: '#e74c3c', description: 'Firewall compromised — systems exposed' },
+  },
+];
 
 // --- Pack Metadata ---
 

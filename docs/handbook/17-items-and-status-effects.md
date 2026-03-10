@@ -35,3 +35,5 @@ stackable: false
 ## How Statuses Interact with the Simulation
 
 Status effects produce events each tick (`status.tick`, `status.expired`). Other modules can listen for these events. For example, the cognition module might update an entity's morale when a debilitating status is applied, or the environment module might react to a status that produces noise or light.
+
+For the full ability-driven status system — semantic tags, resistances, cleanse, and AI-aware application — see [Chapter 48: Abilities System](./48-abilities-system.md).

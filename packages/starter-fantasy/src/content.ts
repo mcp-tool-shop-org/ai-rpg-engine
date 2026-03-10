@@ -8,6 +8,7 @@ import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
 import type { EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
+import type { AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
 
 export const manifest: GameManifest = {
   id: 'chapel-threshold',
@@ -107,6 +108,7 @@ export const cryptWarden: EntityState = {
   resources: { hp: 45, maxHp: 45, stamina: 12, maxStamina: 12 },
   statuses: [],
   zoneId: 'crypt-chamber',
+  resistances: { holy: 'immune' },
   ai: { profileId: 'territorial', goals: ['protect-crypt', 'destroy-intruders'], fears: ['sacred'], alertLevel: 0, knowledge: {} },
 };
 
@@ -120,6 +122,7 @@ export const cryptStalker: EntityState = {
   resources: { hp: 8, stamina: 6 },
   statuses: [],
   zoneId: 'vestry-door',
+  resistances: { holy: 'vulnerable' },
   ai: { profileId: 'cautious', goals: ['ambush-intruders'], fears: ['sacred', 'light'], alertLevel: 0, knowledge: {} },
 };
 
@@ -392,6 +395,88 @@ export const healingDraughtEffect = {
     }];
   },
 };
+
+// --- Abilities ---
+
+export const holySmite: AbilityDefinition = {
+  id: 'holy-smite',
+  name: 'Holy Smite',
+  verb: 'use-ability',
+  tags: ['divine', 'combat', 'damage'],
+  costs: [{ resourceId: 'stamina', amount: 3 }],
+  target: { type: 'single' },
+  checks: [{ stat: 'will', difficulty: 8, onFail: 'half-damage' }],
+  effects: [
+    { type: 'damage', target: 'target', params: { amount: 6, damageType: 'holy' } },
+    { type: 'apply-status', target: 'target', params: { statusId: 'holy-fire', duration: 2, stacking: 'replace' } },
+  ],
+  cooldown: 3,
+  requirements: [{ type: 'has-tag', params: { tag: 'divine' } }],
+  ui: {
+    text: 'Channel divine wrath through your will, searing the unholy.',
+    hitText: 'Sacred fire engulfs the target.',
+    missText: 'The divine light flickers — faith wavers.',
+    soundCue: 'ability.holy-smite',
+  },
+};
+
+export const purify: AbilityDefinition = {
+  id: 'purify',
+  name: 'Purify',
+  verb: 'use-ability',
+  tags: ['divine', 'support', 'cleanse'],
+  costs: [{ resourceId: 'stamina', amount: 2 }],
+  target: { type: 'self' },
+  checks: [{ stat: 'will', difficulty: 6, onFail: 'abort' }],
+  effects: [
+    { type: 'remove-status-by-tag', target: 'actor', params: { tags: 'debuff,holy' } },
+  ],
+  cooldown: 3,
+  requirements: [{ type: 'has-tag', params: { tag: 'divine' } }],
+  ui: {
+    text: 'Call upon divine grace to cleanse impurities.',
+    hitText: 'A warm light washes away the affliction.',
+    missText: 'Your faith falters — the corruption remains.',
+    soundCue: 'ability.purify',
+  },
+};
+
+export const divineLight: AbilityDefinition = {
+  id: 'divine-light',
+  name: 'Divine Light',
+  verb: 'use-ability',
+  tags: ['divine', 'support', 'heal'],
+  costs: [{ resourceId: 'stamina', amount: 2 }],
+  target: { type: 'self' },
+  checks: [{ stat: 'will', difficulty: 5, onFail: 'abort' }],
+  effects: [
+    { type: 'heal', target: 'actor', params: { amount: 4 } },
+    { type: 'stat-modify', target: 'actor', params: { stat: 'will', amount: 1 } },
+  ],
+  cooldown: 3,
+  requirements: [{ type: 'has-tag', params: { tag: 'divine' } }],
+  ui: {
+    text: 'Channel sacred light to mend wounds and strengthen resolve.',
+    hitText: 'Golden warmth fills you — wounds close, faith deepens.',
+    missText: 'The light flickers and fades. The connection is too weak.',
+    soundCue: 'ability.divine-light',
+  },
+};
+
+export const fantasyAbilities: AbilityDefinition[] = [holySmite, purify, divineLight];
+
+// --- Status Definitions ---
+
+export const fantasyStatusDefinitions: StatusDefinition[] = [
+  {
+    id: 'holy-fire',
+    name: 'Holy Fire',
+    tags: ['holy', 'debuff'],
+    stacking: 'replace',
+    duration: { type: 'ticks', value: 2 },
+    ui: { icon: '🔥', color: '#f1c40f', description: 'Seared by sacred flame' },
+  },
+];
 
 // --- Pack Metadata ---
 

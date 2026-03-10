@@ -14,7 +14,7 @@
 
 # @ai-rpg-engine/modules
 
-17 composable simulation modules for AI RPG Engine — combat, dialogue, cognition, perception, factions, and more.
+29 composable simulation modules for AI RPG Engine — combat, abilities, dialogue, cognition, perception, factions, and more.
 
 ## Install
 
@@ -50,6 +50,23 @@ npm install @ai-rpg-engine/modules
 | `defeatFallout` | Post-combat faction consequences, reputation shifts |
 | `bossPhaseListener` | Boss HP-threshold phase transitions |
 
+### Ability Modules
+
+| Module | Description |
+|--------|-------------|
+| `abilityCore` | Ability resolution — costs, checks, targeting, effect dispatch, cooldowns |
+| `abilityEffects` | Effect handlers — damage, heal, stat-modify, status apply/remove |
+| `abilityReview` | Runtime tracing — per-use breakdowns, inspector, formatted output |
+| `abilityIntent` | AI scoring — self/AoE/single paths, resistance awareness, cleanse valuation |
+
+### Ability Authoring (Pure Functions)
+
+| Export | Purpose |
+|--------|---------|
+| `ability-summary` | Pack summary, balance audit, cross-pack comparison matrix, Markdown/JSON export |
+| `ability-builders` | Convenience factories: buildDamageAbility, buildHealAbility, buildStatusAbility, buildCleanseAbility, buildAbilitySuite |
+| `status-semantics` | 11-tag vocabulary, status registry, resistance-aware application |
+
 ### Combat Authoring (Pure Functions)
 
 | Export | Purpose |
@@ -77,6 +94,7 @@ const engine = new Engine({
 - [AI Cognition (Ch. 8)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/08-ai-cognition/)
 - [Perception (Ch. 9)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/09-perception-layers/)
 - [Combat System (Ch. 47)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/47-combat-system/)
+- [Abilities System (Ch. 48)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/48-abilities-system/)
 - [Handbook](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/)
 - [GitHub](https://github.com/mcp-tool-shop-org/ai-rpg-engine)
 

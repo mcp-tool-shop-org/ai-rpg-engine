@@ -26,6 +26,10 @@ import {
   BUILTIN_PACK_BIASES,
   createCombatRecovery,
   createBossPhaseListener,
+  createAbilityCore,
+  createAbilityEffects,
+  createAbilityReview,
+  registerStatusDefinitions,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -42,6 +46,8 @@ import {
   scientistDialogue,
   emergencyCellEffect,
   commanderTree,
+  colonyAbilities,
+  colonyStatusDefinitions,
 } from './content.js';
 import { colonyMinimalRuleset } from './ruleset.js';
 
@@ -84,6 +90,7 @@ const colonyFormulas: CombatFormulas = {
 };
 
 export function createGame(seed?: number): Engine {
+  registerStatusDefinitions(colonyStatusDefinitions);
   const review = createCombatReview({ baseFormulas: colonyFormulas });
   const engine = new Engine({
     manifest,
@@ -149,6 +156,9 @@ export function createGame(seed?: number): Engine {
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['drone', 'alien'].includes(b.tag)) }),
       createCombatRecovery({ safeZoneTags: ['safe', 'colony-core'] }),
       createBossPhaseListener(resonanceBoss),
+      createAbilityCore({ abilities: colonyAbilities, statMapping: { power: 'engineering', precision: 'awareness', focus: 'command' } }),
+      createAbilityEffects(),
+      createAbilityReview(),
       createSimulationInspector(),
     ],
   });

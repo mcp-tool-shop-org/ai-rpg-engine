@@ -47,6 +47,24 @@ Optional AI layer that scaffolds rooms, factions, quests, and districts from a t
 
 Session-aware, plan-first workflows for world scaffolding, critique loops, design iteration, guided builds, and structured tuning plans. Combines deterministic tools with AI assistance.
 
+### Abilities & Powers
+
+Genre-native ability system with 10-pack cross-genre coverage — every pack has 3+ abilities with a complete tactical triangle (offense, defense, control). Abilities have costs, stat checks, cooldowns, and typed effects (damage, heal, status apply, cleanse). Status effects use an 11-tag semantic vocabulary with resistance/vulnerability profiles across 8+ packs. AI-aware ability selection scores self/AoE/single-target paths with resistance awareness and cleanse valuation. Cross-pack comparison matrix, balance audit, and pack identity profiling catch outliers and dead abilities at authoring time.
+
+```typescript
+const warCry: AbilityDefinition = {
+  id: 'war-cry', name: 'War Cry', verb: 'use-ability',
+  tags: ['combat', 'debuff', 'aoe'],
+  costs: [{ resourceId: 'stamina', amount: 3 }, { resourceId: 'infection', amount: 5 }],
+  target: { type: 'all-enemies' },
+  checks: [{ stat: 'nerve', difficulty: 6, onFail: 'abort' }],
+  effects: [
+    { type: 'apply-status', target: 'target', params: { statusId: 'rattled', duration: 2 } },
+  ],
+  cooldown: 4,
+};
+```
+
 ### Simulation Analysis
 
 Replay analysis that explains why events happened, where mechanics break down, which triggers never fire, and which systems create instability. Structured findings feed directly into tuning.
@@ -155,7 +173,7 @@ The system has four layers.
 
 | Resource | Description |
 |----------|-------------|
-| [Handbook](docs/handbook/index.md) | 43 chapters + 4 appendices covering every system |
+| [Handbook](docs/handbook/index.md) | 48 chapters + 4 appendices covering every system |
 | [Design Document](docs/DESIGN.md) | Architecture deep-dive — action pipeline, truth vs presentation, simulation layers |
 | [AI Worldbuilding Guide](packages/ollama/AI_WORLDBUILDING.md) | Scaffold, diagnose, tune, experiment workflows |
 | [Philosophy](PHILOSOPHY.md) | Why deterministic worlds, evidence-driven design, and AI as assistant |

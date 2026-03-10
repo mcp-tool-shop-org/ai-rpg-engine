@@ -29,6 +29,7 @@ export const fantasyMinimalRuleset: RulesetDefinition = {
     { id: 'choose', name: 'Choose', tags: ['dialogue'], description: 'Select a dialogue option' },
     { id: 'pray', name: 'Pray', tags: ['divine', 'ritual'], description: 'Channel divine will for guidance or protection' },
     { id: 'consecrate', name: 'Consecrate', tags: ['divine', 'purification'], description: 'Purify cursed ground or objects with sacred rites' },
+    { id: 'use-ability', name: 'Use Ability', tags: ['ability'], description: 'Activate a special ability or power' },
   ],
 
   formulas: [

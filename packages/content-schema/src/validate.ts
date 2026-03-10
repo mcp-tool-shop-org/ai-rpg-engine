@@ -326,6 +326,64 @@ export function validateStatusDefinition(v: unknown, path = 'StatusDefinition'):
   return { ok: c.errors.length === 0, errors: c.errors };
 }
 
+/**
+ * Cross-validates a collection of StatusDefinitions.
+ *
+ * Runs `validateStatusDefinition()` on each entry, then checks:
+ * - No duplicate IDs
+ * - Tags reference known vocabulary (advisory, not error — returned as separate list)
+ */
+export function validateStatusDefinitionPack(
+  defs: unknown[],
+  knownTags?: string[],
+  path = 'StatusDefinitionPack',
+): ValidationResult & { advisories: ValidationError[] } {
+  const errors: ValidationError[] = [];
+  const advisories: ValidationError[] = [];
+
+  if (!Array.isArray(defs)) {
+    return { ok: false, errors: [{ path, message: 'must be an array' }], advisories: [] };
+  }
+
+  const seenIds = new Set<string>();
+  const tagSet = knownTags ? new Set(knownTags) : null;
+
+  for (let i = 0; i < defs.length; i++) {
+    const def = defs[i];
+    const defPath = `${path}[${i}]`;
+
+    // Structural validation
+    const structResult = validateStatusDefinition(def, defPath);
+    errors.push(...structResult.errors);
+
+    if (!isObj(def)) continue;
+
+    // Duplicate ID check
+    const id = def.id;
+    if (typeof id === 'string') {
+      if (seenIds.has(id)) {
+        errors.push({ path: `${defPath}.id`, message: `duplicate status id "${id}"` });
+      }
+      seenIds.add(id);
+    }
+
+    // Advisory: tags not in known vocabulary
+    if (tagSet && Array.isArray(def.tags)) {
+      for (let j = 0; j < (def.tags as unknown[]).length; j++) {
+        const tag = (def.tags as unknown[])[j];
+        if (typeof tag === 'string' && !tagSet.has(tag)) {
+          advisories.push({
+            path: `${defPath}.tags[${j}]`,
+            message: `tag "${tag}" is not in the known vocabulary`,
+          });
+        }
+      }
+    }
+  }
+
+  return { ok: errors.length === 0, errors, advisories };
+}
+
 export function validateZoneDefinition(v: unknown, path = 'ZoneDefinition'): ValidationResult {
   if (!isObj(v)) return fail([{ path, message: 'must be an object' }]);
   const c = checker(path);
@@ -638,6 +696,216 @@ export function validateRulesetDefinition(v: unknown, path = 'RulesetDefinition'
   reqStrArr(c, v, 'progressionModels');
 
   return { ok: c.errors.length === 0, errors: c.errors };
+}
+
+// --- Ability Pack cross-validator ---
+
+/** Minimal ruleset shape for cross-validation (compatible with RulesetDefinition) */
+export type AbilityPackRuleset = {
+  stats: { id: string }[];
+  resources: { id: string }[];
+};
+
+/** Implicit resources that every engine provides — no need to declare in ruleset */
+const IMPLICIT_RESOURCES = new Set(['hp', 'stamina']);
+
+/**
+ * Cross-validates an ability pack against a ruleset.
+ *
+ * Runs `validateAbilityDefinition()` on each ability, then checks:
+ * - Costs reference resources that exist in the ruleset (or implicit: hp, stamina)
+ * - Checks reference stats that exist in the ruleset
+ * - `stat-modify` effects reference valid stats
+ * - `resource-modify` effects reference valid resources (or implicit)
+ * - No duplicate ability IDs within the pack
+ */
+export function validateAbilityPack(
+  abilities: unknown[],
+  ruleset: AbilityPackRuleset,
+  path = 'AbilityPack',
+): ValidationResult & { advisories: ValidationError[] } {
+  const errors: ValidationError[] = [];
+  const advisories: ValidationError[] = [];
+
+  if (!Array.isArray(abilities)) {
+    return { ...fail([{ path, message: 'abilities must be an array' }]), advisories: [] };
+  }
+
+  // Build lookup sets from ruleset
+  const statIds = new Set(ruleset.stats.map((s) => s.id));
+  const resourceIds = new Set([
+    ...ruleset.resources.map((r) => r.id),
+    ...IMPLICIT_RESOURCES,
+  ]);
+
+  // Duplicate ID detection
+  const seenIds = new Set<string>();
+
+  // Track data for pack-level advisories
+  const statusTagCounts: Record<string, number> = {};
+  let totalApplyStatusAbilities = 0;
+  const abilityCosts: number[] = [];
+  const damageAmounts: number[] = [];
+
+  for (let i = 0; i < abilities.length; i++) {
+    const ab = abilities[i];
+    const abPath = `${path}[${i}]`;
+
+    // Run structural validation first
+    const structResult = validateAbilityDefinition(ab, abPath);
+    errors.push(...structResult.errors);
+
+    // Skip cross-validation if not an object
+    if (!isObj(ab)) continue;
+
+    // Duplicate ID check
+    const id = ab.id;
+    if (typeof id === 'string') {
+      if (seenIds.has(id)) {
+        errors.push({ path: `${abPath}.id`, message: `duplicate ability id "${id}"` });
+      }
+      seenIds.add(id);
+    }
+
+    // Cross-validate costs → resources
+    let abCost = 0;
+    if (Array.isArray(ab.costs)) {
+      for (let j = 0; j < (ab.costs as unknown[]).length; j++) {
+        const cost = (ab.costs as unknown[])[j];
+        if (isObj(cost) && typeof cost.resourceId === 'string') {
+          if (!resourceIds.has(cost.resourceId)) {
+            errors.push({
+              path: `${abPath}.costs[${j}].resourceId`,
+              message: `references unknown resource "${cost.resourceId}" (not in ruleset or implicit)`,
+            });
+          }
+          if (typeof cost.amount === 'number') abCost += cost.amount;
+        }
+      }
+    }
+    abilityCosts.push(abCost);
+
+    // Cross-validate checks → stats
+    if (Array.isArray(ab.checks)) {
+      for (let j = 0; j < (ab.checks as unknown[]).length; j++) {
+        const check = (ab.checks as unknown[])[j];
+        if (isObj(check) && typeof check.stat === 'string') {
+          if (!statIds.has(check.stat)) {
+            errors.push({
+              path: `${abPath}.checks[${j}].stat`,
+              message: `references unknown stat "${check.stat}" (not in ruleset)`,
+            });
+          }
+        }
+      }
+    }
+
+    // Cross-validate effects → stats/resources + gather advisory data
+    if (Array.isArray(ab.effects)) {
+      for (let j = 0; j < (ab.effects as unknown[]).length; j++) {
+        const effect = (ab.effects as unknown[])[j];
+        if (!isObj(effect)) continue;
+        const effectPath = `${abPath}.effects[${j}]`;
+        const params = effect.params;
+        if (!isObj(params)) continue;
+
+        if (effect.type === 'stat-modify') {
+          if (typeof params.stat === 'string' && !statIds.has(params.stat)) {
+            errors.push({
+              path: `${effectPath}.params.stat`,
+              message: `stat-modify references unknown stat "${params.stat}" (not in ruleset)`,
+            });
+          }
+        }
+
+        if (effect.type === 'resource-modify') {
+          if (typeof params.resource === 'string' && !resourceIds.has(params.resource)) {
+            errors.push({
+              path: `${effectPath}.params.resource`,
+              message: `resource-modify references unknown resource "${params.resource}" (not in ruleset or implicit)`,
+            });
+          }
+        }
+
+        // Track apply-status tags for pack-level advisory
+        if (effect.type === 'apply-status' && typeof params.statusId === 'string') {
+          totalApplyStatusAbilities++;
+          statusTagCounts[params.statusId] = (statusTagCounts[params.statusId] ?? 0) + 1;
+        }
+
+        // Track damage
+        if (effect.type === 'damage' && typeof params.amount === 'number') {
+          damageAmounts.push(params.amount);
+        }
+      }
+    }
+
+    // Per-ability advisory: zero-cost-zero-cooldown
+    const cooldown = typeof ab.cooldown === 'number' ? ab.cooldown : 0;
+    if (abCost === 0 && cooldown === 0) {
+      advisories.push({
+        path: abPath,
+        message: `"${typeof ab.name === 'string' ? ab.name : ab.id}" has zero cost and zero cooldown — suspicious free+instant ability`,
+      });
+    }
+
+    // Per-ability advisory: overbroad-cleanse
+    if (Array.isArray(ab.effects)) {
+      for (const effect of (ab.effects as unknown[])) {
+        if (isObj(effect) && effect.type === 'remove-status-by-tag' && isObj(effect.params)) {
+          const tags = typeof effect.params.tags === 'string' ? effect.params.tags : '';
+          const tagList = tags.split(',').map((s: string) => s.trim()).filter((s: string) => s.length > 0);
+          if (tagList.length > 3) {
+            advisories.push({
+              path: `${abPath}`,
+              message: `"${typeof ab.name === 'string' ? ab.name : ab.id}" cleanse covers ${tagList.length} tags (>3) — may be overbroad`,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // Pack-level advisory: excessive-duplicate-semantics
+  if (totalApplyStatusAbilities > 0 && abilities.length > 1) {
+    for (const [statusId, count] of Object.entries(statusTagCounts)) {
+      if (count / abilities.length > 0.5) {
+        advisories.push({
+          path,
+          message: `>50% of pack abilities apply "${statusId}" — excessive duplicate semantics`,
+        });
+      }
+    }
+  }
+
+  // Pack-level advisory: high-cost-low-value
+  if (abilityCosts.length > 1 && damageAmounts.length > 0) {
+    const avgCost = abilityCosts.reduce((a, b) => a + b, 0) / abilityCosts.length;
+    const minDamage = Math.min(...damageAmounts);
+    for (let i = 0; i < abilities.length; i++) {
+      const ab = abilities[i];
+      if (!isObj(ab)) continue;
+      if (abilityCosts[i] > avgCost * 0.6) {
+        // Check if this ability has the lowest damage in the pack
+        const abDamages: number[] = [];
+        if (Array.isArray(ab.effects)) {
+          for (const effect of (ab.effects as unknown[])) {
+            if (isObj(effect) && effect.type === 'damage' && isObj(effect.params) && typeof effect.params.amount === 'number') {
+              abDamages.push(effect.params.amount);
+            }
+          }
+        }
+        if (abDamages.length > 0 && Math.max(...abDamages) === minDamage && abilityCosts[i] > avgCost * 1.5) {
+          advisories.push({
+            path: `${path}[${i}]`,
+            message: `"${typeof ab.name === 'string' ? ab.name : ab.id}" has high cost (${abilityCosts[i]}) but lowest damage in pack (${minDamage})`,
+          });
+        }
+      }
+    }
+  }
+
+  return { ok: errors.length === 0, errors, advisories };
 }
 
 // --- Convenience: format errors as readable string ---

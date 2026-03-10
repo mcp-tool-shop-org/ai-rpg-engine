@@ -2,7 +2,7 @@
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
-import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
+import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
@@ -91,6 +91,7 @@ export const shambler: EntityState = {
   resources: { hp: 12, stamina: 20, infection: 0 },
   statuses: [],
   zoneId: 'overrun-street',
+  resistances: { control: 'immune' },
   ai: {
     profileId: 'aggressive',
     goals: ['consume-living'],
@@ -129,6 +130,7 @@ export const bloaterAlpha: EntityState = {
   resources: { hp: 50, maxHp: 50, stamina: 30, maxStamina: 30, infection: 0 },
   statuses: [],
   zoneId: 'hospital-wing',
+  resistances: { fear: 'immune', poison: 'resistant' },
   ai: {
     profileId: 'aggressive',
     goals: ['destroy-all-living'],
@@ -404,6 +406,110 @@ export const antibioticsEffect = {
     }];
   },
 };
+
+// --- Abilities ---
+
+export const desperateSwing: AbilityDefinition = {
+  id: 'desperate-swing',
+  name: 'Desperate Swing',
+  verb: 'use-ability',
+  tags: ['combat', 'damage'],
+  costs: [{ resourceId: 'stamina', amount: 3 }],
+  target: { type: 'single' },
+  checks: [{ stat: 'fitness', difficulty: 5, onFail: 'half-damage' }],
+  effects: [
+    { type: 'damage', target: 'target', params: { amount: 5, damageType: 'melee' } },
+  ],
+  cooldown: 2,
+  requirements: [{ type: 'has-tag', params: { tag: 'survivor' } }],
+  ui: {
+    text: 'Swing hard. Swing fast. Make it count.',
+    hitText: 'The blow connects — bone crunches.',
+    missText: 'It lurches aside. Wasted energy.',
+    soundCue: 'ability.desperate-swing',
+  },
+};
+
+export const fieldTriage: AbilityDefinition = {
+  id: 'field-triage',
+  name: 'Field Triage',
+  verb: 'use-ability',
+  tags: ['support', 'heal'],
+  costs: [{ resourceId: 'stamina', amount: 3 }],
+  target: { type: 'self' },
+  checks: [{ stat: 'wits', difficulty: 5, onFail: 'abort' }],
+  effects: [
+    { type: 'heal', target: 'actor', params: { amount: 4, resource: 'hp' } },
+    { type: 'resource-modify', target: 'actor', params: { resource: 'infection', amount: -2 } },
+  ],
+  cooldown: 4,
+  ui: {
+    text: 'Patch the wound. Clean the bite. Keep moving.',
+    hitText: 'Bandaged and disinfected — not clean, but alive.',
+    missText: 'Hands shaking too badly. The wound stays open.',
+    soundCue: 'ability.field-triage',
+  },
+};
+
+export const warCry: AbilityDefinition = {
+  id: 'war-cry',
+  name: 'War Cry',
+  verb: 'use-ability',
+  tags: ['combat', 'debuff', 'aoe'],
+  costs: [
+    { resourceId: 'stamina', amount: 3 },
+    { resourceId: 'infection', amount: 5 },
+  ],
+  target: { type: 'all-enemies' },
+  checks: [{ stat: 'nerve', difficulty: 6, onFail: 'abort' }],
+  effects: [
+    { type: 'apply-status', target: 'target', params: { statusId: 'rattled', duration: 2, stacking: 'replace' } },
+  ],
+  cooldown: 4,
+  requirements: [{ type: 'has-tag', params: { tag: 'survivor' } }],
+  ui: {
+    text: 'Let the infection fuel the fury. Scream until they flinch.',
+    hitText: 'A primal roar echoes — even the dead hesitate.',
+    missText: 'The scream catches in the throat. Nothing flinches.',
+    soundCue: 'ability.war-cry',
+  },
+};
+
+export const survivalInstinct: AbilityDefinition = {
+  id: 'survival-instinct',
+  name: 'Survival Instinct',
+  verb: 'use-ability',
+  tags: ['support', 'cleanse'],
+  costs: [{ resourceId: 'stamina', amount: 2 }],
+  target: { type: 'self' },
+  checks: [{ stat: 'nerve', difficulty: 5, onFail: 'abort' }],
+  effects: [
+    { type: 'remove-status-by-tag', target: 'actor', params: { tags: 'fear,blind' } },
+  ],
+  cooldown: 3,
+  requirements: [{ type: 'has-tag', params: { tag: 'survivor' } }],
+  ui: {
+    text: 'The body knows what the mind forgets — survive.',
+    hitText: 'Adrenaline surges. Fear dissolves. Eyes clear.',
+    missText: 'Panic grips tight. The instinct fails.',
+    soundCue: 'ability.survival-instinct',
+  },
+};
+
+export const zombieAbilities: AbilityDefinition[] = [desperateSwing, fieldTriage, warCry, survivalInstinct];
+
+// --- Status Definitions ---
+
+export const zombieStatusDefinitions: StatusDefinition[] = [
+  {
+    id: 'rattled',
+    name: 'Rattled',
+    tags: ['fear', 'debuff'],
+    stacking: 'replace',
+    duration: { type: 'ticks', value: 2 },
+    ui: { icon: '!', color: '#e74c3c', description: 'Shaken by primal fury — hesitating, stumbling' },
+  },
+];
 
 // --- Pack Metadata ---
 

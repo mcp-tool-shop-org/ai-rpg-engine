@@ -63,3 +63,5 @@ npm install @ai-rpg-engine/starter-vampire
 import { createGame } from '@ai-rpg-engine/starter-vampire';
 const engine = createGame(42);
 ```
+
+This pack includes 3 abilities (mesmerize, blood-drain, dark-ward), the `mesmerized` status with supernatural tag, and resistance profiles on witch-hunter and elder-vampire entities. See [Chapter 48: Abilities System](./48-abilities-system.md).

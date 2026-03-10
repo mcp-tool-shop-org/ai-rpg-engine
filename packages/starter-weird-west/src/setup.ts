@@ -26,6 +26,10 @@ import {
   BUILTIN_PACK_BIASES,
   createCombatRecovery,
   createBossPhaseListener,
+  createAbilityCore,
+  createAbilityEffects,
+  createAbilityReview,
+  registerStatusDefinitions,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -42,6 +46,8 @@ import {
   bartenderDialogue,
   sageBundleEffect,
   gunslingerTree,
+  weirdWestAbilities,
+  weirdWestStatusDefinitions,
 } from './content.js';
 import { weirdWestMinimalRuleset } from './ruleset.js';
 
@@ -84,6 +90,7 @@ const weirdWestFormulas: CombatFormulas = {
 };
 
 export function createGame(seed?: number): Engine {
+  registerStatusDefinitions(weirdWestStatusDefinitions);
   const review = createCombatReview({ baseFormulas: weirdWestFormulas });
   const engine = new Engine({
     manifest,
@@ -160,6 +167,9 @@ export function createGame(seed?: number): Engine {
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['undead', 'spirit', 'beast'].includes(b.tag)) }),
       createCombatRecovery(),
       createBossPhaseListener(mesaCrawlerBoss),
+      createAbilityCore({ abilities: weirdWestAbilities, statMapping: { power: 'grit', precision: 'draw-speed', focus: 'lore' } }),
+      createAbilityEffects(),
+      createAbilityReview(),
       createSimulationInspector(),
     ],
   });

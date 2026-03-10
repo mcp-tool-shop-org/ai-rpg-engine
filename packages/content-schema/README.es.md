@@ -29,6 +29,7 @@ npm install @ai-rpg-engine/content-schema
 - **Esquemas de diálogo:** Árboles de diálogo basados en grafos, con condiciones y efectos.
 - **Esquemas de objeto:** Equipamiento, consumibles, objetos de misión con modificadores de estadísticas.
 - **Cargador de paquetes de contenido:** Valida y carga paquetes de contenido en formato JSON/TypeScript.
+- **Esquemas de habilidad:** Definiciones de habilidades, definiciones de estados y validación de paquetes con advertencias sobre el equilibrio.
 - **Validadores de esquema:** Validación en tiempo de ejecución con mensajes de error estructurados.
 
 ## Uso
@@ -44,10 +45,10 @@ if (!result.valid) {
 
 ## Documentación
 
-- [Archivos de contenido (Cap. 13)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/13-content-files/) — Creación de paquetes de contenido.
+- [Archivos de contenido (Cap. 13)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/13-content-files/) — creación de paquetes de contenido.
 - [Manual](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/)
 - [GitHub](https://github.com/mcp-tool-shop-org/ai-rpg-engine)
 
 ---
 
-Desarrollado por <a href="https://mcp-tool-shop.github.io/">MCP Tool Shop</a>
+Creado por <a href="https://mcp-tool-shop.github.io/">MCP Tool Shop</a>

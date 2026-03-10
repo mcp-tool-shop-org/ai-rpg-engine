@@ -50,6 +50,23 @@ npm install @ai-rpg-engine/modules
 | `defeatFallout` | 戦闘後の派閥への影響、評判の変化 |
 | `bossPhaseListener` | ボス HP の閾値に基づくフェーズ移行 |
 
+### 能力モジュール
+
+| モジュール | 説明 |
+|--------|-------------|
+| `abilityCore` | 能力の処理：コスト、判定、対象、効果の発動、クールダウン |
+| `abilityEffects` | 効果ハンドラ：ダメージ、回復、ステータス変更、状態異常の付与/解除 |
+| `abilityReview` | 実行時トレース：使用ごとの詳細、インスペクタ、整形された出力 |
+| `abilityIntent` | AIの評価：自己攻撃/範囲攻撃/単体攻撃のパス、耐性への意識、浄化の効果評価 |
+
+### 能力の作成（純粋関数）
+
+| エクスポート | 目的 |
+|--------|---------|
+| `ability-summary` | パッケージ概要、バランス調整、Markdown/JSON形式でのエクスポート |
+| `ability-builders` | 便利な関数：buildDamageAbility（ダメージ能力の作成）、buildHealAbility（回復能力の作成）、buildStatusAbility（状態異常能力の作成）、buildCleanseAbility（浄化能力の作成）、buildAbilitySuite（能力セットの作成） |
+| `status-semantics` | 11個のタグを持つ語彙、状態登録、耐性への対応 |
+
 ### 戦闘の作成 (純粋関数)
 
 | エクスポート | 目的 |
@@ -73,10 +90,11 @@ const engine = new Engine({
 
 ## ドキュメント
 
-- [モジュール (第 6 章)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/06-modules/)
-- [AI 認知 (第 8 章)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/08-ai-cognition/)
-- [知覚 (第 9 章)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/09-perception-layers/)
-- [戦闘システム (第 47 章)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/47-combat-system/)
+- [モジュール (第6章)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/06-modules/)
+- [AIの認知 (第8章)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/08-ai-cognition/)
+- [知覚 (第9章)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/09-perception-layers/)
+- [戦闘システム (第47章)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/47-combat-system/)
+- [能力システム (第48章)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/48-abilities-system/)
 - [ハンドブック](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/)
 - [GitHub](https://github.com/mcp-tool-shop-org/ai-rpg-engine)
 

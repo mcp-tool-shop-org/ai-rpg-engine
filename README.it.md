@@ -37,7 +37,7 @@ build → critique → simulate → analyze → tune → experiment
 
 ### Simulazione deterministica
 
-Un motore di simulazione basato su eventi per mondi di giochi di ruolo. Include lo stato del mondo, un sistema di eventi, livelli di percezione e cognizione, la propagazione delle credenze delle fazioni, sistemi di voci, metriche dei distretti con derivazione dell'umore, l'autonomia dei personaggi non giocanti con punti di rottura della lealtà e catene di conseguenze, compagni con morale e rischio di abbandono, la capacità di influenza del giocatore e azioni politiche, analisi della mappa strategica, un assistente per la pianificazione degli spostamenti, il riconoscimento degli oggetti e la tracciabilità delle attrezzature, le tappe fondamentali della crescita degli artefatti, opportunità emergenti (contratti, taglie, favori, missioni di rifornimento, indagini) generate dalle condizioni del mondo, il rilevamento delle linee narrative (10 tipi di linee narrative derivate dallo stato accumulato), il rilevamento dei trigger della fine del gioco (8 classi di risoluzione) e una resa finale deterministica con epiloghi strutturati. Registrazioni delle azioni riproducibili e un generatore di numeri casuali deterministico. Ogni partita può essere riprodotta esattamente.
+Un motore di simulazione basato su eventi per mondi di giochi di ruolo. Include lo stato del mondo, un sistema di eventi, livelli di percezione e cognizione, propagazione delle credenze delle fazioni, sistemi di voci, metriche dei distretti con derivazione dell'umore, autonomia dei personaggi non giocanti con punti di rottura della lealtà e catene di conseguenze, compagni con morale e rischio di abbandono, influenza del giocatore e azioni politiche, analisi della mappa strategica, assistente di movimento, riconoscimento degli oggetti e provenienza delle attrezzature, tappe fondamentali della crescita degli artefatti, opportunità emergenti (contratti, taglie, favori, missioni di rifornimento, indagini) generate dalle condizioni del mondo, rilevamento dell'arco narrativo (10 tipi di arco derivati dallo stato accumulato), rilevamento dei trigger della fine del gioco (8 classi di risoluzione) e rendering finale deterministico con epiloghi strutturati. Registri delle azioni riproducibili e generatore di numeri casuali deterministico. Ogni partita può essere riprodotta esattamente.
 
 ### Creazione di mondi assistita dall'IA
 
@@ -46,6 +46,24 @@ Un livello opzionale di intelligenza artificiale che crea stanze, fazioni, missi
 ### Flussi di lavoro di progettazione guidati
 
 Flussi di lavoro sensibili al contesto e basati sulla pianificazione per la creazione del mondo, i cicli di valutazione, l'iterazione del design, la creazione guidata e i piani di ottimizzazione strutturati. Combina strumenti deterministici con l'assistenza dell'IA.
+
+### Abilità e Poteri
+
+Sistema di abilità nativo del genere, con una copertura trasversale di 10 categorie. Le abilità hanno costi, controlli di statistiche, tempi di ricarica ed effetti di tipo (danno, guarigione, applicazione di stati, purificazione). Gli effetti di stato utilizzano un vocabolario semantico con 11 tag, con profili di resistenza/vulnerabilità per le entità. Il sistema di selezione delle abilità, consapevole dell'intelligenza artificiale, valuta percorsi di attacco a sé stessi/ad area/a bersaglio singolo, tenendo conto della resistenza e della valutazione della purificazione. Strumenti di audit dell'equilibrio e riepilogo dei pacchetti rilevano anomalie durante la fase di creazione.
+
+```typescript
+const warCry: AbilityDefinition = {
+  id: 'war-cry', name: 'War Cry', verb: 'use-ability',
+  tags: ['combat', 'debuff', 'aoe'],
+  costs: [{ resourceId: 'stamina', amount: 3 }, { resourceId: 'infection', amount: 5 }],
+  target: { type: 'all-enemies' },
+  checks: [{ stat: 'nerve', difficulty: 6, onFail: 'abort' }],
+  effects: [
+    { type: 'apply-status', target: 'target', params: { statusId: 'rattled', duration: 2 } },
+  ],
+  cooldown: 4,
+};
+```
 
 ### Analisi della simulazione
 
@@ -132,11 +150,11 @@ Il sistema è composto da quattro livelli.
 | Pacchetto | Scopo |
 |---------|---------|
 | [`@ai-rpg-engine/core`](packages/core) | Motore di simulazione deterministico — stato del mondo, eventi, RNG, tick, risoluzione delle azioni |
-| [`@ai-rpg-engine/modules`](packages/modules) | 29 moduli integrati: combattimento, percezione, cognizione, fazioni, voci, distretti, autonomia dei personaggi non giocanti, compagni, influenza del giocatore, mappa strategica, assistente per la pianificazione degli spostamenti, riconoscimento degli oggetti, opportunità emergenti, rilevamento delle linee narrative, trigger della fine del gioco. |
+| [`@ai-rpg-engine/modules`](packages/modules) | 29 moduli integrati: combattimento, percezione, cognizione, fazioni, voci, distretti, autonomia dei personaggi non giocanti, compagni, influenza del giocatore, mappa strategica, assistente di movimento, riconoscimento degli oggetti, opportunità emergenti, rilevamento degli archi narrativi, trigger della fine del gioco. |
 | [`@ai-rpg-engine/content-schema`](packages/content-schema) | Schemi e validatori canonici per i contenuti del mondo |
 | [`@ai-rpg-engine/character-profile`](packages/character-profile) | Stato di progressione del personaggio, ferite, tappe fondamentali, reputazione. |
-| [`@ai-rpg-engine/character-creation`](packages/character-creation) | Selezione dell'archetipo, generazione del personaggio, equipaggiamento iniziale. |
-| [`@ai-rpg-engine/equipment`](packages/equipment) | Tipi di equipaggiamento, tracciabilità degli oggetti, crescita degli artefatti, cronache degli oggetti. |
+| [`@ai-rpg-engine/character-creation`](packages/character-creation) | Selezione dell'archetipo, generazione della build, equipaggiamento iniziale. |
+| [`@ai-rpg-engine/equipment`](packages/equipment) | Tipi di equipaggiamento, provenienza degli oggetti, crescita degli artefatti, cronache degli oggetti. |
 | [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | Memoria tra sessioni, effetti delle relazioni, stato della campagna. |
 | [`@ai-rpg-engine/ollama`](packages/ollama) | Creazione assistita dall'IA (opzionale) — scaffolding, valutazione, flussi di lavoro guidati, ottimizzazione, esperimenti |
 | [`@ai-rpg-engine/cli`](packages/cli) | Studio di progettazione basato su riga di comando: shell di chat, flussi di lavoro, strumenti di sperimentazione. |
@@ -144,7 +162,7 @@ Il sistema è composto da quattro livelli.
 | [`@ai-rpg-engine/starter-fantasy`](packages/starter-fantasy) | The Chapel Threshold: mondo di partenza a tema fantasy. |
 | [`@ai-rpg-engine/starter-cyberpunk`](packages/starter-cyberpunk) | Neon Lockbox: mondo di partenza a tema cyberpunk. |
 | [`@ai-rpg-engine/starter-detective`](packages/starter-detective) | Gaslight Detective: mondo di partenza a tema mistero vittoriano. |
-| [`@ai-rpg-engine/starter-pirate`](packages/starter-pirate) | Black Flag Requiem: mondo di partenza a tema pirata. |
+| [`@ai-rpg-engine/starter-pirate`](packages/starter-pirate) | Black Flag Requiem: mondo di partenza a tema piratesco. |
 | [`@ai-rpg-engine/starter-zombie`](packages/starter-zombie) | Ashfall Dead: mondo di partenza a tema sopravvivenza agli zombie. |
 | [`@ai-rpg-engine/starter-weird-west`](packages/starter-weird-west) | Dust Devil's Bargain: mondo di partenza a tema western fantastico. |
 | [`@ai-rpg-engine/starter-colony`](packages/starter-colony) | Signal Loss: mondo di partenza a tema colonia fantascientifica. |

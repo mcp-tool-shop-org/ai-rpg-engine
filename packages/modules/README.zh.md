@@ -14,7 +14,7 @@
 
 # @ai-rpg-engine/modules
 
-17个可组合的模拟模块，用于AI RPG引擎，涵盖战斗、对话、认知、感知、派系等。
+29个可组合的模拟模块，用于AI RPG引擎，涵盖战斗、技能、对话、认知、感知、派系等。
 
 ## 安装
 
@@ -27,35 +27,52 @@ npm install @ai-rpg-engine/modules
 | 模块 | 描述 |
 |--------|-------------|
 | `combatCore` | 攻击/防御、伤害、击败、体力、防御、脱离 |
-| `dialogueCore` | 基于图的对话树，带有条件判断 |
+| `dialogueCore` | 基于图的对话树，带有条件 |
 | `inventoryCore` | 物品、装备、使用/装备/卸载 |
 | `traversalCore` | 区域移动和出口验证 |
 | `statusCore` | 带有持续时间和叠加效果的状态 |
 | `environmentCore` | 动态区域属性、危险、衰减 |
 | `cognitionCore` | AI的信念、意图、士气、记忆 |
 | `perceptionFilter` | 感官通道、清晰度、跨区域听觉 |
-| `narrativeAuthority` | 真实与呈现、隐藏、扭曲 |
+| `narrativeAuthority` | 真实与呈现、隐瞒、扭曲 |
 | `progressionCore` | 基于货币的升级、技能树 |
-| `factionCognition` | 派系的信念、信任、派系间的知识 |
-| `rumorPropagation` | 信息传播，并伴随置信度衰减 |
-| `knowledgeDecay` | 基于时间的置信度降低 |
+| `factionCognition` | 派系信念、信任、派系间的知识 |
+| `rumorPropagation` | 信息传播，伴随置信度衰减 |
+| `knowledgeDecay` | 基于时间的置信度衰减 |
 | `districtCore` | 空间记忆、区域指标、警戒阈值 |
-| `beliefProvenance` | 追踪重建，涉及感知/认知/传闻 |
-| `observerPresentation` | 针对每个观察者的事件过滤、偏差追踪 |
+| `beliefProvenance` | 跨感知/认知/传闻的痕迹重建 |
+| `observerPresentation` | 观察者事件过滤、偏差跟踪 |
 | `simulationInspector` | 运行时检查、健康检查、诊断 |
-| `combatIntent` | AI的决策偏差、士气、逃跑逻辑 |
-| `engagementCore` | 前线/后线位置、保镖拦截 |
+| `combatIntent` | AI决策偏差、士气、逃避逻辑 |
+| `engagementCore` | 前线/后线位置、护卫拦截 |
 | `combatRecovery` | 战斗后的伤情状态、安全区域的治疗 |
 | `combatReview` | 公式解释、命中率分析 |
 | `defeatFallout` | 战斗后的派系影响、声誉变化 |
-| `bossPhaseListener` | Boss的生命值阈值阶段转换 |
+| `bossPhaseListener` | Boss生命值阈值阶段转换 |
 
-### 战斗内容编辑（纯函数）
+### 技能模块
 
-| 导出 | 目的 |
+| 模块 | 描述 |
+|--------|-------------|
+| `abilityCore` | 技能解析：成本、检查、目标、效果触发、冷却 |
+| `abilityEffects` | 效果处理：伤害、治疗、属性修改、状态附加/移除 |
+| `abilityReview` | 运行时跟踪：每次使用的详细信息、检查器、格式化输出 |
+| `abilityIntent` | AI评分：自攻击/范围攻击/单体攻击路径、抗性感知、净化价值 |
+
+### 技能编写（纯函数）
+
+| 导出 | 用途 |
 |--------|---------|
-| `combat-roles` | 8个角色模板、遭遇类型、危险等级、Boss定义 |
-| `encounter-library` | 5个遭遇原型工厂、3个Boss模板工厂、数据包审计 |
+| `ability-summary` | 打包摘要、平衡性审计、Markdown/JSON导出 |
+| `ability-builders` | 便捷工厂：buildDamageAbility（构建伤害技能）、buildHealAbility（构建治疗技能）、buildStatusAbility（构建状态技能）、buildCleanseAbility（构建净化技能）、buildAbilitySuite（构建技能套件） |
+| `status-semantics` | 11个标签的词汇表、状态注册、抗性感知应用 |
+
+### 战斗编写（纯函数）
+
+| 导出 | 用途 |
+|--------|---------|
+| `combat-roles` | 8个角色模板、遭遇构成类型、危险等级、Boss定义 |
+| `encounter-library` | 5个遭遇原型工厂、3个Boss模板工厂、打包审计 |
 | `combat-summary` | 查询、审计、格式化和检查战斗内容 |
 
 ## 用法
@@ -77,9 +94,10 @@ const engine = new Engine({
 - [AI认知 (第8章)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/08-ai-cognition/)
 - [感知 (第9章)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/09-perception-layers/)
 - [战斗系统 (第47章)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/47-combat-system/)
+- [技能系统 (第48章)](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/48-abilities-system/)
 - [手册](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/)
 - [GitHub](https://github.com/mcp-tool-shop-org/ai-rpg-engine)
 
 ---
 
-由 <a href="https://mcp-tool-shop.github.io/">MCP Tool Shop</a> 构建。
+构建者：<a href="https://mcp-tool-shop.github.io/">MCP Tool Shop</a>

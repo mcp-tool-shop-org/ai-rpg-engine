@@ -2,7 +2,7 @@
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
-import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
+import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
@@ -79,6 +79,7 @@ export const drone: EntityState = {
   resources: { hp: 10, stamina: 4, power: 30, morale: 0 },
   statuses: [],
   zoneId: 'perimeter-fence',
+  resistances: { breach: 'vulnerable' },
   ai: {
     profileId: 'aggressive',
     goals: ['patrol-perimeter', 'attack-unauthorized'],
@@ -98,6 +99,7 @@ export const resonance: EntityState = {
   resources: { hp: 8, maxHp: 8, stamina: 4, maxStamina: 4, power: 80, morale: 0 },
   statuses: [],
   zoneId: 'alien-cavern',
+  resistances: { control: 'immune', breach: 'resistant' },
   ai: {
     profileId: 'territorial',
     goals: ['protect-signal', 'observe-colonists'],
@@ -378,6 +380,111 @@ export const emergencyCellEffect = {
     }];
   },
 };
+
+// --- Abilities ---
+
+export const plasmaBurst: AbilityDefinition = {
+  id: 'plasma-burst',
+  name: 'Plasma Burst',
+  verb: 'use-ability',
+  tags: ['combat', 'damage'],
+  costs: [{ resourceId: 'stamina', amount: 2 }, { resourceId: 'power', amount: 10 }],
+  target: { type: 'single' },
+  checks: [{ stat: 'engineering', difficulty: 5, onFail: 'half-damage' }],
+  effects: [
+    { type: 'damage', target: 'target', params: { amount: 5, damageType: 'energy' } },
+  ],
+  cooldown: 2,
+  requirements: [{ type: 'has-tag', params: { tag: 'colonist' } }],
+  ui: {
+    text: 'Route colony power to the plasma emitter. Fire.',
+    hitText: 'The burst connects — superheated plasma sears the target.',
+    missText: 'The capacitor misfires. Power wasted.',
+    soundCue: 'ability.plasma-burst',
+  },
+};
+
+export const emergencyProtocol: AbilityDefinition = {
+  id: 'emergency-protocol',
+  name: 'Emergency Protocol',
+  verb: 'use-ability',
+  tags: ['support', 'heal'],
+  costs: [{ resourceId: 'stamina', amount: 3 }],
+  target: { type: 'self' },
+  checks: [{ stat: 'command', difficulty: 5, onFail: 'abort' }],
+  effects: [
+    { type: 'heal', target: 'actor', params: { amount: 4, resource: 'hp' } },
+    { type: 'resource-modify', target: 'actor', params: { resource: 'power', amount: 5 } },
+  ],
+  cooldown: 4,
+  ui: {
+    text: 'Activate emergency systems. Reroute power. Stabilize.',
+    hitText: 'Systems respond — hull integrity restored, power rerouted.',
+    missText: 'The command fails. Systems unresponsive.',
+    soundCue: 'ability.emergency-protocol',
+  },
+};
+
+export const systemOverride: AbilityDefinition = {
+  id: 'system-override',
+  name: 'System Override',
+  verb: 'use-ability',
+  tags: ['combat', 'debuff'],
+  costs: [
+    { resourceId: 'stamina', amount: 2 },
+    { resourceId: 'power', amount: 15 },
+  ],
+  target: { type: 'single' },
+  checks: [{ stat: 'engineering', difficulty: 6, onFail: 'abort' }],
+  effects: [
+    { type: 'apply-status', target: 'target', params: { statusId: 'disrupted', duration: 2, stacking: 'replace' } },
+    { type: 'stat-modify', target: 'target', params: { stat: 'awareness', amount: -2 } },
+  ],
+  cooldown: 4,
+  requirements: [{ type: 'has-tag', params: { tag: 'colonist' } }],
+  ui: {
+    text: 'Hack into their systems. Scramble everything.',
+    hitText: 'Override accepted — their systems convulse.',
+    missText: 'Access denied. The firewall holds.',
+    soundCue: 'ability.system-override',
+  },
+};
+
+export const rebootSystems: AbilityDefinition = {
+  id: 'reboot-systems',
+  name: 'Reboot Systems',
+  verb: 'use-ability',
+  tags: ['support', 'cleanse'],
+  costs: [{ resourceId: 'stamina', amount: 2 }, { resourceId: 'power', amount: 5 }],
+  target: { type: 'self' },
+  checks: [{ stat: 'engineering', difficulty: 5, onFail: 'abort' }],
+  effects: [
+    { type: 'remove-status-by-tag', target: 'actor', params: { tags: 'breach,control' } },
+  ],
+  cooldown: 3,
+  requirements: [{ type: 'has-tag', params: { tag: 'colonist' } }],
+  ui: {
+    text: 'Full system reboot. Clear the corruption.',
+    hitText: 'Systems online. All clear.',
+    missText: 'Reboot fails — corruption persists.',
+    soundCue: 'ability.reboot-systems',
+  },
+};
+
+export const colonyAbilities: AbilityDefinition[] = [plasmaBurst, emergencyProtocol, systemOverride, rebootSystems];
+
+// --- Status Definitions ---
+
+export const colonyStatusDefinitions: StatusDefinition[] = [
+  {
+    id: 'disrupted',
+    name: 'Disrupted',
+    tags: ['breach', 'control', 'debuff'],
+    stacking: 'replace',
+    duration: { type: 'ticks', value: 2 },
+    ui: { icon: '⚡', color: '#f39c12', description: 'Systems scrambled — sensors offline, controls unresponsive' },
+  },
+];
 
 // --- Pack Metadata ---
 

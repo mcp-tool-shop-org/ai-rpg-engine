@@ -2,7 +2,7 @@
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
-import type { DialogueDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
+import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
@@ -98,6 +98,7 @@ export const crawler: EntityState = {
   resources: { hp: 10, maxHp: 10, stamina: 4, maxStamina: 4, resolve: 25, dust: 0 },
   statuses: [],
   zoneId: 'spirit-hollow',
+  resistances: { blind: 'immune', supernatural: 'resistant' },
   ai: {
     profileId: 'territorial',
     goals: ['guard-hollow', 'consume-resolve'],
@@ -377,6 +378,93 @@ export const sageBundleEffect = {
     }];
   },
 };
+
+// --- Abilities ---
+
+export const dustDevil: AbilityDefinition = {
+  id: 'dust-devil',
+  name: 'Dust Devil',
+  verb: 'use-ability',
+  tags: ['supernatural', 'combat', 'damage', 'aoe'],
+  costs: [
+    { resourceId: 'resolve', amount: 5 },
+    { resourceId: 'dust', amount: 10 },
+  ],
+  target: { type: 'all-enemies' },
+  checks: [{ stat: 'lore', difficulty: 9, onFail: 'abort' }],
+  effects: [
+    { type: 'damage', target: 'target', params: { amount: 3, damageType: 'supernatural' } },
+    { type: 'apply-status', target: 'target', params: { statusId: 'dust-blind', duration: 2, stacking: 'replace' } },
+  ],
+  cooldown: 4,
+  requirements: [{ type: 'has-tag', params: { tag: 'supernatural' } }],
+  ui: {
+    text: 'Call upon the cursed dust to scour your enemies.',
+    hitText: 'A howling vortex of dust and bone shards engulfs the battlefield.',
+    missText: 'The dust refuses to answer — the spirits turn away.',
+    soundCue: 'ability.dust-devil',
+  },
+};
+
+export const frontierGrit: AbilityDefinition = {
+  id: 'frontier-grit',
+  name: 'Frontier Grit',
+  verb: 'use-ability',
+  tags: ['supernatural', 'support', 'cleanse'],
+  costs: [
+    { resourceId: 'stamina', amount: 2 },
+    { resourceId: 'resolve', amount: 2 },
+  ],
+  target: { type: 'self' },
+  checks: [{ stat: 'grit', difficulty: 6, onFail: 'abort' }],
+  effects: [
+    { type: 'remove-status-by-tag', target: 'actor', params: { tags: 'fear,blind' } },
+  ],
+  cooldown: 4,
+  requirements: [{ type: 'has-tag', params: { tag: 'supernatural' } }],
+  ui: {
+    text: 'Grit your teeth and push through the fog.',
+    hitText: 'The frontier hardens you. The dust clears.',
+    missText: 'The land has its hooks in you — can\'t shake it.',
+    soundCue: 'ability.frontier-grit',
+  },
+};
+
+export const deadEyeShot: AbilityDefinition = {
+  id: 'dead-eye-shot',
+  name: 'Dead-Eye Shot',
+  verb: 'use-ability',
+  tags: ['combat', 'damage'],
+  costs: [{ resourceId: 'stamina', amount: 3 }],
+  target: { type: 'single' },
+  checks: [{ stat: 'draw-speed', difficulty: 6, onFail: 'half-damage' }],
+  effects: [
+    { type: 'damage', target: 'target', params: { amount: 5, damageType: 'ballistic' } },
+  ],
+  cooldown: 2,
+  requirements: [{ type: 'has-tag', params: { tag: 'supernatural' } }],
+  ui: {
+    text: 'One shot. Make it count.',
+    hitText: 'The bullet finds its mark — dead center.',
+    missText: 'The shot goes wide. Dust and smoke.',
+    soundCue: 'ability.dead-eye-shot',
+  },
+};
+
+export const weirdWestAbilities: AbilityDefinition[] = [dustDevil, frontierGrit, deadEyeShot];
+
+// --- Status Definitions ---
+
+export const weirdWestStatusDefinitions: StatusDefinition[] = [
+  {
+    id: 'dust-blind',
+    name: 'Dust Blind',
+    tags: ['blind', 'debuff'],
+    stacking: 'replace',
+    duration: { type: 'ticks', value: 2 },
+    ui: { icon: '💨', color: '#d4a574', description: 'Eyes stinging from cursed dust' },
+  },
+];
 
 // --- Pack Metadata ---
 

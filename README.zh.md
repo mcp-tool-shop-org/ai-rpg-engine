@@ -47,6 +47,24 @@ build → critique → simulate → analyze → tune → experiment
 
 具有会话感知、以计划为先的流程，用于世界构建、设计评估、设计迭代、引导式构建和结构化调整计划。 结合确定性工具和 AI 辅助。
 
+### 能力与技能
+
+游戏内置一套能力系统，包含10个不同类型的能力，覆盖多种游戏类型。这些能力具有消耗、属性检查、冷却时间和特定效果（伤害、治疗、状态附加、净化）。状态效果使用11个标签的语义词汇，并为实体定义了抗性和易受性属性。人工智能会根据抗性和净化效果的评估，为玩家选择最佳的能力，包括自攻击、范围攻击和单体攻击。平衡性审计和能力包摘要工具可以在创作阶段发现异常情况。
+
+```typescript
+const warCry: AbilityDefinition = {
+  id: 'war-cry', name: 'War Cry', verb: 'use-ability',
+  tags: ['combat', 'debuff', 'aoe'],
+  costs: [{ resourceId: 'stamina', amount: 3 }, { resourceId: 'infection', amount: 5 }],
+  target: { type: 'all-enemies' },
+  checks: [{ stat: 'nerve', difficulty: 6, onFail: 'abort' }],
+  effects: [
+    { type: 'apply-status', target: 'target', params: { statusId: 'rattled', duration: 2 } },
+  ],
+  cooldown: 4,
+};
+```
+
 ### 模拟分析
 
 重播分析，解释事件发生的原因，机制出现故障的地方，哪些触发器从未启动，以及哪些系统导致不稳定。 结构化的发现结果直接用于调整。

@@ -30,6 +30,7 @@ export const vampireMinimalRuleset: RulesetDefinition = {
     { id: 'choose', name: 'Choose', tags: ['dialogue'], description: 'Select a dialogue option' },
     { id: 'enthrall', name: 'Enthrall', tags: ['social', 'supernatural'], description: 'Bend a mortal mind to your will' },
     { id: 'feed', name: 'Feed', tags: ['predatory', 'survival'], description: 'Drink blood to sate the hunger' },
+    { id: 'use-ability', name: 'Use Ability', tags: ['ability'], description: 'Activate a vampiric power' },
   ],
 
   formulas: [

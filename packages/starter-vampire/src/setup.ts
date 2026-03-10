@@ -26,6 +26,10 @@ import {
   BUILTIN_PACK_BIASES,
   createCombatRecovery,
   createBossPhaseListener,
+  createAbilityCore,
+  createAbilityEffects,
+  createAbilityReview,
+  registerStatusDefinitions,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -43,6 +47,8 @@ import {
   duchessDialogue,
   bloodVialEffect,
   bloodMasteryTree,
+  vampireAbilities,
+  vampireStatusDefinitions,
 } from './content.js';
 import { vampireMinimalRuleset } from './ruleset.js';
 
@@ -85,6 +91,7 @@ const vampireFormulas: CombatFormulas = {
 };
 
 export function createGame(seed?: number): Engine {
+  registerStatusDefinitions(vampireStatusDefinitions);
   const review = createCombatReview({ baseFormulas: vampireFormulas });
   const engine = new Engine({
     manifest,
@@ -163,6 +170,9 @@ export function createGame(seed?: number): Engine {
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['vampire', 'feral', 'hunter'].includes(b.tag)) }),
       createCombatRecovery({ safeZoneTags: ['safe', 'opulent'] }),
       createBossPhaseListener(elderVampireBoss),
+      createAbilityCore({ abilities: vampireAbilities, statMapping: { power: 'vitality', precision: 'cunning', focus: 'presence' } }),
+      createAbilityEffects(),
+      createAbilityReview(),
       createSimulationInspector(),
     ],
   });

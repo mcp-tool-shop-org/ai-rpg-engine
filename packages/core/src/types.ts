@@ -75,6 +75,7 @@ export type EntityState = {
   zoneId?: string;
   visibility?: VisibilityState;
   ai?: AIState;
+  resistances?: Record<string, ResistanceLevel>;
   custom?: Record<string, ScalarValue>;
 };
 
@@ -137,6 +138,8 @@ export type ResolvedEvent = {
 };
 
 // --- Status ---
+
+export type ResistanceLevel = 'immune' | 'resistant' | 'vulnerable';
 
 export type AppliedStatus = {
   id: string;

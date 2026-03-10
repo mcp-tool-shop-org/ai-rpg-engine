@@ -26,6 +26,10 @@ import {
   BUILTIN_PACK_BIASES,
   createCombatRecovery,
   createBossPhaseListener,
+  createAbilityCore,
+  createAbilityEffects,
+  createAbilityReview,
+  registerStatusDefinitions,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -43,6 +47,8 @@ import {
   medicDialogue,
   antibioticsEffect,
   survivalTree,
+  zombieAbilities,
+  zombieStatusDefinitions,
 } from './content.js';
 import { zombieMinimalRuleset } from './ruleset.js';
 
@@ -85,6 +91,7 @@ const zombieFormulas: CombatFormulas = {
 };
 
 export function createGame(seed?: number): Engine {
+  registerStatusDefinitions(zombieStatusDefinitions);
   const review = createCombatReview({ baseFormulas: zombieFormulas });
   const engine = new Engine({
     manifest,
@@ -151,6 +158,9 @@ export function createGame(seed?: number): Engine {
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['zombie', 'undead'].includes(b.tag)) }),
       createCombatRecovery({ safeZoneTags: ['safe', 'home-base'] }),
       createBossPhaseListener(bloaterAlphaBoss),
+      createAbilityCore({ abilities: zombieAbilities, statMapping: { power: 'fitness', precision: 'wits', focus: 'nerve' } }),
+      createAbilityEffects(),
+      createAbilityReview(),
       createSimulationInspector(),
     ],
   });

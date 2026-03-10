@@ -26,6 +26,10 @@ import {
   BUILTIN_PACK_BIASES,
   createCombatRecovery,
   createBossPhaseListener,
+  createAbilityCore,
+  createAbilityEffects,
+  createAbilityReview,
+  registerStatusDefinitions,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule } from '@ai-rpg-engine/modules';
 import {
@@ -43,6 +47,8 @@ import {
   pilgrimDialogue,
   healingDraughtEffect,
   combatMasteryTree,
+  fantasyAbilities,
+  fantasyStatusDefinitions,
 } from './content.js';
 import { fantasyMinimalRuleset } from './ruleset.js';
 
@@ -64,6 +70,7 @@ const undeadHostilePerception: PresentationRule = {
 };
 
 export function createGame(seed?: number): Engine {
+  registerStatusDefinitions(fantasyStatusDefinitions);
   const review = createCombatReview({ baseFormulas: {} });
   const engine = new Engine({
     manifest,
@@ -119,6 +126,9 @@ export function createGame(seed?: number): Engine {
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['undead'].includes(b.tag)) }),
       createCombatRecovery({ safeZoneTags: ['safe', 'sacred'] }),
       createBossPhaseListener(cryptWardenBoss),
+      createAbilityCore({ abilities: fantasyAbilities, statMapping: { power: 'vigor', precision: 'instinct', focus: 'will' } }),
+      createAbilityEffects(),
+      createAbilityReview(),
       createSimulationInspector(),
     ],
   });

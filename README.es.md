@@ -37,7 +37,7 @@ Puedes generar contenido para el mundo, evaluar diseños, ejecutar simulaciones 
 
 ### Simulación determinista
 
-Un motor de simulación basado en intervalos de tiempo para mundos de juegos de rol. Incluye el estado del mundo, un sistema de eventos, capas de percepción y cognición, propagación de creencias de facciones, sistemas de rumores, métricas de distritos con derivación del estado de ánimo, agencia de personajes no jugables (PNJ) con puntos de inflexión de lealtad y cadenas de consecuencias, compañeros con moral y riesgo de abandono, influencia del jugador y acciones políticas, análisis de mapas estratégicos, un asesor de movimiento, reconocimiento de objetos y trazabilidad de equipos, hitos de crecimiento de reliquias, oportunidades emergentes (contratos, recompensas, favores, misiones de suministro, investigaciones) generadas a partir de las condiciones del mundo, detección de arcos de campaña (10 tipos de arcos derivados del estado acumulado), detección de desencadenantes del final del juego (8 clases de resolución) y una representación final determinista con epílogos estructurados. Registros de acciones reproducibles y un generador de números aleatorios determinista. Cada partida puede ser reproducida exactamente.
+Un motor de simulación basado en eventos para mundos de juegos de rol. Incluye el estado del mundo, un sistema de eventos, capas de percepción y cognición, propagación de creencias de facciones, sistemas de rumores, métricas de distritos con derivación del estado de ánimo, agencia de personajes no jugables (PNJ) con puntos de inflexión de lealtad y cadenas de consecuencias, compañeros con moral y riesgo de abandono, influencia del jugador y acciones políticas, análisis de mapas estratégicos, un asesor de movimiento, reconocimiento de objetos y trazabilidad de equipos, hitos de crecimiento de reliquias, oportunidades emergentes (contratos, recompensas, favores, misiones de suministro, investigaciones) generadas a partir de las condiciones del mundo, detección de arcos de campaña (10 tipos de arcos derivados del estado acumulado), detección de desencadenantes del final del juego (8 clases de resolución) y renderizado de un final determinista con epílogos estructurados. Registros de acciones reproducibles y un generador de números aleatorios determinista. Cada partida se puede reproducir exactamente.
 
 ### Creación de mundos asistida por IA
 
@@ -46,6 +46,24 @@ Una capa de IA opcional que genera salas, facciones, misiones y distritos a part
 ### Flujos de trabajo de diseño guiados
 
 Flujos de trabajo conscientes de la sesión y basados en la planificación para la creación de mundos, ciclos de evaluación, iteración de diseño, construcción guiada y planes de ajuste estructurados. Combina herramientas deterministas con asistencia de IA.
+
+### Habilidades y Poderes
+
+Sistema de habilidades propio del género, con una cobertura de 10 tipos que abarcan diferentes géneros. Las habilidades tienen costos, pruebas de atributos, tiempos de reutilización y efectos de tipo (daño, curación, aplicación de estados, purificación). Los efectos de estado utilizan un vocabulario semántico de 11 etiquetas, con perfiles de resistencia/vulnerabilidad en las entidades. El sistema de selección de habilidades, que tiene en cuenta la inteligencia artificial, evalúa las opciones de ataque propio/área/objetivo único, teniendo en cuenta la resistencia y la valoración de la purificación. Las herramientas de auditoría de equilibrio y resumen de paquetes detectan valores atípicos durante la creación.
+
+```typescript
+const warCry: AbilityDefinition = {
+  id: 'war-cry', name: 'War Cry', verb: 'use-ability',
+  tags: ['combat', 'debuff', 'aoe'],
+  costs: [{ resourceId: 'stamina', amount: 3 }, { resourceId: 'infection', amount: 5 }],
+  target: { type: 'all-enemies' },
+  checks: [{ stat: 'nerve', difficulty: 6, onFail: 'abort' }],
+  effects: [
+    { type: 'apply-status', target: 'target', params: { statusId: 'rattled', duration: 2 } },
+  ],
+  cooldown: 4,
+};
+```
 
 ### Análisis de simulaciones
 
@@ -135,7 +153,7 @@ El sistema tiene cuatro capas.
 | [`@ai-rpg-engine/modules`](packages/modules) | 29 módulos integrados: combate, percepción, cognición, facciones, rumores, distritos, agencia de PNJ, compañeros, influencia del jugador, mapa estratégico, asesor de movimiento, reconocimiento de objetos, oportunidades emergentes, detección de arcos, desencadenantes del final del juego. |
 | [`@ai-rpg-engine/content-schema`](packages/content-schema) | Esquemas y validadores canónicos para el contenido del mundo |
 | [`@ai-rpg-engine/character-profile`](packages/character-profile) | Estado de progresión del personaje, lesiones, hitos, reputación. |
-| [`@ai-rpg-engine/character-creation`](packages/character-creation) | Selección de arquetipos, generación de personajes, equipo inicial. |
+| [`@ai-rpg-engine/character-creation`](packages/character-creation) | Selección de arquetipos, generación de builds, equipo inicial. |
 | [`@ai-rpg-engine/equipment`](packages/equipment) | Tipos de equipo, trazabilidad de objetos, crecimiento de reliquias, crónicas de objetos. |
 | [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | Memoria entre sesiones, efectos de relaciones, estado de la campaña. |
 | [`@ai-rpg-engine/ollama`](packages/ollama) | Creación de contenido con IA opcional: creación de estructuras, evaluación, flujos de trabajo guiados, ajuste, experimentos |
@@ -147,7 +165,7 @@ El sistema tiene cuatro capas.
 | [`@ai-rpg-engine/starter-pirate`](packages/starter-pirate) | Black Flag Requiem: mundo inicial de piratas. |
 | [`@ai-rpg-engine/starter-zombie`](packages/starter-zombie) | Ashfall Dead: mundo inicial de supervivencia zombie. |
 | [`@ai-rpg-engine/starter-weird-west`](packages/starter-weird-west) | Dust Devil's Bargain: mundo inicial de oeste salvaje. |
-| [`@ai-rpg-engine/starter-colony`](packages/starter-colony) | Signal Loss: mundo inicial de ciencia ficción. |
+| [`@ai-rpg-engine/starter-colony`](packages/starter-colony) | Signal Loss: mundo inicial de colonia de ciencia ficción. |
 
 ---
 

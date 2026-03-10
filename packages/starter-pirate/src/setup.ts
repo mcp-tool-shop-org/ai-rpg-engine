@@ -26,6 +26,10 @@ import {
   BUILTIN_PACK_BIASES,
   createCombatRecovery,
   createBossPhaseListener,
+  createAbilityCore,
+  createAbilityEffects,
+  createAbilityReview,
+  registerStatusDefinitions,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -43,6 +47,8 @@ import {
   cartographerDialogue,
   rumBarrelEffect,
   seamanshipTree,
+  pirateAbilities,
+  pirateStatusDefinitions,
 } from './content.js';
 import { pirateMinimalRuleset } from './ruleset.js';
 
@@ -85,6 +91,7 @@ const pirateFormulas: CombatFormulas = {
 };
 
 export function createGame(seed?: number): Engine {
+  registerStatusDefinitions(pirateStatusDefinitions);
   const review = createCombatReview({ baseFormulas: pirateFormulas });
   const engine = new Engine({
     manifest,
@@ -149,6 +156,9 @@ export function createGame(seed?: number): Engine {
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['pirate', 'colonial', 'beast'].includes(b.tag)) }),
       createCombatRecovery({ safeZoneTags: ['safe', 'ship', 'home-base', 'tavern'] }),
       createBossPhaseListener(drownedGuardianBoss),
+      createAbilityCore({ abilities: pirateAbilities, statMapping: { power: 'brawn', precision: 'cunning', focus: 'sea-legs' } }),
+      createAbilityEffects(),
+      createAbilityReview(),
       createSimulationInspector(),
     ],
   });

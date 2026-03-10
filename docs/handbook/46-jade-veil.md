@@ -63,3 +63,5 @@ npm install @ai-rpg-engine/starter-ronin
 import { createGame } from '@ai-rpg-engine/starter-ronin';
 const engine = createGame(42);
 ```
+
+This pack includes 3 abilities (precision-cut, inner-calm, shadow-mark), the `marked` status with debuff tag, and cleanse support. See [Chapter 48: Abilities System](./48-abilities-system.md).

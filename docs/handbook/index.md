@@ -30,6 +30,13 @@ Create rooms, entities, factions, quests, and content packs.
 - [The Chapel Threshold](./20-chapel-threshold.md) — fantasy starter walkthrough
 - [Neon Lockbox](./21-neon-lockbox.md) — cyberpunk starter walkthrough
 
+### Combat & Abilities
+
+Powers, statuses, resistances, AI intent, and balance tools.
+
+- [Combat System](./47-combat-system.md) — roles, encounters, bosses, engagement, recovery
+- [Abilities System](./48-abilities-system.md) — ability definitions, statuses, resistance, AI scoring, audit
+
 ### Understanding the Simulation
 
 How the engine processes actions, events, perception, and cognition.
@@ -163,6 +170,12 @@ build → simulate → analyze → tune → experiment
 40. [Economy, Scarcity & Trade](./40-economy-trade.md)
 41. [Crafting, Salvage & Item Transformation](./41-crafting-salvage.md)
 42. [Quest Webs & Emergent Opportunities](./42-quest-webs.md)
+43. [Endgames & Campaign Conclusions](./43-endgames.md)
+
+### Part X — Systems Reference
+
+47. [Combat System](./47-combat-system.md)
+48. [Abilities System](./48-abilities-system.md)
 
 ### Appendix
 

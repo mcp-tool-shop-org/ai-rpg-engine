@@ -30,6 +30,7 @@ export const weirdWestMinimalRuleset: RulesetDefinition = {
     { id: 'choose', name: 'Choose', tags: ['dialogue'], description: 'Select a dialogue option' },
     { id: 'draw', name: 'Draw', tags: ['combat', 'duel'], description: 'Quick-draw duel — reflexes determine who fires first' },
     { id: 'commune', name: 'Commune', tags: ['supernatural'], description: 'Speak with spirits or read ley lines' },
+    { id: 'use-ability', name: 'Use Ability', tags: ['ability'], description: 'Activate a hex, curse, or supernatural power' },
   ],
 
   formulas: [

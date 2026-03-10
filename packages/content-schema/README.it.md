@@ -24,12 +24,13 @@ npm install @ai-rpg-engine/content-schema
 
 ## Cosa c'è dentro
 
-- **Schemi per le stanze** — aree con uscite, proprietà e stato ambientale.
-- **Schemi per le entità** — definizioni di personaggi non giocanti, creature e personaggi del giocatore.
-- **Schemi per i dialoghi** — alberi di dialogo basati su grafi, con condizioni ed effetti.
-- **Schemi per gli oggetti** — equipaggiamento, oggetti consumabili, oggetti di missione con modificatori di statistiche.
-- **Caricatore di pacchetti di contenuti** — convalida e carica pacchetti di contenuti JSON/TypeScript.
-- **Validatori di schemi** — convalida a runtime con messaggi di errore strutturati.
+- **Schemi delle stanze** — aree con uscite, proprietà e stato ambientale.
+- **Schemi delle entità** — definizioni di personaggi non giocanti (PNG), creature e personaggi del giocatore.
+- **Schemi dei dialoghi** — alberi di dialogo basati su grafi, con condizioni ed effetti.
+- **Schemi degli oggetti** — equipaggiamento, oggetti consumabili, oggetti di missione con modificatori di statistiche.
+- **Caricatore di pacchetti di contenuti** — convalida e caricamento di pacchetti di contenuti JSON/TypeScript.
+- **Schemi delle abilità** — definizioni delle abilità, definizioni degli stati e convalida dei pacchetti con avvisi sull'equilibrio.
+- **Convalidatori di schemi** — convalida a runtime con messaggi di errore strutturati.
 
 ## Utilizzo
 

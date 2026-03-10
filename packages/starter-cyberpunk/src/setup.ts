@@ -26,6 +26,10 @@ import {
   BUILTIN_PACK_BIASES,
   createCombatRecovery,
   createBossPhaseListener,
+  createAbilityCore,
+  createAbilityEffects,
+  createAbilityReview,
+  registerStatusDefinitions,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -42,6 +46,8 @@ import {
   fixerDialogue,
   iceBreaker,
   netrunningTree,
+  cyberpunkAbilities,
+  cyberpunkStatusDefinitions,
 } from './content.js';
 import { cyberpunkMinimalRuleset } from './ruleset.js';
 
@@ -84,6 +90,7 @@ const cyberpunkFormulas: CombatFormulas = {
 };
 
 export function createGame(seed?: number): Engine {
+  registerStatusDefinitions(cyberpunkStatusDefinitions);
   const review = createCombatReview({ baseFormulas: cyberpunkFormulas });
   const engine = new Engine({
     manifest,
@@ -142,6 +149,9 @@ export function createGame(seed?: number): Engine {
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['ice-agent'].includes(b.tag)) }),
       createCombatRecovery(),
       createBossPhaseListener(vaultOverseerBoss),
+      createAbilityCore({ abilities: cyberpunkAbilities, statMapping: { power: 'chrome', precision: 'reflex', focus: 'netrunning' } }),
+      createAbilityEffects(),
+      createAbilityReview(),
       createSimulationInspector(),
     ],
   });

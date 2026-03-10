@@ -26,6 +26,10 @@ import {
   BUILTIN_PACK_BIASES,
   createCombatRecovery,
   createBossPhaseListener,
+  createAbilityCore,
+  createAbilityEffects,
+  createAbilityReview,
+  registerStatusDefinitions,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -43,6 +47,8 @@ import {
   magistrateDialogue,
   incenseKitEffect,
   wayOfTheBladeTree,
+  roninAbilities,
+  roninStatusDefinitions,
 } from './content.js';
 import { roninMinimalRuleset } from './ruleset.js';
 
@@ -85,6 +91,7 @@ const roninFormulas: CombatFormulas = {
 };
 
 export function createGame(seed?: number): Engine {
+  registerStatusDefinitions(roninStatusDefinitions);
   const review = createCombatReview({ baseFormulas: roninFormulas });
   const engine = new Engine({
     manifest,
@@ -161,6 +168,9 @@ export function createGame(seed?: number): Engine {
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['assassin', 'samurai'].includes(b.tag)) }),
       createCombatRecovery({ safeZoneTags: ['safe', 'tranquil'] }),
       createBossPhaseListener(corruptSamuraiBoss),
+      createAbilityCore({ abilities: roninAbilities, statMapping: { power: 'discipline', precision: 'perception', focus: 'composure' } }),
+      createAbilityEffects(),
+      createAbilityReview(),
       createSimulationInspector(),
     ],
   });

@@ -30,6 +30,7 @@ export const gladiatorMinimalRuleset: RulesetDefinition = {
     { id: 'choose', name: 'Choose', tags: ['dialogue'], description: 'Select a dialogue option' },
     { id: 'taunt', name: 'Taunt', tags: ['social', 'arena'], description: 'Provoke an opponent to lower their guard' },
     { id: 'showboat', name: 'Showboat', tags: ['spectacle', 'crowd'], description: 'Play to the crowd for favor' },
+    { id: 'use-ability', name: 'Use Ability', tags: ['ability'], description: 'Activate a gladiatorial technique' },
   ],
 
   formulas: [

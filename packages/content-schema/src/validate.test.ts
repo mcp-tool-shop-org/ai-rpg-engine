@@ -3,6 +3,7 @@ import {
   validateEntityBlueprint,
   validateAbilityDefinition,
   validateStatusDefinition,
+  validateStatusDefinitionPack,
   validateRulesetDefinition,
   validateZoneDefinition,
   validateRoomDefinition,
@@ -356,6 +357,51 @@ describe('validateRulesetDefinition', () => {
     });
     expect(r.ok).toBe(false);
     expect(r.errors.some((e) => e.path.includes('default'))).toBe(true);
+  });
+});
+
+describe('validateStatusDefinitionPack', () => {
+  const validDefs = [
+    { id: 'mesmerized', name: 'Mesmerized', tags: ['control', 'debuff'], stacking: 'replace' },
+    { id: 'terrified', name: 'Terrified', tags: ['fear', 'debuff'], stacking: 'replace' },
+  ];
+
+  it('accepts valid status definitions', () => {
+    const r = validateStatusDefinitionPack(validDefs);
+    expect(r.ok).toBe(true);
+    expect(r.advisories).toHaveLength(0);
+  });
+
+  it('catches duplicate IDs', () => {
+    const dups = [
+      { id: 'mesmerized', name: 'Mesmerized', tags: ['control'], stacking: 'replace' },
+      { id: 'mesmerized', name: 'Mesmerized Dup', tags: ['control'], stacking: 'replace' },
+    ];
+    const r = validateStatusDefinitionPack(dups);
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('duplicate status id'))).toBe(true);
+  });
+
+  it('reports advisory for unknown tags when knownTags provided', () => {
+    const defs = [
+      { id: 'x', name: 'X', tags: ['control', 'made-up-tag'], stacking: 'replace' },
+    ];
+    const r = validateStatusDefinitionPack(defs, ['control', 'debuff', 'fear']);
+    expect(r.ok).toBe(true); // advisories don't cause failure
+    expect(r.advisories.length).toBe(1);
+    expect(r.advisories[0].message).toContain('made-up-tag');
+  });
+
+  it('no advisories when tags match known vocabulary', () => {
+    const r = validateStatusDefinitionPack(validDefs, ['control', 'debuff', 'fear']);
+    expect(r.advisories).toHaveLength(0);
+  });
+
+  it('validates structural issues in individual defs', () => {
+    const bad = [{ id: 'x', name: 'X', tags: [], stacking: 'explode' }];
+    const r = validateStatusDefinitionPack(bad);
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('replace, stack, refresh'))).toBe(true);
   });
 });
 

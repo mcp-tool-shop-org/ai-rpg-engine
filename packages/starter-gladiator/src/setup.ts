@@ -26,6 +26,10 @@ import {
   BUILTIN_PACK_BIASES,
   createCombatRecovery,
   createBossPhaseListener,
+  createAbilityCore,
+  createAbilityEffects,
+  createAbilityReview,
+  registerStatusDefinitions,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -43,6 +47,8 @@ import {
   patronDialogue,
   patronTokenEffect,
   arenaGloryTree,
+  gladiatorAbilities,
+  gladiatorStatusDefinitions,
 } from './content.js';
 import { gladiatorMinimalRuleset } from './ruleset.js';
 
@@ -85,6 +91,7 @@ const gladiatorFormulas: CombatFormulas = {
 };
 
 export function createGame(seed?: number): Engine {
+  registerStatusDefinitions(gladiatorStatusDefinitions);
   const review = createCombatReview({ baseFormulas: gladiatorFormulas });
   const engine = new Engine({
     manifest,
@@ -161,6 +168,9 @@ export function createGame(seed?: number): Engine {
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['feral', 'beast'].includes(b.tag)) }),
       createCombatRecovery(),
       createBossPhaseListener(arenaOverlordBoss),
+      createAbilityCore({ abilities: gladiatorAbilities, statMapping: { power: 'might', precision: 'agility', focus: 'showmanship' } }),
+      createAbilityEffects(),
+      createAbilityReview(),
       createSimulationInspector(),
     ],
   });
