@@ -10,6 +10,8 @@ import type {
   ZoneState,
 } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
+import { hasStatus } from './status-core.js';
+import { COMBAT_STATES } from './combat-core.js';
 
 // --- Knowledge Model ---
 
@@ -342,24 +344,34 @@ export const aggressiveProfile: IntentProfile = {
         || target.tags.includes('enemy');
 
       if (isHostile) {
-        if (cognition.morale > 30) {
+        if (cognition.morale <= 30) {
+          // Low morale — disengage if possible, else flee
+          const zoneState = world.zones[zone ?? ''];
+          const disengagePriority = hasStatus(entity, COMBAT_STATES.EXPOSED) ? 95 : 85;
+          if (zoneState?.neighbors.length) {
+            options.push({
+              verb: 'disengage',
+              priority: disengagePriority,
+              reason: 'disengage: low morale',
+            });
+          }
+        } else if (cognition.morale <= 50 && (entity.resources.hp ?? 0) < ((entity.resources.maxHp ?? 30) * 0.4)) {
+          // Moderate morale but hurt — guard
+          options.push({
+            verb: 'guard',
+            priority: 70,
+            reason: 'guard: wounded',
+          });
+        } else {
+          // Confident — attack, but deprioritize guarded targets
+          let attackPriority = 80 + cognition.suspicion * 0.2;
+          if (hasStatus(target, COMBAT_STATES.GUARDED)) attackPriority -= 5;
           options.push({
             verb: 'attack',
             targetIds: [target.id],
-            priority: 80 + cognition.suspicion * 0.2,
+            priority: attackPriority,
             reason: `attack hostile: ${target.name}`,
           });
-        } else {
-          // Low morale — flee if possible
-          const zoneState = world.zones[zone ?? ''];
-          if (zoneState?.neighbors.length) {
-            options.push({
-              verb: 'move',
-              targetIds: [zoneState.neighbors[0]],
-              priority: 90,
-              reason: 'flee: low morale',
-            });
-          }
         }
       }
     }
@@ -392,13 +404,35 @@ export const cautiousProfile: IntentProfile = {
       const hostileBelief = getBelief(cognition, target.id, 'hostile');
       const isKnownHostile = hostileBelief && hostileBelief.value === true && hostileBelief.confidence > 0.6;
 
-      if (isKnownHostile && cognition.morale > 50) {
-        options.push({
-          verb: 'attack',
-          targetIds: [target.id],
-          priority: 60,
-          reason: `attack confirmed hostile: ${target.name}`,
-        });
+      if (isKnownHostile) {
+        if (cognition.morale <= 30) {
+          // Very low morale — disengage
+          const zoneState = world.zones[zone ?? ''];
+          if (zoneState?.neighbors.length) {
+            options.push({
+              verb: 'disengage',
+              priority: 80,
+              reason: 'disengage: morale collapsed',
+            });
+          }
+        } else if (cognition.morale <= 50) {
+          // Moderate morale — guard defensively
+          options.push({
+            verb: 'guard',
+            priority: 65,
+            reason: 'guard: cautious under pressure',
+          });
+        } else {
+          // Confident — attack, but deprioritize guarded targets
+          let attackPriority = 60;
+          if (hasStatus(target, COMBAT_STATES.GUARDED)) attackPriority -= 5;
+          options.push({
+            verb: 'attack',
+            targetIds: [target.id],
+            priority: attackPriority,
+            reason: `attack confirmed hostile: ${target.name}`,
+          });
+        }
       } else if (cognition.suspicion > 50) {
         // Suspicious but not sure — watch
         options.push({

@@ -8,6 +8,7 @@ import type {
   EntityState,
 } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
+import { applyStatus, removeStatus, hasStatus } from './status-core.js';
 
 export type CombatFormulas = {
   /** Calculate hit chance (0-100). Default: 50 + attacker.instinct * 5 - target.instinct * 3 */
@@ -16,7 +17,17 @@ export type CombatFormulas = {
   damage?: (attacker: EntityState, target: EntityState, world: WorldState) => number;
   /** Check if an entity is the player's ally (companion). Used for interception. */
   isAlly?: (entityId: string) => boolean;
+  /** Fraction of damage absorbed when guarded (0-1). Default: 0.5 */
+  guardReduction?: (defender: EntityState, world: WorldState) => number;
+  /** Success chance for disengage (0-100). Default: 40 + instinct*5 + will*2 */
+  disengageChance?: (actor: EntityState, world: WorldState) => number;
 };
+
+export const COMBAT_STATES = {
+  GUARDED: 'combat:guarded',
+  EXPOSED: 'combat:exposed',
+  FLEEING: 'combat:fleeing',
+} as const;
 
 export function createCombatCore(formulas?: CombatFormulas): EngineModule {
   return {
@@ -25,6 +36,8 @@ export function createCombatCore(formulas?: CombatFormulas): EngineModule {
 
     register(ctx) {
       ctx.actions.registerVerb('attack', (action, world) => attackHandler(action, world, formulas));
+      ctx.actions.registerVerb('guard', (action, world) => guardHandler(action, world, formulas));
+      ctx.actions.registerVerb('disengage', (action, world) => disengageHandler(action, world, formulas));
 
       ctx.persistence.registerNamespace('combat-core', {
         inCombat: false,
@@ -84,10 +97,19 @@ function attackHandler(
     delta: -staminaCost,
   }));
 
-  // Hit check
-  const hitChance = formulas?.hitChance
+  // Attacking clears own guarded status
+  if (hasStatus(attacker, COMBAT_STATES.GUARDED)) {
+    const removeEvt = removeStatus(attacker, COMBAT_STATES.GUARDED, world.meta.tick);
+    if (removeEvt) events.push(removeEvt);
+  }
+
+  // Hit check with state modifiers
+  let hitChance = formulas?.hitChance
     ? formulas.hitChance(attacker, target, world)
     : defaultHitChance(attacker, target);
+  if (hasStatus(target, COMBAT_STATES.EXPOSED)) hitChance += 20;
+  if (hasStatus(target, COMBAT_STATES.FLEEING)) hitChance += 10;
+  hitChance = Math.min(95, Math.max(5, hitChance));
 
   // Use a simple deterministic roll based on tick + entity IDs
   const roll = simpleRoll(world.meta.tick, attacker.id, target.id);
@@ -164,8 +186,35 @@ function attackHandler(
     }
   }
 
+  // Apply combat state modifiers to damage
+  let finalDamage = damage;
+  if (hasStatus(target, COMBAT_STATES.GUARDED)) {
+    const reduction = formulas?.guardReduction
+      ? formulas.guardReduction(target, world)
+      : 0.5;
+    const originalDamage = finalDamage;
+    finalDamage = Math.max(1, Math.floor(finalDamage * (1 - reduction)));
+    // Guard absorbs one hit then clears
+    const guardRemoveEvt = removeStatus(target, COMBAT_STATES.GUARDED, world.meta.tick);
+    if (guardRemoveEvt) events.push(guardRemoveEvt);
+    events.push(makeEvent(action, 'combat.guard.absorbed', {
+      entityId: target.id,
+      entityName: target.name,
+      originalDamage,
+      reducedDamage: finalDamage,
+    }, {
+      targetIds: [target.id],
+      presentation: { channels: ['objective'], priority: 'normal' },
+    }));
+  }
+  if (hasStatus(target, COMBAT_STATES.EXPOSED)) {
+    finalDamage += 2;
+    const exposedRemoveEvt = removeStatus(target, COMBAT_STATES.EXPOSED, world.meta.tick);
+    if (exposedRemoveEvt) events.push(exposedRemoveEvt);
+  }
+
   const previousHp = target.resources.hp ?? 0;
-  target.resources.hp = Math.max(0, previousHp - damage);
+  target.resources.hp = Math.max(0, previousHp - finalDamage);
 
   events.push(makeEvent(action, 'combat.contact.hit', {
     attackerId: attacker.id,
@@ -180,7 +229,7 @@ function attackHandler(
   events.push(makeEvent(action, 'combat.damage.applied', {
     attackerId: attacker.id,
     targetId: target.id,
-    damage,
+    damage: finalDamage,
     previousHp,
     currentHp: target.resources.hp,
   }, {
@@ -197,7 +246,7 @@ function attackHandler(
     resource: 'hp',
     previous: previousHp,
     current: target.resources.hp,
-    delta: -damage,
+    delta: -finalDamage,
   }));
 
   // Defeat check
@@ -213,6 +262,148 @@ function attackHandler(
         priority: 'critical',
         soundCues: ['combat.defeat'],
       },
+    }));
+  }
+
+  return events;
+}
+
+function guardHandler(
+  action: ActionIntent,
+  world: WorldState,
+  formulas?: CombatFormulas,
+): ResolvedEvent[] {
+  const events: ResolvedEvent[] = [];
+  const actor = world.entities[action.actorId];
+
+  if (!actor) {
+    return [makeEvent(action, 'action.rejected', { reason: 'actor not found' })];
+  }
+  if ((actor.resources.hp ?? 0) <= 0) {
+    return [makeEvent(action, 'action.rejected', { reason: 'actor is defeated' })];
+  }
+
+  const staminaCost = 1;
+  const currentStamina = actor.resources.stamina ?? 0;
+  if (currentStamina < staminaCost) {
+    return [makeEvent(action, 'action.rejected', { reason: 'not enough stamina' })];
+  }
+
+  // Clear existing guarded (no double-guard)
+  if (hasStatus(actor, COMBAT_STATES.GUARDED)) {
+    const removeEvt = removeStatus(actor, COMBAT_STATES.GUARDED, world.meta.tick);
+    if (removeEvt) events.push(removeEvt);
+  }
+
+  // Deduct stamina
+  actor.resources.stamina = currentStamina - staminaCost;
+  events.push(makeEvent(action, 'resource.changed', {
+    entityId: actor.id,
+    resource: 'stamina',
+    previous: currentStamina,
+    current: actor.resources.stamina,
+    delta: -staminaCost,
+  }));
+
+  // Apply guarded status (expires after 2 ticks as safety net)
+  events.push(applyStatus(actor, COMBAT_STATES.GUARDED, world.meta.tick, {
+    duration: 2,
+    sourceId: actor.id,
+  }));
+
+  events.push(makeEvent(action, 'combat.guard.start', {
+    entityId: actor.id,
+    entityName: actor.name,
+  }, {
+    presentation: { channels: ['objective'], priority: 'normal' },
+  }));
+
+  return events;
+}
+
+function disengageHandler(
+  action: ActionIntent,
+  world: WorldState,
+  formulas?: CombatFormulas,
+): ResolvedEvent[] {
+  const events: ResolvedEvent[] = [];
+  const actor = world.entities[action.actorId];
+
+  if (!actor) {
+    return [makeEvent(action, 'action.rejected', { reason: 'actor not found' })];
+  }
+  if ((actor.resources.hp ?? 0) <= 0) {
+    return [makeEvent(action, 'action.rejected', { reason: 'actor is defeated' })];
+  }
+
+  const zoneState = world.zones[actor.zoneId ?? ''];
+  if (!zoneState?.neighbors.length) {
+    return [makeEvent(action, 'action.rejected', { reason: 'no exit from current zone' })];
+  }
+
+  const staminaCost = 1;
+  const currentStamina = actor.resources.stamina ?? 0;
+  if (currentStamina < staminaCost) {
+    return [makeEvent(action, 'action.rejected', { reason: 'not enough stamina' })];
+  }
+
+  // Clear guarded (taking an action clears guard)
+  if (hasStatus(actor, COMBAT_STATES.GUARDED)) {
+    const removeEvt = removeStatus(actor, COMBAT_STATES.GUARDED, world.meta.tick);
+    if (removeEvt) events.push(removeEvt);
+  }
+
+  // Deduct stamina
+  actor.resources.stamina = currentStamina - staminaCost;
+  events.push(makeEvent(action, 'resource.changed', {
+    entityId: actor.id,
+    resource: 'stamina',
+    previous: currentStamina,
+    current: actor.resources.stamina,
+    delta: -staminaCost,
+  }));
+
+  // Roll disengage chance
+  const instinct = actor.stats.instinct ?? 5;
+  const will = actor.stats.will ?? 3;
+  const chance = formulas?.disengageChance
+    ? formulas.disengageChance(actor, world)
+    : Math.min(90, Math.max(15, 40 + instinct * 5 + will * 2));
+  const roll = simpleRoll(world.meta.tick, actor.id, 'disengage');
+
+  if (roll <= chance) {
+    // Success — apply fleeing, move to neighbor
+    events.push(applyStatus(actor, COMBAT_STATES.FLEEING, world.meta.tick, {
+      duration: 2,
+      sourceId: actor.id,
+    }));
+
+    const fromZoneId = actor.zoneId;
+    const toZoneId = zoneState.neighbors[0];
+    actor.zoneId = toZoneId;
+
+    events.push(makeEvent(action, 'combat.disengage.success', {
+      entityId: actor.id,
+      entityName: actor.name,
+      fromZoneId,
+      toZoneId,
+    }, {
+      presentation: { channels: ['objective'], priority: 'normal' },
+    }));
+  } else {
+    // Failure — apply exposed
+    events.push(applyStatus(actor, COMBAT_STATES.EXPOSED, world.meta.tick, {
+      duration: 1,
+      sourceId: actor.id,
+    }));
+
+    events.push(makeEvent(action, 'combat.disengage.fail', {
+      entityId: actor.id,
+      entityName: actor.name,
+      roll,
+      needed: chance,
+    }, {
+      presentation: { channels: ['objective'], priority: 'normal' },
     }));
   }
 

@@ -21,6 +21,10 @@ Events follow the pattern: `domain.object.verb`
 | `combat.contact.missed` | combat-core | Attack missed |
 | `combat.damage.applied` | combat-core | Damage dealt to entity |
 | `combat.entity.defeated` | combat-core | Entity HP reached zero |
+| `combat.guard.start` | combat-core | Entity raised guard stance |
+| `combat.guard.absorbed` | combat-core | Guard absorbed incoming damage (includes original/reduced values) |
+| `combat.disengage.success` | combat-core | Entity broke from combat and moved to adjacent zone |
+| `combat.disengage.fail` | combat-core | Entity failed to disengage and became exposed |
 
 ## Status Events
 

@@ -190,7 +190,7 @@ describe('Intent selection', () => {
     expect(intent!.targetIds).toContain('player');
   });
 
-  it('aggressive profile flees when morale is low', () => {
+  it('aggressive profile disengages when morale is low', () => {
     const engine = createTestEngine({
       modules: [createCognitionCore()],
       entities: [makePlayer('a'), makeAIEntity('guard', 'Guard', 'a')],
@@ -205,8 +205,8 @@ describe('Intent selection', () => {
 
     const intent = selectIntent(guard, cog, engine.world, aggressiveProfile);
     expect(intent).toBeDefined();
-    expect(intent!.verb).toBe('move'); // flee!
-    expect(intent!.reason).toContain('flee');
+    expect(intent!.verb).toBe('disengage');
+    expect(intent!.reason).toContain('disengage');
   });
 
   it('cautious profile inspects when suspicious but unsure', () => {
