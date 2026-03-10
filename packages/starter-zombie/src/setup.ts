@@ -18,6 +18,7 @@ import {
   createBeliefProvenance,
   createObserverPresentation,
   giveItem,
+  createDefeatFallout,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -129,6 +130,10 @@ export function createGame(seed?: number): Engine {
       createBeliefProvenance(),
       createObserverPresentation({
         rules: [undeadHunger],
+      }),
+      createDefeatFallout({
+        factions: [{ factionId: 'survivors', entityIds: ['medic_chen', 'scavenger_rook', 'leader_marsh'] }],
+        playerId: 'survivor',
       }),
       createSimulationInspector(),
     ],

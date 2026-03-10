@@ -18,6 +18,7 @@ import {
   createBeliefProvenance,
   createObserverPresentation,
   giveItem,
+  createDefeatFallout,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -127,6 +128,10 @@ export function createGame(seed?: number): Engine {
       createBeliefProvenance(),
       createObserverPresentation({
         rules: [cursedGuardianPerception],
+      }),
+      createDefeatFallout({
+        factions: [{ factionId: 'colonial-navy', entityIds: ['navy_sailor', 'governor_vane'] }],
+        playerId: 'captain',
       }),
       createSimulationInspector(),
     ],

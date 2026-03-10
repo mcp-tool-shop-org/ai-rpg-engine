@@ -18,6 +18,7 @@ import {
   createBeliefProvenance,
   createObserverPresentation,
   giveItem,
+  createDefeatFallout,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule } from '@ai-rpg-engine/modules';
 import {
@@ -97,6 +98,10 @@ export function createGame(seed?: number): Engine {
       createBeliefProvenance(),
       createObserverPresentation({
         rules: [undeadHostilePerception],
+      }),
+      createDefeatFallout({
+        factions: [{ factionId: 'chapel-undead', entityIds: ['ash-ghoul'] }],
+        playerId: 'player',
       }),
       createSimulationInspector(),
     ],

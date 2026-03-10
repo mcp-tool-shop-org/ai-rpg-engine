@@ -18,6 +18,7 @@ import {
   createBeliefProvenance,
   createObserverPresentation,
   giveItem,
+  createDefeatFallout,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -136,6 +137,13 @@ export function createGame(seed?: number): Engine {
       createObserverPresentation({
         rules: [spiritPerception],
       }),
+      createDefeatFallout({
+        factions: [
+          { factionId: 'townsfolk', entityIds: ['bartender_silas', 'sheriff_hale'] },
+          { factionId: 'red-congregation', entityIds: ['dust_revenant'] },
+        ],
+        playerId: 'drifter',
+      }),
       createSimulationInspector(),
     ],
   });
@@ -210,6 +218,14 @@ export function createGame(seed?: number): Engine {
     if (event.payload.entityId === 'drifter') {
       const p = engine.store.state.entities['drifter'];
       if (p) p.resources.resolve = Math.min(100, (p.resources.resolve ?? 0) + 1);
+    }
+  });
+
+  // --- Defeat Fallout: violence attracts the supernatural ---
+  engine.store.events.on('defeat.fallout.triggered', (event) => {
+    if (event.payload.actorId === 'drifter') {
+      const p = engine.store.state.entities['drifter'];
+      if (p) p.resources.dust = Math.min(100, (p.resources.dust ?? 0) + 2);
     }
   });
 

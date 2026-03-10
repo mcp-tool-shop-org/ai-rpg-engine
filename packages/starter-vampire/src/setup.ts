@@ -18,6 +18,7 @@ import {
   createBeliefProvenance,
   createObserverPresentation,
   giveItem,
+  createDefeatFallout,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -139,6 +140,13 @@ export function createGame(seed?: number): Engine {
       createObserverPresentation({
         rules: [vampireHungerPerception],
       }),
+      createDefeatFallout({
+        factions: [
+          { factionId: 'house-morvaine', entityIds: ['duchess-morvaine', 'cassius', 'feral-thrall'] },
+          { factionId: 'witch-hunters', entityIds: ['witch-hunter'] },
+        ],
+        playerId: 'player',
+      }),
       createSimulationInspector(),
     ],
   });
@@ -218,6 +226,14 @@ export function createGame(seed?: number): Engine {
     if (event.payload.entityId === 'player') {
       const p = engine.store.state.entities['player'];
       if (p) p.resources.humanity = Math.min(100, (p.resources.humanity ?? 0) + 1);
+    }
+  });
+
+  // --- Defeat Fallout: violence erodes humanity ---
+  engine.store.events.on('defeat.fallout.triggered', (event) => {
+    if (event.payload.actorId === 'player') {
+      const p = engine.store.state.entities['player'];
+      if (p) p.resources.humanity = Math.max(0, (p.resources.humanity ?? 0) - 1);
     }
   });
 

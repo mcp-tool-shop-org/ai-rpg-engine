@@ -18,6 +18,7 @@ import {
   createBeliefProvenance,
   createObserverPresentation,
   giveItem,
+  createDefeatFallout,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -117,6 +118,10 @@ export function createGame(seed?: number): Engine {
       createBeliefProvenance(),
       createObserverPresentation({
         rules: [suspectParanoia],
+      }),
+      createDefeatFallout({
+        factions: [{ factionId: 'dockworkers', entityIds: ['dock_thug'] }],
+        playerId: 'inspector',
       }),
       createSimulationInspector(),
     ],

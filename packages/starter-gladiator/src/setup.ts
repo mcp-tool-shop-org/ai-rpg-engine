@@ -18,6 +18,7 @@ import {
   createBeliefProvenance,
   createObserverPresentation,
   giveItem,
+  createDefeatFallout,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -136,6 +137,13 @@ export function createGame(seed?: number): Engine {
       createBeliefProvenance(),
       createObserverPresentation({
         rules: [patronPerception],
+      }),
+      createDefeatFallout({
+        factions: [
+          { factionId: 'arena-stable', entityIds: ['lanista-brutus', 'nerva', 'arena-champion'] },
+          { factionId: 'patron-circle', entityIds: ['domina-valeria'] },
+        ],
+        playerId: 'player',
       }),
       createSimulationInspector(),
     ],

@@ -18,6 +18,7 @@ import {
   createBeliefProvenance,
   createObserverPresentation,
   giveItem,
+  createDefeatFallout,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -119,6 +120,10 @@ export function createGame(seed?: number): Engine {
       createBeliefProvenance(),
       createObserverPresentation({
         rules: [iceSecurityFraming],
+      }),
+      createDefeatFallout({
+        factions: [{ factionId: 'vault-ice', entityIds: ['ice-sentry'] }],
+        playerId: 'runner',
       }),
       createSimulationInspector(),
     ],

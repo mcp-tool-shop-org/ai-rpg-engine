@@ -18,6 +18,7 @@ import {
   createBeliefProvenance,
   createObserverPresentation,
   giveItem,
+  createDefeatFallout,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -137,6 +138,13 @@ export function createGame(seed?: number): Engine {
       createObserverPresentation({
         rules: [assassinPerception],
       }),
+      createDefeatFallout({
+        factions: [
+          { factionId: 'takeda-clan', entityIds: ['lord-takeda', 'lady-himiko', 'corrupt-samurai'] },
+          { factionId: 'shadow-network', entityIds: ['shadow-assassin'] },
+        ],
+        playerId: 'player',
+      }),
       createSimulationInspector(),
     ],
   });
@@ -224,6 +232,14 @@ export function createGame(seed?: number): Engine {
     if (event.payload.attackerId === 'player') {
       const p = engine.store.state.entities['player'];
       if (p) p.resources.ki = Math.max(0, (p.resources.ki ?? 0) - 1);
+    }
+  });
+
+  // --- Defeat Fallout: bonus honor on boss kill ---
+  engine.store.events.on('defeat.fallout.triggered', (event) => {
+    if (event.payload.isBoss && event.payload.actorId === 'player') {
+      const p = engine.store.state.entities['player'];
+      if (p) p.resources.honor = Math.min(100, (p.resources.honor ?? 0) + 5);
     }
   });
 

@@ -568,6 +568,10 @@ export type {
   FactionStateEntry,
 } from './arc-detection.js';
 
+// --- Defeat Fallout (Phase 4) ---
+export { createDefeatFallout } from './defeat-fallout.js';
+export type { DefeatFalloutConfig } from './defeat-fallout.js';
+
 // --- Endgame Detection (v2.0) ---
 export {
   evaluateEndgame,

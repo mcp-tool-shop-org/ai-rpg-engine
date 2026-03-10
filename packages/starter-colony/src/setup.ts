@@ -18,6 +18,7 @@ import {
   createBeliefProvenance,
   createObserverPresentation,
   giveItem,
+  createDefeatFallout,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -127,6 +128,10 @@ export function createGame(seed?: number): Engine {
       createBeliefProvenance(),
       createObserverPresentation({
         rules: [alienPerception],
+      }),
+      createDefeatFallout({
+        factions: [{ factionId: 'colony-council', entityIds: ['dr_vasquez', 'chief_okafor'] }],
+        playerId: 'commander',
       }),
       createSimulationInspector(),
     ],
