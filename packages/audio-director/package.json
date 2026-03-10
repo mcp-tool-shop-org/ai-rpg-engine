@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/audio-director",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "Audio cue scheduling, priority, ducking, and cooldown engine for AI RPG Engine",
   "type": "module",
   "main": "./dist/index.js",

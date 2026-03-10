@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/asset-registry",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Content-addressed asset registry for portraits, icons, and media in AI RPG Engine",
   "type": "module",
   "main": "./dist/index.js",

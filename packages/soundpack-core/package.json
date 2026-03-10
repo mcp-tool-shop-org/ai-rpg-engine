@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/soundpack-core",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Sound pack manifest schema and content-addressable audio registry for AI RPG Engine",
   "type": "module",
   "main": "./dist/index.js",
@@ -11,7 +11,9 @@
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run"
@@ -24,7 +26,15 @@
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
     "directory": "packages/soundpack-core"
   },
-  "keywords": ["rpg", "soundpack", "audio", "registry", "sfx", "ambient", "game-engine"],
+  "keywords": [
+    "rpg",
+    "soundpack",
+    "audio",
+    "registry",
+    "sfx",
+    "ambient",
+    "game-engine"
+  ],
   "bugs": {
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues"
   },
