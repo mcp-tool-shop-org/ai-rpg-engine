@@ -469,3 +469,437 @@ describe('AI prefers appropriate verb by morale bucket', () => {
     expect(intent?.verb).toBe('attack');
   });
 });
+
+// ============================================================
+// Phase 2 — Will, Morale, and Companion Loyalty Integration
+// ============================================================
+
+describe('will affects guard reduction', () => {
+  it('high-will defender absorbs more damage via default formula', () => {
+    // Will 10 → reduction = min(0.75, 0.5 + (10-3)*0.03) = min(0.75, 0.71) = 0.71
+    // Against vigor 10: floor(10 * (1 - 0.71)) = floor(2.9) = 2
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore()],
+      entities: [
+        makePlayer('a', { stats: { vigor: 5, instinct: 5, will: 10 } }),
+        makeEntity('enemy1', 'Thug', 'a', { stats: { vigor: 10, instinct: 10 } }),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    engine.submitAction('guard');
+
+    for (let tick = 2; tick <= 40; tick++) {
+      if (!hasStatus(engine.world.entities.player, COMBAT_STATES.GUARDED)) {
+        engine.submitAction('guard');
+        tick++;
+      }
+      const events = engine.processAction(npcAction('attack', 'enemy1', tick, { targetIds: ['player'] }));
+      const absorbEvt = events.find(e => e.type === 'combat.guard.absorbed');
+      if (absorbEvt) {
+        // Will 10: reduction ~0.71, so 10 * 0.29 = 2.9 → 2
+        expect(absorbEvt.payload.reducedDamage).toBeLessThan(absorbEvt.payload.originalDamage as number);
+        expect(absorbEvt.payload.reducedDamage).toBeLessThanOrEqual(3); // much less than the will=3 default of 5
+        return;
+      }
+    }
+    expect.unreachable('expected at least one guarded hit');
+  });
+
+  it('baseline will=3 gives standard 50% reduction', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore()],
+      entities: [
+        makePlayer('a', { stats: { vigor: 5, instinct: 5, will: 3 } }),
+        makeEntity('enemy1', 'Thug', 'a', { stats: { vigor: 10, instinct: 10 } }),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    engine.submitAction('guard');
+
+    for (let tick = 2; tick <= 40; tick++) {
+      if (!hasStatus(engine.world.entities.player, COMBAT_STATES.GUARDED)) {
+        engine.submitAction('guard');
+        tick++;
+      }
+      const events = engine.processAction(npcAction('attack', 'enemy1', tick, { targetIds: ['player'] }));
+      const absorbEvt = events.find(e => e.type === 'combat.guard.absorbed');
+      if (absorbEvt) {
+        expect(absorbEvt.payload.reducedDamage).toBe(5); // floor(10 * 0.5) = 5
+        return;
+      }
+    }
+    expect.unreachable('expected at least one guarded hit');
+  });
+});
+
+describe('morale changes on combat events', () => {
+  it('morale drops on damage proportional to hit', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCognitionCore()],
+      entities: [
+        makePlayer('a'),
+        makeEntity('guard', 'Guard', 'a', {
+          ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+        }),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    const cog = getCognition(engine.world, 'guard');
+    const initialMorale = cog.morale;
+
+    // Player attacks guard — find a tick that hits
+    for (let tick = 1; tick <= 30; tick++) {
+      engine.world.entities.player.resources.stamina = 5;
+      const events = engine.submitAction('attack', { targetIds: ['guard'] });
+      if (events.some(e => e.type === 'combat.damage.applied')) {
+        // Morale should have dropped (via combat.damage.applied listener)
+        expect(cog.morale).toBeLessThan(initialMorale);
+        return;
+      }
+    }
+    expect.unreachable('expected at least one hit');
+  });
+
+  it('will mitigates morale loss from damage', () => {
+    // Compare morale loss between will=3 and will=10 entities
+    const makeSetup = (will: number) => {
+      const engine = createTestEngine({
+        modules: [statusCore, createCombatCore(), createCognitionCore()],
+        entities: [
+          makePlayer('a', { stats: { vigor: 8, instinct: 10 } }),
+          makeEntity('target', 'Target', 'a', {
+            stats: { vigor: 3, instinct: 3, will },
+            resources: { hp: 20, stamina: 5 },
+            ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+          }),
+        ],
+        zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+      });
+      return engine;
+    };
+
+    let lowWillLoss = 0;
+    let highWillLoss = 0;
+
+    for (const [will, setter] of [[3, (v: number) => { lowWillLoss = v; }], [10, (v: number) => { highWillLoss = v; }]] as [number, (v: number) => void][]) {
+      const engine = makeSetup(will);
+      const cog = getCognition(engine.world, 'target');
+      const initialMorale = cog.morale;
+
+      for (let tick = 1; tick <= 30; tick++) {
+        engine.world.entities.player.resources.stamina = 5;
+        const events = engine.submitAction('attack', { targetIds: ['target'] });
+        if (events.some(e => e.type === 'combat.damage.applied')) {
+          setter(initialMorale - cog.morale);
+          break;
+        }
+      }
+    }
+
+    expect(lowWillLoss).toBeGreaterThan(0);
+    expect(highWillLoss).toBeGreaterThan(0);
+    expect(highWillLoss).toBeLessThan(lowWillLoss);
+  });
+
+  it('attacker morale drops on miss', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCognitionCore()],
+      entities: [
+        makePlayer('a'),
+        makeEntity('guard', 'Guard', 'a', {
+          ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+        }),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    const cog = getCognition(engine.world, 'guard');
+    const initialMorale = cog.morale;
+
+    // Guard attacks player — find a tick that misses
+    for (let tick = 1; tick <= 30; tick++) {
+      engine.world.entities.guard.resources.stamina = 5;
+      const events = engine.processAction(npcAction('attack', 'guard', tick, { targetIds: ['player'] }));
+      if (events.some(e => e.type === 'combat.contact.miss')) {
+        expect(cog.morale).toBe(initialMorale - 2);
+        return;
+      }
+    }
+    expect.unreachable('expected at least one miss');
+  });
+
+  it('guard absorb gives +3 morale (net effect includes damage loss)', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCognitionCore()],
+      entities: [
+        makePlayer('a', { stats: { vigor: 2, instinct: 10 } }),
+        makeEntity('guard', 'Guard', 'a', {
+          stats: { vigor: 5, instinct: 3, will: 3 },
+          resources: { hp: 30, stamina: 5 },
+          ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+        }),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    const cog = getCognition(engine.world, 'guard');
+
+    // Guard the NPC
+    engine.processAction(npcAction('guard', 'guard', 1));
+    expect(hasStatus(engine.world.entities.guard, COMBAT_STATES.GUARDED)).toBe(true);
+
+    // Player attacks guarded guard — find a tick that hits
+    for (let tick = 2; tick <= 30; tick++) {
+      if (!hasStatus(engine.world.entities.guard, COMBAT_STATES.GUARDED)) {
+        engine.processAction(npcAction('guard', 'guard', tick));
+        tick++;
+      }
+      const moraleBefore = cog.morale;
+      engine.world.entities.player.resources.stamina = 5;
+      const events = engine.submitAction('attack', { targetIds: ['guard'] });
+      if (events.some(e => e.type === 'combat.guard.absorbed')) {
+        // Guard absorbed → morale went up +3 from guard_absorb,
+        // but also down from combat.damage.applied. With low player vigor (2),
+        // guard reduction halves to 1, so damage is small, morale loss is small.
+        // The +3 guard_absorb offset should be visible in the net effect.
+        // Specifically: with tiny damage, net morale change should be small (close to 0 or positive)
+        const netChange = cog.morale - moraleBefore;
+        // The +3 offset from guard_absorb was applied
+        // (without it, morale would be 3 points lower)
+        expect(netChange).toBeGreaterThan(-5); // damage is tiny, so guard_absorb +3 mostly offsets
+        return;
+      }
+    }
+    expect.unreachable('expected at least one guarded hit');
+  });
+
+  it('morale rises on defeating enemy', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCognitionCore()],
+      entities: [
+        makePlayer('a'),
+        makeEntity('guard', 'Guard', 'a', {
+          resources: { hp: 1, stamina: 5 },
+          ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+        }),
+        makeEntity('bystander', 'Bystander', 'a', {
+          ai: { profileId: 'cautious', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+        }),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    // Set bystander to know guard is hostile (so they're glad when guard dies)
+    const bystanderCog = getCognition(engine.world, 'bystander');
+    setBelief(bystanderCog, 'guard', 'hostile', true, 0.9, 'observed', 1);
+    const bystanderMoraleBefore = bystanderCog.morale;
+
+    // Player kills guard (1 HP)
+    for (let tick = 1; tick <= 30; tick++) {
+      engine.world.entities.player.resources.stamina = 5;
+      engine.world.entities.guard.resources.hp = 1;
+      const events = engine.submitAction('attack', { targetIds: ['guard'] });
+      if (events.some(e => e.type === 'combat.entity.defeated')) {
+        // Bystander who considered guard hostile should gain morale
+        expect(bystanderCog.morale).toBeGreaterThan(bystanderMoraleBefore);
+        return;
+      }
+    }
+    expect.unreachable('expected guard to be defeated');
+  });
+});
+
+describe('companion interception uses formula', () => {
+  it('interceptChance formula drives interception instead of flat 30%', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore({
+        isAlly: (id) => id === 'companion',
+        interceptChance: (_ally, _target, _world) => 100, // always intercept
+      })],
+      entities: [
+        makePlayer('a'),
+        makeEntity('companion', 'Ally', 'a', { tags: ['companion'] }),
+        makeEntity('enemy1', 'Thug', 'a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    // Enemy attacks player — companion should always intercept with 100% chance
+    // Note: when interception succeeds, combat.contact.hit is NOT emitted (early return)
+    for (let tick = 1; tick <= 30; tick++) {
+      engine.world.entities.player.resources.hp = 20;
+      engine.world.entities.companion.resources.hp = 20;
+      engine.world.entities.enemy1.resources.stamina = 5;
+      const events = engine.processAction(npcAction('attack', 'enemy1', tick, { targetIds: ['player'] }));
+      const intercepted = events.find(e => e.type === 'combat.companion.intercepted');
+      if (intercepted) {
+        expect(intercepted.payload.interceptChance).toBe(100);
+        expect(intercepted.payload.interceptorId).toBe('companion');
+        // Player should NOT have taken damage
+        expect(engine.world.entities.player.resources.hp).toBe(20);
+        return;
+      }
+    }
+    expect.unreachable('expected at least one interception');
+  });
+
+  it('zero interceptChance prevents interception', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore({
+        isAlly: (id) => id === 'companion',
+        interceptChance: () => 0, // never intercept
+      })],
+      entities: [
+        makePlayer('a'),
+        makeEntity('companion', 'Ally', 'a', { tags: ['companion'] }),
+        makeEntity('enemy1', 'Thug', 'a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    let hitCount = 0;
+    for (let tick = 1; tick <= 30; tick++) {
+      engine.world.entities.player.resources.hp = 20;
+      engine.world.entities.companion.resources.hp = 20;
+      engine.world.entities.enemy1.resources.stamina = 5;
+      const events = engine.processAction(npcAction('attack', 'enemy1', tick, { targetIds: ['player'] }));
+      // With 0% interception, hits should never be intercepted
+      expect(events.some(e => e.type === 'combat.companion.intercepted')).toBe(false);
+      if (events.some(e => e.type === 'combat.damage.applied' && e.payload.targetId === 'player')) {
+        hitCount++;
+      }
+    }
+    expect(hitCount).toBeGreaterThan(0);
+  });
+});
+
+describe('fleeing entity AI suppression', () => {
+  it('fleeing aggressive NPC only disengages', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCognitionCore({ profiles: [aggressiveProfile] })],
+      entities: [
+        makePlayer('a'),
+        makeEntity('guard', 'Guard', 'a', {
+          ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+        }),
+      ],
+      zones: [
+        { id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: ['b'] },
+        { id: 'b', roomId: 'test', name: 'B', tags: [], neighbors: ['a'] },
+      ],
+    });
+
+    const cog = getCognition(engine.world, 'guard');
+    cog.morale = 70; // high morale, would normally attack
+    setBelief(cog, 'player', 'hostile', true, 0.9, 'observed', 1);
+
+    // Apply fleeing status
+    applyStatus(engine.world.entities.guard, COMBAT_STATES.FLEEING, 1, { duration: 5 });
+
+    const intent = selectIntent(engine.world.entities.guard, cog, engine.world, aggressiveProfile);
+    expect(intent?.verb).toBe('disengage');
+    expect(intent?.reason).toBe('disengage: fleeing');
+  });
+
+  it('fleeing cautious NPC only disengages', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCognitionCore({ profiles: [cautiousProfile] })],
+      entities: [
+        makePlayer('a'),
+        makeEntity('scout', 'Scout', 'a', {
+          ai: { profileId: 'cautious', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+        }),
+      ],
+      zones: [
+        { id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: ['b'] },
+        { id: 'b', roomId: 'test', name: 'B', tags: [], neighbors: ['a'] },
+      ],
+    });
+
+    const cog = getCognition(engine.world, 'scout');
+    cog.morale = 70;
+    setBelief(cog, 'player', 'hostile', true, 0.9, 'observed', 1);
+
+    applyStatus(engine.world.entities.scout, COMBAT_STATES.FLEEING, 1, { duration: 5 });
+
+    const intent = selectIntent(engine.world.entities.scout, cog, engine.world, cautiousProfile);
+    expect(intent?.verb).toBe('disengage');
+  });
+});
+
+describe('will-shifted AI thresholds', () => {
+  it('high-will aggressive NPC attacks at morale levels where low-will would disengage', () => {
+    const makeSetup = (will: number) => {
+      const engine = createTestEngine({
+        modules: [statusCore, createCombatCore(), createCognitionCore({ profiles: [aggressiveProfile] })],
+        entities: [
+          makePlayer('a'),
+          makeEntity('guard', 'Guard', 'a', {
+            stats: { vigor: 5, instinct: 5, will },
+            ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+          }),
+        ],
+        zones: [
+          { id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: ['b'] },
+          { id: 'b', roomId: 'test', name: 'B', tags: [], neighbors: ['a'] },
+        ],
+      });
+      return engine;
+    };
+
+    // Morale 25: low-will (3) would disengage (25 <= 30), high-will (7) attacks (25 > 30 - 10 = 20, and 25 <= 50 - 10 = 40 but HP not low enough)
+    const lowWillEngine = makeSetup(3);
+    const lowWillCog = getCognition(lowWillEngine.world, 'guard');
+    lowWillCog.morale = 25;
+    setBelief(lowWillCog, 'player', 'hostile', true, 0.9, 'observed', 1);
+    const lowWillIntent = selectIntent(lowWillEngine.world.entities.guard, lowWillCog, lowWillEngine.world, aggressiveProfile);
+
+    const highWillEngine = makeSetup(7);
+    const highWillCog = getCognition(highWillEngine.world, 'guard');
+    highWillCog.morale = 25;
+    setBelief(highWillCog, 'player', 'hostile', true, 0.9, 'observed', 1);
+    const highWillIntent = selectIntent(highWillEngine.world.entities.guard, highWillCog, highWillEngine.world, aggressiveProfile);
+
+    expect(lowWillIntent?.verb).toBe('disengage');
+    expect(highWillIntent?.verb).toBe('attack');
+  });
+
+  it('high-will cautious NPC guards at morale levels where low-will would disengage', () => {
+    const makeSetup = (will: number) => {
+      const engine = createTestEngine({
+        modules: [statusCore, createCombatCore(), createCognitionCore({ profiles: [cautiousProfile] })],
+        entities: [
+          makePlayer('a'),
+          makeEntity('scout', 'Scout', 'a', {
+            stats: { vigor: 5, instinct: 5, will },
+            ai: { profileId: 'cautious', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+          }),
+        ],
+        zones: [
+          { id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: ['b'] },
+          { id: 'b', roomId: 'test', name: 'B', tags: [], neighbors: ['a'] },
+        ],
+      });
+      return engine;
+    };
+
+    // Morale 25: low-will (3) disengages (25 <= 30), high-will (7) guards (25 > 20, 25 <= 40)
+    const lowWillEngine = makeSetup(3);
+    const lowWillCog = getCognition(lowWillEngine.world, 'scout');
+    lowWillCog.morale = 25;
+    setBelief(lowWillCog, 'player', 'hostile', true, 0.9, 'observed', 1);
+    const lowWillIntent = selectIntent(lowWillEngine.world.entities.scout, lowWillCog, lowWillEngine.world, cautiousProfile);
+
+    const highWillEngine = makeSetup(7);
+    const highWillCog = getCognition(highWillEngine.world, 'scout');
+    highWillCog.morale = 25;
+    setBelief(highWillCog, 'player', 'hostile', true, 0.9, 'observed', 1);
+    const highWillIntent = selectIntent(highWillEngine.world.entities.scout, highWillCog, highWillEngine.world, cautiousProfile);
+
+    expect(lowWillIntent?.verb).toBe('disengage');
+    expect(highWillIntent?.verb).toBe('guard');
+  });
+});

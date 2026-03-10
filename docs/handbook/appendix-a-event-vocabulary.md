@@ -25,6 +25,9 @@ Events follow the pattern: `domain.object.verb`
 | `combat.guard.absorbed` | combat-core | Guard absorbed incoming damage (includes original/reduced values) |
 | `combat.disengage.success` | combat-core | Entity broke from combat and moved to adjacent zone |
 | `combat.disengage.fail` | combat-core | Entity failed to disengage and became exposed |
+| `combat.companion.intercepted` | combat-core | Companion intercepted damage aimed at player (includes interceptChance) |
+| `combat.morale.shift` | cognition-core | Entity morale changed due to combat (damage, defeat, guard absorb, miss) |
+| `combat.will.hold` | cognition-core | High-will entity resisted significant morale loss |
 
 ## Status Events
 

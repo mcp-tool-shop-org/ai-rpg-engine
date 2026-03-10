@@ -17,10 +17,14 @@ export type CombatFormulas = {
   damage?: (attacker: EntityState, target: EntityState, world: WorldState) => number;
   /** Check if an entity is the player's ally (companion). Used for interception. */
   isAlly?: (entityId: string) => boolean;
-  /** Fraction of damage absorbed when guarded (0-1). Default: 0.5 */
+  /** Fraction of damage absorbed when guarded (0-1). Default: 0.5 + will bonus (cap 0.75) */
   guardReduction?: (defender: EntityState, world: WorldState) => number;
   /** Success chance for disengage (0-100). Default: 40 + instinct*5 + will*2 */
   disengageChance?: (actor: EntityState, world: WorldState) => number;
+  /** Companion interception chance (0-100). Called per ally; first ally whose roll passes intercepts. */
+  interceptChance?: (ally: EntityState, target: EntityState, world: WorldState) => number;
+  /** Combat morale delta for damage taken. Return negative for loss. Overrides default will-scaled formula. */
+  combatMoraleDelta?: (entity: EntityState, damage: number, world: WorldState) => number;
 };
 
 export const COMBAT_STATES = {
@@ -133,7 +137,7 @@ function attackHandler(
     : defaultDamage(attacker);
 
   // Ally interception: if the target is the player and has companion allies in the same zone,
-  // there's a 30% chance a companion intercepts the damage
+  // check if a companion intercepts the damage
   if (formulas?.isAlly && target.id === world.playerId) {
     const allies = Object.values(world.entities).filter(
       (e) => e.zoneId === target.zoneId && e.id !== target.id && e.id !== attacker.id
@@ -141,10 +145,22 @@ function attackHandler(
         && (e.resources.hp ?? 0) > 0,
     );
     if (allies.length > 0) {
-      const interceptRoll = simpleRoll(world.meta.tick, target.id, allies[0].id);
-      if (interceptRoll <= 30) {
-        // Companion intercepts
-        const interceptor = allies[0];
+      // Find first ally whose interception roll passes
+      let interceptor: EntityState | null = null;
+      let interceptChanceUsed = 30; // default flat chance
+      for (const ally of allies) {
+        const chance = formulas.interceptChance
+          ? formulas.interceptChance(ally, target, world)
+          : 30;
+        const interceptRoll = simpleRoll(world.meta.tick, target.id, ally.id);
+        if (interceptRoll <= chance) {
+          interceptor = ally;
+          interceptChanceUsed = chance;
+          break;
+        }
+      }
+
+      if (interceptor) {
         const interceptorPrevHp = interceptor.resources.hp ?? 0;
         interceptor.resources.hp = Math.max(0, interceptorPrevHp - damage);
 
@@ -154,6 +170,7 @@ function attackHandler(
           targetId: target.id,
           attackerId: attacker.id,
           damage,
+          interceptChance: interceptChanceUsed,
           interceptorHpBefore: interceptorPrevHp,
           interceptorHpAfter: interceptor.resources.hp,
         }, {
@@ -189,9 +206,11 @@ function attackHandler(
   // Apply combat state modifiers to damage
   let finalDamage = damage;
   if (hasStatus(target, COMBAT_STATES.GUARDED)) {
+    const targetWill = target.stats.will ?? 3;
+    const willBonus = Math.max(0, (targetWill - 3) * 0.03);
     const reduction = formulas?.guardReduction
       ? formulas.guardReduction(target, world)
-      : 0.5;
+      : Math.min(0.75, 0.5 + willBonus);
     const originalDamage = finalDamage;
     finalDamage = Math.max(1, Math.floor(finalDamage * (1 - reduction)));
     // Guard absorbs one hit then clears

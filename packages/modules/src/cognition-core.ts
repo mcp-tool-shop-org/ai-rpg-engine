@@ -136,6 +136,65 @@ export function createCognitionCore(configOrProfiles?: CognitionCoreConfig | Int
 
       ctx.events.on('combat.contact.miss', (event, world) => {
         recordCombatMemory(event, world, getModuleState(world));
+        // Attacker frustration: morale -2 on miss
+        const attackerId = event.payload.attackerId as string;
+        const attacker = world.entities[attackerId];
+        if (attacker?.ai) {
+          const cog = getCognition(world, attackerId);
+          const prev = cog.morale;
+          cog.morale = Math.max(0, cog.morale - 2);
+          if (prev !== cog.morale) {
+            ctx.events.emit(makeCognitionEvent('combat.morale.shift', event.tick, {
+              entityId: attackerId,
+              delta: -2,
+              previous: prev,
+              current: cog.morale,
+              reason: 'miss',
+            }));
+          }
+        }
+      });
+
+      // Morale loss on taking damage — proportional to damage/hp, mitigated by will
+      ctx.events.on('combat.damage.applied', (event, world) => {
+        const targetId = event.payload.targetId as string;
+        const target = world.entities[targetId];
+        if (!target?.ai) return;
+
+        const cog = getCognition(world, targetId);
+        const damage = event.payload.damage as number;
+        const previousHp = event.payload.previousHp as number;
+        const maxHpEstimate = Math.max(1, previousHp); // best proxy since maxHp not always stored
+        const ratio = Math.min(1, damage / maxHpEstimate);
+
+        const will = target.stats.will ?? 3;
+        const rawLoss = Math.round(-5 + ratio * -20); // -5 to -25
+        const willMitigation = Math.max(0.3, 1 - (will - 3) * 0.1); // will 3=1.0, will 10=0.3
+        const mitigatedLoss = Math.round(rawLoss * willMitigation);
+
+        const prev = cog.morale;
+        cog.morale = Math.max(0, Math.min(100, cog.morale + mitigatedLoss));
+
+        if (prev !== cog.morale) {
+          ctx.events.emit(makeCognitionEvent('combat.morale.shift', event.tick, {
+            entityId: targetId,
+            delta: mitigatedLoss,
+            previous: prev,
+            current: cog.morale,
+            reason: 'damage',
+            will,
+          }));
+        }
+
+        // Will hold: high-will entity shrugged off significant morale loss
+        if (will >= 7 && rawLoss < -15 && mitigatedLoss > -8) {
+          ctx.events.emit(makeCognitionEvent('combat.will.hold', event.tick, {
+            entityId: targetId,
+            rawLoss,
+            mitigatedLoss,
+            will,
+          }));
+        }
       });
 
       ctx.events.on('combat.entity.defeated', (event, world) => {
@@ -143,6 +202,77 @@ export function createCognitionCore(configOrProfiles?: CognitionCoreConfig | Int
         if (world.modules['perception-filter']) return;
         const cogState = getModuleState(world);
         broadcastBelief(world, cogState, event.payload.entityId as string, 'alive', false, event.tick);
+
+        // Morale shifts for entities in same zone
+        const defeatedId = event.payload.entityId as string;
+        const killerId = event.payload.defeatedBy as string;
+        const defeated = world.entities[defeatedId];
+        const zone = defeated?.zoneId;
+        if (!zone) return;
+
+        for (const entity of Object.values(world.entities)) {
+          if (entity.id === defeatedId) continue;
+          if (entity.zoneId !== zone || !entity.ai) continue;
+          if ((entity.resources.hp ?? 0) <= 0) continue;
+
+          const cog = getCognition(world, entity.id);
+          const prev = cog.morale;
+          let delta = 0;
+          let reason = '';
+
+          if (entity.id === killerId) {
+            // Killer gets morale boost
+            delta = 8;
+            reason = 'killed_enemy';
+          } else {
+            // Witness: check relationship to defeated
+            const hostileBelief = getBelief(cog, defeatedId, 'hostile');
+            if (hostileBelief?.value === true) {
+              // Known hostile was defeated — morale boost
+              delta = 5;
+              reason = 'enemy_defeated';
+            } else {
+              // Check if ally (shared faction profile or tags)
+              const isAlly = (entity.ai?.profileId && defeated?.ai?.profileId && entity.ai.profileId === defeated.ai.profileId)
+                || entity.tags.some(t => t !== 'enemy' && t !== 'npc' && defeated?.tags.includes(t));
+              if (isAlly) {
+                delta = -12;
+                reason = 'ally_defeated';
+              }
+            }
+          }
+
+          if (delta !== 0) {
+            cog.morale = Math.max(0, Math.min(100, cog.morale + delta));
+            ctx.events.emit(makeCognitionEvent('combat.morale.shift', event.tick, {
+              entityId: entity.id,
+              delta,
+              previous: prev,
+              current: cog.morale,
+              reason,
+            }));
+          }
+        }
+      });
+
+      // Guard absorb stabilizes morale
+      ctx.events.on('combat.guard.absorbed', (event, world) => {
+        const entityId = event.payload.entityId as string;
+        const entity = world.entities[entityId];
+        if (!entity?.ai) return;
+
+        const cog = getCognition(world, entityId);
+        const prev = cog.morale;
+        cog.morale = Math.min(100, cog.morale + 3);
+        if (prev !== cog.morale) {
+          ctx.events.emit(makeCognitionEvent('combat.morale.shift', event.tick, {
+            entityId,
+            delta: 3,
+            previous: prev,
+            current: cog.morale,
+            reason: 'guard_absorb',
+          }));
+        }
       });
 
       // Knowledge decay — process on tick
@@ -332,6 +462,22 @@ export const aggressiveProfile: IntentProfile = {
     const options: IntentOption[] = [];
     const zone = entity.zoneId;
 
+    // Fleeing entities can only disengage — suppress all other combat intents
+    if (hasStatus(entity, COMBAT_STATES.FLEEING)) {
+      const zoneState = world.zones[zone ?? ''];
+      if (zoneState?.neighbors.length) {
+        options.push({
+          verb: 'disengage',
+          priority: 100,
+          reason: 'disengage: fleeing',
+        });
+      }
+      return options;
+    }
+
+    // Will-shifted morale thresholds: high-will NPCs hold ground longer
+    const willShift = Math.min(10, Math.max(0, ((entity.stats.will ?? 3) - 3) * 3));
+
     // Find entities in same zone
     const nearby = Object.values(world.entities).filter(
       (e) => e.id !== entity.id && e.zoneId === zone && (e.resources.hp ?? 0) > 0,
@@ -344,7 +490,7 @@ export const aggressiveProfile: IntentProfile = {
         || target.tags.includes('enemy');
 
       if (isHostile) {
-        if (cognition.morale <= 30) {
+        if (cognition.morale <= 30 - willShift) {
           // Low morale — disengage if possible, else flee
           const zoneState = world.zones[zone ?? ''];
           const disengagePriority = hasStatus(entity, COMBAT_STATES.EXPOSED) ? 95 : 85;
@@ -355,7 +501,7 @@ export const aggressiveProfile: IntentProfile = {
               reason: 'disengage: low morale',
             });
           }
-        } else if (cognition.morale <= 50 && (entity.resources.hp ?? 0) < ((entity.resources.maxHp ?? 30) * 0.4)) {
+        } else if (cognition.morale <= 50 - willShift && (entity.resources.hp ?? 0) < ((entity.resources.maxHp ?? 30) * 0.4)) {
           // Moderate morale but hurt — guard
           options.push({
             verb: 'guard',
@@ -396,6 +542,22 @@ export const cautiousProfile: IntentProfile = {
     const options: IntentOption[] = [];
     const zone = entity.zoneId;
 
+    // Fleeing entities can only disengage — suppress all other combat intents
+    if (hasStatus(entity, COMBAT_STATES.FLEEING)) {
+      const zoneState = world.zones[zone ?? ''];
+      if (zoneState?.neighbors.length) {
+        options.push({
+          verb: 'disengage',
+          priority: 100,
+          reason: 'disengage: fleeing',
+        });
+      }
+      return options;
+    }
+
+    // Will-shifted morale thresholds: high-will NPCs hold ground longer
+    const willShift = Math.min(10, Math.max(0, ((entity.stats.will ?? 3) - 3) * 3));
+
     const nearby = Object.values(world.entities).filter(
       (e) => e.id !== entity.id && e.zoneId === zone && (e.resources.hp ?? 0) > 0,
     );
@@ -405,7 +567,7 @@ export const cautiousProfile: IntentProfile = {
       const isKnownHostile = hostileBelief && hostileBelief.value === true && hostileBelief.confidence > 0.6;
 
       if (isKnownHostile) {
-        if (cognition.morale <= 30) {
+        if (cognition.morale <= 30 - willShift) {
           // Very low morale — disengage
           const zoneState = world.zones[zone ?? ''];
           if (zoneState?.neighbors.length) {
@@ -415,7 +577,7 @@ export const cautiousProfile: IntentProfile = {
               reason: 'disengage: morale collapsed',
             });
           }
-        } else if (cognition.morale <= 50) {
+        } else if (cognition.morale <= 50 - willShift) {
           // Moderate morale — guard defensively
           options.push({
             verb: 'guard',
@@ -491,8 +653,7 @@ function recordCombatMemory(event: ResolvedEvent, world: WorldState, cogStates: 
     setBelief(cog, attackerId, 'hostile', true, 1.0, 'observed', event.tick);
     addMemory(cog, 'was-attacked', event.tick, { attackerId }, attackerId, target.zoneId);
 
-    // Lower morale on being hit
-    cog.morale = Math.max(0, cog.morale - 10);
+    // Morale changes are now handled by combat.damage.applied and combat.contact.miss listeners
     cog.suspicion = Math.min(100, cog.suspicion + 20);
   }
 
@@ -538,6 +699,20 @@ function deterministicRoll(tick: number, id1: string, id2: string): number {
     hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
   }
   return (Math.abs(hash) % 50) + 1; // 1-50
+}
+
+function makeCognitionEvent(
+  type: string,
+  tick: number,
+  payload: Record<string, unknown>,
+): ResolvedEvent {
+  return {
+    id: nextId('evt'),
+    tick,
+    type,
+    actorId: payload.entityId as string,
+    payload,
+  };
 }
 
 // --- Knowledge Decay ---
