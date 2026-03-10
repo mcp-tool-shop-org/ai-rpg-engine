@@ -22,6 +22,8 @@ import {
   createEngagementCore,
   withEngagement,
   createCombatReview,
+  createCombatIntent,
+  BUILTIN_PACK_BIASES,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -153,6 +155,7 @@ export function createGame(seed?: number): Engine {
         ],
         playerId: 'player',
       }),
+      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['vampire', 'feral', 'hunter'].includes(b.tag)) }),
       createSimulationInspector(),
     ],
   });

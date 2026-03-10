@@ -22,6 +22,8 @@ import {
   createEngagementCore,
   withEngagement,
   createCombatReview,
+  createCombatIntent,
+  BUILTIN_PACK_BIASES,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -141,6 +143,7 @@ export function createGame(seed?: number): Engine {
         factions: [{ factionId: 'survivors', entityIds: ['medic_chen', 'scavenger_rook', 'leader_marsh'] }],
         playerId: 'survivor',
       }),
+      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['zombie', 'undead'].includes(b.tag)) }),
       createSimulationInspector(),
     ],
   });

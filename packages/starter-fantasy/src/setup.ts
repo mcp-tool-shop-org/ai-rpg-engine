@@ -22,6 +22,8 @@ import {
   createEngagementCore,
   withEngagement,
   createCombatReview,
+  createCombatIntent,
+  BUILTIN_PACK_BIASES,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule } from '@ai-rpg-engine/modules';
 import {
@@ -109,6 +111,7 @@ export function createGame(seed?: number): Engine {
         factions: [{ factionId: 'chapel-undead', entityIds: ['ash-ghoul'] }],
         playerId: 'player',
       }),
+      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['undead'].includes(b.tag)) }),
       createSimulationInspector(),
     ],
   });

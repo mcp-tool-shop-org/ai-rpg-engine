@@ -22,6 +22,8 @@ import {
   createEngagementCore,
   withEngagement,
   createCombatReview,
+  createCombatIntent,
+  BUILTIN_PACK_BIASES,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -139,6 +141,7 @@ export function createGame(seed?: number): Engine {
         factions: [{ factionId: 'colonial-navy', entityIds: ['navy_sailor', 'governor_vane'] }],
         playerId: 'captain',
       }),
+      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['pirate', 'colonial', 'beast'].includes(b.tag)) }),
       createSimulationInspector(),
     ],
   });

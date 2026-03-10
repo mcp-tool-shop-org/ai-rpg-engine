@@ -22,6 +22,8 @@ import {
   createEngagementCore,
   withEngagement,
   createCombatReview,
+  createCombatIntent,
+  BUILTIN_PACK_BIASES,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -129,6 +131,7 @@ export function createGame(seed?: number): Engine {
         factions: [{ factionId: 'dockworkers', entityIds: ['dock_thug'] }],
         playerId: 'inspector',
       }),
+      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['criminal'].includes(b.tag)) }),
       createSimulationInspector(),
     ],
   });

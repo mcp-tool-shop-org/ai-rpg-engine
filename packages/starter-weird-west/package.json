@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/starter-weird-west",
-  "version": "2.0.11",
+  "version": "2.0.12",
   "description": "AI RPG Engine weird west starter: Dust Devil's Bargain",
   "type": "module",
   "main": "./dist/index.js",

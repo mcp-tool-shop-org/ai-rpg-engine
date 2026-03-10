@@ -580,6 +580,10 @@ export type { EngagementConfig } from './engagement-core.js';
 export { createCombatReview, formatCombatTrace } from './combat-review.js';
 export type { CombatTrace, FormulaTrace, FormulaStep, FormulaSource, DamageTrace, InterceptionTrace, CombatOutcome, CombatReviewConfig } from './combat-review.js';
 
+// --- Combat Intent (Phase 6B) ---
+export { createCombatIntent, selectNpcCombatAction, emitDecisionEvent, formatCombatDecision, BUILTIN_PACK_BIASES } from './combat-intent.js';
+export type { CombatIntentType, IntentScore, IntentScoreContribution, CombatDecision, PackBias, CombatIntentConfig, ScoringContext } from './combat-intent.js';
+
 // --- Endgame Detection (v2.0) ---
 export {
   evaluateEndgame,
