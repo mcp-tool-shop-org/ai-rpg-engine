@@ -1,10 +1,19 @@
 {
   "name": "ai-rpg-engine",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
   "description": "Simulation-native toolkit for building, analyzing, and balancing RPG worlds",
-  "keywords": ["rpg", "game-engine", "simulation", "worldbuilding", "procedural", "ai", "text-rpg", "deterministic"],
+  "keywords": [
+    "rpg",
+    "game-engine",
+    "simulation",
+    "worldbuilding",
+    "procedural",
+    "ai",
+    "text-rpg",
+    "deterministic"
+  ],
   "bugs": {
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues"
   },
@@ -23,7 +32,7 @@
     "clean": "tsc --build --clean",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint packages/*/src/**/*.ts",
+    "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "verify": "npm run build && npm run test"
   },
@@ -32,6 +41,7 @@
     "@vitest/coverage-v8": "^3.2.4",
     "eslint": "^9.0.0",
     "typescript": "^5.7.0",
+    "typescript-eslint": "^8.57.0",
     "vitest": "^3.0.0"
   },
   "engines": {

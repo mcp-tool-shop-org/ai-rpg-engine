@@ -106,7 +106,7 @@ export class WorldStore {
   getStat(entityId: string, statId: string): number {
     const entity = this.state.entities[entityId];
     if (!entity) return 0;
-    let base = entity.stats[statId] ?? 0;
+    const base = entity.stats[statId] ?? 0;
 
     // Apply status modifiers
     for (const status of entity.statuses) {

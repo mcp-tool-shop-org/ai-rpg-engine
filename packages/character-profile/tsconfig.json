@@ -4,9 +4,18 @@
     "outDir": "dist",
     "rootDir": "src"
   },
-  "include": ["src"],
+  "include": [
+    "src"
+  ],
   "references": [
-    { "path": "../character-creation" },
-    { "path": "../equipment" }
+    {
+      "path": "../character-creation"
+    },
+    {
+      "path": "../equipment"
+    }
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
   ]
 }

@@ -259,7 +259,7 @@ describe('mutations', () => {
 
     // Run many spreads with high instability to verify it matters
     let mutationCountHigh = 0;
-    let mutationCountLow = 0;
+    const mutationCountLow = 0;
 
     for (let i = 0; i < 20; i++) {
       const rumor = engine.create({

@@ -4,10 +4,21 @@
     "outDir": "dist",
     "rootDir": "src"
   },
-  "include": ["src"],
+  "include": [
+    "src"
+  ],
   "references": [
-    { "path": "../core" },
-    { "path": "../content-schema" },
-    { "path": "../character-profile" }
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../content-schema"
+    },
+    {
+      "path": "../character-profile"
+    }
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
   ]
 }

@@ -118,6 +118,7 @@ export class ModuleManager {
   }
 
   private createContext(moduleId: string, store: WorldStore): ModuleRegistrationContext {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias -- capture for closure-based registries
     const self = this;
 
     const actions: ActionRegistry = {

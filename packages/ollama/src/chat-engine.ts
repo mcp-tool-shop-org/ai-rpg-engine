@@ -559,7 +559,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     if (!activeBuild) return 'No active build. Use "build <goal>" to create one.';
 
     const results: string[] = [];
-    let maxSteps = activeBuild.plan.steps.length;
+    const maxSteps = activeBuild.plan.steps.length;
     let executed = 0;
 
     while (executed < maxSteps) {

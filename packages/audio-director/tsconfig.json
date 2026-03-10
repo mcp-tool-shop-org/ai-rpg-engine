@@ -4,8 +4,15 @@
     "outDir": "dist",
     "rootDir": "src"
   },
-  "include": ["src"],
+  "include": [
+    "src"
+  ],
   "references": [
-    { "path": "../presentation" }
+    {
+      "path": "../presentation"
+    }
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
   ]
 }

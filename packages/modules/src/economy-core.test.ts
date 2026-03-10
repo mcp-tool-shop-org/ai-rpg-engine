@@ -231,7 +231,7 @@ describe('getScarcestSupply / getMostSurplusSupply', () => {
   });
 
   it('returns correct extremes', () => {
-    let e = createDistrictEconomy('zombie');
+    const e = createDistrictEconomy('zombie');
     // zombie: food=20, medicine=25, ammunition=30
     expect(getScarcestSupply(e)).toBe('food');
   });

@@ -4,14 +4,33 @@
     "outDir": "dist",
     "rootDir": "src"
   },
-  "include": ["src"],
+  "include": [
+    "src"
+  ],
   "references": [
-    { "path": "../core" },
-    { "path": "../modules" },
-    { "path": "../content-schema" },
-    { "path": "../starter-fantasy" },
-    { "path": "../pack-registry" },
-    { "path": "../character-creation" },
-    { "path": "../equipment" }
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../modules"
+    },
+    {
+      "path": "../content-schema"
+    },
+    {
+      "path": "../starter-fantasy"
+    },
+    {
+      "path": "../pack-registry"
+    },
+    {
+      "path": "../character-creation"
+    },
+    {
+      "path": "../equipment"
+    }
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
   ]
 }

@@ -4,8 +4,15 @@
     "outDir": "dist",
     "rootDir": "src"
   },
-  "include": ["src"],
+  "include": [
+    "src"
+  ],
   "references": [
-    { "path": "../asset-registry" }
+    {
+      "path": "../asset-registry"
+    }
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
   ]
 }
