@@ -24,6 +24,7 @@ import {
   createCombatReview,
   createCombatIntent,
   BUILTIN_PACK_BIASES,
+  createCombatRecovery,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -144,6 +145,7 @@ export function createGame(seed?: number): Engine {
         playerId: 'survivor',
       }),
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['zombie', 'undead'].includes(b.tag)) }),
+      createCombatRecovery({ safeZoneTags: ['safe', 'home-base'] }),
       createSimulationInspector(),
     ],
   });

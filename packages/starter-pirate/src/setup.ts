@@ -24,6 +24,7 @@ import {
   createCombatReview,
   createCombatIntent,
   BUILTIN_PACK_BIASES,
+  createCombatRecovery,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -142,6 +143,7 @@ export function createGame(seed?: number): Engine {
         playerId: 'captain',
       }),
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['pirate', 'colonial', 'beast'].includes(b.tag)) }),
+      createCombatRecovery({ safeZoneTags: ['safe', 'ship', 'home-base', 'tavern'] }),
       createSimulationInspector(),
     ],
   });

@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/starter-ronin",
-  "version": "2.1.8",
+  "version": "2.1.9",
   "description": "AI RPG Engine feudal mystery starter: Jade Veil",
   "type": "module",
   "main": "./dist/index.js",

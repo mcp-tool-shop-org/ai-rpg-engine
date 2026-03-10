@@ -584,6 +584,10 @@ export type { CombatTrace, FormulaTrace, FormulaStep, FormulaSource, DamageTrace
 export { createCombatIntent, selectNpcCombatAction, emitDecisionEvent, formatCombatDecision, BUILTIN_PACK_BIASES } from './combat-intent.js';
 export type { CombatIntentType, IntentScore, IntentScoreContribution, CombatDecision, PackBias, CombatIntentConfig, ScoringContext } from './combat-intent.js';
 
+// --- Combat Recovery (Phase 6C) ---
+export { createCombatRecovery, WOUND_STATUSES, MORALE_AFTERMATH_STATUSES } from './combat-recovery.js';
+export type { WoundSeverity, WoundThreshold, MoraleAftermathTier, AftermathSurvivor, AftermathSummaryPayload, CombatRecoveryConfig } from './combat-recovery.js';
+
 // --- Endgame Detection (v2.0) ---
 export {
   evaluateEndgame,

@@ -24,6 +24,7 @@ import {
   createCombatReview,
   createCombatIntent,
   BUILTIN_PACK_BIASES,
+  createCombatRecovery,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -153,6 +154,7 @@ export function createGame(seed?: number): Engine {
         playerId: 'drifter',
       }),
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['undead', 'spirit', 'beast'].includes(b.tag)) }),
+      createCombatRecovery(),
       createSimulationInspector(),
     ],
   });

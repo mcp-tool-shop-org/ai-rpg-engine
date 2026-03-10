@@ -24,6 +24,7 @@ import {
   createCombatReview,
   createCombatIntent,
   BUILTIN_PACK_BIASES,
+  createCombatRecovery,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -134,6 +135,7 @@ export function createGame(seed?: number): Engine {
         playerId: 'runner',
       }),
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['ice-agent'].includes(b.tag)) }),
+      createCombatRecovery(),
       createSimulationInspector(),
     ],
   });

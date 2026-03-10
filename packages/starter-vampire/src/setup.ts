@@ -24,6 +24,7 @@ import {
   createCombatReview,
   createCombatIntent,
   BUILTIN_PACK_BIASES,
+  createCombatRecovery,
 } from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
 import {
@@ -156,6 +157,7 @@ export function createGame(seed?: number): Engine {
         playerId: 'player',
       }),
       createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['vampire', 'feral', 'hunter'].includes(b.tag)) }),
+      createCombatRecovery({ safeZoneTags: ['safe', 'opulent'] }),
       createSimulationInspector(),
     ],
   });
