@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/rumor-system",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "description": "Rumor lifecycle engine with mutation mechanics, spread tracking, and faction uptake for AI RPG Engine",
   "type": "module",
   "main": "./dist/index.js",
