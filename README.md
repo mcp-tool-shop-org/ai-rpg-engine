@@ -47,6 +47,12 @@ Optional AI layer that scaffolds rooms, factions, quests, and districts from a t
 
 Session-aware, plan-first workflows for world scaffolding, critique loops, design iteration, guided builds, and structured tuning plans. Combines deterministic tools with AI assistance.
 
+### Combat System
+
+Five combat actions (attack, guard, disengage, brace, reposition) with four combat states (guarded, off-balance, exposed, fleeing) and four engagement states (engaged, protected, backline, isolated). Three stat dimensions — instinct (precision), vigor (force), will (resolve) — drive every formula so a quick duelist plays differently from a heavy bruiser or a composed sentinel.
+
+Companion interception uses a scored formula driven by reaction speed, health, morale, combat states, and role tags. AI opponents estimate interception cover and prefer weaker-covered targets. Guard breakthrough, counter-attacks, brace resistance, morale cascades, and defeat narration create emergent combat stories. All 10 starter packs have stat-differentiated enemies and integrated combat formulas.
+
 ### Abilities & Powers
 
 Genre-native ability system with 10-pack cross-genre coverage — every pack has 3+ abilities with a complete tactical triangle (offense, defense, control). Abilities have costs, stat checks, cooldowns, and typed effects (damage, heal, status apply, cleanse). Status effects use an 11-tag semantic vocabulary with resistance/vulnerability profiles across 8+ packs. AI-aware ability selection scores self/AoE/single-target paths with resistance awareness and cleanse valuation. Cross-pack comparison matrix, balance audit, and pack identity profiling catch outliers and dead abilities at authoring time.
@@ -150,7 +156,7 @@ The system has four layers.
 | Package | Purpose |
 |---------|---------|
 | [`@ai-rpg-engine/core`](packages/core) | Deterministic simulation runtime — world state, events, RNG, ticks, action resolution |
-| [`@ai-rpg-engine/modules`](packages/modules) | 29 built-in modules — combat, perception, cognition, factions, rumors, districts, NPC agency, companions, player leverage, strategic map, move advisor, item recognition, emergent opportunities, arc detection, endgame triggers |
+| [`@ai-rpg-engine/modules`](packages/modules) | 35+ built-in modules — combat (5 actions, 4 states, engagement, tactics, interception, defeat narration), perception, cognition, factions, rumors, districts, NPC agency, companions, player leverage, strategic map, move advisor, item recognition, emergent opportunities, arc detection, endgame triggers |
 | [`@ai-rpg-engine/content-schema`](packages/content-schema) | Canonical schemas and validators for world content |
 | [`@ai-rpg-engine/character-profile`](packages/character-profile) | Character progression state, injuries, milestones, reputation |
 | [`@ai-rpg-engine/character-creation`](packages/character-creation) | Archetype selection, build generation, starter gear |
@@ -173,7 +179,7 @@ The system has four layers.
 
 | Resource | Description |
 |----------|-------------|
-| [Handbook](docs/handbook/index.md) | 48 chapters + 4 appendices covering every system |
+| [Handbook](docs/handbook/index.md) | 54 chapters + 4 appendices covering every system |
 | [Design Document](docs/DESIGN.md) | Architecture deep-dive — action pipeline, truth vs presentation, simulation layers |
 | [AI Worldbuilding Guide](packages/ollama/AI_WORLDBUILDING.md) | Scaffold, diagnose, tune, experiment workflows |
 | [Philosophy](PHILOSOPHY.md) | Why deterministic worlds, evidence-driven design, and AI as assistant |

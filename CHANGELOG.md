@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.0] - 2026-03-11
+
+### Combat System (Priorities 3-7)
+
+Full combat pillar stack — the engine now has a complete tactical combat system.
+
+### Added
+
+- **Combat tactics** — brace (resist OFF_BALANCE, hold position) and reposition (outflank for PROTECTED removal) actions with AI scoring
+- **Combat states** — 4 visible states (guarded, off-balance, exposed, fleeing) with state-aware hit/damage/disengage formulas and narrator-channel narration
+- **Zone engagement** — 4 engagement states (engaged, protected, backline, isolated) with `withEngagement()` formula wrapper, frontline collapse detection, and ambush zones
+- **Defeat flow** — morale cascades on ally death, cognition-driven flee/surrender thresholds, defeat narration module
+- **Precision vs force** — 3 stat dimensions (instinct/vigor/will) driving every combat formula. Guard breakthrough, guard counter, brace resistance, hit style, and AI dimension awareness
+- **Companion interception** — scored formula replacing flat chance, driven by instinct, will, HP, morale, combat states, and role tags. FLEEING hard block, AI cover awareness, heroic interception narration
+- **Combat resources** — stamina costs for actions, resource tracking
+- **Engagement narration** — narrator text for engagement state changes
+- **Handbook chapters 49-54** — combat tactics, combat states, zone positioning, defeat flow, precision vs force, companion interception
+- **All 10 starter packs** integrated with stat dimensions and combat formulas
+
+### Stats
+
+- 2661 tests across 130 test files
+- 6500+ lines of new combat code
+
 ## [2.0.0] - 2025-07-17
 
 ### Release Polish & Public Surface

@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/modules",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "AI RPG Engine built-in modules: combat, dialogue, inventory, traversal, status",
   "type": "module",
   "main": "./dist/index.js",
