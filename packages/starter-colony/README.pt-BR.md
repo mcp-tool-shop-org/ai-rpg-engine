@@ -4,6 +4,8 @@
 
 # @ai-rpg-engine/starter-colony
 
+**Exemplo de Implementação** — Este exemplo demonstra como conectar o motor para garantir a sobrevivência da colônia em um cenário de ficção científica. É um exemplo para aprender, não um modelo para copiar. Consulte o [Guia de Implementação](../../docs/handbook/57-composition-guide.md) para criar seu próprio jogo.
+
 **Perda de Sinal** — Uma colônia distante perde o contato com a Terra. Algo está vivo nas cavernas abaixo.
 
 Parte do catálogo de pacotes iniciais do [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine).
@@ -20,6 +22,15 @@ import { createGame } from '@ai-rpg-engine/starter-colony';
 const engine = createGame();
 engine.start();
 ```
+
+## Padrões Demonstrados
+
+| Funcionalidade | O que a colônia demonstra |
+|---------|-------------------|
+| **Engagement** | Marcadores de zonas de gargalo, funções de suporte/proteção baseadas em esquadrões. |
+| **Resources** | Recurso de energia compartilhado em toda a colônia, com consumo ambiental. |
+| **Environment** | Perigos ambientais que desencadeiam a depleção de recursos e falhas em cascata. |
+| **Cognition** | Entidade alienígena com regras de percepção não humanas. |
 
 ## Conteúdo
 
@@ -50,6 +61,10 @@ engine.start();
 | HP | 0–25 | Saúde padrão |
 | Energia | 0–100 | Recurso compartilhado pela colônia, regenera 2/tick |
 | Moral | 0–30 | Coesão da tripulação |
+
+## O que você pode adaptar
+
+Pressão de recursos impulsionada pelo ambiente e funções de engajamento em esquadrões. Estude como o recurso de energia da colônia se esgota devido a eventos ambientais (não apenas combate), criando falhas sistêmicas em cascata que forçam a alocação tática de recursos em todo o esquadrão.
 
 ## Licença
 

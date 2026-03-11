@@ -226,7 +226,7 @@ export const zones: ZoneState[] = [
     id: 'hidden-passage',
     roomId: 'castle',
     name: 'Hidden Passage',
-    tags: ['interior', 'hidden', 'dark', 'dangerous'],
+    tags: ['interior', 'hidden', 'dark', 'dangerous', 'chokepoint'],
     neighbors: ['lords-chamber', 'tea-garden'],
     light: 1,
     interactables: ['secret door mechanism', 'poison vials', 'bloody cloth'],

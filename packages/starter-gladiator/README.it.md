@@ -14,6 +14,8 @@
 
 # @ai-rpg-engine/starter-gladiator
 
+**Esempio di implementazione** — Questo esempio dimostra come collegare i componenti per un combattimento in arena. È un esempio da cui imparare, non un modello da copiare. Consultare la [Guida all'implementazione](../../docs/handbook/57-composition-guide.md) per creare il proprio gioco.
+
 **Iron Colosseum** — Un'arena gladiatoria sotterranea situata sotto un impero in decadenza. Combatti per la libertà, conquista i favori dei patroni e sopravvivi al giudizio della folla.
 
 Parte del catalogo di modelli di avvio per l'[AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine).
@@ -30,6 +32,15 @@ import { createGame } from '@ai-rpg-engine/starter-gladiator';
 const engine = createGame();
 engine.start();
 ```
+
+## Modelli dimostrati
+
+| Funzionalità | Cosa mostra Gladiator |
+|---------|----------------------|
+| **Resources** | Una risorsa meta-dinamica (il favore del pubblico) guidata dallo spettacolo, non dall'efficienza. |
+| **Combat** | Progettazione di un boss in tre fasi con cambiamenti dinamici durante l'incontro. |
+| **Custom verbs** | Provocazioni e gesti come azioni di combattimento che non infliggono danni, ma influenzano le risorse. |
+| **Social** | Sistema di mecenatismo legato a soglie di favore del pubblico. |
 
 ## Contenuti
 
@@ -60,6 +71,10 @@ engine.start();
 | HP | 0–40 | Salute standard |
 | Affaticamento | 0–50 | Pressione inversa: aumenta in combattimento, si recupera di -2 per tick |
 | Favore della folla | 0–100 | Volatile: >75 sblocca doni dai patroni, <25 significa morte |
+
+## Cosa prendere come riferimento
+
+L'economia delle risorse legate alla performance (il favore del pubblico) e la progettazione di un boss in tre fasi. Studiare come il favore del pubblico agisce come una risorsa meta-dinamica che varia in base allo spettacolo piuttosto che all'efficienza, e come il combattimento contro il Campione dell'Arena utilizza le transizioni di fase per modificare le dinamiche del combattimento durante l'incontro.
 
 ## Licenza
 

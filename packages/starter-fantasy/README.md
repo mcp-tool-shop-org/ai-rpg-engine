@@ -14,6 +14,8 @@
 
 # @ai-rpg-engine/starter-fantasy
 
+> **Composition Example** — This starter demonstrates how to wire the engine for dark fantasy. It is an example to learn from, not a template to copy. See the [Composition Guide](../../docs/handbook/57-composition-guide.md) to build your own game.
+
 **The Chapel Threshold** — a dark fantasy starter world for AI RPG Engine.
 
 ## Install
@@ -22,7 +24,7 @@
 npm install @ai-rpg-engine/starter-fantasy
 ```
 
-## What You'll Learn
+## Patterns Demonstrated
 
 This starter demonstrates the full engine stack in a compact world:
 
@@ -62,6 +64,10 @@ const engine = createGame(42);
 // Or import pieces individually:
 import { manifest, zones, pilgrimDialogue, fantasyMinimalRuleset } from '@ai-rpg-engine/starter-fantasy';
 ```
+
+## What to Borrow
+
+Simplest combat wiring in the catalog — no resources beyond HP/stamina, no engagement roles. If you are building your first game, start here to understand the minimal combat loop before adding complexity.
 
 ## Documentation
 

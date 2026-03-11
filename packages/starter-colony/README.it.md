@@ -4,6 +4,8 @@
 
 # @ai-rpg-engine/starter-colony
 
+**Esempio di implementazione** — Questo esempio dimostra come collegare i componenti per garantire la sopravvivenza della colonia in un contesto fantascientifico. È un esempio da cui imparare, non un modello da copiare. Consultare la [Guida all'implementazione](../../docs/handbook/57-composition-guide.md) per creare il proprio gioco.
+
 **Perdita di segnale** — Una colonia lontana perde il contatto con la Terra. Qualcosa è vivo nelle caverne sottostanti.
 
 Parte del catalogo del pacchetto di avvio [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine).
@@ -20,6 +22,15 @@ import { createGame } from '@ai-rpg-engine/starter-colony';
 const engine = createGame();
 engine.start();
 ```
+
+## Modelli dimostrati
+
+| Funzionalità | Cosa mostra Colony |
+|---------|-------------------|
+| **Engagement** | Etichette di zona di "collo di bottiglia", ruoli di supporto/protezione basati su squadre. |
+| **Resources** | Risorsa energetica condivisa a livello di colonia con consumo ambientale. |
+| **Environment** | Pericoli ambientali che causano l'esaurimento delle risorse e guasti a catena. |
+| **Cognition** | Entità aliena con regole di percezione non umane. |
 
 ## Contenuto
 
@@ -50,6 +61,10 @@ engine.start();
 | HP | 0–25 | Salute standard |
 | Energia | 0–100 | Risorsa condivisa dalla colonia, si rigenera a 2 unità al tick |
 | Morale | 0–30 | Coesione dell'equipaggio |
+
+## Cosa prendere in considerazione
+
+Pressione sulle risorse guidata dall'ambiente e ruoli di squadra basati sull'impegno. Studiare come la risorsa energetica della colonia si esaurisce a causa di eventi ambientali (non solo combattimenti), creando guasti a catena che costringono a un'allocazione tattica delle risorse all'interno della squadra.
 
 ## Licenza
 

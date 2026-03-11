@@ -4,6 +4,8 @@
 
 # @ai-rpg-engine/starter-weird-west
 
+> **Composition Example** — This starter demonstrates how to wire the engine for weird western. It is an example to learn from, not a template to copy. See the [Composition Guide](../../docs/handbook/57-composition-guide.md) to build your own game.
+
 **Dust Devil's Bargain** — A frontier town hides a cult summoning something from the red mesa.
 
 Part of the [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine) starter pack catalog.
@@ -50,6 +52,10 @@ engine.start();
 | HP | 0–30 | Standard health |
 | Resolve | 0–20 | Mental fortitude, regens 1/tick |
 | Dust | 0–100 | **Inverse pressure** — accumulates, 100 = death |
+
+## What to Borrow
+
+`buildCombatStack` usage and dual resource profile (dust + resolve). Study how two resources with opposite polarity create tension — dust accumulates toward a death threshold while resolve is spent for powerful actions, forcing players to balance aggression against survival.
 
 ## License
 

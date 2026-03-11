@@ -226,7 +226,7 @@ export const zones: ZoneState[] = [
     id: 'alien-cavern',
     roomId: 'outskirts',
     name: 'Alien Cavern',
-    tags: ['underground', 'alien', 'dangerous', 'enigmatic'],
+    tags: ['underground', 'alien', 'dangerous', 'enigmatic', 'chokepoint'],
     neighbors: ['perimeter-fence', 'signal-tower'],
     light: 1,
     noise: 2,

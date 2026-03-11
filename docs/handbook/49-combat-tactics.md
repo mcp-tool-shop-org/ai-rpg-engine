@@ -210,3 +210,13 @@ The module is backward-compatible. Packs that only use `attack` continue to work
 3. **Zone tags matter.** Place `chokepoint` tags on narrow passages to make brace more meaningful. Use positioning to create tactical decisions.
 4. **Don't add more states.** Four visible combat states is the cap. If you need pack-specific effects, use resources and abilities, not new combat states.
 5. **Test the AI.** Run `selectNpcCombatAction()` with your pack biases and verify enemies make sensible choices.
+
+---
+
+## See Also
+
+- [Combat Overview](49a-combat-overview.md) — The six pillars and how they fit together
+- [Combat States](50-combat-states.md) — GUARDED, OFF_BALANCE, EXPOSED, FLEEING
+- [Zone Positioning](51-zone-positioning.md) — Chokepoints, backline, engagement states
+- [Precision vs Force](53-precision-vs-force.md) — How stats drive each action's formula
+- [Build a Combat Pack](55-combat-pack-guide.md) — Author guide for buildCombatStack

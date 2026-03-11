@@ -14,13 +14,15 @@
 
 # @ai-rpg-engine/starter-ronin
 
-**Jade Veil** — Un castillo feudal durante una tensa cumbre política. Un señor ha sido envenenado. Encuentra al asesino antes de que el honor se agote.
+> **Ejemplo de estructura** — Este programa de inicio demuestra cómo integrar el motor para un misterio feudal. Es un ejemplo para aprender, no una plantilla para copiar. Consulte la [Guía de estructura](../../docs/handbook/57-composition-guide.md) para crear su propio juego.
 
-Parte del catálogo de paquetes de inicio del [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine).
+**Velo de Jade** — Un castillo feudal durante una tensa cumbre política. Un señor ha sido envenenado. Encuentre al asesino antes de que se agote el honor.
+
+Parte del catálogo de programas de inicio del [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine).
 
 ## Tema
 
-Misterio feudal + intrigas palaciegas. El honor es frágil; las falsas acusaciones tienen un alto costo y son casi imposibles de reparar. Cada pregunta tiene peso, cada acusación tiene consecuencias. Los asesinos perciben al ronin como "una espada sin señor: impredecible".
+Misterio feudal + intrigas palaciegas. El honor es frágil: las falsas acusaciones tienen un alto costo y son casi imposibles de recuperar. Cada pregunta tiene peso, cada acusación tiene consecuencias. Los asesinos perciben al ronin como "una espada sin señor: impredecible".
 
 ## Inicio rápido
 
@@ -31,12 +33,21 @@ const engine = createGame();
 engine.start();
 ```
 
+## Patrones demostrados
+
+| Característica | Lo que muestra Ronin |
+|---------|------------------|
+| **Engagement** | Múltiples roles de protector (cuerpo de guardia + samurái), pasajes ocultos. |
+| **Resources** | Sistema de doble capa: ki (regenerativo) vs. honor (frágil, difícil de recuperar). |
+| **Social** | Investigación con consecuencias: las falsas acusaciones cuestan honor. |
+| **Cognition** | Regla de percepción de los asesinos dirigida a los ronin no afiliados. |
+
 ## Contenido
 
-- **5 zonas:** Puerta del castillo, Gran salón, Jardín de té, Cámara del señor, Pasaje secreto.
+- **5 zonas:** Puerta del castillo, Gran salón, Jardín de té, Cámara del señor, Pasaje oculto.
 - **3 PNJ:** Lord Takeda (señor envenenado), Lady Himiko (sospechosa), Magistrado Sato (investigador).
-- **2 enemigos:** Asesino de las sombras, Samurai corrupto.
-- **1 árbol de diálogo:** Informe del magistrado sobre el envenenamiento y los sospechosos de la corte.
+- **2 enemigos:** Asesino de las sombras, Samurái corrupto.
+- **1 árbol de diálogo:** El magistrado informa sobre el envenenamiento y los sospechosos de la corte.
 - **1 árbol de progresión:** Camino de la Espada (Mano firme → Calma interior → Furia justa).
 - **1 objeto:** Kit de incienso (restaura 5 ki).
 
@@ -58,8 +69,12 @@ engine.start();
 | Recurso | Rango | Notas |
 |----------|-------|-------|
 | HP | 0–30 | Salud estándar |
-| Honor | 0–30 | Frágil; las falsas acusaciones cuestan -5, difícil de recuperar. |
-| Ki | 0–20 | Energía espiritual, se regenera 2 por tick. |
+| Honor | 0–30 | Frágil: las falsas acusaciones cuestan -5, difícil de recuperar. |
+| Ki | 0–20 | Energía espiritual, se regenera 2 por "tick". |
+
+## Qué tomar prestado
+
+Múltiples roles de protector (cuerpo de guardia + samurái) y recursos de doble capa (ki + honor). Estudie cómo dos roles de protección con diferentes condiciones de activación crean una defensa en capas, y cómo el ki (regenerativo) frente al honor (frágil, difícil de recuperar) fuerzan diferentes estilos de juego en combate e investigación.
 
 ## Licencia
 

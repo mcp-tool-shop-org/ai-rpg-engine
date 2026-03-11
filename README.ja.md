@@ -14,48 +14,108 @@
 
 # AI RPG エンジン
 
-RPGの世界を構築、分析し、バランス調整するための、シミュレーションに特化したツールキット。
+TypeScriptを使用した、決定論的なRPGシミュレーションを構築するためのツールキットです。 プレイヤーはステータスを定義し、モジュールを選択し、戦闘システムを構築し、コンテンツを作成します。 エンジンは、状態、イベント、乱数生成、アクションの解決、およびAIの意思決定を処理します。 毎回、同じ結果が得られます。
 
-AI RPG エンジンは、決定論的なシミュレーション実行環境と、AIを活用したデザインスタジオを組み合わせることで、開発者が世界を構築し、シミュレーションを通じてテストし、推測ではなく、データに基づいて改善することができます。
-
-> 従来のツールは、物語の作成を支援します。
-> AI RPG エンジンは、**世界のテスト**を支援します。
+これは、完成したゲームではなく、**コンポジションエンジン**です。 10個のスターターワールドは、学習し、再利用できる構成要素の例です。 プレイヤーのゲームは、エンジンが必要とするモジュールのサブセットを使用します。
 
 ---
 
-## その機能・役割
+## このツールの概要
 
-```
-build → critique → simulate → analyze → tune → experiment
-```
+- **モジュールライブラリ**: 戦闘、知覚、認知、派閥、噂、移動、仲間など、27以上のモジュールが含まれています。
+- **コンポジションツールキット**: `buildCombatStack()` を使用すると、約7行で戦闘システムを構築できます。 `new Engine({ modules })` を使用すると、ゲームを起動できます。
+- **シミュレーション実行環境**: 決定論的な動作、リプレイ可能なアクションログ、シードされた乱数生成。
+- **AIデザインスタジオ** (オプション): スキャフォールディング、批評、バランス分析、チューニング、Ollamaを使用した実験。
 
-世界の内容を生成したり、デザインを評価したり、決定論的なシミュレーションを実行したり、リプレイの挙動を分析したり、ゲームの仕組みを調整したり、多数のパラメータで実験を実行したり、結果を比較したりすることができます。すべての結果は、再現可能で、検証可能で、説明可能です。
+## このツールではないもの
+
+- すぐにプレイできるゲームではありません。 モジュールとコンテンツを組み合わせて作成する必要があります。
+- 視覚的なエンジンではありません。 ピクセルではなく、構造化されたイベントを出力します。
+- ストーリー生成ツールではありません。 世界をシミュレートし、そのメカニズムから物語が生まれます。
 
 ---
 
-## 主要機能
+## 現在の状態 (v2.3.0)
 
-### 決定論的なシミュレーション
+**動作し、テストされているもの:**
+- コア実行環境: ワールドの状態、イベント、アクション、ティック、リプレイ - v1.0以降、安定しています。
+- 戦闘システム: 5つのアクション、4つの戦闘状態、4つのエンゲージメント状態、仲間の介入、敗北の流れ、AI戦術 - 1099件のテストを実施済み。
+- アビリティ: コスト、クールダウン、ステータスチェック、タイプ付きの効果、ステータス語彙、AI対応の選択。
+- 統合された意思決定レイヤー: 戦闘とアビリティのスコアリングが1つの呼び出し (`selectBestAction`) に統合されています。
+- ステータスが異なる敵を持つ10個のスターターワールドと、完全な戦闘統合。
+- `buildCombatStack()` を使用すると、各ワールドの戦闘設定に関する約40行のコードを削減できます。
+- コンテンツ作成のためのタグ分類と検証ユーティリティ。
+- フェーズ間のタグ追跡によるボスフェーズの検証。
 
-RPGの世界をシミュレーションする、時間経過に基づくエンジン。世界の状態、イベントシステム、知覚と認知のレイヤー、派閥の信念伝播、噂システム、地区の指標（感情に基づいて算出）、NPCの行動（忠誠心に基づく分岐点と結果連鎖）、仲間（士気と離脱リスク）、プレイヤーの行動力と政治的行動、戦略マップ分析、移動アドバイザー、アイテム認識と装備の由来、遺物の成長段階、世界の状況に基づいて生成される機会（契約、賞金、依頼、物資調達、調査）、キャンペーンの展開検出（累積状態から派生する10種類の展開）、ゲーム終盤のトリガー検出（8つの解決段階）、そして構造化されたエピローグによる決定的な結末。アクションログはリプレイ可能で、決定論的な乱数生成を使用。すべてのプレイは完全に再現可能です。
+**未完成または粗い部分:**
+- AIワールド構築ツール (Ollamaレイヤー) は動作しますが、シミュレーションと比較してテストが不十分です。
+- CLIスタジオシェルは機能しますが、洗練されていません。
+- 10個のスターターワールドのうち、`buildCombatStack` を使用しているのは「Weird West」のみで、他のワールドは詳細な手動での設定が必要です。
+- プロファイルシステムはまだありません。 ワールドはスタンドアロンであり、共有プロファイルから構成することはできません。
+- ドキュメントは詳細 (57章) ですが、すべての章が最新のAPIを反映しているわけではありません。
 
-### AIを活用した世界構築
+---
 
-オプションのAIレイヤーが、テーマに基づいて、部屋、派閥、クエスト、地区などを自動生成します。デザインを評価し、スキーマのエラーを修正し、改善案を提示し、段階的な世界構築のワークフローを支援します。AIは、シミュレーションの状態を直接変更することはありません。コンテンツの生成や提案のみを行います。
+## クイックスタートガイド
 
-### ガイド付きのデザインワークフロー
+```typescript
+import { Engine } from '@ai-rpg-engine/core';
+import { buildCombatStack, createTraversalCore, createDialogueCore } from '@ai-rpg-engine/modules';
 
-セッションを意識し、計画を優先するワークフローにより、世界の構築、デザインの評価、デザインの反復、ガイド付きのビルド、および構造化された調整計画を実現します。決定論的なツールとAIの支援を組み合わせます。
+// Define your stat mapping
+const combat = buildCombatStack({
+  statMapping: { attack: 'might', precision: 'agility', resolve: 'will' },
+  playerId: 'hero',
+  biasTags: ['undead', 'beast'],
+});
 
-### 能力と力
+// Wire the engine
+const engine = new Engine({
+  manifest: myManifest,
+  modules: [...combat.modules, createTraversalCore(), createDialogueCore(myDialogues)],
+});
 
-ジャンルに特化した能力システム。10種類の能力パックで、様々なジャンルをカバーします。能力には、コスト、ステータスチェック、クールダウン、および種類ごとの効果（ダメージ、回復、状態異常付与、浄化）があります。状態異常は、11個のタグを持つ語彙を使用し、エンティティごとに抵抗/脆弱性のプロファイルが設定されています。AIが認識する能力選択スコアは、自己、範囲攻撃、単体攻撃のパスを、抵抗の認識と浄化の価値に基づいて評価します。バランス調整監査ツールとパック概要ツールは、作成時に異常値を検出します。
+// Submit player actions
+engine.submitAction('attack', { targetIds: ['skeleton-1'] });
+
+// Submit AI entity actions
+engine.submitActionAs('guard-captain', 'attack', { targetIds: ['player'] });
+```
+
+完全なワークフローについては、[コンポジションガイド](docs/handbook/57-composition-guide.md) を参照してください。
+
+---
+
+## アーキテクチャ
+
+| レイヤー | 役割 |
+|-------|------|
+| **Core Runtime** | 決定論的なエンジン - ワールドの状態、イベント、アクション、ティック、乱数生成、リプレイ。 |
+| **Modules** | 27以上の構成可能なシステム - 戦闘、知覚、認知、派閥、移動、仲間など。 |
+| **Content** | エンティティ、ゾーン、ダイアログ、アイテム、アビリティ、ステータス - ユーザーが作成。 |
+| **AI Studio** | オプションのOllamaレイヤー - スキャフォールディング、批評、バランス分析、チューニング、実験。 |
+
+---
+
+## 戦闘システム
+
+5つのアクション (攻撃、防御、離脱、防御態勢、再配置)、4つの戦闘状態 (防御状態、体勢を崩された状態、防御が薄れた状態、逃走状態)、4つのエンゲージメント状態 (交戦状態、防御状態、後衛、孤立状態)。 3つのステータス次元がすべての数式に影響を与え、素早いデュエリストと、重装甲の近接戦闘家、または冷静な防御型キャラクターでは、プレイスタイルが大きく異なります。
+
+AIの敵は、統合された意思決定スコアリングを使用します。 戦闘アクションとアビリティが単一の評価で競合し、設定可能な閾値によって、無意味なアビリティの使用を抑制します。
+
+パックの作成者は、`buildCombatStack()`を使用して、わずか7行のコードで戦闘システムを構築します。 これには、能力値のマッピング、リソースの定義、およびバイアスタグの設定が含まれます。 詳細については、[戦闘システムの概要](docs/handbook/49a-combat-overview.md)と[パック作成者ガイド](docs/handbook/55-combat-pack-guide.md)を参照してください。
+
+---
+
+## アビリティ
+
+ジャンルに特化したアビリティシステムで、コスト、ステータスチェック、クールダウン、およびタイプ付きの効果 (ダメージ、回復、ステータス付与、浄化) があります。 ステータス効果には、耐性/脆弱性プロファイルを持つ11個のタグの語彙を使用します。 AI対応の選択は、自己/範囲/単体攻撃のパスを評価します。
 
 ```typescript
 const warCry: AbilityDefinition = {
   id: 'war-cry', name: 'War Cry', verb: 'use-ability',
   tags: ['combat', 'debuff', 'aoe'],
-  costs: [{ resourceId: 'stamina', amount: 3 }, { resourceId: 'infection', amount: 5 }],
+  costs: [{ resourceId: 'stamina', amount: 3 }],
   target: { type: 'all-enemies' },
   checks: [{ stat: 'nerve', difficulty: 6, onFail: 'abort' }],
   effects: [
@@ -65,84 +125,6 @@ const warCry: AbilityDefinition = {
 };
 ```
 
-### シミュレーション分析
-
-リプレイ分析により、イベントが発生した理由、ゲームの仕組みがどこで破綻しているか、どのトリガーが発火しないか、どのシステムが不安定を引き起こしているかを説明します。分析結果は、調整に直接反映されます。
-
-### ガイド付きの調整
-
-バランスの分析結果に基づいて、構造化された調整計画が生成されます。計画には、提案された修正、予想される影響、信頼度、およびプレビューされた変更が含まれます。段階的に適用され、完全なトレーサビリティが確保されます。
-
-### シナリオ実験
-
-多数のパラメータでシミュレーションを実行し、典型的な挙動を理解します。シナリオの指標を抽出し、ばらつきを検出し、パラメータを調整し、調整された世界とベースラインの世界を比較します。世界のデザインをテスト可能なプロセスに変えます。
-
-### スタジオシェル
-
-プロジェクトのダッシュボード、問題の閲覧、実験の検査、セッション履歴、ガイド付きのオンボーディング、およびコンテキストに応じたコマンドの発見機能を備えた、CLIデザインスタジオ。世界を構築およびテストするためのワークスペースです。
-
----
-
-## クイックスタートガイド
-
-```bash
-# Install the CLI
-npm install -g @ai-rpg-engine/cli
-
-# Start the interactive studio
-ai chat
-
-# Run onboarding
-/onboard
-
-# Create your first content
-create-room haunted chapel
-
-# Run a simulation
-simulate
-
-# Analyze the results
-analyze-balance
-
-# Tune the design
-tune paranoia
-
-# Run an experiment
-experiment run --runs 50
-```
-
----
-
-## ワークフローの例
-
-```bash
-ai chat
-
-/onboard
-create-location-pack haunted chapel district
-critique-content
-simulate
-analyze-balance
-tune rumor propagation
-experiment run --runs 50
-compare-replays
-```
-
-世界を構築し、シミュレーションのデータに基づいて改善します。
-
----
-
-## アーキテクチャ
-
-このシステムは、4つのレイヤーで構成されています。
-
-| レイヤー | 役割 |
-|-------|------|
-| **Simulation** | 決定論的なエンジン — 世界の状態、イベント、アクション、知覚、認知、派閥、噂の伝播、地区の指標、リプレイ |
-| **Authoring** | コンテンツ生成 — スキャフォールディング、評価、正規化、修正ループ、パックジェネレーター |
-| **AI Cognition** | オプションのAIアシスタンス — チャットシェル、コンテキストルーティング、検索、メモリ整形、ツールオーケストレーション |
-| **Studio UX** | CLIデザイン環境 — ダッシュボード、問題追跡、実験の閲覧、セッション履歴、ガイド付きワークフロー |
-
 ---
 
 ## パッケージ
@@ -150,22 +132,32 @@ compare-replays
 | パッケージ | 目的。 |
 |---------|---------|
 | [`@ai-rpg-engine/core`](packages/core) | 決定論的なシミュレーション実行環境 — 世界の状態、イベント、乱数生成、ティック、アクションの解決 |
-| [`@ai-rpg-engine/modules`](packages/modules) | 29個の組み込みモジュール：戦闘、知覚、認知、派閥、噂、地区、NPCの行動、仲間、プレイヤーの行動力、戦略マップ、移動アドバイザー、アイテム認識、機会、展開検出、ゲーム終盤のトリガー |
+| [`@ai-rpg-engine/modules`](packages/modules) | 27種類以上のモジュールを組み合わせることで、戦闘、認識、認知、派閥、噂、移動、仲間、NPCの行動、戦略マップ、アイテム認識、新たな機会の創出、物語の展開、ゲーム終盤のイベントなどを実現できます。 |
 | [`@ai-rpg-engine/content-schema`](packages/content-schema) | 世界のコンテンツのための標準的なスキーマとバリデータ |
 | [`@ai-rpg-engine/character-profile`](packages/character-profile) | キャラクターの成長状態、負傷、成長段階、評判 |
 | [`@ai-rpg-engine/character-creation`](packages/character-creation) | アーキタイプ選択、ビルド生成、初期装備 |
-| [`@ai-rpg-engine/equipment`](packages/equipment) | 装備の種類、アイテムの由来、遺物の成長、アイテムの記録 |
+| [`@ai-rpg-engine/equipment`](packages/equipment) | 装備の種類、アイテムの由来、遺物の成長 |
 | [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | セッション間の記憶、関係性の効果、キャンペーンの状態 |
 | [`@ai-rpg-engine/ollama`](packages/ollama) | オプションのAIによるコンテンツ作成 — スキャフォールディング、評価、ガイド付きワークフロー、調整、実験 |
-| [`@ai-rpg-engine/cli`](packages/cli) | コマンドラインデザインスタジオ — チャットシェル、ワークフロー、実験ツール |
+| [`@ai-rpg-engine/cli`](packages/cli) | コマンドラインによるゲームデザインツール |
 | [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | ターミナルレンダラーと入力レイヤー。 |
-| [`@ai-rpg-engine/starter-fantasy`](packages/starter-fantasy) | The Chapel Threshold — ファンタジーのスターターワールド |
-| [`@ai-rpg-engine/starter-cyberpunk`](packages/starter-cyberpunk) | Neon Lockbox — サイバーパンクのスターターワールド |
-| [`@ai-rpg-engine/starter-detective`](packages/starter-detective) | Gaslight Detective：ヴィクトリア朝のミステリーをテーマにしたスターターワールド |
-| [`@ai-rpg-engine/starter-pirate`](packages/starter-pirate) | Black Flag Requiem：海賊をテーマにしたスターターワールド |
-| [`@ai-rpg-engine/starter-zombie`](packages/starter-zombie) | Ashfall Dead：ゾンビサバイバルをテーマにしたスターターワールド |
-| [`@ai-rpg-engine/starter-weird-west`](packages/starter-weird-west) | Dust Devil's Bargain：西部劇をテーマにしたスターターワールド |
-| [`@ai-rpg-engine/starter-colony`](packages/starter-colony) | Signal Loss：SFコロニーをテーマにしたスターターワールド |
+
+### スターターサンプル
+
+10個のスターターワールドは、**モジュールの組み合わせ例**です。これらは、エンジンモジュールを組み合わせて完全なゲームを作成する方法を示しています。それぞれが異なるパターン（ステータスのマッピング、リソースのプロファイル、エンゲージメントの設定、アビリティセット）を示しています。各スターターのREADMEファイルで、「示されているパターン」と「利用できるもの」を確認してください。
+
+| スターター | ジャンル | 主要なパターン |
+|---------|-------|-------------|
+| [`starter-fantasy`](packages/starter-fantasy) | ダークファンタジー | 戦闘は控えめ、会話が中心 |
+| [`starter-cyberpunk`](packages/starter-cyberpunk) | サイバーパンク | リソース、エンゲージメントの役割 |
+| [`starter-detective`](packages/starter-detective) | ヴィクトリア朝のミステリー | ソーシャル要素が強く、認識が重要 |
+| [`starter-pirate`](packages/starter-pirate) | 海賊 | 海戦＋近接戦闘、複数のエリア |
+| [`starter-zombie`](packages/starter-zombie) | ゾンビサバイバル | 資源の枯渇、感染 |
+| [`starter-weird-west`](packages/starter-weird-west) | ワイルドウエスト | `buildCombatStack` の参照、パックの優先順位 |
+| [`starter-colony`](packages/starter-colony) | SFコロニー | 隘路、待ち伏せポイント |
+| [`starter-ronin`](packages/starter-ronin) | 封建時代の日本 | 隠し通路、複数の守護役 |
+| [`starter-vampire`](packages/starter-vampire) | ヴァンパイアホラー | 血資源、社会操作 |
+| [`starter-gladiator`](packages/starter-gladiator) | 歴史的なグラディエーター | アリーナでの戦闘、観客の評価 |
 
 ---
 
@@ -173,11 +165,36 @@ compare-replays
 
 | リソース | 説明 |
 |----------|-------------|
+| [Composition Guide](docs/handbook/57-composition-guide.md) | エンジンモジュールを組み合わせて、独自のゲームを作成しましょう。ここから始めましょう。 |
+| [Combat Overview](docs/handbook/49a-combat-overview.md) | 6つの戦闘の基本要素、5つのアクション、ステータスの一覧 |
+| [Pack Author Guide](docs/handbook/55-combat-pack-guide.md) | 段階的な `buildCombatStack` の構築、ステータスマッピング、リソースプロファイル |
 | [Handbook](docs/handbook/index.md) | すべてのシステムを網羅する26章と4つの付録 |
-| [Design Document](docs/DESIGN.md) | アーキテクチャの詳細解説：アクションパイプライン、真実と表現、シミュレーションレイヤー |
-| [AI Worldbuilding Guide](packages/ollama/AI_WORLDBUILDING.md) | 構築、診断、調整、実験のワークフロー |
+| [Composition Model](docs/composition-model.md) | 6つの再利用可能なレイヤーとその組み合わせ方 |
+| [Examples](docs/examples/) | 実行可能なTypeScriptのサンプルコード：混合パーティー、ワールド間の連携、ゼロから作成 |
+| [Design Document](docs/DESIGN.md) | アーキテクチャの詳細：アクションパイプライン、真実と表現 |
 | [Philosophy](PHILOSOPHY.md) | 決定論的な世界、データに基づいた設計、そしてAIをアシスタントとして |
 | [Changelog](CHANGELOG.md) | リリース履歴 |
+
+---
+
+## ロードマップ
+
+### 現在の状況
+
+シミュレーションの実行エンジンと戦闘システムは安定しています。2661件のテスト、10種類のジャンル例、再現可能な結果、完全なAIによる意思決定スコアリングが可能です。このエンジンは、モジュールを選択し、ステータスを定義し、接続し、コンテンツを作成するツールキットとして機能します。ドキュメントはすべてのシステムをカバーしていますが、最新の追加機能についてはAPIの同期が必要です。
+
+### 今後数週間
+
+- 残りの9つのスターターを `buildCombatStack` に移行します（ワイルドウエストが参照です）。
+- APIドキュメントの同期：`submitActionAs`、`selectBestAction`、`resourceCaps`、タグの分類
+- スターターのREADMEの改善：より明確な「利用できるもの」と、リミックスに関するガイダンス
+- 相互リンクの追加：README、モジュール構成ガイド、サンプル、ハンドブックを関連付けます。
+
+### 目標：プラグインプロファイル
+
+このエンジンの最終目標は、**ユーザー定義のプロファイル**です。これは、任意のゲームに組み込むことができる、ポータブルなバンドルです。プロファイルは、ステータスマッピング、リソースの動作、AIのバイアス、アビリティ、エンカウンターのトリガーなどを、単一のインポート可能なユニットにパッケージ化します。異なるプロファイルを持つ2人のプレイヤーが同じワールドを共有でき、それぞれが独自のプレイスタイルを楽しむことができます。
+
+プロファイルは、モジュールの組み合わせ（すでに動作中）と、統一された意思決定レイヤー（v2.3.0でリリース）を基盤としています。残りの作業は、プロファイルのスキーマを定義し、ローダーを構築し、プロファイル間の相互作用を検証することです。詳細については、[プロファイルのロードマップ](docs/profile-roadmap.md) を参照してください。
 
 ---
 

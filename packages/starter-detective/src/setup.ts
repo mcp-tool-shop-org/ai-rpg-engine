@@ -74,9 +74,9 @@ const suspectParanoia: PresentationRule = {
   }),
 };
 
-// Detective combat formulas — grit for damage + guard, perception for hit/dodge
+// Detective combat formulas — grit for damage, perception for hit/dodge, eloquence for resolve
 const detectiveFormulas: CombatFormulas = {
-  statMapping: { attack: 'grit', precision: 'perception', resolve: 'grit' },
+  statMapping: { attack: 'grit', precision: 'perception', resolve: 'eloquence' },
   hitChance: (attacker, target) => {
     const atkPerception = attacker.stats.perception ?? 5;
     const tgtPerception = target.stats.perception ?? 5;
@@ -84,14 +84,14 @@ const detectiveFormulas: CombatFormulas = {
   },
   damage: (attacker) => Math.max(1, attacker.stats.grit ?? 3),
   guardReduction: (defender) => {
-    const grit = defender.stats.grit ?? 3;
-    const bonus = Math.max(0, (grit - 3) * 0.03);
+    const eloquence = defender.stats.eloquence ?? 3;
+    const bonus = Math.max(0, (eloquence - 3) * 0.03);
     return Math.min(0.75, 0.5 + bonus);
   },
   disengageChance: (actor) => {
     const perception = actor.stats.perception ?? 5;
-    const grit = actor.stats.grit ?? 3;
-    return Math.min(90, Math.max(15, 40 + perception * 5 + grit * 2));
+    const eloquence = actor.stats.eloquence ?? 3;
+    return Math.min(90, Math.max(15, 40 + perception * 5 + eloquence * 2));
   },
 };
 

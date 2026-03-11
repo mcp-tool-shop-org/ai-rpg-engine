@@ -14,6 +14,8 @@
 
 # @ai-rpg-engine/starter-detective
 
+> **Composition Example** — This starter demonstrates how to wire the engine for Victorian mystery. It is an example to learn from, not a template to copy. See the [Composition Guide](../../docs/handbook/57-composition-guide.md) to build your own game.
+
 **Gaslight Detective** — a Victorian mystery starter world for AI RPG Engine.
 
 ## Install
@@ -22,7 +24,7 @@
 npm install @ai-rpg-engine/starter-detective
 ```
 
-## What You'll Learn
+## Patterns Demonstrated
 
 This starter demonstrates the full engine stack through an investigation scenario:
 
@@ -62,6 +64,10 @@ const engine = createGame(42);
 // Or import pieces individually:
 import { manifest, detectiveMinimalRuleset, deductionMasteryTree } from '@ai-rpg-engine/starter-detective';
 ```
+
+## What to Borrow
+
+Defensive resource spending pattern — composure is spent to resist status effects rather than to fuel attacks. Study how a resource can act as a shield against narrative consequences instead of a currency for player actions.
 
 ## Documentation
 

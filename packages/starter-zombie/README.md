@@ -14,6 +14,8 @@
 
 # @ai-rpg-engine/starter-zombie
 
+> **Composition Example** — This starter demonstrates how to wire the engine for zombie survival. It is an example to learn from, not a template to copy. See the [Composition Guide](../../docs/handbook/57-composition-guide.md) to build your own game.
+
 **Ashfall Dead** — a zombie survival starter world for AI RPG Engine.
 
 ## Install
@@ -22,7 +24,7 @@
 npm install @ai-rpg-engine/starter-zombie
 ```
 
-## What You'll Learn
+## Patterns Demonstrated
 
 This starter demonstrates the full engine stack through a survival scenario:
 
@@ -62,6 +64,10 @@ const engine = createGame(42);
 // Or import pieces individually:
 import { manifest, zombieMinimalRuleset, survivalTree } from '@ai-rpg-engine/starter-zombie';
 ```
+
+## What to Borrow
+
+Consequence-only resource pattern — infection accumulates from events and combat but cannot be voluntarily spent. Study how a resource that only grows creates escalating tension and forces players toward the item economy (antibiotics) as the only relief valve.
 
 ## Documentation
 

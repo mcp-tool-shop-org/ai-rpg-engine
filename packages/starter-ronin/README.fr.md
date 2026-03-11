@@ -14,6 +14,8 @@
 
 # @ai-rpg-engine/starter-ronin
 
+**Exemple de conception** — Cet exemple illustre comment câbler le moteur pour un jeu de type "mystère féodal". Il s'agit d'un exemple à étudier, et non d'un modèle à copier. Consultez le [Guide de conception](../../docs/handbook/57-composition-guide.md) pour créer votre propre jeu.
+
 **Jade Veil** — Un château féodal pendant un sommet politique tendu. Un seigneur a été empoisonné. Trouvez le coupable avant que l'honneur ne soit perdu.
 
 Fait partie du catalogue de kits de démarrage [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine).
@@ -30,6 +32,15 @@ import { createGame } from '@ai-rpg-engine/starter-ronin';
 const engine = createGame();
 engine.start();
 ```
+
+## Exemples illustrés
+
+| Fonctionnalité | Ce que Ronin montre |
+|---------|------------------|
+| **Engagement** | Rôles de protecteur multiples (garde du corps + samouraï), passages secrets. |
+| **Resources** | Double système : ki (régénération) vs honneur (fragile, difficile à restaurer). |
+| **Social** | Enquête avec conséquences : les fausses accusations coûtent de l'honneur. |
+| **Cognition** | Règle de perception de l'assassin ciblant les ronin non affiliés. |
 
 ## Contenu
 
@@ -60,6 +71,10 @@ engine.start();
 | HP | 0–30 | Santé standard |
 | Honneur | 0–30 | Fragile : les fausses accusations coûtent -5, difficile à récupérer. |
 | Ki | 0–20 | Énergie spirituelle, régénère 2 par tick. |
+
+## Ce que vous pouvez adapter
+
+Rôles de protecteur multiples (garde du corps + samouraï) et ressources à double couche (ki + honneur). Étudiez comment deux rôles de protecteur avec des conditions de déclenchement différentes créent une défense en plusieurs niveaux, et comment le système ki (régénération) vs honneur (fragile, difficile à restaurer) impose des styles de jeu différents en combat et en enquête.
 
 ## Licence
 

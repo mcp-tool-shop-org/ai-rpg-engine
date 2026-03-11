@@ -14,6 +14,8 @@
 
 # @ai-rpg-engine/starter-ronin
 
+**Exemplo de Estrutura** — Este exemplo demonstra como estruturar um jogo com elementos de mistério feudal. É um exemplo para aprender, não um modelo para copiar. Consulte o [Guia de Estrutura](../../docs/handbook/57-composition-guide.md) para criar seu próprio jogo.
+
 **Jade Veil** — Um castelo feudal durante um tenso encontro político. Um senhor foi envenenado. Descubra o assassino antes que a honra se perca.
 
 Parte do catálogo de pacotes de inicialização do [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine).
@@ -30,6 +32,15 @@ import { createGame } from '@ai-rpg-engine/starter-ronin';
 const engine = createGame();
 engine.start();
 ```
+
+## Padrões Demonstrados
+
+| Funcionalidade | O que o Ronin demonstra |
+|---------|------------------|
+| **Engagement** | Múltiplos papéis de protetor (guarda-costas + samurai), passagens secretas. |
+| **Resources** | Sistema de camadas: ki (regeneração) vs. honra (frágil, difícil de recuperar). |
+| **Social** | Investigação com consequências — acusações falsas custam honra. |
+| **Cognition** | Regra de percepção de assassinos, direcionada a ronins não afiliados. |
 
 ## Conteúdo
 
@@ -60,6 +71,10 @@ engine.start();
 | HP | 0–30 | Saúde padrão |
 | Honra | 0–30 | Frágil — falsas acusações custam -5, difícil de recuperar |
 | Ki | 0–20 | Energia espiritual, regenera 2/tick |
+
+## O que pode ser adaptado
+
+Múltiplos papéis de protetor (guarda-costas + samurai) e recursos de camadas (ki + honra). Estude como dois papéis de protetor com diferentes condições de ativação criam uma defesa em camadas, e como o ki (regeneração) vs. a honra (frágil, difícil de recuperar) forçam diferentes estilos de jogo em combate e investigação.
 
 ## Licença
 

@@ -69,6 +69,19 @@ export class Engine {
     return this.processAction(action);
   }
 
+  /** Submit an action on behalf of any entity (party member, ally, NPC).
+   *  Like submitAction but for non-player actors — avoids the need to
+   *  manually create actions via dispatcher.createAction(). */
+  submitActionAs(entityId: string, verb: string, options?: Partial<Pick<ActionIntent, 'targetIds' | 'toolId' | 'parameters'>>): ResolvedEvent[] {
+    const action = this.dispatcher.createAction(
+      verb,
+      entityId,
+      this.store.tick,
+      { source: 'ai', ...options },
+    );
+    return this.processAction(action);
+  }
+
   /** Process any action through the pipeline */
   processAction(action: ActionIntent): ResolvedEvent[] {
     this.actionLog.push(action);

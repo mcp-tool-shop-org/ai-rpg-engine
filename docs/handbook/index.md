@@ -30,6 +30,15 @@ Create rooms, entities, factions, quests, and content packs.
 - [The Chapel Threshold](./20-chapel-threshold.md) — fantasy starter walkthrough
 - [Neon Lockbox](./21-neon-lockbox.md) — cyberpunk starter walkthrough
 
+### Composing Games
+
+Build your own game from engine pieces.
+
+- [Composition Guide](./57-composition-guide.md) — the 5-step workflow for building a game
+- [Build a Combat Pack](./55-combat-pack-guide.md) — deep combat authoring with buildCombatStack
+- [Tuning Philosophy](./56-tuning-philosophy.md) — what to tune vs leave alone
+- [Profile Roadmap](../profile-roadmap.md) — plug-in profiles: the engine's destination feature (planned)
+
 ### Combat & Abilities
 
 Powers, statuses, resistances, AI intent, and balance tools.
@@ -133,7 +142,7 @@ build → simulate → analyze → tune → experiment
 18. [Writing a Module](./18-writing-a-module.md)
 19. [Testing Modules](./19-testing-modules.md)
 
-### Part VI — Starter Worlds
+### Part VI — Starter Examples
 
 20. [The Chapel Threshold (Fantasy)](./20-chapel-threshold.md)
 21. [Neon Lockbox (Cyberpunk)](./21-neon-lockbox.md)
@@ -172,10 +181,24 @@ build → simulate → analyze → tune → experiment
 42. [Quest Webs & Emergent Opportunities](./42-quest-webs.md)
 43. [Endgames & Campaign Conclusions](./43-endgames.md)
 
-### Part X — Systems Reference
+### Part X — Composition
 
-47. [Combat System](./47-combat-system.md)
-48. [Abilities System](./48-abilities-system.md)
+57. [Composition Guide](./57-composition-guide.md) — Build your own game by composing engine modules
+58. [Profile Roadmap](../profile-roadmap.md) — Plug-in profiles: portable mechanical templates (planned)
+
+### Part XI — Combat Reference
+
+47. [Combat System](./47-combat-system.md) — Roles, encounters, bosses, recovery, defeat fallout
+48. [Abilities System](./48-abilities-system.md) — Definitions, effects, status semantics, builders
+49a. [Combat Overview](./49a-combat-overview.md) — The six pillars, actions, states, authoring map
+49. [Combat Tactics](./49-combat-tactics.md) — The five actions, soft counters, brace/reposition
+50. [Combat States](./50-combat-states.md) — GUARDED, OFF_BALANCE, EXPOSED, FLEEING
+51. [Zone Positioning](./51-zone-positioning.md) — ENGAGED, PROTECTED, BACKLINE, ISOLATED, chokepoints
+52. [Defeat Flow](./52-defeat-flow.md) — Morale cascade, FLEEING, frontline collapse
+53. [Precision vs Force](./53-precision-vs-force.md) — Three stat dimensions, breakthrough, guard counter
+54. [Companion Interception](./54-companion-interception.md) — Scored formula, role bonuses, AI cover
+55. [Build a Combat Pack](./55-combat-pack-guide.md) — Author guide for buildCombatStack and stat mapping
+56. [Tuning Philosophy](./56-tuning-philosophy.md) — What to tune, what to leave alone
 
 ### Appendix
 

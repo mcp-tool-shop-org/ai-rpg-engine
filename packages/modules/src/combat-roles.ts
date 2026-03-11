@@ -701,12 +701,42 @@ export function validateBossDefinition(
     }
   }
 
+  // Trace tag add/remove across phases to detect conflicts
+  const tagState = new Set<string>();
   if (entities) {
     const entity = entities[bossDef.entityId];
     if (!entity) {
       warnings.push(`Entity '${bossDef.entityId}' not found`);
-    } else if (!entity.tags.includes('role:boss')) {
-      warnings.push(`Entity '${bossDef.entityId}' missing 'role:boss' tag`);
+    } else {
+      if (!entity.tags.includes('role:boss')) {
+        warnings.push(`Entity '${bossDef.entityId}' missing 'role:boss' tag`);
+      }
+      // Seed tag state from entity's initial tags
+      for (const t of entity.tags) tagState.add(t);
+    }
+  }
+
+  for (let i = 0; i < bossDef.phases.length; i++) {
+    const phase = bossDef.phases[i];
+
+    // Warn if removing a tag that was never added (by entity or prior phase)
+    if (phase.removeTags) {
+      for (const tag of phase.removeTags) {
+        if (!tagState.has(tag)) {
+          warnings.push(`Phase ${i} (${phase.narrativeKey}): removes tag "${tag}" which is not present at this point`);
+        }
+        tagState.delete(tag);
+      }
+    }
+
+    // Track added tags
+    if (phase.addTags) {
+      for (const tag of phase.addTags) {
+        if (tagState.has(tag)) {
+          warnings.push(`Phase ${i} (${phase.narrativeKey}): adds tag "${tag}" which is already present`);
+        }
+        tagState.add(tag);
+      }
     }
   }
 

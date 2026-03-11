@@ -14,6 +14,8 @@
 
 # @ai-rpg-engine/starter-cyberpunk
 
+> **Composition Example** — This starter demonstrates how to wire the engine for cyberpunk. It is an example to learn from, not a template to copy. See the [Composition Guide](../../docs/handbook/57-composition-guide.md) to build your own game.
+
 **Neon Lockbox** — a cyberpunk starter world for AI RPG Engine.
 
 ## Install
@@ -22,7 +24,7 @@
 npm install @ai-rpg-engine/starter-cyberpunk
 ```
 
-## What You'll Learn
+## Patterns Demonstrated
 
 This starter demonstrates genre flexibility — the same engine stack with a completely different stat model:
 
@@ -73,6 +75,10 @@ const engine = createGame(77);
 // Or import pieces individually:
 import { manifest, zones, fixerDialogue, cyberpunkMinimalRuleset } from '@ai-rpg-engine/starter-cyberpunk';
 ```
+
+## What to Borrow
+
+Squad engagement with backline/protector tags and the bandwidth resource model. Study how engagement roles partition combat responsibility and how bandwidth acts as a shared tactical constraint across the squad.
 
 ## Documentation
 

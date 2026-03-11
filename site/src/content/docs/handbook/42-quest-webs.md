@@ -1,3 +1,7 @@
+---
+title: Quest Webs & Emergent Opportunities
+---
+
 # Chapter 42 — Quest Webs & Emergent Opportunities
 
 The simulation creates rich conditions — pressure, scarcity, faction goals, NPC obligations, district drift, companion dynamics. Quest Webs turn those conditions into structured things the player can intentionally pursue: contracts, bounties, favors, supply runs, investigations, escorts, recovery missions, and faction jobs.

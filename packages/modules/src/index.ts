@@ -819,6 +819,18 @@ export type {
   PackComparisonMatrix,
 } from './ability-summary.js';
 
+// --- Combat Builders (DX Helpers) ---
+export { buildCombatFormulas, buildCombatStack, PACK_BIAS_TAGS } from './combat-builders.js';
+export type { CombatStackConfig, CombatStack } from './combat-builders.js';
+
+// --- Unified Decision (Combat + Ability Merge Layer) ---
+export { selectBestAction, formatUnifiedDecision } from './unified-decision.js';
+export type { UnifiedActionSource, UnifiedAction, UnifiedDecision, UnifiedDecisionConfig } from './unified-decision.js';
+
+// --- Tag Taxonomy & Validation ---
+export { TAG_CATEGORIES, classifyTag, validateEntityTags, validateZoneTags } from './tag-taxonomy.js';
+export type { TagCategory, TagCategoryDefinition, TagWarning } from './tag-taxonomy.js';
+
 // --- Ability Builders (Abilities Phase 4) ---
 export {
   buildDamageAbility,

@@ -175,3 +175,14 @@ entities:
 
 Stat differentiation is additive — you can combine it with pack biases,
 engagement states, and zone positioning for layered tactical identity.
+
+---
+
+## See Also
+
+- [Combat Overview](49a-combat-overview.md) — The six pillars and how they fit together
+- [Combat Tactics](49-combat-tactics.md) — How actions use the three stat dimensions
+- [Combat States](50-combat-states.md) — Guard counter and breakthrough state transitions
+- [Companion Interception](54-companion-interception.md) — Precision and resolve in interception formula
+- [Build a Combat Pack](55-combat-pack-guide.md) — Choosing stat mappings for your world
+- [Tuning Philosophy](56-tuning-philosophy.md) — Why stat distributions matter more than constants

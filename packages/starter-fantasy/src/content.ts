@@ -228,7 +228,7 @@ export const zones: ZoneState[] = [
     id: 'vestry-door',
     roomId: 'ruined-chapel',
     name: 'Vestry Passage',
-    tags: ['interior', 'transition'],
+    tags: ['interior', 'transition', 'chokepoint'],
     neighbors: ['chapel-nave', 'crypt-chamber'],
     light: 2,
     hazards: ['unstable floor'],

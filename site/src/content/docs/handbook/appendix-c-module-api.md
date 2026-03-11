@@ -1,3 +1,7 @@
+---
+title: Module API Reference
+---
+
 # Appendix C — Module API Reference
 
 Function signatures and hooks for built-in modules.

@@ -136,7 +136,11 @@ function buildContext(entity: EntityState, world: WorldState, config?: CombatInt
     }
   }
 
-  // Find first matching pack bias (explicit config > role tag > none)
+  // Find first matching pack bias (explicit config > role tag > none).
+  // Precedence: first matching config packBias tag wins.
+  // If no config match, first role:* tag on the entity wins.
+  // Multiple role tags: first in entity.tags order is used (deterministic).
+  // Use validateEntityTags() from tag-taxonomy to detect multi-role conflicts.
   let packBias: PackBias | null = null;
   if (config?.packBiases) {
     for (const bias of config.packBiases) {

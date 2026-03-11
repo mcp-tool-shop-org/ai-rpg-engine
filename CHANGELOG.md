@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [2.3.0] - 2026-03-11
 
-### Combat System (Priorities 3-7)
+### Combat System (Priorities 3-7) + Polish Pass
 
-Full combat pillar stack — the engine now has a complete tactical combat system.
+Full combat pillar stack — the engine now has a complete tactical combat system, audited for internal consistency, content expression, balance, authoring ergonomics, and documentation.
 
 ### Added
 
@@ -21,13 +21,53 @@ Full combat pillar stack — the engine now has a complete tactical combat syste
 - **Companion interception** — scored formula replacing flat chance, driven by instinct, will, HP, morale, combat states, and role tags. FLEEING hard block, AI cover awareness, heroic interception narration
 - **Combat resources** — stamina costs for actions, resource tracking
 - **Engagement narration** — narrator text for engagement state changes
-- **Handbook chapters 49-54** — combat tactics, combat states, zone positioning, defeat flow, precision vs force, companion interception
+- **`buildCombatFormulas(statMapping)`** — DX helper that generates standard combat formulas from a stat mapping, eliminating 20 lines of copy-paste per world
+- **`buildCombatStack(config)`** — DX helper that encapsulates formula wrapping, module wiring, and review tracing into a single call. Reduces combat setup from ~40 lines to 7
+- **`PACK_BIAS_TAGS`** — exported constant listing all 16 built-in pack bias tags for discoverability
 - **All 10 starter packs** integrated with stat dimensions and combat formulas
+
+### Fixed
+
+- **Detective dimension collapse** — resolve was mapped to 'grit' (same as attack), now correctly mapped to 'eloquence'
+- **Weird West dimension collapse** — resolve was mapped to 'grit' (same as attack), now correctly mapped to 'lore'
+- **Chokepoint coverage** — added chokepoint zone tags to Colony (alien-cavern), Fantasy (vestry-door), Ronin (hidden-passage). Previously 0/10 worlds used chokepoints
+- **Engagement tag coverage** — added backlineTags/protectorTags to Colony, Cyberpunk, Ronin engagement configs
+
+### Documentation
+
+- **Combat Overview** (49a) — six pillars map, five actions, states at a glance, simple vs advanced worlds
+- **Combat Pack Guide** (55) — step-by-step author guide for buildCombatStack, stat mapping, resource profiles, pack biases
+- **Tuning Philosophy** (56) — what to tune vs leave alone, anti-number-soup doctrine, genre-appropriate silence
+- **Cross-links** — See Also sections added to all combat chapters (49-54), all chapters linked from handbook index
+- **Combat synthesis audit** — 15-pairwise interaction matrix, three-way combo audit, dominance/contradiction analysis
+- **Starter world audit** — 10-world mechanic coverage grid, pillar expression analysis
+- **Balance pass** — breakthrough rates, chokepoint stickiness, interception reliability calculated from actual entity stats across all 10 worlds
+
+### Mixed-Game Hardening
+
+- **Unified decision layer** — `selectBestAction()` merges combat + ability scoring into one call per entity, with configurable advantage threshold
+- **Party orchestration** — `engine.submitActionAs(entityId, verb, options)` for non-player entity actions
+- **Cognition auto-wiring** — `buildCombatStack()` now auto-includes `createCognitionCore()`, resolving hidden dependency
+- **Resource cap flexibility** — `CombatResourceProfile.resourceCaps` for per-resource maximums (default: 100)
+- **Tag taxonomy** — `classifyTag()`, `validateEntityTags()`, `validateZoneTags()` with canonical categories and validation
+- **Boss phase guardrails** — `validateBossDefinition()` traces tag add/remove across phases
+- **Role-tag precedence** — first `role:*` tag wins (documented, deterministic)
+- **Golden scenario tests** — 24 regression tests for pillar interaction combos
 
 ### Stats
 
 - 2661 tests across 130 test files
 - 6500+ lines of new combat code
+- 10 handbook chapters covering the combat system
+- 0 engine constant changes needed (content fixes resolved all balance issues)
+
+### Deferred (intentional)
+
+- **Will stat breadth** — resolve maps to 5 mechanics (guard absorption, disengage, brace resistance, morale, interception composure). Not broken — each mechanic reads it differently — but worth monitoring if future pillars also key off resolve
+- **Remaining 9 worlds on buildCombatStack** — Weird West refactored as proof; other worlds still use manual wiring (functional, just verbose)
+- **Stat-scaled engagement modifiers** — engagement states are currently stat-neutral. A future pass could let precision influence BACKLINE bonuses or resolve influence ENGAGED penalties
+- **Explicit "protect" stance** — interception is currently automatic. A dedicated protect action would give players agency over companion positioning
+- ~~**Golden scenario test suite**~~ — shipped (24 tests in golden-scenarios.test.ts)
 
 ## [2.0.0] - 2025-07-17
 

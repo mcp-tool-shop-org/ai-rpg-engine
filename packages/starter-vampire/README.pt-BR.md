@@ -14,6 +14,8 @@
 
 # @ai-rpg-engine/starter-vampire
 
+**Exemplo de Estrutura** — Este exemplo demonstra como configurar o sistema para um jogo de terror gótico com vampiros. É um exemplo para aprender, não um modelo para copiar. Consulte o [Guia de Estrutura](../../docs/handbook/57-composition-guide.md) para criar seu próprio jogo.
+
 **Crimson Court** — Uma mansão aristocrática em ruínas durante um baile de máscaras. Três famílias de vampiros disputam a supremacia, enquanto a sede ameaça consumi-lo.
 
 Parte do catálogo de pacotes de inicialização do [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine).
@@ -30,6 +32,15 @@ import { createGame } from '@ai-rpg-engine/starter-vampire';
 const engine = createGame();
 engine.start();
 ```
+
+## Padrões Demonstrados
+
+| Funcionalidade | O que o sistema de vampiros mostra |
+|---------|---------------------|
+| **Resources** | Recursos duais opostos (sede de sangue aumenta, humanidade diminui), criando uma economia moral. |
+| **Cognition** | Os vampiros percebem os humanos de maneira diferente — regra de apresentação para entidades vivas. |
+| **Dialogue** | Opções limitadas — baixa humanidade bloqueia ramificações de diálogo. |
+| **Progression** | Árvore de poderes sobrenaturais com habilidades de controle social que aumentam progressivamente. |
 
 ## Conteúdo
 
@@ -60,6 +71,10 @@ engine.start();
 | HP | 0–30 | Saúde padrão |
 | Sede | 0–100 | Pressão inversa — aumenta a cada instante, perda de controle em 100 |
 | Humanidade | 0–30 | Âncora moral — abaixo de 10, bloqueia opções de diálogo |
+
+## O que pode ser adaptado
+
+Recursos duais opostos (sede de sangue versus humanidade). Estude como dois recursos que se movem em direções opostas criam uma economia moral — alimentar-se reduz a sede de sangue, mas custa humanidade, tornando cada decisão de recurso uma escolha narrativa com consequências permanentes.
 
 ## Licença
 

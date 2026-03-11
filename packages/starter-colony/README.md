@@ -4,6 +4,8 @@
 
 # @ai-rpg-engine/starter-colony
 
+> **Composition Example** — This starter demonstrates how to wire the engine for sci-fi colony survival. It is an example to learn from, not a template to copy. See the [Composition Guide](../../docs/handbook/57-composition-guide.md) to build your own game.
+
 **Signal Loss** — A distant colony loses contact with Earth. Something is alive in the caverns below.
 
 Part of the [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine) starter pack catalog.
@@ -20,6 +22,15 @@ import { createGame } from '@ai-rpg-engine/starter-colony';
 const engine = createGame();
 engine.start();
 ```
+
+## Patterns Demonstrated
+
+| Feature | What Colony shows |
+|---------|-------------------|
+| **Engagement** | Chokepoint zone tags, squad-based backline/protector roles |
+| **Resources** | Shared colony-wide power resource with environmental drain |
+| **Environment** | Zone hazards triggering resource depletion, cascade failures |
+| **Cognition** | Alien entity with non-human perception rule |
 
 ## Content
 
@@ -50,6 +61,10 @@ engine.start();
 | HP | 0–25 | Standard health |
 | Power | 0–100 | Shared colony resource, regens 2/tick |
 | Morale | 0–30 | Crew cohesion |
+
+## What to Borrow
+
+Environment-driven resource pressure and squad engagement roles. Study how the colony's power resource depletes from environmental events (not just combat), creating cascading system failures that force tactical resource allocation across the squad.
 
 ## License
 

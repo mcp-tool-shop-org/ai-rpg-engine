@@ -14,6 +14,8 @@
 
 # @ai-rpg-engine/starter-ronin
 
+> **Composition Example** — This starter demonstrates how to wire the engine for feudal mystery. It is an example to learn from, not a template to copy. See the [Composition Guide](../../docs/handbook/57-composition-guide.md) to build your own game.
+
 **Jade Veil** — A feudal castle during a tense political summit. A lord has been poisoned. Find the killer before honor runs out.
 
 Part of the [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine) starter pack catalog.
@@ -30,6 +32,15 @@ import { createGame } from '@ai-rpg-engine/starter-ronin';
 const engine = createGame();
 engine.start();
 ```
+
+## Patterns Demonstrated
+
+| Feature | What Ronin shows |
+|---------|------------------|
+| **Engagement** | Multiple protector roles (bodyguard + samurai), hidden passages |
+| **Resources** | Dual-layer: ki (regenerating) vs honor (fragile, hard to recover) |
+| **Social** | Investigation with consequence — false accusations cost honor |
+| **Cognition** | Assassin perception rule targeting unaffiliated ronin |
 
 ## Content
 
@@ -60,6 +71,10 @@ engine.start();
 | HP | 0–30 | Standard health |
 | Honor | 0–30 | Fragile — false accusations cost -5, hard to recover |
 | Ki | 0–20 | Spiritual energy, regens 2/tick |
+
+## What to Borrow
+
+Multiple protector roles (bodyguard + samurai) and dual-layer resources (ki + honor). Study how two engagement protector roles with different trigger conditions create layered defense, and how ki (regenerating) vs honor (fragile, hard to recover) force different play styles in combat vs investigation.
 
 ## License
 

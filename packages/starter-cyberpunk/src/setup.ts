@@ -128,7 +128,7 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      createEngagementCore({ playerId: 'runner', backlineTags: ['ranged', 'caster', 'netrunner'] }),
+      createEngagementCore({ playerId: 'runner', backlineTags: ['ranged', 'caster', 'netrunner'], protectorTags: ['bodyguard'] }),
       review.module,
       createCombatCore(review.explain(wrappedFormulas)),
       createInventoryCore([iceBreaker]),

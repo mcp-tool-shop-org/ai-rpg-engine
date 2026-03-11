@@ -258,3 +258,71 @@ Compute fallout effects when opportunities resolve. Pure functions, deterministi
 | formatEntityInspection | `(inspection) → string` | Text format for entity |
 | formatFactionInspection | `(inspection) → string` | Text format for faction |
 | formatDistrictInspection | `(inspection) → string` | Text format for district |
+
+## Combat Core — `createCombatCore(formulas)`
+
+Registers the 5 combat verbs (attack, guard, disengage, brace, reposition) and resolves them using the provided formulas.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| buildCombatFormulas | `(mapping: CombatStatMapping) → CombatFormulas` | Generate standard formulas from stat names |
+| buildCombatStack | `(config: CombatStackConfig) → CombatStack` | Wire complete combat module stack from config |
+
+**CombatStackConfig fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| statMapping | `CombatStatMapping` | Yes | Maps attack, precision, resolve to world stat names |
+| playerId | `string` | No | Default: `'player'` |
+| engagement | `Partial<EngagementConfig>` | No | backlineTags, protectorTags, chokepointTag |
+| resourceProfile | `CombatResourceProfile` | No | Stamina/mana/ammo costs, gains, drains, caps |
+| biasTags | `string[]` | No | Filter BUILTIN_PACK_BIASES by tag |
+| recovery | `Partial<CombatRecoveryConfig>` | No | Recovery config overrides |
+| formulaOverrides | `Partial<CombatFormulas>` | No | Override individual formulas |
+| tacticsConfig | `Partial<CombatTacticsConfig>` | No | braceStabilizeChance, etc. |
+
+**CombatResourceProfile.resourceCaps:** Optional `Record<string, number>` for per-resource maximum values. Defaults to 100 for any resource not specified.
+
+**Note:** `buildCombatStack` auto-includes `createCognitionCore()` — no need to add it separately.
+
+## Unified Decision — `selectBestAction(entity, world, abilities, config?)`
+
+Merges combat intent and ability intent into a single decision per entity.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| selectBestAction | `(entity, world, abilities, config?) → UnifiedDecision` | Combined combat + ability scoring |
+| formatUnifiedDecision | `(decision) → string` | Human-readable decision summary |
+
+**UnifiedDecisionConfig fields:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| abilityAdvantageThreshold | `number` | 5 | Ability must outscore combat by this much to win |
+| combatConfig | `CombatIntentConfig` | — | Pass-through to combat intent scorer |
+
+Returns a `UnifiedDecision` with `chosen` (verb, targetId, score, source, abilityId?), `combatDecision`, and `abilityDecision`.
+
+## Tag Taxonomy — `tag-taxonomy.ts`
+
+Canonical tag categories and validation utilities.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| classifyTag | `(tag: string) → TagCategory` | Classify a tag into a canonical category |
+| validateEntityTags | `(tags: string[]) → TagWarning[]` | Validate entity tags, warn on multi-role or contradictions |
+| validateZoneTags | `(tags: string[]) → TagWarning[]` | Validate zone tags, warn on entity-level tags |
+
+**Tag categories:** `role`, `companion`, `engagement`, `pack-bias`, `zone`, `status`, `custom`
+
+**Prefix conventions:** `role:*`, `companion:*`, `engagement:*` are recognized prefixes. Unprefixed tags are classified by lookup table or marked `custom`.
+
+## Engine — `submitActionAs`
+
+Convenience method on the Engine class for submitting actions on behalf of non-player entities.
+
+```typescript
+engine.submitActionAs(entityId: string, verb: string, options?): ResolvedEvent[]
+```
+
+Uses `source: 'ai'`. Equivalent to manually calling `dispatcher.createAction()` + `engine.processAction()` but eliminates the boilerplate.

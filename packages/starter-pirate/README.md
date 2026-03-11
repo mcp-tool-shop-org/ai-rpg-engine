@@ -14,6 +14,8 @@
 
 # @ai-rpg-engine/starter-pirate
 
+> **Composition Example** — This starter demonstrates how to wire the engine for pirate adventure. It is an example to learn from, not a template to copy. See the [Composition Guide](../../docs/handbook/57-composition-guide.md) to build your own game.
+
 **Black Flag Requiem** — a high-seas pirate starter world for AI RPG Engine.
 
 ## Install
@@ -22,7 +24,7 @@
 npm install @ai-rpg-engine/starter-pirate
 ```
 
-## What You'll Learn
+## Patterns Demonstrated
 
 This starter demonstrates the full engine stack through a pirate adventure:
 
@@ -62,6 +64,10 @@ const engine = createGame(42);
 // Or import pieces individually:
 import { manifest, pirateMinimalRuleset, seamanshipTree } from '@ai-rpg-engine/starter-pirate';
 ```
+
+## What to Borrow
+
+Crew morale as a shared group resource. Study how a single resource pool is owned by the group rather than individuals, and how crew-wide events (storms, victories, mutiny threats) move it for everyone at once.
 
 ## Documentation
 

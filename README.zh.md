@@ -14,48 +14,108 @@
 
 # AI 角色扮演游戏引擎
 
-用于构建、分析和平衡角色扮演游戏世界的模拟原生工具包。
+一个用于构建确定性角色扮演游戏模拟的 TypeScript 工具集。 您可以定义属性，选择模块，连接战斗系统，并创建内容。 引擎负责处理状态、事件、随机数生成、行动解析以及人工智能决策。 每次运行的结果都是可重复的。
 
-AI 角色扮演游戏引擎将确定性模拟运行时与 AI 辅助设计工作室相结合，使作者能够构建世界，通过模拟进行测试，并根据证据进行改进，而不是猜测。
-
-> 传统的工具可以帮助您编写故事。
-> AI 角色扮演游戏引擎可以帮助您**测试世界**。
+这是一款**组合引擎**，而不是一个完整的游戏。 提供的 10 个入门世界是示例，它们是可分解的模式，您可以从中学习并进行修改。 您的游戏可以使用引擎的任何子集。
 
 ---
 
-## 主要功能
+## 这是一款什么
 
-```
-build → critique → simulate → analyze → tune → experiment
-```
+- 一个**模块库**：包含 27 多个模块，涵盖战斗、感知、认知、派系、传闻、探索、同伴等。
+- 一个**组合工具集**：`buildCombatStack()` 函数可以在大约 7 行代码中连接战斗系统；`new Engine({ modules })` 用于启动游戏。
+- 一个**模拟运行时**：具有确定性的时间步进、可重播的行动日志和带种子的随机数生成。
+- 一个**人工智能设计工作室**（可选）：提供脚手架、评估、平衡分析、调优以及通过 Ollama 进行实验。
 
-您可以生成世界内容，评估设计，运行确定性模拟，分析游戏行为，调整机制，在大量不同的初始状态下进行实验，并比较结果。 每一个结果都是可重现的、可检查的，并且可以解释的。
+## 这不是什么
+
+- 这不是一个开箱即用的可玩游戏——您需要使用模块和内容进行组合。
+- 这不是一个视觉引擎——它输出的是结构化的事件，而不是像素。
+- 这不是一个故事生成器——它模拟世界，叙事是从机制中产生的。
 
 ---
 
-## 核心功能
+## 当前状态 (v2.3.0)
 
-### 确定性模拟
+**已测试且功能完善的部分：**
+- 核心运行时：世界状态、事件、行动、时间步进、重播——自 v1.0 以来稳定。
+- 战斗系统：5 个行动、4 种战斗状态、4 种交战状态、同伴干预、失败流程、人工智能战术——1099 个测试用例。
+- 技能：成本、冷却时间、属性检查、类型化效果、状态词汇表、人工智能感知选择。
+- 统一决策层：战斗和技能评分合并为一个调用 (`selectBestAction`)。
+- 10 个入门世界，具有属性差异化的敌人和完整的战斗集成。
+- `buildCombatStack()` 函数可以消除每个世界约 40 行的战斗设置代码。
+- 内容创作的标签分类和验证工具。
+- 带跨阶段标签跟踪的 Boss 阶段验证。
 
-用于角色扮演游戏世界的基于时间步进的模拟引擎。 包括世界状态、事件系统、感知和认知层、派系信仰传播、谣言系统、区域指标（包含情绪推导）、NPC 行为（包含忠诚度阈值和后果链）、同伴（包含士气和离开风险）、玩家影响力与政治行动、战略地图分析、移动建议、物品识别与装备来源、遗物成长里程碑、基于世界条件的 emergent 机会（合同、赏金、恩惠、补给任务、调查）、战役弧线检测（从积累的状态中推导出的 10 种弧线类型）、游戏结束触发检测（8 种解决方案类别），以及具有结构化尾声的确定性结局渲染。 可重播的游戏行为日志和确定性随机数生成器。 每次运行都可以完全重播。
+**粗糙或未完成的部分：**
+- 人工智能世界构建工具（Ollama 层）可以工作，但与模拟相比，测试程度较低。
+- CLI 命令行界面工具可以工作，但尚未完善。
+- 只有 10 个入门世界中的 1 个使用了 `buildCombatStack()` 函数（Weird West）；其他世界使用冗长的手动连接方式。
+- 尚未实现配置文件系统——世界是独立的，不能从共享的配置文件中组合。
+- 文档非常详细（57 个章节），但并非所有章节都反映了最新的 API。
 
-### AI 辅助世界构建
+---
 
-可选的 AI 层，可以根据主题生成房间、派系、任务和区域。 评估设计，纠正模式错误，提出改进建议，并指导多步骤的世界构建流程。 AI 永远不会直接修改模拟状态，它只生成内容或建议。
+## 快速入门
 
-### 引导式设计流程
+```typescript
+import { Engine } from '@ai-rpg-engine/core';
+import { buildCombatStack, createTraversalCore, createDialogueCore } from '@ai-rpg-engine/modules';
 
-具有会话感知、以计划为先的流程，用于世界构建、设计评估、设计迭代、引导式构建和结构化调整计划。 结合确定性工具和 AI 辅助。
+// Define your stat mapping
+const combat = buildCombatStack({
+  statMapping: { attack: 'might', precision: 'agility', resolve: 'will' },
+  playerId: 'hero',
+  biasTags: ['undead', 'beast'],
+});
 
-### 能力与技能
+// Wire the engine
+const engine = new Engine({
+  manifest: myManifest,
+  modules: [...combat.modules, createTraversalCore(), createDialogueCore(myDialogues)],
+});
 
-游戏内置一套能力系统，包含10个不同类型的能力，覆盖多种游戏类型。这些能力具有消耗、属性检查、冷却时间和特定效果（伤害、治疗、状态附加、净化）。状态效果使用11个标签的语义词汇，并为实体定义了抗性和易受性属性。人工智能会根据抗性和净化效果的评估，为玩家选择最佳的能力，包括自攻击、范围攻击和单体攻击。平衡性审计和能力包摘要工具可以在创作阶段发现异常情况。
+// Submit player actions
+engine.submitAction('attack', { targetIds: ['skeleton-1'] });
+
+// Submit AI entity actions
+engine.submitActionAs('guard-captain', 'attack', { targetIds: ['player'] });
+```
+
+请参阅 [组合指南](docs/handbook/57-composition-guide.md)，了解完整的流程。
+
+---
+
+## 架构
+
+| 层级 | 角色 |
+|-------|------|
+| **Core Runtime** | 确定性引擎——世界状态、事件、行动、时间步进、随机数生成、重播。 |
+| **Modules** | 27 多个可组合系统——战斗、感知、认知、派系、探索、同伴等。 |
+| **Content** | 实体、区域、对话、物品、技能、状态——由作者创建。 |
+| **AI Studio** | 可选的 Ollama 层——脚手架、评估、平衡分析、调优、实验。 |
+
+---
+
+## 战斗系统
+
+五个行动（攻击、防御、撤退、格挡、调整位置），四种战斗状态（防御、失衡、暴露、逃离），四种交战状态（交战、保护、后卫、孤立）。 三个属性维度驱动每个公式，因此一个快速的剑士与一个笨重的战士或一个沉稳的哨兵的玩法截然不同。
+
+人工智能对手使用统一的决策评分——战斗行动和技能在单个评估中竞争，并具有可配置的阈值，以防止边缘技能的滥用。
+
+打包作者使用 `buildCombatStack()` 函数，通过属性映射、资源配置文件和偏好标签来连接战斗系统。 请参阅 [战斗概述](docs/handbook/49a-combat-overview.md) 和 [打包作者指南](docs/handbook/55-combat-pack-guide.md)。
+
+---
+
+## 技能
+
+具有成本、属性检查、冷却时间和类型效果（伤害、治疗、状态附加、清除）的、特定游戏类型的能力系统。状态效果使用包含11个标签的语义词汇表，并具有抗性和易受性属性。人工智能会根据选择，评估自身、范围攻击和单体攻击的优劣。
 
 ```typescript
 const warCry: AbilityDefinition = {
   id: 'war-cry', name: 'War Cry', verb: 'use-ability',
   tags: ['combat', 'debuff', 'aoe'],
-  costs: [{ resourceId: 'stamina', amount: 3 }, { resourceId: 'infection', amount: 5 }],
+  costs: [{ resourceId: 'stamina', amount: 3 }],
   target: { type: 'all-enemies' },
   checks: [{ stat: 'nerve', difficulty: 6, onFail: 'abort' }],
   effects: [
@@ -65,84 +125,6 @@ const warCry: AbilityDefinition = {
 };
 ```
 
-### 模拟分析
-
-重播分析，解释事件发生的原因，机制出现故障的地方，哪些触发器从未启动，以及哪些系统导致不稳定。 结构化的发现结果直接用于调整。
-
-### 引导式调整
-
-平衡分析生成结构化的调整计划，包含建议的修复方案、预期的影响、置信度估计和预览的更改。 逐步应用，并具有完整的可追溯性。
-
-### 场景实验
-
-在不同的初始状态下运行大量模拟，以了解典型的行为。 提取场景指标，检测方差，调整参数，并比较调整后的世界与基准世界。 将世界设计转化为一个可测试的过程。
-
-### 工作室环境
-
-命令行设计工作室，具有项目仪表板、问题浏览、实验检查、会话历史记录、引导式入门和上下文感知的命令发现。 用于构建和测试世界的环境。
-
----
-
-## 快速入门
-
-```bash
-# Install the CLI
-npm install -g @ai-rpg-engine/cli
-
-# Start the interactive studio
-ai chat
-
-# Run onboarding
-/onboard
-
-# Create your first content
-create-room haunted chapel
-
-# Run a simulation
-simulate
-
-# Analyze the results
-analyze-balance
-
-# Tune the design
-tune paranoia
-
-# Run an experiment
-experiment run --runs 50
-```
-
----
-
-## 示例流程
-
-```bash
-ai chat
-
-/onboard
-create-location-pack haunted chapel district
-critique-content
-simulate
-analyze-balance
-tune rumor propagation
-experiment run --runs 50
-compare-replays
-```
-
-构建一个世界，并通过模拟证据对其进行改进。
-
----
-
-## 架构
-
-该系统具有四层结构。
-
-| 层级 | 角色 |
-|-------|------|
-| **Simulation** | 确定性引擎 — 世界状态、事件、行动、感知、认知、派系、谣言传播、区域指标、重播 |
-| **Authoring** | 内容生成 — 框架构建、评估、标准化、修复循环、内容包生成器 |
-| **AI Cognition** | 可选的 AI 辅助 — 聊天界面、上下文路由、检索、记忆塑造、工具编排 |
-| **Studio UX** | CLI 设计环境：仪表盘、问题跟踪、实验浏览、会话历史、引导式工作流程。 |
-
 ---
 
 ## 包
@@ -150,22 +132,32 @@ compare-replays
 | 包 | 目的 |
 |---------|---------|
 | [`@ai-rpg-engine/core`](packages/core) | 确定性模拟运行时：世界状态、事件、随机数生成器、时间步长、动作解析。 |
-| [`@ai-rpg-engine/modules`](packages/modules) | 29 个内置模块：战斗、感知、认知、派系、传闻、区域、NPC 行为、同伴、玩家优势、战略地图、移动建议、物品识别、新兴机会、情节检测、游戏结束触发器。 |
+| [`@ai-rpg-engine/modules`](packages/modules) | 27多个可组合模块，包括战斗、感知、认知、派系、传闻、探索、同伴、NPC行为、战略地图、物品识别、新兴机会、剧情发展检测、游戏后期触发。 |
 | [`@ai-rpg-engine/content-schema`](packages/content-schema) | 用于世界内容的规范模式和验证器。 |
 | [`@ai-rpg-engine/character-profile`](packages/character-profile) | 角色成长状态、伤势、里程碑、声望。 |
 | [`@ai-rpg-engine/character-creation`](packages/character-creation) | 原型选择、构建生成、初始装备。 |
-| [`@ai-rpg-engine/equipment`](packages/equipment) | 装备类型、物品来源、遗物成长、物品编年史。 |
+| [`@ai-rpg-engine/equipment`](packages/equipment) | 装备类型、物品来源、遗物成长。 |
 | [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | 跨会话记忆、关系效果、战役状态。 |
 | [`@ai-rpg-engine/ollama`](packages/ollama) | 可选的 AI 内容创作：框架、评论、引导式工作流程、调优、实验。 |
-| [`@ai-rpg-engine/cli`](packages/cli) | 命令行设计工作室：聊天界面、工作流程、实验工具。 |
+| [`@ai-rpg-engine/cli`](packages/cli) | 命令行设计工作室。 |
 | [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | 终端渲染器和输入层。 |
-| [`@ai-rpg-engine/starter-fantasy`](packages/starter-fantasy) | Chapel Threshold：奇幻世界入门。 |
-| [`@ai-rpg-engine/starter-cyberpunk`](packages/starter-cyberpunk) | Neon Lockbox：赛博朋克世界入门。 |
-| [`@ai-rpg-engine/starter-detective`](packages/starter-detective) | Gaslight Detective：维多利亚时代神秘世界入门。 |
-| [`@ai-rpg-engine/starter-pirate`](packages/starter-pirate) | Black Flag Requiem：海盗世界入门。 |
-| [`@ai-rpg-engine/starter-zombie`](packages/starter-zombie) | Ashfall Dead：僵尸生存世界入门。 |
-| [`@ai-rpg-engine/starter-weird-west`](packages/starter-weird-west) | Dust Devil's Bargain：西部奇幻世界入门。 |
-| [`@ai-rpg-engine/starter-colony`](packages/starter-colony) | Signal Loss：科幻殖民世界入门。 |
+
+### 入门示例
+
+这10个入门世界是**组合示例**，它们展示了如何将引擎模块组合成完整的游戏。每个示例都展示了不同的模式（属性映射、资源配置、互动设置、能力集）。请参阅每个入门示例的README文件，了解“演示模式”和“可借鉴内容”。
+
+| 入门。 | 游戏类型。 | 关键模式。 |
+|---------|-------|-------------|
+| [`starter-fantasy`](packages/starter-fantasy) | 黑暗奇幻。 | 战斗较少，以对话为主。 |
+| [`starter-cyberpunk`](packages/starter-cyberpunk) | 赛博朋克。 | 资源、互动角色。 |
+| [`starter-detective`](packages/starter-detective) | 维多利亚时期悬疑。 | 以社交为中心，注重感知。 |
+| [`starter-pirate`](packages/starter-pirate) | 海盗。 | 水上战斗+近战，多区域。 |
+| [`starter-zombie`](packages/starter-zombie) | 僵尸生存。 | 资源稀缺、感染。 |
+| [`starter-weird-west`](packages/starter-weird-west) | 西部怪谈。 | `buildCombatStack` 引用，打包偏好。 |
+| [`starter-colony`](packages/starter-colony) | 科幻殖民地。 | 狭窄通道、伏击区域。 |
+| [`starter-ronin`](packages/starter-ronin) | 日本封建时代。 | 隐藏通道、多种保护角色。 |
+| [`starter-vampire`](packages/starter-vampire) | 吸血鬼恐怖。 | 血资源、社会操纵。 |
+| [`starter-gladiator`](packages/starter-gladiator) | 历史角斗士。 | 竞技场战斗、观众欢呼。 |
 
 ---
 
@@ -173,11 +165,36 @@ compare-replays
 
 | 资源 | 描述 |
 |----------|-------------|
+| [Composition Guide](docs/handbook/57-composition-guide.md) | 通过组合引擎模块来构建您自己的游戏——从这里开始。 |
+| [Combat Overview](docs/handbook/49a-combat-overview.md) | 六个战斗核心要素，五个动作，一目了然的状态。 |
+| [Pack Author Guide](docs/handbook/55-combat-pack-guide.md) | 逐步构建`buildCombatStack`，属性映射，资源配置。 |
 | [Handbook](docs/handbook/index.md) | 43 个章节 + 4 个附录，涵盖所有系统。 |
-| [Design Document](docs/DESIGN.md) | 架构深入剖析：动作流水线、真实与呈现、模拟层。 |
-| [AI Worldbuilding Guide](packages/ollama/AI_WORLDBUILDING.md) | 框架、诊断、调优、实验工作流程。 |
+| [Composition Model](docs/composition-model.md) | 6个可重用层及其组合方式。 |
+| [Examples](docs/examples/) | 可运行的TypeScript示例，包括混合队伍、跨世界、从零开始。 |
+| [Design Document](docs/DESIGN.md) | 架构深入分析——动作流水线，真实与表现。 |
 | [Philosophy](PHILOSOPHY.md) | 为什么是确定性世界、基于证据的设计以及 AI 作为助手。 |
 | [Changelog](CHANGELOG.md) | 发布历史 |
+
+---
+
+## 路线图
+
+### 我们目前的状态
+
+模拟运行时和战斗系统已经稳定——2661个测试用例，10个游戏类型示例，可重复的确定性回放，完整的AI决策评分。引擎作为一个组合工具包工作：选择模块，定义属性，连接，创建内容。文档涵盖所有系统，但需要进行API同步，以包含最新的更新。
+
+### 未来几周
+
+- 将剩余的9个入门示例迁移到`buildCombatStack`（西部怪谈是参考）。
+- API文档同步——`submitActionAs`、`selectBestAction`、`resourceCaps`、标签分类。
+- 入门示例README文件优化——更清晰的“可借鉴内容”和“可重用指南”。
+- 交叉链接——README、组合指南、示例和手册相互关联。
+
+### 目标：插件配置文件
+
+引擎的最终目标是**用户定义的配置文件**，这些是可移植的捆绑包，可以嵌入到任何游戏中。一个配置文件将属性映射、资源行为、AI偏好标签、能力和遭遇钩子打包成一个可导入的单元。两个具有不同配置文件的玩家可以共享一个世界，每个人都带来自己的游戏风格。
+
+配置文件建立在组合（已实现）和统一的决策层（在v2.3.0中发布）的基础上。剩余的工作是定义配置文件模式，构建加载器，并验证跨配置文件的交互。请参阅[配置文件路线图](docs/profile-roadmap.md)，了解完整计划。
 
 ---
 

@@ -14,6 +14,8 @@
 
 # @ai-rpg-engine/starter-vampire
 
+**Exemple de conception** — Ce modèle de départ illustre comment câbler le moteur pour créer une ambiance d'horreur gothique avec des vampires. Il s'agit d'un exemple à étudier, et non d'un modèle à copier. Consultez le [Guide de conception](../../docs/handbook/57-composition-guide.md) pour créer votre propre jeu.
+
 **Crimson Court** — Un manoir aristocratique en ruine, théâtre d'un bal masqué. Trois familles de vampires rivalisent pour la domination, tandis que la soif menace de vous consumer.
 
 Fait partie du catalogue de kits de démarrage [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine).
@@ -30,6 +32,15 @@ import { createGame } from '@ai-rpg-engine/starter-vampire';
 const engine = createGame();
 engine.start();
 ```
+
+## Fonctionnalités illustrées
+
+| Fonctionnalité | Ce que "Vampire" montre |
+|---------|---------------------|
+| **Resources** | Deux ressources opposées (soif de sang qui augmente, humanité qui diminue), créant une économie morale. |
+| **Cognition** | Les vampires perçoivent les humains différemment — règle de présentation pour les entités vivantes. |
+| **Dialogue** | Options limitées — une faible humanité bloque certaines branches de dialogue. |
+| **Progression** | Arbre de pouvoirs surnaturels avec des capacités croissantes de contrôle social. |
 
 ## Contenu
 
@@ -60,6 +71,10 @@ engine.start();
 | HP | 0–30 | Santé standard |
 | Soif | 0–100 | Pression inverse — augmente à chaque instant, perte de contrôle à 100. |
 | Humanité | 0–30 | Ancre morale — en dessous de 10, certaines options de dialogue sont verrouillées. |
+
+## Ce que vous pouvez adapter
+
+Deux ressources opposées (soif de sang contre humanité). Étudiez comment deux ressources qui évoluent dans des directions opposées créent une économie morale : se nourrir réduit la soif de sang, mais coûte de l'humanité, faisant de chaque décision liée aux ressources un choix narratif avec des conséquences permanentes.
 
 ## Licence
 

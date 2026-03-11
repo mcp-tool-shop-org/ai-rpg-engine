@@ -78,6 +78,11 @@ export type CombatResourceProfile = {
   spends: ResourceSpendModifier[];
   drains: ResourceDrainTrigger[];
   aiModifiers: ResourceAIModifier[];
+  /**
+   * Per-resource maximum caps. Default: 100 for any resource not listed.
+   * Example: `{ momentum: 10, focus: 20 }` — momentum caps at 10, focus at 20.
+   */
+  resourceCaps?: Record<string, number>;
 };
 
 // ---------------------------------------------------------------------------
@@ -111,6 +116,11 @@ const DRAIN_EVENT_MAP: Record<Exclude<ResourceDrainTrigger['trigger'], 'ally-def
 /** Check if entity has this resource (initialized, not undefined) */
 function hasResource(entity: EntityState, resourceId: string): boolean {
   return entity.resources[resourceId] !== undefined;
+}
+
+/** Get the cap for a resource (profile.resourceCaps[id] or default 100) */
+function getResourceCap(profile: CombatResourceProfile, resourceId: string): number {
+  return profile.resourceCaps?.[resourceId] ?? 100;
 }
 
 /** Try to spend a resource. Returns true if spend succeeded. */
@@ -269,7 +279,7 @@ export function registerResourceListeners(
         }
 
         entity.resources[gain.resourceId] = Math.min(
-          100,
+          getResourceCap(profile, gain.resourceId),
           (entity.resources[gain.resourceId] ?? 0) + amount,
         );
       }
@@ -331,7 +341,7 @@ export function registerResourceListeners(
             amount += (witness.stats[gain.scaleStat] ?? 0) * gain.scaleMultiplier;
           }
           witness.resources[gain.resourceId] = Math.min(
-            100,
+            getResourceCap(profile, gain.resourceId),
             (witness.resources[gain.resourceId] ?? 0) + amount,
           );
         }

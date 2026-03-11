@@ -132,7 +132,7 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      createEngagementCore({ playerId: 'commander' }),
+      createEngagementCore({ playerId: 'commander', backlineTags: ['ranged'], protectorTags: ['bodyguard'] }),
       review.module,
       createCombatCore(review.explain(wrappedFormulas)),
       createInventoryCore([emergencyCellEffect]),

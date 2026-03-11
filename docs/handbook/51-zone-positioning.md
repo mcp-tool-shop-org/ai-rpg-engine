@@ -153,3 +153,13 @@ const engine = createEngine({
   ],
 });
 ```
+
+---
+
+## See Also
+
+- [Combat Overview](49a-combat-overview.md) — The six pillars and how they fit together
+- [Combat Tactics](49-combat-tactics.md) — Brace at chokepoints, reposition mechanics
+- [Combat States](50-combat-states.md) — GUARDED, OFF_BALANCE interact with engagement states
+- [Companion Interception](54-companion-interception.md) — PROTECTED boosts interception chance
+- [Defeat Flow](52-defeat-flow.md) — Frontline collapse and ISOLATED state

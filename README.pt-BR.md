@@ -14,48 +14,108 @@
 
 # Motor de RPG com Inteligência Artificial
 
-Um conjunto de ferramentas para a criação, análise e balanceamento de mundos de RPG, com foco em simulação.
+Um conjunto de ferramentas em TypeScript para criar simulações de RPG determinísticas. Você define as estatísticas, escolhe os módulos, conecta as ações de combate e cria o conteúdo. O motor gerencia o estado, os eventos, o gerador de números aleatórios, a resolução de ações e a tomada de decisões da inteligência artificial. Cada execução é reproduzível.
 
-O Motor de RPG com Inteligência Artificial combina um ambiente de simulação determinística com um estúdio de design assistido por IA, permitindo que os criadores construam mundos, os testem por meio de simulações e os aprimorem com base em evidências, em vez de suposições.
-
-> As ferramentas tradicionais ajudam você a escrever histórias.
-> O Motor de RPG com Inteligência Artificial ajuda você a **testar mundos**.
+Este é um **motor de composição**, não um jogo completo. Os 10 mundos iniciais são exemplos — padrões que podem ser decompostos, aprendidos e remixados. Seu jogo usa apenas o subconjunto do motor que você precisa.
 
 ---
 
-## O que ele faz
+## O que isso é
 
-```
-build → critique → simulate → analyze → tune → experiment
-```
+- Uma **biblioteca de módulos** — mais de 27 módulos que abrangem combate, percepção, cognição, facções, rumores, exploração, companheiros e muito mais.
+- Um **conjunto de ferramentas de composição** — `buildCombatStack()` conecta as ações de combate em aproximadamente 7 linhas; `new Engine({ modules })` inicia o jogo.
+- Um **ambiente de execução de simulação** — execução determinística, logs de ações reproduzíveis, gerador de números aleatórios com semente.
+- Um **estúdio de design de IA** (opcional) — estrutura básica, análise crítica, análise de equilíbrio, ajuste fino e experimentos via Ollama.
 
-Você pode gerar conteúdo para o mundo, analisar projetos, executar simulações determinísticas, analisar o comportamento em diferentes jogadas, ajustar as mecânicas, realizar experimentos em diversas configurações e comparar os resultados. Cada resultado é reproduzível, inspecionável e explicável.
+## O que isso não é
+
+- Não é um jogo jogável "out of the box" — você o cria a partir de módulos e conteúdo.
+- Não é um motor visual — ele gera eventos estruturados, não pixels.
+- Não é um gerador de histórias — ele simula mundos; a narrativa emerge das mecânicas.
 
 ---
 
-## Funcionalidades Principais
+## Status atual (v2.3.0)
 
-### Simulação Determinística
+**O que funciona e está testado:**
+- Ambiente de execução principal: estado do mundo, eventos, ações, ciclos, reprodução — estável desde a versão 1.0.
+- Sistema de combate: 5 ações, 4 estados de combate, 4 estados de engajamento, interceptação de companheiros, fluxo de derrota, táticas de IA — 1099 testes.
+- Habilidades: custos, tempos de recarga, verificações de estatísticas, efeitos tipados, vocabulário de status, seleção com consciência da IA.
+- Camada de decisão unificada: pontuação de combate + habilidades combinadas em uma única chamada (`selectBestAction`).
+- 10 mundos iniciais com inimigos com estatísticas diferentes e integração completa de combate.
+- `buildCombatStack()` elimina aproximadamente 40 linhas de configuração de combate por mundo.
+- Taxonomia de tags e utilitários de validação para criação de conteúdo.
+- Validação de fase de chefe com rastreamento de tags entre fases.
 
-Um motor de simulação baseado em ciclos para mundos de RPG. Inclui o estado do mundo, sistema de eventos, camadas de percepção e cognição, propagação de crenças de facções, sistemas de rumores, métricas de distritos com derivação de humor, agência de NPCs com pontos de fidelidade e cadeias de consequências, companheiros com moral e risco de deserção, influência do jogador e ações políticas, análise de mapas estratégicos, consultor de movimentos, reconhecimento de itens e rastreamento de origem de equipamentos, marcos de desenvolvimento de relíquias, oportunidades emergentes (contratos, recompensas, favores, missões de suprimento, investigações) geradas a partir das condições do mundo, detecção de arcos de campanha (10 tipos de arcos derivados do estado acumulado), detecção de gatilhos de final de jogo (8 classes de resolução) e renderização de finais determinísticos com epílogos estruturados. Registros de ações reproduzíveis e RNG determinístico. Cada execução pode ser reproduzida exatamente.
+**O que está incompleto ou em desenvolvimento:**
+- As ferramentas de criação de mundo de IA (camada Ollama) funcionam, mas são menos testadas em comparação com a simulação.
+- O shell do estúdio de linha de comando é funcional, mas não está finalizado.
+- Apenas 1 dos 10 mundos iniciais usa `buildCombatStack` (Weird West); os outros usam conexões manuais mais detalhadas.
+- Ainda não há sistema de perfil — os mundos são independentes e não podem ser combinados a partir de perfis compartilhados.
+- A documentação é extensa (57 capítulos), mas nem todos os capítulos refletem as APIs mais recentes.
 
-### Criação de Mundos Assistida por IA
+---
 
-Uma camada de IA opcional que cria salas, facções, missões e distritos a partir de um tema. Analisa projetos, corrige erros de esquema, propõe melhorias e orienta fluxos de trabalho de criação de mundos. A IA nunca modifica diretamente o estado da simulação; ela apenas gera conteúdo ou sugestões.
+## Início Rápido
 
-### Fluxos de Trabalho de Design Guiados
+```typescript
+import { Engine } from '@ai-rpg-engine/core';
+import { buildCombatStack, createTraversalCore, createDialogueCore } from '@ai-rpg-engine/modules';
 
-Fluxos de trabalho conscientes da sessão e orientados por planos para a criação de mundos, ciclos de análise, iteração de design, construções guiadas e planos de ajuste estruturados. Combina ferramentas determinísticas com assistência de IA.
+// Define your stat mapping
+const combat = buildCombatStack({
+  statMapping: { attack: 'might', precision: 'agility', resolve: 'will' },
+  playerId: 'hero',
+  biasTags: ['undead', 'beast'],
+});
 
-### Habilidades e Poderes
+// Wire the engine
+const engine = new Engine({
+  manifest: myManifest,
+  modules: [...combat.modules, createTraversalCore(), createDialogueCore(myDialogues)],
+});
 
-Sistema de habilidades nativo do gênero, com cobertura abrangente em 10 categorias. As habilidades têm custos, testes de atributos, tempos de recarga e efeitos de diferentes tipos (dano, cura, aplicação de status, purificação). Os efeitos de status utilizam um vocabulário semântico com 11 categorias, com perfis de resistência/vulnerabilidade para cada entidade. O sistema de seleção de habilidades, que considera a inteligência artificial, avalia diferentes caminhos (ataque direto, área de efeito, alvo único) levando em conta a resistência e a eficácia da purificação. Ferramentas de auditoria de equilíbrio e resumos de categorias ajudam a identificar valores discrepantes durante a criação.
+// Submit player actions
+engine.submitAction('attack', { targetIds: ['skeleton-1'] });
+
+// Submit AI entity actions
+engine.submitActionAs('guard-captain', 'attack', { targetIds: ['player'] });
+```
+
+Consulte o [Guia de Composição](docs/handbook/57-composition-guide.md) para o fluxo de trabalho completo.
+
+---
+
+## Arquitetura
+
+| Camada | Função |
+|-------|------|
+| **Core Runtime** | Motor determinístico — estado do mundo, eventos, ações, ciclos, gerador de números aleatórios, reprodução. |
+| **Modules** | Mais de 27 sistemas compostáveis — combate, percepção, cognição, facções, exploração, companheiros, etc. |
+| **Content** | Entidades, zonas, diálogos, itens, habilidades, estados — criados pelo usuário. |
+| **AI Studio** | Camada Ollama opcional — estrutura básica, análise crítica, análise de equilíbrio, ajuste fino e experimentos. |
+
+---
+
+## Sistema de Combate
+
+Cinco ações (ataque, defesa, desengajamento, preparo, reposicionamento), quatro estados de combate (defensivo, desequilibrado, exposto, em fuga), quatro estados de engajamento (engajado, protegido, retaguarda, isolado). Três dimensões de estatísticas impulsionam cada fórmula, então um duelista rápido joga de forma diferente de um lutador pesado ou um sentinela composto.
+
+Os oponentes de IA usam uma pontuação de decisão unificada — ações de combate e habilidades competem em uma única avaliação, com limites configuráveis para evitar o uso excessivo de habilidades marginais.
+
+Os autores de pacotes utilizam a função `buildCombatStack()` para implementar o sistema de combate em aproximadamente 7 linhas – mapeamento de atributos, perfil de recursos e tags de viés. Consulte a [Visão Geral do Combate](docs/handbook/49a-combat-overview.md) e o [Guia para Autores de Pacotes](docs/handbook/55-combat-pack-guide.md).
+
+---
+
+## Habilidades
+
+Sistema de habilidades nativo do gênero com custos, verificações de estatísticas, tempos de recarga e efeitos tipados (dano, cura, aplicação de estado, limpeza). Os efeitos de status usam um vocabulário semântico de 11 tags com perfis de resistência/vulnerabilidade. A seleção com consciência da IA pontua caminhos de ataque próprio/área/alvo único.
 
 ```typescript
 const warCry: AbilityDefinition = {
   id: 'war-cry', name: 'War Cry', verb: 'use-ability',
   tags: ['combat', 'debuff', 'aoe'],
-  costs: [{ resourceId: 'stamina', amount: 3 }, { resourceId: 'infection', amount: 5 }],
+  costs: [{ resourceId: 'stamina', amount: 3 }],
   target: { type: 'all-enemies' },
   checks: [{ stat: 'nerve', difficulty: 6, onFail: 'abort' }],
   effects: [
@@ -65,84 +125,6 @@ const warCry: AbilityDefinition = {
 };
 ```
 
-### Análise de Simulação
-
-Análise de jogadas que explica por que os eventos ocorreram, onde as mecânicas falham, quais gatilhos nunca são acionados e quais sistemas criam instabilidade. Os resultados estruturados são integrados diretamente no ajuste.
-
-### Ajuste Guiado
-
-Os resultados de balanceamento geram planos de ajuste estruturados com correções propostas, impacto esperado, estimativas de confiança e alterações previstas. Aplicados passo a passo, com total rastreabilidade.
-
-### Experimentos de Cenário
-
-Execute várias simulações em diferentes configurações para entender o comportamento típico. Extraia métricas de cenário, detecte variações, ajuste parâmetros e compare mundos ajustados com mundos de referência. Transforma o design de mundos em um processo testável.
-
-### Ambiente de Desenvolvimento (Studio Shell)
-
-Ambiente de desenvolvimento de linha de comando com painéis de projetos, navegação de problemas, inspeção de experimentos, histórico de sessões, integração guiada e descoberta de comandos com base no contexto. Um espaço de trabalho para construir e testar mundos.
-
----
-
-## Início Rápido
-
-```bash
-# Install the CLI
-npm install -g @ai-rpg-engine/cli
-
-# Start the interactive studio
-ai chat
-
-# Run onboarding
-/onboard
-
-# Create your first content
-create-room haunted chapel
-
-# Run a simulation
-simulate
-
-# Analyze the results
-analyze-balance
-
-# Tune the design
-tune paranoia
-
-# Run an experiment
-experiment run --runs 50
-```
-
----
-
-## Fluxo de Trabalho de Exemplo
-
-```bash
-ai chat
-
-/onboard
-create-location-pack haunted chapel district
-critique-content
-simulate
-analyze-balance
-tune rumor propagation
-experiment run --runs 50
-compare-replays
-```
-
-Crie um mundo e aprimore-o por meio de evidências de simulação.
-
----
-
-## Arquitetura
-
-O sistema possui quatro camadas.
-
-| Camada | Função |
-|-------|------|
-| **Simulation** | Motor determinístico — estado do mundo, eventos, ações, percepção, cognição, facções, propagação de rumores, métricas de distritos, reprodução |
-| **Authoring** | Geração de conteúdo — criação de estruturas, análise, normalização, ciclos de reparo, geradores de pacotes |
-| **AI Cognition** | Assistência de IA opcional — shell de chat, roteamento de contexto, recuperação, modelagem de memória, orquestração de ferramentas |
-| **Studio UX** | Ambiente de design de linha de comando — painéis, rastreamento de problemas, navegação de experimentos, histórico de sessões, fluxos de trabalho guiados |
-
 ---
 
 ## Pacotes
@@ -150,22 +132,32 @@ O sistema possui quatro camadas.
 | Pacote | Propósito |
 |---------|---------|
 | [`@ai-rpg-engine/core`](packages/core) | Simulação determinística em tempo de execução — estado do mundo, eventos, gerador de números aleatórios, ciclos, resolução de ações. |
-| [`@ai-rpg-engine/modules`](packages/modules) | 29 módulos integrados — combate, percepção, cognição, facções, rumores, distritos, agência de NPCs, companheiros, influência do jogador, mapa estratégico, consultor de movimento, reconhecimento de itens, oportunidades emergentes, detecção de arcos narrativos, gatilhos para o final do jogo. |
+| [`@ai-rpg-engine/modules`](packages/modules) | 27+ módulos combináveis — combate, percepção, cognição, facções, rumores, exploração, companheiros, agência de NPCs, mapa estratégico, reconhecimento de itens, oportunidades emergentes, detecção de arcos narrativos, gatilhos para o final do jogo. |
 | [`@ai-rpg-engine/content-schema`](packages/content-schema) | Esquemas e validadores canônicos para o conteúdo do mundo. |
 | [`@ai-rpg-engine/character-profile`](packages/character-profile) | Estado de progressão do personagem, ferimentos, marcos, reputação. |
 | [`@ai-rpg-engine/character-creation`](packages/character-creation) | Seleção de arquétipos, geração de personagens, equipamentos iniciais. |
-| [`@ai-rpg-engine/equipment`](packages/equipment) | Tipos de equipamentos, origem dos itens, crescimento de relíquias, registros de itens. |
+| [`@ai-rpg-engine/equipment`](packages/equipment) | Tipos de equipamentos, origem dos itens, crescimento de relíquias. |
 | [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | Memória entre sessões, efeitos de relacionamento, estado da campanha. |
 | [`@ai-rpg-engine/ollama`](packages/ollama) | Criação de IA opcional — estruturas de base, análise crítica, fluxos de trabalho guiados, ajuste fino, experimentos. |
-| [`@ai-rpg-engine/cli`](packages/cli) | Estúdio de design em linha de comando — shell de chat, fluxos de trabalho, ferramentas de experimentação. |
+| [`@ai-rpg-engine/cli`](packages/cli) | Estúdio de design de linha de comando. |
 | [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | Renderizador de terminal e camada de entrada |
-| [`@ai-rpg-engine/starter-fantasy`](packages/starter-fantasy) | Chapel Threshold — mundo de fantasia para iniciantes. |
-| [`@ai-rpg-engine/starter-cyberpunk`](packages/starter-cyberpunk) | Neon Lockbox — mundo cyberpunk para iniciantes. |
-| [`@ai-rpg-engine/starter-detective`](packages/starter-detective) | Gaslight Detective — mundo de mistério vitoriano para iniciantes. |
-| [`@ai-rpg-engine/starter-pirate`](packages/starter-pirate) | Black Flag Requiem — mundo de piratas para iniciantes. |
-| [`@ai-rpg-engine/starter-zombie`](packages/starter-zombie) | Ashfall Dead — mundo de sobrevivência zumbi para iniciantes. |
-| [`@ai-rpg-engine/starter-weird-west`](packages/starter-weird-west) | Dust Devil's Bargain — mundo de faroeste estranho para iniciantes. |
-| [`@ai-rpg-engine/starter-colony`](packages/starter-colony) | Signal Loss — mundo de colônia de ficção científica para iniciantes. |
+
+### Exemplos iniciais
+
+Os 10 exemplos iniciais são **exemplos de composição** — eles demonstram como combinar módulos do motor para criar jogos completos. Cada um mostra padrões diferentes (mapeamentos de atributos, perfis de recursos, configurações de engajamento, conjuntos de habilidades). Consulte o arquivo README de cada exemplo inicial para ver os "Padrões Demonstrados" e "O que pode ser usado".
+
+| Inicial. | Gênero. | Padrões-chave. |
+|---------|-------|-------------|
+| [`starter-fantasy`](packages/starter-fantasy) | Fantasia sombria. | Combate mínimo, focado em diálogos. |
+| [`starter-cyberpunk`](packages/starter-cyberpunk) | Cyberpunk. | Recursos, papéis de engajamento. |
+| [`starter-detective`](packages/starter-detective) | Mistério vitoriano. | Prioridade para a interação social, forte ênfase na percepção. |
+| [`starter-pirate`](packages/starter-pirate) | Pirata. | Combate naval + corpo a corpo, em múltiplas áreas. |
+| [`starter-zombie`](packages/starter-zombie) | Sobrevivência contra zumbis. | Escassez, recurso de infecção. |
+| [`starter-weird-west`](packages/starter-weird-west) | Oeste estranho. | Referência `buildCombatStack`, preferências de empacotamento. |
+| [`starter-colony`](packages/starter-colony) | Colônia espacial. | Pontos de estrangulamento, zonas de emboscada. |
+| [`starter-ronin`](packages/starter-ronin) | Japão feudal. | Passagens secretas, múltiplos papéis de proteção. |
+| [`starter-vampire`](packages/starter-vampire) | Horror de vampiros. | Recurso de sangue, manipulação social. |
+| [`starter-gladiator`](packages/starter-gladiator) | Gladiador histórico. | Combate na arena, favor da multidão. |
 
 ---
 
@@ -173,11 +165,36 @@ O sistema possui quatro camadas.
 
 | Recurso | Descrição |
 |----------|-------------|
+| [Composition Guide](docs/handbook/57-composition-guide.md) | Crie seu próprio jogo combinando módulos do motor — comece aqui. |
+| [Combat Overview](docs/handbook/49a-combat-overview.md) | Seis pilares do combate, cinco ações, estados em um piscar de olhos. |
+| [Pack Author Guide](docs/handbook/55-combat-pack-guide.md) | Construção passo a passo de `buildCombatStack`, mapeamento de atributos, perfis de recursos. |
 | [Handbook](docs/handbook/index.md) | 43 capítulos + 4 apêndices que cobrem todos os sistemas. |
-| [Design Document](docs/DESIGN.md) | Análise aprofundada da arquitetura — pipeline de ações, verdade versus apresentação, camadas de simulação. |
-| [AI Worldbuilding Guide](packages/ollama/AI_WORLDBUILDING.md) | Fluxos de trabalho para estruturação, diagnóstico, ajuste fino e experimentação. |
+| [Composition Model](docs/composition-model.md) | As 6 camadas reutilizáveis e como elas se combinam. |
+| [Examples](docs/examples/) | Exemplos em TypeScript que podem ser executados — grupo misto, entre mundos, do zero. |
+| [Design Document](docs/DESIGN.md) | Análise aprofundada da arquitetura — pipeline de ações, verdade versus apresentação. |
 | [Philosophy](PHILOSOPHY.md) | Por que mundos determinísticos, design baseado em evidências e IA como assistente. |
 | [Changelog](CHANGELOG.md) | Histórico de lançamentos |
+
+---
+
+## Roteiro
+
+### Onde estamos agora
+
+O sistema de simulação e combate são robustos — 2661 testes, 10 exemplos de gênero, reprodução determinística, pontuação completa de decisões da IA. O motor funciona como um conjunto de ferramentas de composição: escolha módulos, defina atributos, conecte-os e crie conteúdo. A documentação cobre todos os sistemas, mas precisa de uma sincronização da API para as adições mais recentes.
+
+### Nas próximas semanas
+
+- Migrar os 9 exemplos iniciais restantes para `buildCombatStack` (Oeste estranho é a referência).
+- Sincronização da documentação da API — `submitActionAs`, `selectBestAction`, `resourceCaps`, taxonomia de tags.
+- Refinar os arquivos README dos exemplos iniciais — instruções mais claras sobre "O que pode ser usado" e como remixar.
+- Passagem de interligação — conectar os arquivos README, o guia de composição, os exemplos e o manual.
+
+### Destino: Perfis de Plug-in
+
+O objetivo final do motor são os **perfis definidos pelo usuário** — pacotes portáteis que podem ser integrados em qualquer jogo. Um perfil empacota um mapeamento de atributos, comportamento de recursos, tags de viés da IA, habilidades e ganchos de encontro em uma única unidade importável. Dois jogadores com perfis diferentes podem compartilhar um mundo, cada um trazendo seu próprio estilo de jogo.
+
+Os perfis se baseiam na composição (já em funcionamento) e na camada unificada de tomada de decisão (lançada na v2.3.0). O trabalho restante é definir o esquema do perfil, construir o carregador e validar as interações entre perfis. Consulte o [Roteiro do Perfil](docs/profile-roadmap.md) para o plano completo.
 
 ---
 

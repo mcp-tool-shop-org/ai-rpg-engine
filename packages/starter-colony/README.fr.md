@@ -4,6 +4,8 @@
 
 # @ai-rpg-engine/starter-colony
 
+**Exemple de conception** — Ce modèle de démarrage illustre comment câbler le moteur pour assurer la survie d'une colonie dans un contexte de science-fiction. Il s'agit d'un exemple à étudier, et non d'un modèle à copier. Consultez le [Guide de conception](../../docs/handbook/57-composition-guide.md) pour créer votre propre jeu.
+
 **Perte de signal** — Une colonie lointaine perd le contact avec la Terre. Quelque chose vit dans les cavernes situées en dessous.
 
 Fait partie du catalogue de kits de démarrage [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine).
@@ -20,6 +22,15 @@ import { createGame } from '@ai-rpg-engine/starter-colony';
 const engine = createGame();
 engine.start();
 ```
+
+## Modèles illustrés
+
+| Fonctionnalité | Ce que Colony montre |
+|---------|-------------------|
+| **Engagement** | Marqueurs de zones stratégiques, rôles de soutien/protection basés sur des escouades. |
+| **Resources** | Ressource énergétique partagée à l'échelle de la colonie, avec consommation environnementale. |
+| **Environment** | Dangers de zone déclenchant l'épuisement des ressources et des défaillances en cascade. |
+| **Cognition** | Entité extraterrestre avec une règle de perception non humaine. |
 
 ## Contenu
 
@@ -50,6 +61,10 @@ engine.start();
 | HP | 0–25 | Santé standard |
 | Énergie | 0–100 | Ressource partagée par la colonie, se régénère à 2 par cycle |
 | Moral | 0–30 | Cohésion de l'équipage |
+
+## Ce que vous pouvez adapter
+
+Pression des ressources liée à l'environnement et rôles d'engagement des escouades. Étudiez comment la ressource énergétique de la colonie diminue en raison d'événements environnementaux (et non seulement des combats), ce qui provoque des défaillances systémiques en cascade qui obligent à une allocation tactique des ressources au sein de l'escouade.
 
 ## Licence
 

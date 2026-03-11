@@ -4,7 +4,6 @@ import { Engine } from '@ai-rpg-engine/core';
 import {
   traversalCore,
   statusCore,
-  createCombatCore,
   createInventoryCore,
   createDialogueCore,
   createCognitionCore,
@@ -19,24 +18,15 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
-  createEngagementCore,
-  withEngagement,
-  createCombatReview,
-  createCombatIntent,
-  BUILTIN_PACK_BIASES,
-  createCombatRecovery,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
-  createCombatTactics,
-  withCombatResources,
-  buildTacticalHooks,
-  createCombatResources,
+  buildCombatStack,
   COMBAT_STATES,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatFormulas, CombatResourceProfile } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatResourceProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -73,27 +63,6 @@ const spiritPerception: PresentationRule = {
   }),
 };
 
-// Weird West combat formulas — grit for damage + guard, draw-speed for hit/dodge
-const weirdWestFormulas: CombatFormulas = {
-  statMapping: { attack: 'grit', precision: 'draw-speed', resolve: 'grit' },
-  hitChance: (attacker, target) => {
-    const atkSpeed = attacker.stats['draw-speed'] ?? 5;
-    const tgtSpeed = target.stats['draw-speed'] ?? 5;
-    return Math.min(95, Math.max(5, 50 + atkSpeed * 5 - tgtSpeed * 3));
-  },
-  damage: (attacker) => Math.max(1, attacker.stats.grit ?? 3),
-  guardReduction: (defender) => {
-    const grit = defender.stats.grit ?? 3;
-    const bonus = Math.max(0, (grit - 3) * 0.03);
-    return Math.min(0.75, 0.5 + bonus);
-  },
-  disengageChance: (actor) => {
-    const speed = actor.stats['draw-speed'] ?? 5;
-    const grit = actor.stats.grit ?? 3;
-    return Math.min(90, Math.max(15, 40 + speed * 5 + grit * 2));
-  },
-};
-
 // Weird West combat resource profile — corruption and iron will
 const weirdWestCombatProfile: CombatResourceProfile = {
   packId: 'weird-west',
@@ -123,8 +92,15 @@ const weirdWestCombatProfile: CombatResourceProfile = {
 
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(weirdWestStatusDefinitions);
-  const review = createCombatReview({ baseFormulas: weirdWestFormulas });
-  const wrappedFormulas = withCombatResources(weirdWestCombatProfile, withEngagement(weirdWestFormulas));
+
+  // Combat stack: grit for damage, draw-speed for hit/dodge, lore for resolve
+  const combat = buildCombatStack({
+    statMapping: { attack: 'grit', precision: 'draw-speed', resolve: 'lore' },
+    playerId: 'drifter',
+    resourceProfile: weirdWestCombatProfile,
+    biasTags: ['undead', 'spirit', 'beast'],
+  });
+
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -132,9 +108,7 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      createEngagementCore({ playerId: 'drifter' }),
-      review.module,
-      createCombatCore(review.explain(wrappedFormulas)),
+      ...combat.modules,
       createInventoryCore([sageBundleEffect]),
       createDialogueCore([bartenderDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -197,10 +171,6 @@ export function createGame(seed?: number): Engine {
         ],
         playerId: 'drifter',
       }),
-      createCombatTactics({ hooks: buildTacticalHooks(weirdWestCombatProfile) }),
-      createCombatResources(weirdWestCombatProfile),
-      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['undead', 'spirit', 'beast'].includes(b.tag)), resourceProfile: weirdWestCombatProfile }),
-      createCombatRecovery(),
       createBossPhaseListener(mesaCrawlerBoss),
       createAbilityCore({ abilities: weirdWestAbilities, statMapping: { power: 'grit', precision: 'draw-speed', focus: 'lore' } }),
       createAbilityEffects(),

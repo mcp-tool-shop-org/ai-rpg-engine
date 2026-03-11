@@ -14,6 +14,8 @@
 
 # @ai-rpg-engine/starter-vampire
 
+> **Composition Example** — This starter demonstrates how to wire the engine for gothic vampire horror. It is an example to learn from, not a template to copy. See the [Composition Guide](../../docs/handbook/57-composition-guide.md) to build your own game.
+
 **Crimson Court** — A decaying aristocratic manor during a masked ball. Three vampire houses vie for dominance while the hunger threatens to consume you.
 
 Part of the [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine) starter pack catalog.
@@ -30,6 +32,15 @@ import { createGame } from '@ai-rpg-engine/starter-vampire';
 const engine = createGame();
 engine.start();
 ```
+
+## Patterns Demonstrated
+
+| Feature | What Vampire shows |
+|---------|---------------------|
+| **Resources** | Opposing dual resources (bloodlust rises, humanity falls) creating a moral economy |
+| **Cognition** | Vampires perceive humans differently — presentation rule on living entities |
+| **Dialogue** | Gated options — low humanity locks conversation branches |
+| **Progression** | Supernatural power tree with escalating social control abilities |
 
 ## Content
 
@@ -60,6 +71,10 @@ engine.start();
 | HP | 0–30 | Standard health |
 | Bloodlust | 0–100 | Inverse pressure — rises each tick, loss of control at 100 |
 | Humanity | 0–30 | Moral anchor — below 10 locks dialogue options |
+
+## What to Borrow
+
+Opposing dual resources (bloodlust vs humanity). Study how two resources that move in opposite directions create a moral economy — feeding reduces bloodlust but costs humanity, making every resource decision a narrative choice with permanent consequences.
 
 ## License
 

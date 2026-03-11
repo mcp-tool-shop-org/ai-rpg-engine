@@ -14,6 +14,8 @@
 
 # @ai-rpg-engine/starter-gladiator
 
+**Exemple de conception** — Cet exemple illustre comment câbler le moteur pour les combats en arène. Il s'agit d'un exemple à étudier, et non d'un modèle à copier. Consultez le [Guide de conception](../../docs/handbook/57-composition-guide.md) pour créer votre propre jeu.
+
 **Iron Colosseum** — Une arène de gladiateurs souterraine située sous un empire en déclin. Combattez pour la liberté, gagnez le soutien de mécènes et survivez au jugement de la foule.
 
 Fait partie du catalogue de kits de démarrage [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine).
@@ -30,6 +32,15 @@ import { createGame } from '@ai-rpg-engine/starter-gladiator';
 const engine = createGame();
 engine.start();
 ```
+
+## Exemples de réalisations
+
+| Fonctionnalité | Ce que "Gladiator" propose |
+|---------|----------------------|
+| **Resources** | Une ressource méta volatile (l'approbation du public) motivée par le spectacle, et non par l'efficacité. |
+| **Combat** | Une conception de boss en trois phases avec des changements dynamiques au cours du combat. |
+| **Custom verbs** | Des actions de combat non offensives, comme les provocations et les démonstrations, qui affectent les ressources. |
+| **Social** | Un système de patronage conditionné par les seuils d'approbation du public. |
 
 ## Contenu
 
@@ -60,6 +71,10 @@ engine.start();
 | HP | 0–40 | Santé standard |
 | Fatigue | 0–50 | Pression inverse : augmente au combat, se régénère à -2 par tick. |
 | Faveur de la foule | 0–100 | Volatile : >75 débloque des cadeaux des mécènes, <25 signifie la mort. |
+
+## Ce que vous pouvez adapter
+
+L'économie de ressources basée sur la performance (l'approbation du public) et la conception de boss en trois phases. Étudiez comment l'approbation du public agit comme une ressource méta volatile qui dépend du spectacle plutôt que de l'efficacité, et comment le combat contre le champion de l'arène utilise les transitions de phase pour modifier la dynamique du combat au cours de l'affrontement.
 
 ## Licence
 

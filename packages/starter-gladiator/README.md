@@ -14,6 +14,8 @@
 
 # @ai-rpg-engine/starter-gladiator
 
+> **Composition Example** — This starter demonstrates how to wire the engine for arena combat. It is an example to learn from, not a template to copy. See the [Composition Guide](../../docs/handbook/57-composition-guide.md) to build your own game.
+
 **Iron Colosseum** — An underground gladiatorial arena beneath a crumbling empire. Fight for freedom, earn patrons, and survive the crowd's judgment.
 
 Part of the [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine) starter pack catalog.
@@ -30,6 +32,15 @@ import { createGame } from '@ai-rpg-engine/starter-gladiator';
 const engine = createGame();
 engine.start();
 ```
+
+## Patterns Demonstrated
+
+| Feature | What Gladiator shows |
+|---------|----------------------|
+| **Resources** | Volatile meta-resource (crowd favor) driven by spectacle, not efficiency |
+| **Combat** | 3-phase boss design with mid-encounter dynamic shifts |
+| **Custom verbs** | Taunt and showboat as non-damage combat actions affecting resources |
+| **Social** | Patronage system gated by crowd favor thresholds |
 
 ## Content
 
@@ -60,6 +71,10 @@ engine.start();
 | HP | 0–40 | Standard health |
 | Fatigue | 0–50 | Inverse pressure — rises in combat, recovers -2/tick |
 | Crowd Favor | 0–100 | Volatile — >75 unlocks patron gifts, <25 means death |
+
+## What to Borrow
+
+Performance resource economy (crowd-favor) and 3-phase boss design. Study how crowd favor acts as a volatile meta-resource that swings on spectacle rather than efficiency, and how the Arena Champion fight uses phase transitions to shift combat dynamics mid-encounter.
 
 ## License
 

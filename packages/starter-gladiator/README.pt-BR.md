@@ -14,6 +14,8 @@
 
 # @ai-rpg-engine/starter-gladiator
 
+**Exemplo de Implementação** — Este exemplo demonstra como conectar o motor para combates em arena. É um exemplo para aprender, não um modelo para copiar. Consulte o [Guia de Implementação](../../docs/handbook/57-composition-guide.md) para criar seu próprio jogo.
+
 **Coliseu de Ferro** — Uma arena subterrânea para gladiadores, localizada sob um império em ruínas. Lute pela liberdade, ganhe o apoio de patrocinadores e sobreviva ao julgamento da multidão.
 
 Parte do catálogo de pacotes iniciais do [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine).
@@ -30,6 +32,15 @@ import { createGame } from '@ai-rpg-engine/starter-gladiator';
 const engine = createGame();
 engine.start();
 ```
+
+## Padrões Demonstrados
+
+| Funcionalidade | O que o Gladiator demonstra |
+|---------|----------------------|
+| **Resources** | Recurso meta volátil (favor do público) impulsionado pelo espetáculo, e não pela eficiência. |
+| **Combat** | Design de chefe em 3 fases com mudanças dinâmicas durante o combate. |
+| **Custom verbs** | Provocações e exibições como ações de combate que não causam dano, mas afetam os recursos. |
+| **Social** | Sistema de patrocínio limitado por níveis de favor do público. |
 
 ## Conteúdo
 
@@ -60,6 +71,10 @@ engine.start();
 | HP | 0–40 | Saúde padrão. |
 | Fadiga | 0–50 | Pressão inversa — aumenta em combate, recupera -2 por "tick". |
 | Favor da Multidão | 0–100 | Volátil — >75 desbloqueia presentes dos patrocinadores, <25 significa morte. |
+
+## O que você pode adaptar
+
+Economia de recursos de desempenho (favor do público) e design de chefe em 3 fases. Estude como o favor do público funciona como um recurso meta volátil que depende do espetáculo, e não da eficiência, e como a luta contra o Campeão da Arena utiliza transições de fase para alterar a dinâmica do combate durante o confronto.
 
 ## Licença
 

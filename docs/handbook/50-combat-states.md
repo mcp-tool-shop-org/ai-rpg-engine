@@ -129,3 +129,13 @@ const engine = createEngine({
   ],
 });
 ```
+
+---
+
+## See Also
+
+- [Combat Overview](49a-combat-overview.md) — The six pillars and how they fit together
+- [Combat Tactics](49-combat-tactics.md) — The five actions that produce these states
+- [Zone Positioning](51-zone-positioning.md) — Engagement states (ENGAGED, PROTECTED, BACKLINE, ISOLATED)
+- [Precision vs Force](53-precision-vs-force.md) — How stats drive guard counter and breakthrough
+- [Defeat Flow](52-defeat-flow.md) — Morale cascade into FLEEING

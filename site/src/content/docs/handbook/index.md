@@ -44,18 +44,23 @@ A guide to building simulation-driven terminal RPGs.
 18. [Writing a Module](./18-writing-a-module.md)
 19. [Testing Modules](./19-testing-modules.md)
 
-## Part VI — Starter Worlds
+## Part VI — Starter Examples
 
-20. [The Chapel Threshold (Fantasy Demo)](./20-chapel-threshold.md)
-21. [Neon Lockbox (Cyberpunk Demo)](./21-neon-lockbox.md)
+20. [The Chapel Threshold (Fantasy)](./20-chapel-threshold.md)
+21. [Neon Lockbox (Cyberpunk)](./21-neon-lockbox.md)
 
-## Part VII — Debugging and Tools
+## Part VII — Composition
+
+57. [Composition Guide](./57-composition-guide.md) — Build your own game by composing engine modules
+58. [Profile Roadmap](https://github.com/mcp-tool-shop-org/ai-rpg-engine/blob/main/docs/profile-roadmap.md) — Plug-in profiles: portable mechanical templates (planned)
+
+## Part VIII — Debugging and Tools
 
 22. [Save Files](./22-save-files.md)
 23. [Deterministic Replay](./23-deterministic-replay.md)
 24. [Observability](./24-observability.md)
 
-## Part VIII — Future Directions
+## Part IX — Future Directions
 
 25. [Planned Systems](./25-planned-systems.md)
 26. [AI-Assisted Worldbuilding](./26-ai-worldbuilding.md)

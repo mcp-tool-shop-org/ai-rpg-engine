@@ -170,3 +170,14 @@ entities:
     stats: { vigor: 5, instinct: 5, will: 7 }
     # At full HP: ~45%. At critical HP: heroic narration fires.
 ```
+
+---
+
+## See Also
+
+- [Combat Overview](49a-combat-overview.md) — The six pillars and how they fit together
+- [Zone Positioning](51-zone-positioning.md) — PROTECTED state boosts interception
+- [Combat States](50-combat-states.md) — FLEEING blocks interception, GUARDED/OFF_BALANCE modify it
+- [Defeat Flow](52-defeat-flow.md) — Morale-driven FLEEING disables interception
+- [Precision vs Force](53-precision-vs-force.md) — How precision and resolve drive the formula
+- [Build a Combat Pack](55-combat-pack-guide.md) — Configuring protectorTags and engagement

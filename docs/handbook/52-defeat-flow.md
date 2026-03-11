@@ -157,3 +157,13 @@ To customise defeat behaviour for a new pack:
 3. **Resource effects**: Add `ally-defeated` or `defeat-enemy` triggers to
    your `CombatResourceProfile`
 4. **Pack biases**: Use `moraleFleeThreshold` in `PackBias` for AI scoring
+
+---
+
+## See Also
+
+- [Combat Overview](49a-combat-overview.md) — The six pillars and how they fit together
+- [Combat States](50-combat-states.md) — FLEEING state mechanics
+- [Zone Positioning](51-zone-positioning.md) — Frontline collapse and ISOLATED
+- [Combat System](47-combat-system.md) — Defeat fallout, role templates, morale profiles
+- [Companion Interception](54-companion-interception.md) — FLEEING blocks interception
