@@ -114,5 +114,5 @@ function createDesertWorld(seed: number): Engine {
 }
 
 // Same combat mechanics, different worlds.
-const tundra = createTundraWorld(1);
-const desert = createDesertWorld(2);
+const _tundra = createTundraWorld(1);
+const _desert = createDesertWorld(2);
