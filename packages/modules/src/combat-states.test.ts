@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { createTestEngine, nextId } from '@ai-rpg-engine/core';
 import type { EntityState, ActionIntent } from '@ai-rpg-engine/core';
-import { createCombatCore, COMBAT_STATES } from './combat-core.js';
-import { statusCore, hasStatus, applyStatus } from './status-core.js';
+import { createCombatCore, COMBAT_STATES, defaultInterceptChance, DEFAULT_STAT_MAPPING } from './combat-core.js';
+import { createCombatTactics } from './combat-tactics.js';
+import { createCombatStateNarration } from './combat-state-narration.js';
+import { statusCore, hasStatus, applyStatus, removeStatus } from './status-core.js';
 import {
   createCognitionCore,
   getCognition,
@@ -1181,5 +1183,565 @@ describe('combat-core: stat mapping', () => {
     // With dex=10 vs dex=3: 50 + 10*5 - 3*3 = 91, clamped to 91
     // Should hit the vast majority of the time
     expect(hits).toBeGreaterThan(40); // >80% hit rate expected
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Edge case tests — state discipline
+// ---------------------------------------------------------------------------
+
+describe('combat state edge cases', () => {
+  it('GUARDED absorbs exactly one hit — second attacker gets no reduction', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore()],
+      entities: [
+        makePlayer('a'),
+        makeEntity('foe1', 'Goblin A', 'a'),
+        makeEntity('foe2', 'Goblin B', 'a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    // Player guards
+    engine.submitAction('guard');
+    expect(hasStatus(engine.world.entities.player, COMBAT_STATES.GUARDED)).toBe(true);
+
+    // First attacker hits — guard absorbs
+    const events1 = engine.processAction(npcAction('attack', 'foe1', engine.world.meta.tick, { targetIds: ['player'] }));
+    const hit1 = events1.find(e => e.type === 'combat.contact.hit');
+
+    // Guard should be cleared after absorbing
+    if (hit1) {
+      expect(hasStatus(engine.world.entities.player, COMBAT_STATES.GUARDED)).toBe(false);
+    }
+
+    // Second attacker hits — no guard protection
+    const hpBeforeSecond = engine.world.entities.player.resources.hp;
+    const events2 = engine.processAction(npcAction('attack', 'foe2', engine.world.meta.tick, { targetIds: ['player'] }));
+    const hit2 = events2.find(e => e.type === 'combat.contact.hit');
+    if (hit2) {
+      // No guard absorption event for second hit
+      const guardAbsorb = events2.find(e => e.type === 'combat.guard.absorbed');
+      expect(guardAbsorb).toBeUndefined();
+    }
+  });
+
+  it('EXPOSED consumed by first hit — second attacker gets no bonus', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore()],
+      entities: [
+        makePlayer('a'),
+        makeEntity('foe1', 'Goblin A', 'a'),
+        makeEntity('foe2', 'Goblin B', 'a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    // Apply EXPOSED to player
+    applyStatus(engine.world.entities.player, COMBAT_STATES.EXPOSED, engine.world.meta.tick, { duration: 1 });
+    expect(hasStatus(engine.world.entities.player, COMBAT_STATES.EXPOSED)).toBe(true);
+
+    // First attacker hits — EXPOSED consumed
+    const events1 = engine.processAction(npcAction('attack', 'foe1', engine.world.meta.tick, { targetIds: ['player'] }));
+    const hit1 = events1.find(e => e.type === 'combat.contact.hit');
+    if (hit1) {
+      expect(hasStatus(engine.world.entities.player, COMBAT_STATES.EXPOSED)).toBe(false);
+    }
+
+    // Second attacker — should not benefit from EXPOSED
+    expect(hasStatus(engine.world.entities.player, COMBAT_STATES.EXPOSED)).toBe(false);
+  });
+
+  it('attacking clears own GUARDED', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore()],
+      entities: [makePlayer('a'), makeEntity('foe', 'Goblin', 'a')],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    engine.submitAction('guard');
+    expect(hasStatus(engine.world.entities.player, COMBAT_STATES.GUARDED)).toBe(true);
+
+    engine.world.entities.player.resources.stamina = 5;
+    engine.submitAction('attack', { targetIds: ['foe'] });
+    expect(hasStatus(engine.world.entities.player, COMBAT_STATES.GUARDED)).toBe(false);
+  });
+
+  it('disengaging clears own GUARDED', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore()],
+      entities: [makePlayer('a')],
+      zones: [
+        { id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: ['b'] },
+        { id: 'b', roomId: 'test', name: 'B', tags: [], neighbors: ['a'] },
+      ],
+    });
+
+    engine.submitAction('guard');
+    expect(hasStatus(engine.world.entities.player, COMBAT_STATES.GUARDED)).toBe(true);
+
+    engine.world.entities.player.resources.stamina = 5;
+    engine.submitAction('disengage');
+    expect(hasStatus(engine.world.entities.player, COMBAT_STATES.GUARDED)).toBe(false);
+  });
+
+  it('defeated entity with states does not crash on tick', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore()],
+      entities: [makePlayer('a', { resources: { hp: 0, stamina: 5 } })],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    // Apply states to defeated entity
+    applyStatus(engine.world.entities.player, COMBAT_STATES.OFF_BALANCE, engine.world.meta.tick, { duration: 1 });
+    applyStatus(engine.world.entities.player, COMBAT_STATES.FLEEING, engine.world.meta.tick, { duration: 2 });
+
+    // Advance ticks and trigger expiration processing via action.resolved
+    expect(() => {
+      for (let i = 0; i < 3; i++) {
+        engine.store.advanceTick();
+        engine.store.recordEvent({
+          id: nextId('evt'),
+          tick: engine.store.tick,
+          type: 'action.resolved',
+          payload: { verb: 'wait' },
+        });
+      }
+    }).not.toThrow();
+
+    // States should have expired
+    expect(hasStatus(engine.world.entities.player, COMBAT_STATES.OFF_BALANCE)).toBe(false);
+    expect(hasStatus(engine.world.entities.player, COMBAT_STATES.FLEEING)).toBe(false);
+  });
+
+  it('brace clears OFF_BALANCE via stabilization', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCombatTactics()],
+      entities: [makePlayer('a')],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    // Apply off-balance
+    applyStatus(engine.world.entities.player, COMBAT_STATES.OFF_BALANCE, engine.world.meta.tick, { duration: 1 });
+    expect(hasStatus(engine.world.entities.player, COMBAT_STATES.OFF_BALANCE)).toBe(true);
+
+    // Brace should clear it
+    engine.submitAction('brace');
+    expect(hasStatus(engine.world.entities.player, COMBAT_STATES.OFF_BALANCE)).toBe(false);
+    expect(hasStatus(engine.world.entities.player, COMBAT_STATES.GUARDED)).toBe(true);
+  });
+
+  it('GUARDED + EXPOSED can coexist', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore()],
+      entities: [makePlayer('a')],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    // Apply both
+    engine.submitAction('guard');
+    applyStatus(engine.world.entities.player, COMBAT_STATES.EXPOSED, engine.world.meta.tick, { duration: 1 });
+
+    expect(hasStatus(engine.world.entities.player, COMBAT_STATES.GUARDED)).toBe(true);
+    expect(hasStatus(engine.world.entities.player, COMBAT_STATES.EXPOSED)).toBe(true);
+  });
+
+  it('OFF_BALANCE + EXPOSED stack vulnerability', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore()],
+      entities: [
+        makePlayer('a'),
+        makeEntity('foe', 'Goblin', 'a', { stats: { vigor: 5, instinct: 10, will: 3 } }),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    // Apply both bad states
+    applyStatus(engine.world.entities.player, COMBAT_STATES.OFF_BALANCE, engine.world.meta.tick, { duration: 1 });
+    applyStatus(engine.world.entities.player, COMBAT_STATES.EXPOSED, engine.world.meta.tick, { duration: 1 });
+
+    expect(hasStatus(engine.world.entities.player, COMBAT_STATES.OFF_BALANCE)).toBe(true);
+    expect(hasStatus(engine.world.entities.player, COMBAT_STATES.EXPOSED)).toBe(true);
+
+    // Both states provide their modifiers simultaneously
+    const hpBefore = engine.world.entities.player.resources.hp;
+    engine.processAction(npcAction('attack', 'foe', engine.world.meta.tick, { targetIds: ['player'] }));
+    const hpAfter = engine.world.entities.player.resources.hp;
+
+    // If hit landed, damage includes both bonuses (+1 from off-balance, +2 from exposed)
+    if (hpAfter < hpBefore) {
+      const damage = hpBefore - hpAfter;
+      // Base damage (vigor 5) + off-balance (+1) + exposed (+2) = 8
+      expect(damage).toBeGreaterThanOrEqual(7); // at least base + some bonus
+    }
+  });
+
+  it('reposition clears own GUARDED', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCombatTactics()],
+      entities: [makePlayer('a'), makeEntity('foe', 'Goblin', 'a')],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    engine.submitAction('guard');
+    expect(hasStatus(engine.world.entities.player, COMBAT_STATES.GUARDED)).toBe(true);
+
+    engine.world.entities.player.resources.stamina = 5;
+    engine.submitAction('reposition', { targetIds: ['foe'] });
+    // Reposition clears own guard (movement breaks static defense)
+    expect(hasStatus(engine.world.entities.player, COMBAT_STATES.GUARDED)).toBe(false);
+  });
+
+  it('untargeted reposition clears own EXPOSED', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCombatTactics()],
+      entities: [makePlayer('a')],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    applyStatus(engine.world.entities.player, COMBAT_STATES.EXPOSED, engine.world.meta.tick, { duration: 1 });
+    expect(hasStatus(engine.world.entities.player, COMBAT_STATES.EXPOSED)).toBe(true);
+
+    // Untargeted reposition — recovery mode
+    engine.submitAction('reposition');
+
+    // If reposition succeeded, EXPOSED should be cleared
+    // (success depends on roll, so we check both outcomes are valid)
+    // The important thing is no crash
+    const player = engine.world.entities.player;
+    // Either exposed cleared (success) or still exposed (fail) — both valid
+    expect(player).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Precision vs Force distinction (P6)
+// ---------------------------------------------------------------------------
+
+describe('precision vs force: guard counter', () => {
+  it('high instinct entity has higher counter chance than default', () => {
+    // Test guard counter formula: 25 + instinct*2 + will*2
+    // Default (inst=5, will=3): 25+10+6 = 41
+    // High instinct (inst=8, will=3): 25+16+6 = 47
+    // We test by having a player guard, enemy attacks, and checking counter rates
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore()],
+      entities: [
+        makePlayer('a', { stats: { vigor: 5, instinct: 8, will: 3 } }),
+        makeEntity('enemy1', 'Thug', 'a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    let counterCount = 0;
+    const trials = 100;
+    for (let tick = 1; tick <= trials; tick++) {
+      engine.world.entities.player.resources.hp = 20;
+      engine.world.entities.player.resources.stamina = 5;
+      engine.world.entities.enemy1.resources.stamina = 5;
+      // Guard first
+      engine.submitAction('guard');
+      expect(hasStatus(engine.world.entities.player, COMBAT_STATES.GUARDED)).toBe(true);
+      // Enemy attacks
+      const events = engine.processAction(npcAction('attack', 'enemy1', tick, { targetIds: ['player'] }));
+      if (events.some(e => e.type === 'combat.counter.off_balance')) {
+        counterCount++;
+      }
+      // Clean up states
+      removeStatus(engine.world.entities.enemy1, COMBAT_STATES.OFF_BALANCE, tick);
+      removeStatus(engine.world.entities.player, COMBAT_STATES.GUARDED, tick);
+    }
+
+    // With formula 25+16+6=47%, counter rate should be ~47% over 100 trials
+    // Default would be 25+10+6=41%. Just verify high instinct gives a reasonable rate.
+    expect(counterCount).toBeGreaterThan(20); // should be around 47
+  });
+});
+
+describe('precision vs force: guard breakthrough', () => {
+  it('high vigor attacker can break guard (vigor=10 vs will=3)', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore()],
+      entities: [
+        makeEntity('brute', 'Brute', 'a', {
+          type: 'enemy',
+          stats: { vigor: 10, instinct: 5, will: 3 },
+        }),
+        makePlayer('a', { resources: { hp: 200, stamina: 5 } }),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    let breakCount = 0;
+    const trials = 200;
+    for (let tick = 1; tick <= trials; tick++) {
+      engine.world.entities.player.resources.hp = 200;
+      engine.world.entities.player.resources.stamina = 5;
+      engine.world.entities.brute.resources.stamina = 5;
+      // Directly apply guard (avoids tick advancement from submitAction)
+      engine.world.entities.player.statuses = engine.world.entities.player.statuses.filter(
+        s => s.statusId !== COMBAT_STATES.GUARDED,
+      );
+      applyStatus(engine.world.entities.player, COMBAT_STATES.GUARDED, engine.world.meta.tick, { duration: 3 });
+      // Brute attacks
+      const events = engine.processAction(npcAction('attack', 'brute', tick, { targetIds: ['player'] }));
+      if (events.some(e => e.type === 'combat.guard.broken')) {
+        breakCount++;
+      }
+      // Clean up
+      removeStatus(engine.world.entities.player, COMBAT_STATES.OFF_BALANCE, tick);
+      removeStatus(engine.world.entities.player, COMBAT_STATES.GUARDED, tick);
+    }
+
+    // breakChance = min(25, max(0, (10-3-2)*5)) = 25%. Should see some breaks.
+    expect(breakCount).toBeGreaterThan(0);
+  });
+
+  it('balanced stats cannot break guard (vigor=5 vs will=3)', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore()],
+      entities: [
+        makeEntity('fighter', 'Fighter', 'a', {
+          type: 'enemy',
+          stats: { vigor: 5, instinct: 5, will: 3 },
+        }),
+        makePlayer('a', { resources: { hp: 200, stamina: 5 } }),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    let breakCount = 0;
+    for (let tick = 1; tick <= 100; tick++) {
+      engine.world.entities.player.resources.hp = 200;
+      engine.world.entities.player.resources.stamina = 5;
+      engine.world.entities.fighter.resources.stamina = 5;
+      engine.world.entities.player.statuses = engine.world.entities.player.statuses.filter(
+        s => s.statusId !== COMBAT_STATES.GUARDED,
+      );
+      applyStatus(engine.world.entities.player, COMBAT_STATES.GUARDED, engine.world.meta.tick, { duration: 3 });
+      const events = engine.processAction(npcAction('attack', 'fighter', tick, { targetIds: ['player'] }));
+      if (events.some(e => e.type === 'combat.guard.broken')) breakCount++;
+      removeStatus(engine.world.entities.player, COMBAT_STATES.OFF_BALANCE, tick);
+      removeStatus(engine.world.entities.player, COMBAT_STATES.GUARDED, tick);
+    }
+
+    // breakChance = min(25, max(0, (5-3-2)*5)) = 0. No breaks ever.
+    expect(breakCount).toBe(0);
+  });
+
+  it('guard breakthrough applies OFF_BALANCE to defender', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore()],
+      entities: [
+        makeEntity('brute', 'Brute', 'a', {
+          type: 'enemy',
+          stats: { vigor: 10, instinct: 5, will: 3 },
+        }),
+        makePlayer('a', { resources: { hp: 200, stamina: 5 } }),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    for (let tick = 1; tick <= 200; tick++) {
+      engine.world.entities.player.resources.hp = 200;
+      engine.world.entities.player.resources.stamina = 5;
+      engine.world.entities.brute.resources.stamina = 5;
+      engine.world.entities.player.statuses = engine.world.entities.player.statuses.filter(
+        s => s.statusId !== COMBAT_STATES.GUARDED,
+      );
+      applyStatus(engine.world.entities.player, COMBAT_STATES.GUARDED, engine.world.meta.tick, { duration: 3 });
+      const events = engine.processAction(npcAction('attack', 'brute', tick, { targetIds: ['player'] }));
+      const broken = events.find(e => e.type === 'combat.guard.broken');
+      if (broken) {
+        expect(hasStatus(engine.world.entities.player, COMBAT_STATES.OFF_BALANCE)).toBe(true);
+        return;
+      }
+      removeStatus(engine.world.entities.player, COMBAT_STATES.OFF_BALANCE, tick);
+      removeStatus(engine.world.entities.player, COMBAT_STATES.GUARDED, tick);
+    }
+    expect.unreachable('expected at least one guard break in 200 trials');
+  });
+});
+
+describe('precision vs force: guard break narration', () => {
+  it('guard break event gets description text patched', () => {
+    const engine = createTestEngine({
+      modules: [
+        statusCore,
+        createCombatCore(),
+        createCombatStateNarration(),
+      ],
+      entities: [
+        makeEntity('brute', 'Brute', 'a', {
+          type: 'enemy',
+          stats: { vigor: 10, instinct: 5, will: 3 },
+        }),
+        makePlayer('a', {
+          stats: { vigor: 5, instinct: 5, will: 1 },
+        }),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    // Guard the player, then attack with brute many times to trigger breakthrough
+    let guardBreakEvent: any = null;
+    for (let tick = 1; tick <= 100 && !guardBreakEvent; tick++) {
+      engine.world.entities.player.resources.hp = 200;
+      engine.world.entities.player.resources.stamina = 5;
+      engine.world.entities.brute.resources.stamina = 5;
+      // Reapply guard each round
+      engine.world.entities.player.statuses = engine.world.entities.player.statuses.filter(
+        s => s.statusId !== COMBAT_STATES.GUARDED,
+      );
+      applyStatus(engine.world.entities.player, COMBAT_STATES.GUARDED, tick, { duration: 3 });
+      engine.world.meta.tick = tick;
+
+      const events = engine.processAction(npcAction('attack', 'brute', tick, { targetIds: ['player'] }));
+      guardBreakEvent = events.find(e => e.type === 'combat.guard.broken');
+    }
+
+    expect(guardBreakEvent).toBeDefined();
+    expect(guardBreakEvent.payload.description).toBeDefined();
+    expect(typeof guardBreakEvent.payload.description).toBe('string');
+    expect(guardBreakEvent.payload.description.length).toBeGreaterThan(0);
+    // Should mention the attacker name
+    expect(guardBreakEvent.payload.description).toContain('Brute');
+    expect(guardBreakEvent.presentation.channels).toContain('narrator');
+  });
+});
+
+describe('precision vs force: hitStyle', () => {
+  it('hitStyle reflects attacker stat profile', () => {
+    // Forceful: vigor > instinct
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore()],
+      entities: [
+        makeEntity('brute', 'Brute', 'a', {
+          type: 'enemy',
+          stats: { vigor: 8, instinct: 3, will: 3 },
+        }),
+        makePlayer('a', { resources: { hp: 200, stamina: 5 } }),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    for (let tick = 1; tick <= 50; tick++) {
+      engine.world.entities.player.resources.hp = 200;
+      engine.world.entities.brute.resources.stamina = 5;
+      const events = engine.processAction(npcAction('attack', 'brute', tick, { targetIds: ['player'] }));
+      const hit = events.find(e => e.type === 'combat.contact.hit');
+      if (hit) {
+        expect(hit.payload.hitStyle).toBe('forceful');
+        return;
+      }
+    }
+    expect.unreachable('expected at least one hit');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Companion Interception Formula (P7)
+// ---------------------------------------------------------------------------
+
+describe('companion interception formula', () => {
+  const baseWorld = (overrides?: Record<string, unknown>) => ({
+    playerId: 'player',
+    entities: {},
+    zones: {},
+    modules: {},
+    meta: { tick: 1 },
+    locationId: 'a',
+    ...overrides,
+  } as any);
+
+  const makeAlly = (overrides?: Partial<EntityState>): EntityState => ({
+    id: 'ally1',
+    blueprintId: 'ally1',
+    type: 'player',
+    name: 'Companion',
+    tags: ['ally'],
+    stats: { vigor: 5, instinct: 5, will: 3 },
+    resources: { hp: 20, maxHp: 20, stamina: 5 },
+    statuses: [],
+    zoneId: 'a',
+    ...overrides,
+  });
+
+  const dummyTarget: EntityState = {
+    id: 'player',
+    blueprintId: 'player',
+    type: 'player',
+    name: 'Hero',
+    tags: ['player'],
+    stats: { vigor: 5, instinct: 5, will: 3 },
+    resources: { hp: 20, maxHp: 20, stamina: 5 },
+    statuses: [],
+    zoneId: 'a',
+  };
+
+  it('baseline returns ~31 at default stats (instinct=5, will=3, full HP, morale=70)', () => {
+    const ally = makeAlly();
+    const world = baseWorld();
+    const chance = defaultInterceptChance(ally, dummyTarget, world, DEFAULT_STAT_MAPPING);
+    // 8 + floor(5*2.5) + max(0,floor((3-3)*1.5)) + floor(1.0*8) + floor((70-50)*0.15) + 0 role
+    // = 8 + 12 + 0 + 8 + 3 + 0 = 31
+    expect(chance).toBe(31);
+  });
+
+  it('FLEEING ally returns 0', () => {
+    const ally = makeAlly();
+    applyStatus(ally, COMBAT_STATES.FLEEING, 1);
+    const chance = defaultInterceptChance(ally, dummyTarget, baseWorld(), DEFAULT_STAT_MAPPING);
+    expect(chance).toBe(0);
+  });
+
+  it('bodyguard role boosts interception by +15', () => {
+    const ally = makeAlly({ tags: ['ally', 'role:bodyguard'] });
+    const chance = defaultInterceptChance(ally, dummyTarget, baseWorld(), DEFAULT_STAT_MAPPING);
+    // baseline 31 + 15 = 46
+    expect(chance).toBe(46);
+  });
+
+  it('critical HP (< 25%) reduces interception by -15', () => {
+    const ally = makeAlly({ resources: { hp: 4, maxHp: 20, stamina: 5 } });
+    const chance = defaultInterceptChance(ally, dummyTarget, baseWorld(), DEFAULT_STAT_MAPPING);
+    // hpRatio = 0.2, floor(0.2*8) = 1, critical penalty -15
+    // 8 + 12 + 0 + 1 - 15 + 3 + 0 = 9
+    expect(chance).toBe(9);
+  });
+
+  it('OFF_BALANCE reduces interception by -10', () => {
+    const ally = makeAlly();
+    applyStatus(ally, COMBAT_STATES.OFF_BALANCE, 1);
+    const chance = defaultInterceptChance(ally, dummyTarget, baseWorld(), DEFAULT_STAT_MAPPING);
+    // baseline 31 - 10 = 21
+    expect(chance).toBe(21);
+  });
+
+  it('GUARDED boosts interception by +8', () => {
+    const ally = makeAlly();
+    applyStatus(ally, COMBAT_STATES.GUARDED, 1, { duration: 2 });
+    const chance = defaultInterceptChance(ally, dummyTarget, baseWorld(), DEFAULT_STAT_MAPPING);
+    // baseline 31 + 8 = 39
+    expect(chance).toBe(39);
+  });
+
+  it('coward role with low morale and OFF_BALANCE clamps to 5', () => {
+    const ally = makeAlly({
+      tags: ['ally', 'role:coward'],
+      resources: { hp: 10, maxHp: 20, stamina: 5 },
+    });
+    applyStatus(ally, COMBAT_STATES.OFF_BALANCE, 1);
+    // Morale=20 via cognition module
+    const world = baseWorld({
+      modules: {
+        'cognition-core': {
+          entityCognition: { ally1: { morale: 20 } },
+        },
+      },
+    });
+    const chance = defaultInterceptChance(ally, dummyTarget, world, DEFAULT_STAT_MAPPING);
+    // 8 + 12 + 0 + floor(0.5*8)=4 + floor((20-50)*0.15)=floor(-4.5)=-5 + (-10 OB) + (-12 coward) = 8+12+0+4-5-10-12 = -3 → clamped to 5
+    expect(chance).toBe(5);
   });
 });

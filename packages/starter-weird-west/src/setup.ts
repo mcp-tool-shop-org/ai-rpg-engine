@@ -30,8 +30,13 @@ import {
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
+  createCombatTactics,
+  withCombatResources,
+  buildTacticalHooks,
+  createCombatResources,
+  COMBAT_STATES,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatFormulas, CombatResourceProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -89,9 +94,37 @@ const weirdWestFormulas: CombatFormulas = {
   },
 };
 
+// Weird West combat resource profile — corruption and iron will
+const weirdWestCombatProfile: CombatResourceProfile = {
+  packId: 'weird-west',
+  gains: [
+    { trigger: 'take-damage', resourceId: 'dust', amount: 3 },
+  ],
+  spends: [
+    { action: 'brace', resourceId: 'resolve', amount: 3, effects: { guardBonus: 0.10, resistState: COMBAT_STATES.OFF_BALANCE, resistChance: 60 } },
+    { action: 'attack', resourceId: 'resolve', amount: 2, effects: { damageBonus: 1 } },
+  ],
+  drains: [
+    { trigger: 'take-damage', resourceId: 'resolve', amount: 1 },
+  ],
+  aiModifiers: [
+    {
+      resourceId: 'dust',
+      highThreshold: 60,
+      highModifiers: { disengage: 15 },
+    },
+    {
+      resourceId: 'resolve',
+      lowThreshold: 20,
+      lowModifiers: { guard: 10, brace: 10 },
+    },
+  ],
+};
+
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(weirdWestStatusDefinitions);
   const review = createCombatReview({ baseFormulas: weirdWestFormulas });
+  const wrappedFormulas = withCombatResources(weirdWestCombatProfile, withEngagement(weirdWestFormulas));
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -101,7 +134,7 @@ export function createGame(seed?: number): Engine {
       statusCore,
       createEngagementCore({ playerId: 'drifter' }),
       review.module,
-      createCombatCore(review.explain(withEngagement(weirdWestFormulas))),
+      createCombatCore(review.explain(wrappedFormulas)),
       createInventoryCore([sageBundleEffect]),
       createDialogueCore([bartenderDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -164,7 +197,9 @@ export function createGame(seed?: number): Engine {
         ],
         playerId: 'drifter',
       }),
-      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['undead', 'spirit', 'beast'].includes(b.tag)) }),
+      createCombatTactics({ hooks: buildTacticalHooks(weirdWestCombatProfile) }),
+      createCombatResources(weirdWestCombatProfile),
+      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['undead', 'spirit', 'beast'].includes(b.tag)), resourceProfile: weirdWestCombatProfile }),
       createCombatRecovery(),
       createBossPhaseListener(mesaCrawlerBoss),
       createAbilityCore({ abilities: weirdWestAbilities, statMapping: { power: 'grit', precision: 'draw-speed', focus: 'lore' } }),
@@ -223,29 +258,6 @@ export function createGame(seed?: number): Engine {
       channel: 'stinger',
       priority: 'high',
     });
-  });
-
-  // --- Resolve + Dust combat hooks ---
-  engine.store.events.on('combat.damage.applied', (event) => {
-    if (event.payload.targetId === 'drifter') {
-      const p = engine.store.state.entities['drifter'];
-      if (p) {
-        p.resources.resolve = Math.max(0, (p.resources.resolve ?? 0) - 1);
-        p.resources.dust = Math.min(100, (p.resources.dust ?? 0) + 1);
-      }
-    }
-  });
-  engine.store.events.on('combat.entity.defeated', (event) => {
-    if (event.payload.defeatedBy === 'drifter') {
-      const p = engine.store.state.entities['drifter'];
-      if (p) p.resources.resolve = Math.min(100, (p.resources.resolve ?? 0) + 3);
-    }
-  });
-  engine.store.events.on('combat.guard.absorbed', (event) => {
-    if (event.payload.entityId === 'drifter') {
-      const p = engine.store.state.entities['drifter'];
-      if (p) p.resources.resolve = Math.min(100, (p.resources.resolve ?? 0) + 1);
-    }
   });
 
   // --- Defeat Fallout: violence attracts the supernatural ---

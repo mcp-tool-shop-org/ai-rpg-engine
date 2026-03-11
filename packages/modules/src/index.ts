@@ -574,7 +574,12 @@ export type { DefeatFalloutConfig } from './defeat-fallout.js';
 
 // --- Engagement Core (Phase 5) ---
 export { createEngagementCore, withEngagement, ENGAGEMENT_STATES, isEngaged, isProtected, isBackline, isIsolated } from './engagement-core.js';
-export type { EngagementConfig } from './engagement-core.js';
+export type { EngagementConfig, EngagementFormulaOpts } from './engagement-core.js';
+export { createEngagementNarration } from './engagement-narration.js';
+
+// --- Defeat Narration ---
+export { createDefeatNarration } from './defeat-narration.js';
+export type { DefeatNarrationConfig } from './defeat-narration.js';
 
 // --- Combat Review (Phase 6A) ---
 export { createCombatReview, formatCombatTrace } from './combat-review.js';
@@ -685,6 +690,42 @@ export type {
   EndgameTrigger,
   EndgameInputs,
 } from './endgame-detection.js';
+
+// --- Combat Tactics (Tactical Triangle) ---
+export {
+  createCombatTactics,
+  getRoundFlags,
+  setRoundFlag,
+  clearRoundFlags,
+  clearEntityRoundFlags,
+} from './combat-tactics.js';
+export type {
+  CombatActionKind,
+  CombatZone,
+  CombatIntent as TacticalIntent,
+  RoundFlags,
+  TacticalHooks,
+  CombatTacticsConfig,
+} from './combat-tactics.js';
+
+// --- Combat Resources (Genre Resource Integration) ---
+export {
+  createCombatResources,
+  buildTacticalHooks,
+  withCombatResources,
+  registerResourceListeners,
+  applyResourceIntentModifiers,
+} from './combat-resources.js';
+export type {
+  ResourceGainTrigger,
+  ResourceSpendModifier,
+  ResourceDrainTrigger,
+  ResourceAIModifier,
+  CombatResourceProfile,
+} from './combat-resources.js';
+
+// --- Combat State Narration ---
+export { createCombatStateNarration } from './combat-state-narration.js';
 
 // --- Ability Core (Abilities & Powers) ---
 export {

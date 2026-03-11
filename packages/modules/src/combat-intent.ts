@@ -19,13 +19,22 @@ import { ENGAGEMENT_STATES } from './engagement-core.js';
 import { getCognition } from './cognition-core.js';
 import { BUILTIN_COMBAT_ROLES } from './combat-roles.js';
 import type { CombatRole } from './combat-roles.js';
+import type { CombatResourceProfile } from './combat-resources.js';
+import { applyResourceIntentModifiers } from './combat-resources.js';
+
+// ---------------------------------------------------------------------------
+// Defeat awareness (module-scoped, cleared per tick)
+// ---------------------------------------------------------------------------
+
+/** Tracks defeated entity IDs and their types for this tick */
+const defeatLog: Map<string, string> = new Map(); // entityId → entity.type
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export type CombatIntentType =
-  | 'attack' | 'guard' | 'disengage'
+  | 'attack' | 'guard' | 'brace' | 'disengage' | 'reposition'
   | 'pressure' | 'protect' | 'finish';
 
 export type IntentScoreContribution = {
@@ -37,7 +46,7 @@ export type IntentScoreContribution = {
 
 export type IntentScore = {
   intent: CombatIntentType;
-  resolvedVerb: 'attack' | 'guard' | 'disengage';
+  resolvedVerb: 'attack' | 'guard' | 'brace' | 'disengage' | 'reposition';
   targetId?: string;
   score: number;
   contributions: IntentScoreContribution[];
@@ -64,6 +73,8 @@ export type PackBias = {
 export type CombatIntentConfig = {
   packBiases?: PackBias[];
   statMapping?: CombatStatMapping;
+  /** Optional resource profile for resource-aware AI scoring */
+  resourceProfile?: CombatResourceProfile;
 };
 
 export type ScoringContext = {
@@ -73,12 +84,19 @@ export type ScoringContext = {
   enemies: EntityState[];
   allies: EntityState[];
   hasExit: boolean;
+  bestExitScore: number;
   engagementState: {
     isEngaged: boolean;
     isProtected: boolean;
     isBackline: boolean;
     isIsolated: boolean;
   };
+  allyDefeatedRecently: boolean;
+  enemyDefeatedRecently: boolean;
+  attackStat: number;
+  precisionStat: number;
+  dominantDimension: 'force' | 'precision' | 'composure';
+  enemyCover: Map<string, number>;
   packBias: PackBias | null;
 };
 
@@ -139,19 +157,70 @@ function buildContext(entity: EntityState, world: WorldState, config?: CombatInt
 
   const mapping = config?.statMapping ?? DEFAULT_STAT_MAPPING;
 
+  // Evaluate best exit zone quality (non-chokepoint +5, has allies +5, no enemies +5)
+  let bestExitScore = 0;
+  if (zone?.neighbors) {
+    for (const nid of zone.neighbors) {
+      const nzone = world.zones[nid];
+      let exitScore = 0;
+      if (!nzone?.tags?.includes('chokepoint')) exitScore += 5;
+      const nEntities = Object.values(world.entities).filter(
+        e => e.zoneId === nid && (e.resources.hp ?? 0) > 0,
+      );
+      if (nEntities.some(e => e.type === entity.type)) exitScore += 5;
+      if (!nEntities.some(e => e.type !== entity.type)) exitScore += 5;
+      bestExitScore = Math.max(bestExitScore, exitScore);
+    }
+  }
+
+  const attackStat = entity.stats[mapping.attack] ?? 5;
+  const precisionStat = entity.stats[mapping.precision] ?? 5;
+  const resolveStat = entity.stats[mapping.resolve] ?? 3;
+  const dominantDimension: ScoringContext['dominantDimension'] =
+    attackStat > precisionStat && attackStat > resolveStat ? 'force'
+    : precisionStat > attackStat && precisionStat > resolveStat ? 'precision'
+    : 'composure';
+
+  // Estimate interception cover per enemy (how well-protected are they by allies?)
+  const enemyCover = new Map<string, number>();
+  for (const enemy of enemies) {
+    let cover = 0;
+    for (const e of Object.values(world.entities)) {
+      if (e.id === enemy.id || e.id === entity.id) continue;
+      if ((e.resources.hp ?? 0) <= 0) continue;
+      if (e.type !== enemy.type) continue;
+      if ((e.zoneId ?? world.locationId) !== (enemy.zoneId ?? world.locationId)) continue;
+      if (hasStatus(e, COMBAT_STATES.FLEEING)) continue;
+      let allyScore = 5;
+      const roleTag = e.tags.find(t => t.startsWith('role:'));
+      if (roleTag === 'role:bodyguard' || roleTag === 'role:sentinel') allyScore = 15;
+      else if (roleTag === 'role:brute' || roleTag === 'role:elite') allyScore = 8;
+      else if (roleTag === 'role:coward' || roleTag === 'role:backliner') allyScore = 2;
+      cover += allyScore;
+    }
+    enemyCover.set(enemy.id, cover);
+  }
+
   return {
     morale: cognition.morale,
-    will: entity.stats[mapping.resolve] ?? 3,
+    will: resolveStat,
     hpRatio: entityHpRatio(entity),
     enemies,
     allies,
     hasExit: (zone?.neighbors?.length ?? 0) > 0,
+    bestExitScore,
     engagementState: {
       isEngaged: hasStatus(entity, ENGAGEMENT_STATES.ENGAGED),
       isProtected: hasStatus(entity, ENGAGEMENT_STATES.PROTECTED),
       isBackline: hasStatus(entity, ENGAGEMENT_STATES.BACKLINE),
       isIsolated: hasStatus(entity, ENGAGEMENT_STATES.ISOLATED),
     },
+    allyDefeatedRecently: [...defeatLog.entries()].some(([, type]) => type === entity.type),
+    enemyDefeatedRecently: [...defeatLog.entries()].some(([, type]) => type !== entity.type),
+    attackStat,
+    precisionStat,
+    dominantDimension,
+    enemyCover,
     packBias,
   };
 }
@@ -200,11 +269,34 @@ function scoreAttack(entity: EntityState, ctx: ScoringContext): IntentScore[] {
       score += 5;
       c.push(contrib('fleeing_target', 1, 5, 5));
     }
+    if (hasStatus(enemy, COMBAT_STATES.OFF_BALANCE)) {
+      score += 8;
+      c.push(contrib('off_balance_target', 1, 8, 8));
+    }
 
     const willDelta = Math.min(5, (ctx.will - 3) * 1.5);
     if (willDelta !== 0) {
       score += willDelta;
       c.push(contrib('will', ctx.will, 1.5, willDelta));
+    }
+
+    if (ctx.enemyDefeatedRecently) {
+      score += 8;
+      c.push(contrib('momentum', 1, 8, 8));
+    }
+
+    if (ctx.attackStat > 5) {
+      const vigorDelta = Math.min(5, (ctx.attackStat - 5) * 3);
+      score += vigorDelta;
+      c.push(contrib('vigor_advantage', ctx.attackStat, 3, vigorDelta));
+    }
+
+    // Prefer targets with weaker interception cover
+    const cover = ctx.enemyCover.get(enemy.id) ?? 0;
+    if (cover > 0) {
+      const coverPenalty = -Math.min(10, Math.floor(cover * 0.6));
+      score += coverPenalty;
+      c.push(contrib('interception_cover', cover, -0.6, coverPenalty));
     }
 
     if (biasMod !== 0) {
@@ -263,6 +355,11 @@ function scoreGuard(entity: EntityState, ctx: ScoringContext): IntentScore[] {
     c.push(contrib('will', ctx.will, 2, willDelta));
   }
 
+  if (ctx.allyDefeatedRecently) {
+    score += 8;
+    c.push(contrib('ally_fallen', 1, 8, 8));
+  }
+
   if (biasMod !== 0) {
     score += biasMod;
     c.push(contrib(ctx.packBias!.name, biasMod, 1, biasMod));
@@ -315,6 +412,16 @@ function scoreDisengage(entity: EntityState, ctx: ScoringContext): IntentScore[]
     c.push(contrib('isolated', 1, 10, 10));
   }
 
+  if (ctx.bestExitScore > 0) {
+    score += ctx.bestExitScore;
+    c.push(contrib('exit_quality', ctx.bestExitScore, 1, ctx.bestExitScore));
+  }
+
+  if (ctx.allyDefeatedRecently) {
+    score += 12;
+    c.push(contrib('ally_fallen', 1, 12, 12));
+  }
+
   const willPenalty = -Math.min(10, (ctx.will - 3) * 3);
   if (willPenalty !== 0) {
     score += willPenalty;
@@ -335,6 +442,172 @@ function scoreDisengage(entity: EntityState, ctx: ScoringContext): IntentScore[]
     contributions: c,
     reason: buildReason(c),
   }];
+}
+
+function scoreBrace(entity: EntityState, ctx: ScoringContext): IntentScore[] {
+  const c: IntentScoreContribution[] = [];
+  let score = 25;
+  c.push(contrib('base', 25, 1, 25));
+  const biasMod = ctx.packBias?.modifiers.brace ?? 0;
+
+  // Brace is strong when holding ground under pressure
+  if (ctx.engagementState.isEngaged) {
+    score += 10;
+    c.push(contrib('engaged', 1, 10, 10));
+  }
+
+  // Low HP encourages bracing to stabilize
+  if (ctx.hpRatio < 0.5) {
+    const delta = (1 - ctx.hpRatio) * 20;
+    score += delta;
+    c.push(contrib('low_hp', ctx.hpRatio, 20, delta));
+  }
+
+  // Off-balance strongly encourages brace (it clears off-balance)
+  if (hasStatus(entity, COMBAT_STATES.OFF_BALANCE)) {
+    score += 25;
+    c.push(contrib('off_balance', 1, 25, 25));
+  }
+
+  // Exposed encourages brace to stabilize
+  if (hasStatus(entity, COMBAT_STATES.EXPOSED)) {
+    score += 15;
+    c.push(contrib('exposed', 1, 15, 15));
+  }
+
+  // Chokepoint makes brace very attractive (holding ground)
+  // Check via zone tags
+  if (ctx.engagementState.isEngaged && ctx.allies.length > 0) {
+    score += 8;
+    c.push(contrib('protecting_allies', ctx.allies.length, 8, 8));
+  }
+
+  // Will boosts brace effectiveness
+  const willDelta = Math.min(10, (ctx.will - 3) * 2.5);
+  if (willDelta !== 0) {
+    score += willDelta;
+    c.push(contrib('will', ctx.will, 2.5, willDelta));
+  }
+
+  if (ctx.attackStat > 5) {
+    const forceDelta = Math.min(5, (ctx.attackStat - 5) * 2);
+    score += forceDelta;
+    c.push(contrib('force_hold', ctx.attackStat, 2, forceDelta));
+  }
+
+  if (biasMod !== 0) {
+    score += biasMod;
+    c.push(contrib(ctx.packBias!.name, biasMod, 1, biasMod));
+  }
+
+  score = clamp(score, 0, 100);
+
+  return [{
+    intent: 'brace',
+    resolvedVerb: 'brace',
+    score,
+    contributions: c,
+    reason: buildReason(c),
+  }];
+}
+
+function scoreReposition(entity: EntityState, ctx: ScoringContext): IntentScore[] {
+  const scores: IntentScore[] = [];
+  const biasMod = ctx.packBias?.modifiers.reposition ?? 0;
+
+  // Reposition against specific targets
+  for (const enemy of ctx.enemies) {
+    const c: IntentScoreContribution[] = [];
+    let score = 30;
+    c.push(contrib('base', 30, 1, 30));
+
+    // Guarded target is prime reposition target (outflank the guard)
+    if (hasStatus(enemy, COMBAT_STATES.GUARDED)) {
+      score += 20;
+      c.push(contrib('guarded_target', 1, 20, 20));
+    }
+
+    // Off-balance self discourages reposition (risky while unstable)
+    if (hasStatus(entity, COMBAT_STATES.OFF_BALANCE)) {
+      score -= 15;
+      c.push(contrib('self_off_balance', 1, -15, -15));
+    }
+
+    // High morale encourages aggressive repositioning
+    if (ctx.morale > 60) {
+      score += 10;
+      c.push(contrib('confident', ctx.morale, 1, 10));
+    }
+
+    // Not engaged = free to maneuver
+    if (!ctx.engagementState.isEngaged) {
+      score += 10;
+      c.push(contrib('free_to_maneuver', 1, 10, 10));
+    }
+
+    // Backline target is worth repositioning toward
+    if (hasStatus(enemy, ENGAGEMENT_STATES.BACKLINE)) {
+      score += 15;
+      c.push(contrib('backline_target', 1, 15, 15));
+    }
+
+    // HP ratio: healthy = more willing to reposition
+    if (ctx.hpRatio > 0.6) {
+      score += 5;
+      c.push(contrib('healthy', ctx.hpRatio, 5, 5));
+    }
+
+    if (ctx.precisionStat > 5) {
+      const precDelta = Math.min(5, (ctx.precisionStat - 5) * 3);
+      score += precDelta;
+      c.push(contrib('precision_advantage', ctx.precisionStat, 3, precDelta));
+    }
+
+    if (biasMod !== 0) {
+      score += biasMod;
+      c.push(contrib(ctx.packBias!.name, biasMod, 1, biasMod));
+    }
+
+    score = clamp(score, 0, 100);
+
+    scores.push({
+      intent: 'reposition',
+      resolvedVerb: 'reposition',
+      targetId: enemy.id,
+      score,
+      contributions: c,
+      reason: buildReason(c),
+    });
+  }
+
+  // Untargeted reposition (for positional recovery when exposed/off-balance)
+  if (hasStatus(entity, COMBAT_STATES.EXPOSED) || hasStatus(entity, COMBAT_STATES.OFF_BALANCE)) {
+    const c: IntentScoreContribution[] = [];
+    let score = 35;
+    c.push(contrib('base', 35, 1, 35));
+    if (hasStatus(entity, COMBAT_STATES.EXPOSED)) {
+      score += 15;
+      c.push(contrib('self_exposed', 1, 15, 15));
+    }
+    if (hasStatus(entity, COMBAT_STATES.OFF_BALANCE)) {
+      score += 10;
+      c.push(contrib('self_off_balance', 1, 10, 10));
+    }
+    if (biasMod !== 0) {
+      score += biasMod;
+      c.push(contrib(ctx.packBias!.name, biasMod, 1, biasMod));
+    }
+    score = clamp(score, 0, 100);
+    scores.push({
+      intent: 'reposition',
+      resolvedVerb: 'reposition',
+      score,
+      contributions: c,
+      reason: buildReason(c),
+    });
+  }
+
+  return scores;
 }
 
 function scorePressure(_entity: EntityState, ctx: ScoringContext): IntentScore[] {
@@ -363,6 +636,12 @@ function scorePressure(_entity: EntityState, ctx: ScoringContext): IntentScore[]
     if (ctx.allies.length > 0) {
       score += 5;
       c.push(contrib('ally_present', ctx.allies.length, 5, 5));
+    }
+
+    if (ctx.attackStat > 5) {
+      const forceDelta = Math.min(5, (ctx.attackStat - 5) * 2);
+      score += forceDelta;
+      c.push(contrib('force_pressure', ctx.attackStat, 2, forceDelta));
     }
 
     if (biasMod !== 0) {
@@ -466,6 +745,11 @@ function scoreFinish(_entity: EntityState, ctx: ScoringContext): IntentScore[] {
       c.push(contrib('morale', ctx.morale, 1, 5));
     }
 
+    if (ctx.enemyDefeatedRecently) {
+      score += 10;
+      c.push(contrib('momentum', 1, 10, 10));
+    }
+
     if (biasMod !== 0) {
       score += biasMod;
       c.push(contrib(ctx.packBias!.name, biasMod, 1, biasMod));
@@ -499,11 +783,18 @@ export function selectNpcCombatAction(
   const allScores: IntentScore[] = [
     ...scoreAttack(entity, ctx),
     ...scoreGuard(entity, ctx),
+    ...scoreBrace(entity, ctx),
     ...scoreDisengage(entity, ctx),
+    ...scoreReposition(entity, ctx),
     ...scorePressure(entity, ctx),
     ...scoreProtect(entity, ctx),
     ...scoreFinish(entity, ctx),
   ];
+
+  // Resource-aware scoring pass (additive — no profile = no change)
+  if (config?.resourceProfile) {
+    applyResourceIntentModifiers(config.resourceProfile, entity, allScores);
+  }
 
   // Sort descending by score
   allScores.sort((a, b) => b.score - a.score);
@@ -534,84 +825,84 @@ export const BUILTIN_PACK_BIASES: PackBias[] = [
   {
     tag: 'assassin',
     name: 'assassin-precision',
-    modifiers: { finish: 20, pressure: 10, guard: -10, disengage: 10, attack: 5 },
+    modifiers: { finish: 20, pressure: 10, guard: -10, disengage: 10, attack: 5, reposition: 15, brace: -15 },
   },
   {
     tag: 'samurai',
     name: 'samurai-discipline',
-    modifiers: { guard: 15, protect: 10, attack: 5, disengage: -10 },
+    modifiers: { guard: 15, protect: 10, attack: 5, disengage: -10, brace: 15, reposition: -5 },
     moraleFleeThreshold: 15,
   },
   {
     tag: 'feral',
     name: 'feral-berserk',
-    modifiers: { attack: 20, finish: 15, guard: -20, disengage: -15, protect: -15 },
+    modifiers: { attack: 20, finish: 15, guard: -20, disengage: -15, protect: -15, brace: -20, reposition: 5 },
     moraleFleeThreshold: 5,
   },
   {
     tag: 'beast',
     name: 'beast-predator',
-    modifiers: { attack: 15, finish: 10, guard: -15, protect: -10 },
+    modifiers: { attack: 15, finish: 10, guard: -15, protect: -10, brace: -10, reposition: 10 },
   },
   {
     tag: 'pirate',
     name: 'pirate-swarm',
-    modifiers: { attack: 10, pressure: 15, finish: 10, protect: -5, disengage: -5 },
+    modifiers: { attack: 10, pressure: 15, finish: 10, protect: -5, disengage: -5, reposition: 10, brace: -5 },
   },
   {
     tag: 'colonial',
     name: 'colonial-disciplined',
-    modifiers: { guard: 10, protect: 10, disengage: 5 },
+    modifiers: { guard: 10, protect: 10, disengage: 5, brace: 15, reposition: -5 },
   },
   {
     tag: 'vampire',
     name: 'vampire-aggression',
-    modifiers: { attack: 15, finish: 15, guard: -10, disengage: -10, pressure: 5 },
+    modifiers: { attack: 15, finish: 15, guard: -10, disengage: -10, pressure: 5, reposition: 10, brace: -10 },
     moraleFleeThreshold: 15,
   },
   {
     tag: 'hunter',
     name: 'hunter-methodical',
-    modifiers: { guard: 5, attack: 5, finish: 10 },
+    modifiers: { guard: 5, attack: 5, finish: 10, reposition: 10, brace: 5 },
   },
   {
     tag: 'ice-agent',
     name: 'cyberpunk-protocol',
-    modifiers: { pressure: 20, finish: 10, guard: -5 },
+    modifiers: { pressure: 20, finish: 10, guard: -5, reposition: 10, brace: 5 },
   },
   {
     tag: 'zombie',
     name: 'zombie-mindless',
-    modifiers: { attack: 25, guard: -25, disengage: -25, protect: -20 },
+    modifiers: { attack: 25, guard: -25, disengage: -25, protect: -20, brace: -20, reposition: -15 },
     moraleFleeThreshold: 0,
   },
   {
     tag: 'undead',
     name: 'undead-relentless',
-    modifiers: { attack: 15, disengage: -20, guard: -10 },
+    modifiers: { attack: 15, disengage: -20, guard: -10, brace: -5, reposition: -10 },
     moraleFleeThreshold: 5,
   },
   {
     tag: 'criminal',
     name: 'criminal-coward',
-    modifiers: { disengage: 15, attack: -5, guard: 5 },
+    modifiers: { disengage: 15, attack: -5, guard: 5, reposition: 10, brace: -5 },
     moraleFleeThreshold: 45,
   },
   {
     tag: 'drone',
     name: 'drone-programmed',
-    modifiers: { attack: 10, guard: 5, disengage: -20, protect: -10 },
+    modifiers: { attack: 10, guard: 5, disengage: -20, protect: -10, brace: 10, reposition: -10 },
     moraleFleeThreshold: 10,
   },
   {
     tag: 'alien',
     name: 'alien-enigmatic',
-    modifiers: { pressure: 10, guard: 10, disengage: 5 },
+    modifiers: { pressure: 10, guard: 10, disengage: 5, reposition: 10, brace: 5 },
   },
   {
     tag: 'spirit',
     name: 'spirit-ethereal',
-    modifiers: { attack: 10, pressure: 10, guard: -5, disengage: 10 },
+    modifiers: { attack: 10, pressure: 10, guard: -5, disengage: 10, reposition: 15, brace: -15 },
   },
 ];
 
@@ -648,6 +939,14 @@ export function createCombatIntent(_config?: CombatIntentConfig): EngineModule {
     register(ctx) {
       ctx.persistence.registerNamespace('combat-intent', {
         recentDecisions: [] as CombatDecision[],
+      });
+
+      // Track defeats for AI scoring context
+      ctx.events.on('tick.start', () => defeatLog.clear());
+      ctx.events.on('combat.entity.defeated', (event, world) => {
+        const defeatedId = event.payload.entityId as string;
+        const defeated = world.entities[defeatedId];
+        if (defeated) defeatLog.set(defeatedId, defeated.type);
       });
 
       // Listen for combat.ai.decision events to populate ring buffer

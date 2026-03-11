@@ -30,8 +30,13 @@ import {
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
+  createCombatTactics,
+  withCombatResources,
+  buildTacticalHooks,
+  createCombatResources,
+  COMBAT_STATES,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatFormulas, CombatResourceProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -90,9 +95,34 @@ const detectiveFormulas: CombatFormulas = {
   },
 };
 
+// Detective combat resource profile — calm under pressure
+const detectiveCombatProfile: CombatResourceProfile = {
+  packId: 'detective',
+  gains: [
+    { trigger: 'guard-absorb', resourceId: 'composure', amount: 2 },
+    { trigger: 'brace', resourceId: 'composure', amount: 1 },
+  ],
+  spends: [
+    { action: 'reposition', resourceId: 'composure', amount: 3, effects: { resistState: COMBAT_STATES.EXPOSED, resistChance: 60 } },
+    { action: 'guard', resourceId: 'composure', amount: 4, effects: { resistState: COMBAT_STATES.OFF_BALANCE, resistChance: 70 } },
+  ],
+  drains: [
+    { trigger: 'take-damage', resourceId: 'composure', amount: 3 },
+    { trigger: 'off-balance-applied', resourceId: 'composure', amount: 2 },
+  ],
+  aiModifiers: [
+    {
+      resourceId: 'composure',
+      lowThreshold: 10,
+      lowModifiers: { disengage: 15 },
+    },
+  ],
+};
+
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(detectiveStatusDefinitions);
   const review = createCombatReview({ baseFormulas: detectiveFormulas });
+  const wrappedFormulas = withCombatResources(detectiveCombatProfile, withEngagement(detectiveFormulas));
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -102,7 +132,7 @@ export function createGame(seed?: number): Engine {
       statusCore,
       createEngagementCore({ playerId: 'inspector' }),
       review.module,
-      createCombatCore(review.explain(withEngagement(detectiveFormulas))),
+      createCombatCore(review.explain(wrappedFormulas)),
       createInventoryCore([smellingSaltsEffect]),
       createDialogueCore([widowDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -144,7 +174,9 @@ export function createGame(seed?: number): Engine {
         factions: [{ factionId: 'dockworkers', entityIds: ['dock_thug'] }],
         playerId: 'inspector',
       }),
-      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['criminal'].includes(b.tag)) }),
+      createCombatTactics({ hooks: buildTacticalHooks(detectiveCombatProfile) }),
+      createCombatResources(detectiveCombatProfile),
+      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['criminal'].includes(b.tag)), resourceProfile: detectiveCombatProfile }),
       createCombatRecovery(),
       createBossPhaseListener(crimeBossDef),
       createAbilityCore({ abilities: detectiveAbilities, statMapping: { power: 'grit', precision: 'perception', focus: 'eloquence' } }),
@@ -206,25 +238,7 @@ export function createGame(seed?: number): Engine {
     });
   });
 
-  // --- Composure combat hooks ---
-  engine.store.events.on('combat.damage.applied', (event) => {
-    if (event.payload.targetId === 'inspector') {
-      const p = engine.store.state.entities['inspector'];
-      if (p) p.resources.composure = Math.max(0, (p.resources.composure ?? 0) - 2);
-    }
-  });
-  engine.store.events.on('combat.guard.absorbed', (event) => {
-    if (event.payload.entityId === 'inspector') {
-      const p = engine.store.state.entities['inspector'];
-      if (p) p.resources.composure = Math.min(50, (p.resources.composure ?? 0) + 1);
-    }
-  });
-  engine.store.events.on('combat.contact.miss', (event) => {
-    if (event.payload.attackerId === 'inspector') {
-      const p = engine.store.state.entities['inspector'];
-      if (p) p.resources.composure = Math.max(0, (p.resources.composure ?? 0) - 1);
-    }
-  });
+  // Combat resource gains/drains/spends handled by detectiveCombatProfile
 
   return engine;
 }

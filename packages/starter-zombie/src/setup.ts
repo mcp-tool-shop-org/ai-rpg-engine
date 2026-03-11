@@ -30,8 +30,12 @@ import {
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
+  createCombatTactics,
+  withCombatResources,
+  buildTacticalHooks,
+  createCombatResources,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatFormulas, CombatResourceProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -90,9 +94,29 @@ const zombieFormulas: CombatFormulas = {
   },
 };
 
+// Zombie combat resource profile — infection is consequence, not currency
+const zombieCombatProfile: CombatResourceProfile = {
+  packId: 'zombie',
+  gains: [
+    { trigger: 'take-damage', resourceId: 'infection', amount: 5 },
+  ],
+  spends: [],
+  drains: [],
+  aiModifiers: [
+    {
+      resourceId: 'infection',
+      highThreshold: 70,
+      highModifiers: { attack: 15 },
+      lowThreshold: 40,
+      lowModifiers: { disengage: 10 },
+    },
+  ],
+};
+
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(zombieStatusDefinitions);
   const review = createCombatReview({ baseFormulas: zombieFormulas });
+  const wrappedFormulas = withCombatResources(zombieCombatProfile, withEngagement(zombieFormulas));
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -102,7 +126,7 @@ export function createGame(seed?: number): Engine {
       statusCore,
       createEngagementCore({ playerId: 'survivor' }),
       review.module,
-      createCombatCore(review.explain(withEngagement(zombieFormulas))),
+      createCombatCore(review.explain(wrappedFormulas)),
       createInventoryCore([antibioticsEffect]),
       createDialogueCore([medicDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -155,7 +179,9 @@ export function createGame(seed?: number): Engine {
         factions: [{ factionId: 'survivors', entityIds: ['medic_chen', 'scavenger_rook', 'leader_marsh'] }],
         playerId: 'survivor',
       }),
-      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['zombie', 'undead'].includes(b.tag)) }),
+      createCombatTactics({ hooks: buildTacticalHooks(zombieCombatProfile) }),
+      createCombatResources(zombieCombatProfile),
+      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['zombie', 'undead'].includes(b.tag)), resourceProfile: zombieCombatProfile }),
       createCombatRecovery({ safeZoneTags: ['safe', 'home-base'] }),
       createBossPhaseListener(bloaterAlphaBoss),
       createAbilityCore({ abilities: zombieAbilities, statMapping: { power: 'fitness', precision: 'wits', focus: 'nerve' } }),
@@ -215,22 +241,6 @@ export function createGame(seed?: number): Engine {
       channel: 'stinger',
       priority: 'high',
     });
-  });
-
-  // --- Infection combat hooks ---
-  engine.store.events.on('combat.damage.applied', (event) => {
-    if (event.payload.targetId === 'survivor') {
-      const attackerId = event.payload.attackerId as string;
-      const attacker = engine.store.state.entities[attackerId];
-      if (attacker?.tags.includes('zombie')) {
-        const p = engine.store.state.entities['survivor'];
-        if (p) {
-          const dmg = (event.payload.damage as number) ?? 0;
-          const amount = dmg >= 5 ? 2 : 1;
-          p.resources.infection = Math.min(100, (p.resources.infection ?? 0) + amount);
-        }
-      }
-    }
   });
 
   return engine;

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { createTestEngine } from '@ai-rpg-engine/core';
-import type { EntityState } from '@ai-rpg-engine/core';
+import { createTestEngine, nextId } from '@ai-rpg-engine/core';
+import type { EntityState, ResolvedEvent } from '@ai-rpg-engine/core';
 import {
   createCognitionCore,
   getCognition,
@@ -17,7 +17,8 @@ import {
   cautiousProfile,
 } from './cognition-core.js';
 import { traversalCore } from './traversal-core.js';
-import { combatCore } from './combat-core.js';
+import { combatCore, COMBAT_STATES } from './combat-core.js';
+import { statusCore, hasStatus, applyStatus } from './status-core.js';
 
 const makeAIEntity = (id: string, name: string, zoneId: string, overrides?: Partial<EntityState>): EntityState => ({
   id,
@@ -263,5 +264,270 @@ describe('Event-driven cognition updates', () => {
     expect(believes(cog, 'player', 'hostile', true)).toBe(true);
     // Guard's morale should have dropped
     expect(cog.morale).toBeLessThan(70);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Defeat morale cascade (P5)
+// ---------------------------------------------------------------------------
+
+describe('Defeat morale cascade', () => {
+  function emitDefeat(engine: ReturnType<typeof createTestEngine>, defeatedId: string, defeatedBy: string) {
+    engine.store.recordEvent({
+      id: nextId('evt'),
+      tick: engine.store.tick,
+      type: 'combat.entity.defeated',
+      actorId: defeatedBy,
+      payload: { entityId: defeatedId, entityName: defeatedId, defeatedBy },
+    });
+  }
+
+  it('will 3 entity gets full -12 ally defeat morale loss', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        makeAIEntity('npc1', 'Guard A', 'a', { stats: { will: 3 }, ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makeAIEntity('npc2', 'Guard B', 'a', { ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makePlayer('a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [] as string[], neighbors: [] as string[] }],
+    });
+
+    const cog = getCognition(engine.world, 'npc1');
+    const before = cog.morale;
+    emitDefeat(engine, 'npc2', 'player');
+    expect(cog.morale).toBe(before - 12);
+  });
+
+  it('will 7 entity gets mitigated ally defeat morale loss', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        makeAIEntity('npc1', 'Guard A', 'a', { stats: { will: 7 }, ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makeAIEntity('npc2', 'Guard B', 'a', { ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makePlayer('a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [] as string[], neighbors: [] as string[] }],
+    });
+
+    const cog = getCognition(engine.world, 'npc1');
+    const before = cog.morale;
+    emitDefeat(engine, 'npc2', 'player');
+    // Will 7: mitigation = max(0.3, 1 - (7-3)*0.1) = 0.6; -12 * 0.6 = -7.2 → -7
+    expect(cog.morale).toBe(before - 7);
+  });
+
+  it('will 10 entity gets maximum mitigation on ally defeat', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        makeAIEntity('npc1', 'Guard A', 'a', { stats: { will: 10 }, ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makeAIEntity('npc2', 'Guard B', 'a', { ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makePlayer('a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [] as string[], neighbors: [] as string[] }],
+    });
+
+    const cog = getCognition(engine.world, 'npc1');
+    const before = cog.morale;
+    emitDefeat(engine, 'npc2', 'player');
+    // Will 10: mitigation = max(0.3, 1 - (10-3)*0.1) = 0.3; -12 * 0.3 = -3.6 → -4
+    expect(cog.morale).toBe(before - 4);
+  });
+
+  it('three simultaneous ally defeats cap at -20 morale per tick', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        makeAIEntity('npc1', 'Guard A', 'a', { stats: { will: 3 }, ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makeAIEntity('npc2', 'Guard B', 'a', { ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makeAIEntity('npc3', 'Guard C', 'a', { ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makeAIEntity('npc4', 'Guard D', 'a', { ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makePlayer('a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [] as string[], neighbors: [] as string[] }],
+    });
+
+    const cog = getCognition(engine.world, 'npc1');
+    const before = cog.morale;
+
+    // Defeat 3 allies at once — would be -36 without cap
+    engine.world.entities.npc2.resources.hp = 0;
+    emitDefeat(engine, 'npc2', 'player');
+    engine.world.entities.npc3.resources.hp = 0;
+    emitDefeat(engine, 'npc3', 'player');
+    engine.world.entities.npc4.resources.hp = 0;
+    emitDefeat(engine, 'npc4', 'player');
+
+    // Cap: -20 max per tick
+    expect(cog.morale).toBe(before - 20);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Morale-triggered FLEEING (P5)
+// ---------------------------------------------------------------------------
+
+describe('Morale-triggered FLEEING', () => {
+  function emitDefeat(engine: ReturnType<typeof createTestEngine>, defeatedId: string, defeatedBy: string) {
+    engine.store.recordEvent({
+      id: nextId('evt'),
+      tick: engine.store.tick,
+      type: 'combat.entity.defeated',
+      actorId: defeatedBy,
+      payload: { entityId: defeatedId, entityName: defeatedId, defeatedBy },
+    });
+  }
+
+  it('auto-applies FLEEING when morale drops below threshold', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        makeAIEntity('npc1', 'Guard', 'a', { stats: { will: 3 }, ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makeAIEntity('npc2', 'Guard B', 'a', { ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makePlayer('a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [] as string[], neighbors: ['b'] }, { id: 'b', roomId: 'test', name: 'B', tags: [] as string[], neighbors: ['a'] }],
+    });
+
+    // Set morale just above threshold (15)
+    const cog = getCognition(engine.world, 'npc1');
+    cog.morale = 20;
+
+    // Ally defeat: -12 → morale 8, below default threshold 15
+    engine.world.entities.npc2.resources.hp = 0;
+    emitDefeat(engine, 'npc2', 'player');
+
+    expect(hasStatus(engine.world.entities.npc1, COMBAT_STATES.FLEEING)).toBe(true);
+  });
+
+  it('zombie (threshold 0) never gets morale-triggered FLEEING', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore({ moraleFleeThresholds: { zombie: 0 } })],
+      entities: [
+        makeAIEntity('npc1', 'Zombie', 'a', { tags: ['enemy', 'zombie'], stats: { will: 3 }, ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makeAIEntity('npc2', 'Zombie B', 'a', { tags: ['enemy', 'zombie'], ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makePlayer('a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [] as string[], neighbors: ['b'] }, { id: 'b', roomId: 'test', name: 'B', tags: [] as string[], neighbors: ['a'] }],
+    });
+
+    const cog = getCognition(engine.world, 'npc1');
+    cog.morale = 5;
+    engine.world.entities.npc2.resources.hp = 0;
+    emitDefeat(engine, 'npc2', 'player');
+
+    // Morale should drop but no FLEEING because threshold is 0
+    expect(hasStatus(engine.world.entities.npc1, COMBAT_STATES.FLEEING)).toBe(false);
+  });
+
+  it('already-FLEEING entity does not get duplicate application', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        makeAIEntity('npc1', 'Guard', 'a', { stats: { will: 3 }, ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makeAIEntity('npc2', 'Guard B', 'a', { ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makeAIEntity('npc3', 'Guard C', 'a', { ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makePlayer('a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [] as string[], neighbors: ['b'] }, { id: 'b', roomId: 'test', name: 'B', tags: [] as string[], neighbors: ['a'] }],
+    });
+
+    const cog = getCognition(engine.world, 'npc1');
+    cog.morale = 20;
+
+    // First defeat triggers FLEEING
+    engine.world.entities.npc2.resources.hp = 0;
+    emitDefeat(engine, 'npc2', 'player');
+    expect(hasStatus(engine.world.entities.npc1, COMBAT_STATES.FLEEING)).toBe(true);
+
+    const fleeingCount = engine.world.entities.npc1.statuses.filter(
+      s => s.statusId === COMBAT_STATES.FLEEING,
+    ).length;
+
+    // Second defeat should not add another FLEEING
+    engine.world.entities.npc3.resources.hp = 0;
+    emitDefeat(engine, 'npc3', 'player');
+
+    const newCount = engine.world.entities.npc1.statuses.filter(
+      s => s.statusId === COMBAT_STATES.FLEEING,
+    ).length;
+    expect(newCount).toBe(fleeingCount);
+  });
+
+  it('rout penalty fires when alone after ally defeat', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        makeAIEntity('npc1', 'Guard', 'a', { stats: { will: 3 }, ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makeAIEntity('npc2', 'Guard B', 'a', { ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makePlayer('a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [] as string[], neighbors: ['b'] }, { id: 'b', roomId: 'test', name: 'B', tags: [] as string[], neighbors: ['a'] }],
+    });
+
+    const cog = getCognition(engine.world, 'npc1');
+    cog.morale = 25; // After -12 ally defeat → 13, then rout -10 → 3
+
+    const collected: ResolvedEvent[] = [];
+    engine.store.events.on('combat.morale.rout', (e: ResolvedEvent) => collected.push(e));
+
+    engine.world.entities.npc2.resources.hp = 0;
+    emitDefeat(engine, 'npc2', 'player');
+
+    expect(collected.length).toBe(1);
+    expect(collected[0].payload.entityId).toBe('npc1');
+    expect((collected[0].payload.delta as number)).toBeLessThan(0);
+  });
+
+  it('will 7 entity adjusted threshold allows higher morale', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        makeAIEntity('npc1', 'Veteran', 'a', { stats: { will: 7 }, ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makeAIEntity('npc2', 'Guard B', 'a', { ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makePlayer('a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [] as string[], neighbors: ['b'] }, { id: 'b', roomId: 'test', name: 'B', tags: [] as string[], neighbors: ['a'] }],
+    });
+
+    // Will 7: willShift = min(10, max(0, (7-3)*3)) = 12 → capped at 10
+    // Wait, (7-3)*3 = 12, min(10,12) = 10. Threshold = max(0, 15-10) = 5
+    const cog = getCognition(engine.world, 'npc1');
+    cog.morale = 10;
+
+    engine.world.entities.npc2.resources.hp = 0;
+    emitDefeat(engine, 'npc2', 'player');
+
+    // Morale after -7 (will-mitigated from -12): 3, below adjusted threshold 5
+    expect(hasStatus(engine.world.entities.npc1, COMBAT_STATES.FLEEING)).toBe(true);
+  });
+
+  it('defeat during FLEEING does not add duplicate FLEEING', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        makeAIEntity('npc1', 'Guard', 'a', { stats: { will: 3 }, ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makeAIEntity('npc2', 'Guard B', 'a', { ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makeAIEntity('npc3', 'Guard C', 'a', { ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} } }),
+        makePlayer('a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [] as string[], neighbors: ['b'] }, { id: 'b', roomId: 'test', name: 'B', tags: [] as string[], neighbors: ['a'] }],
+    });
+
+    const cog = getCognition(engine.world, 'npc1');
+    cog.morale = 20;
+
+    // Pre-apply FLEEING from a previous source
+    applyStatus(engine.world.entities.npc1, COMBAT_STATES.FLEEING, 0, { duration: 2, sourceId: 'disengage' });
+    expect(hasStatus(engine.world.entities.npc1, COMBAT_STATES.FLEEING)).toBe(true);
+    const countBefore = engine.world.entities.npc1.statuses.filter(s => s.statusId === COMBAT_STATES.FLEEING).length;
+
+    // Ally defeat triggers morale drop but should not add another FLEEING
+    engine.world.entities.npc2.resources.hp = 0;
+    emitDefeat(engine, 'npc2', 'player');
+
+    const countAfter = engine.world.entities.npc1.statuses.filter(s => s.statusId === COMBAT_STATES.FLEEING).length;
+    expect(countAfter).toBe(countBefore);
   });
 });

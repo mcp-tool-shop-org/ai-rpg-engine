@@ -43,10 +43,13 @@ export type CombatFormulas = {
   interceptChance?: (ally: EntityState, target: EntityState, world: WorldState) => number;
   /** Combat morale delta for damage taken. Return negative for loss. Overrides default will-scaled formula. */
   combatMoraleDelta?: (entity: EntityState, damage: number, world: WorldState) => number;
+  /** Whether a target should be eligible for ally interception. Default: player only. */
+  shouldIntercept?: (target: EntityState, world: WorldState) => boolean;
 };
 
 export const COMBAT_STATES = {
   GUARDED: 'combat:guarded',
+  OFF_BALANCE: 'combat:off_balance',
   EXPOSED: 'combat:exposed',
   FLEEING: 'combat:fleeing',
 } as const;
@@ -132,6 +135,8 @@ function attackHandler(
     : defaultHitChance(attacker, target, mapping);
   if (hasStatus(target, COMBAT_STATES.EXPOSED)) hitChance += 20;
   if (hasStatus(target, COMBAT_STATES.FLEEING)) hitChance += 10;
+  if (hasStatus(target, COMBAT_STATES.OFF_BALANCE)) hitChance += 10;
+  if (hasStatus(attacker, COMBAT_STATES.OFF_BALANCE)) hitChance -= 15;
   hitChance = Math.min(95, Math.max(5, hitChance));
 
   // Use a simple deterministic roll based on tick + entity IDs
@@ -155,22 +160,28 @@ function attackHandler(
     ? formulas.damage(attacker, target, world)
     : defaultDamage(attacker, mapping);
 
-  // Ally interception: if the target is the player and has companion allies in the same zone,
-  // check if a companion intercepts the damage
-  if (formulas?.isAlly && target.id === world.playerId) {
+  // Ally interception: if the target qualifies (player or backline) and has allies in zone,
+  // check if an engaged companion intercepts the damage
+  const shouldCheck = formulas?.shouldIntercept
+    ? formulas.shouldIntercept(target, world)
+    : (target.id === world.playerId);
+  if (formulas?.isAlly && shouldCheck) {
     const allies = Object.values(world.entities).filter(
       (e) => e.zoneId === target.zoneId && e.id !== target.id && e.id !== attacker.id
         && formulas.isAlly!(e.id)
-        && (e.resources.hp ?? 0) > 0,
+        && (e.resources.hp ?? 0) > 0
+        && !hasStatus(e, COMBAT_STATES.FLEEING)
+        && (target.id === world.playerId || e.statuses.some(s => s.statusId === 'engagement:engaged')),
     );
     if (allies.length > 0) {
       // Find first ally whose interception roll passes
       let interceptor: EntityState | null = null;
       let interceptChanceUsed = 30; // default flat chance
+      const mapping = formulas?.statMapping ?? DEFAULT_STAT_MAPPING;
       for (const ally of allies) {
         const chance = formulas.interceptChance
           ? formulas.interceptChance(ally, target, world)
-          : 30;
+          : defaultInterceptChance(ally, target, world, mapping);
         const interceptRoll = simpleRoll(world.meta.tick, target.id, ally.id);
         if (interceptRoll <= chance) {
           interceptor = ally;
@@ -187,11 +198,13 @@ function attackHandler(
           interceptorId: interceptor.id,
           interceptorName: interceptor.name,
           targetId: target.id,
+          targetName: target.name,
           attackerId: attacker.id,
           damage,
           interceptChance: interceptChanceUsed,
           interceptorHpBefore: interceptorPrevHp,
           interceptorHpAfter: interceptor.resources.hp,
+          interceptorMaxHp: interceptor.resources.maxHp ?? 20,
         }, {
           targetIds: [interceptor.id, target.id],
           presentation: { channels: ['objective', 'narrator'], priority: 'high' },
@@ -211,6 +224,9 @@ function attackHandler(
             entityId: interceptor.id,
             entityName: interceptor.name,
             defeatedBy: attacker.id,
+            defeatedByName: attacker.name,
+            defeatZoneId: interceptor.zoneId ?? '',
+            wasInterceptor: true,
           }, {
             targetIds: [interceptor.id],
             presentation: { channels: ['objective', 'narrator'], priority: 'critical', soundCues: ['combat.defeat'] },
@@ -244,21 +260,80 @@ function attackHandler(
       targetIds: [target.id],
       presentation: { channels: ['objective'], priority: 'normal' },
     }));
+
+    // Soft counter: attacking into guard may off-balance the attacker
+    // Instinct (timing) + will (composure) determine counter chance
+    const counterRoll = simpleRoll(world.meta.tick, attacker.id, 'counter');
+    const targetInstinct = getStat(target, mapping, 'precision', 5);
+    const counterChance = 25 + targetInstinct * 2 + targetResolve * 2;
+    if (counterRoll <= counterChance && !hasStatus(attacker, COMBAT_STATES.OFF_BALANCE)) {
+      events.push(applyStatus(attacker, COMBAT_STATES.OFF_BALANCE, world.meta.tick, {
+        duration: 1,
+        sourceId: target.id,
+      }));
+      events.push(makeEvent(action, 'combat.counter.off_balance', {
+        entityId: attacker.id,
+        entityName: attacker.name,
+        causedBy: target.id,
+        causedByName: target.name,
+      }, {
+        targetIds: [attacker.id],
+        presentation: { channels: ['objective', 'narrator'], priority: 'normal' },
+      }));
+    }
+
+    // Guard breakthrough: high-vigor attacker may stagger a weak-willed defender
+    const attackerVigor = getStat(attacker, mapping, 'attack', 5);
+    const breakChance = Math.min(25, Math.max(0, (attackerVigor - targetResolve - 2) * 5));
+    if (breakChance > 0) {
+      const breakRoll = simpleRoll(world.meta.tick, attacker.id, 'guardbreak');
+      if (breakRoll <= breakChance) {
+        if (!hasStatus(target, COMBAT_STATES.OFF_BALANCE)) {
+          events.push(applyStatus(target, COMBAT_STATES.OFF_BALANCE, world.meta.tick, {
+            duration: 1,
+            sourceId: attacker.id,
+          }));
+        }
+        events.push(makeEvent(action, 'combat.guard.broken', {
+          attackerId: attacker.id,
+          attackerName: attacker.name,
+          targetId: target.id,
+          targetName: target.name,
+          attackerVigor,
+          defenderResolve: targetResolve,
+          breakChance,
+        }, {
+          targetIds: [target.id],
+          presentation: { channels: ['objective', 'narrator'], priority: 'high' },
+        }));
+      }
+    }
   }
   if (hasStatus(target, COMBAT_STATES.EXPOSED)) {
     finalDamage += 2;
     const exposedRemoveEvt = removeStatus(target, COMBAT_STATES.EXPOSED, world.meta.tick);
     if (exposedRemoveEvt) events.push(exposedRemoveEvt);
   }
+  if (hasStatus(target, COMBAT_STATES.OFF_BALANCE)) {
+    finalDamage += 1;
+  }
 
   const previousHp = target.resources.hp ?? 0;
   target.resources.hp = Math.max(0, previousHp - finalDamage);
+
+  // Hit style: distinguish precision hits from forceful blows
+  const atkAttack = getStat(attacker, mapping, 'attack', 5);
+  const atkPrecision = getStat(attacker, mapping, 'precision', 5);
+  const hitStyle = atkPrecision > atkAttack ? 'precise'
+    : atkAttack > atkPrecision ? 'forceful'
+    : 'balanced';
 
   events.push(makeEvent(action, 'combat.contact.hit', {
     attackerId: attacker.id,
     targetId: target.id,
     roll,
     hitChance,
+    hitStyle,
   }, {
     targetIds: [target.id],
     presentation: { channels: ['objective'], priority: 'normal' },
@@ -293,6 +368,9 @@ function attackHandler(
       entityId: target.id,
       entityName: target.name,
       defeatedBy: attacker.id,
+      defeatedByName: attacker.name,
+      defeatZoneId: target.zoneId ?? '',
+      wasInterceptor: false,
     }, {
       targetIds: [target.id],
       presentation: {
@@ -359,6 +437,28 @@ function guardHandler(
   return events;
 }
 
+/** Pick the safest neighbor zone to flee to. Prefers non-chokepoint zones with allies and no enemies. */
+function selectBestExit(neighbors: string[], world: WorldState, actor: EntityState): string {
+  if (neighbors.length <= 1) return neighbors[0];
+  let bestId = neighbors[0];
+  let bestScore = -1;
+  for (const nid of neighbors) {
+    const nzone = world.zones[nid];
+    let score = 0;
+    if (!nzone?.tags?.includes('chokepoint')) score += 5;
+    const nEntities = Object.values(world.entities).filter(
+      e => e.zoneId === nid && (e.resources.hp ?? 0) > 0,
+    );
+    if (nEntities.some(e => e.type === actor.type)) score += 5;
+    if (!nEntities.some(e => e.type !== actor.type)) score += 5;
+    if (score > bestScore) {
+      bestScore = score;
+      bestId = nid;
+    }
+  }
+  return bestId;
+}
+
 function disengageHandler(
   action: ActionIntent,
   world: WorldState,
@@ -418,7 +518,7 @@ function disengageHandler(
     }));
 
     const fromZoneId = actor.zoneId;
-    const toZoneId = zoneState.neighbors[0];
+    const toZoneId = selectBestExit(zoneState.neighbors, world, actor);
     actor.zoneId = toZoneId;
 
     events.push(makeEvent(action, 'combat.disengage.success', {
@@ -463,6 +563,54 @@ function defaultHitChance(attacker: EntityState, target: EntityState, mapping: C
 function defaultDamage(attacker: EntityState, mapping: CombatStatMapping): number {
   const attack = getStat(attacker, mapping, 'attack', 3);
   return Math.max(1, attack);
+}
+
+// ---------------------------------------------------------------------------
+// Interception formula
+// ---------------------------------------------------------------------------
+
+const INTERCEPT_ROLE_BONUS: Record<string, number> = {
+  'role:bodyguard': 15, 'role:brute': 5, 'role:elite': 5, 'role:sentinel': 8,
+  'role:skirmisher': -8, 'role:backliner': -10, 'role:coward': -12, 'role:minion': -5,
+  'companion:fighter': 8, 'companion:scout': -5, 'companion:healer': -8,
+  'companion:diplomat': -10, 'companion:smuggler': -5, 'companion:scholar': -10,
+};
+
+function getInterceptRoleBonus(entity: EntityState): number {
+  const roleTag = entity.tags.find(t => t.startsWith('role:'));
+  if (roleTag && INTERCEPT_ROLE_BONUS[roleTag] !== undefined) return INTERCEPT_ROLE_BONUS[roleTag];
+  const compTag = entity.tags.find(t => t.startsWith('companion:'));
+  if (compTag && INTERCEPT_ROLE_BONUS[compTag] !== undefined) return INTERCEPT_ROLE_BONUS[compTag];
+  return 0;
+}
+
+/** Scored interception chance based on stats, HP, morale, combat states, and role. */
+export function defaultInterceptChance(
+  ally: EntityState, _target: EntityState, world: WorldState, mapping: CombatStatMapping,
+): number {
+  const instinct = getStat(ally, mapping, 'precision', 5);
+  const will = getStat(ally, mapping, 'resolve', 3);
+  const hp = ally.resources.hp ?? 0;
+  const maxHp = ally.resources.maxHp ?? 20;
+  const hpRatio = maxHp > 0 ? hp / maxHp : 0;
+
+  // Morale from cognition-core (default 70 if not loaded)
+  const cogMod = (world.modules?.['cognition-core'] ?? undefined) as
+    { entityCognition?: Record<string, { morale?: number }> } | undefined;
+  const morale = cogMod?.entityCognition?.[ally.id]?.morale ?? 70;
+
+  let chance = 8;
+  chance += Math.floor(instinct * 2.5);                    // reaction speed
+  chance += Math.max(0, Math.floor((will - 3) * 1.5));    // composure
+  chance += Math.floor(hpRatio * 8);                       // health
+  if (hpRatio < 0.25) chance -= 15;                        // critical HP penalty
+  chance += Math.floor((morale - 50) * 0.15);             // morale
+  if (hasStatus(ally, COMBAT_STATES.FLEEING)) return 0;    // hard block
+  if (hasStatus(ally, COMBAT_STATES.OFF_BALANCE)) chance -= 10;
+  if (hasStatus(ally, COMBAT_STATES.GUARDED)) chance += 8;
+  chance += getInterceptRoleBonus(ally);                   // role tags
+
+  return Math.max(5, Math.min(90, chance));
 }
 
 /** Simple deterministic roll 1-100 based on tick and IDs */

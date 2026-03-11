@@ -30,8 +30,12 @@ import {
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
+  createCombatTactics,
+  withCombatResources,
+  buildTacticalHooks,
+  createCombatResources,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatFormulas, CombatResourceProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -89,9 +93,34 @@ const cyberpunkFormulas: CombatFormulas = {
   },
 };
 
+// Cyberpunk combat resource profile — network-driven tactical augmentation
+const cyberpunkCombatProfile: CombatResourceProfile = {
+  packId: 'cyberpunk',
+  gains: [
+    { trigger: 'brace', resourceId: 'bandwidth', amount: 2 },
+  ],
+  spends: [
+    { action: 'reposition', resourceId: 'bandwidth', amount: 4, effects: { repositionBonus: 15 } },
+    { action: 'attack', resourceId: 'bandwidth', amount: 3, effects: { hitBonus: 10 } },
+  ],
+  drains: [
+    { trigger: 'take-damage', resourceId: 'bandwidth', amount: 2 },
+  ],
+  aiModifiers: [
+    {
+      resourceId: 'bandwidth',
+      highThreshold: 50,
+      highModifiers: { pressure: 10, reposition: 10 },
+      lowThreshold: 10,
+      lowModifiers: { guard: 10, brace: 10 },
+    },
+  ],
+};
+
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(cyberpunkStatusDefinitions);
   const review = createCombatReview({ baseFormulas: cyberpunkFormulas });
+  const wrappedFormulas = withCombatResources(cyberpunkCombatProfile, withEngagement(cyberpunkFormulas));
   const engine = new Engine({
     manifest,
     seed: seed ?? 77,
@@ -101,7 +130,7 @@ export function createGame(seed?: number): Engine {
       statusCore,
       createEngagementCore({ playerId: 'runner', backlineTags: ['ranged', 'caster', 'netrunner'] }),
       review.module,
-      createCombatCore(review.explain(withEngagement(cyberpunkFormulas))),
+      createCombatCore(review.explain(wrappedFormulas)),
       createInventoryCore([iceBreaker]),
       createDialogueCore([fixerDialogue]),
       createCognitionCore({ decay: { baseRate: 0.03, pruneThreshold: 0.05, instabilityFactor: 0.8 } }),
@@ -146,7 +175,9 @@ export function createGame(seed?: number): Engine {
         factions: [{ factionId: 'vault-ice', entityIds: ['ice-sentry'] }],
         playerId: 'runner',
       }),
-      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['ice-agent'].includes(b.tag)) }),
+      createCombatTactics({ hooks: buildTacticalHooks(cyberpunkCombatProfile) }),
+      createCombatResources(cyberpunkCombatProfile),
+      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['ice-agent'].includes(b.tag)), resourceProfile: cyberpunkCombatProfile }),
       createCombatRecovery(),
       createBossPhaseListener(vaultOverseerBoss),
       createAbilityCore({ abilities: cyberpunkAbilities, statMapping: { power: 'chrome', precision: 'reflex', focus: 'netrunning' } }),
@@ -198,25 +229,7 @@ export function createGame(seed?: number): Engine {
     }
   });
 
-  // --- ICE + Bandwidth combat hooks ---
-  engine.store.events.on('combat.contact.hit', (event) => {
-    if (event.payload.attackerId === 'runner') {
-      const p = engine.store.state.entities['runner'];
-      if (p) p.resources.ice = Math.max(0, (p.resources.ice ?? 0) - 1);
-    }
-  });
-  engine.store.events.on('combat.damage.applied', (event) => {
-    if (event.payload.targetId === 'runner') {
-      const p = engine.store.state.entities['runner'];
-      if (p) p.resources.bandwidth = Math.max(0, (p.resources.bandwidth ?? 0) - 1);
-    }
-  });
-  engine.store.events.on('combat.guard.absorbed', (event) => {
-    if (event.payload.entityId === 'runner') {
-      const p = engine.store.state.entities['runner'];
-      if (p) p.resources.ice = Math.min(100, (p.resources.ice ?? 0) + 1);
-    }
-  });
+  // Combat resource gains/drains/spends handled by cyberpunkCombatProfile
 
   return engine;
 }

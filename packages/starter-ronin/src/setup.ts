@@ -30,8 +30,13 @@ import {
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
+  createCombatTactics,
+  withCombatResources,
+  buildTacticalHooks,
+  createCombatResources,
+  COMBAT_STATES,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatFormulas, CombatResourceProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -90,9 +95,36 @@ const roninFormulas: CombatFormulas = {
   },
 };
 
+// Ronin combat resource profile — discipline and patience
+const roninCombatProfile: CombatResourceProfile = {
+  packId: 'ronin',
+  gains: [
+    { trigger: 'brace', resourceId: 'ki', amount: 2 },
+    { trigger: 'guard-absorb', resourceId: 'ki', amount: 1 },
+  ],
+  spends: [
+    { action: 'reposition', resourceId: 'ki', amount: 4, effects: { repositionBonus: 20 } },
+    { action: 'guard', resourceId: 'ki', amount: 3, effects: { resistState: COMBAT_STATES.OFF_BALANCE, resistChance: 80 } },
+    { action: 'attack', resourceId: 'ki', amount: 5, effects: { damageBonus: 2 } },
+  ],
+  drains: [
+    { trigger: 'disengage-fail', resourceId: 'honor', amount: 2 },
+  ],
+  aiModifiers: [
+    {
+      resourceId: 'ki',
+      highThreshold: 30,
+      highModifiers: { reposition: 10, attack: 5 },
+      lowThreshold: 5,
+      lowModifiers: { brace: 15, guard: 10 },
+    },
+  ],
+};
+
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(roninStatusDefinitions);
   const review = createCombatReview({ baseFormulas: roninFormulas });
+  const wrappedFormulas = withCombatResources(roninCombatProfile, withEngagement(roninFormulas));
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -102,7 +134,7 @@ export function createGame(seed?: number): Engine {
       statusCore,
       createEngagementCore({ playerId: 'player', protectorTags: ['bodyguard', 'samurai'] }),
       review.module,
-      createCombatCore(review.explain(withEngagement(roninFormulas))),
+      createCombatCore(review.explain(wrappedFormulas)),
       createInventoryCore([incenseKitEffect]),
       createDialogueCore([magistrateDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -165,7 +197,9 @@ export function createGame(seed?: number): Engine {
         ],
         playerId: 'player',
       }),
-      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['assassin', 'samurai'].includes(b.tag)) }),
+      createCombatTactics({ hooks: buildTacticalHooks(roninCombatProfile) }),
+      createCombatResources(roninCombatProfile),
+      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['assassin', 'samurai'].includes(b.tag)), resourceProfile: roninCombatProfile }),
       createCombatRecovery({ safeZoneTags: ['safe', 'tranquil'] }),
       createBossPhaseListener(corruptSamuraiBoss),
       createAbilityCore({ abilities: roninAbilities, statMapping: { power: 'discipline', precision: 'perception', focus: 'composure' } }),
@@ -227,40 +261,7 @@ export function createGame(seed?: number): Engine {
     });
   });
 
-  // --- Ki + Honor combat hooks ---
-  engine.store.events.on('combat.damage.applied', (event) => {
-    if (event.payload.attackerId === 'player') {
-      const p = engine.store.state.entities['player'];
-      if (p) p.resources.ki = Math.max(0, (p.resources.ki ?? 0) - 1);
-    }
-  });
-  engine.store.events.on('combat.guard.absorbed', (event) => {
-    if (event.payload.entityId === 'player') {
-      const p = engine.store.state.entities['player'];
-      if (p) p.resources.ki = Math.min(50, (p.resources.ki ?? 0) + 2);
-    }
-  });
-  engine.store.events.on('combat.entity.defeated', (event) => {
-    if (event.payload.defeatedBy === 'player') {
-      const p = engine.store.state.entities['player'];
-      if (p) {
-        p.resources.honor = Math.min(100, (p.resources.honor ?? 0) + 3);
-        p.resources.ki = Math.min(50, (p.resources.ki ?? 0) + 5);
-      }
-    }
-  });
-  engine.store.events.on('combat.disengage.success', (event) => {
-    if (event.payload.entityId === 'player') {
-      const p = engine.store.state.entities['player'];
-      if (p) p.resources.honor = Math.max(0, (p.resources.honor ?? 0) - 5);
-    }
-  });
-  engine.store.events.on('combat.contact.miss', (event) => {
-    if (event.payload.attackerId === 'player') {
-      const p = engine.store.state.entities['player'];
-      if (p) p.resources.ki = Math.max(0, (p.resources.ki ?? 0) - 1);
-    }
-  });
+  // Combat resource gains/drains/spends handled by roninCombatProfile
 
   // --- Defeat Fallout: bonus honor on boss kill ---
   engine.store.events.on('defeat.fallout.triggered', (event) => {

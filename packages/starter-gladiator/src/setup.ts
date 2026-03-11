@@ -30,8 +30,12 @@ import {
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
+  createCombatTactics,
+  withCombatResources,
+  buildTacticalHooks,
+  createCombatResources,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatFormulas, CombatResourceProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -90,9 +94,37 @@ const gladiatorFormulas: CombatFormulas = {
   },
 };
 
+// Gladiator combat resource profile — spectacle-driven economy
+const gladiatorCombatProfile: CombatResourceProfile = {
+  packId: 'gladiator',
+  gains: [
+    { trigger: 'attack-hit', resourceId: 'crowd-favor', amount: 3 },
+    { trigger: 'defeat-enemy', resourceId: 'crowd-favor', amount: 8 },
+    { trigger: 'reposition-outflank', resourceId: 'crowd-favor', amount: 2 },
+  ],
+  spends: [
+    { action: 'attack', resourceId: 'crowd-favor', amount: 10, effects: { damageBonus: 3 } },
+    { action: 'guard', resourceId: 'crowd-favor', amount: 15, effects: { guardBonus: 0.15 } },
+  ],
+  drains: [
+    { trigger: 'take-damage', resourceId: 'fatigue', amount: 3 },
+    { trigger: 'reposition-fail', resourceId: 'fatigue', amount: 5 },
+  ],
+  aiModifiers: [
+    {
+      resourceId: 'crowd-favor',
+      highThreshold: 60,
+      highModifiers: { attack: 10, reposition: 10 },
+      lowThreshold: 20,
+      lowModifiers: { guard: 10, brace: 10 },
+    },
+  ],
+};
+
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(gladiatorStatusDefinitions);
   const review = createCombatReview({ baseFormulas: gladiatorFormulas });
+  const wrappedFormulas = withCombatResources(gladiatorCombatProfile, withEngagement(gladiatorFormulas));
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -102,7 +134,7 @@ export function createGame(seed?: number): Engine {
       statusCore,
       createEngagementCore({ playerId: 'player' }),
       review.module,
-      createCombatCore(review.explain(withEngagement(gladiatorFormulas))),
+      createCombatCore(review.explain(wrappedFormulas)),
       createInventoryCore([patronTokenEffect]),
       createDialogueCore([patronDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -165,7 +197,9 @@ export function createGame(seed?: number): Engine {
         ],
         playerId: 'player',
       }),
-      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['feral', 'beast'].includes(b.tag)) }),
+      createCombatTactics({ hooks: buildTacticalHooks(gladiatorCombatProfile) }),
+      createCombatResources(gladiatorCombatProfile),
+      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['feral', 'beast'].includes(b.tag)), resourceProfile: gladiatorCombatProfile }),
       createCombatRecovery(),
       createBossPhaseListener(arenaOverlordBoss),
       createAbilityCore({ abilities: gladiatorAbilities, statMapping: { power: 'might', precision: 'agility', focus: 'showmanship' } }),
@@ -227,37 +261,7 @@ export function createGame(seed?: number): Engine {
     });
   });
 
-  // --- Crowd Favor combat hooks ---
-  engine.store.events.on('combat.contact.hit', (event) => {
-    if (event.payload.attackerId === 'player') {
-      const p = engine.store.state.entities['player'];
-      if (p) p.resources['crowd-favor'] = Math.min(100, (p.resources['crowd-favor'] ?? 0) + 2);
-    }
-  });
-  engine.store.events.on('combat.contact.miss', (event) => {
-    if (event.payload.attackerId === 'player') {
-      const p = engine.store.state.entities['player'];
-      if (p) p.resources['crowd-favor'] = Math.max(0, (p.resources['crowd-favor'] ?? 0) - 1);
-    }
-  });
-  engine.store.events.on('combat.entity.defeated', (event) => {
-    if (event.payload.defeatedBy === 'player') {
-      const p = engine.store.state.entities['player'];
-      if (p) p.resources['crowd-favor'] = Math.min(100, (p.resources['crowd-favor'] ?? 0) + 5);
-    }
-  });
-  engine.store.events.on('combat.guard.absorbed', (event) => {
-    if (event.payload.entityId === 'player') {
-      const p = engine.store.state.entities['player'];
-      if (p) p.resources['crowd-favor'] = Math.min(100, (p.resources['crowd-favor'] ?? 0) + 1);
-    }
-  });
-  engine.store.events.on('combat.disengage.success', (event) => {
-    if (event.payload.entityId === 'player') {
-      const p = engine.store.state.entities['player'];
-      if (p) p.resources['crowd-favor'] = Math.max(0, (p.resources['crowd-favor'] ?? 0) - 3);
-    }
-  });
+  // Combat resource gains/drains/spends handled by gladiatorCombatProfile
 
   return engine;
 }

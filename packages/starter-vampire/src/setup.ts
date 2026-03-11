@@ -30,8 +30,12 @@ import {
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
+  createCombatTactics,
+  withCombatResources,
+  buildTacticalHooks,
+  createCombatResources,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatFormulas, CombatResourceProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -90,9 +94,38 @@ const vampireFormulas: CombatFormulas = {
   },
 };
 
+// Vampire combat resource profile — hunger-driven aggression
+const vampireCombatProfile: CombatResourceProfile = {
+  packId: 'vampire',
+  gains: [
+    { trigger: 'attack-hit', resourceId: 'bloodlust', amount: 5 },
+    { trigger: 'defeat-enemy', resourceId: 'bloodlust', amount: 15 },
+  ],
+  spends: [
+    { action: 'attack', resourceId: 'bloodlust', amount: 20, effects: { damageBonus: 4 } },
+    { action: 'reposition', resourceId: 'bloodlust', amount: 10, effects: { repositionBonus: 15 } },
+  ],
+  drains: [
+    { trigger: 'defeat-enemy', resourceId: 'humanity', amount: 1 },
+  ],
+  aiModifiers: [
+    {
+      resourceId: 'bloodlust',
+      highThreshold: 60,
+      highModifiers: { attack: 15, finish: 10 },
+    },
+    {
+      resourceId: 'humanity',
+      lowThreshold: 10,
+      lowModifiers: { guard: -10, disengage: -10 },
+    },
+  ],
+};
+
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(vampireStatusDefinitions);
   const review = createCombatReview({ baseFormulas: vampireFormulas });
+  const wrappedFormulas = withCombatResources(vampireCombatProfile, withEngagement(vampireFormulas));
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -102,7 +135,7 @@ export function createGame(seed?: number): Engine {
       statusCore,
       createEngagementCore({ playerId: 'player', backlineTags: ['ranged', 'caster', 'thrall'] }),
       review.module,
-      createCombatCore(review.explain(withEngagement(vampireFormulas))),
+      createCombatCore(review.explain(wrappedFormulas)),
       createInventoryCore([bloodVialEffect]),
       createDialogueCore([duchessDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -167,7 +200,9 @@ export function createGame(seed?: number): Engine {
         ],
         playerId: 'player',
       }),
-      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['vampire', 'feral', 'hunter'].includes(b.tag)) }),
+      createCombatTactics({ hooks: buildTacticalHooks(vampireCombatProfile) }),
+      createCombatResources(vampireCombatProfile),
+      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['vampire', 'feral', 'hunter'].includes(b.tag)), resourceProfile: vampireCombatProfile }),
       createCombatRecovery({ safeZoneTags: ['safe', 'opulent'] }),
       createBossPhaseListener(elderVampireBoss),
       createAbilityCore({ abilities: vampireAbilities, statMapping: { power: 'vitality', precision: 'cunning', focus: 'presence' } }),
@@ -229,32 +264,7 @@ export function createGame(seed?: number): Engine {
     });
   });
 
-  // --- Bloodlust + Humanity combat hooks ---
-  engine.store.events.on('combat.damage.applied', (event) => {
-    const p = engine.store.state.entities['player'];
-    if (!p) return;
-    if (event.payload.attackerId === 'player') {
-      p.resources.bloodlust = Math.min(100, (p.resources.bloodlust ?? 0) + 2);
-    }
-    if (event.payload.targetId === 'player') {
-      p.resources.bloodlust = Math.min(100, (p.resources.bloodlust ?? 0) + 3);
-    }
-  });
-  engine.store.events.on('combat.entity.defeated', (event) => {
-    if (event.payload.defeatedBy === 'player') {
-      const p = engine.store.state.entities['player'];
-      if (p) {
-        p.resources.bloodlust = Math.min(100, (p.resources.bloodlust ?? 0) + 5);
-        p.resources.humanity = Math.max(0, (p.resources.humanity ?? 0) - 3);
-      }
-    }
-  });
-  engine.store.events.on('combat.guard.absorbed', (event) => {
-    if (event.payload.entityId === 'player') {
-      const p = engine.store.state.entities['player'];
-      if (p) p.resources.humanity = Math.min(100, (p.resources.humanity ?? 0) + 1);
-    }
-  });
+  // Combat resource gains/drains/spends handled by vampireCombatProfile
 
   // --- Defeat Fallout: violence erodes humanity ---
   engine.store.events.on('defeat.fallout.triggered', (event) => {

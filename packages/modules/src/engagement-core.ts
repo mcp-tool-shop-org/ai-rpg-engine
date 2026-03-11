@@ -14,6 +14,7 @@ import type {
   EntityState,
 } from '@ai-rpg-engine/core';
 import { applyStatus, removeStatus, hasStatus } from './status-core.js';
+import { COMBAT_STATES, DEFAULT_STAT_MAPPING, defaultInterceptChance } from './combat-core.js';
 import type { CombatFormulas } from './combat-core.js';
 
 // ---------------------------------------------------------------------------
@@ -34,6 +35,7 @@ export const ENGAGEMENT_STATES = {
 export type EngagementConfig = {
   backlineTags?: string[];      // entity tags that default to backline, default ['ranged', 'caster']
   chokepointTag?: string;       // zone tag that forces engagement, default 'chokepoint'
+  ambushTag?: string;           // zone tag that applies EXPOSED on entry, default 'ambush_entry'
   protectorTags?: string[];     // entity tags that grant PROTECTED to allies, default ['bodyguard']
   playerId?: string;            // default 'player'
 };
@@ -118,6 +120,7 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
   const {
     backlineTags = ['ranged', 'caster'],
     chokepointTag = 'chokepoint',
+    ambushTag = 'ambush_entry',
     protectorTags = ['bodyguard'],
     playerId = 'player',
   } = config;
@@ -153,6 +156,9 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
         const defeated = world.entities[defeatedId];
         if (!defeated?.zoneId) return;
 
+        // Snapshot: was the defeated entity a frontliner?
+        const wasEngaged = hasStatus(defeated, ENGAGEMENT_STATES.ENGAGED);
+
         const zoneEntities = getEntitiesInZone(world, defeated.zoneId);
         for (const entity of zoneEntities) {
           if (entity.id === defeatedId) continue;
@@ -171,11 +177,37 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
             safeApply(entity, ENGAGEMENT_STATES.ISOLATED, tick);
           }
 
+          // Clear ENGAGED when no enemies remain (nothing to be engaged with)
+          if (hasStatus(entity, ENGAGEMENT_STATES.ENGAGED) && !hasEnemiesInZone(world, entity)) {
+            safeRemove(entity, ENGAGEMENT_STATES.ENGAGED, tick);
+          }
+
           // Re-check BACKLINE (if no enemies left, could revert to backline)
           if (isBacklineCandidate(entity, backlineTags)
             && !hasStatus(entity, ENGAGEMENT_STATES.ENGAGED)
             && !hasEnemiesInZone(world, entity)) {
             safeApply(entity, ENGAGEMENT_STATES.BACKLINE, tick);
+          }
+        }
+
+        // Frontline collapse: if defeated was ENGAGED and no same-side entities remain ENGAGED
+        if (wasEngaged) {
+          const remainingFrontliners = zoneEntities.filter(
+            e => e.id !== defeatedId && e.type === defeated.type && hasStatus(e, ENGAGEMENT_STATES.ENGAGED),
+          );
+          if (remainingFrontliners.length === 0) {
+            const exposedBackliners = zoneEntities.filter(
+              e => e.type === defeated.type && hasStatus(e, ENGAGEMENT_STATES.BACKLINE),
+            );
+            if (exposedBackliners.length > 0) {
+              ctx.events.emit({
+                id: `evt-frontline-collapse-${tick}`,
+                tick,
+                type: 'combat.frontline.collapsed',
+                payload: { zoneId: defeated.zoneId, exposedIds: exposedBackliners.map(e => e.id) },
+                presentation: { channels: ['narrator'], priority: 'high' },
+              });
+            }
           }
         }
       });
@@ -210,6 +242,36 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
             safeRemove(entity, ENGAGEMENT_STATES.PROTECTED, tick);
           }
         }
+      });
+
+      // --- Reposition success: re-evaluate engagement states ---
+      ctx.events.on('combat.reposition.success', (event: ResolvedEvent, world: WorldState) => {
+        const tick = event.tick;
+        const entityId = event.payload.entityId as string;
+        const entity = world.entities[entityId];
+        if (!entity?.zoneId) return;
+
+        // Successful reposition may shift engagement status
+        // If entity was backline and repositioned, they may now be engaged
+        if (hasStatus(entity, ENGAGEMENT_STATES.BACKLINE)) {
+          const hasEnemies = getEntitiesInZone(world, entity.zoneId)
+            .some(e => e.id !== entity.id && e.type !== entity.type);
+          if (hasEnemies) {
+            safeRemove(entity, ENGAGEMENT_STATES.BACKLINE, tick);
+            safeApply(entity, ENGAGEMENT_STATES.ENGAGED, tick);
+          }
+        }
+      });
+
+      // --- Reposition outflank: target loses protected status ---
+      ctx.events.on('combat.reposition.outflank', (event: ResolvedEvent, world: WorldState) => {
+        const tick = event.tick;
+        const targetId = event.payload.targetId as string;
+        const target = world.entities[targetId];
+        if (!target) return;
+
+        // Outflanked targets lose PROTECTED status
+        safeRemove(target, ENGAGEMENT_STATES.PROTECTED, tick);
       });
 
       // --- Zone entered: full evaluation ---
@@ -248,6 +310,22 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
           safeRemove(entity, ENGAGEMENT_STATES.PROTECTED, tick);
         }
 
+        // Ambush entry: entity walking into an ambush zone with enemies gets EXPOSED
+        if (zone?.tags.includes(ambushTag) && hasEnemiesInZone(world, entity)) {
+          if (!hasStatus(entity, COMBAT_STATES.EXPOSED)) {
+            applyStatus(entity, COMBAT_STATES.EXPOSED, tick, { duration: 1, sourceId: 'ambush' });
+            ctx.events.emit({
+              id: `evt-ambush-${tick}-${entityId}`,
+              tick,
+              type: 'combat.ambush.triggered',
+              actorId: entityId,
+              payload: { entityId, entityName: entity.name, zoneId },
+              tags: ['combat', 'ambush'],
+              presentation: { channels: ['narrator', 'objective'], priority: 'high' },
+            });
+          }
+        }
+
         // Also re-evaluate other entities in the zone (arrival changes their state)
         const zoneEntities = getEntitiesInZone(world, zoneId);
         for (const other of zoneEntities) {
@@ -282,7 +360,12 @@ function defaultDamage(attacker: EntityState): number {
   return Math.max(1, attacker.stats.vigor ?? 3);
 }
 
-export function withEngagement(base: CombatFormulas): CombatFormulas {
+export type EngagementFormulaOpts = {
+  chokepointTag?: string;
+};
+
+export function withEngagement(base: CombatFormulas, opts?: EngagementFormulaOpts): CombatFormulas {
+  const chokepointTag = opts?.chokepointTag ?? 'chokepoint';
   return {
     ...base,
 
@@ -319,15 +402,22 @@ export function withEngagement(base: CombatFormulas): CombatFormulas {
       if (hasStatus(actor, ENGAGEMENT_STATES.ENGAGED)) chance -= 15;
       if (hasStatus(actor, ENGAGEMENT_STATES.ISOLATED)) chance -= 10;
       if (hasStatus(actor, ENGAGEMENT_STATES.BACKLINE)) chance += 15;
+      const zone = world.zones?.[actor.zoneId ?? ''];
+      if (zone?.tags?.includes(chokepointTag)) chance -= 10;
       return Math.min(90, Math.max(5, chance));
     },
 
     interceptChance: (ally, target, world) => {
       let chance = base.interceptChance
         ? base.interceptChance(ally, target, world)
-        : 30;
+        : defaultInterceptChance(ally, target, world, base.statMapping ?? DEFAULT_STAT_MAPPING);
       if (hasStatus(target, ENGAGEMENT_STATES.PROTECTED)) chance += 15;
       return Math.min(90, Math.max(5, chance));
+    },
+
+    shouldIntercept: (target, world) => {
+      if (target.id === world.playerId) return true;
+      return hasStatus(target, ENGAGEMENT_STATES.BACKLINE);
     },
 
     isAlly: base.isAlly,

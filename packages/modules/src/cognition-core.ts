@@ -10,7 +10,7 @@ import type {
   ZoneState,
 } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
-import { hasStatus } from './status-core.js';
+import { hasStatus, applyStatus } from './status-core.js';
 import { COMBAT_STATES } from './combat-core.js';
 
 // --- Knowledge Model ---
@@ -95,6 +95,8 @@ const DEFAULT_SUSPICION = 0;
 export type CognitionCoreConfig = {
   profiles?: IntentProfile[];
   decay?: Partial<BeliefDecayConfig>;
+  /** Map entity tags to morale flee thresholds. Default threshold: 15. */
+  moraleFleeThresholds?: Record<string, number>;
 };
 
 const DEFAULT_DECAY: BeliefDecayConfig = {
@@ -115,6 +117,7 @@ export function createCognitionCore(configOrProfiles?: CognitionCoreConfig | Int
   }
 
   const decayConfig: BeliefDecayConfig = { ...DEFAULT_DECAY, ...config.decay };
+  const moraleFleeThresholds = config.moraleFleeThresholds ?? {};
 
   return {
     id: 'cognition-core',
@@ -124,6 +127,10 @@ export function createCognitionCore(configOrProfiles?: CognitionCoreConfig | Int
       ctx.persistence.registerNamespace('cognition-core', {
         entityCognition: {} as Record<string, CognitionState>,
       });
+
+      // Per-tick defeat morale budget (cap at -20 per entity per tick)
+      const defeatMoraleBudget = new Map<string, number>();
+      ctx.events.on('tick.start', () => defeatMoraleBudget.clear());
 
       // Listen to events to update entity knowledge
       ctx.events.on('world.zone.entered', (event, world) => {
@@ -242,6 +249,25 @@ export function createCognitionCore(configOrProfiles?: CognitionCoreConfig | Int
             }
           }
 
+          // Apply will mitigation to negative defeat morale shifts
+          if (delta < 0) {
+            const will = entity.stats.will ?? 3;
+            const willMitigation = Math.max(0.3, 1 - (will - 3) * 0.1);
+            delta = Math.round(delta * willMitigation);
+
+            // Per-tick morale loss cap (-20 max per entity per tick)
+            const spent = defeatMoraleBudget.get(entity.id) ?? 0;
+            const remaining = Math.max(0, 20 + spent); // spent is negative
+            if (remaining <= 0) {
+              delta = 0;
+            } else if (-delta > remaining) {
+              delta = -remaining;
+            }
+            if (delta !== 0) {
+              defeatMoraleBudget.set(entity.id, (spent) + delta);
+            }
+          }
+
           if (delta !== 0) {
             cog.morale = Math.max(0, Math.min(100, cog.morale + delta));
             ctx.events.emit(makeCognitionEvent('combat.morale.shift', event.tick, {
@@ -251,6 +277,63 @@ export function createCognitionCore(configOrProfiles?: CognitionCoreConfig | Int
               current: cog.morale,
               reason,
             }));
+          }
+        }
+      });
+
+      // Morale-triggered FLEEING: auto-apply FLEEING when morale drops below threshold
+      ctx.events.on('combat.morale.shift', (event: ResolvedEvent, world: WorldState) => {
+        const entityId = event.payload.entityId as string;
+        const entity = world.entities[entityId];
+        if (!entity?.ai || (entity.resources.hp ?? 0) <= 0) return;
+        if (hasStatus(entity, COMBAT_STATES.FLEEING)) return;
+
+        const morale = event.payload.current as number;
+        const will = entity.stats.will ?? 3;
+        const willShift = Math.min(10, Math.max(0, (will - 3) * 3));
+        const packThreshold = findPackFleeThreshold(entity, moraleFleeThresholds);
+        const threshold = Math.max(0, packThreshold - willShift);
+
+        if (threshold > 0 && morale <= threshold) {
+          const statusEvt = applyStatus(entity, COMBAT_STATES.FLEEING, event.tick, {
+            duration: 3, sourceId: 'morale_collapse',
+          });
+          ctx.events.emit(statusEvt);
+          ctx.events.emit(makeCognitionEvent('combat.morale.flee', event.tick, {
+            entityId,
+            entityName: entity.name,
+            morale,
+            threshold,
+            reason: event.payload.reason,
+          }));
+        }
+
+        // Rout penalty: alone after ally defeat, morale ≤ 20
+        if (morale <= 20 && event.payload.reason === 'ally_defeated') {
+          const zone = entity.zoneId;
+          const hasAllies = zone && Object.values(world.entities).some(
+            e => e.id !== entityId && e.zoneId === zone && e.type === entity.type && (e.resources.hp ?? 0) > 0,
+          );
+          if (!hasAllies) {
+            const cog = getCognition(world, entityId);
+            const prev = cog.morale;
+            // Rout penalty bounded by per-tick cap
+            let routDelta = -10;
+            const spent = defeatMoraleBudget.get(entityId) ?? 0;
+            const remaining = Math.max(0, 20 + spent);
+            if (remaining <= 0) routDelta = 0;
+            else if (-routDelta > remaining) routDelta = -remaining;
+            if (routDelta !== 0) {
+              defeatMoraleBudget.set(entityId, spent + routDelta);
+              cog.morale = Math.max(0, cog.morale + routDelta);
+              ctx.events.emit(makeCognitionEvent('combat.morale.rout', event.tick, {
+                entityId,
+                entityName: entity.name,
+                delta: routDelta,
+                previous: prev,
+                current: cog.morale,
+              }));
+            }
           }
         }
       });
@@ -699,6 +782,13 @@ function deterministicRoll(tick: number, id1: string, id2: string): number {
     hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
   }
   return (Math.abs(hash) % 50) + 1; // 1-50
+}
+
+function findPackFleeThreshold(entity: EntityState, thresholds: Record<string, number>): number {
+  for (const tag of entity.tags) {
+    if (tag in thresholds) return thresholds[tag];
+  }
+  return 15; // default
 }
 
 function makeCognitionEvent(

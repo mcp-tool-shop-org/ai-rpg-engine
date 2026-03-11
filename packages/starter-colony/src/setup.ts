@@ -30,8 +30,12 @@ import {
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
+  createCombatTactics,
+  withCombatResources,
+  buildTacticalHooks,
+  createCombatResources,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatFormulas, CombatResourceProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -89,9 +93,38 @@ const colonyFormulas: CombatFormulas = {
   },
 };
 
+// Colony combat resource profile — scarcity and crew cohesion
+const colonyCombatProfile: CombatResourceProfile = {
+  packId: 'colony',
+  gains: [
+    { trigger: 'brace', resourceId: 'power', amount: 3 },
+  ],
+  spends: [
+    { action: 'attack', resourceId: 'power', amount: 5, effects: { damageBonus: 2 } },
+    { action: 'reposition', resourceId: 'power', amount: 4, effects: { repositionBonus: 10 } },
+  ],
+  drains: [
+    { trigger: 'take-damage', resourceId: 'morale', amount: 2 },
+    { trigger: 'disengage-fail', resourceId: 'morale', amount: 3 },
+  ],
+  aiModifiers: [
+    {
+      resourceId: 'power',
+      lowThreshold: 15,
+      lowModifiers: { brace: 15 },
+    },
+    {
+      resourceId: 'morale',
+      lowThreshold: 20,
+      lowModifiers: { disengage: 15 },
+    },
+  ],
+};
+
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(colonyStatusDefinitions);
   const review = createCombatReview({ baseFormulas: colonyFormulas });
+  const wrappedFormulas = withCombatResources(colonyCombatProfile, withEngagement(colonyFormulas));
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -101,7 +134,7 @@ export function createGame(seed?: number): Engine {
       statusCore,
       createEngagementCore({ playerId: 'commander' }),
       review.module,
-      createCombatCore(review.explain(withEngagement(colonyFormulas))),
+      createCombatCore(review.explain(wrappedFormulas)),
       createInventoryCore([emergencyCellEffect]),
       createDialogueCore([scientistDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -153,7 +186,9 @@ export function createGame(seed?: number): Engine {
         factions: [{ factionId: 'colony-council', entityIds: ['dr_vasquez', 'chief_okafor'] }],
         playerId: 'commander',
       }),
-      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['drone', 'alien'].includes(b.tag)) }),
+      createCombatTactics({ hooks: buildTacticalHooks(colonyCombatProfile) }),
+      createCombatResources(colonyCombatProfile),
+      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['drone', 'alien'].includes(b.tag)), resourceProfile: colonyCombatProfile }),
       createCombatRecovery({ safeZoneTags: ['safe', 'colony-core'] }),
       createBossPhaseListener(resonanceBoss),
       createAbilityCore({ abilities: colonyAbilities, statMapping: { power: 'engineering', precision: 'awareness', focus: 'command' } }),
@@ -214,19 +249,8 @@ export function createGame(seed?: number): Engine {
     });
   });
 
-  // --- Colony Morale combat hooks ---
-  engine.store.events.on('combat.damage.applied', (event) => {
-    if (event.payload.targetId === 'commander') {
-      const p = engine.store.state.entities['commander'];
-      if (p) p.resources.morale = Math.max(0, (p.resources.morale ?? 0) - 2);
-    }
-  });
+  // --- Colony-specific: ally defeated morale penalty (not covered by profile) ---
   engine.store.events.on('combat.entity.defeated', (event) => {
-    if (event.payload.defeatedBy === 'commander') {
-      const p = engine.store.state.entities['commander'];
-      if (p) p.resources.morale = Math.min(100, (p.resources.morale ?? 0) + 4);
-    }
-    // Ally defeated — morale drops
     const defeatedId = event.payload.entityId as string;
     const defeated = engine.store.state.entities[defeatedId];
     if (defeated?.tags.includes('ally') && event.payload.defeatedBy !== 'commander') {

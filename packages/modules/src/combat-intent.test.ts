@@ -2,8 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
 import type { EntityState } from '@ai-rpg-engine/core';
 import { statusCore, applyStatus } from './status-core.js';
-import { COMBAT_STATES } from './combat-core.js';
-import { ENGAGEMENT_STATES } from './engagement-core.js';
+import { createCombatCore, COMBAT_STATES } from './combat-core.js';
+import { createEngagementCore, ENGAGEMENT_STATES } from './engagement-core.js';
 import { createCognitionCore, getCognition } from './cognition-core.js';
 import {
   selectNpcCombatAction,
@@ -197,6 +197,26 @@ describe('combat-intent: tactical behavior', () => {
 
     // EXPOSED +20 to guard should tip it
     expect(decision.chosen.intent).toBe('guard');
+  });
+
+  it('OFF_BALANCE enemy gets attack bonus', () => {
+    const npc = makeEntity('npc', 'enemy', ['enemy'], {
+      resources: { hp: 20, maxHp: 20, stamina: 5 },
+    });
+    const target = makeEntity('target', 'player', ['player']);
+    applyStatus(target, COMBAT_STATES.OFF_BALANCE, 99, { duration: 1 });
+    const engine = buildEngine([npc, target]);
+
+    const cog = getCognition(engine.store.state, 'npc');
+    cog.morale = 50;
+
+    const decision = selectNpcCombatAction(npc, engine.store.state);
+
+    // Should prefer attack — off_balance_target +8 contributes
+    expect(decision.chosen.intent).toBe('attack');
+    const offBalContrib = decision.chosen.contributions.find(c => c.factor === 'off_balance_target');
+    expect(offBalContrib).toBeDefined();
+    expect(offBalContrib!.delta).toBe(8);
   });
 
   it('ISOLATED + low morale strongly disengages', () => {
@@ -512,5 +532,245 @@ describe('combat-intent: edge cases', () => {
 
     // Mapped guard (composure=10) should score higher than default (will=undefined → 3)
     expect(mappedGuard!.score).toBeGreaterThan(defaultGuard!.score);
+  });
+
+  it('exit quality boosts disengage score when safe neighbors exist', () => {
+    const npc = makeEntity('npc', 'enemy', ['enemy'], { name: 'Bandit', zoneId: 'zone-a' });
+    const ally = makeEntity('ally', 'enemy', ['enemy'], { name: 'Friendly', zoneId: 'zone-safe' });
+    const target = makeEntity('player', 'player', ['player'], { name: 'Hero', zoneId: 'zone-a' });
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore(), createCombatIntent()],
+      entities: [npc, target, ally],
+      zones: [
+        { id: 'zone-a', roomId: 'test', name: 'Fight Zone', tags: [] as string[], neighbors: ['zone-safe', 'zone-choke'] },
+        { id: 'zone-safe', roomId: 'test', name: 'Safe Zone', tags: [] as string[], neighbors: ['zone-a'] },
+        { id: 'zone-choke', roomId: 'test', name: 'Choke', tags: ['chokepoint'] as string[], neighbors: ['zone-a'] },
+      ],
+    });
+
+    const decision = selectNpcCombatAction(engine.world.entities.npc, engine.store.state);
+    const disengage = [decision.chosen, ...decision.alternatives].find(a => a.intent === 'disengage');
+    expect(disengage).toBeDefined();
+
+    // Should have exit_quality contribution since zone-safe has ally + no enemies
+    const exitContrib = disengage!.contributions.find(c => c.factor === 'exit_quality');
+    expect(exitContrib).toBeDefined();
+    expect(exitContrib!.delta).toBeGreaterThan(0);
+  });
+
+  it('allyDefeatedRecently boosts disengage + guard scores', () => {
+    const npc = makeEntity('npc', 'enemy', ['enemy'], {
+      resources: { hp: 10, maxHp: 20, stamina: 5 },
+    });
+    const target = makeEntity('target', 'player', ['player']);
+    const ally = makeEntity('ally', 'enemy', ['enemy'], {
+      resources: { hp: 0, maxHp: 20, stamina: 5 },
+    });
+    const engine = buildEngine([npc, target, ally]);
+
+    const cog = getCognition(engine.store.state, 'npc');
+    cog.morale = 40;
+
+    // Baseline without defeat
+    const baseDec = selectNpcCombatAction(npc, engine.store.state);
+    const baseGuard = [baseDec.chosen, ...baseDec.alternatives].find(a => a.intent === 'guard')!;
+    const baseDisengage = [baseDec.chosen, ...baseDec.alternatives].find(a => a.intent === 'disengage')!;
+
+    // Simulate ally defeat event through the module
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'ally', entityName: 'ally', defeatedBy: 'target',
+    });
+
+    const dec = selectNpcCombatAction(npc, engine.store.state);
+    const guard = [dec.chosen, ...dec.alternatives].find(a => a.intent === 'guard')!;
+    const disengage = [dec.chosen, ...dec.alternatives].find(a => a.intent === 'disengage')!;
+
+    // Ally fallen contributions should boost guard (+8) and disengage (+12)
+    expect(guard.score).toBeGreaterThan(baseGuard.score);
+    expect(disengage.score).toBeGreaterThan(baseDisengage.score);
+
+    const guardContrib = guard.contributions.find(c => c.factor === 'ally_fallen');
+    expect(guardContrib).toBeDefined();
+    expect(guardContrib!.delta).toBe(8);
+
+    const disengageContrib = disengage.contributions.find(c => c.factor === 'ally_fallen');
+    expect(disengageContrib).toBeDefined();
+    expect(disengageContrib!.delta).toBe(12);
+
+    // Clear for next test
+    engine.store.emitEvent('tick.start', {});
+  });
+
+  it('enemyDefeatedRecently boosts attack + finish scores', () => {
+    const npc = makeEntity('npc', 'enemy', ['enemy'], {
+      resources: { hp: 15, maxHp: 20, stamina: 5 },
+    });
+    const target = makeEntity('target', 'player', ['player'], {
+      resources: { hp: 4, maxHp: 20, stamina: 5 },
+    });
+    applyStatus(target, COMBAT_STATES.FLEEING, 99);
+    const enemy2 = makeEntity('enemy2', 'player', ['player'], {
+      resources: { hp: 0, maxHp: 20, stamina: 5 },
+    });
+    const engine = buildEngine([npc, target, enemy2]);
+
+    const cog = getCognition(engine.store.state, 'npc');
+    cog.morale = 60;
+
+    // Baseline without defeat
+    const baseDec = selectNpcCombatAction(npc, engine.store.state);
+    const baseAttack = [baseDec.chosen, ...baseDec.alternatives].find(a => a.intent === 'attack')!;
+    const baseFinish = [baseDec.chosen, ...baseDec.alternatives].find(a => a.intent === 'finish')!;
+
+    // Simulate enemy defeat (player-type entity defeated)
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'enemy2', entityName: 'enemy2', defeatedBy: 'npc',
+    });
+
+    const dec = selectNpcCombatAction(npc, engine.store.state);
+    const attack = [dec.chosen, ...dec.alternatives].find(a => a.intent === 'attack')!;
+    const finish = [dec.chosen, ...dec.alternatives].find(a => a.intent === 'finish')!;
+
+    // Momentum contributions should boost attack (+8) and finish (+10)
+    expect(attack.score).toBeGreaterThan(baseAttack.score);
+    expect(finish.score).toBeGreaterThan(baseFinish.score);
+
+    const attackContrib = attack.contributions.find(c => c.factor === 'momentum');
+    expect(attackContrib).toBeDefined();
+    expect(attackContrib!.delta).toBe(8);
+
+    const finishContrib = finish.contributions.find(c => c.factor === 'momentum');
+    expect(finishContrib).toBeDefined();
+    expect(finishContrib!.delta).toBe(10);
+
+    // Clear for next test
+    engine.store.emitEvent('tick.start', {});
+  });
+
+  it('exit quality is zero when no neighbors', () => {
+    const npc = makeEntity('npc', 'enemy', ['enemy'], { name: 'Bandit', zoneId: 'zone-dead-end' });
+    const target = makeEntity('player', 'player', ['player'], { name: 'Hero', zoneId: 'zone-dead-end' });
+    const engine = buildEngine([npc, target]);
+
+    const decision = selectNpcCombatAction(engine.world.entities.npc, engine.store.state);
+    const disengage = [decision.chosen, ...decision.alternatives].find(a => a.intent === 'disengage');
+    if (disengage) {
+      const exitContrib = disengage.contributions.find(c => c.factor === 'exit_quality');
+      // Either no exit_quality contribution, or it has delta 0
+      expect(exitContrib?.delta ?? 0).toBe(0);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Precision vs Force: AI dimension awareness
+// ---------------------------------------------------------------------------
+
+describe('precision vs force: AI dimension awareness', () => {
+  it('high-vigor entity gets vigor_advantage contribution to attack', () => {
+    const bruiser = makeEntity('bruiser', 'enemy', ['enemy'], {
+      name: 'Bruiser',
+      stats: { vigor: 8, instinct: 5, will: 3 },
+    });
+    const target = makeEntity('player', 'player', ['player'], { name: 'Hero' });
+    const engine = buildEngine([bruiser, target]);
+
+    const decision = selectNpcCombatAction(engine.world.entities.bruiser, engine.store.state);
+    const allScores = [decision.chosen, ...decision.alternatives];
+    const attack = allScores.find(s => s.intent === 'attack')!;
+    expect(attack).toBeDefined();
+
+    const vigorContrib = attack.contributions.find(c => c.factor === 'vigor_advantage');
+    expect(vigorContrib).toBeDefined();
+    // vigor=8 → (8-5)*3 = 9 → capped at 5
+    expect(vigorContrib!.delta).toBeGreaterThan(0);
+  });
+
+  it('high-instinct entity gets precision_advantage contribution to reposition', () => {
+    const duelist = makeEntity('duelist', 'enemy', ['enemy'], {
+      name: 'Duelist',
+      stats: { vigor: 5, instinct: 8, will: 3 },
+    });
+    const target = makeEntity('player', 'player', ['player'], { name: 'Hero' });
+    const engine = buildEngine([duelist, target]);
+
+    const decision = selectNpcCombatAction(engine.world.entities.duelist, engine.store.state);
+    const allScores = [decision.chosen, ...decision.alternatives];
+    const reposition = allScores.find(s => s.intent === 'reposition');
+
+    // Reposition may not always appear if combat-tactics isn't loaded,
+    // but the contribution should be there if it does
+    if (reposition) {
+      const precContrib = reposition.contributions.find(c => c.factor === 'precision_advantage');
+      expect(precContrib).toBeDefined();
+      // instinct=8 → (8-5)*3 = 9 → capped at 5
+      expect(precContrib!.delta).toBeGreaterThan(0);
+    }
+  });
+
+  it('default-stat entity gets no dimension bonuses', () => {
+    const generic = makeEntity('generic', 'enemy', ['enemy'], {
+      name: 'Generic',
+      stats: { vigor: 5, instinct: 5, will: 3 },
+    });
+    const target = makeEntity('player', 'player', ['player'], { name: 'Hero' });
+    const engine = buildEngine([generic, target]);
+
+    const decision = selectNpcCombatAction(engine.world.entities.generic, engine.store.state);
+    const allScores = [decision.chosen, ...decision.alternatives];
+
+    // No vigor_advantage, precision_advantage, force_pressure, or force_hold at defaults
+    for (const scored of allScores) {
+      const dimContribs = scored.contributions.filter(c =>
+        ['vigor_advantage', 'precision_advantage', 'force_pressure', 'force_hold'].includes(c.factor),
+      );
+      expect(dimContribs.length).toBe(0);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Group: AI Interception Cover Awareness (P7)
+// ---------------------------------------------------------------------------
+
+describe('AI interception cover awareness', () => {
+  it('attack score penalizes targets with bodyguard cover', () => {
+    const attacker = makeEntity('goblin', 'enemy', ['enemy'], {
+      name: 'Goblin',
+      stats: { vigor: 5, instinct: 5, will: 3 },
+    });
+    // Player has a bodyguard ally
+    const player = makeEntity('player', 'player', ['player'], { name: 'Hero' });
+    const bodyguard = makeEntity('guard', 'player', ['ally', 'role:bodyguard'], {
+      name: 'Guard',
+      resources: { hp: 20, maxHp: 20, stamina: 5 },
+    });
+    const engine = buildEngine([attacker, player, bodyguard]);
+
+    const decision = selectNpcCombatAction(engine.world.entities.goblin, engine.store.state);
+    const allScores = [decision.chosen, ...decision.alternatives];
+    const attack = allScores.find(s => s.intent === 'attack');
+    if (attack) {
+      const coverContrib = attack.contributions.find(c => c.factor === 'interception_cover');
+      expect(coverContrib).toBeDefined();
+      expect(coverContrib!.delta).toBeLessThan(0);
+    }
+  });
+
+  it('no interception cover penalty when enemy has no live allies', () => {
+    const attacker = makeEntity('goblin', 'enemy', ['enemy'], {
+      name: 'Goblin',
+      stats: { vigor: 5, instinct: 5, will: 3 },
+    });
+    const player = makeEntity('player', 'player', ['player'], { name: 'Hero' });
+    const engine = buildEngine([attacker, player]);
+
+    const decision = selectNpcCombatAction(engine.world.entities.goblin, engine.store.state);
+    const allScores = [decision.chosen, ...decision.alternatives];
+    const attack = allScores.find(s => s.intent === 'attack');
+    if (attack) {
+      const coverContrib = attack.contributions.find(c => c.factor === 'interception_cover');
+      expect(coverContrib).toBeUndefined();
+    }
   });
 });

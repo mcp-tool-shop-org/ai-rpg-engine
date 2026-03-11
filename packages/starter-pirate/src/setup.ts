@@ -30,8 +30,13 @@ import {
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
+  createCombatTactics,
+  withCombatResources,
+  buildTacticalHooks,
+  createCombatResources,
+  COMBAT_STATES,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatFormulas } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatFormulas, CombatResourceProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -90,9 +95,36 @@ const pirateFormulas: CombatFormulas = {
   },
 };
 
+// Pirate combat resource profile — crew morale drives everything
+const pirateCombatProfile: CombatResourceProfile = {
+  packId: 'pirate',
+  gains: [
+    { trigger: 'defeat-enemy', resourceId: 'morale', amount: 3 },
+    { trigger: 'attack-hit', resourceId: 'morale', amount: 2 },
+  ],
+  spends: [
+    { action: 'attack', resourceId: 'morale', amount: 5, effects: { damageBonus: 2 } },
+    { action: 'reposition', resourceId: 'morale', amount: 4, effects: { resistState: COMBAT_STATES.EXPOSED, resistChance: 50 } },
+  ],
+  drains: [
+    { trigger: 'take-damage', resourceId: 'morale', amount: 3 },
+    { trigger: 'disengage-fail', resourceId: 'morale', amount: 4 },
+  ],
+  aiModifiers: [
+    {
+      resourceId: 'morale',
+      highThreshold: 60,
+      highModifiers: { attack: 10, pressure: 10 },
+      lowThreshold: 20,
+      lowModifiers: { disengage: 15 },
+    },
+  ],
+};
+
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(pirateStatusDefinitions);
   const review = createCombatReview({ baseFormulas: pirateFormulas });
+  const wrappedFormulas = withCombatResources(pirateCombatProfile, withEngagement(pirateFormulas));
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -102,7 +134,7 @@ export function createGame(seed?: number): Engine {
       statusCore,
       createEngagementCore({ playerId: 'captain' }),
       review.module,
-      createCombatCore(review.explain(withEngagement(pirateFormulas))),
+      createCombatCore(review.explain(wrappedFormulas)),
       createInventoryCore([rumBarrelEffect]),
       createDialogueCore([cartographerDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -153,7 +185,9 @@ export function createGame(seed?: number): Engine {
         factions: [{ factionId: 'colonial-navy', entityIds: ['navy_sailor', 'governor_vane'] }],
         playerId: 'captain',
       }),
-      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['pirate', 'colonial', 'beast'].includes(b.tag)) }),
+      createCombatTactics({ hooks: buildTacticalHooks(pirateCombatProfile) }),
+      createCombatResources(pirateCombatProfile),
+      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['pirate', 'colonial', 'beast'].includes(b.tag)), resourceProfile: pirateCombatProfile }),
       createCombatRecovery({ safeZoneTags: ['safe', 'ship', 'home-base', 'tavern'] }),
       createBossPhaseListener(drownedGuardianBoss),
       createAbilityCore({ abilities: pirateAbilities, statMapping: { power: 'brawn', precision: 'cunning', focus: 'sea-legs' } }),
@@ -213,32 +247,6 @@ export function createGame(seed?: number): Engine {
       channel: 'stinger',
       priority: 'high',
     });
-  });
-
-  // --- Morale combat hooks ---
-  engine.store.events.on('combat.contact.hit', (event) => {
-    if (event.payload.attackerId === 'captain') {
-      const p = engine.store.state.entities['captain'];
-      if (p) p.resources.morale = Math.min(100, (p.resources.morale ?? 0) + 1);
-    }
-  });
-  engine.store.events.on('combat.entity.defeated', (event) => {
-    if (event.payload.defeatedBy === 'captain') {
-      const p = engine.store.state.entities['captain'];
-      if (p) p.resources.morale = Math.min(100, (p.resources.morale ?? 0) + 3);
-    }
-  });
-  engine.store.events.on('combat.contact.miss', (event) => {
-    if (event.payload.attackerId === 'captain') {
-      const p = engine.store.state.entities['captain'];
-      if (p) p.resources.morale = Math.max(0, (p.resources.morale ?? 0) - 1);
-    }
-  });
-  engine.store.events.on('combat.disengage.success', (event) => {
-    if (event.payload.entityId === 'captain') {
-      const p = engine.store.state.entities['captain'];
-      if (p) p.resources.morale = Math.max(0, (p.resources.morale ?? 0) - 2);
-    }
   });
 
   return engine;
