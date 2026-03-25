@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.1] - 2026-03-25
+
+### Added
+
+- CLI: `--version` / `-v` flag and `version` command
+- CLI: `--help` / `-h` flag with usage information
+- CLI: proper error on unknown commands (exits 1 with help text)
+- 5 CLI integration tests (version, help, unknown command)
+
+### Fixed
+
+- SECURITY.md: updated supported versions to include 2.x
+- README: corrected test count (2661 → 2743)
+- CLI: removed hardcoded version string, reads from package.json
+
 ## [2.3.0] - 2026-03-11
 
 ### Combat System (Priorities 3-7) + Polish Pass

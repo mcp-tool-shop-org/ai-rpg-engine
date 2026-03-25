@@ -181,7 +181,7 @@ The 10 starter worlds are **composition examples** — they demonstrate how to c
 
 ### Where we are now
 
-The simulation runtime and combat system are solid — 2661 tests, 10 genre examples, deterministic replay, full AI decision scoring. The engine works as a composition toolkit: pick modules, define stats, wire, create content. Documentation covers every system but needs an API sync pass for the latest additions.
+The simulation runtime and combat system are solid — 2743 tests, 10 genre examples, deterministic replay, full AI decision scoring. The engine works as a composition toolkit: pick modules, define stats, wire, create content. Documentation covers every system but needs an API sync pass for the latest additions.
 
 ### Next few weeks
 

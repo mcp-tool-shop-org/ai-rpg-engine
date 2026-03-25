@@ -3,6 +3,10 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { version } = require('../package.json') as { version: string };
 import {
   renderFullScreen,
   parseActionSelection,
@@ -17,9 +21,38 @@ import { buildCharacter } from './character-builder.js';
 const SAVE_DIR = '.ai-rpg-engine';
 const SAVE_FILE = path.join(SAVE_DIR, 'save.json');
 
+function printHelp() {
+  console.log(`ai-rpg-engine v${version} — simulation-first RPG toolkit`);
+  console.log('');
+  console.log('Usage: ai-rpg-engine [command]');
+  console.log('');
+  console.log('Commands:');
+  console.log('  run            Start a new game (default)');
+  console.log('  replay         Replay actions from a save file');
+  console.log('  inspect-save   Show save file summary');
+  console.log('  version        Print version');
+  console.log('  help           Show this help');
+  console.log('');
+  console.log('Flags:');
+  console.log('  --version, -v  Print version');
+  console.log('  --help, -h     Show this help');
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const command = args[0] ?? 'run';
+
+  if (args.includes('--version') || args.includes('-v') || command === 'version') {
+    console.log(`ai-rpg-engine v${version}`);
+    closeReadline();
+    return;
+  }
+
+  if (args.includes('--help') || args.includes('-h') || command === 'help') {
+    printHelp();
+    closeReadline();
+    return;
+  }
 
   switch (command) {
     case 'run':
@@ -33,10 +66,10 @@ async function main() {
       closeReadline();
       return;
     default:
-      console.log('AI RPG Engine CLI v2.0.0');
-      console.log('Commands: run, replay, inspect-save');
+      console.log(`Unknown command: ${command}`);
+      printHelp();
       closeReadline();
-      process.exit(0);
+      process.exit(1);
   }
 }
 
