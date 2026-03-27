@@ -40,17 +40,22 @@ AI RPG Engine is genre-agnostic.
 
 The same engine can power very different worlds because genre assumptions live in rulesets and content, not in the core runtime.
 
-The repository already includes two small demonstration games:
+The repository includes 10 starter worlds spanning different genres:
 
-### The Chapel Threshold
+| Starter | Genre |
+|---------|-------|
+| starter-fantasy | Dark fantasy |
+| starter-cyberpunk | Cyberpunk |
+| starter-detective | Victorian mystery |
+| starter-pirate | High-seas pirate |
+| starter-zombie | Zombie survival |
+| starter-weird-west | Weird west |
+| starter-colony | Sci-fi colony |
+| starter-ronin | Feudal Japan |
+| starter-vampire | Vampire horror |
+| starter-gladiator | Historical gladiator |
 
-A dark fantasy scene featuring a ruined chapel, a mysterious pilgrim, and an ash ghoul lurking beneath the crypt.
-
-### Neon Lockbox
-
-A cyberpunk micro-scenario involving a fixer, a locked data cache, and an ICE sentry guarding a digital asset.
-
-Both games run on the same engine without changing the core runtime.
+All 10 run on the same engine without changing the core runtime. Each one demonstrates different composition patterns — stat mappings, resource profiles, engagement configurations, and ability sets.
 
 ---
 

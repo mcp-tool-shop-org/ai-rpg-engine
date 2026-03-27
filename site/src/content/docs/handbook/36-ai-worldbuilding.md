@@ -1,5 +1,5 @@
 ---
-title: "Chapter 26 — AI-Assisted Worldbuilding"
+title: "Chapter 36 — AI-Assisted Worldbuilding"
 description: "Using the Ollama package to scaffold, diagnose, and repair simulation content"
 sidebar:
   order: 36

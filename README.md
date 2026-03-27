@@ -22,7 +22,7 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 
 ## What This Is
 
-- A **module library** — 27+ modules covering combat, perception, cognition, factions, rumors, traversal, companions, and more
+- A **module library** — 30+ engine modules covering combat, perception, cognition, factions, rumors, traversal, companions, and more
 - A **composition toolkit** — `buildCombatStack()` wires combat in ~7 lines; `new Engine({ modules })` boots the game
 - A **simulation runtime** — deterministic ticks, replayable action logs, seeded RNG
 - An **AI design studio** (optional) — scaffolding, critique, balance analysis, tuning, experiments via Ollama
@@ -35,24 +35,25 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 
 ---
 
-## Current Status (v2.3.0)
+## Current Status (v2.3.1)
 
 **What works and is tested:**
 - Core runtime: world state, events, actions, ticks, replay — stable since v1.0
-- Combat system: 5 actions, 4 combat states, 4 engagement states, companion interception, defeat flow, AI tactics — 1099 tests
-- Abilities: costs, cooldowns, stat checks, typed effects, status vocabulary, AI-aware selection
+- Combat system: 5 actions, 4 combat states, 4 engagement states, companion interception, defeat flow, AI tactics
+- Abilities: costs, cooldowns, stat checks, typed effects, 11-tag status vocabulary, AI-aware selection
 - Unified decision layer: combat + ability scoring merged into one call (`selectBestAction`)
 - 10 starter worlds with stat-differentiated enemies and full combat integration
 - `buildCombatStack()` eliminates ~40 lines of combat setup per world
 - Tag taxonomy and validation utilities for content authoring
 - Boss phase validation with cross-phase tag tracing
+- Full test suite: 2743 tests across 134 files
 
 **What is rough or incomplete:**
 - AI worldbuilding tools (Ollama layer) work but are lightly tested compared to simulation
 - CLI studio shell is functional but not polished
 - Only 1 of 10 starters uses `buildCombatStack` (Weird West); others use verbose manual wiring
 - No profile system yet — worlds are standalone, not composable from shared profiles
-- Documentation is extensive (57 chapters) but not all chapters reflect the latest APIs
+- Documentation is extensive (40+ handbook pages and 4 appendices) but not all pages reflect the latest APIs
 
 ---
 
@@ -60,7 +61,7 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 
 ```typescript
 import { Engine } from '@ai-rpg-engine/core';
-import { buildCombatStack, createTraversalCore, createDialogueCore } from '@ai-rpg-engine/modules';
+import { buildCombatStack, traversalCore, createDialogueCore } from '@ai-rpg-engine/modules';
 
 // Define your stat mapping
 const combat = buildCombatStack({
@@ -72,7 +73,7 @@ const combat = buildCombatStack({
 // Wire the engine
 const engine = new Engine({
   manifest: myManifest,
-  modules: [...combat.modules, createTraversalCore(), createDialogueCore(myDialogues)],
+  modules: [...combat.modules, traversalCore, createDialogueCore(myDialogues)],
 });
 
 // Submit player actions
@@ -132,12 +133,19 @@ const warCry: AbilityDefinition = {
 | Package | Purpose |
 |---------|---------|
 | [`@ai-rpg-engine/core`](packages/core) | Deterministic simulation runtime — world state, events, RNG, ticks, action resolution |
-| [`@ai-rpg-engine/modules`](packages/modules) | 27+ composable modules — combat, perception, cognition, factions, rumors, traversal, companions, NPC agency, strategic map, item recognition, emergent opportunities, arc detection, endgame triggers |
+| [`@ai-rpg-engine/modules`](packages/modules) | 30+ composable modules — combat, perception, cognition, factions, rumors, traversal, companions, NPC agency, strategic map, item recognition, emergent opportunities, arc detection, endgame triggers |
 | [`@ai-rpg-engine/content-schema`](packages/content-schema) | Canonical schemas and validators for world content |
 | [`@ai-rpg-engine/character-profile`](packages/character-profile) | Character progression, injuries, milestones, reputation |
 | [`@ai-rpg-engine/character-creation`](packages/character-creation) | Archetype selection, build generation, starter gear |
 | [`@ai-rpg-engine/equipment`](packages/equipment) | Equipment types, item provenance, relic growth |
 | [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | Cross-session memory, relationship effects, campaign state |
+| [`@ai-rpg-engine/rumor-system`](packages/rumor-system) | Rumor lifecycle, mutation mechanics, spread tracking |
+| [`@ai-rpg-engine/presentation`](packages/presentation) | Narration plan schema, render contracts, voice profiles |
+| [`@ai-rpg-engine/audio-director`](packages/audio-director) | Cue scheduling, priority, ducking, cooldown logic |
+| [`@ai-rpg-engine/soundpack-core`](packages/soundpack-core) | Sound pack manifests, content-addressable registry |
+| [`@ai-rpg-engine/pack-registry`](packages/pack-registry) | Pack registration, rubric scoring, pack discovery |
+| [`@ai-rpg-engine/asset-registry`](packages/asset-registry) | Content-addressed storage for portraits, icons, media |
+| [`@ai-rpg-engine/image-gen`](packages/image-gen) | Headless portrait generation with pluggable providers |
 | [`@ai-rpg-engine/ollama`](packages/ollama) | Optional AI authoring — scaffolding, critique, guided workflows, tuning, experiments |
 | [`@ai-rpg-engine/cli`](packages/cli) | Command-line design studio |
 | [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | Terminal renderer and input layer |
@@ -168,7 +176,7 @@ The 10 starter worlds are **composition examples** — they demonstrate how to c
 | [Composition Guide](docs/handbook/57-composition-guide.md) | Build your own game by composing engine modules — start here |
 | [Combat Overview](docs/handbook/49a-combat-overview.md) | Six combat pillars, five actions, states at a glance |
 | [Pack Author Guide](docs/handbook/55-combat-pack-guide.md) | Step-by-step buildCombatStack, stat mapping, resource profiles |
-| [Handbook](docs/handbook/index.md) | 57 chapters + 4 appendices covering every system |
+| [Handbook](docs/handbook/index.md) | 40+ pages + 4 appendices covering every system |
 | [Composition Model](docs/composition-model.md) | The 6 reusable layers and how they compose |
 | [Examples](docs/examples/) | Runnable TypeScript examples — mixed party, cross-world, from scratch |
 | [Design Document](docs/DESIGN.md) | Architecture deep-dive — action pipeline, truth vs presentation |
@@ -181,12 +189,12 @@ The 10 starter worlds are **composition examples** — they demonstrate how to c
 
 ### Where we are now
 
-The simulation runtime and combat system are solid — 2743 tests, 10 genre examples, deterministic replay, full AI decision scoring. The engine works as a composition toolkit: pick modules, define stats, wire, create content. Documentation covers every system but needs an API sync pass for the latest additions.
+The simulation runtime and combat system are solid — 2743 tests across 134 files, 10 genre examples, deterministic replay, full AI decision scoring. The engine works as a composition toolkit: pick modules, define stats, wire, create content. Documentation covers every system but needs an API sync pass for the latest additions.
 
 ### Next few weeks
 
 - Migrate remaining 9 starters to `buildCombatStack` (Weird West is the reference)
-- API documentation sync — `submitActionAs`, `selectBestAction`, `resourceCaps`, tag taxonomy
+- API documentation sync — `submitActionAs`, `selectBestAction`, `resourceCaps`, tag taxonomy, pack-registry
 - Starter README polish — clearer "What to Borrow" and remix guidance
 - Cross-linking pass — README, composition guide, examples, and handbook wired together
 

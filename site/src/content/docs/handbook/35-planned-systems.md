@@ -1,5 +1,5 @@
 ---
-title: "Chapter 25 — Planned Systems"
+title: "Chapter 35 — Planned Systems"
 description: "Planned Systems"
 sidebar:
   order: 35
@@ -58,11 +58,13 @@ Persistent NPC memory with multi-axis relationships and a campaign journal. NPCs
 
 Rumor lifecycle engine with mutation mechanics. Rumors now mutate as they spread — five built-in mutation rules fire probabilistically per hop: exaggeration (numbers grow), minimization (numbers shrink), inversion (booleans flip), attribution shift (who did it changes), and embellishment (emotional charge intensifies). The engine tracks full spread paths, faction uptake, confidence decay per hop, and lifecycle states (spreading → established → fading → dead). Environment instability multiplies mutation probabilities, making chaotic zones breed wilder rumors.
 
+## Shipped in Built-in Modules
+
+### Companion System (companion-core, companion-reactions)
+
+NPCs that travel with the player, maintaining their own cognition state. The `companion-core` module manages party state, companion morale, cohesion, and ability modifiers. The `companion-reactions` module evaluates departure risk and companion reactions to player decisions. Companions observe the same events through different perception filters, forming independent beliefs that may contradict the narrator or the player's understanding.
+
 ## Planned
-
-### Companion AI
-
-NPCs that travel with the player, maintaining their own cognition state. Companions observe the same events through different perception filters, forming independent beliefs that may contradict the narrator or the player's understanding.
 
 ### Stealth Systems
 

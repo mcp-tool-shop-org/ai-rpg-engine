@@ -10,6 +10,10 @@ A guide to building simulation-driven terminal RPGs.
 
 ---
 
+## Getting Started
+
+- [Beginners Guide](./beginners.md) — New to the engine? Start here
+
 ## Part I — Orientation
 
 1. [What AI RPG Engine Is](./01-what-ai-rpg-engine-is.md)
@@ -48,22 +52,35 @@ A guide to building simulation-driven terminal RPGs.
 
 20. [The Chapel Threshold (Fantasy)](./20-chapel-threshold.md)
 21. [Neon Lockbox (Cyberpunk)](./21-neon-lockbox.md)
+22. [Gaslight Detective (Detective)](./22-gaslight-detective.md)
+23. [Black Flag Requiem (Pirate)](./23-black-flag-requiem.md)
+24. [Ashfall Dead (Zombie)](./24-ashfall-dead.md)
+25. [Dust Devil's Bargain (Weird West)](./25-dust-devils-bargain.md)
+26. [Signal Loss (Colony)](./26-signal-loss.md)
 
-## Part VII — Composition
+## Part VII — Systems
 
-57. [Composition Guide](./57-composition-guide.md) — Build your own game by composing engine modules
-58. [Profile Roadmap](https://github.com/mcp-tool-shop-org/ai-rpg-engine/blob/main/docs/profile-roadmap.md) — Plug-in profiles: portable mechanical templates (planned)
+27. [Character Creation](./27-character-creation.md)
+28. [Asset Registry](./28-asset-registry.md)
+29. [Image Generation](./29-image-generation.md)
+30. [Equipment System](./30-equipment.md)
+31. [Character Profiles](./31-character-profiles.md)
 
 ## Part VIII — Debugging and Tools
 
-22. [Save Files](./22-save-files.md)
-23. [Deterministic Replay](./23-deterministic-replay.md)
-24. [Observability](./24-observability.md)
+32. [Save Files](./32-save-files.md)
+33. [Deterministic Replay](./33-deterministic-replay.md)
+34. [Observability](./34-observability.md)
 
 ## Part IX — Future Directions
 
-25. [Planned Systems](./25-planned-systems.md)
-26. [AI-Assisted Worldbuilding](./26-ai-worldbuilding.md)
+35. [Planned Systems](./35-planned-systems.md)
+36. [AI-Assisted Worldbuilding](./36-ai-worldbuilding.md)
+
+## Part X — Advanced Systems
+
+42. [Quest Webs & Emergent Opportunities](./42-quest-webs.md)
+57. [Composition Guide](./57-composition-guide.md) — Build your own game by composing engine modules
 
 ## Appendix
 

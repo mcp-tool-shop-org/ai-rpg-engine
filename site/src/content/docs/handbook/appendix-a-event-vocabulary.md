@@ -24,9 +24,17 @@ Events follow the pattern: `domain.object.verb`
 | Event | Source | Description |
 |-------|--------|-------------|
 | `combat.contact.hit` | combat-core | Attack connected |
-| `combat.contact.missed` | combat-core | Attack missed |
+| `combat.contact.miss` | combat-core | Attack missed |
 | `combat.damage.applied` | combat-core | Damage dealt to entity |
 | `combat.entity.defeated` | combat-core | Entity HP reached zero |
+| `combat.guard.start` | combat-core | Entity entered guarded stance |
+| `combat.guard.absorbed` | combat-core | Guard reduced incoming damage |
+| `combat.guard.broken` | combat-core | Attacker broke through guard |
+| `combat.counter.off_balance` | combat-core | Guard counter knocked attacker off balance |
+| `combat.disengage.success` | combat-core | Entity fled to adjacent zone |
+| `combat.disengage.fail` | combat-core | Disengage failed, entity exposed |
+| `combat.companion.intercepted` | combat-core | Ally intercepted damage for target |
+| `resource.changed` | combat-core | Entity resource pool changed |
 
 ## Status Events
 

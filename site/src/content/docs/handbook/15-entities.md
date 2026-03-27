@@ -26,7 +26,7 @@ Actors and objects in the world.
 ```
 id: pilgrim
 name: The Pilgrim
-kind: npc
+type: npc
 stats: { vigor: 3, instinct: 5, will: 7 }
 resources: { hp: 15 }
 tags: [friendly, mysterious]
@@ -37,7 +37,7 @@ tags: [friendly, mysterious]
 ```
 id: ash_ghoul
 name: Ash Ghoul
-kind: enemy
+type: enemy
 stats: { vigor: 6, instinct: 4, will: 2 }
 resources: { hp: 20, stamina: 8 }
 ai:
@@ -51,7 +51,7 @@ ai:
 ```
 id: healing_draught
 name: Healing Draught
-kind: item
+type: item
 effects: [{ type: restore, resource: hp, amount: 8 }]
 ```
 

@@ -1,5 +1,5 @@
 ---
-title: "Chapter 23 — Deterministic Replay"
+title: "Chapter 33 — Deterministic Replay"
 description: "Deterministic Replay"
 sidebar:
   order: 33

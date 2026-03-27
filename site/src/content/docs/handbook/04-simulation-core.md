@@ -119,8 +119,10 @@ The engine exposes:
 | Method / Property | Purpose |
 |-------------------|---------|
 | `submitAction(verb, options)` | Process a player action |
+| `submitActionAs(entityId, verb, options)` | Process an action on behalf of any entity (NPC, ally, party member) |
 | `processAction(action)` | Process any action (player, AI, or system) |
 | `getAvailableActions()` | List all registered verbs |
+| `getActionLog()` | Get the action log for replay |
 | `serialize()` | Full state snapshot for save/load |
 | `world` | Read-only access to current WorldState |
 | `tick` | Current tick number |

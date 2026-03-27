@@ -1,5 +1,5 @@
 ---
-title: "Chapter 24 — Observability"
+title: "Chapter 34 — Observability"
 description: "Observability"
 sidebar:
   order: 34
