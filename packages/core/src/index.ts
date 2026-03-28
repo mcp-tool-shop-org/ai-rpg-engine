@@ -10,4 +10,5 @@ export * from './modules.js';
 export * from './formulas.js';
 export * from './channels.js';
 export * from './engine.js';
+// TODO: move to @ai-rpg-engine/core/testing subpath
 export * from './test-harness.js';

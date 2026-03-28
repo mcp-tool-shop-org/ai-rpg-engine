@@ -1,5 +1,6 @@
 // @ai-rpg-engine/modules — built-in mechanical systems
 
+export { makeEvent } from './make-event.js';
 export { traversalCore } from './traversal-core.js';
 export { statusCore, applyStatus, removeStatus, hasStatus, getStatusStacks } from './status-core.js';
 export { combatCore, createCombatCore, COMBAT_STATES, simpleRoll, DEFAULT_STAT_MAPPING } from './combat-core.js';

@@ -42,7 +42,7 @@ export function validateRumor(rumor: unknown): ValidationError[] {
   if (!Array.isArray(r.factionUptake)) {
     errors.push({ field: 'factionUptake', message: 'must be an array' });
   }
-  if (!VALID_STATUSES.includes(r.status as any)) {
+  if (!(VALID_STATUSES as readonly string[]).includes(r.status as string)) {
     errors.push({ field: 'status', message: `must be one of: ${VALID_STATUSES.join(', ')}` });
   }
 

@@ -52,14 +52,14 @@ export const vampireMinimalRuleset: RulesetDefinition = {
       id: 'guard-reduction',
       name: 'Guard Reduction',
       description: 'Fraction of damage absorbed when guarded (default 0.5)',
-      inputs: ['defender.vigor'],
+      inputs: ['defender.vitality'],
       output: 'number (0-1)',
     },
     {
       id: 'disengage-chance',
       name: 'Disengage Chance',
       description: 'Success chance: 40 + instinct*5 + will*2, clamped 15-90',
-      inputs: ['actor.instinct', 'actor.will'],
+      inputs: ['actor.cunning', 'actor.presence'],
       output: 'number (0-100)',
     },
     {

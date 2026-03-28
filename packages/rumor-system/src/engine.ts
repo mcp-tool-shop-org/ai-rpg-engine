@@ -79,7 +79,8 @@ export class RumorEngine {
       throw new Error(`Rumor not found: ${rumorId}`);
     }
 
-    // Clone the rumor for mutation
+    if (original.spreadPath.includes(ctx.receiverId)) return original;
+
     let spreading: Rumor = { ...original, spreadPath: [...original.spreadPath] };
 
     // Apply confidence decay

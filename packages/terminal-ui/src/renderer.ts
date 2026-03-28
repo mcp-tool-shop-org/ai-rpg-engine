@@ -86,7 +86,7 @@ export function renderEventLog(events: ResolvedEvent[], limit = 8): string {
   return lines.join('\n') + '\n';
 }
 
-export function renderActions(verbs: string[], world: WorldState): string {
+export function renderActions(world: WorldState): string {
   const zone = world.zones[world.locationId];
   const lines: string[] = [];
   let idx = 1;
@@ -200,36 +200,61 @@ export function parseTextInput(
   if (!zone) return { verb };
 
   if (rest) {
-    // Try to find matching entity
+    const restLower = rest.toLowerCase();
+
     const entities = Object.values(world.entities).filter(e => e.zoneId === zone.id);
+    const entityResult = (entity: EntityState) =>
+      verb === 'use' ? { verb, toolId: entity.id } : { verb, targetIds: [entity.id] };
+
+    let prefixEntity: EntityState | undefined;
+    let substringEntity: EntityState | undefined;
     for (const entity of entities) {
-      if (entity.name.toLowerCase().includes(rest) || entity.id.toLowerCase().includes(rest)) {
-        if (verb === 'use') {
-          return { verb, toolId: entity.id };
-        }
-        return { verb, targetIds: [entity.id] };
+      const nameLower = entity.name.toLowerCase();
+      const idLower = entity.id.toLowerCase();
+      if (nameLower === restLower || idLower === restLower) {
+        return entityResult(entity);
+      }
+      if (!prefixEntity && (nameLower.startsWith(restLower) || idLower.startsWith(restLower))) {
+        prefixEntity = entity;
+      }
+      if (!substringEntity && (nameLower.includes(restLower) || idLower.includes(restLower))) {
+        substringEntity = entity;
       }
     }
+    if (prefixEntity) return entityResult(prefixEntity);
+    if (substringEntity) return entityResult(substringEntity);
 
-    // Try to find matching zone
+    let prefixZone: string | undefined;
+    let substringZone: string | undefined;
     for (const neighborId of zone.neighbors) {
       const neighbor = world.zones[neighborId];
-      if (neighbor && neighbor.name.toLowerCase().includes(rest)) {
+      const nameLower = neighbor?.name.toLowerCase();
+      const idLower = neighborId.toLowerCase();
+      if (nameLower === restLower || idLower === restLower) {
         return { verb, targetIds: [neighborId] };
       }
-      if (neighborId.toLowerCase().includes(rest)) {
-        return { verb, targetIds: [neighborId] };
+      if (!prefixZone && ((nameLower && nameLower.startsWith(restLower)) || idLower.startsWith(restLower))) {
+        prefixZone = neighborId;
+      }
+      if (!substringZone && ((nameLower && nameLower.includes(restLower)) || idLower.includes(restLower))) {
+        substringZone = neighborId;
       }
     }
+    if (prefixZone) return { verb, targetIds: [prefixZone] };
+    if (substringZone) return { verb, targetIds: [substringZone] };
 
-    // Try inventory items
     const player = world.entities[world.playerId];
     if (player?.inventory) {
+      let prefixItem: string | undefined;
+      let substringItem: string | undefined;
       for (const itemId of player.inventory) {
-        if (itemId.toLowerCase().includes(rest)) {
-          return { verb: 'use', toolId: itemId };
-        }
+        const idLower = itemId.toLowerCase();
+        if (idLower === restLower) return { verb: 'use', toolId: itemId };
+        if (!prefixItem && idLower.startsWith(restLower)) prefixItem = itemId;
+        if (!substringItem && idLower.includes(restLower)) substringItem = itemId;
       }
+      if (prefixItem) return { verb: 'use', toolId: prefixItem };
+      if (substringItem) return { verb: 'use', toolId: substringItem };
     }
   }
 
@@ -338,7 +363,7 @@ export function renderFullScreen(world: WorldState, recentEvents: ResolvedEvent[
   }
 
   lines.push(DIVIDER);
-  lines.push(renderActions([], world));
+  lines.push(renderActions(world));
   lines.push(DIVIDER);
 
   return lines.join('\n');

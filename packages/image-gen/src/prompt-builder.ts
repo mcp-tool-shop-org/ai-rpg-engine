@@ -3,28 +3,39 @@
 import type { PortraitRequest } from './types.js';
 import { getStylePreset } from './styles.js';
 
+function sanitize(s: string): string {
+  return s.replace(/[():\[\]\\<>]/g, '');
+}
+
 /** Build a portrait generation prompt from character data. */
 export function buildPortraitPrompt(request: PortraitRequest): string {
   const parts: string[] = [];
 
+  const name = sanitize(request.characterName);
+  const archetype = sanitize(request.archetypeName);
+  const background = sanitize(request.backgroundName);
+  const title = request.title ? sanitize(request.title) : undefined;
+  const discipline = request.disciplineName ? sanitize(request.disciplineName) : undefined;
+  const traits = request.traits.map(sanitize);
+
   // Subject
-  if (request.title) {
-    parts.push(`Portrait of ${request.characterName}, ${request.title}`);
+  if (title) {
+    parts.push(`Portrait of ${name}, ${title}`);
   } else {
-    parts.push(`Portrait of ${request.characterName}`);
+    parts.push(`Portrait of ${name}`);
   }
 
   // Class identity
-  const classDesc: string[] = [request.archetypeName];
-  if (request.disciplineName) classDesc.push(request.disciplineName);
+  const classDesc: string[] = [archetype];
+  if (discipline) classDesc.push(discipline);
   parts.push(classDesc.join(' and '));
 
   // Background origin
-  parts.push(`${request.backgroundName} origin`);
+  parts.push(`${background} origin`);
 
   // Traits (flavor only, pick the interesting ones)
-  if (request.traits.length > 0) {
-    parts.push(`known for being ${request.traits.join(' and ')}`);
+  if (traits.length > 0) {
+    parts.push(`known for being ${traits.join(' and ')}`);
   }
 
   // Style

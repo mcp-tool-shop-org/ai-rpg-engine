@@ -30,6 +30,7 @@ export const zombieMinimalRuleset: RulesetDefinition = {
     { id: 'choose', name: 'Choose', tags: ['dialogue'], description: 'Select a dialogue option' },
     { id: 'barricade', name: 'Barricade', tags: ['defense'], description: 'Fortify a location against the dead' },
     { id: 'scavenge', name: 'Scavenge', tags: ['loot', 'survival'], description: 'Forage for food, water, or materials' },
+    { id: 'use-ability', name: 'Use Ability', tags: ['ability'], description: 'Use a special ability' },
   ],
 
   formulas: [
@@ -51,14 +52,14 @@ export const zombieMinimalRuleset: RulesetDefinition = {
       id: 'guard-reduction',
       name: 'Guard Reduction',
       description: 'Fraction of damage absorbed when guarded (default 0.5)',
-      inputs: ['defender.vigor'],
+      inputs: ['defender.fitness'],
       output: 'number (0-1)',
     },
     {
       id: 'disengage-chance',
       name: 'Disengage Chance',
       description: 'Success chance: 40 + instinct*5 + will*2, clamped 15-90',
-      inputs: ['actor.instinct', 'actor.will'],
+      inputs: ['actor.wits', 'actor.nerve'],
       output: 'number (0-100)',
     },
   ],

@@ -23,7 +23,7 @@ import type {
   ResolvedEvent,
   EntityState,
 } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
+import { makeEvent } from './make-event.js';
 import { applyStatus, removeStatus, hasStatus } from './status-core.js';
 import { COMBAT_STATES, simpleRoll, DEFAULT_STAT_MAPPING } from './combat-core.js';
 import type { CombatFormulas, CombatStatMapping } from './combat-core.js';
@@ -125,22 +125,6 @@ export function clearEntityRoundFlags(entityId: string): void {
 
 function getStat(entity: EntityState, mapping: CombatStatMapping, role: keyof CombatStatMapping, fallback: number): number {
   return entity.stats[mapping[role]] ?? fallback;
-}
-
-function makeEvent(
-  action: ActionIntent,
-  type: string,
-  payload: Record<string, unknown>,
-  extra?: Partial<ResolvedEvent>,
-): ResolvedEvent {
-  return {
-    id: nextId('evt'),
-    tick: action.issuedAtTick,
-    type,
-    actorId: action.actorId,
-    payload,
-    ...extra,
-  };
 }
 
 function getEntitiesInZone(world: WorldState, zoneId: string): EntityState[] {

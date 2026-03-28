@@ -54,6 +54,11 @@ export function validateBuild(
     errors.push(`Not enough flaws: ${flawCount} < required ${catalog.requiredFlaws}`);
   }
 
+  // --- Check duplicate traits ---
+  if (new Set(build.traitIds).size !== build.traitIds.length) {
+    errors.push('Duplicate trait IDs detected');
+  }
+
   // --- Check trait incompatibilities ---
   const selectedIds = new Set(build.traitIds);
   for (const trait of validTraits) {

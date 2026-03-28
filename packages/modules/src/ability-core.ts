@@ -10,7 +10,7 @@ import type {
   EntityState,
   ScalarValue,
 } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
+import { makeEvent } from './make-event.js';
 import type {
   AbilityDefinition,
   ResourceCost,
@@ -542,22 +542,3 @@ function useAbilityHandler(
   return events;
 }
 
-// ---------------------------------------------------------------------------
-// Event helper
-// ---------------------------------------------------------------------------
-
-function makeEvent(
-  action: ActionIntent,
-  type: string,
-  payload: Record<string, unknown>,
-  extra?: Partial<ResolvedEvent>,
-): ResolvedEvent {
-  return {
-    id: nextId('evt'),
-    tick: action.issuedAtTick,
-    type,
-    actorId: action.actorId,
-    payload,
-    ...extra,
-  };
-}

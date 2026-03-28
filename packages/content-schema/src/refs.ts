@@ -108,7 +108,7 @@ export function validateRefs(pack: ContentPack): ValidationResult {
       if (neighborZone && !(neighborZone.neighbors ?? []).includes(zone.id)) {
         errors.push({
           path: `${path}.zone(${zone.id}).neighbors`,
-          message: `one-way neighbor: "${zone.id}" → "${neighbor}" but not "${neighbor}" → "${zone.id}"`,
+          message: `[advisory] zone '${zone.id}' lists '${neighbor}' as neighbor but not vice versa`,
         });
       }
     }

@@ -7,7 +7,7 @@ import type {
   ResolvedEvent,
   ScalarValue,
 } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
+import { makeEvent } from './make-event.js';
 import type { DialogueDefinition, DialogueNode, EffectDefinition } from '@ai-rpg-engine/content-schema';
 
 export type DialogueState = {
@@ -222,18 +222,3 @@ function evaluateCondition(
   return true;
 }
 
-function makeEvent(
-  action: ActionIntent,
-  type: string,
-  payload: Record<string, unknown>,
-  extra?: Partial<ResolvedEvent>,
-): ResolvedEvent {
-  return {
-    id: nextId('evt'),
-    tick: action.issuedAtTick,
-    type,
-    actorId: action.actorId,
-    payload,
-    ...extra,
-  };
-}

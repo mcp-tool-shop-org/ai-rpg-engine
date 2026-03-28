@@ -89,6 +89,7 @@ describe('apply-preview', () => {
       const msg = await applyConfirmed({
         content: 'id: written\nname: Written Room',
         targetPath: target,
+        projectRoot: tempDir,
       });
 
       expect(msg).toContain('Written');
@@ -101,6 +102,7 @@ describe('apply-preview', () => {
       await applyConfirmed({
         content: 'id: nested',
         targetPath: target,
+        projectRoot: tempDir,
       });
 
       const onDisk = await readFile(target, 'utf-8');
@@ -113,6 +115,7 @@ describe('apply-preview', () => {
       await applyConfirmed({
         content: 'new',
         targetPath: target,
+        projectRoot: tempDir,
       });
 
       const onDisk = await readFile(target, 'utf-8');

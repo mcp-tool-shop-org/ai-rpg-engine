@@ -209,10 +209,15 @@ function replayGame() {
     process.exit(1);
   }
 
-  const data = JSON.parse(fs.readFileSync(SAVE_FILE, 'utf-8'));
+  let data: any;
+  try {
+    data = JSON.parse(fs.readFileSync(SAVE_FILE, 'utf-8'));
+  } catch {
+    console.error('  Save file is corrupted or not valid JSON.');
+    process.exit(1);
+  }
   const actionLog = data.actionLog ?? [];
 
-  // Use the first pack for replay (TODO: save pack ID in save file)
   const pack = allPacks[0];
   console.log(`  Replaying ${actionLog.length} actions...`);
 
@@ -239,7 +244,13 @@ function inspectSave() {
     process.exit(1);
   }
 
-  const data = JSON.parse(fs.readFileSync(SAVE_FILE, 'utf-8'));
+  let data: any;
+  try {
+    data = JSON.parse(fs.readFileSync(SAVE_FILE, 'utf-8'));
+  } catch {
+    console.error('  Save file is corrupted or not valid JSON.');
+    process.exit(1);
+  }
   const world = data.world?.state;
   if (!world) {
     console.log('  Invalid save file.');
@@ -256,4 +267,4 @@ function inspectSave() {
   console.log(`  Globals: ${JSON.stringify(world.globals ?? {})}`);
 }
 
-main();
+main().catch((e: Error) => { console.error(e.message); process.exit(1); });

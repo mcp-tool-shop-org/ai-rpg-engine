@@ -110,7 +110,7 @@ describe('validateRefs', () => {
       ],
     });
     expect(r.ok).toBe(false);
-    expect(r.errors.some((e) => e.message.includes('one-way neighbor'))).toBe(true);
+    expect(r.errors.some((e) => e.message.includes('[advisory]') && e.message.includes('not vice versa'))).toBe(true);
   });
 
   it('passes with empty pack', () => {

@@ -9,6 +9,7 @@ export type ApplyPreviewInput = {
   content: string;
   targetPath: string;
   label?: string;
+  projectRoot?: string;
 };
 
 export type ApplyPreviewResult = {
@@ -68,6 +69,10 @@ export async function generatePreview(input: ApplyPreviewInput): Promise<ApplyPr
 
 export async function applyConfirmed(input: ApplyPreviewInput): Promise<string> {
   const resolved = resolve(input.targetPath);
+  const root = resolve(input.projectRoot ?? process.cwd());
+  if (!resolved.startsWith(root + '/') && !resolved.startsWith(root + '\\') && resolved !== root) {
+    return `Error: target path escapes project root (${resolved})`;
+  }
   await mkdir(dirname(resolved), { recursive: true });
   await writeFile(resolved, input.content, 'utf-8');
   return `Written: ${resolved} (${input.content.length} bytes)`;

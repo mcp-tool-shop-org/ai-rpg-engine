@@ -59,7 +59,7 @@ function getTriggerValue(trigger: GrowthTrigger, chronicle: ItemChronicleEntry[]
     case 'recognition-count':
       return countByEvent(chronicle, 'recognized');
     case 'faction-kills':
-      return countByEvent(chronicle, 'used-in-kill'); // Same as kill-count for now
+      return 0;
     case 'boss-kill':
       return chronicle.filter((e) => e.event === 'used-in-kill' && e.detail.toLowerCase().includes('boss')).length;
   }

@@ -1,7 +1,7 @@
 // traversal-core — movement between zones
 
 import type { EngineModule, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
+import { makeEvent } from './make-event.js';
 
 export const traversalCore: EngineModule = {
   id: 'traversal-core',
@@ -98,18 +98,3 @@ function inspectHandler(action: ActionIntent, world: WorldState): ResolvedEvent[
   })];
 }
 
-function makeEvent(
-  action: ActionIntent,
-  type: string,
-  payload: Record<string, unknown>,
-  extra?: Partial<ResolvedEvent>,
-): ResolvedEvent {
-  return {
-    id: nextId('evt'),
-    tick: action.issuedAtTick,
-    type,
-    actorId: action.actorId,
-    payload,
-    ...extra,
-  };
-}

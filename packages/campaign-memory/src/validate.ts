@@ -23,7 +23,7 @@ export function validateCampaignRecord(record: unknown): ValidationError[] {
   if (typeof r.tick !== 'number' || r.tick < 0) {
     errors.push({ field: 'tick', message: 'must be a non-negative number' });
   }
-  if (!VALID_CATEGORIES.includes(r.category as any)) {
+  if (!(VALID_CATEGORIES as readonly string[]).includes(r.category as string)) {
     errors.push({ field: 'category', message: `must be one of: ${VALID_CATEGORIES.join(', ')}` });
   }
   if (typeof r.actorId !== 'string' || r.actorId.length === 0) {
@@ -81,7 +81,7 @@ export function validateMemoryFragment(fragment: unknown): ValidationError[] {
   if (typeof f.emotionalCharge !== 'number' || f.emotionalCharge < -1 || f.emotionalCharge > 1) {
     errors.push({ field: 'emotionalCharge', message: 'must be a number between -1 and 1' });
   }
-  if (!VALID_CONSOLIDATIONS.includes(f.consolidation as any)) {
+  if (!(VALID_CONSOLIDATIONS as readonly string[]).includes(f.consolidation as string)) {
     errors.push({ field: 'consolidation', message: `must be one of: ${VALID_CONSOLIDATIONS.join(', ')}` });
   }
 

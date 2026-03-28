@@ -7,8 +7,8 @@ import type {
   ResolvedEvent,
   EntityState,
 } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
 import { applyStatus, removeStatus, hasStatus } from './status-core.js';
+import { makeEvent } from './make-event.js';
 
 /** Maps generic combat roles to starter-specific stat names */
 export type CombatStatMapping = {
@@ -622,18 +622,3 @@ export function simpleRoll(tick: number, attackerId: string, targetId: string): 
   return (Math.abs(hash) % 100) + 1;
 }
 
-function makeEvent(
-  action: ActionIntent,
-  type: string,
-  payload: Record<string, unknown>,
-  extra?: Partial<ResolvedEvent>,
-): ResolvedEvent {
-  return {
-    id: nextId('evt'),
-    tick: action.issuedAtTick,
-    type,
-    actorId: action.actorId,
-    payload,
-    ...extra,
-  };
-}

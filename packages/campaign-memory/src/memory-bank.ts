@@ -140,6 +140,7 @@ export class NpcMemoryBank {
 
         // Decay salience
         mem.salience = Math.max(0, mem.salience - this.config.decayRate * elapsed);
+        mem.tick = currentTick;
 
         // Update consolidation state
         if (mem.salience < this.config.dimThreshold) {
@@ -173,7 +174,13 @@ export class NpcMemoryBank {
 
   /** Get the full memory entry for a subject */
   getEntry(subjectId: string): NpcMemoryEntry | undefined {
-    return this.state.subjects[subjectId];
+    const entry = this.state.subjects[subjectId];
+    if (!entry) return undefined;
+    return {
+      ...entry,
+      relationship: { ...entry.relationship },
+      memories: entry.memories.map((m) => ({ ...m })),
+    };
   }
 
   /** Serializable state */

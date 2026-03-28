@@ -5,7 +5,8 @@ import type { AudioCommand, AudioDomain } from './types.js';
 
 /** Estimate speech duration in ms from text length. */
 function estimateSpeechDurationMs(text: string, speed: number): number {
-  const wordsPerMinute = 150 * speed;
+  const safeSpeed = Math.max(0.1, speed);
+  const wordsPerMinute = 150 * safeSpeed;
   const wordCount = text.split(/\s+/).length;
   return Math.round((wordCount / wordsPerMinute) * 60_000);
 }

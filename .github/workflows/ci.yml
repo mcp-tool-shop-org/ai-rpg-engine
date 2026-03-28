@@ -1,5 +1,8 @@
 name: CI
 
+permissions:
+  contents: read
+
 on:
   push:
     paths:
@@ -7,6 +10,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'tsconfig.json'
+      - 'vitest.config.ts'
       - 'eslint.config.js'
       - '.github/workflows/**'
   pull_request:
@@ -15,6 +19,7 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'tsconfig.json'
+      - 'vitest.config.ts'
       - 'eslint.config.js'
       - '.github/workflows/**'
   workflow_dispatch:
@@ -41,7 +46,8 @@ jobs:
       - run: npm audit --audit-level=high || true
       - run: npm run lint
       - run: npm run build
-      - run: npm run test
+      - if: matrix.node-version != 22
+        run: npm run test
 
       - name: Coverage
         if: matrix.node-version == 22

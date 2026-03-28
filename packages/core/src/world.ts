@@ -108,13 +108,6 @@ export class WorldStore {
     if (!entity) return 0;
     const base = entity.stats[statId] ?? 0;
 
-    // Apply status modifiers
-    for (const status of entity.statuses) {
-      // Status modifiers will be resolved by status-core module
-      // Core just provides the base value
-      void status;
-    }
-
     return base;
   }
 

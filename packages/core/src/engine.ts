@@ -6,6 +6,7 @@ import type {
   ActionIntent,
   ResolvedEvent,
   RulesetDefinition,
+  WorldState,
 } from './types.js';
 import { WorldStore } from './world.js';
 import { ActionDispatcher } from './actions.js';
@@ -125,7 +126,7 @@ export class Engine {
   }
 
   /** Get current world state (read-only access) */
-  get world() {
+  get world(): Readonly<WorldState> {
     return this.store.state;
   }
 

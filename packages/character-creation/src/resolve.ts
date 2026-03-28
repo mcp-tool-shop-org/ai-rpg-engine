@@ -19,8 +19,10 @@ export function resolveEntity(
     throw new Error(`Invalid build: ${result.errors.join('; ')}`);
   }
 
-  const archetype = catalog.archetypes.find((a) => a.id === build.archetypeId)!;
-  const background = catalog.backgrounds.find((b) => b.id === build.backgroundId)!;
+  const archetype = catalog.archetypes.find((a) => a.id === build.archetypeId);
+  if (!archetype) throw new Error('Archetype not found: ' + build.archetypeId);
+  const background = catalog.backgrounds.find((b) => b.id === build.backgroundId);
+  if (!background) throw new Error('Background not found: ' + build.backgroundId);
 
   // Collect starting inventory
   const inventory: string[] = [];

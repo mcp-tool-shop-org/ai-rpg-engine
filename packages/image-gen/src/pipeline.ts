@@ -32,9 +32,12 @@ export async function generatePortrait(
 
   const result = await provider.generate(prompt, genOpts);
 
+  const characterKey = `${request.characterName}::${request.archetypeName}`;
+
   const tags = [
     'portrait',
     request.genre,
+    `char:${characterKey}`,
     ...request.tags.filter((t) => t !== 'player'),
     ...(opts?.extraTags ?? []),
   ];
@@ -68,9 +71,9 @@ export async function ensurePortrait(
     tag: request.genre,
   });
 
-  // Check if any existing portrait matches this character's archetype
+  const characterKey = `char:${request.characterName}::${request.archetypeName}`;
   const match = existing.find(
-    (m) => m.source?.includes(request.characterName) && m.source?.includes(request.archetypeName),
+    (m) => m.tags?.includes(characterKey),
   );
 
   if (match) return match;

@@ -46,7 +46,8 @@ export class EventBus {
     // Specific listeners
     const handlers = this.listeners.get(event.type);
     if (handlers) {
-      for (const handler of handlers) {
+      const snapshot = [...handlers];
+      for (const handler of snapshot) {
         handler(event, world);
       }
     }
@@ -58,14 +59,16 @@ export class EventBus {
       const domainWildcard = `${domain}.*`;
       const domainHandlers = this.listeners.get(domainWildcard);
       if (domainHandlers) {
-        for (const handler of domainHandlers) {
+        const domainSnapshot = [...domainHandlers];
+        for (const handler of domainSnapshot) {
           handler(event, world);
         }
       }
     }
 
     // Wildcard listeners
-    for (const handler of this.wildcardListeners) {
+    const wildcardSnapshot = [...this.wildcardListeners];
+    for (const handler of wildcardSnapshot) {
       handler(event, world);
     }
   }

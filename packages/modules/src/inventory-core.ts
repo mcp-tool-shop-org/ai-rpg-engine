@@ -7,6 +7,7 @@ import type {
   ResolvedEvent,
 } from '@ai-rpg-engine/core';
 import { nextId } from '@ai-rpg-engine/core';
+import { makeEvent } from './make-event.js';
 
 export type ItemEffect = {
   itemId: string;
@@ -84,16 +85,3 @@ export function giveItem(entity: import('@ai-rpg-engine/core').EntityState, item
   };
 }
 
-function makeEvent(
-  action: ActionIntent,
-  type: string,
-  payload: Record<string, unknown>,
-): ResolvedEvent {
-  return {
-    id: nextId('evt'),
-    tick: action.issuedAtTick,
-    type,
-    actorId: action.actorId,
-    payload,
-  };
-}
