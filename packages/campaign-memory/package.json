@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/campaign-memory",
-  "version": "2.1.6",
+  "version": "2.1.7",
   "description": "Persistent NPC memory, relationship axes, and campaign journal for AI RPG Engine",
   "type": "module",
   "main": "./dist/index.js",

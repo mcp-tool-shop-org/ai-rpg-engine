@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/core",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "AI RPG Engine core: state, entities, actions, events, rules, RNG, persistence",
   "type": "module",
   "main": "./dist/index.js",
