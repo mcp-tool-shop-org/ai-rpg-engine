@@ -35,7 +35,7 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 
 ---
 
-## Current Status (v2.3.1)
+## Current Status (v2.3.2)
 
 **What works and is tested:**
 - Core runtime: world state, events, actions, ticks, replay — stable since v1.0
@@ -61,7 +61,7 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 
 ```typescript
 import { Engine } from '@ai-rpg-engine/core';
-import { buildCombatStack, traversalCore, createDialogueCore } from '@ai-rpg-engine/modules';
+import { buildCombatStack, traversalCore, statusCore, createDialogueCore } from '@ai-rpg-engine/modules';
 
 // Define your stat mapping
 const combat = buildCombatStack({
@@ -73,7 +73,7 @@ const combat = buildCombatStack({
 // Wire the engine
 const engine = new Engine({
   manifest: myManifest,
-  modules: [...combat.modules, traversalCore, createDialogueCore(myDialogues)],
+  modules: [statusCore, ...combat.modules, traversalCore, createDialogueCore(myDialogues)],
 });
 
 // Submit player actions

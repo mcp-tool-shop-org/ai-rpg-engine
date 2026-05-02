@@ -4,7 +4,6 @@ import { Engine } from '@ai-rpg-engine/core';
 import {
   traversalCore,
   statusCore,
-  createCombatCore,
   createInventoryCore,
   createDialogueCore,
   createCognitionCore,
@@ -19,23 +18,14 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
-  createEngagementCore,
-  withEngagement,
-  createCombatReview,
-  createCombatIntent,
-  BUILTIN_PACK_BIASES,
-  createCombatRecovery,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
-  createCombatTactics,
-  withCombatResources,
-  buildTacticalHooks,
-  createCombatResources,
+  buildCombatStack,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatFormulas, CombatResourceProfile } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatResourceProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -73,27 +63,6 @@ const vampireHungerPerception: PresentationRule = {
   }),
 };
 
-// Vampire combat formulas — vitality for damage, cunning for hit/dodge, presence for guard
-const vampireFormulas: CombatFormulas = {
-  statMapping: { attack: 'vitality', precision: 'cunning', resolve: 'presence' },
-  hitChance: (attacker, target) => {
-    const atkCunning = attacker.stats.cunning ?? 5;
-    const tgtCunning = target.stats.cunning ?? 5;
-    return Math.min(95, Math.max(5, 50 + atkCunning * 5 - tgtCunning * 3));
-  },
-  damage: (attacker) => Math.max(1, attacker.stats.vitality ?? 3),
-  guardReduction: (defender) => {
-    const presence = defender.stats.presence ?? 3;
-    const bonus = Math.max(0, (presence - 3) * 0.03);
-    return Math.min(0.75, 0.5 + bonus);
-  },
-  disengageChance: (actor) => {
-    const cunning = actor.stats.cunning ?? 5;
-    const presence = actor.stats.presence ?? 3;
-    return Math.min(90, Math.max(15, 40 + cunning * 5 + presence * 2));
-  },
-};
-
 // Vampire combat resource profile — hunger-driven aggression
 const vampireCombatProfile: CombatResourceProfile = {
   packId: 'vampire',
@@ -124,8 +93,17 @@ const vampireCombatProfile: CombatResourceProfile = {
 
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(vampireStatusDefinitions);
-  const review = createCombatReview({ baseFormulas: vampireFormulas });
-  const wrappedFormulas = withCombatResources(vampireCombatProfile, withEngagement(vampireFormulas));
+
+  // Combat stack: vitality for damage, cunning for hit/dodge, presence for guard
+  const combat = buildCombatStack({
+    statMapping: { attack: 'vitality', precision: 'cunning', resolve: 'presence' },
+    playerId: 'player',
+    resourceProfile: vampireCombatProfile,
+    biasTags: ['vampire', 'feral', 'hunter'],
+    engagement: { backlineTags: ['ranged', 'caster', 'thrall'] },
+    recovery: { safeZoneTags: ['safe', 'opulent'] },
+  });
+
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -133,9 +111,7 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      createEngagementCore({ playerId: 'player', backlineTags: ['ranged', 'caster', 'thrall'] }),
-      review.module,
-      createCombatCore(review.explain(wrappedFormulas)),
+      ...combat.modules,
       createInventoryCore([bloodVialEffect]),
       createDialogueCore([duchessDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -200,10 +176,6 @@ export function createGame(seed?: number): Engine {
         ],
         playerId: 'player',
       }),
-      createCombatTactics({ hooks: buildTacticalHooks(vampireCombatProfile) }),
-      createCombatResources(vampireCombatProfile),
-      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['vampire', 'feral', 'hunter'].includes(b.tag)), resourceProfile: vampireCombatProfile }),
-      createCombatRecovery({ safeZoneTags: ['safe', 'opulent'] }),
       createBossPhaseListener(elderVampireBoss),
       createAbilityCore({ abilities: vampireAbilities, statMapping: { power: 'vitality', precision: 'cunning', focus: 'presence' } }),
       createAbilityEffects(),

@@ -4,7 +4,6 @@ import { Engine } from '@ai-rpg-engine/core';
 import {
   traversalCore,
   statusCore,
-  createCombatCore,
   createInventoryCore,
   createDialogueCore,
   createCognitionCore,
@@ -19,23 +18,14 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
-  createEngagementCore,
-  withEngagement,
-  createCombatReview,
-  createCombatIntent,
-  BUILTIN_PACK_BIASES,
-  createCombatRecovery,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
-  createCombatTactics,
-  withCombatResources,
-  buildTacticalHooks,
-  createCombatResources,
+  buildCombatStack,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatFormulas, CombatResourceProfile } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatResourceProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -73,27 +63,6 @@ const patronPerception: PresentationRule = {
   }),
 };
 
-// Gladiator combat formulas — might for damage, agility for hit/dodge, showmanship for guard
-const gladiatorFormulas: CombatFormulas = {
-  statMapping: { attack: 'might', precision: 'agility', resolve: 'showmanship' },
-  hitChance: (attacker, target) => {
-    const atkAgility = attacker.stats.agility ?? 5;
-    const tgtAgility = target.stats.agility ?? 5;
-    return Math.min(95, Math.max(5, 50 + atkAgility * 5 - tgtAgility * 3));
-  },
-  damage: (attacker) => Math.max(1, attacker.stats.might ?? 3),
-  guardReduction: (defender) => {
-    const showmanship = defender.stats.showmanship ?? 3;
-    const bonus = Math.max(0, (showmanship - 3) * 0.03);
-    return Math.min(0.75, 0.5 + bonus);
-  },
-  disengageChance: (actor) => {
-    const agility = actor.stats.agility ?? 5;
-    const showmanship = actor.stats.showmanship ?? 3;
-    return Math.min(90, Math.max(15, 40 + agility * 5 + showmanship * 2));
-  },
-};
-
 // Gladiator combat resource profile — spectacle-driven economy
 const gladiatorCombatProfile: CombatResourceProfile = {
   packId: 'gladiator',
@@ -123,8 +92,15 @@ const gladiatorCombatProfile: CombatResourceProfile = {
 
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(gladiatorStatusDefinitions);
-  const review = createCombatReview({ baseFormulas: gladiatorFormulas });
-  const wrappedFormulas = withCombatResources(gladiatorCombatProfile, withEngagement(gladiatorFormulas));
+
+  // Combat stack: might for damage, agility for hit/dodge, showmanship for guard
+  const combat = buildCombatStack({
+    statMapping: { attack: 'might', precision: 'agility', resolve: 'showmanship' },
+    playerId: 'player',
+    resourceProfile: gladiatorCombatProfile,
+    biasTags: ['feral', 'beast'],
+  });
+
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -132,9 +108,7 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      createEngagementCore({ playerId: 'player' }),
-      review.module,
-      createCombatCore(review.explain(wrappedFormulas)),
+      ...combat.modules,
       createInventoryCore([patronTokenEffect]),
       createDialogueCore([patronDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -197,10 +171,6 @@ export function createGame(seed?: number): Engine {
         ],
         playerId: 'player',
       }),
-      createCombatTactics({ hooks: buildTacticalHooks(gladiatorCombatProfile) }),
-      createCombatResources(gladiatorCombatProfile),
-      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['feral', 'beast'].includes(b.tag)), resourceProfile: gladiatorCombatProfile }),
-      createCombatRecovery(),
       createBossPhaseListener(arenaOverlordBoss),
       createAbilityCore({ abilities: gladiatorAbilities, statMapping: { power: 'might', precision: 'agility', focus: 'showmanship' } }),
       createAbilityEffects(),
