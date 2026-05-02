@@ -4,7 +4,7 @@ import { Engine } from '@ai-rpg-engine/core';
 import {
   traversalCore,
   statusCore,
-  createCombatCore,
+  buildCombatStack,
   createInventoryCore,
   createDialogueCore,
   createCognitionCore,
@@ -19,24 +19,14 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
-  createEngagementCore,
-  withEngagement,
-  createCombatReview,
-  createCombatIntent,
-  BUILTIN_PACK_BIASES,
-  createCombatRecovery,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
-  createCombatTactics,
-  withCombatResources,
-  buildTacticalHooks,
-  createCombatResources,
   COMBAT_STATES,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatFormulas, CombatResourceProfile } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatResourceProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -74,27 +64,6 @@ const suspectParanoia: PresentationRule = {
   }),
 };
 
-// Detective combat formulas — grit for damage, perception for hit/dodge, eloquence for resolve
-const detectiveFormulas: CombatFormulas = {
-  statMapping: { attack: 'grit', precision: 'perception', resolve: 'eloquence' },
-  hitChance: (attacker, target) => {
-    const atkPerception = attacker.stats.perception ?? 5;
-    const tgtPerception = target.stats.perception ?? 5;
-    return Math.min(95, Math.max(5, 50 + atkPerception * 5 - tgtPerception * 3));
-  },
-  damage: (attacker) => Math.max(1, attacker.stats.grit ?? 3),
-  guardReduction: (defender) => {
-    const eloquence = defender.stats.eloquence ?? 3;
-    const bonus = Math.max(0, (eloquence - 3) * 0.03);
-    return Math.min(0.75, 0.5 + bonus);
-  },
-  disengageChance: (actor) => {
-    const perception = actor.stats.perception ?? 5;
-    const eloquence = actor.stats.eloquence ?? 3;
-    return Math.min(90, Math.max(15, 40 + perception * 5 + eloquence * 2));
-  },
-};
-
 // Detective combat resource profile — calm under pressure
 const detectiveCombatProfile: CombatResourceProfile = {
   packId: 'detective',
@@ -121,8 +90,13 @@ const detectiveCombatProfile: CombatResourceProfile = {
 
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(detectiveStatusDefinitions);
-  const review = createCombatReview({ baseFormulas: detectiveFormulas });
-  const wrappedFormulas = withCombatResources(detectiveCombatProfile, withEngagement(detectiveFormulas));
+  const combat = buildCombatStack({
+    statMapping: { attack: 'grit', precision: 'perception', resolve: 'eloquence' },
+    playerId: 'inspector',
+    resourceProfile: detectiveCombatProfile,
+    biasTags: ['criminal'],
+  });
+
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -130,9 +104,7 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      createEngagementCore({ playerId: 'inspector' }),
-      review.module,
-      createCombatCore(review.explain(wrappedFormulas)),
+      ...combat.modules,
       createInventoryCore([smellingSaltsEffect]),
       createDialogueCore([widowDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -174,10 +146,6 @@ export function createGame(seed?: number): Engine {
         factions: [{ factionId: 'dockworkers', entityIds: ['dock_thug'] }],
         playerId: 'inspector',
       }),
-      createCombatTactics({ hooks: buildTacticalHooks(detectiveCombatProfile) }),
-      createCombatResources(detectiveCombatProfile),
-      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['criminal'].includes(b.tag)), resourceProfile: detectiveCombatProfile }),
-      createCombatRecovery(),
       createBossPhaseListener(crimeBossDef),
       createAbilityCore({ abilities: detectiveAbilities, statMapping: { power: 'grit', precision: 'perception', focus: 'eloquence' } }),
       createAbilityEffects(),
