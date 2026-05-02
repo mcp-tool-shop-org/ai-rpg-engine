@@ -4,10 +4,9 @@ import { Engine } from '@ai-rpg-engine/core';
 import {
   traversalCore,
   statusCore,
-  createCombatCore,
+  buildCombatStack,
   createInventoryCore,
   createDialogueCore,
-  createCognitionCore,
   createPerceptionFilter,
   createProgressionCore,
   createEnvironmentCore,
@@ -19,24 +18,14 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
-  createEngagementCore,
-  withEngagement,
-  createCombatReview,
-  createCombatIntent,
-  BUILTIN_PACK_BIASES,
-  createCombatRecovery,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
-  createCombatTactics,
-  withCombatResources,
-  buildTacticalHooks,
-  createCombatResources,
   COMBAT_STATES,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatFormulas, CombatResourceProfile } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatResourceProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -74,27 +63,6 @@ const assassinPerception: PresentationRule = {
   }),
 };
 
-// Ronin combat formulas — discipline for damage, perception for hit/dodge, composure for guard
-const roninFormulas: CombatFormulas = {
-  statMapping: { attack: 'discipline', precision: 'perception', resolve: 'composure' },
-  hitChance: (attacker, target) => {
-    const atkPerception = attacker.stats.perception ?? 5;
-    const tgtPerception = target.stats.perception ?? 5;
-    return Math.min(95, Math.max(5, 50 + atkPerception * 5 - tgtPerception * 3));
-  },
-  damage: (attacker) => Math.max(1, attacker.stats.discipline ?? 3),
-  guardReduction: (defender) => {
-    const composure = defender.stats.composure ?? 3;
-    const bonus = Math.max(0, (composure - 3) * 0.03);
-    return Math.min(0.75, 0.5 + bonus);
-  },
-  disengageChance: (actor) => {
-    const perception = actor.stats.perception ?? 5;
-    const composure = actor.stats.composure ?? 3;
-    return Math.min(90, Math.max(15, 40 + perception * 5 + composure * 2));
-  },
-};
-
 // Ronin combat resource profile — discipline and patience
 const roninCombatProfile: CombatResourceProfile = {
   packId: 'ronin',
@@ -123,8 +91,18 @@ const roninCombatProfile: CombatResourceProfile = {
 
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(roninStatusDefinitions);
-  const review = createCombatReview({ baseFormulas: roninFormulas });
-  const wrappedFormulas = withCombatResources(roninCombatProfile, withEngagement(roninFormulas));
+
+  // Combat stack: discipline for damage, perception for hit/dodge, composure for guard
+  const combat = buildCombatStack({
+    statMapping: { attack: 'discipline', precision: 'perception', resolve: 'composure' },
+    playerId: 'player',
+    resourceProfile: roninCombatProfile,
+    biasTags: ['assassin', 'samurai'],
+    engagement: { backlineTags: ['ranged'], protectorTags: ['bodyguard', 'samurai'] },
+    recovery: { safeZoneTags: ['safe', 'tranquil'] },
+    cognition: { decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } },
+  });
+
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -132,12 +110,9 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      createEngagementCore({ playerId: 'player', backlineTags: ['ranged'], protectorTags: ['bodyguard', 'samurai'] }),
-      review.module,
-      createCombatCore(review.explain(wrappedFormulas)),
+      ...combat.modules,
       createInventoryCore([incenseKitEffect]),
       createDialogueCore([magistrateDialogue]),
-      createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
       createPerceptionFilter(),
       createProgressionCore({
         trees: [wayOfTheBladeTree],
@@ -197,10 +172,6 @@ export function createGame(seed?: number): Engine {
         ],
         playerId: 'player',
       }),
-      createCombatTactics({ hooks: buildTacticalHooks(roninCombatProfile) }),
-      createCombatResources(roninCombatProfile),
-      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['assassin', 'samurai'].includes(b.tag)), resourceProfile: roninCombatProfile }),
-      createCombatRecovery({ safeZoneTags: ['safe', 'tranquil'] }),
       createBossPhaseListener(corruptSamuraiBoss),
       createAbilityCore({ abilities: roninAbilities, statMapping: { power: 'discipline', precision: 'perception', focus: 'composure' } }),
       createAbilityEffects(),
