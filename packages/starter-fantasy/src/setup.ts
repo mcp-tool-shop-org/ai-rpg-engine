@@ -4,10 +4,9 @@ import { Engine } from '@ai-rpg-engine/core';
 import {
   traversalCore,
   statusCore,
-  createCombatCore,
+  buildCombatStack,
   createInventoryCore,
   createDialogueCore,
-  createCognitionCore,
   createPerceptionFilter,
   createProgressionCore,
   createEnvironmentCore,
@@ -19,12 +18,6 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
-  createEngagementCore,
-  withEngagement,
-  createCombatReview,
-  createCombatIntent,
-  BUILTIN_PACK_BIASES,
-  createCombatRecovery,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
@@ -71,7 +64,17 @@ const undeadHostilePerception: PresentationRule = {
 
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(fantasyStatusDefinitions);
-  const review = createCombatReview({ baseFormulas: {} });
+
+  // Combat stack: vigor for damage, instinct for hit/dodge, will for guard
+  // Fantasy is the simplest starter — no resource profile, no engagement roles
+  const combat = buildCombatStack({
+    statMapping: { attack: 'vigor', precision: 'instinct', resolve: 'will' },
+    playerId: 'player',
+    biasTags: ['undead'],
+    recovery: { safeZoneTags: ['safe', 'sacred'] },
+    cognition: { decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } },
+  });
+
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -79,12 +82,9 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      createEngagementCore({ playerId: 'player' }),
-      review.module,
-      createCombatCore(review.explain(withEngagement({ statMapping: { attack: 'vigor', precision: 'instinct', resolve: 'will' } }))),
+      ...combat.modules,
       createInventoryCore([healingDraughtEffect]),
       createDialogueCore([pilgrimDialogue]),
-      createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
       createPerceptionFilter(),
       createProgressionCore({
         trees: [combatMasteryTree],
@@ -123,8 +123,6 @@ export function createGame(seed?: number): Engine {
         factions: [{ factionId: 'chapel-undead', entityIds: ['ash-ghoul', 'crypt-warden'] }],
         playerId: 'player',
       }),
-      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['undead'].includes(b.tag)) }),
-      createCombatRecovery({ safeZoneTags: ['safe', 'sacred'] }),
       createBossPhaseListener(cryptWardenBoss),
       createAbilityCore({ abilities: fantasyAbilities, statMapping: { power: 'vigor', precision: 'instinct', focus: 'will' } }),
       createAbilityEffects(),
