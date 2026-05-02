@@ -5,13 +5,13 @@
 import type { EntityState, ZoneState, GameManifest } from '@ai-rpg-engine/core';
 
 export const manifest: GameManifest = {
-  id: 'my-game',
-  title: 'My Game',
-  version: '0.1.0',
-  engineVersion: '0.1.0',
-  ruleset: 'my-game',
-  modules: ['traversal-core', 'status-core', 'combat-core'],
-  contentPacks: ['my-game'],
+    id: 'my-game',
+    title: 'My Game',
+    version: '0.1.0',
+    engineVersion: '0.1.0',
+    ruleset: 'my-game',
+    modules: ['traversal-core', 'status-core', 'combat-core'],
+    contentPacks: ['my-game'],
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -19,10 +19,10 @@ export const manifest: GameManifest = {
 // ═══════════════════════════════════════════════════════════════════
 
 export const packMeta = {
-  id: 'my-game',
-  name: 'My Game',
-  description: 'A brief description of your game',
-  version: '0.1.0',
+    id: 'my-game',
+    name: 'My Game',
+    description: 'A brief description of your game',
+    version: '0.1.0',
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -30,16 +30,16 @@ export const packMeta = {
 // ═══════════════════════════════════════════════════════════════════
 
 export const player: EntityState = {
-  id: 'player',
-  blueprintId: 'player',
-  type: 'player',
-  name: 'Hero',
-  tags: ['player'],
-  stats: { power: 5, speed: 4, grit: 3 },
-  resources: { hp: 25, stamina: 10, tension: 0 },
-  statuses: [],
-  inventory: [],
-  zoneId: 'start',
+    id: 'player',
+    blueprintId: 'player',
+    type: 'player',
+    name: 'Hero',
+    tags: ['player'],
+    stats: { power: 5, speed: 4, grit: 3 },
+    resources: { hp: 25, stamina: 10, tension: 0 },
+    statuses: [],
+    inventory: [],
+    zoneId: 'start',
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -47,15 +47,15 @@ export const player: EntityState = {
 // ═══════════════════════════════════════════════════════════════════
 
 export const enemy: EntityState = {
-  id: 'grunt',
-  blueprintId: 'grunt',
-  type: 'npc',
-  name: 'Grunt',
-  tags: ['enemy', 'hostile'],
-  stats: { power: 3, speed: 3, grit: 2 },
-  resources: { hp: 12 },
-  statuses: [],
-  zoneId: 'danger-zone',
+    id: 'grunt',
+    blueprintId: 'grunt',
+    type: 'npc',
+    name: 'Grunt',
+    tags: ['enemy', 'hostile'],
+    stats: { power: 3, speed: 3, grit: 2 },
+    resources: { hp: 12 },
+    statuses: [],
+    zoneId: 'danger-zone',
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -63,18 +63,18 @@ export const enemy: EntityState = {
 // ═══════════════════════════════════════════════════════════════════
 
 export const zones: ZoneState[] = [
-  {
-    id: 'start',
-    roomId: 'room-1',
-    name: 'Starting Area',
-    tags: ['safe'],
-    neighbors: ['danger-zone'],
-  },
-  {
-    id: 'danger-zone',
-    roomId: 'room-2',
-    name: 'The Danger Zone',
-    tags: ['hostile'],
-    neighbors: ['start'],
-  },
+    {
+        id: 'start',
+        roomId: 'room-1',
+        name: 'Starting Area',
+        tags: ['safe'],
+        neighbors: ['danger-zone'],
+    },
+    {
+        id: 'danger-zone',
+        roomId: 'room-2',
+        name: 'The Danger Zone',
+        tags: ['hostile'],
+        neighbors: ['start'],
+    },
 ];

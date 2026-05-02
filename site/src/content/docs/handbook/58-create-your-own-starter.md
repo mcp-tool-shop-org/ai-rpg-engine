@@ -7,33 +7,48 @@ sidebar:
 
 # Create Your Own Starter
 
-The fastest path to a new game: copy the template and customize.
+The fastest path to a new game: scaffold from the CLI.
 
 ## Quick Start
 
-The starter template is published on npm as an artifact to copy from (not a runtime dependency).
+```bash
+ai-rpg-engine create-starter my-game
+```
+
+This generates `packages/starter-my-game/` with:
+- `buildCombatStack` as the default combat composition
+- A marked **starter-owned systems** section for your custom modules
+- A pressure example (`createTensionPressure`) to build from
+- A smoke test that validates the scaffold boots
+
+Then:
 
 ```bash
-# 1. Get the template from npm
+cd packages/starter-my-game
+npm install
+npx tsc --noEmit
+npx vitest run
+```
+
+### Options
+
+```bash
+ai-rpg-engine create-starter my-game --out=./somewhere-else
+ai-rpg-engine create-starter my-game --force  # overwrite existing
+```
+
+## Manual Template Route
+
+If you prefer to work without the CLI, the template is published on npm as an artifact to copy from (not a runtime dependency):
+
+```bash
 npm pack @ai-rpg-engine/starter-template
 tar -xzf ai-rpg-engine-starter-template-*.tgz
 mv package packages/starter-mygame
 rm ai-rpg-engine-starter-template-*.tgz
-
-# 2. Update package.json
-#    - name: @ai-rpg-engine/starter-mygame
-#    - description: your game's one-liner
-#    - remove "files" array (you'll configure your own)
-
-# 3. Install and build
-npm install
-npx tsc -p packages/starter-mygame/tsconfig.json
-
-# 4. Run tests
-npx vitest run packages/starter-mygame
 ```
 
-Or, if working inside the monorepo:
+Or inside the monorepo:
 
 ```bash
 cp -r templates/starter packages/starter-mygame

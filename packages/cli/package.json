@@ -1,7 +1,7 @@
 {
   "name": "@ai-rpg-engine/cli",
-  "version": "2.0.9",
-  "description": "AI RPG Engine developer CLI: run, validate, replay, inspect",
+  "version": "2.1.0",
+  "description": "AI RPG Engine developer CLI: run, validate, replay, inspect, scaffold",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -61,6 +61,7 @@ async function main() {
       return runGame();
     case 'create-starter':
       runCreateStarter(args.slice(1));
+      closeReadline();
       return;
     case 'replay':
       replayGame();
