@@ -17,6 +17,7 @@ import type { Engine } from '@ai-rpg-engine/core';
 import { allPacks, type PackInfo } from './packs.js';
 import { promptMenu, promptConfirm, getReadline, closeReadline } from './prompts.js';
 import { buildCharacter } from './character-builder.js';
+import { runCreateStarter } from './create-starter.js';
 
 const SAVE_DIR = '.ai-rpg-engine';
 const SAVE_FILE = path.join(SAVE_DIR, 'save.json');
@@ -28,6 +29,7 @@ function printHelp() {
   console.log('');
   console.log('Commands:');
   console.log('  run            Start a new game (default)');
+  console.log('  create-starter Scaffold a new starter from template');
   console.log('  replay         Replay actions from a save file');
   console.log('  inspect-save   Show save file summary');
   console.log('  version        Print version');
@@ -57,6 +59,9 @@ async function main() {
   switch (command) {
     case 'run':
       return runGame();
+    case 'create-starter':
+      runCreateStarter(args.slice(1));
+      return;
     case 'replay':
       replayGame();
       closeReadline();
