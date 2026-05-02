@@ -11,13 +11,19 @@ The fastest path to a new game: copy the template and customize.
 
 ## Quick Start
 
+The starter template is published on npm as an artifact to copy from (not a runtime dependency).
+
 ```bash
-# 1. Copy the template
-cp -r templates/starter packages/starter-mygame
+# 1. Get the template from npm
+npm pack @ai-rpg-engine/starter-template
+tar -xzf ai-rpg-engine-starter-template-*.tgz
+mv package packages/starter-mygame
+rm ai-rpg-engine-starter-template-*.tgz
 
 # 2. Update package.json
 #    - name: @ai-rpg-engine/starter-mygame
 #    - description: your game's one-liner
+#    - remove "files" array (you'll configure your own)
 
 # 3. Install and build
 npm install
@@ -25,6 +31,12 @@ npx tsc -p packages/starter-mygame/tsconfig.json
 
 # 4. Run tests
 npx vitest run packages/starter-mygame
+```
+
+Or, if working inside the monorepo:
+
+```bash
+cp -r templates/starter packages/starter-mygame
 ```
 
 ## What You Own vs What the Stack Owns
