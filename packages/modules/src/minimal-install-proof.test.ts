@@ -16,7 +16,6 @@ import { describe, it, expect } from 'vitest';
 import { Engine } from '@ai-rpg-engine/core';
 import type { GameManifest, EntityState, ZoneState } from '@ai-rpg-engine/core';
 import { buildCombatStack, traversalCore, statusCore, createDialogueCore } from '@ai-rpg-engine/modules';
-import type { DialogueRegistry } from '@ai-rpg-engine/modules';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,7 +42,7 @@ describe('Minimal Install Proof', () => {
       biasTags: ['enemy'],
     });
 
-    const dialogues: DialogueRegistry = [];
+    const dialogues: Parameters<typeof createDialogueCore>[0] = [];
     const engine = new Engine({
       manifest,
       modules: [statusCore, ...combat.modules, traversalCore, createDialogueCore(dialogues)],

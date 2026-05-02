@@ -9,7 +9,6 @@ import { describe, it, expect } from 'vitest';
 import { Engine } from '@ai-rpg-engine/core';
 import type { GameManifest } from '@ai-rpg-engine/core';
 import { buildCombatStack, traversalCore, statusCore, createDialogueCore } from '@ai-rpg-engine/modules';
-import type { DialogueRegistry } from '@ai-rpg-engine/modules';
 
 describe('README Quickstart', () => {
   it('compiles and runs the documented example', () => {
@@ -24,7 +23,7 @@ describe('README Quickstart', () => {
       contentPacks: [],
     };
 
-    const myDialogues: DialogueRegistry = [];
+    const myDialogues: Parameters<typeof createDialogueCore>[0] = [];
 
     // --- BEGIN README CODE (verbatim) ---
 

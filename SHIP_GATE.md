@@ -64,7 +64,7 @@
 - [x] `[npm]` README quickstart has executable smoke test (`readme-quickstart.test.ts`) (2026-05-02)
 - [x] `[npm]` Every publishable package tarball includes LICENSE (verified via `npm pack --dry-run`) (2026-05-02)
 - [x] `[npm]` External consumer install + composition proof passes (2026-05-02)
-- [ ] `[npm]` Minimal-install proof: `@ai-rpg-engine/core` + `@ai-rpg-engine/modules` only, README code compiles in isolation
+- [x] `[npm]` Minimal-install proof: `@ai-rpg-engine/core` + `@ai-rpg-engine/modules` only, README code compiles in isolation (2026-05-02)
 
 ---
 

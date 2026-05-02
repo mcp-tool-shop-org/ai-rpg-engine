@@ -78,13 +78,17 @@ Do **not** mass-migrate. Pick starters that prove new composition shapes:
 3. **detective** — dialogue/social-adjacent combat with custom states (proves combat-social boundary)
 4. **pirate** — custom combat states with naval flavor (proves COMBAT_STATES override path)
 
-## Consumer proof hardening (next iteration)
+## Consumer proof hardening (CLOSED)
 
-The current proof runs inside the monorepo. The harsher version should:
+The isolated proof now lives at `scripts/verify-isolated-consumer.mjs`. It:
 
-1. Install **only** `@ai-rpg-engine/core` + `@ai-rpg-engine/modules` (no monorepo workspace resolution)
-2. Copy README quickstart verbatim into a fresh `.ts` file
-3. Compile with `tsc --noEmit`
-4. Run and assert the engine boots
+1. Packs `core`, `modules`, `content-schema`, `character-profile` into tarballs
+2. Creates a fresh temp project outside the monorepo
+3. Installs only from those tarballs (no workspace resolution)
+4. Writes the README quickstart pattern as TypeScript
+5. Compiles with `tsc --noEmit` (strict type-check)
+6. Builds and runs, asserting combat works + serialization round-trips
 
-This proves the "new user truth" — no hidden monorepo dependencies leak.
+Run: `node scripts/verify-isolated-consumer.mjs`
+
+**Finding:** `DialogueRegistry` (a Map type) was incorrectly used in monorepo tests where `createDialogueCore()` actually takes `DialogueDefinition[]`. This passed in workspace builds but failed under strict `.d.ts` compilation from tarballs. Fixed by using `Parameters<typeof createDialogueCore>[0]` pattern.
