@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/starter-gladiator",
-  "version": "2.2.3",
+  "version": "2.2.4",
   "description": "AI RPG Engine historical arena starter: Iron Colosseum",
   "type": "module",
   "main": "./dist/index.js",

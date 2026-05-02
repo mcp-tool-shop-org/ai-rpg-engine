@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.3] - 2026-05-02
+
+### Consumer Artifact Dogfood
+
+Release-grade trust surface improvements proven by external consumer simulation.
+
+### Added
+
+- **Consumer proof test** — 7-gate integration test proving external package install + composition path
+- **README quickstart test** — executable compilation proof that README code is accurate
+- **Ollama integration proof** — 7-test suite proving AI authoring pipeline without live server
+- **buildCombatStack() starter migrations** — Gladiator, Vampire, and Weird West now use shared combat composition
+
+### Fixed
+
+- **README quickstart bug** — `statusCore` was missing from module array; engagement-core depends on it
+- **README version** — corrected 2.3.1 → 2.3.2
+
+### Security
+
+- `npm audit` clean — 0 vulnerabilities
+- LICENSE file included in all 27 package tarballs
+
+### Policy
+
+- New ship gate: README quickstart must have corresponding executable smoke test
+- New ship gate: every publishable package must pass tarball LICENSE inspection before release
+
 ## [2.3.1] - 2026-03-25
 
 ### Added
