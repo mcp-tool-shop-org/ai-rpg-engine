@@ -4,7 +4,7 @@ import { Engine } from '@ai-rpg-engine/core';
 import {
   traversalCore,
   statusCore,
-  createCombatCore,
+  buildCombatStack,
   createInventoryCore,
   createDialogueCore,
   createCognitionCore,
@@ -19,23 +19,13 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
-  createEngagementCore,
-  withEngagement,
-  createCombatReview,
-  createCombatIntent,
-  BUILTIN_PACK_BIASES,
-  createCombatRecovery,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
-  createCombatTactics,
-  withCombatResources,
-  buildTacticalHooks,
-  createCombatResources,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatFormulas, CombatResourceProfile } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatResourceProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -72,27 +62,6 @@ const alienPerception: PresentationRule = {
   }),
 };
 
-// Colony combat formulas — engineering for damage, awareness for hit/dodge, command for guard
-const colonyFormulas: CombatFormulas = {
-  statMapping: { attack: 'engineering', precision: 'awareness', resolve: 'command' },
-  hitChance: (attacker, target) => {
-    const atkAwareness = attacker.stats.awareness ?? 5;
-    const tgtAwareness = target.stats.awareness ?? 5;
-    return Math.min(95, Math.max(5, 50 + atkAwareness * 5 - tgtAwareness * 3));
-  },
-  damage: (attacker) => Math.max(1, attacker.stats.engineering ?? 3),
-  guardReduction: (defender) => {
-    const command = defender.stats.command ?? 3;
-    const bonus = Math.max(0, (command - 3) * 0.03);
-    return Math.min(0.75, 0.5 + bonus);
-  },
-  disengageChance: (actor) => {
-    const awareness = actor.stats.awareness ?? 5;
-    const command = actor.stats.command ?? 3;
-    return Math.min(90, Math.max(15, 40 + awareness * 5 + command * 2));
-  },
-};
-
 // Colony combat resource profile — scarcity and crew cohesion
 const colonyCombatProfile: CombatResourceProfile = {
   packId: 'colony',
@@ -123,8 +92,15 @@ const colonyCombatProfile: CombatResourceProfile = {
 
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(colonyStatusDefinitions);
-  const review = createCombatReview({ baseFormulas: colonyFormulas });
-  const wrappedFormulas = withCombatResources(colonyCombatProfile, withEngagement(colonyFormulas));
+  const combat = buildCombatStack({
+    statMapping: { attack: 'engineering', precision: 'awareness', resolve: 'command' },
+    playerId: 'commander',
+    resourceProfile: colonyCombatProfile,
+    biasTags: ['drone', 'alien'],
+    engagement: { backlineTags: ['ranged'], protectorTags: ['bodyguard'] },
+    recovery: { safeZoneTags: ['safe', 'colony-core'] },
+  });
+
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -132,9 +108,7 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      createEngagementCore({ playerId: 'commander', backlineTags: ['ranged'], protectorTags: ['bodyguard'] }),
-      review.module,
-      createCombatCore(review.explain(wrappedFormulas)),
+      ...combat.modules,
       createInventoryCore([emergencyCellEffect]),
       createDialogueCore([scientistDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -186,10 +160,6 @@ export function createGame(seed?: number): Engine {
         factions: [{ factionId: 'colony-council', entityIds: ['dr_vasquez', 'chief_okafor'] }],
         playerId: 'commander',
       }),
-      createCombatTactics({ hooks: buildTacticalHooks(colonyCombatProfile) }),
-      createCombatResources(colonyCombatProfile),
-      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['drone', 'alien'].includes(b.tag)), resourceProfile: colonyCombatProfile }),
-      createCombatRecovery({ safeZoneTags: ['safe', 'colony-core'] }),
       createBossPhaseListener(resonanceBoss),
       createAbilityCore({ abilities: colonyAbilities, statMapping: { power: 'engineering', precision: 'awareness', focus: 'command' } }),
       createAbilityEffects(),
