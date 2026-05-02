@@ -7,7 +7,6 @@ import {
   buildCombatStack,
   createInventoryCore,
   createDialogueCore,
-  createCognitionCore,
   createPerceptionFilter,
   createProgressionCore,
   createEnvironmentCore,
@@ -90,6 +89,7 @@ export function createGame(seed?: number): Engine {
     resourceProfile: zombieCombatProfile,
     biasTags: ['zombie', 'undead'],
     recovery: { safeZoneTags: ['safe', 'home-base'] },
+    cognition: { decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } },
   });
 
   const engine = new Engine({
@@ -102,7 +102,6 @@ export function createGame(seed?: number): Engine {
       ...combat.modules,
       createInventoryCore([antibioticsEffect]),
       createDialogueCore([medicDialogue]),
-      createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
       createPerceptionFilter(),
       createProgressionCore({
         trees: [survivalTree],

@@ -7,7 +7,6 @@ import {
   buildCombatStack,
   createInventoryCore,
   createDialogueCore,
-  createCognitionCore,
   createPerceptionFilter,
   createProgressionCore,
   createEnvironmentCore,
@@ -99,6 +98,7 @@ export function createGame(seed?: number): Engine {
     biasTags: ['drone', 'alien'],
     engagement: { backlineTags: ['ranged'], protectorTags: ['bodyguard'] },
     recovery: { safeZoneTags: ['safe', 'colony-core'] },
+    cognition: { decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } },
   });
 
   const engine = new Engine({
@@ -111,7 +111,6 @@ export function createGame(seed?: number): Engine {
       ...combat.modules,
       createInventoryCore([emergencyCellEffect]),
       createDialogueCore([scientistDialogue]),
-      createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
       createPerceptionFilter(),
       createProgressionCore({
         trees: [commanderTree],

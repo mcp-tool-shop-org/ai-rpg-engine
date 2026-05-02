@@ -6,7 +6,6 @@ import {
   statusCore,
   createInventoryCore,
   createDialogueCore,
-  createCognitionCore,
   createPerceptionFilter,
   createProgressionCore,
   createEnvironmentCore,
@@ -99,6 +98,7 @@ export function createGame(seed?: number): Engine {
     playerId: 'drifter',
     resourceProfile: weirdWestCombatProfile,
     biasTags: ['undead', 'spirit', 'beast'],
+    cognition: { decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } },
   });
 
   const engine = new Engine({
@@ -111,7 +111,6 @@ export function createGame(seed?: number): Engine {
       ...combat.modules,
       createInventoryCore([sageBundleEffect]),
       createDialogueCore([bartenderDialogue]),
-      createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
       createPerceptionFilter(),
       createProgressionCore({
         trees: [gunslingerTree],

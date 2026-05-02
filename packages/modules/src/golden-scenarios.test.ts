@@ -895,3 +895,75 @@ describe('Post-Hardening Regression', () => {
     expect(decision.entityId).toBe('enemy');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// COGNITION CONFIG API — proves custom cognition is applied once
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Cognition Config API', () => {
+  it('custom cognition config is applied through buildCombatStack', () => {
+    const customCombat = buildCombatStack({
+      ...COMBAT_CONFIG,
+      cognition: { decay: { baseRate: 0.10, pruneThreshold: 0.15, instabilityFactor: 1.0 } },
+    });
+
+    // Only one cognition-core module should exist in the stack
+    const cognitionModules = customCombat.modules.filter(m => m.id === 'cognition-core');
+    expect(cognitionModules).toHaveLength(1);
+  });
+
+  it('no duplicate cognition listeners when using cognition config', () => {
+    const customCombat = buildCombatStack({
+      ...COMBAT_CONFIG,
+      cognition: { decay: { baseRate: 0.10, pruneThreshold: 0.15, instabilityFactor: 1.0 } },
+    });
+
+    const engine = createTestEngine({
+      modules: [traversalCore, statusCore, ...customCombat.modules],
+      entities: [makeVanguard(), {
+        id: 'enemy', blueprintId: 'enemy', type: 'enemy', name: 'Target',
+        tags: ['beast'], stats: { might: 5, agility: 5, resolve: 5 },
+        resources: { hp: 30, maxHp: 30, stamina: 10, maxStamina: 10 },
+        statuses: [],
+      }],
+      zones: [{
+        id: 'arena', roomId: 'arena', name: 'Arena',
+        tags: ['combat'], neighbors: [],
+      }],
+      playerId: 'vanguard',
+      startZone: 'arena',
+    });
+
+    placeAll(engine, 'arena', ['vanguard', 'enemy']);
+    engine.drainEvents();
+
+    // Attack should produce exactly one morale.shift event per hit (not duplicated)
+    engine.submitAction('attack', { targetIds: ['enemy'] });
+    const events = engine.drainEvents();
+    const moraleShifts = events.filter(e => e.type === 'combat.morale.shift');
+
+    // At most 1 morale shift per damage event (not 2 from duplicate listeners)
+    expect(moraleShifts.length).toBeLessThanOrEqual(1);
+  });
+
+  it('cognition: false excludes cognition-core from stack', () => {
+    const noCognitionCombat = buildCombatStack({
+      statMapping: STAT_MAPPING,
+      playerId: 'vanguard',
+      cognition: false,
+    });
+
+    const cognitionModules = noCognitionCombat.modules.filter(m => m.id === 'cognition-core');
+    expect(cognitionModules).toHaveLength(0);
+  });
+
+  it('default cognition (no config) still auto-includes module', () => {
+    const defaultCombat = buildCombatStack({
+      statMapping: STAT_MAPPING,
+      playerId: 'vanguard',
+    });
+
+    const cognitionModules = defaultCombat.modules.filter(m => m.id === 'cognition-core');
+    expect(cognitionModules).toHaveLength(1);
+  });
+});

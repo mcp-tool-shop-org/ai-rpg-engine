@@ -106,9 +106,14 @@ Pick the modules your game needs:
 
 ```typescript
 import { Engine } from '@ai-rpg-engine/core';
-import { traversalCore, statusCore, buildCombatStack, createDialogueCore, createCognitionCore, /* ... */ } from '@ai-rpg-engine/modules';
+import { traversalCore, statusCore, buildCombatStack, createDialogueCore, /* ... */ } from '@ai-rpg-engine/modules';
 
-const combat = buildCombatStack({ /* ... */ });
+const combat = buildCombatStack({
+  statMapping: { attack: 'might', precision: 'agility', resolve: 'will' },
+  playerId: 'hero',
+  resourceProfile: myResourceProfile,
+  cognition: { decay: { baseRate: 0.02 } },
+});
 
 const engine = new Engine({
   manifest: { id: 'my-game', title: 'My Game', version: '1.0.0' },
@@ -118,7 +123,6 @@ const engine = new Engine({
     statusCore,
     ...combat.modules,
     createDialogueCore(myDialogues),
-    createCognitionCore({ decay: { baseRate: 0.02 } }),
     // ... add what you need
   ],
 });
@@ -129,7 +133,7 @@ const engine = new Engine({
 | Rooms to move between | `traversalCore` |
 | Combat | `buildCombatStack` |
 | NPC dialogue | `createDialogueCore` |
-| NPC beliefs and memory | `createCognitionCore` |
+| NPC beliefs and memory | `buildCombatStack({ cognition: {...} })` |
 | Items and equipment | `createInventoryCore` |
 | Factions | `createFactionCognition` |
 | Character abilities | `createAbilityCore` + `createAbilityEffects` |
@@ -145,6 +149,56 @@ engine.store.addEntity({ id: 'hero', type: 'player', name: 'Fighter', tags: ['hu
 engine.store.state.playerId = 'hero';
 engine.store.state.locationId = 'cave';
 ```
+
+---
+
+## What the Stack Owns vs What Starters Own
+
+`buildCombatStack()` is infrastructure. Starters are fantasy. The boundary is clear:
+
+### Stack owns (combat structure)
+
+| Concern | How |
+|---------|-----|
+| Formula generation | `statMapping` → hit/damage/guard/dodge/brace formulas |
+| Formula wrapping | engagement modifiers, resource effects, review tracing |
+| Cognition | belief decay, morale tracking, flee thresholds |
+| Engagement | backline/protector/chokepoint zone states |
+| Resources | gain/spend/drain triggers, AI resource-aware scoring |
+| Intent | AI verb selection, pack biases, dimension awareness |
+| Recovery | safe-zone healing, morale reset |
+| State narration | combat state change narration |
+| Tactics | brace stabilize, guard counter, tactical hooks |
+
+### Starters own (fantasy pressure)
+
+| Concern | Examples |
+|---------|----------|
+| Resource identity | infection, composure, bloodlust, crowd-favor, power, dust |
+| Resource economy | what gains/spends/drains mean thematically |
+| Environment hazards | roaming-dead, dark-alley, scorching-sand, dust-storm |
+| Faction cognition | pack behavior, group morale, cohesion |
+| Presentation rules | spirit perception, suspect paranoia, noir framing |
+| Abilities | Deductive Strike, War Cry, Field Triage |
+| AI modifiers | high-infection aggression, low-composure flee |
+| Boss definitions | phase tags, threshold logic |
+| Progression trees | XP rewards, unlock paths |
+| Defeat fallout | what happens when entities die |
+
+### The `cognition` config option
+
+```typescript
+// Custom decay (most starters)
+buildCombatStack({ cognition: { decay: { baseRate: 0.02, instabilityFactor: 0.5 } } })
+
+// Exclude cognition (caller provides their own)
+buildCombatStack({ cognition: false })
+
+// Default cognition (omit the key)
+buildCombatStack({ statMapping, playerId })
+```
+
+Do **not** add a separate `createCognitionCore()` to your module list if you are using `buildCombatStack()`. The stack handles it.
 
 ---
 

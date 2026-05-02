@@ -6,7 +6,6 @@ import {
   statusCore,
   createInventoryCore,
   createDialogueCore,
-  createCognitionCore,
   createPerceptionFilter,
   createProgressionCore,
   createEnvironmentCore,
@@ -102,6 +101,7 @@ export function createGame(seed?: number): Engine {
     biasTags: ['vampire', 'feral', 'hunter'],
     engagement: { backlineTags: ['ranged', 'caster', 'thrall'] },
     recovery: { safeZoneTags: ['safe', 'opulent'] },
+    cognition: { decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } },
   });
 
   const engine = new Engine({
@@ -114,7 +114,6 @@ export function createGame(seed?: number): Engine {
       ...combat.modules,
       createInventoryCore([bloodVialEffect]),
       createDialogueCore([duchessDialogue]),
-      createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
       createPerceptionFilter(),
       createProgressionCore({
         trees: [bloodMasteryTree],

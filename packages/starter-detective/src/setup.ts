@@ -7,7 +7,6 @@ import {
   buildCombatStack,
   createInventoryCore,
   createDialogueCore,
-  createCognitionCore,
   createPerceptionFilter,
   createProgressionCore,
   createEnvironmentCore,
@@ -95,6 +94,7 @@ export function createGame(seed?: number): Engine {
     playerId: 'inspector',
     resourceProfile: detectiveCombatProfile,
     biasTags: ['criminal'],
+    cognition: { decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } },
   });
 
   const engine = new Engine({
@@ -107,7 +107,6 @@ export function createGame(seed?: number): Engine {
       ...combat.modules,
       createInventoryCore([smellingSaltsEffect]),
       createDialogueCore([widowDialogue]),
-      createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
       createPerceptionFilter(),
       createProgressionCore({
         trees: [deductionTree],

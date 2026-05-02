@@ -19,7 +19,7 @@ import { createCombatResources, withCombatResources, buildTacticalHooks } from '
 import { createCombatIntent, BUILTIN_PACK_BIASES } from './combat-intent.js';
 import { createCombatRecovery } from './combat-recovery.js';
 import { createCombatStateNarration } from './combat-state-narration.js';
-import { createCognitionCore } from './cognition-core.js';
+import { createCognitionCore, type CognitionCoreConfig } from './cognition-core.js';
 
 // ---------------------------------------------------------------------------
 // buildCombatFormulas — eliminates the 20-line formula copy-paste
@@ -96,6 +96,14 @@ export type CombatStackConfig = {
 
   /** Additional combat tactics config (braceStabilizeChance, etc). */
   tacticsConfig?: Partial<CombatTacticsConfig>;
+
+  /**
+   * Cognition module config. Controls belief decay, morale flee thresholds, and intent profiles.
+   * - Omit or undefined → default cognition (baseRate 0.02, pruneThreshold 0.05)
+   * - Object → custom cognition config passed to createCognitionCore()
+   * - false → no cognition module included (caller must provide their own)
+   */
+  cognition?: CognitionCoreConfig | false;
 };
 
 export type CombatStack = {
@@ -153,14 +161,17 @@ export function buildCombatStack(config: CombatStackConfig): CombatStack {
   const tracedFormulas = review.explain(wrappedFormulas);
 
   // Build modules in correct wiring order.
-  // cognition-core is included automatically — combat-recovery depends on it,
-  // and combat-intent uses getCognition() for morale-aware scoring.
-  const modules: EngineModule[] = [
-    createCognitionCore(),
+  // cognition-core is included automatically unless explicitly disabled (false).
+  // combat-recovery depends on it, and combat-intent uses getCognition() for morale-aware scoring.
+  const modules: EngineModule[] = [];
+  if (config.cognition !== false) {
+    modules.push(createCognitionCore(config.cognition ?? undefined));
+  }
+  modules.push(
     createEngagementCore({ playerId, ...config.engagement }),
     review.module,
     createCombatCore(tracedFormulas),
-  ];
+  );
 
   // Tactics (with resource hooks if profile exists)
   const tacticsOpts: Partial<CombatTacticsConfig> = { ...config.tacticsConfig };
