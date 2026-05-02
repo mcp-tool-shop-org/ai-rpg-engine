@@ -202,6 +202,27 @@ Do **not** add a separate `createCognitionCore()` to your module list if you are
 
 ---
 
+## Starter Composition Matrix
+
+All 10 starters use `buildCombatStack()`. This matrix shows how each genre maps to stack config:
+
+| Starter | Genre Pressure | Stack Config Used | Starter-Owned Systems |
+|---------|---------------|-------------------|----------------------|
+| **Fantasy** | Simple baseline | `statMapping`, `biasTags`, `recovery`, `cognition` | Undead faction, unstable-floor hazard, boss phases |
+| **Weird West** | Dual-resource frontier | `statMapping`, `resourceProfile`, `biasTags`, `cognition` | Dust/resolve resources, spirit-drain hazard, spirit perception |
+| **Gladiator** | Performance economy | `statMapping`, `resourceProfile`, `biasTags`, `cognition` | Crowd-favor/fatigue, scorching-sand, trap-pit, 3-phase boss |
+| **Vampire** | Opposing dual resources | `statMapping`, `resourceProfile`, `biasTags`, `engagement`, `recovery`, `cognition` | Bloodlust/humanity tension, blood-scent, consecrated-ground |
+| **Zombie** | Survival/attrition | `statMapping`, `resourceProfile`, `biasTags`, `recovery`, `cognition` | Infection-as-resource, roaming-dead, infection-risk, safe-zone recovery |
+| **Colony** | Party/settlement | `statMapping`, `resourceProfile`, `biasTags`, `engagement`, `recovery`, `cognition` | Power/morale economy, ally-defeated penalty, resonance-field |
+| **Detective** | Social-combat | `statMapping`, `resourceProfile`, `biasTags`, `cognition` | Composure drains, dark-alley, suspect paranoia, no safe haven |
+| **Cyberpunk** | Tech/network | `statMapping`, `resourceProfile`, `biasTags`, `engagement`, `cognition` | Bandwidth economy, exposed-wiring, ICE security framing |
+| **Pirate** | Crew morale | `statMapping`, `resourceProfile`, `biasTags`, `recovery`, `cognition` | Morale drives everything, storm-surge, drowning-pressure |
+| **Ronin** | Discipline/duel | `statMapping`, `resourceProfile`, `biasTags`, `engagement`, `recovery`, `cognition` | Ki/honor, poison-residue, shadow-watch, dual-faction |
+
+**Key insight:** No starter required `formulaOverrides` or custom combat state definitions. The standard `buildCombatFormulas()` output plus `resourceProfile.spends[].resistState` covered all 10 genres.
+
+---
+
 ## Remixing Starters
 
 | Starter | Best Pattern to Borrow |
