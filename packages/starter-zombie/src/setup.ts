@@ -4,7 +4,7 @@ import { Engine } from '@ai-rpg-engine/core';
 import {
   traversalCore,
   statusCore,
-  createCombatCore,
+  buildCombatStack,
   createInventoryCore,
   createDialogueCore,
   createCognitionCore,
@@ -19,23 +19,13 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
-  createEngagementCore,
-  withEngagement,
-  createCombatReview,
-  createCombatIntent,
-  BUILTIN_PACK_BIASES,
-  createCombatRecovery,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
-  createCombatTactics,
-  withCombatResources,
-  buildTacticalHooks,
-  createCombatResources,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatFormulas, CombatResourceProfile } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatResourceProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -73,27 +63,6 @@ const undeadHunger: PresentationRule = {
   }),
 };
 
-// Zombie combat formulas — fitness for damage, wits for hit/dodge, nerve for guard
-const zombieFormulas: CombatFormulas = {
-  statMapping: { attack: 'fitness', precision: 'wits', resolve: 'nerve' },
-  hitChance: (attacker, target) => {
-    const atkWits = attacker.stats.wits ?? 5;
-    const tgtWits = target.stats.wits ?? 5;
-    return Math.min(95, Math.max(5, 50 + atkWits * 5 - tgtWits * 3));
-  },
-  damage: (attacker) => Math.max(1, attacker.stats.fitness ?? 3),
-  guardReduction: (defender) => {
-    const nerve = defender.stats.nerve ?? 3;
-    const bonus = Math.max(0, (nerve - 3) * 0.03);
-    return Math.min(0.75, 0.5 + bonus);
-  },
-  disengageChance: (actor) => {
-    const wits = actor.stats.wits ?? 5;
-    const nerve = actor.stats.nerve ?? 3;
-    return Math.min(90, Math.max(15, 40 + wits * 5 + nerve * 2));
-  },
-};
-
 // Zombie combat resource profile — infection is consequence, not currency
 const zombieCombatProfile: CombatResourceProfile = {
   packId: 'zombie',
@@ -115,8 +84,14 @@ const zombieCombatProfile: CombatResourceProfile = {
 
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(zombieStatusDefinitions);
-  const review = createCombatReview({ baseFormulas: zombieFormulas });
-  const wrappedFormulas = withCombatResources(zombieCombatProfile, withEngagement(zombieFormulas));
+  const combat = buildCombatStack({
+    statMapping: { attack: 'fitness', precision: 'wits', resolve: 'nerve' },
+    playerId: 'survivor',
+    resourceProfile: zombieCombatProfile,
+    biasTags: ['zombie', 'undead'],
+    recovery: { safeZoneTags: ['safe', 'home-base'] },
+  });
+
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -124,9 +99,7 @@ export function createGame(seed?: number): Engine {
     modules: [
       traversalCore,
       statusCore,
-      createEngagementCore({ playerId: 'survivor' }),
-      review.module,
-      createCombatCore(review.explain(wrappedFormulas)),
+      ...combat.modules,
       createInventoryCore([antibioticsEffect]),
       createDialogueCore([medicDialogue]),
       createCognitionCore({ decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } }),
@@ -179,10 +152,6 @@ export function createGame(seed?: number): Engine {
         factions: [{ factionId: 'survivors', entityIds: ['medic_chen', 'scavenger_rook', 'leader_marsh'] }],
         playerId: 'survivor',
       }),
-      createCombatTactics({ hooks: buildTacticalHooks(zombieCombatProfile) }),
-      createCombatResources(zombieCombatProfile),
-      createCombatIntent({ packBiases: BUILTIN_PACK_BIASES.filter(b => ['zombie', 'undead'].includes(b.tag)), resourceProfile: zombieCombatProfile }),
-      createCombatRecovery({ safeZoneTags: ['safe', 'home-base'] }),
       createBossPhaseListener(bloaterAlphaBoss),
       createAbilityCore({ abilities: zombieAbilities, statMapping: { power: 'fitness', precision: 'wits', focus: 'nerve' } }),
       createAbilityEffects(),
