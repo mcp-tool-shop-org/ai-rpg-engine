@@ -35,25 +35,26 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 
 ---
 
-## Current Status (v2.3.2)
+## Current Status (v2.3.7)
 
 **What works and is tested:**
 - Core runtime: world state, events, actions, ticks, replay — stable since v1.0
 - Combat system: 5 actions, 4 combat states, 4 engagement states, companion interception, defeat flow, AI tactics
 - Abilities: costs, cooldowns, stat checks, typed effects, 11-tag status vocabulary, AI-aware selection
 - Unified decision layer: combat + ability scoring merged into one call (`selectBestAction`)
-- 10 starter worlds with stat-differentiated enemies and full combat integration
-- `buildCombatStack()` eliminates ~40 lines of combat setup per world
+- All 10 starter worlds use `buildCombatStack()` — the proven composition spine
+- `buildCombatStack()` owns combat infrastructure; starters own genre pressure
+- Cognition config API (`cognition: CognitionCoreConfig | false`) for per-starter AI tuning
 - Tag taxonomy and validation utilities for content authoring
 - Boss phase validation with cross-phase tag tracing
-- Full test suite: 2743 tests across 134 files
+- `ai-rpg-engine create-starter <name>` — scaffold a new game from the CLI
+- Published starter template on npm (`@ai-rpg-engine/starter-template`)
+- Full test suite: **2779 tests across 140 files**
 
 **What is rough or incomplete:**
 - AI worldbuilding tools (Ollama layer) work but are lightly tested compared to simulation
-- CLI studio shell is functional but not polished
-- Only 1 of 10 starters uses `buildCombatStack` (Weird West); others use verbose manual wiring
 - No profile system yet — worlds are standalone, not composable from shared profiles
-- Documentation is extensive (40+ handbook pages and 4 appendices) but not all pages reflect the latest APIs
+- Documentation is extensive (58 handbook chapters and 4 appendices) but not all pages reflect the latest APIs
 
 ---
 
@@ -83,7 +84,11 @@ engine.submitAction('attack', { targetIds: ['skeleton-1'] });
 engine.submitActionAs('guard-captain', 'attack', { targetIds: ['player'] });
 ```
 
-See the [Composition Guide](docs/handbook/57-composition-guide.md) for the full workflow.
+See the [Composition Guide](docs/handbook/57-composition-guide.md) for the full workflow, or scaffold a new starter:
+
+```bash
+npx @ai-rpg-engine/cli create-starter my-game
+```
 
 ---
 
@@ -147,7 +152,7 @@ const warCry: AbilityDefinition = {
 | [`@ai-rpg-engine/asset-registry`](packages/asset-registry) | Content-addressed storage for portraits, icons, media |
 | [`@ai-rpg-engine/image-gen`](packages/image-gen) | Headless portrait generation with pluggable providers |
 | [`@ai-rpg-engine/ollama`](packages/ollama) | Optional AI authoring — scaffolding, critique, guided workflows, tuning, experiments |
-| [`@ai-rpg-engine/cli`](packages/cli) | Command-line design studio |
+| [`@ai-rpg-engine/cli`](packages/cli) | CLI: run games, scaffold starters, inspect saves |
 | [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | Terminal renderer and input layer |
 
 ### Starter Examples
@@ -161,7 +166,7 @@ The 10 starter worlds are **composition examples** — they demonstrate how to c
 | [`starter-detective`](packages/starter-detective) | Victorian mystery | Social-first, perception-heavy |
 | [`starter-pirate`](packages/starter-pirate) | Pirate | Naval + melee, multi-zone |
 | [`starter-zombie`](packages/starter-zombie) | Zombie survival | Scarcity, infection resource |
-| [`starter-weird-west`](packages/starter-weird-west) | Weird west | buildCombatStack reference, pack biases |
+| [`starter-weird-west`](packages/starter-weird-west) | Weird west | Pack biases, safe-zone recovery |
 | [`starter-colony`](packages/starter-colony) | Sci-fi colony | Chokepoints, ambush zones |
 | [`starter-ronin`](packages/starter-ronin) | Feudal Japan | Hidden passages, multiple protector roles |
 | [`starter-vampire`](packages/starter-vampire) | Vampire horror | Blood resource, social manipulation |
@@ -173,10 +178,11 @@ The 10 starter worlds are **composition examples** — they demonstrate how to c
 
 | Resource | Description |
 |----------|-------------|
-| [Composition Guide](docs/handbook/57-composition-guide.md) | Build your own game by composing engine modules — start here |
+| [Create Your Own Starter](site/src/content/docs/handbook/58-create-your-own-starter.md) | Scaffold a new game — CLI or manual template route |
+| [Composition Guide](site/src/content/docs/handbook/57-composition-guide.md) | Build your own game by composing engine modules |
 | [Combat Overview](docs/handbook/49a-combat-overview.md) | Six combat pillars, five actions, states at a glance |
 | [Pack Author Guide](docs/handbook/55-combat-pack-guide.md) | Step-by-step buildCombatStack, stat mapping, resource profiles |
-| [Handbook](docs/handbook/index.md) | 40+ pages + 4 appendices covering every system |
+| [Handbook](docs/handbook/index.md) | 58 chapters + 4 appendices covering every system |
 | [Composition Model](docs/composition-model.md) | The 6 reusable layers and how they compose |
 | [Examples](docs/examples/) | Runnable TypeScript examples — mixed party, cross-world, from scratch |
 | [Design Document](docs/DESIGN.md) | Architecture deep-dive — action pipeline, truth vs presentation |
@@ -189,14 +195,20 @@ The 10 starter worlds are **composition examples** — they demonstrate how to c
 
 ### Where we are now
 
-The simulation runtime and combat system are solid — 2743 tests across 134 files, 10 genre examples, deterministic replay, full AI decision scoring. The engine works as a composition toolkit: pick modules, define stats, wire, create content. Documentation covers every system but needs an API sync pass for the latest additions.
+The simulation runtime, combat composition spine, and starter authoring path are complete — 2779 tests across 140 files, all 10 starters on `buildCombatStack`, deterministic replay, full AI decision scoring, and a CLI scaffold command. The engine works as a composition toolkit: pick modules, define stats, wire, create content.
 
-### Next few weeks
+**Recent release arc (v2.3.3–v2.3.7):**
+- v2.3.3 — Consumer artifact proof (isolated install verification)
+- v2.3.4 — Combat Stack API hardening (cognition config)
+- v2.3.5 — All 10 starters migrated to `buildCombatStack`
+- v2.3.6 — Published `@ai-rpg-engine/starter-template` on npm
+- v2.3.7 — `ai-rpg-engine create-starter` CLI command
 
-- Migrate remaining 9 starters to `buildCombatStack` (Weird West is the reference)
-- API documentation sync — `submitActionAs`, `selectBestAction`, `resourceCaps`, tag taxonomy, pack-registry
-- Starter README polish — clearer "What to Borrow" and remix guidance
-- Cross-linking pass — README, composition guide, examples, and handbook wired together
+### Next
+
+- API documentation sync — ensure all handbook chapters reflect v2.3.x APIs
+- Profile system — portable bundles (stat mapping, resource behavior, AI bias, abilities) that slot into any game
+- Cross-world interactions — shared profiles in shared worlds
 
 ### Destination: Plug-in Profiles
 
