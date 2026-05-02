@@ -25,7 +25,8 @@
   "author": "mcp-tool-shop",
   "license": "MIT",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "templates/*"
   ],
   "scripts": {
     "build": "tsc --build",
