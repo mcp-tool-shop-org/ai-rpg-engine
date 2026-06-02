@@ -35,25 +35,26 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 
 ---
 
-## Current Status (v2.3.7)
+## Current Status (v2.4.0)
 
 **What works and is tested:**
-- Core runtime: world state, events, actions, ticks, replay — stable since v1.0
+- Core runtime: world state, events, actions, ticks, replay — stable since v1.0; deterministic byte-identical replay (per-instance id counter, seeded RNG)
 - Combat system: 5 actions, 4 combat states, 4 engagement states, companion interception, defeat flow, AI tactics
 - Abilities: costs, cooldowns, stat checks, typed effects, 11-tag status vocabulary, AI-aware selection
+- **Party combat (v2.4):** ally-targeting (heal / buff / revive), friend/foe AoE filtering, target selectors — a healer can heal a teammate; enemy AoE spares allies
+- **Status effects (v2.4):** passive stat modifiers reach combat, deterministic DoT/HoT off the tick counter, depth-capped reactive triggers (thorns/reflect)
+- **Plug-in Profiles — Phase 1 (v2.4):** `Profile` type, `buildProfile()`, `validateProfileSet()`, per-entity AI via `selectActionForProfile()`
 - Unified decision layer: combat + ability scoring merged into one call (`selectBestAction`)
 - All 10 starter worlds use `buildCombatStack()` — the proven composition spine
-- `buildCombatStack()` owns combat infrastructure; starters own genre pressure
 - Cognition config API (`cognition: CognitionCoreConfig | false`) for per-starter AI tuning
 - Tag taxonomy and validation utilities for content authoring
-- Boss phase validation with cross-phase tag tracing
-- `ai-rpg-engine create-starter <name>` — scaffold a new game from the CLI
+- `ai-rpg-engine create-starter <name>` — scaffold a new game; `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **2779 tests across 140 files**
+- Full test suite: **3195 tests across 169 files**
 
 **What is rough or incomplete:**
 - AI worldbuilding tools (Ollama layer) work but are lightly tested compared to simulation
-- No profile system yet — worlds are standalone, not composable from shared profiles
+- Profiles ship at Phase 1 (packaging + per-entity AI + cross-profile validation). Per-entity combat *resolution* (a `might` fighter and a `will` mystic resolving in one fight) is designed and grounded ([feature architecture](docs/feature-architecture.md)) but is a future slice
 - Documentation is extensive (58 handbook chapters and 4 appendices) but not all pages reflect the latest APIs
 
 ---
@@ -195,19 +196,16 @@ The 10 starter worlds are **composition examples** — they demonstrate how to c
 
 ### Where we are now
 
-The simulation runtime, combat composition spine, and starter authoring path are complete — 2779 tests across 140 files, all 10 starters on `buildCombatStack`, deterministic replay, full AI decision scoring, and a CLI scaffold command. The engine works as a composition toolkit: pick modules, define stats, wire, create content.
+The simulation runtime, combat composition spine, and starter authoring path are complete — 3195 tests across 169 files, all 10 starters on `buildCombatStack`, deterministic byte-identical replay, full AI decision scoring, and a CLI scaffold command. v2.4 adds party-RPG combat (ally support), a deterministic status-effect system, and Phase 1 of the plug-in Profile system.
 
-**Recent release arc (v2.3.3–v2.3.7):**
-- v2.3.3 — Consumer artifact proof (isolated install verification)
-- v2.3.4 — Combat Stack API hardening (cognition config)
-- v2.3.5 — All 10 starters migrated to `buildCombatStack`
-- v2.3.6 — Published `@ai-rpg-engine/starter-template` on npm
-- v2.3.7 — `ai-rpg-engine create-starter` CLI command
+**Recent release arc (v2.3.3–v2.4.0):**
+- v2.3.3–v2.3.7 — Consumer artifact proof, Combat Stack hardening, all 10 starters on `buildCombatStack`, published starter template, `create-starter` CLI
+- **v2.4.0 — Party combat (ally-targeting / heal / buff / revive, friend-foe AoE), status-effect system (modifiers + DoT/HoT + reactive triggers), plug-in Profiles Phase 1, content `validate`/`scaffold` CLI, and a determinism/security/DX hardening pass**
 
 ### Next
 
-- API documentation sync — ensure all handbook chapters reflect v2.3.x APIs
-- Profile system — portable bundles (stat mapping, resource behavior, AI bias, abilities) that slot into any game
+- Per-entity combat *resolution* — let a `might` fighter and a `will` mystic resolve in one fight (Profile Phase 2; designed + grounded in [docs/feature-architecture.md](docs/feature-architecture.md))
+- API documentation sync — ensure all handbook chapters reflect v2.4.x APIs
 - Cross-world interactions — shared profiles in shared worlds
 
 ### Destination: Plug-in Profiles

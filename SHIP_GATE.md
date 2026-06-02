@@ -43,7 +43,7 @@
 ## D. Shipping Hygiene
 
 - [x] `[all]` `verify` script exists (test + build in one command) (2026-03-06)
-- [x] `[all]` Version in manifest matches git tag — v2.3.7 (2026-06-02)
+- [x] `[all]` Version in manifest matches git tag — v2.4.0 (2026-06-02)
 - [x] `[all]` Dependency scanning runs in CI (npm audit in ci.yml) (2026-03-06)
 - [ ] `[all]` SKIP: no dependabot per GitHub Actions cost rules — manual updates only
 - [x] `[npm]` `npm pack --dry-run` includes: dist/, README.md, CHANGELOG.md, LICENSE (2026-03-06)

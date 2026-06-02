@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.4.0] - 2026-06-02
+
+### Added
+
+- **Party combat — ally targeting & support.** `TargetSpec` gains independent axes (`scope` / `affiliation` / `life`) with back-compat mapping from the old flat `type`; `EntityState.faction` + an `affiliationOf` predicate; `resolveTargets` + deterministic selectors (`lowestHp`, random-N). `buildHealAbility`/`buildCleanseAbility` support ally targeting; new `buildBuffAbility`/`buildReviveAbility`. A healer can now heal/buff/revive a teammate, and enemy AoE spares allies (previously a hardcoded type check hit everyone in a zone). Per-candidate ally AI scoring (`heal the most-hurt ally`).
+- **Status-effect system.** `StatusDefinition.modifiers[]` (passive stat changes) now reach combat via `effectiveStat` wired into `combat-core` (GAS-style `((base + Σadd) * mul) / div`, deterministic stable-key ordering, stacks clamped at `maxStacks`). `triggers[]` now fire: deterministic DoT/HoT off the engine tick counter, and reactive triggers (thorns/reflect) via a depth-capped (`PROC_DEPTH_LIMIT`) FIFO proc queue wired into the run loop.
+- **Plug-in Profiles — Phase 1.** `Profile` type, `buildProfile()` validator, `validateProfileSet()` cross-profile linter, and `selectActionForProfile()` (the first real consumer of `selectBestAction`). Per-entity combat *resolution* is designed + grounded (docs/feature-architecture.md) and deferred to a Phase 2 slice — the code does not overclaim.
+- **Content-authoring DX.** `ai-rpg-engine validate <file.json>` and `scaffold <kind> <name>` CLI commands; `loadContentFromFile()` to load packs from JSON.
+- `docs/feature-architecture.md` — research-grounded design lock for the above (citations: GAS, Nystrom, Fiedler, MTG CR 104.4b, Liquid Fire, D&D 5e SRD, Game AI Pro / IAUS).
+
+### Changed
+
+- **Determinism hardened to byte-identical replay.** Eliminated every process-global mutable id counter (core `id.ts`, campaign-memory, rumor-system, pressure-system, player-rumor, npc-agency, endgame-detection, opportunity-core) in favor of a per-instance, serialized `state.meta.idCounter`; centralized event-id assignment in `recordEvent`; added `Engine.deserialize()` + save-version migration + RNG range guards.
+- **Security & robustness.** SSRF guard canonicalizes host→IP (blocks link-local/IMDS, IPv4-mapped/compatible IPv6, NAT64, 6to4, CGNAT); webfetch + content-preview confined to the project root; `EventBus` isolates throwing consumer listeners (one bad listener can no longer abort a tick); structured errors on malformed content packs and saves.
+- Correctness: heal/resource caps read `resources.maxHp` (was `stats.maxHp` → silent overheal); combat HP-ratio + ability cost-ratio read the resource convention; profile/save validation; negative-XP clamp.
+- Docs/site: CHANGELOG completed through 2.3.7, site handbook synced to the full chapter set, doc examples compiled in CI.
+
+### Test suite
+
+- 2779 → **3195 tests across 169 files**, stable across repeated runs (3/3).
+
 ## [2.3.7] - 2026-05-02
 
 ### Added

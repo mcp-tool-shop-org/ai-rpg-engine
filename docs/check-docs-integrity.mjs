@@ -16,6 +16,11 @@ import assert from 'node:assert/strict';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (p) => readFileSync(join(root, p), 'utf8');
 
+// package.json is the single source of truth for the current version. Every other
+// honesty surface is cross-checked AGAINST it, so this gate never pins a stale
+// version number (the doc-regression anti-pattern) — it enforces consistency.
+const VERSION = JSON.parse(read('package.json')).version;
+
 let passed = 0;
 const failures = [];
 const check = (name, fn) => {
@@ -33,9 +38,8 @@ const check = (name, fn) => {
 // DOCS-05 — root package.json version matches the latest git tag / README
 // ---------------------------------------------------------------------------
 console.log('DOCS-05 package.json version');
-check('root package.json version is 2.3.7', () => {
-  const pkg = JSON.parse(read('package.json'));
-  assert.equal(pkg.version, '2.3.7', `expected 2.3.7, got ${pkg.version}`);
+check('root package.json version is valid semver (source of truth)', () => {
+  assert.ok(/^\d+\.\d+\.\d+$/.test(VERSION), `package.json version "${VERSION}" is not semver`);
 });
 
 // ---------------------------------------------------------------------------
@@ -51,10 +55,10 @@ for (const v of ['2.3.4', '2.3.5', '2.3.6', '2.3.7']) {
     );
   });
 }
-check('CHANGELOG top entry is the latest version (2.3.7)', () => {
+check('CHANGELOG top entry matches package.json version', () => {
   const firstSection = changelog.match(/^## \[(\d+\.\d+\.\d+)\]/m);
   assert.ok(firstSection, 'no version section found');
-  assert.equal(firstSection[1], '2.3.7', `top entry is ${firstSection[1]}, expected 2.3.7`);
+  assert.equal(firstSection[1], VERSION, `top entry is ${firstSection[1]}, expected ${VERSION} (package.json)`);
 });
 
 // ---------------------------------------------------------------------------
@@ -87,8 +91,8 @@ const realChapterCount = srcChapters.filter((f) => f !== 'index.md' && !f.starts
 check('SHIP_GATE does not claim stale v1.0.0', () => {
   assert.ok(!/v1\.0\.0/.test(shipGate), 'SHIP_GATE.md still references v1.0.0');
 });
-check('SHIP_GATE references current version 2.3.7', () => {
-  assert.ok(/2\.3\.7/.test(shipGate), 'SHIP_GATE.md does not mention 2.3.7');
+check('SHIP_GATE references the current package.json version', () => {
+  assert.ok(shipGate.includes(VERSION), `SHIP_GATE.md does not mention current version ${VERSION}`);
 });
 check(`SHIP_GATE states the real chapter count (${realChapterCount})`, () => {
   assert.ok(!/25 chapters/.test(shipGate), 'SHIP_GATE.md still claims "25 chapters"');
