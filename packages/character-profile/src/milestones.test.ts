@@ -49,6 +49,37 @@ describe('recordMilestone', () => {
     });
     expect(profile.milestones).toHaveLength(2);
   });
+
+  // CP-05: milestone ids must be deterministic (no Date.now / Math.random).
+  const first = {
+    label: 'First',
+    description: 'First event.',
+    at: 'turn-1',
+    tags: ['story'],
+  } as const;
+
+  it('generates reproducible milestone ids from the same profile state', () => {
+    const a = recordMilestone(makeProfile(), first);
+    const b = recordMilestone(makeProfile(), first);
+    expect(a.milestones[0]!.id).toBe(b.milestones[0]!.id);
+  });
+
+  it('assigns sequential, collision-free ids as milestones accumulate', () => {
+    let profile = makeProfile();
+    profile = recordMilestone(profile, first);
+    profile = recordMilestone(profile, { ...first, label: 'Second' });
+    profile = recordMilestone(profile, { ...first, label: 'Third' });
+    const ids = profile.milestones.map((m) => m.id);
+    expect(new Set(ids).size).toBe(3);
+    expect(ids[0]).toBe('ms-1');
+    expect(ids[1]).toBe('ms-2');
+    expect(ids[2]).toBe('ms-3');
+  });
+
+  it('honors a caller-supplied milestone id', () => {
+    const profile = recordMilestone(makeProfile(), first, 'ms-custom');
+    expect(profile.milestones[0]!.id).toBe('ms-custom');
+  });
 });
 
 describe('getMilestonesByTag', () => {

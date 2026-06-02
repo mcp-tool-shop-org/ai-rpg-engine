@@ -57,30 +57,51 @@ export interface CreateStarterOptions {
     name: string;
     outDir?: string;
     force?: boolean;
+    /**
+     * Override the template directory. Primarily for tests; production callers
+     * rely on `resolveTemplateDir()`.
+     */
+    templateDir?: string;
+    /**
+     * Validate the generated scaffold before returning. On validation failure
+     * the freshly written files are cleaned up so no half-written, invalid
+     * scaffold is left behind (CLI-005). Throws an Error listing the problems.
+     */
+    validate?: boolean;
 }
 
 export function createStarter(opts: CreateStarterOptions): string {
     const { name, force = false } = opts;
 
-    // Validate name
-    if (!/^[a-z][a-z0-9-]*$/.test(name)) {
+    // Validate name.
+    // CLI-003: reject consecutive hyphens ("my--game"), leading hyphen
+    // ("-game"), and trailing hyphens ("my-game-", "ab-"). The name must be a
+    // run of lowercase-alphanumeric segments separated by single hyphens.
+    if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)*$/.test(name)) {
         throw new Error(
-            `Invalid starter name "${name}". Use lowercase letters, numbers, and hyphens (e.g. "my-game").`,
+            `Invalid starter name "${name}". Use lowercase letters and numbers in hyphen-separated segments (e.g. "my-game"). No leading, trailing, or consecutive hyphens.`,
         );
     }
 
     const targetDir = opts.outDir ?? path.resolve(`packages/starter-${name}`);
 
-    // Safety: refuse to overwrite
-    if (fs.existsSync(targetDir) && !force) {
+    // Safety: refuse to overwrite without --force.
+    const targetExisted = fs.existsSync(targetDir);
+    if (targetExisted && !force) {
         throw new Error(
             `Directory already exists: ${targetDir}\nUse --force to overwrite.`,
         );
     }
 
-    const templateDir = resolveTemplateDir();
+    // CLI-004: with --force, clear the target first so stale files from a
+    // previous scaffold do not linger alongside the freshly generated ones.
+    if (targetExisted && force) {
+        fs.rmSync(targetDir, { recursive: true, force: true });
+    }
 
-    // Copy and transform
+    const templateDir = opts.templateDir ?? resolveTemplateDir();
+
+    // Copy and transform.
     for (const relPath of TEMPLATE_FILES) {
         const srcFile = path.join(templateDir, relPath);
         if (!fs.existsSync(srcFile)) continue;
@@ -95,6 +116,22 @@ export function createStarter(opts: CreateStarterOptions): string {
         const destFile = path.join(targetDir, relPath);
         fs.mkdirSync(path.dirname(destFile), { recursive: true });
         fs.writeFileSync(destFile, content, 'utf-8');
+    }
+
+    // CLI-005: validate before handing back a scaffold. If it is invalid, undo
+    // the write so callers never see a half-written, broken scaffold. We only
+    // remove the directory if the tool created it (targetExisted === false);
+    // a pre-existing directory the user pointed --force at is preserved.
+    if (opts.validate) {
+        const errors = validateScaffold(targetDir);
+        if (errors.length > 0) {
+            if (!targetExisted) {
+                fs.rmSync(targetDir, { recursive: true, force: true });
+            }
+            throw new Error(
+                `Scaffold validation failed:\n${errors.map((e) => `  - ${e}`).join('\n')}`,
+            );
+        }
     }
 
     return targetDir;
@@ -164,15 +201,14 @@ export function runCreateStarter(args: string[]): void {
     }
 
     try {
-        const targetDir = createStarter({ name, force, outDir: outDir ? path.resolve(outDir) : undefined });
-
-        // Validate
-        const errors = validateScaffold(targetDir);
-        if (errors.length > 0) {
-            console.error('⚠ Scaffold validation warnings:');
-            for (const e of errors) console.error(`  - ${e}`);
-            process.exit(1);
-        }
+        // validate:true makes createStarter clean up on validation failure, so a
+        // failed run never leaves a half-written scaffold behind (CLI-005).
+        const targetDir = createStarter({
+            name,
+            force,
+            outDir: outDir ? path.resolve(outDir) : undefined,
+            validate: true,
+        });
 
         console.log(`✓ Created starter-${name} at ${path.relative(process.cwd(), targetDir)}`);
         console.log('');

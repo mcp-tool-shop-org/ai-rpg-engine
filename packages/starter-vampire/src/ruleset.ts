@@ -15,6 +15,7 @@ export const vampireMinimalRuleset: RulesetDefinition = {
 
   resources: [
     { id: 'hp', name: 'HP', min: 0, max: 30, default: 20 },
+    { id: 'stamina', name: 'Stamina', min: 0, max: 50, default: 10, regenRate: 1 },
     { id: 'bloodlust', name: 'Bloodlust', min: 0, max: 100, default: 10 },
     { id: 'humanity', name: 'Humanity', min: 0, max: 30, default: 25 },
   ],

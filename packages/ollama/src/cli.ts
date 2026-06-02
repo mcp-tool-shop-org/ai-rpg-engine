@@ -1151,14 +1151,14 @@ export async function runCli(args: string[]): Promise<void> {
       }
 
       if (flags.confirm) {
-        const msg = await applyConfirmed({ content: input, targetPath, label: flags.contentType });
+        const msg = await applyConfirmed({ content: input, targetPath, label: flags.contentType, projectRoot });
         console.log(msg);
         if (session) {
           recordEvent(session, 'content_applied', targetPath);
           await saveSession(projectRoot, session);
         }
       } else {
-        const preview = await generatePreview({ content: input, targetPath, label: flags.contentType });
+        const preview = await generatePreview({ content: input, targetPath, label: flags.contentType, projectRoot });
         console.log(preview.preview);
       }
       break;

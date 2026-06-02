@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   evaluateItemRecognition,
   recognitionProbability,
+  shouldRecognize,
 } from './item-recognition.js';
 import type { ItemDefinition, ItemChronicleEntry } from '@ai-rpg-engine/equipment';
 
@@ -28,6 +29,39 @@ describe('recognitionProbability', () => {
 
   it('caps at 1.0', () => {
     expect(recognitionProbability(1, 1)).toBe(1);
+  });
+});
+
+describe('shouldRecognize (deterministic — MW-3)', () => {
+  // World truth is sacred & deterministic: recognition must NOT use Math.random.
+  // The caller supplies a seeded roll; recognition fires iff roll < probability.
+  it('is deterministic — same inputs always yield the same result', () => {
+    // probability for (0.5, 0.5) = 0.3 + 0.15 + 0.2 = 0.65
+    for (let i = 0; i < 50; i++) {
+      expect(shouldRecognize(0.5, 0.5, 0.1)).toBe(true);
+      expect(shouldRecognize(0.5, 0.5, 0.9)).toBe(false);
+    }
+  });
+
+  it('recognizes when roll is below probability', () => {
+    // probability(1, 1) caps at 1.0 → any roll < 1 recognizes
+    expect(shouldRecognize(1, 1, 0.99)).toBe(true);
+    expect(shouldRecognize(1, 1, 0)).toBe(true);
+  });
+
+  it('does not recognize when roll is at or above probability', () => {
+    // probability(0, 0) = 0.3
+    expect(shouldRecognize(0, 0, 0.3)).toBe(false);
+    expect(shouldRecognize(0, 0, 0.5)).toBe(false);
+    expect(shouldRecognize(0, 0, 0.29)).toBe(true);
+  });
+
+  it('agrees with recognitionProbability twin', () => {
+    const clarity = 0.4;
+    const notoriety = 0.6;
+    const p = recognitionProbability(clarity, notoriety); // 0.3 + 0.12 + 0.24 = 0.66
+    expect(shouldRecognize(clarity, notoriety, p - 0.0001)).toBe(true);
+    expect(shouldRecognize(clarity, notoriety, p)).toBe(false);
   });
 });
 

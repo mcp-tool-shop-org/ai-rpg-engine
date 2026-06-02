@@ -17,12 +17,6 @@ const DEFAULT_CONFIG = {
   deathThreshold: 30,
 };
 
-let nextRumorId = 1;
-
-function generateId(): string {
-  return `rum_${nextRumorId++}`;
-}
-
 export class RumorEngine {
   private rumors: Map<string, Rumor> = new Map();
   private mutations: MutationRule[];
@@ -30,6 +24,15 @@ export class RumorEngine {
   private confidenceDecayPerHop: number;
   private fadingThreshold: number;
   private deathThreshold: number;
+  /**
+   * Per-instance ID counter. Rumor IDs depend only on (this engine's history),
+   * never on cross-instance order — see CP-02. Two engines number independently.
+   */
+  private nextRumorId = 1;
+
+  private generateId(): string {
+    return `rum_${this.nextRumorId++}`;
+  }
 
   constructor(config?: RumorEngineConfig) {
     this.maxHops = config?.maxHops ?? DEFAULT_CONFIG.maxHops;
@@ -51,7 +54,7 @@ export class RumorEngine {
     emotionalCharge?: number;
   }): Rumor {
     const rumor: Rumor = {
-      id: generateId(),
+      id: this.generateId(),
       claim: params.claim,
       subject: params.subject,
       key: params.key,
@@ -200,7 +203,7 @@ export class RumorEngine {
     for (const rumor of rumors) {
       engine.rumors.set(rumor.id, rumor);
     }
-    // Ensure ID counter is ahead
+    // Advance THIS instance's counter past the highest restored id (CP-02).
     let maxNum = 0;
     for (const r of rumors) {
       const match = r.id.match(/^rum_(\d+)$/);
@@ -208,7 +211,7 @@ export class RumorEngine {
         maxNum = Math.max(maxNum, parseInt(match[1], 10));
       }
     }
-    nextRumorId = maxNum + 1;
+    engine.nextRumorId = maxNum + 1;
     return engine;
   }
 }

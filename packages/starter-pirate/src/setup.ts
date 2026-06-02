@@ -123,11 +123,13 @@ export function createGame(seed?: number): Engine {
         }],
       }),
       createEnvironmentCore({
+        // Hazards mutate entity.resources directly (deterministic, clamped);
+        // environment-core does not record the returned events. Return [].
         hazards: [{
           id: 'storm-surge',
           triggerOn: 'world.zone.entered',
           condition: (zone) => zone.hazards?.includes('storm-surge') ?? false,
-          effect: (zone, entity, _world, tick) => {
+          effect: (_zone, entity, _world, _tick) => {
             entity.resources.morale = Math.max(0, (entity.resources.morale ?? 0) - 2);
             return [];
           },
@@ -136,7 +138,7 @@ export function createGame(seed?: number): Engine {
           id: 'drowning-pressure',
           triggerOn: 'world.zone.entered',
           condition: (zone) => zone.hazards?.includes('drowning-pressure') ?? false,
-          effect: (zone, entity, _world, tick) => {
+          effect: (_zone, entity, _world, _tick) => {
             entity.resources.hp = Math.max(0, (entity.resources.hp ?? 0) - 1);
             return [];
           },

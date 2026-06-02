@@ -24,12 +24,17 @@ export function xpToNextLevel(xp: number): number {
   return XP_THRESHOLDS[level]! - xp;
 }
 
-/** Grant XP and auto-level. Returns the updated profile and whether a level-up occurred. */
+/**
+ * Grant XP and auto-level. Returns the updated profile and whether a level-up
+ * occurred. `amount` may be negative (e.g. an XP debuff), but total XP is floored
+ * at 0 — a negative grant can never drive xp below zero (CP-07). Level is always
+ * recomputed from the clamped XP value.
+ */
 export function grantXp(
   profile: CharacterProfile,
   amount: number,
 ): { profile: CharacterProfile; leveledUp: boolean; newLevel: number } {
-  const newXp = profile.progression.xp + amount;
+  const newXp = Math.max(0, profile.progression.xp + amount);
   const newLevel = computeLevel(newXp);
   const leveledUp = newLevel > profile.progression.level;
 

@@ -30,6 +30,13 @@ export type CooldownEntry = {
 /** Configuration for the AudioDirector. */
 export type AudioDirectorConfig = {
   defaultCooldownMs?: number;
+  /**
+   * Per-resource cooldown overrides keyed by resourceId. A resource not listed
+   * here falls back to `defaultCooldownMs`. Lets distinct sounds (e.g. a 200ms
+   * UI click vs a 5000ms critical alert) carry their own cooldown — mirrors
+   * `SoundEntry.cooldownMs` from soundpack-core without coupling the packages.
+   */
+  cooldownMs?: Record<string, number>;
   duckingRules?: DuckingRule[];
   domainPriorities?: Record<AudioDomain, number>;
 };

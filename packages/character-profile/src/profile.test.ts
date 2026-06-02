@@ -64,6 +64,27 @@ describe('createProfile', () => {
     stats.vigor = 99;
     expect(profile.stats.vigor).toBe(5);
   });
+
+  // CP-05: persisted IDs must be deterministic (no Date.now / Math.random),
+  // so the same inputs always yield the same id (reproducible saves).
+  it('generates a reproducible id from the same inputs', () => {
+    const a = createProfile(testBuild, testStats, testResources, testTags, 'fantasy');
+    const b = createProfile(testBuild, testStats, testResources, testTags, 'fantasy');
+    expect(a.id).toBe(b.id);
+    expect(a.id).toBeTruthy();
+  });
+
+  it('honors a caller-supplied id', () => {
+    const profile = createProfile(testBuild, testStats, testResources, testTags, 'fantasy', 'pc-aldric');
+    expect(profile.id).toBe('pc-aldric');
+  });
+
+  it('derives different ids for materially different builds', () => {
+    const a = createProfile(testBuild, testStats, testResources, testTags, 'fantasy');
+    const other = { ...testBuild, name: 'Beric' };
+    const b = createProfile(other, testStats, testResources, testTags, 'fantasy');
+    expect(a.id).not.toBe(b.id);
+  });
 });
 
 describe('incrementTurns', () => {

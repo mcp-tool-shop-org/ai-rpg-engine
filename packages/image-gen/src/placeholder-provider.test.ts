@@ -68,4 +68,17 @@ describe('PlaceholderProvider', () => {
     const svgB = new TextDecoder().decode(b.image);
     expect(svgA).not.toBe(svgB);
   });
+
+  // PM-04: initials are interpolated into <text>; they must be XML-escaped like the subtitle.
+  it('escapes XML-special characters in the initials', async () => {
+    // Prompt -> name "<x" -> initials "<". The bold text node renders the initials.
+    const result = await provider.generate('Portrait of <x, Villain');
+    const svg = new TextDecoder().decode(result.image);
+
+    // The initials node is the one with font-weight="bold". Before the fix its content
+    // is a raw "<" (`bold"><`), which is invalid XML and a markup-injection vector.
+    expect(svg).not.toMatch(/font-weight="bold">\s*</);
+    // After the fix the initial appears escaped inside that node.
+    expect(svg).toMatch(/font-weight="bold">&lt;/);
+  });
 });

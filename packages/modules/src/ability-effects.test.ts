@@ -4,7 +4,7 @@ import type { EntityState, ActionIntent } from '@ai-rpg-engine/core';
 import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
 import { statusCore, hasStatus } from './status-core.js';
 import { createAbilityCore } from './ability-core.js';
-import { createAbilityEffects, registerEffectHandler, getEffectHandler } from './ability-effects.js';
+import { createAbilityEffects, registerEffectHandler, getEffectHandler, clearEffectRegistry } from './ability-effects.js';
 import type { AbilityEffectHandler } from './ability-effects.js';
 
 // ---------------------------------------------------------------------------
@@ -476,6 +476,34 @@ describe('ability-effects: custom handler', () => {
     const customEvent = events.find((e) => e.type === 'ability.custom.fired');
     expect(customEvent).toBeDefined();
     expect(customEvent!.payload.flavor).toBe('electric');
+  });
+});
+
+// MC-04: the effect registry is an append-only, idempotent, process-global
+// handler registry. These tests pin that contract (no duplicate accumulation;
+// built-ins survive; clearEffectRegistry isolates pack-added handlers).
+describe('ability-effects: registry is idempotent + isolable (MC-04)', () => {
+  it('re-registering a handler overwrites without duplicating', () => {
+    const h1 = () => [];
+    const h2 = () => [];
+    registerEffectHandler('mc04-dup', h1);
+    registerEffectHandler('mc04-dup', h2);
+    // Last write wins; only one mapping exists for the key.
+    expect(getEffectHandler('mc04-dup')).toBe(h2);
+  });
+
+  it('clearEffectRegistry drops pack handlers but restores built-ins', () => {
+    registerEffectHandler('mc04-temp', () => []);
+    expect(getEffectHandler('mc04-temp')).toBeDefined();
+
+    clearEffectRegistry();
+
+    // Pack-added handler is gone…
+    expect(getEffectHandler('mc04-temp')).toBeUndefined();
+    // …but the universal built-ins are restored.
+    expect(getEffectHandler('damage')).toBeDefined();
+    expect(getEffectHandler('heal')).toBeDefined();
+    expect(getEffectHandler('apply-status')).toBeDefined();
   });
 });
 

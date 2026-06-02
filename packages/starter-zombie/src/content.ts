@@ -1,7 +1,6 @@
 // Ashfall Dead — content definitions
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
@@ -392,7 +391,7 @@ export const antibioticsEffect = {
     actor.resources.infection = Math.max(0, previous - 25);
 
     return [{
-      id: nextId('evt'),
+      id: '',
       tick: action.issuedAtTick,
       type: 'resource.changed',
       actorId: action.actorId,

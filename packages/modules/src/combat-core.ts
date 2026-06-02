@@ -270,7 +270,7 @@ function attackHandler(
       events.push(applyStatus(attacker, COMBAT_STATES.OFF_BALANCE, world.meta.tick, {
         duration: 1,
         sourceId: target.id,
-      }));
+      }, world));
       events.push(makeEvent(action, 'combat.counter.off_balance', {
         entityId: attacker.id,
         entityName: attacker.name,
@@ -292,7 +292,7 @@ function attackHandler(
           events.push(applyStatus(target, COMBAT_STATES.OFF_BALANCE, world.meta.tick, {
             duration: 1,
             sourceId: attacker.id,
-          }));
+          }, world));
         }
         events.push(makeEvent(action, 'combat.guard.broken', {
           attackerId: attacker.id,
@@ -425,7 +425,7 @@ function guardHandler(
   events.push(applyStatus(actor, COMBAT_STATES.GUARDED, world.meta.tick, {
     duration: 2,
     sourceId: actor.id,
-  }));
+  }, world));
 
   events.push(makeEvent(action, 'combat.guard.start', {
     entityId: actor.id,
@@ -515,7 +515,7 @@ function disengageHandler(
     events.push(applyStatus(actor, COMBAT_STATES.FLEEING, world.meta.tick, {
       duration: 2,
       sourceId: actor.id,
-    }));
+    }, world));
 
     const fromZoneId = actor.zoneId;
     const toZoneId = selectBestExit(zoneState.neighbors, world, actor);
@@ -534,7 +534,7 @@ function disengageHandler(
     events.push(applyStatus(actor, COMBAT_STATES.EXPOSED, world.meta.tick, {
       duration: 1,
       sourceId: actor.id,
-    }));
+    }, world));
 
     events.push(makeEvent(action, 'combat.disengage.fail', {
       entityId: actor.id,

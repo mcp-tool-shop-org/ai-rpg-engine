@@ -61,15 +61,29 @@ export async function loadTranscript(path: string): Promise<ChatTranscript | nul
   const lines = raw.trim().split('\n').filter(l => l.length > 0);
   if (lines.length === 0) return null;
 
-  const header = JSON.parse(lines[0]);
+  // A malformed header means we can't trust the file's metadata — honor the
+  // documented `ChatTranscript | null` contract and bail rather than throw.
+  let header: { sessionName?: string; startedAt?: string };
+  try {
+    header = JSON.parse(lines[0]) as { sessionName?: string; startedAt?: string };
+  } catch {
+    return null;
+  }
   const messages: ChatMessage[] = [];
 
   for (let i = 1; i < lines.length; i++) {
-    const parsed = JSON.parse(lines[i]);
+    // Skip a corrupt line instead of throwing — one bad line shouldn't sink
+    // the whole transcript (contract: never throw, return null on total failure).
+    let parsed: { role?: ChatMessage['role']; content?: string; timestamp?: string; actions?: ChatMessage['actions'] };
+    try {
+      parsed = JSON.parse(lines[i]);
+    } catch {
+      continue;
+    }
     messages.push({
-      role: parsed.role,
-      content: parsed.content,
-      timestamp: parsed.timestamp,
+      role: parsed.role as ChatMessage['role'],
+      content: parsed.content as string,
+      timestamp: parsed.timestamp as string,
       ...(parsed.actions ? { actions: parsed.actions } : {}),
     });
   }

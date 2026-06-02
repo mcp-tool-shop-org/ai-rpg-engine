@@ -109,17 +109,23 @@ function computeNotoriety(item: ItemDefinition, chronicle: ItemChronicleEntry[])
 /**
  * Check whether an NPC should recognize an item based on perception clarity and item notoriety.
  * Higher clarity + higher notoriety = more likely to be noticed.
+ *
+ * DETERMINISTIC: the caller supplies a seeded `roll` in [0, 1) (e.g. from the
+ * world's seeded RNG). Recognition fires iff `roll < probability`. World truth is
+ * sacred — this must never call Math.random, so its output is reproducible across
+ * same-seed runs.
  */
 export function shouldRecognize(
   npcPerceptionClarity: number,
   itemNotoriety: number,
+  roll: number,
 ): boolean {
-  const probability = 0.3 + (npcPerceptionClarity * 0.3) + (itemNotoriety * 0.4);
-  return Math.random() < probability;
+  return roll < recognitionProbability(npcPerceptionClarity, itemNotoriety);
 }
 
 /**
- * Deterministic variant for testing — returns the probability instead of rolling.
+ * Deterministic recognition probability in [0, 1]. Shared by `shouldRecognize`
+ * and available directly when a caller wants the raw probability.
  */
 export function recognitionProbability(
   npcPerceptionClarity: number,

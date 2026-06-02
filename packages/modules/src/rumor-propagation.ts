@@ -9,7 +9,7 @@ import type {
   ResolvedEvent,
   ScalarValue,
 } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
+import { genId } from '@ai-rpg-engine/core';
 import { getCognition, getBelief } from './cognition-core.js';
 import type { Belief } from './cognition-core.js';
 import { getEntityFaction } from './faction-cognition.js';
@@ -126,7 +126,7 @@ function scheduleRumors(
 
       // Schedule delayed propagation via PendingEffect
       world.pending.push({
-        id: nextId('pend'),
+        id: genId(world, 'pend'),
         type: 'rumor.belief.propagated',
         executeAtTick: event.tick + delay,
         payload: {
@@ -145,7 +145,7 @@ function scheduleRumors(
 
       // Record in rumor log
       state.rumorLog.push({
-        id: nextId('rumor'),
+        id: genId(world, 'rumor'),
         sourceEntityId: entity.id,
         targetFactionId: factionId,
         subject: belief.subject,

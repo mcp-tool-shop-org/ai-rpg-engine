@@ -169,6 +169,50 @@ describe('ability-intent: scoreAbilityUse', () => {
     expect(healthyScore).toBeDefined();
     expect(woundedScore!.score).toBeGreaterThan(healthyScore!.score);
   });
+
+  // MC-03 regression: content stores maxHp in resources.maxHp, not stats.maxHp.
+  // Before the fix, entityHpRatio read stats.maxHp (undefined → fallback to hp),
+  // making hpRatio permanently 1.0 and disabling the target_low_hp bonus.
+  it('applies target_low_hp bonus when maxHp lives in resources (not stats)', () => {
+    const npc = makeEntity('npc1', 'npc', ['npc'], {
+      resources: { hp: 45, maxHp: 45, mana: 20, stamina: 15 },
+      stats: { vigor: 10, instinct: 8, will: 5 }, // NO maxHp in stats
+    });
+    // 4/45 HP ≈ 0.089 ratio → must trigger target_low_hp (< 0.3)
+    const wounded = makeEntity('wounded', 'pc', ['enemy'], {
+      resources: { hp: 4, maxHp: 45, mana: 0, stamina: 10 },
+      stats: { vigor: 5, instinct: 5, will: 5 }, // NO maxHp in stats
+    });
+
+    const world = buildWorldState([npc, wounded]);
+    const scores = scoreAbilityUse(npc, fireball, world);
+
+    const woundedScore = scores.find(s => s.targetId === 'wounded');
+    expect(woundedScore).toBeDefined();
+    const lowHpContrib = woundedScore!.contributions.find(c => c.factor === 'target_low_hp');
+    expect(lowHpContrib).toBeDefined();
+    expect(lowHpContrib!.delta).toBe(20);
+  });
+
+  it('self-heal scoring uses resources.maxHp convention for hpRatio', () => {
+    // Hurt NPC with maxHp only in resources should still see the low_hp_heal bonus.
+    const npcHurt = makeEntity('npc-hurt', 'npc', ['enemy'], {
+      resources: { hp: 5, maxHp: 30, mana: 20, stamina: 15 },
+      stats: { vigor: 10, instinct: 8, will: 5 }, // NO maxHp in stats
+    });
+    const player = makeEntity('player', 'pc', ['enemy'], {
+      resources: { hp: 20, maxHp: 20, mana: 0, stamina: 10 },
+      stats: { vigor: 5, instinct: 5, will: 5 },
+    });
+    const world = buildWorldState([npcHurt, player]);
+
+    const scores = scoreAbilityUse(npcHurt, heal, world);
+    const healScore = scores.find(s => s.abilityId === 'heal');
+    expect(healScore).toBeDefined();
+    const healContrib = healScore!.contributions.find(c => c.factor === 'low_hp_heal');
+    expect(healContrib).toBeDefined();
+    expect(healContrib!.delta).toBeGreaterThan(0);
+  });
 });
 
 describe('ability-intent: selectNpcAbilityAction', () => {

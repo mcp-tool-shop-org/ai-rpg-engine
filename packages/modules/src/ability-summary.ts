@@ -156,7 +156,7 @@ export function summarizeAbilityPack(
 
   for (const ability of abilities) {
     const tags = ability.tags;
-    if (tags.includes('damage') || tags.includes('combat') && !tags.includes('debuff') && !tags.includes('buff')) {
+    if ((tags.includes('damage') || tags.includes('combat')) && !tags.includes('debuff') && !tags.includes('buff')) {
       abilitiesByCategory.offensive.push(ability.id);
     } else if (tags.includes('heal') || tags.includes('buff') || tags.includes('cleanse')) {
       abilitiesByCategory.defensive.push(ability.id);

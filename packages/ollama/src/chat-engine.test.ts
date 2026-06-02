@@ -1,6 +1,9 @@
 // Tests — chat engine: message processing, memory, confirmation flow
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
+import { mkdtemp, rm, readFile, access } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { OllamaTextClient, PromptInput, PromptResult } from './client.js';
 import {
   createChatEngine, createChatMemory, addMessage, getRecentContext,
@@ -177,6 +180,72 @@ describe('engine.process — confirmation flow', () => {
     const response = await engine.process('no');
     expect(response).toContain('cancelled');
     expect(engine.pendingWrite).toBeNull();
+  });
+});
+
+// ollama-02 — confirmed writes must confine against the configured projectRoot,
+// not process.cwd(). A path inside projectRoot but outside cwd must be allowed.
+describe('engine.process — confirmed write confines against projectRoot', () => {
+  let projectRoot: string;
+
+  afterEach(async () => {
+    if (projectRoot) {
+      try { await rm(projectRoot, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+  });
+
+  it('allows a write to an absolute path inside projectRoot (outside cwd)', async () => {
+    // A temp dir is outside the test runner's cwd (the repo root).
+    projectRoot = await mkdtemp(join(tmpdir(), 'ollama-engine-root-'));
+    const target = join(projectRoot, 'artifact.yaml');
+
+    const engine = createChatEngine({
+      client: mockClient('ack'),
+      projectRoot,
+      rawMode: true,
+    });
+
+    // Seed a pending write pointing inside projectRoot but outside cwd.
+    engine.pendingWrite = {
+      content: 'id: confined\nname: Confined Artifact',
+      suggestedPath: target,
+      label: 'confined artifact',
+    };
+
+    const response = await engine.process('yes');
+
+    // With the bug (confine vs cwd) this returns "escapes project root".
+    expect(response).not.toMatch(/escapes project root/i);
+    expect(response).toContain('Written');
+
+    // File actually exists on disk under projectRoot.
+    await expect(access(target)).resolves.toBeUndefined();
+    const onDisk = await readFile(target, 'utf-8');
+    expect(onDisk).toBe('id: confined\nname: Confined Artifact');
+  });
+
+  it('still rejects a confirmed write that escapes projectRoot', async () => {
+    projectRoot = await mkdtemp(join(tmpdir(), 'ollama-engine-root-'));
+    // Sibling temp dir — outside projectRoot.
+    const outside = await mkdtemp(join(tmpdir(), 'ollama-engine-out-'));
+    const escapeTarget = join(outside, 'escape.yaml');
+
+    const engine = createChatEngine({
+      client: mockClient('ack'),
+      projectRoot,
+      rawMode: true,
+    });
+    engine.pendingWrite = {
+      content: 'id: escape',
+      suggestedPath: escapeTarget,
+      label: 'escape',
+    };
+
+    const response = await engine.process('yes');
+    expect(response).toMatch(/escapes project root/i);
+    // No file written outside the sandbox.
+    await expect(access(escapeTarget)).rejects.toBeTruthy();
+    try { await rm(outside, { recursive: true, force: true }); } catch { /* ignore */ }
   });
 });
 

@@ -116,6 +116,30 @@ describe('registerStatusDefinitions + getStatusDefinition', () => {
     expect(ids).toContain('terrified');
     expect(ids).toContain('holy-fire');
   });
+
+  // MC-04: registration is idempotent (keyed by id) — re-registering the same
+  // pack never accumulates duplicates, which is what makes a process-global
+  // definition registry safe to share across Engine instances.
+  it('is idempotent — re-registering the same defs does not duplicate', () => {
+    registerStatusDefinitions([mesmerizedDef, terrifiedDef]);
+    registerStatusDefinitions([mesmerizedDef, terrifiedDef]);
+    registerStatusDefinitions([mesmerizedDef]);
+    const ids = getRegisteredStatusIds();
+    expect(ids.filter((id) => id === 'mesmerized')).toHaveLength(1);
+    expect(ids.filter((id) => id === 'terrified')).toHaveLength(1);
+    expect(ids).toHaveLength(2);
+  });
+
+  it('clearStatusRegistry isolates definitions between unrelated packs', () => {
+    registerStatusDefinitions([mesmerizedDef]);
+    expect(getStatusTags('mesmerized')).toEqual(['control', 'supernatural', 'debuff']);
+
+    // A different "game"/pack clears, then registers its own — no bleed.
+    clearStatusRegistry();
+    expect(getStatusTags('mesmerized')).toEqual([]);
+    registerStatusDefinitions([holyFireDef]);
+    expect(getRegisteredStatusIds()).toEqual(['holy-fire']);
+  });
 });
 
 describe('getStatusTags', () => {

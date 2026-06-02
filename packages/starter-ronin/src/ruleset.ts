@@ -15,6 +15,7 @@ export const roninMinimalRuleset: RulesetDefinition = {
 
   resources: [
     { id: 'hp', name: 'HP', min: 0, max: 30, default: 20 },
+    { id: 'stamina', name: 'Stamina', min: 0, max: 50, default: 10, regenRate: 1 },
     { id: 'honor', name: 'Honor', min: 0, max: 30, default: 25 },
     { id: 'ki', name: 'Ki', min: 0, max: 20, default: 15, regenRate: 2 },
   ],

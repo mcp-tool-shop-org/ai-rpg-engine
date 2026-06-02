@@ -102,8 +102,8 @@ describe('Memory system', () => {
     });
 
     const cog = getCognition(engine.world, 'guard');
-    addMemory(cog, 'saw-entity', 1, { entityId: 'player', zoneId: 'a' }, 'player', 'a');
-    addMemory(cog, 'heard-noise', 3, { direction: 'north' });
+    addMemory(engine.world, cog, 'saw-entity', 1, { entityId: 'player', zoneId: 'a' }, 'player', 'a');
+    addMemory(engine.world, cog, 'heard-noise', 3, { direction: 'north' });
 
     expect(getMemories(cog)).toHaveLength(2);
     expect(getMemories(cog, 'saw-entity')).toHaveLength(1);
@@ -119,13 +119,36 @@ describe('Memory system', () => {
     });
 
     const cog = getCognition(engine.world, 'guard');
-    addMemory(cog, 'old-event', 1, { x: 1 });
-    addMemory(cog, 'recent-event', 8, { x: 2 });
-    addMemory(cog, 'very-recent', 10, { x: 3 });
+    addMemory(engine.world, cog, 'old-event', 1, { x: 1 });
+    addMemory(engine.world, cog, 'recent-event', 8, { x: 2 });
+    addMemory(engine.world, cog, 'very-recent', 10, { x: 3 });
 
     const recent = getRecentMemories(cog, 3, 10);
     expect(recent).toHaveLength(2); // tick 8 and 10
     expect(recent.every((m) => m.tick >= 7)).toBe(true);
+  });
+
+  it('mints deterministic per-instance memory ids (nextId → genId)', () => {
+    // Memory ids are serialized in cognition state, so they must come from the
+    // per-instance counter (genId), not a process-global counter. Two same-seed
+    // instances must produce byte-identical memory ids.
+    const mk = () => {
+      const engine = createTestEngine({
+        modules: [createCognitionCore()],
+        entities: [makePlayer('a'), makeAIEntity('guard', 'Guard', 'a')],
+        zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+      });
+      const cog = getCognition(engine.world, 'guard');
+      addMemory(engine.world, cog, 'saw-entity', 1, { x: 1 });
+      addMemory(engine.world, cog, 'heard-noise', 2, { x: 2 });
+      return cog.memories.map((m) => m.id);
+    };
+    const idsA = mk();
+    const idsB = mk();
+    expect(idsA).toEqual(idsB);
+    // Distinct within an instance, and stamped from the per-instance counter.
+    expect(new Set(idsA).size).toBe(idsA.length);
+    expect(idsA[0].startsWith('mem_')).toBe(true);
   });
 });
 

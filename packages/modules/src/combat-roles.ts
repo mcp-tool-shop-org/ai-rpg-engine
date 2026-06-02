@@ -11,7 +11,7 @@ import type {
   ResolvedEvent,
   WorldState,
 } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
+import { genId } from '@ai-rpg-engine/core';
 import type { PackBias, CombatIntentType } from './combat-intent.js';
 import type { CombatStatMapping } from './combat-core.js';
 import { DEFAULT_STAT_MAPPING } from './combat-core.js';
@@ -343,9 +343,9 @@ export function createBossPhaseListener(bossDef: BossDefinition): EngineModule {
             }
           }
 
-          // Emit phase transition event
+          // Emit phase transition event (deterministic id from per-instance counter)
           ctx.events.emit({
-            id: nextId('evt'),
+            id: genId(world, 'evt'),
             type: 'boss.phase.transition',
             tick: event.tick,
             actorId: bossDef.entityId,

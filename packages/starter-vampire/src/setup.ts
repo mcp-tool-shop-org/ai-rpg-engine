@@ -125,6 +125,8 @@ export function createGame(seed?: number): Engine {
         }],
       }),
       createEnvironmentCore({
+        // Hazards mutate entity.resources directly (deterministic, clamped);
+        // environment-core does not record the returned events. Return [].
         hazards: [
           {
             id: 'blood-scent',

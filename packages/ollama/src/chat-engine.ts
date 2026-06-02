@@ -435,9 +435,10 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     if (!pendingWrite) return 'Nothing to write.';
     const { content, suggestedPath, label } = pendingWrite;
 
-    // Use apply-preview's confirmed write
+    // Use apply-preview's confirmed write. Pass projectRoot so the path-escape
+    // confinement uses the configured sandbox, not process.cwd().
     const { applyConfirmed } = await import('./apply-preview.js');
-    const msg = await applyConfirmed({ content, targetPath: suggestedPath, label });
+    const msg = await applyConfirmed({ content, targetPath: suggestedPath, label, projectRoot });
 
     if (session) {
       recordEvent(session, 'content_applied', suggestedPath);

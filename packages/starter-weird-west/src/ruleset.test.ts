@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { validateRulesetDefinition } from '@ai-rpg-engine/content-schema';
 import { weirdWestMinimalRuleset } from './ruleset.js';
+import { weirdWestAbilities } from './content.js';
 
 describe('weirdWestMinimalRuleset', () => {
   it('validates against RulesetDefinition schema', () => {
@@ -21,6 +22,24 @@ describe('weirdWestMinimalRuleset', () => {
     expect(resIds).toContain('hp');
     expect(resIds).toContain('resolve');
     expect(resIds).toContain('dust');
+  });
+
+  // ST-03: abilities cost stamina, so the ruleset must declare stamina.
+  it('declares the stamina resource used by ability costs', () => {
+    const resIds = weirdWestMinimalRuleset.resources.map((r) => r.id);
+    expect(resIds).toContain('stamina');
+  });
+
+  it('every ability cost resource is declared in the ruleset', () => {
+    const resIds = new Set(weirdWestMinimalRuleset.resources.map((r) => r.id));
+    for (const ability of weirdWestAbilities) {
+      for (const cost of ability.costs ?? []) {
+        expect(
+          resIds.has(cost.resourceId),
+          `ability "${ability.id}" costs undeclared resource "${cost.resourceId}"`,
+        ).toBe(true);
+      }
+    }
   });
 
   it('declares all verbs used by starter modules', () => {

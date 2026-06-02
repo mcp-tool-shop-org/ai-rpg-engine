@@ -65,15 +65,51 @@ export function deserializeProfile(json: string): {
   if (!Array.isArray(obj['milestones'])) errors.push('Missing or invalid milestones');
   if (!Array.isArray(obj['reputation'])) errors.push('Missing or invalid reputation');
 
+  // Required scalar / plain-object fields (CP-04). A save missing these
+  // deserialized as a "valid" but corrupt profile before this check existed.
+  if (typeof obj['totalTurns'] !== 'number' || Number.isNaN(obj['totalTurns'])) {
+    errors.push('Missing or invalid totalTurns');
+  }
+  if (
+    typeof obj['custom'] !== 'object' ||
+    obj['custom'] === null ||
+    Array.isArray(obj['custom'])
+  ) {
+    errors.push('Missing or invalid custom');
+  }
+
+  // Progression substructure (CP-03). The old code only checked that
+  // `progression` was a non-null object and never inspected its numeric fields
+  // or traitEvolutions — a corrupt progression slipped through as "valid".
+  let needsTraitEvolutionRepair = false;
+  if (typeof obj['progression'] === 'object' && obj['progression'] !== null && !Array.isArray(obj['progression'])) {
+    const prog = obj['progression'] as Record<string, unknown>;
+    for (const numField of ['xp', 'level', 'archetypeRank', 'disciplineRank'] as const) {
+      if (typeof prog[numField] !== 'number' || Number.isNaN(prog[numField])) {
+        errors.push(`Missing or invalid progression.${numField}`);
+      }
+    }
+    if (prog['traitEvolutions'] === undefined) {
+      // Legacy (v1) saves predate traitEvolutions — repair to [] rather than reject.
+      needsTraitEvolutionRepair = true;
+    } else if (!Array.isArray(prog['traitEvolutions'])) {
+      errors.push('Missing or invalid progression.traitEvolutions');
+    }
+  }
+  // (If progression itself was not an object, the earlier check already errored.)
+
   if (errors.length > 0) {
     return { profile: null, errors };
   }
 
-  // Migrate v1 profiles: add itemChronicle if missing
+  // Migrate v1 profiles: add itemChronicle and progression.traitEvolutions if missing.
   const base = parsed as CharacterProfile;
   const profile: CharacterProfile = {
     ...base,
     itemChronicle: base.itemChronicle ?? {},
+    progression: needsTraitEvolutionRepair
+      ? { ...base.progression, traitEvolutions: [] }
+      : base.progression,
     version: Math.max(base.version, PROFILE_VERSION),
   };
 

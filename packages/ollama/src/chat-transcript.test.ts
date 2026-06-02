@@ -1,7 +1,7 @@
 // Tests — chat transcript: create, save, load, round-trip
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -103,6 +103,36 @@ describe('saveTranscript + loadTranscript', () => {
   it('returns null for nonexistent file', async () => {
     const loaded = await loadTranscript('/nonexistent/path/test.jsonl');
     expect(loaded).toBeNull();
+  });
+
+  // ollama-04 — a corrupt JSONL line must not throw (contract: ChatTranscript | null)
+  it('does not throw on a malformed line and skips it', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'chat-transcript-test-'));
+    const path = join(tempDir, 'corrupt.jsonl');
+
+    const header = JSON.stringify({ _type: 'transcript', sessionName: 'corrupt-test', startedAt: '2025-01-01T00:00:00Z', messageCount: 2 });
+    const goodLine = JSON.stringify({ role: 'user', content: 'hello', timestamp: '2025-01-01T00:00:00Z' });
+    const badLine = '{this is not valid json';
+    await writeFile(path, [header, goodLine, badLine].join('\n') + '\n', 'utf-8');
+
+    // Must not throw (rejects) and must honor the ChatTranscript | null contract.
+    const loaded = await loadTranscript(path);
+
+    // Valid messages are preserved, malformed line skipped.
+    expect(loaded).not.toBeNull();
+    expect(loaded!.sessionName).toBe('corrupt-test');
+    expect(loaded!.messages.length).toBe(1);
+    expect(loaded!.messages[0].content).toBe('hello');
+  });
+
+  it('does not throw when the header line is malformed', async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'chat-transcript-test-'));
+    const path = join(tempDir, 'bad-header.jsonl');
+    await writeFile(path, '{not valid header\n' + JSON.stringify({ role: 'user', content: 'hi', timestamp: '' }) + '\n', 'utf-8');
+
+    // Should not throw a SyntaxError — returns a value per the documented contract.
+    const loaded = await loadTranscript(path);
+    expect(loaded === null || typeof loaded === 'object').toBe(true);
   });
 
   it('preserves action metadata', async () => {

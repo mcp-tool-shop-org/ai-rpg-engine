@@ -8,6 +8,7 @@ import { createCognitionCore, getCognition } from './cognition-core.js';
 import {
   selectNpcCombatAction,
   formatCombatDecision,
+  emitDecisionEvent,
   createCombatIntent,
   BUILTIN_PACK_BIASES,
 } from './combat-intent.js';
@@ -647,6 +648,83 @@ describe('combat-intent: edge cases', () => {
     engine.store.emitEvent('tick.start', {});
   });
 
+  // MC-01 regression: defeatLog was cleared only on a 'tick.start' event the
+  // engine never emits, so momentum bonuses (guard +8 / disengage +12 / attack +8
+  // / finish +10) leaked forever after the first death. With tick-stamping, a
+  // defeat counts as "recent" only on the tick it happened (or the prior tick).
+  describe('MC-01: momentum does not leak across combats (no manual tick.start)', () => {
+    it('enemy momentum from fight 1 does not boost attack/finish in a later fight 2', () => {
+      const npc = makeEntity('npc', 'enemy', ['enemy'], { resources: { hp: 15, maxHp: 20, stamina: 5 } });
+      // A live enemy the npc can still attack during fight 1.
+      const liveFoe = makeEntity('liveFoe', 'player', ['player'], { resources: { hp: 18, maxHp: 20, stamina: 5 } });
+      // A separate enemy that has just been defeated (provides the momentum signal).
+      const deadFoe = makeEntity('deadFoe', 'player', ['player'], { resources: { hp: 0, maxHp: 20, stamina: 5 } });
+      const engine = buildEngine([npc, liveFoe, deadFoe]);
+
+      const cog = getCognition(engine.store.state, 'npc');
+      cog.morale = 60;
+
+      // --- Fight 1 (tick 0): an enemy (player-type) is defeated. ---
+      // Emitted through the real engine bus → recordEvent → combat-intent listener.
+      engine.store.emitEvent('combat.entity.defeated', {
+        entityId: 'deadFoe', entityName: 'deadFoe', defeatedBy: 'npc',
+      });
+
+      // Sanity: same-tick read still sees momentum (the bonus must still work).
+      const fight1Dec = selectNpcCombatAction(npc, engine.store.state);
+      const fight1Attack = [fight1Dec.chosen, ...fight1Dec.alternatives].find(a => a.intent === 'attack')!;
+      expect(fight1Attack).toBeDefined();
+      expect(fight1Attack.contributions.find(c => c.factor === 'momentum')).toBeDefined();
+
+      // --- Time passes between fights (no tick.start ever emitted). ---
+      for (let i = 0; i < 5; i++) engine.store.advanceTick();
+
+      // --- Fight 2 (tick 5): a fresh enemy appears, none defeated this tick. ---
+      engine.store.addEntity(makeEntity('foe2', 'player', ['player'], {
+        resources: { hp: 18, maxHp: 20, stamina: 5 },
+      }));
+
+      const fight2Dec = selectNpcCombatAction(npc, engine.store.state);
+      const fight2Attack = [fight2Dec.chosen, ...fight2Dec.alternatives].find(a => a.intent === 'attack')!;
+      const fight2Finish = [fight2Dec.chosen, ...fight2Dec.alternatives].find(a => a.intent === 'finish');
+
+      // The stale defeat from fight 1 must NOT inject momentum into fight 2.
+      expect(fight2Attack).toBeDefined();
+      expect(fight2Attack.contributions.find(c => c.factor === 'momentum')).toBeUndefined();
+      if (fight2Finish) {
+        expect(fight2Finish.contributions.find(c => c.factor === 'momentum')).toBeUndefined();
+      }
+    });
+
+    it('ally momentum from fight 1 does not boost guard/disengage in a later fight 2', () => {
+      const npc = makeEntity('npc', 'enemy', ['enemy'], { resources: { hp: 10, maxHp: 20, stamina: 5 } });
+      const target = makeEntity('target', 'player', ['player']);
+      const ally = makeEntity('ally', 'enemy', ['enemy'], { resources: { hp: 0, maxHp: 20, stamina: 5 } });
+      const engine = buildEngine([npc, target, ally]);
+
+      const cog = getCognition(engine.store.state, 'npc');
+      cog.morale = 40;
+
+      // Fight 1 (tick 0): an ally falls.
+      engine.store.emitEvent('combat.entity.defeated', {
+        entityId: 'ally', entityName: 'ally', defeatedBy: 'target',
+      });
+      const fight1 = selectNpcCombatAction(npc, engine.store.state);
+      const fight1Guard = [fight1.chosen, ...fight1.alternatives].find(a => a.intent === 'guard')!;
+      expect(fight1Guard.contributions.find(c => c.factor === 'ally_fallen')).toBeDefined();
+
+      // Several ticks later — no tick.start emitted.
+      for (let i = 0; i < 4; i++) engine.store.advanceTick();
+
+      const fight2 = selectNpcCombatAction(npc, engine.store.state);
+      const fight2Guard = [fight2.chosen, ...fight2.alternatives].find(a => a.intent === 'guard')!;
+      const fight2Disengage = [fight2.chosen, ...fight2.alternatives].find(a => a.intent === 'disengage')!;
+
+      expect(fight2Guard.contributions.find(c => c.factor === 'ally_fallen')).toBeUndefined();
+      expect(fight2Disengage.contributions.find(c => c.factor === 'ally_fallen')).toBeUndefined();
+    });
+  });
+
   it('exit quality is zero when no neighbors', () => {
     const npc = makeEntity('npc', 'enemy', ['enemy'], { name: 'Bandit', zoneId: 'zone-dead-end' });
     const target = makeEntity('player', 'player', ['player'], { name: 'Hero', zoneId: 'zone-dead-end' });
@@ -772,5 +850,66 @@ describe('AI interception cover awareness', () => {
       const coverContrib = attack.contributions.find(c => c.factor === 'interception_cover');
       expect(coverContrib).toBeUndefined();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Determinism: emitDecisionEvent draws event ids from per-instance counter
+// ---------------------------------------------------------------------------
+
+describe('combat-intent: deterministic event ids (emitDecisionEvent)', () => {
+  it('mints event id from world.meta.idCounter (genId), not a global counter', () => {
+    const npc = makeEntity('npc', 'enemy', ['enemy']);
+    const target = makeEntity('target', 'player', ['player']);
+    const engine = buildEngine([npc, target]);
+
+    const decision = selectNpcCombatAction(npc, engine.store.state);
+
+    const counterBefore = engine.store.state.meta.idCounter;
+    const emitted: { id: string }[] = [];
+    emitDecisionEvent({ emit: (e) => emitted.push(e) }, decision, engine.store.state);
+
+    expect(emitted).toHaveLength(1);
+    // genId increments the per-instance counter and prefixes with 'evt_'.
+    expect(emitted[0].id).toBe(`evt_${(counterBefore + 1).toString(36)}`);
+    expect(engine.store.state.meta.idCounter).toBe(counterBefore + 1);
+  });
+
+  it('two same-seed engines produce byte-identical decision event ids', () => {
+    const mk = () => {
+      const npc = makeEntity('npc', 'enemy', ['enemy']);
+      const target = makeEntity('target', 'player', ['player']);
+      return createTestEngine({
+        modules: [statusCore, createCognitionCore(), createCombatIntent()],
+        entities: [npc, target],
+        zones,
+        seed: 7,
+      });
+    };
+    const e1 = mk();
+    const e2 = mk();
+
+    const d1 = selectNpcCombatAction(e1.store.state.entities.npc, e1.store.state);
+    const d2 = selectNpcCombatAction(e2.store.state.entities.npc, e2.store.state);
+
+    const out1: { id: string }[] = [];
+    const out2: { id: string }[] = [];
+    emitDecisionEvent({ emit: (e) => out1.push(e) }, d1, e1.store.state);
+    emitDecisionEvent({ emit: (e) => out2.push(e) }, d2, e2.store.state);
+
+    expect(out1[0].id).toBe(out2[0].id);
+  });
+
+  it('without a world, emits id: "" so a recordEvent-backed emit assigns the id', () => {
+    const npc = makeEntity('npc', 'enemy', ['enemy']);
+    const target = makeEntity('target', 'player', ['player']);
+    const engine = buildEngine([npc, target]);
+    const decision = selectNpcCombatAction(npc, engine.store.state);
+
+    // Route through the real store bus (recordEvent) — it must backfill the id.
+    emitDecisionEvent({ emit: (e) => engine.store.recordEvent(e) }, decision);
+    const recorded = engine.store.state.eventLog.find(e => e.type === 'combat.ai.decision');
+    expect(recorded).toBeDefined();
+    expect(recorded!.id).toMatch(/^evt_/);
   });
 });

@@ -122,11 +122,13 @@ export function createGame(seed?: number): Engine {
         }],
       }),
       createEnvironmentCore({
+        // Hazards mutate entity.resources directly (deterministic, clamped);
+        // environment-core does not record the returned events. Return [].
         hazards: [{
           id: 'power-drain',
           triggerOn: 'world.zone.entered',
           condition: (zone) => zone.hazards?.includes('power-drain') ?? false,
-          effect: (zone, entity, _world, tick) => {
+          effect: (_zone, entity, _world, _tick) => {
             entity.resources.power = Math.max(0, (entity.resources.power ?? 0) - 5);
             return [];
           },
@@ -135,7 +137,7 @@ export function createGame(seed?: number): Engine {
           id: 'resonance-field',
           triggerOn: 'world.zone.entered',
           condition: (zone) => zone.hazards?.includes('resonance-field') ?? false,
-          effect: (zone, entity, _world, tick) => {
+          effect: (_zone, entity, _world, _tick) => {
             entity.resources.morale = Math.max(0, (entity.resources.morale ?? 0) - 3);
             entity.resources.power = Math.max(0, (entity.resources.power ?? 0) - 8);
             return [];
@@ -219,10 +221,14 @@ export function createGame(seed?: number): Engine {
   });
 
   // --- Colony-specific: ally defeated morale penalty (not covered by profile) ---
+  // Allied colonists carry the 'colonist' tag (there is no 'ally' tag in this
+  // pack). Losing one of the crew — anyone but the commander, and not by the
+  // commander's own hand — costs the commander morale.
   engine.store.events.on('combat.entity.defeated', (event) => {
     const defeatedId = event.payload.entityId as string;
+    if (defeatedId === 'commander') return;
     const defeated = engine.store.state.entities[defeatedId];
-    if (defeated?.tags.includes('ally') && event.payload.defeatedBy !== 'commander') {
+    if (defeated?.tags.includes('colonist') && event.payload.defeatedBy !== 'commander') {
       const p = engine.store.state.entities['commander'];
       if (p) p.resources.morale = Math.max(0, (p.resources.morale ?? 0) - 5);
     }

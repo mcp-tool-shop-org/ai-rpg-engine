@@ -98,25 +98,64 @@ export type CombatTacticsConfig = {
 // ---------------------------------------------------------------------------
 // Round flags — per-entity per-tick tracking
 // ---------------------------------------------------------------------------
+//
+// MC-02: flags used to be cleared on a `tick.start` event the engine never
+// emits, so once an entity braced, the off_balance-resist roll and the
+// reposition penalty fired forever. Each flag is now stamped with the tick it
+// was set, and a flag counts as "active" only on that tick or the immediately
+// following tick (see isRoundFlagActive). The active window spans two ticks
+// because brace and the opponent's reaction are separate actions, and the engine
+// advances meta.tick once per action — so a same-round interaction reads as tick
+// N (brace) and tick N+1 (reaction).
 
-const roundFlagsMap = new Map<string, RoundFlags>();
+/** Internal: per-flag tick stamp (the tick the flag was last set). */
+type RoundFlagTicks = Partial<Record<keyof RoundFlags, number>>;
 
-export function getRoundFlags(entityId: string): RoundFlags {
-  return roundFlagsMap.get(entityId) ?? {};
+const roundFlagTickMap = new Map<string, RoundFlagTicks>();
+
+/** A round flag is active on the tick it was set or the immediately next tick. */
+function isRoundFlagActiveAt(entityId: string, flag: keyof RoundFlags, tick: number): boolean {
+  const t = roundFlagTickMap.get(entityId)?.[flag];
+  return t !== undefined && (t === tick || t === tick - 1);
 }
 
-export function setRoundFlag(entityId: string, flag: keyof RoundFlags, value: boolean): void {
-  const flags = roundFlagsMap.get(entityId) ?? {};
-  flags[flag] = value;
-  roundFlagsMap.set(entityId, flags);
+/**
+ * Public boolean view of an entity's round flags. A flag reads `true` when it
+ * has been set at all (back-compat for callers/tests that inspect set-state);
+ * tick-scoped activeness for game logic goes through isRoundFlagActiveAt.
+ */
+export function getRoundFlags(entityId: string): RoundFlags {
+  const ticks = roundFlagTickMap.get(entityId);
+  if (!ticks) return {};
+  const view: RoundFlags = {};
+  for (const key of Object.keys(ticks) as (keyof RoundFlags)[]) {
+    if (ticks[key] !== undefined) view[key] = true;
+  }
+  return view;
+}
+
+/**
+ * Set or clear a round flag, stamping the tick it was set. `tick` is required so
+ * the flag can be aged out deterministically; callers pass world.meta.tick /
+ * event.tick. (Optional only for back-compat with the re-exported signature —
+ * omitting it stamps tick 0, which all internal callers avoid.)
+ */
+export function setRoundFlag(entityId: string, flag: keyof RoundFlags, value: boolean, tick = 0): void {
+  const ticks = roundFlagTickMap.get(entityId) ?? {};
+  if (value) {
+    ticks[flag] = tick;
+  } else {
+    delete ticks[flag];
+  }
+  roundFlagTickMap.set(entityId, ticks);
 }
 
 export function clearRoundFlags(): void {
-  roundFlagsMap.clear();
+  roundFlagTickMap.clear();
 }
 
 export function clearEntityRoundFlags(entityId: string): void {
-  roundFlagsMap.delete(entityId);
+  roundFlagTickMap.delete(entityId);
 }
 
 // ---------------------------------------------------------------------------
@@ -185,16 +224,16 @@ function braceHandler(
   events.push(applyStatus(actor, COMBAT_STATES.GUARDED, world.meta.tick, {
     duration: 2,
     sourceId: actor.id,
-  }));
+  }, world));
 
   // Set internal braced flag — grants displacement resistance
-  setRoundFlag(actor.id, 'braced', true);
+  setRoundFlag(actor.id, 'braced', true, world.meta.tick);
 
   // Brace is stronger at chokepoints — set flag for stabilize listener
   const zone = world.zones[actor.zoneId ?? ''];
   const atChokepoint = zone?.tags?.includes('chokepoint') ?? false;
   if (atChokepoint) {
-    setRoundFlag(actor.id, 'bracedAtChokepoint', true);
+    setRoundFlag(actor.id, 'bracedAtChokepoint', true, world.meta.tick);
   }
 
   // Brace clears off-balance (stabilization)
@@ -267,7 +306,7 @@ function repositionHandler(
     if (removeEvt) events.push(removeEvt);
   }
 
-  setRoundFlag(actor.id, 'attemptedReposition', true);
+  setRoundFlag(actor.id, 'attemptedReposition', true, world.meta.tick);
 
   const mapping = config?.formulas?.statMapping ?? { attack: 'vigor', precision: 'instinct', resolve: 'will' };
   const precision = getStat(actor, mapping, 'precision', 5);
@@ -291,9 +330,10 @@ function repositionHandler(
 
   chance = Math.min(90, Math.max(10, chance));
 
-  // Check if any enemy in zone is braced (brace counters reposition)
+  // Check if any enemy in zone is braced *this round* (brace counters reposition).
+  // Tick-scoped: a stale braced flag from an earlier round must not apply (MC-02).
   const enemies = getEnemiesInZone(world, actor);
-  const bracedDefender = enemies.find(e => getRoundFlags(e.id).braced);
+  const bracedDefender = enemies.find(e => isRoundFlagActiveAt(e.id, 'braced', world.meta.tick));
   if (bracedDefender) {
     chance -= 20; // Braced defender makes repositioning harder
   }
@@ -329,7 +369,7 @@ function repositionHandler(
         events.push(applyStatus(target, COMBAT_STATES.EXPOSED, world.meta.tick, {
           duration: 1,
           sourceId: actor.id,
-        }));
+        }, world));
         events.push(makeEvent(action, 'combat.reposition.outflank', {
           entityId: actor.id,
           entityName: actor.name,
@@ -374,7 +414,7 @@ function repositionHandler(
       events.push(applyStatus(actor, COMBAT_STATES.EXPOSED, world.meta.tick, {
         duration: 1,
         sourceId: actor.id,
-      }));
+      }, world));
     }
 
     events.push(makeEvent(action, 'combat.reposition.fail', {
@@ -411,15 +451,14 @@ export function createCombatTactics(config?: CombatTacticsConfig): EngineModule 
       ctx.actions.registerVerb('brace', (action, world) => braceHandler(action, world, config));
       ctx.actions.registerVerb('reposition', (action, world) => repositionHandler(action, world, config));
 
-      // Clear round flags at the start of each tick
-      ctx.events.on('tick.start', () => {
-        clearRoundFlags();
-      });
+      // Round flags are tick-scoped (see isRoundFlagActiveAt) — no clear-on-tick
+      // signal is needed. The engine never emits 'tick.start', and relying on it
+      // was the MC-02 leak: flags lived forever once set.
 
       // Track guard action via round flags
-      ctx.events.on('combat.guard.start', (event: ResolvedEvent) => {
+      ctx.events.on('combat.guard.start', (event: ResolvedEvent, world: WorldState) => {
         const entityId = event.payload.entityId as string;
-        setRoundFlag(entityId, 'guarding', true);
+        setRoundFlag(entityId, 'guarding', true, world.meta.tick);
       });
 
       // Guard action clears off-balance (spending a turn to stabilize)
@@ -438,8 +477,9 @@ export function createCombatTactics(config?: CombatTacticsConfig): EngineModule 
 
         const entityId = event.actorId ?? (event.payload.entityId as string);
         if (!entityId) return;
-        const flags = getRoundFlags(entityId);
-        if (!flags.braced) return;
+        // Only an active brace (this tick or the immediately prior tick) resists.
+        // A stale braced flag from a past round must not fire (MC-02).
+        if (!isRoundFlagActiveAt(entityId, 'braced', event.tick)) return;
 
         // Braced entities resist off-balance (vigor = physical force to hold ground)
         const entity = world.entities[entityId];
@@ -447,7 +487,7 @@ export function createCombatTactics(config?: CombatTacticsConfig): EngineModule 
           const entityMapping = config?.formulas?.statMapping ?? DEFAULT_STAT_MAPPING;
           const entityVigor = entity.stats[entityMapping.attack] ?? 5;
           let stabilizeChance = config?.braceStabilizeChance ?? Math.min(90, 40 + entityVigor * 6);
-          if (flags.bracedAtChokepoint) stabilizeChance += 15;
+          if (isRoundFlagActiveAt(entityId, 'bracedAtChokepoint', event.tick)) stabilizeChance += 15;
           const roll = simpleRoll(event.tick, entityId, 'stabilize');
           if (roll <= stabilizeChance) {
             removeStatus(entity, COMBAT_STATES.OFF_BALANCE, event.tick);

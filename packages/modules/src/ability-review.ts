@@ -8,8 +8,9 @@
 import type {
   EngineModule,
   ResolvedEvent,
+  WorldState,
 } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
+import { genId } from '@ai-rpg-engine/core';
 import type { AbilityCheckResult } from './ability-core.js';
 
 // ---------------------------------------------------------------------------
@@ -92,12 +93,12 @@ export function createAbilityReview(config?: AbilityReviewConfig): EngineModule 
 
     register(ctx) {
       // 1. ability.used — start trace
-      ctx.events.on('ability.used', (event) => {
+      ctx.events.on('ability.used', (event, world) => {
         const checks = (event.payload.checks as AbilityCheckResult[]) ?? [];
         const allPassed = checks.every((c) => c.passed);
 
         pending = {
-          traceId: nextId('trace'),
+          traceId: genId(world, 'trace'),
           tick: event.tick,
           abilityId: event.payload.abilityId as string,
           abilityName: event.payload.abilityName as string,
@@ -121,11 +122,11 @@ export function createAbilityReview(config?: AbilityReviewConfig): EngineModule 
       });
 
       // 2. ability.check.failed (abort) — starts its own trace since ability.used never fires on abort
-      ctx.events.on('ability.check.failed', (event) => {
+      ctx.events.on('ability.check.failed', (event, world) => {
         if (event.payload.aborted) {
           const checks = ((event.payload.checks as AbilityCheckResult[]) ?? []);
           pending = {
-            traceId: nextId('trace'),
+            traceId: genId(world, 'trace'),
             tick: event.tick,
             abilityId: event.payload.abilityId as string,
             abilityName: event.payload.abilityName as string,
@@ -146,14 +147,14 @@ export function createAbilityReview(config?: AbilityReviewConfig): EngineModule 
             cooldownSet: false,
             outcome: 'aborted',
           };
-          finalize(ctx, event.tick);
+          finalize(ctx, event.tick, world);
         }
       });
 
       // 3. ability.rejected
-      ctx.events.on('ability.rejected', (event) => {
+      ctx.events.on('ability.rejected', (event, world) => {
         pending = {
-          traceId: nextId('trace'),
+          traceId: genId(world, 'trace'),
           tick: event.tick,
           abilityId: event.payload.abilityId as string ?? 'unknown',
           abilityName: event.payload.abilityName as string ?? 'unknown',
@@ -169,7 +170,7 @@ export function createAbilityReview(config?: AbilityReviewConfig): EngineModule 
           outcome: 'rejected',
           summary: `Rejected: ${event.payload.reason}`,
         };
-        finalize(ctx, event.tick);
+        finalize(ctx, event.tick, world);
       });
 
       // 4. resource.changed — capture costs
@@ -237,10 +238,10 @@ export function createAbilityReview(config?: AbilityReviewConfig): EngineModule 
       }
 
       // 6. ability.resolved — finalize trace
-      ctx.events.on('ability.resolved', (event) => {
+      ctx.events.on('ability.resolved', (event, world) => {
         if (!pending) return;
         pending.cooldownSet = true; // If we got to resolved, cooldown was set (if ability has one)
-        finalize(ctx, event.tick);
+        finalize(ctx, event.tick, world);
       });
 
       // Debug inspector — expanded for Phase 4
@@ -304,6 +305,7 @@ export function createAbilityReview(config?: AbilityReviewConfig): EngineModule 
   function finalize(
     ctx: { events: { emit: (event: ResolvedEvent) => void } },
     tick: number,
+    world: WorldState,
   ): void {
     if (!pending) return;
     if (!pending.summary) {
@@ -316,7 +318,7 @@ export function createAbilityReview(config?: AbilityReviewConfig): EngineModule 
     pending = null;
 
     ctx.events.emit({
-      id: nextId('evt'),
+      id: genId(world, 'evt'),
       type: 'ability.review.trace',
       tick,
       actorId: trace.actorId,

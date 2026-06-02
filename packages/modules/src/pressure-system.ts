@@ -3,6 +3,8 @@
 // Pressures are structured objects, not prose. Claude renders them into narration.
 // Most turns produce nothing — scarcity makes pressures meaningful.
 
+import type { WorldState } from '@ai-rpg-engine/core';
+import { genId } from '@ai-rpg-engine/core';
 import type { PlayerRumor } from './player-rumor.js';
 import type { PressureResolution } from './pressure-resolution.js';
 import type { DistrictEconomy } from './economy-core.js';
@@ -99,9 +101,17 @@ const MAX_ACTIVE_PRESSURES = 3;
 const MIN_TURNS_BETWEEN_SPAWNS = 3;
 const VISIBILITY_ESCALATION_TICKS = 3;
 
-let pressureCounter = 0;
-function nextPressureId(): string {
-  return `wp-${++pressureCounter}`;
+// Deterministic id minting. Previously a module-global `pressureCounter` minted
+// `wp-N` ids — the same footgun fixed across the engine: a process-global counter
+// is shared between engine instances (two engines with the same seed produce
+// different ids) and is never serialized (a reloaded game restarts at 0 and
+// collides with ids already in state). When a WorldState is available we draw
+// from the per-instance serialized counter via `genId`; otherwise we derive a
+// stable id from the pressure's own content (kind + faction + tick), which is
+// unique within a run because the system keeps at most one active pressure per
+// kind. No shared mutable global is used.
+function contentPressureId(kind: PressureKind, sourceFactionId: string, currentTick: number): string {
+  return `wp-${kind}-${sourceFactionId}-${currentTick}`;
 }
 
 // --- Lifecycle ---
@@ -876,21 +886,27 @@ export function formatPressureForDialogue(pressure: WorldPressure): string {
 
 // --- Helpers ---
 
-export function makePressure(opts: {
-  kind: PressureKind;
-  sourceFactionId: string;
-  description: string;
-  triggeredBy: string;
-  urgency: number;
-  visibility: PressureVisibility;
-  turnsRemaining: number | null;
-  potentialOutcomes: string[];
-  tags: string[];
-  currentTick: number;
-  sourceNpcId?: string;
-}): WorldPressure {
+export function makePressure(
+  opts: {
+    kind: PressureKind;
+    sourceFactionId: string;
+    description: string;
+    triggeredBy: string;
+    urgency: number;
+    visibility: PressureVisibility;
+    turnsRemaining: number | null;
+    potentialOutcomes: string[];
+    tags: string[];
+    currentTick: number;
+    sourceNpcId?: string;
+  },
+  state?: WorldState,
+): WorldPressure {
+  const id = state
+    ? genId(state, 'wp')
+    : contentPressureId(opts.kind, opts.sourceFactionId, opts.currentTick);
   const pressure: WorldPressure = {
-    id: nextPressureId(),
+    id,
     kind: opts.kind,
     sourceFactionId: opts.sourceFactionId,
     description: opts.description,

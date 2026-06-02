@@ -100,9 +100,9 @@ function isBacklineCandidate(entity: EntityState, backlineTags: string[]): boole
   return backlineTags.some(tag => entity.tags.includes(tag));
 }
 
-function safeApply(entity: EntityState, statusId: string, tick: number): void {
+function safeApply(entity: EntityState, statusId: string, tick: number, world: WorldState): void {
   if (!hasStatus(entity, statusId)) {
-    applyStatus(entity, statusId, tick, { stacking: 'refresh' });
+    applyStatus(entity, statusId, tick, { stacking: 'refresh' }, world);
   }
 }
 
@@ -140,11 +140,11 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
         const target = world.entities[targetId];
 
         if (attacker) {
-          safeApply(attacker, ENGAGEMENT_STATES.ENGAGED, tick);
+          safeApply(attacker, ENGAGEMENT_STATES.ENGAGED, tick, world);
           safeRemove(attacker, ENGAGEMENT_STATES.BACKLINE, tick);
         }
         if (target) {
-          safeApply(target, ENGAGEMENT_STATES.ENGAGED, tick);
+          safeApply(target, ENGAGEMENT_STATES.ENGAGED, tick, world);
           safeRemove(target, ENGAGEMENT_STATES.BACKLINE, tick);
         }
       });
@@ -165,7 +165,7 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
 
           // Re-check PROTECTED (protector might have been defeated)
           if (hasProtectorInZone(world, entity, protectorTags)) {
-            safeApply(entity, ENGAGEMENT_STATES.PROTECTED, tick);
+            safeApply(entity, ENGAGEMENT_STATES.PROTECTED, tick, world);
           } else {
             safeRemove(entity, ENGAGEMENT_STATES.PROTECTED, tick);
           }
@@ -174,7 +174,7 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
           if (hasAlliesInZone(world, entity)) {
             safeRemove(entity, ENGAGEMENT_STATES.ISOLATED, tick);
           } else {
-            safeApply(entity, ENGAGEMENT_STATES.ISOLATED, tick);
+            safeApply(entity, ENGAGEMENT_STATES.ISOLATED, tick, world);
           }
 
           // Clear ENGAGED when no enemies remain (nothing to be engaged with)
@@ -186,7 +186,7 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
           if (isBacklineCandidate(entity, backlineTags)
             && !hasStatus(entity, ENGAGEMENT_STATES.ENGAGED)
             && !hasEnemiesInZone(world, entity)) {
-            safeApply(entity, ENGAGEMENT_STATES.BACKLINE, tick);
+            safeApply(entity, ENGAGEMENT_STATES.BACKLINE, tick, world);
           }
         }
 
@@ -225,19 +225,19 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
         if (entity.zoneId) {
           const zone = world.zones[entity.zoneId];
           if (zone?.tags.includes(chokepointTag)) {
-            safeApply(entity, ENGAGEMENT_STATES.ENGAGED, tick);
+            safeApply(entity, ENGAGEMENT_STATES.ENGAGED, tick, world);
           } else if (isBacklineCandidate(entity, backlineTags) && !hasEnemiesInZone(world, entity)) {
-            safeApply(entity, ENGAGEMENT_STATES.BACKLINE, tick);
+            safeApply(entity, ENGAGEMENT_STATES.BACKLINE, tick, world);
           }
 
           if (hasAlliesInZone(world, entity)) {
             safeRemove(entity, ENGAGEMENT_STATES.ISOLATED, tick);
           } else {
-            safeApply(entity, ENGAGEMENT_STATES.ISOLATED, tick);
+            safeApply(entity, ENGAGEMENT_STATES.ISOLATED, tick, world);
           }
 
           if (hasProtectorInZone(world, entity, protectorTags)) {
-            safeApply(entity, ENGAGEMENT_STATES.PROTECTED, tick);
+            safeApply(entity, ENGAGEMENT_STATES.PROTECTED, tick, world);
           } else {
             safeRemove(entity, ENGAGEMENT_STATES.PROTECTED, tick);
           }
@@ -258,7 +258,7 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
             .some(e => e.id !== entity.id && e.type !== entity.type);
           if (hasEnemies) {
             safeRemove(entity, ENGAGEMENT_STATES.BACKLINE, tick);
-            safeApply(entity, ENGAGEMENT_STATES.ENGAGED, tick);
+            safeApply(entity, ENGAGEMENT_STATES.ENGAGED, tick, world);
           }
         }
       });
@@ -286,13 +286,13 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
 
         // Chokepoint forces engagement
         if (zone?.tags.includes(chokepointTag)) {
-          safeApply(entity, ENGAGEMENT_STATES.ENGAGED, tick);
+          safeApply(entity, ENGAGEMENT_STATES.ENGAGED, tick, world);
           safeRemove(entity, ENGAGEMENT_STATES.BACKLINE, tick);
         } else {
           // Backline for ranged/caster if not engaged
           if (isBacklineCandidate(entity, backlineTags)
             && !hasStatus(entity, ENGAGEMENT_STATES.ENGAGED)) {
-            safeApply(entity, ENGAGEMENT_STATES.BACKLINE, tick);
+            safeApply(entity, ENGAGEMENT_STATES.BACKLINE, tick, world);
           }
         }
 
@@ -300,12 +300,12 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
         if (hasAlliesInZone(world, entity)) {
           safeRemove(entity, ENGAGEMENT_STATES.ISOLATED, tick);
         } else {
-          safeApply(entity, ENGAGEMENT_STATES.ISOLATED, tick);
+          safeApply(entity, ENGAGEMENT_STATES.ISOLATED, tick, world);
         }
 
         // Protected check
         if (hasProtectorInZone(world, entity, protectorTags)) {
-          safeApply(entity, ENGAGEMENT_STATES.PROTECTED, tick);
+          safeApply(entity, ENGAGEMENT_STATES.PROTECTED, tick, world);
         } else {
           safeRemove(entity, ENGAGEMENT_STATES.PROTECTED, tick);
         }
@@ -313,7 +313,7 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
         // Ambush entry: entity walking into an ambush zone with enemies gets EXPOSED
         if (zone?.tags.includes(ambushTag) && hasEnemiesInZone(world, entity)) {
           if (!hasStatus(entity, COMBAT_STATES.EXPOSED)) {
-            applyStatus(entity, COMBAT_STATES.EXPOSED, tick, { duration: 1, sourceId: 'ambush' });
+            applyStatus(entity, COMBAT_STATES.EXPOSED, tick, { duration: 1, sourceId: 'ambush' }, world);
             ctx.events.emit({
               id: `evt-ambush-${tick}-${entityId}`,
               tick,
@@ -338,7 +338,7 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
 
           // New arrival might be a protector
           if (protectorTags.some(tag => entity.tags.includes(tag)) && other.type === entity.type) {
-            safeApply(other, ENGAGEMENT_STATES.PROTECTED, tick);
+            safeApply(other, ENGAGEMENT_STATES.PROTECTED, tick, world);
           }
         }
       });

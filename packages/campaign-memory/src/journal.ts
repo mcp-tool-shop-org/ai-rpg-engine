@@ -2,12 +2,6 @@
 
 import type { CampaignRecord, RecordCategory } from './types.js';
 
-let nextRecordId = 1;
-
-function generateId(): string {
-  return `cr_${nextRecordId++}`;
-}
-
 export type JournalQueryFilters = {
   actorId?: string;
   targetId?: string;
@@ -18,10 +12,19 @@ export type JournalQueryFilters = {
 
 export class CampaignJournal {
   private records: Map<string, CampaignRecord> = new Map();
+  /**
+   * Per-instance ID counter. Record IDs depend only on (this journal's history),
+   * never on cross-instance order — see CP-01. Two journals number independently.
+   */
+  private nextRecordId = 1;
+
+  private generateId(): string {
+    return `cr_${this.nextRecordId++}`;
+  }
 
   /** Record a significant event. Returns the created record with generated ID. */
   record(entry: Omit<CampaignRecord, 'id'>): CampaignRecord {
-    const record: CampaignRecord = { id: generateId(), ...entry };
+    const record: CampaignRecord = { id: this.generateId(), ...entry };
     this.records.set(record.id, record);
     return record;
   }
@@ -77,7 +80,7 @@ export class CampaignJournal {
     for (const record of records) {
       journal.records.set(record.id, record);
     }
-    // Ensure ID counter is ahead of existing records
+    // Advance THIS instance's counter past the highest restored id (CP-01).
     let maxNum = 0;
     for (const r of records) {
       const match = r.id.match(/^cr_(\d+)$/);
@@ -85,7 +88,7 @@ export class CampaignJournal {
         maxNum = Math.max(maxNum, parseInt(match[1], 10));
       }
     }
-    nextRecordId = maxNum + 1;
+    journal.nextRecordId = maxNum + 1;
     return journal;
   }
 }

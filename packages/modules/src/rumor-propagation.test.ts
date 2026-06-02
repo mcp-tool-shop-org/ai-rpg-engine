@@ -91,6 +91,35 @@ describe('rumor-propagation', () => {
     expect(rumors[0].targetFactionId).toBe('castle-guard');
   });
 
+  test('rumor + pending ids are deterministic per-instance (nextId → genId)', () => {
+    // The scheduled-propagation pending effect id and the rumor-log id are both
+    // serialized; they must be minted from the per-instance counter (genId), not
+    // a process-global. Two same-seed instances must produce identical ids.
+    const run = () => {
+      const engine = createEngine({ propagationDelay: 2 });
+      engine.drainEvents();
+      engine.store.emitEvent('combat.contact.hit', {
+        attackerId: 'player',
+        targetId: 'guard_1',
+        damage: 5,
+      }, { actorId: 'player', targetIds: ['guard_1'] });
+      return {
+        rumorIds: getRumorLog(engine.world).map((r) => r.id),
+        pendingIds: engine.world.pending
+          .filter((p) => p.type === 'rumor.belief.propagated')
+          .map((p) => p.id),
+      };
+    };
+    const a = run();
+    const b = run();
+    expect(a.rumorIds.length).toBeGreaterThan(0);
+    expect(a.pendingIds.length).toBeGreaterThan(0);
+    expect(a.rumorIds).toEqual(b.rumorIds); // byte-identical across instances
+    expect(a.pendingIds).toEqual(b.pendingIds);
+    expect(a.rumorIds[0].startsWith('rumor_')).toBe(true);
+    expect(a.pendingIds[0].startsWith('pend_')).toBe(true);
+  });
+
   test('rumor arrives at faction after propagation delay', () => {
     const engine = createEngine({ propagationDelay: 1 });
     engine.drainEvents();

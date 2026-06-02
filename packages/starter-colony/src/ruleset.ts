@@ -15,6 +15,7 @@ export const colonyMinimalRuleset: RulesetDefinition = {
 
   resources: [
     { id: 'hp', name: 'HP', min: 0, max: 25, default: 18 },
+    { id: 'stamina', name: 'Stamina', min: 0, max: 50, default: 10, regenRate: 1 },
     { id: 'power', name: 'Power', min: 0, max: 100, default: 60, regenRate: 2 },
     { id: 'morale', name: 'Morale', min: 0, max: 30, default: 20 },
   ],

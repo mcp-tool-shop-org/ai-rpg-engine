@@ -13,7 +13,7 @@ import {
   parseTextInput,
 } from '@ai-rpg-engine/terminal-ui';
 import { resolveEntity } from '@ai-rpg-engine/character-creation';
-import type { Engine } from '@ai-rpg-engine/core';
+import { WorldStore, SaveLoadError, type Engine } from '@ai-rpg-engine/core';
 import { allPacks, type PackInfo } from './packs.js';
 import { promptMenu, promptConfirm, getReadline, closeReadline } from './prompts.js';
 import { buildCharacter } from './character-builder.js';
@@ -30,7 +30,7 @@ function printHelp() {
   console.log('Commands:');
   console.log('  run            Start a new game (default)');
   console.log('  create-starter Scaffold a new starter from template');
-  console.log('  replay         Replay actions from a save file');
+  console.log('  replay         Load a save and restore its state (--replay re-simulates the action log)');
   console.log('  inspect-save   Show save file summary');
   console.log('  version        Print version');
   console.log('  help           Show this help');
@@ -64,7 +64,7 @@ async function main() {
       closeReadline();
       return;
     case 'replay':
-      replayGame();
+      replayGame(args.slice(1));
       closeReadline();
       return;
     case 'inspect-save':
@@ -110,10 +110,15 @@ async function runGame() {
   // --- Create Game ---
   const engine = pack.createGame();
 
-  // Replace the default player with the custom character
-  const defaultPlayer = engine.store.state.entities['player'];
+  // Replace the default player with the custom character. The player entity key
+  // is NOT always 'player' — 6/10 packs use a pack-specific id (e.g. 'runner',
+  // 'detective'). Read the real id from state.playerId and re-key the built
+  // character to it, preserving the default player's zone (CLI-001).
+  const playerId = engine.store.state.playerId;
+  const defaultPlayer = engine.store.state.entities[playerId];
+  playerEntity.id = playerId;
   playerEntity.zoneId = defaultPlayer?.zoneId;
-  engine.store.state.entities['player'] = playerEntity;
+  engine.store.state.entities[playerId] = playerEntity;
 
   console.log(`\n  ═══════════════════════════════════════`);
   console.log(`  ${pack.meta.name.toUpperCase()}`);
@@ -209,9 +214,9 @@ function saveGame(engine: Engine) {
   fs.writeFileSync(SAVE_FILE, engine.serialize(), 'utf-8');
 }
 
-function replayGame() {
+function replayGame(args: string[] = []) {
   if (!fs.existsSync(SAVE_FILE)) {
-    console.log('  No save file found.');
+    console.error('  No save file found.');
     process.exit(1);
   }
 
@@ -222,20 +227,62 @@ function replayGame() {
     console.error('  Save file is corrupted or not valid JSON.');
     process.exit(1);
   }
-  const actionLog = data.actionLog ?? [];
 
-  const pack = allPacks[0];
-  console.log(`  Replaying ${actionLog.length} actions...`);
-
-  const engine = pack.createGame(data.world?.state?.meta?.seed ?? 42);
-  for (const action of actionLog) {
-    engine.processAction(action);
+  // CLI-002: select the pack whose manifest id matches the SAVED gameId rather
+  // than blindly using allPacks[0] (fantasy). Loading a cyberpunk save through
+  // the fantasy pack produced nonsense.
+  const savedGameId: string | undefined = data.world?.state?.meta?.gameId;
+  const pack = allPacks.find((p) => p.meta.id === savedGameId);
+  if (!pack) {
+    console.error(`  Cannot load save: no installed pack matches gameId "${savedGameId ?? '(missing)'}".`);
+    console.error(`  Installed packs: ${allPacks.map((p) => p.meta.id).join(', ')}`);
+    console.error('  Hint: this save was made by a pack that is not part of this build.');
+    process.exit(1);
   }
 
-  console.log(`  Replay complete. ${engine.world.eventLog.length} events generated.`);
+  const seed = data.world?.state?.meta?.seed ?? 42;
+  const reSimulate = args.includes('--replay');
+
+  // Build a fully-wired engine (modules registered, pack event subscriptions
+  // bound to its live EventBus). createGame is also where pack closures hook the
+  // bus — we must reuse THAT bus, so we restore state into this engine rather
+  // than constructing a bare one via Engine.deserialize.
+  const engine = pack.createGame(seed);
+
+  if (reSimulate) {
+    // Explicit re-simulation path: replay the action log through a fresh game.
+    const actionLog = data.actionLog ?? [];
+    console.log(`  Re-simulating ${actionLog.length} actions...`);
+    for (const action of actionLog) {
+      engine.processAction(action);
+    }
+    console.log(`  Replay complete. ${engine.world.eventLog.length} events generated.`);
+  } else {
+    // Default load: RESTORE the saved world state (entities, eventLog, globals,
+    // pending, rngState, meta incl. idCounter). Reuse the pack-wired EventBus so
+    // module + pack subscriptions survive the swap (core-004). The pack closures
+    // read engine.store.state via the engine reference, so they see the new
+    // store after the assignment below.
+    try {
+      const restored = WorldStore.deserialize(
+        JSON.stringify(data.world),
+        engine.store.events,
+      );
+      (engine as { store: WorldStore }).store = restored;
+    } catch (e) {
+      if (e instanceof SaveLoadError) {
+        console.error(`  Cannot load save [${e.code}]: ${e.message}`);
+        console.error(`  Hint: ${e.hint}`);
+        process.exit(1);
+      }
+      throw e;
+    }
+    console.log(`  Loaded save. ${engine.world.eventLog.length} events in log.`);
+  }
+
   console.log(`  Final tick: ${engine.tick}`);
   console.log(`  Player location: ${engine.world.locationId}`);
-  const player = engine.world.entities['player'];
+  const player = engine.world.entities[engine.store.state.playerId];
   if (player) {
     const resDisplay = Object.entries(player.resources)
       .map(([k, v]) => `${k}: ${v}`)

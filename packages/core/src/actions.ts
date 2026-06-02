@@ -7,7 +7,6 @@ import type {
   WorldState,
 } from './types.js';
 import type { WorldStore } from './world.js';
-import { nextId } from './id.js';
 
 export type ActionValidationResult = {
   valid: boolean;
@@ -91,15 +90,25 @@ export class ActionDispatcher {
     return events;
   }
 
-  /** Create an ActionIntent with defaults */
+  /**
+   * Create an ActionIntent with defaults.
+   *
+   * The id is supplied by the caller (the Engine mints it from the per-world
+   * deterministic counter via `store.genId('act')`) because action ids live in
+   * the serialized actionLog and must be replayable byte-for-byte. The
+   * dispatcher itself is stateless and has no world to draw a counter from.
+   * `id` defaults to '' so direct test callers that don't assert on action.id
+   * keep working; production paths always pass a real id.
+   */
   createAction(
     verb: string,
     actorId: string,
     tick: number,
-    options?: Partial<Pick<ActionIntent, 'targetIds' | 'toolId' | 'parameters' | 'source'>>
+    options?: Partial<Pick<ActionIntent, 'targetIds' | 'toolId' | 'parameters' | 'source'>>,
+    id = '',
   ): ActionIntent {
     return {
-      id: nextId('act'),
+      id,
       actorId,
       verb,
       source: 'player',

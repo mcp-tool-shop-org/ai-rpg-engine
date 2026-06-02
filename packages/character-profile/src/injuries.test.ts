@@ -56,6 +56,39 @@ describe('addInjury', () => {
     });
     expect(profile.injuries).toHaveLength(2);
   });
+
+  // CP-05: injury ids must be deterministic (no Date.now / Math.random).
+  const cut = {
+    name: 'Cut',
+    description: 'A shallow wound.',
+    statPenalties: {},
+    resourcePenalties: {},
+    grantedTags: [],
+    sustainedAt: 'turn-5',
+  } as const;
+
+  it('generates reproducible injury ids from the same profile state', () => {
+    const a = addInjury(makeProfile(), cut);
+    const b = addInjury(makeProfile(), cut);
+    expect(a.injuries[0]!.id).toBe(b.injuries[0]!.id);
+  });
+
+  it('assigns sequential, collision-free ids as injuries accumulate', () => {
+    let profile = makeProfile();
+    profile = addInjury(profile, cut);
+    profile = addInjury(profile, { ...cut, name: 'Burn' });
+    profile = addInjury(profile, { ...cut, name: 'Sprain' });
+    const ids = profile.injuries.map((i) => i.id);
+    expect(new Set(ids).size).toBe(3); // all unique
+    expect(ids[0]).toBe('inj-1');
+    expect(ids[1]).toBe('inj-2');
+    expect(ids[2]).toBe('inj-3');
+  });
+
+  it('honors a caller-supplied injury id', () => {
+    const profile = addInjury(makeProfile(), cut, 'inj-custom');
+    expect(profile.injuries[0]!.id).toBe('inj-custom');
+  });
 });
 
 describe('healInjury', () => {

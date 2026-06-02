@@ -21,8 +21,34 @@ export type ApplyPreviewResult = {
   preview: string;
 };
 
+/** True when `resolved` is the project root or a descendant of it. */
+function withinRoot(resolved: string, projectRoot?: string): boolean {
+  const root = resolve(projectRoot ?? process.cwd());
+  return resolved === root || resolved.startsWith(root + '/') || resolved.startsWith(root + '\\');
+}
+
 export async function generatePreview(input: ApplyPreviewInput): Promise<ApplyPreviewResult> {
   const resolved = resolve(input.targetPath);
+
+  // Security: preview shares the same sandbox as the confirmed write. A
+  // model/user-supplied targetPath that escapes the project root must NOT be
+  // read here — otherwise preview becomes a file-existence/size oracle for
+  // arbitrary on-disk paths outside the project. Block BEFORE any readFile.
+  if (!withinRoot(resolved, input.projectRoot)) {
+    return {
+      targetPath: resolved,
+      contentLength: input.content.length,
+      existingFile: false,
+      existingLength: 0,
+      delta: input.content.length,
+      preview:
+        `--- Apply Preview${input.label ? `: ${input.label}` : ''} ---\n` +
+        `Target: ${resolved}\n` +
+        `Status: BLOCKED — target path escapes project root\n\n` +
+        `No preview generated (out-of-sandbox path).`,
+    };
+  }
+
   let existingContent = '';
   let existingFile = false;
 
@@ -69,8 +95,7 @@ export async function generatePreview(input: ApplyPreviewInput): Promise<ApplyPr
 
 export async function applyConfirmed(input: ApplyPreviewInput): Promise<string> {
   const resolved = resolve(input.targetPath);
-  const root = resolve(input.projectRoot ?? process.cwd());
-  if (!resolved.startsWith(root + '/') && !resolved.startsWith(root + '\\') && resolved !== root) {
+  if (!withinRoot(resolved, input.projectRoot)) {
     return `Error: target path escapes project root (${resolved})`;
   }
   await mkdir(dirname(resolved), { recursive: true });

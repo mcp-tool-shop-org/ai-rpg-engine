@@ -118,11 +118,13 @@ export function createGame(seed?: number): Engine {
         }],
       }),
       createEnvironmentCore({
+        // Hazards mutate entity.resources directly (deterministic, clamped);
+        // environment-core does not record the returned events. Return [].
         hazards: [{
           id: 'dark-alley',
           triggerOn: 'world.zone.entered',
           condition: (zone) => zone.hazards?.includes('ambush-risk') ?? false,
-          effect: (zone, entity, _world, tick) => {
+          effect: (_zone, entity, _world, _tick) => {
             entity.resources.composure = Math.max(0, (entity.resources.composure ?? 0) - 2);
             return [];
           },

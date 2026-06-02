@@ -15,6 +15,7 @@ export const weirdWestMinimalRuleset: RulesetDefinition = {
 
   resources: [
     { id: 'hp', name: 'HP', min: 0, max: 30, default: 18 },
+    { id: 'stamina', name: 'Stamina', min: 0, max: 50, default: 10, regenRate: 1 },
     { id: 'resolve', name: 'Resolve', min: 0, max: 20, default: 15, regenRate: 1 },
     { id: 'dust', name: 'Dust', min: 0, max: 100, default: 0 },
   ],

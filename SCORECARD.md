@@ -1,9 +1,10 @@
 # Scorecard
 
 > Score a repo before remediation. Fill this out first, then use SHIP_GATE.md to fix.
+> This is an audit snapshot — scores reflect the gate results at the date below, not a live readout.
 
 **Repo:** mcp-tool-shop-org/ai-rpg-engine
-**Date:** 2026-03-06
+**Date:** 2026-06-02 (snapshot; original audit 2026-03-06 at v1.0.0)
 **Type tags:** `[npm]` `[library]`
 
 ## Pre-Remediation Assessment
@@ -12,8 +13,8 @@
 |----------|-------|-------|
 | A. Security | 10/10 | SECURITY.md, threat model, no secrets, no telemetry |
 | B. Error Handling | 10/10 | Structured events with verb + reason fields |
-| C. Operator Docs | 10/10 | README, CHANGELOG, LICENSE, handbook (29 chapters) |
-| D. Shipping Hygiene | 10/10 | verify script, v1.0.0, dep scanning, clean packaging |
+| C. Operator Docs | 10/10 | README, CHANGELOG, LICENSE, handbook (58 chapters + 4 appendices) |
+| D. Shipping Hygiene | 10/10 | verify script, v2.3.7, dep scanning, clean packaging |
 | E. Identity (soft) | 10/10 | Logo, 7 translations, landing page, repo metadata |
 | **Overall** | **50/50** | |
 

@@ -1,9 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   evaluateEndgame,
   formatEndgameForDirector,
   formatEndgameForNarrator,
-  resetEndgameCounter,
   type EndgameInputs,
 } from './endgame-detection.js';
 import type { ArcSnapshot } from './arc-detection.js';
@@ -49,10 +48,6 @@ function makePressure(kind: string) {
     createdAtTick: 1,
   };
 }
-
-beforeEach(() => {
-  resetEndgameCounter();
-});
 
 describe('endgame-detection', () => {
   it('returns null for neutral state', () => {
@@ -203,6 +198,57 @@ describe('endgame-detection', () => {
 
       // martyrdom conditions are met but class already triggered
       expect(trigger?.resolutionClass).not.toBe('martyrdom');
+    });
+  });
+
+  describe('determinism (no module-global counter)', () => {
+    // The id must be a function of (content), not a process-global counter.
+    // Two independent evaluations of IDENTICAL inputs must mint IDENTICAL ids.
+    // Against the old `endgame_${++endgameCounter}` global this FAILS (id depends
+    // on how many triggers were ever minted in the process / call order).
+    function martyrdomInputs() {
+      return makeInputs({
+        playerHp: 0,
+        playerReputations: [{ factionId: 'f1', value: 30 }],
+        companions: [],
+        currentTick: 42,
+      });
+    }
+
+    it('produces identical ids for identical inputs regardless of call order', () => {
+      const a = evaluateEndgame(martyrdomInputs());
+      // interleave an unrelated trigger to advance any hidden global counter
+      evaluateEndgame(makeInputs({
+        playerReputations: [
+          { factionId: 'f1', value: 65 },
+          { factionId: 'f2', value: 70 },
+        ],
+        playerLeverage: { favor: 0, debt: 0, blackmail: 0, influence: 65, heat: 10, legitimacy: 0 },
+        currentTick: 99,
+      }));
+      const b = evaluateEndgame(martyrdomInputs());
+
+      expect(a).not.toBeNull();
+      expect(b).not.toBeNull();
+      expect(a!.id).toBe(b!.id);
+    });
+
+    it('encodes resolution class + tick in the id (collision-free across classes/ticks)', () => {
+      const martyr = evaluateEndgame(martyrdomInputs());
+      const exile = evaluateEndgame(makeInputs({
+        playerReputations: [
+          { factionId: 'f1', value: -40 },
+          { factionId: 'f2', value: -35 },
+        ],
+        playerLeverage: { favor: 0, debt: 0, blackmail: 0, influence: 0, heat: 85, legitimacy: 0 },
+        companions: [],
+        npcProfiles: [],
+        currentTick: 42,
+      }));
+
+      expect(martyr!.id).not.toBe(exile!.id); // different class, same tick → distinct
+      expect(martyr!.id).toContain('martyrdom');
+      expect(martyr!.id).toContain('42');
     });
   });
 

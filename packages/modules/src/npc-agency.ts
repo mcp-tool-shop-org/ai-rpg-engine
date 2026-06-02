@@ -513,17 +513,26 @@ function deriveNpcGoals(
     }
   }
 
-  // Breakpoint-based goal gating
+  // Breakpoint-based goal gating.
+  // Forbidden goals must be REMOVED, not parked at priority 0 — a 0-priority
+  // forbidden goal can still be selected (it can end up at goals[0] after the
+  // descending sort) when every other goal also scores 0 or negative. An allied
+  // NPC must never accuse/betray; a hostile NPC must never warn/recruit for the
+  // player. Soft nudges (compromised, hostile accuse boost) stay as priority math.
   if (breakpoint) {
+    const forbiddenByBreakpoint: Partial<Record<LoyaltyBreakpoint, NpcActionVerb[]>> = {
+      allied: ['accuse', 'betray'],
+      hostile: ['warn', 'recruit'],
+    };
+    const forbidden = forbiddenByBreakpoint[breakpoint];
+    if (forbidden) {
+      for (let i = goals.length - 1; i >= 0; i--) {
+        if (forbidden.includes(goals[i].verb)) goals.splice(i, 1);
+      }
+    }
     for (const g of goals) {
       switch (breakpoint) {
-        case 'allied':
-          // Allied NPCs never accuse or betray the player
-          if (g.verb === 'accuse' || g.verb === 'betray') g.priority = 0;
-          break;
         case 'hostile':
-          // Hostile NPCs won't warn or recruit for the player
-          if (g.verb === 'warn' || g.verb === 'recruit') g.priority = 0;
           if (g.verb === 'accuse') g.priority = Math.min(1, g.priority + 0.1);
           break;
         case 'compromised':
@@ -540,20 +549,20 @@ function deriveNpcGoals(
     const companionGoals = deriveCompanionGoals(world, npcId, entity, playerId, rel, breakpoint);
     goals.push(...companionGoals);
 
-    // Companions with allied/favorable suppress accuse, betray, flee entirely
+    // Companions with allied/favorable suppress accuse, betray, flee entirely.
+    // Remove (not priority 0) so a suppressed goal can never be selected when
+    // everything else also scores 0.
     if (breakpoint === 'allied' || breakpoint === 'favorable') {
-      for (const g of goals) {
-        if (g.verb === 'accuse' || g.verb === 'betray' || g.verb === 'flee') {
-          g.priority = 0;
-        }
+      for (let i = goals.length - 1; i >= 0; i--) {
+        const v = goals[i].verb;
+        if (v === 'accuse' || v === 'betray' || v === 'flee') goals.splice(i, 1);
       }
     }
     // Companions with hostile suppress protect, warn
     if (breakpoint === 'hostile') {
-      for (const g of goals) {
-        if (g.verb === 'protect' || g.verb === 'warn') {
-          g.priority = 0;
-        }
+      for (let i = goals.length - 1; i >= 0; i--) {
+        const v = goals[i].verb;
+        if (v === 'protect' || v === 'warn') goals.splice(i, 1);
       }
     }
   }
@@ -1290,9 +1299,25 @@ export type NpcObligationLedger = {
   obligations: NpcObligation[];
 };
 
-let obligationCounter = 0;
-function nextObligationId(): string {
-  return `obl-${++obligationCounter}`;
+// Deterministic id minting. Previously a module-global `obligationCounter` minted
+// `obl-N` ids — the same determinism footgun fixed across the engine
+// (pressure-system, player-rumor, campaign-memory/journal, rumor-system/engine):
+// a process-global counter is shared between engine instances (two engines with
+// the same seed mint different ids) and is never serialized (a reloaded game
+// restarts at 0 and collides with obligation ids already in state). The id is now
+// a pure function of the obligation's defining content (the parties, kind,
+// direction, source, and tick that uniquely identify it within a run). Two
+// obligations sharing all of these would be genuine duplicates. No shared mutable
+// global is used.
+function obligationId(
+  kind: ObligationKind,
+  direction: ObligationDirection,
+  npcId: string,
+  counterpartyId: string,
+  sourceTag: string,
+  tick: number,
+): string {
+  return `obl-${npcId}-${counterpartyId}-${kind}-${direction}-${sourceTag}-${tick}`;
 }
 
 /** Create a new obligation. */
@@ -1307,7 +1332,7 @@ export function createObligation(
   decayTurns: number | null = null,
 ): NpcObligation {
   return {
-    id: nextObligationId(),
+    id: obligationId(kind, direction, npcId, counterpartyId, sourceTag, tick),
     kind,
     direction,
     npcId,
@@ -1533,7 +1558,19 @@ const CONSEQUENCE_TRIGGERS: Array<{
   },
 ];
 
-let consequenceCounter = 0;
+// Deterministic id minting. Previously a module-global `consequenceCounter` minted
+// `cc-N` ids — the same determinism footgun fixed across the engine
+// (pressure-system, player-rumor, campaign-memory/journal, rumor-system/engine):
+// a process-global counter is shared between engine instances (two engines with
+// the same seed mint different ids) and is never serialized (a reloaded game
+// restarts at 0 and collides with chain ids already in state). The id is now a
+// pure function of the chain's defining content. A consequence chain is keyed by
+// (npcId, kind) — the trigger registry produces at most one chain per kind per NPC
+// — and the tick disambiguates re-triggers across a run. No shared mutable global
+// is used.
+function consequenceChainId(npcId: string, kind: ConsequenceKind, tick: number): string {
+  return `cc-${npcId}-${kind}-${tick}`;
+}
 
 /**
  * Evaluate whether an NPC's breakpoint shift triggers a consequence chain.
@@ -1564,7 +1601,7 @@ export function buildConsequenceChain(
   const template = CONSEQUENCE_TRIGGERS.find((t) => t.kind === kind);
   const steps = template?.steps ?? [];
   return {
-    id: `cc-${++consequenceCounter}`,
+    id: consequenceChainId(npcId, kind, tick),
     npcId,
     kind,
     trigger,

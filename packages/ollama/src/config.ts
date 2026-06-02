@@ -27,10 +27,20 @@ export function resolveConfig(overrides?: Partial<OllamaConfig>): OllamaConfig {
       ?? DEFAULTS.model,
     timeoutMs:
       overrides?.timeoutMs
-      ?? (process.env['AI_RPG_ENGINE_OLLAMA_TIMEOUT_MS']
-        ? Number(process.env['AI_RPG_ENGINE_OLLAMA_TIMEOUT_MS'])
-        : DEFAULTS.timeoutMs),
+      ?? resolveTimeoutMs(process.env['AI_RPG_ENGINE_OLLAMA_TIMEOUT_MS']),
     temperature: overrides?.temperature ?? DEFAULTS.temperature,
     maxTokens: overrides?.maxTokens,
   };
+}
+
+/**
+ * Parse the timeout env var into a valid milliseconds value.
+ * A malformed (NaN), empty, zero, or negative value falls back to the default —
+ * an unvalidated Number() yields NaN, which makes AbortSignal.timeout misbehave.
+ */
+function resolveTimeoutMs(raw: string | undefined): number {
+  if (raw === undefined) return DEFAULTS.timeoutMs;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULTS.timeoutMs;
+  return parsed;
 }

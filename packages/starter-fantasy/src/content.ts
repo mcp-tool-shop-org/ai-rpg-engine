@@ -2,7 +2,6 @@
 // 2 rooms, 5 zones, 1 NPC, 1 enemy, 1 item, 1 dialogue, 1 status
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
@@ -381,7 +380,7 @@ export const healingDraughtEffect = {
     const previous = actor.resources.hp ?? 0;
     actor.resources.hp = Math.min(20, previous + 8);
     return [{
-      id: nextId('evt'),
+      id: '',
       tick: action.issuedAtTick,
       type: 'resource.changed',
       actorId: action.actorId,

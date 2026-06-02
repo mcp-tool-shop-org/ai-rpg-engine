@@ -42,7 +42,7 @@ function generateSvg(
   const svg = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
     `  <rect width="${width}" height="${height}" fill="${bg}"/>`,
-    `  <text x="${width / 2}" y="${height * 0.45}" font-size="${fontSize}" fill="rgba(255,255,255,0.9)" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-weight="bold">${letters}</text>`,
+    `  <text x="${width / 2}" y="${height * 0.45}" font-size="${fontSize}" fill="rgba(255,255,255,0.9)" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-weight="bold">${escapeXml(letters)}</text>`,
     `  <text x="${width / 2}" y="${height * 0.72}" font-size="${subtitleSize}" fill="rgba(255,255,255,0.5)" text-anchor="middle" font-family="sans-serif">${escapeXml(subtitle)}</text>`,
     `</svg>`,
   ].join('\n');

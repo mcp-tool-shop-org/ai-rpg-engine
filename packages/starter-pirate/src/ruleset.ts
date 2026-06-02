@@ -15,6 +15,7 @@ export const pirateMinimalRuleset: RulesetDefinition = {
 
   resources: [
     { id: 'hp', name: 'HP', min: 0, max: 40, default: 20 },
+    { id: 'stamina', name: 'Stamina', min: 0, max: 50, default: 10, regenRate: 1 },
     { id: 'morale', name: 'Morale', min: 0, max: 30, default: 15, regenRate: 1 },
   ],
 

@@ -59,7 +59,10 @@ function contrib(factor: string, value: number, weight: number, delta: number): 
 
 function entityHpRatio(e: EntityState): number {
   const hp = e.resources.hp ?? 0;
-  const maxHp = e.stats.maxHp ?? hp ?? 30;
+  // Content stores maxHp in resources.maxHp (the engine convention); fall back to
+  // stats.maxHp for legacy fixtures, then to current hp. Reading only stats.maxHp
+  // made this permanently 1.0 for real content, disabling low-HP scoring (MC-03).
+  const maxHp = e.resources.maxHp ?? e.stats.maxHp ?? hp ?? 30;
   return maxHp > 0 ? hp / maxHp : 0;
 }
 

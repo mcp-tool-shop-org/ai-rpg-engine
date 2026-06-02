@@ -96,11 +96,15 @@ export function createGame(seed?: number): Engine {
         }],
       }),
       createEnvironmentCore({
+        // Hazard effects apply their consequence by mutating entity.resources
+        // directly: environment-core invokes effect() for its side-effects and
+        // does not record the returned events. Mutation is deterministic (pure
+        // arithmetic, always clamped) so it stays replayable. Return [].
         hazards: [{
           id: 'unstable-floor',
           triggerOn: 'world.zone.entered',
           condition: (zone) => zone.hazards?.includes('unstable floor') ?? false,
-          effect: (zone, entity, _world, tick) => {
+          effect: (_zone, entity, _world, _tick) => {
             entity.resources.stamina = Math.max(0, (entity.resources.stamina ?? 0) - 1);
             return [];
           },

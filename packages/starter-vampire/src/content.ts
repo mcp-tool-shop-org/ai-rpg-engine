@@ -2,7 +2,6 @@
 // 5 zones, 3 NPCs, 2 enemies, 1 dialogue, 2 districts
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
@@ -379,7 +378,7 @@ export const bloodVialEffect = {
     const previous = actor.resources.bloodlust ?? 0;
     actor.resources.bloodlust = Math.max(0, previous - 15);
     return [{
-      id: nextId('evt'),
+      id: '',
       tick: action.issuedAtTick,
       type: 'resource.changed',
       actorId: action.actorId,

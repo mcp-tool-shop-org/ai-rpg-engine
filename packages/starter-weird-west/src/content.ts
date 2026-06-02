@@ -1,7 +1,6 @@
 // Dust Devil's Bargain — content definitions
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
@@ -364,7 +363,7 @@ export const sageBundleEffect = {
     actor.resources.dust = Math.max(0, previous - 20);
 
     return [{
-      id: nextId('evt'),
+      id: '',
       tick: action.issuedAtTick,
       type: 'resource.changed',
       actorId: action.actorId,
@@ -496,7 +495,7 @@ export const buildCatalog: BuildCatalog = {
       description: 'Fastest hand in the territory',
       statPriorities: { grit: 4, 'draw-speed': 7, lore: 3 },
       startingTags: ['gunslinger', 'quick-draw'],
-      progressionTreeId: 'gunslinger-path',
+      progressionTreeId: 'gunslinger',
       grantedVerbs: ['draw'],
     },
     {
@@ -505,7 +504,7 @@ export const buildCatalog: BuildCatalog = {
       description: 'Speaks to what shouldn\'t speak back',
       statPriorities: { grit: 3, 'draw-speed': 3, lore: 8 },
       startingTags: ['mystic', 'spirit-walker'],
-      progressionTreeId: 'gunslinger-path',
+      progressionTreeId: 'gunslinger',
       grantedVerbs: ['commune'],
     },
     {
@@ -514,7 +513,7 @@ export const buildCatalog: BuildCatalog = {
       description: 'Badge and backbone, but whose law?',
       statPriorities: { grit: 7, 'draw-speed': 4, lore: 3 },
       startingTags: ['law', 'lawkeeper'],
-      progressionTreeId: 'gunslinger-path',
+      progressionTreeId: 'gunslinger',
     },
   ],
   backgrounds: [

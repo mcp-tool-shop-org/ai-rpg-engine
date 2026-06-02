@@ -28,6 +28,13 @@ export type WorldMeta = {
   seed: number;
   activeRuleset: string;
   activeModules: string[];
+  /**
+   * Monotonic counter for deterministic id generation, scoped to this world
+   * instance. Lives in serialized state so save/load preserves the id sequence
+   * and a reloaded game never re-mints ids that collide with the eventLog.
+   * @see WorldStore.genId
+   */
+  idCounter: number;
 };
 
 export type WorldState = {

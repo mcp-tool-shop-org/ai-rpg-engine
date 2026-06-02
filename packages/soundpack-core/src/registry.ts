@@ -37,11 +37,23 @@ export class SoundRegistry {
     return this.entries.get(id);
   }
 
-  /** Pick a random variant filename for an entry. */
-  pickVariant(id: string): string | undefined {
+  /**
+   * Pick a variant filename for an entry from a caller-supplied roll.
+   *
+   * Determinism: the engine bills itself reproducible, so variant selection must
+   * not draw from a hidden RNG. The caller passes `roll` — a value in [0, 1]
+   * (typically from the project's seeded dice/RNG) — and the variant index is
+   * `floor(roll * length)`, clamped so `roll === 1` maps to the last variant
+   * rather than overflowing. Same roll ⇒ same variant, every run.
+   *
+   * @param id   The entry id.
+   * @param roll Deterministic selector in [0, 1]. Out-of-range values are clamped.
+   */
+  pickVariant(id: string, roll: number): string | undefined {
     const entry = this.entries.get(id);
     if (!entry || entry.variants.length === 0) return undefined;
-    const idx = Math.floor(Math.random() * entry.variants.length);
+    const clamped = Math.min(Math.max(roll, 0), 1);
+    const idx = Math.min(Math.floor(clamped * entry.variants.length), entry.variants.length - 1);
     return entry.variants[idx];
   }
 

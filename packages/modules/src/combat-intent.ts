@@ -11,7 +11,7 @@ import type {
   EntityState,
   WorldState,
 } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
+import { genId } from '@ai-rpg-engine/core';
 import { hasStatus } from './status-core.js';
 import { COMBAT_STATES, DEFAULT_STAT_MAPPING } from './combat-core.js';
 import type { CombatStatMapping } from './combat-core.js';
@@ -23,11 +23,25 @@ import type { CombatResourceProfile } from './combat-resources.js';
 import { applyResourceIntentModifiers } from './combat-resources.js';
 
 // ---------------------------------------------------------------------------
-// Defeat awareness (module-scoped, cleared per tick)
+// Defeat awareness (module-scoped, tick-stamped)
 // ---------------------------------------------------------------------------
 
-/** Tracks defeated entity IDs and their types for this tick */
-const defeatLog: Map<string, string> = new Map(); // entityId → entity.type
+/**
+ * Tracks defeated entities, stamped with the tick the defeat happened.
+ *
+ * MC-01: this map used to be cleared on a `tick.start` event the engine never
+ * emits, so entries stuck forever and permanently injected momentum bonuses into
+ * AI scoring after the first death. Entries are now tick-stamped and counted as
+ * "recent" only on the tick they occurred (or the immediately prior tick) — see
+ * `isRecentDefeat`. No external clear signal is required for correctness.
+ */
+type DefeatEntry = { type: string; tick: number };
+const defeatLog: Map<string, DefeatEntry> = new Map(); // entityId → { type, tick }
+
+/** A defeat counts as "recent" only on its own tick or the immediately prior tick. */
+function isRecentDefeat(entry: DefeatEntry, currentTick: number): boolean {
+  return entry.tick === currentTick || entry.tick === currentTick - 1;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -219,8 +233,8 @@ function buildContext(entity: EntityState, world: WorldState, config?: CombatInt
       isBackline: hasStatus(entity, ENGAGEMENT_STATES.BACKLINE),
       isIsolated: hasStatus(entity, ENGAGEMENT_STATES.ISOLATED),
     },
-    allyDefeatedRecently: [...defeatLog.entries()].some(([, type]) => type === entity.type),
-    enemyDefeatedRecently: [...defeatLog.entries()].some(([, type]) => type !== entity.type),
+    allyDefeatedRecently: [...defeatLog.values()].some(e => isRecentDefeat(e, world.meta.tick) && e.type === entity.type),
+    enemyDefeatedRecently: [...defeatLog.values()].some(e => isRecentDefeat(e, world.meta.tick) && e.type !== entity.type),
     attackStat,
     precisionStat,
     dominantDimension,
@@ -917,9 +931,13 @@ export const BUILTIN_PACK_BIASES: PackBias[] = [
 export function emitDecisionEvent(
   ctx: { emit: (event: { id: string; type: string; tick: number; actorId: string; payload: Record<string, unknown>; visibility: string }) => void },
   decision: CombatDecision,
+  world?: WorldState,
 ): void {
+  // Deterministic event id: draw from the per-instance counter when a world is
+  // available; otherwise emit id: '' so a recordEvent-backed emit assigns one
+  // (same convention as makeEvent). The deprecated global nextId() is never used.
   ctx.emit({
-    id: nextId('evt'),
+    id: world ? genId(world, 'evt') : '',
     type: 'combat.ai.decision',
     tick: decision.tick,
     actorId: decision.entityId,
@@ -945,12 +963,20 @@ export function createCombatIntent(_config?: CombatIntentConfig): EngineModule {
         recentDecisions: [] as CombatDecision[],
       });
 
-      // Track defeats for AI scoring context
-      ctx.events.on('tick.start', () => defeatLog.clear());
+      // Track defeats for AI scoring context, stamped with the tick they occurred.
+      // Recency is decided by tick comparison in buildContext (see isRecentDefeat),
+      // so no clear-on-tick.start signal is needed — that event is never emitted
+      // by the engine, which is exactly the MC-01 leak this replaces.
       ctx.events.on('combat.entity.defeated', (event, world) => {
         const defeatedId = event.payload.entityId as string;
         const defeated = world.entities[defeatedId];
-        if (defeated) defeatLog.set(defeatedId, defeated.type);
+        if (defeated) defeatLog.set(defeatedId, { type: defeated.type, tick: event.tick });
+        // Bound the map: drop entries that can no longer be "recent" relative to
+        // this defeat's tick. Deterministic (sorted-insensitive set membership
+        // check) and keeps a long-running game (or a reused module) from leaking.
+        for (const [id, entry] of defeatLog) {
+          if (!isRecentDefeat(entry, event.tick)) defeatLog.delete(id);
+        }
       });
 
       // Listen for combat.ai.decision events to populate ring buffer

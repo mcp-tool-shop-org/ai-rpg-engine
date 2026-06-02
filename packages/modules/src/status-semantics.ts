@@ -36,10 +36,22 @@ export function isKnownStatusTag(tag: string): tag is StatusSemanticTag {
 // ---------------------------------------------------------------------------
 // Status Definition Registry
 // ---------------------------------------------------------------------------
+//
+// MC-04 assessment: this is a PROCESS-GLOBAL, append-only *definition* registry
+// (statusId → its semantic tags), not per-game world state. The mapping is
+// content metadata — "poisoned" carries the same semantic tags wherever it is
+// defined — so sharing it across Engine instances in one process is intentional,
+// not a leak of mutable game state. Registration is idempotent (keyed by id;
+// last write wins), so re-registering a pack is safe and never accumulates
+// duplicates. Callers that need a clean slate between unrelated packs (tests,
+// multi-pack tooling) call `clearStatusRegistry()`; that is the supported
+// isolation mechanism. (Threading a per-instance registry would require changing
+// every starter pack's free-function call site — out of scope here — and buys
+// nothing for content metadata that is definitionally global.)
 
 const statusRegistry = new Map<string, StatusDefinition>();
 
-/** Register one or more StatusDefinitions into the global registry. Idempotent — re-registering same ID overwrites. */
+/** Register one or more StatusDefinitions into the global registry. Idempotent — re-registering same ID overwrites, never duplicates. */
 export function registerStatusDefinitions(defs: StatusDefinition[]): void {
   for (const def of defs) {
     statusRegistry.set(def.id, def);

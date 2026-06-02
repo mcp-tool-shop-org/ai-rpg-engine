@@ -12,6 +12,19 @@ export type ManifestError = {
   message: string;
 };
 
+/** Push errors if `value` is not an array of strings. */
+function validateStringArray(value: unknown, field: string, errors: ManifestError[]): void {
+  if (!Array.isArray(value)) {
+    errors.push({ field, message: `${field} must be an array of strings` });
+    return;
+  }
+  for (let i = 0; i < value.length; i++) {
+    if (typeof value[i] !== 'string') {
+      errors.push({ field: `${field}[${i}]`, message: `${field}[${i}] must be a string` });
+    }
+  }
+}
+
 /** Validate a SoundPackManifest. */
 export function validateManifest(manifest: unknown): ManifestError[] {
   const errors: ManifestError[] = [];
@@ -36,8 +49,17 @@ export function validateManifest(manifest: unknown): ManifestError[] {
 
   const seenIds = new Set<string>();
   for (let i = 0; i < m.entries.length; i++) {
-    const e = m.entries[i] as Record<string, unknown>;
+    const raw = m.entries[i];
     const prefix = `entries[${i}]`;
+
+    // This is the untrusted-input boundary: an entry that is null/undefined or a
+    // primitive must produce a structured error, never a thrown TypeError from a
+    // property access below.
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      errors.push({ field: prefix, message: 'entry must be an object' });
+      continue;
+    }
+    const e = raw as Record<string, unknown>;
 
     if (typeof e.id !== 'string' || e.id.length === 0) {
       errors.push({ field: `${prefix}.id`, message: 'id must be a non-empty string' });
@@ -58,6 +80,23 @@ export function validateManifest(manifest: unknown): ManifestError[] {
     }
     if (!VALID_SOURCES.includes(e.source as SoundSource)) {
       errors.push({ field: `${prefix}.source`, message: `source must be one of: ${VALID_SOURCES.join(', ')}` });
+    }
+
+    // String-array fields — guard both the array shape and each element, since
+    // downstream consumers (registry.query, pickVariant) call .includes/.length
+    // on these without re-checking.
+    validateStringArray(e.tags, `${prefix}.tags`, errors);
+    validateStringArray(e.mood, `${prefix}.mood`, errors);
+    validateStringArray(e.variants, `${prefix}.variants`, errors);
+
+    // cooldownMs drives scheduling math; it must be a finite, non-negative number.
+    if (typeof e.cooldownMs !== 'number' || !Number.isFinite(e.cooldownMs) || e.cooldownMs < 0) {
+      errors.push({ field: `${prefix}.cooldownMs`, message: 'cooldownMs must be a finite, non-negative number' });
+    }
+
+    // Optional field — only validated when present.
+    if (e.voiceSoundboardEffect !== undefined && typeof e.voiceSoundboardEffect !== 'string') {
+      errors.push({ field: `${prefix}.voiceSoundboardEffect`, message: 'voiceSoundboardEffect must be a string when present' });
     }
   }
 

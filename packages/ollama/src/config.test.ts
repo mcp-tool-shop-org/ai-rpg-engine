@@ -43,4 +43,30 @@ describe('resolveConfig', () => {
     const cfg = resolveConfig({ maxTokens: 2048 });
     expect(cfg.maxTokens).toBe(2048);
   });
+
+  // ollama-05 — malformed timeout env var must not yield a NaN timeout
+  it('falls back to default when timeout env var is non-numeric', () => {
+    process.env['AI_RPG_ENGINE_OLLAMA_TIMEOUT_MS'] = 'not-a-number';
+    const cfg = resolveConfig();
+    expect(Number.isFinite(cfg.timeoutMs)).toBe(true);
+    expect(cfg.timeoutMs).toBe(30_000);
+  });
+
+  it('falls back to default when timeout env var is empty/whitespace', () => {
+    process.env['AI_RPG_ENGINE_OLLAMA_TIMEOUT_MS'] = '   ';
+    const cfg = resolveConfig();
+    expect(cfg.timeoutMs).toBe(30_000);
+  });
+
+  it('falls back to default when timeout env var is zero or negative', () => {
+    process.env['AI_RPG_ENGINE_OLLAMA_TIMEOUT_MS'] = '0';
+    expect(resolveConfig().timeoutMs).toBe(30_000);
+    process.env['AI_RPG_ENGINE_OLLAMA_TIMEOUT_MS'] = '-5000';
+    expect(resolveConfig().timeoutMs).toBe(30_000);
+  });
+
+  it('honors a valid positive timeout env var', () => {
+    process.env['AI_RPG_ENGINE_OLLAMA_TIMEOUT_MS'] = '45000';
+    expect(resolveConfig().timeoutMs).toBe(45_000);
+  });
 });

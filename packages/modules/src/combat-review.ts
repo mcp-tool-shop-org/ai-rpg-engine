@@ -11,7 +11,7 @@ import type {
   EntityState,
   WorldState,
 } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
+import { genId } from '@ai-rpg-engine/core';
 import { hasStatus } from './status-core.js';
 import { COMBAT_STATES } from './combat-core.js';
 import type { CombatFormulas } from './combat-core.js';
@@ -322,7 +322,7 @@ export function createCombatReview(config: CombatReviewConfig): {
         const target = targetId ? world.entities[targetId] : undefined;
 
         pending = {
-          traceId: nextId('trace'),
+          traceId: genId(world, 'trace'),
           tick: event.tick,
           verb: verb as CombatTrace['verb'],
           actorId,
@@ -484,7 +484,7 @@ export function createCombatReview(config: CombatReviewConfig): {
       });
 
       // 11. action.resolved — finalize + emit
-      ctx.events.on('action.resolved', (event, _world) => {
+      ctx.events.on('action.resolved', (event, world) => {
         if (!pending) return;
         pending.summary = summarize(pending);
 
@@ -494,7 +494,7 @@ export function createCombatReview(config: CombatReviewConfig): {
         pending = null;
 
         ctx.events.emit({
-          id: nextId('evt'),
+          id: genId(world, 'evt'),
           type: 'combat.review.trace',
           tick: event.tick,
           actorId: trace.actorId,

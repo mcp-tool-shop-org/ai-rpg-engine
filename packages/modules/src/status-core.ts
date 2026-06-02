@@ -7,7 +7,7 @@ import type {
   AppliedStatus,
   EntityState,
 } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
+import { genId } from '@ai-rpg-engine/core';
 
 export const statusCore: EngineModule = {
   id: 'status-core',
@@ -21,7 +21,27 @@ export const statusCore: EngineModule = {
   },
 };
 
-/** Apply a status to an entity. Returns the event to record. */
+/**
+ * Deterministic AppliedStatus id when no WorldState is available to draw from
+ * the per-instance counter. The id only needs to be unique within one entity's
+ * status list (its sole use is the expiry-filter dedup in processExpirations),
+ * and an entity holds at most one entry per statusId — so this is collision-free
+ * and reproducible across same-seed runs. Used as the back-compat path for
+ * callers that have not yet been threaded a `world` (see applyStatus).
+ */
+function deriveStatusId(entity: EntityState, statusId: string, tick: number): string {
+  return `status_${entity.id}_${statusId}_${tick}`;
+}
+
+/**
+ * Apply a status to an entity. Returns the event to record.
+ *
+ * `world` is optional: when provided, the AppliedStatus id is minted from the
+ * per-instance deterministic counter (genId) — preferred, and what keeps status
+ * ids byte-identical across same-seed runs and save/load. When omitted (legacy
+ * call sites not yet threaded), a deterministic id is derived from the entity +
+ * statusId + tick instead. The deprecated global nextId() is never used.
+ */
 export function applyStatus(
   entity: EntityState,
   statusId: string,
@@ -33,6 +53,7 @@ export function applyStatus(
     sourceId?: string;
     data?: Record<string, import('@ai-rpg-engine/core').ScalarValue>;
   },
+  world?: WorldState,
 ): ResolvedEvent {
   const stacking = options?.stacking ?? 'replace';
   const existing = entity.statuses.find(s => s.statusId === statusId);
@@ -74,7 +95,7 @@ export function applyStatus(
   }
 
   const applied: AppliedStatus = {
-    id: nextId('status'),
+    id: world ? genId(world, 'status') : deriveStatusId(entity, statusId, tick),
     statusId,
     stacks: 1,
     sourceId: options?.sourceId,
@@ -139,8 +160,12 @@ function makeStatusEvent(
   tick: number,
   payload: Record<string, unknown>,
 ): ResolvedEvent {
+  // id: '' — every consumer of these events records them via store.recordEvent
+  // (verb handlers return them → ActionDispatcher records each; processExpirations
+  // emits via ctx.events.emit → recordEvent). recordEvent assigns a deterministic
+  // per-instance id when the id is empty, so the global nextId() is not needed.
   return {
-    id: nextId('evt'),
+    id: '',
     tick,
     type,
     actorId: entityId,

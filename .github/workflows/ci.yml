@@ -43,6 +43,12 @@ jobs:
           cache: npm
 
       - run: npm ci
+      # Audit is non-blocking: the only current high/critical advisories are in
+      # dev-only tooling (vitest / @vitest/coverage-v8, GHSA-5xrq-8626-4rwp).
+      # That advisory only triggers when the Vitest UI server is listening; CI
+      # runs `vitest run` (no UI), so it is not exploitable here. The fix is a
+      # breaking vitest 3->4 major bump, deferred to a dedicated upgrade. Keep
+      # `|| true` until that lands, then make audit gate again.
       - run: npm audit --audit-level=high || true
       - run: npm run lint
       - run: npm run build

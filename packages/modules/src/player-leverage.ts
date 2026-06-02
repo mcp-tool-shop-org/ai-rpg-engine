@@ -739,8 +739,21 @@ export function resolveSabotageAction(
 // --- Leverage Tick (Passive) ---
 
 /**
- * Per-turn passive changes: heat decays, influence recalculated from max rep.
+ * Per-turn passive changes: heat decays; the reputation-derived component of
+ * influence is reconciled WITHOUT clobbering influence earned or spent through
+ * play.
+ *
+ * Influence has two sources: a reputation-derived floor (`floor(maxRep/2)`) and
+ * the amount gained/spent by player actions (recruit-ally, seed rumor, etc.).
+ * Earlier this function overwrote `leverage.influence` unconditionally every
+ * tick, so any influence the player spent was silently refunded next turn and
+ * any influence earned was wiped. We instead track the last-applied reputation
+ * baseline in `leverage.influenceRepBase` and apply only the *delta* between the
+ * old and new baseline, so the earned/spent component persists across ticks
+ * while reputation changes still raise or lower influence proportionally.
  */
+const INFLUENCE_REP_BASE_KEY = 'leverage.influenceRepBase';
+
 export function tickLeverage(
   custom: Record<string, string | number | boolean>,
   reputations: { factionId: string; value: number }[],
@@ -753,10 +766,24 @@ export function tickLeverage(
     result = adjustLeverage(result, 'heat', -HEAT_DECAY_PER_TURN);
   }
 
-  // Influence is derived from max positive reputation (not stored separately)
+  // Reconcile the reputation-derived component of influence.
   const maxRep = Math.max(0, ...reputations.map((r) => r.value));
-  const computedInfluence = Math.min(MAX_LEVERAGE, Math.floor(maxRep / 2));
-  result = { ...result, 'leverage.influence': computedInfluence };
+  const newRepBase = Math.min(MAX_LEVERAGE, Math.floor(maxRep / 2));
+
+  const hasStoredBase = typeof custom[INFLUENCE_REP_BASE_KEY] === 'number';
+  const prevRepBase = hasStoredBase ? (custom[INFLUENCE_REP_BASE_KEY] as number) : 0;
+
+  if (!hasStoredBase) {
+    // First reconcile: seed the reputation-derived floor on top of any existing
+    // influence the profile already carries.
+    result = adjustLeverage(result, 'influence', newRepBase);
+  } else if (newRepBase !== prevRepBase) {
+    // Apply only the change in the reputation component; the earned/spent
+    // portion is preserved (and the clamp in adjustLeverage keeps it in range).
+    result = adjustLeverage(result, 'influence', newRepBase - prevRepBase);
+  }
+
+  result = { ...result, [INFLUENCE_REP_BASE_KEY]: newRepBase };
 
   return result;
 }

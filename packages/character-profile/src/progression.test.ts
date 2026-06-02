@@ -85,6 +85,32 @@ describe('grantXp', () => {
     expect(result.newLevel).toBe(4);
     expect(result.leveledUp).toBe(true);
   });
+
+  // CP-07: negative grants must not drive xp below 0.
+  it('floors xp at 0 when a large negative amount is granted', () => {
+    const profile = makeProfile(); // xp starts at 0
+    const result = grantXp(profile, -100);
+    expect(result.profile.progression.xp).toBe(0);
+    expect(result.profile.progression.level).toBe(1);
+    expect(result.leveledUp).toBe(false);
+    expect(result.newLevel).toBe(1);
+  });
+
+  it('subtracts xp but never below 0, recomputing level from the floored value', () => {
+    let profile = makeProfile();
+    profile = grantXp(profile, 300).profile; // xp 300, level 3
+    const result = grantXp(profile, -1000); // would be -700 without clamp
+    expect(result.profile.progression.xp).toBe(0);
+    expect(result.profile.progression.level).toBe(1);
+  });
+
+  it('allows ordinary negative adjustments above 0', () => {
+    let profile = makeProfile();
+    profile = grantXp(profile, 300).profile; // xp 300
+    const result = grantXp(profile, -100); // xp 200
+    expect(result.profile.progression.xp).toBe(200);
+    expect(result.profile.progression.level).toBe(2);
+  });
 });
 
 describe('advanceArchetypeRank', () => {

@@ -62,7 +62,15 @@ export function createClient(config: OllamaConfig): OllamaTextClient {
           return { ok: false, error: `Ollama HTTP ${res.status}: ${text}` };
         }
 
-        const json = await res.json() as { response?: string };
+        let json: { response?: string };
+        try {
+          json = await res.json() as { response?: string };
+        } catch {
+          // A 200 with a non-JSON body (reverse proxy / captive-portal HTML,
+          // truncated body, wrong baseUrl) makes res.json() throw a SyntaxError.
+          // Keep it inside the discriminated-union contract instead of escaping.
+          return { ok: false, error: `Ollama returned a non-JSON response (HTTP ${res.status})` };
+        }
         if (typeof json.response !== 'string') {
           return { ok: false, error: 'Unexpected Ollama response shape' };
         }

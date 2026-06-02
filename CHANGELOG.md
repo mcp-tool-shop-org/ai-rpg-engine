@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.3.7] - 2026-05-02
+
+### Added
+
+- **`ai-rpg-engine create-starter <name>` CLI command** — scaffold a new game from the published starter template directly from the command line.
+
+## [2.3.6] - 2026-05-02
+
+### Added
+
+- **`@ai-rpg-engine/starter-template` published on npm** — the starter scaffold is now an installable package, the foundation for the `create-starter` workflow.
+
+## [2.3.5] - 2026-05-02
+
+### Changed
+
+- **All 10 starter worlds migrated to `buildCombatStack`** — every starter now uses the proven combat composition spine. `buildCombatStack()` owns combat infrastructure; starters own only their genre pressure.
+
+## [2.3.4] - 2026-05-02
+
+### Added
+
+- **Cognition config API** — `cognition: CognitionCoreConfig | false` for per-starter AI tuning.
+
+### Changed
+
+- **Combat Stack API hardening** — `buildCombatStack()` surface tightened and made the canonical composition entry point.
+
 ## [2.3.3] - 2026-05-02
 
 ### Consumer Artifact Dogfood

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
   evaluateOpportunities,
   tickOpportunities,
@@ -12,7 +12,6 @@ import {
   formatOpportunityForNarrator,
   formatOpportunityForDialogue,
   makeOpportunity,
-  resetOpportunityCounter,
   type OpportunityState,
   type OpportunityInputs,
 } from './opportunity-core.js';
@@ -88,10 +87,6 @@ function makeTestOpp(overrides?: Partial<OpportunityState>): OpportunityState {
 }
 
 describe('opportunity-core', () => {
-  beforeEach(() => {
-    resetOpportunityCounter();
-  });
-
   describe('evaluateOpportunities', () => {
     it('returns null when at capacity', () => {
       const inputs = baseInputs({
@@ -416,6 +411,79 @@ describe('opportunity-core', () => {
       expect(opp.linkedRumorIds).toEqual([]);
       expect(opp.linkedNpcIds).toEqual([]);
       expect(opp.tags).toEqual([]);
+    });
+  });
+
+  describe('determinism (no module-global counter)', () => {
+    // The id must be a function of (content), not a process-global counter.
+    // Two independent "runs" that build the SAME opportunity must mint the SAME
+    // id. Against the old `opp-${++opportunityCounter}` global this FAILS (id
+    // depends on how many opportunities were ever minted in the process).
+    function buildOpp(currentTick: number) {
+      return makeOpportunity({
+        kind: 'contract',
+        sourceFactionId: 'guild',
+        title: 'Job',
+        description: 'Desc',
+        objectiveDescription: 'Obj',
+        urgency: 0.5,
+        turnsRemaining: 10,
+        visibility: 'offered',
+        rewards: [],
+        risks: [],
+        genre: 'fantasy',
+        currentTick,
+      });
+    }
+
+    it('produces identical ids for identical inputs regardless of call order', () => {
+      const a = buildOpp(7);
+      // mint unrelated opportunities to advance any hidden global counter
+      buildOpp(99);
+      makeOpportunity({
+        kind: 'bounty', sourceFactionId: 'rebels', title: 't', description: 'd',
+        objectiveDescription: 'o', urgency: 0.5, turnsRemaining: 5,
+        visibility: 'offered', rewards: [], risks: [], genre: 'fantasy', currentTick: 50,
+      });
+      const b = buildOpp(7);
+      expect(a.id).toBe(b.id);
+    });
+
+    it('encodes kind + source + tick (collision-free across kinds/sources/ticks)', () => {
+      const contract = buildOpp(7);
+      const sameKindLaterTick = buildOpp(8);
+      const differentSource = makeOpportunity({
+        kind: 'contract', sourceFactionId: 'rebels', title: 't', description: 'd',
+        objectiveDescription: 'o', urgency: 0.5, turnsRemaining: 5,
+        visibility: 'offered', rewards: [], risks: [], genre: 'fantasy', currentTick: 7,
+      });
+      expect(contract.id).not.toBe(sameKindLaterTick.id); // same kind+source, diff tick
+      expect(contract.id).not.toBe(differentSource.id);   // same kind+tick, diff source
+      expect(contract.id).toContain('contract');
+      expect(contract.id).toContain('guild');
+      expect(contract.id).toContain('7');
+    });
+
+    it('a realistic multi-spawn sequence has no id collisions', () => {
+      // Drive evaluateOpportunities across several ticks; collect minted ids and
+      // assert all distinct (no two persisted opportunities share an id).
+      const ids = new Set<string>();
+      let activeOpportunities: OpportunityState[] = [];
+      for (let tick = 10; tick <= 60; tick += 4) {
+        const scarce = baseEconomy({ medicine: 5, weapons: 8, food: 6 });
+        const result = evaluateOpportunities(baseInputs({
+          activeOpportunities,
+          districtEconomies: new Map([['market-district', scarce]]),
+          currentTick: tick,
+          totalTurns: tick,
+        }));
+        if (result) {
+          expect(ids.has(result.opportunity.id)).toBe(false);
+          ids.add(result.opportunity.id);
+          activeOpportunities = [...activeOpportunities, result.opportunity];
+        }
+      }
+      expect(ids.size).toBeGreaterThan(1);
     });
   });
 });

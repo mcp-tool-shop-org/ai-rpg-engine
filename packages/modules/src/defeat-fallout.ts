@@ -9,7 +9,7 @@
  */
 
 import type { EngineModule, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
+import { genId } from '@ai-rpg-engine/core';
 import { getDistrictForZone } from './district-core.js';
 
 // ---------------------------------------------------------------------------
@@ -52,9 +52,17 @@ function setGlobal(world: WorldState, key: string, value: number): void {
   world.globals[key] = value;
 }
 
-function emit(ctx: { events: { emit(event: ResolvedEvent): void } }, type: string, tick: number, payload: Record<string, unknown>): void {
+function emit(
+  ctx: { events: { emit(event: ResolvedEvent): void } },
+  world: WorldState,
+  type: string,
+  tick: number,
+  payload: Record<string, unknown>,
+): void {
+  // Deterministic id from the per-instance counter; the event is recorded via
+  // ctx.events.emit → store.recordEvent. (Was the deprecated global nextId.)
   ctx.events.emit({
-    id: nextId('evt'),
+    id: genId(world, 'evt'),
     type,
     tick,
     actorId: (payload.actorId as string) ?? undefined,
@@ -106,14 +114,14 @@ export function createDefeatFallout(config: DefeatFalloutConfig = {}): EngineMod
 
         // --- Player defeated ---
         if (defeatedId === playerId) {
-          emit(ctx, 'defeat.fallout.player-fallen', event.tick, {
+          emit(ctx, world, 'defeat.fallout.player-fallen', event.tick, {
             defeatedBy,
             zoneId: world.entities[playerId]?.zoneId ?? world.locationId,
           });
-          emit(ctx, 'defeat.fallout.companion', event.tick, {
+          emit(ctx, world, 'defeat.fallout.companion', event.tick, {
             trigger: 'combat-lost',
           });
-          emit(ctx, 'defeat.fallout.chronicle', event.tick, {
+          emit(ctx, world, 'defeat.fallout.chronicle', event.tick, {
             category: 'death',
             actorId: defeatedBy,
             targetId: playerId,
@@ -176,7 +184,7 @@ export function createDefeatFallout(config: DefeatFalloutConfig = {}): EngineMod
 
           if (killCount >= violenceThreshold) {
             world.globals[`district_${districtId}_tension`] = violenceLevel;
-            emit(ctx, 'defeat.region.violence-escalated', event.tick, {
+            emit(ctx, world, 'defeat.region.violence-escalated', event.tick, {
               districtId,
               level: violenceLevel,
               killCount,
@@ -190,7 +198,7 @@ export function createDefeatFallout(config: DefeatFalloutConfig = {}): EngineMod
         // --- Emit structured events ---
 
         // Fallout summary
-        emit(ctx, 'defeat.fallout.triggered', event.tick, {
+        emit(ctx, world, 'defeat.fallout.triggered', event.tick, {
           actorId: playerId,
           targetId: defeatedId,
           targetName: defeatedName,
@@ -206,7 +214,7 @@ export function createDefeatFallout(config: DefeatFalloutConfig = {}): EngineMod
         });
 
         // Chronicle
-        emit(ctx, 'defeat.fallout.chronicle', event.tick, {
+        emit(ctx, world, 'defeat.fallout.chronicle', event.tick, {
           category: 'kill',
           actorId: playerId,
           targetId: defeatedId,
@@ -222,7 +230,7 @@ export function createDefeatFallout(config: DefeatFalloutConfig = {}): EngineMod
         const claim = isBoss
           ? `${world.entities[playerId]?.name ?? playerId} slew the ${defeatedName}`
           : `${world.entities[playerId]?.name ?? playerId} killed ${defeatedName}`;
-        emit(ctx, 'defeat.fallout.rumor', event.tick, {
+        emit(ctx, world, 'defeat.fallout.rumor', event.tick, {
           claim,
           valence,
           originDistrictId: districtId ?? null,
@@ -231,13 +239,13 @@ export function createDefeatFallout(config: DefeatFalloutConfig = {}): EngineMod
         });
 
         // Companion
-        emit(ctx, 'defeat.fallout.companion', event.tick, {
+        emit(ctx, world, 'defeat.fallout.companion', event.tick, {
           trigger: 'combat-won',
         });
 
         // Pressure (for product layer evaluation)
         if (factionId) {
-          emit(ctx, 'defeat.fallout.pressure', event.tick, {
+          emit(ctx, world, 'defeat.fallout.pressure', event.tick, {
             factionId,
             alertLevel: getGlobal(world, `faction_alert_${factionId}`, 0),
             reputation: getGlobal(world, `reputation_${factionId}`, 0),
@@ -246,7 +254,7 @@ export function createDefeatFallout(config: DefeatFalloutConfig = {}): EngineMod
 
         // Boss milestone
         if (isBoss) {
-          emit(ctx, 'defeat.fallout.milestone', event.tick, {
+          emit(ctx, world, 'defeat.fallout.milestone', event.tick, {
             label: `Defeated ${defeatedName}`,
             tags: ['boss-kill', `faction:${factionId ?? 'none'}`],
           });

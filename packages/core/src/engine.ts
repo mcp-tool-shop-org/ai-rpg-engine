@@ -8,11 +8,10 @@ import type {
   RulesetDefinition,
   WorldState,
 } from './types.js';
-import { WorldStore } from './world.js';
+import { WorldStore, SaveLoadError } from './world.js';
 import { ActionDispatcher } from './actions.js';
 import { ModuleManager } from './modules.js';
 import type { FormulaRegistry } from './formulas.js';
-import { nextId } from './id.js';
 
 export type EngineOptions = {
   manifest: GameManifest;
@@ -66,6 +65,7 @@ export class Engine {
       this.store.state.playerId,
       this.store.tick,
       { source: 'player', ...options },
+      this.store.genId('act'),
     );
     return this.processAction(action);
   }
@@ -79,6 +79,7 @@ export class Engine {
       entityId,
       this.store.tick,
       { source: 'ai', ...options },
+      this.store.genId('act'),
     );
     return this.processAction(action);
   }
@@ -118,6 +119,80 @@ export class Engine {
       world: JSON.parse(this.store.serialize()),
       actionLog: this.actionLog,
     });
+  }
+
+  /**
+   * Reconstruct a fully-wired Engine from a string produced by {@link serialize}.
+   *
+   * Unlike replaying the actionLog through a fresh game, this restores the exact
+   * saved world state (entities, eventLog, globals, pending, rngState, and the
+   * per-instance meta.idCounter) so continuing to play resumes the deterministic
+   * id sequence without colliding with ids already in the loaded eventLog.
+   *
+   * Modules/ruleset must be supplied by the caller — code (verb handlers, event
+   * subscribers) is never serialized, only state. The saved manifest is
+   * reconstructed from world.state.meta so the dispatcher, moduleManager, and
+   * module state namespaces are registered, then the live EventBus those modules
+   * subscribed to is threaded into the restored WorldStore so subscriptions
+   * survive the swap (core-004).
+   *
+   * @throws SaveLoadError on malformed or unsupported-version saves.
+   */
+  static deserialize(
+    serialized: string,
+    options: { modules?: EngineModule[]; ruleset?: RulesetDefinition } = {},
+  ): Engine {
+    let data: { world: { state: WorldState; rngState: number }; actionLog?: ActionIntent[] };
+    try {
+      data = JSON.parse(serialized) as typeof data;
+    } catch {
+      throw new SaveLoadError({
+        code: 'SAVE_MALFORMED',
+        message: 'Engine save is not valid JSON.',
+        hint: 'The save may be truncated or corrupted. Restore from a backup.',
+      });
+    }
+    if (!data || !data.world || !data.world.state || !data.world.state.meta) {
+      throw new SaveLoadError({
+        code: 'SAVE_MALFORMED',
+        message: 'Engine save is missing required world state.',
+        hint: 'Expected an object with { world: { state, rngState }, actionLog }.',
+      });
+    }
+
+    const meta = data.world.state.meta;
+    const manifest: GameManifest = {
+      id: meta.gameId,
+      title: '',
+      version: '',
+      engineVersion: '0.1.0',
+      ruleset: meta.activeRuleset,
+      modules: meta.activeModules,
+      contentPacks: [],
+    };
+
+    // Build the engine normally so dispatcher + moduleManager + namespaces are
+    // registered and modules subscribe to this.store.events (the live bus).
+    const engine = new Engine({
+      manifest,
+      seed: meta.seed,
+      modules: options.modules,
+      ruleset: options.ruleset,
+    });
+
+    // Replace the fresh store with the saved one, reusing the live EventBus so
+    // module subscriptions registered above are preserved. WorldStore.deserialize
+    // runs the save-version migration chain and restores meta.idCounter + rng.
+    const restored = WorldStore.deserialize(
+      JSON.stringify(data.world),
+      engine.store.events,
+    );
+    (engine as { store: WorldStore }).store = restored;
+
+    // Restore the action log so getActionLog()/serialize() round-trip.
+    engine.actionLog = data.actionLog ? [...data.actionLog] : [];
+
+    return engine;
   }
 
   /** Get current tick */

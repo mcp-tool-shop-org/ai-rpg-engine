@@ -122,11 +122,13 @@ export function createGame(seed?: number): Engine {
         }],
       }),
       createEnvironmentCore({
+        // Hazards mutate entity.resources directly (deterministic, clamped);
+        // environment-core does not record the returned events. Return [].
         hazards: [{
           id: 'exposed-wiring',
           triggerOn: 'world.zone.entered',
           condition: (zone) => zone.hazards?.includes('exposed wiring') ?? false,
-          effect: (zone, entity, _world, tick) => {
+          effect: (_zone, entity, _world, _tick) => {
             entity.resources.hp = Math.max(0, (entity.resources.hp ?? 0) - 2);
             return [];
           },

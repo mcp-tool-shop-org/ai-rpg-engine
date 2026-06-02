@@ -46,10 +46,22 @@ export type AbilityEffectsConfig = {
 // ---------------------------------------------------------------------------
 // Effect registry
 // ---------------------------------------------------------------------------
+//
+// MC-04 assessment: this is a PROCESS-GLOBAL, append-only *handler* registry
+// (effect type → pure handler function), not per-game world state. The built-in
+// handlers ('damage', 'heal', 'apply-status', …) are universal code; an effect
+// type means the same thing in every game, so sharing handlers across Engine
+// instances is intentional. Registration is idempotent (keyed by type; last
+// write wins) so a pack registering its custom handlers more than once is safe
+// and never accumulates duplicates. Tests / multi-pack tooling that need to drop
+// pack-added handlers call `clearEffectRegistry()` (which restores the built-in
+// set). Threading a per-instance registry would require changing every call site
+// that registers/dispatches effects (out of scope) and buys nothing for handler
+// code that is definitionally global.
 
 const effectRegistry = new Map<string, AbilityEffectHandler>();
 
-/** Register a custom effect handler (used by packs to extend the system) */
+/** Register a custom effect handler (used by packs to extend the system). Idempotent — re-registering a type overwrites, never duplicates. */
 export function registerEffectHandler(
   type: string,
   handler: AbilityEffectHandler,
@@ -60,6 +72,17 @@ export function registerEffectHandler(
 /** Get a registered handler (for testing/inspection) */
 export function getEffectHandler(type: string): AbilityEffectHandler | undefined {
   return effectRegistry.get(type);
+}
+
+/**
+ * Reset the effect registry to only the built-in handlers, dropping any
+ * pack-registered custom handlers. Provided for test isolation and multi-pack
+ * tooling — the supported way to keep one game's custom effect types from
+ * leaking into another within the same process (see MC-04 note above).
+ */
+export function clearEffectRegistry(): void {
+  effectRegistry.clear();
+  registerBuiltinEffectHandlers();
 }
 
 // ---------------------------------------------------------------------------
@@ -242,7 +265,7 @@ function handleApplyStatus(effect: EffectDefinition, ctx: EffectContext): Resolv
       maxStacks,
       duration: adjustedDuration,
       sourceId: ctx.actor.id,
-    });
+    }, ctx.world);
     events.push(statusEvent);
 
     // Also emit an ability-scoped status event for tracing
@@ -410,13 +433,18 @@ function handleRemoveStatusByTag(effect: EffectDefinition, ctx: EffectContext): 
 // Register built-in handlers
 // ---------------------------------------------------------------------------
 
-effectRegistry.set('damage', handleDamage);
-effectRegistry.set('heal', handleHeal);
-effectRegistry.set('apply-status', handleApplyStatus);
-effectRegistry.set('remove-status', handleRemoveStatus);
-effectRegistry.set('remove-status-by-tag', handleRemoveStatusByTag);
-effectRegistry.set('resource-modify', handleResourceModify);
-effectRegistry.set('stat-modify', handleStatModify);
+/** (Re)install the universal built-in effect handlers. Idempotent. */
+function registerBuiltinEffectHandlers(): void {
+  effectRegistry.set('damage', handleDamage);
+  effectRegistry.set('heal', handleHeal);
+  effectRegistry.set('apply-status', handleApplyStatus);
+  effectRegistry.set('remove-status', handleRemoveStatus);
+  effectRegistry.set('remove-status-by-tag', handleRemoveStatusByTag);
+  effectRegistry.set('resource-modify', handleResourceModify);
+  effectRegistry.set('stat-modify', handleStatModify);
+}
+
+registerBuiltinEffectHandlers();
 
 // ---------------------------------------------------------------------------
 // Core resolution function

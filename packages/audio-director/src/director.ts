@@ -11,29 +11,49 @@ import type {
 import { DEFAULT_DOMAIN_PRIORITIES, DEFAULT_DUCKING_RULES } from './types.js';
 import { scheduleAll } from './scheduler.js';
 
-/** Deterministic audio cue scheduling engine. */
+/**
+ * Deterministic audio cue scheduling engine.
+ *
+ * Time is an explicit input: callers pass `now` (a monotonic ms timestamp from
+ * the game clock) to {@link schedule} and {@link isOnCooldown}. The class never
+ * reads the wall clock, so identical inputs + identical `now` always produce the
+ * identical command stream — a requirement of the engine's determinism contract.
+ */
 export class AudioDirector {
   private cooldowns = new Map<string, CooldownEntry>();
   private activeLayers = new Map<string, { domain: AudioDomain; resourceId: string }>();
   private duckingRules: DuckingRule[];
   private domainPriorities: Record<AudioDomain, number>;
   private defaultCooldownMs: number;
+  private cooldownOverrides: Record<string, number>;
 
   constructor(config?: AudioDirectorConfig) {
     this.defaultCooldownMs = config?.defaultCooldownMs ?? 2000;
+    this.cooldownOverrides = config?.cooldownMs ?? {};
     this.duckingRules = config?.duckingRules ?? [...DEFAULT_DUCKING_RULES];
     this.domainPriorities = config?.domainPriorities ?? { ...DEFAULT_DOMAIN_PRIORITIES };
   }
 
-  /** Convert a NarrationPlan into sequenced AudioCommands, applying cooldowns and ducking. */
-  schedule(plan: NarrationPlan): AudioCommand[] {
-    const now = Date.now();
+  /** Resolve the cooldown for a resource: per-resource override, else the default. */
+  private cooldownFor(resourceId: string): number {
+    const override = this.cooldownOverrides[resourceId];
+    return typeof override === 'number' ? override : this.defaultCooldownMs;
+  }
+
+  /**
+   * Convert a NarrationPlan into sequenced AudioCommands, applying cooldowns and ducking.
+   *
+   * @param plan The narration plan to schedule.
+   * @param now  Current time in ms from the caller's clock. Explicit (not wall
+   *             time) so scheduling stays deterministic and replayable.
+   */
+  schedule(plan: NarrationPlan, now: number): AudioCommand[] {
     const raw = scheduleAll(plan, this.domainPriorities);
 
     // Filter out cooled-down resources
     const filtered = raw.filter((cmd) => {
       if (cmd.action !== 'play') return true;
-      return !this.isOnCooldown(cmd.resourceId);
+      return !this.isOnCooldown(cmd.resourceId, now);
     });
 
     // Add ducking commands for active triggers
@@ -45,7 +65,7 @@ export class AudioDirector {
         this.cooldowns.set(cmd.resourceId, {
           resourceId: cmd.resourceId,
           lastPlayedMs: now,
-          cooldownMs: this.defaultCooldownMs,
+          cooldownMs: this.cooldownFor(cmd.resourceId),
         });
       }
     }
@@ -69,11 +89,17 @@ export class AudioDirector {
     return all;
   }
 
-  /** Check if a resource is currently on cooldown. */
-  isOnCooldown(resourceId: string): boolean {
+  /**
+   * Check whether a resource is on cooldown at time `now`.
+   *
+   * @param resourceId The resource to check.
+   * @param now        Current time in ms from the caller's clock (explicit, not
+   *                   wall time) so the check is deterministic.
+   */
+  isOnCooldown(resourceId: string, now: number): boolean {
     const entry = this.cooldowns.get(resourceId);
     if (!entry) return false;
-    return Date.now() - entry.lastPlayedMs < entry.cooldownMs;
+    return now - entry.lastPlayedMs < entry.cooldownMs;
   }
 
   /** Register a ducking rule. */

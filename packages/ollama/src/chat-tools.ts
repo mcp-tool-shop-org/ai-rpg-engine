@@ -461,7 +461,8 @@ const applyContentTool: ChatTool = {
     }
 
     const a = action('apply-preview', `Preview write to ${targetPath}`, true);
-    const preview = await generatePreview({ content, targetPath });
+    // Thread projectRoot through so preview and confirmed write share one sandbox.
+    const preview = await generatePreview({ content, targetPath, projectRoot: p.projectRoot });
     return {
       ok: true,
       summary: preview.preview,

@@ -15,7 +15,7 @@ import type {
   ResolvedEvent,
   EntityState,
 } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
+import { genId } from '@ai-rpg-engine/core';
 import { applyStatus } from './status-core.js';
 import { getCognition } from './cognition-core.js';
 
@@ -135,12 +135,15 @@ function isSafeZone(world: WorldState, zoneId: string, safeTags: string[]): bool
 
 function emitHidden(
   ctx: { events: { emit(event: ResolvedEvent): void } },
+  world: WorldState,
   type: string,
   tick: number,
   payload: Record<string, unknown>,
 ): void {
+  // Deterministic id from the per-instance counter (was the deprecated global
+  // nextId). These hidden events are recorded via ctx.events.emit → recordEvent.
   ctx.events.emit({
-    id: nextId('evt'),
+    id: genId(world, 'evt'),
     type,
     tick,
     actorId: (payload.actorId as string) ?? undefined,
@@ -246,10 +249,10 @@ export function createCombatRecovery(config: CombatRecoveryConfig = {}): EngineM
                 data: Object.fromEntries(
                   Object.entries(threshold.statPenalties).map(([k, v]) => [k, v]),
                 ),
-              });
+              }, world);
               wounds.push(threshold.severity);
 
-              emitHidden(ctx, 'combat.aftermath.injury', tick, {
+              emitHidden(ctx, world, 'combat.aftermath.injury', tick, {
                 entityId: entity.id,
                 entityName: entity.name,
                 severity: threshold.severity,
@@ -282,8 +285,8 @@ export function createCombatRecovery(config: CombatRecoveryConfig = {}): EngineM
               duration: 10,
               stacking: 'replace',
               data: { attackPenalty: -10, disengageBonus: 15 },
-            });
-            emitHidden(ctx, 'combat.aftermath.morale', tick, {
+            }, world);
+            emitHidden(ctx, world, 'combat.aftermath.morale', tick, {
               entityId: entity.id,
               entityName: entity.name,
               morale,
@@ -295,8 +298,8 @@ export function createCombatRecovery(config: CombatRecoveryConfig = {}): EngineM
               duration: 8,
               stacking: 'replace',
               data: { hitBonus: 5, damageBonusPct: 0.10 },
-            });
-            emitHidden(ctx, 'combat.aftermath.morale', tick, {
+            }, world);
+            emitHidden(ctx, world, 'combat.aftermath.morale', tick, {
               entityId: entity.id,
               entityName: entity.name,
               morale,
@@ -329,13 +332,13 @@ export function createCombatRecovery(config: CombatRecoveryConfig = {}): EngineM
         const survivorIds = survivors.map(s => s.entityId);
         const casualtyIds = casualties.map(c => c.entityId);
 
-        emitHidden(ctx, 'combat.aftermath.started', tick, {
+        emitHidden(ctx, world, 'combat.aftermath.started', tick, {
           zoneId,
           survivorIds,
           casualtyIds,
         });
 
-        emitHidden(ctx, 'combat.aftermath.summary', tick, {
+        emitHidden(ctx, world, 'combat.aftermath.summary', tick, {
           zoneId,
           casualties,
           survivors,
@@ -357,7 +360,7 @@ export function createCombatRecovery(config: CombatRecoveryConfig = {}): EngineM
             const prev = entity.resources.stamina;
             entity.resources.stamina = Math.min(maxStamina, entity.resources.stamina + staminaRegenPerTick);
             if (entity.resources.stamina !== prev) {
-              emitHidden(ctx, 'combat.aftermath.stamina-tick', tick, {
+              emitHidden(ctx, world, 'combat.aftermath.stamina-tick', tick, {
                 entityId: entity.id,
                 prevStamina: prev,
                 currentStamina: entity.resources.stamina,
@@ -386,7 +389,7 @@ export function createCombatRecovery(config: CombatRecoveryConfig = {}): EngineM
               const prev = entity.resources.hp;
               entity.resources.hp = Math.min(maxHp, entity.resources.hp + regenRate);
               if (entity.resources.hp !== prev) {
-                emitHidden(ctx, 'combat.aftermath.hp-tick', tick, {
+                emitHidden(ctx, world, 'combat.aftermath.hp-tick', tick, {
                   entityId: entity.id,
                   prevHp: prev,
                   currentHp: entity.resources.hp,
@@ -398,7 +401,7 @@ export function createCombatRecovery(config: CombatRecoveryConfig = {}): EngineM
 
           // Check if fully recovered
           if (entity.resources.hp >= maxHp && entity.resources.stamina >= maxStamina) {
-            emitHidden(ctx, 'combat.aftermath.recovery-complete', tick, {
+            emitHidden(ctx, world, 'combat.aftermath.recovery-complete', tick, {
               entityId: entity.id,
             });
             completed.push(i);

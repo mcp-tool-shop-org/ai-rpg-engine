@@ -188,14 +188,14 @@ function getBuiltinLayers(): PerceptionLayer[] {
 
         setBelief(cog, actorId, 'present', true, clarity, 'observed', event.tick);
         setBelief(cog, actorId, 'location', zoneId, clarity, 'observed', event.tick);
-        addMemory(cog, 'saw-entity', event.tick,
+        addMemory(world, cog, 'saw-entity', event.tick,
           { entityId: actorId as ScalarValue, zoneId: zoneId as ScalarValue },
           actorId, zoneId);
       },
       onPartial(event, entity, clarity, world) {
         const cog = getCognition(world, entity.id);
         // Sensed something but didn't see who
-        addMemory(cog, 'sensed-presence', event.tick, {
+        addMemory(world, cog, 'sensed-presence', event.tick, {
           zoneId: event.payload.zoneId as ScalarValue,
           certainty: clarity,
         });
@@ -218,12 +218,12 @@ function getBuiltinLayers(): PerceptionLayer[] {
         if (clarity > 0.5) {
           // High clarity: know exactly who is hostile
           setBelief(cog, attackerId, 'hostile', true, clarity * 0.8, 'observed', event.tick);
-          addMemory(cog, 'saw-combat', event.tick,
+          addMemory(world, cog, 'saw-combat', event.tick,
             { attackerId: attackerId as ScalarValue, targetId: targetId as ScalarValue },
             undefined, entity.zoneId);
         } else {
           // Low clarity: know there's danger but not who
-          addMemory(cog, 'sensed-danger', event.tick,
+          addMemory(world, cog, 'sensed-danger', event.tick,
             { certainty: clarity }, undefined, entity.zoneId);
         }
         cog.suspicion = Math.min(100, cog.suspicion + Math.round(25 * clarity));
@@ -241,7 +241,7 @@ function getBuiltinLayers(): PerceptionLayer[] {
         const cog = getCognition(world, entity.id);
         const sourceZone = getEventZone(event, world);
 
-        addMemory(cog, 'heard-combat', event.tick, {
+        addMemory(world, cog, 'heard-combat', event.tick, {
           direction: (sourceZone ?? 'unknown') as ScalarValue,
           certainty: clarity,
         }, undefined, entity.zoneId);
@@ -250,7 +250,7 @@ function getBuiltinLayers(): PerceptionLayer[] {
       },
       onPartial(event, entity, clarity, world) {
         const cog = getCognition(world, entity.id);
-        addMemory(cog, 'heard-noise', event.tick, { certainty: clarity });
+        addMemory(world, cog, 'heard-noise', event.tick, { certainty: clarity });
         cog.suspicion = Math.min(100, cog.suspicion + 5);
       },
     },
@@ -267,7 +267,7 @@ function getBuiltinLayers(): PerceptionLayer[] {
         const defeatedId = event.payload.entityId as string;
 
         setBelief(cog, defeatedId, 'alive', false, clarity, 'observed', event.tick);
-        addMemory(cog, 'saw-defeat', event.tick,
+        addMemory(world, cog, 'saw-defeat', event.tick,
           { entityId: defeatedId as ScalarValue }, defeatedId, entity.zoneId);
 
         // Seeing an ally fall tanks morale

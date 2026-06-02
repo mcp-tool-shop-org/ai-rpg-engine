@@ -97,7 +97,7 @@ npx @ai-rpg-engine/cli create-starter my-game
 | Layer | Role |
 |-------|------|
 | **Core Runtime** | Deterministic engine — world state, events, actions, ticks, RNG, replay |
-| **Modules** | 27+ composable systems — combat, perception, cognition, factions, traversal, companions, etc. |
+| **Modules** | 30+ composable systems — combat, perception, cognition, factions, traversal, companions, etc. |
 | **Content** | Entities, zones, dialogue, items, abilities, statuses — author-created |
 | **AI Studio** | Optional Ollama layer — scaffolding, critique, balance analysis, tuning, experiments |
 

@@ -44,16 +44,19 @@ const director = new AudioDirector({
   defaultCooldownMs: 2000,
 });
 
-// Schedule commands from a narration plan
-const commands = director.schedule(plan);
+// Schedule commands from a narration plan. `now` is an explicit monotonic
+// millisecond timestamp from your game clock — the director never reads the
+// wall clock, so scheduling is deterministic and replayable.
+const now = engine.tick; // or any monotonic ms clock you control
+const commands = director.schedule(plan, now);
 
 // Execute commands through your audio backend
 for (const cmd of commands) {
   await audioBackend.execute(cmd);
 }
 
-// Check cooldowns
-director.isOnCooldown('alert_warning'); // true if recently played
+// Check cooldowns (pass the same clock value)
+director.isOnCooldown('alert_warning', now); // true if recently played
 
 // Clear cooldowns on scene change
 director.clearCooldowns();

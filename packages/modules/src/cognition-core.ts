@@ -9,7 +9,7 @@ import type {
   ActionIntent,
   ZoneState,
 } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
+import { genId } from '@ai-rpg-engine/core';
 import { hasStatus, applyStatus } from './status-core.js';
 import { COMBAT_STATES } from './combat-core.js';
 
@@ -128,9 +128,13 @@ export function createCognitionCore(configOrProfiles?: CognitionCoreConfig | Int
         entityCognition: {} as Record<string, CognitionState>,
       });
 
-      // Per-tick defeat morale budget (cap at -20 per entity per tick)
-      const defeatMoraleBudget = new Map<string, number>();
-      ctx.events.on('tick.start', () => defeatMoraleBudget.clear());
+      // Per-tick defeat morale budget (cap at -20 per entity per tick).
+      // Tick-stamped rather than cleared on a 'tick.start' event: the engine
+      // never emits tick.start (advanceTick only does meta.tick++), so a
+      // clear-on-tick.start listener never fires and the per-tick cap would
+      // silently become a per-GAME cap. Each entry records the tick it was set;
+      // an entry from a previous tick reads as zero spent (a fresh budget).
+      const defeatMoraleBudget = new Map<string, { tick: number; spent: number }>();
 
       // Listen to events to update entity knowledge
       ctx.events.on('world.zone.entered', (event, world) => {
@@ -256,7 +260,8 @@ export function createCognitionCore(configOrProfiles?: CognitionCoreConfig | Int
             delta = Math.round(delta * willMitigation);
 
             // Per-tick morale loss cap (-20 max per entity per tick)
-            const spent = defeatMoraleBudget.get(entity.id) ?? 0;
+            const prevBudget = defeatMoraleBudget.get(entity.id);
+            const spent = prevBudget && prevBudget.tick === event.tick ? prevBudget.spent : 0;
             const remaining = Math.max(0, 20 + spent); // spent is negative
             if (remaining <= 0) {
               delta = 0;
@@ -264,7 +269,7 @@ export function createCognitionCore(configOrProfiles?: CognitionCoreConfig | Int
               delta = -remaining;
             }
             if (delta !== 0) {
-              defeatMoraleBudget.set(entity.id, (spent) + delta);
+              defeatMoraleBudget.set(entity.id, { tick: event.tick, spent: spent + delta });
             }
           }
 
@@ -297,7 +302,7 @@ export function createCognitionCore(configOrProfiles?: CognitionCoreConfig | Int
         if (threshold > 0 && morale <= threshold) {
           const statusEvt = applyStatus(entity, COMBAT_STATES.FLEEING, event.tick, {
             duration: 3, sourceId: 'morale_collapse',
-          });
+          }, world);
           ctx.events.emit(statusEvt);
           ctx.events.emit(makeCognitionEvent('combat.morale.flee', event.tick, {
             entityId,
@@ -319,12 +324,13 @@ export function createCognitionCore(configOrProfiles?: CognitionCoreConfig | Int
             const prev = cog.morale;
             // Rout penalty bounded by per-tick cap
             let routDelta = -10;
-            const spent = defeatMoraleBudget.get(entityId) ?? 0;
+            const prevBudget = defeatMoraleBudget.get(entityId);
+            const spent = prevBudget && prevBudget.tick === event.tick ? prevBudget.spent : 0;
             const remaining = Math.max(0, 20 + spent);
             if (remaining <= 0) routDelta = 0;
             else if (-routDelta > remaining) routDelta = -remaining;
             if (routDelta !== 0) {
-              defeatMoraleBudget.set(entityId, spent + routDelta);
+              defeatMoraleBudget.set(entityId, { tick: event.tick, spent: spent + routDelta });
               cog.morale = Math.max(0, cog.morale + routDelta);
               ctx.events.emit(makeCognitionEvent('combat.morale.rout', event.tick, {
                 entityId,
@@ -447,6 +453,7 @@ export function believes(
 // --- Memory Operations ---
 
 export function addMemory(
+  world: WorldState,
   cognition: CognitionState,
   type: string,
   tick: number,
@@ -455,7 +462,10 @@ export function addMemory(
   zoneId?: string,
 ): void {
   cognition.memories.push({
-    id: nextId('mem'),
+    // Memory ids are serialized in cognition state, so they must be deterministic
+    // and per-instance — minted from the world's serialized counter, not the
+    // deprecated process-global `nextId`.
+    id: genId(world, 'mem'),
     type,
     tick,
     entityId,
@@ -720,7 +730,7 @@ function updatePerceptions(event: ResolvedEvent, world: WorldState, cogStates: R
     const cog = getCognition(world, entity.id);
     setBelief(cog, actorId, 'location', zoneId, 0.9, 'observed', event.tick);
     setBelief(cog, actorId, 'present', true, 1.0, 'observed', event.tick);
-    addMemory(cog, 'saw-entity', event.tick, { entityId: actorId, zoneId }, actorId, zoneId);
+    addMemory(world, cog, 'saw-entity', event.tick, { entityId: actorId, zoneId }, actorId, zoneId);
   }
 }
 
@@ -734,7 +744,7 @@ function recordCombatMemory(event: ResolvedEvent, world: WorldState, cogStates: 
   if (target?.ai) {
     const cog = getCognition(world, targetId);
     setBelief(cog, attackerId, 'hostile', true, 1.0, 'observed', event.tick);
-    addMemory(cog, 'was-attacked', event.tick, { attackerId }, attackerId, target.zoneId);
+    addMemory(world, cog, 'was-attacked', event.tick, { attackerId }, attackerId, target.zoneId);
 
     // Morale changes are now handled by combat.damage.applied and combat.contact.miss listeners
     cog.suspicion = Math.min(100, cog.suspicion + 20);
@@ -752,7 +762,7 @@ function recordCombatMemory(event: ResolvedEvent, world: WorldState, cogStates: 
 
     const cog = getCognition(world, entity.id);
     setBelief(cog, attackerId, 'hostile', true, 0.7, 'observed', event.tick);
-    addMemory(cog, 'heard-combat', event.tick, { attackerId, targetId }, undefined, zone);
+    addMemory(world, cog, 'heard-combat', event.tick, { attackerId, targetId }, undefined, zone);
     cog.suspicion = Math.min(100, cog.suspicion + 15);
   }
 }
@@ -797,7 +807,11 @@ function makeCognitionEvent(
   payload: Record<string, unknown>,
 ): ResolvedEvent {
   return {
-    id: nextId('evt'),
+    // Empty id: every caller emits this through `ctx.events.emit`, which routes
+    // to `store.recordEvent` — the single choke point that stamps a deterministic
+    // per-instance id when none is present. Minting here via the deprecated
+    // process-global `nextId` would reintroduce the cross-instance id collision.
+    id: '',
     tick,
     type,
     actorId: payload.entityId as string,

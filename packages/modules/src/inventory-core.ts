@@ -6,7 +6,6 @@ import type {
   WorldState,
   ResolvedEvent,
 } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
 import { makeEvent } from './make-event.js';
 
 export type ItemEffect = {
@@ -72,12 +71,21 @@ function useHandler(
   ];
 }
 
-/** Helper: add an item to an entity's inventory */
+/**
+ * Helper: add an item to an entity's inventory.
+ *
+ * Returns the event with an empty id: every caller routes it through
+ * `store.recordEvent`, the single choke point that stamps a deterministic
+ * per-instance id (`genId('evt')`) when none is present — which is what keeps
+ * event ids byte-identical across same-seed runs. Minting an id here from the
+ * deprecated process-global `nextId` would reintroduce the cross-instance /
+ * non-serialized id-collision footgun.
+ */
 export function giveItem(entity: import('@ai-rpg-engine/core').EntityState, itemId: string, tick: number): ResolvedEvent {
   if (!entity.inventory) entity.inventory = [];
   entity.inventory.push(itemId);
   return {
-    id: nextId('evt'),
+    id: '',
     tick,
     type: 'item.acquired',
     actorId: entity.id,

@@ -120,14 +120,31 @@ const MIN_TURNS_BETWEEN_SPAWNS = 3;
 const DEFAULT_DEADLINE = 12;
 const VISIBILITY_ESCALATION_TICKS = 3;
 
-let opportunityCounter = 0;
-function nextOpportunityId(): string {
-  return `opp-${++opportunityCounter}`;
+// Deterministic id minting. Previously a module-global `opportunityCounter`
+// minted `opp-N` ids — the same determinism footgun fixed across the engine
+// (pressure-system, player-rumor, campaign-memory/journal, rumor-system/engine):
+// a process-global counter is shared between engine instances (two engines with
+// the same seed mint different ids) and is never serialized (a reloaded game
+// restarts at 0 and collides with opportunity ids already in state). The id is
+// now a pure function of the opportunity's defining content. `evaluateOpportunities`
+// already forbids duplicate (kind, source) pairs among live opportunities (see
+// `activeKindSourcePairs`), so (kind, source, createdAtTick) is unique within a
+// run and identical across same-seed runs. No shared mutable global is used.
+function contentOpportunityId(
+  kind: OpportunityKind,
+  sourceId: string | undefined,
+  currentTick: number,
+): string {
+  return `opp-${kind}-${sourceId ?? 'none'}-${currentTick}`;
 }
 
-/** Reset counter for testing. */
+/**
+ * @deprecated No module-global counter exists anymore — ids are derived from
+ * opportunity content (kind + source + tick), so there is nothing to reset.
+ * Retained as a no-op for back-compat with callers/fixtures that still import it.
+ */
 export function resetOpportunityCounter(): void {
-  opportunityCounter = 0;
+  /* no-op: deterministic content-derived ids, no global state */
 }
 
 // --- Lifecycle ---
@@ -932,7 +949,7 @@ export function makeOpportunity(opts: {
   tags?: string[];
 }): OpportunityState {
   return {
-    id: nextOpportunityId(),
+    id: contentOpportunityId(opts.kind, opts.sourceNpcId ?? opts.sourceFactionId, opts.currentTick),
     kind: opts.kind,
     status: 'available',
     sourceNpcId: opts.sourceNpcId,

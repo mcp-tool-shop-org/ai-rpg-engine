@@ -3,17 +3,30 @@
 import type { CharacterProfile, Milestone, ReputationEntry } from './types.js';
 import { touch } from './profile.js';
 
-/** Generate a simple milestone ID. */
-function milestoneId(): string {
-  return `ms-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+/**
+ * Derive the next deterministic milestone id for a profile (CP-05 — no Date.now /
+ * Math.random). Ids are `ms-N` where N is one past the highest existing suffix,
+ * making them sequential, collision-free, and reproducible from profile state.
+ */
+function nextMilestoneId(profile: CharacterProfile): string {
+  let max = 0;
+  for (const ms of profile.milestones) {
+    const m = /^ms-(\d+)$/.exec(ms.id);
+    if (m) max = Math.max(max, parseInt(m[1]!, 10));
+  }
+  return `ms-${max + 1}`;
 }
 
-/** Record a milestone. */
+/**
+ * Record a milestone. `id` is optional — when omitted, a deterministic sequential
+ * id is derived from the profile's existing milestones (CP-05).
+ */
 export function recordMilestone(
   profile: CharacterProfile,
   milestone: Omit<Milestone, 'id'>,
+  id?: string,
 ): CharacterProfile {
-  const full: Milestone = { ...milestone, id: milestoneId() };
+  const full: Milestone = { ...milestone, id: id ?? nextMilestoneId(profile) };
   return touch({
     ...profile,
     milestones: [...profile.milestones, full],

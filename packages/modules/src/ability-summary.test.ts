@@ -105,6 +105,45 @@ describe('summarizeAbilityPack', () => {
     expect(s.abilitiesByCooldown[1].id).toBe('fireball'); // cd 3
     expect(s.abilitiesByCooldown[2].id).toBe('quick-strike'); // cd 1
   });
+
+  // MC-05 regression: `&&` binds tighter than `||`, so the offensive test was
+  // `damage || (combat && !debuff && !buff)`. That let any damage-tagged buff or
+  // debuff fall into "offensive" instead of defensive/control. The fix
+  // parenthesizes to `(damage || combat) && !debuff && !buff`.
+  it('categorizes a damage+buff ability as defensive, not offensive', () => {
+    const empowerStrike: AbilityDefinition = {
+      id: 'empower-strike', name: 'Empower Strike', verb: 'use-ability',
+      tags: ['combat', 'damage', 'buff'],
+      costs: [{ resourceId: 'stamina', amount: 2 }],
+      target: { type: 'self' },
+      checks: [],
+      effects: [{ type: 'stat-modify', target: 'actor', params: { stat: 'vigor', amount: 2 } }],
+      cooldown: 2,
+    };
+    const s = summarizeAbilityPack('test', [empowerStrike]);
+    expect(s.abilitiesByCategory.defensive).toContain('empower-strike');
+    expect(s.abilitiesByCategory.offensive).not.toContain('empower-strike');
+  });
+
+  it('categorizes a damage+debuff ability as control, not offensive', () => {
+    const enfeeblingBlow: AbilityDefinition = {
+      id: 'enfeebling-blow', name: 'Enfeebling Blow', verb: 'use-ability',
+      tags: ['damage', 'debuff'],
+      costs: [{ resourceId: 'stamina', amount: 2 }],
+      target: { type: 'single' },
+      checks: [],
+      effects: [{ type: 'apply-status', target: 'target', params: { statusId: 'weakened', duration: 2 } }],
+      cooldown: 2,
+    };
+    const s = summarizeAbilityPack('test', [enfeeblingBlow]);
+    expect(s.abilitiesByCategory.control).toContain('enfeebling-blow');
+    expect(s.abilitiesByCategory.offensive).not.toContain('enfeebling-blow');
+  });
+
+  it('still categorizes a pure damage/combat ability as offensive', () => {
+    const s = summarizeAbilityPack('test', [quickStrike]); // tags: combat, damage
+    expect(s.abilitiesByCategory.offensive).toContain('quick-strike');
+  });
 });
 
 // --- Formatter tests ---

@@ -96,14 +96,21 @@ export function evaluateRelicGrowth(
       : DEFAULT_ARMOR_MILESTONES); // Non-weapon/armor items use armor milestones
 
   const reached: string[] = [];
+  // The current epithet is the highest-tier reached milestone, chosen by threshold
+  // — NOT the last one in array order. Milestone lists are not guaranteed to be
+  // tier-sorted, so relying on iteration order picked the wrong epithet (CP-06).
   let highestEpithet: string | undefined;
+  let highestThreshold = -Infinity;
 
   for (const milestone of effectiveMilestones) {
     const value = getTriggerValue(milestone.trigger, chronicle, currentTick);
     if (value >= milestone.threshold) {
       const epithet = resolveEpithet(milestone.epithet, item.name);
       reached.push(epithet);
-      highestEpithet = epithet; // Last reached = highest tier
+      if (milestone.threshold > highestThreshold) {
+        highestThreshold = milestone.threshold;
+        highestEpithet = epithet;
+      }
     }
   }
 

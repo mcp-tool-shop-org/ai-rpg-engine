@@ -72,7 +72,7 @@ describe('simulation-inspector', () => {
     const engine = createEngine();
     const cog = getCognition(engine.world, 'guard_1');
     setBelief(cog, 'player', 'hostile', true, 0.8, 'observed', 0);
-    addMemory(cog, 'saw-combat', 0, { attackerId: 'player' });
+    addMemory(engine.world, cog, 'saw-combat', 0, { attackerId: 'player' });
 
     const inspection = inspectEntity(engine.world, 'guard_1');
     expect(inspection).not.toBeNull();

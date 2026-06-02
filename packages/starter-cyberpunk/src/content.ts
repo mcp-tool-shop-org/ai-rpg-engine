@@ -2,7 +2,6 @@
 // 3 zones, 1 NPC, 1 ICE agent, 1 item, 1 dialogue
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
@@ -344,7 +343,7 @@ export const iceBreaker = {
     const prevIce = target.resources.ice ?? 0;
     target.resources.ice = Math.max(0, prevIce - 8);
     return [{
-      id: nextId('evt'),
+      id: '',
       tick: action.issuedAtTick,
       type: 'netrunning.ice.breached',
       actorId: action.actorId,

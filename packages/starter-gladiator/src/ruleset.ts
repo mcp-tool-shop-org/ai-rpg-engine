@@ -15,6 +15,7 @@ export const gladiatorMinimalRuleset: RulesetDefinition = {
 
   resources: [
     { id: 'hp', name: 'HP', min: 0, max: 40, default: 25 },
+    { id: 'stamina', name: 'Stamina', min: 0, max: 50, default: 10, regenRate: 1 },
     { id: 'fatigue', name: 'Fatigue', min: 0, max: 50, default: 0 },
     { id: 'crowd-favor', name: 'Crowd Favor', min: 0, max: 100, default: 40 },
   ],

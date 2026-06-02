@@ -184,7 +184,9 @@ build → simulate → analyze → tune → experiment
 ### Part X — Composition
 
 57. [Composition Guide](./57-composition-guide.md) — Build your own game by composing engine modules
-58. [Profile Roadmap](../profile-roadmap.md) — Plug-in profiles: portable mechanical templates (planned)
+58. [Create Your Own Starter](../../site/src/content/docs/handbook/58-create-your-own-starter.md) — Scaffold a new game from the CLI or template
+
+See also: [Profile Roadmap](../profile-roadmap.md) — Plug-in profiles: portable mechanical templates (planned)
 
 ### Part XI — Combat Reference
 

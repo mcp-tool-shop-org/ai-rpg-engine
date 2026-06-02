@@ -121,4 +121,57 @@ describe('CampaignJournal', () => {
     expect(results[1].tick).toBe(15);
     expect(results[2].tick).toBe(20);
   });
+
+  // CP-01: record IDs must be per-instance (depend only on seed+actions), not a
+  // module-global counter shared across all journals.
+  test('two journals do not share an ID counter', () => {
+    const a = new CampaignJournal();
+    const b = new CampaignJournal();
+
+    const a1 = a.record(makeRecord());
+    const a2 = a.record(makeRecord());
+    const b1 = b.record(makeRecord());
+
+    // Each journal numbers from 1 independently.
+    expect(a1.id).toBe('cr_1');
+    expect(a2.id).toBe('cr_2');
+    // b1 is the FIRST record in journal b — must be cr_1, not cr_3.
+    expect(b1.id).toBe('cr_1');
+  });
+
+  test('record IDs are reproducible across runs (same actions => same ids)', () => {
+    const run = () => {
+      const j = new CampaignJournal();
+      return [j.record(makeRecord()).id, j.record(makeRecord()).id];
+    };
+    expect(run()).toEqual(run());
+  });
+
+  test('interleaving journal record calls does not affect per-instance ids', () => {
+    const a = new CampaignJournal();
+    const b = new CampaignJournal();
+    // Interleave: a, b, a, b
+    const a1 = a.record(makeRecord());
+    const b1 = b.record(makeRecord());
+    const a2 = a.record(makeRecord());
+    const b2 = b.record(makeRecord());
+    expect(a1.id).toBe('cr_1');
+    expect(a2.id).toBe('cr_2');
+    expect(b1.id).toBe('cr_1');
+    expect(b2.id).toBe('cr_2');
+  });
+
+  test('deserialize advances only the restored instance counter', () => {
+    const restored = CampaignJournal.deserialize([
+      { id: 'cr_7', ...makeRecord() },
+      { id: 'cr_3', ...makeRecord() },
+    ]);
+    // Next record on the restored instance is cr_8 (max + 1).
+    const next = restored.record(makeRecord());
+    expect(next.id).toBe('cr_8');
+
+    // A fresh, independent journal is unaffected by the deserialize above.
+    const fresh = new CampaignJournal();
+    expect(fresh.record(makeRecord()).id).toBe('cr_1');
+  });
 });

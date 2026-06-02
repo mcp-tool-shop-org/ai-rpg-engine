@@ -2,6 +2,8 @@
 // Pure functions + types for rumor lifecycle. No module registration.
 // Rumors are structured claims, not prose. Claude renders them into dialogue.
 
+import type { WorldState } from '@ai-rpg-engine/core';
+import { genId } from '@ai-rpg-engine/core';
 import { buildPlayerDescriptor } from './social-consequence.js';
 import type { CharacterProfile } from '@ai-rpg-engine/character-profile';
 
@@ -71,9 +73,21 @@ const VALENCE_INVERSIONS: Record<RumorValence, RumorValence> = {
   mysterious: 'tragic',
 };
 
-let rumorCounter = 0;
-function nextRumorId(): string {
-  return `pr-${++rumorCounter}`;
+// Deterministic id minting. Previously a module-global `rumorCounter` minted
+// `pr-N` ids — the same determinism footgun fixed across the engine: a
+// process-global counter is shared between engine instances (two engines with
+// the same seed mint different ids) and is never serialized (a reloaded game
+// restarts at 0 and collides with rumor ids already in state). When a WorldState
+// is available we draw from the per-instance serialized counter via `genId`;
+// otherwise we derive a stable id from the rumor's identifying content. No
+// shared mutable global is used.
+function rumorId(state: WorldState | undefined, parts: Array<string | number | undefined>): string {
+  if (state) return genId(state, 'pr');
+  const slug = parts
+    .map((p) => (p === undefined ? '' : String(p)))
+    .join('-')
+    .replace(/\s+/g, '_');
+  return `pr-${slug}`;
 }
 
 // --- Valence Derivation ---
@@ -109,9 +123,10 @@ export function spawnPlayerRumor(
   originFactionId?: string,
   originDistrictId?: string,
   tick: number = 0,
+  state?: WorldState,
 ): PlayerRumor {
   return {
-    id: nextRumorId(),
+    id: rumorId(state, ['milestone', milestone.label, originFactionId, tick]),
     claim: milestone.label,
     subjectDescriptor: descriptorFromProfile(profile),
     sourceEvent: 'milestone',
@@ -135,6 +150,7 @@ export function spawnReputationRumor(
   profile: CharacterProfile,
   districtId?: string,
   tick: number = 0,
+  state?: WorldState,
 ): PlayerRumor {
   const claim = delta < 0
     ? `angered the ${factionName}`
@@ -142,7 +158,7 @@ export function spawnReputationRumor(
   const valence: RumorValence = delta < 0 ? 'fearsome' : 'heroic';
 
   return {
-    id: nextRumorId(),
+    id: rumorId(state, ['reputation', factionId, delta, tick]),
     claim,
     subjectDescriptor: descriptorFromProfile(profile),
     sourceEvent: 'reputation',
@@ -264,9 +280,10 @@ export function spawnNpcOriginatedRumor(
   originDistrictId: string | undefined,
   tick: number,
   confidence: number = 0.75,
+  state?: WorldState,
 ): PlayerRumor {
   return {
-    id: nextRumorId(),
+    id: rumorId(state, [sourceEvent, originNpcId, claim, tick]),
     claim,
     subjectDescriptor: `word from ${originNpcId}`,
     sourceEvent,
@@ -294,9 +311,10 @@ export function spawnIntentionalRumor(
   originDistrictId: string | undefined,
   tick: number,
   confidence: number = 0.8,
+  state?: WorldState,
 ): PlayerRumor {
   return {
-    id: nextRumorId(),
+    id: rumorId(state, ['player-leverage', claim, originFactionId, tick]),
     claim,
     subjectDescriptor: 'the outsider',
     sourceEvent: 'player-leverage',

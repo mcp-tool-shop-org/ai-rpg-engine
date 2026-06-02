@@ -192,6 +192,55 @@ describe('RumorEngine', () => {
     const engine = new RumorEngine();
     expect(() => engine.spread('nonexistent', defaultCtx())).toThrow('Rumor not found');
   });
+
+  // CP-02: rumor IDs must be per-instance, not a module-global counter shared
+  // across all engines. World truth must depend only on (seed + actions).
+  test('two engines do not share an ID counter', () => {
+    const a = new RumorEngine();
+    const b = new RumorEngine();
+
+    const a1 = createRumor(a);
+    const a2 = createRumor(a);
+    const b1 = createRumor(b);
+
+    expect(a1.id).toBe('rum_1');
+    expect(a2.id).toBe('rum_2');
+    // b1 is the FIRST rumor in engine b — must be rum_1, not rum_3.
+    expect(b1.id).toBe('rum_1');
+  });
+
+  test('rumor IDs are reproducible across runs (same actions => same ids)', () => {
+    const run = () => {
+      const e = new RumorEngine();
+      return [createRumor(e).id, createRumor(e).id];
+    };
+    expect(run()).toEqual(run());
+  });
+
+  test('deserialize advances only the restored instance counter', () => {
+    const engine = new RumorEngine();
+    const r1 = createRumor(engine); // rum_1
+    const serialized = engine.serialize();
+    // Rewrite the id high to simulate a save with a large counter.
+    serialized[0].id = 'rum_9';
+
+    const restored = RumorEngine.deserialize(serialized);
+    const next = restored.create({
+      claim: 'next',
+      subject: 's',
+      key: 'k',
+      value: 1,
+      sourceId: 'src',
+      originTick: 0,
+      confidence: 1,
+    });
+    expect(next.id).toBe('rum_10');
+
+    // A fresh engine created AFTER the deserialize is unaffected.
+    const fresh = new RumorEngine();
+    expect(createRumor(fresh).id).toBe('rum_1');
+    void r1;
+  });
 });
 
 describe('mutations', () => {

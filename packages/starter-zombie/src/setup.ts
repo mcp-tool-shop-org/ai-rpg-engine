@@ -113,11 +113,13 @@ export function createGame(seed?: number): Engine {
         }],
       }),
       createEnvironmentCore({
+        // Hazards mutate entity.resources directly (deterministic, clamped);
+        // environment-core does not record the returned events. Return [].
         hazards: [{
           id: 'roaming-dead',
           triggerOn: 'world.zone.entered',
           condition: (zone) => zone.hazards?.includes('roaming-dead') ?? false,
-          effect: (zone, entity, _world, tick) => {
+          effect: (_zone, entity, _world, _tick) => {
             entity.resources.stamina = Math.max(0, (entity.resources.stamina ?? 0) - 2);
             return [];
           },
@@ -126,7 +128,7 @@ export function createGame(seed?: number): Engine {
           id: 'infection-risk',
           triggerOn: 'world.zone.entered',
           condition: (zone) => zone.hazards?.includes('infection-risk') ?? false,
-          effect: (zone, entity, _world, tick) => {
+          effect: (_zone, entity, _world, _tick) => {
             if (entity.tags.includes('human')) {
               entity.resources.infection = Math.min(100, (entity.resources.infection ?? 0) + 5);
             }

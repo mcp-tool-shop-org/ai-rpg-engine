@@ -5,6 +5,7 @@ dist/
 *.log
 coverage/
 .ai-rpg-engine/
+.signalfire/
 
 # Root build artifacts from vitest.config.ts
 /vitest.config.js

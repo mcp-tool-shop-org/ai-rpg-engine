@@ -118,6 +118,33 @@ describe('evaluateRelicGrowth', () => {
     const state = evaluateRelicGrowth(baseWeapon, chronicle, 50, custom);
     expect(state.milestonesReached).toContain('First Blood Test Sword');
   });
+
+  // CP-06: currentEpithet must be the highest-tier reached milestone, selected by
+  // threshold — NOT merely the last one in array order. With an out-of-order list,
+  // the previous code picked whichever epithet happened to be last.
+  it('picks the highest-threshold epithet even when milestones are out of order', () => {
+    const outOfOrder: GrowthMilestone[] = [
+      { trigger: 'kill-count', threshold: 25, epithet: '{name}, Drinker of Souls' },
+      { trigger: 'kill-count', threshold: 3, epithet: 'Bloodied {name}' },
+      { trigger: 'kill-count', threshold: 10, epithet: '{name} the Reaper' },
+    ];
+    const chronicle = makeKills(25); // satisfies all three thresholds
+    const state = evaluateRelicGrowth(baseWeapon, chronicle, 50, outOfOrder);
+    // Highest threshold reached is 25 → Drinker of Souls, regardless of array order.
+    expect(state.currentEpithet).toBe('Test Sword, Drinker of Souls');
+    // All three are still recorded as reached.
+    expect(state.milestonesReached).toHaveLength(3);
+  });
+
+  it('picks the highest-threshold epithet when the top milestone is listed first', () => {
+    const topFirst: GrowthMilestone[] = [
+      { trigger: 'kill-count', threshold: 10, epithet: '{name} the Reaper' },
+      { trigger: 'kill-count', threshold: 3, epithet: 'Bloodied {name}' },
+    ];
+    const chronicle = makeKills(10);
+    const state = evaluateRelicGrowth(baseWeapon, chronicle, 50, topFirst);
+    expect(state.currentEpithet).toBe('Test Sword the Reaper');
+  });
 });
 
 describe('getRelicEpithet', () => {

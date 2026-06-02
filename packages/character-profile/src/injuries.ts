@@ -3,19 +3,32 @@
 import type { CharacterProfile, Injury } from './types.js';
 import { touch } from './profile.js';
 
-/** Generate a simple injury ID. */
-function injuryId(): string {
-  return `inj-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+/**
+ * Derive the next deterministic injury id for a profile (CP-05 — no Date.now /
+ * Math.random). Ids are `inj-N` where N is one past the highest existing suffix,
+ * making them sequential, collision-free, and reproducible from profile state.
+ */
+function nextInjuryId(profile: CharacterProfile): string {
+  let max = 0;
+  for (const inj of profile.injuries) {
+    const m = /^inj-(\d+)$/.exec(inj.id);
+    if (m) max = Math.max(max, parseInt(m[1]!, 10));
+  }
+  return `inj-${max + 1}`;
 }
 
-/** Add an injury to the profile. */
+/**
+ * Add an injury to the profile. `id` is optional — when omitted, a deterministic
+ * sequential id is derived from the profile's existing injuries (CP-05).
+ */
 export function addInjury(
   profile: CharacterProfile,
   injury: Omit<Injury, 'id' | 'healed' | 'healedAt'>,
+  id?: string,
 ): CharacterProfile {
   const full: Injury = {
     ...injury,
-    id: injuryId(),
+    id: id ?? nextInjuryId(profile),
     healed: false,
   };
   return touch({

@@ -9,7 +9,7 @@ import type {
   EntityState,
   ScalarValue,
 } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
+import { genId } from '@ai-rpg-engine/core';
 import type { ProgressionTreeDefinition, ProgressionNode, EffectDefinition } from '@ai-rpg-engine/content-schema';
 
 // --- Types ---
@@ -98,7 +98,7 @@ export function createProgressionCore(config?: ProgressionCoreConfig): EngineMod
 
         if (!treeId || !nodeId) {
           return [{
-            id: nextId('evt'),
+            id: genId(world, 'evt'),
             tick: action.issuedAtTick,
             type: 'progression.unlock.rejected',
             actorId: action.actorId,
@@ -110,7 +110,7 @@ export function createProgressionCore(config?: ProgressionCoreConfig): EngineMod
 
         if (!result.success) {
           return [{
-            id: nextId('evt'),
+            id: genId(world, 'evt'),
             tick: action.issuedAtTick,
             type: 'progression.unlock.rejected',
             actorId: action.actorId,
@@ -119,7 +119,7 @@ export function createProgressionCore(config?: ProgressionCoreConfig): EngineMod
         }
 
         return [{
-          id: nextId('evt'),
+          id: genId(world, 'evt'),
           tick: action.issuedAtTick,
           type: 'progression.node.unlocked',
           actorId: action.actorId,

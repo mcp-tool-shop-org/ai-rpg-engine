@@ -65,11 +65,27 @@ export type EndgameInputs = ArcInputs & {
 
 // --- Constants ---
 
-let endgameCounter = 0;
+// Deterministic id minting. Previously a module-global `endgameCounter` minted
+// `endgame_N` ids — the same determinism footgun fixed across the engine
+// (pressure-system, player-rumor, campaign-memory/journal, rumor-system/engine):
+// a process-global counter is shared between engine instances (two engines with
+// the same seed mint different ids) and is never serialized (a reloaded game
+// restarts at 0 and collides with trigger ids already in state). The id is now a
+// pure function of the trigger's defining content. `evaluateEndgame` yields at
+// most ONE trigger per resolution class per evaluation and skips classes already
+// in `previousTriggers`, so (resolutionClass, detectedAtTick) is unique within a
+// run and identical across same-seed runs. No shared mutable global is used.
+function endgameId(resolutionClass: ResolutionClass, currentTick: number): string {
+  return `endgame_${resolutionClass}_${currentTick}`;
+}
 
-/** Reset counter (for tests). */
+/**
+ * @deprecated No module-global counter exists anymore — ids are derived from
+ * trigger content (class + tick), so there is nothing to reset. Retained as a
+ * no-op for back-compat with callers/fixtures that still import it.
+ */
 export function resetEndgameCounter(): void {
-  endgameCounter = 0;
+  /* no-op: deterministic content-derived ids, no global state */
 }
 
 // --- Threshold Checkers ---
@@ -92,7 +108,7 @@ function checkVictory(inputs: EndgameInputs): EndgameTrigger | null {
   if (!majorityAllied && alliedFactions.length < 3) return null;
 
   return {
-    id: `endgame_${++endgameCounter}`,
+    id: endgameId('victory', inputs.currentTick),
     resolutionClass: 'victory',
     detectedAtTick: inputs.currentTick,
     reason: 'Dominant position established — allied factions, high influence, pressures resolved.',
@@ -126,7 +142,7 @@ function checkTragicStabilization(inputs: EndgameInputs): EndgameTrigger | null 
   if (playerLeverage.legitimacy > 20) return null;
 
   return {
-    id: `endgame_${++endgameCounter}`,
+    id: endgameId('tragic-stabilization', inputs.currentTick),
     resolutionClass: 'tragic-stabilization',
     detectedAtTick: inputs.currentTick,
     reason: 'The world has stabilized, but at great cost. Nobody remembers your name.',
@@ -159,7 +175,7 @@ function checkExile(inputs: EndgameInputs): EndgameTrigger | null {
   if (alliedNpcs.length > 0) return null;
 
   return {
-    id: `endgame_${++endgameCounter}`,
+    id: endgameId('exile', inputs.currentTick),
     resolutionClass: 'exile',
     detectedAtTick: inputs.currentTick,
     reason: 'No allies remain. Every faction wants you gone. There is nowhere left to turn.',
@@ -194,7 +210,7 @@ function checkOverthrow(inputs: EndgameInputs): EndgameTrigger | null {
   if (!rival) return null;
 
   return {
-    id: `endgame_${++endgameCounter}`,
+    id: endgameId('overthrow', inputs.currentTick),
     resolutionClass: 'overthrow',
     detectedAtTick: inputs.currentTick,
     reason: `The dominant power crumbles. ${dominant.factionId} collapses under the weight of your opposition.`,
@@ -229,7 +245,7 @@ function checkMartyrdom(inputs: EndgameInputs): EndgameTrigger | null {
   if (companions.length > 0 && avgMorale < 50) return null;
 
   return {
-    id: `endgame_${++endgameCounter}`,
+    id: endgameId('martyrdom', inputs.currentTick),
     resolutionClass: 'martyrdom',
     detectedAtTick: inputs.currentTick,
     reason: 'Fallen in service of a cause. The world mourns — or celebrates — what you represented.',
@@ -260,7 +276,7 @@ function checkQuietRetirement(inputs: EndgameInputs): EndgameTrigger | null {
   }
 
   return {
-    id: `endgame_${++endgameCounter}`,
+    id: endgameId('quiet-retirement', inputs.currentTick),
     resolutionClass: 'quiet-retirement',
     detectedAtTick: inputs.currentTick,
     reason: 'The threats have passed. Your name carries weight. The world is at peace — or close enough.',
@@ -296,7 +312,7 @@ function checkPuppetMaster(inputs: EndgameInputs): EndgameTrigger | null {
   if (owedCount < 3) return null;
 
   return {
-    id: `endgame_${++endgameCounter}`,
+    id: endgameId('puppet-master', inputs.currentTick),
     resolutionClass: 'puppet-master',
     detectedAtTick: inputs.currentTick,
     reason: 'Nobody knows who pulls the strings. But everyone dances.',
@@ -332,7 +348,7 @@ function checkCollapse(inputs: EndgameInputs): EndgameTrigger | null {
   }
 
   return {
-    id: `endgame_${++endgameCounter}`,
+    id: endgameId('collapse', inputs.currentTick),
     resolutionClass: 'collapse',
     detectedAtTick: inputs.currentTick,
     reason: 'The world fractures. Districts fall. Factions splinter. There is nothing left to hold together.',

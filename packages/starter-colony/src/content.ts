@@ -1,7 +1,6 @@
 // Signal Loss — content definitions
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
@@ -366,7 +365,7 @@ export const emergencyCellEffect = {
     actor.resources.power = Math.min(100, previous + 20);
 
     return [{
-      id: nextId('evt'),
+      id: '',
       tick: action.issuedAtTick,
       type: 'resource.changed',
       actorId: action.actorId,
@@ -516,7 +515,7 @@ export const buildCatalog: BuildCatalog = {
       description: 'Keeps the colony running with wire and will',
       statPriorities: { engineering: 7, command: 3, awareness: 4 },
       startingTags: ['engineer', 'field-engineer'],
-      progressionTreeId: 'commander-path',
+      progressionTreeId: 'commander',
       grantedVerbs: ['allocate'],
     },
     {
@@ -525,7 +524,7 @@ export const buildCatalog: BuildCatalog = {
       description: 'Holds the crew together, makes the calls',
       statPriorities: { engineering: 3, command: 7, awareness: 4 },
       startingTags: ['leader', 'colony-commander'],
-      progressionTreeId: 'commander-path',
+      progressionTreeId: 'commander',
       grantedVerbs: ['scan'],
     },
     {
@@ -534,7 +533,7 @@ export const buildCatalog: BuildCatalog = {
       description: 'Scouts the perimeter, reads the signals',
       statPriorities: { engineering: 4, command: 3, awareness: 7 },
       startingTags: ['scout', 'outrider'],
-      progressionTreeId: 'commander-path',
+      progressionTreeId: 'commander',
       grantedVerbs: ['scan'],
     },
   ],

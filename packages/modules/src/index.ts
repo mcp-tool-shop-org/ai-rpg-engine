@@ -755,6 +755,7 @@ export {
   resolveEffects,
   registerEffectHandler,
   getEffectHandler,
+  clearEffectRegistry,
 } from './ability-effects.js';
 export type {
   EffectContext,
