@@ -507,6 +507,132 @@ describe('ability-effects: registry is idempotent + isolable (MC-04)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Ally targeting + friend/foe AoE (design-lock section B)
+// ---------------------------------------------------------------------------
+
+// An ally heal: single-target, affiliation ally, includeSelf. Routed to a living
+// ally by id through ability-core's existing single-target path; the effect uses
+// target 'target' so it lands on the chosen ally.
+const allyHealAbility: AbilityDefinition = {
+  id: 'mend-ally',
+  name: 'Mend Ally',
+  verb: 'pray',
+  tags: ['support', 'heal'],
+  costs: [{ resourceId: 'mana', amount: 3 }],
+  target: { type: 'single', scope: 'single', affiliation: 'ally', life: 'alive', includeSelf: true },
+  checks: [],
+  effects: [{ type: 'heal', target: 'target', params: { amount: 10, resource: 'hp' } }],
+  cooldown: 0,
+};
+
+// A revive: ally + life:dead. Uses target.type 'zone' so ability-core does not
+// reject the (defeated) ally; resolveEffectTargets runs the affiliation+life
+// filter from the ability spec and the effect heals the fallen ally.
+const reviveAbility: AbilityDefinition = {
+  id: 'raise-ally',
+  name: 'Raise Ally',
+  verb: 'pray',
+  tags: ['support', 'revive'],
+  costs: [{ resourceId: 'mana', amount: 5 }],
+  target: { type: 'zone', scope: 'single', affiliation: 'ally', life: 'dead' },
+  checks: [],
+  effects: [{ type: 'heal', target: 'zone', params: { amount: 15, resource: 'hp' } }],
+  cooldown: 0,
+};
+
+// An enemy-only AoE that must SPARE allies sharing the caster's zone. Uses the
+// 'zone' effect target so resolveEffectTargets applies the affiliation filter.
+const enemyBlastAbility: AbilityDefinition = {
+  id: 'enemy-blast',
+  name: 'Enemy Blast',
+  verb: 'cast',
+  tags: ['arcane', 'combat'],
+  costs: [{ resourceId: 'mana', amount: 4 }],
+  target: { type: 'all-enemies', scope: 'all', affiliation: 'enemy', life: 'alive' },
+  checks: [],
+  effects: [{ type: 'damage', target: 'zone', params: { amount: 6 } }],
+  cooldown: 0,
+};
+
+// An ally-only AoE buff (group heal) — hits allies + self, never enemies.
+const groupHealAbility: AbilityDefinition = {
+  id: 'group-heal',
+  name: 'Group Heal',
+  verb: 'pray',
+  tags: ['support', 'heal'],
+  costs: [{ resourceId: 'mana', amount: 6 }],
+  target: { type: 'zone', scope: 'all', affiliation: 'ally', life: 'alive', includeSelf: true },
+  checks: [],
+  effects: [{ type: 'heal', target: 'zone', params: { amount: 8, resource: 'hp' } }],
+  cooldown: 0,
+};
+
+const allyAbilities = [allyHealAbility, reviveAbility, enemyBlastAbility, groupHealAbility];
+
+describe('ability-effects: ally targeting + faction AoE', () => {
+  it('a healer heals a wounded ALLY targeted by id (not just self)', () => {
+    const healer = makeEntity('healer', 'pc', ['player'], { faction: 'party', resources: { hp: 30, mana: 20, stamina: 15 } });
+    const fighter = makeEntity('fighter', 'pc', ['player'], { faction: 'party', resources: { hp: 5, mana: 0, stamina: 15 }, stats: { vigor: 5, instinct: 5, will: 5, maxHp: 30 } });
+    const engine = buildEngine([healer, fighter], allyAbilities);
+
+    const events = engine.processAction(makeAction('healer', 'mend-ally', ['fighter']));
+
+    const healEvent = events.find((e) => e.type === 'ability.heal.applied');
+    expect(healEvent).toBeDefined();
+    expect(healEvent!.payload.targetId).toBe('fighter');
+    expect(engine.entity('fighter').resources.hp).toBe(15); // 5 + 10
+    // The healer is untouched.
+    expect(engine.entity('healer').resources.hp).toBe(30);
+  });
+
+  it('a revive heals a DEAD ally (ally + life:dead)', () => {
+    const cleric = makeEntity('cleric', 'pc', ['player'], { faction: 'party' });
+    const fallen = makeEntity('fallen', 'pc', ['player'], { faction: 'party', resources: { hp: 0, mana: 0, stamina: 0 }, stats: { vigor: 5, instinct: 5, will: 5, maxHp: 30 } });
+    const engine = buildEngine([cleric, fallen], allyAbilities);
+
+    const events = engine.processAction(makeAction('cleric', 'raise-ally'));
+
+    const healEvent = events.find((e) => e.type === 'ability.heal.applied');
+    expect(healEvent).toBeDefined();
+    expect(healEvent!.payload.targetId).toBe('fallen');
+    expect(engine.entity('fallen').resources.hp).toBe(15); // 0 + 15, back from the dead
+  });
+
+  it('a zone AoE with affiliation:enemy SPARES allies', () => {
+    const mage = makeEntity('mage', 'pc', ['player'], { faction: 'party' });
+    const ally = makeEntity('ally', 'pc', ['player'], { faction: 'party', resources: { hp: 25, mana: 0, stamina: 15 } });
+    const orc1 = makeEntity('orc1', 'npc', ['enemy'], { faction: 'horde', resources: { hp: 20, mana: 0, stamina: 10 }, stats: { vigor: 5, instinct: 5, will: 5, maxHp: 20 } });
+    const orc2 = makeEntity('orc2', 'npc', ['enemy'], { faction: 'horde', resources: { hp: 20, mana: 0, stamina: 10 }, stats: { vigor: 5, instinct: 5, will: 5, maxHp: 20 } });
+    const engine = buildEngine([mage, ally, orc1, orc2], allyAbilities);
+
+    const events = engine.processAction(makeAction('mage', 'enemy-blast'));
+
+    // Enemies hit…
+    expect(engine.entity('orc1').resources.hp).toBe(14); // 20 - 6
+    expect(engine.entity('orc2').resources.hp).toBe(14);
+    // …ally and caster spared.
+    expect(engine.entity('ally').resources.hp).toBe(25);
+    expect(engine.entity('mage').resources.hp).toBe(25);
+
+    const dmgEvents = events.filter((e) => e.type === 'ability.damage.applied');
+    expect(dmgEvents.map((e) => e.payload.targetId).sort()).toEqual(['orc1', 'orc2']);
+  });
+
+  it('an ally-only group heal hits allies + self but no enemies', () => {
+    const bard = makeEntity('bard', 'pc', ['player'], { faction: 'party', resources: { hp: 20, mana: 20, stamina: 15 } });
+    const ally = makeEntity('ally', 'pc', ['player'], { faction: 'party', resources: { hp: 18, mana: 0, stamina: 15 } });
+    const orc = makeEntity('orc', 'npc', ['enemy'], { faction: 'horde', resources: { hp: 10, mana: 0, stamina: 10 }, stats: { vigor: 5, instinct: 5, will: 5, maxHp: 20 } });
+    const engine = buildEngine([bard, ally, orc], allyAbilities);
+
+    engine.processAction(makeAction('bard', 'group-heal'));
+
+    expect(engine.entity('bard').resources.hp).toBe(28); // 20 + 8
+    expect(engine.entity('ally').resources.hp).toBe(26); // 18 + 8
+    expect(engine.entity('orc').resources.hp).toBe(10); // untouched
+  });
+});
+
 describe('ability-effects: unknown effect type', () => {
   it('emits unknown event for unregistered effect types', () => {
     const unknownAbility: AbilityDefinition = {

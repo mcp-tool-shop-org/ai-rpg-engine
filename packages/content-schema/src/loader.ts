@@ -1,5 +1,6 @@
 // Content loader/compiler — validates + compiles a ContentPack into a LoadedContent result
 
+import * as fs from 'node:fs';
 import type { ContentPack } from './refs.js';
 import type { ValidationError } from './validate.js';
 import {
@@ -9,13 +10,22 @@ import {
   validateQuestDefinition,
   formatErrors,
 } from './validate.js';
-import { validateRefs } from './refs.js';
+import { validateRefs, validateGameContent } from './refs.js';
 
 export type LoadResult = {
   ok: boolean;
   errors: ValidationError[];
   pack: ContentPack;
   summary: string;
+};
+
+/**
+ * Result of loading content from a file. Extends {@link LoadResult} with the
+ * cross-reference `advisories` surfaced by {@link validateGameContent} (likely-mistake
+ * signals — one-way passages, etc. — that never flip `ok`).
+ */
+export type LoadFromFileResult = LoadResult & {
+  advisories: ValidationError[];
 };
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
@@ -121,4 +131,101 @@ export function loadContent(pack: ContentPack): LoadResult {
     : `Content invalid (${allErrors.length} errors): ${counts}\n${formatErrors({ ok: false, errors: allErrors })}`;
 
   return { ok, errors: allErrors, pack, summary };
+}
+
+/**
+ * Loads a content pack from a JSON file on local disk, then validates it.
+ *
+ * Pipeline (all local, deterministic — no network, no clock, no RNG):
+ * 1. Read the file. A missing/unreadable file is reported as a structured `file`
+ *    error, never a raw fs throw.
+ * 2. Parse the JSON. Malformed JSON is reported as a structured `file` error with a
+ *    parse hint (CA-02 boundary discipline) — the caller never sees a raw `SyntaxError`.
+ * 3. Run {@link loadContent} (structural + per-element validation) AND
+ *    {@link validateGameContent} (cross-reference validation, deriving registries from
+ *    the pack itself). Errors from both are merged; cross-ref advisories are surfaced
+ *    separately in `advisories` so they never flip `ok`.
+ *
+ * On any boundary failure (read/parse) the returned `pack` is `{}` and `ok` is false.
+ */
+export function loadContentFromFile(filePath: string): LoadFromFileResult {
+  // Boundary 1: read the file. Wrap the fs call so ENOENT/EACCES/EISDIR surface as a
+  // structured error rather than a raw throw the caller would have to try/catch.
+  let raw: string;
+  try {
+    raw = fs.readFileSync(filePath, 'utf-8');
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      errors: [
+        {
+          path: 'file',
+          message: `could not read content file "${filePath}": ${reason} — check the path exists and is readable`,
+        },
+      ],
+      pack: {},
+      summary: `Content invalid (1 error): could not read "${filePath}".`,
+      advisories: [],
+    };
+  }
+
+  // Boundary 2: parse the JSON. Malformed JSON becomes a structured `file` error with a
+  // hint — never a raw SyntaxError escaping to the caller.
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      errors: [
+        {
+          path: 'file',
+          message: `invalid JSON in "${filePath}": ${reason} — fix the JSON syntax (a trailing comma or unclosed bracket is the usual cause)`,
+        },
+      ],
+      pack: {},
+      summary: `Content invalid (1 error): "${filePath}" is not valid JSON.`,
+      advisories: [],
+    };
+  }
+
+  // loadContent already guards a non-object/array pack shape (CA-02) and returns a
+  // structured `pack` error, so passing `parsed` through is safe even if it is, e.g.,
+  // a bare number or array.
+  const structural = loadContent(parsed as ContentPack);
+
+  // Cross-reference pass. validateGameContent re-runs validateRefs internally and adds
+  // registry-backed checks (startingStatuses, ability verbs, apply-status, …) deriving
+  // the registries from the pack itself. It is null-safe at its boundary.
+  const cross = validateGameContent(structural.pack);
+
+  // Merge errors from both passes, de-duplicated by (path|message) so a reference error
+  // reported by both validateRefs (inside loadContent) and validateGameContent appears
+  // once. Order is preserved (structural first, then cross-ref extras) for deterministic,
+  // byte-identical output across runs.
+  const seen = new Set<string>();
+  const errors: ValidationError[] = [];
+  for (const e of [...structural.errors, ...cross.errors]) {
+    const key = `${e.path} ${e.message}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    errors.push(e);
+  }
+
+  const ok = errors.length === 0;
+  // Recompute the summary off the merged error set so a cross-ref-only failure still
+  // reports as invalid (structural.summary would have said "loaded").
+  const summary = ok
+    ? structural.summary
+    : `Content invalid (${errors.length} errors):\n${formatErrors({ ok: false, errors })}`;
+
+  return {
+    ok,
+    errors,
+    pack: structural.pack,
+    summary,
+    advisories: cross.advisories,
+  };
 }

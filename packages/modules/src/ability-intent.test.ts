@@ -71,6 +71,21 @@ const curse: AbilityDefinition = {
   cooldown: 0,
 };
 
+// An ally heal that can reach other party members (single-target, affiliation ally).
+const allyHeal: AbilityDefinition = {
+  id: 'mend-ally',
+  name: 'Mend Ally',
+  verb: 'pray',
+  tags: ['divine', 'support', 'heal'],
+  costs: [{ resourceId: 'mana', amount: 3 }],
+  target: { type: 'single', scope: 'single', affiliation: 'ally', life: 'alive', includeSelf: true },
+  checks: [],
+  effects: [
+    { type: 'heal', target: 'target', params: { amount: 10, resource: 'hp' } },
+  ],
+  cooldown: 0,
+};
+
 const allAbilities = [fireball, heal, shockwave, curse];
 
 function makeEntity(id: string, type: string, tags: string[], overrides?: Partial<EntityState>): EntityState {
@@ -212,6 +227,50 @@ describe('ability-intent: scoreAbilityUse', () => {
     const healContrib = healScore!.contributions.find(c => c.factor === 'low_hp_heal');
     expect(healContrib).toBeDefined();
     expect(healContrib!.delta).toBeGreaterThan(0);
+  });
+});
+
+describe('ability-intent: ally-targeted scoring (per-candidate)', () => {
+  it('scores an ally heal per ally candidate, favoring the most-hurt ally', () => {
+    // Healer + two allies (same type → allies under the legacy heuristic).
+    const healer = makeEntity('healer', 'pc', ['party'], { resources: { hp: 28, maxHp: 30, mana: 20, stamina: 15 } });
+    const wounded = makeEntity('wounded', 'pc', ['party'], { resources: { hp: 4, maxHp: 30, mana: 0, stamina: 15 } });
+    const scratched = makeEntity('scratched', 'pc', ['party'], { resources: { hp: 24, maxHp: 30, mana: 0, stamina: 15 } });
+    const world = buildWorldState([healer, wounded, scratched]);
+
+    const scores = scoreAbilityUse(healer, allyHeal, world);
+
+    // One score per ally candidate (the two allies + self).
+    const byTarget = new Map(scores.map((s) => [s.targetId, s]));
+    expect(byTarget.has('wounded')).toBe(true);
+    expect(byTarget.has('scratched')).toBe(true);
+
+    // The most-hurt ally outscores the lightly-hurt one and the near-full healer.
+    expect(byTarget.get('wounded')!.score).toBeGreaterThan(byTarget.get('scratched')!.score);
+    if (byTarget.has('healer')) {
+      expect(byTarget.get('wounded')!.score).toBeGreaterThan(byTarget.get('healer')!.score);
+    }
+  });
+
+  it('an ally heal never scores an enemy as a target', () => {
+    const healer = makeEntity('healer', 'pc', ['party'], { resources: { hp: 30, maxHp: 30, mana: 20, stamina: 15 } });
+    const enemy = makeEntity('orc', 'npc', ['enemy'], { resources: { hp: 1, maxHp: 20, mana: 0, stamina: 10 } });
+    const world = buildWorldState([healer, enemy]);
+
+    const scores = scoreAbilityUse(healer, allyHeal, world);
+    expect(scores.every((s) => s.targetId !== 'orc')).toBe(true);
+  });
+
+  it('selectNpcAbilityAction chooses to heal the lowest-HP ally', () => {
+    const healer = makeEntity('healer', 'pc', ['party'], { resources: { hp: 27, maxHp: 30, mana: 20, stamina: 15 } });
+    const wounded = makeEntity('wounded', 'pc', ['party'], { resources: { hp: 3, maxHp: 30, mana: 0, stamina: 15 } });
+    const fine = makeEntity('fine', 'pc', ['party'], { resources: { hp: 29, maxHp: 30, mana: 0, stamina: 15 } });
+    const world = buildWorldState([healer, wounded, fine]);
+
+    const decision = selectNpcAbilityAction(healer, world, [allyHeal]);
+    expect(decision.chosen).not.toBeNull();
+    expect(decision.chosen!.abilityId).toBe('mend-ally');
+    expect(decision.chosen!.targetId).toBe('wounded');
   });
 });
 

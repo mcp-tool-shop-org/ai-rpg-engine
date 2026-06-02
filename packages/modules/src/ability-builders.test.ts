@@ -6,9 +6,11 @@ import {
   buildHealAbility,
   buildStatusAbility,
   buildCleanseAbility,
+  buildBuffAbility,
+  buildReviveAbility,
   buildAbilitySuite,
 } from './ability-builders.js';
-import { validateAbilityPack, type AbilityPackRuleset } from '@ai-rpg-engine/content-schema';
+import { validateAbilityPack, normalizeTargetSpec, type AbilityPackRuleset } from '@ai-rpg-engine/content-schema';
 
 const testRuleset: AbilityPackRuleset = {
   stats: [{ id: 'might' }, { id: 'agility' }, { id: 'will' }],
@@ -84,6 +86,109 @@ describe('buildHealAbility', () => {
       cooldown: 4,
     });
     expect(ab.effects[0].params.resource).toBe('mana');
+  });
+
+  it('can target a single ally (party-JRPG heal) without breaking back-compat', () => {
+    const ab = buildHealAbility({
+      id: 'mend',
+      name: 'Mend',
+      healAmount: 8,
+      affiliation: 'ally',
+      costs: [{ resourceId: 'mana', amount: 4 }],
+      cooldown: 2,
+    });
+    // Single-target ally heal: routed through the normal single-target path so the
+    // effect lands on the chosen target.
+    expect(ab.target.type).toBe('single');
+    expect(ab.target.affiliation).toBe('ally');
+    expect(ab.target.includeSelf).toBe(true);
+    expect(ab.effects[0].target).toBe('target');
+    const norm = normalizeTargetSpec(ab.target);
+    expect(norm.affiliation).toBe('ally');
+    expect(norm.life).toBe('alive');
+
+    const r = validateAbilityPack([ab], testRuleset);
+    expect(r.ok).toBe(true);
+  });
+
+  it('can target the whole party (group heal via zone scope)', () => {
+    const ab = buildHealAbility({
+      id: 'group-mend',
+      name: 'Group Mend',
+      healAmount: 6,
+      affiliation: 'ally',
+      scope: 'all',
+      costs: [{ resourceId: 'mana', amount: 6 }],
+      cooldown: 3,
+    });
+    // scope:'all' ally heal routes through the zone effect target so the AoE filter runs.
+    expect(ab.target.scope).toBe('all');
+    expect(ab.effects[0].target).toBe('zone');
+    const r = validateAbilityPack([ab], testRuleset);
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe('buildBuffAbility', () => {
+  it('builds an ally-targeted buff (apply-status, includeSelf)', () => {
+    const ab = buildBuffAbility({
+      id: 'bless',
+      name: 'Bless',
+      statusId: 'blessed',
+      duration: 3,
+      statModify: { stat: 'might', amount: 2 },
+      costs: [{ resourceId: 'mana', amount: 3 }],
+      cooldown: 2,
+    });
+    expect(ab.target.affiliation).toBe('ally');
+    expect(ab.target.includeSelf).toBe(true);
+    expect(ab.tags).toContain('buff');
+    expect(ab.effects[0].type).toBe('apply-status');
+    expect(ab.effects[0].params.statusId).toBe('blessed');
+    // stat-modify is included when requested
+    expect(ab.effects.some((e) => e.type === 'stat-modify')).toBe(true);
+
+    const r = validateAbilityPack([ab], testRuleset);
+    expect(r.ok).toBe(true);
+  });
+
+  it('supports group buffs (scope:all routes through zone effect target)', () => {
+    const ab = buildBuffAbility({
+      id: 'war-cry',
+      name: 'War Cry',
+      statusId: 'inspired',
+      duration: 2,
+      scope: 'all',
+      costs: [{ resourceId: 'mana', amount: 5 }],
+      cooldown: 4,
+    });
+    expect(ab.target.scope).toBe('all');
+    expect(ab.effects[0].target).toBe('zone');
+    const r = validateAbilityPack([ab], testRuleset);
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe('buildReviveAbility', () => {
+  it('builds an ally + life:dead revive that heals', () => {
+    const ab = buildReviveAbility({
+      id: 'raise',
+      name: 'Raise',
+      healAmount: 15,
+      costs: [{ resourceId: 'mana', amount: 8 }],
+      cooldown: 6,
+    });
+    const norm = normalizeTargetSpec(ab.target);
+    expect(norm.affiliation).toBe('ally');
+    expect(norm.life).toBe('dead');
+    // Routed through the zone effect target so the (defeated) ally is reachable.
+    expect(ab.effects[0].type).toBe('heal');
+    expect(ab.effects[0].target).toBe('zone');
+    expect(ab.effects[0].params.amount).toBe(15);
+    expect(ab.tags).toContain('revive');
+
+    const r = validateAbilityPack([ab], testRuleset);
+    expect(r.ok).toBe(true);
   });
 });
 

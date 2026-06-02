@@ -6,16 +6,49 @@ import type {
   WorldState,
   AppliedStatus,
   EntityState,
+  ScalarValue,
 } from '@ai-rpg-engine/core';
 import { genId } from '@ai-rpg-engine/core';
+import { PERIODIC_KEYS, processPeriodicStatuses, processStatusTriggers, makeProcContext } from './status-effects.js';
 
 export const statusCore: EngineModule = {
   id: 'status-core',
   version: '0.1.0',
 
   register(ctx) {
-    // Tick-based expiration
+    // One game tick == one resolved action (the engine advances the tick counter
+    // after each action), so 'action.resolved' is the per-tick hook. We run the
+    // periodic (DoT/HoT) pass FIRST so a lethal tick records its damage + defeat
+    // before tick-based expirations clean up the now-finished instances.
+    //
+    // This is purely additive: only statuses carrying periodic bookkeeping in
+    // `data` (the new opt-in fields) do anything here, so no existing content
+    // changes behaviour. Periodic events are emitted via the same recordEvent
+    // choke point as every other status event (deterministic ids, eventLog).
     ctx.events.on('action.resolved', (_event: ResolvedEvent, world: WorldState) => {
+      const tick = world.meta.tick;
+
+      // Reactive status triggers (thorns / reflect). React to THIS action's own
+      // damage events, snapshotted BEFORE the periodic pass emits more (so periodic
+      // DoT isn't re-seeded). processStatusTriggers drains the full reflect chain
+      // internally (dedup set + PROC_DEPTH_LIMIT fiat halt), so seeding the action's
+      // direct damage is sufficient and terminating. Purely additive: an entity with
+      // no matching `triggers` produces zero reactions, so content without reactive
+      // statuses is unchanged. Driven off action.resolved (not off damage events
+      // themselves), so trigger-produced events cannot re-enter this hook this tick.
+      const seedDamage = world.eventLog.filter(
+        (e) => e.tick === tick &&
+          (e.type === 'combat.damage.applied' || e.type === 'ability.damage.applied'),
+      );
+      if (seedDamage.length > 0) {
+        const procCtx = makeProcContext();
+        for (const dmg of seedDamage) {
+          for (const ev of processStatusTriggers(dmg, world, procCtx, tick)) ctx.events.emit(ev);
+        }
+      }
+
+      const periodicEvents = processPeriodicStatuses(world, tick);
+      for (const ev of periodicEvents) ctx.events.emit(ev);
       processExpirations(world, ctx);
     });
   },
@@ -31,6 +64,37 @@ export const statusCore: EngineModule = {
  */
 function deriveStatusId(entity: EntityState, statusId: string, tick: number): string {
   return `status_${entity.id}_${statusId}_${tick}`;
+}
+
+/**
+ * For periodic (DoT/HoT) statuses, freeze the magnitude at apply-tick and record
+ * the duration in ticks, both inside `AppliedStatus.data` (a ScalarValue record)
+ * so the core AppliedStatus type stays untouched. "Snapshot" semantics (design-lock
+ * finding 3): the DoT/HoT magnitude is captured once at application and not
+ * recomputed live, so a later change to the source's stats or the definition does
+ * not retroactively alter ticks already scheduled.
+ *
+ *  - If `data.periodicKind` is set and `data.snapshotAmount` is absent, copy
+ *    `data.amount` → `data.snapshotAmount` (the captured magnitude).
+ *  - If a `duration` is given, record it as `data.durationTicks` so the periodic
+ *    engine can compute expiry without depending on `expiresAtTick`.
+ *
+ * A non-periodic status (no `periodicKind`) is returned unchanged — back-compat:
+ * existing callers that pass plain `data` (or none) see identical behaviour.
+ */
+function withPeriodicSnapshot(
+  data: Record<string, ScalarValue> | undefined,
+  duration: number | undefined,
+): Record<string, ScalarValue> | undefined {
+  if (!data || typeof data[PERIODIC_KEYS.KIND] !== 'string') return data;
+  const next: Record<string, ScalarValue> = { ...data };
+  if (next[PERIODIC_KEYS.SNAPSHOT] === undefined && typeof next[PERIODIC_KEYS.AMOUNT] === 'number') {
+    next[PERIODIC_KEYS.SNAPSHOT] = next[PERIODIC_KEYS.AMOUNT];
+  }
+  if (duration !== undefined && next[PERIODIC_KEYS.DURATION] === undefined) {
+    next[PERIODIC_KEYS.DURATION] = duration;
+  }
+  return next;
 }
 
 /**
@@ -101,7 +165,7 @@ export function applyStatus(
     sourceId: options?.sourceId,
     appliedAtTick: tick,
     expiresAtTick: options?.duration ? tick + options.duration : undefined,
-    data: options?.data,
+    data: withPeriodicSnapshot(options?.data, options?.duration),
   };
 
   entity.statuses.push(applied);

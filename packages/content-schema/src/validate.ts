@@ -181,9 +181,19 @@ function vEffectDefinition(path: string, v: unknown): ValidationError[] {
 function vTargetSpec(path: string, v: unknown): ValidationError[] {
   if (!isObj(v)) return [{ path, message: 'must be an object' }];
   const c = checker(path);
+  // `type` stays required (the back-compat flat enum and the default source for
+  // the independent axes when they are omitted).
   reqEnum(c, v, 'type', ['self', 'single', 'zone', 'all-enemies', 'none']);
   optNum(c, v, 'range');
   optStrArr(c, v, 'filter');
+  // Independent axes (optional) — accepted alongside the flat `type`.
+  optEnum(c, v, 'scope', ['self', 'single', 'all']);
+  optEnum(c, v, 'affiliation', ['ally', 'enemy', 'any']);
+  optEnum(c, v, 'life', ['alive', 'dead', 'any']);
+  optStr(c, v, 'area');
+  if (v.includeSelf !== undefined && typeof v.includeSelf !== 'boolean') {
+    c.errors.push({ path: `${path}.includeSelf`, message: `must be a boolean if provided` });
+  }
   return c.errors;
 }
 

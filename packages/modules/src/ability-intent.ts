@@ -11,10 +11,12 @@ import type {
   WorldState,
 } from '@ai-rpg-engine/core';
 import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
+import { normalizeTargetSpec } from '@ai-rpg-engine/content-schema';
 import {
   isAbilityReady,
 } from './ability-core.js';
 import { checkResistance, getStatusTags } from './status-semantics.js';
+import { candidateTargets } from './targeting.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -199,6 +201,112 @@ export function scoreAbilityUse(
     return scores;
   }
 
+  // --- Ally-support abilities (heal / buff / revive / cleanse) ---
+  // Fires when the spec's affiliation axis is 'ally' and it reaches beyond self.
+  // Legacy `{ type:'self' }` normalizes to scope:'self' and is handled above, so
+  // this branch only adds NEW behavior (it never changes existing self-targeting).
+  const norm = normalizeTargetSpec(ability.target);
+  if (norm.affiliation === 'ally' && norm.scope !== 'self') {
+    // Candidates already filtered by affiliation × life × tag and sorted by id,
+    // so per-candidate scoring is deterministic (finding 10).
+    const allies = candidateTargets(ability.target, entity, world);
+    if (allies.length === 0) return [];
+
+    const isHeal = hasTag(ability.tags, 'heal') || hasTag(ability.tags, 'support');
+    const isRevive = hasTag(ability.tags, 'revive') || norm.life === 'dead';
+    const isBuff = hasTag(ability.tags, 'buff');
+
+    if (norm.scope === 'all') {
+      // Group support: one score, more valuable with more (and more-hurt) allies.
+      const c: AbilityScoreContribution[] = [];
+      let score = 45;
+      c.push(contrib('base', 45, 1, 45));
+
+      const countDelta = Math.min(20, allies.length * 8);
+      score += countDelta;
+      c.push(contrib('ally_targets', allies.length, 8, countDelta));
+
+      if (isHeal && !isRevive) {
+        // Average wounded-ness across the party drives heal value.
+        const avgRatio = allies.reduce((sum, a) => sum + entityHpRatio(a), 0) / allies.length;
+        if (avgRatio < 0.8) {
+          const healBonus = (1 - avgRatio) * 40;
+          score += healBonus;
+          c.push(contrib('party_wounded', avgRatio, 40, healBonus));
+        }
+      }
+      if (isBuff) {
+        score += 10;
+        c.push(contrib('buff', 1, 10, 10));
+      }
+      if (isRevive) {
+        score += 25;
+        c.push(contrib('revive', allies.length, 25, 25));
+      }
+
+      score = clamp(score, 0, 100);
+      scores.push({
+        abilityId: ability.id,
+        abilityName: ability.name,
+        resolvedVerb: 'use-ability',
+        score,
+        contributions: c,
+        reason: buildReason(c),
+      });
+      return scores;
+    }
+
+    // Single-target ally support: one score PER ally candidate so the AI can pick
+    // the right ally (e.g. heal the most-hurt one). Each consideration is applied
+    // per-candidate; argmax with a stable lowest-id tie-break is done by the caller.
+    for (const ally of allies) {
+      const c: AbilityScoreContribution[] = [];
+      let score = 40;
+      c.push(contrib('base', 40, 1, 40));
+
+      const allyRatio = entityHpRatio(ally);
+
+      if (isRevive) {
+        // A dead ally is the whole point; weight strongly and equally (ratio ~0).
+        score += 45;
+        c.push(contrib('revive_target', allyRatio, 45, 45));
+      } else if (isHeal) {
+        // Most-hurt ally wins: bonus grows as the ally's HP ratio falls.
+        if (allyRatio < 1) {
+          const healBonus = (1 - allyRatio) * 50;
+          score += healBonus;
+          c.push(contrib('ally_low_hp', allyRatio, 50, healBonus));
+        }
+      }
+
+      if (isBuff) {
+        // Prefer buffing an ally that isn't already carrying statuses.
+        const bonus = ally.statuses.length === 0 ? 12 : 4;
+        score += bonus;
+        c.push(contrib('buff', ally.statuses.length, 1, bonus));
+      }
+
+      // Cleanse value for the specific ally (matching debuffs on that ally).
+      const cleanseBonus = getCleanseValue(ability, ally);
+      if (cleanseBonus > 0) {
+        score += cleanseBonus;
+        c.push(contrib('cleanse_value', ally.statuses.length, 15, cleanseBonus));
+      }
+
+      score = clamp(score, 0, 100);
+      scores.push({
+        abilityId: ability.id,
+        abilityName: ability.name,
+        resolvedVerb: 'use-ability',
+        targetId: ally.id,
+        score,
+        contributions: c,
+        reason: buildReason(c),
+      });
+    }
+    return scores;
+  }
+
   // --- Combat / target abilities ---
   const enemies = Object.values(world.entities).filter(
     (e) => e.id !== entity.id &&
@@ -344,8 +452,16 @@ export function selectNpcAbilityAction(
     allScores.push(...scoreAbilityUse(entity, ability, world));
   }
 
-  // Sort descending by score
-  allScores.sort((a, b) => b.score - a.score);
+  // Sort descending by score, with a TOTAL deterministic tie-break (finding 10):
+  // equal scores break by target id then ability id, so argmax is byte-identical
+  // across runs and platforms regardless of input/iteration order.
+  allScores.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    const at = a.targetId ?? '';
+    const bt = b.targetId ?? '';
+    if (at !== bt) return at < bt ? -1 : 1;
+    return a.abilityId < b.abilityId ? -1 : a.abilityId > b.abilityId ? 1 : 0;
+  });
 
   return {
     entityId: entity.id,

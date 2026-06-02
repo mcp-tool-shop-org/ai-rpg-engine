@@ -839,6 +839,8 @@ export {
   buildHealAbility,
   buildStatusAbility,
   buildCleanseAbility,
+  buildBuffAbility,
+  buildReviveAbility,
   buildAbilitySuite,
 } from './ability-builders.js';
 export type {
@@ -846,5 +848,34 @@ export type {
   HealAbilityOpts,
   StatusAbilityOpts,
   CleanseAbilityOpts,
+  BuffAbilityOpts,
+  ReviveAbilityOpts,
   AbilitySuiteResult,
 } from './ability-builders.js';
+
+// --- Status Effects (modifiers / periodic DoT-HoT / reactive triggers) ---
+export {
+  effectiveStat,
+  processPeriodicStatuses,
+  processStatusTriggers,
+  makeProcContext,
+  PROC_DEPTH_LIMIT,
+  PERIODIC_KEYS,
+} from './status-effects.js';
+export type { ProcContext } from './status-effects.js';
+
+// --- Targeting (Ally Targeting & Friend/Foe AoE) ---
+export {
+  affiliationOf,
+  candidateTargets,
+  resolveTargets,
+  lowestHp,
+  highestHp,
+  selectRandomN,
+  randomSelector,
+} from './targeting.js';
+export type { Affiliation, TargetSelector } from './targeting.js';
+
+// --- Profile System (Phase 1: schema + validation + per-entity AI driver) ---
+export { buildProfile, validateProfileSet, selectActionForProfile } from './profile.js';
+export type { Profile, ProfileConfig, BuildProfileResult, ProfileSetResult } from './profile.js';

@@ -83,6 +83,15 @@ export type EntityState = {
   visibility?: VisibilityState;
   ai?: AIState;
   resistances?: Record<string, ResistanceLevel>;
+  /**
+   * Optional team/side tag for friend-or-foe resolution. When set on both the
+   * source and a candidate, ability targeting compares factions directly (same
+   * faction = ally); when unset on either, it falls back to the `type` heuristic
+   * (same type = ally). Lets a party JRPG put PCs and recruited NPCs on one side
+   * even when their `type` differs. Pure data — serialized with state, no closures.
+   * @see affiliationOf in @ai-rpg-engine/modules
+   */
+  faction?: string;
   custom?: Record<string, ScalarValue>;
 };
 

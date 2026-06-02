@@ -9,6 +9,7 @@ import type {
 } from '@ai-rpg-engine/core';
 import { applyStatus, removeStatus, hasStatus } from './status-core.js';
 import { makeEvent } from './make-event.js';
+import { effectiveStat } from './status-effects.js';
 
 /** Maps generic combat roles to starter-specific stat names */
 export type CombatStatMapping = {
@@ -132,7 +133,7 @@ function attackHandler(
   const mapping = formulas?.statMapping ?? DEFAULT_STAT_MAPPING;
   let hitChance = formulas?.hitChance
     ? formulas.hitChance(attacker, target, world)
-    : defaultHitChance(attacker, target, mapping);
+    : defaultHitChance(attacker, target, mapping, world);
   if (hasStatus(target, COMBAT_STATES.EXPOSED)) hitChance += 20;
   if (hasStatus(target, COMBAT_STATES.FLEEING)) hitChance += 10;
   if (hasStatus(target, COMBAT_STATES.OFF_BALANCE)) hitChance += 10;
@@ -158,7 +159,7 @@ function attackHandler(
   // Damage
   const damage = formulas?.damage
     ? formulas.damage(attacker, target, world)
-    : defaultDamage(attacker, mapping);
+    : defaultDamage(attacker, mapping, world);
 
   // Ally interception: if the target qualifies (player or backline) and has allies in zone,
   // check if an engaged companion intercepts the damage
@@ -241,7 +242,7 @@ function attackHandler(
   // Apply combat state modifiers to damage
   let finalDamage = damage;
   if (hasStatus(target, COMBAT_STATES.GUARDED)) {
-    const targetResolve = getStat(target, mapping, 'resolve', 3);
+    const targetResolve = getStat(target, mapping, 'resolve', 3, world);
     const resolveBonus = Math.max(0, (targetResolve - 3) * 0.03);
     const reduction = formulas?.guardReduction
       ? formulas.guardReduction(target, world)
@@ -264,7 +265,7 @@ function attackHandler(
     // Soft counter: attacking into guard may off-balance the attacker
     // Instinct (timing) + will (composure) determine counter chance
     const counterRoll = simpleRoll(world.meta.tick, attacker.id, 'counter');
-    const targetInstinct = getStat(target, mapping, 'precision', 5);
+    const targetInstinct = getStat(target, mapping, 'precision', 5, world);
     const counterChance = 25 + targetInstinct * 2 + targetResolve * 2;
     if (counterRoll <= counterChance && !hasStatus(attacker, COMBAT_STATES.OFF_BALANCE)) {
       events.push(applyStatus(attacker, COMBAT_STATES.OFF_BALANCE, world.meta.tick, {
@@ -283,7 +284,7 @@ function attackHandler(
     }
 
     // Guard breakthrough: high-vigor attacker may stagger a weak-willed defender
-    const attackerVigor = getStat(attacker, mapping, 'attack', 5);
+    const attackerVigor = getStat(attacker, mapping, 'attack', 5, world);
     const breakChance = Math.min(25, Math.max(0, (attackerVigor - targetResolve - 2) * 5));
     if (breakChance > 0) {
       const breakRoll = simpleRoll(world.meta.tick, attacker.id, 'guardbreak');
@@ -322,8 +323,8 @@ function attackHandler(
   target.resources.hp = Math.max(0, previousHp - finalDamage);
 
   // Hit style: distinguish precision hits from forceful blows
-  const atkAttack = getStat(attacker, mapping, 'attack', 5);
-  const atkPrecision = getStat(attacker, mapping, 'precision', 5);
+  const atkAttack = getStat(attacker, mapping, 'attack', 5, world);
+  const atkPrecision = getStat(attacker, mapping, 'precision', 5, world);
   const hitStyle = atkPrecision > atkAttack ? 'precise'
     : atkAttack > atkPrecision ? 'forceful'
     : 'balanced';
@@ -503,8 +504,8 @@ function disengageHandler(
 
   // Roll disengage chance
   const mapping = formulas?.statMapping ?? DEFAULT_STAT_MAPPING;
-  const precision = getStat(actor, mapping, 'precision', 5);
-  const resolve = getStat(actor, mapping, 'resolve', 3);
+  const precision = getStat(actor, mapping, 'precision', 5, world);
+  const resolve = getStat(actor, mapping, 'resolve', 3, world);
   const chance = formulas?.disengageChance
     ? formulas.disengageChance(actor, world)
     : Math.min(90, Math.max(15, 40 + precision * 5 + resolve * 2));
@@ -549,19 +550,31 @@ function disengageHandler(
   return events;
 }
 
-/** Read a mapped stat from an entity, with fallback */
-function getStat(entity: EntityState, mapping: CombatStatMapping, role: keyof CombatStatMapping, fallback: number): number {
-  return entity.stats[mapping[role]] ?? fallback;
+/**
+ * Read a mapped stat from an entity, with fallback — now resolved through
+ * effectiveStat so passive status modifiers (buffs/debuffs) actually reach combat
+ * (design-lock capability 1). When the entity has no status modifiers for the
+ * stat, effectiveStat returns `entity.stats[statId] ?? fallback`, byte-identical
+ * to the pre-change raw read, so every existing caller keeps its old numbers.
+ */
+function getStat(
+  entity: EntityState,
+  mapping: CombatStatMapping,
+  role: keyof CombatStatMapping,
+  fallback: number,
+  world: WorldState,
+): number {
+  return effectiveStat(entity, mapping[role], world, fallback);
 }
 
-function defaultHitChance(attacker: EntityState, target: EntityState, mapping: CombatStatMapping): number {
-  const attackerPrecision = getStat(attacker, mapping, 'precision', 5);
-  const targetPrecision = getStat(target, mapping, 'precision', 5);
+function defaultHitChance(attacker: EntityState, target: EntityState, mapping: CombatStatMapping, world: WorldState): number {
+  const attackerPrecision = getStat(attacker, mapping, 'precision', 5, world);
+  const targetPrecision = getStat(target, mapping, 'precision', 5, world);
   return Math.min(95, Math.max(5, 50 + attackerPrecision * 5 - targetPrecision * 3));
 }
 
-function defaultDamage(attacker: EntityState, mapping: CombatStatMapping): number {
-  const attack = getStat(attacker, mapping, 'attack', 3);
+function defaultDamage(attacker: EntityState, mapping: CombatStatMapping, world: WorldState): number {
+  const attack = getStat(attacker, mapping, 'attack', 3, world);
   return Math.max(1, attack);
 }
 
@@ -588,8 +601,8 @@ function getInterceptRoleBonus(entity: EntityState): number {
 export function defaultInterceptChance(
   ally: EntityState, _target: EntityState, world: WorldState, mapping: CombatStatMapping,
 ): number {
-  const instinct = getStat(ally, mapping, 'precision', 5);
-  const will = getStat(ally, mapping, 'resolve', 3);
+  const instinct = getStat(ally, mapping, 'precision', 5, world);
+  const will = getStat(ally, mapping, 'resolve', 3, world);
   const hp = ally.resources.hp ?? 0;
   const maxHp = ally.resources.maxHp ?? 20;
   const hpRatio = maxHp > 0 ? hp / maxHp : 0;

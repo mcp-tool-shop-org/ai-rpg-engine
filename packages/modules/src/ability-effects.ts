@@ -12,8 +12,10 @@ import type {
 } from '@ai-rpg-engine/core';
 import { makeEvent } from './make-event.js';
 import type { EffectDefinition, AbilityDefinition } from '@ai-rpg-engine/content-schema';
+import { normalizeTargetSpec } from '@ai-rpg-engine/content-schema';
 import { applyStatus, removeStatus } from './status-core.js';
 import { checkResistance, applyResistanceToDuration, getStatusTags } from './status-semantics.js';
+import { resolveTargets as resolveSpecTargets, lowestHp } from './targeting.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -89,6 +91,18 @@ export function clearEffectRegistry(): void {
 // Built-in effect handlers
 // ---------------------------------------------------------------------------
 
+/**
+ * Whether an ability is support-oriented (heal/buff/revive). Support abilities use
+ * the most-hurt ally selector for a single-scope effect (so "raise/mend the right
+ * ally" is automatic); offensive abilities fall through to the spec's stable
+ * lowest-id default. Pure read of the ability's declared tags.
+ */
+function isSupportAbility(ability: AbilityDefinition): boolean {
+  return ability.tags.some(
+    (t) => t === 'heal' || t === 'support' || t === 'buff' || t === 'revive',
+  );
+}
+
 function resolveEffectTargets(
   effect: EffectDefinition,
   ctx: EffectContext,
@@ -96,11 +110,23 @@ function resolveEffectTargets(
   switch (effect.target) {
     case 'actor':
       return [ctx.actor];
-    case 'zone':
-      // Zone effects target all entities in zone (excluding actor by default)
-      return Object.values(ctx.world.entities).filter(
-        (e) => e.zoneId === ctx.actor.zoneId && e.id !== ctx.actor.id && (e.resources.hp ?? 0) > 0,
-      );
+    case 'zone': {
+      // Zone/AoE effects resolve from the ORIGIN (the actor) and then run the
+      // ability's affiliation + life + scope filter via the shared, deterministic
+      // target resolver. Replaces the old hardcoded "everyone-in-zone-except-actor,
+      // hp>0" rule — which had no friend/foe concept and could never spare allies
+      // or reach a downed ally (design-lock B, finding 9). Affiliation now comes
+      // from the faction predicate, so an enemy-only blast skips allies and an
+      // ally-only buff/heal skips enemies. For a single-scope support effect
+      // (e.g. revive) the most-hurt valid candidate is chosen deterministically.
+      const norm = normalizeTargetSpec(ctx.ability.target);
+      const selector =
+        norm.scope === 'single' && isSupportAbility(ctx.ability) ? lowestHp : undefined;
+      return resolveSpecTargets(ctx.ability.target, ctx.actor, ctx.world, {
+        explicitTargetId: ctx.action.targetIds?.[0],
+        selector,
+      });
+    }
     case 'target':
     default:
       return ctx.targets;
