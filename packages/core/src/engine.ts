@@ -12,12 +12,19 @@ import { WorldStore, SaveLoadError } from './world.js';
 import { ActionDispatcher } from './actions.js';
 import { ModuleManager } from './modules.js';
 import type { FormulaRegistry } from './formulas.js';
+import type { EventBusListenerErrorHook } from './events.js';
 
 export type EngineOptions = {
   manifest: GameManifest;
   seed?: number;
   modules?: EngineModule[];
   ruleset?: RulesetDefinition;
+  /**
+   * Optional hook to observe consumer event-listener failures. A throwing
+   * listener is always isolated (the tick never aborts); supply this to also
+   * surface the failure to a dev overlay / log instead of swallowing it.
+   */
+  onListenerError?: EventBusListenerErrorHook;
 };
 
 export class Engine {
@@ -34,6 +41,7 @@ export class Engine {
     this.store = new WorldStore({
       manifest: options.manifest,
       seed: options.seed,
+      onListenerError: options.onListenerError,
     });
 
     this.dispatcher = new ActionDispatcher();
@@ -74,6 +82,22 @@ export class Engine {
    *  Like submitAction but for non-player actors — avoids the need to
    *  manually create actions via dispatcher.createAction(). */
   submitActionAs(entityId: string, verb: string, options?: Partial<Pick<ActionIntent, 'targetIds' | 'toolId' | 'parameters'>>): ResolvedEvent[] {
+    // Guard against dispatching for a ghost actor (a typo'd or already-removed
+    // entity id). A verb handler reading state.entities[actorId] for a missing
+    // actor would either crash or silently act on undefined; short-circuit to a
+    // structured action.rejected naming the actor instead. The tick still
+    // advances so the rejected attempt is recorded in the same lifecycle as any
+    // other rejected action.
+    if (!this.store.state.entities[entityId]) {
+      this.store.emitEvent('action.rejected', {
+        verb,
+        actorId: entityId,
+        reason: `unknown actor: no entity "${entityId}" in world state. Add the entity before acting as it, or check the actor id for a typo.`,
+      }, { actorId: entityId });
+      this.store.advanceTick();
+      return [];
+    }
+
     const action = this.dispatcher.createAction(
       verb,
       entityId,
@@ -106,6 +130,23 @@ export class Engine {
   /** Get available actions for the player in current context */
   getAvailableActions(): string[] {
     return this.dispatcher.getRegisteredVerbs();
+  }
+
+  /** Get debug inspectors registered by modules (thin pass-through). */
+  getInspectors(): import('./types.js').DebugInspector[] {
+    return this.moduleManager.getInspectors();
+  }
+
+  /** Get UI panels registered by modules (thin pass-through). */
+  getPanels(): import('./types.js').PanelDefinition[] {
+    return this.moduleManager.getPanels();
+  }
+
+  /** Tear down all modules. Call on engine shutdown so modules can release any
+   *  resources they hold (timers, listeners, file handles). Idempotent from the
+   *  caller's view — teardown() on a module is invoked at most once per call. */
+  shutdown(): void {
+    this.moduleManager.teardownAll();
   }
 
   /** Get the action log for replay */

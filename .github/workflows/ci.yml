@@ -12,6 +12,7 @@ on:
       - 'tsconfig.json'
       - 'vitest.config.ts'
       - 'eslint.config.js'
+      - 'docs/examples/**'
       - '.github/workflows/**'
   pull_request:
     paths:
@@ -21,6 +22,7 @@ on:
       - 'tsconfig.json'
       - 'vitest.config.ts'
       - 'eslint.config.js'
+      - 'docs/examples/**'
       - '.github/workflows/**'
   workflow_dispatch:
 
@@ -52,6 +54,10 @@ jobs:
       - run: npm audit --audit-level=high || true
       - run: npm run lint
       - run: npm run build
+      # Doc examples (docs/examples/*.ts) are compiled against the just-built
+      # packages so README/handbook "runnable" snippets cannot drift from the API.
+      - name: Typecheck doc examples
+        run: npx tsc -p docs/examples/tsconfig.json --noEmit
       - if: matrix.node-version != 22
         run: npm run test
 

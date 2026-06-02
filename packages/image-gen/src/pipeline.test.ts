@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { MemoryAssetStore } from '@ai-rpg-engine/asset-registry';
 import { PlaceholderProvider } from './placeholder-provider.js';
-import { generatePortrait, ensurePortrait } from './pipeline.js';
-import type { PortraitRequest } from './types.js';
+import { generatePortrait, ensurePortrait, resolveProvider } from './pipeline.js';
+import type { PortraitRequest, ImageProvider, GenerationResult, GenerationOptions } from './types.js';
 
 const testRequest: PortraitRequest = {
   characterName: 'Aldric',
@@ -111,5 +111,86 @@ describe('ensurePortrait', () => {
     await ensurePortrait(other, provider, store);
 
     expect(await store.count()).toBe(2);
+  });
+});
+
+// IMG-001: generatePortrait/ensurePortrait call provider.generate() unconditionally,
+// so an offline ComfyUI throws 'fetch failed' deep in the pipeline. resolveProvider
+// degrades a likely-mistake (passing an unavailable provider) to the always-on
+// placeholder instead of crashing — the WARN-AND-DEGRADE contract for runtime media.
+describe('resolveProvider (IMG-001)', () => {
+  /** A provider whose availability and generate() behavior are controllable. */
+  class StubProvider implements ImageProvider {
+    readonly name: string;
+    constructor(
+      name: string,
+      private readonly available: boolean,
+      private readonly onGenerate?: () => void,
+    ) {
+      this.name = name;
+    }
+    async isAvailable(): Promise<boolean> {
+      return this.available;
+    }
+    async generate(prompt: string, opts?: GenerationOptions): Promise<GenerationResult> {
+      this.onGenerate?.();
+      return {
+        image: new TextEncoder().encode('stub'),
+        mimeType: 'image/png',
+        width: opts?.width ?? 512,
+        height: opts?.height ?? 512,
+        prompt,
+        durationMs: 0,
+      };
+    }
+  }
+
+  it('returns the preferred provider when it is available', async () => {
+    const preferred = new StubProvider('comfyui', true);
+    const resolved = await resolveProvider(preferred);
+    expect(resolved.name).toBe('comfyui');
+  });
+
+  it('falls back to the PlaceholderProvider when the preferred is unavailable', async () => {
+    const preferred = new StubProvider('comfyui', false);
+    const resolved = await resolveProvider(preferred);
+    expect(resolved.name).toBe('placeholder');
+  });
+
+  it('uses a custom fallback when one is supplied', async () => {
+    const preferred = new StubProvider('comfyui', false);
+    const fallback = new StubProvider('custom-fallback', true);
+    const resolved = await resolveProvider(preferred, fallback);
+    expect(resolved.name).toBe('custom-fallback');
+  });
+
+  it('falls back when isAvailable() itself throws, rather than propagating', async () => {
+    const flaky: ImageProvider = {
+      name: 'flaky',
+      async isAvailable() {
+        throw new Error('network down');
+      },
+      async generate() {
+        throw new Error('should not be called');
+      },
+    };
+    const resolved = await resolveProvider(flaky);
+    expect(resolved.name).toBe('placeholder');
+  });
+
+  it('lets an offline provider degrade to a real placeholder portrait end-to-end', async () => {
+    const store = new MemoryAssetStore();
+    let offlineCalled = false;
+    // Offline ComfyUI: generate() would throw 'fetch failed' if ever reached.
+    const offline = new StubProvider('comfyui', false, () => {
+      offlineCalled = true;
+    });
+
+    const provider = await resolveProvider(offline);
+    const meta = await generatePortrait(testRequest, provider, store);
+
+    expect(meta.kind).toBe('portrait');
+    expect(meta.mimeType).toBe('image/svg+xml'); // placeholder, not the offline provider
+    expect(offlineCalled).toBe(false);
   });
 });

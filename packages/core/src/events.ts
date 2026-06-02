@@ -7,9 +7,48 @@ export type EventSubscription = {
   handler: EventHandler;
 };
 
+/**
+ * Optional hook invoked when a subscriber throws during {@link EventBus.emit}.
+ * Lets a host surface listener failures (dev overlay, log) without letting one
+ * bad consumer abort the tick. When no hook is supplied the error is swallowed
+ * so dispatch always completes — a listener failure must never break the
+ * simulation loop or propagate a raw stack to other listeners.
+ */
+export type EventBusListenerErrorHook = (
+  err: unknown,
+  event: ResolvedEvent,
+) => void;
+
+export type EventBusOptions = {
+  onListenerError?: EventBusListenerErrorHook;
+};
+
 export class EventBus {
   private listeners: Map<string, EventHandler[]> = new Map();
   private wildcardListeners: EventHandler[] = [];
+  private onListenerError?: EventBusListenerErrorHook;
+
+  constructor(options?: EventBusOptions) {
+    this.onListenerError = options?.onListenerError;
+  }
+
+  /**
+   * Invoke one subscriber in isolation. A throwing consumer listener is caught
+   * and routed to onListenerError (if any), then dispatch continues to the next
+   * listener. This is the WARN-AND-DEGRADE contract for the event bus: one bad
+   * consumer cannot abort the tick, drop other subscribers, or leak a stack.
+   */
+  private invokeListener(
+    handler: EventHandler,
+    event: ResolvedEvent,
+    world: import('./types.js').WorldState,
+  ): void {
+    try {
+      handler(event, world);
+    } catch (err) {
+      if (this.onListenerError) this.onListenerError(err, event);
+    }
+  }
 
   /** Subscribe to a specific event type */
   on(eventType: string, handler: EventHandler): void {
@@ -41,14 +80,18 @@ export class EventBus {
     if (idx !== -1) this.wildcardListeners.splice(idx, 1);
   }
 
-  /** Emit an event to all matching listeners */
+  /**
+   * Emit an event to all matching listeners. Each listener runs in isolation
+   * (see {@link invokeListener}) so a throwing subscriber cannot abort the tick
+   * or stop sibling listeners from firing.
+   */
   emit(event: ResolvedEvent, world: import('./types.js').WorldState): void {
     // Specific listeners
     const handlers = this.listeners.get(event.type);
     if (handlers) {
       const snapshot = [...handlers];
       for (const handler of snapshot) {
-        handler(event, world);
+        this.invokeListener(handler, event, world);
       }
     }
 
@@ -61,7 +104,7 @@ export class EventBus {
       if (domainHandlers) {
         const domainSnapshot = [...domainHandlers];
         for (const handler of domainSnapshot) {
-          handler(event, world);
+          this.invokeListener(handler, event, world);
         }
       }
     }
@@ -69,7 +112,7 @@ export class EventBus {
     // Wildcard listeners
     const wildcardSnapshot = [...this.wildcardListeners];
     for (const handler of wildcardSnapshot) {
-      handler(event, world);
+      this.invokeListener(handler, event, world);
     }
   }
 

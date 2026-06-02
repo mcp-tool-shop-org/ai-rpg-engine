@@ -192,11 +192,13 @@ import type { EntityState } from '@ai-rpg-engine/core';
 
 const hero: EntityState = {
   id: 'hero',
+  blueprintId: 'hero',
   type: 'player',
   name: 'The Hero',
   tags: ['human', 'player'],
   stats: { might: 7, agility: 5, will: 4 },
-  resources: { hp: 30, maxHp: 30 },
+  resources: { hp: 30, maxHp: 30, stamina: 5 },
+  zoneId: 'goblin-cave',
   inventory: [],
   equipment: {},
   statuses: [],
@@ -204,18 +206,18 @@ const hero: EntityState = {
 
 const goblin: EntityState = {
   id: 'goblin-1',
+  blueprintId: 'goblin',
   type: 'enemy',
   name: 'Cave Goblin',
   tags: ['goblin', 'beast'],
   stats: { might: 3, agility: 6, will: 2 },
-  resources: { hp: 12, maxHp: 12 },
-  inventory: [],
-  equipment: {},
+  resources: { hp: 12, maxHp: 12, stamina: 5 },
+  zoneId: 'goblin-cave',
   statuses: [],
 };
 ```
 
-Entity stats should use the names from your stat mapping. Tags should match your pack bias tags (so `['beast']` biases apply to entities tagged `beast`).
+Entity stats should use the names from your stat mapping. Tags should match your pack bias tags (so `['beast']` biases apply to entities tagged `beast`). Two notes that trip people up: `blueprintId` is required (it links an instance back to its content blueprint), and combatants must share a `zoneId` — combat-core rejects an attack whose target is in a different zone. Attacking also costs 1 `stamina`, so give fighters a `stamina` resource.
 
 ### Zones
 
@@ -224,12 +226,14 @@ import type { ZoneState } from '@ai-rpg-engine/core';
 
 const cave: ZoneState = {
   id: 'goblin-cave',
+  roomId: 'goblin-cave',
   name: 'Goblin Cave',
   tags: ['underground', 'dark'],
-  exits: [{ to: 'forest-clearing' }],
-  entities: ['goblin-1'],
+  neighbors: ['forest-clearing'],
 };
 ```
+
+A zone declares its connections through `neighbors` (zone ids you can move to), not an `exits` list, and it does not hold an entity roster — entities point at the zone via their own `zoneId`. To find who is in a zone, call `engine.store.entitiesInZone('goblin-cave')`.
 
 ### Adding content to the engine
 
@@ -238,7 +242,8 @@ engine.store.addZone(cave);
 engine.store.addEntity(hero);
 engine.store.addEntity(goblin);
 engine.store.state.playerId = 'hero';
-engine.store.state.locationId = 'goblin-cave';
+// setPlayerLocation sets state.locationId AND the player's zoneId together.
+engine.store.setPlayerLocation('goblin-cave');
 ```
 
 ---
@@ -286,18 +291,24 @@ const combat = buildCombatStack({
 });
 
 const engine = new Engine({
-  manifest: { id: 'arena', title: 'Arena', version: '1.0.0' },
+  manifest: {
+    id: 'arena', title: 'Arena', version: '1.0.0',
+    engineVersion: '1.0.0', ruleset: 'minimal', modules: [], contentPacks: ['arena'],
+  },
   modules: [traversalCore, statusCore, ...combat.modules],
 });
 
-engine.store.addZone({ id: 'pit', name: 'The Pit', tags: [], exits: [] });
-engine.store.addEntity({ id: 'player', type: 'player', name: 'Fighter', tags: ['human'], stats: { str: 6, dex: 5, con: 4 }, resources: { hp: 25, maxHp: 25 }, inventory: [], equipment: {}, statuses: [] });
-engine.store.addEntity({ id: 'rat', type: 'enemy', name: 'Giant Rat', tags: ['beast'], stats: { str: 3, dex: 7, con: 2 }, resources: { hp: 8, maxHp: 8 }, inventory: [], equipment: {}, statuses: [] });
+engine.store.addZone({ id: 'pit', roomId: 'pit', name: 'The Pit', tags: [], neighbors: [] });
+engine.store.addEntity({ id: 'player', blueprintId: 'player', type: 'player', name: 'Fighter', tags: ['human'], stats: { str: 6, dex: 5, con: 4 }, resources: { hp: 25, maxHp: 25, stamina: 5 }, zoneId: 'pit', inventory: [], equipment: {}, statuses: [] });
+engine.store.addEntity({ id: 'rat', blueprintId: 'rat', type: 'enemy', name: 'Giant Rat', tags: ['beast'], stats: { str: 3, dex: 7, con: 2 }, resources: { hp: 8, maxHp: 8, stamina: 5 }, zoneId: 'pit', statuses: [] });
 engine.store.state.playerId = 'player';
-engine.store.state.locationId = 'pit';
+engine.store.setPlayerLocation('pit');
+
+// Both fighters are in 'pit' with stamina, so this attack actually resolves:
+engine.submitAction('attack', { targetIds: ['rat'] });
 ```
 
-That's a complete game. ~15 lines of setup.
+That's a complete game. ~15 lines of setup. This exact pattern is exercised in [`docs/examples/from-scratch.ts`](../examples/from-scratch.ts).
 
 ### Social-only game — no combat
 

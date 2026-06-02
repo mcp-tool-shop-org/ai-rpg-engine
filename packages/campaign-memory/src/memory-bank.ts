@@ -188,8 +188,32 @@ export class NpcMemoryBank {
     return JSON.parse(JSON.stringify(this.state));
   }
 
-  /** Restore from serialized state */
+  /**
+   * Restore from serialized state.
+   *
+   * CA-06: guards malformed state with a clear, actionable error instead of building a
+   * half-formed bank that throws a raw TypeError on the next call. The thrown Error names
+   * the offending field and how to fix it.
+   */
   static deserialize(state: NpcMemoryState, config?: CampaignMemoryConfig): NpcMemoryBank {
+    if (typeof state !== 'object' || state === null || Array.isArray(state)) {
+      throw new Error(
+        `NpcMemoryBank.deserialize: expected a state object (got ${state === null ? 'null' : Array.isArray(state) ? 'array' : typeof state}) — pass the value returned by serialize()`,
+      );
+    }
+    if (typeof (state as { entityId?: unknown }).entityId !== 'string') {
+      throw new Error(
+        'NpcMemoryBank.deserialize: state is missing a string "entityId" — this is the NPC the bank belongs to',
+      );
+    }
+    const subjects = (state as { subjects?: unknown }).subjects;
+    if (typeof subjects !== 'object' || subjects === null || Array.isArray(subjects)) {
+      throw new Error(
+        `NpcMemoryBank.deserialize: state.subjects must be an object mapping subjectId → entry (got ${
+          subjects === undefined ? 'undefined' : subjects === null ? 'null' : Array.isArray(subjects) ? 'array' : typeof subjects
+        })`,
+      );
+    }
     const bank = new NpcMemoryBank(state.entityId, config);
     bank.state = JSON.parse(JSON.stringify(state));
     return bank;

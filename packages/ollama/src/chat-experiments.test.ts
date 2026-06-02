@@ -3,6 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   deriveSeeds,
+  MAX_EXPERIMENT_RUNS,
   extractScenarioMetrics,
   runExperiment,
   computeAggregate,
@@ -156,6 +157,29 @@ describe('Pillar 1 — Deterministic experiment runner', () => {
     it('returns empty for 0 runs without seedList', () => {
       const seeds = deriveSeeds(makeSpec({ runs: 0 }));
       expect(seeds).toEqual([]);
+    });
+
+    // ollama-runexperiment-unbounded-runs — a bad `runs` count must be coerced
+    // to a non-negative integer and capped, so a typo or hostile spec can't
+    // allocate a multi-billion-element array (OOM) or loop forever.
+    it('clamps a negative runs count to 0', () => {
+      const seeds = deriveSeeds(makeSpec({ runs: -5 }));
+      expect(seeds).toEqual([]);
+    });
+
+    it('floors a fractional runs count to an integer', () => {
+      const seeds = deriveSeeds(makeSpec({ seedStart: 1, runs: 3.9 }));
+      expect(seeds).toEqual([1, 2, 3]);
+    });
+
+    it('treats a non-finite runs count as 0', () => {
+      expect(deriveSeeds(makeSpec({ runs: NaN }))).toEqual([]);
+      expect(deriveSeeds(makeSpec({ runs: Infinity }))).toHaveLength(MAX_EXPERIMENT_RUNS);
+    });
+
+    it('caps an absurdly large runs count at MAX_EXPERIMENT_RUNS', () => {
+      const seeds = deriveSeeds(makeSpec({ runs: 1_000_000_000 }));
+      expect(seeds).toHaveLength(MAX_EXPERIMENT_RUNS);
     });
   });
 

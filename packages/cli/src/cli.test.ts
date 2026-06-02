@@ -43,4 +43,27 @@ describe('CLI', () => {
   it('unknown command exits with error', () => {
     expect(() => run('nonsense')).toThrow();
   });
+
+  // CLI-011 — `<command> --help` must route into that command's own help, not
+  // the top-level help. Verified for create-starter (the command with a distinct
+  // help screen).
+  it('create-starter --help shows create-starter help, not top-level help', () => {
+    const out = run('create-starter', '--help');
+    // create-starter-specific content
+    expect(out).toContain('create-starter <name>');
+    expect(out).toContain('Examples:');
+    // NOT the top-level command list
+    expect(out).not.toContain('inspect-save');
+  });
+
+  it('create-starter -h shows create-starter help', () => {
+    const out = run('create-starter', '-h');
+    expect(out).toContain('create-starter <name>');
+  });
+
+  it('top-level --help still shows the command list', () => {
+    const out = run('--help');
+    expect(out).toContain('inspect-save');
+    expect(out).toContain('create-starter');
+  });
 });

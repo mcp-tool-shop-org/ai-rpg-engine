@@ -180,24 +180,55 @@ export function validateScaffold(dir: string): string[] {
     return errors;
 }
 
+function printCreateStarterHelp(): void {
+    console.log('Usage: ai-rpg-engine create-starter <name> [--force] [--out=<dir>]');
+    console.log('');
+    console.log('Creates a new starter from the template.');
+    console.log('');
+    console.log('Examples:');
+    console.log('  ai-rpg-engine create-starter western');
+    console.log('  ai-rpg-engine create-starter space-opera --out=./my-project');
+    console.log('');
+    console.log('The generated starter uses buildCombatStack by default');
+    console.log('and includes a marked starter-owned systems section.');
+}
+
 /** CLI entry point */
 export function runCreateStarter(args: string[]): void {
+    // CLI-011: `create-starter --help` is an explicit help request — print this
+    // command's own help and exit 0 (help is not an error).
+    if (args.includes('--help') || args.includes('-h')) {
+        printCreateStarterHelp();
+        return;
+    }
+
     const name = args.find((a) => !a.startsWith('-'));
     const force = args.includes('--force');
-    const outDir = args.find((a) => a.startsWith('--out='))?.split('=')[1];
+
+    // CLI-012: an --out token that is present but carries no value (`--out=`,
+    // `--out=   `, or a bare `--out`) is a likely mistake — a shell that dropped
+    // the value, say. Without this guard the empty value falls through to the
+    // default `packages/starter-<name>` location and the scaffold lands somewhere
+    // the user never named. Fail loudly with a structured, actionable error.
+    const outToken = args.find((a) => a === '--out' || a.startsWith('--out='));
+    let outDir: string | undefined;
+    if (outToken !== undefined) {
+        // Everything after the first '=' is the value; a bare `--out` has none.
+        const eq = outToken.indexOf('=');
+        const rawValue = eq === -1 ? '' : outToken.slice(eq + 1);
+        if (rawValue.trim().length === 0) {
+            console.error('✗ [CLI_OUT_EMPTY] --out was given but its value is empty.');
+            console.error('  Hint: pass a target directory, e.g. --out=./my-project — or omit --out to scaffold into packages/.');
+            process.exit(1);
+            return; // unreachable in production; lets tests that stub process.exit stop here
+        }
+        outDir = rawValue;
+    }
 
     if (!name) {
-        console.log('Usage: ai-rpg-engine create-starter <name> [--force] [--out=<dir>]');
-        console.log('');
-        console.log('Creates a new starter from the template.');
-        console.log('');
-        console.log('Examples:');
-        console.log('  ai-rpg-engine create-starter western');
-        console.log('  ai-rpg-engine create-starter space-opera --out=./my-project');
-        console.log('');
-        console.log('The generated starter uses buildCombatStack by default');
-        console.log('and includes a marked starter-owned systems section.');
+        printCreateStarterHelp();
         process.exit(1);
+        return; // unreachable in production; guards tests that stub process.exit
     }
 
     try {

@@ -139,12 +139,37 @@ export function isTunableParam(param: string): boolean {
 // Seed derivation — deterministic
 // ============================================================
 
+/**
+ * Upper bound on how many runs a single experiment will derive seeds for.
+ * `spec.runs` is consumer-supplied (CLI flag, chat param, sweep config). A typo
+ * or hostile value like 1e9 would make `Array.from({ length })` allocate a
+ * multi-billion-element array and OOM the process; a non-integer/NaN would loop
+ * unpredictably. We clamp to keep the runner bounded and deterministic.
+ */
+export const MAX_EXPERIMENT_RUNS = 10_000;
+
+/**
+ * Coerce a consumer-supplied run count to a safe, non-negative integer in
+ * [0, MAX_EXPERIMENT_RUNS]. Non-finite values (NaN) become 0; Infinity and
+ * absurdly large values are capped; fractional values are floored.
+ */
+function clampRuns(runs: number): number {
+  if (!Number.isFinite(runs)) {
+    // Infinity is "as many as allowed"; NaN/-Infinity collapse to 0.
+    return runs === Infinity ? MAX_EXPERIMENT_RUNS : 0;
+  }
+  const floored = Math.floor(runs);
+  if (floored <= 0) return 0;
+  return Math.min(floored, MAX_EXPERIMENT_RUNS);
+}
+
 export function deriveSeeds(spec: ExperimentSpec): number[] {
   if (spec.seedList && spec.seedList.length > 0) {
     return [...spec.seedList];
   }
   const start = spec.seedStart ?? 1;
-  return Array.from({ length: spec.runs }, (_, i) => start + i);
+  const count = clampRuns(spec.runs);
+  return Array.from({ length: count }, (_, i) => start + i);
 }
 
 // ============================================================

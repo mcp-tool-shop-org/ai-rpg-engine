@@ -19,6 +19,18 @@ export interface OllamaTextClient {
   generate(input: PromptInput): Promise<PromptResult>;
 }
 
+/**
+ * Build a recovery hint for connection failures. Ollama is the only optional
+ * network surface; when it's unreachable the most common cause is the server
+ * not running or a misconfigured URL, so name both the attempted URL and the
+ * concrete fixes rather than returning a bare "fetch failed".
+ */
+function offlineHint(baseUrl: string): string {
+  return `Could not reach the Ollama server at ${baseUrl}. `
+    + 'Is it running? Start it with "ollama serve", '
+    + 'or point at a different host via AI_RPG_ENGINE_OLLAMA_URL.';
+}
+
 export function createClient(config: OllamaConfig): OllamaTextClient {
   return {
     async generate(input: PromptInput): Promise<PromptResult> {
@@ -50,7 +62,7 @@ export function createClient(config: OllamaConfig): OllamaTextClient {
             continue;
           }
           const message = err instanceof Error ? err.message : String(err);
-          return { ok: false, error: `Ollama request failed: ${message}` };
+          return { ok: false, error: `Ollama request failed: ${message}. ${offlineHint(config.baseUrl)}` };
         }
 
         if (!res.ok) {
@@ -78,7 +90,7 @@ export function createClient(config: OllamaConfig): OllamaTextClient {
         return { ok: true, text: json.response };
       }
 
-      return { ok: false, error: 'Ollama request failed: max retries exceeded' };
+      return { ok: false, error: `Ollama request failed: max retries exceeded. ${offlineHint(config.baseUrl)}` };
     },
   };
 }

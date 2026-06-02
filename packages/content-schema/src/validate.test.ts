@@ -245,6 +245,47 @@ describe('validateDialogueDefinition', () => {
     expect(r.ok).toBe(false);
     expect(r.errors.some((e) => e.message.includes('does not match key'))).toBe(true);
   });
+
+  // CA-07: an unreachable (orphan) node is almost always an authoring mistake —
+  // a node nothing links to. It is an advisory (the tree still loads), not an error.
+  it('flags an orphan (unreachable) node as an advisory', () => {
+    const r = validateDialogueDefinition({
+      id: 'd1',
+      speakers: ['npc'],
+      entryNodeId: 'start',
+      nodes: {
+        start: { id: 'start', speaker: 'NPC', text: 'Hi.' },
+        // 'lost' is never referenced from start (no choices, no nextNodeId).
+        lost: { id: 'lost', speaker: 'NPC', text: 'Nobody can reach me.' },
+      },
+    });
+    // Structurally valid — the dialogue still loads.
+    expect(r.ok).toBe(true);
+    expect(r.advisories).toBeDefined();
+    expect(
+      r.advisories!.some((a) => a.message.includes('unreachable') && a.message.includes('lost')),
+    ).toBe(true);
+  });
+
+  it('does not flag reachable nodes as orphans', () => {
+    const r = validateDialogueDefinition({
+      id: 'd1',
+      speakers: ['npc'],
+      entryNodeId: 'start',
+      nodes: {
+        start: {
+          id: 'start',
+          speaker: 'NPC',
+          text: 'Hi.',
+          choices: [{ id: 'c1', text: 'Continue', nextNodeId: 'mid' }],
+        },
+        mid: { id: 'mid', speaker: 'NPC', text: 'More.', nextNodeId: 'end' },
+        end: { id: 'end', speaker: 'NPC', text: 'Done.' },
+      },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.advisories ?? []).toHaveLength(0);
+  });
 });
 
 describe('validateProgressionTreeDefinition', () => {
@@ -357,6 +398,67 @@ describe('validateRulesetDefinition', () => {
     });
     expect(r.ok).toBe(false);
     expect(r.errors.some((e) => e.path.includes('default'))).toBe(true);
+  });
+
+  // CA-04: stat/resource bounds must be internally consistent — min <= max and
+  // min <= default <= max. An out-of-bounds default is a content bug, not a runtime
+  // surprise.
+  it('catches a stat whose default is above max', () => {
+    const r = validateRulesetDefinition({
+      ...validRuleset,
+      stats: [{ id: 'vigor', name: 'Vigor', min: 0, max: 10, default: 99 }],
+    });
+    expect(r.ok).toBe(false);
+    expect(
+      r.errors.some((e) => e.path.includes('vigor') || e.path.includes('stats')),
+    ).toBe(true);
+    expect(r.errors.some((e) => e.message.includes('default'))).toBe(true);
+  });
+
+  it('catches a stat whose default is below min', () => {
+    const r = validateRulesetDefinition({
+      ...validRuleset,
+      stats: [{ id: 'vigor', name: 'Vigor', min: 5, max: 10, default: 1 }],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('default'))).toBe(true);
+  });
+
+  it('catches a stat whose min exceeds its max', () => {
+    const r = validateRulesetDefinition({
+      ...validRuleset,
+      stats: [{ id: 'vigor', name: 'Vigor', min: 10, max: 0, default: 5 }],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('min') && e.message.includes('max'))).toBe(true);
+  });
+
+  it('catches a resource whose default is outside its bounds', () => {
+    const r = validateRulesetDefinition({
+      ...validRuleset,
+      resources: [{ id: 'hp', name: 'HP', min: 0, max: 50, default: 100 }],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('default'))).toBe(true);
+  });
+
+  it('accepts a stat with default exactly on the boundary', () => {
+    const r = validateRulesetDefinition({
+      ...validRuleset,
+      stats: [
+        { id: 'a', name: 'A', min: 0, max: 10, default: 0 },
+        { id: 'b', name: 'B', min: 0, max: 10, default: 10 },
+      ],
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it('accepts bounds when min/max are omitted (default unconstrained)', () => {
+    const r = validateRulesetDefinition({
+      ...validRuleset,
+      stats: [{ id: 'a', name: 'A', default: 9999 }],
+    });
+    expect(r.ok).toBe(true);
   });
 });
 

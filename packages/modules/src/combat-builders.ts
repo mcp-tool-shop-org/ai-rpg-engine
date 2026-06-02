@@ -112,6 +112,15 @@ export type CombatStack = {
 
   /** Combat engine modules in correct wiring order. Add these to Engine's modules array. */
   modules: EngineModule[];
+
+  /**
+   * Non-fatal author warnings (warn-and-degrade). Currently surfaces any
+   * `biasTags` entry that is not a known built-in pack bias tag — those are
+   * silently dropped from the intent config, so a typo (`'feeral'` for
+   * `'feral'`) would otherwise vanish without trace. Each message names the
+   * offending tag and lists the valid tags. Empty array when all input is valid.
+   */
+  warnings: string[];
 };
 
 /**
@@ -142,6 +151,7 @@ export type CombatStack = {
 export function buildCombatStack(config: CombatStackConfig): CombatStack {
   const playerId = config.playerId ?? 'player';
   const mapping = config.statMapping;
+  const warnings: string[] = [];
 
   // Build base formulas (standard or overridden)
   const baseFormulas: CombatFormulas = {
@@ -190,6 +200,14 @@ export function buildCombatStack(config: CombatStackConfig): CombatStack {
     statMapping: mapping,
   };
   if (config.biasTags?.length) {
+    // Warn-and-degrade: an unknown biasTag is silently dropped by the filter
+    // below. Surface each one (with the valid tag list) instead of vanishing it.
+    const unknownTags = config.biasTags.filter(t => !PACK_BIAS_TAGS.includes(t));
+    for (const tag of unknownTags) {
+      warnings.push(
+        `unknown biasTag '${tag}' — dropped. Valid tags: ${PACK_BIAS_TAGS.join(', ')}.`,
+      );
+    }
     intentConfig.packBiases = BUILTIN_PACK_BIASES.filter(b => config.biasTags!.includes(b.tag));
   }
   if (config.resourceProfile) {
@@ -203,5 +221,5 @@ export function buildCombatStack(config: CombatStackConfig): CombatStack {
   // State narration
   modules.push(createCombatStateNarration());
 
-  return { formulas: tracedFormulas, modules };
+  return { formulas: tracedFormulas, modules, warnings };
 }

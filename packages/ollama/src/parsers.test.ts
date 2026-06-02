@@ -44,6 +44,27 @@ describe('extractJson', () => {
   it('returns raw when no JSON found', () => {
     expect(extractJson('no json here')).toBe('no json here');
   });
+
+  // ollama-extractjson-silent-truncation — when model output is truncated
+  // mid-object, extractJson returns the unbalanced fragment from the first
+  // brace to end-of-input (it does NOT fabricate a closing brace). This is
+  // documented behavior; callers must treat the result as best-effort and
+  // guard their own JSON.parse. These tests pin that contract.
+  it('returns the unbalanced fragment from start to end on a truncated object', () => {
+    const truncated = 'Result: {"id": "chapel", "rooms": [{"id": "nave"';
+    const out = extractJson(truncated);
+    // Starts at the first brace, carries through to end-of-input.
+    expect(out).toBe('{"id": "chapel", "rooms": [{"id": "nave"');
+    // The fragment is genuinely unbalanced — JSON.parse will reject it.
+    expect(() => JSON.parse(out)).toThrow();
+  });
+
+  it('returns the unbalanced fragment on a truncated array', () => {
+    const truncated = 'Errors: [{"path":"a","message":"b"},{"path":"c"';
+    const out = extractJson(truncated);
+    expect(out).toBe('[{"path":"a","message":"b"},{"path":"c"');
+    expect(() => JSON.parse(out)).toThrow();
+  });
 });
 
 describe('extractText', () => {

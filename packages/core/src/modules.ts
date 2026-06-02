@@ -42,6 +42,17 @@ export class ModuleManager {
 
   /** Register and initialize a module */
   register(module: EngineModule, store: WorldStore): void {
+    // Duplicate module id is a real config mistake (two modules claiming the
+    // same id would silently clobber each other's context and verbs). Fail
+    // loud and actionable rather than degrade — there is no safe way to run
+    // two modules under one id.
+    if (this.modules.has(module.id)) {
+      throw new Error(
+        `Module id "${module.id}" is already registered. ` +
+          `Module ids must be unique; rename one of the conflicting modules or remove the duplicate from the engine's modules list.`,
+      );
+    }
+
     // Check dependencies
     if (module.dependsOn) {
       for (const dep of module.dependsOn) {

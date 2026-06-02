@@ -78,3 +78,45 @@ describe('createClient.generate — contract safety', () => {
     expect(result.ok).toBe(false);
   });
 });
+
+// ollama-offline-no-recovery-hint — when the server is unreachable, the error
+// must name the attempted base URL AND give an actionable recovery hint so the
+// user isn't left with a bare "fetch failed".
+describe('createClient.generate — offline recovery hint', () => {
+  const baseUrl = 'http://localhost:9999';
+
+  it('includes the base URL and a recovery hint on a connection failure', async () => {
+    // A network refusal surfaces as a TypeError from fetch.
+    globalThis.fetch = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+
+    const client = createClient(resolveConfig({ baseUrl, timeoutMs: 50 }));
+    const result = await client.generate({ system: 's', prompt: 'p' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      // Names the URL the client actually tried to reach.
+      expect(result.error).toContain(baseUrl);
+      // Actionable recovery guidance.
+      expect(result.error).toMatch(/ollama serve/i);
+      expect(result.error).toContain('AI_RPG_ENGINE_OLLAMA_URL');
+    }
+  });
+
+  it('uses the configured URL (not the default) in the failure message', async () => {
+    const customUrl = 'http://192.168.1.50:11434';
+    globalThis.fetch = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+
+    const client = createClient(resolveConfig({ baseUrl: customUrl, timeoutMs: 50 }));
+    const result = await client.generate({ system: 's', prompt: 'p' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain(customUrl);
+      expect(result.error).not.toContain('localhost:11434');
+    }
+  });
+});

@@ -152,7 +152,7 @@ export type {
 export { DEFAULT_CHAT_CONFIG } from './chat-types.js';
 export { classifyIntent, classifyByKeywords, classifyByLLM } from './chat-router.js';
 export { findToolForIntent, getAllTools } from './chat-tools.js';
-export { createChatEngine, createChatMemory, addMessage, getRecentContext } from './chat-engine.js';
+export { createChatEngine, createChatMemory, addMessage, getRecentContext, capturePlanFromOutput } from './chat-engine.js';
 export type { ChatEngine, ChatEngineOptions, LoadoutHistoryEntry } from './chat-engine.js';
 export { createTranscript, addToTranscript, saveTranscript, loadTranscript, defaultTranscriptPath } from './chat-transcript.js';
 export { runChatShell } from './chat-shell.js';
@@ -252,7 +252,7 @@ export {
   generateSweepValues, isTunableParam, getTunableParams,
   formatExperimentSummary, formatExperimentComparison,
   formatParameterSweepResult, formatExperimentPlan,
-  formatRunResults,
+  formatRunResults, MAX_EXPERIMENT_RUNS,
 } from './chat-experiments.js';
 export type {
   ExperimentSpec, ExperimentRunResult, ExperimentSummary,

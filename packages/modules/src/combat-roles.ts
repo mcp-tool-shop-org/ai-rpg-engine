@@ -309,6 +309,31 @@ export function createBossPhaseListener(bossDef: BossDefinition): EngineModule {
     version: '0.1.0',
 
     register(ctx) {
+      // Warn-and-degrade: validate the boss definition at registration and
+      // surface any problems (out-of-range/duplicate/unordered thresholds,
+      // missing narrativeKey, tag add/remove conflicts) as a structured dev
+      // event instead of silently accepting a typo'd threshold (MOD-PH-03).
+      // Entities aren't available yet at register time, so entity-level checks
+      // (missing role:boss tag) run later via validateBossDefinition(def, entities).
+      const defWarnings = validateBossDefinition(bossDef);
+      if (defWarnings.length > 0) {
+        ctx.events.emit({
+          id: '',
+          type: 'boss.definition.invalid',
+          tick: 0,
+          actorId: bossDef.entityId,
+          payload: {
+            entityId: bossDef.entityId,
+            warnings: defWarnings,
+            reason:
+              `boss definition for "${bossDef.entityId}" has ${defWarnings.length} ` +
+              `issue(s); fix the phases (thresholds must be in 0-1, unique, and ` +
+              `descending; each phase needs a narrativeKey).`,
+          },
+          targetIds: [bossDef.entityId],
+        });
+      }
+
       ctx.events.on('combat.damage.applied', (event: ResolvedEvent, world: WorldState) => {
         const targetId = event.payload.targetId as string;
         if (targetId !== bossDef.entityId) return;

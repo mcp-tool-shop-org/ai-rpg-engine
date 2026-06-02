@@ -74,10 +74,32 @@ export class CampaignJournal {
     return Array.from(this.records.values()).sort((a, b) => a.tick - b.tick);
   }
 
-  /** Restore from serialized state */
+  /**
+   * Restore from serialized state.
+   *
+   * CA-06: guards malformed input with a clear, actionable error instead of letting a raw
+   * TypeError escape ("records is not iterable", "cannot read 'id' of null"). The thrown
+   * Error names the offending element index/field and how to fix it.
+   */
   static deserialize(records: CampaignRecord[]): CampaignJournal {
+    if (!Array.isArray(records)) {
+      throw new Error(
+        `CampaignJournal.deserialize: expected an array of records (got ${records === null ? 'null' : typeof records}) — pass the value returned by serialize()`,
+      );
+    }
     const journal = new CampaignJournal();
-    for (const record of records) {
+    for (let i = 0; i < records.length; i++) {
+      const record = records[i];
+      if (typeof record !== 'object' || record === null) {
+        throw new Error(
+          `CampaignJournal.deserialize: record[${i}] must be an object (got ${record === null ? 'null' : typeof record})`,
+        );
+      }
+      if (typeof (record as { id?: unknown }).id !== 'string') {
+        throw new Error(
+          `CampaignJournal.deserialize: record[${i}] is missing a string "id" — each record needs an id like "cr_1"`,
+        );
+      }
       journal.records.set(record.id, record);
     }
     // Advance THIS instance's counter past the highest restored id (CP-01).

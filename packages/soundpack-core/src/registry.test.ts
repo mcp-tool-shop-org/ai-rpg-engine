@@ -102,4 +102,103 @@ describe('SoundRegistry', () => {
       expect(registry.pickVariant('ambient_drone', 0)).toBeUndefined();
     });
   });
+
+  // SND-001: load() used to silently set() each entry, so a duplicate id (either
+  // within one manifest or across two loads) overwrote without warning, and a
+  // malformed manifest was accepted as-is. Per WARN-AND-DEGRADE, load now reports
+  // structured warnings naming the collision (and which entry wins) and can
+  // optionally run validateManifest — it still degrades (keeps loading) rather
+  // than throwing on a consumer mistake.
+  describe('duplicate-id and validation reporting (SND-001)', () => {
+    const entry = (id: string, tag: string) => ({
+      id,
+      tags: [tag],
+      domain: 'sfx' as const,
+      intensity: 'low' as const,
+      mood: ['neutral'],
+      durationClass: 'oneshot' as const,
+      cooldownMs: 0,
+      variants: [`${tag}.wav`],
+      source: 'file' as const,
+    });
+
+    it('reports a duplicate id within a single manifest, naming the collision', () => {
+      const registry = new SoundRegistry();
+      const result = registry.load({
+        name: 'dup-pack',
+        version: '1.0.0',
+        description: 'has a duplicate id',
+        author: 'test',
+        entries: [entry('boom', 'first'), entry('boom', 'second')],
+      });
+
+      const dup = result.warnings.find((w) => w.message.includes('boom'));
+      expect(dup).toBeDefined();
+      expect(dup!.field).toContain('boom');
+      // The later entry wins (last-write), and the warning says so.
+      expect(registry.get('boom')!.tags).toContain('second');
+    });
+
+    it('reports a duplicate id across two separate load() calls', () => {
+      const registry = new SoundRegistry();
+      registry.load({
+        name: 'pack-a',
+        version: '1.0.0',
+        description: 'a',
+        author: 'test',
+        entries: [entry('shared', 'from-a')],
+      });
+      const second = registry.load({
+        name: 'pack-b',
+        version: '1.0.0',
+        description: 'b',
+        author: 'test',
+        entries: [entry('shared', 'from-b')],
+      });
+
+      expect(second.warnings.some((w) => w.message.includes('shared'))).toBe(true);
+      expect(registry.get('shared')!.tags).toContain('from-b');
+    });
+
+    it('returns no warnings for a clean manifest', () => {
+      const registry = new SoundRegistry();
+      const result = registry.load({
+        name: 'clean',
+        version: '1.0.0',
+        description: 'clean',
+        author: 'test',
+        entries: [entry('a', 'ta'), entry('b', 'tb')],
+      });
+      expect(result.warnings).toEqual([]);
+      expect(result.loaded).toBe(2);
+    });
+
+    it('surfaces validateManifest errors as warnings when { validate: true }', () => {
+      const registry = new SoundRegistry();
+      const malformed = {
+        name: 'bad',
+        version: '1.0.0',
+        description: 'malformed entry',
+        author: 'test',
+        // domain is invalid; validateManifest should flag it.
+        entries: [{ ...entry('x', 'tx'), domain: 'not-a-domain' }],
+      };
+      const result = registry.load(malformed as unknown as Parameters<SoundRegistry['load']>[0], { validate: true });
+      expect(result.warnings.some((w) => /domain/.test(w.message))).toBe(true);
+    });
+
+    it('does not run validateManifest unless asked (default behavior unchanged)', () => {
+      const registry = new SoundRegistry();
+      const malformed = {
+        name: 'bad',
+        version: '1.0.0',
+        description: 'malformed entry',
+        author: 'test',
+        entries: [{ ...entry('x', 'tx'), domain: 'not-a-domain' }],
+      };
+      const result = registry.load(malformed as unknown as Parameters<SoundRegistry['load']>[0]);
+      // No validate flag → no schema warnings (only duplicate-id detection runs).
+      expect(result.warnings.some((w) => /domain/.test(w.message))).toBe(false);
+    });
+  });
 });

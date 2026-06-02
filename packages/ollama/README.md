@@ -38,15 +38,47 @@ npm install @ai-rpg-engine/ollama
 ## Usage
 
 ```typescript
-import { translateMarkdown, ChatEngine, createSession } from '@ai-rpg-engine/ollama';
+import { resolveConfig, createClient, createChatEngine } from '@ai-rpg-engine/ollama';
 
-// Start a design session
-const session = createSession('haunted-chapel');
+// Resolve config (explicit > env vars > defaults) and connect to local Ollama
+const config = resolveConfig({ model: 'qwen2.5-coder' });
+const client = createClient(config);
 
-// Use the chat engine
-const engine = new ChatEngine({ session });
-const response = await engine.chat('scaffold a haunted chapel district');
+// Create a chat engine bound to a project directory (it loads/creates its own
+// design session under projectRoot — nothing is written without confirmation)
+const engine = createChatEngine({ client, projectRoot: process.cwd() });
+
+// Process a design request; returns the assistant's response text
+const response = await engine.process('scaffold a haunted chapel district');
+console.log(response);
 ```
+
+The client never throws on connection or protocol errors — it returns a
+discriminated union (`{ ok: true, text }` or `{ ok: false, error }`), so you can
+check `result.ok` if you call `client.generate(...)` directly.
+
+## Configuration
+
+Config resolves in priority order: **explicit overrides** passed to
+`resolveConfig()` > **environment variables** > **built-in defaults**.
+
+| Env var | Controls | Default |
+| --- | --- | --- |
+| `AI_RPG_ENGINE_OLLAMA_URL` | Base URL of the Ollama server | `http://localhost:11434` |
+| `AI_RPG_ENGINE_OLLAMA_MODEL` | Model name to generate with | `qwen2.5-coder` |
+| `AI_RPG_ENGINE_OLLAMA_TIMEOUT_MS` | Per-request timeout in milliseconds | `30000` |
+
+```bash
+# Point at a remote Ollama box with a longer timeout
+export AI_RPG_ENGINE_OLLAMA_URL="http://192.168.1.50:11434"
+export AI_RPG_ENGINE_OLLAMA_MODEL="llama3.1"
+export AI_RPG_ENGINE_OLLAMA_TIMEOUT_MS="60000"
+```
+
+A malformed, empty, zero, or negative `AI_RPG_ENGINE_OLLAMA_TIMEOUT_MS` falls
+back to the default rather than producing an invalid timeout. If the server is
+unreachable, the error message includes the attempted URL and a recovery hint
+(start it with `ollama serve`, or set `AI_RPG_ENGINE_OLLAMA_URL`).
 
 ## Documentation
 

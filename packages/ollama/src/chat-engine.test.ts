@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import type { OllamaTextClient, PromptInput, PromptResult } from './client.js';
 import {
   createChatEngine, createChatMemory, addMessage, getRecentContext,
+  capturePlanFromOutput,
 } from './chat-engine.js';
 
 function mockClient(response: string): OllamaTextClient {
@@ -89,6 +90,34 @@ describe('getRecentContext', () => {
     const mem = createChatMemory(10, null);
     const ctx = getRecentContext(mem);
     expect(ctx).toBe('');
+  });
+});
+
+// --- Plan capture (ollama-chat-silent-plan-parse-failure) ---
+// When a tool's structured output can't be parsed back into a plan/summary,
+// the engine used to swallow the error silently (empty catch). It must instead
+// surface a one-line, actionable notice so the user knows the plan was dropped.
+describe('capturePlanFromOutput', () => {
+  it('parses valid JSON and returns no notice', () => {
+    const { value, notice } = capturePlanFromOutput<{ goal: string }>(
+      '{"goal":"build a market"}',
+      'build plan',
+    );
+    expect(value).toEqual({ goal: 'build a market' });
+    expect(notice).toBeNull();
+  });
+
+  it('returns a null value and an actionable notice on unparseable output', () => {
+    const { value, notice } = capturePlanFromOutput(
+      '{"goal": "truncated', // missing closing brace/quote
+      'build plan',
+    );
+    expect(value).toBeNull();
+    expect(notice).not.toBeNull();
+    // Names what was dropped (so the user understands the gap)…
+    expect(notice).toMatch(/build plan/i);
+    // …and is a single line (no embedded newlines).
+    expect(notice).not.toContain('\n');
   });
 });
 

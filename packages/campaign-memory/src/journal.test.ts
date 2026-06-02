@@ -174,4 +174,30 @@ describe('CampaignJournal', () => {
     const fresh = new CampaignJournal();
     expect(fresh.record(makeRecord()).id).toBe('cr_1');
   });
+
+  // CA-06: deserialize must guard malformed input with a clear, actionable message
+  // instead of letting a raw TypeError escape (e.g. "records is not iterable").
+  test('deserialize throws a clear error on a non-array (null)', () => {
+    expect(() => CampaignJournal.deserialize(null as any)).toThrowError(/array/i);
+  });
+
+  test('deserialize throws a clear error on a non-array (object)', () => {
+    expect(() => CampaignJournal.deserialize({} as any)).toThrowError(/array/i);
+  });
+
+  test('deserialize throws a clear error naming the bad element index', () => {
+    expect(() =>
+      CampaignJournal.deserialize([{ id: 'cr_1', ...makeRecord() }, null as any]),
+    ).toThrowError(/\[1\]/);
+  });
+
+  test('deserialize throws a clear error when an element is missing its id', () => {
+    const noId = { ...makeRecord() } as any; // no id field
+    expect(() => CampaignJournal.deserialize([noId])).toThrowError(/id/i);
+  });
+
+  test('deserialize accepts a valid empty array', () => {
+    const j = CampaignJournal.deserialize([]);
+    expect(j.size()).toBe(0);
+  });
 });

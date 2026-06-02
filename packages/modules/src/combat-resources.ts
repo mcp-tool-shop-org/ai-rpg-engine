@@ -123,6 +123,51 @@ function getResourceCap(profile: CombatResourceProfile, resourceId: string): num
   return profile.resourceCaps?.[resourceId] ?? 100;
 }
 
+/** Valid gain triggers (event-mapped set + the special 'ally-defeated' witness trigger). */
+const VALID_GAIN_TRIGGERS = new Set<string>([
+  ...Object.keys(GAIN_EVENT_MAP),
+  'ally-defeated',
+]);
+
+/** Valid drain triggers (event-mapped set + the special 'ally-defeated' witness trigger). */
+const VALID_DRAIN_TRIGGERS = new Set<string>([
+  ...Object.keys(DRAIN_EVENT_MAP),
+  'ally-defeated',
+]);
+
+/**
+ * Emit a structured dev warning for an unrecognized resource trigger
+ * (warn-and-degrade, MOD-PH-05). No-op if the ctx provides no emit sink.
+ * Names the offending trigger, the resource, and the valid trigger set so the
+ * author can fix the typo (e.g. 'attack-hitt' → 'attack-hit'). The legitimate
+ * 'ally-defeated' skip never reaches here.
+ */
+function warnUnknownTrigger(
+  ctx: EventRegistrationCtx,
+  kind: 'gain' | 'drain',
+  packId: string,
+  trigger: string,
+  resourceId: string,
+  validTriggers: Set<string>,
+): void {
+  ctx.events.emit?.({
+    id: '',
+    type: 'combat.resource.trigger.unknown',
+    tick: 0,
+    actorId: packId,
+    payload: {
+      packId,
+      kind,
+      trigger,
+      resourceId,
+      reason:
+        `${kind} trigger '${trigger}' (resource '${resourceId}') in pack '${packId}' ` +
+        `is not recognized and was ignored. Valid ${kind} triggers: ` +
+        `${[...validTriggers].sort().join(', ')}.`,
+    },
+  });
+}
+
 /** Try to spend a resource. Returns true if spend succeeded. */
 function trySpend(entity: EntityState, spend: ResourceSpendModifier): boolean {
   const current = entity.resources[spend.resourceId] ?? 0;
@@ -244,6 +289,13 @@ export function buildTacticalHooks(profile: CombatResourceProfile): TacticalHook
 type EventRegistrationCtx = {
   events: {
     on: (type: string, handler: (event: ResolvedEvent, world: WorldState) => void) => void;
+    /**
+     * Optional dev-event sink. The real EngineModule ctx always provides this;
+     * it is optional here only so older/narrower test stubs that pass `{ events:
+     * { on } }` still type-check. Used to surface unrecognized resource triggers
+     * (warn-and-degrade, MOD-PH-05).
+     */
+    emit?: (event: ResolvedEvent) => void;
   };
 };
 
@@ -259,7 +311,14 @@ export function registerResourceListeners(
   const gainsByEvent = new Map<string, { gain: ResourceGainTrigger; entityField: string }[]>();
   for (const gain of profile.gains) {
     const mapping = GAIN_EVENT_MAP[gain.trigger as keyof typeof GAIN_EVENT_MAP];
-    if (!mapping) continue; // ally-defeated handled separately
+    if (!mapping) {
+      // 'ally-defeated' is a legitimate witness trigger handled below; anything
+      // else is an unrecognized trigger (likely a typo) — warn-and-degrade.
+      if (!VALID_GAIN_TRIGGERS.has(gain.trigger)) {
+        warnUnknownTrigger(ctx, 'gain', profile.packId, gain.trigger, gain.resourceId, VALID_GAIN_TRIGGERS);
+      }
+      continue;
+    }
     const entries = gainsByEvent.get(mapping.eventType) ?? [];
     entries.push({ gain, entityField: mapping.entityField });
     gainsByEvent.set(mapping.eventType, entries);
@@ -290,7 +349,14 @@ export function registerResourceListeners(
   const drainsByEvent = new Map<string, { drain: ResourceDrainTrigger; entityField: string }[]>();
   for (const drain of profile.drains) {
     const mapping = DRAIN_EVENT_MAP[drain.trigger as keyof typeof DRAIN_EVENT_MAP];
-    if (!mapping) continue; // ally-defeated handled separately
+    if (!mapping) {
+      // 'ally-defeated' is a legitimate witness trigger handled below; anything
+      // else is an unrecognized trigger (likely a typo) — warn-and-degrade.
+      if (!VALID_DRAIN_TRIGGERS.has(drain.trigger)) {
+        warnUnknownTrigger(ctx, 'drain', profile.packId, drain.trigger, drain.resourceId, VALID_DRAIN_TRIGGERS);
+      }
+      continue;
+    }
     const entries = drainsByEvent.get(mapping.eventType) ?? [];
     entries.push({ drain, entityField: mapping.entityField });
     drainsByEvent.set(mapping.eventType, entries);

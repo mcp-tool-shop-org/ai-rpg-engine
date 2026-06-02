@@ -1,12 +1,14 @@
 // Audio Director — cue scheduling with priority, cooldowns, and ducking
 
 import type { NarrationPlan } from '@ai-rpg-engine/presentation';
+import { validateNarrationPlan } from '@ai-rpg-engine/presentation';
 import type {
   AudioCommand,
   AudioDomain,
   AudioDirectorConfig,
   CooldownEntry,
   DuckingRule,
+  ScheduleWarning,
 } from './types.js';
 import { DEFAULT_DOMAIN_PRIORITIES, DEFAULT_DUCKING_RULES } from './types.js';
 import { scheduleAll } from './scheduler.js';
@@ -26,12 +28,15 @@ export class AudioDirector {
   private domainPriorities: Record<AudioDomain, number>;
   private defaultCooldownMs: number;
   private cooldownOverrides: Record<string, number>;
+  private onWarn?: (warning: ScheduleWarning) => void;
+  private lastWarnings: ScheduleWarning[] = [];
 
   constructor(config?: AudioDirectorConfig) {
     this.defaultCooldownMs = config?.defaultCooldownMs ?? 2000;
     this.cooldownOverrides = config?.cooldownMs ?? {};
     this.duckingRules = config?.duckingRules ?? [...DEFAULT_DUCKING_RULES];
     this.domainPriorities = config?.domainPriorities ?? { ...DEFAULT_DOMAIN_PRIORITIES };
+    this.onWarn = config?.onWarn;
   }
 
   /** Resolve the cooldown for a resource: per-resource override, else the default. */
@@ -48,6 +53,39 @@ export class AudioDirector {
    *             time) so scheduling stays deterministic and replayable.
    */
   schedule(plan: NarrationPlan, now: number): AudioCommand[] {
+    this.lastWarnings = [];
+
+    // Guard the untrusted-input boundary. scheduleAll() reads plan.sceneText.split,
+    // plan.sfx.map, plan.ambientLayers.map with no checks, so a plan a consumer
+    // built by hand (missing a field) would crash with a raw ".map of undefined".
+    const errors = validateNarrationPlan(plan);
+    if (errors.length > 0) {
+      // A non-object plan (null/undefined/primitive) has nothing schedulable and
+      // would otherwise throw a raw TypeError downstream — hard-throw a structured
+      // error instead, matching the engine's "invalid input that would crash anyway"
+      // rule.
+      const rootError = errors.find((e) => e.field === 'root');
+      if (rootError) {
+        throw new Error(
+          `[audio-director] schedule() received an invalid NarrationPlan: ${rootError.message}. ` +
+            `Pass a NarrationPlan object (see @ai-rpg-engine/presentation).`,
+        );
+      }
+
+      // Otherwise it is an incomplete-but-object plan (a likely consumer mistake).
+      // Degrade: surface each problem as a structured, actionable warning naming
+      // the field, and return no commands rather than crashing on a missing array.
+      for (const e of errors) {
+        const warning: ScheduleWarning = {
+          field: e.field,
+          message: `${e.message} (audio-director skipped scheduling this plan; fix the field above)`,
+        };
+        this.lastWarnings.push(warning);
+        this.onWarn?.(warning);
+      }
+      return [];
+    }
+
     const raw = scheduleAll(plan, this.domainPriorities);
 
     // Filter out cooled-down resources
@@ -115,6 +153,15 @@ export class AudioDirector {
   /** Clear all cooldowns (e.g. on scene change). */
   clearCooldowns(): void {
     this.cooldowns.clear();
+  }
+
+  /**
+   * Warnings raised by the most recent {@link schedule} call. Empty when the
+   * last plan scheduled cleanly. Lets consumers that did not supply an `onWarn`
+   * callback still inspect why an incomplete plan produced no commands.
+   */
+  getLastWarnings(): ScheduleWarning[] {
+    return [...this.lastWarnings];
   }
 
   /** Build ducking commands based on active triggers. */

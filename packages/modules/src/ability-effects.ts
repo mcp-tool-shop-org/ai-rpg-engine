@@ -107,6 +107,21 @@ function resolveEffectTargets(
   }
 }
 
+/**
+ * Resolve the maximum for a resource, resources-first.
+ *
+ * The engine convention is that content stores caps alongside the resource
+ * (e.g. `resources.maxHp`). We prefer that, fall back to `stats.maxHp` for
+ * legacy fixtures, then to Infinity (no cap). Reading only `stats[maxKey]`
+ * previously let heals and resource gains silently overheal real content,
+ * because content never put maxHp in `stats` (MOD-PH-01). Mirrors the
+ * precedence in ability-intent.ts `entityHpRatio`.
+ */
+function resourceMax(target: EntityState, resource: string): number {
+  const maxKey = `max${resource.charAt(0).toUpperCase()}${resource.slice(1)}`;
+  return target.resources[maxKey] ?? target.stats[maxKey] ?? Infinity;
+}
+
 /** damage — reduce HP, emit damage events, trigger defeat if HP <= 0 */
 function handleDamage(effect: EffectDefinition, ctx: EffectContext): ResolvedEvent[] {
   const events: ResolvedEvent[] = [];
@@ -170,9 +185,11 @@ function handleHeal(effect: EffectDefinition, ctx: EffectContext): ResolvedEvent
 
   for (const target of targets) {
     const before = target.resources[resource] ?? 0;
-    // Use max from stats if available (e.g., stats.maxHp), otherwise no cap
-    const maxKey = `max${resource.charAt(0).toUpperCase()}${resource.slice(1)}`;
-    const max = target.stats[maxKey] ?? Infinity;
+    // Resources-first cap precedence (matches ability-intent.ts entityHpRatio):
+    // content stores the max in resources.maxHp (the engine convention); fall
+    // back to stats.maxHp for legacy fixtures, then to no cap. Reading only
+    // stats.maxHp made heals silently overheal for real content (MOD-PH-01).
+    const max = resourceMax(target, resource);
     target.resources[resource] = Math.min(max, before + amount);
     const after = target.resources[resource];
 
@@ -206,6 +223,28 @@ function handleApplyStatus(effect: EffectDefinition, ctx: EffectContext): Resolv
   const targets = resolveEffectTargets(effect, ctx);
 
   for (const target of targets) {
+    // --- Unregistered-status warning (warn-and-degrade) ---
+    // If the status carries no registered semantic tags, it was never added via
+    // registerStatusDefinitions(). Resistance checks and tag-based cleanses can't
+    // see it, so surface a structured dev signal (mirrors 'ability.effect.unknown')
+    // naming the id and how to fix it — but still apply the status (MOD-PH-04).
+    if (getStatusTags(statusId).length === 0) {
+      events.push(makeEvent(ctx.action, 'ability.status.unregistered', {
+        abilityId: ctx.ability.id,
+        abilityName: ctx.ability.name,
+        actorId: ctx.actor.id,
+        targetId: target.id,
+        targetName: target.name,
+        statusId,
+        reason: `status "${statusId}" is not registered (no semantic tags found); ` +
+          `resistance and tag-cleanse will not apply to it. ` +
+          `Register it via registerStatusDefinitions([{ id: "${statusId}", ... }]).`,
+      }, {
+        targetIds: [target.id],
+        tags: ['ability', 'status', 'dev-warning'],
+      }));
+    }
+
     // --- Resistance check ---
     const resistance = checkResistance(target, statusId);
 
@@ -325,8 +364,8 @@ function handleResourceModify(effect: EffectDefinition, ctx: EffectContext): Res
 
   for (const target of targets) {
     const before = target.resources[resource] ?? 0;
-    const maxKey = `max${resource.charAt(0).toUpperCase()}${resource.slice(1)}`;
-    const max = target.stats[maxKey] ?? Infinity;
+    // Same resources-first cap precedence as handleHeal (MOD-PH-01).
+    const max = resourceMax(target, resource);
     target.resources[resource] = Math.min(max, Math.max(0, before + delta));
     const after = target.resources[resource];
 

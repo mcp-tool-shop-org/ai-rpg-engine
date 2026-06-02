@@ -358,24 +358,32 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       } catch { /* ignore */ }
     }
 
+    // Notices for plan-capture failures — surfaced to the user instead of being
+    // swallowed silently (a dropped plan would otherwise look like success).
+    const planNotices: string[] = [];
+
     // Capture build plan if the build tool generated one
     if (classification.intent === 'build_goal' && toolResult.ok && toolResult.output) {
-      try {
-        const plan = JSON.parse(toolResult.output) as BuildPlan;
+      const { value: plan, notice } = capturePlanFromOutput<BuildPlan>(toolResult.output, 'build plan');
+      if (plan) {
         activeBuild = createBuildState(plan);
-      } catch { /* output wasn't valid plan JSON — ignore */ }
+      } else if (notice) {
+        planNotices.push(notice);
+      }
     }
 
     // Capture tuning plan if the tune tool generated one
     // v1.7.0: use operational plan when prior analysis is available
     if (classification.intent === 'tune_goal' && toolResult.ok && toolResult.output) {
-      try {
-        const rawPlan = JSON.parse(toolResult.output) as TuningPlan;
+      const { value: rawPlan, notice } = capturePlanFromOutput<TuningPlan>(toolResult.output, 'tuning plan');
+      if (rawPlan) {
         const plan = lastAnalysis
           ? generateOperationalPlan(rawPlan.goal, session, lastAnalysis)
           : rawPlan;
         activeTuning = createTuningState(plan);
-      } catch { /* output wasn't valid plan JSON — ignore */ }
+      } else if (notice) {
+        planNotices.push(notice);
+      }
     }
 
     // Capture experiment summary/plan (v1.8.0)
@@ -383,8 +391,10 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       (classification.intent === 'experiment_run' || classification.intent === 'experiment_compare')
       && toolResult.ok && toolResult.output
     ) {
-      try {
-        const parsed = JSON.parse(toolResult.output);
+      const { value: parsed, notice } = capturePlanFromOutput<{ spec?: unknown; runs?: unknown }>(
+        toolResult.output, 'experiment summary',
+      );
+      if (parsed) {
         if (parsed.spec && parsed.runs) {
           // It's an ExperimentSummary
           if (lastExperiment) {
@@ -392,7 +402,11 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
           }
           lastExperiment = parsed as ExperimentSummary;
         }
-      } catch { /* ignore */ }
+        // A well-formed-but-not-a-summary payload (e.g. a plan) is expected here
+        // and intentionally produces no notice.
+      } else if (notice) {
+        planNotices.push(notice);
+      }
     }
 
     // Apply session events
@@ -418,6 +432,11 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     // Show pending write notice
     if (toolResult.pendingWrite) {
       response += `\n\nContent ready to save to ${toolResult.pendingWrite.suggestedPath}. Say "yes" to write, or "write to <path>" to choose a different location.`;
+    }
+
+    // Surface any plan-capture failures so they aren't swallowed silently.
+    for (const notice of planNotices) {
+      response += `\n\n${notice}`;
     }
 
     // Record assistant message
@@ -701,6 +720,31 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
 }
 
 // --- Helpers ---
+
+/**
+ * Parse a tool's structured `output` back into a typed plan/summary.
+ *
+ * Tools emit their plan as JSON in `toolResult.output`; the engine parses it to
+ * drive multi-step build/tune/experiment flows. If that JSON is malformed
+ * (truncated model output, a future tool emitting a non-JSON blob), the parse
+ * fails. Rather than swallow the error silently — which leaves the user thinking
+ * a plan is active when none was captured — return a null value plus a one-line,
+ * actionable notice naming what was dropped. Callers append the notice to the
+ * response.
+ */
+export function capturePlanFromOutput<T>(
+  output: string,
+  kind: string,
+): { value: T | null; notice: string | null } {
+  try {
+    return { value: JSON.parse(output) as T, notice: null };
+  } catch {
+    return {
+      value: null,
+      notice: `Note: I generated a ${kind} but couldn't read it back (the model's output wasn't valid JSON), so no plan is active. Try rephrasing the request or running it again.`,
+    };
+  }
+}
 
 function isConfirmation(msg: string): boolean {
   const normalized = msg.trim().toLowerCase();

@@ -208,4 +208,60 @@ describe('AudioDirector', () => {
       expect(director.isOnCooldown('alert_warning', 2000)).toBe(false);
     });
   });
+
+  // AUD-001: schedule() previously read plan.sceneText.split / plan.sfx.map /
+  // plan.ambientLayers.map with no guard, so an incomplete plan (a consumer
+  // mistake — e.g. forgetting sfx/ambientLayers) crashed with a raw
+  // ".map of undefined". Per WARN-AND-DEGRADE it must now degrade: return [] and
+  // surface a structured warning naming the missing field, not throw.
+  describe('invalid plan handling (AUD-001)', () => {
+    it('returns [] instead of crashing when the plan is missing arrays', () => {
+      const director = new AudioDirector();
+      // Incomplete plan: a consumer built it by hand and forgot sfx/ambientLayers.
+      const broken = { sceneText: 'A scene.', tone: 'calm', urgency: 'normal' } as unknown as NarrationPlan;
+
+      expect(() => director.schedule(broken, 0)).not.toThrow();
+      expect(director.schedule(broken, 0)).toEqual([]);
+    });
+
+    it('surfaces a structured warning naming the offending field via onWarn', () => {
+      const warnings: { field: string; message: string }[] = [];
+      const director = new AudioDirector({ onWarn: (w) => warnings.push(w) });
+      const broken = { sceneText: 'A scene.', tone: 'calm', urgency: 'normal' } as unknown as NarrationPlan;
+
+      director.schedule(broken, 0);
+
+      // At least one warning, and the missing sfx array is named with a fix hint.
+      expect(warnings.length).toBeGreaterThan(0);
+      const sfxWarn = warnings.find((w) => w.field === 'sfx');
+      expect(sfxWarn).toBeDefined();
+      expect(sfxWarn!.message).toMatch(/sfx/);
+    });
+
+    it('exposes the last batch of warnings via getLastWarnings()', () => {
+      const director = new AudioDirector();
+      const broken = { sceneText: 'A scene.' } as unknown as NarrationPlan;
+
+      director.schedule(broken, 0);
+      const warns = director.getLastWarnings();
+      expect(warns.length).toBeGreaterThan(0);
+      expect(warns.every((w) => typeof w.field === 'string' && typeof w.message === 'string')).toBe(true);
+    });
+
+    it('hard-throws a structured error for a non-object plan (would crash anyway)', () => {
+      const director = new AudioDirector();
+      expect(() => director.schedule(null as unknown as NarrationPlan, 0)).toThrow(/NarrationPlan/);
+    });
+
+    it('still schedules normally and reports no warnings for a valid plan', () => {
+      const director = new AudioDirector();
+      const plan = makePlan({
+        sfx: [{ effectId: 'alert_warning', timing: 'immediate', intensity: 0.8 }],
+      });
+
+      const commands = director.schedule(plan, 0);
+      expect(commands.length).toBeGreaterThan(0);
+      expect(director.getLastWarnings()).toEqual([]);
+    });
+  });
 });

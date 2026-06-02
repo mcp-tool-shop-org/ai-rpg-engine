@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { createStarter, validateScaffold } from './create-starter.js';
+import { createStarter, validateScaffold, runCreateStarter } from './create-starter.js';
 
 describe('create-starter', () => {
     let tmpDir: string;
@@ -179,5 +179,60 @@ describe('create-starter', () => {
 
         const index = fs.readFileSync(path.join(outDir, 'src/index.ts'), 'utf-8');
         expect(index).toContain('darkSoulsRuleset');
+    });
+});
+
+// CLI-012 — an empty/whitespace --out= value must NOT silently scaffold into
+// packages/. A present-but-empty --out token is a likely mistake (e.g. a shell
+// that dropped the value) and would otherwise write the scaffold somewhere the
+// user never named. It must fail loudly with a structured error and exit 1.
+describe('runCreateStarter --out validation (CLI-012)', () => {
+    let tmpDir: string;
+    let exitSpy: ReturnType<typeof vi.spyOn>;
+    let errSpy: ReturnType<typeof vi.spyOn>;
+    let logSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-out-test-'));
+        // process.exit must throw so we can assert it fired AND stop execution
+        // before any file write happens.
+        exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+            throw new Error(`__exit__${code}`);
+        }) as never);
+        errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        exitSpy.mockRestore();
+        errSpy.mockRestore();
+        logSpy.mockRestore();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('exits 1 with a structured error when --out= is empty', () => {
+        expect(() => runCreateStarter(['western', '--out='])).toThrow('__exit__1');
+        const combined = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+        expect(combined).toMatch(/--out/);
+        // Must name how to fix it (the actionable part of the structured error).
+        expect(combined).toMatch(/directory|path/i);
+    });
+
+    it('exits 1 when --out= is only whitespace', () => {
+        expect(() => runCreateStarter(['western', '--out=   '])).toThrow('__exit__1');
+        const combined = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+        expect(combined).toMatch(/--out/);
+    });
+
+    it('does NOT trip the empty-out guard when --out carries a real value', () => {
+        // A non-empty --out value must pass the guard and scaffold normally into
+        // the isolated temp dir (no repo pollution, no --out error, no exit).
+        const outDir = path.join(tmpDir, 'guard-ok');
+        runCreateStarter(['western', `--out=${outDir}`]);
+        expect(exitSpy).not.toHaveBeenCalled();
+        const combined = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+        expect(combined).not.toMatch(/--out/);
+        // And it actually produced a scaffold at the named location.
+        expect(fs.existsSync(path.join(outDir, 'src/setup.ts'))).toBe(true);
     });
 });

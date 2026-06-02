@@ -153,6 +153,28 @@ describe('NpcMemoryBank', () => {
     expect(rel.trust).toBeCloseTo(-0.4);
     expect(rel.fear).toBeCloseTo(0.3);
   });
+
+  // CA-06: deserialize must guard malformed state with a clear, actionable message
+  // instead of producing a half-built bank that throws a raw TypeError later.
+  test('deserialize throws a clear error on null state', () => {
+    expect(() => NpcMemoryBank.deserialize(null as any)).toThrowError(/object|state/i);
+  });
+
+  test('deserialize throws a clear error when entityId is missing', () => {
+    expect(() => NpcMemoryBank.deserialize({ subjects: {} } as any)).toThrowError(/entityId/i);
+  });
+
+  test('deserialize throws a clear error when subjects is not an object', () => {
+    expect(() =>
+      NpcMemoryBank.deserialize({ entityId: 'g', subjects: [] } as any),
+    ).toThrowError(/subjects/i);
+  });
+
+  test('deserialize accepts a minimal valid state with no subjects', () => {
+    const bank = NpcMemoryBank.deserialize({ entityId: 'lonely', subjects: {} });
+    expect(bank.entityId).toBe('lonely');
+    expect(bank.knownSubjects()).toHaveLength(0);
+  });
 });
 
 describe('applyRelationshipEffect', () => {

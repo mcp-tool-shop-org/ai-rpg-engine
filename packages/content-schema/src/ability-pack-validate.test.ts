@@ -128,6 +128,36 @@ describe('validateAbilityPack — unit', () => {
     expect(r.ok).toBe(false);
     expect(r.errors.some((e) => e.path.includes('effects'))).toBe(true);
   });
+
+  // CA-03: validateAbilityPack must not trust the ruleset. A malformed ruleset must
+  // yield a structured failure, never a raw TypeError (e.g. "ruleset.stats.map is not
+  // a function").
+  it('fails structurally when ruleset is null (no TypeError)', () => {
+    let r!: ReturnType<typeof validateAbilityPack>;
+    expect(() => {
+      r = validateAbilityPack([validAbility], null as any);
+    }).not.toThrow();
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('ruleset'))).toBe(true);
+  });
+
+  it('fails structurally when ruleset.stats is not an array (no TypeError)', () => {
+    let r!: ReturnType<typeof validateAbilityPack>;
+    expect(() => {
+      r = validateAbilityPack([validAbility], { stats: 'nope', resources: [] } as any);
+    }).not.toThrow();
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('ruleset.stats'))).toBe(true);
+  });
+
+  it('fails structurally when ruleset.resources is missing (no TypeError)', () => {
+    let r!: ReturnType<typeof validateAbilityPack>;
+    expect(() => {
+      r = validateAbilityPack([validAbility], { stats: [] } as any);
+    }).not.toThrow();
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('ruleset.resources'))).toBe(true);
+  });
 });
 
 describe('validateAbilityPack — advisories', () => {

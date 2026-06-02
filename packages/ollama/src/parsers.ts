@@ -20,6 +20,17 @@ export function extractYaml(raw: string): string {
 /**
  * Extract a JSON block from model output.
  * Strips markdown fences if present, attempts raw parse otherwise.
+ *
+ * Best-effort only — this does NOT validate or balance the result:
+ * - If the input is truncated mid-object/array (a common failure mode when a
+ *   local model hits its token limit), the brace/bracket depth never returns to
+ *   zero and this returns the **unbalanced fragment** from the first `{`/`[` to
+ *   end-of-input. It never fabricates a closing delimiter.
+ * - If no JSON delimiter is found at all, the trimmed raw input is returned.
+ *
+ * Because of this, the return value is not guaranteed to be parseable. Callers
+ * MUST wrap their own `JSON.parse(...)` in a try/catch (or otherwise validate)
+ * and degrade gracefully on failure rather than assuming valid JSON.
  */
 export function extractJson(raw: string): string {
   const fenced = /```(?:json)?\s*\n([\s\S]*?)```/.exec(raw);

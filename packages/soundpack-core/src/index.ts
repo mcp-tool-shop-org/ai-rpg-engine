@@ -8,7 +8,12 @@ export type {
   SoundQuery,
 } from './types.js';
 
-export { SoundRegistry } from './registry.js';
+export {
+  SoundRegistry,
+  type LoadResult,
+  type LoadOptions,
+  type LoadWarning,
+} from './registry.js';
 export { CORE_SOUND_PACK } from './core-pack.js';
 export {
   validateManifest,

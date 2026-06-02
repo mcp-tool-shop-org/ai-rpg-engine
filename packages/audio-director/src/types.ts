@@ -2,6 +2,17 @@
 
 export type AudioDomain = 'voice' | 'sfx' | 'ambient' | 'music';
 
+/**
+ * A structured, actionable warning surfaced when {@link AudioDirector.schedule}
+ * receives a plan it cannot fully schedule (e.g. a missing array field).
+ */
+export type ScheduleWarning = {
+  /** The offending field (e.g. `sfx`, `ambientLayers`). */
+  field: string;
+  /** What is wrong and how to fix it. */
+  message: string;
+};
+
 /** A scheduled audio command to be executed by the renderer. */
 export type AudioCommand = {
   domain: AudioDomain;
@@ -39,6 +50,13 @@ export type AudioDirectorConfig = {
   cooldownMs?: Record<string, number>;
   duckingRules?: DuckingRule[];
   domainPriorities?: Record<AudioDomain, number>;
+  /**
+   * Optional sink for structured warnings raised during {@link AudioDirector.schedule}
+   * (e.g. an incomplete plan). Lets dev tooling surface the warning without the
+   * director writing to a console — keeping it deterministic. Warnings are also
+   * always retrievable via `getLastWarnings()`.
+   */
+  onWarn?: (warning: ScheduleWarning) => void;
 };
 
 /** Default domain priorities (higher number = higher priority). */

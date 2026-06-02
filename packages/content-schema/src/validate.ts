@@ -458,9 +458,13 @@ export function validateQuestDefinition(v: unknown, path = 'QuestDefinition'): V
   return { ok: c.errors.length === 0, errors: c.errors };
 }
 
-export function validateDialogueDefinition(v: unknown, path = 'DialogueDefinition'): ValidationResult {
-  if (!isObj(v)) return fail([{ path, message: 'must be an object' }]);
+export function validateDialogueDefinition(
+  v: unknown,
+  path = 'DialogueDefinition',
+): ValidationResult & { advisories: ValidationError[] } {
+  if (!isObj(v)) return { ...fail([{ path, message: 'must be an object' }]), advisories: [] };
   const c = checker(path);
+  const advisories: ValidationError[] = [];
   reqStr(c, v, 'id');
   reqStrArr(c, v, 'speakers');
   reqStr(c, v, 'entryNodeId');
@@ -539,9 +543,42 @@ export function validateDialogueDefinition(v: unknown, path = 'DialogueDefinitio
 
       c.errors.push(...nc.errors);
     }
+
+    // CA-07: reachability — walk from entryNodeId following choices + nextNodeId; any node
+    // never visited is an orphan (unreachable). This is an advisory (the dialogue still
+    // loads), not an error. Only walk when the entry node actually exists.
+    if (typeof v.entryNodeId === 'string' && nodeIds.has(v.entryNodeId)) {
+      const reachable = new Set<string>();
+      const stack: string[] = [v.entryNodeId];
+      while (stack.length > 0) {
+        const current = stack.pop()!;
+        if (reachable.has(current)) continue;
+        reachable.add(current);
+        const node = nodes[current];
+        if (!isObj(node)) continue;
+        if (Array.isArray(node.choices)) {
+          for (const ch of node.choices as unknown[]) {
+            if (isObj(ch) && typeof ch.nextNodeId === 'string' && nodeIds.has(ch.nextNodeId)) {
+              stack.push(ch.nextNodeId);
+            }
+          }
+        }
+        if (typeof node.nextNodeId === 'string' && nodeIds.has(node.nextNodeId)) {
+          stack.push(node.nextNodeId);
+        }
+      }
+      for (const nodeId of nodeIds) {
+        if (!reachable.has(nodeId)) {
+          advisories.push({
+            path: `${path}.nodes.${nodeId}`,
+            message: `node "${nodeId}" is unreachable from entry node "${v.entryNodeId}" — link a choice/nextNodeId to it or remove it`,
+          });
+        }
+      }
+    }
   }
 
-  return { ok: c.errors.length === 0, errors: c.errors };
+  return { ok: c.errors.length === 0, errors: c.errors, advisories };
 }
 
 export function validateProgressionTreeDefinition(v: unknown, path = 'ProgressionTreeDefinition'): ValidationResult {
@@ -607,6 +644,39 @@ export function validateSoundCueDefinition(v: unknown, path = 'SoundCueDefinitio
 
 // --- Ruleset validator ---
 
+/**
+ * Cross-checks numeric bounds on a stat/resource definition (CA-04): min <= max, and
+ * min <= default <= max. Only compares fields that are actually numbers, so a missing
+ * (optional) min/max imposes no constraint. Reports structured errors naming the field.
+ */
+function checkBounds(c: Checker, v: Record<string, unknown>): void {
+  const min = v.min;
+  const max = v.max;
+  const def = v.default;
+  const hasMin = typeof min === 'number';
+  const hasMax = typeof max === 'number';
+  const hasDef = typeof def === 'number';
+
+  if (hasMin && hasMax && (min as number) > (max as number)) {
+    c.errors.push({
+      path: `${c.path}.min`,
+      message: `min (${min}) must be <= max (${max})`,
+    });
+  }
+  if (hasDef && hasMin && (def as number) < (min as number)) {
+    c.errors.push({
+      path: `${c.path}.default`,
+      message: `default (${def}) must be >= min (${min})`,
+    });
+  }
+  if (hasDef && hasMax && (def as number) > (max as number)) {
+    c.errors.push({
+      path: `${c.path}.default`,
+      message: `default (${def}) must be <= max (${max})`,
+    });
+  }
+}
+
 function vStatDefinition(path: string, v: unknown): ValidationError[] {
   if (!isObj(v)) return [{ path, message: 'must be an object' }];
   const c = checker(path);
@@ -615,6 +685,7 @@ function vStatDefinition(path: string, v: unknown): ValidationError[] {
   optNum(c, v, 'min');
   optNum(c, v, 'max');
   reqNum(c, v, 'default');
+  checkBounds(c, v);
   return c.errors;
 }
 
@@ -627,6 +698,7 @@ function vResourceDefinition(path: string, v: unknown): ValidationError[] {
   optNum(c, v, 'max');
   reqNum(c, v, 'default');
   optNum(c, v, 'regenRate');
+  checkBounds(c, v);
   return c.errors;
 }
 
@@ -731,10 +803,34 @@ export function validateAbilityPack(
     return { ...fail([{ path, message: 'abilities must be an array' }]), advisories: [] };
   }
 
-  // Build lookup sets from ruleset
-  const statIds = new Set(ruleset.stats.map((s) => s.id));
+  // CA-03: never trust the ruleset shape. A malformed ruleset must produce a structured
+  // failure here, not a raw TypeError ("ruleset.stats.map is not a function") deeper down.
+  if (!isObj(ruleset)) {
+    return {
+      ...fail([{ path: `${path}.ruleset`, message: `ruleset must be an object (got ${ruleset === null ? 'null' : Array.isArray(ruleset) ? 'array' : typeof ruleset})` }]),
+      advisories: [],
+    };
+  }
+  const rulesetErrors: ValidationError[] = [];
+  if (!Array.isArray((ruleset as Record<string, unknown>).stats)) {
+    rulesetErrors.push({ path: `${path}.ruleset.stats`, message: 'must be an array of { id }' });
+  }
+  if (!Array.isArray((ruleset as Record<string, unknown>).resources)) {
+    rulesetErrors.push({ path: `${path}.ruleset.resources`, message: 'must be an array of { id }' });
+  }
+  if (rulesetErrors.length > 0) {
+    return { ...fail(rulesetErrors), advisories: [] };
+  }
+
+  // Build lookup sets from ruleset (shape now guaranteed). Each entry is read defensively
+  // so a non-object element does not throw.
+  const statIds = new Set(
+    ruleset.stats.filter((s): s is { id: string } => isObj(s) && typeof s.id === 'string').map((s) => s.id),
+  );
   const resourceIds = new Set([
-    ...ruleset.resources.map((r) => r.id),
+    ...ruleset.resources
+      .filter((r): r is { id: string } => isObj(r) && typeof r.id === 'string')
+      .map((r) => r.id),
     ...IMPLICIT_RESOURCES,
   ]);
 

@@ -47,7 +47,7 @@ const sharedCombatConfig: CombatStackConfig = {
 
 // --- World A: Frozen Tundra ---
 
-function createTundraWorld(seed: number): Engine {
+export function createTundraWorld(seed: number): Engine {
   const combat = buildCombatStack(sharedCombatConfig);
   const manifest: GameManifest = {
     id: 'frozen-tundra', title: 'Frozen Tundra', version: '1.0.0',
@@ -60,28 +60,30 @@ function createTundraWorld(seed: number): Engine {
     { id: 'ice-cave', roomId: 'ice-cave', name: 'Ice Cave', tags: ['cold', 'dark'], neighbors: ['glacier'] },
   ];
 
+  // Both combatants start in 'glacier' and carry stamina so an attack resolves
+  // instead of being rejected ("target not in same zone" / "not enough stamina").
   const player: EntityState = {
     id: 'player', blueprintId: 'player', type: 'player', name: 'Frost Ranger',
     tags: ['human'], stats: { ferocity: 5, instinct: 6, endurance: 4 },
-    resources: { hp: 28, maxHp: 28, fury: 0 }, statuses: [],
+    resources: { hp: 28, maxHp: 28, fury: 0, stamina: 5 }, zoneId: 'glacier', statuses: [],
   };
   const iceWyrm: EntityState = {
     id: 'ice-wyrm', blueprintId: 'ice-wyrm', type: 'enemy', name: 'Ice Wyrm',
     tags: ['beast'], stats: { ferocity: 7, instinct: 4, endurance: 5 },
-    resources: { hp: 20, maxHp: 20 }, statuses: [],
+    resources: { hp: 20, maxHp: 20, stamina: 5 }, zoneId: 'glacier', statuses: [],
   };
 
   zones.forEach(z => engine.store.addZone(z));
   engine.store.addEntity(player);
   engine.store.addEntity(iceWyrm);
   engine.store.state.playerId = 'player';
-  engine.store.state.locationId = 'glacier';
+  engine.store.setPlayerLocation('glacier');
   return engine;
 }
 
 // --- World B: Desert Ruins ---
 
-function createDesertWorld(seed: number): Engine {
+export function createDesertWorld(seed: number): Engine {
   const combat = buildCombatStack(sharedCombatConfig);
   const manifest: GameManifest = {
     id: 'desert-ruins', title: 'Desert Ruins', version: '1.0.0',
@@ -97,22 +99,24 @@ function createDesertWorld(seed: number): Engine {
   const player: EntityState = {
     id: 'player', blueprintId: 'player', type: 'player', name: 'Sand Walker',
     tags: ['human'], stats: { ferocity: 4, instinct: 7, endurance: 5 },
-    resources: { hp: 24, maxHp: 24, fury: 0 }, statuses: [],
+    resources: { hp: 24, maxHp: 24, fury: 0, stamina: 5 }, zoneId: 'oasis', statuses: [],
   };
   const mummy: EntityState = {
     id: 'mummy', blueprintId: 'mummy', type: 'enemy', name: 'Risen Mummy',
     tags: ['undead'], stats: { ferocity: 6, instinct: 3, endurance: 7 },
-    resources: { hp: 22, maxHp: 22 }, statuses: [],
+    resources: { hp: 22, maxHp: 22, stamina: 5 }, zoneId: 'oasis', statuses: [],
   };
 
   zones.forEach(z => engine.store.addZone(z));
   engine.store.addEntity(player);
   engine.store.addEntity(mummy);
   engine.store.state.playerId = 'player';
-  engine.store.state.locationId = 'oasis';
+  engine.store.setPlayerLocation('oasis');
   return engine;
 }
 
 // Same combat mechanics, different worlds.
 const _tundra = createTundraWorld(1);
 const _desert = createDesertWorld(2);
+void _tundra;
+void _desert;

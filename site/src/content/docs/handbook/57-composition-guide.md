@@ -143,11 +143,15 @@ const engine = new Engine({
 
 ## Step 4: Create Your Content
 
+A zone connects to others through `neighbors` (zone ids), and entities locate themselves with `zoneId` — a zone does not carry an entity roster. Combatants must share a `zoneId` and carry a `stamina` resource, or combat-core rejects the attack ("target not in same zone" / "not enough stamina"). `blueprintId` is required on every entity.
+
 ```typescript
-engine.store.addZone({ id: 'cave', name: 'Goblin Cave', tags: ['dark'], exits: [{ to: 'clearing' }] });
-engine.store.addEntity({ id: 'hero', type: 'player', name: 'Fighter', tags: ['human'], stats: { might: 6, agility: 5, will: 4 }, resources: { hp: 25, maxHp: 25 }, inventory: [], equipment: {}, statuses: [] });
+engine.store.addZone({ id: 'cave', roomId: 'cave', name: 'Goblin Cave', tags: ['dark'], neighbors: ['clearing'] });
+engine.store.addEntity({ id: 'hero', blueprintId: 'hero', type: 'player', name: 'Fighter', tags: ['human'], stats: { might: 6, agility: 5, will: 4 }, resources: { hp: 25, maxHp: 25, stamina: 5 }, zoneId: 'cave', inventory: [], equipment: {}, statuses: [] });
+engine.store.addEntity({ id: 'goblin', blueprintId: 'goblin', type: 'enemy', name: 'Cave Goblin', tags: ['beast'], stats: { might: 3, agility: 6, will: 2 }, resources: { hp: 12, maxHp: 12, stamina: 5 }, zoneId: 'cave', statuses: [] });
 engine.store.state.playerId = 'hero';
-engine.store.state.locationId = 'cave';
+// setPlayerLocation keeps state.locationId and the player's zoneId in sync.
+engine.store.setPlayerLocation('cave');
 ```
 
 ---

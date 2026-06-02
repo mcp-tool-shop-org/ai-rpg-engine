@@ -10,11 +10,13 @@ import type {
   ScalarValue,
 } from './types.js';
 import { SeededRNG } from './rng.js';
-import { EventBus } from './events.js';
+import { EventBus, type EventBusListenerErrorHook } from './events.js';
 
 export type WorldStoreOptions = {
   manifest: GameManifest;
   seed?: number;
+  /** Optional hook to observe consumer-listener failures (see EventBus). */
+  onListenerError?: EventBusListenerErrorHook;
 };
 
 /**
@@ -128,7 +130,7 @@ export class WorldStore {
   constructor(options: WorldStoreOptions) {
     const seed = options.seed ?? 0;
     this.rng = new SeededRNG(seed);
-    this.events = new EventBus();
+    this.events = new EventBus({ onListenerError: options.onListenerError });
 
     this.state = {
       meta: {

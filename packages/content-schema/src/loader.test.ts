@@ -92,4 +92,56 @@ describe('loadContent', () => {
     expect(r.summary).toContain('errors');
     expect(r.summary).toContain('nowhere');
   });
+
+  // CA-02: guard the boundary. A malformed pack must fail with a structured error
+  // naming the offending field — never silently return ok:true and never throw a raw
+  // TypeError on a null element.
+
+  it('rejects null as a content pack with a structured error', () => {
+    const r = loadContent(null as any);
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path === 'pack')).toBe(true);
+  });
+
+  it('rejects a non-object content pack (string)', () => {
+    const r = loadContent('not-a-pack' as any);
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path === 'pack')).toBe(true);
+  });
+
+  it('rejects a content pack that is an array', () => {
+    const r = loadContent([] as any);
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path === 'pack')).toBe(true);
+  });
+
+  it('rejects entities that is not an array (naming the field)', () => {
+    const r = loadContent({ entities: 'nope' } as any);
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path === 'pack.entities')).toBe(true);
+  });
+
+  it('rejects zones that is not an array (naming the field)', () => {
+    const r = loadContent({ zones: 42 } as any);
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path === 'pack.zones')).toBe(true);
+  });
+
+  it('does not throw on a null element in entities — reports it structurally', () => {
+    let r!: ReturnType<typeof loadContent>;
+    expect(() => {
+      r = loadContent({ entities: [null] } as any);
+    }).not.toThrow();
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('entities'))).toBe(true);
+  });
+
+  it('does not throw on a null element in zones — reports it structurally', () => {
+    let r!: ReturnType<typeof loadContent>;
+    expect(() => {
+      r = loadContent({ zones: [null] } as any);
+    }).not.toThrow();
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('zones'))).toBe(true);
+  });
 });

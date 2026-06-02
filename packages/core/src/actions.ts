@@ -15,6 +15,12 @@ export type ActionValidationResult = {
 
 export type ActionValidator = (action: ActionIntent, world: WorldState) => ActionValidationResult;
 
+/** Extract a one-line message from a thrown value without leaking the stack. */
+function errMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
 export class ActionDispatcher {
   private verbs: Map<string, VerbHandler> = new Map();
   private validators: ActionValidator[] = [];
@@ -50,9 +56,20 @@ export class ActionDispatcher {
       targetIds: action.targetIds,
     }, { actorId: action.actorId });
 
-    // Validate
+    // Validate. A validator is consumer-supplied code (module rule checks run
+    // through one); a throwing validator must degrade to a structured
+    // action.rejected naming the verb, not abort the tick with a raw stack.
     for (const validator of this.validators) {
-      const result = validator(action, world);
+      let result: ActionValidationResult;
+      try {
+        result = validator(action, world);
+      } catch (err) {
+        store.emitEvent('action.rejected', {
+          verb: action.verb,
+          reason: `validator for "${action.verb}" threw: ${errMessage(err)}`,
+        }, { actorId: action.actorId });
+        return [];
+      }
       if (!result.valid) {
         store.emitEvent('action.rejected', {
           verb: action.verb,
@@ -72,8 +89,19 @@ export class ActionDispatcher {
       return [];
     }
 
-    // Resolve
-    const events = handler(action, world);
+    // Resolve. The handler is module-supplied; a throw must surface as a
+    // structured action.rejected (verb + that the handler threw) so a single
+    // buggy verb cannot crash the tick or leak a stack to the player.
+    let events: ResolvedEvent[];
+    try {
+      events = handler(action, world);
+    } catch (err) {
+      store.emitEvent('action.rejected', {
+        verb: action.verb,
+        reason: `handler for "${action.verb}" threw: ${errMessage(err)}`,
+      }, { actorId: action.actorId });
+      return [];
+    }
 
     // Record all resolved events
     for (const event of events) {

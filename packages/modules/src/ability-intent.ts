@@ -295,7 +295,12 @@ export function scoreAbilityUse(
     if (ability.costs && ability.costs.length > 0) {
       const totalCostRatio = ability.costs.reduce((sum, cost) => {
         const current = entity.resources[cost.resourceId] ?? 0;
-        const max = entity.stats[`max${cost.resourceId.charAt(0).toUpperCase()}${cost.resourceId.slice(1)}`] ?? current;
+        // Resources-first precedence: content stores max* in resources (e.g.
+        // resources.maxStamina), not stats — matching entityHpRatio (line ~65)
+        // and the heal cap. Reading stats only made the cost ratio key off
+        // current depletion instead of capacity.
+        const maxKey = `max${cost.resourceId.charAt(0).toUpperCase()}${cost.resourceId.slice(1)}`;
+        const max = entity.resources[maxKey] ?? entity.stats[maxKey] ?? current;
         return sum + (max > 0 ? cost.amount / max : 1);
       }, 0) / ability.costs.length;
 

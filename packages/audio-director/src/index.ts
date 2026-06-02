@@ -4,6 +4,7 @@ export type {
   DuckingRule,
   CooldownEntry,
   AudioDirectorConfig,
+  ScheduleWarning,
 } from './types.js';
 
 export {

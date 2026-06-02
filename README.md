@@ -184,7 +184,7 @@ The 10 starter worlds are **composition examples** — they demonstrate how to c
 | [Pack Author Guide](docs/handbook/55-combat-pack-guide.md) | Step-by-step buildCombatStack, stat mapping, resource profiles |
 | [Handbook](docs/handbook/index.md) | 58 chapters + 4 appendices covering every system |
 | [Composition Model](docs/composition-model.md) | The 6 reusable layers and how they compose |
-| [Examples](docs/examples/) | Runnable TypeScript examples — mixed party, cross-world, from scratch |
+| [Examples](docs/examples/) | Runnable TypeScript examples (type-checked + behavior-tested) — mixed party, cross-world, from scratch |
 | [Design Document](docs/DESIGN.md) | Architecture deep-dive — action pipeline, truth vs presentation |
 | [Philosophy](PHILOSOPHY.md) | Deterministic worlds, evidence-driven design, AI as assistant |
 | [Changelog](CHANGELOG.md) | Release history |

@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import type { EntityState, ZoneState, WorldState, EngineModule, ResolvedEvent } from '@ai-rpg-engine/core';
+import type { EntityState, ZoneState, WorldState, EngineModule, ResolvedEvent, ActionIntent } from '@ai-rpg-engine/core';
 import type { CombatResourceProfile, CombatStackConfig, BossDefinition } from './index.js';
 import {
   buildCombatStack,
@@ -20,12 +20,17 @@ import {
   withCombatResources,
   withEngagement,
   applyResourceIntentModifiers,
+  registerResourceListeners,
   BUILTIN_COMBAT_ROLES,
+  PACK_BIAS_TAGS,
   getEntityRole,
   validateBossDefinition,
+  resolveEffects,
 } from './index.js';
+import { registerStatusDefinitions, clearStatusRegistry } from './status-semantics.js';
 import type { CombatFormulas } from './combat-core.js';
 import type { IntentScore } from './combat-intent.js';
+import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
 
 // ═══════════════════════════════════════════════════════════════════
 // Helpers
@@ -62,7 +67,55 @@ function makeWorld(entities: EntityState[], zones: ZoneState[]): WorldState {
     locationId: zones[0]?.id ?? 'zone-1',
     tick: 0,
     events: [],
+    meta: { idCounter: 0 },
   } as unknown as WorldState;
+}
+
+function makeAction(overrides: Partial<ActionIntent> = {}): ActionIntent {
+  return {
+    id: 'act-1',
+    actorId: 'actor',
+    verb: 'use',
+    issuedAtTick: 1,
+    ...overrides,
+  } as ActionIntent;
+}
+
+/**
+ * Minimal stand-in for a module registration ctx's `events` bus.
+ * `on` captures handlers, `fire` dispatches a matching event to them,
+ * and `emit` records anything a listener emits back onto the bus (so tests
+ * can assert dev/warning events). Mirrors the EventRegistry contract.
+ */
+function makeListenerCtx() {
+  const handlers = new Map<string, Array<(e: ResolvedEvent, w: WorldState) => void>>();
+  const emitted: ResolvedEvent[] = [];
+  const emit = (e: ResolvedEvent) => {
+    emitted.push(e);
+    const hs = handlers.get(e.type);
+    if (hs) for (const h of hs) h(e, {} as WorldState);
+  };
+  return {
+    emitted,
+    events: {
+      on(type: string, handler: (e: ResolvedEvent, w: WorldState) => void) {
+        const hs = handlers.get(type) ?? [];
+        hs.push(handler);
+        handlers.set(type, hs);
+      },
+      emit,
+    },
+    on(type: string, handler: (e: ResolvedEvent, w: WorldState) => void) {
+      const hs = handlers.get(type) ?? [];
+      hs.push(handler);
+      handlers.set(type, hs);
+    },
+    emit,
+    fire(type: string, event: ResolvedEvent, world: WorldState) {
+      const hs = handlers.get(type) ?? [];
+      for (const h of hs) h(event, world);
+    },
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -752,15 +805,37 @@ describe('Multi-Resource Adversarial', () => {
     expect(entity.resources.rage).toBe(100);  // Capped at 100, not 103
   });
 
-  it('FINDING: resource cap is hardcoded to 100 — no per-resource max', () => {
-    // This is a design finding, not a bug.
-    // Resources like "hp" use maxHp, but combat resources all cap at 100.
-    // If an author wants a resource that caps at 10, they can't via CombatResourceProfile.
-    // They'd need to set gains low enough that 100 is unreachable.
-    //
-    // Severity: LOW — usable workaround exists (set gains/spends relative to 100).
-    // Recommendation: consider adding maxResource to CombatResourceProfile.
-    expect(true).toBe(true);
+  it('MOD-PH-06: per-resource cap via resourceCaps clamps a gain to the configured max', () => {
+    // resourceCaps shipped — a momentum cap of 10 must clamp gains at 10, not 100.
+    const profile: CombatResourceProfile = {
+      packId: 'cap-test',
+      gains: [
+        { trigger: 'attack-hit', resourceId: 'momentum', amount: 4 },
+      ],
+      spends: [],
+      drains: [],
+      aiModifiers: [],
+      resourceCaps: { momentum: 10 },
+    };
+
+    const attacker = makeEntity({
+      id: 'striker',
+      resources: { hp: 20, maxHp: 20, momentum: 9 }, // 9 + 4 = 13, must clamp to 10
+    });
+    const world = makeWorld([attacker], [makeZone({ id: 'z1' })]);
+
+    const ctx = makeListenerCtx();
+    registerResourceListeners(profile, ctx);
+
+    ctx.fire('combat.contact.hit', {
+      id: 'evt-hit',
+      type: 'combat.contact.hit',
+      tick: 1,
+      actorId: 'striker',
+      payload: { attackerId: 'striker' },
+    } as ResolvedEvent, world);
+
+    expect(attacker.resources.momentum).toBe(10); // clamped to 10, not 13 and not 100
   });
 });
 
@@ -804,6 +879,222 @@ describe('Boss Phase Adversarial', () => {
 
     const warnings = validateBossDefinition(invalidBoss);
     expect(warnings.length).toBeGreaterThan(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// #7c: WARN-AND-DEGRADE — Phase findings MOD-PH-01..05
+// ═══════════════════════════════════════════════════════════════════
+
+describe('Warn-and-degrade: phase findings', () => {
+  const healAbility: AbilityDefinition = {
+    id: 'mend',
+    name: 'Mend',
+    verb: 'pray',
+    tags: ['support'],
+    costs: [],
+    target: { type: 'self' },
+    checks: [],
+    effects: [{ type: 'heal', target: 'actor', params: { amount: 100, resource: 'hp' } }],
+    cooldown: 0,
+  };
+
+  // -------------------------------------------------------------------
+  // MOD-PH-01: heal must respect resources.maxHp (the engine convention)
+  // -------------------------------------------------------------------
+  it('MOD-PH-01: heal cannot exceed resources.maxHp (no silent overheal)', () => {
+    const target = makeEntity({
+      id: 'wounded',
+      // Content stores the cap in resources.maxHp — NOT stats.maxHp.
+      resources: { hp: 10, maxHp: 30 },
+      stats: { might: 5, agility: 5, resolve: 5 }, // no maxHp here on purpose
+    });
+    const world = makeWorld([target], [makeZone({ id: 'z1' })]);
+    const action = makeAction({ actorId: 'wounded' });
+
+    resolveEffects(healAbility, target, [target], world, 1, action, true);
+
+    // 10 + 100 = 110, but resources.maxHp caps it at 30.
+    expect(target.resources.hp).toBe(30);
+  });
+
+  it('MOD-PH-01: resource-modify (gain) cannot exceed resources.maxHp', () => {
+    const gainAbility: AbilityDefinition = {
+      id: 'surge',
+      name: 'Surge',
+      verb: 'use',
+      tags: [],
+      costs: [],
+      target: { type: 'self' },
+      checks: [],
+      effects: [{ type: 'resource-modify', target: 'actor', params: { resource: 'hp', amount: 100 } }],
+      cooldown: 0,
+    };
+    const target = makeEntity({
+      id: 'topup',
+      resources: { hp: 5, maxHp: 25 },
+      stats: { might: 5, agility: 5, resolve: 5 },
+    });
+    const world = makeWorld([target], [makeZone({ id: 'z1' })]);
+    const action = makeAction({ actorId: 'topup' });
+
+    resolveEffects(gainAbility, target, [target], world, 1, action, true);
+
+    expect(target.resources.hp).toBe(25); // capped at resources.maxHp, not 105
+  });
+
+  // -------------------------------------------------------------------
+  // MOD-PH-04: applying an unregistered status emits a structured dev event
+  // -------------------------------------------------------------------
+  it('MOD-PH-04: applying an unregistered status emits ability.status.unregistered', () => {
+    clearStatusRegistry(); // ensure "ghostly" is NOT registered
+    const statusAbility: AbilityDefinition = {
+      id: 'haunt',
+      name: 'Haunt',
+      verb: 'use',
+      tags: [],
+      costs: [],
+      target: { type: 'target' },
+      checks: [],
+      effects: [{ type: 'apply-status', target: 'target', params: { statusId: 'ghostly', duration: 2 } }],
+      cooldown: 0,
+    };
+    const actor = makeEntity({ id: 'caster' });
+    const target = makeEntity({ id: 'victim' });
+    const world = makeWorld([actor, target], [makeZone({ id: 'z1' })]);
+    const action = makeAction({ actorId: 'caster' });
+
+    const events = resolveEffects(statusAbility, actor, [target], world, 1, action, true);
+
+    const warn = events.find(e => e.type === 'ability.status.unregistered');
+    expect(warn).toBeDefined();
+    expect(warn!.payload.statusId).toBe('ghostly');
+    // It must NOT throw and must still apply the status (degrade, not block).
+    expect(target.statuses.some(s => s.statusId === 'ghostly')).toBe(true);
+  });
+
+  it('MOD-PH-04: a registered status does NOT emit the unregistered event', () => {
+    clearStatusRegistry();
+    registerStatusDefinitions([
+      { id: 'cursed', name: 'Cursed', tags: ['debuff'], stackable: false } as never,
+    ]);
+    const statusAbility: AbilityDefinition = {
+      id: 'hex',
+      name: 'Hex',
+      verb: 'use',
+      tags: [],
+      costs: [],
+      target: { type: 'target' },
+      checks: [],
+      effects: [{ type: 'apply-status', target: 'target', params: { statusId: 'cursed', duration: 2 } }],
+      cooldown: 0,
+    };
+    const actor = makeEntity({ id: 'caster' });
+    const target = makeEntity({ id: 'victim' });
+    const world = makeWorld([actor, target], [makeZone({ id: 'z1' })]);
+    const action = makeAction({ actorId: 'caster' });
+
+    const events = resolveEffects(statusAbility, actor, [target], world, 1, action, true);
+    expect(events.find(e => e.type === 'ability.status.unregistered')).toBeUndefined();
+    clearStatusRegistry();
+  });
+
+  // -------------------------------------------------------------------
+  // MOD-PH-02: buildCombatStack warns on unknown biasTags
+  // -------------------------------------------------------------------
+  it('MOD-PH-02: buildCombatStack returns a warning for an unknown biasTag', () => {
+    const stack = buildCombatStack({
+      statMapping: { attack: 'might', precision: 'agility', resolve: 'resolve' },
+      biasTags: ['undead', 'feeral'], // 'feeral' is a typo (should be 'feral')
+    });
+
+    expect(stack.warnings).toBeDefined();
+    const joined = (stack.warnings ?? []).join(' | ');
+    expect(joined).toContain('feeral');
+    // The message should be actionable — list the valid tags.
+    expect(joined.toLowerCase()).toContain('undead'); // a known valid tag is listed
+    // 'undead' (valid) must NOT itself be flagged as unknown.
+    expect((stack.warnings ?? []).some(w => /unknown.*'undead'/i.test(w))).toBe(false);
+  });
+
+  it('MOD-PH-02: buildCombatStack with all-valid biasTags produces no warnings', () => {
+    const validTag = PACK_BIAS_TAGS[0];
+    const stack = buildCombatStack({
+      statMapping: { attack: 'might', precision: 'agility', resolve: 'resolve' },
+      biasTags: [validTag],
+    });
+    expect(stack.warnings ?? []).toHaveLength(0);
+  });
+
+  // -------------------------------------------------------------------
+  // MOD-PH-03: createBossPhaseListener surfaces validation warnings
+  // -------------------------------------------------------------------
+  it('MOD-PH-03: createBossPhaseListener emits a boss.definition.invalid dev event for a bad threshold', () => {
+    const badBoss: BossDefinition = {
+      entityId: 'typo-boss',
+      phases: [
+        { hpThreshold: 1.5, narrativeKey: 'impossible' }, // out of range (0-1)
+      ],
+    };
+
+    const module = createBossPhaseListener(badBoss);
+    const ctx = makeListenerCtx();
+    module.register(ctx as never);
+
+    const warnEvent = ctx.emitted.find(e => e.type === 'boss.definition.invalid');
+    expect(warnEvent).toBeDefined();
+    expect(warnEvent!.payload.entityId).toBe('typo-boss');
+    expect(Array.isArray(warnEvent!.payload.warnings)).toBe(true);
+    expect((warnEvent!.payload.warnings as string[]).length).toBeGreaterThan(0);
+  });
+
+  it('MOD-PH-03: a valid boss definition emits no boss.definition.invalid event', () => {
+    const goodBoss: BossDefinition = {
+      entityId: 'good-boss',
+      phases: [
+        { hpThreshold: 0.5, narrativeKey: 'enraged' },
+      ],
+    };
+    const module = createBossPhaseListener(goodBoss);
+    const ctx = makeListenerCtx();
+    module.register(ctx as never);
+
+    expect(ctx.emitted.find(e => e.type === 'boss.definition.invalid')).toBeUndefined();
+  });
+
+  // -------------------------------------------------------------------
+  // MOD-PH-05: registerResourceListeners warns on an unrecognized trigger
+  //            but NOT on the legitimate 'ally-defeated' skip
+  // -------------------------------------------------------------------
+  it('MOD-PH-05: an unrecognized gain trigger emits a combat.resource.trigger.unknown dev event', () => {
+    const profile: CombatResourceProfile = {
+      packId: 'typo-trigger',
+      // 'attack-hitt' is a typo; not in GAIN_EVENT_MAP and not 'ally-defeated'.
+      gains: [{ trigger: 'attack-hitt' as never, resourceId: 'momentum', amount: 3 }],
+      spends: [],
+      drains: [],
+      aiModifiers: [],
+    };
+    const ctx = makeListenerCtx();
+    registerResourceListeners(profile, ctx);
+
+    const warn = ctx.emitted.find(e => e.type === 'combat.resource.trigger.unknown');
+    expect(warn).toBeDefined();
+    expect(String(warn!.payload.trigger)).toBe('attack-hitt');
+  });
+
+  it('MOD-PH-05: the legitimate ally-defeated trigger does NOT emit an unknown-trigger warning', () => {
+    const profile: CombatResourceProfile = {
+      packId: 'ally-defeated-ok',
+      gains: [{ trigger: 'ally-defeated', resourceId: 'rage', amount: 5 }],
+      spends: [],
+      drains: [{ trigger: 'ally-defeated', resourceId: 'morale', amount: 5 }],
+      aiModifiers: [],
+    };
+    const ctx = makeListenerCtx();
+    registerResourceListeners(profile, ctx);
+
+    expect(ctx.emitted.find(e => e.type === 'combat.resource.trigger.unknown')).toBeUndefined();
   });
 });
 
