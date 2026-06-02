@@ -1,35 +1,35 @@
 {
-    "name": "@ai-rpg-engine/starter-template",
-    "version": "2.3.6",
-    "description": "Starter template for ai-rpg-engine — copy, rename, and build your own game",
-    "type": "module",
-    "files": [
-        "src",
-        "README.md",
-        "tsconfig.json"
-    ],
-    "scripts": {
-        "build": "tsc",
-        "test": "vitest run"
-    },
-    "dependencies": {
-        "@ai-rpg-engine/core": "*",
-        "@ai-rpg-engine/content-schema": "*",
-        "@ai-rpg-engine/modules": "*"
-    },
-    "license": "MIT",
-    "author": "mcp-tool-shop",
-    "homepage": "https://mcp-tool-shop-org.github.io/ai-rpg-engine/",
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
-        "directory": "templates/starter"
-    },
-    "keywords": [
-        "rpg",
-        "game-engine",
-        "starter",
-        "template",
-        "ai-rpg-engine"
-    ]
+  "name": "@ai-rpg-engine/starter-template",
+  "version": "2.4.0",
+  "description": "Starter template for ai-rpg-engine — copy, rename, and build your own game",
+  "type": "module",
+  "files": [
+    "src",
+    "README.md",
+    "tsconfig.json"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ai-rpg-engine/core": "*",
+    "@ai-rpg-engine/content-schema": "*",
+    "@ai-rpg-engine/modules": "*"
+  },
+  "license": "MIT",
+  "author": "mcp-tool-shop",
+  "homepage": "https://mcp-tool-shop-org.github.io/ai-rpg-engine/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
+    "directory": "templates/starter"
+  },
+  "keywords": [
+    "rpg",
+    "game-engine",
+    "starter",
+    "template",
+    "ai-rpg-engine"
+  ]
 }

@@ -1,0 +1,15 @@
+node_modules
+**/node_modules
+**/dist
+*.tsbuildinfo
+**/*.tsbuildinfo
+coverage
+site
+.git
+.github
+.signalfire
+.ai-rpg-engine
+docs
+*.md
+!README.md
+.polyglot-cache.json

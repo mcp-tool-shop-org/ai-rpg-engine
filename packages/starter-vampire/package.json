@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/starter-vampire",
-  "version": "2.2.5",
+  "version": "2.4.0",
   "description": "AI RPG Engine gothic horror starter: Crimson Court",
   "type": "module",
   "main": "./dist/index.js",
