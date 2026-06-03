@@ -16,11 +16,11 @@ describe('create-starter', () => {
     });
 
     it('scaffolds a named starter with correct package name', () => {
-        const outDir = path.join(tmpDir, 'starter-western');
-        createStarter({ name: 'western', outDir });
+        const outDir = path.join(tmpDir, 'starter-frontier');
+        createStarter({ name: 'frontier', outDir });
 
         const pkg = JSON.parse(fs.readFileSync(path.join(outDir, 'package.json'), 'utf-8'));
-        expect(pkg.name).toBe('@ai-rpg-engine/starter-western');
+        expect(pkg.name).toBe('@ai-rpg-engine/starter-frontier');
     });
 
     it('replaces template placeholders in all files', () => {
