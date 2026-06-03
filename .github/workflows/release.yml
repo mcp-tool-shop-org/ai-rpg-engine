@@ -41,13 +41,40 @@ jobs:
       - run: npm run build
       - run: npm test
 
+      # Idempotent per-package publish: skip private packages and any version
+      # already on npm, so a re-run after a partial failure completes the release
+      # without erroring on already-published packages. Real publish errors still
+      # halt the job (bash -e).
       - name: Publish (dry-run)
         if: github.event_name == 'workflow_dispatch' && inputs.dry_run
-        run: npm publish --workspaces --access public --provenance --dry-run
+        run: |
+          for dir in packages/* templates/*; do
+            [ -f "$dir/package.json" ] || continue
+            priv=$(node -p "require('./$dir/package.json').private === true")
+            [ "$priv" = "true" ] && { echo "skip private $dir"; continue; }
+            name=$(node -p "require('./$dir/package.json').name")
+            echo "::group::dry-run $name"
+            npm publish -w "$name" --access public --provenance --dry-run
+            echo "::endgroup::"
+          done
 
-      - name: Publish (live)
+      - name: Publish (live, idempotent)
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
-        run: npm publish --workspaces --access public --provenance
+        run: |
+          for dir in packages/* templates/*; do
+            [ -f "$dir/package.json" ] || continue
+            priv=$(node -p "require('./$dir/package.json').private === true")
+            [ "$priv" = "true" ] && { echo "skip private $dir"; continue; }
+            name=$(node -p "require('./$dir/package.json').name")
+            ver=$(node -p "require('./$dir/package.json').version")
+            if npm view "$name@$ver" version >/dev/null 2>&1; then
+              echo "skip $name@$ver (already published)"
+            else
+              echo "::group::publish $name@$ver"
+              npm publish -w "$name" --access public --provenance
+              echo "::endgroup::"
+            fi
+          done
 
   docker:
     name: Build & push CLI image (GHCR)

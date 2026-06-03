@@ -1,7 +1,8 @@
 {
   "name": "@ai-rpg-engine/starter-western",
   "version": "2.4.0",
-  "description": "Starter template for ai-rpg-engine — copy, rename, and build your own game",
+  "private": true,
+  "description": "DEPRECATED stray — redundant duplicate of @ai-rpg-engine/starter-template (templates/starter). Never published; not in the canonical 10 starters (the real western starter is @ai-rpg-engine/starter-weird-west). Marked private so it is excluded from publishing.",
   "type": "module",
   "files": [
     "src",
