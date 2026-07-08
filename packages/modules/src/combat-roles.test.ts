@@ -167,6 +167,41 @@ describe('combat-roles: encounters', () => {
     const warnings = validateEncounter(enc, entities);
     expect(warnings.some(w => w.includes('no boss'))).toBe(true);
   });
+
+  it('validateEncounter surfaces a participant tag typo like role:brut (PM-3 tag lint wiring)', () => {
+    // A typo'd role tag used to no-op silently: classifyTag returns 'custom',
+    // the entity gets roleless combat behavior, and nothing warns. The
+    // encounter validation path now runs validateEntityTags per participant.
+    const entities: Record<string, EntityState> = {
+      'ok': makeEntity('ok', 'enemy', ['enemy', 'role:brute']),
+      'typo': makeEntity('typo', 'enemy', ['enemy', 'role:brut']),
+    };
+    const enc = createEncounter('test', 'Test', 'patrol', [
+      { entityId: 'ok' },
+      { entityId: 'typo' },
+    ]);
+
+    const warnings = validateEncounter(enc, entities);
+    const tagWarning = warnings.find(w => w.includes('role:brut') && w.includes("'typo'"));
+    expect(tagWarning).toBeDefined();
+    expect(tagWarning).toContain('Unknown role:*');
+    // The clean participant produces no tag warnings.
+    expect(warnings.some(w => w.includes("'ok'") && w.includes('Unknown'))).toBe(false);
+  });
+
+  it('validateEncounter stays warning-free for canonical role tags (no false positives)', () => {
+    const entities: Record<string, EntityState> = {
+      'b1': makeEntity('b1', 'enemy', ['enemy', 'role:brute']),
+      'm1': makeEntity('m1', 'enemy', ['enemy', 'role:minion']),
+    };
+    const enc = createEncounter('test', 'Test', 'horde', [
+      { entityId: 'b1' },
+      { entityId: 'm1' },
+    ]);
+
+    const warnings = validateEncounter(enc, entities);
+    expect(warnings.filter(w => w.includes('Unknown'))).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------

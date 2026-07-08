@@ -84,6 +84,32 @@ describe('loadContent', () => {
     expect(r.errors.some((e) => e.message.includes('missing-npc'))).toBe(true);
   });
 
+  // PC-4: the silent-clobber case goes loud. Two structurally-valid entities
+  // (or zones) sharing an id previously produced ok:true from loadContent, and
+  // the second silently overwrote the first at WorldStore.addEntity/addZone.
+  it('pc4-005: duplicate entity ids fail loadContent with a structured error (was: silent clobber)', () => {
+    const r = loadContent({
+      entities: [
+        { id: 'pilgrim', type: 'npc', name: 'Suspicious Pilgrim' },
+        { id: 'pilgrim', type: 'npc', name: 'Pasted Pilgrim' },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('duplicate entity id "pilgrim"'))).toBe(true);
+    expect(r.summary).toContain('duplicate entity id');
+  });
+
+  it('pc4-006: duplicate zone ids fail loadContent with a structured error', () => {
+    const r = loadContent({
+      zones: [
+        { id: 'chapel-nave', name: 'Chapel Nave' },
+        { id: 'chapel-nave', name: 'Chapel Nave (copy)' },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('duplicate zone id "chapel-nave"'))).toBe(true);
+  });
+
   it('summary includes error details when invalid', () => {
     const r = loadContent({
       zones: [{ id: 'a', name: 'A', neighbors: ['nowhere'] }],

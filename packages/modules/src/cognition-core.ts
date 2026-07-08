@@ -12,6 +12,7 @@ import type {
 import { genId } from '@ai-rpg-engine/core';
 import { hasStatus, applyStatus } from './status-core.js';
 import { COMBAT_STATES } from './combat-core.js';
+import { affiliationOf } from './targeting.js';
 
 // --- Knowledge Model ---
 
@@ -313,11 +314,14 @@ export function createCognitionCore(configOrProfiles?: CognitionCoreConfig | Int
           }));
         }
 
-        // Rout penalty: alone after ally defeat, morale ≤ 20
+        // Rout penalty: alone after ally defeat, morale ≤ 20.
+        // "Living ally" routes through the shared affiliationOf predicate so a
+        // same-faction companion of a different `type` counts (faction compare
+        // when both sides carry one; legacy same-`type` heuristic otherwise).
         if (morale <= 20 && event.payload.reason === 'ally_defeated') {
           const zone = entity.zoneId;
           const hasAllies = zone && Object.values(world.entities).some(
-            e => e.id !== entityId && e.zoneId === zone && e.type === entity.type && (e.resources.hp ?? 0) > 0,
+            e => e.zoneId === zone && affiliationOf(entity, e) === 'ally' && (e.resources.hp ?? 0) > 0,
           );
           if (!hasAllies) {
             const cog = getCognition(world, entityId);

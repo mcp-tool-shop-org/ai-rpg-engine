@@ -7,22 +7,28 @@ on:
   push:
     paths:
       - 'packages/**'
+      - 'templates/**'
+      - 'scripts/**'
       - 'package.json'
       - 'package-lock.json'
       - 'tsconfig.json'
       - 'vitest.config.ts'
       - 'eslint.config.js'
       - 'docs/examples/**'
+      - 'docs/check-docs-integrity.mjs'
       - '.github/workflows/**'
   pull_request:
     paths:
       - 'packages/**'
+      - 'templates/**'
+      - 'scripts/**'
       - 'package.json'
       - 'package-lock.json'
       - 'tsconfig.json'
       - 'vitest.config.ts'
       - 'eslint.config.js'
       - 'docs/examples/**'
+      - 'docs/check-docs-integrity.mjs'
       - '.github/workflows/**'
   workflow_dispatch:
 
@@ -58,9 +64,20 @@ jobs:
       # packages so README/handbook "runnable" snippets cannot drift from the API.
       - name: Typecheck doc examples
         run: npx tsc -p docs/examples/tsconfig.json --noEmit
+      # Packaging gate (PG-5): every publishable workspace's `npm pack` tarball
+      # must contain LICENSE + README.md. npm silently drops `files` entries
+      # that don't exist on disk, so only inspecting the dry-run file list
+      # catches a missing file (this is how the G3 LICENSE gap shipped).
+      # One leg only — the check is node-version independent.
+      - name: Packaging gate (LICENSE/README in every publishable tarball)
+        if: matrix.node-version == 22
+        run: node scripts/check-packaging.mjs
+
       - if: matrix.node-version != 22
         run: npm run test
 
+      # Coverage thresholds in vitest.config.ts act as a ratchet: this step
+      # goes red if coverage regresses below the floors recorded there.
       - name: Coverage
         if: matrix.node-version == 22
         run: npx vitest run --coverage

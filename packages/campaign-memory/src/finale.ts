@@ -100,7 +100,7 @@ function factionOutcome(rep: number, cohesion: number, alertLevel: number): Fact
 
 function deriveLegacy(journal: CampaignJournal): LegacyEntry[] {
   const entries: LegacyEntry[] = [];
-  const records = journal.serialize();
+  const records = journal.query({});
 
   // Count categories
   const categoryCounts: Partial<Record<RecordCategory, number>> = {};
@@ -235,7 +235,7 @@ export function buildFinaleOutline(
   playerLevel?: number,
 ): FinaleOutline {
   // Top 10 most significant events
-  const allRecords = journal.serialize();
+  const allRecords = journal.query({});
   const keyMoments = [...allRecords]
     .sort((a, b) => b.significance - a.significance)
     .slice(0, 10);

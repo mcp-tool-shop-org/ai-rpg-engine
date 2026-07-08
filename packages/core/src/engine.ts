@@ -8,11 +8,11 @@ import type {
   RulesetDefinition,
   WorldState,
 } from './types.js';
-import { WorldStore, SaveLoadError, assertSaveMetaShape } from './world.js';
+import { WorldStore, SaveLoadError } from './world.js';
 import { ActionDispatcher } from './actions.js';
 import { ModuleManager } from './modules.js';
 import type { FormulaRegistry } from './formulas.js';
-import type { EventBusListenerErrorHook } from './events.js';
+import type { EventBus, EventBusListenerErrorHook } from './events.js';
 
 export type EngineOptions = {
   manifest: GameManifest;
@@ -217,11 +217,14 @@ export class Engine {
    * id sequence without colliding with ids already in the loaded eventLog.
    *
    * Modules/ruleset must be supplied by the caller — code (verb handlers, event
-   * subscribers) is never serialized, only state. The saved manifest is
-   * reconstructed from world.state.meta so the dispatcher, moduleManager, and
-   * module state namespaces are registered, then the live EventBus those modules
-   * subscribed to is threaded into the restored WorldStore so subscriptions
-   * survive the swap (core-004).
+   * subscribers) is never serialized, only state. The saved world is restored
+   * through WorldStore.deserialize FIRST (rngState check → migration chain →
+   * meta-shape assert, in that order, so a migration may backfill legacy meta
+   * fields — v2.5 PC-2), then the manifest is reconstructed from the restored
+   * post-migration meta so the dispatcher, moduleManager, and module state
+   * namespaces are registered, and the live EventBus those modules subscribed
+   * to is threaded into the restored WorldStore so subscriptions survive the
+   * swap (core-004).
    *
    * @throws SaveLoadError on malformed or unsupported-version saves.
    */
@@ -247,12 +250,24 @@ export class Engine {
       });
     }
 
-    const meta = data.world.state.meta;
-    // Guard the meta fields fed into manifest reconstruction (v2.5 C5 family):
-    // a crafted save with e.g. activeModules missing previously raw-threw the
-    // same [...undefined] TypeError as a malformed manifest. On the load path
-    // the structured error must be a SaveLoadError — the bad input is the save.
-    assertSaveMetaShape(meta);
+    // Restore the world FIRST. WorldStore.deserialize is the single load
+    // authority: it validates rngState (C3), runs the save-version migration
+    // chain, and asserts the reconstruction-critical meta shape AFTER the
+    // migrations — so a future SAVE_MIGRATIONS entry may backfill meta fields
+    // for legacy saves (v2.5 PC-2). This path previously asserted the
+    // PRE-migration meta, which foreclosed exactly those backfill migrations
+    // and made the two public load paths disagree; the guard itself is intact,
+    // it just runs where WorldStore.deserialize runs it. A nice side effect:
+    // every save-rejection now fires before any module code executes. The
+    // caller's ruleset is threaded through so stat/resource bounds (C7)
+    // survive the load — like modules, rulesets are code, never serialized.
+    const restored = WorldStore.deserialize(JSON.stringify(data.world), undefined, options.ruleset);
+
+    // Reconstruct the manifest from the RESTORED (post-migration, shape-
+    // asserted) meta — not the raw save blob — and build the engine normally
+    // so dispatcher + moduleManager + namespaces are registered and modules
+    // subscribe to this.store.events (the live bus).
+    const meta = restored.state.meta;
     const manifest: GameManifest = {
       id: meta.gameId,
       title: '',
@@ -262,9 +277,6 @@ export class Engine {
       modules: meta.activeModules,
       contentPacks: [],
     };
-
-    // Build the engine normally so dispatcher + moduleManager + namespaces are
-    // registered and modules subscribe to this.store.events (the live bus).
     const engine = new Engine({
       manifest,
       seed: meta.seed,
@@ -272,16 +284,10 @@ export class Engine {
       ruleset: options.ruleset,
     });
 
-    // Replace the fresh store with the saved one, reusing the live EventBus so
-    // module subscriptions registered above are preserved. WorldStore.deserialize
-    // runs the save-version migration chain and restores meta.idCounter + rng.
-    // The caller's ruleset is threaded through so stat/resource bounds (C7)
-    // survive the load — like modules, rulesets are code and never serialized.
-    const restored = WorldStore.deserialize(
-      JSON.stringify(data.world),
-      engine.store.events,
-      options.ruleset,
-    );
+    // Swap the fresh construction store for the restored one, threading the
+    // live EventBus (the bus modules subscribed to during construction above)
+    // into the restored store so subscriptions survive the swap (core-004).
+    (restored as { events: EventBus }).events = engine.store.events;
     (engine as { store: WorldStore }).store = restored;
 
     // The module contexts' event-emit path (ctx.events.emit -> store.recordEvent)

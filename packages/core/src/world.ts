@@ -84,29 +84,51 @@ function describeJsonValue(v: unknown): string {
   if (v === null) return 'null';
   if (v === undefined) return 'undefined (missing)';
   if (Array.isArray(v)) return 'an array';
+  if (typeof v === 'number' && !Number.isFinite(v)) return 'a non-finite number';
   return `${typeof v}`;
 }
 
 /**
  * Validate the meta fields a loaded save feeds back into world construction
- * (gameId/activeRuleset/activeModules → the reconstructed manifest). Without
- * this, a crafted save with e.g. `activeModules` missing raw-threw the same
- * `[...undefined]` TypeError the manifest validator now guards at the front
- * door (v2.5 C5) — but on the LOAD path it must surface as a SaveLoadError,
- * not a ManifestError, because the bad input is the save file.
+ * (gameId/activeRuleset/activeModules → the reconstructed manifest, plus
+ * seed/tick → RNG construction and tick progression). Without this, a crafted
+ * save with e.g. `activeModules` missing raw-threw the same `[...undefined]`
+ * TypeError the manifest validator now guards at the front door (v2.5 C5) —
+ * but on the LOAD path it must surface as a SaveLoadError, not a
+ * ManifestError, because the bad input is the save file.
+ *
+ * Runs AFTER the migration chain on both public load paths (WorldStore and
+ * Engine deserialize — v2.5 PC-2), so a future SAVE_MIGRATIONS entry may
+ * backfill any of these fields for legacy saves before the assert fires.
  */
 export function assertSaveMetaShape(meta: unknown): void {
-  const m = (meta ?? {}) as Partial<Record<'gameId' | 'activeRuleset' | 'activeModules', unknown>>;
-  const fail = (field: string, expected: string, got: unknown): never => {
+  const m = (meta ?? {}) as Partial<
+    Record<'gameId' | 'activeRuleset' | 'activeModules' | 'seed' | 'tick', unknown>
+  >;
+  const fail = (field: string, expected: string, got: unknown, hint?: string): never => {
     throw new SaveLoadError({
       code: 'SAVE_MALFORMED',
       message: `Save meta.${field} must be ${expected}, got ${describeJsonValue(got)}.`,
-      hint: 'The save file is corrupt or was not produced by this engine. Restore from a backup.',
+      hint: hint ?? 'The save file is corrupt or was not produced by this engine. Restore from a backup.',
     });
   };
   if (typeof m.gameId !== 'string') fail('gameId', 'a string', m.gameId);
   if (typeof m.activeRuleset !== 'string') fail('activeRuleset', 'a string', m.activeRuleset);
   if (!Array.isArray(m.activeModules)) fail('activeModules', 'an array', m.activeModules);
+  // seed/tick complete the save-meta validation matrix (v2.5 PC-3), mirroring
+  // the rngState guard (C3): engine-produced saves always carry finite numbers
+  // here, so a mismatch means a corrupt or foreign save. Unvalidated, a
+  // non-numeric tick loads clean and then advanceTick()'s `tick++` produces
+  // NaN — which is sticky, so every subsequent event silently carries
+  // `tick: NaN`, breaking tick-ordered logic and replay with no signal.
+  if (typeof m.seed !== 'number' || !Number.isFinite(m.seed)) {
+    fail('seed', 'a finite number', m.seed,
+      'Without a numeric seed the RNG cannot be reconstructed deterministically. The save is corrupt or was produced by an incompatible tool. Restore from a backup.');
+  }
+  if (typeof m.tick !== 'number' || !Number.isFinite(m.tick)) {
+    fail('tick', 'a finite number', m.tick,
+      'Without a numeric tick, tick progression would silently become NaN for every subsequent event, breaking replay. The save is corrupt or was produced by an incompatible tool. Restore from a backup.');
+  }
 }
 
 /**

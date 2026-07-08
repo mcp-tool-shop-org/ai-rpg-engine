@@ -3,6 +3,8 @@
 import type { OllamaTextClient } from '../client.js';
 import { createDistrictPrompt } from '../prompts/create-district.js';
 import { extractYaml } from '../parsers.js';
+import { parseYamlish, validateGeneratedDistrict } from '../validators.js';
+import type { GeneratedContentResult } from '../validators.js';
 
 export type CreateDistrictInput = {
   theme: string;
@@ -16,6 +18,8 @@ export type CreateDistrictInput = {
 export type GeneratedDistrictResult = {
   ok: true;
   yaml: string;
+  /** Schema check of the draft (v2.5 audit PA-4) — advisory unless the CLI --validate gate is on. */
+  validation: GeneratedContentResult;
 } | {
   ok: false;
   error: string;
@@ -38,5 +42,6 @@ export async function createDistrict(
   });
 
   if (!result.ok) return result;
-  return { ok: true, yaml: extractYaml(result.text) };
+  const yaml = extractYaml(result.text);
+  return { ok: true, yaml, validation: validateGeneratedDistrict(yaml, parseYamlish(yaml)) };
 }

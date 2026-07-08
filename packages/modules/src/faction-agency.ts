@@ -76,6 +76,13 @@ export type FactionActionResult = {
   action: FactionAction;
   effects: FactionEffect[];
   narratorHint: string;
+  /**
+   * Structured author signal, present only when resolution hit a defect —
+   * e.g. an unknown verb reached `resolveFactionAction` (extended enum without
+   * a matching effects-table arm). Effects are empty in that case; surfacing
+   * the warning keeps the no-op observable instead of silent.
+   */
+  warning?: string;
 };
 
 // --- Constants ---
@@ -322,8 +329,9 @@ function deriveGoals(
     }
   }
 
-  // Sort by priority descending, take top MAX_GOALS
-  goals.sort((a, b) => b.priority - a.priority);
+  // Sort by priority descending with a total, stable tie-break by goal id so
+  // equal-priority goals rank identically regardless of derivation order.
+  goals.sort((a, b) => b.priority - a.priority || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return goals.slice(0, MAX_GOALS);
 }
 
@@ -340,7 +348,14 @@ export function evaluateFactionActions(
 ): FactionAction[] {
   const actions: FactionAction[] = [];
 
-  for (const profile of profiles) {
+  // Total, stable evaluation order by factionId: which factions win the
+  // maxGlobal slots must not depend on the caller's Record iteration order
+  // (e.g. a world rebuilt via object spread would silently reprioritize).
+  const ordered = [...profiles].sort((a, b) =>
+    a.factionId < b.factionId ? -1 : a.factionId > b.factionId ? 1 : 0,
+  );
+
+  for (const profile of ordered) {
     if (actions.length >= maxGlobal) break;
     if (profile.goals.length === 0) continue;
 
@@ -393,6 +408,13 @@ function buildActionDescription(
     case 'blockade': return `${factionName} blockades trade routes to ${district}`;
     case 'raid-supply': return `${factionName} raids supply stores in ${district}`;
     case 'open-trade': return `${factionName} opens trade channels in ${district}`;
+    default: {
+      // Exhaustiveness gate: adding a FactionActionVerb member without a
+      // description arm fails the build here. At runtime (untyped caller) the
+      // fallback keeps the description non-empty instead of `undefined`.
+      const unknownVerb: never = verb;
+      return `${factionName} acts (unrecognized verb '${String(unknownVerb)}')`;
+    }
   }
 }
 
@@ -407,6 +429,7 @@ export function resolveFactionAction(
 ): FactionActionResult {
   const effects: FactionEffect[] = [];
   let narratorHint = '';
+  let warning: string | undefined;
 
   switch (action.verb) {
     case 'recruit':
@@ -581,12 +604,25 @@ export function resolveFactionAction(
       effects.push({ type: 'cohesion', factionId: action.factionId, delta: 0.05 });
       narratorHint = `The ${action.factionId} have opened trade channels in ${action.targetDistrictId ?? 'the district'}`;
       break;
+
+    default: {
+      // Exhaustiveness gate: a new FactionActionVerb without an effects arm
+      // fails the build here. At runtime an unknown verb (untyped caller /
+      // deserialized action) is surfaced as a structured warning instead of a
+      // silent zero-effect resolution.
+      const unknownVerb: never = action.verb;
+      warning = `unknown FactionActionVerb '${String(unknownVerb)}' — action resolved with no effects. `
+        + `Add a case to resolveFactionAction (faction-agency.ts) for this verb.`;
+      narratorHint = `The ${action.factionId} attempt something, but nothing comes of it`;
+      break;
+    }
   }
 
   return {
     action,
     effects,
     narratorHint,
+    ...(warning !== undefined ? { warning } : {}),
   };
 }
 

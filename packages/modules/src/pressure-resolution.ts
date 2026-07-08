@@ -46,6 +46,14 @@ export type PressureFallout = {
   effects: FalloutEffect[];
   /** One-line summary for director mode */
   summary: string;
+  /**
+   * Structured author signals, present only when fallout computation hit a
+   * defect — e.g. a pressure kind that NO table (universal or the requested
+   * genre) handles, so the resolution silently produced zero effects. Absent
+   * when the tables covered the kind (even if this particular resolution type
+   * legitimately maps to no effects).
+   */
+  warnings?: string[];
 };
 
 export type FalloutContext = {
@@ -76,24 +84,42 @@ export function computeFallout(
     resolutionVisibility: ctx.resolutionVisibility ?? pressure.visibility,
   };
 
-  // Collect effects from universal + genre tables
+  // Collect effects from universal + genre tables. Each table returns `null`
+  // when the pressure KIND has no entry at all (vs `[]` for "kind known, but
+  // this resolution type intentionally produces nothing").
+  const universalEffects = getUniversalFallout(pressure, resolutionType, ctx);
+  const genreEffects = getGenreFallout(pressure, resolutionType, genre, ctx);
+
   const effects: FalloutEffect[] = [
-    ...getUniversalFallout(pressure, resolutionType, ctx),
-    ...getGenreFallout(pressure, resolutionType, genre, ctx),
+    ...(universalEffects ?? []),
+    ...(genreEffects ?? []),
   ];
+
+  // Loud no-op guard: a pressure kind unknown to BOTH tables (typo'd genre,
+  // custom kind without a table entry) used to vanish into zero fallout with
+  // no signal. Surface it as a structured warning for the product layer.
+  const warnings: string[] = [];
+  if (universalEffects === null && genreEffects === null) {
+    warnings.push(
+      `pressure kind '${pressure.kind}' has no fallout entry in the universal table `
+      + `or the '${genre}' genre table — resolution '${resolutionType}' produced zero effects. `
+      + `Add a table entry in pressure-resolution.ts (or verify the genre string).`,
+    );
+  }
 
   const summary = buildFalloutSummary(pressure, resolutionType);
 
-  return { resolution, effects, summary };
+  return { resolution, effects, summary, ...(warnings.length > 0 ? { warnings } : {}) };
 }
 
 // --- Universal Fallout ---
 
+/** Returns the universal effects for a pressure kind, or `null` when the kind has no universal entry. */
 function getUniversalFallout(
   pressure: WorldPressure,
   resolutionType: ResolutionType,
   ctx: FalloutContext,
-): FalloutEffect[] {
+): FalloutEffect[] | null {
   const effects: FalloutEffect[] = [];
   const faction = pressure.sourceFactionId;
 
@@ -297,6 +323,11 @@ function getUniversalFallout(
         }
       }
       break;
+
+    default:
+      // Kind has no universal entry (genre-specific kinds land here by design;
+      // computeFallout warns only when the genre table ALSO has no entry).
+      return null;
   }
 
   return effects;
@@ -304,12 +335,17 @@ function getUniversalFallout(
 
 // --- Genre Fallout ---
 
+/**
+ * Returns the genre-flavored effects for a pressure kind, or `null` when the
+ * kind has no entry in the requested genre's table (including an unknown genre
+ * string — a typo like 'fantsy' must not silently vanish all genre fallout).
+ */
 function getGenreFallout(
   pressure: WorldPressure,
   resolutionType: ResolutionType,
   genre: string,
   ctx: FalloutContext,
-): FalloutEffect[] {
+): FalloutEffect[] | null {
   switch (genre) {
     case 'fantasy':
       return getFantasyFallout(pressure, resolutionType, ctx);
@@ -323,7 +359,7 @@ function getGenreFallout(
     case 'cyberpunk':
       return getCyberpunkFallout(pressure, resolutionType, ctx);
     default:
-      return [];
+      return null;
   }
 }
 
@@ -331,7 +367,7 @@ function getFantasyFallout(
   pressure: WorldPressure,
   resolutionType: ResolutionType,
   _ctx: FalloutContext,
-): FalloutEffect[] {
+): FalloutEffect[] | null {
   const effects: FalloutEffect[] = [];
   const faction = pressure.sourceFactionId;
 
@@ -369,6 +405,11 @@ function getFantasyFallout(
         });
       }
       break;
+
+    default:
+      // Kind has no entry in this genre's table (universal kinds land here
+      // by design; computeFallout warns only when BOTH tables lack an entry).
+      return null;
   }
 
   return effects;
@@ -378,7 +419,7 @@ function getMysteryFallout(
   pressure: WorldPressure,
   resolutionType: ResolutionType,
   _ctx: FalloutContext,
-): FalloutEffect[] {
+): FalloutEffect[] | null {
   const effects: FalloutEffect[] = [];
   const faction = pressure.sourceFactionId;
 
@@ -413,6 +454,11 @@ function getMysteryFallout(
         });
       }
       break;
+
+    default:
+      // Kind has no entry in this genre's table (universal kinds land here
+      // by design; computeFallout warns only when BOTH tables lack an entry).
+      return null;
   }
 
   return effects;
@@ -422,7 +468,7 @@ function getPirateFallout(
   pressure: WorldPressure,
   resolutionType: ResolutionType,
   _ctx: FalloutContext,
-): FalloutEffect[] {
+): FalloutEffect[] | null {
   const effects: FalloutEffect[] = [];
   const faction = pressure.sourceFactionId;
 
@@ -460,6 +506,11 @@ function getPirateFallout(
         effects.push({ type: 'alert', factionId: faction, delta: -10 });
       }
       break;
+
+    default:
+      // Kind has no entry in this genre's table (universal kinds land here
+      // by design; computeFallout warns only when BOTH tables lack an entry).
+      return null;
   }
 
   return effects;
@@ -469,7 +520,7 @@ function getHorrorFallout(
   pressure: WorldPressure,
   resolutionType: ResolutionType,
   ctx: FalloutContext,
-): FalloutEffect[] {
+): FalloutEffect[] | null {
   const effects: FalloutEffect[] = [];
   const faction = pressure.sourceFactionId;
 
@@ -519,6 +570,11 @@ function getHorrorFallout(
         });
       }
       break;
+
+    default:
+      // Kind has no entry in this genre's table (universal kinds land here
+      // by design; computeFallout warns only when BOTH tables lack an entry).
+      return null;
   }
 
   return effects;
@@ -528,7 +584,7 @@ function getCyberpunkFallout(
   pressure: WorldPressure,
   resolutionType: ResolutionType,
   _ctx: FalloutContext,
-): FalloutEffect[] {
+): FalloutEffect[] | null {
   const effects: FalloutEffect[] = [];
   const faction = pressure.sourceFactionId;
 
@@ -563,6 +619,11 @@ function getCyberpunkFallout(
         effects.push({ type: 'alert', factionId: faction, delta: 5 });
       }
       break;
+
+    default:
+      // Kind has no entry in this genre's table (universal kinds land here
+      // by design; computeFallout warns only when BOTH tables lack an entry).
+      return null;
   }
 
   return effects;

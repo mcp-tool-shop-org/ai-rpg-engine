@@ -355,11 +355,14 @@ export type {
 export {
   evaluateCompanionReactions,
   evaluateDepartureRisk,
+  isKnownReactionTrigger,
+  KNOWN_REACTION_TRIGGERS,
 } from './companion-reactions.js';
 export type {
   CompanionReaction,
   DepartureRisk,
   DepartureAssessment,
+  ReactionTrigger,
 } from './companion-reactions.js';
 export {
   evaluateItemRecognition,
@@ -830,8 +833,8 @@ export { selectBestAction, formatUnifiedDecision } from './unified-decision.js';
 export type { UnifiedActionSource, UnifiedAction, UnifiedDecision, UnifiedDecisionConfig } from './unified-decision.js';
 
 // --- Tag Taxonomy & Validation ---
-export { TAG_CATEGORIES, classifyTag, validateEntityTags, validateZoneTags } from './tag-taxonomy.js';
-export type { TagCategory, TagCategoryDefinition, TagWarning } from './tag-taxonomy.js';
+export { TAG_CATEGORIES, classifyTag, validateEntityTags, validateZoneTags, validateWorldTags } from './tag-taxonomy.js';
+export type { TagCategory, TagCategoryDefinition, TagWarning, WorldTagWarning } from './tag-taxonomy.js';
 
 // --- Ability Builders (Abilities Phase 4) ---
 export {

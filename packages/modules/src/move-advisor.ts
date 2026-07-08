@@ -307,7 +307,12 @@ function computeFeasibility(
   if (costs.length === 0) return 1; // free action
 
   const surplusRatios = costs.map(([currency, amount]) => {
-    const available = inputs.leverageState[currency as LeverageCurrency];
+    // NaN guard: a malformed LeverageState (missing currency key or NaN value)
+    // must not poison the ratio — `undefined / amount` would produce a NaN
+    // feasibility that survives the `feasibility === 0` skip downstream.
+    // Treat a missing/non-finite balance as 0 (cannot afford → infeasible).
+    const raw = inputs.leverageState[currency as LeverageCurrency];
+    const available = Number.isFinite(raw) ? raw : 0;
     return available / (amount as number);
   });
   const minSurplus = Math.min(...surplusRatios);
@@ -378,7 +383,11 @@ export function scoreAction(
   const impact = computeImpact(category, subAction, inputs);
   const risk = computeRisk(category, subAction, inputs);
 
-  const score = (urgency * 0.3 + feasibility * 0.3 + impact * 0.25 + (1 - risk) * 0.15) * 100;
+  const rawScore = (urgency * 0.3 + feasibility * 0.3 + impact * 0.25 + (1 - risk) * 0.15) * 100;
+  // Boundary guard: if any malformed input (NaN heat, NaN pressure urgency, …)
+  // slipped through the component computations, pin the composite to 0 instead
+  // of letting a NaN score destabilize the sort and reach top3.
+  const score = Number.isFinite(rawScore) ? rawScore : 0;
 
   // Build reason context
   const faction = targetFactionId
@@ -458,15 +467,27 @@ export function recommendMoves(inputs: AdvisorInputs): MoveRecommendation {
     }
   }
 
-  // Sort by score descending, take top 3
-  scored.sort((a, b) => b.score - a.score);
+  // Sort by score descending with a TOTAL, stable tie-break (action key, then
+  // target faction id) so equal-scoring moves rank identically regardless of
+  // scan order — presentation output stays byte-identical across refactors.
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    const ak = `${a.category}.${a.subAction}`;
+    const bk = `${b.category}.${b.subAction}`;
+    if (ak !== bk) return ak < bk ? -1 : 1;
+    const at = a.targetFactionId ?? '';
+    const bt = b.targetFactionId ?? '';
+    return at < bt ? -1 : at > bt ? 1 : 0;
+  });
 
   // Deduplicate: don't recommend the same subAction twice with different targets
   const seen = new Set<string>();
   const top3: ScoredMove[] = [];
   for (const move of scored) {
     if (top3.length >= 3) break;
-    if (move.feasibility === 0) continue; // skip infeasible
+    // Skip infeasible moves; `!(x > 0)` also catches a NaN feasibility from
+    // malformed inputs (NaN === 0 is false, so the old check let NaN through).
+    if (!(move.feasibility > 0)) continue;
     const key = `${move.category}.${move.subAction}`;
     if (seen.has(key)) continue;
     seen.add(key);

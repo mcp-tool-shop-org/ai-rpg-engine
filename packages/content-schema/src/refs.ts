@@ -54,8 +54,38 @@ export function validateRefs(pack: ContentPack): RefsResult {
   const entities = (Array.isArray(pack.entities) ? pack.entities : []).filter(isRecord) as NonNullable<ContentPack['entities']>;
   const dialogues = (Array.isArray(pack.dialogues) ? pack.dialogues : []).filter(isRecord) as NonNullable<ContentPack['dialogues']>;
   const quests = (Array.isArray(pack.quests) ? pack.quests : []).filter(isRecord) as NonNullable<ContentPack['quests']>;
-  const entityIds = new Set(entities.map((e) => e.id));
-  const zoneIds = new Set(zones.map((z) => z.id));
+  // Build the id registries WITH duplicate detection (v2.5 PC-4). A plain
+  // `new Set(map(id))` silently dedups, so a copy-pasted entity/zone whose id
+  // was never renamed passed validation clean and then silently clobbered at
+  // WorldStore.addEntity/addZone (last definition wins) — one authored
+  // entity/zone missing from the shipped game with zero diagnostic. Every
+  // other content category already enforces unique ids (status, verb, ability,
+  // per-entity inventory items); entities/zones were the gap. Non-string ids
+  // are skipped here — element shape is the per-type validators' job.
+  const entityIds = new Set<string>();
+  for (const entity of entities) {
+    const id = (entity as { id?: unknown }).id;
+    if (typeof id !== 'string') continue;
+    if (entityIds.has(id)) {
+      errors.push({
+        path: `${path}.entity(${id}).id`,
+        message: `duplicate entity id "${id}" — entity ids must be unique; rename one of the copies (at load, the later definition silently replaces the earlier one)`,
+      });
+    }
+    entityIds.add(id);
+  }
+  const zoneIds = new Set<string>();
+  for (const zone of zones) {
+    const id = (zone as { id?: unknown }).id;
+    if (typeof id !== 'string') continue;
+    if (zoneIds.has(id)) {
+      errors.push({
+        path: `${path}.zone(${id}).id`,
+        message: `duplicate zone id "${id}" — zone ids must be unique; rename one of the copies (at load, the later definition silently replaces the earlier one)`,
+      });
+    }
+    zoneIds.add(id);
+  }
 
   // Zone neighbors must reference existing zones
   for (const zone of zones) {

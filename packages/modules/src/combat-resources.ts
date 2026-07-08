@@ -22,6 +22,7 @@ import type { CombatIntentType, IntentScore } from './combat-intent.js';
 import type { CombatFormulas } from './combat-core.js';
 import { COMBAT_STATES, simpleRoll } from './combat-core.js';
 import { removeStatus } from './status-core.js';
+import { affiliationOf } from './targeting.js';
 
 // ---------------------------------------------------------------------------
 // Profile types
@@ -393,10 +394,12 @@ export function registerResourceListeners(
       const defeated = world.entities[defeatedId];
       if (!defeated?.zoneId) return;
 
-      // Find living same-type entities in zone (ally witnesses)
+      // Find living allied entities in zone (ally witnesses). Routes through the
+      // shared affiliationOf predicate: same-faction different-`type` companions
+      // count as witnesses; factionless content keeps the same-`type` heuristic.
       const witnesses = Object.values(world.entities).filter(
-        e => e.id !== defeatedId && e.zoneId === defeated.zoneId
-          && e.type === defeated.type && (e.resources.hp ?? 0) > 0,
+        e => e.zoneId === defeated.zoneId
+          && affiliationOf(defeated, e) === 'ally' && (e.resources.hp ?? 0) > 0,
       );
 
       for (const witness of witnesses) {

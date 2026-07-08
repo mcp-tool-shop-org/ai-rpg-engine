@@ -52,7 +52,12 @@ export type GenerationResult = {
   prompt: string;
   /** Negative prompt if used. */
   negativePrompt?: string;
-  /** RNG seed used. */
+  /**
+   * RNG seed actually used. Providers that sample with a seed (ComfyUI) always
+   * report the effective value — caller-supplied or the deterministically
+   * derived default — so the image can be reproduced. Providers with no RNG
+   * (placeholder) echo the caller's seed, which may be undefined.
+   */
   seed?: number;
   /** Model name/identifier used. */
   model?: string;

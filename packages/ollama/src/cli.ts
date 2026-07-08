@@ -40,6 +40,7 @@ import {
 } from './session.js';
 import { sessionDoctor, formatDoctorReport } from './session-doctor.js';
 import type { DesignSession } from './session.js';
+import type { GeneratedContentResult } from './validators.js';
 
 type CliFlags = {
   model?: string;
@@ -65,6 +66,7 @@ type CliFlags = {
   tickRange?: string;
   repair?: boolean;
   confirm?: boolean;
+  validate?: boolean;
   autoExecute?: number;
   kind?: string;
   stdin?: boolean;
@@ -106,6 +108,7 @@ function parseFlags(args: string[]): { command: string; flags: CliFlags } {
       case '--tick-range': flags.tickRange = next; i++; break;
       case '--repair': flags.repair = true; break;
       case '--confirm': flags.confirm = true; break;
+      case '--validate': flags.validate = true; break;
       case '--auto-execute': flags.autoExecute = parseInt(next ?? '1', 10); i++; break;
       case '--kind': flags.kind = next; i++; break;
       case '--stdin': flags.stdin = true; break;
@@ -158,7 +161,81 @@ export async function emit(
   }
 }
 
+/**
+ * Structured CLI failure — the code/message/hint shape (v2.5 audit PA-2/PA-4).
+ * Command flows throw this instead of printing + exiting inline so the
+ * top-level catch in {@link runCli} renders exactly one structured error.
+ */
+class CliError extends Error {
+  readonly code: string;
+  readonly hint?: string;
+  constructor(code: string, message: string, hint?: string) {
+    super(message);
+    this.name = 'CliError';
+    this.code = code;
+    this.hint = hint;
+  }
+}
+
+/**
+ * v2.5 audit PA-4: `--validate` turns generation-time schema validation into a
+ * hard gate — invalid content is neither printed nor written (structured
+ * INVALID_CONTENT error, exit code 1). Without the flag, the honest default
+ * stands: drafts are emitted with warnings and validated strictly at engine
+ * load.
+ */
+function enforceValidationGate(
+  kind: string,
+  validation: GeneratedContentResult,
+  enabled: boolean | undefined,
+): void {
+  if (!enabled || validation.valid) return;
+  const errors = validation.validation.errors;
+  const list = errors.map((e) => `  ${e.path}: ${e.message}`).join('\n');
+  throw new CliError(
+    'INVALID_CONTENT',
+    `generated ${kind} failed schema validation (${errors.length} error(s)):\n${list}`,
+    'Nothing was emitted or written. Re-run without --validate to inspect the draft, '
+    + 'tighten --theme/--constraints, or use --repair (room/quest) for an automatic fix attempt.',
+  );
+}
+
+/** Print validation warnings for an emitted-anyway draft (stderr, advisory). */
+function printValidationWarnings(validation: GeneratedContentResult): void {
+  if (validation.valid) return;
+  console.error('\n--- Validation warnings ---');
+  for (const err of validation.validation.errors) {
+    console.error(`  ${err.path}: ${err.message}`);
+  }
+  console.error('(Drafts are validated strictly at engine load; add --validate to refuse invalid output here.)');
+}
+
+/**
+ * CLI entry point. Never lets a raw stack escape (v2.5 audit PA-2): structured
+ * errors (anything carrying a string `code` — CliError, SessionLoadError)
+ * render as `Error [CODE]: message` + `Hint:`, anything else as
+ * `Error [UNEXPECTED]`. Failures set `process.exitCode = 1` rather than
+ * calling `process.exit()`, so stdio flushes and embedders keep control.
+ */
 export async function runCli(args: string[]): Promise<void> {
+  try {
+    await runCliInner(args);
+  } catch (err) {
+    const code = (err as { code?: unknown } | null)?.code;
+    const hint = (err as { hint?: unknown } | null)?.hint;
+    if (err instanceof Error && typeof code === 'string') {
+      console.error(`Error [${code}]: ${err.message}`);
+      if (typeof hint === 'string' && hint.length > 0) console.error(`Hint: ${hint}`);
+    } else {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`Error [UNEXPECTED]: ${message}`);
+      console.error('Hint: this looks like a bug in the ai CLI — please report it: https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues');
+    }
+    process.exitCode = 1;
+  }
+}
+
+async function runCliInner(args: string[]): Promise<void> {
   const { command, flags } = parseFlags(args);
   const projectRoot = process.cwd();
 
@@ -361,19 +438,15 @@ export async function runCli(args: string[]): Promise<void> {
         process.exit(1);
       }
 
+      enforceValidationGate('room', result.validation, flags.validate);
+
       if (result.repaired && result.repairNote) {
         console.error(result.repairNote);
       } else if (!result.validation.valid) {
         console.error('Generated on first pass (has validation warnings).');
       }
       await emit(result.yaml, flags.write);
-
-      if (!result.validation.valid) {
-        console.error('\n--- Validation warnings ---');
-        for (const err of result.validation.validation.errors) {
-          console.error(`  ${err.path}: ${err.message}`);
-        }
-      }
+      printValidationWarnings(result.validation);
       if (session) {
         const idMatch = result.yaml.match(/^id:\s*(\S+)/m);
         if (idMatch) addArtifact(session, 'rooms', idMatch[1]);
@@ -401,7 +474,9 @@ export async function runCli(args: string[]): Promise<void> {
         process.exit(1);
       }
 
+      enforceValidationGate('faction', result.validation, flags.validate);
       await emit(result.yaml, flags.write);
+      printValidationWarnings(result.validation);
       if (session) {
         const idMatch = result.yaml.match(/^id:\s*(\S+)/m);
         if (idMatch) addArtifact(session, 'factions', idMatch[1]);
@@ -431,19 +506,15 @@ export async function runCli(args: string[]): Promise<void> {
         process.exit(1);
       }
 
+      enforceValidationGate('quest', result.validation, flags.validate);
+
       if (result.repaired && result.repairNote) {
         console.error(result.repairNote);
       } else if (!result.validation.valid) {
         console.error('Generated on first pass (has validation warnings).');
       }
       await emit(result.yaml, flags.write);
-
-      if (!result.validation.valid) {
-        console.error('\n--- Validation warnings ---');
-        for (const err of result.validation.validation.errors) {
-          console.error(`  ${err.path}: ${err.message}`);
-        }
-      }
+      printValidationWarnings(result.validation);
       if (session) {
         const idMatch = result.yaml.match(/^id:\s*(\S+)/m);
         if (idMatch) addArtifact(session, 'quests', idMatch[1]);
@@ -499,7 +570,9 @@ export async function runCli(args: string[]): Promise<void> {
         process.exit(1);
       }
 
+      enforceValidationGate('district', result.validation, flags.validate);
       await emit(result.yaml, flags.write);
+      printValidationWarnings(result.validation);
       if (session) {
         const idMatch = result.yaml.match(/^id:\s*(\S+)/m);
         if (idMatch) addArtifact(session, 'districts', idMatch[1]);
@@ -560,7 +633,9 @@ export async function runCli(args: string[]): Promise<void> {
         process.exit(1);
       }
 
+      enforceValidationGate('location pack', result.validation, flags.validate);
       await emit(result.yaml, flags.write);
+      printValidationWarnings(result.validation);
       if (session) {
         const idMatch = result.yaml.match(/^id:\s*(\S+)/m);
         if (idMatch) addArtifact(session, 'packs', idMatch[1]);
@@ -590,7 +665,9 @@ export async function runCli(args: string[]): Promise<void> {
         process.exit(1);
       }
 
+      enforceValidationGate('encounter pack', result.validation, flags.validate);
       await emit(result.yaml, flags.write);
+      printValidationWarnings(result.validation);
       if (session) {
         const idMatch = result.yaml.match(/^id:\s*(\S+)/m);
         if (idMatch) addArtifact(session, 'packs', idMatch[1]);
@@ -1272,6 +1349,7 @@ export async function runCli(args: string[]): Promise<void> {
       console.log('  --label-before <t>   Label for "before" version in diff');
       console.log('  --label-after <t>    Label for "after" version in diff');
       console.log('  --repair             Attempt to fix invalid generated content');
+      console.log('  --validate           Refuse to emit/write create-* content that fails schema validation');
       console.log('  --confirm            Confirm apply-preview (actually write the file)');
       console.log('  --kind <type>        Scaffold kind: room, faction, district, location-pack, encounter-pack');
       console.log('  --auto-execute <n>   Plan-and-generate: steps to auto-execute (1-3, default 1)');

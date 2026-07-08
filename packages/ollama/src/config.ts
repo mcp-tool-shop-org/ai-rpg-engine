@@ -6,6 +6,13 @@ export type OllamaConfig = {
   timeoutMs: number;
   temperature: number;
   maxTokens?: number;
+  /**
+   * Total request attempts per generate() call, including the first
+   * (1 = no retry). Default: 3. (v2.5 audit PA-3 — previously hardcoded.)
+   */
+  maxAttempts: number;
+  /** Fixed delay between retry attempts, in milliseconds. Default: 1000. */
+  retryDelayMs: number;
 };
 
 const DEFAULTS: OllamaConfig = {
@@ -13,6 +20,8 @@ const DEFAULTS: OllamaConfig = {
   model: 'qwen2.5-coder',
   timeoutMs: 30_000,
   temperature: 0.2,
+  maxAttempts: 3,
+  retryDelayMs: 1000,
 };
 
 export function resolveConfig(overrides?: Partial<OllamaConfig>): OllamaConfig {
@@ -30,7 +39,25 @@ export function resolveConfig(overrides?: Partial<OllamaConfig>): OllamaConfig {
       ?? resolveTimeoutMs(process.env['AI_RPG_ENGINE_OLLAMA_TIMEOUT_MS']),
     temperature: overrides?.temperature ?? DEFAULTS.temperature,
     maxTokens: overrides?.maxTokens,
+    maxAttempts: resolveMaxAttempts(overrides?.maxAttempts),
+    retryDelayMs: resolveRetryDelayMs(overrides?.retryDelayMs),
   };
+}
+
+/**
+ * Clamp a caller-supplied attempt count to a sane integer ≥ 1. A non-finite or
+ * sub-1 value falls back to the default — a NaN/0 count would silently skip
+ * every attempt and return "max retries exceeded" without ever calling fetch.
+ */
+function resolveMaxAttempts(raw: number | undefined): number {
+  if (raw === undefined || !Number.isFinite(raw)) return DEFAULTS.maxAttempts;
+  return Math.max(1, Math.floor(raw));
+}
+
+/** Clamp a caller-supplied retry delay to a finite non-negative integer (0 is valid: retry immediately). */
+function resolveRetryDelayMs(raw: number | undefined): number {
+  if (raw === undefined || !Number.isFinite(raw) || raw < 0) return DEFAULTS.retryDelayMs;
+  return Math.floor(raw);
 }
 
 /**

@@ -63,11 +63,16 @@ function makeProvider(url: string, extra?: { timeoutMs?: number; maxImageBytes?:
 }
 
 /** Handler implementing the happy queue→history flow with a pluggable /view. */
-function comfyFlow(view: MockHandler): MockHandler {
+function comfyFlow(view: MockHandler, onWorkflow?: (workflow: Record<string, never>) => void): MockHandler {
   return (req, res) => {
     if (req.method === 'POST' && req.url === '/prompt') {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ prompt_id: 'p1' }));
+      let body = '';
+      req.on('data', (chunk) => { body += chunk; });
+      req.on('end', () => {
+        if (onWorkflow) onWorkflow(JSON.parse(body).prompt);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ prompt_id: 'p1' }));
+      });
       return;
     }
     if (req.url?.startsWith('/history/p1')) {
@@ -271,6 +276,87 @@ describe('ComfyUIProvider.generate — A6: image body validation', () => {
     const result = await makeProvider(mock.url, { maxImageBytes: 1024 }).generate('p');
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe('image_too_large');
+  });
+});
+
+// v2.5 audit PA-1 (MED): the provider generated a random default seed inside
+// buildWorkflow but returned `seed: opts?.seed` — the effective seed was
+// discarded AND the reported seed was undefined whenever one was actually used.
+// The invariant under test: the seed in the result is ALWAYS the seed sent to
+// KSampler, and the no-seed default is deterministic (same inputs → same seed)
+// so any portrait can be reproduced.
+describe('ComfyUIProvider.generate — PA-1: seed reproducibility', () => {
+  /** Extract the KSampler seed from a captured workflow. */
+  function kSamplerSeed(workflow: Record<string, never>): unknown {
+    const nodes = workflow as Record<string, { class_type?: string; inputs?: { seed?: unknown } }>;
+    for (const node of Object.values(nodes)) {
+      if (node.class_type === 'KSampler') return node.inputs?.seed;
+    }
+    return undefined;
+  }
+
+  function seedCapturingMock(): Promise<MockServer> & { sent: unknown[] } {
+    const sent: unknown[] = [];
+    const promise = startMock(
+      comfyFlow(
+        (_req, res) => {
+          res.writeHead(200, { 'Content-Type': 'image/png' });
+          res.end(tinyPng(8, 8));
+        },
+        (workflow) => sent.push(kSamplerSeed(workflow)),
+      ),
+    ) as Promise<MockServer> & { sent: unknown[] };
+    promise.sent = sent;
+    return promise;
+  }
+
+  it('PA1-explicit: a caller-supplied seed is sent to KSampler and reported back verbatim', async () => {
+    const mockPromise = seedCapturingMock();
+    const mock = await mockPromise;
+
+    const result = await makeProvider(mock.url).generate('a knight', { seed: 1234 });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.seed).toBe(1234);
+    expect(mockPromise.sent).toEqual([1234]);
+  });
+
+  it('PA1-default: with no seed, a concrete seed is used, reported (never undefined), and matches what was sent', async () => {
+    const mockPromise = seedCapturingMock();
+    const mock = await mockPromise;
+
+    const result = await makeProvider(mock.url).generate('a knight');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(typeof result.seed).toBe('number');
+      expect(Number.isFinite(result.seed)).toBe(true);
+      // The reported seed is the one that actually reached KSampler.
+      expect(mockPromise.sent).toEqual([result.seed]);
+    }
+  });
+
+  it('PA1-reproducible: the derived default seed is deterministic — same inputs, same seed', async () => {
+    const mockPromise = seedCapturingMock();
+    const mock = await mockPromise;
+    const provider = makeProvider(mock.url);
+
+    const first = await provider.generate('a knight', { width: 256, height: 256 });
+    const second = await provider.generate('a knight', { width: 256, height: 256 });
+    expect(first.ok && second.ok).toBe(true);
+    if (first.ok && second.ok) {
+      expect(first.seed).toBe(second.seed);
+      expect(mockPromise.sent).toEqual([first.seed, first.seed]);
+    }
+  });
+
+  it('PA1-distinct: different prompts derive different default seeds', async () => {
+    const mockPromise = seedCapturingMock();
+    const mock = await mockPromise;
+    const provider = makeProvider(mock.url);
+
+    const knight = await provider.generate('a knight');
+    const oracle = await provider.generate('an oracle');
+    expect(knight.ok && oracle.ok).toBe(true);
+    if (knight.ok && oracle.ok) expect(knight.seed).not.toBe(oracle.seed);
   });
 });
 

@@ -8,11 +8,13 @@ export type {
   MemoryFragment,
   NpcMemoryEntry,
   NpcMemoryState,
+  SerializedJournal,
   MemoryQuery,
   CampaignMemoryConfig,
 } from './types.js';
 
 export {
+  CAMPAIGN_MEMORY_VERSION,
   VALID_CATEGORIES,
   VALID_CONSOLIDATIONS,
   createDefaultRelationship,

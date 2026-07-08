@@ -1,5 +1,15 @@
 // Campaign memory types — persistent NPC memory and relationship model
 
+/**
+ * Current campaign-memory schema version (CM-01/CM-02). Stamped into every
+ * value returned by `NpcMemoryBank.serialize()` / `CampaignJournal.serialize()`
+ * and checked by both `deserialize()`s: saves with a NEWER version are rejected
+ * with an actionable error; saves with no version (written before this constant
+ * existed) load as legacy v1. Mirrors character-profile's PROFILE_VERSION so a
+ * future schema change has a number to migrate on.
+ */
+export const CAMPAIGN_MEMORY_VERSION = 1;
+
 /** Multi-axis relationship model beyond boolean hostile */
 export type RelationshipAxes = {
   /** -1 (distrust) to 1 (trust) */
@@ -80,8 +90,24 @@ export type NpcMemoryEntry = {
 
 /** Full NPC memory state */
 export type NpcMemoryState = {
+  /**
+   * Schema version, stamped by `NpcMemoryBank.serialize()`. Optional because
+   * legacy saves (pre-versioning) lack it — `deserialize()` treats a missing
+   * version as v1 and re-stamps on the next serialize.
+   */
+  version?: number;
   entityId: string;
   subjects: Record<string, NpcMemoryEntry>;
+};
+
+/**
+ * Versioned journal save envelope, returned by `CampaignJournal.serialize()`.
+ * `CampaignJournal.deserialize()` also accepts a bare `CampaignRecord[]`
+ * (the legacy pre-versioning format).
+ */
+export type SerializedJournal = {
+  version: number;
+  records: CampaignRecord[];
 };
 
 /** Query filters for NPC memories */

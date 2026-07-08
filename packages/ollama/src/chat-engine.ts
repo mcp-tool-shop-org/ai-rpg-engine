@@ -12,7 +12,7 @@ import type {
 } from './chat-types.js';
 import type { DesignSession } from './session.js';
 import {
-  loadSession, saveSession, renderSessionContext,
+  tryLoadSession, saveSession, renderSessionContext,
   recordEvent, addArtifact, addCritiqueIssues,
 } from './session.js';
 import { classifyIntent } from './chat-router.js';
@@ -201,7 +201,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     addMessage(memory, { role: 'user', content: userMessage, timestamp: now });
 
     // Load current session state
-    const session = await loadSession(projectRoot);
+    const session = await tryLoadSession(projectRoot);
     const sessionCtx = session ? renderSessionContext(session) : undefined;
     if (session && !memory.sessionName) {
       memory.sessionName = session.name;
@@ -502,7 +502,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     if (!step) {
       if (isBuildComplete(activeBuild)) {
         finalizeBuild(activeBuild);
-        const session = await loadSession(projectRoot);
+        const session = await tryLoadSession(projectRoot);
         const diag = buildDiagnostics(activeBuild, session);
         if (session) {
           recordEvent(session, 'build_plan_completed', `Build completed: ${activeBuild.plan.goal}`);
@@ -519,7 +519,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     const tool = findToolForIntent(step.intent);
     if (!tool) {
       markStepFailed(activeBuild, step.id, `No tool for intent: ${step.intent}`);
-      const session = await loadSession(projectRoot);
+      const session = await tryLoadSession(projectRoot);
       if (session) {
         recordEvent(session, 'build_step_failed', `${step.command}: no tool`);
         await saveSession(projectRoot, session);
@@ -534,7 +534,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     }
 
     // Load session for execution
-    const session = await loadSession(projectRoot);
+    const session = await tryLoadSession(projectRoot);
     const sessionCtx = session ? renderSessionContext(session) : undefined;
 
     const toolResult = await tool.execute({
@@ -594,7 +594,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       return 'No pending steps to execute.';
     }
 
-    const session = await loadSession(projectRoot);
+    const session = await tryLoadSession(projectRoot);
     const diag = buildDiagnostics(activeBuild, session);
 
     return results.join('\n\n') + '\n\n' + formatBuildDiagnostics(diag);
@@ -609,7 +609,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     if (!step) {
       if (isTuningComplete(activeTuning)) {
         finalizeTuning(activeTuning);
-        const session = await loadSession(projectRoot);
+        const session = await tryLoadSession(projectRoot);
         if (session) {
           recordEvent(session, 'tune_plan_completed', `Tuning completed: ${activeTuning.plan.goal}`);
           await saveSession(projectRoot, session);
@@ -624,7 +624,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     const tool = findToolForIntent(step.intent);
     if (!tool) {
       markTuningStepFailed(activeTuning, step.id, `No tool for intent: ${step.intent}`);
-      const session = await loadSession(projectRoot);
+      const session = await tryLoadSession(projectRoot);
       if (session) {
         recordEvent(session, 'tune_step_failed', `${step.command}: no tool`);
         await saveSession(projectRoot, session);
@@ -632,7 +632,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       return `Step ${step.id} failed: no tool for ${step.intent}`;
     }
 
-    const session = await loadSession(projectRoot);
+    const session = await tryLoadSession(projectRoot);
     const sessionCtx = session ? renderSessionContext(session) : undefined;
 
     const toolResult = await tool.execute({

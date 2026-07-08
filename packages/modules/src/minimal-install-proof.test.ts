@@ -35,12 +35,14 @@ describe('Minimal Install Proof', () => {
       contentPacks: [],
     };
 
-    // They follow the README pattern exactly
+    // They follow the README pattern exactly — biasTags must be REAL built-in
+    // pack bias tags (see PACK_BIAS_TAGS); unknown tags warn-and-drop.
     const combat = buildCombatStack({
       statMapping: { attack: 'strength', precision: 'dexterity', resolve: 'willpower' },
       playerId: 'player',
-      biasTags: ['enemy'],
+      biasTags: ['undead', 'beast'],
     });
+    expect(combat.warnings).toEqual([]);
 
     const dialogues: Parameters<typeof createDialogueCore>[0] = [];
     const engine = new Engine({

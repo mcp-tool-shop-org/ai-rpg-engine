@@ -1,10 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { tmpdir } from 'node:os';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   createSession,
   loadSession,
+  tryLoadSession,
+  SessionLoadError,
   saveSession,
   deleteSession,
   addThemes,
@@ -92,6 +94,88 @@ describe('session', () => {
     it('deleteSession returns false when no file exists', async () => {
       const deleted = await deleteSession(tempDir);
       expect(deleted).toBe(false);
+    });
+  });
+
+  // v2.5 audit PA-2 — loadSession swallowed ALL errors to null: a corrupt
+  // session was silently ignored and the next save clobbered it, while a
+  // valid-JSON-wrong-shape file escaped as a raw TypeError downstream. The
+  // invariants: ENOENT → null (no session, fine); anything else → a structured
+  // SessionLoadError naming the file; the corrupt file is never modified.
+  describe('corrupt session handling (PA-2)', () => {
+    const sessionFile = () => join(tempDir, '.ai-session.json');
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('throws SessionLoadError (not null) on truncated/invalid JSON', async () => {
+      await writeFile(sessionFile(), '{ "name": "half-written', 'utf-8');
+      await expect(loadSession(tempDir)).rejects.toThrow(SessionLoadError);
+      await expect(loadSession(tempDir)).rejects.toMatchObject({
+        code: 'SESSION_CORRUPT',
+        path: sessionFile(),
+      });
+    });
+
+    it('the error names the file and carries a recovery hint', async () => {
+      await writeFile(sessionFile(), 'not json at all', 'utf-8');
+      const err = await loadSession(tempDir).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(SessionLoadError);
+      const loadError = err as SessionLoadError;
+      expect(loadError.message).toContain(sessionFile());
+      expect(loadError.hint).toMatch(/session end|restore|fix/i);
+    });
+
+    it('throws SessionLoadError on valid-JSON-wrong-shape files', async () => {
+      for (const bad of ['{}', '[]', '"just a string"', JSON.stringify({ name: 'x' })]) {
+        await writeFile(sessionFile(), bad, 'utf-8');
+        await expect(loadSession(tempDir)).rejects.toThrow(SessionLoadError);
+      }
+    });
+
+    it('names the first missing artifacts array in the shape error', async () => {
+      const almost = {
+        name: 'x', createdAt: 't', updatedAt: 't',
+        themes: [], constraints: [], issues: [], acceptedSuggestions: [],
+        artifacts: {}, history: [],
+      };
+      await writeFile(sessionFile(), JSON.stringify(almost), 'utf-8');
+      await expect(loadSession(tempDir)).rejects.toThrow(/artifacts\.districts/);
+    });
+
+    it('does not modify the corrupt file (salvageable content preserved)', async () => {
+      const corrupt = '{ "name": "precious-context", "themes": ["gothic"';
+      await writeFile(sessionFile(), corrupt, 'utf-8');
+      await loadSession(tempDir).catch(() => undefined);
+      expect(await readFile(sessionFile(), 'utf-8')).toBe(corrupt);
+    });
+
+    it('tolerates a session without history (older format)', async () => {
+      const s = createSession('old-format');
+      const obj = JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+      delete obj['history'];
+      await writeFile(sessionFile(), JSON.stringify(obj), 'utf-8');
+      const loaded = await loadSession(tempDir);
+      expect(loaded?.name).toBe('old-format');
+    });
+
+    it('tryLoadSession degrades a corrupt session to null with a stderr warning', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      await writeFile(sessionFile(), '{ broken', 'utf-8');
+
+      const result = await tryLoadSession(tempDir);
+
+      expect(result).toBeNull();
+      const stderr = errSpy.mock.calls.flat().join('\n');
+      expect(stderr).toContain('Warning:');
+      expect(stderr).toContain(sessionFile());
+    });
+
+    it('tryLoadSession stays quiet when there is simply no session', async () => {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      expect(await tryLoadSession(tempDir)).toBeNull();
+      expect(errSpy).not.toHaveBeenCalled();
     });
   });
 

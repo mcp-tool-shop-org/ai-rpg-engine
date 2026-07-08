@@ -91,12 +91,102 @@ function sessionPath(projectRoot: string): string {
   return resolve(projectRoot, SESSION_FILENAME);
 }
 
+/**
+ * Structured failure for an unusable session file (v2.5 audit PA-2).
+ *
+ * "No session" and "corrupt session" are different situations: the first is
+ * the normal case (→ null), the second used to be silently swallowed — the
+ * user's accumulated design context was ignored without a word and the next
+ * `saveSession` clobbered the salvageable file. Carries the code/message/hint
+ * shape the CLI renders.
+ */
+export class SessionLoadError extends Error {
+  readonly code = 'SESSION_CORRUPT';
+  /** Absolute path of the offending session file. */
+  readonly path: string;
+  readonly hint: string;
+  constructor(path: string, detail: string) {
+    super(`Session file is corrupt: ${path} (${detail})`);
+    this.name = 'SessionLoadError';
+    this.path = path;
+    this.hint =
+      'The file was left untouched. Fix the JSON by hand, restore it from git, '
+      + 'or discard it with "ai session end" to start fresh.';
+  }
+}
+
+/**
+ * Describe the first structural problem that would make this object unusable
+ * as a DesignSession, or null when it is safe to use. Guards exactly the
+ * fields the CLI dereferences — a valid-JSON-wrong-shape file (`{}`, an array)
+ * must become a structured error, not a downstream TypeError.
+ */
+function sessionShapeProblem(v: unknown): string | null {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return 'not a JSON object';
+  const s = v as Record<string, unknown>;
+  if (typeof s['name'] !== 'string') return 'missing "name" (string)';
+  for (const key of ['themes', 'constraints', 'issues', 'acceptedSuggestions'] as const) {
+    if (!Array.isArray(s[key])) return `missing "${key}" (array)`;
+  }
+  const artifacts = s['artifacts'];
+  if (typeof artifacts !== 'object' || artifacts === null || Array.isArray(artifacts)) {
+    return 'missing "artifacts" (object)';
+  }
+  for (const kind of ['districts', 'factions', 'quests', 'rooms', 'packs'] as const) {
+    if (!Array.isArray((artifacts as Record<string, unknown>)[kind])) {
+      return `missing "artifacts.${kind}" (array)`;
+    }
+  }
+  // history is tolerated when absent (older sessions); recordEvent re-initializes it.
+  if (s['history'] !== undefined && !Array.isArray(s['history'])) return '"history" is not an array';
+  return null;
+}
+
+/**
+ * Load the design session for a project root.
+ *
+ * - No session file (ENOENT) → `null` — the normal, quiet case.
+ * - Unreadable / invalid JSON / wrong shape → throws {@link SessionLoadError}
+ *   so a corrupt session is surfaced instead of silently ignored-then-clobbered
+ *   by the next save (PA-2). Callers on advisory surfaces that must never throw
+ *   should use {@link tryLoadSession}.
+ */
 export async function loadSession(projectRoot: string): Promise<DesignSession | null> {
+  const file = sessionPath(projectRoot);
+  let raw: string;
   try {
-    const raw = await readFile(sessionPath(projectRoot), 'utf-8');
-    return JSON.parse(raw) as DesignSession;
-  } catch {
-    return null;
+    raw = await readFile(file, 'utf-8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException | null)?.code === 'ENOENT') return null;
+    const message = err instanceof Error ? err.message : String(err);
+    throw new SessionLoadError(file, `unreadable: ${message}`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new SessionLoadError(file, `invalid JSON: ${message}`);
+  }
+  const problem = sessionShapeProblem(parsed);
+  if (problem) throw new SessionLoadError(file, problem);
+  return parsed as DesignSession;
+}
+
+/**
+ * Lenient variant of {@link loadSession} for advisory surfaces (the chat
+ * shell/engine): a corrupt session degrades to "no session" with a one-line
+ * stderr warning instead of an exception — visible, but never fatal.
+ */
+export async function tryLoadSession(projectRoot: string): Promise<DesignSession | null> {
+  try {
+    return await loadSession(projectRoot);
+  } catch (err) {
+    if (err instanceof SessionLoadError) {
+      console.error(`Warning: ${err.message}. Continuing without session context.`);
+      return null;
+    }
+    throw err;
   }
 }
 
