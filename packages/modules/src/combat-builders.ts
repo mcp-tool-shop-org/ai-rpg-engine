@@ -10,8 +10,9 @@ import type { CombatResourceProfile } from './combat-resources.js';
 import type { EngagementConfig } from './engagement-core.js';
 import type { PackBias, CombatIntentConfig } from './combat-intent.js';
 import type { CombatRecoveryConfig } from './combat-recovery.js';
-import { DEFAULT_STAT_MAPPING } from './combat-core.js';
+import { DEFAULT_STAT_MAPPING, resolveEntityMapping } from './combat-core.js';
 import { createCombatCore } from './combat-core.js';
+import { effectiveStat } from './status-effects.js';
 import { createCombatReview } from './combat-review.js';
 import { createEngagementCore, withEngagement } from './engagement-core.js';
 import { createCombatTactics, type CombatTacticsConfig } from './combat-tactics.js';
@@ -38,24 +39,39 @@ import { createCognitionCore, type CognitionCoreConfig } from './cognition-core.
  * ```
  * const formulas = { ...buildCombatFormulas(mapping), damage: myCustomDamage };
  * ```
+ *
+ * CR-1: each closure resolves its stats PER-ENTITY via `resolveEntityMapping`,
+ * with `mapping` as the fallback — so a `might` fighter and a `will` mystic in a
+ * `buildCombatStack`-wired game (every shipped starter) read their own stat
+ * mappings off this one formula set. Reads go through `effectiveStat`, so status
+ * buffs/debuffs reach these formulas too (matching the built-in default path).
+ * Byte-identical to the previous raw reads when no profile and no modifiers are
+ * present (`effectiveStat` then returns `entity.stats[stat] ?? fallback`).
  */
 export function buildCombatFormulas(mapping: CombatStatMapping): CombatFormulas {
   return {
     statMapping: mapping,
-    hitChance: (attacker, target) => {
-      const atkPrec = attacker.stats[mapping.precision] ?? 5;
-      const tgtPrec = target.stats[mapping.precision] ?? 5;
+    hitChance: (attacker, target, world) => {
+      const am = resolveEntityMapping(attacker, world, mapping);
+      const tm = resolveEntityMapping(target, world, mapping);
+      const atkPrec = effectiveStat(attacker, am.precision, world, 5);
+      const tgtPrec = effectiveStat(target, tm.precision, world, 5);
       return Math.min(95, Math.max(5, 50 + atkPrec * 5 - tgtPrec * 3));
     },
-    damage: (attacker) => Math.max(1, attacker.stats[mapping.attack] ?? 3),
-    guardReduction: (defender) => {
-      const res = defender.stats[mapping.resolve] ?? 3;
+    damage: (attacker, _target, world) => {
+      const m = resolveEntityMapping(attacker, world, mapping);
+      return Math.max(1, effectiveStat(attacker, m.attack, world, 3));
+    },
+    guardReduction: (defender, world) => {
+      const m = resolveEntityMapping(defender, world, mapping);
+      const res = effectiveStat(defender, m.resolve, world, 3);
       const bonus = Math.max(0, (res - 3) * 0.03);
       return Math.min(0.75, 0.5 + bonus);
     },
-    disengageChance: (actor) => {
-      const prec = actor.stats[mapping.precision] ?? 5;
-      const res = actor.stats[mapping.resolve] ?? 3;
+    disengageChance: (actor, world) => {
+      const m = resolveEntityMapping(actor, world, mapping);
+      const prec = effectiveStat(actor, m.precision, world, 5);
+      const res = effectiveStat(actor, m.resolve, world, 3);
       return Math.min(90, Math.max(15, 40 + prec * 5 + res * 2));
     },
   };

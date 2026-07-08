@@ -159,10 +159,13 @@ export function buildStrategicMap(
     });
   }
 
-  // Hot rumors (top 5 by spread count)
+  // Hot rumors (top 5 by spread count; ties break by rumor id so equal-spread
+  // rumors rank identically regardless of the caller's array order)
   const hotRumors = [...playerRumors]
     .filter((r) => r.confidence > 0.3)
-    .sort((a, b) => b.spreadTo.length - a.spreadTo.length)
+    .sort((a, b) =>
+      b.spreadTo.length - a.spreadTo.length
+      || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .slice(0, 5)
     .map((r) => ({
       claim: r.claim,
@@ -175,7 +178,9 @@ export function buildStrategicMap(
     (p) => `${p.kind}: ${p.description} (${p.turnsRemaining} turns)`,
   );
 
-  // Hot goods — scarce items across all districts that command premiums (v1.7)
+  // Hot goods — scarce items across all districts that command premiums (v1.7).
+  // Categories and their district lists are sorted so the output is a total,
+  // stable order independent of the caller's Map insertion order.
   const hotGoods: { category: string; reason: string }[] = [];
   if (districtEconomies) {
     const scarcityCounts = new Map<string, string[]>();
@@ -187,7 +192,9 @@ export function buildStrategicMap(
         scarcityCounts.set(scarcest, arr);
       }
     }
-    for (const [category, districtIds] of scarcityCounts) {
+    const orderedCategories = [...scarcityCounts.keys()].sort();
+    for (const category of orderedCategories) {
+      const districtIds = [...(scarcityCounts.get(category) ?? [])].sort();
       hotGoods.push({
         category,
         reason: `scarce in ${districtIds.join(', ')}`,

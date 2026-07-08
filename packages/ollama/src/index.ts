@@ -6,7 +6,10 @@ export type { OllamaConfig } from './config.js';
 
 // Client
 export { createClient } from './client.js';
-export type { OllamaTextClient, PromptInput, PromptResult } from './client.js';
+export type {
+  OllamaTextClient, PromptInput, PromptResult,
+  OllamaRetryInfo, OllamaClientOptions,
+} from './client.js';
 
 // Commands
 export { explainValidationError } from './commands/explain-validation-error.js';
@@ -88,12 +91,26 @@ export type {
 } from './parsers.js';
 
 // Validators
-export { parseYamlish, validateGeneratedRoom, validateGeneratedQuest } from './validators.js';
+export {
+  parseYamlish,
+  validateGeneratedRoom,
+  validateGeneratedQuest,
+  validateGeneratedFaction,
+  validateGeneratedDistrict,
+  validateGeneratedLocationPack,
+  validateGeneratedEncounterPack,
+  validateFactionDefinition,
+  validateDistrictDefinition,
+  validateLocationPackDefinition,
+  validateEncounterPackDefinition,
+} from './validators.js';
 export type { GeneratedContentResult } from './validators.js';
 
 // Session
 export {
   loadSession,
+  tryLoadSession,
+  SessionLoadError,
   saveSession,
   deleteSession,
   createSession,

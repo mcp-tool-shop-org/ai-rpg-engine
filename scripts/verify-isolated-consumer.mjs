@@ -9,7 +9,9 @@
  *   1. Packs core, modules, content-schema, character-profile into tarballs
  *   2. Creates a fresh temp project (outside the monorepo)
  *   3. Installs from tarballs (no workspace resolution)
- *   4. Writes a TypeScript consumer file (README quickstart pattern)
+ *   4. Writes a TypeScript consumer file (README quickstart pattern, PLUS
+ *      the per-entity rule-profile surface: two ruleProfileId entities
+ *      resolving through their own mappings, buildProfile/validateProfileSet)
  *   5. Compiles with tsc --noEmit (type-check only)
  *   6. Compiles with tsc and runs the proof
  *   7. Cleans up
@@ -22,12 +24,18 @@
  */
 
 import { execSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1');
 const PACKAGES = ['core', 'modules', 'content-schema', 'character-profile'];
+
+// The proof's manifest declares the engine version it targets. Read it from
+// the packages being packed so the proof can never drift stale again.
+const ENGINE_VERSION = JSON.parse(
+  readFileSync(join(ROOT, 'packages', 'core', 'package.json'), 'utf-8'),
+).version;
 
 function run(cmd, opts = {}) {
   try {
@@ -94,14 +102,15 @@ try {
 
   writeFileSync(join(appDir, 'src', 'proof.ts'), `
 import { Engine } from '@ai-rpg-engine/core';
-import type { GameManifest, EntityState, ZoneState } from '@ai-rpg-engine/core';
-import { buildCombatStack, traversalCore, statusCore, createDialogueCore } from '@ai-rpg-engine/modules';
+import type { GameManifest, EntityState, ZoneState, RuleProfile } from '@ai-rpg-engine/core';
+import { buildCombatStack, traversalCore, statusCore, createDialogueCore, buildProfile, validateProfileSet } from '@ai-rpg-engine/modules';
+import type { Profile } from '@ai-rpg-engine/modules';
 
 const manifest: GameManifest = {
   id: 'isolated-proof',
   title: 'Isolated Consumer Proof',
   version: '1.0.0',
-  engineVersion: '2.3.3',
+  engineVersion: '${ENGINE_VERSION}',
   ruleset: 'proof',
   modules: ['combat', 'traversal', 'dialogue'],
   contentPacks: [],
@@ -155,6 +164,95 @@ const serialized = JSON.parse(engine.serialize());
 if (!serialized.world) failures.push('missing world in serialized');
 if (!serialized.actionLog || serialized.actionLog.length !== 2) failures.push('bad action log');
 
+// --- Per-entity rule profiles at the artifact boundary (CR-1) ---
+// A might fighter and a will mystic in ONE fight, each resolving through its
+// OWN statMapping via world.ruleProfiles + entity.ruleProfileId. Both carry
+// the world attack stat (edge = 2), so if the installed artifact resolved a
+// single shared mapping, both would deal 2 — the assertions below prove the
+// flagship feature survives packaging, not just its types.
+
+const might: RuleProfile = { statMapping: { attack: 'brawn', precision: 'reflex', resolve: 'grit' } };
+const will: RuleProfile = { statMapping: { attack: 'psyche', precision: 'reflex', resolve: 'calm' } };
+
+const profileCombat = buildCombatStack({
+  statMapping: { attack: 'edge', precision: 'reflex', resolve: 'lore' },
+  playerId: 'fighter',
+});
+
+const profileEngine = new Engine({
+  manifest: { ...manifest, id: 'isolated-profile-proof' },
+  modules: [statusCore, ...profileCombat.modules],
+});
+
+const fighter: EntityState = {
+  id: 'fighter', blueprintId: 'fighter', type: 'player', name: 'Fighter',
+  tags: ['human'], faction: 'party', ruleProfileId: 'might',
+  stats: { brawn: 9, edge: 2, reflex: 50, lore: 0 },
+  resources: { hp: 30, stamina: 5 }, statuses: [], zoneId: 'yard',
+};
+const mystic: EntityState = {
+  id: 'mystic', blueprintId: 'mystic', type: 'ally', name: 'Mystic',
+  tags: ['human'], faction: 'party', ruleProfileId: 'will',
+  stats: { psyche: 7, edge: 2, reflex: 50, lore: 0 },
+  resources: { hp: 20, stamina: 5 }, statuses: [], zoneId: 'yard',
+};
+const foe: EntityState = {
+  id: 'foe', blueprintId: 'foe', type: 'enemy', name: 'Foe',
+  tags: ['beast'], stats: { edge: 0, reflex: 0, lore: 0 },
+  resources: { hp: 40, stamina: 5 }, statuses: [], zoneId: 'yard',
+};
+
+profileEngine.store.state.playerId = 'fighter';
+profileEngine.store.state.locationId = 'yard';
+profileEngine.store.state.entities['fighter'] = fighter;
+profileEngine.store.state.entities['mystic'] = mystic;
+profileEngine.store.state.entities['foe'] = foe;
+profileEngine.store.state.zones['yard'] = { id: 'yard', roomId: 'yard', name: 'Yard', tags: [], neighbors: [] };
+profileEngine.store.state.ruleProfiles = { might, will };
+
+const damageOf = (events: { type: string; payload: Record<string, unknown> }[]): number | undefined =>
+  events.find((e) => e.type === 'combat.damage.applied')?.payload.damage as number | undefined;
+
+const fighterDmg = damageOf(profileEngine.submitActionAs('fighter', 'attack', { targetIds: ['foe'] }));
+const mysticDmg = damageOf(profileEngine.submitActionAs('mystic', 'attack', { targetIds: ['foe'] }));
+
+if (fighterDmg !== 9) failures.push('fighter damage ' + fighterDmg + ' !== 9 (attack should resolve via its own profile: might -> brawn)');
+if (mysticDmg !== 7) failures.push('mystic damage ' + mysticDmg + ' !== 7 (attack should resolve via its own profile: will -> psyche)');
+if (fighterDmg === 2 || mysticDmg === 2) failures.push('an attack resolved via the shared world mapping (edge) — per-entity resolution is inert in the artifact');
+
+// Profiles are data — they must ride the save.
+const profileSave = JSON.parse(profileEngine.serialize());
+if (!profileSave.world?.state?.ruleProfiles?.will) failures.push('ruleProfiles missing from serialized state');
+if (profileSave.world?.state?.entities?.mystic?.ruleProfileId !== 'will') failures.push('ruleProfileId missing from serialized entity');
+
+// The profile authoring surface packs too: buildProfile + validateProfileSet.
+const sentinel = buildProfile({
+  id: 'sentinel', name: 'Sentinel',
+  statMapping: { attack: 'brawn', precision: 'reflex', resolve: 'grit' },
+  abilities: [{
+    id: 'bulwark-slam', name: 'Bulwark Slam', verb: 'use-ability',
+    tags: ['combat', 'damage'], target: { type: 'single' },
+    costs: [{ resourceId: 'stamina', amount: 2 }], cooldown: 1,
+    effects: [{ type: 'damage', params: { amount: 5 } }],
+  }],
+});
+const lorekeeper = buildProfile({
+  id: 'lorekeeper', name: 'Lorekeeper',
+  statMapping: { attack: 'psyche', precision: 'reflex', resolve: 'calm' },
+  abilities: [{
+    id: 'mind-spike', name: 'Mind Spike', verb: 'use-ability',
+    tags: ['combat', 'damage'], target: { type: 'single' },
+    costs: [{ resourceId: 'stamina', amount: 2 }], cooldown: 1,
+    effects: [{ type: 'damage', params: { amount: 4 } }],
+  }],
+});
+if (sentinel.warnings.length > 0) failures.push('buildProfile(sentinel) warned: ' + sentinel.warnings.join('; '));
+if (lorekeeper.warnings.length > 0) failures.push('buildProfile(lorekeeper) warned: ' + lorekeeper.warnings.join('; '));
+
+const packagedProfiles: Profile[] = [sentinel.profile, lorekeeper.profile];
+const profileSet = validateProfileSet(packagedProfiles);
+if (!profileSet.ok) failures.push('validateProfileSet rejected a coherent set: ' + profileSet.errors.map((e) => e.message).join('; '));
+
 if (failures.length > 0) {
   console.error('FAILED:', failures.join(', '));
   process.exit(1);
@@ -177,7 +275,8 @@ console.log('PASSED');
   console.log('      Runtime proof passed');
 
   console.log('\n✅ ISOLATED CONSUMER PROOF VERIFIED');
-  console.log('   Artifact packages are consumer-ready.\n');
+  console.log('   Artifact packages are consumer-ready.');
+  console.log('   Per-entity rule profiles (CR-1) resolve correctly from the packed tarballs.\n');
 } finally {
   // Cleanup
   rmSync(tmpBase, { recursive: true, force: true });

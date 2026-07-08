@@ -24,13 +24,17 @@ import { myRuleset } from './ruleset.js';
 // your starter feel different from other starters.
 // ═══════════════════════════════════════════════════════════════════
 
-// Example: a custom module that ticks your "tension" resource each combat round
+// Example: a custom module that raises your "tension" resource whenever
+// damage lands in combat. It listens on 'combat.damage.applied' — a real
+// event emitted by combat-core every time an attack connects (other engine
+// events you can hook: 'combat.contact.hit', 'combat.contact.miss',
+// 'combat.entity.defeated', 'status.applied', 'world.zone.entered').
 function createTensionPressure(): EngineModule {
     return {
         id: 'tension-pressure',
         version: '1.0.0',
         register(ctx) {
-            ctx.events.on('combat.round.end', (event: ResolvedEvent, world: WorldState) => {
+            ctx.events.on('combat.damage.applied', (event: ResolvedEvent, world: WorldState) => {
                 const p = world.entities['player'];
                 if (p && p.resources.tension !== undefined) {
                     p.resources.tension = Math.min(100, (p.resources.tension ?? 0) + 5);
@@ -49,16 +53,29 @@ export function createGame(seed?: number): Engine {
     const combat = buildCombatStack({
         statMapping: { attack: 'power', precision: 'speed', resolve: 'grit' },
         playerId: 'player',
-        // resourceProfile — uncomment and customize for your game's resource pressure:
+        // resourceProfile — uncomment and customize for your game's resource
+        // pressure. A CombatResourceProfile needs packId + the four arrays
+        // (gains / spends / drains / aiModifiers — empty arrays are fine):
         // resourceProfile: {
-        //   spends: [
-        //     { verbId: 'attack', costStat: 'stamina', amount: 2 },
+        //   packId: 'my-game',
+        //   gains: [
+        //     // +2 tension every time an attack you make lands
+        //     { trigger: 'attack-hit', resourceId: 'tension', amount: 2 },
         //   ],
+        //   spends: [
+        //     // spend 2 stamina on each attack for +1 damage
+        //     { action: 'attack', resourceId: 'stamina', amount: 2, effects: { damageBonus: 1 } },
+        //   ],
+        //   drains: [],
+        //   aiModifiers: [],
         // },
-        // biasTags — entity tags that cognition uses for faction bias:
-        // biasTags: ['enemy'],
-        // engagement — customize if your game uses ranged/melee distance:
-        // engagement: { defaultRange: 'melee' },
+        // biasTags — built-in pack bias tags that shape combat AI intent.
+        // Must come from PACK_BIAS_TAGS (exported by @ai-rpg-engine/modules,
+        // e.g. 'undead', 'beast', 'feral'); unknown tags warn and are dropped:
+        // biasTags: ['undead', 'beast'],
+        // engagement — backline/protector behavior for ranged parties
+        // (fields: backlineTags, protectorTags, chokepointTag, ambushTag):
+        // engagement: { backlineTags: ['ranged', 'caster'], protectorTags: ['bodyguard'] },
         // recovery — safe zone recovery:
         recovery: { safeZoneTags: ['safe'] },
     });

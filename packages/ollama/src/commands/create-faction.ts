@@ -3,6 +3,8 @@
 import type { OllamaTextClient } from '../client.js';
 import { createFactionPrompt } from '../prompts/create-faction.js';
 import { extractYaml } from '../parsers.js';
+import { parseYamlish, validateGeneratedFaction } from '../validators.js';
+import type { GeneratedContentResult } from '../validators.js';
 
 export type CreateFactionInput = {
   theme: string;
@@ -15,6 +17,8 @@ export type CreateFactionInput = {
 export type GeneratedFactionResult = {
   ok: true;
   yaml: string;
+  /** Schema check of the draft (v2.5 audit PA-4) — advisory unless the CLI --validate gate is on. */
+  validation: GeneratedContentResult;
 } | {
   ok: false;
   error: string;
@@ -36,5 +40,6 @@ export async function createFaction(
   });
 
   if (!result.ok) return result;
-  return { ok: true, yaml: extractYaml(result.text) };
+  const yaml = extractYaml(result.text);
+  return { ok: true, yaml, validation: validateGeneratedFaction(yaml, parseYamlish(yaml)) };
 }

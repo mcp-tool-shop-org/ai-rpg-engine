@@ -9,6 +9,7 @@ function makePack(id: string, overrides: {
   tones?: PackEntry['meta']['tones'];
   tags?: string[];
   defaultModules?: string[];
+  districts?: { id: string; controllingFaction?: string }[];
 } = {}): PackEntry {
   return {
     meta: {
@@ -50,6 +51,7 @@ function makePack(id: string, overrides: {
       progressionModels: [],
       contentConventions: { entityTypes: [], statusTags: [] },
     },
+    districts: overrides.districts,
     createGame: () => ({} as any),
   };
 }
@@ -68,6 +70,7 @@ describe('validatePackRubric', () => {
       ],
       genres: ['mystery'],
       tones: ['noir'],
+      districts: [{ id: 'old-quarter', controllingFaction: 'the-syndicate' }],
     });
     const result = validatePackRubric(pack, [pack]);
     expect(result.ok).toBe(true);
@@ -122,5 +125,84 @@ describe('validatePackRubric', () => {
     const pack = makePack('full');
     const result = validatePackRubric(pack, [pack]);
     expect(result.checks).toHaveLength(7);
+  });
+
+  // --- D1 meta-tests: faction topology must inspect real faction data ---
+
+  it('D1 meta: a pack with dialogue-core but zero factions FAILS faction topology', () => {
+    // Mutation under test: the pack declares the dialogue module (the field the
+    // old check wrongly inspected) but defines no districts and no factions.
+    const pack = makePack('dialogue-only', { defaultModules: ['dialogue-core'] });
+    const result = validatePackRubric(pack, [pack]);
+    const check = result.checks.find((c) => c.dimension === 'distinct-faction-topology');
+    expect(check?.passed).toBe(false);
+    // The detail string must describe what was actually inspected — not dialogue.
+    expect(check?.detail.toLowerCase()).not.toContain('dialogue');
+  });
+
+  it('D1: districts without any controllingFaction still fail faction topology', () => {
+    const pack = makePack('unclaimed', {
+      districts: [{ id: 'wilds' }, { id: 'ruins' }],
+    });
+    const result = validatePackRubric(pack, [pack]);
+    const check = result.checks.find((c) => c.dimension === 'distinct-faction-topology');
+    expect(check?.passed).toBe(false);
+  });
+
+  it('D1: passes faction topology when a district declares a controlling faction, and the detail names it', () => {
+    const pack = makePack('factioned', {
+      districts: [
+        { id: 'docks', controllingFaction: 'smugglers' },
+        { id: 'temple' },
+      ],
+    });
+    const result = validatePackRubric(pack, [pack]);
+    const check = result.checks.find((c) => c.dimension === 'distinct-faction-topology');
+    expect(check?.passed).toBe(true);
+    expect(check?.detail).toContain('smugglers');
+  });
+
+  // --- D6: cross-catalog uniqueness must actually consult the catalog ---
+
+  it('D6: fails distinct-verbs when every non-base verb is shared with another pack', () => {
+    const a = makePack('a', {
+      verbs: [{ id: 'move', name: 'Move' }, { id: 'duel', name: 'Duel' }],
+    });
+    const b = makePack('b', {
+      verbs: [{ id: 'move', name: 'Move' }, { id: 'duel', name: 'Duel' }],
+    });
+    const result = validatePackRubric(a, [a, b]);
+    const check = result.checks.find((c) => c.dimension === 'distinct-verbs');
+    expect(check?.passed).toBe(false);
+  });
+
+  it('D6: fails distinct-failure-mode when the failure resource is shared with another pack', () => {
+    const shared = [
+      { id: 'hp', name: 'HP', min: 0, max: 100, default: 50 },
+      { id: 'corruption', name: 'Corruption', min: 0, max: 10, default: 0 },
+    ];
+    const a = makePack('a', { resources: shared });
+    const b = makePack('b', { resources: shared });
+    const result = validatePackRubric(a, [a, b]);
+    const check = result.checks.find((c) => c.dimension === 'distinct-failure-mode');
+    expect(check?.passed).toBe(false);
+  });
+
+  it('D6: passes distinct-failure-mode when the pack has a failure resource no other pack shares', () => {
+    const a = makePack('a', {
+      resources: [
+        { id: 'hp', name: 'HP', min: 0, max: 100, default: 50 },
+        { id: 'corruption', name: 'Corruption', min: 0, max: 10, default: 0 },
+      ],
+    });
+    const b = makePack('b', {
+      resources: [
+        { id: 'hp', name: 'HP', min: 0, max: 100, default: 50 },
+        { id: 'suspicion', name: 'Suspicion', min: 0, max: 10, default: 0 },
+      ],
+    });
+    const result = validatePackRubric(a, [a, b]);
+    const check = result.checks.find((c) => c.dimension === 'distinct-failure-mode');
+    expect(check?.passed).toBe(true);
   });
 });

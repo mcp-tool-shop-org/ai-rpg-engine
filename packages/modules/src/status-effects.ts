@@ -20,11 +20,12 @@
 //      defaults to snapshot (finding 3).
 //
 //   3. REACTIVE TRIGGERS  — `processStatusTriggers(event, world, procCtx)` runs a
-//      per-tick FIFO proc queue. The `ProcContext` (reset each tick) holds the
-//      chain depth and an already-fired Set of `(event,source,target,statusId)`
-//      signatures; a chain halts at the fixed `PROC_DEPTH_LIMIT` so reflect-damage
-//      ping-pong loops terminate deterministically (MTG Comprehensive Rules
-//      104.4b-style fiat, finding 7).
+//      per-tick FIFO proc queue. The `ProcContext` (reset each tick) holds an
+//      already-fired Set of `(event,source,target,statusId)` signatures shared
+//      across the tick's seed events; each seed event's chain starts at depth 0
+//      and halts at the fixed `PROC_DEPTH_LIMIT`, so reflect-damage ping-pong
+//      loops terminate deterministically (MTG Comprehensive Rules 104.4b-style
+//      fiat, finding 7) and an AoE's per-entity reactions stay uniform (M1).
 //
 // Determinism guardrails (design-lock): no Date.now / Math.random; ticks from the
 // engine counter; entities and modifiers iterated in a total stable key order;
@@ -301,17 +302,25 @@ export function processPeriodicStatuses(world: WorldState, tick: number): Resolv
 
 /**
  * Per-tick proc context for reactive triggers. Reset (recreated) every tick so
- * the dedup set and chain depth never leak across ticks. `chainDepth` counts how
- * deep the current reaction chain has gone; `firedSignatures` blocks re-firing the
- * same `(causeEvent,source,target,statusId)` within the tick.
+ * the dedup set and depth bookkeeping never leak across ticks. `chainDepth`
+ * records the DEEPEST chain depth observed this tick (bookkeeping/inspection
+ * only — it is never used to seed a new chain); `firedSignatures` blocks
+ * re-firing the same `(causeEvent,source,target,statusId)` within the tick.
  *
  * Two distinct loop-terminators, both per the design lock (finding 7):
  *  - The dedup set keys on the *triggering event id*, so one hit cannot proc the
  *    same status instance twice (no double-counting on fan-out / re-entry of the
- *    same event).
+ *    same event). It is SHARED across all of the tick's seed events.
  *  - A reflect ping-pong produces a *new* event each hop (a fresh id), so the
  *    dedup set does not catch it — that is exactly what `PROC_DEPTH_LIMIT` is for:
  *    the chain is halted by fiat once it grows past the cap (MTG 104.4b-style).
+ *
+ * Depth is PER SEED EVENT, not cumulative across the tick (M1): each seed damage
+ * event (e.g. each hit of one AoE) starts its own chain at depth 0. Accumulating
+ * depth across seeds made identical reactive statuses fire a different number of
+ * times per entity depending on same-tick processing order — deterministic, but
+ * non-uniform and wrong. The shared dedup set (not the depth) is what prevents
+ * cross-seed double-fires.
  */
 export type ProcContext = {
   chainDepth: number;
@@ -358,6 +367,12 @@ function eventIdFor(event: ResolvedEvent, world: WorldState): string {
  * Termination is guaranteed by `PROC_DEPTH_LIMIT` (a `status.trigger.halted` event
  * is emitted when the cap is hit) and re-entry of the *same* event is blocked by
  * the dedup set. Entities are scanned in id order for determinism.
+ *
+ * Each call seeds its chain at depth 0 (M1): when a caller processes several seed
+ * events through one shared `procCtx` (status-core's per-tick loop over an AoE's
+ * damage events), every seed gets the full depth budget, so identical reactive
+ * statuses on N entities react uniformly regardless of seed order. The shared
+ * `firedSignatures` set still dedups across the whole tick.
  */
 export function processStatusTriggers(
   event: ResolvedEvent,
@@ -366,7 +381,7 @@ export function processStatusTriggers(
   tick: number,
 ): ResolvedEvent[] {
   const out: ResolvedEvent[] = [];
-  const queue: ProcItem[] = [{ event, depth: procCtx.chainDepth }];
+  const queue: ProcItem[] = [{ event, depth: 0 }];
 
   while (queue.length > 0) {
     const item = queue.shift()!;

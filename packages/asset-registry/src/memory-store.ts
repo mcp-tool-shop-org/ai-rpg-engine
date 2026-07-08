@@ -1,6 +1,6 @@
 // In-memory asset store — useful for testing and ephemeral sessions
 
-import type { AssetMetadata, AssetInput, AssetFilter, AssetStore } from './types.js';
+import type { AssetMetadata, AssetInput, AssetFilter, AssetGetOptions, AssetStore } from './types.js';
 import { hashBytes } from './hash.js';
 import { matchesFilter } from './filter.js';
 
@@ -32,9 +32,14 @@ export class MemoryAssetStore implements AssetStore {
     return metadata;
   }
 
-  async get(hash: string): Promise<Uint8Array | null> {
+  async get(hash: string, opts?: AssetGetOptions): Promise<Uint8Array | null> {
     const bytes = this.data.get(hash);
-    return bytes ? new Uint8Array(bytes) : null;
+    if (!bytes) return null;
+    // Honor the AssetStore verify contract for parity with FileAssetStore —
+    // in-memory bytes are keyed by their own digest, so this only fires if
+    // something reached in and mutated the map.
+    if (opts?.verify && hashBytes(bytes) !== hash) return null;
+    return new Uint8Array(bytes);
   }
 
   async getMeta(hash: string): Promise<AssetMetadata | null> {

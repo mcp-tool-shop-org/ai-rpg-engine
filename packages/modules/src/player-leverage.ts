@@ -144,10 +144,21 @@ export function applyLeverageDeltas(
 
 // --- Cost Checking ---
 
+/**
+ * A currency balance for comparisons. NaN guard: `undefined < amount` and
+ * `NaN < amount` are both `false`, so a MISSING or NaN balance used to pass
+ * the affordability gate (and then poison downstream ratios). A malformed
+ * balance reads as 0 — cannot afford.
+ */
+function balanceOf(state: LeverageState, currency: LeverageCurrency): number {
+  const raw = state[currency];
+  return Number.isFinite(raw) ? raw : 0;
+}
+
 /** Check if the player can afford a leverage cost. */
 export function canAfford(state: LeverageState, costs: LeverageCost): boolean {
   for (const [currency, amount] of Object.entries(costs)) {
-    if (amount && state[currency as LeverageCurrency] < amount) {
+    if (amount && balanceOf(state, currency as LeverageCurrency) < amount) {
       return false;
     }
   }
@@ -157,7 +168,7 @@ export function canAfford(state: LeverageState, costs: LeverageCost): boolean {
 /** Get the first currency that's too low to afford. */
 function getShortfall(state: LeverageState, costs: LeverageCost): string | undefined {
   for (const [currency, amount] of Object.entries(costs)) {
-    if (amount && state[currency as LeverageCurrency] < amount) {
+    if (amount && balanceOf(state, currency as LeverageCurrency) < amount) {
       return currency;
     }
   }

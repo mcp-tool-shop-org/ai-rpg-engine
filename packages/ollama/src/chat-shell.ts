@@ -34,7 +34,7 @@ import {
   runExperiment, runParameterSweep,
   type ReplayProducer, type ExperimentSummary,
 } from './chat-experiments.js';
-import { loadSession } from './session.js';
+import { tryLoadSession } from './session.js';
 import {
   resolveAlias, formatGroupedHelp,
   buildStudioSnapshot, formatStudioDashboard,
@@ -216,7 +216,7 @@ async function handleSlashCommand(
         console.log('Example: /build rumor-driven market district');
         return 'handled';
       }
-      const session = await loadSession(projectRoot);
+      const session = await tryLoadSession(projectRoot);
       const plan = generateBuildPlan(goal, session);
       engine.activeBuild = createBuildState(plan);
       console.log('');
@@ -276,7 +276,7 @@ async function handleSlashCommand(
         console.log('No active build to diagnose.');
         return 'handled';
       }
-      const session = await loadSession(projectRoot);
+      const session = await tryLoadSession(projectRoot);
       const diag = buildDiagnostics(engine.activeBuild, session);
       console.log('');
       console.log(formatBuildDiagnostics(diag));
@@ -290,7 +290,7 @@ async function handleSlashCommand(
         console.log('Usage: /analyze-balance <replay-json>');
         return 'handled';
       }
-      const session = await loadSession(projectRoot);
+      const session = await tryLoadSession(projectRoot);
       const analysis = analyzeBalance(replay, session);
       console.log('');
       console.log(formatBalanceAnalysis(analysis));
@@ -311,7 +311,7 @@ async function handleSlashCommand(
         return 'handled';
       }
       const intent = parseDesignIntent(intentPart);
-      const session = await loadSession(projectRoot);
+      const session = await tryLoadSession(projectRoot);
       const comparison = compareIntent(intent, replayPart, session);
       console.log('');
       console.log(formatIntentComparison(comparison));
@@ -384,7 +384,7 @@ async function handleSlashCommand(
         console.log('Example: /tune increase paranoia');
         return 'handled';
       }
-      const session = await loadSession(projectRoot);
+      const session = await tryLoadSession(projectRoot);
       // v1.7.0: use operational plan when prior analysis is available
       const plan = engine.lastAnalysis
         ? generateOperationalPlan(goal, session, engine.lastAnalysis)
@@ -404,7 +404,7 @@ async function handleSlashCommand(
           engine.activeTuning.plan.goal,
           engine.lastAnalysis.findings,
           fixes,
-          await loadSession(projectRoot),
+          await tryLoadSession(projectRoot),
         );
         console.log('');
         console.log(formatPatchPreview(preview));
@@ -522,7 +522,7 @@ async function handleSlashCommand(
         console.log('Example: /experiment-plan compare baseline vs tuned');
         return 'handled';
       }
-      const session = await loadSession(projectRoot);
+      const session = await tryLoadSession(projectRoot);
       const plan = generateExperimentPlan(goal, session);
       console.log('');
       console.log(formatExperimentPlan(plan));
@@ -603,7 +603,7 @@ async function handleSlashCommand(
 
     case 'studio':
     case 'dashboard': {
-      const session = await loadSession(projectRoot);
+      const session = await tryLoadSession(projectRoot);
       const snapshot = buildStudioSnapshot(session, {
         lastExperiment: engine.lastExperiment,
         baselineExperiment: engine.baselineExperiment,
@@ -618,7 +618,7 @@ async function handleSlashCommand(
     }
 
     case 'history': {
-      const session = await loadSession(projectRoot);
+      const session = await tryLoadSession(projectRoot);
       if (!session) {
         console.log('No active session.');
         return 'handled';
@@ -644,7 +644,7 @@ async function handleSlashCommand(
     }
 
     case 'issues': {
-      const session = await loadSession(projectRoot);
+      const session = await tryLoadSession(projectRoot);
       if (!session) {
         console.log('No active session.');
         return 'handled';

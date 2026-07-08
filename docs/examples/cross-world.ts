@@ -8,6 +8,10 @@
  * This example defines one combat stack and two factory functions
  * that each build a different world with the same combat feel.
  *
+ * Scope note: this is same-STACK, two-WORLDS (reuse mechanics across
+ * content). For two-PROFILES-one-world — several playstyles resolving
+ * side by side in a single WorldState — see shared-profiles.ts.
+ *
  * Inspired by: Weird West (buildCombatStack), Fantasy (simple content)
  */
 

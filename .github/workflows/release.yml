@@ -46,6 +46,14 @@ jobs:
       - run: npm run build
       - run: npm test
 
+      # Packaging gate (PG-5): refuse to publish any package whose tarball
+      # lacks LICENSE or README.md. npm silently drops `files` entries that
+      # don't exist on disk — this dry-run inspection is the only reliable
+      # check, and it is the gate that would have caught the G3 LICENSE gap
+      # before it reached npm.
+      - name: Packaging gate (LICENSE/README in every publishable tarball)
+        run: node scripts/check-packaging.mjs
+
       # Idempotent per-package publish: skip private packages and any version
       # already on npm, so a re-run after a partial failure completes the release
       # without erroring on already-published packages. Real publish errors still

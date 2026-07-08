@@ -88,6 +88,51 @@ describe('validateRefs', () => {
     expect(r.errors.some((e) => e.message.includes('duplicate item "sword"'))).toBe(true);
   });
 
+  // PC-4: a copy-pasted entity/zone with an unrenamed id used to pass validation
+  // clean (the ref Sets silently dedup), then silently clobber at
+  // WorldStore.addEntity/addZone — one authored thing missing from the shipped
+  // game with zero diagnostic. Dedup was already enforced for statuses, verbs,
+  // abilities, and per-entity inventory; entities/zones were the gap.
+  it('pc4-001: catches duplicate entity ids', () => {
+    const r = validateRefs({
+      entities: [
+        { id: 'goblin', type: 'enemy', name: 'Goblin' },
+        { id: 'goblin', type: 'enemy', name: 'Goblin Copy' },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('duplicate entity id "goblin"'))).toBe(true);
+  });
+
+  it('pc4-002: catches duplicate zone ids', () => {
+    const r = validateRefs({
+      zones: [
+        { id: 'town', name: 'Town' },
+        { id: 'town', name: 'Second Town' },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('duplicate zone id "town"'))).toBe(true);
+  });
+
+  it('pc4-003: a triple-duplicate reports one error per extra copy (deterministic count)', () => {
+    const r = validateRefs({
+      entities: [
+        { id: 'mob', type: 'enemy', name: 'A' },
+        { id: 'mob', type: 'enemy', name: 'B' },
+        { id: 'mob', type: 'enemy', name: 'C' },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.filter((e) => e.message.includes('duplicate entity id "mob"'))).toHaveLength(2);
+  });
+
+  it('pc4-004: unique entity/zone ids produce no duplicate errors (control)', () => {
+    const r = validateRefs(validPack);
+    expect(r.ok).toBe(true);
+    expect(r.errors.some((e) => e.message.includes('duplicate'))).toBe(false);
+  });
+
   it('catches bad quest stage references', () => {
     const r = validateRefs({
       quests: [

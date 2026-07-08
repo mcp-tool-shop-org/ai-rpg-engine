@@ -12,10 +12,14 @@ import type {
 } from '@ai-rpg-engine/core';
 import { makeEvent } from './make-event.js';
 import type { EffectDefinition, AbilityDefinition } from '@ai-rpg-engine/content-schema';
-import { normalizeTargetSpec } from '@ai-rpg-engine/content-schema';
 import { applyStatus, removeStatus } from './status-core.js';
 import { checkResistance, applyResistanceToDuration, getStatusTags } from './status-semantics.js';
-import { resolveTargets as resolveSpecTargets, lowestHp } from './targeting.js';
+import {
+  resolveTargets as resolveSpecTargets,
+  lowestHp,
+  isSupportAbility,
+  normalizeAbilityTarget,
+} from './targeting.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -91,17 +95,10 @@ export function clearEffectRegistry(): void {
 // Built-in effect handlers
 // ---------------------------------------------------------------------------
 
-/**
- * Whether an ability is support-oriented (heal/buff/revive). Support abilities use
- * the most-hurt ally selector for a single-scope effect (so "raise/mend the right
- * ally" is automatic); offensive abilities fall through to the spec's stable
- * lowest-id default. Pure read of the ability's declared tags.
- */
-function isSupportAbility(ability: AbilityDefinition): boolean {
-  return ability.tags.some(
-    (t) => t === 'heal' || t === 'support' || t === 'buff' || t === 'revive',
-  );
-}
+// isSupportAbility lives in targeting.ts (shared with the M7 support-aware
+// normalization default) — support abilities use the most-hurt ally selector for
+// a single-scope effect (so "raise/mend the right ally" is automatic); offensive
+// abilities fall through to the spec's stable lowest-id default.
 
 function resolveEffectTargets(
   effect: EffectDefinition,
@@ -119,12 +116,15 @@ function resolveEffectTargets(
       // from the faction predicate, so an enemy-only blast skips allies and an
       // ally-only buff/heal skips enemies. For a single-scope support effect
       // (e.g. revive) the most-hurt valid candidate is chosen deterministically.
-      const norm = normalizeTargetSpec(ctx.ability.target);
+      // Axes resolve support-aware (M7): a bare legacy { type:'single' } heal
+      // defaults to allies, not enemies.
+      const norm = normalizeAbilityTarget(ctx.ability);
       const selector =
         norm.scope === 'single' && isSupportAbility(ctx.ability) ? lowestHp : undefined;
       return resolveSpecTargets(ctx.ability.target, ctx.actor, ctx.world, {
         explicitTargetId: ctx.action.targetIds?.[0],
         selector,
+        norm,
       });
     }
     case 'target':

@@ -100,13 +100,17 @@ const meta = await ensurePortrait(request, provider, store);
 Implement the `ImageProvider` interface:
 
 ```typescript
-import type { ImageProvider, GenerationResult, GenerationOptions } from '@ai-rpg-engine/image-gen';
+import type { ImageProvider, GenerationOutcome, GenerationOptions } from '@ai-rpg-engine/image-gen';
 
 class MyProvider implements ImageProvider {
   readonly name = 'my-provider';
 
-  async generate(prompt: string, opts?: GenerationOptions): Promise<GenerationResult> {
-    // Your generation logic here
+  // generate() returns a typed outcome — do not throw for an expected failure.
+  // Success: { ok: true, ...GenerationResult }.
+  // Failure: { ok: false, code, error, hint } (code: timeout | http_error |
+  //   invalid_response | network | not_an_image | image_too_large).
+  async generate(prompt: string, opts?: GenerationOptions): Promise<GenerationOutcome> {
+    // Your generation logic here — return { ok: true, ... } or { ok: false, code, error }
   }
 
   async isAvailable(): Promise<boolean> {

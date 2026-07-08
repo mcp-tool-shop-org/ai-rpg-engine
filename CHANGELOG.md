@@ -5,6 +5,79 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.5.0] - 2026-07-08
+
+Strictly additive — every new field is optional and an unset `ruleProfileId`
+resolves byte-identically to 2.4.0. Produced by a full dogfood swarm (health
+pass A→C + feature pass), advisor-orchestrated with per-wave cross-family
+verification.
+
+### Added
+
+- **Plug-in Profiles — per-entity rule resolution (the marquee feature).** A
+  `might` fighter and a `will` mystic now resolve combat in ONE fight, each
+  reading stats through its own mapping. New `RuleProfile` type +
+  `WorldState.ruleProfiles?` + `EntityState.ruleProfileId?` (pure data,
+  serializes byte-identically); `resolveEntityMapping()` in combat-core resolves
+  every stat read against the entity's own profile mapping (fallback chain
+  `entity profile → world mapping → DEFAULT`, so custom-mapping starters are
+  unchanged). Critically, the `buildCombatFormulas` closures that all 10 starters
+  use were routed through the resolver too — without that the feature would have
+  been inert in every real game.
+- **`applyProfile(world, entityId, profile)`** — attaches a built profile to an
+  entity (registers the rule profile, sets `ruleProfileId`, initializes resource
+  pools). **Per-entity abilities** resolve via a lazy world-state registry
+  consulted after the base ability map (byte-identical when no profile is
+  applied).
+- **10 starter-derived profile templates** (`starterProfiles` / `starterProfileList`)
+  — each shipping starter's playstyle as a reusable `Profile`.
+- **`profile` CLI subcommand** — `profile validate <file.json>` and
+  `profile scaffold <name>`.
+- **Runnable proofs** — `docs/examples/mixed-party.ts` rewritten as the
+  per-entity flagship, new `docs/examples/shared-profiles.ts`; the doc-example
+  behavior tests now RUN in CI (they were type-checked but never executed); the
+  isolated-consumer proof exercises per-entity resolution from packed tarballs.
+
+### Fixed
+
+- **Determinism: byte-identical replay on the save/load path (PC-1).** Module
+  event emits (`ctx.events.emit`) captured a throwaway store during
+  `Engine.deserialize`, so after save→load→continue every module-emitted reactive
+  event (status reflect/DoT, cognition, defeat cascades) recorded into an
+  orphaned store with the wrong id counter — silently absent from the live event
+  log. A latent bug since before 2.4.0; fixed via a rebindable module store.
+- **Correctness:** rule effects registered via `rules.registerEffect` now
+  actually execute (were stored and never called); reactive-trigger depth is now
+  per-entity uniform under AoE (was order-dependent); the `faction` affiliation
+  filter now applies on the default targeting path so enemy AoE spares
+  same-faction allies (previously only the zone path); `validateProfileSet`
+  rejects duplicate profile ids; duplicate entity/zone ids are rejected instead
+  of silently clobbering; numerous NaN / clamp / enum-exhaustiveness guards.
+- **Robustness:** the image-generation ComfyUI provider degrades to a typed
+  failure within a bounded timeout instead of hanging or crashing; corrupt AI
+  sessions surface a structured error instead of silent loss; the Ollama client
+  retry loop is configurable, observable, and tested.
+
+### Changed
+
+- **Quality gates made real (each with a mutation meta-test):** the pack rubric
+  now runs against the real 10-pack catalog; the docs-integrity gate compares the
+  manifest version to the latest release tag (was a semver-format no-op) and runs
+  in CI; a coverage ratchet is enforced; a **LICENSE packaging gate** blocks
+  `npm publish` on any tarball missing its LICENSE; `npm audit` gates on real
+  high/critical production advisories (`--omit=dev`).
+- Deterministic default portrait seed (was `Math.random()`, breaking
+  reproducibility and content-address dedup); AI content generators gain an
+  opt-in `--validate` that blocks writing invalid content.
+- **Deferred (documented):** multiplayer / two-players-in-one-world (netcode),
+  `RuleProfile.formulaOverrides` (closures are not serializable), starter-to-
+  profile migration.
+
+### Test suite
+
+- 3190 → **3613 tests across 193 files**, deterministic across repeated runs
+  (3/3); coverage 76.9% → 80%+, now ratchet-enforced in CI.
+
 ## [2.4.0] - 2026-06-02
 
 ### Added

@@ -748,3 +748,120 @@ describe('withEngagement PROTECTED + scored interception', () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// PM-1: faction-aware auxiliary checks
+//
+// The positional helpers (hasEnemiesInZone / hasAlliesInZone /
+// hasProtectorInZone), frontline collapse, reposition, and protector-arrival
+// all route friend-or-foe through the shared `affiliationOf` predicate. A
+// same-faction companion of a DIFFERENT `type` must be treated as an ally —
+// consistent with offensive targeting — while factionless content keeps the
+// legacy same-`type` behavior (pinned by every earlier test in this file).
+// ---------------------------------------------------------------------------
+
+describe('faction-aware engagement (PM-1 divergence)', () => {
+  function emitDefeat(engine: ReturnType<typeof createTestEngine>, defeatedId: string) {
+    engine.store.recordEvent({
+      id: nextId('evt'),
+      tick: engine.store.tick,
+      type: 'combat.entity.defeated',
+      actorId: 'player',
+      payload: { entityId: defeatedId, entityName: defeatedId, defeatedBy: 'player' },
+    });
+  }
+
+  it('cross-type same-faction companion relieves ISOLATED and grants PROTECTED on defeat re-evaluation', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a', { faction: 'coalition' }),
+      // Recruited companion: different `type`, same faction, bodyguard tag.
+      makeAlly('companion', 'zone-a', {
+        type: 'npc',
+        faction: 'coalition',
+        tags: ['bodyguard'],
+      }),
+      makeEnemy('bandit-1', 'zone-a', { faction: 'raiders' }),
+      makeEnemy('bandit-2', 'zone-a', { faction: 'raiders', resources: { hp: 20, stamina: 5 } }),
+    ]);
+
+    // Defeat bandit-1 → zone re-evaluation runs for every survivor.
+    engine.world.entities['bandit-1'].resources.hp = 0;
+    emitDefeat(engine, 'bandit-1');
+
+    const player = engine.world.entities.player;
+    // Companion (type 'npc', faction 'coalition') counts as the player's ally:
+    // no ISOLATED, and its bodyguard tag grants PROTECTED. Under the legacy
+    // same-`type` heuristic the player would be ISOLATED and unprotected.
+    expect(isIsolated(player)).toBe(false);
+    expect(isProtected(player)).toBe(true);
+  });
+
+  it('frontline collapse exposes same-faction backliners of a different type', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeEnemy('orc', 'zone-a', { faction: 'horde' }),
+      makeEnemy('wolf-shaman', 'zone-a', {
+        type: 'beast',
+        faction: 'horde',
+        resources: { hp: 20, stamina: 5 },
+      }),
+    ]);
+
+    // Orc holds the front; the shaman hangs back.
+    applyStatus(engine.world.entities.orc, ENGAGEMENT_STATES.ENGAGED, 0, { stacking: 'refresh' }, engine.world);
+    applyStatus(engine.world.entities['wolf-shaman'], ENGAGEMENT_STATES.BACKLINE, 0, { stacking: 'refresh' }, engine.world);
+
+    const collapses: ResolvedEvent[] = [];
+    engine.store.events.on('combat.frontline.collapsed', (e: ResolvedEvent) => collapses.push(e));
+
+    engine.world.entities.orc.resources.hp = 0;
+    emitDefeat(engine, 'orc');
+
+    // The beast-type shaman shares the orc's faction → it is the exposed
+    // backliner. The legacy same-`type` filter would find nobody and stay silent.
+    expect(collapses.length).toBe(1);
+    expect(collapses[0].payload.exposedIds).toContain('wolf-shaman');
+  });
+
+  it('reposition beside a cross-type same-faction ally does not force engagement', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a', { faction: 'coalition' }),
+      makeAlly('ranger', 'zone-a', { type: 'npc', faction: 'coalition', tags: ['ranged'] }),
+    ]);
+
+    applyStatus(engine.world.entities.ranger, ENGAGEMENT_STATES.BACKLINE, 0, { stacking: 'refresh' }, engine.world);
+
+    engine.store.recordEvent({
+      id: nextId('evt'),
+      tick: engine.store.tick,
+      type: 'combat.reposition.success',
+      actorId: 'ranger',
+      payload: { entityId: 'ranger' },
+    });
+
+    // Only a same-faction hero shares the zone — no enemy → BACKLINE holds.
+    // The legacy heuristic would read the cross-`type` hero as an enemy and
+    // flip the ranger to ENGAGED.
+    expect(isBackline(engine.world.entities.ranger)).toBe(true);
+    expect(isEngaged(engine.world.entities.ranger)).toBe(false);
+  });
+
+  it('arriving cross-type same-faction protector grants PROTECTED to zone occupants', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a', { faction: 'coalition' }),
+      makeAlly('guard-dog', 'zone-a', { type: 'beast', faction: 'coalition', tags: ['bodyguard'] }),
+    ]);
+
+    engine.store.recordEvent({
+      id: nextId('evt'),
+      tick: engine.store.tick,
+      type: 'world.zone.entered',
+      actorId: 'guard-dog',
+      payload: { entityId: 'guard-dog', zoneId: 'zone-a' },
+    });
+
+    // The arriving bodyguard shares the player's faction despite its `type` —
+    // the player gains PROTECTED. Legacy heuristic: no protection.
+    expect(isProtected(engine.world.entities.player)).toBe(true);
+  });
+});

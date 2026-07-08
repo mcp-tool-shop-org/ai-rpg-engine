@@ -1,7 +1,8 @@
 import { describe, test, expect } from 'vitest';
 import { NpcMemoryBank } from './memory-bank.js';
 import { applyRelationshipEffect, DEFAULT_RELATIONSHIP_EFFECTS } from './relationship-effects.js';
-import type { CampaignRecord } from './types.js';
+import type { CampaignRecord, NpcMemoryState } from './types.js';
+import { CAMPAIGN_MEMORY_VERSION } from './types.js';
 
 function makeRecord(overrides: Partial<CampaignRecord> = {}): CampaignRecord {
   return {
@@ -174,6 +175,93 @@ describe('NpcMemoryBank', () => {
     const bank = NpcMemoryBank.deserialize({ entityId: 'lonely', subjects: {} });
     expect(bank.entityId).toBe('lonely');
     expect(bank.knownSubjects()).toHaveLength(0);
+  });
+});
+
+// CM-02: the bank save format carries a schema version (mirroring
+// character-profile's PROFILE_VERSION) and deserialize validates every
+// subject entry's substructure — relationship axes, memory fragments,
+// interaction counters — so a corrupt save fails AT THE BOUNDARY with an
+// error naming the offending subject/field, instead of surfacing later as a
+// raw TypeError inside recall()/consolidate().
+describe('NpcMemoryBank schema versioning + substructure guards (CM-02)', () => {
+  /** A fully valid serialized state to mutate per test. */
+  function makeState(): NpcMemoryState {
+    const bank = new NpcMemoryBank('guard_1');
+    bank.remember(makeRecord({ id: 'cr_1', actorId: 'player', targetId: 'guard_1' }), 0.8, -0.5);
+    bank.adjustRelationship('player', { trust: -0.4, fear: 0.3 });
+    return bank.serialize();
+  }
+
+  test('serialize stamps the current schema version', () => {
+    expect(makeState().version).toBe(CAMPAIGN_MEMORY_VERSION);
+  });
+
+  test('serialize -> deserialize -> serialize is byte-stable', () => {
+    const once = makeState();
+    const twice = NpcMemoryBank.deserialize(once).serialize();
+    expect(JSON.stringify(twice)).toBe(JSON.stringify(once));
+  });
+
+  test('legacy load: a pre-versioning save (no version field) still deserializes', () => {
+    const legacy = makeState();
+    delete legacy.version; // saves written before versioning have no stamp
+    const bank = NpcMemoryBank.deserialize(legacy);
+    expect(bank.recall({ aboutEntity: 'player' })).toHaveLength(1);
+    // Re-serializing a legacy save upgrades it to the versioned format.
+    expect(bank.serialize().version).toBe(CAMPAIGN_MEMORY_VERSION);
+  });
+
+  test('rejects a state from a NEWER schema version with an actionable error', () => {
+    const future = { ...makeState(), version: CAMPAIGN_MEMORY_VERSION + 1 };
+    expect(() => NpcMemoryBank.deserialize(future)).toThrowError(/newer|version/i);
+    expect(() => NpcMemoryBank.deserialize(future)).toThrowError(
+      new RegExp(`${CAMPAIGN_MEMORY_VERSION + 1}`),
+    );
+  });
+
+  test('rejects a state whose version is not a number', () => {
+    const bad = { ...makeState(), version: 'two' } as any;
+    expect(() => NpcMemoryBank.deserialize(bad)).toThrowError(/version/i);
+  });
+
+  test('corrupt subject: memories: null is rejected at the boundary, naming the subject', () => {
+    // Before CM-02 this passed the top-level guard and blew up later inside
+    // recall()/consolidate() — the exact failure CA-06's comment claims to prevent.
+    const state = makeState() as any;
+    state.subjects['player'].memories = null;
+    expect(() => NpcMemoryBank.deserialize(state)).toThrowError(/memories/i);
+    expect(() => NpcMemoryBank.deserialize(state)).toThrowError(/player/);
+  });
+
+  test('corrupt subject: non-numeric relationship axis is rejected', () => {
+    const state = makeState() as any;
+    state.subjects['player'].relationship.trust = 'high';
+    expect(() => NpcMemoryBank.deserialize(state)).toThrowError(/trust/i);
+  });
+
+  test('corrupt subject: missing relationship object is rejected', () => {
+    const state = makeState() as any;
+    delete state.subjects['player'].relationship;
+    expect(() => NpcMemoryBank.deserialize(state)).toThrowError(/relationship/i);
+  });
+
+  test('corrupt fragment: out-of-range salience is rejected, naming the fragment', () => {
+    const state = makeState() as any;
+    state.subjects['player'].memories[0].salience = 7;
+    expect(() => NpcMemoryBank.deserialize(state)).toThrowError(/salience/i);
+  });
+
+  test('corrupt subject: non-numeric interactionCount is rejected', () => {
+    const state = makeState() as any;
+    state.subjects['player'].interactionCount = 'many';
+    expect(() => NpcMemoryBank.deserialize(state)).toThrowError(/interactionCount/i);
+  });
+
+  test('corrupt subject: entry that is not an object is rejected', () => {
+    const state = makeState() as any;
+    state.subjects['ghost'] = 42;
+    expect(() => NpcMemoryBank.deserialize(state)).toThrowError(/ghost/);
   });
 });
 

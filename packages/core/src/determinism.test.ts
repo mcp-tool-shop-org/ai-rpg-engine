@@ -51,6 +51,19 @@ function freshEngine(seed: number): Engine {
     seed,
     modules: [echoModule()],
   });
+  // A real player entity — the C2 ghost-actor guard rejects actions for
+  // actors that are not in world state. Added identically on every engine so
+  // byte-identical comparisons stay meaningful.
+  engine.store.addEntity({
+    id: 'hero',
+    blueprintId: 'bp',
+    type: 'player',
+    name: 'Hero',
+    tags: [],
+    stats: {},
+    resources: {},
+    statuses: [],
+  });
   engine.store.state.playerId = 'hero';
   return engine;
 }
@@ -251,6 +264,76 @@ describe('core-004 — deserialize preserves live EventBus subscriptions', () =>
     // The listener (subscribed on the live bus that deserialize threaded in)
     // must have fired for the post-load echo event.
     expect(received.length).toBeGreaterThan(0);
+  });
+});
+
+describe('core-006 — deserialize validates rngState (C3)', () => {
+  // A malformed/foreign save with a missing or non-numeric rngState previously
+  // slipped through: SeededRNG.setState(undefined) silently coerces the stream
+  // to the seed-0 position on the first next() (`undefined | 0 === 0`) —
+  // corrupting replay determinism with no signal. These pin the typed error.
+
+  function savedGame(seed: number): string {
+    const a = freshEngine(seed);
+    a.submitAction('echo');
+    return a.serialize();
+  }
+
+  it('Engine.deserialize rejects a save with rngState missing (structured, names the field)', () => {
+    const parsed = JSON.parse(savedGame(9));
+    delete parsed.world.rngState;
+    try {
+      Engine.deserialize(JSON.stringify(parsed), { modules: [echoModule()] });
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(SaveLoadError);
+      expect((e as SaveLoadError).code).toBe('SAVE_MALFORMED');
+      expect((e as SaveLoadError).message).toContain('rngState');
+      expect((e as SaveLoadError).hint).toBeTruthy();
+    }
+  });
+
+  it('Engine.deserialize rejects a save with a non-numeric rngState (string)', () => {
+    const parsed = JSON.parse(savedGame(9));
+    parsed.world.rngState = 'not-a-number';
+    expect(() => Engine.deserialize(JSON.stringify(parsed), { modules: [echoModule()] }))
+      .toThrow(SaveLoadError);
+  });
+
+  it('Engine.deserialize rejects a save with rngState null', () => {
+    const parsed = JSON.parse(savedGame(9));
+    parsed.world.rngState = null;
+    expect(() => Engine.deserialize(JSON.stringify(parsed), { modules: [echoModule()] }))
+      .toThrow(SaveLoadError);
+  });
+
+  it('WorldStore.deserialize rejects a save with rngState missing', () => {
+    const store = new WorldStore({ manifest: testManifest, seed: 4 });
+    const parsed = JSON.parse(store.serialize());
+    delete parsed.rngState;
+    try {
+      WorldStore.deserialize(JSON.stringify(parsed));
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(SaveLoadError);
+      expect((e as SaveLoadError).code).toBe('SAVE_MALFORMED');
+      expect((e as SaveLoadError).message).toContain('rngState');
+    }
+  });
+
+  it('a valid rngState still round-trips and resumes the exact rng stream (control)', () => {
+    const store = new WorldStore({ manifest: testManifest, seed: 21 });
+    store.rng.next();
+    store.rng.next();
+    const twinDraw = (() => {
+      const twin = new WorldStore({ manifest: testManifest, seed: 21 });
+      twin.rng.next();
+      twin.rng.next();
+      return twin.rng.next();
+    })();
+
+    const restored = WorldStore.deserialize(store.serialize());
+    expect(restored.rng.next()).toBe(twinDraw);
   });
 });
 

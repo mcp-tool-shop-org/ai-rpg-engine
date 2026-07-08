@@ -25,7 +25,7 @@ export type DepartureAssessment = {
 
 type ReactionRow = Record<CompanionRole, number>;
 
-const REACTION_TABLE: Record<string, ReactionRow> = {
+const REACTION_TABLE = {
   'leverage-sabotage':       { fighter: 0,  scout: 2,  healer: -3, diplomat: -5, smuggler: 3,  scholar: -2 },
   'leverage-diplomacy':      { fighter: -1, scout: 0,  healer: 2,  diplomat: 5,  smuggler: 0,  scholar: 3 },
   'leverage-rumor':          { fighter: -1, scout: 1,  healer: -1, diplomat: 0,  smuggler: 3,  scholar: 0 },
@@ -43,7 +43,23 @@ const REACTION_TABLE: Record<string, ReactionRow> = {
   'item-stolen-recognized':  { fighter: -1, scout: 1,  healer: -2, diplomat: -3, smuggler: 2,  scholar: -1 },
   'item-cursed-recognized':  { fighter: -2, scout: -1, healer: -5, diplomat: -2, smuggler: -1, scholar: 1 },
   'item-trophy-recognized':  { fighter: 3,  scout: 1,  healer: -1, diplomat: 0,  smuggler: 1,  scholar: 2 },
-};
+} satisfies Record<string, ReactionRow>;
+
+/**
+ * Every trigger the reaction table understands. TypeScript callers get
+ * compile-time autocomplete/checking via {@link ReactionTrigger}; dynamic-string
+ * callers can validate with {@link isKnownReactionTrigger} before dispatching.
+ */
+export type ReactionTrigger = keyof typeof REACTION_TABLE;
+
+/** All known reaction triggers, sorted for stable presentation. */
+export const KNOWN_REACTION_TRIGGERS: readonly string[] =
+  Object.keys(REACTION_TABLE).sort() as readonly string[];
+
+/** True when `trigger` has a reaction-table row. */
+export function isKnownReactionTrigger(trigger: string): trigger is ReactionTrigger {
+  return Object.prototype.hasOwnProperty.call(REACTION_TABLE, trigger);
+}
 
 // --- Narrator Hint Templates ---
 
@@ -76,18 +92,33 @@ function pickHint(role: CompanionRole, delta: number, seed: number): string {
  * Evaluate companion reactions to a game event trigger.
  * Returns reactions for all active companions, including morale deltas and narrator hints.
  * Checks for departure conditions after applying morale delta.
+ *
+ * Unknown triggers (e.g. a typo like `'combat-win'` for `'combat-won'`) return
+ * `[]` — indistinguishable from "no companion cares" — so they are ALSO
+ * reported through `context.onWarning` when provided. Pass an `onWarning` sink
+ * in dev/authoring builds to make trigger typos loud instead of silent; use
+ * {@link ReactionTrigger} / {@link isKnownReactionTrigger} for compile-time or
+ * pre-dispatch validation.
  */
 export function evaluateCompanionReactions(
   companions: CompanionState[],
-  trigger: string,
+  trigger: ReactionTrigger | (string & {}),
   context: {
     relationships?: Map<string, NpcRelationship>;
     breakpoints?: Map<string, LoyaltyBreakpoint>;
     tick?: number;
+    /** Structured author-warning sink; called for unknown triggers. */
+    onWarning?: (message: string) => void;
   },
 ): CompanionReaction[] {
-  const row = REACTION_TABLE[trigger];
-  if (!row) return [];
+  if (!isKnownReactionTrigger(trigger)) {
+    context.onWarning?.(
+      `unknown companion reaction trigger '${trigger}' — no reactions evaluated. `
+      + `Known triggers: ${KNOWN_REACTION_TRIGGERS.join(', ')}.`,
+    );
+    return [];
+  }
+  const row: ReactionRow = REACTION_TABLE[trigger];
 
   const reactions: CompanionReaction[] = [];
   const seed = context.tick ?? 0;

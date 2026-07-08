@@ -66,3 +66,26 @@ describe('tickLeverage influence accumulation (MW-5)', () => {
     expect(getLeverageState(custom).influence).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// canAfford boundary guard (PM-4 family)
+// ---------------------------------------------------------------------------
+
+describe('canAfford malformed-state guard', () => {
+  it('treats a MISSING currency balance as 0 — cannot afford', async () => {
+    const { canAfford } = await import('./player-leverage.js');
+    const broken = { debt: 50, blackmail: 50, influence: 50, heat: 50, legitimacy: 50 };
+    // 'favor' key absent: `undefined < 15` is false, which used to slip
+    // through the gate and later poison surplus ratios with NaN.
+    expect(canAfford(broken as never, { favor: 15 })).toBe(false);
+  });
+
+  it('treats a NaN balance as 0 — cannot afford', async () => {
+    const { canAfford } = await import('./player-leverage.js');
+    const state = { favor: Number.NaN, debt: 50, blackmail: 50, influence: 50, heat: 50, legitimacy: 50 };
+    expect(canAfford(state, { favor: 1 })).toBe(false);
+    // Healthy balances still afford.
+    expect(canAfford(state, { debt: 50 })).toBe(true);
+    expect(canAfford(state, { debt: 51 })).toBe(false);
+  });
+});

@@ -62,7 +62,7 @@ This separation matters because:
 
 - Simulation results must stay reproducible (AI outputs are non-deterministic)
 - Authors must maintain ownership of their designs
-- Generated content must pass the same validation as hand-authored content
+- Generated content is validated **at load** — `loadContent()` re-validates every AI-authored file with the same checks as hand-authored content before it can enter a running simulation (generation itself writes to stdout by default; the engine is the validating authority)
 - Trust requires transparency — every AI suggestion can be inspected and rejected
 
 The AI is powerful. The simulation is authoritative. The human decides.

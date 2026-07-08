@@ -13,7 +13,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { StatusDefinition } from '@ai-rpg-engine/content-schema';
-import type { EntityState, WorldState } from '@ai-rpg-engine/core';
+import type { EntityState, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import {
   effectiveStat,
   processPeriodicStatuses,
@@ -428,5 +428,86 @@ describe('processStatusTriggers — reactive triggers + depth cap', () => {
     const procCtx = makeProcContext();
     const events = processStatusTriggers(incoming, world, procCtx, 1);
     expect(events.filter(ev => ev.type === 'status.trigger.fired')).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// M1: AoE proc-chain uniformity — a shared per-tick proc context must not let
+// chain depth ACCUMULATE across an AoE's separate damage events. Each seed
+// event starts its own chain at depth 0 (the cap bounds each single chain);
+// the already-fired dedup Set stays shared across the whole tick.
+// ---------------------------------------------------------------------------
+
+describe('M1: identical reactive statuses fire uniformly across an AoE\'s damage events', () => {
+  /**
+   * Attacker + two identical defenders, ALL carrying a reflect status, so each
+   * seed damage event opens a full ping-pong chain (defender ↔ attacker) that
+   * runs to the depth cap. If chain depth leaks from the first seed's chain
+   * into the second, the second defender's reactions are (partially or wholly)
+   * suppressed — a per-entity count that depends on same-tick ordering.
+   *
+   * Mirrors the production call pattern exactly (status-core.ts action.resolved
+   * hook): ONE ProcContext shared across all of the tick's seed damage events.
+   */
+  function runAoeSeeds(order: ('a' | 'b')[]) {
+    registerStatusDefinitions([
+      {
+        id: 'reflect', name: 'Reflect', tags: ['buff'], stacking: 'replace',
+        triggers: [
+          {
+            event: 'combat.damage.applied',
+            effect: { type: 'damage', target: 'target', params: { amount: 1, triggerTarget: 'attacker' } },
+          },
+        ],
+      },
+    ]);
+    const withReflect = (e: EntityState): EntityState => {
+      e.statuses = [{ id: `s-${e.id}`, statusId: 'reflect', stacks: 1, appliedAtTick: 0, sourceId: e.id }];
+      return e;
+    };
+    const attacker = withReflect(makeEntity({ id: 'attacker', resources: { hp: 1000, maxHp: 1000 } }));
+    const a = withReflect(makeEntity({ id: 'a', resources: { hp: 1000, maxHp: 1000 } }));
+    const b = withReflect(makeEntity({ id: 'b', resources: { hp: 1000, maxHp: 1000 } }));
+    const world = makeWorld([attacker, a, b], 1);
+
+    const seedFor = (defender: 'a' | 'b') => ({
+      id: `evt-${defender}`, tick: 1, type: 'combat.damage.applied',
+      actorId: 'attacker', targetIds: [defender],
+      payload: { attackerId: 'attacker', targetId: defender, damage: 3 },
+    });
+
+    // One shared proc context for the tick's whole seed batch (production pattern).
+    const procCtx = makeProcContext();
+    const events: ResolvedEvent[] = [];
+    for (const d of order) {
+      events.push(...processStatusTriggers(seedFor(d), world, procCtx, 1));
+    }
+
+    const firedBy = (reactorId: string) =>
+      events.filter(
+        ev => ev.type === 'status.trigger.fired' && ev.payload.sourceId === reactorId,
+      ).length;
+    return { firedBy, events };
+  }
+
+  it('two identical reflect defenders hit by one AoE produce identical reflect counts', () => {
+    const { firedBy } = runAoeSeeds(['a', 'b']);
+    expect(firedBy('a')).toBeGreaterThan(0);
+    expect(firedBy('b')).toBe(firedBy('a'));
+  });
+
+  it('per-entity reflect counts are invariant under seed-event processing order', () => {
+    const run1 = runAoeSeeds(['a', 'b']);
+    const run2 = runAoeSeeds(['b', 'a']);
+    expect(run1.firedBy('a')).toBe(run2.firedBy('a'));
+    expect(run1.firedBy('b')).toBe(run2.firedBy('b'));
+  });
+
+  it('the depth cap still halts each single ping-pong chain (no unbounded loop)', () => {
+    const { firedBy, events } = runAoeSeeds(['a', 'b']);
+    expect(events.some(ev => ev.type === 'status.trigger.halted')).toBe(true);
+    // Each defender's chain is bounded by the cap (alternating hops → at most half).
+    expect(firedBy('a')).toBeLessThanOrEqual(PROC_DEPTH_LIMIT);
+    expect(firedBy('b')).toBeLessThanOrEqual(PROC_DEPTH_LIMIT);
   });
 });

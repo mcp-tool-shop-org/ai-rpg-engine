@@ -4,6 +4,9 @@ export type {
   PortraitRequest,
   GenerationOptions,
   GenerationResult,
+  GenerationFailure,
+  GenerationSuccess,
+  GenerationOutcome,
   ImageProvider,
   StylePreset,
 } from './types.js';
@@ -13,5 +16,5 @@ export { STYLE_PRESETS, getStylePreset } from './styles.js';
 export { PlaceholderProvider } from './placeholder-provider.js';
 export { ComfyUIProvider } from './comfyui-provider.js';
 export type { ComfyUIProviderOptions } from './comfyui-provider.js';
-export { generatePortrait, ensurePortrait, resolveProvider } from './pipeline.js';
+export { generatePortrait, ensurePortrait, resolveProvider, ImageGenError } from './pipeline.js';
 export type { PipelineOptions } from './pipeline.js';

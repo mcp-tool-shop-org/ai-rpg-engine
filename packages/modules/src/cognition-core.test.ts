@@ -503,6 +503,76 @@ describe('Morale-triggered FLEEING', () => {
     expect((collected[0].payload.delta as number)).toBeLessThan(0);
   });
 
+  it('rout penalty spared by a living same-faction ally of a different type (PM-1 faction divergence)', () => {
+    // The "has living allies" rout check must honor entity.faction like the
+    // offensive layer: a cross-`type` companion sharing the faction keeps the
+    // witness from routing. Under the old same-`type` heuristic the beast would
+    // be invisible and the rout would fire.
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        makeAIEntity('npc1', 'Guard', 'a', {
+          faction: 'horde',
+          stats: { will: 3 },
+          ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+        }),
+        makeAIEntity('npc2', 'Guard B', 'a', {
+          faction: 'horde',
+          ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+        }),
+        // Different `type`, same faction, alive — a real ally for the rout check.
+        makeAIEntity('wolf', 'Bound Wolf', 'a', { type: 'beast', faction: 'horde' }),
+        makePlayer('a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [] as string[], neighbors: ['b'] }, { id: 'b', roomId: 'test', name: 'B', tags: [] as string[], neighbors: ['a'] }],
+    });
+
+    const cog = getCognition(engine.world, 'npc1');
+    cog.morale = 25; // -12 ally defeat → 13 (≤ 20 rout window) — but wolf lives.
+
+    const collected: ResolvedEvent[] = [];
+    engine.store.events.on('combat.morale.rout', (e: ResolvedEvent) => collected.push(e));
+
+    engine.world.entities.npc2.resources.hp = 0;
+    emitDefeat(engine, 'npc2', 'player');
+
+    expect(collected.length).toBe(0);
+    expect(getCognition(engine.world, 'npc1').morale).toBe(13); // shift only, no -10 rout
+  });
+
+  it('rout penalty still fires when the cross-type survivor shares no faction (legacy heuristic pinned)', () => {
+    // Without factions the same-`type` fallback applies: a 'beast' bystander is
+    // NOT an ally of an 'enemy' witness, so the rout penalty fires. Pins the
+    // factionless path so the divergence test above is provably faction-driven.
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        makeAIEntity('npc1', 'Guard', 'a', {
+          stats: { will: 3 },
+          ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+        }),
+        makeAIEntity('npc2', 'Guard B', 'a', {
+          ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+        }),
+        makeAIEntity('wolf', 'Stray Wolf', 'a', { type: 'beast' }),
+        makePlayer('a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [] as string[], neighbors: ['b'] }, { id: 'b', roomId: 'test', name: 'B', tags: [] as string[], neighbors: ['a'] }],
+    });
+
+    const cog = getCognition(engine.world, 'npc1');
+    cog.morale = 25;
+
+    const collected: ResolvedEvent[] = [];
+    engine.store.events.on('combat.morale.rout', (e: ResolvedEvent) => collected.push(e));
+
+    engine.world.entities.npc2.resources.hp = 0;
+    emitDefeat(engine, 'npc2', 'player');
+
+    expect(collected.length).toBe(1);
+    expect(collected[0].payload.entityId).toBe('npc1');
+  });
+
   it('will 7 entity adjusted threshold allows higher morale', () => {
     const engine = createTestEngine({
       modules: [statusCore, createCognitionCore()],

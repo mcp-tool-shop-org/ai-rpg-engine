@@ -35,7 +35,7 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 
 ---
 
-## Current Status (v2.4.0)
+## Current Status (v2.5.0)
 
 **What works and is tested:**
 - Core runtime: world state, events, actions, ticks, replay — stable since v1.0; deterministic byte-identical replay (per-instance id counter, seeded RNG)
@@ -43,19 +43,19 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 - Abilities: costs, cooldowns, stat checks, typed effects, 11-tag status vocabulary, AI-aware selection
 - **Party combat (v2.4):** ally-targeting (heal / buff / revive), friend/foe AoE filtering, target selectors — a healer can heal a teammate; enemy AoE spares allies
 - **Status effects (v2.4):** passive stat modifiers reach combat, deterministic DoT/HoT off the tick counter, depth-capped reactive triggers (thorns/reflect)
-- **Plug-in Profiles — Phase 1 (v2.4):** `Profile` type, `buildProfile()`, `validateProfileSet()`, per-entity AI via `selectActionForProfile()`
+- **Plug-in Profiles — per-entity rule resolution (v2.5):** a `might` fighter and a `will` mystic resolve combat in one fight, each reading stats through its own mapping. `RuleProfile` + `WorldState.ruleProfiles` + `EntityState.ruleProfileId`; `applyProfile()` attaches a profile (stat mapping, resource pools, per-entity abilities); `buildProfile()`, `validateProfileSet()` (duplicate ids rejected), 10 starter-derived templates, and a `profile` CLI command
 - Unified decision layer: combat + ability scoring merged into one call (`selectBestAction`)
 - All 10 starter worlds use `buildCombatStack()` — the proven composition spine
 - Cognition config API (`cognition: CognitionCoreConfig | false`) for per-starter AI tuning
 - Tag taxonomy and validation utilities for content authoring
 - `ai-rpg-engine create-starter <name>` — scaffold a new game; `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **3195 tests across 169 files**
+- Full test suite: **3613 tests across 193 files** (deterministic across repeated runs; coverage ratchet-enforced in CI)
 
 **What is rough or incomplete:**
-- AI worldbuilding tools (Ollama layer) work but are lightly tested compared to simulation
-- Profiles ship at Phase 1 (packaging + per-entity AI + cross-profile validation). Per-entity combat *resolution* (a `might` fighter and a `will` mystic resolving in one fight) is designed and grounded ([feature architecture](docs/feature-architecture.md)) but is a future slice
-- Documentation is extensive (58 handbook chapters and 4 appendices) but not all pages reflect the latest APIs
+- AI worldbuilding tools (Ollama layer) are more lightly tested than the simulation core — though v2.5 added structured error handling, a configurable/observable retry loop, and an opt-in `--validate` gate on generated content
+- Multiplayer (two human players sharing one world) is **not** built — it is a networking layer, deliberately out of scope; profiles today target a single controller
+- Documentation is extensive but not every handbook page reflects the very latest APIs
 
 ---
 
@@ -181,11 +181,12 @@ The 10 starter worlds are **composition examples** — they demonstrate how to c
 |----------|-------------|
 | [Create Your Own Starter](site/src/content/docs/handbook/58-create-your-own-starter.md) | Scaffold a new game — CLI or manual template route |
 | [Composition Guide](site/src/content/docs/handbook/57-composition-guide.md) | Build your own game by composing engine modules |
+| [Plug-in Profiles](site/src/content/docs/handbook/59-plugin-profiles.md) | Per-entity rule resolution — mixed-playstyle combat, `applyProfile`, profile templates, the `profile` CLI |
 | [Combat Overview](docs/handbook/49a-combat-overview.md) | Six combat pillars, five actions, states at a glance |
 | [Pack Author Guide](docs/handbook/55-combat-pack-guide.md) | Step-by-step buildCombatStack, stat mapping, resource profiles |
-| [Handbook](docs/handbook/index.md) | 58 chapters + 4 appendices covering every system |
+| [Handbook](docs/handbook/index.md) | Comprehensive handbook — every system, plus 4 appendices |
 | [Composition Model](docs/composition-model.md) | The 6 reusable layers and how they compose |
-| [Examples](docs/examples/) | Runnable TypeScript examples (type-checked + behavior-tested) — mixed party, cross-world, from scratch |
+| [Examples](docs/examples/) | Runnable TypeScript examples (type-checked + behavior-tested in CI) — per-entity mixed party, shared profiles, cross-world, from scratch |
 | [Design Document](docs/DESIGN.md) | Architecture deep-dive — action pipeline, truth vs presentation |
 | [Philosophy](PHILOSOPHY.md) | Deterministic worlds, evidence-driven design, AI as assistant |
 | [Changelog](CHANGELOG.md) | Release history |
@@ -196,23 +197,24 @@ The 10 starter worlds are **composition examples** — they demonstrate how to c
 
 ### Where we are now
 
-The simulation runtime, combat composition spine, and starter authoring path are complete — 3195 tests across 169 files, all 10 starters on `buildCombatStack`, deterministic byte-identical replay, full AI decision scoring, and a CLI scaffold command. v2.4 adds party-RPG combat (ally support), a deterministic status-effect system, and Phase 1 of the plug-in Profile system.
+The simulation runtime, combat composition spine, and starter authoring path are complete — 3613 tests across 193 files, all 10 starters on `buildCombatStack`, deterministic byte-identical replay, full AI decision scoring, and a CLI scaffold command. **v2.5 delivers per-entity rule resolution — the marquee Plug-in Profiles feature: a `might` fighter and a `will` mystic resolve combat in one fight, each reading stats through its own mapping.**
 
-**Recent release arc (v2.3.3–v2.4.0):**
+**Recent release arc (v2.3.3–v2.5.0):**
 - v2.3.3–v2.3.7 — Consumer artifact proof, Combat Stack hardening, all 10 starters on `buildCombatStack`, published starter template, `create-starter` CLI
-- **v2.4.0 — Party combat (ally-targeting / heal / buff / revive, friend-foe AoE), status-effect system (modifiers + DoT/HoT + reactive triggers), plug-in Profiles Phase 1, content `validate`/`scaffold` CLI, and a determinism/security/DX hardening pass**
+- v2.4.0 — Party combat (ally-targeting / heal / buff / revive, friend-foe AoE), status-effect system (modifiers + DoT/HoT + reactive triggers), plug-in Profiles Phase 1, content `validate`/`scaffold` CLI
+- **v2.5.0 — Per-entity rule resolution (mixed-playstyle combat), the `applyProfile` loader + per-entity abilities, profile templates + `profile` CLI, and a full health pass (byte-identical-replay fix, correctness hardening, quality gates made real)**
 
 ### Next
 
-- Per-entity combat *resolution* — let a `might` fighter and a `will` mystic resolve in one fight (Profile Phase 2; designed + grounded in [docs/feature-architecture.md](docs/feature-architecture.md))
-- API documentation sync — ensure all handbook chapters reflect v2.4.x APIs
-- Cross-world interactions — shared profiles in shared worlds
+- Multiplayer — two *human* players sharing one world (a networking layer, deliberately deferred; single-controller shared profiles ship today as [`shared-profiles.ts`](docs/examples/shared-profiles.ts))
+- Serializable formula overrides — per-profile formula tuning (blocked on a formula DSL; profiles carry stat mappings today, not closures)
+- API documentation sync — ensure every handbook page reflects the v2.5 APIs
 
 ### Destination: Plug-in Profiles
 
-The engine's end goal is **user-defined profiles** — portable bundles that slot into any game. A profile packages a stat mapping, resource behavior, AI bias tags, abilities, and encounter hooks into a single importable unit. Two players with different profiles can share a world, each bringing their own playstyle.
+The engine's end goal is **user-defined profiles** — portable bundles that slot into any game. A profile packages a stat mapping, resource behavior, AI bias tags, and abilities into a single importable unit. As of v2.5, entities in one world can each carry their own profile and resolve combat per-entity — a `might` fighter and a `will` mystic share a party, each bringing their own playstyle.
 
-Profiles build on composition (already working) and the unified decision layer (shipped in v2.3.0). The remaining work is defining the profile schema, building the loader, and validating cross-profile interactions. See [Profile Roadmap](docs/profile-roadmap.md) for the full plan.
+The schema, the `applyProfile` loader, per-entity ability resolution, and cross-profile validation are all shipped. What remains is multiplayer — letting two *human* players (not just two entities) share a world — which is a networking layer. See [Profile Roadmap](docs/profile-roadmap.md) and [feature-architecture.md](docs/feature-architecture.md) for the design.
 
 ---
 
@@ -230,7 +232,7 @@ See [PHILOSOPHY.md](PHILOSOPHY.md) for the full explanation.
 
 ## Security
 
-AI RPG Engine is a **local-only simulation library**. No telemetry, no network, no secrets. Save files go to `.ai-rpg-engine/` only when explicitly requested. See [SECURITY.md](SECURITY.md) for details.
+The core engine is a **local-only simulation library**: no telemetry, no network, no secrets. Save files go to `.ai-rpg-engine/` only when explicitly requested. The **optional** AI layer (`@ai-rpg-engine/ollama`) talks to a **local** Ollama daemon; its opt-in `webfetch` (for RAG) is the only outbound network path and is confined by an SSRF guard (blocks loopback/link-local/CGNAT/cloud-metadata and IPv6-tunnelled equivalents) — you never reach it unless you invoke it. See [SECURITY.md](SECURITY.md) for details.
 
 ## Requirements
 

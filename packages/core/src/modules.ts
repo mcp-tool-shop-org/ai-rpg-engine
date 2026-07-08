@@ -34,6 +34,14 @@ export class ModuleManager {
   private inspectors: DebugInspector[] = [];
   private namespaceDefaults: Map<string, unknown> = new Map();
   readonly formulas: FormulaRegistry = new FormulaRegistry();
+  /**
+   * The store that module event emits (`ctx.events.emit`) record into. Held as
+   * a single mutable reference — NOT captured per-context — so
+   * Engine.deserialize can rebind it after swapping the throwaway construction
+   * store for the restored one, keeping post-load module emits in the live
+   * world instead of an orphaned store (v2.5 PC-1).
+   */
+  private activeStore?: WorldStore;
 
   constructor(
     private dispatcher: ActionDispatcher,
@@ -62,10 +70,24 @@ export class ModuleManager {
       }
     }
 
-    const ctx = this.createContext(module.id, store);
+    // Bind the store module emits record into (rebindable across deserialize —
+    // PC-1). All modules in one manager share the one active store.
+    this.activeStore = store;
+    const ctx = this.createContext(module.id);
     module.register(ctx);
     this.modules.set(module.id, module);
     this.moduleContexts.set(module.id, ctx);
+  }
+
+  /**
+   * Redirect module event emits (`ctx.events.emit`) to a different store.
+   * Called by Engine.deserialize after the restored store replaces the
+   * throwaway the modules were registered against, so reactive follow-on events
+   * land in the live eventLog with the live idCounter instead of the orphaned
+   * construction store (v2.5 PC-1).
+   */
+  rebindStore(store: WorldStore): void {
+    this.activeStore = store;
   }
 
   /** Check if a module is registered */
@@ -93,11 +115,35 @@ export class ModuleManager {
     return { pass: true };
   }
 
-  /** Apply rule effects to a resolved event */
+  /**
+   * Apply rule effects to a resolved event. Wired into the dispatch pipeline
+   * by the Engine (v2.5 C1 — previously this had zero callers, so
+   * `rules.registerEffect` silently never executed). Effects run in
+   * registration order; returned events are recorded by the caller through
+   * the store's recordEvent choke point, so ids and ordering stay
+   * deterministic. A throwing effect is isolated into a structured
+   * `rule.effect.failed` event naming the effect (consistent with how
+   * dispatch isolates throwing validators/handlers) — one buggy effect can
+   * neither crash the tick nor silently vanish, and later effects still run.
+   */
   applyEffects(event: ResolvedEvent, world: WorldState): ResolvedEvent[] {
     const additional: ResolvedEvent[] = [];
     for (const effect of this.ruleEffects) {
-      additional.push(...effect.apply(event, world));
+      try {
+        additional.push(...effect.apply(event, world));
+      } catch (err) {
+        additional.push({
+          id: '', // stamped deterministically by recordEvent
+          tick: event.tick,
+          type: 'rule.effect.failed',
+          payload: {
+            effectId: effect.id,
+            sourceEventId: event.id,
+            reason: err instanceof Error ? err.message : String(err),
+          },
+          causedBy: event.id,
+        });
+      }
     }
     return additional;
   }
@@ -128,7 +174,7 @@ export class ModuleManager {
     }
   }
 
-  private createContext(moduleId: string, store: WorldStore): ModuleRegistrationContext {
+  private createContext(moduleId: string): ModuleRegistrationContext {
     // eslint-disable-next-line @typescript-eslint/no-this-alias -- capture for closure-based registries
     const self = this;
 
@@ -156,7 +202,11 @@ export class ModuleManager {
         }
       },
       emit(event: ResolvedEvent): void {
-        store.recordEvent(event);
+        // Record into the CURRENT active store, not one captured at register
+        // time — deserialize rebinds via rebindStore so post-load emits hit the
+        // live world (v2.5 PC-1). activeStore is set by register() before any
+        // tick can run, so it is always bound here.
+        self.activeStore!.recordEvent(event);
       },
     };
 

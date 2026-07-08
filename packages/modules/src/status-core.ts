@@ -132,8 +132,9 @@ export function applyStatus(
             stacks: existing.stacks,
           });
         }
-        // At max stacks, just refresh
-        if (options?.duration) {
+        // At max stacks, just refresh. `!== undefined` (not truthiness): a
+        // duration of 0 means "expires now", only undefined means "no expiry" (M5).
+        if (options?.duration !== undefined) {
           existing.expiresAtTick = tick + options.duration;
         }
         return makeStatusEvent('status.stacked', entity.id, statusId, tick, {
@@ -142,7 +143,9 @@ export function applyStatus(
         });
       }
       case 'refresh': {
-        if (options?.duration) {
+        // `!== undefined` (not truthiness): duration 0 refreshes the expiry to
+        // the current tick; only undefined leaves the expiry untouched (M5).
+        if (options?.duration !== undefined) {
           existing.expiresAtTick = tick + options.duration;
         }
         return makeStatusEvent('status.applied', entity.id, statusId, tick, {
@@ -164,7 +167,9 @@ export function applyStatus(
     stacks: 1,
     sourceId: options?.sourceId,
     appliedAtTick: tick,
-    expiresAtTick: options?.duration ? tick + options.duration : undefined,
+    // `!== undefined` (not truthiness): duration 0 expires at the CURRENT tick,
+    // it is not "permanent". Only an absent duration means no expiry (M5).
+    expiresAtTick: options?.duration !== undefined ? tick + options.duration : undefined,
     data: withPeriodicSnapshot(options?.data, options?.duration),
   };
 

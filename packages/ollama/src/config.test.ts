@@ -69,4 +69,33 @@ describe('resolveConfig', () => {
     process.env['AI_RPG_ENGINE_OLLAMA_TIMEOUT_MS'] = '45000';
     expect(resolveConfig().timeoutMs).toBe(45_000);
   });
+
+  // v2.5 audit PA-3 — retry count/delay live in config (previously hardcoded).
+  describe('retry settings (PA-3)', () => {
+    it('defaults to 3 attempts with a 1000ms delay', () => {
+      const cfg = resolveConfig();
+      expect(cfg.maxAttempts).toBe(3);
+      expect(cfg.retryDelayMs).toBe(1000);
+    });
+
+    it('honors explicit overrides', () => {
+      const cfg = resolveConfig({ maxAttempts: 5, retryDelayMs: 250 });
+      expect(cfg.maxAttempts).toBe(5);
+      expect(cfg.retryDelayMs).toBe(250);
+    });
+
+    it('clamps maxAttempts to at least 1 and rejects non-finite values', () => {
+      expect(resolveConfig({ maxAttempts: 0 }).maxAttempts).toBe(1);
+      expect(resolveConfig({ maxAttempts: -2 }).maxAttempts).toBe(1);
+      expect(resolveConfig({ maxAttempts: 2.9 }).maxAttempts).toBe(2);
+      expect(resolveConfig({ maxAttempts: Number.NaN }).maxAttempts).toBe(3);
+      expect(resolveConfig({ maxAttempts: Number.POSITIVE_INFINITY }).maxAttempts).toBe(3);
+    });
+
+    it('allows a zero retry delay but rejects negative/non-finite values', () => {
+      expect(resolveConfig({ retryDelayMs: 0 }).retryDelayMs).toBe(0);
+      expect(resolveConfig({ retryDelayMs: -1 }).retryDelayMs).toBe(1000);
+      expect(resolveConfig({ retryDelayMs: Number.NaN }).retryDelayMs).toBe(1000);
+    });
+  });
 });

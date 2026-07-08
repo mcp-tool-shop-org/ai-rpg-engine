@@ -9,6 +9,7 @@
  * package source — so it stays in the docs domain.
  */
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import assert from 'node:assert/strict';
@@ -41,6 +42,60 @@ console.log('DOCS-05 package.json version');
 check('root package.json version is valid semver (source of truth)', () => {
   assert.ok(/^\d+\.\d+\.\d+$/.test(VERSION), `package.json version "${VERSION}" is not semver`);
 });
+
+// De-vacuumed (PG-2): this block's header always promised "matches the latest
+// git tag", but only the semver FORMAT was asserted — the tag-match half of the
+// claim was never executed. Now the version is compared against the newest
+// v-prefixed release tag:
+//   - version BEHIND the latest tag -> FAIL (stale package.json / honesty surfaces)
+//   - version equal to it           -> pass
+//   - version AHEAD of it           -> pass + note (intentional pre-release bump;
+//                                      the tag catches up when the release lands)
+//   - no v* tags visible            -> skip with a clear message (shallow
+//                                      checkout — fetch tags to enforce)
+// DOCS_INTEGRITY_LATEST_TAG overrides tag discovery so the meta-test in
+// scripts/gates.test.ts can force a mismatch without touching real git state.
+const cmpSemver = (a, b) => {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) - (pb[i] ?? 0);
+  }
+  return 0;
+};
+const latestTag = (() => {
+  if (process.env.DOCS_INTEGRITY_LATEST_TAG) return process.env.DOCS_INTEGRITY_LATEST_TAG;
+  try {
+    // Glob v[0-9]* skips non-release tags (e.g. dogfood-save-*); version sort
+    // puts the newest release first.
+    return execSync('git tag --list "v[0-9]*" --sort=-v:refname', {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean)[0];
+  } catch {
+    return undefined; // not a git checkout / git unavailable
+  }
+})();
+if (latestTag === undefined) {
+  console.log('  skip - no v* release tags visible (shallow checkout?) — tag-match not enforced; fetch tags to enable');
+} else if (!/^v\d+\.\d+\.\d+$/.test(latestTag)) {
+  console.log(`  skip - latest tag "${latestTag}" is not vX.Y.Z — tag-match not enforced`);
+} else {
+  const tagVersion = latestTag.slice(1);
+  check(`package.json version (${VERSION}) is not behind the latest release tag (${latestTag})`, () => {
+    assert.ok(
+      cmpSemver(VERSION, tagVersion) >= 0,
+      `package.json version ${VERSION} is BEHIND the latest release tag ${latestTag} — the repo's honesty surfaces are stale relative to what was released`,
+    );
+  });
+  if (cmpSemver(VERSION, tagVersion) > 0) {
+    console.log(`  note - version ${VERSION} is ahead of ${latestTag} (pre-release bump in progress; the next release tag closes the gap)`);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // DOCS-01 — CHANGELOG documents every released tag (2.3.4..2.3.7)

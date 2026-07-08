@@ -11,12 +11,11 @@ import type {
   WorldState,
 } from '@ai-rpg-engine/core';
 import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
-import { normalizeTargetSpec } from '@ai-rpg-engine/content-schema';
 import {
   isAbilityReady,
 } from './ability-core.js';
 import { checkResistance, getStatusTags } from './status-semantics.js';
-import { candidateTargets } from './targeting.js';
+import { affiliationOf, candidateTargets, normalizeAbilityTarget } from './targeting.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -205,11 +204,14 @@ export function scoreAbilityUse(
   // Fires when the spec's affiliation axis is 'ally' and it reaches beyond self.
   // Legacy `{ type:'self' }` normalizes to scope:'self' and is handled above, so
   // this branch only adds NEW behavior (it never changes existing self-targeting).
-  const norm = normalizeTargetSpec(ability.target);
+  // Axes resolve support-aware (M7): a bare legacy `{ type:'single' }` HEAL
+  // defaults to allies here too, so the AI scores healing allies — not enemies.
+  const norm = normalizeAbilityTarget(ability);
   if (norm.affiliation === 'ally' && norm.scope !== 'self') {
     // Candidates already filtered by affiliation × life × tag and sorted by id,
-    // so per-candidate scoring is deterministic (finding 10).
-    const allies = candidateTargets(ability.target, entity, world);
+    // so per-candidate scoring is deterministic (finding 10). Pass the resolved
+    // support-aware axes so candidates match the branch decision above.
+    const allies = candidateTargets(ability.target, entity, world, norm);
     if (allies.length === 0) return [];
 
     const isHeal = hasTag(ability.tags, 'heal') || hasTag(ability.tags, 'support');
@@ -308,11 +310,13 @@ export function scoreAbilityUse(
   }
 
   // --- Combat / target abilities ---
+  // Friend/foe via the faction predicate (M2), not the old type-only check — a
+  // same-faction, different-`type` recruited ally is never in the offensive pool.
   const enemies = Object.values(world.entities).filter(
     (e) => e.id !== entity.id &&
     e.zoneId === entity.zoneId &&
     (e.resources.hp ?? 0) > 0 &&
-    e.type !== entity.type,
+    affiliationOf(entity, e) === 'enemy',
   );
 
   if (ability.target.type === 'all-enemies') {

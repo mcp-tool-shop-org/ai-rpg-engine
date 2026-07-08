@@ -52,7 +52,12 @@ export type GenerationResult = {
   prompt: string;
   /** Negative prompt if used. */
   negativePrompt?: string;
-  /** RNG seed used. */
+  /**
+   * RNG seed actually used. Providers that sample with a seed (ComfyUI) always
+   * report the effective value — caller-supplied or the deterministically
+   * derived default — so the image can be reproduced. Providers with no RNG
+   * (placeholder) echo the caller's seed, which may be undefined.
+   */
   seed?: number;
   /** Model name/identifier used. */
   model?: string;
@@ -60,12 +65,41 @@ export type GenerationResult = {
   durationMs: number;
 };
 
+/**
+ * Typed failure returned by providers instead of throwing raw network errors.
+ * Mirrors the discriminated-union contract of the ollama client
+ * (`packages/ollama/src/client.ts`): the network boundary reports failures as
+ * values, so a flaky external daemon can never hang the caller or leak a raw
+ * fetch `TypeError` / `SyntaxError` up the stack.
+ */
+export type GenerationFailure = {
+  ok: false;
+  /** Stable machine-readable failure category. */
+  code: 'timeout' | 'http_error' | 'invalid_response' | 'network' | 'not_an_image' | 'image_too_large';
+  /** Human-readable description of what went wrong. */
+  error: string;
+  /** Actionable recovery hint, when one exists. */
+  hint?: string;
+};
+
+/** Successful generation — the result payload plus the `ok` discriminant. */
+export type GenerationSuccess = { ok: true } & GenerationResult;
+
+/** Discriminated union resolved by {@link ImageProvider.generate}. */
+export type GenerationOutcome = GenerationSuccess | GenerationFailure;
+
 /** Abstract image generation provider. */
 export interface ImageProvider {
   /** Provider name (e.g. 'placeholder', 'comfyui', 'stable-diffusion'). */
   readonly name: string;
-  /** Generate an image from a text prompt. */
-  generate(prompt: string, opts?: GenerationOptions): Promise<GenerationResult>;
+  /**
+   * Generate an image from a text prompt.
+   *
+   * Contract: resolves to a discriminated union and MUST NOT throw or hang on
+   * provider failure (offline daemon, timeout, malformed response) — report
+   * `{ok: false}` with a stable `code` instead.
+   */
+  generate(prompt: string, opts?: GenerationOptions): Promise<GenerationOutcome>;
   /** Check if this provider is currently available. */
   isAvailable(): Promise<boolean>;
 }

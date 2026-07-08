@@ -657,6 +657,55 @@ describe('Ally-defeated resource triggers', () => {
     expect(engine.world.entities.player.resources.rage).toBe(0);
   });
 
+  it('ally-defeated witnesses honor entity.faction across different types (PM-1 faction divergence)', () => {
+    // A same-faction companion of a DIFFERENT `type` must count as an ally
+    // witness — matching the offensive-targeting affiliationOf predicate. Under
+    // the old same-`type` heuristic the beast would be silently excluded.
+    const engine = createTestEngine({
+      modules: [
+        statusCore,
+        createCombatCore(),
+        createCombatResources(allyDefeatProfile),
+      ],
+      entities: [
+        makeEntity('wolf', 'Bound Wolf', 'a', {
+          type: 'beast',
+          faction: 'horde',
+          resources: { hp: 20, rage: 0, morale: 10 },
+        }),
+        makeEntity('orc', 'Orc Raider', 'a', {
+          type: 'enemy',
+          faction: 'horde',
+          resources: { hp: 1, rage: 0, morale: 10 },
+        }),
+        // Same `type` as the defeated but a DIFFERENT faction — must NOT witness.
+        makeEntity('rival', 'Rival Bandit', 'a', {
+          type: 'enemy',
+          faction: 'outcasts',
+          resources: { hp: 20, rage: 0, morale: 10 },
+        }),
+        makePlayer('a'),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [] as string[], neighbors: [] as string[] }],
+    });
+
+    engine.world.entities.orc.resources.hp = 0;
+    engine.store.recordEvent({
+      id: nextId('evt'),
+      tick: engine.store.tick,
+      type: 'combat.entity.defeated',
+      actorId: 'player',
+      payload: { entityId: 'orc', entityName: 'Orc Raider', defeatedBy: 'player' },
+    });
+
+    // Cross-type, same-faction wolf IS a witness: +5 rage, -3 morale.
+    expect(engine.world.entities.wolf.resources.rage).toBe(5);
+    expect(engine.world.entities.wolf.resources.morale).toBe(7);
+    // Same-type, different-faction rival is NOT a witness.
+    expect(engine.world.entities.rival.resources.rage).toBe(0);
+    expect(engine.world.entities.rival.resources.morale).toBe(10);
+  });
+
   it('ally-defeated does not apply to entities in different zones', () => {
     const engine = createTestEngine({
       modules: [

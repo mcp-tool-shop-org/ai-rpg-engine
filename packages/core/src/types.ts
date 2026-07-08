@@ -37,6 +37,30 @@ export type WorldMeta = {
   idCounter: number;
 };
 
+/**
+ * Per-archetype mechanical config, referenced by id from
+ * {@link EntityState.ruleProfileId} and stored in {@link WorldState.ruleProfiles}.
+ *
+ * DATA, not closures: a profile is a plain record that serializes with world
+ * state byte-identically (never a function/subclass), following the same
+ * "component referenced by id" idiom as {@link EntityState.faction}. This is what
+ * lets a `might` fighter and a `will` mystic resolve combat in one fight, each
+ * reading its own stat mapping.
+ *
+ * `statMapping` is defined structurally here (generic role → stat name) rather
+ * than importing modules' `CombatStatMapping`, because `core` has no dependency
+ * on `modules`; the two shapes are byte-identical and freely assignable under
+ * structural typing.
+ *
+ * @see resolveEntityMapping in @ai-rpg-engine/modules
+ */
+export type RuleProfile = {
+  /** Generic combat roles → this archetype's stat names. */
+  statMapping: { attack: string; precision: string; resolve: string };
+  // formulaOverrides?: RESERVED — combat formulas are closures and cannot round-
+  // trip through serialized data, so v1 ships statMapping only.
+};
+
 export type WorldState = {
   meta: WorldMeta;
   playerId: string;
@@ -50,6 +74,13 @@ export type WorldState = {
   eventLog: ResolvedEvent[];
   pending: PendingEffect[];
   narrator?: NarratorState;
+  /**
+   * Per-entity mechanical profiles, keyed by profile id. Optional + additive: a
+   * world without mixed playstyles never sets this and behaves exactly as before.
+   * Pure data — serialized with state, byte-identical, no closures.
+   * @see EntityState.ruleProfileId
+   */
+  ruleProfiles?: Record<string, RuleProfile>;
 };
 
 // --- Entity ---
@@ -92,6 +123,15 @@ export type EntityState = {
    * @see affiliationOf in @ai-rpg-engine/modules
    */
   faction?: string;
+  /**
+   * Id into {@link WorldState.ruleProfiles}. When set, this entity resolves its
+   * combat stat mapping from that profile (its OWN `attack`/`precision`/`resolve`
+   * stat names); when unset it uses the world/fallback mapping exactly as before,
+   * so an entity with no `ruleProfileId` is byte-identical to today. Pure data —
+   * serialized with state, no closures.
+   * @see resolveEntityMapping in @ai-rpg-engine/modules
+   */
+  ruleProfileId?: string;
   custom?: Record<string, ScalarValue>;
 };
 

@@ -58,15 +58,32 @@ const TAG_WEIGHTS: Record<string, Partial<MoodAxisWeights>> = {
 // --- Mood Computation ---
 
 function clamp(min: number, max: number, value: number): number {
+  // NaN guard: Math.max/Math.min propagate NaN, so a poisoned expression would
+  // survive the clamp and cascade into every downstream modifier. Pin to `min`.
+  if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(max, value));
+}
+
+/** Coerce a malformed (NaN/±Infinity/missing) metric to its safe baseline. */
+function finiteMetric(value: number, fallback: number): number {
+  return Number.isFinite(value) ? value : fallback;
 }
 
 /** Compute expressive mood from raw district metrics and district tags. */
 export function computeDistrictMood(state: DistrictState, tags: string[]): DistrictMood {
+  // Boundary guard: this is a public pure function — a product layer can hand
+  // it a hand-built DistrictState with a NaN metric. Coerce each raw metric to
+  // its district-core default baseline instead of emitting NaN modifiers.
+  const alertPressure = finiteMetric(state.alertPressure, 0);
+  const surveillance = finiteMetric(state.surveillance, 0);
+  const stability = finiteMetric(state.stability, 5);
+  const commerce = finiteMetric(state.commerce, 50);
+  const morale = finiteMetric(state.morale, 50);
+
   // Base derivation from raw metrics
-  let safety = clamp(0, 100, (100 - state.alertPressure) * 0.5 + state.stability * 5);
-  let prosperity = clamp(0, 100, state.commerce * 0.6 + state.stability * 4);
-  let spirit = clamp(0, 100, state.morale * 0.6 + (100 - state.surveillance) * 0.2 + state.stability * 2);
+  let safety = clamp(0, 100, (100 - alertPressure) * 0.5 + stability * 5);
+  let prosperity = clamp(0, 100, commerce * 0.6 + stability * 4);
+  let spirit = clamp(0, 100, morale * 0.6 + (100 - surveillance) * 0.2 + stability * 2);
 
   // Apply tag-driven weights
   const weights: MoodAxisWeights = { safety: 1, prosperity: 1, spirit: 1 };

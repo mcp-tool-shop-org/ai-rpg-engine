@@ -36,7 +36,7 @@ export const TAG_CATEGORIES: readonly TagCategoryDefinition[] = [
     category: 'role',
     prefix: 'role:',
     description: 'Combat role assignment for AI behavior and encounter analysis',
-    examples: ['role:brute', 'role:boss', 'role:elite', 'role:bodyguard', 'role:backliner', 'role:skirmisher', 'role:sentinel', 'role:coward'],
+    examples: ['role:brute', 'role:boss', 'role:elite', 'role:bodyguard', 'role:backliner', 'role:skirmisher', 'role:sentinel', 'role:coward', 'role:minion'],
     usedBy: ['combat-intent', 'combat-roles', 'engagement-core'],
   },
   {
@@ -57,7 +57,7 @@ export const TAG_CATEGORIES: readonly TagCategoryDefinition[] = [
     category: 'pack-bias',
     prefix: null,
     description: 'Pack bias personality for AI combat behavior',
-    examples: ['assassin', 'samurai', 'feral', 'beast', 'pirate', 'colonial', 'vampire', 'hunter', 'zombie', 'undead', 'criminal', 'drone', 'alien', 'spirit'],
+    examples: ['assassin', 'samurai', 'feral', 'beast', 'pirate', 'colonial', 'vampire', 'hunter', 'ice-agent', 'zombie', 'undead', 'criminal', 'drone', 'alien', 'spirit'],
     usedBy: ['combat-intent'],
   },
   {
@@ -197,6 +197,50 @@ export function validateZoneTags(tags: string[]): TagWarning[] {
         severity: 'warn',
         message: `Zone has entity-level tag "${tag}". Role and companion tags belong on entities, not zones.`,
       });
+    }
+  }
+
+  return warnings;
+}
+
+// ---------------------------------------------------------------------------
+// World-level aggregate (content-load lint)
+// ---------------------------------------------------------------------------
+
+/** A tag warning annotated with the entity/zone that owns the offending tag. */
+export type WorldTagWarning = TagWarning & {
+  scope: 'entity' | 'zone';
+  ownerId: string;
+};
+
+/**
+ * Lint every entity's and zone's tags in one call — the content-load hook.
+ *
+ * `validateEntityTags` used to run only inside `buildProfile`, so worlds
+ * authored as raw state literals (the pattern every starter uses) got NO tag
+ * lint: a typo like `role:brut` silently produced a roleless entity. Run this
+ * once after injecting content (or from a product-layer validate step) and
+ * surface the returned warnings to the author. Warn-and-degrade: never throws.
+ *
+ * Structural parameter (anything with `entities`/`zones` records carrying
+ * `tags`), so `WorldState` works directly and the module stays dependency-free.
+ * Output order is total and stable: entities by id, then zones by id.
+ */
+export function validateWorldTags(world: {
+  entities: Record<string, { tags: string[] }>;
+  zones: Record<string, { tags: string[] }>;
+}): WorldTagWarning[] {
+  const warnings: WorldTagWarning[] = [];
+
+  for (const entityId of Object.keys(world.entities).sort()) {
+    for (const w of validateEntityTags(world.entities[entityId].tags)) {
+      warnings.push({ ...w, scope: 'entity', ownerId: entityId });
+    }
+  }
+
+  for (const zoneId of Object.keys(world.zones).sort()) {
+    for (const w of validateZoneTags(world.zones[zoneId].tags)) {
+      warnings.push({ ...w, scope: 'zone', ownerId: zoneId });
     }
   }
 

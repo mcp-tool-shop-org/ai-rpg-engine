@@ -35,9 +35,10 @@ Create rooms, entities, factions, quests, and content packs.
 Build your own game from engine pieces.
 
 - [Composition Guide](./57-composition-guide.md) — the 5-step workflow for building a game
+- [Create Your Own Starter](./58-create-your-own-starter.md) — scaffold a new game from the CLI or template
+- [Plug-in Profiles](./59-plugin-profiles.md) — per-entity rule resolution: mixed-playstyle combat (shipped v2.5)
 - [Build a Combat Pack](./55-combat-pack-guide.md) — deep combat authoring with buildCombatStack
 - [Tuning Philosophy](./56-tuning-philosophy.md) — what to tune vs leave alone
-- [Profile Roadmap](../profile-roadmap.md) — plug-in profiles: the engine's destination feature (planned)
 
 ### Combat & Abilities
 
@@ -184,9 +185,10 @@ build → simulate → analyze → tune → experiment
 ### Part X — Composition
 
 57. [Composition Guide](./57-composition-guide.md) — Build your own game by composing engine modules
-58. [Create Your Own Starter](../../site/src/content/docs/handbook/58-create-your-own-starter.md) — Scaffold a new game from the CLI or template
+58. [Create Your Own Starter](./58-create-your-own-starter.md) — Scaffold a new game from the CLI or template
+59. [Plug-in Profiles](./59-plugin-profiles.md) — Per-entity rule resolution: a might fighter and a will mystic in one fight
 
-See also: [Profile Roadmap](../profile-roadmap.md) — Plug-in profiles: portable mechanical templates (planned)
+See also: [Profile Roadmap](../profile-roadmap.md) — the original "why profiles" vision doc (Plug-in Profiles shipped in v2.5 — see Chapter 59)
 
 ### Part XI — Combat Reference
 

@@ -9,7 +9,8 @@ import type {
   NpcMemoryState,
   RelationshipAxes,
 } from './types.js';
-import { createDefaultRelationship } from './types.js';
+import { CAMPAIGN_MEMORY_VERSION, createDefaultRelationship } from './types.js';
+import { validateMemoryFragment, validateRelationshipAxes } from './validate.js';
 
 const DEFAULT_CONFIG: Required<CampaignMemoryConfig> = {
   fadeThreshold: 0.3,
@@ -183,9 +184,12 @@ export class NpcMemoryBank {
     };
   }
 
-  /** Serializable state */
+  /** Serializable state, stamped with the current schema version (CM-02). */
   serialize(): NpcMemoryState {
-    return JSON.parse(JSON.stringify(this.state));
+    return {
+      version: CAMPAIGN_MEMORY_VERSION,
+      ...JSON.parse(JSON.stringify(this.state)),
+    };
   }
 
   /**
@@ -194,12 +198,34 @@ export class NpcMemoryBank {
    * CA-06: guards malformed state with a clear, actionable error instead of building a
    * half-formed bank that throws a raw TypeError on the next call. The thrown Error names
    * the offending field and how to fix it.
+   *
+   * CM-02 extends the guard below the top level:
+   * - schema version check — a save stamped with a NEWER version than this
+   *   package supports is rejected (upgrade the package); a save with no
+   *   version is legacy v1 and loads normally.
+   * - per-subject validation — relationship axes, memory fragments, and
+   *   interaction counters are checked, so a corrupt subject entry fails HERE
+   *   (naming the subject and field) rather than as a raw TypeError deep in
+   *   recall()/consolidate().
    */
   static deserialize(state: NpcMemoryState, config?: CampaignMemoryConfig): NpcMemoryBank {
     if (typeof state !== 'object' || state === null || Array.isArray(state)) {
       throw new Error(
         `NpcMemoryBank.deserialize: expected a state object (got ${state === null ? 'null' : Array.isArray(state) ? 'array' : typeof state}) — pass the value returned by serialize()`,
       );
+    }
+    const version = (state as { version?: unknown }).version;
+    if (version !== undefined) {
+      if (typeof version !== 'number' || !Number.isFinite(version)) {
+        throw new Error(
+          `NpcMemoryBank.deserialize: state.version must be a number (got ${typeof version}) — legacy saves omit it entirely`,
+        );
+      }
+      if (version > CAMPAIGN_MEMORY_VERSION) {
+        throw new Error(
+          `NpcMemoryBank.deserialize: state version ${version} is newer than supported version ${CAMPAIGN_MEMORY_VERSION} — upgrade @ai-rpg-engine/campaign-memory to load this save`,
+        );
+      }
     }
     if (typeof (state as { entityId?: unknown }).entityId !== 'string') {
       throw new Error(
@@ -214,8 +240,17 @@ export class NpcMemoryBank {
         })`,
       );
     }
+    for (const [subjectId, entry] of Object.entries(subjects as Record<string, unknown>)) {
+      validateSubjectEntry(subjectId, entry);
+    }
     const bank = new NpcMemoryBank(state.entityId, config);
-    bank.state = JSON.parse(JSON.stringify(state));
+    // Store WITHOUT the version stamp — the runtime state has no use for it,
+    // and serialize() re-stamps the current version (which also upgrades
+    // legacy saves on their next write).
+    bank.state = {
+      entityId: state.entityId,
+      subjects: JSON.parse(JSON.stringify(subjects)),
+    };
     return bank;
   }
 
@@ -237,4 +272,53 @@ export class NpcMemoryBank {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+/**
+ * CM-02 per-subject guard. Throws an Error naming the offending subject and
+ * field. Reuses the validate.js helpers so the boundary check and the public
+ * validators cannot drift apart.
+ */
+function validateSubjectEntry(subjectId: string, entry: unknown): void {
+  const at = `subjects["${subjectId}"]`;
+  if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+    throw new Error(
+      `NpcMemoryBank.deserialize: ${at} must be an entry object (got ${entry === null ? 'null' : Array.isArray(entry) ? 'array' : typeof entry})`,
+    );
+  }
+  const e = entry as Record<string, unknown>;
+
+  const relErrors = validateRelationshipAxes(e.relationship);
+  if (relErrors.length > 0) {
+    const first = relErrors[0];
+    throw new Error(
+      `NpcMemoryBank.deserialize: ${at}.relationship${first.field === 'root' ? '' : '.' + first.field} ${first.message}`,
+    );
+  }
+
+  if (!Array.isArray(e.memories)) {
+    throw new Error(
+      `NpcMemoryBank.deserialize: ${at}.memories must be an array of memory fragments (got ${e.memories === null ? 'null' : typeof e.memories})`,
+    );
+  }
+  for (let i = 0; i < e.memories.length; i++) {
+    const fragErrors = validateMemoryFragment(e.memories[i]);
+    if (fragErrors.length > 0) {
+      const first = fragErrors[0];
+      throw new Error(
+        `NpcMemoryBank.deserialize: ${at}.memories[${i}]${first.field === 'root' ? '' : '.' + first.field} ${first.message}`,
+      );
+    }
+  }
+
+  if (typeof e.lastInteractionTick !== 'number' || Number.isNaN(e.lastInteractionTick)) {
+    throw new Error(
+      `NpcMemoryBank.deserialize: ${at}.lastInteractionTick must be a number (got ${typeof e.lastInteractionTick})`,
+    );
+  }
+  if (typeof e.interactionCount !== 'number' || Number.isNaN(e.interactionCount)) {
+    throw new Error(
+      `NpcMemoryBank.deserialize: ${at}.interactionCount must be a number (got ${typeof e.interactionCount})`,
+    );
+  }
 }

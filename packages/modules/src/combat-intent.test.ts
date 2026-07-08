@@ -913,3 +913,56 @@ describe('combat-intent: deterministic event ids (emitDecisionEvent)', () => {
     expect(recorded!.id).toMatch(/^evt_/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// M3: affiliation-aware combat AI (folded into the M2 affiliation fix)
+// ---------------------------------------------------------------------------
+// The ally/enemy split in buildContext was type-only, so a recruited ally
+// (same faction, different `type`) was healed-as-ally by the ability layer but
+// attacked-as-enemy by the combat AI. The split now uses affiliationOf.
+
+describe('combat-intent: faction-aware ally/enemy split (M3)', () => {
+  function packSetup() {
+    const wolf = makeEntity('wolf', 'enemy', ['enemy'], { faction: 'wolves' });
+    // Same faction, different type, wounded (protect-eligible at < 0.4 hp).
+    const shaman = makeEntity('shaman', 'shaman', ['shaman'], {
+      faction: 'wolves',
+      resources: { hp: 5, maxHp: 20, stamina: 5 },
+    });
+    const hero = makeEntity('hero', 'player', ['player'], { faction: 'party' });
+    const engine = buildEngine([wolf, shaman, hero]);
+    return { wolf, shaman, hero, engine };
+  }
+
+  it('never scores an offensive intent against a same-faction different-type ally', () => {
+    const { wolf, engine } = packSetup();
+    const decision = selectNpcCombatAction(wolf, engine.store.state);
+
+    const all = [decision.chosen, ...decision.alternatives];
+    const offensive = all.filter((s) =>
+      s.intent === 'attack' || s.intent === 'pressure' || s.intent === 'finish',
+    );
+    expect(offensive.length).toBeGreaterThan(0);
+    expect(offensive.every((s) => s.targetId !== 'shaman')).toBe(true);
+    expect(offensive.some((s) => s.targetId === 'hero')).toBe(true);
+  });
+
+  it('treats the same-faction ally as protectable (attacked-as-enemy incoherence closed)', () => {
+    const { wolf, engine } = packSetup();
+    const decision = selectNpcCombatAction(wolf, engine.store.state);
+
+    const all = [decision.chosen, ...decision.alternatives];
+    // The wounded shaman (hp 5/20 < 0.4) is scored for protect, i.e. as an ALLY.
+    expect(all.some((s) => s.intent === 'protect' && s.targetId === 'shaman')).toBe(true);
+  });
+
+  it('entities without factions keep the legacy type heuristic (back-compat lock)', () => {
+    const npc = makeEntity('npc', 'enemy', ['enemy']);
+    const target = makeEntity('target', 'player', ['player']);
+    const engine = buildEngine([npc, target]);
+
+    const decision = selectNpcCombatAction(npc, engine.store.state);
+    const all = [decision.chosen, ...decision.alternatives];
+    expect(all.some((s) => s.intent === 'attack' && s.targetId === 'target')).toBe(true);
+  });
+});

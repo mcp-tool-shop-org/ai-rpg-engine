@@ -355,11 +355,14 @@ export type {
 export {
   evaluateCompanionReactions,
   evaluateDepartureRisk,
+  isKnownReactionTrigger,
+  KNOWN_REACTION_TRIGGERS,
 } from './companion-reactions.js';
 export type {
   CompanionReaction,
   DepartureRisk,
   DepartureAssessment,
+  ReactionTrigger,
 } from './companion-reactions.js';
 export {
   evaluateItemRecognition,
@@ -739,6 +742,7 @@ export {
   getAbilityCooldown,
   isAbilityReady,
   getAvailableAbilities,
+  registerProfileAbilities,
 } from './ability-core.js';
 export type {
   AbilityStatMapping,
@@ -830,8 +834,8 @@ export { selectBestAction, formatUnifiedDecision } from './unified-decision.js';
 export type { UnifiedActionSource, UnifiedAction, UnifiedDecision, UnifiedDecisionConfig } from './unified-decision.js';
 
 // --- Tag Taxonomy & Validation ---
-export { TAG_CATEGORIES, classifyTag, validateEntityTags, validateZoneTags } from './tag-taxonomy.js';
-export type { TagCategory, TagCategoryDefinition, TagWarning } from './tag-taxonomy.js';
+export { TAG_CATEGORIES, classifyTag, validateEntityTags, validateZoneTags, validateWorldTags } from './tag-taxonomy.js';
+export type { TagCategory, TagCategoryDefinition, TagWarning, WorldTagWarning } from './tag-taxonomy.js';
 
 // --- Ability Builders (Abilities Phase 4) ---
 export {
@@ -867,6 +871,9 @@ export type { ProcContext } from './status-effects.js';
 // --- Targeting (Ally Targeting & Friend/Foe AoE) ---
 export {
   affiliationOf,
+  matchesAffiliation,
+  isSupportAbility,
+  normalizeAbilityTarget,
   candidateTargets,
   resolveTargets,
   lowestHp,
@@ -879,3 +886,22 @@ export type { Affiliation, TargetSelector } from './targeting.js';
 // --- Profile System (Phase 1: schema + validation + per-entity AI driver) ---
 export { buildProfile, validateProfileSet, selectActionForProfile } from './profile.js';
 export type { Profile, ProfileConfig, BuildProfileResult, ProfileSetResult } from './profile.js';
+
+// --- Profile Loader (Phase 2: runtime application — attaches a profile to an entity) ---
+export { applyProfile } from './profile-loader.js';
+
+// --- Profile Templates (Phase 2: the 10 starter playstyles as reusable bundles) ---
+export {
+  starterProfiles,
+  starterProfileList,
+  gladiatorProfile,
+  detectiveProfile,
+  colonyProfile,
+  cyberpunkProfile,
+  pirateProfile,
+  vampireProfile,
+  roninProfile,
+  weirdWestProfile,
+  zombieProfile,
+  fantasyProfile,
+} from './profile-templates.js';

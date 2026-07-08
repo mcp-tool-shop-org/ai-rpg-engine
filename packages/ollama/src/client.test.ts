@@ -91,7 +91,7 @@ describe('createClient.generate — offline recovery hint', () => {
       throw new TypeError('fetch failed');
     }) as unknown as typeof fetch;
 
-    const client = createClient(resolveConfig({ baseUrl, timeoutMs: 50 }));
+    const client = createClient(resolveConfig({ baseUrl, timeoutMs: 50, retryDelayMs: 0 }));
     const result = await client.generate({ system: 's', prompt: 'p' });
 
     expect(result.ok).toBe(false);
@@ -110,7 +110,7 @@ describe('createClient.generate — offline recovery hint', () => {
       throw new TypeError('fetch failed');
     }) as unknown as typeof fetch;
 
-    const client = createClient(resolveConfig({ baseUrl: customUrl, timeoutMs: 50 }));
+    const client = createClient(resolveConfig({ baseUrl: customUrl, timeoutMs: 50, retryDelayMs: 0 }));
     const result = await client.generate({ system: 's', prompt: 'p' });
 
     expect(result.ok).toBe(false);
@@ -118,5 +118,136 @@ describe('createClient.generate — offline recovery hint', () => {
       expect(result.error).toContain(customUrl);
       expect(result.error).not.toContain('localhost:11434');
     }
+  });
+});
+
+// v2.5 audit PA-3 — the retry loop is defensive code on the single network
+// path and previously had ZERO coverage: a refactor that broke the `continue`
+// branches would still pass CI. It was also silent (up to maxAttempts ×
+// timeoutMs of freeze with no breadcrumb) and hardcoded. The invariants:
+// transient failures recover, retries are observable via onRetry (default: a
+// stderr breadcrumb), and count/delay come from OllamaConfig.
+describe('createClient.generate — retry/backoff (PA-3)', () => {
+  type RetryCall = { attempt: number; maxAttempts: number; reason: string; delayMs: number };
+
+  function collectRetries(): { calls: RetryCall[]; onRetry: (info: RetryCall) => void } {
+    const calls: RetryCall[] = [];
+    return { calls, onRetry: (info) => calls.push(info) };
+  }
+
+  it('recovers when a transient network error precedes a success', async () => {
+    let call = 0;
+    globalThis.fetch = vi.fn(async () => {
+      call++;
+      if (call === 1) throw new TypeError('fetch failed');
+      return makeResponse({ ok: true, status: 200, json: async () => ({ response: 'recovered' }) });
+    }) as unknown as typeof fetch;
+
+    const { calls, onRetry } = collectRetries();
+    const client = createClient(resolveConfig({ retryDelayMs: 0 }), { onRetry });
+    const result = await client.generate({ system: 's', prompt: 'p' });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.text).toBe('recovered');
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    expect(calls).toEqual([
+      { attempt: 1, maxAttempts: 3, reason: 'network error: fetch failed', delayMs: 0 },
+    ]);
+  });
+
+  it('retries a 5xx and surfaces the final HTTP error after max attempts', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      makeResponse({ ok: false, status: 503, text: async () => 'overloaded' }),
+    ) as unknown as typeof fetch;
+
+    const { calls, onRetry } = collectRetries();
+    const client = createClient(resolveConfig({ retryDelayMs: 0 }), { onRetry });
+    const result = await client.generate({ system: 's', prompt: 'p' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('HTTP 503');
+      expect(result.error).toContain('overloaded');
+    }
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+    expect(calls.map((c) => c.reason)).toEqual(['HTTP 503', 'HTTP 503']);
+    expect(calls.map((c) => c.attempt)).toEqual([1, 2]);
+  });
+
+  it('surfaces the offline hint once network retries are exhausted', async () => {
+    globalThis.fetch = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+
+    const { calls, onRetry } = collectRetries();
+    const client = createClient(resolveConfig({ retryDelayMs: 0 }), { onRetry });
+    const result = await client.generate({ system: 's', prompt: 'p' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/ollama serve/i);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+    expect(calls).toHaveLength(2); // one breadcrumb per retry, none for the final failure
+  });
+
+  it('does not retry a 4xx client error', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      makeResponse({ ok: false, status: 400, text: async () => 'bad request' }),
+    ) as unknown as typeof fetch;
+
+    const { calls, onRetry } = collectRetries();
+    const client = createClient(resolveConfig({ retryDelayMs: 0 }), { onRetry });
+    const result = await client.generate({ system: 's', prompt: 'p' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain('HTTP 400');
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('maxAttempts: 1 disables retry entirely', async () => {
+    globalThis.fetch = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+
+    const { calls, onRetry } = collectRetries();
+    const client = createClient(resolveConfig({ maxAttempts: 1, retryDelayMs: 0 }), { onRetry });
+    const result = await client.generate({ system: 's', prompt: 'p' });
+
+    expect(result.ok).toBe(false);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('configured maxAttempts and retryDelayMs flow into the loop and the breadcrumb payload', async () => {
+    globalThis.fetch = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+
+    const { calls, onRetry } = collectRetries();
+    const client = createClient(resolveConfig({ maxAttempts: 5, retryDelayMs: 1 }), { onRetry });
+    const result = await client.generate({ system: 's', prompt: 'p' });
+
+    expect(result.ok).toBe(false);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(5);
+    expect(calls.map((c) => c.attempt)).toEqual([1, 2, 3, 4]);
+    expect(calls.every((c) => c.maxAttempts === 5 && c.delayMs === 1)).toBe(true);
+  });
+
+  it('emits a stderr breadcrumb per retry by default (no onRetry hook)', async () => {
+    let call = 0;
+    globalThis.fetch = vi.fn(async () => {
+      call++;
+      if (call === 1) throw new TypeError('fetch failed');
+      return makeResponse({ ok: true, status: 200, json: async () => ({ response: 'ok' }) });
+    }) as unknown as typeof fetch;
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const client = createClient(resolveConfig({ retryDelayMs: 0 }));
+    const result = await client.generate({ system: 's', prompt: 'p' });
+
+    expect(result.ok).toBe(true);
+    const stderr = errSpy.mock.calls.flat().join('\n');
+    expect(stderr).toContain('[ollama] attempt 1/3 failed');
+    expect(stderr).toContain('retrying in 0ms');
   });
 });

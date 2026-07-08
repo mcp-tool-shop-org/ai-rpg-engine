@@ -16,6 +16,7 @@ import type {
 import { applyStatus, removeStatus, hasStatus } from './status-core.js';
 import { COMBAT_STATES, DEFAULT_STAT_MAPPING, defaultInterceptChance } from './combat-core.js';
 import type { CombatFormulas } from './combat-core.js';
+import { affiliationOf } from './targeting.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -70,16 +71,22 @@ function getEntitiesInZone(world: WorldState, zoneId: string): EntityState[] {
   );
 }
 
+// Friend-or-foe checks route through the shared `affiliationOf` predicate
+// (targeting.ts): entities that BOTH carry `faction` compare factions; otherwise
+// the legacy same-`type` heuristic applies. Keeps positional texture consistent
+// with offensive targeting / combat AI for mixed-`type` faction parties
+// (`affiliationOf` returns 'self' for the entity itself, so no id check needed).
+
 function hasEnemiesInZone(world: WorldState, entity: EntityState): boolean {
   if (!entity.zoneId) return false;
   const zoneEntities = getEntitiesInZone(world, entity.zoneId);
-  return zoneEntities.some(e => e.id !== entity.id && e.type !== entity.type);
+  return zoneEntities.some(e => affiliationOf(entity, e) === 'enemy');
 }
 
 function hasAlliesInZone(world: WorldState, entity: EntityState): boolean {
   if (!entity.zoneId) return false;
   const zoneEntities = getEntitiesInZone(world, entity.zoneId);
-  return zoneEntities.some(e => e.id !== entity.id && e.type === entity.type);
+  return zoneEntities.some(e => affiliationOf(entity, e) === 'ally');
 }
 
 function hasProtectorInZone(
@@ -90,8 +97,7 @@ function hasProtectorInZone(
   if (!entity.zoneId) return false;
   const zoneEntities = getEntitiesInZone(world, entity.zoneId);
   return zoneEntities.some(
-    e => e.id !== entity.id
-      && e.type === entity.type
+    e => affiliationOf(entity, e) === 'ally'
       && protectorTags.some(tag => e.tags.includes(tag)),
   );
 }
@@ -193,11 +199,11 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
         // Frontline collapse: if defeated was ENGAGED and no same-side entities remain ENGAGED
         if (wasEngaged) {
           const remainingFrontliners = zoneEntities.filter(
-            e => e.id !== defeatedId && e.type === defeated.type && hasStatus(e, ENGAGEMENT_STATES.ENGAGED),
+            e => affiliationOf(defeated, e) === 'ally' && hasStatus(e, ENGAGEMENT_STATES.ENGAGED),
           );
           if (remainingFrontliners.length === 0) {
             const exposedBackliners = zoneEntities.filter(
-              e => e.type === defeated.type && hasStatus(e, ENGAGEMENT_STATES.BACKLINE),
+              e => affiliationOf(defeated, e) === 'ally' && hasStatus(e, ENGAGEMENT_STATES.BACKLINE),
             );
             if (exposedBackliners.length > 0) {
               ctx.events.emit({
@@ -255,7 +261,7 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
         // If entity was backline and repositioned, they may now be engaged
         if (hasStatus(entity, ENGAGEMENT_STATES.BACKLINE)) {
           const hasEnemies = getEntitiesInZone(world, entity.zoneId)
-            .some(e => e.id !== entity.id && e.type !== entity.type);
+            .some(e => affiliationOf(entity, e) === 'enemy');
           if (hasEnemies) {
             safeRemove(entity, ENGAGEMENT_STATES.BACKLINE, tick);
             safeApply(entity, ENGAGEMENT_STATES.ENGAGED, tick, world);
@@ -337,7 +343,7 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
           }
 
           // New arrival might be a protector
-          if (protectorTags.some(tag => entity.tags.includes(tag)) && other.type === entity.type) {
+          if (protectorTags.some(tag => entity.tags.includes(tag)) && affiliationOf(other, entity) === 'ally') {
             safeApply(other, ENGAGEMENT_STATES.PROTECTED, tick, world);
           }
         }

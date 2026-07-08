@@ -1,9 +1,28 @@
 // Portrait generation pipeline — prompt → generate → store
 
 import type { AssetStore, AssetMetadata } from '@ai-rpg-engine/asset-registry';
-import type { PortraitRequest, ImageProvider, GenerationOptions } from './types.js';
+import type { PortraitRequest, ImageProvider, GenerationOptions, GenerationFailure } from './types.js';
 import { buildPromptPair } from './prompt-builder.js';
 import { PlaceholderProvider } from './placeholder-provider.js';
+
+/**
+ * Typed error thrown by the pipeline when a provider reports a failure.
+ * Carries the provider's stable failure `code` and optional recovery `hint`
+ * so callers can branch (retry, degrade, surface) without string-matching —
+ * and so a flaky daemon surfaces as one named error type instead of a raw
+ * fetch `TypeError` from deep inside the pipeline.
+ */
+export class ImageGenError extends Error {
+  readonly code: GenerationFailure['code'];
+  readonly hint?: string;
+
+  constructor(failure: GenerationFailure) {
+    super(failure.error);
+    this.name = 'ImageGenError';
+    this.code = failure.code;
+    this.hint = failure.hint;
+  }
+}
 
 /**
  * Pick a usable image provider, degrading to a fallback when the preferred one
@@ -11,13 +30,13 @@ import { PlaceholderProvider } from './placeholder-provider.js';
  *
  * `generatePortrait`/`ensurePortrait` call `provider.generate()` unconditionally;
  * if you hand them, say, a {@link ComfyUIProvider} whose server is down, the
- * pipeline throws `fetch failed` deep in the call stack. That is a likely
- * consumer mistake (forgetting that a local generator may not be running), so
- * per the engine's warn-and-degrade contract this helper turns it into a safe
- * fallback instead of a crash: it awaits `preferred.isAvailable()` (treating a
- * thrown availability check as "unavailable") and returns `fallback` — the
- * always-on {@link PlaceholderProvider} by default — when the preferred provider
- * is not reachable.
+ * pipeline throws a typed {@link ImageGenError} (code `'network'`). That is a
+ * likely consumer mistake (forgetting that a local generator may not be
+ * running), so per the engine's warn-and-degrade contract this helper turns it
+ * into a safe fallback instead of an error: it awaits `preferred.isAvailable()`
+ * (treating a thrown availability check as "unavailable") and returns
+ * `fallback` — the always-on {@link PlaceholderProvider} by default — when the
+ * preferred provider is not reachable.
  *
  * Use it at the seam where you choose a provider:
  * ```ts
@@ -72,6 +91,7 @@ export async function generatePortrait(
   };
 
   const result = await provider.generate(prompt, genOpts);
+  if (!result.ok) throw new ImageGenError(result);
 
   const characterKey = `${request.characterName}::${request.archetypeName}`;
 

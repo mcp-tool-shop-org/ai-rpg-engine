@@ -100,12 +100,19 @@ function alliedNpcCount(profiles: NpcProfile[]): number {
 function avgDistrictStability(economies: Map<string, DistrictEconomy>): number {
   if (economies.size === 0) return 50;
   let total = 0;
+  let counted = 0;
   for (const econ of economies.values()) {
-    // Approximate stability from supply levels
+    // Approximate stability from supply levels. A district with no supply data
+    // contributes no signal — averaging it would be 0/0 = NaN, and one NaN
+    // poisoned the whole average, silently suppressing every supply-driven arc
+    // dimension (M6).
     const supplies = Object.values(econ.supplies);
+    if (supplies.length === 0) continue;
     total += supplies.reduce((s, v) => s + v.level, 0) / supplies.length;
+    counted++;
   }
-  return total / economies.size;
+  // All-empty falls back to the neutral 50 baseline (same as the no-districts case).
+  return counted > 0 ? total / counted : 50;
 }
 
 function totalObligationsOwedToPlayer(obligations: Map<string, NpcObligationLedger>): number {

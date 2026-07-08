@@ -12,7 +12,7 @@ import { WorldStore, SaveLoadError } from './world.js';
 import { ActionDispatcher } from './actions.js';
 import { ModuleManager } from './modules.js';
 import type { FormulaRegistry } from './formulas.js';
-import type { EventBusListenerErrorHook } from './events.js';
+import type { EventBus, EventBusListenerErrorHook } from './events.js';
 
 export type EngineOptions = {
   manifest: GameManifest;
@@ -41,6 +41,7 @@ export class Engine {
     this.store = new WorldStore({
       manifest: options.manifest,
       seed: options.seed,
+      ruleset: options.ruleset,
       onListenerError: options.onListenerError,
     });
 
@@ -64,13 +65,43 @@ export class Engine {
       }
       return { valid: true };
     });
+
+    // Wire module rule EFFECTS into the dispatch pipeline (v2.5 C1). Rule
+    // checks were wired above since day one, but effects registered via
+    // rules.registerEffect were stored and never executed. Each
+    // handler-resolved event is offered to every registered effect; events
+    // they return are recorded through the same recordEvent choke point so
+    // ordering and ids stay deterministic (see ActionDispatcher.dispatch).
+    this.dispatcher.registerEffectApplier((event, world) =>
+      this.moduleManager.applyEffects(event, world),
+    );
   }
 
   /** Submit a player action */
   submitAction(verb: string, options?: Partial<Pick<ActionIntent, 'targetIds' | 'toolId' | 'parameters'>>): ResolvedEvent[] {
+    // Ghost-actor guard, symmetric with submitActionAs (v2.5 C2): the default
+    // playerId is '' and nothing forces a consumer to register the player
+    // entity before acting. A verb handler reading entities[actorId] for a
+    // missing player would crash or silently act on undefined; short-circuit
+    // to a structured action.rejected instead. Guarded before createAction so
+    // no action id is minted for the ghost attempt (same as submitActionAs);
+    // the tick still advances, matching every other rejected action.
+    const playerId = this.store.state.playerId;
+    if (!this.store.state.entities[playerId]) {
+      this.store.emitEvent('action.rejected', {
+        verb,
+        actorId: playerId,
+        reason: playerId === ''
+          ? 'unknown actor: state.playerId is not set. Set world.playerId to the player entity\'s id (and add that entity) before submitting player actions.'
+          : `unknown actor: no entity "${playerId}" in world state for state.playerId. Add the player entity before acting, or check the id for a typo.`,
+      }, { actorId: playerId });
+      this.store.advanceTick();
+      return [];
+    }
+
     const action = this.dispatcher.createAction(
       verb,
-      this.store.state.playerId,
+      playerId,
       this.store.tick,
       { source: 'player', ...options },
       this.store.genId('act'),
@@ -110,6 +141,21 @@ export class Engine {
 
   /** Process any action through the pipeline */
   processAction(action: ActionIntent): ResolvedEvent[] {
+    // Ghost-actor guard (v2.5 C2), symmetric with submitActionAs: this method
+    // is public and accepts a caller-built ActionIntent, so the actor must be
+    // validated here too. Guarded BEFORE the actionLog push so a ghost action
+    // never enters the replay log — matching submitActionAs, whose guard
+    // fires before the action is even created.
+    if (!this.store.state.entities[action.actorId]) {
+      this.store.emitEvent('action.rejected', {
+        verb: action.verb,
+        actorId: action.actorId,
+        reason: `unknown actor: no entity "${action.actorId}" in world state. Add the entity before acting as it, or check the actor id for a typo.`,
+      }, { actorId: action.actorId });
+      this.store.advanceTick();
+      return [];
+    }
+
     this.actionLog.push(action);
     const events = this.dispatcher.dispatch(action, this.store);
 
@@ -171,11 +217,14 @@ export class Engine {
    * id sequence without colliding with ids already in the loaded eventLog.
    *
    * Modules/ruleset must be supplied by the caller — code (verb handlers, event
-   * subscribers) is never serialized, only state. The saved manifest is
-   * reconstructed from world.state.meta so the dispatcher, moduleManager, and
-   * module state namespaces are registered, then the live EventBus those modules
-   * subscribed to is threaded into the restored WorldStore so subscriptions
-   * survive the swap (core-004).
+   * subscribers) is never serialized, only state. The saved world is restored
+   * through WorldStore.deserialize FIRST (rngState check → migration chain →
+   * meta-shape assert, in that order, so a migration may backfill legacy meta
+   * fields — v2.5 PC-2), then the manifest is reconstructed from the restored
+   * post-migration meta so the dispatcher, moduleManager, and module state
+   * namespaces are registered, and the live EventBus those modules subscribed
+   * to is threaded into the restored WorldStore so subscriptions survive the
+   * swap (core-004).
    *
    * @throws SaveLoadError on malformed or unsupported-version saves.
    */
@@ -201,7 +250,24 @@ export class Engine {
       });
     }
 
-    const meta = data.world.state.meta;
+    // Restore the world FIRST. WorldStore.deserialize is the single load
+    // authority: it validates rngState (C3), runs the save-version migration
+    // chain, and asserts the reconstruction-critical meta shape AFTER the
+    // migrations — so a future SAVE_MIGRATIONS entry may backfill meta fields
+    // for legacy saves (v2.5 PC-2). This path previously asserted the
+    // PRE-migration meta, which foreclosed exactly those backfill migrations
+    // and made the two public load paths disagree; the guard itself is intact,
+    // it just runs where WorldStore.deserialize runs it. A nice side effect:
+    // every save-rejection now fires before any module code executes. The
+    // caller's ruleset is threaded through so stat/resource bounds (C7)
+    // survive the load — like modules, rulesets are code, never serialized.
+    const restored = WorldStore.deserialize(JSON.stringify(data.world), undefined, options.ruleset);
+
+    // Reconstruct the manifest from the RESTORED (post-migration, shape-
+    // asserted) meta — not the raw save blob — and build the engine normally
+    // so dispatcher + moduleManager + namespaces are registered and modules
+    // subscribe to this.store.events (the live bus).
+    const meta = restored.state.meta;
     const manifest: GameManifest = {
       id: meta.gameId,
       title: '',
@@ -211,9 +277,6 @@ export class Engine {
       modules: meta.activeModules,
       contentPacks: [],
     };
-
-    // Build the engine normally so dispatcher + moduleManager + namespaces are
-    // registered and modules subscribe to this.store.events (the live bus).
     const engine = new Engine({
       manifest,
       seed: meta.seed,
@@ -221,14 +284,19 @@ export class Engine {
       ruleset: options.ruleset,
     });
 
-    // Replace the fresh store with the saved one, reusing the live EventBus so
-    // module subscriptions registered above are preserved. WorldStore.deserialize
-    // runs the save-version migration chain and restores meta.idCounter + rng.
-    const restored = WorldStore.deserialize(
-      JSON.stringify(data.world),
-      engine.store.events,
-    );
+    // Swap the fresh construction store for the restored one, threading the
+    // live EventBus (the bus modules subscribed to during construction above)
+    // into the restored store so subscriptions survive the swap (core-004).
+    (restored as { events: EventBus }).events = engine.store.events;
     (engine as { store: WorldStore }).store = restored;
+
+    // The module contexts' event-emit path (ctx.events.emit -> store.recordEvent)
+    // captured the throwaway store during construction above; rebind it to the
+    // restored store so post-load reactive emits (status reflect/DoT, cognition,
+    // defeat cascades) land in the live eventLog with the live idCounter instead
+    // of the orphaned construction store (v2.5 PC-1). The EventBus reuse
+    // (core-004) already preserved the subscribe side; this fixes the emit side.
+    engine.moduleManager.rebindStore(restored);
 
     // Restore the action log so getActionLog()/serialize() round-trip.
     engine.actionLog = data.actionLog ? [...data.actionLog] : [];

@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import { CampaignJournal } from './journal.js';
 import type { CampaignRecord } from './types.js';
+import { CAMPAIGN_MEMORY_VERSION } from './types.js';
 
 function makeRecord(overrides: Partial<Omit<CampaignRecord, 'id'>> = {}): Omit<CampaignRecord, 'id'> {
   return {
@@ -103,11 +104,12 @@ describe('CampaignJournal', () => {
     journal.record(makeRecord({ tick: 10 }));
 
     const serialized = journal.serialize();
-    expect(serialized).toHaveLength(2);
+    expect(serialized.version).toBe(CAMPAIGN_MEMORY_VERSION);
+    expect(serialized.records).toHaveLength(2);
 
     const restored = CampaignJournal.deserialize(serialized);
     expect(restored.size()).toBe(2);
-    expect(restored.get(serialized[0].id)).toBeDefined();
+    expect(restored.get(serialized.records[0].id)).toBeDefined();
   });
 
   test('results are sorted by tick', () => {
@@ -199,5 +201,96 @@ describe('CampaignJournal', () => {
   test('deserialize accepts a valid empty array', () => {
     const j = CampaignJournal.deserialize([]);
     expect(j.size()).toBe(0);
+  });
+});
+
+// CM-01: the journal save format carries a schema version (mirroring
+// character-profile's PROFILE_VERSION) and deserialize validates every record's
+// substructure — not just top-level shape — so a corrupt or future-format save
+// fails AT THE BOUNDARY with an actionable error instead of NaN-sorting or
+// throwing a raw TypeError deep inside query()/buildFinaleOutline().
+describe('CampaignJournal schema versioning + substructure guards (CM-01)', () => {
+  test('serialize stamps the current schema version', () => {
+    const journal = new CampaignJournal();
+    journal.record(makeRecord());
+    const saved = journal.serialize();
+    expect(saved.version).toBe(CAMPAIGN_MEMORY_VERSION);
+    expect(Array.isArray(saved.records)).toBe(true);
+  });
+
+  test('serialize -> deserialize -> serialize is byte-stable', () => {
+    const journal = new CampaignJournal();
+    journal.record(makeRecord({ tick: 5 }));
+    journal.record(makeRecord({ tick: 12, category: 'gift' }));
+    const once = journal.serialize();
+    const twice = CampaignJournal.deserialize(once).serialize();
+    expect(JSON.stringify(twice)).toBe(JSON.stringify(once));
+  });
+
+  test('legacy load: a pre-versioning raw array save still deserializes', () => {
+    // Saves written before CAMPAIGN_MEMORY_VERSION existed are bare arrays.
+    const legacy: CampaignRecord[] = [
+      { id: 'cr_1', ...makeRecord({ tick: 3 }) },
+      { id: 'cr_2', ...makeRecord({ tick: 9 }) },
+    ];
+    const restored = CampaignJournal.deserialize(legacy);
+    expect(restored.size()).toBe(2);
+    // Re-serializing a legacy save upgrades it to the versioned envelope.
+    expect(restored.serialize().version).toBe(CAMPAIGN_MEMORY_VERSION);
+  });
+
+  test('rejects an envelope from a NEWER schema version with an actionable error', () => {
+    const future = {
+      version: CAMPAIGN_MEMORY_VERSION + 1,
+      records: [] as CampaignRecord[],
+    };
+    expect(() => CampaignJournal.deserialize(future)).toThrowError(/newer|version/i);
+    expect(() => CampaignJournal.deserialize(future)).toThrowError(
+      new RegExp(`${CAMPAIGN_MEMORY_VERSION + 1}`),
+    );
+  });
+
+  test('rejects an envelope whose version is not a number', () => {
+    expect(() =>
+      CampaignJournal.deserialize({ version: '1', records: [] } as any),
+    ).toThrowError(/version/i);
+  });
+
+  test('rejects an envelope whose records is not an array', () => {
+    expect(() =>
+      CampaignJournal.deserialize({ version: CAMPAIGN_MEMORY_VERSION, records: {} } as any),
+    ).toThrowError(/records|array/i);
+  });
+
+  test('corrupt substructure: record with a missing tick is rejected at the boundary', () => {
+    // Before CM-01 this built a journal whose query() sorted on undefined
+    // (NaN comparisons) — the exact failure the CA-06 comment claims to prevent.
+    const bad = { ...makeRecord(), id: 'cr_1' } as any;
+    delete bad.tick;
+    expect(() => CampaignJournal.deserialize([bad])).toThrowError(/tick/i);
+    expect(() => CampaignJournal.deserialize([bad])).toThrowError(/\[0\]/);
+  });
+
+  test('corrupt substructure: out-of-range significance is rejected', () => {
+    const bad = { ...makeRecord(), id: 'cr_1', significance: 7 } as any;
+    expect(() => CampaignJournal.deserialize([bad])).toThrowError(/significance/i);
+  });
+
+  test('corrupt substructure: unknown category is rejected', () => {
+    const bad = { ...makeRecord(), id: 'cr_1', category: 'not-a-category' } as any;
+    expect(() => CampaignJournal.deserialize([bad])).toThrowError(/category/i);
+  });
+
+  test('corrupt substructure: non-array witnesses is rejected', () => {
+    const bad = { ...makeRecord(), id: 'cr_1', witnesses: 'everyone' } as any;
+    expect(() => CampaignJournal.deserialize([bad])).toThrowError(/witnesses/i);
+  });
+
+  test('substructure guards apply on the versioned-envelope path too', () => {
+    const bad = { ...makeRecord(), id: 'cr_1' } as any;
+    delete bad.tick;
+    expect(() =>
+      CampaignJournal.deserialize({ version: CAMPAIGN_MEMORY_VERSION, records: [bad] }),
+    ).toThrowError(/tick/i);
   });
 });

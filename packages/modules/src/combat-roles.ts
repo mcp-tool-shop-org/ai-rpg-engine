@@ -15,6 +15,7 @@ import { genId } from '@ai-rpg-engine/core';
 import type { PackBias, CombatIntentType } from './combat-intent.js';
 import type { CombatStatMapping } from './combat-core.js';
 import { DEFAULT_STAT_MAPPING } from './combat-core.js';
+import { validateEntityTags } from './tag-taxonomy.js';
 
 // ---------------------------------------------------------------------------
 // Combat Role System
@@ -218,10 +219,18 @@ export function validateEncounter(
 ): string[] {
   const warnings: string[] = [];
 
-  // Check for missing entities
+  // Check for missing entities + lint participant tags. Tag lint on the
+  // encounter path catches typos (`role:brut` for `role:brute`) that would
+  // otherwise silently produce a roleless entity — validateEntityTags used to
+  // run only inside buildProfile, never on raw-authored encounter content.
   for (const p of encounter.participants) {
-    if (!entities[p.entityId]) {
+    const entity = entities[p.entityId];
+    if (!entity) {
       warnings.push(`Participant '${p.entityId}' not found in entities`);
+      continue;
+    }
+    for (const tw of validateEntityTags(entity.tags)) {
+      warnings.push(`Participant '${p.entityId}' tag (${tw.severity}): ${tw.message}`);
     }
   }
 
