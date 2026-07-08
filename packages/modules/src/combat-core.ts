@@ -554,11 +554,46 @@ function disengageHandler(
 }
 
 /**
- * Read a mapped stat from an entity, with fallback — now resolved through
- * effectiveStat so passive status modifiers (buffs/debuffs) actually reach combat
- * (design-lock capability 1). When the entity has no status modifiers for the
- * stat, effectiveStat returns `entity.stats[statId] ?? fallback`, byte-identical
- * to the pre-change raw read, so every existing caller keeps its old numbers.
+ * Resolve an entity's combat stat mapping (CR-1, per-entity rule resolution).
+ *
+ * When the entity carries a `ruleProfileId` that resolves to a profile in
+ * `world.ruleProfiles`, that profile's `statMapping` wins — so a `might` fighter
+ * and a `will` mystic read their OWN `attack`/`precision`/`resolve` stat names in
+ * the same fight, off ONE formula set (feature-architecture §C, finding 1). When
+ * the entity has no profile (or the id doesn't resolve) the passed-in `fallback`
+ * is returned unchanged. The fallback is always the world/formula mapping, never a
+ * bare DEFAULT_STAT_MAPPING, which preserves custom-mapping starters (e.g.
+ * weird-west's attack→grit) — the real chain is
+ * `entity profile → world mapping → DEFAULT`.
+ *
+ * Pure and deterministic — a plain map lookup, no clock/RNG. Exported so
+ * buildCombatFormulas' pluggable closures resolve per-entity too (Change B); a
+ * `RuleProfile.statMapping` is structurally identical to `CombatStatMapping`.
+ */
+export function resolveEntityMapping(
+  entity: EntityState,
+  world: WorldState,
+  fallback: CombatStatMapping,
+): CombatStatMapping {
+  const pid = entity.ruleProfileId;
+  if (pid) {
+    const prof = world.ruleProfiles?.[pid];
+    if (prof?.statMapping) return prof.statMapping;
+  }
+  return fallback;
+}
+
+/**
+ * Read a mapped stat from an entity, resolving the mapping PER-ENTITY first
+ * (CR-1) then through `effectiveStat` so passive status modifiers (buffs/debuffs)
+ * still reach combat (design-lock capability 1). The `mapping` argument is now the
+ * FALLBACK: each read resolves against the passed entity's own RuleProfile mapping
+ * when it has one, else `mapping`. Because every call site already passes the
+ * specific entity for the read (`getStat(attacker, …)` vs `getStat(target, …)`),
+ * this makes attacker reads use the attacker's mapping and target reads use the
+ * target's — the Source-vs-Target split — with no call-site change. When the entity
+ * has no profile and no status modifiers, the result is `entity.stats[statId] ??
+ * fallback`, byte-identical to the pre-CR-1 read, so existing callers are unchanged.
  */
 function getStat(
   entity: EntityState,
@@ -567,7 +602,8 @@ function getStat(
   fallback: number,
   world: WorldState,
 ): number {
-  return effectiveStat(entity, mapping[role], world, fallback);
+  const resolved = resolveEntityMapping(entity, world, mapping);
+  return effectiveStat(entity, resolved[role], world, fallback);
 }
 
 function defaultHitChance(attacker: EntityState, target: EntityState, mapping: CombatStatMapping, world: WorldState): number {
