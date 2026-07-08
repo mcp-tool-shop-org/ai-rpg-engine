@@ -1,6 +1,8 @@
 # Profile Roadmap
 
-This document describes the **plug-in profile** system — the engine's destination feature. Profiles don't exist yet. This is the plan.
+> **Status note (superseded in part):** this is the original vision doc. **Profile Phase 1 shipped in v2.4** (`Profile` type, `buildProfile()`, `validateProfileSet()`, `selectActionForProfile()`). The authoritative, research-grounded design for the remaining per-entity combat *resolution* work (CR-1) now lives in [`feature-architecture.md`](feature-architecture.md) — read that for the current plan; this doc is kept for the "why profiles" framing.
+
+This document describes the **plug-in profile** system — the engine's destination feature. It was written before any of it existed; the framing below still holds, but see the status note above for what has since shipped.
 
 ---
 

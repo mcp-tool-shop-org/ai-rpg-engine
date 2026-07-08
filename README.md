@@ -230,7 +230,7 @@ See [PHILOSOPHY.md](PHILOSOPHY.md) for the full explanation.
 
 ## Security
 
-AI RPG Engine is a **local-only simulation library**. No telemetry, no network, no secrets. Save files go to `.ai-rpg-engine/` only when explicitly requested. See [SECURITY.md](SECURITY.md) for details.
+The core engine is a **local-only simulation library**: no telemetry, no network, no secrets. Save files go to `.ai-rpg-engine/` only when explicitly requested. The **optional** AI layer (`@ai-rpg-engine/ollama`) talks to a **local** Ollama daemon; its opt-in `webfetch` (for RAG) is the only outbound network path and is confined by an SSRF guard (blocks loopback/link-local/CGNAT/cloud-metadata and IPv6-tunnelled equivalents) — you never reach it unless you invoke it. See [SECURITY.md](SECURITY.md) for details.
 
 ## Requirements
 
