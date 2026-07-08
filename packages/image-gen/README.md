@@ -67,6 +67,8 @@ if (await provider.isAvailable()) {
 }
 ```
 
+**Reproducible seeds (v2.5).** ComfyUI generation is deterministic. If you don't pass a `seed`, the provider derives one by hashing the generation inputs (prompt, negative prompt, size, steps, CFG), so the same request yields the same image every run — and the effective seed is always reported back on `result.seed` (never `undefined`). Pass an explicit `seed` to draw a different sample from otherwise-identical inputs.
+
 ### Build Prompts Manually
 
 ```typescript

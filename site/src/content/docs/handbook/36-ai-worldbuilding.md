@@ -73,9 +73,18 @@ cat errors.json | ai explain-validation-error
 cat lint.json   | ai explain-lint
 ```
 
-### Repair
+### Validate & Repair
 
-Commands that produce schema-validated content (`create-room`, `create-quest`) support `--repair`:
+Every `create-*` command validates its generated content against the engine schemas. What happens to an invalid draft depends on two flags.
+
+**`--validate` — refuse invalid output (all six `create-*` commands).** With `--validate`, content that fails schema validation is neither printed nor written: the command reports a structured `INVALID_CONTENT` error and exits `1`. Without it, the honest default stands — the draft is emitted with its validation warnings on stderr, and the engine validates strictly at load anyway.
+
+```bash
+ai create-district --theme "underground fungal caverns" --validate
+# exits 1 and writes nothing if the generated district fails schema validation
+```
+
+**`--repair` — attempt a fix (`create-room` and `create-quest` only).** These two commands can feed the validation errors back to the model for one correction pass:
 
 ```bash
 ai create-room --theme "haunted library" --repair
@@ -85,9 +94,11 @@ ai create-room --theme "haunted library" --repair
 The repair loop:
 1. Generate content from the theme
 2. Validate against the engine schema
-3. If invalid and `--repair` is set: feed validation errors back to the model
+3. If invalid and `--repair` is set: feed the validation errors back to the model
 4. Single correction pass — not an infinite retry loop
 5. Result includes a `repairNote` explaining what happened
+
+The flags compose: with both, a `create-room` / `create-quest` run attempts a repair first, then still refuses to emit if the result is invalid.
 
 ## Writing to Files
 
@@ -108,11 +119,13 @@ ai create-location-pack --theme "dwarven forge" --write content/locations/forge.
 | Command | Input | Output |
 |---------|-------|--------|
 | `create-room` | `--theme` | Room YAML (validated, repairable) |
-| `create-district` | `--theme` | District config YAML |
-| `create-faction` | `--theme` | Faction config YAML |
+| `create-district` | `--theme` | District config YAML (validated) |
+| `create-faction` | `--theme` | Faction config YAML (validated) |
 | `create-quest` | `--theme` | Quest YAML (validated, repairable) |
-| `create-location-pack` | `--theme` | District + rooms bundle |
-| `create-encounter-pack` | `--theme` | Room + entities + quest bundle |
+| `create-location-pack` | `--theme` | District + rooms bundle (validated) |
+| `create-encounter-pack` | `--theme` | Room + entities + quest bundle (validated) |
+
+All six `create-*` commands validate against the engine schemas and honor `--validate`. `--repair` (automatic single-pass fix) is available on `create-room` and `create-quest`.
 
 ### Diagnose Commands
 
@@ -132,7 +145,8 @@ ai create-location-pack --theme "dwarven forge" --write content/locations/forge.
 | `--theme <text>` | Theme for content generation |
 | `--model <name>` | Ollama model (default: `qwen2.5-coder`) |
 | `--url <url>` | Ollama base URL (default: `http://localhost:11434`) |
-| `--repair` | Attempt single-pass fix on validation failure |
+| `--validate` | Refuse to emit/write any `create-*` content that fails schema validation (exit 1) |
+| `--repair` | Attempt a single-pass fix on validation failure (`create-room`, `create-quest`) |
 | `--write <path>` | Write to file instead of stdout |
 | `--format <fmt>` | Output format: `plain`, `forensic`, `author` |
 | `--factions <ids>` | Comma-separated faction IDs for context |
