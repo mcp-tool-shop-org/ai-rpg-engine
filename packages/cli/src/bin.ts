@@ -21,6 +21,7 @@ import { buildCharacter } from './character-builder.js';
 import { runCreateStarter } from './create-starter.js';
 import { runValidate } from './validate.js';
 import { runScaffold } from './scaffold.js';
+import { runProfile } from './profile.js';
 
 const SAVE_DIR = '.ai-rpg-engine';
 const SAVE_FILE = path.join(SAVE_DIR, 'save.json');
@@ -34,6 +35,7 @@ function printHelp() {
   console.log('  run            Start a new game (default)');
   console.log('  validate       Validate a content pack JSON file (errors + advisories)');
   console.log('  scaffold       Write a minimal valid content stub (ability/zone/quest/status/dialogue)');
+  console.log('  profile        Validate a profile/profile-set JSON, or scaffold a starter profile');
   console.log('  create-starter Scaffold a new starter from template');
   console.log('  replay         Load a save and restore its state (--replay re-simulates the action log)');
   console.log('  inspect-save   Show save file summary');
@@ -116,7 +118,7 @@ async function main() {
   // the help flag is the leading token, the explicit `help` command is used, or
   // the command has no help of its own.
   const wantsHelp = args.includes('--help') || args.includes('-h') || command === 'help';
-  const COMMANDS_WITH_OWN_HELP = new Set(['create-starter', 'validate', 'scaffold']);
+  const COMMANDS_WITH_OWN_HELP = new Set(['create-starter', 'validate', 'scaffold', 'profile']);
   if (wantsHelp && !COMMANDS_WITH_OWN_HELP.has(command)) {
     printHelp();
     closeReadline();
@@ -138,6 +140,14 @@ async function main() {
       runScaffold(args.slice(1));
       closeReadline();
       return;
+    case 'profile': {
+      // runProfile returns the exit code (0 ok / 1 errors-or-usage) rather than
+      // exiting itself, so it stays unit-testable. The bin turns it into the process code.
+      const code = runProfile(args.slice(1));
+      closeReadline();
+      if (code !== 0) process.exit(code);
+      return;
+    }
     case 'create-starter':
       runCreateStarter(args.slice(1));
       closeReadline();

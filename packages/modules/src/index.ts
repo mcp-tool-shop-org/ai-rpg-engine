@@ -742,6 +742,7 @@ export {
   getAbilityCooldown,
   isAbilityReady,
   getAvailableAbilities,
+  registerProfileAbilities,
 } from './ability-core.js';
 export type {
   AbilityStatMapping,
@@ -885,3 +886,22 @@ export type { Affiliation, TargetSelector } from './targeting.js';
 // --- Profile System (Phase 1: schema + validation + per-entity AI driver) ---
 export { buildProfile, validateProfileSet, selectActionForProfile } from './profile.js';
 export type { Profile, ProfileConfig, BuildProfileResult, ProfileSetResult } from './profile.js';
+
+// --- Profile Loader (Phase 2: runtime application — attaches a profile to an entity) ---
+export { applyProfile } from './profile-loader.js';
+
+// --- Profile Templates (Phase 2: the 10 starter playstyles as reusable bundles) ---
+export {
+  starterProfiles,
+  starterProfileList,
+  gladiatorProfile,
+  detectiveProfile,
+  colonyProfile,
+  cyberpunkProfile,
+  pirateProfile,
+  vampireProfile,
+  roninProfile,
+  weirdWestProfile,
+  zombieProfile,
+  fantasyProfile,
+} from './profile-templates.js';

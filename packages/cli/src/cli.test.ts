@@ -167,3 +167,48 @@ describe('CLI validate + scaffold (content-dx)', () => {
     expect(r.stdout + r.stderr).not.toMatch(/Unknown command/);
   });
 });
+
+// prod-readiness — end-to-end through the real binary: `profile validate` +
+// `profile scaffold` wired into bin.ts, and the scaffolded stub passing validate
+// (the same round-trip contract the content scaffold pins above).
+describe('CLI profile (entity profiles)', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-cli-profile-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('profile scaffold writes a stub that then passes profile validate (round-trip through the binary)', () => {
+    const file = path.join(tmpDir, 'mystic.profile.json');
+    const scaffoldRes = runResult('profile', 'scaffold', 'mystic', `--out=${file}`);
+    expect(scaffoldRes.code).toBe(0);
+    expect(fs.existsSync(file)).toBe(true);
+
+    const validateRes = runResult('profile', 'validate', file);
+    expect(validateRes.code).toBe(0);
+    expect(validateRes.stdout).toMatch(/valid/i);
+  });
+
+  it('profile validate exits nonzero with a structured error on a non-profile file', () => {
+    const file = path.join(tmpDir, 'not-a-profile.json');
+    fs.writeFileSync(file, JSON.stringify({ zones: [] }), 'utf-8');
+    const r = runResult('profile', 'validate', file);
+    expect(r.code).not.toBe(0);
+    expect(r.stdout + r.stderr).toContain('PROFILE_SHAPE_INVALID');
+  });
+
+  it('profile --help shows its own help, not the top-level list (CLI-011)', () => {
+    const out = run('profile', '--help');
+    expect(out).toContain('profile validate <file.json>');
+    expect(out).not.toContain('inspect-save');
+  });
+
+  it('top-level --help lists the profile command', () => {
+    const out = run('--help');
+    expect(out).toContain('profile');
+  });
+});

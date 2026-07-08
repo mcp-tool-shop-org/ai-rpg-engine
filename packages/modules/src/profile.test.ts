@@ -278,6 +278,66 @@ describe('Profile System Phase 1', () => {
       const joined = [...result.errors, ...result.advisories].map((e) => e.message).join('\n');
       expect(joined).toContain('beast');
     });
+
+    it('flags a DUPLICATE profile id as an ERROR (the masking hazard)', () => {
+      // Two DIFFERENT profiles share the id 'warrior'. Registering both would key
+      // WorldState.ruleProfiles['warrior'] twice — one silently overwrites the
+      // other. This is the one true correctness hole the linter previously missed.
+      const a = buildProfile(warriorConfig()).profile;          // id 'warrior'
+      const bDup = { ...buildProfile(casterConfig()).profile, id: 'warrior' };
+
+      const result = validateProfileSet([a, bDup]);
+
+      expect(result.ok).toBe(false);
+      const dupIdError = result.errors.find((e) => e.path.startsWith('ProfileSet.id.'));
+      expect(dupIdError).toBeDefined();
+      expect(dupIdError!.message).toContain('warrior');
+      expect(dupIdError!.message.toLowerCase()).toContain('unique');
+    });
+
+    it('flags a name used as a STAT in one profile and a RESOURCE in another (advisory)', () => {
+      // Profile A maps resolve→'focus'; Profile B declares 'focus' as a resource.
+      const a = buildProfile({
+        id: 'a', name: 'A',
+        statMapping: { attack: 'grit', precision: 'edge', resolve: 'focus' },
+        abilities: [],
+      }).profile;
+      const b = buildProfile({
+        id: 'b', name: 'B',
+        statMapping: { attack: 'might', precision: 'agility', resolve: 'nerve' },
+        abilities: [],
+        resourceProfile: {
+          packId: 'b', gains: [], spends: [], drains: [], aiModifiers: [],
+          resourceCaps: { focus: 20 },
+        },
+      }).profile;
+
+      const result = validateProfileSet([a, b]);
+
+      const adv = result.advisories.find((x) => x.path === 'ProfileSet.namespace.focus');
+      expect(adv).toBeDefined();
+      expect(adv!.message).toContain('focus');
+    });
+
+    it('flags an engagement tag that is backline in one profile and protector in another (advisory)', () => {
+      const a = buildProfile({
+        id: 'a', name: 'A',
+        statMapping: { attack: 'grit', precision: 'edge', resolve: 'nerve' },
+        abilities: [],
+        engagement: { backlineTags: ['mystic'] },
+      }).profile;
+      const b = buildProfile({
+        id: 'b', name: 'B',
+        statMapping: { attack: 'might', precision: 'agility', resolve: 'will' },
+        abilities: [],
+        engagement: { protectorTags: ['mystic'] },
+      }).profile;
+
+      const result = validateProfileSet([a, b]);
+
+      const adv = result.advisories.find((x) => x.path === 'ProfileSet.engagement.mystic');
+      expect(adv).toBeDefined();
+    });
   });
 
   describe('selectActionForProfile', () => {

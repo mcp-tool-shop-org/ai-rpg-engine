@@ -191,11 +191,24 @@ export function buildProfile(config: ProfileConfig): BuildProfileResult {
 // validateProfileSet
 // ---------------------------------------------------------------------------
 
+/** Get-or-create an owner set and record `owner` under `key` (stable-scan helper). */
+function addOwner(map: Map<string, Set<string>>, key: string, owner: string): void {
+  let owners = map.get(key);
+  if (!owners) {
+    owners = new Set<string>();
+    map.set(key, owners);
+  }
+  owners.add(owner);
+}
+
 /**
  * Cross-profile linter. Composes existing primitives + small stable scans to
  * catch mistakes that only appear when profiles are used together:
  *
  *  ERRORS (hard — break a shared world):
+ *   - duplicate profile id (an id keys WorldState.ruleProfiles; a duplicate
+ *     silently overwrites one profile's rule data with another's AND masks the
+ *     ability/stat owner scans below, which dedupe on profile.id)
  *   - duplicate ability id across two profiles (an id must resolve to ONE
  *     definition; two profiles claiming the same id is ambiguous)
  *   - resource-id collision with conflicting caps (the same resource declared
@@ -206,12 +219,36 @@ export function buildProfile(config: ProfileConfig): BuildProfileResult {
  *     `resolve→grit`; the name means two different combat dimensions)
  *   - contradictory pack biases (same tag pushed in opposite directions for the
  *     same intent across profiles)
+ *   - stat/resource namespace collision (a name used as a combat STAT in one
+ *     profile and a RESOURCE id in another — one key, two mechanical meanings)
+ *   - engagement positioning conflict (a tag flagged BACKLINE by one profile and
+ *     PROTECTOR by another — contradictory positioning for the same tag)
  *
  * Every scan sorts by a stable key so the report is byte-identical across runs.
  */
 export function validateProfileSet(profiles: Profile[]): ProfileSetResult {
   const errors: ValidationError[] = [];
   const advisories: ValidationError[] = [];
+
+  // --- Duplicate profile ids (ERROR) ---
+  // The keystone correctness check: a profile id keys WorldState.ruleProfiles, so
+  // two profiles sharing an id means one silently OVERWRITES the other when
+  // applied. Worse, the owner-by-id scans below dedupe on profile.id, so a
+  // duplicate id can MASK a real ability or stat collision between the two.
+  // Flagged first, as a hard error.
+  const idCounts = new Map<string, number>();
+  for (const profile of profiles) {
+    idCounts.set(profile.id, (idCounts.get(profile.id) ?? 0) + 1);
+  }
+  for (const id of [...idCounts.keys()].sort()) {
+    const count = idCounts.get(id)!;
+    if (count > 1) {
+      errors.push({
+        path: `ProfileSet.id.${id}`,
+        message: `profile id "${id}" is declared by ${count} profiles — profile ids must be unique (an id keys WorldState.ruleProfiles; a duplicate silently overwrites and can mask other collisions)`,
+      });
+    }
+  }
 
   // --- Duplicate ability ids across profiles ---
   // abilityId -> sorted list of owning profile ids
@@ -344,6 +381,61 @@ export function validateProfileSet(profiles: Profile[]): ProfileSetResult {
           message: `pack bias tag "${tag}" pushes "${intent}" in opposite directions: + by (${pos}) vs - by (${neg})`,
         });
       }
+    }
+  }
+
+  // --- Stat-name / resource-id namespace collision (advisory) ---
+  // A name used as a combat STAT by one profile and as a RESOURCE id by another
+  // is ambiguous in a shared world: one key, two mechanical meanings. Collect the
+  // owners of each namespace, then report names that appear in both.
+  const statNameOwners = new Map<string, Set<string>>();
+  const resourceNameOwners = new Map<string, Set<string>>();
+  for (const profile of profiles) {
+    for (const role of ROLES) {
+      addOwner(statNameOwners, profile.statMapping[role], profile.id);
+    }
+    const rp = profile.resourceProfile;
+    if (rp) {
+      for (const g of rp.gains) addOwner(resourceNameOwners, g.resourceId, profile.id);
+      for (const s of rp.spends) addOwner(resourceNameOwners, s.resourceId, profile.id);
+      for (const d of rp.drains) addOwner(resourceNameOwners, d.resourceId, profile.id);
+      for (const m of rp.aiModifiers) addOwner(resourceNameOwners, m.resourceId, profile.id);
+      if (rp.resourceCaps) {
+        for (const id of Object.keys(rp.resourceCaps)) addOwner(resourceNameOwners, id, profile.id);
+      }
+    }
+  }
+  for (const name of [...statNameOwners.keys()].sort()) {
+    if (resourceNameOwners.has(name)) {
+      const statOwners = [...statNameOwners.get(name)!].sort().join(', ');
+      const resOwners = [...resourceNameOwners.get(name)!].sort().join(', ');
+      advisories.push({
+        path: `ProfileSet.namespace.${name}`,
+        message: `"${name}" is used as a combat stat by (${statOwners}) and as a resource by (${resOwners}) — one name, two mechanical meanings in a shared world`,
+      });
+    }
+  }
+
+  // --- Engagement positioning conflict (advisory) ---
+  // A tag flagged BACKLINE (keep this entity back) by one profile and PROTECTOR
+  // (this entity front-lines to shield allies) by another is contradictory
+  // positioning for the same tag across a shared world.
+  const backlineOwners = new Map<string, Set<string>>();
+  const protectorOwners = new Map<string, Set<string>>();
+  for (const profile of profiles) {
+    const eng = profile.engagement;
+    if (!eng) continue;
+    for (const tag of eng.backlineTags ?? []) addOwner(backlineOwners, tag, profile.id);
+    for (const tag of eng.protectorTags ?? []) addOwner(protectorOwners, tag, profile.id);
+  }
+  for (const tag of [...backlineOwners.keys()].sort()) {
+    if (protectorOwners.has(tag)) {
+      const back = [...backlineOwners.get(tag)!].sort().join(', ');
+      const prot = [...protectorOwners.get(tag)!].sort().join(', ');
+      advisories.push({
+        path: `ProfileSet.engagement.${tag}`,
+        message: `engagement tag "${tag}" is backline for (${back}) but protector for (${prot}) — contradictory positioning across profiles`,
+      });
     }
   }
 

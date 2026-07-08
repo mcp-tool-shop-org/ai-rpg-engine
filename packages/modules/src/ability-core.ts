@@ -55,6 +55,19 @@ export type AbilityUseState = Record<string, Record<string, number>>;
 export type AbilityModuleState = {
   cooldowns: AbilityCooldownState;
   useCounts: AbilityUseState;
+  /**
+   * Abilities registered at RUNTIME by a per-entity Profile (see applyProfile /
+   * registerProfileAbilities — Profile System Part B). Abilities are otherwise
+   * frozen into `createAbilityCore`'s closure at construction; this lets a
+   * profile add abilities the base pack never declared and have the entity
+   * actually resolve them through `use-ability`.
+   *
+   * Optional + lazy: the persistence default never sets it, so a world that
+   * never applies a profile keeps this key ABSENT and serializes byte-identically
+   * to before. Pure data — AbilityDefinition carries no closures, so it round-
+   * trips through save/load with the rest of world state.
+   */
+  registered?: Record<string, AbilityDefinition>;
 };
 
 /** Result of a stat check */
@@ -276,6 +289,47 @@ function incrementUseCount(
 }
 
 // ---------------------------------------------------------------------------
+// Profile ability registration (Profile System Part B)
+// ---------------------------------------------------------------------------
+
+/**
+ * Register a Profile's abilities into world state so the `use-ability` verb can
+ * RESOLVE them at runtime — the ability half of {@link applyProfile}.
+ *
+ * Why this exists: abilities are frozen into `createAbilityCore`'s closure at
+ * construction, so a per-entity Profile can SCORE its abilities (the pure
+ * advisor is handed `profile.abilities` directly) but could not EXECUTE them.
+ * This stores them under `AbilityModuleState.registered`, which the handler
+ * consults as a fallback AFTER the frozen pack.
+ *
+ * Contract:
+ *  - Base-pack ids always win (checked first in the handler) — profile abilities
+ *    that collide with a base id are shadowed. Cross-PROFILE id collisions are
+ *    caught upstream by validateProfileSet (ERROR).
+ *  - Deterministic + idempotent: re-registering overwrites the same keys with
+ *    equal data; no ids / Date.now / Math.random. An empty list is a no-op and
+ *    leaves `registered` absent (preserving the byte-identical default shape).
+ *  - Pure data: AbilityDefinition has no closures, so registered abilities ride
+ *    save/load with the rest of world state.
+ */
+export function registerProfileAbilities(
+  world: WorldState,
+  abilities: AbilityDefinition[],
+): void {
+  if (abilities.length === 0) return;
+  const state = getModuleState(world);
+  const registered = state.registered ?? {};
+  for (const ability of abilities) {
+    registered[ability.id] = ability;
+  }
+  state.registered = registered;
+  // getModuleState() synthesizes a fresh default when the ability-core namespace
+  // was never initialized (e.g. a pure-WorldState harness with no engine); write
+  // it back so the registry actually lands on the world instead of the throwaway.
+  world.modules['ability-core'] = state;
+}
+
+// ---------------------------------------------------------------------------
 // Stat checks
 // ---------------------------------------------------------------------------
 
@@ -429,7 +483,12 @@ function useAbilityHandler(
     return [makeEvent(action, 'action.rejected', { reason: 'no abilityId specified' })];
   }
 
-  const ability = abilityMap.get(abilityId);
+  // The construction-frozen pack wins; a Profile-registered ability
+  // (applyProfile / registerProfileAbilities) resolves ONLY as a fallback. So
+  // every id the base pack defines behaves exactly as before, and a world that
+  // never registered a profile ability sees the same 'not found' rejection —
+  // byte-identical. The new path only resolves ids the base pack lacks.
+  const ability = abilityMap.get(abilityId) ?? getModuleState(world).registered?.[abilityId];
   if (!ability) {
     return [makeEvent(action, 'action.rejected', { reason: `ability ${abilityId} not found` })];
   }

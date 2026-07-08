@@ -51,19 +51,30 @@ jobs:
           cache: npm
 
       - run: npm ci
-      # Audit is non-blocking: the only current high/critical advisories are in
-      # dev-only tooling (vitest / @vitest/coverage-v8, GHSA-5xrq-8626-4rwp).
-      # That advisory only triggers when the Vitest UI server is listening; CI
-      # runs `vitest run` (no UI), so it is not exploitable here. The fix is a
-      # breaking vitest 3->4 major bump, deferred to a dedicated upgrade. Keep
-      # `|| true` until that lands, then make audit gate again.
-      - run: npm audit --audit-level=high || true
+      # Audit GATES on high/critical advisories in production deps (--omit=dev):
+      # a real advisory in a shipped dependency now fails CI. Dev-only tooling is
+      # excluded because the sole current high advisory (vitest /
+      # @vitest/coverage-v8, GHSA-5xrq-8626-4rwp) only triggers when the Vitest
+      # UI server is listening — CI runs `vitest run` (no UI), so it is not
+      # exploitable here, and gating it would force a breaking vitest 3->4 major
+      # bump for zero consumer risk. Drop `--omit=dev` (audit the full tree)
+      # when that bump lands.
+      - run: npm audit --audit-level=high --omit=dev
       - run: npm run lint
       - run: npm run build
       # Doc examples (docs/examples/*.ts) are compiled against the just-built
       # packages so README/handbook "runnable" snippets cannot drift from the API.
       - name: Typecheck doc examples
         run: npx tsc -p docs/examples/tsconfig.json --noEmit
+      # Doc examples are also BEHAVIOR-tested (examples.test.ts), but the root
+      # vitest config only includes packages/*, templates/*, and scripts/* — the
+      # examples' tests run solely via their dedicated config. Executing them
+      # here (after the build, so they resolve the just-built packages) makes the
+      # README's "type-checked + behavior-tested" claim enforced in CI rather
+      # than local-only. One leg only — the tests are node-version independent.
+      - name: Behavior-test doc examples
+        if: matrix.node-version == 22
+        run: npx vitest run --config docs/examples/vitest.config.ts
       # Packaging gate (PG-5): every publishable workspace's `npm pack` tarball
       # must contain LICENSE + README.md. npm silently drops `files` entries
       # that don't exist on disk, so only inspecting the dry-run file list
