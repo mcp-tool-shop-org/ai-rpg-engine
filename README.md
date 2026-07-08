@@ -85,7 +85,7 @@ engine.submitAction('attack', { targetIds: ['skeleton-1'] });
 engine.submitActionAs('guard-captain', 'attack', { targetIds: ['player'] });
 ```
 
-See the [Composition Guide](docs/handbook/57-composition-guide.md) for the full workflow, or scaffold a new starter:
+See the [Composition Guide](site/src/content/docs/handbook/57-composition-guide.md) for the full workflow, or scaffold a new starter:
 
 ```bash
 npx @ai-rpg-engine/cli create-starter my-game
@@ -110,7 +110,7 @@ Five actions (attack, guard, disengage, brace, reposition), four combat states (
 
 AI opponents use unified decision scoring — combat actions and abilities compete in a single evaluation, with configurable thresholds to prevent marginal ability spam.
 
-Pack authors use `buildCombatStack()` to wire combat from a stat mapping, resource profile, and bias tags. See the [Combat Overview](docs/handbook/49a-combat-overview.md) and [Pack Author Guide](docs/handbook/55-combat-pack-guide.md).
+Pack authors use `buildCombatStack()` to wire combat from a stat mapping, resource profile, and bias tags. See the [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) and [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md).
 
 ---
 
@@ -182,9 +182,9 @@ The 10 starter worlds are **composition examples** — they demonstrate how to c
 | [Create Your Own Starter](site/src/content/docs/handbook/58-create-your-own-starter.md) | Scaffold a new game — CLI or manual template route |
 | [Composition Guide](site/src/content/docs/handbook/57-composition-guide.md) | Build your own game by composing engine modules |
 | [Plug-in Profiles](site/src/content/docs/handbook/59-plugin-profiles.md) | Per-entity rule resolution — mixed-playstyle combat, `applyProfile`, profile templates, the `profile` CLI |
-| [Combat Overview](docs/handbook/49a-combat-overview.md) | Six combat pillars, five actions, states at a glance |
-| [Pack Author Guide](docs/handbook/55-combat-pack-guide.md) | Step-by-step buildCombatStack, stat mapping, resource profiles |
-| [Handbook](docs/handbook/index.md) | Comprehensive handbook — every system, plus 4 appendices |
+| [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) | Six combat pillars, five actions, states at a glance |
+| [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | Step-by-step buildCombatStack, stat mapping, resource profiles |
+| [Handbook](site/src/content/docs/handbook/index.md) | Comprehensive handbook — every system, plus 4 appendices |
 | [Composition Model](docs/composition-model.md) | The 6 reusable layers and how they compose |
 | [Examples](docs/examples/) | Runnable TypeScript examples (type-checked + behavior-tested in CI) — per-entity mixed party, shared profiles, cross-world, from scratch |
 | [Design Document](docs/DESIGN.md) | Architecture deep-dive — action pipeline, truth vs presentation |

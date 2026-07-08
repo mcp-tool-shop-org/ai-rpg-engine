@@ -109,9 +109,24 @@ Formats: `plain` (default), `forensic` (step-by-step with tick numbers), `author
 
 ---
 
-## Repair Loop
+## Validation & Repair
 
-Commands that produce schema-validated content (`create-room`, `create-quest`) support `--repair`:
+Every `create-*` command validates its generated content against the engine schemas. Two flags control what happens to an invalid draft.
+
+### `--validate` — refuse invalid output (all six `create-*` commands)
+
+With `--validate`, content that fails schema validation is neither printed nor written. The command reports a structured `INVALID_CONTENT` error (the failing paths + messages) and exits `1`:
+
+```bash
+ai create-district --theme "underground fungal caverns" --validate
+# exits 1 and emits nothing if the district fails schema validation
+```
+
+Without `--validate`, the honest default stands: the draft is emitted with its validation warnings on stderr, and the engine validates strictly at load anyway.
+
+### `--repair` — attempt a fix (`create-room` and `create-quest` only)
+
+`create-room` and `create-quest` can feed validation errors back to the model for one correction pass:
 
 1. First pass: generate content from the theme
 2. Validate against the engine schema
@@ -125,6 +140,8 @@ What you'll see on stderr:
 - `Repaired: 3 validation error(s) fixed.` — repair succeeded
 - `Repair attempted: 3 original error(s), 1 remaining.` — partial repair
 - `Generated on first pass (has validation warnings).` — valid enough but not perfect
+
+`--validate` and `--repair` compose: with both, `create-room` / `create-quest` attempts a repair first, then still refuses to emit if the result is invalid.
 
 ---
 
@@ -183,6 +200,23 @@ Environment variables:
 | `AI_RPG_ENGINE_OLLAMA_MODEL` | `qwen2.5-coder` |
 | `AI_RPG_ENGINE_OLLAMA_TIMEOUT_MS` | `30000` |
 
+## Retries (v2.5)
+
+Each generation retries on failure. Two `OllamaConfig` fields tune the loop — programmatic overrides via `resolveConfig`, not environment variables:
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `maxAttempts` | `3` | Total request attempts per `generate()` call, including the first (`1` = no retry) |
+| `retryDelayMs` | `1000` | Fixed delay between attempts, in milliseconds (`0` = retry immediately) |
+
+```typescript
+import { resolveConfig, createClient } from '@ai-rpg-engine/ollama';
+
+const client = createClient(resolveConfig({ maxAttempts: 5, retryDelayMs: 500 }));
+```
+
+Both are clamped to sane values: a non-finite or sub-1 `maxAttempts`, or a negative `retryDelayMs`, falls back to the default.
+
 ---
 
 ## Command Reference
@@ -190,12 +224,14 @@ Environment variables:
 ### Scaffold
 | Command | Input | Output |
 |---------|-------|--------|
-| `create-room` | `--theme` | Room YAML (validated) |
-| `create-faction` | `--theme` | Faction config YAML |
-| `create-quest` | `--theme` | Quest YAML (validated) |
-| `create-district` | `--theme` | District config YAML |
-| `create-location-pack` | `--theme` | District + rooms YAML |
-| `create-encounter-pack` | `--theme` | Room + entities + quest YAML |
+| `create-room` | `--theme` | Room YAML (validated, repairable) |
+| `create-faction` | `--theme` | Faction config YAML (validated) |
+| `create-quest` | `--theme` | Quest YAML (validated, repairable) |
+| `create-district` | `--theme` | District config YAML (validated) |
+| `create-location-pack` | `--theme` | District + rooms YAML (validated) |
+| `create-encounter-pack` | `--theme` | Room + entities + quest YAML (validated) |
+
+All six `create-*` commands validate against the engine schemas and honor `--validate`.
 
 ### Diagnose
 | Command | Input | Output |
@@ -207,11 +243,11 @@ Environment variables:
 | `explain-faction-alert` | JSON (stdin) | Alert explanation |
 | `summarize-belief-trace` | JSON (stdin) | Trace summary |
 
-### Repair
-| Command | Flag | Behavior |
-|---------|------|----------|
-| `create-room` | `--repair` | Single repair pass on validation failure |
-| `create-quest` | `--repair` | Single repair pass on validation failure |
+### Validate & Repair
+| Flag | Commands | Behavior |
+|------|----------|----------|
+| `--validate` | all six `create-*` | Refuse to emit/write content that fails schema validation (exit 1) |
+| `--repair` | `create-room`, `create-quest` | Single automatic repair pass on validation failure |
 
 ---
 
