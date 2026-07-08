@@ -81,6 +81,8 @@ A guide to building simulation-driven terminal RPGs.
 
 42. [Quest Webs & Emergent Opportunities](./42-quest-webs.md)
 57. [Composition Guide](./57-composition-guide.md) — Build your own game by composing engine modules
+58. [Create Your Own Starter](./58-create-your-own-starter.md) — Scaffold a new game from the CLI or template
+59. [Plug-in Profiles](./59-plugin-profiles.md) — Per-entity rule resolution: a might fighter and a will mystic in one fight
 
 ## Appendix
 

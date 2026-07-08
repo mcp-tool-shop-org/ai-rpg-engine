@@ -4,7 +4,7 @@
 > This is an audit snapshot — scores reflect the gate results at the date below, not a live readout.
 
 **Repo:** mcp-tool-shop-org/ai-rpg-engine
-**Date:** 2026-06-02 (snapshot; original audit 2026-03-06 at v1.0.0)
+**Date:** 2026-07-08 (v2.5.0 dogfood swarm; snapshot — original audit 2026-03-06 at v1.0.0). The v2.5 swarm also made the quality gates real: pack rubric on the live catalog, docs-integrity vs the latest tag, coverage ratchet, and a LICENSE packaging gate that blocks publish (each with a mutation meta-test).
 **Type tags:** `[npm]` `[library]`
 
 ## Pre-Remediation Assessment

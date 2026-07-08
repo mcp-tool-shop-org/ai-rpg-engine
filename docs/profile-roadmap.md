@@ -1,8 +1,12 @@
 # Profile Roadmap
 
-> **Status note (superseded in part):** this is the original vision doc. **Profile Phase 1 shipped in v2.4** (`Profile` type, `buildProfile()`, `validateProfileSet()`, `selectActionForProfile()`). The authoritative, research-grounded design for the remaining per-entity combat *resolution* work (CR-1) now lives in [`feature-architecture.md`](feature-architecture.md) — read that for the current plan; this doc is kept for the "why profiles" framing.
+> **Status note (largely shipped):** this is the original vision doc, kept for the "why profiles" framing. Most of what it describes as future work has since shipped:
+> - **v2.4** — Profile Phase 1: the `Profile` type, `buildProfile()`, `validateProfileSet()`, `selectActionForProfile()`.
+> - **v2.5** — Phase 2 (the `applyProfile()` loader) and **CR-1 per-entity combat resolution**: `RuleProfile` + `WorldState.ruleProfiles` + `EntityState.ruleProfileId`, per-entity abilities, the 10 starter templates (`starterProfiles`), and the `profile` CLI. A `might` fighter and a `will` mystic now resolve combat in one fight, each through its own stat mapping.
+>
+> For the shipped feature, read **[Handbook Chapter 59 — Plug-in Profiles](handbook/59-plugin-profiles.md)**. The research-grounded CR-1 design record lives in [`feature-architecture.md`](feature-architecture.md). What remains is multiplayer (two *human* players sharing one world — a networking layer) and serializable per-profile formula overrides.
 
-This document describes the **plug-in profile** system — the engine's destination feature. It was written before any of it existed; the framing below still holds, but see the status note above for what has since shipped.
+This document describes the **plug-in profile** system as it was first envisioned, before any of it existed. The framing below still holds; see the status note above (and Chapter 59) for what has since shipped.
 
 ---
 
