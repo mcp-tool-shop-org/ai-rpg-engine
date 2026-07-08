@@ -284,6 +284,14 @@ export class Engine {
     );
     (engine as { store: WorldStore }).store = restored;
 
+    // The module contexts' event-emit path (ctx.events.emit -> store.recordEvent)
+    // captured the throwaway store during construction above; rebind it to the
+    // restored store so post-load reactive emits (status reflect/DoT, cognition,
+    // defeat cascades) land in the live eventLog with the live idCounter instead
+    // of the orphaned construction store (v2.5 PC-1). The EventBus reuse
+    // (core-004) already preserved the subscribe side; this fixes the emit side.
+    engine.moduleManager.rebindStore(restored);
+
     // Restore the action log so getActionLog()/serialize() round-trip.
     engine.actionLog = data.actionLog ? [...data.actionLog] : [];
 
