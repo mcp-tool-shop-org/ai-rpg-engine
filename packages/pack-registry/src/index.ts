@@ -5,6 +5,7 @@ export type {
   PackDifficulty,
   PackTone,
   PackMetadata,
+  PackDistrictInfo,
   PackEntry,
   PackSummary,
   PackFilter,

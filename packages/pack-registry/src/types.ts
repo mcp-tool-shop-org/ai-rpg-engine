@@ -66,12 +66,31 @@ export type PackMetadata = {
   narratorTone: string;
 };
 
+// --- District topology (rubric inspection surface) ---
+
+/**
+ * Structural subset of the modules package's DistrictDefinition — just the
+ * fields the faction-topology rubric dimension inspects. Declared locally so
+ * pack-registry does not need a dependency on @ai-rpg-engine/modules; a real
+ * DistrictDefinition is directly assignable to this shape.
+ */
+export type PackDistrictInfo = {
+  id: string;
+  controllingFaction?: string;
+};
+
 // --- Pack Entry (registry-internal) ---
 
 export type PackEntry = {
   meta: PackMetadata;
   manifest: GameManifest;
   ruleset: RulesetDefinition;
+  /**
+   * District topology declared by the pack (id + controllingFaction per
+   * district). Inspected by the `distinct-faction-topology` rubric dimension:
+   * a pack with no faction-controlled district fails that dimension.
+   */
+  districts?: PackDistrictInfo[];
   createGame: (seed?: number) => Engine;
 };
 

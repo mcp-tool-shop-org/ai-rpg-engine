@@ -31,7 +31,7 @@ import {
   scaffoldAndCritique, compareAndFix, planAndGenerate,
   type MacroProgress, type ScaffoldKind,
 } from './macros.js';
-import { generatePreview, applyConfirmed } from './apply-preview.js';
+import { generatePreview, applyConfirmed, withinRoot } from './apply-preview.js';
 import {
   loadSession, saveSession, deleteSession, createSession,
   addThemes, addConstraints, addArtifact, addCritiqueIssues,
@@ -130,9 +130,26 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString('utf-8');
 }
 
-async function emit(text: string, writePath: string | undefined): Promise<void> {
+/**
+ * Emit command output — stdout by default, or to a file with `--write`.
+ *
+ * The `--write` branch lands AI-generated output on disk, so it obeys the same
+ * project-root sandbox as apply-preview/applyConfirmed (v2.5 audit A2): a
+ * target that escapes `projectRoot` is rejected with a structured error and
+ * exit code 1, and nothing is written. Exported for tests.
+ */
+export async function emit(
+  text: string,
+  writePath: string | undefined,
+  projectRoot: string = process.cwd(),
+): Promise<void> {
   if (writePath) {
     const resolved = resolve(writePath);
+    if (!withinRoot(resolved, projectRoot)) {
+      console.error(`Error: --write target escapes the project root (${resolved})`);
+      console.error(`Writes are sandboxed to ${resolve(projectRoot)}. Choose a path inside the project.`);
+      process.exit(1);
+    }
     await mkdir(dirname(resolved), { recursive: true });
     await writeFile(resolved, text, 'utf-8');
     console.error(`Wrote ${resolved}`);
@@ -1258,7 +1275,7 @@ export async function runCli(args: string[]): Promise<void> {
       console.log('  --confirm            Confirm apply-preview (actually write the file)');
       console.log('  --kind <type>        Scaffold kind: room, faction, district, location-pack, encounter-pack');
       console.log('  --auto-execute <n>   Plan-and-generate: steps to auto-execute (1-3, default 1)');
-      console.log('  --write <path>       Write output to file instead of stdout');
+      console.log('  --write <path>       Write output to file instead of stdout (sandboxed to the project root)');
       console.log('  --format <fmt>       Output format: plain, forensic, author');
       console.log('  --stdin              Read input from stdin');
       break;

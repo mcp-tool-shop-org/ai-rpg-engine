@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { MemoryAssetStore } from '@ai-rpg-engine/asset-registry';
 import { PlaceholderProvider } from './placeholder-provider.js';
-import { generatePortrait, ensurePortrait, resolveProvider } from './pipeline.js';
-import type { PortraitRequest, ImageProvider, GenerationResult, GenerationOptions } from './types.js';
+import { generatePortrait, ensurePortrait, resolveProvider, ImageGenError } from './pipeline.js';
+import type { PortraitRequest, ImageProvider, GenerationOutcome, GenerationOptions } from './types.js';
 
 const testRequest: PortraitRequest = {
   characterName: 'Aldric',
@@ -132,9 +132,10 @@ describe('resolveProvider (IMG-001)', () => {
     async isAvailable(): Promise<boolean> {
       return this.available;
     }
-    async generate(prompt: string, opts?: GenerationOptions): Promise<GenerationResult> {
+    async generate(prompt: string, opts?: GenerationOptions): Promise<GenerationOutcome> {
       this.onGenerate?.();
       return {
+        ok: true,
         image: new TextEncoder().encode('stub'),
         mimeType: 'image/png',
         width: opts?.width ?? 512,
@@ -181,7 +182,7 @@ describe('resolveProvider (IMG-001)', () => {
   it('lets an offline provider degrade to a real placeholder portrait end-to-end', async () => {
     const store = new MemoryAssetStore();
     let offlineCalled = false;
-    // Offline ComfyUI: generate() would throw 'fetch failed' if ever reached.
+    // Offline ComfyUI: generate() would report a typed failure if ever reached.
     const offline = new StubProvider('comfyui', false, () => {
       offlineCalled = true;
     });
@@ -192,5 +193,37 @@ describe('resolveProvider (IMG-001)', () => {
     expect(meta.kind).toBe('portrait');
     expect(meta.mimeType).toBe('image/svg+xml'); // placeholder, not the offline provider
     expect(offlineCalled).toBe(false);
+  });
+});
+
+// A1 seam: when a provider resolves {ok:false} (the new GenerationOutcome
+// contract), the pipeline must surface it as ONE named error type carrying the
+// stable code + hint — never a raw fetch error, never a silent store write.
+describe('generatePortrait — typed failure propagation (A1)', () => {
+  it('throws ImageGenError with the provider code/hint and stores nothing', async () => {
+    const failing: ImageProvider = {
+      name: 'failing-comfyui',
+      async isAvailable() {
+        return true;
+      },
+      async generate() {
+        return {
+          ok: false,
+          code: 'timeout',
+          error: 'ComfyUI request timed out after 5ms',
+          hint: 'raise timeoutMs',
+        };
+      },
+    };
+    const store = new MemoryAssetStore();
+
+    await expect(generatePortrait(testRequest, failing, store)).rejects.toMatchObject({
+      name: 'ImageGenError',
+      code: 'timeout',
+      hint: 'raise timeoutMs',
+      message: 'ComfyUI request timed out after 5ms',
+    });
+    await expect(generatePortrait(testRequest, failing, store)).rejects.toBeInstanceOf(ImageGenError);
+    expect(await store.count()).toBe(0); // no partial asset landed
   });
 });

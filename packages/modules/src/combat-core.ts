@@ -10,6 +10,7 @@ import type {
 import { applyStatus, removeStatus, hasStatus } from './status-core.js';
 import { makeEvent } from './make-event.js';
 import { effectiveStat } from './status-effects.js';
+import { affiliationOf } from './targeting.js';
 
 /** Maps generic combat roles to starter-specific stat names */
 export type CombatStatMapping = {
@@ -450,8 +451,10 @@ function selectBestExit(neighbors: string[], world: WorldState, actor: EntitySta
     const nEntities = Object.values(world.entities).filter(
       e => e.zoneId === nid && (e.resources.hp ?? 0) > 0,
     );
-    if (nEntities.some(e => e.type === actor.type)) score += 5;
-    if (!nEntities.some(e => e.type !== actor.type)) score += 5;
+    // Friend/foe via the faction predicate (M3 family): flee toward allies —
+    // a same-faction, different-`type` companion counts as an ally.
+    if (nEntities.some(e => affiliationOf(actor, e) === 'ally')) score += 5;
+    if (!nEntities.some(e => affiliationOf(actor, e) === 'enemy')) score += 5;
     if (score > bestScore) {
       bestScore = score;
       bestId = nid;

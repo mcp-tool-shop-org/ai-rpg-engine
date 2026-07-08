@@ -1,7 +1,7 @@
 // Placeholder image provider — generates SVG portraits with zero external deps
 // Always available, deterministic, useful for testing and development.
 
-import type { ImageProvider, GenerationResult, GenerationOptions } from './types.js';
+import type { ImageProvider, GenerationOutcome, GenerationOptions } from './types.js';
 
 /** Deterministic color from a string (hash-based). */
 function stringToColor(s: string): string {
@@ -57,7 +57,7 @@ function escapeXml(s: string): string {
 export class PlaceholderProvider implements ImageProvider {
   readonly name = 'placeholder';
 
-  async generate(prompt: string, opts?: GenerationOptions): Promise<GenerationResult> {
+  async generate(prompt: string, opts?: GenerationOptions): Promise<GenerationOutcome> {
     const width = opts?.width ?? 512;
     const height = opts?.height ?? 512;
     const start = Date.now();
@@ -68,7 +68,10 @@ export class PlaceholderProvider implements ImageProvider {
 
     const image = generateSvg(charName, prompt, width, height);
 
+    // Local + synchronous: this provider has no failure modes, so it always
+    // resolves the ok:true arm of the GenerationOutcome contract.
     return {
+      ok: true,
       image,
       mimeType: 'image/svg+xml',
       width,

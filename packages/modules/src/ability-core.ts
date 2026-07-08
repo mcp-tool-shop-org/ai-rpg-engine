@@ -18,6 +18,12 @@ import type {
 } from '@ai-rpg-engine/content-schema';
 import { simpleRoll } from './combat-core.js';
 import { resolveEffects } from './ability-effects.js';
+import {
+  affiliationOf,
+  candidateTargets,
+  matchesAffiliation,
+  normalizeAbilityTarget,
+} from './targeting.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -335,16 +341,31 @@ function resolveTargets(
           return { targets: [], reason: `target lacks required tags: ${ability.target.filter.join(', ')}` };
         }
       }
+      // Affiliation gate (M2): the spec's affiliation axis decides friend/foe via
+      // the faction predicate — an offensive single ability can no longer land on
+      // a same-faction recruited ally. The axis default is support-aware (M7):
+      // a bare legacy { type:'single' } HEAL targets allies (self included), not
+      // enemies. Explicit `affiliation` axes always win over both defaults.
+      const norm = normalizeAbilityTarget(ability);
+      if (!matchesAffiliation(actor, target, norm.affiliation, norm.includeSelf)) {
+        const rel = affiliationOf(actor, target);
+        return {
+          targets: [],
+          reason: rel === 'self'
+            ? `this ability cannot target the caster (targets: ${norm.affiliation})`
+            : `target ${targetId} is an ${rel}; this ability targets ${norm.affiliation === 'any' ? 'any' : norm.affiliation} targets`,
+        };
+      }
       return { targets: [target] };
     }
 
     case 'all-enemies': {
-      const enemies = Object.values(world.entities).filter((e) =>
-        e.id !== actor.id &&
-        e.zoneId === actor.zoneId &&
-        (e.resources.hp ?? 0) > 0 &&
-        e.type !== actor.type,
-      );
+      // Affiliation predicate (M2): route through the same faction-aware
+      // candidate machinery the zone-effect path uses (candidateTargets), so an
+      // enemy-only blast SPARES a same-faction, different-`type` recruited ally
+      // and hits true enemies. Candidates come back sorted by entity id — the
+      // stable AoE application order used everywhere else in targeting.
+      const enemies = candidateTargets(ability.target, actor, world);
       if (enemies.length === 0) {
         return { targets: [], reason: 'no valid targets in zone' };
       }

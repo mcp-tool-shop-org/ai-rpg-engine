@@ -126,3 +126,50 @@ describe('statusCore module — periodic statuses tick through the engine', () =
     expect(hpBefore - hero2.resources.hp).toBeLessThanOrEqual(4 * 2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// M5: duration 0 means "expires now", not "permanent"
+// ---------------------------------------------------------------------------
+// A falsy guard (`options?.duration ? ...`) treated duration:0 like undefined,
+// silently making a zero-duration status permanent. 0 and undefined are
+// distinct: undefined → permanent (no expiry), 0 → expires at the current tick.
+
+describe('M5: applyStatus duration:0 vs undefined', () => {
+  it('duration 0 sets expiresAtTick to the current tick (expires immediately)', () => {
+    const e = makeEntity();
+    const world = makeWorld(e, 5);
+    applyStatus(e, 'stun', 5, { duration: 0 }, world);
+
+    expect(e.statuses).toHaveLength(1);
+    expect(e.statuses[0].expiresAtTick).toBe(5);
+  });
+
+  it('no duration still means permanent (lock)', () => {
+    const e = makeEntity();
+    const world = makeWorld(e, 5);
+    applyStatus(e, 'brand', 5, {}, world);
+
+    expect(e.statuses[0].expiresAtTick).toBeUndefined();
+  });
+
+  it('refresh with duration 0 pulls the expiry to the current tick', () => {
+    const e = makeEntity();
+    const world = makeWorld(e, 5);
+    applyStatus(e, 'ward', 5, { duration: 5 }, world);
+    expect(e.statuses[0].expiresAtTick).toBe(10);
+
+    applyStatus(e, 'ward', 6, { stacking: 'refresh', duration: 0 }, world);
+    expect(e.statuses[0].expiresAtTick).toBe(6);
+  });
+
+  it('stack-at-max refresh with duration 0 pulls the expiry to the current tick', () => {
+    const e = makeEntity();
+    const world = makeWorld(e, 5);
+    applyStatus(e, 'venom', 5, { stacking: 'stack', maxStacks: 1, duration: 5 }, world);
+    expect(e.statuses[0].expiresAtTick).toBe(10);
+
+    // Already at max stacks → the "refresh at max" path.
+    applyStatus(e, 'venom', 6, { stacking: 'stack', maxStacks: 1, duration: 0 }, world);
+    expect(e.statuses[0].expiresAtTick).toBe(6);
+  });
+});

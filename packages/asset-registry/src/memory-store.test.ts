@@ -123,4 +123,12 @@ describe('MemoryAssetStore', () => {
     const c = await store.get(meta.hash);
     expect(c).toEqual(testData);
   });
+
+  // A4 parity: the AssetStore interface exposes get(hash, {verify}) — the
+  // memory backend honors the flag (intact bytes still come back).
+  it('get honors the verify flag from the AssetStore contract', async () => {
+    const meta = await store.put(testData, testInput);
+    expect(await store.get(meta.hash, { verify: true })).toEqual(testData);
+    expect(await store.get('0'.repeat(64), { verify: true })).toBeNull();
+  });
 });

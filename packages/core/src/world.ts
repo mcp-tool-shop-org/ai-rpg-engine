@@ -7,14 +7,25 @@ import type {
   ResolvedEvent,
   PendingEffect,
   GameManifest,
+  RulesetDefinition,
+  StatDefinition,
+  ResourceDefinition,
   ScalarValue,
 } from './types.js';
 import { SeededRNG } from './rng.js';
 import { EventBus, type EventBusListenerErrorHook } from './events.js';
+import { validateGameManifest } from './manifest.js';
 
 export type WorldStoreOptions = {
   manifest: GameManifest;
   seed?: number;
+  /**
+   * Optional ruleset whose stat/resource min/max declarations the store
+   * honors in getStat/modifyResource (v2.5 C7). Code, not state — never
+   * serialized; supply it again on deserialize (the Engine threads its own
+   * `ruleset` option through both paths).
+   */
+  ruleset?: RulesetDefinition;
   /** Optional hook to observe consumer-listener failures (see EventBus). */
   onListenerError?: EventBusListenerErrorHook;
 };
@@ -66,6 +77,36 @@ export class SaveLoadError extends Error {
     this.code = shape.code;
     this.hint = shape.hint;
   }
+}
+
+/** One-word description of a JSON value for error messages. */
+function describeJsonValue(v: unknown): string {
+  if (v === null) return 'null';
+  if (v === undefined) return 'undefined (missing)';
+  if (Array.isArray(v)) return 'an array';
+  return `${typeof v}`;
+}
+
+/**
+ * Validate the meta fields a loaded save feeds back into world construction
+ * (gameId/activeRuleset/activeModules → the reconstructed manifest). Without
+ * this, a crafted save with e.g. `activeModules` missing raw-threw the same
+ * `[...undefined]` TypeError the manifest validator now guards at the front
+ * door (v2.5 C5) — but on the LOAD path it must surface as a SaveLoadError,
+ * not a ManifestError, because the bad input is the save file.
+ */
+export function assertSaveMetaShape(meta: unknown): void {
+  const m = (meta ?? {}) as Partial<Record<'gameId' | 'activeRuleset' | 'activeModules', unknown>>;
+  const fail = (field: string, expected: string, got: unknown): never => {
+    throw new SaveLoadError({
+      code: 'SAVE_MALFORMED',
+      message: `Save meta.${field} must be ${expected}, got ${describeJsonValue(got)}.`,
+      hint: 'The save file is corrupt or was not produced by this engine. Restore from a backup.',
+    });
+  };
+  if (typeof m.gameId !== 'string') fail('gameId', 'a string', m.gameId);
+  if (typeof m.activeRuleset !== 'string') fail('activeRuleset', 'a string', m.activeRuleset);
+  if (!Array.isArray(m.activeModules)) fail('activeModules', 'an array', m.activeModules);
 }
 
 /**
@@ -126,11 +167,23 @@ export class WorldStore {
   readonly state: WorldState;
   readonly rng: SeededRNG;
   readonly events: EventBus;
+  /** Ruleset-declared bounds honored by getStat/modifyResource (C7). Derived
+   *  from code (the ruleset option), so never serialized — like modules, the
+   *  caller supplies the ruleset again on deserialize. */
+  private readonly statBounds: ReadonlyMap<string, StatDefinition>;
+  private readonly resourceBounds: ReadonlyMap<string, ResourceDefinition>;
 
   constructor(options: WorldStoreOptions) {
+    // Fail loud + structured on a malformed manifest before any field is
+    // consumed (v2.5 C5) — previously `[...options.manifest.modules]` below
+    // raw-threw a bare TypeError for a manifest missing `modules`.
+    validateGameManifest(options.manifest);
+
     const seed = options.seed ?? 0;
     this.rng = new SeededRNG(seed);
     this.events = new EventBus({ onListenerError: options.onListenerError });
+    this.statBounds = new Map((options.ruleset?.stats ?? []).map((s) => [s.id, s]));
+    this.resourceBounds = new Map((options.ruleset?.resources ?? []).map((r) => [r.id, r]));
 
     this.state = {
       meta: {
@@ -214,7 +267,14 @@ export class WorldStore {
     const entity = this.state.entities[entityId];
     if (!entity) return 0;
     const current = entity.resources[resourceId] ?? 0;
-    const newValue = Math.max(0, current + delta);
+    // Clamp into the ruleset-declared range when this store was built with a
+    // ruleset that bounds the resource (v2.5 C7 — there was no upper clamp).
+    // Without a ruleset, or for a resource the ruleset does not declare, the
+    // legacy contract is preserved exactly: floor at 0, open ceiling.
+    const def = this.resourceBounds.get(resourceId);
+    const min = def?.min ?? 0;
+    const max = def?.max ?? Number.POSITIVE_INFINITY;
+    const newValue = Math.min(max, Math.max(min, current + delta));
     entity.resources[resourceId] = newValue;
     return newValue;
   }
@@ -224,9 +284,16 @@ export class WorldStore {
   getStat(entityId: string, statId: string): number {
     const entity = this.state.entities[entityId];
     if (!entity) return 0;
-    const base = entity.stats[statId] ?? 0;
-
-    return base;
+    const value = entity.stats[statId] ?? 0;
+    // Honor ruleset stat bounds when declared (v2.5 C7 — bounds were ignored
+    // and `value` was a dead intermediate). Undeclared stats, declared stats
+    // without min/max, and stores built without a ruleset return the raw
+    // value unchanged.
+    const def = this.statBounds.get(statId);
+    if (!def) return value;
+    const min = def.min ?? Number.NEGATIVE_INFINITY;
+    const max = def.max ?? Number.POSITIVE_INFINITY;
+    return Math.min(max, Math.max(min, value));
   }
 
   // --- Global state ---
@@ -328,7 +395,7 @@ export class WorldStore {
     });
   }
 
-  static deserialize(json: string, eventBus?: EventBus): WorldStore {
+  static deserialize(json: string, eventBus?: EventBus, ruleset?: RulesetDefinition): WorldStore {
     let data: { state: WorldState; rngState: number };
     try {
       data = JSON.parse(json) as { state: WorldState; rngState: number };
@@ -347,8 +414,25 @@ export class WorldStore {
       });
     }
 
+    // A malformed/foreign save with a missing or non-numeric rngState would
+    // otherwise slip through setState() and silently coerce the RNG stream to
+    // the seed-0 position on the first draw (`undefined | 0 === 0`) — a
+    // determinism corruption with no signal (v2.5 C3). Engine-produced saves
+    // always carry a finite number here.
+    if (typeof data.rngState !== 'number' || !Number.isFinite(data.rngState)) {
+      throw new SaveLoadError({
+        code: 'SAVE_MALFORMED',
+        message: `Save rngState must be a finite number, got ${describeJsonValue(data.rngState)}.`,
+        hint: 'Without a valid rngState the RNG would silently restart from the seed position, breaking replay determinism. The save is corrupt or was produced by an incompatible tool.',
+      });
+    }
+
     // Honor the save-version contract: check + migrate before adopting state.
     const migratedState = migrateSaveState(data.state);
+
+    // Guard the meta fields fed back into construction AFTER migration, so a
+    // future migration may backfill them for legacy saves (v2.5 C5 family).
+    assertSaveMetaShape(migratedState.meta);
 
     const manifest: GameManifest = {
       id: migratedState.meta.gameId,
@@ -359,7 +443,7 @@ export class WorldStore {
       modules: migratedState.meta.activeModules,
       contentPacks: [],
     };
-    const store = new WorldStore({ manifest, seed: migratedState.meta.seed });
+    const store = new WorldStore({ manifest, seed: migratedState.meta.seed, ruleset });
     Object.assign(store.state, migratedState);
 
     // idCounter rides along in meta via the Object.assign above. Back-compat:

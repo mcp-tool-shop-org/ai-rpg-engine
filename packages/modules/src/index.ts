@@ -867,6 +867,9 @@ export type { ProcContext } from './status-effects.js';
 // --- Targeting (Ally Targeting & Friend/Foe AoE) ---
 export {
   affiliationOf,
+  matchesAffiliation,
+  isSupportAbility,
+  normalizeAbilityTarget,
   candidateTargets,
   resolveTargets,
   lowestHp,

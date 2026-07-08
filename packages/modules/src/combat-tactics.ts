@@ -28,6 +28,7 @@ import { applyStatus, removeStatus, hasStatus } from './status-core.js';
 import { COMBAT_STATES, simpleRoll, DEFAULT_STAT_MAPPING } from './combat-core.js';
 import type { CombatFormulas, CombatStatMapping } from './combat-core.js';
 import { ENGAGEMENT_STATES } from './engagement-core.js';
+import { affiliationOf } from './targeting.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -174,8 +175,10 @@ function getEntitiesInZone(world: WorldState, zoneId: string): EntityState[] {
 
 function getEnemiesInZone(world: WorldState, entity: EntityState): EntityState[] {
   if (!entity.zoneId) return [];
+  // Friend/foe via the faction predicate (M2 family): a same-faction,
+  // different-`type` recruited ally is not a valid tactical target.
   return getEntitiesInZone(world, entity.zoneId).filter(
-    e => e.id !== entity.id && e.type !== entity.type,
+    e => e.id !== entity.id && affiliationOf(entity, e) === 'enemy',
   );
 }
 

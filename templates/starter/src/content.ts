@@ -15,7 +15,13 @@ export const manifest: GameManifest = {
 };
 
 // ═══════════════════════════════════════════════════════════════════
-// PACK METADATA (used by the CLI pack selector)
+// PACK METADATA
+// This is a minimal subset to keep the template dependency-light. To list
+// your pack in the CLI pack selector, export the full PackMetadata shape
+// from @ai-rpg-engine/pack-registry (adds: tagline, genres, difficulty,
+// tones, tags, engineVersion, narratorTone) plus a BuildCatalog from
+// @ai-rpg-engine/character-creation — see any packages/starter-* content.ts
+// for a complete example.
 // ═══════════════════════════════════════════════════════════════════
 
 export const packMeta = {

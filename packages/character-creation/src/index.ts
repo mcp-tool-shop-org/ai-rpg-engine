@@ -14,6 +14,8 @@ export type {
   BuildValidationResult,
 } from './types.js';
 
+export { BUILD_VERSION } from './types.js';
+
 export { validateBuild } from './validate.js';
 export { resolveEntity } from './resolve.js';
 export {
@@ -24,4 +26,5 @@ export {
   getStatBudgetRemaining,
 } from './options.js';
 export { resolveTitle, resolveEntanglements } from './titles.js';
-export { serializeBuild, deserializeBuild, validateSerializedBuild } from './serialize.js';
+export { serializeBuild, deserializeBuild, validateSerializedBuild, BuildLoadError } from './serialize.js';
+export type { BuildLoadErrorShape } from './serialize.js';

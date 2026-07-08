@@ -153,6 +153,16 @@ describe('core-runtime-002: dispatch isolates throwing validator/handler', () =>
       seed: 1,
       modules: [boomModule],
     });
+    engine.store.addEntity({
+      id: 'p1',
+      blueprintId: 'bp',
+      type: 'player',
+      name: 'P1',
+      tags: [],
+      stats: {},
+      resources: {},
+      statuses: [],
+    });
     engine.store.state.playerId = 'p1';
 
     expect(() => engine.submitAction('boom')).not.toThrow();
@@ -288,6 +298,104 @@ describe('core-runtime-004: submitActionAs rejects unknown actor', () => {
     const events = engine.submitActionAs('ally-1', 'walk');
     expect(events.length).toBe(1);
     expect(events[0].type).toBe('test.walked');
+  });
+});
+
+// --- core-runtime-006: submitAction/processAction ghost-actor guard (C2) ---
+// submitActionAs already short-circuits a ghost actor to a structured
+// action.rejected; the v2.5 audit found submitAction and processAction were
+// asymmetric — the default playerId is '' and a verb handler would run for a
+// nonexistent actor. These tests pin the symmetric guard.
+describe('core-runtime-006: submitAction/processAction ghost-actor guard', () => {
+  function walkModule(): EngineModule {
+    return {
+      id: 'walk',
+      version: '0.1.0',
+      register(ctx) {
+        ctx.actions.registerVerb('walk', (action: ActionIntent): ResolvedEvent[] => [
+          {
+            id: '',
+            tick: action.issuedAtTick,
+            type: 'test.walked',
+            actorId: action.actorId,
+            payload: {},
+          },
+        ]);
+      },
+    };
+  }
+
+  function buildEngine(): Engine {
+    return new Engine({
+      manifest: { ...testManifest, modules: ['walk'] },
+      seed: 1,
+      modules: [walkModule()],
+    });
+  }
+
+  it('submitAction with the default empty playerId is rejected, not dispatched', () => {
+    const engine = buildEngine(); // playerId stays ''
+
+    const events = engine.submitAction('walk');
+
+    expect(events.length).toBe(0);
+    expect(engine.world.eventLog.some((e) => e.type === 'test.walked')).toBe(false);
+    const rejected = engine.world.eventLog.find((e) => e.type === 'action.rejected');
+    expect(rejected).toBeDefined();
+    expect(String(rejected!.payload.reason).toLowerCase()).toContain('actor');
+    // Same lifecycle as any rejected action: the tick still advances…
+    expect(engine.tick).toBe(1);
+    // …and, like submitActionAs's guard, the ghost attempt never enters the
+    // replay log.
+    expect(engine.getActionLog().length).toBe(0);
+  });
+
+  it('submitAction with a playerId that has no entity is rejected symmetrically with submitActionAs', () => {
+    const engine = buildEngine();
+    engine.store.state.playerId = 'vanished-hero';
+
+    const events = engine.submitAction('walk');
+
+    expect(events.length).toBe(0);
+    expect(engine.world.eventLog.some((e) => e.type === 'test.walked')).toBe(false);
+    const rejected = engine.world.eventLog.find((e) => e.type === 'action.rejected');
+    expect(rejected).toBeDefined();
+    expect(rejected!.payload.actorId).toBe('vanished-hero');
+    expect(String(rejected!.payload.reason)).toContain('vanished-hero');
+  });
+
+  it('processAction with a ghost actorId is rejected and the handler does not run', () => {
+    const engine = buildEngine();
+
+    const action = engine.dispatcher.createAction('walk', 'ghost-actor', engine.tick, { source: 'ai' }, 'a-ghost');
+    const events = engine.processAction(action);
+
+    expect(events.length).toBe(0);
+    expect(engine.world.eventLog.some((e) => e.type === 'test.walked')).toBe(false);
+    const rejected = engine.world.eventLog.find((e) => e.type === 'action.rejected');
+    expect(rejected).toBeDefined();
+    expect(rejected!.payload.actorId).toBe('ghost-actor');
+    expect(engine.getActionLog().length).toBe(0);
+  });
+
+  it('submitAction still dispatches for a real player entity (control)', () => {
+    const engine = buildEngine();
+    engine.store.addEntity({
+      id: 'p1',
+      blueprintId: 'bp',
+      type: 'player',
+      name: 'P1',
+      tags: [],
+      stats: {},
+      resources: {},
+      statuses: [],
+    });
+    engine.store.state.playerId = 'p1';
+
+    const events = engine.submitAction('walk');
+    expect(events.length).toBe(1);
+    expect(events[0].type).toBe('test.walked');
+    expect(engine.getActionLog().length).toBe(1);
   });
 });
 

@@ -494,3 +494,155 @@ describe('ability-core: helpers', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// M2 + M7: faction affiliation on the offensive resolvers
+// ---------------------------------------------------------------------------
+// M2: `all-enemies` and `single` were type-only — an offensive ability on the
+// default path could select a same-faction, different-`type` recruited ally.
+// Invariant: an offensive ability never selects a target whose
+// affiliationOf(source, candidate) === 'ally'.
+// M7: a legacy bare `{ type:'single' }` HEAL defaulted to affiliation 'enemy';
+// with the affiliation gate in place, the support-aware default must keep a
+// bare single-target heal pointed at allies (self included).
+
+describe('ability-core: affiliation on offensive resolvers (M2/M7)', () => {
+  const aoeBlast: AbilityDefinition = {
+    id: 'aoe-blast', name: 'Blast', verb: 'cast', tags: ['combat'],
+    costs: [], target: { type: 'all-enemies' }, checks: [],
+    effects: [{ type: 'damage', target: 'target', params: { amount: 5 } }],
+    cooldown: 0,
+  };
+  const strike: AbilityDefinition = {
+    id: 'strike', name: 'Strike', verb: 'strike', tags: ['combat'],
+    costs: [], target: { type: 'single' }, checks: [],
+    effects: [{ type: 'damage', target: 'target', params: { amount: 5 } }],
+    cooldown: 0,
+  };
+  const mend: AbilityDefinition = {
+    id: 'mend', name: 'Mend', verb: 'pray', tags: ['heal'],
+    costs: [], target: { type: 'single' }, checks: [],
+    effects: [{ type: 'heal', target: 'target', params: { amount: 5 } }],
+    cooldown: 0,
+  };
+
+  function partySetup() {
+    // Recruited NPC shares the player's faction but NOT the player's type —
+    // exactly the case the v2.4 faction predicate exists for.
+    const player = makeEntity('player', 'player', ['player'], { faction: 'party' });
+    const recruit = makeEntity('recruit', 'npc', ['npc'], {
+      faction: 'party',
+      resources: { hp: 10, maxHp: 20, stamina: 10, mana: 20, resolve: 20, dust: 20 },
+    });
+    const wolf = makeEntity('wolf', 'enemy', ['enemy'], { faction: 'wolves' });
+    const engine = buildEngine([player, recruit, wolf], [aoeBlast, strike, mend]);
+    return { player, recruit, wolf, engine };
+  }
+
+  it('all-enemies AoE spares a same-faction different-type ally and hits the true enemy (M2)', () => {
+    const { recruit, wolf, engine } = partySetup();
+    const events = engine.processAction(makeAction('player', 'aoe-blast'));
+
+    const damaged = events
+      .filter((e) => e.type === 'ability.damage.applied')
+      .map((e) => e.payload.targetId);
+    expect(damaged).toContain('wolf');       // true enemy hit
+    expect(damaged).not.toContain('recruit'); // recruited ally spared
+    expect(wolf.resources.hp).toBe(15);
+    expect(recruit.resources.hp).toBe(10);
+  });
+
+  it('offensive single-target rejects an explicitly-chosen ally (M2)', () => {
+    const { recruit, engine } = partySetup();
+    const events = engine.processAction(makeAction('player', 'strike', ['recruit']));
+
+    expect(events.some((e) => e.type === 'ability.rejected')).toBe(true);
+    expect(events.some((e) => e.type === 'ability.damage.applied')).toBe(false);
+    expect(recruit.resources.hp).toBe(10); // untouched
+  });
+
+  it('offensive single-target still hits a true enemy (lock)', () => {
+    const { wolf, engine } = partySetup();
+    const events = engine.processAction(makeAction('player', 'strike', ['wolf']));
+
+    expect(events.some((e) => e.type === 'ability.damage.applied')).toBe(true);
+    expect(wolf.resources.hp).toBe(15);
+  });
+
+  it('a bare {type:single} heal targets a same-faction ally (M7 × M2 interaction)', () => {
+    const { recruit, engine } = partySetup();
+    const events = engine.processAction(makeAction('player', 'mend', ['recruit']));
+
+    const healed = events.filter((e) => e.type === 'ability.heal.applied');
+    expect(healed).toHaveLength(1);
+    expect(healed[0].payload.targetId).toBe('recruit');
+    expect(recruit.resources.hp).toBe(15);
+  });
+
+  it('a bare {type:single} heal no longer lands on an enemy (M7 footgun closed)', () => {
+    const { wolf, engine } = partySetup();
+    const events = engine.processAction(makeAction('player', 'mend', ['wolf']));
+
+    expect(events.some((e) => e.type === 'ability.rejected')).toBe(true);
+    expect(events.some((e) => e.type === 'ability.heal.applied')).toBe(false);
+    expect(wolf.resources.hp).toBe(20); // untouched
+  });
+
+  it('a bare {type:single} heal may target the caster (includeSelf default for support)', () => {
+    const { player, engine } = partySetup();
+    player.resources.hp = 10;
+    const events = engine.processAction(makeAction('player', 'mend', ['player']));
+
+    const healed = events.filter((e) => e.type === 'ability.heal.applied');
+    expect(healed).toHaveLength(1);
+    expect(player.resources.hp).toBe(15);
+  });
+
+  it('explicit affiliation axes still override the default (escape hatch lock)', () => {
+    const drainLife: AbilityDefinition = {
+      id: 'drain', name: 'Drain Life', verb: 'hex', tags: ['heal'],
+      costs: [], target: { type: 'single', affiliation: 'enemy' }, checks: [],
+      effects: [{ type: 'damage', target: 'target', params: { amount: 3 } }],
+      cooldown: 0,
+    };
+    const player = makeEntity('player', 'player', ['player'], { faction: 'party' });
+    const wolf = makeEntity('wolf', 'enemy', ['enemy'], { faction: 'wolves' });
+    const engine = buildEngine([player, wolf], [drainLife]);
+
+    const events = engine.processAction(makeAction('player', 'drain', ['wolf']));
+    expect(events.some((e) => e.type === 'ability.damage.applied')).toBe(true);
+  });
+
+  it('a heal-TAGGED drain (damage + self-heal, bare {type:single}) still targets enemies (drain-life lock)', () => {
+    // The blood-drain shape from starter-vampire: tagged 'heal' but its effects
+    // DAMAGE the target. The M7 support-aware default must key off the effects
+    // (ground truth), not tags alone — a damage-dealing ability stays offensive.
+    const bloodDrain: AbilityDefinition = {
+      id: 'bite', name: 'Bite', verb: 'strike', tags: ['combat', 'damage', 'heal'],
+      costs: [], target: { type: 'single' }, checks: [],
+      effects: [
+        { type: 'damage', target: 'target', params: { amount: 4 } },
+        { type: 'heal', target: 'actor', params: { amount: 3, resource: 'hp' } },
+      ],
+      cooldown: 0,
+    };
+    const player = makeEntity('player', 'player', ['player'], {
+      faction: 'party',
+      resources: { hp: 10, maxHp: 20, stamina: 10, mana: 20, resolve: 20, dust: 20 },
+    });
+    const recruit = makeEntity('recruit', 'npc', ['npc'], { faction: 'party' });
+    const wolf = makeEntity('wolf', 'enemy', ['enemy'], { faction: 'wolves' });
+    const engine = buildEngine([player, recruit, wolf], [bloodDrain]);
+
+    // Drains the true enemy: damage lands, self-heal lands.
+    const events = engine.processAction(makeAction('player', 'bite', ['wolf']));
+    expect(events.some((e) => e.type === 'ability.damage.applied')).toBe(true);
+    expect(wolf.resources.hp).toBe(16);
+    expect(player.resources.hp).toBe(13);
+
+    // Still cannot drain the recruited ally (affiliation gate holds).
+    const events2 = engine.processAction(makeAction('player', 'bite', ['recruit']));
+    expect(events2.some((e) => e.type === 'ability.rejected')).toBe(true);
+    expect(recruit.resources.hp).toBe(20);
+  });
+});

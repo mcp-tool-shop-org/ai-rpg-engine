@@ -47,7 +47,7 @@ export function affiliationOf(source: EntityState, candidate: EntityState): Affi
 }
 
 /** True when `candidate` satisfies the requested affiliation axis relative to `source`. */
-function matchesAffiliation(
+export function matchesAffiliation(
   source: EntityState,
   candidate: EntityState,
   affiliation: TargetAffiliation,
@@ -68,6 +68,58 @@ function matchesAffiliation(
     default:
       return false;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Support-aware normalization (M7)
+// ---------------------------------------------------------------------------
+
+/** Tags that mark an ability as support-oriented (heal / buff / revive). */
+const SUPPORT_TAGS = ['heal', 'support', 'buff', 'revive'];
+
+/**
+ * Whether an ability is support-oriented (heal/buff/revive/support tags). The
+ * single shared definition — ability-effects' selector choice and the M7
+ * support-aware targeting default both key off it, so they cannot drift.
+ */
+export function isSupportAbility(ability: { tags: string[] }): boolean {
+  return ability.tags.some((t) => SUPPORT_TAGS.includes(t));
+}
+
+/**
+ * Normalize an ability's TargetSpec with a support-aware default for the legacy
+ * bare `{ type:'single' }` (M7). `normalizeTargetSpec` maps that legacy enum
+ * value to `affiliation:'enemy'` — correct for attacks, a footgun for a bare
+ * single-target HEAL, which would point at enemies. When the spec declares no
+ * explicit affiliation axis and the ability is genuinely support-shaped, the
+ * default flips to `affiliation:'ally'` with `includeSelf:true` (matching the
+ * documented explicit-ally-heal shape).
+ *
+ * "Genuinely support-shaped" = support-tagged AND deals no damage. Tags alone
+ * are not enough: a drain-life ability (damage the target + heal the caster,
+ * e.g. starter-vampire's blood-drain, tagged both 'damage' and 'heal') is
+ * offensive — its EFFECTS are the ground truth, so any `damage` effect keeps
+ * the enemy default. Explicit axes always win — this only changes the DEFAULT
+ * for legacy specs, so `{ type:'single', affiliation:'enemy' }` is untouched.
+ */
+export function normalizeAbilityTarget(
+  ability: { target: TargetSpec; tags: string[]; effects?: { type: string }[] },
+): NormalizedTargetSpec {
+  const norm = normalizeTargetSpec(ability.target);
+  const dealsDamage = ability.effects?.some((e) => e.type === 'damage') ?? false;
+  if (
+    ability.target.affiliation === undefined &&
+    ability.target.type === 'single' &&
+    isSupportAbility(ability) &&
+    !dealsDamage
+  ) {
+    return {
+      ...norm,
+      affiliation: 'ally',
+      includeSelf: ability.target.includeSelf ?? true,
+    };
+  }
+  return norm;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,13 +154,18 @@ function matchesLife(candidate: EntityState, life: NormalizedTargetSpec['life'])
  *
  * `scope:'self'` short-circuits to just the source (the canonical self target),
  * subject to the life gate.
+ *
+ * `normOverride` lets a caller supply pre-resolved axes (e.g. the M7
+ * support-aware default from {@link normalizeAbilityTarget}) instead of the
+ * spec's own raw normalization.
  */
 export function candidateTargets(
   spec: TargetSpec,
   source: EntityState,
   world: WorldState,
+  normOverride?: NormalizedTargetSpec,
 ): EntityState[] {
-  const norm = normalizeTargetSpec(spec);
+  const norm = normOverride ?? normalizeTargetSpec(spec);
 
   if (norm.scope === 'self') {
     return matchesLife(source, norm.life) ? [source] : [];
@@ -150,10 +207,10 @@ export function resolveTargets(
   spec: TargetSpec,
   source: EntityState,
   world: WorldState,
-  opts?: { explicitTargetId?: string; selector?: TargetSelector },
+  opts?: { explicitTargetId?: string; selector?: TargetSelector; norm?: NormalizedTargetSpec },
 ): EntityState[] {
-  const norm = normalizeTargetSpec(spec);
-  const candidates = candidateTargets(spec, source, world);
+  const norm = opts?.norm ?? normalizeTargetSpec(spec);
+  const candidates = candidateTargets(spec, source, world, norm);
 
   if (norm.scope === 'self') return candidates;
   if (norm.scope === 'all') return candidates;

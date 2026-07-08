@@ -304,3 +304,56 @@ describe('arc-detection', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// M6: avgDistrictStability must not go NaN on a district with no supply data
+// ---------------------------------------------------------------------------
+// `supplies.reduce(...) / supplies.length` was 0/0 = NaN for an empty supplies
+// record, and the NaN poisoned the average across ALL districts — silently
+// suppressing the supply-driven arc dimensions.
+
+describe('M6: empty-supplies district stability', () => {
+  const CATEGORIES = [
+    'medicine', 'weapons', 'ammunition', 'food',
+    'fuel', 'luxuries', 'components', 'contraband',
+  ] as const;
+
+  function economyAt(level: number) {
+    const supplies = {} as Record<string, { category: string; level: number; trend: string }>;
+    for (const c of CATEGORIES) supplies[c] = { category: c, level, trend: 'stable' };
+    return {
+      supplies, tradeVolume: 50, blackMarketActive: false, lastUpdateTick: 0,
+    } as any;
+  }
+
+  function emptyEconomy() {
+    return {
+      supplies: {}, tradeVolume: 0, blackMarketActive: false, lastUpdateTick: 0,
+    } as any;
+  }
+
+  it('an empty-supplies district does not poison the average (merchant-prince still fires)', () => {
+    const richOnly = evaluateArcs(makeInputs({
+      districtEconomies: new Map([['d1', economyAt(80)]]),
+    }));
+    const richPlusEmpty = evaluateArcs(makeInputs({
+      districtEconomies: new Map([['d1', economyAt(80)], ['d2', emptyEconomy()]]),
+    }));
+
+    const mpOnly = richOnly.find((s) => s.kind === 'merchant-prince');
+    const mpBoth = richPlusEmpty.find((s) => s.kind === 'merchant-prince');
+
+    expect(mpOnly).toBeDefined();
+    expect(mpBoth).toBeDefined();
+    // The empty district contributes no signal — the average is unchanged.
+    expect(mpBoth!.strength).toBe(mpOnly!.strength);
+    expect(mpBoth!.primaryDrivers.some((d) => d.startsWith('avg supply'))).toBe(true);
+  });
+
+  it('all signals stay finite with only empty-supply districts (neutral fallback)', () => {
+    const signals = evaluateArcs(makeInputs({
+      districtEconomies: new Map([['d1', emptyEconomy()], ['d2', emptyEconomy()]]),
+    }));
+    expect(signals.every((s) => Number.isFinite(s.strength))).toBe(true);
+  });
+});

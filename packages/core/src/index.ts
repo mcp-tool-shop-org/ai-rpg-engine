@@ -2,6 +2,7 @@
 
 export * from './types.js';
 export * from './id.js';
+export * from './manifest.js';
 export * from './rng.js';
 export * from './events.js';
 export * from './world.js';

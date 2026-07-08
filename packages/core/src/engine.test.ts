@@ -14,6 +14,22 @@ const testManifest = {
   contentPacks: [],
 };
 
+/** Register a real player entity + playerId (the C2 ghost-actor guard rejects
+ *  actions for actors that are not in world state). */
+function withPlayer(engine: Engine, id: string): void {
+  engine.store.addEntity({
+    id,
+    blueprintId: 'bp',
+    type: 'player',
+    name: 'Player',
+    tags: [],
+    stats: {},
+    resources: {},
+    statuses: [],
+  });
+  engine.store.state.playerId = id;
+}
+
 describe('Engine', () => {
   it('creates a world with correct metadata', () => {
     const engine = new Engine({ manifest: testManifest, seed: 42 });
@@ -24,7 +40,7 @@ describe('Engine', () => {
 
   it('rejects actions with unknown verbs', () => {
     const engine = new Engine({ manifest: testManifest, seed: 42 });
-    engine.store.state.playerId = 'player-1';
+    withPlayer(engine, 'player-1');
     const events = engine.submitAction('nonexistent');
     // Should have action.declared + action.rejected + action.resolved won't happen
     const rejected = engine.world.eventLog.find(e => e.type === 'action.rejected');
@@ -34,7 +50,7 @@ describe('Engine', () => {
 
   it('advances tick after each action', () => {
     const engine = new Engine({ manifest: testManifest, seed: 42 });
-    engine.store.state.playerId = 'player-1';
+    withPlayer(engine, 'player-1');
     expect(engine.tick).toBe(0);
     engine.submitAction('test');
     expect(engine.tick).toBe(1);
@@ -64,7 +80,7 @@ describe('Engine', () => {
       seed: 42,
       modules: [echoModule],
     });
-    engine.store.state.playerId = 'player-1';
+    withPlayer(engine, 'player-1');
 
     const events = engine.submitAction('echo');
     expect(events.length).toBe(1);
@@ -103,7 +119,7 @@ describe('Engine', () => {
       seed: 42,
       modules: [echoModule],
     });
-    engine.store.state.playerId = 'p1';
+    withPlayer(engine, 'p1');
 
     engine.submitAction('echo');
     engine.submitAction('echo');

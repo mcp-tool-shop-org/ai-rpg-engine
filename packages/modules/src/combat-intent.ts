@@ -21,6 +21,7 @@ import { BUILTIN_COMBAT_ROLES } from './combat-roles.js';
 import type { CombatRole } from './combat-roles.js';
 import type { CombatResourceProfile } from './combat-resources.js';
 import { applyResourceIntentModifiers } from './combat-resources.js';
+import { affiliationOf } from './targeting.js';
 
 // ---------------------------------------------------------------------------
 // Defeat awareness (module-scoped, tick-stamped)
@@ -35,12 +36,25 @@ import { applyResourceIntentModifiers } from './combat-resources.js';
  * "recent" only on the tick they occurred (or the immediately prior tick) — see
  * `isRecentDefeat`. No external clear signal is required for correctness.
  */
-type DefeatEntry = { type: string; tick: number };
-const defeatLog: Map<string, DefeatEntry> = new Map(); // entityId → { type, tick }
+type DefeatEntry = { type: string; faction?: string; tick: number };
+const defeatLog: Map<string, DefeatEntry> = new Map(); // entityId → { type, faction?, tick }
 
 /** A defeat counts as "recent" only on its own tick or the immediately prior tick. */
 function isRecentDefeat(entry: DefeatEntry, currentTick: number): boolean {
   return entry.tick === currentTick || entry.tick === currentTick - 1;
+}
+
+/**
+ * Whether a logged defeat was an ally of `entity`. Mirrors `affiliationOf`
+ * exactly (faction predicate first, legacy type heuristic as fallback — M3),
+ * but works from the log entry because the defeated entity may already be gone
+ * from the world.
+ */
+function isAllyEntry(entity: EntityState, entry: DefeatEntry): boolean {
+  if (entity.faction !== undefined && entry.faction !== undefined) {
+    return entity.faction === entry.faction;
+  }
+  return entity.type === entry.type;
 }
 
 // ---------------------------------------------------------------------------
@@ -143,7 +157,11 @@ function buildContext(entity: EntityState, world: WorldState, config?: CombatInt
     if ((e.resources.hp ?? 0) <= 0) continue;
     const sameZone = (e.zoneId ?? world.locationId) === (entity.zoneId ?? world.locationId);
     if (!sameZone) continue;
-    if (e.type === entity.type) {
+    // Friend/foe via the faction predicate (M3): a recruited ally (same faction,
+    // different `type`) is an ALLY to this AI — coherent with the ability layer,
+    // which already heals it as an ally. Factionless content keeps the legacy
+    // type heuristic (affiliationOf falls back to it).
+    if (affiliationOf(entity, e) === 'ally') {
       allies.push(e);
     } else {
       enemies.push(e);
@@ -185,8 +203,10 @@ function buildContext(entity: EntityState, world: WorldState, config?: CombatInt
       const nEntities = Object.values(world.entities).filter(
         e => e.zoneId === nid && (e.resources.hp ?? 0) > 0,
       );
-      if (nEntities.some(e => e.type === entity.type)) exitScore += 5;
-      if (!nEntities.some(e => e.type !== entity.type)) exitScore += 5;
+      // Exit quality via the faction predicate (M3): flee TOWARD allies, away
+      // from enemies — a same-faction different-type companion counts as an ally.
+      if (nEntities.some(e => affiliationOf(entity, e) === 'ally')) exitScore += 5;
+      if (!nEntities.some(e => affiliationOf(entity, e) === 'enemy')) exitScore += 5;
       bestExitScore = Math.max(bestExitScore, exitScore);
     }
   }
@@ -206,7 +226,9 @@ function buildContext(entity: EntityState, world: WorldState, config?: CombatInt
     for (const e of Object.values(world.entities)) {
       if (e.id === enemy.id || e.id === entity.id) continue;
       if ((e.resources.hp ?? 0) <= 0) continue;
-      if (e.type !== enemy.type) continue;
+      // Cover comes from the ENEMY's allies (faction predicate, M3) — a
+      // same-faction bodyguard of a different `type` still counts as cover.
+      if (affiliationOf(enemy, e) !== 'ally') continue;
       if ((e.zoneId ?? world.locationId) !== (enemy.zoneId ?? world.locationId)) continue;
       if (hasStatus(e, COMBAT_STATES.FLEEING)) continue;
       let allyScore = 5;
@@ -233,8 +255,8 @@ function buildContext(entity: EntityState, world: WorldState, config?: CombatInt
       isBackline: hasStatus(entity, ENGAGEMENT_STATES.BACKLINE),
       isIsolated: hasStatus(entity, ENGAGEMENT_STATES.ISOLATED),
     },
-    allyDefeatedRecently: [...defeatLog.values()].some(e => isRecentDefeat(e, world.meta.tick) && e.type === entity.type),
-    enemyDefeatedRecently: [...defeatLog.values()].some(e => isRecentDefeat(e, world.meta.tick) && e.type !== entity.type),
+    allyDefeatedRecently: [...defeatLog.values()].some(e => isRecentDefeat(e, world.meta.tick) && isAllyEntry(entity, e)),
+    enemyDefeatedRecently: [...defeatLog.values()].some(e => isRecentDefeat(e, world.meta.tick) && !isAllyEntry(entity, e)),
     attackStat,
     precisionStat,
     dominantDimension,
@@ -970,7 +992,9 @@ export function createCombatIntent(_config?: CombatIntentConfig): EngineModule {
       ctx.events.on('combat.entity.defeated', (event, world) => {
         const defeatedId = event.payload.entityId as string;
         const defeated = world.entities[defeatedId];
-        if (defeated) defeatLog.set(defeatedId, { type: defeated.type, tick: event.tick });
+        // Faction recorded alongside type so recency checks can use the same
+        // faction-first predicate as affiliationOf (M3) after the entity is gone.
+        if (defeated) defeatLog.set(defeatedId, { type: defeated.type, faction: defeated.faction, tick: event.tick });
         // Bound the map: drop entries that can no longer be "recent" relative to
         // this defeat's tick. Deterministic (sorted-insensitive set membership
         // check) and keeps a long-running game (or a reused module) from leaking.

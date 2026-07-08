@@ -8,7 +8,7 @@ import type {
   RulesetDefinition,
   WorldState,
 } from './types.js';
-import { WorldStore, SaveLoadError } from './world.js';
+import { WorldStore, SaveLoadError, assertSaveMetaShape } from './world.js';
 import { ActionDispatcher } from './actions.js';
 import { ModuleManager } from './modules.js';
 import type { FormulaRegistry } from './formulas.js';
@@ -41,6 +41,7 @@ export class Engine {
     this.store = new WorldStore({
       manifest: options.manifest,
       seed: options.seed,
+      ruleset: options.ruleset,
       onListenerError: options.onListenerError,
     });
 
@@ -64,13 +65,43 @@ export class Engine {
       }
       return { valid: true };
     });
+
+    // Wire module rule EFFECTS into the dispatch pipeline (v2.5 C1). Rule
+    // checks were wired above since day one, but effects registered via
+    // rules.registerEffect were stored and never executed. Each
+    // handler-resolved event is offered to every registered effect; events
+    // they return are recorded through the same recordEvent choke point so
+    // ordering and ids stay deterministic (see ActionDispatcher.dispatch).
+    this.dispatcher.registerEffectApplier((event, world) =>
+      this.moduleManager.applyEffects(event, world),
+    );
   }
 
   /** Submit a player action */
   submitAction(verb: string, options?: Partial<Pick<ActionIntent, 'targetIds' | 'toolId' | 'parameters'>>): ResolvedEvent[] {
+    // Ghost-actor guard, symmetric with submitActionAs (v2.5 C2): the default
+    // playerId is '' and nothing forces a consumer to register the player
+    // entity before acting. A verb handler reading entities[actorId] for a
+    // missing player would crash or silently act on undefined; short-circuit
+    // to a structured action.rejected instead. Guarded before createAction so
+    // no action id is minted for the ghost attempt (same as submitActionAs);
+    // the tick still advances, matching every other rejected action.
+    const playerId = this.store.state.playerId;
+    if (!this.store.state.entities[playerId]) {
+      this.store.emitEvent('action.rejected', {
+        verb,
+        actorId: playerId,
+        reason: playerId === ''
+          ? 'unknown actor: state.playerId is not set. Set world.playerId to the player entity\'s id (and add that entity) before submitting player actions.'
+          : `unknown actor: no entity "${playerId}" in world state for state.playerId. Add the player entity before acting, or check the id for a typo.`,
+      }, { actorId: playerId });
+      this.store.advanceTick();
+      return [];
+    }
+
     const action = this.dispatcher.createAction(
       verb,
-      this.store.state.playerId,
+      playerId,
       this.store.tick,
       { source: 'player', ...options },
       this.store.genId('act'),
@@ -110,6 +141,21 @@ export class Engine {
 
   /** Process any action through the pipeline */
   processAction(action: ActionIntent): ResolvedEvent[] {
+    // Ghost-actor guard (v2.5 C2), symmetric with submitActionAs: this method
+    // is public and accepts a caller-built ActionIntent, so the actor must be
+    // validated here too. Guarded BEFORE the actionLog push so a ghost action
+    // never enters the replay log — matching submitActionAs, whose guard
+    // fires before the action is even created.
+    if (!this.store.state.entities[action.actorId]) {
+      this.store.emitEvent('action.rejected', {
+        verb: action.verb,
+        actorId: action.actorId,
+        reason: `unknown actor: no entity "${action.actorId}" in world state. Add the entity before acting as it, or check the actor id for a typo.`,
+      }, { actorId: action.actorId });
+      this.store.advanceTick();
+      return [];
+    }
+
     this.actionLog.push(action);
     const events = this.dispatcher.dispatch(action, this.store);
 
@@ -202,6 +248,11 @@ export class Engine {
     }
 
     const meta = data.world.state.meta;
+    // Guard the meta fields fed into manifest reconstruction (v2.5 C5 family):
+    // a crafted save with e.g. activeModules missing previously raw-threw the
+    // same [...undefined] TypeError as a malformed manifest. On the load path
+    // the structured error must be a SaveLoadError — the bad input is the save.
+    assertSaveMetaShape(meta);
     const manifest: GameManifest = {
       id: meta.gameId,
       title: '',
@@ -224,9 +275,12 @@ export class Engine {
     // Replace the fresh store with the saved one, reusing the live EventBus so
     // module subscriptions registered above are preserved. WorldStore.deserialize
     // runs the save-version migration chain and restores meta.idCounter + rng.
+    // The caller's ruleset is threaded through so stat/resource bounds (C7)
+    // survive the load — like modules, rulesets are code and never serialized.
     const restored = WorldStore.deserialize(
       JSON.stringify(data.world),
       engine.store.events,
+      options.ruleset,
     );
     (engine as { store: WorldStore }).store = restored;
 

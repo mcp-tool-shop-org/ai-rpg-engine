@@ -8,12 +8,17 @@
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import type { AssetMetadata, AssetInput, AssetFilter, AssetStore } from './types.js';
-import { hashBytes } from './hash.js';
+import type { AssetMetadata, AssetInput, AssetFilter, AssetGetOptions, AssetStore } from './types.js';
+import { hashBytes, isValidHash } from './hash.js';
 import { matchesFilter } from './filter.js';
 
 export class FileAssetStore implements AssetStore {
   constructor(private readonly root: string) {}
+
+  // Security (v2.5 audit A5): every public method that accepts a hash MUST
+  // reject anything that is not a SHA-256 hex digest BEFORE it reaches
+  // path.join — a "hash" like '../../x' would otherwise resolve outside the
+  // store root (read oracle on get/getMeta/has, arbitrary unlink on delete).
 
   private shardDir(hash: string): string {
     return path.join(this.root, hash.slice(0, 2));
@@ -54,16 +59,23 @@ export class FileAssetStore implements AssetStore {
     return metadata;
   }
 
-  async get(hash: string): Promise<Uint8Array | null> {
+  async get(hash: string, opts?: AssetGetOptions): Promise<Uint8Array | null> {
+    if (!isValidHash(hash)) return null;
     try {
       const buf = await fs.readFile(this.dataPath(hash));
-      return new Uint8Array(buf);
+      const bytes = new Uint8Array(buf);
+      // Integrity on read (v2.5 audit A4): with `verify`, prove the bytes
+      // still match their content address before serving them. Opt-in so hot
+      // paths keep skipping the extra hash.
+      if (opts?.verify && hashBytes(bytes) !== hash) return null;
+      return bytes;
     } catch {
       return null;
     }
   }
 
   async getMeta(hash: string): Promise<AssetMetadata | null> {
+    if (!isValidHash(hash)) return null;
     try {
       const json = await fs.readFile(this.metaPath(hash), 'utf-8');
       return JSON.parse(json) as AssetMetadata;
@@ -73,6 +85,7 @@ export class FileAssetStore implements AssetStore {
   }
 
   async has(hash: string): Promise<boolean> {
+    if (!isValidHash(hash)) return false;
     try {
       await fs.access(this.dataPath(hash));
       return true;
@@ -118,6 +131,7 @@ export class FileAssetStore implements AssetStore {
   }
 
   async delete(hash: string): Promise<boolean> {
+    if (!isValidHash(hash)) return false;
     const existed = await this.has(hash);
     if (!existed) return false;
 

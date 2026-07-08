@@ -21,8 +21,13 @@ export type ApplyPreviewResult = {
   preview: string;
 };
 
-/** True when `resolved` is the project root or a descendant of it. */
-function withinRoot(resolved: string, projectRoot?: string): boolean {
+/**
+ * True when `resolved` is the project root or a descendant of it.
+ * Exported as THE sandbox predicate for every path that lands AI output on
+ * disk (applyConfirmed, generatePreview, and the CLI's emit --write branch) —
+ * one guard, one behavior.
+ */
+export function withinRoot(resolved: string, projectRoot?: string): boolean {
   const root = resolve(projectRoot ?? process.cwd());
   return resolved === root || resolved.startsWith(root + '/') || resolved.startsWith(root + '\\');
 }

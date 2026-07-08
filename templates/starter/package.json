@@ -6,6 +6,7 @@
   "files": [
     "src",
     "README.md",
+    "LICENSE",
     "tsconfig.json"
   ],
   "scripts": {

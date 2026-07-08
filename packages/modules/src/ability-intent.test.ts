@@ -334,3 +334,76 @@ describe('ability-intent: formatAbilityDecision', () => {
     expect(formatted).toContain('no abilities available');
   });
 });
+
+// ---------------------------------------------------------------------------
+// M2 + M7: affiliation-aware AI scoring
+// ---------------------------------------------------------------------------
+// M2: the offensive scoring pool was type-only (`e.type !== entity.type`) — a
+// same-faction, different-type ally was scored as an attack target.
+// M7: a legacy bare `{ type:'single' }` heal normalized to affiliation 'enemy',
+// so the AI scored healing ENEMIES instead of allies.
+
+describe('ability-intent: affiliation-aware scoring (M2/M7)', () => {
+  const bolt: AbilityDefinition = {
+    id: 'bolt', name: 'Bolt', verb: 'cast', tags: ['combat'],
+    costs: [], target: { type: 'single' }, checks: [],
+    effects: [{ type: 'damage', target: 'target', params: { amount: 6 } }],
+    cooldown: 0,
+  };
+  const blast: AbilityDefinition = {
+    id: 'blast', name: 'Blast', verb: 'cast', tags: ['combat'],
+    costs: [], target: { type: 'all-enemies' }, checks: [],
+    effects: [{ type: 'damage', target: 'target', params: { amount: 4 } }],
+    cooldown: 0,
+  };
+  const bareHeal: AbilityDefinition = {
+    id: 'bare-heal', name: 'Bare Heal', verb: 'pray', tags: ['heal'],
+    costs: [], target: { type: 'single' }, checks: [],
+    effects: [{ type: 'heal', target: 'target', params: { amount: 10, resource: 'hp' } }],
+    cooldown: 0,
+  };
+
+  function packSetup() {
+    // The wolf pack: wolf + shaman share a faction but differ in `type`
+    // (the recruited-ally shape). The hero is the true enemy.
+    const wolf = makeEntity('wolf', 'enemy', ['enemy'], { faction: 'wolves' });
+    const shaman = makeEntity('shaman', 'shaman', ['shaman'], {
+      faction: 'wolves',
+      resources: { hp: 5, mana: 20, stamina: 15 }, // wounded → prime heal target
+    });
+    const hero = makeEntity('hero', 'player', ['player'], { faction: 'party' });
+    const world = buildWorldState([wolf, shaman, hero]);
+    return { wolf, shaman, hero, world };
+  }
+
+  it('offensive single-target scoring never targets a same-faction ally (M2)', () => {
+    const { wolf, world } = packSetup();
+    const scores = scoreAbilityUse(wolf, bolt, world);
+
+    expect(scores.length).toBeGreaterThan(0);
+    expect(scores.every((s) => s.targetId !== 'shaman')).toBe(true);
+    expect(scores.some((s) => s.targetId === 'hero')).toBe(true);
+  });
+
+  it('all-enemies AoE scoring counts only true enemies (M2)', () => {
+    const { wolf, world } = packSetup();
+    const scores = scoreAbilityUse(wolf, blast, world);
+
+    expect(scores).toHaveLength(1);
+    // aoe_targets contribution reflects 1 enemy (the hero), not 2.
+    const aoe = scores[0].contributions.find((c) => c.factor === 'aoe_targets');
+    expect(aoe?.value).toBe(1);
+  });
+
+  it('a bare {type:single} heal is scored toward allies, never enemies (M7)', () => {
+    const { wolf, world } = packSetup();
+    const scores = scoreAbilityUse(wolf, bareHeal, world);
+
+    expect(scores.length).toBeGreaterThan(0);
+    // Never scores healing the enemy hero...
+    expect(scores.every((s) => s.targetId !== 'hero')).toBe(true);
+    // ...and the wounded same-faction shaman is the top pick.
+    const sorted = [...scores].sort((a, b) => b.score - a.score);
+    expect(sorted[0].targetId).toBe('shaman');
+  });
+});

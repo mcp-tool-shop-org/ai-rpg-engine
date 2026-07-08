@@ -27,9 +27,21 @@ describe('starter template', () => {
         expect(engine).toBeDefined();
     });
 
-    it('tension pressure module is wired', () => {
+    it('tension rises when combat damage lands (tension-pressure fires)', () => {
         const engine = createGame(1);
-        const p = engine.world.entities['player'];
-        expect(p?.resources.tension).toBe(0);
+        expect(engine.world.entities['player']?.resources.tension).toBe(0);
+
+        // Walk into the danger zone and fight. combat-core emits
+        // 'combat.damage.applied' whenever a hit lands — that is the event
+        // the tension-pressure module listens on.
+        engine.submitAction('move', { targetIds: ['danger-zone'] });
+        for (let i = 0; i < 8; i++) {
+            engine.submitAction('attack', { targetIds: ['grunt'] });
+            if ((engine.world.entities['player']?.resources.tension ?? 0) > 0) break;
+        }
+
+        // Meta-test property: deleting the tension-pressure listener in
+        // setup.ts turns this RED — nothing else writes the tension resource.
+        expect(engine.world.entities['player']?.resources.tension).toBeGreaterThan(0);
     });
 });

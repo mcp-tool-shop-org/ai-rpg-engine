@@ -15,6 +15,14 @@ export type ActionValidationResult = {
 
 export type ActionValidator = (action: ActionIntent, world: WorldState) => ActionValidationResult;
 
+/**
+ * Applied to each handler-resolved event after it is recorded; any events it
+ * returns are recorded through the same choke point. The Engine wires
+ * `ModuleManager.applyEffects` through this so module-registered RuleEffects
+ * actually execute (v2.5 C1 — they were stored and never run).
+ */
+export type RuleEffectApplier = (event: ResolvedEvent, world: WorldState) => ResolvedEvent[];
+
 /** Extract a one-line message from a thrown value without leaking the stack. */
 function errMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
@@ -24,6 +32,7 @@ function errMessage(err: unknown): string {
 export class ActionDispatcher {
   private verbs: Map<string, VerbHandler> = new Map();
   private validators: ActionValidator[] = [];
+  private effectAppliers: RuleEffectApplier[] = [];
 
   /** Register a verb handler */
   registerVerb(verb: string, handler: VerbHandler): void {
@@ -33,6 +42,11 @@ export class ActionDispatcher {
   /** Register a global validator */
   registerValidator(validator: ActionValidator): void {
     this.validators.push(validator);
+  }
+
+  /** Register a rule-effect applier (see {@link RuleEffectApplier}). */
+  registerEffectApplier(applier: RuleEffectApplier): void {
+    this.effectAppliers.push(applier);
   }
 
   /** Get all registered verb names */
@@ -108,14 +122,48 @@ export class ActionDispatcher {
       store.recordEvent(event);
     }
 
-    // Emit action.resolved
+    // Apply registered rule effects (v2.5 C1). Each applier sees every
+    // handler-resolved event in order; events they return are recorded through
+    // the same recordEvent choke point (deterministic ids), after the
+    // handler's own events and before action.resolved. Single pass — effect
+    // output is NOT re-fed to effects, so cascades are bounded and the id
+    // sequence stays replayable. An applier is consumer-adjacent code; a throw
+    // degrades to a structured rule.effect.failed event, never a lost tick
+    // (module-level RuleEffects are additionally isolated per-effect inside
+    // ModuleManager.applyEffects).
+    const effectEvents: ResolvedEvent[] = [];
+    for (const event of events) {
+      for (const applier of this.effectAppliers) {
+        try {
+          effectEvents.push(...applier(event, world));
+        } catch (err) {
+          effectEvents.push({
+            id: '',
+            tick: event.tick,
+            type: 'rule.effect.failed',
+            payload: {
+              sourceEventId: event.id,
+              reason: `rule-effect applier threw: ${errMessage(err)}`,
+            },
+            causedBy: event.id,
+          });
+        }
+      }
+    }
+    for (const event of effectEvents) {
+      store.recordEvent(event);
+    }
+
+    // Emit action.resolved. eventCount is everything the action recorded
+    // between declared and resolved (handler events + effect events) — with
+    // no effects registered this equals events.length, the pre-C1 value.
     store.emitEvent('action.resolved', {
       verb: action.verb,
       actorId: action.actorId,
-      eventCount: events.length,
+      eventCount: events.length + effectEvents.length,
     }, { actorId: action.actorId });
 
-    return events;
+    return effectEvents.length > 0 ? [...events, ...effectEvents] : events;
   }
 
   /**

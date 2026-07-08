@@ -93,11 +93,35 @@ export class ModuleManager {
     return { pass: true };
   }
 
-  /** Apply rule effects to a resolved event */
+  /**
+   * Apply rule effects to a resolved event. Wired into the dispatch pipeline
+   * by the Engine (v2.5 C1 — previously this had zero callers, so
+   * `rules.registerEffect` silently never executed). Effects run in
+   * registration order; returned events are recorded by the caller through
+   * the store's recordEvent choke point, so ids and ordering stay
+   * deterministic. A throwing effect is isolated into a structured
+   * `rule.effect.failed` event naming the effect (consistent with how
+   * dispatch isolates throwing validators/handlers) — one buggy effect can
+   * neither crash the tick nor silently vanish, and later effects still run.
+   */
   applyEffects(event: ResolvedEvent, world: WorldState): ResolvedEvent[] {
     const additional: ResolvedEvent[] = [];
     for (const effect of this.ruleEffects) {
-      additional.push(...effect.apply(event, world));
+      try {
+        additional.push(...effect.apply(event, world));
+      } catch (err) {
+        additional.push({
+          id: '', // stamped deterministically by recordEvent
+          tick: event.tick,
+          type: 'rule.effect.failed',
+          payload: {
+            effectId: effect.id,
+            sourceEventId: event.id,
+            reason: err instanceof Error ? err.message : String(err),
+          },
+          causedBy: event.id,
+        });
+      }
     }
     return additional;
   }

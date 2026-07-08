@@ -10,7 +10,6 @@ import type {
   ResolvedEvent,
   ScalarValue,
 } from '@ai-rpg-engine/core';
-import { nextId } from '@ai-rpg-engine/core';
 
 // --- Types ---
 

@@ -82,7 +82,16 @@ export type ClassEntanglement = {
 
 // --- Character Build (Player's Choices) ---
 
+/** Current CharacterBuild schema version (mirrors CharacterProfile's PROFILE_VERSION). */
+export const BUILD_VERSION = 1;
+
 export type CharacterBuild = {
+  /**
+   * Schema version for migration. Stamped by serializeBuild/deserializeBuild;
+   * optional so hand-constructed in-memory builds and legacy JSON (which
+   * predates versioning) remain valid. Legacy builds are treated as v1.
+   */
+  version?: number;
   name: string;
   archetypeId: string;
   backgroundId: string;
