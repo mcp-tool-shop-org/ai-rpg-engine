@@ -181,8 +181,15 @@ describe('TIER_LABELS', () => {
 
 describe('computeRelicBonuses', () => {
   it('returns empty for no stat bonuses', () => {
+    // F-9b3e21fa: this call site was left on the OLD 2-arg signature after
+    // F-c2ac7705 added the required `itemName` param — a live TS2554 that no
+    // gate caught (build excludes tests, vitest/esbuild doesn't typecheck,
+    // root `tsc --noEmit` resolves zero files). The test still passed only by
+    // accident (no DEFAULT_WEAPON_MILESTONES entry declares a statBonus, so
+    // the loop consuming itemName never ran). Typechecked by
+    // tsconfig.test.json now: `npx tsc -p packages/equipment/tsconfig.test.json`.
     const state = evaluateRelicGrowth(baseWeapon, makeKills(3), 50);
-    const bonuses = computeRelicBonuses(state, DEFAULT_WEAPON_MILESTONES);
+    const bonuses = computeRelicBonuses(state, DEFAULT_WEAPON_MILESTONES, baseWeapon.name);
     expect(bonuses).toEqual({});
   });
 

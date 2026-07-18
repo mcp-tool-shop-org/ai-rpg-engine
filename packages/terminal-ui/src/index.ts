@@ -8,4 +8,5 @@ export {
   renderFullScreen,
   parseActionSelection,
   parseTextInput,
+  DIALOGUE_LOOKBACK,
 } from './renderer.js';

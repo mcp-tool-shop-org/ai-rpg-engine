@@ -77,9 +77,13 @@ export interface AssetStore {
   put(data: Uint8Array, input: AssetInput): Promise<AssetMetadata>;
   /** Retrieve raw bytes by hash. Returns null if not found, if `hash` is malformed, or (with `verify`) on an integrity mismatch. */
   get(hash: string, opts?: AssetGetOptions): Promise<Uint8Array | null>;
-  /** Retrieve metadata by hash. Returns null if not found or `hash` is malformed. */
+  /** Retrieve metadata by hash. Returns null if not found, `hash` is malformed, or the stored metadata is corrupt/wrong-shaped. */
   getMeta(hash: string): Promise<AssetMetadata | null>;
-  /** Check if an asset exists by hash. Malformed hashes are never "present". */
+  /**
+   * Check if an asset's BYTES exist by hash. Malformed hashes are never
+   * "present". Guarantees the blob only — metadata may still be missing or
+   * corrupt, so `has(h) === true` does not imply `getMeta(h) !== null`.
+   */
   has(hash: string): Promise<boolean>;
   /** List all assets matching an optional filter. */
   list(filter?: AssetFilter): Promise<AssetMetadata[]>;

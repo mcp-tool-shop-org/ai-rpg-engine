@@ -6,7 +6,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
-import type { EntityState, ZoneState } from '@ai-rpg-engine/core';
+import type { EntityState, ResolvedEvent, ZoneState } from '@ai-rpg-engine/core';
 import {
   parseTextInput,
   parseActionSelection,
@@ -15,6 +15,7 @@ import {
   renderActions,
   renderDialogue,
   renderFullScreen,
+  DIALOGUE_LOOKBACK,
 } from './renderer.js';
 
 function makeWorld() {
@@ -196,5 +197,94 @@ describe('render functions — smoke coverage', () => {
     const text = renderFullScreen(world, []);
     expect(text).toContain('Town Square');
     expect(text.length).toBeGreaterThan(0);
+  });
+});
+
+// F-4b7e6f01: renderDialogue used to do up to three full
+// `[...world.eventLog].reverse().find(...)` passes per render — each one
+// copying and reversing the ENTIRE unbounded event log (core never caps or
+// trims it), on every single turn via the CLI's render(), whether or not
+// dialogue was active. renderEventLog's caller already demonstrated the
+// bounded pattern (`eventLog.slice(-8)`); renderDialogue reached past it into
+// the full log, so every turn's render cost grew with total session length —
+// a silent session-long slowdown. These tests pin the bounded-scan contract.
+describe('renderDialogue — bounded event-log scan (F-4b7e6f01)', () => {
+  function ev(type: string, tick: number, payload: Record<string, unknown> = {}): ResolvedEvent {
+    return { id: `e${tick}-${type}`, tick, type, payload };
+  }
+
+  function withEventLog(world: ReturnType<typeof makeWorld>, log: ResolvedEvent[], activeDialogue: string | null) {
+    world.modules['dialogue-core'] = { activeDialogue };
+    (world as { eventLog: ResolvedEvent[] }).eventLog = log;
+    return world;
+  }
+
+  it('finds the active dialogue node within the recent window of a huge log', () => {
+    const filler = Array.from({ length: 5000 }, (_, i) => ev('combat.contact.hit', i));
+    const log = [
+      ...filler,
+      ev('dialogue.node.entered', 5000, {
+        speaker: 'Bram',
+        text: 'Well met.',
+        choices: [{ id: 'c1', text: 'And you.', index: 0 }],
+      }),
+    ];
+    const world = withEventLog(makeWorld(), log, 'bram-talk');
+
+    const out = renderDialogue(world);
+    expect(out).toContain('Bram');
+    expect(out).toContain('Well met.');
+    expect(out).toContain('[1] And you.');
+  });
+
+  it('does not scan past the lookback window — a node buried deeper than DIALOGUE_LOOKBACK is out of reach', () => {
+    const buried = ev('dialogue.node.entered', 1, { speaker: 'Ghost', text: 'You cannot hear me.' });
+    const filler = Array.from({ length: DIALOGUE_LOOKBACK + 50 }, (_, i) => ev('combat.contact.hit', i + 2));
+    const world = withEventLog(makeWorld(), [buried, ...filler], 'ghost-talk');
+
+    // Bounded work means the ancient node is genuinely out of reach: the
+    // dialogue box degrades to null instead of paying a full-log scan.
+    expect(renderDialogue(world)).toBeNull();
+  });
+
+  it('performs bounded work per render regardless of total log length', () => {
+    // Worst old case: the no-active-dialogue branch copied + reversed the
+    // whole log via [...world.eventLog] on every turn. Count element reads
+    // through a Proxy — the read count must be a function of the lookback
+    // window, not of the 50k-event session log.
+    const filler = Array.from({ length: 50_000 }, (_, i) => ev('combat.contact.hit', i));
+    let reads = 0;
+    const proxied = new Proxy(filler, {
+      get(target, prop, receiver) {
+        if (typeof prop === 'string' && /^\d+$/.test(prop)) reads++;
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+    const world = withEventLog(makeWorld(), proxied as unknown as ResolvedEvent[], null);
+
+    renderDialogue(world);
+    expect(reads).toBeLessThanOrEqual(DIALOGUE_LOOKBACK * 3);
+  });
+
+  it('still renders the just-ended dialogue line when it is recent (regression guard)', () => {
+    const world = makeWorld();
+    world.meta.tick = 6;
+    withEventLog(world, [
+      ev('dialogue.node.entered', 4, { speaker: 'Bram', text: 'Farewell, friend.' }),
+      ev('dialogue.ended', 5),
+    ], null);
+
+    expect(renderDialogue(world)).toContain('Farewell, friend.');
+  });
+
+  it('does not render a stale ended-dialogue line from earlier ticks', () => {
+    const world = makeWorld();
+    world.meta.tick = 20;
+    withEventLog(world, [
+      ev('dialogue.node.entered', 4, { speaker: 'Bram', text: 'Farewell, friend.' }),
+      ev('dialogue.ended', 5),
+    ], null);
+
+    expect(renderDialogue(world)).toBeNull();
   });
 });

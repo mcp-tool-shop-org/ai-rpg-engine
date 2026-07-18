@@ -55,16 +55,31 @@ export type PerceptionFilterConfig = {
   perceptionStat?: string;
   /** Per-sense stat overrides */
   senseStats?: Partial<Record<SenseType, string>>;
+  /** Max perception log entries kept PER ENTITY (default: 200). See F-c68e150a. */
+  maxLogSize?: number;
 };
 
 // --- Module ---
 
 const DEFAULT_PERCEPTION_STAT = 'instinct';
 
+/**
+ * Per-entity perception log ring-buffer cap. perceptionLog is persisted (it
+ * rides WorldStore.serialize), and logPerception pushes an entry for every
+ * (AI entity x matching layer x event) combination — for successful AND
+ * failed checks — so without a cap it grew save files and memory unboundedly
+ * over a long campaign (F-c68e150a). Every other ring-buffer trace log in
+ * this package caps its buffer (combat-review maxTraces=50, combat-recovery
+ * maxAftermathLog=20, narrative-authority objectiveLog=500); this was the one
+ * comparable structure without the same treatment.
+ */
+const DEFAULT_MAX_PERCEPTION_LOG = 200;
+
 export function createPerceptionFilter(config?: PerceptionFilterConfig): EngineModule {
   const perceptionStat = config?.perceptionStat ?? DEFAULT_PERCEPTION_STAT;
   const senseStats = config?.senseStats ?? {};
   const customLayers = config?.layers ?? [];
+  const maxLogSize = config?.maxLogSize ?? DEFAULT_MAX_PERCEPTION_LOG;
 
   // Combine built-in layers with custom ones
   const allLayers: PerceptionLayer[] = [
@@ -84,7 +99,7 @@ export function createPerceptionFilter(config?: PerceptionFilterConfig): EngineM
 
       // Catch-all listener that routes events through perception layers
       ctx.events.on('*', (event, world) => {
-        processEvent(event, world, allLayers, perceptionStat, senseStats);
+        processEvent(event, world, allLayers, perceptionStat, senseStats, maxLogSize);
       });
     },
   };
@@ -98,6 +113,7 @@ function processEvent(
   layers: PerceptionLayer[],
   defaultStat: string,
   senseStats: Partial<Record<SenseType, string>>,
+  maxLogSize: number,
 ): void {
   // Find matching layers for this event type
   const matchingLayers = layers.filter((layer) =>
@@ -158,7 +174,7 @@ function processEvent(
           : (clarity > 0.15 ? 'partial' : 'none'),
       };
 
-      logPerception(world, perceived);
+      logPerception(world, perceived, maxLogSize);
 
       // Apply perception results
       if (result.detected) {
@@ -346,14 +362,22 @@ function matchEventPattern(eventType: string, pattern: string): boolean {
   return eventType === pattern;
 }
 
-function logPerception(world: WorldState, perceived: PerceivedEvent): void {
+function logPerception(world: WorldState, perceived: PerceivedEvent, maxLogSize: number): void {
   const mod = world.modules['perception-filter'] as
     { perceptionLog: Record<string, PerceivedEvent[]> } | undefined;
   if (!mod) return;
   if (!mod.perceptionLog[perceived.entityId]) {
     mod.perceptionLog[perceived.entityId] = [];
   }
-  mod.perceptionLog[perceived.entityId].push(perceived);
+  const entries = mod.perceptionLog[perceived.entityId];
+  entries.push(perceived);
+  // Ring-buffer cap (F-c68e150a): same shift-when-over-cap pattern the other
+  // trace logs in this package use. One push per call, so a single shift
+  // keeps the invariant; the while also self-heals logs persisted over-cap
+  // by an older save.
+  while (entries.length > maxLogSize) {
+    entries.shift();
+  }
 }
 
 // --- Query API ---

@@ -88,35 +88,27 @@ export type AbilityCoreConfig = {
 };
 
 // ---------------------------------------------------------------------------
-// Genre-gated ability tables (follows crafting-recipes pattern)
+// Ability catalog formula (F-dd1faf2a)
 // ---------------------------------------------------------------------------
 
-/** Universal abilities available in all genres */
-export const UNIVERSAL_ABILITIES: AbilityDefinition[] = [];
-
-/** Genre-specific ability tables */
-export const GENRE_ABILITIES: Record<string, AbilityDefinition[]> = {};
-
 /**
- * Get abilities available for a given genre + entity tags.
- * Follows the same pattern as getAvailableRecipes() in crafting-recipes.ts.
+ * Formula-registry id under which createAbilityCore publishes its
+ * construction-frozen ability catalog. The registry is per-engine (it lives
+ * on the ModuleManager), so observability modules in the SAME engine —
+ * simulation-inspector's zero-arg default path — can resolve the full
+ * AbilityDefinition[] list without every starter re-threading it, while
+ * parallel engines with different packs never cross-contaminate. Registered
+ * formulas are code, never serialized, and re-register on Engine.deserialize.
  */
-export function getAbilitiesForGenre(
-  genre: string,
-  entityTags?: string[],
-): AbilityDefinition[] {
-  const all = [
-    ...UNIVERSAL_ABILITIES,
-    ...(GENRE_ABILITIES[genre] ?? []),
-  ];
+export const ABILITY_CATALOG_FORMULA = 'ability-core:catalog';
 
-  if (!entityTags || entityTags.length === 0) return all;
-
-  return all.filter((ability) => {
-    if (!ability.requirements || ability.requirements.length === 0) return true;
-    return ability.requirements.every((req) => checkCondition(req, entityTags));
-  });
-}
+// NOTE (F-6b2a840f): the former UNIVERSAL_ABILITIES / GENRE_ABILITIES /
+// getAbilitiesForGenre() genre tables were removed. They claimed to follow
+// crafting-recipes.ts's populated-table pattern but were permanently empty
+// stubs with zero call sites — getAbilitiesForGenre() returned [] for every
+// input, always. All 10 starters define ability catalogs directly in each
+// pack's content and hand them to createAbilityCore; that (plus the catalog
+// formula above) is the supported path.
 
 // ---------------------------------------------------------------------------
 // Condition checking
@@ -461,6 +453,11 @@ export function createAbilityCore(config: AbilityCoreConfig): EngineModule {
         cooldowns: {},
         useCounts: {},
       } satisfies AbilityModuleState);
+
+      // Publish the construction-frozen catalog so same-engine observability
+      // modules (simulation-inspector) can compute a CORRECT availability
+      // read by default (F-dd1faf2a) — see ABILITY_CATALOG_FORMULA.
+      ctx.formulas.register(ABILITY_CATALOG_FORMULA, () => config.abilities);
     },
   };
 }

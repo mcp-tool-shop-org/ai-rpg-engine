@@ -4,3 +4,4 @@ export * from './schemas.js';
 export * from './validate.js';
 export * from './refs.js';
 export * from './loader.js';
+export * from './build-catalog.js';

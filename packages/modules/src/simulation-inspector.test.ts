@@ -267,4 +267,96 @@ describe('simulation-inspector', () => {
       expect(result['guard_1'].abilityState.availableAbilities).toContain('fireball');
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Default ability catalog resolution (F-dd1faf2a completion)
+  // -------------------------------------------------------------------------
+  //
+  // The opt-in `abilities` config above was the Stage A fix, but every one of
+  // the 10 shipped starters calls createSimulationInspector() with ZERO args,
+  // so the under-reporting persisted in every shipped game. ability-core now
+  // publishes its construction-frozen catalog through the engine's shared
+  // formula registry, and the zero-arg inspector resolves it automatically —
+  // correct by default, no starter changes needed.
+
+  describe('default ability catalog resolution (zero-arg, F-dd1faf2a)', () => {
+    const zap: AbilityDefinition = {
+      id: 'zap', name: 'Zap', verb: 'cast', tags: [],
+      target: { type: 'single', filter: ['enemy'] }, checks: [], effects: [],
+    };
+    const unaffordable: AbilityDefinition = {
+      id: 'unaffordable', name: 'Unaffordable', verb: 'cast', tags: [],
+      costs: [{ resourceId: 'mana', amount: 100 }], // guard_1 has no mana
+      target: { type: 'self' }, checks: [], effects: [],
+    };
+
+    function createZeroArgEngine() {
+      return createTestEngine({
+        modules: [
+          statusCore,
+          createCognitionCore(),
+          createPerceptionFilter(),
+          createEnvironmentCore(),
+          createFactionCognition({
+            factions: [{ factionId: 'castle-guard', entityIds: ['guard_1'] }],
+          }),
+          createRumorPropagation(),
+          createAbilityCore({ abilities: [zap, unaffordable] }),
+          createSimulationInspector(), // ZERO args — the shape all 10 starters ship
+        ],
+        entities: [player, { ...guard }],
+        zones,
+        playerId: 'player',
+        startZone: 'hall',
+      });
+    }
+
+    test('zero-arg inspector reports a never-used ability as available via ability-core catalog', () => {
+      const engine = createZeroArgEngine();
+      const inspector = engine.moduleManager.getInspectors().find(i => i.id === 'entity-cognition')!;
+      const result = inspector.inspect(engine.world) as Record<string, {
+        abilityState: { availableAbilities: string[] };
+      }>;
+      expect(result['guard_1'].abilityState.availableAbilities).toContain('zap');
+      expect(result['guard_1'].abilityState.availableAbilities).not.toContain('unaffordable');
+    });
+
+    test('zero-arg simulation-snapshot inspector also resolves the catalog', () => {
+      const engine = createZeroArgEngine();
+      const inspector = engine.moduleManager.getInspectors().find(i => i.id === 'simulation-snapshot')!;
+      const snapshot = inspector.inspect(engine.world) as ReturnType<typeof createSnapshot>;
+      expect(snapshot.entities['guard_1'].abilityState.availableAbilities).toContain('zap');
+    });
+
+    test('an explicitly configured abilities list still wins over the auto-resolved catalog', () => {
+      const engine = createTestEngine({
+        modules: [
+          statusCore,
+          createCognitionCore(),
+          createAbilityCore({ abilities: [zap, unaffordable] }),
+          createSimulationInspector({ abilities: [unaffordable] }), // deliberately narrower
+        ],
+        entities: [player, { ...guard }],
+        zones,
+        playerId: 'player',
+        startZone: 'hall',
+      });
+      const inspector = engine.moduleManager.getInspectors().find(i => i.id === 'entity-cognition')!;
+      const result = inspector.inspect(engine.world) as Record<string, {
+        abilityState: { availableAbilities: string[] };
+      }>;
+      // zap is in ability-core's catalog but NOT in the explicit config — the
+      // explicit list is authoritative when supplied.
+      expect(result['guard_1'].abilityState.availableAbilities).not.toContain('zap');
+    });
+
+    test('an engine without ability-core still inspects safely (fallback path)', () => {
+      const engine = createEngine(); // the base fixture — no ability-core at all
+      const inspector = engine.moduleManager.getInspectors().find(i => i.id === 'entity-cognition')!;
+      const result = inspector.inspect(engine.world) as Record<string, {
+        abilityState: { availableAbilities: string[] };
+      }>;
+      expect(result['guard_1'].abilityState.availableAbilities).toEqual([]);
+    });
+  });
 });

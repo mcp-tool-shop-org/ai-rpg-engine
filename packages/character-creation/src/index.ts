@@ -17,7 +17,8 @@ export type {
 export { BUILD_VERSION } from './types.js';
 
 export { validateBuild } from './validate.js';
-export { resolveEntity } from './resolve.js';
+export { resolveEntity, BuildResolutionError } from './resolve.js';
+export type { BuildResolutionErrorShape } from './resolve.js';
 export {
   getAvailableArchetypes,
   getAvailableBackgrounds,

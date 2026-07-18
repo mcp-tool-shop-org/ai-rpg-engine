@@ -1,7 +1,24 @@
 // Profile serialization — save/load to JSON
 
+import type { ItemChronicleEvent } from '@ai-rpg-engine/equipment';
 import type { CharacterProfile } from './types.js';
 import { PROFILE_VERSION } from './types.js';
+
+// All chronicle event kinds, typed exhaustively against equipment's
+// ItemChronicleEvent (F-08afa14a): `Record<ItemChronicleEvent, true>` fails to
+// compile if equipment ever adds, renames, or removes an event and this list
+// drifts — the deserializer can never silently reject a newly-legal event or
+// accept a removed one. (Type-only import: erased at runtime.)
+const ITEM_CHRONICLE_EVENT_FLAGS: Record<ItemChronicleEvent, true> = {
+  'acquired': true,
+  'lost': true,
+  'used-in-kill': true,
+  'recognized': true,
+  'transformed': true,
+  'cursed': true,
+  'blessed': true,
+};
+const ITEM_CHRONICLE_EVENTS: ReadonlySet<string> = new Set(Object.keys(ITEM_CHRONICLE_EVENT_FLAGS));
 
 /** Serialize a profile to JSON string. */
 export function serializeProfile(profile: CharacterProfile): string {
@@ -88,8 +105,38 @@ export function deserializeProfile(json: string): {
     } else {
       const chronicle = obj['itemChronicle'] as Record<string, unknown>;
       for (const key of Object.keys(chronicle)) {
-        if (!Array.isArray(chronicle[key])) {
+        const entries = chronicle[key];
+        if (!Array.isArray(entries)) {
           errors.push(`Missing or invalid itemChronicle.${key}`);
+          continue;
+        }
+        // Element-level shape (F-08afa14a re-report): a valid ARRAY whose
+        // elements are malformed sailed through — `[null]` passed with
+        // errors: [] and then evaluateRelicGrowth raw-threw reading `.event`;
+        // an object entry with a missing/wrong-typed `tick` never crashed at
+        // all, it just made getAge() return NaN so every age milestone
+        // silently failed forever. Validate each entry with the same
+        // element-level rigor character-creation applies to traitIds/
+        // statAllocations, naming the exact element and field.
+        for (let i = 0; i < entries.length; i++) {
+          const entry: unknown = entries[i];
+          if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+            errors.push(`Missing or invalid itemChronicle.${key}[${i}]`);
+            continue;
+          }
+          const e = entry as Record<string, unknown>;
+          if (typeof e['event'] !== 'string' || !ITEM_CHRONICLE_EVENTS.has(e['event'])) {
+            errors.push(`Missing or invalid itemChronicle.${key}[${i}].event`);
+          }
+          if (typeof e['tick'] !== 'number' || !Number.isFinite(e['tick'])) {
+            errors.push(`Missing or invalid itemChronicle.${key}[${i}].tick`);
+          }
+          if (typeof e['detail'] !== 'string' || e['detail'].length === 0) {
+            errors.push(`Missing or invalid itemChronicle.${key}[${i}].detail`);
+          }
+          if (e['zoneId'] !== undefined && typeof e['zoneId'] !== 'string') {
+            errors.push(`Missing or invalid itemChronicle.${key}[${i}].zoneId`);
+          }
         }
       }
     }

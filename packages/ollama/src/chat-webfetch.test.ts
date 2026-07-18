@@ -359,3 +359,164 @@ describe('webfetch — DNS-resolution SSRF gate (F-f268b81a)', () => {
     }
   });
 });
+
+// v2.6 audit F-23749236 — the DNS-resolved gate (F-f268b81a) validates only
+// the INITIAL url, then calls fetch() with the WHATWG/undici default
+// redirect:'follow'. fetch() then follows the entire redirect chain internally
+// — re-resolving and connecting to each hop with NO further SSRF check — so a
+// public URL that 302-redirects to 127.0.0.1 / 169.254.169.254 / an internal
+// address bypasses the guard outright, needing no DNS control at all. The gate
+// must re-validate EVERY hop. These tests spy on globalThis.fetch and emulate
+// undici's empirically-verified redirect semantics exactly: with redirect:
+// 'manual' undici returns the real 3xx status + Location header (a basic, not
+// opaque, response), while the default 'follow' transparently yields the FINAL
+// hop's body — which is precisely how the internal content leaks today.
+describe('webfetch — redirect-follow SSRF gate (F-23749236)', () => {
+  beforeEach(() => {
+    vi.mocked(lookup).mockReset();
+  });
+
+  it('rejects a redirect whose target is a blocked address, never contacts it, and never surfaces its body', async () => {
+    // The first hop is a genuinely public host (resolves public); the redirect
+    // target is loopback. Pre-fix, default-follow fetch() returns the loopback
+    // body and webfetch() reports ok:true with the internal secret in content.
+    vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+    const calls: Array<{ url: string; redirect: unknown }> = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, redirect: init?.redirect });
+      if (url === 'http://redirector.example/') {
+        if (init?.redirect === 'manual') {
+          // Faithful undici: manual mode exposes the real 302 + Location.
+          return {
+            ok: false, status: 302,
+            headers: new Headers({ location: 'http://127.0.0.1:9/secret' }),
+            text: async () => '',
+          } as unknown as Response;
+        }
+        // Faithful undici: default 'follow' returns the FINAL (loopback) body.
+        return {
+          ok: true, status: 200,
+          headers: new Headers({ 'content-type': 'text/plain' }),
+          text: async () => 'INTERNAL-SECRET-DATA',
+        } as unknown as Response;
+      }
+      // A DIRECT hit on the internal target would mean the bypass completed.
+      return {
+        ok: true, status: 200,
+        headers: new Headers({ 'content-type': 'text/plain' }),
+        text: async () => 'INTERNAL-SECRET-DATA',
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    try {
+      const { webfetch } = await import('./chat-webfetch.js');
+      const result = await webfetch('http://redirector.example/');
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/not allowed/i);
+      // The internal address is never contacted...
+      expect(calls.some((c) => c.url.includes('127.0.0.1'))).toBe(false);
+      // ...and its body never surfaces in the returned content.
+      expect(result.content).not.toContain('INTERNAL-SECRET-DATA');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('rejects a redirect to the cloud-metadata endpoint (169.254.169.254)', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+    const calls: string[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push(url);
+      if (url === 'http://reputable.example/' && init?.redirect === 'manual') {
+        return {
+          ok: false, status: 301,
+          headers: new Headers({ location: 'http://169.254.169.254/latest/meta-data/' }),
+          text: async () => '',
+        } as unknown as Response;
+      }
+      return {
+        ok: true, status: 200,
+        headers: new Headers({ 'content-type': 'text/plain' }),
+        text: async () => 'iam-credentials',
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    try {
+      const { webfetch } = await import('./chat-webfetch.js');
+      const result = await webfetch('http://reputable.example/');
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/not allowed/i);
+      expect(calls.some((u) => u.includes('169.254.169.254'))).toBe(false);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('follows a redirect to another public address and returns its content', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === 'http://start.example/') {
+        if (init?.redirect === 'manual') {
+          return {
+            ok: false, status: 301,
+            headers: new Headers({ location: 'http://final.example/page' }),
+            text: async () => '',
+          } as unknown as Response;
+        }
+        return {
+          ok: true, status: 200,
+          headers: new Headers({ 'content-type': 'text/plain' }),
+          text: async () => 'PUBLIC-FINAL',
+        } as unknown as Response;
+      }
+      if (url === 'http://final.example/page') {
+        return {
+          ok: true, status: 200,
+          headers: new Headers({ 'content-type': 'text/plain' }),
+          text: async () => 'PUBLIC-FINAL',
+        } as unknown as Response;
+      }
+      return {
+        ok: false, status: 404, statusText: 'Not Found',
+        headers: new Headers(), text: async () => '',
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    try {
+      const { webfetch } = await import('./chat-webfetch.js');
+      const result = await webfetch('http://start.example/');
+      expect(result.ok).toBe(true);
+      expect(result.content).toContain('PUBLIC-FINAL');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('stops after a bounded number of redirects instead of following an endless chain', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+    const realFetch = globalThis.fetch;
+    let hops = 0;
+    globalThis.fetch = (async (_input: RequestInfo | URL, _init?: RequestInit) => {
+      hops++;
+      // Every hop redirects onward to a fresh public URL — forever.
+      return {
+        ok: false, status: 302,
+        headers: new Headers({ location: `http://hop-${hops}.example/` }),
+        text: async () => 'redir',
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    try {
+      const { webfetch } = await import('./chat-webfetch.js');
+      const result = await webfetch('http://hop-start.example/');
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/too many redirects/i);
+      // Bounded: the manual loop caps hops rather than calling fetch forever.
+      expect(hops).toBeLessThanOrEqual(6);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+});

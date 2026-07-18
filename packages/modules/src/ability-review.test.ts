@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createTestEngine } from '@ai-rpg-engine/core';
+import { createTestEngine, Engine } from '@ai-rpg-engine/core';
 import type { EntityState, ActionIntent } from '@ai-rpg-engine/core';
 import type { AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
 import { statusCore } from './status-core.js';
 import { createAbilityCore } from './ability-core.js';
 import { createAbilityEffects } from './ability-effects.js';
-import { createAbilityReview, formatAbilityTrace } from './ability-review.js';
+import { createAbilityReview, formatAbilityTrace, getAbilityTraces } from './ability-review.js';
 import type { AbilityTrace } from './ability-review.js';
 import { registerStatusDefinitions, clearStatusRegistry } from './status-semantics.js';
 
@@ -381,6 +381,92 @@ describe('ability-review: inspector content', () => {
     const inspectorData = runInspector(engine, 'ability-review');
     const res = inspectorData.resistances as Array<{ entityId: string; resistances: Record<string, string> }>;
     expect(res.some((r) => r.entityId === 'boss' && r.resistances.control === 'immune')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Persistence (F-a4c17b02)
+// ---------------------------------------------------------------------------
+//
+// `traces` used to live ONLY in createAbilityReview()'s closure —
+// register(ctx) never called ctx.persistence.registerNamespace, unlike the
+// six sibling modules migrated off this exact pattern (combat-review et al).
+// Engine.deserialize reconstructs a fresh closure on every reload, so traces
+// silently reset to [] in every shipped starter on any save/reload.
+
+describe('ability-review: persistence (F-a4c17b02)', () => {
+  function reloadModules() {
+    return [
+      statusCore,
+      createAbilityCore({ abilities: allAbilities }),
+      createAbilityEffects(),
+      createAbilityReview(),
+    ];
+  }
+
+  it('getAbilityTraces reads recorded traces from world state', () => {
+    const player = makeEntity('player', 'pc', ['player']);
+    const enemy = makeEntity('goblin', 'npc', ['enemy'], { resources: { hp: 20, mana: 0, stamina: 10 }, stats: { vigor: 5, instinct: 5, will: 5, maxHp: 20 } });
+    const engine = buildEngine([player, enemy]);
+    expect(getAbilityTraces(engine.world)).toEqual([]);
+
+    engine.processAction(makeAction('player', 'fireball', ['goblin']));
+
+    const traces = getAbilityTraces(engine.world);
+    expect(traces.length).toBe(1);
+    expect(traces[0].abilityId).toBe('fireball');
+    expect(traces[0].outcome).toBe('success');
+  });
+
+  it('traces survive save/reload', () => {
+    const player = makeEntity('player', 'pc', ['player']);
+    const enemy = makeEntity('goblin', 'npc', ['enemy'], { resources: { hp: 20, mana: 0, stamina: 10 }, stats: { vigor: 5, instinct: 5, will: 5, maxHp: 20 } });
+    const engine = buildEngine([player, enemy]);
+
+    engine.processAction(makeAction('player', 'fireball', ['goblin']));
+    const beforeCount = getAbilityTraces(engine.world).length;
+    expect(beforeCount).toBe(1);
+
+    const blob = engine.serialize();
+    const restored = Engine.deserialize(blob, { modules: reloadModules() });
+
+    const after = getAbilityTraces(restored.world);
+    expect(after.length).toBe(beforeCount);
+    expect(after[0].abilityId).toBe('fireball');
+  });
+
+  it('the debug inspector reads persisted traces after reload (not a stale closure)', () => {
+    const player = makeEntity('player', 'pc', ['player']);
+    const enemy = makeEntity('goblin', 'npc', ['enemy'], { resources: { hp: 20, mana: 0, stamina: 10 }, stats: { vigor: 5, instinct: 5, will: 5, maxHp: 20 } });
+    const engine = buildEngine([player, enemy]);
+
+    engine.processAction(makeAction('player', 'fireball', ['goblin']));
+
+    const blob = engine.serialize();
+    const restored = Engine.deserialize(blob, { modules: reloadModules() });
+
+    const inspector = restored.moduleManager.getInspectors().find((i) => i.id === 'ability-review');
+    expect(inspector).toBeDefined();
+    const data = inspector!.inspect(restored.world) as { traceCount: number; recentTraces: Array<{ abilityId: string }> };
+    expect(data.traceCount).toBe(1);
+    expect(data.recentTraces[0].abilityId).toBe('fireball');
+  });
+
+  it('new traces recorded after reload append to the restored log and respect maxTraces', () => {
+    const player = makeEntity('player', 'pc', ['player']);
+    const enemy = makeEntity('goblin', 'npc', ['enemy'], { resources: { hp: 200, mana: 0, stamina: 10 }, stats: { vigor: 5, instinct: 5, will: 5, maxHp: 200 } });
+    const engine = buildEngine([player, enemy]);
+
+    engine.processAction(makeAction('player', 'fireball', ['goblin']));
+    const blob = engine.serialize();
+
+    const restored = Engine.deserialize(blob, { modules: reloadModules() });
+    // heal is self-targeted and off cooldown — usable immediately post-reload
+    restored.processAction(makeAction('player', 'heal'));
+
+    const traces = getAbilityTraces(restored.world);
+    expect(traces.length).toBe(2);
+    expect(traces.map((t) => t.abilityId)).toEqual(['fireball', 'heal']);
   });
 });
 

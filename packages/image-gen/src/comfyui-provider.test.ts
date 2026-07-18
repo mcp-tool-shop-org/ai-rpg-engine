@@ -10,8 +10,9 @@
 //
 // Mirrors the contract style of packages/ollama/src/client.ts + client.test.ts.
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { readFileSync } from 'node:fs';
 import type { Socket } from 'node:net';
 import { ComfyUIProvider, readBodyCapped } from './comfyui-provider.js';
 
@@ -443,44 +444,41 @@ describe('ComfyUIProvider.generate — PA-1: seed reproducibility', () => {
   });
 });
 
-// v2.6 audit F-7ad6e99e — readBodyCapped()'s docstring promises to
-// "Accumulate a response body without ever buffering more than `cap`
-// bytes." The streaming branch honors that by checking after every chunk,
-// but when res.body is null the function falls back to res.arrayBuffer()
-// (which reads the WHOLE body first) and only compares byteLength > cap
-// afterward. This branch is real and reachable — a 204/304 (or any Response
-// built without a stream) gives `body === null` in undici's fetch — but it
-// had zero test coverage in either direction.
-describe('readBodyCapped — null-body fallback (F-7ad6e99e)', () => {
-  /** A Response-shaped object with no stream, exactly like a bodyless 204/304. */
-  function makeNullBodyResponse(bytes: Uint8Array): Response {
-    const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-    return { body: null, arrayBuffer: async () => ab } as unknown as Response;
-  }
+// v2.6 audit F-7ad6e99e (re-opened) — readBodyCapped() promises to
+// "Accumulate a response body without ever buffering more than `cap` bytes."
+// Stage A only DOCUMENTED the null-body fallback (res.arrayBuffer(), which
+// reads the WHOLE body before the size check) as a narrow exception; it did
+// not fix the behavior. The behavior is now fixed: a null res.body is undici's
+// signal that the response carries NO bytes at all (empirically, only 204/304
+// and the other null-body statuses produce it — a 200 with a real body always
+// exposes a stream), so readBodyCapped returns empty WITHOUT calling
+// arrayBuffer(). No path in the function reads a whole body before the cap can
+// reject it anymore — the contract holds unconditionally.
+describe('readBodyCapped — null body yields zero bytes, no pre-buffering (F-7ad6e99e)', () => {
+  it('returns an empty buffer for a null body and never calls arrayBuffer()', async () => {
+    let arrayBufferCalled = false;
+    // Even a (non-real) null-body Response whose arrayBuffer would hand back a
+    // huge buffer must not be read: the fix removed that call entirely.
+    const res = {
+      body: null,
+      arrayBuffer: async () => {
+        arrayBufferCalled = true;
+        return new ArrayBuffer(4096);
+      },
+    } as unknown as Response;
 
-  it('accumulates a small body correctly via the arrayBuffer() fallback', async () => {
-    const bytes = new Uint8Array([1, 2, 3, 4, 5]);
-    const result = await readBodyCapped(makeNullBodyResponse(bytes), 1024);
+    const result = await readBodyCapped(res, 1024);
     expect(result).not.toBe('too-large');
-    expect(Buffer.from(result as Uint8Array)).toEqual(Buffer.from(bytes));
-  });
-
-  it('still rejects an over-cap body reached via the null-body fallback', async () => {
-    const bytes = new Uint8Array(2048);
-    const result = await readBodyCapped(makeNullBodyResponse(bytes), 1024);
-    expect(result).toBe('too-large');
-  });
-
-  it('accepts a body exactly at the cap boundary via the null-body fallback', async () => {
-    const bytes = new Uint8Array(1024);
-    const result = await readBodyCapped(makeNullBodyResponse(bytes), 1024);
-    expect(result).not.toBe('too-large');
+    expect((result as Uint8Array).byteLength).toBe(0);
+    // The whole-body read that used to live here is gone — this is the actual
+    // behavior change, not just a doc/test tweak.
+    expect(arrayBufferCalled).toBe(false);
   });
 
   // Reachability proof: a real bodyless HTTP response (204) gives
   // `res.body === null` in undici's fetch, so generate() genuinely exercises
-  // this fallback rather than it being purely theoretical.
-  it('generate() does not crash on a real bodyless (204) /view response', async () => {
+  // the null-body branch — and does so without ever buffering a whole body.
+  it('generate() handles a real bodyless (204) /view response as a typed outcome', async () => {
     const mock = await startMock(
       comfyFlow((_req, res) => {
         res.writeHead(204, { 'Content-Type': 'image/png' });
@@ -491,6 +489,80 @@ describe('readBodyCapped — null-body fallback (F-7ad6e99e)', () => {
     const result = await makeProvider(mock.url).generate('p');
     // Whatever it resolves to, it must be a typed outcome, never a throw/hang.
     expect(typeof result.ok).toBe('boolean');
+  });
+});
+
+// v2.6 audit F-5e41e3c3 — the history-poll loop tolerated transient non-OK
+// responses (5xx / proxy hiccup mid-generation) with a bare `continue` and NO
+// signal, so a flaky-but-recovering daemon and a flaky-then-failed one both
+// surfaced only a single opaque timeout at the very end, indistinguishable
+// from a merely-slow generation. Non-OK polls now route through onPollError.
+describe('ComfyUIProvider.generate — F-5e41e3c3: non-OK poll observability', () => {
+  it('reports each tolerated non-OK history poll via a supplied onPollError hook', async () => {
+    const seen: PollErrorInfoShape[] = [];
+    const mock = await startMock((req, res) => {
+      if (req.method === 'POST' && req.url === '/prompt') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ prompt_id: 'p1' }));
+        return;
+      }
+      // Every history poll fails transiently — tolerated, bounded by deadline.
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('worker restarting');
+    });
+
+    const provider = new ComfyUIProvider({
+      baseUrl: mock.url,
+      pollIntervalMs: 20,
+      timeoutMs: 200,
+      onPollError: (info) => seen.push(info),
+    });
+    const result = await provider.generate('p');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('timeout');
+    // The flaky window left a diagnosable trail: real status + a poll counter.
+    expect(seen.length).toBeGreaterThanOrEqual(1);
+    expect(seen[0].status).toBe(500);
+    expect(seen[0].attempt).toBeGreaterThanOrEqual(1);
+    expect(seen[0].url).toContain('/history/p1');
+  });
+
+  it('the default onPollError writes a stderr breadcrumb naming the status', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const mock = await startMock((req, res) => {
+      if (req.method === 'POST' && req.url === '/prompt') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ prompt_id: 'p1' }));
+        return;
+      }
+      res.writeHead(502);
+      res.end();
+    });
+    try {
+      const result = await makeProvider(mock.url, { timeoutMs: 150 }).generate('p');
+      expect(result.ok).toBe(false);
+      expect(errSpy).toHaveBeenCalled();
+      expect(errSpy.mock.calls.some((c) => String(c[0]).includes('502'))).toBe(true);
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+});
+
+/** Shape of the onPollError payload — local mirror of the exported PollErrorInfo. */
+type PollErrorInfoShape = { status: number; attempt: number; url: string };
+
+// v2.6 audit F-a1c8b2b1 — deriveDefaultSeed()'s join separator was a literal
+// NUL byte (0x00) rendering as a space in every editor. Functionally harmless
+// (FNV-1a hashes it like any code unit), but git treats a file with a NUL in
+// its first several KB as BINARY, so `git diff`/`blame`/review tools lost
+// line-level visibility here — which plausibly let the typo survive Stage A's
+// own edits to nearby lines. This guard rejects any NUL byte in the source.
+describe('comfyui-provider.ts source hygiene (F-a1c8b2b1)', () => {
+  it('contains no NUL byte (keeps git treating the file as text)', () => {
+    const src = readFileSync(new URL('./comfyui-provider.ts', import.meta.url));
+    expect(src.includes(0x00)).toBe(false);
   });
 });
 

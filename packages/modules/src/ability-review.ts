@@ -62,13 +62,36 @@ export type AbilityReviewConfig = {
   maxTraces?: number;
 };
 
+/**
+ * Module persistence shape. `traces` used to live ONLY in
+ * createAbilityReview()'s closure — register(ctx) never called
+ * ctx.persistence.registerNamespace at all (F-a4c17b02), the exact
+ * closure-vs-world.modules pattern combat-review.ts was migrated off
+ * (F-de2760c4). Engine.deserialize reconstructs a fresh closure on every
+ * reload, so traces silently reset to []. Re-fetched fresh from
+ * world.modules['ability-review'] on every access instead, the same pattern
+ * combat-review.ts/rumor-propagation.ts/district-core.ts use.
+ */
+type AbilityReviewModuleState = {
+  traces: AbilityTrace[];
+};
+
+function getReviewState(world: WorldState): AbilityReviewModuleState {
+  return (world.modules['ability-review'] ?? { traces: [] }) as AbilityReviewModuleState;
+}
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
 export function createAbilityReview(config?: AbilityReviewConfig): EngineModule {
   const maxTraces = config?.maxTraces ?? 50;
-  const traces: AbilityTrace[] = [];
+  // `pending` is ephemeral, work-in-progress state for the CURRENT synchronous
+  // action-dispatch cycle only (built up across the event handlers reacting to
+  // one ability resolution, then always flushed into the persisted traces and
+  // reset to null by finalize before the cycle ends) — safe to keep in the
+  // closure since a save can only happen BETWEEN actions. The trace ring
+  // buffer itself is NOT safe here — see getReviewState above (F-a4c17b02).
   let pending: Partial<AbilityTrace> | null = null;
 
   function summarize(t: Partial<AbilityTrace>): string {
@@ -92,6 +115,8 @@ export function createAbilityReview(config?: AbilityReviewConfig): EngineModule 
     dependsOn: ['ability-core'],
 
     register(ctx) {
+      ctx.persistence.registerNamespace('ability-review', { traces: [] } as AbilityReviewModuleState);
+
       // 1. ability.used — start trace
       ctx.events.on('ability.used', (event, world) => {
         const checks = (event.payload.checks as AbilityCheckResult[]) ?? [];
@@ -285,6 +310,8 @@ export function createAbilityReview(config?: AbilityReviewConfig): EngineModule 
             }
           }
 
+          // Re-fetch from world state (F-a4c17b02) — the closure never holds traces
+          const traces = getReviewState(world).traces;
           return {
             traceCount: traces.length,
             recentTraces: traces.slice(-5).map((t) => ({
@@ -313,8 +340,9 @@ export function createAbilityReview(config?: AbilityReviewConfig): EngineModule 
     }
 
     const trace = pending as AbilityTrace;
-    traces.push(trace);
-    if (traces.length > maxTraces) traces.shift();
+    const state = getReviewState(world);
+    state.traces.push(trace);
+    if (state.traces.length > maxTraces) state.traces.shift();
     pending = null;
 
     ctx.events.emit({
@@ -326,6 +354,15 @@ export function createAbilityReview(config?: AbilityReviewConfig): EngineModule 
       visibility: 'hidden',
     });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Query helpers (exposed for tests / external consumers)
+// ---------------------------------------------------------------------------
+
+/** Read the recorded ability traces from world state (survives save/reload). */
+export function getAbilityTraces(world: WorldState): readonly AbilityTrace[] {
+  return getReviewState(world).traces;
 }
 
 // ---------------------------------------------------------------------------

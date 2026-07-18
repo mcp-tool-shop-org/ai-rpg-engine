@@ -343,3 +343,146 @@ describe('core-spine — Engine.deserialize validates actionLog shape (F-e53d5e9
     expect(loaded.getActionLog()).toEqual(parsed.actionLog);
   });
 });
+
+// dogfood/v2.6 core-spine amend, F-71a4c9de: WorldStore.deserialize validated
+// rngState, saveVersion, and every reconstruction-critical meta field with a
+// structured SaveLoadError — then adopted the ACTUAL game-state payload
+// (entities/zones/quests/factions/globals/modules/eventLog/pending/playerId/
+// locationId) via a blind `Object.assign(store.state, migratedState)` with
+// ZERO shape validation. Reproduced failure classes:
+//   (1) `playerId: 99` (number) loads clean, and `entities[99]` silently
+//       reads `entities["99"]` (JS object keys are strings) — a WRONG-entity
+//       identity corruption with no signal.
+//   (2) `entities: null` loads clean, then getEntity() raw-throws a
+//       TypeError far downstream; `eventLog: "some string"` loads clean, then
+//       recordEvent() raw-throws `push is not a function`.
+// These pin the same structured SAVE_MALFORMED treatment every sibling field
+// already gets: fail loud + named-field at the load boundary.
+describe('core-spine — WorldStore.deserialize validates bulk state shape (F-71a4c9de)', () => {
+  it('rejects a numeric playerId instead of silently resolving a WRONG entity', () => {
+    const parsed = JSON.parse(savedGame(31));
+    // An unrelated entity whose id happens to be the string "99" — the exact
+    // silent-misresolution target from the finding.
+    parsed.world.state.entities['99'] = {
+      ...parsed.world.state.entities.hero, id: '99', name: 'Impostor',
+    };
+    parsed.world.state.playerId = 99;
+    try {
+      WorldStore.deserialize(JSON.stringify(parsed.world));
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(SaveLoadError);
+      expect((e as SaveLoadError).code).toBe('SAVE_MALFORMED');
+      expect((e as SaveLoadError).message).toContain('playerId');
+      expect((e as SaveLoadError).hint).toBeTruthy();
+    }
+  });
+
+  it('rejects a playerId that does not resolve to any entity in the save', () => {
+    const parsed = JSON.parse(savedGame(31));
+    parsed.world.state.playerId = 'ghost-of-a-renamed-entity';
+    try {
+      WorldStore.deserialize(JSON.stringify(parsed.world));
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(SaveLoadError);
+      expect((e as SaveLoadError).code).toBe('SAVE_MALFORMED');
+      expect((e as SaveLoadError).message).toContain('playerId');
+    }
+  });
+
+  it('accepts the empty-string playerId of a pre-player save (constructor default)', () => {
+    // A fresh store serialized before any player entity exists carries
+    // playerId '' and entities {} — that is a legitimate engine-produced
+    // save (the pc6 fixtures rely on it) and must keep loading.
+    const store = new WorldStore({ manifest: testManifest, seed: 41 });
+    const restored = WorldStore.deserialize(store.serialize());
+    expect(restored.state.playerId).toBe('');
+  });
+
+  it('rejects entities: null (previously loaded clean, then getEntity raw-threw downstream)', () => {
+    const parsed = JSON.parse(savedGame(32));
+    parsed.world.state.entities = null;
+    try {
+      WorldStore.deserialize(JSON.stringify(parsed.world));
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(SaveLoadError);
+      expect((e as SaveLoadError).code).toBe('SAVE_MALFORMED');
+      expect((e as SaveLoadError).message).toContain('entities');
+      expect((e as SaveLoadError).hint).toBeTruthy();
+    }
+  });
+
+  it('rejects entities as an array (typeof [] === "object" must not slip through)', () => {
+    const parsed = JSON.parse(savedGame(32));
+    parsed.world.state.entities = [{ id: 'hero' }];
+    expect(() => WorldStore.deserialize(JSON.stringify(parsed.world))).toThrow(SaveLoadError);
+  });
+
+  it('rejects a string eventLog (previously loaded clean, then recordEvent raw-threw "push is not a function")', () => {
+    const parsed = JSON.parse(savedGame(32));
+    parsed.world.state.eventLog = 'some string';
+    try {
+      WorldStore.deserialize(JSON.stringify(parsed.world));
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(SaveLoadError);
+      expect((e as SaveLoadError).code).toBe('SAVE_MALFORMED');
+      expect((e as SaveLoadError).message).toContain('eventLog');
+    }
+  });
+
+  it('rejects a non-array pending', () => {
+    const parsed = JSON.parse(savedGame(32));
+    parsed.world.state.pending = { sneaky: true };
+    expect(() => WorldStore.deserialize(JSON.stringify(parsed.world))).toThrow(SaveLoadError);
+  });
+
+  it('rejects null/array/scalar for every remaining bulk container, naming the field', () => {
+    const corruptions: Array<[string, unknown]> = [
+      ['zones', null],
+      ['quests', 42],
+      ['factions', 'nope'],
+      ['globals', []],
+      ['modules', true],
+    ];
+    for (const [field, bad] of corruptions) {
+      const parsed = JSON.parse(savedGame(33));
+      parsed.world.state[field] = bad;
+      try {
+        WorldStore.deserialize(JSON.stringify(parsed.world));
+        throw new Error(`should have thrown for ${field}`);
+      } catch (e) {
+        expect(e, field).toBeInstanceOf(SaveLoadError);
+        expect((e as SaveLoadError).code, field).toBe('SAVE_MALFORMED');
+        expect((e as SaveLoadError).message, field).toContain(field);
+      }
+    }
+  });
+
+  it('rejects a non-string locationId', () => {
+    const parsed = JSON.parse(savedGame(33));
+    parsed.world.state.locationId = 7;
+    try {
+      WorldStore.deserialize(JSON.stringify(parsed.world));
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(SaveLoadError);
+      expect((e as SaveLoadError).message).toContain('locationId');
+    }
+  });
+
+  it('Engine.deserialize rejects the same corruption (single load authority)', () => {
+    const parsed = JSON.parse(savedGame(34));
+    parsed.world.state.entities = null;
+    expect(() => Engine.deserialize(JSON.stringify(parsed), { modules: [echoModule()] }))
+      .toThrow(SaveLoadError);
+  });
+
+  it('control — a valid engine-produced save still round-trips byte-identically', () => {
+    const saved = savedGame(35);
+    const loaded = Engine.deserialize(saved, { modules: [echoModule()] });
+    expect(loaded.serialize()).toBe(saved);
+  });
+});

@@ -222,6 +222,53 @@ describe('buildCharacter — F-2c013eff: never returns an invalid build, never t
   });
 });
 
+// F-2ae7c051: the retry gate above (F-2c013eff) `continue`s on ANY validation
+// failure — a strict improvement for every satisfiable catalog, but for a
+// HYPOTHETICALLY unsatisfiable one (requiredFlaws exceeding the pack's actual
+// flaw traits, or every flaw mutually incompatible) every possible selection
+// re-fails forever: the player is trapped in a silent, structurally
+// un-winnable retry loop instead of getting a diagnosable failure. The
+// catalog must be checked for self-consistency BEFORE the loop, failing loud
+// with a structured [CATALOG_UNSATISFIABLE] error naming the defect.
+describe('buildCharacter — F-2ae7c051: unsatisfiable catalog fails loud up front, never loops', () => {
+  it('rejects a catalog demanding more flaws than it defines, before any prompting', async () => {
+    const catalog = makeCatalog({
+      requiredFlaws: 2,
+      traits: [
+        { id: 'brave', name: 'Brave', description: 'Fearless', category: 'perk', effects: [] },
+        { id: 'lucky', name: 'Lucky', description: 'Fortunate', category: 'flaw', effects: [] },
+      ],
+    });
+
+    await expect(buildCharacter(catalog, ruleset)).rejects.toThrow('[CATALOG_UNSATISFIABLE]');
+    // Failed at the gate — the player was never dragged into the doomed flow.
+    expect(mockPromptText).not.toHaveBeenCalled();
+    expect(mockPromptMultiSelect).not.toHaveBeenCalled();
+  });
+
+  it('rejects a catalog whose two required flaws are mutually incompatible', async () => {
+    const catalog = makeCatalog({
+      requiredFlaws: 2,
+      traits: [
+        { id: 'grim', name: 'Grim', description: 'Never smiles', category: 'flaw', effects: [], incompatibleWith: ['dour'] },
+        { id: 'dour', name: 'Dour', description: 'Never laughs', category: 'flaw', effects: [], incompatibleWith: ['grim'] },
+      ],
+    });
+
+    await expect(buildCharacter(catalog, ruleset)).rejects.toThrow('[CATALOG_UNSATISFIABLE]');
+    expect(mockPromptText).not.toHaveBeenCalled();
+  });
+
+  it('control — the standard satisfiable fixture still passes the gate and completes', async () => {
+    const catalog = makeCatalog();
+    mockPromptMultiSelect.mockResolvedValueOnce([2]);
+    mockPromptConfirm.mockResolvedValueOnce(true);
+
+    const result = await buildCharacter(catalog, ruleset);
+    expect(validateBuild(result, catalog, ruleset).ok).toBe(true);
+  });
+});
+
 describe('buildCharacter — baseline coverage (F-0850a894: previously zero test coverage)', () => {
   it('returns a valid build immediately on a clean single-pass run', async () => {
     const catalog = makeCatalog();

@@ -265,72 +265,121 @@ function stripTags(html: string): string {
 
 // --- Fetch ---
 
+/** Max redirect hops webfetch() will follow before giving up (fail closed). */
+const MAX_REDIRECTS = 5;
+
 export async function webfetch(url: string, options?: WebfetchOptions): Promise<WebfetchResult> {
   const maxChars = options?.maxChars ?? 4000;
   const timeoutMs = options?.timeoutMs ?? 10_000;
   const fetchedAt = new Date().toISOString();
 
-  // isAllowedUrl() alone is not enough here: it only proves the URL is
-  // syntactically safe and would let an unresolved DNS name straight
-  // through. isAllowedUrlResolved() additionally resolves the hostname and
-  // validates every address it maps to before the real fetch() below runs.
-  if (!(await isAllowedUrlResolved(url))) {
-    return {
-      ok: false, url, title: '', content: '', truncatedTo: 0, fetchedAt,
-      error: 'URL not allowed: must be public http/https',
-    };
-  }
+  const failClosed = (error: string): WebfetchResult => ({
+    ok: false, url, title: '', content: '', truncatedTo: 0, fetchedAt, error,
+  });
+
+  // Validating only the initial URL is NOT enough: fetch()'s default
+  // redirect:'follow' would follow a 3xx to an internal/loopback/link-local/
+  // metadata address entirely inside undici, re-resolving and connecting to
+  // each hop with no further SSRF check — a public URL that redirects to
+  // 127.0.0.1 / 169.254.169.254 / a 10.x host bypasses the guard outright,
+  // no DNS control required (v2.6 audit F-23749236). So we drive the redirect
+  // chain by hand: redirect:'manual', and re-run the FULL DNS-resolving gate
+  // (isAllowedUrlResolved) against EVERY hop — the initial URL and each
+  // Location — before following it, bounded by MAX_REDIRECTS. The whole chain
+  // shares one deadline, so a redirect loop cannot multiply the caller's
+  // timeout budget.
+  //
+  // Residual ceiling (v2.6 audit F-3d66e5c9, DNS-rebinding TOCTOU): the address
+  // isAllowedUrlResolved() validates via dns.lookup() is NOT pinned to the
+  // socket fetch() ultimately connects to — undici performs its own
+  // independent resolution, so an attacker controlling authoritative DNS with
+  // a low/zero TTL could still answer "public" to our lookup and "private" to
+  // undici's. Fully closing that needs connecting to a pinned, pre-validated IP
+  // via a custom undici dispatcher (with an explicit Host header / SNI), which
+  // native fetch() cannot express without one. This fix closes the redirect
+  // and static-record variants completely; the timing-race rebinding variant
+  // remains a documented, higher-cost residual, not a silently-open hole.
+  let currentUrl = url;
+  const deadline = Date.now() + timeoutMs;
 
   try {
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(timeoutMs),
-      headers: {
-        'User-Agent': 'ai-rpg-engine-chat/1.1 (design-assistant)',
-        'Accept': 'text/html, text/plain, application/json',
-      },
-    });
+    for (let hop = 0; ; hop++) {
+      // Gate EVERY hop, not just the first — the entire point of the fix.
+      if (!(await isAllowedUrlResolved(currentUrl))) {
+        return failClosed('URL not allowed: must be public http/https');
+      }
 
-    if (!response.ok) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        return failClosed(`Request timed out after ${timeoutMs}ms`);
+      }
+
+      const response = await fetch(currentUrl, {
+        signal: AbortSignal.timeout(remaining),
+        redirect: 'manual',
+        headers: {
+          'User-Agent': 'ai-rpg-engine-chat/1.1 (design-assistant)',
+          'Accept': 'text/html, text/plain, application/json',
+        },
+      });
+
+      // A 3xx under redirect:'manual' exposes the real status + Location
+      // (undici returns a basic, non-opaque response). Re-validate the target
+      // through the gate on the next loop iteration before following it.
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+        if (!location) {
+          return failClosed(`HTTP ${response.status}: redirect response with no Location header`);
+        }
+        if (hop >= MAX_REDIRECTS) {
+          return failClosed(`Too many redirects (followed ${MAX_REDIRECTS})`);
+        }
+        let next: string;
+        try {
+          next = new URL(location, currentUrl).toString();
+        } catch {
+          return failClosed(`Invalid redirect Location: ${location}`);
+        }
+        currentUrl = next;
+        continue;
+      }
+
+      if (!response.ok) {
+        return failClosed(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const contentType = response.headers.get('content-type') ?? '';
+      const raw = await response.text();
+
+      let title: string;
+      let content: string;
+
+      if (contentType.includes('text/html')) {
+        title = extractTitle(raw);
+        content = stripTags(raw);
+      } else if (contentType.includes('application/json')) {
+        title = url;
+        content = raw;
+      } else {
+        // Plain text or other
+        title = url;
+        content = raw;
+      }
+
+      const truncated = content.slice(0, maxChars);
+
       return {
-        ok: false, url, title: '', content: '', truncatedTo: 0, fetchedAt,
-        error: `HTTP ${response.status}: ${response.statusText}`,
+        ok: true,
+        url,
+        title: title || url,
+        content: truncated,
+        truncatedTo: Math.min(content.length, maxChars),
+        fetchedAt,
       };
     }
-
-    const contentType = response.headers.get('content-type') ?? '';
-    const raw = await response.text();
-
-    let title: string;
-    let content: string;
-
-    if (contentType.includes('text/html')) {
-      title = extractTitle(raw);
-      content = stripTags(raw);
-    } else if (contentType.includes('application/json')) {
-      title = url;
-      content = raw;
-    } else {
-      // Plain text or other
-      title = url;
-      content = raw;
-    }
-
-    const truncated = content.slice(0, maxChars);
-
-    return {
-      ok: true,
-      url,
-      title: title || url,
-      content: truncated,
-      truncatedTo: Math.min(content.length, maxChars),
-      fetchedAt,
-    };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return {
-      ok: false, url, title: '', content: '', truncatedTo: 0, fetchedAt,
-      error: msg,
-    };
+    return failClosed(msg);
   }
 }
 

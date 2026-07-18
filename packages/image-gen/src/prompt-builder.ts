@@ -44,9 +44,13 @@ export function buildPortraitPrompt(request: PortraitRequest): string {
     parts.push(`known for being ${traits.join(' and ')}`);
   }
 
-  // Style
+  // Style — request.style is the same open string type as the sanitized
+  // fields above and lands in the same final prompt, so it gets the same
+  // stripping (v2.6 audit F-ece77541). This is a no-op for every built-in
+  // STYLE_PRESETS value (none contain the stripped characters); it only bites
+  // a crafted override trying to smuggle prompt-control syntax through.
   const preset = getStylePreset(request.genre);
-  const style = request.style ?? preset.style;
+  const style = sanitize(request.style ?? preset.style);
   parts.push(style);
 
   return parts.join(', ');

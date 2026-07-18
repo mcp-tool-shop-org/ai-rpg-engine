@@ -25,6 +25,7 @@ export {
 } from './mutations.js';
 
 export { RumorEngine } from './engine.js';
+export type { DeserializeWarning, DeserializeResult } from './engine.js';
 
 export type { ValidationError } from './validate.js';
 export { validateRumor, isValidRumor } from './validate.js';

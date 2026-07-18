@@ -733,12 +733,12 @@ export type {
 export { createCombatStateNarration } from './combat-state-narration.js';
 
 // --- Ability Core (Abilities & Powers) ---
+// (F-6b2a840f: the permanently-empty UNIVERSAL_ABILITIES / GENRE_ABILITIES /
+// getAbilitiesForGenre stubs were removed — see ability-core.ts.)
 export {
   createAbilityCore,
   DEFAULT_ABILITY_STAT_MAPPING,
-  UNIVERSAL_ABILITIES,
-  GENRE_ABILITIES,
-  getAbilitiesForGenre,
+  ABILITY_CATALOG_FORMULA,
   isAbilityOnCooldown,
   getAbilityCooldown,
   isAbilityReady,
@@ -772,6 +772,7 @@ export type {
 export {
   createAbilityReview,
   formatAbilityTrace,
+  getAbilityTraces,
 } from './ability-review.js';
 export type {
   AbilityCheckTrace,

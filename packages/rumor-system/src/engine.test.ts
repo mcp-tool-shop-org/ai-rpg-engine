@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import { RumorEngine } from './engine.js';
 import { DEFAULT_MUTATIONS, embellishMutation, invertMutation } from './mutations.js';
+import { validateRumor, isValidRumor } from './validate.js';
 import type { MutationContext, MutationRule, Rumor } from './types.js';
 
 function createTestEngine(config?: Parameters<typeof RumorEngine['prototype']['create']>[0] extends never ? never : any) {
@@ -366,5 +367,166 @@ describe('mutations', () => {
     // Just verify the engine runs without error — deterministic seeding
     // makes probabilistic tests tricky, but the mechanism is exercised
     expect(mutationCountHigh).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// F-1f8c5a94: deserialize() used to write every incoming rumor straight into
+// the registry with no validation, even though this package ships
+// validateRumor/isValidRumor for exactly this boundary. A persisted rumor
+// missing lastSpreadTick froze forever (NaN never crosses tick()'s
+// fading/death thresholds — both comparisons are false against NaN), and one
+// missing spreadPath raw-threw a TypeError inside the next spread(). These
+// tests pin the warn-and-skip load contract (mirroring soundpack-core's
+// SoundRegistry.load, F-833dedfc).
+describe('deserialize validation boundary (F-1f8c5a94)', () => {
+  /** Serialize an engine's rumors into detached copies safe to corrupt. */
+  function serializedCopy(engine: RumorEngine): Rumor[] {
+    return engine.serialize().map((r) => ({ ...r }));
+  }
+
+  test('skips a rumor missing lastSpreadTick instead of freezing it forever', () => {
+    const engine = new RumorEngine();
+    const good = createRumor(engine, { originTick: 0 });
+    const bad = createRumor(engine, { originTick: 0 });
+    const serialized = serializedCopy(engine);
+    delete (serialized.find((r) => r.id === bad.id) as Partial<Rumor>).lastSpreadTick;
+
+    const result = RumorEngine.deserializeSafe(serialized, { deathThreshold: 30 });
+    expect(result.restored).toBe(1);
+    expect(result.engine.get(good.id)).toBeDefined();
+    expect(result.engine.get(bad.id)).toBeUndefined();
+    expect(result.warnings.length).toBeGreaterThan(0);
+    expect(result.warnings.some((w) => w.field.includes('lastSpreadTick'))).toBe(true);
+
+    // The restored engine's lifecycle math now runs on real numbers only:
+    // everything ages out normally — no NaN-frozen immortal rumor left behind.
+    result.engine.tick(100);
+    expect(result.engine.get(good.id)?.status).toBe('dead');
+    expect(result.engine.activeCount()).toBe(0);
+  });
+
+  test('skips a rumor missing spreadPath instead of raw-throwing later in spread()', () => {
+    const engine = new RumorEngine();
+    const bad = createRumor(engine);
+    const serialized = serializedCopy(engine);
+    delete (serialized[0] as Partial<Rumor>).spreadPath;
+
+    const result = RumorEngine.deserializeSafe(serialized);
+    expect(result.restored).toBe(0);
+    expect(result.warnings.some((w) => w.field.includes('spreadPath'))).toBe(true);
+
+    // The malformed entry never entered the registry, so spread() reports the
+    // structured miss instead of `original.spreadPath.includes` TypeError.
+    expect(() => result.engine.spread(bad.id, defaultCtx())).toThrowError(/Rumor not found/);
+  });
+
+  test('mixed load keeps every valid rumor (warn-and-skip, not all-or-nothing)', () => {
+    const engine = new RumorEngine();
+    const r1 = createRumor(engine, { subject: 'player' });
+    const r2 = createRumor(engine, { subject: 'merchant' });
+    const r3 = createRumor(engine, { subject: 'guard' });
+    const serialized = serializedCopy(engine);
+    const corrupted = serialized.find((r) => r.id === r2.id) as { status: unknown };
+    corrupted.status = 'zombie'; // not a RumorStatus
+
+    const result = RumorEngine.deserializeSafe(serialized);
+    expect(result.restored).toBe(2);
+    expect(result.engine.get(r1.id)).toBeDefined();
+    expect(result.engine.get(r3.id)).toBeDefined();
+    expect(result.engine.get(r2.id)).toBeUndefined();
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0].field).toContain('status');
+    expect(result.warnings[0].message).toContain(r2.id);
+  });
+
+  test('clean roundtrip restores everything with zero warnings (back-compat)', () => {
+    const engine = new RumorEngine();
+    const r1 = createRumor(engine, { subject: 'player' });
+    createRumor(engine, { subject: 'merchant' });
+    engine.recordFactionUptake(r1.id, 'guards');
+
+    const result = RumorEngine.deserializeSafe(serializedCopy(engine));
+    expect(result.restored).toBe(2);
+    expect(result.warnings).toEqual([]);
+    expect(result.engine.get(r1.id)?.factionUptake).toEqual(['guards']);
+  });
+
+  test('a skipped malformed entry does not advance the id counter', () => {
+    const engine = new RumorEngine();
+    createRumor(engine); // rum_1
+    const serialized = serializedCopy(engine);
+    const forged = { ...serialized[0], id: 'rum_50' } as Partial<Rumor>;
+    delete forged.lastSpreadTick; // malformed AND carrying a high id
+    serialized.push(forged as Rumor);
+
+    const result = RumorEngine.deserializeSafe(serialized);
+    expect(result.restored).toBe(1);
+    // Counter advanced past rum_1 only — the skipped rum_50 never counts.
+    expect(result.engine.create({
+      claim: 'next', subject: 's', key: 'k', value: 1,
+      sourceId: 'src', originTick: 0, confidence: 1,
+    }).id).toBe('rum_2');
+  });
+
+  test('non-array input throws a clear structured error, not a raw iteration failure', () => {
+    expect(() => RumorEngine.deserialize(null as never)).toThrowError(/\[rumor-system\].*array/);
+    expect(() => RumorEngine.deserialize({} as never)).toThrowError(/\[rumor-system\].*array/);
+  });
+
+  test('deserialize (legacy signature) also skips malformed entries', () => {
+    const engine = new RumorEngine();
+    const good = createRumor(engine);
+    const serialized = serializedCopy(engine);
+    serialized.push({ id: 'rum_bad' } as Rumor); // missing nearly every field
+
+    const restored = RumorEngine.deserialize(serialized);
+    expect(restored.get(good.id)).toBeDefined();
+    expect(restored.get('rum_bad')).toBeUndefined();
+  });
+});
+
+describe('validateRumor tick-field hardening (F-1f8c5a94)', () => {
+  function validRumor(): Rumor {
+    const engine = new RumorEngine();
+    return { ...createRumor(engine) };
+  }
+
+  test('rejects a rumor missing lastSpreadTick', () => {
+    const r = validRumor() as Partial<Rumor>;
+    delete r.lastSpreadTick;
+    expect(isValidRumor(r)).toBe(false);
+    expect(validateRumor(r).some((e) => e.field === 'lastSpreadTick')).toBe(true);
+  });
+
+  test('rejects a rumor missing originTick', () => {
+    const r = validRumor() as Partial<Rumor>;
+    delete r.originTick;
+    expect(validateRumor(r).some((e) => e.field === 'originTick')).toBe(true);
+  });
+
+  test('rejects NaN in numeric fields (NaN silently defeats every threshold compare)', () => {
+    expect(validateRumor({ ...validRumor(), lastSpreadTick: NaN }).length).toBeGreaterThan(0);
+    expect(validateRumor({ ...validRumor(), confidence: NaN }).length).toBeGreaterThan(0);
+    expect(validateRumor({ ...validRumor(), emotionalCharge: NaN }).length).toBeGreaterThan(0);
+    expect(validateRumor({ ...validRumor(), mutationCount: NaN }).length).toBeGreaterThan(0);
+  });
+
+  test('accepts every engine-produced rumor (create + spread + mutations)', () => {
+    // Roundtrip safety: the boundary validator must never reject legit
+    // engine output, or save/load would silently drop real rumors.
+    const engine = new RumorEngine();
+    const rumor = engine.create({
+      claim: 'player killed merchant_1', subject: 'player', key: 'killed',
+      value: 10, sourceId: 'guard_1', originTick: 5, confidence: 0.9,
+      emotionalCharge: -0.7,
+    });
+    // High instability forces mutation rolls through every default rule.
+    for (let hop = 1; hop <= 4; hop++) {
+      engine.spread(rumor.id, defaultCtx({ receiverId: `npc_${hop}`, hopCount: hop, environmentInstability: 1 }));
+    }
+    engine.tick(50);
+    for (const r of engine.serialize()) {
+      expect(validateRumor(r)).toEqual([]);
+    }
   });
 });

@@ -153,6 +153,18 @@ describe('SeededRNG', () => {
 describe('WorldStore', () => {
   it('serializes and deserializes correctly', () => {
     const store = new WorldStore({ manifest: testManifest, seed: 42 });
+    // The playerId must resolve to an entity in the serialized state —
+    // deserialize now rejects a dangling playerId as corrupt (F-71a4c9de).
+    store.addEntity({
+      id: 'player-1',
+      blueprintId: 'bp-player',
+      type: 'player',
+      name: 'Test Player',
+      tags: [],
+      stats: {},
+      resources: {},
+      statuses: [],
+    });
     store.state.playerId = 'player-1';
     store.setGlobal('flag', true);
     store.addEntity({

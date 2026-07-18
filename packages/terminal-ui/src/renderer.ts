@@ -315,16 +315,56 @@ function entityIcon(entity: EntityState): string {
   return '-';
 }
 
+/**
+ * How many of the most-recent events renderDialogue may scan per lookup.
+ *
+ * F-4b7e6f01: renderDialogue used to do up to three full
+ * `[...world.eventLog].reverse().find(...)` passes per render — each one
+ * copying and reversing the ENTIRE event log, which core never caps or trims,
+ * on every turn via the CLI's render loop, whether or not dialogue was even
+ * active. renderEventLog's caller already used the bounded pattern
+ * (`eventLog.slice(-8)`); this constant gives dialogue lookups the same
+ * discipline. The events renderDialogue wants are always near the tail (the
+ * active node was entered at most a few turns ago, and the "just ended" line
+ * only renders when the dialogue ended on the PREVIOUS tick), so the window
+ * is deliberately generous — wide enough to survive a busy modules stack
+ * emitting dozens of ambient events per turn. If a game's per-turn event
+ * volume ever outgrows it, widen this constant explicitly; never fall back
+ * to scanning the full log.
+ */
+export const DIALOGUE_LOOKBACK = 100;
+
+/**
+ * Scan backward over at most `limit` most-recent events — no copy, no
+ * reverse, O(limit) worst case regardless of total log length.
+ */
+function findRecentEvent(
+  log: readonly ResolvedEvent[],
+  predicate: (e: ResolvedEvent) => boolean,
+  limit = DIALOGUE_LOOKBACK,
+): ResolvedEvent | undefined {
+  const stop = Math.max(0, log.length - limit);
+  for (let i = log.length - 1; i >= stop; i--) {
+    const event = log[i];
+    if (predicate(event)) return event;
+  }
+  return undefined;
+}
+
 export function renderDialogue(world: WorldState): string | null {
   const dState = world.modules['dialogue-core'] as { activeDialogue: string | null } | undefined;
   if (!dState?.activeDialogue) {
-    // Show the last spoken line briefly if dialogue just ended
-    const endedEvent = [...world.eventLog].reverse().find(e => e.type === 'dialogue.ended');
-    if (endedEvent) {
-      const lastNode = [...world.eventLog].reverse().find(
-        e => e.type === 'dialogue.node.entered' && e.tick <= endedEvent.tick
+    // Show the last spoken line briefly if dialogue just ended. The tick
+    // check runs BEFORE the second scan: same observable behavior as
+    // checking it after (both conditions must hold to render), but a stale
+    // ended-event no longer pays for a node lookup.
+    const endedEvent = findRecentEvent(world.eventLog, e => e.type === 'dialogue.ended');
+    if (endedEvent && endedEvent.tick === world.meta.tick - 1) {
+      const lastNode = findRecentEvent(
+        world.eventLog,
+        e => e.type === 'dialogue.node.entered' && e.tick <= endedEvent.tick,
       );
-      if (lastNode && endedEvent.tick === world.meta.tick - 1) {
+      if (lastNode) {
         return `  ${lastNode.payload.speaker}: "${lastNode.payload.text}"\n`;
       }
     }
@@ -332,7 +372,7 @@ export function renderDialogue(world: WorldState): string | null {
   }
 
   // Find the most recent dialogue.node.entered event
-  const nodeEvent = [...world.eventLog].reverse().find(e => e.type === 'dialogue.node.entered');
+  const nodeEvent = findRecentEvent(world.eventLog, e => e.type === 'dialogue.node.entered');
   if (!nodeEvent) return null;
 
   const lines: string[] = [];

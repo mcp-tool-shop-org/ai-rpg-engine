@@ -23,3 +23,5 @@ site/node_modules/
 .swarm-*.txt
 .swarm-casefile/
 .swarm-*/
+.swarm-casefile-b/
+.swarm-briefs-b/

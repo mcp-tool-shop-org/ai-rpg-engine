@@ -23,7 +23,7 @@ import {
   WORLDBUILDER_PROFILE, getProfileForIntent, buildSystemPrompt,
   type PersonalityProfile,
 } from './chat-personality.js';
-import { webfetch, formatWebfetchForPrompt, isAllowedUrl } from './chat-webfetch.js';
+import { webfetch, formatWebfetchForPrompt } from './chat-webfetch.js';
 import {
   buildContextSnapshot, formatContextSnapshot, formatSources,
   type ContextSnapshot,

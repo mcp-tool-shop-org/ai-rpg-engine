@@ -79,6 +79,33 @@ function deriveViolenceLevel(count: number): ViolenceLevel {
   return 'normal';
 }
 
+/**
+ * Module persistence shape. `violenceHistory` (per-district rolling window of
+ * kill ticks) used to live ONLY in createDefeatFallout()'s closure while the
+ * DERIVED `violence_<district>_count` global WAS persisted (F-7f3d92e1).
+ * After any save/reload the fresh closure recomputed the count from an empty
+ * window and silently overwrote the persisted global with a much smaller
+ * value — discarding accumulated violence pressure with no error or event
+ * distinguishing "genuinely low violence" from "tracking got reset by a
+ * reload." Plain arrays of tick numbers serialize fine, so the raw window now
+ * rides world.modules like the sibling modules' state does.
+ */
+type DefeatFalloutModuleState = {
+  violenceHistory: Record<string, number[]>;
+};
+
+function getFalloutState(world: WorldState): DefeatFalloutModuleState {
+  const existing = world.modules['defeat-fallout'] as DefeatFalloutModuleState | undefined;
+  if (existing) return existing;
+  // Legacy saves (pre-persistence) lack the namespace, and Engine.deserialize
+  // only seeds namespaces on NEW stores — synthesize and ATTACH the default so
+  // mutations land on the world instead of a throwaway (the same write-back
+  // registerProfileAbilities uses in ability-core.ts for harness worlds).
+  const fresh: DefeatFalloutModuleState = { violenceHistory: {} };
+  world.modules['defeat-fallout'] = fresh;
+  return fresh;
+}
+
 // ---------------------------------------------------------------------------
 // Module factory
 // ---------------------------------------------------------------------------
@@ -98,15 +125,16 @@ export function createDefeatFallout(config: DefeatFalloutConfig = {}): EngineMod
     playerId = 'player',
   } = config;
 
-  // In-memory violence tracking (tick history per district, not persisted in globals)
-  const violenceHistory: Record<string, number[]> = {};
-
   return {
     id: 'defeat-fallout',
     version: '1.0.0',
     dependsOn: ['district-core'],
 
     register(ctx) {
+      ctx.persistence.registerNamespace('defeat-fallout', {
+        violenceHistory: {},
+      } satisfies DefeatFalloutModuleState);
+
       ctx.events.on('combat.entity.defeated', (event: ResolvedEvent, world: WorldState) => {
         const defeatedId = event.payload.entityId as string;
         const defeatedName = (event.payload.entityName as string) ?? defeatedId;
@@ -167,11 +195,25 @@ export function createDefeatFallout(config: DefeatFalloutConfig = {}): EngineMod
           setGlobal(world, safetyKey, getGlobal(world, safetyKey, 0) + districtSafetyDelta);
         }
 
-        // Violence tracking per district (in-memory tick history, count stored in globals)
+        // Violence tracking per district (persisted tick history, count stored
+        // in globals). Re-fetched from world.modules on every kill
+        // (F-7f3d92e1) so the window survives save/reload and the derived
+        // count can never silently regress below reality.
         let violenceLevel: ViolenceLevel = 'normal';
         if (districtId) {
           const countKey = `violence_${districtId}_count`;
-          if (!violenceHistory[districtId]) violenceHistory[districtId] = [];
+          const { violenceHistory } = getFalloutState(world);
+          if (!violenceHistory[districtId]) {
+            violenceHistory[districtId] = [];
+            // Legacy-save reconciliation: a pre-persistence save carries the
+            // derived count global but no tick history. Seed that many ticks
+            // at the current tick so accumulated pressure carries forward
+            // (and decays from now) instead of being silently amnestied.
+            const persisted = getGlobal(world, countKey, 0);
+            for (let i = 0; i < persisted; i++) {
+              violenceHistory[districtId].push(event.tick);
+            }
+          }
           const ticks = violenceHistory[districtId];
           // Prune old ticks outside window
           while (ticks.length > 0 && event.tick - ticks[0] > violenceWindow) {

@@ -11,6 +11,7 @@ import {
   validateBuild,
   resolveTitle,
 } from '@ai-rpg-engine/character-creation';
+import { validateBuildCatalog } from '@ai-rpg-engine/content-schema';
 import { promptText, promptMenu, promptMultiSelect, promptOptionalMenu, promptConfirm } from './prompts.js';
 
 function formatStatPriorities(stats: Record<string, number>): string {
@@ -29,6 +30,22 @@ export async function buildCharacter(
   catalog: BuildCatalog,
   ruleset: RulesetDefinition,
 ): Promise<CharacterBuild> {
+  // F-2ae7c051: the retry gate below `continue`s on ANY validation failure —
+  // correct for every satisfiable catalog, but an UNSATISFIABLE one (more
+  // required flaws than the pack defines, requiredFlaws > maxTraits, or every
+  // flaw mutually incompatibleWith every other) would trap the player in a
+  // structurally un-winnable retry loop with zero diagnosis. No shipped
+  // starter is affected; this guards future/third-party/hand-authored packs.
+  // Fail loud BEFORE the loop, in the CLI's [CODE]-prefixed error style.
+  const catalogCheck = validateBuildCatalog(catalog);
+  if (!catalogCheck.ok) {
+    const detail = catalogCheck.errors.map((e) => `${e.path}: ${e.message}`).join('; ');
+    throw new Error(
+      `[CATALOG_UNSATISFIABLE] Character creation cannot start — the build catalog is not self-consistent: ${detail}. ` +
+      'Hint: fix the pack (add compatible flaw traits, lower requiredFlaws, or raise maxTraits) — no possible selection can satisfy it as authored.',
+    );
+  }
+
   while (true) {
     const name = await promptText('What is your name?');
 
