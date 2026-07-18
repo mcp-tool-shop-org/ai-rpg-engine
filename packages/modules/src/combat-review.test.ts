@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createTestEngine } from '@ai-rpg-engine/core';
+import { createTestEngine, Engine } from '@ai-rpg-engine/core';
 import type { EntityState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { createCombatCore, COMBAT_STATES } from './combat-core.js';
 import type { CombatFormulas } from './combat-core.js';
@@ -9,6 +9,7 @@ import { createEnvironmentCore } from './environment-core.js';
 import {
   createCombatReview,
   formatCombatTrace,
+  getReviewTraces,
 } from './combat-review.js';
 import type { CombatTrace } from './combat-review.js';
 
@@ -625,6 +626,74 @@ describe('combat-review', () => {
         // trace3 should not carry over data from trace1 or trace2
         if (trace1) expect(trace3.tick).not.toBe(trace1.tick);
       }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // getReviewTraces (F-de2760c4)
+  // ---------------------------------------------------------------------------
+  //
+  // createCombatReview's register(ctx) never called
+  // ctx.persistence.registerNamespace — the ring buffer lived ONLY in the
+  // closure. getReviewTraces still read from world.modules['combat-review'],
+  // which nothing ever wrote to, so it ALWAYS returned [] for any real
+  // Engine, regardless of how many traces had actually been recorded.
+
+  describe('getReviewTraces', () => {
+    it('returns the actual recorded traces instead of always []', () => {
+      const engine = buildEngine([makePlayer('zone-a'), makeEnemy('goblin', 'zone-a')]);
+      expect(getReviewTraces(engine.world)).toEqual([]);
+
+      attackUntilHit(engine, 'goblin');
+
+      const traces = getReviewTraces(engine.world);
+      expect(traces.length).toBeGreaterThan(0);
+      expect(traces[0].verb).toBe('attack');
+    });
+
+    it('respects maxTraces (the persisted array is capped, not just the emitted event count)', () => {
+      const starterFormulas: CombatFormulas = { ...fixedFormulas };
+      const review = createCombatReview({ baseFormulas: starterFormulas, maxTraces: 3 });
+      const engine = createTestEngine({
+        modules: [
+          statusCore,
+          createEngagementCore({ playerId: 'player' }),
+          createEnvironmentCore(),
+          review.module,
+          createCombatCore(review.explain(withEngagement(starterFormulas))),
+        ],
+        entities: [makePlayer('zone-a'), makeEnemy('goblin', 'zone-a', { resources: { hp: 200, stamina: 100 } })],
+        zones,
+      });
+
+      for (let i = 0; i < 5; i++) {
+        engine.world.entities.player.resources.stamina = 5;
+        engine.submitAction('attack', { targetIds: ['goblin'] });
+      }
+
+      expect(getReviewTraces(engine.world).length).toBe(3);
+    });
+
+    it('traces survive save/reload', () => {
+      const engine = buildEngine([makePlayer('zone-a'), makeEnemy('goblin', 'zone-a')]);
+      attackUntilHit(engine, 'goblin');
+      const beforeCount = getReviewTraces(engine.world).length;
+      expect(beforeCount).toBeGreaterThan(0);
+
+      const blob = engine.serialize();
+      const restored = Engine.deserialize(blob, {
+        modules: [
+          statusCore,
+          createEngagementCore({ playerId: 'player' }),
+          createEnvironmentCore(),
+          createCombatReview({ baseFormulas: fixedFormulas }).module,
+          // Note: a real consumer would also rebuild combat-core via
+          // review.explain(...) to keep tracing new actions post-reload;
+          // this test only asserts the PRE-reload traces survived the round trip.
+        ],
+      });
+
+      expect(getReviewTraces(restored.world).length).toBe(beforeCount);
     });
   });
 });

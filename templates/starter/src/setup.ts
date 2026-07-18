@@ -14,7 +14,9 @@ import {
     traversalCore,
     statusCore,
     buildCombatStack,
+    aggressiveProfile,
 } from '@ai-rpg-engine/modules';
+import type { IntentProfile } from '@ai-rpg-engine/modules';
 import { manifest, player, enemy, zones } from './content.js';
 import { myRuleset } from './ruleset.js';
 
@@ -43,6 +45,19 @@ function createTensionPressure(): EngineModule {
         },
     };
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// INTENT PROFILES — required for enemies to act
+// Every entity in content.ts that declares an `ai.profileId` must find a
+// matching profile in this list: cognition builds its profile map from
+// `cognition.profiles`, and with an empty map no enemy ever selects an
+// intent — they stand still forever. Built-ins from @ai-rpg-engine/modules:
+// aggressiveProfile ('aggressive': attack visible hostiles, flee at low
+// morale) and cautiousProfile ('cautious': observe first, strike when
+// confident). Add your own IntentProfile objects here for custom brains.
+// ═══════════════════════════════════════════════════════════════════
+
+export const myIntentProfiles: IntentProfile[] = [aggressiveProfile];
 
 // ═══════════════════════════════════════════════════════════════════
 // GAME FACTORY
@@ -78,6 +93,9 @@ export function createGame(seed?: number): Engine {
         // engagement: { backlineTags: ['ranged', 'caster'], protectorTags: ['bodyguard'] },
         // recovery — safe zone recovery:
         recovery: { safeZoneTags: ['safe'] },
+        // cognition — wires the intent profiles above into the enemy AI.
+        // Every ai.profileId declared in content.ts must resolve here.
+        cognition: { profiles: myIntentProfiles },
     });
 
     const engine = new Engine({
@@ -101,8 +119,8 @@ export function createGame(seed?: number): Engine {
     }
 
     // Register entities
-    engine.store.addEntity({ ...player });
-    engine.store.addEntity({ ...enemy });
+    engine.store.addEntity(structuredClone(player));
+    engine.store.addEntity(structuredClone(enemy));
 
     // Set player context
     engine.store.state.playerId = 'player';

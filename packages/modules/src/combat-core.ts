@@ -193,8 +193,21 @@ function attackHandler(
       }
 
       if (interceptor) {
+        // Recompute damage against the INTERCEPTOR's own context, and route
+        // it through the SAME guard/exposed/off-balance modifier block a
+        // normal hit gets (F-8da23635). Previously this reused the RAW
+        // `damage` computed against the ORIGINAL target — wrong for any
+        // defender-aware custom formula (guardReduction/hitChance all take
+        // (attacker, target, world), so damage should too) — and never even
+        // checked the interceptor's own GUARDED status, silently wasting it.
+        const interceptRawDamage = formulas?.damage
+          ? formulas.damage(attacker, interceptor, world)
+          : defaultDamage(attacker, mapping, world);
         const interceptorPrevHp = interceptor.resources.hp ?? 0;
-        interceptor.resources.hp = Math.max(0, interceptorPrevHp - damage);
+        const interceptDamage = applyDefenseModifiers(
+          action, attacker, interceptor, interceptRawDamage, mapping, formulas, world, events,
+        );
+        interceptor.resources.hp = Math.max(0, interceptorPrevHp - interceptDamage);
 
         events.push(makeEvent(action, 'combat.companion.intercepted', {
           interceptorId: interceptor.id,
@@ -202,7 +215,7 @@ function attackHandler(
           targetId: target.id,
           targetName: target.name,
           attackerId: attacker.id,
-          damage,
+          damage: interceptDamage,
           interceptChance: interceptChanceUsed,
           interceptorHpBefore: interceptorPrevHp,
           interceptorHpAfter: interceptor.resources.hp,
@@ -217,7 +230,7 @@ function attackHandler(
           resource: 'hp',
           previous: interceptorPrevHp,
           current: interceptor.resources.hp,
-          delta: -damage,
+          delta: -interceptDamage,
         }));
 
         // Check interceptor defeat
@@ -240,85 +253,9 @@ function attackHandler(
     }
   }
 
-  // Apply combat state modifiers to damage
-  let finalDamage = damage;
-  if (hasStatus(target, COMBAT_STATES.GUARDED)) {
-    const targetResolve = getStat(target, mapping, 'resolve', 3, world);
-    const resolveBonus = Math.max(0, (targetResolve - 3) * 0.03);
-    const reduction = formulas?.guardReduction
-      ? formulas.guardReduction(target, world)
-      : Math.min(0.75, 0.5 + resolveBonus);
-    const originalDamage = finalDamage;
-    finalDamage = Math.max(1, Math.floor(finalDamage * (1 - reduction)));
-    // Guard absorbs one hit then clears
-    const guardRemoveEvt = removeStatus(target, COMBAT_STATES.GUARDED, world.meta.tick);
-    if (guardRemoveEvt) events.push(guardRemoveEvt);
-    events.push(makeEvent(action, 'combat.guard.absorbed', {
-      entityId: target.id,
-      entityName: target.name,
-      originalDamage,
-      reducedDamage: finalDamage,
-    }, {
-      targetIds: [target.id],
-      presentation: { channels: ['objective'], priority: 'normal' },
-    }));
-
-    // Soft counter: attacking into guard may off-balance the attacker
-    // Instinct (timing) + will (composure) determine counter chance
-    const counterRoll = simpleRoll(world.meta.tick, attacker.id, 'counter');
-    const targetInstinct = getStat(target, mapping, 'precision', 5, world);
-    const counterChance = 25 + targetInstinct * 2 + targetResolve * 2;
-    if (counterRoll <= counterChance && !hasStatus(attacker, COMBAT_STATES.OFF_BALANCE)) {
-      events.push(applyStatus(attacker, COMBAT_STATES.OFF_BALANCE, world.meta.tick, {
-        duration: 1,
-        sourceId: target.id,
-      }, world));
-      events.push(makeEvent(action, 'combat.counter.off_balance', {
-        entityId: attacker.id,
-        entityName: attacker.name,
-        causedBy: target.id,
-        causedByName: target.name,
-      }, {
-        targetIds: [attacker.id],
-        presentation: { channels: ['objective', 'narrator'], priority: 'normal' },
-      }));
-    }
-
-    // Guard breakthrough: high-vigor attacker may stagger a weak-willed defender
-    const attackerVigor = getStat(attacker, mapping, 'attack', 5, world);
-    const breakChance = Math.min(25, Math.max(0, (attackerVigor - targetResolve - 2) * 5));
-    if (breakChance > 0) {
-      const breakRoll = simpleRoll(world.meta.tick, attacker.id, 'guardbreak');
-      if (breakRoll <= breakChance) {
-        if (!hasStatus(target, COMBAT_STATES.OFF_BALANCE)) {
-          events.push(applyStatus(target, COMBAT_STATES.OFF_BALANCE, world.meta.tick, {
-            duration: 1,
-            sourceId: attacker.id,
-          }, world));
-        }
-        events.push(makeEvent(action, 'combat.guard.broken', {
-          attackerId: attacker.id,
-          attackerName: attacker.name,
-          targetId: target.id,
-          targetName: target.name,
-          attackerVigor,
-          defenderResolve: targetResolve,
-          breakChance,
-        }, {
-          targetIds: [target.id],
-          presentation: { channels: ['objective', 'narrator'], priority: 'high' },
-        }));
-      }
-    }
-  }
-  if (hasStatus(target, COMBAT_STATES.EXPOSED)) {
-    finalDamage += 2;
-    const exposedRemoveEvt = removeStatus(target, COMBAT_STATES.EXPOSED, world.meta.tick);
-    if (exposedRemoveEvt) events.push(exposedRemoveEvt);
-  }
-  if (hasStatus(target, COMBAT_STATES.OFF_BALANCE)) {
-    finalDamage += 1;
-  }
+  // Apply combat state modifiers to damage (guard/exposed/off-balance),
+  // shared with the companion-interception path above (F-8da23635).
+  const finalDamage = applyDefenseModifiers(action, attacker, target, damage, mapping, formulas, world, events);
 
   const previousHp = target.resources.hp ?? 0;
   target.resources.hp = Math.max(0, previousHp - finalDamage);
@@ -384,6 +321,107 @@ function attackHandler(
   }
 
   return events;
+}
+
+/**
+ * Apply guard/exposed/off-balance damage modifiers for a defender taking a
+ * hit, pushing any resulting events (guard absorption, counter off-balance,
+ * guard breakthrough, exposed/off-balance bonus damage) into `events`, and
+ * returning the final damage. Shared by the normal attack path (defender =
+ * target) and the companion-interception path (defender = interceptor) so an
+ * intercepting companion's own GUARDED/EXPOSED/OFF_BALANCE status is honored
+ * exactly like a direct hit's would be, instead of being silently ignored
+ * (F-8da23635).
+ */
+function applyDefenseModifiers(
+  action: ActionIntent,
+  attacker: EntityState,
+  defender: EntityState,
+  rawDamage: number,
+  mapping: CombatStatMapping,
+  formulas: CombatFormulas | undefined,
+  world: WorldState,
+  events: ResolvedEvent[],
+): number {
+  let finalDamage = rawDamage;
+  if (hasStatus(defender, COMBAT_STATES.GUARDED)) {
+    const defenderResolve = getStat(defender, mapping, 'resolve', 3, world);
+    const resolveBonus = Math.max(0, (defenderResolve - 3) * 0.03);
+    const reduction = formulas?.guardReduction
+      ? formulas.guardReduction(defender, world)
+      : Math.min(0.75, 0.5 + resolveBonus);
+    const originalDamage = finalDamage;
+    finalDamage = Math.max(1, Math.floor(finalDamage * (1 - reduction)));
+    // Guard absorbs one hit then clears
+    const guardRemoveEvt = removeStatus(defender, COMBAT_STATES.GUARDED, world.meta.tick);
+    if (guardRemoveEvt) events.push(guardRemoveEvt);
+    events.push(makeEvent(action, 'combat.guard.absorbed', {
+      entityId: defender.id,
+      entityName: defender.name,
+      originalDamage,
+      reducedDamage: finalDamage,
+    }, {
+      targetIds: [defender.id],
+      presentation: { channels: ['objective'], priority: 'normal' },
+    }));
+
+    // Soft counter: attacking into guard may off-balance the attacker
+    // Instinct (timing) + will (composure) determine counter chance
+    const counterRoll = simpleRoll(world.meta.tick, attacker.id, 'counter');
+    const defenderInstinct = getStat(defender, mapping, 'precision', 5, world);
+    const counterChance = 25 + defenderInstinct * 2 + defenderResolve * 2;
+    if (counterRoll <= counterChance && !hasStatus(attacker, COMBAT_STATES.OFF_BALANCE)) {
+      events.push(applyStatus(attacker, COMBAT_STATES.OFF_BALANCE, world.meta.tick, {
+        duration: 1,
+        sourceId: defender.id,
+      }, world));
+      events.push(makeEvent(action, 'combat.counter.off_balance', {
+        entityId: attacker.id,
+        entityName: attacker.name,
+        causedBy: defender.id,
+        causedByName: defender.name,
+      }, {
+        targetIds: [attacker.id],
+        presentation: { channels: ['objective', 'narrator'], priority: 'normal' },
+      }));
+    }
+
+    // Guard breakthrough: high-vigor attacker may stagger a weak-willed defender
+    const attackerVigor = getStat(attacker, mapping, 'attack', 5, world);
+    const breakChance = Math.min(25, Math.max(0, (attackerVigor - defenderResolve - 2) * 5));
+    if (breakChance > 0) {
+      const breakRoll = simpleRoll(world.meta.tick, attacker.id, 'guardbreak');
+      if (breakRoll <= breakChance) {
+        if (!hasStatus(defender, COMBAT_STATES.OFF_BALANCE)) {
+          events.push(applyStatus(defender, COMBAT_STATES.OFF_BALANCE, world.meta.tick, {
+            duration: 1,
+            sourceId: attacker.id,
+          }, world));
+        }
+        events.push(makeEvent(action, 'combat.guard.broken', {
+          attackerId: attacker.id,
+          attackerName: attacker.name,
+          targetId: defender.id,
+          targetName: defender.name,
+          attackerVigor,
+          defenderResolve,
+          breakChance,
+        }, {
+          targetIds: [defender.id],
+          presentation: { channels: ['objective', 'narrator'], priority: 'high' },
+        }));
+      }
+    }
+  }
+  if (hasStatus(defender, COMBAT_STATES.EXPOSED)) {
+    finalDamage += 2;
+    const exposedRemoveEvt = removeStatus(defender, COMBAT_STATES.EXPOSED, world.meta.tick);
+    if (exposedRemoveEvt) events.push(exposedRemoveEvt);
+  }
+  if (hasStatus(defender, COMBAT_STATES.OFF_BALANCE)) {
+    finalDamage += 1;
+  }
+  return finalDamage;
 }
 
 function guardHandler(

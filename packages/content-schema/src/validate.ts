@@ -850,7 +850,15 @@ export function validateAbilityPack(
   // Track data for pack-level advisories
   const statusTagCounts: Record<string, number> = {};
   let totalApplyStatusAbilities = 0;
-  const abilityCosts: number[] = [];
+  // F-1ba7db23: keyed by the ability's REAL index (not push order). A plain
+  // `number[]` filled with `.push()` inside a loop that `continue`s past
+  // non-object entries desyncs from `abilities` by one slot per malformed
+  // entry that precedes a given index — the high-cost-low-value advisory
+  // below re-indexes the original `abilities` array, so that desync silently
+  // attributed one ability's cost to a different ability (or read undefined
+  // past the shortened array's end). A Map keyed by the true index can never
+  // drift out of alignment.
+  const abilityCostByIndex = new Map<number, number>();
   const damageAmounts: number[] = [];
 
   for (let i = 0; i < abilities.length; i++) {
@@ -889,7 +897,7 @@ export function validateAbilityPack(
         }
       }
     }
-    abilityCosts.push(abCost);
+    abilityCostByIndex.set(i, abCost);
 
     // Cross-validate checks → stats
     if (Array.isArray(ab.checks)) {
@@ -985,13 +993,16 @@ export function validateAbilityPack(
   }
 
   // Pack-level advisory: high-cost-low-value
-  if (abilityCosts.length > 1 && damageAmounts.length > 0) {
-    const avgCost = abilityCosts.reduce((a, b) => a + b, 0) / abilityCosts.length;
+  if (abilityCostByIndex.size > 1 && damageAmounts.length > 0) {
+    const costValues = [...abilityCostByIndex.values()];
+    const avgCost = costValues.reduce((a, b) => a + b, 0) / costValues.length;
     const minDamage = Math.min(...damageAmounts);
     for (let i = 0; i < abilities.length; i++) {
       const ab = abilities[i];
       if (!isObj(ab)) continue;
-      if (abilityCosts[i] > avgCost * 0.6) {
+      const abCost = abilityCostByIndex.get(i);
+      if (abCost === undefined) continue;
+      if (abCost > avgCost * 0.6) {
         // Check if this ability has the lowest damage in the pack
         const abDamages: number[] = [];
         if (Array.isArray(ab.effects)) {
@@ -1001,10 +1012,10 @@ export function validateAbilityPack(
             }
           }
         }
-        if (abDamages.length > 0 && Math.max(...abDamages) === minDamage && abilityCosts[i] > avgCost * 1.5) {
+        if (abDamages.length > 0 && Math.max(...abDamages) === minDamage && abCost > avgCost * 1.5) {
           advisories.push({
             path: `${path}[${i}]`,
-            message: `"${typeof ab.name === 'string' ? ab.name : ab.id}" has high cost (${abilityCosts[i]}) but lowest damage in pack (${minDamage})`,
+            message: `"${typeof ab.name === 'string' ? ab.name : ab.id}" has high cost (${abCost}) but lowest damage in pack (${minDamage})`,
           });
         }
       }

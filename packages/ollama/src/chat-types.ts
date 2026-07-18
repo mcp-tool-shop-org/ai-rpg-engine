@@ -61,6 +61,14 @@ export type IntentClassification = {
   confidence: 'high' | 'medium' | 'low';
   /** Extracted parameters from the user message. */
   params: Record<string, string>;
+  /**
+   * Set when the LLM classifier itself could not run (Ollama unreachable,
+   * model not pulled, HTTP failure) — as opposed to running and returning
+   * `unknown`. Carries the client's curated error text (offline hint, pull
+   * command) so the engine can surface the REAL problem instead of blaming
+   * the user's phrasing (v2.6 Stage C F-c1a55f01).
+   */
+  llmError?: string;
 };
 
 // --- Planned actions (transparency contract) ---

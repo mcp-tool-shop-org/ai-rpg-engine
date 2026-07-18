@@ -5,6 +5,75 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.6.0] - 2026-07-18
+
+The `run` command is a real game now. Produced by a full dogfood swarm — a
+four-stage health pass (bug/security, proactive hardening, behavioral
+humanization, visual polish) followed by a feature pass — with every wave gated
+by a family-different verification jury and the deterministic test floor. Test
+suite: 3613 → **4292**.
+
+### Added
+
+- **A playable `run` loop.** Enemies now act: after each player action, hostiles
+  in the zone select and submit their own actions through the engine's AI
+  (`selectActionForEntity`), so combat is two-sided. Two new AI intent profiles,
+  `territorial` (holds its zone) and `calculating` (strikes only when
+  advantaged), join the existing `aggressive`/`cautious`, and all 10 starters wire
+  their enemies to one. A fight ends in a **victory or defeat** screen (the
+  0-HP soft-lock is gone), you can **save and resume** (`run` offers Continue),
+  and **abilities and XP** are on the numbered action menu.
+- **`ai-rpg-engine run <path>`** loads and runs a game you scaffolded, against
+  the pack contract, with structured errors.
+- **The AI design studio ships as its own `ai` command.** `@ai-rpg-engine/ollama`
+  now has a `bin` — `npm install -g @ai-rpg-engine/ollama` then `ai chat`. The
+  handbook's Chapter 36 commands are reachable at last.
+- **Narration/audio stack wired.** A unified cue vocabulary maps every emitted
+  module sound cue to a canonical soundpack id; a `NarrationPlan` builder derives
+  tone, urgency, and sfx from a turn's events; a `TurnPresenter` styles the scene
+  and produces deterministic audio commands. There is no terminal audio backend —
+  the commands are a documented integration hook for a GUI/web embedder.
+
+### Fixed
+
+- **Security:** the webfetch SSRF guard now resolves each hostname and re-checks
+  every resolved IP, **and re-validates every redirect hop** — closing two
+  distinct bypasses (a DNS record pointing at an internal address, and a public
+  URL that redirects to one).
+- **Save integrity:** `WorldStore.deserialize` validates the whole bulk save
+  state (a numeric `playerId` no longer silently resolves to the wrong entity;
+  a non-array `eventLog` no longer crashes deep in unrelated code), and
+  `itemChronicle` elements are validated, all with structured `SaveLoadError`s.
+- **The interactive game spoke almost nothing before, and now does:** rejected
+  actions show *why* ("not enough stamina", "cannot reach X"), inspect/look and
+  the DoT/HoT lifecycle render, a defeated boss's killing blow survives to the
+  screen (victories no longer render blank), a dialogue leaf node ends the
+  conversation (it used to dead-lock the menu for the rest of the session), and
+  `save game` actually saves (it was silently discarded).
+- **A CLI crash:** an invalid character build (missing a required flaw, or two
+  incompatible traits) re-prompts in place instead of crashing the process.
+- **AI perception** across 8 starters read a non-existent stat and silently fell
+  back to a flat value; each starter now reads its own declared perception stat.
+- Correctness: the traversal handler now moves the entity that issued the action
+  (not always the player); module state that lived in closures now survives
+  save/reload; five starters' dialogue speakers referenced display names instead
+  of entity ids; numerous save/deserialize boundary guards.
+- When the local Ollama daemon is down, the studio surfaces an actionable hint
+  instead of blaming the user's phrasing, and a missing model names the exact
+  `ollama pull` command.
+
+### Changed
+
+- **`create-starter` works from any directory** and scaffolds a **standalone**
+  project (self-contained tsconfig, real dependencies) — it was monorepo-bound.
+- The `typecheck` script now actually type-checks (it was a no-op over an empty
+  file set).
+- Terminal output is composed into labeled sections with a glance-able HP-bar
+  HUD and optional accessible color (honors `NO_COLOR` and non-TTY pipes; every
+  cue is also in the text, never color alone).
+- Documentation: a real install-and-play path, an honest "10 playable starters +
+  a toolkit" framing, and corrected CLI references throughout.
+
 ## [2.5.0] - 2026-07-08
 
 Strictly additive — every new field is optional and an unset `ruleProfileId`

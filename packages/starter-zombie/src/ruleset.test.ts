@@ -45,4 +45,17 @@ describe('zombieMinimalRuleset', () => {
     expect(formulaIds).toContain('hit-chance');
     expect(formulaIds).toContain('damage');
   });
+
+  // F-e83a091f: this description was copy-pasted verbatim from starter-fantasy
+  // ("40 + instinct*5 + will*2") — zombie has no 'instinct'/'will' stats at
+  // all. Per buildCombatFormulas' real disengageChance formula
+  // (packages/modules/src/combat-builders.ts: 40 + precision*5 + resolve*2,
+  // clamped 15-90), zombie's precision/resolve stats are wits/nerve.
+  it('disengage-chance formula description matches this pack\'s real stats', () => {
+    const formula = zombieMinimalRuleset.formulas.find((f) => f.id === 'disengage-chance')!;
+    expect(formula.description).toContain('wits');
+    expect(formula.description).toContain('nerve');
+    expect(formula.description).not.toContain('instinct');
+    expect(formula.description).not.toContain('will');
+  });
 });

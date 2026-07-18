@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { createTestEngine, nextId } from '@ai-rpg-engine/core';
 import type { EntityState, ActionIntent } from '@ai-rpg-engine/core';
 import { createCombatCore, COMBAT_STATES } from './combat-core.js';
 import { statusCore, hasStatus, applyStatus } from './status-core.js';
-import { createCombatTactics, getRoundFlags, clearRoundFlags } from './combat-tactics.js';
+import { createCombatTactics, getRoundFlags } from './combat-tactics.js';
 import { createEngagementCore, ENGAGEMENT_STATES } from './engagement-core.js';
 import { selectNpcCombatAction } from './combat-intent.js';
 import { createCognitionCore, getCognition } from './cognition-core.js';
@@ -45,9 +45,10 @@ function npcAction(verb: string, actorId: string, tick: number, opts?: { targetI
   };
 }
 
-beforeEach(() => {
-  clearRoundFlags();
-});
+// Round-flag state now lives per-world in world.modules['combat-tactics']
+// (F-80a6afa2) — each createTestEngine() call gets its own fresh, isolated
+// state, so the old global clearRoundFlags()-in-beforeEach reset is no longer
+// needed for test isolation.
 
 // ---------------------------------------------------------------------------
 // Brace
@@ -79,7 +80,7 @@ describe('brace action', () => {
     });
 
     engine.submitAction('brace');
-    const flags = getRoundFlags('player');
+    const flags = getRoundFlags(engine.world, 'player');
     expect(flags.braced).toBe(true);
   });
 
@@ -207,6 +208,30 @@ describe('reposition action', () => {
     }
   });
 
+  // MOD-C-BH-04: the fail event travelled the narrator channel with no
+  // player-grade text — a failed reposition was mechanically punished (exposed)
+  // but narratively silent.
+  it('combat.reposition.fail carries a player-grade description (MOD-C-BH-04)', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCombatTactics({
+        repositionBaseChance: 0, // failure highly likely (floor is 10% success)
+      })],
+      entities: [makePlayer('a', { stats: { vigor: 1, instinct: 1, will: 1 } }), makeEntity('orc-1', 'Orc', 'a')],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: ['b'] }],
+    });
+
+    let fail: import('@ai-rpg-engine/core').ResolvedEvent | undefined;
+    for (let i = 0; i < 30 && !fail; i++) {
+      engine.world.entities.player.resources.stamina = 5;
+      const events = engine.submitAction('reposition', { targetIds: ['orc-1'] });
+      fail = events.find(e => e.type === 'combat.reposition.fail');
+    }
+    expect(fail).toBeDefined();
+    expect(typeof fail!.payload.description).toBe('string');
+    expect(fail!.payload.description as string).toContain('Hero');
+    expect((fail!.payload.description as string).toLowerCase()).toContain('exposed');
+  });
+
   it('successful untargeted reposition clears exposed and off-balance', () => {
     const player = makePlayer('a', { stats: { vigor: 5, instinct: 10, will: 5 } });
     applyStatus(player, COMBAT_STATES.EXPOSED, 0, { duration: 2 });
@@ -260,7 +285,7 @@ describe('MC-02: braced flag only resists off-balance on the same/adjacent tick'
 
     // Brace at tick 0 (submitAction processes at 0, then advances to tick 1).
     engine.submitAction('brace');
-    expect(getRoundFlags('player').braced).toBe(true);
+    expect(getRoundFlags(engine.world, 'player').braced).toBe(true);
 
     // Jump to tick 2 (N+2 relative to the brace tick) without re-bracing.
     engine.world.meta.tick = 2;
@@ -300,7 +325,7 @@ describe('MC-02: braced flag only resists off-balance on the same/adjacent tick'
 
     // Orc braces at tick 0.
     engine.submitAction('brace', { actorId: 'orc-1' });
-    expect(getRoundFlags('orc-1').braced).toBe(true);
+    expect(getRoundFlags(engine.world, 'orc-1').braced).toBe(true);
 
     // Advance well past the brace window, then reposition against the orc.
     engine.world.meta.tick = 5;
@@ -635,7 +660,7 @@ describe('backward compatibility', () => {
     });
 
     engine.submitAction('brace');
-    const flags = getRoundFlags('player');
+    const flags = getRoundFlags(engine.world, 'player');
     expect(flags.braced).toBe(true);
     expect(flags.bracedAtChokepoint).toBe(true);
   });
@@ -653,7 +678,7 @@ describe('backward compatibility', () => {
     });
 
     engine.submitAction('brace');
-    const flags = getRoundFlags('player');
+    const flags = getRoundFlags(engine.world, 'player');
     expect(flags.braced).toBe(true);
     expect(flags.bracedAtChokepoint).toBeUndefined();
   });
@@ -735,5 +760,71 @@ describe('precision vs force: brace resistance', () => {
     const strongRate = strongResisted / strongCountered;
     const weakRate = weakResisted / weakCountered;
     expect(strongRate).toBeGreaterThan(weakRate);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Round-flag cross-instance isolation (F-80a6afa2)
+// ---------------------------------------------------------------------------
+//
+// roundFlagTickMap used to be a module-top-level Map shared by EVERY Engine
+// instance in the process (the same anti-pattern combat-intent.ts's defeatLog
+// had before its fix). Two concurrent worlds with an entity sharing an id
+// (plausible: a server hosting multiple sessions, or simply two engines built
+// in the same test/process) would cross-contaminate: bracing the entity in
+// world A would make isRoundFlagActiveAt report "braced" for the
+// same-id entity in world B too.
+
+describe('round flags: cross-instance isolation', () => {
+  it('bracing an entity in one engine does not mark a same-id entity braced in a DIFFERENT engine', () => {
+    const engineA = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCombatTactics()],
+      entities: [makePlayer('a')],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+    const engineB = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCombatTactics()],
+      entities: [makePlayer('a')],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    // Only engine A's player braces. Both engines share the entity id
+    // 'player' and are at the same tick (both fresh, tick 0).
+    engineA.submitAction('brace');
+
+    expect(getRoundFlags(engineA.world, 'player').braced).toBe(true);
+    // Engine B's same-id entity must NOT read as braced — a fresh, isolated
+    // world's round-flag state must be independent of every other Engine
+    // instance in the process.
+    expect(getRoundFlags(engineB.world, 'player').braced).toBeUndefined();
+  });
+
+  it('reposition-vs-braced-defender check in engine B is unaffected by a same-id brace in engine A', () => {
+    const orcA = makeEntity('orc-1', 'Orc', 'a', { stats: { vigor: 5, instinct: 5, will: 5 } });
+    const engineA = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCombatTactics()],
+      entities: [makePlayer('a', { stats: { vigor: 5, instinct: 10, will: 5 } }), orcA],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+    // Orc braces in engine A only, at tick 0.
+    engineA.submitAction('brace', { actorId: 'orc-1' });
+    expect(getRoundFlags(engineA.world, 'orc-1').braced).toBe(true);
+
+    const orcB = makeEntity('orc-1', 'Orc', 'a', { stats: { vigor: 5, instinct: 5, will: 5 } });
+    const engineB = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCombatTactics()],
+      entities: [makePlayer('a', { stats: { vigor: 5, instinct: 10, will: 5 } }), orcB],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+    // Engine B's same-id orc never braced. A reposition against it must NOT
+    // see the -20 braced-defender penalty that engine A's brace would apply.
+    engineB.world.entities.player.resources.stamina = 5;
+    const events = engineB.processAction(npcAction('reposition', 'player', 0, { targetIds: ['orc-1'] }));
+    const resolved = events.find(e => e.type === 'combat.reposition.success' || e.type === 'combat.reposition.fail');
+    expect(resolved).toBeDefined();
+    // needed chance should be the UNPENALIZED base chance (no braced-defender
+    // -20), proving engine B never observed engine A's brace.
+    const baseChance = Math.min(90, Math.max(10, 45 + 10 * 5));
+    expect(resolved!.payload.needed).toBe(baseChance);
   });
 });

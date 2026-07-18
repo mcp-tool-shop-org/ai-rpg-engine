@@ -8,9 +8,7 @@ import {
   isAbilityOnCooldown,
   isAbilityReady,
   getAvailableAbilities,
-  getAbilitiesForGenre,
-  GENRE_ABILITIES,
-  UNIVERSAL_ABILITIES,
+  ABILITY_CATALOG_FORMULA,
 } from './ability-core.js';
 
 // ---------------------------------------------------------------------------
@@ -475,23 +473,17 @@ describe('ability-core: helpers', () => {
     expect(availableIds).not.toContain('dust-devil');
   });
 
-  it('getAbilitiesForGenre filters by genre and tags', () => {
-    // Temporarily populate genre table
-    const savedFantasy = GENRE_ABILITIES['fantasy'];
-    GENRE_ABILITIES['fantasy'] = [holySmite];
+  // (F-6b2a840f: the getAbilitiesForGenre test was removed along with the
+  // permanently-empty UNIVERSAL_ABILITIES / GENRE_ABILITIES stub tables it
+  // had to hand-populate to exercise at all.)
 
-    const result = getAbilitiesForGenre('fantasy', ['divine']);
-    expect(result.map((a) => a.id)).toContain('holy-smite');
+  it('publishes the construction-frozen catalog via ABILITY_CATALOG_FORMULA (F-dd1faf2a)', () => {
+    const player = makeEntity('player', 'player', ['player']);
+    const engine = buildEngine([player]);
 
-    const resultNoTag = getAbilitiesForGenre('fantasy', ['warrior']);
-    expect(resultNoTag.map((a) => a.id)).not.toContain('holy-smite');
-
-    // Restore
-    if (savedFantasy) {
-      GENRE_ABILITIES['fantasy'] = savedFantasy;
-    } else {
-      delete GENRE_ABILITIES['fantasy'];
-    }
+    expect(engine.moduleManager.formulas.has(ABILITY_CATALOG_FORMULA)).toBe(true);
+    const catalog = engine.moduleManager.formulas.get(ABILITY_CATALOG_FORMULA)() as AbilityDefinition[];
+    expect(catalog.map((a) => a.id)).toEqual(allAbilities.map((a) => a.id));
   });
 });
 

@@ -27,6 +27,11 @@ export {
   processBeliefDecay,
   aggressiveProfile,
   cautiousProfile,
+  territorialProfile,
+  calculatingProfile,
+  BUILTIN_INTENT_PROFILES,
+  resolveIntentProfile,
+  selectActionForEntity,
 } from './cognition-core.js';
 export type {
   Belief,
@@ -38,6 +43,7 @@ export type {
   PerceptionResult,
   IntentOption,
   IntentProfile,
+  EntityActionSelection,
 } from './cognition-core.js';
 export {
   createPerceptionFilter,
@@ -351,6 +357,7 @@ export type {
   CompanionState,
   PartyState,
   AbilityModifiers,
+  AddCompanionResult,
 } from './companion-core.js';
 export {
   evaluateCompanionReactions,
@@ -732,12 +739,12 @@ export type {
 export { createCombatStateNarration } from './combat-state-narration.js';
 
 // --- Ability Core (Abilities & Powers) ---
+// (F-6b2a840f: the permanently-empty UNIVERSAL_ABILITIES / GENRE_ABILITIES /
+// getAbilitiesForGenre stubs were removed — see ability-core.ts.)
 export {
   createAbilityCore,
   DEFAULT_ABILITY_STAT_MAPPING,
-  UNIVERSAL_ABILITIES,
-  GENRE_ABILITIES,
-  getAbilitiesForGenre,
+  ABILITY_CATALOG_FORMULA,
   isAbilityOnCooldown,
   getAbilityCooldown,
   isAbilityReady,
@@ -771,6 +778,7 @@ export type {
 export {
   createAbilityReview,
   formatAbilityTrace,
+  getAbilityTraces,
 } from './ability-review.js';
 export type {
   AbilityCheckTrace,

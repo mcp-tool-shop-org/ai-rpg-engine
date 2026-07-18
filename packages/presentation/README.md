@@ -61,6 +61,24 @@ if (isValidNarrationPlan(data)) {
 }
 ```
 
+## Building Plans from Engine Turns
+
+`buildNarrationPlan` constructs a valid plan from a turn's resolved events — tone and urgency derived from event kinds (combat → elevated/critical, quiet turns → calm), sfx collected from the events' gameplay `soundCues` and mapped through an injected resolver (soundpack-core's `resolveSoundCue` fits). Every plan it returns passes `validateNarrationPlan` — pinned by test.
+
+```typescript
+import { buildNarrationPlan } from '@ai-rpg-engine/presentation';
+import { resolveSoundCue } from '@ai-rpg-engine/soundpack-core';
+
+const plan = buildNarrationPlan({
+  sceneText: '4 damage dealt. The Ash Ghoul crumbles.',
+  events: turnEvents,            // engine ResolvedEvents pass directly
+  resolveSoundCue,               // gameplay cues → canonical soundpack ids
+  playerId: world.playerId,      // "you fell" (sorrow) vs "it fell" (triumph)
+});
+```
+
+For the full composed loop (events → plan → scheduled `AudioCommand[]`), see `TurnPresenter` in `@ai-rpg-engine/terminal-ui`.
+
 ## Part of AI RPG Engine
 
 This package is part of the [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine) monorepo. See the root README for the full architecture.

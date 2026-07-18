@@ -174,6 +174,13 @@ function isRelevantToEntity(event: ResolvedEvent, entityId: string, world: World
   return entity.zoneId === eventZone;
 }
 
+// Takes the narrowed { beliefs } shape and calls getBelief directly, no cast
+// needed — getBelief's parameter type was widened to Pick<CognitionState,
+// 'beliefs'> for exactly this caller (F-0eb004fc). Previously this passed
+// `cognition as any`, which was functionally safe only because getBelief's
+// implementation touched nothing but `.beliefs`; the cast would have
+// silently defeated the type checker for any future getBelief change that
+// read another CognitionState field.
 function extractRelevantBeliefs(
   event: ResolvedEvent,
   entityId: string,
@@ -186,7 +193,7 @@ function extractRelevantBeliefs(
     const attackerId = event.payload.attackerId as string;
 
     // Propagate hostile belief about the attacker
-    const hostile = getBelief(cognition as any, attackerId, 'hostile');
+    const hostile = getBelief(cognition, attackerId, 'hostile');
     if (hostile) {
       results.push({ subject: hostile.subject, key: hostile.key, value: hostile.value, confidence: hostile.confidence });
     }
@@ -194,7 +201,7 @@ function extractRelevantBeliefs(
 
   if (type === 'combat.entity.defeated') {
     const defeatedId = event.payload.entityId as string;
-    const alive = getBelief(cognition as any, defeatedId, 'alive');
+    const alive = getBelief(cognition, defeatedId, 'alive');
     if (alive) {
       results.push({ subject: alive.subject, key: alive.key, value: alive.value, confidence: alive.confidence });
     }
@@ -203,7 +210,7 @@ function extractRelevantBeliefs(
   if (type === 'world.zone.entered') {
     const actorId = event.actorId;
     if (actorId && actorId !== entityId) {
-      const present = getBelief(cognition as any, actorId, 'present');
+      const present = getBelief(cognition, actorId, 'present');
       if (present) {
         results.push({ subject: present.subject, key: present.key, value: present.value, confidence: present.confidence });
       }

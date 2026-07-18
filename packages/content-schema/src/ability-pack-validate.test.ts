@@ -194,6 +194,42 @@ describe('validateAbilityPack — advisories', () => {
     const r = validateAbilityPack([validAbility], testRuleset);
     expect(r.advisories).toHaveLength(0);
   });
+
+  // F-1ba7db23: `abilityCosts` was populated with `.push(abCost)` inside a loop
+  // that `continue`s past non-object entries BEFORE the push — so a malformed
+  // entry anywhere in `abilities` desyncs `abilityCosts` from `abilities` by
+  // one slot for every malformed entry that precedes it. The advisory loop
+  // then re-indexes the ORIGINAL `abilities` array and reads `abilityCosts[i]`,
+  // silently attributing a different ability's cost (or undefined, past the
+  // shortened array's end) to the "high cost, lowest damage" advisory.
+  it('high-cost-low-value advisory stays correctly attributed when a malformed entry precedes real abilities', () => {
+    const cheapHighDamage = {
+      ...validAbility,
+      id: 'cheap-high-damage',
+      name: 'Cheap High Damage',
+      costs: [{ resourceId: 'stamina', amount: 1 }],
+      effects: [{ type: 'damage', target: 'target', params: { amount: 20 } }],
+    };
+    const expensiveLowDamage = {
+      ...validAbility,
+      id: 'expensive-low-damage',
+      name: 'Expensive Low Damage',
+      costs: [{ resourceId: 'stamina', amount: 10 }],
+      effects: [{ type: 'damage', target: 'target', params: { amount: 2 } }],
+    };
+    // A malformed (non-object) entry at index 0 — before both real abilities —
+    // is exactly the shape that desyncs a push-based parallel array.
+    const r = validateAbilityPack([null, cheapHighDamage, expensiveLowDamage], testRuleset);
+
+    const highCostAdvisory = r.advisories.find((a) => a.message.includes('high cost'));
+    expect(highCostAdvisory).toBeDefined();
+    // Must name the ability that is ACTUALLY high-cost + lowest-damage, at its
+    // real index in the original array...
+    expect(highCostAdvisory!.path).toBe('AbilityPack[2]');
+    expect(highCostAdvisory!.message).toContain('Expensive Low Damage');
+    // ...and never misattribute it to the cheap, high-damage ability.
+    expect(r.advisories.some((a) => a.message.includes('Cheap High Damage'))).toBe(false);
+  });
 });
 
 describe('validateAbilityPack — all 10 shipped packs', () => {

@@ -16,68 +16,24 @@ import {
 } from '@ai-rpg-engine/modules';
 import type { StatusDefinition } from '@ai-rpg-engine/content-schema';
 import { beforeEach } from 'vitest';
+// F-2e1879af: import the real shipped fixtures instead of hand-duplicating
+// them. The inline copies used to drift silently from content.ts — a future
+// balance/mechanics edit to a shipped ability's cost, check difficulty, or
+// effect amount would not have been caught by its own "integration" test,
+// which kept passing against a frozen hand-copied duplicate.
+import {
+  broadside,
+  dirtyFighting,
+  seaShanty,
+  rumCourage,
+  pirateAbilities as allPirateAbilities,
+  pirateStatusDefinitions as pirateStatusDefs,
+} from './content.js';
 
 const zones = [
   { id: 'zone-a', roomId: 'test', name: 'Ship Deck', tags: [] as string[], neighbors: ['zone-b'] },
   { id: 'zone-b', roomId: 'test', name: 'Below Deck', tags: [] as string[], neighbors: ['zone-a'] },
 ];
-
-const broadside: AbilityDefinition = {
-  id: 'broadside', name: 'Broadside', verb: 'use-ability',
-  tags: ['naval', 'combat', 'damage', 'aoe'],
-  costs: [{ resourceId: 'stamina', amount: 4 }],
-  target: { type: 'all-enemies' },
-  checks: [{ stat: 'cunning', difficulty: 8, onFail: 'half-damage' }],
-  effects: [
-    { type: 'damage', target: 'target', params: { amount: 4, damageType: 'cannon' } },
-    { type: 'resource-modify', target: 'actor', params: { resource: 'morale', amount: 3 } },
-  ],
-  cooldown: 4,
-  requirements: [{ type: 'has-tag', params: { tag: 'pirate' } }],
-};
-
-const dirtyFighting: AbilityDefinition = {
-  id: 'dirty-fighting', name: 'Dirty Fighting', verb: 'use-ability',
-  tags: ['combat', 'damage', 'debuff'],
-  costs: [{ resourceId: 'stamina', amount: 2 }],
-  target: { type: 'single' },
-  checks: [{ stat: 'cunning', difficulty: 6, onFail: 'half-damage' }],
-  effects: [
-    { type: 'damage', target: 'target', params: { amount: 4, damageType: 'melee' } },
-    { type: 'apply-status', target: 'target', params: { statusId: 'blinded', duration: 2, stacking: 'replace' } },
-  ],
-  cooldown: 2,
-  requirements: [{ type: 'has-tag', params: { tag: 'pirate' } }],
-};
-
-const seaShanty: AbilityDefinition = {
-  id: 'sea-shanty', name: 'Sea Shanty', verb: 'use-ability',
-  tags: ['support', 'buff', 'morale'],
-  costs: [{ resourceId: 'stamina', amount: 2 }, { resourceId: 'morale', amount: 5 }],
-  target: { type: 'self' },
-  checks: [{ stat: 'sea-legs', difficulty: 6, onFail: 'abort' }],
-  effects: [
-    { type: 'heal', target: 'actor', params: { amount: 4, resource: 'hp' } },
-    { type: 'stat-modify', target: 'actor', params: { stat: 'brawn', amount: 1 } },
-    { type: 'stat-modify', target: 'actor', params: { stat: 'sea-legs', amount: 1 } },
-  ],
-  cooldown: 4,
-};
-
-const rumCourage: AbilityDefinition = {
-  id: 'rum-courage', name: 'Rum Courage', verb: 'use-ability',
-  tags: ['support', 'cleanse', 'morale'],
-  costs: [{ resourceId: 'stamina', amount: 2 }, { resourceId: 'morale', amount: 5 }],
-  target: { type: 'self' },
-  checks: [{ stat: 'sea-legs', difficulty: 6, onFail: 'abort' }],
-  effects: [
-    { type: 'remove-status-by-tag', target: 'actor', params: { tags: 'fear,blind' } },
-  ],
-  cooldown: 4,
-  requirements: [{ type: 'has-tag', params: { tag: 'pirate' } }],
-};
-
-const allPirateAbilities = [broadside, dirtyFighting, seaShanty, rumCourage];
 
 function buildPirateEngine(opts?: {
   playerCunning?: number;
@@ -235,16 +191,9 @@ describe('Pirate — Sea Shanty', () => {
 });
 
 // --- Status definitions for resistance tests ---
-
-const pirateStatusDefs: StatusDefinition[] = [
-  {
-    id: 'blinded',
-    name: 'Blinded',
-    tags: ['blind', 'debuff'],
-    stacking: 'replace',
-    duration: { type: 'ticks', value: 2 },
-  },
-];
+// F-2e1879af: pirateStatusDefs is imported (aliased) at the top of this file
+// from content.ts rather than hand-duplicated, so it stays in sync with the
+// real shipped status.
 
 describe('Pirate — Rum Courage (cleanse)', () => {
   beforeEach(() => {

@@ -242,7 +242,10 @@ export const zones: ZoneState[] = [
 
 export const widowDialogue: DialogueDefinition = {
   id: 'widow-interrogation',
-  speakers: ['Lady Ashford'],
+  // Must be the entity id (not the display name) — dialogue-core's
+  // speakHandler auto-discovers a dialogue via `speakers.includes(targetId)`
+  // using the real entity id when no explicit dialogueId is passed.
+  speakers: ['widow_ashford'],
   entryNodeId: 'greeting',
   nodes: {
     greeting: {

@@ -89,10 +89,33 @@ export type DivergenceRecord = {
 
 const ruleRegistry = new Map<string, PresentationRule[]>();
 
-/** Deterministic registry key from rule IDs — same rules always produce the same key */
+/**
+ * Deterministic registry key from rule CONTENT — not just ids (F-d16bd990).
+ * Rule ids are author-chosen and nothing enforces cross-pack uniqueness: two
+ * DIFFERENT custom rule sets that happen to reuse the same rule id used to
+ * collide onto the same key, and the second createObserverPresentation()
+ * call's ruleRegistry.set(...) silently overwrote the first's entry —
+ * changing how an unrelated, already-built world presents events. Each
+ * rule's condition/transform source (via Function#toString) is folded into
+ * the key alongside its id, so two different implementations sharing an id
+ * no longer collide, while re-registering the SAME rule definitions (e.g.
+ * a fresh process reconstructing the same config after a save/reload) still
+ * produces the SAME key.
+ */
 function makeRegistryId(customRules: PresentationRule[]): string {
   if (customRules.length === 0) return 'op:builtin';
-  return `op:${customRules.map((r) => r.id).join(',')}`;
+  const parts = customRules.map((r) => `${r.id}:${hashRuleContent(r)}`);
+  return `op:${parts.join(',')}`;
+}
+
+/** Cheap, stable string hash (not cryptographic) over a rule's content. */
+function hashRuleContent(rule: PresentationRule): string {
+  const src = `${rule.priority ?? 0}|${rule.eventPatterns.join(',')}|${rule.condition.toString()}|${rule.transform.toString()}`;
+  let hash = 0;
+  for (let i = 0; i < src.length; i++) {
+    hash = (Math.imul(31, hash) + src.charCodeAt(i)) | 0;
+  }
+  return (hash >>> 0).toString(36);
 }
 
 // --- Module ---

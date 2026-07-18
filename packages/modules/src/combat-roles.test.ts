@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createTestEngine } from '@ai-rpg-engine/core';
+import { createTestEngine, Engine } from '@ai-rpg-engine/core';
 import type { EntityState } from '@ai-rpg-engine/core';
 import { statusCore } from './status-core.js';
 import { createCognitionCore, getCognition } from './cognition-core.js';
@@ -393,6 +393,150 @@ describe('combat-roles: boss phases', () => {
 
     expect(phases).toContain('enraged');
     expect(phases).toContain('desperate');
+  });
+
+  it('activatedPhases survives save/reload — a phase already triggered before saving does not re-fire after reload (F-123ac29f)', () => {
+    const engine = buildBossEngine();
+    const boss = engine.store.state.entities['test-boss'];
+
+    // Trigger phase 0 ("enraged") at 50% HP, tick 1.
+    boss.resources.hp = 50;
+    engine.store.events.emit({
+      id: 'evt-dmg-1',
+      type: 'combat.damage.applied',
+      tick: 1,
+      actorId: 'player',
+      payload: { attackerId: 'player', targetId: 'test-boss', damage: 50, previousHp: 100, currentHp: 50 },
+    }, engine.store.state);
+    expect(boss.tags).toContain('enraged');
+
+    // SAVE -> LOAD mid-fight, after phase 0 already fired.
+    const blob = engine.serialize();
+    const restored = Engine.deserialize(blob, {
+      modules: [statusCore, createCognitionCore(), createBossPhaseListener(bossDef)],
+    });
+
+    const phases: string[] = [];
+    restored.store.events.on('boss.phase.transition', (event) => {
+      phases.push(event.payload.narrativeKey as string);
+    });
+
+    // One more hit that crosses into phase 1 ("desperate") at 20% HP.
+    const restoredBoss = restored.world.entities['test-boss'];
+    restoredBoss.resources.hp = 20;
+    restored.store.events.emit({
+      id: 'evt-dmg-2',
+      type: 'combat.damage.applied',
+      tick: 2,
+      actorId: 'player',
+      payload: { attackerId: 'player', targetId: 'test-boss', damage: 30, previousHp: 50, currentHp: 20 },
+    }, restored.store.state);
+
+    // Only the NEW phase should fire — the already-activated phase 0 must
+    // not re-announce itself just because reload reconstructed a fresh
+    // module instance with an empty closure-only activatedPhases Set.
+    expect(phases).toContain('desperate');
+    expect(phases).not.toContain('enraged');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Boss phase spawnEntityIds (F-7097c3d8)
+// ---------------------------------------------------------------------------
+//
+// spawnEntityIds is authored by content and surfaced by combat-summary.ts's
+// buildBossProfile as a director-facing "spawns N reinforcement(s)" claim,
+// but the runtime handler never read phase.spawnEntityIds at all — nothing
+// ever spawned. Since this module has no AbilityDefinition/EntityState
+// TEMPLATE data (only bare ids), the fix "spawns" ids that already resolve
+// to a pre-authored entity: it moves them into the boss's zone and reveals
+// them if hidden. Ids that don't resolve are surfaced as a structured
+// warning instead of silently doing nothing (this package's warn-and-degrade
+// convention, e.g. boss.definition.invalid above).
+
+describe('combat-roles: boss phase spawnEntityIds', () => {
+  function buildSpawningBossEngine(spawnEntityIds: string[], extraEntities: EntityState[] = []) {
+    const spawnBossDef: BossDefinition = {
+      entityId: 'test-boss',
+      phases: [
+        { hpThreshold: 0.5, narrativeKey: 'summoning', spawnEntityIds },
+      ],
+    };
+    const boss = makeEntity('test-boss', 'enemy', ['enemy', 'role:boss'], {
+      resources: { hp: 100, maxHp: 100, stamina: 10 },
+      zoneId: 'zone-a',
+    });
+    const player = makeEntity('player', 'player', ['player'], { zoneId: 'zone-a' });
+    return createTestEngine({
+      modules: [
+        statusCore,
+        createCognitionCore(),
+        createBossPhaseListener(spawnBossDef),
+      ],
+      entities: [player, boss, ...extraEntities],
+      zones,
+    });
+  }
+
+  it('a spawnEntityIds id that resolves to an existing entity is moved into the boss zone, revealed, and reported as spawned', () => {
+    const reinforcement = makeEntity('minion-1', 'enemy', ['enemy'], {
+      zoneId: 'zone-b',
+      visibility: { hidden: true },
+    });
+    const engine = buildSpawningBossEngine(['minion-1'], [reinforcement]);
+    const boss = engine.store.state.entities['test-boss'];
+
+    let transitionPayload: Record<string, unknown> | undefined;
+    engine.store.events.on('boss.phase.transition', (event) => {
+      transitionPayload = event.payload;
+    });
+
+    boss.resources.hp = 50;
+    engine.store.events.emit({
+      id: 'evt-dmg-1',
+      type: 'combat.damage.applied',
+      tick: 1,
+      actorId: 'player',
+      payload: { attackerId: 'player', targetId: 'test-boss', damage: 50, previousHp: 100, currentHp: 50 },
+    }, engine.store.state);
+
+    // The reinforcement actually appears: moved into the boss's zone and
+    // revealed (no longer hidden) — the runtime handler now does something
+    // with spawnEntityIds instead of never reading it at all.
+    expect(engine.store.state.entities['minion-1'].zoneId).toBe('zone-a');
+    expect(engine.store.state.entities['minion-1'].visibility?.hidden).toBe(false);
+
+    expect(transitionPayload).toBeDefined();
+    expect(transitionPayload!.spawnedEntityIds).toEqual(['minion-1']);
+    expect(transitionPayload!.unresolvedSpawnIds).toEqual([]);
+  });
+
+  it('a spawnEntityIds id with no matching entity is surfaced as an unresolved warning, not silently dropped', () => {
+    const engine = buildSpawningBossEngine(['ghost-minion']);
+    const boss = engine.store.state.entities['test-boss'];
+
+    const warnings: Record<string, unknown>[] = [];
+    engine.store.events.on('boss.phase.spawn.unresolved', (event) => {
+      warnings.push(event.payload);
+    });
+    let transitionPayload: Record<string, unknown> | undefined;
+    engine.store.events.on('boss.phase.transition', (event) => {
+      transitionPayload = event.payload;
+    });
+
+    boss.resources.hp = 50;
+    engine.store.events.emit({
+      id: 'evt-dmg-1',
+      type: 'combat.damage.applied',
+      tick: 1,
+      actorId: 'player',
+      payload: { attackerId: 'player', targetId: 'test-boss', damage: 50, previousHp: 100, currentHp: 50 },
+    }, engine.store.state);
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].unresolvedSpawnIds).toEqual(['ghost-minion']);
+    expect(transitionPayload!.spawnedEntityIds).toEqual([]);
+    expect(transitionPayload!.unresolvedSpawnIds).toEqual(['ghost-minion']);
   });
 });
 

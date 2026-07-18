@@ -24,8 +24,11 @@ import {
   createAbilityReview,
   registerStatusDefinitions,
   COMBAT_STATES,
+  aggressiveProfile,
+  cautiousProfile,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatResourceProfile } from '@ai-rpg-engine/modules';
+import * as engineModules from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatResourceProfile, IntentProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -89,6 +92,38 @@ const roninCombatProfile: CombatResourceProfile = {
   ],
 };
 
+// ─── Intent profiles (F1-cs-a) ──────────────────────────────────────────────
+// Every hostile entity in content.ts declares an ai.profileId. The cognition
+// config must supply an IntentProfile for each declared id — with an empty
+// profileMap no enemy ever resolves an intent, so enemies never act.
+// `territorial` and `calculating` are newer built-ins; resolve them from the
+// installed modules build when present, otherwise back the same id with the
+// closest established behavior so every declared id still resolves.
+function resolveBuiltinProfile(
+  id: 'territorial' | 'calculating',
+  fallbackEvaluate: IntentProfile['evaluate'],
+): IntentProfile {
+  const candidate = (engineModules as unknown as Record<string, unknown>)[`${id}Profile`] as
+    | IntentProfile
+    | undefined;
+  if (candidate && candidate.id === id && typeof candidate.evaluate === 'function') {
+    return candidate;
+  }
+  return { id, evaluate: fallbackEvaluate };
+}
+
+/**
+ * Intent profiles wired into this pack's cognition config:
+ * - shadow-assassin → calculating (strikes from concealment, only when sure)
+ * - corrupt-samurai → cautious (wary boss guarding both the gate and his guilt)
+ * - castle-guard → territorial (holds the castle gate against intruders)
+ */
+export const roninIntentProfiles: IntentProfile[] = [
+  cautiousProfile,
+  resolveBuiltinProfile('territorial', aggressiveProfile.evaluate),
+  resolveBuiltinProfile('calculating', cautiousProfile.evaluate),
+];
+
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(roninStatusDefinitions);
 
@@ -100,7 +135,10 @@ export function createGame(seed?: number): Engine {
     biasTags: ['assassin', 'samurai'],
     engagement: { backlineTags: ['ranged'], protectorTags: ['bodyguard', 'samurai'] },
     recovery: { safeZoneTags: ['safe', 'tranquil'] },
-    cognition: { decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } },
+    cognition: {
+      profiles: roninIntentProfiles,
+      decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 },
+    },
   });
 
   const engine = new Engine({
@@ -113,7 +151,7 @@ export function createGame(seed?: number): Engine {
       ...combat.modules,
       createInventoryCore([incenseKitEffect]),
       createDialogueCore([magistrateDialogue]),
-      createPerceptionFilter(),
+      createPerceptionFilter({ perceptionStat: 'perception' }),
       createProgressionCore({
         trees: [wayOfTheBladeTree],
         rewards: [{
@@ -188,13 +226,13 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity({ ...player });
-  engine.store.addEntity({ ...lordTakeda });
-  engine.store.addEntity({ ...ladyHimiko });
-  engine.store.addEntity({ ...magistrateSato });
-  engine.store.addEntity({ ...shadowAssassin });
-  engine.store.addEntity({ ...corruptSamurai });
-  engine.store.addEntity({ ...castleGuard });
+  engine.store.addEntity(structuredClone(player));
+  engine.store.addEntity(structuredClone(lordTakeda));
+  engine.store.addEntity(structuredClone(ladyHimiko));
+  engine.store.addEntity(structuredClone(magistrateSato));
+  engine.store.addEntity(structuredClone(shadowAssassin));
+  engine.store.addEntity(structuredClone(corruptSamurai));
+  engine.store.addEntity(structuredClone(castleGuard));
 
   // Set player
   engine.store.state.playerId = 'player';

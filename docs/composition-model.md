@@ -11,7 +11,7 @@ The engine is a composition toolkit. Starters are example builds. This model sho
 | Layer | What It Contains | Package | Author Touches It? |
 |-------|-----------------|---------|-------------------|
 | **1. Core Runtime** | Engine, WorldStore, EventBus, RNG, tick loop, action pipeline | `@ai-rpg-engine/core` | No — consume only |
-| **2. Mechanical Modules** | 27 module creators, all composable | `@ai-rpg-engine/modules` | Select and configure |
+| **2. Mechanical Modules** | 30+ module creators, all composable | `@ai-rpg-engine/modules` | Select and configure |
 | **3. Ruleset** | Stat schema, resource schema, verb set, formula mappings | Your `ruleset.ts` | Author creates |
 | **4. Content** | Entities, zones, dialogue, items, abilities, statuses, progression | Your `content.ts` | Author creates |
 | **5. Wiring** | Module selection, combat stack config, Engine constructor | Your `setup.ts` | Author creates |
@@ -62,7 +62,7 @@ createDialogueCore(dialogues)
 createCognitionCore({ decay: { beliefDecayTicks: 50 } })
 createPerceptionFilter()
 createProgressionCore({ trees, rewards })
-// ... 27 total
+// ... 30+ total
 ```
 
 ### `buildCombatFormulas(statMapping)` — formula generation only
@@ -159,4 +159,4 @@ base formulas → withEngagement → withCombatResources → review.explain
 - Combat authoring: [Build a Combat Pack](handbook/55-combat-pack-guide.md)
 - User-facing composition workflow: [Composition Guide](handbook/57-composition-guide.md)
 - Module API details: [Module API Reference](handbook/appendix-c-module-api.md)
-- Plug-in profiles (planned): [Profile Roadmap](profile-roadmap.md)
+- Plug-in profiles (shipped v2.5 — per-entity rule resolution): [Handbook Ch. 59](handbook/59-plugin-profiles.md); origin vision in [Profile Roadmap](profile-roadmap.md)

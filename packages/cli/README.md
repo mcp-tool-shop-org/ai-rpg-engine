@@ -14,7 +14,7 @@
 
 # @ai-rpg-engine/cli
 
-Developer CLI for AI RPG Engine — run, validate, replay, and inspect simulation sessions from your terminal.
+Developer CLI for AI RPG Engine — run, author, scaffold, and inspect simulation sessions from your terminal.
 
 ## Install
 
@@ -25,23 +25,34 @@ npm install -g @ai-rpg-engine/cli
 ## Commands
 
 ```
-ai-rpg-engine run [content-pack]   Start an interactive session
-ai-rpg-engine validate <path>      Validate a content pack
-ai-rpg-engine replay <save-file>   Replay a saved session deterministically
-ai-rpg-engine inspect <save-file>  Inspect world state from a save
+ai-rpg-engine run                     Start an interactive session (pick a starter, create a character)
+ai-rpg-engine validate <file.json>    Validate a content pack file (errors + advisories)
+ai-rpg-engine scaffold <kind> <name>  Write a minimal valid content stub (ability|zone|quest|status|dialogue)
+ai-rpg-engine profile <sub> ...       Validate a profile/profile-set JSON, or scaffold a starter profile
+ai-rpg-engine create-starter <name>   Scaffold a new starter game from the template
+ai-rpg-engine replay [--replay]       Load the save in ./.ai-rpg-engine/ and restore its state
+ai-rpg-engine inspect-save            Show a summary of the save in ./.ai-rpg-engine/
+ai-rpg-engine version                 Print the version
+ai-rpg-engine help                    Show help
 ```
+
+Saves live at `./.ai-rpg-engine/save.json` in the current directory — `replay`
+and `inspect-save` read that path; they do not take a file argument. Pass
+`--replay` to re-simulate the recorded action log instead of restoring state
+directly.
 
 ## Quick Start
 
 ```bash
-# Run the built-in fantasy starter
+# Run a starter (choose a world, build a character)
 ai-rpg-engine run
 
-# Validate your custom content
-ai-rpg-engine validate ./my-world/
+# Validate a content pack file
+ai-rpg-engine validate ./my-world/content.json
 
-# Replay a saved session
-ai-rpg-engine replay .ai-rpg-engine/save.json
+# Scaffold your own starter, then inspect a save you made
+ai-rpg-engine create-starter my-world
+ai-rpg-engine inspect-save
 ```
 
 ## Documentation

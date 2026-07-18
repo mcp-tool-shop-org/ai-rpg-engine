@@ -27,17 +27,28 @@ export function validateRumor(rumor: unknown): ValidationError[] {
   if (typeof r.sourceId !== 'string' || r.sourceId.length === 0) {
     errors.push({ field: 'sourceId', message: 'must be a non-empty string' });
   }
-  if (typeof r.confidence !== 'number' || r.confidence < 0 || r.confidence > 1) {
-    errors.push({ field: 'confidence', message: 'must be a number between 0 and 1' });
+  // F-1f8c5a94: the numeric checks below use Number.isFinite (not just
+  // typeof) because NaN passes `typeof === 'number'` AND every range
+  // comparison (`NaN < 0` and `NaN > 1` are both false). A NaN that slips
+  // through here defeats tick()'s fading/death threshold compares, leaving
+  // the rumor frozen in its saved status forever.
+  if (!Number.isFinite(r.confidence) || (r.confidence as number) < 0 || (r.confidence as number) > 1) {
+    errors.push({ field: 'confidence', message: 'must be a finite number between 0 and 1' });
   }
-  if (typeof r.emotionalCharge !== 'number' || r.emotionalCharge < -1 || r.emotionalCharge > 1) {
-    errors.push({ field: 'emotionalCharge', message: 'must be a number between -1 and 1' });
+  if (!Number.isFinite(r.emotionalCharge) || (r.emotionalCharge as number) < -1 || (r.emotionalCharge as number) > 1) {
+    errors.push({ field: 'emotionalCharge', message: 'must be a finite number between -1 and 1' });
+  }
+  if (!Number.isFinite(r.originTick)) {
+    errors.push({ field: 'originTick', message: 'must be a finite number' });
+  }
+  if (!Number.isFinite(r.lastSpreadTick)) {
+    errors.push({ field: 'lastSpreadTick', message: 'must be a finite number' });
   }
   if (!Array.isArray(r.spreadPath)) {
     errors.push({ field: 'spreadPath', message: 'must be an array' });
   }
-  if (typeof r.mutationCount !== 'number' || r.mutationCount < 0) {
-    errors.push({ field: 'mutationCount', message: 'must be a non-negative number' });
+  if (!Number.isFinite(r.mutationCount) || (r.mutationCount as number) < 0) {
+    errors.push({ field: 'mutationCount', message: 'must be a finite non-negative number' });
   }
   if (!Array.isArray(r.factionUptake)) {
     errors.push({ field: 'factionUptake', message: 'must be an array' });

@@ -29,13 +29,13 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 
 ## What This Is Not
 
-- Not a playable game out of the box — you compose one from modules and content
+- Not a single finished game — it ships 10 playable starter worlds you can `run` today as examples, and the engine is the toolkit you compose your *own* game from
 - Not a visual engine — it outputs structured events, not pixels
 - Not a story generator — it simulates worlds; narrative emerges from mechanics
 
 ---
 
-## Current Status (v2.5.0)
+## Current Status (v2.6.0)
 
 **What works and is tested:**
 - Core runtime: world state, events, actions, ticks, replay — stable since v1.0; deterministic byte-identical replay (per-instance id counter, seeded RNG)
@@ -44,22 +44,95 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 - **Party combat (v2.4):** ally-targeting (heal / buff / revive), friend/foe AoE filtering, target selectors — a healer can heal a teammate; enemy AoE spares allies
 - **Status effects (v2.4):** passive stat modifiers reach combat, deterministic DoT/HoT off the tick counter, depth-capped reactive triggers (thorns/reflect)
 - **Plug-in Profiles — per-entity rule resolution (v2.5):** a `might` fighter and a `will` mystic resolve combat in one fight, each reading stats through its own mapping. `RuleProfile` + `WorldState.ruleProfiles` + `EntityState.ruleProfileId`; `applyProfile()` attaches a profile (stat mapping, resource pools, per-entity abilities); `buildProfile()`, `validateProfileSet()` (duplicate ids rejected), 10 starter-derived templates, and a `profile` CLI command
+- **Playable `run` loop (v2.6):** the terminal game is real, not a demo — enemies act on their own AI intent profiles (`aggressive`/`cautious`/`territorial`/`calculating`), a fight ends in victory or defeat, you can save and resume, and abilities and XP are on the action menu. `run <path>` loads a game you scaffolded. Composed terminal UI with a glance-able HUD and accessible color (honors `NO_COLOR` / non-TTY)
+- **AI design studio ships as its own `ai` command (v2.6):** `npm install -g @ai-rpg-engine/ollama` → `ai chat` — scaffold, critique, and balance content against a local Ollama model
 - Unified decision layer: combat + ability scoring merged into one call (`selectBestAction`)
 - All 10 starter worlds use `buildCombatStack()` — the proven composition spine
 - Cognition config API (`cognition: CognitionCoreConfig | false`) for per-starter AI tuning
 - Tag taxonomy and validation utilities for content authoring
-- `ai-rpg-engine create-starter <name>` — scaffold a new game; `validate` + `scaffold` content commands; load packs from JSON
+- `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **3613 tests across 193 files** (deterministic across repeated runs; coverage ratchet-enforced in CI)
+- Full test suite: **4292 tests** (deterministic across repeated runs; coverage ratchet-enforced in CI)
 
 **What is rough or incomplete:**
-- AI worldbuilding tools (Ollama layer) are more lightly tested than the simulation core — though v2.5 added structured error handling, a configurable/observable retry loop, and an opt-in `--validate` gate on generated content
+- The AI worldbuilding studio (Ollama layer) is more lightly tested than the simulation core, and needs a local Ollama daemon; it is entirely optional — the engine and the `run` loop need no network
+- The narration/audio stack builds deterministic audio commands but there is **no terminal audio backend** — nothing plays a sound; the commands are an integration hook for a GUI/web embedder
 - Multiplayer (two human players sharing one world) is **not** built — it is a networking layer, deliberately out of scope; profiles today target a single controller
 - Documentation is extensive but not every handbook page reflects the very latest APIs
 
 ---
 
+## What It Looks Like
+
+The bundled terminal UI composes each turn into labeled sections — scene, status, log, and actions — with a glance-able HUD. Output is plain text by default and adds semantic color on a TTY (damage red, heals green, rejections yellow), honoring `NO_COLOR` and non-TTY pipes; every cue is carried in the text too, never color alone.
+
+```text
+── The Crypt Gate ──────────────────────────────────────────
+  [dark, unhallowed]
+
+  ! Crypt Warden · HP 6/14 · Off Balance
+  ! Bone Thrall · defeated
+  + Mira · HP 11/16
+
+  * rusted portcullis winch
+
+  Exits: Ossuary, Churchyard
+
+── Status ──────────────────────────────────────────────────
+  HP 9/20 [#####-----]  Stamina 4/10
+  Status: Guarded
+  Items: healing-draught, grave-key
+
+── Log ─────────────────────────────────────────────────────
+  > Ash takes a guarded stance.
+  > Hit!  4 damage dealt (HP: 6)
+  > Bone Thrall defeated!
+  > You can't do that: not enough stamina
+
+── Actions ─────────────────────────────────────────────────
+  [ 1] Move to Ossuary      [ 3] Attack Crypt Warden
+  [ 2] Move to Churchyard   [ 4] Inspect Crypt Warden
+────────────────────────────────────────────────────────────
+```
+
+---
+
+## Install & Play
+
+Play a starter, or scaffold your own game, from the terminal:
+
+```bash
+npm install -g @ai-rpg-engine/cli
+
+ai-rpg-engine run                    # pick a starter, build a character, play
+ai-rpg-engine create-starter my-game # scaffold a new game you can edit and run
+ai-rpg-engine run ./my-game          # run a game you scaffolded
+```
+
+The `run` loop is a real turn-based session: enemies act on their own AI
+profiles, abilities and XP are on the menu, you can save and resume, and a
+fight ends in victory or defeat. Every game is deterministic and replayable.
+
+Optionally, the AI design studio installs as its own command:
+
+```bash
+npm install -g @ai-rpg-engine/ollama
+ai chat                              # scaffold, critique, and balance content
+                                     # against a local Ollama model (see Ch. 36)
+```
+
+The studio talks to a local [Ollama](https://ollama.com) daemon — run
+`ollama serve` and `ollama pull qwen2.5-coder` first. It is entirely optional;
+the engine and the `run` loop need no network.
+
+A container image is published to GHCR as
+`ghcr.io/mcp-tool-shop-org/ai-rpg-engine` for CI and sandboxed runs.
+
+---
+
 ## Quick Start
+
+Prefer to build your own game in code? Compose the engine from modules:
 
 ```typescript
 import { Engine } from '@ai-rpg-engine/core';
@@ -199,7 +272,7 @@ The 10 starter worlds are **composition examples** — they demonstrate how to c
 
 The simulation runtime, combat composition spine, and starter authoring path are complete — 3613 tests across 193 files, all 10 starters on `buildCombatStack`, deterministic byte-identical replay, full AI decision scoring, and a CLI scaffold command. **v2.5 delivers per-entity rule resolution — the marquee Plug-in Profiles feature: a `might` fighter and a `will` mystic resolve combat in one fight, each reading stats through its own mapping.**
 
-**Recent release arc (v2.3.3–v2.5.0):**
+**Recent release arc (v2.3.3–v2.6.0):**
 - v2.3.3–v2.3.7 — Consumer artifact proof, Combat Stack hardening, all 10 starters on `buildCombatStack`, published starter template, `create-starter` CLI
 - v2.4.0 — Party combat (ally-targeting / heal / buff / revive, friend-foe AoE), status-effect system (modifiers + DoT/HoT + reactive triggers), plug-in Profiles Phase 1, content `validate`/`scaffold` CLI
 - **v2.5.0 — Per-entity rule resolution (mixed-playstyle combat), the `applyProfile` loader + per-entity abilities, profile templates + `profile` CLI, and a full health pass (byte-identical-replay fix, correctness hardening, quality gates made real)**

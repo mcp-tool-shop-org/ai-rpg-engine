@@ -16,3 +16,17 @@ site/.astro/
 site/dist/
 site/node_modules/
 .polyglot-cache.json
+
+# dogfood-swarm scratch (not committed)
+.swarm-briefs/
+.swarm-*.json
+.swarm-*.txt
+.swarm-casefile/
+.swarm-*/
+.swarm-casefile-b/
+.swarm-briefs-b/
+.swarm-casefile-c/
+.swarm-briefs-c/
+.swarm-casefile-d/
+.swarm-casefile-f1/
+.swarm-casefile-f2/

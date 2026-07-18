@@ -200,5 +200,31 @@ describe('SoundRegistry', () => {
       // No validate flag → no schema warnings (only duplicate-id detection runs).
       expect(result.warnings.some((w) => /domain/.test(w.message))).toBe(false);
     });
+
+    // F-833dedfc: the JSDoc on LoadResult.loaded promises "Number of entries
+    // written into the registry by this call," but load() used to return the
+    // raw `manifest.entries.length` instead of counting actual writes. A
+    // malformed (non-object) entry is skipped — warned, but never written —
+    // so `loaded` overstated the real count by exactly the number of skipped
+    // entries. This is most likely to bite when opts.validate is used, i.e.
+    // precisely the untrusted/third-party-pack case the option exists for.
+    it('loaded counts entries actually written, not the raw entries.length, when an entry is skipped', () => {
+      const registry = new SoundRegistry();
+      const malformedPack = {
+        name: 'mixed-pack',
+        version: '1.0.0',
+        description: 'one good entry, two malformed (non-object) entries',
+        author: 'test',
+        entries: [entry('good', 'tag'), null, 'not-an-object'],
+      };
+      const result = registry.load(malformedPack as unknown as Parameters<SoundRegistry['load']>[0]);
+
+      // Only the one well-formed entry was actually written.
+      expect(registry.size).toBe(1);
+      expect(result.loaded).toBe(1);
+      // Not the raw array length (3) — what the pre-fix code returned.
+      expect(result.loaded).not.toBe(malformedPack.entries.length);
+      expect(result.warnings.filter((w) => w.field === 'entries[]')).toHaveLength(2);
+    });
   });
 });

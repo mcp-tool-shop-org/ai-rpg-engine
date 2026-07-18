@@ -812,7 +812,7 @@ export function computeLeverageGains(
 
   // Kill/defeat → blackmail (information power)
   if (hints.xpGained >= 15) {
-    gains.blackmail = 5;
+    gains.blackmail = (gains.blackmail ?? 0) + 5;
   }
 
   // Reputation change → favor
@@ -820,9 +820,12 @@ export function computeLeverageGains(
     if (hints.reputationDelta.delta > 0) {
       gains.favor = 5;
     }
-    // Negative rep change → blackmail (you know their secrets from the conflict)
+    // Negative rep change → blackmail (you know their secrets from the
+    // conflict). Accumulates (F-da82fb75) — a notable kill that ALSO tanks
+    // reputation with the victim's faction in the same turn must stack with
+    // the xpGained trigger above, not silently overwrite it.
     if (hints.reputationDelta.delta < -10) {
-      gains.blackmail = 3;
+      gains.blackmail = (gains.blackmail ?? 0) + 3;
     }
   }
 

@@ -9,16 +9,16 @@ export const config: SiteConfig = {
   footerText: 'MIT Licensed — built by <a href="https://github.com/mcp-tool-shop-org" style="color:var(--color-muted);text-decoration:underline">mcp-tool-shop-org</a>',
 
   hero: {
-    badge: 'v2.4.0',
+    badge: 'v2.6.0',
     headline: 'AI RPG Engine',
     headlineAccent: 'Build worlds. Simulate them. Improve them.',
-    description: 'The first RPG engine designed for experimentation. Deterministic simulation runtime + AI-assisted design studio + six-pillar tactical combat.',
+    description: 'A TypeScript toolkit for deterministic RPG simulation: a composable module runtime, six-pillar tactical combat, and an optional AI-assisted design library. Every run replays exactly.',
     primaryCta: { href: '#usage', label: 'Get started' },
     secondaryCta: { href: 'handbook/', label: 'Read the Handbook' },
     previews: [
       { label: 'Install', code: 'npm install -g @ai-rpg-engine/cli' },
-      { label: 'Studio', code: 'ai chat' },
-      { label: 'Onboard', code: '/onboard' },
+      { label: 'Play', code: 'ai-rpg-engine run' },
+      { label: 'Scaffold', code: 'ai-rpg-engine create-starter my-world' },
     ],
   },
 
@@ -35,7 +35,7 @@ export const config: SiteConfig = {
         },
         {
           title: 'AI-Assisted Worldbuilding',
-          desc: 'Scaffold rooms, factions, quests, and districts from a theme. Critique designs, repair schema errors, and guide multi-step builds. AI suggests — you decide.',
+          desc: 'An optional design studio (install @ai-rpg-engine/ollama, run `ai chat`) scaffolds content, critiques designs, and analyzes balance against a local Ollama model — or use it as a library. AI suggests — you decide.',
         },
         {
           title: 'Replay Analysis',
@@ -46,16 +46,16 @@ export const config: SiteConfig = {
           desc: 'Run batches of simulations across seeds. Detect variance, sweep parameters, compare tuned vs baseline. Turn world design into a testable process.',
         },
         {
-          title: 'Studio Workflow',
-          desc: 'CLI design studio with dashboards, issue tracking, experiment browsing, session history, guided onboarding, and context-aware command discovery.',
+          title: 'Plug-in Profiles',
+          desc: 'Per-entity rule resolution: a might fighter and a will mystic resolve combat in one fight, each reading stats through its own mapping. 10 starter-derived templates and a profile CLI command.',
         },
         {
           title: 'Six-Pillar Combat',
-          desc: 'Guard, brace, engagement, interception, precision-vs-force dimensions, and AI tactics. Stats shape every formula. buildCombatStack wires it in 7 lines.',
+          desc: 'Guard, brace, engagement, interception, precision-vs-force dimensions, and AI tactics. Party ally-targeting, status effects, and DoT/HoT. Stats shape every formula. buildCombatStack wires it in ~7 lines.',
         },
         {
-          title: '27 Built-In Modules',
-          desc: 'Combat, tactics, engagement, abilities, dialogue, cognition, perception, factions, rumors, districts, progression, environment, and more. All composable, all deterministic.',
+          title: '30+ Built-In Modules',
+          desc: 'Combat, tactics, engagement, abilities, status, dialogue, cognition, perception, factions, rumors, districts, progression, environment, and more. All composable, all deterministic.',
         },
         {
           title: 'Genre-Agnostic',
@@ -73,16 +73,16 @@ export const config: SiteConfig = {
           code: 'npm install -g @ai-rpg-engine/cli',
         },
         {
-          title: 'Start the studio',
-          code: `ai chat\n/onboard`,
+          title: 'Play a starter',
+          code: `ai-rpg-engine run`,
         },
         {
-          title: 'Build a world',
-          code: `create-location-pack haunted chapel district\ncritique-content\nsimulate`,
+          title: 'Scaffold your own world',
+          code: `ai-rpg-engine create-starter my-world\nai-rpg-engine scaffold zone town-square`,
         },
         {
-          title: 'Analyze and improve',
-          code: `analyze-balance\ntune paranoia\nexperiment run --runs 50`,
+          title: 'Validate content',
+          code: `ai-rpg-engine validate my-world/content.json`,
         },
       ],
     },
@@ -90,7 +90,7 @@ export const config: SiteConfig = {
       kind: 'data-table',
       id: 'modules',
       title: 'Built-In Modules',
-      subtitle: '27 composable simulation modules.',
+      subtitle: '30+ composable simulation modules — a representative selection.',
       columns: ['Module', 'Description'],
       rows: [
         ['combat-core', 'Hit/damage formulas, guard, defeat, stat-mapped combat'],
@@ -128,21 +128,20 @@ export const config: SiteConfig = {
       title: 'Design Workflow',
       cards: [
         {
-          title: 'Scaffold content',
-          code: `create-location-pack --theme "abandoned mine" \\
-  --factions miners_guild,deep_crawlers`,
+          title: 'Author with the CLI',
+          code: `ai-rpg-engine create-starter my-world\nai-rpg-engine scaffold quest rescue-the-smith`,
         },
         {
-          title: 'Analyze balance',
-          code: `simulate\nanalyze-balance\nsuggest-fixes`,
+          title: 'Generate with the AI library',
+          code: `import { createClient, createLocationPack } from '@ai-rpg-engine/ollama';\n\nconst client = createClient();\nconst pack = await createLocationPack(client, {\n  theme: 'abandoned mine',\n  factions: ['miners_guild', 'deep_crawlers'],\n});`,
         },
         {
-          title: 'Tune mechanics',
-          code: `tune rumor propagation\ntune-step\ntune-status`,
+          title: 'Validate & explain',
+          code: `ai-rpg-engine validate my-world/content.json\n// or programmatically: explainValidationError(client, err)`,
         },
         {
-          title: 'Run experiments',
-          code: `experiment run --runs 50\nexperiment compare baseline tuned\n/findings`,
+          title: 'Simulate & replay',
+          code: `ai-rpg-engine run\nai-rpg-engine replay --replay   # deterministic re-simulation`,
         },
       ],
     },

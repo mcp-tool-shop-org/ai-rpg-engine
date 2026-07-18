@@ -147,28 +147,47 @@ export const TIER_LABELS: Record<number, string> = {
 
 /**
  * Compute aggregate stat bonuses from reached milestones.
+ *
+ * `itemName` is required to resolve each candidate milestone's own pattern
+ * (F-c2ac7705) — see the exact-match note below. Callers already have the
+ * `ItemDefinition` in scope wherever a `RelicState` is available (it's what
+ * `evaluateRelicGrowth` was called with to produce that state); pass
+ * `item.name`.
  */
 export function computeRelicBonuses(
   relicState: RelicState,
   milestones: GrowthMilestone[],
+  itemName: string,
 ): Record<string, number> {
   const bonuses: Record<string, number> = {};
+  const reached = new Set(relicState.milestonesReached);
 
-  // Match reached epithets back to milestones to get stat bonuses
+  // Match reached epithets back to milestones by EXACT resolution, not by
+  // prefix/suffix string containment (F-c2ac7705). The old check derived
+  // `prefix`/`suffix` from the pattern and tested
+  // `epithet.startsWith(prefix) && epithet.endsWith(suffix)` — unsound
+  // whenever the item's own `name` textually overlaps with a DIFFERENT
+  // milestone's fixed prefix/suffix text. Concretely: an item named e.g.
+  // "Old Rusty Blade" that reaches ONLY the kill-count-10 milestone
+  // ("{name} the Reaper") produces the epithet "Old Rusty Blade the Reaper".
+  // Checking that epithet against the UNRELATED age milestone ("Old {name}",
+  // prefix "Old ", suffix "") evaluated `startsWith('Old ')` -> true (only
+  // because the item's own name starts with "Old ") and `.endsWith('')` ->
+  // always true in JS — a false-positive match that credited the age
+  // milestone's statBonus even though age was never reached.
+  //
+  // Resolving each milestone's OWN pattern against the real item name (the
+  // same resolveEpithet() evaluateRelicGrowth used to populate
+  // milestonesReached in the first place) and checking for exact membership
+  // cannot produce that false positive: two different patterns only resolve
+  // to the same string for the same name if they are, in fact, the same
+  // epithet.
   for (const milestone of milestones) {
-    if (milestone.statBonus) {
-      // Check if any reached milestone corresponds to this milestone's pattern
-      const matchesAny = relicState.milestonesReached.some((epithet) => {
-        // Simple check: does the reached epithet follow this milestone's pattern?
-        const pattern = milestone.epithet;
-        const prefix = pattern.split('{name}')[0];
-        const suffix = pattern.split('{name}')[1] ?? '';
-        return epithet.startsWith(prefix) && epithet.endsWith(suffix);
-      });
-      if (matchesAny) {
-        for (const [stat, value] of Object.entries(milestone.statBonus)) {
-          bonuses[stat] = (bonuses[stat] ?? 0) + value;
-        }
+    if (!milestone.statBonus) continue;
+    const resolved = resolveEpithet(milestone.epithet, itemName);
+    if (reached.has(resolved)) {
+      for (const [stat, value] of Object.entries(milestone.statBonus)) {
+        bonuses[stat] = (bonuses[stat] ?? 0) + value;
       }
     }
   }

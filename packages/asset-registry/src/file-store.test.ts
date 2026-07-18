@@ -171,6 +171,76 @@ describe('FileAssetStore — hash validation blocks path traversal (A5)', () => 
   });
 });
 
+// core-spine F-4d8f612a (MED): getMeta() did `JSON.parse(json) as AssetMetadata`
+// with no runtime shape check — a sidecar that is syntactically valid JSON but
+// wrong-shaped (hand-edited, legacy, partially written) was returned as-is, and
+// the first caller to touch a missing field crashed with a raw TypeError far
+// from the root cause (e.g. matchesFilter's `meta.tags.includes(...)`).
+// Worse, visibility DIFFERED by call pattern: a FILTERED list() silently
+// swallowed the TypeError in its catch (dropping the entry), while an
+// UNfiltered list() returned the malformed object without complaint. The
+// invariant now: a wrong-shaped sidecar is treated as corrupt at the JSON
+// boundary — getMeta returns null, and list() excludes it consistently whether
+// or not a filter is passed.
+describe('FileAssetStore — wrong-shaped metadata sidecar is rejected at the boundary (F-4d8f612a)', () => {
+  /** Overwrite the stored sidecar for `hash` with arbitrary JSON. */
+  async function corruptSidecar(hash: string, contents: unknown): Promise<void> {
+    const metaPath = path.join(tmpDir, hash.slice(0, 2), `${hash}.json`);
+    await fs.writeFile(metaPath, JSON.stringify(contents));
+  }
+
+  it('getMeta returns null for valid JSON that is missing tags (the matchesFilter crash shape)', async () => {
+    const meta = await store.put(testData, testInput);
+    const { tags: _tags, ...withoutTags } = meta;
+    await corruptSidecar(meta.hash, withoutTags);
+    expect(await store.getMeta(meta.hash)).toBeNull();
+  });
+
+  it('getMeta returns null for an unknown kind', async () => {
+    const meta = await store.put(testData, testInput);
+    await corruptSidecar(meta.hash, { ...meta, kind: 'hologram' });
+    expect(await store.getMeta(meta.hash)).toBeNull();
+  });
+
+  it('getMeta returns null for a non-numeric sizeBytes', async () => {
+    const meta = await store.put(testData, testInput);
+    await corruptSidecar(meta.hash, { ...meta, sizeBytes: 'big' });
+    expect(await store.getMeta(meta.hash)).toBeNull();
+  });
+
+  it('getMeta returns null for a JSON scalar / array sidecar', async () => {
+    const meta = await store.put(testData, testInput);
+    await corruptSidecar(meta.hash, 'just a string');
+    expect(await store.getMeta(meta.hash)).toBeNull();
+    await corruptSidecar(meta.hash, [1, 2, 3]);
+    expect(await store.getMeta(meta.hash)).toBeNull();
+  });
+
+  it('list() excludes a wrong-shaped entry CONSISTENTLY — with and without a filter', async () => {
+    const good = await store.put(testData, testInput);
+    const bad = await store.put(new Uint8Array([9, 9, 9]), testInput);
+    await corruptSidecar(bad.hash, { hash: bad.hash, kind: 'portrait' }); // missing the rest
+
+    // Unfiltered previously returned the malformed object; filtered silently
+    // dropped it via the broad catch. Both must now agree.
+    const unfiltered = await store.list();
+    expect(unfiltered).toHaveLength(1);
+    expect(unfiltered[0].hash).toBe(good.hash);
+    const filtered = await store.list({ kind: 'portrait' });
+    expect(filtered).toHaveLength(1);
+    expect(filtered[0].hash).toBe(good.hash);
+  });
+
+  it('control — a well-formed sidecar still loads (including optional fields absent)', async () => {
+    const meta = await store.put(new Uint8Array([5]), { kind: 'document', mimeType: 'text/plain' });
+    // Optional width/height/source absent, tags defaulted by put().
+    const retrieved = await store.getMeta(meta.hash);
+    expect(retrieved).not.toBeNull();
+    expect(retrieved!.kind).toBe('document');
+    expect(retrieved!.tags).toEqual([]);
+  });
+});
+
 // v2.5 audit A4 (MED): get() serves bytes without re-hashing, so bit-rot or a
 // swapped .bin is served silently. The invariant: get(hash, {verify:true})
 // re-hashes on read and returns null when the bytes no longer match their

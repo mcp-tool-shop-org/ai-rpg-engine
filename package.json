@@ -1,7 +1,7 @@
 {
   "name": "ai-rpg-engine",
   "private": true,
-  "version": "2.5.0",
+  "version": "2.6.0",
   "type": "module",
   "description": "Simulation-native toolkit for building, analyzing, and balancing RPG worlds",
   "keywords": [
@@ -34,7 +34,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --build",
     "verify": "npm run build && npm run test"
   },
   "devDependencies": {

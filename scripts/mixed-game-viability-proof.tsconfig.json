@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "rootDir": "../docs",
+    "outDir": "./.viability-proof-build",
+    "types": ["node"]
+  },
+  "include": ["../docs/mixed-game-viability-proof.ts"]
+}

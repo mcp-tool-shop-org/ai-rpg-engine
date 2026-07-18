@@ -1381,9 +1381,16 @@ export function getNetObligationWeight(
   let net = 0;
   for (const o of ledger.obligations) {
     if (o.counterpartyId !== counterpartyId) continue;
+    // `direction` alone fully encodes who owes whom — do not ALSO flip sign
+    // by `kind` (F-b53aa70d). The only 'betrayed' obligation ever created
+    // (resolveNpcAction's 'betray' case) is recorded with
+    // direction: 'player-owes-npc', which already yields sign = -1;
+    // multiplying by an additional kind-based -1 double-negated it back to
+    // POSITIVE — the same sign bucket as a genuine 'favor' — silently
+    // treating a fresh betrayal as goodwill and partially canceling
+    // deriveNpcGoals's adjacent, correctly-signed betrayalCount adjustment.
     const sign = o.direction === 'npc-owes-player' || o.direction === 'npc-owes-npc' ? 1 : -1;
-    const kindWeight = o.kind === 'betrayed' ? -1 : 1;
-    net += o.magnitude * sign * kindWeight;
+    net += o.magnitude * sign;
   }
   return net;
 }

@@ -153,7 +153,7 @@ function emitHidden(
 }
 
 // ---------------------------------------------------------------------------
-// Recovery tracker (in-memory)
+// Recovery tracker (persisted — F-2e1b94b9)
 // ---------------------------------------------------------------------------
 
 type RecoveryEntry = {
@@ -161,6 +161,31 @@ type RecoveryEntry = {
   zoneId: string;
   startTick: number;
 };
+
+/**
+ * Module persistence shape. This module used to keep `triggeredZones` and
+ * `recoveryEntries` ONLY in createCombatRecovery()'s closure — no
+ * ctx.persistence.registerNamespace call existed at all. A save/reload while
+ * any entity was mid-recovery (an ordinary player action — "save before
+ * continuing after a fight while still injured") silently and permanently
+ * dropped that entity from HP-regen tracking, since Engine.deserialize
+ * reconstructs a brand-new createCombatRecovery() closure with empty state.
+ * State now lives in world.modules['combat-recovery'], re-fetched fresh on
+ * every access — the same pattern rumor-propagation.ts/district-core.ts use.
+ * `triggeredZones` is stored as an array (Set doesn't survive JSON) and
+ * checked with `.includes()`.
+ */
+type ModuleState = {
+  triggeredZones: string[];
+  recoveryEntries: RecoveryEntry[];
+};
+
+function getRecoveryState(world: WorldState): ModuleState {
+  return (world.modules['combat-recovery'] ?? {
+    triggeredZones: [],
+    recoveryEntries: [],
+  }) as ModuleState;
+}
 
 // ---------------------------------------------------------------------------
 // Module factory
@@ -177,17 +202,17 @@ export function createCombatRecovery(config: CombatRecoveryConfig = {}): EngineM
     maxAftermathLog = 20,
   } = config;
 
-  // Track which zone+tick combos have already triggered aftermath
-  const triggeredZones = new Set<string>();
-  // Active recovery entries
-  const recoveryEntries: RecoveryEntry[] = [];
-
   return {
     id: 'combat-recovery',
     version: '1.0.0',
     dependsOn: ['status-core', 'cognition-core'],
 
     register(ctx) {
+      ctx.persistence.registerNamespace('combat-recovery', {
+        triggeredZones: [],
+        recoveryEntries: [],
+      } as ModuleState);
+
       // -----------------------------------------------------------------------
       // Combat end detection — after defeat or disengage, check zone clearance
       // -----------------------------------------------------------------------
@@ -197,7 +222,8 @@ export function createCombatRecovery(config: CombatRecoveryConfig = {}): EngineM
 
         const zoneId = playerEntity.zoneId ?? world.locationId;
         const key = `${zoneId}:${event.tick}`;
-        if (triggeredZones.has(key)) return;
+        const state = getRecoveryState(world);
+        if (state.triggeredZones.includes(key)) return;
 
         // Are there living enemies in the player's zone?
         const livingEnemies = Object.values(world.entities).filter(
@@ -210,7 +236,7 @@ export function createCombatRecovery(config: CombatRecoveryConfig = {}): EngineM
         if (livingEnemies.length > 0) return;
 
         // Zone is clear — trigger aftermath
-        triggeredZones.add(key);
+        state.triggeredZones.push(key);
         processAftermath(event.tick, zoneId, world);
       }
 
@@ -320,10 +346,11 @@ export function createCombatRecovery(config: CombatRecoveryConfig = {}): EngineM
           // Register for recovery tracking
           if (entity.resources.hp < (entity.resources.maxHp ?? entity.resources.hp) ||
               entity.resources.stamina < (entity.resources.maxStamina ?? entity.resources.stamina ?? 5)) {
-            recoveryEntries.push({ entityId: entity.id, zoneId, startTick: tick });
+            const recovery = getRecoveryState(world);
+            recovery.recoveryEntries.push({ entityId: entity.id, zoneId, startTick: tick });
             // Cap recovery entries
-            while (recoveryEntries.length > maxAftermathLog) {
-              recoveryEntries.shift();
+            while (recovery.recoveryEntries.length > maxAftermathLog) {
+              recovery.recoveryEntries.shift();
             }
           }
         }
@@ -370,8 +397,9 @@ export function createCombatRecovery(config: CombatRecoveryConfig = {}): EngineM
         }
 
         // HP regen for tracked recovery entries
-        for (let i = recoveryEntries.length - 1; i >= 0; i--) {
-          const entry = recoveryEntries[i];
+        const recovery = getRecoveryState(world);
+        for (let i = recovery.recoveryEntries.length - 1; i >= 0; i--) {
+          const entry = recovery.recoveryEntries[i];
           const entity = world.entities[entry.entityId];
           if (!entity || !isAlive(entity)) {
             completed.push(i);
@@ -410,7 +438,7 @@ export function createCombatRecovery(config: CombatRecoveryConfig = {}): EngineM
 
         // Remove completed entries (reverse order to preserve indices)
         for (const idx of completed.sort((a, b) => b - a)) {
-          recoveryEntries.splice(idx, 1);
+          recovery.recoveryEntries.splice(idx, 1);
         }
       });
     },

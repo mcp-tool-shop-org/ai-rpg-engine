@@ -239,7 +239,10 @@ export const zones: ZoneState[] = [
 
 export const scientistDialogue: DialogueDefinition = {
   id: 'vasquez-briefing',
-  speakers: ['Dr. Vasquez'],
+  // Must be the entity id (not the display name) — dialogue-core's
+  // speakHandler auto-discovers a dialogue via `speakers.includes(targetId)`
+  // using the real entity id when no explicit dialogueId is passed.
+  speakers: ['dr_vasquez'],
   entryNodeId: 'greeting',
   nodes: {
     greeting: {

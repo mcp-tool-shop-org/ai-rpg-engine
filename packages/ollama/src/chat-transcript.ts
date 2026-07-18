@@ -3,7 +3,8 @@
 // Chat engine calls save() after each exchange. Reads are on demand.
 
 import { writeFile, readFile, mkdir } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
+import { withinRoot } from './apply-preview.js';
 import type { ChatMessage, ChatTranscript } from './chat-types.js';
 
 export function createTranscript(sessionName: string | null): ChatTranscript {
@@ -25,8 +26,28 @@ export function defaultTranscriptPath(projectRoot: string, sessionName: string |
   return join(projectRoot, '.ai-transcripts', `${slug}-${date}.jsonl`);
 }
 
-/** Save transcript as JSONL (one JSON object per line). */
-export async function saveTranscript(path: string, transcript: ChatTranscript): Promise<string> {
+/**
+ * Save transcript as JSONL (one JSON object per line).
+ *
+ * Sandboxed to `projectRoot` (default: process.cwd()) via the same
+ * withinRoot() predicate apply-preview.ts's generatePreview/applyConfirmed
+ * and the CLI's --write flag use for every other AI-output-to-disk path in
+ * this package (v2.6 audit F-2992b0cf). saveTranscript/loadTranscript are
+ * exported from the package's public index.ts, so a caller-supplied `path`
+ * must be confined HERE, not merely by caller discipline — today's only
+ * production call site (chat-shell.ts) always derives `path` from
+ * defaultTranscriptPath(), which is already inside the sandbox.
+ */
+export async function saveTranscript(
+  path: string,
+  transcript: ChatTranscript,
+  projectRoot?: string,
+): Promise<string> {
+  const resolved = resolve(path);
+  if (!withinRoot(resolved, projectRoot)) {
+    return `Error: target path escapes project root (${resolved})`;
+  }
+
   const header = JSON.stringify({
     _type: 'transcript',
     sessionName: transcript.sessionName,
@@ -44,16 +65,26 @@ export async function saveTranscript(path: string, transcript: ChatTranscript): 
     }));
   }
 
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, lines.join('\n') + '\n', 'utf-8');
-  return path;
+  await mkdir(dirname(resolved), { recursive: true });
+  await writeFile(resolved, lines.join('\n') + '\n', 'utf-8');
+  return resolved;
 }
 
-/** Load a transcript from JSONL file. */
-export async function loadTranscript(path: string): Promise<ChatTranscript | null> {
+/**
+ * Load a transcript from a JSONL file.
+ *
+ * Same project-root sandbox as saveTranscript() (v2.6 audit F-2992b0cf): a
+ * path outside `projectRoot` is treated the same as "not found" — rejected
+ * BEFORE the read, so this can never become a file-existence/content oracle
+ * for arbitrary on-disk paths outside the project.
+ */
+export async function loadTranscript(path: string, projectRoot?: string): Promise<ChatTranscript | null> {
+  const resolved = resolve(path);
+  if (!withinRoot(resolved, projectRoot)) return null;
+
   let raw: string;
   try {
-    raw = await readFile(path, 'utf-8');
+    raw = await readFile(resolved, 'utf-8');
   } catch {
     return null;
   }

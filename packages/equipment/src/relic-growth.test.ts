@@ -181,8 +181,15 @@ describe('TIER_LABELS', () => {
 
 describe('computeRelicBonuses', () => {
   it('returns empty for no stat bonuses', () => {
+    // F-9b3e21fa: this call site was left on the OLD 2-arg signature after
+    // F-c2ac7705 added the required `itemName` param — a live TS2554 that no
+    // gate caught (build excludes tests, vitest/esbuild doesn't typecheck,
+    // root `tsc --noEmit` resolves zero files). The test still passed only by
+    // accident (no DEFAULT_WEAPON_MILESTONES entry declares a statBonus, so
+    // the loop consuming itemName never ran). Typechecked by
+    // tsconfig.test.json now: `npx tsc -p packages/equipment/tsconfig.test.json`.
     const state = evaluateRelicGrowth(baseWeapon, makeKills(3), 50);
-    const bonuses = computeRelicBonuses(state, DEFAULT_WEAPON_MILESTONES);
+    const bonuses = computeRelicBonuses(state, DEFAULT_WEAPON_MILESTONES, baseWeapon.name);
     expect(bonuses).toEqual({});
   });
 
@@ -193,7 +200,58 @@ describe('computeRelicBonuses', () => {
     ];
     const chronicle = makeKills(3);
     const state = evaluateRelicGrowth(baseWeapon, chronicle, 50, custom);
-    const bonuses = computeRelicBonuses(state, custom);
+    const bonuses = computeRelicBonuses(state, custom, baseWeapon.name);
     expect(bonuses.attack).toBe(3); // 1 + 2
+  });
+
+  // F-c2ac7705: the old match logic derived prefix/suffix from the pattern and
+  // tested `epithet.startsWith(prefix) && epithet.endsWith(suffix)` — unsound
+  // whenever the item's OWN NAME textually overlaps with a DIFFERENT
+  // milestone's fixed prefix/suffix text. An item named "Old Rusty Blade"
+  // that reaches ONLY the kill-count milestone ("{name} the Reaper") produces
+  // the epithet "Old Rusty Blade the Reaper" — which also happens to start
+  // with "Old " (only because the item's own name does) and trivially ends
+  // with "" — so it false-matched the UNRELATED age milestone ("Old {name}")
+  // and credited its stat bonus even though age was never reached.
+  it('does not credit an unrelated milestone whose fixed prefix happens to match the item name', () => {
+    const milestones: GrowthMilestone[] = [
+      { trigger: 'kill-count', threshold: 10, epithet: '{name} the Reaper', statBonus: { attack: 5 } },
+      { trigger: 'age', threshold: 100, epithet: 'Old {name}', statBonus: { defense: 3 } },
+    ];
+    const oldRustyBlade: ItemDefinition = {
+      id: 'old-rusty-blade',
+      name: 'Old Rusty Blade',
+      description: 'A well-worn weapon.',
+      slot: 'weapon',
+      rarity: 'common',
+    };
+    const chronicle: ItemChronicleEntry[] = [
+      { event: 'acquired', tick: 40, detail: 'Found' }, // age at tick 50 is only 10, well under threshold 100
+      ...makeKills(10, 40),
+    ];
+    const state = evaluateRelicGrowth(oldRustyBlade, chronicle, 50, milestones);
+
+    // Precondition: only the kill-count milestone was actually reached.
+    expect(state.milestonesReached).toEqual(['Old Rusty Blade the Reaper']);
+
+    const bonuses = computeRelicBonuses(state, milestones, oldRustyBlade.name);
+    expect(bonuses.attack).toBe(5); // legitimately earned
+    expect(bonuses.defense).toBeUndefined(); // never earned — age milestone was not reached
+  });
+
+  // Guards against the fix over-correcting into false NEGATIVES: when
+  // multiple milestones are ALL genuinely reached, every one of their
+  // bonuses must still be credited via the exact-match rewrite.
+  it('still credits every genuinely reached milestone (no false negatives from the exact-match rewrite)', () => {
+    const milestones: GrowthMilestone[] = [
+      { trigger: 'kill-count', threshold: 3, epithet: 'Bloodied {name}', statBonus: { attack: 1 } },
+      { trigger: 'kill-count', threshold: 10, epithet: '{name} the Reaper', statBonus: { attack: 5 } },
+    ];
+    const chronicle = makeKills(10); // satisfies both thresholds
+    const state = evaluateRelicGrowth(baseWeapon, chronicle, 50, milestones);
+    expect(state.milestonesReached).toHaveLength(2);
+
+    const bonuses = computeRelicBonuses(state, milestones, baseWeapon.name);
+    expect(bonuses.attack).toBe(6); // 1 + 5, both genuinely earned
   });
 });

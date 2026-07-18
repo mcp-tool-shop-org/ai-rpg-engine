@@ -16,69 +16,24 @@ import {
 } from '@ai-rpg-engine/modules';
 import type { StatusDefinition } from '@ai-rpg-engine/content-schema';
 import { beforeEach } from 'vitest';
+// F-2e1879af: import the real shipped fixtures instead of hand-duplicating
+// them. The inline copies used to drift silently from content.ts — a future
+// balance/mechanics edit to a shipped ability's cost, check difficulty, or
+// effect amount would not have been caught by its own "integration" test,
+// which kept passing against a frozen hand-copied duplicate.
+import {
+  crowdCleave,
+  rallyCrowd,
+  gladiatorChallenge,
+  ironResolve,
+  gladiatorAbilities as allGladiatorAbilities,
+  gladiatorStatusDefinitions as gladiatorStatusDefs,
+} from './content.js';
 
 const zones = [
   { id: 'zone-a', roomId: 'test', name: 'Arena Floor', tags: [] as string[], neighbors: ['zone-b'] },
   { id: 'zone-b', roomId: 'test', name: 'Holding Cells', tags: [] as string[], neighbors: ['zone-a'] },
 ];
-
-const crowdCleave: AbilityDefinition = {
-  id: 'crowd-cleave', name: 'Crowd Cleave', verb: 'use-ability',
-  tags: ['spectacle', 'combat', 'damage'],
-  costs: [{ resourceId: 'stamina', amount: 3 }],
-  target: { type: 'single' },
-  checks: [{ stat: 'might', difficulty: 7, onFail: 'half-damage' }],
-  effects: [
-    { type: 'damage', target: 'target', params: { amount: 5, damageType: 'melee' } },
-    { type: 'resource-modify', target: 'actor', params: { resource: 'crowd-favor', amount: 10 } },
-  ],
-  cooldown: 2,
-  requirements: [{ type: 'has-tag', params: { tag: 'gladiator' } }],
-};
-
-const rallyCrowd: AbilityDefinition = {
-  id: 'rally-crowd', name: 'Rally the Crowd', verb: 'use-ability',
-  tags: ['spectacle', 'buff', 'support'],
-  costs: [{ resourceId: 'stamina', amount: 2 }, { resourceId: 'crowd-favor', amount: 15 }],
-  target: { type: 'self' },
-  checks: [{ stat: 'showmanship', difficulty: 7, onFail: 'abort' }],
-  effects: [
-    { type: 'heal', target: 'actor', params: { amount: 5, resource: 'hp' } },
-    { type: 'resource-modify', target: 'actor', params: { resource: 'fatigue', amount: -5 } },
-    { type: 'stat-modify', target: 'actor', params: { stat: 'might', amount: 2 } },
-  ],
-  cooldown: 4,
-};
-
-const gladiatorChallenge: AbilityDefinition = {
-  id: 'gladiators-challenge', name: "Gladiator's Challenge", verb: 'use-ability',
-  tags: ['spectacle', 'combat', 'debuff'],
-  costs: [{ resourceId: 'stamina', amount: 2 }],
-  target: { type: 'single' },
-  checks: [{ stat: 'showmanship', difficulty: 6, onFail: 'half-damage' }],
-  effects: [
-    { type: 'apply-status', target: 'target', params: { statusId: 'challenged', duration: 3, stacking: 'replace' } },
-    { type: 'stat-modify', target: 'target', params: { stat: 'agility', amount: -2 } },
-    { type: 'resource-modify', target: 'actor', params: { resource: 'crowd-favor', amount: 5 } },
-  ],
-  cooldown: 3,
-  requirements: [{ type: 'has-tag', params: { tag: 'gladiator' } }],
-};
-
-const ironResolve: AbilityDefinition = {
-  id: 'iron-resolve', name: 'Iron Resolve', verb: 'use-ability',
-  tags: ['spectacle', 'support', 'cleanse'],
-  costs: [{ resourceId: 'stamina', amount: 2 }, { resourceId: 'fatigue', amount: 3 }],
-  target: { type: 'self' },
-  checks: [{ stat: 'might', difficulty: 6, onFail: 'abort' }],
-  effects: [
-    { type: 'remove-status-by-tag', target: 'actor', params: { tags: 'control,fear' } },
-  ],
-  cooldown: 4,
-  requirements: [{ type: 'has-tag', params: { tag: 'gladiator' } }],
-};
-
-const allGladiatorAbilities = [crowdCleave, rallyCrowd, gladiatorChallenge, ironResolve];
 
 function buildGladiatorEngine(opts?: {
   playerMight?: number;
@@ -213,16 +168,9 @@ describe('Gladiator — Challenge', () => {
 });
 
 // --- Status definitions for resistance tests ---
-
-const gladiatorStatusDefs: StatusDefinition[] = [
-  {
-    id: 'challenged',
-    name: 'Challenged',
-    tags: ['control', 'debuff'],
-    stacking: 'replace',
-    duration: { type: 'ticks', value: 3 },
-  },
-];
+// F-2e1879af: gladiatorStatusDefs is imported (aliased) at the top of this
+// file from content.ts rather than hand-duplicated, so it stays in sync
+// with the real shipped status.
 
 describe('Gladiator — Iron Resolve (cleanse)', () => {
   beforeEach(() => {

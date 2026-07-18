@@ -170,9 +170,12 @@ export { DEFAULT_CHAT_CONFIG } from './chat-types.js';
 export { classifyIntent, classifyByKeywords, classifyByLLM } from './chat-router.js';
 export { findToolForIntent, getAllTools } from './chat-tools.js';
 export { createChatEngine, createChatMemory, addMessage, getRecentContext, capturePlanFromOutput } from './chat-engine.js';
-export type { ChatEngine, ChatEngineOptions, LoadoutHistoryEntry } from './chat-engine.js';
+export type {
+  ChatEngine, ChatEngineOptions, LoadoutHistoryEntry,
+  BatchStepProgress, BatchStepCallback,
+} from './chat-engine.js';
 export { createTranscript, addToTranscript, saveTranscript, loadTranscript, defaultTranscriptPath } from './chat-transcript.js';
-export { runChatShell } from './chat-shell.js';
+export { runChatShell, persistTranscriptAtExit } from './chat-shell.js';
 export type { ChatShellOptions } from './chat-shell.js';
 
 // RAG — project-grounded retrieval
@@ -188,7 +191,14 @@ export { WORLDBUILDER_PROFILE, ANALYST_PROFILE, GENERATOR_PROFILE, ROUTER_PROFIL
 export type { PersonalityProfile } from './chat-personality.js';
 
 // Webfetch adapter
-export { webfetch, isAllowedUrl, formatWebfetchForPrompt } from './chat-webfetch.js';
+export { webfetch, isAllowedUrlResolved, formatWebfetchForPrompt } from './chat-webfetch.js';
+// The syntax-only URL check is exported under a self-documenting name so no
+// consumer mistakes it for the live SSRF gate — that gate is
+// isAllowedUrlResolved(), which resolves DNS and re-checks every address
+// (v2.6 audit F-7f6ca7bd). isAllowedUrl() alone does NOT resolve DNS and is
+// insufficient as a security boundary; the rename makes that impossible to
+// miss at the call site.
+export { isAllowedUrl as isSyntacticallyAllowedUrl } from './chat-webfetch.js';
 export type { WebfetchResult, WebfetchOptions } from './chat-webfetch.js';
 
 // Planner — session-aware multi-step planning

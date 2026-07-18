@@ -24,8 +24,10 @@ import {
   createAbilityReview,
   registerStatusDefinitions,
   COMBAT_STATES,
+  aggressiveProfile,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatResourceProfile } from '@ai-rpg-engine/modules';
+import * as engineModules from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatResourceProfile, IntentProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -89,6 +91,37 @@ const pirateCombatProfile: CombatResourceProfile = {
   ],
 };
 
+// ─── Intent profiles (F1-cs-a) ──────────────────────────────────────────────
+// Every hostile entity in content.ts declares an ai.profileId. The cognition
+// config must supply an IntentProfile for each declared id — with an empty
+// profileMap no enemy ever resolves an intent, so enemies never act.
+// `territorial` is a newer built-in; resolve it from the installed modules
+// build when present, otherwise back the same id with the closest established
+// behavior so every declared id still resolves.
+function resolveBuiltinProfile(
+  id: 'territorial' | 'calculating',
+  fallbackEvaluate: IntentProfile['evaluate'],
+): IntentProfile {
+  const candidate = (engineModules as unknown as Record<string, unknown>)[`${id}Profile`] as
+    | IntentProfile
+    | undefined;
+  if (candidate && candidate.id === id && typeof candidate.evaluate === 'function') {
+    return candidate;
+  }
+  return { id, evaluate: fallbackEvaluate };
+}
+
+/**
+ * Intent profiles wired into this pack's cognition config:
+ * - navy-sailor / boarding-marine → aggressive (colonial enforcers who press
+ *   the attack on sight)
+ * - drowned-guardian → territorial (shrine-bound boss that punishes trespass)
+ */
+export const pirateIntentProfiles: IntentProfile[] = [
+  aggressiveProfile,
+  resolveBuiltinProfile('territorial', aggressiveProfile.evaluate),
+];
+
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(pirateStatusDefinitions);
 
@@ -99,7 +132,10 @@ export function createGame(seed?: number): Engine {
     resourceProfile: pirateCombatProfile,
     biasTags: ['pirate', 'colonial', 'beast'],
     recovery: { safeZoneTags: ['safe', 'ship', 'home-base', 'tavern'] },
-    cognition: { decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } },
+    cognition: {
+      profiles: pirateIntentProfiles,
+      decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 },
+    },
   });
 
   const engine = new Engine({
@@ -112,7 +148,7 @@ export function createGame(seed?: number): Engine {
       ...combat.modules,
       createInventoryCore([rumBarrelEffect]),
       createDialogueCore([cartographerDialogue]),
-      createPerceptionFilter(),
+      createPerceptionFilter({ perceptionStat: 'cunning' }),
       createProgressionCore({
         trees: [seamanshipTree],
         rewards: [{
@@ -175,13 +211,13 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity({ ...player });
-  engine.store.addEntity({ ...quartermaster });
-  engine.store.addEntity({ ...cartographer });
-  engine.store.addEntity({ ...governor });
-  engine.store.addEntity({ ...navySailor });
-  engine.store.addEntity({ ...seaBeast });
-  engine.store.addEntity({ ...boardingMarine });
+  engine.store.addEntity(structuredClone(player));
+  engine.store.addEntity(structuredClone(quartermaster));
+  engine.store.addEntity(structuredClone(cartographer));
+  engine.store.addEntity(structuredClone(governor));
+  engine.store.addEntity(structuredClone(navySailor));
+  engine.store.addEntity(structuredClone(seaBeast));
+  engine.store.addEntity(structuredClone(boardingMarine));
 
   // Set player
   engine.store.state.playerId = 'captain';

@@ -23,8 +23,10 @@ import {
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
+  aggressiveProfile,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatResourceProfile } from '@ai-rpg-engine/modules';
+import * as engineModules from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatResourceProfile, IntentProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -89,6 +91,37 @@ const colonyCombatProfile: CombatResourceProfile = {
   ],
 };
 
+// ─── Intent profiles (F1-cs-a) ──────────────────────────────────────────────
+// Every hostile entity in content.ts declares an ai.profileId. The cognition
+// config must supply an IntentProfile for each declared id — with an empty
+// profileMap no enemy ever resolves an intent, so enemies never act.
+// `territorial` is a newer built-in; resolve it from the installed modules
+// build when present, otherwise back the same id with the closest established
+// behavior so every declared id still resolves.
+function resolveBuiltinProfile(
+  id: 'territorial' | 'calculating',
+  fallbackEvaluate: IntentProfile['evaluate'],
+): IntentProfile {
+  const candidate = (engineModules as unknown as Record<string, unknown>)[`${id}Profile`] as
+    | IntentProfile
+    | undefined;
+  if (candidate && candidate.id === id && typeof candidate.evaluate === 'function') {
+    return candidate;
+  }
+  return { id, evaluate: fallbackEvaluate };
+}
+
+/**
+ * Intent profiles wired into this pack's cognition config:
+ * - breached-drone / swarm-larva → aggressive (malfunctioning security and
+ *   swarming larvae attack whatever crosses them)
+ * - resonance-entity → territorial (guards the signal in its cavern)
+ */
+export const colonyIntentProfiles: IntentProfile[] = [
+  aggressiveProfile,
+  resolveBuiltinProfile('territorial', aggressiveProfile.evaluate),
+];
+
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(colonyStatusDefinitions);
   const combat = buildCombatStack({
@@ -98,7 +131,10 @@ export function createGame(seed?: number): Engine {
     biasTags: ['drone', 'alien'],
     engagement: { backlineTags: ['ranged'], protectorTags: ['bodyguard'] },
     recovery: { safeZoneTags: ['safe', 'colony-core'] },
-    cognition: { decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } },
+    cognition: {
+      profiles: colonyIntentProfiles,
+      decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 },
+    },
   });
 
   const engine = new Engine({
@@ -111,7 +147,7 @@ export function createGame(seed?: number): Engine {
       ...combat.modules,
       createInventoryCore([emergencyCellEffect]),
       createDialogueCore([scientistDialogue]),
-      createPerceptionFilter(),
+      createPerceptionFilter({ perceptionStat: 'awareness' }),
       createProgressionCore({
         trees: [commanderTree],
         rewards: [{
@@ -175,12 +211,12 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity({ ...player });
-  engine.store.addEntity({ ...scientist });
-  engine.store.addEntity({ ...security });
-  engine.store.addEntity({ ...drone });
-  engine.store.addEntity({ ...resonance });
-  engine.store.addEntity({ ...swarmLarva });
+  engine.store.addEntity(structuredClone(player));
+  engine.store.addEntity(structuredClone(scientist));
+  engine.store.addEntity(structuredClone(security));
+  engine.store.addEntity(structuredClone(drone));
+  engine.store.addEntity(structuredClone(resonance));
+  engine.store.addEntity(structuredClone(swarmLarva));
 
   // Set player
   engine.store.state.playerId = 'commander';

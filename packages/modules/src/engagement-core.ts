@@ -13,6 +13,7 @@ import type {
   ResolvedEvent,
   EntityState,
 } from '@ai-rpg-engine/core';
+import { genId } from '@ai-rpg-engine/core';
 import { applyStatus, removeStatus, hasStatus } from './status-core.js';
 import { COMBAT_STATES, DEFAULT_STAT_MAPPING, defaultInterceptChance } from './combat-core.js';
 import type { CombatFormulas } from './combat-core.js';
@@ -207,7 +208,13 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
             );
             if (exposedBackliners.length > 0) {
               ctx.events.emit({
-                id: `evt-frontline-collapse-${tick}`,
+                // Deterministic id from the per-instance counter (F-fc282589)
+                // — the old hand-rolled `evt-frontline-collapse-${tick}` had
+                // NO zone or entity disambiguation, only the tick. A single
+                // AoE that defeats two+ engaged allies in the SAME zone
+                // within one action (one tick) runs this handler twice for
+                // the same zone/tick, and both emits collided on this id.
+                id: genId(world, 'evt'),
                 tick,
                 type: 'combat.frontline.collapsed',
                 payload: { zoneId: defeated.zoneId, exposedIds: exposedBackliners.map(e => e.id) },
@@ -321,7 +328,10 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
           if (!hasStatus(entity, COMBAT_STATES.EXPOSED)) {
             applyStatus(entity, COMBAT_STATES.EXPOSED, tick, { duration: 1, sourceId: 'ambush' }, world);
             ctx.events.emit({
-              id: `evt-ambush-${tick}-${entityId}`,
+              // Deterministic id from the per-instance counter (F-fc282589)
+              // — matches the codebase-wide hardening convention (this file
+              // previously imported no genId at all).
+              id: genId(world, 'evt'),
               tick,
               type: 'combat.ambush.triggered',
               actorId: entityId,

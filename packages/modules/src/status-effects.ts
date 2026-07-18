@@ -233,13 +233,24 @@ export function processPeriodicStatuses(world: WorldState, tick: number): Resolv
         (inst.expiresAtTick !== undefined ? inst.expiresAtTick - inst.appliedAtTick : undefined);
       const elapsed = tick - inst.appliedAtTick;
 
+      // Display name for player-grade text (MOD-C-BH-01). Warn-and-degrade: an
+      // unregistered statusId falls back to the raw id, never throws.
+      const statusName = getStatusDefinition(inst.statusId)?.name ?? inst.statusId;
+
       // Expiry (>= duration). Periodic instances own their own expiry here so the
       // periodic schedule and the removal are decided by one integer comparison.
+      // Because this removal happens BEFORE status-core's expiry sweep, the
+      // standard status.expired never fires for periodic instances — so THIS
+      // event carries the player-grade description/presentation the UI renders
+      // (MOD-C-BH-01; emitting status.expired as well would double the UI line).
       if (duration !== undefined && elapsed >= duration) {
         events.push(makePeriodicEvent('status.periodic.expired', entity.id, inst.statusId, tick, {
           appliedAtTick: inst.appliedAtTick,
           durationTicks: duration,
-        }));
+          statusName,
+          entityName: entity.name,
+          description: `${statusName} fades from ${entity.name}`,
+        }, { channels: ['objective'], priority: 'low' }));
         continue; // drop (do not push to survivors)
       }
 
@@ -255,11 +266,25 @@ export function processPeriodicStatuses(world: WorldState, tick: number): Resolv
         if (kind === 'damage') {
           const before = entity.resources.hp ?? 0;
           entity.resources.hp = Math.max(0, before - magnitude);
+          // Player-grade description + presentation matching the sibling
+          // combat.damage.applied event (channels/priority), plus a paired
+          // resource.changed so HP-bar consumers see the change (MOD-C-BH-01).
           events.push(makePeriodicEvent('status.periodic.damage', entity.id, inst.statusId, tick, {
             amount: magnitude,
             sourceId: inst.sourceId ?? '',
             hpBefore: before,
             hpAfter: entity.resources.hp,
+            statusName,
+            entityName: entity.name,
+            description: `${entity.name} takes ${magnitude} damage from ${statusName}`,
+          }, { channels: ['objective'], priority: 'high' }));
+          events.push(makePeriodicEvent('resource.changed', entity.id, inst.statusId, tick, {
+            entityId: entity.id,
+            resource: 'hp',
+            previous: before,
+            current: entity.resources.hp,
+            delta: entity.resources.hp - before,
+            cause: 'status-periodic',
           }));
           if (entity.resources.hp <= 0 && before > 0) {
             events.push(makePeriodicEvent('combat.entity.defeated', entity.id, inst.statusId, tick, {
@@ -268,7 +293,7 @@ export function processPeriodicStatuses(world: WorldState, tick: number): Resolv
               cause: 'status',
               statusId: inst.statusId,
               attackerId: inst.sourceId ?? '',
-            }));
+            }, { channels: ['objective', 'narrator'], priority: 'critical', soundCues: ['combat.defeat'] }));
           }
         } else if (kind === 'heal') {
           const resource = strData(inst.data, PERIODIC_KEYS.RESOURCE) ?? 'hp';
@@ -276,13 +301,25 @@ export function processPeriodicStatuses(world: WorldState, tick: number): Resolv
           const maxKey = `max${resource.charAt(0).toUpperCase()}${resource.slice(1)}`;
           const max = entity.resources[maxKey] ?? entity.stats[maxKey] ?? Infinity;
           entity.resources[resource] = Math.min(max, before + magnitude);
+          const actual = entity.resources[resource] - before;
           events.push(makePeriodicEvent('status.periodic.heal', entity.id, inst.statusId, tick, {
             amount: magnitude,
-            actual: entity.resources[resource] - before,
+            actual,
             resource,
             sourceId: inst.sourceId ?? '',
             before,
             after: entity.resources[resource],
+            statusName,
+            entityName: entity.name,
+            description: `${entity.name} recovers ${actual} ${resource} from ${statusName}`,
+          }, { channels: ['objective'], priority: 'normal' }));
+          events.push(makePeriodicEvent('resource.changed', entity.id, inst.statusId, tick, {
+            entityId: entity.id,
+            resource,
+            previous: before,
+            current: entity.resources[resource],
+            delta: actual,
+            cause: 'status-periodic',
           }));
         }
       }
@@ -568,6 +605,7 @@ function makePeriodicEvent(
   statusId: string,
   tick: number,
   payload: Record<string, unknown>,
+  presentation?: ResolvedEvent['presentation'],
 ): ResolvedEvent {
   return {
     id: '',
@@ -577,6 +615,7 @@ function makePeriodicEvent(
     targetIds: [entityId],
     payload: { statusId, ...payload },
     tags: ['status', 'periodic'],
+    ...(presentation ? { presentation } : {}),
   };
 }
 

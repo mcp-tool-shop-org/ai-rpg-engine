@@ -23,8 +23,11 @@ import {
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
+  aggressiveProfile,
+  cautiousProfile,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatResourceProfile } from '@ai-rpg-engine/modules';
+import * as engineModules from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatResourceProfile, IntentProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -85,6 +88,37 @@ const cyberpunkCombatProfile: CombatResourceProfile = {
   ],
 };
 
+// ─── Intent profiles (F1-cs-a) ──────────────────────────────────────────────
+// Every hostile entity in content.ts declares an ai.profileId. The cognition
+// config must supply an IntentProfile for each declared id — with an empty
+// profileMap no enemy ever resolves an intent, so enemies never act.
+// `calculating` is a newer built-in; resolve it from the installed modules
+// build when present, otherwise back the same id with the closest established
+// behavior so every declared id still resolves.
+function resolveBuiltinProfile(
+  id: 'territorial' | 'calculating',
+  fallbackEvaluate: IntentProfile['evaluate'],
+): IntentProfile {
+  const candidate = (engineModules as unknown as Record<string, unknown>)[`${id}Profile`] as
+    | IntentProfile
+    | undefined;
+  if (candidate && candidate.id === id && typeof candidate.evaluate === 'function') {
+    return candidate;
+  }
+  return { id, evaluate: fallbackEvaluate };
+}
+
+/**
+ * Intent profiles wired into this pack's cognition config:
+ * - ice-sentry / street-runner → aggressive (attack-on-sight vault defense
+ *   and turf-first gang muscle)
+ * - vault-overseer → calculating (AI construct that optimizes its strike)
+ */
+export const cyberpunkIntentProfiles: IntentProfile[] = [
+  aggressiveProfile,
+  resolveBuiltinProfile('calculating', cautiousProfile.evaluate),
+];
+
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(cyberpunkStatusDefinitions);
 
@@ -95,7 +129,10 @@ export function createGame(seed?: number): Engine {
     resourceProfile: cyberpunkCombatProfile,
     biasTags: ['ice-agent'],
     engagement: { backlineTags: ['ranged', 'caster', 'netrunner'], protectorTags: ['bodyguard'] },
-    cognition: { decay: { baseRate: 0.03, pruneThreshold: 0.05, instabilityFactor: 0.8 } },
+    cognition: {
+      profiles: cyberpunkIntentProfiles,
+      decay: { baseRate: 0.03, pruneThreshold: 0.05, instabilityFactor: 0.8 },
+    },
   });
 
   const engine = new Engine({
@@ -165,12 +202,12 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity({ ...player });
-  engine.store.addEntity({ ...fixer });
-  engine.store.addEntity({ ...rez });
-  engine.store.addEntity({ ...iceAgent });
-  engine.store.addEntity({ ...streetRunner });
-  engine.store.addEntity({ ...vaultOverseer });
+  engine.store.addEntity(structuredClone(player));
+  engine.store.addEntity(structuredClone(fixer));
+  engine.store.addEntity(structuredClone(rez));
+  engine.store.addEntity(structuredClone(iceAgent));
+  engine.store.addEntity(structuredClone(streetRunner));
+  engine.store.addEntity(structuredClone(vaultOverseer));
 
   // Set player
   engine.store.state.playerId = 'runner';

@@ -132,6 +132,62 @@ export function assertSaveMetaShape(meta: unknown): void {
 }
 
 /**
+ * Validate the bulk game-state containers a loaded save adopts wholesale
+ * (F-71a4c9de). meta, rngState, and saveVersion were each individually guarded
+ * with a structured SaveLoadError — but the actual payload (entities, zones,
+ * quests, factions, globals, modules, eventLog, pending, playerId, locationId)
+ * was adopted via a blind Object.assign with ZERO shape validation, making it
+ * the one unguarded boundary in an otherwise consistently-hardened domain.
+ *
+ * Failure classes this eliminates:
+ * - `playerId: 99` (number): JS object keys are strings, so `entities[99]`
+ *   silently reads `entities["99"]` — a wrong-player-identity corruption with
+ *   no signal if an unrelated entity happens to carry that id.
+ * - `entities: null` / `eventLog: "..."`: loads clean, then getEntity() /
+ *   recordEvent() raw-throw a bare TypeError far from the actual root cause.
+ *
+ * Runs AFTER the migration chain (like assertSaveMetaShape — v2.5 PC-2), so a
+ * future SAVE_MIGRATIONS entry may backfill containers for legacy saves.
+ * Element-level contents are intentionally NOT deep-validated here — this
+ * guards the container shapes the engine dereferences unconditionally.
+ */
+export function assertSaveStateShape(state: WorldState): void {
+  const s = state as unknown as Record<string, unknown>;
+  const fail = (field: string, expected: string, got: unknown, hint?: string): never => {
+    throw new SaveLoadError({
+      code: 'SAVE_MALFORMED',
+      message: `Save ${field} must be ${expected}, got ${describeJsonValue(got)}.`,
+      hint: hint ?? 'The save file is corrupt or was not produced by this engine. Restore from a backup.',
+    });
+  };
+  for (const field of ['entities', 'zones', 'quests', 'factions', 'globals', 'modules'] as const) {
+    const v = s[field];
+    if (typeof v !== 'object' || v === null || Array.isArray(v)) {
+      fail(field, 'a plain object', v);
+    }
+  }
+  for (const field of ['eventLog', 'pending'] as const) {
+    if (!Array.isArray(s[field])) fail(field, 'an array', s[field]);
+  }
+  if (typeof s.playerId !== 'string') {
+    fail('playerId', 'a string', s.playerId,
+      'A non-string playerId can silently resolve to a DIFFERENT entity after load (object keys are strings in JS), corrupting player identity with no signal. The save is corrupt or was produced by an incompatible tool.');
+  }
+  if (typeof s.locationId !== 'string') fail('locationId', 'a string', s.locationId);
+  // A non-empty playerId must resolve to an entity present in this save —
+  // otherwise every player lookup silently returns undefined downstream.
+  // '' is the pre-player constructor default and stays valid (a fresh store
+  // serialized before a player entity exists is a legitimate save).
+  if (s.playerId !== '' && !((s.playerId as string) in (s.entities as Record<string, unknown>))) {
+    throw new SaveLoadError({
+      code: 'SAVE_MALFORMED',
+      message: `Save playerId "${s.playerId as string}" does not match any entity in the save.`,
+      hint: 'The player entity is missing or renamed — the save is corrupt or was edited by hand. Restore from a backup.',
+    });
+  }
+}
+
+/**
  * Run the migration chain to bring a loaded state up to SAVE_VERSION.
  * Throws a structured SaveLoadError if the save is newer than this engine
  * supports, or sits at a version with no migration path forward.
@@ -455,6 +511,11 @@ export class WorldStore {
     // Guard the meta fields fed back into construction AFTER migration, so a
     // future migration may backfill them for legacy saves (v2.5 C5 family).
     assertSaveMetaShape(migratedState.meta);
+
+    // Guard the bulk state containers adopted below via Object.assign
+    // (F-71a4c9de) — same post-migration placement, same structured
+    // SaveLoadError contract as the meta guard above.
+    assertSaveStateShape(migratedState);
 
     const manifest: GameManifest = {
       id: migratedState.meta.gameId,

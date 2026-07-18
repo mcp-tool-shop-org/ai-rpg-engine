@@ -23,8 +23,11 @@ import {
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
+  aggressiveProfile,
+  cautiousProfile,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule } from '@ai-rpg-engine/modules';
+import * as engineModules from '@ai-rpg-engine/modules';
+import type { PresentationRule, IntentProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -62,6 +65,39 @@ const undeadHostilePerception: PresentationRule = {
   }),
 };
 
+// ─── Intent profiles (F1-cs-a) ──────────────────────────────────────────────
+// Every hostile entity in content.ts declares an ai.profileId. The cognition
+// config must supply an IntentProfile for each declared id: cognition-core
+// builds its profileMap from `cognition.profiles`, and with an empty map no
+// enemy ever resolves an intent — enemies simply never act. `territorial` and
+// `calculating` are newer built-ins; resolve them from the installed modules
+// build when present, otherwise back the same id with the closest established
+// behavior so every declared id still resolves.
+function resolveBuiltinProfile(
+  id: 'territorial' | 'calculating',
+  fallbackEvaluate: IntentProfile['evaluate'],
+): IntentProfile {
+  const candidate = (engineModules as unknown as Record<string, unknown>)[`${id}Profile`] as
+    | IntentProfile
+    | undefined;
+  if (candidate && candidate.id === id && typeof candidate.evaluate === 'function') {
+    return candidate;
+  }
+  return { id, evaluate: fallbackEvaluate };
+}
+
+/**
+ * Intent profiles wired into this pack's cognition config:
+ * - ash-ghoul → aggressive (brute that hurls itself at the living)
+ * - crypt-warden → territorial (boss bound to defend the crypt)
+ * - crypt-stalker → cautious (ambusher that observes before striking)
+ */
+export const fantasyIntentProfiles: IntentProfile[] = [
+  aggressiveProfile,
+  cautiousProfile,
+  resolveBuiltinProfile('territorial', aggressiveProfile.evaluate),
+];
+
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(fantasyStatusDefinitions);
 
@@ -72,7 +108,10 @@ export function createGame(seed?: number): Engine {
     playerId: 'player',
     biasTags: ['undead'],
     recovery: { safeZoneTags: ['safe', 'sacred'] },
-    cognition: { decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } },
+    cognition: {
+      profiles: fantasyIntentProfiles,
+      decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 },
+    },
   });
 
   const engine = new Engine({
@@ -141,13 +180,13 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity({ ...player });
-  engine.store.addEntity({ ...pilgrim });
-  engine.store.addEntity({ ...brotherAldric });
-  engine.store.addEntity({ ...sisterMaren });
-  engine.store.addEntity({ ...ashGhoul });
-  engine.store.addEntity({ ...cryptStalker });
-  engine.store.addEntity({ ...cryptWarden });
+  engine.store.addEntity(structuredClone(player));
+  engine.store.addEntity(structuredClone(pilgrim));
+  engine.store.addEntity(structuredClone(brotherAldric));
+  engine.store.addEntity(structuredClone(sisterMaren));
+  engine.store.addEntity(structuredClone(ashGhoul));
+  engine.store.addEntity(structuredClone(cryptStalker));
+  engine.store.addEntity(structuredClone(cryptWarden));
 
   // Set player
   engine.store.state.playerId = 'player';

@@ -216,6 +216,37 @@ check('.gitignore ignores .signalfire/', () => {
   assert.ok(/^\.signalfire\/?$/m.test(read('.gitignore')), '.gitignore does not ignore .signalfire/');
 });
 
+// ---------------------------------------------------------------------------
+// HANDBOOK-SYNC — the REVERSE half of DOCS-02. DOCS-02 (above) asserts every
+// canonical chapter is rendered on the site (forward parity). This adds the
+// reverse guard: a chapter on the public site must have a canonical source,
+// so site-only orphans (content with no maintained source of truth) surface
+// instead of drifting silently. `beginners.md` is the one intentional
+// site-only page (a Starlight getting-started with no canonical counterpart).
+// Neither gate checks per-chapter CONTENT divergence — that needs generation,
+// a separate initiative, not a chapter-set parity check.
+// ---------------------------------------------------------------------------
+console.log('HANDBOOK-SYNC site mirror -> canonical (reverse parity)');
+const SITE_ONLY = new Set(['beginners.md']);
+const chapters = (dir) =>
+  new Set(readdirSync(join(root, dir)).filter((f) => f.endsWith('.md')));
+check('docs/handbook and site mirror carry the same chapter set', () => {
+  const canon = chapters('docs/handbook');
+  const site = chapters('site/src/content/docs/handbook');
+  const missingFromSite = [...canon].filter((f) => !site.has(f));
+  const missingFromCanon = [...site].filter((f) => !canon.has(f) && !SITE_ONLY.has(f));
+  assert.equal(
+    missingFromSite.length,
+    0,
+    `chapters in docs/handbook not mirrored to the site: ${missingFromSite.join(', ')}`,
+  );
+  assert.equal(
+    missingFromCanon.length,
+    0,
+    `chapters in the site mirror with no canonical source: ${missingFromCanon.join(', ')}`,
+  );
+});
+
 if (failures.length > 0) {
   console.error(`\n${failures.length} docs-integrity check(s) FAILED (${passed} passed).`);
   process.exit(1);

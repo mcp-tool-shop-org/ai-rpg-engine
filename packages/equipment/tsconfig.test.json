@@ -1,0 +1,15 @@
+{
+  "//": "Typechecks src INCLUDING *.test.ts (F-9b3e21fa). The build tsconfig excludes tests, `npm test` (vitest/esbuild) transpiles without typechecking, and the root `tsc --noEmit` resolves zero files — so a required-parameter signature change silently degraded a test to a 2-arg call (TS2554) without failing any gate. Run: npx tsc -p packages/equipment/tsconfig.test.json",
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "noEmit": true,
+    "rootDir": "src"
+  },
+  "include": [
+    "src"
+  ]
+}

@@ -1,10 +1,13 @@
 import { describe, test, expect } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
+import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
 import { createCognitionCore, getCognition, setBelief, addMemory } from './cognition-core.js';
 import { createPerceptionFilter } from './perception-filter.js';
 import { createEnvironmentCore, setZoneProperty } from './environment-core.js';
 import { createFactionCognition, setFactionBelief, getFactionCognition } from './faction-cognition.js';
 import { createRumorPropagation } from './rumor-propagation.js';
+import { statusCore } from './status-core.js';
+import { createAbilityCore } from './ability-core.js';
 import {
   createSimulationInspector,
   inspectEntity,
@@ -178,5 +181,182 @@ describe('simulation-inspector', () => {
     expect(ids).toContain('environment-state');
     expect(ids).toContain('rumor-trace');
     expect(ids).toContain('simulation-snapshot');
+  });
+
+  // -------------------------------------------------------------------------
+  // abilityState.availableAbilities (F-dd1faf2a)
+  // -------------------------------------------------------------------------
+  //
+  // availableAbilities used to be derived ONLY from AbilityModuleState's
+  // cooldowns/useCounts, both populated ONLY once an ability has been used at
+  // least once. Any ability an entity has NEVER used — the common case for
+  // most of a kit, most of the time — was silently omitted even when fully
+  // ready, because this inspector never called ability-core.ts's actually-
+  // correct isAbilityReady/getAvailableAbilities (it lacked the
+  // AbilityDefinition[] list needed to). inspectEntity/inspectAllEntities/
+  // createSimulationInspector now accept an OPTIONAL abilities list; when
+  // supplied, availability is computed correctly; omitted, the old
+  // (under-reporting, but no worse than before) cooldown/use-count fallback
+  // still applies for back-compat.
+
+  describe('abilityState.availableAbilities', () => {
+    const fireball: AbilityDefinition = {
+      id: 'fireball', name: 'Fireball', verb: 'cast', tags: [],
+      target: { type: 'single', filter: ['enemy'] }, checks: [], effects: [],
+    };
+    const drainingRitual: AbilityDefinition = {
+      id: 'draining-ritual', name: 'Draining Ritual', verb: 'cast', tags: [],
+      costs: [{ resourceId: 'mana', amount: 100 }], // guard_1 has no mana → never affordable
+      target: { type: 'self' }, checks: [], effects: [],
+    };
+
+    function createEngineWithAbilities() {
+      return createTestEngine({
+        modules: [
+          statusCore,
+          createCognitionCore(),
+          createPerceptionFilter(),
+          createEnvironmentCore(),
+          createFactionCognition({
+            factions: [{ factionId: 'castle-guard', entityIds: ['guard_1'] }],
+          }),
+          createRumorPropagation(),
+          createAbilityCore({ abilities: [fireball, drainingRitual] }),
+          createSimulationInspector({ abilities: [fireball, drainingRitual] }),
+        ],
+        entities: [player, { ...guard }],
+        zones,
+        playerId: 'player',
+        startZone: 'hall',
+      });
+    }
+
+    test('an ability the entity has NEVER used still shows as available when it is actually ready', () => {
+      const engine = createEngineWithAbilities();
+      const inspection = inspectEntity(engine.world, 'guard_1', [fireball, drainingRitual]);
+      expect(inspection).not.toBeNull();
+      expect(inspection!.abilityState.availableAbilities).toContain('fireball');
+    });
+
+    test('an ability the entity has never used but genuinely CANNOT afford is correctly excluded (proves this reads real readiness, not just presence)', () => {
+      const engine = createEngineWithAbilities();
+      const inspection = inspectEntity(engine.world, 'guard_1', [fireball, drainingRitual]);
+      expect(inspection!.abilityState.availableAbilities).not.toContain('draining-ritual');
+    });
+
+    test('inspectAllEntities threads the abilities list through to every entity', () => {
+      const engine = createEngineWithAbilities();
+      const all = inspectAllEntities(engine.world, [fireball, drainingRitual]);
+      expect(all['guard_1'].abilityState.availableAbilities).toContain('fireball');
+    });
+
+    test('without an abilities list (back-compat), a never-used ability is not reported', () => {
+      const engine = createEngineWithAbilities();
+      const inspection = inspectEntity(engine.world, 'guard_1');
+      expect(inspection!.abilityState.availableAbilities).not.toContain('fireball');
+    });
+
+    test('createSimulationInspector threads its configured abilities into the entity-cognition debug inspector', () => {
+      const engine = createEngineWithAbilities();
+      const entityCognitionInspector = engine.moduleManager
+        .getInspectors()
+        .find(i => i.id === 'entity-cognition')!;
+      const result = entityCognitionInspector.inspect(engine.world) as Record<string, {
+        abilityState: { availableAbilities: string[] };
+      }>;
+      expect(result['guard_1'].abilityState.availableAbilities).toContain('fireball');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Default ability catalog resolution (F-dd1faf2a completion)
+  // -------------------------------------------------------------------------
+  //
+  // The opt-in `abilities` config above was the Stage A fix, but every one of
+  // the 10 shipped starters calls createSimulationInspector() with ZERO args,
+  // so the under-reporting persisted in every shipped game. ability-core now
+  // publishes its construction-frozen catalog through the engine's shared
+  // formula registry, and the zero-arg inspector resolves it automatically —
+  // correct by default, no starter changes needed.
+
+  describe('default ability catalog resolution (zero-arg, F-dd1faf2a)', () => {
+    const zap: AbilityDefinition = {
+      id: 'zap', name: 'Zap', verb: 'cast', tags: [],
+      target: { type: 'single', filter: ['enemy'] }, checks: [], effects: [],
+    };
+    const unaffordable: AbilityDefinition = {
+      id: 'unaffordable', name: 'Unaffordable', verb: 'cast', tags: [],
+      costs: [{ resourceId: 'mana', amount: 100 }], // guard_1 has no mana
+      target: { type: 'self' }, checks: [], effects: [],
+    };
+
+    function createZeroArgEngine() {
+      return createTestEngine({
+        modules: [
+          statusCore,
+          createCognitionCore(),
+          createPerceptionFilter(),
+          createEnvironmentCore(),
+          createFactionCognition({
+            factions: [{ factionId: 'castle-guard', entityIds: ['guard_1'] }],
+          }),
+          createRumorPropagation(),
+          createAbilityCore({ abilities: [zap, unaffordable] }),
+          createSimulationInspector(), // ZERO args — the shape all 10 starters ship
+        ],
+        entities: [player, { ...guard }],
+        zones,
+        playerId: 'player',
+        startZone: 'hall',
+      });
+    }
+
+    test('zero-arg inspector reports a never-used ability as available via ability-core catalog', () => {
+      const engine = createZeroArgEngine();
+      const inspector = engine.moduleManager.getInspectors().find(i => i.id === 'entity-cognition')!;
+      const result = inspector.inspect(engine.world) as Record<string, {
+        abilityState: { availableAbilities: string[] };
+      }>;
+      expect(result['guard_1'].abilityState.availableAbilities).toContain('zap');
+      expect(result['guard_1'].abilityState.availableAbilities).not.toContain('unaffordable');
+    });
+
+    test('zero-arg simulation-snapshot inspector also resolves the catalog', () => {
+      const engine = createZeroArgEngine();
+      const inspector = engine.moduleManager.getInspectors().find(i => i.id === 'simulation-snapshot')!;
+      const snapshot = inspector.inspect(engine.world) as ReturnType<typeof createSnapshot>;
+      expect(snapshot.entities['guard_1'].abilityState.availableAbilities).toContain('zap');
+    });
+
+    test('an explicitly configured abilities list still wins over the auto-resolved catalog', () => {
+      const engine = createTestEngine({
+        modules: [
+          statusCore,
+          createCognitionCore(),
+          createAbilityCore({ abilities: [zap, unaffordable] }),
+          createSimulationInspector({ abilities: [unaffordable] }), // deliberately narrower
+        ],
+        entities: [player, { ...guard }],
+        zones,
+        playerId: 'player',
+        startZone: 'hall',
+      });
+      const inspector = engine.moduleManager.getInspectors().find(i => i.id === 'entity-cognition')!;
+      const result = inspector.inspect(engine.world) as Record<string, {
+        abilityState: { availableAbilities: string[] };
+      }>;
+      // zap is in ability-core's catalog but NOT in the explicit config — the
+      // explicit list is authoritative when supplied.
+      expect(result['guard_1'].abilityState.availableAbilities).not.toContain('zap');
+    });
+
+    test('an engine without ability-core still inspects safely (fallback path)', () => {
+      const engine = createEngine(); // the base fixture — no ability-core at all
+      const inspector = engine.moduleManager.getInspectors().find(i => i.id === 'entity-cognition')!;
+      const result = inspector.inspect(engine.world) as Record<string, {
+        abilityState: { availableAbilities: string[] };
+      }>;
+      expect(result['guard_1'].abilityState.availableAbilities).toEqual([]);
+    });
   });
 });

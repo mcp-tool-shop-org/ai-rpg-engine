@@ -67,6 +67,69 @@ describe('buildPortraitPrompt', () => {
   });
 });
 
+// v2.6 audit F-4d700ceb — sanitize() strips `():[]\<>` to neutralize
+// Stable-Diffusion-style prompt-control syntax (attention weighting
+// `(word:1.5)`, LoRA tags `<lora:...>`) before untrusted-ish fields
+// (characterName/archetypeName/backgroundName/title/disciplineName/traits)
+// are joined into the generation prompt. The stripped set omitted `{}` and
+// `|`, which several SD front-ends (including some ComfyUI text-encode
+// nodes) also treat as alternation/weighting syntax (`{a|b}`) — a crafted
+// field value could still inject prompt-control syntax past the sanitizer.
+describe('buildPortraitPrompt — sanitize() strips hostile prompt-control syntax', () => {
+  it('strips curly braces and pipes from character name and traits', () => {
+    const req: PortraitRequest = {
+      ...baseRequest,
+      characterName: '{Aldric|EvilTwin}',
+      traits: ['{cursed|blessed}'],
+    };
+    const prompt = buildPortraitPrompt(req);
+    expect(prompt).not.toContain('{');
+    expect(prompt).not.toContain('}');
+    expect(prompt).not.toContain('|');
+  });
+
+  it('still strips the previously-covered characters (regression)', () => {
+    const req: PortraitRequest = {
+      ...baseRequest,
+      characterName: '(Aldric:1.5)',
+      archetypeName: '[Penitent Knight]',
+      backgroundName: '<lora:evil:1>',
+    };
+    const prompt = buildPortraitPrompt(req);
+    expect(prompt).not.toMatch(/[():[\]\\<>]/);
+  });
+
+  it('leaves ordinary punctuation-free content untouched', () => {
+    const prompt = buildPortraitPrompt(baseRequest);
+    expect(prompt).toContain('Aldric');
+    expect(prompt).toContain('Penitent Knight');
+  });
+
+  // v2.6 audit F-ece77541 — request.style is the same open string type as the
+  // sanitized fields and lands in the exact same final prompt string, but was
+  // interpolated completely unsanitized. A crafted style override could inject
+  // the very prompt-control syntax every sibling field is stripped of. Route
+  // it through the same sanitize() for a consistent threat model.
+  it('strips prompt-control syntax from the style override', () => {
+    const req: PortraitRequest = {
+      ...baseRequest,
+      style: '(masterpiece:1.6), <lora:hijack:1>, {oil|neon}',
+    };
+    const prompt = buildPortraitPrompt(req);
+    expect(prompt).not.toMatch(/[():[\]\\<>{}|]/);
+    // The harmless words survive; only the control characters are removed.
+    expect(prompt).toContain('masterpiece');
+    expect(prompt).toContain('oil');
+  });
+
+  it('leaves a clean built-in preset style unchanged (no-op for presets)', () => {
+    // Every STYLE_PRESETS value is free of the stripped characters, so
+    // sanitizing the default path must not alter it.
+    const prompt = buildPortraitPrompt(baseRequest);
+    expect(prompt).toContain('dark fantasy oil painting');
+  });
+});
+
 describe('buildNegativePrompt', () => {
   it('returns genre-appropriate negative prompt', () => {
     const neg = buildNegativePrompt(baseRequest);

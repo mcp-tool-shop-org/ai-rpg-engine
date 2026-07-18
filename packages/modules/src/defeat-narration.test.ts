@@ -158,4 +158,61 @@ describe('defeat narration', () => {
 
     expect(otherEvent.payload.description).toBeUndefined();
   });
+
+  // MOD-C-BH-03: `tick % templates.length` alone picked the SAME template for
+  // every defeat resolved on one tick, so an AoE felling three enemies read
+  // "X falls / Y falls / Z falls". A per-tick defeat index now offsets the pick.
+  it('same-tick multi-defeat: simultaneous kills read differently (MOD-C-BH-03)', () => {
+    const engine = buildEngine([
+      makeEntity('player', 'Hero', 'player', 'zone-a'),
+      makeEntity('bandit-1', 'Bandit One', 'enemy', 'zone-a'),
+      makeEntity('bandit-2', 'Bandit Two', 'enemy', 'zone-a'),
+      makeEntity('bandit-3', 'Bandit Three', 'enemy', 'zone-a'),
+    ]);
+
+    const mk = (id: string, name: string): ResolvedEvent => ({
+      id: nextId('evt'),
+      tick: engine.store.tick,
+      type: 'combat.entity.defeated',
+      actorId: 'player',
+      payload: { entityId: id, entityName: name, defeatedBy: 'player' },
+    });
+    const e1 = mk('bandit-1', 'Bandit One');
+    const e2 = mk('bandit-2', 'Bandit Two');
+    const e3 = mk('bandit-3', 'Bandit Three');
+    engine.store.recordEvent(e1);
+    engine.store.recordEvent(e2);
+    engine.store.recordEvent(e3);
+
+    // Normalize out the names — the TEMPLATES must differ, not just the names.
+    const t1 = (e1.payload.description as string).replace('Bandit One', '{name}');
+    const t2 = (e2.payload.description as string).replace('Bandit Two', '{name}');
+    const t3 = (e3.payload.description as string).replace('Bandit Three', '{name}');
+    expect(t1).not.toBe(t2);
+    expect(t2).not.toBe(t3);
+    expect(t1).not.toBe(t3);
+  });
+
+  it('same-tick defeat variation is deterministic — a replay produces identical text', () => {
+    const run = () => {
+      const engine = buildEngine([
+        makeEntity('player', 'Hero', 'player', 'zone-a'),
+        makeEntity('bandit-1', 'Bandit One', 'enemy', 'zone-a'),
+        makeEntity('bandit-2', 'Bandit Two', 'enemy', 'zone-a'),
+      ]);
+      const mk = (id: string, name: string): ResolvedEvent => ({
+        id: nextId('evt'),
+        tick: engine.store.tick,
+        type: 'combat.entity.defeated',
+        actorId: 'player',
+        payload: { entityId: id, entityName: name, defeatedBy: 'player' },
+      });
+      const a = mk('bandit-1', 'Bandit One');
+      const b = mk('bandit-2', 'Bandit Two');
+      engine.store.recordEvent(a);
+      engine.store.recordEvent(b);
+      return [a.payload.description, b.payload.description];
+    };
+    expect(run()).toEqual(run());
+  });
 });

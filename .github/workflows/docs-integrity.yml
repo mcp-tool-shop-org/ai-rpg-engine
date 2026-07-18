@@ -10,6 +10,19 @@ name: Docs Integrity
 # ci.yml would run the full 2-node build/test matrix on every README edit. This
 # job is checkout + node + one stdlib-only script — no npm ci — so a doc-only
 # push costs seconds of Linux runner time.
+#
+# Workflow-file-count note (dogfood-swarm F-a160dfa6, assessed 2026-07-18):
+# the org rule caps repos at 2 workflow files; this repo carries 4
+# (ci.yml, docs-integrity.yml, release.yml, pages.yml). Folding this job into
+# ci.yml was evaluated and rejected: GitHub Actions has no native per-job path
+# filter, so a "clean" fold means either (a) union ci.yml's trigger paths with
+# this file's — which puts the full 2-node matrix back on every doc-only push,
+# the exact regression this file exists to avoid, or (b) add a third-party
+# paths-filter action (e.g. dorny/paths-filter) to gate the build-and-test job
+# — new supply-chain surface on trigger-critical CI logic that could not be
+# runtime-verified in the session that made this call. Both cost more than the
+# one extra file. Kept separate on purpose; revisit if a native per-job path
+# filter ships, or if someone verifies a pinned paths-filter action end to end.
 
 permissions:
   contents: read

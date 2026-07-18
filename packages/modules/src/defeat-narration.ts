@@ -60,6 +60,22 @@ export function createDefeatNarration(config: DefeatNarrationConfig = {}): Engin
     dependsOn: ['combat-core'],
 
     register(ctx) {
+      // MOD-C-BH-03: `tick % templates.length` alone picks the SAME template
+      // for every event narrated on one tick, so an AoE felling three enemies
+      // read "X falls / Y falls / Z falls". A per-tick event index (reset when
+      // the tick advances) offsets the pick per event. Deterministic: event
+      // order within a tick is itself deterministic, and the counters live in
+      // this register closure, so each engine registration gets its own state.
+      let narratedTick = -1;
+      let sameTickIndex = 0;
+      const templateFor = (templates: string[], tick: number): string => {
+        if (tick !== narratedTick) {
+          narratedTick = tick;
+          sameTickIndex = 0;
+        }
+        return templates[(tick + sameTickIndex++) % templates.length];
+      };
+
       ctx.events.on('combat.entity.defeated', (event: ResolvedEvent, world: WorldState) => {
         const name = (event.payload.entityName as string) ?? 'Unknown';
         const entityId = event.payload.entityId as string;
@@ -76,7 +92,7 @@ export function createDefeatNarration(config: DefeatNarrationConfig = {}): Engin
           }
         }
 
-        const template = templates[event.tick % templates.length];
+        const template = templateFor(templates, event.tick);
         event.payload.description = template.replace('{name}', name);
         event.presentation = {
           ...event.presentation,
@@ -87,7 +103,7 @@ export function createDefeatNarration(config: DefeatNarrationConfig = {}): Engin
 
       ctx.events.on('combat.morale.flee', (event: ResolvedEvent, world: WorldState) => {
         const name = (event.payload.entityName as string) ?? 'Unknown';
-        const template = FLEE_TEXT[event.tick % FLEE_TEXT.length];
+        const template = templateFor(FLEE_TEXT, event.tick);
         event.payload.description = template.replace('{name}', name);
         event.presentation = {
           channels: ['narrator'],
@@ -97,7 +113,7 @@ export function createDefeatNarration(config: DefeatNarrationConfig = {}): Engin
 
       ctx.events.on('combat.morale.rout', (event: ResolvedEvent, world: WorldState) => {
         const name = (event.payload.entityName as string) ?? 'Unknown';
-        const template = ROUT_TEXT[event.tick % ROUT_TEXT.length];
+        const template = templateFor(ROUT_TEXT, event.tick);
         event.payload.description = template.replace('{name}', name);
         event.presentation = {
           channels: ['narrator'],

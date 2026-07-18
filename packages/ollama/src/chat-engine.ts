@@ -23,7 +23,7 @@ import {
   WORLDBUILDER_PROFILE, getProfileForIntent, buildSystemPrompt,
   type PersonalityProfile,
 } from './chat-personality.js';
-import { webfetch, formatWebfetchForPrompt, isAllowedUrl } from './chat-webfetch.js';
+import { webfetch, formatWebfetchForPrompt } from './chat-webfetch.js';
 import {
   buildContextSnapshot, formatContextSnapshot, formatSources,
   type ContextSnapshot,
@@ -129,6 +129,30 @@ export type LoadoutHistoryEntry = {
   droppedByBudget: number;
 };
 
+/**
+ * Per-step progress for `executeAllBuildSteps` / `executeAllTuningSteps`
+ * (v2.6 Stage C F-4be7a3c2). Without it, an N-step batch is N model
+ * generations of total stdout silence: the shell prints one "Executing all
+ * remaining steps..." line and nothing more until the whole batch returns.
+ * Mirrors the macros.ts ProgressCallback pattern already wired into the CLI.
+ */
+export type BatchStepProgress = {
+  /** 1-based position of this step within the current batch run. */
+  index: number;
+  /** Steps pending when the batch started (upper bound for `index`). */
+  total: number;
+  /** The executed step's plan ID. */
+  stepId: number;
+  /** The executed step's human-readable description. */
+  description: string;
+  /** Whether the step succeeded. */
+  ok: boolean;
+  /** The formatted per-step result block (same text the batch summary uses). */
+  result: string;
+};
+
+export type BatchStepCallback = (progress: BatchStepProgress) => void;
+
 export type ChatEngine = {
   memory: ChatMemory;
   /** Last generated content available for write. */
@@ -153,12 +177,19 @@ export type ChatEngine = {
   process: (message: string) => Promise<string>;
   /** Execute the next pending build step. Returns formatted result. */
   executeBuildStep: () => Promise<string>;
-  /** Execute all remaining build steps. Returns formatted result. */
-  executeAllBuildSteps: () => Promise<string>;
+  /**
+   * Execute all remaining build steps. Returns formatted result.
+   * `onStep` fires as each step completes (liveness for long batches);
+   * the batch stops early after two consecutive identical failures.
+   */
+  executeAllBuildSteps: (onStep?: BatchStepCallback) => Promise<string>;
   /** Execute the next pending tuning step. Returns formatted result. */
   executeTuningStep: () => Promise<string>;
-  /** Execute all remaining tuning steps. Returns formatted result. */
-  executeAllTuningSteps: () => Promise<string>;
+  /**
+   * Execute all remaining tuning steps. Returns formatted result.
+   * Same `onStep` liveness + early-abort contract as executeAllBuildSteps.
+   */
+  executeAllTuningSteps: (onStep?: BatchStepCallback) => Promise<string>;
 };
 
 export type ChatEngineOptions = {
@@ -314,8 +345,16 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     // Find tool
     const tool = findToolForIntent(classification.intent);
     if (!tool) {
+      // Distinguish "the classifier could not RUN" from "the message is
+      // genuinely unclassifiable" (v2.6 Stage C F-c1a55f01). When the LLM was
+      // unreachable, the #1 cause is the Ollama daemon not running / model not
+      // pulled — telling the user to rephrase sends them chasing their own
+      // phrasing through retry cycles. Surface the client's curated error
+      // (offline hint / pull command) verbatim instead.
       const msg = classification.intent === 'unknown'
-        ? "I'm not sure what you're asking. Could you rephrase, or type \"help\" to see what I can do?"
+        ? (classification.llmError
+          ? `I couldn't reach the language model to interpret that message — this isn't a problem with your phrasing. ${classification.llmError}`
+          : "I'm not sure what you're asking. Could you rephrase, or type \"help\" to see what I can do?")
         : `I understand you want to ${classification.intent.replace(/_/g, ' ')}, but I don't have a tool for that yet.`;
       addMessage(memory, { role: 'assistant', content: msg, timestamp: new Date().toISOString() });
       return msg;
@@ -575,12 +614,19 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     return `${icon} Step ${step.id}: ${step.description}\n${toolResult.summary}`;
   }
 
-  async function executeAllBuildSteps(): Promise<string> {
+  async function executeAllBuildSteps(onStep?: BatchStepCallback): Promise<string> {
     if (!activeBuild) return 'No active build. Use "build <goal>" to create one.';
 
     const results: string[] = [];
     const maxSteps = activeBuild.plan.steps.length;
+    const total = activeBuild.plan.steps.filter(s => s.status === 'pending').length;
     let executed = 0;
+    // Early-abort bookkeeping (F-4be7a3c2): with the daemon down mid-build,
+    // every remaining step burns its full retry cycle just to fail the same
+    // way — the user waits N × (attempts + delays) to learn ONE thing. Two
+    // consecutive identical failures are treated as systemic and stop the batch.
+    let lastFailure: string | null = null;
+    let abortNote: string | null = null;
 
     while (executed < maxSteps) {
       const step = nextPendingStep(activeBuild);
@@ -588,6 +634,27 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       const result = await executeBuildStep();
       results.push(result);
       executed++;
+
+      const ok = !result.startsWith('✗');
+      onStep?.({
+        index: executed, total,
+        stepId: step.id, description: step.description,
+        ok, result,
+      });
+
+      if (!ok) {
+        const reason = result.slice(result.indexOf('\n') + 1);
+        if (lastFailure !== null && reason === lastFailure) {
+          const remaining = activeBuild.plan.steps.filter(s => s.status === 'pending').length;
+          if (remaining > 0) {
+            abortNote = `Stopped early: two consecutive steps failed the same way, so the remaining ${remaining} step(s) were skipped instead of repeating the failure. Fix the cause and run the build again to resume.`;
+          }
+          break;
+        }
+        lastFailure = reason;
+      } else {
+        lastFailure = null;
+      }
     }
 
     if (results.length === 0) {
@@ -597,7 +664,9 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     const session = await tryLoadSession(projectRoot);
     const diag = buildDiagnostics(activeBuild, session);
 
-    return results.join('\n\n') + '\n\n' + formatBuildDiagnostics(diag);
+    return results.join('\n\n')
+      + (abortNote ? `\n\n${abortNote}` : '')
+      + '\n\n' + formatBuildDiagnostics(diag);
   }
 
   // --- Tuning execution ---
@@ -672,12 +741,16 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     return `${icon} Step ${step.id}: ${step.description}\n${toolResult.summary}`;
   }
 
-  async function executeAllTuningSteps(): Promise<string> {
+  async function executeAllTuningSteps(onStep?: BatchStepCallback): Promise<string> {
     if (!activeTuning) return 'No active tuning plan. Use "tune <goal>" to create one.';
 
     const results: string[] = [];
     const maxSteps = activeTuning.plan.steps.length;
+    const total = activeTuning.plan.steps.filter(s => s.status === 'pending').length;
     let executedCount = 0;
+    // Same liveness + early-abort contract as executeAllBuildSteps (F-4be7a3c2).
+    let lastFailure: string | null = null;
+    let abortNote: string | null = null;
 
     while (executedCount < maxSteps) {
       const step = nextPendingTuningStep(activeTuning);
@@ -685,13 +758,36 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       const result = await executeTuningStep();
       results.push(result);
       executedCount++;
+
+      const ok = !result.startsWith('✗');
+      onStep?.({
+        index: executedCount, total,
+        stepId: step.id, description: step.description,
+        ok, result,
+      });
+
+      if (!ok) {
+        const reason = result.slice(result.indexOf('\n') + 1);
+        if (lastFailure !== null && reason === lastFailure) {
+          const remaining = activeTuning.plan.steps.filter(s => s.status === 'pending').length;
+          if (remaining > 0) {
+            abortNote = `Stopped early: two consecutive tuning steps failed the same way, so the remaining ${remaining} step(s) were skipped instead of repeating the failure. Fix the cause and run the tuning plan again to resume.`;
+          }
+          break;
+        }
+        lastFailure = reason;
+      } else {
+        lastFailure = null;
+      }
     }
 
     if (results.length === 0) {
       return 'No pending tuning steps to execute.';
     }
 
-    return results.join('\n\n') + '\n\n' + formatTuningStatus(activeTuning);
+    return results.join('\n\n')
+      + (abortNote ? `\n\n${abortNote}` : '')
+      + '\n\n' + formatTuningStatus(activeTuning);
   }
 
   return {

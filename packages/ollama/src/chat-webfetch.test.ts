@@ -1,8 +1,15 @@
 // Tests — webfetch adapter: URL validation, HTML processing, formatting
 
-import { describe, it, expect } from 'vitest';
-import { isAllowedUrl, formatWebfetchForPrompt } from './chat-webfetch.js';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { lookup } from 'node:dns/promises';
+import { isAllowedUrl, isAllowedUrlResolved, formatWebfetchForPrompt } from './chat-webfetch.js';
 import type { WebfetchResult } from './chat-webfetch.js';
+
+// DNS is mocked so isAllowedUrlResolved tests are deterministic and fully
+// offline — no real resolver call ever leaves the test process.
+vi.mock('node:dns/promises', () => ({
+  lookup: vi.fn(),
+}));
 
 // --- isAllowedUrl ---
 
@@ -157,6 +164,79 @@ describe('isAllowedUrl', () => {
   });
 });
 
+// --- isAllowedUrlResolved — F-f268b81a: isAllowedUrl() only proves a URL is
+// syntactically safe. Any hostname that is not already an IP literal sails
+// through it unresolved, so a single attacker-controlled DNS record (no
+// rebinding/TOCTOU needed) pointing at a blocked address defeats the entire
+// IP-literal blocklist. isAllowedUrlResolved() is the check webfetch() must
+// actually gate on: it resolves the hostname and runs every returned address
+// through the same blocklist before allowing the real fetch.
+describe('isAllowedUrlResolved', () => {
+  beforeEach(() => {
+    vi.mocked(lookup).mockReset();
+  });
+
+  it('rejects a hostname whose DNS record resolves to the cloud metadata address', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '169.254.169.254', family: 4 }] as never);
+    await expect(isAllowedUrlResolved('http://attacker-controlled.example/')).resolves.toBe(false);
+  });
+
+  it('rejects a hostname whose DNS record resolves to a loopback address', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '127.0.0.1', family: 4 }] as never);
+    await expect(isAllowedUrlResolved('http://rebind.example/')).resolves.toBe(false);
+  });
+
+  it('rejects a hostname whose DNS record resolves to a private RFC1918 address', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '10.0.0.5', family: 4 }] as never);
+    await expect(isAllowedUrlResolved('http://internal.example/')).resolves.toBe(false);
+  });
+
+  it('allows a hostname that resolves to a normal public IP', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+    await expect(isAllowedUrlResolved('https://example.com/')).resolves.toBe(true);
+  });
+
+  it('rejects when ANY resolved address is blocked, even if others are public', async () => {
+    vi.mocked(lookup).mockResolvedValue([
+      { address: '93.184.216.34', family: 4 },
+      { address: '127.0.0.1', family: 4 },
+    ] as never);
+    await expect(isAllowedUrlResolved('https://mixed.example/')).resolves.toBe(false);
+  });
+
+  it('rejects a blocked IPv6 resolution (unique-local)', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: 'fd12:3456::1', family: 6 }] as never);
+    await expect(isAllowedUrlResolved('https://v6.example/')).resolves.toBe(false);
+  });
+
+  it('rejects when DNS resolution fails (NXDOMAIN etc.)', async () => {
+    vi.mocked(lookup).mockRejectedValue(Object.assign(new Error('queryA ENOTFOUND'), { code: 'ENOTFOUND' }));
+    await expect(isAllowedUrlResolved('https://nonexistent.example/')).resolves.toBe(false);
+  });
+
+  it('rejects when DNS resolution does not settle within the resolve timeout', async () => {
+    vi.mocked(lookup).mockImplementation(() => new Promise(() => {})); // never resolves
+    await expect(isAllowedUrlResolved('https://slow-dns.example/', 20)).resolves.toBe(false);
+  });
+
+  it('rejects a resolution with zero addresses', async () => {
+    vi.mocked(lookup).mockResolvedValue([] as never);
+    await expect(isAllowedUrlResolved('https://empty.example/')).resolves.toBe(false);
+  });
+
+  it('short-circuits on a syntactically-blocked host without ever calling DNS', async () => {
+    await expect(isAllowedUrlResolved('http://localhost/')).resolves.toBe(false);
+    await expect(isAllowedUrlResolved('http://127.0.0.1/')).resolves.toBe(false);
+    await expect(isAllowedUrlResolved('http://myserver.internal/')).resolves.toBe(false);
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it('short-circuits on an already-public IP literal without calling DNS', async () => {
+    await expect(isAllowedUrlResolved('https://93.184.216.34/')).resolves.toBe(true);
+    expect(lookup).not.toHaveBeenCalled();
+  });
+});
+
 // --- formatWebfetchForPrompt ---
 
 describe('formatWebfetchForPrompt', () => {
@@ -232,5 +312,211 @@ describe('webfetch — URL validation pre-check', () => {
     const result = await webfetch('file:///etc/passwd');
     expect(result.ok).toBe(false);
     expect(result.error).toContain('not allowed');
+  });
+});
+
+// v2.6 audit F-f268b81a — webfetch() must gate the real fetch() call on the
+// DNS-RESOLVED address, not just the syntactic hostname check. A domain an
+// attacker controls (any registrable domain, A record pointed at a blocked
+// address) previously sailed straight through to fetch().
+describe('webfetch — DNS-resolution SSRF gate (F-f268b81a)', () => {
+  beforeEach(() => {
+    vi.mocked(lookup).mockReset();
+  });
+
+  it('rejects a hostname whose DNS record resolves to a blocked IP, and never calls fetch', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '169.254.169.254', family: 4 }] as never);
+    const realFetch = globalThis.fetch;
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    try {
+      const { webfetch } = await import('./chat-webfetch.js');
+      const result = await webfetch('http://attacker-controlled.example/');
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('not allowed');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('allows a hostname that resolves to a normal public address through to fetch', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+    const realFetch = globalThis.fetch;
+    const fetchSpy = vi.fn(async () => ({
+      ok: true,
+      headers: new Headers({ 'content-type': 'text/plain' }),
+      text: async () => 'hello',
+    })) as unknown as typeof fetch;
+    globalThis.fetch = fetchSpy;
+    try {
+      const { webfetch } = await import('./chat-webfetch.js');
+      const result = await webfetch('https://public.example/');
+      expect(result.ok).toBe(true);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+});
+
+// v2.6 audit F-23749236 — the DNS-resolved gate (F-f268b81a) validates only
+// the INITIAL url, then calls fetch() with the WHATWG/undici default
+// redirect:'follow'. fetch() then follows the entire redirect chain internally
+// — re-resolving and connecting to each hop with NO further SSRF check — so a
+// public URL that 302-redirects to 127.0.0.1 / 169.254.169.254 / an internal
+// address bypasses the guard outright, needing no DNS control at all. The gate
+// must re-validate EVERY hop. These tests spy on globalThis.fetch and emulate
+// undici's empirically-verified redirect semantics exactly: with redirect:
+// 'manual' undici returns the real 3xx status + Location header (a basic, not
+// opaque, response), while the default 'follow' transparently yields the FINAL
+// hop's body — which is precisely how the internal content leaks today.
+describe('webfetch — redirect-follow SSRF gate (F-23749236)', () => {
+  beforeEach(() => {
+    vi.mocked(lookup).mockReset();
+  });
+
+  it('rejects a redirect whose target is a blocked address, never contacts it, and never surfaces its body', async () => {
+    // The first hop is a genuinely public host (resolves public); the redirect
+    // target is loopback. Pre-fix, default-follow fetch() returns the loopback
+    // body and webfetch() reports ok:true with the internal secret in content.
+    vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+    const calls: Array<{ url: string; redirect: unknown }> = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, redirect: init?.redirect });
+      if (url === 'http://redirector.example/') {
+        if (init?.redirect === 'manual') {
+          // Faithful undici: manual mode exposes the real 302 + Location.
+          return {
+            ok: false, status: 302,
+            headers: new Headers({ location: 'http://127.0.0.1:9/secret' }),
+            text: async () => '',
+          } as unknown as Response;
+        }
+        // Faithful undici: default 'follow' returns the FINAL (loopback) body.
+        return {
+          ok: true, status: 200,
+          headers: new Headers({ 'content-type': 'text/plain' }),
+          text: async () => 'INTERNAL-SECRET-DATA',
+        } as unknown as Response;
+      }
+      // A DIRECT hit on the internal target would mean the bypass completed.
+      return {
+        ok: true, status: 200,
+        headers: new Headers({ 'content-type': 'text/plain' }),
+        text: async () => 'INTERNAL-SECRET-DATA',
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    try {
+      const { webfetch } = await import('./chat-webfetch.js');
+      const result = await webfetch('http://redirector.example/');
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/not allowed/i);
+      // The internal address is never contacted...
+      expect(calls.some((c) => c.url.includes('127.0.0.1'))).toBe(false);
+      // ...and its body never surfaces in the returned content.
+      expect(result.content).not.toContain('INTERNAL-SECRET-DATA');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('rejects a redirect to the cloud-metadata endpoint (169.254.169.254)', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+    const calls: string[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push(url);
+      if (url === 'http://reputable.example/' && init?.redirect === 'manual') {
+        return {
+          ok: false, status: 301,
+          headers: new Headers({ location: 'http://169.254.169.254/latest/meta-data/' }),
+          text: async () => '',
+        } as unknown as Response;
+      }
+      return {
+        ok: true, status: 200,
+        headers: new Headers({ 'content-type': 'text/plain' }),
+        text: async () => 'iam-credentials',
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    try {
+      const { webfetch } = await import('./chat-webfetch.js');
+      const result = await webfetch('http://reputable.example/');
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/not allowed/i);
+      expect(calls.some((u) => u.includes('169.254.169.254'))).toBe(false);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('follows a redirect to another public address and returns its content', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === 'http://start.example/') {
+        if (init?.redirect === 'manual') {
+          return {
+            ok: false, status: 301,
+            headers: new Headers({ location: 'http://final.example/page' }),
+            text: async () => '',
+          } as unknown as Response;
+        }
+        return {
+          ok: true, status: 200,
+          headers: new Headers({ 'content-type': 'text/plain' }),
+          text: async () => 'PUBLIC-FINAL',
+        } as unknown as Response;
+      }
+      if (url === 'http://final.example/page') {
+        return {
+          ok: true, status: 200,
+          headers: new Headers({ 'content-type': 'text/plain' }),
+          text: async () => 'PUBLIC-FINAL',
+        } as unknown as Response;
+      }
+      return {
+        ok: false, status: 404, statusText: 'Not Found',
+        headers: new Headers(), text: async () => '',
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    try {
+      const { webfetch } = await import('./chat-webfetch.js');
+      const result = await webfetch('http://start.example/');
+      expect(result.ok).toBe(true);
+      expect(result.content).toContain('PUBLIC-FINAL');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('stops after a bounded number of redirects instead of following an endless chain', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+    const realFetch = globalThis.fetch;
+    let hops = 0;
+    globalThis.fetch = (async (_input: RequestInfo | URL, _init?: RequestInit) => {
+      hops++;
+      // Every hop redirects onward to a fresh public URL — forever.
+      return {
+        ok: false, status: 302,
+        headers: new Headers({ location: `http://hop-${hops}.example/` }),
+        text: async () => 'redir',
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+    try {
+      const { webfetch } = await import('./chat-webfetch.js');
+      const result = await webfetch('http://hop-start.example/');
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/too many redirects/i);
+      // Bounded: the manual loop caps hops rather than calling fetch forever.
+      expect(hops).toBeLessThanOrEqual(6);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });

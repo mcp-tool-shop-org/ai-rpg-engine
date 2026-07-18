@@ -23,7 +23,9 @@ import { ENGAGEMENT_STATES } from './engagement-core.js';
 import { WOUND_STATUSES, MORALE_AFTERMATH_STATUSES } from './combat-recovery.js';
 import { getEntityRole, BUILTIN_COMBAT_ROLES } from './combat-roles.js';
 import type { CombatRole } from './combat-roles.js';
+import { getAvailableAbilities, ABILITY_CATALOG_FORMULA } from './ability-core.js';
 import type { AbilityModuleState } from './ability-core.js';
+import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
 
 // --- Types ---
 
@@ -100,16 +102,44 @@ export type SimulationSnapshot = {
 
 // --- Module ---
 
-export function createSimulationInspector(): EngineModule {
+export type SimulationInspectorConfig = {
+  /**
+   * Optional EXPLICIT ability list — threaded into
+   * abilityState.availableAbilities (F-dd1faf2a). When omitted, the module
+   * resolves the catalog automatically from ability-core's published
+   * ABILITY_CATALOG_FORMULA in the same engine, so the zero-arg
+   * createSimulationInspector() every starter ships is correct by default.
+   * Supply this only to override that catalog (e.g. to inspect a subset).
+   */
+  abilities?: AbilityDefinition[];
+};
+
+export function createSimulationInspector(config?: SimulationInspectorConfig): EngineModule {
   return {
     id: 'simulation-inspector',
     version: '0.1.0',
 
     register(ctx) {
+      // Resolve the ability catalog for availability reads (F-dd1faf2a).
+      // An explicitly configured list always wins; otherwise pull the
+      // construction-frozen catalog ability-core publishes through the
+      // engine's shared formula registry. Resolved LAZILY at inspect time —
+      // inspectors only run after every module has registered, so module
+      // ordering in the starter's list cannot matter. Engines without
+      // ability-core resolve to undefined and keep the old
+      // cooldown/use-count fallback.
+      const resolveAbilities = (): AbilityDefinition[] | undefined => {
+        if (config?.abilities) return config.abilities;
+        if (ctx.formulas.has(ABILITY_CATALOG_FORMULA)) {
+          return ctx.formulas.get(ABILITY_CATALOG_FORMULA)() as AbilityDefinition[];
+        }
+        return undefined;
+      };
+
       ctx.debug.registerInspector({
         id: 'entity-cognition',
         label: 'Entity Cognition',
-        inspect: (world) => inspectAllEntities(world),
+        inspect: (world) => inspectAllEntities(world, resolveAbilities()),
       });
 
       ctx.debug.registerInspector({
@@ -228,7 +258,7 @@ export function createSimulationInspector(): EngineModule {
       ctx.debug.registerInspector({
         id: 'simulation-snapshot',
         label: 'Full Simulation Snapshot',
-        inspect: (world) => createSnapshot(world),
+        inspect: (world) => createSnapshot(world, resolveAbilities()),
       });
     },
   };
@@ -236,8 +266,30 @@ export function createSimulationInspector(): EngineModule {
 
 // --- Entity Inspection ---
 
-/** Inspect a single entity's cognitive state */
-export function inspectEntity(world: WorldState, entityId: string): EntityInspection | null {
+/**
+ * Inspect a single entity's cognitive state.
+ *
+ * `abilities` is OPTIONAL — pass the game's full AbilityDefinition[] list for
+ * a correct `abilityState.availableAbilities` read (F-dd1faf2a). Without it,
+ * availability falls back to the old cooldown/use-count-only heuristic, which
+ * under-reports: an ability the entity has never used has no cooldown or use-
+ * count entry yet, so it silently never appeared as available even when
+ * fully ready — the common case for most of an entity's kit, most of the
+ * time. ability-core.ts's own isAbilityReady/getAvailableAbilities need the
+ * full definition list to check costs/requirements, which this inspector
+ * cannot fabricate on its own.
+ *
+ * Note: the DEBUG INSPECTORS registered by createSimulationInspector() no
+ * longer need callers to thread this — they auto-resolve the catalog from
+ * ability-core's ABILITY_CATALOG_FORMULA (F-dd1faf2a). The parameter remains
+ * for direct callers of this standalone function, which has no engine context
+ * to resolve from.
+ */
+export function inspectEntity(
+  world: WorldState,
+  entityId: string,
+  abilities?: AbilityDefinition[],
+): EntityInspection | null {
   const entity = world.entities[entityId];
   if (!entity) return null;
 
@@ -276,14 +328,29 @@ export function inspectEntity(world: WorldState, entityId: string): EntityInspec
   const abilityMod = (world.modules['ability-core'] ?? { cooldowns: {}, useCounts: {} }) as AbilityModuleState;
   const entityCooldowns = abilityMod.cooldowns[entityId] ?? {};
   const entityUseCounts = abilityMod.useCounts[entityId] ?? {};
-  const currentTick = world.meta.tick;
-  const availableAbilities = Object.entries(entityCooldowns)
-    .filter(([, expiresAt]) => currentTick >= expiresAt)
-    .map(([abilityId]) => abilityId);
-  // Also include abilities that have use counts but no cooldown entry (never used or cooldown expired)
-  for (const abilityId of Object.keys(entityUseCounts)) {
-    if (!entityCooldowns[abilityId] && !availableAbilities.includes(abilityId)) {
-      availableAbilities.push(abilityId);
+
+  let availableAbilities: string[];
+  if (abilities && abilities.length > 0) {
+    // Correct path: real readiness check (cooldown + resources + requirements)
+    // against the FULL ability list, folding in any per-entity
+    // Profile-registered abilities (world.modules['ability-core'].registered)
+    // alongside the base list.
+    const registered = Object.values(abilityMod.registered ?? {});
+    const allKnown = [...abilities, ...registered.filter((r) => !abilities.some((a) => a.id === r.id))];
+    availableAbilities = getAvailableAbilities(world, entityId, allKnown).map((a) => a.id);
+  } else {
+    // Fallback (no abilities list supplied): best-effort from cooldown/use-
+    // count bookkeeping alone. Under-reports abilities never used — pass
+    // `abilities` for a correct read.
+    const currentTick = world.meta.tick;
+    availableAbilities = Object.entries(entityCooldowns)
+      .filter(([, expiresAt]) => currentTick >= expiresAt)
+      .map(([abilityId]) => abilityId);
+    // Also include abilities that have use counts but no cooldown entry (never used or cooldown expired)
+    for (const abilityId of Object.keys(entityUseCounts)) {
+      if (!entityCooldowns[abilityId] && !availableAbilities.includes(abilityId)) {
+        availableAbilities.push(abilityId);
+      }
     }
   }
 
@@ -320,12 +387,12 @@ export function inspectEntity(world: WorldState, entityId: string): EntityInspec
   };
 }
 
-/** Inspect all AI entities */
-export function inspectAllEntities(world: WorldState): Record<string, EntityInspection> {
+/** Inspect all AI entities. `abilities` is threaded through to inspectEntity (F-dd1faf2a). */
+export function inspectAllEntities(world: WorldState, abilities?: AbilityDefinition[]): Record<string, EntityInspection> {
   const result: Record<string, EntityInspection> = {};
   for (const entity of Object.values(world.entities)) {
     if (!entity.ai) continue;
-    const inspection = inspectEntity(world, entity.id);
+    const inspection = inspectEntity(world, entity.id, abilities);
     if (inspection) result[entity.id] = inspection;
   }
   return result;
@@ -453,11 +520,11 @@ export function inspectAllDistricts(world: WorldState): Record<string, DistrictI
 
 // --- Full Snapshot ---
 
-/** Create a complete simulation snapshot */
-export function createSnapshot(world: WorldState): SimulationSnapshot {
+/** Create a complete simulation snapshot. `abilities` is threaded through to inspectAllEntities (F-dd1faf2a). */
+export function createSnapshot(world: WorldState, abilities?: AbilityDefinition[]): SimulationSnapshot {
   return {
     tick: world.meta.tick,
-    entities: inspectAllEntities(world),
+    entities: inspectAllEntities(world, abilities),
     factions: inspectAllFactions(world),
     zones: inspectAllZones(world),
     districts: inspectAllDistricts(world),

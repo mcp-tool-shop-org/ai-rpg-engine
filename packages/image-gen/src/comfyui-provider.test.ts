@@ -10,10 +10,11 @@
 //
 // Mirrors the contract style of packages/ollama/src/client.ts + client.test.ts.
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { readFileSync } from 'node:fs';
 import type { Socket } from 'node:net';
-import { ComfyUIProvider } from './comfyui-provider.js';
+import { ComfyUIProvider, readBodyCapped } from './comfyui-provider.js';
 
 type MockHandler = (req: IncomingMessage, res: ServerResponse) => void;
 type MockServer = { url: string; close: () => Promise<void> };
@@ -221,6 +222,60 @@ describe('ComfyUIProvider.generate — A1: typed failure envelope', () => {
     }
   });
 
+  // v2.6 audit F-b576db51 — ComfyUIProviderOptions.timeoutMs promises to
+  // bound "every fetch AND the poll loop" (line 32), but each poll fetch was
+  // given AbortSignal.timeout(timeout) using the ORIGINAL full budget, not
+  // the remaining time before the deadline. A poll response that stalls late
+  // in the loop (most of the budget already spent on earlier, fast polls)
+  // could still be granted a FRESH full timeoutMs window, letting the whole
+  // call run up to ~2x timeoutMs — directly contradicting the documented
+  // hard bound. The prior 'A1-poll-timeout' test never exercised this: its
+  // mock always answers immediately, so the loop only ever exits via the
+  // normal deadline check, never via an in-flight fetch outliving it.
+  it(
+    'A1-poll-overrun: a poll response that stalls near the deadline does not re-grant the full timeout budget',
+    { timeout: 10_000 },
+    async () => {
+      const timeoutMs = 500;
+      const start = Date.now();
+      const mock = await startMock((req, res) => {
+        if (req.method === 'POST' && req.url === '/prompt') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ prompt_id: 'p1' }));
+          return;
+        }
+        if (req.url?.startsWith('/history/p1')) {
+          const elapsedSoFar = Date.now() - start;
+          if (elapsedSoFar < timeoutMs * 0.8) {
+            // Comfortably inside the budget: report "still working" so the
+            // loop keeps polling and burns through most of timeoutMs.
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end('{}');
+            return;
+          }
+          // Close to the deadline now (>=80% of the budget already spent) —
+          // stall. A correct implementation aborts this fetch using only
+          // what's left of the ORIGINAL deadline, not a fresh full grant.
+          return;
+        }
+        res.writeHead(404);
+        res.end();
+      });
+
+      const result = await makeProvider(mock.url, { pollIntervalMs: 50, timeoutMs }).generate('p');
+      const elapsed = Date.now() - start;
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe('timeout');
+      // Contract: timeoutMs bounds the ENTIRE poll loop, including a
+      // stalling fetch that starts near the deadline. A buggy re-grant of
+      // the full budget to that one fetch would push total elapsed close to
+      // 2x timeoutMs (~900-950ms here); a correct bound stays close to 1x
+      // (~500-550ms). 1.5x leaves a wide, jitter-safe margin between them.
+      expect(elapsed).toBeLessThan(timeoutMs * 1.5);
+    },
+  );
+
   it('A1-view-500: an HTTP 500 on the image fetch resolves {ok:false, code:http_error}', async () => {
     const mock = await startMock(
       comfyFlow((_req, res) => {
@@ -357,6 +412,157 @@ describe('ComfyUIProvider.generate — PA-1: seed reproducibility', () => {
     const oracle = await provider.generate('an oracle');
     expect(knight.ok && oracle.ok).toBe(true);
     if (knight.ok && oracle.ok) expect(knight.seed).not.toBe(oracle.seed);
+  });
+
+  // v2.6 audit F-f29b1934 — deriveDefaultSeed()'s own stated purpose is "same
+  // request → same seed → same image", where "request" implicitly includes
+  // every generation parameter fed into the hash (prompt, negativePrompt,
+  // width, height, steps, cfgScale), not just the prompt text. PA1-distinct
+  // above only varied the prompt; nothing previously asserted that varying
+  // ONLY steps/cfgScale/width/height (identical prompt/negativePrompt) also
+  // changes the derived seed — the untested half of the invariant.
+  it('PA1-param-sensitive: same prompt with different steps/cfgScale/width/height derives different default seeds', async () => {
+    const mockPromise = seedCapturingMock();
+    const mock = await mockPromise;
+    const provider = makeProvider(mock.url);
+
+    const base = await provider.generate('a knight', { width: 512, height: 512, steps: 20, cfgScale: 7 });
+    const diffSteps = await provider.generate('a knight', { width: 512, height: 512, steps: 30, cfgScale: 7 });
+    const diffCfg = await provider.generate('a knight', { width: 512, height: 512, steps: 20, cfgScale: 9 });
+    const diffWidth = await provider.generate('a knight', { width: 768, height: 512, steps: 20, cfgScale: 7 });
+    const diffHeight = await provider.generate('a knight', { width: 512, height: 768, steps: 20, cfgScale: 7 });
+
+    expect([base, diffSteps, diffCfg, diffWidth, diffHeight].every(r => r.ok)).toBe(true);
+    if (base.ok && diffSteps.ok && diffCfg.ok && diffWidth.ok && diffHeight.ok) {
+      expect(diffSteps.seed).not.toBe(base.seed);
+      expect(diffCfg.seed).not.toBe(base.seed);
+      expect(diffWidth.seed).not.toBe(base.seed);
+      expect(diffHeight.seed).not.toBe(base.seed);
+      // Every sent seed matches the reported seed (PA-1's existing invariant).
+      expect(mockPromise.sent).toEqual([base.seed, diffSteps.seed, diffCfg.seed, diffWidth.seed, diffHeight.seed]);
+    }
+  });
+});
+
+// v2.6 audit F-7ad6e99e (re-opened) — readBodyCapped() promises to
+// "Accumulate a response body without ever buffering more than `cap` bytes."
+// Stage A only DOCUMENTED the null-body fallback (res.arrayBuffer(), which
+// reads the WHOLE body before the size check) as a narrow exception; it did
+// not fix the behavior. The behavior is now fixed: a null res.body is undici's
+// signal that the response carries NO bytes at all (empirically, only 204/304
+// and the other null-body statuses produce it — a 200 with a real body always
+// exposes a stream), so readBodyCapped returns empty WITHOUT calling
+// arrayBuffer(). No path in the function reads a whole body before the cap can
+// reject it anymore — the contract holds unconditionally.
+describe('readBodyCapped — null body yields zero bytes, no pre-buffering (F-7ad6e99e)', () => {
+  it('returns an empty buffer for a null body and never calls arrayBuffer()', async () => {
+    let arrayBufferCalled = false;
+    // Even a (non-real) null-body Response whose arrayBuffer would hand back a
+    // huge buffer must not be read: the fix removed that call entirely.
+    const res = {
+      body: null,
+      arrayBuffer: async () => {
+        arrayBufferCalled = true;
+        return new ArrayBuffer(4096);
+      },
+    } as unknown as Response;
+
+    const result = await readBodyCapped(res, 1024);
+    expect(result).not.toBe('too-large');
+    expect((result as Uint8Array).byteLength).toBe(0);
+    // The whole-body read that used to live here is gone — this is the actual
+    // behavior change, not just a doc/test tweak.
+    expect(arrayBufferCalled).toBe(false);
+  });
+
+  // Reachability proof: a real bodyless HTTP response (204) gives
+  // `res.body === null` in undici's fetch, so generate() genuinely exercises
+  // the null-body branch — and does so without ever buffering a whole body.
+  it('generate() handles a real bodyless (204) /view response as a typed outcome', async () => {
+    const mock = await startMock(
+      comfyFlow((_req, res) => {
+        res.writeHead(204, { 'Content-Type': 'image/png' });
+        res.end();
+      }),
+    );
+
+    const result = await makeProvider(mock.url).generate('p');
+    // Whatever it resolves to, it must be a typed outcome, never a throw/hang.
+    expect(typeof result.ok).toBe('boolean');
+  });
+});
+
+// v2.6 audit F-5e41e3c3 — the history-poll loop tolerated transient non-OK
+// responses (5xx / proxy hiccup mid-generation) with a bare `continue` and NO
+// signal, so a flaky-but-recovering daemon and a flaky-then-failed one both
+// surfaced only a single opaque timeout at the very end, indistinguishable
+// from a merely-slow generation. Non-OK polls now route through onPollError.
+describe('ComfyUIProvider.generate — F-5e41e3c3: non-OK poll observability', () => {
+  it('reports each tolerated non-OK history poll via a supplied onPollError hook', async () => {
+    const seen: PollErrorInfoShape[] = [];
+    const mock = await startMock((req, res) => {
+      if (req.method === 'POST' && req.url === '/prompt') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ prompt_id: 'p1' }));
+        return;
+      }
+      // Every history poll fails transiently — tolerated, bounded by deadline.
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('worker restarting');
+    });
+
+    const provider = new ComfyUIProvider({
+      baseUrl: mock.url,
+      pollIntervalMs: 20,
+      timeoutMs: 200,
+      onPollError: (info) => seen.push(info),
+    });
+    const result = await provider.generate('p');
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('timeout');
+    // The flaky window left a diagnosable trail: real status + a poll counter.
+    expect(seen.length).toBeGreaterThanOrEqual(1);
+    expect(seen[0].status).toBe(500);
+    expect(seen[0].attempt).toBeGreaterThanOrEqual(1);
+    expect(seen[0].url).toContain('/history/p1');
+  });
+
+  it('the default onPollError writes a stderr breadcrumb naming the status', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const mock = await startMock((req, res) => {
+      if (req.method === 'POST' && req.url === '/prompt') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ prompt_id: 'p1' }));
+        return;
+      }
+      res.writeHead(502);
+      res.end();
+    });
+    try {
+      const result = await makeProvider(mock.url, { timeoutMs: 150 }).generate('p');
+      expect(result.ok).toBe(false);
+      expect(errSpy).toHaveBeenCalled();
+      expect(errSpy.mock.calls.some((c) => String(c[0]).includes('502'))).toBe(true);
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+});
+
+/** Shape of the onPollError payload — local mirror of the exported PollErrorInfo. */
+type PollErrorInfoShape = { status: number; attempt: number; url: string };
+
+// v2.6 audit F-a1c8b2b1 — deriveDefaultSeed()'s join separator was a literal
+// NUL byte (0x00) rendering as a space in every editor. Functionally harmless
+// (FNV-1a hashes it like any code unit), but git treats a file with a NUL in
+// its first several KB as BINARY, so `git diff`/`blame`/review tools lost
+// line-level visibility here — which plausibly let the typo survive Stage A's
+// own edits to nearby lines. This guard rejects any NUL byte in the source.
+describe('comfyui-provider.ts source hygiene (F-a1c8b2b1)', () => {
+  it('contains no NUL byte (keeps git treating the file as text)', () => {
+    const src = readFileSync(new URL('./comfyui-provider.ts', import.meta.url));
+    expect(src.includes(0x00)).toBe(false);
   });
 });
 

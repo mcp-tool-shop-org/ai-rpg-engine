@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createTestEngine } from '@ai-rpg-engine/core';
+import { createTestEngine, Engine } from '@ai-rpg-engine/core';
 import type { EntityState } from '@ai-rpg-engine/core';
 import { statusCore, hasStatus } from './status-core.js';
 import { createCognitionCore, getCognition } from './cognition-core.js';
@@ -613,5 +613,50 @@ describe('combat-recovery: edge cases', () => {
     events = engine.drainEvents();
     const aftermathB = events.find(e => e.type === 'combat.aftermath.started' && e.payload.zoneId === 'zone-b');
     expect(aftermathB).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Save/Reload Persistence (F-2e1b94b9)
+// ---------------------------------------------------------------------------
+//
+// recoveryEntries (and triggeredZones) lived ONLY in createCombatRecovery()'s
+// closure — this module registered NO ctx.persistence.registerNamespace call
+// at all. A save/reload while any entity was mid-recovery silently and
+// permanently dropped it from HP-regen tracking, with zero error or signal.
+
+describe('combat-recovery: save/reload persistence', () => {
+  it('an entity mid-recovery (HP below max, safe zone) keeps regenerating after save/reload', () => {
+    const player = makeEntity('player', 'player', ['player'], {
+      resources: { hp: 15, maxHp: 20, stamina: 5, maxStamina: 5 },
+    });
+    const enemy = makeEntity('enemy1', 'enemy', ['enemy']);
+    const engine = buildEngine([player, enemy]);
+    engine.drainEvents();
+
+    // Trigger aftermath — registers a recovery entry for the player (hp < maxHp).
+    engine.store.state.entities.enemy1.resources.hp = 0;
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'enemy1', entityName: 'enemy1', defeatedBy: 'player',
+    });
+    engine.drainEvents();
+
+    // Sanity: regen is active before saving (zone-a is 'safe').
+    engine.submitAction('guard', {});
+    expect(engine.store.state.entities.player.resources.hp).toBe(16);
+
+    // SAVE -> LOAD mid-recovery — an ordinary player action ("save before
+    // continuing after a fight while still injured").
+    const blob = engine.serialize();
+    const restored = Engine.deserialize(blob, {
+      modules: [statusCore, createCognitionCore(), createCombatCore(), createCombatRecovery()],
+    });
+    expect(restored.world.entities.player.resources.hp).toBe(16);
+
+    // HP regen must continue after reload — the entity must not silently
+    // stop healing just because the process restarted and reconstructed a
+    // fresh createCombatRecovery() module instance.
+    restored.submitAction('guard', {});
+    expect(restored.world.entities.player.resources.hp).toBe(17);
   });
 });

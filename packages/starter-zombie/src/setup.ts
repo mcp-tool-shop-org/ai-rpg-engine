@@ -23,8 +23,9 @@ import {
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
+  aggressiveProfile,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatResourceProfile } from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatResourceProfile, IntentProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -81,6 +82,17 @@ const zombieCombatProfile: CombatResourceProfile = {
   ],
 };
 
+// ─── Intent profiles (F1-cs-a) ──────────────────────────────────────────────
+// Every hostile entity in content.ts declares an ai.profileId. The cognition
+// config must supply an IntentProfile for each declared id — with an empty
+// profileMap no enemy ever resolves an intent, so enemies never act.
+/**
+ * Intent profiles wired into this pack's cognition config:
+ * - shambler / runner / bloater-alpha → aggressive (mindless hunger; the dead
+ *   do not stalk or scheme — they swarm whatever lives)
+ */
+export const zombieIntentProfiles: IntentProfile[] = [aggressiveProfile];
+
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(zombieStatusDefinitions);
   const combat = buildCombatStack({
@@ -89,7 +101,10 @@ export function createGame(seed?: number): Engine {
     resourceProfile: zombieCombatProfile,
     biasTags: ['zombie', 'undead'],
     recovery: { safeZoneTags: ['safe', 'home-base'] },
-    cognition: { decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } },
+    cognition: {
+      profiles: zombieIntentProfiles,
+      decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 },
+    },
   });
 
   const engine = new Engine({
@@ -102,7 +117,7 @@ export function createGame(seed?: number): Engine {
       ...combat.modules,
       createInventoryCore([antibioticsEffect]),
       createDialogueCore([medicDialogue]),
-      createPerceptionFilter(),
+      createPerceptionFilter({ perceptionStat: 'wits' }),
       createProgressionCore({
         trees: [survivalTree],
         rewards: [{
@@ -167,13 +182,13 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity({ ...player });
-  engine.store.addEntity({ ...medic });
-  engine.store.addEntity({ ...scavenger });
-  engine.store.addEntity({ ...leader });
-  engine.store.addEntity({ ...shambler });
-  engine.store.addEntity({ ...runner });
-  engine.store.addEntity({ ...bloaterAlpha });
+  engine.store.addEntity(structuredClone(player));
+  engine.store.addEntity(structuredClone(medic));
+  engine.store.addEntity(structuredClone(scavenger));
+  engine.store.addEntity(structuredClone(leader));
+  engine.store.addEntity(structuredClone(shambler));
+  engine.store.addEntity(structuredClone(runner));
+  engine.store.addEntity(structuredClone(bloaterAlpha));
 
   // Set player
   engine.store.state.playerId = 'survivor';

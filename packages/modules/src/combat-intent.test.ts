@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createTestEngine } from '@ai-rpg-engine/core';
+import { createTestEngine, Engine } from '@ai-rpg-engine/core';
 import type { EntityState } from '@ai-rpg-engine/core';
 import { statusCore, applyStatus } from './status-core.js';
 import { createCombatCore, COMBAT_STATES } from './combat-core.js';
@@ -725,6 +725,78 @@ describe('combat-intent: edge cases', () => {
     });
   });
 
+  // F-71ec5dcd: defeatLog was a MODULE-TOP-LEVEL Map, shared by every
+  // Engine/World instance in the same process — unlike recentDecisions
+  // (already registered per-world via ctx.persistence.registerNamespace).
+  // The MC-01 fix (tick-stamping) addressed entries never expiring; it did
+  // NOT address entries being shared across worlds. Two concurrent engines
+  // with an entity sharing an id could read each other's defeat entries.
+  describe('F-71ec5dcd: defeatLog does not leak across Engine instances', () => {
+    it('an enemy defeat in engine A does not inject a momentum bonus into a same-id NPC in engine B', () => {
+      const npcA = makeEntity('npc', 'enemy', ['enemy'], { resources: { hp: 15, maxHp: 20, stamina: 5 } });
+      const targetA = makeEntity('target', 'player', ['player'], { resources: { hp: 4, maxHp: 20, stamina: 5 } });
+      const deadFoeA = makeEntity('enemy2', 'player', ['player'], { resources: { hp: 0, maxHp: 20, stamina: 5 } });
+      const engineA = buildEngine([npcA, targetA, deadFoeA]);
+      const cogA = getCognition(engineA.store.state, 'npc');
+      cogA.morale = 60;
+
+      // Fight in engine A: enemy2 (player-type) is defeated at tick 0.
+      engineA.store.emitEvent('combat.entity.defeated', {
+        entityId: 'enemy2', entityName: 'enemy2', defeatedBy: 'npc',
+      });
+      // Sanity: engine A itself sees the momentum bonus (the mechanic works).
+      const decA = selectNpcCombatAction(npcA, engineA.store.state);
+      const attackA = [decA.chosen, ...decA.alternatives].find(a => a.intent === 'attack')!;
+      expect(attackA.contributions.find(c => c.factor === 'momentum')).toBeDefined();
+
+      // A SEPARATE, freshly-built engine B, at the same tick (0), with a
+      // same-id NPC ('npc') and a LIVE same-id 'enemy2' that was never
+      // defeated in this world.
+      const npcB = makeEntity('npc', 'enemy', ['enemy'], { resources: { hp: 15, maxHp: 20, stamina: 5 } });
+      const targetB = makeEntity('target', 'player', ['player'], { resources: { hp: 4, maxHp: 20, stamina: 5 } });
+      const liveFoeB = makeEntity('enemy2', 'player', ['player'], { resources: { hp: 18, maxHp: 20, stamina: 5 } });
+      const engineB = buildEngine([npcB, targetB, liveFoeB]);
+      const cogB = getCognition(engineB.store.state, 'npc');
+      cogB.morale = 60;
+
+      // Engine B never emitted any defeat — its own 'enemy2' is alive. A
+      // correctly-isolated, per-world defeatLog must NOT see engine A's
+      // defeat just because both worlds share the entity id 'enemy2'/'npc'.
+      const decB = selectNpcCombatAction(npcB, engineB.store.state);
+      const attackB = [decB.chosen, ...decB.alternatives].find(a => a.intent === 'attack')!;
+      expect(attackB.contributions.find(c => c.factor === 'momentum')).toBeUndefined();
+    });
+
+    it('an ally defeat in engine A does not inject an ally_fallen bonus into a same-id NPC in engine B', () => {
+      const npcA = makeEntity('npc', 'enemy', ['enemy'], { resources: { hp: 10, maxHp: 20, stamina: 5 } });
+      const targetA = makeEntity('target', 'player', ['player']);
+      const allyA = makeEntity('ally', 'enemy', ['enemy'], { resources: { hp: 0, maxHp: 20, stamina: 5 } });
+      const engineA = buildEngine([npcA, targetA, allyA]);
+      const cogA = getCognition(engineA.store.state, 'npc');
+      cogA.morale = 40;
+
+      engineA.store.emitEvent('combat.entity.defeated', {
+        entityId: 'ally', entityName: 'ally', defeatedBy: 'target',
+      });
+      const decA = selectNpcCombatAction(npcA, engineA.store.state);
+      const guardA = [decA.chosen, ...decA.alternatives].find(a => a.intent === 'guard')!;
+      expect(guardA.contributions.find(c => c.factor === 'ally_fallen')).toBeDefined();
+
+      // Engine B: same tick (0), same-id 'npc' and 'ally' — but 'ally' is
+      // alive here; no defeat was ever emitted in this world.
+      const npcB = makeEntity('npc', 'enemy', ['enemy'], { resources: { hp: 10, maxHp: 20, stamina: 5 } });
+      const targetB = makeEntity('target', 'player', ['player']);
+      const allyB = makeEntity('ally', 'enemy', ['enemy'], { resources: { hp: 20, maxHp: 20, stamina: 5 } });
+      const engineB = buildEngine([npcB, targetB, allyB]);
+      const cogB = getCognition(engineB.store.state, 'npc');
+      cogB.morale = 40;
+
+      const decB = selectNpcCombatAction(npcB, engineB.store.state);
+      const guardB = [decB.chosen, ...decB.alternatives].find(a => a.intent === 'guard')!;
+      expect(guardB.contributions.find(c => c.factor === 'ally_fallen')).toBeUndefined();
+    });
+  });
+
   it('exit quality is zero when no neighbors', () => {
     const npc = makeEntity('npc', 'enemy', ['enemy'], { name: 'Bandit', zoneId: 'zone-dead-end' });
     const target = makeEntity('player', 'player', ['player'], { name: 'Hero', zoneId: 'zone-dead-end' });
@@ -964,5 +1036,74 @@ describe('combat-intent: faction-aware ally/enemy split (M3)', () => {
     const decision = selectNpcCombatAction(npc, engine.store.state);
     const all = [decision.chosen, ...decision.alternatives];
     expect(all.some((s) => s.intent === 'attack' && s.targetId === 'target')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-cix-recentdecisions: recentDecisions persists to world.modules
+// ---------------------------------------------------------------------------
+//
+// ctx.persistence.registerNamespace('combat-intent', { recentDecisions: [] })
+// registered a namespace, but nothing ever wrote to it — a SEPARATE closure-
+// scoped `decisions` array (createCombatIntent()'s own local, not
+// world.modules) is what the 'combat.ai.decision' listener actually pushed
+// into, and what the debug inspector read. world.modules['combat-intent']
+// .recentDecisions was ALWAYS [], and a save/reload silently lost all AI-
+// decision history (it lived only in the pre-reload module instance's
+// closure) — the exact same closure-vs-world.modules divergence class as
+// defeatLog (F-71ec5dcd), roundFlagTickMap (F-80a6afa2), recoveryEntries
+// (F-2e1b94b9), and objectiveLog (F-fe16be5e).
+
+describe('F-cix-recentdecisions: recentDecisions persists to world.modules (not a disconnected closure)', () => {
+  it('a combat.ai.decision event populates world.modules[\'combat-intent\'].recentDecisions', () => {
+    const npc = makeEntity('npc', 'enemy', ['enemy']);
+    const target = makeEntity('target', 'player', ['player']);
+    const engine = buildEngine([npc, target]);
+    const decision = selectNpcCombatAction(npc, engine.store.state);
+
+    // Route through the real store bus so the module's own listener fires.
+    emitDecisionEvent({ emit: (e) => engine.store.recordEvent(e) }, decision, engine.store.state);
+
+    const state = engine.world.modules['combat-intent'] as { recentDecisions: unknown[] };
+    expect(state.recentDecisions.length).toBeGreaterThan(0);
+  });
+
+  it('recentDecisions survives save/reload and keeps accumulating post-reload', () => {
+    const npc = makeEntity('npc', 'enemy', ['enemy']);
+    const target = makeEntity('target', 'player', ['player']);
+    const engine = buildEngine([npc, target]);
+    const decision1 = selectNpcCombatAction(npc, engine.store.state);
+    emitDecisionEvent({ emit: (e) => engine.store.recordEvent(e) }, decision1, engine.store.state);
+
+    const beforeCount = (engine.world.modules['combat-intent'] as { recentDecisions: unknown[] }).recentDecisions.length;
+    expect(beforeCount).toBeGreaterThan(0);
+
+    const blob = engine.serialize();
+    const restored = Engine.deserialize(blob, {
+      modules: [statusCore, createCognitionCore(), createCombatIntent()],
+    });
+
+    const restoredState = restored.world.modules['combat-intent'] as { recentDecisions: unknown[] };
+    expect(restoredState.recentDecisions.length).toBe(beforeCount);
+
+    // Post-reload events must keep accumulating into the SAME live object —
+    // not vanish into the new engine's fresh, disconnected closure.
+    const decision2 = selectNpcCombatAction(restored.world.entities.npc, restored.world);
+    emitDecisionEvent({ emit: (e) => restored.store.recordEvent(e) }, decision2, restored.world);
+
+    const afterState = restored.world.modules['combat-intent'] as { recentDecisions: unknown[] };
+    expect(afterState.recentDecisions.length).toBeGreaterThan(beforeCount);
+  });
+
+  it('the entity-cognition debug inspector reads live recentDecisions too', () => {
+    const npc = makeEntity('npc', 'enemy', ['enemy']);
+    const target = makeEntity('target', 'player', ['player']);
+    const engine = buildEngine([npc, target]);
+    const decision = selectNpcCombatAction(npc, engine.store.state);
+    emitDecisionEvent({ emit: (e) => engine.store.recordEvent(e) }, decision, engine.store.state);
+
+    const inspector = engine.moduleManager.getInspectors().find(i => i.id === 'combat-intent')!;
+    const result = inspector.inspect(engine.world) as { count: number; recent: unknown[] };
+    expect(result.count).toBeGreaterThan(0);
   });
 });

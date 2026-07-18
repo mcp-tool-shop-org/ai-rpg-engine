@@ -292,4 +292,4 @@ const formulas = buildCombatFormulas({
 - [Combat Overview](49a-combat-overview.md) — the six pillars, actions, states
 - [Composition Guide](57-composition-guide.md) — full game composition workflow
 - [Tuning Philosophy](56-tuning-philosophy.md) — what to tune vs leave alone
-- [Profile Roadmap](../profile-roadmap.md) — plug-in profiles: the engine's destination feature (planned)
+- [Plug-in Profiles](59-plugin-profiles.md) — per-entity rule resolution (shipped v2.5); origin vision in the [Profile Roadmap](../profile-roadmap.md)

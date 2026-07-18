@@ -284,8 +284,28 @@ async function retrieveFromTranscripts(
 
   const snippets: RetrievedSnippet[] = [];
 
-  // Only look at the most recent transcripts (max 5)
-  const sorted = files.sort().reverse().slice(0, 5);
+  // Only look at the most recent transcripts (max 5), ranked by actual file
+  // modification time — NOT filename (v2.6 audit F-c46487a9). Filenames are
+  // `${slug}-${date}.jsonl` (defaultTranscriptPath); a lexicographic sort
+  // only approximates recency when every transcript shares the same slug.
+  // Once a project has differently-named sessions, an alphabetically-later
+  // slug can sort ahead of a much more recent date from an earlier-lettered
+  // slug, silently feeding stale prior-decision context into the chat.
+  const withMtimes = await Promise.all(
+    files.map(async (file) => {
+      try {
+        const info = await stat(file);
+        return { file, mtimeMs: info.mtimeMs };
+      } catch {
+        // Unreadable/vanished file — sort it last rather than throwing.
+        return { file, mtimeMs: 0 };
+      }
+    }),
+  );
+  const sorted = withMtimes
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .slice(0, 5)
+    .map((f) => f.file);
   for (const file of sorted) {
     const content = await safeReadFile(file, 6000);
     if (!content) continue;

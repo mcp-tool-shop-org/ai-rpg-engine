@@ -52,6 +52,28 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * True for a fetch()-level failure worth retrying (v2.6 audit F-65938632).
+ *
+ * Empirically (Node 20+, undici): a connection-level failure (ECONNREFUSED,
+ * DNS failure, etc.) surfaces from fetch() as `TypeError: fetch failed` —
+ * that was the only case the old predicate accepted. But this client's own
+ * `AbortSignal.timeout(config.timeoutMs)` firing surfaces as a `DOMException`
+ * named 'TimeoutError', which is NOT an instanceof TypeError, so it fell
+ * straight to the immediate-failure branch regardless of maxAttempts. Ollama
+ * runs local LLM inference (cold model load into VRAM, long generations), so
+ * a request timeout is arguably the single most common transient failure
+ * mode for this client — it was also the one failure mode retry silently
+ * excluded. A generic abort that is NOT our own timeout (e.g. a
+ * caller-supplied AbortController — not used by this client today, but kept
+ * explicit for anyone who wires one in later) is deliberately left alone:
+ * only a recognized transient failure is retried.
+ */
+function isRetryableFetchError(err: unknown): err is TypeError | DOMException {
+  if (err instanceof TypeError) return true;
+  return err instanceof DOMException && err.name === 'TimeoutError';
+}
+
+/**
  * Build a recovery hint for connection failures. Ollama is the only optional
  * network surface; when it's unreachable the most common cause is the server
  * not running or a misconfigured URL, so name both the attempted URL and the
@@ -61,6 +83,34 @@ function offlineHint(baseUrl: string): string {
   return `Could not reach the Ollama server at ${baseUrl}. `
     + 'Is it running? Start it with "ollama serve", '
     + 'or point at a different host via AI_RPG_ENGINE_OLLAMA_URL.';
+}
+
+/**
+ * Curate the daemon's model-not-found 404 into an actionable message
+ * (v2.6 Stage C F-9d02e714). The raw failure is an escaped-JSON dump —
+ * `Ollama HTTP 404: {"error":"model \"qwen2.5-coder\" not found, try pulling
+ * it first"}` — which never names the exact `ollama pull` command or where
+ * the model name came from. This is the likely #2 first-run failure (the
+ * default model is rarely pre-pulled), so it deserves the same curated
+ * treatment as the offline case.
+ *
+ * Returns null when the 404 does not carry the daemon's model-missing shape
+ * (e.g. a reverse proxy's HTML 404 from a wrong baseUrl) — those fall through
+ * to the generic HTTP error rather than misdiagnosing a missing model.
+ */
+function modelNotFoundError(status: number, body: string, model: string): string | null {
+  if (status !== 404) return null;
+  let detail: string | undefined;
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown };
+    if (typeof parsed.error === 'string') detail = parsed.error;
+  } catch {
+    return null; // non-JSON 404 body — not the daemon's model-missing response
+  }
+  if (!detail || !/not found/i.test(detail)) return null;
+  return `Model "${model}" is not installed on the Ollama server (${detail}). `
+    + `Pull it first with "ollama pull ${model}", `
+    + 'or pick an installed model via AI_RPG_ENGINE_OLLAMA_MODEL or --model.';
 }
 
 export function createClient(config: OllamaConfig, options?: OllamaClientOptions): OllamaTextClient {
@@ -95,9 +145,11 @@ export function createClient(config: OllamaConfig, options?: OllamaClientOptions
             signal: AbortSignal.timeout(config.timeoutMs),
           });
         } catch (err) {
-          if (attempt < maxAttempts && err instanceof TypeError) {
-            const message = err.message || 'fetch failed';
-            onRetry({ attempt, maxAttempts, reason: `network error: ${message}`, delayMs: retryDelayMs });
+          if (attempt < maxAttempts && isRetryableFetchError(err)) {
+            const reason = err instanceof DOMException
+              ? `timeout after ${config.timeoutMs}ms`
+              : `network error: ${err.message || 'fetch failed'}`;
+            onRetry({ attempt, maxAttempts, reason, delayMs: retryDelayMs });
             await sleep(retryDelayMs);
             continue;
           }
@@ -112,6 +164,8 @@ export function createClient(config: OllamaConfig, options?: OllamaClientOptions
             continue;
           }
           const text = await res.text().catch(() => '(no body)');
+          const notPulled = modelNotFoundError(res.status, text, config.model);
+          if (notPulled) return { ok: false, error: notPulled };
           return { ok: false, error: `Ollama HTTP ${res.status}: ${text}` };
         }
 

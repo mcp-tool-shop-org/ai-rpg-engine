@@ -10,6 +10,26 @@ sidebar:
 
 The `@ai-rpg-engine/ollama` package connects to a local [Ollama](https://ollama.ai) instance to assist with content creation and simulation inspection. It never mutates engine state directly — AI assists, the engine governs.
 
+## Install & prerequisites
+
+The studio ships as its own `ai` command:
+
+```bash
+npm install -g @ai-rpg-engine/ollama
+
+# start a local Ollama daemon and pull the default model first
+ollama serve
+ollama pull qwen2.5-coder
+
+ai chat            # the interactive design studio
+ai create-room --help
+```
+
+`ai` and the game CLI (`ai-rpg-engine`, from `@ai-rpg-engine/cli`) are separate
+binaries and coexist if you install both. The AI layer is entirely optional —
+the engine and the `run` loop need no network. Every command defaults to stdout;
+nothing is persisted until you pass `--write`.
+
 ## Philosophy
 
 Three rules govern the AI layer:

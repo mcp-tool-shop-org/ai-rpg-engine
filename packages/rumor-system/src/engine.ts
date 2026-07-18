@@ -9,6 +9,30 @@ import type {
   MutationRule,
 } from './types.js';
 import { DEFAULT_MUTATIONS } from './mutations.js';
+import { validateRumor } from './validate.js';
+
+/** A structured warning surfaced by {@link RumorEngine.deserializeSafe}. */
+export type DeserializeWarning = {
+  /** Offending location, e.g. `rumors[3].lastSpreadTick`. */
+  field: string;
+  /** What was wrong with the skipped entry (includes its id when it has one). */
+  message: string;
+};
+
+/** Result of {@link RumorEngine.deserializeSafe}. */
+export type DeserializeResult = {
+  /** The restored engine, containing only the rumors that passed validation. */
+  engine: RumorEngine;
+  /** Number of rumors actually restored into the engine. */
+  restored: number;
+  /**
+   * Structured warnings for malformed entries that were skipped. Empty on a
+   * clean load. Mirrors soundpack-core's SoundRegistry.load warning
+   * convention so a save/load layer can surface these instead of discovering
+   * the corruption later as a frozen rumor or a raw TypeError.
+   */
+  warnings: DeserializeWarning[];
+};
 
 const DEFAULT_CONFIG = {
   maxHops: 5,
@@ -132,15 +156,28 @@ export class RumorEngine {
 
       const ticksSinceSpread = currentTick - rumor.lastSpreadTick;
 
-      if (ticksSinceSpread >= this.deathThreshold) {
+      // F-06c431da: 'established' gets its own branch rather than sharing the
+      // spreading/fading branch below and relying on a second check to catch
+      // it. Established rumors skip the 'fading' stage entirely — they go
+      // straight from established to dead once inactive past deathThreshold,
+      // and otherwise stay established. This used to be expressed as a
+      // status-agnostic death check plus a trailing "established can also
+      // die" block that could never actually run (the first check already
+      // caught every status, including 'established'); that made the
+      // established path look conditional on the second block while
+      // depending entirely on the first, so an edit to the first branch
+      // alone (e.g. excluding 'established' from it) would have silently
+      // made established rumors immortal. Splitting the branch makes the
+      // established death path self-contained and independent of how the
+      // spreading/fading branch is written.
+      if (rumor.status === 'established') {
+        if (ticksSinceSpread >= this.deathThreshold) {
+          rumor.status = 'dead';
+        }
+      } else if (ticksSinceSpread >= this.deathThreshold) {
         rumor.status = 'dead';
-      } else if (ticksSinceSpread >= this.fadingThreshold && rumor.status !== 'established') {
+      } else if (ticksSinceSpread >= this.fadingThreshold) {
         rumor.status = 'fading';
-      }
-
-      // Established rumors can also fade if inactive long enough
-      if (rumor.status === 'established' && ticksSinceSpread >= this.deathThreshold) {
-        rumor.status = 'dead';
       }
     }
   }
@@ -197,23 +234,82 @@ export class RumorEngine {
     return Array.from(this.rumors.values());
   }
 
-  /** Restore from serialized state */
-  static deserialize(rumors: Rumor[], config?: RumorEngineConfig): RumorEngine {
-    const engine = new RumorEngine(config);
-    for (const rumor of rumors) {
-      engine.rumors.set(rumor.id, rumor);
+  /**
+   * Restore from serialized state, validating every rumor at the boundary.
+   *
+   * F-1f8c5a94: this used to write each incoming entry straight into the
+   * registry unvalidated, even though the package ships {@link validateRumor}
+   * for exactly this boundary. A persisted rumor missing `lastSpreadTick`
+   * then froze forever — `tick()`'s `currentTick - lastSpreadTick` is NaN and
+   * NaN fails both threshold compares, so the rumor never fades or dies — and
+   * one missing `spreadPath` raw-threw a TypeError inside the next `spread()`.
+   *
+   * Contract (mirrors soundpack-core's `SoundRegistry.load` warn-and-skip):
+   * malformed entries are skipped and reported as structured warnings naming
+   * the entry index, its id when present, and the offending field; valid
+   * entries load normally. Non-array input is the one case that throws —
+   * there is nothing to restore and iterating would crash anyway.
+   */
+  static deserializeSafe(rumors: Rumor[], config?: RumorEngineConfig): DeserializeResult {
+    if (!Array.isArray(rumors)) {
+      throw new Error(
+        '[rumor-system] deserialize() requires an array of rumors; received ' +
+          describeType(rumors) + '. Pass the array produced by serialize().',
+      );
     }
-    // Advance THIS instance's counter past the highest restored id (CP-02).
+
+    const engine = new RumorEngine(config);
+    const warnings: DeserializeWarning[] = [];
+    let restored = 0;
     let maxNum = 0;
-    for (const r of rumors) {
-      const match = r.id.match(/^rum_(\d+)$/);
+
+    for (let i = 0; i < rumors.length; i++) {
+      const rumor = rumors[i];
+      const errors = validateRumor(rumor);
+      if (errors.length > 0) {
+        const id =
+          rumor !== null && typeof rumor === 'object' && typeof (rumor as { id?: unknown }).id === 'string'
+            ? ` (id "${(rumor as { id: string }).id}")`
+            : '';
+        for (const e of errors) {
+          warnings.push({
+            field: `rumors[${i}].${e.field}`,
+            message: `skipped malformed rumor${id}: ${e.field} ${e.message}`,
+          });
+        }
+        continue;
+      }
+
+      engine.rumors.set(rumor.id, rumor);
+      restored++;
+
+      // Advance THIS instance's counter past the highest RESTORED id (CP-02).
+      // Skipped entries don't count — they never entered the registry.
+      const match = rumor.id.match(/^rum_(\d+)$/);
       if (match) {
         maxNum = Math.max(maxNum, parseInt(match[1], 10));
       }
     }
+
     engine.nextRumorId = maxNum + 1;
-    return engine;
+    return { engine, restored, warnings };
   }
+
+  /**
+   * Restore from serialized state. Malformed entries are skipped — use
+   * {@link RumorEngine.deserializeSafe} to also receive the structured
+   * per-entry warnings for your save/load UX.
+   */
+  static deserialize(rumors: Rumor[], config?: RumorEngineConfig): RumorEngine {
+    return RumorEngine.deserializeSafe(rumors, config).engine;
+  }
+}
+
+/** Human-readable type description for boundary error messages. */
+function describeType(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'an array';
+  return typeof value;
 }
 
 // Deterministic pseudo-random based on rumor ID, hop count, and rule ID

@@ -10,6 +10,15 @@
   "references": [
     {
       "path": "../core"
+    },
+    {
+      "path": "../presentation"
+    },
+    {
+      "path": "../audio-director"
+    },
+    {
+      "path": "../soundpack-core"
     }
   ],
   "exclude": [

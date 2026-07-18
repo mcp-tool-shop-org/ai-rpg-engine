@@ -8,6 +8,7 @@ import {
   startMacro,
   advanceStep,
   failStep,
+  skipStep,
   buildMacroResult,
   scaffoldAndCritique,
   compareAndFix,
@@ -102,6 +103,35 @@ describe('macro framework', () => {
       failStep(p, 'something broke');
       expect(p.steps[0].status).toBe('failed');
       expect(p.steps[0].error).toBe('something broke');
+    });
+  });
+
+  // v2.6 audit F-307f8f22 — advanceStep() guards its step mutation with
+  // `if (step)` before writing step.status, specifically to avoid indexing
+  // past the end of progress.steps. Three call sites (scaffoldAndCritique's
+  // no-session-context branch, planAndGenerate's cannot-auto-execute branch,
+  // and its nothing-to-critique branch) used to hand-roll the same "mark
+  // skipped and advance" transition WITHOUT that guard, mutating
+  // progress.steps[progress.currentStep] directly — safe today only because
+  // each macro's step-label array happens to be hand-sized to match every
+  // code path exactly. skipStep() replaces all three with the same
+  // bounds-checked pattern advanceStep/failStep already use.
+  describe('skipStep', () => {
+    it('marks current step skipped, records output, and advances', () => {
+      const p = createMacroProgress('test', ['A', 'B']);
+      startMacro(p);
+      skipStep(p, 'not applicable');
+      expect(p.steps[0].status).toBe('skipped');
+      expect(p.steps[0].output).toBe('not applicable');
+      expect(p.currentStep).toBe(1);
+    });
+
+    it('does not throw when currentStep is already at/past the last step', () => {
+      const p = createMacroProgress('test', ['A']);
+      startMacro(p);
+      skipStep(p, 'skip 1'); // currentStep now 1 === steps.length
+      expect(() => skipStep(p, 'skip 2')).not.toThrow();
+      expect(p.currentStep).toBe(2);
     });
   });
 

@@ -111,7 +111,7 @@ export const seaBeast: EntityState = {
   zoneId: 'sunken-shrine',
   resistances: { fear: 'immune' },
   ai: {
-    profileId: 'aggressive',
+    profileId: 'territorial',
     goals: ['guard-shrine', 'destroy-trespassers'],
     fears: [],
     alertLevel: 0,
@@ -255,7 +255,10 @@ export const zones: ZoneState[] = [
 
 export const cartographerDialogue: DialogueDefinition = {
   id: 'cartographer-maps',
-  speakers: ['Mara the Cartographer'],
+  // Must be the entity id (not the display name) — dialogue-core's
+  // speakHandler auto-discovers a dialogue via `speakers.includes(targetId)`
+  // using the real entity id when no explicit dialogueId is passed.
+  speakers: ['cartographer_mara'],
   entryNodeId: 'greeting',
   nodes: {
     greeting: {

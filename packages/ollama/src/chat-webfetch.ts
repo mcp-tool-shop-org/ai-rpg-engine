@@ -1,7 +1,9 @@
 // Webfetch adapter — optional external URL retrieval.
 // Explicit, opt-in, source-citing, clearly separated from project truth.
 // Chat must never silently mix external content with local project facts.
-// Uses Node native fetch (>= 20). Zero external deps.
+// Uses Node native fetch (>= 20) and the node:dns builtin. Zero npm deps.
+
+import { lookup } from 'node:dns/promises';
 
 // --- Types ---
 
@@ -125,9 +127,13 @@ export function isAllowedUrl(url: string): boolean {
       return !traversal(parsed);
     }
 
-    // Otherwise a DNS name: allow (NOTE: hostname checks cannot stop DNS
-    // rebinding to a private IP after validation — the complete fix is to
-    // resolve and validate the connected IP at fetch time; future hardening).
+    // Otherwise a DNS name: syntactically fine, but NOT proven safe. A name
+    // is not an address — it is only safe once resolved. This function does
+    // not resolve DNS, so a hostname reaching this line has NOT been checked
+    // against the blocklist above at all; a single attacker-controlled A/AAAA
+    // record pointing at a blocked address sails straight through. Callers
+    // that will actually issue the request MUST use isAllowedUrlResolved()
+    // below instead of (or in addition to) this function — webfetch() does.
     return !traversal(parsed);
   } catch {
     return false;
@@ -136,6 +142,97 @@ export function isAllowedUrl(url: string): boolean {
 
 function traversal(parsed: URL): boolean {
   return parsed.pathname.includes('..') || parsed.href.includes('..');
+}
+
+// --- DNS-resolved validation (the gate webfetch() actually enforces) ---
+
+/** Default budget for the DNS resolution step in isAllowedUrlResolved(). */
+const DEFAULT_RESOLVE_TIMEOUT_MS = 5_000;
+
+/**
+ * The real SSRF gate: isAllowedUrl() plus DNS resolution for plain hostnames.
+ *
+ * isAllowedUrl() only proves a URL is *syntactically* safe — it blocks
+ * IP-literal hosts (every encoding form: decimal/hex/octal v4, compressed
+ * v6, IPv4-mapped/compatible/NAT64/6to4 tunnels) and a short list of known-
+ * internal hostnames, but for any OTHER hostname it falls through to "DNS
+ * name: allow" without ever resolving it. That gap needs no DNS-rebinding or
+ * TOCTOU timing trick to exploit: an attacker registers any domain, points
+ * its A record at 127.0.0.1 / 169.254.169.254 (cloud metadata) / an internal
+ * 10.x address, and the resulting URL sails through every check above and
+ * would be fetched for real (v2.6 audit F-f268b81a).
+ *
+ * This function closes that gap. A host that is already an IP literal is
+ * fully validated by isAllowedUrl() alone. A DNS name is resolved (every
+ * address it maps to, via dns.promises.lookup) and each resolved address is
+ * run through the SAME blocklist isAllowedUrl() applies to literals — the
+ * URL is rejected if any resolved address is blocked, or if resolution
+ * itself fails or does not complete within resolveTimeoutMs (fail closed).
+ */
+export async function isAllowedUrlResolved(
+  url: string,
+  resolveTimeoutMs = DEFAULT_RESOLVE_TIMEOUT_MS,
+): Promise<boolean> {
+  if (!isAllowedUrl(url)) return false;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+
+  // Already fully validated (or rejected) as an IP literal by isAllowedUrl().
+  if (parseV4(host) || parseV6(host)) return true;
+
+  // A plain DNS name: resolve it and validate every address it maps to
+  // before this URL may be treated as allowed.
+  return resolvesToOnlyPublicAddresses(host, resolveTimeoutMs);
+}
+
+/**
+ * True only when `hostname` resolves to at least one address and every
+ * resolved address is public. Any failure mode — resolver error, empty
+ * answer, or a resolution that does not settle within `timeoutMs` — rejects
+ * (fail closed): an SSRF guard that hangs open on a slow or broken resolver
+ * defeats its own purpose.
+ */
+async function resolvesToOnlyPublicAddresses(hostname: string, timeoutMs: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const addresses = await Promise.race([
+      lookup(hostname, { all: true, verbatim: true }),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('DNS resolution timed out')), timeoutMs);
+      }),
+    ]);
+    if (!Array.isArray(addresses) || addresses.length === 0) return false;
+    return addresses.every(({ address, family }) => isPublicResolvedAddress(address, family));
+  } catch {
+    return false;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/** Applies the same blocklist isAllowedUrl() uses for literals to a resolved address. */
+function isPublicResolvedAddress(address: string, family: number): boolean {
+  if (family === 4) {
+    const v4 = parseV4(address);
+    return !!v4 && !isBlockedV4(v4);
+  }
+  if (family === 6) {
+    const v6 = parseV6(address);
+    if (!v6) return false;
+    if (v6.every((x, i) => x === 0 || (i === 15 && x === 1))) return false; // ::1 loopback / :: unspecified
+    if (v6[0] === 0xfe && (v6[1] & 0xc0) === 0x80) return false; // fe80::/10 link-local
+    if ((v6[0] & 0xfe) === 0xfc) return false; // fc00::/7 unique-local
+    const emb = embeddedV4(v6);
+    if (emb && isBlockedV4(emb)) return false;
+    return true;
+  }
+  return false; // unknown address family — fail closed
 }
 
 // --- HTML text extraction ---
@@ -168,68 +265,121 @@ function stripTags(html: string): string {
 
 // --- Fetch ---
 
+/** Max redirect hops webfetch() will follow before giving up (fail closed). */
+const MAX_REDIRECTS = 5;
+
 export async function webfetch(url: string, options?: WebfetchOptions): Promise<WebfetchResult> {
   const maxChars = options?.maxChars ?? 4000;
   const timeoutMs = options?.timeoutMs ?? 10_000;
   const fetchedAt = new Date().toISOString();
 
-  if (!isAllowedUrl(url)) {
-    return {
-      ok: false, url, title: '', content: '', truncatedTo: 0, fetchedAt,
-      error: 'URL not allowed: must be public http/https',
-    };
-  }
+  const failClosed = (error: string): WebfetchResult => ({
+    ok: false, url, title: '', content: '', truncatedTo: 0, fetchedAt, error,
+  });
+
+  // Validating only the initial URL is NOT enough: fetch()'s default
+  // redirect:'follow' would follow a 3xx to an internal/loopback/link-local/
+  // metadata address entirely inside undici, re-resolving and connecting to
+  // each hop with no further SSRF check — a public URL that redirects to
+  // 127.0.0.1 / 169.254.169.254 / a 10.x host bypasses the guard outright,
+  // no DNS control required (v2.6 audit F-23749236). So we drive the redirect
+  // chain by hand: redirect:'manual', and re-run the FULL DNS-resolving gate
+  // (isAllowedUrlResolved) against EVERY hop — the initial URL and each
+  // Location — before following it, bounded by MAX_REDIRECTS. The whole chain
+  // shares one deadline, so a redirect loop cannot multiply the caller's
+  // timeout budget.
+  //
+  // Residual ceiling (v2.6 audit F-3d66e5c9, DNS-rebinding TOCTOU): the address
+  // isAllowedUrlResolved() validates via dns.lookup() is NOT pinned to the
+  // socket fetch() ultimately connects to — undici performs its own
+  // independent resolution, so an attacker controlling authoritative DNS with
+  // a low/zero TTL could still answer "public" to our lookup and "private" to
+  // undici's. Fully closing that needs connecting to a pinned, pre-validated IP
+  // via a custom undici dispatcher (with an explicit Host header / SNI), which
+  // native fetch() cannot express without one. This fix closes the redirect
+  // and static-record variants completely; the timing-race rebinding variant
+  // remains a documented, higher-cost residual, not a silently-open hole.
+  let currentUrl = url;
+  const deadline = Date.now() + timeoutMs;
 
   try {
-    const response = await fetch(url, {
-      signal: AbortSignal.timeout(timeoutMs),
-      headers: {
-        'User-Agent': 'ai-rpg-engine-chat/1.1 (design-assistant)',
-        'Accept': 'text/html, text/plain, application/json',
-      },
-    });
+    for (let hop = 0; ; hop++) {
+      // Gate EVERY hop, not just the first — the entire point of the fix.
+      if (!(await isAllowedUrlResolved(currentUrl))) {
+        return failClosed('URL not allowed: must be public http/https');
+      }
 
-    if (!response.ok) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        return failClosed(`Request timed out after ${timeoutMs}ms`);
+      }
+
+      const response = await fetch(currentUrl, {
+        signal: AbortSignal.timeout(remaining),
+        redirect: 'manual',
+        headers: {
+          'User-Agent': 'ai-rpg-engine-chat/1.1 (design-assistant)',
+          'Accept': 'text/html, text/plain, application/json',
+        },
+      });
+
+      // A 3xx under redirect:'manual' exposes the real status + Location
+      // (undici returns a basic, non-opaque response). Re-validate the target
+      // through the gate on the next loop iteration before following it.
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+        if (!location) {
+          return failClosed(`HTTP ${response.status}: redirect response with no Location header`);
+        }
+        if (hop >= MAX_REDIRECTS) {
+          return failClosed(`Too many redirects (followed ${MAX_REDIRECTS})`);
+        }
+        let next: string;
+        try {
+          next = new URL(location, currentUrl).toString();
+        } catch {
+          return failClosed(`Invalid redirect Location: ${location}`);
+        }
+        currentUrl = next;
+        continue;
+      }
+
+      if (!response.ok) {
+        return failClosed(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const contentType = response.headers.get('content-type') ?? '';
+      const raw = await response.text();
+
+      let title: string;
+      let content: string;
+
+      if (contentType.includes('text/html')) {
+        title = extractTitle(raw);
+        content = stripTags(raw);
+      } else if (contentType.includes('application/json')) {
+        title = url;
+        content = raw;
+      } else {
+        // Plain text or other
+        title = url;
+        content = raw;
+      }
+
+      const truncated = content.slice(0, maxChars);
+
       return {
-        ok: false, url, title: '', content: '', truncatedTo: 0, fetchedAt,
-        error: `HTTP ${response.status}: ${response.statusText}`,
+        ok: true,
+        url,
+        title: title || url,
+        content: truncated,
+        truncatedTo: Math.min(content.length, maxChars),
+        fetchedAt,
       };
     }
-
-    const contentType = response.headers.get('content-type') ?? '';
-    const raw = await response.text();
-
-    let title: string;
-    let content: string;
-
-    if (contentType.includes('text/html')) {
-      title = extractTitle(raw);
-      content = stripTags(raw);
-    } else if (contentType.includes('application/json')) {
-      title = url;
-      content = raw;
-    } else {
-      // Plain text or other
-      title = url;
-      content = raw;
-    }
-
-    const truncated = content.slice(0, maxChars);
-
-    return {
-      ok: true,
-      url,
-      title: title || url,
-      content: truncated,
-      truncatedTo: Math.min(content.length, maxChars),
-      fetchedAt,
-    };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return {
-      ok: false, url, title: '', content: '', truncatedTo: 0, fetchedAt,
-      error: msg,
-    };
+    return failClosed(msg);
   }
 }
 

@@ -27,4 +27,17 @@ describe('vampireMinimalRuleset', () => {
       }
     }
   });
+
+  // F-e83a091f: this description was copy-pasted verbatim from starter-fantasy
+  // ("40 + instinct*5 + will*2") — vampire has no 'instinct'/'will' stats at
+  // all. Per buildCombatFormulas' real disengageChance formula
+  // (packages/modules/src/combat-builders.ts: 40 + precision*5 + resolve*2,
+  // clamped 15-90), vampire's precision/resolve stats are cunning/presence.
+  it('disengage-chance formula description matches this pack\'s real stats', () => {
+    const formula = vampireMinimalRuleset.formulas.find((f) => f.id === 'disengage-chance')!;
+    expect(formula.description).toContain('cunning');
+    expect(formula.description).toContain('presence');
+    expect(formula.description).not.toContain('instinct');
+    expect(formula.description).not.toContain('will');
+  });
 });

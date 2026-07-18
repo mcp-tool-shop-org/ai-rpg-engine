@@ -127,6 +127,75 @@ describe('finale', () => {
     });
   });
 
+  // F-3c079d7e: factionOutcome(rep, cohesion, alertLevel) accepted alertLevel
+  // — threaded all the way from FinaleFactionInput.alertLevel — but never
+  // referenced it, so a faction the rest of the simulation already treats as
+  // mobilized-against-the-player (packages/modules/faction-agency.ts defines
+  // `isEnemy = alertLevel >= 40 && playerReputation <= -20` for live
+  // gameplay) could still narrate as 'neutral' purely because its raw
+  // reputation number hadn't yet cratered past -40.
+  describe('faction outcome — alertLevel actually affects the result (F-3c079d7e)', () => {
+    it('a highly-alerted faction resolves hostile even when reputation/cohesion alone would say neutral', () => {
+      const alertedFactions: FinaleFactionInput[] = [
+        { factionId: 'watchers', playerReputation: -25, alertLevel: 50, cohesion: 45 },
+      ];
+      const outline = buildFinaleOutline('victory', null, makeJournal(), [], alertedFactions, [], 25);
+      expect(outline.factionFates.find((f) => f.factionId === 'watchers')?.outcome).toBe('hostile');
+    });
+
+    it('low alert does not push a genuinely neutral faction into hostile', () => {
+      const calmFactions: FinaleFactionInput[] = [
+        { factionId: 'quiet-folk', playerReputation: 0, alertLevel: 5, cohesion: 60 },
+      ];
+      const outline = buildFinaleOutline('victory', null, makeJournal(), [], calmFactions, [], 25);
+      expect(outline.factionFates.find((f) => f.factionId === 'quiet-folk')?.outcome).toBe('neutral');
+    });
+
+    it('high alert never overrides an already-earned allied outcome', () => {
+      const stillAllied: FinaleFactionInput[] = [
+        { factionId: 'loyalists', playerReputation: 60, alertLevel: 90, cohesion: 80 },
+      ];
+      const outline = buildFinaleOutline('victory', null, makeJournal(), [], stillAllied, [], 25);
+      expect(outline.factionFates.find((f) => f.factionId === 'loyalists')?.outcome).toBe('allied');
+    });
+  });
+
+  // F-ac4df69b: the faction-seed switch in buildEpilogueSeeds had no case for
+  // 'neutral' (one of FactionFate['outcome']'s six values), and the
+  // companion-seed switch had no cases for 'enemy' or 'neutral' (two of
+  // NpcFate['outcome']'s six values, both reachable — breakpointToOutcome
+  //('hostile') returns 'enemy', and 'neutral' is the wavering/default
+  // fallthrough). Both are dramatically significant campaign endings that
+  // were silently dropped from epilogueSeeds with no signal.
+  describe('epilogue seeds cover every outcome (F-ac4df69b)', () => {
+    it('includes an epilogue seed for a neutral faction outcome', () => {
+      const neutralFactions: FinaleFactionInput[] = [
+        { factionId: 'fence-sitters', playerReputation: 0, alertLevel: 0, cohesion: 60 },
+      ];
+      const outline = buildFinaleOutline('victory', null, makeJournal(), [], neutralFactions, [], 25);
+      expect(outline.factionFates.find((f) => f.factionId === 'fence-sitters')?.outcome).toBe('neutral');
+      expect(outline.epilogueSeeds.some((s) => s.includes('fence-sitters'))).toBe(true);
+    });
+
+    it('includes an epilogue seed for a companion who ended as an enemy', () => {
+      const enemyCompanion: FinaleNpcInput[] = [
+        { npcId: 'turncoat', name: 'Bryn', breakpoint: 'hostile', isCompanion: true },
+      ];
+      const outline = buildFinaleOutline('victory', null, makeJournal(), enemyCompanion, [], [], 25);
+      expect(outline.companionFates.find((f) => f.npcId === 'turncoat')?.outcome).toBe('enemy');
+      expect(outline.epilogueSeeds.some((s) => s.includes('Bryn'))).toBe(true);
+    });
+
+    it('includes an epilogue seed for a companion who ended neutral', () => {
+      const neutralCompanion: FinaleNpcInput[] = [
+        { npcId: 'drifter', name: 'Sable', breakpoint: 'wavering', isCompanion: true },
+      ];
+      const outline = buildFinaleOutline('victory', null, makeJournal(), neutralCompanion, [], [], 25);
+      expect(outline.companionFates.find((f) => f.npcId === 'drifter')?.outcome).toBe('neutral');
+      expect(outline.epilogueSeeds.some((s) => s.includes('Sable'))).toBe(true);
+    });
+  });
+
   describe('formatting', () => {
     it('formatFinaleForDirector includes key sections', () => {
       const outline = buildFinaleOutline(

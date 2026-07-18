@@ -14,6 +14,7 @@ import type { EntityState, WorldState } from '@ai-rpg-engine/core';
 import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
 import { selectBestAction, formatUnifiedDecision } from './unified-decision.js';
 import type { UnifiedDecision, UnifiedDecisionConfig } from './unified-decision.js';
+import { selectNpcCombatAction } from './combat-intent.js';
 import { registerStatusDefinitions, clearStatusRegistry } from './status-semantics.js';
 
 // ---------------------------------------------------------------------------
@@ -436,5 +437,54 @@ describe('Unified Decision Layer', () => {
       expect(decision.chosen.source).toBe('combat');
       expect(decision.combatDecision.packBias).toBe('beast-test');
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Turn-driver support (F1-mod-b): the per-hostile loop must work for ARBITRARY
+// NPC entities — nonstandard stat names, unregistered profile ids, and worlds
+// where cognition-core never registered. These are the exact conditions the
+// CLI turn driver hits when iterating world.entities.
+// ---------------------------------------------------------------------------
+
+describe('Turn-driver support: arbitrary NPC entities', () => {
+  function makeOddNpc(): EntityState {
+    // Detective-starter shape: none of the default might/agility/resolve stats,
+    // and a profile id that only the cognition layer knows about.
+    return {
+      id: 'hargreaves', blueprintId: 'hargreaves', type: 'enemy', name: 'Mr. Hargreaves',
+      tags: ['enemy', 'criminal'],
+      stats: { perception: 6, eloquence: 7, grit: 5 },
+      resources: { hp: 40, maxHp: 40, stamina: 10, maxStamina: 10 },
+      statuses: [], zoneId: 'arena',
+      ai: { profileId: 'calculating', goals: ['eliminate-witnesses'], fears: [], alertLevel: 0, knowledge: {} },
+    };
+  }
+
+  it('selectNpcCombatAction returns a valid decision for an NPC with nonstandard stats', () => {
+    const npc = makeOddNpc();
+    const world = makeWorld([npc, makeDefender()]);
+
+    const decision = selectNpcCombatAction(npc, world);
+
+    expect(decision.entityId).toBe('hargreaves');
+    expect(decision.chosen).toBeDefined();
+    expect(['attack', 'guard', 'brace', 'disengage', 'reposition']).toContain(decision.chosen.resolvedVerb);
+    expect(decision.chosen.score).toBeGreaterThan(0);
+  });
+
+  it('selectBestAction works with an empty ability list and no cognition-core module state', () => {
+    const npc = makeOddNpc();
+    const world = makeWorld([npc, makeDefender()]);
+    // Simulate a world where cognition-core was never registered — getCognition
+    // must degrade to defaults instead of throwing.
+    delete (world.modules as Record<string, unknown>)['cognition-core'];
+
+    const decision = selectBestAction(npc, world, []);
+
+    expect(decision.entityId).toBe('hargreaves');
+    expect(decision.chosen.source).toBe('combat');
+    expect(decision.chosen.verb).toBeTruthy();
+    expect(decision.runnerUp).toBeNull(); // no abilities offered
   });
 });

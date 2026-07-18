@@ -309,15 +309,40 @@ export type BossDefinition = {
   immovable?: boolean;
 };
 
+/**
+ * Module persistence shape for one boss's phase listener. Keyed by this
+ * boss's own module id (`boss-phase:${entityId}`), so multiple bosses in the
+ * same world naturally get separate state with no risk of collision.
+ */
+type BossPhaseModuleState = {
+  /** Phase indices already activated. Array (not Set) — Set doesn't survive
+   *  WorldStore.serialize()'s JSON.stringify. */
+  activatedPhases: number[];
+};
+
 /** Create an EngineModule that listens for damage and triggers boss phase transitions */
 export function createBossPhaseListener(bossDef: BossDefinition): EngineModule {
-  const activatedPhases = new Set<number>();
+  const moduleId = `boss-phase:${bossDef.entityId}`;
+
+  function getModuleState(world: WorldState): BossPhaseModuleState {
+    return (world.modules[moduleId] ?? { activatedPhases: [] }) as BossPhaseModuleState;
+  }
 
   return {
-    id: `boss-phase:${bossDef.entityId}`,
+    id: moduleId,
     version: '0.1.0',
 
     register(ctx) {
+      // F-123ac29f: activatedPhases used to live only in this closure's Set,
+      // never registered via ctx.persistence.registerNamespace — unlike every
+      // comparable piece of module state elsewhere in this package. After a
+      // save/reload mid-boss-fight, a fresh module instance's Set started
+      // empty, so the next combat.damage.applied event re-evaluated ALL
+      // phases against the boss's CURRENT hp ratio and re-fired every
+      // already-seen transition alongside any genuinely new one. Now
+      // persisted per-world, re-fetched fresh on every access.
+      ctx.persistence.registerNamespace(moduleId, { activatedPhases: [] } as BossPhaseModuleState);
+
       // Warn-and-degrade: validate the boss definition at registration and
       // surface any problems (out-of-range/duplicate/unordered thresholds,
       // missing narrativeKey, tag add/remove conflicts) as a structured dev
@@ -360,12 +385,14 @@ export function createBossPhaseListener(bossDef: BossDefinition): EngineModule {
           .map((p, i) => ({ ...p, index: i }))
           .sort((a, b) => b.hpThreshold - a.hpThreshold);
 
+        const state = getModuleState(world);
+
         for (const phase of sorted) {
-          if (activatedPhases.has(phase.index)) continue;
+          if (state.activatedPhases.includes(phase.index)) continue;
           if (hpRatio > phase.hpThreshold) continue;
 
           // Activate this phase
-          activatedPhases.add(phase.index);
+          state.activatedPhases.push(phase.index);
 
           // Swap tags
           if (phase.removeTags) {
@@ -374,6 +401,53 @@ export function createBossPhaseListener(bossDef: BossDefinition): EngineModule {
           if (phase.addTags) {
             for (const tag of phase.addTags) {
               if (!entity.tags.includes(tag)) entity.tags.push(tag);
+            }
+          }
+
+          // Resolve spawnEntityIds (F-7097c3d8). This module has no
+          // AbilityDefinition/EntityState TEMPLATE data — only bare ids — so
+          // it cannot fabricate a brand-new entity from nothing. An id
+          // "spawns" if it already resolves to a pre-authored entity
+          // (content authors place reinforcements ahead of time, possibly
+          // hidden/off-zone, and reference them here): it is revealed and
+          // moved into the boss's zone. An id that never resolves is
+          // surfaced as a structured warning instead of silently doing
+          // nothing — a content author who declares spawnEntityIds otherwise
+          // gets confident director-facing confirmation
+          // ("spawns N reinforcement(s)", combat-summary.ts's
+          // buildBossProfile) that nothing backs at runtime.
+          const spawnedEntityIds: string[] = [];
+          const unresolvedSpawnIds: string[] = [];
+          if (phase.spawnEntityIds) {
+            for (const spawnId of phase.spawnEntityIds) {
+              const spawnEntity = world.entities[spawnId];
+              if (!spawnEntity) {
+                unresolvedSpawnIds.push(spawnId);
+                continue;
+              }
+              spawnEntity.zoneId = entity.zoneId;
+              if (spawnEntity.visibility?.hidden) {
+                spawnEntity.visibility = { ...spawnEntity.visibility, hidden: false };
+              }
+              spawnedEntityIds.push(spawnId);
+            }
+            if (unresolvedSpawnIds.length > 0) {
+              ctx.events.emit({
+                id: genId(world, 'evt'),
+                type: 'boss.phase.spawn.unresolved',
+                tick: event.tick,
+                actorId: bossDef.entityId,
+                payload: {
+                  entityId: bossDef.entityId,
+                  phaseIndex: phase.index,
+                  unresolvedSpawnIds,
+                  reason:
+                    `phase ${phase.index} (${phase.narrativeKey}) declares spawnEntityIds ` +
+                    `that do not exist in world.entities: ${unresolvedSpawnIds.join(', ')}. ` +
+                    `Pre-author these entities (may be hidden/off-zone) before the encounter starts.`,
+                },
+                targetIds: [bossDef.entityId],
+              });
             }
           }
 
@@ -390,6 +464,8 @@ export function createBossPhaseListener(bossDef: BossDefinition): EngineModule {
               hpRatio,
               addedTags: phase.addTags ?? [],
               removedTags: phase.removeTags ?? [],
+              spawnedEntityIds,
+              unresolvedSpawnIds,
             },
             targetIds: [bossDef.entityId],
             presentation: {

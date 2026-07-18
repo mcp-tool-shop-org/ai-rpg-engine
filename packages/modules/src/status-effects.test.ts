@@ -511,3 +511,176 @@ describe('M1: identical reactive statuses fire uniformly across an AoE\'s damage
     expect(firedBy('b')).toBeLessThanOrEqual(PROC_DEPTH_LIMIT);
   });
 });
+
+// ---------------------------------------------------------------------------
+// MOD-C-BH-01: periodic events are player-renderable
+//
+// Before this fix, status.periodic.damage/heal/expired carried no description
+// and no presentation, and no paired resource.changed fired — and because the
+// periodic pass removes finished instances BEFORE status-core's expiry sweep,
+// the standard status.expired never fired for them either. A burning player
+// silently lost HP with zero player-visible feedback. The events now carry a
+// player-grade description + presentation metadata matching the sibling
+// combat-damage events, a paired resource.changed, and a renderable expiry.
+// ---------------------------------------------------------------------------
+
+describe('MOD-C-BH-01: periodic events carry description + presentation + renderable expiry', () => {
+  const burning: StatusDefinition = {
+    id: 'burning',
+    name: 'Burning',
+    tags: ['poison', 'debuff'],
+    stacking: 'refresh',
+    duration: { type: 'ticks', value: 4 },
+  };
+  const regen: StatusDefinition = {
+    id: 'regen',
+    name: 'Regenerating',
+    tags: ['buff'],
+    stacking: 'refresh',
+    duration: { type: 'ticks', value: 3 },
+  };
+
+  beforeEach(() => {
+    registerStatusDefinitions([burning, regen]);
+  });
+
+  it('status.periodic.damage carries a player-grade description + objective presentation', () => {
+    const e = makeEntity({ name: 'Torch Ghoul', resources: { hp: 20, maxHp: 20 } });
+    const world = makeWorld([e], 0);
+    applyStatus(e, 'burning', 0, {
+      duration: 4,
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 3 },
+    }, world);
+
+    const events = processPeriodicStatuses(world, 0);
+    const dmg = events.find(ev => ev.type === 'status.periodic.damage');
+    expect(dmg).toBeDefined();
+    expect(dmg!.payload.description).toBe('Torch Ghoul takes 3 damage from Burning');
+    expect(dmg!.payload.statusName).toBe('Burning');
+    expect(dmg!.payload.entityName).toBe('Torch Ghoul');
+    // Presentation matches the sibling combat.damage.applied metadata.
+    expect(dmg!.presentation?.channels).toContain('objective');
+    expect(dmg!.presentation?.priority).toBe('high');
+  });
+
+  it('status.periodic.heal carries description + presentation and reports the ACTUAL healed amount', () => {
+    const e = makeEntity({ name: 'Pilgrim', resources: { hp: 19, maxHp: 20 } });
+    const world = makeWorld([e], 0);
+    applyStatus(e, 'regen', 0, {
+      duration: 3,
+      data: { periodicKind: 'heal', periodTicks: 1, amount: 4, resource: 'hp' },
+    }, world);
+
+    const events = processPeriodicStatuses(world, 0);
+    const heal = events.find(ev => ev.type === 'status.periodic.heal');
+    expect(heal).toBeDefined();
+    // Capped at maxHp: only 1 actually healed, and the text says so.
+    expect(heal!.payload.description).toBe('Pilgrim recovers 1 hp from Regenerating');
+    expect(heal!.payload.statusName).toBe('Regenerating');
+    expect(heal!.presentation?.channels).toContain('objective');
+  });
+
+  it('an unregistered statusId degrades to the raw id in the description (never throws)', () => {
+    const e = makeEntity({ resources: { hp: 20, maxHp: 20 } });
+    const world = makeWorld([e], 0);
+    applyStatus(e, 'mystery-dot', 0, {
+      duration: 2,
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 1 },
+    }, world);
+
+    const events = processPeriodicStatuses(world, 0);
+    const dmg = events.find(ev => ev.type === 'status.periodic.damage');
+    expect(dmg!.payload.description).toBe('E1 takes 1 damage from mystery-dot');
+  });
+
+  it('a paired resource.changed fires alongside each periodic tick (HP bars stay honest)', () => {
+    const e = makeEntity({ resources: { hp: 20, maxHp: 20 } });
+    const world = makeWorld([e], 0);
+    applyStatus(e, 'burning', 0, {
+      duration: 4,
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 3 },
+    }, world);
+
+    const events = processPeriodicStatuses(world, 0);
+    const rcIdx = events.findIndex(ev => ev.type === 'resource.changed');
+    const dmgIdx = events.findIndex(ev => ev.type === 'status.periodic.damage');
+    expect(rcIdx).toBeGreaterThanOrEqual(0);
+    const rc = events[rcIdx];
+    expect(rc.payload.entityId).toBe('e1');
+    expect(rc.payload.resource).toBe('hp');
+    expect(rc.payload.previous).toBe(20);
+    expect(rc.payload.current).toBe(17);
+    expect(rc.payload.delta).toBe(-3);
+    // Ordered AFTER its damage event — same order combat-core uses.
+    expect(rcIdx).toBeGreaterThan(dmgIdx);
+  });
+
+  it('heal ticks pair a resource.changed with the actual (capped) delta', () => {
+    const e = makeEntity({ resources: { hp: 19, maxHp: 20 } });
+    const world = makeWorld([e], 0);
+    applyStatus(e, 'regen', 0, {
+      duration: 3,
+      data: { periodicKind: 'heal', periodTicks: 1, amount: 4, resource: 'hp' },
+    }, world);
+
+    const events = processPeriodicStatuses(world, 0);
+    const rc = events.find(ev => ev.type === 'resource.changed');
+    expect(rc).toBeDefined();
+    expect(rc!.payload.previous).toBe(19);
+    expect(rc!.payload.current).toBe(20);
+    expect(rc!.payload.delta).toBe(1);
+  });
+
+  it('expiry is signalled renderably: status.periodic.expired carries a description', () => {
+    const e = makeEntity({ resources: { hp: 50, maxHp: 50 } });
+    const world = makeWorld([e], 0);
+    applyStatus(e, 'burning', 0, {
+      duration: 2,
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 1 },
+    }, world);
+
+    let expired: ResolvedEvent | undefined;
+    for (let t = 0; t <= 2; t++) {
+      world.meta.tick = t;
+      const evs = processPeriodicStatuses(world, t);
+      expired ??= evs.find(ev => ev.type === 'status.periodic.expired');
+    }
+    expect(expired).toBeDefined();
+    expect(expired!.payload.description).toBe('Burning fades from E1');
+    expect(expired!.payload.statusName).toBe('Burning');
+    expect(expired!.presentation?.channels).toContain('objective');
+  });
+
+  it('a DoT kill carries defeat presentation matching combat-core defeats', () => {
+    const e = makeEntity({ resources: { hp: 2, maxHp: 20 } });
+    const world = makeWorld([e], 0);
+    applyStatus(e, 'burning', 0, {
+      duration: 4,
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 5 },
+    }, world);
+
+    const events = processPeriodicStatuses(world, 0);
+    const defeat = events.find(ev => ev.type === 'combat.entity.defeated');
+    expect(defeat).toBeDefined();
+    expect(defeat!.presentation?.channels).toContain('narrator');
+    expect(defeat!.presentation?.priority).toBe('critical');
+  });
+
+  it('descriptions stay deterministic — same seed, byte-identical periodic event payloads', () => {
+    const run = () => {
+      const e = makeEntity({ resources: { hp: 30, maxHp: 30 } });
+      const world = makeWorld([e], 0, 7);
+      applyStatus(e, 'burning', 0, {
+        duration: 3,
+        data: { periodicKind: 'damage', periodTicks: 1, amount: 2 },
+      }, world);
+      const all: ResolvedEvent[] = [];
+      for (let t = 0; t <= 3; t++) {
+        world.meta.tick = t;
+        all.push(...processPeriodicStatuses(world, t));
+      }
+      return JSON.stringify(all.map(ev => [ev.type, ev.payload]));
+    };
+    expect(run()).toBe(run());
+  });
+});

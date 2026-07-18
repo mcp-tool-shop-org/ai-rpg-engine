@@ -3,6 +3,7 @@
 // Tools declare whether they mutate (require confirmation).
 
 import type { ChatTool, ChatToolParams, ChatToolResult, PlannedAction } from './chat-types.js';
+import type { GeneratedContentResult } from './validators.js';
 import { suggestNext } from './commands/suggest-next.js';
 import { critiqueContent } from './commands/critique-content.js';
 import { improveContent } from './commands/improve-content.js';
@@ -144,6 +145,7 @@ const scaffoldTool: ChatTool = {
     const a = action(cmdName, `Generate a ${kind} with theme "${theme}"`, false);
 
     let yaml: string;
+    let validation: GeneratedContentResult | undefined;
     let idMatch: RegExpMatchArray | null = null;
 
     switch (kind) {
@@ -151,36 +153,42 @@ const scaffoldTool: ChatTool = {
         const r = await createRoom(p.client, { theme, sessionContext: p.sessionContext });
         if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
         yaml = r.yaml;
+        validation = r.validation;
         break;
       }
       case 'faction': {
         const r = await createFaction(p.client, { theme, sessionContext: p.sessionContext });
         if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
         yaml = r.yaml;
+        validation = r.validation;
         break;
       }
       case 'district': {
         const r = await createDistrict(p.client, { theme, sessionContext: p.sessionContext });
         if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
         yaml = r.yaml;
+        validation = r.validation;
         break;
       }
       case 'quest': {
         const r = await createQuest(p.client, { theme, sessionContext: p.sessionContext });
         if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
         yaml = r.yaml;
+        validation = r.validation;
         break;
       }
       case 'location-pack': {
         const r = await createLocationPack(p.client, { theme, sessionContext: p.sessionContext });
         if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
         yaml = r.yaml;
+        validation = r.validation;
         break;
       }
       case 'encounter-pack': {
         const r = await createEncounterPack(p.client, { theme, sessionContext: p.sessionContext });
         if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
         yaml = r.yaml;
+        validation = r.validation;
         break;
       }
       default:
@@ -195,9 +203,24 @@ const scaffoldTool: ChatTool = {
       : kind === 'district' ? 'districts'
       : 'packs';
 
+    // Surface validation instead of discarding it (v2.6 Stage C F-b8d1a6e3):
+    // the commands validate every draft, and the CLI prints the warnings, but
+    // the chat path used to invite the user to save schema-invalid YAML with
+    // zero indication — the failure then resurfaced at strict engine load,
+    // far from its cause.
+    let validationNote = '';
+    if (validation && !validation.valid) {
+      const errors = validation.validation.errors;
+      const shown = errors.slice(0, 5).map(e => `  - ${e.path}: ${e.message}`);
+      if (errors.length > 5) shown.push(`  - ...and ${errors.length - 5} more`);
+      validationNote = `\n\nWarning: this ${kind} has ${errors.length} validation issue(s) and may fail strict engine load:\n`
+        + shown.join('\n')
+        + '\nAsk me to improve it, or run "ai explain-validation-error" for a plain-English fix guide.';
+    }
+
     return {
       ok: true,
-      summary: `Generated ${kind}: ${artifactId}\n\nYou can save this with: "write this to <filename>.yaml"`,
+      summary: `Generated ${kind}: ${artifactId}${validationNote}\n\nYou can save this with: "write this to <filename>.yaml"`,
       output: yaml,
       actions: [executed(a, `Generated ${kind}: ${artifactId}`)],
       sessionEvents: [{ kind: 'artifact_created', detail: `${artifactKind}/${artifactId}` }],

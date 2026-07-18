@@ -23,8 +23,11 @@ import {
   createAbilityReview,
   registerStatusDefinitions,
   buildCombatStack,
+  aggressiveProfile,
+  cautiousProfile,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatResourceProfile } from '@ai-rpg-engine/modules';
+import * as engineModules from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatResourceProfile, IntentProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -90,6 +93,37 @@ const vampireCombatProfile: CombatResourceProfile = {
   ],
 };
 
+// ─── Intent profiles (F1-cs-a) ──────────────────────────────────────────────
+// Every hostile entity in content.ts declares an ai.profileId. The cognition
+// config must supply an IntentProfile for each declared id — with an empty
+// profileMap no enemy ever resolves an intent, so enemies never act.
+// `calculating` is a newer built-in; resolve it from the installed modules
+// build when present, otherwise back the same id with the closest established
+// behavior so every declared id still resolves.
+function resolveBuiltinProfile(
+  id: 'territorial' | 'calculating',
+  fallbackEvaluate: IntentProfile['evaluate'],
+): IntentProfile {
+  const candidate = (engineModules as unknown as Record<string, unknown>)[`${id}Profile`] as
+    | IntentProfile
+    | undefined;
+  if (candidate && candidate.id === id && typeof candidate.evaluate === 'function') {
+    return candidate;
+  }
+  return { id, evaluate: fallbackEvaluate };
+}
+
+/**
+ * Intent profiles wired into this pack's cognition config:
+ * - feral-thrall → aggressive (bloodlust-driven feeder)
+ * - witch-hunter → calculating (methodical hunter who picks his moment)
+ * - elder-vampire → calculating (court schemer who feeds selectively)
+ */
+export const vampireIntentProfiles: IntentProfile[] = [
+  aggressiveProfile,
+  resolveBuiltinProfile('calculating', cautiousProfile.evaluate),
+];
+
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(vampireStatusDefinitions);
 
@@ -101,7 +135,10 @@ export function createGame(seed?: number): Engine {
     biasTags: ['vampire', 'feral', 'hunter'],
     engagement: { backlineTags: ['ranged', 'caster', 'thrall'] },
     recovery: { safeZoneTags: ['safe', 'opulent'] },
-    cognition: { decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } },
+    cognition: {
+      profiles: vampireIntentProfiles,
+      decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 },
+    },
   });
 
   const engine = new Engine({
@@ -114,7 +151,7 @@ export function createGame(seed?: number): Engine {
       ...combat.modules,
       createInventoryCore([bloodVialEffect]),
       createDialogueCore([duchessDialogue]),
-      createPerceptionFilter(),
+      createPerceptionFilter({ perceptionStat: 'cunning' }),
       createProgressionCore({
         trees: [bloodMasteryTree],
         rewards: [{
@@ -191,13 +228,13 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity({ ...player });
-  engine.store.addEntity({ ...duchessMorvaine });
-  engine.store.addEntity({ ...cassius });
-  engine.store.addEntity({ ...servantElara });
-  engine.store.addEntity({ ...witchHunter });
-  engine.store.addEntity({ ...feralThrall });
-  engine.store.addEntity({ ...elderVampire });
+  engine.store.addEntity(structuredClone(player));
+  engine.store.addEntity(structuredClone(duchessMorvaine));
+  engine.store.addEntity(structuredClone(cassius));
+  engine.store.addEntity(structuredClone(servantElara));
+  engine.store.addEntity(structuredClone(witchHunter));
+  engine.store.addEntity(structuredClone(feralThrall));
+  engine.store.addEntity(structuredClone(elderVampire));
 
   // Set player
   engine.store.state.playerId = 'player';

@@ -27,4 +27,17 @@ describe('gladiatorMinimalRuleset', () => {
       }
     }
   });
+
+  // F-e83a091f: this description was copy-pasted verbatim from starter-fantasy
+  // ("40 + instinct*5 + will*2") — gladiator has no 'instinct'/'will' stats
+  // at all. Per buildCombatFormulas' real disengageChance formula
+  // (packages/modules/src/combat-builders.ts: 40 + precision*5 + resolve*2,
+  // clamped 15-90), gladiator's precision/resolve stats are agility/showmanship.
+  it('disengage-chance formula description matches this pack\'s real stats', () => {
+    const formula = gladiatorMinimalRuleset.formulas.find((f) => f.id === 'disengage-chance')!;
+    expect(formula.description).toContain('agility');
+    expect(formula.description).toContain('showmanship');
+    expect(formula.description).not.toContain('instinct');
+    expect(formula.description).not.toContain('will');
+  });
 });

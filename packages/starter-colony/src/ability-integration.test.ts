@@ -4,7 +4,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
 import type { EntityState } from '@ai-rpg-engine/core';
-import type { AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
 import { statusCore } from '@ai-rpg-engine/modules';
 import {
   createAbilityCore,
@@ -15,78 +14,23 @@ import {
   clearStatusRegistry,
 } from '@ai-rpg-engine/modules';
 import { scoreAbilityUse } from '@ai-rpg-engine/modules';
+// F-2e1879af: import the real shipped fixtures instead of hand-duplicating
+// them. The inline copies used to drift silently from content.ts — a future
+// balance/mechanics edit to a shipped ability's cost, check difficulty, or
+// effect amount would not have been caught by its own "integration" test,
+// which kept passing against a frozen hand-copied duplicate.
+import {
+  plasmaBurst,
+  emergencyProtocol,
+  systemOverride,
+  rebootSystems,
+  colonyAbilities as allColonyAbilities,
+  colonyStatusDefinitions as colonyStatusDefs,
+} from './content.js';
 
 const zones = [
   { id: 'zone-a', roomId: 'test', name: 'Command Module', tags: [] as string[], neighbors: ['zone-b'] },
   { id: 'zone-b', roomId: 'test', name: 'Perimeter', tags: [] as string[], neighbors: ['zone-a'] },
-];
-
-// --- Ability definitions (inline, matching content.ts) ---
-
-const plasmaBurst: AbilityDefinition = {
-  id: 'plasma-burst', name: 'Plasma Burst', verb: 'use-ability',
-  tags: ['combat', 'damage'],
-  costs: [{ resourceId: 'stamina', amount: 2 }, { resourceId: 'power', amount: 10 }],
-  target: { type: 'single' },
-  checks: [{ stat: 'engineering', difficulty: 5, onFail: 'half-damage' }],
-  effects: [
-    { type: 'damage', target: 'target', params: { amount: 5, damageType: 'energy' } },
-  ],
-  cooldown: 2,
-  requirements: [{ type: 'has-tag', params: { tag: 'colonist' } }],
-};
-
-const emergencyProtocol: AbilityDefinition = {
-  id: 'emergency-protocol', name: 'Emergency Protocol', verb: 'use-ability',
-  tags: ['support', 'heal'],
-  costs: [{ resourceId: 'stamina', amount: 3 }],
-  target: { type: 'self' },
-  checks: [{ stat: 'command', difficulty: 5, onFail: 'abort' }],
-  effects: [
-    { type: 'heal', target: 'actor', params: { amount: 4, resource: 'hp' } },
-    { type: 'resource-modify', target: 'actor', params: { resource: 'power', amount: 5 } },
-  ],
-  cooldown: 4,
-};
-
-const systemOverride: AbilityDefinition = {
-  id: 'system-override', name: 'System Override', verb: 'use-ability',
-  tags: ['combat', 'debuff'],
-  costs: [
-    { resourceId: 'stamina', amount: 2 },
-    { resourceId: 'power', amount: 15 },
-  ],
-  target: { type: 'single' },
-  checks: [{ stat: 'engineering', difficulty: 6, onFail: 'abort' }],
-  effects: [
-    { type: 'apply-status', target: 'target', params: { statusId: 'disrupted', duration: 2, stacking: 'replace' } },
-    { type: 'stat-modify', target: 'target', params: { stat: 'awareness', amount: -2 } },
-  ],
-  cooldown: 4,
-  requirements: [{ type: 'has-tag', params: { tag: 'colonist' } }],
-};
-
-const rebootSystems: AbilityDefinition = {
-  id: 'reboot-systems', name: 'Reboot Systems', verb: 'use-ability',
-  tags: ['support', 'cleanse'],
-  costs: [{ resourceId: 'stamina', amount: 2 }, { resourceId: 'power', amount: 5 }],
-  target: { type: 'self' },
-  checks: [{ stat: 'engineering', difficulty: 5, onFail: 'abort' }],
-  effects: [
-    { type: 'remove-status-by-tag', target: 'actor', params: { tags: 'breach,control' } },
-  ],
-  cooldown: 3,
-  requirements: [{ type: 'has-tag', params: { tag: 'colonist' } }],
-};
-
-const allColonyAbilities = [plasmaBurst, emergencyProtocol, systemOverride, rebootSystems];
-
-const colonyStatusDefs: StatusDefinition[] = [
-  {
-    id: 'disrupted', name: 'Disrupted',
-    tags: ['breach', 'control', 'debuff'], stacking: 'replace',
-    duration: { type: 'ticks', value: 2 },
-  },
 ];
 
 // --- Engine builder ---

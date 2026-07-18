@@ -15,7 +15,13 @@ import {
   selectIntent,
   aggressiveProfile,
   cautiousProfile,
+  territorialProfile,
+  calculatingProfile,
+  BUILTIN_INTENT_PROFILES,
+  resolveIntentProfile,
+  selectActionForEntity,
 } from './cognition-core.js';
+import type { IntentProfile } from './cognition-core.js';
 import { traversalCore } from './traversal-core.js';
 import { combatCore, COMBAT_STATES } from './combat-core.js';
 import { statusCore, hasStatus, applyStatus } from './status-core.js';
@@ -622,5 +628,340 @@ describe('Morale-triggered FLEEING', () => {
 
     const countAfter = engine.world.entities.npc1.statuses.filter(s => s.statusId === COMBAT_STATES.FLEEING).length;
     expect(countAfter).toBe(countBefore);
+  });
+});
+
+// ============================================================
+// F1-mod-a — territorial & calculating intent profiles
+// ============================================================
+
+const zonesWithExit = [
+  { id: 'a', roomId: 'test', name: 'A', tags: [] as string[], neighbors: ['b'] },
+  { id: 'b', roomId: 'test', name: 'B', tags: [] as string[], neighbors: ['a'] },
+];
+
+const makeWarden = (overrides?: Partial<EntityState>): EntityState => makeAIEntity('warden', 'Crypt Warden', 'a', {
+  ai: { profileId: 'territorial', goals: ['protect-crypt'], fears: [], alertLevel: 0, knowledge: {} },
+  ...overrides,
+});
+
+const makeSchemer = (overrides?: Partial<EntityState>): EntityState => makeAIEntity('schemer', 'Mastermind', 'a', {
+  ai: { profileId: 'calculating', goals: ['eliminate-witnesses'], fears: [], alertLevel: 0, knowledge: {} },
+  ...overrides,
+});
+
+describe('Territorial profile', () => {
+  it('attacks an intruder in its zone on contact (no prior hostile belief needed)', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [makePlayer('a'), makeWarden()],
+      zones: zonesWithExit,
+    });
+
+    const cog = getCognition(engine.world, 'warden');
+    const intent = selectIntent(engine.world.entities.warden, cog, engine.world, territorialProfile);
+    expect(intent?.verb).toBe('attack');
+    expect(intent?.targetIds).toContain('player');
+  });
+
+  it('does not pursue a fleeing target — holds the zone (aggressive would still attack)', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [makePlayer('a'), makeWarden()],
+      zones: zonesWithExit,
+    });
+
+    applyStatus(engine.world.entities.player, COMBAT_STATES.FLEEING, 1, { duration: 3 });
+
+    const cog = getCognition(engine.world, 'warden');
+    const intent = selectIntent(engine.world.entities.warden, cog, engine.world, territorialProfile);
+    expect(intent?.verb).toBe('guard');
+    expect(intent?.reason).toContain('hold zone');
+
+    // Contrast: an aggressive profile on the same state still swings at the fleeing target.
+    const aggIntent = selectIntent(engine.world.entities.warden, cog, engine.world, aggressiveProfile);
+    expect(aggIntent?.verb).toBe('attack');
+  });
+
+  it('guards when no valid target is present (allies are not intruders)', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        makePlayer('b'), // out of the warden's zone
+        makeWarden(),
+        makeAIEntity('stalker', 'Crypt Stalker', 'a'), // same type => ally, not an intruder
+      ],
+      zones: zonesWithExit,
+    });
+
+    const cog = getCognition(engine.world, 'warden');
+    const intent = selectIntent(engine.world.entities.warden, cog, engine.world, territorialProfile);
+    expect(intent?.verb).toBe('guard');
+    expect(intent?.reason).toContain('holding territory');
+  });
+
+  it('holds ground at low morale where aggressive would disengage', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [makePlayer('a'), makeWarden()],
+      zones: zonesWithExit,
+    });
+
+    const cog = getCognition(engine.world, 'warden');
+    cog.morale = 15;
+
+    const territorialIntent = selectIntent(engine.world.entities.warden, cog, engine.world, territorialProfile);
+    expect(territorialIntent?.verb).toBe('guard');
+    expect(territorialIntent?.reason).toContain('holding ground');
+
+    const aggIntent = selectIntent(engine.world.entities.warden, cog, engine.world, aggressiveProfile);
+    expect(aggIntent?.verb).toBe('disengage');
+  });
+
+  it('fleeing territorial entity can only disengage', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [makePlayer('a'), makeWarden()],
+      zones: zonesWithExit,
+    });
+
+    applyStatus(engine.world.entities.warden, COMBAT_STATES.FLEEING, 1, { duration: 3 });
+
+    const cog = getCognition(engine.world, 'warden');
+    const intent = selectIntent(engine.world.entities.warden, cog, engine.world, territorialProfile);
+    expect(intent?.verb).toBe('disengage');
+    expect(intent?.priority).toBe(100);
+  });
+});
+
+describe('Calculating profile', () => {
+  it('observes instead of attacking when it has no advantage', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        { ...makePlayer('a'), resources: { hp: 30, maxHp: 30, stamina: 5 } }, // healthy
+        makeSchemer(),
+      ],
+      zones: zonesWithExit,
+    });
+
+    const cog = getCognition(engine.world, 'schemer');
+    const intent = selectIntent(engine.world.entities.schemer, cog, engine.world, calculatingProfile);
+    expect(intent?.verb).toBe('inspect');
+    expect(intent?.reason).toContain('waiting for an advantage');
+  });
+
+  it('strikes when the target is weakened', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        { ...makePlayer('a'), resources: { hp: 10, maxHp: 30, stamina: 5 } }, // below half
+        makeSchemer(),
+      ],
+      zones: zonesWithExit,
+    });
+
+    const cog = getCognition(engine.world, 'schemer');
+    const intent = selectIntent(engine.world.entities.schemer, cog, engine.world, calculatingProfile);
+    expect(intent?.verb).toBe('attack');
+    expect(intent?.targetIds).toContain('player');
+    expect(intent?.reason).toContain('weakened');
+  });
+
+  it('strikes when numbers favor it', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        { ...makePlayer('a'), resources: { hp: 30, maxHp: 30, stamina: 5 } }, // healthy
+        makeSchemer(),
+        makeAIEntity('henchman', 'Henchman', 'a'), // same type => ally: 2 vs 1
+      ],
+      zones: zonesWithExit,
+    });
+
+    const cog = getCognition(engine.world, 'schemer');
+    const intent = selectIntent(engine.world.entities.schemer, cog, engine.world, calculatingProfile);
+    expect(intent?.verb).toBe('attack');
+    expect(intent?.reason).toContain('numbers');
+  });
+
+  it('avoids the low-percentage attack on a guarded, healthy target even with numbers', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        { ...makePlayer('a'), resources: { hp: 30, maxHp: 30, stamina: 5 } },
+        makeSchemer(),
+        makeAIEntity('henchman', 'Henchman', 'a'),
+      ],
+      zones: zonesWithExit,
+    });
+
+    applyStatus(engine.world.entities.player, COMBAT_STATES.GUARDED, 1, { duration: 3 });
+
+    const cog = getCognition(engine.world, 'schemer');
+    const intent = selectIntent(engine.world.entities.schemer, cog, engine.world, calculatingProfile);
+    expect(intent?.verb).not.toBe('attack');
+    expect(['guard', 'inspect']).toContain(intent?.verb);
+  });
+
+  it('keeps its guard up when hurt and holding no advantage', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        { ...makePlayer('a'), resources: { hp: 30, maxHp: 30, stamina: 5 } },
+        makeSchemer({ resources: { hp: 8, maxHp: 30, stamina: 5 } }),
+      ],
+      zones: zonesWithExit,
+    });
+
+    const cog = getCognition(engine.world, 'schemer');
+    const intent = selectIntent(engine.world.entities.schemer, cog, engine.world, calculatingProfile);
+    expect(intent?.verb).toBe('guard');
+    expect(intent?.reason).toContain('defensive');
+  });
+
+  it('disengages decisively when morale collapses', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        { ...makePlayer('a'), resources: { hp: 10, maxHp: 30, stamina: 5 } }, // even an advantaged fight
+        makeSchemer(),
+      ],
+      zones: zonesWithExit,
+    });
+
+    const cog = getCognition(engine.world, 'schemer');
+    cog.morale = 20;
+    const intent = selectIntent(engine.world.entities.schemer, cog, engine.world, calculatingProfile);
+    expect(intent?.verb).toBe('disengage');
+  });
+
+  it('fleeing calculating entity can only disengage', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [makePlayer('a'), makeSchemer()],
+      zones: zonesWithExit,
+    });
+
+    applyStatus(engine.world.entities.schemer, COMBAT_STATES.FLEEING, 1, { duration: 3 });
+
+    const cog = getCognition(engine.world, 'schemer');
+    const intent = selectIntent(engine.world.entities.schemer, cog, engine.world, calculatingProfile);
+    expect(intent?.verb).toBe('disengage');
+    expect(intent?.priority).toBe(100);
+  });
+});
+
+describe('Built-in intent profile resolution', () => {
+  it('exposes all four built-ins with stable ids', () => {
+    expect(BUILTIN_INTENT_PROFILES.map((p) => p.id)).toEqual([
+      'aggressive', 'cautious', 'territorial', 'calculating',
+    ]);
+  });
+
+  it('resolveIntentProfile finds every built-in by id', () => {
+    expect(resolveIntentProfile('aggressive')).toBe(aggressiveProfile);
+    expect(resolveIntentProfile('cautious')).toBe(cautiousProfile);
+    expect(resolveIntentProfile('territorial')).toBe(territorialProfile);
+    expect(resolveIntentProfile('calculating')).toBe(calculatingProfile);
+    expect(resolveIntentProfile('no-such-profile')).toBeUndefined();
+  });
+
+  it('caller-supplied profiles override built-ins by id', () => {
+    const custom: IntentProfile = {
+      id: 'territorial',
+      evaluate: () => [{ verb: 'sing', priority: 1, reason: 'custom' }],
+    };
+    expect(resolveIntentProfile('territorial', [custom])).toBe(custom);
+  });
+});
+
+describe('selectActionForEntity (turn-driver helper)', () => {
+  it('resolves the entity profile by id and returns the chosen action in one call', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [makePlayer('a'), makeWarden()],
+      zones: zonesWithExit,
+    });
+
+    const sel = selectActionForEntity(engine.world, 'warden');
+    expect(sel).not.toBeNull();
+    expect(sel!.requestedProfileId).toBe('territorial');
+    expect(sel!.profileId).toBe('territorial');
+    expect(sel!.usedFallback).toBe(false);
+    expect(sel!.verb).toBe('attack');
+    expect(sel!.targetIds).toContain('player');
+    // options are the full evaluated list, highest priority first, chosen = options[0]
+    expect(sel!.options[0].verb).toBe(sel!.verb);
+    for (let i = 1; i < sel!.options.length; i++) {
+      expect(sel!.options[i - 1].priority).toBeGreaterThanOrEqual(sel!.options[i].priority);
+    }
+  });
+
+  it('resolves the calculating profile id shipped in starter content', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        { ...makePlayer('a'), resources: { hp: 30, maxHp: 30, stamina: 5 } },
+        makeSchemer(),
+      ],
+      zones: zonesWithExit,
+    });
+
+    const sel = selectActionForEntity(engine.world, 'schemer');
+    expect(sel).not.toBeNull();
+    expect(sel!.profileId).toBe('calculating');
+    expect(sel!.usedFallback).toBe(false);
+    expect(sel!.verb).toBe('inspect'); // no advantage yet — observes
+  });
+
+  it('falls back to aggressive for an unknown profile id instead of doing nothing', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [
+        makePlayer('a'),
+        makeAIEntity('brute', 'Brute', 'a', {
+          ai: { profileId: 'brooding-menace', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+        }),
+      ],
+      zones: zonesWithExit,
+    });
+
+    const sel = selectActionForEntity(engine.world, 'brute');
+    expect(sel).not.toBeNull();
+    expect(sel!.requestedProfileId).toBe('brooding-menace');
+    expect(sel!.profileId).toBe('aggressive');
+    expect(sel!.usedFallback).toBe(true);
+    expect(sel!.verb).toBe('attack'); // still acts — the original bug was "falls back to nothing"
+  });
+
+  it('returns null for missing, non-AI, and downed entities', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [makePlayer('a'), makeWarden()],
+      zones: zonesWithExit,
+    });
+
+    expect(selectActionForEntity(engine.world, 'ghost')).toBeNull();
+    expect(selectActionForEntity(engine.world, 'player')).toBeNull(); // player has no ai state
+
+    engine.world.entities.warden.resources.hp = 0;
+    expect(selectActionForEntity(engine.world, 'warden')).toBeNull();
+  });
+
+  it('caller-supplied profiles take precedence over built-ins', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCognitionCore()],
+      entities: [makePlayer('a'), makeWarden()],
+      zones: zonesWithExit,
+    });
+
+    const custom: IntentProfile = {
+      id: 'territorial',
+      evaluate: () => [{ verb: 'taunt', priority: 99, reason: 'custom override' }],
+    };
+    const sel = selectActionForEntity(engine.world, 'warden', { profiles: [custom] });
+    expect(sel!.verb).toBe('taunt');
+    expect(sel!.profileId).toBe('territorial');
   });
 });

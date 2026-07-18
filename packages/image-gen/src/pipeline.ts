@@ -17,11 +17,37 @@ export class ImageGenError extends Error {
   readonly hint?: string;
 
   constructor(failure: GenerationFailure) {
-    super(failure.error);
+    // Fold the recovery hint into the message (v2.6 Stage C F-72a9c4d0):
+    // consumers that log err.message — and every uncaught-exception display —
+    // otherwise show only 'ComfyUI request failed: fetch failed' while the
+    // actionable 'Is ComfyUI running at ...?' hint is dropped at the last hop.
+    // The structured `.hint` field is kept for callers that branch on it.
+    super(failure.hint ? `${failure.error} — ${failure.hint}` : failure.error);
     this.name = 'ImageGenError';
     this.code = failure.code;
     this.hint = failure.hint;
   }
+}
+
+/** What the pipeline knows about a provider degradation it is about to make. */
+export type ResolveProviderFallbackInfo = {
+  /** Name of the provider that was skipped. */
+  preferred: string;
+  /** Name of the provider selected instead. */
+  fallback: string;
+  /** Why the preferred provider was skipped. */
+  reason: string;
+};
+
+export type ResolveProviderOptions = {
+  onFallback?: (info: ResolveProviderFallbackInfo) => void;
+};
+
+function defaultOnFallback(info: ResolveProviderFallbackInfo): void {
+  console.error(
+    `[image-gen] provider "${info.preferred}" unavailable (${info.reason}); `
+    + `falling back to "${info.fallback}"`,
+  );
 }
 
 /**
@@ -47,21 +73,35 @@ export class ImageGenError extends Error {
  * @param preferred The provider you would like to use (e.g. ComfyUI).
  * @param fallback  Used when `preferred` is unavailable. Defaults to a new
  *                  {@link PlaceholderProvider}, which is always available.
+ * @param opts      `onFallback` observes the degradation. The engine contract
+ *                  is warn-AND-degrade: the default emits a one-line stderr
+ *                  breadcrumb naming the skipped provider, why, and the
+ *                  fallback (v2.6 Stage C F-6c3d9a48 — the swap used to be
+ *                  fully silent). Pass a no-op to silence it, or your own
+ *                  hook to route it elsewhere.
  * @returns `preferred` if available, otherwise `fallback`.
  */
 export async function resolveProvider(
   preferred: ImageProvider,
   fallback: ImageProvider = new PlaceholderProvider(),
+  opts?: ResolveProviderOptions,
 ): Promise<ImageProvider> {
+  const onFallback = opts?.onFallback ?? defaultOnFallback;
   let available = false;
+  let reason = 'isAvailable() returned false';
   try {
     available = await preferred.isAvailable();
-  } catch {
+  } catch (err) {
     // A throwing availability probe (e.g. DNS failure) counts as unavailable;
     // never let provider selection itself crash the caller.
     available = false;
+    reason = `availability check threw: ${err instanceof Error ? err.message : String(err)}`;
   }
-  return available ? preferred : fallback;
+  if (!available) {
+    onFallback({ preferred: preferred.name, fallback: fallback.name, reason });
+    return fallback;
+  }
+  return preferred;
 }
 
 export type PipelineOptions = {
@@ -95,10 +135,19 @@ export async function generatePortrait(
 
   const characterKey = `${request.characterName}::${request.archetypeName}`;
 
+  // Mark WHO produced this asset (v2.6 Stage C F-6c3d9a48): without a
+  // registry-level tell, a degraded placeholder was indistinguishable from a
+  // real render, and ensurePortrait would treat it as final forever. The
+  // 'placeholder' tag is what lets a later real render replace it.
+  const isPlaceholderResult = provider.name === 'placeholder'
+    || result.mimeType === 'image/svg+xml';
+
   const tags = [
     'portrait',
     request.genre,
     `char:${characterKey}`,
+    `provider:${provider.name}`,
+    ...(isPlaceholderResult ? ['placeholder'] : []),
     ...request.tags.filter((t) => t !== 'player'),
     ...(opts?.extraTags ?? []),
   ];
@@ -116,9 +165,28 @@ export async function generatePortrait(
 }
 
 /**
+ * True when a stored asset is a degraded placeholder, not a real render.
+ * Primary signal: the 'placeholder' tag written by {@link generatePortrait}.
+ * Fallback signal for assets stored before tagging existed: the
+ * PlaceholderProvider is the pipeline's only SVG producer, so
+ * `image/svg+xml` identifies legacy placeholders too.
+ */
+function isPlaceholderAsset(m: AssetMetadata): boolean {
+  return (m.tags?.includes('placeholder') ?? false) || m.mimeType === 'image/svg+xml';
+}
+
+/**
  * Generate a portrait only if one doesn't already exist for this character.
  * Checks the store for an existing portrait with matching tags.
  * Returns existing metadata if found, otherwise generates a new one.
+ *
+ * Placeholder-poisoning guard (v2.6 Stage C F-6c3d9a48): a placeholder cached
+ * during a provider outage is NOT treated as final. It is reused only while
+ * the caller's provider would produce another placeholder anyway; as soon as
+ * a real provider is passed, the portrait is regenerated and the real render
+ * becomes the preferred match from then on. Without this, one ComfyUI outage
+ * permanently filled the registry with initials-on-a-color-square SVGs that
+ * no code path would ever regenerate.
  */
 export async function ensurePortrait(
   request: PortraitRequest,
@@ -133,11 +201,18 @@ export async function ensurePortrait(
   });
 
   const characterKey = `char:${request.characterName}::${request.archetypeName}`;
-  const match = existing.find(
-    (m) => m.tags?.includes(characterKey),
-  );
+  const matches = existing.filter((m) => m.tags?.includes(characterKey));
 
-  if (match) return match;
+  // A real render always wins.
+  const real = matches.find((m) => !isPlaceholderAsset(m));
+  if (real) return real;
+
+  // Only a placeholder is cached. Reuse it when this call would just make
+  // another placeholder; regenerate when a real provider is available.
+  const cachedPlaceholder = matches[0];
+  if (cachedPlaceholder && provider.name === 'placeholder') {
+    return cachedPlaceholder;
+  }
 
   return generatePortrait(request, provider, store, opts);
 }

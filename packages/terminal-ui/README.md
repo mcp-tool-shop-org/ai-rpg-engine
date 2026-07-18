@@ -24,27 +24,43 @@ npm install @ai-rpg-engine/terminal-ui
 
 ## What's Inside
 
-- **Event Renderer** — converts engine events into formatted terminal text
-- **Input Parser** — parses player commands into engine actions
-- **Color Themes** — ANSI color palettes for different game genres
-- **Layout Helpers** — status bars, room descriptions, entity lists
+- **Screen Renderer** — composes the full game screen from world state: labeled sections (Scene / Status / Log / Actions), an HP bar HUD (`HP 12/20 [######----]`), and a grouped, aligned action menu
+- **Event Renderer** — converts engine events into player-grade log lines
+- **Input Parser** — parses numbered menu picks and freeform text into engine actions
+- **Accessible Color** — optional ANSI emphasis that auto-disables for `NO_COLOR`, piped output, and dumb terminals; every screen is byte-identical plain text with codes stripped, so nothing is ever communicated by color alone
 
 ## Usage
 
 ```typescript
-import { TerminalRenderer, InputParser } from '@ai-rpg-engine/terminal-ui';
+import {
+  renderFullScreen,
+  parseActionSelection,
+  parseTextInput,
+} from '@ai-rpg-engine/terminal-ui';
 
-const renderer = new TerminalRenderer();
-const parser = new InputParser();
-
-// Render engine events
-for (const event of events) {
-  renderer.render(event);
-}
+// Compose the whole screen (color auto-detected; pass { color: false } to force plain)
+console.log(renderFullScreen(world, world.eventLog.slice(-8)));
 
 // Parse player input into actions
-const action = parser.parse('attack guard');
+const picked = parseActionSelection('3', world);      // numbered menu
+const typed = parseTextInput('attack warden', world); // freeform text
 ```
+
+## Narration & Audio (integration hook)
+
+`TurnPresenter` composes the presentation stack for each turn: it builds a validated `NarrationPlan` from the turn's events (tone/urgency from event kinds, sfx mapped through soundpack-core's cue table) and schedules it through the audio-director.
+
+```typescript
+import { TurnPresenter } from '@ai-rpg-engine/terminal-ui';
+
+const presenter = new TurnPresenter(); // hold one per session (real cooldowns)
+const { plan, styledNarration, audioCommands } = presenter.present(world, turnEvents);
+
+console.log(styledNarration); // narration emphasized by tone/urgency (Stage-D palette)
+// audioCommands → hand to your audio backend
+```
+
+**Honest ceiling:** this is a terminal — there is no terminal audio backend, and nothing here plays a sound. The terminal renders the plan's *text*. `audioCommands` (deterministic, cooldown/ducking-resolved, canonical soundpack `resourceId`s) are exposed so a GUI/web embedder with real audio output can play them via the `PresentationRenderer` contract from `@ai-rpg-engine/presentation`.
 
 ## Documentation
 

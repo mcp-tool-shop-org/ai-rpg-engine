@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/terminal-ui",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "description": "AI RPG Engine terminal renderer and input layer",
   "type": "module",
   "main": "./dist/index.js",
@@ -19,7 +19,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ai-rpg-engine/core": "*"
+    "@ai-rpg-engine/core": "*",
+    "@ai-rpg-engine/presentation": "*",
+    "@ai-rpg-engine/audio-director": "*",
+    "@ai-rpg-engine/soundpack-core": "*"
   },
   "license": "MIT",
   "author": "mcp-tool-shop",

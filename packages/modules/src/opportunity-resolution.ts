@@ -48,6 +48,15 @@ export type OpportunityFallout = {
   effects: OpportunityFalloutEffect[];
   /** One-line summary for director mode */
   summary: string;
+  /**
+   * Structured author signal, present only when `opp.kind` did not match any
+   * case in getKindFallout — e.g. a corrupted/schema-drifted save, a
+   * hand-built OpportunityState in test/content tooling, or a future
+   * OpportunityKind added without updating this switch (F-0e7a14c3). Absent
+   * when the kind resolved normally. Mirrors pressure-resolution.ts's
+   * PressureFallout.warnings.
+   */
+  warnings?: string[];
 };
 
 export type OpportunityResolutionContext = {
@@ -74,19 +83,35 @@ export function computeOpportunityFallout(
     resolvedAtTick: ctx.currentTick,
   };
 
-  const effects = getKindFallout(opp, resolutionType, ctx);
+  const kindEffects = getKindFallout(opp, resolutionType, ctx);
+  const effects = kindEffects ?? [];
   const summary = buildFalloutSummary(opp, resolutionType);
 
-  return { resolution, effects, summary };
+  // Loud no-op guard (F-0e7a14c3): an opportunity kind unknown to the switch
+  // used to fall through to an implicit `undefined` return, and the first
+  // consumer touching `.effects.length`/`.effects.map(...)` threw instead of
+  // degrading gracefully. Surface it as a structured warning for the product
+  // layer, mirroring pressure-resolution.ts's computeFallout.
+  const warnings: string[] = [];
+  if (kindEffects === null) {
+    warnings.push(
+      `opportunity kind '${opp.kind}' has no entry in getKindFallout — ` +
+      `resolution '${resolutionType}' produced zero effects. Add a case to ` +
+      `getKindFallout (opportunity-resolution.ts) for this kind.`,
+    );
+  }
+
+  return { resolution, effects, summary, ...(warnings.length > 0 ? { warnings } : {}) };
 }
 
 // --- Per-Kind Fallout ---
 
+/** Returns the effects for an opportunity kind, or `null` when the kind has no entry at all. */
 function getKindFallout(
   opp: OpportunityState,
   resolutionType: OpportunityResolutionType,
   ctx: OpportunityResolutionContext,
-): OpportunityFalloutEffect[] {
+): OpportunityFalloutEffect[] | null {
   switch (opp.kind) {
     case 'contract': return getContractFallout(opp, resolutionType, ctx);
     case 'favor-request': return getFavorRequestFallout(opp, resolutionType, ctx);
@@ -96,6 +121,14 @@ function getKindFallout(
     case 'escort': return getEscortFallout(opp, resolutionType, ctx);
     case 'investigation': return getInvestigationFallout(opp, resolutionType, ctx);
     case 'faction-job': return getFactionJobFallout(opp, resolutionType, ctx);
+    default: {
+      // Exhaustiveness gate (matches faction-agency.ts's resolveFactionAction
+      // pattern): a genuine future OpportunityKind addition fails to compile
+      // here until a case is added above; a runtime-only unknown kind (bad
+      // save data, hand-built test fixture) falls through to `null`.
+      const _exhaustive: never = opp.kind;
+      return null;
+    }
   }
 }
 

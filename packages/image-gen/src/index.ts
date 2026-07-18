@@ -17,4 +17,8 @@ export { PlaceholderProvider } from './placeholder-provider.js';
 export { ComfyUIProvider } from './comfyui-provider.js';
 export type { ComfyUIProviderOptions } from './comfyui-provider.js';
 export { generatePortrait, ensurePortrait, resolveProvider, ImageGenError } from './pipeline.js';
-export type { PipelineOptions } from './pipeline.js';
+export type {
+  PipelineOptions,
+  ResolveProviderOptions,
+  ResolveProviderFallbackInfo,
+} from './pipeline.js';

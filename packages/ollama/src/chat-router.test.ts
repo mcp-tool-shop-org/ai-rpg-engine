@@ -283,18 +283,24 @@ describe('classifyByLLM', () => {
     expect(r.confidence).toBe('medium');
   });
 
-  it('returns unknown on LLM failure', async () => {
+  // v2.6 Stage C F-c1a55f01 — an LLM CLIENT failure (daemon down, model not
+  // pulled) must be distinguishable from "the LLM ran and couldn't classify".
+  // The client's curated error (offline hint / pull command) is propagated via
+  // llmError so the engine can surface it instead of blaming the phrasing.
+  it('returns unknown WITH the client error on LLM failure', async () => {
     const client = failingClient();
     const r = await classifyByLLM(client, 'anything');
     expect(r.intent).toBe('unknown');
     expect(r.confidence).toBe('low');
+    expect(r.llmError).toBe('connection refused');
   });
 
-  it('returns unknown on non-JSON LLM response', async () => {
+  it('does NOT set llmError on a non-JSON LLM response (the client worked)', async () => {
     const client = mockClient('I cannot determine the intent');
     const r = await classifyByLLM(client, 'random gibberish');
     expect(r.intent).toBe('unknown');
     expect(r.confidence).toBe('low');
+    expect(r.llmError).toBeUndefined();
   });
 
   it('handles params as non-object gracefully', async () => {

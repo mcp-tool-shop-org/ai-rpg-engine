@@ -330,6 +330,69 @@ describe('Perception filter — custom layers', () => {
   });
 });
 
+describe('Perception filter — perception log cap (F-c68e150a)', () => {
+  // perceptionLog is persisted (rides WorldStore.serialize) but had NO size
+  // cap — the one ring-buffer-shaped trace log in this package without one
+  // (combat-review maxTraces=50, combat-recovery maxAftermathLog=20,
+  // narrative-authority objectiveLog=500). Every (AI entity x layer x event)
+  // match pushed an entry for BOTH successful and failed checks, growing the
+  // save file unboundedly over a long campaign.
+
+  const pingLayer = {
+    id: 'ping-layer',
+    eventPatterns: ['custom.ping'],
+    sense: 'sight' as const,
+    baseDifficulty: 20,
+    crossZone: false,
+    onPerceived: () => {},
+  };
+
+  function buildCapEngine(maxLogSize?: number) {
+    return createTestEngine({
+      modules: [
+        traversalCore,
+        createCognitionCore(),
+        createPerceptionFilter({ layers: [pingLayer], ...(maxLogSize !== undefined ? { maxLogSize } : {}) }),
+      ],
+      entities: [
+        makePlayer('a'),
+        makeAI('guard', 'Guard', 'b', 10),
+      ],
+      zones: [
+        { id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: ['b'] },
+        { id: 'b', roomId: 'test', name: 'B', tags: [], neighbors: ['a'], light: 10 },
+      ],
+    });
+  }
+
+  it('caps each entity log at the configured maxLogSize, keeping the most recent entries', () => {
+    const engine = buildCapEngine(5);
+
+    const eventIds: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      const evt = engine.store.emitEvent('custom.ping', { zoneId: 'b' }, { actorId: 'player' });
+      eventIds.push(evt.id);
+    }
+
+    const log = getPerceptionLog(engine.world, 'guard');
+    expect(log.length).toBe(5);
+    // Most recent 5 survive, oldest 7 pruned
+    expect(log.map((p) => p.eventId)).toEqual(eventIds.slice(-5));
+  });
+
+  it('applies a bounded default cap when no maxLogSize is configured', () => {
+    const engine = buildCapEngine();
+
+    for (let i = 0; i < 230; i++) {
+      engine.store.emitEvent('custom.ping', { zoneId: 'b' }, { actorId: 'player' });
+    }
+
+    const log = getPerceptionLog(engine.world, 'guard');
+    expect(log.length).toBeLessThanOrEqual(200);
+    expect(log.length).toBeGreaterThan(0);
+  });
+});
+
 describe('Perception filter — interpretation levels', () => {
   it('high clarity perception gives full interpretation', () => {
     const engine = createTestEngine({

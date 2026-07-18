@@ -38,11 +38,30 @@ export type Contradiction = {
   discoveredAtTick?: number;
 };
 
+/**
+ * Objective log ring-buffer cap. Every other comparable trace log in this
+ * package caps its buffer (combat-review.ts's `traces`, ability-review.ts's
+ * `traces`); objectiveLog previously had none and grew unboundedly for the
+ * life of the process (F-fe16be5e).
+ */
+const DEFAULT_MAX_OBJECTIVE_LOG = 500;
+
 export function createNarrativeAuthority(
   channels: PresentationChannels,
   personality?: NarratorPersonality,
 ): EngineModule {
-  const state: NarrativeAuthorityState = {
+  // Registration-time default only — NEVER mutated directly by game logic.
+  // The live, per-world copy is world.modules['narrative-authority'], a
+  // structuredClone taken from this object when the namespace initializes
+  // (see ModuleManager.initializeNamespaces). Every event handler below
+  // re-fetches that live copy fresh instead of closing over this reference,
+  // matching the pattern every other stateful module in this package uses
+  // (rumor-propagation.ts's getRumorState, district-core.ts's
+  // getModuleState, ...). Writing to this closure directly instead — as this
+  // module used to — silently diverged from world.modules from the very
+  // first event (registerNamespace clones, it doesn't alias), and a
+  // save/reload made the divergence permanent (F-fe16be5e).
+  const defaultState: NarrativeAuthorityState = {
     objectiveLog: [],
     presentedLog: [],
     contradictions: [],
@@ -54,7 +73,7 @@ export function createNarrativeAuthority(
     version: '0.1.0',
 
     register(ctx) {
-      ctx.persistence.registerNamespace('narrative-authority', state);
+      ctx.persistence.registerNamespace('narrative-authority', defaultState);
 
       // Install narrator filter on the narrator channel
       if (personality?.filter) {
@@ -85,9 +104,15 @@ export function createNarrativeAuthority(
         });
       }
 
-      // Listen to all events and track objective truth
-      ctx.events.on('*', (event) => {
+      // Listen to all events and track objective truth. Re-fetch the LIVE
+      // state from world.modules on every event (F-fe16be5e) — see the note
+      // on defaultState above for why.
+      ctx.events.on('*', (event, world) => {
+        const state = (world.modules['narrative-authority'] ?? defaultState) as NarrativeAuthorityState;
         state.objectiveLog.push(event);
+        if (state.objectiveLog.length > DEFAULT_MAX_OBJECTIVE_LOG) {
+          state.objectiveLog.shift();
+        }
       });
     },
 

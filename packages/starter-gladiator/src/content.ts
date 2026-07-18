@@ -213,7 +213,13 @@ export const zones: ZoneState[] = [
     roomId: 'arena',
     name: 'Arena Floor',
     tags: ['exterior', 'combat', 'open', 'sand'],
-    neighbors: ['holding-cells', 'tunnel-exit'],
+    // F-7902facb: patron-gallery lists arena-floor as a neighbor (you can
+    // walk down into the arena from the gallery); this reciprocates it so
+    // the passage isn't one-way. patron-gallery is an ordinary viewing box
+    // (tags: interior/elevated/social/wealthy), not a drop/hazard like
+    // tunnel-exit (tags: escape/hidden), so there is no design reason for
+    // the trip back up to require detouring via holding-cells -> armory.
+    neighbors: ['holding-cells', 'tunnel-exit', 'patron-gallery'],
     light: 5,
     interactables: ['bloodstained sand', 'discarded weapons', 'gate mechanisms'],
     hazards: ['scorching-sand'],

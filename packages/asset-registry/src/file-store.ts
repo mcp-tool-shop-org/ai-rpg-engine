@@ -9,8 +9,36 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import type { AssetMetadata, AssetInput, AssetFilter, AssetGetOptions, AssetStore } from './types.js';
+import { VALID_ASSET_KINDS } from './types.js';
 import { hashBytes, isValidHash } from './hash.js';
 import { matchesFilter } from './filter.js';
+
+/**
+ * Runtime shape check for a parsed metadata sidecar (F-4d8f612a). The sidecar
+ * is a JSON boundary like every other load path in this domain — a file that
+ * parses but is wrong-shaped (hand-edited, legacy, partially written) must be
+ * treated as corrupt HERE, not returned under a blind `as AssetMetadata` cast
+ * so the first caller to touch a missing field (e.g. matchesFilter's
+ * `meta.tags.includes(...)`) raw-throws far from the root cause.
+ * Optional fields (width/height/source) are only checked when present.
+ */
+function isAssetMetadataShape(v: unknown): v is AssetMetadata {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false;
+  const m = v as Record<string, unknown>;
+  return (
+    typeof m.hash === 'string' &&
+    typeof m.kind === 'string' &&
+    (VALID_ASSET_KINDS as readonly string[]).includes(m.kind) &&
+    typeof m.mimeType === 'string' &&
+    typeof m.sizeBytes === 'number' &&
+    Number.isFinite(m.sizeBytes) &&
+    Array.isArray(m.tags) &&
+    typeof m.createdAt === 'string' &&
+    (m.width === undefined || typeof m.width === 'number') &&
+    (m.height === undefined || typeof m.height === 'number') &&
+    (m.source === undefined || typeof m.source === 'string')
+  );
+}
 
 export class FileAssetStore implements AssetStore {
   constructor(private readonly root: string) {}
@@ -76,14 +104,24 @@ export class FileAssetStore implements AssetStore {
 
   async getMeta(hash: string): Promise<AssetMetadata | null> {
     if (!isValidHash(hash)) return null;
+    let parsed: unknown;
     try {
       const json = await fs.readFile(this.metaPath(hash), 'utf-8');
-      return JSON.parse(json) as AssetMetadata;
+      parsed = JSON.parse(json);
     } catch {
+      // Missing file or invalid JSON — not found.
       return null;
     }
+    // Valid JSON, wrong shape — corrupt sidecar, same verdict (F-4d8f612a).
+    return isAssetMetadataShape(parsed) ? parsed : null;
   }
 
+  /**
+   * NOTE: has() only guarantees the `.bin` BLOB exists — it does not confirm
+   * the metadata sidecar is present or well-shaped, so `has(h) === true` does
+   * NOT imply `getMeta(h)` will succeed. Callers that need the metadata should
+   * call getMeta() and handle null (F-4d8f612a).
+   */
   async has(hash: string): Promise<boolean> {
     if (!isValidHash(hash)) return false;
     try {
@@ -115,14 +153,22 @@ export class FileAssetStore implements AssetStore {
 
       for (const file of files) {
         if (!file.endsWith('.json')) continue;
+        let parsed: unknown;
         try {
           const json = await fs.readFile(path.join(shardPath, file), 'utf-8');
-          const meta = JSON.parse(json) as AssetMetadata;
-          if (!filter || matchesFilter(meta, filter)) {
-            results.push(meta);
-          }
+          parsed = JSON.parse(json);
         } catch {
-          // Skip corrupt metadata files
+          // Skip unreadable or non-JSON sidecars (I/O error / parse failure).
+          continue;
+        }
+        // Skip valid-JSON-but-wrong-shaped sidecars too (F-4d8f612a) — BEFORE
+        // matchesFilter, so a malformed entry is excluded consistently whether
+        // or not a filter was passed. Previously an unfiltered list() returned
+        // the malformed object while a filtered list() silently swallowed
+        // matchesFilter's TypeError in this catch — same file, two behaviors.
+        if (!isAssetMetadataShape(parsed)) continue;
+        if (!filter || matchesFilter(parsed, filter)) {
+          results.push(parsed);
         }
       }
     }

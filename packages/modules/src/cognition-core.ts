@@ -112,7 +112,13 @@ export function createCognitionCore(configOrProfiles?: CognitionCoreConfig | Int
     ? { profiles: configOrProfiles }
     : (configOrProfiles ?? {});
 
+  // Built-ins first, so every profile id shipped in starter content
+  // ('aggressive', 'cautious', 'territorial', 'calculating') resolves out of
+  // the box; config-passed profiles override by id.
   const profileMap = new Map<string, IntentProfile>();
+  for (const p of BUILTIN_INTENT_PROFILES) {
+    profileMap.set(p.id, p);
+  }
   for (const p of config.profiles ?? []) {
     profileMap.set(p.id, p);
   }
@@ -425,8 +431,18 @@ export function setBelief(
   }
 }
 
+/**
+ * Accepts any object exposing `.beliefs` — narrower than the full
+ * CognitionState, which is all this function ever touches (F-0eb004fc). A
+ * full CognitionState is structurally assignable here, so no existing caller
+ * changes; callers holding only a narrowed `{ beliefs: Belief[] }` shape
+ * (e.g. rumor-propagation.ts's extractRelevantBeliefs) no longer need an
+ * `as any` escape hatch to call this. If this function's implementation ever
+ * needs another CognitionState field, that access now fails to compile right
+ * here instead of silently working through a stale cast at every call site.
+ */
 export function getBelief(
-  cognition: CognitionState,
+  cognition: Pick<CognitionState, 'beliefs'>,
   subject: string,
   key: string,
 ): Belief | undefined {
@@ -714,6 +730,303 @@ export const cautiousProfile: IntentProfile = {
     return options;
   },
 };
+
+/**
+ * Built-in territorial profile: holds its zone. Attacks intruders on contact
+ * (place-triggered — presence in the zone is hostile evidence enough), lets
+ * fleeing targets go rather than pursue them out of its territory, and guards
+ * its ground when no valid target is present. Even at low morale it digs in
+ * and guards instead of abandoning the zone; only a full morale COLLAPSE
+ * (the FLEEING status applied by this module's morale listener) makes it leave.
+ */
+export const territorialProfile: IntentProfile = {
+  id: 'territorial',
+  evaluate(entity, cognition, world) {
+    const options: IntentOption[] = [];
+    const zone = entity.zoneId;
+
+    // Fleeing entities can only disengage — suppress all other combat intents
+    if (hasStatus(entity, COMBAT_STATES.FLEEING)) {
+      const zoneState = world.zones[zone ?? ''];
+      if (zoneState?.neighbors.length) {
+        options.push({
+          verb: 'disengage',
+          priority: 100,
+          reason: 'disengage: fleeing',
+        });
+      }
+      return options;
+    }
+
+    // Will-shifted morale thresholds: high-will NPCs hold ground longer
+    const willShift = Math.min(10, Math.max(0, ((entity.stats.will ?? 3) - 3) * 3));
+
+    // Find entities in same zone
+    const nearby = Object.values(world.entities).filter(
+      (e) => e.id !== entity.id && e.zoneId === zone && (e.resources.hp ?? 0) > 0,
+    );
+
+    for (const target of nearby) {
+      // An intruder is anyone in this entity's zone that reads as an enemy
+      // (faction predicate) or is a believed hostile. Allies are never intruders.
+      const isIntruder = affiliationOf(entity, target) === 'enemy'
+        || believes(cognition, target.id, 'hostile', true);
+      if (!isIntruder) continue;
+
+      if (hasStatus(target, COMBAT_STATES.FLEEING)) {
+        // Do not pursue — the zone is what matters, not the kill.
+        options.push({
+          verb: 'guard',
+          priority: 60,
+          reason: `hold zone: ${target.name} is fleeing, let them go`,
+        });
+      } else if (cognition.morale <= 20 - willShift) {
+        // Low morale — a territorial defender holds ground rather than abandon
+        // its zone. (Morale collapse still routes through FLEEING above.)
+        options.push({
+          verb: 'guard',
+          priority: 75,
+          reason: 'guard: holding ground despite low morale',
+        });
+      } else {
+        // Defend the territory — attack, but deprioritize guarded targets
+        let attackPriority = 85 + cognition.suspicion * 0.1;
+        if (hasStatus(target, COMBAT_STATES.GUARDED)) attackPriority -= 5;
+        options.push({
+          verb: 'attack',
+          targetIds: [target.id],
+          priority: attackPriority,
+          reason: `attack intruder: ${target.name}`,
+        });
+      }
+    }
+
+    // No valid target — guard the territory instead of idling
+    if (options.length === 0) {
+      options.push({
+        verb: 'guard',
+        priority: 30,
+        reason: 'guard: holding territory',
+      });
+    }
+
+    return options;
+  },
+};
+
+/**
+ * Built-in calculating profile: strikes only from advantage — a weakened
+ * target (below half hp), favorable numbers (its side outnumbers the threats),
+ * or an off-guard target (EXPOSED / OFF_BALANCE). A guarded, healthy target is
+ * a low-percentage attack and is never taken. With no advantage it observes
+ * (inspect) while healthy or keeps its guard up while hurt, and it cuts losses
+ * decisively when morale collapses.
+ */
+export const calculatingProfile: IntentProfile = {
+  id: 'calculating',
+  evaluate(entity, cognition, world) {
+    const options: IntentOption[] = [];
+    const zone = entity.zoneId;
+
+    // Fleeing entities can only disengage — suppress all other combat intents
+    if (hasStatus(entity, COMBAT_STATES.FLEEING)) {
+      const zoneState = world.zones[zone ?? ''];
+      if (zoneState?.neighbors.length) {
+        options.push({
+          verb: 'disengage',
+          priority: 100,
+          reason: 'disengage: fleeing',
+        });
+      }
+      return options;
+    }
+
+    // Will-shifted morale thresholds: high-will NPCs hold ground longer
+    const willShift = Math.min(10, Math.max(0, ((entity.stats.will ?? 3) - 3) * 3));
+
+    const nearby = Object.values(world.entities).filter(
+      (e) => e.id !== entity.id && e.zoneId === zone && (e.resources.hp ?? 0) > 0,
+    );
+
+    const threats = nearby.filter(
+      (t) => affiliationOf(entity, t) === 'enemy' || believes(cognition, t.id, 'hostile', true),
+    );
+    // A believed-hostile ally (a traitor) counts as a threat, never as backup.
+    const allyCount = nearby.filter(
+      (t) => affiliationOf(entity, t) === 'ally' && !threats.includes(t),
+    ).length;
+    const numbersFavor = threats.length > 0 && allyCount + 1 > threats.length;
+
+    // Morale collapsed — a calculating fighter cuts losses decisively.
+    // Priority 95 outranks every attack option (max 90) when an exit exists;
+    // cornered (no exit), it falls through to the advantage calculus below.
+    if (threats.length > 0 && cognition.morale <= 30 - willShift) {
+      const zoneState = world.zones[zone ?? ''];
+      if (zoneState?.neighbors.length) {
+        options.push({
+          verb: 'disengage',
+          priority: 95,
+          reason: 'disengage: odds no longer acceptable',
+        });
+      }
+    }
+
+    for (const target of threats) {
+      const targetHp = target.resources.hp ?? 0;
+      const targetMaxHp = target.resources.maxHp ?? target.resources.hp ?? 30;
+      const targetHpRatio = targetMaxHp > 0 ? targetHp / targetMaxHp : 0;
+      const weakened = targetHpRatio < 0.5;
+      const offGuard = hasStatus(target, COMBAT_STATES.EXPOSED)
+        || hasStatus(target, COMBAT_STATES.OFF_BALANCE);
+      const guarded = hasStatus(target, COMBAT_STATES.GUARDED);
+
+      // Advantage calculus: strike only when the odds favor it. A guarded,
+      // healthy target is a low-percentage attack — never take it.
+      const advantaged = (weakened || numbersFavor || offGuard) && !(guarded && !weakened);
+
+      if (advantaged) {
+        let attackPriority = 75;
+        if (weakened) attackPriority += 10;
+        if (offGuard) attackPriority += 5;
+        if (guarded) attackPriority -= 5;
+        const edge = weakened ? 'weakened' : numbersFavor ? 'numbers' : 'off-guard';
+        options.push({
+          verb: 'attack',
+          targetIds: [target.id],
+          priority: attackPriority,
+          reason: `attack advantaged (${edge}): ${target.name}`,
+        });
+      } else {
+        const ownHp = entity.resources.hp ?? 0;
+        const ownMaxHp = entity.resources.maxHp ?? entity.resources.hp ?? 30;
+        const ownRatio = ownMaxHp > 0 ? ownHp / ownMaxHp : 0;
+        if (ownRatio < 0.6) {
+          options.push({
+            verb: 'guard',
+            priority: 55,
+            reason: 'guard: no advantage, staying defensive',
+          });
+        } else {
+          options.push({
+            verb: 'inspect',
+            targetIds: [target.id],
+            priority: 50,
+            reason: `observe: waiting for an advantage over ${target.name}`,
+          });
+        }
+      }
+    }
+
+    if (options.length === 0) {
+      options.push({
+        verb: 'inspect',
+        priority: 10,
+        reason: 'idle: assessing',
+      });
+    }
+
+    return options;
+  },
+};
+
+// --- Built-in Profile Registry ---
+
+/**
+ * All built-in intent profiles, in id-resolution order. Content references
+ * these by `entity.ai.profileId` — the four shipped ids are 'aggressive',
+ * 'cautious', 'territorial', and 'calculating'. `createCognitionCore` seeds
+ * its profile map from this list (config-passed profiles override by id), and
+ * `resolveIntentProfile` / `selectActionForEntity` resolve against it.
+ */
+export const BUILTIN_INTENT_PROFILES: readonly IntentProfile[] = [
+  aggressiveProfile,
+  cautiousProfile,
+  territorialProfile,
+  calculatingProfile,
+];
+
+/**
+ * Resolve an intent profile by id. Caller-supplied `extraProfiles` win over
+ * built-ins (same override rule as `createCognitionCore`'s config.profiles).
+ * Returns undefined when the id matches nothing.
+ */
+export function resolveIntentProfile(
+  profileId: string,
+  extraProfiles?: readonly IntentProfile[],
+): IntentProfile | undefined {
+  return extraProfiles?.find((p) => p.id === profileId)
+    ?? BUILTIN_INTENT_PROFILES.find((p) => p.id === profileId);
+}
+
+/** Result of `selectActionForEntity` — the chosen action plus the full option list. */
+export type EntityActionSelection = {
+  entityId: string;
+  /** Profile id the entity asked for (`entity.ai.profileId`). */
+  requestedProfileId: string;
+  /** Profile that actually evaluated (differs from requested when the fallback engaged). */
+  profileId: string;
+  /** True when the requested id resolved to nothing and the fallback profile ran instead. */
+  usedFallback: boolean;
+  /** Chosen action — the highest-priority option. */
+  verb: string;
+  targetIds?: string[];
+  reason: string;
+  /** Every evaluated option, highest priority first (`options[0]` is the chosen one). */
+  options: IntentOption[];
+};
+
+/**
+ * One-call AI turn driver: resolve `entityId`'s intent profile from its
+ * `ai.profileId` and return the chosen action. This is the convenience the
+ * per-hostile turn loop calls — no manual getCognition / resolve / selectIntent
+ * plumbing.
+ *
+ * Resolution order: `opts.profiles` (caller overrides) → built-ins. An unknown
+ * profile id falls back to `opts.fallbackProfileId` (default 'aggressive') so a
+ * content typo degrades to a sensible behavior instead of an NPC that never
+ * acts — the `usedFallback` flag lets drivers log the mismatch.
+ *
+ * Returns null (no action) when the entity is missing, has no `ai` state, or
+ * is downed (`(hp ?? 0) <= 0` — the same liveness convention the profiles use).
+ *
+ * Deterministic: pure over (world, entityId, opts); the option sort is stable,
+ * so ties keep the profile's own evaluation order (same rule as selectIntent).
+ */
+export function selectActionForEntity(
+  world: WorldState,
+  entityId: string,
+  opts?: { profiles?: readonly IntentProfile[]; fallbackProfileId?: string },
+): EntityActionSelection | null {
+  const entity = world.entities[entityId];
+  if (!entity?.ai) return null;
+  if ((entity.resources.hp ?? 0) <= 0) return null;
+
+  const requestedProfileId = entity.ai.profileId;
+  let profile = resolveIntentProfile(requestedProfileId, opts?.profiles);
+  let usedFallback = false;
+  if (!profile) {
+    profile = resolveIntentProfile(opts?.fallbackProfileId ?? 'aggressive', opts?.profiles);
+    usedFallback = true;
+  }
+  if (!profile) return null; // unknown fallback id too — nothing to evaluate
+
+  const cognition = getCognition(world, entityId);
+  const options = [...profile.evaluate(entity, cognition, world)]
+    .sort((a, b) => b.priority - a.priority);
+  if (options.length === 0) return null;
+
+  const chosen = options[0];
+  return {
+    entityId,
+    requestedProfileId,
+    profileId: profile.id,
+    usedFallback,
+    verb: chosen.verb,
+    targetIds: chosen.targetIds,
+    reason: chosen.reason,
+    options,
+  };
+}
 
 // --- Internal Helpers ---
 

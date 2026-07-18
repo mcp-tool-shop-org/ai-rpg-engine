@@ -1,6 +1,6 @@
 # AI RPG Engine Design Overview
 
-AI RPG Engine is a simulation-first narrative engine for terminal RPGs. It maintains objective world truth, routes events through presentation channels that can lie, and supports pluggable genres through modular rulesets.
+AI RPG Engine is a simulation-first narrative composition engine for text-driven RPGs. It maintains objective world truth, routes events through presentation channels that can lie, and supports pluggable genres through modular rulesets.
 
 ## Core Architecture
 

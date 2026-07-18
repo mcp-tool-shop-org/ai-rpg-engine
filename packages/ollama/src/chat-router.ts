@@ -430,7 +430,12 @@ export async function classifyByLLM(
   });
 
   if (!result.ok) {
-    return { intent: 'unknown', confidence: 'low', params: {} };
+    // The classifier did not fail to UNDERSTAND the message — it failed to RUN
+    // (daemon down, model not pulled, HTTP error). Propagate the client's
+    // curated error so the engine can surface it instead of asking the user
+    // to rephrase (v2.6 Stage C F-c1a55f01). The client error already embeds
+    // the actionable hint (offlineHint / `ollama pull`) for the common cases.
+    return { intent: 'unknown', confidence: 'low', params: {}, llmError: result.error };
   }
 
   try {

@@ -62,6 +62,11 @@ export const enemy: EntityState = {
     resources: { hp: 12 },
     statuses: [],
     zoneId: 'danger-zone',
+    // ai.profileId picks this enemy's combat brain. It must match a profile
+    // provided in setup.ts (`cognition: { profiles: [...] }`) — without that
+    // pairing the enemy never selects an intent and just stands there.
+    // Built-ins: 'aggressive' (attack on sight) and 'cautious' (observe first).
+    ai: { profileId: 'aggressive', goals: ['guard-zone'], fears: [], alertLevel: 0, knowledge: {} },
 };
 
 // ═══════════════════════════════════════════════════════════════════

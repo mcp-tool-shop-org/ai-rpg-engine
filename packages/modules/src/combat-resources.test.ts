@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { createTestEngine, nextId } from '@ai-rpg-engine/core';
 import type { EntityState, ActionIntent } from '@ai-rpg-engine/core';
 import { createCombatCore, COMBAT_STATES } from './combat-core.js';
 import { statusCore, hasStatus, applyStatus } from './status-core.js';
-import { createCombatTactics, clearRoundFlags } from './combat-tactics.js';
+import { createCombatTactics } from './combat-tactics.js';
 import { createEngagementCore } from './engagement-core.js';
 import { selectNpcCombatAction } from './combat-intent.js';
 import { createCognitionCore } from './cognition-core.js';
@@ -45,9 +45,10 @@ const makePlayer = (zoneId: string, overrides?: Partial<EntityState>): EntitySta
   ...overrides,
 });
 
-beforeEach(() => {
-  clearRoundFlags();
-});
+// Round-flag state now lives per-world in world.modules['combat-tactics']
+// (F-80a6afa2) — each createTestEngine() call gets its own fresh, isolated
+// state, so the old global clearRoundFlags()-in-beforeEach reset is no longer
+// needed for test isolation.
 
 // ---------------------------------------------------------------------------
 // Test profiles

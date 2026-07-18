@@ -90,6 +90,7 @@ function makeAction(overrides: Partial<ActionIntent> = {}): ActionIntent {
 function makeListenerCtx() {
   const handlers = new Map<string, Array<(e: ResolvedEvent, w: WorldState) => void>>();
   const emitted: ResolvedEvent[] = [];
+  const namespaceDefaults = new Map<string, unknown>();
   const emit = (e: ResolvedEvent) => {
     emitted.push(e);
     const hs = handlers.get(e.type);
@@ -97,6 +98,7 @@ function makeListenerCtx() {
   };
   return {
     emitted,
+    namespaceDefaults,
     events: {
       on(type: string, handler: (e: ResolvedEvent, w: WorldState) => void) {
         const hs = handlers.get(type) ?? [];
@@ -104,6 +106,15 @@ function makeListenerCtx() {
         handlers.set(type, hs);
       },
       emit,
+    },
+    // Minimal stand-in for ModuleRegistrationContext['persistence'] — a full
+    // EngineModule.register(ctx) may call ctx.persistence.registerNamespace
+    // (e.g. createBossPhaseListener, F-123ac29f). Records what was
+    // registered for inspection; does not simulate world.modules storage.
+    persistence: {
+      registerNamespace(moduleId: string, defaults: unknown) {
+        namespaceDefaults.set(moduleId, defaults);
+      },
     },
     on(type: string, handler: (e: ResolvedEvent, w: WorldState) => void) {
       const hs = handlers.get(type) ?? [];

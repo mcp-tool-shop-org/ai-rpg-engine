@@ -778,6 +778,96 @@ describe('companion interception uses formula', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// F-8da23635: interception damage recomputation + defense modifiers
+// ---------------------------------------------------------------------------
+//
+// When a companion intercepts, the damage applied to the interceptor used to
+// be the RAW damage computed against the ORIGINAL target's context — never
+// recomputed for the interceptor, and never passed through the guard/
+// exposed/off-balance damage-modifier block that a normal hit gets. A
+// defender-aware custom damage formula would compute damage using the
+// ORIGINAL target's stats, not the interceptor's, and a GUARDING interceptor
+// took full, unreduced damage with their guard silently wasted.
+
+describe('companion interception: damage recomputation + defense modifiers', () => {
+  it('recomputes damage against the INTERCEPTOR, not the original target, when the damage formula is defender-aware', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore({
+        isAlly: (id) => id === 'companion',
+        interceptChance: () => 100, // always intercept once eligible
+        damage: (attacker, target) => Math.max(1, attacker.stats.vigor - (target.stats.will ?? 0)),
+      })],
+      entities: [
+        makePlayer('a', { stats: { vigor: 5, instinct: 50, will: 5 } }),
+        makeEntity('companion', 'Ally', 'a', {
+          tags: ['enemy', 'companion'], stats: { vigor: 5, instinct: 5, will: 8 }, resources: { hp: 20, stamina: 5 },
+        }),
+        makeEntity('enemy1', 'Thug', 'a', { stats: { vigor: 10, instinct: 50, will: 3 } }),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+      playerId: 'player',
+    });
+
+    for (let tick = 1; tick <= 30; tick++) {
+      engine.world.entities.player.resources.hp = 20;
+      engine.world.entities.companion.resources.hp = 20;
+      engine.world.entities.enemy1.resources.stamina = 5;
+      const events = engine.processAction(npcAction('attack', 'enemy1', tick, { targetIds: ['player'] }));
+      const intercepted = events.find(e => e.type === 'combat.companion.intercepted');
+      if (intercepted) {
+        // Formula: attacker.vigor(10) - defender.will. Against the PLAYER
+        // (will 5) this would be 5; against the COMPANION (will 8) it must
+        // be 2. The buggy code reused the damage computed for the player;
+        // the interceptor must take damage computed against ITS OWN stats.
+        expect(intercepted.payload.damage).toBe(2);
+        expect(engine.world.entities.companion.resources.hp).toBe(18);
+        return;
+      }
+    }
+    expect.unreachable('expected at least one interception');
+  });
+
+  it('an interceptor who is actively GUARDING has their guard honored (reduced damage, status cleared) instead of silently wasted', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore({
+        isAlly: (id) => id === 'companion',
+        interceptChance: () => 100,
+      })],
+      entities: [
+        makePlayer('a', { stats: { vigor: 5, instinct: 50, will: 5 } }),
+        makeEntity('companion', 'Ally', 'a', { tags: ['enemy', 'companion'], resources: { hp: 20, stamina: 5 } }),
+        makeEntity('enemy1', 'Thug', 'a', { stats: { vigor: 10, instinct: 50, will: 3 } }),
+      ],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+      playerId: 'player',
+    });
+
+    for (let tick = 1; tick <= 30; tick++) {
+      engine.world.entities.player.resources.hp = 20;
+      engine.world.entities.companion.resources.hp = 20;
+      if (!hasStatus(engine.world.entities.companion, COMBAT_STATES.GUARDED)) {
+        applyStatus(engine.world.entities.companion, COMBAT_STATES.GUARDED, tick, { duration: 3 });
+      }
+      engine.world.entities.enemy1.resources.stamina = 5;
+      const events = engine.processAction(npcAction('attack', 'enemy1', tick, { targetIds: ['player'] }));
+      const intercepted = events.find(e => e.type === 'combat.companion.intercepted');
+      if (intercepted) {
+        // Default damage (attacker.vigor=10) halved by the default guard
+        // reduction (0.5 — companion's default will=3 gives zero resolve
+        // bonus) → 5, not the raw unmodified 10.
+        expect(intercepted.payload.damage).toBe(5);
+        expect(engine.world.entities.companion.resources.hp).toBe(15);
+        // Guard absorbs one hit then clears — it must not be silently ignored.
+        expect(hasStatus(engine.world.entities.companion, COMBAT_STATES.GUARDED)).toBe(false);
+        expect(events.some(e => e.type === 'combat.guard.absorbed' && e.payload.entityId === 'companion')).toBe(true);
+        return;
+      }
+    }
+    expect.unreachable('expected at least one interception');
+  });
+});
+
 describe('fleeing entity AI suppression', () => {
   it('fleeing aggressive NPC only disengages', () => {
     const engine = createTestEngine({

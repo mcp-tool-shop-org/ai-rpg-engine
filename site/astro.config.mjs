@@ -10,7 +10,7 @@ export default defineConfig({
   integrations: [
     starlight({
       title: 'AI RPG Engine',
-      description: 'A simulation-first terminal RPG engine for worlds shaped by perception, cognition, and consequence',
+      description: 'A simulation-first RPG composition engine for worlds shaped by perception, cognition, and consequence',
       social: [
         { icon: 'github', label: 'GitHub', href: 'https://github.com/mcp-tool-shop-org/ai-rpg-engine' },
       ],
