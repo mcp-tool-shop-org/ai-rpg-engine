@@ -13,7 +13,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
-import { ComfyUIProvider } from './comfyui-provider.js';
+import { ComfyUIProvider, readBodyCapped } from './comfyui-provider.js';
 
 type MockHandler = (req: IncomingMessage, res: ServerResponse) => void;
 type MockServer = { url: string; close: () => Promise<void> };
@@ -221,6 +221,60 @@ describe('ComfyUIProvider.generate — A1: typed failure envelope', () => {
     }
   });
 
+  // v2.6 audit F-b576db51 — ComfyUIProviderOptions.timeoutMs promises to
+  // bound "every fetch AND the poll loop" (line 32), but each poll fetch was
+  // given AbortSignal.timeout(timeout) using the ORIGINAL full budget, not
+  // the remaining time before the deadline. A poll response that stalls late
+  // in the loop (most of the budget already spent on earlier, fast polls)
+  // could still be granted a FRESH full timeoutMs window, letting the whole
+  // call run up to ~2x timeoutMs — directly contradicting the documented
+  // hard bound. The prior 'A1-poll-timeout' test never exercised this: its
+  // mock always answers immediately, so the loop only ever exits via the
+  // normal deadline check, never via an in-flight fetch outliving it.
+  it(
+    'A1-poll-overrun: a poll response that stalls near the deadline does not re-grant the full timeout budget',
+    { timeout: 10_000 },
+    async () => {
+      const timeoutMs = 500;
+      const start = Date.now();
+      const mock = await startMock((req, res) => {
+        if (req.method === 'POST' && req.url === '/prompt') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ prompt_id: 'p1' }));
+          return;
+        }
+        if (req.url?.startsWith('/history/p1')) {
+          const elapsedSoFar = Date.now() - start;
+          if (elapsedSoFar < timeoutMs * 0.8) {
+            // Comfortably inside the budget: report "still working" so the
+            // loop keeps polling and burns through most of timeoutMs.
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end('{}');
+            return;
+          }
+          // Close to the deadline now (>=80% of the budget already spent) —
+          // stall. A correct implementation aborts this fetch using only
+          // what's left of the ORIGINAL deadline, not a fresh full grant.
+          return;
+        }
+        res.writeHead(404);
+        res.end();
+      });
+
+      const result = await makeProvider(mock.url, { pollIntervalMs: 50, timeoutMs }).generate('p');
+      const elapsed = Date.now() - start;
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.code).toBe('timeout');
+      // Contract: timeoutMs bounds the ENTIRE poll loop, including a
+      // stalling fetch that starts near the deadline. A buggy re-grant of
+      // the full budget to that one fetch would push total elapsed close to
+      // 2x timeoutMs (~900-950ms here); a correct bound stays close to 1x
+      // (~500-550ms). 1.5x leaves a wide, jitter-safe margin between them.
+      expect(elapsed).toBeLessThan(timeoutMs * 1.5);
+    },
+  );
+
   it('A1-view-500: an HTTP 500 on the image fetch resolves {ok:false, code:http_error}', async () => {
     const mock = await startMock(
       comfyFlow((_req, res) => {
@@ -357,6 +411,86 @@ describe('ComfyUIProvider.generate — PA-1: seed reproducibility', () => {
     const oracle = await provider.generate('an oracle');
     expect(knight.ok && oracle.ok).toBe(true);
     if (knight.ok && oracle.ok) expect(knight.seed).not.toBe(oracle.seed);
+  });
+
+  // v2.6 audit F-f29b1934 — deriveDefaultSeed()'s own stated purpose is "same
+  // request → same seed → same image", where "request" implicitly includes
+  // every generation parameter fed into the hash (prompt, negativePrompt,
+  // width, height, steps, cfgScale), not just the prompt text. PA1-distinct
+  // above only varied the prompt; nothing previously asserted that varying
+  // ONLY steps/cfgScale/width/height (identical prompt/negativePrompt) also
+  // changes the derived seed — the untested half of the invariant.
+  it('PA1-param-sensitive: same prompt with different steps/cfgScale/width/height derives different default seeds', async () => {
+    const mockPromise = seedCapturingMock();
+    const mock = await mockPromise;
+    const provider = makeProvider(mock.url);
+
+    const base = await provider.generate('a knight', { width: 512, height: 512, steps: 20, cfgScale: 7 });
+    const diffSteps = await provider.generate('a knight', { width: 512, height: 512, steps: 30, cfgScale: 7 });
+    const diffCfg = await provider.generate('a knight', { width: 512, height: 512, steps: 20, cfgScale: 9 });
+    const diffWidth = await provider.generate('a knight', { width: 768, height: 512, steps: 20, cfgScale: 7 });
+    const diffHeight = await provider.generate('a knight', { width: 512, height: 768, steps: 20, cfgScale: 7 });
+
+    expect([base, diffSteps, diffCfg, diffWidth, diffHeight].every(r => r.ok)).toBe(true);
+    if (base.ok && diffSteps.ok && diffCfg.ok && diffWidth.ok && diffHeight.ok) {
+      expect(diffSteps.seed).not.toBe(base.seed);
+      expect(diffCfg.seed).not.toBe(base.seed);
+      expect(diffWidth.seed).not.toBe(base.seed);
+      expect(diffHeight.seed).not.toBe(base.seed);
+      // Every sent seed matches the reported seed (PA-1's existing invariant).
+      expect(mockPromise.sent).toEqual([base.seed, diffSteps.seed, diffCfg.seed, diffWidth.seed, diffHeight.seed]);
+    }
+  });
+});
+
+// v2.6 audit F-7ad6e99e — readBodyCapped()'s docstring promises to
+// "Accumulate a response body without ever buffering more than `cap`
+// bytes." The streaming branch honors that by checking after every chunk,
+// but when res.body is null the function falls back to res.arrayBuffer()
+// (which reads the WHOLE body first) and only compares byteLength > cap
+// afterward. This branch is real and reachable — a 204/304 (or any Response
+// built without a stream) gives `body === null` in undici's fetch — but it
+// had zero test coverage in either direction.
+describe('readBodyCapped — null-body fallback (F-7ad6e99e)', () => {
+  /** A Response-shaped object with no stream, exactly like a bodyless 204/304. */
+  function makeNullBodyResponse(bytes: Uint8Array): Response {
+    const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    return { body: null, arrayBuffer: async () => ab } as unknown as Response;
+  }
+
+  it('accumulates a small body correctly via the arrayBuffer() fallback', async () => {
+    const bytes = new Uint8Array([1, 2, 3, 4, 5]);
+    const result = await readBodyCapped(makeNullBodyResponse(bytes), 1024);
+    expect(result).not.toBe('too-large');
+    expect(Buffer.from(result as Uint8Array)).toEqual(Buffer.from(bytes));
+  });
+
+  it('still rejects an over-cap body reached via the null-body fallback', async () => {
+    const bytes = new Uint8Array(2048);
+    const result = await readBodyCapped(makeNullBodyResponse(bytes), 1024);
+    expect(result).toBe('too-large');
+  });
+
+  it('accepts a body exactly at the cap boundary via the null-body fallback', async () => {
+    const bytes = new Uint8Array(1024);
+    const result = await readBodyCapped(makeNullBodyResponse(bytes), 1024);
+    expect(result).not.toBe('too-large');
+  });
+
+  // Reachability proof: a real bodyless HTTP response (204) gives
+  // `res.body === null` in undici's fetch, so generate() genuinely exercises
+  // this fallback rather than it being purely theoretical.
+  it('generate() does not crash on a real bodyless (204) /view response', async () => {
+    const mock = await startMock(
+      comfyFlow((_req, res) => {
+        res.writeHead(204, { 'Content-Type': 'image/png' });
+        res.end();
+      }),
+    );
+
+    const result = await makeProvider(mock.url).generate('p');
+    // Whatever it resolves to, it must be a typed outcome, never a throw/hang.
+    expect(typeof result.ok).toBe('boolean');
   });
 });
 

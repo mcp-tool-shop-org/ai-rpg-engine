@@ -188,7 +188,7 @@ export { WORLDBUILDER_PROFILE, ANALYST_PROFILE, GENERATOR_PROFILE, ROUTER_PROFIL
 export type { PersonalityProfile } from './chat-personality.js';
 
 // Webfetch adapter
-export { webfetch, isAllowedUrl, formatWebfetchForPrompt } from './chat-webfetch.js';
+export { webfetch, isAllowedUrl, isAllowedUrlResolved, formatWebfetchForPrompt } from './chat-webfetch.js';
 export type { WebfetchResult, WebfetchOptions } from './chat-webfetch.js';
 
 // Planner — session-aware multi-step planning

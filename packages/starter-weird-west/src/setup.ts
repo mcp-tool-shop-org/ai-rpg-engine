@@ -111,7 +111,7 @@ export function createGame(seed?: number): Engine {
       ...combat.modules,
       createInventoryCore([sageBundleEffect]),
       createDialogueCore([bartenderDialogue]),
-      createPerceptionFilter(),
+      createPerceptionFilter({ perceptionStat: 'draw-speed' }),
       createProgressionCore({
         trees: [gunslingerTree],
         rewards: [{

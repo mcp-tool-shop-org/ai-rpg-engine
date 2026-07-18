@@ -206,7 +206,16 @@ function applyDialogueEffect(
     world.globals[key] = value;
     return [makeEvent(action, 'world.flag.changed', { key, value })];
   }
-  return [];
+  // Warn-and-degrade (F-db919552): dialogue-core only implements
+  // 'set-global'. EffectDefinition is the SAME shared type ability-effects.ts
+  // fully implements (damage, heal, apply-status, resource-modify, ...), so a
+  // content author writing a dialogue choice's effects using that exact shape
+  // silently saw it do nothing. Mirrors ability-effects.ts's
+  // 'ability.effect.unknown' event for the same class of mistake.
+  return [makeEvent(action, 'dialogue.effect.unknown', {
+    effectType: effect.type,
+    reason: `dialogue-core only handles 'set-global' effects; no handler for effect type: ${effect.type}`,
+  })];
 }
 
 function evaluateCondition(

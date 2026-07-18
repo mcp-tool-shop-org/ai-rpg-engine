@@ -1,7 +1,9 @@
 // Webfetch adapter — optional external URL retrieval.
 // Explicit, opt-in, source-citing, clearly separated from project truth.
 // Chat must never silently mix external content with local project facts.
-// Uses Node native fetch (>= 20). Zero external deps.
+// Uses Node native fetch (>= 20) and the node:dns builtin. Zero npm deps.
+
+import { lookup } from 'node:dns/promises';
 
 // --- Types ---
 
@@ -125,9 +127,13 @@ export function isAllowedUrl(url: string): boolean {
       return !traversal(parsed);
     }
 
-    // Otherwise a DNS name: allow (NOTE: hostname checks cannot stop DNS
-    // rebinding to a private IP after validation — the complete fix is to
-    // resolve and validate the connected IP at fetch time; future hardening).
+    // Otherwise a DNS name: syntactically fine, but NOT proven safe. A name
+    // is not an address — it is only safe once resolved. This function does
+    // not resolve DNS, so a hostname reaching this line has NOT been checked
+    // against the blocklist above at all; a single attacker-controlled A/AAAA
+    // record pointing at a blocked address sails straight through. Callers
+    // that will actually issue the request MUST use isAllowedUrlResolved()
+    // below instead of (or in addition to) this function — webfetch() does.
     return !traversal(parsed);
   } catch {
     return false;
@@ -136,6 +142,97 @@ export function isAllowedUrl(url: string): boolean {
 
 function traversal(parsed: URL): boolean {
   return parsed.pathname.includes('..') || parsed.href.includes('..');
+}
+
+// --- DNS-resolved validation (the gate webfetch() actually enforces) ---
+
+/** Default budget for the DNS resolution step in isAllowedUrlResolved(). */
+const DEFAULT_RESOLVE_TIMEOUT_MS = 5_000;
+
+/**
+ * The real SSRF gate: isAllowedUrl() plus DNS resolution for plain hostnames.
+ *
+ * isAllowedUrl() only proves a URL is *syntactically* safe — it blocks
+ * IP-literal hosts (every encoding form: decimal/hex/octal v4, compressed
+ * v6, IPv4-mapped/compatible/NAT64/6to4 tunnels) and a short list of known-
+ * internal hostnames, but for any OTHER hostname it falls through to "DNS
+ * name: allow" without ever resolving it. That gap needs no DNS-rebinding or
+ * TOCTOU timing trick to exploit: an attacker registers any domain, points
+ * its A record at 127.0.0.1 / 169.254.169.254 (cloud metadata) / an internal
+ * 10.x address, and the resulting URL sails through every check above and
+ * would be fetched for real (v2.6 audit F-f268b81a).
+ *
+ * This function closes that gap. A host that is already an IP literal is
+ * fully validated by isAllowedUrl() alone. A DNS name is resolved (every
+ * address it maps to, via dns.promises.lookup) and each resolved address is
+ * run through the SAME blocklist isAllowedUrl() applies to literals — the
+ * URL is rejected if any resolved address is blocked, or if resolution
+ * itself fails or does not complete within resolveTimeoutMs (fail closed).
+ */
+export async function isAllowedUrlResolved(
+  url: string,
+  resolveTimeoutMs = DEFAULT_RESOLVE_TIMEOUT_MS,
+): Promise<boolean> {
+  if (!isAllowedUrl(url)) return false;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+
+  // Already fully validated (or rejected) as an IP literal by isAllowedUrl().
+  if (parseV4(host) || parseV6(host)) return true;
+
+  // A plain DNS name: resolve it and validate every address it maps to
+  // before this URL may be treated as allowed.
+  return resolvesToOnlyPublicAddresses(host, resolveTimeoutMs);
+}
+
+/**
+ * True only when `hostname` resolves to at least one address and every
+ * resolved address is public. Any failure mode — resolver error, empty
+ * answer, or a resolution that does not settle within `timeoutMs` — rejects
+ * (fail closed): an SSRF guard that hangs open on a slow or broken resolver
+ * defeats its own purpose.
+ */
+async function resolvesToOnlyPublicAddresses(hostname: string, timeoutMs: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const addresses = await Promise.race([
+      lookup(hostname, { all: true, verbatim: true }),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('DNS resolution timed out')), timeoutMs);
+      }),
+    ]);
+    if (!Array.isArray(addresses) || addresses.length === 0) return false;
+    return addresses.every(({ address, family }) => isPublicResolvedAddress(address, family));
+  } catch {
+    return false;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/** Applies the same blocklist isAllowedUrl() uses for literals to a resolved address. */
+function isPublicResolvedAddress(address: string, family: number): boolean {
+  if (family === 4) {
+    const v4 = parseV4(address);
+    return !!v4 && !isBlockedV4(v4);
+  }
+  if (family === 6) {
+    const v6 = parseV6(address);
+    if (!v6) return false;
+    if (v6.every((x, i) => x === 0 || (i === 15 && x === 1))) return false; // ::1 loopback / :: unspecified
+    if (v6[0] === 0xfe && (v6[1] & 0xc0) === 0x80) return false; // fe80::/10 link-local
+    if ((v6[0] & 0xfe) === 0xfc) return false; // fc00::/7 unique-local
+    const emb = embeddedV4(v6);
+    if (emb && isBlockedV4(emb)) return false;
+    return true;
+  }
+  return false; // unknown address family — fail closed
 }
 
 // --- HTML text extraction ---
@@ -173,7 +270,11 @@ export async function webfetch(url: string, options?: WebfetchOptions): Promise<
   const timeoutMs = options?.timeoutMs ?? 10_000;
   const fetchedAt = new Date().toISOString();
 
-  if (!isAllowedUrl(url)) {
+  // isAllowedUrl() alone is not enough here: it only proves the URL is
+  // syntactically safe and would let an unresolved DNS name straight
+  // through. isAllowedUrlResolved() additionally resolves the hostname and
+  // validates every address it maps to before the real fetch() below runs.
+  if (!(await isAllowedUrlResolved(url))) {
     return {
       ok: false, url, title: '', content: '', truncatedTo: 0, fetchedAt,
       error: 'URL not allowed: must be public http/https',

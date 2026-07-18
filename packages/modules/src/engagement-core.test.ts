@@ -865,3 +865,90 @@ describe('faction-aware engagement (PM-1 divergence)', () => {
     expect(isProtected(engine.world.entities.player)).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// F-fc282589: hand-rolled event ids can collide
+// ---------------------------------------------------------------------------
+//
+// combat.frontline.collapsed and combat.ambush.triggered used hand-rolled ids
+// (`evt-frontline-collapse-${tick}`, `evt-ambush-${tick}-${entityId}`)
+// instead of genId(world, 'evt') — unlike every other combat/status/
+// cognition module in this package, all explicitly hardened against hand-
+// rolled, colliding ids. The frontline-collapse id in particular has NO zone
+// disambiguation, only the tick: a single AoE that defeats two+ engaged
+// allies in the SAME zone within one action (one tick) — routine, since
+// ability-effects.ts's handleDamage loops over multiple AoE targets — causes
+// this handler to run twice for the same zone at the same tick, and if both
+// times remainingFrontliners.length === 0, it emits two
+// combat.frontline.collapsed events with the IDENTICAL id.
+
+describe('F-fc282589: hand-rolled event ids', () => {
+  it('two engaged allies defeated in the same zone at the same tick emit frontline-collapse events with DIFFERENT ids', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a', { tags: ['player', 'ranged'] }),
+      makeAlly('knight1', 'zone-a', { tags: ['ally'], resources: { hp: 1, stamina: 5 } }),
+      makeAlly('knight2', 'zone-a', { tags: ['ally'], resources: { hp: 1, stamina: 5 } }),
+      makeEnemy('bandit', 'zone-a', { resources: { hp: 50, stamina: 5 } }),
+    ]);
+
+    // Both knights are the ONLY frontliners; player is BACKLINE (ranged).
+    applyStatus(engine.world.entities.knight1, ENGAGEMENT_STATES.ENGAGED, 0);
+    applyStatus(engine.world.entities.knight2, ENGAGEMENT_STATES.ENGAGED, 0);
+    applyStatus(engine.world.entities.player, ENGAGEMENT_STATES.BACKLINE, 0);
+
+    const collapsed: ResolvedEvent[] = [];
+    engine.store.events.on('combat.frontline.collapsed', (e: ResolvedEvent) => {
+      collapsed.push(e);
+    });
+
+    // An AoE-style hit defeats BOTH engaged frontliners in the same action
+    // (same tick) — hp already applied for both before either defeat event
+    // fires, as ability-effects.ts's handleDamage does for multi-target AoE.
+    engine.world.entities.knight1.resources.hp = 0;
+    engine.world.entities.knight2.resources.hp = 0;
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'knight1', entityName: 'knight1', defeatedBy: 'bandit',
+    });
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'knight2', entityName: 'knight2', defeatedBy: 'bandit',
+    });
+
+    // Both defeats independently observe zero remaining frontliners (each
+    // other is already hp=0) with a live backliner present, so BOTH
+    // legitimately fire a frontline-collapse event — but they must not
+    // collide on id.
+    expect(collapsed.length).toBe(2);
+    expect(collapsed[0].tick).toBe(collapsed[1].tick);
+    expect(collapsed[0].id).not.toBe(collapsed[1].id);
+  });
+
+  // Unlike frontline-collapse, the ambush id already embeds entityId, so it
+  // does not collide for two DIFFERENT entities today — this is a
+  // consistency/hardening regression guard for switching it to genId (this
+  // file imports no genId at all, unlike every other combat/status/
+  // cognition module), not a demonstrated collision.
+  it('ambush.triggered ids do not collide when two entities are exposed in the same zone at the same tick', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeAlly('scout1', 'zone-a'),
+      makeAlly('scout2', 'zone-a'),
+      makeEnemy('bandit', 'zone-a', { resources: { hp: 50, stamina: 5 } }),
+    ], [
+      { id: 'zone-a', roomId: 'test', name: 'Zone A', tags: ['ambush_entry'], neighbors: ['zone-b'] },
+      { id: 'zone-b', roomId: 'test', name: 'Zone B', tags: [], neighbors: ['zone-a'] },
+    ]);
+
+    const ambushes: ResolvedEvent[] = [];
+    engine.store.events.on('combat.ambush.triggered', (e: ResolvedEvent) => {
+      ambushes.push(e);
+    });
+
+    // Two entities enter the ambush zone at the SAME tick.
+    engine.store.emitEvent('world.zone.entered', { entityId: 'scout1', zoneId: 'zone-a' });
+    engine.store.emitEvent('world.zone.entered', { entityId: 'scout2', zoneId: 'zone-a' });
+
+    expect(ambushes.length).toBe(2);
+    expect(ambushes[0].tick).toBe(ambushes[1].tick);
+    expect(ambushes[0].id).not.toBe(ambushes[1].id);
+  });
+});

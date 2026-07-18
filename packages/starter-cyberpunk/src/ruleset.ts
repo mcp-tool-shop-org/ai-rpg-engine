@@ -15,6 +15,12 @@ export const cyberpunkMinimalRuleset: RulesetDefinition = {
 
   resources: [
     { id: 'hp', name: 'HP', min: 0, max: 100, default: 15 },
+    // F-e83a091f (adjacent gap, found while adding this file's first test
+    // suite): debug-protocol costs stamina (content.ts), and entities
+    // (player, iceAgent, vaultOverseer) already carry a real stamina value —
+    // but stamina was never declared here, unlike every other starter's
+    // ruleset. This brings the declared contract in line with reality.
+    { id: 'stamina', name: 'Stamina', min: 0, max: 50, default: 10, regenRate: 1 },
     { id: 'ice', name: 'ICE', min: 0, max: 50, default: 10 },
     { id: 'bandwidth', name: 'Bandwidth', min: 0, max: 20, default: 8, regenRate: 2 },
   ],
@@ -65,7 +71,7 @@ export const cyberpunkMinimalRuleset: RulesetDefinition = {
     {
       id: 'disengage-chance',
       name: 'Disengage Chance',
-      description: 'Success chance: 40 + instinct*5 + will*2, clamped 15-90',
+      description: 'Success chance: 40 + reflex*5 + netrunning*2, clamped 15-90',
       inputs: ['actor.reflex', 'actor.netrunning'],
       output: 'number (0-100)',
     },

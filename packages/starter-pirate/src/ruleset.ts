@@ -58,7 +58,7 @@ export const pirateMinimalRuleset: RulesetDefinition = {
     {
       id: 'disengage-chance',
       name: 'Disengage Chance',
-      description: 'Success chance: 40 + instinct*5 + will*2, clamped 15-90',
+      description: 'Success chance: 40 + cunning*5 + sea-legs*2, clamped 15-90',
       inputs: ['actor.cunning', 'actor.sea-legs'],
       output: 'number (0-100)',
     },

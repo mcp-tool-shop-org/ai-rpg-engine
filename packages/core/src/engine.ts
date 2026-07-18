@@ -298,8 +298,25 @@ export class Engine {
     // (core-004) already preserved the subscribe side; this fixes the emit side.
     engine.moduleManager.rebindStore(restored);
 
-    // Restore the action log so getActionLog()/serialize() round-trip.
-    engine.actionLog = data.actionLog ? [...data.actionLog] : [];
+    // Restore the action log so getActionLog()/serialize() round-trip. Every
+    // other field this method reads from a save is validated with a
+    // structured SaveLoadError before use (assertSaveMetaShape, the rngState
+    // guard in world.ts) — actionLog had none of that (dogfood/v2.6
+    // core-spine amend). A non-iterable truthy actionLog (a number, boolean,
+    // or plain object) would raw-throw a TypeError out of
+    // `[...data.actionLog]` instead of this method's documented `@throws
+    // SaveLoadError` contract; a JSON STRING would silently succeed and
+    // spread into an array of single characters, accepted as the action log
+    // with zero error — the same "corrupt input silently accepted as valid"
+    // failure class the rest of this file was hardened to eliminate.
+    if (data.actionLog !== undefined && data.actionLog !== null && !Array.isArray(data.actionLog)) {
+      throw new SaveLoadError({
+        code: 'SAVE_MALFORMED',
+        message: `Save actionLog must be an array, got ${typeof data.actionLog}.`,
+        hint: 'The save file is corrupt or was not produced by this engine. Restore from a backup.',
+      });
+    }
+    engine.actionLog = Array.isArray(data.actionLog) ? [...data.actionLog] : [];
 
     return engine;
   }

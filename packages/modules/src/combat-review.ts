@@ -108,6 +108,22 @@ function defaultDamage(attacker: EntityState): number {
 
 const COMBAT_VERBS = new Set(['attack', 'guard', 'disengage']);
 
+/**
+ * Module persistence shape. `traces` used to live ONLY in
+ * createCombatReview()'s closure — register(ctx) never called
+ * ctx.persistence.registerNamespace at all (F-de2760c4). getReviewTraces(world)
+ * always read from world.modules['combat-review'], which nothing ever wrote
+ * to, so it ALWAYS returned [] for any real Engine. Re-fetched fresh on every
+ * access, the same pattern rumor-propagation.ts/district-core.ts use.
+ */
+type CombatReviewModuleState = {
+  traces: CombatTrace[];
+};
+
+function getReviewState(world: WorldState): CombatReviewModuleState {
+  return (world.modules['combat-review'] ?? { traces: [] }) as CombatReviewModuleState;
+}
+
 export function createCombatReview(config: CombatReviewConfig): {
   module: EngineModule;
   explain: (wrappedFormulas: CombatFormulas) => CombatFormulas;
@@ -116,7 +132,15 @@ export function createCombatReview(config: CombatReviewConfig): {
   const base = config.baseFormulas;
 
   // --- Shared closure state ---
-  const traces: CombatTrace[] = [];
+  // `pending` is ephemeral, work-in-progress state for the CURRENT
+  // synchronous action-dispatch cycle only (built up across multiple event
+  // handlers reacting to different event types during ONE action's
+  // resolution, then always flushed into `traces` and reset to null by the
+  // 'action.resolved' handler before the cycle ends) — safe to keep in the
+  // closure since a save can only happen BETWEEN actions.
+  //
+  // `traces` (the persisted ring buffer) is NOT safe to keep here — see
+  // getReviewState below (F-de2760c4).
   let pending: Partial<CombatTrace> | null = null;
 
   // Formula capture buffer — written by explain(), read by module listeners
@@ -307,6 +331,8 @@ export function createCombatReview(config: CombatReviewConfig): {
     dependsOn: ['status-core'],
 
     register(ctx) {
+      ctx.persistence.registerNamespace('combat-review', { traces: [] } as CombatReviewModuleState);
+
       // 1. action.declared — start trace
       ctx.events.on('action.declared', (event, world) => {
         const verb = event.payload.verb as string;
@@ -489,8 +515,9 @@ export function createCombatReview(config: CombatReviewConfig): {
         pending.summary = summarize(pending);
 
         const trace = pending as CombatTrace;
-        traces.push(trace);
-        if (traces.length > maxTraces) traces.shift();
+        const state = getReviewState(world);
+        state.traces.push(trace);
+        if (state.traces.length > maxTraces) state.traces.shift();
         pending = null;
 
         ctx.events.emit({
@@ -507,10 +534,13 @@ export function createCombatReview(config: CombatReviewConfig): {
       ctx.debug.registerInspector({
         id: 'combat-review',
         label: 'Combat Review Traces',
-        inspect: () => ({
-          count: traces.length,
-          recent: traces.slice(-10),
-        }),
+        inspect: (world) => {
+          const state = getReviewState(world);
+          return {
+            count: state.traces.length,
+            recent: state.traces.slice(-10),
+          };
+        },
       });
     },
   };
@@ -523,10 +553,7 @@ export function createCombatReview(config: CombatReviewConfig): {
 // ---------------------------------------------------------------------------
 
 export function getReviewTraces(world: WorldState): readonly CombatTrace[] {
-  const mod = world.modules['combat-review'] as { traces?: CombatTrace[] } | undefined;
-  // The ring buffer lives in the closure, not in world.modules.
-  // Traces are accessible via the debug inspector or combat.review.trace events.
-  return mod?.traces ?? [];
+  return getReviewState(world).traces;
 }
 
 // ---------------------------------------------------------------------------

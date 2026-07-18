@@ -46,11 +46,34 @@ export function createPartyState(maxSize?: number): PartyState {
   };
 }
 
-export function addCompanion(party: PartyState, companion: CompanionState): PartyState {
-  if (party.companions.length >= party.maxSize) return party;
-  if (party.companions.some((c) => c.npcId === companion.npcId)) return party;
+export type AddCompanionResult = {
+  party: PartyState;
+  success: boolean;
+  /** Present only when success is false — why the companion was not added. */
+  reason?: 'party-full' | 'already-present';
+};
+
+/**
+ * Add a companion to the party. Returns a result wrapper (F-f0ca0e51) —
+ * addCompanion used to silently return the unchanged `party` with no signal
+ * of any kind when the party was already at maxSize or the companion was
+ * already present, unlike every comparable state-changing operation
+ * elsewhere in this package (unlockNode -> UnlockResult { success, reason },
+ * resolveCraft/resolveRepair/resolveModify -> { success, ... },
+ * resolveSocialAction/etc -> LeverageResolution { success, failReason }).
+ * A caller can no longer distinguish "companion added" from "party was full,
+ * nothing happened" only by comparing party.companions.length before/after.
+ */
+export function addCompanion(party: PartyState, companion: CompanionState): AddCompanionResult {
+  if (party.companions.length >= party.maxSize) {
+    return { party, success: false, reason: 'party-full' };
+  }
+  if (party.companions.some((c) => c.npcId === companion.npcId)) {
+    return { party, success: false, reason: 'already-present' };
+  }
   const companions = [...party.companions, companion];
-  return { ...party, companions, cohesion: computePartyCohesion({ ...party, companions }) };
+  const newParty: PartyState = { ...party, companions, cohesion: computePartyCohesion({ ...party, companions }) };
+  return { party: newParty, success: true };
 }
 
 export function removeCompanion(

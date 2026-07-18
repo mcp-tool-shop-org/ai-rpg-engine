@@ -111,7 +111,7 @@ export function createGame(seed?: number): Engine {
       ...combat.modules,
       createInventoryCore([patronTokenEffect]),
       createDialogueCore([patronDialogue]),
-      createPerceptionFilter(),
+      createPerceptionFilter({ perceptionStat: 'agility' }),
       createProgressionCore({
         trees: [arenaGloryTree],
         rewards: [{

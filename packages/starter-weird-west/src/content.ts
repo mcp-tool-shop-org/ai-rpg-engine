@@ -237,7 +237,10 @@ export const zones: ZoneState[] = [
 
 export const bartenderDialogue: DialogueDefinition = {
   id: 'bartender-intel',
-  speakers: ['Silas'],
+  // Must be the entity id (not the display name) — dialogue-core's
+  // speakHandler auto-discovers a dialogue via `speakers.includes(targetId)`
+  // using the real entity id when no explicit dialogueId is passed.
+  speakers: ['bartender_silas'],
   entryNodeId: 'greeting',
   nodes: {
     greeting: {

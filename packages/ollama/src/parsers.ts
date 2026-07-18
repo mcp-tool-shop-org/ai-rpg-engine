@@ -478,7 +478,12 @@ function parsePlanYaml(text: string): DesignPlan {
 
 function flushStep(result: DesignPlan, item: Record<string, string>): void {
   if (!item['command']) return;
-  const order = parseInt(item['order'] ?? '0', 10) || result.steps.length + 1;
+  // v2.6 audit F-65bfc680 — `parseInt(...) || fallback` discards an explicit
+  // `order: 0` because 0 is falsy in JS. Check for NaN explicitly instead so
+  // a legitimate zero-indexed step is honored; only a missing/non-numeric
+  // value falls back to the sequential default.
+  const parsedOrder = parseInt(item['order'] ?? '', 10);
+  const order = Number.isNaN(parsedOrder) ? result.steps.length + 1 : parsedOrder;
   const dependsOn = item['dependsOn']
     ? item['dependsOn'].replace(/[\[\]]/g, '').split(',').map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n))
     : [];

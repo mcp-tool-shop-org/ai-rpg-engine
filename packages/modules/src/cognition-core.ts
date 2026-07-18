@@ -425,8 +425,18 @@ export function setBelief(
   }
 }
 
+/**
+ * Accepts any object exposing `.beliefs` — narrower than the full
+ * CognitionState, which is all this function ever touches (F-0eb004fc). A
+ * full CognitionState is structurally assignable here, so no existing caller
+ * changes; callers holding only a narrowed `{ beliefs: Belief[] }` shape
+ * (e.g. rumor-propagation.ts's extractRelevantBeliefs) no longer need an
+ * `as any` escape hatch to call this. If this function's implementation ever
+ * needs another CognitionState field, that access now fails to compile right
+ * here instead of silently working through a stale cast at every call site.
+ */
 export function getBelief(
-  cognition: CognitionState,
+  cognition: Pick<CognitionState, 'beliefs'>,
   subject: string,
   key: string,
 ): Belief | undefined {

@@ -380,6 +380,62 @@ describe('parsePlanOutput', () => {
     expect(structured.steps[0].command).toContain('create-district');
     expect(structured.rationale).toBe('ok');
   });
+
+  // v2.6 audit F-65bfc680 — flushStep() computed order via
+  // `parseInt(item['order'] ?? '0', 10) || result.steps.length + 1`. Because
+  // 0 is falsy in JS, `0 || fallback` always evaluates to the fallback, so a
+  // model that legitimately emits `order: 0` for a zero-indexed plan step had
+  // that explicit value silently discarded in favor of a sequential default.
+  it('honors an explicit order: 0 (zero-indexed step) instead of discarding it as falsy', () => {
+    const raw = [
+      'Plan.',
+      '',
+      '```yaml',
+      'steps:',
+      '  - order: 0',
+      '    command: "create-room --theme entry_hall"',
+      '    produces: "room definition"',
+      '    description: "Zero-indexed first step"',
+      'rationale: "starts at zero"',
+      '```',
+    ].join('\n');
+
+    const { structured } = parsePlanOutput(raw);
+    expect(structured.steps).toHaveLength(1);
+    expect(structured.steps[0].order).toBe(0);
+  });
+
+  it('honors an explicit order: 0 in the JSON fast-path too', () => {
+    const raw = [
+      'Plan.',
+      '',
+      '```yaml',
+      '{"steps":[{"order":0,"command":"create-room --theme entry_hall","produces":"room","description":"zero"}],"rationale":"ok"}',
+      '```',
+    ].join('\n');
+
+    const { structured } = parsePlanOutput(raw);
+    expect(structured.steps).toHaveLength(1);
+    expect(structured.steps[0].order).toBe(0);
+  });
+
+  it('still falls back to a sequential default when order is omitted entirely', () => {
+    const raw = [
+      'Plan.',
+      '',
+      '```yaml',
+      'steps:',
+      '  - command: "create-room --theme entry_hall"',
+      '    produces: "room definition"',
+      '    description: "No order given"',
+      'rationale: "default ordering"',
+      '```',
+    ].join('\n');
+
+    const { structured } = parsePlanOutput(raw);
+    expect(structured.steps).toHaveLength(1);
+    expect(structured.steps[0].order).toBe(1); // result.steps.length (0) + 1
+  });
 });
 
 describe('parseCompareOutput', () => {

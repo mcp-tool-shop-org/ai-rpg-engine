@@ -105,6 +105,43 @@ describe('RumorEngine', () => {
     expect(updated.status).toBe('dead');
   });
 
+  // F-06c431da: tick()'s death check used to fire unconditionally for every
+  // non-dead status (including 'established'), which made a dedicated
+  // "established rumors can also fade" block after it structurally
+  // unreachable — established rumors only ever died via the first,
+  // status-agnostic branch. That produced the right answer today but meant
+  // a future edit to the first branch (e.g. excluding 'established' from it,
+  // a very plausible "fix" given the dead block right below it) would
+  // silently make established rumors immortal. These two tests pin the
+  // intended semantics directly against an 'established' rumor so the
+  // established->dead path has its own coverage independent of the
+  // spreading/fading path.
+  test('tick keeps an established rumor established past the fading threshold (no fade stage)', () => {
+    const engine = new RumorEngine({ maxHops: 2, fadingThreshold: 5, deathThreshold: 20 });
+    const rumor = createRumor(engine, { originTick: 0 });
+
+    const established = engine.spread(rumor.id, defaultCtx({ receiverId: 'e1', hopCount: 1 }));
+    expect(established.status).toBe('established');
+
+    engine.tick(10); // ticksSinceSpread=9: past fadingThreshold(5), short of deathThreshold(20)
+
+    const updated = engine.get(rumor.id)!;
+    expect(updated.status).toBe('established');
+  });
+
+  test('tick transitions established rumors to dead after the death threshold', () => {
+    const engine = new RumorEngine({ maxHops: 2, fadingThreshold: 5, deathThreshold: 20 });
+    const rumor = createRumor(engine, { originTick: 0 });
+
+    const established = engine.spread(rumor.id, defaultCtx({ receiverId: 'e1', hopCount: 1 }));
+    expect(established.status).toBe('established');
+
+    engine.tick(21); // ticksSinceSpread=20: at deathThreshold(20)
+
+    const updated = engine.get(rumor.id)!;
+    expect(updated.status).toBe('dead');
+  });
+
   test('query filters by subject', () => {
     const engine = new RumorEngine();
     createRumor(engine, { subject: 'player' });

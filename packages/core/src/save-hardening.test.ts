@@ -269,3 +269,77 @@ describe('pc6 — migrateSaveState success path (the loop itself, not just its r
     expect(Object.keys(SAVE_MIGRATIONS)).toEqual([]);
   });
 });
+
+// dogfood/v2.6 core-spine amend, F-e53d5e91: Engine.deserialize read
+// `data.actionLog` with an `as`-cast and no runtime check, then did
+// `engine.actionLog = data.actionLog ? [...data.actionLog] : [];`. Every
+// OTHER field this method reads from a save is validated with a structured
+// SaveLoadError before use (assertSaveMetaShape, the rngState guard); this
+// pins the same treatment for actionLog: a non-iterable truthy value
+// (number/boolean/plain object) must raise SAVE_MALFORMED instead of a raw
+// TypeError, and a JSON STRING must be rejected instead of silently spreading
+// into an array of single characters.
+describe('core-spine — Engine.deserialize validates actionLog shape (F-e53d5e91)', () => {
+  it('rejects a non-array actionLog (plain object) with SAVE_MALFORMED naming the field', () => {
+    const parsed = JSON.parse(savedGame(21));
+    parsed.actionLog = { not: 'an array' };
+    try {
+      Engine.deserialize(JSON.stringify(parsed), { modules: [echoModule()] });
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(SaveLoadError);
+      expect((e as SaveLoadError).code).toBe('SAVE_MALFORMED');
+      expect((e as SaveLoadError).message).toContain('actionLog');
+      expect((e as SaveLoadError).hint).toBeTruthy();
+    }
+  });
+
+  it('rejects a non-array actionLog (number) instead of raw-throwing a TypeError out of the spread', () => {
+    const parsed = JSON.parse(savedGame(21));
+    parsed.actionLog = 42;
+    expect(() => Engine.deserialize(JSON.stringify(parsed), { modules: [echoModule()] }))
+      .toThrow(SaveLoadError);
+  });
+
+  it('rejects a non-array actionLog (boolean)', () => {
+    const parsed = JSON.parse(savedGame(21));
+    parsed.actionLog = true;
+    expect(() => Engine.deserialize(JSON.stringify(parsed), { modules: [echoModule()] }))
+      .toThrow(SaveLoadError);
+  });
+
+  it('rejects a STRING actionLog instead of silently spreading into an array of single characters', () => {
+    const parsed = JSON.parse(savedGame(21));
+    parsed.actionLog = 'not-an-array-but-iterable';
+    try {
+      Engine.deserialize(JSON.stringify(parsed), { modules: [echoModule()] });
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(SaveLoadError);
+      expect((e as SaveLoadError).code).toBe('SAVE_MALFORMED');
+    }
+  });
+
+  it('accepts a missing actionLog (defaults to [])', () => {
+    const parsed = JSON.parse(savedGame(21));
+    delete parsed.actionLog;
+    const loaded = Engine.deserialize(JSON.stringify(parsed), { modules: [echoModule()] });
+    expect(loaded.getActionLog()).toEqual([]);
+  });
+
+  it('accepts a null actionLog (defaults to [])', () => {
+    const parsed = JSON.parse(savedGame(21));
+    parsed.actionLog = null;
+    const loaded = Engine.deserialize(JSON.stringify(parsed), { modules: [echoModule()] });
+    expect(loaded.getActionLog()).toEqual([]);
+  });
+
+  it('control — a valid actionLog array still round-trips through deserialize', () => {
+    const saved = savedGame(22);
+    const parsed = JSON.parse(saved);
+    expect(Array.isArray(parsed.actionLog)).toBe(true);
+    expect(parsed.actionLog.length).toBeGreaterThan(0);
+    const loaded = Engine.deserialize(saved, { modules: [echoModule()] });
+    expect(loaded.getActionLog()).toEqual(parsed.actionLog);
+  });
+});

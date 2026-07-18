@@ -197,4 +197,48 @@ describe('Observer Presentation', () => {
     expect(presented._observerId).toBe('nonexistent');
     expect(presented._appliedRules.length).toBe(0);
   });
+
+  // F-d16bd990: ruleRegistry is a module-top-level Map keyed by
+  // makeRegistryId(customRules), derived ONLY from rule .id strings. Two
+  // Engine instances each registering a DIFFERENT custom rule under the SAME
+  // rule id collide onto the same registry key — the second
+  // createObserverPresentation() call's ruleRegistry.set(...) silently
+  // overwrites the first's entry, changing how the FIRST (already-built,
+  // unrelated) world presents events with no signal.
+  it('two engines registering different rules under the SAME rule id do not clobber each other', () => {
+    const ruleA: PresentationRule = {
+      id: 'shared-id',
+      eventPatterns: ['world.zone.entered'],
+      condition: () => true,
+      transform: (event) => ({
+        ...event,
+        payload: { ...event.payload, _subjectiveDescription: 'FROM ENGINE A' },
+      }),
+    };
+    const ruleB: PresentationRule = {
+      id: 'shared-id',
+      eventPatterns: ['world.zone.entered'],
+      condition: () => true,
+      transform: (event) => ({
+        ...event,
+        payload: { ...event.payload, _subjectiveDescription: 'FROM ENGINE B' },
+      }),
+    };
+
+    const engineA = createTestEngine([ruleA]);
+    // Building engine B AFTER engine A is what triggers the overwrite in the
+    // buggy code — same makeRegistryId('shared-id') key for two different
+    // transform functions.
+    createTestEngine([ruleB]);
+
+    engineA.submitAction('move', { targetIds: ['cave'] });
+    const moveEventA = engineA.world.eventLog.find((e) => e.type === 'world.zone.entered')!;
+
+    // Engine A's own world must still resolve to engine A's rule, not engine
+    // B's — even though engine B registered a DIFFERENT rule under the SAME
+    // id afterward. presentForObserver here deliberately omits the `rules`
+    // param so it goes through getAllRules(world) → the shared ruleRegistry.
+    const presented = presentForObserver(moveEventA, 'guard', engineA.world);
+    expect(presented.payload._subjectiveDescription).toBe('FROM ENGINE A');
+  });
 });

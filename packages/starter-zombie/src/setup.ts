@@ -102,7 +102,7 @@ export function createGame(seed?: number): Engine {
       ...combat.modules,
       createInventoryCore([antibioticsEffect]),
       createDialogueCore([medicDialogue]),
-      createPerceptionFilter(),
+      createPerceptionFilter({ perceptionStat: 'wits' }),
       createProgressionCore({
         trees: [survivalTree],
         rewards: [{

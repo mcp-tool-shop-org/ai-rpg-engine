@@ -52,6 +52,28 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * True for a fetch()-level failure worth retrying (v2.6 audit F-65938632).
+ *
+ * Empirically (Node 20+, undici): a connection-level failure (ECONNREFUSED,
+ * DNS failure, etc.) surfaces from fetch() as `TypeError: fetch failed` —
+ * that was the only case the old predicate accepted. But this client's own
+ * `AbortSignal.timeout(config.timeoutMs)` firing surfaces as a `DOMException`
+ * named 'TimeoutError', which is NOT an instanceof TypeError, so it fell
+ * straight to the immediate-failure branch regardless of maxAttempts. Ollama
+ * runs local LLM inference (cold model load into VRAM, long generations), so
+ * a request timeout is arguably the single most common transient failure
+ * mode for this client — it was also the one failure mode retry silently
+ * excluded. A generic abort that is NOT our own timeout (e.g. a
+ * caller-supplied AbortController — not used by this client today, but kept
+ * explicit for anyone who wires one in later) is deliberately left alone:
+ * only a recognized transient failure is retried.
+ */
+function isRetryableFetchError(err: unknown): err is TypeError | DOMException {
+  if (err instanceof TypeError) return true;
+  return err instanceof DOMException && err.name === 'TimeoutError';
+}
+
+/**
  * Build a recovery hint for connection failures. Ollama is the only optional
  * network surface; when it's unreachable the most common cause is the server
  * not running or a misconfigured URL, so name both the attempted URL and the
@@ -95,9 +117,11 @@ export function createClient(config: OllamaConfig, options?: OllamaClientOptions
             signal: AbortSignal.timeout(config.timeoutMs),
           });
         } catch (err) {
-          if (attempt < maxAttempts && err instanceof TypeError) {
-            const message = err.message || 'fetch failed';
-            onRetry({ attempt, maxAttempts, reason: `network error: ${message}`, delayMs: retryDelayMs });
+          if (attempt < maxAttempts && isRetryableFetchError(err)) {
+            const reason = err instanceof DOMException
+              ? `timeout after ${config.timeoutMs}ms`
+              : `network error: ${err.message || 'fetch failed'}`;
+            onRetry({ attempt, maxAttempts, reason, delayMs: retryDelayMs });
             await sleep(retryDelayMs);
             continue;
           }

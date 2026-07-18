@@ -1,12 +1,12 @@
 ---
 title: "AI RPG Engine Handbook"
-description: "Complete guide to building simulation-driven terminal RPGs with AI RPG Engine"
+description: "Complete guide to building simulation-driven text RPGs with AI RPG Engine"
 sidebar:
   order: 0
 ---
 
 
-A guide to building simulation-driven terminal RPGs.
+A guide to building simulation-driven text RPGs.
 
 ---
 
@@ -77,9 +77,38 @@ A guide to building simulation-driven terminal RPGs.
 35. [Planned Systems](./35-planned-systems.md)
 36. [AI-Assisted Worldbuilding](./36-ai-worldbuilding.md)
 
-## Part X — Advanced Systems
+## Part X — World & Society Systems
 
+37. [NPC Agency](./37-npc-agency.md)
+38. [District Life](./38-district-life.md)
+39. [Companions & Party Dynamics](./39-companions.md)
+40. [Economy, Scarcity & Trade](./40-economy-trade.md)
+41. [Crafting, Salvage & Item Transformation](./41-crafting-salvage.md)
 42. [Quest Webs & Emergent Opportunities](./42-quest-webs.md)
+43. [Endgames & Campaign Conclusions](./43-endgames.md)
+
+## Part XI — Starter Deep-Dives
+
+44. [Crimson Court (Vampire Horror Demo)](./44-crimson-court.md)
+45. [Iron Colosseum (Gladiator Historical Demo)](./45-iron-colosseum.md)
+46. [Jade Veil (Feudal Mystery Demo)](./46-jade-veil.md)
+
+## Part XII — Combat System
+
+47. [Combat System](./47-combat-system.md)
+48. [Abilities System](./48-abilities-system.md)
+49. [Combat Tactics — The Tactical Triangle](./49-combat-tactics.md)
+49a. [Combat Overview](./49a-combat-overview.md)
+50. [Combat States — The Four-State Doctrine](./50-combat-states.md)
+51. [Zone-Local Positioning](./51-zone-positioning.md)
+52. [Defeat Flow](./52-defeat-flow.md)
+53. [Precision vs Force](./53-precision-vs-force.md)
+54. [Companion Interception](./54-companion-interception.md)
+55. [Combat Pack Guide](./55-combat-pack-guide.md)
+56. [Tuning Philosophy](./56-tuning-philosophy.md)
+
+## Part XIII — Composition
+
 57. [Composition Guide](./57-composition-guide.md) — Build your own game by composing engine modules
 58. [Create Your Own Starter](./58-create-your-own-starter.md) — Scaffold a new game from the CLI or template
 59. [Plug-in Profiles](./59-plugin-profiles.md) — Per-entity rule resolution: a might fighter and a will mystic in one fight
@@ -95,7 +124,7 @@ A guide to building simulation-driven terminal RPGs.
 
 ## Building Worlds with AI RPG Engine
 
-AI RPG Engine is built to support simulation-driven storytelling, reactive worlds, modular design, and terminal-native games.
+AI RPG Engine is built to support simulation-driven storytelling, reactive worlds, modular design, and text-native games.
 
 The engine does not tell you what kind of world to build. It gives you the systems to build one that behaves.
 

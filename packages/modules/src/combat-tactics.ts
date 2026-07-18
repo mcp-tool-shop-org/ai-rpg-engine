@@ -112,21 +112,40 @@ export type CombatTacticsConfig = {
 /** Internal: per-flag tick stamp (the tick the flag was last set). */
 type RoundFlagTicks = Partial<Record<keyof RoundFlags, number>>;
 
-const roundFlagTickMap = new Map<string, RoundFlagTicks>();
+/**
+ * Module persistence shape (F-80a6afa2). Round flags used to live in a
+ * module-top-level `Map`, shared by EVERY Engine instance in the process —
+ * the same anti-pattern combat-intent.ts's defeatLog had before its fix. Two
+ * concurrent worlds (a server hosting multiple sessions, or many tests in one
+ * file reusing entity ids) with an entity sharing an id would cross-
+ * contaminate: an off-balance-resist roll or a reposition-vs-braced-defender
+ * check could fire based on a DIFFERENT world's brace action. Flags now live
+ * in `world.modules['combat-tactics']`, re-fetched fresh on every access —
+ * the same pattern rumor-propagation.ts/district-core.ts use.
+ */
+type ModuleState = {
+  version: string;
+  roundFlags: Record<string, RoundFlagTicks>;
+};
+
+function getModuleState(world: WorldState): ModuleState {
+  return (world.modules['combat-tactics'] ?? { version: '1.0.0', roundFlags: {} }) as ModuleState;
+}
 
 /** A round flag is active on the tick it was set or the immediately next tick. */
-function isRoundFlagActiveAt(entityId: string, flag: keyof RoundFlags, tick: number): boolean {
-  const t = roundFlagTickMap.get(entityId)?.[flag];
+function isRoundFlagActiveAt(world: WorldState, entityId: string, flag: keyof RoundFlags, tick: number): boolean {
+  const t = getModuleState(world).roundFlags[entityId]?.[flag];
   return t !== undefined && (t === tick || t === tick - 1);
 }
 
 /**
- * Public boolean view of an entity's round flags. A flag reads `true` when it
- * has been set at all (back-compat for callers/tests that inspect set-state);
- * tick-scoped activeness for game logic goes through isRoundFlagActiveAt.
+ * Public boolean view of an entity's round flags, scoped to `world`. A flag
+ * reads `true` when it has been set at all (back-compat for callers/tests
+ * that inspect set-state); tick-scoped activeness for game logic goes through
+ * isRoundFlagActiveAt.
  */
-export function getRoundFlags(entityId: string): RoundFlags {
-  const ticks = roundFlagTickMap.get(entityId);
+export function getRoundFlags(world: WorldState, entityId: string): RoundFlags {
+  const ticks = getModuleState(world).roundFlags[entityId];
   if (!ticks) return {};
   const view: RoundFlags = {};
   for (const key of Object.keys(ticks) as (keyof RoundFlags)[]) {
@@ -141,22 +160,24 @@ export function getRoundFlags(entityId: string): RoundFlags {
  * event.tick. (Optional only for back-compat with the re-exported signature —
  * omitting it stamps tick 0, which all internal callers avoid.)
  */
-export function setRoundFlag(entityId: string, flag: keyof RoundFlags, value: boolean, tick = 0): void {
-  const ticks = roundFlagTickMap.get(entityId) ?? {};
+export function setRoundFlag(world: WorldState, entityId: string, flag: keyof RoundFlags, value: boolean, tick = 0): void {
+  const state = getModuleState(world);
+  const ticks = state.roundFlags[entityId] ?? {};
   if (value) {
     ticks[flag] = tick;
   } else {
     delete ticks[flag];
   }
-  roundFlagTickMap.set(entityId, ticks);
+  state.roundFlags[entityId] = ticks;
 }
 
-export function clearRoundFlags(): void {
-  roundFlagTickMap.clear();
+/** Clear all round flags in `world` (per-world — no longer a global reset). */
+export function clearRoundFlags(world: WorldState): void {
+  getModuleState(world).roundFlags = {};
 }
 
-export function clearEntityRoundFlags(entityId: string): void {
-  roundFlagTickMap.delete(entityId);
+export function clearEntityRoundFlags(world: WorldState, entityId: string): void {
+  delete getModuleState(world).roundFlags[entityId];
 }
 
 // ---------------------------------------------------------------------------
@@ -230,13 +251,13 @@ function braceHandler(
   }, world));
 
   // Set internal braced flag — grants displacement resistance
-  setRoundFlag(actor.id, 'braced', true, world.meta.tick);
+  setRoundFlag(world, actor.id, 'braced', true, world.meta.tick);
 
   // Brace is stronger at chokepoints — set flag for stabilize listener
   const zone = world.zones[actor.zoneId ?? ''];
   const atChokepoint = zone?.tags?.includes('chokepoint') ?? false;
   if (atChokepoint) {
-    setRoundFlag(actor.id, 'bracedAtChokepoint', true, world.meta.tick);
+    setRoundFlag(world, actor.id, 'bracedAtChokepoint', true, world.meta.tick);
   }
 
   // Brace clears off-balance (stabilization)
@@ -309,7 +330,7 @@ function repositionHandler(
     if (removeEvt) events.push(removeEvt);
   }
 
-  setRoundFlag(actor.id, 'attemptedReposition', true, world.meta.tick);
+  setRoundFlag(world, actor.id, 'attemptedReposition', true, world.meta.tick);
 
   const mapping = config?.formulas?.statMapping ?? { attack: 'vigor', precision: 'instinct', resolve: 'will' };
   const precision = getStat(actor, mapping, 'precision', 5);
@@ -336,7 +357,7 @@ function repositionHandler(
   // Check if any enemy in zone is braced *this round* (brace counters reposition).
   // Tick-scoped: a stale braced flag from an earlier round must not apply (MC-02).
   const enemies = getEnemiesInZone(world, actor);
-  const bracedDefender = enemies.find(e => isRoundFlagActiveAt(e.id, 'braced', world.meta.tick));
+  const bracedDefender = enemies.find(e => isRoundFlagActiveAt(world, e.id, 'braced', world.meta.tick));
   if (bracedDefender) {
     chance -= 20; // Braced defender makes repositioning harder
   }
@@ -461,7 +482,7 @@ export function createCombatTactics(config?: CombatTacticsConfig): EngineModule 
       // Track guard action via round flags
       ctx.events.on('combat.guard.start', (event: ResolvedEvent, world: WorldState) => {
         const entityId = event.payload.entityId as string;
-        setRoundFlag(entityId, 'guarding', true, world.meta.tick);
+        setRoundFlag(world, entityId, 'guarding', true, world.meta.tick);
       });
 
       // Guard action clears off-balance (spending a turn to stabilize)
@@ -482,7 +503,7 @@ export function createCombatTactics(config?: CombatTacticsConfig): EngineModule 
         if (!entityId) return;
         // Only an active brace (this tick or the immediately prior tick) resists.
         // A stale braced flag from a past round must not fire (MC-02).
-        if (!isRoundFlagActiveAt(entityId, 'braced', event.tick)) return;
+        if (!isRoundFlagActiveAt(world, entityId, 'braced', event.tick)) return;
 
         // Braced entities resist off-balance (vigor = physical force to hold ground)
         const entity = world.entities[entityId];
@@ -490,7 +511,7 @@ export function createCombatTactics(config?: CombatTacticsConfig): EngineModule 
           const entityMapping = config?.formulas?.statMapping ?? DEFAULT_STAT_MAPPING;
           const entityVigor = entity.stats[entityMapping.attack] ?? 5;
           let stabilizeChance = config?.braceStabilizeChance ?? Math.min(90, 40 + entityVigor * 6);
-          if (isRoundFlagActiveAt(entityId, 'bracedAtChokepoint', event.tick)) stabilizeChance += 15;
+          if (isRoundFlagActiveAt(world, entityId, 'bracedAtChokepoint', event.tick)) stabilizeChance += 15;
           const roll = simpleRoll(event.tick, entityId, 'stabilize');
           if (roll <= stabilizeChance) {
             removeStatus(entity, COMBAT_STATES.OFF_BALANCE, event.tick);
@@ -500,7 +521,8 @@ export function createCombatTactics(config?: CombatTacticsConfig): EngineModule 
 
       ctx.persistence.registerNamespace('combat-tactics', {
         version: '1.0.0',
-      });
+        roundFlags: {},
+      } as ModuleState);
     },
   };
 }

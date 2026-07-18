@@ -351,6 +351,7 @@ export type {
   CompanionState,
   PartyState,
   AbilityModifiers,
+  AddCompanionResult,
 } from './companion-core.js';
 export {
   evaluateCompanionReactions,

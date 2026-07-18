@@ -86,7 +86,7 @@ export async function runChatShell(options: ChatShellOptions): Promise<void> {
       if (handled === 'quit') {
         if (saveTranscripts && transcript.messages.length > 0) {
           const path = defaultTranscriptPath(projectRoot, transcript.sessionName);
-          await saveTranscript(path, transcript);
+          await saveTranscript(path, transcript, projectRoot);
           console.log(`Transcript saved to ${path}`);
         }
         rl.close();
@@ -120,7 +120,8 @@ export async function runChatShell(options: ChatShellOptions): Promise<void> {
   });
 }
 
-async function handleSlashCommand(
+/** Exported for tests (v2.6 audit F-ed21662f). */
+export async function handleSlashCommand(
   input: string,
   engine: ChatEngine,
   transcript: ChatTranscript,
@@ -149,7 +150,7 @@ async function handleSlashCommand(
         return 'handled';
       }
       const path = defaultTranscriptPath(projectRoot, transcript.sessionName);
-      await saveTranscript(path, transcript);
+      await saveTranscript(path, transcript, projectRoot);
       console.log(`Transcript saved to ${path}`);
       return 'handled';
     }
@@ -323,7 +324,15 @@ async function handleSlashCommand(
       const startTick = parseInt(parts[1] ?? '0', 10);
       const endTick = parseInt(parts[2] ?? '0', 10);
       const replay = parts.slice(3).join(' ').trim();
-      if (endTick <= startTick) {
+      // v2.6 audit F-ed21662f — a non-numeric tick argument makes parseInt
+      // yield NaN, and ANY comparison against NaN is false, so the old
+      // `endTick <= startTick` check alone never tripped for a malformed
+      // argument. Execution fell through into analyzeWindow(replay, NaN, ...),
+      // whose tick filter (`tick >= NaN`) always matches zero ticks — a
+      // silent "0 ticks analyzed, 0 findings" indistinguishable from a
+      // legitimately empty (but validly specified) window. Reject NaN
+      // explicitly so malformed input gets the same usage message.
+      if (Number.isNaN(startTick) || Number.isNaN(endTick) || endTick <= startTick) {
         console.log('Usage: /analyze-window <startTick> <endTick> <replay-json>');
         return 'handled';
       }

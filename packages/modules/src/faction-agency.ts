@@ -125,8 +125,13 @@ export function buildFactionProfile(
     cognition.cohesion * 0.6 + (1 - cognition.alertLevel / 100) * 0.4,
   ));
 
-  // Enemy factions: player has ≤ -30 rep AND this faction has high alert
+  // Enemy / allied factions: player has ≤ -30 rep AND this faction has high
+  // alert — only THEN do we have a confident posture to reason about other
+  // factions from. alliedFactions used to be unconditionally `[]` (dead
+  // field, F-9871d1eb); it now walks the SAME loop as enemyFactions instead
+  // of a separate pass. A faction lands in at most one list.
   const enemyFactions: string[] = [];
+  const alliedFactions: string[] = [];
   if (playerReputation <= -30 && cognition.alertLevel >= 30) {
     // This faction considers the player an enemy — track rival factions too
     for (const otherId of Object.keys(world.factions)) {
@@ -135,6 +140,10 @@ export function buildFactionProfile(
       // Rival: high alert toward same threat, or competing for districts
       if (otherCog.alertLevel >= 40) {
         enemyFactions.push(otherId);
+      } else if (otherCog.alertLevel < 10 && otherCog.cohesion >= 0.6) {
+        // Calm and cohesive: not competing for the same volatile crisis —
+        // provisionally read as aligned rather than rival.
+        alliedFactions.push(otherId);
       }
     }
   }
@@ -159,7 +168,7 @@ export function buildFactionProfile(
     memberCount: livingMembers.length,
     controlledDistricts,
     enemyFactions,
-    alliedFactions: [],
+    alliedFactions,
   };
 }
 
@@ -299,8 +308,8 @@ function deriveGoals(
           verb,
           targetDistrictId: districtId,
         });
+        break; // One economy goal — stop at the FIRST district with a crisis
       }
-      break; // One economy goal per controlled district
     }
 
     // Enemy prosperous districts → blockade or raid-supply

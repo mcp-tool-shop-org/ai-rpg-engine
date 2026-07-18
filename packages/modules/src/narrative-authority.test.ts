@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   PresentationChannels,
   createTestEngine,
+  Engine,
   type ResolvedEvent,
 } from '@ai-rpg-engine/core';
 import {
@@ -283,5 +284,85 @@ describe('contradiction tracking + truth reveal', () => {
     // Now the player knows the narrator lied
     expect(getHiddenTruths(state)).toHaveLength(0);
     expect(getRevealedTruths(state)).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Live world.modules state, incl. save/reload (F-fe16be5e)
+// ---------------------------------------------------------------------------
+//
+// The '*' listener installed by createNarrativeAuthority used to mutate the
+// closure-captured `state` object directly instead of re-fetching from
+// world.modules — but ctx.persistence.registerNamespace stores a
+// structuredClone of that object into world.modules, a SEPARATE reference
+// from the very start. So objectiveLog diverged from world.modules
+// immediately (not just after reload), and a save/reload made the divergence
+// permanent: Engine.deserialize reconstructs a brand-new closure whose
+// listener keeps writing to ITS OWN new stale object forever.
+
+describe('narrative-authority: live world.modules state', () => {
+  const playerEntity = {
+    id: 'player', blueprintId: 'player', type: 'player', name: 'Hero',
+    tags: [], stats: {}, resources: {}, statuses: [], zoneId: 'a',
+  };
+  const zones = [
+    { id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: ['b'] },
+    { id: 'b', roomId: 'test', name: 'B', tags: [], neighbors: ['a'] },
+  ];
+
+  it('objectiveLog accumulates into world.modules (not a disconnected closure) and survives save/reload', () => {
+    const channels = new PresentationChannels();
+    const mod = createNarrativeAuthority(channels);
+
+    const engine = createTestEngine({
+      modules: [traversalCore, mod],
+      entities: [{ ...playerEntity }],
+      zones,
+    });
+
+    engine.submitAction('move', { targetIds: ['b'] });
+
+    // The event MUST be visible through world.modules — the live, persisted
+    // location the rest of the engine (and any reload) reads from.
+    const liveState = engine.world.modules['narrative-authority'] as NarrativeAuthorityState;
+    expect(liveState.objectiveLog.length).toBeGreaterThan(0);
+    expect(liveState.objectiveLog.some((e) => e.type === 'world.zone.entered')).toBe(true);
+    const beforeCount = liveState.objectiveLog.length;
+
+    // SAVE -> LOAD.
+    const blob = engine.serialize();
+    const channels2 = new PresentationChannels();
+    const restored = Engine.deserialize(blob, {
+      modules: [traversalCore, createNarrativeAuthority(channels2)],
+    });
+
+    // The pre-reload log rode along with the save.
+    const restoredState = restored.world.modules['narrative-authority'] as NarrativeAuthorityState;
+    expect(restoredState.objectiveLog.length).toBe(beforeCount);
+
+    // Post-reload events must keep accumulating into the SAME live object —
+    // not vanish into the new engine's fresh, disconnected closure.
+    restored.submitAction('move', { targetIds: ['a'] });
+    const afterState = restored.world.modules['narrative-authority'] as NarrativeAuthorityState;
+    expect(afterState.objectiveLog.length).toBeGreaterThan(beforeCount);
+  });
+
+  it('objectiveLog is capped so it does not grow unboundedly', () => {
+    const channels = new PresentationChannels();
+    const mod = createNarrativeAuthority(channels);
+
+    const engine = createTestEngine({
+      modules: [traversalCore, mod],
+      entities: [{ ...playerEntity }],
+      zones,
+    });
+
+    // Bounce back and forth well past any reasonable cap.
+    for (let i = 0; i < 600; i++) {
+      engine.submitAction('move', { targetIds: [i % 2 === 0 ? 'b' : 'a'] });
+    }
+
+    const liveState = engine.world.modules['narrative-authority'] as NarrativeAuthorityState;
+    expect(liveState.objectiveLog.length).toBeLessThan(600);
   });
 });

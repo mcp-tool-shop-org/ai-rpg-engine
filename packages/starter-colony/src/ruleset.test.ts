@@ -65,4 +65,17 @@ describe('colonyMinimalRuleset', () => {
     expect(formulaIds).toContain('damage');
     expect(formulaIds).toContain('scan-success');
   });
+
+  // F-e83a091f: this description was copy-pasted verbatim from starter-fantasy
+  // ("40 + instinct*5 + will*2") — colony has no 'instinct'/'will' stats at
+  // all. Per buildCombatFormulas' real disengageChance formula
+  // (packages/modules/src/combat-builders.ts: 40 + precision*5 + resolve*2,
+  // clamped 15-90), colony's precision/resolve stats are awareness/command.
+  it('disengage-chance formula description matches this pack\'s real stats', () => {
+    const formula = colonyMinimalRuleset.formulas.find((f) => f.id === 'disengage-chance')!;
+    expect(formula.description).toContain('awareness');
+    expect(formula.description).toContain('command');
+    expect(formula.description).not.toContain('instinct');
+    expect(formula.description).not.toContain('will');
+  });
 });

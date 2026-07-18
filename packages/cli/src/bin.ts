@@ -309,7 +309,12 @@ function saveGame(engine: Engine) {
   fs.writeFileSync(SAVE_FILE, engine.serialize(), 'utf-8');
 }
 
-function replayGame(args: string[] = []) {
+/**
+ * Exported for unit testing (same rationale as runGuardedAction — this reads
+ * a real save file off disk and drives process.exit on bad input, so tests
+ * point it at a temp cwd and stub process.exit rather than shelling out).
+ */
+export function replayGame(args: string[] = []) {
   if (!fs.existsSync(SAVE_FILE)) {
     console.error('  No save file found.');
     process.exit(1);
@@ -346,7 +351,19 @@ function replayGame(args: string[] = []) {
 
   if (reSimulate) {
     // Explicit re-simulation path: replay the action log through a fresh game.
-    const actionLog = data.actionLog ?? [];
+    // F-7650e39d: `data.actionLog ?? []` only substitutes for null/undefined —
+    // a corrupted save with actionLog set to any other non-iterable JSON
+    // value (a number, boolean, or plain object) made the for..of below
+    // raw-throw an unstructured TypeError, unlike the default-load branch
+    // just below, which wraps WorldStore.deserialize in try/catch and prints
+    // a friendly `[code] message` + hint on SaveLoadError. Match that.
+    const rawActionLog = data.actionLog;
+    if (rawActionLog !== undefined && rawActionLog !== null && !Array.isArray(rawActionLog)) {
+      console.error(`  Cannot load save: actionLog must be an array, got ${typeof rawActionLog}.`);
+      console.error('  Hint: the save file is corrupt or was not produced by this engine.');
+      process.exit(1);
+    }
+    const actionLog = Array.isArray(rawActionLog) ? rawActionLog : [];
     console.log(`  Re-simulating ${actionLog.length} actions...`);
     for (const action of actionLog) {
       engine.processAction(action);

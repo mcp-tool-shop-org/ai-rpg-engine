@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { extractKeywords, retrieve, formatRetrievedContext } from './chat-rag.js';
 import type { RetrievedSnippet, RetrievalResult } from './chat-rag.js';
 import type { DesignSession } from './session.js';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, utimes } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -270,6 +270,57 @@ describe('retrieve — transcripts', () => {
     const transcriptSnippet = result.snippets.find(s => s.source === 'transcript');
     expect(transcriptSnippet).toBeDefined();
     expect(transcriptSnippet!.content).toContain('haunted library');
+  });
+});
+
+// v2.6 audit F-c46487a9 — retrieveFromTranscripts() picked its "5 most
+// recent transcripts" via `files.sort().reverse().slice(0, 5)`, a
+// LEXICOGRAPHIC sort of filenames shaped `${slug}-${date}.jsonl`
+// (defaultTranscriptPath). That only approximates recency when every
+// transcript shares the same slug. Once a project has differently-named
+// sessions, an alphabetically-later slug (e.g. "zz-old-session...") sorts
+// ahead of a much more recent date from an earlier-lettered slug (e.g.
+// "aa-recent-1..."), silently feeding stale prior-decision context into the
+// chat instead of the actually-recent transcripts.
+describe('retrieve — transcript recency selection (F-c46487a9)', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), 'rag-transcript-recency-'));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('selects the 5 most recently MODIFIED transcripts, not the 5 alphabetically-last filenames', async () => {
+    const transcriptDir = join(tmpDir, '.ai-transcripts');
+    await mkdir(transcriptDir, { recursive: true });
+
+    const jsonlLine = (marker: string) => [
+      JSON.stringify({ role: 'user', content: `notes about ${marker}`, timestamp: '2025-01-01T00:00:00Z' }),
+    ].join('\n');
+
+    // Alphabetically LAST (would sort first under `.sort().reverse()`), but
+    // deliberately given an OLD mtime so the test isn't sensitive to write
+    // speed / filesystem timestamp resolution.
+    const oldFile = join(transcriptDir, 'zz-old-session-2020-01-01.jsonl');
+    await writeFile(oldFile, jsonlLine('gizmo'));
+    await utimes(oldFile, new Date('2020-01-01T00:00:00Z'), new Date('2020-01-01T00:00:00Z'));
+
+    // 5 alphabetically-EARLIER files that are actually more recently modified.
+    for (let i = 1; i <= 5; i++) {
+      await writeFile(join(transcriptDir, `aa-recent-${i}.jsonl`), jsonlLine('gizmo'));
+    }
+
+    const result = await retrieve({ userMessage: 'gizmo', maxSnippets: 20 }, null, tmpDir);
+    const origins = result.snippets.filter(s => s.source === 'transcript').map(s => s.origin);
+
+    expect(origins).toHaveLength(5);
+    expect(origins.some(o => o.includes('zz-old-session'))).toBe(false);
+    for (let i = 1; i <= 5; i++) {
+      expect(origins.some(o => o.includes(`aa-recent-${i}`))).toBe(true);
+    }
   });
 });
 

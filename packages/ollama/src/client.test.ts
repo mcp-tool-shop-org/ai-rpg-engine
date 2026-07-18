@@ -155,6 +155,65 @@ describe('createClient.generate — retry/backoff (PA-3)', () => {
     ]);
   });
 
+  // v2.6 audit F-65938632 — AbortSignal.timeout(config.timeoutMs) firing
+  // rejects fetch() with a DOMException named 'TimeoutError', which is NOT
+  // an instanceof TypeError. The old predicate (`err instanceof TypeError`)
+  // silently excluded the single most common transient failure for a local
+  // Ollama daemon (cold model load / long generation blowing past
+  // timeoutMs): a maxAttempts:3 caller got a hard failure on attempt 1.
+  it('recovers when a request timeout (AbortSignal.timeout TimeoutError) precedes a success', async () => {
+    let call = 0;
+    globalThis.fetch = vi.fn(async () => {
+      call++;
+      if (call === 1) throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+      return makeResponse({ ok: true, status: 200, json: async () => ({ response: 'recovered' }) });
+    }) as unknown as typeof fetch;
+
+    const { calls, onRetry } = collectRetries();
+    const client = createClient(resolveConfig({ retryDelayMs: 0, timeoutMs: 5000 }), { onRetry });
+    const result = await client.generate({ system: 's', prompt: 'p' });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.text).toBe('recovered');
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    expect(calls).toEqual([
+      { attempt: 1, maxAttempts: 3, reason: 'timeout after 5000ms', delayMs: 0 },
+    ]);
+  });
+
+  it('surfaces a final error (not a raw DOMException) once repeated timeouts exhaust retries', async () => {
+    globalThis.fetch = vi.fn(async () => {
+      throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    }) as unknown as typeof fetch;
+
+    const { calls, onRetry } = collectRetries();
+    const client = createClient(resolveConfig({ retryDelayMs: 0 }), { onRetry });
+    const result = await client.generate({ system: 's', prompt: 'p' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/timeout/i);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+    expect(calls).toHaveLength(2); // one breadcrumb per retry, none for the final failure
+  });
+
+  it('does NOT retry an abort that is not our own timeout (e.g. name "AbortError")', async () => {
+    // Guards the predicate's specificity: only OUR AbortSignal.timeout()
+    // firing (name 'TimeoutError') is transient/retryable. A generic abort
+    // is left alone, matching the pre-fix behavior for anything that isn't
+    // a recognized transient failure.
+    globalThis.fetch = vi.fn(async () => {
+      throw new DOMException('The operation was aborted', 'AbortError');
+    }) as unknown as typeof fetch;
+
+    const { calls, onRetry } = collectRetries();
+    const client = createClient(resolveConfig({ retryDelayMs: 0 }), { onRetry });
+    const result = await client.generate({ system: 's', prompt: 'p' });
+
+    expect(result.ok).toBe(false);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(0);
+  });
+
   it('retries a 5xx and surfaces the final HTTP error after max attempts', async () => {
     globalThis.fetch = vi.fn(async () =>
       makeResponse({ ok: false, status: 503, text: async () => 'overloaded' }),

@@ -265,7 +265,10 @@ export const zones: ZoneState[] = [
 
 export const medicDialogue: DialogueDefinition = {
   id: 'medic-triage',
-  speakers: ['Dr. Chen'],
+  // Must be the entity id (not the display name) — dialogue-core's
+  // speakHandler auto-discovers a dialogue via `speakers.includes(targetId)`
+  // using the real entity id when no explicit dialogueId is passed.
+  speakers: ['medic_chen'],
   entryNodeId: 'greeting',
   nodes: {
     greeting: {

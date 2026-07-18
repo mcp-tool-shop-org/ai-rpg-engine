@@ -1,10 +1,13 @@
 import { describe, test, expect } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
+import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
 import { createCognitionCore, getCognition, setBelief, addMemory } from './cognition-core.js';
 import { createPerceptionFilter } from './perception-filter.js';
 import { createEnvironmentCore, setZoneProperty } from './environment-core.js';
 import { createFactionCognition, setFactionBelief, getFactionCognition } from './faction-cognition.js';
 import { createRumorPropagation } from './rumor-propagation.js';
+import { statusCore } from './status-core.js';
+import { createAbilityCore } from './ability-core.js';
 import {
   createSimulationInspector,
   inspectEntity,
@@ -178,5 +181,90 @@ describe('simulation-inspector', () => {
     expect(ids).toContain('environment-state');
     expect(ids).toContain('rumor-trace');
     expect(ids).toContain('simulation-snapshot');
+  });
+
+  // -------------------------------------------------------------------------
+  // abilityState.availableAbilities (F-dd1faf2a)
+  // -------------------------------------------------------------------------
+  //
+  // availableAbilities used to be derived ONLY from AbilityModuleState's
+  // cooldowns/useCounts, both populated ONLY once an ability has been used at
+  // least once. Any ability an entity has NEVER used — the common case for
+  // most of a kit, most of the time — was silently omitted even when fully
+  // ready, because this inspector never called ability-core.ts's actually-
+  // correct isAbilityReady/getAvailableAbilities (it lacked the
+  // AbilityDefinition[] list needed to). inspectEntity/inspectAllEntities/
+  // createSimulationInspector now accept an OPTIONAL abilities list; when
+  // supplied, availability is computed correctly; omitted, the old
+  // (under-reporting, but no worse than before) cooldown/use-count fallback
+  // still applies for back-compat.
+
+  describe('abilityState.availableAbilities', () => {
+    const fireball: AbilityDefinition = {
+      id: 'fireball', name: 'Fireball', verb: 'cast', tags: [],
+      target: { type: 'single', filter: ['enemy'] }, checks: [], effects: [],
+    };
+    const drainingRitual: AbilityDefinition = {
+      id: 'draining-ritual', name: 'Draining Ritual', verb: 'cast', tags: [],
+      costs: [{ resourceId: 'mana', amount: 100 }], // guard_1 has no mana → never affordable
+      target: { type: 'self' }, checks: [], effects: [],
+    };
+
+    function createEngineWithAbilities() {
+      return createTestEngine({
+        modules: [
+          statusCore,
+          createCognitionCore(),
+          createPerceptionFilter(),
+          createEnvironmentCore(),
+          createFactionCognition({
+            factions: [{ factionId: 'castle-guard', entityIds: ['guard_1'] }],
+          }),
+          createRumorPropagation(),
+          createAbilityCore({ abilities: [fireball, drainingRitual] }),
+          createSimulationInspector({ abilities: [fireball, drainingRitual] }),
+        ],
+        entities: [player, { ...guard }],
+        zones,
+        playerId: 'player',
+        startZone: 'hall',
+      });
+    }
+
+    test('an ability the entity has NEVER used still shows as available when it is actually ready', () => {
+      const engine = createEngineWithAbilities();
+      const inspection = inspectEntity(engine.world, 'guard_1', [fireball, drainingRitual]);
+      expect(inspection).not.toBeNull();
+      expect(inspection!.abilityState.availableAbilities).toContain('fireball');
+    });
+
+    test('an ability the entity has never used but genuinely CANNOT afford is correctly excluded (proves this reads real readiness, not just presence)', () => {
+      const engine = createEngineWithAbilities();
+      const inspection = inspectEntity(engine.world, 'guard_1', [fireball, drainingRitual]);
+      expect(inspection!.abilityState.availableAbilities).not.toContain('draining-ritual');
+    });
+
+    test('inspectAllEntities threads the abilities list through to every entity', () => {
+      const engine = createEngineWithAbilities();
+      const all = inspectAllEntities(engine.world, [fireball, drainingRitual]);
+      expect(all['guard_1'].abilityState.availableAbilities).toContain('fireball');
+    });
+
+    test('without an abilities list (back-compat), a never-used ability is not reported', () => {
+      const engine = createEngineWithAbilities();
+      const inspection = inspectEntity(engine.world, 'guard_1');
+      expect(inspection!.abilityState.availableAbilities).not.toContain('fireball');
+    });
+
+    test('createSimulationInspector threads its configured abilities into the entity-cognition debug inspector', () => {
+      const engine = createEngineWithAbilities();
+      const entityCognitionInspector = engine.moduleManager
+        .getInspectors()
+        .find(i => i.id === 'entity-cognition')!;
+      const result = entityCognitionInspector.inspect(engine.world) as Record<string, {
+        abilityState: { availableAbilities: string[] };
+      }>;
+      expect(result['guard_1'].abilityState.availableAbilities).toContain('fireball');
+    });
   });
 });

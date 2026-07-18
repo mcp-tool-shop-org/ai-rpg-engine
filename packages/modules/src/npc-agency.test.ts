@@ -9,7 +9,9 @@ import {
   deriveLoyaltyBreakpoint,
   createObligation,
   buildConsequenceChain,
+  getNetObligationWeight,
 } from './npc-agency.js';
+import type { NpcObligationLedger } from './npc-agency.js';
 import { makePressure, type WorldPressure } from './pressure-system.js';
 
 const makePlayer = (zoneId: string): EntityState => ({
@@ -196,5 +198,85 @@ describe('npc-agency determinism (no module-global counters)', () => {
       expect(base.id).toContain('retaliation');
       expect(base.id).toContain('8');
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Obligation sign math (F-b53aa70d / F-9fc34e60)
+// ---------------------------------------------------------------------------
+//
+// The only place a `kind: 'betrayed'` obligation is created is
+// resolveNpcAction's 'betray' case: { kind: 'betrayed',
+// direction: 'player-owes-npc', magnitude: 5, ... } — the NPC is the
+// betrayer, counterpartyId is the player. getNetObligationWeight's sign math
+// used to double-negate this: direction: 'player-owes-npc' already yields
+// sign = -1, and kindWeight = (kind === 'betrayed' ? -1 : 1) applied ANOTHER
+// -1, so the product was POSITIVE — the same sign bucket as a genuine
+// 'favor'. This contradicted deriveNpcGoals's adjacent, correctly-signed
+// betrayalCount check (boosts accuse/betray, suppresses warn for exactly
+// this case), so the two obligation-adjustment blocks partially canceled
+// instead of reinforcing.
+
+describe('npc-agency: obligation sign math', () => {
+  it('a single betrayed obligation nets NEGATIVE (not positive) toward the counterparty', () => {
+    const ledger: NpcObligationLedger = {
+      obligations: [createObligation('betrayed', 'player-owes-npc', 'knight', 'player', 5, 'betray', 10, null)],
+    };
+    expect(getNetObligationWeight(ledger, 'player')).toBeLessThan(0);
+  });
+
+  it('a genuine favor (npc-owes-player) still nets POSITIVE — the fix must not flip unrelated kinds', () => {
+    const ledger: NpcObligationLedger = {
+      obligations: [createObligation('favor', 'npc-owes-player', 'knight', 'player', 5, 'recruit', 10, null)],
+    };
+    expect(getNetObligationWeight(ledger, 'player')).toBeGreaterThan(0);
+  });
+
+  it('after a betrayal, the netWeight-based and betrayalCount-based goal adjustments reinforce (not partially cancel): accuse/betray moves MORE hostile', () => {
+    // NPC loyal to a cohesive faction (loyalty > 60 via cohesion 0.8), deeply
+    // distrustful of the player, and aware of damaging rumors — satisfies
+    // deriveNpcGoals rule 2 ('accuse'). trust <= -30 also makes this NPC
+    // 'hostile' for BOTH scenarios below, so the breakpoint-gating step's
+    // +0.1 accuse bump applies equally in each and cancels out of the diff.
+    const engine = createTestEngine({
+      modules: [
+        createCognitionCore(),
+        createFactionCognition({
+          factions: [{ factionId: 'order', entityIds: ['knight'], cohesion: 0.8 }], // loyalty ≈ 84
+        }),
+      ],
+      entities: [
+        makePlayer('hall'),
+        makeNamedNpc('knight', 'Sir Aldric', 'hall', { relations: { 'player-trust': -40 } }),
+      ],
+      zones: [{ id: 'hall', roomId: 'keep', name: 'Great Hall', tags: [], neighbors: [] }],
+    });
+
+    const rumors = [{
+      id: 'r1', claim: 'burned the granary', subjectDescriptor: 'the stranger',
+      sourceEvent: 'test', originFactionId: 'order', confidence: 0.9, distortion: 0,
+      mutationCount: 0, valence: 'fearsome' as const, spreadTo: [], originTick: 0,
+    }];
+
+    // Sanity: this scenario is hostile (trust ≤ -30) with loyalty > 60 —
+    // rule 2's precondition for an 'accuse' goal.
+    const rel = deriveNpcRelationship(engine.world, 'knight', 'player');
+    expect(rel.trust).toBeLessThanOrEqual(-30);
+    expect(rel.loyalty).toBeGreaterThan(60);
+
+    const withoutObligation = buildNpcProfile(engine.world, 'knight', 'player', [], rumors);
+    const accuseBefore = withoutObligation.goals.find((g) => g.verb === 'accuse');
+    expect(accuseBefore).toBeDefined();
+
+    const ledger: NpcObligationLedger = {
+      obligations: [createObligation('betrayed', 'player-owes-npc', 'knight', 'player', 5, 'betray', 10, null)],
+    };
+    const withObligation = buildNpcProfile(engine.world, 'knight', 'player', [], rumors, ledger);
+    const accuseAfter = withObligation.goals.find((g) => g.verb === 'accuse');
+    expect(accuseAfter).toBeDefined();
+
+    // Fixed behavior: a betrayal must make accuse strictly MORE likely, never
+    // less — the buggy sign math made it LESS likely (net effect -0.1).
+    expect(accuseAfter!.priority).toBeGreaterThan(accuseBefore!.priority);
   });
 });

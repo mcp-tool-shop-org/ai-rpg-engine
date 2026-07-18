@@ -70,6 +70,31 @@ export function failStep(
   onProgress?.(progress);
 }
 
+/**
+ * Mark the current step 'skipped' and advance — the same bounds-checked
+ * pattern advanceStep()/failStep() use (v2.6 audit F-307f8f22). Several
+ * macro call sites used to hand-roll this transition by mutating
+ * `progress.steps[progress.currentStep]` directly with no `if (step)` guard,
+ * safe today only because each macro's step-label array happens to be
+ * hand-sized to match every code path exactly. A future edit that changed a
+ * macro's step count without updating every branch in lockstep would throw
+ * "Cannot set properties of undefined" instead of degrading gracefully like
+ * every other transition in this module.
+ */
+export function skipStep(
+  progress: MacroProgress,
+  output: string,
+  onProgress?: ProgressCallback,
+): void {
+  const step = progress.steps[progress.currentStep];
+  if (step) {
+    step.status = 'skipped';
+    step.output = output;
+  }
+  progress.currentStep++;
+  onProgress?.(progress);
+}
+
 export function startMacro(
   progress: MacroProgress,
   onProgress?: ProgressCallback,
@@ -175,10 +200,7 @@ export async function scaffoldAndCritique(
       advanceStep(progress, 'Suggestions unavailable.', onProgress);
     }
   } else {
-    progress.steps[progress.currentStep].status = 'skipped';
-    progress.steps[progress.currentStep].output = 'No session context — skipped.';
-    progress.currentStep++;
-    onProgress?.(progress);
+    skipStep(progress, 'No session context — skipped.', onProgress);
   }
 
   return buildMacroResult(progress);
@@ -373,10 +395,7 @@ export async function planAndGenerate(
     const scaffoldKind = parseScaffoldKind(step.command);
     if (!scaffoldKind) {
       // Can't auto-execute pipe commands or non-scaffold commands
-      progress.steps[progress.currentStep].status = 'skipped';
-      progress.steps[progress.currentStep].output = `Cannot auto-execute: ${step.command}`;
-      progress.currentStep++;
-      onProgress?.(progress);
+      skipStep(progress, `Cannot auto-execute: ${step.command}`, onProgress);
       continue;
     }
 
@@ -403,10 +422,7 @@ export async function planAndGenerate(
       return buildMacroResult(progress);
     }
   } else {
-    progress.steps[progress.currentStep].status = 'skipped';
-    progress.steps[progress.currentStep].output = 'No artifact to critique (nothing was generated).';
-    progress.currentStep++;
-    onProgress?.(progress);
+    skipStep(progress, 'No artifact to critique (nothing was generated).', onProgress);
   }
 
   return buildMacroResult(progress);

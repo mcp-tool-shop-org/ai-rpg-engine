@@ -145,6 +145,30 @@ export async function buildCharacter(
     };
 
     const validation = validateBuild(build, catalog, ruleset);
+
+    // F-2c013eff: this build can be invalid — e.g. the trait-selection step
+    // above offers perks and flaws in a single batch, so a player can satisfy
+    // the pick-count minimum while choosing zero flaws (every shipping pack
+    // sets requiredFlaws >= 1), or select two traits that declare each other
+    // incompatibleWith in that same batch (getAvailableTraits only excludes
+    // traits blocked by ALREADY-recorded selections, and selectedTraitIds is
+    // still empty on the first offer). Previously nothing checked
+    // validation.ok here, so an invalid build sailed past this screen and
+    // resolveEntity() threw `Invalid build: ...` uncaught, crashing the CLI
+    // right after a summary that implied everything was fine. Gate on it: an
+    // invalid build must never reach the "ready" summary or be returned —
+    // show the errors and let the player redo character creation instead.
+    if (!validation.ok) {
+      console.log('\n  ═══════════════════════════════════════');
+      console.log('  This build is not valid:');
+      for (const err of validation.errors) {
+        console.log(`  ✗ ${err}`);
+      }
+      console.log('  ═══════════════════════════════════════');
+      console.log("\n  Let's fix that — starting over...\n");
+      continue;
+    }
+
     const title = disciplineId ? resolveTitle(archetype.id, disciplineId, catalog) : undefined;
 
     console.log('\n  ═══════════════════════════════════════');

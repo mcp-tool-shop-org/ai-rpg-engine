@@ -63,4 +63,17 @@ describe('pirateMinimalRuleset', () => {
     expect(formulaIds).toContain('hit-chance');
     expect(formulaIds).toContain('damage');
   });
+
+  // F-e83a091f: this description was copy-pasted verbatim from starter-fantasy
+  // ("40 + instinct*5 + will*2") — pirate has no 'instinct'/'will' stats at
+  // all. Per buildCombatFormulas' real disengageChance formula
+  // (packages/modules/src/combat-builders.ts: 40 + precision*5 + resolve*2,
+  // clamped 15-90), pirate's precision/resolve stats are cunning/sea-legs.
+  it('disengage-chance formula description matches this pack\'s real stats', () => {
+    const formula = pirateMinimalRuleset.formulas.find((f) => f.id === 'disengage-chance')!;
+    expect(formula.description).toContain('cunning');
+    expect(formula.description).toContain('sea-legs');
+    expect(formula.description).not.toContain('instinct');
+    expect(formula.description).not.toContain('will');
+  });
 });

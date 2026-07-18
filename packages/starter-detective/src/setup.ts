@@ -107,7 +107,7 @@ export function createGame(seed?: number): Engine {
       ...combat.modules,
       createInventoryCore([smellingSaltsEffect]),
       createDialogueCore([widowDialogue]),
-      createPerceptionFilter(),
+      createPerceptionFilter({ perceptionStat: 'perception' }),
       createProgressionCore({
         trees: [deductionTree],
         rewards: [{

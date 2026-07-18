@@ -35,9 +35,30 @@ import { affiliationOf } from './targeting.js';
  * AI scoring after the first death. Entries are now tick-stamped and counted as
  * "recent" only on the tick they occurred (or the immediately prior tick) — see
  * `isRecentDefeat`. No external clear signal is required for correctness.
+ *
+ * F-71ec5dcd: the MC-01 fix addressed entries never expiring, but defeatLog
+ * itself remained a MODULE-TOP-LEVEL Map — shared by every Engine/World
+ * instance in the same process, unlike `recentDecisions` (this module's OTHER
+ * piece of state, which IS registered per-world via
+ * ctx.persistence.registerNamespace below). Two concurrent Engine instances
+ * with an entity sharing an id (a multi-session server, or simply two engines
+ * built in the same test/process) could read each other's defeat entries.
+ * Storage moved into world.modules['combat-intent'].defeatLog, re-fetched
+ * fresh on every access (getModuleState) — the same pattern
+ * rumor-propagation.ts/district-core.ts use. Stored as a plain Record, not a
+ * Map: WorldStore.serialize() JSON.stringifies, which silently drops
+ * Map/Set contents.
  */
 type DefeatEntry = { type: string; faction?: string; tick: number };
-const defeatLog: Map<string, DefeatEntry> = new Map(); // entityId → { type, faction?, tick }
+
+type ModuleState = {
+  recentDecisions: CombatDecision[];
+  defeatLog: Record<string, DefeatEntry>;
+};
+
+function getModuleState(world: WorldState): ModuleState {
+  return (world.modules['combat-intent'] ?? { recentDecisions: [], defeatLog: {} }) as ModuleState;
+}
 
 /** A defeat counts as "recent" only on its own tick or the immediately prior tick. */
 function isRecentDefeat(entry: DefeatEntry, currentTick: number): boolean {
@@ -255,8 +276,8 @@ function buildContext(entity: EntityState, world: WorldState, config?: CombatInt
       isBackline: hasStatus(entity, ENGAGEMENT_STATES.BACKLINE),
       isIsolated: hasStatus(entity, ENGAGEMENT_STATES.ISOLATED),
     },
-    allyDefeatedRecently: [...defeatLog.values()].some(e => isRecentDefeat(e, world.meta.tick) && isAllyEntry(entity, e)),
-    enemyDefeatedRecently: [...defeatLog.values()].some(e => isRecentDefeat(e, world.meta.tick) && !isAllyEntry(entity, e)),
+    allyDefeatedRecently: Object.values(getModuleState(world).defeatLog).some(e => isRecentDefeat(e, world.meta.tick) && isAllyEntry(entity, e)),
+    enemyDefeatedRecently: Object.values(getModuleState(world).defeatLog).some(e => isRecentDefeat(e, world.meta.tick) && !isAllyEntry(entity, e)),
     attackStat,
     precisionStat,
     dominantDimension,
@@ -973,7 +994,6 @@ export function emitDecisionEvent(
 // ---------------------------------------------------------------------------
 
 export function createCombatIntent(_config?: CombatIntentConfig): EngineModule {
-  const decisions: CombatDecision[] = [];
   const maxDecisions = 50;
 
   return {
@@ -983,7 +1003,8 @@ export function createCombatIntent(_config?: CombatIntentConfig): EngineModule {
     register(ctx) {
       ctx.persistence.registerNamespace('combat-intent', {
         recentDecisions: [] as CombatDecision[],
-      });
+        defeatLog: {} as Record<string, DefeatEntry>,
+      } as ModuleState);
 
       // Track defeats for AI scoring context, stamped with the tick they occurred.
       // Recency is decided by tick comparison in buildContext (see isRecentDefeat),
@@ -992,33 +1013,43 @@ export function createCombatIntent(_config?: CombatIntentConfig): EngineModule {
       ctx.events.on('combat.entity.defeated', (event, world) => {
         const defeatedId = event.payload.entityId as string;
         const defeated = world.entities[defeatedId];
+        const state = getModuleState(world);
         // Faction recorded alongside type so recency checks can use the same
         // faction-first predicate as affiliationOf (M3) after the entity is gone.
-        if (defeated) defeatLog.set(defeatedId, { type: defeated.type, faction: defeated.faction, tick: event.tick });
-        // Bound the map: drop entries that can no longer be "recent" relative to
+        if (defeated) state.defeatLog[defeatedId] = { type: defeated.type, faction: defeated.faction, tick: event.tick };
+        // Bound the log: drop entries that can no longer be "recent" relative to
         // this defeat's tick. Deterministic (sorted-insensitive set membership
         // check) and keeps a long-running game (or a reused module) from leaking.
-        for (const [id, entry] of defeatLog) {
-          if (!isRecentDefeat(entry, event.tick)) defeatLog.delete(id);
+        for (const [id, entry] of Object.entries(state.defeatLog)) {
+          if (!isRecentDefeat(entry, event.tick)) delete state.defeatLog[id];
         }
       });
 
-      // Listen for combat.ai.decision events to populate ring buffer
-      ctx.events.on('combat.ai.decision', (event) => {
+      // Listen for combat.ai.decision events to populate the ring buffer.
+      // F-cix-recentdecisions: this used to push into a closure-scoped
+      // `decisions` array that world.modules['combat-intent'].recentDecisions
+      // (registered above) never received — the same closure-vs-world.modules
+      // divergence class as defeatLog/roundFlagTickMap/recoveryEntries/
+      // objectiveLog. Re-fetch fresh from world.modules on every access.
+      ctx.events.on('combat.ai.decision', (event, world) => {
         const decision = event.payload.decision as CombatDecision;
-        decisions.push(decision);
-        if (decisions.length > maxDecisions) {
-          decisions.splice(0, decisions.length - maxDecisions);
+        const state = getModuleState(world);
+        state.recentDecisions.push(decision);
+        if (state.recentDecisions.length > maxDecisions) {
+          state.recentDecisions.splice(0, state.recentDecisions.length - maxDecisions);
         }
       });
 
       ctx.debug.registerInspector({
         id: 'combat-intent',
         label: 'AI Combat Decisions',
-        inspect: () => ({
-          count: decisions.length,
-          recent: decisions.slice(-10),
-        }),
+        inspect: (world) => {
+          const state = getModuleState(world);
+          return {
+            count: state.recentDecisions.length,
+            recent: state.recentDecisions.slice(-10),
+          };
+        },
       });
     },
   };

@@ -94,6 +94,19 @@ function factionOutcome(rep: number, cohesion: number, alertLevel: number): Fact
   if (rep > 40 && cohesion > 50) return 'allied';
   if (rep > 40) return 'dominant';
   if (rep < -40) return 'hostile';
+  // F-3c079d7e: alertLevel was threaded all the way from
+  // FinaleFactionInput.alertLevel through buildFinaleOutline into this
+  // function but never read, so a faction the rest of the simulation already
+  // treats as mobilized-against-the-player could still narrate as
+  // 'neutral'/'weakened' purely because its raw reputation number hadn't yet
+  // cratered past -40 above. packages/modules/faction-agency.ts already
+  // defines this exact combination (`isEnemy = alertLevel >= 40 &&
+  // playerReputation <= -20`) for live gameplay — mirror it here rather than
+  // inventing a new threshold. This only affects the ambiguous middle
+  // ground: it can never fire before the allied/dominant/hostile-by-rep
+  // checks above, so a clearly-earned positive outcome is never overridden
+  // by a possibly-transient alert spike.
+  if (alertLevel >= 40 && rep <= -20) return 'hostile';
   if (cohesion < 40) return 'weakened';
   return 'neutral';
 }
@@ -181,6 +194,25 @@ function buildEpilogueSeeds(
       case 'dominant':
         seeds.push(`${f.factionId} emerges as the dominant power.`);
         break;
+      // F-ac4df69b: 'neutral' is one of FactionFate['outcome']'s six values
+      // (factionOutcome's final fallthrough) and was previously silently
+      // dropped from epilogueSeeds — not a dramatic ending, but still a real
+      // one worth a line, and still shown verbatim in the FACTION OUTCOMES
+      // terminal section, so leaving it out of the LLM-narration seeds was
+      // an inconsistency between the two presentations of the same data.
+      case 'neutral':
+        seeds.push(`${f.factionId} neither aided nor opposed the player in any lasting way.`);
+        break;
+      default: {
+        // Exhaustiveness guard: if FactionFate['outcome'] ever grows a new
+        // member, this becomes a compile error instead of a silently-dropped
+        // epilogue line — the exact failure mode this finding flagged.
+        // Never throws at runtime: epilogue seeds are best-effort narrative
+        // color for the campaign's climactic screen, the wrong place for a
+        // hard failure over a missing line of flavor text.
+        const _exhaustive: never = f.outcome;
+        void _exhaustive;
+      }
     }
   }
 
@@ -199,6 +231,20 @@ function buildEpilogueSeeds(
       case 'betrayed':
         seeds.push(`${c.name} turned against everything you built together.`);
         break;
+      // F-ac4df69b: both reachable — breakpointToOutcome('hostile') returns
+      // 'enemy', and 'neutral' is the wavering/default fallthrough — and
+      // both are dramatically significant campaign endings that were
+      // previously silently dropped from epilogueSeeds with no signal.
+      case 'enemy':
+        seeds.push(`${c.name} became an enemy, and there was no mending it before the end.`);
+        break;
+      case 'neutral':
+        seeds.push(`${c.name}'s path simply diverged from yours before the end came.`);
+        break;
+      default: {
+        const _exhaustive: never = c.outcome;
+        void _exhaustive;
+      }
     }
   }
 

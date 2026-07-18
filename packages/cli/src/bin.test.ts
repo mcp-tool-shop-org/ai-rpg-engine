@@ -1,5 +1,8 @@
-import { describe, it, expect, vi } from 'vitest';
-import { runGuardedAction } from './bin.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { runGuardedAction, replayGame } from './bin.js';
 
 // CLI-010 — the interactive loop must never crash an unsaved session when a
 // buggy custom module throws inside submitAction/submitActionAs. The guarded
@@ -64,5 +67,85 @@ describe('runGuardedAction (CLI-010)', () => {
     expect(ok).toBe(false);
     const msg = log.mock.calls[0][0] as string;
     expect(msg).toContain('plain string failure');
+  });
+});
+
+// F-7650e39d — the `--replay` re-simulation branch read `data.actionLog ?? []`
+// straight from a hand-crafted/corrupted save with no shape validation, then
+// did `for (const action of actionLog)`. The `??` only substitutes for
+// null/undefined; a corrupted save with actionLog set to any other
+// non-iterable JSON value (number/boolean/plain object) raw-throws an
+// unstructured TypeError out of the for..of loop, unlike the immediately
+// adjacent default-load branch in the same function, which wraps
+// WorldStore.deserialize in try/catch and prints a friendly
+// `[code] message` + hint on SaveLoadError.
+class ProcessExitSignal extends Error {
+  constructor(public code: number | undefined) {
+    super(`process.exit(${code})`);
+  }
+}
+
+describe('replayGame --replay (F-7650e39d: actionLog must be validated before iterating)', () => {
+  let tmpDir: string;
+  let originalCwd: string;
+  let exitSpy: ReturnType<typeof vi.spyOn>;
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-replay-test-'));
+    fs.mkdirSync(path.join(tmpDir, '.ai-rpg-engine'), { recursive: true });
+    originalCwd = process.cwd();
+    process.chdir(tmpDir);
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new ProcessExitSignal(code);
+    }) as never);
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  function writeSave(actionLogValue: unknown, includeActionLog = true) {
+    const save: Record<string, unknown> = {
+      world: { state: { meta: { gameId: 'chapel-threshold', seed: 1 } } },
+    };
+    if (includeActionLog) save.actionLog = actionLogValue;
+    fs.writeFileSync(path.join(tmpDir, '.ai-rpg-engine', 'save.json'), JSON.stringify(save), 'utf-8');
+  }
+
+  it('a non-array actionLog (number) is rejected with a structured message, not a raw TypeError', () => {
+    writeSave(42);
+    expect(() => replayGame(['--replay'])).toThrow(ProcessExitSignal);
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    const allErrorText = errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(allErrorText.toLowerCase()).toContain('actionlog');
+  });
+
+  it('a non-array actionLog (plain object) is rejected the same way', () => {
+    writeSave({ not: 'an array' });
+    expect(() => replayGame(['--replay'])).toThrow(ProcessExitSignal);
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it('a non-array actionLog (boolean) is rejected the same way', () => {
+    writeSave(true);
+    expect(() => replayGame(['--replay'])).toThrow(ProcessExitSignal);
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it('a missing actionLog defaults to empty and replays cleanly (pre-existing behavior)', () => {
+    writeSave(undefined, false);
+    expect(() => replayGame(['--replay'])).not.toThrow();
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('a valid empty-array actionLog replays cleanly (control)', () => {
+    writeSave([]);
+    expect(() => replayGame(['--replay'])).not.toThrow();
+    expect(exitSpy).not.toHaveBeenCalled();
   });
 });

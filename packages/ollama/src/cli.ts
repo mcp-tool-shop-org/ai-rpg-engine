@@ -109,7 +109,26 @@ function parseFlags(args: string[]): { command: string; flags: CliFlags } {
       case '--repair': flags.repair = true; break;
       case '--confirm': flags.confirm = true; break;
       case '--validate': flags.validate = true; break;
-      case '--auto-execute': flags.autoExecute = parseInt(next ?? '1', 10); i++; break;
+      case '--auto-execute': {
+        // v2.6 audit F-a19d7360 — a non-numeric value (e.g. "abc") used to
+        // silently become NaN, which macros.ts's Math.min(Math.max(...))
+        // propagates unchanged into a for-loop bound and an Array.slice()
+        // end-argument that both treat NaN as 0 — the command quietly ran
+        // in plan-only mode with ZERO auto-executed steps and no signal
+        // that the flag was rejected rather than intentionally 0. Reject
+        // it here instead, matching the CLI's structured error contract.
+        const parsed = parseInt(next ?? '1', 10);
+        if (Number.isNaN(parsed)) {
+          throw new CliError(
+            'INVALID_FLAG',
+            `--auto-execute expects a number, got "${next}"`,
+            'Use a whole number between 0 and 3, e.g. --auto-execute 2.',
+          );
+        }
+        flags.autoExecute = parsed;
+        i++;
+        break;
+      }
       case '--kind': flags.kind = next; i++; break;
       case '--stdin': flags.stdin = true; break;
     }

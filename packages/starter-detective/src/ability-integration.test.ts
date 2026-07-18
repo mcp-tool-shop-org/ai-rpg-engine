@@ -15,65 +15,25 @@ import {
   clearStatusRegistry,
 } from '@ai-rpg-engine/modules';
 import { scoreAbilityUse } from '@ai-rpg-engine/modules';
+// F-2e1879af: import the real shipped fixtures instead of hand-duplicating
+// them. The inline copies used to drift silently from content.ts — a future
+// balance/mechanics edit to a shipped ability's cost, check difficulty, or
+// effect amount would not have been caught by its own "integration" test,
+// which kept passing against a frozen hand-copied duplicate. Importing the
+// real exports also picks up clearHeaded, which the old hand-copied list
+// (deductiveStrike/composureShield/exposeWeakness only) silently omitted.
+import {
+  deductiveStrike,
+  composureShield,
+  exposeWeakness,
+  clearHeaded,
+  detectiveAbilities as allDetectiveAbilities,
+  detectiveStatusDefinitions as detectiveStatusDefs,
+} from './content.js';
 
 const zones = [
   { id: 'zone-a', roomId: 'test', name: 'Crime Scene', tags: [] as string[], neighbors: ['zone-b'] },
   { id: 'zone-b', roomId: 'test', name: 'Back Alley', tags: [] as string[], neighbors: ['zone-a'] },
-];
-
-// --- Ability definitions (inline, matching content.ts) ---
-
-const deductiveStrike: AbilityDefinition = {
-  id: 'deductive-strike', name: 'Deductive Strike', verb: 'use-ability',
-  tags: ['combat', 'damage'],
-  costs: [{ resourceId: 'stamina', amount: 3 }],
-  target: { type: 'single' },
-  checks: [{ stat: 'grit', difficulty: 5, onFail: 'half-damage' }],
-  effects: [
-    { type: 'damage', target: 'target', params: { amount: 4, damageType: 'melee' } },
-  ],
-  cooldown: 2,
-  requirements: [{ type: 'has-tag', params: { tag: 'investigator' } }],
-};
-
-const composureShield: AbilityDefinition = {
-  id: 'composure-shield', name: 'Composure Shield', verb: 'use-ability',
-  tags: ['support', 'buff'],
-  costs: [{ resourceId: 'stamina', amount: 2 }],
-  target: { type: 'self' },
-  checks: [{ stat: 'perception', difficulty: 5, onFail: 'abort' }],
-  effects: [
-    { type: 'heal', target: 'actor', params: { amount: 4, resource: 'composure' } },
-    { type: 'stat-modify', target: 'actor', params: { stat: 'perception', amount: 1 } },
-  ],
-  cooldown: 3,
-};
-
-const exposeWeakness: AbilityDefinition = {
-  id: 'expose-weakness', name: 'Expose Weakness', verb: 'use-ability',
-  tags: ['combat', 'debuff', 'social'],
-  costs: [
-    { resourceId: 'stamina', amount: 2 },
-    { resourceId: 'composure', amount: 3 },
-  ],
-  target: { type: 'single' },
-  checks: [{ stat: 'perception', difficulty: 6, onFail: 'abort' }],
-  effects: [
-    { type: 'apply-status', target: 'target', params: { statusId: 'exposed', duration: 2, stacking: 'replace' } },
-    { type: 'stat-modify', target: 'target', params: { stat: 'grit', amount: -2 } },
-  ],
-  cooldown: 4,
-  requirements: [{ type: 'has-tag', params: { tag: 'investigator' } }],
-};
-
-const allDetectiveAbilities = [deductiveStrike, composureShield, exposeWeakness];
-
-const detectiveStatusDefs: StatusDefinition[] = [
-  {
-    id: 'exposed', name: 'Exposed',
-    tags: ['breach', 'debuff'], stacking: 'replace',
-    duration: { type: 'ticks', value: 2 },
-  },
 ];
 
 // --- Engine builder ---
@@ -237,6 +197,41 @@ describe('Detective — Expose Weakness', () => {
       parameters: { abilityId: 'expose-weakness' }, targetIds: ['thug'],
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Clear-Headed (cleanse) — F-2e1879af: this ability was silently absent from
+// the old hand-copied allDetectiveAbilities fixture (only 3 of the pack's 4
+// abilities were duplicated), so it had zero integration coverage even
+// though it shipped in content.ts and is wired into createAbilityCore via
+// detectiveAbilities. Importing the real array pulled it in; this covers it.
+// ---------------------------------------------------------------------------
+
+describe('Detective — Clear-Headed (cleanse)', () => {
+  it('costs stamina and composure', () => {
+    const engine = buildDetectiveEngine({ playerPerception: 15 });
+    const events = engine.processAction({
+      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      parameters: { abilityId: 'clear-headed' }, targetIds: [],
+    });
+
+    const aborted = events.find(e => e.type === 'ability.check.failed' && e.payload.aborted);
+    if (!aborted) {
+      expect(events.find(e => e.type === 'ability.used')).toBeDefined();
+      const player = engine.player();
+      expect(player.resources.stamina).toBe(8); // 10 - 2
+      expect(player.resources.composure).toBe(10); // 12 - 2
+    }
+  });
+
+  it('sets cooldown after use', () => {
+    const engine = buildDetectiveEngine({ playerPerception: 15 });
+    engine.processAction({
+      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      parameters: { abilityId: 'clear-headed' }, targetIds: [],
+    });
+    expect(isAbilityReady(engine.store.state, 'player', 'clear-headed', allDetectiveAbilities)).toBe(false);
   });
 });
 

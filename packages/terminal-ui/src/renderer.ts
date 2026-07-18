@@ -185,7 +185,13 @@ export function parseTextInput(
   world: WorldState,
 ): { verb: string; targetIds?: string[]; toolId?: string; parameters?: Record<string, import('@ai-rpg-engine/core').ScalarValue> } | null {
   const parts = input.trim().toLowerCase().split(/\s+/);
-  if (parts.length === 0) return null;
+  // F-1de46432: `String.prototype.split` on a regex never returns an empty
+  // array — for '' or whitespace-only input it returns [''], a one-element
+  // array containing an empty string, so `parts.length === 0` here was
+  // unreachable dead code. Blank input fell through with verb === '',
+  // skipped every special-verb check, and returned a real `{ verb: '' }`
+  // action instead of the null no-op this guard was meant to produce.
+  if (parts[0] === '') return null;
 
   const verb = parts[0];
   const rest = parts.slice(1).join(' ');

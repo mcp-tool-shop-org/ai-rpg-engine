@@ -43,7 +43,7 @@ describe('party management', () => {
 
   it('addCompanion adds, recomputes cohesion, and does not mutate the input', () => {
     const empty = createPartyState();
-    const party = addCompanion(empty, makeCompanion('mira', { morale: 80 }));
+    const party = addCompanion(empty, makeCompanion('mira', { morale: 80 })).party;
 
     expect(party.companions).toHaveLength(1);
     expect(party.cohesion).toBe(80);
@@ -54,19 +54,23 @@ describe('party management', () => {
 
   it('rejects duplicates and enforces the party-size cap', () => {
     let party = createPartyState(2);
-    party = addCompanion(party, makeCompanion('a'));
+    party = addCompanion(party, makeCompanion('a')).party;
     const dupe = addCompanion(party, makeCompanion('a'));
-    expect(dupe).toBe(party); // unchanged reference — no-op
+    expect(dupe.success).toBe(false);
+    expect(dupe.reason).toBe('already-present');
+    expect(dupe.party).toBe(party); // unchanged reference — no-op
 
-    party = addCompanion(party, makeCompanion('b'));
+    party = addCompanion(party, makeCompanion('b')).party;
     const overflow = addCompanion(party, makeCompanion('c'));
-    expect(overflow.companions.map((c) => c.npcId)).toEqual(['a', 'b']);
+    expect(overflow.success).toBe(false);
+    expect(overflow.reason).toBe('party-full');
+    expect(overflow.party.companions.map((c) => c.npcId)).toEqual(['a', 'b']);
   });
 
   it('removeCompanion returns the removed companion and recomputes cohesion', () => {
     let party = createPartyState();
-    party = addCompanion(party, makeCompanion('a', { morale: 100 }));
-    party = addCompanion(party, makeCompanion('b', { morale: 50 }));
+    party = addCompanion(party, makeCompanion('a', { morale: 100 })).party;
+    party = addCompanion(party, makeCompanion('b', { morale: 50 })).party;
     expect(party.cohesion).toBe(75);
 
     const { party: after, removed } = removeCompanion(party, 'a');
@@ -80,8 +84,8 @@ describe('party management', () => {
 
   it('cohesion averages ACTIVE companions only (0 with none active)', () => {
     let party = createPartyState();
-    party = addCompanion(party, makeCompanion('a', { morale: 100 }));
-    party = addCompanion(party, makeCompanion('b', { morale: 20 }));
+    party = addCompanion(party, makeCompanion('a', { morale: 100 })).party;
+    party = addCompanion(party, makeCompanion('b', { morale: 20 })).party;
     expect(computePartyCohesion(party)).toBe(60);
 
     party = setCompanionActive(party, 'b', false);
@@ -93,7 +97,7 @@ describe('party management', () => {
   });
 
   it('adjustCompanionMorale clamps to 0-100', () => {
-    let party = addCompanion(createPartyState(), makeCompanion('a', { morale: 95 }));
+    let party = addCompanion(createPartyState(), makeCompanion('a', { morale: 95 })).party;
     party = adjustCompanionMorale(party, 'a', +20);
     expect(getCompanion(party, 'a')?.morale).toBe(100);
     party = adjustCompanionMorale(party, 'a', -150);
@@ -102,12 +106,44 @@ describe('party management', () => {
 
   it('computePartyAbilities unions active companions and dedups tags', () => {
     let party = createPartyState();
-    party = addCompanion(party, makeCompanion('a', { abilityTags: ['medical-support', 'trade-advantage'] }));
-    party = addCompanion(party, makeCompanion('b', { abilityTags: ['medical-support'] }));
-    party = addCompanion(party, makeCompanion('c', { abilityTags: ['rumor-suppression'], active: false }));
+    party = addCompanion(party, makeCompanion('a', { abilityTags: ['medical-support', 'trade-advantage'] })).party;
+    party = addCompanion(party, makeCompanion('b', { abilityTags: ['medical-support'] })).party;
+    party = addCompanion(party, makeCompanion('c', { abilityTags: ['rumor-suppression'], active: false })).party;
 
     const abilities = computePartyAbilities(party);
     expect(abilities.sort()).toEqual(['medical-support', 'trade-advantage']);
+  });
+
+  // F-f0ca0e51: addCompanion used to silently return the unchanged `party`
+  // object (no signal of any kind) when the party was already at maxSize or
+  // the companion was already present — a caller couldn't distinguish
+  // "companion added" from "nothing happened" without separately comparing
+  // party.companions.length before and after, unlike every comparable
+  // state-changing operation elsewhere in this package (UnlockResult,
+  // resolveCraft/resolveRepair/resolveModify, LeverageResolution, ...).
+  describe('addCompanion result', () => {
+    it('returns { success: true } and the updated party when the add succeeds', () => {
+      const result = addCompanion(createPartyState(), makeCompanion('mira'));
+      expect(result.success).toBe(true);
+      expect(result.reason).toBeUndefined();
+      expect(result.party.companions).toHaveLength(1);
+    });
+
+    it('returns { success: false, reason: "party-full" } when the party is at maxSize, with the party reference unchanged', () => {
+      const full = addCompanion(createPartyState(1), makeCompanion('a')).party;
+      const result = addCompanion(full, makeCompanion('b'));
+      expect(result.success).toBe(false);
+      expect(result.reason).toBe('party-full');
+      expect(result.party).toBe(full);
+    });
+
+    it('returns { success: false, reason: "already-present" } for a duplicate npcId, with the party reference unchanged', () => {
+      const withA = addCompanion(createPartyState(), makeCompanion('a')).party;
+      const result = addCompanion(withA, makeCompanion('a'));
+      expect(result.success).toBe(false);
+      expect(result.reason).toBe('already-present');
+      expect(result.party).toBe(withA);
+    });
   });
 
   it('isCompanionRecruitable keys off recruitable/companion-ready tags', () => {
@@ -160,7 +196,7 @@ describe('formatting', () => {
   it('status line lists active companions with cohesion, undefined when solo', () => {
     expect(formatPartyStatusLine(createPartyState(), {})).toBeUndefined();
 
-    const party = addCompanion(createPartyState(), makeCompanion('mira', { morale: 70 }));
+    const party = addCompanion(createPartyState(), makeCompanion('mira', { morale: 70 })).party;
     const line = formatPartyStatusLine(party, { mira: 'Mira' });
     expect(line).toContain('Mira (fighter, morale 70)');
     expect(line).toContain('Cohesion: 70');
@@ -169,7 +205,7 @@ describe('formatting', () => {
   it('director view renders roster details and departure risks', () => {
     const party = addCompanion(createPartyState(), makeCompanion('mira', {
       morale: 25, abilityTags: ['medical-support'], personalGoal: 'Find her brother',
-    }));
+    })).party;
     const text = formatPartyForDirector(
       party,
       [{ npcId: 'mira', name: 'Mira', breakpoint: 'wavering', goals: [{ label: 'Repay debt', priority: 0.7 }] }],

@@ -1,8 +1,15 @@
 // Tests — webfetch adapter: URL validation, HTML processing, formatting
 
-import { describe, it, expect } from 'vitest';
-import { isAllowedUrl, formatWebfetchForPrompt } from './chat-webfetch.js';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { lookup } from 'node:dns/promises';
+import { isAllowedUrl, isAllowedUrlResolved, formatWebfetchForPrompt } from './chat-webfetch.js';
 import type { WebfetchResult } from './chat-webfetch.js';
+
+// DNS is mocked so isAllowedUrlResolved tests are deterministic and fully
+// offline — no real resolver call ever leaves the test process.
+vi.mock('node:dns/promises', () => ({
+  lookup: vi.fn(),
+}));
 
 // --- isAllowedUrl ---
 
@@ -157,6 +164,79 @@ describe('isAllowedUrl', () => {
   });
 });
 
+// --- isAllowedUrlResolved — F-f268b81a: isAllowedUrl() only proves a URL is
+// syntactically safe. Any hostname that is not already an IP literal sails
+// through it unresolved, so a single attacker-controlled DNS record (no
+// rebinding/TOCTOU needed) pointing at a blocked address defeats the entire
+// IP-literal blocklist. isAllowedUrlResolved() is the check webfetch() must
+// actually gate on: it resolves the hostname and runs every returned address
+// through the same blocklist before allowing the real fetch.
+describe('isAllowedUrlResolved', () => {
+  beforeEach(() => {
+    vi.mocked(lookup).mockReset();
+  });
+
+  it('rejects a hostname whose DNS record resolves to the cloud metadata address', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '169.254.169.254', family: 4 }] as never);
+    await expect(isAllowedUrlResolved('http://attacker-controlled.example/')).resolves.toBe(false);
+  });
+
+  it('rejects a hostname whose DNS record resolves to a loopback address', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '127.0.0.1', family: 4 }] as never);
+    await expect(isAllowedUrlResolved('http://rebind.example/')).resolves.toBe(false);
+  });
+
+  it('rejects a hostname whose DNS record resolves to a private RFC1918 address', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '10.0.0.5', family: 4 }] as never);
+    await expect(isAllowedUrlResolved('http://internal.example/')).resolves.toBe(false);
+  });
+
+  it('allows a hostname that resolves to a normal public IP', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+    await expect(isAllowedUrlResolved('https://example.com/')).resolves.toBe(true);
+  });
+
+  it('rejects when ANY resolved address is blocked, even if others are public', async () => {
+    vi.mocked(lookup).mockResolvedValue([
+      { address: '93.184.216.34', family: 4 },
+      { address: '127.0.0.1', family: 4 },
+    ] as never);
+    await expect(isAllowedUrlResolved('https://mixed.example/')).resolves.toBe(false);
+  });
+
+  it('rejects a blocked IPv6 resolution (unique-local)', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: 'fd12:3456::1', family: 6 }] as never);
+    await expect(isAllowedUrlResolved('https://v6.example/')).resolves.toBe(false);
+  });
+
+  it('rejects when DNS resolution fails (NXDOMAIN etc.)', async () => {
+    vi.mocked(lookup).mockRejectedValue(Object.assign(new Error('queryA ENOTFOUND'), { code: 'ENOTFOUND' }));
+    await expect(isAllowedUrlResolved('https://nonexistent.example/')).resolves.toBe(false);
+  });
+
+  it('rejects when DNS resolution does not settle within the resolve timeout', async () => {
+    vi.mocked(lookup).mockImplementation(() => new Promise(() => {})); // never resolves
+    await expect(isAllowedUrlResolved('https://slow-dns.example/', 20)).resolves.toBe(false);
+  });
+
+  it('rejects a resolution with zero addresses', async () => {
+    vi.mocked(lookup).mockResolvedValue([] as never);
+    await expect(isAllowedUrlResolved('https://empty.example/')).resolves.toBe(false);
+  });
+
+  it('short-circuits on a syntactically-blocked host without ever calling DNS', async () => {
+    await expect(isAllowedUrlResolved('http://localhost/')).resolves.toBe(false);
+    await expect(isAllowedUrlResolved('http://127.0.0.1/')).resolves.toBe(false);
+    await expect(isAllowedUrlResolved('http://myserver.internal/')).resolves.toBe(false);
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it('short-circuits on an already-public IP literal without calling DNS', async () => {
+    await expect(isAllowedUrlResolved('https://93.184.216.34/')).resolves.toBe(true);
+    expect(lookup).not.toHaveBeenCalled();
+  });
+});
+
 // --- formatWebfetchForPrompt ---
 
 describe('formatWebfetchForPrompt', () => {
@@ -232,5 +312,50 @@ describe('webfetch — URL validation pre-check', () => {
     const result = await webfetch('file:///etc/passwd');
     expect(result.ok).toBe(false);
     expect(result.error).toContain('not allowed');
+  });
+});
+
+// v2.6 audit F-f268b81a — webfetch() must gate the real fetch() call on the
+// DNS-RESOLVED address, not just the syntactic hostname check. A domain an
+// attacker controls (any registrable domain, A record pointed at a blocked
+// address) previously sailed straight through to fetch().
+describe('webfetch — DNS-resolution SSRF gate (F-f268b81a)', () => {
+  beforeEach(() => {
+    vi.mocked(lookup).mockReset();
+  });
+
+  it('rejects a hostname whose DNS record resolves to a blocked IP, and never calls fetch', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '169.254.169.254', family: 4 }] as never);
+    const realFetch = globalThis.fetch;
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    try {
+      const { webfetch } = await import('./chat-webfetch.js');
+      const result = await webfetch('http://attacker-controlled.example/');
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('not allowed');
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('allows a hostname that resolves to a normal public address through to fetch', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+    const realFetch = globalThis.fetch;
+    const fetchSpy = vi.fn(async () => ({
+      ok: true,
+      headers: new Headers({ 'content-type': 'text/plain' }),
+      text: async () => 'hello',
+    })) as unknown as typeof fetch;
+    globalThis.fetch = fetchSpy;
+    try {
+      const { webfetch } = await import('./chat-webfetch.js');
+      const result = await webfetch('https://public.example/');
+      expect(result.ok).toBe(true);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });

@@ -42,21 +42,57 @@ export function deserializeProfile(json: string): {
     errors.push(`Profile version ${obj['version']} is newer than supported version ${PROFILE_VERSION}`);
   }
 
-  // Required objects
-  if (typeof obj['build'] !== 'object' || obj['build'] === null) {
+  // Required objects. Each check also excludes arrays (F-08afa14a):
+  // `typeof [] === 'object'` in JS, so without the Array.isArray guard a
+  // profile where build/stats/resources/loadout/progression is an array was
+  // accepted as fully valid. A `progression` array in particular silently
+  // produces NaN-poisoned XP/level once grantXp/computeLevel read
+  // profile.progression.xp/.level off the array (`undefined + amount` = NaN)
+  // — the same "corrupt input loads clean, then produces a sticky NaN with no
+  // signal" failure class the numeric progression-subfield checks below
+  // (CP-03) exist to eliminate, just previously unguarded for the array case.
+  if (typeof obj['build'] !== 'object' || obj['build'] === null || Array.isArray(obj['build'])) {
     errors.push('Missing or invalid build');
   }
-  if (typeof obj['stats'] !== 'object' || obj['stats'] === null) {
+  if (typeof obj['stats'] !== 'object' || obj['stats'] === null || Array.isArray(obj['stats'])) {
     errors.push('Missing or invalid stats');
   }
-  if (typeof obj['resources'] !== 'object' || obj['resources'] === null) {
+  if (typeof obj['resources'] !== 'object' || obj['resources'] === null || Array.isArray(obj['resources'])) {
     errors.push('Missing or invalid resources');
   }
-  if (typeof obj['loadout'] !== 'object' || obj['loadout'] === null) {
+  if (typeof obj['loadout'] !== 'object' || obj['loadout'] === null || Array.isArray(obj['loadout'])) {
     errors.push('Missing or invalid loadout');
   }
-  if (typeof obj['progression'] !== 'object' || obj['progression'] === null) {
+  if (
+    typeof obj['progression'] !== 'object' ||
+    obj['progression'] === null ||
+    Array.isArray(obj['progression'])
+  ) {
     errors.push('Missing or invalid progression');
+  }
+
+  // itemChronicle (F-08afa14a) is optional on legacy (v1) saves — migrated to
+  // {} below when absent — but had NO shape check at all when present. A
+  // wrong-typed value (array, string, or a record whose per-item values
+  // aren't arrays) reached packages/equipment consumers (evaluateRelicGrowth,
+  // computeItemNotoriety) unchecked, where a non-array entry can raw-throw
+  // deep inside relic-growth/provenance logic instead of failing cleanly at
+  // this load boundary like every other field in this function.
+  if (obj['itemChronicle'] !== undefined) {
+    if (
+      typeof obj['itemChronicle'] !== 'object' ||
+      obj['itemChronicle'] === null ||
+      Array.isArray(obj['itemChronicle'])
+    ) {
+      errors.push('Missing or invalid itemChronicle');
+    } else {
+      const chronicle = obj['itemChronicle'] as Record<string, unknown>;
+      for (const key of Object.keys(chronicle)) {
+        if (!Array.isArray(chronicle[key])) {
+          errors.push(`Missing or invalid itemChronicle.${key}`);
+        }
+      }
+    }
   }
 
   // Required arrays

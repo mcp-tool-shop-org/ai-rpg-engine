@@ -114,7 +114,7 @@ export function createGame(seed?: number): Engine {
       ...combat.modules,
       createInventoryCore([bloodVialEffect]),
       createDialogueCore([duchessDialogue]),
-      createPerceptionFilter(),
+      createPerceptionFilter({ perceptionStat: 'cunning' }),
       createProgressionCore({
         trees: [bloodMasteryTree],
         rewards: [{

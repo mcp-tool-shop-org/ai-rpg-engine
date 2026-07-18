@@ -59,7 +59,7 @@ export const colonyMinimalRuleset: RulesetDefinition = {
     {
       id: 'disengage-chance',
       name: 'Disengage Chance',
-      description: 'Success chance: 40 + instinct*5 + will*2, clamped 15-90',
+      description: 'Success chance: 40 + awareness*5 + command*2, clamped 15-90',
       inputs: ['actor.command', 'actor.awareness'],
       output: 'number (0-100)',
     },

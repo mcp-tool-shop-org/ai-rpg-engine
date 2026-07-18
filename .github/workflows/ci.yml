@@ -16,6 +16,7 @@ on:
       - 'eslint.config.js'
       - 'docs/examples/**'
       - 'docs/check-docs-integrity.mjs'
+      - 'docs/mixed-game-viability-proof.ts'
       - '.github/workflows/**'
   pull_request:
     paths:
@@ -29,6 +30,7 @@ on:
       - 'eslint.config.js'
       - 'docs/examples/**'
       - 'docs/check-docs-integrity.mjs'
+      - 'docs/mixed-game-viability-proof.ts'
       - '.github/workflows/**'
   workflow_dispatch:
 
@@ -75,6 +77,16 @@ jobs:
       - name: Behavior-test doc examples
         if: matrix.node-version == 22
         run: npx vitest run --config docs/examples/vitest.config.ts
+      # docs/mixed-game-viability-proof.ts headlines itself as a "Release
+      # Gate" architecture test (4 archetypes / 6 encounter modes coexisting
+      # on one stat model, one combat stack, one world), but nothing invoked
+      # it — the label was aspirational, not enforced. This step makes it
+      # true. See scripts/verify-mixed-game-viability.mjs for why "compiles
+      # + runs without throwing" is the proof's actual pass condition. One
+      # leg only — node-version independent, same as the packaging gate below.
+      - name: Release gate — mixed-game viability proof
+        if: matrix.node-version == 22
+        run: node scripts/verify-mixed-game-viability.mjs
       # Packaging gate (PG-5): every publishable workspace's `npm pack` tarball
       # must contain LICENSE + README.md. npm silently drops `files` entries
       # that don't exist on disk, so only inspecting the dry-run file list

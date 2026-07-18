@@ -111,7 +111,7 @@ export function createGame(seed?: number): Engine {
       ...combat.modules,
       createInventoryCore([emergencyCellEffect]),
       createDialogueCore([scientistDialogue]),
-      createPerceptionFilter(),
+      createPerceptionFilter({ perceptionStat: 'awareness' }),
       createProgressionCore({
         trees: [commanderTree],
         rewards: [{

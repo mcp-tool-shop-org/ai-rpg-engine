@@ -55,6 +55,12 @@ export class SoundRegistry {
    */
   load(manifest: SoundPackManifest, opts?: LoadOptions): LoadResult {
     const warnings: LoadWarning[] = [];
+    // F-833dedfc: count actual writes, not manifest.entries.length. A
+    // malformed entry is warned-and-skipped below without ever reaching
+    // this.entries.set(), so the raw input length overstates the real
+    // write count by the number of skipped entries — most likely to matter
+    // exactly when opts.validate is used, i.e. loading an untrusted pack.
+    let loaded = 0;
 
     if (!manifest || typeof manifest !== 'object' || !Array.isArray((manifest as SoundPackManifest).entries)) {
       throw new Error(
@@ -90,9 +96,10 @@ export class SoundRegistry {
       }
 
       this.entries.set(entry.id, entry);
+      loaded++;
     }
 
-    return { loaded: manifest.entries.length, warnings };
+    return { loaded, warnings };
   }
 
   /** Query entries by tags, domain, mood, or intensity. */

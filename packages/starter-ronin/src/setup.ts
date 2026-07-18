@@ -113,7 +113,7 @@ export function createGame(seed?: number): Engine {
       ...combat.modules,
       createInventoryCore([incenseKitEffect]),
       createDialogueCore([magistrateDialogue]),
-      createPerceptionFilter(),
+      createPerceptionFilter({ perceptionStat: 'perception' }),
       createProgressionCore({
         trees: [wayOfTheBladeTree],
         rewards: [{

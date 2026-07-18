@@ -15,77 +15,23 @@ import {
   clearStatusRegistry,
 } from '@ai-rpg-engine/modules';
 import { scoreAbilityUse } from '@ai-rpg-engine/modules';
+// F-2e1879af: import the real shipped fixtures instead of hand-duplicating
+// them. The inline copies used to drift silently from content.ts — a future
+// balance/mechanics edit to a shipped ability's cost, check difficulty, or
+// effect amount would not have been caught by its own "integration" test,
+// which kept passing against a frozen hand-copied duplicate.
+import {
+  desperateSwing,
+  fieldTriage,
+  warCry,
+  survivalInstinct,
+  zombieAbilities as allZombieAbilities,
+  zombieStatusDefinitions as zombieStatusDefs,
+} from './content.js';
 
 const zones = [
   { id: 'zone-a', roomId: 'test', name: 'Overrun Street', tags: [] as string[], neighbors: ['zone-b'] },
   { id: 'zone-b', roomId: 'test', name: 'Safehouse', tags: [] as string[], neighbors: ['zone-a'] },
-];
-
-// --- Ability definitions (inline, matching content.ts) ---
-
-const desperateSwing: AbilityDefinition = {
-  id: 'desperate-swing', name: 'Desperate Swing', verb: 'use-ability',
-  tags: ['combat', 'damage'],
-  costs: [{ resourceId: 'stamina', amount: 3 }],
-  target: { type: 'single' },
-  checks: [{ stat: 'fitness', difficulty: 5, onFail: 'half-damage' }],
-  effects: [
-    { type: 'damage', target: 'target', params: { amount: 5, damageType: 'melee' } },
-  ],
-  cooldown: 2,
-  requirements: [{ type: 'has-tag', params: { tag: 'survivor' } }],
-};
-
-const fieldTriage: AbilityDefinition = {
-  id: 'field-triage', name: 'Field Triage', verb: 'use-ability',
-  tags: ['support', 'heal'],
-  costs: [{ resourceId: 'stamina', amount: 3 }],
-  target: { type: 'self' },
-  checks: [{ stat: 'wits', difficulty: 5, onFail: 'abort' }],
-  effects: [
-    { type: 'heal', target: 'actor', params: { amount: 4, resource: 'hp' } },
-    { type: 'resource-modify', target: 'actor', params: { resource: 'infection', amount: -2 } },
-  ],
-  cooldown: 4,
-};
-
-const warCry: AbilityDefinition = {
-  id: 'war-cry', name: 'War Cry', verb: 'use-ability',
-  tags: ['combat', 'debuff', 'aoe'],
-  costs: [
-    { resourceId: 'stamina', amount: 3 },
-    { resourceId: 'infection', amount: 5 },
-  ],
-  target: { type: 'all-enemies' },
-  checks: [{ stat: 'nerve', difficulty: 6, onFail: 'abort' }],
-  effects: [
-    { type: 'apply-status', target: 'target', params: { statusId: 'rattled', duration: 2, stacking: 'replace' } },
-  ],
-  cooldown: 4,
-  requirements: [{ type: 'has-tag', params: { tag: 'survivor' } }],
-};
-
-const survivalInstinct: AbilityDefinition = {
-  id: 'survival-instinct', name: 'Survival Instinct', verb: 'use-ability',
-  tags: ['support', 'cleanse'],
-  costs: [{ resourceId: 'stamina', amount: 2 }],
-  target: { type: 'self' },
-  checks: [{ stat: 'nerve', difficulty: 5, onFail: 'abort' }],
-  effects: [
-    { type: 'remove-status-by-tag', target: 'actor', params: { tags: 'fear,blind' } },
-  ],
-  cooldown: 3,
-  requirements: [{ type: 'has-tag', params: { tag: 'survivor' } }],
-};
-
-const allZombieAbilities = [desperateSwing, fieldTriage, warCry, survivalInstinct];
-
-const zombieStatusDefs: StatusDefinition[] = [
-  {
-    id: 'rattled', name: 'Rattled',
-    tags: ['fear', 'debuff'], stacking: 'replace',
-    duration: { type: 'ticks', value: 2 },
-  },
 ];
 
 // --- Engine builder ---

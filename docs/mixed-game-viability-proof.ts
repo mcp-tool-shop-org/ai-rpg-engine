@@ -7,6 +7,12 @@
  *
  * It is NOT a documentation example or tutorial. It is an architecture test.
  *
+ * Invoked in CI by scripts/verify-mixed-game-viability.mjs (ci.yml, node 22
+ * leg, step "Release gate — mixed-game viability proof"), which compiles this
+ * file under the repo's strict tsconfig and runs it — a thrown exception or
+ * compile error fails the build. See that script's header for why a clean
+ * run IS the pass condition (this file has no assertion-library calls).
+ *
  * ── Four Archetypes ──────────────────────────────────────────────
  *   1. Iron Vanguard   — brute interceptor (high might, low wits)
  *   2. Sera the Veiled — mystic backliner (high wits, low might)

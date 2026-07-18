@@ -112,7 +112,7 @@ export function createGame(seed?: number): Engine {
       ...combat.modules,
       createInventoryCore([rumBarrelEffect]),
       createDialogueCore([cartographerDialogue]),
-      createPerceptionFilter(),
+      createPerceptionFilter({ perceptionStat: 'cunning' }),
       createProgressionCore({
         trees: [seamanshipTree],
         rewards: [{

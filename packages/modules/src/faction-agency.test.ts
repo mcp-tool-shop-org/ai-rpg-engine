@@ -185,6 +185,49 @@ describe('buildFactionProfile goal thresholds', () => {
     const smuggler = buildFactionProfile('rats', world, 0, [], economies);
     expect(smuggler.goals.some((g) => g.verb === 'smuggle')).toBe(true); // cohesion ≤ 0.6
   });
+
+  // F-53776510: the supply-crisis loop's `break` sat OUTSIDE the
+  // `if (scarcestLevel < 25)` block — inside the for loop but after/sibling
+  // to the if — so it ran unconditionally after examining exactly the FIRST
+  // controlled district, regardless of whether THAT district had a crisis.
+  it('finds a supply crisis in a LATER controlled district even when the FIRST one examined is healthy', () => {
+    const world = makeWorld({
+      factions: { watch: { alertLevel: 10, cohesion: 0.7 } },
+      districts: {
+        // Insertion-order FIRST — healthy (fantasy genre: food 55, min-of-4 ≥ 40).
+        market: { controllingFaction: 'watch' },
+        // Insertion-order SECOND — genuinely scarce (zombie genre: food 20).
+        // A correct scan must not stop after the healthy first district.
+        docks: { controllingFaction: 'watch' },
+      },
+    });
+    const economies = new Map<string, DistrictEconomy>([
+      ['market', createDistrictEconomy('fantasy')],
+      ['docks', createDistrictEconomy('zombie')],
+    ]);
+
+    const profile = buildFactionProfile('watch', world, 0, [], economies);
+    const supplyGoal = profile.goals.find((g) => g.verb === 'open-trade' || g.verb === 'smuggle');
+    expect(supplyGoal).toBeDefined();
+    expect(supplyGoal!.targetDistrictId).toBe('docks');
+  });
+
+  // F-9871d1eb: alliedFactions was unconditionally `[]` — no code path ever
+  // populated it, unlike the adjacent enemyFactions field derived from the
+  // same loop over other factions' alert level.
+  it('populates alliedFactions with calm, cohesive other factions when this faction reads the player as hostile', () => {
+    const world = makeWorld({
+      factions: {
+        watch: { alertLevel: 40, cohesion: 0.7 },     // focal: hostile posture toward player
+        rats: { alertLevel: 50, cohesion: 0.5 },      // high alert → rival (enemyFactions)
+        merchants: { alertLevel: 5, cohesion: 0.8 },  // calm + cohesive → provisional ally
+      },
+    });
+    const profile = buildFactionProfile('watch', world, -40, []);
+    expect(profile.enemyFactions).toContain('rats');
+    expect(profile.alliedFactions).toContain('merchants');
+    expect(profile.alliedFactions).not.toContain('rats');
+  });
 });
 
 // --- evaluateFactionActions ---------------------------------------------------

@@ -209,3 +209,46 @@ describe('runCli — --validate write gate (PA-4)', () => {
     expect(stderr).toContain('--validate');
   });
 });
+
+// v2.6 audit F-a19d7360 — `parseInt(next ?? '1', 10)` on a non-numeric
+// --auto-execute value (e.g. "abc") produces NaN, which flows unchecked
+// through macros.ts's `Math.min(Math.max(input.autoExecute ?? 1, 0), 3)`
+// (NaN ?? 1 stays NaN; Math.max/min both propagate NaN) into a for-loop
+// bound and an Array.slice() end-argument that both silently treat NaN as
+// 0. The result: plan-and-generate quietly ran in plan-only mode with ZERO
+// auto-executed steps and no indication the flag value was rejected rather
+// than intentionally 0 — materially different from both the documented
+// default (1, when the flag is omitted) and any sane "reject bad input"
+// behavior.
+describe('runCli — --auto-execute validation (F-a19d7360)', () => {
+  it('rejects a non-numeric --auto-execute value with a structured error instead of silently running 0 steps', async () => {
+    mockOllama('irrelevant'); // must not even be reached — parsing fails first
+    await runCli(['plan-and-generate', '--theme', 'docks', '--auto-execute', 'abc']);
+
+    expect(process.exitCode).toBe(1);
+    const stderr = stderrText();
+    expect(stderr).toMatch(/auto-execute/i);
+    expect(stderr).toContain('Hint:');
+    expect(globalThis.fetch).not.toHaveBeenCalled(); // rejected before any client call
+  });
+
+  it('still accepts a valid numeric --auto-execute value', async () => {
+    mockOllama([
+      'Plan.',
+      '',
+      '```yaml',
+      'steps:',
+      '  - order: 1',
+      '    command: "create-room --theme docks"',
+      '    produces: "room definition"',
+      '    description: "test"',
+      'rationale: "ok"',
+      '```',
+    ].join('\n'));
+
+    await runCli(['plan-and-generate', '--theme', 'docks', '--auto-execute', '2']);
+
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(stderrText()).not.toMatch(/auto-execute expects/i);
+  });
+});

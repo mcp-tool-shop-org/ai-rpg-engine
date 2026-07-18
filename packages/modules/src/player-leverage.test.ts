@@ -3,7 +3,9 @@ import {
   tickLeverage,
   getLeverageState,
   adjustLeverage,
+  computeLeverageGains,
 } from './player-leverage.js';
+import type { LeverageHints } from './player-leverage.js';
 
 describe('tickLeverage influence accumulation (MW-5)', () => {
   const reps = [{ factionId: 'guild', value: 40 }]; // rep baseline = floor(40/2) = 20
@@ -87,5 +89,45 @@ describe('canAfford malformed-state guard', () => {
     // Healthy balances still afford.
     expect(canAfford(state, { debt: 50 })).toBe(true);
     expect(canAfford(state, { debt: 51 })).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeLeverageGains: blackmail accumulation (F-da82fb75)
+// ---------------------------------------------------------------------------
+//
+// The first two blackmail triggers (xpGained ≥ 15, reputationDelta.delta <
+// -10) used direct assignment (`gains.blackmail = 5` / `= 3`); the third
+// (milestone with exploration/landmark tags) correctly ACCUMULATES
+// (`gains.blackmail = (gains.blackmail ?? 0) + 5`). When both of the first
+// two fire in the same call — realistic: defeating a notable enemy tanks
+// reputation with their faction in the same turn — the second assignment
+// silently overwrote the first instead of the two stacking.
+
+describe('computeLeverageGains: blackmail accumulation', () => {
+  it('a single trigger alone produces the documented amount', () => {
+    expect(computeLeverageGains({ xpGained: 15 }).blackmail).toBe(5);
+    expect(computeLeverageGains({
+      xpGained: 0, reputationDelta: { factionId: 'guild', delta: -15 },
+    }).blackmail).toBe(3);
+  });
+
+  it('xpGained and a large negative reputationDelta in the SAME call stack instead of the second overwriting the first', () => {
+    const hints: LeverageHints = {
+      xpGained: 15, // triggers +5 blackmail
+      reputationDelta: { factionId: 'guild', delta: -15 }, // triggers +3 blackmail
+    };
+    // 5 + 3 = 8, not 3 (the buggy direct assignment discarding the +5).
+    expect(computeLeverageGains(hints).blackmail).toBe(8);
+  });
+
+  it('all three blackmail triggers stack when they all fire together', () => {
+    const hints: LeverageHints = {
+      xpGained: 15,
+      reputationDelta: { factionId: 'guild', delta: -15 },
+      milestoneTriggered: { label: 'Found the ruins', tags: ['exploration'] },
+    };
+    // 5 (xp) + 3 (rep) + 5 (milestone) = 13.
+    expect(computeLeverageGains(hints).blackmail).toBe(13);
   });
 });

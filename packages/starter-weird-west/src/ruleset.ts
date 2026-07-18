@@ -59,7 +59,7 @@ export const weirdWestMinimalRuleset: RulesetDefinition = {
     {
       id: 'disengage-chance',
       name: 'Disengage Chance',
-      description: 'Success chance: 40 + instinct*5 + will*2, clamped 15-90',
+      description: 'Success chance: 40 + draw-speed*5 + lore*2, clamped 15-90',
       inputs: ['actor.draw-speed', 'actor.lore'],
       output: 'number (0-100)',
     },

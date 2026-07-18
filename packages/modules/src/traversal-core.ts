@@ -20,12 +20,27 @@ function moveHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
     return [makeEvent(action, 'action.rejected', { reason: 'no target zone specified' })];
   }
 
-  const currentZone = world.zones[world.locationId];
+  // Resolve the actor from action.actorId (falling back to playerId for
+  // back-compat with hand-built actions that never set it), matching every
+  // sibling verb handler (attack, guard, disengage, brace, reposition,
+  // use-ability). Previously this handler ignored action.actorId entirely and
+  // always checked adjacency from world.locationId / moved the player — so a
+  // non-player actor submitting 'move' via Engine.submitActionAs got wrong
+  // adjacency checks against the PLAYER's zone and, on success, silently
+  // teleported the PLAYER while leaving the real actor unmoved (F-5ce40588).
+  const actorId = action.actorId || world.playerId;
+  const actor = world.entities[actorId];
+  if (!actor) {
+    return [makeEvent(action, 'action.rejected', { reason: `actor not found: ${actorId}` })];
+  }
+
+  const actorZoneId = actor.zoneId ?? world.locationId;
+  const currentZone = world.zones[actorZoneId];
   if (!currentZone) {
     return [makeEvent(action, 'action.rejected', { reason: 'current zone not found' })];
   }
 
-  // Check adjacency
+  // Check adjacency from the ACTOR's own zone, not the player's.
   if (!currentZone.neighbors.includes(targetZoneId)) {
     return [makeEvent(action, 'action.rejected', { reason: `cannot reach ${targetZoneId} from ${currentZone.id}` })];
   }
@@ -35,11 +50,12 @@ function moveHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
     return [makeEvent(action, 'action.rejected', { reason: `zone ${targetZoneId} does not exist` })];
   }
 
-  // Update location
-  world.locationId = targetZoneId;
-  const player = world.entities[world.playerId];
-  if (player) {
-    player.zoneId = targetZoneId;
+  // Move the ACTOR. world.locationId (the "current scene" pointer) only
+  // follows the PLAYER — an NPC/companion moving around must never change
+  // what zone the player-facing scene is anchored to.
+  actor.zoneId = targetZoneId;
+  if (actorId === world.playerId) {
+    world.locationId = targetZoneId;
   }
 
   return [
@@ -63,7 +79,12 @@ function inspectHandler(action: ActionIntent, world: WorldState): ResolvedEvent[
 
   // Inspect current zone if no target
   if (!targetId) {
-    const zone = world.zones[world.locationId];
+    // Report the ACTOR's own zone, not the player's — a non-player actor
+    // issuing a targetless 'inspect' via submitActionAs should see its own
+    // surroundings, not the player's (F-08f214dd).
+    const actorId = action.actorId || world.playerId;
+    const actorZoneId = world.entities[actorId]?.zoneId ?? world.locationId;
+    const zone = world.zones[actorZoneId];
     if (!zone) {
       return [makeEvent(action, 'action.rejected', { reason: 'no zone to inspect' })];
     }

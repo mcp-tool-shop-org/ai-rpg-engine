@@ -284,4 +284,37 @@ describe('opportunity-resolution', () => {
       expect(result.effects.find((e) => e.type === 'heat')).toMatchObject({ delta: 8 });
     });
   });
+
+  // F-0e7a14c3: getKindFallout's switch over opp.kind relied entirely on
+  // TypeScript's compile-time exhaustiveness check, with no runtime default.
+  // A corrupted/schema-drifted save, a hand-built OpportunityState in
+  // test/content tooling, or a future OpportunityKind added without updating
+  // this switch made it implicitly return `undefined` instead of `[]`, and
+  // the first consumer touching `.effects.length`/`.effects.map(...)` (e.g.
+  // formatOpportunityFalloutForDirector) threw an uncaught TypeError instead
+  // of degrading gracefully — unlike pressure-resolution.ts's
+  // computeFallout/getUniversalFallout (returns null + warnings) and
+  // faction-agency.ts's resolveFactionAction (never: exhaustiveness gate +
+  // runtime warning).
+  describe('unrecognized opportunity kind (defensive default)', () => {
+    it('degrades to empty effects + a structured warning instead of returning undefined', () => {
+      const opp = makeOpp({ kind: 'phantom-kind' as OpportunityState['kind'] });
+      const result = computeOpportunityFallout(opp, 'completed', ctx);
+      expect(result.effects).toEqual([]);
+      expect(result.warnings).toBeDefined();
+      expect(result.warnings![0]).toContain('phantom-kind');
+    });
+
+    it('formatOpportunityFalloutForDirector does not throw on the degraded result', () => {
+      const opp = makeOpp({ kind: 'phantom-kind' as OpportunityState['kind'] });
+      const result = computeOpportunityFallout(opp, 'completed', ctx);
+      expect(() => formatOpportunityFalloutForDirector(result)).not.toThrow();
+    });
+
+    it('a recognized kind produces no warnings field at all', () => {
+      const opp = makeOpp({ kind: 'contract', sourceFactionId: 'guild' });
+      const result = computeOpportunityFallout(opp, 'completed', ctx);
+      expect(result.warnings).toBeUndefined();
+    });
+  });
 });

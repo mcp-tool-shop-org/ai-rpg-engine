@@ -57,7 +57,7 @@ export const detectiveMinimalRuleset: RulesetDefinition = {
     {
       id: 'disengage-chance',
       name: 'Disengage Chance',
-      description: 'Success chance: 40 + instinct*5 + will*2, clamped 15-90',
+      description: 'Success chance: 40 + perception*5 + eloquence*2, clamped 15-90',
       inputs: ['actor.eloquence', 'actor.perception'],
       output: 'number (0-100)',
     },

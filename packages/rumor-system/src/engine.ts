@@ -132,15 +132,28 @@ export class RumorEngine {
 
       const ticksSinceSpread = currentTick - rumor.lastSpreadTick;
 
-      if (ticksSinceSpread >= this.deathThreshold) {
+      // F-06c431da: 'established' gets its own branch rather than sharing the
+      // spreading/fading branch below and relying on a second check to catch
+      // it. Established rumors skip the 'fading' stage entirely — they go
+      // straight from established to dead once inactive past deathThreshold,
+      // and otherwise stay established. This used to be expressed as a
+      // status-agnostic death check plus a trailing "established can also
+      // die" block that could never actually run (the first check already
+      // caught every status, including 'established'); that made the
+      // established path look conditional on the second block while
+      // depending entirely on the first, so an edit to the first branch
+      // alone (e.g. excluding 'established' from it) would have silently
+      // made established rumors immortal. Splitting the branch makes the
+      // established death path self-contained and independent of how the
+      // spreading/fading branch is written.
+      if (rumor.status === 'established') {
+        if (ticksSinceSpread >= this.deathThreshold) {
+          rumor.status = 'dead';
+        }
+      } else if (ticksSinceSpread >= this.deathThreshold) {
         rumor.status = 'dead';
-      } else if (ticksSinceSpread >= this.fadingThreshold && rumor.status !== 'established') {
+      } else if (ticksSinceSpread >= this.fadingThreshold) {
         rumor.status = 'fading';
-      }
-
-      // Established rumors can also fade if inactive long enough
-      if (rumor.status === 'established' && ticksSinceSpread >= this.deathThreshold) {
-        rumor.status = 'dead';
       }
     }
   }

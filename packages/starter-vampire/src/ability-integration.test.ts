@@ -4,7 +4,6 @@
 import { describe, it, expect } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
 import type { EntityState } from '@ai-rpg-engine/core';
-import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
 import { statusCore } from '@ai-rpg-engine/modules';
 import {
   createAbilityCore,
@@ -13,72 +12,29 @@ import {
   createAbilityEffects,
   createAbilityReview,
 } from '@ai-rpg-engine/modules';
+// F-2e1879af: import the real shipped fixtures instead of hand-duplicating
+// them. The inline copies used to drift silently from content.ts — a future
+// balance/mechanics edit to a shipped ability's cost, check difficulty, or
+// effect amount would not have been caught by its own "integration" test,
+// which kept passing against a frozen hand-copied duplicate. Importing the
+// real array also picks up bloodPurge, which the old hand-copied list
+// (bloodDrain/mesmerize/crimsonFury only) silently omitted.
+import {
+  bloodDrain,
+  mesmerize,
+  crimsonFury,
+  bloodPurge,
+  vampireAbilities as allVampireAbilities,
+} from './content.js';
 
 // ---------------------------------------------------------------------------
-// Fixtures — inline ability defs matching content.ts
+// Fixtures
 // ---------------------------------------------------------------------------
 
 const zones = [
   { id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [] as string[], neighbors: ['zone-b'] },
   { id: 'zone-b', roomId: 'test', name: 'Zone B', tags: [] as string[], neighbors: ['zone-a'] },
 ];
-
-const bloodDrain: AbilityDefinition = {
-  id: 'blood-drain',
-  name: 'Blood Drain',
-  verb: 'use-ability',
-  tags: ['predatory', 'combat', 'damage', 'heal'],
-  costs: [{ resourceId: 'stamina', amount: 2 }],
-  target: { type: 'single' },
-  checks: [{ stat: 'vitality', difficulty: 7, onFail: 'half-damage' }],
-  effects: [
-    { type: 'damage', target: 'target', params: { amount: 4, damageType: 'predatory' } },
-    { type: 'heal', target: 'actor', params: { amount: 3, resource: 'hp' } },
-    { type: 'resource-modify', target: 'actor', params: { resource: 'bloodlust', amount: 8 } },
-  ],
-  cooldown: 2,
-  requirements: [{ type: 'has-tag', params: { tag: 'vampire' } }],
-};
-
-const mesmerize: AbilityDefinition = {
-  id: 'mesmerize',
-  name: 'Mesmerize',
-  verb: 'use-ability',
-  tags: ['supernatural', 'debuff', 'social'],
-  costs: [
-    { resourceId: 'stamina', amount: 3 },
-    { resourceId: 'humanity', amount: 2 },
-  ],
-  target: { type: 'single' },
-  checks: [{ stat: 'presence', difficulty: 8, onFail: 'abort' }],
-  effects: [
-    { type: 'apply-status', target: 'target', params: { statusId: 'mesmerized', duration: 3, stacking: 'replace' } },
-    { type: 'stat-modify', target: 'target', params: { stat: 'cunning', amount: -2 } },
-  ],
-  cooldown: 4,
-  requirements: [{ type: 'has-tag', params: { tag: 'vampire' } }],
-};
-
-const crimsonFury: AbilityDefinition = {
-  id: 'crimson-fury',
-  name: 'Crimson Fury',
-  verb: 'use-ability',
-  tags: ['predatory', 'combat', 'damage', 'aoe'],
-  costs: [
-    { resourceId: 'stamina', amount: 4 },
-    { resourceId: 'bloodlust', amount: 20 },
-  ],
-  target: { type: 'all-enemies' },
-  checks: [{ stat: 'vitality', difficulty: 9, onFail: 'half-damage' }],
-  effects: [
-    { type: 'damage', target: 'target', params: { amount: 5, damageType: 'predatory' } },
-    { type: 'apply-status', target: 'target', params: { statusId: 'terrified', duration: 2, stacking: 'replace' } },
-  ],
-  cooldown: 5,
-  requirements: [{ type: 'has-tag', params: { tag: 'vampire' } }],
-};
-
-const allVampireAbilities = [bloodDrain, mesmerize, crimsonFury];
 
 function buildVampireEngine(opts?: {
   playerVitality?: number;
@@ -285,6 +241,74 @@ describe('Vampire — Crimson Fury', () => {
 
     const world = engine.store.state;
     expect(isAbilityReady(world, 'player', 'crimson-fury', allVampireAbilities)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Blood Purge (cleanse) — F-2e1879af: this ability was silently absent from
+// the old hand-copied allVampireAbilities fixture (only 3 of the pack's 4
+// abilities were duplicated), so it had zero integration coverage even
+// though it shipped in content.ts and is wired into createAbilityCore via
+// vampireAbilities. Importing the real array pulled it in; this covers it.
+// ---------------------------------------------------------------------------
+
+describe('Vampire — Blood Purge (cleanse)', () => {
+  it('costs stamina and humanity', () => {
+    const engine = buildVampireEngine({ playerVitality: 15, playerHumanity: 20 });
+    const events = engine.processAction({
+      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      parameters: { abilityId: 'blood-purge' }, targetIds: [],
+    });
+
+    const aborted = events.find(e => e.type === 'ability.check.failed' && e.payload.aborted);
+    if (!aborted) {
+      expect(events.find(e => e.type === 'ability.used')).toBeDefined();
+      const player = engine.player();
+      expect(player.resources.stamina).toBe(8); // 10 - 2
+      expect(player.resources.humanity).toBe(17); // 20 - 3
+    }
+  });
+
+  it('requires vampire tag', () => {
+    const humanPlayer: EntityState = {
+      id: 'player', blueprintId: 'player', type: 'player', name: 'Human',
+      tags: ['player', 'human'],
+      stats: { presence: 10, vitality: 15, cunning: 5 },
+      resources: { hp: 15, stamina: 10, bloodlust: 25, humanity: 20 },
+      statuses: [], zoneId: 'zone-a',
+    };
+    const enemy: EntityState = {
+      id: 'hunter', blueprintId: 'witch-hunter', type: 'enemy', name: 'Witch Hunter',
+      tags: ['enemy', 'human'],
+      stats: { presence: 3, vitality: 6, cunning: 5 },
+      resources: { hp: 18, stamina: 5 },
+      statuses: [], zoneId: 'zone-a',
+    };
+    const engine = createTestEngine({
+      zones,
+      entities: [humanPlayer, enemy],
+      modules: [
+        statusCore,
+        createAbilityCore({ abilities: allVampireAbilities, statMapping: { power: 'vitality', precision: 'cunning', focus: 'presence' } }),
+        createAbilityEffects(),
+        createAbilityReview(),
+      ],
+    });
+
+    const events = engine.processAction({
+      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      parameters: { abilityId: 'blood-purge' }, targetIds: [],
+    });
+    expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
+  });
+
+  it('sets cooldown after use', () => {
+    const engine = buildVampireEngine({ playerVitality: 15 });
+    engine.processAction({
+      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      parameters: { abilityId: 'blood-purge' }, targetIds: [],
+    });
+    expect(isAbilityReady(engine.store.state, 'player', 'blood-purge', allVampireAbilities)).toBe(false);
   });
 });
 
