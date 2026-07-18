@@ -15,8 +15,12 @@ import {
   renderActions,
   renderDialogue,
   renderFullScreen,
+  buildActionList,
+  textBar,
   DIALOGUE_LOOKBACK,
+  SCREEN_WIDTH,
 } from './renderer.js';
+import { detectColorEnabled, makePalette, stripAnsi } from './styles.js';
 
 function makeWorld() {
   const zones: ZoneState[] = [
@@ -625,5 +629,372 @@ describe('renderScene — humanized state labels, no corpse statuses (CS-C amend
     expect(text).not.toContain('Fleeing');
     expect(text).not.toContain('combat:fleeing');
     expect(text).not.toContain('(HP: 0)');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Stage D — visual composition. The screen is the product's only "screen":
+// labeled section rules, a glanceable HUD, a grouped/aligned menu, and an
+// optional color layer that degrades to byte-identical plain text.
+// ---------------------------------------------------------------------------
+
+const PLAIN = { color: false } as const;
+const COLORED = { color: true } as const;
+
+/** Rule lines are every line made of `─` (plain or labeled). */
+function ruleLines(screen: string): string[] {
+  return screen.split('\n').filter(l => l.startsWith('─'));
+}
+
+describe('Stage D — labeled section rules frame the screen', () => {
+  it('renders zone name, Status, and Actions as labeled rules', () => {
+    const world = makeWorld();
+    const screen = renderFullScreen(world, [], PLAIN);
+    expect(screen).toContain('── Town Square ');
+    expect(screen).toContain('── Status ');
+    expect(screen).toContain('── Actions ');
+  });
+
+  it('every rule line is exactly SCREEN_WIDTH characters wide', () => {
+    const world = makeWorld();
+    const screen = renderFullScreen(world, [], PLAIN);
+    const rules = ruleLines(screen);
+    expect(rules.length).toBeGreaterThanOrEqual(4); // zone, Status, Actions, closer
+    for (const line of rules) {
+      expect(line).toHaveLength(SCREEN_WIDTH);
+    }
+  });
+
+  it('closes the screen with a plain full-width rule directly under the menu', () => {
+    const world = makeWorld();
+    const screen = renderFullScreen(world, [], PLAIN);
+    const lines = screen.split('\n');
+    expect(lines[lines.length - 1]).toBe('─'.repeat(SCREEN_WIDTH));
+    // Tight: no blank line between the last action and the closing rule.
+    expect(lines[lines.length - 2]).toContain('Look around');
+  });
+
+  it('skips the Log section entirely when no event is renderable — no lone divider', () => {
+    const world = makeWorld();
+    const screen = renderFullScreen(world, [], PLAIN);
+    expect(screen).not.toContain('── Log ');
+  });
+
+  it('shows the Log section when a renderable event exists', () => {
+    const world = makeWorld();
+    (world as { eventLog: ResolvedEvent[] }).eventLog = [
+      { id: 'e1', tick: 1, type: 'combat.contact.hit', payload: {} },
+    ];
+    const screen = renderFullScreen(world, [], PLAIN);
+    expect(screen).toContain('── Log ');
+    expect(screen).toContain('> Hit!');
+  });
+
+  it('shows a labeled Dialogue section when dialogue is active', () => {
+    const world = makeWorld();
+    world.modules['dialogue-core'] = { activeDialogue: 'bram-talk' };
+    (world as { eventLog: ResolvedEvent[] }).eventLog = [
+      {
+        id: 'e1', tick: 1, type: 'dialogue.node.entered',
+        payload: { speaker: 'Bram', text: 'Well met.', choices: [{ id: 'c1', text: 'And you.', index: 0 }] },
+      },
+    ];
+    const screen = renderFullScreen(world, [], PLAIN);
+    expect(screen).toContain('── Dialogue ');
+    expect(screen).toContain('Bram: "Well met."');
+    expect(screen).toContain('[1] And you.');
+  });
+
+  it('never emits double blank lines or two rules back to back', () => {
+    const worlds = [makeWorld(), makeWorld()];
+    // Second world: stress edge states — defeated enemy, statuses, events.
+    worlds[1].entities['wolf'].resources.hp = 0;
+    worlds[1].entities['hero'].statuses = [{ id: 's', statusId: 'burning', appliedAtTick: 0 }];
+    (worlds[1] as { eventLog: ResolvedEvent[] }).eventLog = [
+      { id: 'e1', tick: 1, type: 'combat.entity.defeated', payload: { entityName: 'Wolf' } },
+    ];
+    for (const world of worlds) {
+      const screen = renderFullScreen(world, [], PLAIN);
+      expect(screen).not.toContain('\n\n\n');
+      const lines = screen.split('\n');
+      for (let i = 1; i < lines.length; i++) {
+        const both = lines[i - 1].startsWith('─') && lines[i].startsWith('─');
+        expect(both).toBe(false);
+      }
+    }
+  });
+
+  it('composes the nowhere edge state cleanly', () => {
+    const world = makeWorld();
+    (world.locationId as string) = 'does-not-exist';
+    const screen = renderFullScreen(world, [], PLAIN);
+    expect(screen).toContain('── Scene ');
+    expect(screen).toContain('You are nowhere.');
+    // Look around stays reachable even from nowhere, and parse agrees.
+    expect(screen).toContain('[1] Look around');
+    expect(parseActionSelection('1', world)).toEqual({ verb: 'inspect' });
+  });
+
+  it('a zone name longer than the rule width still renders without throwing', () => {
+    const world = makeWorld();
+    world.zones['town-square'].name = 'The Extraordinarily Long-Named Grand Plaza of the Ancient Merchant Republic';
+    const screen = renderFullScreen(world, [], PLAIN);
+    expect(screen).toContain('Grand Plaza');
+  });
+});
+
+describe('Stage D — HUD vitals: HP bar and resource readout', () => {
+  it('renders HP cur/max with a filled text bar when maxHp is known', () => {
+    const world = makeWorld();
+    world.entities['hero'].resources = { hp: 18, maxHp: 20, stamina: 10 };
+    const text = renderScene(world, PLAIN);
+    expect(text).toContain('HP 18/20 [#########-]');
+  });
+
+  it('renders a full bar at full HP and an empty bar at 0 HP', () => {
+    expect(textBar(20, 20)).toBe('[##########]');
+    expect(textBar(0, 20)).toBe('[----------]');
+  });
+
+  it('never shows an empty bar while alive, never a full bar while damaged', () => {
+    expect(textBar(1, 100)).toBe('[#---------]'); // alive → at least one tick
+    expect(textBar(19, 20)).toBe('[#########-]'); // damaged → never reads untouched
+  });
+
+  it('appends a plain-text (low) marker at or below 25% — the warning is words, not color', () => {
+    const world = makeWorld();
+    world.entities['hero'].resources = { hp: 5, maxHp: 20, stamina: 10 };
+    expect(renderScene(world, PLAIN)).toContain('(low)');
+    world.entities['hero'].resources = { hp: 6, maxHp: 20, stamina: 10 };
+    expect(renderScene(world, PLAIN)).not.toContain('(low)');
+  });
+
+  it('shows a bare HP value and NO bar when the world does not track maxHp', () => {
+    const world = makeWorld(); // hero: hp 20, stamina 10, no maxHp
+    const text = renderScene(world, PLAIN);
+    const vitals = text.split('\n').find(l => l.startsWith('  HP '));
+    expect(vitals).toBeDefined();
+    expect(vitals).toBe('  HP 20  Stamina 10');
+  });
+
+  it('lists every tracked resource, with cur/max when a max exists', () => {
+    const world = makeWorld();
+    world.entities['hero'].resources = { hp: 20, maxHp: 20, stamina: 8, maxStamina: 12, mana: 4 };
+    const text = renderScene(world, PLAIN);
+    expect(text).toContain('Stamina 8/12');
+    expect(text).toContain('Mana 4');
+    expect(text).not.toContain('MaxStamina'); // max* keys are denominators, not resources
+  });
+
+  it('falls back to stats.maxHp (legacy convention) for the bar denominator', () => {
+    const world = makeWorld();
+    world.entities['hero'].stats = { maxHp: 40 };
+    world.entities['hero'].resources = { hp: 10, stamina: 10 };
+    expect(renderScene(world, PLAIN)).toContain('HP 10/40');
+  });
+});
+
+describe('Stage D — scene entity lines', () => {
+  it('shows HP for enemies (with max when known) but not for NPCs', () => {
+    const world = makeWorld();
+    world.entities['wolf'].resources = { hp: 8, maxHp: 10 };
+    const text = renderScene(world, PLAIN);
+    expect(text).toContain('! Wolf · HP 8/10');
+    const bramLine = text.split('\n').find(l => l.includes('Merchant Bram'));
+    expect(bramLine).toBe('  ? Merchant Bram');
+  });
+
+  it('marks companions with a + icon and shows their HP', () => {
+    const world = makeWorld();
+    world.entities['mira'] = {
+      id: 'mira', blueprintId: 'companion', type: 'npc', name: 'Mira',
+      tags: ['npc', 'companion'], stats: {}, resources: { hp: 12, maxHp: 15 },
+      statuses: [], zoneId: 'town-square',
+    };
+    const text = renderScene(world, PLAIN);
+    expect(text).toContain('+ Mira · HP 12/15');
+  });
+
+  it('appends humanized statuses after the HP readout', () => {
+    const world = makeWorld();
+    world.entities['wolf'].statuses = [
+      { id: 's1', statusId: 'combat:off_balance', appliedAtTick: 0 },
+      { id: 's2', statusId: 'burning', appliedAtTick: 0 },
+    ];
+    const text = renderScene(world, PLAIN);
+    expect(text).toContain('! Wolf · HP 8 · Off Balance, Burning');
+  });
+
+  it('renders a defeated entity as a single quiet line', () => {
+    const world = makeWorld();
+    world.entities['wolf'].resources.hp = 0;
+    const text = renderScene(world, PLAIN);
+    expect(text).toContain('! Wolf · defeated');
+    expect(text).not.toContain('Wolf · HP');
+  });
+});
+
+describe('Stage D — action menu grouping, alignment, and parse sync', () => {
+  it('separates travel / interact / items / system groups with blank lines', () => {
+    const world = makeWorld();
+    const text = renderActions(world, PLAIN);
+    expect(text).toContain('Move to Back Alley\n\n  [2] Speak to Merchant Bram');
+    expect(text).toContain('Use healing-draught\n\n  [7] Look around');
+  });
+
+  it('right-aligns numbers when the menu reaches double digits', () => {
+    const world = makeWorld();
+    // Widen the menu past 9 entries with extra exits.
+    for (let i = 0; i < 6; i++) {
+      const id = `road-${i}`;
+      world.zones[id] = { id, roomId: 'test', name: `Road ${i}`, tags: [], neighbors: [] };
+      world.zones['town-square'].neighbors.push(id);
+    }
+    const text = renderActions(world, PLAIN);
+    expect(text).toContain('[ 1] Move to Back Alley');
+    expect(text).toContain('[10]');
+    // Single-digit menus stay unpadded.
+    expect(renderActions(makeWorld(), PLAIN)).toContain('[1] Move to Back Alley');
+  });
+
+  it('parseActionSelection agrees with buildActionList for EVERY index — display and input cannot drift', () => {
+    const world = makeWorld();
+    world.entities['wolf'].statuses = [{ id: 's', statusId: 'burning', appliedAtTick: 0 }];
+    const list = buildActionList(world);
+    expect(list.length).toBeGreaterThanOrEqual(7);
+    list.forEach((opt, i) => {
+      const parsed = parseActionSelection(String(i + 1), world);
+      expect(parsed).not.toBeNull();
+      expect(parsed!.verb).toBe(opt.verb);
+      expect(parsed!.targetIds).toEqual(opt.targetIds);
+      expect(parsed!.toolId).toEqual(opt.toolId);
+    });
+    expect(parseActionSelection(String(list.length + 1), world)).toBeNull();
+  });
+
+  it('renders exactly one numbered line per action option', () => {
+    const world = makeWorld();
+    const list = buildActionList(world);
+    const numbered = renderActions(world, PLAIN)
+      .split('\n')
+      .filter(l => /^ {2}\[\s*\d+\]/.test(l));
+    expect(numbered).toHaveLength(list.length);
+  });
+});
+
+describe('Stage D — color layer detection (NO_COLOR / TTY contract)', () => {
+  it('NO_COLOR wins over everything, including FORCE_COLOR and a live TTY', () => {
+    expect(detectColorEnabled({ NO_COLOR: '1', FORCE_COLOR: '1' }, { isTTY: true })).toBe(false);
+  });
+
+  it('an empty NO_COLOR is ignored per the no-color.org spec', () => {
+    expect(detectColorEnabled({ NO_COLOR: '' }, { isTTY: true })).toBe(true);
+  });
+
+  it('FORCE_COLOR enables color even when piped; FORCE_COLOR=0 does not force', () => {
+    expect(detectColorEnabled({ FORCE_COLOR: '1' }, { isTTY: false })).toBe(true);
+    expect(detectColorEnabled({ FORCE_COLOR: '0' }, { isTTY: false })).toBe(false);
+  });
+
+  it('disables color for dumb terminals, piped output, and missing streams', () => {
+    expect(detectColorEnabled({ TERM: 'dumb' }, { isTTY: true })).toBe(false);
+    expect(detectColorEnabled({}, { isTTY: false })).toBe(false);
+    expect(detectColorEnabled({}, undefined)).toBe(false);
+    expect(detectColorEnabled({}, { isTTY: true })).toBe(true);
+  });
+
+  it('disables color under a test runner even with a TTY', () => {
+    expect(detectColorEnabled({ VITEST: 'true' }, { isTTY: true })).toBe(false);
+  });
+
+  it('a disabled palette is pure identity; an enabled one wraps and empty strings pass through', () => {
+    const off = makePalette(false);
+    expect(off.red('x')).toBe('x');
+    expect(off.bold('x')).toBe('x');
+    const on = makePalette(true);
+    expect(on.red('x')).toBe('\u001b[31mx\u001b[39m');
+    expect(on.bold('x')).toBe('\u001b[1mx\u001b[22m');
+    expect(on.red('')).toBe('');
+    expect(stripAnsi(on.dim(on.cyan('hi')))).toBe('hi');
+  });
+});
+
+describe('Stage D — colored output degrades to byte-identical plain text', () => {
+  /** A world exercising every visual path at once. */
+  function richWorld() {
+    const world = makeWorld();
+    world.entities['hero'].resources = { hp: 4, maxHp: 20, stamina: 3, maxStamina: 10 };
+    world.entities['hero'].statuses = [{ id: 's1', statusId: 'burning', appliedAtTick: 0 }];
+    world.entities['wolf'].resources = { hp: 8, maxHp: 10 };
+    world.entities['wolf'].statuses = [{ id: 's2', statusId: 'combat:off_balance', appliedAtTick: 0 }];
+    world.entities['mira'] = {
+      id: 'mira', blueprintId: 'companion', type: 'npc', name: 'Mira',
+      tags: ['companion'], stats: {}, resources: { hp: 0 }, statuses: [], zoneId: 'town-square',
+    };
+    (world as { eventLog: ResolvedEvent[] }).eventLog = [
+      { id: 'e1', tick: 1, type: 'combat.damage.applied', payload: { damage: 3, currentHp: 5 } },
+      { id: 'e2', tick: 1, type: 'status.periodic.heal', payload: { statusId: 'regenerating', amount: 2, actual: 2, resource: 'hp' } },
+      { id: 'e3', tick: 1, type: 'combat.entity.defeated', payload: { entityName: 'Bandit' } },
+      { id: 'e4', tick: 1, type: 'action.rejected', payload: { reason: 'not enough stamina' } },
+      { id: 'e5', tick: 1, type: 'combat.contact.miss', payload: {} },
+    ];
+    return world;
+  }
+
+  it('stripAnsi(colored screen) === plain screen, byte for byte', () => {
+    const colored = renderFullScreen(richWorld(), [], COLORED);
+    const plain = renderFullScreen(richWorld(), [], PLAIN);
+    expect(colored).toContain('\u001b[');
+    expect(stripAnsi(colored)).toBe(plain);
+  });
+
+  it('rule lines stay exactly SCREEN_WIDTH visible characters in color mode', () => {
+    const colored = renderFullScreen(richWorld(), [], COLORED);
+    for (const line of ruleLines(stripAnsi(colored))) {
+      expect(line).toHaveLength(SCREEN_WIDTH);
+    }
+  });
+
+  it('the plain path emits zero escape codes from every render function', () => {
+    const world = richWorld();
+    world.modules['dialogue-core'] = { activeDialogue: 'talk' };
+    (world as { eventLog: ResolvedEvent[] }).eventLog.push({
+      id: 'e6', tick: 1, type: 'dialogue.node.entered',
+      payload: { speaker: 'Bram', text: 'Hm.', choices: [{ id: 'c', text: 'Yes.', index: 0 }] },
+    });
+    const outputs = [
+      renderScene(world, PLAIN),
+      renderEventLog(world.eventLog, 8, PLAIN),
+      renderActions(world, PLAIN),
+      renderDialogue(world, PLAIN) ?? '',
+      renderFullScreen(world, [], PLAIN),
+    ];
+    for (const out of outputs) {
+      expect(out).not.toContain('\u001b');
+    }
+  });
+
+  it('classifies event lines semantically: damage red, heal green, rejection yellow, defeat bold, miss dim', () => {
+    const log = richWorld().eventLog;
+    const colored = renderEventLog(log, 8, COLORED);
+    const lineFor = (needle: string) =>
+      colored.split('\n').find(l => stripAnsi(l).includes(needle)) ?? '';
+    expect(lineFor('damage dealt')).toContain('\u001b[31m');
+    expect(lineFor('Regenerating')).toContain('\u001b[32m');
+    expect(lineFor("can't do that")).toContain('\u001b[33m');
+    expect(lineFor('defeated!')).toContain('\u001b[1m');
+    expect(lineFor('Miss.')).toContain('\u001b[2m');
+  });
+
+  it('event text is identical with and without color — color is never the message', () => {
+    const log = richWorld().eventLog;
+    expect(stripAnsi(renderEventLog(log, 8, COLORED))).toBe(renderEventLog(log, 8, PLAIN));
+  });
+
+  it('renders plain by default under the test runner (auto-detection path)', () => {
+    // vitest sets env.VITEST and pipes worker stdout; both independently
+    // disable auto-color, keeping every assertion in this file deterministic.
+    const screen = renderFullScreen(richWorld(), []);
+    expect(screen).not.toContain('\u001b');
   });
 });

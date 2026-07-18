@@ -59,6 +59,41 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 
 ---
 
+## What It Looks Like
+
+The bundled terminal UI composes each turn into labeled sections — scene, status, log, and actions — with a glance-able HUD. Output is plain text by default and adds semantic color on a TTY (damage red, heals green, rejections yellow), honoring `NO_COLOR` and non-TTY pipes; every cue is carried in the text too, never color alone.
+
+```text
+── The Crypt Gate ──────────────────────────────────────────
+  [dark, unhallowed]
+
+  ! Crypt Warden · HP 6/14 · Off Balance
+  ! Bone Thrall · defeated
+  + Mira · HP 11/16
+
+  * rusted portcullis winch
+
+  Exits: Ossuary, Churchyard
+
+── Status ──────────────────────────────────────────────────
+  HP 9/20 [#####-----]  Stamina 4/10
+  Status: Guarded
+  Items: healing-draught, grave-key
+
+── Log ─────────────────────────────────────────────────────
+  > Ash takes a guarded stance.
+  > Hit!  4 damage dealt (HP: 6)
+  > Bone Thrall defeated!
+  > You can't do that: not enough stamina
+
+── Actions ─────────────────────────────────────────────────
+  [ 1] Move to Ossuary      [ 3] Attack Crypt Warden
+  [ 2] Move to Churchyard   [ 4] Inspect Crypt Warden
+────────────────────────────────────────────────────────────
+```
+
+---
+
 ## Quick Start
 
 ```typescript

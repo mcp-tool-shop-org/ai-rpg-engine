@@ -1,9 +1,57 @@
 // Terminal renderer — scene, event log, command display
+//
+// Stage D visual system (one coherent layer, built on Stage C's event work):
+//   - Labeled section rules — `── Town Square ────…`, `── Status ────…`,
+//     `── Log ────…`, `── Actions ────…` — frame each block so the screen
+//     scans top-to-bottom: where am I, how am I, what happened, what can I do.
+//   - HUD: `HP 12/20 [######----]` — plain-text bar plus a `(low)` marker at
+//     ≤25%. Bars and colors are always redundant; the numbers carry the truth.
+//   - One shared action-list builder feeds BOTH renderActions and
+//     parseActionSelection, so the menu the player sees and the numbers the
+//     parser accepts can never drift apart again.
+//   - Optional ANSI color via styles.ts. Auto-detected (interactive TTY
+//     only), disabled by NO_COLOR / piped output / TERM=dumb, forceable per
+//     call via { color }. Stripping the codes yields the byte-identical
+//     plain screen (tested), so nothing is ever communicated by color alone.
 
-import type { WorldState, ResolvedEvent, ZoneState, EntityState } from '@ai-rpg-engine/core';
+import type { WorldState, ResolvedEvent, EntityState, ScalarValue } from '@ai-rpg-engine/core';
+import { detectColorEnabled, makePalette, type Palette } from './styles.js';
 
-const DIVIDER = '─'.repeat(60);
-const THIN_DIVIDER = '·'.repeat(60);
+/** Visible width of every rule line the renderer emits. */
+export const SCREEN_WIDTH = 60;
+const RULE_CHAR = '─';
+
+/** Below this fraction of max HP the HUD appends a plain-text `(low)` marker. */
+const LOW_HP_RATIO = 0.25;
+
+/** Per-call render options. Omitted fields fall back to auto-detection. */
+export type RenderOptions = {
+  /**
+   * Explicit color override. Omitted → auto-detect via detectColorEnabled():
+   * color only on an interactive TTY, never when NO_COLOR is set, never when
+   * output is piped or captured.
+   */
+  color?: boolean;
+};
+
+function paletteFor(opts?: RenderOptions): Palette {
+  return makePalette(opts?.color ?? detectColorEnabled());
+}
+
+/** A full-width plain rule (screen closer, unlabeled separators). */
+function rule(pal: Palette): string {
+  return pal.dim(RULE_CHAR.repeat(SCREEN_WIDTH));
+}
+
+/**
+ * A labeled section rule: `── Label ───────…` padded to SCREEN_WIDTH visible
+ * characters. The label is bold, the rule dim — the label carries the
+ * information; the weight difference is only emphasis.
+ */
+function sectionRule(label: string, pal: Palette): string {
+  const fill = Math.max(0, SCREEN_WIDTH - 4 - label.length);
+  return pal.dim(`${RULE_CHAR}${RULE_CHAR} `) + pal.bold(label) + pal.dim(` ${RULE_CHAR.repeat(fill)}`);
+}
 
 /**
  * CS-C amend (medium): raw machine ids leaked straight into the HUD —
@@ -21,72 +69,177 @@ export function humanizeStateId(id: string): string {
     .join(' ');
 }
 
-export function renderScene(world: WorldState): string {
-  const zone = world.zones[world.locationId];
-  if (!zone) return '  You are nowhere.\n';
+/**
+ * Resolve an entity's maximum for a resource, following the engine
+ * convention (see ability-intent.ts): `resources.maxHp` first, then the
+ * legacy `stats.maxHp` fallback. Returns undefined when the world simply
+ * doesn't track a max — the HUD then shows the bare current value and never
+ * invents a denominator.
+ */
+function maxOf(entity: EntityState, resource: string): number | undefined {
+  const key = `max${resource.charAt(0).toUpperCase()}${resource.slice(1)}`;
+  const value = entity.resources[key] ?? entity.stats[key];
+  return typeof value === 'number' && value > 0 ? value : undefined;
+}
 
-  const lines: string[] = [];
+/**
+ * Plain-text meter: `[######----]`. Two readability clamps: an alive entity
+ * never shows a fully empty bar (1 HP of 100 still shows one tick), and a
+ * damaged entity never shows a fully full bar (19/20 shows nine ticks) — the
+ * bar always agrees with the question "am I untouched / am I about to die?".
+ * Purely decorative reinforcement: the `cur/max` numbers next to it are the
+ * source of truth.
+ */
+export function textBar(current: number, max: number, width = 10): string {
+  if (!(max > 0) || width <= 0) return '';
+  const clamped = Math.max(0, Math.min(current, max));
+  let filled = Math.round((clamped / max) * width);
+  if (clamped > 0 && filled === 0) filled = 1;
+  if (clamped < max && filled === width) filled = width - 1;
+  return `[${'#'.repeat(filled)}${'-'.repeat(width - filled)}]`;
+}
 
-  // Zone header
-  lines.push(`  ${zone.name}`);
-  lines.push(`  ${THIN_DIVIDER}`);
+/** Color the HP bar by remaining fraction — redundant with the numbers. */
+function paintedBar(current: number, max: number, pal: Palette): string {
+  const bar = textBar(current, max);
+  const ratio = max > 0 ? current / max : 0;
+  if (ratio <= LOW_HP_RATIO) return pal.red(bar);
+  if (ratio <= 0.5) return pal.yellow(bar);
+  return pal.green(bar);
+}
 
-  // Tags
-  if (zone.tags.length > 0) {
-    lines.push(`  [${zone.tags.join(', ')}]`);
+type EntityKind = 'enemy' | 'ally' | 'npc' | 'item' | 'other';
+
+/**
+ * Classify an entity for the scene list. Explicit hostility (the `enemy`
+ * tag) wins over everything; party membership comes from the `ally` /
+ * `companion` tags. Faction is deliberately NOT used here — factions define
+ * combat sides, not who travels with you.
+ */
+function entityKind(entity: EntityState): EntityKind {
+  if (entity.tags.includes('enemy')) return 'enemy';
+  if (entity.tags.includes('ally') || entity.tags.includes('companion')) return 'ally';
+  if (entity.tags.includes('npc')) return 'npc';
+  if (entity.tags.includes('item')) return 'item';
+  return 'other';
+}
+
+const ENTITY_ICONS: Record<EntityKind, string> = {
+  enemy: '!',
+  ally: '+',
+  npc: '?',
+  item: '*',
+  other: '-',
+};
+
+/**
+ * One scene line per entity: `! Wolf · HP 8/10 · Off Balance`.
+ * HP shows only for combat-relevant kinds (enemy/ally) — a merchant with a
+ * hit-point readout is noise. CS-C amend preserved: defeated entities show
+ * `· defeated` and suppress live status tags, and never a raw `HP 0`.
+ */
+function entityLine(entity: EntityState, pal: Palette): string {
+  const kind = entityKind(entity);
+  const hp = entity.resources.hp;
+  const defeated = hp !== undefined && hp <= 0;
+
+  const parts: string[] = [];
+  if (defeated) {
+    parts.push('defeated');
+  } else {
+    if ((kind === 'enemy' || kind === 'ally') && hp !== undefined) {
+      const max = maxOf(entity, 'hp');
+      parts.push(max !== undefined ? `HP ${hp}/${max}` : `HP ${hp}`);
+    }
+    if (entity.statuses.length > 0) {
+      parts.push(entity.statuses.map(s => humanizeStateId(s.statusId)).join(', '));
+    }
   }
 
-  // Entities present
+  const name = `${ENTITY_ICONS[kind]} ${entity.name}`;
+  const paintedName =
+    kind === 'enemy' ? pal.red(name)
+    : kind === 'ally' ? pal.green(name)
+    : kind === 'npc' ? pal.cyan(name)
+    : name;
+  const line = `  ${defeated ? pal.dim(name) : paintedName}${parts.map(p => ` ${pal.dim('·')} ${defeated ? pal.dim(p) : p}`).join('')}`;
+  return line;
+}
+
+/**
+ * The player vitals line: `HP 18/20 [#########-]  Stamina 10/12  Mana 4`.
+ * HP leads with its bar; every other (non-max) resource the world actually
+ * tracks follows with `cur/max` when a max is known, bare value otherwise.
+ * At ≤25% of a known max HP, a plain-text `(low)` marker appears — the
+ * warning is words, the red is emphasis.
+ */
+function playerVitals(player: EntityState, pal: Palette): string {
+  const parts: string[] = [];
+  const hp = player.resources.hp ?? 0;
+  const maxHp = maxOf(player, 'hp');
+  if (maxHp !== undefined) {
+    const low = hp / maxHp <= LOW_HP_RATIO;
+    parts.push(`HP ${hp}/${maxHp} ${paintedBar(hp, maxHp, pal)}${low ? ` ${pal.red('(low)')}` : ''}`);
+  } else {
+    parts.push(`HP ${hp}`);
+  }
+  for (const [resource, value] of Object.entries(player.resources)) {
+    if (resource === 'hp' || resource.startsWith('max')) continue;
+    const max = maxOf(player, resource);
+    const label = humanizeStateId(resource);
+    parts.push(max !== undefined ? `${label} ${value}/${max}` : `${label} ${value}`);
+  }
+  return `  ${parts.join('  ')}`;
+}
+
+export function renderScene(world: WorldState, opts?: RenderOptions): string {
+  const pal = paletteFor(opts);
+  const zone = world.zones[world.locationId];
+  if (!zone) {
+    return `${sectionRule('Scene', pal)}\n  You are nowhere.\n`;
+  }
+
+  // Scene body — groups joined by single blank lines, empty groups skipped.
+  const groups: string[] = [];
+
+  if (zone.tags.length > 0) {
+    groups.push(`  ${pal.dim(`[${zone.tags.join(', ')}]`)}`);
+  }
+
   const entities = Object.values(world.entities).filter(
     e => e.zoneId === zone.id && e.id !== world.playerId
   );
   if (entities.length > 0) {
-    lines.push('');
-    for (const entity of entities) {
-      const hp = entity.resources.hp;
-      // CS-C amend: a corpse used to render "! Crypt Warden (HP: 0)
-      // [combat:fleeing]" — a dead entity advertising live combat state.
-      // Defeated entities show "(defeated)" and suppress their status tags.
-      const defeated = hp !== undefined && hp <= 0;
-      const hpStr = hp !== undefined ? (defeated ? ' (defeated)' : ` (HP: ${hp})`) : '';
-      const statusStr = !defeated && entity.statuses.length > 0
-        ? ` [${entity.statuses.map(s => humanizeStateId(s.statusId)).join(', ')}]`
-        : '';
-      lines.push(`  ${entityIcon(entity)} ${entity.name}${hpStr}${statusStr}`);
-    }
+    groups.push(entities.map(e => entityLine(e, pal)).join('\n'));
   }
 
-  // Interactables
   if (zone.interactables && zone.interactables.length > 0) {
-    lines.push('');
-    for (const item of zone.interactables) {
-      lines.push(`  * ${item}`);
-    }
+    groups.push(zone.interactables.map(item => `  * ${item}`).join('\n'));
   }
 
-  // Exits
   if (zone.neighbors.length > 0) {
-    lines.push('');
-    lines.push(`  Exits: ${zone.neighbors.map(n => {
-      const z = world.zones[n];
-      return z ? z.name : n;
-    }).join(', ')}`);
+    const names = zone.neighbors.map(n => world.zones[n]?.name ?? n).join(', ');
+    groups.push(`  Exits: ${names}`);
   }
 
-  // Player status
+  const lines: string[] = [sectionRule(zone.name, pal)];
+  if (groups.length > 0) {
+    lines.push(groups.join('\n\n'));
+  }
+
+  // Player HUD — its own labeled section so status reads at a glance.
   const player = world.entities[world.playerId];
   if (player) {
-    lines.push('');
-    lines.push(`  ${THIN_DIVIDER}`);
-    const hp = player.resources.hp ?? 0;
-    const stamina = player.resources.stamina ?? 0;
-    lines.push(`  HP: ${hp}  Stamina: ${stamina}`);
+    const hud: string[] = [playerVitals(player, pal)];
     if (player.statuses.length > 0) {
-      lines.push(`  Status: ${player.statuses.map(s => humanizeStateId(s.statusId)).join(', ')}`);
+      hud.push(`  Status: ${player.statuses.map(s => humanizeStateId(s.statusId)).join(', ')}`);
     }
     if (player.inventory && player.inventory.length > 0) {
-      lines.push(`  Items: ${player.inventory.join(', ')}`);
+      hud.push(`  Items: ${player.inventory.join(', ')}`);
     }
+    lines.push('');
+    lines.push(sectionRule('Status', pal));
+    lines.push(hud.join('\n'));
   }
 
   return lines.join('\n') + '\n';
@@ -99,7 +252,26 @@ export function renderScene(world: WorldState): string {
  */
 export const EVENT_LOG_LOOKBACK = 100;
 
-export function renderEventLog(events: ResolvedEvent[], limit = 8): string {
+// Event categories for the color layer. Membership only affects emphasis —
+// the formatted text is identical either way.
+const DAMAGE_EVENTS = new Set(['combat.damage.applied', 'status.periodic.damage']);
+const HEAL_EVENTS = new Set(['status.periodic.heal']);
+const ALERT_EVENTS = new Set(['combat.entity.defeated', 'combat.guard.broken', 'combat.companion.intercepted']);
+const REJECT_EVENTS = new Set(['action.rejected', 'ability.rejected', 'ability.check.failed', 'combat.disengage.fail']);
+const MUTED_EVENTS = new Set(['combat.contact.miss', 'status.removed', 'status.expired', 'status.periodic.expired', 'dialogue.ended']);
+
+function paintEventLine(type: string, line: string, pal: Palette): string {
+  if (!pal.enabled) return line;
+  if (DAMAGE_EVENTS.has(type)) return pal.red(line);
+  if (HEAL_EVENTS.has(type)) return pal.green(line);
+  if (ALERT_EVENTS.has(type)) return pal.bold(line);
+  if (REJECT_EVENTS.has(type)) return pal.yellow(line);
+  if (MUTED_EVENTS.has(type)) return pal.dim(line);
+  return line;
+}
+
+export function renderEventLog(events: ResolvedEvent[], limit = 8, opts?: RenderOptions): string {
+  const pal = paletteFor(opts);
   // CS-C-004: filter to renderable events FIRST, then take the last `limit`.
   // The old order (slice(-limit), then format) let unrenderable bookkeeping —
   // defeat fallout, flag changes, audio cues — occupy window slots and push
@@ -110,7 +282,7 @@ export function renderEventLog(events: ResolvedEvent[], limit = 8): string {
   for (let i = scanStart; i < events.length; i++) {
     const formatted = formatEvent(events[i]);
     if (formatted) {
-      lines.push(`  ${formatted}`);
+      lines.push(`  ${paintEventLine(events[i].type, formatted, pal)}`);
     }
   }
 
@@ -121,50 +293,82 @@ export function renderEventLog(events: ResolvedEvent[], limit = 8): string {
   return recent.join('\n') + '\n';
 }
 
-export function renderActions(world: WorldState): string {
+/** Menu groups, in display order. Grouping is visual only — never renumbers. */
+type ActionGroup = 'travel' | 'interact' | 'items' | 'system';
+
+export type ActionOption = {
+  verb: string;
+  targetIds?: string[];
+  toolId?: string;
+  parameters?: Record<string, ScalarValue>;
+  /** Player-facing menu label ("Move to Back Alley"). */
+  label: string;
+  /** Menu group — drives blank-line separation in renderActions only. */
+  group: ActionGroup;
+};
+
+/**
+ * The ONE source of truth for the numbered action menu. renderActions
+ * displays this list; parseActionSelection indexes into it. They previously
+ * built the same list independently — a classic drift bug waiting to happen
+ * (any ordering change in one silently remapped the player's numbers in the
+ * other). Shared now; a test pins the agreement.
+ */
+export function buildActionList(world: WorldState): ActionOption[] {
   const zone = world.zones[world.locationId];
-  const lines: string[] = [];
-  let idx = 1;
+  const actions: ActionOption[] = [];
 
-  // Movement options
-  if (zone?.neighbors) {
+  if (zone) {
+    // Movement options
     for (const neighborId of zone.neighbors) {
-      const neighbor = world.zones[neighborId];
-      const name = neighbor?.name ?? neighborId;
-      lines.push(`  [${idx}] Move to ${name}`);
-      idx++;
+      const name = world.zones[neighborId]?.name ?? neighborId;
+      actions.push({ verb: 'move', targetIds: [neighborId], label: `Move to ${name}`, group: 'travel' });
+    }
+
+    // Entities in zone for interaction
+    const entities = Object.values(world.entities).filter(
+      e => e.zoneId === zone.id && e.id !== world.playerId
+    );
+    for (const entity of entities) {
+      if (entity.tags.includes('npc')) {
+        actions.push({ verb: 'speak', targetIds: [entity.id], label: `Speak to ${entity.name}`, group: 'interact' });
+      }
+      if (entity.tags.includes('enemy') && (entity.resources.hp ?? 0) > 0) {
+        actions.push({ verb: 'attack', targetIds: [entity.id], label: `Attack ${entity.name}`, group: 'interact' });
+      }
+      actions.push({ verb: 'inspect', targetIds: [entity.id], label: `Inspect ${entity.name}`, group: 'interact' });
+    }
+
+    // Items in player inventory
+    const player = world.entities[world.playerId];
+    if (player?.inventory) {
+      for (const itemId of player.inventory) {
+        actions.push({ verb: 'use', toolId: itemId, label: `Use ${itemId}`, group: 'items' });
+      }
     }
   }
 
-  // Entities in zone for interaction
-  const entities = Object.values(world.entities).filter(
-    e => e.zoneId === zone?.id && e.id !== world.playerId
-  );
-  for (const entity of entities) {
-    if (entity.tags.includes('npc')) {
-      lines.push(`  [${idx}] Speak to ${entity.name}`);
-      idx++;
-    }
-    if (entity.tags.includes('enemy') && (entity.resources.hp ?? 0) > 0) {
-      lines.push(`  [${idx}] Attack ${entity.name}`);
-      idx++;
-    }
-    lines.push(`  [${idx}] Inspect ${entity.name}`);
-    idx++;
-  }
+  // Inspect current zone — always available, even from nowhere.
+  actions.push({ verb: 'inspect', label: 'Look around', group: 'system' });
 
-  // Items in player inventory
-  const player = world.entities[world.playerId];
-  if (player?.inventory) {
-    for (const itemId of player.inventory) {
-      lines.push(`  [${idx}] Use ${itemId}`);
-      idx++;
+  return actions;
+}
+
+export function renderActions(world: WorldState, opts?: RenderOptions): string {
+  const pal = paletteFor(opts);
+  const actions = buildActionList(world);
+  // Right-align numbers when the menu reaches double digits: [ 9] / [10].
+  const width = String(actions.length).length;
+  const lines: string[] = [];
+  let prevGroup: ActionGroup | undefined;
+  actions.forEach((action, i) => {
+    if (prevGroup !== undefined && action.group !== prevGroup) {
+      lines.push('');
     }
-  }
-
-  // Inspect current zone
-  lines.push(`  [${idx}] Look around`);
-
+    prevGroup = action.group;
+    const num = `[${String(i + 1).padStart(width)}]`;
+    lines.push(`  ${pal.cyan(num)} ${action.label}`);
+  });
   return lines.join('\n') + '\n';
 }
 
@@ -172,43 +376,19 @@ export function renderActions(world: WorldState): string {
 export function parseActionSelection(
   input: string,
   world: WorldState,
-): { verb: string; targetIds?: string[]; toolId?: string; parameters?: Record<string, import('@ai-rpg-engine/core').ScalarValue> } | null {
-  const zone = world.zones[world.locationId];
-  if (!zone) return null;
+): { verb: string; targetIds?: string[]; toolId?: string; parameters?: Record<string, ScalarValue> } | null {
+  const actions = buildActionList(world);
 
-  // Build the same action list to map index → action
-  const actions: Array<{ verb: string; targetIds?: string[]; toolId?: string; parameters?: Record<string, import('@ai-rpg-engine/core').ScalarValue> }> = [];
-
-  for (const neighborId of zone.neighbors) {
-    actions.push({ verb: 'move', targetIds: [neighborId] });
-  }
-
-  const entities = Object.values(world.entities).filter(
-    e => e.zoneId === zone.id && e.id !== world.playerId
-  );
-  for (const entity of entities) {
-    if (entity.tags.includes('npc')) {
-      actions.push({ verb: 'speak', targetIds: [entity.id] });
-    }
-    if (entity.tags.includes('enemy') && (entity.resources.hp ?? 0) > 0) {
-      actions.push({ verb: 'attack', targetIds: [entity.id] });
-    }
-    actions.push({ verb: 'inspect', targetIds: [entity.id] });
-  }
-
-  const player = world.entities[world.playerId];
-  if (player?.inventory) {
-    for (const itemId of player.inventory) {
-      actions.push({ verb: 'use', toolId: itemId });
-    }
-  }
-
-  actions.push({ verb: 'inspect' });
-
-  // Number selection
   const num = parseInt(input, 10);
   if (!isNaN(num) && num >= 1 && num <= actions.length) {
-    return actions[num - 1];
+    const action = actions[num - 1];
+    const result: { verb: string; targetIds?: string[]; toolId?: string; parameters?: Record<string, ScalarValue> } = {
+      verb: action.verb,
+    };
+    if (action.targetIds) result.targetIds = action.targetIds;
+    if (action.toolId) result.toolId = action.toolId;
+    if (action.parameters) result.parameters = action.parameters;
+    return result;
   }
 
   return null;
@@ -218,7 +398,7 @@ export function parseActionSelection(
 export function parseTextInput(
   input: string,
   world: WorldState,
-): { verb: string; targetIds?: string[]; toolId?: string; parameters?: Record<string, import('@ai-rpg-engine/core').ScalarValue> } | null {
+): { verb: string; targetIds?: string[]; toolId?: string; parameters?: Record<string, ScalarValue> } | null {
   const parts = input.trim().toLowerCase().split(/\s+/);
   // F-1de46432: `String.prototype.split` on a regex never returns an empty
   // array — for '' or whitespace-only input it returns [''], a one-element
@@ -480,13 +660,6 @@ function formatEvent(event: ResolvedEvent): string | null {
   }
 }
 
-function entityIcon(entity: EntityState): string {
-  if (entity.tags.includes('enemy')) return '!';
-  if (entity.tags.includes('npc')) return '?';
-  if (entity.tags.includes('item')) return '*';
-  return '-';
-}
-
 /**
  * How many of the most-recent events renderDialogue may scan per lookup.
  *
@@ -523,7 +696,8 @@ function findRecentEvent(
   return undefined;
 }
 
-export function renderDialogue(world: WorldState): string | null {
+export function renderDialogue(world: WorldState, opts?: RenderOptions): string | null {
+  const pal = paletteFor(opts);
   const dState = world.modules['dialogue-core'] as { activeDialogue: string | null } | undefined;
   if (!dState?.activeDialogue) {
     // Show the last spoken line briefly if dialogue just ended. The tick
@@ -537,7 +711,7 @@ export function renderDialogue(world: WorldState): string | null {
         e => e.type === 'dialogue.node.entered' && e.tick <= endedEvent.tick,
       );
       if (lastNode) {
-        return `  ${lastNode.payload.speaker}: "${lastNode.payload.text}"\n`;
+        return `  ${pal.bold(String(lastNode.payload.speaker))}: "${lastNode.payload.text}"\n`;
       }
     }
     return null;
@@ -548,30 +722,33 @@ export function renderDialogue(world: WorldState): string | null {
   if (!nodeEvent) return null;
 
   const lines: string[] = [];
-  lines.push(`  ${nodeEvent.payload.speaker}: "${nodeEvent.payload.text}"`);
+  lines.push(`  ${pal.bold(String(nodeEvent.payload.speaker))}: "${nodeEvent.payload.text}"`);
 
   const choices = nodeEvent.payload.choices as Array<{ id: string; text: string; index: number }> | undefined;
   if (choices && choices.length > 0) {
     lines.push('');
     for (const choice of choices) {
-      lines.push(`  [${choice.index + 1}] ${choice.text}`);
+      lines.push(`  ${pal.cyan(`[${choice.index + 1}]`)} ${choice.text}`);
     }
   }
 
   return lines.join('\n') + '\n';
 }
 
-export function renderFullScreen(world: WorldState, recentEvents: ResolvedEvent[]): string {
-  const lines: string[] = [];
+export function renderFullScreen(world: WorldState, recentEvents: ResolvedEvent[], opts?: RenderOptions): string {
+  // Resolve color ONCE per screen so every section renders under the same
+  // decision — no mid-frame flips if the environment changes under us.
+  const pal = paletteFor(opts);
+  const resolved: RenderOptions = { color: pal.enabled };
 
-  lines.push(DIVIDER);
-  lines.push(renderScene(world));
+  const sections: string[] = [];
+
+  sections.push(renderScene(world, resolved));
 
   // Check for active dialogue
-  const dialogueDisplay = renderDialogue(world);
+  const dialogueDisplay = renderDialogue(world, resolved);
   if (dialogueDisplay) {
-    lines.push(DIVIDER);
-    lines.push(dialogueDisplay);
+    sections.push(`${sectionRule('Dialogue', pal)}\n${dialogueDisplay}`);
   }
 
   // CS-C-004 (part 2): render the log from the world's own eventLog when it
@@ -582,15 +759,14 @@ export function renderFullScreen(world: WorldState, recentEvents: ResolvedEvent[
   // touching the caller. `recentEvents` remains the fallback for hand-built
   // worlds / curated replays that pass an explicit list.
   const eventSource = world.eventLog && world.eventLog.length > 0 ? world.eventLog : recentEvents;
-  const eventLog = renderEventLog(eventSource);
+  const eventLog = renderEventLog(eventSource, 8, resolved);
   if (eventLog) {
-    lines.push(DIVIDER);
-    lines.push(eventLog);
+    sections.push(`${sectionRule('Log', pal)}\n${eventLog}`);
   }
 
-  lines.push(DIVIDER);
-  lines.push(renderActions(world));
-  lines.push(DIVIDER);
+  sections.push(`${sectionRule('Actions', pal)}\n${renderActions(world, resolved)}`);
 
-  return lines.join('\n');
+  // Sections each end with '\n'; joining with '\n' yields exactly one blank
+  // line between blocks. The closing rule sits tight under the last line.
+  return sections.join('\n') + rule(pal);
 }
