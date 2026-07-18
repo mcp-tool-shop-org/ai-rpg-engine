@@ -1,8 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { MemoryAssetStore } from '@ai-rpg-engine/asset-registry';
 import { PlaceholderProvider } from './placeholder-provider.js';
 import { generatePortrait, ensurePortrait, resolveProvider, ImageGenError } from './pipeline.js';
 import type { PortraitRequest, ImageProvider, GenerationOutcome, GenerationOptions } from './types.js';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const testRequest: PortraitRequest = {
   characterName: 'Aldric',
@@ -221,9 +225,141 @@ describe('generatePortrait — typed failure propagation (A1)', () => {
       name: 'ImageGenError',
       code: 'timeout',
       hint: 'raise timeoutMs',
-      message: 'ComfyUI request timed out after 5ms',
+      // F-72a9c4d0: the hint is folded into .message so consumers that only
+      // log err.message (and uncaught-exception displays) still see it.
+      message: 'ComfyUI request timed out after 5ms — raise timeoutMs',
     });
     await expect(generatePortrait(testRequest, failing, store)).rejects.toBeInstanceOf(ImageGenError);
     expect(await store.count()).toBe(0); // no partial asset landed
+  });
+
+  it('keeps .message equal to the error when no hint exists (F-72a9c4d0)', () => {
+    const err = new ImageGenError({ ok: false, code: 'network', error: 'fetch failed' });
+    expect(err.message).toBe('fetch failed');
+    expect(err.hint).toBeUndefined();
+  });
+});
+
+// v2.6 Stage C F-6c3d9a48 — the provider-selection seam silently swapped in
+// the PlaceholderProvider (no breadcrumb, nothing on the returned value), and
+// ensurePortrait matched on character tags alone, so ONE outage permanently
+// poisoned the portrait cache with initials-tiles that no code path would
+// ever regenerate. The invariants: (1) degradation warns by default and is
+// observable via onFallback, (2) a stored placeholder is marked as such,
+// (3) a cached placeholder is replaced as soon as a real provider is available.
+describe('provider degradation is observable + placeholders are not cached as final (F-6c3d9a48)', () => {
+  /** A "real" (non-placeholder) provider that renders PNG bytes. */
+  function realProvider(name = 'comfyui', available = true): ImageProvider {
+    return {
+      name,
+      async isAvailable() { return available; },
+      async generate(prompt: string, opts?: GenerationOptions): Promise<GenerationOutcome> {
+        return {
+          ok: true,
+          image: new TextEncoder().encode(`png-bytes-for:${prompt}`),
+          mimeType: 'image/png',
+          width: opts?.width ?? 512,
+          height: opts?.height ?? 512,
+          prompt,
+          durationMs: 1,
+        };
+      },
+    };
+  }
+
+  it('emits a stderr breadcrumb by default when degrading to the fallback', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const resolved = await resolveProvider(realProvider('comfyui', false));
+
+    expect(resolved.name).toBe('placeholder');
+    const stderr = errSpy.mock.calls.flat().join('\n');
+    expect(stderr).toContain('comfyui');
+    expect(stderr).toContain('placeholder');
+    expect(stderr).toMatch(/unavailable/i);
+  });
+
+  it('routes degradation through a custom onFallback hook (and stays silent on stderr)', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const events: Array<{ preferred: string; fallback: string; reason: string }> = [];
+    const resolved = await resolveProvider(
+      realProvider('comfyui', false),
+      undefined,
+      { onFallback: (info) => events.push(info) },
+    );
+
+    expect(resolved.name).toBe('placeholder');
+    expect(events).toHaveLength(1);
+    expect(events[0].preferred).toBe('comfyui');
+    expect(events[0].fallback).toBe('placeholder');
+    expect(events[0].reason).toMatch(/isAvailable/i);
+    expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not fire onFallback when the preferred provider is available', async () => {
+    const onFallback = vi.fn();
+    const resolved = await resolveProvider(realProvider('comfyui', true), undefined, { onFallback });
+    expect(resolved.name).toBe('comfyui');
+    expect(onFallback).not.toHaveBeenCalled();
+  });
+
+  it('names the thrown availability error in the fallback reason', async () => {
+    const events: Array<{ reason: string }> = [];
+    const flaky: ImageProvider = {
+      name: 'flaky',
+      async isAvailable() { throw new Error('DNS exploded'); },
+      async generate() { throw new Error('unreachable'); },
+    };
+    await resolveProvider(flaky, undefined, { onFallback: (info) => events.push(info) });
+    expect(events[0].reason).toContain('DNS exploded');
+  });
+
+  it('tags a placeholder render as placeholder + records the provider', async () => {
+    const store = new MemoryAssetStore();
+    const meta = await generatePortrait(testRequest, new PlaceholderProvider(), store);
+    expect(meta.tags).toContain('placeholder');
+    expect(meta.tags).toContain('provider:placeholder');
+  });
+
+  it('does not tag a real render as placeholder', async () => {
+    const store = new MemoryAssetStore();
+    const meta = await generatePortrait(testRequest, realProvider(), store);
+    expect(meta.tags).not.toContain('placeholder');
+    expect(meta.tags).toContain('provider:comfyui');
+  });
+
+  it('ensurePortrait regenerates a cached placeholder once a real provider is available', async () => {
+    const store = new MemoryAssetStore();
+
+    // Outage: placeholder gets cached for the character.
+    const placeholderMeta = await ensurePortrait(testRequest, new PlaceholderProvider(), store);
+    expect(placeholderMeta.mimeType).toBe('image/svg+xml');
+
+    // ComfyUI is back: the placeholder must NOT be treated as final.
+    const realMeta = await ensurePortrait(testRequest, realProvider(), store);
+    expect(realMeta.mimeType).toBe('image/png');
+    expect(realMeta.hash).not.toBe(placeholderMeta.hash);
+
+    // And from now on the real render is the preferred match.
+    const again = await ensurePortrait(testRequest, realProvider(), store);
+    expect(again.hash).toBe(realMeta.hash);
+  });
+
+  it('ensurePortrait still reuses the cached placeholder while the provider is a placeholder', async () => {
+    const store = new MemoryAssetStore();
+    const first = await ensurePortrait(testRequest, new PlaceholderProvider(), store);
+    const second = await ensurePortrait(testRequest, new PlaceholderProvider(), store);
+    expect(second.hash).toBe(first.hash);
+    expect(await store.count()).toBe(1);
+  });
+
+  it('ensurePortrait prefers an existing real render even when handed a placeholder provider', async () => {
+    const store = new MemoryAssetStore();
+    const realMeta = await ensurePortrait(testRequest, realProvider(), store);
+
+    // Later outage: resolveProvider hands ensurePortrait the placeholder —
+    // the stored real render must still win (no downgrade).
+    const resolved = await ensurePortrait(testRequest, new PlaceholderProvider(), store);
+    expect(resolved.hash).toBe(realMeta.hash);
+    expect(resolved.mimeType).toBe('image/png');
   });
 });

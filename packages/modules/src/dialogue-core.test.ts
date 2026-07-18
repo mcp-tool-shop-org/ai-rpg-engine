@@ -13,7 +13,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
-import type { EntityState } from '@ai-rpg-engine/core';
+import type { EntityState, ResolvedEvent } from '@ai-rpg-engine/core';
 import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
 import { createDialogueCore } from './dialogue-core.js';
 
@@ -33,6 +33,8 @@ const zones = [{ id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbo
 
 // entry -> {buy: set-global effect -> shop, haggle: resource-modify effect (unsupported) -> shop,
 //           hidden: condition-gated -> shop, leave: dangling nextNodeId -> ends}
+// shop  -> {done -> farewell}   (mid-branch node: HAS choices, stays active)
+// farewell                      (leaf node: NO choices — ends the dialogue, node effect fires)
 const dialogue: DialogueDefinition = {
   id: 'merchant-greeting',
   speakers: ['merchant'],
@@ -62,6 +64,15 @@ const dialogue: DialogueDefinition = {
       id: 'shop',
       speaker: 'merchant',
       text: 'Take a look.',
+      choices: [
+        { id: 'done', text: 'That is all, thanks.', nextNodeId: 'farewell' },
+      ],
+    },
+    farewell: {
+      id: 'farewell',
+      speaker: 'merchant',
+      text: 'Safe travels, friend.',
+      effects: [{ type: 'set-global', params: { key: 'farewellGiven', value: true } }],
     },
   },
 };
@@ -217,5 +228,132 @@ describe('dialogue-core: effect application', () => {
     const unknown = events.find(e => e.type === 'dialogue.effect.unknown');
     expect(unknown).toBeDefined();
     expect(unknown!.payload.effectType).toBe('resource-modify');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Leaf-node termination (MOD-C-BH-02)
+//
+// Before this fix, dialogue.ended only fired when a choice's nextNodeId pointed
+// at a MISSING node. Advancing into a REAL node with no choices left
+// activeDialogue set forever: every later 'choose' rejected with "no choices
+// available", the numbered menu was dead for the rest of the session, and
+// end-of-conversation hooks (starter-fantasy's healing-draught gift grants on
+// dialogue.ended) never ran. All 10 starter packs end conversations on
+// choiceless nodes (dismiss / end-gift / end-info), so every conversation
+// hit this. A leaf node now renders its text, applies its own effects, and
+// ends the conversation cleanly.
+// ---------------------------------------------------------------------------
+
+describe('dialogue-core: leaf-node termination (MOD-C-BH-02)', () => {
+  it('advancing into a choiceless node renders it, fires dialogue.ended, and clears active dialogue', () => {
+    const engine = buildEngine();
+    engine.submitAction('speak', { targetIds: ['merchant'] });
+    engine.submitAction('choose', { parameters: { choiceId: 'buy' } }); // -> shop (has choices)
+    const events = engine.submitAction('choose', { parameters: { choiceId: 'done' } }); // -> farewell (leaf)
+
+    // The closing line still renders — the player sees the farewell text.
+    const entered = events.find(e => e.type === 'dialogue.node.entered');
+    expect(entered).toBeDefined();
+    expect(entered!.payload.nodeId).toBe('farewell');
+    expect(entered!.payload.hasChoices).toBe(false);
+
+    const ended = events.find(e => e.type === 'dialogue.ended');
+    expect(ended).toBeDefined();
+    expect(ended!.payload.dialogueId).toBe('merchant-greeting');
+    expect(ended!.payload.nodeId).toBe('farewell');
+
+    const dState = engine.world.modules['dialogue-core'] as {
+      activeDialogue: string | null; activeNodeId: string | null; speakerId: string | null;
+    };
+    expect(dState.activeDialogue).toBeNull();
+    expect(dState.activeNodeId).toBeNull();
+    expect(dState.speakerId).toBeNull();
+  });
+
+  it("the leaf node's own effects still apply, and fire BEFORE dialogue.ended", () => {
+    const engine = buildEngine();
+    engine.submitAction('speak', { targetIds: ['merchant'] });
+    engine.submitAction('choose', { parameters: { choiceId: 'buy' } });
+    const events = engine.submitAction('choose', { parameters: { choiceId: 'done' } });
+
+    expect(engine.world.globals.farewellGiven).toBe(true);
+    const flagIdx = events.findIndex(e => e.type === 'world.flag.changed' && e.payload.key === 'farewellGiven');
+    const endedIdx = events.findIndex(e => e.type === 'dialogue.ended');
+    expect(flagIdx).toBeGreaterThanOrEqual(0);
+    expect(endedIdx).toBeGreaterThan(flagIdx);
+  });
+
+  it('a conversation can start again after ending on a leaf (the menu is not dead)', () => {
+    const engine = buildEngine();
+    engine.submitAction('speak', { targetIds: ['merchant'] });
+    engine.submitAction('choose', { parameters: { choiceId: 'buy' } });
+    engine.submitAction('choose', { parameters: { choiceId: 'done' } }); // ends on leaf
+
+    // Speaking again starts a FRESH conversation at the entry node...
+    const again = engine.submitAction('speak', { targetIds: ['merchant'] });
+    expect(again.some(e => e.type === 'dialogue.started')).toBe(true);
+    expect(again.find(e => e.type === 'dialogue.node.entered')!.payload.nodeId).toBe('entry');
+
+    // ...and choosing works. Previously activeNodeId stayed stuck on the
+    // choiceless node, so every subsequent choose was rejected.
+    const chosen = engine.submitAction('choose', { parameters: { choiceId: 'buy' } });
+    expect(chosen.some(e => e.type === 'dialogue.choice.selected')).toBe(true);
+    expect(chosen.some(e => e.type === 'action.rejected')).toBe(false);
+  });
+
+  it('a single-node dialogue (choiceless entry node) speaks its line and ends immediately', () => {
+    const oneLiner: DialogueDefinition = {
+      id: 'guard-bark',
+      speakers: ['merchant'],
+      entryNodeId: 'only',
+      nodes: {
+        only: { id: 'only', speaker: 'merchant', text: 'Move along.' },
+      },
+    };
+    const engine = buildEngine([oneLiner]);
+    const events = engine.submitAction('speak', { targetIds: ['merchant'] });
+
+    expect(events.some(e => e.type === 'dialogue.started')).toBe(true);
+    expect(events.find(e => e.type === 'dialogue.node.entered')!.payload.text).toBe('Move along.');
+    expect(events.some(e => e.type === 'dialogue.ended')).toBe(true);
+    const dState = engine.world.modules['dialogue-core'] as { activeDialogue: string | null };
+    expect(dState.activeDialogue).toBeNull();
+  });
+
+  it('a node whose choices are ALL condition-hidden is the same dead end and also ends', () => {
+    const gated: DialogueDefinition = {
+      id: 'gated',
+      speakers: ['merchant'],
+      entryNodeId: 'start',
+      nodes: {
+        start: {
+          id: 'start', speaker: 'merchant', text: 'Only the worthy may answer.',
+          choices: [
+            {
+              id: 'secret', text: 'The password.', nextNodeId: 'start',
+              condition: { type: 'global-set', params: { key: 'password' } },
+            },
+          ],
+        },
+      },
+    };
+    const engine = buildEngine([gated]);
+    const events = engine.submitAction('speak', { targetIds: ['merchant'] });
+    expect(events.some(e => e.type === 'dialogue.ended')).toBe(true);
+    const dState = engine.world.modules['dialogue-core'] as { activeDialogue: string | null };
+    expect(dState.activeDialogue).toBeNull();
+  });
+
+  it('dialogue.ended from a leaf reaches store listeners (the starter gift-grant pattern)', () => {
+    const engine = buildEngine();
+    let endedDialogueId: string | null = null;
+    engine.store.events.on('dialogue.ended', (e: ResolvedEvent) => {
+      endedDialogueId = e.payload.dialogueId as string;
+    });
+    engine.submitAction('speak', { targetIds: ['merchant'] });
+    engine.submitAction('choose', { parameters: { choiceId: 'buy' } });
+    engine.submitAction('choose', { parameters: { choiceId: 'done' } });
+    expect(endedDialogueId).toBe('merchant-greeting');
   });
 });

@@ -287,6 +287,48 @@ describe('scaffold tool', () => {
     expect(result.ok).toBe(false);
     expect(result.actions[0].status).toBe('failed');
   });
+
+  // v2.6 Stage C F-b8d1a6e3 — the chat scaffold path used to throw the
+  // command's validation result away entirely: the user was invited to save
+  // schema-invalid YAML with zero indication anything was wrong, and the
+  // failure re-appeared at strict engine load, far from its cause. The
+  // summary must now carry the warnings and point at the one capability
+  // built to explain them (explain-validation-error).
+  it('surfaces validation warnings in the summary for schema-invalid output', async () => {
+    const invalidYaml = 'id: bare-room'; // missing name/zones — fails room schema
+    const tool = findToolForIntent('scaffold')!;
+    const result = await tool.execute(makeParams({
+      client: mockClient(invalidYaml),
+      params: { kind: 'room', theme: 'minimal' },
+    }));
+
+    expect(result.ok).toBe(true); // draft still emitted (warn, not refuse)
+    expect(result.summary).toMatch(/validation issue/i);
+    expect(result.summary).toContain('explain-validation-error');
+    // Still offers the save flow — the warning informs, it does not block.
+    expect(result.pendingWrite).toBeDefined();
+  });
+
+  it('adds no validation warning when the generated content is schema-valid', async () => {
+    const validYaml = [
+      'id: ruined_chapel',
+      'name: Ruined Chapel',
+      'zones:',
+      '  - id: nave',
+      '    name: Nave',
+      '  - id: crypt',
+      '    name: Crypt',
+    ].join('\n');
+    const tool = findToolForIntent('scaffold')!;
+    const result = await tool.execute(makeParams({
+      client: mockClient(validYaml),
+      params: { kind: 'room', theme: 'a ruined chapel' },
+    }));
+
+    expect(result.ok).toBe(true);
+    expect(result.summary).not.toMatch(/validation issue/i);
+    expect(result.summary).not.toContain('explain-validation-error');
+  });
 });
 
 describe('critique tool', () => {

@@ -97,7 +97,7 @@ function speakHandler(
     }),
   ];
 
-  events.push(...renderNode(action, entryNode, world));
+  events.push(...enterNode(action, dialogue, entryNode, dState, world));
 
   return events;
 }
@@ -156,9 +156,9 @@ function chooseHandler(
   const nextNode = dialogue.nodes[choice.nextNodeId];
   if (nextNode) {
     dState.activeNodeId = choice.nextNodeId;
-    events.push(...renderNode(action, nextNode, world));
+    events.push(...enterNode(action, dialogue, nextNode, dState, world));
   } else {
-    // End dialogue
+    // End dialogue (choice's nextNodeId points at no real node)
     dState.activeDialogue = null;
     dState.activeNodeId = null;
     dState.speakerId = null;
@@ -168,24 +168,43 @@ function chooseHandler(
   return events;
 }
 
-function renderNode(
+/**
+ * Enter a node: emit dialogue.node.entered, apply the node's own effects, and —
+ * when the node offers no available choices — end the conversation cleanly.
+ *
+ * MOD-C-BH-02: before this, dialogue.ended only fired when a choice's
+ * nextNodeId pointed at a MISSING node. Advancing into a REAL node with no
+ * choices left activeDialogue set forever: every later 'choose' rejected, the
+ * choice menu died for the rest of the session, and end-of-conversation hooks
+ * (starter-fantasy grants the healing draught on dialogue.ended) never ran —
+ * and all 10 starter packs end conversations on choiceless leaf nodes. A node
+ * whose choices are ALL condition-hidden is the same dead end, so leaf-ness is
+ * judged on the condition-filtered list the player actually sees.
+ *
+ * Node effects (schema DialogueNode.effects — previously never wired) apply on
+ * entry, BEFORE the ended event, so a leaf that grants something on entry does
+ * so while listeners can still observe the conversation's final state.
+ */
+function enterNode(
   action: ActionIntent,
+  dialogue: DialogueDefinition,
   node: DialogueNode,
+  dState: DialogueState,
   world: WorldState,
 ): ResolvedEvent[] {
   const text = typeof node.text === 'string' ? node.text : node.text[0]?.text ?? '';
 
   const availableChoices = node.choices
     ?.filter(c => !c.condition || evaluateCondition(c.condition, world))
-    .map((c, i) => ({ id: c.id, text: c.text, index: i }));
+    .map((c, i) => ({ id: c.id, text: c.text, index: i })) ?? [];
 
-  return [
+  const events: ResolvedEvent[] = [
     makeEvent(action, 'dialogue.node.entered', {
       nodeId: node.id,
       speaker: node.speaker,
       text,
-      choices: availableChoices ?? [],
-      hasChoices: (availableChoices?.length ?? 0) > 0,
+      choices: availableChoices,
+      hasChoices: availableChoices.length > 0,
     }, {
       presentation: {
         channels: ['dialogue'],
@@ -193,6 +212,29 @@ function renderNode(
       },
     }),
   ];
+
+  // The node's own effects fire on entry.
+  if (node.effects) {
+    for (const effect of node.effects) {
+      events.push(...applyDialogueEffect(action, effect, world));
+    }
+  }
+
+  if (availableChoices.length === 0) {
+    // Leaf node — the conversation ends here. Its text has rendered and its
+    // effects have applied; clear the active state so the next speak/choose
+    // starts fresh instead of hitting "no choices available" forever.
+    dState.activeDialogue = null;
+    dState.activeNodeId = null;
+    dState.speakerId = null;
+    events.push(makeEvent(action, 'dialogue.ended', {
+      dialogueId: dialogue.id,
+      nodeId: node.id,
+      reason: 'leaf-node',
+    }));
+  }
+
+  return events;
 }
 
 function applyDialogueEffect(

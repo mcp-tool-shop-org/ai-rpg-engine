@@ -13,6 +13,21 @@ The engine is the lawful keeper of reality. AI assists humans in *creating* and 
 
 ---
 
+## Prerequisites
+
+Every command below talks to a local Ollama server, and the model must be
+**pulled before first use** (the default, `qwen2.5-coder`, is not pre-installed):
+
+```bash
+ollama serve                # start the daemon (if not already running)
+ollama pull qwen2.5-coder   # one-time download of the default model
+```
+
+Using a different model? Pull that one instead, and point the tool at it with
+`--model <name>` or `AI_RPG_ENGINE_OLLAMA_MODEL`.
+
+---
+
 ## Workflows
 
 ### 1. Scaffold a Location

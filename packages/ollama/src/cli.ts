@@ -1,6 +1,6 @@
 // CLI wiring — parses argv for `ai` subcommands and dispatches
 
-import { writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { resolveConfig } from './config.js';
 import type { OllamaConfig } from './config.js';
@@ -215,8 +215,27 @@ function enforceValidationGate(
     'INVALID_CONTENT',
     `generated ${kind} failed schema validation (${errors.length} error(s)):\n${list}`,
     'Nothing was emitted or written. Re-run without --validate to inspect the draft, '
-    + 'tighten --theme/--constraints, or use --repair (room/quest) for an automatic fix attempt.',
+    + 'tighten --theme/--constraints, or use --repair (room/quest) for an automatic fix attempt. '
+    + 'Pipe the errors to "ai explain-validation-error" for a plain-English fix guide.',
   );
+}
+
+/**
+ * Read this package's version from package.json (v2.6 Stage C F-8d5c2ea9).
+ * The help banner used to hardcode 'v1.0.0' against a 2.x package — a
+ * trust-eroding mismatch that only recurs with every release. Resolved
+ * relative to this module (src/ and dist/ both sit one level below
+ * package.json), with a safe fallback so a packaging anomaly can never
+ * crash `--help`.
+ */
+async function packageVersion(): Promise<string> {
+  try {
+    const raw = await readFile(new URL('../package.json', import.meta.url), 'utf-8');
+    const pkg = JSON.parse(raw) as { version?: string };
+    return typeof pkg.version === 'string' ? pkg.version : '(unknown)';
+  } catch {
+    return '(unknown)';
+  }
 }
 
 /** Print validation warnings for an emitted-anyway draft (stderr, advisory). */
@@ -226,7 +245,8 @@ function printValidationWarnings(validation: GeneratedContentResult): void {
   for (const err of validation.validation.errors) {
     console.error(`  ${err.path}: ${err.message}`);
   }
-  console.error('(Drafts are validated strictly at engine load; add --validate to refuse invalid output here.)');
+  console.error('(Drafts are validated strictly at engine load; add --validate to refuse invalid output here.'
+    + ' For a plain-English fix guide, pipe the errors to "ai explain-validation-error".)');
 }
 
 /**
@@ -1289,7 +1309,7 @@ async function runCliInner(args: string[]): Promise<void> {
     }
 
     default:
-      console.log('@ai-rpg-engine/ollama v1.0.0');
+      console.log(`@ai-rpg-engine/ollama v${await packageVersion()}`);
       console.log('');
       console.log('Session:');
       console.log('  session start <name>        Start a named design session');

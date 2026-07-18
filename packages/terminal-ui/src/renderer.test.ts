@@ -288,3 +288,342 @@ describe('renderDialogue — bounded event-log scan (F-4b7e6f01)', () => {
     expect(renderDialogue(world)).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Stage C behavioral fixes — the render loop must give the player feedback.
+// ---------------------------------------------------------------------------
+
+function cev(type: string, payload: Record<string, unknown> = {}, extra: Partial<ResolvedEvent> = {}): ResolvedEvent {
+  return { id: `e-${type}`, tick: 1, type, payload, ...extra };
+}
+
+// CS-C-002: action.rejected / ability.rejected used to render null — a typo,
+// "not enough stamina", "cannot reach X from Y", "on cooldown until tick N",
+// or attacking a corpse all redrew an identical screen with zero feedback,
+// even though the modules author player-grade `reason` strings.
+describe('formatEvent — rejections surface their reason (CS-C-002)', () => {
+  it('renders the module-authored reason for each rejection kind', () => {
+    const reasons = [
+      'not enough stamina',
+      'cannot reach back-alley from town-square',
+      'target is already defeated',
+      'no target specified',
+      'nothing to inspect: ghost',
+    ];
+    for (const reason of reasons) {
+      const text = renderEventLog([cev('action.rejected', { reason })]);
+      expect(text).toContain("You can't do that");
+      expect(text).toContain(reason);
+    }
+  });
+
+  it('falls back to a generic line when reason is missing (never prints undefined)', () => {
+    const text = renderEventLog([cev('action.rejected', {})]);
+    expect(text).toContain("You can't do that");
+    expect(text).not.toContain('undefined');
+  });
+
+  it('renders ability.rejected with the ability name and reason', () => {
+    const text = renderEventLog([
+      cev('ability.rejected', { abilityId: 'fireball', abilityName: 'Fireball', reason: 'on cooldown until tick 12' }),
+    ]);
+    expect(text).toContain('Fireball');
+    expect(text).toContain('on cooldown until tick 12');
+  });
+
+  it('renders ability.check.failed as a visible failure', () => {
+    const text = renderEventLog([
+      cev('ability.check.failed', { abilityId: 'fireball', abilityName: 'Fireball', aborted: true }),
+    ]);
+    expect(text).toContain('Fireball');
+    expect(text.toLowerCase()).toContain('fail');
+  });
+});
+
+// CS-C-003: the renderer's own menu items "[7] Look around" and
+// "[N] Inspect X" emit world.zone.inspected / world.entity.inspected with
+// rich payloads — and then rendered null, a visible no-op.
+describe('formatEvent — inspect and look produce output (CS-C-003)', () => {
+  it('renders world.zone.inspected with zone name, other entities, and interactables', () => {
+    const text = renderEventLog([
+      cev('world.zone.inspected', {
+        zoneId: 'town-square',
+        zoneName: 'Town Square',
+        tags: ['safe'],
+        entities: [
+          { id: 'hero', name: 'Hero', type: 'player', tags: ['player'] },
+          { id: 'merchant_bram', name: 'Merchant Bram', type: 'npc', tags: ['npc'] },
+          { id: 'wolf', name: 'Wolf', type: 'enemy', tags: ['enemy'] },
+        ],
+        interactables: ['fountain'],
+        exits: ['back-alley'],
+        hazards: [],
+      }, { actorId: 'hero' }),
+    ]);
+    expect(text).toContain('Town Square');
+    expect(text).toContain('Merchant Bram');
+    expect(text).toContain('Wolf');
+    expect(text).toContain('fountain');
+    // The inspecting actor is not listed among the things they "see"
+    expect(text).not.toContain('Hero');
+  });
+
+  it('renders zone hazards when present', () => {
+    const text = renderEventLog([
+      cev('world.zone.inspected', {
+        zoneId: 'crypt', zoneName: 'Crypt', tags: [], entities: [],
+        interactables: [], exits: [], hazards: ['unstable-floor'],
+      }, { actorId: 'hero' }),
+    ]);
+    expect(text).toContain('Crypt');
+    expect(text.toLowerCase()).toContain('hazard');
+  });
+
+  it('renders world.entity.inspected with name, HP, and humanized statuses', () => {
+    const text = renderEventLog([
+      cev('world.entity.inspected', {
+        entityId: 'wolf', name: 'Wolf', type: 'enemy', tags: ['enemy'],
+        stats: {}, resources: { hp: 8, maxHp: 10 },
+        statuses: ['combat:off_balance'],
+      }),
+    ]);
+    expect(text).toContain('Wolf');
+    expect(text).toContain('HP: 8/10');
+    expect(text).toContain('Off Balance');
+    expect(text).not.toContain('combat:off_balance');
+  });
+
+  it('renders a defeated inspect target as defeated, not as a raw HP: 0 line', () => {
+    const text = renderEventLog([
+      cev('world.entity.inspected', {
+        entityId: 'warden', name: 'Crypt Warden', type: 'enemy', tags: ['enemy'],
+        stats: {}, resources: { hp: 0, maxHp: 12 }, statuses: ['combat:fleeing'],
+      }),
+    ]);
+    expect(text).toContain('Crypt Warden');
+    expect(text.toLowerCase()).toContain('defeated');
+    expect(text).not.toContain('combat:fleeing');
+  });
+});
+
+// CS-C-004: renderEventLog sliced the last N events BEFORE filtering, so the
+// killing blow "X defeated!" was pushed out of the window by unrenderable
+// defeat.fallout/aftermath bookkeeping — the fight climax rendered as an
+// empty divider.
+describe('renderEventLog — filter first, then window (CS-C-004)', () => {
+  it('keeps the defeat line visible when bookkeeping events follow it', () => {
+    const bookkeeping = Array.from({ length: 10 }, (_, i) =>
+      cev(`defeat.fallout.step${i}`, { detail: i }),
+    );
+    const text = renderEventLog([
+      cev('combat.entity.defeated', { entityId: 'wolf', entityName: 'Wolf' }),
+      ...bookkeeping,
+    ]);
+    expect(text).toContain('Wolf defeated!');
+  });
+
+  it('returns "" (not a lone newline) when no event is renderable — no empty divider', () => {
+    const bookkeeping = Array.from({ length: 5 }, (_, i) => cev(`world.flag.changed`, { i }));
+    expect(renderEventLog(bookkeeping)).toBe('');
+  });
+
+  it('still caps output at the limit, counting renderable lines only', () => {
+    const hits = Array.from({ length: 12 }, (_, i) =>
+      cev('combat.damage.applied', { damage: i, currentHp: 20 - i }),
+    );
+    const text = renderEventLog(hits, 8);
+    const lines = text.split('\n').filter(l => l.trim().length > 0);
+    expect(lines).toHaveLength(8);
+    // The newest events win the window
+    expect(text).toContain('11 damage dealt');
+    expect(text).not.toContain('> 0 damage dealt');
+  });
+
+  it('renderFullScreen shows the killing blow even through the CLI\'s raw slice(-8) window', () => {
+    // The CLI passes world.eventLog.slice(-8) — a RAW window. With ≥8
+    // bookkeeping events after the defeat, the defeat event never reaches
+    // renderEventLog via the argument. renderFullScreen owns the fix: it
+    // renders from world.eventLog itself.
+    const world = makeWorld();
+    const bookkeeping = Array.from({ length: 9 }, (_, i) =>
+      cev(`defeat.fallout.step${i}`, { detail: i }),
+    );
+    (world as { eventLog: ResolvedEvent[] }).eventLog = [
+      cev('combat.entity.defeated', { entityId: 'wolf', entityName: 'Wolf' }),
+      ...bookkeeping,
+    ];
+    const cliStyleWindow = world.eventLog.slice(-8);
+    const text = renderFullScreen(world, cliStyleWindow);
+    expect(text).toContain('Wolf defeated!');
+  });
+});
+
+// Item 4: guard, disengage, interception, and the DoT/HoT lifecycle were all
+// silent — visible state changes with no text.
+describe('formatEvent — combat maneuver events render (CS-C amend)', () => {
+  it('renders combat.guard.start', () => {
+    const text = renderEventLog([cev('combat.guard.start', { entityId: 'hero', entityName: 'Hero' })]);
+    expect(text).toContain('Hero');
+    expect(text.toLowerCase()).toContain('guard');
+  });
+
+  it('renders combat.guard.absorbed with the damage reduction', () => {
+    const text = renderEventLog([
+      cev('combat.guard.absorbed', { entityId: 'hero', entityName: 'Hero', originalDamage: 6, reducedDamage: 3 }),
+    ]);
+    expect(text).toContain('Hero');
+    expect(text).toContain('6');
+    expect(text).toContain('3');
+  });
+
+  it('renders combat.guard.broken', () => {
+    const text = renderEventLog([
+      cev('combat.guard.broken', { attackerId: 'wolf', attackerName: 'Wolf', targetId: 'hero', targetName: 'Hero' }),
+    ]);
+    expect(text).toContain('Wolf');
+    expect(text).toContain('Hero');
+    expect(text.toLowerCase()).toContain('guard');
+  });
+
+  it('renders combat.counter.off_balance', () => {
+    const text = renderEventLog([
+      cev('combat.counter.off_balance', { entityId: 'wolf', entityName: 'Wolf', causedBy: 'hero', causedByName: 'Hero' }),
+    ]);
+    expect(text).toContain('Wolf');
+    expect(text.toLowerCase()).toContain('off balance');
+  });
+
+  it('renders combat.companion.intercepted', () => {
+    const text = renderEventLog([
+      cev('combat.companion.intercepted', {
+        interceptorId: 'ally', interceptorName: 'Mira', targetId: 'hero', targetName: 'Hero', damage: 4,
+      }),
+    ]);
+    expect(text).toContain('Mira');
+    expect(text).toContain('Hero');
+    expect(text.toLowerCase()).toContain('intercept');
+  });
+
+  it('renders disengage success and failure distinctly', () => {
+    const ok = renderEventLog([cev('combat.disengage.success', { entityId: 'hero', entityName: 'Hero', fromZoneId: 'a', toZoneId: 'b' })]);
+    expect(ok).toContain('Hero');
+    expect(ok.toLowerCase()).toContain('break');
+
+    const fail = renderEventLog([cev('combat.disengage.fail', { entityId: 'hero', entityName: 'Hero', roll: 90, needed: 40 })]);
+    expect(fail).toContain('Hero');
+    expect(fail.toLowerCase()).toContain('fail');
+  });
+});
+
+describe('formatEvent — DoT/HoT lifecycle renders (CS-C amend)', () => {
+  it('renders status.periodic.damage as "Burning: -3 HP"', () => {
+    const text = renderEventLog([
+      cev('status.periodic.damage', { statusId: 'burning', amount: 3, hpBefore: 10, hpAfter: 7 }),
+    ]);
+    expect(text).toContain('Burning');
+    expect(text).toContain('-3 HP');
+  });
+
+  it('renders status.periodic.heal as "Regenerating: +2 HP"', () => {
+    const text = renderEventLog([
+      cev('status.periodic.heal', { statusId: 'regenerating', amount: 2, actual: 2, resource: 'hp' }),
+    ]);
+    expect(text).toContain('Regenerating');
+    expect(text).toContain('+2 HP');
+  });
+
+  it('renders non-hp periodic heals with their resource name', () => {
+    const text = renderEventLog([
+      cev('status.periodic.heal', { statusId: 'second-wind', amount: 2, actual: 2, resource: 'stamina' }),
+    ]);
+    expect(text).toContain('+2 stamina');
+  });
+
+  it('renders status.periodic.expired as "X wore off"', () => {
+    const text = renderEventLog([
+      cev('status.periodic.expired', { statusId: 'burning', appliedAtTick: 1, durationTicks: 3 }),
+    ]);
+    expect(text).toContain('Burning');
+    expect(text).toContain('wore off');
+  });
+
+  it('prefers module-authored description metadata when present', () => {
+    const text = renderEventLog([
+      cev('status.periodic.damage', { statusId: 'burning', amount: 3, description: 'The flames gnaw deeper.' }),
+    ]);
+    expect(text).toContain('The flames gnaw deeper.');
+  });
+
+  it('humanizes status ids in the applied/removed/expired lines', () => {
+    const applied = renderEventLog([cev('status.applied', { statusId: 'combat:guarded', stacks: 1 })]);
+    expect(applied).toContain('Guarded');
+    expect(applied).not.toContain('combat:guarded');
+
+    const expired = renderEventLog([cev('status.expired', { statusId: 'engagement:isolated', stacks: 1 })]);
+    expect(expired).toContain('Isolated');
+    expect(expired).not.toContain('engagement:isolated');
+  });
+});
+
+describe('formatEvent — ability.used renders with flavor text (CS-C amend)', () => {
+  it('renders actor, ability name, and targets', () => {
+    const text = renderEventLog([
+      cev('ability.used', {
+        abilityId: 'fireball', abilityName: 'Fireball', actorId: 'hero', actorName: 'Hero',
+        targetIds: ['wolf'], targetNames: ['Wolf'],
+      }),
+    ]);
+    expect(text).toContain('Hero');
+    expect(text).toContain('Fireball');
+    expect(text).toContain('Wolf');
+  });
+
+  it('appends ui flavor text when authored', () => {
+    const text = renderEventLog([
+      cev('ability.used', {
+        abilityId: 'fireball', abilityName: 'Fireball', actorId: 'hero', actorName: 'Hero',
+        targetIds: [], targetNames: [],
+        ui: { text: 'A roaring gout of flame.' },
+      }),
+    ]);
+    expect(text).toContain('A roaring gout of flame.');
+  });
+});
+
+// MEDIUM: raw state ids leaked into the HUD ("Status: engagement:isolated",
+// "! Crypt Warden (HP: 0) [combat:fleeing]" for a corpse).
+describe('renderScene — humanized state labels, no corpse statuses (CS-C amend)', () => {
+  it('humanizes the player status line', () => {
+    const world = makeWorld();
+    world.entities['hero'].statuses = [
+      { id: 's1', statusId: 'engagement:isolated', appliedAtTick: 0 },
+    ];
+    const text = renderScene(world);
+    expect(text).toContain('Isolated');
+    expect(text).not.toContain('engagement:isolated');
+  });
+
+  it('humanizes entity status tags in the scene list', () => {
+    const world = makeWorld();
+    world.entities['wolf'].statuses = [
+      { id: 's2', statusId: 'combat:off_balance', appliedAtTick: 0 },
+    ];
+    const text = renderScene(world);
+    expect(text).toContain('Off Balance');
+    expect(text).not.toContain('combat:off_balance');
+  });
+
+  it('suppresses statuses on defeated entities and marks them defeated', () => {
+    const world = makeWorld();
+    world.entities['wolf'].resources.hp = 0;
+    world.entities['wolf'].statuses = [
+      { id: 's3', statusId: 'combat:fleeing', appliedAtTick: 0 },
+    ];
+    const text = renderScene(world);
+    expect(text).toContain('Wolf');
+    expect(text).toContain('defeated');
+    expect(text).not.toContain('Fleeing');
+    expect(text).not.toContain('combat:fleeing');
+    expect(text).not.toContain('(HP: 0)');
+  });
+});

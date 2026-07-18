@@ -441,12 +441,16 @@ function repositionHandler(
       }, world));
     }
 
+    // MOD-C-BH-04: carry a player-grade line — the fail event travelled the
+    // narrator channel with no text, so a failed reposition was mechanically
+    // punished (exposed) but narratively silent.
     events.push(makeEvent(action, 'combat.reposition.fail', {
       entityId: actor.id,
       entityName: actor.name,
       targetId: targetId ?? null,
       roll,
       needed: chance,
+      description: `${actor.name} scrambles for position and stumbles — left exposed`,
     }, {
       presentation: { channels: ['objective', 'narrator'], priority: 'normal' },
     }));

@@ -121,6 +121,70 @@ describe('createClient.generate — offline recovery hint', () => {
   });
 });
 
+// v2.6 Stage C F-9d02e714 — model-not-installed is the likely #2 first-run
+// failure (the default model is rarely pre-pulled) and used to surface as a
+// raw escaped-JSON dump with no `ollama pull` guidance anywhere. The daemon's
+// 404 body must be curated into: model name, the exact pull command, and the
+// override knobs. A 404 that is NOT the daemon's model-missing shape (reverse
+// proxy HTML from a wrong baseUrl) must fall through to the generic error.
+describe('createClient.generate — model-not-pulled 404 (F-9d02e714)', () => {
+  it('curates the daemon 404 into an actionable "ollama pull" message', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      makeResponse({
+        ok: false,
+        status: 404,
+        text: async () => '{"error":"model \\"qwen2.5-coder\\" not found, try pulling it first"}',
+      }),
+    ) as unknown as typeof fetch;
+
+    const client = createClient(resolveConfig({ model: 'qwen2.5-coder' }));
+    const result = await client.generate({ system: 's', prompt: 'p' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('ollama pull qwen2.5-coder');
+      expect(result.error).toContain('AI_RPG_ENGINE_OLLAMA_MODEL');
+      // No raw escaped-JSON dump.
+      expect(result.error).not.toContain('{"error"');
+    }
+  });
+
+  it('names the CONFIGURED model in the pull command (typo\'d --model case)', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      makeResponse({
+        ok: false,
+        status: 404,
+        text: async () => '{"error":"model \\"lama3\\" not found, try pulling it first"}',
+      }),
+    ) as unknown as typeof fetch;
+
+    const client = createClient(resolveConfig({ model: 'lama3' }));
+    const result = await client.generate({ system: 's', prompt: 'p' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain('ollama pull lama3');
+  });
+
+  it('does NOT misdiagnose a non-daemon 404 (HTML body) as a missing model', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      makeResponse({
+        ok: false,
+        status: 404,
+        text: async () => '<html><head><title>404 Not Found</title></head></html>',
+      }),
+    ) as unknown as typeof fetch;
+
+    const client = createClient(resolveConfig());
+    const result = await client.generate({ system: 's', prompt: 'p' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toContain('HTTP 404');
+      expect(result.error).not.toContain('ollama pull');
+    }
+  });
+});
+
 // v2.5 audit PA-3 — the retry loop is defensive code on the single network
 // path and previously had ZERO coverage: a refactor that broke the `continue`
 // branches would still pass CI. It was also silent (up to maxAttempts ×

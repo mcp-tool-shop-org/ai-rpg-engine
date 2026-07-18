@@ -37,6 +37,14 @@ npm install @ai-rpg-engine/ollama
 
 ## Usage
 
+Before first use, make sure Ollama is running **and the model is pulled** —
+the default model is `qwen2.5-coder`, which is not pre-installed:
+
+```bash
+ollama serve            # start the daemon (if not already running)
+ollama pull qwen2.5-coder   # one-time model download (or pull the model you configure)
+```
+
 ```typescript
 import { resolveConfig, createClient, createChatEngine } from '@ai-rpg-engine/ollama';
 
@@ -78,7 +86,9 @@ export AI_RPG_ENGINE_OLLAMA_TIMEOUT_MS="60000"
 A malformed, empty, zero, or negative `AI_RPG_ENGINE_OLLAMA_TIMEOUT_MS` falls
 back to the default rather than producing an invalid timeout. If the server is
 unreachable, the error message includes the attempted URL and a recovery hint
-(start it with `ollama serve`, or set `AI_RPG_ENGINE_OLLAMA_URL`).
+(start it with `ollama serve`, or set `AI_RPG_ENGINE_OLLAMA_URL`). If the
+configured model is not installed, the error names the exact
+`ollama pull <model>` command to run.
 
 ## Documentation
 

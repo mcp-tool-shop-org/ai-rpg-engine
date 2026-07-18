@@ -16,6 +16,14 @@
 // makes it structurally impossible for buildCharacter() to hand back a build
 // that fails validateBuild(build, catalog, ruleset).ok — the exact invariant
 // that was untested (F-0850a894: character-builder.ts had zero coverage).
+//
+// CS-C-004 (Stage C) upgraded the RECOVERY: the Stage-A gate `continue`d the
+// whole wizard — back to name entry, every answer discarded ("maximally
+// punishing"). Bad trait batches are now caught IN the trait step (flaw
+// minimum + incompatible pairs, phrased as the real rules) and re-prompt just
+// that step; the end-of-wizard gate remains as a backstop that also returns
+// to the trait step with name/archetype/background preserved. The invariant
+// tests below therefore assert promptText was called ONCE on a trait retry.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RulesetDefinition } from '@ai-rpg-engine/core';
@@ -151,7 +159,7 @@ describe('buildCharacter — trait offer shape (pins the exploit precondition)',
 });
 
 describe('buildCharacter — F-2c013eff: never returns an invalid build, never throws', () => {
-  it('missing required flaw: re-prompts instead of returning, and does not show the confirm screen for the bad attempt', async () => {
+  it('missing required flaw: re-prompts the TRAIT step (name is NOT re-asked), and does not show the confirm screen for the bad attempt', async () => {
     const catalog = makeCatalog();
 
     // Attempt 1: pick only the perk (index 0 = brave) -> 0 flaws, requiredFlaws=1 -> invalid.
@@ -168,18 +176,23 @@ describe('buildCharacter — F-2c013eff: never returns an invalid build, never t
     // It actually retried (proves the gate looped rather than silently
     // upgrading/dropping the bad pick).
     expect(mockPromptMultiSelect).toHaveBeenCalledTimes(2);
-    expect(mockPromptText).toHaveBeenCalledTimes(2);
+
+    // CS-C-004: the retry starts at the TRAIT step. Name entry and the
+    // archetype/background menus must NOT run again (Stage A restarted the
+    // whole wizard from name entry here).
+    expect(mockPromptText).toHaveBeenCalledTimes(1);
+    expect(mockPromptMenu).toHaveBeenCalledTimes(2); // archetype + background, once each
 
     // The "ready to play" confirm screen must never have been shown for the
     // invalid attempt — only once, for the valid retry.
     expect(mockPromptConfirm).toHaveBeenCalledTimes(1);
 
-    // The errors were surfaced to the player, not swallowed.
+    // The error states the REAL rule, at the step where it can be fixed.
     const lines = loggedLines();
-    expect(lines.some((l) => l.includes('Not enough flaws'))).toBe(true);
+    expect(lines.some((l) => l.includes('Pick at least 1 flaw'))).toBe(true);
   });
 
-  it('incompatible pair picked in the same batch: re-prompts instead of returning, and does not show the confirm screen for the bad attempt', async () => {
+  it('incompatible pair picked in the same batch: re-prompts the TRAIT step, and does not show the confirm screen for the bad attempt', async () => {
     const catalog = makeCatalog();
 
     // Attempt 1: pick brave (0) AND reckless (1) together -> mutually
@@ -193,10 +206,12 @@ describe('buildCharacter — F-2c013eff: never returns an invalid build, never t
     expect(validateBuild(result, catalog, ruleset).ok).toBe(true);
     expect(result.traitIds).toEqual(['lucky']);
     expect(mockPromptMultiSelect).toHaveBeenCalledTimes(2);
+    expect(mockPromptText).toHaveBeenCalledTimes(1); // CS-C-004: no wizard restart
     expect(mockPromptConfirm).toHaveBeenCalledTimes(1);
 
+    // Both trait names and the remedy are stated.
     const lines = loggedLines();
-    expect(lines.some((l) => l.includes('Incompatible traits'))).toBe(true);
+    expect(lines.some((l) => l.includes('Brave and Reckless are incompatible'))).toBe(true);
   });
 
   it('never throws across two consecutive invalid attempts before recovering', async () => {
@@ -216,9 +231,44 @@ describe('buildCharacter — F-2c013eff: never returns an invalid build, never t
 
     expect(validateBuild(result, catalog, ruleset).ok).toBe(true);
     expect(mockPromptMultiSelect).toHaveBeenCalledTimes(3);
+    // Both retries stayed at the trait step — one name entry for the session.
+    expect(mockPromptText).toHaveBeenCalledTimes(1);
     // The confirm ("ready to play") screen must only ever appear once, for
     // the one attempt that was actually valid.
     expect(mockPromptConfirm).toHaveBeenCalledTimes(1);
+  });
+});
+
+// CS-C-004 — the trait step must state the REAL rule, not just a selection
+// count. The visible constraint used to be "select 1-3 items" (min = 1 of
+// ANYTHING) while the actual rule was "at least 1 FLAW"; a player could
+// satisfy the count with a single perk, invest in discipline + stat
+// allocation, and only then learn the build was doomed.
+describe('buildCharacter — CS-C-004: trait-step constraint states the real rule', () => {
+  it('passes a flaw-rule hint into the trait multi-select', async () => {
+    const catalog = makeCatalog();
+    mockPromptMultiSelect.mockResolvedValueOnce([2]);
+    mockPromptConfirm.mockResolvedValueOnce(true);
+
+    await buildCharacter(catalog, ruleset);
+
+    expect(mockPromptMultiSelect).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ hint: expect.stringContaining('at least 1 flaw') }),
+    );
+  });
+
+  it('omits the hint when the catalog requires no flaws (no false rule stated)', async () => {
+    const catalog = makeCatalog({ requiredFlaws: 0 });
+    mockPromptMultiSelect.mockResolvedValueOnce([0]); // a lone perk is now valid
+    mockPromptConfirm.mockResolvedValueOnce(true);
+
+    const result = await buildCharacter(catalog, ruleset);
+
+    expect(validateBuild(result, catalog, ruleset).ok).toBe(true);
+    expect(result.traitIds).toEqual(['brave']);
+    const [, opts] = mockPromptMultiSelect.mock.calls[0];
+    expect(opts?.hint).toBeUndefined();
   });
 });
 

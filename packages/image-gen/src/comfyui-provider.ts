@@ -20,7 +20,12 @@ import type {
 export type ComfyUIProviderOptions = {
   /** ComfyUI server URL. Default: http://localhost:8188 */
   baseUrl?: string;
-  /** Checkpoint model name. Default: auto-detected from ComfyUI. */
+  /**
+   * Checkpoint model name. Default: 'sd_xl_base_1.0.safetensors'.
+   * There is NO auto-detection (an earlier version of this doc claimed there
+   * was — v2.6 Stage C F-8d5c2ea9): if your ComfyUI install uses any other
+   * checkpoint, set this explicitly or the queue request fails with HTTP 400.
+   */
   checkpoint?: string;
   /** Sampler name. Default: 'euler'. */
   sampler?: string;

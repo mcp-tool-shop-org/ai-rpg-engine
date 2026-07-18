@@ -170,9 +170,12 @@ export { DEFAULT_CHAT_CONFIG } from './chat-types.js';
 export { classifyIntent, classifyByKeywords, classifyByLLM } from './chat-router.js';
 export { findToolForIntent, getAllTools } from './chat-tools.js';
 export { createChatEngine, createChatMemory, addMessage, getRecentContext, capturePlanFromOutput } from './chat-engine.js';
-export type { ChatEngine, ChatEngineOptions, LoadoutHistoryEntry } from './chat-engine.js';
+export type {
+  ChatEngine, ChatEngineOptions, LoadoutHistoryEntry,
+  BatchStepProgress, BatchStepCallback,
+} from './chat-engine.js';
 export { createTranscript, addToTranscript, saveTranscript, loadTranscript, defaultTranscriptPath } from './chat-transcript.js';
-export { runChatShell } from './chat-shell.js';
+export { runChatShell, persistTranscriptAtExit } from './chat-shell.js';
 export type { ChatShellOptions } from './chat-shell.js';
 
 // RAG — project-grounded retrieval

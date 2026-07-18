@@ -55,7 +55,50 @@ export type ChatShellOptions = {
   transcriptDir?: string;
   /** Enable loadout-guided context routing. */
   loadoutEnabled?: boolean;
+  /** Input stream override (default process.stdin). Exposed for tests. */
+  input?: NodeJS.ReadableStream;
+  /** Output stream override (default process.stdout). Exposed for tests. */
+  output?: NodeJS.WritableStream;
 };
+
+/**
+ * Persist the transcript when the REPL exits (v2.6 Stage C F-77c30d19).
+ *
+ * Previously only /quit saved: exiting via Ctrl+D (the standard REPL exit
+ * reflex) or Ctrl+C silently discarded the whole transcript even with
+ * saveTranscripts: true. This is the single exit-save path — called from the
+ * readline 'close' handler, which fires for /quit, Ctrl+D, and Ctrl+C alike.
+ *
+ * It also surfaces failure honestly: saveTranscript signals a sandbox
+ * violation by RETURNING an 'Error: ...' string and can THROW on disk errors
+ * (mkdir/writeFile) — both used to be swallowed while "Transcript saved"
+ * printed regardless. Returns the saved path, or null when nothing was saved.
+ * Never throws (it runs at exit — the one moment a crash also loses the data
+ * it exists to protect).
+ *
+ * Exported for tests.
+ */
+export async function persistTranscriptAtExit(
+  transcript: ChatTranscript,
+  projectRoot: string,
+  saveTranscripts: boolean,
+): Promise<string | null> {
+  if (!saveTranscripts || transcript.messages.length === 0) return null;
+  const path = defaultTranscriptPath(projectRoot, transcript.sessionName);
+  try {
+    const saved = await saveTranscript(path, transcript, projectRoot);
+    if (saved.startsWith('Error:')) {
+      console.error(`Transcript NOT saved — ${saved}`);
+      return null;
+    }
+    console.log(`Transcript saved to ${saved}`);
+    return saved;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`Transcript NOT saved — ${msg}`);
+    return null;
+  }
+}
 
 export async function runChatShell(options: ChatShellOptions): Promise<void> {
   const { client, projectRoot, maxMemory, saveTranscripts = false, loadoutEnabled = false } = options;
@@ -64,12 +107,14 @@ export async function runChatShell(options: ChatShellOptions): Promise<void> {
   const transcript = createTranscript(null);
 
   const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
+    input: options.input ?? process.stdin,
+    output: options.output ?? process.stdout,
     prompt: 'chat> ',
   });
 
-  console.log('ai-rpg-engine chat — type your question, /help for commands, /quit to exit.');
+  // /onboard is the purpose-built first-run walkthrough — name it here, not
+  // only inside /help (F-a4c8e217 discoverability polish).
+  console.log('ai-rpg-engine chat — type your question, /help for commands, /onboard for a guided tour, /quit to exit.');
   console.log('');
   rl.prompt();
 
@@ -80,17 +125,25 @@ export async function runChatShell(options: ChatShellOptions): Promise<void> {
       return;
     }
 
-    // Slash commands
+    // Slash commands — wrapped in the same try/catch that protects the normal
+    // message path (v2.6 Stage C F-2ef8b590). Reachable rejections exist
+    // (saveTranscript's mkdir/writeFile on /save, saveSession during
+    // /step //execute /tune-step, tryLoadSession's rethrow); unguarded, any of
+    // them became an unhandled rejection that crashed the whole process — and
+    // with it the in-memory conversation, active build/tuning state, and the
+    // unsaved transcript.
     if (trimmed.startsWith('/')) {
-      const handled = await handleSlashCommand(trimmed, engine, transcript, projectRoot, saveTranscripts);
-      if (handled === 'quit') {
-        if (saveTranscripts && transcript.messages.length > 0) {
-          const path = defaultTranscriptPath(projectRoot, transcript.sessionName);
-          await saveTranscript(path, transcript, projectRoot);
-          console.log(`Transcript saved to ${path}`);
+      try {
+        const handled = await handleSlashCommand(trimmed, engine, transcript, projectRoot, saveTranscripts);
+        if (handled === 'quit') {
+          // Transcript persistence happens in the 'close' handler — the single
+          // exit-save path shared with Ctrl+D / Ctrl+C (F-77c30d19).
+          rl.close();
+          return;
         }
-        rl.close();
-        return;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`Error: ${msg}`);
       }
       rl.prompt();
       return;
@@ -101,6 +154,10 @@ export async function runChatShell(options: ChatShellOptions): Promise<void> {
       const now = new Date().toISOString();
       addToTranscript(transcript, { role: 'user', content: trimmed, timestamp: now });
 
+      // Liveness affordance (F-4be7a3c2): a turn can be 1-3 sequential LLM
+      // calls, and a cold model load alone can take 30s+. One line beats
+      // wondering whether the REPL froze.
+      console.log('(thinking...)');
       const response = await engine.process(trimmed);
       console.log('');
       console.log(response);
@@ -115,8 +172,14 @@ export async function runChatShell(options: ChatShellOptions): Promise<void> {
     rl.prompt();
   });
 
+  let exitSaveStarted = false;
   rl.on('close', () => {
-    // Handled above in /quit — this covers Ctrl+C
+    // Fires for /quit, Ctrl+D, and Ctrl+C — the single exit-save path
+    // (F-77c30d19). The pending write keeps the event loop alive until the
+    // transcript lands (or the failure is reported).
+    if (exitSaveStarted) return;
+    exitSaveStarted = true;
+    void persistTranscriptAtExit(transcript, projectRoot, saveTranscripts);
   });
 }
 
@@ -150,8 +213,16 @@ export async function handleSlashCommand(
         return 'handled';
       }
       const path = defaultTranscriptPath(projectRoot, transcript.sessionName);
-      await saveTranscript(path, transcript, projectRoot);
-      console.log(`Transcript saved to ${path}`);
+      // saveTranscript signals sandbox failure by RETURNING an 'Error: ...'
+      // string; printing an unconditional success line was a false receipt
+      // (v2.6 Stage C F-77c30d19). Disk errors (mkdir/writeFile) throw and are
+      // caught by the shell's slash-command try/catch (F-2ef8b590).
+      const saved = await saveTranscript(path, transcript, projectRoot);
+      if (saved.startsWith('Error:')) {
+        console.log(`Transcript NOT saved — ${saved}`);
+      } else {
+        console.log(`Transcript saved to ${saved}`);
+      }
       return 'handled';
     }
 
@@ -255,7 +326,12 @@ export async function handleSlashCommand(
         return 'handled';
       }
       console.log('Executing all remaining steps...');
-      const result = await engine.executeAllBuildSteps();
+      // Per-step liveness (v2.6 Stage C F-4be7a3c2): each step is a full model
+      // generation; without the callback an N-step batch is N generations of
+      // stdout silence. Same [n/N] shape macros.ts uses in the CLI.
+      const result = await engine.executeAllBuildSteps((p) => {
+        console.log(`[${p.index}/${p.total}] ${p.result.split('\n')[0]}`);
+      });
       console.log('');
       console.log(result);
       console.log('');
@@ -507,7 +583,10 @@ export async function handleSlashCommand(
         return 'handled';
       }
       console.log('Executing all remaining tuning steps...');
-      const result = await engine.executeAllTuningSteps();
+      // Per-step liveness — same contract as /execute (F-4be7a3c2).
+      const result = await engine.executeAllTuningSteps((p) => {
+        console.log(`[${p.index}/${p.total}] ${p.result.split('\n')[0]}`);
+      });
       console.log('');
       console.log(result);
       console.log('');
@@ -541,6 +620,15 @@ export async function handleSlashCommand(
 
     case 'experiment-run': {
       const runs = parseInt(parts[1] ?? '20', 10);
+      // v2.6 Stage C F-3f6b0d95 — same NaN family as /analyze-window
+      // (F-ed21662f): NaN passes a range guard because every comparison
+      // against NaN is false, so '/experiment-run abc' printed
+      // 'Experiment plan: NaN runs'. Reject explicitly with the usage line.
+      if (Number.isNaN(runs)) {
+        console.log('Usage: /experiment-run <runs> [label]');
+        console.log('Run count must be a number between 1 and 1000.');
+        return 'handled';
+      }
       if (runs < 1 || runs > 1000) {
         console.log('Run count must be between 1 and 1000.');
         return 'handled';
@@ -570,6 +658,14 @@ export async function handleSlashCommand(
       const from = parseFloat(parts[2] ?? '0.3');
       const to = parseFloat(parts[3] ?? '0.8');
       const step = parseFloat(parts[4] ?? '0.1');
+      // v2.6 Stage C F-3f6b0d95 — non-numeric range arguments produced
+      // 'Sweep: rumorClarity from NaN to NaN step NaN (0 points)'
+      // (generateSweepValues returns [] for NaN inputs). Reject with usage.
+      if (Number.isNaN(from) || Number.isNaN(to) || Number.isNaN(step)) {
+        console.log('Usage: /experiment-sweep <param> <from> <to> <step>');
+        console.log('from/to/step must be numbers. Example: /experiment-sweep rumorClarity 0.4 0.8 0.1');
+        return 'handled';
+      }
       const values = generateSweepValues(from, to, step);
       console.log(`Sweep: ${param} from ${from} to ${to} step ${step} (${values.length} points)`);
       console.log('Use the sweep runner API with a ReplayProducer to execute.');
@@ -736,8 +832,15 @@ export async function handleSlashCommand(
       return 'handled';
     }
 
-    default:
-      console.log(`Unknown command: /${cmd}. Type /help for available commands.`);
+    default: {
+      // Name the command the user actually TYPED, not its alias target
+      // (v2.6 Stage C F-a4c8e217): '/next' used to print "Unknown command:
+      // /suggest-next" — an error naming a command the user never entered,
+      // because the alias was resolved before the message was formatted.
+      const typed = parts[0].toLowerCase();
+      const aliasNote = typed !== cmd ? ` (alias of /${cmd})` : '';
+      console.log(`Unknown command: /${typed}${aliasNote}. Type /help for available commands.`);
       return 'handled';
+    }
   }
 }

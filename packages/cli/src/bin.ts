@@ -14,7 +14,7 @@ import {
   parseTextInput,
 } from '@ai-rpg-engine/terminal-ui';
 import { resolveEntity } from '@ai-rpg-engine/character-creation';
-import { WorldStore, SaveLoadError, type Engine } from '@ai-rpg-engine/core';
+import { WorldStore, SaveLoadError, type Engine, type RulesetDefinition } from '@ai-rpg-engine/core';
 import { allPacks, type PackInfo } from './packs.js';
 import { promptMenu, promptConfirm, getReadline, closeReadline } from './prompts.js';
 import { buildCharacter } from './character-builder.js';
@@ -224,77 +224,17 @@ async function runGame() {
   function prompt() {
     render();
     rl.question('  > ', (input) => {
-      const trimmed = input.trim();
-      if (!trimmed) {
-        prompt();
-        return;
-      }
-
-      // Meta commands
-      if (trimmed === 'quit' || trimmed === 'exit') {
+      // All routing lives in handlePlayerInput (exported + unit-tested); the
+      // readline callback only decides "exit or keep prompting". Notably this
+      // keeps every fs/engine failure inside the guarded router instead of
+      // raw-throwing out of the callback, OUTSIDE main()'s .catch (CS-C-008).
+      const result = handlePlayerInput(engine, input, { ruleset: pack.ruleset });
+      if (result.kind === 'quit') {
         console.log('\n  Farewell, wanderer.\n');
         closeReadline();
         process.exit(0);
-      }
-
-      if (trimmed === 'save') {
-        saveGame(engine);
-        console.log('  Game saved.');
-        prompt();
         return;
       }
-
-      if (trimmed === 'help') {
-        console.log('\n  Commands: move, inspect, attack, speak, use, save, quit');
-        console.log('  Or type a number to select an action.\n');
-        prompt();
-        return;
-      }
-
-      // Check for dialogue mode — number selects dialogue choice
-      const dState = engine.world.modules['dialogue-core'] as { activeDialogue: string | null } | undefined;
-      if (dState?.activeDialogue) {
-        const choiceIndex = parseInt(trimmed, 10);
-        if (!isNaN(choiceIndex) && choiceIndex >= 1) {
-          runGuardedAction(() =>
-            engine.submitAction('choose', {
-              parameters: { choiceIndex: choiceIndex - 1 },
-            }),
-          );
-          prompt();
-          return;
-        }
-      }
-
-      // Try number selection
-      const numAction = parseActionSelection(trimmed, engine.world);
-      if (numAction) {
-        runGuardedAction(() =>
-          engine.submitAction(numAction.verb, {
-            targetIds: numAction.targetIds,
-            toolId: numAction.toolId,
-            parameters: numAction.parameters,
-          }),
-        );
-        prompt();
-        return;
-      }
-
-      // Try text parsing
-      const textAction = parseTextInput(trimmed, engine.world);
-      if (textAction) {
-        runGuardedAction(() =>
-          engine.submitAction(textAction.verb, {
-            targetIds: textAction.targetIds,
-            toolId: textAction.toolId,
-            parameters: textAction.parameters,
-          }),
-        );
-        prompt();
-        return;
-      }
-
-      console.log(`  Unknown command: ${trimmed}. Type "help" for options.`);
       prompt();
     });
   }
@@ -302,11 +242,196 @@ async function runGame() {
   prompt();
 }
 
-function saveGame(engine: Engine) {
-  if (!fs.existsSync(SAVE_DIR)) {
-    fs.mkdirSync(SAVE_DIR, { recursive: true });
+/**
+ * CS-C-008: `save` is the one command whose whole purpose is preserving
+ * progress — and it was the one that could destroy it. The old saveGame ran
+ * bare mkdirSync/writeFileSync inside the readline callback, OUTSIDE main()'s
+ * promise chain, so an EACCES/EROFS/ENOSPC surfaced as an uncaught raw stack
+ * that killed the process along with the unsaved session. Guarded now: on
+ * failure print a structured [SAVE_WRITE_FAILED] line + hint and return false
+ * so the caller keeps the loop (and the session) alive for a retry or a
+ * relocated save. On success the resolved path is printed (CS-C-009) so the
+ * player knows saves are cwd-relative. Exported for unit testing.
+ */
+export function saveGameGuarded(
+  engine: Engine,
+  log: (msg: string) => void = console.log,
+): boolean {
+  const resolvedPath = path.resolve(SAVE_FILE);
+  try {
+    if (!fs.existsSync(SAVE_DIR)) {
+      fs.mkdirSync(SAVE_DIR, { recursive: true });
+    }
+    fs.writeFileSync(SAVE_FILE, engine.serialize(), 'utf-8');
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    log(`  [SAVE_WRITE_FAILED] Could not write ${resolvedPath}: ${reason}`);
+    log('  Hint: run from a directory you can write to. Your session is still live — you can keep playing or try "save" again.');
+    return false;
   }
-  fs.writeFileSync(SAVE_FILE, engine.serialize(), 'utf-8');
+  log(`  Game saved to ${resolvedPath}`);
+  return true;
+}
+
+/**
+ * CS-C-005: in-game help generated from the ACTIVE pack's ruleset verbs
+ * (id + player-facing description — authored for exactly this purpose and
+ * previously rendered nowhere), so pack-defining mechanics like the vampire's
+ * `feed`/`enthrall` or the universal `guard`/`disengage` are discoverable
+ * instead of the old hardcoded seven-verb line. The session meta commands are
+ * appended so `help` stays the one complete list. Falls back to the engine's
+ * registered verbs when no ruleset is available. Exported for unit testing.
+ */
+export function formatGameHelp(engine: Engine, ruleset?: RulesetDefinition): string {
+  const verbs: { id: string; description: string }[] =
+    ruleset && ruleset.verbs.length > 0
+      ? ruleset.verbs.map((v) => ({ id: v.id, description: v.description ?? v.name }))
+      : engine.getAvailableActions().map((id) => ({ id, description: '' }));
+
+  const meta = [
+    { id: 'save', description: `Save the game (writes ${SAVE_FILE})` },
+    { id: 'quit', description: 'Exit the game (progress is NOT saved automatically)' },
+    { id: 'help', description: 'Show this list' },
+  ];
+
+  const width = Math.max(...[...verbs, ...meta].map((v) => v.id.length));
+  const row = (v: { id: string; description: string }) =>
+    `    ${v.id.padEnd(width + 2)}${v.description}`.trimEnd();
+
+  const lines: string[] = [''];
+  lines.push('  Commands:');
+  for (const v of verbs) lines.push(row(v));
+  lines.push('');
+  lines.push('  Session:');
+  for (const v of meta) lines.push(row(v));
+  lines.push('');
+  lines.push('  Or type a number to select one of the listed actions.');
+  return lines.join('\n');
+}
+
+/**
+ * Discriminated result of one line of player input — lets the readline loop
+ * stay a two-branch shell while the real routing logic stays unit-testable.
+ */
+export type PlayerInputResult =
+  | { kind: 'empty' }
+  | { kind: 'quit' }
+  | { kind: 'save'; ok: boolean }
+  | { kind: 'help' }
+  | { kind: 'action'; via: 'dialogue-choice' | 'menu' | 'text' }
+  | { kind: 'unknown' };
+
+/**
+ * Route one line of player input. Exported for unit testing — the interactive
+ * prompt() loop is readline-driven and awkward to drive in a test (same
+ * rationale as runGuardedAction / replayGame).
+ *
+ * CS-C-001 (the false-save half): meta commands match on the FIRST word,
+ * case-insensitively, not on the exact string. Previously only the exact
+ * strings 'save'/'quit'/'exit'/'help' were intercepted, while parseTextInput
+ * turned a leading save/quit into pseudo-verbs — so 'save game' was submitted
+ * to the engine as verb 'save', rejected, and rendered as nothing: the player
+ * believed they saved and they had not. Data-loss-adjacent, hence first-word
+ * routing BEFORE anything reaches the engine.
+ */
+export function handlePlayerInput(
+  engine: Engine,
+  rawInput: string,
+  opts: { ruleset?: RulesetDefinition; log?: (msg: string) => void } = {},
+): PlayerInputResult {
+  const log = opts.log ?? console.log;
+  const trimmed = rawInput.trim();
+  if (!trimmed) return { kind: 'empty' };
+
+  // Meta commands — first-word match so 'save game' / 'quit now' / 'HELP me'
+  // reach the meta handlers instead of dying in the engine's rejection
+  // pipeline with zero on-screen feedback.
+  const firstWord = trimmed.split(/\s+/)[0].toLowerCase();
+  if (firstWord === 'quit' || firstWord === 'exit') {
+    return { kind: 'quit' };
+  }
+  if (firstWord === 'save') {
+    return { kind: 'save', ok: saveGameGuarded(engine, log) };
+  }
+  if (firstWord === 'help') {
+    log(formatGameHelp(engine, opts.ruleset));
+    return { kind: 'help' };
+  }
+
+  // Dialogue mode — a number selects a dialogue choice.
+  const dState = engine.world.modules['dialogue-core'] as { activeDialogue: string | null } | undefined;
+  if (dState?.activeDialogue) {
+    const choiceIndex = parseInt(trimmed, 10);
+    if (!isNaN(choiceIndex) && choiceIndex >= 1) {
+      const logLenBefore = engine.world.eventLog.length;
+      const ok = runGuardedAction(
+        () =>
+          engine.submitAction('choose', {
+            parameters: { choiceIndex: choiceIndex - 1 },
+          }),
+        log,
+      );
+      // Rejections are EVENTS, not throws — runGuardedAction cannot see them.
+      // Scan only the events this submission appended, and only for a rejected
+      // `choose`, so a companion/reactive action rejected in the same window
+      // does not trigger a false fall-through.
+      const chooseRejected = engine.world.eventLog
+        .slice(logLenBefore)
+        .some(
+          (e) =>
+            e.type === 'action.rejected' &&
+            (e.payload as { verb?: unknown }).verb === 'choose',
+        );
+      if (ok && !chooseRejected) {
+        return { kind: 'action', via: 'dialogue-choice' };
+      }
+      // Dialogue-trap guard (pairs with the modules-side dialogue.ended fix):
+      // dialogue is flagged active but `choose` was rejected — e.g. the node
+      // has no choices and the menu on screen is a numbered ACTION menu.
+      // Previously the doomed hijack returned here anyway, so every numeric
+      // input died in a rejected `choose` and the menu was dead: a stuck
+      // session. Fall through to normal number/text handling instead.
+    }
+  }
+
+  // Numbered menu selection
+  const numAction = parseActionSelection(trimmed, engine.world);
+  if (numAction) {
+    runGuardedAction(
+      () =>
+        engine.submitAction(numAction.verb, {
+          targetIds: numAction.targetIds,
+          toolId: numAction.toolId,
+          parameters: numAction.parameters,
+        }),
+      log,
+    );
+    return { kind: 'action', via: 'menu' };
+  }
+
+  // Freeform text
+  const textAction = parseTextInput(trimmed, engine.world);
+  if (textAction) {
+    // Belt-and-braces for CS-C-001: parseTextInput maps a leading save/quit
+    // into pseudo-verbs the engine always rejects. The first-word routing
+    // above already intercepts them; if the parser and that routing ever
+    // drift, still refuse to submit a pseudo-verb as an engine action.
+    if (textAction.verb === 'save') return { kind: 'save', ok: saveGameGuarded(engine, log) };
+    if (textAction.verb === 'quit') return { kind: 'quit' };
+    runGuardedAction(
+      () =>
+        engine.submitAction(textAction.verb, {
+          targetIds: textAction.targetIds,
+          toolId: textAction.toolId,
+          parameters: textAction.parameters,
+        }),
+      log,
+    );
+    return { kind: 'action', via: 'text' };
+  }
+
+  log(`  Unknown command: ${trimmed}. Type "help" for options.`);
+  return { kind: 'unknown' };
 }
 
 /**

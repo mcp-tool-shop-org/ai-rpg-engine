@@ -252,3 +252,23 @@ describe('runCli — --auto-execute validation (F-a19d7360)', () => {
     expect(stderrText()).not.toMatch(/auto-execute expects/i);
   });
 });
+
+// v2.6 Stage C F-8d5c2ea9 — the default help banner hardcoded 'v1.0.0'
+// against a 2.x package.json: a trust-eroding mismatch that recurs on every
+// release. The banner must report the version package.json actually declares.
+describe('runCli — help banner version (F-8d5c2ea9)', () => {
+  it('prints the package.json version, not a stale hardcoded one', async () => {
+    const pkgRaw = await fs.readFile(
+      new URL('../package.json', import.meta.url),
+      'utf-8',
+    );
+    const pkg = JSON.parse(pkgRaw) as { version: string };
+
+    await runCli([]);
+
+    const stdout = stdoutText();
+    expect(stdout).toContain(`@ai-rpg-engine/ollama v${pkg.version}`);
+    // Guard against the literal regression (package is past 1.0.0).
+    expect(stdout).not.toContain('v1.0.0');
+  });
+});

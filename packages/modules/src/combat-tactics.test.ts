@@ -208,6 +208,30 @@ describe('reposition action', () => {
     }
   });
 
+  // MOD-C-BH-04: the fail event travelled the narrator channel with no
+  // player-grade text — a failed reposition was mechanically punished (exposed)
+  // but narratively silent.
+  it('combat.reposition.fail carries a player-grade description (MOD-C-BH-04)', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCombatTactics({
+        repositionBaseChance: 0, // failure highly likely (floor is 10% success)
+      })],
+      entities: [makePlayer('a', { stats: { vigor: 1, instinct: 1, will: 1 } }), makeEntity('orc-1', 'Orc', 'a')],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: ['b'] }],
+    });
+
+    let fail: import('@ai-rpg-engine/core').ResolvedEvent | undefined;
+    for (let i = 0; i < 30 && !fail; i++) {
+      engine.world.entities.player.resources.stamina = 5;
+      const events = engine.submitAction('reposition', { targetIds: ['orc-1'] });
+      fail = events.find(e => e.type === 'combat.reposition.fail');
+    }
+    expect(fail).toBeDefined();
+    expect(typeof fail!.payload.description).toBe('string');
+    expect(fail!.payload.description as string).toContain('Hero');
+    expect((fail!.payload.description as string).toLowerCase()).toContain('exposed');
+  });
+
   it('successful untargeted reposition clears exposed and off-balance', () => {
     const player = makePlayer('a', { stats: { vigor: 5, instinct: 10, will: 5 } });
     applyStatus(player, COMBAT_STATES.EXPOSED, 0, { duration: 2 });

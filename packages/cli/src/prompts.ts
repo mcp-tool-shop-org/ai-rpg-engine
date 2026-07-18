@@ -49,13 +49,22 @@ export async function promptMenu(
   }
 }
 
-/** Prompt for multiple selections from a numbered menu. Returns array of 0-based indices. */
+/**
+ * Prompt for multiple selections from a numbered menu. Returns array of
+ * 0-based indices.
+ *
+ * CS-C-004: `hint` lets the caller state the REAL selection rule (e.g.
+ * "include at least 1 flaw") alongside the generic count constraint — the
+ * bare count ("select 1-3 items") let a zero-flaw trait pick look valid and
+ * fail only at end-of-wizard validation.
+ */
 export async function promptMultiSelect(
   items: { label: string; detail?: string }[],
-  opts: { min?: number; max?: number } = {},
+  opts: { min?: number; max?: number; hint?: string } = {},
 ): Promise<number[]> {
   const min = opts.min ?? 0;
   const max = opts.max ?? items.length;
+  const hint = opts.hint ? ` — ${opts.hint}` : '';
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
@@ -63,7 +72,7 @@ export async function promptMultiSelect(
     if (item.detail) console.log(`      ${item.detail}`);
   }
   console.log();
-  console.log(`  Enter numbers separated by spaces (${min}-${max} selections):`);
+  console.log(`  Enter numbers separated by spaces (${min}-${max} selections${hint}):`);
 
   while (true) {
     const answer = await ask('  > ');
@@ -74,7 +83,7 @@ export async function promptMultiSelect(
     if (unique.length >= min && unique.length <= max) {
       return unique.map((n) => n - 1);
     }
-    console.log(`  Please select ${min}-${max} items.`);
+    console.log(`  Please select ${min}-${max} items${hint}.`);
   }
 }
 
