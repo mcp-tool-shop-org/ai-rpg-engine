@@ -93,7 +93,7 @@ export const shadowAssassin: EntityState = {
   resources: { hp: 14, stamina: 6, ki: 20 },
   statuses: [],
   zoneId: 'hidden-passage',
-  ai: { profileId: 'stalker', goals: ['eliminate-target'], fears: ['exposure', 'outnumbered'], alertLevel: 0, knowledge: {} },
+  ai: { profileId: 'calculating', goals: ['eliminate-target'], fears: ['exposure', 'outnumbered'], alertLevel: 0, knowledge: {} },
 };
 
 export const corruptSamurai: EntityState = {
@@ -107,7 +107,7 @@ export const corruptSamurai: EntityState = {
   statuses: [],
   zoneId: 'castle-gate',
   resistances: { fear: 'immune' },
-  ai: { profileId: 'defensive', goals: ['guard-passage', 'conceal-guilt'], fears: ['accusation'], alertLevel: 0, knowledge: {} },
+  ai: { profileId: 'cautious', goals: ['guard-passage', 'conceal-guilt'], fears: ['accusation'], alertLevel: 0, knowledge: {} },
 };
 
 export const castleGuard: EntityState = {
@@ -121,7 +121,7 @@ export const castleGuard: EntityState = {
   statuses: [],
   zoneId: 'castle-gate',
   resistances: { stance: 'resistant' },
-  ai: { profileId: 'defensive', goals: ['protect-castle', 'challenge-intruders'], fears: ['dishonor'], alertLevel: 0, knowledge: {} },
+  ai: { profileId: 'territorial', goals: ['protect-castle', 'challenge-intruders'], fears: ['dishonor'], alertLevel: 0, knowledge: {} },
 };
 
 // --- Boss Definition ---

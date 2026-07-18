@@ -2,6 +2,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { createRequire } from 'node:module';
 
 const TEMPLATE_FILES = [
     'src/index.ts',
@@ -33,23 +34,58 @@ function camelCase(s: string): string {
     return s.split('-').map((w, i) => i === 0 ? w : w[0].toUpperCase() + w.slice(1)).join('');
 }
 
-function resolveTemplateDir(): string {
-    // 1. Check monorepo-relative path (dev mode)
-    const monoRepo = path.resolve(import.meta.dirname, '../../../templates/starter');
+/**
+ * CS-F1f: locate the starter template from ANY working directory.
+ *
+ * The old resolver only checked the monorepo-relative path and the CWD's
+ * node_modules — so `npx @ai-rpg-engine/cli create-starter my-game` from a
+ * clean directory failed with "Cannot locate starter template": npx installs
+ * the CLI (and its dependencies) into its own cache, not the user's cwd.
+ *
+ * The load-bearing fix is step 2: resolve @ai-rpg-engine/starter-template
+ * through Node's own resolution ANCHORED AT THIS FILE (createRequire), which
+ * walks up from wherever the CLI package is actually installed — npx cache,
+ * global install, or a project's node_modules. The CLI declares
+ * starter-template as a dependency, so it is always installed alongside.
+ *
+ * `resolve` is injectable for tests (simulating an npx-style layout without
+ * publishing anything).
+ */
+export function resolveTemplateDir(
+    opts: { resolve?: (spec: string) => string; monorepoDir?: string } = {},
+): string {
+    // 1. Monorepo-relative path (dev mode: running from packages/cli/{src,dist}).
+    //    `monorepoDir` is injectable so tests can force the fallback chain.
+    const monoRepo = opts.monorepoDir ?? path.resolve(import.meta.dirname, '../../../templates/starter');
     if (fs.existsSync(path.join(monoRepo, 'src/setup.ts'))) {
         return monoRepo;
     }
 
-    // 2. Check for installed @ai-rpg-engine/starter-template package
+    // 2. Node resolution anchored at the CLI package itself — works from any
+    //    cwd because it searches the CLI's OWN node_modules chain, exactly
+    //    where npm/npx placed the dependency. starter-template has no
+    //    "exports" map, so its package.json is a resolvable subpath.
+    const resolvePkg = opts.resolve ?? ((spec: string) => createRequire(import.meta.url).resolve(spec));
     try {
-        const pkgJson = path.resolve('node_modules/@ai-rpg-engine/starter-template/package.json');
-        if (fs.existsSync(pkgJson)) {
-            return path.dirname(pkgJson);
+        const pkgJson = resolvePkg('@ai-rpg-engine/starter-template/package.json');
+        const dir = path.dirname(pkgJson);
+        if (fs.existsSync(path.join(dir, 'src/setup.ts'))) {
+            return dir;
         }
-    } catch { /* not installed */ }
+    } catch { /* not resolvable from the CLI's install — try the cwd */ }
+
+    // 3. Last resort: the working directory's node_modules (a project that
+    //    installed starter-template directly but runs a globally-linked CLI
+    //    whose own tree lacks it).
+    const cwdPkgJson = path.resolve('node_modules/@ai-rpg-engine/starter-template/package.json');
+    if (fs.existsSync(cwdPkgJson)) {
+        return path.dirname(cwdPkgJson);
+    }
 
     throw new Error(
-        'Cannot locate starter template. Either run from the monorepo or install @ai-rpg-engine/starter-template.',
+        'Cannot locate starter template. Reinstall the CLI (npm i -g @ai-rpg-engine/cli or use npx) so ' +
+        '@ai-rpg-engine/starter-template is installed with it, run from the ai-rpg-engine monorepo, or ' +
+        'npm install @ai-rpg-engine/starter-template in the current project.',
     );
 }
 

@@ -46,3 +46,34 @@ describe('fantasy setup — unstable-floor hazard (ST-04)', () => {
     expect(run()).toBe(run());
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// CROSS-INSTANCE STATE ISOLATION
+// setup.ts inserts entities from module-level constants. A shallow spread
+// (`addEntity({ ...ashGhoul })`) copies only the top level — the nested
+// resources/stats/statuses/tags/ai objects stay SHARED across every engine
+// built from this module in one process. Combat damage (or the CLI's NPC
+// turn driver killing an enemy) in engine A would then permanently mutate
+// the constant, so a LATER createGame() boots with a dead enemy. The fix is
+// structuredClone at insertion. Same class as F-71ec5dcd.
+// ═══════════════════════════════════════════════════════════════════
+describe('fantasy setup — cross-instance state isolation', () => {
+  it('killing an enemy in engine A does not carry into a fresh engine B', () => {
+    const a = createGame(7);
+    const fullHp = a.store.state.entities['ash-ghoul'].resources.hp;
+    expect(fullHp).toBeGreaterThan(0);
+
+    // Simulate combat/turn-driver damage in engine A.
+    a.store.state.entities['ash-ghoul'].resources.hp = 0;
+    a.store.state.entities['crypt-warden'].statuses.push({ statusId: 'enraged', stacks: 1, appliedTick: 0 });
+
+    // A brand-new game must start from pristine content, not A's mutations.
+    const b = createGame(7);
+    expect(b.store.state.entities['ash-ghoul'].resources.hp).toBe(fullHp);
+    expect(b.store.state.entities['crypt-warden'].statuses).toHaveLength(0);
+
+    // And the two engines must not alias the same nested objects.
+    expect(b.store.state.entities['ash-ghoul'].resources)
+      .not.toBe(a.store.state.entities['ash-ghoul'].resources);
+  });
+});

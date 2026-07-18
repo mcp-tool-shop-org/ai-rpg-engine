@@ -24,8 +24,10 @@ import {
   registerStatusDefinitions,
   buildCombatStack,
   COMBAT_STATES,
+  aggressiveProfile,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatResourceProfile } from '@ai-rpg-engine/modules';
+import * as engineModules from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatResourceProfile, IntentProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -89,6 +91,36 @@ const weirdWestCombatProfile: CombatResourceProfile = {
   ],
 };
 
+// ─── Intent profiles (F1-cs-a) ──────────────────────────────────────────────
+// Every hostile entity in content.ts declares an ai.profileId. The cognition
+// config must supply an IntentProfile for each declared id — with an empty
+// profileMap no enemy ever resolves an intent, so enemies never act.
+// `territorial` is a newer built-in; resolve it from the installed modules
+// build when present, otherwise back the same id with the closest established
+// behavior so every declared id still resolves.
+function resolveBuiltinProfile(
+  id: 'territorial' | 'calculating',
+  fallbackEvaluate: IntentProfile['evaluate'],
+): IntentProfile {
+  const candidate = (engineModules as unknown as Record<string, unknown>)[`${id}Profile`] as
+    | IntentProfile
+    | undefined;
+  if (candidate && candidate.id === id && typeof candidate.evaluate === 'function') {
+    return candidate;
+  }
+  return { id, evaluate: fallbackEvaluate };
+}
+
+/**
+ * Intent profiles wired into this pack's cognition config:
+ * - dust-revenant / bandit-rider → aggressive (duel-hungry dead, road robbers)
+ * - mesa-crawler → territorial (spirit bound to guard its hollow)
+ */
+export const weirdWestIntentProfiles: IntentProfile[] = [
+  aggressiveProfile,
+  resolveBuiltinProfile('territorial', aggressiveProfile.evaluate),
+];
+
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(weirdWestStatusDefinitions);
 
@@ -98,7 +130,10 @@ export function createGame(seed?: number): Engine {
     playerId: 'drifter',
     resourceProfile: weirdWestCombatProfile,
     biasTags: ['undead', 'spirit', 'beast'],
-    cognition: { decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } },
+    cognition: {
+      profiles: weirdWestIntentProfiles,
+      decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 },
+    },
   });
 
   const engine = new Engine({
@@ -186,12 +221,12 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity({ ...player });
-  engine.store.addEntity({ ...bartender });
-  engine.store.addEntity({ ...sheriff });
-  engine.store.addEntity({ ...revenant });
-  engine.store.addEntity({ ...crawler });
-  engine.store.addEntity({ ...banditRider });
+  engine.store.addEntity(structuredClone(player));
+  engine.store.addEntity(structuredClone(bartender));
+  engine.store.addEntity(structuredClone(sheriff));
+  engine.store.addEntity(structuredClone(revenant));
+  engine.store.addEntity(structuredClone(crawler));
+  engine.store.addEntity(structuredClone(banditRider));
 
   // Set player
   engine.store.state.playerId = 'drifter';

@@ -415,13 +415,18 @@ export function formatFinaleForTerminal(outline: FinaleOutline): string {
   lines.push(`  Campaign Duration: ${outline.campaignDuration} turns`);
   lines.push(`  Chronicle Events: ${outline.totalChronicleEvents}`);
 
-  lines.push('');
-  lines.push(`  ${DIVIDER}`);
-  lines.push('  KEY MOMENTS');
-  lines.push(`  ${DIVIDER}`);
-  lines.push('');
-  for (const m of outline.keyMoments) {
-    lines.push(`  Turn ${m.tick}: ${m.description}`);
+  // Conditional like every other section below (F1b polish): a short campaign
+  // with an empty chronicle used to render the KEY MOMENTS header over
+  // nothing — an empty shrine to events that never happened.
+  if (outline.keyMoments.length > 0) {
+    lines.push('');
+    lines.push(`  ${DIVIDER}`);
+    lines.push('  KEY MOMENTS');
+    lines.push(`  ${DIVIDER}`);
+    lines.push('');
+    for (const m of outline.keyMoments) {
+      lines.push(`  Turn ${m.tick}: ${m.description}`);
+    }
   }
 
   if (outline.factionFates.length > 0) {

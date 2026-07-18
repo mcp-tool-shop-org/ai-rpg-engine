@@ -111,7 +111,7 @@ export const seaBeast: EntityState = {
   zoneId: 'sunken-shrine',
   resistances: { fear: 'immune' },
   ai: {
-    profileId: 'aggressive',
+    profileId: 'territorial',
     goals: ['guard-shrine', 'destroy-trespassers'],
     fears: [],
     alertLevel: 0,

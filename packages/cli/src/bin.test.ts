@@ -3,13 +3,18 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { Engine, type RulesetDefinition } from '@ai-rpg-engine/core';
+import { createGame as createFantasyGame } from '@ai-rpg-engine/starter-fantasy';
 import {
   runGuardedAction,
   replayGame,
   handlePlayerInput,
   saveGameGuarded,
   formatGameHelp,
+  readSaveSummary,
+  restoreSessionFromSave,
 } from './bin.js';
+import { allPacks } from './packs.js';
+import { runNpcTurns } from './turns.js';
 
 // --- Shared fixtures for the interactive-loop tests -------------------------
 
@@ -426,6 +431,123 @@ describe('handlePlayerInput — dialogue choose rejection falls through (CS-C-00
         (e) => e.type === 'action.rejected' && (e.payload as { verb?: unknown }).verb === 'choose',
       ),
     ).toBe(false);
+  });
+});
+
+// F1c — resume-from-save. `run` never detected a save and `replay` restored
+// then EXITED without playing. Now: readSaveSummary powers the Continue/New
+// offer, restoreSessionFromSave is the shared load authority (EventBus reuse +
+// ruleset bounds + rebindStore + actionLog restore), and replayGame RETURNS
+// the live session so main() can enter the shared prompt loop.
+describe('resume-from-save (F1c)', () => {
+  let tmpDir: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-resume-test-'));
+    originalCwd = process.cwd();
+    process.chdir(tmpDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  /** A fantasy session with visible progress: moved to the nave, took damage. */
+  function makeProgressedGame() {
+    const engine = createFantasyGame(42);
+    // Detach shallow-shared content entity state (see turns.test.ts).
+    for (const e of Object.values(engine.store.state.entities)) {
+      engine.store.state.entities[e.id] = structuredClone(e);
+    }
+    engine.submitAction('move', { targetIds: ['chapel-nave'] });
+    engine.store.state.entities['player'].resources.hp = 13;
+    return engine;
+  }
+
+  it('readSaveSummary: null without a save, null on corrupt JSON, summary on a real save', () => {
+    expect(readSaveSummary()).toBeNull();
+
+    fs.mkdirSync('.ai-rpg-engine', { recursive: true });
+    fs.writeFileSync(path.join('.ai-rpg-engine', 'save.json'), '{corrupt', 'utf-8');
+    expect(readSaveSummary()).toBeNull();
+
+    const engine = makeProgressedGame();
+    expect(saveGameGuarded(engine, vi.fn())).toBe(true);
+    const summary = readSaveSummary();
+    expect(summary).not.toBeNull();
+    expect(summary!.gameId).toBe('chapel-threshold');
+    expect(summary!.tick).toBe(engine.tick);
+  });
+
+  it('restoreSessionFromSave restores state AND the session is live (actions + NPC turns work)', () => {
+    const original = makeProgressedGame();
+    expect(saveGameGuarded(original, vi.fn())).toBe(true);
+
+    const pack = allPacks.find((p) => p.meta.id === 'chapel-threshold')!;
+    const { engine: restored } = restoreSessionFromSave(pack);
+
+    // The saved facts survived the load.
+    expect(restored.world.locationId).toBe('chapel-nave');
+    expect(restored.world.entities['player'].resources.hp).toBe(13);
+    expect(restored.tick).toBe(original.tick);
+
+    // The restored session is PLAYABLE: a real action executes and its events
+    // land in the LIVE event log (bus reuse + rebindStore, not an orphan store).
+    const logLenBefore = restored.world.eventLog.length;
+    const result = handlePlayerInput(restored, '1', { log: vi.fn() });
+    expect(result.kind).toBe('action');
+    expect(restored.world.eventLog.length).toBeGreaterThan(logLenBefore);
+
+    // And the NPC turn driver runs against it without complaint.
+    expect(() => runNpcTurns(restored, { log: vi.fn() })).not.toThrow();
+  });
+
+  it('a save taken after resuming keeps the FULL action history (actionLog restored)', () => {
+    const original = makeProgressedGame();
+    const actionsBefore = original.getActionLog().length;
+    expect(actionsBefore).toBeGreaterThan(0);
+    saveGameGuarded(original, vi.fn());
+
+    const pack = allPacks.find((p) => p.meta.id === 'chapel-threshold')!;
+    const { engine: restored } = restoreSessionFromSave(pack);
+    expect(restored.getActionLog().length).toBe(actionsBefore);
+
+    // Act once more, save again — history is prior + new, not a fork.
+    handlePlayerInput(restored, '1', { log: vi.fn() });
+    saveGameGuarded(restored, vi.fn());
+    const reloaded = JSON.parse(
+      fs.readFileSync(path.join('.ai-rpg-engine', 'save.json'), 'utf-8'),
+    ) as { actionLog: unknown[] };
+    expect(reloaded.actionLog.length).toBe(actionsBefore + 1);
+  });
+
+  it('replayGame (default load) returns the live session for the prompt loop', () => {
+    const original = makeProgressedGame();
+    saveGameGuarded(original, vi.fn());
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const session = replayGame([]);
+    expect(session).toBeDefined();
+    expect(session!.pack.meta.id).toBe('chapel-threshold');
+    expect(session!.engine.world.locationId).toBe('chapel-nave');
+
+    // Playable, not a print-and-exit dead end.
+    const result = handlePlayerInput(session!.engine, '1', { log: vi.fn() });
+    expect(result.kind).toBe('action');
+  });
+
+  it('replayGame --replay (re-simulation) also returns a playable session', () => {
+    const original = makeProgressedGame();
+    saveGameGuarded(original, vi.fn());
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const session = replayGame(['--replay']);
+    expect(session).toBeDefined();
+    // Re-simulated through the real pack: the logged move re-executed.
+    expect(session!.engine.world.locationId).toBe('chapel-nave');
   });
 });
 

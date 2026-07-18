@@ -1,0 +1,6 @@
+{
+  "name": "mini-pack-fixture",
+  "private": true,
+  "type": "module",
+  "main": "index.mjs"
+}

@@ -1,7 +1,7 @@
 {
   "name": "@ai-rpg-engine/starter-template",
   "version": "2.5.0",
-  "description": "Starter template for ai-rpg-engine — copy, rename, and build your own game",
+  "description": "Starter template for ai-rpg-engine — scaffold a standalone game project from it",
   "type": "module",
   "files": [
     "src",
@@ -11,12 +11,17 @@
   ],
   "scripts": {
     "build": "tsc",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
-    "@ai-rpg-engine/core": "*",
-    "@ai-rpg-engine/content-schema": "*",
-    "@ai-rpg-engine/modules": "*"
+    "@ai-rpg-engine/core": "^2.5.0",
+    "@ai-rpg-engine/content-schema": "^2.5.0",
+    "@ai-rpg-engine/modules": "^2.5.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
   },
   "license": "MIT",
   "author": "mcp-tool-shop",

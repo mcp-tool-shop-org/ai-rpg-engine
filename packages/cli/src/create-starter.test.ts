@@ -2,7 +2,100 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { createStarter, validateScaffold, runCreateStarter } from './create-starter.js';
+import { createStarter, validateScaffold, runCreateStarter, resolveTemplateDir } from './create-starter.js';
+
+// F1f — `npx @ai-rpg-engine/cli create-starter my-game` from a clean directory
+// failed ("Cannot locate starter template"): the resolver only knew the
+// monorepo layout and the CWD's node_modules, and npx installs dependencies
+// into its own cache. resolveTemplateDir now resolves the starter-template
+// package through Node resolution anchored at the CLI itself.
+describe('resolveTemplateDir (F1f)', () => {
+    let tmpDir: string;
+    let originalCwd: string;
+
+    beforeEach(() => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-tpl-resolve-'));
+        originalCwd = process.cwd();
+    });
+
+    afterEach(() => {
+        process.chdir(originalCwd);
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('resolves in the monorepo regardless of cwd (dev mode)', () => {
+        process.chdir(tmpDir); // a foreign cwd with no node_modules at all
+        const dir = resolveTemplateDir();
+        expect(fs.existsSync(path.join(dir, 'src/setup.ts'))).toBe(true);
+    });
+
+    /** A fake installed starter-template package with the files the resolver checks. */
+    function makeFakeTemplate(root: string): string {
+        const dir = path.join(root, 'node_modules', '@ai-rpg-engine', 'starter-template');
+        fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+        fs.writeFileSync(path.join(dir, 'package.json'), '{"name":"@ai-rpg-engine/starter-template"}', 'utf-8');
+        fs.writeFileSync(path.join(dir, 'src', 'setup.ts'), '// template', 'utf-8');
+        return dir;
+    }
+
+    const NO_MONOREPO = { monorepoDir: path.join(os.tmpdir(), 'definitely-not-a-monorepo') };
+
+    it('outside the monorepo, resolves through CLI-anchored package resolution (the npx-cache case)', () => {
+        // npx-style install: the template lives in a cache the CWD knows
+        // nothing about; only the CLI-anchored resolver can find it. In
+        // production the injection is createRequire(import.meta.url).resolve.
+        const fakeInstall = makeFakeTemplate(path.join(tmpDir, 'npx-cache'));
+        process.chdir(tmpDir); // clean cwd — no node_modules here
+
+        const resolve = vi.fn((spec: string) => {
+            expect(spec).toBe('@ai-rpg-engine/starter-template/package.json');
+            return path.join(fakeInstall, 'package.json');
+        });
+
+        const dir = resolveTemplateDir({ ...NO_MONOREPO, resolve });
+        expect(dir).toBe(fakeInstall);
+        expect(resolve).toHaveBeenCalledTimes(1);
+    });
+
+    it('falls back to cwd node_modules when the CLI-anchored resolution fails', () => {
+        const cwdInstall = makeFakeTemplate(tmpDir);
+        process.chdir(tmpDir);
+
+        const dir = resolveTemplateDir({
+            ...NO_MONOREPO,
+            resolve: () => {
+                throw new Error('Cannot find module');
+            },
+        });
+        expect(dir).toBe(cwdInstall);
+    });
+
+    it('when nothing resolves, the error names every recovery path', () => {
+        process.chdir(tmpDir); // clean cwd, no installs anywhere
+        try {
+            resolveTemplateDir({
+                ...NO_MONOREPO,
+                resolve: () => {
+                    throw new Error('Cannot find module');
+                },
+            });
+            expect.unreachable('should have thrown');
+        } catch (err) {
+            const msg = (err as Error).message;
+            expect(msg).toContain('Cannot locate starter template');
+            expect(msg).toContain('npx');
+            expect(msg).toContain('monorepo');
+            expect(msg).toContain('npm install @ai-rpg-engine/starter-template');
+        }
+    });
+
+    it('the end-to-end scaffold works from a foreign cwd via the real resolver chain', () => {
+        process.chdir(tmpDir); // outside the repo; dev-mode path still resolves via import.meta
+        const outDir = path.join(tmpDir, 'my-scaffold');
+        createStarter({ name: 'foreign-cwd-game', outDir, validate: true });
+        expect(fs.existsSync(path.join(outDir, 'src/setup.ts'))).toBe(true);
+    });
+});
 
 describe('create-starter', () => {
     let tmpDir: string;

@@ -1,10 +1,61 @@
 // Readline-based prompt utilities for CLI menus
+//
+// F1 hardening: input lines are QUEUED, not raced. `rl.question` only
+// consumes a line while its one-shot listener is attached — when input is
+// piped (a scripted drive, `printf ... | ai-rpg-engine run`), the whole
+// script arrives in one chunk and readline emits every line synchronously;
+// all lines after the currently-pending question landed with NO listener and
+// were silently dropped, so any promise-based prompt flow (character
+// creation, the session loop) starved and the process fell off the end of
+// stdin. A permanent 'line' listener now buffers everything; ask() serves
+// from the buffer or awaits the next line. Interactive TTY behavior is
+// unchanged (a human can't outtype a pending prompt).
 
 import * as readline from 'node:readline';
 
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
+});
+
+/** Thrown when input ends (EOF) while a prompt is waiting — a scripted drive
+ *  under-supplied lines, or the terminal went away. Callers must NOT retry
+ *  (the old retry-loops would spin forever on a closed stdin). */
+export class InputEndedError extends Error {
+  constructor() {
+    super('Input ended while a prompt was waiting (EOF on stdin).');
+    this.name = 'InputEndedError';
+  }
+}
+
+const lineQueue: string[] = [];
+let pendingResolve: ((line: string) => void) | null = null;
+let pendingReject: ((err: Error) => void) | null = null;
+let inputClosed = false;
+
+rl.on('line', (line) => {
+  if (pendingResolve) {
+    // Piped (non-TTY) input is not echoed by the terminal — write it so
+    // transcripts read like an interactive session (same as the queue-served
+    // branch in promptLine; a real TTY echoes keystrokes itself).
+    if (!process.stdin.isTTY) process.stdout.write(line + '\n');
+    const resolve = pendingResolve;
+    pendingResolve = null;
+    pendingReject = null;
+    resolve(line);
+  } else {
+    lineQueue.push(line);
+  }
+});
+
+rl.on('close', () => {
+  inputClosed = true;
+  if (pendingReject) {
+    const reject = pendingReject;
+    pendingResolve = null;
+    pendingReject = null;
+    reject(new InputEndedError());
+  }
 });
 
 export function getReadline(): readline.Interface {
@@ -15,10 +66,31 @@ export function closeReadline(): void {
   rl.close();
 }
 
-function ask(question: string): Promise<string> {
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => resolve(answer.trim()));
+/**
+ * Print `prompt` and read one line — from the buffer when scripted input has
+ * already arrived, else awaiting the next line. Rejects with InputEndedError
+ * on EOF so prompt loops fail loudly instead of spinning.
+ */
+export function promptLine(prompt: string): Promise<string> {
+  process.stdout.write(prompt);
+  if (lineQueue.length > 0) {
+    const line = lineQueue.shift() as string;
+    // Echo scripted input so transcripts read like an interactive session.
+    if (!process.stdin.isTTY) process.stdout.write(line + '\n');
+    return Promise.resolve(line);
+  }
+  if (inputClosed) {
+    return Promise.reject(new InputEndedError());
+  }
+  return new Promise<string>((resolve, reject) => {
+    pendingResolve = resolve;
+    pendingReject = reject;
   });
+}
+
+async function ask(question: string): Promise<string> {
+  const answer = await promptLine(question);
+  return answer.trim();
 }
 
 /** Prompt for free-form text input. Returns trimmed string. */

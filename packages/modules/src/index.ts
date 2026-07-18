@@ -27,6 +27,11 @@ export {
   processBeliefDecay,
   aggressiveProfile,
   cautiousProfile,
+  territorialProfile,
+  calculatingProfile,
+  BUILTIN_INTENT_PROFILES,
+  resolveIntentProfile,
+  selectActionForEntity,
 } from './cognition-core.js';
 export type {
   Belief,
@@ -38,6 +43,7 @@ export type {
   PerceptionResult,
   IntentOption,
   IntentProfile,
+  EntityActionSelection,
 } from './cognition-core.js';
 export {
   createPerceptionFilter,

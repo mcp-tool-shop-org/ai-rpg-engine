@@ -24,8 +24,11 @@ import {
   createAbilityReview,
   registerStatusDefinitions,
   COMBAT_STATES,
+  aggressiveProfile,
+  cautiousProfile,
 } from '@ai-rpg-engine/modules';
-import type { PresentationRule, CombatResourceProfile } from '@ai-rpg-engine/modules';
+import * as engineModules from '@ai-rpg-engine/modules';
+import type { PresentationRule, CombatResourceProfile, IntentProfile } from '@ai-rpg-engine/modules';
 import {
   manifest,
   player,
@@ -87,6 +90,36 @@ const detectiveCombatProfile: CombatResourceProfile = {
   ],
 };
 
+// ─── Intent profiles (F1-cs-a) ──────────────────────────────────────────────
+// Every hostile entity in content.ts declares an ai.profileId. The cognition
+// config must supply an IntentProfile for each declared id — with an empty
+// profileMap no enemy ever resolves an intent, so enemies never act.
+// `calculating` is a newer built-in; resolve it from the installed modules
+// build when present, otherwise back the same id with the closest established
+// behavior so every declared id still resolves.
+function resolveBuiltinProfile(
+  id: 'territorial' | 'calculating',
+  fallbackEvaluate: IntentProfile['evaluate'],
+): IntentProfile {
+  const candidate = (engineModules as unknown as Record<string, unknown>)[`${id}Profile`] as
+    | IntentProfile
+    | undefined;
+  if (candidate && candidate.id === id && typeof candidate.evaluate === 'function') {
+    return candidate;
+  }
+  return { id, evaluate: fallbackEvaluate };
+}
+
+/**
+ * Intent profiles wired into this pack's cognition config:
+ * - dock-thug / hired-muscle → aggressive (enforcers who lead with fists)
+ * - Mr. Hargreaves → calculating (mastermind who strikes only when certain)
+ */
+export const detectiveIntentProfiles: IntentProfile[] = [
+  aggressiveProfile,
+  resolveBuiltinProfile('calculating', cautiousProfile.evaluate),
+];
+
 export function createGame(seed?: number): Engine {
   registerStatusDefinitions(detectiveStatusDefinitions);
   const combat = buildCombatStack({
@@ -94,7 +127,10 @@ export function createGame(seed?: number): Engine {
     playerId: 'inspector',
     resourceProfile: detectiveCombatProfile,
     biasTags: ['criminal'],
-    cognition: { decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 } },
+    cognition: {
+      profiles: detectiveIntentProfiles,
+      decay: { baseRate: 0.02, pruneThreshold: 0.05, instabilityFactor: 0.5 },
+    },
   });
 
   const engine = new Engine({
@@ -161,13 +197,13 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity({ ...player });
-  engine.store.addEntity({ ...widow });
-  engine.store.addEntity({ ...constable });
-  engine.store.addEntity({ ...servant });
-  engine.store.addEntity({ ...thug });
-  engine.store.addEntity({ ...hiredMuscle });
-  engine.store.addEntity({ ...crimeBoss });
+  engine.store.addEntity(structuredClone(player));
+  engine.store.addEntity(structuredClone(widow));
+  engine.store.addEntity(structuredClone(constable));
+  engine.store.addEntity(structuredClone(servant));
+  engine.store.addEntity(structuredClone(thug));
+  engine.store.addEntity(structuredClone(hiredMuscle));
+  engine.store.addEntity(structuredClone(crimeBoss));
 
   // Set player
   engine.store.state.playerId = 'inspector';

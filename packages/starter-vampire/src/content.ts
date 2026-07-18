@@ -93,7 +93,7 @@ export const witchHunter: EntityState = {
   resources: { hp: 18, stamina: 5 },
   statuses: [],
   zoneId: 'bell-tower',
-  ai: { profileId: 'stalker', goals: ['purge-vampires'], fears: ['outnumbered'], alertLevel: 0, knowledge: {} },
+  ai: { profileId: 'calculating', goals: ['purge-vampires'], fears: ['outnumbered'], alertLevel: 0, knowledge: {} },
   resistances: { supernatural: 'resistant' },
 };
 

@@ -78,3 +78,27 @@ describe('zombie content — cross-reference integrity (F-4806a2c9)', () => {
     expect(result.errors).toEqual([]);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// CROSS-INSTANCE STATE ISOLATION
+// setup.ts inserts entities from module-level constants. A shallow spread
+// shares the nested resources/stats/statuses objects across every engine
+// built in one process, so combat damage (or the CLI's NPC turn driver
+// killing a walker) in engine A would permanently mutate the constant and
+// a LATER createGame() would boot with a dead walker. structuredClone at
+// insertion is the fix. Same class as F-71ec5dcd.
+// ═══════════════════════════════════════════════════════════════════
+describe('zombie content — cross-instance state isolation', () => {
+  it('killing a walker in engine A does not carry into a fresh engine B', () => {
+    const a = createGame(1);
+    const fullHp = a.store.state.entities['shambler_1'].resources.hp;
+    expect(fullHp).toBeGreaterThan(0);
+
+    a.store.state.entities['shambler_1'].resources.hp = 0;
+
+    const b = createGame(1);
+    expect(b.store.state.entities['shambler_1'].resources.hp).toBe(fullHp);
+    expect(b.store.state.entities['shambler_1'].resources)
+      .not.toBe(a.store.state.entities['shambler_1'].resources);
+  });
+});
