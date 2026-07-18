@@ -12,6 +12,10 @@ npx @ai-rpg-engine/cli <command>
 
 With no command, the CLI runs `run` (starts a new game). Every command below is dispatched by [`packages/cli/src/bin.ts`](../../packages/cli/src/bin.ts).
 
+> The optional AI design studio is a **separate** binary, `ai`, from
+> `@ai-rpg-engine/ollama` — see [Chapter 36](36-ai-worldbuilding.md). This
+> appendix documents the game CLI (`ai-rpg-engine`) only.
+
 ## Commands at a glance
 
 | Command | Purpose |

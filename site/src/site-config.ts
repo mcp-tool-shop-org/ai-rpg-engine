@@ -35,7 +35,7 @@ export const config: SiteConfig = {
         },
         {
           title: 'AI-Assisted Worldbuilding',
-          desc: 'An optional library (@ai-rpg-engine/ollama) scaffolds content, critiques designs, and analyzes balance against a local Ollama model. Programmatic, not a bundled binary. AI suggests — you decide.',
+          desc: 'An optional design studio (install @ai-rpg-engine/ollama, run `ai chat`) scaffolds content, critiques designs, and analyzes balance against a local Ollama model — or use it as a library. AI suggests — you decide.',
         },
         {
           title: 'Replay Analysis',

@@ -280,7 +280,7 @@ export function renderEventLog(events: ResolvedEvent[], limit = 8, opts?: Render
   const scanStart = Math.max(0, events.length - EVENT_LOG_LOOKBACK);
   const lines: string[] = [];
   for (let i = scanStart; i < events.length; i++) {
-    const formatted = formatEvent(events[i]);
+    const formatted = formatEventLine(events[i]);
     if (formatted) {
       lines.push(`  ${paintEventLine(events[i].type, formatted, pal)}`);
     }
@@ -498,7 +498,14 @@ function describedOr(payload: Record<string, unknown>, fallback: string): string
   return description ? `> ${description}` : fallback;
 }
 
-function formatEvent(event: ResolvedEvent): string | null {
+/**
+ * Format one resolved event as its player-facing log line (`> Hit!`), or null
+ * for events with no text rendering (bookkeeping, flags, audio cues).
+ * Exported for the narration layer (presentation.ts), which reuses these
+ * exact lines as NarrationPlan scene text so the spoken/streamed narration
+ * can never drift from the printed log.
+ */
+export function formatEventLine(event: ResolvedEvent): string | null {
   const p = event.payload;
   switch (event.type) {
     case 'world.zone.entered':

@@ -25,6 +25,11 @@
     "@ai-rpg-engine/modules": "*",
     "@ai-rpg-engine/equipment": "*"
   },
+  "devDependencies": {
+    "@ai-rpg-engine/presentation": "*",
+    "@ai-rpg-engine/soundpack-core": "*",
+    "@ai-rpg-engine/terminal-ui": "*"
+  },
   "license": "MIT",
   "author": "mcp-tool-shop",
   "homepage": "https://mcp-tool-shop-org.github.io/ai-rpg-engine/",

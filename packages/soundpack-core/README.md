@@ -61,12 +61,42 @@ console.log(entry?.voiceSoundboardEffect); // "chime_success"
 | `ui_click` | `click` | sfx | ui, input |
 | `ui_pop` | `pop` | sfx | ui, light |
 | `ui_whoosh` | `whoosh` | sfx | ui, transition |
+| `ui_attention` | `chime_attention` | sfx | ui, alert |
 | `alert_warning` | `warning` | sfx | alert, caution |
 | `alert_critical` | `critical` | sfx | alert, danger |
 | `alert_info` | `info` | sfx | alert, info |
 | `ambient_rain` | `rain` | ambient | weather, calm |
 | `ambient_white_noise` | `white_noise` | ambient | background |
 | `ambient_drone` | `drone` | ambient | dark, tension |
+
+## Gameplay Cue Map
+
+Gameplay modules emit cue ids in their own vocabulary (`combat.hit`, `ability.holy-smite`, `scene.crypt-reveal`). `resolveSoundCue` maps them into canonical soundpack entry ids — total by construction (exact tier → namespace tier → fallback), so no cue ever falls through unmapped:
+
+| Gameplay cue | Soundpack id | Tier |
+|--------------|--------------|------|
+| `combat.hit` | `alert_warning` | exact |
+| `combat.defeat` | `alert_critical` | exact |
+| `combat.victory` | `ui_success` | exact |
+| `scene.enter` | `ui_whoosh` | exact |
+| `ability.*` | `ui_pop` | namespace |
+| `scene.*` | `ui_attention` | namespace |
+| `combat.*` | `alert_warning` | namespace |
+| anything else | `ui_notification` | fallback |
+
+```typescript
+import { resolveSoundCue, extendCueMap } from '@ai-rpg-engine/soundpack-core';
+
+resolveSoundCue('combat.hit');
+// { effectId: 'alert_warning', timing: 'with-text', intensity: 0.6, via: 'exact' }
+
+// A richer pack redirects cues without editing the canonical table:
+const resolve = extendCueMap({
+  'ability.holy-smite': { effectId: 'holy_smite_01', timing: 'immediate', intensity: 1 },
+});
+```
+
+The core pack is a small procedural-chime vocabulary, so the built-in map is a deliberate semantic approximation — a shipping game loads a richer pack and overrides per cue.
 
 ## Custom Sound Packs
 

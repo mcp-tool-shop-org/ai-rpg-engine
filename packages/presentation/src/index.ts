@@ -21,3 +21,13 @@ export {
   isValidNarrationPlan,
   type ValidationError,
 } from './validate.js';
+
+export {
+  buildNarrationPlan,
+  collectSoundCues,
+  deriveTone,
+  deriveUrgency,
+  type BuildNarrationPlanInput,
+  type NarrationSourceEvent,
+  type SoundCueResolver,
+} from './builder.js';

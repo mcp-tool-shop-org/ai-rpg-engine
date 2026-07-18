@@ -29,7 +29,7 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 
 ## What This Is Not
 
-- Not a playable game out of the box — you compose one from modules and content
+- Not a single finished game — it ships 10 playable starter worlds you can `run` today as examples, and the engine is the toolkit you compose your *own* game from
 - Not a visual engine — it outputs structured events, not pixels
 - Not a story generator — it simulates worlds; narrative emerges from mechanics
 
@@ -94,7 +94,42 @@ The bundled terminal UI composes each turn into labeled sections — scene, stat
 
 ---
 
+## Install & Play
+
+Play a starter, or scaffold your own game, from the terminal:
+
+```bash
+npm install -g @ai-rpg-engine/cli
+
+ai-rpg-engine run                    # pick a starter, build a character, play
+ai-rpg-engine create-starter my-game # scaffold a new game you can edit and run
+ai-rpg-engine run ./my-game          # run a game you scaffolded
+```
+
+The `run` loop is a real turn-based session: enemies act on their own AI
+profiles, abilities and XP are on the menu, you can save and resume, and a
+fight ends in victory or defeat. Every game is deterministic and replayable.
+
+Optionally, the AI design studio installs as its own command:
+
+```bash
+npm install -g @ai-rpg-engine/ollama
+ai chat                              # scaffold, critique, and balance content
+                                     # against a local Ollama model (see Ch. 36)
+```
+
+The studio talks to a local [Ollama](https://ollama.com) daemon — run
+`ollama serve` and `ollama pull qwen2.5-coder` first. It is entirely optional;
+the engine and the `run` loop need no network.
+
+A container image is published to GHCR as
+`ghcr.io/mcp-tool-shop-org/ai-rpg-engine` for CI and sandboxed runs.
+
+---
+
 ## Quick Start
+
+Prefer to build your own game in code? Compose the engine from modules:
 
 ```typescript
 import { Engine } from '@ai-rpg-engine/core';
