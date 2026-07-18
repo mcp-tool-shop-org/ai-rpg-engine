@@ -75,7 +75,13 @@ for (const dir of packageDirs()) {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const report = JSON.parse(out);
-    fileSet = new Set(report[0].files.map((f) => f.path));
+    // `npm pack --dry-run --json` changed shape in npm 12: it was an array
+    // `[{ name, files, ... }]` through npm 11, and is now a name-keyed object
+    // `{ "<pkg>": { files, ... } }`. The publish job runs `npm install -g
+    // npm@latest`, so this gate must read either shape or it throws
+    // "Cannot read properties of undefined (reading 'files')" under npm 12.
+    const entry = Array.isArray(report) ? report[0] : Object.values(report)[0];
+    fileSet = new Set(entry.files.map((f) => f.path));
   } catch (err) {
     failures.push({
       name: pkg.name ?? dir,
