@@ -1,7 +1,7 @@
 {
   "name": "@ai-rpg-engine/starter-template",
-  "version": "2.5.0",
-  "description": "Starter template for ai-rpg-engine — scaffold a standalone game project from it",
+  "version": "2.6.0",
+  "description": "Starter template for ai-rpg-engine \u00e2\u20ac\u201d scaffold a standalone game project from it",
   "type": "module",
   "files": [
     "src",
@@ -15,9 +15,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ai-rpg-engine/core": "^2.5.0",
-    "@ai-rpg-engine/content-schema": "^2.5.0",
-    "@ai-rpg-engine/modules": "^2.5.0"
+    "@ai-rpg-engine/core": "^2.6.0",
+    "@ai-rpg-engine/content-schema": "^2.6.0",
+    "@ai-rpg-engine/modules": "^2.6.0"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

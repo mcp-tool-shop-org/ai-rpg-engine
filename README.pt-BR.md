@@ -29,37 +29,105 @@ Este é um **motor de composição**, não um jogo completo. Os 10 mundos inicia
 
 ## O Que Isso Não É
 
-- Não é um jogo jogável pronto para uso — você o cria a partir de módulos e conteúdo.
-- Não é um motor visual — ele gera eventos estruturados, não pixels.
+- Não é um jogo completo — ele oferece 10 mundos iniciais jogáveis que você pode usar como exemplos e testar hoje mesmo, e o motor é o conjunto de ferramentas com o qual você cria seu *próprio* jogo.
+- Não é um motor gráfico — ele gera eventos estruturados, não pixels.
 - Não é um gerador de histórias — ele simula mundos; a narrativa emerge da mecânica.
 
 ---
 
-## Status Atual (v2.5.0)
+## Status atual (v2.6.0)
 
 **O que funciona e foi testado:**
-- Motor principal: estado do mundo, eventos, ações, ciclos, reprodução — estável desde a v1.0; reprodução determinística byte a byte (contador de ID por instância, RNG com semente definida).
+- Motor principal: estado do mundo, eventos, ações, ciclos, repetição — estável desde a v1.0; repetição determinística com bytes idênticos (contador de ID por instância, RNG com semente).
 - Sistema de combate: 5 ações, 4 estados de combate, 4 estados de engajamento, interceptação de companheiros, fluxo de derrota, táticas de IA.
 - Habilidades: custos, tempos de recarga, verificações de atributos, efeitos tipados, vocabulário de status com 11 tags, seleção consciente da IA.
-- **Combate em grupo (v2.4):** direcionamento de aliados (cura/buff/revive), filtragem AoE de amigos/inimigos, seletores de alvos — um curandeiro pode curar um companheiro de equipe; o AoE do inimigo poupa os aliados.
+- **Combate em grupo (v2.4):** direcionamento de aliados (cura/buff/reviver), filtragem de área de efeito (AoE) entre amigos e inimigos, seletores de alvo — um curandeiro pode curar um companheiro de equipe; o AoE do inimigo poupa os aliados.
 - **Efeitos de status (v2.4):** modificadores passivos de atributos afetam o combate, DoT/HoT determinísticos com base no contador de ciclos, gatilhos reativos com profundidade limitada (espinhos/reflexo).
-- **Perfis plug-in — resolução de regras por entidade (v2.5):** um lutador "poderoso" e um místico "de vontade" resolvem o combate em uma luta, cada um lendo os atributos por meio de seu próprio mapeamento. `RuleProfile` + `WorldState.ruleProfiles` + `EntityState.ruleProfileId`; `applyProfile()` anexa um perfil (mapeamento de atributos, pools de recursos, habilidades por entidade); `buildProfile()`, `validateProfileSet()` (IDs duplicados rejeitados), 10 modelos derivados iniciais e um comando CLI `profile`.
-- Camada de decisão unificada: combate + pontuação de habilidade combinados em uma única chamada (`selectBestAction`).
-- Todos os 10 mundos iniciais usam `buildCombatStack()` — a estrutura comprovada de composição.
+- **Perfis plug-in — resolução de regras por entidade (v2.5):** um lutador "poderoso" e um místico "de vontade" resolvem o combate em uma luta, cada um lendo os atributos através de seu próprio mapeamento. `RuleProfile` + `WorldState.ruleProfiles` + `EntityState.ruleProfileId`; `applyProfile()` anexa um perfil (mapeamento de atributos, pools de recursos, habilidades por entidade); `buildProfile()`, `validateProfileSet()` (IDs duplicados rejeitados), 10 modelos derivados iniciais e um comando CLI `profile`.
+- **Ciclo jogável `run` (v2.6):** o jogo final é real, não uma demonstração — os inimigos agem com base em seus próprios perfis de intenção de IA (`agressivo`/`cauteloso`/`territorial`/`calculista`), uma luta termina em vitória ou derrota, você pode salvar e retomar, e as habilidades e a experiência estão no menu de ações. `run <path>` carrega um jogo que você criou. Interface do usuário final composta com uma visão geral (HUD) e cores acessíveis (respeita `NO_COLOR` / não-TTY).
+- **O estúdio de design de IA é lançado como seu próprio comando `ai` (v2.6):** `npm install -g @ai-rpg-engine/ollama` → `ai chat` — crie, critique e equilibre o conteúdo em relação a um modelo Ollama local.
+- Camada de decisão unificada: combate + pontuação de habilidades combinados em uma única chamada (`selectBestAction`).
+- Todos os 10 mundos iniciais usam `buildCombatStack()` — a estrutura comprovada.
 - API de configuração da cognição (`cognition: CognitionCoreConfig | false`) para ajuste da IA por mundo inicial.
 - Taxonomia de tags e utilitários de validação para criação de conteúdo.
-- `ai-rpg-engine create-starter <name>` — cria um novo jogo; comandos `validate` + `scaffold` para conteúdo; carrega pacotes do JSON.
+- `ai-rpg-engine create-starter <name>` — crie um novo jogo (autônomo, executa fora do monorepos); comandos `validate` + `scaffold` de conteúdo; carregue pacotes a partir de JSON.
 - Modelo inicial publicado no npm (`@ai-rpg-engine/starter-template`).
-- Conjunto de testes completo: **3613 testes em 193 arquivos** (determinístico em execuções repetidas; cobertura reforçada na CI).
+- Conjunto completo de testes: **4292 testes** (determinísticos em execuções repetidas; reforço da cobertura na CI).
 
 **O que está incompleto ou precisa ser aprimorado:**
-- As ferramentas de construção de mundo com IA (camada Ollama) são testadas menos do que o núcleo da simulação — embora a v2.5 tenha adicionado tratamento estruturado de erros, um loop de repetição configurável/observável e uma opção `--validate` para o conteúdo gerado.
-- O modo multijogador (dois jogadores humanos compartilhando um mundo) **não** foi implementado — é uma camada de rede, deliberadamente fora do escopo; os perfis hoje têm como alvo um único controlador.
+- O estúdio de criação de mundos com IA (camada Ollama) é testado menos do que o núcleo da simulação e precisa de um daemon Ollama local; é totalmente opcional — o motor e o ciclo `run` não precisam de rede.
+- A pilha de narração/áudio gera comandos de áudio determinísticos, mas **não há backend de áudio no terminal** — nada reproduz som; os comandos são um ponto de integração para um GUI/incorporação web.
+- O modo multijogador (dois jogadores humanos compartilhando um mundo) **não** foi implementado — é uma camada de rede, deliberadamente fora do escopo; os perfis atualmente têm como alvo um único controlador.
 - A documentação é extensa, mas nem todas as páginas do manual refletem as APIs mais recentes.
 
 ---
 
+## Como se parece
+
+A interface do usuário do terminal incluída compõe cada turno em seções rotuladas — cena, status, log e ações — com uma visão geral (HUD). A saída é texto simples por padrão e adiciona cores semânticas em um TTY (dano vermelho, cura verde, rejeições amarelas), respeitando `NO_COLOR` e pipes não-TTY; cada dica também está presente no texto, nunca apenas na cor.
+
+```text
+── The Crypt Gate ──────────────────────────────────────────
+  [dark, unhallowed]
+
+  ! Crypt Warden · HP 6/14 · Off Balance
+  ! Bone Thrall · defeated
+  + Mira · HP 11/16
+
+  * rusted portcullis winch
+
+  Exits: Ossuary, Churchyard
+
+── Status ──────────────────────────────────────────────────
+  HP 9/20 [#####-----]  Stamina 4/10
+  Status: Guarded
+  Items: healing-draught, grave-key
+
+── Log ─────────────────────────────────────────────────────
+  > Ash takes a guarded stance.
+  > Hit!  4 damage dealt (HP: 6)
+  > Bone Thrall defeated!
+  > You can't do that: not enough stamina
+
+── Actions ─────────────────────────────────────────────────
+  [ 1] Move to Ossuary      [ 3] Attack Crypt Warden
+  [ 2] Move to Churchyard   [ 4] Inspect Crypt Warden
+────────────────────────────────────────────────────────────
+```
+
+---
+
+## Instalação e execução
+
+Jogue um mundo inicial ou crie seu próprio jogo a partir do terminal:
+
+```bash
+npm install -g @ai-rpg-engine/cli
+
+ai-rpg-engine run                    # pick a starter, build a character, play
+ai-rpg-engine create-starter my-game # scaffold a new game you can edit and run
+ai-rpg-engine run ./my-game          # run a game you scaffolded
+```
+
+O ciclo `run` é uma sessão real de turnos: os inimigos agem com base em seus próprios perfis de IA, as habilidades e a experiência estão no menu, você pode salvar e retomar, e uma luta termina em vitória ou derrota. Cada jogo é determinístico e reproduzível.
+
+Opcionalmente, o estúdio de design de IA é instalado como seu próprio comando:
+
+```bash
+npm install -g @ai-rpg-engine/ollama
+ai chat                              # scaffold, critique, and balance content
+                                     # against a local Ollama model (see Ch. 36)
+```
+
+O estúdio se comunica com um daemon [Ollama](https://ollama.com) local — execute `ollama serve` e `ollama pull qwen2.5-coder` primeiro. É totalmente opcional; o motor e o ciclo `run` não precisam de rede.
+
+Uma imagem de contêiner é publicada no GHCR como `ghcr.io/mcp-tool-shop-org/ai-rpg-engine` para CI e execuções em sandbox.
+
+---
+
 ## Início Rápido
+
+Prefere criar seu próprio jogo em código? Componha o motor a partir de módulos:
 
 ```typescript
 import { Engine } from '@ai-rpg-engine/core';
@@ -181,9 +249,10 @@ Os 10 mundos iniciais são **exemplos de composição** — demonstram como comb
 |----------|-------------|
 | [Create Your Own Starter](site/src/content/docs/handbook/58-create-your-own-starter.md) | Crie a estrutura de um novo jogo – utilize uma ferramenta de linha de comando ou um modelo manual. |
 | [Composition Guide](site/src/content/docs/handbook/57-composition-guide.md) | Crie o seu próprio jogo combinando diferentes módulos do motor de jogo. |
-| [Combat Overview](docs/handbook/49a-combat-overview.md) | Seis pilares de combate, cinco ações, informações gerais sobre os estados. |
-| [Pack Author Guide](docs/handbook/55-combat-pack-guide.md) | Instruções passo a passo para criar o conjunto de combate, mapeamento de atributos e perfis de recursos. |
-| [Handbook](docs/handbook/index.md) | Manual completo – todos os sistemas, mais 4 apêndices. |
+| [Plug-in Profiles](site/src/content/docs/handbook/59-plugin-profiles.md) | Resolução de regras por entidade — combate com estilos de jogo mistos, `applyProfile`, modelos de perfil, o comando CLI `profile`. |
+| [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) | Seis pilares de combate, cinco ações, informações gerais sobre os estados. |
+| [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | Instruções passo a passo para criar o conjunto de combate, mapeamento de atributos e perfis de recursos. |
+| [Handbook](site/src/content/docs/handbook/index.md) | Manual completo – todos os sistemas, mais 4 apêndices. |
 | [Composition Model](docs/composition-model.md) | As seis camadas reutilizáveis e como elas se combinam. |
 | [Examples](docs/examples/) | Exemplos de código TypeScript que podem ser executados (com verificação de tipos e testes de comportamento em ambiente de integração contínua) — festa mista por entidade, perfis partilhados, interação entre diferentes mundos, criação a partir do zero. |
 | [Design Document](docs/DESIGN.md) | Análise aprofundada da arquitetura — fluxo de trabalho, realidade versus apresentação. |
@@ -198,10 +267,10 @@ Os 10 mundos iniciais são **exemplos de composição** — demonstram como comb
 
 O tempo de execução da simulação, a estrutura da composição do combate e o caminho inicial para criação estão completos – 3613 testes em 193 arquivos, todos os 10 personagens iniciais em `buildCombatStack`, reprodução determinística com resultados idênticos em termos de bytes, pontuação completa das decisões da IA e um comando de estrutura na linha de comandos. **A versão 2.5 oferece a resolução de regras por entidade – o principal recurso dos Perfis de Plug-in: um lutador do tipo `might` e um místico do tipo `will` resolvem o combate em uma única luta, cada um lendo as estatísticas através do seu próprio mapeamento.**
 
-**Lançamento recente (v2.3.3 – v2.5.0):**
-- v2.3.3 – v2.3.7 — Validação do artefato para o utilizador, reforço do conjunto de combate, todos os 10 personagens iniciais em `buildCombatStack`, modelo inicial publicado, CLI `create-starter`
-- v2.4.0 — Combate em grupo (ataque/cura/buff/reviver direcionado a aliados/inimigos, área de efeito), sistema de efeitos de estado (modificadores + dano ao longo do tempo/cura ao longo do tempo + gatilhos reativos), fase 1 dos perfis plug-in, conteúdo `validate`/`scaffold` CLI
-- **v2.5.0 — Resolução de regras por entidade (combate com estilos de jogo mistos), o carregador `applyProfile` + habilidades por entidade, modelos de perfil + CLI `profile` e uma revisão completa da saúde (correção para reprodução idêntica em bytes, reforço da correção, implementação de critérios de qualidade)**
+**Ciclo recente de lançamento (v2.3.3–v2.6.0):**
+- v2.3.3–v2.3.7 — Prova do artefato para o consumidor, fortalecimento da pilha de combate, todos os 10 mundos iniciais em `buildCombatStack`, modelo inicial publicado, comando CLI `create-starter`.
+- v2.4.0 — Combate em grupo (direcionamento de aliados / cura / buff / reviver, AoE entre amigos e inimigos), sistema de efeitos de status (modificadores + DoT/HoT + gatilhos reativos), fase 1 dos perfis plug-in, comandos CLI `validate`/`scaffold` de conteúdo.
+- **v2.5.0 — Resolução de regras por entidade (combate com estilos de jogo mistos), o carregador `applyProfile` + habilidades por entidade, modelos de perfil + comando CLI `profile` e uma revisão completa da saúde (correção de repetição com bytes idênticos, fortalecimento da correção, portões de qualidade tornados reais).**
 
 ### Próximo(a) / Seguinte
 
