@@ -5,8 +5,14 @@
 
 import { describe, it, expect } from 'vitest';
 import { Engine } from '@ai-rpg-engine/core';
-import { createGame } from '@ai-rpg-engine/starter-fantasy';
+import { createGame, combatMasteryTree } from '@ai-rpg-engine/starter-fantasy';
 import type { ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
+import {
+  addCurrency,
+  createDistrictEconomy,
+  type WorldPressure,
+  type CompanionState,
+} from '@ai-rpg-engine/modules';
 import {
   detectBaseOutcome,
   evaluateSessionEnd,
@@ -134,6 +140,158 @@ describe('evaluateSessionEnd (F1b) — outcome + campaign framing', () => {
     const chapelUndead = inputs.factionStates.find((f) => f.factionId === 'chapel-undead');
     expect(chapelUndead).toBeDefined();
     expect(chapelUndead!.cohesion).toBe(70); // 0-1 scaled to 0-100
+  });
+});
+
+// F-ENG005 — the evaluator's inputs come from LIVE state, not hardcoded zeros.
+// Each test pins one input's source namespace at the buildEndgameInputs
+// boundary: the exact key read, the exact value that flows through.
+describe('buildEndgameInputs (F-ENG005) — live inputs from persisted state', () => {
+  /** A minimal valid WorldPressure for namespace-pinning tests. */
+  function makeTestPressure(id: string): WorldPressure {
+    return {
+      id,
+      kind: 'bounty-issued',
+      sourceFactionId: 'chapel-undead',
+      description: 'A bounty circulates',
+      triggeredBy: 'test',
+      urgency: 0.6,
+      visibility: 'known',
+      turnsRemaining: 5,
+      potentialOutcomes: [],
+      tags: [],
+      createdAtTick: 1,
+    };
+  }
+
+  it('a zero-state world reproduces the previous behavior: zero heat, level 1, empty pressures/companions/economies', () => {
+    const engine = makeGame();
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.playerLeverage.heat).toBe(0);
+    expect(inputs.playerLevel).toBe(1);
+    expect(inputs.activePressures).toEqual([]);
+    expect(inputs.companions).toEqual([]);
+    expect(inputs.districtEconomies.size).toBe(0);
+  });
+
+  it('heat is sourced from defeat-fallout\'s exact global key world.globals["player_heat"]', () => {
+    const engine = makeGame();
+    engine.store.state.globals['player_heat'] = 42;
+    expect(buildEndgameInputs(engine.world).playerLeverage.heat).toBe(42);
+    // The other leverage axes have no persisting writer — they stay 0.
+    const lev = buildEndgameInputs(engine.world).playerLeverage;
+    expect(lev.favor).toBe(0);
+    expect(lev.influence).toBe(0);
+    expect(lev.legitimacy).toBe(0);
+  });
+
+  it('heat accrued by the REAL defeat-fallout module flows into the evaluator (5 per kill)', () => {
+    const engine = makeGame();
+    // starter-fantasy wires createDefeatFallout with the default heatPerKill: 5.
+    // Its listener reads entityId/defeatedBy off combat.entity.defeated.
+    engine.store.emitEvent(
+      'combat.entity.defeated',
+      { entityId: 'ash-ghoul', entityName: 'Ash Ghoul', defeatedBy: 'player' },
+      { actorId: 'player' },
+    );
+    expect(engine.world.globals['player_heat']).toBe(5);
+    expect(buildEndgameInputs(engine.world).playerLeverage.heat).toBe(5);
+  });
+
+  it('a non-numeric heat global degrades to 0, never NaN', () => {
+    const engine = makeGame();
+    engine.store.state.globals['player_heat'] = 'hot' as never;
+    expect(buildEndgameInputs(engine.world).playerLeverage.heat).toBe(0);
+  });
+
+  it('active pressures are read from world.modules["pressure-system"].activePressures', () => {
+    const engine = makeGame();
+    const pressure = makeTestPressure('wp-1');
+    engine.store.state.modules['pressure-system'] = { activePressures: [pressure] };
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.activePressures).toHaveLength(1);
+    expect(inputs.activePressures[0].id).toBe('wp-1');
+    expect(inputs.activePressures[0].kind).toBe('bounty-issued');
+  });
+
+  it('the "pressures" key is accepted as an alias; malformed shapes degrade to empty', () => {
+    const engine = makeGame();
+    engine.store.state.modules['pressure-system'] = { pressures: [makeTestPressure('wp-2')] };
+    expect(buildEndgameInputs(engine.world).activePressures.map((p) => p.id)).toEqual(['wp-2']);
+
+    engine.store.state.modules['pressure-system'] = { activePressures: 'not-an-array' };
+    expect(buildEndgameInputs(engine.world).activePressures).toEqual([]);
+  });
+
+  it('companions are read from world.modules["companion-core"].companions', () => {
+    const engine = makeGame();
+    const companion: CompanionState = {
+      npcId: 'sister-maren',
+      role: 'healer',
+      joinedAtTick: 3,
+      abilityTags: [],
+      morale: 80,
+      active: true,
+    };
+    engine.store.state.modules['companion-core'] = { companions: [companion] };
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.companions).toHaveLength(1);
+    expect(inputs.companions[0].npcId).toBe('sister-maren');
+    expect(inputs.companions[0].morale).toBe(80);
+  });
+
+  it('district economies are read from world.modules["economy-core"].districts', () => {
+    const engine = makeGame();
+    engine.store.state.modules['economy-core'] = {
+      districts: { 'chapel-grounds': createDistrictEconomy('fantasy') },
+    };
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.districtEconomies.size).toBe(1);
+    expect(inputs.districtEconomies.get('chapel-grounds')?.supplies.food.level).toBeGreaterThan(0);
+  });
+
+  it('playerLevel derives from progression-core unlocks (the HUD\'s notion: 1 + nodes unlocked)', () => {
+    const engine = makeGame();
+    expect(buildEndgameInputs(engine.world).playerLevel).toBe(1);
+
+    addCurrency(engine.store.state, 'player', 'xp', 30, engine.tick);
+    engine.submitAction('unlock', { parameters: { treeId: 'combat-mastery', nodeId: 'toughened' } });
+    expect(
+      combatMasteryTree.nodes.some((n) => n.id === 'toughened'), // the real tree, not a synthetic one
+    ).toBe(true);
+    expect(buildEndgameInputs(engine.world).playerLevel).toBe(2);
+  });
+
+  it('a lived-in world reaches a DIFFERENT ending than a zero-state world (exile vs plain defeat)', () => {
+    // Zero-state death: plain defeat framing.
+    const fresh = makeGame();
+    fresh.store.state.entities['player'].resources.hp = 0;
+    expect(evaluateSessionEnd(fresh)!.resolutionClass).toBe('defeat');
+
+    // Same death after a hunted, hated run: heat 85 (defeat-fallout's global),
+    // every faction hostile, no companions → checkExile's thresholds fire.
+    const lived = makeGame();
+    lived.store.state.factions['chapel-order'] = {
+      id: 'chapel-order', name: 'Chapel Order', reputation: -60, disposition: 'hostile',
+    };
+    lived.store.state.globals['player_heat'] = 85;
+    lived.store.state.modules['pressure-system'] = {
+      activePressures: [makeTestPressure('wp-a'), makeTestPressure('wp-b')],
+    };
+    lived.store.state.entities['player'].resources.hp = 0;
+
+    const end = evaluateSessionEnd(lived)!;
+    expect(end.kind).toBe('defeat');
+    expect(end.resolutionClass).toBe('exile');
+    expect(end.trigger?.evidence.heat).toBe(85);
+
+    // And the differentiation is visible at the inputs boundary itself.
+    const freshInputs = buildEndgameInputs(fresh.world);
+    const livedInputs = buildEndgameInputs(lived.world);
+    expect(freshInputs.playerLeverage.heat).toBe(0);
+    expect(livedInputs.playerLeverage.heat).toBe(85);
+    expect(freshInputs.activePressures).toHaveLength(0);
+    expect(livedInputs.activePressures).toHaveLength(2);
   });
 });
 

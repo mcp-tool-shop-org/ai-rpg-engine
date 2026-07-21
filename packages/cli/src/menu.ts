@@ -10,6 +10,10 @@
 // 1..N; this module appends entries N+1..N+M (ready abilities with resolved
 // targets, then affordable progression unlocks) that bin.ts renders below the
 // base menu and resolves in handlePlayerInput before the free-text fallback.
+//
+// F-ENG006 adds a last, env-gated entry (AI_RPG_DEBUG=1): a debug view that
+// renders every inspector the engine's modules registered (Engine.getInspectors
+// previously had zero consumers). See buildDebugActions / renderInspectorReport.
 
 import type { Engine, WorldState, EntityState, ScalarValue } from '@ai-rpg-engine/core';
 import type { AbilityDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
@@ -21,6 +25,7 @@ import {
   canUnlock,
 } from '@ai-rpg-engine/modules';
 import { getAbilityCatalog } from './turns.js';
+import { describeActionError } from './guard.js';
 
 /** One appended menu entry — shaped like terminal-ui's ActionOption plus a group label. */
 export type ExtraAction = {
@@ -28,7 +33,7 @@ export type ExtraAction = {
   targetIds?: string[];
   parameters?: Record<string, ScalarValue>;
   label: string;
-  group: 'ability' | 'advance';
+  group: 'ability' | 'advance' | 'debug';
 };
 
 /**
@@ -137,7 +142,74 @@ export function buildUnlockActions(
   return actions;
 }
 
-/** All appended entries, abilities first then unlocks — stable order, pure over state. */
+// ---------------------------------------------------------------------------
+// Debug — inspector report (F-ENG006)
+// ---------------------------------------------------------------------------
+
+/** The debug entry's label. Sentinel verb: routed by `group === 'debug'` in the
+ *  extras dispatch, never meant to reach the engine as an action. */
+export const DEBUG_MENU_LABEL = 'Debug: inspect simulation state';
+export const DEBUG_MENU_VERB = 'debug-inspect';
+
+/**
+ * The extras menu's debug entry — present ONLY when the operator set
+ * AI_RPG_DEBUG=1, so the player surface stays clean. Selecting it renders
+ * renderInspectorReport (the wiring routes on `group: 'debug'` instead of
+ * submitting the sentinel verb to the engine — inspection must not advance
+ * the world).
+ */
+export function buildDebugActions(
+  env: Record<string, string | undefined> = process.env,
+): ExtraAction[] {
+  if (env.AI_RPG_DEBUG !== '1') return [];
+  return [{ verb: DEBUG_MENU_VERB, label: DEBUG_MENU_LABEL, group: 'debug' }];
+}
+
+const DEBUG_RULE = '═'.repeat(60);
+
+/**
+ * Render every registered inspector's output (Engine.getInspectors — the 14
+ * per-starter inspectors that previously had zero consumers): label + id as a
+ * section title, then the inspected state pretty-printed as JSON. Plain text,
+ * two-space indented like the rest of the CLI — no new styling system.
+ *
+ * Guarded per inspector: a throwing `inspect` (or unserializable return, e.g.
+ * a circular structure) degrades to ONE bounded line via describeActionError
+ * and the report moves on — a buggy inspector can never take down the session
+ * or hide its siblings.
+ */
+export function renderInspectorReport(
+  engine: Pick<Engine, 'getInspectors' | 'world'>,
+): string {
+  const inspectors = engine.getInspectors();
+  const lines: string[] = [];
+  lines.push(`  ${DEBUG_RULE}`);
+  lines.push(`  DEBUG — SIMULATION INSPECTORS (${inspectors.length})`);
+  lines.push(`  ${DEBUG_RULE}`);
+
+  if (inspectors.length === 0) {
+    lines.push('');
+    lines.push('  No debug inspectors are registered for this pack.');
+    return lines.join('\n');
+  }
+
+  for (const inspector of inspectors) {
+    lines.push('');
+    lines.push(`  ── ${inspector.label} (${inspector.id}) ──`);
+    try {
+      const value = inspector.inspect(engine.world);
+      const body = JSON.stringify(value, null, 2) ?? String(value);
+      for (const bodyLine of body.split('\n')) lines.push(`  ${bodyLine}`);
+    } catch (err) {
+      lines.push(`  [inspector failed: ${describeActionError(err)}]`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/** All appended entries — abilities, then unlocks, then the env-gated debug
+ *  entry last. Stable order, pure over state. */
 export function buildExtraActions(
   engine: Engine,
   trees: ProgressionTreeDefinition[] = [],
@@ -145,6 +217,7 @@ export function buildExtraActions(
   return [
     ...buildAbilityActions(engine.world, getAbilityCatalog(engine)),
     ...buildUnlockActions(engine.world, trees),
+    ...buildDebugActions(),
   ];
 }
 
@@ -187,6 +260,19 @@ export function parseExtraSelection(
 // ---------------------------------------------------------------------------
 
 /**
+ * The player's level as the CLI understands it: 1 + total progression nodes
+ * the player unlocked across all trees (progression-core persists no explicit
+ * level of its own). Single authority shared by the HUD (buildHudWorld) and
+ * the endgame evaluator (buildEndgameInputs) so the two can never disagree.
+ */
+export function derivePlayerLevel(world: WorldState): number {
+  const unlockedByTree = (world.modules['progression-core'] as
+    | { unlocked?: Record<string, Record<string, string[]>> }
+    | undefined)?.unlocked?.[world.playerId] ?? {};
+  return 1 + Object.values(unlockedByTree).reduce((sum, nodes) => sum + nodes.length, 0);
+}
+
+/**
  * Display-only copy of the world whose player carries `xp` and `level`
  * pseudo-resources, so terminal-ui's existing vitals renderer (which renders
  * every player resource it is handed) shows them with zero terminal-ui
@@ -194,7 +280,7 @@ export function parseExtraSelection(
  * byte-identical to one taken before.
  *
  * xp    — progression-core currency balance (the trees' currency, default 'xp')
- * level — 1 + total progression nodes unlocked across all trees
+ * level — derivePlayerLevel (1 + total progression nodes unlocked across all trees)
  */
 export function buildHudWorld(
   world: WorldState,
@@ -205,11 +291,7 @@ export function buildHudWorld(
 
   const currencyId = trees[0]?.currency ?? 'xp';
   const xp = getCurrency(world, world.playerId, currencyId);
-
-  const unlockedByTree = (world.modules['progression-core'] as
-    | { unlocked?: Record<string, Record<string, string[]>> }
-    | undefined)?.unlocked?.[world.playerId] ?? {};
-  const level = 1 + Object.values(unlockedByTree).reduce((sum, nodes) => sum + nodes.length, 0);
+  const level = derivePlayerLevel(world);
 
   return {
     ...world,

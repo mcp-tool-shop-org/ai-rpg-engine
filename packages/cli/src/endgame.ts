@@ -22,6 +22,9 @@ import {
   getCurrency,
   type EndgameInputs,
   type EndgameTrigger,
+  type WorldPressure,
+  type CompanionState,
+  type DistrictEconomy,
 } from '@ai-rpg-engine/modules';
 import {
   CampaignJournal,
@@ -30,6 +33,7 @@ import {
   type FinaleNpcInput,
   type FinaleFactionInput,
 } from '@ai-rpg-engine/campaign-memory';
+import { derivePlayerLevel } from './menu.js';
 
 export type SessionEndKind = 'defeat' | 'victory';
 
@@ -73,12 +77,34 @@ export function detectBaseOutcome(world: WorldState): SessionEndKind | null {
   return null;
 }
 
+/** Narrow an unknown to an array of plain objects (the persisted-state shapes below). */
+function objectArray<T>(value: unknown): T[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is T => typeof v === 'object' && v !== null);
+}
+
 /**
- * Best-effort EndgameInputs from live world state. The starters wire a
- * fraction of the campaign layer (no leverage, pressures, or companions), so
- * the unavailable axes are passed as their empty/zero shapes — evaluateEndgame
- * simply finds those thresholds unmet. Faction alert/cohesion come from the
- * faction-cognition module when present; player reputation from world.factions.
+ * EndgameInputs from LIVE world state (F-ENG005 — the audit's hardcoded-zeros
+ * fix: every run fed `heat: 0` / `playerLevel: 1` / empty everything, so real
+ * play always converged on the same ending flavor). Each axis reads the
+ * namespace its module actually persists:
+ *
+ *  - heat            — world.globals['player_heat'], defeat-fallout's accrual key
+ *  - pressures       — world.modules['pressure-system'] when a starter wires the
+ *                      pressure tick (this wave, in a sibling change); absent → empty
+ *  - companions      — world.modules['companion-core'] when a wiring persists a
+ *                      party; no starter does yet → empty
+ *  - economies       — world.modules['economy-core'] when a wiring persists
+ *                      district economies; no starter does yet → empty
+ *  - playerLevel     — derived from progression-core unlocks (the HUD's own
+ *                      level notion, derivePlayerLevel)
+ *  - faction alert/cohesion — faction-cognition module when present
+ *  - player reputation      — world.factions
+ *
+ * Axes with NO persisting writer anywhere (npc-agency profiles/obligations,
+ * opportunity-core, pressure fallout, leverage other than heat) stay at their
+ * empty/zero shapes — no invented state; evaluateEndgame finds those
+ * thresholds unmet exactly as a world that never touched them.
  */
 export function buildEndgameInputs(world: WorldState): EndgameInputs {
   const player = world.entities[world.playerId];
@@ -109,21 +135,56 @@ export function buildEndgameInputs(world: WorldState): EndgameInputs {
     value: f.reputation,
   }));
 
+  // Heat: defeat-fallout accrues real heat at world.globals['player_heat']
+  // (its `heatKey`). The five other leverage axes have no persisting writer in
+  // any starter (player-leverage keeps no world.modules state), so they stay 0.
+  const heatRaw = world.globals['player_heat'];
+  const heat = typeof heatRaw === 'number' ? heatRaw : 0;
+
+  // Pressures: pressure-system's namespace, written by the starter pressure
+  // tick when wired (`activePressures`, with `pressures` accepted as an
+  // alias). Read defensively — engines without the tick have no namespace.
+  const pressureNs = world.modules['pressure-system'] as
+    | { activePressures?: unknown; pressures?: unknown }
+    | undefined;
+  const activePressures = objectArray<WorldPressure>(
+    pressureNs?.activePressures ?? pressureNs?.pressures,
+  );
+
+  // Companions: companion-core keeps no world.modules state in any starter yet;
+  // read its namespace (PartyState's `companions`) so a future wiring is picked
+  // up, else empty.
+  const companionNs = world.modules['companion-core'] as { companions?: unknown } | undefined;
+  const companions = objectArray<CompanionState>(companionNs?.companions);
+
+  // Economies: economy-core keeps no world.modules state in any starter yet;
+  // read its namespace (`districts`: districtId → DistrictEconomy, mirroring
+  // district-core's key) so a future wiring is picked up, else empty.
+  const economyNs = world.modules['economy-core'] as { districts?: unknown } | undefined;
+  const districtEconomies = new Map<string, DistrictEconomy>();
+  if (economyNs?.districts && typeof economyNs.districts === 'object') {
+    for (const [districtId, econ] of Object.entries(economyNs.districts as Record<string, unknown>)) {
+      if (econ && typeof econ === 'object') districtEconomies.set(districtId, econ as DistrictEconomy);
+    }
+  }
+
   const arcInputs = {
     factionStates,
     playerReputations,
-    playerLeverage: { favor: 0, debt: 0, blackmail: 0, influence: 0, heat: 0, legitimacy: 0 },
-    activePressures: [],
-    npcProfiles: [],
-    npcObligations: new Map(),
-    companions: [],
-    districtEconomies: new Map(),
-    activeOpportunities: [],
-    resolvedPressures: [],
+    playerLeverage: { favor: 0, debt: 0, blackmail: 0, influence: 0, heat, legitimacy: 0 },
+    activePressures,
+    npcProfiles: [], // npc-agency keeps no world.modules state — nothing to read
+    npcObligations: new Map(), // same — obligation ledgers are never persisted
+    companions,
+    districtEconomies,
+    activeOpportunities: [], // opportunity-core keeps no world.modules state
+    resolvedPressures: [], // pressure fallout is not persisted by any wiring yet
     resolvedOpportunities: [],
     playerHp,
     playerMaxHp,
-    playerLevel: 1,
+    // progression-core persists no explicit level; use the HUD's own notion
+    // (1 + nodes the player unlocked across all trees) so every surface agrees.
+    playerLevel: derivePlayerLevel(world),
     totalTurns: world.meta.tick,
     currentTick: world.meta.tick,
   };

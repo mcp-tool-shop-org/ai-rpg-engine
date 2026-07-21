@@ -2,7 +2,7 @@
 // (finally producing use-ability's parameters.abilityId) and XP-affordable
 // unlock entries; the HUD the renderer receives gains xp/level.
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createGame, combatMasteryTree } from '@ai-rpg-engine/starter-fantasy';
 import { addCurrency, getCurrency } from '@ai-rpg-engine/modules';
 import { buildActionList } from '@ai-rpg-engine/terminal-ui';
@@ -13,6 +13,10 @@ import {
   renderExtraActions,
   parseExtraSelection,
   buildHudWorld,
+  buildDebugActions,
+  renderInspectorReport,
+  derivePlayerLevel,
+  DEBUG_MENU_LABEL,
 } from './menu.js';
 import { getAbilityCatalog } from './turns.js';
 import { handlePlayerInput } from './bin.js';
@@ -189,5 +193,119 @@ describe('buildHudWorld (F1d) — XP/level in the HUD', () => {
     const hud = buildHudWorld(engine.world, []);
     expect(hud.entities['player'].resources.xp).toBe(0);
     expect(hud.entities['player'].resources.level).toBe(1);
+  });
+
+  it('derivePlayerLevel is the single level authority: 1 + unlocked nodes', () => {
+    const engine = makeDivineCryptGame();
+    expect(derivePlayerLevel(engine.world)).toBe(1);
+    addCurrency(engine.store.state, 'player', 'xp', 30, engine.tick);
+    engine.submitAction('unlock', { parameters: { treeId: 'combat-mastery', nodeId: 'toughened' } });
+    expect(derivePlayerLevel(engine.world)).toBe(2);
+    expect(buildHudWorld(engine.world, [combatMasteryTree]).entities['player'].resources.level).toBe(2);
+  });
+});
+
+// F-ENG006 — the engine's registered inspectors (Engine.getInspectors, until
+// now consumer-less) become reachable through an env-gated debug menu entry.
+describe('debug inspector entry (F-ENG006)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('the debug entry is HIDDEN without AI_RPG_DEBUG=1 (player surface stays clean)', () => {
+    vi.stubEnv('AI_RPG_DEBUG', '');
+    const engine = createGame(42); // no divine tag, no xp → no ability/unlock extras
+    expect(buildExtraActions(engine, [combatMasteryTree])).toEqual([]);
+    expect(buildDebugActions({})).toEqual([]);
+    expect(buildDebugActions({ AI_RPG_DEBUG: '0' })).toEqual([]);
+  });
+
+  it('AI_RPG_DEBUG=1 appends the debug entry last, and it renders in the extras section', () => {
+    vi.stubEnv('AI_RPG_DEBUG', '1');
+    const engine = createGame(42);
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    expect(extras).toHaveLength(1);
+    expect(extras[0].group).toBe('debug');
+    expect(extras[0].label).toBe(DEBUG_MENU_LABEL);
+
+    const rendered = renderExtraActions(extras, 6);
+    expect(rendered).toContain(`[7] ${DEBUG_MENU_LABEL}`);
+  });
+
+  it('the debug entry appends AFTER ability and unlock entries', () => {
+    vi.stubEnv('AI_RPG_DEBUG', '1');
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    player.tags = [...player.tags, 'divine'];
+    addCurrency(engine.store.state, 'player', 'xp', 20, engine.tick);
+
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    expect(extras.length).toBeGreaterThan(1);
+    expect(extras[extras.length - 1].group).toBe('debug');
+    expect(extras.slice(0, -1).every((e) => e.group !== 'debug')).toBe(true);
+  });
+
+  it('renderInspectorReport renders every inspector title + real content from a starter engine', () => {
+    const engine = createGame(42);
+    const inspectors = engine.getInspectors();
+    // starter-fantasy registers the simulation-inspector suite (10) plus the
+    // ability/combat observer inspectors — a real roster, not a stub.
+    expect(inspectors.length).toBeGreaterThanOrEqual(10);
+
+    const report = renderInspectorReport(engine);
+    expect(report).toContain(`DEBUG — SIMULATION INSPECTORS (${inspectors.length})`);
+    for (const inspector of inspectors) {
+      expect(report).toContain(`── ${inspector.label} (${inspector.id}) ──`);
+    }
+    // Real state flows through: the faction inspector shows the starter's faction.
+    expect(report).toContain('chapel-undead');
+  });
+
+  it('a throwing inspector degrades to ONE bounded line and its siblings still render', () => {
+    const engine = createGame(42);
+    const fake = {
+      world: engine.world,
+      getInspectors: () => [
+        { id: 'ok-a', label: 'OK A', inspect: () => ({ fine: true }) },
+        {
+          id: 'boom',
+          label: 'Boom',
+          inspect: (): unknown => {
+            throw new Error('kaboom\n'.repeat(100)); // multiline + pathological length
+          },
+        },
+        { id: 'ok-b', label: 'OK B', inspect: () => 'still here' },
+      ],
+    };
+
+    const report = renderInspectorReport(fake);
+    expect(report).toContain('"fine": true'); // first sibling rendered
+    expect(report).toContain('still here'); // sibling AFTER the thrower rendered — session survives
+
+    const failLines = report.split('\n').filter((l) => l.includes('[inspector failed:'));
+    expect(failLines).toHaveLength(1); // one line, not a stack
+    expect(failLines[0]).toContain('kaboom');
+    expect(failLines[0].length).toBeLessThan(280); // bounded (describeActionError caps the reason)
+  });
+
+  it('an unserializable (circular) inspector return is caught by the same guard', () => {
+    const engine = createGame(42);
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const fake = {
+      world: engine.world,
+      getInspectors: () => [{ id: 'cyc', label: 'Cyclic', inspect: () => circular }],
+    };
+    const report = renderInspectorReport(fake);
+    expect(report).toContain('── Cyclic (cyc) ──');
+    expect(report).toContain('[inspector failed:');
+  });
+
+  it('an engine with no inspectors says so instead of rendering an empty report', () => {
+    const engine = createGame(42);
+    const fake = { world: engine.world, getInspectors: () => [] };
+    const report = renderInspectorReport(fake);
+    expect(report).toContain('DEBUG — SIMULATION INSPECTORS (0)');
+    expect(report).toContain('No debug inspectors are registered for this pack.');
   });
 });
