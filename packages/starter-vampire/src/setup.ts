@@ -228,13 +228,13 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity(structuredClone(player));
-  engine.store.addEntity(structuredClone(duchessMorvaine));
-  engine.store.addEntity(structuredClone(cassius));
-  engine.store.addEntity(structuredClone(servantElara));
-  engine.store.addEntity(structuredClone(witchHunter));
-  engine.store.addEntity(structuredClone(feralThrall));
-  engine.store.addEntity(structuredClone(elderVampire));
+  engine.store.addEntity(player);
+  engine.store.addEntity(duchessMorvaine);
+  engine.store.addEntity(cassius);
+  engine.store.addEntity(servantElara);
+  engine.store.addEntity(witchHunter);
+  engine.store.addEntity(feralThrall);
+  engine.store.addEntity(elderVampire);
 
   // Set player
   engine.store.state.playerId = 'player';

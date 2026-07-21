@@ -49,13 +49,14 @@ describe('fantasy setup — unstable-floor hazard (ST-04)', () => {
 
 // ═══════════════════════════════════════════════════════════════════
 // CROSS-INSTANCE STATE ISOLATION
-// setup.ts inserts entities from module-level constants. A shallow spread
-// (`addEntity({ ...ashGhoul })`) copies only the top level — the nested
-// resources/stats/statuses/tags/ai objects stay SHARED across every engine
-// built from this module in one process. Combat damage (or the CLI's NPC
-// turn driver killing an enemy) in engine A would then permanently mutate
-// the constant, so a LATER createGame() boots with a dead enemy. The fix is
-// structuredClone at insertion. Same class as F-71ec5dcd.
+// setup.ts inserts entities from module-level constants. If insertion kept
+// the caller's reference, the nested resources/stats/statuses/tags/ai
+// objects would be SHARED across every engine built from this module in one
+// process: combat damage (or the CLI's NPC turn driver killing an enemy) in
+// engine A would permanently mutate the constant, so a LATER createGame()
+// boots with a dead enemy. The invariant that prevents this is store-level:
+// WorldStore.addEntity/addZone detach their argument at ingestion. Same
+// class as F-71ec5dcd.
 // ═══════════════════════════════════════════════════════════════════
 describe('fantasy setup — cross-instance state isolation', () => {
   it('killing an enemy in engine A does not carry into a fresh engine B', () => {

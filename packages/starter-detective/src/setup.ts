@@ -197,13 +197,13 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity(structuredClone(player));
-  engine.store.addEntity(structuredClone(widow));
-  engine.store.addEntity(structuredClone(constable));
-  engine.store.addEntity(structuredClone(servant));
-  engine.store.addEntity(structuredClone(thug));
-  engine.store.addEntity(structuredClone(hiredMuscle));
-  engine.store.addEntity(structuredClone(crimeBoss));
+  engine.store.addEntity(player);
+  engine.store.addEntity(widow);
+  engine.store.addEntity(constable);
+  engine.store.addEntity(servant);
+  engine.store.addEntity(thug);
+  engine.store.addEntity(hiredMuscle);
+  engine.store.addEntity(crimeBoss);
 
   // Set player
   engine.store.state.playerId = 'inspector';

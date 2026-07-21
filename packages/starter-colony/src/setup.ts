@@ -211,12 +211,12 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity(structuredClone(player));
-  engine.store.addEntity(structuredClone(scientist));
-  engine.store.addEntity(structuredClone(security));
-  engine.store.addEntity(structuredClone(drone));
-  engine.store.addEntity(structuredClone(resonance));
-  engine.store.addEntity(structuredClone(swarmLarva));
+  engine.store.addEntity(player);
+  engine.store.addEntity(scientist);
+  engine.store.addEntity(security);
+  engine.store.addEntity(drone);
+  engine.store.addEntity(resonance);
+  engine.store.addEntity(swarmLarva);
 
   // Set player
   engine.store.state.playerId = 'commander';

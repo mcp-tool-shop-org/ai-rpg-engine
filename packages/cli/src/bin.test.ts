@@ -458,10 +458,6 @@ describe('resume-from-save (F1c)', () => {
   /** A fantasy session with visible progress: moved to the nave, took damage. */
   function makeProgressedGame() {
     const engine = createFantasyGame(42);
-    // Detach shallow-shared content entity state (see turns.test.ts).
-    for (const e of Object.values(engine.store.state.entities)) {
-      engine.store.state.entities[e.id] = structuredClone(e);
-    }
     engine.submitAction('move', { targetIds: ['chapel-nave'] });
     engine.store.state.entities['player'].resources.hp = 13;
     return engine;

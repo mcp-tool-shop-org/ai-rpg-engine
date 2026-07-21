@@ -36,7 +36,9 @@ describe('packaging: the `ai` bin is installable', () => {
 
   it('src/bin.ts starts with a node shebang (tsc preserves it into dist)', async () => {
     const src = await readFile(join(pkgRoot, 'src', 'bin.ts'), 'utf-8');
-    expect(src.startsWith('#!/usr/bin/env node\n')).toBe(true);
+    // First LINE, eol-tolerant: the honest claim is about the shebang, not the
+    // checkout's line endings (a CRLF working tree must not fail this).
+    expect(src.split(/\r?\n/)[0]).toBe('#!/usr/bin/env node');
   });
 
   it('built dist/bin.js exists and starts with the shebang', async () => {

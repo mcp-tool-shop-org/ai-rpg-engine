@@ -15,13 +15,7 @@ import {
 } from './endgame.js';
 
 function makeGame() {
-  const engine = createGame(42);
-  // Starter content entities are shallow-copied module constants — detach
-  // nested state so tests never bleed into each other (see turns.test.ts).
-  for (const e of Object.values(engine.store.state.entities)) {
-    engine.store.state.entities[e.id] = structuredClone(e);
-  }
-  return engine;
+  return createGame(42);
 }
 
 describe('detectBaseOutcome (F1b)', () => {

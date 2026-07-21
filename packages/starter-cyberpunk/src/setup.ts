@@ -202,12 +202,12 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity(structuredClone(player));
-  engine.store.addEntity(structuredClone(fixer));
-  engine.store.addEntity(structuredClone(rez));
-  engine.store.addEntity(structuredClone(iceAgent));
-  engine.store.addEntity(structuredClone(streetRunner));
-  engine.store.addEntity(structuredClone(vaultOverseer));
+  engine.store.addEntity(player);
+  engine.store.addEntity(fixer);
+  engine.store.addEntity(rez);
+  engine.store.addEntity(iceAgent);
+  engine.store.addEntity(streetRunner);
+  engine.store.addEntity(vaultOverseer);
 
   // Set player
   engine.store.state.playerId = 'runner';

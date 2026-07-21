@@ -303,8 +303,16 @@ export class WorldStore {
 
   // --- Entity operations ---
 
+  /**
+   * Ingest an entity. The store owns its state: the argument is detached
+   * (structuredClone) at ingestion, so mutating the argument after the call
+   * never reaches the store, and store mutations never reach the caller's
+   * object. Root-cause fix for the F-71ec5dcd cross-instance bleed class —
+   * content constants fed to multiple stores no longer alias nested state.
+   * Re-adding an id still replaces (last definition wins).
+   */
   addEntity(entity: EntityState): void {
-    this.state.entities[entity.id] = entity;
+    this.state.entities[entity.id] = structuredClone(entity);
   }
 
   getEntity(id: string): EntityState | undefined {
@@ -327,8 +335,13 @@ export class WorldStore {
 
   // --- Zone operations ---
 
+  /**
+   * Ingest a zone. Same ownership contract as addEntity: the argument is
+   * detached (structuredClone) at ingestion — neither side sees the other's
+   * later mutations (F-71ec5dcd). Re-adding an id still replaces.
+   */
   addZone(zone: ZoneState): void {
-    this.state.zones[zone.id] = zone;
+    this.state.zones[zone.id] = structuredClone(zone);
   }
 
   getZone(id: string): ZoneState | undefined {

@@ -211,13 +211,13 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity(structuredClone(player));
-  engine.store.addEntity(structuredClone(quartermaster));
-  engine.store.addEntity(structuredClone(cartographer));
-  engine.store.addEntity(structuredClone(governor));
-  engine.store.addEntity(structuredClone(navySailor));
-  engine.store.addEntity(structuredClone(seaBeast));
-  engine.store.addEntity(structuredClone(boardingMarine));
+  engine.store.addEntity(player);
+  engine.store.addEntity(quartermaster);
+  engine.store.addEntity(cartographer);
+  engine.store.addEntity(governor);
+  engine.store.addEntity(navySailor);
+  engine.store.addEntity(seaBeast);
+  engine.store.addEntity(boardingMarine);
 
   // Set player
   engine.store.state.playerId = 'captain';

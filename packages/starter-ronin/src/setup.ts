@@ -226,13 +226,13 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity(structuredClone(player));
-  engine.store.addEntity(structuredClone(lordTakeda));
-  engine.store.addEntity(structuredClone(ladyHimiko));
-  engine.store.addEntity(structuredClone(magistrateSato));
-  engine.store.addEntity(structuredClone(shadowAssassin));
-  engine.store.addEntity(structuredClone(corruptSamurai));
-  engine.store.addEntity(structuredClone(castleGuard));
+  engine.store.addEntity(player);
+  engine.store.addEntity(lordTakeda);
+  engine.store.addEntity(ladyHimiko);
+  engine.store.addEntity(magistrateSato);
+  engine.store.addEntity(shadowAssassin);
+  engine.store.addEntity(corruptSamurai);
+  engine.store.addEntity(castleGuard);
 
   // Set player
   engine.store.state.playerId = 'player';

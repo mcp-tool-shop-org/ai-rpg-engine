@@ -180,13 +180,13 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity(structuredClone(player));
-  engine.store.addEntity(structuredClone(pilgrim));
-  engine.store.addEntity(structuredClone(brotherAldric));
-  engine.store.addEntity(structuredClone(sisterMaren));
-  engine.store.addEntity(structuredClone(ashGhoul));
-  engine.store.addEntity(structuredClone(cryptStalker));
-  engine.store.addEntity(structuredClone(cryptWarden));
+  engine.store.addEntity(player);
+  engine.store.addEntity(pilgrim);
+  engine.store.addEntity(brotherAldric);
+  engine.store.addEntity(sisterMaren);
+  engine.store.addEntity(ashGhoul);
+  engine.store.addEntity(cryptStalker);
+  engine.store.addEntity(cryptWarden);
 
   // Set player
   engine.store.state.playerId = 'player';

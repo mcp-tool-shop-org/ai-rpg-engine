@@ -221,12 +221,12 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity(structuredClone(player));
-  engine.store.addEntity(structuredClone(bartender));
-  engine.store.addEntity(structuredClone(sheriff));
-  engine.store.addEntity(structuredClone(revenant));
-  engine.store.addEntity(structuredClone(crawler));
-  engine.store.addEntity(structuredClone(banditRider));
+  engine.store.addEntity(player);
+  engine.store.addEntity(bartender);
+  engine.store.addEntity(sheriff);
+  engine.store.addEntity(revenant);
+  engine.store.addEntity(crawler);
+  engine.store.addEntity(banditRider);
 
   // Set player
   engine.store.state.playerId = 'drifter';

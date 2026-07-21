@@ -20,10 +20,6 @@ import { handlePlayerInput } from './bin.js';
 /** Fantasy game with a divine player (ability requirements) in the crypt. */
 function makeDivineCryptGame() {
   const engine = createGame(42);
-  // Detach shallow-shared content entity state (see turns.test.ts).
-  for (const e of Object.values(engine.store.state.entities)) {
-    engine.store.state.entities[e.id] = structuredClone(e);
-  }
   const player = engine.store.state.entities['player'];
   player.tags = [...player.tags, 'divine'];
   player.zoneId = 'crypt-chamber';
@@ -49,9 +45,6 @@ describe('buildAbilityActions (F1d)', () => {
 
   it('offensive abilities never offer FRIENDLY NPCs as targets (live-caught: Holy Smite → the pilgrim)', () => {
     const engine = createGame(42);
-    for (const e of Object.values(engine.store.state.entities)) {
-      engine.store.state.entities[e.id] = structuredClone(e);
-    }
     const player = engine.store.state.entities['player'];
     player.tags = [...player.tags, 'divine'];
     // Player stays at chapel-entrance with the pilgrim + Sister Maren (both
@@ -66,9 +59,6 @@ describe('buildAbilityActions (F1d)', () => {
 
   it('abilities the player does not qualify for are not listed (no menu-offers-it, engine-rejects-it trap)', () => {
     const engine = createGame(42); // no divine tag
-    for (const e of Object.values(engine.store.state.entities)) {
-      engine.store.state.entities[e.id] = structuredClone(e);
-    }
     const actions = buildAbilityActions(engine.world, getAbilityCatalog(engine));
     expect(actions).toEqual([]);
   });

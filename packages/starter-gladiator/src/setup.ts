@@ -221,13 +221,13 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity(structuredClone(player));
-  engine.store.addEntity(structuredClone(lanistaBrutus));
-  engine.store.addEntity(structuredClone(dominaValeria));
-  engine.store.addEntity(structuredClone(nerva));
-  engine.store.addEntity(structuredClone(arenaChampion));
-  engine.store.addEntity(structuredClone(warBeast));
-  engine.store.addEntity(structuredClone(arenaOverlord));
+  engine.store.addEntity(player);
+  engine.store.addEntity(lanistaBrutus);
+  engine.store.addEntity(dominaValeria);
+  engine.store.addEntity(nerva);
+  engine.store.addEntity(arenaChampion);
+  engine.store.addEntity(warBeast);
+  engine.store.addEntity(arenaOverlord);
 
   // Set player
   engine.store.state.playerId = 'player';

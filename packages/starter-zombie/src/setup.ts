@@ -182,13 +182,13 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity(structuredClone(player));
-  engine.store.addEntity(structuredClone(medic));
-  engine.store.addEntity(structuredClone(scavenger));
-  engine.store.addEntity(structuredClone(leader));
-  engine.store.addEntity(structuredClone(shambler));
-  engine.store.addEntity(structuredClone(runner));
-  engine.store.addEntity(structuredClone(bloaterAlpha));
+  engine.store.addEntity(player);
+  engine.store.addEntity(medic);
+  engine.store.addEntity(scavenger);
+  engine.store.addEntity(leader);
+  engine.store.addEntity(shambler);
+  engine.store.addEntity(runner);
+  engine.store.addEntity(bloaterAlpha);
 
   // Set player
   engine.store.state.playerId = 'survivor';
