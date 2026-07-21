@@ -68,6 +68,17 @@ jobs:
       # packages so README/handbook "runnable" snippets cannot drift from the API.
       - name: Typecheck doc examples
         run: npx tsc -p docs/examples/tsconfig.json --noEmit
+      # Test-file typecheck gate (PROD-008): every package tsconfig excludes
+      # src/**/*.test.ts (tests must not ship in dist), so `npm run build`
+      # never sees test files and type errors in them accumulated silently —
+      # 203 had piled up when this gate landed. tsconfig.tests.json is a flat
+      # noEmit config over packages/*/src INCLUDING tests; cross-package
+      # imports resolve against the dist/*.d.ts the build step just produced,
+      # which is why this runs after build. One leg only — the check is
+      # node-version independent, same as the packaging gate below.
+      - name: Typecheck test files
+        if: matrix.node-version == 22
+        run: npm run typecheck:tests
       # Doc examples are also BEHAVIOR-tested (examples.test.ts), but the root
       # vitest config only includes packages/*, templates/*, and scripts/* — the
       # examples' tests run solely via their dedicated config. Executing them

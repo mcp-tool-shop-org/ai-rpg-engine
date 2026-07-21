@@ -86,7 +86,7 @@ describe('Pirate — Broadside', () => {
     };
     const engine = buildPirateEngine({ playerCunning: 15, extraEnemies: [extra] });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'captain', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'captain', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'broadside' }, targetIds: [],
     });
 
@@ -115,7 +115,7 @@ describe('Pirate — Broadside', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'captain', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'captain', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'broadside' }, targetIds: [],
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
@@ -126,7 +126,7 @@ describe('Pirate — Dirty Fighting', () => {
   it('deals damage and applies blinded status', () => {
     const engine = buildPirateEngine({ playerCunning: 15 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'captain', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'captain', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'dirty-fighting' }, targetIds: ['sailor'],
     });
 
@@ -143,7 +143,7 @@ describe('Pirate — Dirty Fighting', () => {
   it('has short cooldown of 2', () => {
     const engine = buildPirateEngine();
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'captain', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'captain', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'dirty-fighting' }, targetIds: ['sailor'],
     });
     expect(isAbilityReady(engine.store.state, 'captain', 'dirty-fighting', allPirateAbilities)).toBe(false);
@@ -159,7 +159,7 @@ describe('Pirate — Sea Shanty', () => {
   it('heals and buffs when morale sufficient', () => {
     const engine = buildPirateEngine({ playerSeaLegs: 15, playerMorale: 20 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'captain', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'captain', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'sea-shanty' }, targetIds: [],
     });
 
@@ -173,7 +173,7 @@ describe('Pirate — Sea Shanty', () => {
   it('rejects when morale too low', () => {
     const engine = buildPirateEngine({ playerMorale: 2 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'captain', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'captain', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'sea-shanty' }, targetIds: [],
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
@@ -182,7 +182,7 @@ describe('Pirate — Sea Shanty', () => {
   it('generates review trace', () => {
     const engine = buildPirateEngine({ playerSeaLegs: 15 });
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'captain', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'captain', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'sea-shanty' }, targetIds: [],
     });
     const traces = engine.drainEvents().filter(e => e.type === 'ability.review.trace');
@@ -228,7 +228,7 @@ describe('Pirate — Rum Courage (cleanse)', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'captain', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'captain', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'rum-courage' }, targetIds: [],
     });
 
@@ -244,7 +244,7 @@ describe('Pirate — Rum Courage (cleanse)', () => {
   it('costs stamina and morale', () => {
     const engine = buildPirateEngine({ playerSeaLegs: 15 });
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'captain', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'captain', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'rum-courage' }, targetIds: [],
     });
     const p = engine.store.state.entities['captain']!;
@@ -303,7 +303,7 @@ describe('Pirate — Resistance profiles', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'captain', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'captain', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'intimidate' }, targetIds: ['guardian'],
     });
 
@@ -340,7 +340,7 @@ describe('Pirate — Resistance profiles', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'captain', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'captain', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'dirty-fighting' }, targetIds: ['marine'],
     });
 

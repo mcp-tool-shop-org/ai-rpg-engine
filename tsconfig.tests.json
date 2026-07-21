@@ -1,0 +1,23 @@
+{
+  // PROD-008: test-file typecheck gate. The per-package tsconfigs exclude
+  // src/**/*.test.ts (tests must not ship in dist), which left every test
+  // file invisible to `tsc` — type errors in tests only surfaced as editor
+  // squiggles. This FLAT config type-checks every package's src INCLUDING
+  // tests in one pass (no project references, no emit). Cross-package
+  // imports (@ai-rpg-engine/*) resolve through the workspace symlinks to
+  // each package's built dist/*.d.ts, so `npm run build` must run first —
+  // which is also the CI step order (build, then typecheck:tests).
+  // Run via: npm run typecheck:tests
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // The base config is composite (project-references driver). A flat
+    // check-only pass must not be: composite forces declaration emit and
+    // conflicts with noEmit.
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "noEmit": true
+  },
+  "include": ["packages/*/src"]
+}

@@ -85,7 +85,7 @@ describe('Vampire — Blood Drain', () => {
   it('deals damage, heals actor, and increases bloodlust', () => {
     const engine = buildVampireEngine();
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'blood-drain' }, targetIds: ['hunter'],
     });
 
@@ -112,7 +112,7 @@ describe('Vampire — Blood Drain', () => {
   it('deducts stamina cost', () => {
     const engine = buildVampireEngine({ playerStamina: 10 });
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'blood-drain' }, targetIds: ['hunter'],
     });
 
@@ -123,7 +123,7 @@ describe('Vampire — Blood Drain', () => {
   it('sets cooldown after use', () => {
     const engine = buildVampireEngine();
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'blood-drain' }, targetIds: ['hunter'],
     });
 
@@ -140,7 +140,7 @@ describe('Vampire — Mesmerize', () => {
   it('applies mesmerized status and reduces cunning', () => {
     const engine = buildVampireEngine({ playerPresence: 15 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'mesmerize' }, targetIds: ['hunter'],
     });
 
@@ -164,7 +164,7 @@ describe('Vampire — Mesmerize', () => {
   it('costs humanity when used', () => {
     const engine = buildVampireEngine({ playerPresence: 15, playerHumanity: 20 });
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'mesmerize' }, targetIds: ['hunter'],
     });
 
@@ -175,7 +175,7 @@ describe('Vampire — Mesmerize', () => {
   it('aborts on failed presence check with low presence', () => {
     const engine = buildVampireEngine({ playerPresence: 1 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'mesmerize' }, targetIds: ['hunter'],
     });
 
@@ -201,7 +201,7 @@ describe('Vampire — Crimson Fury', () => {
   it('requires 20 bloodlust to use', () => {
     const engine = buildVampireEngine({ playerBloodlust: 10 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'crimson-fury' }, targetIds: [],
     });
 
@@ -220,7 +220,7 @@ describe('Vampire — Crimson Fury', () => {
     };
     const engine = buildVampireEngine({ playerBloodlust: 30, playerVitality: 15, extraEnemies: [extra] });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'crimson-fury' }, targetIds: [],
     });
 
@@ -235,7 +235,7 @@ describe('Vampire — Crimson Fury', () => {
   it('has long cooldown of 5', () => {
     const engine = buildVampireEngine({ playerBloodlust: 30, playerVitality: 15 });
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'crimson-fury' }, targetIds: [],
     });
 
@@ -256,7 +256,7 @@ describe('Vampire — Blood Purge (cleanse)', () => {
   it('costs stamina and humanity', () => {
     const engine = buildVampireEngine({ playerVitality: 15, playerHumanity: 20 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'blood-purge' }, targetIds: [],
     });
 
@@ -296,7 +296,7 @@ describe('Vampire — Blood Purge (cleanse)', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'blood-purge' }, targetIds: [],
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
@@ -305,7 +305,7 @@ describe('Vampire — Blood Purge (cleanse)', () => {
   it('sets cooldown after use', () => {
     const engine = buildVampireEngine({ playerVitality: 15 });
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'blood-purge' }, targetIds: [],
     });
     expect(isAbilityReady(engine.store.state, 'player', 'blood-purge', allVampireAbilities)).toBe(false);
@@ -344,7 +344,7 @@ describe('Vampire — Cross-cutting', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'blood-drain' }, targetIds: ['hunter'],
     });
 
@@ -355,7 +355,7 @@ describe('Vampire — Cross-cutting', () => {
   it('generates review trace via drainEvents', () => {
     const engine = buildVampireEngine();
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'blood-drain' }, targetIds: ['hunter'],
     });
 

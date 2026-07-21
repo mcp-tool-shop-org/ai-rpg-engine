@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { CharacterBuild } from '@ai-rpg-engine/character-creation';
+import type { Milestone } from './types.js';
 import { createProfile } from './profile.js';
 import {
   recordMilestone,
@@ -51,12 +52,14 @@ describe('recordMilestone', () => {
   });
 
   // CP-05: milestone ids must be deterministic (no Date.now / Math.random).
-  const first = {
+  // Typed as recordMilestone's own parameter type (was `as const`, whose
+  // readonly array type is not assignable to the mutable Omit<Milestone, ...>).
+  const first: Omit<Milestone, 'id'> = {
     label: 'First',
     description: 'First event.',
     at: 'turn-1',
     tags: ['story'],
-  } as const;
+  };
 
   it('generates reproducible milestone ids from the same profile state', () => {
     const a = recordMilestone(makeProfile(), first);

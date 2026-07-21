@@ -35,6 +35,7 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "typecheck": "tsc --build",
+    "typecheck:tests": "tsc -p tsconfig.tests.json",
     "verify": "npm run build && npm run test"
   },
   "devDependencies": {

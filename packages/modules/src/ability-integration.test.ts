@@ -74,7 +74,7 @@ describe('Fantasy — Holy Smite (full stack)', () => {
   it('deals damage and applies holy-fire status', () => {
     const engine = buildFantasyEngine();
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'holy-smite' }, targetIds: ['ghoul'],
     });
 
@@ -105,7 +105,7 @@ describe('Fantasy — Holy Smite (full stack)', () => {
   it('sets cooldown after use', () => {
     const engine = buildFantasyEngine();
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'holy-smite' }, targetIds: ['ghoul'],
     });
 
@@ -138,7 +138,7 @@ describe('Fantasy — Holy Smite (full stack)', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'holy-smite' }, targetIds: ['ghoul'],
     });
 
@@ -151,7 +151,7 @@ describe('Fantasy — Holy Smite (full stack)', () => {
     const engine = buildFantasyEngine({ playerStamina: 2 }); // needs 3
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'holy-smite' }, targetIds: ['ghoul'],
     });
 
@@ -164,7 +164,7 @@ describe('Fantasy — Holy Smite (full stack)', () => {
     const engine = buildFantasyEngine({ enemyHp: 3 }); // 6 dmg > 3 hp (or 3 half-dmg = 3 hp)
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'holy-smite' }, targetIds: ['ghoul'],
     });
 
@@ -180,7 +180,7 @@ describe('Fantasy — Holy Smite (full stack)', () => {
   it('generates review trace via drainEvents', () => {
     const engine = buildFantasyEngine();
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'holy-smite' }, targetIds: ['ghoul'],
     });
 
@@ -244,7 +244,7 @@ describe('Cyberpunk — ICE Breaker (full stack)', () => {
   it('deals net damage and applies system-breach', () => {
     const engine = buildCyberpunkEngine();
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'runner', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'runner', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'ice-breaker-hack' }, targetIds: ['sentry'],
     });
 
@@ -267,7 +267,7 @@ describe('Cyberpunk — ICE Breaker (full stack)', () => {
   it('has shorter cooldown (2 ticks)', () => {
     const engine = buildCyberpunkEngine();
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'runner', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'runner', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'ice-breaker-hack' }, targetIds: ['sentry'],
     });
 
@@ -345,7 +345,7 @@ describe('Weird West — Dust Devil (full stack)', () => {
     // High lore (15) almost guarantees passing the difficulty 9 check
     const engine = buildWeirdWestEngine({ playerLore: 15 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'drifter', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'drifter', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'dust-devil' },
     });
 
@@ -382,7 +382,7 @@ describe('Weird West — Dust Devil (full stack)', () => {
     const engine = buildWeirdWestEngine({ playerDust: 5 }); // needs 10
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'drifter', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'drifter', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'dust-devil' },
     });
 
@@ -396,7 +396,7 @@ describe('Weird West — Dust Devil (full stack)', () => {
     const engine = buildWeirdWestEngine({ playerLore: 1 });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'drifter', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'drifter', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'dust-devil' },
     });
 
@@ -414,7 +414,7 @@ describe('Weird West — Dust Devil (full stack)', () => {
   it('scales with number of enemies (AoE)', () => {
     const engine3 = buildWeirdWestEngine({ numEnemies: 3, playerLore: 18 });
     const events3 = engine3.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'drifter', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'drifter', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'dust-devil' },
     });
 
@@ -428,7 +428,7 @@ describe('Weird West — Dust Devil (full stack)', () => {
   it('has long cooldown (4 ticks)', () => {
     const engine = buildWeirdWestEngine({ playerLore: 18 });
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'drifter', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'drifter', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'dust-devil' },
     });
 
@@ -448,7 +448,7 @@ describe('Ability System — Edge Cases', () => {
     engine.entity('ghoul').resources.hp = 0;
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'holy-smite' }, targetIds: ['ghoul'],
     });
 
@@ -461,7 +461,7 @@ describe('Ability System — Edge Cases', () => {
     const engine = buildFantasyEngine();
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'nonexistent' }, targetIds: ['ghoul'],
     });
 
@@ -476,14 +476,14 @@ describe('Ability System — Edge Cases', () => {
 
     // Use at tick 1, cooldown 2 → expires at tick 3
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'runner', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'runner', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'ice-breaker-hack' }, targetIds: ['sentry'],
     });
     expect(isAbilityOnCooldown(engine.store.state, 'runner', 'ice-breaker-hack')).toBe(true);
 
     // Attempt at tick 2 — still on cooldown
     const events2 = engine.processAction({
-      id: 'a2', verb: 'use-ability', actorId: 'runner', issuedAtTick: 2,
+      id: 'a2', verb: 'use-ability', actorId: 'runner', source: 'player', issuedAtTick: 2,
       parameters: { abilityId: 'ice-breaker-hack' }, targetIds: ['sentry'],
     });
     const rejected2 = events2.find(e => e.type === 'ability.rejected');
@@ -492,7 +492,7 @@ describe('Ability System — Edge Cases', () => {
 
     // Attempt at tick 4 — cooldown should be expired
     const events4 = engine.processAction({
-      id: 'a3', verb: 'use-ability', actorId: 'runner', issuedAtTick: 4,
+      id: 'a3', verb: 'use-ability', actorId: 'runner', source: 'player', issuedAtTick: 4,
       parameters: { abilityId: 'ice-breaker-hack' }, targetIds: ['sentry'],
     });
     const used4 = events4.find(e => e.type === 'ability.used');
@@ -509,7 +509,7 @@ describe('Ability System — Edge Cases', () => {
 
     // Use the ability to put it on cooldown
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'holy-smite' }, targetIds: ['ghoul'],
     });
 
@@ -539,7 +539,7 @@ describe('Ability System — Edge Cases', () => {
   it('formatAbilityTrace produces readable output', () => {
     const engine = buildFantasyEngine();
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'holy-smite' }, targetIds: ['ghoul'],
     });
 
@@ -557,7 +557,7 @@ describe('Ability System — Edge Cases', () => {
     const engine = buildFantasyEngine({ playerStamina: 20, enemyHp: 50 });
 
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'holy-smite' }, targetIds: ['ghoul'],
     });
 
@@ -568,7 +568,7 @@ describe('Ability System — Edge Cases', () => {
     engine.store.advanceTick(); // tick 4
 
     const events2 = engine.processAction({
-      id: 'a2', verb: 'use-ability', actorId: 'player', issuedAtTick: 5,
+      id: 'a2', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 5,
       parameters: { abilityId: 'holy-smite' }, targetIds: ['ghoul'],
     });
 

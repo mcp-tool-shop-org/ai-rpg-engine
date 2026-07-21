@@ -88,7 +88,7 @@ describe('Zombie — Desperate Swing', () => {
   it('deals damage and costs stamina', () => {
     const engine = buildZombieEngine();
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'desperate-swing' }, targetIds: ['zombie-0'],
     });
 
@@ -117,7 +117,7 @@ describe('Zombie — Desperate Swing', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'desperate-swing' }, targetIds: ['target'],
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
@@ -132,7 +132,7 @@ describe('Zombie — Field Triage', () => {
   it('heals HP and reduces infection', () => {
     const engine = buildZombieEngine({ playerHp: 10, playerInfection: 20, playerWits: 15 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'field-triage' }, targetIds: [],
     });
 
@@ -148,7 +148,7 @@ describe('Zombie — Field Triage', () => {
   it('sets cooldown after use', () => {
     const engine = buildZombieEngine({ playerWits: 15 });
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'field-triage' }, targetIds: [],
     });
     expect(isAbilityReady(engine.store.state, 'player', 'field-triage', allZombieAbilities)).toBe(false);
@@ -168,7 +168,7 @@ describe('Zombie — War Cry', () => {
   it('applies rattled to all enemies and costs infection', () => {
     const engine = buildZombieEngine({ playerNerve: 15, playerInfection: 20, numEnemies: 2 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'war-cry' },
     });
 
@@ -187,7 +187,7 @@ describe('Zombie — War Cry', () => {
   it('rejects when infection resource is too low', () => {
     const engine = buildZombieEngine({ playerInfection: 2 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'war-cry' },
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
@@ -232,7 +232,7 @@ describe('Zombie — Survival Instinct (cleanse)', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'survival-instinct' }, targetIds: [],
     });
 
@@ -284,7 +284,7 @@ describe('Zombie — Resistance profiles', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'war-cry' },
     });
 
@@ -341,7 +341,7 @@ describe('Zombie — Resistance profiles', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'test-control' }, targetIds: ['shambler'],
     });
 

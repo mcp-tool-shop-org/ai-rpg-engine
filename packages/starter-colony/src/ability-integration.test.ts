@@ -83,7 +83,7 @@ describe('Colony — Plasma Burst', () => {
   it('deals damage and costs stamina + power', () => {
     const engine = buildColonyEngine();
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'plasma-burst' }, targetIds: ['drone'],
     });
 
@@ -113,7 +113,7 @@ describe('Colony — Plasma Burst', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'plasma-burst' }, targetIds: ['target'],
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
@@ -128,7 +128,7 @@ describe('Colony — Emergency Protocol', () => {
   it('heals HP and restores power', () => {
     const engine = buildColonyEngine({ playerHp: 10, playerPower: 30, playerCommand: 15 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'emergency-protocol' }, targetIds: [],
     });
 
@@ -144,7 +144,7 @@ describe('Colony — Emergency Protocol', () => {
   it('sets cooldown after use', () => {
     const engine = buildColonyEngine({ playerCommand: 15 });
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'emergency-protocol' }, targetIds: [],
     });
     expect(isAbilityReady(engine.store.state, 'player', 'emergency-protocol', allColonyAbilities)).toBe(false);
@@ -164,7 +164,7 @@ describe('Colony — System Override', () => {
   it('applies disrupted status and reduces awareness', () => {
     const engine = buildColonyEngine({ playerEngineering: 15 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'system-override' }, targetIds: ['drone'],
     });
 
@@ -184,7 +184,7 @@ describe('Colony — System Override', () => {
   it('rejects when power is too low', () => {
     const engine = buildColonyEngine({ playerPower: 5 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'system-override' }, targetIds: ['drone'],
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
@@ -229,7 +229,7 @@ describe('Colony — Reboot Systems (cleanse)', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'reboot-systems' }, targetIds: [],
     });
 
@@ -282,7 +282,7 @@ describe('Colony — Resistance profiles', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'system-override' }, targetIds: ['resonance'],
     });
 
@@ -323,7 +323,7 @@ describe('Colony — Resistance profiles', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'system-override' }, targetIds: ['vuln-drone'],
     });
 
