@@ -445,7 +445,9 @@ export function registerResourceListeners(
         const min = spend.minResource ?? spend.amount;
         if (current < min) continue;
 
-        const roll = simpleRoll(event.tick, entityId, `resist-${statusId}`);
+        // World seed threads in as a pure hash input (see simpleRoll) — the
+        // resist stream varies per run without touching the stateful RNG.
+        const roll = simpleRoll(event.tick, entityId, `resist-${statusId}`, world.meta.seed);
         if (roll <= (spend.effects.resistChance ?? 0)) {
           entity.resources[spend.resourceId] = current - spend.amount;
           removeStatus(entity, statusId, event.tick);

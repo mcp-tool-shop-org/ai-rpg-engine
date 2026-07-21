@@ -141,8 +141,8 @@ function attackHandler(
   if (hasStatus(attacker, COMBAT_STATES.OFF_BALANCE)) hitChance -= 15;
   hitChance = Math.min(95, Math.max(5, hitChance));
 
-  // Use a simple deterministic roll based on tick + entity IDs
-  const roll = simpleRoll(world.meta.tick, attacker.id, target.id);
+  // Use a simple deterministic roll based on world seed + tick + entity IDs
+  const roll = simpleRoll(world.meta.tick, attacker.id, target.id, world.meta.seed);
 
   if (roll > hitChance) {
     events.push(makeEvent(action, 'combat.contact.miss', {
@@ -184,7 +184,7 @@ function attackHandler(
         const chance = formulas.interceptChance
           ? formulas.interceptChance(ally, target, world)
           : defaultInterceptChance(ally, target, world, mapping);
-        const interceptRoll = simpleRoll(world.meta.tick, target.id, ally.id);
+        const interceptRoll = simpleRoll(world.meta.tick, target.id, ally.id, world.meta.seed);
         if (interceptRoll <= chance) {
           interceptor = ally;
           interceptChanceUsed = chance;
@@ -367,7 +367,7 @@ function applyDefenseModifiers(
 
     // Soft counter: attacking into guard may off-balance the attacker
     // Instinct (timing) + will (composure) determine counter chance
-    const counterRoll = simpleRoll(world.meta.tick, attacker.id, 'counter');
+    const counterRoll = simpleRoll(world.meta.tick, attacker.id, 'counter', world.meta.seed);
     const defenderInstinct = getStat(defender, mapping, 'precision', 5, world);
     const counterChance = 25 + defenderInstinct * 2 + defenderResolve * 2;
     if (counterRoll <= counterChance && !hasStatus(attacker, COMBAT_STATES.OFF_BALANCE)) {
@@ -390,7 +390,7 @@ function applyDefenseModifiers(
     const attackerVigor = getStat(attacker, mapping, 'attack', 5, world);
     const breakChance = Math.min(25, Math.max(0, (attackerVigor - defenderResolve - 2) * 5));
     if (breakChance > 0) {
-      const breakRoll = simpleRoll(world.meta.tick, attacker.id, 'guardbreak');
+      const breakRoll = simpleRoll(world.meta.tick, attacker.id, 'guardbreak', world.meta.seed);
       if (breakRoll <= breakChance) {
         if (!hasStatus(defender, COMBAT_STATES.OFF_BALANCE)) {
           events.push(applyStatus(defender, COMBAT_STATES.OFF_BALANCE, world.meta.tick, {
@@ -550,7 +550,7 @@ function disengageHandler(
   const chance = formulas?.disengageChance
     ? formulas.disengageChance(actor, world)
     : Math.min(90, Math.max(15, 40 + precision * 5 + resolve * 2));
-  const roll = simpleRoll(world.meta.tick, actor.id, 'disengage');
+  const roll = simpleRoll(world.meta.tick, actor.id, 'disengage', world.meta.seed);
 
   if (roll <= chance) {
     // Success — apply fleeing, move to neighbor
@@ -703,9 +703,22 @@ export function defaultInterceptChance(
   return Math.max(5, Math.min(90, chance));
 }
 
-/** Simple deterministic roll 1-100 based on tick and IDs */
-export function simpleRoll(tick: number, attackerId: string, targetId: string): number {
-  let hash = tick * 2654435761;
+/**
+ * Simple deterministic roll 1-100 based on tick, IDs, and the world seed.
+ *
+ * `seed` (world.meta.seed) is a PURE hash input, deliberately NOT drawn from
+ * the store's stateful RNG: consuming store.rng here would couple every roll
+ * to global draw ORDER (an extra NPC turn would shift all later rolls),
+ * breaking the stateless-per-tick property — same world state, same outcome —
+ * that replay and save/load parity depend on.
+ *
+ * seed 0 (the default) preserves the legacy stream byte-for-byte, so callers
+ * that do not thread a seed keep their historical outcomes. 40503 is odd, so
+ * seed mixing is a bijection mod 2^32 — no two seeds in range share a stream.
+ * The roll range is unchanged: 1-100 inclusive.
+ */
+export function simpleRoll(tick: number, attackerId: string, targetId: string, seed = 0): number {
+  let hash = tick * 2654435761 + seed * 40503;
   for (const char of attackerId + targetId) {
     hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
   }

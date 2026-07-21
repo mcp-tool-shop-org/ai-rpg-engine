@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createTestEngine, nextId } from '@ai-rpg-engine/core';
 import type { EntityState, ActionIntent } from '@ai-rpg-engine/core';
-import { createCombatCore, COMBAT_STATES } from './combat-core.js';
+import { createCombatCore, COMBAT_STATES, simpleRoll } from './combat-core.js';
 import { statusCore, hasStatus, applyStatus } from './status-core.js';
 import { createCombatTactics } from './combat-tactics.js';
 import { createEngagementCore } from './engagement-core.js';
@@ -736,5 +736,77 @@ describe('Ally-defeated resource triggers', () => {
 
     // npc1 in different zone should not get triggers
     expect(engine.world.entities.npc1.resources.rage).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-SEED-combat-rolls-seed-blind — the resist roll consumes world.meta.seed.
+// The status.applied resist listener rolls simpleRoll(event.tick, entityId,
+// `resist-${statusId}`, world.meta.seed): same seed → identical resist
+// outcomes; different seeds → outcomes diverge within a bounded tick sweep.
+// The resist SEMANTICS (roll <= resistChance spends the resource and removes
+// the status) are unchanged — only the stream shifts with the seed.
+// ---------------------------------------------------------------------------
+describe('resist roll — world-seed threading (F-SEED-combat-rolls-seed-blind)', () => {
+  const RESIST_CHANCE = 80; // roninProfile guard spend
+  const STATUS = COMBAT_STATES.OFF_BALANCE;
+
+  /** One isolated resist attempt: fresh engine at `seed`, world jumped to
+   *  `tick`, OFF_BALANCE applied and announced on the bus. Returns whether
+   *  the ronin ki-resist fired (status removed + 3 ki spent). */
+  function resistAttempt(seed: number, tick: number): boolean {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCombatResources(roninProfile)],
+      entities: [makePlayer('a', { resources: { hp: 20, maxHp: 20, stamina: 5, ki: 10 } })],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+      seed,
+    });
+    engine.store.state.meta.tick = tick;
+    const player = engine.world.entities.player;
+    applyStatus(player, STATUS, tick, { duration: 5 });
+    engine.store.recordEvent({
+      id: nextId('evt'),
+      tick,
+      type: 'status.applied',
+      actorId: 'player',
+      payload: { statusId: STATUS, entityId: 'player' },
+    });
+    const resisted = !hasStatus(player, STATUS);
+    // Resource accounting must agree with the outcome in BOTH directions.
+    expect(player.resources.ki).toBe(resisted ? 7 : 10);
+    return resisted;
+  }
+
+  it('the resist outcome matches simpleRoll(tick, entityId, resist-status, world.meta.seed) exactly', () => {
+    for (const seed of [1, 2]) {
+      for (let tick = 1; tick <= 30; tick++) {
+        const predicted = simpleRoll(tick, 'player', `resist-${STATUS}`, seed) <= RESIST_CHANCE;
+        expect(
+          resistAttempt(seed, tick),
+          `seed ${seed} tick ${tick}: engine disagrees with the seeded roll prediction`,
+        ).toBe(predicted);
+      }
+    }
+    // The sweep is discriminating: seeds 1 and 2 predict different outcomes
+    // somewhere inside it, so the equality above cannot pass by accident of
+    // a seed-blind stream.
+    let differs = false;
+    for (let tick = 1; tick <= 30 && !differs; tick++) {
+      differs =
+        (simpleRoll(tick, 'player', `resist-${STATUS}`, 1) <= RESIST_CHANCE) !==
+        (simpleRoll(tick, 'player', `resist-${STATUS}`, 2) <= RESIST_CHANCE);
+    }
+    expect(differs, 'seeds 1 vs 2 never disagree within the sweep — probe is not discriminating').toBe(true);
+  });
+
+  it('same seed → identical resist vector; different seeds → vectors diverge within 30 ticks', () => {
+    const vector = (seed: number) => {
+      let v = '';
+      for (let tick = 1; tick <= 30; tick++) v += resistAttempt(seed, tick) ? 'R' : '-';
+      return v;
+    };
+    const v1a = vector(1);
+    expect(v1a).toBe(vector(1));
+    expect(v1a).not.toBe(vector(2));
   });
 });

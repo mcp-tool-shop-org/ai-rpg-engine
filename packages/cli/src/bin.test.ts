@@ -14,6 +14,10 @@ import {
   restoreSessionFromSave,
   renderFrame,
   installCreatedPlayer,
+  parseRunArgs,
+  formatSeedLine,
+  mintSeed,
+  createNewSession,
 } from './bin.js';
 import { allPacks } from './packs.js';
 import { runNpcTurns } from './turns.js';
@@ -546,6 +550,161 @@ describe('resume-from-save (F1c)', () => {
     expect(session).toBeDefined();
     // Re-simulated through the real pack: the logged move re-executed.
     expect(session!.engine.world.locationId).toBe('chapel-nave');
+  });
+
+  // F-SEED: the restore path round-trips meta.seed — a resumed session keeps
+  // the SAVED world's roll stream, never a fresh or default one.
+  it('a resumed session keeps the saved meta.seed (42) — the roll stream survives save/load', () => {
+    const original = makeProgressedGame(); // createFantasyGame(42)
+    expect(original.world.meta.seed).toBe(42);
+    saveGameGuarded(original, vi.fn());
+
+    const pack = allPacks.find((p) => p.meta.id === 'chapel-threshold')!;
+    const { engine: restored } = restoreSessionFromSave(pack);
+    expect(restored.world.meta.seed).toBe(42);
+  });
+
+  it('a NON-default saved seed (777) round-trips too — not the createGame fallback leaking through', () => {
+    const original = createFantasyGame(777);
+    original.submitAction('move', { targetIds: ['chapel-nave'] });
+    saveGameGuarded(original, vi.fn());
+
+    const pack = allPacks.find((p) => p.meta.id === 'chapel-threshold')!;
+    const { engine: restored } = restoreSessionFromSave(pack);
+    expect(restored.world.meta.seed).toBe(777);
+
+    // And replayGame's re-simulation path rebuilds from the SAVED seed as well.
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const session = replayGame(['--replay']);
+    expect(session!.engine.world.meta.seed).toBe(777);
+  });
+});
+
+// F-SEED-combat-rolls-seed-blind — CLI seed plumbing. Every fresh run used to
+// be byte-identical because createNewSession called pack.createGame() with no
+// seed (WorldStore defaulted meta.seed to 0) and the roll layer was seed-free.
+// Pinned here: --seed parsing/validation, the printed seed line, minting, the
+// pass-through into pack.createGame, and fresh-run parity under a fixed seed.
+describe('run seeds (F-SEED-combat-rolls-seed-blind)', () => {
+  describe('parseRunArgs', () => {
+    it('no args → no path, no seed (bundled interactive flow unchanged)', () => {
+      expect(parseRunArgs([])).toEqual({ ok: true, path: null, seed: null });
+    });
+
+    it('a bare path still parses as the pack path (F1e regression)', () => {
+      expect(parseRunArgs(['./my-pack'])).toEqual({ ok: true, path: './my-pack', seed: null });
+    });
+
+    it('--seed <n> parses; the VALUE is never mistaken for the pack path', () => {
+      expect(parseRunArgs(['--seed', '42'])).toEqual({ ok: true, path: null, seed: 42 });
+    });
+
+    it('--seed=<n> form parses', () => {
+      expect(parseRunArgs(['--seed=482913'])).toEqual({ ok: true, path: null, seed: 482913 });
+    });
+
+    it('path and seed combine in either order', () => {
+      expect(parseRunArgs(['./pack', '--seed', '7'])).toEqual({ ok: true, path: './pack', seed: 7 });
+      expect(parseRunArgs(['--seed', '7', './pack'])).toEqual({ ok: true, path: './pack', seed: 7 });
+    });
+
+    it('0 and the int32 max are accepted; leading zeros are tolerated', () => {
+      expect(parseRunArgs(['--seed', '0'])).toEqual({ ok: true, path: null, seed: 0 });
+      expect(parseRunArgs(['--seed', '2147483647'])).toEqual({ ok: true, path: null, seed: 2147483647 });
+      expect(parseRunArgs(['--seed', '007'])).toEqual({ ok: true, path: null, seed: 7 });
+    });
+
+    it.each([
+      ['letters', ['--seed', 'abc']],
+      ['negative', ['--seed', '-5']],
+      ['float', ['--seed', '1.5']],
+      ['empty via =', ['--seed=']],
+      ['missing value', ['--seed']],
+      ['beyond int32 max', ['--seed', '2147483648']],
+    ])('structured rejection with hint: %s', (_label, args) => {
+      const parsed = parseRunArgs(args as string[]);
+      expect(parsed.ok).toBe(false);
+      if (!parsed.ok) {
+        expect(parsed.message).toContain('--seed');
+        expect(parsed.message).toContain('non-negative integer');
+        expect(parsed.hint.length).toBeGreaterThan(0);
+      }
+    });
+  });
+
+  describe('formatSeedLine', () => {
+    it('bundled form pairs the seed with the exact replay command', () => {
+      expect(formatSeedLine(482913)).toBe(
+        '  Seed: 482913 — replay this run with: ai-rpg-engine run --seed 482913',
+      );
+    });
+
+    it('external form includes the pack path so the printed command works as-is', () => {
+      expect(formatSeedLine(7, './my-pack')).toBe(
+        '  Seed: 7 — replay this run with: ai-rpg-engine run ./my-pack --seed 7',
+      );
+    });
+  });
+
+  describe('mintSeed', () => {
+    it('mints readable non-negative integers (0..999999)', () => {
+      for (let i = 0; i < 200; i++) {
+        const s = mintSeed();
+        expect(Number.isInteger(s)).toBe(true);
+        expect(s).toBeGreaterThanOrEqual(0);
+        expect(s).toBeLessThan(1_000_000);
+      }
+    });
+  });
+
+  describe('createNewSession seed pass-through', () => {
+    // A minimal pack with no buildCatalog: the wizard is skipped, so the
+    // session constructs without touching readline (the same shape external
+    // starter-template packs use).
+    function fakePack(captured: { seed?: number }) {
+      return {
+        meta: { id: 'seed-probe', name: 'Seed Probe' },
+        createGame: (s?: number) => {
+          captured.seed = s;
+          return new Engine({ manifest: testManifest, seed: s });
+        },
+      } as never;
+    }
+
+    it('an explicit seed reaches pack.createGame and lands in world.meta.seed', async () => {
+      const captured: { seed?: number } = {};
+      const session = await createNewSession(fakePack(captured), 99);
+      expect(captured.seed).toBe(99);
+      expect(session.engine.world.meta.seed).toBe(99);
+    });
+
+    it('with no seed given, a real seed is MINTED — never the old undefined/0-default path', async () => {
+      const captured: { seed?: number } = {};
+      const session = await createNewSession(fakePack(captured));
+      expect(Number.isInteger(captured.seed)).toBe(true);
+      expect(captured.seed).toBeGreaterThanOrEqual(0);
+      expect(captured.seed).toBeLessThan(1_000_000);
+      expect(session.engine.world.meta.seed).toBe(captured.seed);
+    });
+  });
+
+  describe('fresh-run parity under a fixed seed', () => {
+    it('same seed + same actions → byte-identical serialize()', () => {
+      const run = () => {
+        const engine = createFantasyGame(5);
+        engine.submitAction('move', { targetIds: ['chapel-nave'] });
+        return engine.serialize();
+      };
+      expect(run()).toBe(run());
+    });
+
+    it('different seeds → different worlds (roll-level divergence is pinned in combat-core tests)', () => {
+      const a = createFantasyGame(5);
+      const b = createFantasyGame(6);
+      expect(a.world.meta.seed).toBe(5);
+      expect(b.world.meta.seed).toBe(6);
+      expect(a.serialize()).not.toBe(b.serialize());
+    });
   });
 });
 

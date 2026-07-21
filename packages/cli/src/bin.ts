@@ -58,8 +58,70 @@ function printHelp() {
   console.log('  help           Show this help');
   console.log('');
   console.log('Flags:');
+  console.log('  --seed <n>     With run: fix the world seed (replay a specific run exactly).');
+  console.log('                 Omitted, each new session mints and prints its own seed.');
   console.log('  --version, -v  Print version');
   console.log('  --help, -h     Show this help');
+}
+
+// --- Run seeds (F-SEED-combat-rolls-seed-blind) ------------------------------
+//
+// Every fresh run used to be byte-identical: pack.createGame() was called with
+// no seed, WorldStore defaulted meta.seed to 0, and the roll layer hashed only
+// (tick, ids). New sessions now mint a real seed (the ONE place in the engine
+// where a non-deterministic source is welcome — this is the interactive CLI,
+// not module code), print it with a replay affordance, and honor --seed <n>.
+
+/** Upper bound accepted for --seed: int32-positive so seed mixing in the roll
+ *  hash stays exact-integer float math (see modules' simpleRoll). */
+const MAX_SEED = 2147483647;
+
+/** Mint a session seed. Non-deterministic BY DESIGN — two fresh runs must
+ *  differ. Small enough (6 digits) to read off the screen and retype. */
+export function mintSeed(): number {
+  return Math.floor(Math.random() * 1_000_000);
+}
+
+/** The one seed line a new session prints — pairs the seed with the exact
+ *  command that reproduces the run. Exported for unit testing. */
+export function formatSeedLine(seed: number, packPath?: string): string {
+  const cmd = packPath
+    ? `ai-rpg-engine run ${packPath} --seed ${seed}`
+    : `ai-rpg-engine run --seed ${seed}`;
+  return `  Seed: ${seed} — replay this run with: ${cmd}`;
+}
+
+export type ParsedRunArgs =
+  | { ok: true; path: string | null; seed: number | null }
+  | { ok: false; message: string; hint: string };
+
+/**
+ * Parse `run` arguments: an optional pack path (first non-flag token, as
+ * before) plus `--seed <n>` / `--seed=<n>`. The seed VALUE is consumed so it
+ * can never be mistaken for the pack path. Validation is strict — decimal
+ * digits only, 0..MAX_SEED — with a structured rejection (message + hint)
+ * instead of a silent NaN world. Exported for unit testing.
+ */
+export function parseRunArgs(runArgs: string[]): ParsedRunArgs {
+  let seed: number | null = null;
+  let pathArg: string | null = null;
+  for (let i = 0; i < runArgs.length; i++) {
+    const arg = runArgs[i];
+    if (arg === '--seed' || arg.startsWith('--seed=')) {
+      const raw = arg === '--seed' ? runArgs[++i] : arg.slice('--seed='.length);
+      if (raw === undefined || raw === '' || !/^\d+$/.test(raw) || Number(raw) > MAX_SEED) {
+        return {
+          ok: false,
+          message: `--seed must be a non-negative integer (0-${MAX_SEED}), got ${raw === undefined || raw === '' ? '(missing)' : `"${raw}"`}.`,
+          hint: 'Pass the whole number a previous session printed, e.g. --seed 482913.',
+        };
+      }
+      seed = Number(raw);
+    } else if (!arg.startsWith('-') && pathArg === null) {
+      pathArg = arg;
+    }
+  }
+  return { ok: true, path: pathArg, seed };
 }
 
 async function main() {
@@ -288,9 +350,20 @@ export function installCreatedPlayer(engine: Engine, playerEntity: EntityState):
   engine.store.addEntity(playerEntity);
 }
 
-/** Character creation + engine construction for a fresh game. */
-async function createNewSession(pack: LoadedPack): Promise<Session> {
-  const engine = pack.createGame();
+/**
+ * Character creation + engine construction for a fresh game.
+ *
+ * `seed` defaults to a freshly minted one, so every construction path yields a
+ * distinct world stream unless a specific seed is requested (--seed / tests).
+ * The seed is passed to pack.createGame(seed) — the PackInfo contract
+ * (`createGame(seed?)`) — and a pack that ignores it degrades gracefully: the
+ * session still runs; the printed seed line reads the world's ACTUAL
+ * meta.seed, so it never advertises a replay recipe the pack won't honor.
+ * Exported for unit testing (the wizard inside is readline-driven; packs
+ * without a buildCatalog skip it, which is what tests use).
+ */
+export async function createNewSession(pack: LoadedPack, seed: number = mintSeed()): Promise<Session> {
+  const engine = pack.createGame(seed);
 
   // Character creation needs the pack's build catalog + ruleset. External
   // packs may omit them (the starter template does) — the pack's authored
@@ -466,26 +539,56 @@ async function runSession(engine: Engine, pack: LoadedPack): Promise<SessionOutc
  * Session driver: play sessions until the player quits. 'new-game' from an
  * ending loops back — an external pack replays itself; the bundled flow
  * returns to the adventure select.
+ *
+ * Seeds: a FRESH session prints its seed line right under the banner (resumed
+ * and replayed sessions don't — their world is mid-flight; a bare
+ * `run --seed N` would not reproduce it without the action log).
+ * `opts.seedOverride` (from --seed) pins the seed for every fresh session this
+ * invocation starts — "run it back" semantics; without it each new game mints
+ * its own. `opts.packPath` threads the external pack path into the replay
+ * affordance so the printed command actually works.
  */
-async function playSessions(initial: Session | null, external: LoadedPack | null): Promise<void> {
+async function playSessions(
+  initial: Session | null,
+  external: LoadedPack | null,
+  opts: { seedOverride?: number | null; packPath?: string | null } = {},
+): Promise<void> {
   let pending: Session | null = initial;
   while (true) {
     let session = pending;
     pending = null;
+    let fresh = false;
     if (!session) {
       const pack = external ?? (await selectPack());
-      session = await createNewSession(pack);
+      session = await createNewSession(pack, opts.seedOverride ?? undefined);
+      fresh = true;
     }
     printSessionBanner(session.pack);
+    if (fresh) {
+      // Read the seed back from world truth, not from what we requested —
+      // a pack that ignores its seed argument then prints an honest line.
+      console.log(formatSeedLine(session.engine.world.meta.seed, opts.packPath ?? undefined) + '\n');
+    }
     const outcome = await runSession(session.engine, session.pack);
     if (outcome === 'quit') return;
   }
 }
 
 async function runGame(runArgs: string[] = []) {
+  // F-SEED: --seed <n> parsed and validated BEFORE anything interactive; an
+  // invalid value is a structured rejection, not a silently-ignored token.
+  const parsed = parseRunArgs(runArgs);
+  if (!parsed.ok) {
+    console.error(`  ✗ [INVALID_SEED] ${parsed.message}`);
+    console.error(`  Hint: ${parsed.hint}`);
+    closeReadline();
+    process.exit(1);
+    return; // unreachable; keeps control flow explicit for tests that stub exit
+  }
+
   // F1e: `run <path>` loads a scaffolded/built game module instead of the
   // bundled starters. Structured load errors exit with the contract spelled out.
-  const pathArg = runArgs.find((a) => !a.startsWith('-'));
+  const pathArg = parsed.path;
   let external: LoadedPack | null = null;
   if (pathArg) {
     try {
@@ -503,7 +606,7 @@ async function runGame(runArgs: string[] = []) {
   }
 
   const resumed = await maybeOfferResume(external);
-  await playSessions(resumed, external);
+  await playSessions(resumed, external, { seedOverride: parsed.seed, packPath: pathArg });
 
   console.log('\n  Farewell, wanderer.\n');
   closeReadline();
