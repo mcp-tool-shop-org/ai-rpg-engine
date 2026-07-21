@@ -31,6 +31,7 @@ import { evaluateSessionEnd, renderSessionEnd, computeSessionStats } from './end
 import { appendRunRecord, readRunHistory, formatRecentRuns } from './history.js';
 import { buildExtraActions, renderExtraActions, parseExtraSelection, buildHudWorld, renderInspectorReport, type ExtraAction } from './menu.js';
 import { loadExternalPack, PackLoadError, type LoadedPack } from './external-pack.js';
+import { runInspectSave } from './inspect.js';
 
 // Re-exported from guard.ts (extracted so turns.ts shares it without a
 // bin ⇄ turns import cycle). Public surface + tests are unchanged.
@@ -53,7 +54,9 @@ function printHelp() {
   console.log('  profile        Validate a profile/profile-set JSON, or scaffold a starter profile');
   console.log('  create-starter Scaffold a new starter from template');
   console.log('  replay         Restore the save and RESUME PLAY (--replay re-simulates the action log)');
-  console.log('  inspect-save   Show save file summary');
+  console.log('  inspect-save   Validate a save through the same checks Continue uses, then');
+  console.log('                 summarize it (world, player, globals, recent events).');
+  console.log('                 With a path: inspect that save file instead of the default.');
   console.log('  version        Print version');
   console.log('  help           Show this help');
   console.log('');
@@ -187,10 +190,17 @@ async function main() {
       process.exit(0);
       return;
     }
-    case 'inspect-save':
-      inspectSave();
+    case 'inspect-save': {
+      // ENG-006: runInspectSave validates through the SAME load authority the
+      // run → Continue path uses (WorldStore.deserialize via inspect.ts) and
+      // returns the exit code (0 valid / 1 structured failure) rather than
+      // exiting itself — the runValidate/runProfile contract.
+      const savePath = args.slice(1).find((a) => !a.startsWith('-'));
+      const code = runInspectSave(savePath);
       closeReadline();
+      if (code !== 0) process.exit(code);
       return;
+    }
     default:
       console.log(`Unknown command: ${command}`);
       printHelp();
@@ -926,34 +936,10 @@ export function replayGame(args: string[] = []): Session | undefined {
   return session;
 }
 
-function inspectSave() {
-  if (!fs.existsSync(SAVE_FILE)) {
-    console.log('  No save file found.');
-    process.exit(1);
-  }
-
-  let data: any;
-  try {
-    data = JSON.parse(fs.readFileSync(SAVE_FILE, 'utf-8'));
-  } catch {
-    console.error('  Save file is corrupted or not valid JSON.');
-    process.exit(1);
-  }
-  const world = data.world?.state;
-  if (!world) {
-    console.log('  Invalid save file.');
-    process.exit(1);
-  }
-
-  console.log(`  Game: ${world.meta?.gameId}`);
-  console.log(`  Tick: ${world.meta?.tick}`);
-  console.log(`  Seed: ${world.meta?.seed}`);
-  console.log(`  Location: ${world.locationId}`);
-  console.log(`  Entities: ${Object.keys(world.entities ?? {}).length}`);
-  console.log(`  Events: ${(world.eventLog ?? []).length}`);
-  console.log(`  Actions: ${(data.actionLog ?? []).length}`);
-  console.log(`  Globals: ${JSON.stringify(world.globals ?? {})}`);
-}
+// inspect-save's implementation lives in inspect.ts (ENG-006): the old
+// inspectSave() here raw-JSON.parsed the save and field-picked it — schema
+// drift printed `undefined`, the globals dump was unbounded, and it bypassed
+// every SaveLoadError authority the run → Continue path enforces.
 
 // Only run the CLI when this file is the process entry point. Importing it (e.g.
 // from a unit test that exercises the exported helpers) must NOT kick off main()
