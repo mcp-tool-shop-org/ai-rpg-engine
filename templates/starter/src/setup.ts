@@ -118,9 +118,10 @@ export function createGame(seed?: number): Engine {
         engine.store.addZone(zone);
     }
 
-    // Register entities
-    engine.store.addEntity(structuredClone(player));
-    engine.store.addEntity(structuredClone(enemy));
+    // Register entities — the store detaches (structuredClone) at ingestion,
+    // so module-level constants are safe to pass directly.
+    engine.store.addEntity(player);
+    engine.store.addEntity(enemy);
 
     // Set player context
     engine.store.state.playerId = 'player';
