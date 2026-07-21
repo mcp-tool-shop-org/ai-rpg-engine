@@ -18,6 +18,7 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
+  createEncounterSpawn,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
@@ -44,6 +45,7 @@ import {
   colonyAbilities,
   colonyStatusDefinitions,
   progressionRewards,
+  encounterSpawnContent,
 } from './content.js';
 import { colonyMinimalRuleset } from './ruleset.js';
 
@@ -195,6 +197,9 @@ export function createGame(seed?: number): Engine {
         factions: [{ factionId: 'colony-council', entityIds: ['dr_vasquez', 'chief_okafor'] }],
         playerId: 'commander',
       }),
+      // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
+      // tables drive zone-entry spawns via the world tick.
+      createEncounterSpawn({ gameId: manifest.id, ...encounterSpawnContent }),
       createBossPhaseListener(resonanceBoss),
       createAbilityCore({ abilities: colonyAbilities, statMapping: { power: 'engineering', precision: 'awareness', focus: 'command' } }),
       createAbilityEffects(),

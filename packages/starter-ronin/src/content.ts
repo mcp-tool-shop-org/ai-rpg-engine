@@ -6,7 +6,7 @@ import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, 
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
-import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 
 export const manifest: GameManifest = {
   id: 'jade-veil',
@@ -180,6 +180,46 @@ export const lordsChamberShowdown: EncounterDefinition = {
   validZoneIds: ['lords-chamber'],
   narrativeHooks: { tone: 'climactic', trigger: 'The traitor reveals himself at last.', stakes: 'Justice or death in the lord\'s own chamber.' },
 };
+
+
+/**
+ * The castle's standing watch as a SPAWNABLE patrol. gate-patrol (above) is
+ * authored with the corrupt samurai himself in it — he is the unique
+ * `role:boss` and the CLI's victory check live-scans role:boss hostiles, so
+ * cloning him from a random table could double the villain or un-win a won
+ * game. That definition stays a placed set-piece; this guard pair is what a
+ * random castle patrol actually looks like.
+ */
+export const corridorWatch: EncounterDefinition = {
+  id: 'corridor-watch',
+  name: 'Corridor Watch',
+  participants: [
+    { entityId: 'castle-guard', role: 'bodyguard' },
+    { entityId: 'castle-guard', role: 'bodyguard' },
+  ],
+  composition: 'patrol',
+  validZoneIds: ['castle-gate', 'great-hall'],
+  narrativeHooks: { tone: 'formal', trigger: 'Sandaled footfalls echo in strict cadence.', stakes: 'A masterless sword invites questions.' },
+};
+
+// --- Encounter spawn wiring (F-ENG005-encounter-spawn-wiring) ---
+//
+// Per-zone encounter tables — the moral equivalent of content-schema's
+// ZoneDefinition.encounterTable (string[]; weight is repetition).
+// Loyal guard pairs walk the gate and hall (corridor-watch — see its note:
+// gate-patrol as authored contains the unique role:boss villain and so stays
+// a placed set-piece, never a random spawn); assassins strike in the tea
+// garden. The lord's-chamber showdown is the placed boss set-piece.
+
+export const encounterSpawnContent = {
+  encounters: [gatePatrol, corridorWatch, teaGardenAmbush, lordsChamberShowdown],
+  entityTemplates: [castleGuard, shadowAssassin],
+  zoneTables: {
+    'castle-gate': ['corridor-watch', 'corridor-watch'],
+    'great-hall': ['corridor-watch'],
+    'tea-garden': ['tea-garden-ambush', 'tea-garden-ambush'],
+  },
+} satisfies EncounterSpawnContent;
 
 // --- Zones ---
 

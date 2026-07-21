@@ -2,7 +2,7 @@
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
-import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -205,6 +205,25 @@ export const runnerAmbush: EncounterDefinition = {
     stakes: 'Access to the medicine cabinet',
   },
 };
+
+// --- Encounter spawn wiring (F-ENG005-encounter-spawn-wiring) ---
+//
+// Per-zone encounter tables — the moral equivalent of content-schema's
+// ZoneDefinition.encounterTable (string[]; weight is repetition). The dead
+// roam the street thickest, the runners hunt the hospital's east wing, and
+// the gas station sees the occasional wanderer. hospital-horde is a placed
+// boss set-piece (Bloater Alpha already stands in the wing) — boss fights
+// never enter random tables.
+
+export const encounterSpawnContent = {
+  encounters: [hordeEncounter, streetPatrol, runnerAmbush],
+  entityTemplates: [shambler, runner],
+  zoneTables: {
+    'overrun-street': ['street-patrol', 'street-patrol'],
+    'gas-station': ['street-patrol'],
+    'hospital-wing': ['runner-ambush', 'runner-ambush'],
+  },
+} satisfies EncounterSpawnContent;
 
 // --- Zones ---
 

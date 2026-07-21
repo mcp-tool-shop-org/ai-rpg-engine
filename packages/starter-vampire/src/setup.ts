@@ -17,6 +17,7 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
+  createEncounterSpawn,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
@@ -46,6 +47,7 @@ import {
   progressionRewards,
   vampireAbilities,
   vampireStatusDefinitions,
+  encounterSpawnContent,
 } from './content.js';
 import { vampireMinimalRuleset } from './ruleset.js';
 
@@ -212,6 +214,9 @@ export function createGame(seed?: number): Engine {
         ],
         playerId: 'player',
       }),
+      // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
+      // tables drive zone-entry spawns via the world tick.
+      createEncounterSpawn({ gameId: manifest.id, ...encounterSpawnContent }),
       createBossPhaseListener(elderVampireBoss),
       createAbilityCore({ abilities: vampireAbilities, statMapping: { power: 'vitality', precision: 'cunning', focus: 'presence' } }),
       createAbilityEffects(),

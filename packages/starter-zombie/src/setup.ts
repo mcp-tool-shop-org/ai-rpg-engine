@@ -18,6 +18,7 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
+  createEncounterSpawn,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
@@ -44,6 +45,7 @@ import {
   zombieAbilities,
   zombieStatusDefinitions,
   progressionRewards,
+  encounterSpawnContent,
 } from './content.js';
 import { zombieMinimalRuleset } from './ruleset.js';
 
@@ -166,6 +168,9 @@ export function createGame(seed?: number): Engine {
         factions: [{ factionId: 'survivors', entityIds: ['medic_chen', 'scavenger_rook', 'leader_marsh'] }],
         playerId: 'survivor',
       }),
+      // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
+      // tables drive zone-entry spawns via the world tick.
+      createEncounterSpawn({ gameId: manifest.id, ...encounterSpawnContent }),
       createBossPhaseListener(bloaterAlphaBoss),
       createAbilityCore({ abilities: zombieAbilities, statMapping: { power: 'fitness', precision: 'wits', focus: 'nerve' } }),
       createAbilityEffects(),

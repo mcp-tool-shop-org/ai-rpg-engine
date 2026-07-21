@@ -18,6 +18,7 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
+  createEncounterSpawn,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
@@ -47,6 +48,7 @@ import {
   detectiveAbilities,
   detectiveStatusDefinitions,
   progressionRewards,
+  encounterSpawnContent,
 } from './content.js';
 import { detectiveMinimalRuleset } from './ruleset.js';
 
@@ -181,6 +183,9 @@ export function createGame(seed?: number): Engine {
         factions: [{ factionId: 'dockworkers', entityIds: ['dock_thug'] }],
         playerId: 'inspector',
       }),
+      // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
+      // tables drive zone-entry spawns via the world tick.
+      createEncounterSpawn({ gameId: manifest.id, ...encounterSpawnContent }),
       createBossPhaseListener(crimeBossDef),
       createAbilityCore({ abilities: detectiveAbilities, statMapping: { power: 'grit', precision: 'perception', focus: 'eloquence' } }),
       createAbilityEffects(),

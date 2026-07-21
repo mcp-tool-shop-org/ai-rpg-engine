@@ -96,7 +96,43 @@ describe('defeat-fallout', () => {
     expect(engine.world.globals['faction_alert_bandits']).toBe(15);
   });
 
-  it('boss defeat doubles reputation/alert penalties and emits milestone', () => {
+  // W6-bosstag-mismatch (fixed this wave, balance change APPROVED): the
+  // default bossTag was 'boss', which matched NO shipped starter — every
+  // starter tags its boss 'role:boss' (the engine-wide role taxonomy), so
+  // boss kills accrued reputation/alert at the REGULAR rate everywhere and
+  // the boss milestone (world-tick's genre spawn-rule feed) never fired.
+  // The default is now 'role:boss'. This test is the red proof: under the
+  // old default a role:boss kill pinned −10/15 with no milestone.
+  it('boss defeat under the DEFAULT config hits the authored boss rates (role:boss taxonomy)', () => {
+    const engine = createTestEngine({
+      modules: [
+        statusCore,
+        createCombatCore(),
+        createEnvironmentCore(),
+        createDistrictCore({ districts }),
+        createDefeatFallout({ factions: [{ factionId: 'bandits', entityIds: ['boss-bandit'] }], playerId: 'player' }),
+      ],
+      entities: [
+        makePlayer('zone-a'),
+        makeEnemy('boss-bandit', 'zone-a', { tags: ['enemy', 'role:boss'], name: 'Bandit King' }),
+      ],
+      zones,
+    });
+
+    const allEvents: ResolvedEvent[] = [];
+    engine.store.events.onAny(e => allEvents.push(e));
+
+    killEntity(engine, 'boss-bandit');
+
+    expect(engine.world.globals['reputation_bandits']).toBe(-25);
+    expect(engine.world.globals['faction_alert_bandits']).toBe(30);
+    expect(allEvents.some(e => e.type === 'defeat.fallout.milestone')).toBe(true);
+    const triggered = allEvents.find(e => e.type === 'defeat.fallout.triggered');
+    expect(triggered?.payload.isBoss).toBe(true);
+    expect(triggered?.payload.significance).toBe(1.0);
+  });
+
+  it("a bare 'boss' tag no longer triggers boss rates under the default (the old dead default)", () => {
     const engine = createTestEngine({
       modules: [
         statusCore,
@@ -117,9 +153,36 @@ describe('defeat-fallout', () => {
 
     killEntity(engine, 'boss-bandit');
 
+    // Regular-kill rates: the taxonomy tag is the boss marker now.
+    expect(engine.world.globals['reputation_bandits']).toBe(-10);
+    expect(engine.world.globals['faction_alert_bandits']).toBe(15);
+    expect(allEvents.some(e => e.type === 'defeat.fallout.milestone')).toBe(false);
+  });
+
+  it('packs with their own taxonomy can still override bossTag explicitly', () => {
+    const engine = createTestEngine({
+      modules: [
+        statusCore,
+        createCombatCore(),
+        createEnvironmentCore(),
+        createDistrictCore({ districts }),
+        createDefeatFallout({
+          factions: [{ factionId: 'bandits', entityIds: ['boss-bandit'] }],
+          playerId: 'player',
+          bossTag: 'legend',
+        }),
+      ],
+      entities: [
+        makePlayer('zone-a'),
+        makeEnemy('boss-bandit', 'zone-a', { tags: ['enemy', 'legend'], name: 'Bandit King' }),
+      ],
+      zones,
+    });
+
+    killEntity(engine, 'boss-bandit');
+
     expect(engine.world.globals['reputation_bandits']).toBe(-25);
     expect(engine.world.globals['faction_alert_bandits']).toBe(30);
-    expect(allEvents.some(e => e.type === 'defeat.fallout.milestone')).toBe(true);
   });
 
   it('heat increases on kill', () => {

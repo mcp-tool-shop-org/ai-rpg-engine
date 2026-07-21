@@ -6,7 +6,7 @@ import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, 
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
-import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 
 export const manifest: GameManifest = {
   id: 'crimson-court',
@@ -181,6 +181,25 @@ export const ballroomReckoning: EncounterDefinition = {
   validZoneIds: ['grand-ballroom'],
   narrativeHooks: { tone: 'climactic', trigger: 'The elder drops the masquerade.', stakes: 'The court will have a new master — or a new corpse.' },
 };
+
+
+// --- Encounter spawn wiring (F-ENG005-encounter-spawn-wiring) ---
+//
+// Per-zone encounter tables — the moral equivalent of content-schema's
+// ZoneDefinition.encounterTable (string[]; weight is repetition).
+// Thralls prowl the cellar dark and drift into the garden; hunters wait in
+// the private gallery. The ballroom reckoning is the placed Elder set-piece —
+// boss fights never enter random tables.
+
+export const encounterSpawnContent = {
+  encounters: [cellarPatrol, galleryAmbush, ballroomReckoning],
+  entityTemplates: [feralThrall, witchHunter],
+  zoneTables: {
+    'wine-cellar': ['cellar-patrol', 'cellar-patrol'],
+    'moonlit-garden': ['cellar-patrol'],
+    'east-gallery': ['gallery-ambush', 'gallery-ambush'],
+  },
+} satisfies EncounterSpawnContent;
 
 // --- Zones ---
 

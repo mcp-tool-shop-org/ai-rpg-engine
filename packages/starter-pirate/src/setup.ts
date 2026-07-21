@@ -18,6 +18,7 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
+  createEncounterSpawn,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
@@ -46,6 +47,7 @@ import {
   pirateAbilities,
   pirateStatusDefinitions,
   progressionRewards,
+  encounterSpawnContent,
 } from './content.js';
 import { pirateMinimalRuleset } from './ruleset.js';
 
@@ -195,6 +197,9 @@ export function createGame(seed?: number): Engine {
         factions: [{ factionId: 'colonial-navy', entityIds: ['navy_sailor', 'governor_vane'] }],
         playerId: 'captain',
       }),
+      // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
+      // tables drive zone-entry spawns via the world tick.
+      createEncounterSpawn({ gameId: manifest.id, ...encounterSpawnContent }),
       createBossPhaseListener(drownedGuardianBoss),
       createAbilityCore({ abilities: pirateAbilities, statMapping: { power: 'brawn', precision: 'cunning', focus: 'sea-legs' } }),
       createAbilityEffects(),

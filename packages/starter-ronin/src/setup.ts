@@ -18,6 +18,7 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
+  createEncounterSpawn,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
@@ -47,6 +48,7 @@ import {
   roninAbilities,
   roninStatusDefinitions,
   progressionRewards,
+  encounterSpawnContent,
 } from './content.js';
 import { roninMinimalRuleset } from './ruleset.js';
 
@@ -210,6 +212,9 @@ export function createGame(seed?: number): Engine {
         ],
         playerId: 'player',
       }),
+      // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
+      // tables drive zone-entry spawns via the world tick.
+      createEncounterSpawn({ gameId: manifest.id, ...encounterSpawnContent }),
       createBossPhaseListener(corruptSamuraiBoss),
       createAbilityCore({ abilities: roninAbilities, statMapping: { power: 'discipline', precision: 'perception', focus: 'composure' } }),
       createAbilityEffects(),

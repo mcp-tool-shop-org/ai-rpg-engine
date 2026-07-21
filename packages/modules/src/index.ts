@@ -282,6 +282,28 @@ export type {
   UrgencyBand,
 } from './world-tick.js';
 export {
+  createEncounterSpawn,
+  runEncounterSpawnStep,
+  getEncounterSpawnState,
+  validateEncounterSpawnContent,
+  unregisterEncounterSpawnContent,
+  spawnRoll,
+  spawnChance,
+  compositionLabel,
+  encounterDescription,
+  BASE_SPAWN_CHANCE,
+  SAFETY_CHANCE_STEP,
+  MIN_SPAWN_CHANCE,
+  MAX_SPAWN_CHANCE,
+  BOSS_ROLE_TAG,
+} from './encounter-spawn.js';
+export type {
+  EncounterSpawnContent,
+  EncounterSpawnConfig,
+  EncounterSpawnState,
+  SpawnedEncounterReport,
+} from './encounter-spawn.js';
+export {
   buildFactionProfile,
   evaluateFactionActions,
   resolveFactionAction,

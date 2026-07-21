@@ -171,6 +171,24 @@ export const vaultLockdown: EncounterDefinition = {
   narrativeHooks: { tone: 'climactic', trigger: 'The Overseer manifests in the datastream.', stakes: 'Crack the vault or lose everything.' },
 };
 
+
+// --- Encounter spawn wiring (F-ENG005-encounter-spawn-wiring) ---
+//
+// Per-zone encounter tables — the moral equivalent of content-schema's
+// ZoneDefinition.encounterTable (string[]; weight is repetition).
+// Gangers sweep the neon block; ICE counter-runs trip in the dead server
+// room. The vault lockdown is the placed Overseer set-piece — boss fights
+// never enter random tables.
+
+export const encounterSpawnContent = {
+  encounters: [streetSweep, serverBreach, vaultLockdown],
+  entityTemplates: [streetRunner, iceAgent],
+  zoneTables: {
+    'street-level': ['street-sweep', 'street-sweep'],
+    'server-room': ['server-breach', 'server-breach'],
+  },
+} satisfies EncounterSpawnContent;
+
 // --- Zones ---
 
 export const zones: ZoneState[] = [
@@ -279,7 +297,7 @@ export const fixerDialogue: DialogueDefinition = {
 
 // --- Districts ---
 
-import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 
 export const districts: DistrictDefinition[] = [
   {

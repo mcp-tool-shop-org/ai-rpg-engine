@@ -18,6 +18,7 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
+  createEncounterSpawn,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
@@ -45,6 +46,7 @@ import {
   cyberpunkAbilities,
   cyberpunkStatusDefinitions,
   progressionRewards,
+  encounterSpawnContent,
 } from './content.js';
 import { cyberpunkMinimalRuleset } from './ruleset.js';
 
@@ -186,6 +188,9 @@ export function createGame(seed?: number): Engine {
         factions: [{ factionId: 'vault-ice', entityIds: ['ice-sentry'] }],
         playerId: 'runner',
       }),
+      // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
+      // tables drive zone-entry spawns via the world tick.
+      createEncounterSpawn({ gameId: manifest.id, ...encounterSpawnContent }),
       createBossPhaseListener(vaultOverseerBoss),
       createAbilityCore({ abilities: cyberpunkAbilities, statMapping: { power: 'chrome', precision: 'reflex', focus: 'netrunning' } }),
       createAbilityEffects(),

@@ -14,6 +14,13 @@
 // before the round narrates, so tick events ride the SAME eventLog delta.
 //
 // Per tick, in order:
+//   0. zone-entry encounter check (encounter-spawn.ts — F-ENG005-encounter-
+//      spawn-wiring): the round's player zone entries are read from the SAME
+//      eventLog delta discipline as the milestone cursor, and a registered
+//      pack's authored encounter tables may spawn a tactical encounter into
+//      the entered zone. Runs first so the ambush's narration lands ahead of
+//      the strategic pressure beats in the round's delta. Packs that never
+//      registered spawn content are a byte-identical no-op.
 //   1. accumulate milestones from the eventLog delta (boss kills feed the
 //      genre spawn rules' milestone conditions)
 //   2. tickPressures — the module's own lifecycle: timers decrement, expired
@@ -55,6 +62,7 @@ import {
 } from './pressure-system.js';
 import { computeFallout, type PressureFallout } from './pressure-resolution.js';
 import { getDistrictForZone } from './district-core.js';
+import { runEncounterSpawnStep, type SpawnedEncounterReport } from './encounter-spawn.js';
 
 // ---------------------------------------------------------------------------
 // Tuning constants (exported so tests pin the thresholds, not magic numbers)
@@ -168,6 +176,8 @@ export type WorldTickResult = {
   expired: PressureFallout[];
   /** Active pressures after the tick. */
   active: WorldPressure[];
+  /** Encounters spawned by this round's zone entries (encounter-spawn step). */
+  encounters: SpawnedEncounterReport[];
 };
 
 // ---------------------------------------------------------------------------
@@ -439,7 +449,16 @@ export function runWorldTick(engine: Engine, opts: WorldTickOptions = {}): World
     if (!line) line = 'unknown error';
     if (line.length > 200) line = line.slice(0, 199) + '…';
     log(`  (the world's pressures slip out of focus this round: ${line})`);
-    return { ok: false, heat: 0, spawned: [], revealed: [], escalated: [], expired: [], active: [] };
+    return {
+      ok: false,
+      heat: 0,
+      spawned: [],
+      revealed: [],
+      escalated: [],
+      expired: [],
+      active: [],
+      encounters: [],
+    };
   }
 }
 
@@ -448,6 +467,12 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   const state = getWorldTickState(world);
   const currentTick = engine.tick;
   const heat = num(world.globals[HEAT_KEY]);
+
+  // 0. Zone-entry encounter check (F-ENG005-encounter-spawn-wiring) — the
+  // tactical layer of the same reaction loop. Runs inside this tick so the
+  // round keeps ONE world tick; its `encounter.spawned` event rides the same
+  // round delta the narration presents.
+  const encounters = runEncounterSpawnStep(engine);
 
   // 1. Milestones from the delta (before we append our own events).
   collectMilestones(world, state);
@@ -567,5 +592,14 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   state.lastHeat = finalHeat;
 
   state.pressures = active;
-  return { ok: true, heat: finalHeat, spawned, revealed, escalated, expired: expiredFallouts, active };
+  return {
+    ok: true,
+    heat: finalHeat,
+    spawned,
+    revealed,
+    escalated,
+    expired: expiredFallouts,
+    active,
+    encounters,
+  };
 }

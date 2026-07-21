@@ -8,6 +8,8 @@
 // separation so a future rename of either side cannot silently collide.
 
 import { describe, it, expect } from 'vitest';
+import { validateEncounterSpawnContent } from '@ai-rpg-engine/modules';
+import { encounterSpawnContent, zones as authoredZones } from './content.js';
 import type { EntityState } from '@ai-rpg-engine/core';
 import { COMBAT_STATES, applyStatus, hasStatus } from '@ai-rpg-engine/modules';
 import { validateGameContent, validateAbilityPack } from '@ai-rpg-engine/content-schema';
@@ -104,5 +106,18 @@ describe('ronin content — cross-reference integrity (F-4806a2c9)', () => {
   it('abilities reference only stats/resources declared in the ruleset', () => {
     const result = validateAbilityPack(roninAbilities, roninMinimalRuleset);
     expect(result.errors).toEqual([]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// F-ENG005-encounter-spawn-wiring: the per-zone encounter tables are
+// computed-validated against the live authored content — every table entry
+// must reference an authored, spawnable (non-boss) encounter that its own
+// validZoneIds/validZoneTags allow in that zone, with all participant
+// templates present.
+// ═══════════════════════════════════════════════════════════════════
+describe('ronin encounter tables (F-ENG005-encounter-spawn-wiring)', () => {
+  it('every table entry references an authored, spawnable encounter valid for its zone', () => {
+    expect(validateEncounterSpawnContent(encounterSpawnContent, authoredZones)).toEqual([]);
   });
 });

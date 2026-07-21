@@ -2,7 +2,7 @@
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
-import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -179,6 +179,26 @@ export const signalConfrontation: EncounterDefinition = {
   validZoneIds: ['signal-tower'],
   narrativeHooks: { tone: 'climactic', trigger: 'The signal reaches deafening intensity.', stakes: 'First contact — or last stand.' },
 };
+
+
+// --- Encounter spawn wiring (F-ENG005-encounter-spawn-wiring) ---
+//
+// Per-zone encounter tables — the moral equivalent of content-schema's
+// ZoneDefinition.encounterTable (string[]; weight is repetition).
+// The swarm nests thickest in its own cavern, the breach line walks the
+// perimeter fence, and hydroponics sees the stray incursion. The signal
+// confrontation is the placed tower set-piece — boss fights never enter
+// random tables.
+
+export const encounterSpawnContent = {
+  encounters: [perimeterSweep, cavernAmbush, signalConfrontation],
+  entityTemplates: [drone, swarmLarva],
+  zoneTables: {
+    'alien-cavern': ['cavern-ambush', 'cavern-ambush'],
+    'perimeter-fence': ['perimeter-sweep', 'perimeter-sweep'],
+    'hydroponics': ['perimeter-sweep'],
+  },
+} satisfies EncounterSpawnContent;
 
 // --- Zones ---
 

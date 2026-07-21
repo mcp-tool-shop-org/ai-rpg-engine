@@ -2,7 +2,7 @@
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
-import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -176,6 +176,26 @@ export const spiritHollowShowdown: EncounterDefinition = {
   validZoneIds: ['spirit-hollow'],
   narrativeHooks: { tone: 'dread', trigger: 'The hollow screams with spirit fire.', stakes: 'Banish the crawler or join the dead.' },
 };
+
+
+// --- Encounter spawn wiring (F-ENG005-encounter-spawn-wiring) ---
+//
+// Per-zone encounter tables — the moral equivalent of content-schema's
+// ZoneDefinition.encounterTable (string[]; weight is repetition).
+// The cursed trail is thick with riders and worse, the crossroads sees the
+// occasional posse, and once in a while the saloon goes sideways. The spirit
+// hollow showdown is the placed set-piece — boss fights never enter random
+// tables.
+
+export const encounterSpawnContent = {
+  encounters: [trailPatrol, saloonAmbush, spiritHollowShowdown],
+  entityTemplates: [banditRider, revenant],
+  zoneTables: {
+    'red-mesa-trail': ['trail-patrol', 'trail-patrol'],
+    'crossroads': ['trail-patrol'],
+    'saloon': ['saloon-ambush'],
+  },
+} satisfies EncounterSpawnContent;
 
 // --- Zones ---
 

@@ -21,6 +21,8 @@ import { createCombatCore } from './combat-core.js';
 import { createEnvironmentCore } from './environment-core.js';
 import { createDistrictCore } from './district-core.js';
 import { createDefeatFallout } from './defeat-fallout.js';
+import { traversalCore } from './traversal-core.js';
+import { createEncounterSpawn, unregisterEncounterSpawnContent } from './encounter-spawn.js';
 import { makePressure } from './pressure-system.js';
 import {
   runWorldTick,
@@ -431,6 +433,62 @@ describe('world-tick — guarded like the NPC round', () => {
     expect(line).toContain('pressures slip out of focus');
     expect(line.length).toBeLessThan(260);
     expect(line).not.toContain('\n');
+  });
+});
+
+describe('world-tick — the encounter spawn step rides the ONE world tick (F-ENG005-encounter-spawn-wiring)', () => {
+  it('a registered pack spawns from a zone entry inside runWorldTick, in the same round delta', () => {
+    const engine = createTestEngine({
+      modules: [
+        traversalCore,
+        createEncounterSpawn({
+          gameId: 'test-harness',
+          encounters: [
+            {
+              id: 'street-trouble',
+              name: 'Street Trouble',
+              participants: [{ entityId: 'tough' }],
+              composition: 'patrol',
+              validZoneIds: ['zone-b'],
+            },
+          ],
+          entityTemplates: [makeEnemy('tough', { zoneId: 'zone-b' })],
+          zoneTables: { 'zone-b': ['street-trouble'] },
+        }),
+      ],
+      entities: [makePlayer()],
+      zones,
+      startZone: 'zone-a',
+      seed: 3,
+    });
+
+    // Bounded walk under the deterministic seed (chance is capped below 1).
+    for (let i = 0; i < 30; i++) {
+      const logLenBefore = engine.world.eventLog.length;
+      engine.submitAction('move', { targetIds: [i % 2 === 0 ? 'zone-b' : 'zone-a'] });
+      const result = runWorldTick(engine);
+      expect(result.ok).toBe(true);
+      if (result.encounters.length > 0) {
+        // The spawn event and the zone entry share ONE round delta — the
+        // narration layer presents exactly this slice.
+        const delta = engine.world.eventLog.slice(logLenBefore);
+        expect(delta.some((e) => e.type === 'world.zone.entered')).toBe(true);
+        expect(delta.some((e) => e.type === 'encounter.spawned')).toBe(true);
+        expect(result.encounters[0].encounterId).toBe('street-trouble');
+        unregisterEncounterSpawnContent('test-harness');
+        return;
+      }
+    }
+    unregisterEncounterSpawnContent('test-harness');
+    throw new Error('no spawn within 30 rounds');
+  });
+
+  it('without registered content the tick result carries encounters: [] (no-op path)', () => {
+    unregisterEncounterSpawnContent('test-harness');
+    const engine = makeBareEngine();
+    const result = runWorldTick(engine);
+    expect(result.ok).toBe(true);
+    expect(result.encounters).toEqual([]);
   });
 });
 

@@ -20,7 +20,15 @@ export type DefeatFalloutConfig = {
   factions?: Array<{ factionId: string; entityIds: string[] }>;
   reputationPerKill?: number;       // default -10
   alertPerKill?: number;            // default 15
-  bossTag?: string;                 // default 'boss'
+  /**
+   * Tag that marks a defeated entity as a boss. Default 'role:boss' — the
+   * engine-wide role taxonomy every starter tags its bosses with (W6 finding:
+   * the old default 'boss' matched NO shipped starter, so boss kills accrued
+   * reputation/alert at the regular rate everywhere and the boss milestone —
+   * world-tick's genre spawn-rule feed — never fired). Packs with a different
+   * taxonomy pass their own tag here.
+   */
+  bossTag?: string;                 // default 'role:boss'
   bossReputationPenalty?: number;   // default -25
   bossAlertPenalty?: number;        // default 30
   heatPerKill?: number;             // default 5
@@ -115,7 +123,9 @@ export function createDefeatFallout(config: DefeatFalloutConfig = {}): EngineMod
     factions = [],
     reputationPerKill = -10,
     alertPerKill = 15,
-    bossTag = 'boss',
+    // 'role:boss' — the shipped role taxonomy (see DefeatFalloutConfig.bossTag).
+    // The old default 'boss' was dead against every starter's tags.
+    bossTag = 'role:boss',
     bossReputationPenalty = -25,
     bossAlertPenalty = 30,
     heatPerKill = 5,

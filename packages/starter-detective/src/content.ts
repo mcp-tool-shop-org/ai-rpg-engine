@@ -2,7 +2,7 @@
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
-import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -185,6 +185,26 @@ export const crimeLordConfrontation: EncounterDefinition = {
   validZoneIds: ['back-alley'],
   narrativeHooks: { tone: 'climactic', trigger: 'Hargreaves steps from the shadows.', stakes: 'Justice or silence — only one walks away.' },
 };
+
+
+// --- Encounter spawn wiring (F-ENG005-encounter-spawn-wiring) ---
+//
+// Per-zone encounter tables — the moral equivalent of content-schema's
+// ZoneDefinition.encounterTable (string[]; weight is repetition).
+// This is an investigation — encounters are staged confrontations, not
+// wandering monsters. The docks are watched (ambush outweighs patrol in the
+// back alley), the foggy entrance gets a passing patrol, and the indoor
+// scenes stay scenes of words. The crime-lord confrontation is the placed
+// set-piece — boss fights never enter random tables.
+
+export const encounterSpawnContent = {
+  encounters: [alleyPatrol, docksideAmbush, crimeLordConfrontation],
+  entityTemplates: [thug, hiredMuscle],
+  zoneTables: {
+    'back-alley': ['dockside-ambush', 'dockside-ambush', 'alley-patrol'],
+    'front-entrance': ['alley-patrol'],
+  },
+} satisfies EncounterSpawnContent;
 
 // --- Zones ---
 

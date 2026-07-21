@@ -2,7 +2,7 @@
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
-import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -196,6 +196,25 @@ export const shrineGuardian: EncounterDefinition = {
   validZoneIds: ['sunken-shrine'],
   narrativeHooks: { tone: 'dread', trigger: 'The shrine groans with ancient fury.', stakes: 'Treasure or a watery grave.' },
 };
+
+
+// --- Encounter spawn wiring (F-ENG005-encounter-spawn-wiring) ---
+//
+// Per-zone encounter tables — the moral equivalent of content-schema's
+// ZoneDefinition.encounterTable (string[]; weight is repetition).
+// Marines board on the open water, the governor's fort walks its rounds,
+// and now and then the navy comes to your own deck. The shrine guardian is
+// the placed set-piece — boss fights never enter random tables.
+
+export const encounterSpawnContent = {
+  encounters: [portPatrol, openWaterAmbush, shrineGuardian],
+  entityTemplates: [navySailor, boardingMarine],
+  zoneTables: {
+    'open-water': ['open-water-ambush', 'open-water-ambush'],
+    'governors-fort': ['port-patrol', 'port-patrol'],
+    'ship-deck': ['port-patrol'],
+  },
+} satisfies EncounterSpawnContent;
 
 // --- Zones ---
 

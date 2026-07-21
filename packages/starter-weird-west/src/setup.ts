@@ -17,6 +17,7 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
+  createEncounterSpawn,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
@@ -45,6 +46,7 @@ import {
   weirdWestAbilities,
   weirdWestStatusDefinitions,
   progressionRewards,
+  encounterSpawnContent,
 } from './content.js';
 import { weirdWestMinimalRuleset } from './ruleset.js';
 
@@ -205,6 +207,9 @@ export function createGame(seed?: number): Engine {
         ],
         playerId: 'drifter',
       }),
+      // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
+      // tables drive zone-entry spawns via the world tick.
+      createEncounterSpawn({ gameId: manifest.id, ...encounterSpawnContent }),
       createBossPhaseListener(mesaCrawlerBoss),
       createAbilityCore({ abilities: weirdWestAbilities, statMapping: { power: 'grit', precision: 'draw-speed', focus: 'lore' } }),
       createAbilityEffects(),

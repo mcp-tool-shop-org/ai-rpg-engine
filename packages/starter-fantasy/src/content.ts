@@ -6,7 +6,7 @@ import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
-import type { EncounterDefinition, BossDefinition, CurrencyReward } from '@ai-rpg-engine/modules';
+import type { EncounterDefinition, BossDefinition, CurrencyReward, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 import type { AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
 
 export const manifest: GameManifest = {
@@ -192,6 +192,25 @@ export const cryptAmbush: EncounterDefinition = {
     stakes: 'Survival before the warden arrives',
   },
 };
+
+
+// --- Encounter spawn wiring (F-ENG005-encounter-spawn-wiring) ---
+//
+// Per-zone encounter tables — the moral equivalent of content-schema's
+// ZoneDefinition.encounterTable (string[]; weight is repetition).
+// The dead walk the nave and press hardest at the vestry chokepoint;
+// stalkers ambush in the crypt dark. The crypt descent is the placed Warden
+// set-piece — boss fights never enter random tables.
+
+export const encounterSpawnContent = {
+  encounters: [chapelPatrol, cryptAmbush, cryptEncounter],
+  entityTemplates: [ashGhoul, cryptStalker],
+  zoneTables: {
+    'chapel-nave': ['chapel-patrol'],
+    'vestry-door': ['chapel-patrol', 'chapel-patrol'],
+    'crypt-chamber': ['crypt-ambush', 'crypt-ambush'],
+  },
+} satisfies EncounterSpawnContent;
 
 // --- Zones ---
 

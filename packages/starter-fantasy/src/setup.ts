@@ -18,6 +18,7 @@ import {
   createObserverPresentation,
   giveItem,
   createDefeatFallout,
+  createEncounterSpawn,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
@@ -46,6 +47,7 @@ import {
   fantasyAbilities,
   fantasyStatusDefinitions,
   progressionRewards,
+  encounterSpawnContent,
 } from './content.js';
 import { fantasyMinimalRuleset } from './ruleset.js';
 
@@ -164,6 +166,9 @@ export function createGame(seed?: number): Engine {
         factions: [{ factionId: 'chapel-undead', entityIds: ['ash-ghoul', 'crypt-warden'] }],
         playerId: 'player',
       }),
+      // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
+      // tables drive zone-entry spawns via the world tick.
+      createEncounterSpawn({ gameId: manifest.id, ...encounterSpawnContent }),
       createBossPhaseListener(cryptWardenBoss),
       createAbilityCore({ abilities: fantasyAbilities, statMapping: { power: 'vigor', precision: 'instinct', focus: 'will' } }),
       createAbilityEffects(),
