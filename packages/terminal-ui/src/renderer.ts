@@ -650,6 +650,22 @@ export function formatEventLine(event: ResolvedEvent): string | null {
       return `> Acquired ${p.itemId}`;
     case 'resource.changed':
       return `> ${p.resource}: ${p.previous} → ${p.current}`;
+
+    // F-0a572dd7: progression.node.unlocked rendered null, so a successful
+    // XP spend narrated "All is quiet." — an affirmative "nothing happened"
+    // right after the player bought an upgrade. Name the unlock; surface
+    // rejection reasons the same way action.rejected does.
+    case 'progression.node.unlocked': {
+      const node = payloadString(p, 'nodeId');
+      return `> Unlocked ${node ? humanizeStateId(node) : 'an advancement'}`;
+    }
+    case 'progression.unlock.rejected': {
+      const node = payloadString(p, 'nodeId');
+      const label = node ? humanizeStateId(node) : 'that';
+      const reason = payloadString(p, 'reason');
+      return reason ? `> You can't unlock ${label}: ${reason}` : `> You can't unlock ${label}.`;
+    }
+
     case 'dialogue.started':
       return `> Speaking with ${p.speakerName}`;
     case 'dialogue.node.entered':

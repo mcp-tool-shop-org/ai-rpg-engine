@@ -226,4 +226,15 @@ describe('narrationTextFromEvents', () => {
     const flag = ev('world.flag.changed', { flag: 'x', value: true });
     expect(narrationTextFromEvents([flag])).toBe(QUIET_TURN_TEXT);
   });
+
+  it('an unlock round narrates the unlock, not the quiet fallback (F-0a572dd7)', () => {
+    // The live delta for a menu XP spend: declared/resolved bookkeeping
+    // around the one renderable event.
+    const round = [
+      ev('action.declared', { verb: 'unlock' }),
+      ev('progression.node.unlocked', { treeId: 'combat-mastery', nodeId: 'toughened', effects: [] }),
+      ev('action.resolved', { verb: 'unlock' }),
+    ];
+    expect(narrationTextFromEvents(round)).toBe('Unlocked Toughened');
+  });
 });

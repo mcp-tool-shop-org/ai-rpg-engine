@@ -106,14 +106,14 @@ describe('combat-intent: basic selection', () => {
 
   it('low morale + no exit falls back to guard', () => {
     const npc = makeEntity('npc', 'enemy', ['enemy'], { zoneId: 'zone-dead-end' });
+    // Reduce HP to favor guard over attack — mutate before buildEngine
+    // ingests the entity so the local under test and the store copy agree.
+    npc.resources.hp = 5;
     const target = makeEntity('target', 'player', ['player'], { zoneId: 'zone-dead-end' });
     const engine = buildEngine([npc, target]);
 
     const cog = getCognition(engine.store.state, 'npc');
     cog.morale = 10;
-
-    // Also reduce HP to favor guard over attack
-    npc.resources.hp = 5;
 
     const decision = selectNpcCombatAction(npc, engine.store.state);
 

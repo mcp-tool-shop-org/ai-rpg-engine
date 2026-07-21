@@ -594,6 +594,36 @@ describe('formatEvent — ability.used renders with flavor text (CS-C amend)', (
   });
 });
 
+// F-0a572dd7: progression.node.unlocked rendered null — selecting a menu
+// unlock entry ("[N] Unlock Toughened (10 xp)") narrated "All is quiet."
+// and logged nothing after a successful XP spend.
+describe('formatEvent — progression unlocks render (F-0a572dd7)', () => {
+  it('renders the unlocked node by humanized id', () => {
+    const text = renderEventLog([
+      cev('progression.node.unlocked', {
+        treeId: 'combat-mastery', nodeId: 'toughened', effects: ['stat-boost'],
+      }),
+    ]);
+    expect(text).toContain('Unlocked Toughened');
+  });
+
+  it('falls back gracefully when nodeId is missing (never prints undefined)', () => {
+    const text = renderEventLog([cev('progression.node.unlocked', {})]);
+    expect(text).toContain('Unlocked');
+    expect(text).not.toContain('undefined');
+  });
+
+  it('renders unlock rejections with the module-authored reason', () => {
+    const text = renderEventLog([
+      cev('progression.unlock.rejected', {
+        treeId: 'combat-mastery', nodeId: 'keen-eye', reason: 'insufficient xp: have 5, need 15',
+      }),
+    ]);
+    expect(text).toContain("You can't unlock Keen Eye");
+    expect(text).toContain('insufficient xp: have 5, need 15');
+  });
+});
+
 // MEDIUM: raw state ids leaked into the HUD ("Status: engagement:isolated",
 // "! Crypt Warden (HP: 0) [combat:fleeing]" for a corpse).
 describe('renderScene — humanized state labels, no corpse statuses (CS-C amend)', () => {
