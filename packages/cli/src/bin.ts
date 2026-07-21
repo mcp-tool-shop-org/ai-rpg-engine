@@ -29,7 +29,7 @@ import { runNpcTurns } from './turns.js';
 import { runWorldTick } from '@ai-rpg-engine/modules';
 import { evaluateSessionEnd, renderSessionEnd, computeSessionStats } from './endgame.js';
 import { appendRunRecord, readRunHistory, formatRecentRuns } from './history.js';
-import { buildExtraActions, renderExtraActions, parseExtraSelection, buildHudWorld, type ExtraAction } from './menu.js';
+import { buildExtraActions, renderExtraActions, parseExtraSelection, buildHudWorld, renderInspectorReport, type ExtraAction } from './menu.js';
 import { loadExternalPack, PackLoadError, type LoadedPack } from './external-pack.js';
 
 // Re-exported from guard.ts (extracted so turns.ts shares it without a
@@ -687,6 +687,12 @@ export function handlePlayerInput(
   if (opts.extras && opts.extras.length > 0) {
     const extra = parseExtraSelection(trimmed, buildActionList(engine.world).length, opts.extras);
     if (extra) {
+      // Debug entries render the inspector report and consume no turn — the
+      // sentinel verb never reaches the engine (menu.ts's group contract).
+      if (extra.group === 'debug') {
+        log(renderInspectorReport(engine));
+        return { kind: 'help' };
+      }
       runGuardedAction(
         () =>
           engine.submitAction(extra.verb, {
