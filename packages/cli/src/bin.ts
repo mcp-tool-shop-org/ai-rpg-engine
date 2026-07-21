@@ -30,6 +30,7 @@ import { runWorldTick } from '@ai-rpg-engine/modules';
 import { evaluateSessionEnd, renderSessionEnd, computeSessionStats } from './endgame.js';
 import { appendRunRecord, readRunHistory, formatRecentRuns } from './history.js';
 import { buildExtraActions, renderExtraActions, parseExtraSelection, buildHudWorld, renderInspectorReport, type ExtraAction } from './menu.js';
+import { renderDirectorLedger } from './director.js';
 import { loadExternalPack, PackLoadError, type LoadedPack } from './external-pack.js';
 import { runInspectSave } from './inspect.js';
 
@@ -804,6 +805,11 @@ export function handlePlayerInput(
       // sentinel verb never reaches the engine (menu.ts's group contract).
       if (extra.group === 'debug') {
         log(renderInspectorReport(engine));
+        return { kind: 'help' };
+      }
+      // Director's Ledger: same no-turn contract as debug (F-ENG005).
+      if (extra.group === 'director') {
+        log(renderDirectorLedger(engine));
         return { kind: 'help' };
       }
       runGuardedAction(
