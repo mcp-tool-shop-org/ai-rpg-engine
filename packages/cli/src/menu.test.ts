@@ -14,9 +14,12 @@ import {
   parseExtraSelection,
   buildHudWorld,
   buildDebugActions,
+  buildDirectorActions,
   renderInspectorReport,
   derivePlayerLevel,
   DEBUG_MENU_LABEL,
+  DIRECTOR_MENU_LABEL,
+  DIRECTOR_MENU_VERB,
 } from './menu.js';
 import { getAbilityCatalog } from './turns.js';
 import { handlePlayerInput } from './bin.js';
@@ -215,7 +218,11 @@ describe('debug inspector entry (F-ENG006)', () => {
   it('the debug entry is HIDDEN without AI_RPG_DEBUG=1 (player surface stays clean)', () => {
     vi.stubEnv('AI_RPG_DEBUG', '');
     const engine = createGame(42); // no divine tag, no xp → no ability/unlock extras
-    expect(buildExtraActions(engine, [combatMasteryTree])).toEqual([]);
+    // Only the always-on Director's Ledger remains — no debug entry.
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    expect(extras).toHaveLength(1);
+    expect(extras[0].group).toBe('director');
+    expect(extras.some((e) => e.group === 'debug')).toBe(false);
     expect(buildDebugActions({})).toEqual([]);
     expect(buildDebugActions({ AI_RPG_DEBUG: '0' })).toEqual([]);
   });
@@ -224,12 +231,14 @@ describe('debug inspector entry (F-ENG006)', () => {
     vi.stubEnv('AI_RPG_DEBUG', '1');
     const engine = createGame(42);
     const extras = buildExtraActions(engine, [combatMasteryTree]);
-    expect(extras).toHaveLength(1);
-    expect(extras[0].group).toBe('debug');
-    expect(extras[0].label).toBe(DEBUG_MENU_LABEL);
+    expect(extras).toHaveLength(2); // director (always) + debug (env-gated)
+    expect(extras[0].group).toBe('director');
+    expect(extras[1].group).toBe('debug');
+    expect(extras[1].label).toBe(DEBUG_MENU_LABEL);
 
     const rendered = renderExtraActions(extras, 6);
-    expect(rendered).toContain(`[7] ${DEBUG_MENU_LABEL}`);
+    expect(rendered).toContain(`[7] ${DIRECTOR_MENU_LABEL}`);
+    expect(rendered).toContain(`[8] ${DEBUG_MENU_LABEL}`);
   });
 
   it('the debug entry appends AFTER ability and unlock entries', () => {
@@ -307,5 +316,61 @@ describe('debug inspector entry (F-ENG006)', () => {
     const report = renderInspectorReport(fake);
     expect(report).toContain('DEBUG — SIMULATION INSPECTORS (0)');
     expect(report).toContain('No debug inspectors are registered for this pack.');
+  });
+});
+
+describe("director's ledger entry (F-ENG005)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('the entry is ALWAYS present — no env gate, it is a player surface', () => {
+    vi.stubEnv('AI_RPG_DEBUG', '');
+    const engine = createGame(42);
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const director = extras.filter((e) => e.group === 'director');
+    expect(director).toHaveLength(1);
+    expect(director[0].label).toBe(DIRECTOR_MENU_LABEL);
+    expect(director[0].verb).toBe(DIRECTOR_MENU_VERB);
+    expect(buildDirectorActions()).toEqual([
+      { verb: DIRECTOR_MENU_VERB, label: DIRECTOR_MENU_LABEL, group: 'director' },
+    ]);
+  });
+
+  it('the label reads in the menu voice and is pinned', () => {
+    expect(DIRECTOR_MENU_LABEL).toBe("Director's Ledger — the strategic picture");
+    expect(DIRECTOR_MENU_VERB).toBe('director-ledger');
+  });
+
+  it('selecting its number resolves to the director group (the routing key — the sentinel verb never reaches the engine)', () => {
+    const engine = createGame(42);
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const rendered = renderExtraActions(extras, 6);
+    expect(rendered).toContain(`[7] ${DIRECTOR_MENU_LABEL}`);
+
+    const selected = parseExtraSelection('7', 6, extras);
+    expect(selected).not.toBeNull();
+    expect(selected?.group).toBe('director');
+    expect(selected?.verb).toBe(DIRECTOR_MENU_VERB);
+    expect(selected?.targetIds).toBeUndefined();
+    expect(selected?.parameters).toBeUndefined();
+  });
+
+  it('the entry sits after ability/unlock entries and BEFORE the debug entry (operator surface stays last)', () => {
+    vi.stubEnv('AI_RPG_DEBUG', '1');
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    player.tags = [...player.tags, 'divine'];
+    addCurrency(engine.store.state, 'player', 'xp', 20, engine.tick);
+
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const directorIdx = extras.findIndex((e) => e.group === 'director');
+    const debugIdx = extras.findIndex((e) => e.group === 'debug');
+    expect(directorIdx).toBeGreaterThan(0); // abilities/unlocks come first
+    expect(debugIdx).toBe(extras.length - 1);
+    expect(directorIdx).toBe(debugIdx - 1);
+    expect(
+      extras.slice(0, directorIdx).every((e) => e.group === 'ability' || e.group === 'advance'),
+    ).toBe(true);
   });
 });

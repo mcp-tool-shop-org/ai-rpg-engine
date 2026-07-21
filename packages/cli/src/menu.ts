@@ -14,6 +14,12 @@
 // F-ENG006 adds a last, env-gated entry (AI_RPG_DEBUG=1): a debug view that
 // renders every inspector the engine's modules registered (Engine.getInspectors
 // previously had zero consumers). See buildDebugActions / renderInspectorReport.
+//
+// F-ENG005 adds the Director's Ledger entry — ALWAYS visible, because it is a
+// player surface, not an operator one: the strategic-state screen that consumes
+// the director-mode formatters (renderDirectorLedger in director.ts). Same
+// sentinel-verb contract as debug: the wiring routes on `group: 'director'`
+// and never submits the verb to the engine — reading the ledger costs no turn.
 
 import type { Engine, WorldState, EntityState, ScalarValue } from '@ai-rpg-engine/core';
 import type { AbilityDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
@@ -33,7 +39,7 @@ export type ExtraAction = {
   targetIds?: string[];
   parameters?: Record<string, ScalarValue>;
   label: string;
-  group: 'ability' | 'advance' | 'debug';
+  group: 'ability' | 'advance' | 'director' | 'debug';
 };
 
 /**
@@ -143,6 +149,26 @@ export function buildUnlockActions(
 }
 
 // ---------------------------------------------------------------------------
+// Director — the ledger entry (F-ENG005)
+// ---------------------------------------------------------------------------
+
+/** The ledger entry's label. Sentinel verb: routed by `group === 'director'`
+ *  in the extras dispatch, never meant to reach the engine as an action. */
+export const DIRECTOR_MENU_LABEL = "Director's Ledger — the strategic picture";
+export const DIRECTOR_MENU_VERB = 'director-ledger';
+
+/**
+ * The extras menu's Director's Ledger entry — ALWAYS present, no env gate:
+ * unlike the operator-only debug view, the ledger is part of the shipped
+ * player surface. Selecting it renders renderDirectorLedger (director.ts);
+ * the wiring routes on `group: 'director'` instead of submitting the sentinel
+ * verb — consulting the ledger must not advance the world.
+ */
+export function buildDirectorActions(): ExtraAction[] {
+  return [{ verb: DIRECTOR_MENU_VERB, label: DIRECTOR_MENU_LABEL, group: 'director' }];
+}
+
+// ---------------------------------------------------------------------------
 // Debug — inspector report (F-ENG006)
 // ---------------------------------------------------------------------------
 
@@ -208,8 +234,9 @@ export function renderInspectorReport(
   return lines.join('\n');
 }
 
-/** All appended entries — abilities, then unlocks, then the env-gated debug
- *  entry last. Stable order, pure over state. */
+/** All appended entries — abilities, then unlocks, then the always-on
+ *  Director's Ledger, then the env-gated debug entry last (the operator
+ *  surface stays at the bottom). Stable order, pure over state. */
 export function buildExtraActions(
   engine: Engine,
   trees: ProgressionTreeDefinition[] = [],
@@ -217,6 +244,7 @@ export function buildExtraActions(
   return [
     ...buildAbilityActions(engine.world, getAbilityCatalog(engine)),
     ...buildUnlockActions(engine.world, trees),
+    ...buildDirectorActions(),
     ...buildDebugActions(),
   ];
 }
