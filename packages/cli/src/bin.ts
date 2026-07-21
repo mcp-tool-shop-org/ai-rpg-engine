@@ -13,6 +13,7 @@ import {
   buildActionList,
   parseActionSelection,
   parseTextInput,
+  TurnPresenter,
 } from '@ai-rpg-engine/terminal-ui';
 import { resolveEntity } from '@ai-rpg-engine/character-creation';
 import { WorldStore, SaveLoadError, type Engine, type RulesetDefinition } from '@ai-rpg-engine/core';
@@ -321,6 +322,31 @@ function renderFrame(engine: Engine, pack: LoadedPack) {
 export type SessionOutcome = 'quit' | 'new-game';
 
 /**
+ * FU-2: narrate one action round. The round's events — everything the
+ * eventLog gained since `logLenBefore` (the player's action plus the NPC
+ * responses it provoked) — are presented as ONE turn, per the presenter's
+ * contract ("an eventLog slice since the previous present"), and the styled
+ * narration prints on its own line. An empty delta prints nothing.
+ *
+ * The returned audioCommands are deliberately unused: there is no terminal
+ * audio backend — they are an embedder hook (terminal-ui's documented
+ * playback ceiling). Scheduling warnings are advisory and likewise dropped.
+ * Exported for unit testing — the print sink is a parameter so tests capture
+ * output without touching console.
+ */
+export function narrateRound(
+  presenter: TurnPresenter,
+  engine: Engine,
+  logLenBefore: number,
+  print: (line: string) => void,
+): void {
+  const delta = engine.world.eventLog.slice(logLenBefore);
+  if (delta.length === 0) return;
+  const presented = presenter.present(engine.world, delta);
+  print(`  ${presented.styledNarration}`);
+}
+
+/**
  * The shared interactive loop (run, run <path>, resumed saves, and replay all
  * land here). Each iteration:
  *   1. F1b — if the session is over (player downed / bosses downed), render
@@ -329,8 +355,14 @@ export type SessionOutcome = 'quit' | 'new-game';
  *   2. render the frame, read one input, route it (handlePlayerInput).
  *   3. F1a — after the player's action resolves (and only if it didn't end
  *      the game), every living hostile in the zone takes its turn.
+ *   4. FU-2 — the round's eventLog delta (player + NPC events) is presented
+ *      once and its narration line printed. A round that ends the game still
+ *      narrates — the line lands before the next iteration's finale screen.
  */
 async function runSession(engine: Engine, pack: LoadedPack): Promise<SessionOutcome> {
+  // FU-2: ONE presenter per session — its AudioDirector carries sfx cooldown
+  // state across rounds; per-round construction would reset every cooldown.
+  const presenter = new TurnPresenter();
   while (true) {
     const end = evaluateSessionEnd(engine);
     if (end) {
@@ -347,15 +379,21 @@ async function runSession(engine: Engine, pack: LoadedPack): Promise<SessionOutc
     const input = await promptLine('  > ');
 
     // All routing lives in handlePlayerInput (exported + unit-tested); the
-    // loop only decides "exit, NPC turns, or keep prompting". Notably this
-    // keeps every fs/engine failure inside the guarded router instead of
-    // raw-throwing out of the loop, OUTSIDE main()'s .catch (CS-C-008).
+    // loop only decides "exit, NPC turns, narration, or keep prompting".
+    // Notably this keeps every fs/engine failure inside the guarded router
+    // instead of raw-throwing out of the loop, OUTSIDE main()'s .catch
+    // (CS-C-008).
     const extras = buildExtraActions(engine, pack.progressionTrees ?? []);
+    const logLenBefore = engine.world.eventLog.length;
     const result = handlePlayerInput(engine, input, { ruleset: pack.ruleset, extras });
     if (result.kind === 'quit') return 'quit';
 
     if (result.kind === 'action' && !evaluateSessionEnd(engine)) {
       runNpcTurns(engine);
+    }
+
+    if (result.kind === 'action') {
+      narrateRound(presenter, engine, logLenBefore, console.log);
     }
   }
 }
