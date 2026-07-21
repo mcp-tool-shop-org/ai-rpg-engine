@@ -309,7 +309,7 @@ describe('Pirate — Resistance profiles', () => {
 
     const immune = events.find(e => e.type === 'ability.status.immune');
     expect(immune).toBeDefined();
-    expect(guardian.statuses.length).toBe(0);
+    expect(engine.store.state.entities['guardian']!.statuses.length).toBe(0);
   });
 
   it('boarding marine resists blind (halved duration)', () => {

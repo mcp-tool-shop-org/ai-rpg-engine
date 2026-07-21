@@ -291,7 +291,7 @@ describe('Colony — Resistance profiles', () => {
       // immune > resistant, so the highest matching resistance is immune
       const immune = events.find(e => e.type === 'ability.status.immune');
       expect(immune).toBeDefined();
-      expect(resonance.statuses.length).toBe(0);
+      expect(engine.store.state.entities.resonance.statuses.length).toBe(0);
     }
   });
 

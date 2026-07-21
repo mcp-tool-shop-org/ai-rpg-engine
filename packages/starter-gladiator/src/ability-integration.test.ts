@@ -287,7 +287,7 @@ describe('Gladiator — Resistance profiles', () => {
 
     const immune = events.find(e => e.type === 'ability.status.immune');
     expect(immune).toBeDefined();
-    expect(overlord.statuses.length).toBe(0);
+    expect(engine.store.state.entities.overlord.statuses.length).toBe(0);
   });
 
   it('arena champion resists control (halved duration)', () => {

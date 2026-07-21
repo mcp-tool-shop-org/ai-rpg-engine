@@ -292,7 +292,7 @@ describe('Zombie — Resistance profiles', () => {
     if (!aborted) {
       const immune = events.find(e => e.type === 'ability.status.immune');
       expect(immune).toBeDefined();
-      expect(bloater.statuses.length).toBe(0);
+      expect(engine.store.state.entities.bloater.statuses.length).toBe(0);
     }
   });
 
@@ -347,7 +347,7 @@ describe('Zombie — Resistance profiles', () => {
 
     const immune = events.find(e => e.type === 'ability.status.immune');
     expect(immune).toBeDefined();
-    expect(shambler.statuses.length).toBe(0);
+    expect(engine.store.state.entities.shambler.statuses.length).toBe(0);
   });
 });
 

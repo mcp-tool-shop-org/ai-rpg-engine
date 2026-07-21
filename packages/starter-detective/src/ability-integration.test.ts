@@ -296,7 +296,7 @@ describe('Detective — Resistance profiles', () => {
 
     const immune = events.find(e => e.type === 'ability.status.immune');
     expect(immune).toBeDefined();
-    expect(boss.statuses.length).toBe(0);
+    expect(engine.store.state.entities['crime-boss'].statuses.length).toBe(0);
   });
 
   it('crime boss resists control (halved duration)', () => {
