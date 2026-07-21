@@ -11,6 +11,7 @@ import type {
   StatDefinition,
   ResourceDefinition,
   ScalarValue,
+  EngineModule,
 } from './types.js';
 import { SeededRNG } from './rng.js';
 import { EventBus, type EventBusListenerErrorHook } from './events.js';
@@ -34,6 +35,23 @@ export type WorldStoreOptions = {
  * Current save-file format version. Stamped onto every new world's
  * `meta.saveVersion`. `WorldStore.deserialize` checks loaded saves against this
  * and runs the migration chain (see SAVE_MIGRATIONS) up to this version.
+ *
+ * Compatibility promise — keyed to SAVE_VERSION, NOT to any package version
+ * (npm versions of engine packages may move freely without touching save
+ * compatibility; only a SAVE_VERSION bump changes what loads):
+ *
+ * - Saves with the SAME MAJOR save version load. Minor/patch drift within a
+ *   major is bridged automatically: the world-level SAVE_MIGRATIONS chain
+ *   upgrades the world format, and per-module `migrateState` hooks (see
+ *   migrateModuleStates) upgrade each module's namespace slice as needed.
+ * - Saves NEWER than this build's SAVE_VERSION are rejected with
+ *   SAVE_VERSION_UNSUPPORTED — never a best-effort partial load.
+ * - Older saves with no migration path (a missing SAVE_MIGRATIONS step, which
+ *   a same-major save never hits) are rejected with SAVE_VERSION_UNSUPPORTED
+ *   rather than loaded wrong.
+ * - Saves that predate module versioning (no meta.moduleVersions) still load:
+ *   each persisted module namespace is treated as authored at the
+ *   MODULE_PRE_VERSIONING_SENTINEL and offered to that module's migrateState.
  */
 export const SAVE_VERSION = '1.0.0';
 
@@ -63,7 +81,7 @@ function compareVersions(a: string, b: string): number {
 
 /** Structured error thrown when a save cannot be loaded. */
 export type SaveLoadErrorShape = {
-  code: 'SAVE_VERSION_UNSUPPORTED' | 'SAVE_MALFORMED';
+  code: 'SAVE_VERSION_UNSUPPORTED' | 'SAVE_MALFORMED' | 'SAVE_MODULE_MIGRATION_FAILED';
   message: string;
   hint: string;
 };
@@ -128,6 +146,22 @@ export function assertSaveMetaShape(meta: unknown): void {
   if (typeof m.tick !== 'number' || !Number.isFinite(m.tick)) {
     fail('tick', 'a finite number', m.tick,
       'Without a numeric tick, tick progression would silently become NaN for every subsequent event, breaking replay. The save is corrupt or was produced by an incompatible tool. Restore from a backup.');
+  }
+  // moduleVersions is OPTIONAL (absent marks a pre-seam save and stays valid),
+  // but when present it must be a string→string map — migrateModuleStates
+  // compares entries against registered module versions and hands them to
+  // migrateState hooks as `fromVersion`. A crafted save with a numeric entry
+  // would otherwise leak a non-string into every module's migration contract.
+  const mv = (m as Record<'moduleVersions', unknown>).moduleVersions;
+  if (mv !== undefined) {
+    if (typeof mv !== 'object' || mv === null || Array.isArray(mv)) {
+      fail('moduleVersions', 'an object mapping module ids to version strings', mv);
+    }
+    for (const [modId, version] of Object.entries(mv as Record<string, unknown>)) {
+      if (typeof version !== 'string') {
+        fail(`moduleVersions["${modId}"]`, 'a version string', version);
+      }
+    }
   }
 }
 
@@ -241,6 +275,73 @@ export function migrateSaveState(state: WorldState): WorldState {
   return current;
 }
 
+/**
+ * Version a persisted module namespace is treated as authored at when the save
+ * carries no meta.moduleVersions entry for it — i.e. the save predates module
+ * versioning (pre-ENG-009), or the entry for that specific module is missing.
+ * Absent-means-oldest: '0.0.0' sorts below every real module version, so a
+ * migrateState hook receiving this sentinel knows it is looking at the
+ * pre-versioning shape. A module whose registered version IS '0.0.0' is itself
+ * pre-versioning and never migrates such a slice (versions match).
+ */
+export const MODULE_PRE_VERSIONING_SENTINEL = '0.0.0';
+
+/**
+ * Module-level save-migration seam (ENG-009). For each registered module with
+ * a PERSISTED namespace slice in `state.modules`, compares the persisted
+ * version (`meta.moduleVersions[id]`, absent → MODULE_PRE_VERSIONING_SENTINEL)
+ * against the module's registered `version`. On any difference — string
+ * inequality; older AND newer both count, the module owns its own drift
+ * tolerance — the module's optional `migrateState(slice, fromVersion)` hook is
+ * invoked on that module's slice ONLY, and its return value replaces the
+ * slice (returning `undefined` discards it, so the Engine's post-swap
+ * namespace init re-defaults it). Modules without the hook load their slice
+ * as-is (for state shapes stable across versions). Modules whose namespace is
+ * ABSENT from the save are skipped entirely — there is nothing to migrate;
+ * they get registered defaults from the namespace init instead.
+ *
+ * After ALL migrations succeed, meta.moduleVersions is re-stamped IN PLACE:
+ * registered modules record their current version (existing keys keep their
+ * insertion order — byte-stable round-trips), entries for modules NOT
+ * registered this run are preserved (their slices are preserved too, so a
+ * later re-registration still knows what version that state was written at).
+ *
+ * Mutates `state`. Engine.deserialize calls this AFTER the world-level chain +
+ * shape asserts (so moduleVersions is already shape-validated) and BEFORE the
+ * restored store swaps in — a failing module migration rejects the load before
+ * any module code can read the state. WorldStore.deserialize does NOT run
+ * this: modules are code, and the store-level path has no module knowledge —
+ * loading through bare WorldStore leaves slices and moduleVersions untouched.
+ *
+ * @throws SaveLoadError code SAVE_MODULE_MIGRATION_FAILED when a hook throws —
+ *   named module + both versions in the message, never a raw stack.
+ */
+export function migrateModuleStates(state: WorldState, modules: readonly EngineModule[]): void {
+  const persisted = state.meta.moduleVersions;
+  for (const mod of modules) {
+    const slice = state.modules[mod.id];
+    if (slice === undefined) continue; // nothing persisted — namespace init owns this case
+    const from = persisted?.[mod.id] ?? MODULE_PRE_VERSIONING_SENTINEL;
+    if (from === mod.version) continue; // in sync — migrate must NOT fire
+    if (!mod.migrateState) continue; // documented: hookless drift loads as-is
+    try {
+      state.modules[mod.id] = mod.migrateState(slice, from);
+    } catch (err) {
+      throw new SaveLoadError({
+        code: 'SAVE_MODULE_MIGRATION_FAILED',
+        message: `Module "${mod.id}" failed to migrate its saved state from version ${from} to ${mod.version}: ${err instanceof Error ? err.message : String(err)}`,
+        hint: `The "${mod.id}" module's migrateState hook threw while upgrading this save. Update the module to handle saves from version ${from}, or restore from a backup made with a compatible module version.`,
+      });
+    }
+  }
+  // Re-stamp only after every migration succeeded (all-or-nothing: a throw
+  // above abandons the whole restored store, never a half-stamped state).
+  const stamped = (state.meta.moduleVersions ??= {});
+  for (const mod of modules) {
+    stamped[mod.id] = mod.version;
+  }
+}
+
 export class WorldStore {
   readonly state: WorldState;
   readonly rng: SeededRNG;
@@ -274,6 +375,13 @@ export class WorldStore {
         seed,
         activeRuleset: options.manifest.ruleset,
         activeModules: [...options.manifest.modules],
+        // Always present on new worlds (ENG-009): the Engine fills one entry
+        // per registered module right after registration, so every serialize
+        // carries module save-format versions. Only PRE-seam saves lack the
+        // field entirely. Positioned in this literal (not appended later) so
+        // fresh-vs-loaded serializes keep identical meta key order — the
+        // byte-identical determinism pins depend on stable key ordering.
+        moduleVersions: {},
         idCounter: 0,
       },
       playerId: '',

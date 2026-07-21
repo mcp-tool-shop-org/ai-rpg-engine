@@ -29,6 +29,21 @@ export type WorldMeta = {
   activeRuleset: string;
   activeModules: string[];
   /**
+   * Module save-format versions: `EngineModule.version` per registered module,
+   * stamped by the Engine at registration so every serialize carries them
+   * (the module-level save-migration seam, ENG-009). On restore the Engine
+   * compares each entry against the registered module's version and invokes
+   * {@link EngineModule.migrateState} on that module's namespace slice when
+   * they differ.
+   *
+   * Optional because saves written before this seam existed lack the field —
+   * an absent map (or an absent per-module entry) marks a PRE-VERSIONING save:
+   * that module's persisted namespace is treated as authored at the '0.0.0'
+   * sentinel (see MODULE_PRE_VERSIONING_SENTINEL in world.ts). New worlds
+   * always start with `{}` and the Engine fills entries for its modules.
+   */
+  moduleVersions?: Record<string, string>;
+  /**
    * Monotonic counter for deterministic id generation, scoped to this world
    * instance. Lives in serialized state so save/load preserves the id sequence
    * and a reloaded game never re-mints ids that collide with the eventLog.
@@ -274,6 +289,33 @@ export type EngineModule = {
   init?(ctx: ModuleRegistrationContext): void;
   /** Called on engine shutdown */
   teardown?(): void;
+  /**
+   * Module-level save migration (ENG-009). Invoked by Engine.deserialize for
+   * THIS module when the save's persisted version for it
+   * (meta.moduleVersions[id]) differs from the registered `version` — string
+   * inequality, both older AND newer persisted versions fire the hook; the
+   * module owns its own drift tolerance (the engine-level SAVE_VERSION gate
+   * only protects the world format).
+   *
+   * Contract:
+   * - Receives ONLY this module's namespace slice (`state.modules[id]`), never
+   *   the whole world, plus the version the slice was persisted at.
+   *   `fromVersion` is the '0.0.0' pre-versioning sentinel when the save
+   *   predates module versioning (no meta.moduleVersions entry).
+   * - Fires only when a persisted slice EXISTS. An absent namespace is not
+   *   migrated — it is initialized to the module's registered defaults after
+   *   the restored world swaps in.
+   * - The return value REPLACES the slice. Returning `undefined` discards the
+   *   persisted slice; the namespace is then re-initialized to the module's
+   *   registered defaults (deliberate escape hatch for unsalvageable state).
+   * - A throw is wrapped in a structured SaveLoadError with code
+   *   SAVE_MODULE_MIGRATION_FAILED naming the module and both versions — the
+   *   load fails loud; a mismatched slice is never silently misread as the
+   *   current shape.
+   * - NOT declaring the hook means version drift loads the slice as-is (for
+   *   modules whose state shape is stable across versions).
+   */
+  migrateState?(state: unknown, fromVersion: string): unknown;
 };
 
 export type ModuleRegistrationContext = {
