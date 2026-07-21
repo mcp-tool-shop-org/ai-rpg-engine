@@ -29,7 +29,7 @@ import { runNpcTurns } from './turns.js';
 import { runWorldTick } from '@ai-rpg-engine/modules';
 import { evaluateSessionEnd, renderSessionEnd, computeSessionStats } from './endgame.js';
 import { appendRunRecord, readRunHistory, formatRecentRuns } from './history.js';
-import { buildExtraActions, renderExtraActions, parseExtraSelection, buildHudWorld, renderInspectorReport, type ExtraAction } from './menu.js';
+import { buildExtraActions, renderExtraActions, parseExtraSelection, buildHudWorld, renderInspectorReport, renderJournal, type ExtraAction } from './menu.js';
 import { renderDirectorLedger } from './director.js';
 import { loadExternalPack, PackLoadError, type LoadedPack } from './external-pack.js';
 import { runInspectSave } from './inspect.js';
@@ -810,6 +810,11 @@ export function handlePlayerInput(
       // Director's Ledger: same no-turn contract as debug (F-ENG005).
       if (extra.group === 'director') {
         log(renderDirectorLedger(engine));
+        return { kind: 'help' };
+      }
+      // Journal: quests and undertakings — same no-turn contract (F-ENG005).
+      if (extra.group === 'journal') {
+        log(renderJournal(engine.world));
         return { kind: 'help' };
       }
       runGuardedAction(
