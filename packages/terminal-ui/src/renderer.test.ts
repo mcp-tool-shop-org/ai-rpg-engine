@@ -424,6 +424,21 @@ describe('formatEvent — pressure lifecycle renders (F-ENG005)', () => {
       'undefined',
     );
   });
+
+  it('renders an encounter spawn as label + authored trigger hook', () => {
+    const line = formatEventLine(
+      cev('encounter.spawned', {
+        label: 'Patrol',
+        description: 'Noise attracts the dead from nearby blocks',
+      }),
+    );
+    expect(line).toBe('> Patrol: Noise attracts the dead from nearby blocks.');
+  });
+
+  it('encounter spawn falls back without undefined when payload fields are missing', () => {
+    const line = formatEventLine(cev('encounter.spawned', {}));
+    expect(line).toBe('> Encounter: something moves against you.');
+  });
 });
 
 // CS-C-003: the renderer's own menu items "[7] Look around" and

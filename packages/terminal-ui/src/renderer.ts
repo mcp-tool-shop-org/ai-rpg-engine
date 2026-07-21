@@ -693,6 +693,14 @@ export function formatEventLine(event: ResolvedEvent): string | null {
       const summary = payloadString(p, 'summary') ?? 'a pressure has run its course';
       return `> The moment passes: ${summary}.`;
     }
+    // F-ENG005: zone-entry encounter spawns (encounter-spawn module). Label is
+    // the composition kind (Ambush/Patrol/Horde/Challenge/Encounter);
+    // description is the authored trigger hook, terminal punctuation stripped.
+    case 'encounter.spawned': {
+      const label = payloadString(p, 'label') ?? 'Encounter';
+      const desc = payloadString(p, 'description') ?? 'something moves against you';
+      return `> ${label}: ${desc}.`;
+    }
 
     case 'dialogue.started':
       return `> Speaking with ${p.speakerName}`;
