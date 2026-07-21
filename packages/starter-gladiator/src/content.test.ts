@@ -19,6 +19,7 @@ import {
   gladiatorAbilities,
   gladiatorStatusDefinitions,
   buildCatalog,
+  itemCatalog,
 } from './content.js';
 import { gladiatorMinimalRuleset } from './ruleset.js';
 
@@ -33,7 +34,12 @@ describe('gladiator content — cross-reference integrity (F-4806a2c9)', () => {
       statuses: gladiatorStatusDefinitions,
     };
 
-    const result = validateGameContent(pack);
+    // F-ENG008: supply the real item registry so entity.inventory /
+    // entity.equipment references validate against the pack armory instead of
+    // being skipped (validateGameContent skips categories with no registry).
+    const result = validateGameContent(pack, {
+      itemIds: itemCatalog.items.map((i) => i.id),
+    });
     expect(result.errors).toEqual([]);
     expect(result.ok).toBe(true);
   });

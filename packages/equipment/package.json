@@ -18,6 +18,10 @@
     "build": "tsc",
     "test": "vitest run"
   },
+  "devDependencies": {
+    "@ai-rpg-engine/core": "*",
+    "@ai-rpg-engine/modules": "*"
+  },
   "license": "MIT",
   "author": "mcp-tool-shop",
   "homepage": "https://mcp-tool-shop-org.github.io/ai-rpg-engine/",

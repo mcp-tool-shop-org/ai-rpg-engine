@@ -60,3 +60,22 @@ export {
   DEFAULT_ARMOR_MILESTONES,
   TIER_LABELS,
 } from './relic-growth.js';
+
+// Runtime consumer loop (F-ENG008): equip/unequip EngineModule over this
+// package's Loadout model. Status machinery is injected by the pack (see
+// EquipmentStatusOps) so this package keeps zero runtime dependencies.
+export {
+  createEquipmentCore,
+  buildEquipmentStatusDefinitions,
+  getEquipmentState,
+  getEntityLoadout,
+  equipStatusId,
+  EQUIPMENT_CATALOG_FORMULA,
+  EQUIPMENT_STATE_KEY,
+} from './equipment-core.js';
+export type {
+  EquipmentCoreConfig,
+  EquipmentModuleState,
+  EquipmentStatusOps,
+  EquipmentStatusDefinition,
+} from './equipment-core.js';

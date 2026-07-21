@@ -29,7 +29,10 @@ export const player: EntityState = {
   stats: { might: 5, agility: 5, showmanship: 4 },
   resources: { hp: 25, maxHp: 25, stamina: 6, fatigue: 0, 'crowd-favor': 40 },
   statuses: [],
-  inventory: [],
+  // F-ENG008: the armory issues the retiarius kit to the authored player too,
+  // so the equip loop is reachable without character creation (created
+  // retiarius characters carry it via the archetype's startingInventory).
+  inventory: ['trident-and-net'],
   zoneId: 'holding-cells',
 };
 

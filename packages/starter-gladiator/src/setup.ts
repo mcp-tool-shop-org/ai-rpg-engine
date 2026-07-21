@@ -22,9 +22,12 @@ import {
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
+  applyStatus,
+  removeStatus,
   buildCombatStack,
   aggressiveProfile,
 } from '@ai-rpg-engine/modules';
+import { createEquipmentCore } from '@ai-rpg-engine/equipment';
 import * as engineModules from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatResourceProfile, IntentProfile } from '@ai-rpg-engine/modules';
 import {
@@ -45,6 +48,7 @@ import {
   gladiatorAbilities,
   gladiatorStatusDefinitions,
   progressionRewards,
+  itemCatalog,
 } from './content.js';
 import { gladiatorMinimalRuleset } from './ruleset.js';
 
@@ -206,6 +210,19 @@ export function createGame(seed?: number): Engine {
         playerId: 'player',
       }),
       createBossPhaseListener(arenaOverlordBoss),
+      // F-ENG008: the equipment loop — `equip`/`unequip` verbs over the pack's
+      // item catalog. The module (homed in @ai-rpg-engine/equipment) publishes
+      // the catalog under EQUIPMENT_CATALOG_FORMULA and mirrors equipped items'
+      // statModifiers into `equipped-<itemId>` statuses; this pack injects the
+      // status machinery of its engine build (the modules package's ops).
+      createEquipmentCore({
+        catalog: itemCatalog,
+        statuses: {
+          registerDefinitions: registerStatusDefinitions,
+          apply: applyStatus,
+          remove: removeStatus,
+        },
+      }),
       createAbilityCore({ abilities: gladiatorAbilities, statMapping: { power: 'might', precision: 'agility', focus: 'showmanship' } }),
       createAbilityEffects(),
       createAbilityReview(),
