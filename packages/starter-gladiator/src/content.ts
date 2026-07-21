@@ -199,6 +199,41 @@ export const beastAmbush: EncounterDefinition = {
   },
 };
 
+export const looseBeast: EncounterDefinition = {
+  id: 'loose-beast',
+  name: 'Loose War Beast',
+  participants: [{ entityId: 'war-beast', role: 'brute' }],
+  composition: 'ambush',
+  validZoneIds: ['armory'],
+  narrativeHooks: {
+    tone: 'panic among the weapon racks, a chain still swinging',
+    trigger: 'A handler loses his grip and a war beast slips its chain',
+    stakes: 'Cornered among the racks with nowhere to run',
+  },
+};
+
+// --- Encounter spawn tables (W7-gladiator-encounter-tables) ---
+//
+// Zone-entry spawn content for modules' encounter-spawn (shipped by the
+// wave-7 t1-encounters branch; this branch predates that module, so the
+// object is authored plain — its shape matches EncounterSpawnContent:
+// { encounters, entityTemplates, zoneTables }). Constraints honored per the
+// module's fail-closed validator: table entries are string[] encounter ids
+// (weight = repetition), every placement respects the encounter's own
+// validZoneIds, and no boss-fight composition or role:boss participant is
+// listed (championshipBout stays out — spawning a second Overlord could
+// un-win a won game). Registration seam lives in setup.ts.
+export const encounterSpawnContent = {
+  encounters: [beastAmbush, looseBeast],
+  entityTemplates: [warBeast],
+  zoneTables: {
+    // The pens are down here — escapes are twice as likely at the tunnel.
+    'tunnel-exit': ['beast-ambush', 'beast-ambush'],
+    'holding-cells': ['beast-ambush'],
+    'armory': ['loose-beast'],
+  } as Record<string, string[]>,
+};
+
 // --- Zones ---
 
 export const zones: ZoneState[] = [

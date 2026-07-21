@@ -210,6 +210,17 @@ export function createGame(seed?: number): Engine {
         playerId: 'player',
       }),
       createBossPhaseListener(arenaOverlordBoss),
+      // ── W7 MERGE SEAM (t1-encounters × t1-equip) ─────────────────────────
+      // Zone-entry encounter spawning. The encounter-spawn module shipped in
+      // the sibling t1-encounters branch; THIS branch forked before
+      // packages/modules/src/encounter-spawn.ts existed, so the registration
+      // cannot compile here. The content is live (content.ts
+      // encounterSpawnContent — validity pinned by content.test.ts). At merge,
+      // (1) add `createEncounterSpawn` to the '@ai-rpg-engine/modules' import
+      // list, (2) add `encounterSpawnContent` to the './content.js' import
+      // list, and (3) uncomment:
+      // createEncounterSpawn({ gameId: manifest.id, ...encounterSpawnContent }),
+      // ─────────────────────────────────────────────────────────────────────
       // F-ENG008: the equipment loop — `equip`/`unequip` verbs over the pack's
       // item catalog. The module (homed in @ai-rpg-engine/equipment) publishes
       // the catalog under EQUIPMENT_CATALOG_FORMULA and mirrors equipped items'
