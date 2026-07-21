@@ -44,6 +44,7 @@ import {
   arenaGloryTree,
   gladiatorAbilities,
   gladiatorStatusDefinitions,
+  progressionRewards,
 } from './content.js';
 import { gladiatorMinimalRuleset } from './ruleset.js';
 
@@ -149,12 +150,9 @@ export function createGame(seed?: number): Engine {
       createPerceptionFilter({ perceptionStat: 'agility' }),
       createProgressionCore({
         trees: [arenaGloryTree],
-        rewards: [{
-          eventPattern: 'combat.entity.defeated',
-          currencyId: 'xp',
-          amount: 15,
-          recipient: 'actor',
-        }],
+        // T0-progression-ceiling: kills + dialogue + first-visit + boss bonus
+        // (defined next to the tree in content.ts so the arithmetic is testable).
+        rewards: progressionRewards,
       }),
       createEnvironmentCore({
         // Hazards mutate entity.resources directly (deterministic, clamped);

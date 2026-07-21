@@ -43,6 +43,7 @@ import {
   duchessDialogue,
   bloodVialEffect,
   bloodMasteryTree,
+  progressionRewards,
   vampireAbilities,
   vampireStatusDefinitions,
 } from './content.js';
@@ -154,12 +155,9 @@ export function createGame(seed?: number): Engine {
       createPerceptionFilter({ perceptionStat: 'cunning' }),
       createProgressionCore({
         trees: [bloodMasteryTree],
-        rewards: [{
-          eventPattern: 'combat.entity.defeated',
-          currencyId: 'xp',
-          amount: 15,
-          recipient: 'actor',
-        }],
+        // T0-progression-ceiling: kills + dialogue + first-visit + boss bonus
+        // (defined next to the tree in content.ts so the arithmetic is testable).
+        rewards: progressionRewards,
       }),
       createEnvironmentCore({
         // Hazards mutate entity.resources directly (deterministic, clamped);

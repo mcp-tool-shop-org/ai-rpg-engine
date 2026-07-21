@@ -46,6 +46,7 @@ import {
   wayOfTheBladeTree,
   roninAbilities,
   roninStatusDefinitions,
+  progressionRewards,
 } from './content.js';
 import { roninMinimalRuleset } from './ruleset.js';
 
@@ -154,12 +155,9 @@ export function createGame(seed?: number): Engine {
       createPerceptionFilter({ perceptionStat: 'perception' }),
       createProgressionCore({
         trees: [wayOfTheBladeTree],
-        rewards: [{
-          eventPattern: 'combat.entity.defeated',
-          currencyId: 'xp',
-          amount: 15,
-          recipient: 'actor',
-        }],
+        // T0-progression-ceiling: kills + dialogue + first-visit + boss bonus
+        // (defined next to the tree in content.ts so the arithmetic is testable).
+        rewards: progressionRewards,
       }),
       createEnvironmentCore({
         // Hazards mutate entity.resources directly (deterministic, clamped);

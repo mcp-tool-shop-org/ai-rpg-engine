@@ -6,7 +6,7 @@ import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, 
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
-import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward } from '@ai-rpg-engine/modules';
 
 export const manifest: GameManifest = {
   id: 'crimson-court',
@@ -27,7 +27,7 @@ export const player: EntityState = {
   name: 'Fledgling',
   tags: ['player', 'vampire', 'fledgling'],
   stats: { presence: 4, vitality: 5, cunning: 5 },
-  resources: { hp: 20, stamina: 5, bloodlust: 10, humanity: 25 },
+  resources: { hp: 20, maxHp: 20, stamina: 5, bloodlust: 10, humanity: 25 },
   statuses: [],
   inventory: [],
   zoneId: 'grand-ballroom',
@@ -368,6 +368,65 @@ export const bloodMasteryTree: ProgressionTreeDefinition = {
   ],
 };
 
+// --- Progression Rewards (T0-progression-ceiling) ---
+//
+// Kills alone cannot complete blood-mastery: 3 enemies x 15 = 45 XP vs a
+// 50 XP tree. Non-combat sources close the gap and reward playing the court
+// game the pack is about: a completed audience with the Duchess, exploring
+// the manor's five spaces, and the elder's fall (the pack's climax).
+// Max earnable: 45 (kills) + 5 (audience) + 10 (5 zones x 2) + 10 (elder
+// bonus) = 70 >= 50. content-truth.test.ts pins this arithmetic.
+
+/** Flat XP amounts per source — exported so tests can pin the progression arithmetic. */
+export const xpAwards = {
+  kill: 15,
+  dialogueComplete: 5,
+  firstVisit: 2,
+  bossBonus: 10,
+} as const;
+
+/** Award `amount` once per unique key, tracked in world.globals (rides saves). */
+function oncePer(
+  amount: number,
+  keyOf: (event: ResolvedEvent) => string | undefined,
+): CurrencyReward['amount'] {
+  return (event, world) => {
+    const k = keyOf(event);
+    if (!k) return 0;
+    const flag = `xp-awarded:${k}`;
+    if (world.globals[flag]) return 0;
+    world.globals[flag] = true;
+    return amount;
+  };
+}
+
+/** Only the player earns exploration/story XP (NPC movement must not consume the once-gates). */
+const playerOnly: CurrencyReward['recipient'] = (event, world) =>
+  event.actorId === world.playerId ? event.actorId : undefined;
+
+export const progressionRewards: CurrencyReward[] = [
+  { eventPattern: 'combat.entity.defeated', currencyId: 'xp', amount: xpAwards.kill, recipient: 'actor' },
+  {
+    eventPattern: 'combat.entity.defeated',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.bossBonus, (e) =>
+      e.payload.entityId === 'elder-vampire' ? 'boss:elder-vampire' : undefined),
+    recipient: 'actor',
+  },
+  {
+    eventPattern: 'dialogue.ended',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.dialogueComplete, (e) => `dialogue:${String(e.payload.dialogueId)}`),
+    recipient: playerOnly,
+  },
+  {
+    eventPattern: 'world.zone.entered',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.firstVisit, (e) => `zone:${String(e.payload.zoneId)}`),
+    recipient: playerOnly,
+  },
+];
+
 // --- Items ---
 
 export const bloodVialEffect = {
@@ -544,7 +603,10 @@ export const buildCatalog: BuildCatalog = {
       name: 'Courtier',
       description: 'A social predator who rules through charm',
       statPriorities: { presence: 6, vitality: 3, cunning: 5 },
-      startingTags: ['aristocrat', 'charming'],
+      // 'vampire' is the pack-identity tag every ability requirement gates on
+      // (T0-tag-gate): a created character without it sees an empty ability
+      // menu. Every archetype in this pack IS a vampire — carry the tag.
+      startingTags: ['vampire', 'aristocrat', 'charming'],
       progressionTreeId: 'blood-mastery',
     },
     {
@@ -552,7 +614,7 @@ export const buildCatalog: BuildCatalog = {
       name: 'Stalker',
       description: 'A shadow who hunts from darkness',
       statPriorities: { presence: 3, vitality: 6, cunning: 5 },
-      startingTags: ['predator', 'shadow'],
+      startingTags: ['vampire', 'predator', 'shadow'],
       startingInventory: ['blood-vial'],
       progressionTreeId: 'blood-mastery',
     },
@@ -562,7 +624,7 @@ export const buildCatalog: BuildCatalog = {
       description: 'A connoisseur who savors every sensation',
       statPriorities: { presence: 5, vitality: 3, cunning: 6 },
       resourceOverrides: { humanity: 28 },
-      startingTags: ['refined', 'perceptive'],
+      startingTags: ['vampire', 'refined', 'perceptive'],
       progressionTreeId: 'blood-mastery',
     },
   ],

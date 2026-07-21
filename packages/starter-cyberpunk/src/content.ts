@@ -2,6 +2,7 @@
 // 3 zones, 1 NPC, 1 ICE agent, 1 item, 1 dialogue
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
+import type { CurrencyReward } from '@ai-rpg-engine/modules';
 import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
@@ -27,7 +28,7 @@ export const player: EntityState = {
   name: 'Ghost',
   tags: ['player', 'netrunner'],
   stats: { chrome: 3, reflex: 5, netrunning: 7 },
-  resources: { hp: 15, stamina: 6, ice: 10, bandwidth: 8 },
+  resources: { hp: 15, maxHp: 15, stamina: 6, ice: 10, bandwidth: 8 },
   statuses: [],
   inventory: [],
   zoneId: 'street-level',
@@ -357,6 +358,62 @@ export const iceBreaker = {
   },
 };
 
+// --- Progression Rewards (T0-progression-ceiling) ---
+//
+// Kills alone cannot complete the runner tree: 3 enemies x 20 = 60 XP vs a 55 XP tree (already completable); non-combat sources keep it true when content shifts. Max earnable: 60 + 5 (fixer meeting) + 6 (3 zones x 2) + 10 (vault-overseer bonus) = 81 >= 55.
+// Non-combat sources: a completed meeting with the fixer, mapping every corner of the grid, and cracking the vault overseer.
+// content-truth.test.ts pins this arithmetic against the live content.
+
+/** Flat XP amounts per source — exported so tests can pin the progression arithmetic. */
+export const xpAwards = {
+  kill: 20,
+  dialogueComplete: 5,
+  firstVisit: 2,
+  bossBonus: 10,
+} as const;
+
+/** Award `amount` once per unique key, tracked in world.globals (rides saves). */
+function oncePer(
+  amount: number,
+  keyOf: (event: ResolvedEvent) => string | undefined,
+): CurrencyReward['amount'] {
+  return (event, world) => {
+    const k = keyOf(event);
+    if (!k) return 0;
+    const flag = `xp-awarded:${k}`;
+    if (world.globals[flag]) return 0;
+    world.globals[flag] = true;
+    return amount;
+  };
+}
+
+/** Only the player earns exploration/story XP (NPC movement must not consume the once-gates). */
+const playerOnly: CurrencyReward['recipient'] = (event, world) =>
+  event.actorId === world.playerId ? event.actorId : undefined;
+
+export const progressionRewards: CurrencyReward[] = [
+  { eventPattern: 'combat.entity.defeated', currencyId: 'xp', amount: xpAwards.kill, recipient: 'actor' },
+  {
+    eventPattern: 'combat.entity.defeated',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.bossBonus, (e) =>
+      e.payload.entityId === 'vault-overseer' ? 'boss:vault-overseer' : undefined),
+    recipient: 'actor',
+  },
+  {
+    eventPattern: 'dialogue.ended',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.dialogueComplete, (e) => `dialogue:${String(e.payload.dialogueId)}`),
+    recipient: playerOnly,
+  },
+  {
+    eventPattern: 'world.zone.entered',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.firstVisit, (e) => `zone:${String(e.payload.zoneId)}`),
+    recipient: playerOnly,
+  },
+];
+
 // --- Abilities ---
 
 export const iceBreakAbility: AbilityDefinition = {
@@ -473,7 +530,6 @@ export const buildCatalog: BuildCatalog = {
       statPriorities: { chrome: 2, reflex: 4, netrunning: 8 },
       startingTags: ['hacker', 'netrunner'],
       progressionTreeId: 'netrunning-skills',
-      grantedVerbs: ['hack', 'jack-in'],
     },
     {
       id: 'street-razor',

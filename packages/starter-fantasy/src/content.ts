@@ -6,7 +6,7 @@ import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
-import type { EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
+import type { EncounterDefinition, BossDefinition, CurrencyReward } from '@ai-rpg-engine/modules';
 import type { AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
 
 export const manifest: GameManifest = {
@@ -28,7 +28,7 @@ export const player: EntityState = {
   name: 'Wanderer',
   tags: ['player'],
   stats: { vigor: 5, instinct: 4, will: 3 },
-  resources: { hp: 20, stamina: 8 },
+  resources: { hp: 20, maxHp: 20, stamina: 8 },
   statuses: [],
   inventory: [],
   zoneId: 'chapel-entrance',
@@ -395,6 +395,62 @@ export const healingDraughtEffect = {
   },
 };
 
+// --- Progression Rewards (T0-progression-ceiling) ---
+//
+// Kills alone cannot complete combat-mastery: 3 enemies x 15 = 45 XP vs a 50 XP tree. Max earnable: 45 + 5 (pilgrim) + 10 (5 zones x 2) + 10 (crypt-warden bonus) = 70 >= 50.
+// Non-combat sources: hearing the pilgrim's tale to its end, exploring the chapel grounds, and felling the crypt warden.
+// content-truth.test.ts pins this arithmetic against the live content.
+
+/** Flat XP amounts per source — exported so tests can pin the progression arithmetic. */
+export const xpAwards = {
+  kill: 15,
+  dialogueComplete: 5,
+  firstVisit: 2,
+  bossBonus: 10,
+} as const;
+
+/** Award `amount` once per unique key, tracked in world.globals (rides saves). */
+function oncePer(
+  amount: number,
+  keyOf: (event: ResolvedEvent) => string | undefined,
+): CurrencyReward['amount'] {
+  return (event, world) => {
+    const k = keyOf(event);
+    if (!k) return 0;
+    const flag = `xp-awarded:${k}`;
+    if (world.globals[flag]) return 0;
+    world.globals[flag] = true;
+    return amount;
+  };
+}
+
+/** Only the player earns exploration/story XP (NPC movement must not consume the once-gates). */
+const playerOnly: CurrencyReward['recipient'] = (event, world) =>
+  event.actorId === world.playerId ? event.actorId : undefined;
+
+export const progressionRewards: CurrencyReward[] = [
+  { eventPattern: 'combat.entity.defeated', currencyId: 'xp', amount: xpAwards.kill, recipient: 'actor' },
+  {
+    eventPattern: 'combat.entity.defeated',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.bossBonus, (e) =>
+      e.payload.entityId === 'crypt-warden' ? 'boss:crypt-warden' : undefined),
+    recipient: 'actor',
+  },
+  {
+    eventPattern: 'dialogue.ended',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.dialogueComplete, (e) => `dialogue:${String(e.payload.dialogueId)}`),
+    recipient: playerOnly,
+  },
+  {
+    eventPattern: 'world.zone.entered',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.firstVisit, (e) => `zone:${String(e.payload.zoneId)}`),
+    recipient: playerOnly,
+  },
+];
+
 // --- Abilities ---
 
 export const holySmite: AbilityDefinition = {
@@ -506,7 +562,14 @@ export const buildCatalog: BuildCatalog = {
       name: 'Penitent Knight',
       description: 'A warrior burdened by an oath',
       statPriorities: { vigor: 6, instinct: 4, will: 2 },
-      startingTags: ['martial', 'penitent'],
+      // T0-unreachable-abilities (a): the pack's 3-ability kit gates on
+      // 'divine', which only the chapel-seer carried — knight and gravewalker
+      // creation paths saw an empty kit. Every archetype here is bound to the
+      // chapel's sacred threshold (a penitent oath, crypt rites, divine
+      // whispers), so all three carry 'divine'; the seer stays best at the
+      // powers through will-based ability checks. The authored default player
+      // (the untagged Wanderer) deliberately does NOT carry it.
+      startingTags: ['divine', 'martial', 'penitent'],
       progressionTreeId: 'combat-mastery',
     },
     {
@@ -514,7 +577,7 @@ export const buildCatalog: BuildCatalog = {
       name: 'Gravewalker',
       description: 'Stalker of the dead, sharp and quiet',
       statPriorities: { vigor: 3, instinct: 5, will: 4 },
-      startingTags: ['shadow', 'gravewalker'],
+      startingTags: ['divine', 'shadow', 'gravewalker'],
       startingInventory: ['torch'],
       progressionTreeId: 'combat-mastery',
     },
@@ -526,7 +589,6 @@ export const buildCatalog: BuildCatalog = {
       resourceOverrides: { stamina: 10 },
       startingTags: ['divine', 'seer'],
       progressionTreeId: 'combat-mastery',
-      grantedVerbs: ['pray'],
     },
   ],
   backgrounds: [

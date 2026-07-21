@@ -6,7 +6,7 @@ import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, 
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
-import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward } from '@ai-rpg-engine/modules';
 
 export const manifest: GameManifest = {
   id: 'iron-colosseum',
@@ -27,7 +27,7 @@ export const player: EntityState = {
   name: 'Gladiator',
   tags: ['player', 'gladiator', 'enslaved'],
   stats: { might: 5, agility: 5, showmanship: 4 },
-  resources: { hp: 25, stamina: 6, fatigue: 0, 'crowd-favor': 40 },
+  resources: { hp: 25, maxHp: 25, stamina: 6, fatigue: 0, 'crowd-favor': 40 },
   statuses: [],
   inventory: [],
   zoneId: 'holding-cells',
@@ -416,6 +416,62 @@ export const patronTokenEffect = {
   },
 };
 
+// --- Progression Rewards (T0-progression-ceiling) ---
+//
+// Kills alone cannot complete the arena tree: 3 enemies x 15 = 45 XP vs a 50 XP tree. Max earnable: 45 + 5 (patron audience) + 10 (5 zones x 2) + 10 (overlord purse) = 70 >= 50.
+// Non-combat sources: a completed audience with the patron, learning every corner of the arena complex, and the overlord's purse.
+// content-truth.test.ts pins this arithmetic against the live content.
+
+/** Flat XP amounts per source — exported so tests can pin the progression arithmetic. */
+export const xpAwards = {
+  kill: 15,
+  dialogueComplete: 5,
+  firstVisit: 2,
+  bossBonus: 10,
+} as const;
+
+/** Award `amount` once per unique key, tracked in world.globals (rides saves). */
+function oncePer(
+  amount: number,
+  keyOf: (event: ResolvedEvent) => string | undefined,
+): CurrencyReward['amount'] {
+  return (event, world) => {
+    const k = keyOf(event);
+    if (!k) return 0;
+    const flag = `xp-awarded:${k}`;
+    if (world.globals[flag]) return 0;
+    world.globals[flag] = true;
+    return amount;
+  };
+}
+
+/** Only the player earns exploration/story XP (NPC movement must not consume the once-gates). */
+const playerOnly: CurrencyReward['recipient'] = (event, world) =>
+  event.actorId === world.playerId ? event.actorId : undefined;
+
+export const progressionRewards: CurrencyReward[] = [
+  { eventPattern: 'combat.entity.defeated', currencyId: 'xp', amount: xpAwards.kill, recipient: 'actor' },
+  {
+    eventPattern: 'combat.entity.defeated',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.bossBonus, (e) =>
+      e.payload.entityId === 'arena-overlord' ? 'boss:arena-overlord' : undefined),
+    recipient: 'actor',
+  },
+  {
+    eventPattern: 'dialogue.ended',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.dialogueComplete, (e) => `dialogue:${String(e.payload.dialogueId)}`),
+    recipient: playerOnly,
+  },
+  {
+    eventPattern: 'world.zone.entered',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.firstVisit, (e) => `zone:${String(e.payload.zoneId)}`),
+    recipient: playerOnly,
+  },
+];
+
 // --- Abilities ---
 
 export const crowdCleave: AbilityDefinition = {
@@ -556,7 +612,9 @@ export const buildCatalog: BuildCatalog = {
       name: 'Retiarius',
       description: 'Net-and-trident fighter, quick and theatrical',
       statPriorities: { might: 3, agility: 6, showmanship: 5 },
-      startingTags: ['net-fighter', 'agile'],
+      // 'gladiator' is the pack-identity tag every ability requirement gates on
+      // (T0-tag-gate: a created character without it hides gated abilities).
+      startingTags: ['gladiator', 'net-fighter', 'agile'],
       startingInventory: ['trident-and-net'],
       progressionTreeId: 'arena-glory',
     },
@@ -565,7 +623,7 @@ export const buildCatalog: BuildCatalog = {
       name: 'Murmillo',
       description: 'Heavy fighter, shield and sword, built to endure',
       statPriorities: { might: 6, agility: 4, showmanship: 3 },
-      startingTags: ['heavy-fighter', 'armored'],
+      startingTags: ['gladiator', 'heavy-fighter', 'armored'],
       resourceOverrides: { hp: 30 },
       progressionTreeId: 'arena-glory',
     },
@@ -574,7 +632,7 @@ export const buildCatalog: BuildCatalog = {
       name: 'Provocator',
       description: 'Showman first, fighter second — lives for the crowd',
       statPriorities: { might: 4, agility: 4, showmanship: 6 },
-      startingTags: ['showman', 'crowd-favorite'],
+      startingTags: ['gladiator', 'showman', 'crowd-favorite'],
       resourceOverrides: { 'crowd-favor': 55 },
       progressionTreeId: 'arena-glory',
     },

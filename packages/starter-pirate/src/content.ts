@@ -2,7 +2,7 @@
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
-import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -34,7 +34,7 @@ export const player: EntityState = {
   name: 'Captain',
   tags: ['player', 'pirate', 'captain'],
   stats: { brawn: 5, cunning: 6, 'sea-legs': 5 },
-  resources: { hp: 20, stamina: 5, morale: 15 },
+  resources: { hp: 20, maxHp: 20, stamina: 5, morale: 15 },
   statuses: [],
   inventory: [],
   zoneId: 'ship-deck',
@@ -393,6 +393,62 @@ export const rumBarrelEffect = {
   },
 };
 
+// --- Progression Rewards (T0-progression-ceiling) ---
+//
+// Kills alone cannot complete the captain tree: 3 enemies x 12 = 36 XP vs a 50 XP tree. Max earnable: 36 + 5 (cartographer parley) + 10 (5 zones x 2) + 10 (guardian bounty) = 61 >= 50.
+// Non-combat sources: a completed parley with the cartographer, charting every cove of the isle, and the drowned guardian's bounty.
+// content-truth.test.ts pins this arithmetic against the live content.
+
+/** Flat XP amounts per source — exported so tests can pin the progression arithmetic. */
+export const xpAwards = {
+  kill: 12,
+  dialogueComplete: 5,
+  firstVisit: 2,
+  bossBonus: 10,
+} as const;
+
+/** Award `amount` once per unique key, tracked in world.globals (rides saves). */
+function oncePer(
+  amount: number,
+  keyOf: (event: ResolvedEvent) => string | undefined,
+): CurrencyReward['amount'] {
+  return (event, world) => {
+    const k = keyOf(event);
+    if (!k) return 0;
+    const flag = `xp-awarded:${k}`;
+    if (world.globals[flag]) return 0;
+    world.globals[flag] = true;
+    return amount;
+  };
+}
+
+/** Only the player earns exploration/story XP (NPC movement must not consume the once-gates). */
+const playerOnly: CurrencyReward['recipient'] = (event, world) =>
+  event.actorId === world.playerId ? event.actorId : undefined;
+
+export const progressionRewards: CurrencyReward[] = [
+  { eventPattern: 'combat.entity.defeated', currencyId: 'xp', amount: xpAwards.kill, recipient: 'actor' },
+  {
+    eventPattern: 'combat.entity.defeated',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.bossBonus, (e) =>
+      e.payload.entityId === 'drowned_guardian' ? 'boss:drowned_guardian' : undefined),
+    recipient: 'actor',
+  },
+  {
+    eventPattern: 'dialogue.ended',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.dialogueComplete, (e) => `dialogue:${String(e.payload.dialogueId)}`),
+    recipient: playerOnly,
+  },
+  {
+    eventPattern: 'world.zone.entered',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.firstVisit, (e) => `zone:${String(e.payload.zoneId)}`),
+    recipient: playerOnly,
+  },
+];
+
 // --- Abilities ---
 
 export const broadside: AbilityDefinition = {
@@ -532,27 +588,26 @@ export const buildCatalog: BuildCatalog = {
       name: 'Corsair',
       description: 'Boarding specialist, fear incarnate',
       statPriorities: { brawn: 7, cunning: 4, 'sea-legs': 3 },
-      startingTags: ['raider', 'corsair'],
+      // 'pirate' is the pack-identity tag every ability requirement gates on
+      // (T0-tag-gate: a created character without it hides gated abilities).
+      startingTags: ['pirate', 'raider', 'corsair'],
       progressionTreeId: 'seamanship',
-      grantedVerbs: ['plunder'],
     },
     {
       id: 'privateer',
       name: 'Privateer',
       description: 'Schemer with a letter of marque',
       statPriorities: { brawn: 3, cunning: 7, 'sea-legs': 4 },
-      startingTags: ['schemer', 'privateer'],
+      startingTags: ['pirate', 'schemer', 'privateer'],
       progressionTreeId: 'seamanship',
-      grantedVerbs: ['navigate'],
     },
     {
       id: 'helmsman',
       name: 'Helmsman',
       description: 'Born on the waves, reads the wind',
       statPriorities: { brawn: 4, cunning: 3, 'sea-legs': 7 },
-      startingTags: ['sailor', 'helmsman'],
+      startingTags: ['pirate', 'sailor', 'helmsman'],
       progressionTreeId: 'seamanship',
-      grantedVerbs: ['navigate'],
     },
   ],
   backgrounds: [

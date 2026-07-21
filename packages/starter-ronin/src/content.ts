@@ -6,7 +6,7 @@ import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, 
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
-import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward } from '@ai-rpg-engine/modules';
 
 export const manifest: GameManifest = {
   id: 'jade-veil',
@@ -27,7 +27,7 @@ export const player: EntityState = {
   name: 'Ronin',
   tags: ['player', 'ronin', 'masterless'],
   stats: { discipline: 5, perception: 6, composure: 4 },
-  resources: { hp: 20, stamina: 5, honor: 25, ki: 15 },
+  resources: { hp: 20, maxHp: 20, stamina: 5, honor: 25, ki: 15 },
   statuses: [],
   inventory: [],
   zoneId: 'castle-gate',
@@ -392,6 +392,62 @@ export const incenseKitEffect = {
   },
 };
 
+// --- Progression Rewards (T0-progression-ceiling) ---
+//
+// Kills alone cannot complete the way tree: 3 enemies x 15 = 45 XP vs a 50 XP tree. Max earnable: 45 + 5 (magistrate counsel) + 10 (5 zones x 2) + 10 (corrupt-samurai bonus) = 70 >= 50.
+// Non-combat sources: a completed counsel with the magistrate, walking every road of the province, and cutting down the corrupt samurai.
+// content-truth.test.ts pins this arithmetic against the live content.
+
+/** Flat XP amounts per source — exported so tests can pin the progression arithmetic. */
+export const xpAwards = {
+  kill: 15,
+  dialogueComplete: 5,
+  firstVisit: 2,
+  bossBonus: 10,
+} as const;
+
+/** Award `amount` once per unique key, tracked in world.globals (rides saves). */
+function oncePer(
+  amount: number,
+  keyOf: (event: ResolvedEvent) => string | undefined,
+): CurrencyReward['amount'] {
+  return (event, world) => {
+    const k = keyOf(event);
+    if (!k) return 0;
+    const flag = `xp-awarded:${k}`;
+    if (world.globals[flag]) return 0;
+    world.globals[flag] = true;
+    return amount;
+  };
+}
+
+/** Only the player earns exploration/story XP (NPC movement must not consume the once-gates). */
+const playerOnly: CurrencyReward['recipient'] = (event, world) =>
+  event.actorId === world.playerId ? event.actorId : undefined;
+
+export const progressionRewards: CurrencyReward[] = [
+  { eventPattern: 'combat.entity.defeated', currencyId: 'xp', amount: xpAwards.kill, recipient: 'actor' },
+  {
+    eventPattern: 'combat.entity.defeated',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.bossBonus, (e) =>
+      e.payload.entityId === 'corrupt-samurai' ? 'boss:corrupt-samurai' : undefined),
+    recipient: 'actor',
+  },
+  {
+    eventPattern: 'dialogue.ended',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.dialogueComplete, (e) => `dialogue:${String(e.payload.dialogueId)}`),
+    recipient: playerOnly,
+  },
+  {
+    eventPattern: 'world.zone.entered',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.firstVisit, (e) => `zone:${String(e.payload.zoneId)}`),
+    recipient: playerOnly,
+  },
+];
+
 // --- Abilities ---
 
 export const iaijutsuStrike: AbilityDefinition = {
@@ -535,7 +591,9 @@ export const buildCatalog: BuildCatalog = {
       name: 'Kensei',
       description: 'Sword saint — discipline made flesh',
       statPriorities: { discipline: 6, perception: 4, composure: 4 },
-      startingTags: ['blade-master', 'martial'],
+      // 'ronin' is the pack-identity tag every ability requirement gates on
+      // (T0-tag-gate: a created character without it hides gated abilities).
+      startingTags: ['ronin', 'blade-master', 'martial'],
       startingInventory: ['katana'],
       progressionTreeId: 'way-of-the-blade',
     },
@@ -544,7 +602,7 @@ export const buildCatalog: BuildCatalog = {
       name: 'Investigator',
       description: 'Sees what others overlook, hears what others silence',
       statPriorities: { discipline: 3, perception: 6, composure: 5 },
-      startingTags: ['keen-eye', 'methodical'],
+      startingTags: ['ronin', 'keen-eye', 'methodical'],
       progressionTreeId: 'way-of-the-blade',
     },
     {
@@ -553,7 +611,7 @@ export const buildCatalog: BuildCatalog = {
       description: 'Navigates politics with grace and calculated silence',
       statPriorities: { discipline: 4, perception: 4, composure: 6 },
       resourceOverrides: { honor: 28 },
-      startingTags: ['courtly', 'composed'],
+      startingTags: ['ronin', 'courtly', 'composed'],
       progressionTreeId: 'way-of-the-blade',
     },
   ],

@@ -30,8 +30,13 @@ describe('detectiveMinimalRuleset', () => {
     expect(verbIds).toContain('speak');
     expect(verbIds).toContain('choose');
     expect(verbIds).toContain('use');
-    expect(verbIds).toContain('interrogate');
-    expect(verbIds).toContain('deduce');
+    // T0-verb-honesty-content: 'interrogate'/'deduce' were flavor rows with NO
+    // registered handler — the help taught verbs that bounced. They are gone;
+    // brace/reposition (registered by buildCombatStack) are advertised instead.
+    expect(verbIds).not.toContain('interrogate');
+    expect(verbIds).not.toContain('deduce');
+    expect(verbIds).toContain('brace');
+    expect(verbIds).toContain('reposition');
   });
 
   it('lists all default modules', () => {

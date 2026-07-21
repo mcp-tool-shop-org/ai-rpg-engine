@@ -45,6 +45,7 @@ import {
   combatMasteryTree,
   fantasyAbilities,
   fantasyStatusDefinitions,
+  progressionRewards,
 } from './content.js';
 import { fantasyMinimalRuleset } from './ruleset.js';
 
@@ -127,12 +128,9 @@ export function createGame(seed?: number): Engine {
       createPerceptionFilter(),
       createProgressionCore({
         trees: [combatMasteryTree],
-        rewards: [{
-          eventPattern: 'combat.entity.defeated',
-          currencyId: 'xp',
-          amount: 15,
-          recipient: 'actor',
-        }],
+        // T0-progression-ceiling: kills + dialogue + first-visit + boss bonus
+        // (defined next to the tree in content.ts so the arithmetic is testable).
+        rewards: progressionRewards,
       }),
       createEnvironmentCore({
         // Hazard effects apply their consequence by mutating entity.resources
