@@ -359,6 +359,10 @@ describe('tactical triangle counter relationships', () => {
         entities: [p, makeEntity('orc-1', 'Orc', 'a')],
         zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
         tick,
+        // seed 0 = the legacy stream this sweep's counter fires in (F-SEED).
+        // NOTE: `tick` here is silently ignored by HarnessOptions — a
+        // pre-existing latent gap flagged for the Phase-8 re-audit.
+        seed: 0,
       });
 
       const events = engine.submitAction('attack', { actorId: 'orc-1', targetIds: ['player'] });
@@ -400,6 +404,9 @@ describe('tactical triangle counter relationships', () => {
         entities: [p, makeEntity('orc-1', 'Orc', 'a', { stats: { vigor: 4, instinct: 5, will: 3 } })],
         zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
         tick,
+        // seed 0 = the legacy stream (F-SEED); `tick` silently ignored — see
+        // the sibling sweep's note (Phase-8 re-audit item).
+        seed: 0,
       });
 
       const events = engine.submitAction('attack', { actorId: 'orc-1', targetIds: ['player'] });

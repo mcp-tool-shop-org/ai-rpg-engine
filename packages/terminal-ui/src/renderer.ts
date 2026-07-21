@@ -416,6 +416,25 @@ export function parseTextInput(
   if (verb === 'save') return { verb: 'save' };
   if (verb === 'quit' || verb === 'exit') return { verb: 'quit' };
 
+  // F-ENG008: equip/unequip take an ITEM argument, never a target. Without
+  // this branch the inventory fallthrough below rewrote `equip trident` into
+  // `use` — and inventory-core consumed the item. The handler resolves ids
+  // itself (bare-equip auto-resolve, structured rejections listing what's
+  // carried/equipped); prefix-matching for equip mirrors the `use` argument
+  // affordance. Unequip passes raw: equipped items have left the inventory.
+  if (verb === 'equip' || verb === 'unequip') {
+    if (!rest) return { verb };
+    let itemId = rest;
+    const player = world.entities[world.playerId];
+    if (verb === 'equip' && player?.inventory) {
+      const exact = player.inventory.find(i => i.toLowerCase() === rest);
+      const prefix = player.inventory.find(i => i.toLowerCase().startsWith(rest));
+      const substring = player.inventory.find(i => i.toLowerCase().includes(rest));
+      itemId = exact ?? prefix ?? substring ?? rest;
+    }
+    return { verb, parameters: { itemId } };
+  }
+
   // Resolve target by name
   const zone = world.zones[world.locationId];
   if (!zone) return { verb };

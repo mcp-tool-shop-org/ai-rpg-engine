@@ -841,6 +841,9 @@ describe('companion interception: damage recomputation + defense modifiers', () 
       ],
       zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
       playerId: 'player',
+      // seed 0 = the legacy roll stream this damage scenario was authored
+      // against (F-SEED moved the harness-default seed-1 stream).
+      seed: 0,
     });
 
     for (let tick = 1; tick <= 30; tick++) {

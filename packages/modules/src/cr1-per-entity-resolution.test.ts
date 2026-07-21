@@ -199,6 +199,8 @@ describe('CR-1 per-entity rule resolution', () => {
       entities: [plain, foe],
       zones: [ZONE],
       playerId: 'plain',
+      // seed 0 = the legacy stream where this probe attack lands (F-SEED).
+      seed: 0,
     });
     // No ruleProfiles registered — pure back-compat world.
 

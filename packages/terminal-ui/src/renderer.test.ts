@@ -51,6 +51,27 @@ function makeWorld() {
   return engine.world;
 }
 
+describe('parseTextInput — equip/unequip item routing (F-ENG008)', () => {
+  it('equip <partial> resolves the inventory item as parameters.itemId, never verb use', () => {
+    const world = makeWorld();
+    const player = world.entities['hero'];
+    player.inventory = ['trident-and-net', 'healing-draught'];
+    const parsed = parseTextInput('equip trident', world);
+    expect(parsed).toEqual({ verb: 'equip', parameters: { itemId: 'trident-and-net' } });
+  });
+
+  it('unequip passes its argument through raw (equipped items have left the inventory)', () => {
+    const world = makeWorld();
+    const parsed = parseTextInput('unequip trident-and-net', world);
+    expect(parsed).toEqual({ verb: 'unequip', parameters: { itemId: 'trident-and-net' } });
+  });
+
+  it('bare equip carries no parameters — the handler auto-resolves or rejects with a hint', () => {
+    const world = makeWorld();
+    expect(parseTextInput('equip', world)).toEqual({ verb: 'equip' });
+  });
+});
+
 describe('parseTextInput — blank input (F-1de46432)', () => {
   it('returns null for an empty string', () => {
     const world = makeWorld();
