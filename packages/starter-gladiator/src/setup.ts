@@ -8,15 +8,8 @@ import {
   createDialogueCore,
   createPerceptionFilter,
   createProgressionCore,
-  createEnvironmentCore,
-  createFactionCognition,
-  createRumorPropagation,
   createSimulationInspector,
-  createDistrictCore,
-  createBeliefProvenance,
-  createObserverPresentation,
   giveItem,
-  createDefeatFallout,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
@@ -25,8 +18,8 @@ import {
   applyStatus,
   removeStatus,
   buildCombatStack,
+  buildWorldStack,
   aggressiveProfile,
-  createEncounterSpawn,
 } from '@ai-rpg-engine/modules';
 import { createEquipmentCore } from '@ai-rpg-engine/equipment';
 import * as engineModules from '@ai-rpg-engine/modules';
@@ -143,6 +136,60 @@ export function createGame(seed?: number): Engine {
     },
   });
 
+  // Strategic tier in one call (F-ENG005-build-world-stack): the same eight
+  // modules this setup used to hand-list, same wiring order, same configs.
+  // ONE faction roster feeds both faction-cognition and defeat-fallout.
+  // Ordering note: encounter-spawn now registers directly after defeat-fallout
+  // (inside the stack) instead of after the boss-phase listener. The swap is
+  // inert: createEncounterSpawn's register() subscribes to no events and emits
+  // nothing — it only claims a persistence namespace and registers the pack's
+  // spawn content — so no handler ordering or event stream can observe it.
+  const worldStack = buildWorldStack({
+    playerId: 'player',
+    factions: [
+      {
+        factionId: 'arena-stable',
+        entityIds: ['lanista-brutus', 'nerva', 'arena-champion', 'arena-overlord'],
+        cohesion: 0.5,
+      },
+      {
+        factionId: 'patron-circle',
+        entityIds: ['domina-valeria'],
+        cohesion: 0.4,
+      },
+    ],
+    environment: {
+      // Hazards mutate entity.resources directly (deterministic, clamped);
+      // environment-core does not record the returned events. Return [].
+      hazards: [
+        {
+          id: 'scorching-sand',
+          triggerOn: 'world.zone.entered',
+          condition: (zone) => zone.hazards?.includes('scorching-sand') ?? false,
+          effect: (_zone, entity, _world, _tick) => {
+            entity.resources.fatigue = Math.min(50, (entity.resources.fatigue ?? 0) + 3);
+            return [];
+          },
+        },
+        {
+          id: 'trap-pit',
+          triggerOn: 'world.zone.entered',
+          condition: (zone) => zone.hazards?.includes('trap-pit') ?? false,
+          effect: (_zone, entity, _world, _tick) => {
+            entity.resources.hp = Math.max(0, (entity.resources.hp ?? 0) - 4);
+            return [];
+          },
+        },
+      ],
+    },
+    rumors: { propagationDelay: 2 },
+    districts,
+    presentationRules: [patronPerception],
+    // Zone-entry encounter spawning (F-ENG005) — tables authored in
+    // content.ts encounterSpawnContent, validity pinned by content.test.ts.
+    encounterSpawn: { gameId: manifest.id, ...encounterSpawnContent },
+  });
+
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -160,61 +207,8 @@ export function createGame(seed?: number): Engine {
         // (defined next to the tree in content.ts so the arithmetic is testable).
         rewards: progressionRewards,
       }),
-      createEnvironmentCore({
-        // Hazards mutate entity.resources directly (deterministic, clamped);
-        // environment-core does not record the returned events. Return [].
-        hazards: [
-          {
-            id: 'scorching-sand',
-            triggerOn: 'world.zone.entered',
-            condition: (zone) => zone.hazards?.includes('scorching-sand') ?? false,
-            effect: (_zone, entity, _world, _tick) => {
-              entity.resources.fatigue = Math.min(50, (entity.resources.fatigue ?? 0) + 3);
-              return [];
-            },
-          },
-          {
-            id: 'trap-pit',
-            triggerOn: 'world.zone.entered',
-            condition: (zone) => zone.hazards?.includes('trap-pit') ?? false,
-            effect: (_zone, entity, _world, _tick) => {
-              entity.resources.hp = Math.max(0, (entity.resources.hp ?? 0) - 4);
-              return [];
-            },
-          },
-        ],
-      }),
-      createFactionCognition({
-        factions: [
-          {
-            factionId: 'arena-stable',
-            entityIds: ['lanista-brutus', 'nerva', 'arena-champion', 'arena-overlord'],
-            cohesion: 0.5,
-          },
-          {
-            factionId: 'patron-circle',
-            entityIds: ['domina-valeria'],
-            cohesion: 0.4,
-          },
-        ],
-      }),
-      createRumorPropagation({ propagationDelay: 2 }),
-      createDistrictCore({ districts }),
-      createBeliefProvenance(),
-      createObserverPresentation({
-        rules: [patronPerception],
-      }),
-      createDefeatFallout({
-        factions: [
-          { factionId: 'arena-stable', entityIds: ['lanista-brutus', 'nerva', 'arena-champion', 'arena-overlord'] },
-          { factionId: 'patron-circle', entityIds: ['domina-valeria'] },
-        ],
-        playerId: 'player',
-      }),
+      ...worldStack.modules,
       createBossPhaseListener(arenaOverlordBoss),
-      // Zone-entry encounter spawning (F-ENG005) — tables authored in
-      // content.ts encounterSpawnContent, validity pinned by content.test.ts.
-      createEncounterSpawn({ gameId: manifest.id, ...encounterSpawnContent }),
       // F-ENG008: the equipment loop — `equip`/`unequip` verbs over the pack's
       // item catalog. The module (homed in @ai-rpg-engine/equipment) publishes
       // the catalog under EQUIPMENT_CATALOG_FORMULA and mirrors equipped items'

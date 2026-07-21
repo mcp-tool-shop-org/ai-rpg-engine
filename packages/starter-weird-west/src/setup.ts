@@ -8,16 +8,9 @@ import {
   createDialogueCore,
   createPerceptionFilter,
   createProgressionCore,
-  createEnvironmentCore,
-  createFactionCognition,
-  createRumorPropagation,
   createSimulationInspector,
-  createDistrictCore,
-  createBeliefProvenance,
-  createObserverPresentation,
   giveItem,
-  createDefeatFallout,
-  createEncounterSpawn,
+  buildWorldStack,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
@@ -139,6 +132,55 @@ export function createGame(seed?: number): Engine {
     },
   });
 
+  // Strategic tier in one call (F-ENG005-build-world-stack): the same eight
+  // modules this setup used to hand-list, same wiring order, same configs.
+  // ONE faction roster feeds both faction-cognition and defeat-fallout.
+  const worldStack = buildWorldStack({
+    playerId: 'drifter',
+    factions: [
+      {
+        factionId: 'townsfolk',
+        entityIds: ['bartender_silas', 'sheriff_hale'],
+        cohesion: 0.4,
+      },
+      {
+        factionId: 'red-congregation',
+        entityIds: ['dust_revenant'],
+        cohesion: 0.9,
+      },
+    ],
+    environment: {
+      // Hazards mutate entity.resources directly (deterministic, clamped);
+      // environment-core does not record the returned events. Return [].
+      hazards: [{
+        id: 'dust-storm',
+        triggerOn: 'world.zone.entered',
+        condition: (zone) => zone.hazards?.includes('dust-storm') ?? false,
+        effect: (_zone, entity, _world, _tick) => {
+          if (entity.tags.includes('human')) {
+            entity.resources.dust = Math.min(100, (entity.resources.dust ?? 0) + 8);
+          }
+          return [];
+        },
+      },
+      {
+        id: 'spirit-drain',
+        triggerOn: 'world.zone.entered',
+        condition: (zone) => zone.hazards?.includes('spirit-drain') ?? false,
+        effect: (_zone, entity, _world, _tick) => {
+          entity.resources.resolve = Math.max(0, (entity.resources.resolve ?? 0) - 3);
+          return [];
+        },
+      }],
+    },
+    rumors: { propagationDelay: 2 },
+    districts,
+    presentationRules: [spiritPerception],
+    // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
+    // tables drive zone-entry spawns via the world tick.
+    encounterSpawn: { gameId: manifest.id, ...encounterSpawnContent },
+  });
+
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -156,60 +198,7 @@ export function createGame(seed?: number): Engine {
         // (defined next to the tree in content.ts so the arithmetic is testable).
         rewards: progressionRewards,
       }),
-      createEnvironmentCore({
-        // Hazards mutate entity.resources directly (deterministic, clamped);
-        // environment-core does not record the returned events. Return [].
-        hazards: [{
-          id: 'dust-storm',
-          triggerOn: 'world.zone.entered',
-          condition: (zone) => zone.hazards?.includes('dust-storm') ?? false,
-          effect: (_zone, entity, _world, _tick) => {
-            if (entity.tags.includes('human')) {
-              entity.resources.dust = Math.min(100, (entity.resources.dust ?? 0) + 8);
-            }
-            return [];
-          },
-        },
-        {
-          id: 'spirit-drain',
-          triggerOn: 'world.zone.entered',
-          condition: (zone) => zone.hazards?.includes('spirit-drain') ?? false,
-          effect: (_zone, entity, _world, _tick) => {
-            entity.resources.resolve = Math.max(0, (entity.resources.resolve ?? 0) - 3);
-            return [];
-          },
-        }],
-      }),
-      createFactionCognition({
-        factions: [
-          {
-            factionId: 'townsfolk',
-            entityIds: ['bartender_silas', 'sheriff_hale'],
-            cohesion: 0.4,
-          },
-          {
-            factionId: 'red-congregation',
-            entityIds: ['dust_revenant'],
-            cohesion: 0.9,
-          },
-        ],
-      }),
-      createRumorPropagation({ propagationDelay: 2 }),
-      createDistrictCore({ districts }),
-      createBeliefProvenance(),
-      createObserverPresentation({
-        rules: [spiritPerception],
-      }),
-      createDefeatFallout({
-        factions: [
-          { factionId: 'townsfolk', entityIds: ['bartender_silas', 'sheriff_hale'] },
-          { factionId: 'red-congregation', entityIds: ['dust_revenant'] },
-        ],
-        playerId: 'drifter',
-      }),
-      // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
-      // tables drive zone-entry spawns via the world tick.
-      createEncounterSpawn({ gameId: manifest.id, ...encounterSpawnContent }),
+      ...worldStack.modules,
       createBossPhaseListener(mesaCrawlerBoss),
       createAbilityCore({ abilities: weirdWestAbilities, statMapping: { power: 'grit', precision: 'draw-speed', focus: 'lore' } }),
       createAbilityEffects(),

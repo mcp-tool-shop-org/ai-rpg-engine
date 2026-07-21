@@ -5,20 +5,13 @@ import {
   traversalCore,
   statusCore,
   buildCombatStack,
+  buildWorldStack,
   createInventoryCore,
   createDialogueCore,
   createPerceptionFilter,
   createProgressionCore,
-  createEnvironmentCore,
-  createFactionCognition,
-  createRumorPropagation,
   createSimulationInspector,
-  createDistrictCore,
-  createBeliefProvenance,
-  createObserverPresentation,
   giveItem,
-  createDefeatFallout,
-  createEncounterSpawn,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
@@ -117,6 +110,39 @@ export function createGame(seed?: number): Engine {
     },
   });
 
+  // Strategic tier in one call (F-ENG005-build-world-stack): the same eight
+  // modules this setup used to hand-list, same wiring order, same configs.
+  // ONE faction roster feeds both faction-cognition and defeat-fallout.
+  const worldStack = buildWorldStack({
+    playerId: 'player',
+    factions: [{
+      factionId: 'chapel-undead',
+      entityIds: ['ash-ghoul', 'crypt-warden'],
+      cohesion: 0.7,
+    }],
+    environment: {
+      // Hazard effects apply their consequence by mutating entity.resources
+      // directly: environment-core invokes effect() for its side-effects and
+      // does not record the returned events. Mutation is deterministic (pure
+      // arithmetic, always clamped) so it stays replayable. Return [].
+      hazards: [{
+        id: 'unstable-floor',
+        triggerOn: 'world.zone.entered',
+        condition: (zone) => zone.hazards?.includes('unstable floor') ?? false,
+        effect: (_zone, entity, _world, _tick) => {
+          entity.resources.stamina = Math.max(0, (entity.resources.stamina ?? 0) - 1);
+          return [];
+        },
+      }],
+    },
+    rumors: { propagationDelay: 2 },
+    districts,
+    presentationRules: [undeadHostilePerception],
+    // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
+    // tables drive zone-entry spawns via the world tick.
+    encounterSpawn: { gameId: manifest.id, ...encounterSpawnContent },
+  });
+
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -134,41 +160,7 @@ export function createGame(seed?: number): Engine {
         // (defined next to the tree in content.ts so the arithmetic is testable).
         rewards: progressionRewards,
       }),
-      createEnvironmentCore({
-        // Hazard effects apply their consequence by mutating entity.resources
-        // directly: environment-core invokes effect() for its side-effects and
-        // does not record the returned events. Mutation is deterministic (pure
-        // arithmetic, always clamped) so it stays replayable. Return [].
-        hazards: [{
-          id: 'unstable-floor',
-          triggerOn: 'world.zone.entered',
-          condition: (zone) => zone.hazards?.includes('unstable floor') ?? false,
-          effect: (_zone, entity, _world, _tick) => {
-            entity.resources.stamina = Math.max(0, (entity.resources.stamina ?? 0) - 1);
-            return [];
-          },
-        }],
-      }),
-      createFactionCognition({
-        factions: [{
-          factionId: 'chapel-undead',
-          entityIds: ['ash-ghoul', 'crypt-warden'],
-          cohesion: 0.7,
-        }],
-      }),
-      createRumorPropagation({ propagationDelay: 2 }),
-      createDistrictCore({ districts }),
-      createBeliefProvenance(),
-      createObserverPresentation({
-        rules: [undeadHostilePerception],
-      }),
-      createDefeatFallout({
-        factions: [{ factionId: 'chapel-undead', entityIds: ['ash-ghoul', 'crypt-warden'] }],
-        playerId: 'player',
-      }),
-      // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
-      // tables drive zone-entry spawns via the world tick.
-      createEncounterSpawn({ gameId: manifest.id, ...encounterSpawnContent }),
+      ...worldStack.modules,
       createBossPhaseListener(cryptWardenBoss),
       createAbilityCore({ abilities: fantasyAbilities, statMapping: { power: 'vigor', precision: 'instinct', focus: 'will' } }),
       createAbilityEffects(),

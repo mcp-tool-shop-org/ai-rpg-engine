@@ -880,6 +880,10 @@ export type {
 export { buildCombatFormulas, buildCombatStack, PACK_BIAS_TAGS } from './combat-builders.js';
 export type { CombatStackConfig, CombatStack } from './combat-builders.js';
 
+// --- World Stack (Strategic-Tier DX Builder) ---
+export { buildWorldStack } from './world-stack.js';
+export type { WorldStackConfig, WorldStack } from './world-stack.js';
+
 // --- Unified Decision (Combat + Ability Merge Layer) ---
 export { selectBestAction, formatUnifiedDecision } from './unified-decision.js';
 export type { UnifiedActionSource, UnifiedAction, UnifiedDecision, UnifiedDecisionConfig } from './unified-decision.js';

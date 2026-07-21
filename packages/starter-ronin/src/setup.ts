@@ -5,20 +5,13 @@ import {
   traversalCore,
   statusCore,
   buildCombatStack,
+  buildWorldStack,
   createInventoryCore,
   createDialogueCore,
   createPerceptionFilter,
   createProgressionCore,
-  createEnvironmentCore,
-  createFactionCognition,
-  createRumorPropagation,
   createSimulationInspector,
-  createDistrictCore,
-  createBeliefProvenance,
-  createObserverPresentation,
   giveItem,
-  createDefeatFallout,
-  createEncounterSpawn,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
@@ -144,6 +137,55 @@ export function createGame(seed?: number): Engine {
     },
   });
 
+  // Strategic tier in one call (F-ENG005-build-world-stack): the same eight
+  // modules this setup used to hand-list, same wiring order, same configs.
+  // ONE faction roster feeds both faction-cognition and defeat-fallout.
+  const worldStack = buildWorldStack({
+    playerId: 'player',
+    factions: [
+      {
+        factionId: 'takeda-clan',
+        entityIds: ['lord-takeda', 'lady-himiko', 'corrupt-samurai'],
+        cohesion: 0.6,
+      },
+      {
+        factionId: 'shadow-network',
+        entityIds: ['shadow-assassin'],
+        cohesion: 0.9,
+      },
+    ],
+    environment: {
+      // Hazards mutate entity.resources directly (deterministic, clamped);
+      // environment-core does not record the returned events. Return [].
+      hazards: [
+        {
+          id: 'poison-residue',
+          triggerOn: 'world.zone.entered',
+          condition: (zone) => zone.hazards?.includes('poison-residue') ?? false,
+          effect: (_zone, entity, _world, _tick) => {
+            entity.resources.hp = Math.max(0, (entity.resources.hp ?? 0) - 2);
+            return [];
+          },
+        },
+        {
+          id: 'shadow-watch',
+          triggerOn: 'world.zone.entered',
+          condition: (zone) => zone.hazards?.includes('shadow-watch') ?? false,
+          effect: (_zone, entity, _world, _tick) => {
+            entity.resources.ki = Math.max(0, (entity.resources.ki ?? 0) - 3);
+            return [];
+          },
+        },
+      ],
+    },
+    rumors: { propagationDelay: 2 },
+    districts,
+    presentationRules: [assassinPerception],
+    // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
+    // tables drive zone-entry spawns via the world tick.
+    encounterSpawn: { gameId: manifest.id, ...encounterSpawnContent },
+  });
+
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -161,60 +203,7 @@ export function createGame(seed?: number): Engine {
         // (defined next to the tree in content.ts so the arithmetic is testable).
         rewards: progressionRewards,
       }),
-      createEnvironmentCore({
-        // Hazards mutate entity.resources directly (deterministic, clamped);
-        // environment-core does not record the returned events. Return [].
-        hazards: [
-          {
-            id: 'poison-residue',
-            triggerOn: 'world.zone.entered',
-            condition: (zone) => zone.hazards?.includes('poison-residue') ?? false,
-            effect: (_zone, entity, _world, _tick) => {
-              entity.resources.hp = Math.max(0, (entity.resources.hp ?? 0) - 2);
-              return [];
-            },
-          },
-          {
-            id: 'shadow-watch',
-            triggerOn: 'world.zone.entered',
-            condition: (zone) => zone.hazards?.includes('shadow-watch') ?? false,
-            effect: (_zone, entity, _world, _tick) => {
-              entity.resources.ki = Math.max(0, (entity.resources.ki ?? 0) - 3);
-              return [];
-            },
-          },
-        ],
-      }),
-      createFactionCognition({
-        factions: [
-          {
-            factionId: 'takeda-clan',
-            entityIds: ['lord-takeda', 'lady-himiko', 'corrupt-samurai'],
-            cohesion: 0.6,
-          },
-          {
-            factionId: 'shadow-network',
-            entityIds: ['shadow-assassin'],
-            cohesion: 0.9,
-          },
-        ],
-      }),
-      createRumorPropagation({ propagationDelay: 2 }),
-      createDistrictCore({ districts }),
-      createBeliefProvenance(),
-      createObserverPresentation({
-        rules: [assassinPerception],
-      }),
-      createDefeatFallout({
-        factions: [
-          { factionId: 'takeda-clan', entityIds: ['lord-takeda', 'lady-himiko', 'corrupt-samurai'] },
-          { factionId: 'shadow-network', entityIds: ['shadow-assassin'] },
-        ],
-        playerId: 'player',
-      }),
-      // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
-      // tables drive zone-entry spawns via the world tick.
-      createEncounterSpawn({ gameId: manifest.id, ...encounterSpawnContent }),
+      ...worldStack.modules,
       createBossPhaseListener(corruptSamuraiBoss),
       createAbilityCore({ abilities: roninAbilities, statMapping: { power: 'discipline', precision: 'perception', focus: 'composure' } }),
       createAbilityEffects(),
