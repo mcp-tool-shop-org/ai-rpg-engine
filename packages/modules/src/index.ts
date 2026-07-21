@@ -260,6 +260,27 @@ export type {
   PressureFallout,
   FalloutContext,
 } from './pressure-resolution.js';
+// --- World Tick (F-ENG005: heat/safety drive the pressure lifecycle) ---
+export {
+  runWorldTick,
+  buildPressureInputs,
+  getWorldTickState,
+  urgencyBand,
+  HEAT_KEY,
+  HEAT_WAKE_THRESHOLD,
+  HEAT_ESCALATION_THRESHOLD,
+  HEAT_URGENCY_STEP,
+  HEAT_DECAY_PER_QUIET_TICK,
+  QUIET_ROUNDS_BEFORE_DECAY,
+  DISTRICT_STABILITY_BASE,
+  CHAIN_TURNS_REMAINING,
+} from './world-tick.js';
+export type {
+  WorldTickState,
+  WorldTickOptions,
+  WorldTickResult,
+  UrgencyBand,
+} from './world-tick.js';
 export {
   buildFactionProfile,
   evaluateFactionActions,

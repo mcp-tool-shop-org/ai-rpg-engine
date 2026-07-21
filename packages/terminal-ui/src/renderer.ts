@@ -666,6 +666,34 @@ export function formatEventLine(event: ResolvedEvent): string | null {
       return reason ? `> You can't unlock ${label}: ${reason}` : `> You can't unlock ${label}.`;
     }
 
+    // F-ENG005: world-tick pressure lifecycle — the world reacting to the
+    // player's accumulated heat. Hidden pressures render null (the world
+    // knows; the player doesn't — the reveal event is their narrated debut).
+    // Descriptions are pressure-system's own structured claims, verbatim.
+    case 'pressure.spawned': {
+      if (p.visibility === 'hidden') return null;
+      const desc = payloadString(p, 'description') ?? 'something stirs against you';
+      if (payloadString(p, 'chainedFrom')) return `> Consequence: ${desc}.`;
+      if (p.visibility === 'public') return `> Proclaimed: ${desc}.`;
+      if (p.visibility === 'known') return `> Word is out: ${desc}.`;
+      return `> Rumor spreads: ${desc}.`;
+    }
+    case 'pressure.revealed': {
+      const desc = payloadString(p, 'description') ?? 'something has been moving against you';
+      return `> Whispers reach you: ${desc}.`;
+    }
+    case 'pressure.escalated': {
+      const desc = payloadString(p, 'description') ?? 'the pressure against you';
+      return p.band === 'urgent'
+        ? `> It can no longer be ignored: ${desc}.`
+        : `> Pressure mounts: ${desc}.`;
+    }
+    case 'pressure.expired': {
+      if (p.visibility === 'hidden') return null;
+      const summary = payloadString(p, 'summary') ?? 'a pressure has run its course';
+      return `> The moment passes: ${summary}.`;
+    }
+
     case 'dialogue.started':
       return `> Speaking with ${p.speakerName}`;
     case 'dialogue.node.entered':

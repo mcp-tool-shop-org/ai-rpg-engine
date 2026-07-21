@@ -9,7 +9,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Engine } from '@ai-rpg-engine/core';
 import { TurnPresenter, QUIET_TURN_TEXT, stripAnsi } from '@ai-rpg-engine/terminal-ui';
+import { runWorldTick, HEAT_KEY } from '@ai-rpg-engine/modules';
 import { narrateRound } from './bin.js';
+import { allPacks } from './packs.js';
 
 const testManifest = {
   id: 'test-game',
@@ -212,5 +214,76 @@ describe('narrateRound (FU-2) — the run loop narration step', () => {
 
     expect(print).toHaveBeenCalledTimes(1);
     expect(stripAnsi(String(print.mock.calls[0][0]))).toBe(`  ${QUIET_TURN_TEXT}`);
+  });
+});
+
+// F-ENG005 — the world's turn in the round. runSession calls runWorldTick
+// after the NPC round and before narrateRound, so the tick's pressure events
+// land in the SAME eventLog delta the round narrates. These tests pin that
+// contract end-to-end: once through a REAL bundled starter (kills accrue the
+// ledger through the live defeat-fallout pipeline, the tick spawns from it),
+// and once through the round's narration line itself.
+describe('runWorldTick in the round (F-ENG005) — the world reacts', () => {
+  it('through a real starter: kills accrue heat/rep/alert, the tick opens an investigation, and it surfaces with presentation', () => {
+    const pack = allPacks.find((p) => p.meta.id === 'chapel-threshold');
+    expect(pack).toBeDefined();
+    const engine = pack!.createGame(11);
+
+    // Three chapel-undead kills through the canonical defeat event — the same
+    // choke point real combat resolves through; defeat-fallout accrues live.
+    for (let i = 0; i < 3; i++) {
+      engine.store.emitEvent('combat.entity.defeated', {
+        entityId: 'ash-ghoul',
+        entityName: 'Ash Ghoul',
+        defeatedBy: 'player',
+      });
+    }
+    expect(engine.world.globals[HEAT_KEY]).toBe(15);
+    expect(engine.world.globals['reputation_chapel-undead']).toBe(-30);
+    expect(engine.world.globals['faction_alert_chapel-undead']).toBe(45);
+
+    // The world's turn: the accrued ledger crosses the authored investigation
+    // condition (rep ≤ −30, alert ≥ 40) with heat at/above the wake threshold.
+    const first = runWorldTick(engine, { genre: 'fantasy' });
+    expect(first.ok).toBe(true);
+    expect(first.spawned).toHaveLength(1);
+    expect(first.spawned[0].kind).toBe('investigation-opened');
+    expect(first.spawned[0].sourceFactionId).toBe('chapel-undead');
+
+    const spawn = engine.world.eventLog.find((e) => e.type === 'pressure.spawned');
+    expect(spawn?.visibility).toBe('hidden'); // simulation record, not yet narrated
+    expect(spawn?.presentation).toBeUndefined();
+
+    // Hidden pressures surface on the module's own visibility ladder — the
+    // reveal is the player's narrated debut, presentation-bearing.
+    for (let i = 0; i < 3; i++) engine.store.advanceTick();
+    const second = runWorldTick(engine, { genre: 'fantasy' });
+    expect(second.revealed).toHaveLength(1);
+
+    const reveal = engine.world.eventLog.find((e) => e.type === 'pressure.revealed');
+    expect(reveal?.presentation).toEqual({ channels: ['narrator'], priority: 'high' });
+    expect(reveal?.payload.description).toBe(
+      "chapel-undead has opened an investigation into the player's activities",
+    );
+  });
+
+  it("a round's narration line carries tick-emitted pressure events (the delta contract)", () => {
+    const engine = makeEngine();
+    engine.store.state.globals['reputation_gnashers'] = -50;
+    engine.store.state.globals['faction_alert_gnashers'] = 60;
+    engine.store.state.globals[HEAT_KEY] = 10;
+
+    const logLenBefore = engine.world.eventLog.length;
+    engine.submitAction('slay', {}); // the player's half of the round
+    runWorldTick(engine); // the world's half — same order as runSession
+
+    const print = vi.fn();
+    narrateRound(new TurnPresenter(), engine, logLenBefore, print);
+
+    // ONE line for the round, carrying the kill AND the world's reaction.
+    expect(print).toHaveBeenCalledTimes(1);
+    const line = stripAnsi(String(print.mock.calls[0][0]));
+    expect(line).toContain('Gnasher defeated!');
+    expect(line).toContain('Rumor spreads: gnashers has placed a bounty on the player');
   });
 });

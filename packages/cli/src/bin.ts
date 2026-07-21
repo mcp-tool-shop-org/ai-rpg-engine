@@ -26,6 +26,7 @@ import { runScaffold } from './scaffold.js';
 import { runProfile } from './profile.js';
 import { runGuardedAction } from './guard.js';
 import { runNpcTurns } from './turns.js';
+import { runWorldTick } from '@ai-rpg-engine/modules';
 import { evaluateSessionEnd, renderSessionEnd, computeSessionStats } from './endgame.js';
 import { appendRunRecord, readRunHistory, formatRecentRuns } from './history.js';
 import { buildExtraActions, renderExtraActions, parseExtraSelection, buildHudWorld, type ExtraAction } from './menu.js';
@@ -391,9 +392,15 @@ export function narrateRound(
  *   2. render the frame, read one input, route it (handlePlayerInput).
  *   3. F1a — after the player's action resolves (and only if it didn't end
  *      the game), every living hostile in the zone takes its turn.
- *   4. FU-2 — the round's eventLog delta (player + NPC events) is presented
- *      once and its narration line printed. A round that ends the game still
- *      narrates — the line lands before the next iteration's finale screen.
+ *   4. F-ENG005 — then the WORLD takes its turn: runWorldTick reads the heat/
+ *      safety/reputation/alert ledger defeat-fallout accrued and drives the
+ *      pressure lifecycle (spawn, reveal, escalate, expire). Guarded inside
+ *      like the NPC round — one bad tick logs one line, never kills the
+ *      session. Its events land in the same round delta as the action.
+ *   5. FU-2 — the round's eventLog delta (player + NPC + world-tick events)
+ *      is presented once and its narration line printed. A round that ends
+ *      the game still narrates — the line lands before the next iteration's
+ *      finale screen.
  */
 async function runSession(engine: Engine, pack: LoadedPack): Promise<SessionOutcome> {
   // FU-2: ONE presenter per session — its AudioDirector carries sfx cooldown
@@ -446,6 +453,7 @@ async function runSession(engine: Engine, pack: LoadedPack): Promise<SessionOutc
 
     if (result.kind === 'action' && !evaluateSessionEnd(engine)) {
       runNpcTurns(engine);
+      runWorldTick(engine, { genre: pack.meta.genres?.[0], log: console.log });
     }
 
     if (result.kind === 'action') {

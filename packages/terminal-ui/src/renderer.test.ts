@@ -16,6 +16,7 @@ import {
   renderDialogue,
   renderFullScreen,
   buildActionList,
+  formatEventLine,
   textBar,
   DIALOGUE_LOOKBACK,
   SCREEN_WIDTH,
@@ -341,6 +342,87 @@ describe('formatEvent — rejections surface their reason (CS-C-002)', () => {
     ]);
     expect(text).toContain('Fireball');
     expect(text.toLowerCase()).toContain('fail');
+  });
+});
+
+// F-ENG005: world-tick's pressure lifecycle events are player-facing — the
+// world reacting to accumulated heat. Every visible transition renders in the
+// telegraph voice; hidden ones render null (the reveal is their debut).
+describe('formatEvent — pressure lifecycle renders (F-ENG005)', () => {
+  const DESC = 'the city watch has placed a bounty on the player';
+
+  it('renders a rumored spawn as spreading rumor', () => {
+    const line = formatEventLine(
+      cev('pressure.spawned', { kind: 'bounty-issued', description: DESC, visibility: 'rumored' }),
+    );
+    expect(line).toBe(`> Rumor spreads: ${DESC}.`);
+  });
+
+  it('renders known and public spawns with their own framings', () => {
+    expect(
+      formatEventLine(cev('pressure.spawned', { description: DESC, visibility: 'known' })),
+    ).toBe(`> Word is out: ${DESC}.`);
+    expect(
+      formatEventLine(cev('pressure.spawned', { description: DESC, visibility: 'public' })),
+    ).toBe(`> Proclaimed: ${DESC}.`);
+  });
+
+  it('renders a hidden spawn as null — the player must not see it yet', () => {
+    expect(
+      formatEventLine(cev('pressure.spawned', { description: DESC, visibility: 'hidden' })),
+    ).toBeNull();
+  });
+
+  it('renders a fallout chain spawn as a consequence', () => {
+    const line = formatEventLine(
+      cev('pressure.spawned', {
+        description: 'the watch sends hunters after the player',
+        visibility: 'rumored',
+        chainedFrom: 'wp_1',
+      }),
+    );
+    expect(line).toBe('> Consequence: the watch sends hunters after the player.');
+  });
+
+  it('renders a reveal — the moment a hidden pressure surfaces', () => {
+    const line = formatEventLine(
+      cev('pressure.revealed', { description: DESC, visibility: 'rumored' }),
+    );
+    expect(line).toBe(`> Whispers reach you: ${DESC}.`);
+  });
+
+  it('renders escalations by band — growing mounts, urgent demands', () => {
+    expect(
+      formatEventLine(cev('pressure.escalated', { description: DESC, band: 'growing' })),
+    ).toBe(`> Pressure mounts: ${DESC}.`);
+    expect(
+      formatEventLine(cev('pressure.escalated', { description: DESC, band: 'urgent' })),
+    ).toBe(`> It can no longer be ignored: ${DESC}.`);
+  });
+
+  it('renders a visible expiry with the fallout summary; hidden expiry stays null', () => {
+    expect(
+      formatEventLine(
+        cev('pressure.expired', {
+          summary: 'bounty issued expired without resolution',
+          visibility: 'rumored',
+        }),
+      ),
+    ).toBe('> The moment passes: bounty issued expired without resolution.');
+    expect(
+      formatEventLine(cev('pressure.expired', { summary: 'x', visibility: 'hidden' })),
+    ).toBeNull();
+  });
+
+  it('never prints undefined when descriptions are missing', () => {
+    for (const type of ['pressure.spawned', 'pressure.revealed', 'pressure.escalated']) {
+      const line = formatEventLine(cev(type, { visibility: 'rumored' }));
+      expect(line).not.toBeNull();
+      expect(line).not.toContain('undefined');
+    }
+    expect(formatEventLine(cev('pressure.expired', { visibility: 'rumored' }))).not.toContain(
+      'undefined',
+    );
   });
 });
 
