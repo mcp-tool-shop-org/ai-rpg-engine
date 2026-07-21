@@ -70,7 +70,7 @@ const makeEnemy = (id: string, overrides?: Partial<EntityState>): EntityState =>
 });
 
 /** Bare engine — pressure state and globals are injected directly. */
-function makeBareEngine(globals: Record<string, unknown> = {}, seed = 1) {
+function makeBareEngine(globals: Record<string, string | number | boolean> = {}, seed = 1) {
   return createTestEngine({
     modules: [],
     entities: [makePlayer()],

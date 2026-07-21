@@ -125,7 +125,7 @@ describe('Cross-genre safety — tag rejection', () => {
       { power: 'vitality', precision: 'cunning', focus: 'presence' },
     );
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'blood-drain' }, targetIds: ['enemy'],
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
@@ -139,7 +139,7 @@ describe('Cross-genre safety — tag rejection', () => {
       { power: 'discipline', precision: 'perception', focus: 'composure' },
     );
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'captain', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'captain', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'iaijutsu-strike' }, targetIds: ['enemy'],
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
@@ -153,7 +153,7 @@ describe('Cross-genre safety — tag rejection', () => {
       { power: 'might', precision: 'agility', focus: 'showmanship' },
     );
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'crowd-cleave' }, targetIds: ['enemy'],
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
@@ -167,7 +167,7 @@ describe('Cross-genre safety — tag rejection', () => {
       { power: 'brawn', precision: 'cunning', focus: 'sea-legs' },
     );
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'broadside' }, targetIds: [],
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
@@ -187,7 +187,7 @@ describe('Correct stat mapping per genre', () => {
       { power: 'vitality', precision: 'cunning', focus: 'presence' },
     );
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'blood-drain' }, targetIds: ['enemy'],
     });
     expect(events.find(e => e.type === 'ability.used')).toBeDefined();
@@ -201,7 +201,7 @@ describe('Correct stat mapping per genre', () => {
       { power: 'might', precision: 'agility', focus: 'showmanship' },
     );
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'crowd-cleave' }, targetIds: ['enemy'],
     });
     expect(events.find(e => e.type === 'ability.used')).toBeDefined();
@@ -215,7 +215,7 @@ describe('Correct stat mapping per genre', () => {
       { power: 'discipline', precision: 'perception', focus: 'composure' },
     );
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'iaijutsu-strike' }, targetIds: ['enemy'],
     });
     expect(events.find(e => e.type === 'ability.used')).toBeDefined();
@@ -229,7 +229,7 @@ describe('Correct stat mapping per genre', () => {
       { power: 'brawn', precision: 'cunning', focus: 'sea-legs' },
     );
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'captain', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'captain', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'broadside' }, targetIds: [],
     });
     expect(events.find(e => e.type === 'ability.used')).toBeDefined();
@@ -310,7 +310,7 @@ describe('NPC AI scoring across genres', () => {
     expect(decision).toBeDefined();
     if (decision) {
       expect(decision.chosen).toBeDefined();
-      expect(pirateAbilities.map(a => a.id)).toContain(decision.chosen.abilityId);
+      expect(pirateAbilities.map(a => a.id)).toContain(decision.chosen!.abilityId);
     }
   });
 });
@@ -329,7 +329,7 @@ describe('AI pathology checks', () => {
     );
     // Use Blood Drain once
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'blood-drain' }, targetIds: ['enemy'],
     });
     // Should be on cooldown now
@@ -362,7 +362,7 @@ describe('AI pathology checks', () => {
       { power: 'brawn', precision: 'cunning', focus: 'sea-legs' },
     );
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'captain', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'captain', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'broadside' }, targetIds: [],
     });
     const ready = isAbilityReady(engine.store.state, 'captain', 'broadside', pirateAbilities);

@@ -59,13 +59,17 @@ function makeWorld(entities: EntityState[]): WorldState {
   const entityMap: Record<string, EntityState> = {};
   for (const e of entities) entityMap[e.id] = e;
   return {
-    tick: 1,
+    meta: { worldId: 'w', gameId: 'g', saveVersion: '1', tick: 1, seed: 1, activeRuleset: 'test', activeModules: [], idCounter: 0 },
+    playerId: entities[0]?.id ?? 'actor',
+    locationId: 'zone-a',
     entities: entityMap,
     zones: { 'zone-a': { id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbors: [] } },
-    flags: {},
-    events: [],
-    pendingActions: [],
-    history: [],
+    quests: {},
+    factions: {},
+    globals: {},
+    modules: {},
+    eventLog: [],
+    pending: [],
   };
 }
 
@@ -139,8 +143,8 @@ describe('Phase 5 — per-pack ability usage coverage', () => {
         const debuffedActor = makeActor({
           tags: pack.actorTags,
           statuses: [
-            { statusId: 'fearful', stacks: 1, remainingTicks: 3 },
-            { statusId: 'controlled', stacks: 1, remainingTicks: 2 },
+            { id: 'st-fearful', statusId: 'fearful', stacks: 1, appliedAtTick: 1, expiresAtTick: 4 },
+            { id: 'st-controlled', statusId: 'controlled', stacks: 1, appliedAtTick: 1, expiresAtTick: 3 },
           ],
         });
         const debuffedWorld = makeWorld([debuffedActor, enemy]);
@@ -279,8 +283,8 @@ describe('Phase 5 — pathology sweep', () => {
         tags: pack.actorTags,
         resources: { ...makeActor().resources, hp: 12 },
         statuses: [
-          { statusId: 'fearful', stacks: 1, remainingTicks: 3 },
-          { statusId: 'controlled', stacks: 1, remainingTicks: 2 },
+          { id: 'st-fearful', statusId: 'fearful', stacks: 1, appliedAtTick: 1, expiresAtTick: 4 },
+          { id: 'st-controlled', statusId: 'controlled', stacks: 1, appliedAtTick: 1, expiresAtTick: 3 },
         ],
       });
       const enemy = makeEnemy();
@@ -325,7 +329,7 @@ describe('Phase 5 — pathology sweep', () => {
     registerAllStatuses(detectiveStatusDefinitions);
     const debuffedDetective = makeActor({
       tags: ['player', 'investigator'],
-      statuses: [{ statusId: 'fearful', stacks: 1, remainingTicks: 3 }],
+      statuses: [{ id: 'st-fearful', statusId: 'fearful', stacks: 1, appliedAtTick: 1, expiresAtTick: 4 }],
     });
     const chWorld = makeWorld([debuffedDetective, enemy]);
     const chScores = scoreAbilityUse(debuffedDetective, detectiveAbilities.find((a) => a.id === 'clear-headed')!, chWorld);
@@ -355,7 +359,7 @@ describe('Phase 5 — pathology sweep', () => {
       // Scenario 4: debuffed
       const debuffed = makeActor({
         tags: pack.actorTags,
-        statuses: [{ statusId: 'fearful', stacks: 1, remainingTicks: 3 }],
+        statuses: [{ id: 'st-fearful', statusId: 'fearful', stacks: 1, appliedAtTick: 1, expiresAtTick: 4 }],
       });
       scenarios.push([debuffed, makeWorld([debuffed, enemy])]);
 

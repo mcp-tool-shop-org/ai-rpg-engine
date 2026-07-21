@@ -242,7 +242,7 @@ describe('resource drains', () => {
       source: 'ai',
       issuedAtTick: engine.world.meta.tick,
     };
-    engine.submitAction('attack', { actorId: 'bandit', targetIds: ['player'] });
+    engine.submitActionAs('bandit', 'attack', { targetIds: ['player'] });
 
     const p = engine.world.entities.player;
     // If hit, fatigue should increase (drain is triggered by take-damage)
@@ -270,7 +270,7 @@ describe('resource drains', () => {
       zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
     });
 
-    engine.submitAction('attack', { actorId: 'bandit', targetIds: ['player'] });
+    engine.submitActionAs('bandit', 'attack', { targetIds: ['player'] });
 
     const p = engine.world.entities.player;
     expect(p.resources.fatigue).toBeGreaterThanOrEqual(0);

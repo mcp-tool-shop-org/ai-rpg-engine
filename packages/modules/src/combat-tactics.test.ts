@@ -324,7 +324,7 @@ describe('MC-02: braced flag only resists off-balance on the same/adjacent tick'
     });
 
     // Orc braces at tick 0.
-    engine.submitAction('brace', { actorId: 'orc-1' });
+    engine.submitActionAs('orc-1', 'brace');
     expect(getRoundFlags(engine.world, 'orc-1').braced).toBe(true);
 
     // Advance well past the brace window, then reposition against the orc.
@@ -358,14 +358,14 @@ describe('tactical triangle counter relationships', () => {
         modules: [statusCore, createCombatCore(), createCombatTactics()],
         entities: [p, makeEntity('orc-1', 'Orc', 'a')],
         zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
-        tick,
         // seed 0 = the legacy stream this sweep's counter fires in (F-SEED).
-        // NOTE: `tick` here is silently ignored by HarnessOptions — a
-        // pre-existing latent gap flagged for the Phase-8 re-audit.
+        // NOTE: HarnessOptions has no start-tick option, so this sweep never
+        // fed `tick` to the engine (it was silently ignored) — a pre-existing
+        // latent gap flagged for the Phase-8 re-audit.
         seed: 0,
       });
 
-      const events = engine.submitAction('attack', { actorId: 'orc-1', targetIds: ['player'] });
+      const events = engine.submitActionAs('orc-1', 'attack', { targetIds: ['player'] });
       if (events.some(e => e.type === 'combat.counter.off_balance')) {
         counterTriggered = true;
         break;
@@ -386,7 +386,7 @@ describe('tactical triangle counter relationships', () => {
     });
 
     // The handler adjusts hitChance by -15, we just verify the event goes through without error
-    const events = engine.submitAction('attack', { actorId: 'orc-1', targetIds: ['player'] });
+    const events = engine.submitActionAs('orc-1', 'attack', { targetIds: ['player'] });
     expect(events.length).toBeGreaterThan(0);
   });
 
@@ -403,13 +403,13 @@ describe('tactical triangle counter relationships', () => {
         modules: [statusCore, createCombatCore(), createCombatTactics()],
         entities: [p, makeEntity('orc-1', 'Orc', 'a', { stats: { vigor: 4, instinct: 5, will: 3 } })],
         zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
-        tick,
-        // seed 0 = the legacy stream (F-SEED); `tick` silently ignored — see
-        // the sibling sweep's note (Phase-8 re-audit item).
+        // seed 0 = the legacy stream (F-SEED); HarnessOptions has no start-tick
+        // option so `tick` was never fed to the engine — see the sibling
+        // sweep's note (Phase-8 re-audit item).
         seed: 0,
       });
 
-      const events = engine.submitAction('attack', { actorId: 'orc-1', targetIds: ['player'] });
+      const events = engine.submitActionAs('orc-1', 'attack', { targetIds: ['player'] });
       const damageEvent = events.find(e => e.type === 'combat.damage.applied');
       if (damageEvent) {
         // Vigor is 4, so base damage = 4. Off-balance adds +1 = 5
@@ -462,7 +462,7 @@ describe('tactical triangle counter relationships', () => {
     });
 
     // Brace as orc first
-    engine.submitAction('brace', { actorId: 'orc-1' });
+    engine.submitActionAs('orc-1', 'brace');
 
     // Now player repositions — braced enemy reduces chance by 20
     const events = engine.submitAction('reposition', { targetIds: ['orc-1'] });
@@ -814,7 +814,7 @@ describe('round flags: cross-instance isolation', () => {
       zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
     });
     // Orc braces in engine A only, at tick 0.
-    engineA.submitAction('brace', { actorId: 'orc-1' });
+    engineA.submitActionAs('orc-1', 'brace');
     expect(getRoundFlags(engineA.world, 'orc-1').braced).toBe(true);
 
     const orcB = makeEntity('orc-1', 'Orc', 'a', { stats: { vigor: 5, instinct: 5, will: 5 } });

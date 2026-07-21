@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createTestEngine, Engine } from '@ai-rpg-engine/core';
-import type { EntityState } from '@ai-rpg-engine/core';
+import type { EntityState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { statusCore, applyStatus } from './status-core.js';
 import { createCombatCore, COMBAT_STATES } from './combat-core.js';
 import { createEngagementCore, ENGAGEMENT_STATES } from './engagement-core.js';
@@ -979,7 +979,10 @@ describe('combat-intent: deterministic event ids (emitDecisionEvent)', () => {
     const decision = selectNpcCombatAction(npc, engine.store.state);
 
     // Route through the real store bus (recordEvent) — it must backfill the id.
-    emitDecisionEvent({ emit: (e) => engine.store.recordEvent(e) }, decision);
+    // The cast is sound: emitDecisionEvent always emits a valid ResolvedEvent
+    // (type 'combat.ai.decision', visibility 'hidden') — its ctx.emit parameter
+    // just declares a wider inline shape (`visibility: string`) than it produces.
+    emitDecisionEvent({ emit: (e) => engine.store.recordEvent(e as ResolvedEvent) }, decision);
     const recorded = engine.store.state.eventLog.find(e => e.type === 'combat.ai.decision');
     expect(recorded).toBeDefined();
     expect(recorded!.id).toMatch(/^evt_/);
@@ -1062,7 +1065,7 @@ describe('F-cix-recentdecisions: recentDecisions persists to world.modules (not 
     const decision = selectNpcCombatAction(npc, engine.store.state);
 
     // Route through the real store bus so the module's own listener fires.
-    emitDecisionEvent({ emit: (e) => engine.store.recordEvent(e) }, decision, engine.store.state);
+    emitDecisionEvent({ emit: (e) => engine.store.recordEvent(e as ResolvedEvent) }, decision, engine.store.state);
 
     const state = engine.world.modules['combat-intent'] as { recentDecisions: unknown[] };
     expect(state.recentDecisions.length).toBeGreaterThan(0);
@@ -1073,7 +1076,7 @@ describe('F-cix-recentdecisions: recentDecisions persists to world.modules (not 
     const target = makeEntity('target', 'player', ['player']);
     const engine = buildEngine([npc, target]);
     const decision1 = selectNpcCombatAction(npc, engine.store.state);
-    emitDecisionEvent({ emit: (e) => engine.store.recordEvent(e) }, decision1, engine.store.state);
+    emitDecisionEvent({ emit: (e) => engine.store.recordEvent(e as ResolvedEvent) }, decision1, engine.store.state);
 
     const beforeCount = (engine.world.modules['combat-intent'] as { recentDecisions: unknown[] }).recentDecisions.length;
     expect(beforeCount).toBeGreaterThan(0);
@@ -1089,7 +1092,7 @@ describe('F-cix-recentdecisions: recentDecisions persists to world.modules (not 
     // Post-reload events must keep accumulating into the SAME live object —
     // not vanish into the new engine's fresh, disconnected closure.
     const decision2 = selectNpcCombatAction(restored.world.entities.npc, restored.world);
-    emitDecisionEvent({ emit: (e) => restored.store.recordEvent(e) }, decision2, restored.world);
+    emitDecisionEvent({ emit: (e) => restored.store.recordEvent(e as ResolvedEvent) }, decision2, restored.world);
 
     const afterState = restored.world.modules['combat-intent'] as { recentDecisions: unknown[] };
     expect(afterState.recentDecisions.length).toBeGreaterThan(beforeCount);
@@ -1100,7 +1103,7 @@ describe('F-cix-recentdecisions: recentDecisions persists to world.modules (not 
     const target = makeEntity('target', 'player', ['player']);
     const engine = buildEngine([npc, target]);
     const decision = selectNpcCombatAction(npc, engine.store.state);
-    emitDecisionEvent({ emit: (e) => engine.store.recordEvent(e) }, decision, engine.store.state);
+    emitDecisionEvent({ emit: (e) => engine.store.recordEvent(e as ResolvedEvent) }, decision, engine.store.state);
 
     const inspector = engine.moduleManager.getInspectors().find(i => i.id === 'combat-intent')!;
     const result = inspector.inspect(engine.world) as { count: number; recent: unknown[] };

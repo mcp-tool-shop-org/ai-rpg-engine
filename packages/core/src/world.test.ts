@@ -60,7 +60,7 @@ describe('WorldStore detaches entities/zones at ingestion (F-71ec5dcd)', () => {
     store.addEntity(input);
 
     input.resources.hp = 0;
-    input.statuses.push({ statusId: 'poisoned', stacks: 1, appliedTick: 0 });
+    input.statuses.push({ id: 'st-poisoned', statusId: 'poisoned', stacks: 1, appliedAtTick: 0 });
 
     expect(store.getEntity('e1')!.resources.hp).toBe(10);
     expect(store.getEntity('e1')!.statuses).toHaveLength(0);

@@ -85,7 +85,7 @@ function makeWorld(entities: EntityState[]): WorldState {
   const map: Record<string, EntityState> = {};
   for (const e of entities) map[e.id] = e;
   return {
-    meta: { worldId: 'w', gameId: 'g', saveVersion: '1', tick: 1, seed: 42, activeRuleset: 'test', activeModules: [] },
+    meta: { worldId: 'w', gameId: 'g', saveVersion: '1', tick: 1, seed: 42, activeRuleset: 'test', activeModules: [], idCounter: 0 },
     playerId: 'player',
     locationId: 'zone-1',
     entities: map,

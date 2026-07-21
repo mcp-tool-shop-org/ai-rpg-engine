@@ -93,7 +93,7 @@ function makeBoss(): EntityState {
 // ---------------------------------------------------------------------------
 
 const fireball: AbilityDefinition = {
-  id: 'fireball', name: 'Fireball',
+  id: 'fireball', name: 'Fireball', verb: 'use-ability',
   tags: ['combat', 'aoe'],
   target: { type: 'all-enemies' },
   costs: [{ resourceId: 'mana', amount: 10 }],
@@ -103,9 +103,9 @@ const fireball: AbilityDefinition = {
 };
 
 const weakSlap: AbilityDefinition = {
-  id: 'weak-slap', name: 'Weak Slap',
+  id: 'weak-slap', name: 'Weak Slap', verb: 'use-ability',
   tags: ['combat'],
-  target: { type: 'single-enemy' },
+  target: { type: 'single' },
   costs: [],
   cooldown: 0,
   effects: [{ type: 'damage', params: { amount: 1 } }],
@@ -113,7 +113,7 @@ const weakSlap: AbilityDefinition = {
 };
 
 const heal: AbilityDefinition = {
-  id: 'heal', name: 'Heal',
+  id: 'heal', name: 'Heal', verb: 'use-ability',
   tags: ['support', 'heal'],
   target: { type: 'self' },
   costs: [{ resourceId: 'mana', amount: 5 }],
@@ -123,9 +123,9 @@ const heal: AbilityDefinition = {
 };
 
 const poisonSting: AbilityDefinition = {
-  id: 'poison-sting', name: 'Poison Sting',
+  id: 'poison-sting', name: 'Poison Sting', verb: 'use-ability',
   tags: ['combat', 'debuff'],
-  target: { type: 'single-enemy' },
+  target: { type: 'single' },
   costs: [{ resourceId: 'mana', amount: 3 }],
   cooldown: 2,
   effects: [
@@ -143,7 +143,7 @@ describe('Unified Decision Layer', () => {
   beforeEach(() => {
     clearStatusRegistry();
     registerStatusDefinitions([
-      { id: 'poison', name: 'Poison', tags: ['debuff', 'poison'], duration: 3 },
+      { id: 'poison', name: 'Poison', tags: ['debuff', 'poison'], stacking: 'replace', duration: { type: 'ticks', value: 3 } },
     ]);
   });
 

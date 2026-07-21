@@ -566,7 +566,7 @@ describe('Encounter Mode Differentiation', () => {
     const target = makeEntity({
       id: 'tgt',
       stats: { might: 5, agility: 5, resolve: 5 },
-      statuses: [{ statusId: 'engagement:backline', duration: -1, sourceId: 'system' }],
+      statuses: [{ id: 'st-backline', statusId: 'engagement:backline', appliedAtTick: 0, sourceId: 'system' }],
     });
 
     const normalZone = makeZone({ id: 'normal', tags: ['outdoor'] });
@@ -965,7 +965,7 @@ describe('Warn-and-degrade: phase findings', () => {
       verb: 'use',
       tags: [],
       costs: [],
-      target: { type: 'target' },
+      target: { type: 'single' },
       checks: [],
       effects: [{ type: 'apply-status', target: 'target', params: { statusId: 'ghostly', duration: 2 } }],
       cooldown: 0,
@@ -995,7 +995,7 @@ describe('Warn-and-degrade: phase findings', () => {
       verb: 'use',
       tags: [],
       costs: [],
-      target: { type: 'target' },
+      target: { type: 'single' },
       checks: [],
       effects: [{ type: 'apply-status', target: 'target', params: { statusId: 'cursed', duration: 2 } }],
       cooldown: 0,

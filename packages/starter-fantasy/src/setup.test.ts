@@ -66,7 +66,7 @@ describe('fantasy setup — cross-instance state isolation', () => {
 
     // Simulate combat/turn-driver damage in engine A.
     a.store.state.entities['ash-ghoul'].resources.hp = 0;
-    a.store.state.entities['crypt-warden'].statuses.push({ statusId: 'enraged', stacks: 1, appliedTick: 0 });
+    a.store.state.entities['crypt-warden'].statuses.push({ id: 'st-enraged', statusId: 'enraged', stacks: 1, appliedAtTick: 0 });
 
     // A brand-new game must start from pristine content, not A's mutations.
     const b = createGame(7);

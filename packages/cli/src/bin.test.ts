@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -159,7 +159,7 @@ class ProcessExitSignal extends Error {
 describe('replayGame --replay (F-7650e39d: actionLog must be validated before iterating)', () => {
   let tmpDir: string;
   let originalCwd: string;
-  let exitSpy: ReturnType<typeof vi.spyOn>;
+  let exitSpy: MockInstance<typeof process.exit>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {

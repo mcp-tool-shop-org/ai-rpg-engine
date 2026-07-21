@@ -143,7 +143,7 @@ describe('Phase 4 integration — resistance across new genres', () => {
 
     // Use expose-weakness which applies 'exposed' (tags: breach, debuff)
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'expose-weakness' }, targetIds: ['crime-boss'],
     });
     const events = engine.drainEvents();
@@ -177,7 +177,7 @@ describe('Phase 4 integration — resistance across new genres', () => {
 
     // AoE abilities auto-target all enemies — use processAction return value
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'war-cry' },
     });
     // rattled has fear tag — bloater is fear:immune
@@ -207,7 +207,7 @@ describe('Phase 4 integration — resistance across new genres', () => {
     });
 
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'system-override' }, targetIds: ['resonance'],
     });
     const events = engine.drainEvents();
@@ -238,7 +238,7 @@ describe('Phase 4 integration — resistance across new genres', () => {
     });
 
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'system-override' }, targetIds: ['drone'],
     });
     const events = engine.drainEvents();
@@ -281,7 +281,7 @@ describe('Phase 4 integration — cleanse across expanded packs', () => {
     });
 
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'iron-resolve' },
     });
     const events = engine.drainEvents();
@@ -305,7 +305,7 @@ describe('Phase 4 integration — cleanse across expanded packs', () => {
     });
 
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'rum-courage' },
     });
     const events = engine.drainEvents();
@@ -329,7 +329,7 @@ describe('Phase 4 integration — cleanse across expanded packs', () => {
     });
 
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'survival-instinct' },
     });
     const events = engine.drainEvents();

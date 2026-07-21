@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateManifest, isValidManifest } from './validate.js';
+import { validateManifest, isValidManifest, type ManifestError } from './validate.js';
 import { CORE_SOUND_PACK } from './core-pack.js';
 
 /** A minimal valid entry; spread + override per test. */
@@ -48,7 +48,7 @@ describe('validateManifest', () => {
   // and not silently accept) malformed entry shapes.
 
   it('does not throw and reports an error when an entry is null', () => {
-    let errs;
+    let errs: ManifestError[] | undefined;
     // Before the fix this throws "Cannot read properties of null (reading 'id')".
     expect(() => {
       errs = validateManifest(wrap([null]));
@@ -58,7 +58,7 @@ describe('validateManifest', () => {
   });
 
   it('does not throw and reports an error when an entry is a primitive', () => {
-    let errs;
+    let errs: ManifestError[] | undefined;
     expect(() => {
       errs = validateManifest(wrap(['just-a-string', 7]));
     }).not.toThrow();

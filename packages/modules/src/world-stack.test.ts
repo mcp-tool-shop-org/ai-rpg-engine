@@ -365,7 +365,7 @@ describe('buildWorldStack — config pass-through probes', () => {
       resources: { hp: 5 },
       statuses: [],
       zoneId: 'zone-b',
-      ai: { profileId: 'cautious' },
+      ai: { profileId: 'cautious', goals: [], fears: [], alertLevel: 0, knowledge: {} },
     };
     const engine = makeStackEngine(
       {
@@ -380,7 +380,8 @@ describe('buildWorldStack — config pass-through probes', () => {
     engine.store.emitEvent('world.zone.entered', { zoneId: 'zone-b' }, { actorId: 'hero' });
     const pending = engine.world.pending.find((p) => p.type === 'rumor.belief.propagated');
     expect(pending).toBeDefined();
-    const trigger = engine.world.eventLog.findLast((e) => e.type === 'world.zone.entered');
+    // Last matching event; .findLast needs the es2023 lib and this repo targets ES2022.
+    const trigger = [...engine.world.eventLog].reverse().find((e) => e.type === 'world.zone.entered');
     expect(pending!.executeAtTick).toBe(trigger!.tick + 7);
   });
 

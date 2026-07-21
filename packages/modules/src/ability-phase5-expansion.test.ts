@@ -52,7 +52,7 @@ describe('Phase 5 expansion — fantasy divine-light', () => {
     };
     const engine = buildEngine(fantasyAbilities, [player]);
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'divine-light' },
     });
     const used = events.find((e) => e.type === 'ability.used');
@@ -71,7 +71,7 @@ describe('Phase 5 expansion — fantasy divine-light', () => {
     };
     const engine = buildEngine(fantasyAbilities, [player]);
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'divine-light' },
     });
     const rejected = events.find((e) => e.type === 'ability.rejected');
@@ -99,7 +99,7 @@ describe('Phase 5 expansion — cyberpunk nano-repair', () => {
     };
     const engine = buildEngine(cyberpunkAbilities, [player]);
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'nano-repair' },
     });
     const used = events.find((e) => e.type === 'ability.used');
@@ -137,7 +137,7 @@ describe('Phase 5 expansion — weird-west dead-eye-shot', () => {
     };
     const engine = buildEngine(weirdWestAbilities, [player, enemy]);
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'dead-eye-shot' }, targetIds: ['bandit'],
     });
     const used = events.find((e) => e.type === 'ability.used');
@@ -173,7 +173,7 @@ describe('Phase 5 expansion — detective clear-headed', () => {
     };
     const engine = buildEngine(detectiveAbilities, [player]);
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'clear-headed' },
     });
     const removed = events.filter((e) => e.type === 'ability.status.removed');
@@ -191,7 +191,7 @@ describe('Phase 5 expansion — detective clear-headed', () => {
     };
     const engine = buildEngine(detectiveAbilities, [player]);
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'clear-headed' },
     });
     const p = engine.entity('player');
@@ -228,7 +228,7 @@ describe('Phase 5 expansion — fantasy resistances', () => {
     };
     const engine = buildEngine(fantasyAbilities, [player, boss]);
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'holy-smite' }, targetIds: ['warden'],
     });
     const immune = events.filter((e) => e.type === 'ability.status.immune');
@@ -253,7 +253,7 @@ describe('Phase 5 expansion — fantasy resistances', () => {
     };
     const engine = buildEngine(fantasyAbilities, [player, stalker]);
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'holy-smite' }, targetIds: ['stalker'],
     });
     const vuln = events.filter((e) => e.type === 'ability.status.vulnerable');
@@ -292,7 +292,7 @@ describe('Phase 5 expansion — cyberpunk resistances', () => {
     };
     const engine = buildEngine(cyberpunkAbilities, [player, boss]);
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'ice-breaker-hack' }, targetIds: ['overseer'],
     });
     const resisted = events.filter((e) => e.type === 'ability.status.resisted');
@@ -328,7 +328,7 @@ describe('Phase 5 expansion — weird-west resistances', () => {
     };
     const engine = buildEngine(weirdWestAbilities, [player, crawler]);
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'dust-devil' },
     });
     // dust-blind has blind tag — crawler is blind:immune
@@ -384,7 +384,7 @@ describe('Phase 5 expansion — ronin resistances', () => {
     };
     const engine = buildEngine(roninAbilities, [player, guard]);
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'blade-ward' }, targetIds: ['guard'],
     });
     // off-balance has stance tag — guard is stance:resistant → duration halved

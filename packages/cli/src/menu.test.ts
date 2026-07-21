@@ -24,6 +24,7 @@ import {
   DIRECTOR_MENU_VERB,
   JOURNAL_MENU_LABEL,
   JOURNAL_MENU_VERB,
+  type ExtraAction,
 } from './menu.js';
 import { getAbilityCatalog } from './turns.js';
 import { handlePlayerInput } from './bin.js';
@@ -138,9 +139,9 @@ describe('buildUnlockActions (F1d) — XP is spendable', () => {
 });
 
 describe('renderExtraActions + parseExtraSelection (F1d)', () => {
-  const extras = [
-    { verb: 'use-ability', parameters: { abilityId: 'a' }, label: 'Alpha', group: 'ability' as const },
-    { verb: 'unlock', parameters: { treeId: 't', nodeId: 'n' }, label: 'Beta', group: 'advance' as const },
+  const extras: ExtraAction[] = [
+    { verb: 'use-ability', parameters: { abilityId: 'a' }, label: 'Alpha', group: 'ability' },
+    { verb: 'unlock', parameters: { treeId: 't', nodeId: 'n' }, label: 'Beta', group: 'advance' },
   ];
 
   it('numbers continue the base menu and groups are visually separated', () => {

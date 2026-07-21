@@ -70,20 +70,21 @@ describe('equipment loop — authored player (no character creation)', () => {
     const player = world.entities[world.playerId];
     const beast = world.entities['war-beast'];
     const formulas = buildCombatFormulas(gladiatorMapping);
+    expect(formulas.hitChance).toBeDefined();
 
     // Base: 50 + agility(5)*5 − beast.agility(4)*3 = 63
-    expect(formulas.hitChance(player, beast, world)).toBe(63);
+    expect(formulas.hitChance!(player, beast, world)).toBe(63);
 
     engine.submitAction('equip');
 
     // Equipped: effectiveStat(agility) = 6 → 50 + 30 − 12 = 68
     expect(effectiveStat(player, 'agility', world, 5)).toBe(6);
-    expect(formulas.hitChance(player, beast, world)).toBe(68);
+    expect(formulas.hitChance!(player, beast, world)).toBe(68);
 
     // Red-proof (one direction): remove the status carrier and the delta is gone.
     engine.submitAction('unequip');
     expect(hasStatus(player, equipStatusId('trident-and-net'))).toBe(false);
-    expect(formulas.hitChance(player, beast, world)).toBe(63);
+    expect(formulas.hitChance!(player, beast, world)).toBe(63);
   });
 
   it('cross-checks the status-carried delta against the equipment package’s own aggregate', () => {
@@ -116,14 +117,15 @@ describe('equipment loop — created character (startingInventory → inventory 
     const player = insertRetiarius(engine);
     const beast = engine.world.entities['war-beast'];
     const formulas = buildCombatFormulas(gladiatorMapping);
+    expect(formulas.hitChance).toBeDefined();
 
     // Retiarius agility 6: 50 + 30 − 12 = 68 base.
-    expect(formulas.hitChance(player, beast, engine.world)).toBe(68);
+    expect(formulas.hitChance!(player, beast, engine.world)).toBe(68);
 
     engine.submitAction('equip');
 
     expect(effectiveStat(player, 'agility', engine.world, 5)).toBe(7);
-    expect(formulas.hitChance(player, beast, engine.world)).toBe(73); // 50 + 35 − 12
+    expect(formulas.hitChance!(player, beast, engine.world)).toBe(73); // 50 + 35 − 12
   });
 });
 
