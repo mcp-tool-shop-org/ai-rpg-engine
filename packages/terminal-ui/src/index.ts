@@ -16,6 +16,7 @@ export {
   EVENT_LOG_LOOKBACK,
   SCREEN_WIDTH,
   type RenderOptions,
+  type FullScreenOptions,
   type ActionOption,
 } from './renderer.js';
 

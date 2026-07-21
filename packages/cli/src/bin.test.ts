@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { Engine, type RulesetDefinition } from '@ai-rpg-engine/core';
+import { Engine, type EntityState, type RulesetDefinition } from '@ai-rpg-engine/core';
 import { createGame as createFantasyGame } from '@ai-rpg-engine/starter-fantasy';
 import {
   runGuardedAction,
@@ -12,6 +12,8 @@ import {
   formatGameHelp,
   readSaveSummary,
   restoreSessionFromSave,
+  renderFrame,
+  installCreatedPlayer,
 } from './bin.js';
 import { allPacks } from './packs.js';
 import { runNpcTurns } from './turns.js';
@@ -610,5 +612,132 @@ describe('formatGameHelp (CS-C-005)', () => {
     const logged = log.mock.calls.map((c) => String(c[0])).join('\n');
     expect(logged).toContain('enthrall');
     expect(logged).toContain('Drink blood to sate the hunger');
+  });
+});
+
+// T0-menu-collisions — two live-reproduced collisions: (a) during active
+// dialogue the base action menu rendered its own [1]/[2] column under the
+// dialogue choices' numbers; (b) the defeat/ending frame offered the corpse
+// the full [1]-[7] action menu above the DEFEAT banner. Both frames now
+// suppress the menu layers while keeping the scene/HUD/log panels.
+describe('renderFrame — menu suppression (T0-menu-collisions)', () => {
+  function capture() {
+    const lines: string[] = [];
+    return { lines, print: (line: string) => lines.push(line) };
+  }
+
+  function packFor(engine: Engine) {
+    return { meta: { id: 'test-game', name: 'Test Game' }, createGame: () => engine };
+  }
+
+  it('a session-end frame ({ menu: false }) keeps scene/HUD/log but offers NO action menu', () => {
+    const engine = makeEngine();
+    engine.submitAction('move', { targetIds: ['hall'] }); // a renderable-ish log entry
+    engine.store.emitEvent('combat.contact.hit', {}, { actorId: 'hero' });
+    const { lines, print } = capture();
+
+    renderFrame(engine, packFor(engine), { menu: false, print });
+
+    const frame = lines.join('\n');
+    expect(frame).toContain('── Cell ');       // scene panel survives
+    expect(frame).toContain('── Status ');     // HUD panel survives
+    expect(frame).toContain('── Log ');        // log panel survives
+    expect(frame).not.toContain('── Actions ');
+    expect(frame).not.toContain('Move to Hall');
+    expect(frame).not.toMatch(/\[\s*\d+\]/);   // no numbered entries at all
+  });
+
+  it('an active-dialogue frame renders only the dialogue choice numbers — no base menu below', () => {
+    const engine = makeEngine();
+    engine.world.modules['dialogue-core'] = { activeDialogue: 'bram-talk' };
+    engine.store.emitEvent('dialogue.node.entered', {
+      speaker: 'Bram',
+      text: 'Well met.',
+      choices: [{ id: 'c1', text: 'And you.', index: 0 }],
+    }, { actorId: 'hero' });
+    const { lines, print } = capture();
+
+    renderFrame(engine, packFor(engine), { print });
+
+    const frame = lines.join('\n');
+    expect(frame).toContain('── Dialogue ');
+    expect(frame).toContain('[1] And you.');
+    expect(frame).not.toContain('── Actions ');
+    expect(frame).not.toContain('Move to Hall');
+    // Exactly ONE numbered column on screen: the dialogue's.
+    expect(frame.match(/\[1\]/g)).toHaveLength(1);
+  });
+
+  it('a normal frame still renders the numbered menu (control)', () => {
+    const engine = makeEngine();
+    const { lines, print } = capture();
+
+    renderFrame(engine, packFor(engine), { print });
+
+    const frame = lines.join('\n');
+    expect(frame).toContain('── Actions ');
+    expect(frame).toContain('[1] Move to Hall');
+    expect(frame).toContain('Look around');
+  });
+});
+
+// F-1049b518 — the created-character replacement was the ONE ingestion point
+// still writing a caller-owned object straight into store state
+// (`state.entities[playerId] = playerEntity`), bypassing the store's
+// detach-at-ingestion contract (structuredClone, F-71ec5dcd). It now routes
+// through store.addEntity; the id/zone merge semantics (CLI-001) are unchanged.
+describe('installCreatedPlayer (F-1049b518) — detached ingestion', () => {
+  function createdEntity(): EntityState {
+    return {
+      id: 'created',
+      blueprintId: 'custom',
+      type: 'player',
+      name: 'Kael',
+      tags: ['player'],
+      stats: { might: 3 },
+      resources: { hp: 30, maxHp: 30 },
+      statuses: [],
+    };
+  }
+
+  it('re-keys to the pack playerId and preserves the default player zone (CLI-001 semantics)', () => {
+    const engine = makeEngine(); // playerId 'hero', default player in 'cell'
+    installCreatedPlayer(engine, createdEntity());
+
+    const installed = engine.store.state.entities['hero'];
+    expect(installed).toBeDefined();
+    expect(installed.name).toBe('Kael');
+    expect(installed.id).toBe('hero');
+    expect(installed.zoneId).toBe('cell');
+    expect(installed.resources.hp).toBe(30);
+  });
+
+  it('mutating the caller object after installation never reaches store state', () => {
+    const engine = makeEngine();
+    const playerEntity = createdEntity();
+    installCreatedPlayer(engine, playerEntity);
+
+    playerEntity.resources.hp = 999;
+    playerEntity.tags.push('tainted');
+    playerEntity.statuses.push({ id: 's', statusId: 'doomed', appliedAtTick: 0 });
+    playerEntity.stats.might = -1;
+
+    const installed = engine.store.state.entities['hero'];
+    expect(installed.resources.hp).toBe(30);
+    expect(installed.tags).not.toContain('tainted');
+    expect(installed.statuses).toHaveLength(0);
+    expect(installed.stats.might).toBe(3);
+  });
+
+  it('store mutations never bleed back into the caller object either', () => {
+    const engine = makeEngine();
+    const playerEntity = createdEntity();
+    installCreatedPlayer(engine, playerEntity);
+
+    engine.store.state.entities['hero'].resources.hp = 1;
+    engine.store.state.entities['hero'].tags.push('wounded');
+
+    expect(playerEntity.resources.hp).toBe(30);
+    expect(playerEntity.tags).not.toContain('wounded');
   });
 });

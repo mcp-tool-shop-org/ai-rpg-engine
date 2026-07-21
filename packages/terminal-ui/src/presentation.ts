@@ -94,9 +94,24 @@ export type TurnPresenterOptions = {
 };
 
 /**
+ * Terminal punctuation check for narration joins (F-b1b81929). A fragment
+ * "ends punctuated" when its last character is `.`/`!`/`?`, optionally
+ * followed by closing quotes/brackets — so `"Who goes there?"` counts, while
+ * `stamina: 5 → 4` and `4 damage dealt (HP: 4)` do not.
+ */
+const TERMINAL_PUNCTUATION = /[.!?]["')\]]*$/;
+
+/**
  * Build the turn's narration text from its formatted event lines — the exact
  * lines the log renders (minus the `> ` log affordance), joined into prose.
  * Single source of truth: narration can never say something the log doesn't.
+ *
+ * F-b1b81929: busy rounds used to join fragments with bare spaces —
+ * "…stamina: 5 → 4 Hit! …" read as one run-on mash. The join now adds a
+ * period to any fragment lacking terminal punctuation BEFORE the space —
+ * a punctuation-only transform at the joins: fragment CONTENT is still
+ * formatEventLine's verbatim text, already-punctuated fragments are untouched,
+ * and the final fragment keeps its original ending (no join follows it).
  */
 export function narrationTextFromEvents(events: readonly ResolvedEvent[]): string {
   const sentences: string[] = [];
@@ -105,7 +120,12 @@ export function narrationTextFromEvents(events: readonly ResolvedEvent[]): strin
     if (!line) continue;
     sentences.push(line.startsWith('> ') ? line.slice(2) : line);
   }
-  return sentences.length > 0 ? sentences.join(' ') : QUIET_TURN_TEXT;
+  if (sentences.length === 0) return QUIET_TURN_TEXT;
+  return sentences
+    .map((s, i) =>
+      i < sentences.length - 1 && !TERMINAL_PUNCTUATION.test(s) ? `${s}.` : s,
+    )
+    .join(' ');
 }
 
 /**

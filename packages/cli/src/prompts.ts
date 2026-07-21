@@ -102,14 +102,24 @@ export async function promptText(label: string): Promise<string> {
   }
 }
 
-/** Prompt for a single selection from a numbered menu. Returns the 0-based index. */
+/**
+ * Prompt for a single selection from a numbered menu. Returns the 0-based index.
+ * `opts.footer` renders a pre-formatted block between the item list and the
+ * prompt (the adventure select's "Recent runs" panel) — display only, never
+ * part of the numbered range.
+ */
 export async function promptMenu(
   items: { label: string; detail?: string }[],
+  opts: { footer?: string } = {},
 ): Promise<number> {
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     console.log(`  [${i + 1}] ${item.label}`);
     if (item.detail) console.log(`      ${item.detail}`);
+  }
+  if (opts.footer) {
+    console.log();
+    console.log(opts.footer);
   }
   console.log();
 

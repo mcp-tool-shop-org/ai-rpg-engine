@@ -146,11 +146,11 @@ describe('narrateRound (FU-2) — the run loop narration step', () => {
     const print = vi.fn();
     narrateRound(new TurnPresenter(), engine, logLenBefore, print);
 
-    // One present for the whole round — a single line carrying both halves.
+    // One present for the whole round — a single line carrying both halves,
+    // with the join punctuated (F-b1b81929: no more run-on fragment mash).
     expect(print).toHaveBeenCalledTimes(1);
     const line = stripAnsi(String(print.mock.calls[0][0]));
-    expect(line).toContain('Entered Hall');
-    expect(line).toContain('4 damage dealt');
+    expect(line).toContain('Entered Hall. 4 damage dealt');
   });
 
   it('prints the presenter styledNarration, indented two spaces — tone/urgency styling comes through', () => {

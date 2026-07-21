@@ -14,10 +14,12 @@
 // ends the session cleanly (new game / quit) instead of looping forever.
 
 import type { Engine, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
+import type { ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
 import {
   evaluateEndgame,
   buildArcSnapshot,
   formatEndgameForNarrator,
+  getCurrency,
   type EndgameInputs,
   type EndgameTrigger,
 } from '@ai-rpg-engine/modules';
@@ -178,6 +180,132 @@ export function evaluateSessionEnd(engine: Engine): SessionEnd | null {
 }
 
 // ---------------------------------------------------------------------------
+// Session stats — the run in numbers
+// ---------------------------------------------------------------------------
+
+/** The finale's tally of the run, derived from the event log (see computeSessionStats). */
+export type SessionStats = {
+  /** Rounds survived — the engine's turn counter (world.meta.tick). */
+  rounds: number;
+  /** Hostiles downed (combat.entity.defeated, excluding the player and non-hostiles). */
+  enemiesDefeated: number;
+  /** Damage the player dealt (combat.damage.applied where the player attacked). */
+  damageDealt: number;
+  /** Damage the player took (combat.damage.applied on the player + DoT ticks). */
+  damageTaken: number;
+  /** Abilities the player used (ability.used with the player as actor). */
+  abilitiesUsed: number;
+  /** Total XP earned: final balance plus what unlock spends consumed. */
+  xpEarned: number;
+  /** Progression nodes the player unlocked (progression.node.unlocked). */
+  unlocks: number;
+};
+
+/**
+ * Tally the session from the events the engine actually emitted — the same
+ * vocabulary the log renders (formatEventLine), no invented event types:
+ *
+ *  - enemiesDefeated: `combat.entity.defeated` for a non-player entity that is
+ *    hostile by the scene list's convention (`enemy`/`hostile` tag). Entities
+ *    already gone from world state still count (they were downed, not the player).
+ *  - damageDealt/Taken: `combat.damage.applied` attributed via its
+ *    attackerId/targetId payload; DoT ticks (`status.periodic.damage`, whose
+ *    actor IS the afflicted entity) add to damage taken.
+ *  - abilitiesUsed / unlocks: `ability.used` / `progression.node.unlocked`
+ *    with the player as actor.
+ *  - xpEarned: XP accrual emits NO event (progression-core's addCurrency is
+ *    silent), so "earned" is reconstructed as the HUD's own balance authority
+ *    (getCurrency, same as buildHudWorld) plus the cost of every unlocked node
+ *    resolvable in the pack's trees — balance + spent = earned.
+ */
+export function computeSessionStats(
+  world: WorldState,
+  trees: ProgressionTreeDefinition[] = [],
+): SessionStats {
+  const playerId = world.playerId;
+  const stats: SessionStats = {
+    rounds: world.meta.tick,
+    enemiesDefeated: 0,
+    damageDealt: 0,
+    damageTaken: 0,
+    abilitiesUsed: 0,
+    xpEarned: 0,
+    unlocks: 0,
+  };
+
+  // Same currency authority as the HUD (buildHudWorld): first tree's currency,
+  // 'xp' when no trees are wired.
+  const currencyId = trees[0]?.currency ?? 'xp';
+  const nodeCost = new Map<string, number>();
+  for (const tree of trees) {
+    if (tree.currency !== currencyId) continue;
+    for (const node of tree.nodes) nodeCost.set(`${tree.id} ${node.id}`, node.cost);
+  }
+
+  let xpSpent = 0;
+  for (const event of world.eventLog as ResolvedEvent[]) {
+    const p = event.payload;
+    switch (event.type) {
+      case 'combat.entity.defeated': {
+        const id = typeof p.entityId === 'string' ? p.entityId : undefined;
+        if (!id || id === playerId) break;
+        const entity = world.entities[id];
+        if (!entity || entity.tags.includes('enemy') || entity.tags.includes('hostile')) {
+          stats.enemiesDefeated++;
+        }
+        break;
+      }
+      case 'combat.damage.applied': {
+        const damage = typeof p.damage === 'number' ? p.damage : 0;
+        if (p.attackerId === playerId) stats.damageDealt += damage;
+        if (p.targetId === playerId) stats.damageTaken += damage;
+        break;
+      }
+      case 'status.periodic.damage': {
+        if (event.actorId === playerId && typeof p.amount === 'number') {
+          stats.damageTaken += p.amount;
+        }
+        break;
+      }
+      case 'ability.used': {
+        if (event.actorId === playerId) stats.abilitiesUsed++;
+        break;
+      }
+      case 'progression.node.unlocked': {
+        if (event.actorId !== playerId) break;
+        stats.unlocks++;
+        if (typeof p.treeId === 'string' && typeof p.nodeId === 'string') {
+          xpSpent += nodeCost.get(`${p.treeId} ${p.nodeId}`) ?? 0;
+        }
+        break;
+      }
+    }
+  }
+
+  stats.xpEarned = getCurrency(world, playerId, currencyId) + xpSpent;
+  return stats;
+}
+
+const STATS_RULE = '─'.repeat(60);
+
+/** The stats block for the finale screen, in the epilogue's section style. */
+export function renderSessionStats(stats: SessionStats): string {
+  const lines: string[] = [];
+  lines.push(`  ${STATS_RULE}`);
+  lines.push('  THE RUN IN NUMBERS');
+  lines.push(`  ${STATS_RULE}`);
+  lines.push('');
+  lines.push(`  Rounds Survived: ${stats.rounds}`);
+  lines.push(`  Enemies Defeated: ${stats.enemiesDefeated}`);
+  lines.push(`  Damage Dealt: ${stats.damageDealt}`);
+  lines.push(`  Damage Taken: ${stats.damageTaken}`);
+  lines.push(`  Abilities Used: ${stats.abilitiesUsed}`);
+  lines.push(`  XP Earned: ${stats.xpEarned}`);
+  lines.push(`  Advancements Unlocked: ${stats.unlocks}`);
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
 // Finale rendering
 // ---------------------------------------------------------------------------
 
@@ -241,11 +369,18 @@ export function journalFromEventLog(world: WorldState): CampaignJournal {
 const END_RULE = '═'.repeat(60);
 
 /**
- * The full end screen: banner, narrator line, then the finale epilogue
- * (campaign-memory buildFinaleOutline → formatFinaleForTerminal) with NPC and
- * faction fates derived from live world state.
+ * The full end screen: banner, narrator line, the run's stats tally
+ * (computeSessionStats — the audit's "Chronicle Events: 2" finale was too
+ * thin a goodbye), then the finale epilogue (campaign-memory
+ * buildFinaleOutline → formatFinaleForTerminal) with NPC and faction fates
+ * derived from live world state. `trees` (the pack's progression trees)
+ * sharpens the XP tally; omitted, XP falls back to the raw balance.
  */
-export function renderSessionEnd(end: SessionEnd, world: WorldState): string {
+export function renderSessionEnd(
+  end: SessionEnd,
+  world: WorldState,
+  trees: ProgressionTreeDefinition[] = [],
+): string {
   const lines: string[] = [];
   lines.push('');
   lines.push(`  ${END_RULE}`);
@@ -253,6 +388,8 @@ export function renderSessionEnd(end: SessionEnd, world: WorldState): string {
   lines.push(`  ${END_RULE}`);
   lines.push('');
   lines.push(`  ${end.narratorLine}`);
+  lines.push('');
+  lines.push(renderSessionStats(computeSessionStats(world, trees)));
 
   const npcs: FinaleNpcInput[] = Object.values(world.entities)
     .filter((e) => e.id !== world.playerId && (e.tags.includes('npc') || e.tags.includes('enemy')))

@@ -6,12 +6,15 @@
 import { describe, it, expect } from 'vitest';
 import { Engine } from '@ai-rpg-engine/core';
 import { createGame } from '@ai-rpg-engine/starter-fantasy';
+import type { ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
 import {
   detectBaseOutcome,
   evaluateSessionEnd,
   renderSessionEnd,
   journalFromEventLog,
   buildEndgameInputs,
+  computeSessionStats,
+  renderSessionStats,
 } from './endgame.js';
 
 function makeGame() {
@@ -163,6 +166,25 @@ describe('renderSessionEnd + journalFromEventLog (F1b) — the end screen', () =
     expect(screen).toContain('Entered Chapel Nave');
   });
 
+  // T0-finale-stats: a live defeat's finale said "Chronicle Events: 2" and
+  // little else — too thin a goodbye. The end screen now tallies the run from
+  // the events the engine actually emitted.
+  it('the end screen carries the run-in-numbers block', () => {
+    const engine = makeGame();
+    engine.store.state.entities['player'].resources.hp = 0;
+    const end = evaluateSessionEnd(engine)!;
+
+    const screen = renderSessionEnd(end, engine.world);
+    expect(screen).toContain('THE RUN IN NUMBERS');
+    expect(screen).toContain('Rounds Survived:');
+    expect(screen).toContain('Enemies Defeated:');
+    expect(screen).toContain('Damage Dealt:');
+    expect(screen).toContain('Damage Taken:');
+    expect(screen).toContain('Abilities Used:');
+    expect(screen).toContain('XP Earned:');
+    expect(screen).toContain('Advancements Unlocked:');
+  });
+
   it('journalFromEventLog records kills, first-visit discoveries, and unlocks with bounded duplicates', () => {
     const engine = makeGame();
     engine.submitAction('move', { targetIds: ['chapel-nave'] });
@@ -181,5 +203,103 @@ describe('renderSessionEnd + journalFromEventLog (F1b) — the end screen', () =
     // chapel-nave + chapel-entrance discovered once each, revisit ignored.
     expect(discoveries.map((d) => d.zoneId).sort()).toEqual(['chapel-entrance', 'chapel-nave']);
     expect(actions.some((a) => a.description.includes('toughened'))).toBe(true);
+  });
+});
+
+// T0-finale-stats — the tally is derived ONLY from events the engine emits
+// (the formatEventLine vocabulary): combat.damage.applied attribution,
+// combat.entity.defeated hostility, ability.used / progression.node.unlocked
+// actorship, DoT ticks. XP accrual has no event (progression-core addCurrency
+// is silent), so xpEarned reconstructs earned = balance + unlock spends.
+describe('computeSessionStats (T0-finale-stats)', () => {
+  /** Bare engine — no module listeners, so emitted events are exactly the log. */
+  function bareEngine() {
+    const engine = new Engine({
+      manifest: { id: 't', title: 't', version: '0', engineVersion: '0', ruleset: 't', modules: [], contentPacks: [] },
+      seed: 1,
+    });
+    engine.store.state.zones = { z: { id: 'z', roomId: 'r', name: 'Z', tags: [], neighbors: [] } };
+    engine.store.state.locationId = 'z';
+    engine.store.addEntity({
+      id: 'p', blueprintId: 'p', type: 'player', name: 'P', tags: ['player'],
+      stats: {}, resources: { hp: 5 }, statuses: [], zoneId: 'z',
+    });
+    engine.store.addEntity({
+      id: 'ghoul', blueprintId: 'e', type: 'enemy', name: 'Ghoul', tags: ['enemy'],
+      stats: {}, resources: { hp: 0 }, statuses: [], zoneId: 'z',
+    });
+    engine.store.addEntity({
+      id: 'friend', blueprintId: 'n', type: 'npc', name: 'Friend', tags: ['npc', 'companion'],
+      stats: {}, resources: { hp: 0 }, statuses: [], zoneId: 'z',
+    });
+    engine.store.state.playerId = 'p';
+    return engine;
+  }
+
+  const tree: ProgressionTreeDefinition = {
+    id: 'mastery',
+    name: 'Mastery',
+    currency: 'xp',
+    nodes: [{ id: 'toughened', name: 'Toughened', cost: 5, effects: [] }],
+  };
+
+  it('tallies a synthetic event log exactly', () => {
+    const engine = bareEngine();
+    const emit = engine.store.emitEvent.bind(engine.store);
+
+    emit('combat.damage.applied', { attackerId: 'p', targetId: 'ghoul', damage: 4 }, { actorId: 'p' });
+    emit('combat.damage.applied', { attackerId: 'ghoul', targetId: 'p', damage: 3 }, { actorId: 'ghoul' });
+    emit('status.periodic.damage', { statusId: 'burning', amount: 2 }, { actorId: 'p' });
+    emit('status.periodic.damage', { statusId: 'burning', amount: 9 }, { actorId: 'ghoul' }); // not the player
+    emit('combat.entity.defeated', { entityId: 'ghoul', entityName: 'Ghoul' }, { actorId: 'p' });
+    emit('combat.entity.defeated', { entityId: 'friend', entityName: 'Friend' }, { actorId: 'ghoul' }); // companion — not an enemy
+    emit('combat.entity.defeated', { entityId: 'p', entityName: 'P' }, { actorId: 'ghoul' }); // the player — never a kill
+    emit('ability.used', { abilityId: 'smite', abilityName: 'Smite' }, { actorId: 'p' });
+    emit('ability.used', { abilityId: 'howl', abilityName: 'Howl' }, { actorId: 'ghoul' }); // enemy ability
+    emit('progression.node.unlocked', { treeId: 'mastery', nodeId: 'toughened', effects: [] }, { actorId: 'p' });
+
+    engine.store.state.meta.tick = 12;
+    // Post-spend balance: 7 banked. Earned = 7 + the 5 the unlock cost.
+    engine.store.state.modules['progression-core'] = { currencies: { p: { xp: 7 } }, unlocked: {} };
+
+    expect(computeSessionStats(engine.world, [tree])).toEqual({
+      rounds: 12,
+      enemiesDefeated: 1,
+      damageDealt: 4,
+      damageTaken: 5,
+      abilitiesUsed: 1,
+      xpEarned: 12,
+      unlocks: 1,
+    });
+  });
+
+  it('a defeated entity already GONE from world state still counts as a kill', () => {
+    const engine = bareEngine();
+    engine.store.emitEvent('combat.entity.defeated', { entityId: 'long-gone', entityName: 'Gone' }, { actorId: 'p' });
+    expect(computeSessionStats(engine.world).enemiesDefeated).toBe(1);
+  });
+
+  it('an empty log yields all-zero stats and renders gracefully', () => {
+    const engine = bareEngine();
+    const stats = computeSessionStats(engine.world);
+    expect(stats).toEqual({
+      rounds: 0,
+      enemiesDefeated: 0,
+      damageDealt: 0,
+      damageTaken: 0,
+      abilitiesUsed: 0,
+      xpEarned: 0,
+      unlocks: 0,
+    });
+    const block = renderSessionStats(stats);
+    expect(block).toContain('THE RUN IN NUMBERS');
+    expect(block).toContain('Rounds Survived: 0');
+    expect(block).toContain('XP Earned: 0');
+  });
+
+  it('without trees, XP falls back to the raw balance under the default currency', () => {
+    const engine = bareEngine();
+    engine.store.state.modules['progression-core'] = { currencies: { p: { xp: 9 } }, unlocked: {} };
+    expect(computeSessionStats(engine.world).xpEarned).toBe(9);
   });
 });

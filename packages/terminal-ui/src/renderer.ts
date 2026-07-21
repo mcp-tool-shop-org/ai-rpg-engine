@@ -758,7 +758,17 @@ export function renderDialogue(world: WorldState, opts?: RenderOptions): string 
   return lines.join('\n') + '\n';
 }
 
-export function renderFullScreen(world: WorldState, recentEvents: ResolvedEvent[], opts?: RenderOptions): string {
+/** Full-screen options: per-section switches on top of the shared render options. */
+export type FullScreenOptions = RenderOptions & {
+  /**
+   * Render the numbered Actions section. Default true. Callers rendering a
+   * frame the player can no longer act on (the session-end screen — F1b's
+   * finale flow) pass false so a corpse is not offered an action menu.
+   */
+  actions?: boolean;
+};
+
+export function renderFullScreen(world: WorldState, recentEvents: ResolvedEvent[], opts?: FullScreenOptions): string {
   // Resolve color ONCE per screen so every section renders under the same
   // decision — no mid-frame flips if the environment changes under us.
   const pal = paletteFor(opts);
@@ -787,7 +797,18 @@ export function renderFullScreen(world: WorldState, recentEvents: ResolvedEvent[
     sections.push(`${sectionRule('Log', pal)}\n${eventLog}`);
   }
 
-  sections.push(`${sectionRule('Actions', pal)}\n${renderActions(world, resolved)}`);
+  // The numbered Actions section is suppressed while a dialogue is ACTIVE:
+  // the numbers on screen belong to the dialogue choices, and rendering both
+  // lists put two colliding `[1]`/`[2]` columns on one frame (the input
+  // router resolves numbers to dialogue choices first, so the base menu's
+  // numbers were lying). The just-ended echo frame (activeDialogue null,
+  // last spoken line shown) keeps its menu — no choices are on screen there.
+  // Callers can also suppress explicitly via `actions: false` (end frames).
+  const dState = world.modules['dialogue-core'] as { activeDialogue?: string | null } | undefined;
+  const showActions = (opts?.actions ?? true) && !dState?.activeDialogue;
+  if (showActions) {
+    sections.push(`${sectionRule('Actions', pal)}\n${renderActions(world, resolved)}`);
+  }
 
   // Sections each end with '\n'; joining with '\n' yields exactly one blank
   // line between blocks. The closing rule sits tight under the last line.

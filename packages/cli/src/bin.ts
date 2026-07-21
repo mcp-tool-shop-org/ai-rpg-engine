@@ -16,7 +16,7 @@ import {
   TurnPresenter,
 } from '@ai-rpg-engine/terminal-ui';
 import { resolveEntity } from '@ai-rpg-engine/character-creation';
-import { WorldStore, SaveLoadError, type Engine, type RulesetDefinition } from '@ai-rpg-engine/core';
+import { WorldStore, SaveLoadError, type Engine, type EntityState, type RulesetDefinition } from '@ai-rpg-engine/core';
 import { allPacks } from './packs.js';
 import { promptMenu, promptLine, closeReadline } from './prompts.js';
 import { buildCharacter } from './character-builder.js';
@@ -26,7 +26,8 @@ import { runScaffold } from './scaffold.js';
 import { runProfile } from './profile.js';
 import { runGuardedAction } from './guard.js';
 import { runNpcTurns } from './turns.js';
-import { evaluateSessionEnd, renderSessionEnd } from './endgame.js';
+import { evaluateSessionEnd, renderSessionEnd, computeSessionStats } from './endgame.js';
+import { appendRunRecord, readRunHistory, formatRecentRuns } from './history.js';
 import { buildExtraActions, renderExtraActions, parseExtraSelection, buildHudWorld, type ExtraAction } from './menu.js';
 import { loadExternalPack, PackLoadError, type LoadedPack } from './external-pack.js';
 
@@ -141,11 +142,19 @@ async function selectPack(): Promise<LoadedPack> {
   console.log('  Choose your adventure');
   console.log('  ═══════════════════════════════════════\n');
 
+  // Recent completed runs (runs.jsonl) render under the pack list — the table
+  // remembers how the last stories ended. No history, no section.
+  const footer = formatRecentRuns(
+    readRunHistory(SAVE_DIR),
+    new Map(allPacks.map((p) => [p.meta.id, p.meta.name])),
+  );
+
   const idx = await promptMenu(
     allPacks.map((p) => ({
       label: p.meta.name,
       detail: p.meta.tagline,
     })),
+    footer ? { footer } : {},
   );
 
   return allPacks[idx];
@@ -258,6 +267,26 @@ async function maybeOfferResume(external: LoadedPack | null): Promise<Session | 
   }
 }
 
+/**
+ * Replace the pack's default player with the created character. The player
+ * entity key is NOT always 'player' — 6/10 packs use a pack-specific id (e.g.
+ * 'runner', 'detective'). Read the real id from state.playerId and re-key the
+ * built character to it, preserving the default player's zone (CLI-001).
+ *
+ * F-1049b518: ingestion goes through store.addEntity — the store's
+ * detach-at-ingestion contract (structuredClone, F-71ec5dcd) — instead of the
+ * old direct `state.entities[playerId] = playerEntity` write, which was the
+ * one ingestion point left aliasing a caller-owned object into store state.
+ * Exported for unit testing (the interactive wizard around it is readline-driven).
+ */
+export function installCreatedPlayer(engine: Engine, playerEntity: EntityState): void {
+  const playerId = engine.store.state.playerId;
+  const defaultPlayer = engine.store.state.entities[playerId];
+  playerEntity.id = playerId;
+  playerEntity.zoneId = defaultPlayer?.zoneId;
+  engine.store.addEntity(playerEntity);
+}
+
 /** Character creation + engine construction for a fresh game. */
 async function createNewSession(pack: LoadedPack): Promise<Session> {
   const engine = pack.createGame();
@@ -272,16 +301,7 @@ async function createNewSession(pack: LoadedPack): Promise<Session> {
 
     const build = await buildCharacter(pack.buildCatalog, pack.ruleset);
     const playerEntity = resolveEntity(build, pack.buildCatalog, pack.ruleset);
-
-    // Replace the default player with the custom character. The player entity key
-    // is NOT always 'player' — 6/10 packs use a pack-specific id (e.g. 'runner',
-    // 'detective'). Read the real id from state.playerId and re-key the built
-    // character to it, preserving the default player's zone (CLI-001).
-    const playerId = engine.store.state.playerId;
-    const defaultPlayer = engine.store.state.entities[playerId];
-    playerEntity.id = playerId;
-    playerEntity.zoneId = defaultPlayer?.zoneId;
-    engine.store.state.entities[playerId] = playerEntity;
+    installCreatedPlayer(engine, playerEntity);
   }
 
   return { engine, pack };
@@ -300,23 +320,39 @@ function printSessionBanner(pack: LoadedPack) {
  *  - F1d HUD: the player shown carries xp/level pseudo-resources (display-only
  *    copy; live state untouched)
  *  - F1d menu: ability + unlock entries numbered to continue the base menu
- * The extras section is suppressed during active dialogue (numbers belong to
- * dialogue choices there).
+ * BOTH menu layers vanish during active dialogue (terminal-ui suppresses the
+ *  base Actions section itself; the extras gate here matches it) — the
+ *  numbers on screen belong to the dialogue choices.
+ * `opts.menu: false` suppresses both layers outright: the session-end frame
+ *  keeps the scene/HUD/log panels but offers a corpse no action menu (the
+ *  finale's New game / Quit prompt owns the numbers there).
+ * Exported for unit testing — the print sink is a parameter so tests capture
+ * the frame without touching console (same rationale as narrateRound).
  */
-function renderFrame(engine: Engine, pack: LoadedPack) {
+export function renderFrame(
+  engine: Engine,
+  pack: LoadedPack,
+  opts: { menu?: boolean; print?: (line: string) => void } = {},
+) {
+  const print = opts.print ?? console.log;
+  const menu = opts.menu ?? true;
   const trees = pack.progressionTrees ?? [];
-  const screen = renderFullScreen(buildHudWorld(engine.world, trees), engine.world.eventLog.slice(-8));
+  const screen = renderFullScreen(
+    buildHudWorld(engine.world, trees),
+    engine.world.eventLog.slice(-8),
+    menu ? undefined : { actions: false },
+  );
 
   const dState = engine.world.modules['dialogue-core'] as { activeDialogue: string | null } | undefined;
   let extraSection = '';
-  if (!dState?.activeDialogue) {
+  if (menu && !dState?.activeDialogue) {
     const extras = buildExtraActions(engine, trees);
     if (extras.length > 0) {
       extraSection = '\n' + renderExtraActions(extras, buildActionList(engine.world).length);
     }
   }
 
-  console.log('\n' + screen + extraSection);
+  print('\n' + screen + extraSection);
 }
 
 export type SessionOutcome = 'quit' | 'new-game';
@@ -366,8 +402,28 @@ async function runSession(engine: Engine, pack: LoadedPack): Promise<SessionOutc
   while (true) {
     const end = evaluateSessionEnd(engine);
     if (end) {
-      renderFrame(engine, pack);
-      console.log(renderSessionEnd(end, engine.world));
+      // The end frame keeps the scene/HUD/log panels but no action menu —
+      // the session is over; the finale prompt below owns the numbers.
+      renderFrame(engine, pack, { menu: false });
+      console.log(renderSessionEnd(end, engine.world, pack.progressionTrees ?? []));
+
+      // Record the COMPLETED run (victory or defeat — a mid-session quit
+      // never reaches this branch). Guarded append: a history write failure
+      // prints one structured line and the finale flow continues.
+      const stats = computeSessionStats(engine.world, pack.progressionTrees ?? []);
+      appendRunRecord(
+        {
+          ts: new Date().toISOString(),
+          packId: pack.meta.id,
+          outcome: end.kind,
+          ...(end.trigger ? { endingId: end.trigger.id } : {}),
+          rounds: stats.rounds,
+          kills: stats.enemiesDefeated,
+          xp: stats.xpEarned,
+        },
+        SAVE_DIR,
+      );
+
       const choice = await promptMenu([
         { label: 'New game', detail: 'Return to the adventure select' },
         { label: 'Quit', detail: 'Leave the table' },

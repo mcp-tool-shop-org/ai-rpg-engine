@@ -735,6 +735,57 @@ describe('Stage D — labeled section rules frame the screen', () => {
     expect(screen).toContain('[1] And you.');
   });
 
+  // T0-menu-collisions (a): during active dialogue the base action menu used
+  // to render below the dialogue choices — two colliding `[1]`/`[2]` columns
+  // on one frame, and the base menu's numbers were lies (the router resolves
+  // numbers to dialogue choices first). The Actions section now yields the
+  // frame to the dialogue.
+  describe('action menu suppression during dialogue (T0-menu-collisions)', () => {
+    function dialogueWorld() {
+      const world = makeWorld();
+      world.modules['dialogue-core'] = { activeDialogue: 'bram-talk' };
+      (world as { eventLog: ResolvedEvent[] }).eventLog = [
+        {
+          id: 'e1', tick: 1, type: 'dialogue.node.entered',
+          payload: { speaker: 'Bram', text: 'Well met.', choices: [{ id: 'c1', text: 'And you.', index: 0 }] },
+        },
+      ];
+      return world;
+    }
+
+    it('an active dialogue frame carries NO base-action numbers — only the choice numbers', () => {
+      const screen = renderFullScreen(dialogueWorld(), [], PLAIN);
+      expect(screen).not.toContain('── Actions ');
+      // The base menu's first entries for this world (pinned by the
+      // renderActions tests) must not share the frame with the choices.
+      expect(screen).not.toContain('Move to Back Alley');
+      expect(screen).not.toContain('Look around');
+      // The dialogue choice keeps its number — the only [1] on screen.
+      expect(screen).toContain('[1] And you.');
+      expect(screen.match(/\[1\]/g)).toHaveLength(1);
+    });
+
+    it('the menu returns once the dialogue is no longer active', () => {
+      const world = dialogueWorld();
+      world.modules['dialogue-core'] = { activeDialogue: null };
+      const screen = renderFullScreen(world, [], PLAIN);
+      expect(screen).toContain('── Actions ');
+      expect(screen).toContain('Move to Back Alley');
+    });
+
+    it('explicit { actions: false } suppresses the menu on any frame (session-end screens)', () => {
+      const world = makeWorld();
+      const screen = renderFullScreen(world, [], { ...PLAIN, actions: false });
+      // Scene, HUD, and closing rule survive; the menu does not.
+      expect(screen).toContain('── Town Square ');
+      expect(screen).toContain('── Status ');
+      expect(screen).not.toContain('── Actions ');
+      expect(screen).not.toMatch(/\[\s*\d+\]/);
+      const lines = screen.split('\n');
+      expect(lines[lines.length - 1]).toBe('─'.repeat(SCREEN_WIDTH));
+    });
+  });
+
   it('never emits double blank lines or two rules back to back', () => {
     const worlds = [makeWorld(), makeWorld()];
     // Second world: stress edge states — defeated enemy, statuses, events.
