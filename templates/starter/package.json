@@ -1,8 +1,11 @@
 {
   "name": "@ai-rpg-engine/starter-template",
   "version": "2.6.0",
-  "description": "Starter template for ai-rpg-engine \u00e2\u20ac\u201d scaffold a standalone game project from it",
+  "description": "Starter template for ai-rpg-engine \u2014 scaffold a standalone game project from it",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "files": [
     "src",
     "README.md",
