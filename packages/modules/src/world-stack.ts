@@ -29,6 +29,12 @@
 //     and no encounter-spawn module is included. The world tick
 //     (world-tick.ts) drives the registered content each round — the builder
 //     wires the module; the tick chain is unchanged.
+//   - `quests` is presence-optional the same way (F-ENG005-quest-loop-min):
+//     a pack with authored QuestDefinitions passes them and quest-core joins
+//     the stack; a pack without simply omits the key. Quest content is
+//     validated INSIDE createQuestCore and throws at assembly on any problem
+//     (fail-loud is that module's contract — invalid quests are a content
+//     bug, not a degradable warning like an unspawnable table entry).
 
 import type { EngineModule } from '@ai-rpg-engine/core';
 import { createEnvironmentCore } from './environment-core.js';
@@ -46,6 +52,8 @@ import { createDefeatFallout } from './defeat-fallout.js';
 import type { DefeatFalloutConfig } from './defeat-fallout.js';
 import { createEncounterSpawn, validateEncounterSpawnContent } from './encounter-spawn.js';
 import type { EncounterSpawnConfig } from './encounter-spawn.js';
+import { createQuestCore } from './quest-core.js';
+import type { QuestCoreConfig } from './quest-core.js';
 
 // ---------------------------------------------------------------------------
 // buildWorldStack — eliminates the strategic-tier hand-list
@@ -92,6 +100,13 @@ export type WorldStackConfig = {
    * encounter-spawn module is included then.
    */
   encounterSpawn?: EncounterSpawnConfig;
+
+  /**
+   * Authored quests (gameId + QuestDefinitions). Omit for packs without
+   * quest content — no quest-core module is included then. Invalid quest
+   * content THROWS here at assembly (createQuestCore's fail-loud contract).
+   */
+  quests?: QuestCoreConfig;
 };
 
 export type WorldStack = {
@@ -179,6 +194,14 @@ export function buildWorldStack(config: WorldStackConfig = {}): WorldStack {
       warnings.push(`encounterSpawn: ${problem}`);
     }
     modules.push(createEncounterSpawn(config.encounterSpawn));
+  }
+
+  if (config.quests) {
+    // Fail-loud, not warn-and-degrade: createQuestCore validates the authored
+    // quests (schema + runtime vocabulary) and THROWS on any problem — a
+    // quest that could never offer or a reward that would silently vanish is
+    // a content bug that must die at assembly (F-ENG005-quest-loop-min).
+    modules.push(createQuestCore(config.quests));
   }
 
   return { modules, warnings };

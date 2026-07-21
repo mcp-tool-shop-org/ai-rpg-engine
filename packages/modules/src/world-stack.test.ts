@@ -30,6 +30,7 @@
 import { describe, it, expect } from 'vitest';
 import { Engine, createTestEngine } from '@ai-rpg-engine/core';
 import type { EngineModule, EntityState, ZoneState } from '@ai-rpg-engine/core';
+import type { QuestDefinition } from '@ai-rpg-engine/content-schema';
 import { traversalCore } from './traversal-core.js';
 import { createCognitionCore, getCognition, setBelief } from './cognition-core.js';
 import { createPerceptionFilter } from './perception-filter.js';
@@ -117,6 +118,35 @@ const makeThug = (): EntityState => ({
   zoneId: 'zone-b',
 });
 
+/** Minimal valid quest for the presence-flag + pass-through probes: offered
+ *  on entering zone-b, completed by returning to zone-a. No rewards — the
+ *  probe watches the loop itself, not the grant path (quest-core.test.ts
+ *  owns rewards). */
+const probeQuest: QuestDefinition = {
+  id: 'probe-quest',
+  name: 'Probe Quest',
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'zone-b' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'go-home',
+      name: 'Go Home',
+      triggers: [
+        {
+          event: 'world.zone.entered',
+          condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'zone-a' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+};
+
 type StackConfig = Parameters<typeof buildWorldStack>[0];
 
 /** Engine with the stack's documented prerequisites: cognition-core + perception-filter. */
@@ -156,6 +186,27 @@ describe('buildWorldStack — composition', () => {
       encounterSpawn: { gameId: 'g', encounters: [], entityTemplates: [], zoneTables: {} },
     });
     expect(withSpawn).toEqual([...WORLD_STACK_DEFAULT, 'encounter-spawn']);
+  });
+
+  it('quests presence appends the quest-core module; omission excludes it (flag both ways)', () => {
+    expect(stackIds()).not.toContain('quest-core');
+    const withQuests = stackIds({ quests: { gameId: 'g', quests: [probeQuest] } });
+    expect(withQuests).toEqual([...WORLD_STACK_DEFAULT, 'quest-core']);
+  });
+
+  it('quests + encounterSpawn compose: both presence-optional modules append after the default seven', () => {
+    const both = stackIds({
+      encounterSpawn: { gameId: 'g', encounters: [], entityTemplates: [], zoneTables: {} },
+      quests: { gameId: 'g', quests: [probeQuest] },
+    });
+    expect(both).toEqual([...WORLD_STACK_DEFAULT, 'encounter-spawn', 'quest-core']);
+  });
+
+  it('fail-loud: invalid quest content THROWS at assembly (quest-core contract, not a warning)', () => {
+    const dead: QuestDefinition = { id: 'dead', name: 'Dead Quest', stages: [], triggers: [] };
+    expect(() => buildWorldStack({ quests: { gameId: 'g', quests: [dead] } })).toThrow(
+      /quest-core: invalid quest content/,
+    );
   });
 
   it('registration fails loudly when the documented prerequisite (cognition-core) is missing', () => {
@@ -235,6 +286,18 @@ describe('buildWorldStack — config pass-through probes', () => {
     });
     engine.submitAction('move', { targetIds: ['zone-b'] });
     expect(engine.world.entities['hero'].resources.stamina).toBe(6);
+  });
+
+  it('quests: an authored quest offers and completes through the stack engine’s live event stream', () => {
+    const engine = makeStackEngine({ quests: { gameId: 'probe', quests: [probeQuest] } });
+
+    engine.submitAction('move', { targetIds: ['zone-b'] });
+    expect(engine.world.quests['probe-quest']?.status).toBe('active');
+    expect(engine.world.eventLog.some((e) => e.type === 'quest.offered')).toBe(true);
+
+    engine.submitAction('move', { targetIds: ['zone-a'] });
+    expect(engine.world.quests['probe-quest']?.status).toBe('completed');
+    expect(engine.world.eventLog.some((e) => e.type === 'quest.completed')).toBe(true);
   });
 
   it('factions: the roster (members + cohesion) lands in the faction-cognition namespace', () => {
@@ -394,6 +457,13 @@ const ABILITY_SUFFIX = ['ability-core', 'ability-effects', 'ability-review', 'si
  * engine's module manager before the migration to buildWorldStack). If a
  * starter's list drifts from its pre-refactor expectation, the refactor
  * stopped being behavior-preserving — that is a STOP, not a test to adapt.
+ *
+ * One deliberate amendment since the capture: fantasy and zombie now pin
+ * `quest-core` after `encounter-spawn` (F-ENG005-quest-loop-min — those two
+ * packs author quests and pass the stack's presence-optional `quests`
+ * config). That is an INTENDED composition change shipped with the feature,
+ * not refactor drift; the other eight starters remain byte-identical to the
+ * pre-refactor capture.
  */
 const EXPECTED: Record<string, string[]> = {
   colony: [
@@ -417,11 +487,13 @@ const EXPECTED: Record<string, string[]> = {
     'boss-phase:crime-boss',
     ...ABILITY_SUFFIX,
   ],
-  // Fantasy is the one starter with no combat resource profile.
+  // Fantasy is the one starter with no combat resource profile. Authors
+  // quests (F-ENG005-quest-loop-min) → quest-core joins its world stack.
   fantasy: [
     ...COMBAT_PREFIX(null),
     ...CONTENT_MID,
     ...WORLD_RUN,
+    'quest-core',
     'boss-phase:crypt-warden',
     ...ABILITY_SUFFIX,
   ],
@@ -469,10 +541,12 @@ const EXPECTED: Record<string, string[]> = {
     'boss-phase:mesa_crawler',
     ...ABILITY_SUFFIX,
   ],
+  // Zombie authors quests too (F-ENG005-quest-loop-min) → quest-core joins.
   zombie: [
     ...COMBAT_PREFIX('combat-resources-zombie'),
     ...CONTENT_MID,
     ...WORLD_RUN,
+    'quest-core',
     'boss-phase:bloater-alpha',
     ...ABILITY_SUFFIX,
   ],

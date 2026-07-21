@@ -2,7 +2,7 @@
 // 2 rooms, 5 zones, 1 NPC, 1 enemy, 1 item, 1 dialogue, 1 status
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
+import type { DialogueDefinition, QuestDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -334,6 +334,98 @@ export const pilgrimDialogue: DialogueDefinition = {
     },
   },
 };
+
+// --- Quests (F-ENG005-quest-loop-min) ---
+//
+// Two authored QuestDefinitions — the explicit reason to descend. Wired via
+// buildWorldStack's `quests` config in setup.ts; the quest-core runtime
+// validates them at construction and drives offer → track → complete →
+// reward off the live event stream. Both are completable inside a normal
+// session with the shipped world alone: every kill target stands placed at
+// setup (the stalker at the vestry, the ghoul and the warden in the crypt).
+//
+// Stage triggers use quest-core's authored vocabulary: `advance` (done on
+// one matching event), `progress` (params.count matching events), with
+// conditions `payload-equals` (a specific zone or entity) and
+// `payload-entity-has-tag` (kills by tag — spawned patrol undead count too).
+
+export const ashesBelowQuest: QuestDefinition = {
+  id: 'ashes-below',
+  name: 'Ashes Below',
+  // Offered the moment the player steps into the nave — the first stride
+  // past the threshold the pack is named for.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'chapel-nave' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'cross-to-the-vestry',
+      name: 'Cross to the Vestry',
+      description: 'Something scratches beyond the nave — find the vestry passage',
+      objectives: ['Reach the Vestry Passage'],
+      triggers: [
+        {
+          event: 'world.zone.entered',
+          condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'vestry-door' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+      nextStage: 'lay-the-dead-to-rest',
+    },
+    {
+      id: 'lay-the-dead-to-rest',
+      name: 'Lay the Dead to Rest',
+      description: 'Put two of the risen brothers back in the ground',
+      objectives: ['Destroy two of the risen dead'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-entity-has-tag', params: { tag: 'undead' } },
+          effect: { type: 'progress', params: { count: 2 } },
+        },
+      ],
+    },
+  ],
+  rewards: [{ type: 'xp', params: { amount: 20 } }],
+};
+
+export const wardensRestQuest: QuestDefinition = {
+  id: 'the-wardens-rest',
+  name: "The Warden's Rest",
+  // Offered on setting foot in the crypt itself — the Warden's ground.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'crypt-chamber' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'face-the-warden',
+      name: 'Face the Warden',
+      description: 'The Crypt Warden stands between you and the Ember Sigil',
+      objectives: ['Destroy the Crypt Warden'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-equals', params: { key: 'entityId', value: 'crypt-warden' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [
+    { type: 'xp', params: { amount: 30 } },
+    { type: 'item', params: { itemId: 'healing-draught' } },
+  ],
+};
+
+export const fantasyQuests: QuestDefinition[] = [ashesBelowQuest, wardensRestQuest];
 
 // --- Districts ---
 

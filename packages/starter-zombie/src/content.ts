@@ -1,7 +1,7 @@
 // Ashfall Dead — content definitions
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
+import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition, QuestDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
@@ -344,6 +344,93 @@ export const medicDialogue: DialogueDefinition = {
     },
   },
 };
+
+// --- Quests (F-ENG005-quest-loop-min) ---
+//
+// Two authored QuestDefinitions — Dr. Chen's medicine run, made mechanical.
+// Wired via buildWorldStack's `quests` config in setup.ts; quest-core
+// validates at construction (fail loud) and drives the loop off the live
+// event stream. Both are completable inside a normal session with the
+// shipped world alone (the shambler walks the street, the runner and the
+// Bloater Alpha hold the east wing).
+
+export const medicineRunQuest: QuestDefinition = {
+  id: 'the-medicine-run',
+  name: 'The Medicine Run',
+  // Offered the moment the survivor steps onto the overrun street — the
+  // point of no more pretending the safehouse shelves will last.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'overrun-street' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'clear-the-street',
+      name: 'Clear the Street',
+      description: "The dead between you and the hospital won't step aside",
+      objectives: ['Put down one of the dead'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-entity-has-tag', params: { tag: 'zombie' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+      nextStage: 'reach-the-east-wing',
+    },
+    {
+      id: 'reach-the-east-wing',
+      name: 'Reach the East Wing',
+      description: "The pharmacy is somewhere in the hospital's east wing",
+      objectives: ['Reach the Hospital East Wing'],
+      triggers: [
+        {
+          event: 'world.zone.entered',
+          condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'hospital-wing' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [{ type: 'xp', params: { amount: 15 } }],
+};
+
+export const alphaQuest: QuestDefinition = {
+  id: 'the-alpha',
+  name: 'The Alpha',
+  // Offered on entering the east wing itself — the floor the Bloater owns.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'hospital-wing' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'drop-the-bloater',
+      name: 'Drop the Bloater',
+      description: 'The Bloater Alpha stands between you and the medicine cabinet',
+      objectives: ['Destroy the Bloater Alpha'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-equals', params: { key: 'entityId', value: 'bloater-alpha' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [
+    { type: 'xp', params: { amount: 25 } },
+    { type: 'item', params: { itemId: 'antibiotics' } },
+  ],
+};
+
+export const zombieQuests: QuestDefinition[] = [medicineRunQuest, alphaQuest];
 
 // --- Districts ---
 

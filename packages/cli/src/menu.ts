@@ -20,15 +20,26 @@
 // the director-mode formatters (renderDirectorLedger in director.ts). Same
 // sentinel-verb contract as debug: the wiring routes on `group: 'director'`
 // and never submits the verb to the engine — reading the ledger costs no turn.
+//
+// F-ENG005-quest-loop-min adds the Journal entry — ALWAYS visible, the
+// player's own book: active quests with stage progress, then the completed
+// list (renderJournal below, reading core's world.quests + quest-core's
+// registered definitions). Same sentinel-verb contract: the wiring routes on
+// `group: 'journal'` and never submits the verb — reading the journal costs
+// no turn. Menu order is personal → strategic → operator: journal, director,
+// then the env-gated debug entry last.
 
-import type { Engine, WorldState, EntityState, ScalarValue } from '@ai-rpg-engine/core';
-import type { AbilityDefinition, ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
+import type { Engine, WorldState, EntityState, ScalarValue, QuestState } from '@ai-rpg-engine/core';
+import type { AbilityDefinition, ProgressionTreeDefinition, QuestDefinition, QuestStage } from '@ai-rpg-engine/content-schema';
 import {
   getAvailableAbilities,
   normalizeAbilityTarget,
   matchesAffiliation,
   getCurrency,
   canUnlock,
+  getQuestDefinitions,
+  questProgressCount,
+  questProgressRequired,
 } from '@ai-rpg-engine/modules';
 import { getAbilityCatalog } from './turns.js';
 import { describeActionError } from './guard.js';
@@ -39,7 +50,7 @@ export type ExtraAction = {
   targetIds?: string[];
   parameters?: Record<string, ScalarValue>;
   label: string;
-  group: 'ability' | 'advance' | 'director' | 'debug';
+  group: 'ability' | 'advance' | 'journal' | 'director' | 'debug';
 };
 
 /**
@@ -149,6 +160,107 @@ export function buildUnlockActions(
 }
 
 // ---------------------------------------------------------------------------
+// Journal — the quest book entry (F-ENG005-quest-loop-min)
+// ---------------------------------------------------------------------------
+
+/** The journal entry's label. Sentinel verb: routed by `group === 'journal'`
+ *  in the extras dispatch, never meant to reach the engine as an action. */
+export const JOURNAL_MENU_LABEL = 'Journal — quests and undertakings';
+export const JOURNAL_MENU_VERB = 'journal';
+
+/**
+ * The extras menu's Journal entry — ALWAYS present, no env gate: the quest
+ * loop is the shipped reason to return, and its book must never hide.
+ * Selecting it renders {@link renderJournal}; the wiring routes on
+ * `group: 'journal'` instead of submitting the sentinel verb — consulting
+ * the journal must not advance the world.
+ */
+export function buildJournalActions(): ExtraAction[] {
+  return [{ verb: JOURNAL_MENU_VERB, label: JOURNAL_MENU_LABEL, group: 'journal' }];
+}
+
+const JOURNAL_RULE = '═'.repeat(60);
+
+/** One active quest's journal lines: banner, stage position + hook, objectives. */
+function journalQuestLines(instance: QuestState, def: QuestDefinition | undefined): string[] {
+  const lines: string[] = [''];
+  const name = def?.name ?? instance.questId;
+  lines.push(`  ── ${name} ──`);
+
+  const stage: QuestStage | undefined = def?.stages.find((s) => s.id === instance.currentStage);
+  if (!def || !stage) {
+    // Definitions unavailable (foreign save / pack without registered quest
+    // content): the journal still renders what the state itself knows.
+    lines.push(`  Stage: ${instance.currentStage}`);
+    return lines;
+  }
+
+  const stageIndex = def.stages.findIndex((s) => s.id === stage.id) + 1;
+  const required = questProgressRequired(stage);
+  const progress = required !== undefined
+    ? ` (${Math.min(questProgressCount(instance, stage.id), required)}/${required})`
+    : '';
+  const hook = stage.description ? ` — ${stage.description}` : '';
+  lines.push(`  Stage ${stageIndex}/${def.stages.length}: ${stage.name}${progress}${hook}`);
+  for (const objective of stage.objectives ?? []) {
+    lines.push(`    • ${objective}`);
+  }
+  return lines;
+}
+
+/**
+ * Render the Journal: active quests (name, current stage x/y with progress
+ * counts, the stage hook, its objectives), then the completed list — read
+ * from core's own world.quests container plus quest-core's registered
+ * definitions for this world's pack. Same voice family as the inspector
+ * report and the Director's Ledger; pure over state (no writes), so a save
+ * taken after rendering is byte-identical to one taken before.
+ */
+export function renderJournal(world: WorldState): string {
+  const defs = new Map(getQuestDefinitions(world).map((q) => [q.id, q]));
+  const instances = Object.values(world.quests);
+  const active = instances.filter((q) => q.status === 'active');
+  const completed = instances.filter((q) => q.status === 'completed');
+  const failed = instances.filter((q) => q.status === 'failed');
+
+  const lines: string[] = [];
+  lines.push(`  ${JOURNAL_RULE}`);
+  lines.push(`  JOURNAL — ACTIVE QUESTS (${active.length}) · COMPLETED (${completed.length})`);
+  lines.push(`  ${JOURNAL_RULE}`);
+
+  if (instances.length === 0) {
+    lines.push('');
+    lines.push('  Nothing undertaken yet. The world will ask soon enough.');
+    return lines.join('\n');
+  }
+
+  for (const instance of active) {
+    lines.push(...journalQuestLines(instance, defs.get(instance.questId)));
+  }
+
+  if (completed.length > 0) {
+    lines.push('');
+    lines.push('  ── Completed ──');
+    for (const instance of completed) {
+      lines.push(`  • ${defs.get(instance.questId)?.name ?? instance.questId}`);
+    }
+  }
+
+  // quest-core never marks a quest 'failed' today (failStage is a branch, not
+  // a terminal state — its documented ceiling), but core's QuestState models
+  // the status, so a save that carries one still renders honestly.
+  if (failed.length > 0) {
+    lines.push('');
+    lines.push('  ── Failed ──');
+    for (const instance of failed) {
+      lines.push(`  • ${defs.get(instance.questId)?.name ?? instance.questId}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
 // Director — the ledger entry (F-ENG005)
 // ---------------------------------------------------------------------------
 
@@ -234,9 +346,10 @@ export function renderInspectorReport(
   return lines.join('\n');
 }
 
-/** All appended entries — abilities, then unlocks, then the always-on
- *  Director's Ledger, then the env-gated debug entry last (the operator
- *  surface stays at the bottom). Stable order, pure over state. */
+/** All appended entries — abilities, then unlocks, then the always-on player
+ *  surfaces in reading order (the Journal, then the Director's Ledger), then
+ *  the env-gated debug entry last (the operator surface stays at the
+ *  bottom). Stable order, pure over state. */
 export function buildExtraActions(
   engine: Engine,
   trees: ProgressionTreeDefinition[] = [],
@@ -244,6 +357,7 @@ export function buildExtraActions(
   return [
     ...buildAbilityActions(engine.world, getAbilityCatalog(engine)),
     ...buildUnlockActions(engine.world, trees),
+    ...buildJournalActions(),
     ...buildDirectorActions(),
     ...buildDebugActions(),
   ];

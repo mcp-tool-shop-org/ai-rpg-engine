@@ -41,6 +41,7 @@ import {
   fantasyStatusDefinitions,
   progressionRewards,
   encounterSpawnContent,
+  fantasyQuests,
 } from './content.js';
 import { fantasyMinimalRuleset } from './ruleset.js';
 
@@ -141,6 +142,10 @@ export function createGame(seed?: number): Engine {
     // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
     // tables drive zone-entry spawns via the world tick.
     encounterSpawn: { gameId: manifest.id, ...encounterSpawnContent },
+    // F-ENG005-quest-loop-min: the authored quests give the descent its
+    // explicit reason. quest-core validates at construction (fail loud) and
+    // drives offer → track → complete → reward off the live event stream.
+    quests: { gameId: manifest.id, quests: fantasyQuests },
   });
 
   const engine = new Engine({

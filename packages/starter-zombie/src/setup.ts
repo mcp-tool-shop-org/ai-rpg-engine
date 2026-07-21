@@ -39,6 +39,7 @@ import {
   zombieStatusDefinitions,
   progressionRewards,
   encounterSpawnContent,
+  zombieQuests,
 } from './content.js';
 import { zombieMinimalRuleset } from './ruleset.js';
 
@@ -143,6 +144,10 @@ export function createGame(seed?: number): Engine {
     // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
     // tables drive zone-entry spawns via the world tick.
     encounterSpawn: { gameId: manifest.id, ...encounterSpawnContent },
+    // F-ENG005-quest-loop-min: Dr. Chen's medicine run, made mechanical.
+    // quest-core validates at construction (fail loud) and drives
+    // offer → track → complete → reward off the live event stream.
+    quests: { gameId: manifest.id, quests: zombieQuests },
   });
 
   const engine = new Engine({

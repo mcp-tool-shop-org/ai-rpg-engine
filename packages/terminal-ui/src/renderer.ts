@@ -721,6 +721,34 @@ export function formatEventLine(event: ResolvedEvent): string | null {
       return `> ${label}: ${desc}.`;
     }
 
+    // F-ENG005: the quest loop (quest-core). Telegraph lines in the
+    // pressure/encounter family: the module authors display-ready strings
+    // (names, stage hooks, reward summaries) onto the payload; every field
+    // falls back so a sparse payload still renders a complete sentence.
+    case 'quest.offered': {
+      const name = payloadString(p, 'questName') ?? payloadString(p, 'questId') ?? 'A new undertaking';
+      const hook = payloadString(p, 'stageDescription') ?? payloadString(p, 'stageName');
+      return hook ? `> New quest — ${name}: ${hook}.` : `> New quest — ${name}.`;
+    }
+    case 'quest.stage.advanced': {
+      const name = payloadString(p, 'questName') ?? payloadString(p, 'questId') ?? 'The quest';
+      const hook = payloadString(p, 'stageDescription') ?? payloadString(p, 'stageName');
+      // The fail branch is a turn for the worse, not progress — say so.
+      if (p.via === 'fail') {
+        return hook ? `> The quest turns — ${name}: ${hook}.` : `> The quest turns — ${name}.`;
+      }
+      return hook ? `> Quest advanced — ${name}: ${hook}.` : `> Quest advanced — ${name}.`;
+    }
+    case 'quest.completed': {
+      const name = payloadString(p, 'questName') ?? payloadString(p, 'questId') ?? 'A quest';
+      const rewards = Array.isArray(p.rewardSummary)
+        ? (p.rewardSummary as unknown[]).filter((r): r is string => typeof r === 'string' && r.length > 0)
+        : [];
+      return rewards.length > 0
+        ? `> Quest complete — ${name}. Reward: ${rewards.join(', ')}.`
+        : `> Quest complete — ${name}.`;
+    }
+
     case 'dialogue.started':
       return `> Speaking with ${p.speakerName}`;
     case 'dialogue.node.entered':

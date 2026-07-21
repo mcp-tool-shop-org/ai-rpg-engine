@@ -15,11 +15,15 @@ import {
   buildHudWorld,
   buildDebugActions,
   buildDirectorActions,
+  buildJournalActions,
   renderInspectorReport,
+  renderJournal,
   derivePlayerLevel,
   DEBUG_MENU_LABEL,
   DIRECTOR_MENU_LABEL,
   DIRECTOR_MENU_VERB,
+  JOURNAL_MENU_LABEL,
+  JOURNAL_MENU_VERB,
 } from './menu.js';
 import { getAbilityCatalog } from './turns.js';
 import { handlePlayerInput } from './bin.js';
@@ -218,10 +222,12 @@ describe('debug inspector entry (F-ENG006)', () => {
   it('the debug entry is HIDDEN without AI_RPG_DEBUG=1 (player surface stays clean)', () => {
     vi.stubEnv('AI_RPG_DEBUG', '');
     const engine = createGame(42); // no divine tag, no xp → no ability/unlock extras
-    // Only the always-on Director's Ledger remains — no debug entry.
+    // Only the always-on player surfaces remain (Journal + Director's
+    // Ledger) — no debug entry.
     const extras = buildExtraActions(engine, [combatMasteryTree]);
-    expect(extras).toHaveLength(1);
-    expect(extras[0].group).toBe('director');
+    expect(extras).toHaveLength(2);
+    expect(extras[0].group).toBe('journal');
+    expect(extras[1].group).toBe('director');
     expect(extras.some((e) => e.group === 'debug')).toBe(false);
     expect(buildDebugActions({})).toEqual([]);
     expect(buildDebugActions({ AI_RPG_DEBUG: '0' })).toEqual([]);
@@ -231,14 +237,16 @@ describe('debug inspector entry (F-ENG006)', () => {
     vi.stubEnv('AI_RPG_DEBUG', '1');
     const engine = createGame(42);
     const extras = buildExtraActions(engine, [combatMasteryTree]);
-    expect(extras).toHaveLength(2); // director (always) + debug (env-gated)
-    expect(extras[0].group).toBe('director');
-    expect(extras[1].group).toBe('debug');
-    expect(extras[1].label).toBe(DEBUG_MENU_LABEL);
+    expect(extras).toHaveLength(3); // journal + director (always) + debug (env-gated)
+    expect(extras[0].group).toBe('journal');
+    expect(extras[1].group).toBe('director');
+    expect(extras[2].group).toBe('debug');
+    expect(extras[2].label).toBe(DEBUG_MENU_LABEL);
 
     const rendered = renderExtraActions(extras, 6);
-    expect(rendered).toContain(`[7] ${DIRECTOR_MENU_LABEL}`);
-    expect(rendered).toContain(`[8] ${DEBUG_MENU_LABEL}`);
+    expect(rendered).toContain(`[7] ${JOURNAL_MENU_LABEL}`);
+    expect(rendered).toContain(`[8] ${DIRECTOR_MENU_LABEL}`);
+    expect(rendered).toContain(`[9] ${DEBUG_MENU_LABEL}`);
   });
 
   it('the debug entry appends AFTER ability and unlock entries', () => {
@@ -346,9 +354,10 @@ describe("director's ledger entry (F-ENG005)", () => {
     const engine = createGame(42);
     const extras = buildExtraActions(engine, [combatMasteryTree]);
     const rendered = renderExtraActions(extras, 6);
-    expect(rendered).toContain(`[7] ${DIRECTOR_MENU_LABEL}`);
+    // The Journal (player-personal) reads first at [7]; the ledger sits at [8].
+    expect(rendered).toContain(`[8] ${DIRECTOR_MENU_LABEL}`);
 
-    const selected = parseExtraSelection('7', 6, extras);
+    const selected = parseExtraSelection('8', 6, extras);
     expect(selected).not.toBeNull();
     expect(selected?.group).toBe('director');
     expect(selected?.verb).toBe(DIRECTOR_MENU_VERB);
@@ -364,13 +373,97 @@ describe("director's ledger entry (F-ENG005)", () => {
     addCurrency(engine.store.state, 'player', 'xp', 20, engine.tick);
 
     const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const journalIdx = extras.findIndex((e) => e.group === 'journal');
     const directorIdx = extras.findIndex((e) => e.group === 'director');
     const debugIdx = extras.findIndex((e) => e.group === 'debug');
-    expect(directorIdx).toBeGreaterThan(0); // abilities/unlocks come first
+    expect(journalIdx).toBeGreaterThan(0); // abilities/unlocks come first
     expect(debugIdx).toBe(extras.length - 1);
     expect(directorIdx).toBe(debugIdx - 1);
+    expect(journalIdx).toBe(directorIdx - 1); // journal, then ledger, then debug
     expect(
-      extras.slice(0, directorIdx).every((e) => e.group === 'ability' || e.group === 'advance'),
+      extras.slice(0, journalIdx).every((e) => e.group === 'ability' || e.group === 'advance'),
     ).toBe(true);
+  });
+});
+
+// F-ENG005-quest-loop-min — the Journal entry: the player's quest book,
+// always reachable from the numbered menu, costing no turn.
+describe('journal entry (F-ENG005-quest-loop-min)', () => {
+  it('the entry is ALWAYS present, its label and sentinel verb pinned', () => {
+    const engine = createGame(42);
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const journal = extras.filter((e) => e.group === 'journal');
+    expect(journal).toHaveLength(1);
+    expect(journal[0].label).toBe(JOURNAL_MENU_LABEL);
+    expect(journal[0].verb).toBe(JOURNAL_MENU_VERB);
+    expect(buildJournalActions()).toEqual([
+      { verb: JOURNAL_MENU_VERB, label: JOURNAL_MENU_LABEL, group: 'journal' },
+    ]);
+    expect(JOURNAL_MENU_LABEL).toBe('Journal — quests and undertakings');
+    expect(JOURNAL_MENU_VERB).toBe('journal');
+  });
+
+  it('selecting its number resolves to the journal group (the routing key for bin.ts)', () => {
+    const engine = createGame(42);
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const rendered = renderExtraActions(extras, 6);
+    expect(rendered).toContain(`[7] ${JOURNAL_MENU_LABEL}`);
+
+    const selected = parseExtraSelection('7', 6, extras);
+    expect(selected?.group).toBe('journal');
+    expect(selected?.verb).toBe(JOURNAL_MENU_VERB);
+  });
+
+  it('renders the empty state before the world has asked anything', () => {
+    const engine = createGame(42);
+    const journal = renderJournal(engine.world);
+    expect(journal).toContain('JOURNAL — ACTIVE QUESTS (0) · COMPLETED (0)');
+    expect(journal).toContain('Nothing undertaken yet.');
+  });
+
+  it('renders an active quest with stage position, progress count, and objectives from live play', () => {
+    const engine = createGame(42);
+    engine.submitAction('move', { targetIds: ['chapel-nave'] }); // offers Ashes Below
+
+    let journal = renderJournal(engine.world);
+    expect(journal).toContain('JOURNAL — ACTIVE QUESTS (1) · COMPLETED (0)');
+    expect(journal).toContain('── Ashes Below ──');
+    expect(journal).toContain('Stage 1/2: Cross to the Vestry');
+    expect(journal).toContain('• Reach the Vestry Passage');
+
+    engine.submitAction('move', { targetIds: ['vestry-door'] }); // stage 2 begins
+    journal = renderJournal(engine.world);
+    expect(journal).toContain('Stage 2/2: Lay the Dead to Rest (0/2)');
+    expect(journal).toContain('• Destroy two of the risen dead');
+  });
+
+  it('lists completed quests by name under the Completed banner', () => {
+    const engine = createGame(42);
+    engine.submitAction('move', { targetIds: ['chapel-nave'] });
+    // Formatter unit: mark the live instance completed and render.
+    engine.store.state.quests['ashes-below'].status = 'completed';
+    const journal = renderJournal(engine.world);
+    expect(journal).toContain('JOURNAL — ACTIVE QUESTS (0) · COMPLETED (1)');
+    expect(journal).toContain('── Completed ──');
+    expect(journal).toContain('• Ashes Below');
+  });
+
+  it('degrades to raw quest/stage ids when no definitions are registered for the world', () => {
+    const engine = createGame(42);
+    engine.submitAction('move', { targetIds: ['chapel-nave'] });
+    const foreign = structuredClone(engine.store.state);
+    foreign.meta.gameId = 'some-other-pack'; // no registered quest content
+    const journal = renderJournal(foreign);
+    expect(journal).toContain('── ashes-below ──');
+    expect(journal).toContain('Stage: cross-to-the-vestry');
+    expect(journal).not.toContain('undefined');
+  });
+
+  it('reading the journal never mutates state (a save after rendering is byte-identical)', () => {
+    const engine = createGame(42);
+    engine.submitAction('move', { targetIds: ['chapel-nave'] });
+    const before = engine.serialize();
+    renderJournal(engine.world);
+    expect(engine.serialize()).toBe(before);
   });
 });

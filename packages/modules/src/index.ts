@@ -884,6 +884,22 @@ export type { CombatStackConfig, CombatStack } from './combat-builders.js';
 export { buildWorldStack } from './world-stack.js';
 export type { WorldStackConfig, WorldStack } from './world-stack.js';
 
+// --- Quest Core (F-ENG005-quest-loop-min: offer → accept → track → complete → reward) ---
+export {
+  createQuestCore,
+  validateQuestRuntimeContent,
+  evaluateQuestCondition,
+  getQuestDefinitions,
+  unregisterQuestContent,
+  questProgressCount,
+  questProgressRequired,
+  QUEST_OFFER_EFFECT,
+  QUEST_STAGE_EFFECT_TYPES,
+  QUEST_CONDITION_TYPES,
+  QUEST_REWARD_TYPES,
+} from './quest-core.js';
+export type { QuestCoreConfig } from './quest-core.js';
+
 // --- Unified Decision (Combat + Ability Merge Layer) ---
 export { selectBestAction, formatUnifiedDecision } from './unified-decision.js';
 export type { UnifiedActionSource, UnifiedAction, UnifiedDecision, UnifiedDecisionConfig } from './unified-decision.js';

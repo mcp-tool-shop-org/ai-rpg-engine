@@ -462,6 +462,77 @@ describe('formatEvent — pressure lifecycle renders (F-ENG005)', () => {
   });
 });
 
+// F-ENG005: quest-core's three lifecycle events — the loop that gives the
+// player an explicit reason to return. Same telegraph family as the
+// pressure/encounter lines; every field falls back so a sparse payload still
+// renders a complete sentence (never "undefined").
+describe('formatEvent — quest lifecycle renders (F-ENG005)', () => {
+  it('renders an offer with the quest name and the stage hook', () => {
+    const line = formatEventLine(
+      cev('quest.offered', {
+        questId: 'ashes-below',
+        questName: 'Ashes Below',
+        stageName: 'Cross to the Vestry',
+        stageDescription: 'Something scratches beyond the nave — find the vestry passage',
+      }),
+    );
+    expect(line).toBe(
+      '> New quest — Ashes Below: Something scratches beyond the nave — find the vestry passage.',
+    );
+  });
+
+  it('renders a stage advance with the NEXT stage hook', () => {
+    const line = formatEventLine(
+      cev('quest.stage.advanced', {
+        questName: 'Ashes Below',
+        via: 'advance',
+        stageName: 'Lay the Dead to Rest',
+        stageDescription: 'Put two of the risen brothers back in the ground',
+      }),
+    );
+    expect(line).toBe(
+      '> Quest advanced — Ashes Below: Put two of the risen brothers back in the ground.',
+    );
+  });
+
+  it("renders the fail branch as a turn, not progress (via:'fail')", () => {
+    const line = formatEventLine(
+      cev('quest.stage.advanced', {
+        questName: 'The Oath',
+        via: 'fail',
+        stageName: 'Do Penance',
+      }),
+    );
+    expect(line).toBe('> The quest turns — The Oath: Do Penance.');
+  });
+
+  it('renders completion with the reward summary', () => {
+    const line = formatEventLine(
+      cev('quest.completed', {
+        questName: "The Warden's Rest",
+        rewardSummary: ['30 xp', 'healing-draught'],
+      }),
+    );
+    expect(line).toBe("> Quest complete — The Warden's Rest. Reward: 30 xp, healing-draught.");
+  });
+
+  it('renders completion without rewards as a clean sentence', () => {
+    expect(formatEventLine(cev('quest.completed', { questName: 'The Echo' }))).toBe(
+      '> Quest complete — The Echo.',
+    );
+  });
+
+  it('never prints undefined when quest payload fields are missing', () => {
+    for (const type of ['quest.offered', 'quest.stage.advanced', 'quest.completed']) {
+      const line = formatEventLine(cev(type, {}));
+      expect(line).not.toBeNull();
+      expect(line).not.toContain('undefined');
+    }
+    // questId fallback when the name is absent
+    expect(formatEventLine(cev('quest.offered', { questId: 'hunt' }))).toContain('hunt');
+  });
+});
+
 // CS-C-003: the renderer's own menu items "[7] Look around" and
 // "[N] Inspect X" emit world.zone.inspected / world.entity.inspected with
 // rich payloads — and then rendered null, a visible no-op.
