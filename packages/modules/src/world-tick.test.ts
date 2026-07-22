@@ -60,11 +60,18 @@ import {
   createCompanionCore,
   getPartyState,
   setPartyState,
+  syncCompanionCustomFields,
   COMPANION_TAG,
   companionRoleTag,
   type CompanionState,
 } from './companion-core.js';
-import type { LoyaltyBreakpoint } from './npc-agency.js';
+import { createCognitionCore } from './cognition-core.js';
+import { createFactionCognition } from './faction-cognition.js';
+import {
+  getPersistedNpcProfiles,
+  getPersistedNpcObligations,
+  type LoyaltyBreakpoint,
+} from './npc-agency.js';
 
 const zones = [
   { id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbors: ['zone-b'] },
@@ -1513,5 +1520,173 @@ describe('world-tick — district mood transitions (F-e5817c7c-adjacent rider)',
     const result = runWorldTick(engine);
     expect(result.ok).toBe(true);
     expect(getWorldTickState(engine.store.state).districtTones).toEqual({});
+  });
+});
+
+// ---------------------------------------------------------------------------
+// NPC agency wire (v3.0, F-v3-npc-agency) — npc-agency.ts's runNpcAgencyTick
+// was fully authored and unit-tested with ZERO production callers before this
+// wave. These tests prove the wire, not the domain logic (goal derivation,
+// breakpoint gating, effect payload shape) — that is npc-agency.test.ts's own
+// job and stays untouched here.
+// ---------------------------------------------------------------------------
+describe('world-tick — NPC agency wire (v3.0, F-v3-npc-agency)', () => {
+  const makeNamedNpc = (
+    id: string,
+    name: string,
+    zoneId: string,
+    overrides?: Partial<EntityState>,
+  ): EntityState => ({
+    id,
+    blueprintId: id,
+    type: 'npc',
+    name,
+    tags: ['npc'],
+    stats: { vigor: 5, instinct: 5, will: 3 },
+    resources: { hp: 20, stamina: 5 },
+    statuses: [],
+    zoneId,
+    ai: { profileId: 'cautious', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+    ...overrides,
+  });
+
+  function makeNpcAgencyEngine(npc: EntityState) {
+    return createTestEngine({
+      modules: [createCognitionCore(), createFactionCognition({ factions: [] }), createCompanionCore(), createWorldTick()],
+      entities: [makePlayer(), npc],
+      zones,
+    });
+  }
+
+  // SEED-0 IDENTITY (non-negotiable) — a world with NO named NPCs must be
+  // byte-identical to today: no npc-agency namespace created, no events, no
+  // tick-count change, across a round.
+  it('SEED-0 IDENTITY: a world with no named NPCs is untouched by the npc-agency step — no namespace, no npc events, no tick-count change', () => {
+    const engine = makeBareEngine(); // only the player entity — isNamedNpc excludes it
+    expect(engine.world.modules['npc-agency']).toBeUndefined();
+    const beforeTick = engine.world.meta.tick;
+
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.ok).toBe(true);
+
+    // No npc-agency namespace was created by this round.
+    expect(engine.world.modules['npc-agency']).toBeUndefined();
+    expect(getPersistedNpcProfiles(engine.world)).toEqual([]);
+    expect(getPersistedNpcObligations(engine.world)).toEqual(new Map());
+
+    // No npc-agency-originated events landed in the log.
+    expect(engine.world.eventLog.some((e) => e.type.startsWith('npc.'))).toBe(false);
+
+    // The tick driver itself never advances world.meta.tick (advanceTick is a
+    // separate, explicit call the CLI's round loop makes) — unaffected by
+    // this feature either way, asserted per the task's own wording.
+    expect(engine.world.meta.tick).toBe(beforeTick);
+
+    // A second round changes nothing further attributable to npc-agency —
+    // re-run and confirm the namespace is STILL absent.
+    runWorldTick(engine, { genre: 'fantasy' });
+    expect(engine.world.modules['npc-agency']).toBeUndefined();
+
+  });
+
+  it('a world with a named NPC gets a real npc-agency namespace after one round, in the shape director.ts/endgame.ts read', () => {
+    const engine = makeNpcAgencyEngine(makeNamedNpc('elder-vane', 'Elder Vane', 'zone-a'));
+    expect(engine.world.modules['npc-agency']).toBeUndefined();
+
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.ok).toBe(true);
+
+    const profiles = getPersistedNpcProfiles(engine.world);
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].npcId).toBe('elder-vane');
+    expect(profiles[0].name).toBe('Elder Vane');
+
+    // The exact namespace shape director.ts's PEOPLE section and endgame.ts's
+    // buildEndgameInputs both read directly.
+    const ns = engine.world.modules['npc-agency'] as {
+      profiles: unknown;
+      lastActions: unknown;
+      obligationLedgers: unknown;
+    };
+    expect(Array.isArray(ns.profiles)).toBe(true);
+    expect(Array.isArray(ns.lastActions)).toBe(true);
+    expect(typeof ns.obligationLedgers).toBe('object');
+    expect(getPersistedNpcObligations(engine.world)).toEqual(new Map());
+  });
+
+  it('the LAST named NPC dying drops named-NPC presence to zero — the gate skips the whole step, so the prior round\'s profile is left as-is (the gate is "at least one this round", not "keep the ledger in lockstep with the roster")', () => {
+    const engine = makeNpcAgencyEngine(makeNamedNpc('elder-vane', 'Elder Vane', 'zone-a'));
+    runWorldTick(engine, { genre: 'fantasy' });
+    expect(getPersistedNpcProfiles(engine.world)).toHaveLength(1);
+    const before = getPersistedNpcProfiles(engine.world);
+
+    engine.world.entities['elder-vane'].resources.hp = 0;
+    engine.store.advanceTick();
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+
+    // No throw, and the namespace is untouched by this round (the gate's own
+    // contract: "at least one named NPC exists THIS round" is now false, so
+    // the ENTIRE step — persistence write included — is skipped, exactly
+    // the same gate that keeps a world that never had a named NPC from ever
+    // seeing the namespace at all).
+    expect(result.ok).toBe(true);
+    expect(getPersistedNpcProfiles(engine.world)).toEqual(before);
+  });
+
+  it('an NPC action that fires resolves through the wire — narrates via npc.action.resolved, and lastActions carries it', () => {
+    // A companion synced to critically low morale (< 10) reliably produces a
+    // single, unambiguous top-priority goal (abandon @ 0.95) — every other
+    // deriveNpcGoals condition needs trust/greed/loyalty/fear signals this
+    // fixture's neutral defaults never satisfy, so this is deterministic
+    // ONE-candidate selection, not a race between competing goals.
+    const npc = makeNamedNpc('mira', 'Mira', 'zone-a', { tags: ['npc', 'companion'] });
+    const engine = makeNpcAgencyEngine(npc);
+    // Two mirrors, deliberately both seeded: deriveCompanionGoals reads
+    // entity.custom.companionMorale directly (npc-agency's own documented
+    // design — "read from custom field set by product layer"), so
+    // syncCompanionCustomFields alone makes 'abandon' the derived goal; but
+    // the companion-departure EFFECT handler looks her up via
+    // getCompanion(party, npcId) — a real party seat is required for the
+    // removal (and its companion.departed event) to actually happen, exactly
+    // as it should for an NPC nobody ever recruited.
+    syncCompanionCustomFields(engine.world.entities.mira, 'fighter', 5);
+    setPartyState(engine.world, {
+      companions: [{ npcId: 'mira', role: 'fighter', joinedAtTick: 0, abilityTags: [], morale: 5, active: true }],
+      maxSize: 3,
+      cohesion: 5,
+    });
+
+    let resolved: ResolvedEvent | undefined;
+    for (let i = 0; i < 30 && !resolved; i++) {
+      if (i > 0) engine.store.advanceTick();
+      runWorldTick(engine, { genre: 'fantasy' });
+      resolved = engine.world.eventLog.find((e) => e.type === 'npc.action.resolved');
+    }
+
+    expect(resolved).toBeDefined();
+    expect(resolved!.payload.npcId).toBe('mira');
+    expect(resolved!.payload.verb).toBe('abandon');
+    expect(resolved!.visibility).toBe('public');
+    expect(resolved!.presentation).toEqual({ channels: ['narrator'], priority: 'normal' });
+
+    // companion-departure effect (the 'abandon' verb's own resolution) ran
+    // through the SAME companion-core path applyCompanionReactions' own
+    // departure handling uses — Mira actually left the party.
+    expect(engine.world.eventLog.some((e) => e.type === 'companion.departed' && e.payload.npcId === 'mira')).toBe(true);
+    expect(getPartyState(engine.world).companions.find((c) => c.npcId === 'mira')).toBeUndefined();
+  });
+
+  it('is deterministic — same world in, same npc-agency namespace out, across independent instances', () => {
+    const run = () => {
+      const engine = makeNpcAgencyEngine(makeNamedNpc('elder-vane', 'Elder Vane', 'zone-a'));
+      runWorldTick(engine, { genre: 'fantasy' });
+      engine.store.advanceTick();
+      runWorldTick(engine, { genre: 'fantasy' });
+      return JSON.parse(JSON.stringify(engine.world.modules['npc-agency']));
+    };
+    const a = run();
+    const b = run();
+    expect(a).toEqual(b);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 });

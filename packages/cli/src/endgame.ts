@@ -32,6 +32,8 @@ import {
   type EndgameTrigger,
   type CompanionState,
   type DistrictEconomy,
+  type NpcProfile,
+  type NpcObligationLedger,
 } from '@ai-rpg-engine/modules';
 import {
   CampaignJournal,
@@ -130,10 +132,14 @@ function objectArray<T>(value: unknown): T[] {
  *                      carries no reputation signal, and inventing a neutral
  *                      0 would dilute every average/all-hostile threshold.
  *
- * Axes with NO persisting writer anywhere (npc-agency profiles/obligations,
- * leverage other than heat) stay at their empty/zero shapes — no invented
- * state; evaluateEndgame finds those thresholds unmet exactly as a world that
- * never touched them. Opportunities (activeOpportunities/resolvedOpportunities)
+ * npc-agency profiles/obligations (v3.0, F-v3-npc-agency): npc-agency.ts now
+ * persists world.modules['npc-agency'] every round at least one named NPC
+ * exists (world-tick.ts's own step 5a) — read directly here the same way
+ * companions/economies above are, a world with none still reads as empty.
+ * Axes with NO persisting writer anywhere (leverage other than heat) stay at
+ * their empty/zero shapes — no invented state; evaluateEndgame finds those
+ * thresholds unmet exactly as a world that never touched them. Opportunities
+ * (activeOpportunities/resolvedOpportunities)
  * moved OUT of this list in v2.9 (Phase-9 remediation, FIX 3):
  * opportunity-core.ts persists world.modules['opportunity-core'] every round
  * now (world-tick.ts's spawn/tick wire) and opportunity-resolution.ts's
@@ -226,13 +232,32 @@ export function buildEndgameInputs(world: WorldState): EndgameInputs {
   const activeOpportunities = getPersistedOpportunities(world);
   const resolvedOpportunities = getResolvedOpportunities(world);
 
+  // NPC agency (v3.0, F-v3-npc-agency): npc-agency.ts now persists
+  // world.modules['npc-agency'] = { profiles, lastActions, obligationLedgers }
+  // every round at least one named NPC exists (world-tick.ts's own step 5a) —
+  // read the SAME way companions/economies above are read (a direct,
+  // defensive namespace read + this file's own objectArray helper), not via
+  // a re-exported accessor, since npc-agency.ts's own getPersistedNpcProfiles/
+  // getPersistedNpcObligations aren't part of this wave's re-export surface.
+  // A world with no named NPCs still reads as empty, same as before this wire.
+  const npcAgencyNs = world.modules['npc-agency'] as
+    | { profiles?: unknown; obligationLedgers?: unknown }
+    | undefined;
+  const npcProfiles = objectArray<NpcProfile>(npcAgencyNs?.profiles);
+  const npcObligations = new Map<string, NpcObligationLedger>();
+  if (npcAgencyNs?.obligationLedgers && typeof npcAgencyNs.obligationLedgers === 'object') {
+    for (const [npcId, ledger] of Object.entries(npcAgencyNs.obligationLedgers as Record<string, unknown>)) {
+      if (ledger && typeof ledger === 'object') npcObligations.set(npcId, ledger as NpcObligationLedger);
+    }
+  }
+
   const arcInputs = {
     factionStates,
     playerReputations,
     playerLeverage: { favor: 0, debt: 0, blackmail: 0, influence: 0, heat, legitimacy: 0 },
     activePressures,
-    npcProfiles: [], // npc-agency keeps no world.modules state — nothing to read
-    npcObligations: new Map(), // same — obligation ledgers are never persisted
+    npcProfiles,
+    npcObligations,
     companions,
     districtEconomies,
     activeOpportunities,

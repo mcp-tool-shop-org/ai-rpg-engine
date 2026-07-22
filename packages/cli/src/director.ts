@@ -69,6 +69,7 @@ import {
   formatNpcPeopleForDirector,
   type NpcProfile,
   type NpcActionResult,
+  type NpcObligationLedger,
   // arcs + endgame trajectory
   formatArcForDirector,
   evaluateEndgame,
@@ -330,14 +331,25 @@ export function renderDirectorLedger(engine: Pick<Engine, 'world' | 'formulas'>)
     {
       name: 'PEOPLE',
       body: () => {
-        const npcNs = namespace<{ profiles: unknown; lastActions: unknown }>(
+        // v3.0 (F-v3-npc-agency): world-tick.ts's own per-round step is now
+        // the production writer for this namespace — a world with at least
+        // one named NPC gets real profiles/lastActions/obligationLedgers
+        // here every round; a world with none (SEED-0) leaves the namespace
+        // absent, same as before this wave, and this section stays dark.
+        const npcNs = namespace<{ profiles: unknown; lastActions: unknown; obligationLedgers: unknown }>(
           world,
           'npc-agency',
         );
         const profiles = objectArray<NpcProfile>(npcNs?.profiles);
         if (profiles.length === 0) return null;
         const lastActions = objectArray<NpcActionResult>(npcNs?.lastActions);
-        return formatNpcPeopleForDirector(profiles, lastActions);
+        const npcObligations = new Map<string, NpcObligationLedger>();
+        if (npcNs?.obligationLedgers && typeof npcNs.obligationLedgers === 'object') {
+          for (const [npcId, ledger] of Object.entries(npcNs.obligationLedgers as Record<string, unknown>)) {
+            if (ledger && typeof ledger === 'object') npcObligations.set(npcId, ledger as NpcObligationLedger);
+          }
+        }
+        return formatNpcPeopleForDirector(profiles, lastActions, npcObligations);
       },
     },
     // -- Arcs & trajectory: where this campaign is heading. -----------------
