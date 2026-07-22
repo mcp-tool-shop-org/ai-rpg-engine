@@ -558,6 +558,55 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
       const report = renderDirectorLedger(fakeEngine(world));
       expect(report).not.toContain('RECIPES');
     });
+
+    // V3-DIR-1 (v3.0 wave 2): the ceiling the comments above used to
+    // document is closed — world.meta.activeRuleset ('fantasy-minimal') is
+    // now stripped to the bare 'fantasy' GENRE_RECIPES key at the call site,
+    // so a genre-tabled starter's own recipes render alongside the universal
+    // ones, not just the universal set.
+    it('V3-DIR-1: strips the -minimal ruleset suffix so a genre-tabled starter shows its OWN recipes too', () => {
+      const world = bareWorld();
+      const player = world.entities[world.playerId];
+      player.custom = { 'materials.components': 1 };
+
+      const report = renderDirectorLedger(fakeEngine(world));
+
+      expect(report).toContain('  RECIPES');
+      // GENRE_RECIPES['fantasy']: 'craft-potion' and 'modify-enchant' carry
+      // no requiredTags, so both render regardless of player/district tags.
+      expect(report).toContain('Brew Potion');
+      expect(report).toContain('Enchant Item');
+      // 'modify-bless' DOES require the 'sacred' tag (player or district).
+      // bareWorld() wipes world.modules (no district-core namespace) and the
+      // default Wanderer carries no tags of its own beyond 'player' — so
+      // this recipe is correctly still absent. Proves the strip fixes genre
+      // RESOLUTION without bypassing the requiredTags gate.
+      expect(report).not.toContain('Bless Item');
+    });
+
+    it('V3-DIR-1: a starter with no GENRE_RECIPES table (gladiator) still shows universal-only — no cross-genre leak', () => {
+      const engine = createGladiatorGame(42);
+      const world = structuredClone(engine.world) as WorldState;
+      const player = world.entities[world.playerId];
+      player.custom = { 'materials.components': 1 };
+
+      const report = renderDirectorLedger(fakeEngine(world));
+
+      expect(report).toContain('  RECIPES');
+      expect(report).toContain('Craft Bandage'); // universal, unaffected
+      // 'gladiator-minimal' strips to 'gladiator', which has no
+      // GENRE_RECIPES entry (crafting-recipes.ts's table only has fantasy/
+      // zombie/cyberpunk/pirate/detective/colony/weird-west) — the recipe
+      // list must degrade to UNIVERSAL_RECIPES only, exactly as it did
+      // before this fix, never leaking in another genre's content.
+      for (const genreOnly of [
+        'Brew Potion', 'Enchant Item', 'Bless Item', // fantasy
+        'Improvised Weapon', 'Assemble Medkit', 'Barricade Kit', // zombie
+        'Synthesize Stim', 'Overclock', 'Black Market Tune', // cyberpunk
+      ]) {
+        expect(report).not.toContain(genreOnly);
+      }
+    });
   });
 
   // F-6631dd57: the crafting write-wire. Before createCraftingCore, no played
@@ -586,6 +635,17 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
 
     expect(report).toContain('  RECIPES');
     expect(report).toContain('Craft Bandage');
+    // V3-DIR-1: a REAL engine's world.modules['district-core'] is wired by
+    // buildWorldStack (unlike bareWorld()'s stripped fixture), so this is
+    // the fullest proof the strip closes the ceiling end to end: the player
+    // starts in 'chapel-entrance' (district 'chapel-grounds', tags
+    // ['sacred', 'aboveground']) — 'fantasy-minimal' now resolves to
+    // 'fantasy', surfacing BOTH untagged genre recipes AND the one gated on
+    // 'sacred', which only a real district's tags (not a hand-planted
+    // fixture) can satisfy.
+    expect(report).toContain('Brew Potion');
+    expect(report).toContain('Enchant Item');
+    expect(report).toContain('Bless Item');
   });
 
   it('a hostile, hot campaign renders NARRATIVE ARCS and ENDGAME TRAJECTORY from the live evaluators', () => {

@@ -475,18 +475,25 @@ export function renderDirectorLedger(engine: Pick<Engine, 'world' | 'formulas'>)
         const inventory = getMaterialInventory(custom);
         if (!Object.values(inventory).some((quantity) => quantity > 0)) return null;
 
-        // Honest ceiling: world.meta.activeRuleset carries a per-starter
-        // ruleset id (e.g. 'fantasy-minimal'), not the bare 'fantasy'
-        // GENRE_RECIPES key — no pack threads a dedicated genre field through
-        // director.ts yet. getAvailableRecipes degrades an unrecognized
-        // genre to its UNIVERSAL_RECIPES table (the same safe-degrade
-        // contract every recipe lookup here already has), so the section
-        // still renders real, non-invented content — genre-flavored recipes
-        // light up once that plumbing exists.
+        // Ceiling closed (v3.0 wave 2, V3-DIR-1): world.meta.activeRuleset
+        // carries a per-starter ruleset id ('fantasy-minimal'), not the bare
+        // 'fantasy' GENRE_RECIPES key — every starter's ruleset id follows
+        // the literal '<genre>-minimal' pattern (ruleset.ts across all ten
+        // starters), including hyphenated genres ('weird-west-minimal'), so
+        // stripping the trailing '-minimal' suffix (not splitting on the
+        // first '-') recovers the exact key without mangling a multi-word
+        // genre. getAvailableRecipes still degrades an unrecognized genre to
+        // its UNIVERSAL_RECIPES table only (untouched contract, still exact
+        // for gladiator/ronin — neither has a GENRE_RECIPES entry) — this
+        // only fixes resolution for the packs that DO have one. Sibling
+        // wave-2 domains apply the identical strip to the mechanical
+        // resolution (crafting-recipes.ts's write-wire) and the menu's own
+        // buildCraftActions; this is the display-only fix for this file.
+        const genre = world.meta.activeRuleset.replace(/-minimal$/, '');
         const hereId = player?.zoneId ?? world.locationId;
         const districtId = hereId ? getDistrictForZone(world, hereId) : undefined;
         const districtTags = districtId ? getDistrictDefinition(world, districtId)?.tags ?? [] : [];
-        const recipes = getAvailableRecipes(world.meta.activeRuleset, player?.tags ?? [], districtTags);
+        const recipes = getAvailableRecipes(genre, player?.tags ?? [], districtTags);
         if (recipes.length === 0) return null;
         return formatAvailableRecipesForDirector(recipes, inventory);
       },
