@@ -24,6 +24,7 @@
   "dependencies": {
     "@ai-rpg-engine/core": "*",
     "@ai-rpg-engine/modules": "*",
+    "@ai-rpg-engine/equipment": "*",
     "@ai-rpg-engine/content-schema": "*",
     "@ai-rpg-engine/campaign-memory": "*",
     "@ai-rpg-engine/terminal-ui": "*",

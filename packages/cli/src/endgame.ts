@@ -31,6 +31,7 @@ import {
   CampaignJournal,
   buildFinaleOutline,
   formatFinaleForTerminal,
+  formatFinaleForDirector,
   type FinaleNpcInput,
   type FinaleFactionInput,
 } from '@ai-rpg-engine/campaign-memory';
@@ -333,7 +334,7 @@ export function computeSessionStats(
   const nodeCost = new Map<string, number>();
   for (const tree of trees) {
     if (tree.currency !== currencyId) continue;
-    for (const node of tree.nodes) nodeCost.set(`${tree.id} ${node.id}`, node.cost);
+    for (const node of tree.nodes) nodeCost.set(`${tree.id} ${node.id}`, node.cost);
   }
 
   let xpSpent = 0;
@@ -369,7 +370,7 @@ export function computeSessionStats(
         if (event.actorId !== playerId) break;
         stats.unlocks++;
         if (typeof p.treeId === 'string' && typeof p.nodeId === 'string') {
-          xpSpent += nodeCost.get(`${p.treeId} ${p.nodeId}`) ?? 0;
+          xpSpent += nodeCost.get(`${p.treeId} ${p.nodeId}`) ?? 0;
         }
         break;
       }
@@ -514,5 +515,19 @@ export function renderSessionEnd(
   );
 
   lines.push(formatFinaleForTerminal(outline));
+
+  // F-2bf933bd: formatFinaleForDirector — the more structured sibling
+  // (resolution class, dominant arc, duration, top-5 key moments, NPC
+  // fates, faction fates, legacy) computed for free from the SAME `outline`
+  // above, and until now never printed anywhere in the repo. A distinct
+  // small-divider trailer, not a duplicate of the narrative epilogue just
+  // shown — "the numbers behind the story you just got."
+  lines.push('');
+  lines.push(`  ${STATS_RULE}`);
+  lines.push("  THE DIRECTOR'S SUMMARY");
+  lines.push(`  ${STATS_RULE}`);
+  lines.push('');
+  lines.push(formatFinaleForDirector(outline));
+
   return lines.join('\n');
 }

@@ -15,6 +15,9 @@
       "path": "../modules"
     },
     {
+      "path": "../equipment"
+    },
+    {
       "path": "../campaign-memory"
     },
     {

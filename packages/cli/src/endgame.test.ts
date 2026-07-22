@@ -438,6 +438,37 @@ describe('renderSessionEnd + journalFromEventLog (F1b) — the end screen', () =
     expect(screen).toContain('Advancements Unlocked:');
   });
 
+  // F-2bf933bd: formatFinaleForDirector (the structured sibling of
+  // formatFinaleForTerminal — resolution class, dominant arc, duration,
+  // top-5 key moments, NPC fates, faction fates, legacy) had ZERO consumers
+  // anywhere in the repo before this wire, despite being computed for free
+  // from the SAME outline the narrative epilogue already builds.
+  it("F-2bf933bd: the end screen also carries the director's structured summary trailer, after the narrative epilogue", () => {
+    const engine = makeGame();
+    engine.store.state.entities['player'].resources.hp = 0;
+    const end = evaluateSessionEnd(engine)!;
+
+    const screen = renderSessionEnd(end, engine.world);
+
+    // The narrative epilogue (formatFinaleForTerminal) still renders first...
+    expect(screen).toContain('CAMPAIGN CONCLUSION');
+    // ...followed by a distinct trailer carrying formatFinaleForDirector's
+    // own structured labels — title-case-colon, never produced by
+    // formatFinaleForTerminal (which uses ALL-CAPS dividers instead: FACTION
+    // OUTCOMES, LEGACY, ...), so these are unambiguous proof of the new wire.
+    expect(screen).toContain("THE DIRECTOR'S SUMMARY");
+    expect(screen).toContain('Key Moments:');
+    expect(screen).toContain('NPC Fates:');
+    expect(screen).toContain('Faction Fates:');
+    expect(screen).toContain('Legacy:');
+
+    // And it comes AFTER the narrative epilogue, not before — "the numbers
+    // behind the story you just got", not a duplicate shown first.
+    expect(screen.indexOf('CAMPAIGN CONCLUSION')).toBeLessThan(
+      screen.indexOf("THE DIRECTOR'S SUMMARY"),
+    );
+  });
+
   // F-2fe4be26 — the DISCIPLINE section's own worked example: "tagging
   // activates a consumer (e.g. finale COMPANIONS renders)". End-to-end
   // through the REAL starter-fantasy game (createGame — now wired with

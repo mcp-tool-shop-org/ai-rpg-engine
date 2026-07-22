@@ -5,12 +5,14 @@
 
 import { describe, it, expect } from 'vitest';
 import { createGame } from '@ai-rpg-engine/starter-fantasy';
+import { createGame as createGladiatorGame } from '@ai-rpg-engine/starter-gladiator';
 import {
   makePressure,
   makeOpportunity,
   createDistrictEconomy,
 } from '@ai-rpg-engine/modules';
-import type { WorldState } from '@ai-rpg-engine/core';
+import { EQUIPMENT_CATALOG_FORMULA, type ItemCatalog } from '@ai-rpg-engine/equipment';
+import { FormulaRegistry, type Engine, type WorldState } from '@ai-rpg-engine/core';
 import { renderDirectorLedger } from './director.js';
 
 /**
@@ -28,9 +30,23 @@ function bareWorld(): WorldState {
   return world;
 }
 
-/** renderDirectorLedger needs only `world` — the same fake-engine idiom menu.test.ts uses. */
-function fakeEngine(world: WorldState): { world: WorldState } {
-  return { world };
+/**
+ * renderDirectorLedger needs `world` + `formulas` — the same fake-engine
+ * idiom menu.test.ts uses, widened for F-ec5c7354's EQUIPMENT section.
+ * `formulas` defaults to a fresh, empty registry: every pre-existing test
+ * that calls fakeEngine(world) keeps working unchanged (engine.formulas.has
+ * degrades to false, exactly the "no catalog available" path a pack that
+ * never wired equipment-core takes in real play).
+ */
+function fakeEngine(world: WorldState, formulas?: FormulaRegistry): Pick<Engine, 'world' | 'formulas'> {
+  return { world, formulas: formulas ?? new FormulaRegistry() };
+}
+
+/** A FormulaRegistry publishing `catalog` under EQUIPMENT_CATALOG_FORMULA — the exact per-engine transport equipment-core's createEquipmentCore registers at construction. */
+function formulasWithEquipmentCatalog(catalog: ItemCatalog): FormulaRegistry {
+  const formulas = new FormulaRegistry();
+  formulas.register(EQUIPMENT_CATALOG_FORMULA, () => catalog);
+  return formulas;
 }
 
 /** A well-formed pressure in the fixture voice. */
@@ -177,6 +193,36 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
     expect(report).toContain('  Crypt Depths (crypt-depths): ');
   });
 
+  // F-6cc633b9: economy-core (F-d0b5edb5, above) and companion-core
+  // (F-7d5c3e28) are now BOTH always-included in buildWorldStack — MARKET
+  // OVERVIEW and PARTY are no longer fixture-only, they light up together
+  // from one real played session (recruit + a round), not just from a
+  // zero-action engine. PEOPLE stays dark on purpose: npc-agency (its own
+  // namespace) has zero production writer anywhere in the engine — pure
+  // functions only, no EngineModule/register(ctx), confirmed by a repo-wide
+  // grep — so no amount of real play can light it up yet (see
+  // F-69ee0f88/F-f74770d2's skip notes). That is the honest ceiling, not a
+  // missed wire.
+  it('F-6cc633b9: a real played session (recruit + a round) lights up MARKET OVERVIEW and PARTY together — PEOPLE stays dark', () => {
+    const engine = createGame(42);
+    // Sister Maren starts in the player's own zone (chapel-entrance) — no
+    // move needed to reach her.
+    const recruited = engine.submitAction('recruit', { targetIds: ['sister-maren'] });
+    expect(recruited.some((e) => e.type === 'companion.recruited')).toBe(true);
+    engine.submitAction('move', { targetIds: ['chapel-nave'] }); // a played round
+
+    const report = renderDirectorLedger(engine);
+
+    expect(report).toContain('  MARKET OVERVIEW');
+    expect(report).toContain('  Chapel Grounds (chapel-grounds): ');
+    expect(report).toContain('  Crypt Depths (crypt-depths): ');
+
+    expect(report).toContain('  PARTY (1/3 companions)');
+    expect(report).toContain('  sister-maren (sister-maren) — Diplomat | Morale: 60');
+
+    expect(report).not.toContain('PEOPLE —');
+  });
+
   it('districts + market overview render from district-core and economy-core state', () => {
     const world = bareWorld();
     world.modules['district-core'] = {
@@ -313,6 +359,93 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
     };
     const report = renderDirectorLedger(fakeEngine(world));
     expect(report).not.toContain('Departure risk');
+  });
+
+  // F-ec5c7354/F-efdb93d1: EQUIPMENT — the section this file's own header
+  // used to name as designed-but-absent, now wired via the SAME
+  // formula-registry transport turns.ts uses for the ability catalog.
+  describe('EQUIPMENT (F-ec5c7354)', () => {
+    it('renders from a REAL engine — starter-gladiator is the one starter that wires equipment-core', () => {
+      // starter-gladiator's player starts carrying 'trident-and-net'
+      // (uncarried, unequipped); the real 'equip' verb moves it into the
+      // persisted Loadout equipment-core.ts's own namespace tracks.
+      const engine = createGladiatorGame(42);
+      const equipped = engine.submitAction('equip', { targetIds: ['trident-and-net'] });
+      expect(equipped.some((e) => e.type === 'item.equipped')).toBe(true);
+
+      const report = renderDirectorLedger(engine);
+
+      expect(report).toContain('── EQUIPMENT (1) ──');
+      expect(report).toContain('Trident & Net (weapon, uncommon)');
+      expect(report).toContain('  Origin: Arena armory');
+      expect(report).toContain('  Lore: Favored by fighters who prefer cunning to brawn');
+      // The honest ceiling: recordItemEvent has zero production callers, so
+      // no Chronicle line was ever passed and none renders.
+      expect(report).not.toContain('Chronicle:');
+    });
+
+    it('gates off entirely for a REAL engine whose pack never wired equipment-core (9 of 10 starters, incl. starter-fantasy)', () => {
+      // The exact same live createGame(42) every other real-play assertion
+      // in this suite uses — starter-fantasy never registers
+      // EQUIPMENT_CATALOG_FORMULA, so the section must degrade to "no
+      // catalog available", not throw or fabricate content.
+      const engine = createGame(42);
+      const report = renderDirectorLedger(engine);
+      expect(report).not.toContain('EQUIPMENT');
+    });
+
+    it('a resolvable item with NO authored provenance does not earn a line — the gate is per-item, not per-loadout', () => {
+      const world = bareWorld();
+      const catalog: ItemCatalog = {
+        items: [
+          { id: 'plain-dagger', name: 'Plain Dagger', description: 'Unremarkable.', slot: 'weapon', rarity: 'common' },
+        ],
+      };
+      world.modules['equipment-core'] = {
+        loadouts: {
+          [world.playerId]: {
+            equipped: { weapon: 'plain-dagger', armor: null, accessory: null, tool: null, trinket: null },
+            inventory: [],
+          },
+        },
+      };
+      const formulas = formulasWithEquipmentCatalog(catalog);
+
+      const report = renderDirectorLedger(fakeEngine(world, formulas));
+
+      expect(report).not.toContain('EQUIPMENT');
+    });
+
+    it('carried-but-unequipped provenance items render too, not just equipped ones', () => {
+      const world = bareWorld();
+      const catalog: ItemCatalog = {
+        items: [
+          {
+            id: 'cursed-locket',
+            name: 'Cursed Locket',
+            description: 'It hums.',
+            slot: 'trinket',
+            rarity: 'rare',
+            provenance: { flags: ['cursed'], lore: 'Best left closed.' },
+          },
+        ],
+      };
+      world.modules['equipment-core'] = {
+        loadouts: {
+          [world.playerId]: {
+            equipped: { weapon: null, armor: null, accessory: null, tool: null, trinket: null },
+            inventory: ['cursed-locket'],
+          },
+        },
+      };
+      const formulas = formulasWithEquipmentCatalog(catalog);
+
+      const report = renderDirectorLedger(fakeEngine(world, formulas));
+
+      expect(report).toContain('── EQUIPMENT (1) ──');
+      expect(report).toContain('Cursed Locket (trinket, rare)');
+      expect(report).toContain('  Flags: cursed');
+    });
   });
 
   it('materials render through formatMaterialsForDirector from the player custom record', () => {
