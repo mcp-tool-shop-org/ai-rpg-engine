@@ -5,12 +5,23 @@
 // wrapper around a pure resolver" shape.
 // v1.0: Player Leverage — the player can manipulate the social machine.
 // v1.1 (F-677e94ad/F-19a23718/F-92dd2068/F-4684385c): createPlayerLeverageCore
-// registers exactly FOUR verbs — 'seed', 'bribe', 'intimidate', 'petition' —
-// the Director's deliberately narrow scope for this wave (18 of the 22
-// authored sub-actions across all four groups stay unregistered; their
-// resolve*Action cases are fully implemented and tested but have no verb yet,
-// same honest-ceiling posture world-tick.ts documents for its own unreached
-// branches).
+// registered exactly FOUR verbs — 'seed', 'bribe', 'intimidate', 'petition' —
+// the Director's deliberately narrow scope for that wave (18 of the 22
+// authored sub-actions across all four groups stayed unregistered; their
+// resolve*Action cases were already fully implemented and tested but had no
+// verb yet).
+// v1.2 (v3.0 feature cycle, wave 1 "social-verbs"): createPlayerLeverageCore
+// now registers ALL 25 authored sub-actions across all four groups. The
+// remaining 21 — call-in-favor/recruit-ally/disguise/stake-claim;
+// deny/frame/claim-false-credit/bury-scandal/leak-truth/spread-counter-rumor;
+// request-meeting/improve-standing/cash-milestone/negotiate-access/
+// trade-secret/temporary-alliance/broker-truce;
+// sabotage/plant-evidence/blackmail-target/incite-riot — are wired below,
+// grouped by their originating Set (SOCIAL_VERBS/RUMOR_VERBS/DIPLOMACY_VERBS/
+// SABOTAGE_VERBS), each through a shared per-group handler mirroring
+// bribe/intimidate/petition's existing socialVerbHandler shape. No
+// resolve*Action switch case changed — every effect these verbs produce was
+// already authored and unit-tested; this wave is wiring only.
 
 import type {
   EngineModule,
@@ -21,8 +32,8 @@ import type {
 import { makeEvent } from './make-event.js';
 import type { DistrictMetrics } from './district-core.js';
 import { getDistrictForZone } from './district-core.js';
-import type { RumorValence, PlayerRumorState } from './player-rumor.js';
-import { spawnIntentionalRumor, getPlayerRumorState, setPlayerRumorState } from './player-rumor.js';
+import type { RumorValence, PlayerRumorState, PlayerRumor } from './player-rumor.js';
+import { spawnIntentionalRumor, getPlayerRumorState, setPlayerRumorState, applyRumorManipulation } from './player-rumor.js';
 import type { PressureKind } from './pressure-system.js';
 import { makePressure, type WorldPressure } from './pressure-system.js';
 import { getWorldTickState, getActivePressures, HEAT_KEY } from './world-tick.js';
@@ -990,45 +1001,73 @@ export function formatLeverageStatus(state: LeverageState): string {
 }
 
 // ---------------------------------------------------------------------------
-// The write-wire: createPlayerLeverageCore (F-677e94ad / F-19a23718)
+// The write-wire: createPlayerLeverageCore (F-677e94ad / F-19a23718 / v3.0 w1)
 // ---------------------------------------------------------------------------
 //
 // Everything above this line is pure functions + lookup tables —
 // resolveSocial/Rumor/Diplomacy/SabotageAction compute WHAT should happen (a
-// LeverageEffect[] + narratorHint) but until now had zero production callers:
-// no registered verb, no write into world state. This section is the missing
-// wire, scoped to EXACTLY FOUR verbs (Director's scope rule — 18 of the 22
-// authored sub-actions across all four groups stay dark this wave, same
-// honest-ceiling posture world-tick.ts documents for ITS OWN unreached
-// branches):
-//   'seed'       → resolveRumorAction('seed', ...)
-//   'bribe'      → resolveSocialAction('bribe', ...)
-//   'intimidate' → resolveSocialAction('intimidate', ...)
-//   'petition'   → resolveSocialAction('petition-authority', ...) — registered
-//                  as the single word 'petition' to match this codebase's
-//                  dominant player-facing verb style (attack/guard/use/sell/
-//                  recruit/move are single words; 'use-ability' is the one
-//                  established two-word exception, and the '-tick'-suffixed
-//                  verbs are internal-only, never player-facing).
+// LeverageEffect[] + narratorHint). This section is the write-wire: one
+// shared handler per originating Set (SOCIAL_VERBS/RUMOR_VERBS/
+// DIPLOMACY_VERBS/SABOTAGE_VERBS) plus a thin per-verb wrapper, registering
+// ALL 25 authored sub-actions. v1.1 wired exactly four — seed/bribe/
+// intimidate/petition — as a deliberately narrow first wave; v3.0 wave 1
+// "social-verbs" wires the remaining 21.
 //
-// Each handler: actor exists? → target faction present (bribe/intimidate/
-// petition require one — a faction-directed action with no faction is a
-// no-op the player shouldn't be able to pay for; seed does not, a rumor can
-// be seeded generally) → cooldown ready (isCooldownReady/setCooldown, the
-// authored per-sub-action cooldownTurns) → resolve*Action (which itself
-// enforces cost affordability) → on success, applyLeverageEffects writes the
-// real state, then — party non-empty — dispatches the matching companion-
-// reaction trigger.
+// Verb-name notes:
+//   'petition'      → resolveSocialAction('petition-authority', ...) —
+//                      registered as the single word 'petition' (the v1.1
+//                      choice, kept as-is) to match this codebase's dominant
+//                      player-facing verb style.
+//   'recruit-ally'  → registered under its FULL subAction name, NOT a
+//                      shortened 'recruit' — companion-core.ts already owns
+//                      the verb name 'recruit' for party recruitment;
+//                      collapsing to the short form here would silently
+//                      shadow it.
+//   every other new verb is registered under its literal authored subAction
+//                      string (call-in-favor, disguise, stake-claim, deny,
+//                      frame, claim-false-credit, bury-scandal, leak-truth,
+//                      spread-counter-rumor, request-meeting,
+//                      improve-standing, cash-milestone, negotiate-access,
+//                      trade-secret, temporary-alliance, broker-truce,
+//                      sabotage, plant-evidence, blackmail-target,
+//                      incite-riot) — none collide with any verb registered
+//                      elsewhere in packages/modules/src.
 //
-// Honest count on "retiring dark triggers": bribe/intimidate/petition all
-// resolve through resolveSocialAction, whose LeverageResolution.verb is
-// ALWAYS 'social' (an authored-table fact, not something this wave changes) —
-// so all three dispatch 'leverage-social'; only 'seed' dispatches
-// 'leverage-rumor'. 'leverage-diplomacy' and 'leverage-sabotage' stay dark
-// until a future wave registers a diplomacy-group or sabotage-group verb —
-// this wave's exact-4-verbs scope rule and the 4-distinct-trigger-groups
-// framing don't fully overlap, and this file does not fake a dispatch to
-// paper over that. 2 of the 12 dark triggers get a real caller here.
+// Each handler: actor exists? → this group's target requirement (social:
+// bribe/intimidate/petition/call-in-favor/recruit-ally hard-require a target
+// faction — "no target" would be a silent no-op charge, not a smaller version
+// of the action, same reasoning the v1.1 header already documented;
+// disguise/stake-claim do not, matching seed's "need not be about
+// anyone/anywhere in particular" shape — stake-claim's real payload
+// (districtId) comes from the actor's OWN zone, not player input; diplomacy
+// hard-requires a target faction — resolveDiplomacyAction's targetFactionId
+// parameter isn't even optional, it's the type signature's own requirement;
+// sabotage never hard-requires one — every sabotage sub-action bakes in an
+// UNCONDITIONAL heat effect, so there is no no-op case to guard against;
+// deny/bury-scandal hard-require a rumorId instead of a faction) → cooldown
+// ready (isCooldownReady/setCooldown, the authored per-sub-action
+// cooldownTurns, keyed per cost-group: 'social'/'rumor'/'diplomacy'/
+// 'sabotage') → resolve*Action (which itself enforces cost affordability) →
+// on success, applyLeverageEffects writes the real state. A 'rumor' effect,
+// when present (frame/claim-false-credit/leak-truth/spread-counter-rumor/
+// plant-evidence), is split out first and spawned via spawnIntentionalRumor
+// instead — same as 'seed' already does — since applyLeverageEffects itself
+// deliberately drops 'rumor' effects (see its own doc comment). deny/
+// bury-scandal additionally call player-rumor.ts's applyRumorManipulation on
+// the rumor id the caller supplies via action.parameters.rumorId. Then —
+// party non-empty — dispatches the matching companion-reaction trigger.
+//
+// Trigger count: all FOUR leverage-* triggers are reachable as of this wave —
+// bribe/intimidate/petition/call-in-favor/recruit-ally/disguise/stake-claim
+// dispatch 'leverage-social'; seed/deny/frame/claim-false-credit/
+// bury-scandal/leak-truth/spread-counter-rumor dispatch 'leverage-rumor'; all
+// seven diplomacy verbs dispatch 'leverage-diplomacy' (newly reachable this
+// wave — resolveDiplomacyAction's LeverageResolution.verb is always the
+// literal 'diplomacy', distinct from resolveSocialAction's 'social'); all
+// four sabotage verbs dispatch 'leverage-sabotage' (newly reachable this
+// wave — resolveSabotageAction's verb is always 'sabotage'). See
+// companion-reactions.ts's REACTION_TRIGGER_STATUS for the flip from 'dark'
+// to 'reachable'.
 
 const LEVERAGE_ACTOR_MISSING = 'actor not found';
 
@@ -1254,20 +1293,39 @@ function rejectLeverageAction(action: ActionIntent, reason: string): ResolvedEve
   return [makeEvent(action, 'action.rejected', { verb: action.verb, reason })];
 }
 
-/** Shared shape for the three resolveSocialAction-backed verbs (bribe,
- *  intimidate, petition-authority): all three require a target faction, none
- *  use targetId, all resolve through the SAME 'social' cost/cooldown group. */
+/** Shared shape for all seven resolveSocialAction-backed verbs (bribe,
+ *  intimidate, petition-authority, call-in-favor, recruit-ally, disguise,
+ *  stake-claim) — all resolve through the SAME 'social' cost/cooldown group.
+ *
+ *  `options.requireTargetFaction` (default true) preserves the ORIGINAL hard
+ *  gate bribe/intimidate/petition-authority always had ("no target is a
+ *  structured rejection, not a silent no-op charge") and extends it to
+ *  call-in-favor/recruit-ally, whose only meaningful effects are likewise
+ *  targetFactionId-gated. disguise (no target usage at all) and stake-claim
+ *  (whose primary payload — districtId — comes from the actor's OWN zone, not
+ *  player input) pass `false`: a missing target faction there narrows the
+ *  action, it doesn't turn it into a no-op charge.
+ *
+ *  districtId is now ALWAYS derived from the actor's current zone — a no-op
+ *  for bribe/intimidate/petition-authority/call-in-favor/recruit-ally (none
+ *  of their resolveSocialAction switch cases read targetId) and the real
+ *  payload for stake-claim ("wherever you're standing"), the same
+ *  zone→district derivation seedHandler already uses for rumor placement. */
 function socialVerbHandler(
   action: ActionIntent,
   world: WorldState,
   subAction: PlayerSocialVerb,
   rejectVerbLabel: string,
+  options: { requireTargetFaction?: boolean } = {},
 ): ResolvedEvent[] {
+  const requireTargetFaction = options.requireTargetFaction ?? true;
   const actor = world.entities[action.actorId];
   if (!actor) return rejectLeverageAction(action, LEVERAGE_ACTOR_MISSING);
 
   const targetFactionId = action.targetIds?.[0];
-  if (!targetFactionId) return rejectLeverageAction(action, 'no target faction specified');
+  if (requireTargetFaction && !targetFactionId) {
+    return rejectLeverageAction(action, 'no target faction specified');
+  }
 
   const currentTick = action.issuedAtTick;
   const custom = actor.custom ?? {};
@@ -1277,16 +1335,17 @@ function socialVerbHandler(
   }
 
   const leverageState = getLeverageState(custom);
-  const playerReputation = playerReputationFor(world, targetFactionId);
-  const cognition = getFactionCognition(world, targetFactionId);
+  const playerReputation = targetFactionId ? playerReputationFor(world, targetFactionId) : 0;
+  const cognition = targetFactionId ? getFactionCognition(world, targetFactionId) : undefined;
+  const districtId = actor.zoneId ? getDistrictForZone(world, actor.zoneId) : undefined;
 
   const resolution = resolveSocialAction(
     subAction,
-    undefined,
+    districtId,
     targetFactionId,
     leverageState,
     playerReputation,
-    { alertLevel: cognition.alertLevel, cohesion: cognition.cohesion },
+    cognition ? { alertLevel: cognition.alertLevel, cohesion: cognition.cohesion } : undefined,
     currentTick,
   );
   if (!resolution.success) {
@@ -1301,7 +1360,8 @@ function socialVerbHandler(
       verb: 'social',
       subAction,
       actorId: action.actorId,
-      targetFactionId,
+      targetId: districtId ?? null,
+      targetFactionId: targetFactionId ?? null,
       effects: resolution.effects,
       narratorHint: resolution.narratorHint,
     }),
@@ -1333,6 +1393,24 @@ function intimidateHandler(action: ActionIntent, world: WorldState): ResolvedEve
 
 function petitionHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
   return socialVerbHandler(action, world, 'petition-authority', 'petition');
+}
+
+// --- v3.0 wave 1 "social-verbs": the remaining four SOCIAL_VERBS members ---
+
+function callInFavorHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return socialVerbHandler(action, world, 'call-in-favor', 'call-in-favor');
+}
+
+function recruitAllyHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return socialVerbHandler(action, world, 'recruit-ally', 'recruit-ally');
+}
+
+function disguiseHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return socialVerbHandler(action, world, 'disguise', 'disguise', { requireTargetFaction: false });
+}
+
+function stakeClaimHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return socialVerbHandler(action, world, 'stake-claim', 'stake-claim', { requireTargetFaction: false });
 }
 
 /**
@@ -1415,12 +1493,431 @@ function seedHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
   return events;
 }
 
+// ---------------------------------------------------------------------------
+// v3.0 wave 1 "social-verbs": the remaining 21 verbs, grouped by their
+// originating Set. No resolve*Action switch case changes below this line —
+// only wiring (guard → resolve → apply → cooldown → event → dispatch).
+// ---------------------------------------------------------------------------
+
 /**
- * The player-leverage module: registers the FOUR wired verbs (bribe,
- * intimidate, seed, petition) plus the 'player-rumor' persistence namespace
- * default (F-19a23718 — 'seed' is the namespace's production writer). No
- * config needed — the same "always includable, no author input" shape
- * trade-core.ts and companion-core.ts already have in buildWorldStack.
+ * Split a resolution's effects into "mechanical" (applied via
+ * applyLeverageEffects) and an optional 'rumor' effect, then spawn that rumor
+ * into the SAME player-rumor namespace 'seed' writes to. applyLeverageEffects
+ * itself deliberately drops 'rumor' effects (see its own doc comment), so
+ * every resolve*Action call that can produce one needs this same extraction
+ * seedHandler pioneered. Shared by the rumor-group's spawn verbs
+ * (frame/claim-false-credit/leak-truth/spread-counter-rumor, via
+ * rumorSpawnVerbHandler below) AND sabotage's 'plant-evidence' — the only
+ * sabotage sub-action whose resolution includes a 'rumor' effect; a no-op
+ * split for the other three sabotage verbs, whose effects never include one.
+ */
+function applyLeverageEffectsAndSpawnRumor(
+  world: WorldState,
+  actorId: string,
+  effects: LeverageEffect[],
+  currentTick: number,
+  originFactionId: string | undefined,
+): { spawnedPressures: WorldPressure[]; rumor?: PlayerRumor } {
+  const rumorEffect = effects.find(
+    (e): e is Extract<LeverageEffect, { type: 'rumor' }> => e.type === 'rumor',
+  );
+  const mechanicalEffects = effects.filter((e) => e.type !== 'rumor');
+  const spawnedPressures = applyLeverageEffects(world, actorId, mechanicalEffects, currentTick);
+
+  if (!rumorEffect) return { spawnedPressures };
+
+  const actor = world.entities[actorId];
+  const districtId = actor?.zoneId ? getDistrictForZone(world, actor.zoneId) : undefined;
+  const rumor = spawnIntentionalRumor(
+    rumorEffect.claim,
+    rumorEffect.valence,
+    originFactionId,
+    districtId,
+    currentTick,
+    0.8,
+    world,
+  );
+  const ns = getPlayerRumorState(world);
+  setPlayerRumorState(world, { rumors: [...ns.rumors, rumor] });
+
+  return { spawnedPressures, rumor };
+}
+
+// --- Rumor group: the spawn family (frame/claim-false-credit/leak-truth/
+// spread-counter-rumor) — same shape as 'seed', generalized. ---
+
+type RumorSpawnVerb = Exclude<PlayerRumorVerb, 'seed' | 'deny' | 'bury-scandal'>;
+
+/**
+ * Shared shape for the resolveRumorAction-backed verbs that (like 'seed')
+ * always produce a 'rumor' effect: frame, claim-false-credit, leak-truth,
+ * spread-counter-rumor. None require a target faction — every switch case in
+ * resolveRumorAction defaults gracefully when it's absent (the same "a rumor
+ * need not be about anyone in particular" contract 'seed' already has).
+ */
+function rumorSpawnVerbHandler(
+  action: ActionIntent,
+  world: WorldState,
+  subAction: RumorSpawnVerb,
+): ResolvedEvent[] {
+  const actor = world.entities[action.actorId];
+  if (!actor) return rejectLeverageAction(action, LEVERAGE_ACTOR_MISSING);
+
+  const targetFactionId = action.targetIds?.[0];
+  const claim = typeof action.parameters?.claim === 'string' ? action.parameters.claim : undefined;
+  const currentTick = action.issuedAtTick;
+  const custom = actor.custom ?? {};
+
+  const req = getRumorRequirements(subAction);
+  if (!isCooldownReady(custom, 'rumor', subAction, currentTick, req.cooldownTurns ?? 0)) {
+    return rejectLeverageAction(action, `${subAction} is on cooldown`);
+  }
+
+  const leverageState = getLeverageState(custom);
+  const resolution = resolveRumorAction(subAction, targetFactionId, leverageState, currentTick, claim);
+  if (!resolution.success) {
+    return rejectLeverageAction(action, resolution.failReason ?? `cannot ${subAction}`);
+  }
+
+  const { rumor } = applyLeverageEffectsAndSpawnRumor(
+    world, action.actorId, resolution.effects, currentTick, targetFactionId,
+  );
+  actor.custom = setCooldown(actor.custom ?? {}, 'rumor', subAction, currentTick);
+
+  const events: ResolvedEvent[] = [];
+
+  if (rumor) {
+    events.push(makeEvent(action, 'rumor.seeded', {
+      rumorId: rumor.id,
+      subAction,
+      claim: rumor.claim,
+      valence: rumor.valence,
+      targetFactionId: targetFactionId ?? null,
+      narratorHint: resolution.narratorHint,
+    }));
+  } else {
+    // Defensive only — every RumorSpawnVerb's resolveRumorAction case
+    // unconditionally pushes a 'rumor' effect today (frame/claim-false-credit/
+    // leak-truth/spread-counter-rumor all default their claim rather than
+    // omitting it), so this branch is unreached in practice; kept for the
+    // same reason seedHandler keeps its own analogous fallback.
+    events.push(makeEvent(action, 'leverage.resolved', {
+      verb: 'rumor',
+      subAction,
+      actorId: action.actorId,
+      targetFactionId: targetFactionId ?? null,
+      effects: resolution.effects,
+      narratorHint: resolution.narratorHint,
+    }));
+  }
+
+  events.push(...dispatchLeverageCompanionReactions(action, world, 'leverage-rumor', currentTick));
+  return events;
+}
+
+function frameHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return rumorSpawnVerbHandler(action, world, 'frame');
+}
+
+function claimFalseCreditHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return rumorSpawnVerbHandler(action, world, 'claim-false-credit');
+}
+
+function leakTruthHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return rumorSpawnVerbHandler(action, world, 'leak-truth');
+}
+
+function spreadCounterRumorHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return rumorSpawnVerbHandler(action, world, 'spread-counter-rumor');
+}
+
+// --- Rumor group: the manipulation family (deny/bury-scandal) — mutates an
+// EXISTING rumor by id instead of spawning a new one. ---
+
+/**
+ * Shared shape for deny/bury-scandal: the only two PlayerRumorVerb members
+ * whose real effect is mutating an EXISTING rumor by id, not spawning a new
+ * one — resolveRumorAction's own case comments point here (F-19a23718): "the
+ * real call site is player-rumor.ts's applyRumorManipulation(world, subAction,
+ * rumorId), invoked by the caller with the rumor id it reads from
+ * action.parameters." A missing rumorId is a structured rejection (the same
+ * "not a silent no-op charge" contract bribe's missing target has) — denying
+ * or burying nothing isn't a smaller version of the action, it's not the
+ * action at all. A rumorId that doesn't match any known rumor (stale/
+ * decayed/mistyped) is NOT rejected — applyRumorManipulation's own documented
+ * contract is to quietly no-op that case, so the mechanical leverage cost
+ * still applies (the player spent the resource attempting it) and the event
+ * payload reports `rumorFound: false` rather than pretending the attempt
+ * never happened.
+ */
+function rumorManipulationVerbHandler(
+  action: ActionIntent,
+  world: WorldState,
+  subAction: 'deny' | 'bury-scandal',
+): ResolvedEvent[] {
+  const actor = world.entities[action.actorId];
+  if (!actor) return rejectLeverageAction(action, LEVERAGE_ACTOR_MISSING);
+
+  const rumorId = typeof action.parameters?.rumorId === 'string' ? action.parameters.rumorId : undefined;
+  if (!rumorId) return rejectLeverageAction(action, 'no rumor specified');
+
+  const currentTick = action.issuedAtTick;
+  const custom = actor.custom ?? {};
+  const req = getRumorRequirements(subAction);
+  if (!isCooldownReady(custom, 'rumor', subAction, currentTick, req.cooldownTurns ?? 0)) {
+    return rejectLeverageAction(action, `${subAction} is on cooldown`);
+  }
+
+  const leverageState = getLeverageState(custom);
+  const targetFactionId = action.targetIds?.[0];
+  const resolution = resolveRumorAction(subAction, targetFactionId, leverageState, currentTick);
+  if (!resolution.success) {
+    return rejectLeverageAction(action, resolution.failReason ?? `cannot ${subAction}`);
+  }
+
+  applyLeverageEffects(world, action.actorId, resolution.effects, currentTick);
+  actor.custom = setCooldown(actor.custom ?? {}, 'rumor', subAction, currentTick);
+
+  const manipulated = applyRumorManipulation(world, subAction, rumorId);
+
+  const events: ResolvedEvent[] = [
+    makeEvent(action, 'leverage.resolved', {
+      verb: 'rumor',
+      subAction,
+      actorId: action.actorId,
+      targetFactionId: targetFactionId ?? null,
+      rumorId,
+      rumorFound: manipulated !== undefined,
+      effects: resolution.effects,
+      narratorHint: resolution.narratorHint,
+    }),
+  ];
+
+  events.push(...dispatchLeverageCompanionReactions(action, world, 'leverage-rumor', currentTick));
+  return events;
+}
+
+function denyHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return rumorManipulationVerbHandler(action, world, 'deny');
+}
+
+function buryScandalHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return rumorManipulationVerbHandler(action, world, 'bury-scandal');
+}
+
+// --- Diplomacy group: all seven resolveDiplomacyAction-backed verbs. ---
+
+/**
+ * Shared shape for all seven resolveDiplomacyAction-backed verbs. Unlike
+ * resolveSocialAction/resolveSabotageAction, resolveDiplomacyAction's
+ * targetFactionId parameter is NON-optional (`string`, not `string |
+ * undefined`) — every diplomacy sub-action is inherently about a specific
+ * faction relationship, so the target-faction gate here isn't a judgment call
+ * the way it was for the social group; it's the type signature's own
+ * requirement. Dispatches 'leverage-diplomacy' (newly reachable this wave —
+ * see companion-reactions.ts's REACTION_TRIGGER_STATUS).
+ */
+function diplomacyVerbHandler(
+  action: ActionIntent,
+  world: WorldState,
+  subAction: PlayerDiplomacyVerb,
+  rejectVerbLabel: string,
+): ResolvedEvent[] {
+  const actor = world.entities[action.actorId];
+  if (!actor) return rejectLeverageAction(action, LEVERAGE_ACTOR_MISSING);
+
+  const targetFactionId = action.targetIds?.[0];
+  if (!targetFactionId) return rejectLeverageAction(action, 'no target faction specified');
+
+  const currentTick = action.issuedAtTick;
+  const custom = actor.custom ?? {};
+  const req = getDiplomacyRequirements(subAction);
+  if (!isCooldownReady(custom, 'diplomacy', subAction, currentTick, req.cooldownTurns ?? 0)) {
+    return rejectLeverageAction(action, `${rejectVerbLabel} is on cooldown`);
+  }
+
+  const leverageState = getLeverageState(custom);
+  const playerReputation = playerReputationFor(world, targetFactionId);
+  const cognition = getFactionCognition(world, targetFactionId);
+
+  const resolution = resolveDiplomacyAction(
+    subAction,
+    targetFactionId,
+    leverageState,
+    playerReputation,
+    { alertLevel: cognition.alertLevel, cohesion: cognition.cohesion },
+    currentTick,
+  );
+  if (!resolution.success) {
+    return rejectLeverageAction(action, resolution.failReason ?? `cannot ${rejectVerbLabel}`);
+  }
+
+  const spawnedPressures = applyLeverageEffects(world, action.actorId, resolution.effects, currentTick);
+  actor.custom = setCooldown(actor.custom ?? {}, 'diplomacy', subAction, currentTick);
+
+  const events: ResolvedEvent[] = [
+    makeEvent(action, 'leverage.resolved', {
+      verb: 'diplomacy',
+      subAction,
+      actorId: action.actorId,
+      targetFactionId,
+      effects: resolution.effects,
+      narratorHint: resolution.narratorHint,
+    }),
+  ];
+
+  for (const pressure of spawnedPressures) {
+    events.push(makeEvent(action, 'pressure.spawned', {
+      pressureId: pressure.id,
+      kind: pressure.kind,
+      description: pressure.description,
+      urgency: pressure.urgency,
+      visibility: pressure.visibility,
+      sourceFactionId: pressure.sourceFactionId,
+      triggeredBy: pressure.triggeredBy,
+    }));
+  }
+
+  events.push(...dispatchLeverageCompanionReactions(action, world, 'leverage-diplomacy', currentTick));
+  return events;
+}
+
+function requestMeetingHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return diplomacyVerbHandler(action, world, 'request-meeting', 'request-meeting');
+}
+
+function improveStandingHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return diplomacyVerbHandler(action, world, 'improve-standing', 'improve-standing');
+}
+
+function cashMilestoneHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return diplomacyVerbHandler(action, world, 'cash-milestone', 'cash-milestone');
+}
+
+function negotiateAccessHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return diplomacyVerbHandler(action, world, 'negotiate-access', 'negotiate-access');
+}
+
+function tradeSecretHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return diplomacyVerbHandler(action, world, 'trade-secret', 'trade-secret');
+}
+
+function temporaryAllianceHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return diplomacyVerbHandler(action, world, 'temporary-alliance', 'temporary-alliance');
+}
+
+function brokerTruceHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return diplomacyVerbHandler(action, world, 'broker-truce', 'broker-truce');
+}
+
+// --- Sabotage group: all four resolveSabotageAction-backed verbs. ---
+
+/**
+ * Shared shape for all four resolveSabotageAction-backed verbs. Unlike the
+ * social/diplomacy groups, no sabotage sub-action hard-requires a target:
+ * every one of them pushes an UNCONDITIONAL 'heat' effect (sabotage always
+ * burns heat, targeted or not — an authored fact of SABOTAGE_REQUIREMENTS /
+ * the resolveSabotageAction switch, not a decision made here), so there is no
+ * "silent no-op charge" case to guard against the way bribe's all-conditional
+ * effect list needed. targetId is the district the actor is standing in
+ * (derived from the actor's zone, same as stake-claim); targetFactionId is
+ * optional (action.targetIds[0]). Dispatches 'leverage-sabotage' (newly
+ * reachable this wave — see companion-reactions.ts's REACTION_TRIGGER_STATUS).
+ *
+ * 'plant-evidence' is the one sabotage sub-action whose resolution includes a
+ * 'rumor' effect — applyLeverageEffectsAndSpawnRumor handles that uniformly
+ * for all four (a no-op split for the other three, whose effects never
+ * include a 'rumor' entry).
+ */
+function sabotageVerbHandler(
+  action: ActionIntent,
+  world: WorldState,
+  subAction: PlayerSabotageVerb,
+  rejectVerbLabel: string,
+): ResolvedEvent[] {
+  const actor = world.entities[action.actorId];
+  if (!actor) return rejectLeverageAction(action, LEVERAGE_ACTOR_MISSING);
+
+  const currentTick = action.issuedAtTick;
+  const custom = actor.custom ?? {};
+  const req = getSabotageRequirements(subAction);
+  if (!isCooldownReady(custom, 'sabotage', subAction, currentTick, req.cooldownTurns ?? 0)) {
+    return rejectLeverageAction(action, `${rejectVerbLabel} is on cooldown`);
+  }
+
+  const leverageState = getLeverageState(custom);
+  const targetFactionId = action.targetIds?.[0];
+  const districtId = actor.zoneId ? getDistrictForZone(world, actor.zoneId) : undefined;
+
+  const resolution = resolveSabotageAction(
+    subAction,
+    districtId,
+    targetFactionId,
+    leverageState,
+    currentTick,
+  );
+  if (!resolution.success) {
+    return rejectLeverageAction(action, resolution.failReason ?? `cannot ${rejectVerbLabel}`);
+  }
+
+  const { spawnedPressures } = applyLeverageEffectsAndSpawnRumor(
+    world, action.actorId, resolution.effects, currentTick, targetFactionId,
+  );
+  actor.custom = setCooldown(actor.custom ?? {}, 'sabotage', subAction, currentTick);
+
+  const events: ResolvedEvent[] = [
+    makeEvent(action, 'leverage.resolved', {
+      verb: 'sabotage',
+      subAction,
+      actorId: action.actorId,
+      targetId: districtId ?? null,
+      targetFactionId: targetFactionId ?? null,
+      effects: resolution.effects,
+      narratorHint: resolution.narratorHint,
+    }),
+  ];
+
+  for (const pressure of spawnedPressures) {
+    events.push(makeEvent(action, 'pressure.spawned', {
+      pressureId: pressure.id,
+      kind: pressure.kind,
+      description: pressure.description,
+      urgency: pressure.urgency,
+      visibility: pressure.visibility,
+      sourceFactionId: pressure.sourceFactionId,
+      triggeredBy: pressure.triggeredBy,
+    }));
+  }
+
+  events.push(...dispatchLeverageCompanionReactions(action, world, 'leverage-sabotage', currentTick));
+  return events;
+}
+
+function sabotageHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return sabotageVerbHandler(action, world, 'sabotage', 'sabotage');
+}
+
+function plantEvidenceHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return sabotageVerbHandler(action, world, 'plant-evidence', 'plant-evidence');
+}
+
+function blackmailTargetHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return sabotageVerbHandler(action, world, 'blackmail-target', 'blackmail-target');
+}
+
+function inciteRiotHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  return sabotageVerbHandler(action, world, 'incite-riot', 'incite-riot');
+}
+
+/**
+ * The player-leverage module: registers ALL 25 authored leverage verbs (v1.1
+ * wired bribe/intimidate/seed/petition; v3.0 wave 1 "social-verbs" wires the
+ * remaining 21 — see the write-wire section above) plus the 'player-rumor'
+ * persistence namespace default (F-19a23718 — 'seed' is the namespace's
+ * original production writer; frame/claim-false-credit/leak-truth/
+ * spread-counter-rumor/plant-evidence now also write into it). No config
+ * needed — the same "always includable, no author input" shape trade-core.ts
+ * and companion-core.ts already have in buildWorldStack.
  */
 export function createPlayerLeverageCore(): EngineModule {
   return {
@@ -1433,10 +1930,42 @@ export function createPlayerLeverageCore(): EngineModule {
       // namespace<{ rumors: unknown }>(world, 'player-rumor').
       ctx.persistence.registerNamespace('player-rumor', { rumors: [] } as PlayerRumorState);
 
+      // Social group (resolveSocialAction / 'social' cost-cooldown key) —
+      // dispatches 'leverage-social'.
       ctx.actions.registerVerb('bribe', bribeHandler);
       ctx.actions.registerVerb('intimidate', intimidateHandler);
-      ctx.actions.registerVerb('seed', seedHandler);
       ctx.actions.registerVerb('petition', petitionHandler);
+      ctx.actions.registerVerb('call-in-favor', callInFavorHandler);
+      ctx.actions.registerVerb('recruit-ally', recruitAllyHandler);
+      ctx.actions.registerVerb('disguise', disguiseHandler);
+      ctx.actions.registerVerb('stake-claim', stakeClaimHandler);
+
+      // Rumor group (resolveRumorAction / 'rumor' cost-cooldown key) —
+      // dispatches 'leverage-rumor'.
+      ctx.actions.registerVerb('seed', seedHandler);
+      ctx.actions.registerVerb('deny', denyHandler);
+      ctx.actions.registerVerb('frame', frameHandler);
+      ctx.actions.registerVerb('claim-false-credit', claimFalseCreditHandler);
+      ctx.actions.registerVerb('bury-scandal', buryScandalHandler);
+      ctx.actions.registerVerb('leak-truth', leakTruthHandler);
+      ctx.actions.registerVerb('spread-counter-rumor', spreadCounterRumorHandler);
+
+      // Diplomacy group (resolveDiplomacyAction / 'diplomacy' cost-cooldown
+      // key) — dispatches 'leverage-diplomacy' (newly reachable this wave).
+      ctx.actions.registerVerb('request-meeting', requestMeetingHandler);
+      ctx.actions.registerVerb('improve-standing', improveStandingHandler);
+      ctx.actions.registerVerb('cash-milestone', cashMilestoneHandler);
+      ctx.actions.registerVerb('negotiate-access', negotiateAccessHandler);
+      ctx.actions.registerVerb('trade-secret', tradeSecretHandler);
+      ctx.actions.registerVerb('temporary-alliance', temporaryAllianceHandler);
+      ctx.actions.registerVerb('broker-truce', brokerTruceHandler);
+
+      // Sabotage group (resolveSabotageAction / 'sabotage' cost-cooldown key)
+      // — dispatches 'leverage-sabotage' (newly reachable this wave).
+      ctx.actions.registerVerb('sabotage', sabotageHandler);
+      ctx.actions.registerVerb('plant-evidence', plantEvidenceHandler);
+      ctx.actions.registerVerb('blackmail-target', blackmailTargetHandler);
+      ctx.actions.registerVerb('incite-riot', inciteRiotHandler);
     },
   };
 }
