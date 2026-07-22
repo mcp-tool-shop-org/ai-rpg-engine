@@ -112,6 +112,41 @@ function readLoadoutLine(world: WorldState): string | null {
   return carried > 0 ? `${slots} (+${carried} carried)` : slots;
 }
 
+/**
+ * F-1cb3757f: economy-core's district count — same non-attaching
+ * defensive-degrade split as readActivePressures/readLiveEncounters above:
+ * null hides the line (the pack never wired economy-core — getEconomyCoreState
+ * would silently degrade to `{ districts: {} }`, which is indistinguishable
+ * from "wired but empty" without checking the raw namespace ourselves, so this
+ * reads world.modules directly rather than going through that accessor); a
+ * wired-but-empty economy honestly renders 0.
+ */
+function readDistrictEconomyCount(world: WorldState): number | null {
+  const ns = world.modules['economy-core'] as { districts?: unknown } | undefined;
+  if (ns === undefined) return null;
+  const districts = ns.districts;
+  if (typeof districts !== 'object' || districts === null || Array.isArray(districts)) return 0;
+  return Object.keys(districts).length;
+}
+
+/**
+ * F-1cb3757f: companion-core's ACTIVE party size — the roster of companions
+ * actually traveling with the player right now (CompanionState.active),
+ * not every companion ever recruited (dismissed/away companions stay in
+ * the roster array but are not "the party"). Same absent-vs-zero split as
+ * readActivePressures: null when companion-core never wired, 0 for an
+ * empty-or-benched party.
+ */
+function readPartySize(world: WorldState): number | null {
+  const ns = world.modules['companion-core'] as { companions?: unknown } | undefined;
+  if (ns === undefined) return null;
+  const companions = ns.companions;
+  if (!Array.isArray(companions)) return 0;
+  return companions.filter(
+    (c) => c && typeof c === 'object' && (c as { active?: unknown }).active === true,
+  ).length;
+}
+
 // --- The report ---------------------------------------------------------------
 
 export type SaveReportOptions = {
@@ -199,6 +234,10 @@ export function renderSaveReport(state: WorldState, opts: SaveReportOptions = {}
   if (encounters !== null) lines.push(`  Live Encounters: ${encounters}`);
   const loadout = readLoadoutLine(state);
   if (loadout !== null) lines.push(`  Loadout: ${loadout}`);
+  const districtEconomies = readDistrictEconomyCount(state);
+  if (districtEconomies !== null) lines.push(`  District Economies: ${districtEconomies}`);
+  const partySize = readPartySize(state);
+  if (partySize !== null) lines.push(`  Party Size: ${partySize}`);
   lines.push(`  Events Logged: ${state.eventLog.length}`);
   // Absent/null degrades to 0 exactly like restoreSessionFromSave; a present
   // non-array is called out rather than counted as nothing.
