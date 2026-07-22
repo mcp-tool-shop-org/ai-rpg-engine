@@ -5,6 +5,93 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.7.0] - 2026-07-22
+
+The world reacts, runs differ, and there's a reason to return. v2.6.0 made the
+`run` command a real game; v2.7.0 makes it one you come back to. Produced by a
+feature-focused dogfood swarm — two absorbed follow-ups, a regression re-audit,
+five feature waves (user-gated scope), a composed-system re-audit, and a
+Phase-8 amend — every wave adjudicated by a family-different, non-Claude jury
+with the deterministic test floor as law. Test suite: 4292 → **4797**.
+
+### Added
+
+- **The strategic tier is live.** Kills accrue heat and erode district safety;
+  a per-round world tick turns that into pressures that spawn hidden, surface
+  as rumors ("Whispers reach you…"), escalate, and expire with consequences —
+  narrated in play, driven entirely by the modules that already shipped dark.
+- **Zone-entry encounters.** The ~30 authored encounter compositions fire in
+  all ten starters: deterministic per-seed rolls, bloodier districts spawn
+  more, one live encounter per zone, boss compositions refused by design.
+- **A minimal quest loop** on the schema that always existed: quests offer on
+  triggers, track kill/reach/progress objectives, and pay XP and items exactly
+  once. Four authored quests ship (fantasy + zombie), a **Journal** lists
+  active and completed undertakings, and quest beats narrate in the round.
+- **Equipment reaches combat.** `equip` / `unequip` verbs move real numbers:
+  an equipped item's stat modifiers ride a status the combat formulas already
+  read — zero combat-code changes. Gladiator's trident-and-net is wired
+  end-to-end (menu, HUD status line, hit-chance delta pinned by test).
+- **Seeded runs.** Every fresh session mints and prints a seed with the exact
+  replay command; `--seed <n>` reproduces a run byte-for-byte; combat, resist,
+  ability, and tactics rolls all consume the world seed (seed 0 remains
+  byte-exact legacy identity for old saves and tests).
+- **Endings read the run you actually played.** The endgame evaluator receives
+  live heat, pressures, faction alert/reputation accruals, and player level —
+  the same death resolves differently in a lived-in world.
+- **`buildWorldStack`** — the strategic counterpart to `buildCombatStack`: one
+  call assembles environment, factions, rumors, districts, presentation,
+  defeat fallout, encounters, and quests; all ten starters migrated with
+  byte-identical worlds.
+- **The Director's Ledger** — the strategy screen the handbook always promised:
+  pressures, fallout, leverage, factions, districts, markets, opportunities,
+  rumors, people, arcs, endgame trajectory, party, and materials, each section
+  rendered only when its system carries real state. Plus an `AI_RPG_DEBUG=1`
+  inspector report over the simulation registries.
+- **`inspect-save` validates like Continue.** The same load authorities gate
+  both; a save Continue would reject fails inspection with the identical
+  structured error. Bounded globals, event-log tail, player and world summary.
+- **A module save-migration seam** — `meta.moduleVersions` stamps, an optional
+  `migrateState` hook per module, and restored-store namespace initialization —
+  wired into the SHIPPED restore path, proven against doctored legacy saves.
+- **Session UX floor.** Finale stats ("THE RUN IN NUMBERS"), recent-run history
+  at the adventure select, action menus suppressed during dialogue and on the
+  death frame, narration joins punctuated, extras rendered inside the frame,
+  and misinputs (out-of-range numbers, rejected menu picks) cost no turn.
+- **Content truth.** Created characters carry their pack's ability tags in
+  every starter (abilities were invisible to created characters in 5+ packs),
+  all ten progression trees are completable (9 of 10 were mathematically
+  impossible), players have real HP bars, and verb help is honest in both
+  directions (20 dead flavor verbs pulled; brace/reposition documented).
+- **Test files are typechecked in CI** (`tsconfig.tests.json` + a one-leg
+  gate); 203 accumulated test-type errors burned to zero.
+
+### Fixed
+
+- **WorldStore detaches entities and zones at ingestion** — the root cause of
+  the cross-instance state-bleed class; 67 call-site clones removed, the
+  test-harness workarounds dropped, and six immunity assertions that had gone
+  vacuous under the new contract revived with a proven red path.
+- **`replay --replay` no longer diverges silently.** Re-simulation is not
+  sound with world-state modules, so the flag now restores the save (same as
+  Continue) with an honest structured notice; re-simulation parity is v2.8.
+- Free-text `equip <item>` no longer routes to `use` and consumes the item;
+  `move <zone>` is no longer hijacked by a similarly-named corpse.
+- Pressure state is read from where it actually lives (endgame, Ledger, and
+  inspect-save were reading a namespace nothing writes); encounter-spawned
+  clones now attribute kills to their faction (reputation, alert, and rumor
+  valence); legacy saves no longer trigger historical spawn bursts on Continue.
+- Successful unlocks narrate ("Unlocked Toughened") instead of "All is quiet.";
+  a `.gitattributes` normalizes line endings and the packaging shebang test is
+  checkout-tolerant; the stale v2.6.0 lockfile, template mojibake, and missing
+  template engines floor are corrected.
+
+### Changed
+
+- `defeat-fallout`'s default boss tag is `role:boss` — matching every shipped
+  starter, so boss kills accrue at their authored significance.
+- The pack-authoring template teaches the detach-at-ingestion contract instead
+  of call-site cloning.
+
 ## [2.6.0] - 2026-07-18
 
 The `run` command is a real game now. Produced by a full dogfood swarm — a

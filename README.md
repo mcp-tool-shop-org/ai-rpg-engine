@@ -35,7 +35,7 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 
 ---
 
-## Current Status (v2.6.0)
+## Current Status (v2.7.0)
 
 **What works and is tested:**
 - Core runtime: world state, events, actions, ticks, replay — stable since v1.0; deterministic byte-identical replay (per-instance id counter, seeded RNG)
@@ -50,14 +50,21 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 - All 10 starter worlds use `buildCombatStack()` — the proven composition spine
 - Cognition config API (`cognition: CognitionCoreConfig | false`) for per-starter AI tuning
 - Tag taxonomy and validation utilities for content authoring
+- **The world reacts (v2.7):** kills accrue heat and erode district safety; a per-round world tick spawns hidden pressures that surface as rumors ("Whispers reach you…"), escalate, and expire with consequences; the ~30 authored encounter compositions fire on zone entry in all 10 starters — deterministic per-seed, bloodier districts spawn more, boss set-pieces protected
+- **A reason to return (v2.7):** a minimal quest loop on the long-shipped schema — quests offer on triggers, track kill/reach/progress objectives, and pay XP and items exactly once; four authored quests, a **Journal** screen, quest beats in the round's narration
+- **Equipment reaches combat (v2.7):** `equip`/`unequip` move real numbers through the status layer the combat formulas already read — zero combat-code changes; gladiator's trident-and-net is wired end-to-end with a test-pinned hit-chance delta
+- **Seeded runs (v2.7):** every fresh session prints its seed with the exact replay command; `--seed <n>` reproduces a session byte-for-byte; combat, resist, ability, and tactics rolls all consume the world seed — and endings read the run you actually played (live heat, pressures, faction accruals, player level)
+- **`buildWorldStack()` (v2.7):** the strategic composition spine beside `buildCombatStack()` — one call assembles environment, factions, rumors, districts, defeat fallout, encounters, and quests; plus the **Director's Ledger** strategy screen, an `AI_RPG_DEBUG=1` simulation inspector, `inspect-save` gated by the same authorities as Continue, and a module save-migration seam on the shipped restore path
 - `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **4292 tests** (deterministic across repeated runs; coverage ratchet-enforced in CI)
+- Full test suite: **4797 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
 
 **What is rough or incomplete:**
 - The AI worldbuilding studio (Ollama layer) is more lightly tested than the simulation core, and needs a local Ollama daemon; it is entirely optional — the engine and the `run` loop need no network
 - The narration/audio stack builds deterministic audio commands but there is **no terminal audio backend** — nothing plays a sound; the commands are an integration hook for a GUI/web embedder
 - Multiplayer (two human players sharing one world) is **not** built — it is a networking layer, deliberately out of scope; profiles today target a single controller
+- `replay --replay` restores the save instead of re-simulating: re-simulation is not sound with world-state modules (world ticks and encounter spawns evolve outside the action log); parity is v2.8 work
+- Quests ship in the fantasy and zombie starters first and the equip loop is wired in gladiator first — the machinery is engine-wide; the content rollout is deliberate
 - Documentation is extensive but not every handbook page reflects the very latest APIs
 
 ---
@@ -270,18 +277,22 @@ The 10 starter worlds are **composition examples** — they demonstrate how to c
 
 ### Where we are now
 
-The simulation runtime, combat composition spine, and starter authoring path are complete — 3613 tests across 193 files, all 10 starters on `buildCombatStack`, deterministic byte-identical replay, full AI decision scoring, and a CLI scaffold command. **v2.5 delivers per-entity rule resolution — the marquee Plug-in Profiles feature: a `might` fighter and a `will` mystic resolve combat in one fight, each reading stats through its own mapping.**
+Both composition spines are complete — 4797 tests across 259 files, all 10 starters on `buildCombatStack` **and** `buildWorldStack`, deterministic byte-identical replay under printed seeds, full AI decision scoring, and a CLI that scaffolds, runs, validates, and inspects. **v2.7 lights up the strategic tier: the world reacts to how you play (heat, pressures, encounters), quests give a run a spine, equipment changes real numbers, and every session is replayable from the seed it prints.**
 
-**Recent release arc (v2.3.3–v2.6.0):**
-- v2.3.3–v2.3.7 — Consumer artifact proof, Combat Stack hardening, all 10 starters on `buildCombatStack`, published starter template, `create-starter` CLI
+**Recent release arc (v2.4.0–v2.7.0):**
 - v2.4.0 — Party combat (ally-targeting / heal / buff / revive, friend-foe AoE), status-effect system (modifiers + DoT/HoT + reactive triggers), plug-in Profiles Phase 1, content `validate`/`scaffold` CLI
-- **v2.5.0 — Per-entity rule resolution (mixed-playstyle combat), the `applyProfile` loader + per-entity abilities, profile templates + `profile` CLI, and a full health pass (byte-identical-replay fix, correctness hardening, quality gates made real)**
+- v2.5.0 — Per-entity rule resolution (mixed-playstyle combat), the `applyProfile` loader + per-entity abilities, profile templates + `profile` CLI, and a full health pass
+- v2.6.0 — The `run` command became a real game: enemies act on their own AI profiles, victory/defeat, save/resume, abilities and XP on the menu, the `ai` studio bin, and the narration stack
+- **v2.7.0 — The world reacts and there's a reason to return: heat → pressures → narrated consequences, zone-entry encounters, a quest loop + Journal, equipment in combat, seeded replayable runs, live endgame inputs, `buildWorldStack`, the Director's Ledger, and a save-migration seam**
 
-### Next
+### Next (the v2.8 spine)
 
+- The economy tier — live district economies, a trade surface priced by `computeItemValue`, crafting/salvage loops (the modules ship today; the wiring is next)
+- Companions and social verbs — recruit/party mechanics and the bribe/intimidate/seed-rumor playstyle layer over the leverage system
+- `--replay` re-simulation parity with world-state modules, and the remaining Director-formatter surfaces
 - Multiplayer — two *human* players sharing one world (a networking layer, deliberately deferred; single-controller shared profiles ship today as [`shared-profiles.ts`](docs/examples/shared-profiles.ts))
 - Serializable formula overrides — per-profile formula tuning (blocked on a formula DSL; profiles carry stat mappings today, not closures)
-- API documentation sync — ensure every handbook page reflects the v2.5 APIs
+- API documentation sync — ensure every handbook page reflects the v2.7 APIs
 
 ### Destination: Plug-in Profiles
 

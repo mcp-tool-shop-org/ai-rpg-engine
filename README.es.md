@@ -35,30 +35,37 @@ Este es un **motor de composición**, no un juego completo. Los 10 mundos inicia
 
 ---
 
-## Estado actual (v2.6.0)
+## Estado actual (v2.7.0)
 
-**Lo que funciona y se ha probado:**
-- Motor principal: estado del mundo, eventos, acciones, ciclos, reproducción: estable desde la versión 1.0; reproducción determinista con bytes idénticos (contador de ID por instancia, RNG con semilla).
-- Sistema de combate: 5 acciones, 4 estados de combate, 4 estados de enfrentamiento, interceptación de compañeros, flujo de derrota, tácticas de IA.
-- Habilidades: costos, tiempos de espera, comprobaciones de estadísticas, efectos tipados, vocabulario de estado de 11 etiquetas, selección consciente de la IA.
-- **Combate en grupo (v2.4):** orientación a aliados (curación/mejora/revivir), filtrado AoE de amigos/enemigos, selectores de objetivos: un curandero puede curar a un compañero; el AoE enemigo evita a los aliados.
-- **Efectos de estado (v2.4):** los modificadores de estadísticas pasivos afectan al combate, DoT/HoT deterministas basados en el contador de ciclos, desencadenantes reactivos con profundidad limitada (espinas/reflejo).
-- **Perfiles complementarios: resolución de reglas por entidad (v2.5):** un luchador `poderoso` y un místico `voluntad` resuelven el combate en una sola pelea, cada uno leyendo las estadísticas a través de su propio mapeo. `RuleProfile` + `WorldState.ruleProfiles` + `EntityState.ruleProfileId`; `applyProfile()` adjunta un perfil (mapeo de estadísticas, grupos de recursos, habilidades por entidad); `buildProfile()`, `validateProfileSet()` (se rechazan los ID duplicados), 10 plantillas derivadas del mundo inicial y un comando CLI `profile`.
-- **Bucle de ejecución jugable (v2.6):** el juego final es real, no una demostración: los enemigos actúan según sus propios perfiles de intención de IA (`agresivo`/`cauteloso`/`territorial`/`calculador`), una pelea termina en victoria o derrota, puedes guardar y reanudar, y las habilidades y la experiencia están en el menú de acciones. `run <path>` carga un juego que has configurado. Interfaz de usuario terminal compuesta con una interfaz HUD fácil de consultar y colores accesibles (respeta `NO_COLOR` / no TTY).
-- **El estudio de diseño de IA se incluye como su propio comando `ai` (v2.6):** `npm install -g @ai-rpg-engine/ollama` → `ai chat`: estructura básica, evaluación crítica y equilibrio del contenido en comparación con un modelo Ollama local.
-- Capa de decisión unificada: el combate + la puntuación de habilidades se combinan en una sola llamada (`selectBestAction`).
-- Los 10 mundos iniciales utilizan `buildCombatStack()`: la estructura de composición probada.
-- API de configuración de cognición (`cognition: CognitionCoreConfig | false`) para el ajuste de la IA por mundo inicial.
-- Taxonomía de etiquetas y utilidades de validación para la creación de contenido.
-- `ai-rpg-engine create-starter <name>`: estructura básica de un nuevo juego (independiente, se ejecuta fuera del monorepositorio); comandos `validate` + `scaffold` para el contenido; carga paquetes desde JSON.
-- Plantilla inicial publicada en npm (`@ai-rpg-engine/starter-template`).
-- Conjunto completo de pruebas: **4292 pruebas** (determinista en ejecuciones repetidas; cumplimiento del límite de cobertura en CI).
+**Qué funciona y ha sido probado:**
+- Motor principal: estado del mundo, eventos, acciones, ciclos de juego, repetición — estable desde la v1.0; repetición determinista con bytes idénticos (contador de ID por instancia, RNG con semilla)
+- Sistema de combate: 5 acciones, 4 estados de combate, 4 estados de enfrentamiento, interceptación de compañeros, flujo de derrota, tácticas de IA
+- Habilidades: costos, tiempos de espera, comprobaciones de estadísticas, efectos tipificados, vocabulario de estado de 11 etiquetas, selección consciente de la IA
+- **Combate en grupo (v2.4):** apuntar a aliados (curación/mejora/revivir), filtrado AoE de amigos/enemigos, selectores de objetivos — un curandero puede curar a un compañero; el AoE enemigo no afecta a los aliados
+- **Efectos de estado (v2.4):** los modificadores pasivos de estadísticas afectan al combate, DoT/HoT determinista basado en el contador de ciclos, desencadenantes reactivos con profundidad limitada (espinas/reflejo)
+- **Perfiles de complemento — resolución de reglas por entidad (v2.5):** un luchador `poderoso` y un místico `voluntarioso` resuelven el combate en una sola pelea, cada uno leyendo las estadísticas a través de su propio mapeo. `RuleProfile` + `WorldState.ruleProfiles` + `EntityState.ruleProfileId`; `applyProfile()` adjunta un perfil (mapeo de estadísticas, grupos de recursos, habilidades por entidad); `buildProfile()`, `validateProfileSet()` (se rechazan los ID duplicados), 10 plantillas derivadas iniciales y un comando CLI `profile`
+- **Bucle de juego `run` (v2.6):** el juego final es real, no una demostración — los enemigos actúan según sus propios perfiles de intención de IA (`agresivo`/`cauteloso`/`territorial`/`calculador`), una pelea termina en victoria o derrota, puedes guardar y reanudar, y las habilidades y la experiencia están en el menú de acciones. `run <path>` carga un juego que has creado. Interfaz de usuario final compuesta con un HUD fácil de consultar y colores accesibles (respeta `NO_COLOR` / no TTY)
+- **El estudio de diseño de IA se ofrece como su propio comando `ai` (v2.6):** `npm install -g @ai-rpg-engine/ollama` → `ai chat` — crea, critica y equilibra el contenido con un modelo Ollama local
+- Capa de decisión unificada: combate + puntuación de habilidades combinadas en una sola llamada (`selectBestAction`)
+- Los 10 mundos iniciales utilizan `buildCombatStack()` — la estructura probada
+- API de configuración de cognición (`cognition: CognitionCoreConfig | false`) para ajustar la IA por mundo inicial
+- Taxonomía de etiquetas y utilidades de validación para la creación de contenido
+- **El mundo reacciona (v2.7):** las muertes acumulan calor y erosionan la seguridad del distrito; un ciclo mundial por ronda genera presiones ocultas que surgen como rumores ("Los susurros te alcanzan..."), se intensifican y desaparecen con consecuencias; las ~30 composiciones de encuentros creadas se activan al entrar en la zona en los 10 mundos iniciales — determinista por semilla, los distritos más sangrientos generan más, las piezas clave del jefe están protegidas
+- **Una razón para volver (v2.7):** un bucle de misión mínimo en el esquema que se ha estado utilizando durante mucho tiempo — las misiones ofrecen desencadenantes, rastrean objetivos de muerte/alcance/progreso y pagan experiencia y objetos exactamente una vez; cuatro misiones creadas, una pantalla de **Diario**, momentos de la misión en la narración del ciclo
+- **El equipo afecta al combate (v2.7):** `equip`/`unequip` mueve números reales a través de la capa de estado que las fórmulas de combate ya leen — no hay cambios en el código de combate; el tridente y la red del gladiador están conectados de extremo a extremo con una diferencia de probabilidad de golpe probada
+- **Ejecuciones con semilla (v2.7):** cada sesión nueva imprime su semilla con el comando exacto para repetir; `--seed <n>` reproduce una sesión byte por byte; el combate, la resistencia, las habilidades y los roles tácticos consumen todos la semilla del mundo — y los finales leen la ejecución que realmente jugaste (calor en vivo, presiones, acumulaciones de facciones, nivel del jugador)
+- **`buildWorldStack()` (v2.7):** la estructura de composición estratégica junto a `buildCombatStack()` — una sola llamada ensambla el entorno, las facciones, los rumores, los distritos, las consecuencias de la derrota, los encuentros y las misiones; además, la pantalla de estrategia del **Director's Ledger**, un inspector de simulación con `AI_RPG_DEBUG=1`, `inspect-save` restringido por las mismas autoridades que Continuar y una unión de migración de módulos guardados en la ruta de restauración utilizada
+- `ai-rpg-engine create-starter <name>` — crea un nuevo juego (independiente, se ejecuta fuera del monorepositorio); comandos `validate` + `scaffold` para el contenido; carga paquetes desde JSON
+- Plantilla inicial publicada en npm (`@ai-rpg-engine/starter-template`)
+- Suite de pruebas completa: **4797 pruebas** (determinista en ejecuciones repetidas; los archivos de prueba se verifican por tipo en CI; la cobertura se refuerza)
 
-**Lo que es rudimentario o está incompleto:**
-- El estudio de creación de mundos con IA (capa Ollama) se prueba menos que el núcleo de la simulación y necesita un daemon Ollama local; es totalmente opcional: el motor y el bucle `run` no necesitan conexión a la red.
-- La pila de narración/audio genera comandos de audio deterministas, pero **no hay ningún backend de audio terminal**: nada reproduce un sonido; los comandos son un punto de integración para un incrustador GUI/web.
-- El modo multijugador (dos jugadores humanos que comparten un mundo) **no** está implementado: es una capa de red, deliberadamente fuera del alcance; los perfiles actuales se dirigen a un solo controlador.
-- La documentación es extensa, pero no todas las páginas del manual reflejan las API más recientes.
+**Qué es rudimentario o incompleto:**
+- El estudio de creación de mundos con IA (capa Ollama) está menos probado que el núcleo de simulación y necesita un demonio Ollama local; es completamente opcional — el motor y el bucle `run` no necesitan red
+- La pila de narración/audio crea comandos de audio deterministas, pero **no hay ningún backend de audio para la terminal** — nada reproduce un sonido; los comandos son un punto de integración para un incrustador GUI/web
+- El multijugador (dos jugadores humanos compartiendo un mundo) **no** está implementado — es una capa de red, deliberadamente fuera del alcance; los perfiles hoy en día se dirigen a un solo controlador
+- `replay --replay` restaura la partida guardada en lugar de volver a simularla: la re-simulación no funciona correctamente con los módulos de estado del mundo (los ciclos del mundo y los encuentros evolucionan fuera del registro de acciones); la paridad es el trabajo de v2.8
+- Las misiones se envían primero en los mundos de fantasía y zombis, y el bucle de equipamiento está conectado primero en el gladiador — la maquinaria es a nivel de motor; el despliegue de contenido es deliberado
+- La documentación es extensa, pero no todas las páginas del manual reflejan las API más recientes
 
 ---
 
@@ -265,18 +272,22 @@ Los 10 mundos iniciales son **ejemplos de composición**: demuestran cómo combi
 
 ### Dónde estamos ahora
 
-El tiempo de ejecución de la simulación, la estructura de composición del combate y la ruta inicial para el desarrollo están completos: 3613 pruebas en 193 archivos, los 10 personajes iniciales en `buildCombatStack`, reproducción determinista con bytes idénticos, puntuación completa de las decisiones de la IA y un comando CLI para generar una estructura básica. **La versión 2.5 ofrece la resolución de reglas por entidad: la característica principal son los perfiles de complementos: un luchador "poderoso" y un místico "voluntarioso" resuelven el combate en una sola pelea, cada uno leyendo las estadísticas a través de su propio mapeo.**
+Ambas estructuras de composición están completas — 4797 pruebas en 259 archivos, los 10 mundos iniciales en `buildCombatStack` **y** `buildWorldStack`, repetición determinista con bytes idénticos bajo semillas impresas, puntuación completa de la decisión de la IA y una CLI que crea, ejecuta, valida e inspecciona. **v2.7 activa el nivel estratégico: el mundo reacciona a cómo juegas (calor, presiones, encuentros), las misiones le dan un hilo conductor a la ejecución, el equipo cambia números reales y cada sesión se puede repetir desde la semilla que imprime.**
 
-**Ciclo de lanzamiento reciente (v2.3.3–v2.6.0):**
-- v2.3.3–v2.3.7: prueba del artefacto para el usuario, mejora de la estructura de combate, los 10 personajes iniciales en `buildCombatStack`, plantilla inicial publicada, CLI `create-starter`.
-- v2.4.0: combate grupal (ataque/curación/mejora/revivir dirigidos a aliados, efecto de estado del sistema (modificadores + DoT/HoT + desencadenantes reactivos), fase 1 de los perfiles de complementos, CLI para validar/generar la estructura básica del contenido.
-- **v2.5.0: resolución de reglas por entidad (combate con estilos de juego mixtos), el cargador `applyProfile` + habilidades por entidad, plantillas de perfil + CLI `profile` y una revisión completa de la salud (corrección de reproducción con bytes idénticos, mejora de la corrección, implementación de controles de calidad).**
+**Versión más reciente (v2.4.0–v2.7.0):**
+*   v2.4.0: combate en grupo (ataque a aliados/curación/mejora/revivir, área de efecto amigo-enemigo), sistema de efectos de estado (modificadores + daño/curación por turno + desencadenantes reactivos), fase 1 de los perfiles de complementos y comandos CLI `validate`/`scaffold`.
+*   v2.5.0: resolución de reglas por entidad (combate con estilos de juego mixtos), el cargador `applyProfile` + habilidades por entidad, plantillas de perfil + comando CLI `profile` y una revisión completa de la salud.
+*   v2.6.0: el comando `run` se convirtió en un juego real: los enemigos actúan según sus propios perfiles de IA, victoria/derrota, guardar/continuar, habilidades y experiencia en el menú, el archivo `ai` del estudio y la pila de narración.
+*   **v2.7.0: el mundo reacciona y hay una razón para volver: calor → presiones → consecuencias narradas, encuentros al entrar en la zona, un ciclo de misiones + diario, equipo en combate, ejecuciones repetibles programadas, entradas dinámicas del juego final, `buildWorldStack`, el libro del director y una transición de guardado.**
 
-### Siguiente
+### Próxima versión (la base v2.8)
 
-- Multijugador: dos jugadores *humanos* comparten un mundo (una capa de red, deliberadamente pospuesta; los perfiles compartidos con un solo controlador se lanzan hoy como [`shared-profiles.ts`](docs/examples/shared-profiles.ts)).
-- Anulaciones de fórmulas serializables: ajuste de la fórmula por perfil (bloqueado en un DSL de fórmulas; los perfiles contienen mapeos de estadísticas hoy, no funciones anónimas).
-- Sincronización de la documentación de la API: asegurarse de que cada página del manual refleje las API de la v2.5.
+*   Nivel económico: economías de distritos en vivo, una superficie comercial con precios determinados por `computeItemValue`, ciclos de creación/reciclaje (los módulos se envían hoy; la configuración es lo siguiente).
+*   Compañeros y verbos sociales: mecánica de reclutamiento/grupo y la capa de estilo de juego de soborno/intimidación/difusión de rumores sobre el sistema de influencia.
+*   `--replay`: paridad de re-simulación con los módulos del estado del mundo, y las superficies restantes del formateador del director.
+*   Multijugador: dos jugadores *humanos* que comparten un mundo (una capa de red, deliberadamente pospuesta; los perfiles compartidos de un solo controlador se envían hoy como [`shared-profiles.ts`](docs/examples/shared-profiles.ts)).
+*   Anulaciones de fórmulas serializables: ajuste de fórmulas por perfil (bloqueado en un DSL de fórmulas; los perfiles contienen asignaciones de estadísticas hoy, no funciones anónimas).
+*   Sincronización de la documentación de la API: asegurarse de que cada página del manual refleje las API de v2.7.
 
 ### Destino: Perfiles de complementos
 
