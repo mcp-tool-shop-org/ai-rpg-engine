@@ -17,8 +17,9 @@ import { COMBAT_STATES, DEFAULT_STAT_MAPPING } from './combat-core.js';
 import type { CombatStatMapping } from './combat-core.js';
 import { ENGAGEMENT_STATES } from './engagement-core.js';
 import { getCognition } from './cognition-core.js';
-import { BUILTIN_COMBAT_ROLES } from './combat-roles.js';
+import { BUILTIN_COMBAT_ROLES, COMPANION_ROLE_BIAS } from './combat-roles.js';
 import type { CombatRole } from './combat-roles.js';
+import type { CompanionRole } from './companion-core.js';
 import type { CombatResourceProfile } from './combat-resources.js';
 import { applyResourceIntentModifiers } from './combat-resources.js';
 import { affiliationOf } from './targeting.js';
@@ -209,6 +210,20 @@ function buildContext(entity: EntityState, world: WorldState, config?: CombatInt
       const role = roleTag.slice(5) as CombatRole;
       const template = BUILTIN_COMBAT_ROLES[role];
       if (template) packBias = template.bias;
+    }
+  }
+  if (!packBias) {
+    // F-72b258df: a companion's own role tag is namespaced 'companion:<role>'
+    // (companion-core.ts's companionRoleTag), never 'role:<role>' — the check
+    // above never matched it, so every companion scored identically through
+    // the six-intent system regardless of CompanionRole. Every recruit
+    // already carries this tag from the recruit verb (companion-core.ts's
+    // addCompanionTags), so this lights up with zero new tag-authoring.
+    const companionTag = entity.tags.find(t => t.startsWith('companion:'));
+    if (companionTag) {
+      const role = companionTag.slice('companion:'.length) as CompanionRole;
+      const bias = COMPANION_ROLE_BIAS[role];
+      if (bias) packBias = bias;
     }
   }
 

@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
-import type { EntityState } from '@ai-rpg-engine/core';
+import type { EntityState, WorldState } from '@ai-rpg-engine/core';
 import { createCombatCore, DEFAULT_STAT_MAPPING, simpleRoll } from './combat-core.js';
 import { statusCore, applyStatus } from './status-core.js';
 import { registerStatusDefinitions, clearStatusRegistry } from './status-semantics.js';
@@ -250,5 +250,94 @@ describe('simpleRoll — world-seed threading (F-SEED-combat-rolls-seed-blind)',
       return log.join('|');
     };
     expect(run()).toBe(run());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-e2d3aa7c: companion-on-companion interception. v2.8's passive
+// interception protected only the player — `shouldCheck`'s DEFAULT (used
+// whenever a starter doesn't override formulas.shouldIntercept —
+// buildCombatFormulas never sets it, only withEngagement does) was
+// `target.id === world.playerId`, full stop, so a companion being attacked
+// had zero interception protection. Both gates are widened here:
+//   1. shouldCheck's default now also accepts a live, actively-tagged
+//      companion target.
+//   2. the ally-filter's second gate — the candidate interceptor must
+//      already carry 'engagement:engaged' unless the target is the player —
+//      no longer applies when the TARGET is a companion either. A companion,
+//      like the player, doesn't need a protector who is already locked in
+//      melee before they can be shielded from a surprise hit.
+// ---------------------------------------------------------------------------
+
+describe('companion-on-companion interception (F-e2d3aa7c)', () => {
+  const makeCompanion = (id: string, zoneId: string, overrides?: Partial<EntityState>): EntityState => ({
+    id,
+    blueprintId: id,
+    type: 'npc',
+    name: id,
+    tags: ['companion'],
+    stats: { vigor: 5, instinct: 5, will: 3 },
+    resources: { hp: 20, maxHp: 20, stamina: 5 },
+    statuses: [],
+    zoneId,
+    ...overrides,
+  });
+
+  const isAlly = (id: string, world: WorldState) => world.entities[id]?.tags.includes('companion') ?? false;
+
+  it('an enemy attacking a companion (not the player) can be intercepted by another companion — no shouldIntercept override, no prior engagement required on the interceptor', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore({ isAlly, interceptChance: () => 100 })],
+      entities: [
+        makeEntity('player', 'z', { type: 'player', tags: ['player'] }),
+        makeCompanion('friend', 'z'),   // the target: a live companion, NOT the player
+        makeCompanion('guardian', 'z'), // the would-be interceptor: fresh, never engaged this fight
+        makeEntity('foe', 'z', { type: 'enemy', tags: ['enemy'], stats: { vigor: 20, instinct: 50, will: 3 } }),
+      ],
+      zones: [{ id: 'z', roomId: 'r', name: 'Z', tags: [], neighbors: [] }],
+      playerId: 'player',
+      seed: 0,
+    });
+
+    for (let tick = 1; tick <= 30; tick++) {
+      engine.world.entities.friend.resources.hp = 20;
+      engine.world.entities.guardian.resources.hp = 20;
+      engine.world.entities.foe.resources.stamina = 5;
+      const events = engine.submitActionAs('foe', 'attack', { targetIds: ['friend'] });
+      const intercepted = events.find((e) => e.type === 'combat.companion.intercepted');
+      if (intercepted) {
+        expect(intercepted.payload.interceptorId).toBe('guardian');
+        expect(intercepted.payload.targetId).toBe('friend');
+        expect(engine.world.entities.friend.resources.hp).toBe(20); // untouched — guardian took it instead
+        return;
+      }
+    }
+    expect.unreachable('expected at least one companion-on-companion interception');
+  });
+
+  it('does not extend interception to a non-companion, non-player bystander — the widening is scoped to companions, not a blanket bypass', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore({ isAlly, interceptChance: () => 100 })],
+      entities: [
+        makeEntity('player', 'z', { type: 'player', tags: ['player'] }),
+        makeEntity('bystander', 'z', { type: 'npc', tags: ['npc'] }), // no 'companion' tag
+        makeCompanion('guardian', 'z'),
+        makeEntity('foe', 'z', { type: 'enemy', tags: ['enemy'], stats: { vigor: 20, instinct: 50, will: 3 } }),
+      ],
+      zones: [{ id: 'z', roomId: 'r', name: 'Z', tags: [], neighbors: [] }],
+      playerId: 'player',
+      seed: 0,
+    });
+
+    let hitCount = 0;
+    for (let tick = 1; tick <= 30; tick++) {
+      engine.world.entities.bystander.resources.hp = 50;
+      engine.world.entities.guardian.resources.hp = 20;
+      engine.world.entities.foe.resources.stamina = 5;
+      const events = engine.submitActionAs('foe', 'attack', { targetIds: ['bystander'] });
+      expect(events.some((e) => e.type === 'combat.companion.intercepted')).toBe(false);
+      if (events.some((e) => e.type === 'combat.damage.applied')) hitCount++;
+    }
+    expect(hitCount).toBeGreaterThan(0);
   });
 });

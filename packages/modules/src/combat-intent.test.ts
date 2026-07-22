@@ -372,6 +372,74 @@ describe('combat-intent: pack biases', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Companion Role Bias (F-72b258df) — buildContext's companion-tag fallback
+// ---------------------------------------------------------------------------
+//
+// Before this fix, CompanionRole carried zero combat personality: every
+// companion scored identically through the six-intent system because
+// buildContext's role-tag fallback only ever matched a bare 'role:*' tag —
+// never 'companion:<role>' (companion-core.ts's companionRoleTag), which is
+// the tag every recruit actually carries.
+
+describe('combat-intent: companion role bias (F-72b258df)', () => {
+  it('a fighter companion and a scholar companion resolve DIFFERENT pack biases through the companion:<role> tag fallback', () => {
+    const fighter = makeEntity('fighter-comp', 'npc', ['companion', 'companion:fighter']);
+    const fighterEngine = buildEngine([fighter, makeEntity('target', 'player', ['player'])]);
+    const fighterDecision = selectNpcCombatAction(fighter, fighterEngine.store.state);
+
+    const scholar = makeEntity('scholar-comp', 'npc', ['companion', 'companion:scholar']);
+    const scholarEngine = buildEngine([scholar, makeEntity('target', 'player', ['player'])]);
+    const scholarDecision = selectNpcCombatAction(scholar, scholarEngine.store.state);
+
+    expect(fighterDecision.packBias).toBe('companion-fighter-frontline');
+    expect(scholarDecision.packBias).toBe('companion-scholar-cautious');
+    expect(fighterDecision.packBias).not.toBe(scholarDecision.packBias);
+  });
+
+  it('an explicit role:<role> tag still wins over a companion:<role> tag on the same entity — the new fallback is checked LAST', () => {
+    // Tagged with BOTH — 'role:brute' must win since it is checked first in buildContext.
+    const npc = makeEntity('npc', 'enemy', ['enemy', 'role:brute', 'companion', 'companion:scholar']);
+    const target = makeEntity('target', 'player', ['player']);
+    const engine = buildEngine([npc, target]);
+
+    const decision = selectNpcCombatAction(npc, engine.store.state);
+
+    expect(decision.packBias).toBe('brute-aggression');
+  });
+
+  it('an unrecognized companion:<role> suffix leaves packBias unset, the same degrade behavior an unrecognized role:<role> tag already has', () => {
+    const npc = makeEntity('npc', 'npc', ['companion', 'companion:muscle']);
+    const target = makeEntity('target', 'player', ['player']);
+    const engine = buildEngine([npc, target]);
+
+    const decision = selectNpcCombatAction(npc, engine.store.state);
+
+    expect(decision.packBias).toBeUndefined();
+  });
+
+  it('a fighter companion is measurably more inclined to attack/protect than a scholar companion at identical stats/morale (the bias actually changes scoring, not just the label)', () => {
+    const makeCombatant = (id: string, tag: string) => makeEntity(id, 'npc', ['companion', tag], {
+      resources: { hp: 20, maxHp: 20, stamina: 5 },
+    });
+
+    const fighter = makeCombatant('fighter-comp', 'companion:fighter');
+    const fighterEngine = buildEngine([fighter, makeEntity('target', 'player', ['player'])]);
+    const fighterDecision = selectNpcCombatAction(fighter, fighterEngine.store.state);
+    const fighterAttack = [fighterDecision.chosen, ...fighterDecision.alternatives].find(s => s.intent === 'attack');
+
+    const scholar = makeCombatant('scholar-comp', 'companion:scholar');
+    const scholarEngine = buildEngine([scholar, makeEntity('target', 'player', ['player'])]);
+    const scholarDecision = selectNpcCombatAction(scholar, scholarEngine.store.state);
+    const scholarAttack = [scholarDecision.chosen, ...scholarDecision.alternatives].find(s => s.intent === 'attack');
+
+    expect(fighterAttack).toBeDefined();
+    expect(scholarAttack).toBeDefined();
+    // fighter: attack +4; scholar: attack -8 — a 12-point spread on the exact same target/stats/morale.
+    expect(fighterAttack!.score).toBeGreaterThan(scholarAttack!.score);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Group 4: Explainability
 // ---------------------------------------------------------------------------
 
