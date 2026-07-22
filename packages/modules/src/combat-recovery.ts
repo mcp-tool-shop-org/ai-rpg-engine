@@ -383,6 +383,21 @@ export function createCombatRecovery(config: CombatRecoveryConfig = {}): EngineM
         for (const entity of Object.values(world.entities)) {
           if (!isAlive(entity)) continue;
           const maxStamina = entity.resources.maxStamina ?? 5;
+
+          // Defensive init (F-4b9c5aee): an entity authored with a maxStamina
+          // cap but no starting stamina value reads `undefined < maxStamina`
+          // as false FOREVER below — this loop's own guard silently skipped
+          // it every tick, so the field never appeared and every
+          // stamina-gated verb (attack/guard's `?? 0` fallback in
+          // combat-core.ts) rejected with "not enough stamina" for the
+          // entity's whole lifetime. Narrowly gated on purpose: fires only
+          // when maxStamina is a real number AND stamina is exactly
+          // undefined, so it cannot touch any entity that already carries a
+          // numeric stamina value — even a real, hard-earned 0.
+          if (typeof entity.resources.maxStamina === 'number' && entity.resources.stamina === undefined) {
+            entity.resources.stamina = entity.resources.maxStamina;
+          }
+
           if (entity.resources.stamina < maxStamina) {
             const prev = entity.resources.stamina;
             entity.resources.stamina = Math.min(maxStamina, entity.resources.stamina + staminaRegenPerTick);

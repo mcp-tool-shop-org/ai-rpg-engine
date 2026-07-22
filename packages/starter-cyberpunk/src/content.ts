@@ -43,7 +43,12 @@ export const fixer: EntityState = {
   name: 'Kira',
   tags: ['npc', 'fixer', 'recruitable', 'fighter'],
   stats: { chrome: 2, reflex: 4, netrunning: 3 },
-  resources: { hp: 10 },
+  // maxHp/stamina/maxStamina (F-4b9c5aee): a recruitable companion needs the
+  // same resources shape enemies carry — without a real stamina value, every
+  // stamina-gated verb (attack/guard) rejects with "not enough stamina"
+  // forever (combat-core.ts's `resources.stamina ?? 0` fallback), so a
+  // recruited companion could never take a combat turn.
+  resources: { hp: 10, maxHp: 10, stamina: 4, maxStamina: 4 },
   statuses: [],
   zoneId: 'street-level',
   custom: {
@@ -60,7 +65,8 @@ export const rez: EntityState = {
   name: 'Rez',
   tags: ['npc', 'recruitable', 'scout'],
   stats: { chrome: 1, reflex: 6, netrunning: 5 },
-  resources: { hp: 8 },
+  // maxHp/stamina/maxStamina (F-4b9c5aee) — see Kira's comment above.
+  resources: { hp: 8, maxHp: 8, stamina: 2, maxStamina: 2 },
   statuses: [],
   zoneId: 'server-room',
   custom: {

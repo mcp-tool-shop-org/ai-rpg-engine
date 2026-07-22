@@ -54,7 +54,11 @@ export const ladyHimiko: EntityState = {
   name: 'Lady Himiko',
   tags: ['npc', 'noble', 'suspect', 'recruitable', 'diplomat'],
   stats: { discipline: 3, perception: 5, composure: 7 },
-  resources: { hp: 8, stamina: 2, honor: 22 },
+  // maxHp/maxStamina (F-4b9c5aee): a recruitable companion needs the same
+  // resources shape enemies carry — entityHpRatio/regen both read the max
+  // fields, and without them the entity always reads as full HP regardless
+  // of true damage taken.
+  resources: { hp: 8, maxHp: 8, stamina: 2, maxStamina: 2, honor: 22 },
   statuses: [],
   zoneId: 'great-hall',
   custom: {
@@ -71,7 +75,8 @@ export const magistrateSato: EntityState = {
   name: 'Magistrate Sato',
   tags: ['npc', 'official', 'investigator', 'recruitable', 'scout'],
   stats: { discipline: 4, perception: 7, composure: 5 },
-  resources: { hp: 10, stamina: 2, honor: 20 },
+  // maxHp/maxStamina (F-4b9c5aee) — see Lady Himiko's comment above.
+  resources: { hp: 10, maxHp: 10, stamina: 2, maxStamina: 2, honor: 20 },
   statuses: [],
   zoneId: 'great-hall',
   custom: {

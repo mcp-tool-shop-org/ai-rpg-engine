@@ -55,7 +55,12 @@ export const brotherAldric: EntityState = {
   name: 'Brother Aldric',
   tags: ['npc', 'recruitable', 'healer'],
   stats: { vigor: 3, instinct: 3, will: 7 },
-  resources: { hp: 12 },
+  // maxHp/stamina/maxStamina (F-4b9c5aee): a recruitable companion needs the
+  // same resources shape enemies carry — without a real stamina value, every
+  // stamina-gated verb (attack/guard) rejects with "not enough stamina"
+  // forever (combat-core.ts's `resources.stamina ?? 0` fallback), so a
+  // recruited companion could never take a combat turn.
+  resources: { hp: 12, maxHp: 12, stamina: 3, maxStamina: 3 },
   statuses: [],
   zoneId: 'chapel-nave',
   custom: {
@@ -72,7 +77,8 @@ export const sisterMaren: EntityState = {
   name: 'Sister Maren',
   tags: ['npc', 'recruitable', 'diplomat'],
   stats: { vigor: 2, instinct: 5, will: 5 },
-  resources: { hp: 10 },
+  // maxHp/stamina/maxStamina (F-4b9c5aee) — see Brother Aldric's comment above.
+  resources: { hp: 10, maxHp: 10, stamina: 2, maxStamina: 2 },
   statuses: [],
   zoneId: 'chapel-entrance',
   custom: {
