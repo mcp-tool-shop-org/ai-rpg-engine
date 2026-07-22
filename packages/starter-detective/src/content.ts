@@ -1,7 +1,7 @@
 // Gaslight Detective — content definitions
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
+import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition, QuestDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
@@ -34,9 +34,14 @@ export const player: EntityState = {
   name: 'Inspector',
   tags: ['player', 'law', 'investigator'],
   stats: { perception: 7, eloquence: 5, grit: 4 },
-  resources: { hp: 15, maxHp: 15, stamina: 4, composure: 12 },
+  // F-92c78519: a modest starting coin balance so `buy` is reachable at
+  // turn 1, not only after the inspector's first sale.
+  resources: { hp: 15, maxHp: 15, stamina: 4, composure: 12, coin: 25 },
   statuses: [],
-  inventory: [],
+  // F-86b9145d: the inspector's own signature tool, so the equip loop is
+  // reachable without character creation (created inspector characters carry
+  // it via the archetype's startingInventory).
+  inventory: ['magnifying-glass'],
   zoneId: 'crime-scene',
 };
 
@@ -59,11 +64,20 @@ export const constable: EntityState = {
   blueprintId: 'constable',
   type: 'npc',
   name: 'Constable Pike',
-  tags: ['npc', 'law', 'police', 'male'],
+  tags: ['npc', 'law', 'police', 'male', 'recruitable', 'fighter'],
   stats: { perception: 4, eloquence: 3, grit: 6 },
-  resources: { hp: 18, stamina: 4, composure: 10 },
+  // maxHp/maxStamina (F-4b9c5aee): a recruitable companion needs the same
+  // resources shape enemies carry — entityHpRatio/regen both read the max
+  // fields, and without them the entity always reads as full HP regardless
+  // of true damage taken.
+  resources: { hp: 18, maxHp: 18, stamina: 4, maxStamina: 4, composure: 10 },
   statuses: [],
   zoneId: 'crime-scene',
+  custom: {
+    companionRole: 'fighter',
+    companionAbilities: 'intimidation-backup,witness-calming',
+    personalGoal: 'Bring Hargreaves to proper justice, not back-alley vengeance',
+  },
 };
 
 export const servant: EntityState = {
@@ -71,11 +85,17 @@ export const servant: EntityState = {
   blueprintId: 'servant',
   type: 'npc',
   name: 'Mrs Calloway',
-  tags: ['npc', 'servant', 'witness', 'female'],
+  tags: ['npc', 'servant', 'witness', 'female', 'recruitable', 'scout'],
   stats: { perception: 5, eloquence: 4, grit: 3 },
-  resources: { hp: 8, stamina: 2, composure: 8 },
+  // maxHp/maxStamina (F-4b9c5aee) — see Constable Pike's comment above.
+  resources: { hp: 8, maxHp: 8, stamina: 2, maxStamina: 2, composure: 8 },
   statuses: [],
   zoneId: 'servants-hall',
+  custom: {
+    companionRole: 'scout',
+    companionAbilities: 'trade-advantage,witness-calming',
+    personalGoal: "See the Ashford household's secrets finally brought into the light",
+  },
 };
 
 // --- Enemies ---
@@ -327,6 +347,79 @@ export const widowDialogue: DialogueDefinition = {
     },
   },
 };
+
+// --- Quests (F-c07d6024, mirroring F-ENG005-quest-loop-min) ---
+//
+// Two authored QuestDefinitions — the explicit reason to keep pulling the
+// thread. Wired via buildWorldStack's `quests` config in setup.ts; quest-core
+// validates them at construction (fail loud) and drives offer → track →
+// complete → reward off the live event stream. Both are completable inside a
+// normal session with the shipped world alone (the front entrance and
+// Mr. Hargreaves both stand placed at setup).
+
+export const trailQuest: QuestDefinition = {
+  id: 'following-the-trail',
+  name: 'Following the Trail',
+  // Offered the moment the inspector steps into the parlour — the first
+  // stride beyond the study and the body.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'parlour' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'reach-the-entrance',
+      name: 'Reach the Front Entrance',
+      description: 'The names given up in the parlour lead out toward the docks',
+      objectives: ['Reach the Front Entrance'],
+      triggers: [
+        {
+          event: 'world.zone.entered',
+          condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'front-entrance' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [{ type: 'xp', params: { amount: 15 } }],
+};
+
+export const hargreavesQuest: QuestDefinition = {
+  id: 'closing-the-case',
+  name: 'Closing the Case',
+  // Offered on setting foot in the back alley itself — Hargreaves' ground.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'back-alley' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'confront-hargreaves',
+      name: 'Confront Hargreaves',
+      description: 'Mr. Hargreaves stands between the inspector and a closed case',
+      objectives: ['Defeat Mr. Hargreaves'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-equals', params: { key: 'entityId', value: 'crime-boss' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [
+    { type: 'xp', params: { amount: 30 } },
+    { type: 'item', params: { itemId: 'pocket-watch' } },
+  ],
+};
+
+export const detectiveQuests: QuestDefinition[] = [trailQuest, hargreavesQuest];
 
 // --- Districts ---
 
@@ -603,6 +696,10 @@ export const buildCatalog: BuildCatalog = {
       description: 'Methodical observer, sees everything',
       statPriorities: { perception: 7, eloquence: 4, grit: 3 },
       startingTags: ['investigator', 'inspector'],
+      // F-86b9145d: the equip loop needs a real starting kit — the
+      // magnifying glass carries no requiredTags, so every inspector can
+      // equip it.
+      startingInventory: ['magnifying-glass'],
       progressionTreeId: 'deduction-mastery',
     },
     {
@@ -613,6 +710,7 @@ export const buildCatalog: BuildCatalog = {
       // 'investigator' is the pack-identity tag the gated abilities require
       // (T0-tag-gate: a created character without it hides gated abilities).
       startingTags: ['investigator', 'socialite', 'raconteur'],
+      startingInventory: ['press-badge'],
       progressionTreeId: 'deduction-mastery',
     },
     {
@@ -621,6 +719,7 @@ export const buildCatalog: BuildCatalog = {
       description: 'Fists first, questions later',
       statPriorities: { perception: 4, eloquence: 3, grit: 7 },
       startingTags: ['investigator', 'enforcer', 'bruiser'],
+      startingInventory: ['walking-cane'],
       progressionTreeId: 'deduction-mastery',
     },
   ],

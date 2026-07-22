@@ -6,13 +6,16 @@
 // player a build pointing at a non-existent progression tree.
 
 import { describe, it, expect } from 'vitest';
-import { validateEncounterSpawnContent } from '@ai-rpg-engine/modules';
+import { validateEncounterSpawnContent, getPartyState, isCompanion } from '@ai-rpg-engine/modules';
 import { encounterSpawnContent, zones as authoredZones } from './content.js';
 import { validateGameContent, validateAbilityPack } from '@ai-rpg-engine/content-schema';
 import type { ContentPack } from '@ai-rpg-engine/content-schema';
 import { createGame } from './setup.js';
 import {
   buildCatalog,
+  player,
+  scientist,
+  security,
   commanderTree,
   scientistDialogue,
   colonyAbilities,
@@ -115,5 +118,45 @@ describe('colony content — item catalog completeness (F-d70c722d)', () => {
     for (const effect of [emergencyCellEffect]) {
       expect(itemIds.has(effect.itemId), `granted item "${effect.itemId}" missing from itemCatalog`).toBe(true);
     }
+  });
+});
+
+// F-a56f7e5d: the pack already ships the `recruit` verb (companion-core is
+// always included in buildWorldStack), but shipped no recruitable NPC — the
+// verb had no reachable target. Chief Okafor (security → fighter) and
+// Dr. Vasquez (scientist → scholar) close the gap.
+describe('colony content — recruitable companions (F-a56f7e5d)', () => {
+  const ROLE_TAGS = ['fighter', 'scout', 'healer', 'diplomat', 'smuggler', 'scholar'];
+
+  it('at least one non-hostile named NPC is recruitable with exactly one bare role tag', () => {
+    const recruitable = [scientist, security].filter((e) => e.tags.includes('recruitable'));
+    expect(recruitable.length).toBeGreaterThan(0);
+    for (const npc of recruitable) {
+      const roleTags = npc.tags.filter((t) => ROLE_TAGS.includes(t));
+      expect(roleTags.length, `${npc.id} should carry exactly one bare role tag, has [${roleTags.join(', ')}]`).toBe(1);
+    }
+  });
+
+  // Dr. Vasquez's zone (signal-tower) carries no hostile entity and no
+  // encounter-spawn table, so this is a clean recruit path — two plain moves,
+  // no combat interference.
+  it('a recruitable NPC actually joins the party via the recruit verb', () => {
+    const engine = createGame(1);
+    engine.submitAction('move', { targetIds: ['hydroponics'] });
+    engine.submitAction('move', { targetIds: [scientist.zoneId!] });
+    const events = engine.submitAction('recruit', { targetIds: [scientist.id] });
+    expect(events.some((e) => e.type === 'action.rejected')).toBe(false);
+    expect(events.some((e) => e.type === 'companion.recruited')).toBe(true);
+    expect(isCompanion(getPartyState(engine.world), scientist.id)).toBe(true);
+  });
+});
+
+// F-92c78519: a modest starting 'coin' resource so the buy verb is reachable
+// at turn 1, not only after the first sale.
+describe('colony content — starting economy (F-92c78519)', () => {
+  it('the authored player carries a modest starting coin balance', () => {
+    expect(player.resources.coin).toBeDefined();
+    expect(player.resources.coin!).toBeGreaterThanOrEqual(20);
+    expect(player.resources.coin!).toBeLessThanOrEqual(40);
   });
 });

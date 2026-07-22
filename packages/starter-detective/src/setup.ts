@@ -17,10 +17,13 @@ import {
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
+  applyStatus,
+  removeStatus,
   COMBAT_STATES,
   aggressiveProfile,
   cautiousProfile,
 } from '@ai-rpg-engine/modules';
+import { createEquipmentCore } from '@ai-rpg-engine/equipment';
 import * as engineModules from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatResourceProfile, IntentProfile } from '@ai-rpg-engine/modules';
 import {
@@ -42,6 +45,8 @@ import {
   detectiveStatusDefinitions,
   progressionRewards,
   encounterSpawnContent,
+  itemCatalog,
+  detectiveQuests,
 } from './content.js';
 import { detectiveMinimalRuleset } from './ruleset.js';
 
@@ -158,6 +163,11 @@ export function createGame(seed?: number): Engine {
     // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
     // tables drive zone-entry spawns via the world tick.
     encounterSpawn: { gameId: manifest.id, ...encounterSpawnContent },
+    // F-c07d6024-quest-loop-min: the authored quests give the investigation
+    // its explicit reason to keep moving. quest-core validates at
+    // construction (fail loud) and drives offer → track → complete → reward
+    // off the live event stream.
+    quests: { gameId: manifest.id, quests: detectiveQuests },
   });
 
   const engine = new Engine({
@@ -179,6 +189,16 @@ export function createGame(seed?: number): Engine {
       }),
       ...worldStack.modules,
       createBossPhaseListener(crimeBossDef),
+      // F-86b9145d: the equip loop — `equip`/`unequip` verbs over the pack's
+      // item catalog, mirroring starter-gladiator's F-ENG008 wiring exactly.
+      createEquipmentCore({
+        catalog: itemCatalog,
+        statuses: {
+          registerDefinitions: registerStatusDefinitions,
+          apply: applyStatus,
+          remove: removeStatus,
+        },
+      }),
       createAbilityCore({ abilities: detectiveAbilities, statMapping: { power: 'grit', precision: 'perception', focus: 'eloquence' } }),
       createAbilityEffects(),
       createAbilityReview(),

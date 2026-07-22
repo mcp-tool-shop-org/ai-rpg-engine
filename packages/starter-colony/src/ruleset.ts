@@ -18,6 +18,9 @@ export const colonyMinimalRuleset: RulesetDefinition = {
     { id: 'stamina', name: 'Stamina', min: 0, max: 50, default: 10, regenRate: 1 },
     { id: 'power', name: 'Power', min: 0, max: 100, default: 60, regenRate: 2 },
     { id: 'morale', name: 'Morale', min: 0, max: 30, default: 20 },
+    // F-92c78519: the trade-core buy/sell currency — declared here so the
+    // HUD/status surfaces treat it like every other tracked resource.
+    { id: 'coin', name: 'Coin', min: 0, max: 500, default: 0 },
   ],
 
   verbs: [
@@ -29,6 +32,8 @@ export const colonyMinimalRuleset: RulesetDefinition = {
     { id: 'reposition', name: 'Reposition', tags: ['combat', 'movement'], description: 'Shift position to outflank a target or escape a bad spot' },
     { id: 'disengage', name: 'Disengage', tags: ['combat', 'movement'], description: 'Attempt to break from combat and withdraw' },
     { id: 'use', name: 'Use', description: 'Use an item from inventory' },
+    { id: 'equip', name: 'Equip', tags: ['equipment'], description: 'Ready gear from your inventory (bare "equip" readies your only piece)' },
+    { id: 'unequip', name: 'Unequip', tags: ['equipment'], description: 'Stow an equipped item back into your inventory' },
     { id: 'speak', name: 'Speak', tags: ['dialogue'], description: 'Talk to another colonist' },
     { id: 'choose', name: 'Choose', tags: ['dialogue'], description: 'Select a dialogue option' },
     { id: 'use-ability', name: 'Use Ability', tags: ['ability'], description: 'Use a special ability' },
