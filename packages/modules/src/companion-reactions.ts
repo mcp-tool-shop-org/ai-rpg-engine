@@ -70,14 +70,19 @@ export function isKnownReactionTrigger(trigger: string): trigger is ReactionTrig
 // only ever fires because SOME OTHER file calls evaluateCompanionReactions
 // with that literal string. This ledger is a static, testable accounting of
 // which triggers have a real production producer TODAY, audited directly
-// against source (not just comments) as of this wave:
+// against source (not just comments):
 //   - world-tick.ts's applyCompanionReactions, fed by
 //     collectCombatReactionTriggers (combat.entity.defeated), the district-
 //     mood tone-transition check (step 0c), and the pressure-expiry step
 //     (step 3);
 //   - player-leverage.ts's dispatchLeverageCompanionReactions, called
-//     directly from the 'bribe'/'intimidate'/'petition'/'seed' verb
-//     handlers.
+//     directly from all 25 leverage verb handlers (bribe/intimidate/
+//     petition/call-in-favor/recruit-ally/disguise/stake-claim →
+//     'leverage-social'; seed/deny/frame/claim-false-credit/bury-scandal/
+//     leak-truth/spread-counter-rumor → 'leverage-rumor'; the seven
+//     diplomacy-group verbs → 'leverage-diplomacy'; the four sabotage-group
+//     verbs → 'leverage-sabotage' — v3.0 wave 1 "social-verbs" registered the
+//     21 of these that weren't wired as of the F-6be920bd audit).
 //
 // Because wiring a trigger always means editing one of those producer
 // files (or authoring a brand new one for npc-agency/item-recognition),
@@ -103,17 +108,24 @@ export type ReactionTriggerStatus = {
 };
 
 /**
- * Per-trigger reachability, audited against the two live call sites as of
- * this wave (F-6be920bd). 7 reachable, 1 wired-but-dead, 8 dark — none of
- * the 8 dark triggers are wireable from THIS file: leverage-diplomacy/
- * leverage-sabotage need a new verb-group registration in player-leverage.ts
- * (resolveSocialAction's LeverageResolution.verb is always the literal
- * 'social' — nothing today discriminates diplomacy from sabotage from plain
- * social action); betrayal-witnessed/obligation-betrayed/item-*-recognized
- * need entirely new producers in npc-agency.ts/item-recognition.ts that do
- * not exist yet (npc-agency's obligation ledger and item-recognition's
- * chronicle are both never persisted/never reach world.eventLog — honestly
- * deferred to v3.0, not force-wired here).
+ * Per-trigger reachability, audited against the live call sites (F-6be920bd
+ * audit; v3.0 wave 1 "social-verbs" extended player-leverage.ts's producer to
+ * cover all four leverage-* triggers). 9 reachable, 1 wired-but-dead, 6 dark
+ * — the 6 remaining dark triggers are NOT wireable from THIS file:
+ * betrayal-witnessed/obligation-betrayed/item-*-recognized need entirely new
+ * producers in npc-agency.ts/item-recognition.ts that do not exist yet
+ * (npc-agency's obligation ledger and item-recognition's chronicle are both
+ * never persisted/never reach world.eventLog — honestly deferred to v3.0,
+ * not force-wired here).
+ *
+ * leverage-diplomacy and leverage-sabotage WERE in the dark set as of the
+ * F-6be920bd audit (resolveSocialAction's LeverageResolution.verb was always
+ * the literal 'social', so nothing discriminated a diplomacy or sabotage
+ * action from a plain social one). v3.0 wave 1 registered player-leverage.ts's
+ * diplomacy-group and sabotage-group verbs, which resolve through
+ * resolveDiplomacyAction/resolveSabotageAction — whose LeverageResolution.verb
+ * is always the literal 'diplomacy'/'sabotage' respectively — so both are
+ * reachable now.
  */
 export const REACTION_TRIGGER_STATUS: Record<ReactionTrigger, ReactionTriggerStatus> = {
   'combat-won': {
@@ -142,19 +154,19 @@ export const REACTION_TRIGGER_STATUS: Record<ReactionTrigger, ReactionTriggerSta
   },
   'leverage-social': {
     reachability: 'reachable',
-    note: "player-leverage.ts dispatchLeverageCompanionReactions: the 'bribe'/'intimidate'/'petition' verbs (resolveSocialAction's LeverageResolution.verb is always the literal 'social')",
+    note: "player-leverage.ts dispatchLeverageCompanionReactions: all seven social-group verbs (bribe/intimidate/petition/call-in-favor/recruit-ally/disguise/stake-claim, the last four added in v3.0 wave 1 'social-verbs') — resolveSocialAction's LeverageResolution.verb is always the literal 'social'",
   },
   'leverage-rumor': {
     reachability: 'reachable',
-    note: "player-leverage.ts dispatchLeverageCompanionReactions: the 'seed' verb (resolveRumorAction)",
+    note: "player-leverage.ts dispatchLeverageCompanionReactions: all seven rumor-group verbs (seed/deny/frame/claim-false-credit/bury-scandal/leak-truth/spread-counter-rumor, the last six added in v3.0 wave 1 'social-verbs') — resolveRumorAction's LeverageResolution.verb is always the literal 'rumor'",
   },
   'leverage-diplomacy': {
-    reachability: 'dark',
-    note: "waits on a diplomacy-group verb — resolveSocialAction's LeverageResolution.verb is always the literal 'social', so nothing today can discriminate a diplomacy action from a plain social one",
+    reachability: 'reachable',
+    note: "player-leverage.ts dispatchLeverageCompanionReactions: all seven diplomacy-group verbs (request-meeting/improve-standing/cash-milestone/negotiate-access/trade-secret/temporary-alliance/broker-truce), via resolveDiplomacyAction — whose LeverageResolution.verb is always the literal 'diplomacy', distinct from resolveSocialAction's 'social' (v3.0 wave 1 'social-verbs')",
   },
   'leverage-sabotage': {
-    reachability: 'dark',
-    note: "waits on a sabotage-group verb — same resolveSocialAction('social')-only limitation as leverage-diplomacy",
+    reachability: 'reachable',
+    note: "player-leverage.ts dispatchLeverageCompanionReactions: all four sabotage-group verbs (sabotage/plant-evidence/blackmail-target/incite-riot), via resolveSabotageAction — whose LeverageResolution.verb is always the literal 'sabotage' (v3.0 wave 1 'social-verbs')",
   },
   'betrayal-witnessed': {
     reachability: 'dark',

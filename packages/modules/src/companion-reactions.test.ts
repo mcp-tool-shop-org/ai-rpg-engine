@@ -174,14 +174,14 @@ describe('REACTION_TRIGGER_STATUS (F-6be920bd audit)', () => {
     }
   });
 
-  it('matches the audited totals: 7 reachable, 1 wired-unreachable, 8 dark', () => {
+  it('matches the audited totals: 9 reachable, 1 wired-unreachable, 6 dark', () => {
     const values = Object.values(REACTION_TRIGGER_STATUS);
-    expect(values.filter((v) => v.reachability === 'reachable')).toHaveLength(7);
+    expect(values.filter((v) => v.reachability === 'reachable')).toHaveLength(9);
     expect(values.filter((v) => v.reachability === 'wired-unreachable')).toHaveLength(1);
-    expect(values.filter((v) => v.reachability === 'dark')).toHaveLength(8);
+    expect(values.filter((v) => v.reachability === 'dark')).toHaveLength(6);
   });
 
-  it('the two wave-2 sources (leverage-social/leverage-rumor, district-grim/district-prosperous) are reachable, alongside the earlier combat/pressure sources', () => {
+  it('the wave-2 sources (leverage-social/leverage-rumor, district-grim/district-prosperous) are reachable, alongside the earlier combat/pressure sources', () => {
     const reachable: readonly string[] = [
       'combat-won', 'combat-lost', 'pressure-resolved-badly',
       'district-grim', 'district-prosperous', 'leverage-social', 'leverage-rumor',
@@ -191,13 +191,20 @@ describe('REACTION_TRIGGER_STATUS (F-6be920bd audit)', () => {
     }
   });
 
+  it('V3-SV-3: leverage-diplomacy and leverage-sabotage flipped from dark to reachable in v3.0 wave 1 "social-verbs" — a real diplomacy/sabotage verb now produces each trigger', () => {
+    expect(REACTION_TRIGGER_STATUS['leverage-diplomacy'].reachability).toBe('reachable');
+    expect(REACTION_TRIGGER_STATUS['leverage-diplomacy'].note).toMatch(/diplomacy/);
+    expect(REACTION_TRIGGER_STATUS['leverage-sabotage'].reachability).toBe('reachable');
+    expect(REACTION_TRIGGER_STATUS['leverage-sabotage'].note).toMatch(/sabotage/);
+  });
+
   it('pressure-resolved-well is wired but unreachable (dead branch — the one production call site always passes a different literal)', () => {
     expect(REACTION_TRIGGER_STATUS['pressure-resolved-well'].reachability).toBe('wired-unreachable');
   });
 
-  it('the 8 explicitly-deferred-to-v3.0 triggers (leverage-diplomacy/sabotage, betrayal-witnessed, obligation-betrayed, item-*-recognized) are all dark, not force-wired', () => {
+  it('the 6 explicitly-deferred-to-v3.0 triggers (betrayal-witnessed, obligation-betrayed, item-*-recognized) are all dark, not force-wired', () => {
     const dark: readonly string[] = [
-      'leverage-diplomacy', 'leverage-sabotage', 'betrayal-witnessed', 'obligation-betrayed',
+      'betrayal-witnessed', 'obligation-betrayed',
       'item-faction-recognized', 'item-stolen-recognized', 'item-cursed-recognized', 'item-trophy-recognized',
     ];
     for (const trigger of dark) {
