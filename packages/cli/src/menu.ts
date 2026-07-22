@@ -43,6 +43,10 @@ import {
   getQuestDefinitions,
   questProgressCount,
   questProgressRequired,
+  getDistrictForZone,
+  getDistrictEconomy,
+  isBlackMarketCondition,
+  inferSupplyCategory,
 } from '@ai-rpg-engine/modules';
 import { getAbilityCatalog } from './turns.js';
 import { describeActionError } from './guard.js';
@@ -53,7 +57,7 @@ export type ExtraAction = {
   targetIds?: string[];
   parameters?: Record<string, ScalarValue>;
   label: string;
-  group: 'ability' | 'advance' | 'journal' | 'director' | 'debug';
+  group: 'ability' | 'advance' | 'trade' | 'journal' | 'director' | 'debug';
 };
 
 /**
@@ -163,6 +167,48 @@ export function buildUnlockActions(
 }
 
 // ---------------------------------------------------------------------------
+// Trade — the sell entries (F-6c3e4fde)
+// ---------------------------------------------------------------------------
+
+/**
+ * Sell entries for every item the player carries, one per inventory slot —
+ * mirrors buildAbilityActions' per-entry iteration pattern. [] when the
+ * player's current zone has no district/economy to sell into (mirrors the
+ * `sell` verb's own "no market here" rejection reason, so no menu entry is
+ * ever offered that the verb could not also produce on its own).
+ *
+ * A carried item whose inferred category is contraband with no active black
+ * market is also skipped — the same "only ever list what's guaranteed to
+ * succeed" discipline buildAbilityActions/buildUnlockActions already apply
+ * (the ability/unlock precedent for P8-PS-002's root cause), here at
+ * menu-build time instead of via the extras dispatch's post-hoc rejection
+ * scan (which — unlike the base numbered menu — has none).
+ */
+export function buildSellActions(world: WorldState): ExtraAction[] {
+  const player = world.entities[world.playerId];
+  if (!player) return [];
+
+  const zoneId = player.zoneId ?? world.locationId;
+  const districtId = zoneId ? getDistrictForZone(world, zoneId) : undefined;
+  const districtEconomy = districtId ? getDistrictEconomy(world, districtId) : undefined;
+  if (!districtId || !districtEconomy) return [];
+
+  const inventory = player.inventory ?? [];
+  const actions: ExtraAction[] = [];
+  for (const itemId of inventory) {
+    const category = inferSupplyCategory(itemId);
+    if (category === 'contraband' && !isBlackMarketCondition(districtEconomy)) continue;
+    actions.push({
+      verb: 'sell',
+      targetIds: [itemId],
+      label: `Sell ${itemId.replace(/-/g, ' ')}`,
+      group: 'trade',
+    });
+  }
+  return actions;
+}
+
+// ---------------------------------------------------------------------------
 // Journal — the quest book entry (F-ENG005-quest-loop-min)
 // ---------------------------------------------------------------------------
 
@@ -238,7 +284,20 @@ export function renderJournal(world: WorldState): string {
   }
 
   for (const instance of active) {
-    lines.push(...journalQuestLines(instance, defs.get(instance.questId)));
+    // F-470a2a88: guarded-degrade, same contract as renderDirectorLedger's
+    // per-section and this file's own renderInspectorReport per-inspector
+    // try/catch — a throwing quest-core read (a foreign or content-drifted
+    // save) degrades to ONE bounded, attributed line instead of propagating
+    // uncaught through handlePlayerInput into the main interactive loop; the
+    // journal's other entries (and the completed/failed lists below) still
+    // render.
+    try {
+      lines.push(...journalQuestLines(instance, defs.get(instance.questId)));
+    } catch (err) {
+      lines.push('');
+      lines.push(`  ── ${instance.questId} ──`);
+      lines.push(`  [quest entry failed: ${describeActionError(err)}]`);
+    }
   }
 
   if (completed.length > 0) {
@@ -349,17 +408,54 @@ export function renderInspectorReport(
   return lines.join('\n');
 }
 
-/** All appended entries — abilities, then unlocks, then the always-on player
- *  surfaces in reading order (the Journal, then the Director's Ledger), then
- *  the env-gated debug entry last (the operator surface stays at the
- *  bottom). Stable order, pure over state. */
+/** All appended entries — abilities, then unlocks, then trade, then the
+ *  always-on player surfaces in reading order (the Journal, then the
+ *  Director's Ledger), then the env-gated debug entry last (the operator
+ *  surface stays at the bottom). Stable order, pure over state.
+ *
+ * F-03f27ace: the ability and unlock constructions are guarded — same
+ * contract as turns.ts's runNpcTurns and this file's own
+ * renderInspectorReport — because both reach into content-driven modules
+ * data (a malformed ability or progression-node definition from a
+ * hand-authored or scaffolded pack) that has no other guard between here and
+ * the top-level catch. A throw from either source degrades to one bounded
+ * line and contributes no entries from the failing source; the other extras
+ * (unlock/ability, trade, journal, director, debug) still build normally.
+ * F-6c3e4fde: buildSellActions gets the same guard — it reads district/
+ * economy state the same way abilities read the ability catalog.
+ */
 export function buildExtraActions(
   engine: Engine,
   trees: ProgressionTreeDefinition[] = [],
+  opts: { log?: (msg: string) => void } = {},
 ): ExtraAction[] {
+  const log = opts.log ?? console.log;
+
+  let abilityActions: ExtraAction[] = [];
+  try {
+    abilityActions = buildAbilityActions(engine.world, getAbilityCatalog(engine));
+  } catch (err) {
+    log(`  (ability menu unavailable this turn: ${describeActionError(err)})`);
+  }
+
+  let unlockActions: ExtraAction[] = [];
+  try {
+    unlockActions = buildUnlockActions(engine.world, trees);
+  } catch (err) {
+    log(`  (advancement menu unavailable this turn: ${describeActionError(err)})`);
+  }
+
+  let sellActions: ExtraAction[] = [];
+  try {
+    sellActions = buildSellActions(engine.world);
+  } catch (err) {
+    log(`  (trade menu unavailable this turn: ${describeActionError(err)})`);
+  }
+
   return [
-    ...buildAbilityActions(engine.world, getAbilityCatalog(engine)),
-    ...buildUnlockActions(engine.world, trees),
+    ...abilityActions,
+    ...unlockActions,
+    ...sellActions,
     ...buildJournalActions(),
     ...buildDirectorActions(),
     ...buildDebugActions(),

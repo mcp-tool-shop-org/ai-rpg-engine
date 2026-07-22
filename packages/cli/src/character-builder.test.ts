@@ -319,6 +319,49 @@ describe('buildCharacter — F-2ae7c051: unsatisfiable catalog fails loud up fro
   });
 });
 
+// F-d17afbec: content-schema's validateBuildCatalog (the F-2ae7c051 gate
+// above) checks requiredFlaws/maxTraits/traits only — it has no opinion on
+// archetypes/backgrounds. An empty either array used to sail past that gate
+// and reach promptMenu(items=[]), which asks forever for "a number between 1
+// and 0": the exact unwinnable-hang defect class F-2ae7c051 closes, for a
+// field that gate doesn't cover.
+describe('buildCharacter — F-d17afbec: empty archetypes/backgrounds fails loud, never reaches promptMenu([])', () => {
+  it('rejects a catalog with zero archetypes, before any prompting (RED-PROOF: fails pre-fix)', async () => {
+    const catalog = makeCatalog({ archetypes: [] });
+
+    await expect(buildCharacter(catalog, ruleset)).rejects.toThrow('[CATALOG_UNSATISFIABLE]');
+    await expect(buildCharacter(catalog, ruleset)).rejects.toThrow(/archetypes/);
+    // Failed at the gate — promptMenu(items=[]) (the unwinnable hang) never ran.
+    expect(mockPromptText).not.toHaveBeenCalled();
+    expect(mockPromptMenu).not.toHaveBeenCalled();
+  });
+
+  it('rejects a catalog with zero backgrounds, before any prompting (RED-PROOF: fails pre-fix)', async () => {
+    const catalog = makeCatalog({ backgrounds: [] });
+
+    await expect(buildCharacter(catalog, ruleset)).rejects.toThrow('[CATALOG_UNSATISFIABLE]');
+    await expect(buildCharacter(catalog, ruleset)).rejects.toThrow(/backgrounds/);
+    expect(mockPromptText).not.toHaveBeenCalled();
+    expect(mockPromptMenu).not.toHaveBeenCalled();
+  });
+
+  it('rejects a catalog with BOTH empty, naming both fields in one error', async () => {
+    const catalog = makeCatalog({ archetypes: [], backgrounds: [] });
+
+    await expect(buildCharacter(catalog, ruleset)).rejects.toThrow(/archetypes/);
+    await expect(buildCharacter(catalog, ruleset)).rejects.toThrow(/backgrounds/);
+  });
+
+  it('control — the standard fixture (non-empty archetypes/backgrounds) still passes the gate and completes', async () => {
+    const catalog = makeCatalog();
+    mockPromptMultiSelect.mockResolvedValueOnce([2]);
+    mockPromptConfirm.mockResolvedValueOnce(true);
+
+    const result = await buildCharacter(catalog, ruleset);
+    expect(validateBuild(result, catalog, ruleset).ok).toBe(true);
+  });
+});
+
 describe('buildCharacter — baseline coverage (F-0850a894: previously zero test coverage)', () => {
   it('returns a valid build immediately on a clean single-pass run', async () => {
     const catalog = makeCatalog();

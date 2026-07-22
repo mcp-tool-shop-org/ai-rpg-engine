@@ -892,5 +892,12 @@ export const itemCatalog: ItemCatalog = {
       grantedTags: ['comms-active'],
       grantedVerbs: ['broadcast'],
     },
+    {
+      id: 'antibiotics',
+      name: 'Antibiotics',
+      description: 'A course of antibiotics scavenged from the hospital pharmacy — slows the infection when taken.',
+      slot: 'tool',
+      rarity: 'common',
+    },
   ],
 };

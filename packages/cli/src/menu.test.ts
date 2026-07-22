@@ -4,11 +4,13 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createGame, combatMasteryTree } from '@ai-rpg-engine/starter-fantasy';
-import { addCurrency, getCurrency } from '@ai-rpg-engine/modules';
+import { addCurrency, getCurrency, giveItem, ABILITY_CATALOG_FORMULA } from '@ai-rpg-engine/modules';
 import { buildActionList, renderFullScreen, SCREEN_WIDTH } from '@ai-rpg-engine/terminal-ui';
+import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
 import {
   buildAbilityActions,
   buildUnlockActions,
+  buildSellActions,
   buildExtraActions,
   parseExtraSelection,
   buildHudWorld,
@@ -74,6 +76,48 @@ describe('buildAbilityActions (F1d)', () => {
     expect(actions).toEqual([]);
   });
 
+  // F-2fe4be26 — menuTargetable's ally branch: "offensive entries only
+  // against enemy/hostile-tagged targets, support entries only for
+  // self/ally/companion". Before this wave nothing ever wrote the
+  // 'companion' tag, so a support ability could never list a party member —
+  // starter-fantasy's own support abilities (Purify/Divine Light) are
+  // self-only and never exercise this branch, so a small ally-targeted
+  // ability proves the READ side directly (buildAbilityActions takes any
+  // catalog, not just the pack's own).
+  it('a recruited companion becomes a valid target for an ally-affiliated support ability (menuTargetable)', () => {
+    const engine = createGame(42); // sister-maren starts in the player's own zone (chapel-entrance)
+    const recruited = engine.submitAction('recruit', { targetIds: ['sister-maren'] });
+    expect(recruited.some((e) => e.type === 'companion.recruited')).toBe(true);
+
+    const healAlly: AbilityDefinition = {
+      id: 'test-mend',
+      name: 'Mend',
+      verb: 'use-ability',
+      tags: ['support', 'heal'],
+      costs: [],
+      target: { type: 'single', affiliation: 'ally' },
+      effects: [{ type: 'heal', target: 'target', params: { amount: 3 } }],
+    };
+    const actions = buildAbilityActions(engine.world, [healAlly]);
+    const labels = actions.map((a) => a.label);
+    expect(labels).toContain('Mend → Sister Maren');
+  });
+
+  it('an UNrecruited friendly NPC is NOT offered as an ally-targeted support target (mere presence in the zone is not enough — recruiting is)', () => {
+    const engine = createGame(42); // sister-maren present but never recruited
+    const healAlly: AbilityDefinition = {
+      id: 'test-mend',
+      name: 'Mend',
+      verb: 'use-ability',
+      tags: ['support', 'heal'],
+      costs: [],
+      target: { type: 'single', affiliation: 'ally' },
+      effects: [{ type: 'heal', target: 'target', params: { amount: 3 } }],
+    };
+    const actions = buildAbilityActions(engine.world, [healAlly]);
+    expect(actions.map((a) => a.label)).not.toContain('Mend → Sister Maren');
+  });
+
   it('selecting an ability entry submits use-ability with the right abilityId — and it EXECUTES', () => {
     const engine = makeDivineCryptGame();
     const extras = buildExtraActions(engine, [combatMasteryTree]);
@@ -134,6 +178,135 @@ describe('buildUnlockActions (F1d) — XP is spendable', () => {
   it('no trees → no unlock entries', () => {
     const engine = makeDivineCryptGame();
     expect(buildUnlockActions(engine.world, [])).toEqual([]);
+  });
+});
+
+// F-P9-004: buildSellActions (F-6c3e4fde) had zero direct test coverage.
+// Mirrors buildAbilityActions/buildUnlockActions' own coverage above: a real
+// engine, a real carried item, a real district/economy read.
+describe('buildSellActions (F-6c3e4fde) — trade entries', () => {
+  it('lists a carried sellable item as a correctly labeled, parameterized trade entry', () => {
+    const engine = createGame(42); // starts at chapel-entrance, inside the chapel-grounds district
+    const player = engine.store.state.entities['player'];
+    engine.store.recordEvent(giveItem(player, 'healing-draught', engine.tick));
+
+    const actions = buildSellActions(engine.world);
+    expect(actions).toEqual([
+      { verb: 'sell', targetIds: ['healing-draught'], label: 'Sell healing draught', group: 'trade' },
+    ]);
+  });
+
+  it('no district/economy at the player\'s zone → no trade entries, even with a sellable item carried', () => {
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    player.zoneId = 'nowhere-zone'; // off the district map entirely
+    engine.store.recordEvent(giveItem(player, 'healing-draught', engine.tick));
+    expect(buildSellActions(engine.world)).toEqual([]);
+  });
+
+  it('sell entries number contiguously in the extras menu, right after ability/unlock — and the numbered entry actually EXECUTES a sale, never an ability', () => {
+    const engine = makeDivineCryptGame(); // ready abilities (Holy Smite etc.), inside the crypt-depths district
+    const player = engine.store.state.entities['player'];
+    engine.store.recordEvent(giveItem(player, 'healing-draught', engine.tick));
+    addCurrency(engine.store.state, 'player', 'xp', 20, engine.tick); // Toughened/Keen Eye affordable
+
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const abilityCount = extras.filter((e) => e.group === 'ability').length;
+    const unlockCount = extras.filter((e) => e.group === 'advance').length;
+    expect(abilityCount).toBeGreaterThan(0);
+    expect(unlockCount).toBeGreaterThan(0);
+
+    // Trade entries land immediately after ability+unlock, no gap and no overlap.
+    const tradeIndex = extras.findIndex((e) => e.group === 'trade');
+    expect(tradeIndex).toBe(abilityCount + unlockCount);
+    expect(extras[tradeIndex]).toMatchObject({ verb: 'sell', label: 'Sell healing draught' });
+
+    const baseCount = buildActionList(engine.world).length;
+    const result = handlePlayerInput(engine, String(baseCount + tradeIndex + 1), {
+      log: vi.fn(),
+      extras,
+    });
+
+    expect(result).toEqual({ kind: 'action', via: 'extra' });
+    expect(engine.world.eventLog.some((e) => e.type === 'item.sold')).toBe(true);
+    // The number resolved to the sale, never to a colliding ability entry.
+    expect(engine.world.eventLog.some((e) => e.type === 'ability.used')).toBe(false);
+    expect(engine.world.entities['player'].inventory).not.toContain('healing-draught');
+  });
+});
+
+// F-03f27ace: buildExtraActions' ability/unlock construction ran unguarded on
+// every turn — unlike every other per-turn/per-read path in this codebase
+// (turns.ts's runNpcTurns, guard.ts's runGuardedAction, director.ts's
+// per-section try/catch, this file's own renderInspectorReport). A throw from
+// a malformed ability or progression-node definition must degrade to one
+// bounded line and contribute no entries from the failing source, not end the
+// session on the very next frame render.
+describe('buildExtraActions — guarded-degrade on a throwing ability/unlock source (F-03f27ace)', () => {
+  it('a throwing ability catalog degrades to one bounded line; unlock/journal/director siblings still render (RED-PROOF: fails pre-fix)', () => {
+    const engine = makeDivineCryptGame();
+    // Overrides the real ability-core formula with one that blows up —
+    // buildAbilityActions (via getAbilityCatalog) is the failure source.
+    // { override: true } is the intentional-replacement path (F-09338c0a):
+    // ability-core already registered this id during setup, and injecting a
+    // throwing double is a deliberate override, not an accidental collision.
+    engine.formulas.register(
+      ABILITY_CATALOG_FORMULA,
+      () => {
+        throw new Error('ability catalog blew up\n'.repeat(50)); // multiline + pathological length
+      },
+      { override: true },
+    );
+    addCurrency(engine.store.state, 'player', 'xp', 20, engine.tick);
+    const log = vi.fn();
+
+    let extras: ExtraAction[] = [];
+    expect(() => {
+      extras = buildExtraActions(engine, [combatMasteryTree], { log });
+    }).not.toThrow();
+
+    // No ability entries — the failing source contributes nothing...
+    expect(extras.some((e) => e.group === 'ability')).toBe(false);
+    // ...but unlock/journal/director still build normally (siblings survive).
+    expect(extras.some((e) => e.group === 'advance')).toBe(true);
+    expect(extras.some((e) => e.group === 'journal')).toBe(true);
+    expect(extras.some((e) => e.group === 'director')).toBe(true);
+
+    expect(log).toHaveBeenCalledTimes(1);
+    const line = String(log.mock.calls[0][0]);
+    expect(line).toContain('ability catalog blew up');
+    expect(line.length).toBeLessThan(320); // bounded (describeActionError caps the reason at 240) — no raw multiline stack
+  });
+
+  it('a throwing unlock computation degrades to one bounded line; ability/journal/director siblings still render', () => {
+    const engine = makeDivineCryptGame(); // Holy Smite etc. are ready
+    const brokenTree = {
+      ...combatMasteryTree,
+      // buildUnlockActions iterates tree.nodes — non-array throws immediately.
+      nodes: null as unknown as typeof combatMasteryTree.nodes,
+    };
+    const log = vi.fn();
+
+    let extras: ExtraAction[] = [];
+    expect(() => {
+      extras = buildExtraActions(engine, [brokenTree], { log });
+    }).not.toThrow();
+
+    expect(extras.some((e) => e.group === 'ability')).toBe(true);
+    expect(extras.some((e) => e.group === 'advance')).toBe(false);
+    expect(extras.some((e) => e.group === 'journal')).toBe(true);
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(String(log.mock.calls[0][0])).toContain('advancement menu unavailable');
+  });
+
+  it('control: no throw means both real sources still contribute exactly as before', () => {
+    const engine = makeDivineCryptGame();
+    addCurrency(engine.store.state, 'player', 'xp', 20, engine.tick);
+    const log = vi.fn();
+    const extras = buildExtraActions(engine, [combatMasteryTree], { log });
+    expect(extras.some((e) => e.group === 'ability')).toBe(true);
+    expect(extras.some((e) => e.group === 'advance')).toBe(true);
+    expect(log).not.toHaveBeenCalled();
   });
 });
 
@@ -467,5 +640,36 @@ describe('journal entry (F-ENG005-quest-loop-min)', () => {
     const before = engine.serialize();
     renderJournal(engine.world);
     expect(engine.serialize()).toBe(before);
+  });
+
+  // F-470a2a88: renderJournal had no guard around its per-quest-instance
+  // processing, unlike its two siblings wired identically in handlePlayerInput's
+  // extras dispatch (renderDirectorLedger's per-section try/catch,
+  // renderInspectorReport's per-inspector try/catch). A throwing quest-core
+  // read (a foreign or content-drifted save) would propagate uncaught through
+  // handlePlayerInput into the main interactive loop instead of degrading.
+  it('a throwing quest instance degrades to one bounded line instead of crashing renderJournal (RED-PROOF: fails pre-fix)', () => {
+    const engine = createGame(42);
+    engine.submitAction('move', { targetIds: ['chapel-nave'] }); // real active quest: ashes-below
+    const instance = engine.world.quests['ashes-below'];
+    // Poison ONE field journalQuestLines reads. `status` stays a normal
+    // string so the instance still passes the active-quest filter (that
+    // filter is outside this function's own throw surface); `currentStage`
+    // throws the moment journalQuestLines reads it — simulating a quest-core
+    // read gone bad on drifted content.
+    Object.defineProperty(instance, 'currentStage', {
+      configurable: true,
+      get(): string {
+        throw new Error('quest-core read blew up');
+      },
+    });
+
+    let journal = '';
+    expect(() => {
+      journal = renderJournal(engine.world);
+    }).not.toThrow();
+    expect(journal).toContain('  ── ashes-below ──');
+    expect(journal).toContain('[quest entry failed:');
+    expect(journal).toContain('quest-core read blew up');
   });
 });

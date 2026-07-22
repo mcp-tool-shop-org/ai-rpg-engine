@@ -22,6 +22,10 @@ import {
   getCurrency,
   getActivePressures,
   getResolvedPressures,
+  getAllDistrictIds,
+  getDistrictDefinition,
+  getDistrictState,
+  deriveEconomyDescriptor,
   type EndgameInputs,
   type EndgameTrigger,
   type CompanionState,
@@ -31,8 +35,10 @@ import {
   CampaignJournal,
   buildFinaleOutline,
   formatFinaleForTerminal,
+  formatFinaleForDirector,
   type FinaleNpcInput,
   type FinaleFactionInput,
+  type FinaleDistrictInput,
 } from '@ai-rpg-engine/campaign-memory';
 import { derivePlayerLevel } from './menu.js';
 
@@ -96,10 +102,17 @@ function objectArray<T>(value: unknown): T[] {
  *                      the single pressure source of truth — the old
  *                      'pressure-system' namespace had no production writer,
  *                      so this axis was permanently empty in real play)
- *  - companions      — world.modules['companion-core'] when a wiring persists a
- *                      party; no starter does yet → empty
- *  - economies       — world.modules['economy-core'] when a wiring persists
- *                      district economies; no starter does yet → empty
+ *  - companions      — world.modules['companion-core'], flat (F-834d0485: no
+ *                      `party:` wrapper — director.ts reads the identical
+ *                      shape). companion-core's recruit verb (F-7d5c3e28) is
+ *                      now the production writer; a world with no recruits
+ *                      still reads as empty, same as before
+ *  - economies       — world.modules['economy-core'] = { districts }:
+ *                      districtId → DistrictEconomy (mirroring district-
+ *                      core's key). economy-core's write-wire via
+ *                      buildWorldStack (F-d0b5edb5) is now the production
+ *                      writer; a world with no districts still reads as
+ *                      empty, same as before
  *  - playerLevel     — derived from progression-core unlocks (the HUD's own
  *                      level notion, derivePlayerLevel)
  *  - faction alert   — max of the combat channel (defeat-fallout's
@@ -179,15 +192,16 @@ export function buildEndgameInputs(world: WorldState): EndgameInputs {
   const activePressures = getActivePressures(world);
   const resolvedPressures = getResolvedPressures(world);
 
-  // Companions: companion-core keeps no world.modules state in any starter yet;
-  // read its namespace (PartyState's `companions`) so a future wiring is picked
-  // up, else empty.
+  // Companions: companion-core persists world.modules['companion-core'] =
+  // PartyState, flat (F-834d0485/F-7d5c3e28) — read its `companions` array
+  // directly. A world with no recruits still reads as empty.
   const companionNs = world.modules['companion-core'] as { companions?: unknown } | undefined;
   const companions = objectArray<CompanionState>(companionNs?.companions);
 
-  // Economies: economy-core keeps no world.modules state in any starter yet;
-  // read its namespace (`districts`: districtId → DistrictEconomy, mirroring
-  // district-core's key) so a future wiring is picked up, else empty.
+  // Economies: economy-core persists world.modules['economy-core'] =
+  // { districts }, districtId → DistrictEconomy (mirroring district-core's
+  // key) — economy-core's write-wire via buildWorldStack (F-d0b5edb5) is now
+  // the production writer. A world with no districts still reads as empty.
   const economyNs = world.modules['economy-core'] as { districts?: unknown } | undefined;
   const districtEconomies = new Map<string, DistrictEconomy>();
   if (economyNs?.districts && typeof economyNs.districts === 'object') {
@@ -330,7 +344,7 @@ export function computeSessionStats(
   const nodeCost = new Map<string, number>();
   for (const tree of trees) {
     if (tree.currency !== currencyId) continue;
-    for (const node of tree.nodes) nodeCost.set(`${tree.id} ${node.id}`, node.cost);
+    for (const node of tree.nodes) nodeCost.set(`${tree.id} ${node.id}`, node.cost);
   }
 
   let xpSpent = 0;
@@ -366,7 +380,7 @@ export function computeSessionStats(
         if (event.actorId !== playerId) break;
         stats.unlocks++;
         if (typeof p.treeId === 'string' && typeof p.nodeId === 'string') {
-          xpSpent += nodeCost.get(`${p.treeId} ${p.nodeId}`) ?? 0;
+          xpSpent += nodeCost.get(`${p.treeId} ${p.nodeId}`) ?? 0;
         }
         break;
       }
@@ -457,15 +471,57 @@ export function journalFromEventLog(world: WorldState): CampaignJournal {
   return journal;
 }
 
+/**
+ * FinaleDistrictInput[] for buildFinaleOutline's DISTRICTS section — joins
+ * the SAME districtEconomies buildEndgameInputs already derives (economy-
+ * core's per-district supply state) with district-core's own accessors for
+ * the fields economy-core doesn't carry (name, stability, controllingFaction).
+ * Mirrors strategic-map.ts's buildStrategicMap district loop, the only other
+ * place these two modules' state is joined for presentation: district-core
+ * is authoritative for which districts exist (getAllDistrictIds); a missing
+ * def/state skips the district (a hand-built world with a partial namespace);
+ * a district with no matching economy still renders, at the descriptor's
+ * baseline 'normal' tone, rather than being dropped.
+ *
+ * F-P9-001: renderSessionEnd used to pass buildFinaleOutline a hardcoded
+ * `districts: []` even after buildEndgameInputs started deriving live
+ * districtEconomies (F-d0b5edb5) — the finale's DISTRICTS section never
+ * rendered for any played session.
+ */
+function buildFinaleDistricts(
+  world: WorldState,
+  districtEconomies: Map<string, DistrictEconomy>,
+): FinaleDistrictInput[] {
+  const districts: FinaleDistrictInput[] = [];
+  for (const districtId of getAllDistrictIds(world)) {
+    const def = getDistrictDefinition(world, districtId);
+    const state = getDistrictState(world, districtId);
+    if (!def || !state) continue;
+
+    const economy = districtEconomies.get(districtId);
+    const economyTone = economy ? deriveEconomyDescriptor(economy).overallTone : 'normal';
+
+    districts.push({
+      districtId,
+      name: def.name,
+      stability: state.stability,
+      controllingFaction: def.controllingFaction,
+      economyTone,
+    });
+  }
+  return districts;
+}
+
 const END_RULE = '═'.repeat(60);
 
 /**
  * The full end screen: banner, narrator line, the run's stats tally
  * (computeSessionStats — the audit's "Chronicle Events: 2" finale was too
  * thin a goodbye), then the finale epilogue (campaign-memory
- * buildFinaleOutline → formatFinaleForTerminal) with NPC and faction fates
- * derived from live world state. `trees` (the pack's progression trees)
- * sharpens the XP tally; omitted, XP falls back to the raw balance.
+ * buildFinaleOutline → formatFinaleForTerminal) with NPC, faction, and
+ * district fates derived from live world state. `trees` (the pack's
+ * progression trees) sharpens the XP tally; omitted, XP falls back to the
+ * raw balance.
  */
 export function renderSessionEnd(
   end: SessionEnd,
@@ -506,10 +562,24 @@ export function renderSessionEnd(
     journalFromEventLog(world),
     npcs,
     factions,
-    [], // districts: starters don't wire district economies into world state
+    buildFinaleDistricts(world, inputs.districtEconomies), // F-P9-001: real district data, not []
     world.meta.tick,
   );
 
   lines.push(formatFinaleForTerminal(outline));
+
+  // F-2bf933bd: formatFinaleForDirector — the more structured sibling
+  // (resolution class, dominant arc, duration, top-5 key moments, NPC
+  // fates, faction fates, legacy) computed for free from the SAME `outline`
+  // above, and until now never printed anywhere in the repo. A distinct
+  // small-divider trailer, not a duplicate of the narrative epilogue just
+  // shown — "the numbers behind the story you just got."
+  lines.push('');
+  lines.push(`  ${STATS_RULE}`);
+  lines.push("  THE DIRECTOR'S SUMMARY");
+  lines.push(`  ${STATS_RULE}`);
+  lines.push('');
+  lines.push(formatFinaleForDirector(outline));
+
   return lines.join('\n');
 }

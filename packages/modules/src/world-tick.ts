@@ -21,6 +21,13 @@
 //      the entered zone. Runs first so the ambush's narration lands ahead of
 //      the strategic pressure beats in the round's delta. Packs that never
 //      registered spawn content are a byte-identical no-op.
+//   0b. economy tick (F-d0b5edb5): every district economy-core seeded
+//      (createEconomyCore, buildWorldStack) ticks once via tickDistrictEconomy,
+//      fed by district-core's own live commerce/stability. The write-wire
+//      that finally activates director.ts's MARKET OVERVIEW/FACTIONS sections
+//      and endgame.ts's merchant-prince arc/collapse trigger — and feeds this
+//      round's buildPressureInputs (step 5) below. No-op when the pack never
+//      registered economy-core (nothing to tick).
 //   1. accumulate milestones from the eventLog delta (boss kills feed the
 //      genre spawn rules' milestone conditions)
 //   2. tickPressures — the module's own lifecycle: timers decrement, expired
@@ -48,11 +55,17 @@
 // rumor-propagation's belief-transport records are a different shape from
 // PlayerRumor and inventing valence/spread here would fake a system that
 // doesn't exist yet, so the rumor-gated spawn rules stay dormant. Economy
-// inputs are omitted until a district-economy store is wired. Fallout rumor /
-// title-trigger / economy-shift / spawn-opportunity effects are not applied to
-// any store — they ride the `pressure.expired` payload for downstream layers.
+// inputs (F-d0b5edb5/F-6008456f): district economies now tick every round
+// (step 0b below) and buildPressureInputs sets districtEconomies from the
+// same store, so the 4 economy-driven pressure kinds (supply-crisis,
+// trade-war, black-market-boom, crafting-shortage) can fire for any pack that
+// registers economy-core (buildWorldStack does, unconditionally). Fallout
+// rumor / title-trigger / economy-shift / spawn-opportunity effects are still
+// not applied to any store — they ride the `pressure.expired` payload for
+// downstream layers (a pressure's OWN resolution fallout is a separate,
+// still-open wire from the district-economy store this file now ticks).
 
-import type { Engine, EngineModule, WorldState } from '@ai-rpg-engine/core';
+import type { Engine, EngineModule, ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
 import {
   tickPressures,
   evaluatePressures,
@@ -61,8 +74,22 @@ import {
   type PressureInputs,
 } from './pressure-system.js';
 import { computeFallout, type PressureFallout } from './pressure-resolution.js';
-import { getDistrictForZone } from './district-core.js';
+import { getDistrictForZone, getDistrictState } from './district-core.js';
 import { runEncounterSpawnStep, type SpawnedEncounterReport } from './encounter-spawn.js';
+import { getEconomyCoreState, setDistrictEconomy, tickDistrictEconomy } from './economy-core.js';
+import {
+  COMPANION_TAG,
+  getPartyState,
+  setPartyState,
+  getCompanion,
+  adjustCompanionMorale,
+  removeCompanion,
+  removeCompanionTags,
+  refreshCompanionAbilityStatus,
+  syncCompanionCustomFields,
+} from './companion-core.js';
+import { evaluateCompanionReactions, type ReactionTrigger } from './companion-reactions.js';
+import type { LoyaltyBreakpoint } from './npc-agency.js';
 
 // ---------------------------------------------------------------------------
 // Tuning constants (exported so tests pin the thresholds, not magic numbers)
@@ -355,6 +382,36 @@ function getPlayerDistrictId(world: WorldState): string | undefined {
   return zoneId ? getDistrictForZone(world, zoneId) : undefined;
 }
 
+/**
+ * Tick every district economy-core seeded, once per round (F-d0b5edb5): the
+ * write-wire that activates createDistrictEconomy's persisted state. Reads
+ * each district's live commerce/stability from district-core's own
+ * getDistrictState. Commerce rides district-core's 0-100 gauge directly;
+ * stability is scaled ×10 because district-core's own metric is a ~0-10
+ * zone-property average (the same units mismatch DISTRICT_STABILITY_BASE's
+ * own comment documents for pressure inputs), while tickDistrictEconomy's
+ * STABILITY_DRIFT_THRESHOLD (30) and its own tests assume a 0-100 scale —
+ * district-core's default (5) lands exactly on economy-core's neutral
+ * baseline (50) after the ×10 scale, so an unconfigured district ticks as
+ * neutral on both sides. A district absent from district-core (mismatched
+ * configs) falls back to the same neutral defaults. No-op when the pack
+ * never registered economy-core — getEconomyCoreState degrades to {} (see
+ * its own accessor contract).
+ */
+function tickDistrictEconomies(world: WorldState, currentTick: number): void {
+  const { districts } = getEconomyCoreState(world);
+  for (const districtId of Object.keys(districts)) {
+    const district = getDistrictState(world, districtId);
+    const commerce = district?.commerce ?? 50;
+    const stability = (district?.stability ?? 5) * 10;
+    setDistrictEconomy(
+      world,
+      districtId,
+      tickDistrictEconomy(districts[districtId], commerce, stability, currentTick),
+    );
+  }
+}
+
 /** Accumulate milestones from the eventLog delta since the last tick. */
 function collectMilestones(world: WorldState, state: WorldTickState): void {
   const log = world.eventLog;
@@ -368,6 +425,159 @@ function collectMilestones(world: WorldState, state: WorldTickState): void {
     state.milestones.push({ label, tags });
   }
   state.lastEventIndex = log.length;
+}
+
+// ---------------------------------------------------------------------------
+// Companion reactions (F-b595731a) — companion-reactions.ts's
+// evaluateCompanionReactions/evaluateDepartureRisk were fully authored and
+// unit-tested with ZERO production callers: a recruited companion's morale
+// never changed after joining, and departures never fired. This is the
+// write-wire, driven from the SAME round-delta discipline collectMilestones
+// uses above.
+//
+// v2.8-shippable cut: 4 of the 16 REACTION_TABLE triggers are wired to a
+// real production event/state signal today, via 2 event sources; of those
+// 4, only 3 are actually reachable in a played session (F-P9-003: the prior
+// "2 of 16" count conflated event sources with trigger keys — 2 sources,
+// 4 keys) —
+//   - combat.entity.defeated: a hostile going down → 'combat-won'
+//     (reachable). An intercepting companion going down ALSO maps to
+//     'combat-lost' (reachable — interception keeps the player alive, so
+//     the round's world tick still runs). The PLAYER going down maps to
+//     that same 'combat-lost' key below, but F-P9-002: that sub-case can
+//     never fire in the shipped CLI — runHostileRound's "no tick over a
+//     corpse" gate (bin.ts, P8-WL-010) always returns before runWorldTick
+//     in the exact round the player is defeated, so this file never scans
+//     that round's event-log delta. The code path stays as the honest
+//     ceiling it is, not wired away.
+//   - pressure.expired: 'resolved-by-player' → 'pressure-resolved-well'
+//     (wired but UNREACHABLE today — this file's only computeFallout call
+//     site, step 3 below, always passes the literal 'expired-ignored', so
+//     resolutionType can never equal 'resolved-by-player' in production);
+//     every other resolutionType (today, always that same literal) →
+//     'pressure-resolved-badly' (reachable).
+// The remaining 12 triggers (leverage-*, betrayal-witnessed, district-*,
+// obligation-betrayed, item-*-recognized) have no production event or
+// persisted state to key off yet: player-leverage.ts's resolveSocialAction/
+// resolveRumorAction/resolveSabotageAction emit no ResolvedEvents and have no
+// production caller; item-recognition's chronicle never reaches the world
+// eventLog; npc-agency's obligation ledger is never persisted (endgame.ts's
+// own buildEndgameInputs comment says the same: "obligation ledgers are
+// never persisted"). This is an honest ceiling, not an oversight — mirrors
+// this file's own documented ceilings in the header above — deferred to a
+// follow-up wave explicitly scoped to wire those event sources, named here
+// so it is not silently dropped.
+// ---------------------------------------------------------------------------
+
+/**
+ * Map one combat.entity.defeated event onto a companion-reaction trigger.
+ * Anything else (a non-hostile bystander, an unrecognized tag set) has no
+ * clear reaction and is skipped (undefined).
+ */
+function combatReactionTrigger(event: ResolvedEvent, world: WorldState): ReactionTrigger | undefined {
+  if (event.type !== 'combat.entity.defeated') return undefined;
+  const defeatedId = typeof event.payload.entityId === 'string' ? event.payload.entityId : undefined;
+  if (!defeatedId) return undefined;
+  if (defeatedId === world.playerId) return 'combat-lost';
+  const entity = world.entities[defeatedId];
+  if (entity?.tags.includes(COMPANION_TAG)) return 'combat-lost';
+  if (entity && (entity.tags.includes('enemy') || entity.tags.includes('hostile'))) return 'combat-won';
+  return undefined;
+}
+
+/** Scan the round's event-log delta [start, end) for combat reaction triggers. */
+function collectCombatReactionTriggers(world: WorldState, start: number, end: number): ReactionTrigger[] {
+  const triggers: ReactionTrigger[] = [];
+  const log = world.eventLog;
+  for (let i = start; i < end && i < log.length; i++) {
+    const trigger = combatReactionTrigger(log[i], world);
+    if (trigger) triggers.push(trigger);
+  }
+  return triggers;
+}
+
+/**
+ * Apply every trigger this round produced to the live party: role-based
+ * morale deltas (adjustCompanionMorale), and on `reaction.departure`,
+ * removeCompanion PLUS the symmetric tag strip (removeCompanionTags) so a
+ * companion who leaves stops rendering as one everywhere else. Recomputes
+ * the ability-modifier status mirror (F-66cd1cd0) at the end since the
+ * active roster may have shrunk. No-op when there is no party or nothing
+ * triggered this round — the common case for most rounds.
+ *
+ * `breakpoints` (optional) forwards to evaluateCompanionReactions' own
+ * departure gate (`projectedMorale <= 10 && breakpoint is hostile/wavering`).
+ * The real call site below passes none — npc-agency's NpcRelationship ledger
+ * has no production writer yet (same honest ceiling as the 12 deferred
+ * triggers; endgame.ts's own buildEndgameInputs comment says the same), so
+ * departure is a fully-built, correct code path that cannot yet fire in a
+ * played session. Exported and parameterized (rather than hardcoded to no
+ * breakpoints) so it is both directly testable today and a one-line
+ * integration point once a future wave wires relationships: pass the real
+ * map, nothing else here changes.
+ */
+export function applyCompanionReactions(
+  engine: Engine,
+  world: WorldState,
+  triggers: ReactionTrigger[],
+  currentTick: number,
+  breakpoints?: Map<string, LoyaltyBreakpoint>,
+): void {
+  if (triggers.length === 0) return;
+  let party = getPartyState(world);
+  if (party.companions.length === 0) return;
+
+  let changed = false;
+  for (const trigger of triggers) {
+    const reactions = evaluateCompanionReactions(party.companions, trigger, { tick: currentTick, breakpoints });
+    for (const reaction of reactions) {
+      const companion = getCompanion(party, reaction.npcId);
+      if (!companion) continue;
+
+      party = adjustCompanionMorale(party, reaction.npcId, reaction.moraleDelta);
+      changed = true;
+      const newMorale = getCompanion(party, reaction.npcId)?.morale ?? 0;
+      const entityForSync = world.entities[reaction.npcId];
+      // Keep npc-agency's own .custom.companionMorale mirror in sync — its
+      // deriveCompanionGoals reads that field directly, not party state.
+      if (entityForSync) syncCompanionCustomFields(entityForSync, companion.role, newMorale);
+      engine.store.emitEvent('companion.reaction', {
+        npcId: reaction.npcId,
+        trigger: reaction.trigger,
+        moraleDelta: reaction.moraleDelta,
+        morale: newMorale,
+        narratorHint: reaction.narratorHint,
+      }, {
+        targetIds: [reaction.npcId],
+        presentation: { channels: ['narrator'], priority: 'low' },
+      });
+
+      if (reaction.departure) {
+        const removal = removeCompanion(party, reaction.npcId);
+        party = removal.party;
+        const entity = world.entities[reaction.npcId];
+        if (entity) removeCompanionTags(entity, companion.role);
+        engine.store.emitEvent('companion.departed', {
+          npcId: reaction.npcId,
+          npcName: entity?.name ?? reaction.npcId,
+          role: companion.role,
+          reason: reaction.departureReason ?? 'left the party',
+        }, {
+          targetIds: [reaction.npcId],
+          presentation: { channels: ['objective', 'narrator'], priority: 'high' },
+        });
+      }
+    }
+  }
+
+  if (!changed) return;
+  setPartyState(world, party);
+
+  const player = world.entities[world.playerId];
+  if (player) {
+    const statusEvent = refreshCompanionAbilityStatus(world, party, player, currentTick);
+    if (statusEvent) engine.store.recordEvent(statusEvent);
+  }
 }
 
 type FactionCognitionCarrier = {
@@ -435,12 +645,21 @@ export function buildPressureInputs(
     };
   }
 
+  // District economies (F-6008456f): the SAME store F-d0b5edb5's economy tick
+  // persists (world.modules['economy-core'].districts), converted to the Map
+  // shape PressureInputs.districtEconomies declares. Empty when the pack never
+  // registered economy-core — evaluatePressures' economy branch already
+  // guards on `districtEconomies.size === 0` and degrades to null, exactly
+  // like every other axis here degrades when its module is absent.
+  const districtEconomies = new Map(Object.entries(getEconomyCoreState(world).districts));
+
   return {
     playerRumors: [], // documented ceiling — see file header
     reputation,
     milestones: state.milestones,
     factionStates,
     districtMetrics,
+    districtEconomies,
     playerLevel: 1, // unread by every authored spawn rule; wire when one reads it
     totalTurns: currentTick,
     activePressures,
@@ -596,11 +815,27 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   const currentTick = engine.tick;
   const heat = num(world.globals[HEAT_KEY]);
 
+  // Companion reactions (F-b595731a): snapshot the round's event-log window
+  // BEFORE this tick's own steps (encounter spawn, pressure lifecycle) add
+  // anything — the same round-delta collectMilestones scans below, just
+  // captured earlier so combat.entity.defeated events from THIS round's
+  // player/NPC actions are the only thing in range (world-tick itself never
+  // emits that event type, so the exact upper bound is not load-bearing —
+  // captured early purely for clarity). Pressure-resolution triggers are
+  // collected separately, inline, in step 3 below (the resolutionType is
+  // already in hand there — no need to re-scan the log for it).
+  const reactionTriggers = collectCombatReactionTriggers(world, state.lastEventIndex, world.eventLog.length);
+
   // 0. Zone-entry encounter check (F-ENG005-encounter-spawn-wiring) — the
   // tactical layer of the same reaction loop. Runs inside this tick so the
   // round keeps ONE world tick; its `encounter.spawned` event rides the same
   // round delta the narration presents.
   const encounters = runEncounterSpawnStep(engine);
+
+  // 0b. Economy tick (F-d0b5edb5) — see file header. No events emitted (same
+  // silent-ledger posture district-core's own decay tick has); the state feeds
+  // step 5's buildPressureInputs and director.ts/endgame.ts's own reads.
+  tickDistrictEconomies(world, currentTick);
 
   // 1. Milestones from the delta (before we append our own events).
   collectMilestones(world, state);
@@ -635,6 +870,18 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
     });
     const chains = applyFallout(world, state, fallout, currentTick);
     expiredFallouts.push(fallout);
+
+    // Companion reactions (F-b595731a): 'resolved-by-player' is the one
+    // resolutionType that unambiguously means the player actively dealt with
+    // the threat; every other value (today, always 'expired-ignored' — this
+    // loop is the only computeFallout call site in production and always
+    // passes that literal) reads as the world moving on WITHOUT a successful
+    // player intervention.
+    reactionTriggers.push(
+      fallout.resolution.resolutionType === 'resolved-by-player'
+        ? 'pressure-resolved-well'
+        : 'pressure-resolved-badly',
+    );
 
     const wasHidden = pressure.visibility === 'hidden';
     emitPressureEvent(
@@ -678,6 +925,10 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
       ledger.splice(0, ledger.length - RESOLVED_PRESSURES_KEPT);
     }
   }
+
+  // 3c. Companion reactions (F-b595731a) — this round's combat outcomes plus
+  // this tick's pressure resolutions, now that both are known.
+  applyCompanionReactions(engine, world, reactionTriggers, currentTick);
 
   // 4. Sustained heat sharpens what's already in motion.
   const escalated: WorldPressure[] = [];

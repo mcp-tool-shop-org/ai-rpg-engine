@@ -789,5 +789,15 @@ export const itemCatalog: ItemCatalog = {
       grantedTags: ['spirit-sensitive'],
       requiredTags: ['photographic'],
     },
+    {
+      // F-d70c722d: granted via a bespoke item-use effect (smellingSaltsEffect)
+      // but had no itemCatalog entry — mirrors the healing-draught/antibiotics
+      // fix (F-a7a22999/F-b34a5c82).
+      id: 'smelling-salts',
+      name: 'Smelling Salts',
+      description: 'A small vial of ammonia salts — sharpens the senses after a shock.',
+      slot: 'tool',
+      rarity: 'common',
+    },
   ],
 };

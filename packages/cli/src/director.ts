@@ -2,11 +2,11 @@
 //
 // The handbook (appendix C) documents thirty-one format*ForDirector exports
 // across the strategic modules — pressures, leverage, factions, districts,
-// economies, opportunities, rumors, arcs, companions, materials — and until
-// this file none of them had a consumer. The ledger is the player-facing
-// strategic-state screen that finally reads them: one plain-text report, in
-// the CLI's existing visual voice, showing the campaign the way the director
-// modules see it.
+// economies, opportunities, rumors, arcs, companions, materials, equipment
+// — and until this file none of them had a consumer. The ledger is the
+// player-facing strategic-state screen that finally reads them: one
+// plain-text report, in the CLI's existing visual voice, showing the
+// campaign the way the director modules see it.
 //
 // Two rules keep the ledger honest:
 //
@@ -19,10 +19,19 @@
 //     collapses to ONE bounded, attributed line and every sibling section
 //     still renders.
 //
-// The one designed section not present: equipment provenance
-// (formatProvenanceForDirector). @ai-rpg-engine/equipment is not a
-// dependency of the CLI package, and package.json / tsconfig.json are
-// cross-domain this wave — the wiring seam is documented in the wave report.
+// F-efdb93d1/F-ec5c7354 (director-integration, wave 6): EQUIPMENT is wired.
+// @ai-rpg-engine/equipment is now a real dependency (package.json +
+// tsconfig.json references — the gap this file's header used to name as the
+// blocker), and the section below reads the player's Loadout through the
+// SAME formula-registry transport turns.ts already uses for the ability
+// catalog. Its honest ceiling, per rule 1 above: only starter-gladiator
+// wires createEquipmentCore today (9 of the 10 starters don't), so the
+// section silently gates off ("no catalog available") for every other pack
+// — that is rule 1 working as designed, not a bug. The Chronicle: trailer
+// never renders either, because recordItemEvent (item-chronicle.ts) has zero
+// production callers anywhere in the engine — authored provenance
+// (origin/faction/flags/lore) is real, kill/recognition counts are not,
+// until something actually calls it.
 
 import type { Engine, WorldState, ScalarValue } from '@ai-rpg-engine/core';
 import {
@@ -68,12 +77,23 @@ import {
   formatPartyForDirector,
   createPartyState,
   computePartyCohesion,
+  evaluateDepartureRisk,
   type PartyState,
   type CompanionState,
   // materials
   getMaterialInventory,
   formatMaterialsForDirector,
 } from '@ai-rpg-engine/modules';
+import {
+  // equipment (F-ec5c7354) — read via the formula-registry transport, the
+  // same per-engine pattern turns.ts's getAbilityCatalog uses
+  getEntityLoadout,
+  EQUIPMENT_CATALOG_FORMULA,
+  getItemProvenance,
+  formatProvenanceForDirector,
+  type ItemCatalog,
+  type ItemDefinition,
+} from '@ai-rpg-engine/equipment';
 import { buildEndgameInputs } from './endgame.js';
 import { describeActionError } from './guard.js';
 
@@ -107,6 +127,22 @@ function readDistrictEconomies(world: WorldState): Map<string, DistrictEconomy> 
 }
 
 /**
+ * The pack's construction-frozen equipment catalog via the formula-registry
+ * transport (equipment-core's EQUIPMENT_CATALOG_FORMULA) — the identical
+ * per-engine pattern turns.ts's getAbilityCatalog uses for
+ * ABILITY_CATALOG_FORMULA. Empty when the pack never wired
+ * @ai-rpg-engine/equipment's createEquipmentCore module (today that is 9 of
+ * the 10 starters — only starter-gladiator registers the formula). Callers
+ * never need to know which situation they're in: an absent formula and an
+ * empty/malformed published catalog both degrade to [].
+ */
+function readEquipmentCatalog(engine: Pick<Engine, 'formulas'>): ItemDefinition[] {
+  if (!engine.formulas.has(EQUIPMENT_CATALOG_FORMULA)) return [];
+  const catalog = engine.formulas.get(EQUIPMENT_CATALOG_FORMULA)() as ItemCatalog | undefined;
+  return catalog && Array.isArray(catalog.items) ? catalog.items : [];
+}
+
+/**
  * One ledger section: `body` returns the complete section text, or null when
  * the section's module has no state in this world (the section is skipped
  * silently — absence of state is not an error). A THROW anywhere in the body
@@ -132,7 +168,7 @@ function sectionHeader(title: string): string {
  * surface — a save taken after rendering must be byte-identical to one taken
  * before (buildHudWorld's promise, extended here).
  */
-export function renderDirectorLedger(engine: Pick<Engine, 'world'>): string {
+export function renderDirectorLedger(engine: Pick<Engine, 'world' | 'formulas'>): string {
   const world = structuredClone(engine.world) as WorldState;
 
   const player = world.entities[world.playerId];
@@ -326,29 +362,78 @@ export function renderDirectorLedger(engine: Pick<Engine, 'world'>): string {
     {
       name: 'PARTY',
       body: () => {
-        const compNs = namespace<{ party: unknown; companions: unknown }>(
-          world,
-          'companion-core',
-        );
-        let party: PartyState | null = null;
-        const persisted = compNs?.party;
-        if (
-          persisted &&
-          typeof persisted === 'object' &&
-          Array.isArray((persisted as PartyState).companions)
-        ) {
-          party = persisted as PartyState;
-        } else {
-          const companions = objectArray<CompanionState>(compNs?.companions);
-          if (companions.length > 0) {
-            party = { ...createPartyState(), companions };
-            party.cohesion = computePartyCohesion(party);
-          }
+        // F-834d0485: companion-core persists world.modules['companion-core']
+        // flat — PartyState's own { companions, maxSize, cohesion } fields at
+        // the namespace TOP, no `party:` wrapper (the shape director.test.ts
+        // and endgame.test.ts already construct and assert against). The
+        // speculative `party:`-wrapper branch this used to check FIRST was
+        // dead code for a shape nothing ever produced — removed rather than
+        // carried forward. maxSize/cohesion fall back to createPartyState()'s
+        // defaults only when genuinely absent (a pre-wiring save); a live
+        // companion-core namespace always carries both.
+        const compNs = namespace<PartyState>(world, 'companion-core');
+        const companions = objectArray<CompanionState>(compNs?.companions);
+        if (companions.length === 0) return null;
+        const party: PartyState = {
+          companions,
+          maxSize: typeof compNs?.maxSize === 'number' ? compNs.maxSize : createPartyState().maxSize,
+          cohesion: typeof compNs?.cohesion === 'number' ? compNs.cohesion : computePartyCohesion({ ...createPartyState(), companions }),
+        };
+        // NPC profiles still have no production writer (npc-agency's
+        // relationship ledger is never persisted). Departure risk (F-b595731a)
+        // now derives from morale alone (evaluateDepartureRisk with no
+        // breakpoint) — real signal, just never 'high' (that band requires a
+        // hostile/wavering breakpoint nothing supplies yet).
+        const departureRisks: Record<string, { risk: string; reason?: string }> = {};
+        for (const companion of companions) {
+          const assessment = evaluateDepartureRisk(companion);
+          if (assessment.risk !== 'none') departureRisks[companion.npcId] = assessment;
         }
-        if (!party || party.companions.length === 0) return null;
-        // No wiring persists NPC profiles or departure risks yet — the
-        // formatter renders honestly from the companion records alone.
-        return formatPartyForDirector(party, [], {});
+        return formatPartyForDirector(party, [], departureRisks);
+      },
+    },
+    {
+      name: 'EQUIPMENT',
+      body: () => {
+        // F-ec5c7354: the section this file's own header used to name as
+        // designed-but-absent. Reads the player's persisted Loadout
+        // (equipment-core's namespace) and resolves each equipped/carried
+        // item's ItemDefinition through the formula-registry transport.
+        const catalog = readEquipmentCatalog(engine);
+        if (catalog.length === 0) return null; // pack never wired equipment-core
+        const loadout = getEntityLoadout(world, world.playerId);
+        if (!loadout) return null; // wired, but this entity has never equipped
+
+        const itemIds = [
+          ...new Set([
+            ...Object.values(loadout.equipped).filter((id): id is string => id !== null),
+            ...loadout.inventory,
+          ]),
+        ].sort();
+
+        const entries: string[] = [];
+        for (const itemId of itemIds) {
+          const item = catalog.find((i) => i.id === itemId);
+          // Gate per-item, not per-loadout: an entity can carry ordinary
+          // gear alongside provenance-bearing relics, and only the latter
+          // earns a line — mirrors MATERIALS' "is there anything real to
+          // show" gate style.
+          if (!item || !getItemProvenance(item)) continue;
+          // No chronicle argument: recordItemEvent (item-chronicle.ts) has
+          // zero production callers anywhere in the engine, so passing one
+          // here would always be an invented []. formatProvenanceForDirector
+          // already treats an omitted chronicle as "no Chronicle: line" —
+          // the honest ceiling until something actually calls it.
+          entries.push(formatProvenanceForDirector(item));
+        }
+        if (entries.length === 0) return null;
+
+        const parts = [sectionHeader(`EQUIPMENT (${entries.length})`)];
+        for (const entry of entries) {
+          parts.push('');
+          parts.push(entry);
+        }
+        return parts.join('\n');
       },
     },
     {

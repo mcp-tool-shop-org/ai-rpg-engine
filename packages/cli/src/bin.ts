@@ -431,6 +431,25 @@ function printSessionBanner(pack: LoadedPack) {
 }
 
 /**
+ * F-7ea8fdaf: the single gate for "should extras exist this turn" — shared by
+ * renderFrame (what's shown) and runSession (what handlePlayerInput may
+ * resolve a typed number into), so the two can never drift. Extras vanish
+ * during active dialogue: the numbers on screen belong to the dialogue
+ * choices, and a value never rendered must never be reachable as a menu
+ * selection either. Previously runSession built its own copy unconditionally
+ * (unlike renderFrame's gated copy), so a number typed during dialogue that
+ * missed the current node's choice range could fall through into an ability/
+ * unlock entry that was never shown on screen — silently casting an ability
+ * or spending XP. Exported for unit testing (runSession itself has no
+ * exported/testable surface of its own).
+ */
+export function computeExtras(engine: Engine, pack: LoadedPack): ExtraAction[] {
+  const dState = engine.world.modules['dialogue-core'] as { activeDialogue: string | null } | undefined;
+  if (dState?.activeDialogue) return [];
+  return buildExtraActions(engine, pack.progressionTrees ?? []);
+}
+
+/**
  * One full-screen frame: scene/HUD/log/actions from terminal-ui, decorated
  * with the CLI's own layers —
  *  - F1d HUD: the player shown carries xp/level pseudo-resources (display-only
@@ -460,9 +479,10 @@ export function renderFrame(
   const trees = pack.progressionTrees ?? [];
 
   // Building the extras costs ability/unlock scans — skip when the menu is
-  // suppressed anyway (end frames, active dialogue).
-  const dState = engine.world.modules['dialogue-core'] as { activeDialogue: string | null } | undefined;
-  const extras = menu && !dState?.activeDialogue ? buildExtraActions(engine, trees) : [];
+  // suppressed anyway (end frames). The dialogue gate itself lives in
+  // computeExtras (F-7ea8fdaf), shared with runSession, so the numbers
+  // rendered here and the numbers handlePlayerInput can resolve never drift.
+  const extras = menu ? computeExtras(engine, pack) : [];
 
   const screen = renderFullScreen(
     buildHudWorld(engine.world, trees),
@@ -597,7 +617,11 @@ async function runSession(engine: Engine, pack: LoadedPack): Promise<SessionOutc
     // Notably this keeps every fs/engine failure inside the guarded router
     // instead of raw-throwing out of the loop, OUTSIDE main()'s .catch
     // (CS-C-008).
-    const extras = buildExtraActions(engine, pack.progressionTrees ?? []);
+    // F-7ea8fdaf: extras computed via computeExtras — the same gate
+    // renderFrame uses — instead of built unconditionally. A value never
+    // rendered on screen (dialogue suppresses the whole extras layer) can
+    // therefore never be parsed as a selection.
+    const extras = computeExtras(engine, pack);
     const logLenBefore = engine.world.eventLog.length;
     const result = handlePlayerInput(engine, input, { ruleset: pack.ruleset, extras });
     if (result.kind === 'quit') return 'quit';

@@ -20,6 +20,8 @@ import {
   pirateAbilities,
   pirateStatusDefinitions,
   buildCatalog,
+  itemCatalog,
+  rumBarrelEffect,
 } from './content.js';
 import { pirateMinimalRuleset } from './ruleset.js';
 
@@ -91,5 +93,17 @@ describe('pirate content — cross-reference integrity (F-4806a2c9)', () => {
 describe('pirate encounter tables (F-ENG005-encounter-spawn-wiring)', () => {
   it('every table entry references an authored, spawnable encounter valid for its zone', () => {
     expect(validateEncounterSpawnContent(encounterSpawnContent, authoredZones)).toEqual([]);
+  });
+});
+
+// F-d70c722d: rum-barrel is granted via a bespoke item-use effect
+// (rumBarrelEffect) but had no itemCatalog entry — the same shape as
+// F-a7a22999/F-b34a5c82 (healing-draught/antibiotics).
+describe('pirate content — item catalog completeness (F-d70c722d)', () => {
+  it('every item-use effect has a matching itemCatalog entry', () => {
+    const itemIds = new Set(itemCatalog.items.map((i) => i.id));
+    for (const effect of [rumBarrelEffect]) {
+      expect(itemIds.has(effect.itemId), `granted item "${effect.itemId}" missing from itemCatalog`).toBe(true);
+    }
   });
 });

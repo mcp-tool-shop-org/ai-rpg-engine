@@ -164,14 +164,34 @@ describe('buildEndgameInputs (F-ENG005) — live inputs from persisted state', (
     };
   }
 
-  it('a zero-state world reproduces the previous behavior: zero heat, level 1, empty pressures/companions/economies', () => {
+  it('a zero-state world reproduces the previous behavior: zero heat, level 1, empty pressures/companions', () => {
     const engine = makeGame();
     const inputs = buildEndgameInputs(engine.world);
     expect(inputs.playerLeverage.heat).toBe(0);
     expect(inputs.playerLevel).toBe(1);
     expect(inputs.activePressures).toEqual([]);
     expect(inputs.companions).toEqual([]);
-    expect(inputs.districtEconomies.size).toBe(0);
+  });
+
+  // F-d0b5edb5: buildWorldStack now seeds economy-core unconditionally (the
+  // write-wire this fix is for), so districtEconomies is no longer
+  // permanently empty for a REAL played session — this replaces the old
+  // assertion above, which pinned the exact bug F-d0b5edb5 closes. The
+  // "pack never registered economy-core at all" case is covered separately
+  // below and still degrades to an empty Map.
+  it('F-d0b5edb5: a live starter engine seeds economy-core, so districtEconomies reflects real play', () => {
+    const engine = makeGame();
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.districtEconomies.size).toBe(2); // starter-fantasy's two districts
+    expect(inputs.districtEconomies.has('chapel-grounds')).toBe(true);
+    expect(inputs.districtEconomies.has('crypt-depths')).toBe(true);
+  });
+
+  it('districtEconomies degrades to an empty Map for a world whose pack never registered economy-core', () => {
+    const engine = makeGame();
+    const world = structuredClone(engine.world);
+    delete world.modules['economy-core'];
+    expect(buildEndgameInputs(world).districtEconomies.size).toBe(0);
   });
 
   it('heat is sourced from defeat-fallout\'s exact global key world.globals["player_heat"]', () => {
@@ -416,6 +436,90 @@ describe('renderSessionEnd + journalFromEventLog (F1b) — the end screen', () =
     expect(screen).toContain('Abilities Used:');
     expect(screen).toContain('XP Earned:');
     expect(screen).toContain('Advancements Unlocked:');
+  });
+
+  // F-2bf933bd: formatFinaleForDirector (the structured sibling of
+  // formatFinaleForTerminal — resolution class, dominant arc, duration,
+  // top-5 key moments, NPC fates, faction fates, legacy) had ZERO consumers
+  // anywhere in the repo before this wire, despite being computed for free
+  // from the SAME outline the narrative epilogue already builds.
+  it("F-2bf933bd: the end screen also carries the director's structured summary trailer, after the narrative epilogue", () => {
+    const engine = makeGame();
+    engine.store.state.entities['player'].resources.hp = 0;
+    const end = evaluateSessionEnd(engine)!;
+
+    const screen = renderSessionEnd(end, engine.world);
+
+    // The narrative epilogue (formatFinaleForTerminal) still renders first...
+    expect(screen).toContain('CAMPAIGN CONCLUSION');
+    // ...followed by a distinct trailer carrying formatFinaleForDirector's
+    // own structured labels — title-case-colon, never produced by
+    // formatFinaleForTerminal (which uses ALL-CAPS dividers instead: FACTION
+    // OUTCOMES, LEGACY, ...), so these are unambiguous proof of the new wire.
+    expect(screen).toContain("THE DIRECTOR'S SUMMARY");
+    expect(screen).toContain('Key Moments:');
+    expect(screen).toContain('NPC Fates:');
+    expect(screen).toContain('Faction Fates:');
+    expect(screen).toContain('Legacy:');
+
+    // And it comes AFTER the narrative epilogue, not before — "the numbers
+    // behind the story you just got", not a duplicate shown first.
+    expect(screen.indexOf('CAMPAIGN CONCLUSION')).toBeLessThan(
+      screen.indexOf("THE DIRECTOR'S SUMMARY"),
+    );
+  });
+
+  // F-2fe4be26 — the DISCIPLINE section's own worked example: "tagging
+  // activates a consumer (e.g. finale COMPANIONS renders)". End-to-end
+  // through the REAL starter-fantasy game (createGame — now wired with
+  // companion-core via buildWorldStack, F-7d5c3e28) and the real 'recruit'
+  // verb: recruit → tags 'companion' → endgame.ts's FinaleNpcInput.isCompanion
+  // → campaign-memory's finale.ts COMPANIONS block. RED-PROOF: before this
+  // wave, nothing ever wrote the 'companion' tag, so this block never
+  // rendered for any NPC in any played session.
+  it('recruiting through the real verb makes the companion appear in the finale\'s COMPANIONS block', () => {
+    const engine = makeGame();
+    // Brother Aldric ('brother-aldric') starts in chapel-nave; move there first.
+    engine.submitAction('move', { targetIds: ['chapel-nave'] });
+    const recruited = engine.submitAction('recruit', { targetIds: ['brother-aldric'] });
+    expect(recruited.some((e) => e.type === 'companion.recruited')).toBe(true);
+    expect(engine.world.entities['brother-aldric'].tags).toContain('companion');
+
+    engine.store.state.entities['player'].resources.hp = 0; // end the session
+    const end = evaluateSessionEnd(engine)!;
+    const screen = renderSessionEnd(end, engine.world);
+
+    expect(screen).toContain('COMPANIONS');
+    expect(screen).toContain('Brother Aldric');
+  });
+
+  it('an NPC who was never recruited does NOT appear in the COMPANIONS block, even if otherwise alive and well', () => {
+    const engine = makeGame();
+    engine.store.state.entities['player'].resources.hp = 0;
+    const end = evaluateSessionEnd(engine)!;
+    const screen = renderSessionEnd(end, engine.world);
+    expect(screen).not.toContain('COMPANIONS');
+  });
+
+  // F-P9-001: renderSessionEnd used to pass buildFinaleOutline a hardcoded
+  // `districts: []`, even after buildEndgameInputs started deriving live
+  // districtEconomies (F-d0b5edb5) — the finale's DISTRICTS section never
+  // rendered for any played session. starter-fantasy wires two districts via
+  // buildWorldStack (chapel-grounds, crypt-depths — see "a live starter
+  // engine seeds economy-core" above); a session ending with no district-tick
+  // fired shows district-core's DEFAULT_METRICS.stability (5, untouched) and
+  // economy-core's baseline 'normal' tone (neither district's starter tags
+  // push any supply past a scarcity/surplus threshold). RED-PROOF: before
+  // this wire, the DISTRICTS section never appeared at all.
+  it("F-P9-001: a played session's finale DISTRICTS section renders real district economy data", () => {
+    const engine = makeGame();
+    engine.store.state.entities['player'].resources.hp = 0; // end the session
+    const end = evaluateSessionEnd(engine)!;
+    const screen = renderSessionEnd(end, engine.world);
+
+    expect(screen).toContain('DISTRICTS');
+    expect(screen).toContain('Chapel Grounds: stability 5, normal');
+    expect(screen).toContain('Crypt Depths: stability 5, normal');
   });
 
   it('journalFromEventLog records kills, first-visit discoveries, and unlocks with bounded duplicates', () => {

@@ -18,6 +18,23 @@ export type DialogueState = {
 
 export type DialogueRegistry = Map<string, DialogueDefinition>;
 
+/**
+ * Build an action.rejected event that NAMES the rejected verb.
+ *
+ * The dispatcher (core/actions.ts) stamps `verb: action.verb` into every
+ * rejection it raises — unknown verb, a validator/handler throw. Consumers key
+ * on that: the CLI's dialogue-trap fall-through (bin.ts `chooseRejected`,
+ * CS-C-001) tests `payload.verb === 'choose'`, so a rejection that carried only
+ * `{ reason }` was invisible to it — against the real module a mistyped
+ * dialogue number was silently accepted as a valid choice and the fall-through
+ * never engaged. Routing every rejection here makes "name the verb" structural
+ * for this module instead of per-call-site discipline that a future branch can
+ * forget (which is exactly how this bug arose).
+ */
+function rejected(action: ActionIntent, reason: string): ResolvedEvent {
+  return makeEvent(action, 'action.rejected', { verb: action.verb, reason });
+}
+
 export function createDialogueCore(dialogues: DialogueDefinition[]): EngineModule {
   const registry: DialogueRegistry = new Map();
   for (const d of dialogues) {
@@ -48,12 +65,12 @@ function speakHandler(
 ): ResolvedEvent[] {
   const targetId = action.targetIds?.[0];
   if (!targetId) {
-    return [makeEvent(action, 'action.rejected', { reason: 'no one to speak to' })];
+    return [rejected(action, 'no one to speak to')];
   }
 
   const target = world.entities[targetId];
   if (!target) {
-    return [makeEvent(action, 'action.rejected', { reason: `${targetId} not found` })];
+    return [rejected(action, `${targetId} not found`)];
   }
 
   // Find dialogue for this NPC
@@ -73,12 +90,12 @@ function speakHandler(
   }
 
   if (!dialogue) {
-    return [makeEvent(action, 'action.rejected', { reason: `${target.name} has nothing to say` })];
+    return [rejected(action, `${target.name} has nothing to say`)];
   }
 
   const entryNode = dialogue.nodes[dialogue.entryNodeId];
   if (!entryNode) {
-    return [makeEvent(action, 'action.rejected', { reason: 'dialogue has no entry node' })];
+    return [rejected(action, 'dialogue has no entry node')];
   }
 
   // Set dialogue state
@@ -109,17 +126,17 @@ function chooseHandler(
 ): ResolvedEvent[] {
   const dState = world.modules['dialogue-core'] as DialogueState | undefined;
   if (!dState?.activeDialogue || !dState.activeNodeId) {
-    return [makeEvent(action, 'action.rejected', { reason: 'no active dialogue' })];
+    return [rejected(action, 'no active dialogue')];
   }
 
   const dialogue = registry.get(dState.activeDialogue);
   if (!dialogue) {
-    return [makeEvent(action, 'action.rejected', { reason: 'dialogue not found' })];
+    return [rejected(action, 'dialogue not found')];
   }
 
   const currentNode = dialogue.nodes[dState.activeNodeId];
   if (!currentNode?.choices) {
-    return [makeEvent(action, 'action.rejected', { reason: 'no choices available' })];
+    return [rejected(action, 'no choices available')];
   }
 
   const choiceId = action.parameters?.choiceId as string;
@@ -134,7 +151,7 @@ function chooseHandler(
   }
 
   if (!choice) {
-    return [makeEvent(action, 'action.rejected', { reason: 'invalid choice' })];
+    return [rejected(action, 'invalid choice')];
   }
 
   const events: ResolvedEvent[] = [

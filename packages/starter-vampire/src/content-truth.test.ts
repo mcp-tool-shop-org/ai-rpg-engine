@@ -106,11 +106,13 @@ describe('T0-player-maxhp: the HUD HP bar can render for the player', () => {
     expect(player.resources.maxHp).toBeGreaterThanOrEqual(player.resources.hp);
   });
 
-  it('created characters carry maxHp >= hp', () => {
-    const { entity } = insertCreatedCharacter(buildCatalog.archetypes[0].id);
-    expect(entity.resources.maxHp).toBeDefined();
-    expect(entity.resources.maxHp).toBeGreaterThanOrEqual(entity.resources.hp);
-  });
+  for (const archetype of buildCatalog.archetypes) {
+    it(`${archetype.id} carries maxHp >= hp`, () => {
+      const { entity } = insertCreatedCharacter(archetype.id);
+      expect(entity.resources.maxHp).toBeDefined();
+      expect(entity.resources.maxHp).toBeGreaterThanOrEqual(entity.resources.hp);
+    });
+  }
 });
 
 describe('T0-verb-honesty-content: help rows match registered handlers', () => {

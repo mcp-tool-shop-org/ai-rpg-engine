@@ -4,6 +4,10 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { Engine, SaveLoadError, type EngineModule, type EntityState, type RulesetDefinition } from '@ai-rpg-engine/core';
 import { createGame as createFantasyGame } from '@ai-rpg-engine/starter-fantasy';
+import { createDialogueCore } from '@ai-rpg-engine/modules';
+import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
+import { buildActionList } from '@ai-rpg-engine/terminal-ui';
+import { ABILITY_CATALOG_FORMULA } from '@ai-rpg-engine/modules';
 import {
   runGuardedAction,
   replayGame,
@@ -14,6 +18,7 @@ import {
   restoreSessionFromSave,
   runHostileRound,
   renderFrame,
+  computeExtras,
   installCreatedPlayer,
   parseRunArgs,
   formatSeedLine,
@@ -23,6 +28,7 @@ import {
 import { allPacks } from './packs.js';
 import type { LoadedPack } from './external-pack.js';
 import { runNpcTurns } from './turns.js';
+import { buildExtraActions } from './menu.js';
 
 // --- Shared fixtures for the interactive-loop tests -------------------------
 
@@ -471,6 +477,209 @@ describe('handlePlayerInput — dialogue choose rejection falls through (CS-C-00
         (e) => e.type === 'action.rejected' && (e.payload as { verb?: unknown }).verb === 'choose',
       ),
     ).toBe(false);
+  });
+});
+
+// Dialogue-trap amplifier — REAL dialogue-core module (CS-C-001, real-engine proof)
+//
+// The amplifier tests ABOVE use a synthetic engine with NO `choose` verb, so the
+// DISPATCHER rejects `choose` as an unknown verb — and the dispatcher stamps
+// `verb` into its rejection payload. Against the REAL dialogue-core module the
+// rejection comes from chooseHandler, whose payload (before the fix) carried
+// only `{ reason }` — no verb. bin.ts's `chooseRejected` guard keys on
+// `payload.verb === 'choose'`, so a real rejected choose was invisible to it:
+// the router returned `{ via: 'dialogue-choice' }` as if a mistyped dialogue
+// number were a valid selection, and the fall-through never engaged in real
+// gameplay against a real dialogue. These tests wire the REAL module in and
+// lock the fall-through against it.
+describe('handlePlayerInput — dialogue choose rejection falls through (CS-C-001, REAL dialogue-core module)', () => {
+  const trap: DialogueDefinition = {
+    id: 'trap',
+    speakers: ['npc'],
+    entryNodeId: 'entry',
+    nodes: {
+      entry: {
+        id: 'entry',
+        speaker: 'npc',
+        text: 'Well?',
+        choices: [{ id: 'only', text: 'The only option.', nextNodeId: 'nowhere' }],
+      },
+    },
+  };
+
+  // Same bare-but-playable engine as makeEngine() ('1' -> move -> 'test.moved'),
+  // but with the REAL dialogue-core module wired, so `choose` runs the real
+  // chooseHandler rather than the dispatcher's unknown-verb path.
+  function makeRealDialogueEngine(): Engine {
+    const engine = new Engine({ manifest: testManifest, seed: 7, modules: [createDialogueCore([trap])] });
+    engine.store.state.zones = {
+      cell: { id: 'cell', roomId: 'r1', name: 'Cell', tags: [], neighbors: ['hall'] },
+      hall: { id: 'hall', roomId: 'r1', name: 'Hall', tags: [], neighbors: ['cell'] },
+    };
+    engine.store.state.locationId = 'cell';
+    engine.store.addEntity({
+      id: 'hero', blueprintId: 'bp', type: 'player', name: 'Hero',
+      tags: [], stats: {}, resources: { hp: 10 }, statuses: [], zoneId: 'cell',
+    });
+    engine.store.state.playerId = 'hero';
+    engine.dispatcher.registerVerb('move', (action) => [
+      {
+        id: '',
+        tick: action.issuedAtTick,
+        type: 'test.moved',
+        actorId: action.actorId,
+        payload: { to: action.targetIds?.[0] ?? '' },
+      },
+    ]);
+    return engine;
+  }
+
+  it('a real chooseHandler rejection (no active node) falls through to the numbered menu', () => {
+    const engine = makeRealDialogueEngine();
+    // Active flag set but no active node -> the real chooseHandler rejects with
+    // "no active dialogue" (the finding's exact reproduction state).
+    engine.world.modules['dialogue-core'] = { activeDialogue: 'trap', activeNodeId: null, speakerId: null };
+
+    const result = handlePlayerInput(engine, '1', { log: vi.fn() });
+
+    // The rejection came from the REAL module AND now names the verb...
+    const rejected = engine.world.eventLog.filter(
+      (e) => e.type === 'action.rejected' && (e.payload as { verb?: unknown }).verb === 'choose',
+    );
+    expect(rejected).toHaveLength(1);
+    // ...so the router fell through instead of faking a dialogue selection.
+    expect(result).toEqual({ kind: 'action', via: 'menu' });
+    expect(eventTypes(engine)).toContain('test.moved');
+  });
+
+  it('an out-of-range choiceIndex on a node that HAS choices also falls through (not a fake dialogue-choice)', () => {
+    const engine = makeRealDialogueEngine();
+    // Active on the entry node (one visible choice). '99' -> choiceIndex 98 ->
+    // out of range -> real "invalid choice" rejection.
+    engine.world.modules['dialogue-core'] = { activeDialogue: 'trap', activeNodeId: 'entry', speakerId: 'npc' };
+
+    const result = handlePlayerInput(engine, '99', { log: vi.fn() });
+
+    // A real, verb-named choose rejection was recorded...
+    const rejected = engine.world.eventLog.filter(
+      (e) => e.type === 'action.rejected' && (e.payload as { verb?: unknown }).verb === 'choose',
+    );
+    expect(rejected).toHaveLength(1);
+    // ...the input was NOT swallowed as a dialogue selection...
+    expect(result).not.toEqual({ kind: 'action', via: 'dialogue-choice' });
+    expect(eventTypes(engine)).not.toContain('dialogue.choice.selected');
+    // ...and '99' is beyond the menu range, so it consumes no turn.
+    expect(result).toEqual({ kind: 'unknown' });
+  });
+
+  it('a VALID choice on the real module is still consumed as the dialogue selection (the fix does not over-reach)', () => {
+    const engine = makeRealDialogueEngine();
+    engine.world.modules['dialogue-core'] = { activeDialogue: 'trap', activeNodeId: 'entry', speakerId: 'npc' };
+
+    // '1' -> choiceIndex 0 -> the one visible choice -> real chooseHandler SUCCEEDS.
+    const result = handlePlayerInput(engine, '1', { log: vi.fn() });
+
+    expect(result).toEqual({ kind: 'action', via: 'dialogue-choice' });
+    expect(eventTypes(engine)).toContain('dialogue.choice.selected');
+    expect(eventTypes(engine)).not.toContain('test.moved');
+  });
+});
+
+// F-7ea8fdaf — runSession built its extras unconditionally every turn
+// (bin.ts, `buildExtraActions(engine, pack.progressionTrees ?? [])`), unlike
+// renderFrame's own extras (`menu && !dState?.activeDialogue ? ... : []`).
+// So a number typed during dialogue that missed the current node's choice
+// range (dialogue rejects `choose`, chooseRejected=true — the CS-C-001
+// fall-through exercised above) could reach an ability/unlock entry that was
+// NEVER shown on screen: handlePlayerInput would submit it as a real action
+// via runGuardedAction — silently casting an ability or spending XP on a
+// progression unlock. The existing dialogue-trap tests above never exercised
+// this because they call handlePlayerInput without an extras option. Fixed
+// by threading both renderFrame and runSession through one shared gate:
+// computeExtras.
+describe('computeExtras — the shared dialogue gate (F-7ea8fdaf)', () => {
+  function packFor(engine: Engine): LoadedPack {
+    return { meta: { id: 'test-game', name: 'Test Game' }, createGame: () => engine };
+  }
+
+  /**
+   * makeEngine() (the CS-C-001 fixture above — no `choose` verb registered,
+   * so a rejected choose is detected the same PROVEN way: the dispatcher's
+   * own "unknown verb" rejection, which DOES stamp verb:'choose', unlike
+   * dialogue-core's own internal rejections which stamp only `reason`) PLUS
+   * one real, always-ready self-targeted ability registered via the
+   * ability-core formula contract (getAbilityCatalog reads
+   * ABILITY_CATALOG_FORMULA) and a matching verb handler — so
+   * buildExtraActions returns a real 'ability' group entry, and a submission
+   * that reaches it is independently observable as an 'ability.used' event.
+   */
+  function makeAbilityReadyEngine(): Engine {
+    const engine = makeEngine();
+    engine.formulas.register(ABILITY_CATALOG_FORMULA, () => [
+      {
+        id: 'test-buff',
+        name: 'Test Buff',
+        verb: 'use-ability',
+        tags: [],
+        target: { type: 'self' },
+        effects: [],
+      },
+    ]);
+    engine.dispatcher.registerVerb('use-ability', (action) => [
+      {
+        id: '',
+        tick: action.issuedAtTick,
+        type: 'ability.used',
+        actorId: action.actorId,
+        payload: { abilityId: (action.parameters as { abilityId?: unknown } | undefined)?.abilityId },
+      },
+    ]);
+    return engine;
+  }
+
+  it('returns [] while dialogue is active, even though a real ability is ready (control: non-empty outside dialogue)', () => {
+    const engine = makeAbilityReadyEngine();
+    const pack = packFor(engine);
+
+    // Control: outside dialogue, the ability really is offered.
+    const outside = computeExtras(engine, pack);
+    expect(outside.some((a) => a.label === 'Test Buff')).toBe(true);
+
+    engine.world.modules['dialogue-core'] = { activeDialogue: 'stuck-dialogue' };
+    expect(computeExtras(engine, pack)).toEqual([]);
+  });
+
+  it('a number that misses the dialogue choice range never falls through to a READY ability — no ability fires, no turn is spent (RED-PROOF: fails pre-fix)', () => {
+    const engine = makeAbilityReadyEngine();
+    const pack = packFor(engine);
+
+    // Confirm the trap is loaded: rawExtras is exactly what the OLD
+    // unconditional buildExtraActions(...) call in runSession used to
+    // compute (dialogue or not) — this exact number resolves to the ability.
+    const baseCount = buildActionList(engine.world).length;
+    const rawExtras = buildExtraActions(engine, pack.progressionTrees ?? []);
+    const abilityOffset = rawExtras.findIndex((a) => a.label === 'Test Buff');
+    expect(abilityOffset).toBeGreaterThanOrEqual(0);
+    const trapNumber = String(baseCount + abilityOffset + 1);
+
+    engine.world.modules['dialogue-core'] = { activeDialogue: 'stuck-dialogue' };
+    // The FIXED gate — mirrors exactly what runSession now computes and
+    // hands to handlePlayerInput.
+    const extras = computeExtras(engine, pack);
+    expect(extras).toEqual([]);
+    const result = handlePlayerInput(engine, trapNumber, { log: vi.fn(), extras });
+
+    // The doomed `choose` was rejected (the dialogue trap engaged — same
+    // detection mechanism the CS-C-001 tests above already pin)...
+    expect(
+      engine.world.eventLog.some(
+        (e) => e.type === 'action.rejected' && (e.payload as { verb?: unknown }).verb === 'choose',
+      ),
+    ).toBe(true);
+    // ...and nothing that looks like an ability cast occurred — the value
+    // never rendered on screen was never reachable as a selection.
+    expect(engine.world.eventLog.some((e) => e.type === 'ability.used')).toBe(false);
+    expect(result).toEqual({ kind: 'unknown' });
   });
 });
 

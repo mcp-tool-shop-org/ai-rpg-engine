@@ -203,19 +203,26 @@ function deriveSpeaker(events: readonly NarrationSourceEvent[]): SpeakerCue | un
 /**
  * Visual accents for GUI embedders (terminal-ui renders text only and does
  * not apply these): a defeat flashes; the player's own fall fades out.
+ *
+ * F-77706f09: scans the WHOLE turn for a player defeat before falling back to
+ * the first non-player defeat — the same precedence order deriveTone uses.
+ * A turn with two defeats (a non-player entity, then later the player) must
+ * fade out, not flash: plan.tone and plan.uiEffects can never disagree about
+ * whether the player died this turn.
  */
 function deriveUiEffects(
   events: readonly NarrationSourceEvent[],
   playerId?: string,
 ): UiEffect[] {
+  let sawNonPlayerDefeat = false;
   for (const event of events) {
     if (event.type !== DEFEAT_EVENT) continue;
     if (isPlayerDefeat(event, playerId)) {
       return [{ type: 'fade-out', durationMs: 600 }];
     }
-    return [{ type: 'flash', durationMs: 250 }];
+    sawNonPlayerDefeat = true;
   }
-  return [];
+  return sawNonPlayerDefeat ? [{ type: 'flash', durationMs: 250 }] : [];
 }
 
 /**

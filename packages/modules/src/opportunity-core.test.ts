@@ -20,6 +20,9 @@ import type { NpcProfile, NpcObligationLedger } from './npc-agency.js';
 import type { WorldPressure } from './pressure-system.js';
 import type { DistrictEconomy } from './economy-core.js';
 import { createDistrictEconomy } from './economy-core.js';
+import { createTestEngine } from '@ai-rpg-engine/core';
+import { createCompanionCore, getPartyState } from './companion-core.js';
+import { statusCore } from './status-core.js';
 
 function baseLeverage(): LeverageState {
   return { favor: 10, debt: 0, blackmail: 0, influence: 5, heat: 10, legitimacy: 20 };
@@ -252,6 +255,51 @@ describe('opportunity-core', () => {
       expect(result).not.toBeNull();
       expect(result!.opportunity.kind).toBe('favor-request');
       expect(result!.opportunity.tags).toContain('personal-ask');
+    });
+
+    // F-2fe4be26 completeness: the test above proves the READER accepts a
+    // hand-built CompanionState with personalGoal. This closes the loop —
+    // the REAL recruit verb's output (companion-core.ts, F-7d5c3e28), fed
+    // straight into the same already-tested reader, RED-PROOFs that this
+    // wave's write-side output is the exact shape this dark-but-authored
+    // consumer expects (starter-fantasy's Brother Aldric authors
+    // custom.personalGoal, which the recruit verb now carries onto
+    // CompanionState.personalGoal — see companion-core.test.ts's authored-
+    // content test). evaluateOpportunities/evaluateCompanionOpportunities
+    // still have no round-hook caller in production (a separate, unscoped
+    // gap — same class as companion-reactions' pre-wave state); this proves
+    // the DATA CONTRACT, the part actually owned by this wave.
+    it('a companion recruited through the REAL verb round-trips into a favor-request opportunity', () => {
+      const engine = createTestEngine({
+        modules: [statusCore, createCompanionCore()],
+        entities: [
+          { id: 'player', blueprintId: 'player', type: 'player', name: 'Hero', tags: ['player'], stats: {}, resources: { hp: 10 }, statuses: [], zoneId: 'a' },
+          {
+            id: 'aldric', blueprintId: 'aldric', type: 'npc', name: 'Brother Aldric',
+            tags: ['npc', 'recruitable', 'healer'], stats: {}, resources: { hp: 10 }, statuses: [], zoneId: 'a',
+            custom: { companionRole: 'healer', companionAbilities: 'medical-support,witness-calming', personalGoal: 'Redeem the fallen brothers of the chapel' },
+          },
+        ],
+        zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+      });
+      engine.submitAction('recruit', { targetIds: ['aldric'] });
+      const companions = getPartyState(engine.world).companions;
+      expect(companions).toHaveLength(1);
+
+      const inputs = baseInputs({
+        playerReputations: [{ factionId: 'guild', value: 10 }], // keep faction-job from firing first
+        companions,
+        npcProfiles: [{
+          npcId: 'aldric', name: 'Brother Aldric', factionId: null, goals: [],
+          relationship: { trust: 50, fear: 0, greed: 10, loyalty: 0 },
+          breakpoint: 'favorable', dominantAxis: 'trust', leverageAngle: 'Reliable ally',
+          knownRumors: [], underPressure: false,
+        }],
+      });
+      const result = evaluateOpportunities(inputs);
+      expect(result).not.toBeNull();
+      expect(result!.opportunity.kind).toBe('favor-request');
+      expect(result!.opportunity.description).toContain('Redeem the fallen brothers of the chapel');
       expect(result!.opportunity.tags).toContain('companion');
     });
 

@@ -783,5 +783,15 @@ export const itemCatalog: ItemCatalog = {
       grantedTags: ['xeno-researcher'],
       requiredTags: ['pathfinder'],
     },
+    {
+      // F-d70c722d: granted via the dialogue.ended listener in setup.ts
+      // (emergencyCellEffect) but had no itemCatalog entry — mirrors the
+      // healing-draught/antibiotics fix (F-a7a22999/F-b34a5c82).
+      id: 'emergency-cell',
+      name: 'Emergency Cell',
+      description: 'A charged power cell scavenged for a jolt when systems fail.',
+      slot: 'tool',
+      rarity: 'common',
+    },
   ],
 };

@@ -11,7 +11,15 @@ import { encounterSpawnContent, zones as authoredZones } from './content.js';
 import { validateGameContent, validateAbilityPack } from '@ai-rpg-engine/content-schema';
 import type { ContentPack } from '@ai-rpg-engine/content-schema';
 import { createGame } from './setup.js';
-import { buildCatalog, commanderTree, scientistDialogue, colonyAbilities, colonyStatusDefinitions } from './content.js';
+import {
+  buildCatalog,
+  commanderTree,
+  scientistDialogue,
+  colonyAbilities,
+  colonyStatusDefinitions,
+  itemCatalog,
+  emergencyCellEffect,
+} from './content.js';
 import { colonyMinimalRuleset } from './ruleset.js';
 
 describe('colony content — progression tree references', () => {
@@ -95,5 +103,17 @@ describe('colony content — cross-reference integrity (F-4806a2c9)', () => {
 describe('colony encounter tables (F-ENG005-encounter-spawn-wiring)', () => {
   it('every table entry references an authored, spawnable encounter valid for its zone', () => {
     expect(validateEncounterSpawnContent(encounterSpawnContent, authoredZones)).toEqual([]);
+  });
+});
+
+// F-d70c722d: emergency-cell is granted via the dialogue.ended listener in
+// setup.ts (emergencyCellEffect) but had no itemCatalog entry — the same
+// shape as F-a7a22999/F-b34a5c82 (healing-draught/antibiotics).
+describe('colony content — item catalog completeness (F-d70c722d)', () => {
+  it('every item-use effect has a matching itemCatalog entry', () => {
+    const itemIds = new Set(itemCatalog.items.map((i) => i.id));
+    for (const effect of [emergencyCellEffect]) {
+      expect(itemIds.has(effect.itemId), `granted item "${effect.itemId}" missing from itemCatalog`).toBe(true);
+    }
   });
 });

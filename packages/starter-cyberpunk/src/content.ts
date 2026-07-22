@@ -1,5 +1,5 @@
 // Neon Lockbox — cyberpunk micro-demo content
-// 3 zones, 1 NPC, 1 ICE agent, 1 item, 1 dialogue
+// 3 zones, 2 NPCs, 3 enemies, 7 items, 1 dialogue
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import type { CurrencyReward } from '@ai-rpg-engine/modules';

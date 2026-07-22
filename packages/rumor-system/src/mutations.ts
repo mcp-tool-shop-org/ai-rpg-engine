@@ -83,8 +83,8 @@ export const attributeShiftMutation: MutationRule = {
     // The claim gets attributed to the spreader instead of the source
     if (mutated.claim.includes(mutated.sourceId)) {
       mutated.claim = mutated.claim.replace(mutated.sourceId, ctx.spreaderId);
+      mutated.mutationCount++;
     }
-    mutated.mutationCount++;
     return mutated;
   },
 };

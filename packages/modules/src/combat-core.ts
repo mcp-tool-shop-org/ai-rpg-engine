@@ -35,8 +35,16 @@ export type CombatFormulas = {
   hitChance?: (attacker: EntityState, target: EntityState, world: WorldState) => number;
   /** Calculate damage. Default: attacker.attack stat */
   damage?: (attacker: EntityState, target: EntityState, world: WorldState) => number;
-  /** Check if an entity is the player's ally (companion). Used for interception. */
-  isAlly?: (entityId: string) => boolean;
+  /**
+   * Check if an entity is the player's ally (companion). Used for
+   * interception. `world` (F-64580086) lets a caller resolve it purely from
+   * live entity state (e.g. buildCombatFormulas' `tags.includes('companion')`
+   * default) without needing a closure captured at pack-build time, before
+   * any world exists. Optional second parameter — existing single-arg
+   * closures (`(id) => id === 'companion'`, pinned by combat-states.test.ts)
+   * remain valid values for this type; JS ignores the extra argument.
+   */
+  isAlly?: (entityId: string, world: WorldState) => boolean;
   /** Fraction of damage absorbed when guarded (0-1). Default: 0.5 + resolve bonus (cap 0.75) */
   guardReduction?: (defender: EntityState, world: WorldState) => number;
   /** Success chance for disengage (0-100). Default: 40 + precision*5 + resolve*2 */
@@ -170,7 +178,7 @@ function attackHandler(
   if (formulas?.isAlly && shouldCheck) {
     const allies = Object.values(world.entities).filter(
       (e) => e.zoneId === target.zoneId && e.id !== target.id && e.id !== attacker.id
-        && formulas.isAlly!(e.id)
+        && formulas.isAlly!(e.id, world)
         && (e.resources.hp ?? 0) > 0
         && !hasStatus(e, COMBAT_STATES.FLEEING)
         && (target.id === world.playerId || e.statuses.some(s => s.statusId === 'engagement:engaged')),

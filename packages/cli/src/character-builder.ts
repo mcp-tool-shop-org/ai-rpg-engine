@@ -80,6 +80,24 @@ export async function buildCharacter(
     );
   }
 
+  // F-d17afbec: validateBuildCatalog above checks requiredFlaws/maxTraits/
+  // traits only — content-schema's build-catalog validator has no opinion on
+  // archetypes/backgrounds. An empty either array would reach
+  // promptMenu(items=[]) below with nothing to select, which asks forever for
+  // "a number between 1 and 0" — the exact unwinnable-hang defect class
+  // F-2ae7c051 (above) closes, for a field that gate doesn't cover. Same
+  // structured [CATALOG_UNSATISFIABLE] voice, checked here before the
+  // wizard's first prompt.
+  const emptyCatalogFields: string[] = [];
+  if (catalog.archetypes.length === 0) emptyCatalogFields.push('archetypes');
+  if (catalog.backgrounds.length === 0) emptyCatalogFields.push('backgrounds');
+  if (emptyCatalogFields.length > 0) {
+    throw new Error(
+      `[CATALOG_UNSATISFIABLE] Character creation cannot start — the build catalog defines no ${emptyCatalogFields.join(' and no ')}. ` +
+      'Hint: fix the pack — every build catalog needs at least one archetype and one background to offer.',
+    );
+  }
+
   outer: while (true) {
     const name = await promptText('What is your name?');
 

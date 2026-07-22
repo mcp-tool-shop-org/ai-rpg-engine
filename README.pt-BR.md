@@ -35,29 +35,32 @@ Este é um **motor de composição**, não um jogo completo. Os 10 mundos inicia
 
 ---
 
-## Estado atual (v2.7.0)
+## Estado atual (v2.8.0)
 
 **O que funciona e foi testado:**
-- Mecanismo principal: estado do mundo, eventos, ações, ciclos de jogo, reprodução — estável desde a v1.0; reprodução determinística byte a byte (contador de ID por instância, RNG com semente)
+- Mecanismo principal: estado do mundo, eventos, ações, ciclos, reprodução — estável desde a v1.0; reprodução determinística byte a byte (contador de ID por instância, RNG com semente)
 - Sistema de combate: 5 ações, 4 estados de combate, 4 estados de engajamento, interceptação de companheiros, fluxo de derrota, táticas de IA
 - Habilidades: custos, tempos de recarga, verificações de atributos, efeitos tipados, vocabulário de status com 11 tags, seleção consciente da IA
-- **Combate em grupo (v2.4):** direcionamento de aliados (cura/buff/reviver), filtragem de área de efeito para amigos/inimigos, seletores de alvo — um curandeiro pode curar um companheiro; a área de efeito do inimigo poupa os aliados
+- **Combate em grupo (v2.4):** direcionamento de aliados (cura/buff/reviver), filtragem de área de efeito (AoE) para amigos/inimigos, seletores de alvo — um curandeiro pode curar um companheiro; AoE inimigo poupa aliados
 - **Efeitos de status (v2.4):** modificadores passivos de atributos afetam o combate, DoT/HoT determinísticos com base no contador de ciclos, gatilhos reativos com profundidade limitada (espinhos/reflexo)
-- **Perfis de plug-in — resolução de regras por entidade (v2.5):** um lutador “poderoso” e um místico “intuitivo” resolvem o combate em uma luta, cada um lendo os atributos através do seu próprio mapeamento. `RuleProfile` + `WorldState.ruleProfiles` + `EntityState.ruleProfileId`; `applyProfile()` anexa um perfil (mapeamento de atributos, pools de recursos, habilidades por entidade); `buildProfile()`, `validateProfileSet()` (IDs duplicados rejeitados), 10 modelos derivados iniciais e um comando CLI `profile`
-- **Ciclo de jogo jogável (`run`) (v2.6):** o jogo final é real, não uma demonstração — os inimigos agem com base em seus próprios perfis de intenção da IA (`agressivo`/`cauteloso`/`territorial`/`calculista`), uma luta termina em vitória ou derrota, você pode salvar e retomar, e as habilidades e XP estão no menu de ações. `run <path>` carrega um jogo que você criou. Interface do usuário final composta com um HUD fácil de visualizar e cores acessíveis (respeita `NO_COLOR` / não-TTY)
-- **Estúdio de design de IA fornecido como seu próprio comando `ai` (v2.6):** `npm install -g @ai-rpg-engine/ollama` → `ai chat` — crie, critique e equilibre o conteúdo em relação a um modelo Ollama local
+- **Perfis de plug-in — resolução de regras por entidade (v2.5):** um lutador "poderoso" e um místico "intuitivo" resolvem o combate em uma luta, cada um lendo os atributos através do seu próprio mapeamento. `RuleProfile` + `WorldState.ruleProfiles` + `EntityState.ruleProfileId`; `applyProfile()` anexa um perfil (mapeamento de atributos, pools de recursos, habilidades por entidade); `buildProfile()`, `validateProfileSet()` (IDs duplicados rejeitados), 10 modelos derivados iniciais e um comando CLI `profile`
+- **Ciclo de jogo jogável (`run`) (v2.6):** o jogo final é real, não uma demonstração — os inimigos agem com base em seus próprios perfis de intenção de IA (`agressivo`/`cauteloso`/`territorial`/`calculista`), uma luta termina em vitória ou derrota, você pode salvar e retomar, e as habilidades e XP estão no menu de ações. `run <path>` carrega um jogo que você preparou. Interface do usuário final composta com um HUD fácil de visualizar e cores acessíveis (respeita `NO_COLOR` / não-TTY)
+- **Estúdio de design de IA fornecido como seu próprio comando `ai` (v2.6):** `npm install -g @ai-rpg-engine/ollama` → `ai chat` — prepara, critica e equilibra o conteúdo em relação a um modelo Ollama local
 - Camada de decisão unificada: combate + pontuação de habilidades combinados em uma única chamada (`selectBestAction`)
 - Todos os 10 mundos iniciais usam `buildCombatStack()` — a estrutura comprovada
-- API de configuração da cognição (`cognition: CognitionCoreConfig | false`) para ajuste da IA por mundo inicial
+- API de configuração de cognição (`cognition: CognitionCoreConfig | false`) para ajuste da IA por mundo inicial
 - Taxonomia de tags e utilitários de validação para criação de conteúdo
-- **O mundo reage (v2.7):** as mortes acumulam calor e corroem a segurança do distrito; um ciclo de jogo por rodada gera pressões ocultas que surgem como rumores (“Sussurros chegam até você…”), aumentam e desaparecem com consequências; as ~30 composições de encontros criadas são ativadas na entrada da zona em todos os 10 mundos iniciais — determinístico por semente, distritos mais sangrentos geram mais, peças-chave do chefe protegidas
+- **O mundo reage (v2.7):** mortes acumulam calor e corroem a segurança do distrito; um ciclo mundial por rodada gera pressões ocultas que surgem como rumores ("Sussurros chegam até você..."), aumentam e expiram com consequências; as ~30 composições de encontros criadas são acionadas na entrada da zona em todos os 10 mundos iniciais — determinístico por semente, distritos mais sangrentos geram mais, peças-chave do chefe protegidas
 - **Uma razão para retornar (v2.7):** um ciclo de missão mínimo no esquema já lançado — as missões oferecem gatilhos, rastreiam objetivos de morte/alcance/progresso e pagam XP e itens exatamente uma vez; quatro missões criadas, uma tela de **Diário**, momentos da missão na narrativa da rodada
-- **Equipamento afeta o combate (v2.7):** `equip`/`unequip` movem números reais através da camada de status que as fórmulas de combate já leem — nenhuma alteração no código de combate; a tridente e rede do gladiador estão conectadas de ponta a ponta com um delta de chance de acerto fixo para teste
-- **Ciclos de jogo com semente (v2.7):** cada nova sessão imprime sua semente com o comando exato de reprodução; `--seed <n>` reproduz uma sessão byte a byte; combate, resistência, habilidade e rolagens de táticas consomem todos a semente do mundo — e os finais leem o jogo que você realmente jogou (calor ao vivo, pressões, acúmulos de facções, nível do jogador)
-- **`buildWorldStack()` (v2.7):** a estrutura estratégica complementar a `buildCombatStack()` — uma única chamada monta o ambiente, facções, rumores, distritos, consequências da derrota, encontros e missões; mais a tela de estratégia **Ledger do Diretor**, um inspetor de simulação com `AI_RPG_DEBUG=1`, `inspect-save` restrito pelas mesmas autoridades que Continuar e uma junção de migração de salvamento no caminho de restauração lançado
-- `ai-rpg-engine create-starter <name>` — crie um novo jogo (autônomo, executa fora do monorepo); comandos `validate` + `scaffold` para conteúdo; carregue pacotes de JSON
+- **Equipamento afeta o combate (v2.7):** `equip`/`unequip` movem números reais através da camada de status que as fórmulas de combate já leem — nenhuma alteração no código de combate; tridente e rede do gladiador são conectados de ponta a ponta com um delta de chance de acerto fixo em testes
+- **Ciclos com semente (v2.7):** cada nova sessão imprime sua semente com o comando exato de reprodução; `--seed <n>` reproduz uma sessão byte a byte; combate, resistência, habilidade e rolagens de táticas consomem todos a semente do mundo — e os finais leem o ciclo que você realmente jogou (calor ao vivo, pressões, acúmulos de facções, nível do jogador)
+- **`buildWorldStack()` (v2.7):** a estrutura estratégica além de `buildCombatStack()` — uma única chamada monta ambiente, facções, rumores, distritos, consequências da derrota, encontros e missões; mais a tela de estratégia **Ledger do Diretor**, um inspetor de simulação com `AI_RPG_DEBUG=1`, `inspect-save` restrito pelas mesmas autoridades que Continuar e uma junção de migração de salvamento no caminho de restauração lançado
+- **Aja na economia viva (v2.8):** `createEconomyCore` cria uma economia por distrito no carregamento do pacote e a atualiza em cada rodada; um novo verbo `sell` define o preço dos itens através de `computeItemValue` (escassez / facção / proveniência / contrabando) e altera o suprimento local. Uma única conexão ativou cinco sistemas que foram lançados inativos na v2.7 — a visão geral do mercado + pontuação de facções do Diretor, o arco do mercador-príncipe no final do jogo e o gatilho de colapso, e quatro tipos de pressão econômica. **Apenas venda neste ciclo** (compra → v2.9)
+- **Companheiros (v2.8):** um verbo `recruit` constrói um grupo — estado, tags e facção, para que um companheiro lute *com* você; o combate do companheiro utiliza a mecânica de interceptação do núcleo de combate (inativo até que `isAlly` seja definido), os companheiros reagem com moral e podem partir, e o recrutamento acende sete consumidores em espera — a chamada de rolos de COMPANHEIROS do final, direcionamento de grupo, objetivos de agência NPC, missões de favor e a seção PARTY do Diretor. **Interceptação passiva neste ciclo** (turnos independentes → v2.9)
+- **O Diretor lê todo o tabuleiro (v2.8):** uma nova seção EQUIPMENT no Ledger (atrás da dependência cli→proveniência do equipamento), um trailer final do RESUMO DO DIRETOR, as seções VISÃO GERAL DO MERCADO + GRUPO agora alimentadas por produtores ao vivo e estabilidade do distrito + tom econômico na seção DISTRITOS do final
+- `ai-rpg-engine create-starter <name>` — prepara um novo jogo (autônomo, roda fora do monorepo); comandos de conteúdo `validate` + `scaffold`; carrega pacotes de JSON
 - Modelo inicial publicado no npm (`@ai-rpg-engine/starter-template`)
-- Conjunto completo de testes: **4797 testes** (determinístico em execuções repetidas; arquivos de teste verificados por tipo no CI; reforço da cobertura)
+- Conjunto completo de testes: **4975 testes** (determinístico em execuções repetidas; arquivos de teste verificados por tipo no CI; reforço da cobertura)
 
 **O que é instável ou incompleto:**
 - O estúdio de construção do mundo de IA (camada Ollama) é testado de forma mais leve do que o núcleo de simulação e precisa de um daemon Ollama local; é totalmente opcional — o mecanismo e o ciclo de jogo não precisam de rede
@@ -272,21 +275,23 @@ Os 10 mundos iniciais são **exemplos de composição** — demonstram como comb
 
 ### Onde estamos agora
 
-Ambas as estruturas são completas — 4797 testes em 259 arquivos, todos os 10 mundos iniciais em `buildCombatStack` **e** `buildWorldStack`, reprodução determinística byte a byte sob sementes impressas, pontuação completa de decisão da IA e uma CLI que cria, executa, valida e inspeciona. **A v2.7 ilumina o nível estratégico: o mundo reage à forma como você joga (calor, pressões, encontros), as missões dão ao jogo uma estrutura, o equipamento altera números reais e cada sessão pode ser reproduzida a partir da semente que ela imprime.**
+Ambas as estruturas são completas — 4975 testes em 273 arquivos, todos os 10 mundos iniciais em `buildCombatStack` **e** `buildWorldStack`, reprodução determinística byte a byte sob sementes impressas, pontuação completa de decisão da IA e uma CLI que prepara, executa, valida e inspeciona. **A v2.8 permite que você aja no mundo vivo que a v2.7 construiu: uma economia comercial com a qual você interage através do verbo `sell`, companheiros que você recruta e luta ao lado, e um Ledger do Diretor que lê todo o tabuleiro — cada sistema é uma única conexão que acendeu consumidores já lançados em estado inativo.**
 
-**Lançamento recente (v2.4.0–v2.7.0):**
-- v2.4.0 — Combate em grupo (ataque a aliados/cura/buff/reviver, área de efeito amigo/inimigo), sistema de efeitos de status (modificadores + dano ao longo do tempo/cura ao longo do tempo + gatilhos reativos), fase 1 dos perfis de plug-in, conteúdo `validate`/`scaffold` na interface de linha de comando
-- v2.5.0 — Resolução de regras por entidade (combate com estilos de jogo mistos), o carregador `applyProfile` + habilidades por entidade, modelos de perfil + interface de linha de comando `profile` e uma revisão completa da saúde
-- v2.6.0 — O comando `run` tornou-se um jogo real: os inimigos agem com base em seus próprios perfis de IA, vitória/derrota, salvar/retomar, habilidades e experiência no menu, o arquivo `ai` do estúdio e a pilha de narração
-- **v2.7.0 — O mundo reage e há uma razão para retornar: calor → pressões → consequências narradas, encontros na entrada da zona, um ciclo de missão + diário, equipamento em combate, sequências de jogo repetíveis, entradas dinâmicas no final do jogo, `buildWorldStack`, o livro do diretor e uma transição de salvamento**
+**Lançamento recente (v2.4.0–v2.8.0):**
+- v2.4.0 — Combate em grupo (ataque a aliados/cura/buff/reviver, área de efeito amigo/inimigo), sistema de efeitos de status (modificadores + dano ao longo do tempo/cura ao longo do tempo + gatilhos reativos), fase 1 dos perfis de plug-in, conteúdo `validate`/`scaffold` na linha de comando
+- v2.5.0 — Resolução de regras por entidade (combate com estilos de jogo mistos), o carregador `applyProfile` + habilidades por entidade, modelos de perfil + linha de comando `profile` e uma atualização completa da saúde
+- v2.6.0 — O comando `run` tornou-se um jogo real: os inimigos agem com base em seus próprios perfis de IA, vitória/derrota, salvar/retomar, habilidades e experiência no menu, o diretório `ai`, e a pilha de narração
+- v2.7.0 — O mundo reage e há uma razão para retornar: calor → pressões → consequências narradas, encontros na entrada da zona, um ciclo de missões + diário, equipamentos em combate, sequências de jogo repetíveis, entradas dinâmicas no final do jogo, `buildWorldStack`, o livro do diretor e uma transição de salvamento
+- **v2.8.0 — Aja sobre o mundo em que você vive: uma economia comercial dinâmica + verbo `sell`, companheiros que você recruta e com quem luta, e um livro do diretor que analisa todo o cenário — um fio de comunicação por sistema aceso ~12 consumidores que foram lançados**
 
 ### Próximo (a base v2.8)
 
-- Nível econômico — economias de distritos dinâmicas, uma superfície de comércio com preços definidos por `computeItemValue`, ciclos de criação/reaproveitamento (os módulos são lançados hoje; a configuração será feita em seguida)
-- Companheiros e verbos sociais — mecânicas de recrutamento/grupo e a camada de estilo de jogo de suborno/intimidar/espalhar rumores sobre o sistema de influência
-- `--replay` – paridade de re-simulação com os módulos de estado do mundo e as superfícies restantes do formatador do diretor
+- Compra e estoque de mercadores (moeda + inventário da loja) e ciclos de criação/reaproveitamento — a outra metade da economia comercial
+- Turnos completos dos companheiros (ação independente, não apenas interceptação) e verbos sociais — suborno/intimidar/plantar rumores sobre o sistema de influência
+- Os produtores de agência NPC e oportunidades que alimentam a seção PESSOAS do livro do diretor e as consequências da moral dos companheiros; conteúdo de equipamentos além do gladiador
+- Paridade de re-simulação com módulos de estado do mundo usando `--replay`, e as superfícies restantes do formatador do diretor
 - Multijogador — dois jogadores *humanos* compartilhando um mundo (uma camada de rede, intencionalmente adiada; perfis compartilhados controlados por um único jogador são lançados hoje como [`shared-profiles.ts`](docs/examples/shared-profiles.ts))
-- Substituições de fórmula serializáveis — ajuste da fórmula por perfil (bloqueado em uma DSL de fórmulas; os perfis carregam mapeamentos de atributos hoje, não funções anônimas)
+- Substituições de fórmulas serializáveis — ajuste de fórmula por perfil (bloqueado em uma DSL de fórmulas; os perfis carregam mapeamentos de atributos hoje, não closures)
 - Sincronização da documentação da API — garantir que cada página do manual reflita as APIs v2.7
 
 ### Destino: Perfis de plug-ins

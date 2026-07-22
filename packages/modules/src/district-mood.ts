@@ -27,17 +27,17 @@ export type DistrictMood = {
 };
 
 export type DistrictModifiers = {
-  /** Multiplier for leverage action costs (0.7-1.3) */
+  /** Multiplier for leverage action costs (0.85-1.3) */
   leverageCostScale: number;
   /** Multiplier for rumor spread rate (0.7-1.5) */
   rumorSpreadScale: number;
-  /** NPC cooperation bias (-20 to +20, added to trust for checks) */
+  /** NPC cooperation bias (-10 to +10, added to trust for checks) */
   npcCooperationBias: number;
   /** Pressure spawn urgency modifier (0-0.15) */
   pressureUrgencyBias: number;
   /** Trade price scale from scarcity/surplus balance (0.8-2.0) */
   tradePriceScale: number;
-  /** Crafting efficiency multiplier (0.7-1.3) — prosperity > 60 + stability > 50 → 1.2, stability < 30 → 0.7 */
+  /** Crafting efficiency multiplier (0.7-1.2) — prosperity > 60 + stability > 50 → 1.2, stability < 30 → 0.7 */
   craftingEfficiency: number;
 };
 

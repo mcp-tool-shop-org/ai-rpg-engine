@@ -767,5 +767,15 @@ export const itemCatalog: ItemCatalog = {
       grantedTags: ['hex-armed'],
       requiredTags: ['spirit-sensitive'],
     },
+    {
+      // F-d70c722d: granted via a bespoke item-use effect (sageBundleEffect)
+      // but had no itemCatalog entry — mirrors the healing-draught/antibiotics
+      // fix (F-a7a22999/F-b34a5c82).
+      id: 'sage-bundle',
+      name: 'Sage Bundle',
+      description: 'A bundle of dried sage, burned to clear the Dust from a troubled mind.',
+      slot: 'tool',
+      rarity: 'common',
+    },
   ],
 };

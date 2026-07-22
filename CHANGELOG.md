@@ -5,6 +5,61 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.8.0] - 2026-07-22
+
+Act on the world you live in. v2.7.0 made the world react to how you play;
+v2.8.0 lets you act back on it — a living trade economy, companions who fight
+at your side, and a Director's Ledger that reads the whole board. The
+through-line: the consumer/read side was already built across the engine, so
+this cycle wired the *write* side and lit ~12 dormant systems. Produced by a
+dogfood swarm — a regression re-audit + focused amend, three user-gated feature
+waves, a composed-system re-audit, and a Phase-9 amend — with the deterministic
+test floor as law at every wave. Test suite: 4797 → **4975**.
+
+### Added
+
+- **A living trade economy.** `createEconomyCore` seeds a per-district economy
+  at pack-load and ticks it every round; a new `sell` verb prices loot through
+  `computeItemValue` (scarcity / faction / provenance / contraband) and shifts
+  local supply as you trade. One write-wire lit five systems that already
+  shipped dark: the Director's MARKET OVERVIEW + FACTIONS scoring, the endgame
+  merchant-prince arc and collapse trigger, and four economy pressure kinds
+  (supply-crisis, trade-war, black-market-boom, crafting-shortage).
+- **Companions.** A `recruit` verb builds a party — persisting party state,
+  tagging the recruit, and setting its faction so it fights *with* you, not
+  against you. Companion combat rides the interception mechanic combat-core
+  already had (dark until now because nothing set `isAlly`); companions react
+  to the round with morale and can depart. Recruiting lights seven waiting
+  consumers: the finale's COMPANIONS roll-call, party targeting and coloring,
+  npc-agency goals, favor-quests, and the Director's PARTY section.
+- **The Director's Ledger reads the whole board.** A new EQUIPMENT section
+  (behind the cli→equipment provenance dependency v2.7 declined) and a
+  DIRECTOR'S SUMMARY finale trailer; the MARKET OVERVIEW and PARTY sections —
+  built in v2.7 but never fed — now render from live producers, and the finale
+  reads district stability and economic tone into its DISTRICTS section.
+
+### Honest ceilings (shipped, documented, deliberate)
+
+- Trade is **sell-only** this cycle — buying and merchant stock need currency
+  and stock content that doesn't exist yet (→ v2.9).
+- Companion combat is **passive interception**, not independent turns (→ v2.9).
+- The EQUIPMENT Ledger section renders for **starter-gladiator** only (the one
+  pack wiring `createEquipmentCore` today); it gates off cleanly elsewhere.
+- Crafting / salvage deferred; the npc-agency and opportunity-core producers
+  that would feed the PEOPLE section and companion-morale favor-fallout are
+  v2.9-scoped.
+
+### Fixed
+
+- A regression re-audit of the v2.7 tier (no regressions found) cleared 19
+  latent findings plus a folded dialogue-core fix: the dialogue-trap
+  fall-through could route a mistyped number into a real ability use or
+  XP-spend; equipment now commits its loadout *after* the fallible status ops;
+  a dead `faction-kills` growth trigger implemented; content-schema validators
+  now run against all ten starters' shipped content (catching missing
+  item-catalog entries); plus renderer enemy/hostile tag parity, guarded-degrade
+  coverage, and two NUL bytes hardened out of an endgame Map-key separator.
+
 ## [2.7.0] - 2026-07-22
 
 The world reacts, runs differ, and there's a reason to return. v2.6.0 made the
