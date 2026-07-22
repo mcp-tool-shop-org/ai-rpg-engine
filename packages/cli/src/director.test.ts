@@ -10,6 +10,7 @@ import {
   makePressure,
   makeOpportunity,
   createDistrictEconomy,
+  runWorldTick,
 } from '@ai-rpg-engine/modules';
 import { EQUIPMENT_CATALOG_FORMULA, type ItemCatalog } from '@ai-rpg-engine/equipment';
 import { FormulaRegistry, type Engine, type WorldState } from '@ai-rpg-engine/core';
@@ -198,12 +199,13 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
   // (F-7d5c3e28) are now BOTH always-included in buildWorldStack — MARKET
   // OVERVIEW and PARTY are no longer fixture-only, they light up together
   // from one real played session (recruit + a round), not just from a
-  // zero-action engine. PEOPLE stays dark on purpose: npc-agency (its own
-  // namespace) has zero production writer anywhere in the engine — pure
-  // functions only, no EngineModule/register(ctx), confirmed by a repo-wide
-  // grep — so no amount of real play can light it up yet (see
-  // F-69ee0f88/F-f74770d2's skip notes). That is the honest ceiling, not a
-  // missed wire.
+  // zero-action engine. PEOPLE stays dark here specifically because this
+  // test only calls engine.submitAction directly — it never calls
+  // runWorldTick, and world-tick.ts's own per-round step (v3.0,
+  // F-v3-npc-agency) is npc-agency's only production writer. See the
+  // 'lights up PEOPLE too' test directly below for the positive case: the
+  // SAME recruited companion IS a named NPC, and a round that actually runs
+  // runWorldTick renders her here.
   it('F-6cc633b9: a real played session (recruit + a round) lights up MARKET OVERVIEW and PARTY together — PEOPLE stays dark', () => {
     const engine = createGame(42);
     // Sister Maren starts in the player's own zone (chapel-entrance) — no
@@ -222,6 +224,35 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
     expect(report).toContain('  sister-maren (sister-maren) — Diplomat | Morale: 60');
 
     expect(report).not.toContain('PEOPLE —');
+  });
+
+  // v3.0 (F-v3-npc-agency): the positive case the test above deliberately
+  // does NOT exercise — a round that actually calls runWorldTick (the real
+  // per-round driver, not raw submitAction) now persists
+  // world.modules['npc-agency'] whenever a named NPC (isNamedNpc: has `.ai`,
+  // alive, and either tagged 'named' or type 'npc' with a name) is present,
+  // and PEOPLE renders from that real state.
+  it("v3.0 (F-v3-npc-agency): a round that actually runs runWorldTick lights up PEOPLE too", () => {
+    const engine = createGame(42);
+    engine.world.entities['elder-vane'] = {
+      id: 'elder-vane',
+      blueprintId: 'elder-vane',
+      type: 'npc',
+      name: 'Elder Vane',
+      tags: ['npc'],
+      stats: {},
+      resources: { hp: 10 },
+      statuses: [],
+      zoneId: 'chapel-entrance',
+      ai: { profileId: 'cautious', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+    };
+
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.ok).toBe(true);
+
+    const report = renderDirectorLedger(engine);
+    expect(report).toContain('PEOPLE —');
+    expect(report).toContain('Elder Vane');
   });
 
   it('districts + market overview render from district-core and economy-core state', () => {

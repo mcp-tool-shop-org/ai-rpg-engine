@@ -95,6 +95,7 @@ import { createCompanionCore } from './companion-core.js';
 import { createCraftingCore } from './crafting-recipes.js';
 import { createPlayerLeverageCore } from './player-leverage.js';
 import { createOpportunityCore } from './opportunity-resolution.js';
+import { createNpcAgency } from './npc-agency.js';
 
 // ---------------------------------------------------------------------------
 // buildWorldStack — eliminates the strategic-tier hand-list
@@ -192,7 +193,7 @@ export type WorldStack = {
  *
  * Default composition (always included, in wiring order): environment-core,
  * faction-cognition, rumor-propagation, district-core, economy-core,
- * trade-core, companion-core, player-leverage, crafting-core,
+ * trade-core, companion-core, npc-agency, player-leverage, crafting-core,
  * opportunity-core, belief-provenance, observer-presentation, defeat-fallout,
  * world-tick. Presence-optional: encounter-spawn (included when
  * `encounterSpawn` is passed), quests (included when `quests` is passed).
@@ -236,6 +237,15 @@ export function buildWorldStack(config: WorldStackConfig = {}): WorldStack {
     // F-7d5c3e28: always included, no config — see the file-header contract
     // entry above.
     createCompanionCore(),
+    // F-v3-npc-agency (v3.0): named-NPC individual agency — the write-wire
+    // for runNpcAgencyTick (npc-agency.ts), previously fully authored and
+    // unit-tested with ZERO production callers. Always included, no config;
+    // registers ONLY module identity (no verb, no eager namespace default —
+    // see createNpcAgency's own header for why). Placed directly after
+    // companion-core: a companion IS a named NPC, and this module is the
+    // individual-actor layer companion-core's roles/morale sit inside.
+    // world-tick.ts's per-round step is the production writer.
+    createNpcAgency(),
     // F-677e94ad (v2.9): the player-leverage write-wire — bribe/intimidate/
     // petition/seed. Always included, no config; its companion-reaction
     // dispatch places it semantically next to companion-core. Registered

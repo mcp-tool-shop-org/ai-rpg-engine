@@ -101,6 +101,16 @@ const WORLD_STACK_DEFAULT = [
   'economy-core',
   'trade-core',
   'companion-core',
+  // F-v3-npc-agency (v3.0): named-NPC individual agency — the write-wire for
+  // runNpcAgencyTick (npc-agency.ts), previously fully authored and
+  // unit-tested with ZERO production callers. Always-on, no config; inserted
+  // right after companion-core (a companion IS a named NPC). Namespace-only
+  // (no verb, no eager namespace default of its own — see createNpcAgency's
+  // own header), so this addition is behavior-inert to every OTHER module's
+  // wiring, same "additive, behavior-inert-to-everything-else" contract its
+  // siblings below already have. Recomputed from the REAL built module list
+  // (registeredIds against a freshly built starter), not guessed.
+  'npc-agency',
   'player-leverage',
   'crafting-core',
   'opportunity-core',
@@ -206,7 +216,7 @@ function makeStackEngine(config: StackConfig = {}, extraEntities: EntityState[] 
 // ---------------------------------------------------------------------------
 
 describe('buildWorldStack — composition', () => {
-  it('default composition is the twelve always-on strategic modules, in wiring order', () => {
+  it('default composition is the fifteen always-on strategic modules, in wiring order', () => {
     const stack = buildWorldStack();
     expect(stack.modules.map((m) => m.id)).toEqual(WORLD_STACK_DEFAULT);
     expect(stack.warnings).toEqual([]);
@@ -658,17 +668,18 @@ describe('world-stack refactor — per-starter module registration pins', () => 
     },
   );
 
-  it('gladiator: the module SET is the pre-refactor set plus world-tick/economy-core/trade-core/companion-core/player-leverage/crafting-core/opportunity-core (order swap + P8-SP-003 + F-d0b5edb5/F-6c3e4fde + F-7d5c3e28 + F-6631dd57 + F-677e94ad/F-ceed887f are the only deltas)', () => {
+  it('gladiator: the module SET is the pre-refactor set plus world-tick/economy-core/trade-core/companion-core/npc-agency/player-leverage/crafting-core/opportunity-core (order swap + P8-SP-003 + F-d0b5edb5/F-6c3e4fde + F-7d5c3e28 + F-v3-npc-agency + F-6631dd57 + F-677e94ad/F-ceed887f are the only deltas)', () => {
     // The literal pre-refactor gladiator order, boss-phase before
     // encounter-spawn — carried verbatim so the set-equality claim is
     // auditable against the captured baseline, not derived from EXPECTED.
-    // world-tick, economy-core, trade-core, companion-core, player-leverage,
-    // crafting-core, and opportunity-core are the post-baseline additions
-    // (P8-SP-003's driver identity; F-d0b5edb5/F-6c3e4fde's write-wire;
-    // F-7d5c3e28's recruit-verb write-wire; F-6631dd57's salvage/craft/repair/
-    // modify write-wire; F-677e94ad's leverage-verb write-wire; F-ceed887f/
-    // F-f3f2a84c's opportunity spawn+resolution write-wire), asserted
-    // explicitly on top.
+    // world-tick, economy-core, trade-core, companion-core, npc-agency,
+    // player-leverage, crafting-core, and opportunity-core are the
+    // post-baseline additions (P8-SP-003's driver identity;
+    // F-d0b5edb5/F-6c3e4fde's write-wire; F-7d5c3e28's recruit-verb
+    // write-wire; F-v3-npc-agency's named-NPC agency write-wire;
+    // F-6631dd57's salvage/craft/repair/modify write-wire; F-677e94ad's
+    // leverage-verb write-wire; F-ceed887f/F-f3f2a84c's opportunity
+    // spawn+resolution write-wire), asserted explicitly on top.
     const preRefactorOrder = [
       ...COMBAT_PREFIX('combat-resources-gladiator'),
       ...CONTENT_MID,
@@ -680,7 +691,7 @@ describe('world-stack refactor — per-starter module registration pins', () => 
     ];
     const ids = registeredIds(createGladiatorGame(42));
     expect([...ids].sort()).toEqual(
-      [...preRefactorOrder, 'world-tick', 'economy-core', 'trade-core', 'companion-core', 'player-leverage', 'crafting-core', 'opportunity-core', 'quest-core'].sort(),
+      [...preRefactorOrder, 'world-tick', 'economy-core', 'trade-core', 'companion-core', 'npc-agency', 'player-leverage', 'crafting-core', 'opportunity-core', 'quest-core'].sort(),
     );
   });
 

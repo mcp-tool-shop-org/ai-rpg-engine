@@ -3,7 +3,7 @@
 // Actions produce effects through existing systems: cognition, reputation, rumors, pressures.
 // Mirrors faction-agency.ts pattern at the individual (meso) level.
 
-import type { WorldState, EntityState, ScalarValue } from '@ai-rpg-engine/core';
+import type { WorldState, EntityState, ScalarValue, EngineModule } from '@ai-rpg-engine/core';
 import type { RumorValence } from './player-rumor.js';
 import type { PressureKind, WorldPressure } from './pressure-system.js';
 import {
@@ -1061,6 +1061,130 @@ export function buildAllNpcProfiles(
     profiles.push(buildNpcProfile(world, entity.id, playerId, activePressures, playerRumors, obligations));
   }
   return profiles;
+}
+
+// ---------------------------------------------------------------------------
+// Module identity + persistence (V3.0 — the write-wire, F-v3-npc-agency).
+//
+// npc-agency.ts was fully authored and unit-tested with ZERO production
+// callers (runNpcAgencyTick had no caller anywhere in the engine). This is
+// the module-identity + persistence contract that lets world-tick.ts's own
+// per-round step persist what it computes, and lets endgame.ts/director.ts
+// read it back.
+//
+// createNpcAgency() registers ONLY the module id/version — deliberately NOT
+// a persistence namespace default (contrast createWorldTick's own eager
+// factory default, world-tick.ts's createWorldTick). ModuleManager.
+// initializeNamespaces writes EVERY registered namespace default into
+// world.modules UNCONDITIONALLY at construction, for every world, whether or
+// not it will ever matter (companion-core/opportunity-core both do this — an
+// empty PartyState/opportunity ledger scaffold lands in every world from
+// turn zero). SEED-0 IDENTITY is a stronger bar for this module specifically
+// (a world with no named NPCs must never see world.modules['npc-agency']
+// come into being at all, not even an empty scaffold) — the only way to keep
+// that promise is to never register a namespace default. The accessors below
+// are pure, tolerant, lazy reads/writes directly against
+// world.modules['npc-agency'] — the SAME contract opportunity-core.ts's own
+// getPersistedOpportunities/setPersistedOpportunities use (not world-tick's
+// eager-factory contract). world-tick.ts's new per-round step is the only
+// production writer, and it gates the write itself on "at least one named
+// NPC exists this round".
+// ---------------------------------------------------------------------------
+
+/**
+ * npc-agency's EngineModule identity. No verb: npc-agency effects are a
+ * direct-to-ledger NpcEffect union applied by world-tick.ts's own per-round
+ * step (the same application style world-tick.ts's applyFallout already
+ * uses for pressure fallout), never routed through submitActionAs. No
+ * namespace default either — see the file-level comment above; SEED-0
+ * identity requires the namespace to stay genuinely absent until there is
+ * real content to persist.
+ */
+export function createNpcAgency(): EngineModule {
+  return {
+    id: 'npc-agency',
+    version: '1.0.0',
+    register(_ctx) {
+      // Intentionally empty — see the file-level comment above.
+    },
+  };
+}
+
+type NpcAgencyNamespace = {
+  profiles?: unknown;
+  lastActions?: unknown;
+  obligationLedgers?: unknown;
+};
+
+/** Peek the persisted namespace WITHOUT attaching (mirrors world-tick.ts's peekState contract). */
+function peekNpcAgencyNamespace(world: WorldState): NpcAgencyNamespace | undefined {
+  const ns = world.modules['npc-agency'];
+  return ns && typeof ns === 'object' && !Array.isArray(ns) ? (ns as NpcAgencyNamespace) : undefined;
+}
+
+/**
+ * Non-attaching read of this round's persisted NPC profiles. [] when the
+ * namespace is absent (no named NPC has ever existed in this world) or
+ * malformed — never throws, never attaches. Feeds opportunity-core's
+ * npc-goal/obligation rules (via world-tick's opportunity step),
+ * endgame.ts's buildEndgameInputs, and director.ts's PEOPLE section.
+ */
+export function getPersistedNpcProfiles(world: WorldState): NpcProfile[] {
+  const value = peekNpcAgencyNamespace(world)?.profiles;
+  return Array.isArray(value)
+    ? value.filter((v): v is NpcProfile => typeof v === 'object' && v !== null)
+    : [];
+}
+
+/**
+ * Non-attaching read of the last resolved action per named NPC — at most one
+ * entry per npcId (a rolling "what did they last do", not an unbounded
+ * history; world-tick.ts's writer prunes to the current named-NPC roster
+ * every round). [] when absent or malformed.
+ */
+export function getPersistedNpcLastActions(world: WorldState): NpcActionResult[] {
+  const value = peekNpcAgencyNamespace(world)?.lastActions;
+  return Array.isArray(value)
+    ? value.filter((v): v is NpcActionResult => typeof v === 'object' && v !== null)
+    : [];
+}
+
+/**
+ * Non-attaching read of the persisted obligation ledgers, keyed by npcId.
+ * Empty Map when absent or malformed.
+ */
+export function getPersistedNpcObligations(world: WorldState): Map<string, NpcObligationLedger> {
+  const raw = peekNpcAgencyNamespace(world)?.obligationLedgers;
+  const map = new Map<string, NpcObligationLedger>();
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const [npcId, ledger] of Object.entries(raw as Record<string, unknown>)) {
+      if (ledger && typeof ledger === 'object' && Array.isArray((ledger as NpcObligationLedger).obligations)) {
+        map.set(npcId, ledger as NpcObligationLedger);
+      }
+    }
+  }
+  return map;
+}
+
+/**
+ * Persist this round's NPC agency state. The ONLY writer (world-tick.ts's
+ * per-round step) gates this call on "at least one named NPC exists this
+ * round" — SEED-0 identity depends on this function never being invoked for
+ * a world with none. A full overwrite (not a tolerant merge like
+ * opportunity-core's setPersistedOpportunities) is safe and simpler here —
+ * no sibling module shares this namespace.
+ */
+export function setPersistedNpcState(
+  world: WorldState,
+  profiles: NpcProfile[],
+  lastActions: NpcActionResult[],
+  obligationLedgers: Map<string, NpcObligationLedger>,
+): void {
+  world.modules['npc-agency'] = {
+    profiles,
+    lastActions,
+    obligationLedgers: Object.fromEntries(obligationLedgers),
+  };
 }
 
 // --- Formatting ---
