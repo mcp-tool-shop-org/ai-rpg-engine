@@ -120,6 +120,11 @@ const MAX_ACTIVE_OPPORTUNITIES = 5;
 const MIN_TURNS_BETWEEN_SPAWNS = 3;
 const DEFAULT_DEADLINE = 12;
 const VISIBILITY_ESCALATION_TICKS = 3;
+// Reputation needed before a faction (absent a companion to protect) asks the
+// player for a personal escort. Deliberately higher than faction-job's
+// ally-tier gate (30, see evaluateFactionOpportunities) — this is "they trust
+// YOU with someone's safety," not "generic faction work is available."
+const ESCORT_TRUST_THRESHOLD = 50;
 
 // Deterministic id minting. Previously a module-global `opportunityCounter`
 // minted `opp-N` ids — the same determinism footgun fixed across the engine
@@ -324,6 +329,9 @@ export function evaluateOpportunities(inputs: OpportunityInputs): OpportunitySpa
 
   const district = evaluateDistrictOpportunities(inputs, activeKindSourcePairs);
   if (district) candidates.push(district);
+
+  const escort = evaluateEscortOpportunities(inputs, activeKindSourcePairs);
+  if (escort) candidates.push(escort);
 
   if (candidates.length === 0) return null;
 
@@ -858,6 +866,118 @@ function evaluateDistrictOpportunities(
       opportunity: opp,
       score: scoreCandidate(opp, inputs),
       reason: `Low trade volume (${economy.tradeVolume}) in player district → recovery`,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Escort-driven: a protective-travel need. Fires only when BOTH hold:
+ *  (1) someone worth protecting — an active companion, or (absent that) a
+ *      faction that trusts the player enough for a personal ask; AND
+ *  (2) the player's district has gone dangerous — same instability proxy
+ *      evaluateDistrictOpportunities uses (low trade volume or an active
+ *      black market).
+ * On a seed-0/fresh world (no companions, no reputations, stable economy)
+ * both halves fail, so this never fires — the AND-gate IS the seed-0
+ * guarantee, not an extra check bolted on top of it.
+ */
+function evaluateEscortOpportunities(
+  inputs: OpportunityInputs,
+  activePairs: Set<string>,
+): ScoredCandidate | null {
+  const economy = inputs.districtEconomies.get(inputs.playerDistrictId);
+  if (!economy) return null;
+
+  const isDangerous = economy.tradeVolume < 30 || economy.blackMarketActive;
+  if (!isDangerous) return null;
+  const urgency = economy.blackMarketActive ? 0.6 : 0.45;
+
+  // Path 1: an active companion is the highest-priority charge to protect.
+  // Sorted by npcId — `companions` order reflects join order, not a stable
+  // game-state key, so ties are broken deterministically rather than by
+  // array position.
+  const companion = inputs.companions
+    .filter((c) => c.active)
+    .slice()
+    .sort((a, b) => a.npcId.localeCompare(b.npcId))[0];
+
+  if (companion && !hasPairConflict(activePairs, 'escort', companion.npcId)) {
+    const npcProfile = inputs.npcProfiles.find((p) => p.npcId === companion.npcId);
+    const name = npcProfile?.name ?? companion.npcId;
+
+    const opp = makeOpportunity({
+      kind: 'escort',
+      sourceNpcId: companion.npcId,
+      title: `Escort ${name} through dangerous territory`,
+      description: `${name} needs safe passage, and the roads through this district have gone dangerous.`,
+      objectiveDescription: `Escort ${name} safely across the district.`,
+      linkedDistrictId: inputs.playerDistrictId,
+      linkedNpcIds: [companion.npcId],
+      urgency,
+      turnsRemaining: DEFAULT_DEADLINE,
+      visibility: 'offered',
+      rewards: [
+        { type: 'leverage', currency: 'favor', delta: 4 },
+        { type: 'obligation', kind: 'favor', direction: 'npc-owes-player', npcId: companion.npcId, magnitude: 3 },
+      ],
+      risks: [
+        { type: 'combat', threatLevel: 2 },
+      ],
+      genre: inputs.genre,
+      currentTick: inputs.currentTick,
+      tags: ['protective', 'companion', 'personal-ask'],
+    });
+
+    return {
+      opportunity: opp,
+      score: scoreCandidate(opp, inputs),
+      reason: `${name} needs protective escort through a dangerous district — escort opportunity`,
+    };
+  }
+
+  // Path 2: no companion to protect, but a faction that trusts the player
+  // enough for a personal ask — a materially higher bar than faction-job's
+  // ally-tier check (see ESCORT_TRUST_THRESHOLD).
+  const trustedFaction = inputs.playerReputations
+    .filter((r) => r.value >= ESCORT_TRUST_THRESHOLD)
+    .slice()
+    .sort((a, b) => (b.value - a.value) || a.factionId.localeCompare(b.factionId))[0];
+
+  if (trustedFaction && !hasPairConflict(activePairs, 'escort', trustedFaction.factionId)) {
+    const factionNpc = inputs.npcProfiles
+      .filter((p) => p.factionId === trustedFaction.factionId && p.breakpoint !== 'hostile')
+      .sort((a, b) => a.npcId.localeCompare(b.npcId))[0];
+
+    const opp = makeOpportunity({
+      kind: 'escort',
+      sourceNpcId: factionNpc?.npcId,
+      sourceFactionId: trustedFaction.factionId,
+      title: `${trustedFaction.factionId} needs an escort`,
+      description: `${trustedFaction.factionId} trusts you enough to ask for protection through ground gone dangerous.`,
+      objectiveDescription: 'Escort the faction contact safely to their destination.',
+      linkedDistrictId: inputs.playerDistrictId,
+      linkedNpcIds: factionNpc ? [factionNpc.npcId] : [],
+      urgency,
+      turnsRemaining: DEFAULT_DEADLINE,
+      visibility: 'offered',
+      rewards: [
+        { type: 'reputation', factionId: trustedFaction.factionId, delta: 10 },
+        { type: 'leverage', currency: 'favor', delta: 4 },
+      ],
+      risks: [
+        { type: 'combat', threatLevel: 2 },
+      ],
+      genre: inputs.genre,
+      currentTick: inputs.currentTick,
+      tags: ['protective', 'faction'],
+    });
+
+    return {
+      opportunity: opp,
+      score: scoreCandidate(opp, inputs),
+      reason: `Trusted faction ${trustedFaction.factionId} (rep ${trustedFaction.value}) requests escort through a dangerous district`,
     };
   }
 

@@ -26,6 +26,16 @@ import { createDistrictEconomy } from './economy-core.js';
 import { createTestEngine } from '@ai-rpg-engine/core';
 import { createCompanionCore, getPartyState } from './companion-core.js';
 import { statusCore } from './status-core.js';
+// V3-ESC-3: read-only import to prove a spawned escort resolves correctly
+// through the ALREADY-authored getEscortFallout (opportunity-resolution.ts).
+// getEscortFallout itself is not exported (private, dispatched internally by
+// getKindFallout's switch) — computeOpportunityFallout is its public entry
+// point and the same one the product layer calls. This does not edit
+// opportunity-resolution.ts, only consumes its existing export, matching
+// this file's established pattern of importing read-only from sibling
+// domain modules (npc-agency.ts, pressure-system.ts, economy-core.ts,
+// companion-core.ts, status-core.ts, above) it does not own either.
+import { computeOpportunityFallout } from './opportunity-resolution.js';
 
 function baseLeverage(): LeverageState {
   return { favor: 10, debt: 0, blackmail: 0, influence: 5, heat: 10, legitimacy: 20 };
@@ -326,6 +336,183 @@ describe('opportunity-core', () => {
       const result = evaluateOpportunities(inputs);
       expect(result).not.toBeNull();
       expect(result!.opportunity.kind).toBe('investigation');
+    });
+
+    // V3-ESC-1/2/3: escort was a fully-defined OpportunityKind (fallout
+    // already authored in getEscortFallout) with ZERO spawn rules ever
+    // producing one. evaluateEscortOpportunities closes that gap. Its
+    // trigger is an AND-gate: (active companion OR a faction that trusts the
+    // player at ESCORT_TRUST_THRESHOLD) AND the player's district has gone
+    // dangerous (same instability proxy evaluateDistrictOpportunities uses).
+    describe('escort (V3-ESC)', () => {
+      it('V3-ESC-2 SEED-0 IDENTITY: a fresh/legacy world (no companions, neutral economy, no relevant relationships) spawns zero escort opportunities across several rounds', () => {
+        // Deliberately more "fresh" than baseInputs()'s own defaults: empty
+        // reputations/factionStates/npcProfiles/obligations/pressures, and a
+        // stable (non-dangerous) economy. Every one of the 8 spawn rules —
+        // not just escort — returns null against this fixture, so the
+        // assertion is the strongest form available: byte-identical (null)
+        // behavior to today, round after round, not merely "not escort."
+        for (let tick = 10; tick <= 40; tick += 5) {
+          const inputs = baseInputs({
+            companions: [],
+            npcProfiles: [],
+            npcObligations: new Map(),
+            activePressures: [],
+            playerReputations: [],
+            factionStates: {},
+            districtEconomies: new Map([['market-district', stableEconomy()]]),
+            activeOpportunities: [],
+            currentTick: tick,
+            totalTurns: tick,
+          });
+          expect(evaluateOpportunities(inputs)).toBeNull();
+        }
+      });
+
+      it('does not spawn escort when the district is dangerous but nobody has a protective claim (no companion, no trusted faction)', () => {
+        // Danger alone is not nothing — investigation still fires (byte-
+        // identical to today's black-market-district behavior) — but it must
+        // never be escort without a companion or ESCORT_TRUST_THRESHOLD rep.
+        const dangerousEcon = baseEconomy({});
+        dangerousEcon.blackMarketActive = true;
+        const inputs = baseInputs({
+          playerReputations: [{ factionId: 'guild', value: 10 }], // below both faction-job's (30) and escort's (50) bars
+          companions: [],
+          districtEconomies: new Map([['market-district', dangerousEcon]]),
+        });
+        const result = evaluateOpportunities(inputs);
+        expect(result).not.toBeNull();
+        expect(result!.opportunity.kind).not.toBe('escort');
+        expect(result!.opportunity.kind).toBe('investigation');
+      });
+
+      it('does not spawn escort when a companion is active but the district is stable/safe (only one AND-half satisfied)', () => {
+        const inputs = baseInputs({
+          playerReputations: [{ factionId: 'guild', value: 10 }],
+          companions: [{
+            npcId: 'companion-doran', role: 'fighter', joinedAtTick: 3,
+            abilityTags: [], morale: 70, active: true,
+          }],
+          npcProfiles: [{
+            npcId: 'companion-doran', name: 'Doran', factionId: null, goals: [],
+            relationship: { trust: 50, fear: 0, greed: 10, loyalty: 0 },
+            breakpoint: 'favorable', dominantAxis: 'trust', leverageAngle: 'Loyal guard',
+            knownRumors: [], underPressure: false,
+          }],
+          districtEconomies: new Map([['market-district', stableEconomy()]]), // NOT dangerous
+        });
+        const result = evaluateOpportunities(inputs);
+        expect(result?.opportunity.kind).not.toBe('escort');
+      });
+
+      it('V3-ESC-3 SPAWNS: escort via the active-companion path when both AND-halves are met', () => {
+        const dangerousEcon = baseEconomy({});
+        dangerousEcon.blackMarketActive = true;
+        const inputs = baseInputs({
+          playerReputations: [{ factionId: 'guild', value: 10 }], // keep faction-job (30) from competing
+          companions: [{
+            npcId: 'companion-mira', role: 'scout', joinedAtTick: 5,
+            abilityTags: [], morale: 65, active: true,
+          }],
+          npcProfiles: [{
+            npcId: 'companion-mira', name: 'Mira', factionId: null, goals: [],
+            relationship: { trust: 55, fear: 0, greed: 10, loyalty: 0 },
+            breakpoint: 'favorable', dominantAxis: 'trust', leverageAngle: 'Reliable ally',
+            knownRumors: [], underPressure: false,
+          }],
+          districtEconomies: new Map([['market-district', dangerousEcon]]),
+          currentTick: 20,
+        });
+        const result = evaluateOpportunities(inputs);
+        expect(result).not.toBeNull();
+        expect(result!.opportunity.kind).toBe('escort');
+        expect(result!.opportunity.sourceNpcId).toBe('companion-mira');
+        expect(result!.opportunity.linkedNpcIds).toContain('companion-mira');
+        expect(result!.opportunity.tags).toContain('protective');
+
+        // One-active-per-kind-per-source guard applies to escort exactly like
+        // every sibling rule: with this escort already active for Mira, a
+        // second evaluation (same trigger inputs, past MIN_TURNS_BETWEEN_SPAWNS)
+        // must not mint a duplicate escort for the same companion — it falls
+        // through to whatever else still qualifies (investigation, here),
+        // never silently re-picking escort.
+        const secondInputs = baseInputs({
+          playerReputations: [{ factionId: 'guild', value: 10 }],
+          companions: inputs.companions,
+          npcProfiles: inputs.npcProfiles,
+          districtEconomies: new Map([['market-district', dangerousEcon]]),
+          activeOpportunities: [result!.opportunity],
+          currentTick: 24,
+        });
+        const second = evaluateOpportunities(secondInputs);
+        expect(second).not.toBeNull();
+        expect(second!.opportunity.kind).not.toBe('escort');
+      });
+
+      it('V3-ESC-3 SPAWNS: escort via the trusted-faction path when no companion is present', () => {
+        const dangerousEcon = baseEconomy({});
+        dangerousEcon.blackMarketActive = true;
+        const inputs = baseInputs({
+          playerReputations: [{ factionId: 'coalition', value: 60 }], // >= ESCORT_TRUST_THRESHOLD (50)
+          factionStates: { coalition: { alertLevel: 10, cohesion: 0.8 } },
+          companions: [],
+          npcProfiles: [{
+            npcId: 'coalition-envoy', name: 'Envoy Reyes', factionId: 'coalition', goals: [],
+            relationship: { trust: 60, fear: 0, greed: 10, loyalty: 50 },
+            breakpoint: 'allied', dominantAxis: 'trust', leverageAngle: 'Speaks for the coalition',
+            knownRumors: [], underPressure: false,
+          }],
+          districtEconomies: new Map([['market-district', dangerousEcon]]),
+        });
+        const result = evaluateOpportunities(inputs);
+        expect(result).not.toBeNull();
+        expect(result!.opportunity.kind).toBe('escort');
+        expect(result!.opportunity.sourceFactionId).toBe('coalition');
+        expect(result!.opportunity.sourceNpcId).toBe('coalition-envoy');
+      });
+
+      it('a spawned escort resolves correctly through the existing getEscortFallout (completed, failed, expired)', () => {
+        const dangerousEcon = baseEconomy({});
+        dangerousEcon.blackMarketActive = true;
+        const inputs = baseInputs({
+          playerReputations: [{ factionId: 'guild', value: 10 }],
+          companions: [{
+            npcId: 'companion-mira', role: 'scout', joinedAtTick: 5,
+            abilityTags: [], morale: 65, active: true,
+          }],
+          npcProfiles: [{
+            npcId: 'companion-mira', name: 'Mira', factionId: null, goals: [],
+            relationship: { trust: 55, fear: 0, greed: 10, loyalty: 0 },
+            breakpoint: 'favorable', dominantAxis: 'trust', leverageAngle: 'Reliable ally',
+            knownRumors: [], underPressure: false,
+          }],
+          districtEconomies: new Map([['market-district', dangerousEcon]]),
+          currentTick: 20,
+        });
+        const result = evaluateOpportunities(inputs);
+        expect(result).not.toBeNull();
+        const escortOpp = result!.opportunity;
+        expect(escortOpp.kind).toBe('escort');
+
+        const ctx = { currentTick: 30, playerDistrictId: 'market-district', genre: 'fantasy' };
+
+        const completed = computeOpportunityFallout(escortOpp, 'completed', ctx);
+        expect(completed.warnings).toBeUndefined();
+        expect(completed.effects).toEqual(expect.arrayContaining([
+          { type: 'leverage', currency: 'favor', delta: 5 },
+          { type: 'obligation', kind: 'saved', direction: 'npc-owes-player', npcId: 'companion-mira', magnitude: 4 },
+        ]));
+
+        const failed = computeOpportunityFallout(escortOpp, 'failed', ctx);
+        expect(failed.warnings).toBeUndefined();
+        expect(failed.effects).toEqual(expect.arrayContaining([
+          { type: 'companion-morale', npcId: 'companion-mira', delta: -10 },
+        ]));
+
+        const expired = computeOpportunityFallout(escortOpp, 'expired', ctx);
+        expect(expired.warnings).toBeUndefined();
+        expect(expired.effects).toEqual([]);
+      });
     });
   });
 
