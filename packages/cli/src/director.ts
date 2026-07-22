@@ -26,11 +26,14 @@
 
 import type { Engine, WorldState, ScalarValue } from '@ai-rpg-engine/core';
 import {
-  // pressures
+  // pressures — read via world-tick's stable accessors (P8-SP-002/WL-003:
+  // world.modules['world-tick'] is the single persisted pressure source of
+  // truth; the old 'pressure-system' namespace had no production writer, so
+  // these sections could never render in real play)
+  getActivePressures,
+  getResolvedPressures,
   formatPressureForDirector,
   formatFalloutForDirector,
-  type WorldPressure,
-  type PressureFallout,
   // leverage & heat
   getLeverageState,
   formatLeverageForDirector,
@@ -135,17 +138,14 @@ export function renderDirectorLedger(engine: Pick<Engine, 'world'>): string {
   const player = world.entities[world.playerId];
   const custom: Record<string, ScalarValue> = player?.custom ?? {};
 
-  // Shared strategic reads (endgame.ts's defensive conventions, including the
-  // activePressures/pressures alias).
-  const pressureNs = namespace<{
-    activePressures: unknown;
-    pressures: unknown;
-    resolvedPressures: unknown;
-  }>(world, 'pressure-system');
-  const activePressures = objectArray<WorldPressure>(
-    pressureNs?.activePressures ?? pressureNs?.pressures,
-  );
-  const resolvedPressures = objectArray<PressureFallout>(pressureNs?.resolvedPressures);
+  // Shared strategic reads. Pressures come from world-tick's accessors —
+  // non-attaching (this is a structuredClone'd display world; the ledger's
+  // byte-identical-save promise depends on reads that never synthesize) and
+  // defensive (absent/malformed namespaces degrade to []). The fallout ledger
+  // is the tick's bounded resolvedPressures — real state since P8-WL-003, so
+  // the PRESSURE FALLOUT section below can finally render.
+  const activePressures = getActivePressures(world);
+  const resolvedPressures = getResolvedPressures(world);
 
   const sections: LedgerSection[] = [
     // -- Pressures first: what the world is about to do to you. ------------

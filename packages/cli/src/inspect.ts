@@ -25,6 +25,7 @@ import {
   type WorldState,
   type EntityState,
 } from '@ai-rpg-engine/core';
+import { hasWorldTickState, getActivePressures } from '@ai-rpg-engine/modules';
 import { renderEventLog } from '@ai-rpg-engine/terminal-ui';
 import { allPacks } from './packs.js';
 import { derivePlayerLevel } from './menu.js';
@@ -69,19 +70,19 @@ function sectionHeader(title: string): string[] {
 // reads the namespace its module actually persists, structurally — no module
 // imports, no invented state, and namespaces that never wired stay silent.
 
-/** Count of plain objects in an array-ish unknown (endgame's objectArray). */
-function objectCount(value: unknown): number {
-  if (!Array.isArray(value)) return 0;
-  return value.filter((v) => typeof v === 'object' && v !== null).length;
-}
-
-/** pressure-system: `activePressures` with `pressures` accepted as an alias. */
+/**
+ * world-tick's persisted pressures via the module's own accessors
+ * (P8-SP-002/WL-003: the single source of truth — the old 'pressure-system'
+ * namespace had no production writer, so this line under-reported every live
+ * save). hasWorldTickState carries the absent-vs-zero distinction: null hides
+ * the line for saves with no pressure system at all (bare engines, pre-tick
+ * saves); a wired save with nothing brewing honestly renders 0. Both reads
+ * are non-attaching — inspect-save's report must never mutate the state it
+ * summarizes.
+ */
 function readActivePressures(world: WorldState): number | null {
-  const ns = world.modules['pressure-system'] as
-    | { activePressures?: unknown; pressures?: unknown }
-    | undefined;
-  if (ns === undefined) return null;
-  return objectCount(ns.activePressures ?? ns.pressures);
+  if (!hasWorldTickState(world)) return null;
+  return getActivePressures(world).length;
 }
 
 /** encounter-spawn: liveByZone is the one-live-encounter-per-zone ledger. */
@@ -283,7 +284,23 @@ export function runInspectSave(savePath?: string, deps: InspectDeps = defaultDep
     return 1;
   }
 
-  const raw = fs.readFileSync(file, 'utf-8');
+  // P8-SEC-002: the read itself can fail on a foreseeable input even after
+  // existsSync passed — a DIRECTORY at the path (EISDIR), a permission-denied
+  // file (EACCES), or a TOCTOU delete (ENOENT). Each previously raw-threw a
+  // bare Node fs error out of this function, breaking the docstring's promise
+  // that every failure renders as the structured `Cannot load save [CODE]` +
+  // `Hint:` frame. Same voice as the authority's verdicts below.
+  let raw: string;
+  try {
+    raw = fs.readFileSync(file, 'utf-8');
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    deps.error(`  Cannot load save [SAVE_UNREADABLE]: ${reason}`);
+    deps.error(
+      '  Hint: the path must be a readable save FILE. Check that it is not a directory and that you have permission to read it.',
+    );
+    return 1;
+  }
   let envelope: unknown;
   let parsed = true;
   try {

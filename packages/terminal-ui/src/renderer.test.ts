@@ -161,6 +161,63 @@ describe('parseTextInput — target resolution', () => {
   });
 });
 
+// P8-PS-003: resolution is verb-aware. Entity-first order let a name-shadowing
+// entity hijack travel — live-caught: 'move crypt' next to exit 'Crypt
+// Antechamber' matched the DEAD Crypt Stalker corpse instead, submitted move
+// with a corpse as target, and the rejected round burned. Travel verbs now try
+// neighbor zones first; every other verb keeps entity-first claim.
+describe('parseTextInput — verb-aware resolution (P8-PS-003)', () => {
+  /** The live trap's shape: an entity sharing a prefix with a destination. */
+  function shadowedWorld() {
+    const zones: ZoneState[] = [
+      { id: 'vestry-passage', roomId: 'test', name: 'Vestry Passage', tags: [], neighbors: ['crypt-antechamber'] },
+      { id: 'crypt-antechamber', roomId: 'test', name: 'Crypt Antechamber', tags: [], neighbors: ['vestry-passage'] },
+    ];
+    const player: EntityState = {
+      id: 'hero', blueprintId: 'hero', type: 'player', name: 'Hero',
+      tags: ['player'], stats: {}, resources: { hp: 20 }, statuses: [], zoneId: 'vestry-passage',
+    };
+    const stalker: EntityState = {
+      id: 'crypt-stalker', blueprintId: 'stalker', type: 'enemy', name: 'Crypt Stalker',
+      tags: ['enemy'], stats: {}, resources: { hp: 0 }, statuses: [], zoneId: 'vestry-passage',
+    };
+    const engine = createTestEngine({
+      modules: [], zones, entities: [player, stalker],
+      playerId: 'hero', startZone: 'vestry-passage',
+    });
+    return engine.world;
+  }
+
+  it("'move crypt' prefers the neighbor zone over the name-shadowing entity (the live trap)", () => {
+    const world = shadowedWorld();
+    expect(parseTextInput('move crypt', world)).toEqual({ verb: 'move', targetIds: ['crypt-antechamber'] });
+  });
+
+  it("'go' and 'travel' get the same zone-first treatment", () => {
+    const world = shadowedWorld();
+    expect(parseTextInput('go crypt', world)).toEqual({ verb: 'go', targetIds: ['crypt-antechamber'] });
+    expect(parseTextInput('travel crypt', world)).toEqual({ verb: 'travel', targetIds: ['crypt-antechamber'] });
+  });
+
+  it("'attack crypt' still prefers the entity (combat keeps entity-first order)", () => {
+    const world = shadowedWorld();
+    expect(parseTextInput('attack crypt', world)).toEqual({ verb: 'attack', targetIds: ['crypt-stalker'] });
+  });
+
+  it('travel input with NO zone match still falls through to entities, then bare verb', () => {
+    const world = shadowedWorld();
+    // 'stalker' matches no neighbor — the entity fallback keeps working for
+    // packs whose travel points at odd targets (ferries, mounts).
+    expect(parseTextInput('move stalker', world)).toEqual({ verb: 'move', targetIds: ['crypt-stalker'] });
+    expect(parseTextInput('move nowhere-real', world)).toEqual({ verb: 'move' });
+  });
+
+  it('non-travel verbs keep zone fallback when no entity matches (control)', () => {
+    const world = shadowedWorld();
+    expect(parseTextInput('scout antechamber', world)).toEqual({ verb: 'scout', targetIds: ['crypt-antechamber'] });
+  });
+});
+
 describe('parseActionSelection', () => {
   it('maps a valid 1-based index to the corresponding action', () => {
     const world = makeWorld();
@@ -1010,6 +1067,95 @@ describe('Stage D — labeled section rules frame the screen', () => {
     world.zones['town-square'].name = 'The Extraordinarily Long-Named Grand Plaza of the Ancient Merchant Republic';
     const screen = renderFullScreen(world, [], PLAIN);
     expect(screen).toContain('Grand Plaza');
+  });
+});
+
+// P8-PS-005: appended menu entries (the CLI's ability/journal/director layer)
+// render INSIDE the frame — below the base list, above the screen-closing
+// rule, one shared number width. The old embedder pattern printed them after
+// renderFullScreen's return, so the closing rule bisected the menu on every
+// frame and the columns misaligned at the seam ('[8] Look around' / '[ 9]').
+describe('renderFullScreen — appended menu entries inside the frame (P8-PS-005)', () => {
+  const EXTRAS = [
+    { label: 'Rally the Crowd', group: 'ability' },
+    { label: 'Journal — quests and undertakings', group: 'journal' },
+    { label: "Director's Ledger — the strategic picture", group: 'director' },
+  ] as const;
+
+  it('extras render ABOVE the closing rule — the rule closes the whole menu', () => {
+    const world = makeWorld();
+    const screen = renderFullScreen(world, [], { ...PLAIN, extraActions: EXTRAS });
+    const lines = screen.split('\n');
+    expect(lines[lines.length - 1]).toBe('─'.repeat(SCREEN_WIDTH));
+    // The LAST content line is the last extra — nothing renders below it but
+    // the closing rule.
+    expect(lines[lines.length - 2]).toContain("Director's Ledger");
+    // And no rule line sits between the base list and the extras.
+    const lookAround = lines.findIndex((l) => l.includes('Look around'));
+    const rally = lines.findIndex((l) => l.includes('Rally the Crowd'));
+    expect(lookAround).toBeGreaterThan(-1);
+    expect(rally).toBeGreaterThan(lookAround);
+    for (const between of lines.slice(lookAround + 1, rally)) {
+      expect(between.startsWith('─')).toBe(false);
+    }
+  });
+
+  it('base and extras share ONE number width — no seam misalignment', () => {
+    const world = makeWorld();
+    // makeWorld's base menu is 7 entries; +3 extras crosses into double
+    // digits, exactly the misalignment case: base must pad to width 2 too.
+    const base = buildActionList(world);
+    expect(base.length + EXTRAS.length).toBeGreaterThanOrEqual(10);
+    const screen = renderFullScreen(world, [], { ...PLAIN, extraActions: EXTRAS });
+    expect(screen).toContain(`[ 1] Move to ${world.zones['back-alley'].name}`);
+    expect(screen).toContain(`[ ${base.length}] Look around`);
+    expect(screen).toContain(`[ ${base.length + 1}] Rally the Crowd`);
+    expect(screen).toContain(`[${base.length + 3}] Director's Ledger`);
+  });
+
+  it('extras continue the base numbering exactly where parseExtraSelection expects', () => {
+    const world = makeWorld();
+    const base = buildActionList(world);
+    const screen = renderFullScreen(world, [], { ...PLAIN, extraActions: EXTRAS });
+    // Every number from 1..base+extras appears exactly once.
+    const numbers = [...screen.matchAll(/\[\s*(\d+)\]/g)].map((m) => Number(m[1]));
+    expect([...numbers].sort((a, b) => a - b)).toEqual(
+      Array.from({ length: base.length + EXTRAS.length }, (_, i) => i + 1),
+    );
+  });
+
+  it('group separation holds across the seam and between extras groups', () => {
+    const world = makeWorld();
+    const screen = renderFullScreen(world, [], { ...PLAIN, extraActions: EXTRAS });
+    const lines = screen.split('\n');
+    const lookAround = lines.findIndex((l) => l.includes('Look around'));
+    const rally = lines.findIndex((l) => l.includes('Rally the Crowd'));
+    const journal = lines.findIndex((l) => l.includes('Journal'));
+    // One blank line between the base list's last group and the first extras
+    // group, and between distinct extras groups — the base list's own rule.
+    expect(lines[lookAround + 1]).toBe('');
+    expect(rally).toBe(lookAround + 2);
+    expect(lines[rally + 1]).toBe('');
+    expect(journal).toBe(rally + 2);
+  });
+
+  it('no extras → byte-identical to the pre-option frame (default unchanged)', () => {
+    const world = makeWorld();
+    expect(renderFullScreen(world, [], { ...PLAIN, extraActions: [] })).toBe(
+      renderFullScreen(world, [], PLAIN),
+    );
+  });
+
+  it('extras are suppressed with the Actions section: dialogue frames and actions:false', () => {
+    const world = makeWorld();
+    world.modules['dialogue-core'] = { activeDialogue: 'bram-talk' };
+    const dialogueScreen = renderFullScreen(world, [], { ...PLAIN, extraActions: EXTRAS });
+    expect(dialogueScreen).not.toContain('Rally the Crowd');
+
+    const endWorld = makeWorld();
+    const endScreen = renderFullScreen(endWorld, [], { ...PLAIN, actions: false, extraActions: EXTRAS });
+    expect(endScreen).not.toContain('Rally the Crowd');
+    expect(endScreen).not.toContain('── Actions ');
   });
 });
 

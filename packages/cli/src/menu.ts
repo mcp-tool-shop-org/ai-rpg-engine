@@ -5,11 +5,14 @@
 // Likewise XP: progression-core accrues it on kills and registers an `unlock`
 // verb, but the CLI never showed a balance or offered a spend.
 //
-// This module extends the numbered action menu WITHOUT touching terminal-ui:
-// terminal-ui's buildActionList stays the source of truth for entries
-// 1..N; this module appends entries N+1..N+M (ready abilities with resolved
-// targets, then affordable progression unlocks) that bin.ts renders below the
-// base menu and resolves in handlePlayerInput before the free-text fallback.
+// This module extends the numbered action menu: terminal-ui's buildActionList
+// stays the source of truth for entries 1..N; this module appends entries
+// N+1..N+M (ready abilities with resolved targets, then affordable
+// progression unlocks) that renderFrame threads into renderFullScreen's
+// `extraActions` option (P8-PS-005: rendered INSIDE the frame, sharing the
+// base list's number width, above the screen-closing rule) and that
+// handlePlayerInput resolves via parseExtraSelection before the free-text
+// fallback.
 //
 // F-ENG006 adds a last, env-gated entry (AI_RPG_DEBUG=1): a debug view that
 // renders every inspector the engine's modules registered (Engine.getInspectors
@@ -363,23 +366,15 @@ export function buildExtraActions(
   ];
 }
 
-/**
- * Render the appended entries, numbered to continue the base menu
- * (base entries are 1..baseCount, these are baseCount+1..). Returns '' when
- * there is nothing to append so the caller can skip the section cleanly.
- */
-export function renderExtraActions(extras: ExtraAction[], baseCount: number): string {
-  if (extras.length === 0) return '';
-  const width = String(baseCount + extras.length).length;
-  const lines: string[] = [];
-  let prevGroup: ExtraAction['group'] | undefined;
-  extras.forEach((extra, i) => {
-    if (prevGroup !== undefined && extra.group !== prevGroup) lines.push('');
-    prevGroup = extra.group;
-    lines.push(`  [${String(baseCount + i + 1).padStart(width)}] ${extra.label}`);
-  });
-  return lines.join('\n') + '\n';
-}
+// renderExtraActions is gone (P8-PS-005): rendering the appended entries is
+// terminal-ui's job now — renderFullScreen's `extraActions` option numbers
+// them as a continuation of the base list, INSIDE the frame's closing rule,
+// with one shared number width (renderActions owns the whole numbered range).
+// The two-renderer split was the misalignment bug: this module padded to the
+// TOTAL width while the base menu padded to its own, so the columns broke at
+// the seam, and the extras printed after the frame's return, below the
+// screen-closing rule. parseExtraSelection below is unchanged — the numbers
+// it resolves are exactly the numbers the frame now renders.
 
 /**
  * Map a numeric input beyond the base menu range onto an appended entry.

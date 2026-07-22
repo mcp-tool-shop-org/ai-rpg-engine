@@ -18,6 +18,7 @@ export {
   type RenderOptions,
   type FullScreenOptions,
   type ActionOption,
+  type ExtraMenuEntry,
 } from './renderer.js';
 
 export {

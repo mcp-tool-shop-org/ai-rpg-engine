@@ -16,7 +16,7 @@ import {
   TurnPresenter,
 } from '@ai-rpg-engine/terminal-ui';
 import { resolveEntity } from '@ai-rpg-engine/character-creation';
-import { WorldStore, SaveLoadError, type Engine, type EntityState, type RulesetDefinition } from '@ai-rpg-engine/core';
+import { WorldStore, SaveLoadError, migrateModuleStates, type Engine, type EntityState, type RulesetDefinition } from '@ai-rpg-engine/core';
 import { allPacks } from './packs.js';
 import { promptMenu, promptLine, closeReadline } from './prompts.js';
 import { buildCharacter } from './character-builder.js';
@@ -29,7 +29,7 @@ import { runNpcTurns } from './turns.js';
 import { runWorldTick } from '@ai-rpg-engine/modules';
 import { evaluateSessionEnd, renderSessionEnd, computeSessionStats } from './endgame.js';
 import { appendRunRecord, readRunHistory, formatRecentRuns } from './history.js';
-import { buildExtraActions, renderExtraActions, parseExtraSelection, buildHudWorld, renderInspectorReport, renderJournal, type ExtraAction } from './menu.js';
+import { buildExtraActions, parseExtraSelection, buildHudWorld, renderInspectorReport, renderJournal, type ExtraAction } from './menu.js';
 import { renderDirectorLedger } from './director.js';
 import { loadExternalPack, PackLoadError, type LoadedPack } from './external-pack.js';
 import { runInspectSave } from './inspect.js';
@@ -54,7 +54,8 @@ function printHelp() {
   console.log('  scaffold       Write a minimal valid content stub (ability/zone/quest/status/dialogue)');
   console.log('  profile        Validate a profile/profile-set JSON, or scaffold a starter profile');
   console.log('  create-starter Scaffold a new starter from template');
-  console.log('  replay         Restore the save and RESUME PLAY (--replay re-simulates the action log)');
+  console.log('  replay         Restore the save and RESUME PLAY. (--replay is accepted but');
+  console.log('                 re-simulation is not supported: the save is restored instead.)');
   console.log('  inspect-save   Validate a save through the same checks Continue uses, then');
   console.log('                 summarize it (world, player, globals, recent events).');
   console.log('                 With a path: inspect that save file instead of the default.');
@@ -179,9 +180,10 @@ async function main() {
       closeReadline();
       return;
     case 'replay': {
-      // F1c: a restored game is PLAYABLE. replayGame() restores (or
-      // re-simulates) and returns the live session; the shared prompt loop
-      // takes over instead of the old print-summary-and-exit dead end.
+      // F1c: a restored game is PLAYABLE. replayGame() restores and returns
+      // the live session; the shared prompt loop takes over instead of the
+      // old print-summary-and-exit dead end. (--replay re-simulation retired
+      // in v2.7 — see replayGame; resim parity is v2.8 work.)
       const restored = replayGame(args.slice(1));
       if (restored) {
         await playSessions(restored, null);
@@ -272,7 +274,27 @@ export function readSaveSummary(): { gameId: string; tick: number } | null {
  *    the LIVE eventLog, not the orphaned construction store (parity with
  *    Engine.deserialize, v2.5 PC-1)
  *
- * @throws SaveLoadError on malformed/unsupported saves — caller renders it.
+ * P8-WL-002/P8-SP-001: this path also runs the ENG-009 module-migration seam,
+ * which it previously bypassed entirely — Engine.deserialize had the seam,
+ * but this function is the only load authority shipped play reaches, so
+ * version-drifted module slices loaded raw and a save → Continue → save cycle
+ * carried its original meta.moduleVersions forever. After the store swap:
+ *  - migrateModuleStates(restored.state, moduleManager.getModules()) — each
+ *    registered module whose persisted meta.moduleVersions entry differs from
+ *    its registered version gets migrateState() on its slice, then the stamp
+ *    is refreshed IN PLACE (the re-stamp lives inside migrateModuleStates,
+ *    world.ts — the exact call Engine.deserialize makes), so the NEXT save is
+ *    post-seam. All-or-nothing: a throwing hook rejects the load with
+ *    SAVE_MODULE_MIGRATION_FAILED and the half-built engine is abandoned —
+ *    the caller never receives a session holding half-migrated state.
+ *  - moduleManager.initializeNamespaces(restored) — namespaces ABSENT from
+ *    the save get their modules' registered defaults (factory defaults run
+ *    against the RESTORED world, so eventLog-cursor state baselines to the
+ *    loaded log's length — P8-WL-006); PRESENT namespaces are never touched.
+ *
+ * @throws SaveLoadError on malformed/unsupported saves, and with code
+ *   SAVE_MODULE_MIGRATION_FAILED when a module's migrateState throws —
+ *   caller renders it.
  */
 export function restoreSessionFromSave(pack: LoadedPack, saveData?: unknown): Session {
   const data = (saveData ?? JSON.parse(fs.readFileSync(SAVE_FILE, 'utf-8'))) as {
@@ -289,6 +311,15 @@ export function restoreSessionFromSave(pack: LoadedPack, saveData?: unknown): Se
   );
   (engine as { store: WorldStore }).store = restored;
   engine.moduleManager.rebindStore(restored);
+
+  // ENG-009 seam on the shipped load path (see the doc block above). Order
+  // matters: migrations first (a hook may discard its slice by returning
+  // undefined), then namespace init re-defaults whatever is absent. The
+  // module list comes from the pack-wired manager — pack closures own module
+  // construction, so getModules() is the only public route to the exact
+  // instances the pack registered.
+  migrateModuleStates(restored.state, engine.moduleManager.getModules());
+  engine.moduleManager.initializeNamespaces(restored);
 
   // Restore the action log so a save taken AFTER resuming still carries the
   // full history (`--replay` re-simulation stays coherent). The old replay
@@ -404,10 +435,15 @@ function printSessionBanner(pack: LoadedPack) {
  * with the CLI's own layers —
  *  - F1d HUD: the player shown carries xp/level pseudo-resources (display-only
  *    copy; live state untouched)
- *  - F1d menu: ability + unlock entries numbered to continue the base menu
+ *  - F1d menu: ability + unlock entries numbered to continue the base menu.
+ *    P8-PS-005: the extras ride renderFullScreen's `extraActions` option, so
+ *    they render INSIDE the frame — below the base list, above the screen-
+ *    closing rule, sharing one number width. (The old pattern appended them
+ *    after the frame's return: the closing rule bisected the menu on every
+ *    frame and the number columns misaligned at the seam.)
  * BOTH menu layers vanish during active dialogue (terminal-ui suppresses the
- *  base Actions section itself; the extras gate here matches it) — the
- *  numbers on screen belong to the dialogue choices.
+ *  whole Actions section, extras included) — the numbers on screen belong to
+ *  the dialogue choices.
  * `opts.menu: false` suppresses both layers outright: the session-end frame
  *  keeps the scene/HUD/log panels but offers a corpse no action menu (the
  *  finale's New game / Quit prompt owns the numbers there).
@@ -422,22 +458,19 @@ export function renderFrame(
   const print = opts.print ?? console.log;
   const menu = opts.menu ?? true;
   const trees = pack.progressionTrees ?? [];
+
+  // Building the extras costs ability/unlock scans — skip when the menu is
+  // suppressed anyway (end frames, active dialogue).
+  const dState = engine.world.modules['dialogue-core'] as { activeDialogue: string | null } | undefined;
+  const extras = menu && !dState?.activeDialogue ? buildExtraActions(engine, trees) : [];
+
   const screen = renderFullScreen(
     buildHudWorld(engine.world, trees),
     engine.world.eventLog.slice(-8),
-    menu ? undefined : { actions: false },
+    menu ? { extraActions: extras } : { actions: false },
   );
 
-  const dState = engine.world.modules['dialogue-core'] as { activeDialogue: string | null } | undefined;
-  let extraSection = '';
-  if (menu && !dState?.activeDialogue) {
-    const extras = buildExtraActions(engine, trees);
-    if (extras.length > 0) {
-      extraSection = '\n' + renderExtraActions(extras, buildActionList(engine.world).length);
-    }
-  }
-
-  print('\n' + screen + extraSection);
+  print('\n' + screen);
 }
 
 export type SessionOutcome = 'quit' | 'new-game';
@@ -468,6 +501,37 @@ export function narrateRound(
 }
 
 /**
+ * The world's half of one action round: NPC turns, then the world tick.
+ *
+ * Two end-gates, both load-bearing:
+ *  - entry gate (F1a): a player action that ended the game (killing blow on
+ *    the boss, death to a reactive effect) gets no NPC round at all;
+ *  - the P8-WL-010 gate BETWEEN the NPC block and the world tick: when an
+ *    NPC downs the player mid-round, the tick would otherwise still run on
+ *    the dead-player world — pressures tick and the zone-entry spawn check
+ *    can fire, so the death round's narration telegraphed 'Ambush: …' over
+ *    the player's corpse, immediately followed by the defeat screen.
+ *
+ * `deps` exists for unit tests only (the gates are what's under test; the
+ * real NPC/tick drivers are exercised by their own suites) — production
+ * callers pass nothing and get the live drivers.
+ */
+export function runHostileRound(
+  engine: Engine,
+  pack: LoadedPack,
+  deps: {
+    npcTurns?: (engine: Engine) => unknown;
+    worldTick?: (engine: Engine, opts: { genre?: string; log: (msg: string) => void }) => unknown;
+    log?: (msg: string) => void;
+  } = {},
+): void {
+  if (evaluateSessionEnd(engine)) return;
+  (deps.npcTurns ?? runNpcTurns)(engine);
+  if (evaluateSessionEnd(engine)) return; // P8-WL-010 — no tick over a corpse
+  (deps.worldTick ?? runWorldTick)(engine, { genre: pack.meta.genres?.[0], log: deps.log ?? console.log });
+}
+
+/**
  * The shared interactive loop (run, run <path>, resumed saves, and replay all
  * land here). Each iteration:
  *   1. F1b — if the session is over (player downed / bosses downed), render
@@ -481,10 +545,13 @@ export function narrateRound(
  *      pressure lifecycle (spawn, reveal, escalate, expire). Guarded inside
  *      like the NPC round — one bad tick logs one line, never kills the
  *      session. Its events land in the same round delta as the action.
+ *      Both steps live in runHostileRound with its two end-gates (P8-WL-010).
  *   5. FU-2 — the round's eventLog delta (player + NPC + world-tick events)
  *      is presented once and its narration line printed. A round that ends
  *      the game still narrates — the line lands before the next iteration's
- *      finale screen.
+ *      finale screen. A REJECTED round (kind 'rejected' — the engine refused
+ *      the submission, P8-PS-002) narrates its rejection but provokes no NPC
+ *      or world turn: a dead menu entry costs the player nothing.
  */
 async function runSession(engine: Engine, pack: LoadedPack): Promise<SessionOutcome> {
   // FU-2: ONE presenter per session — its AudioDirector carries sfx cooldown
@@ -535,12 +602,14 @@ async function runSession(engine: Engine, pack: LoadedPack): Promise<SessionOutc
     const result = handlePlayerInput(engine, input, { ruleset: pack.ruleset, extras });
     if (result.kind === 'quit') return 'quit';
 
-    if (result.kind === 'action' && !evaluateSessionEnd(engine)) {
-      runNpcTurns(engine);
-      runWorldTick(engine, { genre: pack.meta.genres?.[0], log: console.log });
+    if (result.kind === 'action') {
+      runHostileRound(engine, pack);
     }
 
-    if (result.kind === 'action') {
+    // 'rejected' narrates too: the engine's structured refusal is the round's
+    // one event, and the player deserves to hear it immediately rather than
+    // finding it in the next frame's log panel (P8-PS-002).
+    if (result.kind === 'action' || result.kind === 'rejected') {
       narrateRound(presenter, engine, logLenBefore, console.log);
     }
   }
@@ -701,6 +770,10 @@ export type PlayerInputResult =
   | { kind: 'save'; ok: boolean }
   | { kind: 'help' }
   | { kind: 'action'; via: 'dialogue-choice' | 'menu' | 'extra' | 'text' }
+  /** A MENU-selected submission the engine refused (action.rejected) —
+   *  P8-PS-002: the menu advertised it, the engine said no; the refusal
+   *  narrates but the round is NOT forfeited (no NPC turns, no world tick). */
+  | { kind: 'rejected' }
   | { kind: 'unknown' };
 
 /**
@@ -783,6 +856,7 @@ export function handlePlayerInput(
   // Numbered menu selection
   const numAction = parseActionSelection(trimmed, engine.world);
   if (numAction) {
+    const logLenBefore = engine.world.eventLog.length;
     runGuardedAction(
       () =>
         engine.submitAction(numAction.verb, {
@@ -792,6 +866,27 @@ export function handlePlayerInput(
         }),
       log,
     );
+    // P8-PS-002 (routing half): a menu entry is the UI's own promise — when
+    // the engine refuses it anyway (the 'menu offered it, engine rejected it'
+    // trap: 'Speak to <npc>' with no dialogue authored, the exact composed
+    // finding), the player made no mistake and forfeits nothing. Scan only
+    // this submission's delta, only for the player's own rejected verb (the
+    // dialogue branch's exact discipline for 'choose'), and return the
+    // non-action 'rejected' kind: the refusal still narrates, but no NPC
+    // turns and no world tick follow. The honest MENU-side gate (don't offer
+    // dialogue-less NPCs at all) needs a dialogue-registry read the modules
+    // layer does not expose yet — dialogue-core's registry is closure-private
+    // with no formula/world-state surface — so the cost is gated here, at the
+    // routing layer, instead.
+    const rejected = engine.world.eventLog
+      .slice(logLenBefore)
+      .some(
+        (e) =>
+          e.type === 'action.rejected' &&
+          e.actorId === engine.world.playerId &&
+          (e.payload as { verb?: unknown }).verb === numAction.verb,
+      );
+    if (rejected) return { kind: 'rejected' };
     return { kind: 'action', via: 'menu' };
   }
 
@@ -829,6 +924,19 @@ export function handlePlayerInput(
     }
   }
 
+  // P8-PS-001: a number that resolved to NEITHER the base menu NOR the extras
+  // range must never fall through to the free-text parser — that submitted it
+  // to the engine as a bogus verb ('99' → verb '99'), the engine rejected it,
+  // and because the result was kind 'action' every living hostile got a free
+  // attack on a mistyped menu number. Digits are a menu gesture: answer with
+  // the menu's real range and consume nothing (the extras entries' own
+  // no-turn contract, applied to the whole numbered range).
+  if (/^\d+$/.test(trimmed)) {
+    const menuSize = buildActionList(engine.world).length + (opts.extras?.length ?? 0);
+    log(`  Please enter a number between 1 and ${menuSize}.`);
+    return { kind: 'unknown' };
+  }
+
   // Freeform text
   const textAction = parseTextInput(trimmed, engine.world);
   if (textAction) {
@@ -855,9 +963,22 @@ export function handlePlayerInput(
 }
 
 /**
- * Restore (or re-simulate) the save and hand back the live session so the
- * caller can enter the shared prompt loop (F1c — a restored game is playable,
- * not a print-summary-and-exit dead end).
+ * Restore the save and hand back the live session so the caller can enter the
+ * shared prompt loop (F1c — a restored game is playable, not a
+ * print-summary-and-exit dead end).
+ *
+ * P8-WL-001/P8-PS-004 (v2.7): the `--replay` RE-SIMULATION path is retired —
+ * `--replay` now restores exactly like the default, plus one structured
+ * notice. Re-simulation replayed the actionLog through a fresh
+ * pack.createGame(seed), which has been structurally divergent since the
+ * world-state waves: character creation is not an action (the resim played
+ * the pack's DEFAULT character, not the created one the save holds), and
+ * world-tick/encounter-spawn mutate state OUTSIDE the action log (spawned
+ * entities never existed during resim; fresh cursor state then rolled a spawn
+ * burst against the fully-restored eventLog) — all while printing 'Replay
+ * complete' with no warning. Restore-then-continue is the honest v2.7
+ * behavior; resim PARITY (recording creation as a synthetic action, ticking
+ * the world inside the resim loop at live cadence) is documented v2.8 work.
  *
  * Exported for unit testing (same rationale as runGuardedAction — this reads
  * a real save file off disk and drives process.exit on bad input, so tests
@@ -890,49 +1011,33 @@ export function replayGame(args: string[] = []): Session | undefined {
     process.exit(1);
   }
 
-  const seed = data.world?.state?.meta?.seed ?? 42;
-  const reSimulate = args.includes('--replay');
+  if (args.includes('--replay')) {
+    // The structured notice (the SAVE_WRITE_FAILED voice: [CODE] line + Hint,
+    // non-fatal, stdout): the flag is honored as a restore, never silently.
+    console.log(
+      '  [REPLAY_RESIM_UNSUPPORTED] --replay re-simulation is not supported with world-state modules; restoring the save instead (same as Continue).',
+    );
+    console.log(
+      '  Hint: world ticks and encounter spawns evolve the world outside the action log, so a re-simulation silently diverges from the save. Your session resumes exactly where it was saved.',
+    );
+  }
 
+  // RESTORE the saved world state (entities, eventLog, globals, pending,
+  // rngState, meta incl. idCounter) into a pack-wired engine — shared with
+  // `run` → Continue (see restoreSessionFromSave: EventBus reuse core-004,
+  // ruleset bounds C7, rebindStore v2.5 PC-1, ENG-009 seam P8-WL-002).
   let session: Session;
-  if (reSimulate) {
-    // Explicit re-simulation path: replay the action log through a fresh game.
-    // F-7650e39d: `data.actionLog ?? []` only substitutes for null/undefined —
-    // a corrupted save with actionLog set to any other non-iterable JSON
-    // value (a number, boolean, or plain object) made the for..of below
-    // raw-throw an unstructured TypeError, unlike the default-load branch
-    // just below, which wraps the restore in try/catch and prints
-    // a friendly `[code] message` + hint on SaveLoadError. Match that.
-    const rawActionLog = data.actionLog;
-    if (rawActionLog !== undefined && rawActionLog !== null && !Array.isArray(rawActionLog)) {
-      console.error(`  Cannot load save: actionLog must be an array, got ${typeof rawActionLog}.`);
-      console.error('  Hint: the save file is corrupt or was not produced by this engine.');
+  try {
+    session = restoreSessionFromSave(pack, data);
+  } catch (e) {
+    if (e instanceof SaveLoadError) {
+      console.error(`  Cannot load save [${e.code}]: ${e.message}`);
+      console.error(`  Hint: ${e.hint}`);
       process.exit(1);
     }
-    const actionLog = Array.isArray(rawActionLog) ? rawActionLog : [];
-    console.log(`  Re-simulating ${actionLog.length} actions...`);
-    const engine = pack.createGame(seed);
-    for (const action of actionLog) {
-      engine.processAction(action);
-    }
-    console.log(`  Replay complete. ${engine.world.eventLog.length} events generated.`);
-    session = { engine, pack };
-  } else {
-    // Default load: RESTORE the saved world state (entities, eventLog, globals,
-    // pending, rngState, meta incl. idCounter) into a pack-wired engine —
-    // shared with `run` → Continue (see restoreSessionFromSave: EventBus reuse
-    // core-004, ruleset bounds C7, rebindStore v2.5 PC-1).
-    try {
-      session = restoreSessionFromSave(pack, data);
-    } catch (e) {
-      if (e instanceof SaveLoadError) {
-        console.error(`  Cannot load save [${e.code}]: ${e.message}`);
-        console.error(`  Hint: ${e.hint}`);
-        process.exit(1);
-      }
-      throw e;
-    }
-    console.log(`  Loaded save. ${session.engine.world.eventLog.length} events in log.`);
+    throw e;
   }
+  console.log(`  Loaded save. ${session.engine.world.eventLog.length} events in log.`);
 
   const engine = session.engine;
   console.log(`  Final tick: ${engine.tick}`);

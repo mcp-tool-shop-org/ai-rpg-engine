@@ -354,21 +354,42 @@ export function buildActionList(world: WorldState): ActionOption[] {
   return actions;
 }
 
-export function renderActions(world: WorldState, opts?: RenderOptions): string {
+/**
+ * An appended menu entry rendered AFTER the base action list, continuing its
+ * numbering (P8-PS-005). The embedder (the CLI's ability/journal/director
+ * layer) owns what the entries DO — the renderer only needs a label and a
+ * group for blank-line separation, exactly like ActionOption's `group`.
+ */
+export type ExtraMenuEntry = { label: string; group?: string };
+
+export function renderActions(
+  world: WorldState,
+  opts?: RenderOptions & { extras?: readonly ExtraMenuEntry[] },
+): string {
   const pal = paletteFor(opts);
   const actions = buildActionList(world);
+  const extras = opts?.extras ?? [];
   // Right-align numbers when the menu reaches double digits: [ 9] / [10].
-  const width = String(actions.length).length;
+  // ONE width for the whole numbered range — base and appended entries share
+  // it, so the seam can never misalign ('[8] Look around' vs '[ 9] Rally')
+  // the way the two-renderer split did (P8-PS-005).
+  const width = String(actions.length + extras.length).length;
   const lines: string[] = [];
-  let prevGroup: ActionGroup | undefined;
-  actions.forEach((action, i) => {
-    if (prevGroup !== undefined && action.group !== prevGroup) {
+  let prevGroup: string | undefined;
+  const push = (label: string, group: string, index: number) => {
+    if (prevGroup !== undefined && group !== prevGroup) {
       lines.push('');
     }
-    prevGroup = action.group;
-    const num = `[${String(i + 1).padStart(width)}]`;
-    lines.push(`  ${pal.cyan(num)} ${action.label}`);
-  });
+    prevGroup = group;
+    const num = `[${String(index + 1).padStart(width)}]`;
+    lines.push(`  ${pal.cyan(num)} ${label}`);
+  };
+  actions.forEach((action, i) => push(action.label, action.group, i));
+  // Appended entries continue the numbering — the same numbers
+  // parseExtraSelection (the CLI's extras router) resolves. Group separation
+  // follows the base list's rule; the base-to-extras seam always separates
+  // because no extras group shares a name with an ActionGroup.
+  extras.forEach((extra, i) => push(extra.label, extra.group ?? 'extra', actions.length + i));
   return lines.join('\n') + '\n';
 }
 
@@ -442,46 +463,72 @@ export function parseTextInput(
   if (rest) {
     const restLower = rest.toLowerCase();
 
-    const entities = Object.values(world.entities).filter(e => e.zoneId === zone.id);
-    const entityResult = (entity: EntityState) =>
-      verb === 'use' ? { verb, toolId: entity.id } : { verb, targetIds: [entity.id] };
+    const resolveEntity = (): { verb: string; targetIds?: string[]; toolId?: string } | null => {
+      const entities = Object.values(world.entities).filter(e => e.zoneId === zone.id);
+      const entityResult = (entity: EntityState) =>
+        verb === 'use' ? { verb, toolId: entity.id } : { verb, targetIds: [entity.id] };
 
-    let prefixEntity: EntityState | undefined;
-    let substringEntity: EntityState | undefined;
-    for (const entity of entities) {
-      const nameLower = entity.name.toLowerCase();
-      const idLower = entity.id.toLowerCase();
-      if (nameLower === restLower || idLower === restLower) {
-        return entityResult(entity);
+      let prefixEntity: EntityState | undefined;
+      let substringEntity: EntityState | undefined;
+      for (const entity of entities) {
+        const nameLower = entity.name.toLowerCase();
+        const idLower = entity.id.toLowerCase();
+        if (nameLower === restLower || idLower === restLower) {
+          return entityResult(entity);
+        }
+        if (!prefixEntity && (nameLower.startsWith(restLower) || idLower.startsWith(restLower))) {
+          prefixEntity = entity;
+        }
+        if (!substringEntity && (nameLower.includes(restLower) || idLower.includes(restLower))) {
+          substringEntity = entity;
+        }
       }
-      if (!prefixEntity && (nameLower.startsWith(restLower) || idLower.startsWith(restLower))) {
-        prefixEntity = entity;
-      }
-      if (!substringEntity && (nameLower.includes(restLower) || idLower.includes(restLower))) {
-        substringEntity = entity;
-      }
-    }
-    if (prefixEntity) return entityResult(prefixEntity);
-    if (substringEntity) return entityResult(substringEntity);
+      if (prefixEntity) return entityResult(prefixEntity);
+      if (substringEntity) return entityResult(substringEntity);
+      return null;
+    };
 
-    let prefixZone: string | undefined;
-    let substringZone: string | undefined;
-    for (const neighborId of zone.neighbors) {
-      const neighbor = world.zones[neighborId];
-      const nameLower = neighbor?.name.toLowerCase();
-      const idLower = neighborId.toLowerCase();
-      if (nameLower === restLower || idLower === restLower) {
-        return { verb, targetIds: [neighborId] };
+    const resolveZone = (): { verb: string; targetIds: string[] } | null => {
+      let prefixZone: string | undefined;
+      let substringZone: string | undefined;
+      for (const neighborId of zone.neighbors) {
+        const neighbor = world.zones[neighborId];
+        const nameLower = neighbor?.name.toLowerCase();
+        const idLower = neighborId.toLowerCase();
+        if (nameLower === restLower || idLower === restLower) {
+          return { verb, targetIds: [neighborId] };
+        }
+        if (!prefixZone && ((nameLower && nameLower.startsWith(restLower)) || idLower.startsWith(restLower))) {
+          prefixZone = neighborId;
+        }
+        if (!substringZone && ((nameLower && nameLower.includes(restLower)) || idLower.includes(restLower))) {
+          substringZone = neighborId;
+        }
       }
-      if (!prefixZone && ((nameLower && nameLower.startsWith(restLower)) || idLower.startsWith(restLower))) {
-        prefixZone = neighborId;
-      }
-      if (!substringZone && ((nameLower && nameLower.includes(restLower)) || idLower.includes(restLower))) {
-        substringZone = neighborId;
-      }
+      if (prefixZone) return { verb, targetIds: [prefixZone] };
+      if (substringZone) return { verb, targetIds: [substringZone] };
+      return null;
+    };
+
+    // P8-PS-003: resolution is verb-aware. Travel verbs try neighbor ZONES
+    // first — 'move crypt' next to exit 'Crypt Antechamber' must never be
+    // hijacked by a name-shadowing entity (the dead Crypt Stalker), which
+    // turned the most common free-text command into a burned round wherever
+    // an enemy shares a prefix with a destination. Entities keep first claim
+    // for every other verb ('attack crypt' still finds the Stalker) — same
+    // branch-per-verb shape as the equip/unequip special case above.
+    const TRAVEL_VERBS = new Set(['move', 'go', 'travel']);
+    if (TRAVEL_VERBS.has(verb)) {
+      const zoneMatch = resolveZone();
+      if (zoneMatch) return zoneMatch;
+      const entityMatch = resolveEntity();
+      if (entityMatch) return entityMatch;
+    } else {
+      const entityMatch = resolveEntity();
+      if (entityMatch) return entityMatch;
+      const zoneMatch = resolveZone();
+      if (zoneMatch) return zoneMatch;
     }
-    if (prefixZone) return { verb, targetIds: [prefixZone] };
-    if (substringZone) return { verb, targetIds: [substringZone] };
 
     const player = world.entities[world.playerId];
     if (player?.inventory) {
@@ -849,6 +896,16 @@ export type FullScreenOptions = RenderOptions & {
    * finale flow) pass false so a corpse is not offered an action menu.
    */
   actions?: boolean;
+  /**
+   * Appended menu entries (the CLI's ability/unlock/journal/director layer),
+   * rendered INSIDE the Actions section continuing its numbering — below the
+   * base list, above the screen-closing rule (P8-PS-005: the old embedder
+   * pattern printed them after renderFullScreen's return, so the closing rule
+   * bisected the menu on every frame and the two number columns misaligned at
+   * the seam). Suppressed together with the Actions section (dialogue frames,
+   * `actions: false`) — the extras belong to the menu, never to a corpse.
+   */
+  extraActions?: readonly ExtraMenuEntry[];
 };
 
 export function renderFullScreen(world: WorldState, recentEvents: ResolvedEvent[], opts?: FullScreenOptions): string {
@@ -890,7 +947,9 @@ export function renderFullScreen(world: WorldState, recentEvents: ResolvedEvent[
   const dState = world.modules['dialogue-core'] as { activeDialogue?: string | null } | undefined;
   const showActions = (opts?.actions ?? true) && !dState?.activeDialogue;
   if (showActions) {
-    sections.push(`${sectionRule('Actions', pal)}\n${renderActions(world, resolved)}`);
+    sections.push(
+      `${sectionRule('Actions', pal)}\n${renderActions(world, { ...resolved, extras: opts?.extraActions })}`,
+    );
   }
 
   // Sections each end with '\n'; joining with '\n' yields exactly one blank

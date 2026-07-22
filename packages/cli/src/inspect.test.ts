@@ -327,6 +327,25 @@ describe('runInspectSave — the load authorities render the verdict', () => {
     expect(text).toContain('Hint:');
   });
 
+  // P8-SEC-002: existsSync passes for a DIRECTORY, then readFileSync threw a
+  // raw EISDIR out of the function — an unstructured Node error for a
+  // foreseeable input, against the module's own 'never a stack' contract.
+  it('a directory at the save path: structured [SAVE_UNREADABLE] + hint, exit 1, no raw throw', () => {
+    const dirPath = path.join(tmpDir, 'a-directory');
+    fs.mkdirSync(dirPath, { recursive: true });
+
+    const { deps, err } = makeDeps();
+    let code: number | undefined;
+    expect(() => {
+      code = runInspectSave(dirPath, deps);
+    }).not.toThrow();
+    expect(code).toBe(1);
+    const text = err.join('\n');
+    expect(text).toContain('Cannot load save [SAVE_UNREADABLE]:');
+    expect(text).toContain('Hint:');
+    expect(text).toContain('not a directory');
+  });
+
   it('malformed JSON: the authority\'s own SAVE_MALFORMED verdict, verbatim', () => {
     const garbage = 'not json {{{';
     writeSave(garbage);
@@ -426,8 +445,15 @@ describe('runInspectSave — the load authorities render the verdict', () => {
 
   it('module namespaces surface when present: pressures, encounters, loadout', () => {
     const engine = makeEngine();
-    engine.store.state.modules['pressure-system'] = {
-      activePressures: [{ id: 'p1' }, { id: 'p2' }],
+    // P8-SP-002: pressures live in world-tick's namespace (the real writer's
+    // slice shape) — the old planted 'pressure-system' namespace had no
+    // production writer, so this line under-reported every live save.
+    engine.store.state.modules['world-tick'] = {
+      pressures: [{ id: 'p1' }, { id: 'p2' }],
+      lastHeat: 0,
+      quietRounds: 0,
+      lastEventIndex: 0,
+      milestones: [],
     };
     engine.store.state.modules['encounter-spawn'] = {
       cursor: 0,
@@ -446,6 +472,21 @@ describe('runInspectSave — the load authorities render the verdict', () => {
     expect(report).toContain('  Active Pressures: 2');
     expect(report).toContain('  Live Encounters: 1');
     expect(report).toContain('  Loadout: weapon: iron_sword (+2 carried)');
+  });
+
+  it('a wired pressure system with nothing brewing renders 0 — absent-vs-zero (hasWorldTickState)', () => {
+    const engine = makeEngine();
+    engine.store.state.modules['world-tick'] = {
+      pressures: [],
+      lastHeat: 0,
+      quietRounds: 0,
+      lastEventIndex: 0,
+      milestones: [],
+    };
+    writeSave(engine.serialize());
+    const { deps, out } = makeDeps();
+    expect(runInspectSave(undefined, deps)).toBe(0);
+    expect(out.join('\n')).toContain('  Active Pressures: 0');
   });
 
   it('module lines stay silent when the namespaces never wired', () => {

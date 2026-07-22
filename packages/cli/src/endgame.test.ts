@@ -204,23 +204,97 @@ describe('buildEndgameInputs (F-ENG005) — live inputs from persisted state', (
     expect(buildEndgameInputs(engine.world).playerLeverage.heat).toBe(0);
   });
 
-  it('active pressures are read from world.modules["pressure-system"].activePressures', () => {
+  // P8-SP-002/WL-003: pressures read the namespace the world tick actually
+  // persists — world.modules['world-tick'] via getActivePressures — instead
+  // of the phantom 'pressure-system' namespace these tests used to hand-plant
+  // (nothing in production ever wrote it, so the axis was permanently empty
+  // in real play while the planted tests stayed green).
+  it("active pressures are read from world-tick's persisted state (the REAL writer's namespace)", () => {
     const engine = makeGame();
     const pressure = makeTestPressure('wp-1');
-    engine.store.state.modules['pressure-system'] = { activePressures: [pressure] };
+    // The starter registers world-tick (module identity, P8-SP-003), so the
+    // namespace exists from construction — mutate the real slice, exactly
+    // what the tick does when it persists the round's working set.
+    const tickState = engine.store.state.modules['world-tick'] as { pressures: unknown[] };
+    expect(tickState).toBeDefined();
+    tickState.pressures = [pressure];
+
     const inputs = buildEndgameInputs(engine.world);
     expect(inputs.activePressures).toHaveLength(1);
     expect(inputs.activePressures[0].id).toBe('wp-1');
     expect(inputs.activePressures[0].kind).toBe('bounty-issued');
   });
 
-  it('the "pressures" key is accepted as an alias; malformed shapes degrade to empty', () => {
+  it('malformed world-tick shapes degrade to empty (the accessor contract), and the phantom namespace is dead', () => {
     const engine = makeGame();
-    engine.store.state.modules['pressure-system'] = { pressures: [makeTestPressure('wp-2')] };
-    expect(buildEndgameInputs(engine.world).activePressures.map((p) => p.id)).toEqual(['wp-2']);
-
-    engine.store.state.modules['pressure-system'] = { activePressures: 'not-an-array' };
+    engine.store.state.modules['world-tick'] = { pressures: 'not-an-array' };
     expect(buildEndgameInputs(engine.world).activePressures).toEqual([]);
+
+    // Planting the OLD phantom namespace does nothing now — the axis reads
+    // only the world tick's truth.
+    const phantom = makeGame();
+    phantom.store.state.modules['pressure-system'] = { activePressures: [makeTestPressure('wp-x')] };
+    (phantom.store.state.modules['world-tick'] as { pressures: unknown[] }).pressures = [];
+    expect(buildEndgameInputs(phantom.world).activePressures).toEqual([]);
+  });
+
+  it("resolved pressures flow from world-tick's fallout ledger into the evaluator's resolvedPressures axis", () => {
+    const engine = makeGame();
+    const tickState = engine.store.state.modules['world-tick'] as { resolvedPressures?: unknown[] };
+    tickState.resolvedPressures = [
+      { summary: 'bounty issued expired without resolution', resolution: { pressureKind: 'bounty-issued' } },
+    ];
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.resolvedPressures).toHaveLength(1);
+    expect((inputs.resolvedPressures[0] as { summary?: string }).summary).toBe(
+      'bounty issued expired without resolution',
+    );
+  });
+
+  // P8-SP-002 (accrual half): endgame's faction axes read the same two
+  // channels world-tick's buildPressureInputs merges — defeat-fallout's
+  // faction_alert_<id>/reputation_<id> globals plus the authored/cognition
+  // state — so the endgame and the pressure tick can never disagree.
+  it('faction alert takes the MAX of the combat global and the cognition channel', () => {
+    const engine = makeGame();
+    engine.store.state.globals['faction_alert_chapel-undead'] = 60;
+    // starter-fantasy wires chapel-undead into faction-cognition (alert 0).
+    let inputs = buildEndgameInputs(engine.world);
+    expect(inputs.factionStates.find((f) => f.factionId === 'chapel-undead')!.alertLevel).toBe(60);
+
+    // The hotter channel wins in either direction.
+    const cog = (engine.store.state.modules['faction-cognition'] as {
+      factionCognition: Record<string, { alertLevel: number }>;
+    }).factionCognition;
+    cog['chapel-undead'].alertLevel = 75;
+    inputs = buildEndgameInputs(engine.world);
+    expect(inputs.factionStates.find((f) => f.factionId === 'chapel-undead')!.alertLevel).toBe(75);
+  });
+
+  it('a faction known only through its accrual globals still enters the faction axes', () => {
+    const engine = makeGame();
+    engine.store.state.globals['faction_alert_arena-guild'] = 40;
+    engine.store.state.globals['reputation_arena-guild'] = -15;
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.factionStates.find((f) => f.factionId === 'arena-guild')!.alertLevel).toBe(40);
+    expect(inputs.playerReputations.find((r) => r.factionId === 'arena-guild')!.value).toBe(-15);
+  });
+
+  it('player reputation merges the authored baseline with the accrued delta (base + reputation_<id>)', () => {
+    const engine = makeGame();
+    engine.store.state.factions['chapel-order'] = {
+      id: 'chapel-order', name: 'Chapel Order', reputation: 10, disposition: 'neutral',
+    };
+    engine.store.state.globals['reputation_chapel-order'] = -25;
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.playerReputations.find((r) => r.factionId === 'chapel-order')!.value).toBe(-15);
+  });
+
+  it('cognition-only factions stay OUT of playerReputations — no invented neutral zeros diluting averages', () => {
+    const engine = makeGame(); // chapel-undead lives in faction-cognition only
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.factionStates.some((f) => f.factionId === 'chapel-undead')).toBe(true);
+    expect(inputs.playerReputations.some((r) => r.factionId === 'chapel-undead')).toBe(false);
   });
 
   it('companions are read from world.modules["companion-core"].companions', () => {
@@ -275,9 +349,10 @@ describe('buildEndgameInputs (F-ENG005) — live inputs from persisted state', (
       id: 'chapel-order', name: 'Chapel Order', reputation: -60, disposition: 'hostile',
     };
     lived.store.state.globals['player_heat'] = 85;
-    lived.store.state.modules['pressure-system'] = {
-      activePressures: [makeTestPressure('wp-a'), makeTestPressure('wp-b')],
-    };
+    (lived.store.state.modules['world-tick'] as { pressures: unknown[] }).pressures = [
+      makeTestPressure('wp-a'),
+      makeTestPressure('wp-b'),
+    ];
     lived.store.state.entities['player'].resources.hp = 0;
 
     const end = evaluateSessionEnd(lived)!;

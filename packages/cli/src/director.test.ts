@@ -50,6 +50,27 @@ function testPressure(overrides: Partial<Parameters<typeof makePressure>[0]> = {
   });
 }
 
+/**
+ * Plant world-tick state the way the tick itself persists it (P8-SP-002:
+ * world.modules['world-tick'] is the single pressure source of truth — these
+ * tests used to hand-plant the phantom 'pressure-system' namespace nothing
+ * in production ever wrote, which kept the sections green in tests while
+ * they were permanently inert in real play).
+ */
+function plantWorldTick(
+  world: WorldState,
+  slice: { pressures?: unknown[]; resolvedPressures?: unknown[] },
+): void {
+  world.modules['world-tick'] = {
+    pressures: slice.pressures ?? [],
+    lastHeat: 0,
+    quietRounds: 0,
+    lastEventIndex: world.eventLog.length,
+    milestones: [],
+    ...(slice.resolvedPressures ? { resolvedPressures: slice.resolvedPressures } : {}),
+  };
+}
+
 describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
   it('a zero-state world renders the honest minimal ledger (exact shape)', () => {
     const world = bareWorld();
@@ -74,7 +95,7 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
   it('a world with only heat + pressures shows exactly those sections — short and honest', () => {
     const world = bareWorld();
     world.globals['player_heat'] = 35;
-    world.modules['pressure-system'] = { activePressures: [testPressure()] };
+    plantWorldTick(world, { pressures: [testPressure()] });
 
     const report = renderDirectorLedger(fakeEngine(world));
 
@@ -293,9 +314,7 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
     const world = bareWorld();
     world.globals['player_heat'] = 35;
     // tags: undefined makes formatPressureForDirector throw (pressure.tags.join).
-    world.modules['pressure-system'] = {
-      activePressures: [{ ...testPressure(), tags: undefined }],
-    };
+    plantWorldTick(world, { pressures: [{ ...testPressure(), tags: undefined }] });
 
     const report = renderDirectorLedger(fakeEngine(world));
 
@@ -309,12 +328,46 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
 
   it('a malformed namespace (non-object) is treated as absent, not an error', () => {
     const world = bareWorld();
-    world.modules['pressure-system'] = 'corrupted';
+    world.modules['world-tick'] = 'corrupted';
     world.modules['player-rumor'] = 42;
 
     const report = renderDirectorLedger(fakeEngine(world));
 
     expect(report).not.toContain('[section failed:');
     expect(report).toContain('Nothing on the books yet');
+  });
+
+  // P8-SP-002: the fallout ledger world-tick now persists (bounded
+  // resolvedPressures) is what makes this section renderable at all — before,
+  // fallout records only rode the pressure.expired payload and died with the
+  // round, so PRESSURE FALLOUT could never appear in a real session.
+  it('PRESSURE FALLOUT renders from world-tick\'s persisted fallout ledger via the real formatter', () => {
+    const world = bareWorld();
+    plantWorldTick(world, {
+      resolvedPressures: [
+        {
+          resolution: {
+            pressureId: 'wp-9',
+            pressureKind: 'bounty-issued',
+            resolutionType: 'expired',
+            resolvedBy: 'expiry',
+            resolvedAtTick: 12,
+            resolutionVisibility: 'known',
+          },
+          effects: [{ type: 'reputation', factionId: 'iron-wardens', delta: -5 }],
+          summary: 'bounty issued expired without resolution',
+        },
+      ],
+    });
+
+    const report = renderDirectorLedger(fakeEngine(world));
+
+    expect(report).toContain('── PRESSURE FALLOUT (1) ──');
+    expect(report).toContain('[bounty-issued] → expired');
+    expect(report).toContain('Resolved by: expiry at tick 12');
+    expect(report).toContain('Summary: bounty issued expired without resolution');
+    expect(report).toContain('rep -5 with iron-wardens');
+    // Absent active pressures → no ACTIVE PRESSURES scaffold alongside it.
+    expect(report).not.toContain('ACTIVE PRESSURES');
   });
 });

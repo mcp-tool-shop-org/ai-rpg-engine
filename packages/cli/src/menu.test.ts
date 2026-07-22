@@ -5,12 +5,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createGame, combatMasteryTree } from '@ai-rpg-engine/starter-fantasy';
 import { addCurrency, getCurrency } from '@ai-rpg-engine/modules';
-import { buildActionList } from '@ai-rpg-engine/terminal-ui';
+import { buildActionList, renderFullScreen, SCREEN_WIDTH } from '@ai-rpg-engine/terminal-ui';
 import {
   buildAbilityActions,
   buildUnlockActions,
   buildExtraActions,
-  renderExtraActions,
   parseExtraSelection,
   buildHudWorld,
   buildDebugActions,
@@ -138,17 +137,26 @@ describe('buildUnlockActions (F1d) — XP is spendable', () => {
   });
 });
 
-describe('renderExtraActions + parseExtraSelection (F1d)', () => {
+// P8-PS-005: extras render through terminal-ui's frame seam now
+// (renderFullScreen's `extraActions` option — see renderer.test.ts for the
+// layout pins: inside the closing rule, one shared number width). These tests
+// pin the CLI half: the numbers the frame renders are exactly the numbers
+// parseExtraSelection resolves.
+describe('extras in the frame + parseExtraSelection (F1d / P8-PS-005)', () => {
   const extras: ExtraAction[] = [
     { verb: 'use-ability', parameters: { abilityId: 'a' }, label: 'Alpha', group: 'ability' },
     { verb: 'unlock', parameters: { treeId: 't', nodeId: 'n' }, label: 'Beta', group: 'advance' },
   ];
 
-  it('numbers continue the base menu and groups are visually separated', () => {
-    const rendered = renderExtraActions(extras, 6);
-    expect(rendered).toContain('[7] Alpha');
-    expect(rendered).toContain('[8] Beta');
-    expect(rendered).toContain('\n\n'); // group separator
+  it('the frame numbers extras as a continuation of the base menu, inside the closing rule', () => {
+    const engine = makeDivineCryptGame();
+    const base = buildActionList(engine.world).length;
+    const screen = renderFullScreen(engine.world, [], { color: false, extraActions: extras });
+    expect(screen).toMatch(new RegExp(`\\[\\s*${base + 1}\\] Alpha`));
+    expect(screen).toMatch(new RegExp(`\\[\\s*${base + 2}\\] Beta`));
+    const lines = screen.split('\n');
+    expect(lines[lines.length - 1]).toBe('─'.repeat(SCREEN_WIDTH));
+    expect(lines[lines.length - 2]).toContain('Beta'); // nothing below the extras but the closer
   });
 
   it('parses only numbers inside the extras range', () => {
@@ -158,10 +166,6 @@ describe('renderExtraActions + parseExtraSelection (F1d)', () => {
     expect(parseExtraSelection('9', 6, extras)).toBeNull(); // beyond range
     expect(parseExtraSelection('attack', 6, extras)).toBeNull();
     expect(parseExtraSelection('7 extra words', 6, extras)).toBeNull();
-  });
-
-  it('renders nothing when there are no extras', () => {
-    expect(renderExtraActions([], 6)).toBe('');
   });
 
   it('base-menu numbers still route to the base menu when extras are present (control)', () => {
@@ -234,7 +238,7 @@ describe('debug inspector entry (F-ENG006)', () => {
     expect(buildDebugActions({ AI_RPG_DEBUG: '0' })).toEqual([]);
   });
 
-  it('AI_RPG_DEBUG=1 appends the debug entry last, and it renders in the extras section', () => {
+  it('AI_RPG_DEBUG=1 appends the debug entry last, and it renders in the frame', () => {
     vi.stubEnv('AI_RPG_DEBUG', '1');
     const engine = createGame(42);
     const extras = buildExtraActions(engine, [combatMasteryTree]);
@@ -244,10 +248,11 @@ describe('debug inspector entry (F-ENG006)', () => {
     expect(extras[2].group).toBe('debug');
     expect(extras[2].label).toBe(DEBUG_MENU_LABEL);
 
-    const rendered = renderExtraActions(extras, 6);
-    expect(rendered).toContain(`[7] ${JOURNAL_MENU_LABEL}`);
-    expect(rendered).toContain(`[8] ${DIRECTOR_MENU_LABEL}`);
-    expect(rendered).toContain(`[9] ${DEBUG_MENU_LABEL}`);
+    const base = buildActionList(engine.world).length;
+    const screen = renderFullScreen(engine.world, [], { color: false, extraActions: extras });
+    expect(screen).toMatch(new RegExp(`\\[\\s*${base + 1}\\] ${JOURNAL_MENU_LABEL}`));
+    expect(screen).toMatch(new RegExp(`\\[\\s*${base + 2}\\] ${DIRECTOR_MENU_LABEL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    expect(screen).toMatch(new RegExp(`\\[\\s*${base + 3}\\] ${DEBUG_MENU_LABEL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   });
 
   it('the debug entry appends AFTER ability and unlock entries', () => {
@@ -354,10 +359,9 @@ describe("director's ledger entry (F-ENG005)", () => {
   it('selecting its number resolves to the director group (the routing key — the sentinel verb never reaches the engine)', () => {
     const engine = createGame(42);
     const extras = buildExtraActions(engine, [combatMasteryTree]);
-    const rendered = renderExtraActions(extras, 6);
-    // The Journal (player-personal) reads first at [7]; the ledger sits at [8].
-    expect(rendered).toContain(`[8] ${DIRECTOR_MENU_LABEL}`);
-
+    // The Journal (player-personal) reads first; the ledger sits second —
+    // parseExtraSelection resolves the same continuation numbers the frame
+    // renders (renderer.test.ts pins the rendering half of this contract).
     const selected = parseExtraSelection('8', 6, extras);
     expect(selected).not.toBeNull();
     expect(selected?.group).toBe('director');
@@ -407,9 +411,6 @@ describe('journal entry (F-ENG005-quest-loop-min)', () => {
   it('selecting its number resolves to the journal group (the routing key for bin.ts)', () => {
     const engine = createGame(42);
     const extras = buildExtraActions(engine, [combatMasteryTree]);
-    const rendered = renderExtraActions(extras, 6);
-    expect(rendered).toContain(`[7] ${JOURNAL_MENU_LABEL}`);
-
     const selected = parseExtraSelection('7', 6, extras);
     expect(selected?.group).toBe('journal');
     expect(selected?.verb).toBe(JOURNAL_MENU_VERB);

@@ -20,9 +20,10 @@ import {
   buildArcSnapshot,
   formatEndgameForNarrator,
   getCurrency,
+  getActivePressures,
+  getResolvedPressures,
   type EndgameInputs,
   type EndgameTrigger,
-  type WorldPressure,
   type CompanionState,
   type DistrictEconomy,
 } from '@ai-rpg-engine/modules';
@@ -90,66 +91,93 @@ function objectArray<T>(value: unknown): T[] {
  * namespace its module actually persists:
  *
  *  - heat            — world.globals['player_heat'], defeat-fallout's accrual key
- *  - pressures       — world.modules['pressure-system'] when a starter wires the
- *                      pressure tick (this wave, in a sibling change); absent → empty
+ *  - pressures       — world-tick's persisted working set via
+ *                      getActivePressures/getResolvedPressures (P8-SP-002/WL-003:
+ *                      the single pressure source of truth — the old
+ *                      'pressure-system' namespace had no production writer,
+ *                      so this axis was permanently empty in real play)
  *  - companions      — world.modules['companion-core'] when a wiring persists a
  *                      party; no starter does yet → empty
  *  - economies       — world.modules['economy-core'] when a wiring persists
  *                      district economies; no starter does yet → empty
  *  - playerLevel     — derived from progression-core unlocks (the HUD's own
  *                      level notion, derivePlayerLevel)
- *  - faction alert/cohesion — faction-cognition module when present
- *  - player reputation      — world.factions
+ *  - faction alert   — max of the combat channel (defeat-fallout's
+ *                      `faction_alert_<id>` accrual global) and the rumor
+ *                      channel (faction-cognition's alertLevel) — the same
+ *                      two-channel merge world-tick's buildPressureInputs
+ *                      performs, so the endgame and the pressure tick can
+ *                      never disagree about how alarmed a faction is
+ *  - player reputation — authored baseline (world.factions[id].reputation)
+ *                      plus defeat-fallout's `reputation_<id>` accrual delta
+ *                      (buildPressureInputs' merge). Factions known ONLY to
+ *                      faction-cognition stay out of this list — cognition
+ *                      carries no reputation signal, and inventing a neutral
+ *                      0 would dilute every average/all-hostile threshold.
  *
  * Axes with NO persisting writer anywhere (npc-agency profiles/obligations,
- * opportunity-core, pressure fallout, leverage other than heat) stay at their
- * empty/zero shapes — no invented state; evaluateEndgame finds those
- * thresholds unmet exactly as a world that never touched them.
+ * opportunity-core, leverage other than heat) stay at their empty/zero
+ * shapes — no invented state; evaluateEndgame finds those thresholds unmet
+ * exactly as a world that never touched them.
  */
 export function buildEndgameInputs(world: WorldState): EndgameInputs {
   const player = world.entities[world.playerId];
   const playerHp = player?.resources.hp ?? 0;
   const playerMaxHp = player?.resources.maxHp ?? Math.max(playerHp, 1);
 
+  const globals = world.globals ?? {};
+  const num = (value: unknown): number => (typeof value === 'number' ? value : 0);
+
   const factionCog = (world.modules['faction-cognition'] as
     | { factionCognition?: Record<string, { alertLevel?: number; cohesion?: number }> }
     | undefined)?.factionCognition ?? {};
 
+  // The accrual ledgers defeat-fallout actually writes (world-tick's
+  // buildPressureInputs reads the same keys — P8-SP-002's alignment).
+  const reputationDeltaIds = new Set<string>();
+  const alertGlobalIds = new Set<string>();
+  for (const key of Object.keys(globals)) {
+    if (key.startsWith('reputation_')) reputationDeltaIds.add(key.slice('reputation_'.length));
+    else if (key.startsWith('faction_alert_')) alertGlobalIds.add(key.slice('faction_alert_'.length));
+  }
+
   const factionIds = new Set<string>([
     ...Object.keys(world.factions ?? {}),
     ...Object.keys(factionCog),
+    ...alertGlobalIds,
   ]);
 
   const factionStates = [...factionIds].sort().map((factionId) => {
     const cog = factionCog[factionId];
     return {
       factionId,
-      alertLevel: cog?.alertLevel ?? 0,
+      // Two alert channels, hotter one wins (buildPressureInputs' rule).
+      alertLevel: Math.max(num(globals[`faction_alert_${factionId}`]), cog?.alertLevel ?? 0),
       // faction-cognition stores cohesion 0-1; endgame thresholds read 0-100.
       cohesion: Math.round((cog?.cohesion ?? 0.5) * 100),
     };
   });
 
-  const playerReputations = Object.values(world.factions ?? {}).map((f) => ({
-    factionId: f.id,
-    value: f.reputation,
+  // Reputation spans the factions with an actual reputation signal: authored
+  // baseline and/or accrued delta. Value is base + delta, per the merge.
+  const reputationIds = new Set<string>([
+    ...Object.keys(world.factions ?? {}),
+    ...reputationDeltaIds,
+  ]);
+  const playerReputations = [...reputationIds].sort().map((factionId) => ({
+    factionId,
+    value: (world.factions?.[factionId]?.reputation ?? 0) + num(globals[`reputation_${factionId}`]),
   }));
 
   // Heat: defeat-fallout accrues real heat at world.globals['player_heat']
   // (its `heatKey`). The five other leverage axes have no persisting writer in
   // any starter (player-leverage keeps no world.modules state), so they stay 0.
-  const heatRaw = world.globals['player_heat'];
-  const heat = typeof heatRaw === 'number' ? heatRaw : 0;
+  const heat = num(globals['player_heat']);
 
-  // Pressures: pressure-system's namespace, written by the starter pressure
-  // tick when wired (`activePressures`, with `pressures` accepted as an
-  // alias). Read defensively — engines without the tick have no namespace.
-  const pressureNs = world.modules['pressure-system'] as
-    | { activePressures?: unknown; pressures?: unknown }
-    | undefined;
-  const activePressures = objectArray<WorldPressure>(
-    pressureNs?.activePressures ?? pressureNs?.pressures,
-  );
+  // Pressures: world-tick's namespace via its stable read API — non-attaching
+  // and defensive (absent/malformed degrade to []), safe on any world.
+  const activePressures = getActivePressures(world);
+  const resolvedPressures = getResolvedPressures(world);
 
   // Companions: companion-core keeps no world.modules state in any starter yet;
   // read its namespace (PartyState's `companions`) so a future wiring is picked
@@ -178,7 +206,9 @@ export function buildEndgameInputs(world: WorldState): EndgameInputs {
     companions,
     districtEconomies,
     activeOpportunities: [], // opportunity-core keeps no world.modules state
-    resolvedPressures: [], // pressure fallout is not persisted by any wiring yet
+    // The world tick's bounded fallout ledger (getResolvedPressures) — real
+    // state since P8-WL-003; declared in ArcInputs, read by no threshold yet.
+    resolvedPressures,
     resolvedOpportunities: [],
     playerHp,
     playerMaxHp,

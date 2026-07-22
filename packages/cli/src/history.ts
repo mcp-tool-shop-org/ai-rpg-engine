@@ -102,8 +102,8 @@ export function readRunHistory(saveDir: string, limit = RECENT_RUNS_SHOWN): RunR
 
 /**
  * The "Recent runs" block for the adventure select — '' when there is no
- * history so the caller can skip the section cleanly (same contract as
- * renderExtraActions). `packNames` maps pack ids to display names; unknown
+ * history so the caller can skip the section cleanly. `packNames` maps pack
+ * ids to display names; unknown
  * ids (a pack no longer installed) fall back to the raw id.
  */
 export function formatRecentRuns(

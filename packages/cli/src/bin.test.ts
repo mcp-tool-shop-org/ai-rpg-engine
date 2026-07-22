@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } fr
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { Engine, type EntityState, type RulesetDefinition } from '@ai-rpg-engine/core';
+import { Engine, SaveLoadError, type EngineModule, type EntityState, type RulesetDefinition } from '@ai-rpg-engine/core';
 import { createGame as createFantasyGame } from '@ai-rpg-engine/starter-fantasy';
 import {
   runGuardedAction,
@@ -12,6 +12,7 @@ import {
   formatGameHelp,
   readSaveSummary,
   restoreSessionFromSave,
+  runHostileRound,
   renderFrame,
   installCreatedPlayer,
   parseRunArgs,
@@ -20,6 +21,7 @@ import {
   createNewSession,
 } from './bin.js';
 import { allPacks } from './packs.js';
+import type { LoadedPack } from './external-pack.js';
 import { runNpcTurns } from './turns.js';
 
 // --- Shared fixtures for the interactive-loop tests -------------------------
@@ -141,37 +143,35 @@ describe('runGuardedAction (CLI-010)', () => {
   });
 });
 
-// F-7650e39d — the `--replay` re-simulation branch read `data.actionLog ?? []`
-// straight from a hand-crafted/corrupted save with no shape validation, then
-// did `for (const action of actionLog)`. The `??` only substitutes for
-// null/undefined; a corrupted save with actionLog set to any other
-// non-iterable JSON value (number/boolean/plain object) raw-throws an
-// unstructured TypeError out of the for..of loop, unlike the immediately
-// adjacent default-load branch in the same function, which wraps
-// WorldStore.deserialize in try/catch and prints a friendly
-// `[code] message` + hint on SaveLoadError.
+// P8-WL-001/P8-PS-004 — `--replay` re-simulation is RETIRED (v2.7): the resim
+// loop replayed only the actionLog through pack.createGame(seed), which was
+// structurally divergent — character creation is not an action (the resim
+// played the pack DEFAULT, not the created character the save holds), and
+// world-tick/encounter-spawn mutate state outside the action log — all while
+// printing 'Replay complete' with no warning. `--replay` now restores through
+// the SAME authority as run → Continue and prints one structured notice.
+// Resim PARITY is documented v2.8 work (see replayGame's doc block).
 class ProcessExitSignal extends Error {
   constructor(public code: number | undefined) {
     super(`process.exit(${code})`);
   }
 }
 
-describe('replayGame --replay (F-7650e39d: actionLog must be validated before iterating)', () => {
+describe('replayGame --replay (P8-WL-001/P8-PS-004: restore-then-continue, never a divergent resim)', () => {
   let tmpDir: string;
   let originalCwd: string;
   let exitSpy: MockInstance<typeof process.exit>;
-  let errorSpy: ReturnType<typeof vi.spyOn>;
+  let logSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-replay-test-'));
-    fs.mkdirSync(path.join(tmpDir, '.ai-rpg-engine'), { recursive: true });
     originalCwd = process.cwd();
     process.chdir(tmpDir);
     exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new ProcessExitSignal(code);
     }) as never);
-    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -180,44 +180,78 @@ describe('replayGame --replay (F-7650e39d: actionLog must be validated before it
     vi.restoreAllMocks();
   });
 
-  function writeSave(actionLogValue: unknown, includeActionLog = true) {
-    const save: Record<string, unknown> = {
-      world: { state: { meta: { gameId: 'chapel-threshold', seed: 1 } } },
-    };
-    if (includeActionLog) save.actionLog = actionLogValue;
-    fs.writeFileSync(path.join(tmpDir, '.ai-rpg-engine', 'save.json'), JSON.stringify(save), 'utf-8');
+  function loggedText(): string {
+    return logSpy.mock.calls.map((c) => String(c[0])).join('\n');
   }
 
-  it('a non-array actionLog (number) is rejected with a structured message, not a raw TypeError', () => {
-    writeSave(42);
-    expect(() => replayGame(['--replay'])).toThrow(ProcessExitSignal);
-    expect(exitSpy).toHaveBeenCalledWith(1);
-    const allErrorText = errorSpy.mock.calls.map((c) => String(c[0])).join('\n');
-    expect(allErrorText.toLowerCase()).toContain('actionlog');
-  });
+  /** A save whose truth resim could never reconstruct: the hp mutation and the
+   *  renamed player are OUTSIDE the action log — exactly the created-character
+   *  and world-state divergence the audit live-proved. */
+  function writeDivergentSave(): void {
+    const engine = createFantasyGame(42);
+    engine.store.state.entities['player'].name = 'Auditor';
+    engine.submitAction('move', { targetIds: ['chapel-nave'] });
+    engine.store.state.entities['player'].resources.hp = 13;
+    expect(saveGameGuarded(engine, vi.fn())).toBe(true);
+  }
 
-  it('a non-array actionLog (plain object) is rejected the same way', () => {
-    writeSave({ not: 'an array' });
-    expect(() => replayGame(['--replay'])).toThrow(ProcessExitSignal);
-    expect(exitSpy).toHaveBeenCalledWith(1);
-  });
-
-  it('a non-array actionLog (boolean) is rejected the same way', () => {
-    writeSave(true);
-    expect(() => replayGame(['--replay'])).toThrow(ProcessExitSignal);
-    expect(exitSpy).toHaveBeenCalledWith(1);
-  });
-
-  it('a missing actionLog defaults to empty and replays cleanly (pre-existing behavior)', () => {
-    writeSave(undefined, false);
-    expect(() => replayGame(['--replay'])).not.toThrow();
+  it('--replay restores the SAVED world (created character + off-log state), never the pack default', () => {
+    writeDivergentSave();
+    const session = replayGame(['--replay']);
+    expect(session).toBeDefined();
+    // The save's truth, byte-restored: the retired resim branch reconstructed
+    // the pack's authored default player here (different name, full hp).
+    expect(session!.engine.world.entities['player'].name).toBe('Auditor');
+    expect(session!.engine.world.entities['player'].resources.hp).toBe(13);
+    expect(session!.engine.world.locationId).toBe('chapel-nave');
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
-  it('a valid empty-array actionLog replays cleanly (control)', () => {
-    writeSave([]);
-    expect(() => replayGame(['--replay'])).not.toThrow();
+  it('--replay prints the structured notice (code + hint, non-fatal) and no resim lines', () => {
+    writeDivergentSave();
+    replayGame(['--replay']);
+    const text = loggedText();
+    expect(text).toContain('[REPLAY_RESIM_UNSUPPORTED]');
+    expect(text).toContain('re-simulation is not supported with world-state modules');
+    expect(text).toContain('restoring the save instead (same as Continue)');
+    expect(text).toContain('Hint:');
+    expect(text).not.toContain('Re-simulating');
+    expect(text).not.toContain('Replay complete');
+  });
+
+  it('replay WITHOUT the flag stays exactly as before: same restore, no notice', () => {
+    writeDivergentSave();
+    const session = replayGame([]);
+    expect(session!.engine.world.entities['player'].name).toBe('Auditor');
+    expect(loggedText()).not.toContain('[REPLAY_RESIM_UNSUPPORTED]');
+  });
+
+  it('a corrupt (non-array) actionLog no longer crashes --replay: the restore authority tolerates it', () => {
+    // The old resim branch iterated the log, so it needed its own shape
+    // rejection (F-7650e39d). Restore ignores non-array logs by documented
+    // design — the session starts with a clean post-resume history.
+    writeDivergentSave();
+    const savePath = path.join(tmpDir, '.ai-rpg-engine', 'save.json');
+    const data = JSON.parse(fs.readFileSync(savePath, 'utf-8'));
+    data.actionLog = 42;
+    fs.writeFileSync(savePath, JSON.stringify(data), 'utf-8');
+
+    const session = replayGame(['--replay']);
+    expect(session).toBeDefined();
+    expect(session!.engine.getActionLog()).toEqual([]);
+    expect(session!.engine.world.entities['player'].resources.hp).toBe(13);
     expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('--replay on a MALFORMED world still fails through the shared authority frame, exit 1', () => {
+    fs.mkdirSync(path.join(tmpDir, '.ai-rpg-engine'), { recursive: true });
+    fs.writeFileSync(
+      path.join(tmpDir, '.ai-rpg-engine', 'save.json'),
+      JSON.stringify({ world: { state: { meta: { gameId: 'chapel-threshold', seed: 1 } } } }),
+      'utf-8',
+    );
+    expect(() => replayGame(['--replay'])).toThrow(ProcessExitSignal);
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 });
 
@@ -541,15 +575,16 @@ describe('resume-from-save (F1c)', () => {
     expect(result.kind).toBe('action');
   });
 
-  it('replayGame --replay (re-simulation) also returns a playable session', () => {
+  it('replayGame --replay also returns a playable session (restore path — resim retired, P8-WL-001)', () => {
     const original = makeProgressedGame();
     saveGameGuarded(original, vi.fn());
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
     const session = replayGame(['--replay']);
     expect(session).toBeDefined();
-    // Re-simulated through the real pack: the logged move re-executed.
+    // Restored, not re-simulated: the OFF-LOG hp mutation survives too.
     expect(session!.engine.world.locationId).toBe('chapel-nave');
+    expect(session!.engine.world.entities['player'].resources.hp).toBe(13);
   });
 
   // F-SEED: the restore path round-trips meta.seed — a resumed session keeps
@@ -573,7 +608,8 @@ describe('resume-from-save (F1c)', () => {
     const { engine: restored } = restoreSessionFromSave(pack);
     expect(restored.world.meta.seed).toBe(777);
 
-    // And replayGame's re-simulation path rebuilds from the SAVED seed as well.
+    // And replayGame under --replay (the restore path since P8-WL-001) keeps
+    // the SAVED seed as well.
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const session = replayGame(['--replay']);
     expect(session!.engine.world.meta.seed).toBe(777);
@@ -898,5 +934,294 @@ describe('installCreatedPlayer (F-1049b518) — detached ingestion', () => {
 
     expect(playerEntity.resources.hp).toBe(30);
     expect(playerEntity.tags).not.toContain('wounded');
+  });
+});
+
+// P8-WL-002/P8-SP-001 — the ENG-009 module-migration seam runs on the SHIPPED
+// load path. restoreSessionFromSave previously restored via
+// WorldStore.deserialize + store swap only, which by documented design skips
+// migrateModuleStates and post-swap initializeNamespaces — so a
+// version-drifted module slice loaded raw on run → Continue (Engine.deserialize
+// had the seam; zero production callers did). These tests drive the CLI's own
+// authority with a pack whose module carries a real migrateState hook.
+describe('restoreSessionFromSave — module-migration seam on the CLI path (P8-WL-002/P8-SP-001)', () => {
+  /** A LoadedPack whose game wires one namespaced module at `version`. */
+  function makeDriftPack(
+    version: string,
+    migrateState?: (slice: unknown, from: string) => unknown,
+  ): LoadedPack {
+    const mod: EngineModule = {
+      id: 'drift-mod',
+      version,
+      register(ctx) {
+        ctx.persistence.registerNamespace('drift-mod', { shape: `authored-at-${version}` });
+      },
+      ...(migrateState ? { migrateState } : {}),
+    };
+    return {
+      meta: { id: 'drift-game', name: 'Drift Game' },
+      createGame: (seed?: number) =>
+        new Engine({
+          manifest: {
+            id: 'drift-game',
+            title: 'Drift Game',
+            version: '0.0.0',
+            engineVersion: '0.1.0',
+            ruleset: 'test',
+            modules: ['drift-mod'],
+            contentPacks: [],
+          },
+          seed: seed ?? 1,
+          modules: [mod],
+        }),
+    };
+  }
+
+  it('a version-drifted module slice is migrated on Continue — the audit-proved dead scenario', () => {
+    // Save written at module version 1.0.0…
+    const packV1 = makeDriftPack('1.0.0');
+    const oldEngine = packV1.createGame(9);
+    expect(oldEngine.world.meta.moduleVersions?.['drift-mod']).toBe('1.0.0');
+    const saved = JSON.parse(oldEngine.serialize());
+
+    // …restored through the CLI authority by a build whose module is 2.0.0.
+    const migrate = vi.fn((slice: unknown, from: string) => ({
+      ...(slice as Record<string, unknown>),
+      migratedFrom: from,
+    }));
+    const packV2 = makeDriftPack('2.0.0', migrate);
+    const { engine } = restoreSessionFromSave(packV2, saved);
+
+    expect(migrate).toHaveBeenCalledTimes(1);
+    expect(migrate).toHaveBeenCalledWith({ shape: 'authored-at-1.0.0' }, '1.0.0');
+    expect(engine.world.modules['drift-mod']).toEqual({
+      shape: 'authored-at-1.0.0',
+      migratedFrom: '1.0.0',
+    });
+    // The stamp is refreshed in place — the NEXT save is post-seam.
+    expect(engine.world.meta.moduleVersions?.['drift-mod']).toBe('2.0.0');
+  });
+
+  it('a legacy save with NO meta.moduleVersions loads, migrates from the sentinel, and re-saves stamped', () => {
+    const packV1 = makeDriftPack('1.0.0');
+    const oldEngine = packV1.createGame(9);
+    const saved = JSON.parse(oldEngine.serialize());
+    delete saved.world.state.meta.moduleVersions; // the pre-ENG-009 save shape
+
+    const migrate = vi.fn((slice: unknown, from: string) => ({ upgraded: true, from, was: slice }));
+    const packV2 = makeDriftPack('2.0.0', migrate);
+    const { engine } = restoreSessionFromSave(packV2, saved);
+
+    // Absent stamp means the pre-versioning sentinel — the hook sees 0.0.0.
+    expect(migrate).toHaveBeenCalledWith({ shape: 'authored-at-1.0.0' }, '0.0.0');
+    expect(engine.world.meta.moduleVersions?.['drift-mod']).toBe('2.0.0');
+
+    // And the save → Continue → save cycle now carries the stamp forever.
+    const resaved = JSON.parse(engine.serialize());
+    expect(resaved.world.state.meta.moduleVersions['drift-mod']).toBe('2.0.0');
+  });
+
+  it('in-sync versions never fire the hook (the seam is drift-gated, not a load tax)', () => {
+    const migrate = vi.fn();
+    const pack = makeDriftPack('1.0.0', migrate);
+    const saved = JSON.parse(pack.createGame(3).serialize());
+    restoreSessionFromSave(pack, saved);
+    expect(migrate).not.toHaveBeenCalled();
+  });
+
+  it('a THROWING hook rejects the load with structured SAVE_MODULE_MIGRATION_FAILED — never a raw stack', () => {
+    const packV1 = makeDriftPack('1.0.0');
+    const saved = JSON.parse(packV1.createGame(9).serialize());
+    const packV2 = makeDriftPack('2.0.0', () => {
+      throw new Error('cannot read v1 shard layout');
+    });
+
+    let thrown: unknown;
+    try {
+      restoreSessionFromSave(packV2, saved);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(SaveLoadError);
+    const err = thrown as SaveLoadError;
+    expect(err.code).toBe('SAVE_MODULE_MIGRATION_FAILED');
+    expect(err.message).toContain('drift-mod');
+    expect(err.message).toContain('1.0.0');
+    expect(err.message).toContain('2.0.0');
+    expect(err.message).toContain('cannot read v1 shard layout');
+    // The CLI frames SaveLoadError as `Cannot load save [CODE]` + Hint on both
+    // callers (maybeOfferResume, replayGame) — the hint is part of the shape.
+    expect(err.hint.length).toBeGreaterThan(0);
+  });
+
+  it('a REAL pre-v2.7 fantasy save baselines the world-tick cursor to the restored log length (P8-WL-006 on the CLI path)', () => {
+    const original = createFantasyGame(42);
+    original.submitAction('move', { targetIds: ['chapel-nave'] });
+    original.submitAction('move', { targetIds: ['chapel-threshold'] });
+    const saved = JSON.parse(original.serialize());
+    // Simulate the pre-v2.7 save: no world-tick namespace, no stamp for it.
+    delete saved.world.state.modules['world-tick'];
+    if (saved.world.state.meta.moduleVersions) {
+      delete saved.world.state.meta.moduleVersions['world-tick'];
+    }
+
+    const pack = allPacks.find((p) => p.meta.id === 'chapel-threshold')!;
+    const { engine } = restoreSessionFromSave(pack, saved);
+
+    const logLen = engine.world.eventLog.length;
+    expect(logLen).toBeGreaterThan(0);
+    const tickState = engine.world.modules['world-tick'] as { lastEventIndex: number } | undefined;
+    // initializeNamespaces ran against the RESTORED store, and the factory
+    // default baselined the cursor to the loaded log — not 0, which made the
+    // first tick re-consume the entire prior session (the spawn-burst class).
+    expect(tickState).toBeDefined();
+    expect(tickState!.lastEventIndex).toBe(logLen);
+    // And the re-registered module is stamped for the next save.
+    expect(engine.world.meta.moduleVersions?.['world-tick']).toBe('1.0.0');
+  });
+});
+
+// P8-PS-001 — an out-of-range menu number must never reach the engine as a
+// bogus verb. Live-reproduced: input '11' (valid on the previous frame) was
+// submitted as verb '11', rejected, and because the result was kind 'action'
+// every living hostile got a free attack on a mistyped menu number.
+describe('handlePlayerInput — out-of-range menu numbers cost nothing (P8-PS-001)', () => {
+  it("'99' prints the real menu range and consumes NO turn — nothing reaches the engine", () => {
+    const engine = makeEngine(); // base menu: [1] Move to Hall, [2] Look around
+    const log = vi.fn();
+    const result = handlePlayerInput(engine, '99', { log });
+
+    expect(result).toEqual({ kind: 'unknown' });
+    // Nothing was submitted: no declared/rejected pair, no tick consumed.
+    expect(engine.world.eventLog).toHaveLength(0);
+    expect(engine.tick).toBe(0);
+    const logged = log.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(logged).toContain('Please enter a number between 1 and 2.');
+  });
+
+  it('the guidance range includes the extras — the whole composed menu is one range', () => {
+    const engine = makeEngine();
+    const log = vi.fn();
+    const extras = [{ verb: 'debug-inspect', label: 'Debug', group: 'debug' as const }];
+    const result = handlePlayerInput(engine, '99', { log, extras });
+    expect(result).toEqual({ kind: 'unknown' });
+    expect(log.mock.calls.map((c) => String(c[0])).join('\n')).toContain(
+      'Please enter a number between 1 and 3.',
+    );
+  });
+
+  it("'0' is out of range too (the base parser starts at 1)", () => {
+    const engine = makeEngine();
+    const log = vi.fn();
+    expect(handlePlayerInput(engine, '0', { log })).toEqual({ kind: 'unknown' });
+    expect(engine.world.eventLog).toHaveLength(0);
+  });
+
+  it('numbers INSIDE the base and extras ranges still route exactly as before (control)', () => {
+    const engine = makeEngine();
+    const log = vi.fn();
+    expect(handlePlayerInput(engine, '1', { log })).toEqual({ kind: 'action', via: 'menu' });
+    expect(engine.world.eventLog.map((e) => e.type)).toContain('test.moved');
+
+    const extras = [{ verb: 'debug-inspect', label: 'Debug', group: 'debug' as const }];
+    // Base menu is 2 entries → '3' resolves the appended debug entry (kind
+    // 'help', the extras' own no-turn contract).
+    expect(handlePlayerInput(engine, '3', { log, extras })).toEqual({ kind: 'help' });
+  });
+
+  it('non-numeric text still falls through to the free-text parser (control)', () => {
+    const engine = makeEngine();
+    const result = handlePlayerInput(engine, 'move hall', { log: vi.fn() });
+    expect(result).toEqual({ kind: 'action', via: 'text' });
+  });
+});
+
+// P8-PS-002 (routing half) — a MENU-selected submission the engine refuses is
+// the 'menu offered it, engine rejected it' trap: the player made no mistake,
+// so the refusal must not forfeit the round to NPC turns + world tick. (The
+// menu-side gate — not advertising dialogue-less NPCs at all — needs a
+// dialogue-registry read the modules layer does not expose; see bin.ts.)
+describe('handlePlayerInput — rejected MENU selections do not forfeit the round (P8-PS-002)', () => {
+  /** makeEngine plus an npc whose Speak entry the engine will reject (no
+   *  'speak' verb registered — the same action.rejected shape dialogue-core
+   *  emits for 'X has nothing to say'). */
+  function makeEngineWithDeadSpeak() {
+    const engine = makeEngine();
+    engine.store.addEntity({
+      id: 'brutus',
+      blueprintId: 'bp-npc',
+      type: 'npc',
+      name: 'Lanista Brutus',
+      tags: ['npc'],
+      stats: {},
+      resources: { hp: 10 },
+      statuses: [],
+      zoneId: 'cell',
+    });
+    return engine;
+  }
+
+  it("a rejected 'Speak to <npc>' menu entry returns kind 'rejected' — the no-NPC-round signal", () => {
+    const engine = makeEngineWithDeadSpeak();
+    // Menu: [1] Move to Hall, [2] Speak to Lanista Brutus, [3] Inspect …, [4] Look around.
+    const result = handlePlayerInput(engine, '2', { log: vi.fn() });
+
+    expect(result).toEqual({ kind: 'rejected' });
+    // The engine DID process and reject it (its own tick discipline holds)…
+    const rejections = engine.world.eventLog.filter(
+      (e) => e.type === 'action.rejected' && (e.payload as { verb?: unknown }).verb === 'speak',
+    );
+    expect(rejections).toHaveLength(1);
+    // …but the kind is non-action: runSession only runs NPC turns + the world
+    // tick for kind 'action', so the round is not forfeited.
+    expect(result.kind).not.toBe('action');
+  });
+
+  it('a SUCCESSFUL menu selection still reports the action kind (control)', () => {
+    const engine = makeEngineWithDeadSpeak();
+    const result = handlePlayerInput(engine, '1', { log: vi.fn() });
+    expect(result).toEqual({ kind: 'action', via: 'menu' });
+    expect(engine.world.eventLog.map((e) => e.type)).toContain('test.moved');
+  });
+});
+
+// P8-WL-010 — the two end-gates around the world's half of the round: no NPC
+// block after a round-ending player action, and no world tick after an NPC
+// downs the player (the tick could roll a zone-entry ambush over the corpse,
+// narrated right before the defeat screen).
+describe('runHostileRound — end-gates around NPC turns and the world tick (P8-WL-010)', () => {
+  const pack = {
+    meta: { id: 'test-game', name: 'Test Game' },
+    createGame: () => makeEngine(),
+  } as LoadedPack;
+
+  it('a live round runs NPC turns then the world tick (control)', () => {
+    const engine = makeEngine();
+    const npcTurns = vi.fn();
+    const worldTick = vi.fn();
+    runHostileRound(engine, pack, { npcTurns, worldTick });
+    expect(npcTurns).toHaveBeenCalledTimes(1);
+    expect(worldTick).toHaveBeenCalledTimes(1);
+  });
+
+  it('an NPC downing the player mid-round stops the world tick — no ambush over the corpse', () => {
+    const engine = makeEngine();
+    const npcTurns = vi.fn(() => {
+      engine.store.state.entities['hero'].resources.hp = 0;
+    });
+    const worldTick = vi.fn();
+    runHostileRound(engine, pack, { npcTurns, worldTick });
+    expect(npcTurns).toHaveBeenCalledTimes(1);
+    expect(worldTick).not.toHaveBeenCalled();
+  });
+
+  it('a session already over at entry runs neither (the F1a gate, unchanged)', () => {
+    const engine = makeEngine();
+    engine.store.state.entities['hero'].resources.hp = 0;
+    const npcTurns = vi.fn();
+    const worldTick = vi.fn();
+    runHostileRound(engine, pack, { npcTurns, worldTick });
+    expect(npcTurns).not.toHaveBeenCalled();
+    expect(worldTick).not.toHaveBeenCalled();
   });
 });
