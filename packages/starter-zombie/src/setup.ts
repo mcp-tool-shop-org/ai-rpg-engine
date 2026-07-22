@@ -152,6 +152,15 @@ export function createGame(seed?: number): Engine {
     // quest-core validates at construction (fail loud) and drives
     // offer → track → complete → reward off the live event stream.
     quests: { gameId: manifest.id, quests: zombieQuests },
+    // V3-GEN-1/2 (genre-mechanical fix, wave 2): this starter's own bare
+    // genre key ('zombie-minimal' minus its '-minimal' suffix) — NOT
+    // manifest.genres (this pack's genres include 'post-apocalyptic', a
+    // DIFFERENT vocabulary; see world-stack.ts's file-header contract).
+    // 'zombie' matches a GENRE_BUYABLE_STOCK/GENRE_RECIPES entry, so
+    // buy/craft/repair/modify now resolve zombie-flavored stock/recipes
+    // instead of the universal fallback.
+    tradeGenre: 'zombie',
+    craftingGenre: 'zombie',
   });
 
   const engine = new Engine({

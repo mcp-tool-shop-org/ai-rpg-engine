@@ -29,7 +29,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { Engine, createTestEngine } from '@ai-rpg-engine/core';
-import type { EngineModule, EntityState, ZoneState } from '@ai-rpg-engine/core';
+import type { EngineModule, EntityState, ZoneState, WorldState } from '@ai-rpg-engine/core';
 import type { QuestDefinition } from '@ai-rpg-engine/content-schema';
 import { traversalCore } from './traversal-core.js';
 import { createCognitionCore, getCognition, setBelief } from './cognition-core.js';
@@ -38,6 +38,8 @@ import { runWorldTick } from './world-tick.js';
 import type { EncounterDefinition } from './combat-roles.js';
 import type { PresentationRule } from './observer-presentation.js';
 import { buildWorldStack } from './world-stack.js';
+import { getDistrictEconomy, setDistrictEconomy } from './economy-core.js';
+import type { SupplyCategory, SupplyLevel } from './economy-core.js';
 
 // The ten shipped starters — resolved to their BUILT packages (the same
 // artifacts the CLI loads), so the pins verify what actually ships.
@@ -700,5 +702,123 @@ describe('world-stack refactor — per-starter module registration pins', () => 
       const ids = registeredIds(create(42));
       expect(new Set(ids).size, `${name} has duplicate module ids`).toBe(ids.length);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 3. V3-GEN genre-mechanical fix — starter-level buy/craft genre resolution
+// ---------------------------------------------------------------------------
+//
+// Real starter engines (createXGame — the same built artifacts the per-starter
+// pins above verify), not the synthetic makeStackEngine probe: these tests
+// prove V3-GEN-2's wiring — each starter's setup.ts now passing tradeGenre/
+// craftingGenre into buildWorldStack — actually reaches the shipped starters,
+// not just the builder function (the craftingGenre pass-through probe above,
+// 'reaches createCraftingCore', already covers the builder-level mechanism in
+// isolation). cyberpunk + pirate have GENRE_BUYABLE_STOCK/GENRE_RECIPES
+// entries; gladiator does not (its bare ruleset id has no table match) — the
+// three together cover both the "genre resolves" and "clean universal
+// fallback" halves of V3-GEN-4.
+
+describe('genre-mechanical fix (V3-GEN-1/2/3/4) — starter-level buy/craft genre resolution', () => {
+  /**
+   * Force a district's category supply comfortably above trade-core's
+   * BUY_SUPPLY_FLOOR (30) regardless of the starter's own tag-derived
+   * baseline (BASELINE 50, per economy-core.ts — already above the floor for
+   * every starter today since buildWorldStack's createEconomyCore call
+   * threads no genre, but this helper keeps the scenario deterministic
+   * against future tuning). What's under test here is GENRE RESOLUTION, not
+   * supply-economy tuning.
+   */
+  function ensureSupply(world: WorldState, districtId: string, category: SupplyCategory): void {
+    const economy = getDistrictEconomy(world, districtId);
+    if (!economy) throw new Error(`no district economy for ${districtId}`);
+    const boosted: SupplyLevel = { category, level: 80, trend: 'stable' };
+    setDistrictEconomy(world, districtId, {
+      ...economy,
+      supplies: { ...economy.supplies, [category]: boosted },
+    });
+  }
+
+  it('cyberpunk: buy resolves cyberpunk-flavored stock, not universal', () => {
+    const engine = createCyberpunkGame(42);
+    // playerId 'runner' (starter-cyberpunk/src/setup.ts); starts in
+    // 'street-level', already inside the 'neon-street' district.
+    ensureSupply(engine.world, 'neon-street', 'components');
+    engine.world.entities['runner'].resources.coin = 100000;
+
+    // 'circuit-board' is cyberpunk-only (GENRE_BUYABLE_STOCK.cyberpunk.
+    // components) — absent from DEFAULT_BUYABLE_STOCK, so success alone
+    // proves genre resolution reached the real starter's buy verb.
+    const events = engine.submitAction('buy', { targetIds: ['circuit-board'] });
+    expect(events.some((e) => e.type === 'item.bought')).toBe(true);
+    expect(engine.world.entities['runner'].inventory).toContain('circuit-board');
+  });
+
+  it('cyberpunk: craft resolves a cyberpunk-flavored recipe, not universal', () => {
+    const engine = createCyberpunkGame(42);
+    const runner = engine.world.entities['runner'];
+    runner.custom = { ...(runner.custom ?? {}), 'materials.medicine': 2, 'materials.components': 1 };
+
+    // 'craft-stim' is cyberpunk-only (GENRE_RECIPES.cyberpunk) — pre-fix this
+    // rejected as 'unknown recipe' from every starter (the isolated mechanism
+    // is covered by the craftingGenre pass-through probe above).
+    const events = engine.submitAction('craft', { parameters: { recipeId: 'craft-stim' } });
+    expect(events.some((e) => e.type === 'item.crafted')).toBe(true);
+    expect(engine.world.entities['runner'].inventory).toContain('craft-stim');
+  });
+
+  it('pirate: buy resolves pirate-flavored stock, not universal', () => {
+    const engine = createPirateGame(42);
+    // playerId 'captain'; starts on 'ship-deck', which belongs to NO
+    // district — move to the neighboring 'port-tavern' ('port-haven'
+    // district) first, same as a real player would to reach a merchant.
+    engine.submitAction('move', { targetIds: ['port-tavern'] });
+    ensureSupply(engine.world, 'port-haven', 'ammunition');
+    engine.world.entities['captain'].resources.coin = 100000;
+
+    // 'cannon-shell' is pirate-only (GENRE_BUYABLE_STOCK.pirate.ammunition).
+    const events = engine.submitAction('buy', { targetIds: ['cannon-shell'] });
+    expect(events.some((e) => e.type === 'item.bought')).toBe(true);
+    expect(engine.world.entities['captain'].inventory).toContain('cannon-shell');
+  });
+
+  it('pirate: craft resolves a pirate-flavored recipe, not universal', () => {
+    const engine = createPirateGame(42);
+    engine.submitAction('move', { targetIds: ['port-tavern'] });
+    const captain = engine.world.entities['captain'];
+    captain.custom = { ...(captain.custom ?? {}), 'materials.components': 2, 'materials.weapons': 1 };
+
+    // 'craft-grappling-hook' is pirate-only (GENRE_RECIPES.pirate).
+    const events = engine.submitAction('craft', { parameters: { recipeId: 'craft-grappling-hook' } });
+    expect(events.some((e) => e.type === 'item.crafted')).toBe(true);
+    expect(engine.world.entities['captain'].inventory).toContain('craft-grappling-hook');
+  });
+
+  it("gladiator: buy/craft cleanly fall back to universal — 'gladiator' has no GENRE_BUYABLE_STOCK/GENRE_RECIPES entry (honest degrade, not a residual bug)", () => {
+    const engine = createGladiatorGame(42);
+    // playerId 'player'; starts in 'holding-cells', already inside the
+    // 'arena-grounds' district.
+    ensureSupply(engine.world, 'arena-grounds', 'weapons');
+    const player = engine.world.entities['player'];
+    player.resources.coin = 100000;
+    player.custom = { ...(player.custom ?? {}), 'materials.medicine': 2 };
+
+    // DEFAULT_BUYABLE_STOCK's weapons entry ('short-sword') is offered...
+    const bought = engine.submitAction('buy', { targetIds: ['short-sword'] });
+    expect(bought.some((e) => e.type === 'item.bought')).toBe(true);
+    // ...but another starter's genre-flavored item never resolves here — the
+    // fallback is clean, not an accidental cross-genre leak.
+    const rejectedBuy = engine.submitAction('buy', { targetIds: ['circuit-board'] });
+    expect(rejectedBuy.some((e) => e.type === 'item.bought')).toBe(false);
+    expect(rejectedBuy.some((e) => e.type === 'action.rejected')).toBe(true);
+
+    // UNIVERSAL_RECIPES's 'craft-bandage' resolves...
+    const crafted = engine.submitAction('craft', { parameters: { recipeId: 'craft-bandage' } });
+    expect(crafted.some((e) => e.type === 'item.crafted')).toBe(true);
+    // ...but a genre-gated recipe from any table entry never resolves here.
+    const rejectedCraft = engine.submitAction('craft', { parameters: { recipeId: 'craft-stim' } });
+    expect(rejectedCraft.some((e) => e.type === 'item.crafted')).toBe(false);
+    expect(rejectedCraft.some((e) => e.type === 'action.rejected')).toBe(true);
   });
 });
