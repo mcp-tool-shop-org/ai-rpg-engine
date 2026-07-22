@@ -72,6 +72,8 @@ import {
   getPersistedNpcObligations,
   type LoyaltyBreakpoint,
 } from './npc-agency.js';
+import { getLeverageState } from './player-leverage.js';
+import { createProgressionCore, addCurrency } from './progression-core.js';
 
 const zones = [
   { id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbors: ['zone-b'] },
@@ -1683,6 +1685,172 @@ describe('world-tick — NPC agency wire (v3.0, F-v3-npc-agency)', () => {
       engine.store.advanceTick();
       runWorldTick(engine, { genre: 'fantasy' });
       return JSON.parse(JSON.stringify(engine.world.modules['npc-agency']));
+    };
+    const a = run();
+    const b = run();
+    expect(a).toEqual(b);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Leverage income wire (v3.0 wave 2, "leverage-income", step 5a2) —
+// player-leverage.ts's tickLeverage/computeLeverageGains were fully authored
+// and unit-tested with ZERO production callers before this wave; opportunity
+// completion was the sole leverage-earning path. These tests pin the wire,
+// not the pure functions themselves (already covered end-to-end in
+// player-leverage.test.ts's own 'tickLeverage influence accumulation (MW-5)'
+// and 'computeLeverageGains: blackmail accumulation' suites).
+// ---------------------------------------------------------------------------
+
+describe('world-tick — leverage income wire (v3.0 wave 2, "leverage-income")', () => {
+  function leverageOf(engine: ReturnType<typeof createTestEngine>) {
+    return getLeverageState(
+      (engine.world.entities.player.custom ?? {}) as Record<string, string | number | boolean>,
+    );
+  }
+
+  it('heat decays per round once the leverage step is active (pre-existing leverage.* state is itself an activity trigger)', () => {
+    const engine = createTestEngine({
+      modules: [],
+      entities: [makePlayer({ custom: { 'leverage.heat': 10 } })],
+      zones,
+    });
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.ok).toBe(true);
+    expect(leverageOf(engine).heat).toBe(7); // 10 - HEAT_DECAY_PER_TURN(3), player-leverage.ts's own constant
+  });
+
+  it('influence seeds from reputation on the first active round', () => {
+    const engine = makeBareEngine({ reputation_guild: 40 }); // rep 40 → floor(40/2) = 20
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.ok).toBe(true);
+    expect(leverageOf(engine).influence).toBe(20);
+  });
+
+  it('a NEW milestone grants its gain exactly ONCE — not re-granted the next round (the cursor works)', () => {
+    const engine = makeBareEngine();
+    // Force the world-tick namespace to baseline its eventLog cursor at the
+    // CURRENT (empty) log BEFORE the milestone event exists — mirroring the
+    // suite's own 'fresh world pin' test above. Without this, the milestone
+    // emitted below would land before world-tick's first-ever touch and read
+    // as "historical" (P8-WL-006's own documented behavior — see this file's
+    // 'RED-PROOF legacy Continue' test), never collected as NEW.
+    getWorldTickState(engine.world);
+    engine.store.emitEvent('defeat.fallout.milestone', { label: 'found the ruins', tags: ['boss-kill'] });
+
+    const first = runWorldTick(engine, { genre: 'fantasy' });
+    expect(first.ok).toBe(true);
+    expect(leverageOf(engine).legitimacy).toBe(5); // milestone → legitimacy +5
+
+    // A second round with NO new milestone must not re-grant it.
+    engine.store.advanceTick();
+    const second = runWorldTick(engine, { genre: 'fantasy' });
+    expect(second.ok).toBe(true);
+    expect(leverageOf(engine).legitimacy).toBe(5); // unchanged, not 10
+
+    // A third round confirms it stays put, not just "one extra grant then stops".
+    engine.store.advanceTick();
+    runWorldTick(engine, { genre: 'fantasy' });
+    expect(leverageOf(engine).legitimacy).toBe(5);
+  });
+
+  it('two NEW milestones in the SAME round each grant their own gain (not collapsed into one)', () => {
+    const engine = makeBareEngine();
+    getWorldTickState(engine.world); // baseline the cursor before emitting — see comment above
+    engine.store.emitEvent('defeat.fallout.milestone', { label: 'found the ruins', tags: ['exploration'] });
+    engine.store.emitEvent('defeat.fallout.milestone', { label: 'found the landmark', tags: ['landmark'] });
+
+    runWorldTick(engine, { genre: 'fantasy' });
+    // legitimacy: 5 + 5 = 10; blackmail: 5 (exploration) + 5 (landmark) = 10 —
+    // each milestone computed via its OWN computeLeverageGains call, summed.
+    expect(leverageOf(engine).legitimacy).toBe(10);
+    expect(leverageOf(engine).blackmail).toBe(10);
+  });
+
+  it('an xp gain of 15+ grants blackmail, and is not re-granted next round without further xp gain', () => {
+    const engine = createTestEngine({
+      modules: [createProgressionCore()],
+      entities: [makePlayer()],
+      zones,
+    });
+    addCurrency(engine.world, 'player', 'xp', 20, engine.tick);
+
+    const first = runWorldTick(engine, { genre: 'fantasy' });
+    expect(first.ok).toBe(true);
+    expect(leverageOf(engine).blackmail).toBe(5); // xpGained 20 >= 15 → +5
+
+    // No further xp gained this round — must not re-grant.
+    engine.store.advanceTick();
+    const second = runWorldTick(engine, { genre: 'fantasy' });
+    expect(second.ok).toBe(true);
+    expect(leverageOf(engine).blackmail).toBe(5);
+
+    // Another xp gain of 15+ grants again (a fresh delta, not a repeat).
+    addCurrency(engine.world, 'player', 'xp', 15, engine.tick);
+    engine.store.advanceTick();
+    runWorldTick(engine, { genre: 'fantasy' });
+    expect(leverageOf(engine).blackmail).toBe(10);
+  });
+
+  // -------------------------------------------------------------------------
+  // SEED-0 IDENTITY (non-negotiable) — a legacy world that never engaged the
+  // social layer (no reputation, no milestones, no xp gain, no
+  // player-resolved pressure) must be byte-identical: no leverage.* key
+  // written where none existed, no eventLog/tick change, and — a stricter bar
+  // than playerCustom alone — the WorldTickState's own new bookkeeping
+  // fields (leverageMilestoneCursor/lastXp) never get created either.
+  // -------------------------------------------------------------------------
+  it('SEED-0 IDENTITY: a world that never engages the social layer is untouched by the leverage-income step across several rounds', () => {
+    const engine = makeBareEngine(); // no reputation globals, no milestones, no progression-core → xp always 0
+    expect(engine.world.entities.player.custom).toBeUndefined();
+    const beforeTick = engine.world.meta.tick;
+
+    for (let i = 0; i < 5; i++) {
+      if (i > 0) engine.store.advanceTick();
+      const result = runWorldTick(engine, { genre: 'fantasy' });
+      expect(result.ok).toBe(true);
+
+      // No leverage.* key ever appears on the player entity.
+      expect(engine.world.entities.player.custom).toBeUndefined();
+
+      // The world-tick module's OWN new tracking fields never get created —
+      // their mere presence (even at 0) would itself be an observable diff.
+      const wtState = engine.world.modules['world-tick'] as WorldTickState;
+      expect(wtState.leverageMilestoneCursor).toBeUndefined();
+      expect(wtState.lastXp).toBeUndefined();
+    }
+
+    // No leverage-attributable event ever landed in the log.
+    expect(engine.world.eventLog.some((e) => e.type.startsWith('leverage.'))).toBe(false);
+
+    // world.meta.tick advanced by EXACTLY the 4 explicit advanceTick() calls
+    // this test's own loop made (i = 1..4) — runWorldTick itself never
+    // advances it (mirroring the npc-agency SEED-0 test's identical
+    // assertion, adapted here for a multi-round loop instead of a single
+    // no-advance round).
+    expect(engine.world.meta.tick).toBe(beforeTick + 4);
+  });
+
+  it('SEED-0 IDENTITY: a world with pre-existing OTHER custom fields (but no leverage engagement) gains no leverage.* keys either', () => {
+    const engine = createTestEngine({
+      modules: [],
+      entities: [makePlayer({ custom: { companionRole: 'fighter', companionMorale: 50 } })],
+      zones,
+    });
+    runWorldTick(engine, { genre: 'fantasy' });
+    runWorldTick(engine, { genre: 'fantasy' });
+    expect(engine.world.entities.player.custom).toEqual({ companionRole: 'fighter', companionMorale: 50 });
+  });
+
+  it('is deterministic — same world in, same leverage state out, across independent instances', () => {
+    const run = () => {
+      const engine = makeBareEngine({ reputation_guild: 40 });
+      engine.store.emitEvent('defeat.fallout.milestone', { label: 'found the ruins', tags: ['exploration'] });
+      runWorldTick(engine, { genre: 'fantasy' });
+      engine.store.advanceTick();
+      runWorldTick(engine, { genre: 'fantasy' });
+      return JSON.parse(JSON.stringify(engine.world.entities.player.custom));
     };
     const a = run();
     const b = run();
