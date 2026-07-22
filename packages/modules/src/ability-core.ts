@@ -329,6 +329,12 @@ function resolveChecks(
   ability: AbilityDefinition,
   entity: EntityState,
   tick: number,
+  // world.meta.seed as a PURE hash input (F-SEED / P8-WL-005): ability stat
+  // checks were the last seed-blind stream beside the tactics rolls — two
+  // fresh runs with different seeds rolled byte-identical check outcomes at
+  // the same tick sequence. seed 0 (the default) is the legacy stream
+  // byte-for-byte, so callers that do not thread a seed keep their history.
+  seed = 0,
 ): AbilityCheckResult[] {
   if (!ability.checks || ability.checks.length === 0) return [];
 
@@ -336,7 +342,7 @@ function resolveChecks(
     const statValue = entity.stats[check.stat] ?? 0;
     // Roll 1-20, pass if statValue + roll >= difficulty * 2
     // This gives a stat-dependent check where higher stats pass more often
-    const roll = simpleRoll(tick, entity.id, `check:${ability.id}:${check.stat}`);
+    const roll = simpleRoll(tick, entity.id, `check:${ability.id}:${check.stat}`, seed);
     const rollNorm = ((roll - 1) / 99) * 20 + 1; // map 1-100 to 1-20
     const passed = (statValue + rollNorm) >= (check.difficulty * 2);
 
@@ -540,8 +546,8 @@ function useAbilityHandler(
     })];
   }
 
-  // 7. Stat checks
-  const checkResults = resolveChecks(ability, actor, world.meta.tick);
+  // 7. Stat checks (world.meta.seed threaded — F-SEED / P8-WL-005)
+  const checkResults = resolveChecks(ability, actor, world.meta.tick, world.meta.seed);
   const anyAbort = checkResults.find((c) => !c.passed && c.onFail === 'abort');
   if (anyAbort) {
     // Ability fails entirely — still deduct costs (you tried)

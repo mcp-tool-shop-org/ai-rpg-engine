@@ -348,8 +348,29 @@ export interface ContentRegistry {
   extendSchema(moduleId: string, schema: Record<string, unknown>): void;
 }
 
+/**
+ * Factory form of a module's namespace defaults. Receives the world the
+ * namespace is being initialized INTO, at initialization time — engine
+ * construction for fresh worlds, restore for loaded saves whose namespace is
+ * absent. Exists for state whose correct defaults depend on the world they
+ * join: eventLog-cursor state (world-tick, encounter-spawn) must baseline to
+ * the CURRENT log length on a restored legacy save (a static `cursor: 0`
+ * planted over an old session's full log makes the first tick re-consume the
+ * entire history — the P8-WL-006 spawn-burst class), while on a fresh world
+ * the same expression yields 0 because the log is empty at construction.
+ */
+export type NamespaceDefaultsFactory = (world: Readonly<WorldState>) => unknown;
+
 export interface PersistenceRegistry {
-  registerNamespace(moduleId: string, defaults: unknown): void;
+  /**
+   * Register the default state for this module's `world.modules[moduleId]`
+   * namespace. `defaults` is either plain data (structured-cloned into any
+   * world whose namespace is absent) or a {@link NamespaceDefaultsFactory}
+   * — a function is ALWAYS treated as a factory and invoked with the target
+   * world at initialization time (its result is cloned; never store a bare
+   * function as literal default data — functions don't serialize anyway).
+   */
+  registerNamespace(moduleId: string, defaults: unknown | NamespaceDefaultsFactory): void;
 }
 
 export interface UIRegistry {

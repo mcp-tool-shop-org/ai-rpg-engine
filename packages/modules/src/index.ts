@@ -265,6 +265,10 @@ export {
   runWorldTick,
   buildPressureInputs,
   getWorldTickState,
+  createWorldTick,
+  hasWorldTickState,
+  getActivePressures,
+  getResolvedPressures,
   urgencyBand,
   HEAT_KEY,
   HEAT_WAKE_THRESHOLD,
@@ -274,6 +278,7 @@ export {
   QUIET_ROUNDS_BEFORE_DECAY,
   DISTRICT_STABILITY_BASE,
   CHAIN_TURNS_REMAINING,
+  RESOLVED_PRESSURES_KEPT,
 } from './world-tick.js';
 export type {
   WorldTickState,

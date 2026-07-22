@@ -50,6 +50,7 @@ import { createObserverPresentation } from './observer-presentation.js';
 import type { PresentationRule } from './observer-presentation.js';
 import { createDefeatFallout } from './defeat-fallout.js';
 import type { DefeatFalloutConfig } from './defeat-fallout.js';
+import { createWorldTick } from './world-tick.js';
 import { createEncounterSpawn, validateEncounterSpawnContent } from './encounter-spawn.js';
 import type { EncounterSpawnConfig } from './encounter-spawn.js';
 import { createQuestCore } from './quest-core.js';
@@ -143,8 +144,8 @@ export type WorldStack = {
  *
  * Default composition (always included, in wiring order): environment-core,
  * faction-cognition, rumor-propagation, district-core, belief-provenance,
- * observer-presentation, defeat-fallout. Presence-optional: encounter-spawn
- * (included when `encounterSpawn` is passed).
+ * observer-presentation, defeat-fallout, world-tick. Presence-optional:
+ * encounter-spawn (included when `encounterSpawn` is passed).
  *
  * Usage:
  * ```
@@ -183,6 +184,13 @@ export function buildWorldStack(config: WorldStackConfig = {}): WorldStack {
     // The one roster serves both: defeat-fallout reads factionId + entityIds
     // and ignores cohesion (its config type simply doesn't name it).
     createDefeatFallout({ factions, playerId, ...config.defeatFallout }),
+    // The world-tick driver's module identity (P8-SP-003): runWorldTick stays
+    // a per-round function call, but registering the module here puts its
+    // persisted slice — the tree's most actively evolved state shape — into
+    // the version-stamped set (meta.moduleVersions) and under the ENG-009
+    // migration seam, and its factory namespace default baselines the
+    // eventLog cursor correctly on legacy-save restores (P8-WL-006).
+    createWorldTick(),
   ];
 
   if (config.encounterSpawn) {

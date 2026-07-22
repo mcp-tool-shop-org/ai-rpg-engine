@@ -566,3 +566,101 @@ describe('defeat-fallout', () => {
     expect(run1).toEqual(run2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Spawned clones answer for their faction (P8-WL-004)
+//
+// The config rosters list AUTHORED instance ids, captured at pack assembly.
+// encounter-spawn clones its templates under fresh `enc_*` ids — in no roster
+// — so spawned-patrol kills accrued heat/safety but never reputation/alert,
+// and every spawned-hostile kill's rumor read valence 'heroic' (no factionId
+// → heroic), inverting the world's reaction to a player massacring patrols.
+// Clones carry template identity in blueprintId (pinned in
+// encounter-spawn.test.ts); findFaction now resolves by instance id OR
+// blueprint id.
+// ---------------------------------------------------------------------------
+
+describe('defeat-fallout — spawned clones answer for their faction (P8-WL-004)', () => {
+  /** The spawned-clone shape encounter-spawn produces: fresh enc_* id, the
+   *  template's identity preserved in blueprintId, absent from every roster
+   *  by instance id. */
+  function makeCloneEngine() {
+    return createTestEngine({
+      modules: [
+        statusCore,
+        createCombatCore(),
+        createEnvironmentCore(),
+        createDistrictCore({ districts }),
+        createDefeatFallout({
+          factions: [{ factionId: 'watch', entityIds: ['street-patrol'] }],
+          playerId: 'player',
+        }),
+      ],
+      entities: [
+        makePlayer('zone-a'),
+        makeEnemy('enc_1', 'zone-a', { blueprintId: 'street-patrol', name: 'Street Patrol' }),
+      ],
+      zones,
+    });
+  }
+
+  it('RED-PROOF: a clone kill accrues reputation and alert via blueprintId (pre-fix: heat/safety only)', () => {
+    const engine = makeCloneEngine();
+    killEntity(engine, 'enc_1');
+    // Pre-fix, findFaction matched only the static instance-id roster, so
+    // both of these were undefined while heat still accrued — the faction
+    // axis of the reaction loop was dead for the very kills the loop spawns.
+    expect(engine.world.globals['reputation_watch']).toBe(-10);
+    expect(engine.world.globals['faction_alert_watch']).toBe(15);
+    expect(engine.world.globals['player_heat']).toBe(5); // unchanged axis
+  });
+
+  it('the rumor valence follows: a spawned faction-hostile kill reads fearsome, not heroic', () => {
+    const engine = makeCloneEngine();
+    const allEvents: ResolvedEvent[] = [];
+    engine.store.events.onAny((e) => allEvents.push(e));
+
+    killEntity(engine, 'enc_1');
+    const rumor = allEvents.find((e) => e.type === 'defeat.fallout.rumor');
+    expect(rumor).toBeDefined();
+    expect(rumor!.payload.valence).toBe('fearsome');
+    // The fallout summary names the faction too — downstream layers see the
+    // same resolution the ledger accrued.
+    const triggered = allEvents.find((e) => e.type === 'defeat.fallout.triggered');
+    expect(triggered!.payload.factionId).toBe('watch');
+  });
+
+  it('instance-id matches are unchanged and unlisted blueprints still accrue nothing', () => {
+    const engine = createTestEngine({
+      modules: [
+        statusCore,
+        createCombatCore(),
+        createEnvironmentCore(),
+        createDistrictCore({ districts }),
+        createDefeatFallout({
+          factions: [{ factionId: 'watch', entityIds: ['guard-1'] }],
+          playerId: 'player',
+        }),
+      ],
+      entities: [
+        makePlayer('zone-a'),
+        makeEnemy('guard-1', 'zone-a'), // authored instance — id match, as ever
+        makeEnemy('enc_9', 'zone-a', { blueprintId: 'nobody-knows' }), // unlisted both ways
+      ],
+      zones,
+    });
+
+    killEntity(engine, 'guard-1');
+    expect(engine.world.globals['reputation_watch']).toBe(-10);
+
+    const allEvents: ResolvedEvent[] = [];
+    engine.store.events.onAny((e) => allEvents.push(e));
+    killEntity(engine, 'enc_9');
+    // No roster lists 'enc_9' or 'nobody-knows': reputation unchanged, and
+    // the factionless kill keeps its heroic valence (the honest default).
+    expect(engine.world.globals['reputation_watch']).toBe(-10);
+    const rumor = allEvents.find((e) => e.type === 'defeat.fallout.rumor');
+    expect(rumor).toBeDefined();
+    expect(rumor!.payload.valence).toBe('heroic');
+  });
+});

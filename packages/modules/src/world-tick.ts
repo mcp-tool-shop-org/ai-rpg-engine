@@ -52,7 +52,7 @@
 // title-trigger / economy-shift / spawn-opportunity effects are not applied to
 // any store — they ride the `pressure.expired` payload for downstream layers.
 
-import type { Engine, WorldState } from '@ai-rpg-engine/core';
+import type { Engine, EngineModule, WorldState } from '@ai-rpg-engine/core';
 import {
   tickPressures,
   evaluatePressures,
@@ -118,6 +118,16 @@ export const DISTRICT_STABILITY_BASE = 50;
 /** Turns a fallout-chained pressure lives (spawn-pressure effects carry none). */
 export const CHAIN_TURNS_REMAINING = 10;
 
+/**
+ * Most recent resolved-pressure fallout records kept in persisted state
+ * (oldest dropped past the cap). Bounded on purpose: the ledger rides every
+ * save, and its consumers are display surfaces — the Director's Ledger
+ * PRESSURE FALLOUT section and endgame's resolvedPressures input (declared in
+ * ArcInputs, read by no threshold today) — which want the recent history, not
+ * an unbounded archive.
+ */
+export const RESOLVED_PRESSURES_KEPT = 20;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -151,6 +161,15 @@ export type WorldTickState = {
   lastEventIndex: number;
   /** Milestones accumulated from defeat.fallout.milestone events + fallout tags. */
   milestones: Array<{ label: string; tags: string[] }>;
+  /**
+   * Fallout records of pressures that resolved (expired) — most recent
+   * RESOLVED_PRESSURES_KEPT, oldest dropped. Read via getResolvedPressures.
+   * OPTIONAL because saves written before this field existed persist the
+   * namespace without it — the tick lazy-initializes it and every reader
+   * tolerates absence (the module ships no migrateState; tolerant readers ARE
+   * its drift policy).
+   */
+  resolvedPressures?: PressureFallout[];
 };
 
 export type WorldTickOptions = {
@@ -186,18 +205,127 @@ export type WorldTickResult = {
 
 const STATE_KEY = 'world-tick';
 
-export function getWorldTickState(world: WorldState): WorldTickState {
-  const existing = world.modules[STATE_KEY] as WorldTickState | undefined;
-  if (existing) return existing;
-  const fresh: WorldTickState = {
+/**
+ * Fresh driver state for the world it joins. `lastEventIndex` baselines to
+ * the CURRENT eventLog length (P8-WL-006): on a fresh world the log is empty
+ * so the cursor starts at 0 exactly as before, but on a restored pre-v2.7
+ * save whose namespace is absent, a 0 cursor made the first tick re-scan the
+ * old session's entire log. Nothing historical is re-consumed; the delta
+ * discipline starts from "now".
+ */
+function freshWorldTickState(world: WorldState): WorldTickState {
+  return {
     pressures: [],
     lastHeat: 0,
     quietRounds: 0,
-    lastEventIndex: 0,
+    lastEventIndex: world.eventLog.length,
     milestones: [],
+    resolvedPressures: [],
   };
+}
+
+export function getWorldTickState(world: WorldState): WorldTickState {
+  const existing = world.modules[STATE_KEY] as WorldTickState | undefined;
+  if (existing) return existing;
+  const fresh = freshWorldTickState(world);
   world.modules[STATE_KEY] = fresh;
   return fresh;
+}
+
+/**
+ * The world-tick driver's EngineModule identity (P8-SP-003). The driver
+ * itself stays a per-round function call (runWorldTick — the CLI drives it;
+ * registration order can't), but its persisted slice is the most actively
+ * evolved state shape in the tree and was invisible to the ENG-009 migration
+ * seam: never version-stamped into meta.moduleVersions, never reachable by
+ * migrateModuleStates. Registering this module puts the slice in the stamped
+ * set, exactly like quest-core/encounter-spawn declare theirs.
+ *
+ * The namespace default is a FACTORY (NamespaceDefaultsFactory): cursor state
+ * must baseline to the eventLog length of the world it joins — 0 at fresh
+ * construction (empty log), the full historical length when a legacy save
+ * without the namespace is restored and initialized (P8-WL-006). No
+ * migrateState hook: present slices load as-is across versions because every
+ * reader (the tick, the accessors below) tolerates absent fields.
+ */
+export function createWorldTick(): EngineModule {
+  return {
+    id: STATE_KEY,
+    version: '1.0.0',
+
+    register(ctx) {
+      ctx.persistence.registerNamespace(STATE_KEY, (world: WorldState) =>
+        freshWorldTickState(world),
+      );
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Read accessors — the stable pressure API for display/scoring surfaces
+// (P8-WL-003). world-tick's namespace is the SINGLE source of truth for
+// persisted pressures; these accessors are the supported way to read it.
+// Intended callers (the CLI converts to these): endgame.ts
+// buildEndgameInputs (activePressures + resolvedPressures axes), director.ts
+// renderDirectorLedger (ACTIVE PRESSURES + PRESSURE FALLOUT sections), and
+// inspect.ts's save report (active-pressure count, absent-vs-zero via
+// hasWorldTickState).
+//
+// Contract, identical for all three:
+//   - NON-ATTACHING: pure reads, never synthesize-and-attach — safe on
+//     structuredClone'd display worlds (director) and on inspection paths
+//     whose promise is "a save taken after rendering is byte-identical to one
+//     taken before".
+//   - DEFENSIVE: absent namespace, absent field, or a malformed (non-array)
+//     value all degrade to [] — engines that never ran a world tick read as
+//     "no pressures", never a throw.
+//   - Array items are filtered to plain objects (the persisted shapes);
+//     callers get the module's own types back without re-narrowing.
+// ---------------------------------------------------------------------------
+
+/** Narrow an unknown to an array of plain objects (persisted-state reads). */
+function objectArray<T>(value: unknown): T[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is T => typeof v === 'object' && v !== null);
+}
+
+/** Peek the persisted namespace WITHOUT attaching (see accessor contract). */
+function peekState(world: WorldState): WorldTickState | undefined {
+  const ns = world.modules[STATE_KEY];
+  return typeof ns === 'object' && ns !== null && !Array.isArray(ns)
+    ? (ns as WorldTickState)
+    : undefined;
+}
+
+/**
+ * True when this world carries a world-tick namespace at all — the driver has
+ * run (or the module initialized it). Lets inspection surfaces distinguish
+ * "no pressure system in this world" (hide the line) from "pressure system
+ * live, zero active" (render 0), which getActivePressures alone cannot.
+ */
+export function hasWorldTickState(world: WorldState): boolean {
+  return peekState(world) !== undefined;
+}
+
+/**
+ * Active pressures persisted by the world tick — the array evaluateEndgame's
+ * activePressures axis, the Director's ACTIVE PRESSURES section, and
+ * inspect-save's pressure count must read. [] when the namespace is absent or
+ * malformed. Non-attaching; see the accessor contract above.
+ */
+export function getActivePressures(world: WorldState): WorldPressure[] {
+  return objectArray<WorldPressure>(peekState(world)?.pressures);
+}
+
+/**
+ * Fallout records of resolved (expired) pressures, most recent last, bounded
+ * to RESOLVED_PRESSURES_KEPT by the tick. Feeds the Director's PRESSURE
+ * FALLOUT section and endgame's resolvedPressures input. [] when the
+ * namespace is absent, predates the field, or is malformed. Non-attaching;
+ * see the accessor contract above.
+ */
+export function getResolvedPressures(world: WorldState): PressureFallout[] {
+  return objectArray<PressureFallout>(peekState(world)?.resolvedPressures);
 }
 
 // ---------------------------------------------------------------------------
@@ -533,6 +661,21 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
         { ...pressurePayload(chain), triggeredBy: chain.triggeredBy, chainedFrom: chain.chainedFrom },
         { hidden: false, priority: 'high' },
       );
+    }
+  }
+
+  // 3b. Persist the round's fallout records (P8-WL-003): the resolved-
+  // pressure ledger is what the Director's PRESSURE FALLOUT section and
+  // endgame's resolvedPressures input read back via getResolvedPressures —
+  // until now the records only rode the pressure.expired payload and the
+  // tick's return value, so nothing survived the round. Lazy-init because
+  // pre-field saves persist the namespace without it; bounded so the ledger
+  // never grows a save without limit.
+  if (expiredFallouts.length > 0) {
+    const ledger = (state.resolvedPressures ??= []);
+    ledger.push(...expiredFallouts);
+    if (ledger.length > RESOLVED_PRESSURES_KEPT) {
+      ledger.splice(0, ledger.length - RESOLVED_PRESSURES_KEPT);
     }
   }
 

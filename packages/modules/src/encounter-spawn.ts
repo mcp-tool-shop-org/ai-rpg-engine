@@ -163,10 +163,25 @@ export function unregisterEncounterSpawnContent(gameId: string): void {
 
 const STATE_KEY = 'encounter-spawn';
 
+/**
+ * Fresh module state for the world it joins. `cursor` baselines to the
+ * CURRENT eventLog length (P8-WL-006): a fresh world's log is empty at
+ * initialization so the cursor starts at 0 exactly as before, but a restored
+ * pre-v2.7 save whose namespace is absent used to get cursor 0 over the old
+ * session's FULL log — the first world tick then scanned every historical
+ * `world.zone.entered` event and rolled a spawn for each (a one-round burst
+ * that could place a patrol in every tabled zone the player ever visited).
+ * Nothing historical is re-consumed; the cursor-always-advances discipline
+ * starts from "now".
+ */
+function freshEncounterSpawnState(world: WorldState): EncounterSpawnState {
+  return { cursor: world.eventLog.length, liveByZone: {} };
+}
+
 export function getEncounterSpawnState(world: WorldState): EncounterSpawnState {
   const existing = world.modules[STATE_KEY] as EncounterSpawnState | undefined;
   if (existing) return existing;
-  const fresh: EncounterSpawnState = { cursor: 0, liveByZone: {} };
+  const fresh = freshEncounterSpawnState(world);
   world.modules[STATE_KEY] = fresh;
   return fresh;
 }
@@ -324,10 +339,15 @@ export function createEncounterSpawn(config: EncounterSpawnConfig): EngineModule
     version: '1.0.0',
 
     register(ctx) {
-      ctx.persistence.registerNamespace(STATE_KEY, {
-        cursor: 0,
-        liveByZone: {},
-      } satisfies EncounterSpawnState);
+      // Factory default (NamespaceDefaultsFactory), not static data: the
+      // cursor must baseline to the log length of the world the namespace
+      // joins — 0 at fresh construction, the full historical length when a
+      // legacy save without the namespace is restored and initialized
+      // (P8-WL-006; a static `cursor: 0` planted by namespace-init over an
+      // old log re-armed the spawn burst on every migration-seam load path).
+      ctx.persistence.registerNamespace(STATE_KEY, (world: WorldState) =>
+        freshEncounterSpawnState(world),
+      );
 
       registry.set(config.gameId, {
         encountersById: new Map(config.encounters.map((e) => [e.id, e])),

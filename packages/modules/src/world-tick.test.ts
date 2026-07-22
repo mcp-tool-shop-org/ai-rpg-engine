@@ -14,8 +14,9 @@
 //   - guarded: a poisoned state loses one tick, never the session
 
 import { describe, it, expect, vi } from 'vitest';
-import { createTestEngine } from '@ai-rpg-engine/core';
+import { createTestEngine, Engine } from '@ai-rpg-engine/core';
 import type { EntityState, ResolvedEvent } from '@ai-rpg-engine/core';
+import type { PressureFallout } from './pressure-resolution.js';
 import { statusCore } from './status-core.js';
 import { createCombatCore } from './combat-core.js';
 import { createEnvironmentCore } from './environment-core.js';
@@ -28,12 +29,18 @@ import {
   runWorldTick,
   buildPressureInputs,
   getWorldTickState,
+  createWorldTick,
+  hasWorldTickState,
+  getActivePressures,
+  getResolvedPressures,
   HEAT_KEY,
   HEAT_WAKE_THRESHOLD,
   HEAT_ESCALATION_THRESHOLD,
   QUIET_ROUNDS_BEFORE_DECAY,
   DISTRICT_STABILITY_BASE,
   CHAIN_TURNS_REMAINING,
+  RESOLVED_PRESSURES_KEPT,
+  type WorldTickState,
 } from './world-tick.js';
 
 const zones = [
@@ -514,5 +521,214 @@ describe('buildPressureInputs — the globals-to-inputs mapping', () => {
     expect(inputs.genre).toBe('fantasy');
     expect(inputs.currentTick).toBe(5);
     expect(inputs.playerRumors).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Module identity + the version-stamped seam (P8-SP-003)
+// ---------------------------------------------------------------------------
+
+describe('world-tick — module identity enters the migration seam (P8-SP-003)', () => {
+  it('createWorldTick carries the id/version contract the sibling modules declare', () => {
+    const mod = createWorldTick();
+    expect(mod.id).toBe('world-tick');
+    expect(mod.version).toBe('1.0.0');
+  });
+
+  it('a registered engine version-stamps the slice and initializes the namespace at construction (fresh pin: cursor 0)', () => {
+    const engine = createTestEngine({
+      modules: [createWorldTick()],
+      entities: [makePlayer()],
+      zones,
+    });
+    expect(engine.world.meta.moduleVersions?.['world-tick']).toBe('1.0.0');
+    // The factory namespace default ran against the empty construction-time
+    // log — the cursor starts at 0, byte-for-byte the old fresh shape plus
+    // the (empty) resolved ledger.
+    const state = engine.world.modules['world-tick'] as WorldTickState;
+    expect(state.lastEventIndex).toBe(0);
+    expect(state.pressures).toEqual([]);
+    expect(state.milestones).toEqual([]);
+  });
+
+  it('a legacy save restored through the seam baselines the cursor to the historical log length (Engine.deserialize path)', () => {
+    // Simulate a pre-v2.7 save: a session with history whose save carries NO
+    // world-tick namespace and no version stamp for it (the driver was not a
+    // module when the save was written).
+    const engine = createTestEngine({
+      modules: [createWorldTick()],
+      entities: [makePlayer()],
+      zones,
+    });
+    engine.store.emitEvent('defeat.fallout.milestone', {
+      label: 'old-session boss',
+      tags: ['boss-kill'],
+    });
+    const save = JSON.parse(engine.serialize()) as {
+      world: { state: { modules: Record<string, unknown>; meta: { moduleVersions?: Record<string, string> } } };
+    };
+    delete save.world.state.modules['world-tick'];
+    delete save.world.state.meta.moduleVersions?.['world-tick'];
+
+    const restored = Engine.deserialize(JSON.stringify(save), { modules: [createWorldTick()] });
+    expect(restored.world.eventLog.length).toBeGreaterThan(0);
+    const state = restored.world.modules['world-tick'] as WorldTickState;
+    // The factory default received the RESTORED world (P8-WL-006): the cursor
+    // baselines to the historical log length, not 0 — the first tick of the
+    // resumed session re-consumes nothing.
+    expect(state.lastEventIndex).toBe(restored.world.eventLog.length);
+    // And the ENG-009 re-stamp covers the slice from here on.
+    expect(restored.world.meta.moduleVersions?.['world-tick']).toBe('1.0.0');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Legacy saves do not re-consume history (P8-WL-006 — the getter path)
+// ---------------------------------------------------------------------------
+
+describe('world-tick — legacy saves do not re-consume history (P8-WL-006)', () => {
+  it('fresh world pin: the cursor attaches at 0 (empty log) and round events are consumed', () => {
+    const engine = makeBareEngine();
+    // First touch happens against an empty log — the delta discipline starts
+    // at 0 exactly as before the fix.
+    expect(getWorldTickState(engine.store.state).lastEventIndex).toBe(0);
+    engine.store.emitEvent('defeat.fallout.milestone', { label: 'fresh boss', tags: ['boss-kill'] });
+    runWorldTick(engine);
+    const state = getWorldTickState(engine.store.state);
+    expect(state.milestones.map((m) => m.label)).toContain('fresh boss');
+    expect(state.lastEventIndex).toBe(engine.world.eventLog.length);
+  });
+
+  it('RED-PROOF legacy Continue: absent namespace + historical log ⇒ the cursor attaches at the log END; old milestones are NOT re-collected', () => {
+    const engine = makeBareEngine();
+    engine.store.emitEvent('defeat.fallout.milestone', {
+      label: 'historical boss',
+      tags: ['boss-kill'],
+    });
+    // The pre-v2.7 save shape on the shipped Continue path: full log, no
+    // world-tick namespace (nothing initializes namespaces on that path).
+    expect(engine.world.modules['world-tick']).toBeUndefined();
+
+    const result = runWorldTick(engine); // first tick of the resumed session
+    expect(result.ok).toBe(true);
+    const state = getWorldTickState(engine.store.state);
+    // Pre-fix: fresh state initialized lastEventIndex 0 and this scan
+    // re-collected 'historical boss' — this assertion is the red proof.
+    expect(state.milestones).toEqual([]);
+    expect(state.lastEventIndex).toBe(engine.world.eventLog.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The stable pressure read API (P8-WL-003) — single source of truth under
+// world.modules['world-tick']; the CLI's endgame/director/inspect surfaces
+// build on these accessors instead of the phantom 'pressure-system' namespace
+// nothing ever wrote.
+// ---------------------------------------------------------------------------
+
+describe('world-tick — the stable pressure read API (P8-WL-003)', () => {
+  const expiringBounty = () =>
+    makePressure({
+      kind: 'bounty-issued',
+      sourceFactionId: 'watch',
+      description: 'watch has placed a bounty on the player',
+      triggeredBy: 'test',
+      urgency: 0.7,
+      visibility: 'rumored',
+      turnsRemaining: 0, // expires on entry to the next tick
+      potentialOutcomes: [],
+      tags: ['hostile'],
+      currentTick: 0,
+    });
+
+  it('absent namespace: accessors return empty/false and NEVER attach (display-world safe)', () => {
+    const engine = makeBareEngine();
+    const world = engine.store.state;
+    expect(hasWorldTickState(world)).toBe(false);
+    expect(getActivePressures(world)).toEqual([]);
+    expect(getResolvedPressures(world)).toEqual([]);
+    // Non-attaching: the reads left nothing behind — a save taken after an
+    // inspection render stays byte-identical to one taken before.
+    expect(world.modules['world-tick']).toBeUndefined();
+  });
+
+  it('getActivePressures reads the live working set the tick persists (no mirror namespace)', () => {
+    const engine = makeBareEngine({
+      reputation_watch: -50,
+      faction_alert_watch: 60,
+      [HEAT_KEY]: HEAT_WAKE_THRESHOLD,
+    });
+    const result = runWorldTick(engine);
+    expect(result.spawned).toHaveLength(1);
+
+    const world = engine.store.state;
+    expect(hasWorldTickState(world)).toBe(true);
+    const active = getActivePressures(world);
+    expect(active).toHaveLength(1);
+    expect(active[0].kind).toBe('bounty-issued');
+    // The records the tick returned ARE the records the accessor reads —
+    // world.modules['world-tick'] is the single source of truth.
+    expect(active).toEqual(result.active);
+    // And nothing ever writes the phantom namespace the CLI used to read.
+    expect(world.modules['pressure-system']).toBeUndefined();
+  });
+
+  it('getResolvedPressures returns the persisted fallout ledger, and it rides the save round-trip', () => {
+    const engine = makeBareEngine({ reputation_watch: -60, faction_alert_watch: 60, [HEAT_KEY]: 0 });
+    getWorldTickState(engine.store.state).pressures = [expiringBounty()];
+
+    const result = runWorldTick(engine);
+    expect(result.expired).toHaveLength(1);
+
+    const resolved = getResolvedPressures(engine.store.state);
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].resolution.pressureKind).toBe('bounty-issued');
+    expect(resolved[0].summary).toBe('bounty issued expired without resolution');
+
+    // The ledger rides world.modules like the rest of the slice.
+    const reloaded = JSON.parse(engine.store.serialize()) as {
+      state: { modules: { 'world-tick': WorldTickState } };
+    };
+    expect(reloaded.state.modules['world-tick'].resolvedPressures).toHaveLength(1);
+  });
+
+  it('legacy slice without the ledger field: readers tolerate, the tick lazy-initializes', () => {
+    const engine = makeBareEngine({ [HEAT_KEY]: 0 });
+    const state = getWorldTickState(engine.store.state);
+    delete state.resolvedPressures; // the pre-field persisted shape
+    expect(getResolvedPressures(engine.store.state)).toEqual([]);
+
+    state.pressures = [expiringBounty()];
+    runWorldTick(engine);
+    expect(getResolvedPressures(engine.store.state)).toHaveLength(1);
+  });
+
+  it(`the ledger is bounded: the ${RESOLVED_PRESSURES_KEPT} most recent records, oldest dropped`, () => {
+    const engine = makeBareEngine({ [HEAT_KEY]: 0 });
+    const state = getWorldTickState(engine.store.state);
+    // Pre-fill a full ledger (synthetic records — the bound is mechanical).
+    state.resolvedPressures = Array.from(
+      { length: RESOLVED_PRESSURES_KEPT },
+      (_, i) => ({ summary: `old-${i}` }) as PressureFallout,
+    );
+    state.pressures = [expiringBounty()];
+    runWorldTick(engine);
+
+    const resolved = getResolvedPressures(engine.store.state);
+    expect(resolved).toHaveLength(RESOLVED_PRESSURES_KEPT);
+    expect(resolved[0]).toEqual({ summary: 'old-1' }); // oldest dropped
+    expect(resolved[resolved.length - 1].resolution?.pressureKind).toBe('bounty-issued');
+  });
+
+  it('malformed namespace values degrade to empty, never throw', () => {
+    const engine = makeBareEngine();
+    const world = engine.store.state;
+    world.modules['world-tick'] = {
+      pressures: 'not-an-array',
+      resolvedPressures: 42,
+    } as unknown as WorldTickState;
+    expect(hasWorldTickState(world)).toBe(true);
+    expect(getActivePressures(world)).toEqual([]);
+    expect(getResolvedPressures(world)).toEqual([]);
   });
 });

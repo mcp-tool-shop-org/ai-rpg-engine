@@ -56,17 +56,19 @@ import { createGame as createZombieGame } from '@ai-rpg-engine/starter-zombie';
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Registered module ids in registration order (the ModuleManager's map keys). */
+/** Registered module ids in registration order (ModuleManager.getModules —
+ *  the public accessor the CLI restore path uses for the migration seam). */
 function registeredIds(engine: { moduleManager: unknown }): string[] {
-  const mm = engine.moduleManager as unknown as { modules: Map<string, EngineModule> };
-  return [...mm.modules.keys()];
+  const mm = engine.moduleManager as { getModules(): readonly EngineModule[] };
+  return mm.getModules().map((m) => m.id);
 }
 
 const stackIds = (config: Parameters<typeof buildWorldStack>[0] = {}) =>
   buildWorldStack(config).modules.map((m) => m.id);
 
-/** The always-included strategic tier, in wiring order. */
-const WORLD_STACK_DEFAULT = [
+/** The always-included strategic tier before world-tick joined (P8-SP-003) —
+ *  kept verbatim as the pre-refactor historical baseline. */
+const WORLD_STACK_PRE_WORLD_TICK = [
   'environment-core',
   'faction-cognition',
   'rumor-propagation',
@@ -75,6 +77,12 @@ const WORLD_STACK_DEFAULT = [
   'observer-presentation',
   'defeat-fallout',
 ];
+
+/** The always-included strategic tier, in wiring order. world-tick joined
+ *  this wave (P8-SP-003): the driver's slice enters the version-stamped set
+ *  and the ENG-009 seam; registration is namespace-only (no verbs, no event
+ *  subscriptions), so the addition is behavior-inert at registration time. */
+const WORLD_STACK_DEFAULT = [...WORLD_STACK_PRE_WORLD_TICK, 'world-tick'];
 
 // --- Probe fixtures --------------------------------------------------------
 
@@ -174,7 +182,7 @@ function makeStackEngine(config: StackConfig = {}, extraEntities: EntityState[] 
 // ---------------------------------------------------------------------------
 
 describe('buildWorldStack — composition', () => {
-  it('default composition is the seven always-on strategic modules, in wiring order', () => {
+  it('default composition is the eight always-on strategic modules, in wiring order', () => {
     const stack = buildWorldStack();
     expect(stack.modules.map((m) => m.id)).toEqual(WORLD_STACK_DEFAULT);
     expect(stack.warnings).toEqual([]);
@@ -194,7 +202,7 @@ describe('buildWorldStack — composition', () => {
     expect(withQuests).toEqual([...WORLD_STACK_DEFAULT, 'quest-core']);
   });
 
-  it('quests + encounterSpawn compose: both presence-optional modules append after the default seven', () => {
+  it('quests + encounterSpawn compose: both presence-optional modules append after the default eight', () => {
     const both = stackIds({
       encounterSpawn: { gameId: 'g', encounters: [], entityTemplates: [], zoneTables: {} },
       quests: { gameId: 'g', quests: [probeQuest] },
@@ -576,21 +584,23 @@ describe('world-stack refactor — per-starter module registration pins', () => 
     },
   );
 
-  it('gladiator: the module SET matches the pre-refactor set exactly (order swap is the only delta)', () => {
+  it('gladiator: the module SET is the pre-refactor set plus world-tick (order swap + P8-SP-003 are the only deltas)', () => {
     // The literal pre-refactor gladiator order, boss-phase before
     // encounter-spawn — carried verbatim so the set-equality claim is
     // auditable against the captured baseline, not derived from EXPECTED.
+    // world-tick is the ONE post-baseline addition (P8-SP-003: the driver
+    // gained module identity this wave), asserted explicitly on top.
     const preRefactorOrder = [
       ...COMBAT_PREFIX('combat-resources-gladiator'),
       ...CONTENT_MID,
-      ...WORLD_STACK_DEFAULT,
+      ...WORLD_STACK_PRE_WORLD_TICK,
       'boss-phase:arena-overlord',
       'encounter-spawn',
       'equipment-core',
       ...ABILITY_SUFFIX,
     ];
     const ids = registeredIds(createGladiatorGame(42));
-    expect([...ids].sort()).toEqual([...preRefactorOrder].sort());
+    expect([...ids].sort()).toEqual([...preRefactorOrder, 'world-tick'].sort());
   });
 
   it('every starter world stack is duplicate-free (the engine would throw otherwise — belt and braces)', () => {

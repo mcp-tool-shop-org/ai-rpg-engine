@@ -24,11 +24,12 @@ const zones = [
   { id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [] as string[], neighbors: [] },
 ];
 
-function buildEngine(abilities: typeof fantasyAbilities, entities: EntityState[]) {
+function buildEngine(abilities: typeof fantasyAbilities, entities: EntityState[], seed?: number) {
   return createTestEngine({
     modules: [statusCore, createAbilityCore({ abilities }), createAbilityEffects(), createAbilityReview()],
     entities,
     zones,
+    ...(seed !== undefined ? { seed } : {}),
   });
 }
 
@@ -326,7 +327,11 @@ describe('Phase 5 expansion — weird-west resistances', () => {
       statuses: [], zoneId: 'zone-a',
       resistances: { blind: 'immune', supernatural: 'resistant' },
     };
-    const engine = buildEngine(weirdWestAbilities, [player, crawler]);
+    // seed 0 = the legacy stream where dust-devil's lore check passes at this
+    // tick, so the blind application reaches the immunity gate (F-SEED /
+    // P8-WL-005 threaded world.meta.seed into ability stat checks; the
+    // harness-default seed-1 stream aborts on the check before any status).
+    const engine = buildEngine(weirdWestAbilities, [player, crawler], 0);
     const events = engine.processAction({
       id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'dust-devil' },

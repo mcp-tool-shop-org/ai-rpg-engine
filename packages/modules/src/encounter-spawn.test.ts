@@ -325,6 +325,10 @@ describe('encounter-spawn — entry-driven, one live encounter per zone', () => 
       expect(entity.zoneId).toBe('zone-b');
       expect(entity.name).toBe('Raider');
       expect(entity.id).not.toBe('raider');
+      // Template identity survives the clone (P8-WL-004's carrier): only
+      // id/zoneId/statuses are overridden at spawn, so defeat-fallout can
+      // resolve a clone's faction through its blueprintId.
+      expect(entity.blueprintId).toBe(raiderTemplate.blueprintId);
       expect((entity.resources.hp ?? 0)).toBeGreaterThan(0);
     }
     // Module constant untouched (the store detaches AND we clone-then-override).
@@ -503,5 +507,80 @@ describe('encounter-spawn — packs without registered content are a no-op', () 
     const result = runWorldTick(engine);
     expect(result.ok).toBe(true);
     expect(result.encounters).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Legacy saves must not spawn-burst (P8-WL-006)
+//
+// A pre-v2.7 save Continues with NO encounter-spawn namespace (the module did
+// not exist when the save was written) but a FULL historical eventLog. The
+// old fresh-state cursor of 0 made the first world tick scan every historical
+// player `world.zone.entered` event and roll a spawn for each — a one-round
+// burst across every tabled zone the player ever visited. The fix baselines
+// an absent-namespace cursor to the CURRENT log length: nothing historical is
+// re-consumed. Fresh worlds are pinned unchanged: their namespace initializes
+// at construction against an empty log, so the cursor still starts at 0 and
+// round-1 entries still roll.
+// ---------------------------------------------------------------------------
+
+describe('encounter-spawn — legacy saves do not spawn-burst (P8-WL-006)', () => {
+  /** Six un-ticked player zone entries — the "historical log" of an old session. */
+  function walkHistory(engine: ReturnType<typeof makeEngine>): void {
+    for (let i = 0; i < 3; i++) {
+      engine.submitAction('move', { targetIds: ['zone-b'] });
+      engine.submitAction('move', { targetIds: ['zone-a'] });
+    }
+  }
+
+  it('fresh world pin: the registered namespace initializes with cursor 0 (empty construction-time log)', () => {
+    const engine = makeEngine();
+    // The factory default ran at construction, before any events existed.
+    expect(getEncounterSpawnState(engine.store.state).cursor).toBe(0);
+    expect(engine.world.eventLog.length).toBeGreaterThanOrEqual(0);
+  });
+
+  it('RED-PROOF control: cursor 0 over a historical log IS the burst (the pre-fix legacy shape scans history)', () => {
+    // Hand-plant the exact state a pre-fix restore produced: fresh defaults
+    // (cursor 0) attached over an old session's full log. This is the control
+    // leg proving the burst mechanism is real — the companion test below
+    // asserts the fixed absent-namespace path rolls nothing.
+    const engine = makeEngine({ baseChance: 1 }); // clamps to MAX_SPAWN_CHANCE
+    walkHistory(engine);
+    const world = engine.store.state;
+    world.modules['encounter-spawn'] = { cursor: 0, liveByZone: {} };
+
+    const reports = runEncounterSpawnStep(engine);
+    // Six historical entries rolled at ~0.95 each under this fixed seed —
+    // the old shape demonstrably replays history into spawns.
+    expect(reports.length).toBeGreaterThan(0);
+    expect(spawnEvents(engine).length).toBe(reports.length);
+  });
+
+  it('legacy Continue: an ABSENT namespace over the same historical log rolls NOTHING and baselines to the log end', () => {
+    const engine = makeEngine({ baseChance: 1 }); // same content, same walk as the control
+    walkHistory(engine);
+    const world = engine.store.state;
+    // Simulate the pre-v2.7 save shape: the namespace does not exist (the
+    // module was never registered when the save was written).
+    delete world.modules['encounter-spawn'];
+
+    const reports = runEncounterSpawnStep(engine);
+    expect(reports).toEqual([]);
+    expect(spawnEvents(engine)).toEqual([]);
+    const state = getEncounterSpawnState(world);
+    expect(state.cursor).toBe(world.eventLog.length);
+    expect(state.liveByZone).toEqual({});
+  });
+
+  it('after a legacy restore the table is live for NEW entries (the system resumes, not disabled)', () => {
+    const engine = makeEngine({ baseChance: 1 });
+    walkHistory(engine);
+    delete engine.store.state.modules['encounter-spawn'];
+    expect(runEncounterSpawnStep(engine)).toEqual([]); // history skipped
+
+    // New play after the resume: fresh entries still roll and can spawn.
+    const spawned = walkUntilSpawn(engine);
+    expect(spawned.length).toBeGreaterThan(0);
   });
 });

@@ -10,6 +10,7 @@ import {
   getAvailableAbilities,
   ABILITY_CATALOG_FORMULA,
 } from './ability-core.js';
+import { simpleRoll } from './combat-core.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -636,5 +637,45 @@ describe('ability-core: affiliation on offensive resolvers (M2/M7)', () => {
     const events2 = engine.processAction(makeAction('player', 'bite', ['recruit']));
     expect(events2.some((e) => e.type === 'ability.rejected')).toBe(true);
     expect(engine.store.state.entities.recruit.resources.hp).toBe(20);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-SEED / P8-WL-005 — ability stat checks consume world.meta.seed. Checks
+// were the last seed-blind world-state-affecting stream beside the tactics
+// rolls: resolveChecks hashed (tick, entity id, check key) only, so two fresh
+// runs with different seeds rolled byte-identical check outcomes. Seed 0
+// remains the legacy stream byte-for-byte (the combat-core F-SEED contract).
+// ---------------------------------------------------------------------------
+
+describe('ability-core: stat checks consume the world seed (F-SEED / P8-WL-005)', () => {
+  function checkRoll(seed: number): number {
+    // holy-smite: onFail half-damage — always proceeds to ability.used with a
+    // checks payload, whichever way the roll lands.
+    const player = makeEntity('player', 'player', ['player', 'divine']);
+    const enemy = makeEntity('goblin', 'enemy', ['enemy']);
+    const engine = createTestEngine({
+      modules: [statusCore, createAbilityCore({ abilities: allAbilities })],
+      entities: [player, enemy],
+      zones,
+      seed,
+    });
+    const events = engine.processAction(makeAction('player', 'holy-smite', ['goblin']));
+    const used = events.find((e) => e.type === 'ability.used');
+    expect(used).toBeDefined();
+    const checks = used!.payload.checks as Array<{ roll: number }>;
+    return checks[0].roll;
+  }
+
+  it('the emitted check roll derives from simpleRoll(tick, actor, key, meta.seed) — the seed is consumed', () => {
+    const expected = (seed: number) => {
+      const raw = simpleRoll(0, 'player', 'check:holy-smite:will', seed);
+      return Math.round(((raw - 1) / 99) * 20 + 1); // resolveChecks' 1-20 mapping
+    };
+    // Deterministically located divergence at tick 0: 5 on the legacy stream
+    // (seed 0), 6 under seed 42 — "fresh runs differ" now covers checks too.
+    expect(checkRoll(0)).toBe(expected(0));
+    expect(checkRoll(42)).toBe(expected(42));
+    expect(expected(0)).not.toBe(expected(42));
   });
 });

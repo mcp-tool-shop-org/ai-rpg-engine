@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createTestEngine, nextId } from '@ai-rpg-engine/core';
 import type { EntityState, ActionIntent } from '@ai-rpg-engine/core';
-import { createCombatCore, COMBAT_STATES } from './combat-core.js';
+import { createCombatCore, COMBAT_STATES, simpleRoll } from './combat-core.js';
 import { statusCore, hasStatus, applyStatus } from './status-core.js';
 import { createCombatTactics, getRoundFlags } from './combat-tactics.js';
 import { createEngagementCore, ENGAGEMENT_STATES } from './engagement-core.js';
@@ -833,5 +833,43 @@ describe('round flags: cross-instance isolation', () => {
     // -20), proving engine B never observed engine A's brace.
     const baseChance = Math.min(90, Math.max(10, 45 + 10 * 5));
     expect(resolved!.payload.needed).toBe(baseChance);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-SEED / P8-WL-005 — the tactics rolls consume world.meta.seed. The
+// reposition/outflank/stabilize family was the last seed-blind combat stream:
+// it hashed (tick, ids) only, so two fresh runs with different seeds
+// repositioned byte-identically at the same tick sequence. Seed 0 remains the
+// legacy stream byte-for-byte (the combat-core F-SEED contract), so unseeded
+// callers keep their historical outcomes.
+// ---------------------------------------------------------------------------
+
+describe('tactics rolls — world-seed threading (F-SEED / P8-WL-005)', () => {
+  function repositionRoll(seed: number): number {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCombatTactics()],
+      entities: [makePlayer('a'), makeEntity('orc-1', 'Orc', 'a')],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+      seed,
+    });
+    const events = engine.submitAction('reposition', { targetIds: ['orc-1'] });
+    const resolved = events.find(
+      (e) => e.type === 'combat.reposition.success' || e.type === 'combat.reposition.fail',
+    );
+    expect(resolved).toBeDefined();
+    return resolved!.payload.roll as number;
+  }
+
+  it('the emitted reposition roll IS simpleRoll(tick, actor, "reposition", meta.seed) — the seed is consumed', () => {
+    expect(repositionRoll(0)).toBe(simpleRoll(0, 'player', 'reposition', 0));
+    expect(repositionRoll(42)).toBe(simpleRoll(0, 'player', 'reposition', 42));
+  });
+
+  it('engines identical except for seed diverge in the reposition stream (seed 0 = legacy)', () => {
+    // Deterministically located divergence at tick 0: 44 on the legacy
+    // stream, 78 under seed 42 — "fresh runs differ" now covers this family.
+    expect(repositionRoll(0)).toBe(44);
+    expect(repositionRoll(42)).toBe(78);
   });
 });

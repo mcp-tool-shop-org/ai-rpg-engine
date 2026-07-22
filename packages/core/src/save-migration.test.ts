@@ -342,6 +342,54 @@ describe('eng009 — namespace-init guarantee after Engine.deserialize', () => {
     const reloaded = Engine.deserialize(loaded.serialize(), { modules: [fxV1()] });
     expect(reloaded.store.getModuleState('fx-mod')).toEqual({ format: 'v1', tally: 41 });
   });
+
+  it('eng009-020: FACTORY namespace defaults receive the world they join — empty log at construction, the historical log on a legacy restore (P8-WL-006)', () => {
+    // A cursor-shaped module: its correct default depends on the target
+    // world's eventLog length, which static defaults cannot express. The
+    // factory runs against the CONSTRUCTION world for fresh engines (empty
+    // log → 0) and against the RESTORED world when a save without the
+    // namespace loads (full historical log → its length) — the spawn-burst
+    // class died here.
+    const cursorMod: EngineModule = {
+      id: 'cursor-mod',
+      version: '1.0.0',
+      register(ctx) {
+        ctx.persistence.registerNamespace('cursor-mod', (world: WorldState) => ({
+          cursor: world.eventLog.length,
+        }));
+      },
+    };
+
+    const fresh = new Engine({ manifest: fixtureManifest, seed: 1, modules: [cursorMod] });
+    expect(fresh.store.getModuleState('cursor-mod')).toEqual({ cursor: 0 });
+
+    // FIXTURE_CURRENT carries 3 eventLog entries and no 'cursor-mod'
+    // namespace — the factory must see the restored log, not the throwaway
+    // construction store's empty one.
+    const loaded = Engine.deserialize(FIXTURE_CURRENT, { modules: [fxV2(), cursorMod] });
+    expect(loaded.world.eventLog.length).toBe(3);
+    expect(loaded.store.getModuleState('cursor-mod')).toEqual({ cursor: 3 });
+
+    // Present namespaces stay untouched on the next cycle (factory not re-run).
+    loaded.store.setModuleState('cursor-mod', { cursor: 99 });
+    const again = Engine.deserialize(loaded.serialize(), { modules: [fxV2(), cursorMod] });
+    expect(again.store.getModuleState('cursor-mod')).toEqual({ cursor: 99 });
+  });
+
+  it('eng009-021: getModules exposes the registered list for external seam callers (the CLI restore path)', () => {
+    // restoreSessionFromSave restores into a pack-wired engine and must run
+    // migrateModuleStates + initializeNamespaces itself — it can only reach
+    // the pack's modules through the manager (pack closures own module
+    // construction). Pin the accessor: registration order, live identities.
+    const engine = new Engine({ manifest: fixtureManifest, seed: 1, modules: [fxV1()] });
+    const mods = engine.moduleManager.getModules();
+    expect(mods.map((m) => m.id)).toEqual(['fx-mod']);
+    expect(mods[0].version).toBe('1.0.0');
+    // The returned array is a snapshot — mutating it never alters registration.
+    (mods as EngineModule[]).pop();
+    expect(engine.moduleManager.getModules().map((m) => m.id)).toEqual(['fx-mod']);
+    expect(engine.moduleManager.has('fx-mod')).toBe(true);
+  });
 });
 
 describe('eng009 — migrateModuleStates unit seams + malformed-save guards', () => {
