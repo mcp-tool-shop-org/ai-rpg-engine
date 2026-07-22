@@ -474,6 +474,56 @@ describe('runInspectSave — the load authorities render the verdict', () => {
     expect(report).toContain('  Loadout: weapon: iron_sword (+2 carried)');
   });
 
+  // F-1cb3757f: parity with the pressures/encounters/loadout lines above —
+  // same non-attaching defensive-degrade pattern (readActivePressures),
+  // applied to economy-core's districts and companion-core's party.
+  it('district-economy and party lines surface when present (F-1cb3757f)', () => {
+    const engine = makeEngine();
+    engine.store.state.modules['economy-core'] = {
+      districts: {
+        downtown: { food: { level: 'adequate', trend: 'stable' } },
+        docks: { food: { level: 'scarce', trend: 'falling' } },
+      },
+    };
+    engine.store.state.modules['companion-core'] = {
+      companions: [
+        { npcId: 'ally-1', role: 'fighter', joinedAtTick: 1, abilityTags: [], morale: 80, active: true },
+        { npcId: 'ally-2', role: 'scout', joinedAtTick: 2, abilityTags: [], morale: 60, active: false },
+      ],
+      maxSize: 3,
+      cohesion: 70,
+    };
+    writeSave(engine.serialize());
+
+    const { deps, out } = makeDeps();
+    expect(runInspectSave(undefined, deps)).toBe(0);
+    const report = out.join('\n');
+    // Two districts wired — count, not the pack-not-installed style dump.
+    expect(report).toContain('  District Economies: 2');
+    // Only ally-1 is active — Party Size counts the ACTIVE roster (the
+    // companions actually traveling with the player), not every companion
+    // ever recruited (ally-2 is dismissed/away, per CompanionState.active).
+    expect(report).toContain('  Party Size: 1');
+  });
+
+  it('economy-core wired with zero districts renders 0, not absent (absent-vs-zero)', () => {
+    const engine = makeEngine();
+    engine.store.state.modules['economy-core'] = { districts: {} };
+    writeSave(engine.serialize());
+    const { deps, out } = makeDeps();
+    expect(runInspectSave(undefined, deps)).toBe(0);
+    expect(out.join('\n')).toContain('  District Economies: 0');
+  });
+
+  it('companion-core wired with zero companions renders Party Size: 0, not absent', () => {
+    const engine = makeEngine();
+    engine.store.state.modules['companion-core'] = { companions: [], maxSize: 3, cohesion: 0 };
+    writeSave(engine.serialize());
+    const { deps, out } = makeDeps();
+    expect(runInspectSave(undefined, deps)).toBe(0);
+    expect(out.join('\n')).toContain('  Party Size: 0');
+  });
+
   it('a wired pressure system with nothing brewing renders 0 — absent-vs-zero (hasWorldTickState)', () => {
     const engine = makeEngine();
     engine.store.state.modules['world-tick'] = {
@@ -497,6 +547,9 @@ describe('runInspectSave — the load authorities render the verdict', () => {
     expect(report).not.toContain('Active Pressures:');
     expect(report).not.toContain('Live Encounters:');
     expect(report).not.toContain('Loadout:');
+    // F-1cb3757f: the two new lines degrade silently too, same as above.
+    expect(report).not.toContain('District Economies:');
+    expect(report).not.toContain('Party Size:');
   });
 
   it('inspecting never mutates the save file (read-only authorities)', () => {
