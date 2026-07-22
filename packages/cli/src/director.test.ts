@@ -289,6 +289,32 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
     expect(report).toContain('  Cohesion: 70');
   });
 
+  // F-b595731a: director.ts's own comment used to read "No wiring persists
+  // ... departure risks yet" — the departureRisks argument was always {}.
+  // Morale-derived risk (evaluateDepartureRisk with no breakpoint) now feeds
+  // it for real.
+  it('a low-morale companion now shows a departure risk line (previously always empty)', () => {
+    const world = bareWorld();
+    world.modules['companion-core'] = {
+      companions: [
+        { npcId: 'sable', role: 'diplomat', joinedAtTick: 0, abilityTags: [], morale: 8, active: true },
+      ],
+    };
+    const report = renderDirectorLedger(fakeEngine(world));
+    expect(report).toContain('Departure risk: medium'); // morale <= 10, no breakpoint → 'medium' (evaluateDepartureRisk)
+  });
+
+  it('a healthy-morale companion shows NO departure risk line (risk: none is not rendered as noise)', () => {
+    const world = bareWorld();
+    world.modules['companion-core'] = {
+      companions: [
+        { npcId: 'sable', role: 'diplomat', joinedAtTick: 0, abilityTags: [], morale: 80, active: true },
+      ],
+    };
+    const report = renderDirectorLedger(fakeEngine(world));
+    expect(report).not.toContain('Departure risk');
+  });
+
   it('materials render through formatMaterialsForDirector from the player custom record', () => {
     const world = bareWorld();
     const player = world.entities[world.playerId];

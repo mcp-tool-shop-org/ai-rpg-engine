@@ -68,6 +68,7 @@ import {
   formatPartyForDirector,
   createPartyState,
   computePartyCohesion,
+  evaluateDepartureRisk,
   type PartyState,
   type CompanionState,
   // materials
@@ -326,29 +327,34 @@ export function renderDirectorLedger(engine: Pick<Engine, 'world'>): string {
     {
       name: 'PARTY',
       body: () => {
-        const compNs = namespace<{ party: unknown; companions: unknown }>(
-          world,
-          'companion-core',
-        );
-        let party: PartyState | null = null;
-        const persisted = compNs?.party;
-        if (
-          persisted &&
-          typeof persisted === 'object' &&
-          Array.isArray((persisted as PartyState).companions)
-        ) {
-          party = persisted as PartyState;
-        } else {
-          const companions = objectArray<CompanionState>(compNs?.companions);
-          if (companions.length > 0) {
-            party = { ...createPartyState(), companions };
-            party.cohesion = computePartyCohesion(party);
-          }
+        // F-834d0485: companion-core persists world.modules['companion-core']
+        // flat — PartyState's own { companions, maxSize, cohesion } fields at
+        // the namespace TOP, no `party:` wrapper (the shape director.test.ts
+        // and endgame.test.ts already construct and assert against). The
+        // speculative `party:`-wrapper branch this used to check FIRST was
+        // dead code for a shape nothing ever produced — removed rather than
+        // carried forward. maxSize/cohesion fall back to createPartyState()'s
+        // defaults only when genuinely absent (a pre-wiring save); a live
+        // companion-core namespace always carries both.
+        const compNs = namespace<PartyState>(world, 'companion-core');
+        const companions = objectArray<CompanionState>(compNs?.companions);
+        if (companions.length === 0) return null;
+        const party: PartyState = {
+          companions,
+          maxSize: typeof compNs?.maxSize === 'number' ? compNs.maxSize : createPartyState().maxSize,
+          cohesion: typeof compNs?.cohesion === 'number' ? compNs.cohesion : computePartyCohesion({ ...createPartyState(), companions }),
+        };
+        // NPC profiles still have no production writer (npc-agency's
+        // relationship ledger is never persisted). Departure risk (F-b595731a)
+        // now derives from morale alone (evaluateDepartureRisk with no
+        // breakpoint) — real signal, just never 'high' (that band requires a
+        // hostile/wavering breakpoint nothing supplies yet).
+        const departureRisks: Record<string, { risk: string; reason?: string }> = {};
+        for (const companion of companions) {
+          const assessment = evaluateDepartureRisk(companion);
+          if (assessment.risk !== 'none') departureRisks[companion.npcId] = assessment;
         }
-        if (!party || party.companions.length === 0) return null;
-        // No wiring persists NPC profiles or departure risks yet — the
-        // formatter renders honestly from the companion records alone.
-        return formatPartyForDirector(party, [], {});
+        return formatPartyForDirector(party, [], departureRisks);
       },
     },
     {

@@ -13,6 +13,8 @@ import {
 } from './npc-agency.js';
 import type { NpcObligationLedger } from './npc-agency.js';
 import { makePressure, type WorldPressure } from './pressure-system.js';
+import { createCompanionCore, syncCompanionCustomFields } from './companion-core.js';
+import { statusCore } from './status-core.js';
 
 const makePlayer = (zoneId: string): EntityState => ({
   id: 'player',
@@ -128,6 +130,78 @@ describe('npc-agency breakpoint gating (MW-4)', () => {
       (g) => g.verb === 'accuse' || g.verb === 'betray' || g.verb === 'flee',
     );
     expect(forbidden).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-2fe4be26 completeness — deriveCompanionGoals reads role/morale from
+// entity.custom DIRECTLY (its own comment: "read from custom field set by
+// product layer"), not from the 'companion' tag or party state. The tag
+// write alone gates the OUTER check (the test above proves that), but
+// protect/abandon's own priority and firing condition need REAL data —
+// otherwise they'd silently run on deriveCompanionGoals' own `?? 'fighter'`
+// / `?? 50` fallback defaults regardless of who was actually recruited or
+// how their morale is doing. companion-core.ts's recruit verb (and
+// world-tick.ts's companion-reactions wiring, on every morale change) keep
+// this mirror in sync via syncCompanionCustomFields.
+// ---------------------------------------------------------------------------
+
+describe('companion-core recruit verb feeds npc-agency real data (F-2fe4be26)', () => {
+  it('a recruited fighter gets a protect goal when the player is critically hurt — role comes from the REAL recruit, not a fallback', () => {
+    const engine = createTestEngine({
+      modules: [createCognitionCore(), createFactionCognition({ factions: [] }), statusCore, createCompanionCore()],
+      entities: [
+        makePlayer('hall'), // vigor 5, no maxHp — deriveCompanionGoals falls back to stats.vigor
+        makeNamedNpc('mira', 'Mira', 'hall', { tags: ['npc', 'recruitable', 'fighter'] }),
+      ],
+      zones: [{ id: 'hall', roomId: 'keep', name: 'Great Hall', tags: [], neighbors: [] }],
+    });
+    engine.submitAction('recruit', { targetIds: ['mira'] });
+    expect(engine.world.entities.mira.custom?.companionRole).toBe('fighter'); // the sync, not a default
+
+    engine.world.entities.player.resources.hp = 1; // 1/5 vigor-fallback maxHp = 0.2 < 0.3 threshold
+    const profile = buildNpcProfile(engine.world, 'mira', 'player', []);
+    expect(profile.goals.some((g) => g.verb === 'protect')).toBe(true);
+  });
+
+  it('a fighter with full player HP does NOT get a protect goal (the condition is live, not always-on)', () => {
+    const engine = createTestEngine({
+      modules: [createCognitionCore(), createFactionCognition({ factions: [] }), statusCore, createCompanionCore()],
+      entities: [makePlayer('hall'), makeNamedNpc('mira', 'Mira', 'hall', { tags: ['npc', 'recruitable', 'fighter'] })],
+      zones: [{ id: 'hall', roomId: 'keep', name: 'Great Hall', tags: [], neighbors: [] }],
+    });
+    engine.submitAction('recruit', { targetIds: ['mira'] });
+    const profile = buildNpcProfile(engine.world, 'mira', 'player', []);
+    expect(profile.goals.some((g) => g.verb === 'protect')).toBe(false);
+  });
+
+  it('a recruit\'s morale reflects the REAL value (60, recruitHandler\'s starting morale) — not deriveCompanionGoals\' own 50 default', () => {
+    const engine = createTestEngine({
+      modules: [createCognitionCore(), createFactionCognition({ factions: [] }), statusCore, createCompanionCore()],
+      entities: [makePlayer('hall'), makeNamedNpc('mira', 'Mira', 'hall', { tags: ['npc', 'recruitable', 'fighter'] })],
+      zones: [{ id: 'hall', roomId: 'keep', name: 'Great Hall', tags: [], neighbors: [] }],
+    });
+    engine.submitAction('recruit', { targetIds: ['mira'] });
+    expect(engine.world.entities.mira.custom?.companionMorale).toBe(60);
+    // 60 is well above the abandon threshold (< 20) — no abandon goal yet.
+    const profile = buildNpcProfile(engine.world, 'mira', 'player', []);
+    expect(profile.goals.some((g) => g.verb === 'abandon')).toBe(false);
+  });
+
+  it('a companion whose morale is synced low (companion-reactions wiring) gets an abandon goal at the correct priority band', () => {
+    const engine = createTestEngine({
+      modules: [createCognitionCore(), createFactionCognition({ factions: [] }), statusCore, createCompanionCore()],
+      entities: [makePlayer('hall'), makeNamedNpc('mira', 'Mira', 'hall', { tags: ['npc', 'recruitable', 'fighter'] })],
+      zones: [{ id: 'hall', roomId: 'keep', name: 'Great Hall', tags: [], neighbors: [] }],
+    });
+    engine.submitAction('recruit', { targetIds: ['mira'] });
+
+    // Simulates world-tick.ts's companion-reactions sync after a bad round.
+    syncCompanionCustomFields(engine.world.entities.mira, 'fighter', 8);
+    const profile = buildNpcProfile(engine.world, 'mira', 'player', []);
+    const abandon = profile.goals.find((g) => g.verb === 'abandon');
+    expect(abandon).toBeDefined();
+    expect(abandon?.priority).toBe(0.95); // morale < 10 band
   });
 });
 

@@ -96,8 +96,11 @@ function objectArray<T>(value: unknown): T[] {
  *                      the single pressure source of truth — the old
  *                      'pressure-system' namespace had no production writer,
  *                      so this axis was permanently empty in real play)
- *  - companions      — world.modules['companion-core'] when a wiring persists a
- *                      party; no starter does yet → empty
+ *  - companions      — world.modules['companion-core'], flat (F-834d0485: no
+ *                      `party:` wrapper — director.ts reads the identical
+ *                      shape). companion-core's recruit verb (F-7d5c3e28) is
+ *                      now the production writer; a world with no recruits
+ *                      still reads as empty, same as before
  *  - economies       — world.modules['economy-core'] when a wiring persists
  *                      district economies; no starter does yet → empty
  *  - playerLevel     — derived from progression-core unlocks (the HUD's own
@@ -179,9 +182,9 @@ export function buildEndgameInputs(world: WorldState): EndgameInputs {
   const activePressures = getActivePressures(world);
   const resolvedPressures = getResolvedPressures(world);
 
-  // Companions: companion-core keeps no world.modules state in any starter yet;
-  // read its namespace (PartyState's `companions`) so a future wiring is picked
-  // up, else empty.
+  // Companions: companion-core persists world.modules['companion-core'] =
+  // PartyState, flat (F-834d0485/F-7d5c3e28) — read its `companions` array
+  // directly. A world with no recruits still reads as empty.
   const companionNs = world.modules['companion-core'] as { companions?: unknown } | undefined;
   const companions = objectArray<CompanionState>(companionNs?.companions);
 

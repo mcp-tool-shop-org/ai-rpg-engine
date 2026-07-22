@@ -6,6 +6,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createGame, combatMasteryTree } from '@ai-rpg-engine/starter-fantasy';
 import { addCurrency, getCurrency, ABILITY_CATALOG_FORMULA } from '@ai-rpg-engine/modules';
 import { buildActionList, renderFullScreen, SCREEN_WIDTH } from '@ai-rpg-engine/terminal-ui';
+import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
 import {
   buildAbilityActions,
   buildUnlockActions,
@@ -72,6 +73,48 @@ describe('buildAbilityActions (F1d)', () => {
     const engine = createGame(42); // no divine tag
     const actions = buildAbilityActions(engine.world, getAbilityCatalog(engine));
     expect(actions).toEqual([]);
+  });
+
+  // F-2fe4be26 — menuTargetable's ally branch: "offensive entries only
+  // against enemy/hostile-tagged targets, support entries only for
+  // self/ally/companion". Before this wave nothing ever wrote the
+  // 'companion' tag, so a support ability could never list a party member —
+  // starter-fantasy's own support abilities (Purify/Divine Light) are
+  // self-only and never exercise this branch, so a small ally-targeted
+  // ability proves the READ side directly (buildAbilityActions takes any
+  // catalog, not just the pack's own).
+  it('a recruited companion becomes a valid target for an ally-affiliated support ability (menuTargetable)', () => {
+    const engine = createGame(42); // sister-maren starts in the player's own zone (chapel-entrance)
+    const recruited = engine.submitAction('recruit', { targetIds: ['sister-maren'] });
+    expect(recruited.some((e) => e.type === 'companion.recruited')).toBe(true);
+
+    const healAlly: AbilityDefinition = {
+      id: 'test-mend',
+      name: 'Mend',
+      verb: 'use-ability',
+      tags: ['support', 'heal'],
+      costs: [],
+      target: { type: 'single', affiliation: 'ally' },
+      effects: [{ type: 'heal', target: 'target', params: { amount: 3 } }],
+    };
+    const actions = buildAbilityActions(engine.world, [healAlly]);
+    const labels = actions.map((a) => a.label);
+    expect(labels).toContain('Mend → Sister Maren');
+  });
+
+  it('an UNrecruited friendly NPC is NOT offered as an ally-targeted support target (mere presence in the zone is not enough — recruiting is)', () => {
+    const engine = createGame(42); // sister-maren present but never recruited
+    const healAlly: AbilityDefinition = {
+      id: 'test-mend',
+      name: 'Mend',
+      verb: 'use-ability',
+      tags: ['support', 'heal'],
+      costs: [],
+      target: { type: 'single', affiliation: 'ally' },
+      effects: [{ type: 'heal', target: 'target', params: { amount: 3 } }],
+    };
+    const actions = buildAbilityActions(engine.world, [healAlly]);
+    expect(actions.map((a) => a.label)).not.toContain('Mend → Sister Maren');
   });
 
   it('selecting an ability entry submits use-ability with the right abilityId — and it EXECUTES', () => {

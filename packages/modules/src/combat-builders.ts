@@ -13,6 +13,7 @@ import type { CombatRecoveryConfig } from './combat-recovery.js';
 import { DEFAULT_STAT_MAPPING, resolveEntityMapping } from './combat-core.js';
 import { createCombatCore } from './combat-core.js';
 import { effectiveStat } from './status-effects.js';
+import { COMPANION_TAG } from './companion-core.js';
 import { createCombatReview } from './combat-review.js';
 import { createEngagementCore, withEngagement } from './engagement-core.js';
 import { createCombatTactics, type CombatTacticsConfig } from './combat-tactics.js';
@@ -74,6 +75,18 @@ export function buildCombatFormulas(mapping: CombatStatMapping): CombatFormulas 
       const res = effectiveStat(actor, m.resolve, world, 3);
       return Math.min(90, Math.max(15, 40 + prec * 5 + res * 2));
     },
+    // F-64580086: combat-core.ts's interception mechanic (isAlly/
+    // interceptChance/INTERCEPT_ROLE_BONUS) was fully authored and tested but
+    // 100% dark in every shipped starter — buildCombatFormulas never set
+    // isAlly, so `if (formulas?.isAlly && shouldCheck)` never entered.
+    // companion-core.ts's recruit verb tags a recruit 'companion' (F-2fe4be26);
+    // this is the read side. PASSIVE interception only — shouldIntercept
+    // still defaults to player-only, so this does not give companions
+    // independent turns (that would mean teaching combat-intent.ts's
+    // turn-order/decision system that non-player entities can act
+    // autonomously on the player's side — a materially larger v2.9+ change,
+    // deliberately untouched here).
+    isAlly: (id, world) => world.entities[id]?.tags.includes(COMPANION_TAG) ?? false,
   };
 }
 

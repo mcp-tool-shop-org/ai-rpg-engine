@@ -279,6 +279,8 @@ export {
   DISTRICT_STABILITY_BASE,
   CHAIN_TURNS_REMAINING,
   RESOLVED_PRESSURES_KEPT,
+  // F-b595731a: companion reactions wired into the round
+  applyCompanionReactions,
 } from './world-tick.js';
 export type {
   WorldTickState,
@@ -399,6 +401,19 @@ export {
   formatPartyForDirector,
   formatPartyStatusLine,
   formatPartyPresence,
+  // v2.8 write-wire (F-7d5c3e28/F-834d0485/F-cf1ddc9f/F-2fe4be26/F-66cd1cd0)
+  COMPANION_TAG,
+  companionRoleTag,
+  deriveCompanionRole,
+  removeCompanionTags,
+  getPartyState,
+  setPartyState,
+  syncCompanionCustomFields,
+  COMPANION_HP_RECOVERY_STATUS,
+  COMPANION_HP_RECOVERY_PERIOD_TICKS,
+  refreshCompanionAbilityStatus,
+  createCompanionCore,
+  companionCore,
 } from './companion-core.js';
 export type {
   CompanionRole,

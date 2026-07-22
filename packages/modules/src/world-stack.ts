@@ -47,6 +47,15 @@
 //     waiting: director.ts's MARKET OVERVIEW ledger + FACTIONS' economy-driven
 //     goal scoring, endgame.ts's merchant-prince arc/collapse triggers, and
 //     the 4 economy-driven pressure kinds in pressure-system.ts.
+//   - companion-core (F-7d5c3e28) joins the stack the same way, same
+//     reasoning: ALWAYS included, needs no config (it registers the
+//     `recruit` verb and the flat-PartyState namespace — see companion-core.ts's
+//     own header). The write-wire for director.ts's PARTY ledger section,
+//     endgame.ts's companion arc axis, finale's COMPANIONS block,
+//     terminal-ui's ally coloring, menu.ts's support-ability targeting,
+//     npc-agency's companion goals, and combat-core's interception +
+//     INTERCEPT_ROLE_BONUS — all already built, all previously dark for lack
+//     of a recruit verb.
 
 import type { EngineModule } from '@ai-rpg-engine/core';
 import { createEnvironmentCore } from './environment-core.js';
@@ -69,6 +78,7 @@ import { createQuestCore } from './quest-core.js';
 import type { QuestCoreConfig } from './quest-core.js';
 import { createEconomyCore } from './economy-core.js';
 import { createTradeCore } from './trade-core.js';
+import { createCompanionCore } from './companion-core.js';
 
 // ---------------------------------------------------------------------------
 // buildWorldStack — eliminates the strategic-tier hand-list
@@ -158,9 +168,9 @@ export type WorldStack = {
  *
  * Default composition (always included, in wiring order): environment-core,
  * faction-cognition, rumor-propagation, district-core, economy-core,
- * trade-core, belief-provenance, observer-presentation, defeat-fallout,
- * world-tick. Presence-optional: encounter-spawn (included when
- * `encounterSpawn` is passed), quests (included when `quests` is passed).
+ * trade-core, companion-core, belief-provenance, observer-presentation,
+ * defeat-fallout, world-tick. Presence-optional: encounter-spawn (included
+ * when `encounterSpawn` is passed), quests (included when `quests` is passed).
  *
  * Usage:
  * ```
@@ -198,6 +208,9 @@ export function buildWorldStack(config: WorldStackConfig = {}): WorldStack {
     // district-core received — see the file-header contract entry above.
     createEconomyCore({ districts: config.districts ?? [] }),
     createTradeCore(),
+    // F-7d5c3e28: always included, no config — see the file-header contract
+    // entry above.
+    createCompanionCore(),
     createBeliefProvenance(),
     createObserverPresentation({ rules: config.presentationRules ?? [] }),
     // The one roster serves both: defeat-fallout reads factionId + entityIds

@@ -438,6 +438,38 @@ describe('renderSessionEnd + journalFromEventLog (F1b) — the end screen', () =
     expect(screen).toContain('Advancements Unlocked:');
   });
 
+  // F-2fe4be26 — the DISCIPLINE section's own worked example: "tagging
+  // activates a consumer (e.g. finale COMPANIONS renders)". End-to-end
+  // through the REAL starter-fantasy game (createGame — now wired with
+  // companion-core via buildWorldStack, F-7d5c3e28) and the real 'recruit'
+  // verb: recruit → tags 'companion' → endgame.ts's FinaleNpcInput.isCompanion
+  // → campaign-memory's finale.ts COMPANIONS block. RED-PROOF: before this
+  // wave, nothing ever wrote the 'companion' tag, so this block never
+  // rendered for any NPC in any played session.
+  it('recruiting through the real verb makes the companion appear in the finale\'s COMPANIONS block', () => {
+    const engine = makeGame();
+    // Brother Aldric ('brother-aldric') starts in chapel-nave; move there first.
+    engine.submitAction('move', { targetIds: ['chapel-nave'] });
+    const recruited = engine.submitAction('recruit', { targetIds: ['brother-aldric'] });
+    expect(recruited.some((e) => e.type === 'companion.recruited')).toBe(true);
+    expect(engine.world.entities['brother-aldric'].tags).toContain('companion');
+
+    engine.store.state.entities['player'].resources.hp = 0; // end the session
+    const end = evaluateSessionEnd(engine)!;
+    const screen = renderSessionEnd(end, engine.world);
+
+    expect(screen).toContain('COMPANIONS');
+    expect(screen).toContain('Brother Aldric');
+  });
+
+  it('an NPC who was never recruited does NOT appear in the COMPANIONS block, even if otherwise alive and well', () => {
+    const engine = makeGame();
+    engine.store.state.entities['player'].resources.hp = 0;
+    const end = evaluateSessionEnd(engine)!;
+    const screen = renderSessionEnd(end, engine.world);
+    expect(screen).not.toContain('COMPANIONS');
+  });
+
   it('journalFromEventLog records kills, first-visit discoveries, and unlocks with bounded duplicates', () => {
     const engine = makeGame();
     engine.submitAction('move', { targetIds: ['chapel-nave'] });
