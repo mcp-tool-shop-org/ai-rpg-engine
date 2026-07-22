@@ -1,7 +1,7 @@
 // Black Flag Requiem — content definitions
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
+import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition, QuestDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
@@ -34,9 +34,15 @@ export const player: EntityState = {
   name: 'Captain',
   tags: ['player', 'pirate', 'captain'],
   stats: { brawn: 5, cunning: 6, 'sea-legs': 5 },
-  resources: { hp: 20, maxHp: 20, stamina: 5, morale: 15 },
+  // F-92c78519: a small starting coin purse — trade-core's `sell`/`buy`
+  // verbs (always registered via buildWorldStack) read/write this resource
+  // directly; without a seed the captain starts a working economy at 0.
+  resources: { hp: 20, maxHp: 20, stamina: 5, morale: 15, coin: 30 },
   statuses: [],
-  inventory: [],
+  // F-86b9145d: the armory issues the corsair's cutlass to the authored
+  // player too, so the equip loop is reachable without character creation
+  // (created corsair characters carry it via the archetype's startingInventory).
+  inventory: ['cutlass'],
   zoneId: 'ship-deck',
 };
 
@@ -47,11 +53,22 @@ export const quartermaster: EntityState = {
   blueprintId: 'quartermaster',
   type: 'npc',
   name: 'Quartermaster Bly',
-  tags: ['npc', 'pirate', 'crew', 'male'],
+  // F-a56f7e5d: recruitable + a bare CompanionRole tag ('fighter') — the
+  // vocabulary companion-core's deriveCompanionRole/recruit verb already read.
+  tags: ['npc', 'pirate', 'crew', 'male', 'recruitable', 'fighter'],
   stats: { brawn: 4, cunning: 5, 'sea-legs': 6 },
-  resources: { hp: 16, stamina: 4, morale: 12 },
+  // maxHp/maxStamina (F-4b9c5aee): a recruitable companion needs the same
+  // resources shape enemies carry — entityHpRatio/regen both read the max
+  // fields, and without them the entity always reads as full HP regardless
+  // of true damage taken.
+  resources: { hp: 16, maxHp: 16, stamina: 4, maxStamina: 4, morale: 12 },
   statuses: [],
   zoneId: 'ship-deck',
+  custom: {
+    companionRole: 'fighter',
+    companionAbilities: 'boarding-assault,crew-discipline',
+    personalGoal: 'Earn enough plunder to captain his own ship',
+  },
 };
 
 export const cartographer: EntityState = {
@@ -59,11 +76,19 @@ export const cartographer: EntityState = {
   blueprintId: 'cartographer',
   type: 'npc',
   name: 'Mara the Cartographer',
-  tags: ['npc', 'neutral', 'knowledge', 'female'],
+  // F-a56f7e5d: recruitable + a bare CompanionRole tag ('scout') — her charts
+  // and shrine lore are exactly a scout's stock in trade.
+  tags: ['npc', 'neutral', 'knowledge', 'female', 'recruitable', 'scout'],
   stats: { brawn: 2, cunning: 7, 'sea-legs': 4 },
-  resources: { hp: 8, stamina: 2, morale: 10 },
+  // maxHp/maxStamina (F-4b9c5aee) — see Quartermaster Bly's comment above.
+  resources: { hp: 8, maxHp: 8, stamina: 2, maxStamina: 2, morale: 10 },
   statuses: [],
   zoneId: 'port-tavern',
+  custom: {
+    companionRole: 'scout',
+    companionAbilities: 'reef-navigation,shrine-lore',
+    personalGoal: 'Chart the Sunken Shrine before the Navy does',
+  },
 };
 
 export const governor: EntityState = {
@@ -328,6 +353,94 @@ export const cartographerDialogue: DialogueDefinition = {
     },
   },
 };
+
+// --- Quests (F-ENG005-quest-loop-min / F-c07d6024) ---
+//
+// Two authored QuestDefinitions — the explicit reason to leave port. Wired
+// via buildWorldStack's `quests` config in setup.ts; quest-core validates at
+// construction (fail loud) and drives offer -> track -> complete -> reward
+// off the live event stream. Both are completable inside a normal session
+// with the shipped world alone: the notice board points to open water, navy
+// patrols spawn there and at the governor's fort, and the drowned guardian
+// stands fixed watch over the sunken shrine.
+
+export const chartTheOpenWaterQuest: QuestDefinition = {
+  id: 'chart-the-open-water',
+  name: 'Chart the Open Water',
+  // Offered the moment the captain steps into the tavern — the notice board
+  // is the first hint there is more to this port than rum.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'port-tavern' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'reach-open-water',
+      name: 'Reach Open Water',
+      description: 'The notice board points past the harbor mouth',
+      objectives: ['Reach Open Water'],
+      triggers: [
+        {
+          event: 'world.zone.entered',
+          condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'open-water' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+      nextStage: 'break-the-patrol',
+    },
+    {
+      id: 'break-the-patrol',
+      name: 'Break the Patrol',
+      description: 'Navy colors on the horizon — they will not let a pirate sail quietly',
+      objectives: ['Defeat one colonial patroller'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-entity-has-tag', params: { tag: 'colonial' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [{ type: 'xp', params: { amount: 20 } }],
+};
+
+export const sunkenShrineQuest: QuestDefinition = {
+  id: 'the-sunken-shrine',
+  name: 'The Sunken Shrine',
+  // Offered on setting foot in the shrine itself — the guardian's ground.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'sunken-shrine' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'slay-the-guardian',
+      name: 'Slay the Guardian',
+      description: 'The Drowned Guardian stands between you and the treasure',
+      objectives: ['Destroy the Drowned Guardian'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-equals', params: { key: 'entityId', value: 'drowned_guardian' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [
+    { type: 'xp', params: { amount: 30 } },
+    { type: 'item', params: { itemId: 'kraken-tooth' } },
+  ],
+};
+
+export const pirateQuests: QuestDefinition[] = [chartTheOpenWaterQuest, sunkenShrineQuest];
 
 // --- Districts ---
 
@@ -610,6 +723,10 @@ export const buildCatalog: BuildCatalog = {
       // 'pirate' is the pack-identity tag every ability requirement gates on
       // (T0-tag-gate: a created character without it hides gated abilities).
       startingTags: ['pirate', 'raider', 'corsair'],
+      // F-86b9145d: cutlass carries no requiredTags (any archetype could
+      // equip it), but the boarding specialist is the one who canonically
+      // starts with it in hand.
+      startingInventory: ['cutlass'],
       progressionTreeId: 'seamanship',
     },
     {

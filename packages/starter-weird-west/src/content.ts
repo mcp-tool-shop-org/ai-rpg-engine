@@ -1,7 +1,7 @@
 // Dust Devil's Bargain — content definitions
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
+import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition, QuestDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
@@ -34,9 +34,15 @@ export const player: EntityState = {
   name: 'The Drifter',
   tags: ['player', 'human', 'drifter', 'gunslinger'],
   stats: { grit: 5, 'draw-speed': 6, lore: 4 },
-  resources: { hp: 18, maxHp: 18, stamina: 5, resolve: 15, dust: 0 },
+  // F-92c78519: a small starting coin purse — trade-core's `sell`/`buy`
+  // verbs (always registered via buildWorldStack) read/write this resource
+  // directly; without a seed the drifter starts a working economy at 0.
+  resources: { hp: 18, maxHp: 18, stamina: 5, resolve: 15, dust: 0, coin: 25 },
   statuses: [],
-  inventory: [],
+  // F-86b9145d: the gunslinger's six-shooter reaches the authored player
+  // too, so the equip loop is reachable without character creation (created
+  // gunslinger characters carry it via the archetype's startingInventory).
+  inventory: ['six-shooter'],
   zoneId: 'crossroads',
 };
 
@@ -47,11 +53,22 @@ export const bartender: EntityState = {
   blueprintId: 'bartender',
   type: 'npc',
   name: 'Silas',
-  tags: ['npc', 'townsfolk', 'informant', 'male'],
+  // F-a56f7e5d: recruitable + a bare CompanionRole tag ('scout') — the
+  // town's informant is exactly a scout's stock in trade.
+  tags: ['npc', 'townsfolk', 'informant', 'male', 'recruitable', 'scout'],
   stats: { grit: 3, 'draw-speed': 2, lore: 5 },
-  resources: { hp: 10, stamina: 2, resolve: 12, dust: 0 },
+  // maxHp/maxStamina (F-4b9c5aee): a recruitable companion needs the same
+  // resources shape enemies carry — entityHpRatio/regen both read the max
+  // fields, and without them the entity always reads as full HP regardless
+  // of true damage taken.
+  resources: { hp: 10, maxHp: 10, stamina: 2, maxStamina: 2, resolve: 12, dust: 0 },
   statuses: [],
   zoneId: 'saloon',
+  custom: {
+    companionRole: 'scout',
+    companionAbilities: 'town-intel,trail-warning',
+    personalGoal: 'Learn what really happened to the vanished townsfolk',
+  },
 };
 
 export const sheriff: EntityState = {
@@ -59,11 +76,18 @@ export const sheriff: EntityState = {
   blueprintId: 'sheriff',
   type: 'npc',
   name: 'Sheriff Hale',
-  tags: ['npc', 'law', 'secretive', 'male'],
+  // F-a56f7e5d: recruitable + a bare CompanionRole tag ('fighter').
+  tags: ['npc', 'law', 'secretive', 'male', 'recruitable', 'fighter'],
   stats: { grit: 6, 'draw-speed': 5, lore: 3 },
-  resources: { hp: 16, stamina: 4, resolve: 14, dust: 0 },
+  // maxHp/maxStamina (F-4b9c5aee) — see Silas's comment above.
+  resources: { hp: 16, maxHp: 16, stamina: 4, maxStamina: 4, resolve: 14, dust: 0 },
   statuses: [],
   zoneId: 'sheriffs-office',
+  custom: {
+    companionRole: 'fighter',
+    companionAbilities: 'lawman-backup,duel-cover',
+    personalGoal: 'Atone for whatever he did out at the mesa',
+  },
 };
 
 // --- Enemies ---
@@ -317,6 +341,93 @@ export const bartenderDialogue: DialogueDefinition = {
     },
   },
 };
+
+// --- Quests (F-ENG005-quest-loop-min / F-c07d6024) ---
+//
+// Two authored QuestDefinitions — the explicit reason to ride out. Wired via
+// buildWorldStack's `quests` config in setup.ts; quest-core validates at
+// construction (fail loud) and drives offer -> track -> complete -> reward
+// off the live event stream. Both are completable inside a normal session
+// with the shipped world alone: bandit riders patrol the trail, crossroads,
+// and saloon, and the mesa crawler stands fixed watch over the hollow.
+
+export const rideTheMesaTrailQuest: QuestDefinition = {
+  id: 'ride-the-mesa-trail',
+  name: 'Ride the Mesa Trail',
+  // Offered the moment the drifter steps into the saloon — the first place
+  // in town where the talk turns to the mesa.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'saloon' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'reach-the-mesa-trail',
+      name: 'Reach the Mesa Trail',
+      description: 'The talk in the saloon points out past the crossroads',
+      objectives: ['Reach Red Mesa Trail'],
+      triggers: [
+        {
+          event: 'world.zone.entered',
+          condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'red-mesa-trail' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+      nextStage: 'clear-the-riders',
+    },
+    {
+      id: 'clear-the-riders',
+      name: 'Clear the Riders',
+      description: 'Bandit riders dog every step down this trail',
+      objectives: ['Defeat one bandit rider'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-entity-has-tag', params: { tag: 'outlaw' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [{ type: 'xp', params: { amount: 20 } }],
+};
+
+export const banishTheCrawlerQuest: QuestDefinition = {
+  id: 'banish-the-crawler',
+  name: 'Banish the Crawler',
+  // Offered on setting foot in the hollow itself — the crawler's ground.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'spirit-hollow' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'destroy-the-crawler',
+      name: 'Destroy the Crawler',
+      description: 'The Mesa Crawler stands between you and the ley line beneath the hollow',
+      objectives: ['Destroy the Mesa Crawler'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-equals', params: { key: 'entityId', value: 'mesa_crawler' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [
+    { type: 'xp', params: { amount: 30 } },
+    { type: 'item', params: { itemId: 'rattlesnake-fang' } },
+  ],
+};
+
+export const weirdWestQuests: QuestDefinition[] = [rideTheMesaTrailQuest, banishTheCrawlerQuest];
 
 // --- Districts ---
 
@@ -577,6 +688,10 @@ export const buildCatalog: BuildCatalog = {
       // keeps its 'supernatural' gate, grantable two ways: the spirit-walker
       // archetype carries it natively, and the Spirit-Touched trait grants it.
       startingTags: ['gunslinger', 'quick-draw'],
+      // F-86b9145d: six-shooter carries no requiredTags (any archetype could
+      // equip it), but the fastest hand in the territory is who canonically
+      // starts with it drawn.
+      startingInventory: ['six-shooter'],
       progressionTreeId: 'gunslinger',
     },
     {
