@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { createTestEngine } from '@ai-rpg-engine/core';
+import type { EntityState, ZoneState } from '@ai-rpg-engine/core';
 import {
   getAvailableRecipes,
   getRecipeById,
@@ -9,9 +11,12 @@ import {
   resolveModify,
   formatRecipeForDirector,
   formatAvailableRecipesForDirector,
+  createCraftingCore,
 } from './crafting-recipes.js';
 import { getMaterialInventory } from './crafting-core.js';
-import { createDistrictEconomy } from './economy-core.js';
+import { createDistrictEconomy, createEconomyCore, getSupplyLevel, type EconomyCoreState } from './economy-core.js';
+import { createEnvironmentCore } from './environment-core.js';
+import { createDistrictCore } from './district-core.js';
 import type { ItemDefinition } from '@ai-rpg-engine/equipment';
 import type { CraftingContext } from './crafting-recipes.js';
 
@@ -259,6 +264,236 @@ describe('crafting-recipes', () => {
       expect(output).toContain('Craft:');
       expect(output).toContain('Repair:');
       expect(output).toContain('Modify:');
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Module (F-6631dd57) — the salvage/craft/repair/modify write-wire. Before
+// this module, salvageItem/resolveCraft/resolveRepair/resolveModify (above)
+// and crafting-core.ts's material-inventory API had ZERO production callers
+// — no played session ever invoked these verbs (they didn't exist), so
+// director.ts's MATERIALS section read a permanently-empty
+// getMaterialInventory({}). These tests pin: the verbs are genuinely absent
+// without the module (RED); salvage moves a carried item into materials and
+// applies the matching EconomyShift; craft consumes materials and produces
+// the recipe's own item; and rejection paths never mutate state.
+// ---------------------------------------------------------------------------
+
+const craftingZones: ZoneState[] = [{ id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbors: [] }];
+const craftingDistricts = [{ id: 'district-1', name: 'Workshop District', zoneIds: ['zone-a'], tags: [] }];
+
+const makeCraftingPlayer = (
+  inventory: string[] = [],
+  custom: Record<string, string | number | boolean> = {},
+): EntityState => ({
+  id: 'player',
+  blueprintId: 'player',
+  type: 'player',
+  name: 'Hero',
+  tags: ['player'],
+  stats: {},
+  resources: { hp: 20 },
+  statuses: [],
+  zoneId: 'zone-a',
+  inventory,
+  custom,
+});
+
+/** District-1 has NO controllingFaction, so reputation/heat stay neutral (0) — isolates materials/economy as the only observable effects. */
+function makeCraftingEngine(inventory: string[] = [], custom: Record<string, string | number | boolean> = {}, genre?: string) {
+  return createTestEngine({
+    modules: [
+      createEnvironmentCore(),
+      createDistrictCore({ districts: craftingDistricts }),
+      createEconomyCore({ districts: craftingDistricts.map((d) => ({ id: d.id, tags: d.tags })) }),
+      createCraftingCore(genre !== undefined ? { genre } : {}),
+    ],
+    entities: [makeCraftingPlayer(inventory, custom)],
+    zones: craftingZones,
+  });
+}
+
+describe('crafting-core module (F-6631dd57) — the salvage/craft/repair/modify write-wire', () => {
+  it('salvage/craft/repair/modify are unknown verbs without createCraftingCore registered (RED without the module)', () => {
+    const engine = createTestEngine({
+      modules: [
+        createEnvironmentCore(),
+        createDistrictCore({ districts: craftingDistricts }),
+        createEconomyCore({ districts: craftingDistricts.map((d) => ({ id: d.id, tags: d.tags })) }),
+        // createCraftingCore() intentionally NOT registered — the exact
+        // pre-fix condition every played session was stuck in.
+      ],
+      entities: [makeCraftingPlayer(['iron-sword'], { 'materials.medicine': 5 })],
+      zones: craftingZones,
+    });
+
+    const successTypes = ['item.salvaged', 'item.crafted', 'item.repaired', 'item.modified'];
+    for (const verb of ['salvage', 'craft', 'repair', 'modify']) {
+      // ActionDispatcher.dispatch's unknown-verb branch emits 'action.rejected'
+      // through the event bus but returns [] from dispatch/submitAction (same
+      // contract trade-core.test.ts's own "RED without createTradeCore"
+      // pins against) — so the observable proof here is drainEvents (which
+      // subscribes to every emitted event, not just the handler's return
+      // value) plus the absence of any success event and any state mutation.
+      engine.drainEvents();
+      const returned = engine.submitAction(verb, {
+        targetIds: ['iron-sword'],
+        parameters: { recipeId: 'craft-bandage' },
+      });
+      expect(returned, `${verb} dispatch() should return no events (unknown verb)`).toEqual([]);
+      const emitted = engine.drainEvents();
+      const rejection = emitted.find((e) => e.type === 'action.rejected');
+      expect(rejection, `${verb} should emit action.rejected`).toBeDefined();
+      expect(rejection!.payload.reason).toBe(`unknown verb: ${verb}`);
+      expect(emitted.some((e) => successTypes.includes(e.type)), `${verb} must not succeed`).toBe(false);
+    }
+    // No state mutation from any of the four unknown-verb attempts.
+    expect(engine.world.entities.player.inventory).toEqual(['iron-sword']);
+    expect(engine.world.entities.player.custom).toEqual({ 'materials.medicine': 5 });
+  });
+
+  describe('salvage — SALVAGE FIRST (this wave\'s priority slice)', () => {
+    it('consumes the carried item, writes materials, and applies the matching EconomyShift into the district economy', () => {
+      const engine = makeCraftingEngine(['iron-sword']);
+
+      const events = engine.submitAction('salvage', { targetIds: ['iron-sword'] });
+
+      expect(events.some((e) => e.type === 'item.salvaged')).toBe(true);
+      expect(engine.world.entities.player.inventory).not.toContain('iron-sword');
+      // inferItemSlot('iron-sword') -> 'weapon'; SALVAGE_YIELDS.weapon.common
+      // = [{ category: 'components', quantity: 1 }].
+      expect(engine.world.entities.player.custom?.['materials.components']).toBe(1);
+
+      const economy = (engine.world.modules['economy-core'] as EconomyCoreState).districts['district-1'];
+      expect(getSupplyLevel(economy, 'components')).toBe(50 + 1); // baseline + the one economy-shift
+    });
+
+    it('still writes materials when the actor is in no district — the economy shift is skipped, not rejected', () => {
+      const engine = createTestEngine({
+        modules: [createCraftingCore()], // no district-core/economy-core registered
+        entities: [makeCraftingPlayer(['iron-sword'])],
+        zones: craftingZones,
+      });
+
+      const events = engine.submitAction('salvage', { targetIds: ['iron-sword'] });
+
+      expect(events.some((e) => e.type === 'item.salvaged')).toBe(true);
+      expect(engine.world.entities.player.inventory).not.toContain('iron-sword');
+      expect(engine.world.entities.player.custom?.['materials.components']).toBe(1);
+    });
+
+    it('rejects salvaging an item not carried — no state mutation', () => {
+      const engine = makeCraftingEngine([]);
+      const events = engine.submitAction('salvage', { targetIds: ['iron-sword'] });
+      expect(events.some((e) => e.type === 'action.rejected')).toBe(true);
+      expect(engine.world.entities.player.custom ?? {}).toEqual({});
+    });
+
+    it('rejects with no item specified — no state mutation', () => {
+      const engine = makeCraftingEngine(['iron-sword']);
+      const events = engine.submitAction('salvage', {});
+      expect(events.some((e) => e.type === 'action.rejected')).toBe(true);
+      expect(engine.world.entities.player.inventory).toContain('iron-sword');
+    });
+  });
+
+  describe('craft', () => {
+    it('consumes materials and produces the recipe\'s own item in the actor\'s inventory', () => {
+      const engine = makeCraftingEngine([], { 'materials.medicine': 2 }); // craft-bandage needs 2 medicine
+
+      const events = engine.submitAction('craft', { parameters: { recipeId: 'craft-bandage' } });
+
+      expect(events.some((e) => e.type === 'item.crafted')).toBe(true);
+      expect(engine.world.entities.player.custom?.['materials.medicine']).toBe(0);
+      expect(engine.world.entities.player.inventory).toContain('craft-bandage');
+    });
+
+    it('rejects with insufficient materials — no state mutation', () => {
+      const engine = makeCraftingEngine([], {});
+      const events = engine.submitAction('craft', { parameters: { recipeId: 'craft-bandage' } });
+      expect(events.some((e) => e.type === 'action.rejected')).toBe(true);
+      expect(engine.world.entities.player.inventory).toEqual([]);
+    });
+
+    it('rejects when the actor is in no district ("nowhere to craft here")', () => {
+      const engine = createTestEngine({
+        modules: [createCraftingCore()],
+        entities: [makeCraftingPlayer([], { 'materials.medicine': 5 })],
+        zones: craftingZones,
+      });
+      const events = engine.submitAction('craft', { parameters: { recipeId: 'craft-bandage' } });
+      expect(events.some((e) => e.type === 'action.rejected')).toBe(true);
+      expect(engine.world.entities.player.inventory).toEqual([]);
+    });
+
+    it('rejects an unknown recipe id', () => {
+      const engine = makeCraftingEngine([], { 'materials.medicine': 5 });
+      const events = engine.submitAction('craft', { parameters: { recipeId: 'nonexistent-recipe' } });
+      expect(events.some((e) => e.type === 'action.rejected')).toBe(true);
+    });
+
+    it('rejects a recipe that is not a craft recipe (category mismatch)', () => {
+      const engine = makeCraftingEngine([], { 'materials.components': 5 });
+      const events = engine.submitAction('craft', { parameters: { recipeId: 'repair-weapon' } });
+      expect(events.some((e) => e.type === 'action.rejected')).toBe(true);
+    });
+
+    it('genre config: a genre-flavored recipe resolves only when the genre is configured (universal-only otherwise)', () => {
+      const withoutGenre = makeCraftingEngine([], { 'materials.medicine': 3 });
+      const rejected = withoutGenre.submitAction('craft', { parameters: { recipeId: 'craft-potion' } });
+      expect(rejected.some((e) => e.type === 'action.rejected')).toBe(true);
+
+      const withGenre = makeCraftingEngine([], { 'materials.medicine': 3 }, 'fantasy');
+      const crafted = withGenre.submitAction('craft', { parameters: { recipeId: 'craft-potion' } });
+      expect(crafted.some((e) => e.type === 'item.crafted')).toBe(true);
+      expect(withGenre.world.entities.player.inventory).toContain('craft-potion');
+    });
+  });
+
+  describe('repair', () => {
+    it('consumes materials for a carried item without destroying it', () => {
+      const engine = makeCraftingEngine(['iron-sword'], { 'materials.components': 2 });
+      const events = engine.submitAction('repair', {
+        targetIds: ['iron-sword'],
+        parameters: { recipeId: 'repair-weapon' },
+      });
+      expect(events.some((e) => e.type === 'item.repaired')).toBe(true);
+      expect(engine.world.entities.player.custom?.['materials.components']).toBe(0);
+      expect(engine.world.entities.player.inventory).toContain('iron-sword');
+    });
+
+    it('rejects when the item is not carried', () => {
+      const engine = makeCraftingEngine([], { 'materials.components': 2 });
+      const events = engine.submitAction('repair', {
+        targetIds: ['iron-sword'],
+        parameters: { recipeId: 'repair-weapon' },
+      });
+      expect(events.some((e) => e.type === 'action.rejected')).toBe(true);
+    });
+  });
+
+  describe('modify', () => {
+    it('consumes materials and reports the mechanical result on the event (honest ceiling: not persisted to the bare inventory item)', () => {
+      const engine = makeCraftingEngine(['iron-sword'], { 'materials.components': 1 });
+      const events = engine.submitAction('modify', {
+        targetIds: ['iron-sword'],
+        parameters: { recipeId: 'modify-sharpen' },
+      });
+      const modified = events.find((e) => e.type === 'item.modified');
+      expect(modified).toBeDefined();
+      expect(modified!.payload.statDelta).toEqual({ attack: 1 });
+      expect(engine.world.entities.player.custom?.['materials.components']).toBe(0);
+      expect(engine.world.entities.player.inventory).toContain('iron-sword');
+    });
+
+    it('rejects when the item is not carried', () => {
+      const engine = makeCraftingEngine([], { 'materials.components': 1 });
+      const events = engine.submitAction('modify', {
+        targetIds: ['iron-sword'],
+        parameters: { recipeId: 'modify-sharpen' },
+      });
+      expect(events.some((e) => e.type === 'action.rejected')).toBe(true);
     });
   });
 });
