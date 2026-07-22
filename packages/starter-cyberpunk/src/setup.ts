@@ -17,9 +17,12 @@ import {
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
+  applyStatus,
+  removeStatus,
   aggressiveProfile,
   cautiousProfile,
 } from '@ai-rpg-engine/modules';
+import { createEquipmentCore } from '@ai-rpg-engine/equipment';
 import * as engineModules from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatResourceProfile, IntentProfile } from '@ai-rpg-engine/modules';
 import {
@@ -40,6 +43,8 @@ import {
   cyberpunkStatusDefinitions,
   progressionRewards,
   encounterSpawnContent,
+  cyberpunkQuests,
+  itemCatalog,
 } from './content.js';
 import { cyberpunkMinimalRuleset } from './ruleset.js';
 
@@ -160,6 +165,10 @@ export function createGame(seed?: number): Engine {
     // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
     // tables drive zone-entry spawns via the world tick.
     encounterSpawn: { gameId: manifest.id, ...encounterSpawnContent },
+    // F-ENG005-quest-loop-min: the authored quests give the run its explicit
+    // reason. quest-core validates at construction (fail loud) and drives
+    // offer -> track -> complete -> reward off the live event stream.
+    quests: { gameId: manifest.id, quests: cyberpunkQuests },
   });
 
   const engine = new Engine({
@@ -184,6 +193,20 @@ export function createGame(seed?: number): Engine {
       }),
       ...worldStack.modules,
       createBossPhaseListener(vaultOverseerBoss),
+      // F-86b9145d: the equipment loop — `equip`/`unequip` verbs over the
+      // pack's item catalog (same wiring gladiator's setup.ts pioneered under
+      // F-ENG008). The module (homed in @ai-rpg-engine/equipment) publishes
+      // the catalog under EQUIPMENT_CATALOG_FORMULA and mirrors equipped
+      // items' statModifiers into `equipped-<itemId>` statuses; this pack
+      // injects the status machinery of its own engine build.
+      createEquipmentCore({
+        catalog: itemCatalog,
+        statuses: {
+          registerDefinitions: registerStatusDefinitions,
+          apply: applyStatus,
+          remove: removeStatus,
+        },
+      }),
       createAbilityCore({ abilities: cyberpunkAbilities, statMapping: { power: 'chrome', precision: 'reflex', focus: 'netrunning' } }),
       createAbilityEffects(),
       createAbilityReview(),
@@ -207,6 +230,12 @@ export function createGame(seed?: number): Engine {
   // Set player
   engine.store.state.playerId = 'runner';
   engine.store.state.locationId = 'street-level';
+
+  // F-92c78519: seed a small starting coin balance. trade-core's buy verb
+  // (always registered via buildWorldStack) reads actor.resources.coin, and
+  // an unseeded resource silently reads as 0 (buyHandler's own `?? 0` guard)
+  // — without this a fresh run could never afford a single purchase.
+  engine.store.state.entities[engine.store.state.playerId].resources.coin = 25;
 
   // Give ice-breaker after fixer briefing
   engine.store.events.on('dialogue.ended', (event) => {
