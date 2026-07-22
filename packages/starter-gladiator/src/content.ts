@@ -57,7 +57,11 @@ export const dominaValeria: EntityState = {
   name: 'Domina Valeria',
   tags: ['npc', 'patron', 'wealthy', 'recruitable', 'diplomat'],
   stats: { might: 2, agility: 3, showmanship: 7 },
-  resources: { hp: 8, stamina: 2 },
+  // maxHp/maxStamina (F-4b9c5aee): a recruitable companion needs the same
+  // resources shape enemies carry — entityHpRatio/regen both read the max
+  // fields, and without them the entity always reads as full HP regardless
+  // of true damage taken.
+  resources: { hp: 8, maxHp: 8, stamina: 2, maxStamina: 2 },
   statuses: [],
   zoneId: 'patron-gallery',
   custom: {
@@ -74,7 +78,8 @@ export const nerva: EntityState = {
   name: 'Nerva',
   tags: ['npc', 'gladiator', 'veteran', 'recruitable', 'fighter'],
   stats: { might: 6, agility: 5, showmanship: 3 },
-  resources: { hp: 20, stamina: 5, fatigue: 5 },
+  // maxHp/maxStamina (F-4b9c5aee) — see Domina Valeria's comment above.
+  resources: { hp: 20, maxHp: 20, stamina: 5, maxStamina: 5, fatigue: 5 },
   statuses: [],
   zoneId: 'holding-cells',
   custom: {

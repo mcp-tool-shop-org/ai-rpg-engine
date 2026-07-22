@@ -42,7 +42,11 @@ export const duchessMorvaine: EntityState = {
   name: 'Duchess Morvaine',
   tags: ['npc', 'vampire', 'elder', 'recruitable', 'diplomat'],
   stats: { presence: 8, vitality: 4, cunning: 7 },
-  resources: { hp: 15, stamina: 3, bloodlust: 5, humanity: 8 },
+  // maxHp/maxStamina (F-4b9c5aee): a recruitable companion needs the same
+  // resources shape enemies carry — entityHpRatio/regen both read the max
+  // fields, and without them the entity always reads as full HP regardless
+  // of true damage taken.
+  resources: { hp: 15, maxHp: 15, stamina: 3, maxStamina: 3, bloodlust: 5, humanity: 8 },
   statuses: [],
   zoneId: 'grand-ballroom',
   custom: {
@@ -71,7 +75,8 @@ export const servantElara: EntityState = {
   name: 'Servant Elara',
   tags: ['npc', 'human', 'recruitable', 'scout'],
   stats: { presence: 3, vitality: 2, cunning: 6 },
-  resources: { hp: 8, stamina: 2 },
+  // maxHp/maxStamina (F-4b9c5aee) — see Duchess Morvaine's comment above.
+  resources: { hp: 8, maxHp: 8, stamina: 2, maxStamina: 2 },
   statuses: [],
   zoneId: 'wine-cellar',
   custom: {

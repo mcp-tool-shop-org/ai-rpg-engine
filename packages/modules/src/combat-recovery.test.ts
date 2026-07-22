@@ -246,6 +246,64 @@ describe('combat-recovery: stamina recovery', () => {
     expect(staminaTick!.payload.prevStamina).toBe(3);
     expect(staminaTick!.payload.currentStamina).toBe(4);
   });
+
+  // F-4b9c5aee: a recruitable companion authored with a maxStamina cap but no
+  // starting stamina value (a content-authoring gap this feature closes for
+  // the 5 owned starters) previously read `undefined < maxStamina` as false
+  // FOREVER — the regen loop's own guard silently skipped it every tick, so
+  // the field simply never appeared and every stamina-gated verb (attack,
+  // guard — see combat-core.ts's `?? 0` fallback) rejected with "not enough
+  // stamina" for the entity's entire lifetime. This narrow defensive init
+  // fires ONLY when maxStamina is a real number AND stamina is exactly
+  // undefined, so it cannot touch any entity that already carries a numeric
+  // stamina value — even a real, hard-earned 0.
+  describe('defensive init — maxStamina present, stamina undefined', () => {
+    it('an entity with maxStamina but no stamina field is initialized to full on the first tick', () => {
+      const player = makeEntity('player', 'player', ['player']);
+      const companion = makeEntity('companion', 'npc', ['npc', 'companion'], {
+        resources: { hp: 10, maxHp: 10, maxStamina: 3 } as unknown as Record<string, number>,
+      });
+      delete (companion.resources as { stamina?: number }).stamina;
+      expect(companion.resources.stamina).toBeUndefined();
+
+      const engine = buildEngine([player, companion]);
+      engine.drainEvents();
+
+      engine.store.emitEvent('action.resolved', { verb: 'wait', actorId: 'player', eventCount: 0 });
+
+      expect(engine.store.state.entities.companion.resources.stamina).toBe(3);
+    });
+
+    it('does NOT alter an entity that already carries a real (even zero) stamina value', () => {
+      const player = makeEntity('player', 'player', ['player']);
+      const exhausted = makeEntity('exhausted', 'npc', ['npc'], {
+        resources: { hp: 10, maxHp: 10, stamina: 0, maxStamina: 5 },
+      });
+      const engine = buildEngine([player, exhausted]);
+      engine.drainEvents();
+
+      // Pre-existing behavior: stamina stays 0 this tick (regen only raises
+      // it by staminaRegenPerTick — default 1 — from whatever it already was;
+      // the defensive init must not fast-forward it to maxStamina).
+      engine.store.emitEvent('action.resolved', { verb: 'wait', actorId: 'player', eventCount: 0 });
+      expect(engine.store.state.entities.exhausted.resources.stamina).toBe(1);
+    });
+
+    it('does NOT alter an entity with neither stamina nor maxStamina authored', () => {
+      const player = makeEntity('player', 'player', ['player']);
+      const bare = makeEntity('bare', 'npc', ['npc'], {
+        resources: { hp: 10, maxHp: 10 },
+      });
+      const engine = buildEngine([player, bare]);
+      engine.drainEvents();
+
+      engine.store.emitEvent('action.resolved', { verb: 'wait', actorId: 'player', eventCount: 0 });
+
+      // No maxStamina authored → the narrow gate must not fire; stamina stays
+      // absent exactly as it was before this defensive init existed.
+      expect(engine.store.state.entities.bare.resources.stamina).toBeUndefined();
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

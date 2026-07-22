@@ -10,7 +10,14 @@
 
 import type { Engine, EntityState, WorldState } from '@ai-rpg-engine/core';
 import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
-import { selectActionForEntity, ABILITY_CATALOG_FORMULA } from '@ai-rpg-engine/modules';
+import {
+  selectActionForEntity,
+  ABILITY_CATALOG_FORMULA,
+  selectBestAction,
+  getPartyState,
+  getActiveCompanions,
+} from '@ai-rpg-engine/modules';
+import type { UnifiedActionSource } from '@ai-rpg-engine/modules';
 import { runGuardedAction } from './guard.js';
 
 /**
@@ -138,6 +145,168 @@ export function runNpcTurns(
       profileId: selection.profileId,
       usedFallback: selection.usedFallback,
       reason: selection.reason,
+      submitted,
+    });
+  }
+
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// F-4b9c5aee — Companion turn driver: independent companion combat turns
+// ---------------------------------------------------------------------------
+//
+// Recruited companions (companion-core.ts's 'recruit' verb, v2.8) sat fully
+// wired into party state, tags, and faction, but NEVER took a turn — the
+// per-round driver only ever advanced hostiles (runNpcTurns above). This is
+// the missing wire: after hostiles act, every ACTIVE companion in the
+// player's zone takes one action too, through the SAME guarded-submission
+// discipline runNpcTurns uses.
+//
+// Decisions route through unified-decision.ts's `selectBestAction`
+// (combat-intent + ability-intent merged), NOT cognition-core's
+// `selectActionForEntity` — deliberately. None of the 5 owned starters'
+// recruitable NPCs author an `entity.ai` block (they are plain recruit
+// targets, not autonomous hostiles), and `selectActionForEntity` returns
+// `null` for any entity lacking `.ai`. Routing companions through it would
+// silently never act for a single one of them. `selectBestAction` is
+// entity-agnostic — it needs no `ai.profileId`, only the entity + world +
+// ability catalog — so a plain recruited NPC gets a real tactical choice.
+// Target partitioning (who is an ally vs. an enemy to the companion) already
+// works with zero changes here: companion-core's recruit handler sets a
+// shared faction on the player and every recruit (F-cf1ddc9f), and
+// targeting.ts's `affiliationOf` is faction-first, so combat-intent's
+// `buildContext` naturally sorts the player and other companions into
+// `ctx.allies` and hostiles into `ctx.enemies` — a companion structurally
+// cannot select an attack against the player or another companion.
+
+/** What one companion did on its turn — returned for tests and optional debug output. */
+export type CompanionTurnResult = {
+  actorId: string;
+  actorName: string;
+  verb: string;
+  targetIds?: string[];
+  /** Which advisor's action won the unified-decision merge ('combat' or 'ability'). */
+  source: UnifiedActionSource;
+  reason: string;
+  /** False when the guarded submission threw (session survived; companion turn lost). */
+  submitted: boolean;
+};
+
+/**
+ * The party's ACTIVE companions (not dismissed/away), living, and standing in
+ * the player's zone — the roster that takes a turn in `runCompanionTurns`.
+ * Sorted by npcId for byte-deterministic acting order, same discipline
+ * `listHostilesInPlayerZone` uses for hostiles. A companion left behind in
+ * another zone (no party-follow mechanic exists) never acts here, mirroring
+ * hostile turns' own zone-scoped cadence.
+ */
+function listActiveCompanionsInPlayerZone(world: WorldState): EntityState[] {
+  const player = world.entities[world.playerId];
+  if (!player) return [];
+  const playerZone = player.zoneId ?? world.locationId;
+  const party = getPartyState(world);
+
+  return getActiveCompanions(party)
+    .map((c) => world.entities[c.npcId])
+    .filter(
+      (e): e is EntityState =>
+        !!e &&
+        (e.resources.hp ?? 0) > 0 &&
+        (e.zoneId ?? world.locationId) === playerZone,
+    )
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+/**
+ * Run one companion action for every active, living companion in the
+ * player's zone.
+ *
+ * EARLY-RETURNS when the party is empty — copies the exact
+ * `if (party.companions.length === 0) return;` gate world-tick's
+ * `applyCompanionReactions` uses, so a companion-less pack NEVER submits an
+ * action from this path (world.meta.tick advances only on submitActionAs, so
+ * an empty-party round producing a stray submit would silently change the
+ * tick count of every existing seed-0 playthrough that never recruits).
+ *
+ * Per companion:
+ *  1. `selectBestAction` (unified-decision.ts) consults both the combat-intent
+ *     and ability-intent advisors and returns the winning action —
+ *     entity-agnostic, works for a plain recruited NPC with no `.ai` block.
+ *  2. The chosen action is submitted via `engine.submitActionAs(entityId, …)`,
+ *     under the same `runGuardedAction` wrapper hostile turns use, so one
+ *     buggy verb handler degrades to a logged line instead of crashing the
+ *     session.
+ *  3. An ability-sourced choice threads `parameters.abilityId` — ability-core's
+ *     `use-ability` handler resolves the ability by that field, not `toolId`.
+ *
+ * The roster is snapshotted before any companion acts (this round), then each
+ * entry is re-checked against live state right before it acts: a companion
+ * downed by a reactive effect mid-round loses its turn, and the round stops
+ * early if the player is downed — same contract as `runNpcTurns`.
+ */
+export function runCompanionTurns(
+  engine: Engine,
+  opts: { log?: (msg: string) => void } = {},
+): CompanionTurnResult[] {
+  const log = opts.log ?? console.log;
+  const results: CompanionTurnResult[] = [];
+
+  const party = getPartyState(engine.world);
+  if (party.companions.length === 0) return results;
+
+  const playerId = engine.world.playerId;
+  const abilities = getAbilityCatalog(engine);
+  const roster = listActiveCompanionsInPlayerZone(engine.world).map((e) => e.id);
+
+  for (const entityId of roster) {
+    // Player downed mid-round → stop; the endgame screen takes over.
+    const player = engine.world.entities[playerId];
+    if (!player || (player.resources.hp ?? 0) <= 0) break;
+
+    // Re-check liveness against live state — an earlier companion's/NPC's
+    // action (or a reactive effect it triggered) may have downed this one.
+    const entity = engine.world.entities[entityId];
+    if (!entity || (entity.resources.hp ?? 0) <= 0) continue;
+
+    // 1. Decision — guarded: a throwing advisor must not kill the round.
+    let decision: ReturnType<typeof selectBestAction>;
+    try {
+      decision = selectBestAction(entity, engine.world, abilities);
+    } catch (err) {
+      log(`  (${entity.name} hesitates — its instincts failed: ${err instanceof Error ? err.message : String(err)})`);
+      continue;
+    }
+
+    const chosen = decision.chosen;
+    const targetIds = chosen.targetId ? [chosen.targetId] : undefined;
+
+    // 2. Submission — guarded (CLI-010): one bad verb handler logs one line.
+    const submitted = runGuardedAction(
+      () =>
+        engine.submitActionAs(entityId, chosen.verb, {
+          targetIds,
+          // Ability-sourced actions need the ability id threaded through so
+          // ability-core's use-ability handler can resolve it — it reads
+          // `action.parameters.abilityId`, not `toolId`. None of the 5 owned
+          // starters' companions carry a tag that satisfies any authored
+          // ability's requirements today (an honest ceiling, not an
+          // oversight), so this branch is inert in current content but
+          // correct for the first companion that ever qualifies.
+          ...(chosen.source === 'ability' && chosen.abilityId
+            ? { parameters: { abilityId: chosen.abilityId } }
+            : {}),
+        }),
+      log,
+    );
+
+    results.push({
+      actorId: entityId,
+      actorName: entity.name,
+      verb: chosen.verb,
+      targetIds,
+      source: chosen.source,
+      reason: chosen.reason,
       submitted,
     });
   }
