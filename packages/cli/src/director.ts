@@ -83,6 +83,10 @@ import {
   // materials
   getMaterialInventory,
   formatMaterialsForDirector,
+  // recipes (F-239d0813)
+  getAvailableRecipes,
+  formatAvailableRecipesForDirector,
+  getDistrictForZone,
 } from '@ai-rpg-engine/modules';
 import {
   // equipment (F-ec5c7354) — read via the formula-registry transport, the
@@ -442,6 +446,35 @@ export function renderDirectorLedger(engine: Pick<Engine, 'world' | 'formulas'>)
         const inventory = getMaterialInventory(custom);
         if (!Object.values(inventory).some((quantity) => quantity > 0)) return null;
         return formatMaterialsForDirector(inventory);
+      },
+    },
+    {
+      name: 'RECIPES',
+      body: () => {
+        // F-239d0813: recipes (crafting-recipes.ts's UNIVERSAL_RECIPES ∪
+        // GENRE_RECIPES) are static content, not persisted state — crafting-
+        // core's write-wire (F-6631dd57) registers no namespace of its own to
+        // gate on. Rule 1's "does real state back this section" reduces to
+        // the SAME signal MATERIALS renders on: a world where the player has
+        // never salvaged/crafted gets no invented recipe wishlist alongside
+        // an empty materials pouch.
+        const inventory = getMaterialInventory(custom);
+        if (!Object.values(inventory).some((quantity) => quantity > 0)) return null;
+
+        // Honest ceiling: world.meta.activeRuleset carries a per-starter
+        // ruleset id (e.g. 'fantasy-minimal'), not the bare 'fantasy'
+        // GENRE_RECIPES key — no pack threads a dedicated genre field through
+        // director.ts yet. getAvailableRecipes degrades an unrecognized
+        // genre to its UNIVERSAL_RECIPES table (the same safe-degrade
+        // contract every recipe lookup here already has), so the section
+        // still renders real, non-invented content — genre-flavored recipes
+        // light up once that plumbing exists.
+        const hereId = player?.zoneId ?? world.locationId;
+        const districtId = hereId ? getDistrictForZone(world, hereId) : undefined;
+        const districtTags = districtId ? getDistrictDefinition(world, districtId)?.tags ?? [] : [];
+        const recipes = getAvailableRecipes(world.meta.activeRuleset, player?.tags ?? [], districtTags);
+        if (recipes.length === 0) return null;
+        return formatAvailableRecipesForDirector(recipes, inventory);
       },
     },
   ];

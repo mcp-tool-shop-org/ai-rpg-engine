@@ -13,6 +13,7 @@ import {
   formatMaterialsForDirector,
   formatMaterialsCompact,
   formatSalvagePreview,
+  inferItemSlot,
 } from './crafting-core.js';
 import type { ItemDefinition } from '@ai-rpg-engine/equipment';
 import { createDistrictEconomy } from './economy-core.js';
@@ -225,6 +226,41 @@ describe('crafting-core', () => {
       expect(output).toContain('Flame Blade');
       expect(output).toContain('components');
       expect(output).toContain('fine');
+    });
+  });
+
+  // F-6631dd57: honest-ceiling item-slot inference for the crafting write-wire
+  // (createCraftingCore, crafting-recipes.ts) — mirrors trade-core.ts's own
+  // inferSupplyCategory idiom for a carried item id with no ItemCatalog wired.
+  describe('inferItemSlot (F-6631dd57 — no ItemCatalog wired)', () => {
+    it('infers weapon from a hint in the id', () => {
+      expect(inferItemSlot('iron-sword')).toBe('weapon');
+      expect(inferItemSlot('rusty-dagger')).toBe('weapon');
+    });
+
+    it('infers armor from a hint in the id', () => {
+      expect(inferItemSlot('leather-armor')).toBe('armor');
+      expect(inferItemSlot('steel-shield')).toBe('armor');
+    });
+
+    it('infers accessory from a hint in the id', () => {
+      expect(inferItemSlot('silver-ring')).toBe('accessory');
+    });
+
+    it('infers trinket from a hint in the id', () => {
+      expect(inferItemSlot('ancient-relic')).toBe('trinket');
+    });
+
+    it('infers tool from a hint in the id', () => {
+      expect(inferItemSlot('healers-kit')).toBe('tool');
+    });
+
+    it('falls back to tool for an unrecognized id (the generic-goods bucket)', () => {
+      expect(inferItemSlot('mystery-widget-9000')).toBe('tool');
+    });
+
+    it('is case-insensitive', () => {
+      expect(inferItemSlot('IRON-SWORD')).toBe('weapon');
     });
   });
 });

@@ -56,6 +56,19 @@
 //     npc-agency's companion goals, and combat-core's interception +
 //     INTERCEPT_ROLE_BONUS — all already built, all previously dark for lack
 //     of a recruit verb.
+//   - crafting-core (F-6631dd57) joins the same way, same reasoning: ALWAYS
+//     included, no REQUIRED config (it registers 'salvage'/'craft'/'repair'/
+//     'modify' — see crafting-recipes.ts's own module-header). No new
+//     persistence namespace: material state already lives on actor.custom,
+//     the address getMaterialInventory/adjustMaterial already read/write.
+//     The optional `craftingGenre` passthrough below selects genre-flavored
+//     recipes (crafting-recipes.ts's GENRE_RECIPES); omitting it still
+//     resolves the full UNIVERSAL_RECIPES table (repair/craft/modify recipes
+//     with no genreFilter) — every world gets working verbs with zero
+//     config. The write-wire for director.ts's MATERIALS ledger section
+//     (already reading getMaterialInventory) and the RECIPES section
+//     alongside it (F-239d0813) — both previously dark for lack of a
+//     salvage/craft verb ever writing real material state.
 
 import type { EngineModule } from '@ai-rpg-engine/core';
 import { createEnvironmentCore } from './environment-core.js';
@@ -79,6 +92,7 @@ import type { QuestCoreConfig } from './quest-core.js';
 import { createEconomyCore } from './economy-core.js';
 import { createTradeCore } from './trade-core.js';
 import { createCompanionCore } from './companion-core.js';
+import { createCraftingCore } from './crafting-recipes.js';
 
 // ---------------------------------------------------------------------------
 // buildWorldStack — eliminates the strategic-tier hand-list
@@ -132,6 +146,14 @@ export type WorldStackConfig = {
    * content THROWS here at assembly (createQuestCore's fail-loud contract).
    */
   quests?: QuestCoreConfig;
+
+  /**
+   * Crafting recipe genre (crafting-recipes.ts's GENRE_RECIPES key, e.g.
+   * 'fantasy'). Omit for UNIVERSAL_RECIPES only — crafting-core is included
+   * either way (see the file-header contract entry above); this only
+   * selects which genre-flavored recipes join the universal table.
+   */
+  craftingGenre?: string;
 };
 
 export type WorldStack = {
@@ -168,9 +190,10 @@ export type WorldStack = {
  *
  * Default composition (always included, in wiring order): environment-core,
  * faction-cognition, rumor-propagation, district-core, economy-core,
- * trade-core, companion-core, belief-provenance, observer-presentation,
- * defeat-fallout, world-tick. Presence-optional: encounter-spawn (included
- * when `encounterSpawn` is passed), quests (included when `quests` is passed).
+ * trade-core, companion-core, crafting-core, belief-provenance,
+ * observer-presentation, defeat-fallout, world-tick. Presence-optional:
+ * encounter-spawn (included when `encounterSpawn` is passed), quests
+ * (included when `quests` is passed).
  *
  * Usage:
  * ```
@@ -211,6 +234,9 @@ export function buildWorldStack(config: WorldStackConfig = {}): WorldStack {
     // F-7d5c3e28: always included, no config — see the file-header contract
     // entry above.
     createCompanionCore(),
+    // F-6631dd57: always included, no REQUIRED config — see the file-header
+    // contract entry above. `craftingGenre` is optional passthrough.
+    createCraftingCore({ genre: config.craftingGenre }),
     createBeliefProvenance(),
     createObserverPresentation({ rules: config.presentationRules ?? [] }),
     // The one roster serves both: defeat-fallout reads factionId + entityIds

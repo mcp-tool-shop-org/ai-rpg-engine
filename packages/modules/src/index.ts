@@ -568,6 +568,8 @@ export {
   formatMaterialsForDirector,
   formatMaterialsCompact,
   formatSalvagePreview,
+  // v1.8 write-wire (F-6631dd57) — honest-ceiling item inference
+  inferItemSlot,
 } from './crafting-core.js';
 export type {
   MaterialQuality,
@@ -588,6 +590,9 @@ export {
   resolveModify,
   formatRecipeForDirector,
   formatAvailableRecipesForDirector,
+  // v1.8 write-wire (F-6631dd57) — the salvage/craft/repair/modify verbs
+  createCraftingCore,
+  craftingCore,
 } from './crafting-recipes.js';
 export type {
   RecipeCategory,
@@ -597,6 +602,7 @@ export type {
   CraftEffect,
   CraftResult,
   ModifyResult,
+  CraftingCoreConfig,
 } from './crafting-recipes.js';
 
 // --- Opportunity Core (v1.9) ---

@@ -90,12 +90,18 @@ const WORLD_STACK_PRE_WORLD_TICK = [
  *  joins the SAME wave (F-7d5c3e28), inserted right after trade-core: it
  *  registers exactly one new verb ('recruit') and its own namespace, no
  *  config, no event subscriptions — same additive, behavior-inert-to-
- *  everything-else contract as its two siblings above. */
+ *  everything-else contract as its two siblings above. crafting-core joins a
+ *  later wave (F-6631dd57), inserted right after companion-core: it
+ *  registers four new verbs ('salvage'/'craft'/'repair'/'modify'), NO
+ *  persistence namespace (material state already lives on actor.custom), and
+ *  subscribes to no events — same additive, behavior-inert-to-everything-else
+ *  contract as its three siblings above. */
 const WORLD_STACK_DEFAULT = [
   ...WORLD_STACK_PRE_WORLD_TICK.slice(0, 4), // environment-core, faction-cognition, rumor-propagation, district-core
   'economy-core',
   'trade-core',
   'companion-core',
+  'crafting-core',
   ...WORLD_STACK_PRE_WORLD_TICK.slice(4), // belief-provenance, observer-presentation, defeat-fallout
   'world-tick',
 ];
@@ -198,7 +204,7 @@ function makeStackEngine(config: StackConfig = {}, extraEntities: EntityState[] 
 // ---------------------------------------------------------------------------
 
 describe('buildWorldStack — composition', () => {
-  it('default composition is the eleven always-on strategic modules, in wiring order', () => {
+  it('default composition is the twelve always-on strategic modules, in wiring order', () => {
     const stack = buildWorldStack();
     expect(stack.modules.map((m) => m.id)).toEqual(WORLD_STACK_DEFAULT);
     expect(stack.warnings).toEqual([]);
@@ -344,6 +350,32 @@ describe('buildWorldStack — config pass-through probes', () => {
     };
     expect(state.zoneToDistrict['zone-b']).toBe('probe-district');
     expect(state.districts['probe-district']).toBeDefined();
+  });
+
+  it('craftingGenre (F-6631dd57): reaches createCraftingCore — a genre-flavored recipe resolves only when configured', () => {
+    const withoutGenre = makeStackEngine();
+    withoutGenre.submitAction('move', { targetIds: ['zone-b'] }); // into probe-district
+    withoutGenre.world.entities['hero'].custom = { 'materials.medicine': 3 };
+    const rejected = withoutGenre.submitAction('craft', { parameters: { recipeId: 'craft-potion' } });
+    expect(rejected.some((e) => e.type === 'item.crafted')).toBe(false);
+
+    const withGenre = makeStackEngine({ craftingGenre: 'fantasy' });
+    withGenre.submitAction('move', { targetIds: ['zone-b'] });
+    withGenre.world.entities['hero'].custom = { 'materials.medicine': 3 };
+    const crafted = withGenre.submitAction('craft', { parameters: { recipeId: 'craft-potion' } });
+    expect(crafted.some((e) => e.type === 'item.crafted')).toBe(true);
+    expect(withGenre.world.entities['hero'].inventory).toContain('craft-potion');
+  });
+
+  it('crafting: salvage writes materials through a real stack-built engine (crafting-core reaches actor.custom with zero starter config)', () => {
+    const engine = makeStackEngine();
+    engine.world.entities['hero'].inventory = ['iron-sword'];
+
+    const events = engine.submitAction('salvage', { targetIds: ['iron-sword'] });
+
+    expect(events.some((e) => e.type === 'item.salvaged')).toBe(true);
+    expect(engine.world.entities['hero'].inventory).not.toContain('iron-sword');
+    expect(engine.world.entities['hero'].custom?.['materials.components']).toBe(1);
   });
 
   it('presentationRules: a custom rule changes the observer-presentation registry id', () => {
@@ -600,14 +632,15 @@ describe('world-stack refactor — per-starter module registration pins', () => 
     },
   );
 
-  it('gladiator: the module SET is the pre-refactor set plus world-tick/economy-core/trade-core/companion-core (order swap + P8-SP-003 + F-d0b5edb5/F-6c3e4fde + F-7d5c3e28 are the only deltas)', () => {
+  it('gladiator: the module SET is the pre-refactor set plus world-tick/economy-core/trade-core/companion-core/crafting-core (order swap + P8-SP-003 + F-d0b5edb5/F-6c3e4fde + F-7d5c3e28 + F-6631dd57 are the only deltas)', () => {
     // The literal pre-refactor gladiator order, boss-phase before
     // encounter-spawn — carried verbatim so the set-equality claim is
     // auditable against the captured baseline, not derived from EXPECTED.
-    // world-tick, economy-core, trade-core, and companion-core are the
-    // post-baseline additions (P8-SP-003's driver identity; F-d0b5edb5/
-    // F-6c3e4fde's write-wire; F-7d5c3e28's recruit-verb write-wire),
-    // asserted explicitly on top.
+    // world-tick, economy-core, trade-core, companion-core, and crafting-core
+    // are the post-baseline additions (P8-SP-003's driver identity; F-d0b5edb5/
+    // F-6c3e4fde's write-wire; F-7d5c3e28's recruit-verb write-wire;
+    // F-6631dd57's salvage/craft/repair/modify write-wire), asserted
+    // explicitly on top.
     const preRefactorOrder = [
       ...COMBAT_PREFIX('combat-resources-gladiator'),
       ...CONTENT_MID,
@@ -619,7 +652,7 @@ describe('world-stack refactor — per-starter module registration pins', () => 
     ];
     const ids = registeredIds(createGladiatorGame(42));
     expect([...ids].sort()).toEqual(
-      [...preRefactorOrder, 'world-tick', 'economy-core', 'trade-core', 'companion-core'].sort(),
+      [...preRefactorOrder, 'world-tick', 'economy-core', 'trade-core', 'companion-core', 'crafting-core'].sort(),
     );
   });
 

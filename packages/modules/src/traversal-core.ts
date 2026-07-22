@@ -2,6 +2,8 @@
 
 import type { EngineModule, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import { makeEvent } from './make-event.js';
+import { getDistrictForZone, getDistrictDefinition } from './district-core.js';
+import { getDistrictEconomy, deriveEconomyDescriptor, formatEconomyForDirector } from './economy-core.js';
 
 export const traversalCore: EngineModule = {
   id: 'traversal-core',
@@ -91,6 +93,17 @@ function inspectHandler(action: ActionIntent, world: WorldState): ResolvedEvent[
 
     const entities = Object.values(world.entities).filter(e => e.zoneId === zone.id);
 
+    // F-5ef2c8f5: single-district trade drill-down. When this zone resolves
+    // to a district WITH a seeded economy (economy-core's write-wire,
+    // F-d0b5edb5 — a pack with no districts, or one whose zone maps to no
+    // district, simply has neither), append the detailed single-district
+    // economy report alongside the zone facts already returned above. No new
+    // verb, no menu entry — this only enriches the existing 'inspect'
+    // payload. A zone with no district resolves byte-identically to before
+    // (the spread below adds nothing).
+    const districtId = getDistrictForZone(world, zone.id);
+    const districtEconomy = districtId ? getDistrictEconomy(world, districtId) : undefined;
+
     return [makeEvent(action, 'world.zone.inspected', {
       zoneId: zone.id,
       zoneName: zone.name,
@@ -99,6 +112,17 @@ function inspectHandler(action: ActionIntent, world: WorldState): ResolvedEvent[
       interactables: zone.interactables ?? [],
       exits: zone.neighbors,
       hazards: zone.hazards ?? [],
+      ...(districtId && districtEconomy
+        ? {
+            districtId,
+            economyReport: formatEconomyForDirector(
+              districtId,
+              getDistrictDefinition(world, districtId)?.name ?? districtId,
+              districtEconomy,
+              deriveEconomyDescriptor(districtEconomy),
+            ),
+          }
+        : {}),
     })];
   }
 
