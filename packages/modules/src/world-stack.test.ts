@@ -101,7 +101,9 @@ const WORLD_STACK_DEFAULT = [
   'economy-core',
   'trade-core',
   'companion-core',
+  'player-leverage',
   'crafting-core',
+  'opportunity-core',
   ...WORLD_STACK_PRE_WORLD_TICK.slice(4), // belief-provenance, observer-presentation, defeat-fallout
   'world-tick',
 ];
@@ -632,14 +634,16 @@ describe('world-stack refactor — per-starter module registration pins', () => 
     },
   );
 
-  it('gladiator: the module SET is the pre-refactor set plus world-tick/economy-core/trade-core/companion-core/crafting-core (order swap + P8-SP-003 + F-d0b5edb5/F-6c3e4fde + F-7d5c3e28 + F-6631dd57 are the only deltas)', () => {
+  it('gladiator: the module SET is the pre-refactor set plus world-tick/economy-core/trade-core/companion-core/player-leverage/crafting-core/opportunity-core (order swap + P8-SP-003 + F-d0b5edb5/F-6c3e4fde + F-7d5c3e28 + F-6631dd57 + F-677e94ad/F-ceed887f are the only deltas)', () => {
     // The literal pre-refactor gladiator order, boss-phase before
     // encounter-spawn — carried verbatim so the set-equality claim is
     // auditable against the captured baseline, not derived from EXPECTED.
-    // world-tick, economy-core, trade-core, companion-core, and crafting-core
-    // are the post-baseline additions (P8-SP-003's driver identity; F-d0b5edb5/
-    // F-6c3e4fde's write-wire; F-7d5c3e28's recruit-verb write-wire;
-    // F-6631dd57's salvage/craft/repair/modify write-wire), asserted
+    // world-tick, economy-core, trade-core, companion-core, player-leverage,
+    // crafting-core, and opportunity-core are the post-baseline additions
+    // (P8-SP-003's driver identity; F-d0b5edb5/F-6c3e4fde's write-wire;
+    // F-7d5c3e28's recruit-verb write-wire; F-6631dd57's salvage/craft/repair/
+    // modify write-wire; F-677e94ad's leverage-verb write-wire; F-ceed887f/
+    // F-f3f2a84c's opportunity spawn+resolution write-wire), asserted
     // explicitly on top.
     const preRefactorOrder = [
       ...COMBAT_PREFIX('combat-resources-gladiator'),
@@ -652,7 +656,7 @@ describe('world-stack refactor — per-starter module registration pins', () => 
     ];
     const ids = registeredIds(createGladiatorGame(42));
     expect([...ids].sort()).toEqual(
-      [...preRefactorOrder, 'world-tick', 'economy-core', 'trade-core', 'companion-core', 'crafting-core'].sort(),
+      [...preRefactorOrder, 'world-tick', 'economy-core', 'trade-core', 'companion-core', 'player-leverage', 'crafting-core', 'opportunity-core'].sort(),
     );
   });
 

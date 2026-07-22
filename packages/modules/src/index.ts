@@ -553,12 +553,15 @@ export type {
   TradeEffect,
 } from './trade-value.js';
 
-// --- Trade Core (v2.8: F-6c3e4fde — the sell verb; F-31f15013 — the buy verb) ---
+// --- Trade Core (v2.8: F-6c3e4fde — the sell verb; F-31f15013 — the buy verb;
+//     v2.9 menu-integration wave — quoteBuyPrice, the single-source buy price
+//     shared by buyHandler and packages/cli's menu.ts) ---
 export {
   createTradeCore,
   tradeCore,
   inferSupplyCategory,
   getBuyableStock,
+  quoteBuyPrice,
   SELL_BASE_VALUE,
   SELL_SUPPLY_RAISE,
   SELL_CURRENCY,

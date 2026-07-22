@@ -34,6 +34,7 @@
 
 import type { Engine, WorldState, EntityState, ScalarValue, QuestState } from '@ai-rpg-engine/core';
 import type { AbilityDefinition, ProgressionTreeDefinition, QuestDefinition, QuestStage } from '@ai-rpg-engine/content-schema';
+import type { SupplyCategory } from '@ai-rpg-engine/modules';
 import {
   getAvailableAbilities,
   normalizeAbilityTarget,
@@ -47,6 +48,19 @@ import {
   getDistrictEconomy,
   isBlackMarketCondition,
   inferSupplyCategory,
+  getBuyableStock,
+  quoteBuyPrice,
+  SELL_CURRENCY,
+  getAvailableRecipes,
+  canCraft,
+  getMaterialInventory,
+  getLeverageState,
+  canAfford,
+  isCooldownReady,
+  getSocialRequirements,
+  getRumorRequirements,
+  getPersistedOpportunities,
+  getDistrictDefinition,
 } from '@ai-rpg-engine/modules';
 import { getAbilityCatalog } from './turns.js';
 import { describeActionError } from './guard.js';
@@ -57,7 +71,16 @@ export type ExtraAction = {
   targetIds?: string[];
   parameters?: Record<string, ScalarValue>;
   label: string;
-  group: 'ability' | 'advance' | 'trade' | 'journal' | 'director' | 'debug';
+  group:
+    | 'ability'
+    | 'advance'
+    | 'trade'
+    | 'journal'
+    | 'director'
+    | 'debug'
+    | 'crafting'
+    | 'leverage'
+    | 'opportunities';
 };
 
 /**
@@ -167,15 +190,86 @@ export function buildUnlockActions(
 }
 
 // ---------------------------------------------------------------------------
-// Trade — the sell entries (F-6c3e4fde)
+// Trade — the buy + sell entries (F-31f15013 buy, F-6c3e4fde sell)
 // ---------------------------------------------------------------------------
 
 /**
- * Sell entries for every item the player carries, one per inventory slot —
- * mirrors buildAbilityActions' per-entry iteration pattern. [] when the
- * player's current zone has no district/economy to sell into (mirrors the
- * `sell` verb's own "no market here" rejection reason, so no menu entry is
- * ever offered that the verb could not also produce on its own).
+ * Every SupplyCategory the buy menu checks, as an explicit literal tuple
+ * (trade-core.ts's own ALL_SUPPLY_CATEGORIES is derived from its private
+ * CATEGORY_HINTS and isn't exported) — if a future SupplyCategory addition
+ * drifts this list out of sync with economy-core.ts's union, TypeScript fails
+ * the assignment below, not a silent "some categories never checked" bug.
+ */
+const BUY_CATEGORIES: SupplyCategory[] = [
+  'medicine', 'weapons', 'ammunition', 'food', 'fuel', 'luxuries', 'components', 'contraband',
+];
+
+/**
+ * Buy entries for every item this district currently offers (getBuyableStock,
+ * per SupplyCategory) that the player can ALSO currently afford — the
+ * "guaranteed to succeed" discipline this file's sell entries already follow:
+ * an item below-floor or absent from BuyableStock is never listed (mirrors
+ * buyHandler's own "not for sale here" rejection), and an item the player
+ * cannot afford is never listed either (mirrors buyHandler's own "not enough
+ * coin" rejection) — both checked with trade-core's OWN quoteBuyPrice, the
+ * exact price buyHandler itself debits (single-sourced, no second pricing
+ * copy to drift). [] when the player's zone has no district/economy at all.
+ *
+ * Honest ceiling (documented inline per this wave's instructions): genre here
+ * is world.meta.activeRuleset — a per-starter ruleset id (e.g.
+ * 'fantasy-minimal'), NOT the bare GENRE_BUYABLE_STOCK key ('fantasy').
+ * This is the SAME source director.ts's own RECIPES section already uses for
+ * an identical reason (see that file's comment) — getBuyableStock/
+ * quoteBuyPrice degrade an unmatched genre to the generic DEFAULT_BUYABLE_STOCK
+ * list, the same safe fallback every genre-keyed lookup in this engine
+ * already takes; genre-flavored stock lights up once a pack threads a
+ * matching genre through buildWorldStack's trade-core config (today,
+ * buildWorldStack calls createTradeCore() with no genre at all, so this
+ * ceiling is not even reached in production — every world sees
+ * DEFAULT_BUYABLE_STOCK regardless of activeRuleset).
+ */
+export function buildBuyActions(world: WorldState): ExtraAction[] {
+  const player = world.entities[world.playerId];
+  if (!player) return [];
+
+  const zoneId = player.zoneId ?? world.locationId;
+  const districtId = zoneId ? getDistrictForZone(world, zoneId) : undefined;
+  const districtEconomy = districtId ? getDistrictEconomy(world, districtId) : undefined;
+  if (!districtId || !districtEconomy) return [];
+
+  const genre = world.meta.activeRuleset;
+  const coin = player.resources[SELL_CURRENCY] ?? 0;
+
+  const actions: ExtraAction[] = [];
+  for (const category of BUY_CATEGORIES) {
+    for (const itemId of getBuyableStock(districtEconomy, category, genre)) {
+      const price = quoteBuyPrice(world, itemId, genre);
+      if (price === undefined || coin < price) continue; // unpriceable or unaffordable — never offered
+      actions.push({
+        verb: 'buy',
+        targetIds: [itemId],
+        label: `Buy ${itemId.replace(/-/g, ' ')} (${price} coin)`,
+        group: 'trade',
+      });
+    }
+  }
+  return actions;
+}
+
+/**
+ * Sell entries for every DISTINCT item id the player carries, grouped with a
+ * count (F-13255438) — one entry per item id rather than one per inventory
+ * SLOT, so a player carrying five healing draughts sees one "Sell healing
+ * draught (x5)" line instead of five identical entries. The handler is
+ * unchanged: selecting the grouped entry still sells exactly ONE unit
+ * (targetIds stays a single-item array — sellHandler's own splice removes
+ * one matching item per call), so re-selecting the same entry sells the next
+ * unit, and the count naturally decreases as the menu rebuilds each turn.
+ *
+ * [] when the player's current zone has no district/economy to sell into
+ * (mirrors the `sell` verb's own "no market here" rejection reason, so no
+ * menu entry is ever offered that the verb could not also produce on its
+ * own).
  *
  * A carried item whose inferred category is contraband with no active black
  * market is also skipped — the same "only ever list what's guaranteed to
@@ -194,17 +288,261 @@ export function buildSellActions(world: WorldState): ExtraAction[] {
   if (!districtId || !districtEconomy) return [];
 
   const inventory = player.inventory ?? [];
-  const actions: ExtraAction[] = [];
+  const counts = new Map<string, number>();
   for (const itemId of inventory) {
+    counts.set(itemId, (counts.get(itemId) ?? 0) + 1);
+  }
+
+  const actions: ExtraAction[] = [];
+  for (const [itemId, count] of counts) {
     const category = inferSupplyCategory(itemId);
     if (category === 'contraband' && !isBlackMarketCondition(districtEconomy)) continue;
     actions.push({
       verb: 'sell',
       targetIds: [itemId],
-      label: `Sell ${itemId.replace(/-/g, ' ')}`,
+      label: `Sell ${itemId.replace(/-/g, ' ')}${count > 1 ? ` (x${count})` : ''}`,
       group: 'trade',
     });
   }
+  return actions;
+}
+
+// ---------------------------------------------------------------------------
+// Crafting — salvage + craft entries (F-6631dd57 write-wire, menu-integration wave)
+// ---------------------------------------------------------------------------
+
+/**
+ * Salvage entries for every carried item, one per inventory slot (mirrors
+ * buildAbilityActions' per-entry iteration pattern) — ALWAYS offered, with no
+ * district/economy gate: salvageHandler never rejects for lack of a district
+ * (crafting-core.ts's own module header — "salvage does NOT reject when no
+ * district resolves... only the economy-shift half of the result is
+ * skipped"), so unlike sell/buy/craft this builder has nothing to gate on
+ * besides carrying the item at all.
+ */
+export function buildSalvageActions(world: WorldState): ExtraAction[] {
+  const player = world.entities[world.playerId];
+  if (!player) return [];
+
+  const inventory = player.inventory ?? [];
+  return inventory.map((itemId) => ({
+    verb: 'salvage',
+    targetIds: [itemId],
+    label: `Salvage ${itemId.replace(/-/g, ' ')}`,
+    group: 'crafting' as const,
+  }));
+}
+
+/**
+ * Craft entries for every 'craft'-category recipe the player can currently
+ * afford (canCraft's affordable + meetsRequirements gate — the SAME check
+ * craftHandler itself runs, so an offered entry can never come back
+ * rejected). Deliberately CRAFT-ONLY this wave: repair/modify recipes are NOT
+ * wired into the menu — the coordinator defers those two categories to the
+ * wave-3 content pass, since repair/modify both target an ALREADY-CARRIED
+ * item (a second target selection this menu's flat entry shape doesn't yet
+ * model) rather than craft's "produce a new item from materials" shape. They
+ * stay reachable today via free-text (`craft <recipeId>` style verbs already
+ * registered) and the Director's Ledger RECIPES section.
+ *
+ * canCraft is called with NO CraftingContext (2-arg form) — this is safe
+ * specifically because 'craft' recipes never set `modificationKind`
+ * (crafting-recipes.ts's own tables: only 'modify' recipes carry that field,
+ * and canCraft's only context-dependent branch is
+ * `modificationKind === 'black-market'`), so the menu's context-less
+ * affordability check and craftHandler's own context-ful one always agree
+ * for every recipe this builder can ever offer.
+ *
+ * Honest ceiling (same source + same degrade as buildBuyActions' own):
+ * genre is world.meta.activeRuleset, not crafting-recipes.ts's bare
+ * GENRE_RECIPES key — getAvailableRecipes degrades an unmatched genre to
+ * UNIVERSAL_RECIPES only, exactly the ceiling director.ts's own RECIPES
+ * section documents for this identical call.
+ */
+export function buildCraftActions(world: WorldState): ExtraAction[] {
+  const player = world.entities[world.playerId];
+  if (!player) return [];
+
+  const zoneId = player.zoneId ?? world.locationId;
+  const districtId = zoneId ? getDistrictForZone(world, zoneId) : undefined;
+  if (!districtId) return []; // craftHandler itself rejects with no district to craft in
+
+  const districtTags = getDistrictDefinition(world, districtId)?.tags ?? [];
+  const genre = world.meta.activeRuleset;
+  const recipes = getAvailableRecipes(genre, player.tags ?? [], districtTags).filter(
+    (recipe) => recipe.category === 'craft',
+  );
+  const materials = getMaterialInventory(player.custom ?? {});
+
+  const actions: ExtraAction[] = [];
+  for (const recipe of recipes) {
+    const check = canCraft(recipe, materials);
+    if (!check.affordable || !check.meetsRequirements) continue;
+    actions.push({
+      verb: 'craft',
+      parameters: { recipeId: recipe.id },
+      // recipe.name is already imperative ('Craft Bandage', 'Distill Antidote'),
+      // so it IS the menu label — a `Craft ${name}` template double-verbs it.
+      label: recipe.name,
+      group: 'crafting',
+    });
+  }
+  return actions;
+}
+
+// ---------------------------------------------------------------------------
+// Leverage — bribe/intimidate/petition/seed entries (F-677e94ad/F-19a23718
+// write-wire, menu-integration wave)
+// ---------------------------------------------------------------------------
+
+/**
+ * Leverage entries for the FOUR wired player-leverage verbs
+ * (bribe/intimidate/petition/seed — player-leverage.ts's own documented
+ * "exactly four verbs" scope). Each entry is offered ONLY when its full
+ * success-predicate holds: resolveSocialAction/resolveRumorAction succeed IFF
+ * canAfford(costs) — there is no additional hidden threshold (verified from
+ * source: neither function checks reputation, alert, or anything else before
+ * succeeding) — so afford + cooldown-ready is the COMPLETE guaranteed-success
+ * gate, the same one socialVerbHandler/seedHandler themselves run before
+ * resolving.
+ *
+ * bribe/intimidate/petition all require a controlling faction at the
+ * player's CURRENT district (socialVerbHandler rejects with no target
+ * faction id — a faction-directed action with no faction is a no-op the menu
+ * must never charge a turn for); seed has no such requirement and carries no
+ * targetIds — its target faction is optional (seedHandler resolves fine with
+ * targetFactionId undefined).
+ *
+ * Cooldown keys mirror the verb handlers' own setCooldown calls exactly:
+ * bribe → 'social'/'bribe', intimidate → 'social'/'intimidate', petition →
+ * 'social'/'petition-authority' (NOTE: the sub-action id petitionHandler
+ * actually resolves through is 'petition-authority', not 'petition' — the
+ * VERB is 'petition', the cooldown/requirements key is not), seed →
+ * 'rumor'/'seed'.
+ */
+export function buildLeverageActions(world: WorldState): ExtraAction[] {
+  const player = world.entities[world.playerId];
+  if (!player) return [];
+
+  const zoneId = player.zoneId ?? world.locationId;
+  const districtId = zoneId ? getDistrictForZone(world, zoneId) : undefined;
+  const controllingFaction = districtId ? getDistrictDefinition(world, districtId)?.controllingFaction : undefined;
+
+  const custom = player.custom ?? {};
+  const state = getLeverageState(custom);
+  const tick = world.meta.tick;
+
+  const actions: ExtraAction[] = [];
+
+  if (controllingFaction) {
+    const bribeReq = getSocialRequirements('bribe');
+    if (
+      canAfford(state, bribeReq.costs) &&
+      isCooldownReady(custom, 'social', 'bribe', tick, bribeReq.cooldownTurns ?? 0)
+    ) {
+      actions.push({
+        verb: 'bribe',
+        targetIds: [controllingFaction],
+        label: `Bribe ${controllingFaction.replace(/-/g, ' ')}`,
+        group: 'leverage',
+      });
+    }
+
+    const intimidateReq = getSocialRequirements('intimidate');
+    if (
+      canAfford(state, intimidateReq.costs) &&
+      isCooldownReady(custom, 'social', 'intimidate', tick, intimidateReq.cooldownTurns ?? 0)
+    ) {
+      actions.push({
+        verb: 'intimidate',
+        targetIds: [controllingFaction],
+        label: `Intimidate ${controllingFaction.replace(/-/g, ' ')}`,
+        group: 'leverage',
+      });
+    }
+
+    // NOTE the subAction id is 'petition-authority', not 'petition' — see doc comment above.
+    const petitionReq = getSocialRequirements('petition-authority');
+    if (
+      canAfford(state, petitionReq.costs) &&
+      isCooldownReady(custom, 'social', 'petition-authority', tick, petitionReq.cooldownTurns ?? 0)
+    ) {
+      actions.push({
+        verb: 'petition',
+        targetIds: [controllingFaction],
+        label: `Petition ${controllingFaction.replace(/-/g, ' ')}`,
+        group: 'leverage',
+      });
+    }
+  }
+
+  const seedReq = getRumorRequirements('seed');
+  if (
+    canAfford(state, seedReq.costs) &&
+    isCooldownReady(custom, 'rumor', 'seed', tick, seedReq.cooldownTurns ?? 0)
+  ) {
+    actions.push({
+      verb: 'seed',
+      label: 'Spread a rumor about yourself',
+      group: 'leverage',
+    });
+  }
+
+  return actions;
+}
+
+// ---------------------------------------------------------------------------
+// Opportunities — accept/complete/abandon entries (F-ceed887f/F-f3f2a84c
+// write-wire, menu-integration wave)
+// ---------------------------------------------------------------------------
+
+/**
+ * Opportunity entries from the persisted opportunity ledger
+ * (getPersistedOpportunities — world.modules['opportunity-core'].opportunities,
+ * the same namespace world-tick's per-round spawn/tick and the 'opportunity'
+ * verb both read/write). Only 'available' and 'accepted' are live statuses;
+ * every other OpportunityStatus (completed/failed/expired/declined/abandoned/
+ * betrayed) is terminal and gets no entry — the opportunity verb itself
+ * rejects any op against a terminal opportunity (opportunityHandler: "accept"
+ * requires status 'available', "complete"/"abandon" require 'accepted'), so
+ * this mirrors that gate exactly.
+ *
+ * An 'available' opportunity offers ONE entry (accept); an 'accepted' one
+ * offers TWO (complete, abandon) — both submit the SAME verb ('opportunity')
+ * with a different `parameters.op`, the shape opportunityHandler's own
+ * action.parameters.op switch expects.
+ */
+export function buildOpportunityActions(world: WorldState): ExtraAction[] {
+  const opportunities = getPersistedOpportunities(world);
+  const actions: ExtraAction[] = [];
+
+  for (const opp of opportunities) {
+    if (opp.status === 'available') {
+      actions.push({
+        verb: 'opportunity',
+        targetIds: [opp.id],
+        parameters: { op: 'accept' },
+        label: `Accept: ${opp.title}`,
+        group: 'opportunities',
+      });
+    } else if (opp.status === 'accepted') {
+      actions.push({
+        verb: 'opportunity',
+        targetIds: [opp.id],
+        parameters: { op: 'complete' },
+        label: `Complete: ${opp.title}`,
+        group: 'opportunities',
+      });
+      actions.push({
+        verb: 'opportunity',
+        targetIds: [opp.id],
+        parameters: { op: 'abandon' },
+        label: `Abandon: ${opp.title}`,
+        group: 'opportunities',
+      });
+    }
+  }
+
   return actions;
 }
 
@@ -408,8 +746,9 @@ export function renderInspectorReport(
   return lines.join('\n');
 }
 
-/** All appended entries — abilities, then unlocks, then trade, then the
- *  always-on player surfaces in reading order (the Journal, then the
+/** All appended entries — abilities, then unlocks, then trade (buy, sell),
+ *  then crafting (salvage, craft), then leverage, then opportunities, then
+ *  the always-on player surfaces in reading order (the Journal, then the
  *  Director's Ledger), then the env-gated debug entry last (the operator
  *  surface stays at the bottom). Stable order, pure over state.
  *
@@ -420,9 +759,16 @@ export function renderInspectorReport(
  * hand-authored or scaffolded pack) that has no other guard between here and
  * the top-level catch. A throw from either source degrades to one bounded
  * line and contributes no entries from the failing source; the other extras
- * (unlock/ability, trade, journal, director, debug) still build normally.
+ * (unlock/ability, trade, crafting, leverage, opportunities, journal,
+ * director, debug) still build normally.
  * F-6c3e4fde: buildSellActions gets the same guard — it reads district/
  * economy state the same way abilities read the ability catalog.
+ * Menu-integration wave (v2.9): buildBuyActions, buildSalvageActions,
+ * buildCraftActions, buildLeverageActions, and buildOpportunityActions each
+ * get their OWN guard, same shape — every one of them reads content-driven or
+ * persisted state (district/economy, recipe tables, leverage custom fields,
+ * the opportunity ledger) with no other guard between here and the top-level
+ * catch, and a throw from any ONE of them must never take out its siblings.
  */
 export function buildExtraActions(
   engine: Engine,
@@ -445,6 +791,13 @@ export function buildExtraActions(
     log(`  (advancement menu unavailable this turn: ${describeActionError(err)})`);
   }
 
+  let buyActions: ExtraAction[] = [];
+  try {
+    buyActions = buildBuyActions(engine.world);
+  } catch (err) {
+    log(`  (buy menu unavailable this turn: ${describeActionError(err)})`);
+  }
+
   let sellActions: ExtraAction[] = [];
   try {
     sellActions = buildSellActions(engine.world);
@@ -452,10 +805,43 @@ export function buildExtraActions(
     log(`  (trade menu unavailable this turn: ${describeActionError(err)})`);
   }
 
+  let salvageActions: ExtraAction[] = [];
+  try {
+    salvageActions = buildSalvageActions(engine.world);
+  } catch (err) {
+    log(`  (salvage menu unavailable this turn: ${describeActionError(err)})`);
+  }
+
+  let craftActions: ExtraAction[] = [];
+  try {
+    craftActions = buildCraftActions(engine.world);
+  } catch (err) {
+    log(`  (craft menu unavailable this turn: ${describeActionError(err)})`);
+  }
+
+  let leverageActions: ExtraAction[] = [];
+  try {
+    leverageActions = buildLeverageActions(engine.world);
+  } catch (err) {
+    log(`  (leverage menu unavailable this turn: ${describeActionError(err)})`);
+  }
+
+  let opportunityActions: ExtraAction[] = [];
+  try {
+    opportunityActions = buildOpportunityActions(engine.world);
+  } catch (err) {
+    log(`  (opportunity menu unavailable this turn: ${describeActionError(err)})`);
+  }
+
   return [
     ...abilityActions,
     ...unlockActions,
+    ...buyActions,
     ...sellActions,
+    ...salvageActions,
+    ...craftActions,
+    ...leverageActions,
+    ...opportunityActions,
     ...buildJournalActions(),
     ...buildDirectorActions(),
     ...buildDebugActions(),

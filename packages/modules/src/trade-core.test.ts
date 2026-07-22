@@ -16,6 +16,7 @@ import {
   createTradeCore,
   inferSupplyCategory,
   getBuyableStock,
+  quoteBuyPrice,
   SELL_CURRENCY,
   SELL_SUPPLY_RAISE,
   SELL_BASE_VALUE,
@@ -353,6 +354,59 @@ describe('buy verb (F-31f15013) — the missing merchant-side wire', () => {
     const fantasyEngine = makeBuyEngine(50, { genre: 'fantasy' });
     const fantasyEvents = fantasyEngine.submitAction('buy', { targetIds: ['rum-barrel'] });
     expect(fantasyEvents.some((e) => e.type === 'action.rejected')).toBe(true);
+  });
+});
+
+// --- Single-source buy price (menu-integration wave) ---
+//
+// buyHandler used to compute its price inline; menu.ts's buildBuyActions (the
+// numbered CLI menu's buy entries) needs to PREVIEW that same price before
+// the player commits a turn to it — a second, hand-rolled copy of the
+// ctx-building + computeItemValue + markup pipeline would drift the moment
+// either copy changed. quoteBuyPrice is the single source both now call.
+describe('quoteBuyPrice (single-source buy price) — buyHandler must debit exactly this value', () => {
+  it('returns the same number buyHandler actually debits — no divergence', () => {
+    const engine = makeBuyEngine(50);
+    const price = quoteBuyPrice(engine.world, 'short-sword');
+    expect(price).toBe(13); // SELL_BASE_VALUE(10) * BUY_MARKUP_MULTIPLIER(1.3), baseline district
+
+    const before = engine.world.entities.player.resources[SELL_CURRENCY];
+    engine.submitAction('buy', { targetIds: ['short-sword'] });
+    const after = engine.world.entities.player.resources[SELL_CURRENCY];
+    expect(before - after).toBe(price);
+  });
+
+  it('returns undefined for an item not currently offered (below-floor or unknown id)', () => {
+    const engine = makeBuyEngine(50);
+    expect(quoteBuyPrice(engine.world, 'nonexistent-widget')).toBeUndefined();
+
+    const economy = (engine.world.modules['economy-core'] as EconomyCoreState).districts['district-1'];
+    economy.supplies.weapons.level = BUY_SUPPLY_FLOOR - 1;
+    expect(quoteBuyPrice(engine.world, 'short-sword')).toBeUndefined();
+  });
+
+  it('returns undefined when the player is nowhere near a market', () => {
+    const engine = createTestEngine({
+      modules: [createTradeCore()], // no district-core/economy-core registered
+      entities: [makeBuyerPlayer(50)],
+      zones,
+    });
+    expect(quoteBuyPrice(engine.world, 'short-sword')).toBeUndefined();
+  });
+
+  it('returns undefined for a contraband item with no active black market (untradeable gate, mirrors buyHandler)', () => {
+    const engine = makeBuyEngine(50);
+    const economy = (engine.world.modules['economy-core'] as EconomyCoreState).districts['district-1'];
+    economy.supplies.contraband.level = 30; // clears BUY_SUPPLY_FLOOR but not the black-market threshold
+    expect(quoteBuyPrice(engine.world, 'contraband-goods')).toBeUndefined();
+  });
+
+  it('respects genre flavoring exactly like getBuyableStock (same genre argument, same offered ids)', () => {
+    const pirateEngine = makeBuyEngine(50, { genre: 'pirate' });
+    expect(quoteBuyPrice(pirateEngine.world, 'rum-barrel', 'pirate')).toBeDefined();
+
+    const fantasyEngine = makeBuyEngine(50, { genre: 'fantasy' });
+    expect(quoteBuyPrice(fantasyEngine.world, 'rum-barrel', 'fantasy')).toBeUndefined();
   });
 });
 

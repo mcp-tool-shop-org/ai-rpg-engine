@@ -342,40 +342,38 @@ export const BUY_MARKUP_MULTIPLIER = 1.3;
 export const BUY_SUPPLY_LOWER = -SELL_SUPPLY_RAISE;
 
 /**
- * The buy verb: validates the item is currently offered by this district's
- * BuyableStock (F-f73aa080), prices it via computeItemValue +
- * BUY_MARKUP_MULTIPLIER (F-e9f0a338), debits SELL_CURRENCY — reading it
- * NaN/undefined-safely (F-92c78519) — adds the item to inventory (the exact
- * inverse of sellHandler's splice), and applies a supply-LOWERING TradeEffect
- * back into the same district (BUY_SUPPLY_LOWER, the mirror of
- * SELL_SUPPLY_RAISE). Rejects (no state mutation) when the actor is missing,
- * no item is specified, the district has no market, the item isn't currently
- * offered (absent from BuyableStock or its category is below-floor), the
- * item is untradeable (contraband with no black market — the same
- * computeItemValue-derived gate sellHandler uses), or coin is insufficient.
+ * Single-source buy price preview (menu-integration wave, v2.9): the exact
+ * ctx-building + computeItemValue + BUY_MARKUP_MULTIPLIER pipeline buyHandler
+ * itself calls to price a purchase — extracted so packages/cli's menu.ts can
+ * PREVIEW an offered item's price (to decide whether to list it at all)
+ * without hand-rolling a second copy of this arithmetic that could silently
+ * drift from what buyHandler actually debits. Returns undefined when the
+ * item isn't currently offered here (findBuyableCategory finds no matching
+ * category — absent from BuyableStock, or its category's supply is
+ * below BUY_SUPPLY_FLOOR), there is no district/economy to price against, or
+ * the item is untradeable (contraband with no active black market — the
+ * same computeItemValue-derived gate buyHandler/sellHandler both use).
+ *
+ * No actor/zoneId parameter (menu.ts's own builders resolve their OWN
+ * district via the player's zone for their "is this offered" listing pass —
+ * see buildBuyActions) — 'buy' is a player-only verb in every production and
+ * test call path (engine.submitAction always stamps actorId = world.playerId;
+ * nothing in this engine ever submits 'buy' on behalf of another entity), so
+ * resolving straight off world.playerId's own zone is exactly the zone
+ * buyHandler's own actor-based resolution would find. Reputation/heat/
+ * pressure inputs are already world-level-only (not actor-specific) in this
+ * pipeline, so the only actor-shaped input this function would otherwise need
+ * is the zone, and that reduces to world.playerId's zone in practice.
  */
-function buyHandler(action: ActionIntent, world: WorldState, genre?: string): ResolvedEvent[] {
-  const actor = world.entities[action.actorId];
-  if (!actor) {
-    return [makeEvent(action, 'action.rejected', { reason: 'actor not found' })];
-  }
-
-  const itemId = action.toolId ?? action.targetIds?.[0];
-  if (!itemId) {
-    return [makeEvent(action, 'action.rejected', { reason: 'no item specified' })];
-  }
-
-  const zoneId = actor.zoneId ?? world.locationId;
+export function quoteBuyPrice(world: WorldState, itemId: string, genre?: string): number | undefined {
+  const player = world.entities[world.playerId];
+  const zoneId = player?.zoneId ?? world.locationId;
   const districtId = zoneId ? getDistrictForZone(world, zoneId) : undefined;
   const districtEconomy = districtId ? getDistrictEconomy(world, districtId) : undefined;
-  if (!districtId || !districtEconomy) {
-    return [makeEvent(action, 'action.rejected', { reason: 'no market here' })];
-  }
+  if (!districtId || !districtEconomy) return undefined;
 
   const supplyCategory = findBuyableCategory(districtEconomy, itemId, genre);
-  if (!supplyCategory) {
-    return [makeEvent(action, 'action.rejected', { reason: `${itemId} is not for sale here` })];
-  }
+  if (!supplyCategory) return undefined;
 
   const controllingFactionId = getDistrictDefinition(world, districtId)?.controllingFaction;
   // Same authored-baseline + accrued-delta merge sellHandler uses for
@@ -401,11 +399,58 @@ function buyHandler(action: ActionIntent, world: WorldState, genre?: string): Re
   // and sell price identically except for the markup applied next, which is
   // what makes a round-trip a guaranteed loss (F-e9f0a338).
   const result = computeItemValue(SELL_BASE_VALUE, supplyCategory, ctx);
-  if (result.tradeAdvice === 'untradeable') {
-    return [makeEvent(action, 'action.rejected', { reason: result.reason })];
+  if (result.tradeAdvice === 'untradeable') return undefined;
+
+  return Math.round(result.finalValue * BUY_MARKUP_MULTIPLIER);
+}
+
+/**
+ * The buy verb: validates the item is currently offered by this district's
+ * BuyableStock (F-f73aa080), prices it via quoteBuyPrice (F-e9f0a338 markup
+ * included; single-sourced with menu.ts's buildBuyActions preview, menu-
+ * integration wave v2.9), debits SELL_CURRENCY — reading it NaN/undefined-
+ * safely (F-92c78519) — adds the item to inventory (the exact inverse of
+ * sellHandler's splice), and applies a supply-LOWERING TradeEffect back into
+ * the same district (BUY_SUPPLY_LOWER, the mirror of SELL_SUPPLY_RAISE).
+ * Rejects (no state mutation) when the actor is missing, no item is
+ * specified, the district has no market, the item isn't currently offered
+ * (absent from BuyableStock or its category is below-floor), the item is
+ * untradeable (contraband with no black market — the same computeItemValue-
+ * derived gate sellHandler uses, surfaced via quoteBuyPrice returning
+ * undefined), or coin is insufficient.
+ */
+function buyHandler(action: ActionIntent, world: WorldState, genre?: string): ResolvedEvent[] {
+  const actor = world.entities[action.actorId];
+  if (!actor) {
+    return [makeEvent(action, 'action.rejected', { reason: 'actor not found' })];
   }
 
-  const price = Math.round(result.finalValue * BUY_MARKUP_MULTIPLIER);
+  const itemId = action.toolId ?? action.targetIds?.[0];
+  if (!itemId) {
+    return [makeEvent(action, 'action.rejected', { reason: 'no item specified' })];
+  }
+
+  const zoneId = actor.zoneId ?? world.locationId;
+  const districtId = zoneId ? getDistrictForZone(world, zoneId) : undefined;
+  const districtEconomy = districtId ? getDistrictEconomy(world, districtId) : undefined;
+  if (!districtId || !districtEconomy) {
+    return [makeEvent(action, 'action.rejected', { reason: 'no market here' })];
+  }
+
+  const supplyCategory = findBuyableCategory(districtEconomy, itemId, genre);
+  if (!supplyCategory) {
+    return [makeEvent(action, 'action.rejected', { reason: `${itemId} is not for sale here` })];
+  }
+
+  // Single source of truth (see quoteBuyPrice's own doc comment): undefined
+  // here means the item resolved a category above but computeItemValue still
+  // called it untradeable (contraband, no black market) — the only way
+  // quoteBuyPrice can return undefined once findBuyableCategory has already
+  // succeeded above.
+  const price = quoteBuyPrice(world, itemId, genre);
+  if (price === undefined) {
+    return [makeEvent(action, 'action.rejected', { reason: `${itemId} cannot be traded here` })];
+  }
 
   // F-92c78519: never NaN/undefined arithmetic on a possibly-unseeded resource.
   const coin = actor.resources[SELL_CURRENCY] ?? 0;
