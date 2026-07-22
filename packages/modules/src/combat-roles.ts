@@ -16,6 +16,7 @@ import type { PackBias, CombatIntentType } from './combat-intent.js';
 import type { CombatStatMapping } from './combat-core.js';
 import { DEFAULT_STAT_MAPPING } from './combat-core.js';
 import { validateEntityTags } from './tag-taxonomy.js';
+import type { CompanionRole } from './companion-core.js';
 
 // ---------------------------------------------------------------------------
 // Combat Role System
@@ -161,6 +162,67 @@ export const BUILTIN_COMBAT_ROLES: Record<CombatRole, CombatRoleTemplate> = {
 
 /** All valid CombatRole values */
 export const COMBAT_ROLES: CombatRole[] = Object.keys(BUILTIN_COMBAT_ROLES) as CombatRole[];
+
+// ---------------------------------------------------------------------------
+// Companion Role -> Combat Bias (F-72b258df)
+// ---------------------------------------------------------------------------
+
+/**
+ * PackBias per CompanionRole (companion-core.ts), shaped exactly like
+ * BUILTIN_COMBAT_ROLES above so a recruited companion's role gives it real
+ * tactical personality through the SAME six-intent scoring system enemy
+ * roles already use. Before this table, every companion (fighter, scout,
+ * healer, diplomat, smuggler, scholar) scored identically through
+ * combat-intent.ts's six-intent system: buildContext's fallback only ever
+ * looked for a bare `role:*` tag, and a companion's own tag is namespaced
+ * `companion:*` (companion-core.ts's companionRoleTag) — never a match.
+ *
+ * Each `.tag` is the exact entity tag buildContext's companion-tag fallback
+ * matches against. companion-core.ts's addCompanionTags already writes this
+ * tag on every recruit (F-2fe4be26) — zero new content/tag-authoring needed
+ * for this table to light up in play.
+ *
+ * Bias sketch: fighter/scout lean aggressive-mobile (frontline pressure,
+ * repositioning); healer/diplomat/scholar lean defensive-passive (protect,
+ * guard, brace, avoid attack/finish — matching their low
+ * INTERCEPT_ROLE_BONUS scores in combat-core.ts); smuggler is the
+ * opportunist (reposition + finish, evasive under pressure).
+ */
+export const COMPANION_ROLE_BIAS: Record<CompanionRole, PackBias> = {
+  fighter: {
+    tag: 'companion:fighter',
+    name: 'companion-fighter-frontline',
+    modifiers: { attack: 4, protect: 4, guard: 2, disengage: -4, finish: 2 },
+  },
+  scout: {
+    tag: 'companion:scout',
+    name: 'companion-scout-mobile',
+    modifiers: { reposition: 6, pressure: 4, disengage: 4, guard: -3 },
+  },
+  healer: {
+    tag: 'companion:healer',
+    name: 'companion-healer-support',
+    modifiers: { protect: 8, guard: 4, attack: -5, finish: -4 },
+    moraleGuardThreshold: 70,
+  },
+  diplomat: {
+    tag: 'companion:diplomat',
+    name: 'companion-diplomat-deescalate',
+    modifiers: { disengage: 6, guard: 3, attack: -5, pressure: -3 },
+    moraleFleeThreshold: 40,
+  },
+  smuggler: {
+    tag: 'companion:smuggler',
+    name: 'companion-smuggler-opportunist',
+    modifiers: { reposition: 5, finish: 5, disengage: 4, guard: -3 },
+  },
+  scholar: {
+    tag: 'companion:scholar',
+    name: 'companion-scholar-cautious',
+    modifiers: { guard: 5, brace: 5, attack: -8, finish: -5 },
+    moraleFleeThreshold: 45,
+  },
+};
 
 // ---------------------------------------------------------------------------
 // Encounter Composition

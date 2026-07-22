@@ -3,10 +3,10 @@
 // Party state, cohesion math, and ability-modifier stacking. Pure functions —
 // pins immutability, the party-size gate, and the modifier combination rules.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
 import type { EntityState } from '@ai-rpg-engine/core';
-import type { CompanionState } from './companion-core.js';
+import type { CompanionState, PartyState, CompanionRole } from './companion-core.js';
 import {
   createPartyState,
   addCompanion,
@@ -21,9 +21,11 @@ import {
   isCompanionRecruitable,
   computeAbilityModifiers,
   formatPartyStatusLine,
+  formatPartyPresence,
   formatPartyForDirector,
   createCompanionCore,
   getPartyState,
+  validateCompanionState,
   COMPANION_TAG,
   companionRoleTag,
   deriveCompanionRole,
@@ -568,5 +570,141 @@ describe('computeAbilityModifiers — zero-valued effect guard (F-a8156c3b)', ()
       leverageCostDiscount: 0, hpRecoveryBonus: 0, rumorSpreadScale: 1.0,
       reputationBonus: {}, commerceGainBonus: 0, rumorSuppressionChance: 0, perceptionBonus: 0,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// HP surfaces in party formatters (F-eefac26f) — now that companions take
+// real turns and take real damage (v2.9), formatPartyForDirector/
+// formatPartyStatusLine/formatPartyPresence thread each companion's live
+// entity resources.hp/maxHp alongside morale. `world` is an OPTIONAL last
+// parameter on all three — omitting it (every pre-existing call site,
+// including director.ts's own `formatPartyForDirector(party, [],
+// departureRisks)`) degrades to the old morale-only text, unchanged.
+// ---------------------------------------------------------------------------
+
+describe('HP surfaces in party formatters (F-eefac26f)', () => {
+  const zonesForHp = [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }];
+
+  function engineWithWoundedMira(hp: number, maxHp: number) {
+    return createTestEngine({
+      modules: [statusCore],
+      entities: [{
+        id: 'mira', blueprintId: 'mira', type: 'npc', name: 'Mira',
+        tags: ['companion'], stats: {}, resources: { hp, maxHp }, statuses: [], zoneId: 'a',
+      }],
+      zones: zonesForHp,
+    });
+  }
+
+  it('formatPartyForDirector shows a wounded companion\'s HP when a world is passed, and omits it (unchanged) when not', () => {
+    const party = addCompanion(createPartyState(), makeCompanion('mira', { morale: 70 })).party;
+    const engine = engineWithWoundedMira(8, 20);
+
+    const withoutWorld = formatPartyForDirector(party, [], {});
+    expect(withoutWorld).not.toContain('HP:');
+    expect(withoutWorld).toContain('Morale: 70');
+
+    const withWorld = formatPartyForDirector(party, [], {}, engine.world);
+    expect(withWorld).toContain('HP: 8/20');
+    expect(withWorld).toContain('Morale: 70');
+  });
+
+  it('formatPartyStatusLine surfaces HP the same way, opt-in via the world parameter', () => {
+    const party = addCompanion(createPartyState(), makeCompanion('mira', { morale: 70 })).party;
+    const engine = engineWithWoundedMira(12, 20);
+
+    expect(formatPartyStatusLine(party, { mira: 'Mira' })).toContain('Mira (fighter, morale 70)');
+    expect(formatPartyStatusLine(party, { mira: 'Mira' }, engine.world)).toContain('Mira (fighter, HP 12/20, morale 70)');
+  });
+
+  it('formatPartyPresence surfaces HP the same way, opt-in via the world parameter', () => {
+    const party = addCompanion(createPartyState(), makeCompanion('mira', { morale: 80 })).party;
+    const engine = engineWithWoundedMira(20, 20);
+
+    expect(formatPartyPresence(party, { mira: 'Mira' })).toBe('Accompanied by Mira (fighter, confident)');
+    expect(formatPartyPresence(party, { mira: 'Mira' }, engine.world)).toBe('Accompanied by Mira (fighter, HP 20/20, confident)');
+  });
+
+  it('a companion missing from world.entities (or with no numeric hp) degrades silently — no HP segment, no crash', () => {
+    const party = addCompanion(createPartyState(), makeCompanion('ghost', { morale: 50 })).party;
+    const engine = createTestEngine({ modules: [statusCore], entities: [], zones: zonesForHp });
+
+    const text = formatPartyForDirector(party, [], {}, engine.world);
+    expect(text).not.toContain('HP:');
+    expect(text).toContain('Morale: 50');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getPartyState role validation (F-79278894) — the OLD guard checked only
+// Array.isArray(companions), never that each companion's role is a real
+// CompanionRole or morale is in the 0-100 range. A hand-built
+// world.modules['companion-core'] fixture with role:'muscle' (outside the
+// 6-value union — exactly director.test.ts's own PARTY-section fixture)
+// passed through silently.
+// ---------------------------------------------------------------------------
+
+describe('getPartyState role validation (F-79278894)', () => {
+  it('warns and degrades a companion whose role is not a recognized CompanionRole, instead of silently accepting it', () => {
+    const engine = createTestEngine({ modules: [statusCore], entities: [], zones: [] });
+    engine.world.modules['companion-core'] = {
+      companions: [
+        { npcId: 'mira', role: 'muscle', joinedAtTick: 2, abilityTags: [], morale: 70, active: true },
+      ],
+      maxSize: 3,
+      cohesion: 70,
+    };
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const party = getPartyState(engine.world);
+
+    // Assert BEFORE mockRestore() — mockRestore() clears recorded calls
+    // (same as Jest: it does everything mockReset() does, which does
+    // everything mockClear() does), so asserting after would see an empty
+    // call history regardless of what actually happened.
+    expect(warnSpy).toHaveBeenCalled();
+    expect(String(warnSpy.mock.calls[0]?.[0])).toContain('muscle');
+    warnSpy.mockRestore();
+
+    // Degraded to the same safe fallback deriveCompanionRole already uses for
+    // unauthored content — not silently accepted, not thrown away either.
+    expect(party.companions[0].role).toBe('scout');
+    // Non-attaching read: world.modules is left untouched.
+    const rawNs = engine.world.modules['companion-core'] as { companions: Array<{ role: string }> };
+    expect(rawNs.companions[0].role).toBe('muscle');
+  });
+
+  it('a party with only valid companions passes through with zero warnings, same reference', () => {
+    const engine = createTestEngine({ modules: [statusCore], entities: [], zones: [] });
+    engine.world.modules['companion-core'] = {
+      companions: [{ npcId: 'mira', role: 'healer', joinedAtTick: 0, abilityTags: [], morale: 80, active: true }],
+      maxSize: 3,
+      cohesion: 80,
+    };
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const party = getPartyState(engine.world);
+    warnSpy.mockRestore();
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(party).toBe(engine.world.modules['companion-core']); // untouched, same object
+  });
+
+  it('validateCompanionState flags an unrecognized role and an out-of-range morale, and stays silent on a valid companion', () => {
+    const party: PartyState = {
+      companions: [
+        makeCompanion('a', { role: 'muscle' as CompanionRole }),
+        makeCompanion('b', { morale: 250 }),
+        makeCompanion('c'),
+      ],
+      maxSize: 3,
+      cohesion: 0,
+    };
+    const warnings = validateCompanionState(party);
+
+    expect(warnings.some((w) => w.includes("'a'") && w.includes('muscle'))).toBe(true);
+    expect(warnings.some((w) => w.includes("'b'") && w.includes('250'))).toBe(true);
+    expect(warnings.some((w) => w.includes("'c'"))).toBe(false);
   });
 });

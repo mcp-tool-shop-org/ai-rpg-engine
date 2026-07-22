@@ -8,6 +8,7 @@ import type { PackBias } from './combat-intent.js';
 import {
   BUILTIN_COMBAT_ROLES,
   COMBAT_ROLES,
+  COMPANION_ROLE_BIAS,
   createRoledEnemy,
   getEntityRole,
   getRoleBiases,
@@ -20,6 +21,7 @@ import {
   analyzeEncounter,
 } from './combat-roles.js';
 import type { CombatRole, BossDefinition } from './combat-roles.js';
+import type { CompanionRole } from './companion-core.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -112,6 +114,33 @@ describe('combat-roles: role templates', () => {
     const guard = createRoledEnemy(base, 'bodyguard');
     expect(guard.tags).toContain('role:bodyguard');
     expect(guard.tags).toContain('bodyguard');  // bodyguard engagement tag
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Companion Role Bias (F-72b258df) — COMPANION_ROLE_BIAS, shaped like
+// BUILTIN_COMBAT_ROLES above but keyed by CompanionRole so a recruited
+// companion's role carries real tactical personality through
+// combat-intent.ts's buildContext (see combat-intent.test.ts for the
+// end-to-end scoring proof; this block pins the table's own shape).
+// ---------------------------------------------------------------------------
+
+describe('combat-roles: companion role bias (F-72b258df)', () => {
+  it('COMPANION_ROLE_BIAS has all 6 CompanionRole entries, each with a valid PackBias tagged companion:<role>', () => {
+    const expected: CompanionRole[] = ['fighter', 'scout', 'healer', 'diplomat', 'smuggler', 'scholar'];
+    for (const role of expected) {
+      const bias = COMPANION_ROLE_BIAS[role];
+      expect(bias).toBeDefined();
+      expect(bias.tag).toBe(`companion:${role}`);
+      expect(bias.name).toBeTruthy();
+      expect(Object.keys(bias.modifiers).length).toBeGreaterThan(0);
+    }
+    expect(Object.keys(COMPANION_ROLE_BIAS).length).toBe(6);
+  });
+
+  it('every bias name is unique across roles (no accidental copy-paste collision)', () => {
+    const names = Object.values(COMPANION_ROLE_BIAS).map((b) => b.name);
+    expect(new Set(names).size).toBe(names.length);
   });
 });
 
