@@ -18,6 +18,7 @@ import { createCompanionCore, getPartyState, type CompanionState } from './compa
 import { createEnvironmentCore } from './environment-core.js';
 import { createDistrictCore } from './district-core.js';
 import { createEconomyCore, getDistrictEconomy } from './economy-core.js';
+import { getLeverageState } from './player-leverage.js';
 
 function makeOpp(overrides?: Partial<OpportunityState>): OpportunityState {
   return {
@@ -570,6 +571,73 @@ describe("the 'opportunity' verb — companion morale (v2.8 honest-skip closes h
 });
 
 // ---------------------------------------------------------------------------
+// The leverage-currency economy (Phase-9 remediation, FIX 1): completing an
+// opportunity has always COMPUTED a `{type:'leverage', currency, delta}`
+// reward (every kind above does — contract/favor-request/bounty/supply-run/
+// recovery/investigation/faction-job) and formatFalloutEffect has always
+// NARRATED it ("+5 favor"), but applyOpportunityFallout had no case for it —
+// the reward was announced and never paid. This is the real production
+// EARNING path for player-leverage.ts's four wired verbs (bribe/intimidate/
+// petition/seed), each gated on an affordable currency balance.
+// ---------------------------------------------------------------------------
+describe("the 'opportunity' verb — leverage economy (Phase-9 remediation FIX 1)", () => {
+  it('RED-PROOF: completing a favor-request with a real party ACTUALLY credits the actor\'s leverage currency (today it stays 0)', () => {
+    const engine = makeOppEngine([makePlayer(), makeRecruitableNpc('sara', 'scout')]);
+    engine.submitAction('recruit', { targetIds: ['sara'] });
+    expect(getLeverageState(engine.world.entities.player.custom ?? {}).favor).toBe(0);
+
+    const opp = seedOpportunity(engine, {
+      status: 'accepted', kind: 'favor-request', sourceNpcId: 'sara', tags: ['companion'],
+    });
+    engine.submitAction('opportunity', { parameters: { op: 'complete' }, targetIds: [opp.id] });
+
+    // getFavorRequestFallout's 'completed' case: +5 favor.
+    expect(getLeverageState(engine.world.entities.player.custom ?? {}).favor).toBe(5);
+    // The companion-morale channel (already wired) is unaffected by this fix.
+    expect(getPartyState(engine.world).companions.find((c) => c.npcId === 'sara')!.morale).toBe(75);
+  });
+
+  it('RED-PROOF: completing a contract credits favor the same way (every opportunity kind computes this reward)', () => {
+    const engine = makeOppEngine();
+    const opp = seedOpportunity(engine, { status: 'accepted', kind: 'contract', sourceFactionId: 'guild' });
+
+    engine.submitAction('opportunity', { parameters: { op: 'complete' }, targetIds: [opp.id] });
+
+    // getContractFallout's 'completed' case: +5 favor.
+    expect(getLeverageState(engine.world.entities.player.custom ?? {}).favor).toBe(5);
+  });
+
+  it('leverage accumulates across independent completions (additive, not overwritten)', () => {
+    const engine = makeOppEngine();
+    const first = seedOpportunity(engine, { id: 'opp-1', status: 'accepted', kind: 'contract', sourceFactionId: 'guild' });
+    engine.submitAction('opportunity', { parameters: { op: 'complete' }, targetIds: [first.id] });
+
+    const second = seedOpportunity(engine, { id: 'opp-2', status: 'accepted', kind: 'bounty', sourceFactionId: 'guild' });
+    engine.submitAction('opportunity', { parameters: { op: 'complete' }, targetIds: [second.id] });
+
+    // +5 favor (contract) then +5 blackmail (bounty) — independent currencies, both land.
+    const leverage = getLeverageState(engine.world.entities.player.custom ?? {});
+    expect(leverage.favor).toBe(5);
+    expect(leverage.blackmail).toBe(5);
+  });
+
+  it('narration and written state now AGREE: the emitted event\'s leverage effect matches what actually landed on the actor', () => {
+    const engine = makeOppEngine();
+    const opp = seedOpportunity(engine, { status: 'accepted', kind: 'bounty', sourceFactionId: 'guild' });
+
+    const events = engine.submitAction('opportunity', { parameters: { op: 'complete' }, targetIds: [opp.id] });
+    const completedEvent = events.find((e) => e.type === 'opportunity.completed');
+    const narratedEffects = completedEvent?.payload.effects as Array<{ type: string; currency?: string; delta?: number }>;
+    const narratedLeverage = narratedEffects.find((e) => e.type === 'leverage');
+    expect(narratedLeverage).toMatchObject({ currency: 'blackmail', delta: 5 }); // getBountyFallout's 'completed' case
+
+    expect(getLeverageState(engine.world.entities.player.custom ?? {}).blackmail).toBe(
+      narratedLeverage!.delta,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // applyOpportunityFallout — writes every effect kind (F-f3f2a84c)
 // ---------------------------------------------------------------------------
 describe('applyOpportunityFallout — writes every effect kind', () => {
@@ -590,7 +658,7 @@ describe('applyOpportunityFallout — writes every effect kind', () => {
     const engine = createTestEngine({ modules: [], entities: [makePlayer()], zones });
     const opp = makeOpp({ kind: 'faction-job', sourceFactionId: 'guild' });
     const fallout = computeOpportunityFallout(opp, 'betrayed', ctx); // -30 rep, +25 alert, +20 heat
-    applyOpportunityFallout(engine.world, fallout);
+    applyOpportunityFallout(engine.world, engine.world.playerId, fallout);
     expect(engine.world.globals['reputation_guild']).toBe(-30);
     expect(engine.world.globals['faction_alert_guild']).toBe(25);
     expect(engine.world.globals['player_heat']).toBe(20);
@@ -599,9 +667,36 @@ describe('applyOpportunityFallout — writes every effect kind', () => {
   it('heat accumulates across multiple applications (additive, not overwritten)', () => {
     const engine = createTestEngine({ modules: [], entities: [makePlayer()], zones });
     const opp = makeOpp({ kind: 'bounty', sourceFactionId: 'guild' });
-    applyOpportunityFallout(engine.world, computeOpportunityFallout(opp, 'betrayed', ctx)); // +10 heat
-    applyOpportunityFallout(engine.world, computeOpportunityFallout(opp, 'betrayed', ctx)); // +10 heat again
+    applyOpportunityFallout(engine.world, engine.world.playerId, computeOpportunityFallout(opp, 'betrayed', ctx)); // +10 heat
+    applyOpportunityFallout(engine.world, engine.world.playerId, computeOpportunityFallout(opp, 'betrayed', ctx)); // +10 heat again
     expect(engine.world.globals['player_heat']).toBe(20);
+  });
+
+  describe("leverage effects write to the actor's OWN custom fields via adjustLeverage (Phase-9 remediation, FIX 1)", () => {
+    it('writes onto actor.custom the SAME way player-leverage.ts\'s applyLeverageEffects does', () => {
+      const engine = createTestEngine({ modules: [], entities: [makePlayer()], zones });
+      const opp = makeOpp({ kind: 'faction-job', sourceFactionId: 'guild' });
+      const fallout = computeOpportunityFallout(opp, 'completed', ctx); // +8 influence, among others
+      applyOpportunityFallout(engine.world, engine.world.playerId, fallout);
+      expect(getLeverageState(engine.world.entities.player.custom ?? {}).influence).toBe(8);
+    });
+
+    it('accumulates across multiple applications (additive, clamped, not overwritten — adjustLeverage\'s own contract)', () => {
+      const engine = createTestEngine({ modules: [], entities: [makePlayer()], zones });
+      const opp = makeOpp({ kind: 'bounty', sourceFactionId: 'guild' });
+      applyOpportunityFallout(engine.world, engine.world.playerId, computeOpportunityFallout(opp, 'completed', ctx)); // +5 blackmail
+      applyOpportunityFallout(engine.world, engine.world.playerId, computeOpportunityFallout(opp, 'completed', ctx)); // +5 blackmail again
+      expect(getLeverageState(engine.world.entities.player.custom ?? {}).blackmail).toBe(10);
+    });
+
+    it('is a silent no-op (no throw) when actorId resolves to no entity — mirrors every other actor-gated case', () => {
+      const engine = createTestEngine({ modules: [], entities: [makePlayer()], zones });
+      const opp = makeOpp({ kind: 'contract', sourceFactionId: 'guild' });
+      const fallout = computeOpportunityFallout(opp, 'completed', ctx);
+      expect(() => applyOpportunityFallout(engine.world, 'no-such-actor', fallout)).not.toThrow();
+      // Nothing spurious got created on the real player entity either.
+      expect(engine.world.entities.player.custom ?? {}).toEqual({});
+    });
   });
 
   it('economy-shift writes back into the district economy via getDistrictEconomy/applyEconomyShift (mirrors trade-core\'s own sell handler)', () => {
@@ -616,7 +711,7 @@ describe('applyOpportunityFallout — writes every effect kind', () => {
       rewards: [{ type: 'economy-shift', districtId: 'district-1', category: 'medicine', delta: 15 }],
     });
     const fallout = computeOpportunityFallout(opp, 'completed', { ...ctx, playerDistrictId: 'district-1' });
-    applyOpportunityFallout(engine.world, fallout);
+    applyOpportunityFallout(engine.world, engine.world.playerId, fallout);
 
     const after = getDistrictEconomy(engine.world, 'district-1')!;
     expect(after.supplies.medicine.level).toBe(beforeLevel + 15);
@@ -630,7 +725,7 @@ describe('applyOpportunityFallout — writes every effect kind', () => {
       rewards: [{ type: 'economy-shift', districtId: 'nonexistent-district', category: 'medicine', delta: 15 }],
     });
     const fallout = computeOpportunityFallout(opp, 'completed', { ...ctx, playerDistrictId: 'nonexistent-district' });
-    expect(() => applyOpportunityFallout(engine.world, fallout)).not.toThrow();
+    expect(() => applyOpportunityFallout(engine.world, engine.world.playerId, fallout)).not.toThrow();
   });
 
   describe('companion-morale — all dead emission sites now write for real, gated on party non-empty', () => {
@@ -648,7 +743,7 @@ describe('applyOpportunityFallout — writes every effect kind', () => {
       const before = partyCompanions(engine).find((c) => c.npcId === 'sara')!.morale;
 
       const opp = makeOpp({ kind: 'favor-request', sourceNpcId: 'sara', tags: ['companion'] });
-      applyOpportunityFallout(engine.world, computeOpportunityFallout(opp, 'completed', ctx));
+      applyOpportunityFallout(engine.world, engine.world.playerId, computeOpportunityFallout(opp, 'completed', ctx));
 
       expect(partyCompanions(engine).find((c) => c.npcId === 'sara')!.morale).toBe(before + 15);
     });
@@ -659,7 +754,7 @@ describe('applyOpportunityFallout — writes every effect kind', () => {
       const before = partyCompanions(engine).find((c) => c.npcId === 'sara')!.morale;
 
       const opp = makeOpp({ kind: 'favor-request', sourceNpcId: 'sara', tags: ['companion'] });
-      applyOpportunityFallout(engine.world, computeOpportunityFallout(opp, 'abandoned', ctx));
+      applyOpportunityFallout(engine.world, engine.world.playerId, computeOpportunityFallout(opp, 'abandoned', ctx));
 
       expect(partyCompanions(engine).find((c) => c.npcId === 'sara')!.morale).toBe(before - 15);
     });
@@ -670,7 +765,7 @@ describe('applyOpportunityFallout — writes every effect kind', () => {
       const before = partyCompanions(engine).find((c) => c.npcId === 'sara')!.morale;
 
       const opp = makeOpp({ kind: 'favor-request', sourceNpcId: 'sara', tags: ['companion'] });
-      applyOpportunityFallout(engine.world, computeOpportunityFallout(opp, 'betrayed', ctx));
+      applyOpportunityFallout(engine.world, engine.world.playerId, computeOpportunityFallout(opp, 'betrayed', ctx));
 
       expect(partyCompanions(engine).find((c) => c.npcId === 'sara')!.morale).toBe(before - 30);
     });
@@ -683,7 +778,7 @@ describe('applyOpportunityFallout — writes every effect kind', () => {
       const beforeFinn = partyCompanions(engine).find((c) => c.npcId === 'finn')!.morale;
 
       const opp = makeOpp({ kind: 'escort', sourceFactionId: 'guild', sourceNpcId: 'npc-1', linkedNpcIds: ['sara', 'finn'] });
-      applyOpportunityFallout(engine.world, computeOpportunityFallout(opp, 'failed', ctx));
+      applyOpportunityFallout(engine.world, engine.world.playerId, computeOpportunityFallout(opp, 'failed', ctx));
 
       expect(partyCompanions(engine).find((c) => c.npcId === 'sara')!.morale).toBe(beforeSara - 10);
       expect(partyCompanions(engine).find((c) => c.npcId === 'finn')!.morale).toBe(beforeFinn - 10);
@@ -692,7 +787,7 @@ describe('applyOpportunityFallout — writes every effect kind', () => {
     it('gated on party non-empty: an empty party never calls setPartyState (no throw, nothing to change)', () => {
       const engine = createTestEngine({ modules: [createCompanionCore()], entities: [makePlayer()], zones });
       const opp = makeOpp({ kind: 'favor-request', sourceNpcId: 'sara', tags: ['companion'] });
-      expect(() => applyOpportunityFallout(engine.world, computeOpportunityFallout(opp, 'completed', ctx))).not.toThrow();
+      expect(() => applyOpportunityFallout(engine.world, engine.world.playerId, computeOpportunityFallout(opp, 'completed', ctx))).not.toThrow();
       expect(partyCompanions(engine)).toHaveLength(0);
     });
   });
@@ -706,9 +801,9 @@ describe('applyOpportunityFallout — writes every effect kind', () => {
       // faction-job 'betrayed' carries spawn-pressure; favor-request
       // 'completed'/'expired' carry npc-relationship/obligation.
       const job = makeOpp({ kind: 'faction-job', sourceFactionId: 'guild' });
-      applyOpportunityFallout(engine.world, computeOpportunityFallout(job, 'completed', ctx));
+      applyOpportunityFallout(engine.world, engine.world.playerId, computeOpportunityFallout(job, 'completed', ctx));
       const favor = makeOpp({ kind: 'favor-request', sourceNpcId: 'ann' });
-      applyOpportunityFallout(engine.world, computeOpportunityFallout(favor, 'completed', ctx));
+      applyOpportunityFallout(engine.world, engine.world.playerId, computeOpportunityFallout(favor, 'completed', ctx));
 
       // The globals these documented-dormant kinds WOULD need don't exist —
       // only the real sinks (reputation/heat/alert) changed.

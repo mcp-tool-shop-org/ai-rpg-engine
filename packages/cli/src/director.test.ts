@@ -414,13 +414,27 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
       expect(report).toContain('Trident & Net (weapon, uncommon)');
     });
 
-    it('gates off entirely for a REAL engine whose pack never wired equipment-core (9 of 10 starters, incl. starter-fantasy)', () => {
-      // The exact same live createGame(42) every other real-play assertion
-      // in this suite uses — starter-fantasy never registers
-      // EQUIPMENT_CATALOG_FORMULA, so the section must degrade to "no
-      // catalog available", not throw or fabricate content.
+    it('gates off for a fresh real engine — equipment-core IS wired (all 10 starters, v2.9) but nothing is equipped/carries provenance yet', () => {
+      // createGame(42) DOES register EQUIPMENT_CATALOG_FORMULA now — v2.9 wave 3
+      // wired createEquipmentCore into every starter (F-86b9145d). The section
+      // gates in three layers: catalog registered, a persisted loadout exists,
+      // AND at least one carried/equipped item has authored provenance. A
+      // freshly built engine has nothing equipped and no provenance yet, so the
+      // section correctly renders nothing — the "no invented data" contract,
+      // not a missing module. (The genuinely-unwired path is covered by the
+      // synthetic bare-engine test below, since no real starter shows it now.)
       const engine = createGame(42);
       const report = renderDirectorLedger(engine);
+      expect(report).not.toContain('EQUIPMENT');
+    });
+
+    it('gates off cleanly when equipment-core is truly NOT wired at all (bare engine, no catalog formula registered)', () => {
+      // Gate layer 1: readEquipmentCatalog returns [] when the engine has no
+      // EQUIPMENT_CATALOG_FORMULA. No real starter demonstrates this anymore
+      // (all 10 wire it as of v2.9), so this synthetic bare engine keeps the
+      // "no catalog available, degrade — don't throw or fabricate" branch under
+      // test. fakeEngine(world) defaults to an empty FormulaRegistry.
+      const report = renderDirectorLedger(fakeEngine(bareWorld()));
       expect(report).not.toContain('EQUIPMENT');
     });
 

@@ -22,7 +22,7 @@
 import type { EngineModule, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import type { OpportunityKind, OpportunityState } from './opportunity-core.js';
 import { getPersistedOpportunities, setPersistedOpportunities, getOpportunityById } from './opportunity-core.js';
-import type { LeverageCurrency } from './player-leverage.js';
+import { adjustLeverage, type LeverageCurrency } from './player-leverage.js';
 import type { SupplyCategory } from './economy-core.js';
 import { getDistrictEconomy, setDistrictEconomy, applyEconomyShift } from './economy-core.js';
 import type { ObligationKind, ObligationDirection } from './npc-agency.js';
@@ -225,14 +225,11 @@ function getFavorRequestFallout(
         effects.push({ type: 'npc-relationship', npcId: npc, axis: 'trust', delta: 20 });
       }
       // F-P9-007: 'companion-morale' (here and at this function's other two
-      // sites below, plus getEscortFallout's own) is computed but never
-      // APPLIED — opportunity-core.ts is "pure functions, no module
-      // registration" (its own file header) and computeOpportunityFallout
-      // has no production caller anywhere (world-tick.ts drives
-      // pressure-resolution.ts's fallout every tick via applyFallout; no
-      // equivalent exists for this file). Honest ceiling: a real completed
-      // favor never moves a companion's morale today — a driver is
-      // v2.9-scoped, not wired here.
+      // sites below, plus getEscortFallout's own) IS applied now — this
+      // file's own applyOpportunityFallout (F-f3f2a84c) is
+      // computeOpportunityFallout's real production caller, writing every
+      // companion-morale effect via adjustCompanionMorale + setPartyState. A
+      // real completed favor genuinely moves a companion's morale today.
       if (opp.tags.includes('companion')) {
         if (npc) effects.push({ type: 'companion-morale', npcId: npc, delta: 15 });
       }
@@ -242,7 +239,7 @@ function getFavorRequestFallout(
         effects.push({ type: 'obligation', kind: 'betrayed', direction: 'player-owes-npc', npcId: npc, magnitude: 3 });
         effects.push({ type: 'npc-relationship', npcId: npc, axis: 'trust', delta: -20 });
       }
-      // F-P9-007: same unapplied ceiling as the 'completed' case above.
+      // F-P9-007: same real application as the 'completed' case above.
       if (opp.tags.includes('companion') && npc) {
         effects.push({ type: 'companion-morale', npcId: npc, delta: -15 });
       }
@@ -253,7 +250,7 @@ function getFavorRequestFallout(
         effects.push({ type: 'npc-relationship', npcId: npc, axis: 'trust', delta: -40 });
       }
       effects.push({ type: 'rumor', claim: `betrayed someone who trusted them`, valence: 'fearsome', spreadTo: [] });
-      // F-P9-007: same unapplied ceiling.
+      // F-P9-007: same real application — see the 'completed' case's comment above.
       if (opp.tags.includes('companion') && npc) {
         effects.push({ type: 'companion-morale', npcId: npc, delta: -30 });
       }
@@ -403,9 +400,13 @@ function getEscortFallout(
       if (faction) effects.push({ type: 'reputation', factionId: faction, delta: -10 });
       effects.push({ type: 'rumor', claim: `failed to protect their charge — a tragic loss`, valence: 'tragic', spreadTo: faction ? [faction] : [] });
       if (npc) effects.push({ type: 'npc-relationship', npcId: npc, axis: 'trust', delta: -20 });
-      // Companion morale hit if escorting a linked NPC — F-P9-007: same
-      // unapplied ceiling as getFavorRequestFallout's companion-morale note
-      // (computed, never applied — opportunity-core has no production driver).
+      // Companion morale hit if escorting a linked NPC — F-P9-007: same real
+      // application as getFavorRequestFallout's companion-morale note
+      // (applyOpportunityFallout writes it via adjustCompanionMorale). The
+      // caveat that's STILL true: 'escort' is a fully-dark opportunity kind —
+      // evaluateOpportunities has no spawn rule that ever produces one (v3.0
+      // ceiling) — so this case is reachable only from a hand-built or
+      // imported OpportunityState, never from a live spawn.
       for (const linkedNpc of opp.linkedNpcIds) {
         effects.push({ type: 'companion-morale', npcId: linkedNpc, delta: -10 });
       }
@@ -597,8 +598,14 @@ export function getResolvedOpportunities(world: WorldState): OpportunityFallout[
     : [];
 }
 
-/** Append a fallout record, bounded to RESOLVED_OPPORTUNITIES_KEPT (oldest dropped). */
-function appendResolvedOpportunity(world: WorldState, fallout: OpportunityFallout): void {
+/**
+ * Append a fallout record, bounded to RESOLVED_OPPORTUNITIES_KEPT (oldest
+ * dropped). Exported (Phase-9 remediation, FIX 2) so world-tick.ts's natural-
+ * expiry wire can append to the SAME ledger this file's own 'opportunity'
+ * verb writes through — mirrors this file already exporting
+ * applyOpportunityFallout for the identical cross-file reuse reason.
+ */
+export function appendResolvedOpportunity(world: WorldState, fallout: OpportunityFallout): void {
   const existing = peekOpportunityCoreNamespace(world);
   const ledger = getResolvedOpportunities(world);
   ledger.push(fallout);
@@ -627,7 +634,24 @@ function addGlobal(world: WorldState, key: string, delta: number): void {
 }
 
 /**
- * Apply a resolved opportunity's fallout to real, persisted state:
+ * Apply a resolved opportunity's fallout to real, persisted state. `actorId`
+ * is the entity whose leverage currency changes — the resolution verb
+ * (opportunityHandler, below) passes action.actorId; world-tick.ts's
+ * natural-expiry wire passes world.playerId (opportunities are player-scoped
+ * — only the player ever accepts one — so that's the same actor identity,
+ * just reached via the tick instead of a submitted action).
+ *
+ *  - leverage → adjustLeverage on actor.custom (Phase-9 remediation, FIX 1) —
+ *    the SAME accessor player-leverage.ts's applyLeverageEffects uses for its
+ *    own 'leverage' case. This closes the disconnected-economy gap: every
+ *    opportunity kind computes a `{type:'leverage', currency, delta}` reward
+ *    on completion (contract/favor-request/bounty/supply-run/recovery/
+ *    investigation/faction-job all do), and formatFalloutEffect has always
+ *    NARRATED it ("+5 favor") — but until now nothing ever WROTE it, so
+ *    player-leverage.ts's four wired verbs (bribe/intimidate/petition/seed),
+ *    each gated on an affordable currency balance, had no real production
+ *    EARNING path. No-op when actorId resolves to no entity in this world —
+ *    mirrors every other actor-gated case below.
  *  - reputation/alert/heat → the SAME globals world-tick.ts's applyFallout
  *    writes (reputation_<factionId>, faction_alert_<factionId>, HEAT_KEY) —
  *    buildPressureInputs' merge and trade-core's own reads pick these up
@@ -652,13 +676,19 @@ function addGlobal(world: WorldState, key: string, delta: number): void {
  *    verb handler's emitted event payload carries the full effect list
  *    regardless, so nothing is silently lost, only not yet WRITTEN anywhere.
  */
-export function applyOpportunityFallout(world: WorldState, fallout: OpportunityFallout): void {
+export function applyOpportunityFallout(world: WorldState, actorId: string, fallout: OpportunityFallout): void {
+  const actor = world.entities[actorId];
   let party = getPartyState(world);
   const hasParty = party.companions.length > 0;
   let partyChanged = false;
 
   for (const effect of fallout.effects) {
     switch (effect.type) {
+      case 'leverage':
+        if (actor) {
+          actor.custom = adjustLeverage(actor.custom ?? {}, effect.currency, effect.delta);
+        }
+        break;
       case 'reputation':
         addGlobal(world, `reputation_${effect.factionId}`, effect.delta);
         break;
@@ -796,7 +826,7 @@ function opportunityHandler(action: ActionIntent, world: WorldState): ResolvedEv
     playerDistrictId,
     genre: opp.genre,
   });
-  applyOpportunityFallout(world, fallout);
+  applyOpportunityFallout(world, action.actorId, fallout);
   appendResolvedOpportunity(world, fallout);
 
   return [makeEvent(action, `opportunity.${resolutionType}`, {

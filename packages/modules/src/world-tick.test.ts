@@ -1255,6 +1255,154 @@ describe('world-tick — opportunity spawn/tick wire (F-ceed887f)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Opportunity natural-expiry fallout (Phase-9 remediation, FIX 2) — mirrors
+// the pressure-expiry block ("world-tick — expiry applies fallout to the
+// shared ledger" above). Every getXFallout function in opportunity-
+// resolution.ts has a fully-authored 'expired' case (rep hits, obligations,
+// economy shifts), but the tick used to discard tickOpportunities' own
+// `expired` array entirely — an opportunity's deadline was cosmetic.
+// ---------------------------------------------------------------------------
+describe('world-tick — opportunity expiry fallout wire (Phase-9 remediation FIX 2)', () => {
+  it('RED-PROOF: an opportunity ticked to turnsRemaining 0 applies its authored "expired" fallout and emits opportunity.expired (today it applies nothing)', () => {
+    const engine = makeBareEngine();
+    setPersistedOpportunities(engine.world, [
+      {
+        id: 'opp-contract-guild-0',
+        kind: 'contract',
+        status: 'accepted',
+        sourceFactionId: 'guild',
+        title: 'Test Contract',
+        description: 'A test.',
+        objectiveDescription: 'Do something.',
+        linkedRumorIds: [],
+        linkedNpcIds: [],
+        tags: [],
+        rewards: [],
+        risks: [],
+        visibility: 'known',
+        urgency: 0.5,
+        turnsRemaining: 0, // expires on entry to this tick
+        createdAtTick: 0,
+        genre: 'fantasy',
+      },
+    ]);
+
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+
+    // getContractFallout's 'expired' case: -3 rep with the source faction —
+    // the SAME global the pressure-expiry block above writes.
+    expect(engine.world.globals['reputation_guild']).toBe(-3);
+
+    expect(result.opportunitiesExpired).toHaveLength(1);
+    expect(result.opportunitiesExpired[0].resolution).toMatchObject({
+      opportunityId: 'opp-contract-guild-0',
+      resolutionType: 'expired',
+    });
+
+    const event = engine.world.eventLog.find((e) => e.type === 'opportunity.expired');
+    expect(event).toBeDefined();
+    expect(event?.payload.opportunityId).toBe('opp-contract-guild-0');
+    expect(event?.presentation).toEqual({ channels: ['narrator'], priority: 'normal' });
+
+    // Gone from the persisted (still-active) set — tickOpportunities' own
+    // contract, unaffected by this fix.
+    expect(getPersistedOpportunities(engine.world).find((o) => o.id === 'opp-contract-guild-0')).toBeUndefined();
+
+    // The resolved-opportunity ledger (opportunity-resolution.ts's OWN
+    // getResolvedOpportunities/RESOLVED_OPPORTUNITIES_KEPT contract) gets the
+    // SAME record — the identical ledger the 'opportunity' verb appends to.
+    const ns = engine.world.modules['opportunity-core'] as { resolvedOpportunities?: unknown[] };
+    expect(ns.resolvedOpportunities).toHaveLength(1);
+  });
+
+  it('a hidden opportunity expires silently — no presentation, event stays hidden (mirrors the pressure-expiry test above)', () => {
+    const engine = makeBareEngine();
+    setPersistedOpportunities(engine.world, [
+      {
+        id: 'opp-bounty-guild-0',
+        kind: 'bounty',
+        status: 'accepted',
+        sourceFactionId: 'guild',
+        title: 'Hidden bounty',
+        description: 'A test.',
+        objectiveDescription: 'Do something.',
+        linkedRumorIds: [],
+        linkedNpcIds: [],
+        tags: [],
+        rewards: [],
+        risks: [],
+        visibility: 'hidden',
+        urgency: 0.5,
+        turnsRemaining: 0,
+        createdAtTick: 0,
+        genre: 'fantasy',
+      },
+    ]);
+
+    runWorldTick(engine, { genre: 'fantasy' });
+
+    const event = engine.world.eventLog.find((e) => e.type === 'opportunity.expired');
+    expect(event?.visibility).toBe('hidden');
+    expect(event?.presentation).toBeUndefined();
+  });
+
+  it('no expired opportunities this tick: opportunitiesExpired is [] and no event fires (no regression to the common case)', () => {
+    const engine = makeBareEngine();
+    setPersistedOpportunities(engine.world, [
+      {
+        id: 'opp-still-active',
+        kind: 'contract',
+        status: 'accepted',
+        sourceFactionId: 'guild',
+        title: 'Still active',
+        description: 'A test.',
+        objectiveDescription: 'Do something.',
+        linkedRumorIds: [],
+        linkedNpcIds: [],
+        tags: [],
+        rewards: [],
+        risks: [],
+        visibility: 'known',
+        urgency: 0.5,
+        turnsRemaining: 5,
+        createdAtTick: 0,
+        genre: 'fantasy',
+      },
+    ]);
+
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.opportunitiesExpired).toEqual([]);
+    expect(engine.world.eventLog.find((e) => e.type === 'opportunity.expired')).toBeUndefined();
+  });
+
+  it('is deterministic — same world in, same expiry fallout + events out, across independent instances', () => {
+    const seedExpiring = (engine: ReturnType<typeof createTestEngine>) =>
+      setPersistedOpportunities(engine.world, [
+        {
+          id: 'opp-det-0', kind: 'faction-job', status: 'accepted', sourceFactionId: 'guild',
+          title: 'Det', description: '', objectiveDescription: '', linkedRumorIds: [], linkedNpcIds: [],
+          tags: [], rewards: [], risks: [], visibility: 'known', urgency: 0.5, turnsRemaining: 0,
+          createdAtTick: 0, genre: 'fantasy',
+        },
+      ]);
+    const run = () => {
+      const engine = makeBareEngine();
+      seedExpiring(engine);
+      const result = runWorldTick(engine, { genre: 'fantasy' });
+      return {
+        opportunitiesExpired: result.opportunitiesExpired,
+        globals: engine.world.globals,
+        resolved: (engine.world.modules['opportunity-core'] as { resolvedOpportunities?: unknown[] }).resolvedOpportunities,
+      };
+    };
+    const a = run();
+    const b = run();
+    expect(a).toEqual(b);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // District mood transitions (F-e5817c7c-adjacent rider) — the RED-PROOF:
 // district-mood.ts's computeDistrictMood was fully authored/tested with no
 // memory of the PREVIOUS tone anywhere in the engine, so a district sliding

@@ -72,6 +72,15 @@
 //      no world.modules state — nothing to read") — so they no-op cleanly;
 //      wiring npc-agency's own persistence in a future wave activates both
 //      automatically, nothing here needs to change.
+//   5b-i. opportunity natural-expiry fallout (Phase-9 remediation): mirrors
+//      step 3's pressure-expiry block — tickOpportunities' own `expired`
+//      array used to be discarded, so every getXFallout function's
+//      fully-authored 'expired' case (rep hits, obligations, economy shifts)
+//      never ran; an opportunity's deadline was cosmetic. Now computes +
+//      applies + ledgers + emits `opportunity.expired` for each, exactly the
+//      same four-beat shape as the pressure-expiry block, using the SAME
+//      actor identity the resolution verb uses (world.playerId — an
+//      opportunity is only ever accepted by the player).
 //   6. sustained quiet cools off: after QUIET_ROUNDS_BEFORE_DECAY consecutive
 //      rounds with no new heat, heat decays by HEAT_DECAY_PER_QUIET_TICK per
 //      round (the street's memory fades — but not between two swings of the
@@ -128,6 +137,12 @@ import {
   type OpportunityInputs,
   type OpportunityState,
 } from './opportunity-core.js';
+import {
+  computeOpportunityFallout,
+  applyOpportunityFallout,
+  appendResolvedOpportunity,
+  type OpportunityFallout,
+} from './opportunity-resolution.js';
 import { getLeverageState } from './player-leverage.js';
 
 // ---------------------------------------------------------------------------
@@ -275,6 +290,12 @@ export type WorldTickResult = {
   encounters: SpawnedEncounterReport[];
   /** Opportunities spawned this round by the opportunity wire (F-ceed887f). */
   opportunitiesSpawned: OpportunityState[];
+  /**
+   * Fallout of opportunities that expired this round (effects already
+   * applied, ledger already appended) — Phase-9 remediation, FIX 2. Mirrors
+   * `expired` above, opportunity-side.
+   */
+  opportunitiesExpired: OpportunityFallout[];
 };
 
 // ---------------------------------------------------------------------------
@@ -863,6 +884,7 @@ export function runWorldTick(engine: Engine, opts: WorldTickOptions = {}): World
       active: [],
       encounters: [],
       opportunitiesSpawned: [],
+      opportunitiesExpired: [],
     };
   }
 }
@@ -1078,7 +1100,48 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   }
 
   const persistedOpportunities = getPersistedOpportunities(world);
-  const { active: tickedOpportunities } = tickOpportunities(persistedOpportunities, currentTick);
+  const { active: tickedOpportunities, expired: expiredOpportunities } = tickOpportunities(persistedOpportunities, currentTick);
+
+  // 5b-i. Opportunity natural-expiry fallout (Phase-9 remediation, FIX 2) —
+  // mirrors step 3's pressure-expiry block above (computeFallout → applyFallout
+  // → ledger → emit), opportunity-side. Every getXFallout function in
+  // opportunity-resolution.ts has a fully-authored 'expired' case (rep hits,
+  // obligations, economy shifts) that never ran before this — tickOpportunities'
+  // own `expired` array used to be destructured away and discarded, so an
+  // opportunity's deadline was cosmetic. Same actor identity the resolution
+  // verb uses (opportunityHandler passes action.actorId; opportunities are
+  // player-scoped — only the player ever accepts one — so world.playerId here
+  // is that SAME actor, just reached via the tick instead of a submitted
+  // action). Iterates the array in its own stable order — no Math.random, no
+  // Date.now, so this stays deterministic same as every other step in this file.
+  const opportunityFallouts: OpportunityFallout[] = [];
+  for (const opp of expiredOpportunities) {
+    const fallout = computeOpportunityFallout(opp, 'expired', {
+      currentTick,
+      playerDistrictId,
+      genre,
+    });
+    applyOpportunityFallout(world, world.playerId, fallout);
+    appendResolvedOpportunity(world, fallout);
+    opportunityFallouts.push(fallout);
+
+    engine.store.emitEvent(
+      'opportunity.expired',
+      {
+        opportunityId: opp.id,
+        kind: opp.kind,
+        title: opp.title,
+        summary: fallout.summary,
+        resolutionType: fallout.resolution.resolutionType,
+        effects: fallout.effects,
+        ...(fallout.warnings ? { warnings: fallout.warnings } : {}),
+      },
+      opp.visibility === 'hidden'
+        ? { visibility: 'hidden' }
+        : { visibility: 'public', presentation: { channels: ['narrator'], priority: 'normal' } },
+    );
+  }
+
   const oppInputs: OpportunityInputs = {
     activeOpportunities: tickedOpportunities,
     activePressures: active,
@@ -1148,5 +1211,6 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
     active,
     encounters,
     opportunitiesSpawned,
+    opportunitiesExpired: opportunityFallouts,
   };
 }

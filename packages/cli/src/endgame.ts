@@ -22,6 +22,8 @@ import {
   getCurrency,
   getActivePressures,
   getResolvedPressures,
+  getPersistedOpportunities,
+  getResolvedOpportunities,
   getAllDistrictIds,
   getDistrictDefinition,
   getDistrictState,
@@ -129,9 +131,15 @@ function objectArray<T>(value: unknown): T[] {
  *                      0 would dilute every average/all-hostile threshold.
  *
  * Axes with NO persisting writer anywhere (npc-agency profiles/obligations,
- * opportunity-core, leverage other than heat) stay at their empty/zero
- * shapes — no invented state; evaluateEndgame finds those thresholds unmet
- * exactly as a world that never touched them.
+ * leverage other than heat) stay at their empty/zero shapes — no invented
+ * state; evaluateEndgame finds those thresholds unmet exactly as a world that
+ * never touched them. Opportunities (activeOpportunities/resolvedOpportunities)
+ * moved OUT of this list in v2.9 (Phase-9 remediation, FIX 3):
+ * opportunity-core.ts persists world.modules['opportunity-core'] every round
+ * now (world-tick.ts's spawn/tick wire) and opportunity-resolution.ts's
+ * 'opportunity' verb appends to the SAME resolved-opportunity ledger — both
+ * read here via their own stable accessors, the identical pattern
+ * activePressures/resolvedPressures already use above.
  */
 export function buildEndgameInputs(world: WorldState): EndgameInputs {
   const player = world.entities[world.playerId];
@@ -210,6 +218,14 @@ export function buildEndgameInputs(world: WorldState): EndgameInputs {
     }
   }
 
+  // Opportunities (Phase-9 remediation, FIX 3): opportunity-core.ts's own
+  // stable accessors — non-attaching, defensive (absent/malformed degrade to
+  // []), the SAME contract getActivePressures/getResolvedPressures already
+  // give the pressure axes above. A world whose pack never touched
+  // opportunities still reads as empty, exactly as before this fix.
+  const activeOpportunities = getPersistedOpportunities(world);
+  const resolvedOpportunities = getResolvedOpportunities(world);
+
   const arcInputs = {
     factionStates,
     playerReputations,
@@ -219,11 +235,11 @@ export function buildEndgameInputs(world: WorldState): EndgameInputs {
     npcObligations: new Map(), // same — obligation ledgers are never persisted
     companions,
     districtEconomies,
-    activeOpportunities: [], // opportunity-core keeps no world.modules state
+    activeOpportunities,
     // The world tick's bounded fallout ledger (getResolvedPressures) — real
     // state since P8-WL-003; declared in ArcInputs, read by no threshold yet.
     resolvedPressures,
-    resolvedOpportunities: [],
+    resolvedOpportunities,
     playerHp,
     playerMaxHp,
     // progression-core persists no explicit level; use the HUD's own notion

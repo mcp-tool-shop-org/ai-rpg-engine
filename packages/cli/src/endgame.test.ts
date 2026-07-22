@@ -344,6 +344,57 @@ describe('buildEndgameInputs (F-ENG005) — live inputs from persisted state', (
     expect(inputs.districtEconomies.get('chapel-grounds')?.supplies.food.level).toBeGreaterThan(0);
   });
 
+  // Phase-9 remediation, FIX 3: buildEndgameInputs used to hardcode
+  // activeOpportunities/resolvedOpportunities to [] behind a comment claiming
+  // "opportunity-core keeps no world.modules state" — false as of v2.9;
+  // opportunity-core persists world.modules['opportunity-core'] every round
+  // (world-tick.ts's spawn/tick wire) and opportunity-resolution.ts's
+  // 'opportunity' verb appends to the SAME resolved-opportunity ledger. RED-
+  // PROOF: before this fix these two axes were ALWAYS empty for every played
+  // session, so arc-detection's completedOpportunityCount fed
+  // scoreRisingPower/scoreMerchantPrince zero records forever, no matter how
+  // many opportunities the player actually completed.
+  it("F-P9-A2: activeOpportunities/resolvedOpportunities are read from the LIVE opportunity-core namespace (not hardcoded [])", () => {
+    const engine = makeGame();
+    engine.store.state.modules['opportunity-core'] = {
+      opportunities: [{
+        id: 'opp-open', kind: 'bounty', status: 'available', title: 'Open bounty',
+        description: '', objectiveDescription: '', linkedRumorIds: [], linkedNpcIds: [],
+        tags: [], rewards: [], risks: [], visibility: 'known', urgency: 0.4,
+        turnsRemaining: 5, createdAtTick: 1, genre: 'fantasy',
+      }],
+      resolvedOpportunities: [
+        { resolution: { opportunityId: 'c1', opportunityKind: 'contract', resolutionType: 'completed', resolvedAtTick: 1 }, effects: [], summary: 'contract completed' },
+        { resolution: { opportunityId: 'c2', opportunityKind: 'contract', resolutionType: 'completed', resolvedAtTick: 2 }, effects: [], summary: 'contract completed' },
+        { resolution: { opportunityId: 'c3', opportunityKind: 'contract', resolutionType: 'completed', resolvedAtTick: 3 }, effects: [], summary: 'contract completed' },
+        { resolution: { opportunityId: 's1', opportunityKind: 'supply-run', resolutionType: 'completed', resolvedAtTick: 4 }, effects: [], summary: 'supply-run completed' },
+        { resolution: { opportunityId: 's2', opportunityKind: 'supply-run', resolutionType: 'completed', resolvedAtTick: 5 }, effects: [], summary: 'supply-run completed' },
+      ],
+    };
+
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.activeOpportunities).toHaveLength(1);
+    expect(inputs.activeOpportunities[0].id).toBe('opp-open');
+    expect(inputs.resolvedOpportunities).toHaveLength(5);
+
+    // Arc scoring reflects it: scoreRisingPower's "≥3 completed contracts"
+    // (+0.15) and scoreMerchantPrince's "≥2 supply-runs" (+0.2) drivers both
+    // fire — today (hardcoded []) neither driver could ever appear for any
+    // played session, no matter how many opportunities were completed.
+    const rising = inputs.arcSnapshot.signals.find((s) => s.kind === 'rising-power');
+    expect(rising?.primaryDrivers.some((d) => d.includes('contracts completed'))).toBe(true);
+
+    const merchant = inputs.arcSnapshot.signals.find((s) => s.kind === 'merchant-prince');
+    expect(merchant?.primaryDrivers.some((d) => d.includes('supply runs completed'))).toBe(true);
+  });
+
+  it('a zero-state world still reads [] for both opportunity axes — no invented state, same as before this fix for an untouched world', () => {
+    const engine = makeGame();
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.activeOpportunities).toEqual([]);
+    expect(inputs.resolvedOpportunities).toEqual([]);
+  });
+
   it('playerLevel derives from progression-core unlocks (the HUD\'s notion: 1 + nodes unlocked)', () => {
     const engine = makeGame();
     expect(buildEndgameInputs(engine.world).playerLevel).toBe(1);
