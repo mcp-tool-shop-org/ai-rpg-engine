@@ -12,7 +12,7 @@ import {
   isNodeUnlocked,
   getZoneProperty,
 } from '@ai-rpg-engine/modules';
-import { createGame as createFantasyGame } from '@ai-rpg-engine/starter-fantasy';
+import { createGame as createFantasyGame, xpAwards as fantasyXpAwards } from '@ai-rpg-engine/starter-fantasy';
 import { createGame } from './setup.js';
 
 describe('Fantasy — Phase 3 cognition', () => {
@@ -79,7 +79,11 @@ describe('Fantasy — Phase 3 progression', () => {
     }
 
     expect(defeated).toBe(true);
-    expect(getCurrency(engine.world, 'player', 'xp')).toBe(15);
+    // T0-progression-ceiling: the kill reward plus the three first-visit
+    // awards earned moving nave → vestry → crypt on the way to the ghoul.
+    expect(getCurrency(engine.world, 'player', 'xp')).toBe(
+      fantasyXpAwards.kill + 3 * fantasyXpAwards.firstVisit,
+    );
   });
 
   it('player can unlock combat mastery node with earned XP', () => {

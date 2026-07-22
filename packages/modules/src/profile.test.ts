@@ -140,8 +140,8 @@ describe('Profile System Phase 1', () => {
   beforeEach(() => {
     clearStatusRegistry();
     registerStatusDefinitions([
-      { id: 'guarded', name: 'Guarded', tags: ['buff'], duration: 2 },
-      { id: 'cursed', name: 'Cursed', tags: ['debuff'], duration: 3 },
+      { id: 'guarded', name: 'Guarded', tags: ['buff'], stacking: 'replace', duration: { type: 'ticks', value: 2 } },
+      { id: 'cursed', name: 'Cursed', tags: ['debuff'], stacking: 'replace', duration: { type: 'ticks', value: 3 } },
     ]);
   });
 

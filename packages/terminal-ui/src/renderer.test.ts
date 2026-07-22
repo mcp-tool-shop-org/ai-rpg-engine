@@ -16,6 +16,7 @@ import {
   renderDialogue,
   renderFullScreen,
   buildActionList,
+  formatEventLine,
   textBar,
   DIALOGUE_LOOKBACK,
   SCREEN_WIDTH,
@@ -49,6 +50,27 @@ function makeWorld() {
   });
   return engine.world;
 }
+
+describe('parseTextInput — equip/unequip item routing (F-ENG008)', () => {
+  it('equip <partial> resolves the inventory item as parameters.itemId, never verb use', () => {
+    const world = makeWorld();
+    const player = world.entities['hero'];
+    player.inventory = ['trident-and-net', 'healing-draught'];
+    const parsed = parseTextInput('equip trident', world);
+    expect(parsed).toEqual({ verb: 'equip', parameters: { itemId: 'trident-and-net' } });
+  });
+
+  it('unequip passes its argument through raw (equipped items have left the inventory)', () => {
+    const world = makeWorld();
+    const parsed = parseTextInput('unequip trident-and-net', world);
+    expect(parsed).toEqual({ verb: 'unequip', parameters: { itemId: 'trident-and-net' } });
+  });
+
+  it('bare equip carries no parameters — the handler auto-resolves or rejects with a hint', () => {
+    const world = makeWorld();
+    expect(parseTextInput('equip', world)).toEqual({ verb: 'equip' });
+  });
+});
 
 describe('parseTextInput — blank input (F-1de46432)', () => {
   it('returns null for an empty string', () => {
@@ -136,6 +158,63 @@ describe('parseTextInput — target resolution', () => {
   it('returns a bare verb when there is no target text at all', () => {
     const world = makeWorld();
     expect(parseTextInput('inspect', world)).toEqual({ verb: 'inspect' });
+  });
+});
+
+// P8-PS-003: resolution is verb-aware. Entity-first order let a name-shadowing
+// entity hijack travel — live-caught: 'move crypt' next to exit 'Crypt
+// Antechamber' matched the DEAD Crypt Stalker corpse instead, submitted move
+// with a corpse as target, and the rejected round burned. Travel verbs now try
+// neighbor zones first; every other verb keeps entity-first claim.
+describe('parseTextInput — verb-aware resolution (P8-PS-003)', () => {
+  /** The live trap's shape: an entity sharing a prefix with a destination. */
+  function shadowedWorld() {
+    const zones: ZoneState[] = [
+      { id: 'vestry-passage', roomId: 'test', name: 'Vestry Passage', tags: [], neighbors: ['crypt-antechamber'] },
+      { id: 'crypt-antechamber', roomId: 'test', name: 'Crypt Antechamber', tags: [], neighbors: ['vestry-passage'] },
+    ];
+    const player: EntityState = {
+      id: 'hero', blueprintId: 'hero', type: 'player', name: 'Hero',
+      tags: ['player'], stats: {}, resources: { hp: 20 }, statuses: [], zoneId: 'vestry-passage',
+    };
+    const stalker: EntityState = {
+      id: 'crypt-stalker', blueprintId: 'stalker', type: 'enemy', name: 'Crypt Stalker',
+      tags: ['enemy'], stats: {}, resources: { hp: 0 }, statuses: [], zoneId: 'vestry-passage',
+    };
+    const engine = createTestEngine({
+      modules: [], zones, entities: [player, stalker],
+      playerId: 'hero', startZone: 'vestry-passage',
+    });
+    return engine.world;
+  }
+
+  it("'move crypt' prefers the neighbor zone over the name-shadowing entity (the live trap)", () => {
+    const world = shadowedWorld();
+    expect(parseTextInput('move crypt', world)).toEqual({ verb: 'move', targetIds: ['crypt-antechamber'] });
+  });
+
+  it("'go' and 'travel' get the same zone-first treatment", () => {
+    const world = shadowedWorld();
+    expect(parseTextInput('go crypt', world)).toEqual({ verb: 'go', targetIds: ['crypt-antechamber'] });
+    expect(parseTextInput('travel crypt', world)).toEqual({ verb: 'travel', targetIds: ['crypt-antechamber'] });
+  });
+
+  it("'attack crypt' still prefers the entity (combat keeps entity-first order)", () => {
+    const world = shadowedWorld();
+    expect(parseTextInput('attack crypt', world)).toEqual({ verb: 'attack', targetIds: ['crypt-stalker'] });
+  });
+
+  it('travel input with NO zone match still falls through to entities, then bare verb', () => {
+    const world = shadowedWorld();
+    // 'stalker' matches no neighbor — the entity fallback keeps working for
+    // packs whose travel points at odd targets (ferries, mounts).
+    expect(parseTextInput('move stalker', world)).toEqual({ verb: 'move', targetIds: ['crypt-stalker'] });
+    expect(parseTextInput('move nowhere-real', world)).toEqual({ verb: 'move' });
+  });
+
+  it('non-travel verbs keep zone fallback when no entity matches (control)', () => {
+    const world = shadowedWorld();
+    expect(parseTextInput('scout antechamber', world)).toEqual({ verb: 'scout', targetIds: ['crypt-antechamber'] });
   });
 });
 
@@ -341,6 +420,173 @@ describe('formatEvent — rejections surface their reason (CS-C-002)', () => {
     ]);
     expect(text).toContain('Fireball');
     expect(text.toLowerCase()).toContain('fail');
+  });
+});
+
+// F-ENG005: world-tick's pressure lifecycle events are player-facing — the
+// world reacting to accumulated heat. Every visible transition renders in the
+// telegraph voice; hidden ones render null (the reveal is their debut).
+describe('formatEvent — pressure lifecycle renders (F-ENG005)', () => {
+  const DESC = 'the city watch has placed a bounty on the player';
+
+  it('renders a rumored spawn as spreading rumor', () => {
+    const line = formatEventLine(
+      cev('pressure.spawned', { kind: 'bounty-issued', description: DESC, visibility: 'rumored' }),
+    );
+    expect(line).toBe(`> Rumor spreads: ${DESC}.`);
+  });
+
+  it('renders known and public spawns with their own framings', () => {
+    expect(
+      formatEventLine(cev('pressure.spawned', { description: DESC, visibility: 'known' })),
+    ).toBe(`> Word is out: ${DESC}.`);
+    expect(
+      formatEventLine(cev('pressure.spawned', { description: DESC, visibility: 'public' })),
+    ).toBe(`> Proclaimed: ${DESC}.`);
+  });
+
+  it('renders a hidden spawn as null — the player must not see it yet', () => {
+    expect(
+      formatEventLine(cev('pressure.spawned', { description: DESC, visibility: 'hidden' })),
+    ).toBeNull();
+  });
+
+  it('renders a fallout chain spawn as a consequence', () => {
+    const line = formatEventLine(
+      cev('pressure.spawned', {
+        description: 'the watch sends hunters after the player',
+        visibility: 'rumored',
+        chainedFrom: 'wp_1',
+      }),
+    );
+    expect(line).toBe('> Consequence: the watch sends hunters after the player.');
+  });
+
+  it('renders a reveal — the moment a hidden pressure surfaces', () => {
+    const line = formatEventLine(
+      cev('pressure.revealed', { description: DESC, visibility: 'rumored' }),
+    );
+    expect(line).toBe(`> Whispers reach you: ${DESC}.`);
+  });
+
+  it('renders escalations by band — growing mounts, urgent demands', () => {
+    expect(
+      formatEventLine(cev('pressure.escalated', { description: DESC, band: 'growing' })),
+    ).toBe(`> Pressure mounts: ${DESC}.`);
+    expect(
+      formatEventLine(cev('pressure.escalated', { description: DESC, band: 'urgent' })),
+    ).toBe(`> It can no longer be ignored: ${DESC}.`);
+  });
+
+  it('renders a visible expiry with the fallout summary; hidden expiry stays null', () => {
+    expect(
+      formatEventLine(
+        cev('pressure.expired', {
+          summary: 'bounty issued expired without resolution',
+          visibility: 'rumored',
+        }),
+      ),
+    ).toBe('> The moment passes: bounty issued expired without resolution.');
+    expect(
+      formatEventLine(cev('pressure.expired', { summary: 'x', visibility: 'hidden' })),
+    ).toBeNull();
+  });
+
+  it('never prints undefined when descriptions are missing', () => {
+    for (const type of ['pressure.spawned', 'pressure.revealed', 'pressure.escalated']) {
+      const line = formatEventLine(cev(type, { visibility: 'rumored' }));
+      expect(line).not.toBeNull();
+      expect(line).not.toContain('undefined');
+    }
+    expect(formatEventLine(cev('pressure.expired', { visibility: 'rumored' }))).not.toContain(
+      'undefined',
+    );
+  });
+
+  it('renders an encounter spawn as label + authored trigger hook', () => {
+    const line = formatEventLine(
+      cev('encounter.spawned', {
+        label: 'Patrol',
+        description: 'Noise attracts the dead from nearby blocks',
+      }),
+    );
+    expect(line).toBe('> Patrol: Noise attracts the dead from nearby blocks.');
+  });
+
+  it('encounter spawn falls back without undefined when payload fields are missing', () => {
+    const line = formatEventLine(cev('encounter.spawned', {}));
+    expect(line).toBe('> Encounter: something moves against you.');
+  });
+});
+
+// F-ENG005: quest-core's three lifecycle events — the loop that gives the
+// player an explicit reason to return. Same telegraph family as the
+// pressure/encounter lines; every field falls back so a sparse payload still
+// renders a complete sentence (never "undefined").
+describe('formatEvent — quest lifecycle renders (F-ENG005)', () => {
+  it('renders an offer with the quest name and the stage hook', () => {
+    const line = formatEventLine(
+      cev('quest.offered', {
+        questId: 'ashes-below',
+        questName: 'Ashes Below',
+        stageName: 'Cross to the Vestry',
+        stageDescription: 'Something scratches beyond the nave — find the vestry passage',
+      }),
+    );
+    expect(line).toBe(
+      '> New quest — Ashes Below: Something scratches beyond the nave — find the vestry passage.',
+    );
+  });
+
+  it('renders a stage advance with the NEXT stage hook', () => {
+    const line = formatEventLine(
+      cev('quest.stage.advanced', {
+        questName: 'Ashes Below',
+        via: 'advance',
+        stageName: 'Lay the Dead to Rest',
+        stageDescription: 'Put two of the risen brothers back in the ground',
+      }),
+    );
+    expect(line).toBe(
+      '> Quest advanced — Ashes Below: Put two of the risen brothers back in the ground.',
+    );
+  });
+
+  it("renders the fail branch as a turn, not progress (via:'fail')", () => {
+    const line = formatEventLine(
+      cev('quest.stage.advanced', {
+        questName: 'The Oath',
+        via: 'fail',
+        stageName: 'Do Penance',
+      }),
+    );
+    expect(line).toBe('> The quest turns — The Oath: Do Penance.');
+  });
+
+  it('renders completion with the reward summary', () => {
+    const line = formatEventLine(
+      cev('quest.completed', {
+        questName: "The Warden's Rest",
+        rewardSummary: ['30 xp', 'healing-draught'],
+      }),
+    );
+    expect(line).toBe("> Quest complete — The Warden's Rest. Reward: 30 xp, healing-draught.");
+  });
+
+  it('renders completion without rewards as a clean sentence', () => {
+    expect(formatEventLine(cev('quest.completed', { questName: 'The Echo' }))).toBe(
+      '> Quest complete — The Echo.',
+    );
+  });
+
+  it('never prints undefined when quest payload fields are missing', () => {
+    for (const type of ['quest.offered', 'quest.stage.advanced', 'quest.completed']) {
+      const line = formatEventLine(cev(type, {}));
+      expect(line).not.toBeNull();
+      expect(line).not.toContain('undefined');
+    }
+    // questId fallback when the name is absent
+    expect(formatEventLine(cev('quest.offered', { questId: 'hunt' }))).toContain('hunt');
   });
 });
 
@@ -594,6 +840,36 @@ describe('formatEvent — ability.used renders with flavor text (CS-C amend)', (
   });
 });
 
+// F-0a572dd7: progression.node.unlocked rendered null — selecting a menu
+// unlock entry ("[N] Unlock Toughened (10 xp)") narrated "All is quiet."
+// and logged nothing after a successful XP spend.
+describe('formatEvent — progression unlocks render (F-0a572dd7)', () => {
+  it('renders the unlocked node by humanized id', () => {
+    const text = renderEventLog([
+      cev('progression.node.unlocked', {
+        treeId: 'combat-mastery', nodeId: 'toughened', effects: ['stat-boost'],
+      }),
+    ]);
+    expect(text).toContain('Unlocked Toughened');
+  });
+
+  it('falls back gracefully when nodeId is missing (never prints undefined)', () => {
+    const text = renderEventLog([cev('progression.node.unlocked', {})]);
+    expect(text).toContain('Unlocked');
+    expect(text).not.toContain('undefined');
+  });
+
+  it('renders unlock rejections with the module-authored reason', () => {
+    const text = renderEventLog([
+      cev('progression.unlock.rejected', {
+        treeId: 'combat-mastery', nodeId: 'keen-eye', reason: 'insufficient xp: have 5, need 15',
+      }),
+    ]);
+    expect(text).toContain("You can't unlock Keen Eye");
+    expect(text).toContain('insufficient xp: have 5, need 15');
+  });
+});
+
 // MEDIUM: raw state ids leaked into the HUD ("Status: engagement:isolated",
 // "! Crypt Warden (HP: 0) [combat:fleeing]" for a corpse).
 describe('renderScene — humanized state labels, no corpse statuses (CS-C amend)', () => {
@@ -705,6 +981,57 @@ describe('Stage D — labeled section rules frame the screen', () => {
     expect(screen).toContain('[1] And you.');
   });
 
+  // T0-menu-collisions (a): during active dialogue the base action menu used
+  // to render below the dialogue choices — two colliding `[1]`/`[2]` columns
+  // on one frame, and the base menu's numbers were lies (the router resolves
+  // numbers to dialogue choices first). The Actions section now yields the
+  // frame to the dialogue.
+  describe('action menu suppression during dialogue (T0-menu-collisions)', () => {
+    function dialogueWorld() {
+      const world = makeWorld();
+      world.modules['dialogue-core'] = { activeDialogue: 'bram-talk' };
+      (world as { eventLog: ResolvedEvent[] }).eventLog = [
+        {
+          id: 'e1', tick: 1, type: 'dialogue.node.entered',
+          payload: { speaker: 'Bram', text: 'Well met.', choices: [{ id: 'c1', text: 'And you.', index: 0 }] },
+        },
+      ];
+      return world;
+    }
+
+    it('an active dialogue frame carries NO base-action numbers — only the choice numbers', () => {
+      const screen = renderFullScreen(dialogueWorld(), [], PLAIN);
+      expect(screen).not.toContain('── Actions ');
+      // The base menu's first entries for this world (pinned by the
+      // renderActions tests) must not share the frame with the choices.
+      expect(screen).not.toContain('Move to Back Alley');
+      expect(screen).not.toContain('Look around');
+      // The dialogue choice keeps its number — the only [1] on screen.
+      expect(screen).toContain('[1] And you.');
+      expect(screen.match(/\[1\]/g)).toHaveLength(1);
+    });
+
+    it('the menu returns once the dialogue is no longer active', () => {
+      const world = dialogueWorld();
+      world.modules['dialogue-core'] = { activeDialogue: null };
+      const screen = renderFullScreen(world, [], PLAIN);
+      expect(screen).toContain('── Actions ');
+      expect(screen).toContain('Move to Back Alley');
+    });
+
+    it('explicit { actions: false } suppresses the menu on any frame (session-end screens)', () => {
+      const world = makeWorld();
+      const screen = renderFullScreen(world, [], { ...PLAIN, actions: false });
+      // Scene, HUD, and closing rule survive; the menu does not.
+      expect(screen).toContain('── Town Square ');
+      expect(screen).toContain('── Status ');
+      expect(screen).not.toContain('── Actions ');
+      expect(screen).not.toMatch(/\[\s*\d+\]/);
+      const lines = screen.split('\n');
+      expect(lines[lines.length - 1]).toBe('─'.repeat(SCREEN_WIDTH));
+    });
+  });
+
   it('never emits double blank lines or two rules back to back', () => {
     const worlds = [makeWorld(), makeWorld()];
     // Second world: stress edge states — defeated enemy, statuses, events.
@@ -740,6 +1067,95 @@ describe('Stage D — labeled section rules frame the screen', () => {
     world.zones['town-square'].name = 'The Extraordinarily Long-Named Grand Plaza of the Ancient Merchant Republic';
     const screen = renderFullScreen(world, [], PLAIN);
     expect(screen).toContain('Grand Plaza');
+  });
+});
+
+// P8-PS-005: appended menu entries (the CLI's ability/journal/director layer)
+// render INSIDE the frame — below the base list, above the screen-closing
+// rule, one shared number width. The old embedder pattern printed them after
+// renderFullScreen's return, so the closing rule bisected the menu on every
+// frame and the columns misaligned at the seam ('[8] Look around' / '[ 9]').
+describe('renderFullScreen — appended menu entries inside the frame (P8-PS-005)', () => {
+  const EXTRAS = [
+    { label: 'Rally the Crowd', group: 'ability' },
+    { label: 'Journal — quests and undertakings', group: 'journal' },
+    { label: "Director's Ledger — the strategic picture", group: 'director' },
+  ] as const;
+
+  it('extras render ABOVE the closing rule — the rule closes the whole menu', () => {
+    const world = makeWorld();
+    const screen = renderFullScreen(world, [], { ...PLAIN, extraActions: EXTRAS });
+    const lines = screen.split('\n');
+    expect(lines[lines.length - 1]).toBe('─'.repeat(SCREEN_WIDTH));
+    // The LAST content line is the last extra — nothing renders below it but
+    // the closing rule.
+    expect(lines[lines.length - 2]).toContain("Director's Ledger");
+    // And no rule line sits between the base list and the extras.
+    const lookAround = lines.findIndex((l) => l.includes('Look around'));
+    const rally = lines.findIndex((l) => l.includes('Rally the Crowd'));
+    expect(lookAround).toBeGreaterThan(-1);
+    expect(rally).toBeGreaterThan(lookAround);
+    for (const between of lines.slice(lookAround + 1, rally)) {
+      expect(between.startsWith('─')).toBe(false);
+    }
+  });
+
+  it('base and extras share ONE number width — no seam misalignment', () => {
+    const world = makeWorld();
+    // makeWorld's base menu is 7 entries; +3 extras crosses into double
+    // digits, exactly the misalignment case: base must pad to width 2 too.
+    const base = buildActionList(world);
+    expect(base.length + EXTRAS.length).toBeGreaterThanOrEqual(10);
+    const screen = renderFullScreen(world, [], { ...PLAIN, extraActions: EXTRAS });
+    expect(screen).toContain(`[ 1] Move to ${world.zones['back-alley'].name}`);
+    expect(screen).toContain(`[ ${base.length}] Look around`);
+    expect(screen).toContain(`[ ${base.length + 1}] Rally the Crowd`);
+    expect(screen).toContain(`[${base.length + 3}] Director's Ledger`);
+  });
+
+  it('extras continue the base numbering exactly where parseExtraSelection expects', () => {
+    const world = makeWorld();
+    const base = buildActionList(world);
+    const screen = renderFullScreen(world, [], { ...PLAIN, extraActions: EXTRAS });
+    // Every number from 1..base+extras appears exactly once.
+    const numbers = [...screen.matchAll(/\[\s*(\d+)\]/g)].map((m) => Number(m[1]));
+    expect([...numbers].sort((a, b) => a - b)).toEqual(
+      Array.from({ length: base.length + EXTRAS.length }, (_, i) => i + 1),
+    );
+  });
+
+  it('group separation holds across the seam and between extras groups', () => {
+    const world = makeWorld();
+    const screen = renderFullScreen(world, [], { ...PLAIN, extraActions: EXTRAS });
+    const lines = screen.split('\n');
+    const lookAround = lines.findIndex((l) => l.includes('Look around'));
+    const rally = lines.findIndex((l) => l.includes('Rally the Crowd'));
+    const journal = lines.findIndex((l) => l.includes('Journal'));
+    // One blank line between the base list's last group and the first extras
+    // group, and between distinct extras groups — the base list's own rule.
+    expect(lines[lookAround + 1]).toBe('');
+    expect(rally).toBe(lookAround + 2);
+    expect(lines[rally + 1]).toBe('');
+    expect(journal).toBe(rally + 2);
+  });
+
+  it('no extras → byte-identical to the pre-option frame (default unchanged)', () => {
+    const world = makeWorld();
+    expect(renderFullScreen(world, [], { ...PLAIN, extraActions: [] })).toBe(
+      renderFullScreen(world, [], PLAIN),
+    );
+  });
+
+  it('extras are suppressed with the Actions section: dialogue frames and actions:false', () => {
+    const world = makeWorld();
+    world.modules['dialogue-core'] = { activeDialogue: 'bram-talk' };
+    const dialogueScreen = renderFullScreen(world, [], { ...PLAIN, extraActions: EXTRAS });
+    expect(dialogueScreen).not.toContain('Rally the Crowd');
+
+    const endWorld = makeWorld();
+    const endScreen = renderFullScreen(endWorld, [], { ...PLAIN, actions: false, extraActions: EXTRAS });
+    expect(endScreen).not.toContain('Rally the Crowd');
+    expect(endScreen).not.toContain('── Actions ');
   });
 });
 

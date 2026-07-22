@@ -50,8 +50,13 @@ describe('colonyMinimalRuleset', () => {
     expect(verbIds).toContain('speak');
     expect(verbIds).toContain('choose');
     expect(verbIds).toContain('use');
-    expect(verbIds).toContain('scan');
-    expect(verbIds).toContain('allocate');
+    // T0-verb-honesty-content: 'scan'/'allocate' were flavor rows with NO
+    // registered handler — the help taught verbs that bounced. They are gone;
+    // brace/reposition (registered by buildCombatStack) are advertised instead.
+    expect(verbIds).not.toContain('scan');
+    expect(verbIds).not.toContain('allocate');
+    expect(verbIds).toContain('brace');
+    expect(verbIds).toContain('reposition');
   });
 
   it('lists all default modules', () => {

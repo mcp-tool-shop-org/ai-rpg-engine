@@ -337,9 +337,9 @@ describe('combat-recovery: morale aftermath', () => {
   it('morale <= 29 applies morale:shaken status', () => {
     const player = makeEntity('player', 'player', ['player']);
     const npc = makeEntity('npc-ally', 'enemy', ['enemy'], {
-      ai: { profile: 'aggressive' },
+      ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
       resources: { hp: 20, maxHp: 20, stamina: 5, maxStamina: 5 },
-    } as Partial<EntityState>);
+    });
     const enemy = makeEntity('enemy1', 'enemy', ['enemy']);
     const engine = buildEngine([player, npc, enemy]);
 
@@ -376,9 +376,9 @@ describe('combat-recovery: morale aftermath', () => {
   it('morale >= 70 applies morale:emboldened status', () => {
     const player = makeEntity('player', 'player', ['player']);
     const npc = makeEntity('npc-ally', 'npc', ['npc'], {
-      ai: { profile: 'aggressive' },
+      ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
       resources: { hp: 20, maxHp: 20, stamina: 5, maxStamina: 5 },
-    } as Partial<EntityState>);
+    });
     const enemy = makeEntity('enemy1', 'enemy', ['enemy']);
     const engine = buildEngine([player, npc, enemy]);
 
@@ -482,9 +482,9 @@ describe('combat-recovery: edge cases', () => {
   it('morale exactly 0 applies shaken', () => {
     const player = makeEntity('player', 'player', ['player']);
     const npc = makeEntity('npc-ally', 'npc', ['npc'], {
-      ai: { profile: 'aggressive' },
+      ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
       resources: { hp: 20, maxHp: 20, stamina: 5, maxStamina: 5 },
-    } as Partial<EntityState>);
+    });
     const enemy = makeEntity('enemy1', 'enemy', ['enemy']);
     const engine = buildEngine([player, npc, enemy]);
 

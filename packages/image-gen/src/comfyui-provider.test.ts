@@ -59,7 +59,7 @@ function tinyPng(width: number, height: number, padding = 0): Buffer {
 }
 
 /** Provider tuned for fast tests: 10ms polls, 500ms budget unless overridden. */
-function makeProvider(url: string, extra?: { timeoutMs?: number; maxImageBytes?: number }) {
+function makeProvider(url: string, extra?: { pollIntervalMs?: number; timeoutMs?: number; maxImageBytes?: number }) {
   return new ComfyUIProvider({ baseUrl: url, pollIntervalMs: 10, timeoutMs: 500, ...extra });
 }
 

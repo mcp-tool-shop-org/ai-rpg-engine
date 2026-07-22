@@ -52,9 +52,9 @@ export function createTestEngine(options: HarnessOptions): TestEngine {
     engine.store.addZone(zone);
   }
 
-  // Add entities
+  // Add entities (the store detaches via structuredClone at ingestion — no copy needed here)
   for (const entity of options.entities ?? []) {
-    engine.store.addEntity({ ...entity });
+    engine.store.addEntity(entity);
   }
 
   // Set player

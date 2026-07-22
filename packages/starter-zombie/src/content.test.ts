@@ -11,6 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import { validateGameContent, validateAbilityPack } from '@ai-rpg-engine/content-schema';
 import type { ContentPack } from '@ai-rpg-engine/content-schema';
+import { validateEncounterSpawnContent } from '@ai-rpg-engine/modules';
 import { createGame } from './setup.js';
 import {
   medicDialogue,
@@ -18,6 +19,8 @@ import {
   zombieAbilities,
   zombieStatusDefinitions,
   buildCatalog,
+  encounterSpawnContent,
+  zones,
 } from './content.js';
 import { zombieMinimalRuleset } from './ruleset.js';
 
@@ -81,12 +84,14 @@ describe('zombie content — cross-reference integrity (F-4806a2c9)', () => {
 
 // ═══════════════════════════════════════════════════════════════════
 // CROSS-INSTANCE STATE ISOLATION
-// setup.ts inserts entities from module-level constants. A shallow spread
-// shares the nested resources/stats/statuses objects across every engine
-// built in one process, so combat damage (or the CLI's NPC turn driver
-// killing a walker) in engine A would permanently mutate the constant and
-// a LATER createGame() would boot with a dead walker. structuredClone at
-// insertion is the fix. Same class as F-71ec5dcd.
+// setup.ts inserts entities from module-level constants. If insertion kept
+// the caller's reference, the nested resources/stats/statuses objects would
+// be shared across every engine built in one process, so combat damage (or
+// the CLI's NPC turn driver killing a walker) in engine A would permanently
+// mutate the constant and a LATER createGame() would boot with a dead
+// walker. The invariant that prevents this is store-level: WorldStore
+// addEntity/addZone detach their argument at ingestion. Same class as
+// F-71ec5dcd.
 // ═══════════════════════════════════════════════════════════════════
 describe('zombie content — cross-instance state isolation', () => {
   it('killing a walker in engine A does not carry into a fresh engine B', () => {
@@ -100,5 +105,26 @@ describe('zombie content — cross-instance state isolation', () => {
     expect(b.store.state.entities['shambler_1'].resources.hp).toBe(fullHp);
     expect(b.store.state.entities['shambler_1'].resources)
       .not.toBe(a.store.state.entities['shambler_1'].resources);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// F-ENG005-encounter-spawn-wiring: the per-zone encounter tables are
+// computed-validated against the live authored content — every table entry
+// must reference an authored, spawnable (non-boss) encounter that its own
+// validZoneIds/validZoneTags allow in that zone, with all participant
+// templates present.
+// ═══════════════════════════════════════════════════════════════════
+describe('zombie encounter tables (F-ENG005-encounter-spawn-wiring)', () => {
+  it('every table entry references an authored, spawnable encounter valid for its zone', () => {
+    expect(validateEncounterSpawnContent(encounterSpawnContent, zones)).toEqual([]);
+  });
+
+  it('tables exist for the hostile zones and stay off the safe ones', () => {
+    expect(Object.keys(encounterSpawnContent.zoneTables).sort()).toEqual([
+      'gas-station',
+      'hospital-wing',
+      'overrun-street',
+    ]);
   });
 });

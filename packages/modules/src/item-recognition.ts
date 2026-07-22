@@ -63,7 +63,9 @@ const NOTORIOUS_HINTS = [
 ];
 
 function pickHint(hints: string[], seed: number): string {
-  return hints[seed % hints.length];
+  // Math.abs: a hand-authored negative world seed must index, not crash.
+  // Identical to the legacy behavior for the non-negative seeds the engine mints.
+  return hints[Math.abs(seed) % hints.length];
 }
 
 // --- Notoriety ---
@@ -137,15 +139,23 @@ export function recognitionProbability(
 /**
  * Evaluate item recognition for all equipped items against an NPC's faction context.
  * Returns recognition results for items that would trigger a reaction.
+ *
+ * `worldSeed` (world.meta.seed) varies the narrator hint selection per run as a
+ * PURE hash input — never a stateful RNG draw, so same world state → same
+ * hints (replay-safe). The default 0 preserves the legacy tick-only stream.
+ * WHICH items are recognized is rule-driven and unaffected by the seed.
  */
 export function evaluateItemRecognition(
   equippedItems: ItemDefinition[],
   npcFactionId: string | undefined,
   itemChronicle: Record<string, ItemChronicleEntry[]>,
   tick: number,
+  worldSeed = 0,
 ): ItemRecognitionResult[] {
   const results: ItemRecognitionResult[] = [];
-  const seed = tick;
+  // 7919 is odd (bijective mod 2^32) and not divisible by 3 (the hint-array
+  // length), so distinct world seeds actually shift the picked hint.
+  const seed = tick + worldSeed * 7919;
 
   for (const item of equippedItems) {
     const prov = item.provenance;

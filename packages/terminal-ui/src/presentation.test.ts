@@ -74,8 +74,9 @@ describe('TurnPresenter: combat turn', () => {
     expect(result.plan.urgency).toBe('critical');
     expect(result.warnings).toEqual([]);
 
-    // The narration is the log's own lines, joined.
-    expect(result.narrationText).toBe('4 damage dealt (HP: 4) Ash Ghoul defeated!');
+    // The narration is the log's own lines, joined — unpunctuated fragments
+    // gain a period at the join (F-b1b81929).
+    expect(result.narrationText).toBe('4 damage dealt (HP: 4). Ash Ghoul defeated!');
 
     // Scheduled sfx use SOUNDPACK ids — the vocabulary is unified end to end.
     const sfxPlays = result.audioCommands.filter(
@@ -216,14 +217,68 @@ describe('presentTurn one-shot + determinism', () => {
 });
 
 describe('narrationTextFromEvents', () => {
-  it('joins formatted lines without the log affordance prefix', () => {
+  it('joins formatted lines without the log affordance prefix, punctuating the join', () => {
     expect(narrationTextFromEvents([enterZone(), hit()])).toBe(
-      'Entered Crypt Chamber 4 damage dealt (HP: 4)',
+      'Entered Crypt Chamber. 4 damage dealt (HP: 4)',
     );
   });
 
   it('skips unrenderable bookkeeping events entirely', () => {
     const flag = ev('world.flag.changed', { flag: 'x', value: true });
     expect(narrationTextFromEvents([flag])).toBe(QUIET_TURN_TEXT);
+  });
+
+  it('an unlock round narrates the unlock, not the quiet fallback (F-0a572dd7)', () => {
+    // The live delta for a menu XP spend: declared/resolved bookkeeping
+    // around the one renderable event.
+    const round = [
+      ev('action.declared', { verb: 'unlock' }),
+      ev('progression.node.unlocked', { treeId: 'combat-mastery', nodeId: 'toughened', effects: [] }),
+      ev('action.resolved', { verb: 'unlock' }),
+    ];
+    expect(narrationTextFromEvents(round)).toBe('Unlocked Toughened');
+  });
+
+  // F-b1b81929: a busy round joined its fragments with bare spaces —
+  // "…stamina: 5 → 4 Hit! 3 damage dealt (HP: 7) Miss." read as one run-on
+  // mash. The joins are now punctuated; the transform is punctuation-ONLY.
+  describe('join punctuation (F-b1b81929)', () => {
+    it('the live-caught shape: a resource change joined to a hit gains its period', () => {
+      const round = [
+        ev('resource.changed', { resource: 'stamina', previous: 5, current: 4 }),
+        ev('combat.contact.hit', {}),
+      ];
+      expect(narrationTextFromEvents(round)).toBe('stamina: 5 → 4. Hit!');
+    });
+
+    it('fragments already ending in ./!/? are untouched at the join', () => {
+      const round = [
+        ev('combat.contact.hit', {}),
+        ev('combat.contact.miss', {}),
+        ev('combat.entity.defeated', { entityName: 'Ash Ghoul' }),
+      ];
+      expect(narrationTextFromEvents(round)).toBe('Hit! Miss. Ash Ghoul defeated!');
+    });
+
+    it('the FINAL fragment keeps its original ending — punctuation lands at joins only', () => {
+      const round = [
+        ev('combat.contact.hit', {}),
+        ev('resource.changed', { resource: 'stamina', previous: 5, current: 4 }),
+      ];
+      expect(narrationTextFromEvents(round)).toBe('Hit! stamina: 5 → 4');
+    });
+
+    it('a quoted dialogue choice ending inside its quotes counts as punctuated', () => {
+      const round = [
+        ev('dialogue.choice.selected', { choiceText: 'Who goes there?' }),
+        ev('combat.contact.hit', {}),
+      ];
+      expect(narrationTextFromEvents(round)).toBe('"Who goes there?" Hit!');
+    });
+
+    it('single-fragment narration is byte-identical to its formatEventLine text', () => {
+      const round = [ev('resource.changed', { resource: 'stamina', previous: 5, current: 4 })];
+      expect(narrationTextFromEvents(round)).toBe('stamina: 5 → 4');
+    });
   });
 });

@@ -353,7 +353,7 @@ describe('auditAbilityBalance — Phase 4 flags', () => {
 
 describe('summarizeAbilityPack — resistance profiles', () => {
   it('counts entities with resistances', () => {
-    const entities = [
+    const entities: Array<{ id: string; resistances?: Record<string, string> }> = [
       { id: 'e1', resistances: { fear: 'immune' } },
       { id: 'e2', resistances: {} },
       { id: 'e3', resistances: { control: 'resistant', fear: 'immune' } },
@@ -739,7 +739,7 @@ describe('builder ergonomics (Phase 5)', () => {
       id: 'divine-light', name: 'Divine Light',
       tags: ['divine', 'support', 'heal'],
       costs: [{ resourceId: 'stamina', amount: 2 }],
-      healAmount: 4, healResource: 'hp',
+      healAmount: 4, resource: 'hp',
       cooldown: 3,
     });
     expect(divineLight.id).toBe('divine-light');

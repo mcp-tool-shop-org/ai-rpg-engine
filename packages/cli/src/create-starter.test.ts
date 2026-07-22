@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -281,7 +281,7 @@ describe('create-starter', () => {
 // user never named. It must fail loudly with a structured error and exit 1.
 describe('runCreateStarter --out validation (CLI-012)', () => {
     let tmpDir: string;
-    let exitSpy: ReturnType<typeof vi.spyOn>;
+    let exitSpy: MockInstance<typeof process.exit>;
     let errSpy: ReturnType<typeof vi.spyOn>;
     let logSpy: ReturnType<typeof vi.spyOn>;
 

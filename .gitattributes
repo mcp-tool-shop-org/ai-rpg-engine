@@ -1,0 +1,5 @@
+# Normalize all text to LF in the index and at checkout — a CRLF checkout
+# (core.autocrlf=true on Windows) breaks byte-exact assertions like the
+# packaging shebang test. No binary file types are tracked today; when one
+# lands, mark it here (e.g. `*.png binary`).
+* text=auto eol=lf

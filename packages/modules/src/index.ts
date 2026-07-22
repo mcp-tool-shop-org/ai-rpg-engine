@@ -260,6 +260,54 @@ export type {
   PressureFallout,
   FalloutContext,
 } from './pressure-resolution.js';
+// --- World Tick (F-ENG005: heat/safety drive the pressure lifecycle) ---
+export {
+  runWorldTick,
+  buildPressureInputs,
+  getWorldTickState,
+  createWorldTick,
+  hasWorldTickState,
+  getActivePressures,
+  getResolvedPressures,
+  urgencyBand,
+  HEAT_KEY,
+  HEAT_WAKE_THRESHOLD,
+  HEAT_ESCALATION_THRESHOLD,
+  HEAT_URGENCY_STEP,
+  HEAT_DECAY_PER_QUIET_TICK,
+  QUIET_ROUNDS_BEFORE_DECAY,
+  DISTRICT_STABILITY_BASE,
+  CHAIN_TURNS_REMAINING,
+  RESOLVED_PRESSURES_KEPT,
+} from './world-tick.js';
+export type {
+  WorldTickState,
+  WorldTickOptions,
+  WorldTickResult,
+  UrgencyBand,
+} from './world-tick.js';
+export {
+  createEncounterSpawn,
+  runEncounterSpawnStep,
+  getEncounterSpawnState,
+  validateEncounterSpawnContent,
+  unregisterEncounterSpawnContent,
+  spawnRoll,
+  spawnChance,
+  compositionLabel,
+  encounterDescription,
+  BASE_SPAWN_CHANCE,
+  SAFETY_CHANCE_STEP,
+  MIN_SPAWN_CHANCE,
+  MAX_SPAWN_CHANCE,
+  BOSS_ROLE_TAG,
+} from './encounter-spawn.js';
+export type {
+  EncounterSpawnContent,
+  EncounterSpawnConfig,
+  EncounterSpawnState,
+  SpawnedEncounterReport,
+} from './encounter-spawn.js';
 export {
   buildFactionProfile,
   evaluateFactionActions,
@@ -836,6 +884,26 @@ export type {
 // --- Combat Builders (DX Helpers) ---
 export { buildCombatFormulas, buildCombatStack, PACK_BIAS_TAGS } from './combat-builders.js';
 export type { CombatStackConfig, CombatStack } from './combat-builders.js';
+
+// --- World Stack (Strategic-Tier DX Builder) ---
+export { buildWorldStack } from './world-stack.js';
+export type { WorldStackConfig, WorldStack } from './world-stack.js';
+
+// --- Quest Core (F-ENG005-quest-loop-min: offer → accept → track → complete → reward) ---
+export {
+  createQuestCore,
+  validateQuestRuntimeContent,
+  evaluateQuestCondition,
+  getQuestDefinitions,
+  unregisterQuestContent,
+  questProgressCount,
+  questProgressRequired,
+  QUEST_OFFER_EFFECT,
+  QUEST_STAGE_EFFECT_TYPES,
+  QUEST_CONDITION_TYPES,
+  QUEST_REWARD_TYPES,
+} from './quest-core.js';
+export type { QuestCoreConfig } from './quest-core.js';
 
 // --- Unified Decision (Combat + Ability Merge Layer) ---
 export { selectBestAction, formatUnifiedDecision } from './unified-decision.js';

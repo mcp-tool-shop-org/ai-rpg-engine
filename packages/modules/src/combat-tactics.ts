@@ -370,7 +370,10 @@ function repositionHandler(
     chance += 15; // Easier to outmaneuver a static guard
   }
 
-  const roll = simpleRoll(world.meta.tick, actor.id, 'reposition');
+  // world.meta.seed as a pure hash input (F-SEED / P8-WL-005): reposition/
+  // outflank/stabilize were the last seed-blind combat streams — fresh runs
+  // with different seeds repositioned identically. Seed 0 = legacy stream.
+  const roll = simpleRoll(world.meta.tick, actor.id, 'reposition', world.meta.seed);
 
   if (roll <= chance) {
     // Success — reposition grants tactical advantage
@@ -388,7 +391,12 @@ function repositionHandler(
     if (target && (target.resources.hp ?? 0) > 0) {
       // Outflank check — repositioning around a target can expose them
       const outflankChance = config?.outflankChance ?? 60;
-      const outflankRoll = simpleRoll(world.meta.tick, actor.id, target.id + '-outflank');
+      const outflankRoll = simpleRoll(
+        world.meta.tick,
+        actor.id,
+        target.id + '-outflank',
+        world.meta.seed, // F-SEED / P8-WL-005 — seed 0 = legacy stream
+      );
       if (outflankRoll <= outflankChance && !hasStatus(target, COMBAT_STATES.EXPOSED)) {
         events.push(applyStatus(target, COMBAT_STATES.EXPOSED, world.meta.tick, {
           duration: 1,
@@ -516,7 +524,8 @@ export function createCombatTactics(config?: CombatTacticsConfig): EngineModule 
           const entityVigor = entity.stats[entityMapping.attack] ?? 5;
           let stabilizeChance = config?.braceStabilizeChance ?? Math.min(90, 40 + entityVigor * 6);
           if (isRoundFlagActiveAt(world, entityId, 'bracedAtChokepoint', event.tick)) stabilizeChance += 15;
-          const roll = simpleRoll(event.tick, entityId, 'stabilize');
+          // F-SEED / P8-WL-005 — world seed threaded; seed 0 = legacy stream.
+          const roll = simpleRoll(event.tick, entityId, 'stabilize', world.meta.seed);
           if (roll <= stabilizeChance) {
             removeStatus(entity, COMBAT_STATES.OFF_BALANCE, event.tick);
           }

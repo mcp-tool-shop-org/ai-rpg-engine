@@ -5,19 +5,13 @@ import {
   traversalCore,
   statusCore,
   buildCombatStack,
+  buildWorldStack,
   createInventoryCore,
   createDialogueCore,
   createPerceptionFilter,
   createProgressionCore,
-  createEnvironmentCore,
-  createFactionCognition,
-  createRumorPropagation,
   createSimulationInspector,
-  createDistrictCore,
-  createBeliefProvenance,
-  createObserverPresentation,
   giveItem,
-  createDefeatFallout,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
@@ -46,6 +40,8 @@ import {
   wayOfTheBladeTree,
   roninAbilities,
   roninStatusDefinitions,
+  progressionRewards,
+  encounterSpawnContent,
 } from './content.js';
 import { roninMinimalRuleset } from './ruleset.js';
 
@@ -141,6 +137,55 @@ export function createGame(seed?: number): Engine {
     },
   });
 
+  // Strategic tier in one call (F-ENG005-build-world-stack): the same eight
+  // modules this setup used to hand-list, same wiring order, same configs.
+  // ONE faction roster feeds both faction-cognition and defeat-fallout.
+  const worldStack = buildWorldStack({
+    playerId: 'player',
+    factions: [
+      {
+        factionId: 'takeda-clan',
+        entityIds: ['lord-takeda', 'lady-himiko', 'corrupt-samurai'],
+        cohesion: 0.6,
+      },
+      {
+        factionId: 'shadow-network',
+        entityIds: ['shadow-assassin'],
+        cohesion: 0.9,
+      },
+    ],
+    environment: {
+      // Hazards mutate entity.resources directly (deterministic, clamped);
+      // environment-core does not record the returned events. Return [].
+      hazards: [
+        {
+          id: 'poison-residue',
+          triggerOn: 'world.zone.entered',
+          condition: (zone) => zone.hazards?.includes('poison-residue') ?? false,
+          effect: (_zone, entity, _world, _tick) => {
+            entity.resources.hp = Math.max(0, (entity.resources.hp ?? 0) - 2);
+            return [];
+          },
+        },
+        {
+          id: 'shadow-watch',
+          triggerOn: 'world.zone.entered',
+          condition: (zone) => zone.hazards?.includes('shadow-watch') ?? false,
+          effect: (_zone, entity, _world, _tick) => {
+            entity.resources.ki = Math.max(0, (entity.resources.ki ?? 0) - 3);
+            return [];
+          },
+        },
+      ],
+    },
+    rumors: { propagationDelay: 2 },
+    districts,
+    presentationRules: [assassinPerception],
+    // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
+    // tables drive zone-entry spawns via the world tick.
+    encounterSpawn: { gameId: manifest.id, ...encounterSpawnContent },
+  });
+
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -154,64 +199,11 @@ export function createGame(seed?: number): Engine {
       createPerceptionFilter({ perceptionStat: 'perception' }),
       createProgressionCore({
         trees: [wayOfTheBladeTree],
-        rewards: [{
-          eventPattern: 'combat.entity.defeated',
-          currencyId: 'xp',
-          amount: 15,
-          recipient: 'actor',
-        }],
+        // T0-progression-ceiling: kills + dialogue + first-visit + boss bonus
+        // (defined next to the tree in content.ts so the arithmetic is testable).
+        rewards: progressionRewards,
       }),
-      createEnvironmentCore({
-        // Hazards mutate entity.resources directly (deterministic, clamped);
-        // environment-core does not record the returned events. Return [].
-        hazards: [
-          {
-            id: 'poison-residue',
-            triggerOn: 'world.zone.entered',
-            condition: (zone) => zone.hazards?.includes('poison-residue') ?? false,
-            effect: (_zone, entity, _world, _tick) => {
-              entity.resources.hp = Math.max(0, (entity.resources.hp ?? 0) - 2);
-              return [];
-            },
-          },
-          {
-            id: 'shadow-watch',
-            triggerOn: 'world.zone.entered',
-            condition: (zone) => zone.hazards?.includes('shadow-watch') ?? false,
-            effect: (_zone, entity, _world, _tick) => {
-              entity.resources.ki = Math.max(0, (entity.resources.ki ?? 0) - 3);
-              return [];
-            },
-          },
-        ],
-      }),
-      createFactionCognition({
-        factions: [
-          {
-            factionId: 'takeda-clan',
-            entityIds: ['lord-takeda', 'lady-himiko', 'corrupt-samurai'],
-            cohesion: 0.6,
-          },
-          {
-            factionId: 'shadow-network',
-            entityIds: ['shadow-assassin'],
-            cohesion: 0.9,
-          },
-        ],
-      }),
-      createRumorPropagation({ propagationDelay: 2 }),
-      createDistrictCore({ districts }),
-      createBeliefProvenance(),
-      createObserverPresentation({
-        rules: [assassinPerception],
-      }),
-      createDefeatFallout({
-        factions: [
-          { factionId: 'takeda-clan', entityIds: ['lord-takeda', 'lady-himiko', 'corrupt-samurai'] },
-          { factionId: 'shadow-network', entityIds: ['shadow-assassin'] },
-        ],
-        playerId: 'player',
-      }),
+      ...worldStack.modules,
       createBossPhaseListener(corruptSamuraiBoss),
       createAbilityCore({ abilities: roninAbilities, statMapping: { power: 'discipline', precision: 'perception', focus: 'composure' } }),
       createAbilityEffects(),
@@ -226,13 +218,13 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity(structuredClone(player));
-  engine.store.addEntity(structuredClone(lordTakeda));
-  engine.store.addEntity(structuredClone(ladyHimiko));
-  engine.store.addEntity(structuredClone(magistrateSato));
-  engine.store.addEntity(structuredClone(shadowAssassin));
-  engine.store.addEntity(structuredClone(corruptSamurai));
-  engine.store.addEntity(structuredClone(castleGuard));
+  engine.store.addEntity(player);
+  engine.store.addEntity(lordTakeda);
+  engine.store.addEntity(ladyHimiko);
+  engine.store.addEntity(magistrateSato);
+  engine.store.addEntity(shadowAssassin);
+  engine.store.addEntity(corruptSamurai);
+  engine.store.addEntity(castleGuard);
 
   // Set player
   engine.store.state.playerId = 'player';

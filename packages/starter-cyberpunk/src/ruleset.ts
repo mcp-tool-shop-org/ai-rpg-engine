@@ -28,14 +28,14 @@ export const cyberpunkMinimalRuleset: RulesetDefinition = {
   verbs: [
     { id: 'move', name: 'Move', description: 'Navigate to adjacent node' },
     { id: 'inspect', name: 'Scan', description: 'Scan current node or target' },
-    { id: 'hack', name: 'Hack', tags: ['netrunning'], description: 'Attempt to breach a system' },
     { id: 'attack', name: 'Zap', tags: ['combat'], description: 'Hit with a stun baton or similar' },
-    { id: 'guard', name: 'Guard', tags: ['combat', 'defensive'], description: 'Brace for incoming attacks, reducing damage taken' },
+    { id: 'guard', name: 'Guard', tags: ['combat', 'defensive'], description: 'Take a defensive stance, reducing damage taken' },
+    { id: 'brace', name: 'Brace', tags: ['combat', 'defensive'], description: 'Plant your footing to steady yourself and recover balance' },
+    { id: 'reposition', name: 'Reposition', tags: ['combat', 'movement'], description: 'Shift position to outflank a target or escape a bad spot' },
     { id: 'disengage', name: 'Disengage', tags: ['combat', 'movement'], description: 'Attempt to break from combat and withdraw' },
     { id: 'use', name: 'Use', description: 'Use a program or item' },
     { id: 'speak', name: 'Speak', tags: ['dialogue'], description: 'Talk to an NPC' },
     { id: 'choose', name: 'Choose', tags: ['dialogue'], description: 'Select a dialogue option' },
-    { id: 'jack-in', name: 'Jack In', tags: ['netrunning'], description: 'Connect to a network node' },
     { id: 'use-ability', name: 'Use Ability', tags: ['ability'], description: 'Activate a special ability or program' },
   ],
 

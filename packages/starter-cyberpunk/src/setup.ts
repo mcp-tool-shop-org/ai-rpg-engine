@@ -5,19 +5,13 @@ import {
   traversalCore,
   statusCore,
   buildCombatStack,
+  buildWorldStack,
   createInventoryCore,
   createDialogueCore,
   createPerceptionFilter,
   createProgressionCore,
-  createEnvironmentCore,
-  createFactionCognition,
-  createRumorPropagation,
   createSimulationInspector,
-  createDistrictCore,
-  createBeliefProvenance,
-  createObserverPresentation,
   giveItem,
-  createDefeatFallout,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
@@ -44,6 +38,8 @@ import {
   netrunningTree,
   cyberpunkAbilities,
   cyberpunkStatusDefinitions,
+  progressionRewards,
+  encounterSpawnContent,
 } from './content.js';
 import { cyberpunkMinimalRuleset } from './ruleset.js';
 
@@ -135,6 +131,37 @@ export function createGame(seed?: number): Engine {
     },
   });
 
+  // Strategic tier in one call (F-ENG005-build-world-stack): the same eight
+  // modules this setup used to hand-list, same wiring order, same configs.
+  // ONE faction roster feeds both faction-cognition and defeat-fallout.
+  const worldStack = buildWorldStack({
+    playerId: 'runner',
+    factions: [{
+      factionId: 'vault-ice',
+      entityIds: ['ice-sentry'],
+      cohesion: 0.95,
+    }],
+    environment: {
+      // Hazards mutate entity.resources directly (deterministic, clamped);
+      // environment-core does not record the returned events. Return [].
+      hazards: [{
+        id: 'exposed-wiring',
+        triggerOn: 'world.zone.entered',
+        condition: (zone) => zone.hazards?.includes('exposed wiring') ?? false,
+        effect: (_zone, entity, _world, _tick) => {
+          entity.resources.hp = Math.max(0, (entity.resources.hp ?? 0) - 2);
+          return [];
+        },
+      }],
+    },
+    rumors: { propagationDelay: 1, distortionPerHop: 0.03 },
+    districts,
+    presentationRules: [iceSecurityFraming],
+    // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
+    // tables drive zone-entry spawns via the world tick.
+    encounterSpawn: { gameId: manifest.id, ...encounterSpawnContent },
+  });
+
   const engine = new Engine({
     manifest,
     seed: seed ?? 77,
@@ -151,43 +178,11 @@ export function createGame(seed?: number): Engine {
       }),
       createProgressionCore({
         trees: [netrunningTree],
-        rewards: [{
-          eventPattern: 'combat.entity.defeated',
-          currencyId: 'xp',
-          amount: 20,
-          recipient: 'actor',
-        }],
+        // T0-progression-ceiling: kills + dialogue + first-visit + boss bonus
+        // (defined next to the tree in content.ts so the arithmetic is testable).
+        rewards: progressionRewards,
       }),
-      createEnvironmentCore({
-        // Hazards mutate entity.resources directly (deterministic, clamped);
-        // environment-core does not record the returned events. Return [].
-        hazards: [{
-          id: 'exposed-wiring',
-          triggerOn: 'world.zone.entered',
-          condition: (zone) => zone.hazards?.includes('exposed wiring') ?? false,
-          effect: (_zone, entity, _world, _tick) => {
-            entity.resources.hp = Math.max(0, (entity.resources.hp ?? 0) - 2);
-            return [];
-          },
-        }],
-      }),
-      createFactionCognition({
-        factions: [{
-          factionId: 'vault-ice',
-          entityIds: ['ice-sentry'],
-          cohesion: 0.95,
-        }],
-      }),
-      createRumorPropagation({ propagationDelay: 1, distortionPerHop: 0.03 }),
-      createDistrictCore({ districts }),
-      createBeliefProvenance(),
-      createObserverPresentation({
-        rules: [iceSecurityFraming],
-      }),
-      createDefeatFallout({
-        factions: [{ factionId: 'vault-ice', entityIds: ['ice-sentry'] }],
-        playerId: 'runner',
-      }),
+      ...worldStack.modules,
       createBossPhaseListener(vaultOverseerBoss),
       createAbilityCore({ abilities: cyberpunkAbilities, statMapping: { power: 'chrome', precision: 'reflex', focus: 'netrunning' } }),
       createAbilityEffects(),
@@ -202,12 +197,12 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity(structuredClone(player));
-  engine.store.addEntity(structuredClone(fixer));
-  engine.store.addEntity(structuredClone(rez));
-  engine.store.addEntity(structuredClone(iceAgent));
-  engine.store.addEntity(structuredClone(streetRunner));
-  engine.store.addEntity(structuredClone(vaultOverseer));
+  engine.store.addEntity(player);
+  engine.store.addEntity(fixer);
+  engine.store.addEntity(rez);
+  engine.store.addEntity(iceAgent);
+  engine.store.addEntity(streetRunner);
+  engine.store.addEntity(vaultOverseer);
 
   // Set player
   engine.store.state.playerId = 'runner';

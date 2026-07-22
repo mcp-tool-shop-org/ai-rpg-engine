@@ -262,7 +262,7 @@ describe('validateGameContent', () => {
     // statuses + verbs defined inside the pack should satisfy references — no error.
     const r = validateGameContent({
       statuses: [{ id: 'burning', name: 'Burning', tags: [], stacking: 'refresh' }],
-      verbs: [{ id: 'cast', name: 'Cast' }],
+      verbs: [{ id: 'cast' }],
       entities: [{ id: 'mob', type: 'enemy', name: 'Mob', startingStatuses: ['burning'] }],
       abilities: [
         {

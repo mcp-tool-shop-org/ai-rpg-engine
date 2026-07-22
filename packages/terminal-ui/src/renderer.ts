@@ -354,21 +354,42 @@ export function buildActionList(world: WorldState): ActionOption[] {
   return actions;
 }
 
-export function renderActions(world: WorldState, opts?: RenderOptions): string {
+/**
+ * An appended menu entry rendered AFTER the base action list, continuing its
+ * numbering (P8-PS-005). The embedder (the CLI's ability/journal/director
+ * layer) owns what the entries DO — the renderer only needs a label and a
+ * group for blank-line separation, exactly like ActionOption's `group`.
+ */
+export type ExtraMenuEntry = { label: string; group?: string };
+
+export function renderActions(
+  world: WorldState,
+  opts?: RenderOptions & { extras?: readonly ExtraMenuEntry[] },
+): string {
   const pal = paletteFor(opts);
   const actions = buildActionList(world);
+  const extras = opts?.extras ?? [];
   // Right-align numbers when the menu reaches double digits: [ 9] / [10].
-  const width = String(actions.length).length;
+  // ONE width for the whole numbered range — base and appended entries share
+  // it, so the seam can never misalign ('[8] Look around' vs '[ 9] Rally')
+  // the way the two-renderer split did (P8-PS-005).
+  const width = String(actions.length + extras.length).length;
   const lines: string[] = [];
-  let prevGroup: ActionGroup | undefined;
-  actions.forEach((action, i) => {
-    if (prevGroup !== undefined && action.group !== prevGroup) {
+  let prevGroup: string | undefined;
+  const push = (label: string, group: string, index: number) => {
+    if (prevGroup !== undefined && group !== prevGroup) {
       lines.push('');
     }
-    prevGroup = action.group;
-    const num = `[${String(i + 1).padStart(width)}]`;
-    lines.push(`  ${pal.cyan(num)} ${action.label}`);
-  });
+    prevGroup = group;
+    const num = `[${String(index + 1).padStart(width)}]`;
+    lines.push(`  ${pal.cyan(num)} ${label}`);
+  };
+  actions.forEach((action, i) => push(action.label, action.group, i));
+  // Appended entries continue the numbering — the same numbers
+  // parseExtraSelection (the CLI's extras router) resolves. Group separation
+  // follows the base list's rule; the base-to-extras seam always separates
+  // because no extras group shares a name with an ActionGroup.
+  extras.forEach((extra, i) => push(extra.label, extra.group ?? 'extra', actions.length + i));
   return lines.join('\n') + '\n';
 }
 
@@ -416,6 +437,25 @@ export function parseTextInput(
   if (verb === 'save') return { verb: 'save' };
   if (verb === 'quit' || verb === 'exit') return { verb: 'quit' };
 
+  // F-ENG008: equip/unequip take an ITEM argument, never a target. Without
+  // this branch the inventory fallthrough below rewrote `equip trident` into
+  // `use` — and inventory-core consumed the item. The handler resolves ids
+  // itself (bare-equip auto-resolve, structured rejections listing what's
+  // carried/equipped); prefix-matching for equip mirrors the `use` argument
+  // affordance. Unequip passes raw: equipped items have left the inventory.
+  if (verb === 'equip' || verb === 'unequip') {
+    if (!rest) return { verb };
+    let itemId = rest;
+    const player = world.entities[world.playerId];
+    if (verb === 'equip' && player?.inventory) {
+      const exact = player.inventory.find(i => i.toLowerCase() === rest);
+      const prefix = player.inventory.find(i => i.toLowerCase().startsWith(rest));
+      const substring = player.inventory.find(i => i.toLowerCase().includes(rest));
+      itemId = exact ?? prefix ?? substring ?? rest;
+    }
+    return { verb, parameters: { itemId } };
+  }
+
   // Resolve target by name
   const zone = world.zones[world.locationId];
   if (!zone) return { verb };
@@ -423,46 +463,72 @@ export function parseTextInput(
   if (rest) {
     const restLower = rest.toLowerCase();
 
-    const entities = Object.values(world.entities).filter(e => e.zoneId === zone.id);
-    const entityResult = (entity: EntityState) =>
-      verb === 'use' ? { verb, toolId: entity.id } : { verb, targetIds: [entity.id] };
+    const resolveEntity = (): { verb: string; targetIds?: string[]; toolId?: string } | null => {
+      const entities = Object.values(world.entities).filter(e => e.zoneId === zone.id);
+      const entityResult = (entity: EntityState) =>
+        verb === 'use' ? { verb, toolId: entity.id } : { verb, targetIds: [entity.id] };
 
-    let prefixEntity: EntityState | undefined;
-    let substringEntity: EntityState | undefined;
-    for (const entity of entities) {
-      const nameLower = entity.name.toLowerCase();
-      const idLower = entity.id.toLowerCase();
-      if (nameLower === restLower || idLower === restLower) {
-        return entityResult(entity);
+      let prefixEntity: EntityState | undefined;
+      let substringEntity: EntityState | undefined;
+      for (const entity of entities) {
+        const nameLower = entity.name.toLowerCase();
+        const idLower = entity.id.toLowerCase();
+        if (nameLower === restLower || idLower === restLower) {
+          return entityResult(entity);
+        }
+        if (!prefixEntity && (nameLower.startsWith(restLower) || idLower.startsWith(restLower))) {
+          prefixEntity = entity;
+        }
+        if (!substringEntity && (nameLower.includes(restLower) || idLower.includes(restLower))) {
+          substringEntity = entity;
+        }
       }
-      if (!prefixEntity && (nameLower.startsWith(restLower) || idLower.startsWith(restLower))) {
-        prefixEntity = entity;
-      }
-      if (!substringEntity && (nameLower.includes(restLower) || idLower.includes(restLower))) {
-        substringEntity = entity;
-      }
-    }
-    if (prefixEntity) return entityResult(prefixEntity);
-    if (substringEntity) return entityResult(substringEntity);
+      if (prefixEntity) return entityResult(prefixEntity);
+      if (substringEntity) return entityResult(substringEntity);
+      return null;
+    };
 
-    let prefixZone: string | undefined;
-    let substringZone: string | undefined;
-    for (const neighborId of zone.neighbors) {
-      const neighbor = world.zones[neighborId];
-      const nameLower = neighbor?.name.toLowerCase();
-      const idLower = neighborId.toLowerCase();
-      if (nameLower === restLower || idLower === restLower) {
-        return { verb, targetIds: [neighborId] };
+    const resolveZone = (): { verb: string; targetIds: string[] } | null => {
+      let prefixZone: string | undefined;
+      let substringZone: string | undefined;
+      for (const neighborId of zone.neighbors) {
+        const neighbor = world.zones[neighborId];
+        const nameLower = neighbor?.name.toLowerCase();
+        const idLower = neighborId.toLowerCase();
+        if (nameLower === restLower || idLower === restLower) {
+          return { verb, targetIds: [neighborId] };
+        }
+        if (!prefixZone && ((nameLower && nameLower.startsWith(restLower)) || idLower.startsWith(restLower))) {
+          prefixZone = neighborId;
+        }
+        if (!substringZone && ((nameLower && nameLower.includes(restLower)) || idLower.includes(restLower))) {
+          substringZone = neighborId;
+        }
       }
-      if (!prefixZone && ((nameLower && nameLower.startsWith(restLower)) || idLower.startsWith(restLower))) {
-        prefixZone = neighborId;
-      }
-      if (!substringZone && ((nameLower && nameLower.includes(restLower)) || idLower.includes(restLower))) {
-        substringZone = neighborId;
-      }
+      if (prefixZone) return { verb, targetIds: [prefixZone] };
+      if (substringZone) return { verb, targetIds: [substringZone] };
+      return null;
+    };
+
+    // P8-PS-003: resolution is verb-aware. Travel verbs try neighbor ZONES
+    // first — 'move crypt' next to exit 'Crypt Antechamber' must never be
+    // hijacked by a name-shadowing entity (the dead Crypt Stalker), which
+    // turned the most common free-text command into a burned round wherever
+    // an enemy shares a prefix with a destination. Entities keep first claim
+    // for every other verb ('attack crypt' still finds the Stalker) — same
+    // branch-per-verb shape as the equip/unequip special case above.
+    const TRAVEL_VERBS = new Set(['move', 'go', 'travel']);
+    if (TRAVEL_VERBS.has(verb)) {
+      const zoneMatch = resolveZone();
+      if (zoneMatch) return zoneMatch;
+      const entityMatch = resolveEntity();
+      if (entityMatch) return entityMatch;
+    } else {
+      const entityMatch = resolveEntity();
+      if (entityMatch) return entityMatch;
+      const zoneMatch = resolveZone();
+      if (zoneMatch) return zoneMatch;
     }
-    if (prefixZone) return { verb, targetIds: [prefixZone] };
-    if (substringZone) return { verb, targetIds: [substringZone] };
 
     const player = world.entities[world.playerId];
     if (player?.inventory) {
@@ -650,6 +716,86 @@ export function formatEventLine(event: ResolvedEvent): string | null {
       return `> Acquired ${p.itemId}`;
     case 'resource.changed':
       return `> ${p.resource}: ${p.previous} → ${p.current}`;
+
+    // F-0a572dd7: progression.node.unlocked rendered null, so a successful
+    // XP spend narrated "All is quiet." — an affirmative "nothing happened"
+    // right after the player bought an upgrade. Name the unlock; surface
+    // rejection reasons the same way action.rejected does.
+    case 'progression.node.unlocked': {
+      const node = payloadString(p, 'nodeId');
+      return `> Unlocked ${node ? humanizeStateId(node) : 'an advancement'}`;
+    }
+    case 'progression.unlock.rejected': {
+      const node = payloadString(p, 'nodeId');
+      const label = node ? humanizeStateId(node) : 'that';
+      const reason = payloadString(p, 'reason');
+      return reason ? `> You can't unlock ${label}: ${reason}` : `> You can't unlock ${label}.`;
+    }
+
+    // F-ENG005: world-tick pressure lifecycle — the world reacting to the
+    // player's accumulated heat. Hidden pressures render null (the world
+    // knows; the player doesn't — the reveal event is their narrated debut).
+    // Descriptions are pressure-system's own structured claims, verbatim.
+    case 'pressure.spawned': {
+      if (p.visibility === 'hidden') return null;
+      const desc = payloadString(p, 'description') ?? 'something stirs against you';
+      if (payloadString(p, 'chainedFrom')) return `> Consequence: ${desc}.`;
+      if (p.visibility === 'public') return `> Proclaimed: ${desc}.`;
+      if (p.visibility === 'known') return `> Word is out: ${desc}.`;
+      return `> Rumor spreads: ${desc}.`;
+    }
+    case 'pressure.revealed': {
+      const desc = payloadString(p, 'description') ?? 'something has been moving against you';
+      return `> Whispers reach you: ${desc}.`;
+    }
+    case 'pressure.escalated': {
+      const desc = payloadString(p, 'description') ?? 'the pressure against you';
+      return p.band === 'urgent'
+        ? `> It can no longer be ignored: ${desc}.`
+        : `> Pressure mounts: ${desc}.`;
+    }
+    case 'pressure.expired': {
+      if (p.visibility === 'hidden') return null;
+      const summary = payloadString(p, 'summary') ?? 'a pressure has run its course';
+      return `> The moment passes: ${summary}.`;
+    }
+    // F-ENG005: zone-entry encounter spawns (encounter-spawn module). Label is
+    // the composition kind (Ambush/Patrol/Horde/Challenge/Encounter);
+    // description is the authored trigger hook, terminal punctuation stripped.
+    case 'encounter.spawned': {
+      const label = payloadString(p, 'label') ?? 'Encounter';
+      const desc = payloadString(p, 'description') ?? 'something moves against you';
+      return `> ${label}: ${desc}.`;
+    }
+
+    // F-ENG005: the quest loop (quest-core). Telegraph lines in the
+    // pressure/encounter family: the module authors display-ready strings
+    // (names, stage hooks, reward summaries) onto the payload; every field
+    // falls back so a sparse payload still renders a complete sentence.
+    case 'quest.offered': {
+      const name = payloadString(p, 'questName') ?? payloadString(p, 'questId') ?? 'A new undertaking';
+      const hook = payloadString(p, 'stageDescription') ?? payloadString(p, 'stageName');
+      return hook ? `> New quest — ${name}: ${hook}.` : `> New quest — ${name}.`;
+    }
+    case 'quest.stage.advanced': {
+      const name = payloadString(p, 'questName') ?? payloadString(p, 'questId') ?? 'The quest';
+      const hook = payloadString(p, 'stageDescription') ?? payloadString(p, 'stageName');
+      // The fail branch is a turn for the worse, not progress — say so.
+      if (p.via === 'fail') {
+        return hook ? `> The quest turns — ${name}: ${hook}.` : `> The quest turns — ${name}.`;
+      }
+      return hook ? `> Quest advanced — ${name}: ${hook}.` : `> Quest advanced — ${name}.`;
+    }
+    case 'quest.completed': {
+      const name = payloadString(p, 'questName') ?? payloadString(p, 'questId') ?? 'A quest';
+      const rewards = Array.isArray(p.rewardSummary)
+        ? (p.rewardSummary as unknown[]).filter((r): r is string => typeof r === 'string' && r.length > 0)
+        : [];
+      return rewards.length > 0
+        ? `> Quest complete — ${name}. Reward: ${rewards.join(', ')}.`
+        : `> Quest complete — ${name}.`;
+    }
+
     case 'dialogue.started':
       return `> Speaking with ${p.speakerName}`;
     case 'dialogue.node.entered':
@@ -742,7 +888,27 @@ export function renderDialogue(world: WorldState, opts?: RenderOptions): string 
   return lines.join('\n') + '\n';
 }
 
-export function renderFullScreen(world: WorldState, recentEvents: ResolvedEvent[], opts?: RenderOptions): string {
+/** Full-screen options: per-section switches on top of the shared render options. */
+export type FullScreenOptions = RenderOptions & {
+  /**
+   * Render the numbered Actions section. Default true. Callers rendering a
+   * frame the player can no longer act on (the session-end screen — F1b's
+   * finale flow) pass false so a corpse is not offered an action menu.
+   */
+  actions?: boolean;
+  /**
+   * Appended menu entries (the CLI's ability/unlock/journal/director layer),
+   * rendered INSIDE the Actions section continuing its numbering — below the
+   * base list, above the screen-closing rule (P8-PS-005: the old embedder
+   * pattern printed them after renderFullScreen's return, so the closing rule
+   * bisected the menu on every frame and the two number columns misaligned at
+   * the seam). Suppressed together with the Actions section (dialogue frames,
+   * `actions: false`) — the extras belong to the menu, never to a corpse.
+   */
+  extraActions?: readonly ExtraMenuEntry[];
+};
+
+export function renderFullScreen(world: WorldState, recentEvents: ResolvedEvent[], opts?: FullScreenOptions): string {
   // Resolve color ONCE per screen so every section renders under the same
   // decision — no mid-frame flips if the environment changes under us.
   const pal = paletteFor(opts);
@@ -771,7 +937,20 @@ export function renderFullScreen(world: WorldState, recentEvents: ResolvedEvent[
     sections.push(`${sectionRule('Log', pal)}\n${eventLog}`);
   }
 
-  sections.push(`${sectionRule('Actions', pal)}\n${renderActions(world, resolved)}`);
+  // The numbered Actions section is suppressed while a dialogue is ACTIVE:
+  // the numbers on screen belong to the dialogue choices, and rendering both
+  // lists put two colliding `[1]`/`[2]` columns on one frame (the input
+  // router resolves numbers to dialogue choices first, so the base menu's
+  // numbers were lying). The just-ended echo frame (activeDialogue null,
+  // last spoken line shown) keeps its menu — no choices are on screen there.
+  // Callers can also suppress explicitly via `actions: false` (end frames).
+  const dState = world.modules['dialogue-core'] as { activeDialogue?: string | null } | undefined;
+  const showActions = (opts?.actions ?? true) && !dState?.activeDialogue;
+  if (showActions) {
+    sections.push(
+      `${sectionRule('Actions', pal)}\n${renderActions(world, { ...resolved, extras: opts?.extraActions })}`,
+    );
+  }
 
   // Sections each end with '\n'; joining with '\n' yields exactly one blank
   // line between blocks. The closing rule sits tight under the last line.

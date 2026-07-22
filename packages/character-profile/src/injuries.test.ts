@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { CharacterBuild } from '@ai-rpg-engine/character-creation';
+import type { Injury } from './types.js';
 import { createProfile } from './profile.js';
 import {
   addInjury,
@@ -58,14 +59,16 @@ describe('addInjury', () => {
   });
 
   // CP-05: injury ids must be deterministic (no Date.now / Math.random).
-  const cut = {
+  // Typed as addInjury's own parameter type (was `as const`, whose readonly
+  // tuple/literal types are not assignable to the mutable Omit<Injury, ...>).
+  const cut: Omit<Injury, 'id' | 'healed' | 'healedAt'> = {
     name: 'Cut',
     description: 'A shallow wound.',
     statPenalties: {},
     resourcePenalties: {},
     grantedTags: [],
     sustainedAt: 'turn-5',
-  } as const;
+  };
 
   it('generates reproducible injury ids from the same profile state', () => {
     const a = addInjury(makeProfile(), cut);

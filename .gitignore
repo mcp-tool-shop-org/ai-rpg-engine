@@ -30,3 +30,4 @@ site/node_modules/
 .swarm-casefile-d/
 .swarm-casefile-f1/
 .swarm-casefile-f2/
+.swarm/

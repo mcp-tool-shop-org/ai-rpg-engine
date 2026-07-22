@@ -5,19 +5,13 @@ import {
   traversalCore,
   statusCore,
   buildCombatStack,
+  buildWorldStack,
   createInventoryCore,
   createDialogueCore,
   createPerceptionFilter,
   createProgressionCore,
-  createEnvironmentCore,
-  createFactionCognition,
-  createRumorPropagation,
   createSimulationInspector,
-  createDistrictCore,
-  createBeliefProvenance,
-  createObserverPresentation,
   giveItem,
-  createDefeatFallout,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
@@ -43,6 +37,8 @@ import {
   commanderTree,
   colonyAbilities,
   colonyStatusDefinitions,
+  progressionRewards,
+  encounterSpawnContent,
 } from './content.js';
 import { colonyMinimalRuleset } from './ruleset.js';
 
@@ -137,6 +133,47 @@ export function createGame(seed?: number): Engine {
     },
   });
 
+  // Strategic tier in one call (F-ENG005-build-world-stack): the same eight
+  // modules this setup used to hand-list, same wiring order, same configs.
+  // ONE faction roster feeds both faction-cognition and defeat-fallout.
+  const worldStack = buildWorldStack({
+    playerId: 'commander',
+    factions: [{
+      factionId: 'colony-council',
+      entityIds: ['dr_vasquez', 'chief_okafor'],
+      cohesion: 0.5,
+    }],
+    environment: {
+      // Hazards mutate entity.resources directly (deterministic, clamped);
+      // environment-core does not record the returned events. Return [].
+      hazards: [{
+        id: 'power-drain',
+        triggerOn: 'world.zone.entered',
+        condition: (zone) => zone.hazards?.includes('power-drain') ?? false,
+        effect: (_zone, entity, _world, _tick) => {
+          entity.resources.power = Math.max(0, (entity.resources.power ?? 0) - 5);
+          return [];
+        },
+      },
+      {
+        id: 'resonance-field',
+        triggerOn: 'world.zone.entered',
+        condition: (zone) => zone.hazards?.includes('resonance-field') ?? false,
+        effect: (_zone, entity, _world, _tick) => {
+          entity.resources.morale = Math.max(0, (entity.resources.morale ?? 0) - 3);
+          entity.resources.power = Math.max(0, (entity.resources.power ?? 0) - 8);
+          return [];
+        },
+      }],
+    },
+    rumors: { propagationDelay: 2 },
+    districts,
+    presentationRules: [alienPerception],
+    // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
+    // tables drive zone-entry spawns via the world tick.
+    encounterSpawn: { gameId: manifest.id, ...encounterSpawnContent },
+  });
+
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -150,53 +187,11 @@ export function createGame(seed?: number): Engine {
       createPerceptionFilter({ perceptionStat: 'awareness' }),
       createProgressionCore({
         trees: [commanderTree],
-        rewards: [{
-          eventPattern: 'combat.entity.defeated',
-          currencyId: 'xp',
-          amount: 10,
-          recipient: 'actor',
-        }],
+        // T0-progression-ceiling: kills + dialogue + first-visit + boss bonus
+        // (defined next to the tree in content.ts so the arithmetic is testable).
+        rewards: progressionRewards,
       }),
-      createEnvironmentCore({
-        // Hazards mutate entity.resources directly (deterministic, clamped);
-        // environment-core does not record the returned events. Return [].
-        hazards: [{
-          id: 'power-drain',
-          triggerOn: 'world.zone.entered',
-          condition: (zone) => zone.hazards?.includes('power-drain') ?? false,
-          effect: (_zone, entity, _world, _tick) => {
-            entity.resources.power = Math.max(0, (entity.resources.power ?? 0) - 5);
-            return [];
-          },
-        },
-        {
-          id: 'resonance-field',
-          triggerOn: 'world.zone.entered',
-          condition: (zone) => zone.hazards?.includes('resonance-field') ?? false,
-          effect: (_zone, entity, _world, _tick) => {
-            entity.resources.morale = Math.max(0, (entity.resources.morale ?? 0) - 3);
-            entity.resources.power = Math.max(0, (entity.resources.power ?? 0) - 8);
-            return [];
-          },
-        }],
-      }),
-      createFactionCognition({
-        factions: [{
-          factionId: 'colony-council',
-          entityIds: ['dr_vasquez', 'chief_okafor'],
-          cohesion: 0.5,
-        }],
-      }),
-      createRumorPropagation({ propagationDelay: 2 }),
-      createDistrictCore({ districts }),
-      createBeliefProvenance(),
-      createObserverPresentation({
-        rules: [alienPerception],
-      }),
-      createDefeatFallout({
-        factions: [{ factionId: 'colony-council', entityIds: ['dr_vasquez', 'chief_okafor'] }],
-        playerId: 'commander',
-      }),
+      ...worldStack.modules,
       createBossPhaseListener(resonanceBoss),
       createAbilityCore({ abilities: colonyAbilities, statMapping: { power: 'engineering', precision: 'awareness', focus: 'command' } }),
       createAbilityEffects(),
@@ -211,12 +206,12 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity(structuredClone(player));
-  engine.store.addEntity(structuredClone(scientist));
-  engine.store.addEntity(structuredClone(security));
-  engine.store.addEntity(structuredClone(drone));
-  engine.store.addEntity(structuredClone(resonance));
-  engine.store.addEntity(structuredClone(swarmLarva));
+  engine.store.addEntity(player);
+  engine.store.addEntity(scientist);
+  engine.store.addEntity(security);
+  engine.store.addEntity(drone);
+  engine.store.addEntity(resonance);
+  engine.store.addEntity(swarmLarva);
 
   // Set player
   engine.store.state.playerId = 'commander';

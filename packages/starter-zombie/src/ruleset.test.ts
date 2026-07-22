@@ -31,8 +31,13 @@ describe('zombieMinimalRuleset', () => {
     expect(verbIds).toContain('speak');
     expect(verbIds).toContain('choose');
     expect(verbIds).toContain('use');
-    expect(verbIds).toContain('barricade');
-    expect(verbIds).toContain('scavenge');
+    // T0-verb-honesty-content: 'barricade'/'scavenge' were flavor rows with NO
+    // registered handler — the help taught verbs that bounced. They are gone;
+    // brace/reposition (registered by buildCombatStack) are advertised instead.
+    expect(verbIds).not.toContain('barricade');
+    expect(verbIds).not.toContain('scavenge');
+    expect(verbIds).toContain('brace');
+    expect(verbIds).toContain('reposition');
   });
 
   it('lists all default modules', () => {

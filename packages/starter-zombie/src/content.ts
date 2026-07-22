@@ -1,8 +1,8 @@
 // Ashfall Dead — content definitions
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
-import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
+import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition, QuestDefinition } from '@ai-rpg-engine/content-schema';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -34,7 +34,7 @@ export const player: EntityState = {
   name: 'Survivor',
   tags: ['player', 'human', 'survivor'],
   stats: { fitness: 5, wits: 6, nerve: 5 },
-  resources: { hp: 18, stamina: 12, infection: 0 },
+  resources: { hp: 18, maxHp: 18, stamina: 12, infection: 0 },
   statuses: [],
   inventory: [],
   zoneId: 'safehouse-lobby',
@@ -206,6 +206,25 @@ export const runnerAmbush: EncounterDefinition = {
   },
 };
 
+// --- Encounter spawn wiring (F-ENG005-encounter-spawn-wiring) ---
+//
+// Per-zone encounter tables — the moral equivalent of content-schema's
+// ZoneDefinition.encounterTable (string[]; weight is repetition). The dead
+// roam the street thickest, the runners hunt the hospital's east wing, and
+// the gas station sees the occasional wanderer. hospital-horde is a placed
+// boss set-piece (Bloater Alpha already stands in the wing) — boss fights
+// never enter random tables.
+
+export const encounterSpawnContent = {
+  encounters: [hordeEncounter, streetPatrol, runnerAmbush],
+  entityTemplates: [shambler, runner],
+  zoneTables: {
+    'overrun-street': ['street-patrol', 'street-patrol'],
+    'gas-station': ['street-patrol'],
+    'hospital-wing': ['runner-ambush', 'runner-ambush'],
+  },
+} satisfies EncounterSpawnContent;
+
 // --- Zones ---
 
 export const zones: ZoneState[] = [
@@ -326,6 +345,93 @@ export const medicDialogue: DialogueDefinition = {
   },
 };
 
+// --- Quests (F-ENG005-quest-loop-min) ---
+//
+// Two authored QuestDefinitions — Dr. Chen's medicine run, made mechanical.
+// Wired via buildWorldStack's `quests` config in setup.ts; quest-core
+// validates at construction (fail loud) and drives the loop off the live
+// event stream. Both are completable inside a normal session with the
+// shipped world alone (the shambler walks the street, the runner and the
+// Bloater Alpha hold the east wing).
+
+export const medicineRunQuest: QuestDefinition = {
+  id: 'the-medicine-run',
+  name: 'The Medicine Run',
+  // Offered the moment the survivor steps onto the overrun street — the
+  // point of no more pretending the safehouse shelves will last.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'overrun-street' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'clear-the-street',
+      name: 'Clear the Street',
+      description: "The dead between you and the hospital won't step aside",
+      objectives: ['Put down one of the dead'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-entity-has-tag', params: { tag: 'zombie' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+      nextStage: 'reach-the-east-wing',
+    },
+    {
+      id: 'reach-the-east-wing',
+      name: 'Reach the East Wing',
+      description: "The pharmacy is somewhere in the hospital's east wing",
+      objectives: ['Reach the Hospital East Wing'],
+      triggers: [
+        {
+          event: 'world.zone.entered',
+          condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'hospital-wing' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [{ type: 'xp', params: { amount: 15 } }],
+};
+
+export const alphaQuest: QuestDefinition = {
+  id: 'the-alpha',
+  name: 'The Alpha',
+  // Offered on entering the east wing itself — the floor the Bloater owns.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'hospital-wing' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'drop-the-bloater',
+      name: 'Drop the Bloater',
+      description: 'The Bloater Alpha stands between you and the medicine cabinet',
+      objectives: ['Destroy the Bloater Alpha'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-equals', params: { key: 'entityId', value: 'bloater-alpha' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [
+    { type: 'xp', params: { amount: 25 } },
+    { type: 'item', params: { itemId: 'antibiotics' } },
+  ],
+};
+
+export const zombieQuests: QuestDefinition[] = [medicineRunQuest, alphaQuest];
+
 // --- Districts ---
 
 export const districts: DistrictDefinition[] = [
@@ -408,6 +514,62 @@ export const antibioticsEffect = {
     }];
   },
 };
+
+// --- Progression Rewards (T0-progression-ceiling) ---
+//
+// Kills alone cannot complete the survival tree: 3 enemies x 8 = 24 XP vs a 47 XP tree. Max earnable: 24 + 5 (medic stories) + 15 (5 zones x 3 — scouting pays in this fiction) + 10 (bloater-alpha bonus) = 54 >= 47.
+// Non-combat sources: hearing the medic's stories through, scouting every block of the refuge (survival is exploration here), and dropping the bloater alpha.
+// content-truth.test.ts pins this arithmetic against the live content.
+
+/** Flat XP amounts per source — exported so tests can pin the progression arithmetic. */
+export const xpAwards = {
+  kill: 8,
+  dialogueComplete: 5,
+  firstVisit: 3,
+  bossBonus: 10,
+} as const;
+
+/** Award `amount` once per unique key, tracked in world.globals (rides saves). */
+function oncePer(
+  amount: number,
+  keyOf: (event: ResolvedEvent) => string | undefined,
+): CurrencyReward['amount'] {
+  return (event, world) => {
+    const k = keyOf(event);
+    if (!k) return 0;
+    const flag = `xp-awarded:${k}`;
+    if (world.globals[flag]) return 0;
+    world.globals[flag] = true;
+    return amount;
+  };
+}
+
+/** Only the player earns exploration/story XP (NPC movement must not consume the once-gates). */
+const playerOnly: CurrencyReward['recipient'] = (event, world) =>
+  event.actorId === world.playerId ? event.actorId : undefined;
+
+export const progressionRewards: CurrencyReward[] = [
+  { eventPattern: 'combat.entity.defeated', currencyId: 'xp', amount: xpAwards.kill, recipient: 'actor' },
+  {
+    eventPattern: 'combat.entity.defeated',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.bossBonus, (e) =>
+      e.payload.entityId === 'bloater-alpha' ? 'boss:bloater-alpha' : undefined),
+    recipient: 'actor',
+  },
+  {
+    eventPattern: 'dialogue.ended',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.dialogueComplete, (e) => `dialogue:${String(e.payload.dialogueId)}`),
+    recipient: playerOnly,
+  },
+  {
+    eventPattern: 'world.zone.entered',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.firstVisit, (e) => `zone:${String(e.payload.zoneId)}`),
+    recipient: playerOnly,
+  },
+];
 
 // --- Abilities ---
 
@@ -544,25 +706,24 @@ export const buildCatalog: BuildCatalog = {
       statPriorities: { fitness: 7, wits: 4, nerve: 3 },
       startingTags: ['survivor', 'endurance'],
       progressionTreeId: 'survival',
-      grantedVerbs: ['barricade'],
     },
     {
       id: 'scavenger',
       name: 'Scavenger',
       description: 'Finds resources where others see trash',
       statPriorities: { fitness: 3, wits: 7, nerve: 4 },
-      startingTags: ['scavenger', 'resourceful'],
+      // 'survivor' is the pack-identity tag every ability requirement gates on
+      // (T0-tag-gate: a created character without it hides gated abilities).
+      startingTags: ['survivor', 'scavenger', 'resourceful'],
       progressionTreeId: 'survival',
-      grantedVerbs: ['scavenge'],
     },
     {
       id: 'warden',
       name: 'Warden',
       description: 'Holds the line, keeps people together',
       statPriorities: { fitness: 4, wits: 3, nerve: 7 },
-      startingTags: ['leader', 'warden'],
+      startingTags: ['survivor', 'leader', 'warden'],
       progressionTreeId: 'survival',
-      grantedVerbs: ['barricade'],
     },
   ],
   backgrounds: [

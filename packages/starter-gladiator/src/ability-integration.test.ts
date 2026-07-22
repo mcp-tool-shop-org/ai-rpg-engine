@@ -78,7 +78,7 @@ describe('Gladiator — Crowd Cleave', () => {
   it('deals damage and grants crowd-favor', () => {
     const engine = buildGladiatorEngine();
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'crowd-cleave' }, targetIds: ['champion'],
     });
 
@@ -109,7 +109,7 @@ describe('Gladiator — Crowd Cleave', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'crowd-cleave' }, targetIds: ['champion'],
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
@@ -120,7 +120,7 @@ describe('Gladiator — Rally the Crowd', () => {
   it('heals, reduces fatigue, and buffs might', () => {
     const engine = buildGladiatorEngine({ playerShowmanship: 15, playerCrowdFavor: 40, playerFatigue: 15 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'rally-crowd' }, targetIds: [],
     });
 
@@ -135,7 +135,7 @@ describe('Gladiator — Rally the Crowd', () => {
   it('rejects when crowd-favor is too low', () => {
     const engine = buildGladiatorEngine({ playerCrowdFavor: 5 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'rally-crowd' }, targetIds: [],
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
@@ -146,7 +146,7 @@ describe('Gladiator — Challenge', () => {
   it('applies challenged status and reduces agility', () => {
     const engine = buildGladiatorEngine({ playerShowmanship: 15 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'gladiators-challenge' }, targetIds: ['champion'],
     });
 
@@ -160,7 +160,7 @@ describe('Gladiator — Challenge', () => {
   it('sets cooldown after use', () => {
     const engine = buildGladiatorEngine();
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'gladiators-challenge' }, targetIds: ['champion'],
     });
     expect(isAbilityReady(engine.store.state, 'player', 'gladiators-challenge', allGladiatorAbilities)).toBe(false);
@@ -205,7 +205,7 @@ describe('Gladiator — Iron Resolve (cleanse)', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'iron-resolve' }, targetIds: [],
     });
 
@@ -221,7 +221,7 @@ describe('Gladiator — Iron Resolve (cleanse)', () => {
   it('costs stamina and fatigue', () => {
     const engine = buildGladiatorEngine({ playerMight: 15 });
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'iron-resolve' }, targetIds: [],
     });
     const p = engine.player();
@@ -281,13 +281,13 @@ describe('Gladiator — Resistance profiles', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'fear-strike' }, targetIds: ['overlord'],
     });
 
     const immune = events.find(e => e.type === 'ability.status.immune');
     expect(immune).toBeDefined();
-    expect(overlord.statuses.length).toBe(0);
+    expect(engine.store.state.entities.overlord.statuses.length).toBe(0);
   });
 
   it('arena champion resists control (halved duration)', () => {
@@ -318,7 +318,7 @@ describe('Gladiator — Resistance profiles', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'gladiators-challenge' }, targetIds: ['champion'],
     });
 

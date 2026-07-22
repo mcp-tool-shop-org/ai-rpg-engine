@@ -8,7 +8,7 @@ import type {
   RulesetDefinition,
   WorldState,
 } from './types.js';
-import { WorldStore, SaveLoadError } from './world.js';
+import { WorldStore, SaveLoadError, migrateModuleStates } from './world.js';
 import { ActionDispatcher } from './actions.js';
 import { ModuleManager } from './modules.js';
 import type { FormulaRegistry } from './formulas.js';
@@ -52,6 +52,15 @@ export class Engine {
     if (options.modules) {
       for (const mod of options.modules) {
         this.moduleManager.register(mod, this.store);
+      }
+      // Stamp each registered module's save-format version into meta (ENG-009)
+      // so every serialize carries meta.moduleVersions and a later restore can
+      // detect per-module drift. Values are filled into the map the WorldStore
+      // constructor literal created — never a fresh object — so meta key order
+      // (and byte-identical serialize between same-seed engines) is preserved.
+      const moduleVersions = (this.store.state.meta.moduleVersions ??= {});
+      for (const mod of options.modules) {
+        moduleVersions[mod.id] = mod.version;
       }
       this.moduleManager.initializeNamespaces(this.store);
       this.moduleManager.initAll();
@@ -220,13 +229,18 @@ export class Engine {
    * subscribers) is never serialized, only state. The saved world is restored
    * through WorldStore.deserialize FIRST (rngState check → migration chain →
    * meta-shape assert, in that order, so a migration may backfill legacy meta
-   * fields — v2.5 PC-2), then the manifest is reconstructed from the restored
-   * post-migration meta so the dispatcher, moduleManager, and module state
-   * namespaces are registered, and the live EventBus those modules subscribed
-   * to is threaded into the restored WorldStore so subscriptions survive the
-   * swap (core-004).
+   * fields — v2.5 PC-2), then module-level migrations run (ENG-009: each
+   * registered module whose persisted meta.moduleVersions entry differs from
+   * its registered version gets migrateState() on its namespace slice), then
+   * the manifest is reconstructed from the restored post-migration meta so the
+   * dispatcher, moduleManager, and module state namespaces are registered, and
+   * the live EventBus those modules subscribed to is threaded into the
+   * restored WorldStore so subscriptions survive the swap (core-004). After
+   * the swap, namespaces ABSENT from the save are initialized to their
+   * modules' registered defaults; PRESENT namespaces are never re-initialized.
    *
-   * @throws SaveLoadError on malformed or unsupported-version saves.
+   * @throws SaveLoadError on malformed or unsupported-version saves, and with
+   *   code SAVE_MODULE_MIGRATION_FAILED when a module's migrateState throws.
    */
   static deserialize(
     serialized: string,
@@ -263,6 +277,16 @@ export class Engine {
     // survive the load — like modules, rulesets are code, never serialized.
     const restored = WorldStore.deserialize(JSON.stringify(data.world), undefined, options.ruleset);
 
+    // Module-level save-migration seam (ENG-009): after the world-level chain
+    // + shape asserts, before ANY module code runs and before the world swaps
+    // in, each registered module whose persisted namespace version
+    // (meta.moduleVersions — absent means the pre-versioning sentinel) differs
+    // from its registered version gets migrateState() on its own slice. A
+    // throwing hook rejects the load with a structured
+    // SAVE_MODULE_MIGRATION_FAILED here — consistent with "every
+    // save-rejection fires before any module code executes" below.
+    migrateModuleStates(restored.state, options.modules ?? []);
+
     // Reconstruct the manifest from the RESTORED (post-migration, shape-
     // asserted) meta — not the raw save blob — and build the engine normally
     // so dispatcher + moduleManager + namespaces are registered and modules
@@ -297,6 +321,17 @@ export class Engine {
     // of the orphaned construction store (v2.5 PC-1). The EventBus reuse
     // (core-004) already preserved the subscribe side; this fixes the emit side.
     engine.moduleManager.rebindStore(restored);
+
+    // Namespace-init guarantee (ENG-009): the constructor's
+    // initializeNamespaces call above ran against the THROWAWAY store — the
+    // restored store never got one, so a module registered AFTER the save was
+    // written (its namespace absent from the save) previously had to hand-roll
+    // lazy defaults or crash on first read. Run it against the restored store:
+    // ABSENT namespaces get the module's registered defaults (cloned);
+    // PRESENT namespaces are never touched — initializeNamespaces only writes
+    // when getModuleState() is undefined, so loaded (or just-migrated) module
+    // state is never clobbered back to defaults.
+    engine.moduleManager.initializeNamespaces(restored);
 
     // Restore the action log so getActionLog()/serialize() round-trip. Every
     // other field this method reads from a save is validated with a

@@ -197,3 +197,63 @@ describe('evaluateItemRecognition', () => {
     expect(results).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// F-SEED-combat-rolls-seed-blind — the world seed threads into hint selection
+// as a PURE hash input. WHICH items are recognized stays rule-driven and
+// seed-independent; only the narrator hint stream varies per world seed.
+// ---------------------------------------------------------------------------
+describe('evaluateItemRecognition — world-seed threading (F-SEED-combat-rolls-seed-blind)', () => {
+  const stolenItem: ItemDefinition = {
+    ...baseItem,
+    provenance: { flags: ['stolen'] },
+  };
+
+  it('worldSeed omitted === worldSeed 0 — the legacy tick-only stream is preserved', () => {
+    for (let tick = 0; tick <= 50; tick++) {
+      expect(evaluateItemRecognition([stolenItem], 'guild', {}, tick)).toEqual(
+        evaluateItemRecognition([stolenItem], 'guild', {}, tick, 0),
+      );
+    }
+  });
+
+  it('same worldSeed → identical results (pure, replay-safe)', () => {
+    for (const seed of [0, 1, 42, 999_983]) {
+      expect(evaluateItemRecognition([stolenItem], 'guild', {}, 3, seed)).toEqual(
+        evaluateItemRecognition([stolenItem], 'guild', {}, 3, seed),
+      );
+    }
+  });
+
+  it('different worldSeeds pick different narrator hints at the same tick (seeds 0 vs 1)', () => {
+    const [r0] = evaluateItemRecognition([stolenItem], 'guild', {}, 1, 0);
+    const [r1] = evaluateItemRecognition([stolenItem], 'guild', {}, 1, 1);
+    expect(r0.narratorHint).not.toBe(r1.narratorHint);
+    // The seed shifts the HINT only — recognition facts are unchanged.
+    expect(r1.recognitionType).toBe(r0.recognitionType);
+    expect(r1.stanceDelta).toBe(r0.stanceDelta);
+    expect(r1.rumorClaim).toBe(r0.rumorClaim);
+  });
+
+  it('recognition facts (which items, type, stance) are seed-independent across a seed sweep', () => {
+    const items: ItemDefinition[] = [
+      { ...baseItem, id: 'sword-1', name: 'Stolen Blade', provenance: { flags: ['stolen'] } },
+      { ...baseItem, id: 'ring-1', name: 'Cursed Ring', slot: 'accessory', provenance: { flags: ['cursed'] } },
+      { ...baseItem, id: 'badge-1', name: 'Warden Badge', provenance: { factionId: 'iron-wardens' } },
+    ];
+    const facts = (seed: number) =>
+      evaluateItemRecognition(items, 'iron-wardens', {}, 5, seed).map(
+        (r) => `${r.itemId}:${r.recognitionType}:${r.stanceDelta}`,
+      );
+    const base = facts(0);
+    for (const seed of [1, 2, 7, 42, 481_913]) {
+      expect(facts(seed)).toEqual(base);
+    }
+  });
+
+  it('a negative worldSeed still yields a real hint (defensive indexing, no crash)', () => {
+    const [r] = evaluateItemRecognition([stolenItem], 'guild', {}, 1, -5);
+    expect(typeof r.narratorHint).toBe('string');
+    expect(r.narratorHint.length).toBeGreaterThan(0);
+  });
+});

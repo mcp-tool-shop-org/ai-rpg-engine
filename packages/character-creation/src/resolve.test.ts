@@ -114,3 +114,24 @@ describe('resolveEntity — structured BuildResolutionError (F-6c1a8f3d)', () =>
     }
   });
 });
+
+describe('resolveEntity — maxHp derivation (T0-player-maxhp)', () => {
+  // The HUD's HP bar (`HP 9/20 [#####-----]`) and (low) warning render only
+  // when resources.maxHp exists. Rulesets do not declare maxHp, so created
+  // characters never carried one and the bar was boss-only.
+
+  it('pins maxHp to final creation-time hp so the HUD HP bar renders', () => {
+    const entity = resolveEntity(validBuild, testCatalog, testRuleset);
+    expect(entity.resources.maxHp).toBeDefined();
+    expect(entity.resources.maxHp).toBe(entity.resources.hp);
+  });
+
+  it('leaves an explicit maxHp from archetype resourceOverrides untouched', () => {
+    const catalog = structuredClone(testCatalog);
+    const archetype = catalog.archetypes.find((a) => a.id === validBuild.archetypeId);
+    if (!archetype) throw new Error('fixture archetype missing');
+    archetype.resourceOverrides = { ...(archetype.resourceOverrides ?? {}), maxHp: 42 };
+    const entity = resolveEntity(validBuild, catalog, testRuleset);
+    expect(entity.resources.maxHp).toBe(42);
+  });
+});

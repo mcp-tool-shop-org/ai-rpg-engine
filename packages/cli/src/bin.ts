@@ -13,9 +13,10 @@ import {
   buildActionList,
   parseActionSelection,
   parseTextInput,
+  TurnPresenter,
 } from '@ai-rpg-engine/terminal-ui';
 import { resolveEntity } from '@ai-rpg-engine/character-creation';
-import { WorldStore, SaveLoadError, type Engine, type RulesetDefinition } from '@ai-rpg-engine/core';
+import { WorldStore, SaveLoadError, migrateModuleStates, type Engine, type EntityState, type RulesetDefinition } from '@ai-rpg-engine/core';
 import { allPacks } from './packs.js';
 import { promptMenu, promptLine, closeReadline } from './prompts.js';
 import { buildCharacter } from './character-builder.js';
@@ -25,9 +26,13 @@ import { runScaffold } from './scaffold.js';
 import { runProfile } from './profile.js';
 import { runGuardedAction } from './guard.js';
 import { runNpcTurns } from './turns.js';
-import { evaluateSessionEnd, renderSessionEnd } from './endgame.js';
-import { buildExtraActions, renderExtraActions, parseExtraSelection, buildHudWorld, type ExtraAction } from './menu.js';
+import { runWorldTick } from '@ai-rpg-engine/modules';
+import { evaluateSessionEnd, renderSessionEnd, computeSessionStats } from './endgame.js';
+import { appendRunRecord, readRunHistory, formatRecentRuns } from './history.js';
+import { buildExtraActions, parseExtraSelection, buildHudWorld, renderInspectorReport, renderJournal, type ExtraAction } from './menu.js';
+import { renderDirectorLedger } from './director.js';
 import { loadExternalPack, PackLoadError, type LoadedPack } from './external-pack.js';
+import { runInspectSave } from './inspect.js';
 
 // Re-exported from guard.ts (extracted so turns.ts shares it without a
 // bin ⇄ turns import cycle). Public surface + tests are unchanged.
@@ -49,14 +54,79 @@ function printHelp() {
   console.log('  scaffold       Write a minimal valid content stub (ability/zone/quest/status/dialogue)');
   console.log('  profile        Validate a profile/profile-set JSON, or scaffold a starter profile');
   console.log('  create-starter Scaffold a new starter from template');
-  console.log('  replay         Restore the save and RESUME PLAY (--replay re-simulates the action log)');
-  console.log('  inspect-save   Show save file summary');
+  console.log('  replay         Restore the save and RESUME PLAY. (--replay is accepted but');
+  console.log('                 re-simulation is not supported: the save is restored instead.)');
+  console.log('  inspect-save   Validate a save through the same checks Continue uses, then');
+  console.log('                 summarize it (world, player, globals, recent events).');
+  console.log('                 With a path: inspect that save file instead of the default.');
   console.log('  version        Print version');
   console.log('  help           Show this help');
   console.log('');
   console.log('Flags:');
+  console.log('  --seed <n>     With run: fix the world seed (replay a specific run exactly).');
+  console.log('                 Omitted, each new session mints and prints its own seed.');
   console.log('  --version, -v  Print version');
   console.log('  --help, -h     Show this help');
+}
+
+// --- Run seeds (F-SEED-combat-rolls-seed-blind) ------------------------------
+//
+// Every fresh run used to be byte-identical: pack.createGame() was called with
+// no seed, WorldStore defaulted meta.seed to 0, and the roll layer hashed only
+// (tick, ids). New sessions now mint a real seed (the ONE place in the engine
+// where a non-deterministic source is welcome — this is the interactive CLI,
+// not module code), print it with a replay affordance, and honor --seed <n>.
+
+/** Upper bound accepted for --seed: int32-positive so seed mixing in the roll
+ *  hash stays exact-integer float math (see modules' simpleRoll). */
+const MAX_SEED = 2147483647;
+
+/** Mint a session seed. Non-deterministic BY DESIGN — two fresh runs must
+ *  differ. Small enough (6 digits) to read off the screen and retype. */
+export function mintSeed(): number {
+  return Math.floor(Math.random() * 1_000_000);
+}
+
+/** The one seed line a new session prints — pairs the seed with the exact
+ *  command that reproduces the run. Exported for unit testing. */
+export function formatSeedLine(seed: number, packPath?: string): string {
+  const cmd = packPath
+    ? `ai-rpg-engine run ${packPath} --seed ${seed}`
+    : `ai-rpg-engine run --seed ${seed}`;
+  return `  Seed: ${seed} — replay this run with: ${cmd}`;
+}
+
+export type ParsedRunArgs =
+  | { ok: true; path: string | null; seed: number | null }
+  | { ok: false; message: string; hint: string };
+
+/**
+ * Parse `run` arguments: an optional pack path (first non-flag token, as
+ * before) plus `--seed <n>` / `--seed=<n>`. The seed VALUE is consumed so it
+ * can never be mistaken for the pack path. Validation is strict — decimal
+ * digits only, 0..MAX_SEED — with a structured rejection (message + hint)
+ * instead of a silent NaN world. Exported for unit testing.
+ */
+export function parseRunArgs(runArgs: string[]): ParsedRunArgs {
+  let seed: number | null = null;
+  let pathArg: string | null = null;
+  for (let i = 0; i < runArgs.length; i++) {
+    const arg = runArgs[i];
+    if (arg === '--seed' || arg.startsWith('--seed=')) {
+      const raw = arg === '--seed' ? runArgs[++i] : arg.slice('--seed='.length);
+      if (raw === undefined || raw === '' || !/^\d+$/.test(raw) || Number(raw) > MAX_SEED) {
+        return {
+          ok: false,
+          message: `--seed must be a non-negative integer (0-${MAX_SEED}), got ${raw === undefined || raw === '' ? '(missing)' : `"${raw}"`}.`,
+          hint: 'Pass the whole number a previous session printed, e.g. --seed 482913.',
+        };
+      }
+      seed = Number(raw);
+    } else if (!arg.startsWith('-') && pathArg === null) {
+      pathArg = arg;
+    }
+  }
+  return { ok: true, path: pathArg, seed };
 }
 
 async function main() {
@@ -110,9 +180,10 @@ async function main() {
       closeReadline();
       return;
     case 'replay': {
-      // F1c: a restored game is PLAYABLE. replayGame() restores (or
-      // re-simulates) and returns the live session; the shared prompt loop
-      // takes over instead of the old print-summary-and-exit dead end.
+      // F1c: a restored game is PLAYABLE. replayGame() restores and returns
+      // the live session; the shared prompt loop takes over instead of the
+      // old print-summary-and-exit dead end. (--replay re-simulation retired
+      // in v2.7 — see replayGame; resim parity is v2.8 work.)
       const restored = replayGame(args.slice(1));
       if (restored) {
         await playSessions(restored, null);
@@ -122,10 +193,17 @@ async function main() {
       process.exit(0);
       return;
     }
-    case 'inspect-save':
-      inspectSave();
+    case 'inspect-save': {
+      // ENG-006: runInspectSave validates through the SAME load authority the
+      // run → Continue path uses (WorldStore.deserialize via inspect.ts) and
+      // returns the exit code (0 valid / 1 structured failure) rather than
+      // exiting itself — the runValidate/runProfile contract.
+      const savePath = args.slice(1).find((a) => !a.startsWith('-'));
+      const code = runInspectSave(savePath);
       closeReadline();
+      if (code !== 0) process.exit(code);
       return;
+    }
     default:
       console.log(`Unknown command: ${command}`);
       printHelp();
@@ -140,11 +218,19 @@ async function selectPack(): Promise<LoadedPack> {
   console.log('  Choose your adventure');
   console.log('  ═══════════════════════════════════════\n');
 
+  // Recent completed runs (runs.jsonl) render under the pack list — the table
+  // remembers how the last stories ended. No history, no section.
+  const footer = formatRecentRuns(
+    readRunHistory(SAVE_DIR),
+    new Map(allPacks.map((p) => [p.meta.id, p.meta.name])),
+  );
+
   const idx = await promptMenu(
     allPacks.map((p) => ({
       label: p.meta.name,
       detail: p.meta.tagline,
     })),
+    footer ? { footer } : {},
   );
 
   return allPacks[idx];
@@ -188,7 +274,27 @@ export function readSaveSummary(): { gameId: string; tick: number } | null {
  *    the LIVE eventLog, not the orphaned construction store (parity with
  *    Engine.deserialize, v2.5 PC-1)
  *
- * @throws SaveLoadError on malformed/unsupported saves — caller renders it.
+ * P8-WL-002/P8-SP-001: this path also runs the ENG-009 module-migration seam,
+ * which it previously bypassed entirely — Engine.deserialize had the seam,
+ * but this function is the only load authority shipped play reaches, so
+ * version-drifted module slices loaded raw and a save → Continue → save cycle
+ * carried its original meta.moduleVersions forever. After the store swap:
+ *  - migrateModuleStates(restored.state, moduleManager.getModules()) — each
+ *    registered module whose persisted meta.moduleVersions entry differs from
+ *    its registered version gets migrateState() on its slice, then the stamp
+ *    is refreshed IN PLACE (the re-stamp lives inside migrateModuleStates,
+ *    world.ts — the exact call Engine.deserialize makes), so the NEXT save is
+ *    post-seam. All-or-nothing: a throwing hook rejects the load with
+ *    SAVE_MODULE_MIGRATION_FAILED and the half-built engine is abandoned —
+ *    the caller never receives a session holding half-migrated state.
+ *  - moduleManager.initializeNamespaces(restored) — namespaces ABSENT from
+ *    the save get their modules' registered defaults (factory defaults run
+ *    against the RESTORED world, so eventLog-cursor state baselines to the
+ *    loaded log's length — P8-WL-006); PRESENT namespaces are never touched.
+ *
+ * @throws SaveLoadError on malformed/unsupported saves, and with code
+ *   SAVE_MODULE_MIGRATION_FAILED when a module's migrateState throws —
+ *   caller renders it.
  */
 export function restoreSessionFromSave(pack: LoadedPack, saveData?: unknown): Session {
   const data = (saveData ?? JSON.parse(fs.readFileSync(SAVE_FILE, 'utf-8'))) as {
@@ -205,6 +311,15 @@ export function restoreSessionFromSave(pack: LoadedPack, saveData?: unknown): Se
   );
   (engine as { store: WorldStore }).store = restored;
   engine.moduleManager.rebindStore(restored);
+
+  // ENG-009 seam on the shipped load path (see the doc block above). Order
+  // matters: migrations first (a hook may discard its slice by returning
+  // undefined), then namespace init re-defaults whatever is absent. The
+  // module list comes from the pack-wired manager — pack closures own module
+  // construction, so getModules() is the only public route to the exact
+  // instances the pack registered.
+  migrateModuleStates(restored.state, engine.moduleManager.getModules());
+  engine.moduleManager.initializeNamespaces(restored);
 
   // Restore the action log so a save taken AFTER resuming still carries the
   // full history (`--replay` re-simulation stays coherent). The old replay
@@ -257,9 +372,40 @@ async function maybeOfferResume(external: LoadedPack | null): Promise<Session | 
   }
 }
 
-/** Character creation + engine construction for a fresh game. */
-async function createNewSession(pack: LoadedPack): Promise<Session> {
-  const engine = pack.createGame();
+/**
+ * Replace the pack's default player with the created character. The player
+ * entity key is NOT always 'player' — 6/10 packs use a pack-specific id (e.g.
+ * 'runner', 'detective'). Read the real id from state.playerId and re-key the
+ * built character to it, preserving the default player's zone (CLI-001).
+ *
+ * F-1049b518: ingestion goes through store.addEntity — the store's
+ * detach-at-ingestion contract (structuredClone, F-71ec5dcd) — instead of the
+ * old direct `state.entities[playerId] = playerEntity` write, which was the
+ * one ingestion point left aliasing a caller-owned object into store state.
+ * Exported for unit testing (the interactive wizard around it is readline-driven).
+ */
+export function installCreatedPlayer(engine: Engine, playerEntity: EntityState): void {
+  const playerId = engine.store.state.playerId;
+  const defaultPlayer = engine.store.state.entities[playerId];
+  playerEntity.id = playerId;
+  playerEntity.zoneId = defaultPlayer?.zoneId;
+  engine.store.addEntity(playerEntity);
+}
+
+/**
+ * Character creation + engine construction for a fresh game.
+ *
+ * `seed` defaults to a freshly minted one, so every construction path yields a
+ * distinct world stream unless a specific seed is requested (--seed / tests).
+ * The seed is passed to pack.createGame(seed) — the PackInfo contract
+ * (`createGame(seed?)`) — and a pack that ignores it degrades gracefully: the
+ * session still runs; the printed seed line reads the world's ACTUAL
+ * meta.seed, so it never advertises a replay recipe the pack won't honor.
+ * Exported for unit testing (the wizard inside is readline-driven; packs
+ * without a buildCatalog skip it, which is what tests use).
+ */
+export async function createNewSession(pack: LoadedPack, seed: number = mintSeed()): Promise<Session> {
+  const engine = pack.createGame(seed);
 
   // Character creation needs the pack's build catalog + ruleset. External
   // packs may omit them (the starter template does) — the pack's authored
@@ -271,16 +417,7 @@ async function createNewSession(pack: LoadedPack): Promise<Session> {
 
     const build = await buildCharacter(pack.buildCatalog, pack.ruleset);
     const playerEntity = resolveEntity(build, pack.buildCatalog, pack.ruleset);
-
-    // Replace the default player with the custom character. The player entity key
-    // is NOT always 'player' — 6/10 packs use a pack-specific id (e.g. 'runner',
-    // 'detective'). Read the real id from state.playerId and re-key the built
-    // character to it, preserving the default player's zone (CLI-001).
-    const playerId = engine.store.state.playerId;
-    const defaultPlayer = engine.store.state.entities[playerId];
-    playerEntity.id = playerId;
-    playerEntity.zoneId = defaultPlayer?.zoneId;
-    engine.store.state.entities[playerId] = playerEntity;
+    installCreatedPlayer(engine, playerEntity);
   }
 
   return { engine, pack };
@@ -298,27 +435,101 @@ function printSessionBanner(pack: LoadedPack) {
  * with the CLI's own layers —
  *  - F1d HUD: the player shown carries xp/level pseudo-resources (display-only
  *    copy; live state untouched)
- *  - F1d menu: ability + unlock entries numbered to continue the base menu
- * The extras section is suppressed during active dialogue (numbers belong to
- * dialogue choices there).
+ *  - F1d menu: ability + unlock entries numbered to continue the base menu.
+ *    P8-PS-005: the extras ride renderFullScreen's `extraActions` option, so
+ *    they render INSIDE the frame — below the base list, above the screen-
+ *    closing rule, sharing one number width. (The old pattern appended them
+ *    after the frame's return: the closing rule bisected the menu on every
+ *    frame and the number columns misaligned at the seam.)
+ * BOTH menu layers vanish during active dialogue (terminal-ui suppresses the
+ *  whole Actions section, extras included) — the numbers on screen belong to
+ *  the dialogue choices.
+ * `opts.menu: false` suppresses both layers outright: the session-end frame
+ *  keeps the scene/HUD/log panels but offers a corpse no action menu (the
+ *  finale's New game / Quit prompt owns the numbers there).
+ * Exported for unit testing — the print sink is a parameter so tests capture
+ * the frame without touching console (same rationale as narrateRound).
  */
-function renderFrame(engine: Engine, pack: LoadedPack) {
+export function renderFrame(
+  engine: Engine,
+  pack: LoadedPack,
+  opts: { menu?: boolean; print?: (line: string) => void } = {},
+) {
+  const print = opts.print ?? console.log;
+  const menu = opts.menu ?? true;
   const trees = pack.progressionTrees ?? [];
-  const screen = renderFullScreen(buildHudWorld(engine.world, trees), engine.world.eventLog.slice(-8));
 
+  // Building the extras costs ability/unlock scans — skip when the menu is
+  // suppressed anyway (end frames, active dialogue).
   const dState = engine.world.modules['dialogue-core'] as { activeDialogue: string | null } | undefined;
-  let extraSection = '';
-  if (!dState?.activeDialogue) {
-    const extras = buildExtraActions(engine, trees);
-    if (extras.length > 0) {
-      extraSection = '\n' + renderExtraActions(extras, buildActionList(engine.world).length);
-    }
-  }
+  const extras = menu && !dState?.activeDialogue ? buildExtraActions(engine, trees) : [];
 
-  console.log('\n' + screen + extraSection);
+  const screen = renderFullScreen(
+    buildHudWorld(engine.world, trees),
+    engine.world.eventLog.slice(-8),
+    menu ? { extraActions: extras } : { actions: false },
+  );
+
+  print('\n' + screen);
 }
 
 export type SessionOutcome = 'quit' | 'new-game';
+
+/**
+ * FU-2: narrate one action round. The round's events — everything the
+ * eventLog gained since `logLenBefore` (the player's action plus the NPC
+ * responses it provoked) — are presented as ONE turn, per the presenter's
+ * contract ("an eventLog slice since the previous present"), and the styled
+ * narration prints on its own line. An empty delta prints nothing.
+ *
+ * The returned audioCommands are deliberately unused: there is no terminal
+ * audio backend — they are an embedder hook (terminal-ui's documented
+ * playback ceiling). Scheduling warnings are advisory and likewise dropped.
+ * Exported for unit testing — the print sink is a parameter so tests capture
+ * output without touching console.
+ */
+export function narrateRound(
+  presenter: TurnPresenter,
+  engine: Engine,
+  logLenBefore: number,
+  print: (line: string) => void,
+): void {
+  const delta = engine.world.eventLog.slice(logLenBefore);
+  if (delta.length === 0) return;
+  const presented = presenter.present(engine.world, delta);
+  print(`  ${presented.styledNarration}`);
+}
+
+/**
+ * The world's half of one action round: NPC turns, then the world tick.
+ *
+ * Two end-gates, both load-bearing:
+ *  - entry gate (F1a): a player action that ended the game (killing blow on
+ *    the boss, death to a reactive effect) gets no NPC round at all;
+ *  - the P8-WL-010 gate BETWEEN the NPC block and the world tick: when an
+ *    NPC downs the player mid-round, the tick would otherwise still run on
+ *    the dead-player world — pressures tick and the zone-entry spawn check
+ *    can fire, so the death round's narration telegraphed 'Ambush: …' over
+ *    the player's corpse, immediately followed by the defeat screen.
+ *
+ * `deps` exists for unit tests only (the gates are what's under test; the
+ * real NPC/tick drivers are exercised by their own suites) — production
+ * callers pass nothing and get the live drivers.
+ */
+export function runHostileRound(
+  engine: Engine,
+  pack: LoadedPack,
+  deps: {
+    npcTurns?: (engine: Engine) => unknown;
+    worldTick?: (engine: Engine, opts: { genre?: string; log: (msg: string) => void }) => unknown;
+    log?: (msg: string) => void;
+  } = {},
+): void {
+  if (evaluateSessionEnd(engine)) return;
+  (deps.npcTurns ?? runNpcTurns)(engine);
+  if (evaluateSessionEnd(engine)) return; // P8-WL-010 — no tick over a corpse
+  (deps.worldTick ?? runWorldTick)(engine, { genre: pack.meta.genres?.[0], log: deps.log ?? console.log });
+}
 
 /**
  * The shared interactive loop (run, run <path>, resumed saves, and replay all
@@ -329,13 +540,48 @@ export type SessionOutcome = 'quit' | 'new-game';
  *   2. render the frame, read one input, route it (handlePlayerInput).
  *   3. F1a — after the player's action resolves (and only if it didn't end
  *      the game), every living hostile in the zone takes its turn.
+ *   4. F-ENG005 — then the WORLD takes its turn: runWorldTick reads the heat/
+ *      safety/reputation/alert ledger defeat-fallout accrued and drives the
+ *      pressure lifecycle (spawn, reveal, escalate, expire). Guarded inside
+ *      like the NPC round — one bad tick logs one line, never kills the
+ *      session. Its events land in the same round delta as the action.
+ *      Both steps live in runHostileRound with its two end-gates (P8-WL-010).
+ *   5. FU-2 — the round's eventLog delta (player + NPC + world-tick events)
+ *      is presented once and its narration line printed. A round that ends
+ *      the game still narrates — the line lands before the next iteration's
+ *      finale screen. A REJECTED round (kind 'rejected' — the engine refused
+ *      the submission, P8-PS-002) narrates its rejection but provokes no NPC
+ *      or world turn: a dead menu entry costs the player nothing.
  */
 async function runSession(engine: Engine, pack: LoadedPack): Promise<SessionOutcome> {
+  // FU-2: ONE presenter per session — its AudioDirector carries sfx cooldown
+  // state across rounds; per-round construction would reset every cooldown.
+  const presenter = new TurnPresenter();
   while (true) {
     const end = evaluateSessionEnd(engine);
     if (end) {
-      renderFrame(engine, pack);
-      console.log(renderSessionEnd(end, engine.world));
+      // The end frame keeps the scene/HUD/log panels but no action menu —
+      // the session is over; the finale prompt below owns the numbers.
+      renderFrame(engine, pack, { menu: false });
+      console.log(renderSessionEnd(end, engine.world, pack.progressionTrees ?? []));
+
+      // Record the COMPLETED run (victory or defeat — a mid-session quit
+      // never reaches this branch). Guarded append: a history write failure
+      // prints one structured line and the finale flow continues.
+      const stats = computeSessionStats(engine.world, pack.progressionTrees ?? []);
+      appendRunRecord(
+        {
+          ts: new Date().toISOString(),
+          packId: pack.meta.id,
+          outcome: end.kind,
+          ...(end.trigger ? { endingId: end.trigger.id } : {}),
+          rounds: stats.rounds,
+          kills: stats.enemiesDefeated,
+          xp: stats.xpEarned,
+        },
+        SAVE_DIR,
+      );
+
       const choice = await promptMenu([
         { label: 'New game', detail: 'Return to the adventure select' },
         { label: 'Quit', detail: 'Leave the table' },
@@ -347,15 +593,24 @@ async function runSession(engine: Engine, pack: LoadedPack): Promise<SessionOutc
     const input = await promptLine('  > ');
 
     // All routing lives in handlePlayerInput (exported + unit-tested); the
-    // loop only decides "exit, NPC turns, or keep prompting". Notably this
-    // keeps every fs/engine failure inside the guarded router instead of
-    // raw-throwing out of the loop, OUTSIDE main()'s .catch (CS-C-008).
+    // loop only decides "exit, NPC turns, narration, or keep prompting".
+    // Notably this keeps every fs/engine failure inside the guarded router
+    // instead of raw-throwing out of the loop, OUTSIDE main()'s .catch
+    // (CS-C-008).
     const extras = buildExtraActions(engine, pack.progressionTrees ?? []);
+    const logLenBefore = engine.world.eventLog.length;
     const result = handlePlayerInput(engine, input, { ruleset: pack.ruleset, extras });
     if (result.kind === 'quit') return 'quit';
 
-    if (result.kind === 'action' && !evaluateSessionEnd(engine)) {
-      runNpcTurns(engine);
+    if (result.kind === 'action') {
+      runHostileRound(engine, pack);
+    }
+
+    // 'rejected' narrates too: the engine's structured refusal is the round's
+    // one event, and the player deserves to hear it immediately rather than
+    // finding it in the next frame's log panel (P8-PS-002).
+    if (result.kind === 'action' || result.kind === 'rejected') {
+      narrateRound(presenter, engine, logLenBefore, console.log);
     }
   }
 }
@@ -364,26 +619,56 @@ async function runSession(engine: Engine, pack: LoadedPack): Promise<SessionOutc
  * Session driver: play sessions until the player quits. 'new-game' from an
  * ending loops back — an external pack replays itself; the bundled flow
  * returns to the adventure select.
+ *
+ * Seeds: a FRESH session prints its seed line right under the banner (resumed
+ * and replayed sessions don't — their world is mid-flight; a bare
+ * `run --seed N` would not reproduce it without the action log).
+ * `opts.seedOverride` (from --seed) pins the seed for every fresh session this
+ * invocation starts — "run it back" semantics; without it each new game mints
+ * its own. `opts.packPath` threads the external pack path into the replay
+ * affordance so the printed command actually works.
  */
-async function playSessions(initial: Session | null, external: LoadedPack | null): Promise<void> {
+async function playSessions(
+  initial: Session | null,
+  external: LoadedPack | null,
+  opts: { seedOverride?: number | null; packPath?: string | null } = {},
+): Promise<void> {
   let pending: Session | null = initial;
   while (true) {
     let session = pending;
     pending = null;
+    let fresh = false;
     if (!session) {
       const pack = external ?? (await selectPack());
-      session = await createNewSession(pack);
+      session = await createNewSession(pack, opts.seedOverride ?? undefined);
+      fresh = true;
     }
     printSessionBanner(session.pack);
+    if (fresh) {
+      // Read the seed back from world truth, not from what we requested —
+      // a pack that ignores its seed argument then prints an honest line.
+      console.log(formatSeedLine(session.engine.world.meta.seed, opts.packPath ?? undefined) + '\n');
+    }
     const outcome = await runSession(session.engine, session.pack);
     if (outcome === 'quit') return;
   }
 }
 
 async function runGame(runArgs: string[] = []) {
+  // F-SEED: --seed <n> parsed and validated BEFORE anything interactive; an
+  // invalid value is a structured rejection, not a silently-ignored token.
+  const parsed = parseRunArgs(runArgs);
+  if (!parsed.ok) {
+    console.error(`  ✗ [INVALID_SEED] ${parsed.message}`);
+    console.error(`  Hint: ${parsed.hint}`);
+    closeReadline();
+    process.exit(1);
+    return; // unreachable; keeps control flow explicit for tests that stub exit
+  }
+
   // F1e: `run <path>` loads a scaffolded/built game module instead of the
   // bundled starters. Structured load errors exit with the contract spelled out.
-  const pathArg = runArgs.find((a) => !a.startsWith('-'));
+  const pathArg = parsed.path;
   let external: LoadedPack | null = null;
   if (pathArg) {
     try {
@@ -401,7 +686,7 @@ async function runGame(runArgs: string[] = []) {
   }
 
   const resumed = await maybeOfferResume(external);
-  await playSessions(resumed, external);
+  await playSessions(resumed, external, { seedOverride: parsed.seed, packPath: pathArg });
 
   console.log('\n  Farewell, wanderer.\n');
   closeReadline();
@@ -485,6 +770,10 @@ export type PlayerInputResult =
   | { kind: 'save'; ok: boolean }
   | { kind: 'help' }
   | { kind: 'action'; via: 'dialogue-choice' | 'menu' | 'extra' | 'text' }
+  /** A MENU-selected submission the engine refused (action.rejected) —
+   *  P8-PS-002: the menu advertised it, the engine said no; the refusal
+   *  narrates but the round is NOT forfeited (no NPC turns, no world tick). */
+  | { kind: 'rejected' }
   | { kind: 'unknown' };
 
 /**
@@ -567,6 +856,7 @@ export function handlePlayerInput(
   // Numbered menu selection
   const numAction = parseActionSelection(trimmed, engine.world);
   if (numAction) {
+    const logLenBefore = engine.world.eventLog.length;
     runGuardedAction(
       () =>
         engine.submitAction(numAction.verb, {
@@ -576,6 +866,27 @@ export function handlePlayerInput(
         }),
       log,
     );
+    // P8-PS-002 (routing half): a menu entry is the UI's own promise — when
+    // the engine refuses it anyway (the 'menu offered it, engine rejected it'
+    // trap: 'Speak to <npc>' with no dialogue authored, the exact composed
+    // finding), the player made no mistake and forfeits nothing. Scan only
+    // this submission's delta, only for the player's own rejected verb (the
+    // dialogue branch's exact discipline for 'choose'), and return the
+    // non-action 'rejected' kind: the refusal still narrates, but no NPC
+    // turns and no world tick follow. The honest MENU-side gate (don't offer
+    // dialogue-less NPCs at all) needs a dialogue-registry read the modules
+    // layer does not expose yet — dialogue-core's registry is closure-private
+    // with no formula/world-state surface — so the cost is gated here, at the
+    // routing layer, instead.
+    const rejected = engine.world.eventLog
+      .slice(logLenBefore)
+      .some(
+        (e) =>
+          e.type === 'action.rejected' &&
+          e.actorId === engine.world.playerId &&
+          (e.payload as { verb?: unknown }).verb === numAction.verb,
+      );
+    if (rejected) return { kind: 'rejected' };
     return { kind: 'action', via: 'menu' };
   }
 
@@ -585,6 +896,22 @@ export function handlePlayerInput(
   if (opts.extras && opts.extras.length > 0) {
     const extra = parseExtraSelection(trimmed, buildActionList(engine.world).length, opts.extras);
     if (extra) {
+      // Debug entries render the inspector report and consume no turn — the
+      // sentinel verb never reaches the engine (menu.ts's group contract).
+      if (extra.group === 'debug') {
+        log(renderInspectorReport(engine));
+        return { kind: 'help' };
+      }
+      // Director's Ledger: same no-turn contract as debug (F-ENG005).
+      if (extra.group === 'director') {
+        log(renderDirectorLedger(engine));
+        return { kind: 'help' };
+      }
+      // Journal: quests and undertakings — same no-turn contract (F-ENG005).
+      if (extra.group === 'journal') {
+        log(renderJournal(engine.world));
+        return { kind: 'help' };
+      }
       runGuardedAction(
         () =>
           engine.submitAction(extra.verb, {
@@ -595,6 +922,19 @@ export function handlePlayerInput(
       );
       return { kind: 'action', via: 'extra' };
     }
+  }
+
+  // P8-PS-001: a number that resolved to NEITHER the base menu NOR the extras
+  // range must never fall through to the free-text parser — that submitted it
+  // to the engine as a bogus verb ('99' → verb '99'), the engine rejected it,
+  // and because the result was kind 'action' every living hostile got a free
+  // attack on a mistyped menu number. Digits are a menu gesture: answer with
+  // the menu's real range and consume nothing (the extras entries' own
+  // no-turn contract, applied to the whole numbered range).
+  if (/^\d+$/.test(trimmed)) {
+    const menuSize = buildActionList(engine.world).length + (opts.extras?.length ?? 0);
+    log(`  Please enter a number between 1 and ${menuSize}.`);
+    return { kind: 'unknown' };
   }
 
   // Freeform text
@@ -623,9 +963,22 @@ export function handlePlayerInput(
 }
 
 /**
- * Restore (or re-simulate) the save and hand back the live session so the
- * caller can enter the shared prompt loop (F1c — a restored game is playable,
- * not a print-summary-and-exit dead end).
+ * Restore the save and hand back the live session so the caller can enter the
+ * shared prompt loop (F1c — a restored game is playable, not a
+ * print-summary-and-exit dead end).
+ *
+ * P8-WL-001/P8-PS-004 (v2.7): the `--replay` RE-SIMULATION path is retired —
+ * `--replay` now restores exactly like the default, plus one structured
+ * notice. Re-simulation replayed the actionLog through a fresh
+ * pack.createGame(seed), which has been structurally divergent since the
+ * world-state waves: character creation is not an action (the resim played
+ * the pack's DEFAULT character, not the created one the save holds), and
+ * world-tick/encounter-spawn mutate state OUTSIDE the action log (spawned
+ * entities never existed during resim; fresh cursor state then rolled a spawn
+ * burst against the fully-restored eventLog) — all while printing 'Replay
+ * complete' with no warning. Restore-then-continue is the honest v2.7
+ * behavior; resim PARITY (recording creation as a synthetic action, ticking
+ * the world inside the resim loop at live cadence) is documented v2.8 work.
  *
  * Exported for unit testing (same rationale as runGuardedAction — this reads
  * a real save file off disk and drives process.exit on bad input, so tests
@@ -658,49 +1011,33 @@ export function replayGame(args: string[] = []): Session | undefined {
     process.exit(1);
   }
 
-  const seed = data.world?.state?.meta?.seed ?? 42;
-  const reSimulate = args.includes('--replay');
+  if (args.includes('--replay')) {
+    // The structured notice (the SAVE_WRITE_FAILED voice: [CODE] line + Hint,
+    // non-fatal, stdout): the flag is honored as a restore, never silently.
+    console.log(
+      '  [REPLAY_RESIM_UNSUPPORTED] --replay re-simulation is not supported with world-state modules; restoring the save instead (same as Continue).',
+    );
+    console.log(
+      '  Hint: world ticks and encounter spawns evolve the world outside the action log, so a re-simulation silently diverges from the save. Your session resumes exactly where it was saved.',
+    );
+  }
 
+  // RESTORE the saved world state (entities, eventLog, globals, pending,
+  // rngState, meta incl. idCounter) into a pack-wired engine — shared with
+  // `run` → Continue (see restoreSessionFromSave: EventBus reuse core-004,
+  // ruleset bounds C7, rebindStore v2.5 PC-1, ENG-009 seam P8-WL-002).
   let session: Session;
-  if (reSimulate) {
-    // Explicit re-simulation path: replay the action log through a fresh game.
-    // F-7650e39d: `data.actionLog ?? []` only substitutes for null/undefined —
-    // a corrupted save with actionLog set to any other non-iterable JSON
-    // value (a number, boolean, or plain object) made the for..of below
-    // raw-throw an unstructured TypeError, unlike the default-load branch
-    // just below, which wraps the restore in try/catch and prints
-    // a friendly `[code] message` + hint on SaveLoadError. Match that.
-    const rawActionLog = data.actionLog;
-    if (rawActionLog !== undefined && rawActionLog !== null && !Array.isArray(rawActionLog)) {
-      console.error(`  Cannot load save: actionLog must be an array, got ${typeof rawActionLog}.`);
-      console.error('  Hint: the save file is corrupt or was not produced by this engine.');
+  try {
+    session = restoreSessionFromSave(pack, data);
+  } catch (e) {
+    if (e instanceof SaveLoadError) {
+      console.error(`  Cannot load save [${e.code}]: ${e.message}`);
+      console.error(`  Hint: ${e.hint}`);
       process.exit(1);
     }
-    const actionLog = Array.isArray(rawActionLog) ? rawActionLog : [];
-    console.log(`  Re-simulating ${actionLog.length} actions...`);
-    const engine = pack.createGame(seed);
-    for (const action of actionLog) {
-      engine.processAction(action);
-    }
-    console.log(`  Replay complete. ${engine.world.eventLog.length} events generated.`);
-    session = { engine, pack };
-  } else {
-    // Default load: RESTORE the saved world state (entities, eventLog, globals,
-    // pending, rngState, meta incl. idCounter) into a pack-wired engine —
-    // shared with `run` → Continue (see restoreSessionFromSave: EventBus reuse
-    // core-004, ruleset bounds C7, rebindStore v2.5 PC-1).
-    try {
-      session = restoreSessionFromSave(pack, data);
-    } catch (e) {
-      if (e instanceof SaveLoadError) {
-        console.error(`  Cannot load save [${e.code}]: ${e.message}`);
-        console.error(`  Hint: ${e.hint}`);
-        process.exit(1);
-      }
-      throw e;
-    }
-    console.log(`  Loaded save. ${session.engine.world.eventLog.length} events in log.`);
+    throw e;
   }
+  console.log(`  Loaded save. ${session.engine.world.eventLog.length} events in log.`);
 
   const engine = session.engine;
   console.log(`  Final tick: ${engine.tick}`);
@@ -715,34 +1052,10 @@ export function replayGame(args: string[] = []): Session | undefined {
   return session;
 }
 
-function inspectSave() {
-  if (!fs.existsSync(SAVE_FILE)) {
-    console.log('  No save file found.');
-    process.exit(1);
-  }
-
-  let data: any;
-  try {
-    data = JSON.parse(fs.readFileSync(SAVE_FILE, 'utf-8'));
-  } catch {
-    console.error('  Save file is corrupted or not valid JSON.');
-    process.exit(1);
-  }
-  const world = data.world?.state;
-  if (!world) {
-    console.log('  Invalid save file.');
-    process.exit(1);
-  }
-
-  console.log(`  Game: ${world.meta?.gameId}`);
-  console.log(`  Tick: ${world.meta?.tick}`);
-  console.log(`  Seed: ${world.meta?.seed}`);
-  console.log(`  Location: ${world.locationId}`);
-  console.log(`  Entities: ${Object.keys(world.entities ?? {}).length}`);
-  console.log(`  Events: ${(world.eventLog ?? []).length}`);
-  console.log(`  Actions: ${(data.actionLog ?? []).length}`);
-  console.log(`  Globals: ${JSON.stringify(world.globals ?? {})}`);
-}
+// inspect-save's implementation lives in inspect.ts (ENG-006): the old
+// inspectSave() here raw-JSON.parsed the save and field-picked it — schema
+// drift printed `undefined`, the globals dump was unbounded, and it bypassed
+// every SaveLoadError authority the run → Continue path enforces.
 
 // Only run the CLI when this file is the process entry point. Importing it (e.g.
 // from a unit test that exercises the exported helpers) must NOT kick off main()

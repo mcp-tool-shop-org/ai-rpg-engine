@@ -79,7 +79,7 @@ describe('Ronin — Iaijutsu Strike', () => {
   it('deals high damage and costs stamina + ki', () => {
     const engine = buildRoninEngine();
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'iaijutsu-strike' }, targetIds: ['assassin'],
     });
 
@@ -96,7 +96,7 @@ describe('Ronin — Iaijutsu Strike', () => {
   it('rejects when ki insufficient', () => {
     const engine = buildRoninEngine({ playerKi: 2 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'iaijutsu-strike' }, targetIds: ['assassin'],
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
@@ -107,7 +107,7 @@ describe('Ronin — Inner Calm', () => {
   it('restores ki, heals, and buffs perception', () => {
     const engine = buildRoninEngine({ playerKi: 5, playerComposure: 15 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'inner-calm' }, targetIds: [],
     });
 
@@ -121,7 +121,7 @@ describe('Ronin — Inner Calm', () => {
   it('aborts on low composure', () => {
     const engine = buildRoninEngine({ playerComposure: 1 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'inner-calm' }, targetIds: [],
     });
 
@@ -135,7 +135,7 @@ describe('Ronin — Blade Ward', () => {
   it('applies off-balance and grants honor', () => {
     const engine = buildRoninEngine({ playerPerception: 15, playerHonor: 10 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'blade-ward' }, targetIds: ['assassin'],
     });
 
@@ -169,7 +169,7 @@ describe('Ronin — Blade Ward', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'blade-ward' }, targetIds: ['assassin'],
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
@@ -178,7 +178,7 @@ describe('Ronin — Blade Ward', () => {
   it('sets cooldown after use', () => {
     const engine = buildRoninEngine();
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'blade-ward' }, targetIds: ['assassin'],
     });
     expect(isAbilityReady(engine.store.state, 'player', 'blade-ward', allRoninAbilities)).toBe(false);
@@ -197,7 +197,7 @@ describe('Ronin — Centered Mind (cleanse)', () => {
   it('costs stamina and ki', () => {
     const engine = buildRoninEngine({ playerComposure: 15, playerKi: 10 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'centered-mind' }, targetIds: [],
     });
 
@@ -229,7 +229,7 @@ describe('Ronin — Centered Mind (cleanse)', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'centered-mind' }, targetIds: [],
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
@@ -238,7 +238,7 @@ describe('Ronin — Centered Mind (cleanse)', () => {
   it('sets cooldown after use', () => {
     const engine = buildRoninEngine({ playerComposure: 15 });
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'centered-mind' }, targetIds: [],
     });
     expect(isAbilityReady(engine.store.state, 'player', 'centered-mind', allRoninAbilities)).toBe(false);

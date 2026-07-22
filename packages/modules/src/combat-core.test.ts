@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
 import type { EntityState } from '@ai-rpg-engine/core';
-import { createCombatCore, DEFAULT_STAT_MAPPING } from './combat-core.js';
+import { createCombatCore, DEFAULT_STAT_MAPPING, simpleRoll } from './combat-core.js';
 import { statusCore, applyStatus } from './status-core.js';
 import { registerStatusDefinitions, clearStatusRegistry } from './status-semantics.js';
 
@@ -113,5 +113,142 @@ describe('combat-core effective-stat hook', () => {
 
   it('DEFAULT_STAT_MAPPING is still exported and unchanged', () => {
     expect(DEFAULT_STAT_MAPPING).toEqual({ attack: 'vigor', precision: 'instinct', resolve: 'will' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-SEED-combat-rolls-seed-blind — world.meta.seed threads into the roll layer
+// as a PURE hash input. Properties pinned here:
+//   1. seed omitted === seed 0 === the legacy stream (byte-for-byte), so
+//      callers that do not thread a seed keep their historical outcomes;
+//   2. same (tick, ids, seed) → same roll, always (stateless, replay-safe);
+//   3. the range contract is untouched: integer 1-100 inclusive for any seed;
+//   4. different seeds actually diverge, within a small bounded tick window;
+//   5. the ATTACK PATH consumes world.meta.seed (integration through a live
+//      engine): the emitted roll payload matches simpleRoll(..., meta.seed),
+//      and two engines identical except for seed flip a hit/miss outcome at a
+//      deterministically-located tick.
+// ---------------------------------------------------------------------------
+describe('simpleRoll — world-seed threading (F-SEED-combat-rolls-seed-blind)', () => {
+  const ID_PAIRS: Array<[string, string]> = [
+    ['atk', 'tgt'],
+    ['player', 'goblin-1'],
+    ['npc-77', 'counter'],
+    ['companion', 'resist-off-balance'],
+  ];
+
+  it('seed omitted === seed 0: the legacy roll stream is preserved byte-for-byte', () => {
+    for (let tick = 0; tick <= 500; tick++) {
+      for (const [a, b] of ID_PAIRS) {
+        expect(simpleRoll(tick, a, b)).toBe(simpleRoll(tick, a, b, 0));
+      }
+    }
+  });
+
+  it('pure and stateless: same (tick, ids, seed) always yields the same roll', () => {
+    for (const seed of [0, 1, 2, 42, 999_983, 2_147_483_647]) {
+      for (let tick = 0; tick <= 60; tick++) {
+        expect(simpleRoll(tick, 'atk', 'tgt', seed)).toBe(simpleRoll(tick, 'atk', 'tgt', seed));
+      }
+    }
+  });
+
+  it('range preserved: integer 1-100 inclusive across a tick x seed x id sweep', () => {
+    for (const seed of [0, 1, 7, 42, 481_913, 2_147_483_647]) {
+      for (let tick = 0; tick <= 300; tick++) {
+        for (const [a, b] of ID_PAIRS) {
+          const r = simpleRoll(tick, a, b, seed);
+          expect(Number.isInteger(r)).toBe(true);
+          expect(r).toBeGreaterThanOrEqual(1);
+          expect(r).toBeLessThanOrEqual(100);
+        }
+      }
+    }
+  });
+
+  it('seeds 1..20 each diverge from seed 0 within 50 ticks (bounded, deterministic)', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      let divergentTick: number | null = null;
+      for (let tick = 1; tick <= 50; tick++) {
+        if (simpleRoll(tick, 'atk', 'tgt', seed) !== simpleRoll(tick, 'atk', 'tgt', 0)) {
+          divergentTick = tick;
+          break;
+        }
+      }
+      expect(divergentTick, `seed ${seed} never diverged from seed 0 within 50 ticks`).not.toBeNull();
+    }
+  });
+
+  it('pinned: seeds 1 vs 2 differ on the very first tick for atk/tgt', () => {
+    expect(simpleRoll(1, 'atk', 'tgt', 1)).not.toBe(simpleRoll(1, 'atk', 'tgt', 2));
+  });
+
+  // --- Integration: the attack path reads world.meta.seed -------------------
+
+  function attackEngine(seed: number, tick?: number) {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore()],
+      entities: [makeEntity('atk', 'z'), makeEntity('tgt', 'z')],
+      zones: [{ id: 'z', roomId: 'r', name: 'Z', tags: [], neighbors: [] }],
+      playerId: 'atk',
+      seed,
+    });
+    // The harness has no tick option — jump the world clock directly (the same
+    // idiom other module tests use to test tick-scoped behavior).
+    if (tick !== undefined) engine.store.state.meta.tick = tick;
+    return engine;
+  }
+
+  it('the emitted attack roll equals simpleRoll(tick, attacker, target, world.meta.seed)', () => {
+    const engine = attackEngine(5);
+    expect(engine.world.meta.seed).toBe(5);
+    const tickAtRoll = engine.world.meta.tick; // actions resolve BEFORE advanceTick
+    const events = engine.submitActionAs('atk', 'attack', { targetIds: ['tgt'] });
+    const contact = events.find(
+      (e) => e.type === 'combat.contact.hit' || e.type === 'combat.contact.miss',
+    );
+    expect(contact, 'attack should emit a hit or miss contact event').toBeTruthy();
+    expect(contact!.payload.roll).toBe(simpleRoll(tickAtRoll, 'atk', 'tgt', 5));
+  });
+
+  it('two engines identical except seed flip a hit/miss outcome at a bounded, deterministically-located tick', () => {
+    // Entities from makeEntity: instinct 5 vs 5 → hitChance 50 + 25 - 15 = 60.
+    // Locate (pure function, no engine) a tick where seed 1 and seed 2 land on
+    // opposite sides of 60, then prove it through two LIVE engines.
+    const HIT_CHANCE = 60;
+    let probeTick: number | null = null;
+    for (let tick = 1; tick <= 100; tick++) {
+      const hits1 = simpleRoll(tick, 'atk', 'tgt', 1) <= HIT_CHANCE;
+      const hits2 = simpleRoll(tick, 'atk', 'tgt', 2) <= HIT_CHANCE;
+      if (hits1 !== hits2) {
+        probeTick = tick;
+        break;
+      }
+    }
+    expect(probeTick, 'no hit/miss flip between seeds 1 and 2 within 100 ticks').not.toBeNull();
+
+    const outcome = (seed: number) => {
+      const engine = attackEngine(seed, probeTick!);
+      const events = engine.submitActionAs('atk', 'attack', { targetIds: ['tgt'] });
+      return events.some((e) => e.type === 'combat.contact.hit');
+    };
+    expect(outcome(1)).not.toBe(outcome(2));
+  });
+
+  it('same seed, same script → identical contact outcomes (engine-level replay parity)', () => {
+    const run = () => {
+      const engine = attackEngine(9);
+      const log: string[] = [];
+      for (let i = 0; i < 5; i++) {
+        const events = engine.submitActionAs('atk', 'attack', { targetIds: ['tgt'] });
+        for (const e of events) {
+          if (e.type === 'combat.contact.hit' || e.type === 'combat.contact.miss') {
+            log.push(`${e.type}:${String(e.payload.roll)}`);
+          }
+        }
+      }
+      return log.join('|');
+    };
+    expect(run()).toBe(run());
   });
 });

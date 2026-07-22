@@ -15,6 +15,11 @@ export const detectiveMinimalRuleset: RulesetDefinition = {
 
   resources: [
     { id: 'hp', name: 'HP', min: 0, max: 30, default: 15 },
+    // T0-tag-gate follow-on: every detective ability costs stamina, and the
+    // prebuilt inspector carries it — but the ruleset never declared it, so
+    // CREATED characters (whose resources come from ruleset defaults) started
+    // with no stamina at all and could never afford a single ability.
+    { id: 'stamina', name: 'Stamina', min: 0, max: 50, default: 10, regenRate: 1 },
     { id: 'composure', name: 'Composure', min: 0, max: 20, default: 12, regenRate: 1 },
   ],
 
@@ -22,13 +27,13 @@ export const detectiveMinimalRuleset: RulesetDefinition = {
     { id: 'move', name: 'Move', description: 'Move to an adjacent location' },
     { id: 'inspect', name: 'Inspect', description: 'Examine an object, person, or scene for clues' },
     { id: 'attack', name: 'Strike', tags: ['combat'], description: 'Physical confrontation' },
-    { id: 'guard', name: 'Guard', tags: ['combat', 'defensive'], description: 'Brace for incoming attacks, reducing damage taken' },
+    { id: 'guard', name: 'Guard', tags: ['combat', 'defensive'], description: 'Take a defensive stance, reducing damage taken' },
+    { id: 'brace', name: 'Brace', tags: ['combat', 'defensive'], description: 'Plant your footing to steady yourself and recover balance' },
+    { id: 'reposition', name: 'Reposition', tags: ['combat', 'movement'], description: 'Shift position to outflank a target or escape a bad spot' },
     { id: 'disengage', name: 'Disengage', tags: ['combat', 'movement'], description: 'Attempt to break from combat and withdraw' },
     { id: 'use', name: 'Use', description: 'Use an item from inventory' },
     { id: 'speak', name: 'Speak', tags: ['dialogue'], description: 'Engage in conversation' },
     { id: 'choose', name: 'Choose', tags: ['dialogue'], description: 'Select a dialogue option' },
-    { id: 'interrogate', name: 'Interrogate', tags: ['dialogue', 'investigation'], description: 'Press a subject for information using persuasion or intimidation' },
-    { id: 'deduce', name: 'Deduce', tags: ['investigation'], description: 'Draw a conclusion from gathered evidence' },
     { id: 'use-ability', name: 'Use Ability', tags: ['ability'], description: 'Use a special ability' },
   ],
 

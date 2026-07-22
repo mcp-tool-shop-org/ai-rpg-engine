@@ -2,11 +2,11 @@
 // 2 rooms, 5 zones, 1 NPC, 1 enemy, 1 item, 1 dialogue, 1 status
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
+import type { DialogueDefinition, QuestDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
-import type { EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
+import type { EncounterDefinition, BossDefinition, CurrencyReward, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 import type { AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
 
 export const manifest: GameManifest = {
@@ -28,7 +28,7 @@ export const player: EntityState = {
   name: 'Wanderer',
   tags: ['player'],
   stats: { vigor: 5, instinct: 4, will: 3 },
-  resources: { hp: 20, stamina: 8 },
+  resources: { hp: 20, maxHp: 20, stamina: 8 },
   statuses: [],
   inventory: [],
   zoneId: 'chapel-entrance',
@@ -193,6 +193,25 @@ export const cryptAmbush: EncounterDefinition = {
   },
 };
 
+
+// --- Encounter spawn wiring (F-ENG005-encounter-spawn-wiring) ---
+//
+// Per-zone encounter tables — the moral equivalent of content-schema's
+// ZoneDefinition.encounterTable (string[]; weight is repetition).
+// The dead walk the nave and press hardest at the vestry chokepoint;
+// stalkers ambush in the crypt dark. The crypt descent is the placed Warden
+// set-piece — boss fights never enter random tables.
+
+export const encounterSpawnContent = {
+  encounters: [chapelPatrol, cryptAmbush, cryptEncounter],
+  entityTemplates: [ashGhoul, cryptStalker],
+  zoneTables: {
+    'chapel-nave': ['chapel-patrol'],
+    'vestry-door': ['chapel-patrol', 'chapel-patrol'],
+    'crypt-chamber': ['crypt-ambush', 'crypt-ambush'],
+  },
+} satisfies EncounterSpawnContent;
+
 // --- Zones ---
 
 export const zones: ZoneState[] = [
@@ -316,6 +335,98 @@ export const pilgrimDialogue: DialogueDefinition = {
   },
 };
 
+// --- Quests (F-ENG005-quest-loop-min) ---
+//
+// Two authored QuestDefinitions — the explicit reason to descend. Wired via
+// buildWorldStack's `quests` config in setup.ts; the quest-core runtime
+// validates them at construction and drives offer → track → complete →
+// reward off the live event stream. Both are completable inside a normal
+// session with the shipped world alone: every kill target stands placed at
+// setup (the stalker at the vestry, the ghoul and the warden in the crypt).
+//
+// Stage triggers use quest-core's authored vocabulary: `advance` (done on
+// one matching event), `progress` (params.count matching events), with
+// conditions `payload-equals` (a specific zone or entity) and
+// `payload-entity-has-tag` (kills by tag — spawned patrol undead count too).
+
+export const ashesBelowQuest: QuestDefinition = {
+  id: 'ashes-below',
+  name: 'Ashes Below',
+  // Offered the moment the player steps into the nave — the first stride
+  // past the threshold the pack is named for.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'chapel-nave' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'cross-to-the-vestry',
+      name: 'Cross to the Vestry',
+      description: 'Something scratches beyond the nave — find the vestry passage',
+      objectives: ['Reach the Vestry Passage'],
+      triggers: [
+        {
+          event: 'world.zone.entered',
+          condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'vestry-door' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+      nextStage: 'lay-the-dead-to-rest',
+    },
+    {
+      id: 'lay-the-dead-to-rest',
+      name: 'Lay the Dead to Rest',
+      description: 'Put two of the risen brothers back in the ground',
+      objectives: ['Destroy two of the risen dead'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-entity-has-tag', params: { tag: 'undead' } },
+          effect: { type: 'progress', params: { count: 2 } },
+        },
+      ],
+    },
+  ],
+  rewards: [{ type: 'xp', params: { amount: 20 } }],
+};
+
+export const wardensRestQuest: QuestDefinition = {
+  id: 'the-wardens-rest',
+  name: "The Warden's Rest",
+  // Offered on setting foot in the crypt itself — the Warden's ground.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'crypt-chamber' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'face-the-warden',
+      name: 'Face the Warden',
+      description: 'The Crypt Warden stands between you and the Ember Sigil',
+      objectives: ['Destroy the Crypt Warden'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-equals', params: { key: 'entityId', value: 'crypt-warden' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [
+    { type: 'xp', params: { amount: 30 } },
+    { type: 'item', params: { itemId: 'healing-draught' } },
+  ],
+};
+
+export const fantasyQuests: QuestDefinition[] = [ashesBelowQuest, wardensRestQuest];
+
 // --- Districts ---
 
 import type { DistrictDefinition } from '@ai-rpg-engine/modules';
@@ -394,6 +505,62 @@ export const healingDraughtEffect = {
     }];
   },
 };
+
+// --- Progression Rewards (T0-progression-ceiling) ---
+//
+// Kills alone cannot complete combat-mastery: 3 enemies x 15 = 45 XP vs a 50 XP tree. Max earnable: 45 + 5 (pilgrim) + 10 (5 zones x 2) + 10 (crypt-warden bonus) = 70 >= 50.
+// Non-combat sources: hearing the pilgrim's tale to its end, exploring the chapel grounds, and felling the crypt warden.
+// content-truth.test.ts pins this arithmetic against the live content.
+
+/** Flat XP amounts per source — exported so tests can pin the progression arithmetic. */
+export const xpAwards = {
+  kill: 15,
+  dialogueComplete: 5,
+  firstVisit: 2,
+  bossBonus: 10,
+} as const;
+
+/** Award `amount` once per unique key, tracked in world.globals (rides saves). */
+function oncePer(
+  amount: number,
+  keyOf: (event: ResolvedEvent) => string | undefined,
+): CurrencyReward['amount'] {
+  return (event, world) => {
+    const k = keyOf(event);
+    if (!k) return 0;
+    const flag = `xp-awarded:${k}`;
+    if (world.globals[flag]) return 0;
+    world.globals[flag] = true;
+    return amount;
+  };
+}
+
+/** Only the player earns exploration/story XP (NPC movement must not consume the once-gates). */
+const playerOnly: CurrencyReward['recipient'] = (event, world) =>
+  event.actorId === world.playerId ? event.actorId : undefined;
+
+export const progressionRewards: CurrencyReward[] = [
+  { eventPattern: 'combat.entity.defeated', currencyId: 'xp', amount: xpAwards.kill, recipient: 'actor' },
+  {
+    eventPattern: 'combat.entity.defeated',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.bossBonus, (e) =>
+      e.payload.entityId === 'crypt-warden' ? 'boss:crypt-warden' : undefined),
+    recipient: 'actor',
+  },
+  {
+    eventPattern: 'dialogue.ended',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.dialogueComplete, (e) => `dialogue:${String(e.payload.dialogueId)}`),
+    recipient: playerOnly,
+  },
+  {
+    eventPattern: 'world.zone.entered',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.firstVisit, (e) => `zone:${String(e.payload.zoneId)}`),
+    recipient: playerOnly,
+  },
+];
 
 // --- Abilities ---
 
@@ -506,7 +673,14 @@ export const buildCatalog: BuildCatalog = {
       name: 'Penitent Knight',
       description: 'A warrior burdened by an oath',
       statPriorities: { vigor: 6, instinct: 4, will: 2 },
-      startingTags: ['martial', 'penitent'],
+      // T0-unreachable-abilities (a): the pack's 3-ability kit gates on
+      // 'divine', which only the chapel-seer carried — knight and gravewalker
+      // creation paths saw an empty kit. Every archetype here is bound to the
+      // chapel's sacred threshold (a penitent oath, crypt rites, divine
+      // whispers), so all three carry 'divine'; the seer stays best at the
+      // powers through will-based ability checks. The authored default player
+      // (the untagged Wanderer) deliberately does NOT carry it.
+      startingTags: ['divine', 'martial', 'penitent'],
       progressionTreeId: 'combat-mastery',
     },
     {
@@ -514,7 +688,7 @@ export const buildCatalog: BuildCatalog = {
       name: 'Gravewalker',
       description: 'Stalker of the dead, sharp and quiet',
       statPriorities: { vigor: 3, instinct: 5, will: 4 },
-      startingTags: ['shadow', 'gravewalker'],
+      startingTags: ['divine', 'shadow', 'gravewalker'],
       startingInventory: ['torch'],
       progressionTreeId: 'combat-mastery',
     },
@@ -526,7 +700,6 @@ export const buildCatalog: BuildCatalog = {
       resourceOverrides: { stamina: 10 },
       startingTags: ['divine', 'seer'],
       progressionTreeId: 'combat-mastery',
-      grantedVerbs: ['pray'],
     },
   ],
   backgrounds: [

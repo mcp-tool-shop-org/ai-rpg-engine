@@ -284,6 +284,9 @@ describe('Event-driven cognition updates', () => {
       modules: [traversalCore, combatCore, createCognitionCore()],
       entities: [makePlayer('a'), makeAIEntity('guard', 'Guard', 'a')],
       zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+      // seed 0 = the legacy roll stream this scenario was authored against
+      // (the probe attack must land; F-SEED made harness seed 1 a new stream).
+      seed: 0,
     });
 
     engine.submitAction('attack', { targetIds: ['guard'] });

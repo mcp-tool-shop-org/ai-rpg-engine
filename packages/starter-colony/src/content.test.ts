@@ -6,6 +6,8 @@
 // player a build pointing at a non-existent progression tree.
 
 import { describe, it, expect } from 'vitest';
+import { validateEncounterSpawnContent } from '@ai-rpg-engine/modules';
+import { encounterSpawnContent, zones as authoredZones } from './content.js';
 import { validateGameContent, validateAbilityPack } from '@ai-rpg-engine/content-schema';
 import type { ContentPack } from '@ai-rpg-engine/content-schema';
 import { createGame } from './setup.js';
@@ -80,5 +82,18 @@ describe('colony content — cross-reference integrity (F-4806a2c9)', () => {
   it('abilities reference only stats/resources declared in the ruleset', () => {
     const result = validateAbilityPack(colonyAbilities, colonyMinimalRuleset);
     expect(result.errors).toEqual([]);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// F-ENG005-encounter-spawn-wiring: the per-zone encounter tables are
+// computed-validated against the live authored content — every table entry
+// must reference an authored, spawnable (non-boss) encounter that its own
+// validZoneIds/validZoneTags allow in that zone, with all participant
+// templates present.
+// ═══════════════════════════════════════════════════════════════════
+describe('colony encounter tables (F-ENG005-encounter-spawn-wiring)', () => {
+  it('every table entry references an authored, spawnable encounter valid for its zone', () => {
+    expect(validateEncounterSpawnContent(encounterSpawnContent, authoredZones)).toEqual([]);
   });
 });

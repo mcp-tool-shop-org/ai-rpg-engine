@@ -44,7 +44,7 @@ const damageOf = (events: ResolvedEvent[]): number => {
 
 describe('docs/examples — boot proof', () => {
   it('from-scratch boots with combat verbs registered', () => {
-    const engine = createFromScratchGame(42);
+    const engine = createFromScratchGame(0);
     expect(engine.tick).toBe(0);
     expect(engine.getAvailableActions()).toContain('attack');
   });
@@ -55,14 +55,14 @@ describe('docs/examples — boot proof', () => {
   });
 
   it('mixed-party and multi-encounter boot', () => {
-    expect(createMixedPartyGame(42).tick).toBe(0);
-    expect(createMultiEncounterGame(42).tick).toBe(0);
+    expect(createMixedPartyGame(0).tick).toBe(0);
+    expect(createMultiEncounterGame(0).tick).toBe(0);
   });
 });
 
 describe('docs/examples — from-scratch combat actually resolves', () => {
   it('a player attack against a co-located enemy is NOT rejected', () => {
-    const engine = createFromScratchGame(42);
+    const engine = createFromScratchGame(0);
 
     // The exact call the from-scratch.ts footer documents.
     const events = engine.submitAction('attack', { targetIds: ['rat'] });
@@ -81,7 +81,7 @@ describe('docs/examples — from-scratch combat actually resolves', () => {
   });
 
   it('placing the enemy in a different zone DOES get rejected (proves the zone gate is real)', () => {
-    const engine = createFromScratchGame(42);
+    const engine = createFromScratchGame(0);
     // Move the rat out of the arena — combat must now refuse.
     engine.store.state.entities['rat'].zoneId = 'somewhere-else';
 
@@ -93,7 +93,7 @@ describe('docs/examples — from-scratch combat actually resolves', () => {
 
 describe('docs/examples — mixed-party resolves per-entity (CR-1)', () => {
   it('fighter, mystic, and wolf deal 9 / 7 / 5 in one fight — each through its own mapping', () => {
-    const engine = createMixedPartyGame(42);
+    const engine = createMixedPartyGame(0);
 
     const fighterDmg = damageOf(engine.submitActionAs('fighter', 'attack', { targetIds: ['wolf'] }));
     const mysticDmg = damageOf(engine.submitActionAs('mystic', 'attack', { targetIds: ['wolf'] }));
@@ -118,7 +118,7 @@ describe('docs/examples — mixed-party resolves per-entity (CR-1)', () => {
   });
 
   it('swapping the mystic onto the fighter profile collapses its damage to the fallback — the mapping drives resolution, not the statline', () => {
-    const engine = createMixedPartyGame(42);
+    const engine = createMixedPartyGame(0);
     // Same entity, same stats (will 7 untouched) — different profile id.
     engine.store.state.entities['mystic'].ruleProfileId = 'fighter';
 
@@ -132,7 +132,7 @@ describe('docs/examples — mixed-party resolves per-entity (CR-1)', () => {
   });
 
   it('without the profile registry the whole party collapses to the shared world mapping — the pre-CR-1 behavior the 9/7 assertions rule out', () => {
-    const engine = createMixedPartyGame(42);
+    const engine = createMixedPartyGame(0);
     // Un-register the profiles. Every ruleProfileId now resolves to nothing,
     // so each read falls back to the ONE world mapping (attack → vigor) —
     // exactly how a pre-CR-1 engine treated this scene.
@@ -150,7 +150,7 @@ describe('docs/examples — mixed-party resolves per-entity (CR-1)', () => {
 
   it('profiles are data — they serialize, deserialize, and replay byte-identically', () => {
     // Control: fighter then mystic, no save in between.
-    const control = createMixedPartyGame(42);
+    const control = createMixedPartyGame(0);
     control.submitActionAs('fighter', 'attack', { targetIds: ['wolf'] });
     const controlEvt = control
       .submitActionAs('mystic', 'attack', { targetIds: ['wolf'] })
@@ -158,7 +158,7 @@ describe('docs/examples — mixed-party resolves per-entity (CR-1)', () => {
 
     // Saved run: fighter, then SAVE → LOAD mid-fight, then mystic. Modules
     // are code, never serialized — the loader re-supplies the same set.
-    const saved = createMixedPartyGame(42);
+    const saved = createMixedPartyGame(0);
     saved.submitActionAs('fighter', 'attack', { targetIds: ['wolf'] });
     const restored = Engine.deserialize(saved.serialize(), { modules: createMixedPartyModules() });
 
@@ -209,7 +209,7 @@ describe('docs/examples — shared-profiles: many playstyles, one world', () => 
   });
 
   it('both profiles resolve per-entity in ONE world', () => {
-    const engine = createSharedProfilesWorld(42);
+    const engine = createSharedProfilesWorld(0);
 
     const wardenDmg = damageOf(engine.submitActionAs('warden', 'attack', { targetIds: ['golem'] }));
     const occultistDmg = damageOf(engine.submitActionAs('occultist', 'attack', { targetIds: ['golem'] }));

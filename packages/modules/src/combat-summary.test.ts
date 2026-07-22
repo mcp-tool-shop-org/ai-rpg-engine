@@ -394,7 +394,7 @@ describe('combat-summary: export', () => {
 
   it('formatCombatSummaryJSON round-trips cleanly', () => {
     const summary = summarizeCombatContent(allEncounters, entities, player, [bossDef]);
-    const json = formatCombatSummaryJSON(summary);
+    const json = formatCombatSummaryJSON(summary) as { encounterCount: number };
     const roundTripped = JSON.parse(JSON.stringify(json));
     expect(roundTripped.encounterCount).toBe(json.encounterCount);
     expect(roundTripped.bossList).toEqual((json as any).bossList);

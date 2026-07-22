@@ -50,8 +50,13 @@ describe('weirdWestMinimalRuleset', () => {
     expect(verbIds).toContain('speak');
     expect(verbIds).toContain('choose');
     expect(verbIds).toContain('use');
-    expect(verbIds).toContain('draw');
-    expect(verbIds).toContain('commune');
+    // T0-verb-honesty-content: 'draw'/'commune' were flavor rows with NO
+    // registered handler — the help taught verbs that bounced. They are gone;
+    // brace/reposition (registered by buildCombatStack) are advertised instead.
+    expect(verbIds).not.toContain('draw');
+    expect(verbIds).not.toContain('commune');
+    expect(verbIds).toContain('brace');
+    expect(verbIds).toContain('reposition');
   });
 
   it('lists all default modules', () => {

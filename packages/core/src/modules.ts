@@ -95,6 +95,23 @@ export class ModuleManager {
     return this.modules.has(moduleId);
   }
 
+  /**
+   * The registered EngineModule list, in registration order.
+   *
+   * Exists for load paths that restore a world into an ALREADY-WIRED engine
+   * and must then run the module-migration seam themselves — specifically the
+   * CLI's restoreSessionFromSave (packages/cli/src/bin.ts), which swaps a
+   * restored WorldStore into a pack-built engine and needs the registered
+   * module list to call `migrateModuleStates(restored.state, modules)` +
+   * `initializeNamespaces(restored)` with the exact modules the pack wired
+   * (pack closures own module construction, so the caller has no other way to
+   * reach them — F-P8SP-001's structural note). Read-only: mutating the
+   * returned array does not alter registration.
+   */
+  getModules(): readonly EngineModule[] {
+    return [...this.modules.values()];
+  }
+
   /** Get registered panels for UI */
   getPanels(): PanelDefinition[] {
     return this.panels;
@@ -165,11 +182,28 @@ export class ModuleManager {
     }
   }
 
-  /** Initialize module state namespaces in world */
+  /**
+   * Initialize module state namespaces in world. Only ABSENT namespaces are
+   * written — present (loaded or just-migrated) state is never clobbered.
+   *
+   * Function-valued defaults are factories (NamespaceDefaultsFactory): they
+   * are invoked with the TARGET store's world at init time, so defaults can
+   * depend on the world they join — the eventLog-cursor case (world-tick,
+   * encounter-spawn) baselines its cursor to the current log length, which is
+   * 0 on a fresh construction-time world and the full historical length on a
+   * restored legacy save whose namespace is absent (P8-WL-006: a static
+   * `cursor: 0` planted over an old log made the first tick re-consume the
+   * entire prior session). Factory results are cloned like static defaults so
+   * shared module constants never leak into world state.
+   */
   initializeNamespaces(store: WorldStore): void {
     for (const [moduleId, defaults] of this.namespaceDefaults) {
       if (store.getModuleState(moduleId) === undefined) {
-        store.setModuleState(moduleId, structuredClone(defaults));
+        const value =
+          typeof defaults === 'function'
+            ? (defaults as (world: WorldState) => unknown)(store.state)
+            : defaults;
+        store.setModuleState(moduleId, structuredClone(value));
       }
     }
   }

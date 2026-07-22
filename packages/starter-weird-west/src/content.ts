@@ -2,7 +2,7 @@
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
-import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -34,7 +34,7 @@ export const player: EntityState = {
   name: 'The Drifter',
   tags: ['player', 'human', 'drifter', 'gunslinger'],
   stats: { grit: 5, 'draw-speed': 6, lore: 4 },
-  resources: { hp: 18, stamina: 5, resolve: 15, dust: 0 },
+  resources: { hp: 18, maxHp: 18, stamina: 5, resolve: 15, dust: 0 },
   statuses: [],
   inventory: [],
   zoneId: 'crossroads',
@@ -176,6 +176,26 @@ export const spiritHollowShowdown: EncounterDefinition = {
   validZoneIds: ['spirit-hollow'],
   narrativeHooks: { tone: 'dread', trigger: 'The hollow screams with spirit fire.', stakes: 'Banish the crawler or join the dead.' },
 };
+
+
+// --- Encounter spawn wiring (F-ENG005-encounter-spawn-wiring) ---
+//
+// Per-zone encounter tables — the moral equivalent of content-schema's
+// ZoneDefinition.encounterTable (string[]; weight is repetition).
+// The cursed trail is thick with riders and worse, the crossroads sees the
+// occasional posse, and once in a while the saloon goes sideways. The spirit
+// hollow showdown is the placed set-piece — boss fights never enter random
+// tables.
+
+export const encounterSpawnContent = {
+  encounters: [trailPatrol, saloonAmbush, spiritHollowShowdown],
+  entityTemplates: [banditRider, revenant],
+  zoneTables: {
+    'red-mesa-trail': ['trail-patrol', 'trail-patrol'],
+    'crossroads': ['trail-patrol'],
+    'saloon': ['saloon-ambush'],
+  },
+} satisfies EncounterSpawnContent;
 
 // --- Zones ---
 
@@ -381,6 +401,62 @@ export const sageBundleEffect = {
   },
 };
 
+// --- Progression Rewards (T0-progression-ceiling) ---
+//
+// Kills alone cannot complete gunslinger: 3 enemies x 12 = 36 XP vs a 47 XP tree. Max earnable: 36 + 5 (bartender palaver) + 10 (5 zones x 2) + 10 (mesa-crawler bonus) = 61 >= 47.
+// Non-combat sources: a finished palaver with the bartender, riding every trail around Perdition, and putting down the mesa crawler.
+// content-truth.test.ts pins this arithmetic against the live content.
+
+/** Flat XP amounts per source — exported so tests can pin the progression arithmetic. */
+export const xpAwards = {
+  kill: 12,
+  dialogueComplete: 5,
+  firstVisit: 2,
+  bossBonus: 10,
+} as const;
+
+/** Award `amount` once per unique key, tracked in world.globals (rides saves). */
+function oncePer(
+  amount: number,
+  keyOf: (event: ResolvedEvent) => string | undefined,
+): CurrencyReward['amount'] {
+  return (event, world) => {
+    const k = keyOf(event);
+    if (!k) return 0;
+    const flag = `xp-awarded:${k}`;
+    if (world.globals[flag]) return 0;
+    world.globals[flag] = true;
+    return amount;
+  };
+}
+
+/** Only the player earns exploration/story XP (NPC movement must not consume the once-gates). */
+const playerOnly: CurrencyReward['recipient'] = (event, world) =>
+  event.actorId === world.playerId ? event.actorId : undefined;
+
+export const progressionRewards: CurrencyReward[] = [
+  { eventPattern: 'combat.entity.defeated', currencyId: 'xp', amount: xpAwards.kill, recipient: 'actor' },
+  {
+    eventPattern: 'combat.entity.defeated',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.bossBonus, (e) =>
+      e.payload.entityId === 'mesa_crawler' ? 'boss:mesa_crawler' : undefined),
+    recipient: 'actor',
+  },
+  {
+    eventPattern: 'dialogue.ended',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.dialogueComplete, (e) => `dialogue:${String(e.payload.dialogueId)}`),
+    recipient: playerOnly,
+  },
+  {
+    eventPattern: 'world.zone.entered',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.firstVisit, (e) => `zone:${String(e.payload.zoneId)}`),
+    recipient: playerOnly,
+  },
+];
+
 // --- Abilities ---
 
 export const dustDevil: AbilityDefinition = {
@@ -423,7 +499,6 @@ export const frontierGrit: AbilityDefinition = {
     { type: 'remove-status-by-tag', target: 'actor', params: { tags: 'fear,blind' } },
   ],
   cooldown: 4,
-  requirements: [{ type: 'has-tag', params: { tag: 'supernatural' } }],
   ui: {
     text: 'Grit your teeth and push through the fog.',
     hitText: 'The frontier hardens you. The dust clears.',
@@ -444,7 +519,6 @@ export const deadEyeShot: AbilityDefinition = {
     { type: 'damage', target: 'target', params: { amount: 5, damageType: 'ballistic' } },
   ],
   cooldown: 2,
-  requirements: [{ type: 'has-tag', params: { tag: 'supernatural' } }],
   ui: {
     text: 'One shot. Make it count.',
     hitText: 'The bullet finds its mark — dead center.',
@@ -497,18 +571,21 @@ export const buildCatalog: BuildCatalog = {
       name: 'Gunslinger',
       description: 'Fastest hand in the territory',
       statPriorities: { grit: 4, 'draw-speed': 7, lore: 3 },
+      // T0-unreachable-abilities (b): the whole kit used to gate on
+      // 'supernatural', a tag nothing granted. frontier-grit and dead-eye-shot
+      // are grit-and-gunpowder moves — ungated. dust-devil IS spirit work and
+      // keeps its 'supernatural' gate, grantable two ways: the spirit-walker
+      // archetype carries it natively, and the Spirit-Touched trait grants it.
       startingTags: ['gunslinger', 'quick-draw'],
       progressionTreeId: 'gunslinger',
-      grantedVerbs: ['draw'],
     },
     {
       id: 'spirit-walker',
       name: 'Spirit Walker',
       description: 'Speaks to what shouldn\'t speak back',
       statPriorities: { grit: 3, 'draw-speed': 3, lore: 8 },
-      startingTags: ['mystic', 'spirit-walker'],
+      startingTags: ['supernatural', 'mystic', 'spirit-walker'],
       progressionTreeId: 'gunslinger',
-      grantedVerbs: ['commune'],
     },
     {
       id: 'lawkeeper',
@@ -558,6 +635,7 @@ export const buildCatalog: BuildCatalog = {
       effects: [
         { type: 'stat-modifier', stat: 'lore', amount: 1 },
         { type: 'grant-tag', tag: 'spirit-sensitive' },
+        { type: 'grant-tag', tag: 'supernatural' },
       ],
     },
     {

@@ -2,7 +2,7 @@
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
-import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -34,7 +34,7 @@ export const player: EntityState = {
   name: 'Commander',
   tags: ['player', 'human', 'colonist', 'officer'],
   stats: { engineering: 4, command: 6, awareness: 5 },
-  resources: { hp: 18, stamina: 5, power: 60, morale: 20 },
+  resources: { hp: 18, maxHp: 18, stamina: 5, power: 60, morale: 20 },
   statuses: [],
   inventory: [],
   zoneId: 'command-module',
@@ -179,6 +179,26 @@ export const signalConfrontation: EncounterDefinition = {
   validZoneIds: ['signal-tower'],
   narrativeHooks: { tone: 'climactic', trigger: 'The signal reaches deafening intensity.', stakes: 'First contact — or last stand.' },
 };
+
+
+// --- Encounter spawn wiring (F-ENG005-encounter-spawn-wiring) ---
+//
+// Per-zone encounter tables — the moral equivalent of content-schema's
+// ZoneDefinition.encounterTable (string[]; weight is repetition).
+// The swarm nests thickest in its own cavern, the breach line walks the
+// perimeter fence, and hydroponics sees the stray incursion. The signal
+// confrontation is the placed tower set-piece — boss fights never enter
+// random tables.
+
+export const encounterSpawnContent = {
+  encounters: [perimeterSweep, cavernAmbush, signalConfrontation],
+  entityTemplates: [drone, swarmLarva],
+  zoneTables: {
+    'alien-cavern': ['cavern-ambush', 'cavern-ambush'],
+    'perimeter-fence': ['perimeter-sweep', 'perimeter-sweep'],
+    'hydroponics': ['perimeter-sweep'],
+  },
+} satisfies EncounterSpawnContent;
 
 // --- Zones ---
 
@@ -383,6 +403,62 @@ export const emergencyCellEffect = {
   },
 };
 
+// --- Progression Rewards (T0-progression-ceiling) ---
+//
+// Kills alone cannot complete the command tree: 3 enemies x 10 = 30 XP vs a 47 XP tree. Max earnable: 30 + 5 (debrief) + 10 (5 zones x 2) + 10 (resonance-entity bonus) = 55 >= 47.
+// Non-combat sources: a completed debrief with the scientist, surveying every station sector, and putting down the resonance entity.
+// content-truth.test.ts pins this arithmetic against the live content.
+
+/** Flat XP amounts per source — exported so tests can pin the progression arithmetic. */
+export const xpAwards = {
+  kill: 10,
+  dialogueComplete: 5,
+  firstVisit: 2,
+  bossBonus: 10,
+} as const;
+
+/** Award `amount` once per unique key, tracked in world.globals (rides saves). */
+function oncePer(
+  amount: number,
+  keyOf: (event: ResolvedEvent) => string | undefined,
+): CurrencyReward['amount'] {
+  return (event, world) => {
+    const k = keyOf(event);
+    if (!k) return 0;
+    const flag = `xp-awarded:${k}`;
+    if (world.globals[flag]) return 0;
+    world.globals[flag] = true;
+    return amount;
+  };
+}
+
+/** Only the player earns exploration/story XP (NPC movement must not consume the once-gates). */
+const playerOnly: CurrencyReward['recipient'] = (event, world) =>
+  event.actorId === world.playerId ? event.actorId : undefined;
+
+export const progressionRewards: CurrencyReward[] = [
+  { eventPattern: 'combat.entity.defeated', currencyId: 'xp', amount: xpAwards.kill, recipient: 'actor' },
+  {
+    eventPattern: 'combat.entity.defeated',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.bossBonus, (e) =>
+      e.payload.entityId === 'resonance_entity' ? 'boss:resonance_entity' : undefined),
+    recipient: 'actor',
+  },
+  {
+    eventPattern: 'dialogue.ended',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.dialogueComplete, (e) => `dialogue:${String(e.payload.dialogueId)}`),
+    recipient: playerOnly,
+  },
+  {
+    eventPattern: 'world.zone.entered',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.firstVisit, (e) => `zone:${String(e.payload.zoneId)}`),
+    recipient: playerOnly,
+  },
+];
+
 // --- Abilities ---
 
 export const plasmaBurst: AbilityDefinition = {
@@ -517,27 +593,26 @@ export const buildCatalog: BuildCatalog = {
       name: 'Field Engineer',
       description: 'Keeps the colony running with wire and will',
       statPriorities: { engineering: 7, command: 3, awareness: 4 },
-      startingTags: ['engineer', 'field-engineer'],
+      // 'colonist' is the pack-identity tag every ability requirement gates on
+      // (T0-tag-gate: a created character without it hides gated abilities).
+      startingTags: ['colonist', 'engineer', 'field-engineer'],
       progressionTreeId: 'commander',
-      grantedVerbs: ['allocate'],
     },
     {
       id: 'colony-commander',
       name: 'Colony Commander',
       description: 'Holds the crew together, makes the calls',
       statPriorities: { engineering: 3, command: 7, awareness: 4 },
-      startingTags: ['leader', 'colony-commander'],
+      startingTags: ['colonist', 'leader', 'colony-commander'],
       progressionTreeId: 'commander',
-      grantedVerbs: ['scan'],
     },
     {
       id: 'outrider',
       name: 'Outrider',
       description: 'Scouts the perimeter, reads the signals',
       statPriorities: { engineering: 4, command: 3, awareness: 7 },
-      startingTags: ['scout', 'outrider'],
+      startingTags: ['colonist', 'scout', 'outrider'],
       progressionTreeId: 'commander',
-      grantedVerbs: ['scan'],
     },
   ],
   backgrounds: [

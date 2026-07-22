@@ -54,24 +54,9 @@ function makeBareEngine(): Engine {
   return engine;
 }
 
-/**
- * Starter setup.ts spreads module-level entity constants SHALLOWLY into each
- * engine, so nested state (resources/stats/statuses) is shared across every
- * createGame() in one process — a test that downs the ghoul in engine A downs
- * it in engine B. Detach nested state immediately after creation so tests
- * stay independent. (Root cause flagged to the starters' owner — same
- * cross-instance bleed class as F-71ec5dcd.)
- */
-function detachEntityState(engine: Engine): void {
-  for (const e of Object.values(engine.store.state.entities)) {
-    engine.store.state.entities[e.id] = structuredClone(e);
-  }
-}
-
 /** Fantasy starter with the player standing in the crypt with both hostiles. */
 function makeCryptGame() {
   const engine = createGame(42);
-  detachEntityState(engine);
   engine.store.state.entities['player'].zoneId = 'crypt-chamber';
   engine.store.state.locationId = 'crypt-chamber';
   return engine;
@@ -86,7 +71,6 @@ describe('listHostilesInPlayerZone', () => {
 
   it('friendly NPCs are never hostiles — the pilgrim does not go to war', () => {
     const engine = createGame(42); // player at chapel-entrance with the pilgrim
-    detachEntityState(engine);
     const hostiles = listHostilesInPlayerZone(engine.world);
     expect(hostiles).toEqual([]);
   });
@@ -146,7 +130,6 @@ describe('runNpcTurns (F1a) — enemies act after the player', () => {
 
   it('hostiles in OTHER zones do not act (cadence is zone-scoped)', () => {
     const engine = createGame(42); // player at chapel-entrance; hostiles in crypt/vestry
-    detachEntityState(engine);
     const results = runNpcTurns(engine, { log: vi.fn() });
     expect(results).toEqual([]);
   });

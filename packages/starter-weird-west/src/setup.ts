@@ -8,15 +8,9 @@ import {
   createDialogueCore,
   createPerceptionFilter,
   createProgressionCore,
-  createEnvironmentCore,
-  createFactionCognition,
-  createRumorPropagation,
   createSimulationInspector,
-  createDistrictCore,
-  createBeliefProvenance,
-  createObserverPresentation,
   giveItem,
-  createDefeatFallout,
+  buildWorldStack,
   createBossPhaseListener,
   createAbilityCore,
   createAbilityEffects,
@@ -44,6 +38,8 @@ import {
   gunslingerTree,
   weirdWestAbilities,
   weirdWestStatusDefinitions,
+  progressionRewards,
+  encounterSpawnContent,
 } from './content.js';
 import { weirdWestMinimalRuleset } from './ruleset.js';
 
@@ -136,6 +132,55 @@ export function createGame(seed?: number): Engine {
     },
   });
 
+  // Strategic tier in one call (F-ENG005-build-world-stack): the same eight
+  // modules this setup used to hand-list, same wiring order, same configs.
+  // ONE faction roster feeds both faction-cognition and defeat-fallout.
+  const worldStack = buildWorldStack({
+    playerId: 'drifter',
+    factions: [
+      {
+        factionId: 'townsfolk',
+        entityIds: ['bartender_silas', 'sheriff_hale'],
+        cohesion: 0.4,
+      },
+      {
+        factionId: 'red-congregation',
+        entityIds: ['dust_revenant'],
+        cohesion: 0.9,
+      },
+    ],
+    environment: {
+      // Hazards mutate entity.resources directly (deterministic, clamped);
+      // environment-core does not record the returned events. Return [].
+      hazards: [{
+        id: 'dust-storm',
+        triggerOn: 'world.zone.entered',
+        condition: (zone) => zone.hazards?.includes('dust-storm') ?? false,
+        effect: (_zone, entity, _world, _tick) => {
+          if (entity.tags.includes('human')) {
+            entity.resources.dust = Math.min(100, (entity.resources.dust ?? 0) + 8);
+          }
+          return [];
+        },
+      },
+      {
+        id: 'spirit-drain',
+        triggerOn: 'world.zone.entered',
+        condition: (zone) => zone.hazards?.includes('spirit-drain') ?? false,
+        effect: (_zone, entity, _world, _tick) => {
+          entity.resources.resolve = Math.max(0, (entity.resources.resolve ?? 0) - 3);
+          return [];
+        },
+      }],
+    },
+    rumors: { propagationDelay: 2 },
+    districts,
+    presentationRules: [spiritPerception],
+    // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
+    // tables drive zone-entry spawns via the world tick.
+    encounterSpawn: { gameId: manifest.id, ...encounterSpawnContent },
+  });
+
   const engine = new Engine({
     manifest,
     seed: seed ?? 42,
@@ -149,64 +194,11 @@ export function createGame(seed?: number): Engine {
       createPerceptionFilter({ perceptionStat: 'draw-speed' }),
       createProgressionCore({
         trees: [gunslingerTree],
-        rewards: [{
-          eventPattern: 'combat.entity.defeated',
-          currencyId: 'xp',
-          amount: 12,
-          recipient: 'actor',
-        }],
+        // T0-progression-ceiling: kills + dialogue + first-visit + boss bonus
+        // (defined next to the tree in content.ts so the arithmetic is testable).
+        rewards: progressionRewards,
       }),
-      createEnvironmentCore({
-        // Hazards mutate entity.resources directly (deterministic, clamped);
-        // environment-core does not record the returned events. Return [].
-        hazards: [{
-          id: 'dust-storm',
-          triggerOn: 'world.zone.entered',
-          condition: (zone) => zone.hazards?.includes('dust-storm') ?? false,
-          effect: (_zone, entity, _world, _tick) => {
-            if (entity.tags.includes('human')) {
-              entity.resources.dust = Math.min(100, (entity.resources.dust ?? 0) + 8);
-            }
-            return [];
-          },
-        },
-        {
-          id: 'spirit-drain',
-          triggerOn: 'world.zone.entered',
-          condition: (zone) => zone.hazards?.includes('spirit-drain') ?? false,
-          effect: (_zone, entity, _world, _tick) => {
-            entity.resources.resolve = Math.max(0, (entity.resources.resolve ?? 0) - 3);
-            return [];
-          },
-        }],
-      }),
-      createFactionCognition({
-        factions: [
-          {
-            factionId: 'townsfolk',
-            entityIds: ['bartender_silas', 'sheriff_hale'],
-            cohesion: 0.4,
-          },
-          {
-            factionId: 'red-congregation',
-            entityIds: ['dust_revenant'],
-            cohesion: 0.9,
-          },
-        ],
-      }),
-      createRumorPropagation({ propagationDelay: 2 }),
-      createDistrictCore({ districts }),
-      createBeliefProvenance(),
-      createObserverPresentation({
-        rules: [spiritPerception],
-      }),
-      createDefeatFallout({
-        factions: [
-          { factionId: 'townsfolk', entityIds: ['bartender_silas', 'sheriff_hale'] },
-          { factionId: 'red-congregation', entityIds: ['dust_revenant'] },
-        ],
-        playerId: 'drifter',
-      }),
+      ...worldStack.modules,
       createBossPhaseListener(mesaCrawlerBoss),
       createAbilityCore({ abilities: weirdWestAbilities, statMapping: { power: 'grit', precision: 'draw-speed', focus: 'lore' } }),
       createAbilityEffects(),
@@ -221,12 +213,12 @@ export function createGame(seed?: number): Engine {
   }
 
   // Add entities
-  engine.store.addEntity(structuredClone(player));
-  engine.store.addEntity(structuredClone(bartender));
-  engine.store.addEntity(structuredClone(sheriff));
-  engine.store.addEntity(structuredClone(revenant));
-  engine.store.addEntity(structuredClone(crawler));
-  engine.store.addEntity(structuredClone(banditRider));
+  engine.store.addEntity(player);
+  engine.store.addEntity(bartender);
+  engine.store.addEntity(sheriff);
+  engine.store.addEntity(revenant);
+  engine.store.addEntity(crawler);
+  engine.store.addEntity(banditRider);
 
   // Set player
   engine.store.state.playerId = 'drifter';

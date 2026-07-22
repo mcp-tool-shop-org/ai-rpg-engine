@@ -185,6 +185,17 @@ export function validateBuild(
     }
   }
 
+  // --- Derive maxHp (T0-player-maxhp) ---
+  // The HUD's HP bar and (low) warning render only when `resources.maxHp`
+  // exists (terminal-ui reads resources.maxHp first, legacy stats.maxHp
+  // second). Rulesets don't define maxHp as a resource, so created characters
+  // never carried one and the bar was boss-only. Creation-time hp IS the
+  // character's maximum — every archetype override, trait modifier, and clamp
+  // has applied by this point — so pin it unless the pack set one explicitly.
+  if (finalResources.hp !== undefined && finalResources.maxHp === undefined) {
+    finalResources.maxHp = finalResources.hp;
+  }
+
   // --- Collect tags ---
   resolvedTags.push(...archetype.startingTags);
   resolvedTags.push(...background.startingTags);

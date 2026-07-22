@@ -83,7 +83,7 @@ describe('Detective — Deductive Strike', () => {
   it('deals damage and costs stamina', () => {
     const engine = buildDetectiveEngine();
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'deductive-strike' }, targetIds: ['thug'],
     });
 
@@ -113,7 +113,7 @@ describe('Detective — Deductive Strike', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'deductive-strike' }, targetIds: ['thug'],
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
@@ -122,7 +122,7 @@ describe('Detective — Deductive Strike', () => {
   it('sets cooldown after use', () => {
     const engine = buildDetectiveEngine();
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'deductive-strike' }, targetIds: ['thug'],
     });
     expect(isAbilityReady(engine.store.state, 'player', 'deductive-strike', allDetectiveAbilities)).toBe(false);
@@ -137,7 +137,7 @@ describe('Detective — Composure Shield', () => {
   it('heals composure and buffs perception', () => {
     const engine = buildDetectiveEngine({ playerComposure: 5, playerPerception: 15 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'composure-shield' }, targetIds: [],
     });
 
@@ -152,7 +152,7 @@ describe('Detective — Composure Shield', () => {
   it('rejects when stamina is too low', () => {
     const engine = buildDetectiveEngine({ playerStamina: 1 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'composure-shield' }, targetIds: [],
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
@@ -172,7 +172,7 @@ describe('Detective — Expose Weakness', () => {
   it('applies exposed status and reduces grit', () => {
     const engine = buildDetectiveEngine({ playerPerception: 15 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'expose-weakness' }, targetIds: ['thug'],
     });
 
@@ -193,7 +193,7 @@ describe('Detective — Expose Weakness', () => {
   it('rejects when composure is too low', () => {
     const engine = buildDetectiveEngine({ playerComposure: 1 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'expose-weakness' }, targetIds: ['thug'],
     });
     expect(events.find(e => e.type === 'ability.rejected')).toBeDefined();
@@ -212,7 +212,7 @@ describe('Detective — Clear-Headed (cleanse)', () => {
   it('costs stamina and composure', () => {
     const engine = buildDetectiveEngine({ playerPerception: 15 });
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'clear-headed' }, targetIds: [],
     });
 
@@ -228,7 +228,7 @@ describe('Detective — Clear-Headed (cleanse)', () => {
   it('sets cooldown after use', () => {
     const engine = buildDetectiveEngine({ playerPerception: 15 });
     engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'clear-headed' }, targetIds: [],
     });
     expect(isAbilityReady(engine.store.state, 'player', 'clear-headed', allDetectiveAbilities)).toBe(false);
@@ -290,13 +290,13 @@ describe('Detective — Resistance profiles', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'intimidate' }, targetIds: ['crime-boss'],
     });
 
     const immune = events.find(e => e.type === 'ability.status.immune');
     expect(immune).toBeDefined();
-    expect(boss.statuses.length).toBe(0);
+    expect(engine.store.state.entities['crime-boss'].statuses.length).toBe(0);
   });
 
   it('crime boss resists control (halved duration)', () => {
@@ -344,7 +344,7 @@ describe('Detective — Resistance profiles', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'test-control' }, targetIds: ['crime-boss'],
     });
 
@@ -401,7 +401,7 @@ describe('Detective — Resistance profiles', () => {
     });
 
     const events = engine.processAction({
-      id: 'a1', verb: 'use-ability', actorId: 'player', issuedAtTick: 1,
+      id: 'a1', verb: 'use-ability', actorId: 'player', source: 'player', issuedAtTick: 1,
       parameters: { abilityId: 'test-fear-strike' }, targetIds: ['hired-muscle'],
     });
 

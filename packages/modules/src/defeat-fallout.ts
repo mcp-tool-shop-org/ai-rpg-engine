@@ -20,7 +20,15 @@ export type DefeatFalloutConfig = {
   factions?: Array<{ factionId: string; entityIds: string[] }>;
   reputationPerKill?: number;       // default -10
   alertPerKill?: number;            // default 15
-  bossTag?: string;                 // default 'boss'
+  /**
+   * Tag that marks a defeated entity as a boss. Default 'role:boss' — the
+   * engine-wide role taxonomy every starter tags its bosses with (W6 finding:
+   * the old default 'boss' matched NO shipped starter, so boss kills accrued
+   * reputation/alert at the regular rate everywhere and the boss milestone —
+   * world-tick's genre spawn-rule feed — never fired). Packs with a different
+   * taxonomy pass their own tag here.
+   */
+  bossTag?: string;                 // default 'role:boss'
   bossReputationPenalty?: number;   // default -25
   bossAlertPenalty?: number;        // default 30
   heatPerKill?: number;             // default 5
@@ -34,12 +42,27 @@ export type DefeatFalloutConfig = {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Resolve an entity's faction from the config rosters, by entity id OR
+ * blueprint id (P8-WL-004). The rosters are captured at pack assembly and
+ * list the AUTHORED instance ids — but encounter-spawn clones its templates
+ * under fresh `enc_*` ids, so spawned-clone kills matched no roster: patrol
+ * kills accrued heat/safety but never reputation/alert, and every spawned-
+ * hostile kill's rumor read valence 'heroic'. Clones carry their template
+ * identity in `blueprintId` (structuredClone preserves it; only id/zoneId/
+ * statuses are overridden at spawn), and shipped content authors instances
+ * with id === blueprintId, so a roster naming an authored entity also claims
+ * that entity's spawned clones. First matching roster wins, id checked before
+ * blueprint within each roster — authored-instance matches are unchanged.
+ */
 function findFaction(
   factions: Array<{ factionId: string; entityIds: string[] }>,
   entityId: string,
+  blueprintId?: string,
 ): string | undefined {
   for (const f of factions) {
     if (f.entityIds.includes(entityId)) return f.factionId;
+    if (blueprintId !== undefined && f.entityIds.includes(blueprintId)) return f.factionId;
   }
   return undefined;
 }
@@ -115,7 +138,9 @@ export function createDefeatFallout(config: DefeatFalloutConfig = {}): EngineMod
     factions = [],
     reputationPerKill = -10,
     alertPerKill = 15,
-    bossTag = 'boss',
+    // 'role:boss' — the shipped role taxonomy (see DefeatFalloutConfig.bossTag).
+    // The old default 'boss' was dead against every starter's tags.
+    bossTag = 'role:boss',
     bossReputationPenalty = -25,
     bossAlertPenalty = 30,
     heatPerKill = 5,
@@ -168,8 +193,11 @@ export function createDefeatFallout(config: DefeatFalloutConfig = {}): EngineMod
         const zoneId = defeated?.zoneId ?? world.locationId;
         const districtId = getDistrictForZone(world, zoneId);
 
-        // Faction lookup
-        const factionId = findFaction(factions, defeatedId);
+        // Faction lookup — by instance id or template identity, so spawned
+        // clones (enc_* ids, roster-invisible) still answer for their faction
+        // (P8-WL-004). The rumor valence below follows: a clone kill now
+        // reads 'fearsome' like any faction kill, not 'heroic'.
+        const factionId = findFaction(factions, defeatedId, defeated?.blueprintId);
 
         // Reputation
         if (factionId) {

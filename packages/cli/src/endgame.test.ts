@@ -5,23 +5,26 @@
 
 import { describe, it, expect } from 'vitest';
 import { Engine } from '@ai-rpg-engine/core';
-import { createGame } from '@ai-rpg-engine/starter-fantasy';
+import { createGame, combatMasteryTree } from '@ai-rpg-engine/starter-fantasy';
+import type { ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
+import {
+  addCurrency,
+  createDistrictEconomy,
+  type WorldPressure,
+  type CompanionState,
+} from '@ai-rpg-engine/modules';
 import {
   detectBaseOutcome,
   evaluateSessionEnd,
   renderSessionEnd,
   journalFromEventLog,
   buildEndgameInputs,
+  computeSessionStats,
+  renderSessionStats,
 } from './endgame.js';
 
 function makeGame() {
-  const engine = createGame(42);
-  // Starter content entities are shallow-copied module constants — detach
-  // nested state so tests never bleed into each other (see turns.test.ts).
-  for (const e of Object.values(engine.store.state.entities)) {
-    engine.store.state.entities[e.id] = structuredClone(e);
-  }
-  return engine;
+  return createGame(42);
 }
 
 describe('detectBaseOutcome (F1b)', () => {
@@ -140,6 +143,233 @@ describe('evaluateSessionEnd (F1b) — outcome + campaign framing', () => {
   });
 });
 
+// F-ENG005 — the evaluator's inputs come from LIVE state, not hardcoded zeros.
+// Each test pins one input's source namespace at the buildEndgameInputs
+// boundary: the exact key read, the exact value that flows through.
+describe('buildEndgameInputs (F-ENG005) — live inputs from persisted state', () => {
+  /** A minimal valid WorldPressure for namespace-pinning tests. */
+  function makeTestPressure(id: string): WorldPressure {
+    return {
+      id,
+      kind: 'bounty-issued',
+      sourceFactionId: 'chapel-undead',
+      description: 'A bounty circulates',
+      triggeredBy: 'test',
+      urgency: 0.6,
+      visibility: 'known',
+      turnsRemaining: 5,
+      potentialOutcomes: [],
+      tags: [],
+      createdAtTick: 1,
+    };
+  }
+
+  it('a zero-state world reproduces the previous behavior: zero heat, level 1, empty pressures/companions/economies', () => {
+    const engine = makeGame();
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.playerLeverage.heat).toBe(0);
+    expect(inputs.playerLevel).toBe(1);
+    expect(inputs.activePressures).toEqual([]);
+    expect(inputs.companions).toEqual([]);
+    expect(inputs.districtEconomies.size).toBe(0);
+  });
+
+  it('heat is sourced from defeat-fallout\'s exact global key world.globals["player_heat"]', () => {
+    const engine = makeGame();
+    engine.store.state.globals['player_heat'] = 42;
+    expect(buildEndgameInputs(engine.world).playerLeverage.heat).toBe(42);
+    // The other leverage axes have no persisting writer — they stay 0.
+    const lev = buildEndgameInputs(engine.world).playerLeverage;
+    expect(lev.favor).toBe(0);
+    expect(lev.influence).toBe(0);
+    expect(lev.legitimacy).toBe(0);
+  });
+
+  it('heat accrued by the REAL defeat-fallout module flows into the evaluator (5 per kill)', () => {
+    const engine = makeGame();
+    // starter-fantasy wires createDefeatFallout with the default heatPerKill: 5.
+    // Its listener reads entityId/defeatedBy off combat.entity.defeated.
+    engine.store.emitEvent(
+      'combat.entity.defeated',
+      { entityId: 'ash-ghoul', entityName: 'Ash Ghoul', defeatedBy: 'player' },
+      { actorId: 'player' },
+    );
+    expect(engine.world.globals['player_heat']).toBe(5);
+    expect(buildEndgameInputs(engine.world).playerLeverage.heat).toBe(5);
+  });
+
+  it('a non-numeric heat global degrades to 0, never NaN', () => {
+    const engine = makeGame();
+    engine.store.state.globals['player_heat'] = 'hot' as never;
+    expect(buildEndgameInputs(engine.world).playerLeverage.heat).toBe(0);
+  });
+
+  // P8-SP-002/WL-003: pressures read the namespace the world tick actually
+  // persists — world.modules['world-tick'] via getActivePressures — instead
+  // of the phantom 'pressure-system' namespace these tests used to hand-plant
+  // (nothing in production ever wrote it, so the axis was permanently empty
+  // in real play while the planted tests stayed green).
+  it("active pressures are read from world-tick's persisted state (the REAL writer's namespace)", () => {
+    const engine = makeGame();
+    const pressure = makeTestPressure('wp-1');
+    // The starter registers world-tick (module identity, P8-SP-003), so the
+    // namespace exists from construction — mutate the real slice, exactly
+    // what the tick does when it persists the round's working set.
+    const tickState = engine.store.state.modules['world-tick'] as { pressures: unknown[] };
+    expect(tickState).toBeDefined();
+    tickState.pressures = [pressure];
+
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.activePressures).toHaveLength(1);
+    expect(inputs.activePressures[0].id).toBe('wp-1');
+    expect(inputs.activePressures[0].kind).toBe('bounty-issued');
+  });
+
+  it('malformed world-tick shapes degrade to empty (the accessor contract), and the phantom namespace is dead', () => {
+    const engine = makeGame();
+    engine.store.state.modules['world-tick'] = { pressures: 'not-an-array' };
+    expect(buildEndgameInputs(engine.world).activePressures).toEqual([]);
+
+    // Planting the OLD phantom namespace does nothing now — the axis reads
+    // only the world tick's truth.
+    const phantom = makeGame();
+    phantom.store.state.modules['pressure-system'] = { activePressures: [makeTestPressure('wp-x')] };
+    (phantom.store.state.modules['world-tick'] as { pressures: unknown[] }).pressures = [];
+    expect(buildEndgameInputs(phantom.world).activePressures).toEqual([]);
+  });
+
+  it("resolved pressures flow from world-tick's fallout ledger into the evaluator's resolvedPressures axis", () => {
+    const engine = makeGame();
+    const tickState = engine.store.state.modules['world-tick'] as { resolvedPressures?: unknown[] };
+    tickState.resolvedPressures = [
+      { summary: 'bounty issued expired without resolution', resolution: { pressureKind: 'bounty-issued' } },
+    ];
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.resolvedPressures).toHaveLength(1);
+    expect((inputs.resolvedPressures[0] as { summary?: string }).summary).toBe(
+      'bounty issued expired without resolution',
+    );
+  });
+
+  // P8-SP-002 (accrual half): endgame's faction axes read the same two
+  // channels world-tick's buildPressureInputs merges — defeat-fallout's
+  // faction_alert_<id>/reputation_<id> globals plus the authored/cognition
+  // state — so the endgame and the pressure tick can never disagree.
+  it('faction alert takes the MAX of the combat global and the cognition channel', () => {
+    const engine = makeGame();
+    engine.store.state.globals['faction_alert_chapel-undead'] = 60;
+    // starter-fantasy wires chapel-undead into faction-cognition (alert 0).
+    let inputs = buildEndgameInputs(engine.world);
+    expect(inputs.factionStates.find((f) => f.factionId === 'chapel-undead')!.alertLevel).toBe(60);
+
+    // The hotter channel wins in either direction.
+    const cog = (engine.store.state.modules['faction-cognition'] as {
+      factionCognition: Record<string, { alertLevel: number }>;
+    }).factionCognition;
+    cog['chapel-undead'].alertLevel = 75;
+    inputs = buildEndgameInputs(engine.world);
+    expect(inputs.factionStates.find((f) => f.factionId === 'chapel-undead')!.alertLevel).toBe(75);
+  });
+
+  it('a faction known only through its accrual globals still enters the faction axes', () => {
+    const engine = makeGame();
+    engine.store.state.globals['faction_alert_arena-guild'] = 40;
+    engine.store.state.globals['reputation_arena-guild'] = -15;
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.factionStates.find((f) => f.factionId === 'arena-guild')!.alertLevel).toBe(40);
+    expect(inputs.playerReputations.find((r) => r.factionId === 'arena-guild')!.value).toBe(-15);
+  });
+
+  it('player reputation merges the authored baseline with the accrued delta (base + reputation_<id>)', () => {
+    const engine = makeGame();
+    engine.store.state.factions['chapel-order'] = {
+      id: 'chapel-order', name: 'Chapel Order', reputation: 10, disposition: 'neutral',
+    };
+    engine.store.state.globals['reputation_chapel-order'] = -25;
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.playerReputations.find((r) => r.factionId === 'chapel-order')!.value).toBe(-15);
+  });
+
+  it('cognition-only factions stay OUT of playerReputations — no invented neutral zeros diluting averages', () => {
+    const engine = makeGame(); // chapel-undead lives in faction-cognition only
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.factionStates.some((f) => f.factionId === 'chapel-undead')).toBe(true);
+    expect(inputs.playerReputations.some((r) => r.factionId === 'chapel-undead')).toBe(false);
+  });
+
+  it('companions are read from world.modules["companion-core"].companions', () => {
+    const engine = makeGame();
+    const companion: CompanionState = {
+      npcId: 'sister-maren',
+      role: 'healer',
+      joinedAtTick: 3,
+      abilityTags: [],
+      morale: 80,
+      active: true,
+    };
+    engine.store.state.modules['companion-core'] = { companions: [companion] };
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.companions).toHaveLength(1);
+    expect(inputs.companions[0].npcId).toBe('sister-maren');
+    expect(inputs.companions[0].morale).toBe(80);
+  });
+
+  it('district economies are read from world.modules["economy-core"].districts', () => {
+    const engine = makeGame();
+    engine.store.state.modules['economy-core'] = {
+      districts: { 'chapel-grounds': createDistrictEconomy('fantasy') },
+    };
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.districtEconomies.size).toBe(1);
+    expect(inputs.districtEconomies.get('chapel-grounds')?.supplies.food.level).toBeGreaterThan(0);
+  });
+
+  it('playerLevel derives from progression-core unlocks (the HUD\'s notion: 1 + nodes unlocked)', () => {
+    const engine = makeGame();
+    expect(buildEndgameInputs(engine.world).playerLevel).toBe(1);
+
+    addCurrency(engine.store.state, 'player', 'xp', 30, engine.tick);
+    engine.submitAction('unlock', { parameters: { treeId: 'combat-mastery', nodeId: 'toughened' } });
+    expect(
+      combatMasteryTree.nodes.some((n) => n.id === 'toughened'), // the real tree, not a synthetic one
+    ).toBe(true);
+    expect(buildEndgameInputs(engine.world).playerLevel).toBe(2);
+  });
+
+  it('a lived-in world reaches a DIFFERENT ending than a zero-state world (exile vs plain defeat)', () => {
+    // Zero-state death: plain defeat framing.
+    const fresh = makeGame();
+    fresh.store.state.entities['player'].resources.hp = 0;
+    expect(evaluateSessionEnd(fresh)!.resolutionClass).toBe('defeat');
+
+    // Same death after a hunted, hated run: heat 85 (defeat-fallout's global),
+    // every faction hostile, no companions → checkExile's thresholds fire.
+    const lived = makeGame();
+    lived.store.state.factions['chapel-order'] = {
+      id: 'chapel-order', name: 'Chapel Order', reputation: -60, disposition: 'hostile',
+    };
+    lived.store.state.globals['player_heat'] = 85;
+    (lived.store.state.modules['world-tick'] as { pressures: unknown[] }).pressures = [
+      makeTestPressure('wp-a'),
+      makeTestPressure('wp-b'),
+    ];
+    lived.store.state.entities['player'].resources.hp = 0;
+
+    const end = evaluateSessionEnd(lived)!;
+    expect(end.kind).toBe('defeat');
+    expect(end.resolutionClass).toBe('exile');
+    expect(end.trigger?.evidence.heat).toBe(85);
+
+    // And the differentiation is visible at the inputs boundary itself.
+    const freshInputs = buildEndgameInputs(fresh.world);
+    const livedInputs = buildEndgameInputs(lived.world);
+    expect(freshInputs.playerLeverage.heat).toBe(0);
+    expect(livedInputs.playerLeverage.heat).toBe(85);
+    expect(freshInputs.activePressures).toHaveLength(0);
+    expect(livedInputs.activePressures).toHaveLength(2);
+  });
+});
+
 describe('renderSessionEnd + journalFromEventLog (F1b) — the end screen', () => {
   it('defeat renders a DEFEAT banner, the narrator line, and the finale epilogue', () => {
     const engine = makeGame();
@@ -169,6 +399,25 @@ describe('renderSessionEnd + journalFromEventLog (F1b) — the end screen', () =
     expect(screen).toContain('Entered Chapel Nave');
   });
 
+  // T0-finale-stats: a live defeat's finale said "Chronicle Events: 2" and
+  // little else — too thin a goodbye. The end screen now tallies the run from
+  // the events the engine actually emitted.
+  it('the end screen carries the run-in-numbers block', () => {
+    const engine = makeGame();
+    engine.store.state.entities['player'].resources.hp = 0;
+    const end = evaluateSessionEnd(engine)!;
+
+    const screen = renderSessionEnd(end, engine.world);
+    expect(screen).toContain('THE RUN IN NUMBERS');
+    expect(screen).toContain('Rounds Survived:');
+    expect(screen).toContain('Enemies Defeated:');
+    expect(screen).toContain('Damage Dealt:');
+    expect(screen).toContain('Damage Taken:');
+    expect(screen).toContain('Abilities Used:');
+    expect(screen).toContain('XP Earned:');
+    expect(screen).toContain('Advancements Unlocked:');
+  });
+
   it('journalFromEventLog records kills, first-visit discoveries, and unlocks with bounded duplicates', () => {
     const engine = makeGame();
     engine.submitAction('move', { targetIds: ['chapel-nave'] });
@@ -187,5 +436,103 @@ describe('renderSessionEnd + journalFromEventLog (F1b) — the end screen', () =
     // chapel-nave + chapel-entrance discovered once each, revisit ignored.
     expect(discoveries.map((d) => d.zoneId).sort()).toEqual(['chapel-entrance', 'chapel-nave']);
     expect(actions.some((a) => a.description.includes('toughened'))).toBe(true);
+  });
+});
+
+// T0-finale-stats — the tally is derived ONLY from events the engine emits
+// (the formatEventLine vocabulary): combat.damage.applied attribution,
+// combat.entity.defeated hostility, ability.used / progression.node.unlocked
+// actorship, DoT ticks. XP accrual has no event (progression-core addCurrency
+// is silent), so xpEarned reconstructs earned = balance + unlock spends.
+describe('computeSessionStats (T0-finale-stats)', () => {
+  /** Bare engine — no module listeners, so emitted events are exactly the log. */
+  function bareEngine() {
+    const engine = new Engine({
+      manifest: { id: 't', title: 't', version: '0', engineVersion: '0', ruleset: 't', modules: [], contentPacks: [] },
+      seed: 1,
+    });
+    engine.store.state.zones = { z: { id: 'z', roomId: 'r', name: 'Z', tags: [], neighbors: [] } };
+    engine.store.state.locationId = 'z';
+    engine.store.addEntity({
+      id: 'p', blueprintId: 'p', type: 'player', name: 'P', tags: ['player'],
+      stats: {}, resources: { hp: 5 }, statuses: [], zoneId: 'z',
+    });
+    engine.store.addEntity({
+      id: 'ghoul', blueprintId: 'e', type: 'enemy', name: 'Ghoul', tags: ['enemy'],
+      stats: {}, resources: { hp: 0 }, statuses: [], zoneId: 'z',
+    });
+    engine.store.addEntity({
+      id: 'friend', blueprintId: 'n', type: 'npc', name: 'Friend', tags: ['npc', 'companion'],
+      stats: {}, resources: { hp: 0 }, statuses: [], zoneId: 'z',
+    });
+    engine.store.state.playerId = 'p';
+    return engine;
+  }
+
+  const tree: ProgressionTreeDefinition = {
+    id: 'mastery',
+    name: 'Mastery',
+    currency: 'xp',
+    nodes: [{ id: 'toughened', name: 'Toughened', cost: 5, effects: [] }],
+  };
+
+  it('tallies a synthetic event log exactly', () => {
+    const engine = bareEngine();
+    const emit = engine.store.emitEvent.bind(engine.store);
+
+    emit('combat.damage.applied', { attackerId: 'p', targetId: 'ghoul', damage: 4 }, { actorId: 'p' });
+    emit('combat.damage.applied', { attackerId: 'ghoul', targetId: 'p', damage: 3 }, { actorId: 'ghoul' });
+    emit('status.periodic.damage', { statusId: 'burning', amount: 2 }, { actorId: 'p' });
+    emit('status.periodic.damage', { statusId: 'burning', amount: 9 }, { actorId: 'ghoul' }); // not the player
+    emit('combat.entity.defeated', { entityId: 'ghoul', entityName: 'Ghoul' }, { actorId: 'p' });
+    emit('combat.entity.defeated', { entityId: 'friend', entityName: 'Friend' }, { actorId: 'ghoul' }); // companion — not an enemy
+    emit('combat.entity.defeated', { entityId: 'p', entityName: 'P' }, { actorId: 'ghoul' }); // the player — never a kill
+    emit('ability.used', { abilityId: 'smite', abilityName: 'Smite' }, { actorId: 'p' });
+    emit('ability.used', { abilityId: 'howl', abilityName: 'Howl' }, { actorId: 'ghoul' }); // enemy ability
+    emit('progression.node.unlocked', { treeId: 'mastery', nodeId: 'toughened', effects: [] }, { actorId: 'p' });
+
+    engine.store.state.meta.tick = 12;
+    // Post-spend balance: 7 banked. Earned = 7 + the 5 the unlock cost.
+    engine.store.state.modules['progression-core'] = { currencies: { p: { xp: 7 } }, unlocked: {} };
+
+    expect(computeSessionStats(engine.world, [tree])).toEqual({
+      rounds: 12,
+      enemiesDefeated: 1,
+      damageDealt: 4,
+      damageTaken: 5,
+      abilitiesUsed: 1,
+      xpEarned: 12,
+      unlocks: 1,
+    });
+  });
+
+  it('a defeated entity already GONE from world state still counts as a kill', () => {
+    const engine = bareEngine();
+    engine.store.emitEvent('combat.entity.defeated', { entityId: 'long-gone', entityName: 'Gone' }, { actorId: 'p' });
+    expect(computeSessionStats(engine.world).enemiesDefeated).toBe(1);
+  });
+
+  it('an empty log yields all-zero stats and renders gracefully', () => {
+    const engine = bareEngine();
+    const stats = computeSessionStats(engine.world);
+    expect(stats).toEqual({
+      rounds: 0,
+      enemiesDefeated: 0,
+      damageDealt: 0,
+      damageTaken: 0,
+      abilitiesUsed: 0,
+      xpEarned: 0,
+      unlocks: 0,
+    });
+    const block = renderSessionStats(stats);
+    expect(block).toContain('THE RUN IN NUMBERS');
+    expect(block).toContain('Rounds Survived: 0');
+    expect(block).toContain('XP Earned: 0');
+  });
+
+  it('without trees, XP falls back to the raw balance under the default currency', () => {
+    const engine = bareEngine();
+    engine.store.state.modules['progression-core'] = { currencies: { p: { xp: 9 } }, unlocked: {} };
+    expect(computeSessionStats(engine.world).xpEarned).toBe(9);
   });
 });

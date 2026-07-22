@@ -212,3 +212,91 @@ describe('CLI profile (entity profiles)', () => {
     expect(out).toContain('profile');
   });
 });
+
+// F-SEED-combat-rolls-seed-blind — seed plumbing end-to-end through the real
+// binary. The mini-pack fixture (createGame(seed = 1)) proves the external
+// pass-through: the printed seed line reads world.meta.seed back out of the
+// constructed engine, so 'Seed: 4242' on screen means the seed actually
+// reached WorldStore. Scripted stdin is a supported drive mode (prompts.ts
+// queues piped lines).
+describe('CLI run seeds e2e (F-SEED-combat-rolls-seed-blind)', () => {
+  const MINI_PACK = path.resolve(import.meta.dirname, '../test-fixtures/mini-pack');
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-cli-seed-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  /** Drive one scripted session in an isolated cwd (no save file → no resume offer). */
+  function runSession(args: string[], input: string): { code: number; stdout: string; stderr: string } {
+    try {
+      const stdout = execFileSync('node', [bin, ...args], {
+        encoding: 'utf-8',
+        timeout: 15_000,
+        input,
+        cwd: tmpDir,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      return { code: 0, stdout: stdout.toString(), stderr: '' };
+    } catch (err) {
+      const e = err as { status?: number; stdout?: Buffer | string; stderr?: Buffer | string };
+      return {
+        code: typeof e.status === 'number' ? e.status : 1,
+        stdout: (e.stdout ?? '').toString(),
+        stderr: (e.stderr ?? '').toString(),
+      };
+    }
+  }
+
+  it.each([
+    ['letters', ['run', '--seed', 'abc']],
+    ['float', ['run', '--seed', '1.5']],
+    ['negative', ['run', '--seed', '-7']],
+    ['missing value', ['run', '--seed']],
+  ])('rejects an invalid --seed (%s) with INVALID_SEED + hint, exit 1, before anything interactive', (_label, args) => {
+    const r = runSession(args as string[], '');
+    expect(r.code).toBe(1);
+    expect(r.stderr).toContain('INVALID_SEED');
+    expect(r.stderr).toContain('Hint:');
+  });
+
+  it('an external pack run honors --seed: the printed line reads the world truth and the replay command includes the path', () => {
+    const r = runSession(['run', MINI_PACK, '--seed', '4242'], 'quit\n');
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain('Seed: 4242');
+    expect(r.stdout).toContain(`ai-rpg-engine run ${MINI_PACK} --seed 4242`);
+  });
+
+  it('without --seed, a fresh session MINTS a seed and prints it with the replay affordance', () => {
+    const r = runSession(['run', MINI_PACK], 'quit\n');
+    expect(r.code).toBe(0);
+    const m = r.stdout.match(/Seed: (\d+) — replay this run with: ai-rpg-engine run .+ --seed (\d+)/);
+    expect(m, `no seed line in stdout:\n${r.stdout.slice(0, 400)}`).not.toBeNull();
+    expect(m![1]).toBe(m![2]);
+    expect(Number(m![1])).toBeLessThan(1_000_000);
+  });
+
+  it('two mint-seeded runs differ; two runs with the same --seed are byte-identical on the same script', () => {
+    const seedOf = (out: string) => out.match(/Seed: (\d+)/)?.[1];
+
+    // Minted seeds differ across runs (three strikes so a 1-in-a-million
+    // collision cannot flake the suite).
+    const s1 = seedOf(runSession(['run', MINI_PACK], 'quit\n').stdout);
+    const s2 = seedOf(runSession(['run', MINI_PACK], 'quit\n').stdout);
+    const s3 = s1 === s2 ? seedOf(runSession(['run', MINI_PACK], 'quit\n').stdout) : s2;
+    expect(s1).toBeDefined();
+    expect(new Set([s1, s2, s3]).size).toBeGreaterThan(1);
+
+    // Same --seed, same input script → byte-identical stdout (no timestamps,
+    // no wall-clock anywhere on the quit path).
+    const a = runSession(['run', MINI_PACK, '--seed', '777'], 'quit\n');
+    const b = runSession(['run', MINI_PACK, '--seed', '777'], 'quit\n');
+    expect(a.code).toBe(0);
+    expect(a.stdout).toBe(b.stdout);
+    expect(a.stdout).toContain('Seed: 777');
+  });
+});

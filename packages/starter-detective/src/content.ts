@@ -2,7 +2,7 @@
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
-import type { DistrictDefinition, EncounterDefinition, BossDefinition } from '@ai-rpg-engine/modules';
+import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -34,7 +34,7 @@ export const player: EntityState = {
   name: 'Inspector',
   tags: ['player', 'law', 'investigator'],
   stats: { perception: 7, eloquence: 5, grit: 4 },
-  resources: { hp: 15, stamina: 4, composure: 12 },
+  resources: { hp: 15, maxHp: 15, stamina: 4, composure: 12 },
   statuses: [],
   inventory: [],
   zoneId: 'crime-scene',
@@ -185,6 +185,26 @@ export const crimeLordConfrontation: EncounterDefinition = {
   validZoneIds: ['back-alley'],
   narrativeHooks: { tone: 'climactic', trigger: 'Hargreaves steps from the shadows.', stakes: 'Justice or silence — only one walks away.' },
 };
+
+
+// --- Encounter spawn wiring (F-ENG005-encounter-spawn-wiring) ---
+//
+// Per-zone encounter tables — the moral equivalent of content-schema's
+// ZoneDefinition.encounterTable (string[]; weight is repetition).
+// This is an investigation — encounters are staged confrontations, not
+// wandering monsters. The docks are watched (ambush outweighs patrol in the
+// back alley), the foggy entrance gets a passing patrol, and the indoor
+// scenes stay scenes of words. The crime-lord confrontation is the placed
+// set-piece — boss fights never enter random tables.
+
+export const encounterSpawnContent = {
+  encounters: [alleyPatrol, docksideAmbush, crimeLordConfrontation],
+  entityTemplates: [thug, hiredMuscle],
+  zoneTables: {
+    'back-alley': ['dockside-ambush', 'dockside-ambush', 'alley-patrol'],
+    'front-entrance': ['alley-patrol'],
+  },
+} satisfies EncounterSpawnContent;
 
 // --- Zones ---
 
@@ -390,6 +410,62 @@ export const smellingSaltsEffect = {
   },
 };
 
+// --- Progression Rewards (T0-progression-ceiling) ---
+//
+// Kills alone cannot complete the case tree: 3 enemies x 10 = 30 XP vs a 50 XP tree. Max earnable: 30 + 5 (widow interview) + 10 (5 zones x 2) + 10 (crime-boss bonus) = 55 >= 50.
+// Non-combat sources: a completed interview with the widow, canvassing every scene in the district, and taking down the crime boss.
+// content-truth.test.ts pins this arithmetic against the live content.
+
+/** Flat XP amounts per source — exported so tests can pin the progression arithmetic. */
+export const xpAwards = {
+  kill: 10,
+  dialogueComplete: 5,
+  firstVisit: 2,
+  bossBonus: 10,
+} as const;
+
+/** Award `amount` once per unique key, tracked in world.globals (rides saves). */
+function oncePer(
+  amount: number,
+  keyOf: (event: ResolvedEvent) => string | undefined,
+): CurrencyReward['amount'] {
+  return (event, world) => {
+    const k = keyOf(event);
+    if (!k) return 0;
+    const flag = `xp-awarded:${k}`;
+    if (world.globals[flag]) return 0;
+    world.globals[flag] = true;
+    return amount;
+  };
+}
+
+/** Only the player earns exploration/story XP (NPC movement must not consume the once-gates). */
+const playerOnly: CurrencyReward['recipient'] = (event, world) =>
+  event.actorId === world.playerId ? event.actorId : undefined;
+
+export const progressionRewards: CurrencyReward[] = [
+  { eventPattern: 'combat.entity.defeated', currencyId: 'xp', amount: xpAwards.kill, recipient: 'actor' },
+  {
+    eventPattern: 'combat.entity.defeated',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.bossBonus, (e) =>
+      e.payload.entityId === 'crime-boss' ? 'boss:crime-boss' : undefined),
+    recipient: 'actor',
+  },
+  {
+    eventPattern: 'dialogue.ended',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.dialogueComplete, (e) => `dialogue:${String(e.payload.dialogueId)}`),
+    recipient: playerOnly,
+  },
+  {
+    eventPattern: 'world.zone.entered',
+    currencyId: 'xp',
+    amount: oncePer(xpAwards.firstVisit, (e) => `zone:${String(e.payload.zoneId)}`),
+    recipient: playerOnly,
+  },
+];
+
 // --- Abilities ---
 
 export const deductiveStrike: AbilityDefinition = {
@@ -528,23 +604,23 @@ export const buildCatalog: BuildCatalog = {
       statPriorities: { perception: 7, eloquence: 4, grit: 3 },
       startingTags: ['investigator', 'inspector'],
       progressionTreeId: 'deduction-mastery',
-      grantedVerbs: ['interrogate', 'deduce'],
     },
     {
       id: 'raconteur',
       name: 'Raconteur',
       description: 'Charming liar, silver-tongued',
       statPriorities: { perception: 3, eloquence: 7, grit: 4 },
-      startingTags: ['socialite', 'raconteur'],
+      // 'investigator' is the pack-identity tag the gated abilities require
+      // (T0-tag-gate: a created character without it hides gated abilities).
+      startingTags: ['investigator', 'socialite', 'raconteur'],
       progressionTreeId: 'deduction-mastery',
-      grantedVerbs: ['interrogate'],
     },
     {
       id: 'bruiser',
       name: 'Bruiser',
       description: 'Fists first, questions later',
       statPriorities: { perception: 4, eloquence: 3, grit: 7 },
-      startingTags: ['enforcer', 'bruiser'],
+      startingTags: ['investigator', 'enforcer', 'bruiser'],
       progressionTreeId: 'deduction-mastery',
     },
   ],
