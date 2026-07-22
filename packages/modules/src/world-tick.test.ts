@@ -20,11 +20,18 @@ import type { PressureFallout } from './pressure-resolution.js';
 import { statusCore } from './status-core.js';
 import { createCombatCore } from './combat-core.js';
 import { createEnvironmentCore } from './environment-core.js';
-import { createDistrictCore } from './district-core.js';
+import { createDistrictCore, getDistrictState } from './district-core.js';
 import { createDefeatFallout } from './defeat-fallout.js';
 import { traversalCore } from './traversal-core.js';
 import { createEncounterSpawn, unregisterEncounterSpawnContent } from './encounter-spawn.js';
 import { makePressure } from './pressure-system.js';
+import {
+  createEconomyCore,
+  getSupplyLevel,
+  getDistrictEconomy,
+  tickDistrictEconomy,
+  type EconomyCoreState,
+} from './economy-core.js';
 import {
   runWorldTick,
   buildPressureInputs,
@@ -499,6 +506,78 @@ describe('world-tick — the encounter spawn step rides the ONE world tick (F-EN
   });
 });
 
+// ---------------------------------------------------------------------------
+// Economy tick (F-d0b5edb5) — the write-wire. Before this, a played round
+// never created OR ticked world.modules['economy-core']: createDistrictEconomy
+// and tickDistrictEconomy had zero callers outside economy-core's own test
+// file.
+// ---------------------------------------------------------------------------
+describe('world-tick — economy tick (F-d0b5edb5)', () => {
+  /** Economy-aware engine: district-core + economy-core + world-tick, same district roster. */
+  function makeEconomyEngine(tags: string[] = []) {
+    return createTestEngine({
+      modules: [
+        createEnvironmentCore(),
+        createDistrictCore({ districts: [{ id: 'district-1', name: 'Market', zoneIds: ['zone-a'], tags }] }),
+        createEconomyCore({ districts: [{ id: 'district-1', tags }] }),
+        createWorldTick(),
+      ],
+      entities: [makePlayer()],
+      zones,
+    });
+  }
+
+  it('a played round creates AND ticks world.modules[\'economy-core\'].districts', () => {
+    const engine = makeEconomyEngine();
+
+    // Created at construction (before any tick runs).
+    const seeded = engine.world.modules['economy-core'] as EconomyCoreState;
+    expect(seeded.districts['district-1']).toBeDefined();
+    expect(seeded.districts['district-1'].lastUpdateTick).toBe(0);
+
+    // Push the district off baseline so the tick's baseline-seeking decay is observable.
+    seeded.districts['district-1'].supplies.food.level = 20;
+
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.ok).toBe(true);
+
+    const ticked = getDistrictEconomy(engine.world, 'district-1')!;
+    // Ticked this round (lastUpdateTick advances from 0), and baseline-seeking
+    // decay moved food back toward 50 from the 20 we forced it to.
+    expect(ticked.lastUpdateTick).toBe(engine.tick);
+    expect(getSupplyLevel(ticked, 'food')).toBeGreaterThan(20);
+  });
+
+  it('reads commerce verbatim and stability ×10 from district-core\'s live getDistrictState', () => {
+    // district-core's own stability metric is a ~0-10 zone-property average
+    // (this file's own DISTRICT_STABILITY_BASE comment documents the same
+    // units mismatch for pressure inputs), while tickDistrictEconomy's
+    // STABILITY_DRIFT_THRESHOLD (30) assumes 0-100 — the tick step scales by
+    // ×10. Proven structurally: the tick's own output must equal an
+    // independent call to tickDistrictEconomy with commerce read verbatim and
+    // stability pre-scaled, not just "some value changed".
+    const engine = makeEconomyEngine();
+    const districtState = getDistrictState(engine.world, 'district-1')!;
+    districtState.commerce = 90;
+    districtState.stability = 7;
+
+    const before = getDistrictEconomy(engine.world, 'district-1')!;
+    const expected = tickDistrictEconomy(before, 90, 70, engine.tick);
+
+    runWorldTick(engine, { genre: 'fantasy' });
+
+    expect(getDistrictEconomy(engine.world, 'district-1')).toEqual(expected);
+  });
+
+  it('is a no-op when the pack never registered economy-core (nothing to tick, no throw)', () => {
+    const engine = makeBareEngine();
+    expect(engine.world.modules['economy-core']).toBeUndefined();
+    const result = runWorldTick(engine);
+    expect(result.ok).toBe(true);
+    expect(engine.world.modules['economy-core']).toBeUndefined();
+  });
+});
+
 describe('buildPressureInputs — the globals-to-inputs mapping', () => {
   it('derives reputation/alert/cohesion and safety-based district stability', () => {
     const engine = makeBareEngine({
@@ -521,6 +600,75 @@ describe('buildPressureInputs — the globals-to-inputs mapping', () => {
     expect(inputs.genre).toBe('fantasy');
     expect(inputs.currentTick).toBe(5);
     expect(inputs.playerRumors).toEqual([]);
+  });
+
+  it('sets districtEconomies from world.modules[\'economy-core\'] (F-6008456f)', () => {
+    const engine = createTestEngine({
+      modules: [createEconomyCore({ districts: [{ id: 'district-1', tags: [] }] })],
+      entities: [makePlayer()],
+      zones,
+    });
+    const world = engine.world;
+    const inputs = buildPressureInputs(world, getWorldTickState(world), 'fantasy', 5, []);
+
+    expect(inputs.districtEconomies).toBeInstanceOf(Map);
+    expect(inputs.districtEconomies?.size).toBe(1);
+    expect(inputs.districtEconomies?.get('district-1')).toEqual(
+      (engine.world.modules['economy-core'] as EconomyCoreState).districts['district-1'],
+    );
+  });
+
+  it('degrades to an empty Map when the pack never registered economy-core', () => {
+    const engine = makeBareEngine();
+    const world = engine.store.state;
+    const inputs = buildPressureInputs(world, getWorldTickState(world), 'fantasy', 5, []);
+    expect(inputs.districtEconomies).toEqual(new Map());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-6008456f, the RED-PROOF: the 4 economy-driven pressure kinds were fully
+// authored in pressure-system.ts/pressure-resolution.ts but could never fire
+// — evaluateEconomyRules' own guard (`if (!districtEconomies ||
+// districtEconomies.size === 0) return null`) was permanently tripped because
+// buildPressureInputs never set the field at all. This test proves it can
+// fire now that economy-core is wired and buildPressureInputs threads it
+// through — and the companion test proves it still can't with economy-core
+// absent (the exact pre-fix condition), so the contrast is the RED-PROOF.
+// ---------------------------------------------------------------------------
+describe('world-tick — an economy pressure can fire once districtEconomies is present (F-6008456f)', () => {
+  it('supply-crisis spawns when a district has a critically low essential supply', () => {
+    const engine = createTestEngine({
+      modules: [
+        createEnvironmentCore(),
+        createDistrictCore({ districts: [{ id: 'district-1', name: 'Market', zoneIds: ['zone-a'], tags: [] }] }),
+        createEconomyCore({ districts: [{ id: 'district-1', tags: [] }] }),
+        createWorldTick(),
+      ],
+      entities: [makePlayer()],
+      zones,
+      globals: { [HEAT_KEY]: HEAT_WAKE_THRESHOLD }, // opens the spawn valve; no reputation/rumors set, so universal rules stay silent
+    });
+
+    const seeded = engine.world.modules['economy-core'] as EconomyCoreState;
+    seeded.districts['district-1'].supplies.food.level = 5; // below the 15 threshold
+
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+
+    expect(result.ok).toBe(true);
+    expect(result.spawned.some((p) => p.kind === 'supply-crisis')).toBe(true);
+    expect(pressureEvents(engine).some((e) => e.type === 'pressure.spawned' && e.payload.kind === 'supply-crisis')).toBe(true);
+  });
+
+  it('the SAME low-supply scenario spawns nothing when economy-core is not registered (the pre-fix condition)', () => {
+    const engine = makeBareEngine({ [HEAT_KEY]: HEAT_WAKE_THRESHOLD });
+    // No economy-core module at all — world.modules['economy-core'] never
+    // exists, so buildPressureInputs' districtEconomies is an empty Map and
+    // evaluateEconomyRules' guard returns null every time (dead code path).
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+
+    expect(result.ok).toBe(true);
+    expect(result.spawned.some((p) => p.kind === 'supply-crisis')).toBe(false);
   });
 });
 

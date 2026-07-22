@@ -795,5 +795,15 @@ export const itemCatalog: ItemCatalog = {
       grantedTags: ['armed', 'sea-blessed'],
       grantedVerbs: ['rend'],
     },
+    {
+      // F-d70c722d: granted via a bespoke item-use effect (rumBarrelEffect)
+      // but had no itemCatalog entry — mirrors the healing-draught/antibiotics
+      // fix (F-a7a22999/F-b34a5c82).
+      id: 'rum-barrel',
+      name: 'Rum Barrel',
+      description: 'A tapped barrel of dark rum, passed hand to hand belowdecks.',
+      slot: 'tool',
+      rarity: 'common',
+    },
   ],
 };

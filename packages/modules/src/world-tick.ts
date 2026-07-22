@@ -21,6 +21,13 @@
 //      the entered zone. Runs first so the ambush's narration lands ahead of
 //      the strategic pressure beats in the round's delta. Packs that never
 //      registered spawn content are a byte-identical no-op.
+//   0b. economy tick (F-d0b5edb5): every district economy-core seeded
+//      (createEconomyCore, buildWorldStack) ticks once via tickDistrictEconomy,
+//      fed by district-core's own live commerce/stability. The write-wire
+//      that finally activates director.ts's MARKET OVERVIEW/FACTIONS sections
+//      and endgame.ts's merchant-prince arc/collapse trigger — and feeds this
+//      round's buildPressureInputs (step 5) below. No-op when the pack never
+//      registered economy-core (nothing to tick).
 //   1. accumulate milestones from the eventLog delta (boss kills feed the
 //      genre spawn rules' milestone conditions)
 //   2. tickPressures — the module's own lifecycle: timers decrement, expired
@@ -48,9 +55,15 @@
 // rumor-propagation's belief-transport records are a different shape from
 // PlayerRumor and inventing valence/spread here would fake a system that
 // doesn't exist yet, so the rumor-gated spawn rules stay dormant. Economy
-// inputs are omitted until a district-economy store is wired. Fallout rumor /
-// title-trigger / economy-shift / spawn-opportunity effects are not applied to
-// any store — they ride the `pressure.expired` payload for downstream layers.
+// inputs (F-d0b5edb5/F-6008456f): district economies now tick every round
+// (step 0b below) and buildPressureInputs sets districtEconomies from the
+// same store, so the 4 economy-driven pressure kinds (supply-crisis,
+// trade-war, black-market-boom, crafting-shortage) can fire for any pack that
+// registers economy-core (buildWorldStack does, unconditionally). Fallout
+// rumor / title-trigger / economy-shift / spawn-opportunity effects are still
+// not applied to any store — they ride the `pressure.expired` payload for
+// downstream layers (a pressure's OWN resolution fallout is a separate,
+// still-open wire from the district-economy store this file now ticks).
 
 import type { Engine, EngineModule, WorldState } from '@ai-rpg-engine/core';
 import {
@@ -61,8 +74,9 @@ import {
   type PressureInputs,
 } from './pressure-system.js';
 import { computeFallout, type PressureFallout } from './pressure-resolution.js';
-import { getDistrictForZone } from './district-core.js';
+import { getDistrictForZone, getDistrictState } from './district-core.js';
 import { runEncounterSpawnStep, type SpawnedEncounterReport } from './encounter-spawn.js';
+import { getEconomyCoreState, setDistrictEconomy, tickDistrictEconomy } from './economy-core.js';
 
 // ---------------------------------------------------------------------------
 // Tuning constants (exported so tests pin the thresholds, not magic numbers)
@@ -355,6 +369,36 @@ function getPlayerDistrictId(world: WorldState): string | undefined {
   return zoneId ? getDistrictForZone(world, zoneId) : undefined;
 }
 
+/**
+ * Tick every district economy-core seeded, once per round (F-d0b5edb5): the
+ * write-wire that activates createDistrictEconomy's persisted state. Reads
+ * each district's live commerce/stability from district-core's own
+ * getDistrictState. Commerce rides district-core's 0-100 gauge directly;
+ * stability is scaled ×10 because district-core's own metric is a ~0-10
+ * zone-property average (the same units mismatch DISTRICT_STABILITY_BASE's
+ * own comment documents for pressure inputs), while tickDistrictEconomy's
+ * STABILITY_DRIFT_THRESHOLD (30) and its own tests assume a 0-100 scale —
+ * district-core's default (5) lands exactly on economy-core's neutral
+ * baseline (50) after the ×10 scale, so an unconfigured district ticks as
+ * neutral on both sides. A district absent from district-core (mismatched
+ * configs) falls back to the same neutral defaults. No-op when the pack
+ * never registered economy-core — getEconomyCoreState degrades to {} (see
+ * its own accessor contract).
+ */
+function tickDistrictEconomies(world: WorldState, currentTick: number): void {
+  const { districts } = getEconomyCoreState(world);
+  for (const districtId of Object.keys(districts)) {
+    const district = getDistrictState(world, districtId);
+    const commerce = district?.commerce ?? 50;
+    const stability = (district?.stability ?? 5) * 10;
+    setDistrictEconomy(
+      world,
+      districtId,
+      tickDistrictEconomy(districts[districtId], commerce, stability, currentTick),
+    );
+  }
+}
+
 /** Accumulate milestones from the eventLog delta since the last tick. */
 function collectMilestones(world: WorldState, state: WorldTickState): void {
   const log = world.eventLog;
@@ -435,12 +479,21 @@ export function buildPressureInputs(
     };
   }
 
+  // District economies (F-6008456f): the SAME store F-d0b5edb5's economy tick
+  // persists (world.modules['economy-core'].districts), converted to the Map
+  // shape PressureInputs.districtEconomies declares. Empty when the pack never
+  // registered economy-core — evaluatePressures' economy branch already
+  // guards on `districtEconomies.size === 0` and degrades to null, exactly
+  // like every other axis here degrades when its module is absent.
+  const districtEconomies = new Map(Object.entries(getEconomyCoreState(world).districts));
+
   return {
     playerRumors: [], // documented ceiling — see file header
     reputation,
     milestones: state.milestones,
     factionStates,
     districtMetrics,
+    districtEconomies,
     playerLevel: 1, // unread by every authored spawn rule; wire when one reads it
     totalTurns: currentTick,
     activePressures,
@@ -601,6 +654,11 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   // round keeps ONE world tick; its `encounter.spawned` event rides the same
   // round delta the narration presents.
   const encounters = runEncounterSpawnStep(engine);
+
+  // 0b. Economy tick (F-d0b5edb5) — see file header. No events emitted (same
+  // silent-ledger posture district-core's own decay tick has); the state feeds
+  // step 5's buildPressureInputs and director.ts/endgame.ts's own reads.
+  tickDistrictEconomies(world, currentTick);
 
   // 1. Milestones from the delta (before we append our own events).
   collectMilestones(world, state);

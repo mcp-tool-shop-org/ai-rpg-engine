@@ -35,6 +35,18 @@
 //     validated INSIDE createQuestCore and throws at assembly on any problem
 //     (fail-loud is that module's contract — invalid quests are a content
 //     bug, not a degradable warning like an unspawnable table entry).
+//   - economy-core and trade-core (F-d0b5edb5/F-6c3e4fde) are ALWAYS
+//     included — the SAME always-included-but-possibly-empty contract
+//     district-core itself has, not presence-optional like quests/
+//     encounterSpawn. economy-core seeds a DistrictEconomy for every entry in
+//     the SAME `districts` roster district-core receives (a pack with no
+//     districts registers the namespace governing {}); trade-core needs no
+//     config at all (it registers the `sell` verb and infers pricing purely
+//     from the item id — see trade-core.ts's own header). This is the
+//     write-wire that retroactively activates code that was already built and
+//     waiting: director.ts's MARKET OVERVIEW ledger + FACTIONS' economy-driven
+//     goal scoring, endgame.ts's merchant-prince arc/collapse triggers, and
+//     the 4 economy-driven pressure kinds in pressure-system.ts.
 
 import type { EngineModule } from '@ai-rpg-engine/core';
 import { createEnvironmentCore } from './environment-core.js';
@@ -55,6 +67,8 @@ import { createEncounterSpawn, validateEncounterSpawnContent } from './encounter
 import type { EncounterSpawnConfig } from './encounter-spawn.js';
 import { createQuestCore } from './quest-core.js';
 import type { QuestCoreConfig } from './quest-core.js';
+import { createEconomyCore } from './economy-core.js';
+import { createTradeCore } from './trade-core.js';
 
 // ---------------------------------------------------------------------------
 // buildWorldStack — eliminates the strategic-tier hand-list
@@ -143,9 +157,10 @@ export type WorldStack = {
  * ```
  *
  * Default composition (always included, in wiring order): environment-core,
- * faction-cognition, rumor-propagation, district-core, belief-provenance,
- * observer-presentation, defeat-fallout, world-tick. Presence-optional:
- * encounter-spawn (included when `encounterSpawn` is passed).
+ * faction-cognition, rumor-propagation, district-core, economy-core,
+ * trade-core, belief-provenance, observer-presentation, defeat-fallout,
+ * world-tick. Presence-optional: encounter-spawn (included when
+ * `encounterSpawn` is passed), quests (included when `quests` is passed).
  *
  * Usage:
  * ```
@@ -179,6 +194,10 @@ export function buildWorldStack(config: WorldStackConfig = {}): WorldStack {
       districts: config.districts ?? [],
       ...(config.districtDecay ? { decay: config.districtDecay } : {}),
     }),
+    // F-d0b5edb5/F-6c3e4fde: always included, same district roster
+    // district-core received — see the file-header contract entry above.
+    createEconomyCore({ districts: config.districts ?? [] }),
+    createTradeCore(),
     createBeliefProvenance(),
     createObserverPresentation({ rules: config.presentationRules ?? [] }),
     // The one roster serves both: defeat-fallout reads factionId + entityIds

@@ -477,7 +477,7 @@ export type {
   NpcObligationLedger,
 } from './npc-agency.js';
 
-// --- Economy Core (v1.7) ---
+// --- Economy Core (v1.7; module wiring v2.8 F-d0b5edb5) ---
 export {
   createDistrictEconomy,
   tickDistrictEconomy,
@@ -491,6 +491,10 @@ export {
   formatEconomyForNarrator,
   formatEconomyForDirector,
   formatAllDistrictEconomiesForDirector,
+  createEconomyCore,
+  getEconomyCoreState,
+  getDistrictEconomy,
+  setDistrictEconomy,
 } from './economy-core.js';
 export type {
   SupplyCategory,
@@ -500,6 +504,8 @@ export type {
   SurplusDegree,
   EconomyDescriptor,
   EconomyShift,
+  EconomyCoreConfig,
+  EconomyCoreState,
 } from './economy-core.js';
 
 // --- Trade Value (v1.7) ---
@@ -521,6 +527,16 @@ export type {
   ItemValueResult,
   TradeEffect,
 } from './trade-value.js';
+
+// --- Trade Core (v2.8: F-6c3e4fde — the sell verb) ---
+export {
+  createTradeCore,
+  tradeCore,
+  inferSupplyCategory,
+  SELL_BASE_VALUE,
+  SELL_SUPPLY_RAISE,
+  SELL_CURRENCY,
+} from './trade-core.js';
 
 // --- Crafting Core (v1.8) ---
 export {

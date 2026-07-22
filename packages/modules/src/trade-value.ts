@@ -35,13 +35,13 @@ export type TradeContext = {
 export type ValueModifiers = {
   /** 0.5-3.0 — scarce items are worth more */
   scarcityMultiplier: number;
-  /** 0.7-1.5 — hostile factions gouge, friendly ones discount */
+  /** 0.85-1.5 — hostile factions gouge, friendly ones discount */
   factionAttitude: number;
   /** 1.0-2.0 — notorious/relic items command premiums */
   provenanceNotoriety: number;
   /** 0.0-1.0 — contraband penalty if no black market */
   contrabandPenalty: number;
-  /** 0.8-1.2 — district prosperity scales */
+  /** 0.85-1.2 — district prosperity scales */
   districtProsperity: number;
   /** 0.8-1.5 — active pressures inflate or deflate */
   pressureModifier: number;

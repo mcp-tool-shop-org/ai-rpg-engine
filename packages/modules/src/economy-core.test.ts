@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { createTestEngine } from '@ai-rpg-engine/core';
 import {
   createDistrictEconomy,
   applyEconomyShift,
@@ -11,6 +12,11 @@ import {
   formatEconomyForNarrator,
   formatEconomyForDirector,
   formatAllDistrictEconomiesForDirector,
+  createEconomyCore,
+  getEconomyCoreState,
+  getDistrictEconomy,
+  setDistrictEconomy,
+  type EconomyCoreState,
 } from './economy-core.js';
 
 describe('createDistrictEconomy', () => {
@@ -267,5 +273,54 @@ describe('formatting', () => {
     expect(text).toContain('MARKET OVERVIEW');
     expect(text).toContain('Market Square');
     expect(text).toContain('Undercity');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createEconomyCore — the pack-load write-wire (F-d0b5edb5). Before this
+// module existed, createDistrictEconomy/tickDistrictEconomy had zero callers
+// outside this test file — world.modules['economy-core'] never existed in
+// any played session. These tests prove the module actually persists it, at
+// the EXACT shape director.ts's readDistrictEconomies() and endgame.ts's
+// buildEndgameInputs() already read defensively.
+// ---------------------------------------------------------------------------
+describe('createEconomyCore — the pack-load write-wire (F-d0b5edb5)', () => {
+  it('seeds world.modules[\'economy-core\'] = { districts } at construction, keyed by district id', () => {
+    const engine = createTestEngine({
+      modules: [createEconomyCore({ districts: [{ id: 'market-row', tags: ['market'] }], genre: 'fantasy' })],
+    });
+
+    const state = engine.world.modules['economy-core'] as EconomyCoreState;
+    expect(state).toBeDefined();
+    expect(state.districts['market-row']).toBeDefined();
+    // fantasy genre default (45) + market tag (+10) — createDistrictEconomy's
+    // own documented composition, just reached this time through the module.
+    expect(getSupplyLevel(state.districts['market-row'], 'luxuries')).toBe(55);
+  });
+
+  it('registers as { districts: {} } with no districts — district-core\'s own always-included-but-possibly-empty contract', () => {
+    const engine = createTestEngine({ modules: [createEconomyCore({ districts: [] })] });
+    expect(engine.world.modules['economy-core']).toEqual({ districts: {} });
+  });
+
+  it('getDistrictEconomy / setDistrictEconomy round-trip through the live namespace', () => {
+    const engine = createTestEngine({
+      modules: [createEconomyCore({ districts: [{ id: 'd1', tags: [] }] })],
+    });
+    const world = engine.world;
+
+    const before = getDistrictEconomy(world, 'd1');
+    expect(before).toBeDefined();
+
+    const shifted = applyEconomyShift(before!, { districtId: 'd1', category: 'food', delta: 20, cause: 'test' });
+    setDistrictEconomy(world, 'd1', shifted);
+
+    expect(getSupplyLevel(getDistrictEconomy(world, 'd1')!, 'food')).toBe(70);
+  });
+
+  it('getEconomyCoreState degrades to { districts: {} } on a world whose pack never registered economy-core', () => {
+    const engine = createTestEngine({ modules: [] });
+    expect(getEconomyCoreState(engine.world)).toEqual({ districts: {} });
+    expect(getDistrictEconomy(engine.world, 'anything')).toBeUndefined();
   });
 });

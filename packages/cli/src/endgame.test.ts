@@ -164,14 +164,34 @@ describe('buildEndgameInputs (F-ENG005) — live inputs from persisted state', (
     };
   }
 
-  it('a zero-state world reproduces the previous behavior: zero heat, level 1, empty pressures/companions/economies', () => {
+  it('a zero-state world reproduces the previous behavior: zero heat, level 1, empty pressures/companions', () => {
     const engine = makeGame();
     const inputs = buildEndgameInputs(engine.world);
     expect(inputs.playerLeverage.heat).toBe(0);
     expect(inputs.playerLevel).toBe(1);
     expect(inputs.activePressures).toEqual([]);
     expect(inputs.companions).toEqual([]);
-    expect(inputs.districtEconomies.size).toBe(0);
+  });
+
+  // F-d0b5edb5: buildWorldStack now seeds economy-core unconditionally (the
+  // write-wire this fix is for), so districtEconomies is no longer
+  // permanently empty for a REAL played session — this replaces the old
+  // assertion above, which pinned the exact bug F-d0b5edb5 closes. The
+  // "pack never registered economy-core at all" case is covered separately
+  // below and still degrades to an empty Map.
+  it('F-d0b5edb5: a live starter engine seeds economy-core, so districtEconomies reflects real play', () => {
+    const engine = makeGame();
+    const inputs = buildEndgameInputs(engine.world);
+    expect(inputs.districtEconomies.size).toBe(2); // starter-fantasy's two districts
+    expect(inputs.districtEconomies.has('chapel-grounds')).toBe(true);
+    expect(inputs.districtEconomies.has('crypt-depths')).toBe(true);
+  });
+
+  it('districtEconomies degrades to an empty Map for a world whose pack never registered economy-core', () => {
+    const engine = makeGame();
+    const world = structuredClone(engine.world);
+    delete world.modules['economy-core'];
+    expect(buildEndgameInputs(world).districtEconomies.size).toBe(0);
   });
 
   it('heat is sourced from defeat-fallout\'s exact global key world.globals["player_heat"]', () => {

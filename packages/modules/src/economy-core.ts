@@ -1,7 +1,25 @@
 // economy-core — category-level supply tracking per district
 // v1.7: Districts develop meaningful supply conditions — medicine scarce,
 // ammunition plentiful, contraband abundant. Category-level pressure,
-// not individual item inventories. Pure functions, no module registration.
+// not individual item inventories.
+//
+// v2.8 (F-d0b5edb5): createDistrictEconomy/tickDistrictEconomy were pure
+// functions with zero callers outside their own test file — no played
+// session ever created world.modules['economy-core'], so director.ts's
+// MARKET OVERVIEW ledger section and FACTIONS' economy-driven goal scoring,
+// endgame.ts's merchant-prince arc/collapse triggers, and the 4 economy-
+// driven pressure kinds (pressure-system.ts) all sat dormant behind a
+// defensively-empty read. createEconomyCore below is the write-wire: a
+// module (the district-core/quest-core idiom) that seeds one DistrictEconomy
+// per district at pack-load and persists it at the EXACT shape those readers
+// already expect: world.modules['economy-core'] = { districts }. Per-round
+// ticking lives in world-tick.ts's tickWorld (this file only seeds and
+// exposes read/write accessors) — same split as district-core (state +
+// accessors here, the round-driver owns the cadence) except district-core
+// also owns its own tick verb; economy-core's tick is driven entirely by
+// world-tick.ts, so no verb is registered here.
+
+import type { EngineModule, WorldState } from '@ai-rpg-engine/core';
 
 // --- Types ---
 
@@ -396,4 +414,88 @@ function renderBar(value: number): string {
 
 function padRight(s: string, width: number): string {
   return s + ' '.repeat(Math.max(0, width - s.length));
+}
+
+// --- Module (v2.8: F-d0b5edb5 write-wire) ---
+
+/** Config accepted by createEconomyCore — only id/tags are read (district-core's own DistrictDefinition satisfies this shape). */
+export type EconomyCoreConfig = {
+  /** Districts to seed a DistrictEconomy for. */
+  districts: { id: string; tags: string[] }[];
+  /** Genre-flavored starting supply profile (GENRE_SUPPLY_DEFAULTS). Omit for baseline+tag defaults only. */
+  genre?: string;
+};
+
+/** The persisted shape: world.modules['economy-core'] — read defensively today by director.ts and endgame.ts. */
+export type EconomyCoreState = {
+  districts: Record<string, DistrictEconomy>;
+};
+
+const ECONOMY_MODULE_ID = 'economy-core';
+
+/**
+ * The economy-core module: seeds one DistrictEconomy per district at
+ * pack-load (createDistrictEconomy(genre, tags), this file's own factory)
+ * and persists it under world.modules['economy-core'] = { districts } — the
+ * literal shape director.ts's readDistrictEconomies() and endgame.ts's
+ * buildEndgameInputs() already read defensively (F-d0b5edb5). Per-round
+ * ticking is world-tick.ts's job (tickWorld calls tickDistrictEconomy per
+ * district via the accessors below); this factory only seeds the initial
+ * state, the same division of labor createWorldTick already has with the
+ * pressure lifecycle it drives.
+ *
+ * Always included in buildWorldStack (world-stack.ts) — same contract as
+ * district-core: a pack with no districts still registers the namespace, it
+ * just governs {} (no separate presence flag to check).
+ */
+export function createEconomyCore(config: EconomyCoreConfig): EngineModule {
+  const districts: Record<string, DistrictEconomy> = {};
+  for (const def of config.districts) {
+    districts[def.id] = createDistrictEconomy(config.genre, def.tags);
+  }
+  const initialState: EconomyCoreState = { districts };
+
+  return {
+    id: ECONOMY_MODULE_ID,
+    version: '1.0.0',
+
+    register(ctx) {
+      ctx.persistence.registerNamespace(ECONOMY_MODULE_ID, initialState);
+    },
+  };
+}
+
+/**
+ * Non-attaching read of this world's economy-core namespace — degrades to
+ * `{ districts: {} }` when absent or malformed (a world whose pack never
+ * wired the module, or a hand-built WorldState in a test). Mirrors the
+ * world-tick.ts accessor contract: pure read, safe on any world.
+ */
+export function getEconomyCoreState(world: WorldState): EconomyCoreState {
+  const ns = world.modules[ECONOMY_MODULE_ID];
+  if (ns && typeof ns === 'object' && !Array.isArray(ns)) {
+    const districts = (ns as { districts?: unknown }).districts;
+    if (districts && typeof districts === 'object' && !Array.isArray(districts)) {
+      return { districts: districts as Record<string, DistrictEconomy> };
+    }
+  }
+  return { districts: {} };
+}
+
+/** A single district's live economy, or undefined when unseeded/absent. */
+export function getDistrictEconomy(world: WorldState, districtId: string): DistrictEconomy | undefined {
+  return getEconomyCoreState(world).districts[districtId];
+}
+
+/**
+ * Write a district's economy back (tick results, trade-driven shifts). No-op
+ * when the namespace is absent — a pack that never wired economy-core has
+ * nothing to write into, the same tolerant-writer posture the rest of this
+ * module's readers take toward absence.
+ */
+export function setDistrictEconomy(world: WorldState, districtId: string, economy: DistrictEconomy): void {
+  const ns = world.modules[ECONOMY_MODULE_ID];
+  if (ns && typeof ns === 'object' && !Array.isArray(ns)) {
+    (ns as EconomyCoreState).districts[districtId] = economy;
+  }
 }

@@ -21,6 +21,8 @@ import {
   deductionTree,
   detectiveAbilities,
   buildCatalog,
+  itemCatalog,
+  smellingSaltsEffect,
 } from './content.js';
 import { detectiveMinimalRuleset } from './ruleset.js';
 
@@ -135,5 +137,17 @@ describe('detective content — cross-reference integrity (F-4806a2c9)', () => {
 describe('detective encounter tables (F-ENG005-encounter-spawn-wiring)', () => {
   it('every table entry references an authored, spawnable encounter valid for its zone', () => {
     expect(validateEncounterSpawnContent(encounterSpawnContent, authoredZones)).toEqual([]);
+  });
+});
+
+// F-d70c722d: smelling-salts is granted via a bespoke item-use effect
+// (smellingSaltsEffect) but had no itemCatalog entry — the same shape as
+// F-a7a22999/F-b34a5c82 (healing-draught/antibiotics).
+describe('detective content — item catalog completeness (F-d70c722d)', () => {
+  it('every item-use effect has a matching itemCatalog entry', () => {
+    const itemIds = new Set(itemCatalog.items.map((i) => i.id));
+    for (const effect of [smellingSaltsEffect]) {
+      expect(itemIds.has(effect.itemId), `granted item "${effect.itemId}" missing from itemCatalog`).toBe(true);
+    }
   });
 });

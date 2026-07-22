@@ -162,6 +162,21 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
     expect(JSON.stringify(engine.world)).toBe(before);
   });
 
+  // F-d0b5edb5: before this wire, buildWorldStack never seeded economy-core,
+  // so a REAL played session's world.modules['economy-core'] never existed
+  // and this section could never render outside the hand-planted fixture
+  // below. Now every starter (via buildWorldStack) seeds one, so the SAME
+  // live createGame() engine the DISTRICTS assertion above already uses also
+  // renders MARKET OVERVIEW — no test-only state-hacking required.
+  it('F-d0b5edb5: a live starter engine now seeds economy-core too, so MARKET OVERVIEW renders from real play', () => {
+    const engine = createGame(42);
+    const report = renderDirectorLedger(engine);
+
+    expect(report).toContain('  MARKET OVERVIEW');
+    expect(report).toContain('  Chapel Grounds (chapel-grounds): ');
+    expect(report).toContain('  Crypt Depths (crypt-depths): ');
+  });
+
   it('districts + market overview render from district-core and economy-core state', () => {
     const world = bareWorld();
     world.modules['district-core'] = {

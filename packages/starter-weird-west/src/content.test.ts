@@ -11,7 +11,15 @@ import { encounterSpawnContent, zones as authoredZones } from './content.js';
 import { validateGameContent, validateAbilityPack } from '@ai-rpg-engine/content-schema';
 import type { ContentPack } from '@ai-rpg-engine/content-schema';
 import { createGame } from './setup.js';
-import { buildCatalog, gunslingerTree, bartenderDialogue, weirdWestAbilities, weirdWestStatusDefinitions } from './content.js';
+import {
+  buildCatalog,
+  gunslingerTree,
+  bartenderDialogue,
+  weirdWestAbilities,
+  weirdWestStatusDefinitions,
+  itemCatalog,
+  sageBundleEffect,
+} from './content.js';
 import { weirdWestMinimalRuleset } from './ruleset.js';
 
 describe('weird-west content — progression tree references', () => {
@@ -95,5 +103,17 @@ describe('weird-west content — cross-reference integrity (F-4806a2c9)', () => 
 describe('weird west encounter tables (F-ENG005-encounter-spawn-wiring)', () => {
   it('every table entry references an authored, spawnable encounter valid for its zone', () => {
     expect(validateEncounterSpawnContent(encounterSpawnContent, authoredZones)).toEqual([]);
+  });
+});
+
+// F-d70c722d: sage-bundle is granted via a bespoke item-use effect
+// (sageBundleEffect) but had no itemCatalog entry — the same shape as
+// F-a7a22999/F-b34a5c82 (healing-draught/antibiotics).
+describe('weird-west content — item catalog completeness (F-d70c722d)', () => {
+  it('every item-use effect has a matching itemCatalog entry', () => {
+    const itemIds = new Set(itemCatalog.items.map((i) => i.id));
+    for (const effect of [sageBundleEffect]) {
+      expect(itemIds.has(effect.itemId), `granted item "${effect.itemId}" missing from itemCatalog`).toBe(true);
+    }
   });
 });
