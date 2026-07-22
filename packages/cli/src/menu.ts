@@ -31,10 +31,41 @@
 // `group: 'journal'` and never submits the verb — reading the journal costs
 // no turn. Menu order is personal → strategic → operator: journal, director,
 // then the env-gated debug entry last.
+//
+// v3.0 wave-2 "menu-surface" (V3-MENU-1..3) closes three gaps left open by
+// the v2.9 menu-integration wave:
+//   (1) buildBuyActions/buildCraftActions computed genre straight off
+//       world.meta.activeRuleset ('fantasy-minimal'), which never matched the
+//       bare GENRE_BUYABLE_STOCK/GENRE_RECIPES keys ('fantasy') — every world
+//       silently rendered the universal fallback. normalizeGenre (below)
+//       strips the fixed '-minimal' suffix at every genre-lookup call site in
+//       this file (buy/craft/repair/modify) so genre-tabled stock/recipes
+//       actually display. A sibling wave-2 domain wires the matching
+//       MECHANICAL fix in world-stack (threading the same bare genre into
+//       trade-core/crafting-core's own config, which today receives none
+//       from any starter) — see normalizeGenre's own doc comment for the
+//       honest ceiling this display-only fix does not close alone.
+//   (2) buildCraftActions was deliberately craft-only (its own doc comment:
+//       repair/modify need a SECOND selection — a specific carried item
+//       alongside the recipe id — the flat entry shape didn't yet model).
+//       buildRepairActions/buildModifyActions add that item×recipe pairing.
+//   (3) buildLeverageActions surfaced only the 4 originally-wired verbs
+//       (bribe/intimidate/petition/seed); wave-1 "social-verbs" registered 21
+//       more across the social/rumor groups plus two brand-new groups
+//       (diplomacy/sabotage). buildLeverageActions now surfaces a curated,
+//       individually-gated subset of those (afford + cooldown + minimum
+//       reputation where authored) — see its own doc comment for the two
+//       sub-actions (deny/bury-scandal) deliberately deferred.
 
 import type { Engine, WorldState, EntityState, ScalarValue, QuestState } from '@ai-rpg-engine/core';
 import type { AbilityDefinition, ProgressionTreeDefinition, QuestDefinition, QuestStage } from '@ai-rpg-engine/content-schema';
-import type { SupplyCategory } from '@ai-rpg-engine/modules';
+import type {
+  SupplyCategory,
+  PlayerSocialVerb,
+  PlayerRumorVerb,
+  PlayerDiplomacyVerb,
+  PlayerSabotageVerb,
+} from '@ai-rpg-engine/modules';
 import {
   getAvailableAbilities,
   normalizeAbilityTarget,
@@ -59,6 +90,8 @@ import {
   isCooldownReady,
   getSocialRequirements,
   getRumorRequirements,
+  getDiplomacyRequirements,
+  getSabotageRequirements,
   getPersistedOpportunities,
   getDistrictDefinition,
 } from '@ai-rpg-engine/modules';
@@ -205,6 +238,29 @@ const BUY_CATEGORIES: SupplyCategory[] = [
 ];
 
 /**
+ * Normalize `world.meta.activeRuleset` (a per-starter ruleset id, e.g.
+ * 'fantasy-minimal') to the bare genre key GENRE_BUYABLE_STOCK/GENRE_RECIPES
+ * actually index by (e.g. 'fantasy') — v3.0 wave-2 menu-surface fix
+ * (V3-MENU-1). Every shipped starter's ruleset is exactly `<genre>-minimal`
+ * (see each starter's own content.ts/ruleset.ts — fantasy/cyberpunk/pirate/
+ * zombie/detective/colony/weird-west/gladiator/ronin/vampire all follow
+ * this), so stripping the fixed suffix recovers the genre losslessly. A
+ * ruleset that ISN'T of that shape (a test fixture's 'test'/'minimal'/
+ * 'none'/'proof'/etc.) simply doesn't end in '-minimal' and passes through
+ * unchanged — it was never going to match a genre table key either way, so
+ * this is a no-op for those, not a new failure mode.
+ *
+ * This is the DISPLAY half of a two-sided fix: a sibling wave-2 domain wires
+ * this SAME bare genre into world-stack's createTradeCore/createCraftingCore
+ * config (today neither actually receives one from any starter — see this
+ * function's call sites for the honest ceiling that remains) so the menu's
+ * preview and the verb handler's own resolution agree once both land.
+ */
+export function normalizeGenre(ruleset: string): string {
+  return ruleset.replace(/-minimal$/, '');
+}
+
+/**
  * Buy entries for every item this district currently offers (getBuyableStock,
  * per SupplyCategory) that the player can ALSO currently afford — the
  * "guaranteed to succeed" discipline this file's sell entries already follow:
@@ -215,18 +271,27 @@ const BUY_CATEGORIES: SupplyCategory[] = [
  * exact price buyHandler itself debits (single-sourced, no second pricing
  * copy to drift). [] when the player's zone has no district/economy at all.
  *
- * Honest ceiling (documented inline per this wave's instructions): genre here
- * is world.meta.activeRuleset — a per-starter ruleset id (e.g.
- * 'fantasy-minimal'), NOT the bare GENRE_BUYABLE_STOCK key ('fantasy').
- * This is the SAME source director.ts's own RECIPES section already uses for
- * an identical reason (see that file's comment) — getBuyableStock/
- * quoteBuyPrice degrade an unmatched genre to the generic DEFAULT_BUYABLE_STOCK
- * list, the same safe fallback every genre-keyed lookup in this engine
- * already takes; genre-flavored stock lights up once a pack threads a
- * matching genre through buildWorldStack's trade-core config (today,
- * buildWorldStack calls createTradeCore() with no genre at all, so this
- * ceiling is not even reached in production — every world sees
- * DEFAULT_BUYABLE_STOCK regardless of activeRuleset).
+ * DISPLAY fix (v3.0 wave-2 menu-surface, V3-MENU-1): genre here is
+ * world.meta.activeRuleset — a per-starter ruleset id (e.g.
+ * 'fantasy-minimal'), NOT the bare GENRE_BUYABLE_STOCK key ('fantasy') — the
+ * two strings never matched, so this menu always rendered the universal
+ * DEFAULT_BUYABLE_STOCK fallback regardless of activeRuleset. normalizeGenre
+ * strips the fixed '-minimal' suffix before this lookup so a genre-tabled
+ * starter's own flavored stock actually displays.
+ *
+ * Honest ceiling that REMAINS (a separate, deeper gap this display fix alone
+ * does not close): buildWorldStack still calls createTradeCore() with no
+ * genre config at all — no starter threads one through today — so the
+ * REGISTERED 'buy' verb handler itself still resolves against no genre
+ * regardless of what this preview now computes. A sibling wave-2 domain
+ * wires that mechanical side (the same bare-genre derivation, threaded into
+ * trade-core's own config via each starter's setup); once both land, this
+ * display and the handler's own resolution agree on the same genre-flavored
+ * stock. Until then, a genre-flavored item this function now previews for a
+ * genre-tabled starter is priced/offered correctly HERE but could still be
+ * rejected as "not for sale here" if actually submitted — the identical
+ * cross-domain gap buildCraftActions/buildRepairActions/buildModifyActions
+ * document for themselves below.
  */
 export function buildBuyActions(world: WorldState): ExtraAction[] {
   const player = world.entities[world.playerId];
@@ -237,7 +302,7 @@ export function buildBuyActions(world: WorldState): ExtraAction[] {
   const districtEconomy = districtId ? getDistrictEconomy(world, districtId) : undefined;
   if (!districtId || !districtEconomy) return [];
 
-  const genre = world.meta.activeRuleset;
+  const genre = normalizeGenre(world.meta.activeRuleset);
   const coin = player.resources[SELL_CURRENCY] ?? 0;
 
   const actions: ExtraAction[] = [];
@@ -353,11 +418,24 @@ export function buildSalvageActions(world: WorldState): ExtraAction[] {
  * affordability check and craftHandler's own context-ful one always agree
  * for every recipe this builder can ever offer.
  *
- * Honest ceiling (same source + same degrade as buildBuyActions' own):
- * genre is world.meta.activeRuleset, not crafting-recipes.ts's bare
- * GENRE_RECIPES key — getAvailableRecipes degrades an unmatched genre to
- * UNIVERSAL_RECIPES only, exactly the ceiling director.ts's own RECIPES
- * section documents for this identical call.
+ * DISPLAY fix (v3.0 wave-2 menu-surface, V3-MENU-1): genre is
+ * world.meta.activeRuleset, not crafting-recipes.ts's bare GENRE_RECIPES key
+ * — normalizeGenre (see buildBuyActions' own doc comment) strips the fixed
+ * '-minimal' suffix before this lookup so a genre-tabled starter's own
+ * flavored recipes actually display instead of silently degrading to
+ * UNIVERSAL_RECIPES every time.
+ *
+ * Honest ceiling that REMAINS (the same cross-domain gap buildBuyActions'
+ * own comment documents in full): buildWorldStack's `craftingGenre`
+ * passthrough to createCraftingCore exists but no starter threads a value
+ * into it today, so the REGISTERED 'craft' verb handler still resolves
+ * against no genre regardless of what this preview computes — a sibling
+ * wave-2 domain wires that starter-side plumbing; until it lands, a
+ * genre-flavored recipe this function now offers could still be rejected as
+ * "unknown recipe" if selected. UNIVERSAL_RECIPES-based craft recipes need no
+ * such wiring at all (getRecipeById/getAvailableRecipes spread
+ * UNIVERSAL_RECIPES unconditionally for every genre), so they resolve
+ * identically regardless of which genre string either side computes.
  */
 export function buildCraftActions(world: WorldState): ExtraAction[] {
   const player = world.entities[world.playerId];
@@ -368,7 +446,7 @@ export function buildCraftActions(world: WorldState): ExtraAction[] {
   if (!districtId) return []; // craftHandler itself rejects with no district to craft in
 
   const districtTags = getDistrictDefinition(world, districtId)?.tags ?? [];
-  const genre = world.meta.activeRuleset;
+  const genre = normalizeGenre(world.meta.activeRuleset);
   const recipes = getAvailableRecipes(genre, player.tags ?? [], districtTags).filter(
     (recipe) => recipe.category === 'craft',
   );
@@ -391,34 +469,293 @@ export function buildCraftActions(world: WorldState): ExtraAction[] {
 }
 
 // ---------------------------------------------------------------------------
+// Repair / Modify — item×recipe pairing (v3.0 wave-2 menu-surface, V3-MENU-2).
+// buildCraftActions' own comment (above) deferred repair/modify to this wave:
+// both need a SECOND selection alongside the recipe id — a specific carried
+// item (action.targetIds[0]) — that this file's flat, one-selection entry
+// shape didn't yet model. Both verbs were already reachable via free text
+// (`repair <recipeId>`/`modify <recipeId>` with a target) and the Director's
+// Ledger RECIPES section; this wires the numbered menu.
+// ---------------------------------------------------------------------------
+
+/**
+ * Repair entries: one numbered row per (affordable repair recipe, distinct
+ * carried item) pair.
+ *
+ * repairHandler (crafting-recipes.ts) never gates on the carried item's OWN
+ * type — verified from source: it checks only actor / recipe-category /
+ * `inventory.includes(itemId)` / canCraft's afford+meetsRequirements, no
+ * slot or tag compatibility check between the recipe and the item at all. So
+ * "eligible carried item" reduces to "carried" here — every distinct carried
+ * item pairs validly with every affordable repair recipe, the same
+ * "guaranteed to succeed" ceiling this file's other builders already hold
+ * themselves to. Distinct item ids only (mirrors buildSellActions' own
+ * grouping rationale) — repair never removes the target item from
+ * inventory, so N identical copies would just repeat one already-listed,
+ * identically-resolving row.
+ *
+ * canCraft is called with NO CraftingContext (2-arg form) — safe for the
+ * exact reason buildCraftActions' own comment gives: repair recipes never set
+ * `modificationKind` (only 'modify' recipes do — crafting-recipes.ts's own
+ * tables), so canCraft's only context-dependent branch
+ * (`modificationKind === 'black-market'`) can never fire for a repair recipe;
+ * the menu's context-less affordability check and repairHandler's own
+ * context-ful one always agree for every repair recipe this builder offers.
+ *
+ * Genre normalized the same way buildCraftActions' own call site now is
+ * (normalizeGenre, V3-MENU-1) — repair shares getAvailableRecipes with craft,
+ * so leaving it on the raw `<genre>-minimal` string would silently starve
+ * repair of every genre-flavored recipe craft itself now shows. Same honest
+ * ceiling as buildBuyActions/buildCraftActions: a genre-flavored repair
+ * recipe (there are none authored today — repair-weapon/repair-armor are
+ * both UNIVERSAL_RECIPES) will agree with the mechanical side once the
+ * sibling wave-2 domain's world-stack fix lands; UNIVERSAL_RECIPES entries
+ * need no such wiring at all and are safe today.
+ */
+export function buildRepairActions(world: WorldState): ExtraAction[] {
+  const player = world.entities[world.playerId];
+  if (!player) return [];
+
+  const inventory = player.inventory ?? [];
+  if (inventory.length === 0) return [];
+
+  const zoneId = player.zoneId ?? world.locationId;
+  const districtId = zoneId ? getDistrictForZone(world, zoneId) : undefined;
+  if (!districtId) return []; // repairHandler itself rejects with no district to repair in
+
+  const districtTags = getDistrictDefinition(world, districtId)?.tags ?? [];
+  const genre = normalizeGenre(world.meta.activeRuleset);
+  const recipes = getAvailableRecipes(genre, player.tags ?? [], districtTags).filter(
+    (recipe) => recipe.category === 'repair',
+  );
+  if (recipes.length === 0) return [];
+
+  const materials = getMaterialInventory(player.custom ?? {});
+  const carriedItems = [...new Set(inventory)];
+
+  const actions: ExtraAction[] = [];
+  for (const recipe of recipes) {
+    const check = canCraft(recipe, materials);
+    if (!check.affordable || !check.meetsRequirements) continue;
+    for (const itemId of carriedItems) {
+      actions.push({
+        verb: 'repair',
+        targetIds: [itemId],
+        parameters: { recipeId: recipe.id },
+        label: `${recipe.name} → ${itemId.replace(/-/g, ' ')}`,
+        group: 'crafting',
+      });
+    }
+  }
+  return actions;
+}
+
+/**
+ * Modify entries: the same item×recipe pairing as buildRepairActions, for
+ * 'modify'-category recipes. modifyHandler (crafting-recipes.ts) is likewise
+ * item-type-agnostic — no slot/tag check between recipe and item — so
+ * "eligible carried item" again reduces to "carried".
+ *
+ * Black-market modify recipes (`modificationKind === 'black-market'` —
+ * today just 'modify-black-market-tune') are EXCLUDED from this builder
+ * entirely — the one documented ceiling buildCraftActions' own comment
+ * already carries, for the same reason: canCraft's only context-dependent
+ * branch is exactly that check, and the CraftingContext that would tell it
+ * whether the player is actually standing in an active black market
+ * (`buildCraftingContext`, crafting-recipes.ts) is module-private — out of
+ * this domain's reach without editing that file. Calling canCraft with no
+ * context reports `meetsRequirements: true` for a black-market recipe
+ * UNCONDITIONALLY (the context-dependent branch only fires when a context
+ * IS passed) — offering it even outside an active black market, which
+ * modifyHandler's own context-ful call would then reject. Excluding the
+ * whole `modificationKind` value keeps every OTHER modify recipe's
+ * context-less check provably agreeing with modifyHandler's context-ful one:
+ * every remaining modificationKind (field-repair/enhancement/makeshift/
+ * faction-mark/blessed/cursed) only ever affects resolveModify's OUTPUT
+ * flavor, never canCraft's verdict.
+ */
+export function buildModifyActions(world: WorldState): ExtraAction[] {
+  const player = world.entities[world.playerId];
+  if (!player) return [];
+
+  const inventory = player.inventory ?? [];
+  if (inventory.length === 0) return [];
+
+  const zoneId = player.zoneId ?? world.locationId;
+  const districtId = zoneId ? getDistrictForZone(world, zoneId) : undefined;
+  if (!districtId) return []; // modifyHandler itself rejects with no district to work in
+
+  const districtTags = getDistrictDefinition(world, districtId)?.tags ?? [];
+  const genre = normalizeGenre(world.meta.activeRuleset);
+  const recipes = getAvailableRecipes(genre, player.tags ?? [], districtTags).filter(
+    (recipe) => recipe.category === 'modify' && recipe.modificationKind !== 'black-market',
+  );
+  if (recipes.length === 0) return [];
+
+  const materials = getMaterialInventory(player.custom ?? {});
+  const carriedItems = [...new Set(inventory)];
+
+  const actions: ExtraAction[] = [];
+  for (const recipe of recipes) {
+    const check = canCraft(recipe, materials);
+    if (!check.affordable || !check.meetsRequirements) continue;
+    for (const itemId of carriedItems) {
+      actions.push({
+        verb: 'modify',
+        targetIds: [itemId],
+        parameters: { recipeId: recipe.id },
+        label: `${recipe.name} → ${itemId.replace(/-/g, ' ')}`,
+        group: 'crafting',
+      });
+    }
+  }
+  return actions;
+}
+
+// ---------------------------------------------------------------------------
 // Leverage — bribe/intimidate/petition/seed entries (F-677e94ad/F-19a23718
 // write-wire, menu-integration wave)
 // ---------------------------------------------------------------------------
 
 /**
- * Leverage entries for the FOUR wired player-leverage verbs
- * (bribe/intimidate/petition/seed — player-leverage.ts's own documented
- * "exactly four verbs" scope). Each entry is offered ONLY when its full
- * success-predicate holds: resolveSocialAction/resolveRumorAction succeed IFF
- * canAfford(costs) — there is no additional hidden threshold (verified from
- * source: neither function checks reputation, alert, or anything else before
- * succeeding) — so afford + cooldown-ready is the COMPLETE guaranteed-success
- * gate, the same one socialVerbHandler/seedHandler themselves run before
- * resolving.
+ * v3.0 wave-1 "social-verbs" registered 21 more leverage verbs beyond the
+ * original four (bribe/intimidate/petition/seed) — the full social/rumor
+ * groups, plus two brand-new groups (diplomacy/sabotage). buildLeverageActions
+ * (below) surfaces a CURATED subset of them: every table here lists a verb
+ * this codebase's own resolve*Action source proves is safe to gate by
+ * afford + cooldown (+ minimum reputation where the requirement table sets
+ * one) alone — never a raw, ungated dump. Two sub-actions are deliberately
+ * EXCLUDED: 'deny'/'bury-scandal' (rumor group) mutate an EXISTING rumor by
+ * id (`action.parameters.rumorId`, player-leverage.ts's own
+ * rumorManipulationVerbHandler) — a third selection dimension (which rumor)
+ * this wave doesn't model, the same "defer the extra pairing dimension"
+ * choice buildCraftActions made for repair/modify before THIS wave wired
+ * those. They stay reachable via free text and the Director's Ledger.
  *
- * bribe/intimidate/petition all require a controlling faction at the
- * player's CURRENT district (socialVerbHandler rejects with no target
- * faction id — a faction-directed action with no faction is a no-op the menu
- * must never charge a turn for); seed has no such requirement and carries no
- * targetIds — its target faction is optional (seedHandler resolves fine with
- * targetFactionId undefined).
+ * Social sub-actions that hard-require a controlling-faction target — same
+ * shape/reasoning as bribe/intimidate/petition-authority, extended by
+ * player-leverage.ts's own socialVerbHandler doc comment: "call-in-favor/
+ * recruit-ally['s]... only meaningful effects are likewise
+ * targetFactionId-gated."
+ */
+const SOCIAL_FACTION_VERBS: { subAction: PlayerSocialVerb; label: (factionId: string) => string }[] = [
+  { subAction: 'call-in-favor', label: (id) => `Call in a favor with ${id.replace(/-/g, ' ')}` },
+  { subAction: 'recruit-ally', label: (id) => `Recruit an ally within ${id.replace(/-/g, ' ')}` },
+];
+
+/** Social sub-actions with NO target requirement — same "need not be about
+ *  anyone/anywhere in particular" shape 'seed' already has (socialVerbHandler
+ *  calls both with `{ requireTargetFaction: false }`). stake-claim's real
+ *  payload (the district) is derived from the actor's OWN zone inside the
+ *  handler, never from menu input — mirrored by 'seed' passing no targetIds
+ *  below despite a controlling faction sometimes being available. */
+const SOCIAL_FREE_VERBS: { subAction: PlayerSocialVerb; label: string }[] = [
+  { subAction: 'disguise', label: 'Adopt a disguise' },
+  { subAction: 'stake-claim', label: 'Stake a claim here' },
+];
+
+/** Rumor's "spawn family" — same no-target shape as 'seed' (every
+ *  resolveRumorAction switch case for these defaults gracefully with no
+ *  target faction, mirrored exactly by player-leverage.ts's own
+ *  rumorSpawnVerbHandler). deny/bury-scandal are excluded — see this
+ *  section's header comment. */
+const RUMOR_FREE_VERBS: { subAction: PlayerRumorVerb; label: string }[] = [
+  { subAction: 'frame', label: 'Frame someone else for it' },
+  { subAction: 'claim-false-credit', label: 'Claim false credit for a deed' },
+  { subAction: 'leak-truth', label: 'Leak an uncomfortable truth' },
+  { subAction: 'spread-counter-rumor', label: 'Spread a counter-rumor' },
+];
+
+/**
+ * Diplomacy (brand-new group this wave): every sub-action hard-requires a
+ * target faction — resolveDiplomacyAction's targetFactionId parameter is
+ * non-optional (`string`, not `string | undefined`), the type signature's
+ * own requirement, not a judgment call made here (player-leverage.ts's own
+ * diplomacyVerbHandler doc comment). Three of the seven ALSO gate on a
+ * minimum reputation (DIPLOMACY_REQUIREMENTS' own `minimumReputation` field —
+ * resolveDiplomacyAction checks it BEFORE affordability) — buildLeverageActions
+ * replicates that same check below so an under-reputation offer never reaches
+ * the menu (the "menu offers it, engine rejects it" trap this whole file
+ * avoids everywhere else).
+ */
+const DIPLOMACY_MENU_VERBS: { subAction: PlayerDiplomacyVerb; label: (factionId: string) => string }[] = [
+  { subAction: 'request-meeting', label: (id) => `Request a meeting with ${id.replace(/-/g, ' ')}` },
+  { subAction: 'improve-standing', label: (id) => `Improve standing with ${id.replace(/-/g, ' ')}` },
+  { subAction: 'cash-milestone', label: (id) => `Cash in a milestone with ${id.replace(/-/g, ' ')}` },
+  { subAction: 'negotiate-access', label: (id) => `Negotiate access with ${id.replace(/-/g, ' ')}` },
+  { subAction: 'trade-secret', label: (id) => `Trade a secret with ${id.replace(/-/g, ' ')}` },
+  { subAction: 'temporary-alliance', label: (id) => `Propose a temporary alliance with ${id.replace(/-/g, ' ')}` },
+  { subAction: 'broker-truce', label: (id) => `Broker a truce with ${id.replace(/-/g, ' ')}` },
+];
+
+/** Sabotage (brand-new group this wave): no sub-action hard-requires a
+ *  target — every one bakes in an UNCONDITIONAL 'heat' effect
+ *  (player-leverage.ts's own sabotageVerbHandler doc comment: "no sabotage
+ *  sub-action hard-requires one... there is no no-op case to guard
+ *  against"), so — like disguise/stake-claim/seed — these are offered with
+ *  no target regardless of whether a controlling faction is present here. */
+const SABOTAGE_MENU_VERBS: { subAction: PlayerSabotageVerb; label: string }[] = [
+  { subAction: 'sabotage', label: 'Sabotage something here' },
+  { subAction: 'plant-evidence', label: 'Plant false evidence' },
+  { subAction: 'blackmail-target', label: 'Blackmail a rival' },
+  { subAction: 'incite-riot', label: 'Incite a riot' },
+];
+
+/**
+ * Reputation toward `factionId`, merged the SAME way player-leverage.ts's own
+ * (module-private) playerReputationFor does: an authored faction baseline
+ * (world.factions[id].reputation) plus the accrued `reputation_<id>` global —
+ * replicated here rather than imported because it isn't exported (the same
+ * "each call site inlines this 2-line merge" idiom trade-core.ts and
+ * crafting-recipes.ts already follow independently, for the identical
+ * reason: a leverage/diplomacy action and a sale/craft must never disagree
+ * about how a faction feels about the player).
+ */
+function playerReputationForFaction(world: WorldState, factionId: string): number {
+  const base = world.factions?.[factionId]?.reputation ?? 0;
+  const delta = world.globals[`reputation_${factionId}`];
+  return base + (typeof delta === 'number' && Number.isFinite(delta) ? delta : 0);
+}
+
+/**
+ * Leverage entries for the original FOUR wired player-leverage verbs
+ * (bribe/intimidate/petition/seed) PLUS a curated extension (v3.0 wave-2
+ * menu-surface, V3-MENU-3) surfacing wave-1's 21 newly-registered verbs
+ * across all four groups — see the table comments above for the exact
+ * per-group gating this reuses. Every original-4 entry below is BYTE-FOR-BYTE
+ * unchanged from before this wave (same checks, same labels, same order) —
+ * only new entries are appended after them, so a state where nothing new
+ * applies renders an identical menu to pre-wave (V3-MENU-4).
+ *
+ * Each entry (old and new alike) is offered ONLY when its full
+ * success-predicate holds: resolveSocialAction/resolveRumorAction/
+ * resolveSabotageAction succeed IFF canAfford(costs) — there is no additional
+ * hidden threshold (verified from source: none of the three checks
+ * reputation, alert, or anything else before succeeding) — so afford +
+ * cooldown-ready is the COMPLETE guaranteed-success gate for those three
+ * groups, the same one socialVerbHandler/seedHandler themselves run before
+ * resolving. resolveDiplomacyAction is the one exception — it ALSO checks
+ * `minimumReputation` before affordability — replicated via
+ * playerReputationForFaction above.
+ *
+ * bribe/intimidate/petition/call-in-favor/recruit-ally/every diplomacy verb
+ * all require a controlling faction at the player's CURRENT district
+ * (socialVerbHandler/diplomacyVerbHandler both reject with no target faction
+ * id — a faction-directed action with no faction is a no-op the menu must
+ * never charge a turn for); seed/disguise/stake-claim/every rumor spawn
+ * verb/every sabotage verb have no such requirement and carry no targetIds —
+ * their target faction is optional or nonexistent by design (their own
+ * handlers resolve fine with targetFactionId undefined).
  *
  * Cooldown keys mirror the verb handlers' own setCooldown calls exactly:
  * bribe → 'social'/'bribe', intimidate → 'social'/'intimidate', petition →
  * 'social'/'petition-authority' (NOTE: the sub-action id petitionHandler
  * actually resolves through is 'petition-authority', not 'petition' — the
  * VERB is 'petition', the cooldown/requirements key is not), seed →
- * 'rumor'/'seed'.
+ * 'rumor'/'seed'; every new social/rumor/diplomacy/sabotage verb's cooldown
+ * group+subAction pair matches its own table's `subAction` literally (verb
+ * === subAction for all 19 new entries — only 'petition' has ever needed the
+ * split, and that precedent is untouched).
  */
 export function buildLeverageActions(world: WorldState): ExtraAction[] {
   const player = world.entities[world.playerId];
@@ -474,6 +811,56 @@ export function buildLeverageActions(world: WorldState): ExtraAction[] {
         group: 'leverage',
       });
     }
+
+    // v3.0 wave-2: the remaining social sub-actions that ALSO hard-require a
+    // controlling faction target (SOCIAL_FACTION_VERBS' own doc comment).
+    for (const { subAction, label } of SOCIAL_FACTION_VERBS) {
+      const req = getSocialRequirements(subAction);
+      if (
+        canAfford(state, req.costs) &&
+        isCooldownReady(custom, 'social', subAction, tick, req.cooldownTurns ?? 0)
+      ) {
+        actions.push({
+          verb: subAction,
+          targetIds: [controllingFaction],
+          label: label(controllingFaction),
+          group: 'leverage',
+        });
+      }
+    }
+
+    // Diplomacy (brand-new group): DIPLOMACY_MENU_VERBS' own doc comment —
+    // hard-requires a target faction, so gated inside this SAME
+    // `if (controllingFaction)` block; a minority also gate on minimum
+    // reputation, checked first (mirrors resolveDiplomacyAction's own order).
+    const playerReputation = playerReputationForFaction(world, controllingFaction);
+    for (const { subAction, label } of DIPLOMACY_MENU_VERBS) {
+      const req = getDiplomacyRequirements(subAction);
+      if (req.minimumReputation != null && playerReputation < req.minimumReputation) continue;
+      if (
+        canAfford(state, req.costs) &&
+        isCooldownReady(custom, 'diplomacy', subAction, tick, req.cooldownTurns ?? 0)
+      ) {
+        actions.push({
+          verb: subAction,
+          targetIds: [controllingFaction],
+          label: label(controllingFaction),
+          group: 'leverage',
+        });
+      }
+    }
+  }
+
+  // Social sub-actions with NO target requirement (SOCIAL_FREE_VERBS' own doc
+  // comment: disguise/stake-claim, same shape as 'seed' below).
+  for (const { subAction, label } of SOCIAL_FREE_VERBS) {
+    const req = getSocialRequirements(subAction);
+    if (
+      canAfford(state, req.costs) &&
+      isCooldownReady(custom, 'social', subAction, tick, req.cooldownTurns ?? 0)
+    ) {
+      actions.push({ verb: subAction, label, group: 'leverage' });
+    }
   }
 
   const seedReq = getRumorRequirements('seed');
@@ -486,6 +873,30 @@ export function buildLeverageActions(world: WorldState): ExtraAction[] {
       label: 'Spread a rumor about yourself',
       group: 'leverage',
     });
+  }
+
+  // Rumor's spawn family (RUMOR_FREE_VERBS' own doc comment) — same no-target
+  // shape as 'seed' above.
+  for (const { subAction, label } of RUMOR_FREE_VERBS) {
+    const req = getRumorRequirements(subAction);
+    if (
+      canAfford(state, req.costs) &&
+      isCooldownReady(custom, 'rumor', subAction, tick, req.cooldownTurns ?? 0)
+    ) {
+      actions.push({ verb: subAction, label, group: 'leverage' });
+    }
+  }
+
+  // Sabotage (brand-new group): SABOTAGE_MENU_VERBS' own doc comment — no
+  // target requirement at all, offered regardless of controllingFaction.
+  for (const { subAction, label } of SABOTAGE_MENU_VERBS) {
+    const req = getSabotageRequirements(subAction);
+    if (
+      canAfford(state, req.costs) &&
+      isCooldownReady(custom, 'sabotage', subAction, tick, req.cooldownTurns ?? 0)
+    ) {
+      actions.push({ verb: subAction, label, group: 'leverage' });
+    }
   }
 
   return actions;
@@ -747,10 +1158,10 @@ export function renderInspectorReport(
 }
 
 /** All appended entries — abilities, then unlocks, then trade (buy, sell),
- *  then crafting (salvage, craft), then leverage, then opportunities, then
- *  the always-on player surfaces in reading order (the Journal, then the
- *  Director's Ledger), then the env-gated debug entry last (the operator
- *  surface stays at the bottom). Stable order, pure over state.
+ *  then crafting (salvage, craft, repair, modify), then leverage, then
+ *  opportunities, then the always-on player surfaces in reading order (the
+ *  Journal, then the Director's Ledger), then the env-gated debug entry last
+ *  (the operator surface stays at the bottom). Stable order, pure over state.
  *
  * F-03f27ace: the ability and unlock constructions are guarded — same
  * contract as turns.ts's runNpcTurns and this file's own
@@ -769,6 +1180,11 @@ export function renderInspectorReport(
  * persisted state (district/economy, recipe tables, leverage custom fields,
  * the opportunity ledger) with no other guard between here and the top-level
  * catch, and a throw from any ONE of them must never take out its siblings.
+ * v3.0 wave-2 menu-surface: buildRepairActions/buildModifyActions get the
+ * SAME guard as buildCraftActions (they read the identical recipe-table +
+ * material-inventory + district state, just with an added inventory read) —
+ * a throw from either degrades to its own bounded line and never takes out
+ * craft/leverage/journal/director/debug alongside it.
  */
 export function buildExtraActions(
   engine: Engine,
@@ -819,6 +1235,20 @@ export function buildExtraActions(
     log(`  (craft menu unavailable this turn: ${describeActionError(err)})`);
   }
 
+  let repairActions: ExtraAction[] = [];
+  try {
+    repairActions = buildRepairActions(engine.world);
+  } catch (err) {
+    log(`  (repair menu unavailable this turn: ${describeActionError(err)})`);
+  }
+
+  let modifyActions: ExtraAction[] = [];
+  try {
+    modifyActions = buildModifyActions(engine.world);
+  } catch (err) {
+    log(`  (modify menu unavailable this turn: ${describeActionError(err)})`);
+  }
+
   let leverageActions: ExtraAction[] = [];
   try {
     leverageActions = buildLeverageActions(engine.world);
@@ -840,6 +1270,8 @@ export function buildExtraActions(
     ...sellActions,
     ...salvageActions,
     ...craftActions,
+    ...repairActions,
+    ...modifyActions,
     ...leverageActions,
     ...opportunityActions,
     ...buildJournalActions(),
