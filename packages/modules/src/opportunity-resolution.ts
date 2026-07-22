@@ -2,13 +2,42 @@
 // v1.9: When an opportunity resolves (completed, failed, abandoned, betrayed, expired, declined),
 // computeOpportunityFallout() returns structured effects for the product layer to apply.
 // Pure functions + types. Mirrors pressure-resolution.ts exactly.
+//
+// v2.9 (F-f3f2a84c): the resolution LOOP (accept → resolve → consequence).
+// createOpportunityCore() is the write-wire — mirrors trade-core.ts's
+// createTradeCore 'sell' verb shape: a single EngineModule registering ONE
+// verb ('opportunity') plus applyOpportunityFallout, the effect-applier that
+// finally writes computeOpportunityFallout's output somewhere real (mirrors
+// world-tick.ts's own applyFallout for pressures). Closes the v2.8
+// 'companion-morale favor-fallout' honest-skip: computeOpportunityFallout
+// has always COMPUTED companion-morale effects (getFavorRequestFallout's
+// completed/abandoned/betrayed cases, getEscortFallout's failed case) but
+// nothing ever APPLIED them — opportunity-core.ts is "pure functions, no
+// module registration" (its own header) and this file had no production
+// caller anywhere. applyOpportunityFallout is that caller now. Lives in THIS
+// file (not opportunity-core.ts) to keep the dependency graph one-
+// directional: this file already imports opportunity-core.ts's pure
+// evaluation types; the reverse would be circular.
 
+import type { EngineModule, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import type { OpportunityKind, OpportunityState } from './opportunity-core.js';
+import { getPersistedOpportunities, setPersistedOpportunities, getOpportunityById } from './opportunity-core.js';
 import type { LeverageCurrency } from './player-leverage.js';
 import type { SupplyCategory } from './economy-core.js';
+import { getDistrictEconomy, setDistrictEconomy, applyEconomyShift } from './economy-core.js';
 import type { ObligationKind, ObligationDirection } from './npc-agency.js';
 import type { PressureKind } from './pressure-system.js';
 import type { RumorValence } from './player-rumor.js';
+import { makeEvent } from './make-event.js';
+import { getDistrictForZone } from './district-core.js';
+import { HEAT_KEY } from './world-tick.js';
+import {
+  getPartyState,
+  setPartyState,
+  getCompanion,
+  adjustCompanionMorale,
+  syncCompanionCustomFields,
+} from './companion-core.js';
 
 // --- Types ---
 
@@ -532,3 +561,274 @@ function buildFalloutSummary(opp: OpportunityState, resolutionType: OpportunityR
     case 'declined': return `${kindLabel} "${opp.title}" was declined.`;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Persistence — the resolved-opportunity ledger, world.modules['opportunity-
+// core'].resolvedOpportunities. Mirrors world-tick.ts's own
+// getResolvedPressures/RESOLVED_PRESSURES_KEPT: non-attaching read, bounded
+// ledger, tolerant merge-write that never disturbs opportunity-core.ts's own
+// `opportunities` field living in the SAME namespace (see that file's
+// getPersistedOpportunities/setPersistedOpportunities doc comment — this is
+// the sibling half of that same contract).
+// ---------------------------------------------------------------------------
+
+/** Most recent resolved-opportunity fallout records kept (oldest dropped past the cap). */
+export const RESOLVED_OPPORTUNITIES_KEPT = 20;
+
+type OpportunityCoreNamespace = {
+  opportunities?: unknown;
+  resolvedOpportunities?: unknown;
+};
+
+function peekOpportunityCoreNamespace(world: WorldState): OpportunityCoreNamespace | undefined {
+  const ns = world.modules['opportunity-core'];
+  return ns && typeof ns === 'object' && !Array.isArray(ns) ? (ns as OpportunityCoreNamespace) : undefined;
+}
+
+/**
+ * Non-attaching read of the resolved-opportunity fallout ledger — the
+ * Director's OPPORTUNITY FALLOUT section reads this same shape. [] when the
+ * namespace is absent or malformed; never throws, never attaches.
+ */
+export function getResolvedOpportunities(world: WorldState): OpportunityFallout[] {
+  const value = peekOpportunityCoreNamespace(world)?.resolvedOpportunities;
+  return Array.isArray(value)
+    ? value.filter((v): v is OpportunityFallout => typeof v === 'object' && v !== null)
+    : [];
+}
+
+/** Append a fallout record, bounded to RESOLVED_OPPORTUNITIES_KEPT (oldest dropped). */
+function appendResolvedOpportunity(world: WorldState, fallout: OpportunityFallout): void {
+  const existing = peekOpportunityCoreNamespace(world);
+  const ledger = getResolvedOpportunities(world);
+  ledger.push(fallout);
+  if (ledger.length > RESOLVED_OPPORTUNITIES_KEPT) {
+    ledger.splice(0, ledger.length - RESOLVED_OPPORTUNITIES_KEPT);
+  }
+  world.modules['opportunity-core'] = { ...(existing ?? {}), resolvedOpportunities: ledger };
+}
+
+// ---------------------------------------------------------------------------
+// Fallout application (F-f3f2a84c) — mirrors world-tick.ts's own applyFallout
+// for pressures: writes every effect kind that has an established, real sink
+// elsewhere in the engine today; kinds with no persisted sink ANYWHERE in the
+// engine (documented per-case below) ride the emitted event payload only,
+// exactly the same honest-ceiling posture world-tick.ts's own applyFallout
+// already takes for the analogous pressure-fallout effect kinds.
+// ---------------------------------------------------------------------------
+
+function numGlobal(world: WorldState, key: string): number {
+  const value = world.globals[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function addGlobal(world: WorldState, key: string, delta: number): void {
+  world.globals[key] = numGlobal(world, key) + delta;
+}
+
+/**
+ * Apply a resolved opportunity's fallout to real, persisted state:
+ *  - reputation/alert/heat → the SAME globals world-tick.ts's applyFallout
+ *    writes (reputation_<factionId>, faction_alert_<factionId>, HEAT_KEY) —
+ *    buildPressureInputs' merge and trade-core's own reads pick these up
+ *    automatically, no new plumbing needed.
+ *  - economy-shift → getDistrictEconomy + applyEconomyShift + setDistrictEconomy,
+ *    mirroring trade-core.ts's sell handler exactly.
+ *  - companion-morale → REAL adjustCompanionMorale + setPartyState writes —
+ *    the v2.8 'companion-morale favor-fallout' honest-skip closes here.
+ *    Gated on the party being non-empty (mirrors world-tick.ts's
+ *    applyCompanionReactions' own `if (party.companions.length === 0)
+ *    return` gate); adjustCompanionMorale is ALSO independently a no-op for
+ *    an npcId absent from the party, so this gate is a clarity/cost
+ *    optimization, not a correctness requirement.
+ *  - npc-relationship/obligation — no persisted sink anywhere in the engine
+ *    today: npc-agency's relationship/obligation ledgers are never persisted
+ *    (endgame.ts's own buildEndgameInputs comment says the same). Honest
+ *    no-op.
+ *  - rumor/materials/milestone-tag/title-trigger/spawn-pressure/spawn-
+ *    opportunity — no persisted sink today either (mirrors world-tick.ts's
+ *    OWN applyFallout treatment of the identical effect kinds for pressure
+ *    fallout — "rides the pressure.expired payload"). Honest no-op; the
+ *    verb handler's emitted event payload carries the full effect list
+ *    regardless, so nothing is silently lost, only not yet WRITTEN anywhere.
+ */
+export function applyOpportunityFallout(world: WorldState, fallout: OpportunityFallout): void {
+  let party = getPartyState(world);
+  const hasParty = party.companions.length > 0;
+  let partyChanged = false;
+
+  for (const effect of fallout.effects) {
+    switch (effect.type) {
+      case 'reputation':
+        addGlobal(world, `reputation_${effect.factionId}`, effect.delta);
+        break;
+      case 'alert':
+        addGlobal(world, `faction_alert_${effect.factionId}`, effect.delta);
+        break;
+      case 'heat':
+        addGlobal(world, HEAT_KEY, effect.delta);
+        break;
+      case 'economy-shift': {
+        const economy = getDistrictEconomy(world, effect.districtId);
+        if (economy) {
+          setDistrictEconomy(world, effect.districtId, applyEconomyShift(economy, {
+            districtId: effect.districtId,
+            category: effect.category,
+            delta: effect.delta,
+            cause: effect.cause,
+          }));
+        }
+        break;
+      }
+      case 'companion-morale':
+        if (hasParty) {
+          party = adjustCompanionMorale(party, effect.npcId, effect.delta);
+          partyChanged = true;
+        }
+        break;
+      case 'npc-relationship':
+      case 'obligation':
+      case 'rumor':
+      case 'materials':
+      case 'milestone-tag':
+      case 'title-trigger':
+      case 'spawn-pressure':
+      case 'spawn-opportunity':
+        break; // no persisted sink today — see doc comment above
+      default:
+        break;
+    }
+  }
+
+  if (!partyChanged) return;
+  setPartyState(world, party);
+  // Keep npc-agency's .custom mirror in sync — its deriveCompanionGoals reads
+  // that field directly, not party state (same diligence world-tick.ts's
+  // applyCompanionReactions already shows for the identical mirror).
+  for (const effect of fallout.effects) {
+    if (effect.type !== 'companion-morale') continue;
+    const companion = getCompanion(party, effect.npcId);
+    const entity = world.entities[effect.npcId];
+    if (companion && entity) syncCompanionCustomFields(entity, companion.role, companion.morale);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The 'opportunity' verb (F-f3f2a84c) — accept → resolve → consequence.
+// Mirrors trade-core.ts's createTradeCore 'sell' verb shape: one EngineModule,
+// one verb, reject()-then-mutate. action.parameters.op selects the
+// transition ({accept | complete | abandon}); the opportunity id is read
+// from action.toolId (mirrors trade-core's sell / inventory-core's use — "the
+// noun this verb acts on"), falling back to targetIds[0].
+//
+// The state machine's other terminal outcomes (failed/betrayed/expired/
+// declined) remain fully authored and handled end-to-end by
+// computeOpportunityFallout/applyOpportunityFallout for whatever future
+// caller reaches them (proven directly, unit-level, in this file's own
+// test — the mechanism doesn't care how a resolutionType arrived). This
+// verb reaches exactly 'completed' and 'abandoned' this wave — the same
+// "authored but not every outcome is yet reachable" honesty this engine
+// already practices elsewhere (world-tick.ts's own 'resolved-by-player'
+// resolutionType, e.g., is authored, tested, and unreached in production).
+// ---------------------------------------------------------------------------
+
+function reject(action: ActionIntent, reason: string, hint: string, extra?: Record<string, unknown>): ResolvedEvent[] {
+  return [makeEvent(action, 'action.rejected', { verb: action.verb, reason, hint, ...extra })];
+}
+
+function opportunityHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  const actor = world.entities[action.actorId];
+  if (!actor) {
+    return reject(action, 'actor not found', 'Only a live entity in the world can act on an opportunity.');
+  }
+
+  const op = action.parameters?.op;
+  if (op !== 'accept' && op !== 'complete' && op !== 'abandon') {
+    return reject(action, `unknown op '${String(op)}'`, 'opportunity accept|complete|abandon <id>');
+  }
+
+  const opportunityId = action.toolId ?? action.targetIds?.[0];
+  if (!opportunityId) {
+    return reject(action, 'no opportunity specified', 'opportunity accept|complete|abandon <id>');
+  }
+
+  const opportunities = getPersistedOpportunities(world);
+  const opp = getOpportunityById(opportunities, opportunityId);
+  if (!opp) {
+    return reject(action, `opportunity ${opportunityId} not found`, 'Check the OPPORTUNITIES list.', { opportunityId });
+  }
+
+  const tick = world.meta.tick;
+
+  if (op === 'accept') {
+    if (opp.status !== 'available') {
+      return reject(action, `opportunity is ${opp.status}, not available`, 'Only an available opportunity can be accepted.', { opportunityId });
+    }
+    const updated: OpportunityState = { ...opp, status: 'accepted', acceptedAtTick: tick };
+    setPersistedOpportunities(world, opportunities.map((o) => (o.id === opp.id ? updated : o)));
+    return [makeEvent(action, 'opportunity.accepted', {
+      opportunityId: opp.id,
+      kind: opp.kind,
+      title: opp.title,
+    }, {
+      presentation: { channels: ['objective', 'narrator'], priority: 'normal' },
+    })];
+  }
+
+  // complete/abandon both require the opportunity to already be accepted.
+  if (opp.status !== 'accepted') {
+    return reject(
+      action,
+      `opportunity is ${opp.status}, not accepted`,
+      `Accept it first before you can ${op} it.`,
+      { opportunityId },
+    );
+  }
+
+  const resolutionType: OpportunityResolutionType = op === 'complete' ? 'completed' : 'abandoned';
+  const resolvedOpp: OpportunityState = { ...opp, status: resolutionType, resolvedAtTick: tick };
+  setPersistedOpportunities(world, opportunities.map((o) => (o.id === opp.id ? resolvedOpp : o)));
+
+  const playerDistrictId = opp.linkedDistrictId
+    ?? (actor.zoneId ? getDistrictForZone(world, actor.zoneId) : undefined);
+  const fallout = computeOpportunityFallout(resolvedOpp, resolutionType, {
+    currentTick: tick,
+    playerDistrictId,
+    genre: opp.genre,
+  });
+  applyOpportunityFallout(world, fallout);
+  appendResolvedOpportunity(world, fallout);
+
+  return [makeEvent(action, `opportunity.${resolutionType}`, {
+    opportunityId: opp.id,
+    kind: opp.kind,
+    title: opp.title,
+    summary: fallout.summary,
+    effects: fallout.effects,
+    ...(fallout.warnings ? { warnings: fallout.warnings } : {}),
+  }, {
+    presentation: { channels: ['objective', 'narrator'], priority: 'high' },
+  })];
+}
+
+/**
+ * opportunity-resolution's EngineModule: registers the 'opportunity' verb
+ * (accept/complete/abandon) and the 'opportunity-core' persistence namespace
+ * default. Lives in THIS file (not opportunity-core.ts) — see file header.
+ * Mirrors trade-core.ts's createTradeCore / companion-core.ts's
+ * createCompanionCore shape exactly: one verb registration + one namespace
+ * default, both inside a single register(ctx) call.
+ */
+export function createOpportunityCore(): EngineModule {
+  return {
+    id: 'opportunity-core',
+    version: '1.0.0',
+
+    register(ctx) {
+      ctx.actions.registerVerb('opportunity', (action, world) => opportunityHandler(action, world));
+      ctx.persistence.registerNamespace('opportunity-core', { opportunities: [], resolvedOpportunities: [] });
+    },
+  };
+}
+
+export const opportunityCore: EngineModule = createOpportunityCore();

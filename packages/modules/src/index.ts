@@ -614,6 +614,11 @@ export {
   formatOpportunityForDialogue,
   makeOpportunity,
   resetOpportunityCounter,
+  // v2.9 write-wire (F-ceed887f/F-f3f2a84c): world.modules['opportunity-core']
+  // accessors — the shared contract world-tick.ts's spawn/tick wire and
+  // opportunity-resolution.ts's 'opportunity' verb both read/write through.
+  getPersistedOpportunities,
+  setPersistedOpportunities,
 } from './opportunity-core.js';
 export type {
   OpportunityKind,
@@ -627,11 +632,17 @@ export type {
   OpportunityTickResult,
 } from './opportunity-core.js';
 
-// --- Opportunity Resolution (v1.9) ---
+// --- Opportunity Resolution (v1.9; write-wire v2.9 F-f3f2a84c) ---
 export {
   computeOpportunityFallout,
   formatOpportunityFalloutForDirector,
   formatOpportunityFalloutForNarrator,
+  // F-f3f2a84c: the resolution loop (accept → resolve → consequence).
+  createOpportunityCore,
+  opportunityCore,
+  applyOpportunityFallout,
+  getResolvedOpportunities,
+  RESOLVED_OPPORTUNITIES_KEPT,
 } from './opportunity-resolution.js';
 export type {
   OpportunityResolutionType,

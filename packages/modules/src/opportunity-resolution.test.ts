@@ -3,10 +3,21 @@ import {
   computeOpportunityFallout,
   formatOpportunityFalloutForDirector,
   formatOpportunityFalloutForNarrator,
+  createOpportunityCore,
+  opportunityCore,
+  applyOpportunityFallout,
+  getResolvedOpportunities,
+  RESOLVED_OPPORTUNITIES_KEPT,
   type OpportunityResolutionContext,
   type OpportunityResolutionType,
 } from './opportunity-resolution.js';
-import type { OpportunityState } from './opportunity-core.js';
+import { getPersistedOpportunities, setPersistedOpportunities, type OpportunityState } from './opportunity-core.js';
+import { createTestEngine } from '@ai-rpg-engine/core';
+import type { EntityState } from '@ai-rpg-engine/core';
+import { createCompanionCore, getPartyState, type CompanionState } from './companion-core.js';
+import { createEnvironmentCore } from './environment-core.js';
+import { createDistrictCore } from './district-core.js';
+import { createEconomyCore, getDistrictEconomy } from './economy-core.js';
 
 function makeOpp(overrides?: Partial<OpportunityState>): OpportunityState {
   return {
@@ -35,6 +46,50 @@ const ctx: OpportunityResolutionContext = {
   playerDistrictId: 'market-district',
   genre: 'fantasy',
 };
+
+// ---------------------------------------------------------------------------
+// Fixtures for the resolution-loop tests (F-f3f2a84c) — the verb + fallout
+// application, exercised through a REAL engine, not just the pure
+// computeOpportunityFallout unit above.
+// ---------------------------------------------------------------------------
+
+const zones = [{ id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbors: [] }];
+
+function makePlayer(overrides?: Partial<EntityState>): EntityState {
+  return {
+    id: 'player', blueprintId: 'player', type: 'player', name: 'Hero',
+    tags: ['player'], stats: {}, resources: { hp: 10 }, statuses: [], zoneId: 'zone-a',
+    ...overrides,
+  };
+}
+
+function makeRecruitableNpc(id: string, role: string, overrides?: Partial<EntityState>): EntityState {
+  return {
+    id, blueprintId: id, type: 'npc', name: id,
+    tags: ['npc', 'recruitable', role], stats: {}, resources: { hp: 10 }, statuses: [], zoneId: 'zone-a',
+    ...overrides,
+  };
+}
+
+/** Engine with the 'opportunity' verb + companion-core wired. */
+function makeOppEngine(entities: EntityState[] = [makePlayer()]) {
+  return createTestEngine({
+    modules: [createOpportunityCore(), createCompanionCore()],
+    entities,
+    zones,
+  });
+}
+
+function partyCompanions(engine: ReturnType<typeof createTestEngine>): CompanionState[] {
+  return getPartyState(engine.world).companions;
+}
+
+/** Seed a single opportunity directly into the persisted namespace. */
+function seedOpportunity(engine: ReturnType<typeof createTestEngine>, overrides?: Partial<OpportunityState>): OpportunityState {
+  const opp = makeOpp({ status: 'available', ...overrides });
+  setPersistedOpportunities(engine.world, [opp]);
+  return opp;
+}
 
 describe('opportunity-resolution', () => {
   describe('contract fallout', () => {
@@ -316,5 +371,402 @@ describe('opportunity-resolution', () => {
       const result = computeOpportunityFallout(opp, 'completed', ctx);
       expect(result.warnings).toBeUndefined();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createOpportunityCore — module identity + registration (F-f3f2a84c)
+// ---------------------------------------------------------------------------
+describe('createOpportunityCore — module identity + registration (F-f3f2a84c)', () => {
+  it('carries the id/version contract sibling modules declare', () => {
+    const mod = createOpportunityCore();
+    expect(mod.id).toBe('opportunity-core');
+    expect(mod.version).toBe('1.0.0');
+  });
+
+  it('registers the opportunity-core namespace default at construction', () => {
+    const engine = makeOppEngine();
+    expect(engine.world.modules['opportunity-core']).toEqual({ opportunities: [], resolvedOpportunities: [] });
+  });
+
+  it('the exported opportunityCore singleton is the same shape createOpportunityCore() produces', () => {
+    expect(opportunityCore.id).toBe('opportunity-core');
+    expect(opportunityCore.version).toBe('1.0.0');
+  });
+
+  it("RED-PROOF: the 'opportunity' verb is unknown without the module registered", () => {
+    const engine = createTestEngine({ modules: [], entities: [makePlayer()], zones });
+    expect(engine.getAvailableActions()).not.toContain('opportunity');
+    engine.submitAction('opportunity', { parameters: { op: 'accept' }, targetIds: ['opp-x'] });
+    // The core engine's own unknown-verb rejection (ActionDispatcher.dispatch:
+    // "unknown verb: opportunity") is recorded to the eventLog directly —
+    // dispatch() returns [] on this path, so the SUBMITTED action's own
+    // return value is empty; the rejection still rides the world's eventLog,
+    // the same place every other rejection in this engine lands.
+    const rejection = engine.world.eventLog.find((e) => e.type === 'action.rejected');
+    expect(rejection).toBeDefined();
+    expect(rejection?.payload.reason).toContain('unknown verb');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The 'opportunity' verb — accept (F-f3f2a84c)
+// ---------------------------------------------------------------------------
+describe("the 'opportunity' verb — accept (F-f3f2a84c)", () => {
+  it('accepting an available opportunity marks it accepted and stamps acceptedAtTick', () => {
+    const engine = makeOppEngine();
+    const opp = seedOpportunity(engine);
+    const tickAtSubmit = engine.tick; // submitAction advances the tick AFTER the handler runs
+
+    const events = engine.submitAction('opportunity', { parameters: { op: 'accept' }, targetIds: [opp.id] });
+
+    expect(events.some((e) => e.type === 'opportunity.accepted')).toBe(true);
+    const persisted = getPersistedOpportunities(engine.world);
+    expect(persisted[0].status).toBe('accepted');
+    expect(persisted[0].acceptedAtTick).toBe(tickAtSubmit);
+  });
+
+  it('rejects accepting an opportunity that is not available (e.g. already accepted)', () => {
+    const engine = makeOppEngine();
+    const opp = seedOpportunity(engine, { status: 'accepted' });
+
+    const events = engine.submitAction('opportunity', { parameters: { op: 'accept' }, targetIds: [opp.id] });
+
+    expect(events[0].type).toBe('action.rejected');
+    expect(getPersistedOpportunities(engine.world)[0].status).toBe('accepted'); // unchanged
+  });
+
+  it('rejects an unknown opportunity id', () => {
+    const engine = makeOppEngine();
+    seedOpportunity(engine);
+    const events = engine.submitAction('opportunity', { parameters: { op: 'accept' }, targetIds: ['does-not-exist'] });
+    expect(events[0].type).toBe('action.rejected');
+  });
+
+  it('rejects a missing/unknown op', () => {
+    const engine = makeOppEngine();
+    const opp = seedOpportunity(engine);
+    const events = engine.submitAction('opportunity', { parameters: { op: 'launch' }, targetIds: [opp.id] });
+    expect(events[0].type).toBe('action.rejected');
+  });
+
+  it('rejects with no opportunity id specified', () => {
+    const engine = makeOppEngine();
+    seedOpportunity(engine);
+    const events = engine.submitAction('opportunity', { parameters: { op: 'accept' } });
+    expect(events[0].type).toBe('action.rejected');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The 'opportunity' verb — complete/abandon: transitions + fallout + ledger
+// (F-f3f2a84c)
+// ---------------------------------------------------------------------------
+describe("the 'opportunity' verb — complete/abandon (F-f3f2a84c)", () => {
+  it('rejects completing/abandoning an opportunity that is not yet accepted', () => {
+    const engine = makeOppEngine();
+    const opp = seedOpportunity(engine); // status: 'available'
+    const events = engine.submitAction('opportunity', { parameters: { op: 'complete' }, targetIds: [opp.id] });
+    expect(events[0].type).toBe('action.rejected');
+    expect(getPersistedOpportunities(engine.world)[0].status).toBe('available'); // unchanged
+  });
+
+  it('completing an accepted contract transitions to completed, applies fallout, and appends the resolved-opportunity ledger', () => {
+    const engine = makeOppEngine();
+    const opp = seedOpportunity(engine, { status: 'accepted', kind: 'contract', sourceFactionId: 'guild' });
+    const tickAtSubmit = engine.tick; // submitAction advances the tick AFTER the handler runs
+
+    const events = engine.submitAction('opportunity', { parameters: { op: 'complete' }, targetIds: [opp.id] });
+
+    const completedEvent = events.find((e) => e.type === 'opportunity.completed');
+    expect(completedEvent).toBeDefined();
+    expect(completedEvent?.payload.summary).toContain('completed');
+
+    const persisted = getPersistedOpportunities(engine.world);
+    expect(persisted[0].status).toBe('completed');
+    expect(persisted[0].resolvedAtTick).toBe(tickAtSubmit);
+
+    // Real reputation write — getContractFallout's 'completed' case (+10 guild).
+    expect(engine.world.globals['reputation_guild']).toBe(10);
+
+    // The resolved-opportunity ledger (director's OPPORTUNITY FALLOUT section reads this).
+    const resolved = getResolvedOpportunities(engine.world);
+    expect(resolved).toHaveLength(1);
+    expect(resolved[0].resolution).toMatchObject({ opportunityId: opp.id, resolutionType: 'completed' });
+
+    // Sibling 'opportunities' field preserved alongside the new ledger entry.
+    const ns = engine.world.modules['opportunity-core'] as { opportunities: unknown; resolvedOpportunities: unknown };
+    expect(Array.isArray(ns.opportunities)).toBe(true);
+    expect(Array.isArray(ns.resolvedOpportunities)).toBe(true);
+  });
+
+  it('abandoning an accepted contract transitions to abandoned, applies its own (different) fallout', () => {
+    const engine = makeOppEngine();
+    const opp = seedOpportunity(engine, { status: 'accepted', kind: 'contract', sourceFactionId: 'guild' });
+
+    const events = engine.submitAction('opportunity', { parameters: { op: 'abandon' }, targetIds: [opp.id] });
+
+    expect(events.some((e) => e.type === 'opportunity.abandoned')).toBe(true);
+    expect(getPersistedOpportunities(engine.world)[0].status).toBe('abandoned');
+    // getContractFallout's 'abandoned' case: -8 rep, +5 heat (distinct from 'completed').
+    expect(engine.world.globals['reputation_guild']).toBe(-8);
+    expect(engine.world.globals['player_heat']).toBe(5);
+  });
+
+  it('a terminal opportunity naturally self-prunes from the NEXT tick\'s ticked set (tickOpportunities\' own contract — proven here end to end with the verb)', () => {
+    const engine = makeOppEngine();
+    const opp = seedOpportunity(engine, { status: 'accepted', turnsRemaining: 5 });
+    engine.submitAction('opportunity', { parameters: { op: 'complete' }, targetIds: [opp.id] });
+    expect(getPersistedOpportunities(engine.world)[0].status).toBe('completed');
+    // world-tick.test.ts's own "self-prunes" test proves the TICK side of
+    // this; this just confirms the verb leaves a genuinely terminal status
+    // for that tick step to find.
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Companion morale — the v2.8 'companion-morale favor-fallout' honest-skip
+// closes here (F-f3f2a84c). End-to-end through the REAL verb + a REAL party.
+// ---------------------------------------------------------------------------
+describe("the 'opportunity' verb — companion morale (v2.8 honest-skip closes here)", () => {
+  it('completing a favor-request opportunity with a party present ACTUALLY changes companion morale', () => {
+    const engine = makeOppEngine([makePlayer(), makeRecruitableNpc('sara', 'scout')]);
+    engine.submitAction('recruit', { targetIds: ['sara'] });
+    const before = partyCompanions(engine).find((c) => c.npcId === 'sara')!.morale;
+
+    const opp = seedOpportunity(engine, {
+      status: 'accepted', kind: 'favor-request', sourceNpcId: 'sara', tags: ['companion', 'personal-ask'],
+    });
+    engine.submitAction('opportunity', { parameters: { op: 'complete' }, targetIds: [opp.id] });
+
+    const after = partyCompanions(engine).find((c) => c.npcId === 'sara')!.morale;
+    expect(after).toBe(before + 15); // getFavorRequestFallout's 'completed' companion case
+    // The .custom mirror npc-agency reads directly stays in sync too.
+    expect(engine.world.entities.sara.custom?.companionMorale).toBe(after);
+  });
+
+  it('abandoning a favor-request opportunity with a party present ACTUALLY changes companion morale', () => {
+    const engine = makeOppEngine([makePlayer(), makeRecruitableNpc('sara', 'scout')]);
+    engine.submitAction('recruit', { targetIds: ['sara'] });
+    const before = partyCompanions(engine).find((c) => c.npcId === 'sara')!.morale;
+
+    const opp = seedOpportunity(engine, {
+      status: 'accepted', kind: 'favor-request', sourceNpcId: 'sara', tags: ['companion'],
+    });
+    engine.submitAction('opportunity', { parameters: { op: 'abandon' }, targetIds: [opp.id] });
+
+    const after = partyCompanions(engine).find((c) => c.npcId === 'sara')!.morale;
+    expect(after).toBe(before - 15); // getFavorRequestFallout's 'abandoned' companion case
+  });
+
+  it('with NO party recruited, completing the same favor-request applies every OTHER effect but never touches companion morale (no throw)', () => {
+    const engine = makeOppEngine(); // no recruit call — party stays empty
+    const opp = seedOpportunity(engine, {
+      status: 'accepted', kind: 'favor-request', sourceNpcId: 'sara', tags: ['companion', 'personal-ask'],
+    });
+    expect(() => engine.submitAction('opportunity', { parameters: { op: 'complete' }, targetIds: [opp.id] })).not.toThrow();
+    expect(partyCompanions(engine)).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyOpportunityFallout — writes every effect kind (F-f3f2a84c)
+// ---------------------------------------------------------------------------
+describe('applyOpportunityFallout — writes every effect kind', () => {
+  /** District + economy engine, for the economy-shift write test. */
+  function makeEconomyEngine() {
+    return createTestEngine({
+      modules: [
+        createEnvironmentCore(),
+        createDistrictCore({ districts: [{ id: 'district-1', name: 'Market', zoneIds: ['zone-a'], tags: [] }] }),
+        createEconomyCore({ districts: [{ id: 'district-1', tags: [] }] }),
+      ],
+      entities: [makePlayer()],
+      zones,
+    });
+  }
+
+  it('reputation and alert effects write to the SAME globals world-tick.ts reads (reputation_<id>, faction_alert_<id>)', () => {
+    const engine = createTestEngine({ modules: [], entities: [makePlayer()], zones });
+    const opp = makeOpp({ kind: 'faction-job', sourceFactionId: 'guild' });
+    const fallout = computeOpportunityFallout(opp, 'betrayed', ctx); // -30 rep, +25 alert, +20 heat
+    applyOpportunityFallout(engine.world, fallout);
+    expect(engine.world.globals['reputation_guild']).toBe(-30);
+    expect(engine.world.globals['faction_alert_guild']).toBe(25);
+    expect(engine.world.globals['player_heat']).toBe(20);
+  });
+
+  it('heat accumulates across multiple applications (additive, not overwritten)', () => {
+    const engine = createTestEngine({ modules: [], entities: [makePlayer()], zones });
+    const opp = makeOpp({ kind: 'bounty', sourceFactionId: 'guild' });
+    applyOpportunityFallout(engine.world, computeOpportunityFallout(opp, 'betrayed', ctx)); // +10 heat
+    applyOpportunityFallout(engine.world, computeOpportunityFallout(opp, 'betrayed', ctx)); // +10 heat again
+    expect(engine.world.globals['player_heat']).toBe(20);
+  });
+
+  it('economy-shift writes back into the district economy via getDistrictEconomy/applyEconomyShift (mirrors trade-core\'s own sell handler)', () => {
+    const engine = makeEconomyEngine();
+    const before = getDistrictEconomy(engine.world, 'district-1')!;
+    const beforeLevel = before.supplies.medicine.level;
+
+    const opp = makeOpp({
+      kind: 'supply-run',
+      sourceFactionId: 'guild',
+      linkedDistrictId: 'district-1',
+      rewards: [{ type: 'economy-shift', districtId: 'district-1', category: 'medicine', delta: 15 }],
+    });
+    const fallout = computeOpportunityFallout(opp, 'completed', { ...ctx, playerDistrictId: 'district-1' });
+    applyOpportunityFallout(engine.world, fallout);
+
+    const after = getDistrictEconomy(engine.world, 'district-1')!;
+    expect(after.supplies.medicine.level).toBe(beforeLevel + 15);
+  });
+
+  it("economy-shift is a silent no-op when the district doesn't exist (no throw)", () => {
+    const engine = createTestEngine({ modules: [], entities: [makePlayer()], zones });
+    const opp = makeOpp({
+      kind: 'supply-run',
+      linkedDistrictId: 'nonexistent-district',
+      rewards: [{ type: 'economy-shift', districtId: 'nonexistent-district', category: 'medicine', delta: 15 }],
+    });
+    const fallout = computeOpportunityFallout(opp, 'completed', { ...ctx, playerDistrictId: 'nonexistent-district' });
+    expect(() => applyOpportunityFallout(engine.world, fallout)).not.toThrow();
+  });
+
+  describe('companion-morale — all dead emission sites now write for real, gated on party non-empty', () => {
+    function engineWithParty(): ReturnType<typeof createTestEngine> {
+      return createTestEngine({
+        modules: [createCompanionCore()],
+        entities: [makePlayer(), makeRecruitableNpc('sara', 'scout'), makeRecruitableNpc('finn', 'fighter')],
+        zones,
+      });
+    }
+
+    it('favor-request completed: +15 morale (real write via adjustCompanionMorale)', () => {
+      const engine = engineWithParty();
+      engine.submitAction('recruit', { targetIds: ['sara'] });
+      const before = partyCompanions(engine).find((c) => c.npcId === 'sara')!.morale;
+
+      const opp = makeOpp({ kind: 'favor-request', sourceNpcId: 'sara', tags: ['companion'] });
+      applyOpportunityFallout(engine.world, computeOpportunityFallout(opp, 'completed', ctx));
+
+      expect(partyCompanions(engine).find((c) => c.npcId === 'sara')!.morale).toBe(before + 15);
+    });
+
+    it('favor-request abandoned: -15 morale', () => {
+      const engine = engineWithParty();
+      engine.submitAction('recruit', { targetIds: ['sara'] });
+      const before = partyCompanions(engine).find((c) => c.npcId === 'sara')!.morale;
+
+      const opp = makeOpp({ kind: 'favor-request', sourceNpcId: 'sara', tags: ['companion'] });
+      applyOpportunityFallout(engine.world, computeOpportunityFallout(opp, 'abandoned', ctx));
+
+      expect(partyCompanions(engine).find((c) => c.npcId === 'sara')!.morale).toBe(before - 15);
+    });
+
+    it('favor-request betrayed: -30 morale', () => {
+      const engine = engineWithParty();
+      engine.submitAction('recruit', { targetIds: ['sara'] });
+      const before = partyCompanions(engine).find((c) => c.npcId === 'sara')!.morale;
+
+      const opp = makeOpp({ kind: 'favor-request', sourceNpcId: 'sara', tags: ['companion'] });
+      applyOpportunityFallout(engine.world, computeOpportunityFallout(opp, 'betrayed', ctx));
+
+      expect(partyCompanions(engine).find((c) => c.npcId === 'sara')!.morale).toBe(before - 30);
+    });
+
+    it('escort failed: -10 morale on each linked companion NPC', () => {
+      const engine = engineWithParty();
+      engine.submitAction('recruit', { targetIds: ['sara'] });
+      engine.submitAction('recruit', { targetIds: ['finn'] });
+      const beforeSara = partyCompanions(engine).find((c) => c.npcId === 'sara')!.morale;
+      const beforeFinn = partyCompanions(engine).find((c) => c.npcId === 'finn')!.morale;
+
+      const opp = makeOpp({ kind: 'escort', sourceFactionId: 'guild', sourceNpcId: 'npc-1', linkedNpcIds: ['sara', 'finn'] });
+      applyOpportunityFallout(engine.world, computeOpportunityFallout(opp, 'failed', ctx));
+
+      expect(partyCompanions(engine).find((c) => c.npcId === 'sara')!.morale).toBe(beforeSara - 10);
+      expect(partyCompanions(engine).find((c) => c.npcId === 'finn')!.morale).toBe(beforeFinn - 10);
+    });
+
+    it('gated on party non-empty: an empty party never calls setPartyState (no throw, nothing to change)', () => {
+      const engine = createTestEngine({ modules: [createCompanionCore()], entities: [makePlayer()], zones });
+      const opp = makeOpp({ kind: 'favor-request', sourceNpcId: 'sara', tags: ['companion'] });
+      expect(() => applyOpportunityFallout(engine.world, computeOpportunityFallout(opp, 'completed', ctx))).not.toThrow();
+      expect(partyCompanions(engine)).toHaveLength(0);
+    });
+  });
+
+  describe('documented no-op effect kinds (no persisted sink anywhere in the engine today)', () => {
+    it('npc-relationship, obligation, rumor, milestone-tag, title-trigger, spawn-pressure effects never throw and touch nothing else', () => {
+      const engine = createTestEngine({ modules: [createCompanionCore()], entities: [makePlayer()], zones });
+      const before = JSON.parse(JSON.stringify(engine.world.globals));
+
+      // faction-job 'completed' carries milestone-tag + title-trigger;
+      // faction-job 'betrayed' carries spawn-pressure; favor-request
+      // 'completed'/'expired' carry npc-relationship/obligation.
+      const job = makeOpp({ kind: 'faction-job', sourceFactionId: 'guild' });
+      applyOpportunityFallout(engine.world, computeOpportunityFallout(job, 'completed', ctx));
+      const favor = makeOpp({ kind: 'favor-request', sourceNpcId: 'ann' });
+      applyOpportunityFallout(engine.world, computeOpportunityFallout(favor, 'completed', ctx));
+
+      // The globals these documented-dormant kinds WOULD need don't exist —
+      // only the real sinks (reputation/heat/alert) changed.
+      expect(engine.world.globals).not.toEqual(before); // reputation/leverage-adjacent heat DID move
+      expect(Object.keys(engine.world.globals).some((k) => k.includes('milestone'))).toBe(false);
+      expect(Object.keys(engine.world.globals).some((k) => k.includes('title'))).toBe(false);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getResolvedOpportunities / RESOLVED_OPPORTUNITIES_KEPT — the bounded ledger
+// ---------------------------------------------------------------------------
+describe('getResolvedOpportunities — the bounded resolved-opportunity ledger', () => {
+  it('absent namespace: returns [] and never attaches', () => {
+    const engine = createTestEngine({ modules: [], entities: [makePlayer()], zones });
+    expect(getResolvedOpportunities(engine.world)).toEqual([]);
+    expect(engine.world.modules['opportunity-core']).toBeUndefined();
+  });
+
+  it('malformed value degrades to [], never throws', () => {
+    const engine = createTestEngine({ modules: [], entities: [makePlayer()], zones });
+    engine.world.modules['opportunity-core'] = { resolvedOpportunities: 'not-an-array' };
+    expect(() => getResolvedOpportunities(engine.world)).not.toThrow();
+    expect(getResolvedOpportunities(engine.world)).toEqual([]);
+  });
+
+  it(`is bounded to the ${RESOLVED_OPPORTUNITIES_KEPT} most recent records, oldest dropped`, () => {
+    const engine = makeOppEngine();
+    for (let i = 0; i < RESOLVED_OPPORTUNITIES_KEPT + 5; i++) {
+      const opp = seedOpportunity(engine, { id: `opp-${i}`, status: 'accepted' });
+      engine.submitAction('opportunity', { parameters: { op: 'complete' }, targetIds: [opp.id] });
+    }
+    const resolved = getResolvedOpportunities(engine.world);
+    expect(resolved).toHaveLength(RESOLVED_OPPORTUNITIES_KEPT);
+    expect(resolved[resolved.length - 1].resolution.opportunityId).toBe(`opp-${RESOLVED_OPPORTUNITIES_KEPT + 4}`);
+    expect(resolved[0].resolution.opportunityId).toBe('opp-5'); // the first 5 were dropped
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Determinism (packages/core determinism suite pairs with this)
+// ---------------------------------------------------------------------------
+describe("the 'opportunity' verb — determinism", () => {
+  it('same world in, same resolved state out, across independent instances', () => {
+    const run = () => {
+      const engine = makeOppEngine();
+      const opp = seedOpportunity(engine, { status: 'accepted', kind: 'contract', sourceFactionId: 'guild' });
+      engine.submitAction('opportunity', { parameters: { op: 'complete' }, targetIds: [opp.id] });
+      return {
+        opportunities: getPersistedOpportunities(engine.world),
+        resolved: getResolvedOpportunities(engine.world),
+        globals: engine.world.globals,
+      };
+    };
+    const a = run();
+    const b = run();
+    expect(a).toEqual(b);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 });

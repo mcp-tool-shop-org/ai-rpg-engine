@@ -12,9 +12,12 @@ import {
   formatOpportunityForNarrator,
   formatOpportunityForDialogue,
   makeOpportunity,
+  getPersistedOpportunities,
+  setPersistedOpportunities,
   type OpportunityState,
   type OpportunityInputs,
 } from './opportunity-core.js';
+import type { WorldState } from '@ai-rpg-engine/core';
 import type { LeverageState } from './player-leverage.js';
 import type { NpcProfile, NpcObligationLedger } from './npc-agency.js';
 import type { WorldPressure } from './pressure-system.js';
@@ -87,6 +90,15 @@ function makeTestOpp(overrides?: Partial<OpportunityState>): OpportunityState {
     genre: 'fantasy',
     ...overrides,
   };
+}
+
+/** Real, fully-formed WorldState (modules: {} — no namespace registered yet). */
+function bareWorld(): WorldState {
+  return createTestEngine({
+    modules: [],
+    entities: [{ id: 'player', blueprintId: 'player', type: 'player', name: 'Hero', tags: ['player'], stats: {}, resources: { hp: 10 }, statuses: [], zoneId: 'a' }],
+    zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+  }).world;
 }
 
 describe('opportunity-core', () => {
@@ -459,6 +471,40 @@ describe('opportunity-core', () => {
       expect(opp.linkedRumorIds).toEqual([]);
       expect(opp.linkedNpcIds).toEqual([]);
       expect(opp.tags).toEqual([]);
+    });
+  });
+
+  describe("persisted opportunities (world.modules['opportunity-core']) — F-ceed887f/F-f3f2a84c", () => {
+    it('absent namespace: getPersistedOpportunities returns [] and never attaches', () => {
+      const world = bareWorld();
+      expect(getPersistedOpportunities(world)).toEqual([]);
+      expect(world.modules['opportunity-core']).toBeUndefined();
+    });
+
+    it('setPersistedOpportunities round-trips through getPersistedOpportunities in the EXACT shape director.test.ts pins', () => {
+      const world = bareWorld();
+      const opp = makeTestOpp({ id: 'opp-a' });
+      setPersistedOpportunities(world, [opp]);
+      expect(getPersistedOpportunities(world)).toEqual([opp]);
+      expect(world.modules['opportunity-core']).toEqual({ opportunities: [opp] });
+    });
+
+    it('setPersistedOpportunities preserves a sibling field it does not own (e.g. resolvedOpportunities)', () => {
+      const world = bareWorld();
+      world.modules['opportunity-core'] = { resolvedOpportunities: ['some-fallout'] };
+      const opp = makeTestOpp();
+      setPersistedOpportunities(world, [opp]);
+      expect(world.modules['opportunity-core']).toEqual({
+        resolvedOpportunities: ['some-fallout'],
+        opportunities: [opp],
+      });
+    });
+
+    it('malformed namespace values degrade to [], never throw', () => {
+      const world = bareWorld();
+      world.modules['opportunity-core'] = { opportunities: 'not-an-array' };
+      expect(() => getPersistedOpportunities(world)).not.toThrow();
+      expect(getPersistedOpportunities(world)).toEqual([]);
     });
   });
 
