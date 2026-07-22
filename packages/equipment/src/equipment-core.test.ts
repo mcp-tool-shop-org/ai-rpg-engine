@@ -106,11 +106,11 @@ function makePlayer(): EntityState {
   };
 }
 
-function makeEngine(mutate?: (player: EntityState) => void): Engine {
+function makeEngine(mutate?: (player: EntityState) => void, statusesOverride: EquipmentStatusOps = statusOps): Engine {
   const engine = new Engine({
     manifest,
     seed: 7,
-    modules: [statusCore, createEquipmentCore({ catalog, statuses: statusOps })],
+    modules: [statusCore, createEquipmentCore({ catalog, statuses: statusesOverride })],
   });
   const zone: ZoneState = { id: 'cell', roomId: 'cell', name: 'Cell', tags: [], neighbors: [] };
   engine.store.addZone(zone);
@@ -417,6 +417,75 @@ describe('unequip reverses the carry (red-proof: no status, no delta)', () => {
     const control = engine.world.entities['bystander'];
     expect(effectiveStat(control, 'agility', engine.world, 0)).toBe(5);
     expect(control.statuses).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-8a09a07b (red-proof): a throwing injected status op must never leave a
+// committed loadout behind a dispatcher-degraded action.rejected.
+//
+// commitLoadout used to run BEFORE the fallible statuses.remove/apply calls.
+// ActionDispatcher.dispatch catches any handler throw and degrades it to a
+// generic 'action.rejected' event, but it cannot undo a mutation the handler
+// already made before throwing — so a throwing status op left the actor's
+// loadout/inventory/equipment changed while the event log said the action
+// was rejected. These fail without the fix (the mutation is observable
+// despite the rejection) and pass with it (the commit never ran).
+// ---------------------------------------------------------------------------
+
+describe('F-8a09a07b: throwing status ops never leave a committed loadout behind action.rejected', () => {
+  it('equip: statuses.apply throwing leaves inventory/loadout/equipment uncommitted', () => {
+    const throwingApply: EquipmentStatusOps = {
+      registerDefinitions: registerStatusDefinitions,
+      apply: () => {
+        throw new Error('boom');
+      },
+      remove: removeStatus,
+    };
+    const engine = makeEngine(undefined, throwingApply);
+    const player = engine.world.entities['player'];
+
+    engine.submitAction('equip');
+
+    const rejected = eventsOfType(engine, 'action.rejected');
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].payload.reason).toBe('handler for "equip" threw: boom');
+
+    // RED without the fix: commitLoadout ran before statuses.apply threw, so
+    // the item was already moved out of inventory and into equipment despite
+    // the action being reported as rejected.
+    expect(player.inventory).toEqual(['trident-and-net']); // untouched
+    expect(player.equipment).toBeUndefined();
+    expect(getEntityLoadout(engine.world, 'player')).toBeUndefined();
+  });
+
+  it('unequip: statuses.remove throwing leaves the prior committed loadout unchanged', () => {
+    const throwingRemove: EquipmentStatusOps = {
+      registerDefinitions: registerStatusDefinitions,
+      apply: applyStatus,
+      remove: () => {
+        throw new Error('boom');
+      },
+    };
+    const engine = makeEngine(undefined, throwingRemove);
+    const player = engine.world.entities['player'];
+
+    engine.submitAction('equip'); // succeeds — apply does not throw here
+    expect(player.inventory).toEqual([]);
+    expect(getEntityLoadout(engine.world, 'player')?.equipped.weapon).toBe('trident-and-net');
+
+    engine.submitAction('unequip'); // statuses.remove throws
+
+    const rejected = eventsOfType(engine, 'action.rejected');
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0].payload.reason).toBe('handler for "unequip" threw: boom');
+
+    // RED without the fix: commitLoadout ran before statuses.remove threw, so
+    // the item was already swapped back into inventory and the loadout
+    // cleared despite the action being reported as rejected.
+    expect(player.inventory).toEqual([]); // still equipped, not reverted
+    expect(getEntityLoadout(engine.world, 'player')?.equipped.weapon).toBe('trident-and-net');
+    expect(player.equipment?.weapon).toBe('trident-and-net');
   });
 });
 

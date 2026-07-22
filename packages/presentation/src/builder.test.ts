@@ -119,6 +119,41 @@ describe('buildNarrationPlan: combat turns', () => {
   });
 });
 
+describe('buildNarrationPlan: two defeats in one turn (F-77706f09)', () => {
+  it('a non-player defeat followed by the PLAYER\'s own defeat still reads as a fade-out (mirrors deriveTone\'s sorrow precedence)', () => {
+    // RED-PROOF: pre-fix, deriveUiEffects returned on the FIRST defeat event
+    // in the list (flash, for the non-player defeat) and never looked further
+    // — this fails without the fix (uiEffects would be 'flash') and passes
+    // with it (uiEffects agrees with tone: 'fade-out').
+    const plan = buildNarrationPlan({
+      sceneText: 'The ghoul falls — but so do you.',
+      events: [defeatEvent, playerDefeatEvent], // non-player defeat FIRST, player defeat LATER
+      resolveSoundCue: soundpackLikeResolver,
+      playerId: 'player',
+    });
+
+    expect(validateNarrationPlan(plan)).toEqual([]);
+    expect(plan.tone).toBe('sorrow');
+    expect(plan.uiEffects).toEqual([{ type: 'fade-out', durationMs: 600 }]);
+  });
+
+  it('control: with no player defeat in the turn, the first non-player defeat still flashes', () => {
+    const secondDefeat: NarrationSourceEvent = {
+      type: 'combat.entity.defeated',
+      payload: { entityId: 'bandit', entityName: 'Bandit', defeatedBy: 'player' },
+      presentation: { priority: 'critical', soundCues: ['combat.defeat'] },
+    };
+    const plan = buildNarrationPlan({
+      sceneText: 'Two enemies fall.',
+      events: [defeatEvent, secondDefeat],
+      resolveSoundCue: soundpackLikeResolver,
+      playerId: 'player',
+    });
+    expect(plan.tone).toBe('triumph');
+    expect(plan.uiEffects).toEqual([{ type: 'flash', durationMs: 250 }]);
+  });
+});
+
 describe('buildNarrationPlan: calm turns', () => {
   it('a quiet scene entry produces a calm, normal-urgency plan', () => {
     const plan = buildNarrationPlan({

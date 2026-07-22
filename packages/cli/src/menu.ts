@@ -238,7 +238,20 @@ export function renderJournal(world: WorldState): string {
   }
 
   for (const instance of active) {
-    lines.push(...journalQuestLines(instance, defs.get(instance.questId)));
+    // F-470a2a88: guarded-degrade, same contract as renderDirectorLedger's
+    // per-section and this file's own renderInspectorReport per-inspector
+    // try/catch — a throwing quest-core read (a foreign or content-drifted
+    // save) degrades to ONE bounded, attributed line instead of propagating
+    // uncaught through handlePlayerInput into the main interactive loop; the
+    // journal's other entries (and the completed/failed lists below) still
+    // render.
+    try {
+      lines.push(...journalQuestLines(instance, defs.get(instance.questId)));
+    } catch (err) {
+      lines.push('');
+      lines.push(`  ── ${instance.questId} ──`);
+      lines.push(`  [quest entry failed: ${describeActionError(err)}]`);
+    }
   }
 
   if (completed.length > 0) {
@@ -352,14 +365,41 @@ export function renderInspectorReport(
 /** All appended entries — abilities, then unlocks, then the always-on player
  *  surfaces in reading order (the Journal, then the Director's Ledger), then
  *  the env-gated debug entry last (the operator surface stays at the
- *  bottom). Stable order, pure over state. */
+ *  bottom). Stable order, pure over state.
+ *
+ * F-03f27ace: the ability and unlock constructions are guarded — same
+ * contract as turns.ts's runNpcTurns and this file's own
+ * renderInspectorReport — because both reach into content-driven modules
+ * data (a malformed ability or progression-node definition from a
+ * hand-authored or scaffolded pack) that has no other guard between here and
+ * the top-level catch. A throw from either source degrades to one bounded
+ * line and contributes no entries from the failing source; the other extras
+ * (unlock/ability, journal, director, debug) still build normally.
+ */
 export function buildExtraActions(
   engine: Engine,
   trees: ProgressionTreeDefinition[] = [],
+  opts: { log?: (msg: string) => void } = {},
 ): ExtraAction[] {
+  const log = opts.log ?? console.log;
+
+  let abilityActions: ExtraAction[] = [];
+  try {
+    abilityActions = buildAbilityActions(engine.world, getAbilityCatalog(engine));
+  } catch (err) {
+    log(`  (ability menu unavailable this turn: ${describeActionError(err)})`);
+  }
+
+  let unlockActions: ExtraAction[] = [];
+  try {
+    unlockActions = buildUnlockActions(engine.world, trees);
+  } catch (err) {
+    log(`  (advancement menu unavailable this turn: ${describeActionError(err)})`);
+  }
+
   return [
-    ...buildAbilityActions(engine.world, getAbilityCatalog(engine)),
-    ...buildUnlockActions(engine.world, trees),
+    ...abilityActions,
+    ...unlockActions,
     ...buildJournalActions(),
     ...buildDirectorActions(),
     ...buildDebugActions(),

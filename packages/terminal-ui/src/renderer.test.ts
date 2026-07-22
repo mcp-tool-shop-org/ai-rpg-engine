@@ -261,6 +261,26 @@ describe('render functions — smoke coverage', () => {
     expect(text).toContain('Attack Wolf');
   });
 
+  // F-fea7bb72: the base numbered menu's Attack entry checked `enemy` only,
+  // never `hostile` — unlike turns.ts's listHostilesInPlayerZone, menu.ts's
+  // menuTargetable, and endgame.ts's detectBaseOutcome, which all treat the
+  // two tags as equivalent. A hostile-only entity would take NPC turns and
+  // count toward victory, but never receive a numbered Attack entry.
+  it('buildActionList offers Attack for a hostile-only entity, exactly like enemy (RED-PROOF: fails pre-fix)', () => {
+    const world = makeWorld();
+    world.entities['wolf'].tags = ['hostile']; // no 'enemy' tag
+    const actions = buildActionList(world);
+    expect(actions.some((a) => a.verb === 'attack' && a.label === 'Attack Wolf')).toBe(true);
+  });
+
+  it('buildActionList does not offer Attack for a DEFEATED hostile-only entity (hp <= 0 still excluded)', () => {
+    const world = makeWorld();
+    world.entities['wolf'].tags = ['hostile'];
+    world.entities['wolf'].resources.hp = 0;
+    const actions = buildActionList(world);
+    expect(actions.some((a) => a.verb === 'attack')).toBe(false);
+  });
+
   it('renderEventLog renders known event types and returns "" for none', () => {
     const world = makeWorld();
     expect(renderEventLog([])).toBe('');
@@ -905,6 +925,40 @@ describe('renderScene — humanized state labels, no corpse statuses (CS-C amend
     expect(text).not.toContain('Fleeing');
     expect(text).not.toContain('combat:fleeing');
     expect(text).not.toContain('(HP: 0)');
+  });
+});
+
+// entityKind() classified 'enemy' via the `enemy` tag only, never `hostile` —
+// contradicting turns.ts's documented parity claim ("the same
+// explicit-hostility convention the terminal-ui scene list uses") and this
+// codebase's other hostility checks (turns.ts's listHostilesInPlayerZone,
+// menu.ts's menuTargetable, endgame.ts's detectBaseOutcome). A hostile-only
+// entity rendered as kind 'other': no red color, and no HP/status line at
+// all (entityLine only shows one for kind 'enemy'/'ally').
+describe('entityKind — hostile tag parity with enemy (F-7e0ff4be)', () => {
+  function hostileOnlyWorld() {
+    const world = makeWorld();
+    world.entities['wolf'].tags = ['hostile']; // no 'enemy' tag
+    return world;
+  }
+
+  it('a hostile-only entity gets an HP line, exactly like an enemy would (RED-PROOF: fails pre-fix, kind would be "other")', () => {
+    const world = hostileOnlyWorld();
+    const text = renderScene(world, PLAIN);
+    expect(text).toContain('HP 8');
+  });
+
+  it('a hostile-only entity paints red and uses the enemy icon, exactly like an enemy would', () => {
+    const world = hostileOnlyWorld();
+    const text = renderScene(world, COLORED);
+    const pal = makePalette(true);
+    expect(text).toContain(pal.red('! Wolf'));
+  });
+
+  it('control: the plain enemy tag still classifies as enemy', () => {
+    const world = makeWorld(); // wolf keeps its default ['enemy'] tag
+    const text = renderScene(world, PLAIN);
+    expect(text).toContain('HP 8');
   });
 });
 

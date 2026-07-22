@@ -653,7 +653,11 @@ export class WorldStore {
     // idCounter rides along in meta via the Object.assign above. Back-compat:
     // a legacy save predating the field would resume at 0 and collide with ids
     // already in the eventLog — backfill from the highest counter seen.
-    if (typeof store.state.meta.idCounter !== 'number') {
+    // Number.isFinite guards this identically to the seed/tick checks in
+    // assertSaveMetaShape (F-28b5d9ed): a value that is typeof 'number' but
+    // non-finite would otherwise defeat the backfill, and genId()'s
+    // `(++counter).toString(36)` would mint the same degenerate id forever.
+    if (typeof store.state.meta.idCounter !== 'number' || !Number.isFinite(store.state.meta.idCounter)) {
       store.state.meta.idCounter = highestIdCounter(store.state);
     }
 

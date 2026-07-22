@@ -198,6 +198,48 @@ describe('pc3 — meta.seed / meta.tick are type-validated on deserialize', () =
   });
 });
 
+// F-28b5d9ed: the idCounter backfill guard checked only `typeof !== 'number'`,
+// unlike the sibling seed/tick guards above which additionally require
+// Number.isFinite. A value that is typeof 'number' but non-finite (e.g.
+// Infinity) would defeat the backfill and stick genId() on a degenerate id
+// forever. Unlike seed/tick this guard does not throw — it backfills — so the
+// test pins that the backfill runs instead of leaving a non-finite value in
+// place.
+//
+// A live JS Infinity/NaN cannot reach this guard through a real save:
+// JSON.stringify(Infinity) serializes to `null`, which the pre-existing
+// typeof check already caught. `1e400` is valid JSON number syntax that
+// overflows to Infinity once JS parses the double — typeof 'number', not
+// finite — the exact shape only the new Number.isFinite half of the guard
+// catches, so the fixture is built via text substitution, not
+// JSON.stringify(parsed).
+describe('F-28b5d9ed — meta.idCounter backfill guard also checks Number.isFinite', () => {
+  it('WorldStore.deserialize backfills an idCounter that is typeof "number" but non-finite (1e400 overflow)', () => {
+    const parsed = JSON.parse(savedGame(15));
+    const worldJson = JSON.stringify(parsed.world).replace(/"idCounter":\d+/, '"idCounter":1e400');
+
+    // Sanity: the substitution landed and parses to a non-finite number, or
+    // this test is not exercising what it claims to.
+    const sanity = JSON.parse(worldJson) as { state: { meta: { idCounter: number } } };
+    expect(sanity.state.meta.idCounter).toBe(Infinity);
+
+    const restored = WorldStore.deserialize(worldJson);
+
+    // RED without the fix: typeof Infinity === 'number' passed the old
+    // typeof-only guard unchanged, so idCounter stayed Infinity here.
+    expect(Number.isFinite(restored.state.meta.idCounter)).toBe(true);
+  });
+
+  it('control — a valid finite idCounter is left untouched (no spurious backfill)', () => {
+    const parsed = JSON.parse(savedGame(16));
+    const original = parsed.world.state.meta.idCounter as number;
+    expect(Number.isFinite(original)).toBe(true);
+
+    const restored = WorldStore.deserialize(JSON.stringify(parsed.world));
+    expect(restored.state.meta.idCounter).toBe(original);
+  });
+});
+
 describe('pc6 — migrateSaveState success path (the loop itself, not just its rejections)', () => {
   it('pc6-001: a registered forward migration runs and upgrades the state through WorldStore.deserialize', () => {
     const store = new WorldStore({ manifest: testManifest, seed: 5 });

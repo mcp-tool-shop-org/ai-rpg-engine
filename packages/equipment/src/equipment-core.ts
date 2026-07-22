@@ -385,10 +385,16 @@ function equipHandler(
     });
   }
 
-  commitLoadout(world, state, actor, result.loadout);
-
   const tick = world.meta.tick;
   const events: ResolvedEvent[] = [];
+
+  // F-8a09a07b: run the fallible status ops BEFORE committing the loadout.
+  // statuses.remove/apply are consumer-injected (typed to return a value, not
+  // declared non-throwing) — ActionDispatcher.dispatch wraps the whole
+  // handler and degrades a throw to a generic 'action.rejected', but it
+  // cannot undo a commitLoadout that already ran. Committing only after both
+  // calls succeed means a throw here can never leave the actor's
+  // loadout/inventory/equipment mutated behind a rejected action.
 
   // Swap: retire the displaced item's status first so the log reads in order.
   if (displacedId && displacedId !== item.id) {
@@ -416,6 +422,9 @@ function equipHandler(
   applied.payload.slot = item.slot;
   applied.presentation = presentation(['objective', 'narrator'], 'normal');
   events.push(applied);
+
+  // Both status ops succeeded — commit the loadout now, last, not first.
+  commitLoadout(world, state, actor, result.loadout);
 
   // Objective record for consumers/tests (terminal-ui renders unknown types
   // as nothing; the visible lines above ride the status events).
@@ -503,11 +512,13 @@ function unequipHandler(
 
   // The equipment package's OWN transition: slot → inventory.
   const next = unequipItem(staged, slot);
-  commitLoadout(world, state, actor, next);
 
   const tick = world.meta.tick;
   const events: ResolvedEvent[] = [];
 
+  // F-8a09a07b: run the fallible statuses.remove BEFORE committing the
+  // loadout — same reasoning as equipHandler. A throw here must not leave the
+  // loadout committed behind a dispatcher-degraded 'action.rejected'.
   const removed = statuses.remove(actor, equipStatusId(itemId), tick);
   if (removed) {
     removed.payload.description = `Unequipped: ${item?.name ?? itemId}.`;
@@ -516,6 +527,9 @@ function unequipHandler(
     removed.presentation = presentation(['objective'], 'normal');
     events.push(removed);
   }
+
+  // Status removal succeeded — commit the loadout now, last, not first.
+  commitLoadout(world, state, actor, next);
 
   events.push(
     makeEvent(action, 'item.unequipped', {

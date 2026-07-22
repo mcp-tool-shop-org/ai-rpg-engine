@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createGame, combatMasteryTree } from '@ai-rpg-engine/starter-fantasy';
-import { addCurrency, getCurrency } from '@ai-rpg-engine/modules';
+import { addCurrency, getCurrency, ABILITY_CATALOG_FORMULA } from '@ai-rpg-engine/modules';
 import { buildActionList, renderFullScreen, SCREEN_WIDTH } from '@ai-rpg-engine/terminal-ui';
 import {
   buildAbilityActions,
@@ -134,6 +134,81 @@ describe('buildUnlockActions (F1d) — XP is spendable', () => {
   it('no trees → no unlock entries', () => {
     const engine = makeDivineCryptGame();
     expect(buildUnlockActions(engine.world, [])).toEqual([]);
+  });
+});
+
+// F-03f27ace: buildExtraActions' ability/unlock construction ran unguarded on
+// every turn — unlike every other per-turn/per-read path in this codebase
+// (turns.ts's runNpcTurns, guard.ts's runGuardedAction, director.ts's
+// per-section try/catch, this file's own renderInspectorReport). A throw from
+// a malformed ability or progression-node definition must degrade to one
+// bounded line and contribute no entries from the failing source, not end the
+// session on the very next frame render.
+describe('buildExtraActions — guarded-degrade on a throwing ability/unlock source (F-03f27ace)', () => {
+  it('a throwing ability catalog degrades to one bounded line; unlock/journal/director siblings still render (RED-PROOF: fails pre-fix)', () => {
+    const engine = makeDivineCryptGame();
+    // Overrides the real ability-core formula with one that blows up —
+    // buildAbilityActions (via getAbilityCatalog) is the failure source.
+    // { override: true } is the intentional-replacement path (F-09338c0a):
+    // ability-core already registered this id during setup, and injecting a
+    // throwing double is a deliberate override, not an accidental collision.
+    engine.formulas.register(
+      ABILITY_CATALOG_FORMULA,
+      () => {
+        throw new Error('ability catalog blew up\n'.repeat(50)); // multiline + pathological length
+      },
+      { override: true },
+    );
+    addCurrency(engine.store.state, 'player', 'xp', 20, engine.tick);
+    const log = vi.fn();
+
+    let extras: ExtraAction[] = [];
+    expect(() => {
+      extras = buildExtraActions(engine, [combatMasteryTree], { log });
+    }).not.toThrow();
+
+    // No ability entries — the failing source contributes nothing...
+    expect(extras.some((e) => e.group === 'ability')).toBe(false);
+    // ...but unlock/journal/director still build normally (siblings survive).
+    expect(extras.some((e) => e.group === 'advance')).toBe(true);
+    expect(extras.some((e) => e.group === 'journal')).toBe(true);
+    expect(extras.some((e) => e.group === 'director')).toBe(true);
+
+    expect(log).toHaveBeenCalledTimes(1);
+    const line = String(log.mock.calls[0][0]);
+    expect(line).toContain('ability catalog blew up');
+    expect(line.length).toBeLessThan(320); // bounded (describeActionError caps the reason at 240) — no raw multiline stack
+  });
+
+  it('a throwing unlock computation degrades to one bounded line; ability/journal/director siblings still render', () => {
+    const engine = makeDivineCryptGame(); // Holy Smite etc. are ready
+    const brokenTree = {
+      ...combatMasteryTree,
+      // buildUnlockActions iterates tree.nodes — non-array throws immediately.
+      nodes: null as unknown as typeof combatMasteryTree.nodes,
+    };
+    const log = vi.fn();
+
+    let extras: ExtraAction[] = [];
+    expect(() => {
+      extras = buildExtraActions(engine, [brokenTree], { log });
+    }).not.toThrow();
+
+    expect(extras.some((e) => e.group === 'ability')).toBe(true);
+    expect(extras.some((e) => e.group === 'advance')).toBe(false);
+    expect(extras.some((e) => e.group === 'journal')).toBe(true);
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(String(log.mock.calls[0][0])).toContain('advancement menu unavailable');
+  });
+
+  it('control: no throw means both real sources still contribute exactly as before', () => {
+    const engine = makeDivineCryptGame();
+    addCurrency(engine.store.state, 'player', 'xp', 20, engine.tick);
+    const log = vi.fn();
+    const extras = buildExtraActions(engine, [combatMasteryTree], { log });
+    expect(extras.some((e) => e.group === 'ability')).toBe(true);
+    expect(extras.some((e) => e.group === 'advance')).toBe(true);
+    expect(log).not.toHaveBeenCalled();
   });
 });
 
@@ -467,5 +542,36 @@ describe('journal entry (F-ENG005-quest-loop-min)', () => {
     const before = engine.serialize();
     renderJournal(engine.world);
     expect(engine.serialize()).toBe(before);
+  });
+
+  // F-470a2a88: renderJournal had no guard around its per-quest-instance
+  // processing, unlike its two siblings wired identically in handlePlayerInput's
+  // extras dispatch (renderDirectorLedger's per-section try/catch,
+  // renderInspectorReport's per-inspector try/catch). A throwing quest-core
+  // read (a foreign or content-drifted save) would propagate uncaught through
+  // handlePlayerInput into the main interactive loop instead of degrading.
+  it('a throwing quest instance degrades to one bounded line instead of crashing renderJournal (RED-PROOF: fails pre-fix)', () => {
+    const engine = createGame(42);
+    engine.submitAction('move', { targetIds: ['chapel-nave'] }); // real active quest: ashes-below
+    const instance = engine.world.quests['ashes-below'];
+    // Poison ONE field journalQuestLines reads. `status` stays a normal
+    // string so the instance still passes the active-quest filter (that
+    // filter is outside this function's own throw surface); `currentStage`
+    // throws the moment journalQuestLines reads it — simulating a quest-core
+    // read gone bad on drifted content.
+    Object.defineProperty(instance, 'currentStage', {
+      configurable: true,
+      get(): string {
+        throw new Error('quest-core read blew up');
+      },
+    });
+
+    let journal = '';
+    expect(() => {
+      journal = renderJournal(engine.world);
+    }).not.toThrow();
+    expect(journal).toContain('  ── ashes-below ──');
+    expect(journal).toContain('[quest entry failed:');
+    expect(journal).toContain('quest-core read blew up');
   });
 });

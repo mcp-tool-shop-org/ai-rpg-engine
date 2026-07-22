@@ -111,13 +111,15 @@ function paintedBar(current: number, max: number, pal: Palette): string {
 type EntityKind = 'enemy' | 'ally' | 'npc' | 'item' | 'other';
 
 /**
- * Classify an entity for the scene list. Explicit hostility (the `enemy`
- * tag) wins over everything; party membership comes from the `ally` /
- * `companion` tags. Faction is deliberately NOT used here — factions define
- * combat sides, not who travels with you.
+ * Classify an entity for the scene list. Explicit hostility (the `enemy` /
+ * `hostile` tags — F-7e0ff4be: the same explicit-hostility convention
+ * turns.ts's listHostilesInPlayerZone and menu.ts's menuTargetable use) wins
+ * over everything; party membership comes from the `ally` / `companion`
+ * tags. Faction is deliberately NOT used here — factions define combat
+ * sides, not who travels with you.
  */
 function entityKind(entity: EntityState): EntityKind {
-  if (entity.tags.includes('enemy')) return 'enemy';
+  if (entity.tags.includes('enemy') || entity.tags.includes('hostile')) return 'enemy';
   if (entity.tags.includes('ally') || entity.tags.includes('companion')) return 'ally';
   if (entity.tags.includes('npc')) return 'npc';
   if (entity.tags.includes('item')) return 'item';
@@ -333,7 +335,10 @@ export function buildActionList(world: WorldState): ActionOption[] {
       if (entity.tags.includes('npc')) {
         actions.push({ verb: 'speak', targetIds: [entity.id], label: `Speak to ${entity.name}`, group: 'interact' });
       }
-      if (entity.tags.includes('enemy') && (entity.resources.hp ?? 0) > 0) {
+      // F-fea7bb72: `hostile` is offered exactly like `enemy` — the same
+      // convention turns.ts's listHostilesInPlayerZone, menu.ts's
+      // menuTargetable, and endgame.ts's detectBaseOutcome already use.
+      if ((entity.tags.includes('enemy') || entity.tags.includes('hostile')) && (entity.resources.hp ?? 0) > 0) {
         actions.push({ verb: 'attack', targetIds: [entity.id], label: `Attack ${entity.name}`, group: 'interact' });
       }
       actions.push({ verb: 'inspect', targetIds: [entity.id], label: `Inspect ${entity.name}`, group: 'interact' });

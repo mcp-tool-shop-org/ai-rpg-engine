@@ -357,3 +357,65 @@ describe('dialogue-core: leaf-node termination (MOD-C-BH-02)', () => {
     expect(endedDialogueId).toBe('merchant-greeting');
   });
 });
+
+// ---------------------------------------------------------------------------
+// action.rejected payloads name the verb (convention parity with the dispatcher)
+//
+// Every action.rejected the DISPATCHER emits — unknown verb, a validator or
+// handler throw (core/actions.ts dispatch) — stamps `verb: action.verb` into
+// the payload. dialogue-core's own rejections, built through makeEvent, carried
+// only `{ reason }` with NO verb. That broke any consumer keying on the verb:
+// the CLI's dialogue-trap fall-through (bin.ts `chooseRejected`, CS-C-001)
+// tests `payload.verb === 'choose'`, so against the REAL module a rejected
+// `choose` was invisible to it — a mistyped dialogue number was silently
+// accepted as a valid selection and the fall-through never engaged. The gap
+// hid because the CLI's own trap tests use a synthetic engine with NO `choose`
+// verb, so the DISPATCHER rejects it (and DOES stamp verb) — the real handler
+// path was never exercised. These tests pin the contract against a real, wired
+// engine: dialogue-core rejections name their verb, like every other
+// action.rejected payload in the codebase.
+// ---------------------------------------------------------------------------
+
+describe('dialogue-core: action.rejected payloads name the verb', () => {
+  const rejectionOf = (events: ResolvedEvent[]) =>
+    events.find(e => e.type === 'action.rejected');
+
+  it("chooseHandler names verb 'choose' on all four rejection branches", () => {
+    // 1. No dialogue active (no speak first) -> "no active dialogue".
+    const e1 = buildEngine();
+    const r1 = rejectionOf(e1.submitAction('choose', { parameters: { choiceId: 'buy' } }));
+    expect(r1?.payload).toMatchObject({ verb: 'choose', reason: 'no active dialogue' });
+
+    // 2. Active dialogue whose id is not in the registry -> "dialogue not found".
+    const e2 = buildEngine();
+    e2.world.modules['dialogue-core'] = { activeDialogue: 'ghost', activeNodeId: 'entry', speakerId: null };
+    const r2 = rejectionOf(e2.submitAction('choose', { parameters: { choiceId: 'buy' } }));
+    expect(r2?.payload).toMatchObject({ verb: 'choose', reason: 'dialogue not found' });
+
+    // 3. Current node has no choices ('farewell' is a leaf) -> "no choices available".
+    const e3 = buildEngine();
+    e3.world.modules['dialogue-core'] = { activeDialogue: 'merchant-greeting', activeNodeId: 'farewell', speakerId: 'merchant' };
+    const r3 = rejectionOf(e3.submitAction('choose', { parameters: { choiceId: 'x' } }));
+    expect(r3?.payload).toMatchObject({ verb: 'choose', reason: 'no choices available' });
+
+    // 4. Out-of-range choiceIndex on a node that HAS choices -> "invalid choice".
+    const e4 = buildEngine();
+    e4.submitAction('speak', { targetIds: ['merchant'] });
+    const r4 = rejectionOf(e4.submitAction('choose', { parameters: { choiceIndex: 99 } }));
+    expect(r4?.payload).toMatchObject({ verb: 'choose', reason: 'invalid choice' });
+  });
+
+  it("speakHandler names verb 'speak' on its rejection branches", () => {
+    const e1 = buildEngine();
+    const r1 = rejectionOf(e1.submitAction('speak', {}));
+    expect(r1?.payload).toMatchObject({ verb: 'speak', reason: 'no one to speak to' });
+
+    const e2 = buildEngine();
+    const r2 = rejectionOf(e2.submitAction('speak', { targetIds: ['nobody'] }));
+    expect(r2?.payload).toMatchObject({ verb: 'speak', reason: 'nobody not found' });
+
+    const e3 = buildEngine([]); // empty registry -> "<name> has nothing to say"
+    const r3 = rejectionOf(e3.submitAction('speak', { targetIds: ['merchant'] }));
+    expect(r3?.payload).toMatchObject({ verb: 'speak', reason: 'Merchant has nothing to say' });
+  });
+});

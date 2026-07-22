@@ -59,7 +59,15 @@ function getTriggerValue(trigger: GrowthTrigger, chronicle: ItemChronicleEntry[]
     case 'recognition-count':
       return countByEvent(chronicle, 'recognized');
     case 'faction-kills':
-      return 0;
+      // F-f0f212a0: derived from chronicle content the same way 'boss-kill'
+      // is — text matching against the free-text `detail` field, since
+      // ItemChronicleEntry carries no structured faction reference. A content
+      // author logs a faction kill by mentioning "faction" in the kill's
+      // detail text (e.g. "Killed an Iron Wardens faction soldier"), the same
+      // authoring convention 'boss-kill' already relies on for "boss".
+      // Previously this unconditionally returned 0, so no milestone using
+      // this trigger could ever fire.
+      return chronicle.filter((e) => e.event === 'used-in-kill' && e.detail.toLowerCase().includes('faction')).length;
     case 'boss-kill':
       return chronicle.filter((e) => e.event === 'used-in-kill' && e.detail.toLowerCase().includes('boss')).length;
   }

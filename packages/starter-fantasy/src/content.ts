@@ -1,5 +1,5 @@
 // The Chapel Threshold — fantasy starter content
-// 2 rooms, 5 zones, 1 NPC, 1 enemy, 1 item, 1 dialogue, 1 status
+// 2 rooms, 5 zones, 3 NPCs, 3 enemies, 7 items, 1 dialogue, 1 status
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, QuestDefinition } from '@ai-rpg-engine/content-schema';
@@ -867,6 +867,13 @@ export const itemCatalog: ItemCatalog = {
       resourceModifiers: { hp: 3 },
       grantedTags: ['veil-touched'],
       statModifiers: { instinct: 1 },
+    },
+    {
+      id: 'healing-draught',
+      name: 'Healing Draught',
+      description: 'A vial of blessed water, gifted by the pilgrim — said to knit wounds shut when drunk.',
+      slot: 'tool',
+      rarity: 'common',
     },
   ],
 };

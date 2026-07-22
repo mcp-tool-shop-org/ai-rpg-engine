@@ -145,6 +145,52 @@ describe('evaluateRelicGrowth', () => {
     const state = evaluateRelicGrowth(baseWeapon, chronicle, 50, topFirst);
     expect(state.currentEpithet).toBe('Test Sword the Reaper');
   });
+
+  // F-f0f212a0 (red-proof): getTriggerValue's 'faction-kills' case
+  // unconditionally returned 0 regardless of chronicle content, so a
+  // milestone authored with this trigger could never reach a positive
+  // threshold and its epithet/statBonus could never fire. Fails without the
+  // fix (0 never reaches threshold 2); passes once faction-kills is derived
+  // from chronicle content the way 'boss-kill' already is.
+  describe('faction-kills trigger', () => {
+    it('reaches a faction-kills milestone when the chronicle records kills mentioning "faction"', () => {
+      const milestones: GrowthMilestone[] = [
+        { trigger: 'faction-kills', threshold: 2, epithet: 'Factionbane {name}' },
+      ];
+      const chronicle: ItemChronicleEntry[] = [
+        { event: 'acquired', tick: 1, detail: 'Found' },
+        { event: 'used-in-kill', tick: 10, detail: 'Killed an Iron Wardens faction soldier' },
+        { event: 'used-in-kill', tick: 11, detail: 'Killed another faction guard' },
+      ];
+      const state = evaluateRelicGrowth(baseWeapon, chronicle, 50, milestones);
+      expect(state.milestonesReached).toContain('Factionbane Test Sword');
+      expect(state.tier).toBe(1);
+    });
+
+    it('does not count ordinary kills with no faction mention', () => {
+      const milestones: GrowthMilestone[] = [
+        { trigger: 'faction-kills', threshold: 1, epithet: 'Factionbane {name}' },
+      ];
+      const chronicle: ItemChronicleEntry[] = [
+        { event: 'acquired', tick: 1, detail: 'Found' },
+        ...makeKills(5), // detail text ("Kill 1", "Kill 2", ...) never mentions "faction"
+      ];
+      const state = evaluateRelicGrowth(baseWeapon, chronicle, 50, milestones);
+      expect(state.milestonesReached).toEqual([]);
+      expect(state.tier).toBe(0);
+    });
+
+    it('stays under threshold when faction kills are too few', () => {
+      const milestones: GrowthMilestone[] = [
+        { trigger: 'faction-kills', threshold: 3, epithet: 'Factionbane {name}' },
+      ];
+      const chronicle: ItemChronicleEntry[] = [
+        { event: 'used-in-kill', tick: 10, detail: 'Killed a faction scout' },
+      ];
+      const state = evaluateRelicGrowth(baseWeapon, chronicle, 50, milestones);
+      expect(state.milestonesReached).toEqual([]);
+    });
+  });
 });
 
 describe('getRelicEpithet', () => {
