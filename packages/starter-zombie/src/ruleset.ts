@@ -17,6 +17,14 @@ export const zombieMinimalRuleset: RulesetDefinition = {
     { id: 'hp', name: 'HP', min: 0, max: 30, default: 18 },
     { id: 'stamina', name: 'Stamina', min: 0, max: 20, default: 12, regenRate: 1 },
     { id: 'infection', name: 'Infection', min: 0, max: 100, default: 0 },
+    // F-92c78519: declared for HUD/status-surface consistency with every
+    // other tracked resource above — not required for trade-core's buy/sell
+    // verbs themselves (they read/write entity.resources.coin directly and
+    // clamp min-0/open-ceiling even when undeclared, per WorldStore's own
+    // legacy-contract fallback), but every other resource the survivor
+    // carries already has a ruleset declaration, and coin shouldn't be the
+    // exception.
+    { id: 'coin', name: 'Coin', min: 0, max: 500, default: 0 },
   ],
 
   verbs: [
@@ -28,6 +36,8 @@ export const zombieMinimalRuleset: RulesetDefinition = {
     { id: 'reposition', name: 'Reposition', tags: ['combat', 'movement'], description: 'Shift position to outflank a target or escape a bad spot' },
     { id: 'disengage', name: 'Disengage', tags: ['combat', 'movement'], description: 'Attempt to break from combat and withdraw' },
     { id: 'use', name: 'Use', description: 'Use an item from inventory' },
+    { id: 'equip', name: 'Equip', tags: ['equipment'], description: 'Ready gear from inventory (bare "equip" readies your only piece)' },
+    { id: 'unequip', name: 'Unequip', tags: ['equipment'], description: 'Stow an equipped item back into inventory' },
     { id: 'speak', name: 'Speak', tags: ['dialogue'], description: 'Talk to other survivors' },
     { id: 'choose', name: 'Choose', tags: ['dialogue'], description: 'Select a dialogue option' },
     { id: 'use-ability', name: 'Use Ability', tags: ['ability'], description: 'Use a special ability' },

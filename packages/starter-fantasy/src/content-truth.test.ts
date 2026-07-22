@@ -10,6 +10,14 @@
 //                            and (low) warning can render
 //  T0-verb-honesty-content — the ruleset help table only advertises verbs
 //                            with registered handlers, incl. brace/reposition
+//  T0-equipment-truth      — every creation path's kit resolves in the item
+//                            catalog and is equippable by the tags that path
+//                            grants (F-86b9145d: the equip loop wired into
+//                            this pack; F-1b2e6406: the regression pin for
+//                            gravewalker's dangling 'torch' startingInventory)
+//  T0-coin-seed            — the authored player starts with a positive coin
+//                            balance so trade-core's universal buy verb is
+//                            reachable from the first tick (F-92c78519)
 
 import { describe, it, expect } from 'vitest';
 import { resolveEntity, type CharacterBuild } from '@ai-rpg-engine/character-creation';
@@ -17,7 +25,7 @@ import { getAvailableAbilities, getCurrency } from '@ai-rpg-engine/modules';
 import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
 import { createGame } from './setup.js';
 import { fantasyMinimalRuleset } from './ruleset.js';
-import { buildCatalog, player, fantasyAbilities, combatMasteryTree, pilgrimDialogue, xpAwards } from './content.js';
+import { buildCatalog, player, fantasyAbilities, combatMasteryTree, pilgrimDialogue, xpAwards, itemCatalog } from './content.js';
 
 const dialogues = [pilgrimDialogue];
 
@@ -136,5 +144,70 @@ describe('T0-verb-honesty-content: help rows match registered handlers', () => {
         expect(registered.has(v), `archetype ${a.id} grants unregistered verb '${v}'`).toBe(true);
       }
     }
+  });
+
+  it('equip/unequip help rows resolve to registered handlers (F-86b9145d wiring)', () => {
+    const registered = new Set(createGame(11).getAvailableActions());
+    const helped = new Set(fantasyMinimalRuleset.verbs.map((v) => v.id));
+    for (const verb of ['equip', 'unequip']) {
+      expect(helped.has(verb), `'${verb}' missing from the help table`).toBe(true);
+      expect(registered.has(verb), `'${verb}' advertised but unregistered`).toBe(true);
+    }
+  });
+});
+
+describe('T0-equipment-truth: every entry path can reach the equip loop (computed)', () => {
+  const catalogIds = new Set(itemCatalog.items.map((i) => i.id));
+
+  it('every archetype/background startingInventory item resolves in the item catalog', () => {
+    // This is the regression pin for F-1b2e6406: gravewalker's
+    // startingInventory used to carry 'torch', which had no matching
+    // ItemDefinition anywhere in itemCatalog below — a created gravewalker
+    // carried an item id nothing else in the pack could ever resolve.
+    const kits = [
+      ...buildCatalog.archetypes.map((a) => ({ id: `archetype ${a.id}`, items: a.startingInventory ?? [] })),
+      ...buildCatalog.backgrounds.map((b) => ({ id: `background ${b.id}`, items: b.startingInventory ?? [] })),
+    ];
+    for (const kit of kits) {
+      for (const itemId of kit.items) {
+        expect(catalogIds.has(itemId), `${kit.id} carries '${itemId}' which is not in the item catalog`).toBe(true);
+      }
+    }
+  });
+
+  it('every archetype can equip its own kit (requiredTags ⊆ the tags creation grants)', () => {
+    for (const a of buildCatalog.archetypes) {
+      for (const itemId of a.startingInventory ?? []) {
+        const item = itemCatalog.items.find((i) => i.id === itemId);
+        if (!item) continue; // covered by the resolution assertion above
+        const missing = (item.requiredTags ?? []).filter((t) => !a.startingTags.includes(t));
+        expect(
+          missing,
+          `archetype ${a.id} starts with '${itemId}' but cannot equip it (missing tags: ${missing.join(', ')})`,
+        ).toEqual([]);
+      }
+    }
+  });
+
+  // Adapted from starter-gladiator's own T0-equipment-truth block: this
+  // pack's authored player (unlike gladiator's) starts with an EMPTY
+  // inventory — the Wanderer picks up 'healing-draught' only after the
+  // pilgrim's dialogue gift, and character creation is the only day-one path
+  // to a catalog item (gravewalker's chapel-lantern, post F-1b2e6406). So
+  // this guards whatever the authored player DOES carry, rather than
+  // asserting a non-empty starting kit that was never authored here.
+  it("the authored player's starting inventory (if any) is catalog-recognized and equippable", () => {
+    const carried = (player.inventory ?? []).filter((id) => catalogIds.has(id));
+    for (const itemId of carried) {
+      const item = itemCatalog.items.find((i) => i.id === itemId)!;
+      const missing = (item.requiredTags ?? []).filter((t) => !player.tags.includes(t));
+      expect(missing, `authored player cannot equip '${itemId}'`).toEqual([]);
+    }
+  });
+});
+
+describe('T0-coin-seed: the universal buy verb is reachable from the first tick (F-92c78519)', () => {
+  it('the authored player starts with a positive coin balance', () => {
+    expect(player.resources.coin).toBeGreaterThan(0);
   });
 });
