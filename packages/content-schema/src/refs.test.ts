@@ -225,6 +225,210 @@ describe('validateGameContent', () => {
     expect(r.errors.some((e) => e.message.includes('"rusty-key"') && e.message.includes('item'))).toBe(true);
   });
 
+  // F-703048a5: the item-registry check originally covered only entity
+  // inventory/equipment (above). The same "typo'd itemId ships silently" bug class
+  // recurs on three more itemId-shaped surfaces — chargen startingInventory kits,
+  // bespoke item-use-effect ids, and quest item rewards. Each gets a RED (dangling
+  // ref) / GREEN (clean, control) pair below, fixture-only per the content-validator
+  // domain contract — no starter content is imported.
+
+  it('reports a dangling archetype startingInventory item reference', () => {
+    const r = validateGameContent(
+      // Mirrors the real fantasy-starter shape: an archetype's startingInventory
+      // names an item ('torch') that is not defined anywhere in the item registry.
+      { archetypes: [{ id: 'gravewalker', startingInventory: ['torch'] }] },
+      { itemIds: ['sword'] },
+    );
+    expect(r.ok).toBe(false);
+    expect(
+      r.errors.some(
+        (e) =>
+          e.message.includes('"torch"') &&
+          e.message.includes('item') &&
+          e.path.includes('archetype(gravewalker).startingInventory'),
+      ),
+    ).toBe(true);
+  });
+
+  it('a clean archetype startingInventory passes (control)', () => {
+    const r = validateGameContent(
+      { archetypes: [{ id: 'gravewalker', startingInventory: ['torch'] }] },
+      { itemIds: ['torch'] },
+    );
+    expect(r.ok).toBe(true);
+    expect(r.errors).toHaveLength(0);
+  });
+
+  it('reports a dangling background startingInventory item reference', () => {
+    const r = validateGameContent(
+      { backgrounds: [{ id: 'oath-breaker', startingInventory: ['rusty-key'] }] },
+      { itemIds: ['torch'] },
+    );
+    expect(r.ok).toBe(false);
+    expect(
+      r.errors.some(
+        (e) => e.message.includes('"rusty-key"') && e.path.includes('background(oath-breaker).startingInventory'),
+      ),
+    ).toBe(true);
+  });
+
+  it('a clean background startingInventory passes (control)', () => {
+    const r = validateGameContent(
+      { backgrounds: [{ id: 'oath-breaker', startingInventory: ['torch'] }] },
+      { itemIds: ['torch'] },
+    );
+    expect(r.ok).toBe(true);
+    expect(r.errors).toHaveLength(0);
+  });
+
+  it('reports a dangling item-use-effect itemId reference', () => {
+    const r = validateGameContent(
+      { itemUseEffects: [{ itemId: 'healing-salve' }] },
+      { itemIds: ['torch'] },
+    );
+    expect(r.ok).toBe(false);
+    expect(
+      r.errors.some((e) => e.message.includes('"healing-salve"') && e.path.includes('itemUseEffect[0].itemId')),
+    ).toBe(true);
+  });
+
+  it('a clean item-use-effect itemId passes (control)', () => {
+    const r = validateGameContent(
+      { itemUseEffects: [{ itemId: 'torch' }] },
+      { itemIds: ['torch'] },
+    );
+    expect(r.ok).toBe(true);
+    expect(r.errors).toHaveLength(0);
+  });
+
+  it('reports a dangling quest item-reward reference', () => {
+    const r = validateGameContent(
+      {
+        quests: [
+          {
+            id: 'find-torch',
+            name: 'Find the Torch',
+            stages: [{ id: 's1', name: 'Search' }],
+            rewards: [{ type: 'item', params: { itemId: 'ancient-relic' } }],
+          },
+        ],
+      },
+      { itemIds: ['torch'] },
+    );
+    expect(r.ok).toBe(false);
+    expect(
+      r.errors.some(
+        (e) => e.message.includes('"ancient-relic"') && e.path.includes('quest(find-torch).rewards[0].params.itemId'),
+      ),
+    ).toBe(true);
+  });
+
+  it('a clean quest item-reward passes (control)', () => {
+    const r = validateGameContent(
+      {
+        quests: [
+          {
+            id: 'find-torch',
+            name: 'Find the Torch',
+            stages: [{ id: 's1', name: 'Search' }],
+            rewards: [{ type: 'item', params: { itemId: 'torch' } }],
+          },
+        ],
+      },
+      { itemIds: ['torch'] },
+    );
+    expect(r.ok).toBe(true);
+    expect(r.errors).toHaveLength(0);
+  });
+
+  it('does not flag non-item quest rewards even when the item registry is present', () => {
+    // A gold/xp reward has no itemId at all — must not be misread as a dangling item ref.
+    const r = validateGameContent(
+      {
+        quests: [
+          {
+            id: 'q1',
+            name: 'Q',
+            stages: [{ id: 's1', name: 'S' }],
+            rewards: [{ type: 'gold', params: { amount: 50 } }],
+          },
+        ],
+      },
+      { itemIds: ['torch'] },
+    );
+    expect(r.ok).toBe(true);
+    expect(r.errors).toHaveLength(0);
+  });
+
+  it('skips all new item-reference surfaces uniformly when no item registry is available (warn-and-degrade)', () => {
+    const r = validateGameContent({
+      archetypes: [{ id: 'a1', startingInventory: ['mystery-torch'] }],
+      backgrounds: [{ id: 'b1', startingInventory: ['mystery-cloak'] }],
+      itemUseEffects: [{ itemId: 'mystery-potion' }],
+      quests: [
+        {
+          id: 'q1',
+          name: 'Q',
+          stages: [{ id: 's1', name: 'S' }],
+          rewards: [{ type: 'item', params: { itemId: 'mystery-relic' } }],
+        },
+      ],
+    });
+    expect(r.ok).toBe(true);
+    expect(r.errors).toHaveLength(0);
+  });
+
+  it('does not throw on a null element inside the new item-reference collections', () => {
+    // Unlike the pre-existing null-element test below, this one supplies an item
+    // registry so itemReg is truthy and every new loop actually executes its guard.
+    expect(() =>
+      validateGameContent(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        { archetypes: [null], backgrounds: [null], itemUseEffects: [null], quests: [null] } as any,
+        { itemIds: ['torch'] },
+      ),
+    ).not.toThrow();
+  });
+
+  // Non-vacuity: a validator that can never fire is worse than none. Prove the gate
+  // is RED-capable by taking one clean, multi-surface fixture through both states —
+  // passing as authored, then failing after a single-field mutation that reproduces
+  // the real fantasy-starter 'torch' bug shape (a typo'd startingInventory id).
+  it('non-vacuity: a passing multi-surface fixture goes RED when one startingInventory id is mutated to a typo', () => {
+    const itemIds = ['torch', 'sword', 'healing-salve', 'ancient-relic'];
+    const cleanPack: ContentPack = {
+      archetypes: [{ id: 'gravewalker', startingInventory: ['torch'] }],
+      backgrounds: [{ id: 'oath-breaker', startingInventory: ['sword'] }],
+      itemUseEffects: [{ itemId: 'healing-salve' }],
+      quests: [
+        {
+          id: 'find-torch',
+          name: 'Find the Torch',
+          stages: [{ id: 's1', name: 'Search' }],
+          rewards: [{ type: 'item', params: { itemId: 'ancient-relic' } }],
+        },
+      ],
+    };
+
+    const clean = validateGameContent(cleanPack, { itemIds });
+    expect(clean.ok).toBe(true);
+    expect(clean.errors).toHaveLength(0);
+
+    const mutated: ContentPack = {
+      ...cleanPack,
+      archetypes: [{ id: 'gravewalker', startingInventory: ['torch-typo'] }],
+    };
+    const broken = validateGameContent(mutated, { itemIds });
+    expect(broken.ok).toBe(false);
+    expect(
+      broken.errors.some(
+        (e) => e.message.includes('"torch-typo"') && e.path.includes('archetype(gravewalker).startingInventory'),
+      ),
+    ).toBe(true);
+    // Only the mutated surface fires — the other three untouched surfaces stay clean.
+    expect(broken.errors).toHaveLength(1);
+  });
+
   it('reports an ability verb not in the verb registry', () => {
     const r = validateGameContent(
       {
