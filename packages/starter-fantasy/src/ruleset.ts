@@ -16,6 +16,13 @@ export const fantasyMinimalRuleset: RulesetDefinition = {
   resources: [
     { id: 'hp', name: 'HP', min: 0, max: 100, default: 20 },
     { id: 'stamina', name: 'Stamina', min: 0, max: 50, default: 10, regenRate: 1 },
+    // F-92c78519: declared for HUD/status-surface consistency with every
+    // other tracked resource above — not required for trade-core's buy/sell
+    // verbs themselves (they read/write entity.resources.coin directly and
+    // clamp min-0/open-ceiling even when undeclared, per WorldStore's own
+    // legacy-contract fallback), but every other resource the player carries
+    // already has a ruleset declaration, and coin shouldn't be the exception.
+    { id: 'coin', name: 'Coin', min: 0, max: 500, default: 0 },
   ],
 
   verbs: [
@@ -27,6 +34,8 @@ export const fantasyMinimalRuleset: RulesetDefinition = {
     { id: 'reposition', name: 'Reposition', tags: ['combat', 'movement'], description: 'Shift position to outflank a target or escape a bad spot' },
     { id: 'disengage', name: 'Disengage', tags: ['combat', 'movement'], description: 'Attempt to break from combat and withdraw' },
     { id: 'use', name: 'Use', description: 'Use an item from your inventory' },
+    { id: 'equip', name: 'Equip', tags: ['equipment'], description: 'Ready gear from your inventory (bare "equip" readies your only piece)' },
+    { id: 'unequip', name: 'Unequip', tags: ['equipment'], description: 'Stow an equipped item back into your inventory' },
     { id: 'speak', name: 'Speak', tags: ['dialogue'], description: 'Initiate dialogue with an NPC' },
     { id: 'choose', name: 'Choose', tags: ['dialogue'], description: 'Select a dialogue option' },
     { id: 'use-ability', name: 'Use Ability', tags: ['ability'], description: 'Activate a special ability or power' },

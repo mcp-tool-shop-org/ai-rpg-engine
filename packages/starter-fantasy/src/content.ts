@@ -28,7 +28,16 @@ export const player: EntityState = {
   name: 'Wanderer',
   tags: ['player'],
   stats: { vigor: 5, instinct: 4, will: 3 },
-  resources: { hp: 20, maxHp: 20, stamina: 8 },
+  // coin (F-92c78519): trade-core's 'buy' verb is always wired in via
+  // buildWorldStack (universal, every pack), but no starter ever seeded a
+  // starting balance — a fresh player could never afford a single purchase.
+  // 20 covers one modest buy at typical district pricing (SELL_BASE_VALUE=10
+  // * BUY_MARKUP_MULTIPLIER=1.3 ≈ 13/item at neutral supply) with a little
+  // left over. The engine's own resource clamp (min 0, open ceiling — see
+  // WorldStore.modifyResource) applies whether or not 'coin' is declared in
+  // the ruleset's resources list, so no ruleset.ts change is required for
+  // this seed to behave correctly.
+  resources: { hp: 20, maxHp: 20, stamina: 8, coin: 20 },
   statuses: [],
   inventory: [],
   zoneId: 'chapel-entrance',
@@ -695,7 +704,17 @@ export const buildCatalog: BuildCatalog = {
       description: 'Stalker of the dead, sharp and quiet',
       statPriorities: { vigor: 3, instinct: 5, will: 4 },
       startingTags: ['divine', 'shadow', 'gravewalker'],
-      startingInventory: ['torch'],
+      // F-1b2e6406: this used to read startingInventory: ['torch'], but
+      // 'torch' was never an ItemDefinition in this pack's itemCatalog below —
+      // a created gravewalker carried an unresolvable item id (content-truth's
+      // T0-equipment-truth guard now pins this). Retargeted to the catalog's
+      // OTHER lit-source item, 'chapel-lantern', rather than authoring a new
+      // 'torch' ItemDefinition: chapel-lantern already has no requiredTags (so
+      // every archetype's tags can equip it, gravewalker included) and reusing
+      // it is a one-line fix with zero new content-schema/catalog surface to
+      // get wrong, vs. inventing rarity/slot/provenance for a brand-new item
+      // whose only job is "gravewalker needs a light source."
+      startingInventory: ['chapel-lantern'],
       progressionTreeId: 'combat-mastery',
     },
     {

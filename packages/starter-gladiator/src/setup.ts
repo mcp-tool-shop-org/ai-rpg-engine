@@ -44,6 +44,7 @@ import {
   progressionRewards,
   itemCatalog,
   encounterSpawnContent,
+  gladiatorQuests,
 } from './content.js';
 import { gladiatorMinimalRuleset } from './ruleset.js';
 
@@ -188,6 +189,10 @@ export function createGame(seed?: number): Engine {
     // Zone-entry encounter spawning (F-ENG005) — tables authored in
     // content.ts encounterSpawnContent, validity pinned by content.test.ts.
     encounterSpawn: { gameId: manifest.id, ...encounterSpawnContent },
+    // F-c07d6024: the authored quests give the arena an explicit reason to
+    // return. quest-core validates at construction (fail loud) and drives
+    // offer → track → complete → reward off the live event stream.
+    quests: { gameId: manifest.id, quests: gladiatorQuests },
   });
 
   const engine = new Engine({

@@ -2,7 +2,7 @@
 // 5 zones, 3 NPCs, 2 enemies, 1 dialogue, 2 districts
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
+import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition, QuestDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -27,7 +27,16 @@ export const player: EntityState = {
   name: 'Gladiator',
   tags: ['player', 'gladiator', 'enslaved'],
   stats: { might: 5, agility: 5, showmanship: 4 },
-  resources: { hp: 25, maxHp: 25, stamina: 6, fatigue: 0, 'crowd-favor': 40 },
+  // coin (F-92c78519): trade-core's 'buy' verb is always wired in via
+  // buildWorldStack (universal, every pack), but no starter ever seeded a
+  // starting balance — a fresh player could never afford a single purchase.
+  // 15 (winnings quietly kept back from a bout, despite being enslaved)
+  // covers a modest buy at typical district pricing (SELL_BASE_VALUE=10 *
+  // BUY_MARKUP_MULTIPLIER=1.3 ≈ 13/item at neutral supply). The engine's own
+  // resource clamp (min 0, open ceiling — WorldStore.modifyResource) applies
+  // whether or not 'coin' is declared in the ruleset's resources list, so no
+  // ruleset.ts change is required for this seed to behave correctly.
+  resources: { hp: 25, maxHp: 25, stamina: 6, fatigue: 0, 'crowd-favor': 40, coin: 15 },
   statuses: [],
   // F-ENG008: the armory issues the retiarius kit to the authored player too,
   // so the equip loop is reachable without character creation (created
@@ -377,6 +386,88 @@ export const patronDialogue: DialogueDefinition = {
     },
   },
 };
+
+// --- Quests (F-c07d6024-gladiator-quest-loop) ---
+//
+// Two authored QuestDefinitions — Iron Colosseum shipped with quest-core
+// reachable (buildWorldStack wires it whenever `quests` is passed) but zero
+// authored quest content, despite already carrying everything a quest needs:
+// placed kill targets, zones, and a patron dialogue. Wired via
+// buildWorldStack's `quests` config in setup.ts; quest-core validates them at
+// construction (fail-loud) and drives offer → track → complete → reward off
+// the live event stream. Both are completable inside a normal session with
+// the shipped world alone: war-beast and arena-overlord both stand PLACED at
+// arena-floor from setup (never spawned/random — the encounter-spawn tables
+// never enter this arithmetic, same discipline as fantasy/zombie's own
+// quests).
+//
+// Stage triggers use quest-core's authored vocabulary: `advance` (done on one
+// matching event), condition `payload-equals` (a specific entity kill).
+
+export const firstBloodQuest: QuestDefinition = {
+  id: 'first-blood',
+  name: 'First Blood in the Sand',
+  // Offered the moment the player first steps onto the arena floor — the
+  // instant the fight stops being a rumor and starts being real.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'arena-floor' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'draw-first-blood',
+      name: 'Draw First Blood',
+      description: "A war beast prowls the sand — put it down and earn the crowd's attention",
+      objectives: ['Defeat the War Beast'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-equals', params: { key: 'entityId', value: 'war-beast' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [{ type: 'xp', params: { amount: 15 } }],
+};
+
+export const overlordsDueQuest: QuestDefinition = {
+  id: 'the-overlords-due',
+  name: "The Overlord's Due",
+  // Offered on entering the patron gallery — Domina Valeria's world, and the
+  // moment freedom stops being an abstraction and starts naming its price.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'patron-gallery' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'topple-the-overlord',
+      name: 'Topple the Overlord',
+      description: 'The Overlord holds the arena, and your freedom, in his fist',
+      objectives: ['Destroy the Overlord'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-equals', params: { key: 'entityId', value: 'arena-overlord' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [
+    { type: 'xp', params: { amount: 25 } },
+    { type: 'item', params: { itemId: 'victory-wreath' } },
+  ],
+};
+
+export const gladiatorQuests: QuestDefinition[] = [firstBloodQuest, overlordsDueQuest];
 
 // --- Districts ---
 
