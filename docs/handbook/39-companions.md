@@ -1,6 +1,15 @@
+---
+title: "Chapter 39 — Companions & Party Dynamics"
+description: "Companions & Party Dynamics"
+sidebar:
+  order: 39
+---
+
 # Chapter 39 — Companions & Party Dynamics
 
 Companions in AI RPG Engine are not a separate entity type — they are NPCs with a `CompanionState` sidecar. Every companion already has an `EntityState`, can have `CognitionState`, and participates in NPC agency. The companion system adds party membership, role-based reactions, morale tracking, ability tags, and departure triggers on top of existing NPC infrastructure.
+
+> **Shipped and deepened through v2.9 — companions are live and act on their own.** A **`recruit`** verb builds a party: it persists party state, tags the recruit (`companion` + `companion:<role>`), and sets its faction so it fights *with* you — without the faction, targeting would resolve the companion as an enemy. In v2.9 companions take **independent turns** each round through `selectBestAction`, with a per-role combat bias so a fighter and a scholar fight differently, and interception now protects companion-on-companion, not just the player ([Chapter 54](54-companion-interception)). Companions react to the round with morale, surface HP on the Director's PARTY line, and can depart. The turn step gates on a non-empty party, so companion-less packs stay byte-identical and seed-0 legacy replay is preserved. Recruitable companions now ship in **all ten starters** (five had the verb with no one to recruit before v2.9).
 
 ---
 

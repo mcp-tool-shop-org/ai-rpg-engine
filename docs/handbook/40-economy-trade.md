@@ -1,8 +1,17 @@
+---
+title: "Chapter 40 — Economy, Scarcity & Trade"
+description: "Economy, Scarcity & Trade"
+sidebar:
+  order: 40
+---
+
 # Chapter 40 — Economy, Scarcity & Trade
 
 Districts in AI RPG Engine don't just have mood — they have material conditions. The economy system tracks supply at the category level across districts, derives scarcity and surplus, modulates item values contextually, and feeds economic pressure into faction agency, NPC behavior, narration, and strategic play.
 
 This is not accounting cosplay. Eight supply categories, baseline-seeking decay, and lookup-table-driven modifiers produce emergent economic storytelling with minimal token overhead (~10–15 tokens per narration input).
+
+> **Shipped and complete as of v2.9 — the economy is a full loop.** `createEconomyCore` seeds a per-district economy at pack-load (via `buildWorldStack`, in all ten starters) and ticks it every round. Both a **`sell`** and a **`buy`** verb — numbered `trade` entries on the action menu — price goods through `computeItemValue` (scarcity / faction / provenance / contraband) and shift local supply as you trade; buying carries a spread over selling so a same-district round-trip always loses coin, and merchant stock is offered per district at supply-category granularity (supply level is the restock signal). The **MARKET OVERVIEW** Director's-Ledger section, the four economy pressures below, the endgame merchant-prince arc, and the crafting/salvage loop (Chapter 41) all read this live state. The single-district `/trade` economy drill-down now surfaces on the zone-inspect payload. Genre-flavored merchant stock (per-starter genre threading over the universal fallback that ships today) is a small follow-up.
 
 ---
 

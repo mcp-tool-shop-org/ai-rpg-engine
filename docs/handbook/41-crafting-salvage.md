@@ -1,8 +1,17 @@
+---
+title: "Chapter 41 — Crafting, Salvage & Item Transformation"
+description: "Crafting, Salvage & Item Transformation"
+sidebar:
+  order: 41
+---
+
 # Chapter 41 — Crafting, Salvage & Item Transformation
 
 Objects in AI RPG Engine can be found, tracked, and remembered — but until now, not changed. The crafting system adds salvage (items → materials), crafting (materials → items), repair, and modification — all responding to local scarcity, district mood, faction access, and item provenance.
 
 This is not a crafting minigame. Lookup-table recipes, deterministic yield tables, and context-driven quality modifiers produce emergent item-economy feedback with zero LLM calls and negligible token overhead.
+
+> **Shipped in v2.9 — crafting is live.** `createCraftingCore` (always-on in `buildWorldStack`) registers **`salvage`** / **`craft`** / **`repair`** / **`modify`** as numbered `crafting` menu entries over the authored recipe tables. Salvage consumes a carried item and writes materials to `actor.custom`; crafting/repair/modify draw those materials down against recipe inputs. The write finally lights the Director's Ledger **MATERIALS** and **RECIPES** sections, which shipped dark. Genre-flavored recipes fall back to the universal table today (per-starter genre threading is a follow-up), and `repair`/`modify` are reachable by verb ahead of a dedicated menu row.
 
 ---
 

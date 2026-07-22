@@ -9,7 +9,7 @@ export const config: SiteConfig = {
   footerText: 'MIT Licensed — built by <a href="https://github.com/mcp-tool-shop-org" style="color:var(--color-muted);text-decoration:underline">mcp-tool-shop-org</a>',
 
   hero: {
-    badge: 'v2.8.0',
+    badge: 'v2.9.0',
     headline: 'AI RPG Engine',
     headlineAccent: 'Build worlds. Simulate them. Improve them.',
     description: 'A TypeScript toolkit for deterministic RPG simulation: a composable module runtime, six-pillar tactical combat, and an optional AI-assisted design library. Every run replays exactly.',
