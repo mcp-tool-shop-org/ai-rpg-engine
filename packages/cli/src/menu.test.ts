@@ -53,6 +53,24 @@ function makeDivineCryptGame() {
   player.tags = [...player.tags, 'divine'];
   player.zoneId = 'crypt-chamber';
   engine.store.state.locationId = 'crypt-chamber';
+  // v2.9: fantasy now seeds starting coin, and crypt-chamber's district carries
+  // buyable stock — which would add `buy` entries to every extras list built
+  // from this fixture. These shared-fixture tests exercise the ability / sell /
+  // journal / director / debug composition, not the buy loop (the buy loop has
+  // its own describe block that controls coin explicitly), so zero the coin here
+  // to keep the composition they assert focused on what they test.
+  player.resources[SELL_CURRENCY] = 0;
+  return engine;
+}
+
+/** A fresh fantasy game with the v2.9 starting coin cleared. `createGame(42)`
+ *  used to seed no coin, so these sentinel/idle composition tests relied on it
+ *  producing only the always-on journal / director (+ env-gated debug) entries.
+ *  v2.9 seeds a small starting coin, which would add `buy` entries; clearing it
+ *  keeps what's under test — the sentinel routing / visibility — isolated. */
+function makeIdleGame() {
+  const engine = createGame(42);
+  engine.store.state.entities['player'].resources[SELL_CURRENCY] = 0;
   return engine;
 }
 
@@ -415,7 +433,7 @@ describe('debug inspector entry (F-ENG006)', () => {
 
   it('the debug entry is HIDDEN without AI_RPG_DEBUG=1 (player surface stays clean)', () => {
     vi.stubEnv('AI_RPG_DEBUG', '');
-    const engine = createGame(42); // no divine tag, no xp → no ability/unlock extras
+    const engine = makeIdleGame(); // no divine tag, no xp, no coin → no ability/unlock/buy extras
     // Only the always-on player surfaces remain (Journal + Director's
     // Ledger) — no debug entry.
     const extras = buildExtraActions(engine, [combatMasteryTree]);
@@ -429,7 +447,7 @@ describe('debug inspector entry (F-ENG006)', () => {
 
   it('AI_RPG_DEBUG=1 appends the debug entry last, and it renders in the frame', () => {
     vi.stubEnv('AI_RPG_DEBUG', '1');
-    const engine = createGame(42);
+    const engine = makeIdleGame();
     const extras = buildExtraActions(engine, [combatMasteryTree]);
     expect(extras).toHaveLength(3); // journal + director (always) + debug (env-gated)
     expect(extras[0].group).toBe('journal');
@@ -546,7 +564,7 @@ describe("director's ledger entry (F-ENG005)", () => {
   });
 
   it('selecting its number resolves to the director group (the routing key — the sentinel verb never reaches the engine)', () => {
-    const engine = createGame(42);
+    const engine = makeIdleGame();
     const extras = buildExtraActions(engine, [combatMasteryTree]);
     // The Journal (player-personal) reads first; the ledger sits second —
     // parseExtraSelection resolves the same continuation numbers the frame
@@ -561,7 +579,7 @@ describe("director's ledger entry (F-ENG005)", () => {
 
   it('the entry sits after ability/unlock entries and BEFORE the debug entry (operator surface stays last)', () => {
     vi.stubEnv('AI_RPG_DEBUG', '1');
-    const engine = createGame(42);
+    const engine = makeIdleGame();
     const player = engine.store.state.entities['player'];
     player.tags = [...player.tags, 'divine'];
     addCurrency(engine.store.state, 'player', 'xp', 20, engine.tick);
@@ -598,7 +616,7 @@ describe('journal entry (F-ENG005-quest-loop-min)', () => {
   });
 
   it('selecting its number resolves to the journal group (the routing key for bin.ts)', () => {
-    const engine = createGame(42);
+    const engine = makeIdleGame();
     const extras = buildExtraActions(engine, [combatMasteryTree]);
     const selected = parseExtraSelection('7', 6, extras);
     expect(selected?.group).toBe('journal');
@@ -703,6 +721,7 @@ describe('journal entry (F-ENG005-quest-loop-min)', () => {
 describe('buildBuyActions (F-31f15013 menu wire) — buy entries priced via quoteBuyPrice', () => {
   it('offers nothing when the player is broke, even though the district has stock', () => {
     const engine = createGame(42); // chapel-entrance / chapel-grounds district
+    engine.store.state.entities['player'].resources[SELL_CURRENCY] = 0; // broke (v2.9 seeds a small starting coin — clear it)
     expect(buildBuyActions(engine.world)).toEqual([]);
   });
 
@@ -1124,7 +1143,7 @@ describe('buildSellActions grouping (F-13255438) — collapse duplicate carried 
 
 describe('buildExtraActions wiring order (v2.9) — buy, sell, salvage, craft, leverage, opportunity, then journal/director/debug', () => {
   it('a fully idle player (no coin/inventory/materials/leverage/opportunities) still only ever sees journal + director', () => {
-    const engine = createGame(42);
+    const engine = makeIdleGame();
     const extras = buildExtraActions(engine, [combatMasteryTree]);
     expect(extras).toHaveLength(2);
     expect(extras[0].group).toBe('journal');

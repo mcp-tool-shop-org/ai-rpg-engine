@@ -517,33 +517,46 @@ const ABILITY_SUFFIX = ['ability-core', 'ability-effects', 'ability-review', 'si
  * starter's list drifts from its pre-refactor expectation, the refactor
  * stopped being behavior-preserving — that is a STOP, not a test to adapt.
  *
- * One deliberate amendment since the capture: fantasy and zombie now pin
- * `quest-core` after `encounter-spawn` (F-ENG005-quest-loop-min — those two
- * packs author quests and pass the stack's presence-optional `quests`
- * config). That is an INTENDED composition change shipped with the feature,
- * not refactor drift; the other eight starters remain byte-identical to the
- * pre-refactor capture.
+ * Deliberate amendments since the capture (all INTENDED composition changes
+ * shipped with a feature, not refactor drift):
+ *  - `player-leverage`, `crafting-core`, `opportunity-core` are always-on in
+ *    `WORLD_STACK_DEFAULT` (v2.9 write-wires: F-677e94ad / F-6631dd57 /
+ *    F-ceed887f) — so every starter's tail reflects them.
+ *  - `quest-core` (after `encounter-spawn`) and `equipment-core` (after the
+ *    boss-phase listener) now pin on ALL TEN starters. v2.8 shipped these on
+ *    only fantasy/zombie (quest-core) and gladiator (equipment-core); the v2.9
+ *    content-parity pass (F-c07d6024 / F-86b9145d) rolled equipment to the nine
+ *    non-gladiator packs and quests to the eight that lacked them, so the tails
+ *    are now uniform except for each pack's own `boss-phase:<name>`.
+ * A starter's list drifting from its EXPECTED here means the wiring stopped
+ * being intentional — that is a STOP, not a test to adapt.
  */
 const EXPECTED: Record<string, string[]> = {
   colony: [
     ...COMBAT_PREFIX('combat-resources-colony'),
     ...CONTENT_MID,
     ...WORLD_RUN,
+    'quest-core',
     'boss-phase:resonance_entity',
+    'equipment-core',
     ...ABILITY_SUFFIX,
   ],
   cyberpunk: [
     ...COMBAT_PREFIX('combat-resources-cyberpunk'),
     ...CONTENT_MID,
     ...WORLD_RUN,
+    'quest-core',
     'boss-phase:vault-overseer',
+    'equipment-core',
     ...ABILITY_SUFFIX,
   ],
   detective: [
     ...COMBAT_PREFIX('combat-resources-detective'),
     ...CONTENT_MID,
     ...WORLD_RUN,
+    'quest-core',
     'boss-phase:crime-boss',
+    'equipment-core',
     ...ABILITY_SUFFIX,
   ],
   // Fantasy is the one starter with no combat resource profile. Authors
@@ -554,6 +567,7 @@ const EXPECTED: Record<string, string[]> = {
     ...WORLD_RUN,
     'quest-core',
     'boss-phase:crypt-warden',
+    'equipment-core',
     ...ABILITY_SUFFIX,
   ],
   // Gladiator: pre-refactor order had boss-phase:arena-overlord BEFORE
@@ -568,6 +582,7 @@ const EXPECTED: Record<string, string[]> = {
     ...COMBAT_PREFIX('combat-resources-gladiator'),
     ...CONTENT_MID,
     ...WORLD_RUN,
+    'quest-core',
     'boss-phase:arena-overlord',
     'equipment-core',
     ...ABILITY_SUFFIX,
@@ -576,28 +591,36 @@ const EXPECTED: Record<string, string[]> = {
     ...COMBAT_PREFIX('combat-resources-pirate'),
     ...CONTENT_MID,
     ...WORLD_RUN,
+    'quest-core',
     'boss-phase:drowned_guardian',
+    'equipment-core',
     ...ABILITY_SUFFIX,
   ],
   ronin: [
     ...COMBAT_PREFIX('combat-resources-ronin'),
     ...CONTENT_MID,
     ...WORLD_RUN,
+    'quest-core',
     'boss-phase:corrupt-samurai',
+    'equipment-core',
     ...ABILITY_SUFFIX,
   ],
   vampire: [
     ...COMBAT_PREFIX('combat-resources-vampire'),
     ...CONTENT_MID,
     ...WORLD_RUN,
+    'quest-core',
     'boss-phase:elder-vampire',
+    'equipment-core',
     ...ABILITY_SUFFIX,
   ],
   'weird-west': [
     ...COMBAT_PREFIX('combat-resources-weird-west'),
     ...CONTENT_MID,
     ...WORLD_RUN,
+    'quest-core',
     'boss-phase:mesa_crawler',
+    'equipment-core',
     ...ABILITY_SUFFIX,
   ],
   // Zombie authors quests too (F-ENG005-quest-loop-min) → quest-core joins.
@@ -607,6 +630,7 @@ const EXPECTED: Record<string, string[]> = {
     ...WORLD_RUN,
     'quest-core',
     'boss-phase:bloater-alpha',
+    'equipment-core',
     ...ABILITY_SUFFIX,
   ],
 };
@@ -656,7 +680,7 @@ describe('world-stack refactor — per-starter module registration pins', () => 
     ];
     const ids = registeredIds(createGladiatorGame(42));
     expect([...ids].sort()).toEqual(
-      [...preRefactorOrder, 'world-tick', 'economy-core', 'trade-core', 'companion-core', 'player-leverage', 'crafting-core', 'opportunity-core'].sort(),
+      [...preRefactorOrder, 'world-tick', 'economy-core', 'trade-core', 'companion-core', 'player-leverage', 'crafting-core', 'opportunity-core', 'quest-core'].sort(),
     );
   });
 
