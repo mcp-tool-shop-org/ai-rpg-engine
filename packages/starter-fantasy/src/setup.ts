@@ -150,6 +150,14 @@ export function createGame(seed?: number): Engine {
     // explicit reason. quest-core validates at construction (fail loud) and
     // drives offer → track → complete → reward off the live event stream.
     quests: { gameId: manifest.id, quests: fantasyQuests },
+    // V3-GEN-1/2 (genre-mechanical fix, wave 2): this starter's own bare
+    // genre key ('fantasy-minimal' minus its '-minimal' suffix) — NOT
+    // manifest.genres, a different free-text vocabulary (see world-stack.ts's
+    // file-header contract). 'fantasy' matches a GENRE_BUYABLE_STOCK/
+    // GENRE_RECIPES entry, so buy/craft/repair/modify now resolve
+    // fantasy-flavored stock/recipes instead of the universal fallback.
+    tradeGenre: 'fantasy',
+    craftingGenre: 'fantasy',
   });
 
   const engine = new Engine({
