@@ -384,6 +384,35 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
       expect(report).not.toContain('Chronicle:');
     });
 
+    // F-P9-005: economy-core and companion-core are always-included
+    // (buildWorldStack, F-d0b5edb5/F-7d5c3e28) and equipment-core is wired
+    // ONLY in starter-gladiator (F-ec5c7354/F-efdb93d1) — this is the one
+    // starter where a single real played session can light up all three
+    // sections at once. Mirrors F-6cc633b9's recruit+MARKET-OVERVIEW+PARTY
+    // proof below, widened with the same engine's equip call.
+    it('a real gladiator session (recruit + equip) lights up MARKET OVERVIEW + PARTY + EQUIPMENT together', () => {
+      const engine = createGladiatorGame(42);
+      const equipped = engine.submitAction('equip', { targetIds: ['trident-and-net'] });
+      expect(equipped.some((e) => e.type === 'item.equipped')).toBe(true);
+
+      // Nerva ('recruitable', 'fighter') starts in the player's own zone
+      // (holding-cells) — no move needed.
+      const recruited = engine.submitAction('recruit', { targetIds: ['nerva'] });
+      expect(recruited.some((e) => e.type === 'companion.recruited')).toBe(true);
+
+      const report = renderDirectorLedger(engine);
+
+      expect(report).toContain('  MARKET OVERVIEW');
+      expect(report).toContain('  Arena Grounds (arena-grounds): ');
+      expect(report).toContain('  Patron Quarter (patron-quarter): ');
+
+      expect(report).toContain('  PARTY (1/3 companions)');
+      expect(report).toContain('  nerva (nerva) — Fighter | Morale: 60');
+
+      expect(report).toContain('── EQUIPMENT (1) ──');
+      expect(report).toContain('Trident & Net (weapon, uncommon)');
+    });
+
     it('gates off entirely for a REAL engine whose pack never wired equipment-core (9 of 10 starters, incl. starter-fantasy)', () => {
       // The exact same live createGame(42) every other real-play assertion
       // in this suite uses — starter-fantasy never registers

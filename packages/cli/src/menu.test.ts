@@ -4,12 +4,13 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createGame, combatMasteryTree } from '@ai-rpg-engine/starter-fantasy';
-import { addCurrency, getCurrency, ABILITY_CATALOG_FORMULA } from '@ai-rpg-engine/modules';
+import { addCurrency, getCurrency, giveItem, ABILITY_CATALOG_FORMULA } from '@ai-rpg-engine/modules';
 import { buildActionList, renderFullScreen, SCREEN_WIDTH } from '@ai-rpg-engine/terminal-ui';
 import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
 import {
   buildAbilityActions,
   buildUnlockActions,
+  buildSellActions,
   buildExtraActions,
   parseExtraSelection,
   buildHudWorld,
@@ -177,6 +178,60 @@ describe('buildUnlockActions (F1d) — XP is spendable', () => {
   it('no trees → no unlock entries', () => {
     const engine = makeDivineCryptGame();
     expect(buildUnlockActions(engine.world, [])).toEqual([]);
+  });
+});
+
+// F-P9-004: buildSellActions (F-6c3e4fde) had zero direct test coverage.
+// Mirrors buildAbilityActions/buildUnlockActions' own coverage above: a real
+// engine, a real carried item, a real district/economy read.
+describe('buildSellActions (F-6c3e4fde) — trade entries', () => {
+  it('lists a carried sellable item as a correctly labeled, parameterized trade entry', () => {
+    const engine = createGame(42); // starts at chapel-entrance, inside the chapel-grounds district
+    const player = engine.store.state.entities['player'];
+    engine.store.recordEvent(giveItem(player, 'healing-draught', engine.tick));
+
+    const actions = buildSellActions(engine.world);
+    expect(actions).toEqual([
+      { verb: 'sell', targetIds: ['healing-draught'], label: 'Sell healing draught', group: 'trade' },
+    ]);
+  });
+
+  it('no district/economy at the player\'s zone → no trade entries, even with a sellable item carried', () => {
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    player.zoneId = 'nowhere-zone'; // off the district map entirely
+    engine.store.recordEvent(giveItem(player, 'healing-draught', engine.tick));
+    expect(buildSellActions(engine.world)).toEqual([]);
+  });
+
+  it('sell entries number contiguously in the extras menu, right after ability/unlock — and the numbered entry actually EXECUTES a sale, never an ability', () => {
+    const engine = makeDivineCryptGame(); // ready abilities (Holy Smite etc.), inside the crypt-depths district
+    const player = engine.store.state.entities['player'];
+    engine.store.recordEvent(giveItem(player, 'healing-draught', engine.tick));
+    addCurrency(engine.store.state, 'player', 'xp', 20, engine.tick); // Toughened/Keen Eye affordable
+
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const abilityCount = extras.filter((e) => e.group === 'ability').length;
+    const unlockCount = extras.filter((e) => e.group === 'advance').length;
+    expect(abilityCount).toBeGreaterThan(0);
+    expect(unlockCount).toBeGreaterThan(0);
+
+    // Trade entries land immediately after ability+unlock, no gap and no overlap.
+    const tradeIndex = extras.findIndex((e) => e.group === 'trade');
+    expect(tradeIndex).toBe(abilityCount + unlockCount);
+    expect(extras[tradeIndex]).toMatchObject({ verb: 'sell', label: 'Sell healing draught' });
+
+    const baseCount = buildActionList(engine.world).length;
+    const result = handlePlayerInput(engine, String(baseCount + tradeIndex + 1), {
+      log: vi.fn(),
+      extras,
+    });
+
+    expect(result).toEqual({ kind: 'action', via: 'extra' });
+    expect(engine.world.eventLog.some((e) => e.type === 'item.sold')).toBe(true);
+    // The number resolved to the sale, never to a colliding ability entry.
+    expect(engine.world.eventLog.some((e) => e.type === 'ability.used')).toBe(false);
+    expect(engine.world.entities['player'].inventory).not.toContain('healing-draught');
   });
 });
 

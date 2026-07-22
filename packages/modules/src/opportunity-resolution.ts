@@ -195,6 +195,15 @@ function getFavorRequestFallout(
         effects.push({ type: 'obligation', kind: 'favor', direction: 'npc-owes-player', npcId: npc, magnitude: 4 });
         effects.push({ type: 'npc-relationship', npcId: npc, axis: 'trust', delta: 20 });
       }
+      // F-P9-007: 'companion-morale' (here and at this function's other two
+      // sites below, plus getEscortFallout's own) is computed but never
+      // APPLIED — opportunity-core.ts is "pure functions, no module
+      // registration" (its own file header) and computeOpportunityFallout
+      // has no production caller anywhere (world-tick.ts drives
+      // pressure-resolution.ts's fallout every tick via applyFallout; no
+      // equivalent exists for this file). Honest ceiling: a real completed
+      // favor never moves a companion's morale today — a driver is
+      // v2.9-scoped, not wired here.
       if (opp.tags.includes('companion')) {
         if (npc) effects.push({ type: 'companion-morale', npcId: npc, delta: 15 });
       }
@@ -204,6 +213,7 @@ function getFavorRequestFallout(
         effects.push({ type: 'obligation', kind: 'betrayed', direction: 'player-owes-npc', npcId: npc, magnitude: 3 });
         effects.push({ type: 'npc-relationship', npcId: npc, axis: 'trust', delta: -20 });
       }
+      // F-P9-007: same unapplied ceiling as the 'completed' case above.
       if (opp.tags.includes('companion') && npc) {
         effects.push({ type: 'companion-morale', npcId: npc, delta: -15 });
       }
@@ -214,6 +224,7 @@ function getFavorRequestFallout(
         effects.push({ type: 'npc-relationship', npcId: npc, axis: 'trust', delta: -40 });
       }
       effects.push({ type: 'rumor', claim: `betrayed someone who trusted them`, valence: 'fearsome', spreadTo: [] });
+      // F-P9-007: same unapplied ceiling.
       if (opp.tags.includes('companion') && npc) {
         effects.push({ type: 'companion-morale', npcId: npc, delta: -30 });
       }
@@ -363,7 +374,9 @@ function getEscortFallout(
       if (faction) effects.push({ type: 'reputation', factionId: faction, delta: -10 });
       effects.push({ type: 'rumor', claim: `failed to protect their charge — a tragic loss`, valence: 'tragic', spreadTo: faction ? [faction] : [] });
       if (npc) effects.push({ type: 'npc-relationship', npcId: npc, axis: 'trust', delta: -20 });
-      // Companion morale hit if escorting a linked NPC
+      // Companion morale hit if escorting a linked NPC — F-P9-007: same
+      // unapplied ceiling as getFavorRequestFallout's companion-morale note
+      // (computed, never applied — opportunity-core has no production driver).
       for (const linkedNpc of opp.linkedNpcIds) {
         effects.push({ type: 'companion-morale', npcId: linkedNpc, delta: -10 });
       }

@@ -435,15 +435,28 @@ function collectMilestones(world: WorldState, state: WorldTickState): void {
 // write-wire, driven from the SAME round-delta discipline collectMilestones
 // uses above.
 //
-// v2.8-shippable cut: 2 of the 16 REACTION_TABLE triggers have a real
-// production event/state signal today —
-//   - combat.entity.defeated: a hostile going down → 'combat-won'; the
-//     player or an intercepting companion going down → 'combat-lost'.
-//   - pressure.expired: 'resolved-by-player' → 'pressure-resolved-well';
-//     every other resolutionType (today, always 'expired-ignored' — this
-//     file never calls computeFallout with any other value, see step 3
-//     below) → 'pressure-resolved-badly'.
-// The remaining 14 triggers (leverage-*, betrayal-witnessed, district-*,
+// v2.8-shippable cut: 4 of the 16 REACTION_TABLE triggers are wired to a
+// real production event/state signal today, via 2 event sources; of those
+// 4, only 3 are actually reachable in a played session (F-P9-003: the prior
+// "2 of 16" count conflated event sources with trigger keys — 2 sources,
+// 4 keys) —
+//   - combat.entity.defeated: a hostile going down → 'combat-won'
+//     (reachable). An intercepting companion going down ALSO maps to
+//     'combat-lost' (reachable — interception keeps the player alive, so
+//     the round's world tick still runs). The PLAYER going down maps to
+//     that same 'combat-lost' key below, but F-P9-002: that sub-case can
+//     never fire in the shipped CLI — runHostileRound's "no tick over a
+//     corpse" gate (bin.ts, P8-WL-010) always returns before runWorldTick
+//     in the exact round the player is defeated, so this file never scans
+//     that round's event-log delta. The code path stays as the honest
+//     ceiling it is, not wired away.
+//   - pressure.expired: 'resolved-by-player' → 'pressure-resolved-well'
+//     (wired but UNREACHABLE today — this file's only computeFallout call
+//     site, step 3 below, always passes the literal 'expired-ignored', so
+//     resolutionType can never equal 'resolved-by-player' in production);
+//     every other resolutionType (today, always that same literal) →
+//     'pressure-resolved-badly' (reachable).
+// The remaining 12 triggers (leverage-*, betrayal-witnessed, district-*,
 // obligation-betrayed, item-*-recognized) have no production event or
 // persisted state to key off yet: player-leverage.ts's resolveSocialAction/
 // resolveRumorAction/resolveSabotageAction emit no ResolvedEvents and have no

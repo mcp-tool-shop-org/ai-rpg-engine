@@ -501,6 +501,27 @@ describe('renderSessionEnd + journalFromEventLog (F1b) — the end screen', () =
     expect(screen).not.toContain('COMPANIONS');
   });
 
+  // F-P9-001: renderSessionEnd used to pass buildFinaleOutline a hardcoded
+  // `districts: []`, even after buildEndgameInputs started deriving live
+  // districtEconomies (F-d0b5edb5) — the finale's DISTRICTS section never
+  // rendered for any played session. starter-fantasy wires two districts via
+  // buildWorldStack (chapel-grounds, crypt-depths — see "a live starter
+  // engine seeds economy-core" above); a session ending with no district-tick
+  // fired shows district-core's DEFAULT_METRICS.stability (5, untouched) and
+  // economy-core's baseline 'normal' tone (neither district's starter tags
+  // push any supply past a scarcity/surplus threshold). RED-PROOF: before
+  // this wire, the DISTRICTS section never appeared at all.
+  it("F-P9-001: a played session's finale DISTRICTS section renders real district economy data", () => {
+    const engine = makeGame();
+    engine.store.state.entities['player'].resources.hp = 0; // end the session
+    const end = evaluateSessionEnd(engine)!;
+    const screen = renderSessionEnd(end, engine.world);
+
+    expect(screen).toContain('DISTRICTS');
+    expect(screen).toContain('Chapel Grounds: stability 5, normal');
+    expect(screen).toContain('Crypt Depths: stability 5, normal');
+  });
+
   it('journalFromEventLog records kills, first-visit discoveries, and unlocks with bounded duplicates', () => {
     const engine = makeGame();
     engine.submitAction('move', { targetIds: ['chapel-nave'] });
