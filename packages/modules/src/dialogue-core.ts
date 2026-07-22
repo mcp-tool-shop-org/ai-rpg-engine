@@ -9,6 +9,17 @@ import type {
 } from '@ai-rpg-engine/core';
 import { makeEvent } from './make-event.js';
 import type { DialogueDefinition, DialogueNode, EffectDefinition } from '@ai-rpg-engine/content-schema';
+// V3-DLG: dialogue vocabulary that reads/writes the social layer. Both are
+// read-only imports (getLeverageState/applyLeverageDeltas from player-leverage.ts,
+// deriveNpcRelationship from npc-agency.ts) — this file does not edit either
+// module. Neither module imports dialogue-core.ts (nor does anything in their
+// own dependency chains — cognition-core.ts, faction-cognition.ts,
+// pressure-system.ts, player-rumor.ts), so this is a one-directional edge, not
+// a cycle.
+import { getLeverageState, applyLeverageDeltas } from './player-leverage.js';
+import type { LeverageCurrency } from './player-leverage.js';
+import { deriveNpcRelationship } from './npc-agency.js';
+import type { NpcRelationship } from './npc-agency.js';
 
 export type DialogueState = {
   activeDialogue: string | null;
@@ -265,6 +276,57 @@ function applyDialogueEffect(
     world.globals[key] = value;
     return [makeEvent(action, 'world.flag.changed', { key, value })];
   }
+
+  // V3-DLG-2: social-state WRITE effects. Dialogue content can now move the
+  // SAME stores player-leverage.ts's verb layer writes (bribe/intimidate/seed/
+  // petition), so a dialogue choice's consequence lands in the identical place
+  // a mechanical action's consequence would — trade pricing, faction-cognition
+  // reads, a later leverage-at-least/reputation-at-least gate, etc. all see it.
+  // Handled explicitly, BEFORE the generic unknown-effect fallback below
+  // (V3-DLG-3) — that fallback's behavior/message for genuinely unhandled
+  // types is untouched.
+  if (effect.type === 'leverage-adjust') {
+    const currency = effect.params.currency as LeverageCurrency;
+    const delta = effect.params.delta as number;
+    const player = world.entities[world.playerId];
+    if (!player) {
+      // Same warn-and-degrade posture as the fallback below — a dialogue
+      // effect that cannot resolve its target is surfaced, never silently
+      // dropped. world.playerId is always SET, but the entity it names is
+      // not guaranteed to exist in every constructed WorldState (mirrors the
+      // defensive `if (actor)` guard applyLeverageEffects itself uses).
+      return [makeEvent(action, 'dialogue.effect.unknown', {
+        effectType: effect.type,
+        reason: `no player entity at world.playerId ('${world.playerId}')`,
+      })];
+    }
+    // applyLeverageDeltas clamps 0-100 via player-leverage.ts's adjustLeverage
+    // — write back, then re-read so the emitted value reflects the CLAMPED
+    // result, not the raw requested delta.
+    player.custom = applyLeverageDeltas(player.custom ?? {}, { [currency]: delta });
+    const value = getLeverageState(player.custom)[currency];
+    return [makeEvent(action, 'leverage.adjusted', { currency, delta, value })];
+  }
+
+  if (effect.type === 'reputation-adjust') {
+    const factionId = effect.params.factionId as string;
+    const delta = effect.params.delta as number;
+    // The exact accrued-global store player-leverage.ts's applyLeverageEffects
+    // writes for its own 'reputation' effect case (addGlobal(world,
+    // `reputation_${factionId}`, delta)) and evaluateCondition's
+    // factionReputationFor (below) reads back. Both addGlobal/numGlobal there
+    // are unexported, so this ADDS to the existing value (never overwrites) —
+    // inlined here rather than imported, same reasoning as the reputation
+    // merge below: two unexported private helpers, kept in sync by hand
+    // against the one documented contract instead of a fragile re-import.
+    const key = `reputation_${factionId}`;
+    const current = world.globals[key];
+    const currentValue = typeof current === 'number' && Number.isFinite(current) ? current : 0;
+    const value = currentValue + delta;
+    world.globals[key] = value;
+    return [makeEvent(action, 'reputation.adjusted', { factionId, delta, value })];
+  }
+
   // Warn-and-degrade (F-db919552): dialogue-core only implements
   // 'set-global'. EffectDefinition is the SAME shared type ability-effects.ts
   // fully implements (damage, heal, apply-status, resource-modify, ...), so a
@@ -277,6 +339,22 @@ function applyDialogueEffect(
   })];
 }
 
+/**
+ * Reputation merge: authored faction baseline + the accrued delta global —
+ * the SAME merge player-leverage.ts's (unexported) playerReputationFor,
+ * trade-core.ts's sellHandler, and world-tick.ts's buildPressureInputs all
+ * use, so a dialogue-authored reputation gate can never disagree with a
+ * leverage action or a sale about how a faction feels about the player.
+ * INLINED here (not imported) — playerReputationFor is unexported; kept in
+ * sync by hand against the one documented contract, not a private import.
+ */
+function factionReputationFor(world: WorldState, factionId: string): number {
+  const baseline = world.factions?.[factionId]?.reputation ?? 0;
+  const globalValue = world.globals[`reputation_${factionId}`];
+  const accrued = typeof globalValue === 'number' && Number.isFinite(globalValue) ? globalValue : 0;
+  return baseline + accrued;
+}
+
 function evaluateCondition(
   condition: import('@ai-rpg-engine/content-schema').ConditionSpec,
   world: WorldState,
@@ -287,6 +365,59 @@ function evaluateCondition(
   if (condition.type === 'global-set') {
     return world.globals[condition.params.key as string] !== undefined;
   }
+
+  // V3-DLG-1: social-state READ conditions. Dialogue content can now gate
+  // choices/nodes on the player's leverage, a faction's reputation, and an
+  // NPC's derived relationship — the same social layer player-leverage.ts and
+  // npc-agency.ts already drive trade/pressure/companion decisions from.
+  // Handled explicitly, BEFORE the generic unknown-condition fallback below
+  // (V3-DLG-3) — that fallback's silent-true behavior for genuinely
+  // unhandled types is untouched (existing content may rely on it).
+  if (condition.type === 'leverage-at-least') {
+    const player = world.entities[world.playerId];
+    const currency = condition.params.currency as LeverageCurrency;
+    const amount = condition.params.amount as number;
+    const state = getLeverageState(player?.custom ?? {});
+    // A currency string outside the known 6 reads as `undefined` here (not a
+    // key of LeverageState) — `undefined >= amount` is always false, the same
+    // NaN/undefined-guard reasoning player-leverage.ts's own balanceOf uses.
+    return state[currency] >= amount;
+  }
+
+  if (condition.type === 'reputation-at-least') {
+    const factionId = condition.params.factionId as string;
+    const amount = condition.params.amount as number;
+    return factionReputationFor(world, factionId) >= amount;
+  }
+
+  if (condition.type === 'npc-relationship-at-least') {
+    const npcId = condition.params.npcId as string;
+    const axis = condition.params.axis as keyof NpcRelationship;
+    const amount = condition.params.amount as number;
+    const rel = deriveNpcRelationship(world, npcId, world.playerId);
+    // Same undefined-is-false safety as leverage-at-least above: an axis
+    // string outside trust/fear/greed/loyalty reads as `undefined`, and
+    // `undefined >= amount` is always false.
+    return rel[axis] >= amount;
+  }
+
+  // 'obligation-exists' (npcId?/direction? params) is DEFERRED, not
+  // implemented — not an oversight. Verified across this task's file-
+  // ownership boundary: npc-agency.ts's NpcObligationLedger is never
+  // persisted anywhere in WorldState in this engine —
+  //   - npc-agency.ts registers NO ctx.persistence.registerNamespace call
+  //     anywhere in the file (obligations are derived-per-call-into a ledger
+  //     the CALLER supplies; nothing stores one on `world`);
+  //   - world-tick.ts hardcodes `npcObligations: new Map()` into
+  //     OpportunityInputs with an explicit comment: "npc-agency.ts persists
+  //     neither profiles nor obligations anywhere in the engine";
+  //   - packages/core/src/types.ts (WorldState, EntityState) has zero
+  //     references to "obligation" — no field exists to read one from.
+  // A condition kind that can only ever read state nothing in the engine
+  // writes would be a fake gate (always false, forever, until an unrelated
+  // future wave adds obligation persistence — out of this file's
+  // dialogue-core*.ts ownership). Falls through to the existing
+  // unknown-condition fallback below, same as any other unhandled kind.
   return true;
 }
 
