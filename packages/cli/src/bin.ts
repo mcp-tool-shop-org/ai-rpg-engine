@@ -25,7 +25,7 @@ import { runValidate } from './validate.js';
 import { runScaffold } from './scaffold.js';
 import { runProfile } from './profile.js';
 import { runGuardedAction } from './guard.js';
-import { runNpcTurns } from './turns.js';
+import { runNpcTurns, runCompanionTurns } from './turns.js';
 import { runWorldTick } from '@ai-rpg-engine/modules';
 import { evaluateSessionEnd, renderSessionEnd, computeSessionStats } from './endgame.js';
 import { appendRunRecord, readRunHistory, formatRecentRuns } from './history.js';
@@ -550,6 +550,7 @@ export function runHostileRound(
   pack: LoadedPack,
   deps: {
     npcTurns?: (engine: Engine) => unknown;
+    companionTurns?: (engine: Engine) => unknown;
     worldTick?: (engine: Engine, opts: { genre?: string; log: (msg: string) => void }) => unknown;
     log?: (msg: string) => void;
   } = {},
@@ -557,6 +558,13 @@ export function runHostileRound(
   if (evaluateSessionEnd(engine)) return;
   (deps.npcTurns ?? runNpcTurns)(engine);
   if (evaluateSessionEnd(engine)) return; // P8-WL-010 — no tick over a corpse
+  // F-4b9c5aee (v2.9): recruited companions take their independent turns after
+  // the hostiles, before the world tick. runCompanionTurns early-returns on an
+  // empty party (byte-identical to legacy for companion-less packs), so the
+  // seed-0 legacy-identity law holds. Its own end-gate below: a companion can
+  // down the last boss, and we must not tick past a won session.
+  (deps.companionTurns ?? runCompanionTurns)(engine);
+  if (evaluateSessionEnd(engine)) return; // companions can end combat — no tick over a finished fight
   (deps.worldTick ?? runWorldTick)(engine, { genre: pack.meta.genres?.[0], log: deps.log ?? console.log });
 }
 

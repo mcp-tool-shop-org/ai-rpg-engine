@@ -93,6 +93,8 @@ import { createEconomyCore } from './economy-core.js';
 import { createTradeCore } from './trade-core.js';
 import { createCompanionCore } from './companion-core.js';
 import { createCraftingCore } from './crafting-recipes.js';
+import { createPlayerLeverageCore } from './player-leverage.js';
+import { createOpportunityCore } from './opportunity-resolution.js';
 
 // ---------------------------------------------------------------------------
 // buildWorldStack — eliminates the strategic-tier hand-list
@@ -190,10 +192,10 @@ export type WorldStack = {
  *
  * Default composition (always included, in wiring order): environment-core,
  * faction-cognition, rumor-propagation, district-core, economy-core,
- * trade-core, companion-core, crafting-core, belief-provenance,
- * observer-presentation, defeat-fallout, world-tick. Presence-optional:
- * encounter-spawn (included when `encounterSpawn` is passed), quests
- * (included when `quests` is passed).
+ * trade-core, companion-core, player-leverage, crafting-core,
+ * opportunity-core, belief-provenance, observer-presentation, defeat-fallout,
+ * world-tick. Presence-optional: encounter-spawn (included when
+ * `encounterSpawn` is passed), quests (included when `quests` is passed).
  *
  * Usage:
  * ```
@@ -234,9 +236,19 @@ export function buildWorldStack(config: WorldStackConfig = {}): WorldStack {
     // F-7d5c3e28: always included, no config — see the file-header contract
     // entry above.
     createCompanionCore(),
+    // F-677e94ad (v2.9): the player-leverage write-wire — bribe/intimidate/
+    // petition/seed. Always included, no config; its companion-reaction
+    // dispatch places it semantically next to companion-core. Registered
+    // before crafting so the module order stays value-domain grouped.
+    createPlayerLeverageCore(),
     // F-6631dd57: always included, no REQUIRED config — see the file-header
     // contract entry above. `craftingGenre` is optional passthrough.
     createCraftingCore({ genre: config.craftingGenre }),
+    // F-ceed887f/F-f3f2a84c (v2.9): the opportunity resolution loop (accept →
+    // complete/abandon → fallout). Always included, no config; the per-round
+    // spawn/tick that feeds it lives in world-tick. Registered after crafting
+    // and before belief-provenance, same 'always included' shape.
+    createOpportunityCore(),
     createBeliefProvenance(),
     createObserverPresentation({ rules: config.presentationRules ?? [] }),
     // The one roster serves both: defeat-fallout reads factionId + entityIds
