@@ -33,6 +33,12 @@ import {
   type EconomyCoreState,
 } from './economy-core.js';
 import {
+  getPersistedOpportunities,
+  setPersistedOpportunities,
+  formatOpportunityListForDirector,
+  type OpportunityState,
+} from './opportunity-core.js';
+import {
   runWorldTick,
   buildPressureInputs,
   getWorldTickState,
@@ -1068,5 +1074,296 @@ describe('world-tick — companion reactions (F-b595731a)', () => {
     expect(reactionEvent).toBeDefined();
     expect(reactionEvent?.payload).toMatchObject({ npcId: 'mira', trigger: 'combat-won', moraleDelta: 3 });
     expect(typeof reactionEvent?.payload.narratorHint).toBe('string');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Opportunity spawn/tick wire (F-ceed887f) — the RED-PROOF: opportunity-
+// core.ts's evaluateOpportunities/tickOpportunities were fully authored and
+// unit-tested (opportunity-core.test.ts) with ZERO production callers (its
+// own file header: "Pure functions, no module registration"). Before this
+// wire, world.modules['opportunity-core'] never existed in a played round no
+// matter how much qualifying pressure/scarcity/faction/companion/district
+// state accrued.
+// ---------------------------------------------------------------------------
+describe('world-tick — opportunity spawn/tick wire (F-ceed887f)', () => {
+  /** District + economy + world-tick, same roster shape as makeEconomyEngine. */
+  function makeOpportunityEngine() {
+    const engine = createTestEngine({
+      modules: [
+        createEnvironmentCore(),
+        createDistrictCore({ districts: [{ id: 'district-1', name: 'Market', zoneIds: ['zone-a'], tags: [] }] }),
+        createEconomyCore({ districts: [{ id: 'district-1', tags: [] }] }),
+        createWorldTick(),
+      ],
+      entities: [makePlayer()],
+      zones,
+    });
+    // createDistrictEconomy() with no genre defaults EVERY category
+    // (including contraband) to BASELINE (50) — isBlackMarketCondition's own
+    // first check is `contraband.level > 30`, so an "untouched" district
+    // reads as black-market-active from construction, independent of
+    // anything this wave touches (economy-core.ts is out of domain).
+    // Neutralize it so a genuinely quiet baseline is available to tests that
+    // want one; scarcify() below deliberately re-trips it (ANY category < 20
+    // ALSO satisfies isBlackMarketCondition) — a scarce district legitimately
+    // ALSO reading as black-market-active is honest simulation behavior, not
+    // a bug, and is why the scarcity test below accepts either resulting kind.
+    const econ = engine.world.modules['economy-core'] as EconomyCoreState;
+    econ.districts['district-1'].supplies.contraband.level = 25;
+    return engine;
+  }
+
+  function scarcify(engine: ReturnType<typeof createTestEngine>, category: 'medicine' | 'weapons' | 'ammunition' | 'food' | 'fuel' | 'luxuries' | 'components', level = 5): void {
+    const econ = engine.world.modules['economy-core'] as EconomyCoreState;
+    econ.districts['district-1'].supplies[category].level = level;
+  }
+
+  it('RED-PROOF: the namespace is absent before any tick runs', () => {
+    const engine = makeOpportunityEngine();
+    expect(engine.world.modules['opportunity-core']).toBeUndefined();
+  });
+
+  it("a played round creates world.modules['opportunity-core'] in the EXACT shape director.test.ts pins, even with nothing to spawn", () => {
+    const engine = makeOpportunityEngine();
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.ok).toBe(true);
+    expect(engine.world.modules['opportunity-core']).toEqual({ opportunities: [] });
+  });
+
+  it('qualifying scarcity state spawns a district-economy-driven opportunity through the REAL tick (not a hand fixture)', () => {
+    const engine = makeOpportunityEngine();
+    scarcify(engine, 'medicine'); // < 20 qualifies BOTH evaluateScarcityOpportunities (supply-run)
+    // AND evaluateDistrictOpportunities' black-market branch (investigation) —
+    // isBlackMarketCondition trips on ANY category < 20, not just contraband.
+    // Both are correct, live-state-driven outcomes; scoreCandidate picks the
+    // higher scorer. This proves the wire reads live economy state end to
+    // end, not which specific rule happens to win the score.
+
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+
+    expect(result.ok).toBe(true);
+    expect(result.opportunitiesSpawned).toHaveLength(1);
+    expect(['supply-run', 'investigation']).toContain(result.opportunitiesSpawned[0].kind);
+
+    const persisted = getPersistedOpportunities(engine.world);
+    expect(persisted).toHaveLength(1);
+    expect(persisted).toEqual(result.opportunitiesSpawned);
+
+    // 'opportunity.spawned' rides the SAME round-narration discipline pressures use.
+    const event = engine.world.eventLog.find((e) => e.type === 'opportunity.spawned');
+    expect(event).toBeDefined();
+    expect(event?.payload.kind).toBe(result.opportunitiesSpawned[0].kind);
+  });
+
+  it("capacity/interval/pair-conflict guards hold under repeated ticks — never exceeds the module's own cap, no duplicate live (kind, source) pairs", () => {
+    const engine = makeOpportunityEngine();
+    // Persistently scarce across every category the rule scans — a worst-case
+    // stress where every round is a qualifying round.
+    for (const cat of ['medicine', 'weapons', 'ammunition', 'food', 'fuel', 'luxuries', 'components'] as const) {
+      scarcify(engine, cat, 2);
+    }
+
+    for (let i = 0; i < 40; i++) {
+      engine.store.advanceTick();
+      const result = runWorldTick(engine, { genre: 'fantasy' });
+      expect(result.ok).toBe(true);
+    }
+
+    const persisted = getPersistedOpportunities(engine.world);
+    const live = persisted.filter((o) => o.status === 'available' || o.status === 'accepted');
+    expect(live.length).toBeLessThanOrEqual(5); // MAX_ACTIVE_OPPORTUNITIES (opportunity-core.ts's own cap)
+    const pairs = new Set(live.map((o) => `${o.kind}:${o.sourceNpcId ?? o.sourceFactionId ?? 'none'}`));
+    expect(pairs.size).toBe(live.length); // no duplicate live (kind, source) pairs
+  });
+
+  it('the 2 npc-dependent rules (npc-goal, obligation) no-op cleanly through the wire — hardcoded-empty npcProfiles/npcObligations never spawn an NPC-sourced opportunity', () => {
+    // Scarcity is ALSO present so we know the tick is doing real work — the
+    // absence of npc-sourced kinds specifically proves the hardcoded-empty
+    // ceiling, not "nothing ever spawns". opportunity-core.test.ts's own
+    // 'spawns contract from NPC bargain goal' / 'spawns favor-request from
+    // obligation' tests prove these SAME rules fire correctly when fed real
+    // npcProfiles/npcObligations directly — this proves the production wire
+    // has none to feed them yet (v3.0 honest ceiling).
+    const engine = makeOpportunityEngine();
+    scarcify(engine, 'medicine');
+
+    for (let i = 0; i < 10; i++) {
+      engine.store.advanceTick();
+      runWorldTick(engine, { genre: 'fantasy' });
+    }
+
+    const persisted = getPersistedOpportunities(engine.world);
+    expect(persisted.length).toBeGreaterThan(0); // the tick DID spawn something (scarcity)
+    expect(persisted.every((o) => o.sourceNpcId === undefined)).toBe(true);
+  });
+
+  it('a terminal-status opportunity self-prunes from the ticked set the round after (tickOpportunities\' own contract — no manual cleanup needed)', () => {
+    const engine = makeOpportunityEngine();
+    scarcify(engine, 'medicine');
+    runWorldTick(engine, { genre: 'fantasy' });
+    const spawned = getPersistedOpportunities(engine.world)[0];
+    expect(spawned).toBeDefined();
+
+    // Simulate a resolution verb marking it terminal (F-f3f2a84c territory,
+    // proven directly in opportunity-resolution.test.ts) — here we only prove
+    // world-tick's OWN tick step naturally drops a terminal-status entry.
+    setPersistedOpportunities(engine.world, [{ ...spawned, status: 'completed' }]);
+    engine.store.advanceTick();
+    runWorldTick(engine, { genre: 'fantasy' });
+
+    const after = getPersistedOpportunities(engine.world);
+    expect(after.find((o) => o.id === spawned.id)).toBeUndefined();
+  });
+
+  it("integration: director's OPPORTUNITIES section renders correctly from a PRODUCTION-ticked world (not a hand fixture) — the section itself needs no edit", () => {
+    const engine = makeOpportunityEngine();
+    scarcify(engine, 'medicine');
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.opportunitiesSpawned).toHaveLength(1);
+
+    // The EXACT read director.ts's OPPORTUNITIES section performs:
+    // `oppNs?.opportunities ?? oppNs?.activeOpportunities`.
+    const oppNs = engine.world.modules['opportunity-core'] as { opportunities: OpportunityState[] };
+    const rendered = formatOpportunityListForDirector(oppNs.opportunities);
+    expect(rendered).toContain('=== OPPORTUNITIES ===');
+    expect(rendered).toContain('AVAILABLE:');
+    expect(rendered).toContain(oppNs.opportunities[0].kind.toUpperCase());
+  });
+
+  it('is a no-op-safe, silent write when nothing spawns — no opportunity.spawned event fires', () => {
+    const engine = makeOpportunityEngine();
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.opportunitiesSpawned).toEqual([]);
+    expect(engine.world.eventLog.find((e) => e.type === 'opportunity.spawned')).toBeUndefined();
+  });
+
+  it('is deterministic — same world in, same persisted opportunities out, across independent instances', () => {
+    const run = () => {
+      const engine = makeOpportunityEngine();
+      scarcify(engine, 'medicine');
+      runWorldTick(engine, { genre: 'fantasy' });
+      engine.store.advanceTick();
+      runWorldTick(engine, { genre: 'fantasy' });
+      return JSON.parse(JSON.stringify(getPersistedOpportunities(engine.world)));
+    };
+    const a = run();
+    const b = run();
+    expect(a).toEqual(b);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// District mood transitions (F-e5817c7c-adjacent rider) — the RED-PROOF:
+// district-mood.ts's computeDistrictMood was fully authored/tested with no
+// memory of the PREVIOUS tone anywhere in the engine, so a district sliding
+// into 'grim' or blooming into 'prosperous' never reached the party — 2 of
+// companion-reactions.ts's own REACTION_TABLE triggers ('district-grim' /
+// 'district-prosperous') never fired in a played session.
+// ---------------------------------------------------------------------------
+describe('world-tick — district mood transitions (F-e5817c7c-adjacent rider)', () => {
+  function makeDistrictMoodEngine() {
+    return createTestEngine({
+      modules: [
+        createEnvironmentCore(),
+        createDistrictCore({ districts: [{ id: 'district-1', name: 'Market', zoneIds: ['zone-a'], tags: [] }] }),
+        createCompanionCore(),
+        createWorldTick(),
+      ],
+      entities: [
+        makePlayer(),
+        {
+          id: 'mira', blueprintId: 'mira', type: 'npc', name: 'Mira',
+          tags: ['npc', 'recruitable', 'diplomat'], stats: {}, resources: { hp: 10 }, statuses: [], zoneId: 'zone-a',
+        },
+      ],
+      zones,
+    });
+  }
+
+  function forceGrim(engine: ReturnType<typeof createTestEngine>): void {
+    const s = getDistrictState(engine.world, 'district-1')!;
+    s.alertPressure = 100;
+    s.surveillance = 100;
+    s.stability = 0;
+    s.commerce = 0;
+    s.morale = 0;
+  }
+
+  function forceProsperous(engine: ReturnType<typeof createTestEngine>): void {
+    const s = getDistrictState(engine.world, 'district-1')!;
+    s.alertPressure = 0;
+    s.surveillance = 0;
+    s.stability = 10;
+    s.commerce = 100;
+    s.morale = 100;
+  }
+
+  it('a transition into grim fires district-grim EXACTLY ONCE — a steady grim state the round after fires nothing more', () => {
+    const engine = makeDistrictMoodEngine();
+    engine.submitAction('recruit', { targetIds: ['mira'] });
+    const before = partyCompanions(engine).find((c) => c.npcId === 'mira')!.morale;
+
+    // Round 1: default (not-grim) metrics — establishes the baseline tone silently.
+    runWorldTick(engine);
+    expect(partyCompanions(engine).find((c) => c.npcId === 'mira')!.morale).toBe(before);
+    expect(engine.world.eventLog.find((e) => e.type === 'companion.reaction')).toBeUndefined();
+
+    // Round 2: force grim — a genuine transition.
+    forceGrim(engine);
+    engine.store.advanceTick();
+    runWorldTick(engine);
+    const afterTransition = partyCompanions(engine).find((c) => c.npcId === 'mira')!.morale;
+    expect(afterTransition).toBe(before - 2); // REACTION_TABLE['district-grim'].diplomat === -2
+    const reactionEvents1 = engine.world.eventLog.filter((e) => e.type === 'companion.reaction');
+    expect(reactionEvents1).toHaveLength(1);
+
+    // Round 3: STILL grim (steady state) — no additional fire.
+    engine.store.advanceTick();
+    runWorldTick(engine);
+    expect(partyCompanions(engine).find((c) => c.npcId === 'mira')!.morale).toBe(afterTransition);
+    const reactionEvents2 = engine.world.eventLog.filter((e) => e.type === 'companion.reaction');
+    expect(reactionEvents2).toHaveLength(1); // still exactly one, from round 2 — round 3 added none
+  });
+
+  it('a transition into prosperous fires district-prosperous', () => {
+    const engine = makeDistrictMoodEngine();
+    engine.submitAction('recruit', { targetIds: ['mira'] });
+    const before = partyCompanions(engine).find((c) => c.npcId === 'mira')!.morale;
+    runWorldTick(engine); // baseline (default metrics are not prosperous)
+
+    forceProsperous(engine);
+    engine.store.advanceTick();
+    runWorldTick(engine);
+
+    const after = partyCompanions(engine).find((c) => c.npcId === 'mira')!.morale;
+    expect(after).toBe(before + 2); // REACTION_TABLE['district-prosperous'].diplomat === 2
+  });
+
+  it('empty party: the transition still ticks cleanly — no throw, no companion.reaction event', () => {
+    const engine = createTestEngine({
+      modules: [
+        createEnvironmentCore(),
+        createDistrictCore({ districts: [{ id: 'district-1', name: 'Market', zoneIds: ['zone-a'], tags: [] }] }),
+        createCompanionCore(),
+        createWorldTick(),
+      ],
+      entities: [makePlayer()],
+      zones,
+    });
+    runWorldTick(engine); // baseline
+    forceGrim(engine);
+    engine.store.advanceTick();
+
+    expect(() => runWorldTick(engine)).not.toThrow();
+    expect(engine.world.eventLog.find((e) => e.type === 'companion.reaction')).toBeUndefined();
+  });
+
+  it('no district system: the step no-ops (no throw, no districtTones written)', () => {
+    const engine = makeBareEngine();
+    const result = runWorldTick(engine);
+    expect(result.ok).toBe(true);
+    expect(getWorldTickState(engine.store.state).districtTones).toEqual({});
   });
 });

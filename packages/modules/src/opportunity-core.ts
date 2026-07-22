@@ -3,6 +3,7 @@
 // favors, supply runs — generated deterministically from pressures, scarcity,
 // NPC goals, faction needs, and companion asks. Pure functions, no module registration.
 
+import type { WorldState } from '@ai-rpg-engine/core';
 import type { LeverageCurrency, LeverageState } from './player-leverage.js';
 import type { SupplyCategory, DistrictEconomy } from './economy-core.js';
 import type { ObligationKind, ObligationDirection, NpcProfile, NpcObligationLedger, LoyaltyBreakpoint } from './npc-agency.js';
@@ -213,6 +214,57 @@ export function getOpportunitiesForNpc(opps: OpportunityState[], npcId: string):
 
 export function getOpportunitiesForFaction(opps: OpportunityState[], factionId: string): OpportunityState[] {
   return opps.filter((o) => o.sourceFactionId === factionId);
+}
+
+// ---------------------------------------------------------------------------
+// Persistence (world.modules['opportunity-core']) — F-ceed887f/F-f3f2a84c.
+//
+// This file otherwise stays pure functions with no module registration (see
+// file header) — but SOMETHING must own the read/write contract for the
+// world.modules['opportunity-core'] namespace director.test.ts already pins
+// (`{ opportunities: [...] }`) and endgame.ts's own comment documents as
+// unwritten today ("opportunity-core keeps no world.modules state"). These
+// two accessors are that contract, mirroring economy-core.ts's
+// getEconomyCoreState/setDistrictEconomy: non-attaching read (safe on a
+// structuredClone'd director-mode world; degrades to [] on absence or a
+// malformed shape; never throws), tolerant merge-write (spreads whatever
+// else already lives in the namespace — e.g. opportunity-resolution.ts's
+// own `resolvedOpportunities` ledger — so neither writer clobbers the
+// other's field). world-tick.ts's per-round spawn/tick wire (F-ceed887f)
+// and opportunity-resolution.ts's 'opportunity' verb (F-f3f2a84c) both read
+// and write through these, never touching world.modules directly.
+// ---------------------------------------------------------------------------
+
+type OpportunityCoreNamespace = {
+  opportunities?: unknown;
+  resolvedOpportunities?: unknown;
+};
+
+function peekOpportunityCoreNamespace(world: WorldState): OpportunityCoreNamespace | undefined {
+  const ns = world.modules['opportunity-core'];
+  return ns && typeof ns === 'object' && !Array.isArray(ns) ? (ns as OpportunityCoreNamespace) : undefined;
+}
+
+/**
+ * Non-attaching read of the persisted opportunities array. [] when the
+ * namespace is absent or malformed — never throws, never attaches (a read
+ * taken before this call is byte-identical to one taken after).
+ */
+export function getPersistedOpportunities(world: WorldState): OpportunityState[] {
+  const value = peekOpportunityCoreNamespace(world)?.opportunities;
+  return Array.isArray(value)
+    ? value.filter((v): v is OpportunityState => typeof v === 'object' && v !== null)
+    : [];
+}
+
+/**
+ * Tolerant merge-write: persists the opportunities array without disturbing
+ * any sibling field (e.g. opportunity-resolution.ts's resolvedOpportunities
+ * ledger) already in the namespace.
+ */
+export function setPersistedOpportunities(world: WorldState, opportunities: OpportunityState[]): void {
+  const existing = peekOpportunityCoreNamespace(world);
+  world.modules['opportunity-core'] = { ...(existing ?? {}), opportunities };
 }
 
 // --- Evaluation ---
