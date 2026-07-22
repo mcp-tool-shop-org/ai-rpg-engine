@@ -72,6 +72,20 @@
 //      director.ts's PEOPLE section already reads. See runNpcAgencyStep's
 //      own docstring for the full contract and the effects this wave still
 //      cannot reach (the standalone 'rumor' NpcEffect — no current producer).
+//   5a2. leverage income (v3.0 wave 2, "leverage-income"): player-leverage.ts's
+//      tickLeverage/computeLeverageGains were fully authored and unit-tested
+//      with ZERO production callers — heat never decayed, the reputation-
+//      derived influence floor never reconciled, and passive gains (xp/
+//      milestone/pressure-resolution → leverage currency) never accrued;
+//      opportunity completion (5b below, a separate write-wire) was the SOLE
+//      leverage-earning path. Runs directly after step 5a and BEFORE step
+//      5b's own getLeverageState read, so the opportunity rules see this
+//      round's ticked/gained leverage rather than last round's stale
+//      snapshot. SEED-0 identity (a world that never engaged the social
+//      layer — no reputation, no new milestones, no xp gain, no player-
+//      resolved pressure, no pre-existing leverage.* key — reads nothing and
+//      writes nothing) mirrors step 5a's own gate exactly. See
+//      runLeverageIncomeStep's own docstring for the full contract.
 //   5b. opportunity spawn/tick wire (F-ceed887f): opportunity-core.ts's
 //      evaluateOpportunities/tickOpportunities were fully authored and unit-
 //      tested with ZERO production callers (its own file header: "Pure
@@ -124,7 +138,16 @@
 // resolveNpcAction and no rumor writer that fits an NPC-sourced generic claim
 // without misattributing it as player-initiated (player-rumor.ts's
 // spawnIntentionalRumor tags its source as 'player-leverage') — deferred,
-// same honest-ceiling posture as the rest of this list.
+// same honest-ceiling posture as the rest of this list. Step 5a2's leverage-
+// income wire (v3.0 wave 2) does not feed computeLeverageGains' reputationDelta
+// hint axis (rep-gain → favor / large-rep-loss → blackmail) — out of this
+// wave's explicit scope, xp/milestone/pressure-resolution only. Its
+// pressure-resolution axis is itself a dead branch today: this file's only
+// computeFallout call site (step 3) always passes the literal
+// 'expired-ignored', so resolutionType can never actually equal
+// 'resolved-by-player' in production — the SAME dormant path
+// companion-reactions.ts's own 'pressure-resolved-well' trigger documents.
+// Wired honestly for the day either path goes live.
 
 import type { Engine, EngineModule, ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
 import {
@@ -181,7 +204,14 @@ import {
   appendResolvedOpportunity,
   type OpportunityFallout,
 } from './opportunity-resolution.js';
-import { getLeverageState } from './player-leverage.js';
+import {
+  getLeverageState,
+  tickLeverage,
+  computeLeverageGains,
+  applyLeverageDeltas,
+  type LeverageCurrency,
+} from './player-leverage.js';
+import { getCurrency } from './progression-core.js';
 import { getCognition, setBelief, addMemory } from './cognition-core.js';
 import {
   spawnNpcOriginatedRumor,
@@ -307,6 +337,30 @@ export type WorldTickState = {
    * resolvedPressures is.
    */
   districtTones?: Record<string, DistrictMood['tone']>;
+  /**
+   * Count of `milestones` entries already fed to computeLeverageGains by the
+   * leverage-income step (v3.0 wave 2, step 5a2 below) — a cursor into the
+   * SAME ever-growing, never-cleared array collectMilestones/applyFallout's
+   * milestone-tag effect push into, exactly like lastEventIndex is a cursor
+   * into the eventLog. Only `milestones.slice(cursor)` counts as NEW each
+   * round; without it, a milestone would re-grant its leverage gain on every
+   * subsequent tick forever. OPTIONAL and lazily written — SEED-0 IDENTITY:
+   * a world that never triggers the leverage-income step (see
+   * runLeverageIncomeStep's own gate) never gains this key at all, not even
+   * at 0 — this is a stricter posture than resolvedPressures?/districtTones?
+   * (which freshWorldTickState seeds unconditionally) because THIS field's
+   * mere presence would itself be an observable side effect the SEED-0
+   * contract forbids for an otherwise-untouched world.
+   */
+  leverageMilestoneCursor?: number;
+  /**
+   * The player's 'xp' progression-core currency balance as of the end of the
+   * previous tick this step ran — the SAME tick-over-tick delta pattern
+   * lastHeat already uses, read via progression-core's getCurrency. Feeds
+   * computeLeverageGains' xpGained hint. OPTIONAL/lazily-written for the
+   * identical SEED-0 reason leverageMilestoneCursor documents above.
+   */
+  lastXp?: number;
 };
 
 export type WorldTickOptions = {
@@ -1232,6 +1286,153 @@ function runNpcAgencyStep(
 }
 
 // ---------------------------------------------------------------------------
+// Leverage income (v3.0 wave 2, "leverage-income", step 5a2) — see file
+// header. player-leverage.ts's tickLeverage/computeLeverageGains were fully
+// authored and unit-tested with ZERO production callers before this wire.
+// ---------------------------------------------------------------------------
+
+/**
+ * Combine two partial leverage-gain records, summing shared currencies.
+ * computeLeverageGains is called once per hint AXIS below (xp, each new
+ * milestone, pressure resolution) rather than once with every hint bundled
+ * into a single call — bundling would re-check `hints.xpGained >= 15` (and
+ * re-grant its blackmail gain) once per milestone in a multi-milestone
+ * round, instead of exactly once for the round's actual xp delta.
+ */
+function mergeLeverageGains(
+  a: Partial<Record<LeverageCurrency, number>>,
+  b: Partial<Record<LeverageCurrency, number>>,
+): Partial<Record<LeverageCurrency, number>> {
+  const merged = { ...a };
+  for (const [currency, amount] of Object.entries(b)) {
+    if (!amount) continue;
+    const key = currency as LeverageCurrency;
+    merged[key] = (merged[key] ?? 0) + amount;
+  }
+  return merged;
+}
+
+/**
+ * Tick passive leverage income for one round: heat decay + reputation-
+ * derived influence reconciliation (tickLeverage), then passive gains from
+ * this round's xp/milestone/pressure-resolution signals (computeLeverageGains),
+ * written back to the player entity's custom fields via applyLeverageDeltas.
+ * `reputation` is the SAME `{factionId, value}[]` buildPressureInputs already
+ * derives for the pressure/opportunity steps — reused, not re-plumbed.
+ * `expiredFallouts` is step 3's own per-round pressure-expiry ledger (in
+ * scope, not re-collected).
+ *
+ * SEED-0 IDENTITY (non-negotiable): a legacy world that never engaged the
+ * social layer — no reputation (maxRep <= 0), no NEW milestones since the
+ * cursor, no xp gained this round, no player-resolved pressure this round,
+ * AND no pre-existing `leverage.*` custom key — must be byte-identical:
+ * this function reads world/state but writes NOTHING (not playerCustom, not
+ * either WorldTickState tracking field) when every one of those signals is
+ * absent. `hasActivity` below is the entire gate, mirroring
+ * runNpcAgencyStep's own "the check is the entire gate; when false, read and
+ * write nothing" contract. A world that HAS pre-existing leverage.* state
+ * (the player used a social/rumor/diplomacy/sabotage verb directly, outside
+ * this step) keeps ticking every round from then on regardless of THIS
+ * round's own signals — heat must keep decaying even in a quiet round, the
+ * same reasoning HEAT_DECAY_PER_QUIET_TICK's own quiet-round decay exists
+ * for the world's ambient heat.
+ *
+ * MILESTONE-CURSOR TRAP: state.milestones accumulates for the WHOLE session
+ * (collectMilestones above and applyFallout's 'milestone-tag' effect both
+ * only ever PUSH, never clear or trim). Feeding computeLeverageGains the
+ * FULL array every round would re-grant every old milestone's gain on every
+ * subsequent tick. state.leverageMilestoneCursor tracks how many entries
+ * this step has already processed; only the slice PAST the cursor is fed
+ * in, and the cursor advances to state.milestones.length every round this
+ * step actually runs. It never advances on a round the SEED-0 gate skips,
+ * but a skipped round is, by construction, a round with zero NEW milestones
+ * anyway (a new milestone is itself one of the five hasActivity triggers
+ * below) — the cursor never has a chance to drift behind an unprocessed
+ * entry.
+ *
+ * OPTIONAL fields (leverageMilestoneCursor / lastXp) are tolerant-reader,
+ * `?? 0` degrading absence to "nothing processed / no xp observed yet" —
+ * but UNLIKE resolvedPressures?/districtTones? (which freshWorldTickState
+ * seeds unconditionally at 0/{} for every world), these two are lazily
+ * created ONLY inside the `hasActivity` branch below, never in
+ * freshWorldTickState. Seeding them at 0 for every world would itself be an
+ * observable difference the SEED-0 contract forbids for a world that never
+ * triggers this step.
+ *
+ * Honest ceiling: computeLeverageGains' reputationDelta hint axis (rep-gain
+ * → favor / large-rep-loss → blackmail) is NOT wired here — out of this
+ * wave's explicit scope. Its pressureResolution axis is itself a dead
+ * branch today: this file's only computeFallout call site (step 3) always
+ * passes the literal 'expired-ignored', so `playerResolvedFallout` below is
+ * never actually found in production — the SAME dormant path
+ * companion-reactions.ts's own 'pressure-resolved-well' trigger documents.
+ * Wired honestly for the day either path goes live.
+ */
+function runLeverageIncomeStep(
+  world: WorldState,
+  state: WorldTickState,
+  reputation: PressureInputs['reputation'],
+  expiredFallouts: PressureFallout[],
+): void {
+  const player = world.entities[world.playerId];
+  const playerCustom = (player?.custom ?? {}) as Record<string, string | number | boolean>;
+
+  const cursor = state.leverageMilestoneCursor ?? 0;
+  const newMilestones = state.milestones.slice(cursor);
+
+  const currentXp = getCurrency(world, world.playerId, 'xp');
+  const previousXp = state.lastXp ?? 0;
+  const xpGained = currentXp - previousXp;
+
+  const playerResolvedFallout = expiredFallouts.find(
+    (f) => f.resolution.resolutionType === 'resolved-by-player',
+  );
+
+  const maxRep = Math.max(0, ...reputation.map((r) => r.value));
+  const hasExistingLeverageState = Object.keys(playerCustom).some((k) => k.startsWith('leverage.'));
+
+  const hasActivity =
+    maxRep > 0 ||
+    hasExistingLeverageState ||
+    newMilestones.length > 0 ||
+    xpGained !== 0 ||
+    playerResolvedFallout !== undefined;
+
+  if (!hasActivity) return; // SEED-0 identity — read only, nothing written
+
+  // V3-LEV-1: heat decay + reputation-derived influence reconciliation.
+  let custom = tickLeverage(playerCustom, reputation);
+
+  // V3-LEV-2: passive gains, one hint axis at a time (see this function's
+  // own docstring for why bundling every hint into one call would
+  // double/under-count).
+  let gains: Partial<Record<LeverageCurrency, number>> = {};
+  if (xpGained !== 0) {
+    gains = mergeLeverageGains(gains, computeLeverageGains({ xpGained }));
+  }
+  for (const milestone of newMilestones) {
+    gains = mergeLeverageGains(
+      gains,
+      computeLeverageGains({ xpGained: 0, milestoneTriggered: milestone }),
+    );
+  }
+  if (playerResolvedFallout) {
+    gains = mergeLeverageGains(
+      gains,
+      computeLeverageGains({
+        xpGained: 0,
+        pressureResolution: { resolutionType: playerResolvedFallout.resolution.resolutionType },
+      }),
+    );
+  }
+  custom = applyLeverageDeltas(custom, gains);
+
+  if (player) player.custom = custom;
+  state.lastXp = currentXp;
+  state.leverageMilestoneCursor = state.milestones.length;
+}
+
+// ---------------------------------------------------------------------------
 // The tick
 // ---------------------------------------------------------------------------
 
@@ -1477,16 +1678,26 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   // named NPC exists" — see runNpcAgencyStep's SEED-0 identity contract.
   runNpcAgencyStep(engine, world, active, currentTick, playerDistrictId, genre);
 
+  // 5a2. Leverage income (v3.0 wave 2, "leverage-income") — see file header
+  // + runLeverageIncomeStep's own docstring for the full SEED-0 contract.
+  // oppPressureInputs is hoisted here from its old spot at the top of step
+  // 5b below (same call, same arguments — nothing mutates world.globals/
+  // world.factions/faction-cognition/district-core/economy-core between the
+  // old call site and this one, so the result is byte-identical either way)
+  // so this step and step 5b share the ONE reputation derivation instead of
+  // computing it twice.
+  const oppPressureInputs = buildPressureInputs(world, state, genre, currentTick, active);
+  runLeverageIncomeStep(world, state, oppPressureInputs.reputation, expiredFallouts);
+
   // 5b. Opportunity spawn/tick wire (F-ceed887f) — see file header. Runs
   // every round (not heat-gated). Reuses buildPressureInputs' own
-  // reputation/factionStates/districtEconomies derivation with a second,
-  // pure, side-effect-free call (cheap, and keeps step 5 above completely
-  // untouched) so opportunity evaluation never disagrees with the pressure
-  // tick about faction standing or district economies. Ticks the persisted
-  // set FIRST (timers/visibility/expiry), then evaluates a new spawn against
-  // the ticked set's own capacity/interval/pair-conflict guards — the exact
-  // order step 2→5 already uses for pressures.
-  const oppPressureInputs = buildPressureInputs(world, state, genre, currentTick, active);
+  // reputation/factionStates/districtEconomies derivation (computed once,
+  // just above, and shared with step 5a2) so opportunity evaluation never
+  // disagrees with the pressure tick about faction standing or district
+  // economies. Ticks the persisted set FIRST (timers/visibility/expiry),
+  // then evaluates a new spawn against the ticked set's own capacity/
+  // interval/pair-conflict guards — the exact order step 2→5 already uses
+  // for pressures.
   const player = world.entities[world.playerId];
   const playerCustom = (player?.custom ?? {}) as Record<string, string | number | boolean>;
   let playerLeverage = getLeverageState(playerCustom);
