@@ -11,6 +11,8 @@ Districts in AI RPG Engine don't just have mood — they have material condition
 
 This is not accounting cosplay. Eight supply categories, baseline-seeking decay, and lookup-table-driven modifiers produce emergent economic storytelling with minimal token overhead (~10–15 tokens per narration input).
 
+> **Shipped in v2.8 — the economy is live.** `createEconomyCore` seeds a per-district economy at pack-load (via `buildWorldStack`, in all ten starters) and ticks it every round. A **`sell`** verb — numbered `trade` entries on the action menu — prices carried loot through `computeItemValue` (scarcity / faction / provenance / contraband) and shifts local supply as you sell. The **MARKET OVERVIEW** Director's-Ledger section, the four economy pressures below, and the endgame merchant-prince arc all read this live state. **This cycle is sell-only** — buying, merchant stock, and the crafting/salvage loop (Chapter 41) land in v2.9. The detailed single-district `/trade` drill-down below is a module capability without an in-session command surface yet; the compact **MARKET OVERVIEW** is the shipped view.
+
 ---
 
 ## Supply Categories

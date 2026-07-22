@@ -9,6 +9,8 @@ sidebar:
 
 Companions in AI RPG Engine are not a separate entity type — they are NPCs with a `CompanionState` sidecar. Every companion already has an `EntityState`, can have `CognitionState`, and participates in NPC agency. The companion system adds party membership, role-based reactions, morale tracking, ability tags, and departure triggers on top of existing NPC infrastructure.
 
+> **Shipped in v2.8 — companions are live.** A **`recruit`** verb builds a party: it persists party state, tags the recruit (`companion` + `companion:<role>`), and sets its faction so it fights *with* you — without the faction, targeting would resolve the companion as an enemy. Companion combat rides combat-core's **interception** mechanic ([Chapter 54](54-companion-interception)), dark until now because nothing set `isAlly`; companions react to the round with morale and can depart. Recruiting lights seven waiting consumers — the finale's COMPANIONS roll-call, party targeting and coloring, npc-agency goals, favor-quests, and the Director's PARTY section. **This cycle is passive interception** — independent companion turns land in v2.9.
+
 ---
 
 ## Companion State

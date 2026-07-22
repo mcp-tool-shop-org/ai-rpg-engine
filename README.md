@@ -35,7 +35,7 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 
 ---
 
-## Current Status (v2.7.0)
+## Current Status (v2.8.0)
 
 **What works and is tested:**
 - Core runtime: world state, events, actions, ticks, replay — stable since v1.0; deterministic byte-identical replay (per-instance id counter, seeded RNG)
@@ -55,9 +55,12 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 - **Equipment reaches combat (v2.7):** `equip`/`unequip` move real numbers through the status layer the combat formulas already read — zero combat-code changes; gladiator's trident-and-net is wired end-to-end with a test-pinned hit-chance delta
 - **Seeded runs (v2.7):** every fresh session prints its seed with the exact replay command; `--seed <n>` reproduces a session byte-for-byte; combat, resist, ability, and tactics rolls all consume the world seed — and endings read the run you actually played (live heat, pressures, faction accruals, player level)
 - **`buildWorldStack()` (v2.7):** the strategic composition spine beside `buildCombatStack()` — one call assembles environment, factions, rumors, districts, defeat fallout, encounters, and quests; plus the **Director's Ledger** strategy screen, an `AI_RPG_DEBUG=1` simulation inspector, `inspect-save` gated by the same authorities as Continue, and a module save-migration seam on the shipped restore path
+- **Act on the living economy (v2.8):** `createEconomyCore` seeds a per-district economy at pack-load and ticks it each round; a new `sell` verb prices loot through `computeItemValue` (scarcity / faction / provenance / contraband) and shifts local supply. One write-wire lit five systems that shipped dark in v2.7 — the Director's MARKET OVERVIEW + FACTIONS scoring, the endgame merchant-prince arc and collapse trigger, and four economy pressure kinds. **Sell-only this cycle** (buying → v2.9)
+- **Companions (v2.8):** a `recruit` verb builds a party — state, tags, and faction, so a companion fights *with* you; companion combat rides combat-core's interception mechanic (dark until `isAlly` got set), companions react with morale and can depart, and recruiting lights seven waiting consumers — the finale's COMPANIONS roll-call, party targeting, npc-agency goals, favor-quests, and the Director's PARTY section. **Passive interception this cycle** (independent turns → v2.9)
+- **The Director reads the whole board (v2.8):** a new EQUIPMENT Ledger section (behind the cli→equipment provenance dependency), a DIRECTOR'S SUMMARY finale trailer, the MARKET OVERVIEW + PARTY sections now fed from live producers, and district stability + economic tone in the finale's DISTRICTS section
 - `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **4797 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
+- Full test suite: **4975 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
 
 **What is rough or incomplete:**
 - The AI worldbuilding studio (Ollama layer) is more lightly tested than the simulation core, and needs a local Ollama daemon; it is entirely optional — the engine and the `run` loop need no network
@@ -277,18 +280,20 @@ The 10 starter worlds are **composition examples** — they demonstrate how to c
 
 ### Where we are now
 
-Both composition spines are complete — 4797 tests across 259 files, all 10 starters on `buildCombatStack` **and** `buildWorldStack`, deterministic byte-identical replay under printed seeds, full AI decision scoring, and a CLI that scaffolds, runs, validates, and inspects. **v2.7 lights up the strategic tier: the world reacts to how you play (heat, pressures, encounters), quests give a run a spine, equipment changes real numbers, and every session is replayable from the seed it prints.**
+Both composition spines are complete — 4975 tests across 273 files, all 10 starters on `buildCombatStack` **and** `buildWorldStack`, deterministic byte-identical replay under printed seeds, full AI decision scoring, and a CLI that scaffolds, runs, validates, and inspects. **v2.8 lets you act on the living world v2.7 built: a trade economy you work with a `sell` verb, companions you recruit and fight beside, and a Director's Ledger that reads the whole board — each system a single write-wire that lit consumers already shipped dark.**
 
-**Recent release arc (v2.4.0–v2.7.0):**
+**Recent release arc (v2.4.0–v2.8.0):**
 - v2.4.0 — Party combat (ally-targeting / heal / buff / revive, friend-foe AoE), status-effect system (modifiers + DoT/HoT + reactive triggers), plug-in Profiles Phase 1, content `validate`/`scaffold` CLI
 - v2.5.0 — Per-entity rule resolution (mixed-playstyle combat), the `applyProfile` loader + per-entity abilities, profile templates + `profile` CLI, and a full health pass
 - v2.6.0 — The `run` command became a real game: enemies act on their own AI profiles, victory/defeat, save/resume, abilities and XP on the menu, the `ai` studio bin, and the narration stack
-- **v2.7.0 — The world reacts and there's a reason to return: heat → pressures → narrated consequences, zone-entry encounters, a quest loop + Journal, equipment in combat, seeded replayable runs, live endgame inputs, `buildWorldStack`, the Director's Ledger, and a save-migration seam**
+- v2.7.0 — The world reacts and there's a reason to return: heat → pressures → narrated consequences, zone-entry encounters, a quest loop + Journal, equipment in combat, seeded replayable runs, live endgame inputs, `buildWorldStack`, the Director's Ledger, and a save-migration seam
+- **v2.8.0 — Act on the world you live in: a live trade economy + `sell` verb, companions you recruit and fight beside, and a Director's Ledger reading the whole board — one write-wire per system lit ~12 consumers that shipped dark**
 
-### Next (the v2.8 spine)
+### Next (the v2.9 spine)
 
-- The economy tier — live district economies, a trade surface priced by `computeItemValue`, crafting/salvage loops (the modules ship today; the wiring is next)
-- Companions and social verbs — recruit/party mechanics and the bribe/intimidate/seed-rumor playstyle layer over the leverage system
+- Buying and merchant stock (currency + shop inventory) and crafting / salvage loops — the trade economy's other half
+- Full companion turns (independent action, not just interception) and social verbs — bribe / intimidate / seed-rumor over the leverage system
+- The npc-agency and opportunity-core producers that feed the Director's PEOPLE section and companion-morale favor-fallout; equipment content beyond gladiator
 - `--replay` re-simulation parity with world-state modules, and the remaining Director-formatter surfaces
 - Multiplayer — two *human* players sharing one world (a networking layer, deliberately deferred; single-controller shared profiles ship today as [`shared-profiles.ts`](docs/examples/shared-profiles.ts))
 - Serializable formula overrides — per-profile formula tuning (blocked on a formula DSL; profiles carry stat mappings today, not closures)
