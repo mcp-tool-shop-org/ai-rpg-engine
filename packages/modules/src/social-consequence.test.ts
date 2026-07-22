@@ -5,12 +5,17 @@
 // pins the priority-cascade boundaries.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   deriveStance,
   getReputationConsequence,
   evolveTitle,
   buildPlayerDescriptor,
 } from './social-consequence.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const calmCog = { morale: 50, suspicion: 0 };
 
@@ -49,6 +54,27 @@ describe('getReputationConsequence bands', () => {
     expect(getReputationConsequence(0)).toMatchObject({ priceModifier: 1.0, accessLevel: 'normal' });
     expect(getReputationConsequence(20)).toMatchObject({ priceModifier: 0.9, accessLevel: 'normal' });
     expect(getReputationConsequence(60)).toMatchObject({ priceModifier: 0.7, accessLevel: 'privileged' });
+  });
+
+  // F-4684385c: single pricing truth. priceModifier is not deleted (no
+  // production caller ever read it, so there's nothing to migrate off it),
+  // but it must carry a deprecation note pointing at trade-value.ts's
+  // computeItemValue as the one live reputation→price mapping, so a future
+  // reader never wires a SECOND pricing formula off this field.
+  // accessLevel/dialogueBias are untouched by this finding (no behavior
+  // change anywhere) — pinned unchanged by the band test above.
+  it('priceModifier carries a deprecation note pointing at trade-value.ts computeItemValue', () => {
+    const source = readFileSync(resolve(__dirname, 'social-consequence.ts'), 'utf-8');
+    const fieldBlock = source.slice(source.indexOf('export type ReputationConsequence'), source.indexOf('priceModifier: number;'));
+    expect(fieldBlock).toContain('@deprecated');
+    expect(fieldBlock).toContain('computeItemValue');
+  });
+
+  it('behavior is unchanged: getReputationConsequence still returns priceModifier at every band', () => {
+    // Re-pins the SAME band table as the test above — the deprecation note is
+    // documentation-only, never a behavior change (F-4684385c's own contract).
+    expect(getReputationConsequence(-60).priceModifier).toBe(1.5);
+    expect(getReputationConsequence(60).priceModifier).toBe(0.7);
   });
 });
 

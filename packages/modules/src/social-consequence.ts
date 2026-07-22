@@ -13,11 +13,34 @@ export type Stance =
   | 'neutral';
 
 export type ReputationConsequence = {
-  /** Price multiplier: < 1 = discount, > 1 = markup */
+  /**
+   * @deprecated Price multiplier: < 1 = discount, > 1 = markup. Not the live
+   * reputation→price mapping — trade-core.ts's 'sell' verb prices items
+   * through trade-value.ts's computeItemValue (specifically its
+   * computeFactionAttitudeMultiplier(playerReputation) term), which reads the
+   * SAME merged reputation (authored faction baseline + accrued
+   * reputation_<factionId> global) but applies its own band curve, informed
+   * by district economy/scarcity/provenance/pressure the way THIS field never
+   * was. This field predates that write-wire (F-4684385c) and has no
+   * production caller today; kept for back-compat with any existing caller
+   * that still reads it, and because accessLevel/dialogueBias below (which
+   * DO have no live replacement yet — see their own note) are computed in the
+   * same band cascade.
+   */
   priceModifier: number;
-  /** Access level granted by the faction */
+  /**
+   * Access level granted by the faction. No production caller yet (F-4684385c)
+   * — reserved for a future dialogue/gating consumer (targeted v3.0), same as
+   * dialogueBias below. Unlike priceModifier, nothing else in this codebase
+   * computes an access level from reputation, so this stays the intended
+   * eventual source rather than a deprecated one.
+   */
   accessLevel: 'denied' | 'restricted' | 'normal' | 'privileged';
-  /** One-liner for prompt injection describing faction attitude */
+  /**
+   * One-liner for prompt injection describing faction attitude. No production
+   * caller yet (F-4684385c) — reserved for a future dialogue consumer
+   * (targeted v3.0), same status as accessLevel above.
+   */
   dialogueBias: string;
 };
 
@@ -57,7 +80,10 @@ export function deriveStance(
 // --- Reputation Consequences ---
 
 /**
- * Map a reputation value to mechanical consequences.
+ * Map a reputation value to mechanical consequences. See
+ * {@link ReputationConsequence.priceModifier} — deprecated (F-4684385c),
+ * trade-value.ts's computeItemValue is the live reputation→price mapping.
+ * accessLevel/dialogueBias are unaffected and unchanged by this note.
  */
 export function getReputationConsequence(reputationValue: number): ReputationConsequence {
   if (reputationValue <= -60) {

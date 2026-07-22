@@ -222,6 +222,10 @@ export {
   getRumorsKnownToFaction,
   getRumorsInDistrict,
   formatRumorForDirector,
+  // F-19a23718: the 'player-rumor' namespace accessors + deny/bury-by-id
+  getPlayerRumorState,
+  setPlayerRumorState,
+  applyRumorManipulation,
 } from './player-rumor.js';
 export type {
   PlayerRumor,
@@ -229,6 +233,7 @@ export type {
   RumorMutation,
   MilestoneHint,
   NpcRumorSource,
+  PlayerRumorState,
 } from './player-rumor.js';
 export {
   evaluatePressures,
@@ -350,6 +355,11 @@ export {
   formatLeverageForDirector,
   formatLeverageActionForNarrator,
   formatLeverageStatus,
+  // v1.1 write-wire (F-677e94ad/F-19a23718): the 4-verb EngineModule + its
+  // effect-translation helper
+  applyLeverageEffects,
+  createPlayerLeverageCore,
+  playerLeverageCore,
 } from './player-leverage.js';
 export type {
   LeverageCurrency,

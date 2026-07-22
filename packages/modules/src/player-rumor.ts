@@ -366,6 +366,78 @@ export function getRumorsInDistrict(rumors: PlayerRumor[], districtId: string): 
   return rumors.filter((r) => r.originDistrictId === districtId);
 }
 
+// --- Namespace (F-19a23718) ---
+//
+// world.modules['player-rumor'] = { rumors: PlayerRumor[] } — the exact shape
+// director.test.ts:287 pins and director.ts's RUMORS ABOUT YOU section reads
+// via `namespace<{ rumors: unknown }>(world, 'player-rumor')?.rumors`. The
+// persistence DEFAULT is registered by player-leverage.ts's
+// createPlayerLeverageCore (its 'seed' verb is the production writer); these
+// accessors live here because the namespace's data shape (PlayerRumor[]) is
+// this file's own domain, mirroring how world-tick.ts and companion-core.ts
+// each keep their namespace's typed accessors beside the type they own.
+
+export type PlayerRumorState = {
+  rumors: PlayerRumor[];
+};
+
+const PLAYER_RUMOR_MODULE_ID = 'player-rumor';
+
+/**
+ * Read the player-rumor namespace, defaulting to an empty ledger when absent
+ * or malformed — the SAME lazy-init-if-absent contract world-tick.ts's
+ * getWorldTickState and companion-core.ts's getPartyState already use, so
+ * calling this before createPlayerLeverageCore has registered the real
+ * namespace default (or on a pre-v2.9 save) degrades quietly instead of
+ * throwing.
+ */
+export function getPlayerRumorState(world: WorldState): PlayerRumorState {
+  const ns = world.modules[PLAYER_RUMOR_MODULE_ID];
+  if (
+    ns && typeof ns === 'object' && !Array.isArray(ns) &&
+    Array.isArray((ns as PlayerRumorState).rumors)
+  ) {
+    return ns as PlayerRumorState;
+  }
+  return { rumors: [] };
+}
+
+/** Persist the player-rumor namespace. */
+export function setPlayerRumorState(world: WorldState, state: PlayerRumorState): void {
+  world.modules[PLAYER_RUMOR_MODULE_ID] = state;
+}
+
+/**
+ * Deny or bury a specific rumor by id (F-19a23718). This is the REAL call
+ * site player-leverage.ts's resolveRumorAction 'deny'/'bury-scandal' cases
+ * point to — looked up by rumor id from action.parameters at the verb-wrapper
+ * layer (resolveRumorAction itself is a pure function with no world/namespace
+ * access, so it cannot perform the lookup itself). A stale comment in that
+ * switch previously claimed a non-existent "game.ts" module handled this; no
+ * such file exists anywhere in this codebase.
+ *
+ * Quietly no-ops (returns undefined) when the id isn't found — a stale,
+ * already-decayed, or mistyped rumor id degrades rather than throwing.
+ */
+export function applyRumorManipulation(
+  world: WorldState,
+  subAction: 'deny' | 'bury-scandal',
+  rumorId: string,
+): PlayerRumor | undefined {
+  const state = getPlayerRumorState(world);
+  const index = state.rumors.findIndex((r) => r.id === rumorId);
+  if (index === -1) return undefined;
+
+  const updated = subAction === 'deny'
+    ? denyRumor(state.rumors[index])
+    : buryRumor(state.rumors[index]);
+
+  const rumors = [...state.rumors];
+  rumors[index] = updated;
+  setPlayerRumorState(world, { ...state, rumors });
+  return updated;
+}
+
 // --- Director Display ---
 
 /** Format a single rumor for the director /rumors view. */
