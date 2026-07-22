@@ -543,15 +543,20 @@ export type {
   TradeEffect,
 } from './trade-value.js';
 
-// --- Trade Core (v2.8: F-6c3e4fde — the sell verb) ---
+// --- Trade Core (v2.8: F-6c3e4fde — the sell verb; F-31f15013 — the buy verb) ---
 export {
   createTradeCore,
   tradeCore,
   inferSupplyCategory,
+  getBuyableStock,
   SELL_BASE_VALUE,
   SELL_SUPPLY_RAISE,
   SELL_CURRENCY,
+  BUY_SUPPLY_FLOOR,
+  BUY_MARKUP_MULTIPLIER,
+  BUY_SUPPLY_LOWER,
 } from './trade-core.js';
+export type { BuyableStock, TradeCoreConfig } from './trade-core.js';
 
 // --- Crafting Core (v1.8) ---
 export {

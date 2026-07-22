@@ -10,9 +10,19 @@ import { describe, it, expect } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
 import type { EntityState, ZoneState } from '@ai-rpg-engine/core';
 import { createEnvironmentCore } from './environment-core.js';
-import { createDistrictCore } from './district-core.js';
-import { createEconomyCore, getSupplyLevel, type EconomyCoreState } from './economy-core.js';
-import { createTradeCore, inferSupplyCategory, SELL_CURRENCY, SELL_SUPPLY_RAISE, SELL_BASE_VALUE } from './trade-core.js';
+import { createDistrictCore, getDistrictState } from './district-core.js';
+import { createEconomyCore, createDistrictEconomy, getSupplyLevel, type EconomyCoreState } from './economy-core.js';
+import {
+  createTradeCore,
+  inferSupplyCategory,
+  getBuyableStock,
+  SELL_CURRENCY,
+  SELL_SUPPLY_RAISE,
+  SELL_BASE_VALUE,
+  BUY_SUPPLY_FLOOR,
+  BUY_MARKUP_MULTIPLIER,
+  BUY_SUPPLY_LOWER,
+} from './trade-core.js';
 
 const zones: ZoneState[] = [{ id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbors: [] }];
 const districts = [{ id: 'district-1', name: 'Market', zoneIds: ['zone-a'], tags: [] }];
@@ -148,5 +158,223 @@ describe('sell verb (F-6c3e4fde) — the missing trade wire', () => {
     expect(events.some((e) => e.type === 'action.rejected')).toBe(true);
     expect(engine.world.entities.player.inventory).toContain('smuggled-goods');
     expect(engine.world.entities.player.resources[SELL_CURRENCY] ?? 0).toBe(0);
+  });
+});
+
+// --- Buyable stock model (F-f73aa080) ---
+
+describe('getBuyableStock (F-f73aa080) — category-granularity merchant stock, not a per-item catalog', () => {
+  it('offers the generic default list when no genre is configured', () => {
+    const economy = createDistrictEconomy();
+    expect(getBuyableStock(economy, 'weapons')).toEqual(['short-sword']);
+  });
+
+  it('genre flavoring is respected — pirate and fantasy differ for the same category', () => {
+    const economy = createDistrictEconomy();
+    const pirateLuxuries = getBuyableStock(economy, 'luxuries', 'pirate');
+    const fantasyLuxuries = getBuyableStock(economy, 'luxuries', 'fantasy');
+
+    expect(pirateLuxuries).toContain('rum-barrel');
+    expect(fantasyLuxuries).not.toContain('rum-barrel');
+    expect(fantasyLuxuries.length).toBeGreaterThan(0);
+  });
+
+  it('an unknown genre falls back to the generic default list', () => {
+    const economy = createDistrictEconomy();
+    expect(getBuyableStock(economy, 'weapons', 'not-a-real-genre')).toEqual(['short-sword']);
+  });
+
+  it('below-floor category is not offered, genre or no genre (BUY_SUPPLY_FLOOR)', () => {
+    const economy = createDistrictEconomy();
+    economy.supplies.weapons.level = BUY_SUPPLY_FLOOR - 1;
+
+    expect(getBuyableStock(economy, 'weapons')).toEqual([]);
+    expect(getBuyableStock(economy, 'weapons', 'pirate')).toEqual([]);
+  });
+
+  it('a category exactly at the floor IS offered (floor is inclusive)', () => {
+    const economy = createDistrictEconomy();
+    economy.supplies.weapons.level = BUY_SUPPLY_FLOOR;
+    expect(getBuyableStock(economy, 'weapons')).toEqual(['short-sword']);
+  });
+});
+
+// --- The buy verb (F-31f15013) ---
+
+const makeBuyerPlayer = (coin: number, inventory: string[] = []): EntityState => ({
+  id: 'player',
+  blueprintId: 'player',
+  type: 'player',
+  name: 'Hero',
+  tags: ['player'],
+  stats: {},
+  resources: { hp: 20, coin },
+  statuses: [],
+  zoneId: 'zone-a',
+  inventory,
+});
+
+/** Same neutral Market-1 district as makeSellEngine — no controlling faction, baseline (50) supply on every category unless a genre is given. */
+function makeBuyEngine(coin: number, opts: { genre?: string; inventory?: string[] } = {}) {
+  return createTestEngine({
+    modules: [
+      createEnvironmentCore(),
+      createDistrictCore({ districts }),
+      createEconomyCore({ districts: districts.map((d) => ({ id: d.id, tags: d.tags })), genre: opts.genre }),
+      createTradeCore({ genre: opts.genre }),
+    ],
+    entities: [makeBuyerPlayer(coin, opts.inventory ?? [])],
+    zones,
+  });
+}
+
+describe('buy verb (F-31f15013) — the missing merchant-side wire', () => {
+  it('was impossible before this module: no "buy" verb existed anywhere (RED without createTradeCore registered)', () => {
+    const engine = createTestEngine({
+      modules: [
+        createEnvironmentCore(),
+        createDistrictCore({ districts }),
+        createEconomyCore({ districts: districts.map((d) => ({ id: d.id, tags: d.tags })) }),
+        // no createTradeCore() — the exact pre-fix condition.
+      ],
+      entities: [makeBuyerPlayer(50)],
+      zones,
+    });
+
+    const events = engine.submitAction('buy', { targetIds: ['short-sword'] });
+
+    // dispatch() returns [] directly for a truly unregistered verb (it never
+    // reaches a handler that could emit action.rejected into the returned
+    // array) — same "impossible before" shape as the sell verb's own pin above.
+    expect(events.some((e) => e.type === 'item.bought')).toBe(false);
+    expect(engine.world.entities.player.inventory).not.toContain('short-sword');
+    expect(engine.world.entities.player.resources[SELL_CURRENCY]).toBe(50);
+  });
+
+  it('succeeds: debits coin at base-value + markup, adds the item, lowers category supply (mirrored TradeEffect), and emits item.bought + inventory.item.received', () => {
+    const engine = makeBuyEngine(50);
+
+    const events = engine.submitAction('buy', { targetIds: ['short-sword'] });
+
+    expect(events.some((e) => e.type === 'item.bought')).toBe(true);
+    expect(events.some((e) => e.type === 'inventory.item.received')).toBe(true);
+
+    // Baseline district (all supply 50, tradeVolume 50, no faction, no pressures):
+    // computeItemValue's rawMult is 1.0, so finalValue == SELL_BASE_VALUE (10);
+    // buy price is that times BUY_MARKUP_MULTIPLIER (1.3) == 13.
+    const expectedPrice = Math.round(SELL_BASE_VALUE * BUY_MARKUP_MULTIPLIER);
+    expect(expectedPrice).toBe(13);
+    expect(engine.world.entities.player.resources[SELL_CURRENCY]).toBe(50 - expectedPrice);
+    expect(engine.world.entities.player.inventory).toContain('short-sword');
+
+    const economy = (engine.world.modules['economy-core'] as EconomyCoreState).districts['district-1'];
+    expect(getSupplyLevel(economy, 'weapons')).toBe(50 + BUY_SUPPLY_LOWER);
+
+    // district-core's dormant 'inventory.item.received' listener (commerce +3) wakes up.
+    const district = getDistrictState(engine.world, 'district-1');
+    expect(district?.commerce).toBe(53);
+  });
+
+  it('rejects insufficient coin with a structured failure event — no state mutation', () => {
+    const engine = makeBuyEngine(5); // price is 13; 5 is not enough
+
+    const events = engine.submitAction('buy', { targetIds: ['short-sword'] });
+
+    const rejected = events.find((e) => e.type === 'action.rejected');
+    expect(rejected).toBeDefined();
+    expect(String(rejected?.payload.reason)).toMatch(/coin/);
+    expect(engine.world.entities.player.resources[SELL_CURRENCY]).toBe(5);
+    expect(engine.world.entities.player.inventory).not.toContain('short-sword');
+  });
+
+  it('reads a missing coin resource safely (0, not NaN/undefined) and still rejects — F-92c78519', () => {
+    const engine = createTestEngine({
+      modules: [
+        createEnvironmentCore(),
+        createDistrictCore({ districts }),
+        createEconomyCore({ districts: districts.map((d) => ({ id: d.id, tags: d.tags })) }),
+        createTradeCore(),
+      ],
+      entities: [{
+        id: 'player', blueprintId: 'player', type: 'player', name: 'Hero',
+        tags: ['player'], stats: {}, resources: { hp: 20 }, statuses: [],
+        zoneId: 'zone-a', inventory: [],
+      }],
+      zones,
+    });
+
+    const events = engine.submitAction('buy', { targetIds: ['short-sword'] });
+
+    const rejected = events.find((e) => e.type === 'action.rejected');
+    expect(rejected).toBeDefined();
+    expect(String(rejected?.payload.reason)).not.toMatch(/NaN|undefined/);
+    expect(engine.world.entities.player.inventory).not.toContain('short-sword');
+    expect(engine.world.entities.player.resources.coin ?? 0).toBe(0);
+  });
+
+  it('refuses to buy from a category whose supply has fallen below the offer floor', () => {
+    const engine = makeBuyEngine(50);
+    (engine.world.modules['economy-core'] as EconomyCoreState).districts['district-1'].supplies.weapons.level = BUY_SUPPLY_FLOOR - 1;
+
+    const events = engine.submitAction('buy', { targetIds: ['short-sword'] });
+
+    expect(events.some((e) => e.type === 'action.rejected')).toBe(true);
+    expect(engine.world.entities.player.inventory).not.toContain('short-sword');
+    expect(engine.world.entities.player.resources[SELL_CURRENCY]).toBe(50);
+  });
+
+  it("rejects an item not present in this district's (or genre's) buyable stock", () => {
+    const engine = makeBuyEngine(50);
+    const events = engine.submitAction('buy', { targetIds: ['nonexistent-widget'] });
+
+    expect(events.some((e) => e.type === 'action.rejected')).toBe(true);
+    expect(engine.world.entities.player.inventory).not.toContain('nonexistent-widget');
+    expect(engine.world.entities.player.resources[SELL_CURRENCY]).toBe(50);
+  });
+
+  it('rejects contraband that clears the offer floor but has no active black market (untradeable gate, mirrors sell)', () => {
+    const engine = makeBuyEngine(50);
+    const economy = (engine.world.modules['economy-core'] as EconomyCoreState).districts['district-1'];
+    // 30 clears BUY_SUPPLY_FLOOR (>=30) but isBlackMarketCondition needs contraband STRICTLY >30.
+    economy.supplies.contraband.level = 30;
+
+    const events = engine.submitAction('buy', { targetIds: ['contraband-goods'] });
+
+    expect(events.some((e) => e.type === 'action.rejected')).toBe(true);
+    expect(engine.world.entities.player.resources[SELL_CURRENCY]).toBe(50);
+    expect(engine.world.entities.player.inventory).not.toContain('contraband-goods');
+  });
+
+  it('genre flavoring reaches the buy verb end-to-end: a pirate-genre district offers rum-barrel, a fantasy one does not', () => {
+    const pirateEngine = makeBuyEngine(50, { genre: 'pirate' });
+    const pirateEvents = pirateEngine.submitAction('buy', { targetIds: ['rum-barrel'] });
+    expect(pirateEvents.some((e) => e.type === 'item.bought')).toBe(true);
+
+    const fantasyEngine = makeBuyEngine(50, { genre: 'fantasy' });
+    const fantasyEvents = fantasyEngine.submitAction('buy', { targetIds: ['rum-barrel'] });
+    expect(fantasyEvents.some((e) => e.type === 'action.rejected')).toBe(true);
+  });
+});
+
+// --- Buy/sell spread (F-e9f0a338) ---
+
+describe('buy/sell spread (F-e9f0a338) — BUY_MARKUP_MULTIPLIER prevents a riskless round-trip', () => {
+  it('buying then selling the same item in the same district always loses coin', () => {
+    const engine = makeBuyEngine(50);
+    const startingCoin = 50;
+
+    engine.submitAction('buy', { targetIds: ['short-sword'] });
+    const afterBuy = engine.world.entities.player.resources[SELL_CURRENCY];
+    expect(afterBuy).toBe(startingCoin - 13); // 37
+
+    engine.submitAction('sell', { targetIds: ['short-sword'] });
+    const afterSell = engine.world.entities.player.resources[SELL_CURRENCY];
+
+    // Post-buy weapons supply (50 + BUY_SUPPLY_LOWER = 47) is still in the same
+    // 40-60 scarcity bucket as baseline, so sell's finalValue is still
+    // SELL_BASE_VALUE (10) unmarked-up — the round trip nets a loss, never a gain.
+    expect(afterSell).toBe(37 + 10); // 47
+    expect(afterSell).toBeLessThan(startingCoin);
+    expect(engine.world.entities.player.inventory).not.toContain('short-sword');
   });
 });
