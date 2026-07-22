@@ -17,9 +17,12 @@ import {
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
+  applyStatus,
+  removeStatus,
   aggressiveProfile,
   cautiousProfile,
 } from '@ai-rpg-engine/modules';
+import { createEquipmentCore } from '@ai-rpg-engine/equipment';
 import * as engineModules from '@ai-rpg-engine/modules';
 import type { PresentationRule, IntentProfile } from '@ai-rpg-engine/modules';
 import {
@@ -42,6 +45,7 @@ import {
   progressionRewards,
   encounterSpawnContent,
   fantasyQuests,
+  itemCatalog,
 } from './content.js';
 import { fantasyMinimalRuleset } from './ruleset.js';
 
@@ -167,6 +171,21 @@ export function createGame(seed?: number): Engine {
       }),
       ...worldStack.modules,
       createBossPhaseListener(cryptWardenBoss),
+      // F-86b9145d: the equipment loop — `equip`/`unequip` verbs over the
+      // pack's item catalog (mirrors starter-gladiator's own F-ENG008
+      // wiring). The module (homed in @ai-rpg-engine/equipment) publishes the
+      // catalog under EQUIPMENT_CATALOG_FORMULA and mirrors equipped items'
+      // statModifiers into `equipped-<itemId>` statuses; this pack injects
+      // the status machinery of its own engine build (the modules package's
+      // ops), same as every other equipment-wired starter.
+      createEquipmentCore({
+        catalog: itemCatalog,
+        statuses: {
+          registerDefinitions: registerStatusDefinitions,
+          apply: applyStatus,
+          remove: removeStatus,
+        },
+      }),
       createAbilityCore({ abilities: fantasyAbilities, statMapping: { power: 'vigor', precision: 'instinct', focus: 'will' } }),
       createAbilityEffects(),
       createAbilityReview(),

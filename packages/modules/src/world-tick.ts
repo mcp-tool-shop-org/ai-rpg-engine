@@ -28,6 +28,17 @@
 //      and endgame.ts's merchant-prince arc/collapse trigger — and feeds this
 //      round's buildPressureInputs (step 5) below. No-op when the pack never
 //      registered economy-core (nothing to tick).
+//   0c. district mood transition (F-e5817c7c-adjacent rider): district-mood.ts's
+//      computeDistrictMood was fully authored/tested with no memory of the
+//      PREVIOUS tone, so a district sliding into 'grim' or blooming into
+//      'prosperous' never reached the party — 2 of the REACTION_TABLE's own
+//      12 previously-dormant triggers ('district-grim'/'district-prosperous').
+//      Tracks the player's CURRENT district's tone round over round (a
+//      district the player isn't in shouldn't move their companions) and
+//      queues a reaction trigger on a TRANSITION only, never a steady state —
+//      same "band crossing, not every increment" discipline step 4's own
+//      HEAT_URGENCY_STEP escalation already uses. No-op when there is no
+//      district system or the player isn't in one.
 //   1. accumulate milestones from the eventLog delta (boss kills feed the
 //      genre spawn rules' milestone conditions)
 //   2. tickPressures — the module's own lifecycle: timers decrement, expired
@@ -43,6 +54,33 @@
 //   5. heat at HEAT_WAKE_THRESHOLD opens the spawn valve: evaluatePressures
 //      runs with inputs derived from the globals (spawns stay scarce — the
 //      module's own max-active / min-gap / one-per-kind guards apply)
+//   5b. opportunity spawn/tick wire (F-ceed887f): opportunity-core.ts's
+//      evaluateOpportunities/tickOpportunities were fully authored and unit-
+//      tested with ZERO production callers (its own file header: "Pure
+//      functions, no module registration") — a world could accrue every
+//      signal these rules key off and never once see a contract, bounty, or
+//      favor-request appear. Runs every round — UNLIKE pressures, none of the
+//      5 live (npc-agency-independent) rules key off heat — directly after
+//      the pressure lifecycle settles, so linkedPressureId can reference this
+//      round's own post-escalation/post-spawn pressure list. Persists
+//      world.modules['opportunity-core'] = { opportunities: [...] } — the
+//      EXACT shape director.test.ts pins (director.ts's OPPORTUNITIES section
+//      needs no edit; it already reads this namespace). The 2 npc-dependent
+//      rules (npc-goal, obligation) are fed hardcoded-empty npcProfiles/
+//      npcObligations — npc-agency.ts persists neither anywhere in the engine
+//      today (endgame.ts's own buildEndgameInputs comment: "npc-agency keeps
+//      no world.modules state — nothing to read") — so they no-op cleanly;
+//      wiring npc-agency's own persistence in a future wave activates both
+//      automatically, nothing here needs to change.
+//   5b-i. opportunity natural-expiry fallout (Phase-9 remediation): mirrors
+//      step 3's pressure-expiry block — tickOpportunities' own `expired`
+//      array used to be discarded, so every getXFallout function's
+//      fully-authored 'expired' case (rep hits, obligations, economy shifts)
+//      never ran; an opportunity's deadline was cosmetic. Now computes +
+//      applies + ledgers + emits `opportunity.expired` for each, exactly the
+//      same four-beat shape as the pressure-expiry block, using the SAME
+//      actor identity the resolution verb uses (world.playerId — an
+//      opportunity is only ever accepted by the player).
 //   6. sustained quiet cools off: after QUIET_ROUNDS_BEFORE_DECAY consecutive
 //      rounds with no new heat, heat decays by HEAT_DECAY_PER_QUIET_TICK per
 //      round (the street's memory fades — but not between two swings of the
@@ -74,7 +112,7 @@ import {
   type PressureInputs,
 } from './pressure-system.js';
 import { computeFallout, type PressureFallout } from './pressure-resolution.js';
-import { getDistrictForZone, getDistrictState } from './district-core.js';
+import { getDistrictForZone, getDistrictState, getDistrictDefinition } from './district-core.js';
 import { runEncounterSpawnStep, type SpawnedEncounterReport } from './encounter-spawn.js';
 import { getEconomyCoreState, setDistrictEconomy, tickDistrictEconomy } from './economy-core.js';
 import {
@@ -90,6 +128,22 @@ import {
 } from './companion-core.js';
 import { evaluateCompanionReactions, type ReactionTrigger } from './companion-reactions.js';
 import type { LoyaltyBreakpoint } from './npc-agency.js';
+import { computeDistrictMood, type DistrictMood } from './district-mood.js';
+import {
+  evaluateOpportunities,
+  tickOpportunities,
+  getPersistedOpportunities,
+  setPersistedOpportunities,
+  type OpportunityInputs,
+  type OpportunityState,
+} from './opportunity-core.js';
+import {
+  computeOpportunityFallout,
+  applyOpportunityFallout,
+  appendResolvedOpportunity,
+  type OpportunityFallout,
+} from './opportunity-resolution.js';
+import { getLeverageState } from './player-leverage.js';
 
 // ---------------------------------------------------------------------------
 // Tuning constants (exported so tests pin the thresholds, not magic numbers)
@@ -197,6 +251,16 @@ export type WorldTickState = {
    * its drift policy).
    */
   resolvedPressures?: PressureFallout[];
+  /**
+   * The player's district's mood tone as of the END of the last tick that
+   * observed it, keyed by districtId (F-e5817c7c-adjacent rider). Read/written
+   * only by step 0c below; a district never yet observed (or a save from
+   * before this field existed) is simply absent from the map — the first
+   * observation establishes a silent baseline rather than firing a spurious
+   * "transition" from nothing. OPTIONAL for the same pre-field-save reason
+   * resolvedPressures is.
+   */
+  districtTones?: Record<string, DistrictMood['tone']>;
 };
 
 export type WorldTickOptions = {
@@ -224,6 +288,14 @@ export type WorldTickResult = {
   active: WorldPressure[];
   /** Encounters spawned by this round's zone entries (encounter-spawn step). */
   encounters: SpawnedEncounterReport[];
+  /** Opportunities spawned this round by the opportunity wire (F-ceed887f). */
+  opportunitiesSpawned: OpportunityState[];
+  /**
+   * Fallout of opportunities that expired this round (effects already
+   * applied, ledger already appended) — Phase-9 remediation, FIX 2. Mirrors
+   * `expired` above, opportunity-side.
+   */
+  opportunitiesExpired: OpportunityFallout[];
 };
 
 // ---------------------------------------------------------------------------
@@ -248,6 +320,7 @@ function freshWorldTickState(world: WorldState): WorldTickState {
     lastEventIndex: world.eventLog.length,
     milestones: [],
     resolvedPressures: [],
+    districtTones: {},
   };
 }
 
@@ -456,7 +529,12 @@ function collectMilestones(world: WorldState, state: WorldTickState): void {
 //     resolutionType can never equal 'resolved-by-player' in production);
 //     every other resolutionType (today, always that same literal) →
 //     'pressure-resolved-badly' (reachable).
-// The remaining 12 triggers (leverage-*, betrayal-witnessed, district-*,
+// v2.9 (F-e5817c7c-adjacent rider): +2 more, +1 event source —
+//   - district-core's live DistrictState, read every tick through district-
+//     mood.ts's computeDistrictMood (step 0c above) → 'district-grim' /
+//     'district-prosperous' (both reachable) on a tone TRANSITION only,
+//     never a steady state. 6 of 16 triggers now wired, via 3 sources.
+// The remaining 10 triggers (leverage-*, betrayal-witnessed,
 // obligation-betrayed, item-*-recognized) have no production event or
 // persisted state to key off yet: player-leverage.ts's resolveSocialAction/
 // resolveRumorAction/resolveSabotageAction emit no ResolvedEvents and have no
@@ -805,6 +883,8 @@ export function runWorldTick(engine: Engine, opts: WorldTickOptions = {}): World
       expired: [],
       active: [],
       encounters: [],
+      opportunitiesSpawned: [],
+      opportunitiesExpired: [],
     };
   }
 }
@@ -837,6 +917,41 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   // step 5's buildPressureInputs and director.ts/endgame.ts's own reads.
   tickDistrictEconomies(world, currentTick);
 
+  // Hoisted for steps 0c/3/5b below (was computed fresh at step 3 only,
+  // before F-e5817c7c/F-ceed887f needed the same value earlier) — a pure,
+  // side-effect-free read, so computing it once and reusing it changes
+  // nothing about what step 3 already saw.
+  const playerDistrictId = getPlayerDistrictId(world);
+
+  // 0c. District mood transition (F-e5817c7c-adjacent rider) — see file
+  // header. Queues onto reactionTriggers (built above); dispatched together
+  // with the combat/pressure triggers at step 3c below, so a round with
+  // several triggers still fires exactly one applyCompanionReactions call.
+  // No-op when there is no district system or the player isn't in a district.
+  if (playerDistrictId) {
+    const districtState = getDistrictState(world, playerDistrictId);
+    if (districtState) {
+      const tags = getDistrictDefinition(world, playerDistrictId)?.tags ?? [];
+      const tone = computeDistrictMood(districtState, tags).tone;
+      const tones = (state.districtTones ??= {});
+      const previousTone = tones[playerDistrictId];
+      // Only a genuine transition fires — never a steady state, and never
+      // the FIRST observation (no prior tone recorded yet: that would fire
+      // on a world simply SEEDED already-grim, which never "transitioned"
+      // from anything). Establishing the baseline silently on first touch
+      // mirrors P8-WL-006's own "a fresh read starts the delta discipline
+      // from now, it doesn't re-fire on history" posture.
+      if (previousTone !== undefined) {
+        if (previousTone !== 'grim' && tone === 'grim') {
+          reactionTriggers.push('district-grim');
+        } else if (previousTone !== 'prosperous' && tone === 'prosperous') {
+          reactionTriggers.push('district-prosperous');
+        }
+      }
+      tones[playerDistrictId] = tone;
+    }
+  }
+
   // 1. Milestones from the delta (before we append our own events).
   collectMilestones(world, state);
 
@@ -859,7 +974,6 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   // 3. Expiries → fallout → ledger + chains.
   const spawned: WorldPressure[] = [];
   const expiredFallouts: PressureFallout[] = [];
-  const playerDistrictId = getPlayerDistrictId(world);
   const activeKinds = new Set(active.map((p) => p.kind));
   for (const pressure of expired) {
     const fallout = computeFallout(pressure, 'expired-ignored', genre, {
@@ -968,6 +1082,107 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
     }
   }
 
+  // 5b. Opportunity spawn/tick wire (F-ceed887f) — see file header. Runs
+  // every round (not heat-gated). Reuses buildPressureInputs' own
+  // reputation/factionStates/districtEconomies derivation with a second,
+  // pure, side-effect-free call (cheap, and keeps step 5 above completely
+  // untouched) so opportunity evaluation never disagrees with the pressure
+  // tick about faction standing or district economies. Ticks the persisted
+  // set FIRST (timers/visibility/expiry), then evaluates a new spawn against
+  // the ticked set's own capacity/interval/pair-conflict guards — the exact
+  // order step 2→5 already uses for pressures.
+  const oppPressureInputs = buildPressureInputs(world, state, genre, currentTick, active);
+  const player = world.entities[world.playerId];
+  const playerCustom = (player?.custom ?? {}) as Record<string, string | number | boolean>;
+  let playerLeverage = getLeverageState(playerCustom);
+  if (typeof playerCustom['leverage.heat'] !== 'number') {
+    playerLeverage = { ...playerLeverage, heat };
+  }
+
+  const persistedOpportunities = getPersistedOpportunities(world);
+  const { active: tickedOpportunities, expired: expiredOpportunities } = tickOpportunities(persistedOpportunities, currentTick);
+
+  // 5b-i. Opportunity natural-expiry fallout (Phase-9 remediation, FIX 2) —
+  // mirrors step 3's pressure-expiry block above (computeFallout → applyFallout
+  // → ledger → emit), opportunity-side. Every getXFallout function in
+  // opportunity-resolution.ts has a fully-authored 'expired' case (rep hits,
+  // obligations, economy shifts) that never ran before this — tickOpportunities'
+  // own `expired` array used to be destructured away and discarded, so an
+  // opportunity's deadline was cosmetic. Same actor identity the resolution
+  // verb uses (opportunityHandler passes action.actorId; opportunities are
+  // player-scoped — only the player ever accepts one — so world.playerId here
+  // is that SAME actor, just reached via the tick instead of a submitted
+  // action). Iterates the array in its own stable order — no Math.random, no
+  // Date.now, so this stays deterministic same as every other step in this file.
+  const opportunityFallouts: OpportunityFallout[] = [];
+  for (const opp of expiredOpportunities) {
+    const fallout = computeOpportunityFallout(opp, 'expired', {
+      currentTick,
+      playerDistrictId,
+      genre,
+    });
+    applyOpportunityFallout(world, world.playerId, fallout);
+    appendResolvedOpportunity(world, fallout);
+    opportunityFallouts.push(fallout);
+
+    engine.store.emitEvent(
+      'opportunity.expired',
+      {
+        opportunityId: opp.id,
+        kind: opp.kind,
+        title: opp.title,
+        summary: fallout.summary,
+        resolutionType: fallout.resolution.resolutionType,
+        effects: fallout.effects,
+        ...(fallout.warnings ? { warnings: fallout.warnings } : {}),
+      },
+      opp.visibility === 'hidden'
+        ? { visibility: 'hidden' }
+        : { visibility: 'public', presentation: { channels: ['narrator'], priority: 'normal' } },
+    );
+  }
+
+  const oppInputs: OpportunityInputs = {
+    activeOpportunities: tickedOpportunities,
+    activePressures: active,
+    // Hardcoded-empty (v3.0 honest ceiling — see file header step 5b note):
+    // npc-agency.ts persists neither profiles nor obligations anywhere in the
+    // engine today. The 2 npc-dependent rules simply no-op on these; wiring
+    // npc-agency's own persistence in a future wave activates both without
+    // any change here.
+    npcProfiles: [],
+    npcObligations: new Map(),
+    factionStates: oppPressureInputs.factionStates,
+    playerReputations: oppPressureInputs.reputation,
+    playerLeverage,
+    districtEconomies: oppPressureInputs.districtEconomies ?? new Map(),
+    companions: getPartyState(world).companions,
+    playerDistrictId: playerDistrictId ?? '',
+    playerLevel: 1, // unread by every authored spawn rule; wire when one reads it (mirrors buildPressureInputs' own ceiling)
+    currentTick,
+    genre,
+    totalTurns: currentTick,
+  };
+  const oppResult = evaluateOpportunities(oppInputs);
+  const opportunitiesSpawned: OpportunityState[] = oppResult ? [oppResult.opportunity] : [];
+  const nextOpportunities = oppResult ? [...tickedOpportunities, oppResult.opportunity] : tickedOpportunities;
+  setPersistedOpportunities(world, nextOpportunities);
+  if (oppResult) {
+    engine.store.emitEvent(
+      'opportunity.spawned',
+      {
+        opportunityId: oppResult.opportunity.id,
+        kind: oppResult.opportunity.kind,
+        title: oppResult.opportunity.title,
+        reason: oppResult.reason,
+        urgency: oppResult.opportunity.urgency,
+      },
+      oppResult.opportunity.visibility === 'hidden'
+        ? { visibility: 'hidden' }
+        : { visibility: 'public', presentation: { channels: ['narrator'], priority: 'normal' } },
+    );
+  }
+
   // 6. Sustained quiet cools off. A fight's own rhythm (misses, movement, a
   // rejected swing) must not bleed heat between kills — decay starts only
   // after QUIET_ROUNDS_BEFORE_DECAY consecutive rounds with no new heat. Heat
@@ -995,5 +1210,7 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
     expired: expiredFallouts,
     active,
     encounters,
+    opportunitiesSpawned,
+    opportunitiesExpired: opportunityFallouts,
   };
 }

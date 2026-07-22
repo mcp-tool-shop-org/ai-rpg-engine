@@ -14,6 +14,9 @@
 //                            catalog and is equippable by the tags that path
 //                            grants (F-ENG008: the equip loop must be
 //                            reachable from every way a player enters play)
+//  T0-coin-seed            — the authored player starts with a positive coin
+//                            balance so trade-core's universal buy verb is
+//                            reachable from the first tick (F-92c78519)
 
 import { describe, it, expect } from 'vitest';
 import { resolveEntity, type CharacterBuild } from '@ai-rpg-engine/character-creation';
@@ -189,5 +192,11 @@ describe('T0-equipment-truth: every entry path can reach the equip loop (compute
       const missing = (item.requiredTags ?? []).filter((t) => !player.tags.includes(t));
       expect(missing, `authored player cannot equip '${itemId}'`).toEqual([]);
     }
+  });
+});
+
+describe('T0-coin-seed: the universal buy verb is reachable from the first tick (F-92c78519)', () => {
+  it('the authored player starts with a positive coin balance', () => {
+    expect(player.resources.coin).toBeGreaterThan(0);
   });
 });

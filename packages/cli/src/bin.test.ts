@@ -24,6 +24,14 @@ import {
   formatSeedLine,
   mintSeed,
   createNewSession,
+  listCheckpoints,
+  resolveCheckpointSelector,
+  formatCheckpointList,
+  parseCheckpointArg,
+  writeCheckpoint,
+  findIgnoredReplayArg,
+  CHECKPOINT_KEEP,
+  type CheckpointInfo,
 } from './bin.js';
 import { allPacks } from './packs.js';
 import type { LoadedPack } from './external-pack.js';
@@ -1432,5 +1440,343 @@ describe('runHostileRound — end-gates around NPC turns and the world tick (P8-
     runHostileRound(engine, pack, { npcTurns, worldTick });
     expect(npcTurns).not.toHaveBeenCalled();
     expect(worldTick).not.toHaveBeenCalled();
+  });
+});
+
+// F-b369c8c5 — multi-checkpoint save slots. Every save-to-disk (saveGameGuarded)
+// now ALSO rotates a numbered checkpoint-<NNN>.json under SAVE_DIR (same
+// engine.serialize() bytes as save.json), ordinals derived from the files
+// already on disk — never Date.now()/Math.random() (the repo's determinism
+// law) — pruned to CHECKPOINT_KEEP, oldest first. save.json stays the
+// back-compat latest-pointer: unchanged shape, unchanged write, unchanged
+// read path for every caller that doesn't ask for a checkpoint.
+describe('checkpoint rotation (F-b369c8c5)', () => {
+  let tmpDir: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-checkpoint-test-'));
+    originalCwd = process.cwd();
+    process.chdir(tmpDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  const CHECKPOINT_DIR = path.join('.ai-rpg-engine');
+
+  function checkpointFiles(): string[] {
+    if (!fs.existsSync(CHECKPOINT_DIR)) return [];
+    return fs
+      .readdirSync(CHECKPOINT_DIR)
+      .filter((f) => /^checkpoint-\d+\.json$/.test(f))
+      .sort();
+  }
+
+  it('a save writes save.json AND one checkpoint-NNN.json alongside it', () => {
+    const engine = makeEngine();
+    expect(saveGameGuarded(engine, vi.fn())).toBe(true);
+
+    expect(fs.existsSync(path.join(CHECKPOINT_DIR, 'save.json'))).toBe(true);
+    const files = checkpointFiles();
+    expect(files).toHaveLength(1);
+    expect(files[0]).toBe('checkpoint-001.json');
+  });
+
+  it('successive saves mint monotonically increasing ordinals — never a re-used name', () => {
+    const engine = makeEngine();
+    saveGameGuarded(engine, vi.fn());
+    saveGameGuarded(engine, vi.fn());
+    saveGameGuarded(engine, vi.fn());
+
+    expect(checkpointFiles()).toEqual([
+      'checkpoint-001.json',
+      'checkpoint-002.json',
+      'checkpoint-003.json',
+    ]);
+  });
+
+  it('more than CHECKPOINT_KEEP saves prune the oldest, keeping exactly the bound', () => {
+    const engine = makeEngine();
+    const totalWrites = CHECKPOINT_KEEP + 2;
+    for (let i = 0; i < totalWrites; i++) {
+      saveGameGuarded(engine, vi.fn());
+    }
+    const files = checkpointFiles();
+    expect(files).toHaveLength(CHECKPOINT_KEEP);
+    const ordinals = files.map((f) => Number(/^checkpoint-(\d+)\.json$/.exec(f)![1]));
+    // The oldest (1, 2) are pruned; only the newest CHECKPOINT_KEEP survive.
+    expect(Math.min(...ordinals)).toBe(totalWrites - CHECKPOINT_KEEP + 1);
+    expect(Math.max(...ordinals)).toBe(totalWrites);
+  });
+
+  it('save.json always holds the LATEST state regardless of checkpoint rotation (back-compat pointer)', () => {
+    const engine = makeEngine();
+    saveGameGuarded(engine, vi.fn());
+    engine.store.state.entities['hero'].resources.hp = 3;
+    saveGameGuarded(engine, vi.fn());
+
+    const saved = JSON.parse(fs.readFileSync(path.join(CHECKPOINT_DIR, 'save.json'), 'utf-8')) as {
+      world: { state: { entities: Record<string, { resources: { hp: number } }> } };
+    };
+    expect(saved.world.state.entities['hero'].resources.hp).toBe(3);
+  });
+
+  it('the checkpoint written by a save is byte-identical to save.json at that moment', () => {
+    const engine = makeEngine();
+    saveGameGuarded(engine, vi.fn());
+    const saveContent = fs.readFileSync(path.join(CHECKPOINT_DIR, 'save.json'), 'utf-8');
+    const checkpointContent = fs.readFileSync(path.join(CHECKPOINT_DIR, 'checkpoint-001.json'), 'utf-8');
+    expect(checkpointContent).toBe(saveContent);
+  });
+
+  it('listCheckpoints reads tick metadata, newest first', () => {
+    const engine = makeEngine();
+    saveGameGuarded(engine, vi.fn()); // tick 0
+    engine.store.state.meta.tick = 5;
+    saveGameGuarded(engine, vi.fn()); // tick 5
+
+    const checkpoints = listCheckpoints(CHECKPOINT_DIR);
+    expect(checkpoints.map((c) => c.file)).toEqual(['checkpoint-002.json', 'checkpoint-001.json']);
+    expect(checkpoints.map((c) => c.tick)).toEqual([5, 0]);
+  });
+
+  it('listCheckpoints degrades to [] when the save dir does not exist yet', () => {
+    expect(listCheckpoints(CHECKPOINT_DIR)).toEqual([]);
+  });
+
+  it('formatCheckpointList renders a 1-based numbered listing, newest first; "" when none', () => {
+    expect(formatCheckpointList([])).toBe('');
+    const rendered = formatCheckpointList([
+      { file: 'checkpoint-003.json', ordinal: 3, tick: 12 } as CheckpointInfo,
+      { file: 'checkpoint-002.json', ordinal: 2, tick: 7 } as CheckpointInfo,
+    ]);
+    expect(rendered).toContain('[1] checkpoint-003.json');
+    expect(rendered).toContain('round 12');
+    expect(rendered).toContain('[2] checkpoint-002.json');
+    expect(rendered).toContain('round 7');
+  });
+
+  it('formatCheckpointList renders "(round unknown)" for an unparseable tick', () => {
+    const rendered = formatCheckpointList([{ file: 'checkpoint-001.json', ordinal: 1, tick: null }]);
+    expect(rendered).toContain('(round unknown)');
+  });
+
+  it('resolveCheckpointSelector resolves a 1-based index (newest first) and an exact filename', () => {
+    const engine = makeEngine();
+    saveGameGuarded(engine, vi.fn()); // checkpoint-001
+    saveGameGuarded(engine, vi.fn()); // checkpoint-002
+
+    expect(resolveCheckpointSelector('1', CHECKPOINT_DIR)).toBe(
+      path.join(CHECKPOINT_DIR, 'checkpoint-002.json'),
+    );
+    expect(resolveCheckpointSelector('2', CHECKPOINT_DIR)).toBe(
+      path.join(CHECKPOINT_DIR, 'checkpoint-001.json'),
+    );
+    expect(resolveCheckpointSelector('checkpoint-001.json', CHECKPOINT_DIR)).toBe(
+      path.join(CHECKPOINT_DIR, 'checkpoint-001.json'),
+    );
+  });
+
+  it('resolveCheckpointSelector returns null for an out-of-range index or unknown filename', () => {
+    const engine = makeEngine();
+    saveGameGuarded(engine, vi.fn());
+    expect(resolveCheckpointSelector('99', CHECKPOINT_DIR)).toBeNull();
+    expect(resolveCheckpointSelector('nonexistent.json', CHECKPOINT_DIR)).toBeNull();
+    expect(resolveCheckpointSelector('0', CHECKPOINT_DIR)).toBeNull();
+  });
+
+  it('parseCheckpointArg reads --checkpoint <value> and --checkpoint=<value>; null when absent', () => {
+    expect(parseCheckpointArg([])).toBeNull();
+    expect(parseCheckpointArg(['--replay'])).toBeNull();
+    expect(parseCheckpointArg(['--checkpoint', '3'])).toBe('3');
+    expect(parseCheckpointArg(['--checkpoint=checkpoint-002.json'])).toBe('checkpoint-002.json');
+  });
+
+  it('a checkpoint write failure is guarded — logs [CHECKPOINT_WRITE_FAILED], never throws', () => {
+    const log = vi.fn();
+    // A regular FILE squatting on the save DIRECTORY path (saveGameGuarded's
+    // own unwritable-location fixture) makes writeFileSync fail ENOTDIR.
+    fs.writeFileSync(CHECKPOINT_DIR, 'not a directory', 'utf-8');
+
+    let ok = true;
+    expect(() => {
+      ok = writeCheckpoint('{}', CHECKPOINT_DIR, log);
+    }).not.toThrow();
+
+    expect(ok).toBe(false);
+    expect(log.mock.calls.map((c) => String(c[0])).join('\n')).toContain('[CHECKPOINT_WRITE_FAILED]');
+  });
+});
+
+// F-b369c8c5 (replay integration) — restoreSessionFromSave (the load
+// authority) is reused UNCHANGED here; these tests prove file SELECTION only:
+// an older checkpoint's exact byte-state comes back, never save.json's latest.
+describe('replayGame --checkpoint / --list-checkpoints (F-b369c8c5)', () => {
+  let tmpDir: string;
+  let originalCwd: string;
+  let exitSpy: MockInstance<typeof process.exit>;
+  let logSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-checkpoint-replay-test-'));
+    originalCwd = process.cwd();
+    process.chdir(tmpDir);
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new ProcessExitSignal(code);
+    }) as never);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  function loggedText(): string {
+    return logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+  }
+
+  /** Three saves of the SAME fantasy game, each at a distinct, provable
+   *  zone + hp — the byte-state proof the --replay suite above already
+   *  established, repeated three times so each checkpoint is distinguishable.
+   *  Valid neighbor chain: chapel-entrance -> chapel-nave -> vestry-door ->
+   *  crypt-chamber (starter-fantasy's own zone graph). */
+  function writeThreeCheckpoints(): void {
+    const engine = createFantasyGame(42);
+    engine.submitAction('move', { targetIds: ['chapel-nave'] });
+    engine.store.state.entities['player'].resources.hp = 20;
+    saveGameGuarded(engine, vi.fn()); // checkpoint-001 — nave, hp 20, tick 1
+
+    engine.submitAction('move', { targetIds: ['vestry-door'] });
+    engine.store.state.entities['player'].resources.hp = 15;
+    saveGameGuarded(engine, vi.fn()); // checkpoint-002 — vestry-door, hp 15, tick 2
+
+    engine.submitAction('move', { targetIds: ['crypt-chamber'] });
+    engine.store.state.entities['player'].resources.hp = 5;
+    saveGameGuarded(engine, vi.fn()); // checkpoint-003 == save.json — crypt-chamber, hp 5, tick 3
+  }
+
+  it('--checkpoint 1 (newest) restores the SAME state as bare replay / save.json', () => {
+    writeThreeCheckpoints();
+    const session = replayGame(['--checkpoint', '1']);
+    expect(session!.engine.world.locationId).toBe('crypt-chamber');
+    expect(session!.engine.world.entities['player'].resources.hp).toBe(5);
+  });
+
+  it("--checkpoint 2 restores the MIDDLE checkpoint, not save.json's latest state", () => {
+    writeThreeCheckpoints();
+    const session = replayGame(['--checkpoint', '2']);
+    expect(session!.engine.world.locationId).toBe('vestry-door');
+    expect(session!.engine.world.entities['player'].resources.hp).toBe(15);
+  });
+
+  it('--checkpoint 3 (oldest of the three) restores the FIRST save byte-for-byte', () => {
+    writeThreeCheckpoints();
+    const session = replayGame(['--checkpoint', '3']);
+    expect(session!.engine.world.locationId).toBe('chapel-nave');
+    expect(session!.engine.world.entities['player'].resources.hp).toBe(20);
+  });
+
+  it('--checkpoint accepts an exact filename as well as an index', () => {
+    writeThreeCheckpoints();
+    const session = replayGame(['--checkpoint', 'checkpoint-002.json']);
+    expect(session!.engine.world.locationId).toBe('vestry-door');
+    expect(session!.engine.world.entities['player'].resources.hp).toBe(15);
+  });
+
+  it('bare replay (no --checkpoint) is UNCHANGED — reads save.json, the latest state', () => {
+    writeThreeCheckpoints();
+    const session = replayGame([]);
+    expect(session!.engine.world.locationId).toBe('crypt-chamber');
+    expect(session!.engine.world.entities['player'].resources.hp).toBe(5);
+  });
+
+  it('an out-of-range --checkpoint fails structured, exit 1, never a raw throw', () => {
+    writeThreeCheckpoints();
+    expect(() => replayGame(['--checkpoint', '99'])).toThrow(ProcessExitSignal);
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it('--list-checkpoints prints the numbered list and returns undefined — no restore, no exit', () => {
+    writeThreeCheckpoints();
+    const session = replayGame(['--list-checkpoints']);
+    expect(session).toBeUndefined();
+    expect(exitSpy).not.toHaveBeenCalled();
+    const text = loggedText();
+    expect(text).toContain('[1] checkpoint-003.json');
+    expect(text).toContain('round 3');
+    expect(text).toContain('[3] checkpoint-001.json');
+    expect(text).toContain('round 1');
+  });
+
+  it('--list-checkpoints on a fresh save dir says so instead of printing an empty list', () => {
+    const session = replayGame(['--list-checkpoints']);
+    expect(session).toBeUndefined();
+    expect(loggedText()).toContain('No checkpoints yet');
+  });
+});
+
+// F-fedb2573 — replay silently dropped every arg but --replay. Now any token
+// this function does not act on gets a structured notice (same voice as
+// REPLAY_RESIM_UNSUPPORTED) instead of vanishing with zero feedback.
+describe('replayGame — ignored-arg honesty (F-fedb2573)', () => {
+  it('findIgnoredReplayArg: --replay, --list-checkpoints, and --checkpoint (+ its value) are all handled', () => {
+    expect(findIgnoredReplayArg([])).toBeNull();
+    expect(findIgnoredReplayArg(['--replay'])).toBeNull();
+    expect(findIgnoredReplayArg(['--list-checkpoints'])).toBeNull();
+    expect(findIgnoredReplayArg(['--checkpoint', '2'])).toBeNull();
+    expect(findIgnoredReplayArg(['--checkpoint=2'])).toBeNull();
+    expect(findIgnoredReplayArg(['--replay', '--checkpoint', '2'])).toBeNull();
+  });
+
+  it('findIgnoredReplayArg: names the first token replay does not act on', () => {
+    expect(findIgnoredReplayArg(['--seed', '999'])).toBe('--seed');
+    expect(findIgnoredReplayArg(['--replay', '--seed', '999'])).toBe('--seed');
+  });
+
+  describe('through replayGame itself', () => {
+    let tmpDir: string;
+    let originalCwd: string;
+    let logSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-replay-honesty-test-'));
+      originalCwd = process.cwd();
+      process.chdir(tmpDir);
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      process.chdir(originalCwd);
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+      vi.restoreAllMocks();
+    });
+
+    function loggedText(): string {
+      return logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    }
+
+    it('replay --seed 999 fires the structured notice, naming --seed', () => {
+      const engine = createFantasyGame(42);
+      saveGameGuarded(engine, vi.fn());
+      replayGame(['--seed', '999']);
+      const text = loggedText();
+      expect(text).toContain('[REPLAY_ARG_IGNORED]');
+      expect(text).toContain('--seed');
+    });
+
+    it('bare replay never fires the notice', () => {
+      const engine = createFantasyGame(42);
+      saveGameGuarded(engine, vi.fn());
+      replayGame([]);
+      expect(loggedText()).not.toContain('[REPLAY_ARG_IGNORED]');
+    });
   });
 });

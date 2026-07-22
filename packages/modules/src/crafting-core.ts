@@ -227,6 +227,42 @@ export function salvageItem(
   return { yields, byproducts, economyShifts, chronicleDetail };
 }
 
+// --- Item Inference (honest ceiling — no ItemCatalog wired) ---
+//
+// F-6631dd57's write-wire (createCraftingCore, crafting-recipes.ts) reads
+// carried items off EntityState.inventory: string[] — the same plain,
+// catalog-less shape trade-core.ts's sellHandler already reads. @ai-rpg-
+// engine/modules cannot value-import @ai-rpg-engine/equipment's runtime API
+// (minimal-install-proof.test.ts pins this package's dependencies to core +
+// content-schema + character-profile), so there is no ItemDefinition catalog
+// to resolve a bare item id against. inferItemSlot mirrors trade-core.ts's
+// own inferSupplyCategory idiom exactly: hint-match the id's text, fall back
+// to a generic default. Rarity has no comparable textual signal, so the
+// write-wire treats every carried item as 'common' — the same flat-value
+// ceiling trade-core.ts's SELL_BASE_VALUE documents ("the honest answer
+// until a catalog-aware pass threads real item metadata through here").
+
+const SLOT_HINTS: [EquipmentSlot, string[]][] = [
+  ['weapon', ['sword', 'blade', 'gun', 'rifle', 'pistol', 'axe', 'spear', 'cutter', 'knife', 'dagger', 'bow', 'hammer', 'mace', 'club']],
+  ['armor', ['armor', 'plate', 'mail', 'vest', 'robe', 'shield', 'helm', 'cuirass', 'jacket']],
+  ['accessory', ['ring', 'amulet', 'pendant', 'bracelet', 'cloak', 'cape']],
+  ['trinket', ['trinket', 'relic', 'idol', 'totem', 'figurine', 'charm']],
+  ['tool', ['tool', 'kit', 'torch', 'lockpick', 'rope', 'lantern', 'medkit', 'bandage', 'canteen']],
+];
+
+/**
+ * Infer a carried item's EquipmentSlot from its id. Falls back to 'tool' —
+ * the generic-goods bucket — when no hint matches, so an unrecognized item
+ * still salvages/repairs/modifies at a reasonable slot rather than rejecting.
+ */
+export function inferItemSlot(itemId: string): EquipmentSlot {
+  const haystack = itemId.toLowerCase();
+  for (const [slot, hints] of SLOT_HINTS) {
+    if (hints.some((hint) => haystack.includes(hint))) return slot;
+  }
+  return 'tool';
+}
+
 /** Check if salvaging this item would generate suspicion */
 export function wouldGenerateSuspicion(
   item: ItemDefinition,

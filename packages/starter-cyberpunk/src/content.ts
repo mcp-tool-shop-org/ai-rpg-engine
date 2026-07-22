@@ -3,7 +3,7 @@
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import type { CurrencyReward } from '@ai-rpg-engine/modules';
-import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
+import type { DialogueDefinition, QuestDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -30,7 +30,11 @@ export const player: EntityState = {
   stats: { chrome: 3, reflex: 5, netrunning: 7 },
   resources: { hp: 15, maxHp: 15, stamina: 6, ice: 10, bandwidth: 8 },
   statuses: [],
-  inventory: [],
+  // F-86b9145d: the fixer's own armory issues the street-razor kit to the
+  // authored player too, so the equip loop is reachable without character
+  // creation (created street-razor characters carry it via the archetype's
+  // startingInventory).
+  inventory: ['mono-blade'],
   zoneId: 'street-level',
 };
 
@@ -43,7 +47,12 @@ export const fixer: EntityState = {
   name: 'Kira',
   tags: ['npc', 'fixer', 'recruitable', 'fighter'],
   stats: { chrome: 2, reflex: 4, netrunning: 3 },
-  resources: { hp: 10 },
+  // maxHp/stamina/maxStamina (F-4b9c5aee): a recruitable companion needs the
+  // same resources shape enemies carry — without a real stamina value, every
+  // stamina-gated verb (attack/guard) rejects with "not enough stamina"
+  // forever (combat-core.ts's `resources.stamina ?? 0` fallback), so a
+  // recruited companion could never take a combat turn.
+  resources: { hp: 10, maxHp: 10, stamina: 4, maxStamina: 4 },
   statuses: [],
   zoneId: 'street-level',
   custom: {
@@ -60,7 +69,8 @@ export const rez: EntityState = {
   name: 'Rez',
   tags: ['npc', 'recruitable', 'scout'],
   stats: { chrome: 1, reflex: 6, netrunning: 5 },
-  resources: { hp: 8 },
+  // maxHp/stamina/maxStamina (F-4b9c5aee) — see Kira's comment above.
+  resources: { hp: 8, maxHp: 8, stamina: 2, maxStamina: 2 },
   statuses: [],
   zoneId: 'server-room',
   custom: {
@@ -294,6 +304,97 @@ export const fixerDialogue: DialogueDefinition = {
     },
   },
 };
+
+// --- Quests (F-ENG005-quest-loop-min) ---
+//
+// Two authored QuestDefinitions — the explicit reason to push past the
+// street. Wired via buildWorldStack's `quests` config in setup.ts; quest-core
+// validates them at construction (fail loud) and drives offer -> track ->
+// complete -> reward off the live event stream. Both are completable inside a
+// normal session with the shipped world alone: the ICE sentry and the vault
+// overseer both stand placed in the data vault.
+//
+// Ordering note (avoids a re-entry trap): each quest's zone-entry stage
+// targets a zone not yet visited when that stage becomes current, so the kill
+// stage that follows it never needs a FRESH zone-entry event — the kill
+// target already stands in the zone just reached.
+
+export const ghostInTheWiresQuest: QuestDefinition = {
+  id: 'ghost-in-the-wires',
+  name: 'Ghost in the Wires',
+  // Offered the moment the runner leaves the street — the point of no return.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'server-room' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'reach-the-vault',
+      name: 'Reach the Vault',
+      description: 'The lockbox sits behind the server room — push deeper',
+      objectives: ['Reach the Data Vault'],
+      triggers: [
+        {
+          event: 'world.zone.entered',
+          condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'data-vault' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+      nextStage: 'silence-the-ice',
+    },
+    {
+      id: 'silence-the-ice',
+      name: 'Silence the ICE',
+      description: 'An ICE Sentry stands watch over the lockbox',
+      objectives: ['Take down the ICE Sentry'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-entity-has-tag', params: { tag: 'ice-agent' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [{ type: 'xp', params: { amount: 20 } }],
+};
+
+export const crackTheVaultQuest: QuestDefinition = {
+  id: 'crack-the-vault',
+  name: 'Crack the Vault',
+  // Offered on setting foot in the vault itself — the Overseer's ground.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'data-vault' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'break-the-overseer',
+      name: 'Break the Overseer',
+      description: 'The Vault Overseer guards the shard behind the last firewall',
+      objectives: ['Destroy the Vault Overseer'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-equals', params: { key: 'entityId', value: 'vault-overseer' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [
+    { type: 'xp', params: { amount: 30 } },
+    { type: 'item', params: { itemId: 'neural-link' } },
+  ],
+};
+
+export const cyberpunkQuests: QuestDefinition[] = [ghostInTheWiresQuest, crackTheVaultQuest];
 
 // --- Districts ---
 
@@ -555,6 +656,10 @@ export const buildCatalog: BuildCatalog = {
       description: 'Chrome-heavy enforcer',
       statPriorities: { chrome: 7, reflex: 5, netrunning: 2 },
       startingTags: ['enforcer', 'chromed'],
+      // F-86b9145d: gives the equip loop a reachable entry from character
+      // creation too — mono-blade carries no requiredTags, so it equips
+      // cleanly regardless of which archetype/background combo carries it.
+      startingInventory: ['mono-blade'],
       progressionTreeId: 'netrunning-skills',
     },
     {

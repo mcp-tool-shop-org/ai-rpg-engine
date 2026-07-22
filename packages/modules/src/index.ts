@@ -222,6 +222,10 @@ export {
   getRumorsKnownToFaction,
   getRumorsInDistrict,
   formatRumorForDirector,
+  // F-19a23718: the 'player-rumor' namespace accessors + deny/bury-by-id
+  getPlayerRumorState,
+  setPlayerRumorState,
+  applyRumorManipulation,
 } from './player-rumor.js';
 export type {
   PlayerRumor,
@@ -229,6 +233,7 @@ export type {
   RumorMutation,
   MilestoneHint,
   NpcRumorSource,
+  PlayerRumorState,
 } from './player-rumor.js';
 export {
   evaluatePressures,
@@ -350,6 +355,11 @@ export {
   formatLeverageForDirector,
   formatLeverageActionForNarrator,
   formatLeverageStatus,
+  // v1.1 write-wire (F-677e94ad/F-19a23718): the 4-verb EngineModule + its
+  // effect-translation helper
+  applyLeverageEffects,
+  createPlayerLeverageCore,
+  playerLeverageCore,
 } from './player-leverage.js';
 export type {
   LeverageCurrency,
@@ -543,15 +553,23 @@ export type {
   TradeEffect,
 } from './trade-value.js';
 
-// --- Trade Core (v2.8: F-6c3e4fde — the sell verb) ---
+// --- Trade Core (v2.8: F-6c3e4fde — the sell verb; F-31f15013 — the buy verb;
+//     v2.9 menu-integration wave — quoteBuyPrice, the single-source buy price
+//     shared by buyHandler and packages/cli's menu.ts) ---
 export {
   createTradeCore,
   tradeCore,
   inferSupplyCategory,
+  getBuyableStock,
+  quoteBuyPrice,
   SELL_BASE_VALUE,
   SELL_SUPPLY_RAISE,
   SELL_CURRENCY,
+  BUY_SUPPLY_FLOOR,
+  BUY_MARKUP_MULTIPLIER,
+  BUY_SUPPLY_LOWER,
 } from './trade-core.js';
+export type { BuyableStock, TradeCoreConfig } from './trade-core.js';
 
 // --- Crafting Core (v1.8) ---
 export {
@@ -568,6 +586,8 @@ export {
   formatMaterialsForDirector,
   formatMaterialsCompact,
   formatSalvagePreview,
+  // v1.8 write-wire (F-6631dd57) — honest-ceiling item inference
+  inferItemSlot,
 } from './crafting-core.js';
 export type {
   MaterialQuality,
@@ -588,6 +608,9 @@ export {
   resolveModify,
   formatRecipeForDirector,
   formatAvailableRecipesForDirector,
+  // v1.8 write-wire (F-6631dd57) — the salvage/craft/repair/modify verbs
+  createCraftingCore,
+  craftingCore,
 } from './crafting-recipes.js';
 export type {
   RecipeCategory,
@@ -597,6 +620,7 @@ export type {
   CraftEffect,
   CraftResult,
   ModifyResult,
+  CraftingCoreConfig,
 } from './crafting-recipes.js';
 
 // --- Opportunity Core (v1.9) ---
@@ -614,6 +638,11 @@ export {
   formatOpportunityForDialogue,
   makeOpportunity,
   resetOpportunityCounter,
+  // v2.9 write-wire (F-ceed887f/F-f3f2a84c): world.modules['opportunity-core']
+  // accessors — the shared contract world-tick.ts's spawn/tick wire and
+  // opportunity-resolution.ts's 'opportunity' verb both read/write through.
+  getPersistedOpportunities,
+  setPersistedOpportunities,
 } from './opportunity-core.js';
 export type {
   OpportunityKind,
@@ -627,11 +656,17 @@ export type {
   OpportunityTickResult,
 } from './opportunity-core.js';
 
-// --- Opportunity Resolution (v1.9) ---
+// --- Opportunity Resolution (v1.9; write-wire v2.9 F-f3f2a84c) ---
 export {
   computeOpportunityFallout,
   formatOpportunityFalloutForDirector,
   formatOpportunityFalloutForNarrator,
+  // F-f3f2a84c: the resolution loop (accept → resolve → consequence).
+  createOpportunityCore,
+  opportunityCore,
+  applyOpportunityFallout,
+  getResolvedOpportunities,
+  RESOLVED_OPPORTUNITIES_KEPT,
 } from './opportunity-resolution.js';
 export type {
   OpportunityResolutionType,

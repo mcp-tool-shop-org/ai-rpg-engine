@@ -10,6 +10,10 @@
 //                            and (low) warning can render
 //  T0-verb-honesty-content — the ruleset help table only advertises verbs
 //                            with registered handlers, incl. brace/reposition
+//  T0-equipment-truth      — every creation path's kit resolves in the item
+//                            catalog and is equippable by the tags that path
+//                            grants (F-86b9145d: the equip loop must be
+//                            reachable from every way a player enters play)
 
 import { describe, it, expect } from 'vitest';
 import { resolveEntity, type CharacterBuild } from '@ai-rpg-engine/character-creation';
@@ -17,7 +21,7 @@ import { getAvailableAbilities, getCurrency } from '@ai-rpg-engine/modules';
 import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
 import { createGame } from './setup.js';
 import { cyberpunkMinimalRuleset } from './ruleset.js';
-import { buildCatalog, player, cyberpunkAbilities, netrunningTree, fixerDialogue, xpAwards } from './content.js';
+import { buildCatalog, player, cyberpunkAbilities, netrunningTree, fixerDialogue, xpAwards, itemCatalog } from './content.js';
 
 const dialogues = [fixerDialogue];
 
@@ -135,6 +139,55 @@ describe('T0-verb-honesty-content: help rows match registered handlers', () => {
       for (const v of a.grantedVerbs ?? []) {
         expect(registered.has(v), `archetype ${a.id} grants unregistered verb '${v}'`).toBe(true);
       }
+    }
+  });
+
+  it('equip/unequip help rows resolve to registered handlers (F-86b9145d wiring)', () => {
+    const registered = new Set(createGame(11).getAvailableActions());
+    const helped = new Set(cyberpunkMinimalRuleset.verbs.map((v) => v.id));
+    for (const verb of ['equip', 'unequip']) {
+      expect(helped.has(verb), `'${verb}' missing from the help table`).toBe(true);
+      expect(registered.has(verb), `'${verb}' advertised but unregistered`).toBe(true);
+    }
+  });
+});
+
+describe('T0-equipment-truth: every entry path can reach the equip loop (computed)', () => {
+  const catalogIds = new Set(itemCatalog.items.map((i) => i.id));
+
+  it('every archetype/background startingInventory item resolves in the item catalog', () => {
+    const kits = [
+      ...buildCatalog.archetypes.map((a) => ({ id: `archetype ${a.id}`, items: a.startingInventory ?? [] })),
+      ...buildCatalog.backgrounds.map((b) => ({ id: `background ${b.id}`, items: b.startingInventory ?? [] })),
+    ];
+    for (const kit of kits) {
+      for (const itemId of kit.items) {
+        expect(catalogIds.has(itemId), `${kit.id} carries '${itemId}' which is not in the item catalog`).toBe(true);
+      }
+    }
+  });
+
+  it('every archetype can equip its own kit (requiredTags ⊆ the tags creation grants)', () => {
+    for (const a of buildCatalog.archetypes) {
+      for (const itemId of a.startingInventory ?? []) {
+        const item = itemCatalog.items.find((i) => i.id === itemId);
+        if (!item) continue; // covered by the resolution assertion above
+        const missing = (item.requiredTags ?? []).filter((t) => !a.startingTags.includes(t));
+        expect(
+          missing,
+          `archetype ${a.id} starts with '${itemId}' but cannot equip it (missing tags: ${missing.join(', ')})`,
+        ).toEqual([]);
+      }
+    }
+  });
+
+  it('the authored player carries at least one catalog-recognized, equippable item', () => {
+    const carried = (player.inventory ?? []).filter((id) => catalogIds.has(id));
+    expect(carried.length).toBeGreaterThan(0);
+    for (const itemId of carried) {
+      const item = itemCatalog.items.find((i) => i.id === itemId)!;
+      const missing = (item.requiredTags ?? []).filter((t) => !player.tags.includes(t));
+      expect(missing, `authored player cannot equip '${itemId}'`).toEqual([]);
     }
   });
 });

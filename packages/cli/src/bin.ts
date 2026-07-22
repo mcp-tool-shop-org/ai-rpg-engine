@@ -25,7 +25,7 @@ import { runValidate } from './validate.js';
 import { runScaffold } from './scaffold.js';
 import { runProfile } from './profile.js';
 import { runGuardedAction } from './guard.js';
-import { runNpcTurns } from './turns.js';
+import { runNpcTurns, runCompanionTurns } from './turns.js';
 import { runWorldTick } from '@ai-rpg-engine/modules';
 import { evaluateSessionEnd, renderSessionEnd, computeSessionStats } from './endgame.js';
 import { appendRunRecord, readRunHistory, formatRecentRuns } from './history.js';
@@ -40,6 +40,13 @@ export { runGuardedAction } from './guard.js';
 
 const SAVE_DIR = '.ai-rpg-engine';
 const SAVE_FILE = path.join(SAVE_DIR, 'save.json');
+
+/** How many checkpoint-<NNN>.json files F-b369c8c5's rotation keeps under
+ *  SAVE_DIR before pruning the oldest. save.json is NOT one of these five —
+ *  it is the separate, always-current latest-pointer (back-compat). */
+export const CHECKPOINT_KEEP = 5;
+
+const CHECKPOINT_FILE_RE = /^checkpoint-(\d+)\.json$/;
 
 function printHelp() {
   console.log(`ai-rpg-engine v${version} — simulation-first RPG toolkit`);
@@ -56,6 +63,8 @@ function printHelp() {
   console.log('  create-starter Scaffold a new starter from template');
   console.log('  replay         Restore the save and RESUME PLAY. (--replay is accepted but');
   console.log('                 re-simulation is not supported: the save is restored instead.)');
+  console.log('                 --list-checkpoints lists saved checkpoints, newest first.');
+  console.log('                 --checkpoint <n|file>  restore that checkpoint instead of save.json.');
   console.log('  inspect-save   Validate a save through the same checks Continue uses, then');
   console.log('                 summarize it (world, player, globals, recent events).');
   console.log('                 With a path: inspect that save file instead of the default.');
@@ -541,6 +550,7 @@ export function runHostileRound(
   pack: LoadedPack,
   deps: {
     npcTurns?: (engine: Engine) => unknown;
+    companionTurns?: (engine: Engine) => unknown;
     worldTick?: (engine: Engine, opts: { genre?: string; log: (msg: string) => void }) => unknown;
     log?: (msg: string) => void;
   } = {},
@@ -548,6 +558,13 @@ export function runHostileRound(
   if (evaluateSessionEnd(engine)) return;
   (deps.npcTurns ?? runNpcTurns)(engine);
   if (evaluateSessionEnd(engine)) return; // P8-WL-010 — no tick over a corpse
+  // F-4b9c5aee (v2.9): recruited companions take their independent turns after
+  // the hostiles, before the world tick. runCompanionTurns early-returns on an
+  // empty party (byte-identical to legacy for companion-less packs), so the
+  // seed-0 legacy-identity law holds. Its own end-gate below: a companion can
+  // down the last boss, and we must not tick past a won session.
+  (deps.companionTurns ?? runCompanionTurns)(engine);
+  if (evaluateSessionEnd(engine)) return; // companions can end combat — no tick over a finished fight
   (deps.worldTick ?? runWorldTick)(engine, { genre: pack.meta.genres?.[0], log: deps.log ?? console.log });
 }
 
@@ -717,6 +734,175 @@ async function runGame(runArgs: string[] = []) {
   process.exit(0);
 }
 
+// --- Checkpoints (F-b369c8c5) ------------------------------------------------
+//
+// save.json is the back-compat latest-pointer — unchanged shape, write order,
+// or read path for any caller that never asks for a checkpoint. Every
+// successful save ALSO rotates a numbered checkpoint-<NNN>.json alongside it
+// (same SAVE_DIR, the identical engine.serialize() bytes save.json just got),
+// so `replay` can restore any of the last CHECKPOINT_KEEP saves, not only the
+// most recent. Ordinals are derived from the checkpoint files already on
+// disk — never Date.now()/Math.random() (the repo's determinism law) — so
+// naming stays deterministic and monotonic within a session.
+//
+// restoreSessionFromSave (the load authority) is REUSED UNCHANGED: a
+// checkpoint file is byte-identical in shape to save.json, so selecting one
+// is purely a matter of which file replayGame reads before handing its
+// parsed JSON to that same authority — see replayGame below.
+
+function checkpointFileName(ordinal: number): string {
+  return `checkpoint-${String(ordinal).padStart(3, '0')}.json`;
+}
+
+/** Next monotonic ordinal for this saveDir — one past the highest ordinal
+ *  already on disk, or 1 for an empty/missing directory. Guarded: an
+ *  unreadable directory degrades to 1 rather than throwing — writeCheckpoint's
+ *  own write attempt just below is the real failure gate. */
+function nextCheckpointOrdinal(saveDir: string): number {
+  let files: string[];
+  try {
+    if (!fs.existsSync(saveDir)) return 1;
+    files = fs.readdirSync(saveDir);
+  } catch {
+    return 1;
+  }
+  let max = 0;
+  for (const f of files) {
+    const m = CHECKPOINT_FILE_RE.exec(f);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return max + 1;
+}
+
+/** One checkpoint file's identity + display metadata (listCheckpoints). */
+export type CheckpointInfo = {
+  /** Filename within saveDir, e.g. 'checkpoint-004.json'. */
+  file: string;
+  /** The monotonic ordinal parsed from the filename. */
+  ordinal: number;
+  /** world.meta.tick read from the file's own contents; null when unreadable. */
+  tick: number | null;
+};
+
+/**
+ * Every checkpoint-<NNN>.json in saveDir, NEWEST FIRST (highest ordinal
+ * first) — the order both formatCheckpointList's numbering and
+ * resolveCheckpointSelector's index selector rely on. Never throws: a
+ * missing directory yields [], and one corrupt/unreadable file still appears
+ * in the list (its tick reads null) rather than vanishing entirely.
+ */
+export function listCheckpoints(saveDir: string = SAVE_DIR): CheckpointInfo[] {
+  let files: string[];
+  try {
+    if (!fs.existsSync(saveDir)) return [];
+    files = fs.readdirSync(saveDir);
+  } catch {
+    return [];
+  }
+  const entries: CheckpointInfo[] = [];
+  for (const f of files) {
+    const m = CHECKPOINT_FILE_RE.exec(f);
+    if (!m) continue;
+    let tick: number | null = null;
+    try {
+      const parsed = JSON.parse(fs.readFileSync(path.join(saveDir, f), 'utf-8')) as {
+        world?: { state?: { meta?: { tick?: unknown } } };
+      };
+      const t = parsed.world?.state?.meta?.tick;
+      tick = typeof t === 'number' ? t : null;
+    } catch {
+      tick = null;
+    }
+    entries.push({ file: f, ordinal: Number(m[1]), tick });
+  }
+  return entries.sort((a, b) => b.ordinal - a.ordinal);
+}
+
+/** Delete every checkpoint beyond CHECKPOINT_KEEP, oldest first. Best-effort
+ *  per file — one stuck/locked file logs and is skipped rather than aborting
+ *  the rest of the prune (same posture as history.ts's guarded writes). */
+function pruneCheckpoints(saveDir: string, log: (msg: string) => void): void {
+  const stale = listCheckpoints(saveDir).slice(CHECKPOINT_KEEP); // newest-first; tail = oldest
+  for (const entry of stale) {
+    try {
+      fs.unlinkSync(path.join(saveDir, entry.file));
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      log(`  [CHECKPOINT_PRUNE_FAILED] Could not remove ${entry.file}: ${reason}`);
+    }
+  }
+}
+
+/**
+ * Write one new checkpoint (the exact bytes saveGameGuarded just wrote to
+ * save.json) and prune down to CHECKPOINT_KEEP. Best-effort and NEVER
+ * throws — a checkpoint is a nicety layered on a save that already
+ * succeeded, the same failure posture as history.ts's appendRunRecord: a
+ * failure logs one structured line and returns false instead of losing the
+ * session or the save.json the caller already has on disk.
+ */
+export function writeCheckpoint(
+  serialized: string,
+  saveDir: string = SAVE_DIR,
+  log: (msg: string) => void = console.log,
+): boolean {
+  try {
+    if (!fs.existsSync(saveDir)) {
+      fs.mkdirSync(saveDir, { recursive: true });
+    }
+    const ordinal = nextCheckpointOrdinal(saveDir);
+    fs.writeFileSync(path.join(saveDir, checkpointFileName(ordinal)), serialized, 'utf-8');
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    log(`  [CHECKPOINT_WRITE_FAILED] Could not write a checkpoint in ${path.resolve(saveDir)}: ${reason}`);
+    return false;
+  }
+  pruneCheckpoints(saveDir, log);
+  return true;
+}
+
+/**
+ * Resolve a `--checkpoint` selector to a file path under saveDir. A selector
+ * of decimal digits is a 1-based index into listCheckpoints' newest-first
+ * order (1 = most recent — the CLI's numbered-menu convention elsewhere,
+ * e.g. promptMenu/buildActionList); anything else must match a checkpoint's
+ * exact filename. null when nothing matches — never throws.
+ */
+export function resolveCheckpointSelector(selector: string, saveDir: string = SAVE_DIR): string | null {
+  const checkpoints = listCheckpoints(saveDir);
+  if (/^\d+$/.test(selector)) {
+    const idx = Number(selector) - 1;
+    const entry = idx >= 0 ? checkpoints[idx] : undefined;
+    return entry ? path.join(saveDir, entry.file) : null;
+  }
+  const byName = checkpoints.find((c) => c.file === selector);
+  return byName ? path.join(saveDir, byName.file) : null;
+}
+
+/** The `replay --list-checkpoints` block — 1-based, newest first (matching
+ *  --checkpoint's index selector). '' when there are none; the caller prints
+ *  a one-line fallback instead (formatRecentRuns' empty-string contract). */
+export function formatCheckpointList(checkpoints: CheckpointInfo[]): string {
+  if (checkpoints.length === 0) return '';
+  const lines = ['  Available checkpoints (newest first):'];
+  checkpoints.forEach((c, i) => {
+    const round = c.tick === null ? '(round unknown)' : `round ${c.tick}`;
+    lines.push(`    [${i + 1}] ${c.file} — ${round}`);
+  });
+  return lines.join('\n');
+}
+
+/** Read `--checkpoint <selector>` / `--checkpoint=<selector>` out of replay's
+ *  argv. null when the flag is absent (bare replay / --replay only). */
+export function parseCheckpointArg(args: string[]): string | null {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--checkpoint') return args[i + 1] ?? null;
+    if (arg.startsWith('--checkpoint=')) return arg.slice('--checkpoint='.length);
+  }
+  return null;
+}
+
 /**
  * CS-C-008: `save` is the one command whose whole purpose is preserving
  * progress — and it was the one that could destroy it. The old saveGame ran
@@ -727,23 +913,32 @@ async function runGame(runArgs: string[] = []) {
  * so the caller keeps the loop (and the session) alive for a retry or a
  * relocated save. On success the resolved path is printed (CS-C-009) so the
  * player knows saves are cwd-relative. Exported for unit testing.
+ *
+ * F-b369c8c5: on a successful write, also rotates a checkpoint (writeCheckpoint)
+ * carrying the SAME bytes just written to SAVE_FILE. Best-effort and
+ * non-blocking — save.json above has already succeeded either way, and a
+ * checkpoint failure logs its own structured line rather than turning a
+ * good save into a reported failure.
  */
 export function saveGameGuarded(
   engine: Engine,
   log: (msg: string) => void = console.log,
 ): boolean {
   const resolvedPath = path.resolve(SAVE_FILE);
+  let serialized: string;
   try {
     if (!fs.existsSync(SAVE_DIR)) {
       fs.mkdirSync(SAVE_DIR, { recursive: true });
     }
-    fs.writeFileSync(SAVE_FILE, engine.serialize(), 'utf-8');
+    serialized = engine.serialize();
+    fs.writeFileSync(SAVE_FILE, serialized, 'utf-8');
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     log(`  [SAVE_WRITE_FAILED] Could not write ${resolvedPath}: ${reason}`);
     log('  Hint: run from a directory you can write to. Your session is still live — you can keep playing or try "save" again.');
     return false;
   }
+  writeCheckpoint(serialized, SAVE_DIR, log);
   log(`  Game saved to ${resolvedPath}`);
   return true;
 }
@@ -986,23 +1181,57 @@ export function handlePlayerInput(
   return { kind: 'unknown' };
 }
 
+/** Flags replayGame actually understands — anything else in its argv is
+ *  named by findIgnoredReplayArg instead of vanishing silently (F-fedb2573). */
+const KNOWN_REPLAY_FLAGS = new Set(['--replay', '--list-checkpoints', '--checkpoint']);
+
+/**
+ * The first token in replay's argv that this function does not act on — null
+ * when every token is recognized (a known flag, a --checkpoint value, or no
+ * args at all). Exported for unit testing.
+ */
+export function findIgnoredReplayArg(args: string[]): string | null {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (KNOWN_REPLAY_FLAGS.has(arg)) {
+      if (arg === '--checkpoint') i++; // its value token is consumed too
+      continue;
+    }
+    if (arg.startsWith('--checkpoint=')) continue;
+    return arg;
+  }
+  return null;
+}
+
 /**
  * Restore the save and hand back the live session so the caller can enter the
  * shared prompt loop (F1c — a restored game is playable, not a
  * print-summary-and-exit dead end).
  *
- * P8-WL-001/P8-PS-004 (v2.7): the `--replay` RE-SIMULATION path is retired —
- * `--replay` now restores exactly like the default, plus one structured
- * notice. Re-simulation replayed the actionLog through a fresh
- * pack.createGame(seed), which has been structurally divergent since the
- * world-state waves: character creation is not an action (the resim played
- * the pack's DEFAULT character, not the created one the save holds), and
- * world-tick/encounter-spawn mutate state OUTSIDE the action log (spawned
- * entities never existed during resim; fresh cursor state then rolled a spawn
- * burst against the fully-restored eventLog) — all while printing 'Replay
- * complete' with no warning. Restore-then-continue is the honest v2.7
- * behavior; resim PARITY (recording creation as a synthetic action, ticking
- * the world inside the resim loop at live cadence) is documented v2.8 work.
+ * DECIDED (v2.9, F-079d3fee/F-e5817c7c): snapshot/checkpoint restore is the
+ * durable contract; event-source re-simulation stays retired (v2.7,
+ * P8-WL-001/P8-PS-004). Four state families mutate OUTSIDE the actionLog, so
+ * no resim can ever reconstruct them from it:
+ *   1. chargen          — installCreatedPlayer calls store.addEntity
+ *                          directly; character creation is not a submitted
+ *                          action.
+ *   2. economy tick      — world-tick's tickDistrictEconomy step (economy-core)
+ *                          mutates district economies every round, with no
+ *                          action behind it.
+ *   3. encounter spawn   — runEncounterSpawnStep calls store.addEntity per
+ *                          hostile AND advances the world id counter (genId);
+ *                          a resim's spawn roll drifts the instant timing
+ *                          differs by one tick.
+ *   4. party writes      — world-tick's reaction pass (adjustCompanionMorale /
+ *                          removeCompanion / setPartyState) mutates the party
+ *                          as a round side effect, never a player action.
+ * The old resim printed 'Replay complete' having silently reconstructed the
+ * pack's DEFAULT character over a spawn burst the original session never
+ * saw — restore-then-continue is the only path that was ever actually
+ * correct. F-b369c8c5 (this cycle, same decision) is the other half: multi-
+ * checkpoint rotation (`--checkpoint <n|file>`, `--list-checkpoints`) so
+ * restore has more than one save slot to return to, through this SAME
+ * authority (restoreSessionFromSave) — unchanged.
  *
  * Exported for unit testing (same rationale as runGuardedAction — this reads
  * a real save file off disk and drives process.exit on bad input, so tests
@@ -1010,14 +1239,48 @@ export function handlePlayerInput(
  * Tests exercising only the restore semantics ignore the returned session.
  */
 export function replayGame(args: string[] = []): Session | undefined {
-  if (!fs.existsSync(SAVE_FILE)) {
+  // F-fedb2573: replay used to silently drop every arg but --replay. Name
+  // the first one it does not act on instead of vanishing with zero
+  // feedback — same structured voice as REPLAY_RESIM_UNSUPPORTED below.
+  // Non-fatal: an unrecognized flag is called out, then replay proceeds.
+  const ignoredArg = findIgnoredReplayArg(args);
+  if (ignoredArg !== null) {
+    console.log(
+      `  [REPLAY_ARG_IGNORED] "${ignoredArg}" is not a recognized replay flag — it will be ignored.`,
+    );
+    console.log('  Hint: replay accepts --replay, --checkpoint <n|file>, and --list-checkpoints.');
+  }
+
+  // F-b369c8c5: --list-checkpoints is informational only — it never restores.
+  if (args.includes('--list-checkpoints')) {
+    const formatted = formatCheckpointList(listCheckpoints(SAVE_DIR));
+    console.log(formatted === '' ? '  No checkpoints yet — save at least once to create one.' : formatted);
+    return undefined;
+  }
+
+  // F-b369c8c5: --checkpoint <index|file> swaps which file gets read below;
+  // restoreSessionFromSave (the load authority) never changes.
+  let saveFile = SAVE_FILE;
+  const checkpointArg = parseCheckpointArg(args);
+  if (checkpointArg !== null) {
+    const resolved = resolveCheckpointSelector(checkpointArg, SAVE_DIR);
+    if (!resolved) {
+      console.error(`  No checkpoint matches "${checkpointArg}".`);
+      console.error('  Hint: run "ai-rpg-engine replay --list-checkpoints" to see what is available.');
+      process.exit(1);
+      return; // unreachable; keeps control flow explicit for tests that stub exit
+    }
+    saveFile = resolved;
+  }
+
+  if (!fs.existsSync(saveFile)) {
     console.error('  No save file found.');
     process.exit(1);
   }
 
   let data: any;
   try {
-    data = JSON.parse(fs.readFileSync(SAVE_FILE, 'utf-8'));
+    data = JSON.parse(fs.readFileSync(saveFile, 'utf-8'));
   } catch {
     console.error('  Save file is corrupted or not valid JSON.');
     process.exit(1);

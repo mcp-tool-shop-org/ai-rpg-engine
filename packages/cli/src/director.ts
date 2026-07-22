@@ -24,14 +24,14 @@
 // tsconfig.json references — the gap this file's header used to name as the
 // blocker), and the section below reads the player's Loadout through the
 // SAME formula-registry transport turns.ts already uses for the ability
-// catalog. Its honest ceiling, per rule 1 above: only starter-gladiator
-// wires createEquipmentCore today (9 of the 10 starters don't), so the
-// section silently gates off ("no catalog available") for every other pack
-// — that is rule 1 working as designed, not a bug. The Chronicle: trailer
-// never renders either, because recordItemEvent (item-chronicle.ts) has zero
-// production callers anywhere in the engine — authored provenance
-// (origin/faction/flags/lore) is real, kill/recognition counts are not,
-// until something actually calls it.
+// catalog. v2.9 wave 3 closed the remaining gap: all 10 starters now wire
+// createEquipmentCore (previously only starter-gladiator did, with the other
+// 9 gating off to "no catalog available") — rule 1 above still governs the
+// section, it just no longer has a pack left to silently skip for that
+// specific reason. The Chronicle: trailer still never renders, because
+// recordItemEvent (item-chronicle.ts) has zero production callers anywhere
+// in the engine — authored provenance (origin/faction/flags/lore) is real,
+// kill/recognition counts are not, until something actually calls it.
 
 import type { Engine, WorldState, ScalarValue } from '@ai-rpg-engine/core';
 import {
@@ -83,6 +83,10 @@ import {
   // materials
   getMaterialInventory,
   formatMaterialsForDirector,
+  // recipes (F-239d0813)
+  getAvailableRecipes,
+  formatAvailableRecipesForDirector,
+  getDistrictForZone,
 } from '@ai-rpg-engine/modules';
 import {
   // equipment (F-ec5c7354) — read via the formula-registry transport, the
@@ -131,10 +135,12 @@ function readDistrictEconomies(world: WorldState): Map<string, DistrictEconomy> 
  * transport (equipment-core's EQUIPMENT_CATALOG_FORMULA) — the identical
  * per-engine pattern turns.ts's getAbilityCatalog uses for
  * ABILITY_CATALOG_FORMULA. Empty when the pack never wired
- * @ai-rpg-engine/equipment's createEquipmentCore module (today that is 9 of
- * the 10 starters — only starter-gladiator registers the formula). Callers
- * never need to know which situation they're in: an absent formula and an
- * empty/malformed published catalog both degrade to [].
+ * @ai-rpg-engine/equipment's createEquipmentCore module — as of v2.9 wave 3
+ * all 10 starters register the formula (previously only starter-gladiator
+ * did), so this degrades to [] only for a future/external pack that skips
+ * equipment-core entirely. Callers never need to know which situation
+ * they're in: an absent formula and an empty/malformed published catalog
+ * both degrade to [].
  */
 function readEquipmentCatalog(engine: Pick<Engine, 'formulas'>): ItemDefinition[] {
   if (!engine.formulas.has(EQUIPMENT_CATALOG_FORMULA)) return [];
@@ -442,6 +448,35 @@ export function renderDirectorLedger(engine: Pick<Engine, 'world' | 'formulas'>)
         const inventory = getMaterialInventory(custom);
         if (!Object.values(inventory).some((quantity) => quantity > 0)) return null;
         return formatMaterialsForDirector(inventory);
+      },
+    },
+    {
+      name: 'RECIPES',
+      body: () => {
+        // F-239d0813: recipes (crafting-recipes.ts's UNIVERSAL_RECIPES ∪
+        // GENRE_RECIPES) are static content, not persisted state — crafting-
+        // core's write-wire (F-6631dd57) registers no namespace of its own to
+        // gate on. Rule 1's "does real state back this section" reduces to
+        // the SAME signal MATERIALS renders on: a world where the player has
+        // never salvaged/crafted gets no invented recipe wishlist alongside
+        // an empty materials pouch.
+        const inventory = getMaterialInventory(custom);
+        if (!Object.values(inventory).some((quantity) => quantity > 0)) return null;
+
+        // Honest ceiling: world.meta.activeRuleset carries a per-starter
+        // ruleset id (e.g. 'fantasy-minimal'), not the bare 'fantasy'
+        // GENRE_RECIPES key — no pack threads a dedicated genre field through
+        // director.ts yet. getAvailableRecipes degrades an unrecognized
+        // genre to its UNIVERSAL_RECIPES table (the same safe-degrade
+        // contract every recipe lookup here already has), so the section
+        // still renders real, non-invented content — genre-flavored recipes
+        // light up once that plumbing exists.
+        const hereId = player?.zoneId ?? world.locationId;
+        const districtId = hereId ? getDistrictForZone(world, hereId) : undefined;
+        const districtTags = districtId ? getDistrictDefinition(world, districtId)?.tags ?? [] : [];
+        const recipes = getAvailableRecipes(world.meta.activeRuleset, player?.tags ?? [], districtTags);
+        if (recipes.length === 0) return null;
+        return formatAvailableRecipesForDirector(recipes, inventory);
       },
     },
   ];

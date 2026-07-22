@@ -136,6 +136,7 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
       'ENDGAME TRAJECTORY',
       'PARTY',
       'MATERIALS',
+      'RECIPES',
       'Nothing on the books',
     ]) {
       expect(report).not.toContain(absent);
@@ -413,13 +414,27 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
       expect(report).toContain('Trident & Net (weapon, uncommon)');
     });
 
-    it('gates off entirely for a REAL engine whose pack never wired equipment-core (9 of 10 starters, incl. starter-fantasy)', () => {
-      // The exact same live createGame(42) every other real-play assertion
-      // in this suite uses — starter-fantasy never registers
-      // EQUIPMENT_CATALOG_FORMULA, so the section must degrade to "no
-      // catalog available", not throw or fabricate content.
+    it('gates off for a fresh real engine — equipment-core IS wired (all 10 starters, v2.9) but nothing is equipped/carries provenance yet', () => {
+      // createGame(42) DOES register EQUIPMENT_CATALOG_FORMULA now — v2.9 wave 3
+      // wired createEquipmentCore into every starter (F-86b9145d). The section
+      // gates in three layers: catalog registered, a persisted loadout exists,
+      // AND at least one carried/equipped item has authored provenance. A
+      // freshly built engine has nothing equipped and no provenance yet, so the
+      // section correctly renders nothing — the "no invented data" contract,
+      // not a missing module. (The genuinely-unwired path is covered by the
+      // synthetic bare-engine test below, since no real starter shows it now.)
       const engine = createGame(42);
       const report = renderDirectorLedger(engine);
+      expect(report).not.toContain('EQUIPMENT');
+    });
+
+    it('gates off cleanly when equipment-core is truly NOT wired at all (bare engine, no catalog formula registered)', () => {
+      // Gate layer 1: readEquipmentCatalog returns [] when the engine has no
+      // EQUIPMENT_CATALOG_FORMULA. No real starter demonstrates this anymore
+      // (all 10 wire it as of v2.9), so this synthetic bare engine keeps the
+      // "no catalog available, degrade — don't throw or fabricate" branch under
+      // test. fakeEngine(world) defaults to an empty FormulaRegistry.
+      const report = renderDirectorLedger(fakeEngine(bareWorld()));
       expect(report).not.toContain('EQUIPMENT');
     });
 
@@ -486,6 +501,60 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
 
     expect(report).toContain('  MATERIALS');
     expect(report).toContain(`  components   [${'#'.repeat(3)}${'.'.repeat(17)}] 3`);
+  });
+
+  // F-239d0813: RECIPES — gated on the SAME signal MATERIALS renders on
+  // (crafting-core, F-6631dd57, registers no namespace of its own to check;
+  // recipes are static content, not persisted state).
+  describe('RECIPES (F-239d0813)', () => {
+    it('renders through getAvailableRecipes + formatAvailableRecipesForDirector once the player carries any materials', () => {
+      const world = bareWorld();
+      const player = world.entities[world.playerId];
+      player.custom = { 'materials.medicine': 5 };
+
+      const report = renderDirectorLedger(fakeEngine(world));
+
+      expect(report).toContain('  RECIPES');
+      // UNIVERSAL_RECIPES spans all three categories regardless of genre.
+      expect(report).toContain('  Craft:');
+      expect(report).toContain('  Repair:');
+      expect(report).toContain('  Modify:');
+      expect(report).toContain('Craft Bandage');
+    });
+
+    it('gates off cleanly when the player carries no materials — no invented recipe wishlist', () => {
+      const world = bareWorld();
+      const report = renderDirectorLedger(fakeEngine(world));
+      expect(report).not.toContain('RECIPES');
+    });
+  });
+
+  // F-6631dd57: the crafting write-wire. Before createCraftingCore, no played
+  // session could ever invoke 'salvage', so getMaterialInventory always read
+  // {} and MATERIALS (above) could only render from hand-planted fixtures —
+  // never from a REAL engine. Mirrors F-6cc633b9's recruit+MARKET-OVERVIEW
+  // proof: a real starter-fantasy session, one production verb call, the real
+  // ledger.
+  it('F-6631dd57: a production salvage (real engine, real verb) lights up MATERIALS — and RECIPES alongside it', () => {
+    const engine = createGame(42);
+    const player = engine.world.entities[engine.world.playerId];
+    // The player starts carrying nothing (starter-fantasy) — seed one
+    // salvageable item directly (no 'take'/'pickup' verb exists anywhere in
+    // this engine), then salvage it through the REAL verb.
+    player.inventory = [...(player.inventory ?? []), 'iron-sword'];
+
+    const events = engine.submitAction('salvage', { targetIds: ['iron-sword'] });
+    expect(events.some((e) => e.type === 'item.salvaged')).toBe(true);
+
+    const report = renderDirectorLedger(engine);
+
+    expect(report).toContain('  MATERIALS');
+    // inferItemSlot('iron-sword') -> 'weapon'; SALVAGE_YIELDS.weapon.common
+    // yields 1 components.
+    expect(report).toContain(`  components   [${'#'.repeat(1)}${'.'.repeat(19)}] 1`);
+
+    expect(report).toContain('  RECIPES');
+    expect(report).toContain('Craft Bandage');
   });
 
   it('a hostile, hot campaign renders NARRATIVE ARCS and ENDGAME TRAJECTORY from the live evaluators', () => {

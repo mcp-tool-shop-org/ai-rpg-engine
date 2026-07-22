@@ -21,6 +21,30 @@ export type ContentPack = {
   statuses?: StatusDefinition[];
   /** Optional verb definitions — used by validateGameContent to resolve ability verbs */
   verbs?: { id: string }[];
+  /**
+   * Optional chargen archetype definitions (character-creation's build-catalog
+   * `archetypes[]`) — used by validateGameContent to check `startingInventory` kits
+   * against the item registry (F-703048a5). Minimal shape mirrors
+   * `ArchetypeDefinition` (same pattern as `BuildCatalogShape` in build-catalog.ts);
+   * content-schema sits BELOW character-creation in the dependency graph, so
+   * importing the real type would invert the layering. A real `ArchetypeDefinition[]`
+   * satisfies this shape as-is — no reshaping needed to wire it in.
+   */
+  archetypes?: { id: string; startingInventory?: string[] }[];
+  /**
+   * Optional chargen background definitions (character-creation's build-catalog
+   * `backgrounds[]`) — used by validateGameContent to check `startingInventory` kits
+   * against the item registry (F-703048a5). Minimal shape mirrors
+   * `BackgroundDefinition`; see `archetypes` above for the layering rationale.
+   */
+  backgrounds?: { id: string; startingInventory?: string[] }[];
+  /**
+   * Optional bespoke item-use-effect definitions (e.g. inventory-core's
+   * `ItemEffect[]`) — used by validateGameContent to check each `itemId` against
+   * the item registry (F-703048a5). Minimal shape mirrors `ItemEffect` (the `use`
+   * function field, if present, is simply ignored here).
+   */
+  itemUseEffects?: { itemId: string }[];
 };
 
 /**
@@ -209,12 +233,22 @@ export type GameContentRegistries = {
  *
  * - entity.startingStatuses → status registry
  * - entity.inventory / entity.equipment → item registry
+ * - archetype.startingInventory / background.startingInventory → item registry
+ *   (chargen build-catalog kits)
+ * - itemUseEffect.itemId → item registry (bespoke item-use-effect definitions)
+ * - quest.rewards[type="item"].params.itemId → item registry
  * - ability.verb → verb registry
  * - ability `apply-status` effects (params.statusId) → status registry
  *
  * A misspelled status/verb/item id is reported as an ERROR here, instead of failing
  * silently at runtime. Categories with no available registry are skipped (not invented as
  * errors). One-way neighbor advisories from `validateRefs` flow through unchanged.
+ *
+ * F-703048a5: the item-registry check originally covered only entity inventory/equipment,
+ * so the same "typo'd itemId ships silently" bug kept recurring on three other
+ * itemId-shaped surfaces — e.g. a fantasy-starter archetype shipping
+ * `startingInventory: ['torch']` with no matching catalog entry anywhere in that starter.
+ * All four surfaces now share this one structural check and the same finding shape.
  */
 export function validateGameContent(
   pack: ContentPack,
@@ -275,6 +309,64 @@ export function validateGameContent(
           errors.push({
             path: `${path}.entity(${entity.id}).equipment.${slot}`,
             message: `references unknown item "${item}" — define it in the item registry or fix the id`,
+          });
+        }
+      }
+    }
+
+    // chargen archetype/background startingInventory kits → item registry (F-703048a5).
+    // Same bug class as entity.inventory above: a typo'd id in a character-creation
+    // build-catalog kit ships silently because nothing cross-checks it.
+    for (const archetype of pack.archetypes ?? []) {
+      if (!archetype) continue;
+      for (const item of archetype.startingInventory ?? []) {
+        if (!itemReg.has(item)) {
+          errors.push({
+            path: `${path}.archetype(${archetype.id}).startingInventory`,
+            message: `references unknown item "${item}" — define it in the item registry or fix the id`,
+          });
+        }
+      }
+    }
+    for (const background of pack.backgrounds ?? []) {
+      if (!background) continue;
+      for (const item of background.startingInventory ?? []) {
+        if (!itemReg.has(item)) {
+          errors.push({
+            path: `${path}.background(${background.id}).startingInventory`,
+            message: `references unknown item "${item}" — define it in the item registry or fix the id`,
+          });
+        }
+      }
+    }
+
+    // bespoke item-use-effect itemId fields → item registry (F-703048a5). Runtime
+    // item-use wiring (e.g. inventory-core's ItemEffect[]) keys effects by itemId
+    // with no catalog cross-check today — same silent-typo risk as above.
+    const itemUseEffects = pack.itemUseEffects ?? [];
+    for (let i = 0; i < itemUseEffects.length; i++) {
+      const effect = itemUseEffects[i];
+      if (effect && !itemReg.has(effect.itemId)) {
+        errors.push({
+          path: `${path}.itemUseEffect[${i}].itemId`,
+          message: `references unknown item "${effect.itemId}" — define it in the item registry or fix the id`,
+        });
+      }
+    }
+
+    // quest.rewards item-type rewards → item registry (F-703048a5). Mirrors the
+    // shape modules' quest-core.ts already expects at apply time
+    // (reward.type === 'item' && typeof reward.params.itemId === 'string').
+    for (const quest of pack.quests ?? []) {
+      if (!quest) continue;
+      const rewards = quest.rewards ?? [];
+      for (let i = 0; i < rewards.length; i++) {
+        const reward = rewards[i];
+        const itemId = reward && reward.type === 'item' ? reward.params?.itemId : undefined;
+        if (typeof itemId === 'string' && !itemReg.has(itemId)) {
+          errors.push({
+            path: `${path}.quest(${quest.id}).rewards[${i}].params.itemId`,
+            message: `references unknown item "${itemId}" — define it in the item registry or fix the id`,
           });
         }
       }

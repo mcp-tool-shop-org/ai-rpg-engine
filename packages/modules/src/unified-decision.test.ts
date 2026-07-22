@@ -488,3 +488,71 @@ describe('Turn-driver support: arbitrary NPC entities', () => {
     expect(decision.runnerUp).toBeNull(); // no abilities offered
   });
 });
+
+// ---------------------------------------------------------------------------
+// Companion subject support (F-3a52cc91): runCompanionTurns (packages/cli/src/
+// turns.ts) routes companion decisions through THIS stack — selectBestAction,
+// which consults selectNpcCombatAction (including its protect scoring) — not
+// cognition-core's selectActionForEntity. Before this feature, selectBestAction
+// had ZERO production callers. These pin that a companion-shaped subject (no
+// `.ai` block, sharing the player's faction so the wounded "player" reads as
+// an ALLY rather than a target) is accepted cleanly and that a wounded-ally
+// scenario reaches combat-intent's protect scoring through this exact path.
+// ---------------------------------------------------------------------------
+
+describe('Companion subject support (F-3a52cc91)', () => {
+  function makeCompanion(): EntityState {
+    return {
+      id: 'companion', blueprintId: 'companion', type: 'npc', name: 'Loyal Companion',
+      tags: ['npc', 'companion', 'companion:fighter'],
+      stats: { might: 5, agility: 5, resolve: 5 },
+      resources: { hp: 20, maxHp: 20, stamina: 10, maxStamina: 10 },
+      statuses: [], zoneId: 'arena',
+      faction: 'party',
+    };
+  }
+
+  function makeWoundedPlayer(): EntityState {
+    return {
+      id: 'player', blueprintId: 'player', type: 'player', name: 'Player',
+      tags: ['player'],
+      stats: { might: 5, agility: 5, resolve: 5 },
+      resources: { hp: 3, maxHp: 30 }, // 0.10 ratio — badly wounded
+      statuses: [], zoneId: 'arena',
+      faction: 'party',
+    };
+  }
+
+  it('a companion with no .ai block is accepted cleanly, and a wounded-ally scenario produces a protect-flavored choice (combat-intent\'s scoreProtect, reached through selectBestAction)', () => {
+    const companion = makeCompanion();
+    expect(companion.ai).toBeUndefined();
+    const player = makeWoundedPlayer();
+    const world = makeWorld([companion, player]);
+
+    const decision = selectBestAction(companion, world, []);
+
+    // No enemies in zone (both share the 'party' faction), no abilities
+    // offered — combat wins by default.
+    expect(decision.chosen.source).toBe('combat');
+    expect(decision.runnerUp).toBeNull();
+
+    // The scorer's protect intent is reachable and wins for a companion
+    // subject looking after a badly-wounded ally — this is what "a
+    // wounded-player scenario can produce a protect-flavored choice where
+    // the scorer supports it" means.
+    expect(decision.combatDecision.chosen.intent).toBe('protect');
+    expect(decision.combatDecision.chosen.resolvedVerb).toBe('guard');
+    expect(decision.combatDecision.chosen.targetId).toBe('player');
+    expect(decision.chosen.reason.startsWith('protect:')).toBe(true);
+  });
+
+  it('a healthy party (no wounded ally, no hostiles) does not force protect — the scorer still discriminates for a companion subject', () => {
+    const companion = makeCompanion();
+    const healthyAlly: EntityState = { ...makeWoundedPlayer(), resources: { hp: 30, maxHp: 30 } };
+    const world = makeWorld([companion, healthyAlly]);
+
+    const decision = selectBestAction(companion, world, []);
+
+    expect(decision.combatDecision.chosen.intent).not.toBe('protect');
+  });
+});

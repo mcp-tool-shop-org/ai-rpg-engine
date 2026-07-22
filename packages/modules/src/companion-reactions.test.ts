@@ -12,6 +12,7 @@ import {
   evaluateDepartureRisk,
   isKnownReactionTrigger,
   KNOWN_REACTION_TRIGGERS,
+  REACTION_TRIGGER_STATUS,
 } from './companion-reactions.js';
 
 function makeCompanion(overrides?: Partial<CompanionState>): CompanionState {
@@ -147,5 +148,60 @@ describe('evaluateDepartureRisk thresholds', () => {
   it('low in the 30-50 band only when hostile', () => {
     expect(evaluateDepartureRisk(makeCompanion({ morale: 40 }), 'hostile').risk).toBe('low');
     expect(evaluateDepartureRisk(makeCompanion({ morale: 40 })).risk).toBe('none');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// REACTION_TRIGGER_STATUS (F-6be920bd audit) — a static, testable accounting
+// of which of the 16 REACTION_TABLE triggers have a real production producer
+// today. companion-reactions.ts has no callers of its own — every trigger's
+// reachability is decided by world-tick.ts / player-leverage.ts, so this
+// ledger can only ever be as fresh as the last audit; the completeness check
+// below at least guarantees it can't silently drift out of sync with
+// REACTION_TABLE itself (a 17th trigger added there without a matching
+// status entry here fails loudly, not silently).
+// ---------------------------------------------------------------------------
+
+describe('REACTION_TRIGGER_STATUS (F-6be920bd audit)', () => {
+  it('has exactly one status entry per known trigger — no more, no less', () => {
+    const statusKeys = Object.keys(REACTION_TRIGGER_STATUS).sort();
+    expect(statusKeys).toEqual([...KNOWN_REACTION_TRIGGERS]);
+  });
+
+  it('every note is non-empty (no unexplained status)', () => {
+    for (const [trigger, status] of Object.entries(REACTION_TRIGGER_STATUS)) {
+      expect(status.note.length, `${trigger} has an empty note`).toBeGreaterThan(0);
+    }
+  });
+
+  it('matches the audited totals: 7 reachable, 1 wired-unreachable, 8 dark', () => {
+    const values = Object.values(REACTION_TRIGGER_STATUS);
+    expect(values.filter((v) => v.reachability === 'reachable')).toHaveLength(7);
+    expect(values.filter((v) => v.reachability === 'wired-unreachable')).toHaveLength(1);
+    expect(values.filter((v) => v.reachability === 'dark')).toHaveLength(8);
+  });
+
+  it('the two wave-2 sources (leverage-social/leverage-rumor, district-grim/district-prosperous) are reachable, alongside the earlier combat/pressure sources', () => {
+    const reachable: readonly string[] = [
+      'combat-won', 'combat-lost', 'pressure-resolved-badly',
+      'district-grim', 'district-prosperous', 'leverage-social', 'leverage-rumor',
+    ];
+    for (const trigger of reachable) {
+      expect(REACTION_TRIGGER_STATUS[trigger as keyof typeof REACTION_TRIGGER_STATUS].reachability).toBe('reachable');
+    }
+  });
+
+  it('pressure-resolved-well is wired but unreachable (dead branch — the one production call site always passes a different literal)', () => {
+    expect(REACTION_TRIGGER_STATUS['pressure-resolved-well'].reachability).toBe('wired-unreachable');
+  });
+
+  it('the 8 explicitly-deferred-to-v3.0 triggers (leverage-diplomacy/sabotage, betrayal-witnessed, obligation-betrayed, item-*-recognized) are all dark, not force-wired', () => {
+    const dark: readonly string[] = [
+      'leverage-diplomacy', 'leverage-sabotage', 'betrayal-witnessed', 'obligation-betrayed',
+      'item-faction-recognized', 'item-stolen-recognized', 'item-cursed-recognized', 'item-trophy-recognized',
+    ];
+    for (const trigger of dark) {
+      expect(REACTION_TRIGGER_STATUS[trigger as keyof typeof REACTION_TRIGGER_STATUS].reachability).toBe('dark');
+    }
   });
 });

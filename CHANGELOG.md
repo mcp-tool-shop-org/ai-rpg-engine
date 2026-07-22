@@ -5,6 +5,87 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.9.0] - 2026-07-22
+
+Close the loops. v2.8.0 opened three half-loops — a sell-only economy,
+passive-interception companions, and a social layer with verbs but no economy
+behind them. v2.9.0 closes all three and rolls the results out to every world.
+The through-line is the same "wire the write side" pattern, taken one level
+deeper: several systems were built *and tested in isolation* yet dead in the
+composed engine because the producer that should feed them was never connected.
+Produced by a dogfood swarm — a light regression re-audit, two user-gated
+feature waves (systems, then content parity), a two-auditor composed dead-wire
+re-audit, and a Phase-9 remediation — with the deterministic test floor as law
+and a family-different jury advising at every wave. Test suite: 4975 → **5322**.
+
+### Added
+
+- **The economy's other half — buying and crafting.** A `buy` verb completes
+  the trade loop: merchant stock is offered per district at supply-category
+  granularity (supply level *is* the restock signal, no separate timer),
+  priced through the same `computeItemValue` pipeline as `sell` plus a buy/sell
+  spread so a same-district round-trip always loses coin. `createCraftingCore`
+  registers `salvage` / `craft` / `repair` / `modify` over the authored recipe
+  tables — lighting the Director's MATERIALS and new RECIPES ledger sections
+  that shipped dark — and a single-district `/trade` economy drill-down.
+- **Companions take their own turns.** Recruited companions now act
+  independently each round through `selectBestAction`, the entity-agnostic
+  combat advisor that shipped unused — with a per-role combat bias (a fighter
+  and a scholar fight differently), companion-on-companion interception, and
+  companion HP on the Director's PARTY line. The new turn step gates on a
+  non-empty party, so companion-less packs stay byte-identical and seed-0
+  legacy replay is preserved.
+- **The social layer, connected end to end.** Four leverage verbs — `bribe`,
+  `intimidate`, `petition`, `seed` (rumor) — write real `reputation_*` /
+  `faction_alert_*` / `heat` globals that trade pricing and faction gates
+  already read; `seed` lights the whole player-rumor module and the Director's
+  RUMORS ABOUT YOU section. Crucially, the leverage *economy* that funds the
+  verbs is wired: completing an opportunity now grants the leverage it always
+  narrated, so the four verbs are genuinely earnable and reachable in play.
+- **Opportunities, the full lifecycle.** A per-round spawner scores
+  contracts / bounties / favors against live pressure, economy, faction,
+  companion, and district state; you `accept`, then `complete` or `abandon`
+  from the menu. Letting an opportunity reach its deadline now applies real
+  expiry fallout (it was cosmetic), completing a companion favor moves that
+  companion's morale, and the endgame's rising-power and merchant-prince arcs
+  read the opportunities you actually resolved.
+- **Content parity across all ten starters.** Equipment wiring, quests,
+  recruitable companions, and a starting coin balance rolled out to every
+  starter that lacked them — the ten worlds now share a uniform, fully-lit
+  feature surface (equipment had been gladiator-only, quests fantasy/zombie-only,
+  and five worlds shipped `recruit` with no one to recruit). A structural
+  content validator now catches a typo'd item id across every reference surface
+  (inventory, equipment, chargen kits, item-use effects, quest rewards).
+- **Multi-checkpoint saves + a recorded replay decision.** Saving now rotates
+  a bounded set of `checkpoint-NNN.json` slots; `replay --checkpoint <n>` /
+  `--list-checkpoints` restore any of them. The snapshot-over-resim direction
+  is recorded at the seam: `Engine.serialize()` is a proven full-state
+  snapshot, so restore-then-continue is the durable contract and event-sourced
+  re-simulation is not planned.
+
+### Fixed
+
+- **The leverage economy was disconnected in composition** (caught by the
+  Phase-9 composed re-audit). The four social verbs gate on affordable leverage
+  currency, but nothing in production ever wrote it — `applyOpportunityFallout`
+  narrated "+5 favor" while writing nothing, leaving the verbs permanently
+  unaffordable, the RUMORS ABOUT YOU section dead, and three endings
+  unreachable. Opportunity completion now honors its leverage rewards, closing
+  the earning loop end to end.
+- **Opportunity natural-expiry fallout** was computed but silently discarded,
+  making deadlines cosmetic; the per-round tick now applies it, mirroring the
+  pressure lifecycle. **Endgame arc scoring** read hardcoded-empty opportunity
+  arrays despite the now-live producer; it now reads the persisted state.
+
+### Honest ceilings (deferred, documented)
+
+- Genre-flavored merchant stock and crafting recipes fall back to the universal
+  tables today (they render live; per-starter genre threading is a follow-up),
+  and `repair`/`modify` are reachable by verb but not yet on the numbered menu.
+- The named-NPC **PEOPLE** director section stays dark pending a persisted
+  npc-agency producer — the coherent anchor for a v3.0 "living NPCs" release,
+  alongside passive leverage income and the leverage sub-verbs beyond the four.
+
 ## [2.8.0] - 2026-07-22
 
 Act on the world you live in. v2.7.0 made the world react to how you play;

@@ -170,18 +170,36 @@ function attackHandler(
     ? formulas.damage(attacker, target, world)
     : defaultDamage(attacker, mapping, world);
 
-  // Ally interception: if the target qualifies (player or backline) and has allies in zone,
-  // check if an engaged companion intercepts the damage
+  // Ally interception: if the target qualifies (player, an active companion,
+  // or backline) and has allies in zone, check if an engaged companion
+  // intercepts the damage.
+  //
+  // F-e2d3aa7c: `shouldCheck`'s DEFAULT (used whenever a starter doesn't
+  // override formulas.shouldIntercept — buildCombatFormulas never sets it,
+  // only withEngagement does) used to be player-only, so a companion being
+  // attacked had zero interception protection no matter how isAlly was
+  // wired: v2.8's passive interception protected only the player. A live
+  // companion (the literal 'companion' tag — companion-core.ts's
+  // COMPANION_TAG, the same string INTERCEPT_ROLE_BONUS below keys off) is
+  // now always a protectable target too, same as the player.
+  //
+  // The second gate (the candidate interceptor must already carry
+  // 'engagement:engaged') is widened the same way: engagement-core.ts
+  // applies ENGAGED to both sides of any combat.contact.hit symmetrically
+  // (not player-specific), but a companion who hasn't yet landed/taken a hit
+  // this fight has no ENGAGED status to show for it. Protecting a companion,
+  // like protecting the player, no longer waits on the INTERCEPTOR's own
+  // prior engagement.
   const shouldCheck = formulas?.shouldIntercept
     ? formulas.shouldIntercept(target, world)
-    : (target.id === world.playerId);
+    : (target.id === world.playerId || isProtectableCompanion(target));
   if (formulas?.isAlly && shouldCheck) {
     const allies = Object.values(world.entities).filter(
       (e) => e.zoneId === target.zoneId && e.id !== target.id && e.id !== attacker.id
         && formulas.isAlly!(e.id, world)
         && (e.resources.hp ?? 0) > 0
         && !hasStatus(e, COMBAT_STATES.FLEEING)
-        && (target.id === world.playerId || e.statuses.some(s => s.statusId === 'engagement:engaged')),
+        && (target.id === world.playerId || isProtectableCompanion(target) || e.statuses.some(s => s.statusId === 'engagement:engaged')),
     );
     if (allies.length > 0) {
       // Find first ally whose interception roll passes
@@ -666,6 +684,20 @@ function defaultDamage(attacker: EntityState, mapping: CombatStatMapping, world:
 // ---------------------------------------------------------------------------
 // Interception formula
 // ---------------------------------------------------------------------------
+
+/**
+ * Whether `entity` is a live, actively-tagged companion — i.e. a valid
+ * interception TARGET, not just the player (F-e2d3aa7c). Checked directly
+ * against the literal 'companion' tag (companion-core.ts's COMPANION_TAG,
+ * and the same string prefix INTERCEPT_ROLE_BONUS keys off just below)
+ * rather than importing companion-core.ts — this keeps combat-core.ts
+ * tag-string-only with no upward dependency on the product layer, the same
+ * convention buildCombatFormulas' `isAlly` default already uses
+ * (combat-builders.ts, F-64580086).
+ */
+function isProtectableCompanion(entity: EntityState): boolean {
+  return entity.tags.includes('companion') && (entity.resources.hp ?? 0) > 0;
+}
 
 const INTERCEPT_ROLE_BONUS: Record<string, number> = {
   'role:bodyguard': 15, 'role:brute': 5, 'role:elite': 5, 'role:sentinel': 8,

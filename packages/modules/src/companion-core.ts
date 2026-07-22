@@ -254,6 +254,26 @@ export function computeAbilityModifiers(
 
 // --- Formatting ---
 
+/**
+ * Format a companion's live HP as "hp/maxHp", or undefined when no `world`
+ * was passed or the entity carries no numeric hp (F-eefac26f).
+ *
+ * `world` is OPTIONAL and appended last on all three formatters below so
+ * every existing call site (director.ts's own `formatPartyForDirector(party,
+ * [], departureRisks)`, this file's own tests) keeps compiling unchanged —
+ * this is additive, not a breaking signature change. Now that companions
+ * take real turns and take real damage (v2.9), a caller that DOES have a
+ * `world` in scope (director.ts already does) can pass it straight through
+ * to surface each companion's actual wounds, not just role/morale.
+ */
+function formatCompanionHp(world: WorldState | undefined, npcId: string): string | undefined {
+  const entity = world?.entities[npcId];
+  const hp = entity?.resources.hp;
+  if (typeof hp !== 'number') return undefined;
+  const maxHp = entity?.resources.maxHp ?? hp;
+  return `${hp}/${maxHp}`;
+}
+
 export function formatPartyForDirector(
   party: PartyState,
   companionProfiles: Array<{
@@ -263,6 +283,7 @@ export function formatPartyForDirector(
     goals: Array<{ label: string; priority: number }>;
   }>,
   departureRisks: Record<string, { risk: string; reason?: string }>,
+  world?: WorldState,
 ): string {
   const DIVIDER = '─'.repeat(60);
   const lines: string[] = [];
@@ -283,8 +304,10 @@ export function formatPartyForDirector(
       const breakpoint = profile?.breakpoint ?? 'unknown';
       const activeStr = comp.active ? '' : ' [inactive]';
       const role = comp.role.charAt(0).toUpperCase() + comp.role.slice(1);
+      const hp = formatCompanionHp(world, comp.npcId);
+      const hpStr = hp ? ` | HP: ${hp}` : '';
 
-      lines.push(`  ${name} (${comp.npcId}) — ${role} | Morale: ${comp.morale} | Breakpoint: ${breakpoint}${activeStr}`);
+      lines.push(`  ${name} (${comp.npcId}) — ${role}${hpStr} | Morale: ${comp.morale} | Breakpoint: ${breakpoint}${activeStr}`);
 
       if (comp.abilityTags.length > 0) {
         lines.push(`    Abilities: ${comp.abilityTags.join(', ')}`);
@@ -322,13 +345,15 @@ export function formatPartyForDirector(
 export function formatPartyStatusLine(
   party: PartyState,
   companionNames: Record<string, string>,
+  world?: WorldState,
 ): string | undefined {
   const active = getActiveCompanions(party);
   if (active.length === 0) return undefined;
 
   const parts = active.map((c) => {
     const name = companionNames[c.npcId] ?? c.npcId;
-    return `${name} (${c.role}, morale ${c.morale})`;
+    const hp = formatCompanionHp(world, c.npcId);
+    return hp ? `${name} (${c.role}, HP ${hp}, morale ${c.morale})` : `${name} (${c.role}, morale ${c.morale})`;
   });
 
   return `  Party: ${parts.join(' | ')} | Cohesion: ${party.cohesion}`;
@@ -337,6 +362,7 @@ export function formatPartyStatusLine(
 export function formatPartyPresence(
   party: PartyState,
   companionNames: Record<string, string>,
+  world?: WorldState,
 ): string | undefined {
   const active = getActiveCompanions(party);
   if (active.length === 0) return undefined;
@@ -344,7 +370,8 @@ export function formatPartyPresence(
   const parts = active.map((c) => {
     const name = companionNames[c.npcId] ?? c.npcId;
     const mood = c.morale >= 70 ? 'confident' : c.morale >= 40 ? 'cautious' : 'uneasy';
-    return `${name} (${c.role}, ${mood})`;
+    const hp = formatCompanionHp(world, c.npcId);
+    return hp ? `${name} (${c.role}, HP ${hp}, ${mood})` : `${name} (${c.role}, ${mood})`;
   });
 
   return `Accompanied by ${parts.join(' and ')}`;
@@ -453,16 +480,68 @@ export function removeCompanionTags(entity: EntityState, role: CompanionRole): v
 
 const COMPANION_MODULE_ID = 'companion-core';
 
-/** Non-attaching read of this world's companion-core namespace (PartyState).
- *  Degrades to a fresh empty party when absent or malformed — a pack that
- *  never wired the module, or a hand-built WorldState in a test. */
+/**
+ * Validate a party's companions, returning warning strings (F-79278894) —
+ * same warn-and-degrade posture buildCombatStack uses for an unknown
+ * biasTag: non-fatal, human-readable, and named per offending companion.
+ * getPartyState's OLD guard checked only `Array.isArray(companions)`, never
+ * that each companion's `role` is a real CompanionRole or `morale` is in the
+ * 0-100 range — a hand-built world.modules['companion-core'] fixture with
+ * `role: 'muscle'` (outside the 6-value union) passed silently and would
+ * later index DEFAULT_ROLE_ABILITY_TAG/COMPANION_ROLE_BIAS with a key that
+ * was never authored for it. Pure — does not mutate `party`.
+ */
+export function validateCompanionState(party: PartyState): string[] {
+  const warnings: string[] = [];
+  for (const c of party.companions) {
+    if (!isCompanionRole(c.role)) {
+      warnings.push(
+        `companion '${c.npcId}': role '${String(c.role)}' is not a recognized CompanionRole `
+        + `(${COMPANION_ROLES.join(', ')})`,
+      );
+    }
+    if (typeof c.morale !== 'number' || Number.isNaN(c.morale) || c.morale < 0 || c.morale > 100) {
+      warnings.push(`companion '${c.npcId}': morale ${String(c.morale)} is out of the 0-100 range`);
+    }
+  }
+  return warnings;
+}
+
+/**
+ * Non-attaching read of this world's companion-core namespace (PartyState).
+ * Degrades to a fresh empty party when absent or malformed — a pack that
+ * never wired the module, or a hand-built WorldState in a test.
+ *
+ * F-79278894: also warn-and-degrades on a per-companion basis. A companion
+ * whose role fails validateCompanionState is coerced to 'scout' — the same
+ * safe fallback deriveCompanionRole already uses for unauthored content — so
+ * every role-keyed lookup downstream (DEFAULT_ROLE_ABILITY_TAG,
+ * COMPANION_ROLE_BIAS, capitalization in formatPartyForDirector) always
+ * indexes with a real union member instead of silently accepting anything.
+ * Logged via console.warn rather than thrown: a read function has no event
+ * emitter to report through, and a malformed companion should still degrade
+ * to a playable (if corrected) state, not crash the read. Returns a REPAIRED
+ * COPY when a warning fires — world.modules is left untouched, preserving
+ * this function's existing non-attaching-read contract.
+ */
 export function getPartyState(world: WorldState): PartyState {
   const ns = world.modules[COMPANION_MODULE_ID];
   if (
     ns && typeof ns === 'object' && !Array.isArray(ns) &&
     Array.isArray((ns as PartyState).companions)
   ) {
-    return ns as PartyState;
+    const raw = ns as PartyState;
+    const warnings = validateCompanionState(raw);
+    if (warnings.length === 0) return raw;
+    for (const w of warnings) {
+      console.warn(`[companion-core] ${w}`);
+    }
+    return {
+      ...raw,
+      companions: raw.companions.map((c) => (
+        isCompanionRole(c.role) ? c : { ...c, role: 'scout' as CompanionRole }
+      )),
+    };
   }
   return createPartyState();
 }

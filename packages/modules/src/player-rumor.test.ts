@@ -6,6 +6,9 @@ import {
   spawnPlayerRumor,
   spawnReputationRumor,
   spawnIntentionalRumor,
+  getPlayerRumorState,
+  setPlayerRumorState,
+  applyRumorManipulation,
   type MilestoneHint,
 } from './player-rumor.js';
 
@@ -54,5 +57,70 @@ describe('player-rumor id determinism (MW-2)', () => {
     const b1 = spawnPlayerRumor(milestone, profile, 'order', 'keep', 5, worldB);
     expect(b1.id).toBe(a1.id);
     expect(a1.id.startsWith('pr_')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// player-rumor namespace accessors (F-19a23718)
+// ---------------------------------------------------------------------------
+
+describe('getPlayerRumorState / setPlayerRumorState', () => {
+  it('defaults to an empty ledger when the namespace is absent', () => {
+    const engine = createTestEngine({ modules: [], entities: [], zones: [] });
+    const world = engine.world as WorldState;
+    expect(getPlayerRumorState(world)).toEqual({ rumors: [] });
+  });
+
+  it('persists under the exact "player-rumor" key director.ts reads (director.test.ts:287 shape)', () => {
+    const engine = createTestEngine({ modules: [], entities: [], zones: [] });
+    const world = engine.world as WorldState;
+    const rumor = spawnIntentionalRumor('a lie', 'fearsome', 'order', 'keep', 5);
+
+    setPlayerRumorState(world, { rumors: [rumor] });
+
+    expect(world.modules['player-rumor']).toEqual({ rumors: [rumor] });
+    expect(getPlayerRumorState(world).rumors).toEqual([rumor]);
+  });
+
+  it('treats a malformed (non-object) namespace as absent, not an error', () => {
+    const engine = createTestEngine({ modules: [], entities: [], zones: [] });
+    const world = engine.world as WorldState;
+    (world.modules as Record<string, unknown>)['player-rumor'] = 42;
+    expect(getPlayerRumorState(world)).toEqual({ rumors: [] });
+  });
+});
+
+describe('applyRumorManipulation: deny/bury by id (F-19a23718)', () => {
+  it('deny reduces confidence of the matching rumor and persists the change', () => {
+    const engine = createTestEngine({ modules: [], entities: [], zones: [] });
+    const world = engine.world as WorldState;
+    const rumor = spawnIntentionalRumor('a lie', 'fearsome', 'order', 'keep', 5, 0.8);
+    setPlayerRumorState(world, { rumors: [rumor] });
+
+    const updated = applyRumorManipulation(world, 'deny', rumor.id);
+
+    expect(updated?.confidence).toBeCloseTo(0.5); // 0.8 - 0.3 (denyRumor)
+    expect(getPlayerRumorState(world).rumors[0].confidence).toBeCloseTo(0.5);
+  });
+
+  it('bury-scandal accelerates distortion and persists the change', () => {
+    const engine = createTestEngine({ modules: [], entities: [], zones: [] });
+    const world = engine.world as WorldState;
+    const rumor = spawnIntentionalRumor('a lie', 'fearsome', 'order', 'keep', 5, 0.8);
+    setPlayerRumorState(world, { rumors: [rumor] });
+
+    const updated = applyRumorManipulation(world, 'bury-scandal', rumor.id);
+
+    expect(updated?.distortion).toBeCloseTo(0.2); // 0*2 + 0.2 (buryRumor)
+    expect(getPlayerRumorState(world).rumors[0].distortion).toBeCloseTo(0.2);
+  });
+
+  it('an unknown rumor id is a quiet no-op — no throw, undefined result', () => {
+    const engine = createTestEngine({ modules: [], entities: [], zones: [] });
+    const world = engine.world as WorldState;
+    setPlayerRumorState(world, { rumors: [] });
+
+    expect(applyRumorManipulation(world, 'deny', 'nope')).toBeUndefined();
+    expect(getPlayerRumorState(world).rumors).toEqual([]);
   });
 });

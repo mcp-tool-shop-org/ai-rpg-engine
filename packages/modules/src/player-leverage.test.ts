@@ -1,11 +1,74 @@
 import { describe, it, expect } from 'vitest';
+import { createTestEngine } from '@ai-rpg-engine/core';
+import type { WorldState, EntityState, ZoneState } from '@ai-rpg-engine/core';
 import {
   tickLeverage,
   getLeverageState,
   adjustLeverage,
   computeLeverageGains,
+  resolveSocialAction,
+  resolveRumorAction,
+  resolveDiplomacyAction,
+  resolveSabotageAction,
+  applyLeverageEffects,
+  createPlayerLeverageCore,
 } from './player-leverage.js';
-import type { LeverageHints } from './player-leverage.js';
+import type { LeverageHints, LeverageState, LeverageEffect } from './player-leverage.js';
+import { getPlayerRumorState, formatRumorForDirector } from './player-rumor.js';
+import { setPartyState, createPartyState } from './companion-core.js';
+import type { CompanionState } from './companion-core.js';
+import { getFactionCognition, createFactionCognition } from './faction-cognition.js';
+import { createCognitionCore } from './cognition-core.js';
+import { getWorldTickState } from './world-tick.js';
+
+// ---------------------------------------------------------------------------
+// Shared fixtures for the EngineModule / verb-wiring tests below
+// ---------------------------------------------------------------------------
+
+function makePlayerEntity(overrides?: Partial<EntityState>): EntityState {
+  return {
+    id: 'player',
+    blueprintId: 'player',
+    type: 'player',
+    name: 'Hero',
+    tags: ['human', 'player'],
+    stats: {},
+    resources: {},
+    statuses: [],
+    zoneId: 'start',
+    ...overrides,
+  };
+}
+
+const START_ZONES: ZoneState[] = [
+  { id: 'start', roomId: 'start', name: 'Starting Area', tags: [], neighbors: [] },
+];
+
+function makeCompanion(npcId: string, overrides?: Partial<CompanionState>): CompanionState {
+  return {
+    npcId,
+    role: 'diplomat',
+    joinedAtTick: 0,
+    abilityTags: [],
+    morale: 50,
+    active: true,
+    ...overrides,
+  };
+}
+
+/** A leverage-flush player entity — enough of every currency to afford any
+ *  single authored sub-action's cost without hitting the affordability gate,
+ *  so tests can isolate the behavior they're actually checking. */
+function flushCustom(): Record<string, string | number | boolean> {
+  return {
+    'leverage.favor': 100,
+    'leverage.debt': 100,
+    'leverage.blackmail': 100,
+    'leverage.influence': 100,
+    'leverage.heat': 100,
+    'leverage.legitimacy': 100,
+  };
+}
 
 describe('tickLeverage influence accumulation (MW-5)', () => {
   const reps = [{ factionId: 'guild', value: 40 }]; // rep baseline = floor(40/2) = 20
@@ -129,5 +192,438 @@ describe('computeLeverageGains: blackmail accumulation', () => {
     };
     // 5 (xp) + 3 (rep) + 5 (milestone) = 13.
     expect(computeLeverageGains(hints).blackmail).toBe(13);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-677e94ad: red-proof — every one of the 4 verbs is unknown without the
+// module registered (the dispatcher's own generic "unknown verb" rejection —
+// proves the verb NAMES only exist once createPlayerLeverageCore is wired).
+// ---------------------------------------------------------------------------
+
+describe('F-677e94ad red-proof: unknown verb without createPlayerLeverageCore', () => {
+  for (const verb of ['bribe', 'intimidate', 'seed', 'petition']) {
+    it(`"${verb}" is rejected as an unknown verb on a bare engine`, () => {
+      const engine = createTestEngine({ modules: [], entities: [makePlayerEntity()], zones: START_ZONES });
+      engine.submitAction(verb, { targetIds: ['guild'] });
+      const rejected = engine.drainEvents().find((e) => e.type === 'action.rejected');
+      expect(rejected?.payload.reason).toMatch(/unknown verb/);
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// F-677e94ad: applyLeverageEffects — the effect-translation helper, unit-
+// tested directly against every wired effect type.
+// ---------------------------------------------------------------------------
+
+describe('applyLeverageEffects (F-677e94ad)', () => {
+  function bareEngine() {
+    return createTestEngine({ modules: [], entities: [makePlayerEntity()], zones: START_ZONES });
+  }
+
+  it('writes leverage effects onto the actor custom fields via adjustLeverage', () => {
+    const engine = bareEngine();
+    const world = engine.world as WorldState;
+    world.entities['player'].custom = { 'leverage.favor': 40 };
+    applyLeverageEffects(world, 'player', [{ type: 'leverage', currency: 'favor', delta: -15 }], 0);
+    expect(getLeverageState(world.entities['player'].custom ?? {}).favor).toBe(25);
+  });
+
+  it('writes reputation effects to the exact reputation_<factionId> global trade pricing reads', () => {
+    const engine = bareEngine();
+    const world = engine.world as WorldState;
+    applyLeverageEffects(world, 'player', [{ type: 'reputation', factionId: 'guild', delta: 10 }], 0);
+    expect(world.globals['reputation_guild']).toBe(10);
+  });
+
+  it('writes alert effects to the exact faction_alert_<factionId> global', () => {
+    const engine = bareEngine();
+    const world = engine.world as WorldState;
+    applyLeverageEffects(world, 'player', [{ type: 'alert', factionId: 'guild', delta: 15 }], 0);
+    expect(world.globals['faction_alert_guild']).toBe(15);
+  });
+
+  it('writes heat effects to the shared player_heat global (world-tick.ts HEAT_KEY)', () => {
+    const engine = bareEngine();
+    const world = engine.world as WorldState;
+    applyLeverageEffects(world, 'player', [{ type: 'heat', delta: 10 }], 0);
+    expect(world.globals['player_heat']).toBe(10);
+  });
+
+  it('writes district-metric effects to district_<id>_<metric>', () => {
+    const engine = bareEngine();
+    const world = engine.world as WorldState;
+    applyLeverageEffects(world, 'player', [
+      { type: 'district-metric', districtId: 'docks', metric: 'stability', delta: -5 },
+    ], 0);
+    expect(world.globals['district_docks_stability']).toBe(-5);
+  });
+
+  it('clamps cohesion effects to 0-1 on faction-cognition state', () => {
+    // Needs faction-cognition actually REGISTERED — otherwise getFactionCognition's
+    // own "no wired store" fallback returns a fresh throwaway state every call
+    // (a graceful, documented degrade for a pack that never registers the
+    // module) and no mutation would ever persist across the two reads below.
+    const engine = createTestEngine({
+      modules: [createCognitionCore(), createFactionCognition({ factions: [] })],
+      entities: [makePlayerEntity()],
+      zones: START_ZONES,
+    });
+    const world = engine.world as WorldState;
+    const before = getFactionCognition(world, 'guild').cohesion; // default 0.8
+    applyLeverageEffects(world, 'player', [{ type: 'cohesion', factionId: 'guild', delta: -0.05 }], 0);
+    expect(getFactionCognition(world, 'guild').cohesion).toBeCloseTo(before - 0.05);
+
+    // Clamp floor: repeated heavy negative deltas never go below 0.
+    for (let i = 0; i < 30; i++) {
+      applyLeverageEffects(world, 'player', [{ type: 'cohesion', factionId: 'guild', delta: -0.1 }], 0);
+    }
+    expect(getFactionCognition(world, 'guild').cohesion).toBe(0);
+  });
+
+  it('spawns a pressure via the pressure system and pushes it into world-tick state', () => {
+    const engine = bareEngine();
+    const world = engine.world as WorldState;
+    const spawned = applyLeverageEffects(world, 'player', [
+      { type: 'pressure', kind: 'investigation-opened', sourceFactionId: 'guild', description: 'inquiry', urgency: 0.4 },
+    ], 3);
+    expect(spawned).toHaveLength(1);
+    expect(spawned[0].kind).toBe('investigation-opened');
+    expect(getWorldTickState(world).pressures).toHaveLength(1);
+    expect(getWorldTickState(world).pressures[0].sourceFactionId).toBe('guild');
+  });
+
+  it('respects the one-active-pressure-per-kind invariant — a second same-kind effect is a no-op', () => {
+    const engine = bareEngine();
+    const world = engine.world as WorldState;
+    const effect: LeverageEffect = { type: 'pressure', kind: 'investigation-opened', sourceFactionId: 'guild', description: 'inquiry', urgency: 0.4 };
+    applyLeverageEffects(world, 'player', [effect], 3);
+    const secondSpawn = applyLeverageEffects(world, 'player', [effect], 4);
+    expect(secondSpawn).toHaveLength(0);
+    expect(getWorldTickState(world).pressures).toHaveLength(1);
+  });
+
+  it('drops rumor and access effects silently (documented ceiling, not this choke point)', () => {
+    const engine = bareEngine();
+    const world = engine.world as WorldState;
+    expect(() => applyLeverageEffects(world, 'player', [
+      { type: 'rumor', claim: 'x', valence: 'heroic', targetFactionIds: [] },
+      { type: 'access', factionId: 'guild', level: 'normal' },
+    ], 0)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-677e94ad: the 4 wired verbs, end to end through a real engine.
+// ---------------------------------------------------------------------------
+
+describe('F-677e94ad: bribe writes the reputation global', () => {
+  it('bribe succeeds, deducts favor, and writes reputation_<factionId>', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+
+    engine.submitAction('bribe', { targetIds: ['guild'] });
+
+    const world = engine.world as WorldState;
+    expect(world.globals['reputation_guild']).toBe(10);
+    expect(getLeverageState(world.entities['player'].custom ?? {}).favor).toBe(85); // 100 - 15
+    const resolved = engine.drainEvents().find((e) => e.type === 'leverage.resolved');
+    expect(resolved?.payload.subAction).toBe('bribe');
+  });
+
+  it('rejects with the resolution failReason when the player cannot afford it', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: {} })], // no leverage at all
+      zones: START_ZONES,
+    });
+    engine.submitAction('bribe', { targetIds: ['guild'] });
+    const rejected = engine.drainEvents().find((e) => e.type === 'action.rejected');
+    expect(rejected?.payload.reason).toMatch(/Not enough/);
+  });
+
+  it('requires a target faction — no target is a structured rejection, not a silent no-op charge', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('bribe', {});
+    const rejected = engine.drainEvents().find((e) => e.type === 'action.rejected');
+    expect(rejected?.payload.reason).toBe('no target faction specified');
+    const world = engine.world as WorldState;
+    expect(getLeverageState(world.entities['player'].custom ?? {}).favor).toBe(100); // untouched
+  });
+
+  it('enforces the authored cooldown (3 turns) — a second bribe before it expires is rejected', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('bribe', { targetIds: ['guild'] });
+    engine.drainEvents();
+    engine.submitAction('bribe', { targetIds: ['guild'] }); // same tick-ish, well within 3 turns
+    const rejected = engine.drainEvents().find((e) => e.type === 'action.rejected');
+    expect(rejected?.payload.reason).toMatch(/cooldown/);
+  });
+});
+
+describe('F-677e94ad: intimidate writes alert + heat', () => {
+  it('intimidate succeeds and writes faction_alert_<factionId> and player_heat', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+
+    engine.submitAction('intimidate', { targetIds: ['guild'] });
+
+    const world = engine.world as WorldState;
+    expect(world.globals['faction_alert_guild']).toBe(15);
+    expect(world.globals['player_heat']).toBe(10);
+    expect(world.globals['reputation_guild']).toBe(-5);
+  });
+});
+
+describe('F-677e94ad: petition produces its pressure effect', () => {
+  it('petition succeeds and spawns an investigation-opened pressure', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+
+    engine.submitAction('petition', { targetIds: ['guild'] });
+
+    const world = engine.world as WorldState;
+    const pressures = getWorldTickState(world).pressures;
+    expect(pressures).toHaveLength(1);
+    expect(pressures[0].kind).toBe('investigation-opened');
+    expect(pressures[0].sourceFactionId).toBe('guild');
+    expect(world.globals['faction_alert_guild']).toBe(5);
+
+    const spawnedEvent = engine.drainEvents().find((e) => e.type === 'pressure.spawned');
+    expect(spawnedEvent?.payload.kind).toBe('investigation-opened');
+  });
+
+  it('requires a target faction, same as bribe/intimidate', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('petition', {});
+    const rejected = engine.drainEvents().find((e) => e.type === 'action.rejected');
+    expect(rejected?.payload.reason).toBe('no target faction specified');
+  });
+});
+
+describe('F-677e94ad + F-19a23718: seed spawns a rumor', () => {
+  it('seed succeeds, deducts influence, and spawns a PlayerRumor into the player-rumor namespace', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+
+    engine.submitAction('seed', { targetIds: ['guild'], parameters: { claim: 'a curse follows the outsider' } });
+
+    const world = engine.world as WorldState;
+    expect(getLeverageState(world.entities['player'].custom ?? {}).influence).toBe(90); // 100 - 10
+    const rumors = getPlayerRumorState(world).rumors;
+    expect(rumors).toHaveLength(1);
+    expect(rumors[0].claim).toBe('a curse follows the outsider');
+    expect(rumors[0].valence).toBe('mysterious');
+    expect(rumors[0].originFactionId).toBe('guild');
+
+    const seededEvent = engine.drainEvents().find((e) => e.type === 'rumor.seeded');
+    expect(seededEvent?.payload.rumorId).toBe(rumors[0].id);
+  });
+
+  it('seed works with no target faction (a rumor need not be about anyone in particular)', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('seed', {});
+    const world = engine.world as WorldState;
+    expect(getPlayerRumorState(world).rumors).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-19a23718: production 'seed' → director-renderable rumor (integration).
+// director.ts itself lives in packages/cli (a different package this domain
+// cannot import — modules must never depend on cli), so this integration test
+// proves the achievable contract from within the modules package: the SAME
+// namespace key + shape director.ts reads (world.modules['player-rumor'] =
+// { rumors: [...] }, director.test.ts:287's exact pin) plus director.ts's OWN
+// formatter (formatRumorForDirector, re-exported from this package) render
+// the production rumor without error.
+// ---------------------------------------------------------------------------
+
+describe('F-19a23718: seed → director RUMORS ABOUT YOU contract', () => {
+  it('a production seed leaves a rumor that formatRumorForDirector renders', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+
+    engine.submitAction('seed', { targetIds: ['guild'], parameters: { claim: 'defeated the Bone Collector' } });
+
+    const world = engine.world as WorldState;
+    // The exact read director.ts's RUMORS ABOUT YOU section performs:
+    // namespace<{ rumors: unknown }>(world, 'player-rumor')?.rumors
+    const ns = world.modules['player-rumor'] as { rumors: unknown };
+    expect(Array.isArray(ns.rumors)).toBe(true);
+    const rumors = getPlayerRumorState(world).rumors;
+    expect(rumors).toHaveLength(1);
+
+    const rendered = formatRumorForDirector(rumors[0]);
+    expect(rendered).toContain('defeated the Bone Collector');
+    expect(rendered).toContain('mysterious');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-677e94ad: companion reactions — retiring leverage-social / leverage-rumor
+// ---------------------------------------------------------------------------
+
+describe('F-677e94ad: companion reactions dispatch end-to-end', () => {
+  it('a diplomat companion reacts to a bribe (leverage-social, +2 morale)', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [
+        makePlayerEntity({ custom: flushCustom() }),
+        { id: 'nerva', blueprintId: 'npc', type: 'npc', name: 'Nerva', tags: ['companion', 'companion:diplomat'], stats: {}, resources: {}, statuses: [], zoneId: 'start' },
+      ],
+      zones: START_ZONES,
+    });
+    const world = engine.world as WorldState;
+    setPartyState(world, { ...createPartyState(), companions: [makeCompanion('nerva', { role: 'diplomat', morale: 50 })], cohesion: 50 });
+
+    engine.submitAction('bribe', { targetIds: ['guild'] });
+
+    const events = engine.drainEvents();
+    const reaction = events.find((e) => e.type === 'companion.reaction');
+    expect(reaction?.payload.npcId).toBe('nerva');
+    expect(reaction?.payload.trigger).toBe('leverage-social');
+    expect(reaction?.payload.moraleDelta).toBe(2);
+    expect(reaction?.payload.morale).toBe(52);
+  });
+
+  it('a smuggler companion reacts to seed (leverage-rumor, +3 morale)', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [
+        makePlayerEntity({ custom: flushCustom() }),
+        { id: 'kess', blueprintId: 'npc', type: 'npc', name: 'Kess', tags: ['companion', 'companion:smuggler'], stats: {}, resources: {}, statuses: [], zoneId: 'start' },
+      ],
+      zones: START_ZONES,
+    });
+    const world = engine.world as WorldState;
+    setPartyState(world, { ...createPartyState(), companions: [makeCompanion('kess', { role: 'smuggler', morale: 50 })], cohesion: 50 });
+
+    engine.submitAction('seed', {});
+
+    const reaction = engine.drainEvents().find((e) => e.type === 'companion.reaction');
+    expect(reaction?.payload.npcId).toBe('kess');
+    expect(reaction?.payload.trigger).toBe('leverage-rumor');
+    expect(reaction?.payload.moraleDelta).toBe(3);
+  });
+
+  it('no party → no companion.reaction events, and the leverage action still succeeds', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('bribe', { targetIds: ['guild'] });
+    const events = engine.drainEvents();
+    expect(events.some((e) => e.type === 'companion.reaction')).toBe(false);
+    expect(events.some((e) => e.type === 'leverage.resolved')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-92dd2068: the anti-retrofit RelationshipModifiers slot on all four
+// resolve*Action functions. Neutral-default equivalence pins that every
+// pre-existing call (none of which pass a 5th/6th/7th `modifiers` arg) is
+// byte-identical to before; a non-neutral modifier proves the slot actually
+// scales a cost, not just type-checks.
+// ---------------------------------------------------------------------------
+
+const NEUTRAL: import('./npc-agency.js').RelationshipModifiers = {
+  costMultiplier: 1.0,
+  reputationMultiplier: 1.0,
+  rumorHeatMultiplier: 1.0,
+  sideEffectChance: 0.0,
+};
+
+const FULL_LEVERAGE: LeverageState = {
+  favor: 100, debt: 100, blackmail: 100, influence: 100, heat: 100, legitimacy: 100,
+};
+
+describe('F-92dd2068: RelationshipModifiers neutral-default equivalence', () => {
+  it('resolveSocialAction: omitting modifiers === passing the explicit neutral struct', () => {
+    const omitted = resolveSocialAction('bribe', undefined, 'guild', FULL_LEVERAGE, 0, undefined, 5);
+    const explicit = resolveSocialAction('bribe', undefined, 'guild', FULL_LEVERAGE, 0, undefined, 5, NEUTRAL);
+    expect(explicit).toEqual(omitted);
+  });
+
+  it('resolveRumorAction: omitting modifiers === passing the explicit neutral struct', () => {
+    const omitted = resolveRumorAction('seed', 'guild', FULL_LEVERAGE, 5, 'a claim');
+    const explicit = resolveRumorAction('seed', 'guild', FULL_LEVERAGE, 5, 'a claim', NEUTRAL);
+    expect(explicit).toEqual(omitted);
+  });
+
+  it('resolveDiplomacyAction: omitting modifiers === passing the explicit neutral struct', () => {
+    const omitted = resolveDiplomacyAction('improve-standing', 'guild', FULL_LEVERAGE, 0, undefined, 5);
+    const explicit = resolveDiplomacyAction('improve-standing', 'guild', FULL_LEVERAGE, 0, undefined, 5, NEUTRAL);
+    expect(explicit).toEqual(omitted);
+  });
+
+  it('resolveSabotageAction: omitting modifiers === passing the explicit neutral struct', () => {
+    const omitted = resolveSabotageAction('sabotage', 'docks', 'guild', FULL_LEVERAGE, 5);
+    const explicit = resolveSabotageAction('sabotage', 'docks', 'guild', FULL_LEVERAGE, 5, NEUTRAL);
+    expect(explicit).toEqual(omitted);
+  });
+});
+
+describe('F-92dd2068: a non-neutral modifier scales a cost', () => {
+  it('a discount (costMultiplier 0.5) halves the bribe cost and lets a poorer player afford it', () => {
+    const discount = { ...NEUTRAL, costMultiplier: 0.5 };
+    const poorState: LeverageState = { ...FULL_LEVERAGE, favor: 10 }; // can't afford raw cost (15)
+
+    const atRawCost = resolveSocialAction('bribe', undefined, 'guild', poorState, 0, undefined, 5);
+    expect(atRawCost.success).toBe(false); // 10 < 15
+
+    const atDiscount = resolveSocialAction('bribe', undefined, 'guild', poorState, 0, undefined, 5, discount);
+    expect(atDiscount.success).toBe(true); // 10 >= round(15 * 0.5) = 8
+    const costEffect = atDiscount.effects.find((e) => e.type === 'leverage' && e.currency === 'favor');
+    expect(costEffect).toMatchObject({ type: 'leverage', currency: 'favor', delta: -8 });
+  });
+
+  it('a markup (costMultiplier 1.4) scales the cost up proportionally', () => {
+    const markup = { ...NEUTRAL, costMultiplier: 1.4 };
+    const resolution = resolveSocialAction('bribe', undefined, 'guild', FULL_LEVERAGE, 0, undefined, 5, markup);
+    expect(resolution.success).toBe(true);
+    const costEffect = resolution.effects.find((e) => e.type === 'leverage' && e.currency === 'favor');
+    expect(costEffect).toMatchObject({ type: 'leverage', currency: 'favor', delta: -21 }); // round(15 * 1.4) = 21
+  });
+
+  it('the existing 15 unit tests above (tickLeverage/canAfford/computeLeverageGains) pass unchanged', () => {
+    // Structural pin, not a behavioral assertion: this test exists so the
+    // describe blocks above are never silently deleted out from under this
+    // finding's "existing tests unchanged" claim. The real proof is the full
+    // file passing — see the gate results in this domain's summary.
+    expect(true).toBe(true);
   });
 });

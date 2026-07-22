@@ -2,7 +2,7 @@
 // 5 zones, 3 NPCs, 2 enemies, 1 dialogue, 2 districts
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
+import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition, QuestDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -29,7 +29,11 @@ export const player: EntityState = {
   stats: { presence: 4, vitality: 5, cunning: 5 },
   resources: { hp: 20, maxHp: 20, stamina: 5, bloodlust: 10, humanity: 25 },
   statuses: [],
-  inventory: [],
+  // F-86b9145d: a masquerade mask so the equip loop is reachable without
+  // character creation (deliberately NOT blood-vial — that id is already the
+  // duchess's post-dialogue gift below, and giveItem's own dupe-guard would
+  // make the gift a silent no-op for the authored player).
+  inventory: ['masquerade-mask'],
   zoneId: 'grand-ballroom',
 };
 
@@ -42,7 +46,11 @@ export const duchessMorvaine: EntityState = {
   name: 'Duchess Morvaine',
   tags: ['npc', 'vampire', 'elder', 'recruitable', 'diplomat'],
   stats: { presence: 8, vitality: 4, cunning: 7 },
-  resources: { hp: 15, stamina: 3, bloodlust: 5, humanity: 8 },
+  // maxHp/maxStamina (F-4b9c5aee): a recruitable companion needs the same
+  // resources shape enemies carry — entityHpRatio/regen both read the max
+  // fields, and without them the entity always reads as full HP regardless
+  // of true damage taken.
+  resources: { hp: 15, maxHp: 15, stamina: 3, maxStamina: 3, bloodlust: 5, humanity: 8 },
   statuses: [],
   zoneId: 'grand-ballroom',
   custom: {
@@ -71,7 +79,8 @@ export const servantElara: EntityState = {
   name: 'Servant Elara',
   tags: ['npc', 'human', 'recruitable', 'scout'],
   stats: { presence: 3, vitality: 2, cunning: 6 },
-  resources: { hp: 8, stamina: 2 },
+  // maxHp/maxStamina (F-4b9c5aee) — see Duchess Morvaine's comment above.
+  resources: { hp: 8, maxHp: 8, stamina: 2, maxStamina: 2 },
   statuses: [],
   zoneId: 'wine-cellar',
   custom: {
@@ -333,6 +342,104 @@ export const duchessDialogue: DialogueDefinition = {
     },
   },
 };
+
+// --- Quests (F-ENG005-quest-loop-min) ---
+//
+// Two authored QuestDefinitions — the explicit reason to survive the night.
+// Wired via buildWorldStack's `quests` config in setup.ts; quest-core
+// validates them at construction (fail loud) and drives offer -> track ->
+// complete -> reward off the live event stream. Both are completable inside
+// a normal session with the shipped world alone: the witch hunter and the
+// elder vampire both stand placed in the bell tower and the grand ballroom
+// respectively.
+//
+// Quest 2's offer trigger is deliberately NOT the grand ballroom itself: the
+// elder vampire (its kill target) is placed there, but grand-ballroom is
+// also the player's START zone — the initial placement never emits a
+// world.zone.entered event (only a subsequent `move` does), so a trigger
+// keyed to grand-ballroom would only fire on a LATER return visit. Keying
+// the offer to the bell tower instead (where the fledgling learns enough
+// from the hunter's own trail to move against the elder) avoids that
+// fragility. The kill itself has no zone dependency, so it resolves whenever
+// the player finally returns to confront him.
+
+export const thirstAndShadowsQuest: QuestDefinition = {
+  id: 'thirst-and-shadows',
+  name: 'Thirst and Shadows',
+  // Offered on descending into the wine cellar — the Duchess's own hint.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'wine-cellar' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'reach-the-bell-tower',
+      name: 'Reach the Bell Tower',
+      description: 'Hunter supplies were seen near the old bell tower',
+      objectives: ['Reach the Bell Tower'],
+      triggers: [
+        {
+          event: 'world.zone.entered',
+          condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'bell-tower' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+      nextStage: 'put-down-the-hunter',
+    },
+    {
+      id: 'put-down-the-hunter',
+      name: 'Put Down the Hunter',
+      description: 'A witch hunter has made the consecrated tower his own',
+      objectives: ['Defeat the Witch Hunter'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-equals', params: { key: 'entityId', value: 'witch-hunter' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [{ type: 'xp', params: { amount: 20 } }],
+};
+
+export const eldersReckoningQuest: QuestDefinition = {
+  id: 'the-elders-reckoning',
+  name: "The Elder's Reckoning",
+  // Offered on reaching the bell tower — the same event that can also
+  // advance Thirst and Shadows' first stage.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'bell-tower' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'end-the-elder',
+      name: 'End the Elder',
+      description: 'The Elder Vampire rules the court from the grand ballroom',
+      objectives: ['Destroy the Elder Vampire'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-equals', params: { key: 'entityId', value: 'elder-vampire' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [
+    { type: 'xp', params: { amount: 30 } },
+    { type: 'item', params: { itemId: 'obsidian-ring' } },
+  ],
+};
+
+export const vampireQuests: QuestDefinition[] = [thirstAndShadowsQuest, eldersReckoningQuest];
 
 // --- Districts ---
 

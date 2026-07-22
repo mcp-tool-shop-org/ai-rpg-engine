@@ -34,7 +34,17 @@ export const player: EntityState = {
   name: 'Survivor',
   tags: ['player', 'human', 'survivor'],
   stats: { fitness: 5, wits: 6, nerve: 5 },
-  resources: { hp: 18, maxHp: 18, stamina: 12, infection: 0 },
+  // coin (F-92c78519): trade-core's 'buy' verb is always wired in via
+  // buildWorldStack (universal, every pack), but no starter ever seeded a
+  // starting balance — a fresh survivor could never afford a single
+  // purchase. 18 (cash scavenged before the world ended, worth less now but
+  // still spends) covers a modest buy at typical district pricing
+  // (SELL_BASE_VALUE=10 * BUY_MARKUP_MULTIPLIER=1.3 ≈ 13/item at neutral
+  // supply). The engine's own resource clamp (min 0, open ceiling —
+  // WorldStore.modifyResource) applies whether or not 'coin' is declared in
+  // the ruleset's resources list, so no ruleset.ts change is required for
+  // this seed to behave correctly.
+  resources: { hp: 18, maxHp: 18, stamina: 12, infection: 0, coin: 18 },
   statuses: [],
   inventory: [],
   zoneId: 'safehouse-lobby',
@@ -47,11 +57,28 @@ export const medic: EntityState = {
   blueprintId: 'medic',
   type: 'npc',
   name: 'Dr. Chen',
-  tags: ['npc', 'survivor', 'medic', 'female'],
+  // F-a56f7e5d: 'recruitable' + the bare role tag 'healer' — companion-core's
+  // deriveCompanionRole reads the role straight off authored tags (see
+  // starter-fantasy's Brother Aldric: ['npc','recruitable','healer']), and
+  // isCompanionRecruitable gates on the 'recruitable' tag alone. Ashfall Dead
+  // shipped the 'recruit' verb (universal, wired into every pack via
+  // buildWorldStack) with zero recruitable NPCs — Dr. Chen, already the
+  // pack's medic, is the obvious first companion.
+  tags: ['npc', 'survivor', 'medic', 'female', 'recruitable', 'healer'],
   stats: { fitness: 3, wits: 7, nerve: 4 },
-  resources: { hp: 12, stamina: 10, infection: 0 },
+  // maxHp/maxStamina (F-4b9c5aee precedent, see starter-fantasy/-gladiator's
+  // own recruitable NPCs): a recruitable companion needs the same resources
+  // shape enemies carry — entityHpRatio/regen both read the max fields, and
+  // without them the entity always reads as full HP regardless of true
+  // damage taken.
+  resources: { hp: 12, maxHp: 12, stamina: 10, maxStamina: 10, infection: 0 },
   statuses: [],
   zoneId: 'safehouse-lobby',
+  custom: {
+    companionRole: 'healer',
+    companionAbilities: 'medical-support,witness-calming',
+    personalGoal: 'Find enough antibiotics to treat everyone, not just the lucky few',
+  },
 };
 
 export const scavenger: EntityState = {
@@ -71,11 +98,20 @@ export const leader: EntityState = {
   blueprintId: 'leader',
   type: 'npc',
   name: 'Sergeant Marsh',
-  tags: ['npc', 'survivor', 'military', 'male'],
+  // F-a56f7e5d: the second recruitable NPC — 'recruitable' + the bare role
+  // tag 'fighter' (same minimal pattern as Dr. Chen above). A hardened
+  // military sergeant fits 'fighter' and 'intimidation-backup' precisely.
+  tags: ['npc', 'survivor', 'military', 'male', 'recruitable', 'fighter'],
   stats: { fitness: 6, wits: 4, nerve: 6 },
-  resources: { hp: 20, stamina: 14, infection: 0 },
+  // maxHp/maxStamina (F-4b9c5aee precedent) — see Dr. Chen's comment above.
+  resources: { hp: 20, maxHp: 20, stamina: 14, maxStamina: 14, infection: 0 },
   statuses: [],
   zoneId: 'safehouse-lobby',
+  custom: {
+    companionRole: 'fighter',
+    companionAbilities: 'intimidation-backup,rumor-suppression',
+    personalGoal: 'Hold what is left of the chain of command together',
+  },
 };
 
 // --- Enemies ---

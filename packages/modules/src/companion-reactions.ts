@@ -61,6 +61,127 @@ export function isKnownReactionTrigger(trigger: string): trigger is ReactionTrig
   return Object.prototype.hasOwnProperty.call(REACTION_TABLE, trigger);
 }
 
+// ---------------------------------------------------------------------------
+// Trigger Reachability Ledger (F-6be920bd audit)
+// ---------------------------------------------------------------------------
+//
+// companion-reactions.ts is a pure library — it has no EngineModule, no
+// event listeners, and no callers of its own. Every REACTION_TABLE trigger
+// only ever fires because SOME OTHER file calls evaluateCompanionReactions
+// with that literal string. This ledger is a static, testable accounting of
+// which triggers have a real production producer TODAY, audited directly
+// against source (not just comments) as of this wave:
+//   - world-tick.ts's applyCompanionReactions, fed by
+//     collectCombatReactionTriggers (combat.entity.defeated), the district-
+//     mood tone-transition check (step 0c), and the pressure-expiry step
+//     (step 3);
+//   - player-leverage.ts's dispatchLeverageCompanionReactions, called
+//     directly from the 'bribe'/'intimidate'/'petition'/'seed' verb
+//     handlers.
+//
+// Because wiring a trigger always means editing one of those producer
+// files (or authoring a brand new one for npc-agency/item-recognition),
+// and NOT this file, re-audit and update this table whenever a producer's
+// dispatch changes — this file cannot detect that drift on its own.
+// ---------------------------------------------------------------------------
+
+export type ReactionTriggerReachability =
+  /** A real producer exists and genuinely fires it in a played session. */
+  | 'reachable'
+  /** A producer calls evaluateCompanionReactions with this trigger, but the
+   *  literal value it always passes can never select this trigger's branch
+   *  — dead code, not a live path. */
+  | 'wired-unreachable'
+  /** No producer calls evaluateCompanionReactions with this trigger at all. */
+  | 'dark';
+
+export type ReactionTriggerStatus = {
+  reachability: ReactionTriggerReachability;
+  /** Where this trigger is dispatched from today (reachable/wired-unreachable),
+   *  or precisely what it is waiting on (dark). */
+  note: string;
+};
+
+/**
+ * Per-trigger reachability, audited against the two live call sites as of
+ * this wave (F-6be920bd). 7 reachable, 1 wired-but-dead, 8 dark — none of
+ * the 8 dark triggers are wireable from THIS file: leverage-diplomacy/
+ * leverage-sabotage need a new verb-group registration in player-leverage.ts
+ * (resolveSocialAction's LeverageResolution.verb is always the literal
+ * 'social' — nothing today discriminates diplomacy from sabotage from plain
+ * social action); betrayal-witnessed/obligation-betrayed/item-*-recognized
+ * need entirely new producers in npc-agency.ts/item-recognition.ts that do
+ * not exist yet (npc-agency's obligation ledger and item-recognition's
+ * chronicle are both never persisted/never reach world.eventLog — honestly
+ * deferred to v3.0, not force-wired here).
+ */
+export const REACTION_TRIGGER_STATUS: Record<ReactionTrigger, ReactionTriggerStatus> = {
+  'combat-won': {
+    reachability: 'reachable',
+    note: 'world-tick.ts combatReactionTrigger: a hostile/enemy entity is defeated',
+  },
+  'combat-lost': {
+    reachability: 'reachable',
+    note: "world-tick.ts combatReactionTrigger: a companion is defeated (the player-defeat sub-case is unreachable in the shipped CLI — bin.ts's \"no tick over a corpse\" gate always returns before this file's round scan runs)",
+  },
+  'pressure-resolved-well': {
+    reachability: 'wired-unreachable',
+    note: "world-tick.ts's only computeFallout call site always passes the literal 'expired-ignored' as resolutionType, so fallout.resolution.resolutionType can never equal 'resolved-by-player' in production — dead branch, not a live path",
+  },
+  'pressure-resolved-badly': {
+    reachability: 'reachable',
+    note: "world-tick.ts: every pressure expiry's resolutionType is (today, always) 'expired-ignored', which maps here",
+  },
+  'district-grim': {
+    reachability: 'reachable',
+    note: "world-tick.ts step 0c: district-mood.ts's computeDistrictMood reports a tone TRANSITION into 'grim'",
+  },
+  'district-prosperous': {
+    reachability: 'reachable',
+    note: "world-tick.ts step 0c: district-mood.ts's computeDistrictMood reports a tone TRANSITION into 'prosperous'",
+  },
+  'leverage-social': {
+    reachability: 'reachable',
+    note: "player-leverage.ts dispatchLeverageCompanionReactions: the 'bribe'/'intimidate'/'petition' verbs (resolveSocialAction's LeverageResolution.verb is always the literal 'social')",
+  },
+  'leverage-rumor': {
+    reachability: 'reachable',
+    note: "player-leverage.ts dispatchLeverageCompanionReactions: the 'seed' verb (resolveRumorAction)",
+  },
+  'leverage-diplomacy': {
+    reachability: 'dark',
+    note: "waits on a diplomacy-group verb — resolveSocialAction's LeverageResolution.verb is always the literal 'social', so nothing today can discriminate a diplomacy action from a plain social one",
+  },
+  'leverage-sabotage': {
+    reachability: 'dark',
+    note: "waits on a sabotage-group verb — same resolveSocialAction('social')-only limitation as leverage-diplomacy",
+  },
+  'betrayal-witnessed': {
+    reachability: 'dark',
+    note: 'waits on npc-agency emitting a witnessed-betrayal signal — no producer exists yet (v3.0)',
+  },
+  'obligation-betrayed': {
+    reachability: 'dark',
+    note: "waits on npc-agency's obligation ledger being persisted — it is not today (endgame.ts's own buildEndgameInputs comment confirms the same ceiling; v3.0)",
+  },
+  'item-faction-recognized': {
+    reachability: 'dark',
+    note: "waits on item-recognition's chronicle reaching world.eventLog — it does not today (v3.0)",
+  },
+  'item-stolen-recognized': {
+    reachability: 'dark',
+    note: 'same item-recognition ceiling as item-faction-recognized (v3.0)',
+  },
+  'item-cursed-recognized': {
+    reachability: 'dark',
+    note: 'same item-recognition ceiling as item-faction-recognized (v3.0)',
+  },
+  'item-trophy-recognized': {
+    reachability: 'dark',
+    note: 'same item-recognition ceiling as item-faction-recognized (v3.0)',
+  },
+};
+
 // --- Narrator Hint Templates ---
 
 const POSITIVE_HINTS: Record<CompanionRole, string[]> = {

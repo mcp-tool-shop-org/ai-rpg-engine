@@ -2,7 +2,7 @@
 // 5 zones, 3 NPCs, 2 enemies, 1 dialogue, 2 districts
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
+import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition, QuestDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
@@ -29,7 +29,10 @@ export const player: EntityState = {
   stats: { discipline: 5, perception: 6, composure: 4 },
   resources: { hp: 20, maxHp: 20, stamina: 5, honor: 25, ki: 15 },
   statuses: [],
-  inventory: [],
+  // F-86b9145d: the same katana the kensei archetype starts with also rides
+  // the authored player, so the equip loop is reachable without character
+  // creation (created kensei characters carry it via startingInventory).
+  inventory: ['katana'],
   zoneId: 'castle-gate',
 };
 
@@ -54,7 +57,11 @@ export const ladyHimiko: EntityState = {
   name: 'Lady Himiko',
   tags: ['npc', 'noble', 'suspect', 'recruitable', 'diplomat'],
   stats: { discipline: 3, perception: 5, composure: 7 },
-  resources: { hp: 8, stamina: 2, honor: 22 },
+  // maxHp/maxStamina (F-4b9c5aee): a recruitable companion needs the same
+  // resources shape enemies carry — entityHpRatio/regen both read the max
+  // fields, and without them the entity always reads as full HP regardless
+  // of true damage taken.
+  resources: { hp: 8, maxHp: 8, stamina: 2, maxStamina: 2, honor: 22 },
   statuses: [],
   zoneId: 'great-hall',
   custom: {
@@ -71,7 +78,8 @@ export const magistrateSato: EntityState = {
   name: 'Magistrate Sato',
   tags: ['npc', 'official', 'investigator', 'recruitable', 'scout'],
   stats: { discipline: 4, perception: 7, composure: 5 },
-  resources: { hp: 10, stamina: 2, honor: 20 },
+  // maxHp/maxStamina (F-4b9c5aee) — see Lady Himiko's comment above.
+  resources: { hp: 10, maxHp: 10, stamina: 2, maxStamina: 2, honor: 20 },
   statuses: [],
   zoneId: 'great-hall',
   custom: {
@@ -353,6 +361,104 @@ export const magistrateDialogue: DialogueDefinition = {
     },
   },
 };
+
+// --- Quests (F-ENG005-quest-loop-min) ---
+//
+// Two authored QuestDefinitions — the explicit reason to keep digging.
+// Wired via buildWorldStack's `quests` config in setup.ts; quest-core
+// validates them at construction (fail loud) and drives offer -> track ->
+// complete -> reward off the live event stream. Both are completable inside
+// a normal session with the shipped world alone: the shadow assassin stands
+// placed in the hidden passage, and the corrupt samurai stands placed at the
+// castle gate.
+//
+// Quest 2's offer trigger is deliberately NOT the castle gate itself: the
+// corrupt samurai (its kill target) is placed there, but castle-gate is also
+// the player's START zone — the initial placement never emits a
+// world.zone.entered event (only a subsequent `move` does), so a trigger
+// keyed to castle-gate would only fire on a LATER return visit. Keying the
+// offer to lords-chamber instead (the room the poisoning happened in) avoids
+// that fragility and fits the investigation's climax: seeing the evidence
+// firsthand is what sends the ronin back to the gate to confront the guard
+// captain. The kill itself has no zone dependency, so it resolves whenever
+// the player finally corners him.
+
+export const voicesInTheCourtQuest: QuestDefinition = {
+  id: 'voices-in-the-court',
+  name: 'Voices in the Court',
+  // Offered on stepping into the great hall — the court's own ground.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'great-hall' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'reach-the-hidden-passage',
+      name: 'Reach the Hidden Passage',
+      description: 'A rumor points to a passage hidden behind the tea garden',
+      objectives: ['Find the Hidden Passage'],
+      triggers: [
+        {
+          event: 'world.zone.entered',
+          condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'hidden-passage' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+      nextStage: 'silence-the-shadow',
+    },
+    {
+      id: 'silence-the-shadow',
+      name: 'Silence the Shadow',
+      description: 'A shadow assassin waits in the dark for a clean strike',
+      objectives: ['Defeat the Shadow Assassin'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-equals', params: { key: 'entityId', value: 'shadow-assassin' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [{ type: 'xp', params: { amount: 20 } }],
+};
+
+export const unmaskTheTraitorQuest: QuestDefinition = {
+  id: 'unmask-the-traitor',
+  name: 'Unmask the Traitor',
+  // Offered on entering the lord's own chamber — the scene of the poisoning.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'lords-chamber' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'confront-the-traitor',
+      name: 'Confront the Traitor',
+      description: 'The corrupt samurai guards the gate — and a secret',
+      objectives: ['Defeat the Corrupt Samurai'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-equals', params: { key: 'entityId', value: 'corrupt-samurai' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [
+    { type: 'xp', params: { amount: 30 } },
+    { type: 'item', params: { itemId: 'wakizashi' } },
+  ],
+};
+
+export const roninQuests: QuestDefinition[] = [voicesInTheCourtQuest, unmaskTheTraitorQuest];
 
 // --- Districts ---
 

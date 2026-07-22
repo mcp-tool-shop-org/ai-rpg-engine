@@ -18,6 +18,13 @@ export const gladiatorMinimalRuleset: RulesetDefinition = {
     { id: 'stamina', name: 'Stamina', min: 0, max: 50, default: 10, regenRate: 1 },
     { id: 'fatigue', name: 'Fatigue', min: 0, max: 50, default: 0 },
     { id: 'crowd-favor', name: 'Crowd Favor', min: 0, max: 100, default: 40 },
+    // F-92c78519: declared for HUD/status-surface consistency with every
+    // other tracked resource above — not required for trade-core's buy/sell
+    // verbs themselves (they read/write entity.resources.coin directly and
+    // clamp min-0/open-ceiling even when undeclared, per WorldStore's own
+    // legacy-contract fallback), but every other resource the player carries
+    // already has a ruleset declaration, and coin shouldn't be the exception.
+    { id: 'coin', name: 'Coin', min: 0, max: 500, default: 0 },
   ],
 
   verbs: [

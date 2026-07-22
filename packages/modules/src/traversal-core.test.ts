@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
-import type { EntityState } from '@ai-rpg-engine/core';
+import type { EntityState, ZoneState } from '@ai-rpg-engine/core';
 import { traversalCore } from './traversal-core.js';
+import { createEnvironmentCore } from './environment-core.js';
+import { createDistrictCore } from './district-core.js';
+import { createEconomyCore } from './economy-core.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -129,5 +132,71 @@ describe('traversal-core: inspectHandler actor resolution (F-08f214dd)', () => {
     const inspected = events.find((e) => e.type === 'world.zone.inspected');
     expect(inspected).toBeDefined();
     expect(inspected!.payload.zoneId).toBe('zone-b');
+  });
+});
+
+describe('traversal-core: inspectHandler district drill-down (F-5ef2c8f5)', () => {
+  const districtZones: ZoneState[] = [
+    { id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbors: ['zone-b'] },
+    { id: 'zone-b', roomId: 'test', name: 'Zone B', tags: [], neighbors: ['zone-a'] },
+  ];
+  const districts = [{ id: 'district-1', name: 'Market District', zoneIds: ['zone-b'], tags: [] }];
+
+  function makeInspectEngine(startZone: string) {
+    return createTestEngine({
+      modules: [
+        traversalCore,
+        createEnvironmentCore(),
+        createDistrictCore({ districts }),
+        createEconomyCore({ districts: districts.map((d) => ({ id: d.id, tags: d.tags })) }),
+      ],
+      entities: [makePlayer(startZone)],
+      zones: districtZones,
+      playerId: 'player',
+      startZone,
+    });
+  }
+
+  it('a zone that resolves to a district carries the detailed single-district economy report on the inspected payload', () => {
+    const engine = makeInspectEngine('zone-b'); // zone-b -> district-1
+
+    const events = engine.submitAction('inspect', {});
+    const inspected = events.find((e) => e.type === 'world.zone.inspected');
+
+    expect(inspected).toBeDefined();
+    expect(inspected!.payload.districtId).toBe('district-1');
+    expect(typeof inspected!.payload.economyReport).toBe('string');
+    expect(inspected!.payload.economyReport as string).toContain('ECONOMY: Market District (district-1)');
+  });
+
+  it('a zone with NO district resolves the exact same payload shape as before the fix (byte-shape unchanged — no districtId/economyReport keys at all)', () => {
+    const engine = makeInspectEngine('zone-a'); // zone-a maps to no district
+
+    const events = engine.submitAction('inspect', {});
+    const inspected = events.find((e) => e.type === 'world.zone.inspected');
+
+    expect(inspected).toBeDefined();
+    expect(Object.keys(inspected!.payload).sort()).toEqual(
+      ['zoneId', 'zoneName', 'tags', 'entities', 'interactables', 'exits', 'hazards'].sort(),
+    );
+    expect(inspected!.payload).not.toHaveProperty('districtId');
+    expect(inspected!.payload).not.toHaveProperty('economyReport');
+  });
+
+  it('a district zone whose economy was never seeded (economy-core not registered) also stays byte-shape unchanged', () => {
+    const engine = createTestEngine({
+      modules: [traversalCore, createEnvironmentCore(), createDistrictCore({ districts })], // no createEconomyCore
+      entities: [makePlayer('zone-b')],
+      zones: districtZones,
+      playerId: 'player',
+      startZone: 'zone-b',
+    });
+
+    const events = engine.submitAction('inspect', {});
+    const inspected = events.find((e) => e.type === 'world.zone.inspected');
+
+    expect(inspected).toBeDefined();
+    expect(inspected!.payload).not.toHaveProperty('districtId');
+    expect(inspected!.payload).not.toHaveProperty('economyReport');
   });
 });

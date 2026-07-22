@@ -4,13 +4,29 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createGame, combatMasteryTree } from '@ai-rpg-engine/starter-fantasy';
-import { addCurrency, getCurrency, giveItem, ABILITY_CATALOG_FORMULA } from '@ai-rpg-engine/modules';
+import {
+  addCurrency,
+  getCurrency,
+  giveItem,
+  ABILITY_CATALOG_FORMULA,
+  quoteBuyPrice,
+  SELL_CURRENCY,
+  getDistrictEconomy,
+  setPersistedOpportunities,
+  makeOpportunity,
+  type OpportunityState,
+} from '@ai-rpg-engine/modules';
 import { buildActionList, renderFullScreen, SCREEN_WIDTH } from '@ai-rpg-engine/terminal-ui';
 import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
 import {
   buildAbilityActions,
   buildUnlockActions,
+  buildBuyActions,
   buildSellActions,
+  buildSalvageActions,
+  buildCraftActions,
+  buildLeverageActions,
+  buildOpportunityActions,
   buildExtraActions,
   parseExtraSelection,
   buildHudWorld,
@@ -37,6 +53,24 @@ function makeDivineCryptGame() {
   player.tags = [...player.tags, 'divine'];
   player.zoneId = 'crypt-chamber';
   engine.store.state.locationId = 'crypt-chamber';
+  // v2.9: fantasy now seeds starting coin, and crypt-chamber's district carries
+  // buyable stock — which would add `buy` entries to every extras list built
+  // from this fixture. These shared-fixture tests exercise the ability / sell /
+  // journal / director / debug composition, not the buy loop (the buy loop has
+  // its own describe block that controls coin explicitly), so zero the coin here
+  // to keep the composition they assert focused on what they test.
+  player.resources[SELL_CURRENCY] = 0;
+  return engine;
+}
+
+/** A fresh fantasy game with the v2.9 starting coin cleared. `createGame(42)`
+ *  used to seed no coin, so these sentinel/idle composition tests relied on it
+ *  producing only the always-on journal / director (+ env-gated debug) entries.
+ *  v2.9 seeds a small starting coin, which would add `buy` entries; clearing it
+ *  keeps what's under test — the sentinel routing / visibility — isolated. */
+function makeIdleGame() {
+  const engine = createGame(42);
+  engine.store.state.entities['player'].resources[SELL_CURRENCY] = 0;
   return engine;
 }
 
@@ -399,7 +433,7 @@ describe('debug inspector entry (F-ENG006)', () => {
 
   it('the debug entry is HIDDEN without AI_RPG_DEBUG=1 (player surface stays clean)', () => {
     vi.stubEnv('AI_RPG_DEBUG', '');
-    const engine = createGame(42); // no divine tag, no xp → no ability/unlock extras
+    const engine = makeIdleGame(); // no divine tag, no xp, no coin → no ability/unlock/buy extras
     // Only the always-on player surfaces remain (Journal + Director's
     // Ledger) — no debug entry.
     const extras = buildExtraActions(engine, [combatMasteryTree]);
@@ -413,7 +447,7 @@ describe('debug inspector entry (F-ENG006)', () => {
 
   it('AI_RPG_DEBUG=1 appends the debug entry last, and it renders in the frame', () => {
     vi.stubEnv('AI_RPG_DEBUG', '1');
-    const engine = createGame(42);
+    const engine = makeIdleGame();
     const extras = buildExtraActions(engine, [combatMasteryTree]);
     expect(extras).toHaveLength(3); // journal + director (always) + debug (env-gated)
     expect(extras[0].group).toBe('journal');
@@ -530,7 +564,7 @@ describe("director's ledger entry (F-ENG005)", () => {
   });
 
   it('selecting its number resolves to the director group (the routing key — the sentinel verb never reaches the engine)', () => {
-    const engine = createGame(42);
+    const engine = makeIdleGame();
     const extras = buildExtraActions(engine, [combatMasteryTree]);
     // The Journal (player-personal) reads first; the ledger sits second —
     // parseExtraSelection resolves the same continuation numbers the frame
@@ -545,7 +579,7 @@ describe("director's ledger entry (F-ENG005)", () => {
 
   it('the entry sits after ability/unlock entries and BEFORE the debug entry (operator surface stays last)', () => {
     vi.stubEnv('AI_RPG_DEBUG', '1');
-    const engine = createGame(42);
+    const engine = makeIdleGame();
     const player = engine.store.state.entities['player'];
     player.tags = [...player.tags, 'divine'];
     addCurrency(engine.store.state, 'player', 'xp', 20, engine.tick);
@@ -582,7 +616,7 @@ describe('journal entry (F-ENG005-quest-loop-min)', () => {
   });
 
   it('selecting its number resolves to the journal group (the routing key for bin.ts)', () => {
-    const engine = createGame(42);
+    const engine = makeIdleGame();
     const extras = buildExtraActions(engine, [combatMasteryTree]);
     const selected = parseExtraSelection('7', 6, extras);
     expect(selected?.group).toBe('journal');
@@ -671,5 +705,520 @@ describe('journal entry (F-ENG005-quest-loop-min)', () => {
     expect(journal).toContain('  ── ashes-below ──');
     expect(journal).toContain('[quest entry failed:');
     expect(journal).toContain('quest-core read blew up');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v2.9 menu-integration wave — buy / salvage / craft / leverage / opportunity
+// entries, plus the sell-grouping rewrite (F-13255438). Every builder below
+// follows the file's documented "only ever list what's guaranteed to
+// succeed" discipline (see buildSellActions' own header comment): an offered
+// entry must never come back rejected, because bin.ts's extras dispatch
+// submits every non-sentinel group via engine.submitAction unconditionally —
+// a rejected extra still costs the player a turn.
+// ---------------------------------------------------------------------------
+
+describe('buildBuyActions (F-31f15013 menu wire) — buy entries priced via quoteBuyPrice', () => {
+  it('offers nothing when the player is broke, even though the district has stock', () => {
+    const engine = createGame(42); // chapel-entrance / chapel-grounds district
+    engine.store.state.entities['player'].resources[SELL_CURRENCY] = 0; // broke (v2.9 seeds a small starting coin — clear it)
+    expect(buildBuyActions(engine.world)).toEqual([]);
+  });
+
+  it('offers only items the player can currently afford, each priced via the SAME single source (quoteBuyPrice)', () => {
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    player.resources[SELL_CURRENCY] = 1_000_000; // absurdly rich — afford gate never excludes anything offered
+
+    const actions = buildBuyActions(engine.world);
+    expect(actions.length).toBeGreaterThan(0);
+    for (const action of actions) {
+      expect(action.verb).toBe('buy');
+      expect(action.group).toBe('trade');
+      const itemId = action.targetIds?.[0];
+      expect(typeof itemId).toBe('string');
+      const price = quoteBuyPrice(engine.world, itemId!, engine.world.meta.activeRuleset);
+      expect(price).toBeDefined();
+      expect(action.label).toBe(`Buy ${itemId!.replace(/-/g, ' ')} (${price} coin)`);
+    }
+  });
+
+  it('excludes an item the instant coin drops below its quoted price (never a menu-offers-it, engine-rejects-it trap)', () => {
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    player.resources[SELL_CURRENCY] = 1_000_000;
+    const richActions = buildBuyActions(engine.world);
+    expect(richActions.length).toBeGreaterThan(0);
+    const sample = richActions[0];
+    const itemId = sample.targetIds![0];
+    const price = quoteBuyPrice(engine.world, itemId, engine.world.meta.activeRuleset)!;
+
+    player.resources[SELL_CURRENCY] = price - 1; // one short
+    const poorerActions = buildBuyActions(engine.world);
+    expect(poorerActions.some((a) => a.targetIds?.[0] === itemId)).toBe(false);
+
+    player.resources[SELL_CURRENCY] = price; // exactly affordable
+    const exactActions = buildBuyActions(engine.world);
+    expect(exactActions.some((a) => a.targetIds?.[0] === itemId)).toBe(true);
+  });
+
+  it('selecting a buy entry actually EXECUTES the purchase for exactly quoteBuyPrice — never rejected', () => {
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    player.resources[SELL_CURRENCY] = 1_000_000;
+
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const buyIndex = extras.findIndex((a) => a.group === 'trade' && a.verb === 'buy');
+    expect(buyIndex).toBeGreaterThanOrEqual(0);
+    const chosen = extras[buyIndex];
+    const price = quoteBuyPrice(engine.world, chosen.targetIds![0], engine.world.meta.activeRuleset)!;
+    const before = engine.world.entities['player'].resources[SELL_CURRENCY];
+
+    const baseCount = buildActionList(engine.world).length;
+    const result = handlePlayerInput(engine, String(baseCount + buyIndex + 1), { log: vi.fn(), extras });
+
+    expect(result).toEqual({ kind: 'action', via: 'extra' });
+    expect(engine.world.eventLog.some((e) => e.type === 'item.bought')).toBe(true);
+    expect(
+      engine.world.eventLog.some(
+        (e) => e.type === 'action.rejected' && (e.payload as { verb?: unknown }).verb === 'buy',
+      ),
+    ).toBe(false);
+    expect(before - engine.world.entities['player'].resources[SELL_CURRENCY]).toBe(price);
+  });
+
+  it('no district/economy at the player\'s zone → no buy entries, no matter the coin', () => {
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    player.zoneId = 'nowhere-zone';
+    player.resources[SELL_CURRENCY] = 1_000_000;
+    expect(buildBuyActions(engine.world)).toEqual([]);
+  });
+});
+
+describe('buildSalvageActions (crafting menu wire) — one entry per carried item, always offered', () => {
+  it('no inventory → no salvage entries', () => {
+    const engine = createGame(42);
+    expect(buildSalvageActions(engine.world)).toEqual([]);
+  });
+
+  it('one entry per carried item, even off the district map (salvage never needs a market)', () => {
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    player.zoneId = 'nowhere-zone'; // no district/economy at all
+    engine.store.recordEvent(giveItem(player, 'healing-draught', engine.tick));
+
+    expect(buildSalvageActions(engine.world)).toEqual([
+      { verb: 'salvage', targetIds: ['healing-draught'], label: 'Salvage healing draught', group: 'crafting' },
+    ]);
+  });
+
+  it('selecting a salvage entry actually EXECUTES the salvage — never rejected', () => {
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    engine.store.recordEvent(giveItem(player, 'healing-draught', engine.tick));
+
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const idx = extras.findIndex((a) => a.group === 'crafting' && a.verb === 'salvage');
+    expect(idx).toBeGreaterThanOrEqual(0);
+
+    const baseCount = buildActionList(engine.world).length;
+    const result = handlePlayerInput(engine, String(baseCount + idx + 1), { log: vi.fn(), extras });
+
+    expect(result).toEqual({ kind: 'action', via: 'extra' });
+    expect(engine.world.eventLog.some((e) => e.type === 'item.salvaged')).toBe(true);
+    expect(engine.world.entities['player'].inventory).not.toContain('healing-draught');
+  });
+});
+
+describe('buildCraftActions (crafting menu wire) — craft-category recipes only, gated on canCraft', () => {
+  it('offers nothing with no materials held', () => {
+    const engine = makeDivineCryptGame(); // crypt-depths district — a real district to craft in
+    expect(buildCraftActions(engine.world)).toEqual([]);
+  });
+
+  it('offers a craft recipe once its materials are held — never repair/modify (deferred to wave 3)', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'materials.medicine': 2 };
+
+    const actions = buildCraftActions(engine.world);
+    expect(actions).toEqual([
+      { verb: 'craft', parameters: { recipeId: 'craft-bandage' }, label: 'Craft Bandage', group: 'crafting' },
+    ]);
+    expect(actions.every((a) => a.verb === 'craft')).toBe(true);
+  });
+
+  it('offers every affordable craft recipe once broad materials are held, all still craft-only', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = {
+      ...player.custom,
+      'materials.medicine': 5,
+      'materials.fuel': 5,
+      'materials.components': 5,
+      'materials.luxuries': 5,
+    };
+
+    const actions = buildCraftActions(engine.world);
+    expect(actions.length).toBeGreaterThanOrEqual(2); // craft-bandage + craft-torch (universal recipes)
+    expect(actions.every((a) => a.verb === 'craft' && a.group === 'crafting')).toBe(true);
+    expect(actions.map((a) => a.parameters?.recipeId)).toEqual(
+      expect.arrayContaining(['craft-bandage', 'craft-torch']),
+    );
+  });
+
+  it('selecting a craft entry actually EXECUTES the craft verb — never rejected (canCraft gate matches the handler exactly)', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'materials.medicine': 2 };
+
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const idx = extras.findIndex((a) => a.group === 'crafting' && a.verb === 'craft');
+    expect(idx).toBeGreaterThanOrEqual(0);
+
+    const baseCount = buildActionList(engine.world).length;
+    const result = handlePlayerInput(engine, String(baseCount + idx + 1), { log: vi.fn(), extras });
+
+    expect(result).toEqual({ kind: 'action', via: 'extra' });
+    expect(engine.world.eventLog.some((e) => e.type === 'item.crafted')).toBe(true);
+    expect(
+      engine.world.eventLog.some(
+        (e) => e.type === 'action.rejected' && (e.payload as { verb?: unknown }).verb === 'craft',
+      ),
+    ).toBe(false);
+  });
+
+  it('no district at the player\'s zone → no craft entries, no matter the materials held', () => {
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    player.zoneId = 'nowhere-zone';
+    player.custom = { ...player.custom, 'materials.medicine': 5, 'materials.fuel': 5, 'materials.components': 5 };
+    expect(buildCraftActions(engine.world)).toEqual([]);
+  });
+});
+
+describe('buildLeverageActions (leverage menu wire) — guaranteed-success entries only (afford + cooldown)', () => {
+  it('offers nothing with empty leverage, even with a controlling faction present', () => {
+    const engine = makeDivineCryptGame(); // crypt-depths → controllingFaction 'chapel-undead'
+    expect(buildLeverageActions(engine.world)).toEqual([]);
+  });
+
+  it('offers bribe once favor is affordable, targeting the controlling faction — executes without rejection', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'leverage.favor': 20 };
+
+    const actions = buildLeverageActions(engine.world);
+    expect(actions).toContainEqual({
+      verb: 'bribe',
+      targetIds: ['chapel-undead'],
+      label: 'Bribe chapel undead',
+      group: 'leverage',
+    });
+
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const idx = extras.findIndex((a) => a.verb === 'bribe');
+    const baseCount = buildActionList(engine.world).length;
+    const result = handlePlayerInput(engine, String(baseCount + idx + 1), { log: vi.fn(), extras });
+
+    expect(result).toEqual({ kind: 'action', via: 'extra' });
+    expect(engine.world.eventLog.some((e) => e.type === 'leverage.resolved')).toBe(true);
+    expect(
+      engine.world.eventLog.some(
+        (e) => e.type === 'action.rejected' && (e.payload as { verb?: unknown }).verb === 'bribe',
+      ),
+    ).toBe(false);
+  });
+
+  it('offers intimidate once heat is affordable, and petition once legitimacy is affordable', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'leverage.heat': 15, 'leverage.legitimacy': 25 };
+
+    const actions = buildLeverageActions(engine.world);
+    expect(actions).toContainEqual({
+      verb: 'intimidate',
+      targetIds: ['chapel-undead'],
+      label: 'Intimidate chapel undead',
+      group: 'leverage',
+    });
+    expect(actions).toContainEqual({
+      verb: 'petition',
+      targetIds: ['chapel-undead'],
+      label: 'Petition chapel undead',
+      group: 'leverage',
+    });
+  });
+
+  it('bribe drops off the menu the turn after it is used (cooldown gate)', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'leverage.favor': 999 };
+    expect(buildLeverageActions(engine.world).some((a) => a.verb === 'bribe')).toBe(true);
+
+    engine.submitAction('bribe', { targetIds: ['chapel-undead'] });
+    expect(buildLeverageActions(engine.world).some((a) => a.verb === 'bribe')).toBe(false);
+  });
+
+  it('offers seed with NO targetIds once influence is affordable (target faction is optional for seed)', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'leverage.influence': 15 };
+
+    const actions = buildLeverageActions(engine.world);
+    expect(actions).toContainEqual({ verb: 'seed', label: 'Spread a rumor about yourself', group: 'leverage' });
+    const seed = actions.find((a) => a.verb === 'seed');
+    expect(seed?.targetIds).toBeUndefined();
+  });
+
+  it('never offers bribe/intimidate/petition when no district here controls a faction', () => {
+    const engine = createGame(42); // chapel-grounds — no controllingFaction
+    const player = engine.store.state.entities['player'];
+    player.custom = {
+      ...player.custom,
+      'leverage.favor': 999,
+      'leverage.heat': 999,
+      'leverage.legitimacy': 999,
+      'leverage.influence': 999,
+    };
+    const actions = buildLeverageActions(engine.world);
+    expect(actions.some((a) => a.verb === 'bribe' || a.verb === 'intimidate' || a.verb === 'petition')).toBe(false);
+    // seed has no faction requirement, so it still offers.
+    expect(actions.some((a) => a.verb === 'seed')).toBe(true);
+  });
+});
+
+describe('buildOpportunityActions (opportunity menu wire) — accept/complete/abandon, never a terminal status', () => {
+  function testOpportunity(overrides: Partial<OpportunityState> & { id: string }): OpportunityState {
+    return {
+      ...makeOpportunity({
+        kind: 'contract',
+        title: 'Deliver the Relic',
+        description: 'A contract has come up.',
+        objectiveDescription: 'Deliver it.',
+        urgency: 0.5,
+        turnsRemaining: 10,
+        visibility: 'offered',
+        rewards: [],
+        risks: [],
+        genre: 'fantasy',
+        currentTick: 0,
+      }),
+      ...overrides,
+    };
+  }
+
+  it('offers an Accept entry for an available opportunity', () => {
+    const engine = createGame(42);
+    setPersistedOpportunities(engine.world, [testOpportunity({ id: 'opp-1', status: 'available' })]);
+
+    expect(buildOpportunityActions(engine.world)).toEqual([
+      {
+        verb: 'opportunity',
+        targetIds: ['opp-1'],
+        parameters: { op: 'accept' },
+        label: 'Accept: Deliver the Relic',
+        group: 'opportunities',
+      },
+    ]);
+  });
+
+  it('offers Complete AND Abandon entries for an accepted opportunity', () => {
+    const engine = createGame(42);
+    setPersistedOpportunities(engine.world, [testOpportunity({ id: 'opp-2', status: 'accepted' })]);
+
+    expect(buildOpportunityActions(engine.world)).toEqual([
+      {
+        verb: 'opportunity',
+        targetIds: ['opp-2'],
+        parameters: { op: 'complete' },
+        label: 'Complete: Deliver the Relic',
+        group: 'opportunities',
+      },
+      {
+        verb: 'opportunity',
+        targetIds: ['opp-2'],
+        parameters: { op: 'abandon' },
+        label: 'Abandon: Deliver the Relic',
+        group: 'opportunities',
+      },
+    ]);
+  });
+
+  it('offers nothing for any terminal-status opportunity', () => {
+    const engine = createGame(42);
+    const terminalStatuses = ['completed', 'failed', 'expired', 'declined', 'abandoned', 'betrayed'] as const;
+    for (const status of terminalStatuses) {
+      setPersistedOpportunities(engine.world, [testOpportunity({ id: `opp-${status}`, status })]);
+      expect(buildOpportunityActions(engine.world)).toEqual([]);
+    }
+  });
+
+  it('selecting Accept actually EXECUTES the accept transition — never rejected', () => {
+    const engine = createGame(42);
+    setPersistedOpportunities(engine.world, [testOpportunity({ id: 'opp-3', status: 'available' })]);
+
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const idx = extras.findIndex((a) => a.group === 'opportunities');
+    expect(idx).toBeGreaterThanOrEqual(0);
+
+    const baseCount = buildActionList(engine.world).length;
+    const result = handlePlayerInput(engine, String(baseCount + idx + 1), { log: vi.fn(), extras });
+
+    expect(result).toEqual({ kind: 'action', via: 'extra' });
+    expect(engine.world.eventLog.some((e) => e.type === 'opportunity.accepted')).toBe(true);
+    expect(
+      engine.world.eventLog.some(
+        (e) => e.type === 'action.rejected' && (e.payload as { verb?: unknown }).verb === 'opportunity',
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('buildSellActions grouping (F-13255438) — collapse duplicate carried items into one entry (xN)', () => {
+  it('collapses three carried units of the same item into one (x3) entry', () => {
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    engine.store.recordEvent(giveItem(player, 'healing-draught', engine.tick));
+    engine.store.recordEvent(giveItem(player, 'healing-draught', engine.tick));
+    engine.store.recordEvent(giveItem(player, 'healing-draught', engine.tick));
+
+    expect(buildSellActions(engine.world)).toEqual([
+      { verb: 'sell', targetIds: ['healing-draught'], label: 'Sell healing draught (x3)', group: 'trade' },
+    ]);
+  });
+
+  it('a single carried unit has NO count suffix (backward-compatible label, F-6c3e4fde\'s original pin)', () => {
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    engine.store.recordEvent(giveItem(player, 'healing-draught', engine.tick));
+
+    expect(buildSellActions(engine.world)).toEqual([
+      { verb: 'sell', targetIds: ['healing-draught'], label: 'Sell healing draught', group: 'trade' },
+    ]);
+  });
+
+  it('distinct items each get their own entry, counted independently', () => {
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    engine.store.recordEvent(giveItem(player, 'healing-draught', engine.tick));
+    engine.store.recordEvent(giveItem(player, 'healing-draught', engine.tick));
+    engine.store.recordEvent(giveItem(player, 'iron-sword', engine.tick));
+
+    expect(buildSellActions(engine.world)).toEqual([
+      { verb: 'sell', targetIds: ['healing-draught'], label: 'Sell healing draught (x2)', group: 'trade' },
+      { verb: 'sell', targetIds: ['iron-sword'], label: 'Sell iron sword', group: 'trade' },
+    ]);
+  });
+
+  it('one grouped entry still sells exactly ONE unit per selection — the handler is unchanged', () => {
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    engine.store.recordEvent(giveItem(player, 'healing-draught', engine.tick));
+    engine.store.recordEvent(giveItem(player, 'healing-draught', engine.tick));
+
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const idx = extras.findIndex((a) => a.group === 'trade' && a.verb === 'sell');
+    const baseCount = buildActionList(engine.world).length;
+    handlePlayerInput(engine, String(baseCount + idx + 1), { log: vi.fn(), extras });
+
+    const remaining = engine.world.entities['player'].inventory?.filter((i) => i === 'healing-draught') ?? [];
+    expect(remaining).toHaveLength(1); // one sold, one remains — never both
+  });
+
+  it('still skips a contraband item with no active black market (existing gate preserved)', () => {
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    // chapel-grounds' 'sacred' tag modifier starts contraband at 35 (>30,
+    // i.e. black-market-active by default) — push it back down so this test
+    // actually exercises the "no active black market" branch, not the
+    // opposite one.
+    const economy = getDistrictEconomy(engine.world, 'chapel-grounds')!;
+    economy.supplies.contraband.level = 25;
+    engine.store.recordEvent(giveItem(player, 'smuggled-goods', engine.tick));
+    expect(buildSellActions(engine.world)).toEqual([]);
+  });
+});
+
+describe('buildExtraActions wiring order (v2.9) — buy, sell, salvage, craft, leverage, opportunity, then journal/director/debug', () => {
+  it('a fully idle player (no coin/inventory/materials/leverage/opportunities) still only ever sees journal + director', () => {
+    const engine = makeIdleGame();
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    expect(extras).toHaveLength(2);
+    expect(extras[0].group).toBe('journal');
+    expect(extras[1].group).toBe('director');
+  });
+
+  it('every new group appears in the documented order when all six are simultaneously live', () => {
+    const engine = makeDivineCryptGame(); // controllingFaction present for leverage
+    const player = engine.store.state.entities['player'];
+    player.resources[SELL_CURRENCY] = 1_000_000; // buy affords, and funds sell/buy both being non-empty
+    engine.store.recordEvent(giveItem(player, 'healing-draught', engine.tick)); // sell + salvage
+    player.custom = {
+      ...player.custom,
+      'materials.medicine': 5, // craft
+      'leverage.favor': 20, // leverage
+    };
+    setPersistedOpportunities(engine.world, [
+      { ...makeOpportunity({
+        kind: 'contract', title: 'T', description: 'd', objectiveDescription: 'o',
+        urgency: 0.5, turnsRemaining: 10, visibility: 'offered', rewards: [], risks: [],
+        genre: 'fantasy', currentTick: 0,
+      }), id: 'opp-1', status: 'available' },
+    ]); // opportunities
+
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const groupOrder = extras.map((e) => e.group);
+    const firstIndexOf = (g: ExtraAction['group']) => groupOrder.indexOf(g);
+
+    // Only the 9 groups this test seeded/always-on are checked in relative
+    // order — ability/advance are absent for this player (no divine tag, no xp).
+    expect(firstIndexOf('trade')).toBeGreaterThanOrEqual(0); // buy AND/OR sell
+    expect(firstIndexOf('crafting')).toBeGreaterThan(firstIndexOf('trade')); // salvage/craft after trade
+    expect(firstIndexOf('leverage')).toBeGreaterThan(firstIndexOf('crafting'));
+    expect(firstIndexOf('opportunities')).toBeGreaterThan(firstIndexOf('leverage'));
+    expect(firstIndexOf('journal')).toBeGreaterThan(firstIndexOf('opportunities'));
+    expect(firstIndexOf('director')).toBeGreaterThan(firstIndexOf('journal'));
+    // Within 'trade', buy entries (verb 'buy') come before the sell entry (verb 'sell').
+    const tradeVerbs = extras.filter((e) => e.group === 'trade').map((e) => e.verb);
+    const lastBuyIdx = tradeVerbs.lastIndexOf('buy');
+    const firstSellIdx = tradeVerbs.indexOf('sell');
+    if (lastBuyIdx >= 0 && firstSellIdx >= 0) {
+      expect(lastBuyIdx).toBeLessThan(firstSellIdx);
+    }
+  });
+
+  it('a throwing buy/salvage/craft/leverage/opportunity source degrades to one bounded line each, siblings unaffected', () => {
+    // Poison getPersistedOpportunities' own read path indirectly is awkward
+    // (it's a pure function) — instead exercise the SAME guarded-degrade
+    // contract sellActions already has by poisoning player.custom access via
+    // a getter that throws only for buildCraftActions' own read shape. The
+    // simplest, most direct proof: buildExtraActions must never throw even
+    // when engine.world is a minimal stub missing fields the new builders
+    // read, and it must still produce the always-on journal/director entries.
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    Object.defineProperty(player, 'custom', {
+      configurable: true,
+      get(): never {
+        throw new Error('custom read blew up');
+      },
+    });
+    const log = vi.fn();
+
+    let extras: ExtraAction[] = [];
+    expect(() => {
+      extras = buildExtraActions(engine, [combatMasteryTree], { log });
+    }).not.toThrow();
+
+    expect(extras.some((e) => e.group === 'journal')).toBe(true);
+    expect(extras.some((e) => e.group === 'director')).toBe(true);
+    // At least one guarded builder logged its own bounded failure line
+    // instead of the whole menu construction blowing up.
+    expect(log.mock.calls.length).toBeGreaterThan(0);
+    for (const call of log.mock.calls) {
+      expect(String(call[0]).length).toBeLessThan(320);
+    }
   });
 });
