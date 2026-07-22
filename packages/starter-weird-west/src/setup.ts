@@ -16,10 +16,13 @@ import {
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
+  applyStatus,
+  removeStatus,
   buildCombatStack,
   COMBAT_STATES,
   aggressiveProfile,
 } from '@ai-rpg-engine/modules';
+import { createEquipmentCore } from '@ai-rpg-engine/equipment';
 import * as engineModules from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatResourceProfile, IntentProfile } from '@ai-rpg-engine/modules';
 import {
@@ -40,6 +43,8 @@ import {
   weirdWestStatusDefinitions,
   progressionRewards,
   encounterSpawnContent,
+  itemCatalog,
+  weirdWestQuests,
 } from './content.js';
 import { weirdWestMinimalRuleset } from './ruleset.js';
 
@@ -179,6 +184,10 @@ export function createGame(seed?: number): Engine {
     // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
     // tables drive zone-entry spawns via the world tick.
     encounterSpawn: { gameId: manifest.id, ...encounterSpawnContent },
+    // F-ENG005-quest-loop-min / F-c07d6024: the authored quests give the
+    // ride its explicit reason. quest-core validates at construction
+    // (fail loud) and drives the loop off the live event stream.
+    quests: { gameId: manifest.id, quests: weirdWestQuests },
   });
 
   const engine = new Engine({
@@ -200,6 +209,20 @@ export function createGame(seed?: number): Engine {
       }),
       ...worldStack.modules,
       createBossPhaseListener(mesaCrawlerBoss),
+      // F-86b9145d/F-ENG008: the equipment loop — `equip`/`unequip` verbs
+      // over the pack's item catalog. Mirrors starter-gladiator's wiring
+      // exactly: the module (homed in @ai-rpg-engine/equipment) publishes
+      // the catalog under EQUIPMENT_CATALOG_FORMULA and mirrors equipped
+      // items' statModifiers into `equipped-<itemId>` statuses; this pack
+      // injects the status machinery of its engine build (modules' ops).
+      createEquipmentCore({
+        catalog: itemCatalog,
+        statuses: {
+          registerDefinitions: registerStatusDefinitions,
+          apply: applyStatus,
+          remove: removeStatus,
+        },
+      }),
       createAbilityCore({ abilities: weirdWestAbilities, statMapping: { power: 'grit', precision: 'draw-speed', focus: 'lore' } }),
       createAbilityEffects(),
       createAbilityReview(),
