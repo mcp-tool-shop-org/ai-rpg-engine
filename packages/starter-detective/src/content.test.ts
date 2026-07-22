@@ -8,7 +8,7 @@
 // future rename of either side cannot silently introduce a collision.
 
 import { describe, it, expect } from 'vitest';
-import { validateEncounterSpawnContent } from '@ai-rpg-engine/modules';
+import { validateEncounterSpawnContent, getPartyState, isCompanion } from '@ai-rpg-engine/modules';
 import { encounterSpawnContent, zones as authoredZones } from './content.js';
 import type { EntityState } from '@ai-rpg-engine/core';
 import { COMBAT_STATES, applyStatus, hasStatus } from '@ai-rpg-engine/modules';
@@ -23,6 +23,9 @@ import {
   buildCatalog,
   itemCatalog,
   smellingSaltsEffect,
+  player,
+  servant,
+  constable,
 } from './content.js';
 import { detectiveMinimalRuleset } from './ruleset.js';
 
@@ -149,5 +152,43 @@ describe('detective content — item catalog completeness (F-d70c722d)', () => {
     for (const effect of [smellingSaltsEffect]) {
       expect(itemIds.has(effect.itemId), `granted item "${effect.itemId}" missing from itemCatalog`).toBe(true);
     }
+  });
+});
+
+// F-a56f7e5d: the pack already ships the `recruit` verb (companion-core is
+// always included in buildWorldStack), but shipped no recruitable NPC — the
+// verb had no reachable target. Mrs Calloway (servant/witness → scout) and
+// Constable Pike (police → fighter) close the gap.
+describe('detective content — recruitable companions (F-a56f7e5d)', () => {
+  const ROLE_TAGS = ['fighter', 'scout', 'healer', 'diplomat', 'smuggler', 'scholar'];
+
+  it('at least one non-hostile named NPC is recruitable with exactly one bare role tag', () => {
+    const recruitable = [servant, constable].filter((e) => e.tags.includes('recruitable'));
+    expect(recruitable.length).toBeGreaterThan(0);
+    for (const npc of recruitable) {
+      const roleTags = npc.tags.filter((t) => ROLE_TAGS.includes(t));
+      expect(roleTags.length, `${npc.id} should carry exactly one bare role tag, has [${roleTags.join(', ')}]`).toBe(1);
+    }
+  });
+
+  // Constable Pike starts in the same zone as the inspector (crime-scene) —
+  // no movement, and no hostile entity or encounter-spawn table there, so
+  // this is a clean recruit path with zero combat interference.
+  it('a recruitable NPC actually joins the party via the recruit verb', () => {
+    const engine = createGame(1);
+    const events = engine.submitAction('recruit', { targetIds: [constable.id] });
+    expect(events.some((e) => e.type === 'action.rejected')).toBe(false);
+    expect(events.some((e) => e.type === 'companion.recruited')).toBe(true);
+    expect(isCompanion(getPartyState(engine.world), constable.id)).toBe(true);
+  });
+});
+
+// F-92c78519: a modest starting 'coin' resource so the buy verb is reachable
+// at turn 1, not only after the first sale.
+describe('detective content — starting economy (F-92c78519)', () => {
+  it('the authored player carries a modest starting coin balance', () => {
+    expect(player.resources.coin).toBeDefined();
+    expect(player.resources.coin!).toBeGreaterThanOrEqual(20);
+    expect(player.resources.coin!).toBeLessThanOrEqual(40);
   });
 });

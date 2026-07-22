@@ -1,7 +1,7 @@
 // Signal Loss — content definitions
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
+import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition, QuestDefinition } from '@ai-rpg-engine/content-schema';
 import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyReward, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
@@ -34,9 +34,14 @@ export const player: EntityState = {
   name: 'Commander',
   tags: ['player', 'human', 'colonist', 'officer'],
   stats: { engineering: 4, command: 6, awareness: 5 },
-  resources: { hp: 18, maxHp: 18, stamina: 5, power: 60, morale: 20 },
+  // F-92c78519: a modest starting coin balance so `buy` is reachable at
+  // turn 1, not only after the commander's first sale.
+  resources: { hp: 18, maxHp: 18, stamina: 5, power: 60, morale: 20, coin: 30 },
   statuses: [],
-  inventory: [],
+  // F-86b9145d: the armory issues the command tablet to the authored player
+  // too, so the equip loop is reachable without character creation (created
+  // colony-commander characters carry it via the archetype's startingInventory).
+  inventory: ['command-tablet'],
   zoneId: 'command-module',
 };
 
@@ -47,11 +52,20 @@ export const scientist: EntityState = {
   blueprintId: 'scientist',
   type: 'npc',
   name: 'Dr. Vasquez',
-  tags: ['npc', 'colonist', 'scientist', 'female'],
+  tags: ['npc', 'colonist', 'scientist', 'female', 'recruitable', 'scholar'],
   stats: { engineering: 3, command: 2, awareness: 7 },
-  resources: { hp: 12, stamina: 2, power: 60, morale: 16 },
+  // maxHp/maxStamina (F-4b9c5aee): a recruitable companion needs the same
+  // resources shape enemies carry — entityHpRatio/regen both read the max
+  // fields, and without them the entity always reads as full HP regardless
+  // of true damage taken.
+  resources: { hp: 12, maxHp: 12, stamina: 2, maxStamina: 2, power: 60, morale: 16 },
   statuses: [],
   zoneId: 'signal-tower',
+  custom: {
+    companionRole: 'scholar',
+    companionAbilities: 'scholarly-insight,medical-support',
+    personalGoal: 'Understand what the signal is trying to say',
+  },
 };
 
 export const security: EntityState = {
@@ -59,11 +73,17 @@ export const security: EntityState = {
   blueprintId: 'security',
   type: 'npc',
   name: 'Chief Okafor',
-  tags: ['npc', 'colonist', 'security', 'male'],
+  tags: ['npc', 'colonist', 'security', 'male', 'recruitable', 'fighter'],
   stats: { engineering: 5, command: 5, awareness: 4 },
-  resources: { hp: 20, stamina: 4, power: 60, morale: 18 },
+  // maxHp/maxStamina (F-4b9c5aee) — see Dr. Vasquez's comment above.
+  resources: { hp: 20, maxHp: 20, stamina: 4, maxStamina: 4, power: 60, morale: 18 },
   statuses: [],
   zoneId: 'perimeter-fence',
+  custom: {
+    companionRole: 'fighter',
+    companionAbilities: 'intimidation-backup,rumor-suppression',
+    personalGoal: "Keep the colony's perimeter — and its people — intact",
+  },
 };
 
 // --- Enemies ---
@@ -319,6 +339,80 @@ export const scientistDialogue: DialogueDefinition = {
     },
   },
 };
+
+// --- Quests (F-c07d6024, mirroring F-ENG005-quest-loop-min) ---
+//
+// Two authored QuestDefinitions — the explicit reason to push past the
+// command module. Wired via buildWorldStack's `quests` config in setup.ts;
+// quest-core validates them at construction (fail loud) and drives
+// offer → track → complete → reward off the live event stream. Both are
+// completable inside a normal session with the shipped world alone (the
+// signal tower and the resonance entity both stand placed at setup).
+
+export const signalTraceQuest: QuestDefinition = {
+  id: 'signal-trace',
+  name: 'Signal Trace',
+  // Offered the moment the commander steps into hydroponics — the first
+  // stride beyond the command module's walls.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'hydroponics' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'reach-the-tower',
+      name: 'Reach the Signal Tower',
+      description: 'Dr. Vasquez wants eyes on the antenna array in person',
+      objectives: ['Reach the Signal Tower'],
+      triggers: [
+        {
+          event: 'world.zone.entered',
+          condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'signal-tower' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [{ type: 'xp', params: { amount: 15 } }],
+};
+
+export const signalSourceQuest: QuestDefinition = {
+  id: 'the-signal-source',
+  name: 'The Signal Source',
+  // Offered on setting foot in the alien cavern itself — the resonance
+  // entity's ground.
+  triggers: [
+    {
+      event: 'world.zone.entered',
+      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'alien-cavern' } },
+      effect: { type: 'offer', params: {} },
+    },
+  ],
+  stages: [
+    {
+      id: 'silence-the-source',
+      name: 'Silence the Source',
+      description: 'The resonance entity stands between the colony and an answer',
+      objectives: ['Destroy the Resonance Entity'],
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-equals', params: { key: 'entityId', value: 'resonance_entity' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+  ],
+  rewards: [
+    { type: 'xp', params: { amount: 30 } },
+    { type: 'item', params: { itemId: 'signal-booster' } },
+  ],
+};
+
+export const colonyQuests: QuestDefinition[] = [signalTraceQuest, signalSourceQuest];
 
 // --- Districts ---
 
@@ -596,6 +690,9 @@ export const buildCatalog: BuildCatalog = {
       // 'colonist' is the pack-identity tag every ability requirement gates on
       // (T0-tag-gate: a created character without it hides gated abilities).
       startingTags: ['colonist', 'engineer', 'field-engineer'],
+      // F-86b9145d: the equip loop needs a real starting kit — arc-welder
+      // carries no requiredTags, so every field-engineer can equip it.
+      startingInventory: ['arc-welder'],
       progressionTreeId: 'commander',
     },
     {
@@ -604,6 +701,7 @@ export const buildCatalog: BuildCatalog = {
       description: 'Holds the crew together, makes the calls',
       statPriorities: { engineering: 3, command: 7, awareness: 4 },
       startingTags: ['colonist', 'leader', 'colony-commander'],
+      startingInventory: ['command-tablet'],
       progressionTreeId: 'commander',
     },
     {
@@ -612,6 +710,7 @@ export const buildCatalog: BuildCatalog = {
       description: 'Scouts the perimeter, reads the signals',
       statPriorities: { engineering: 4, command: 3, awareness: 7 },
       startingTags: ['colonist', 'scout', 'outrider'],
+      startingInventory: ['diagnostic-scanner'],
       progressionTreeId: 'commander',
     },
   ],

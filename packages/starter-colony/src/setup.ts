@@ -17,8 +17,11 @@ import {
   createAbilityEffects,
   createAbilityReview,
   registerStatusDefinitions,
+  applyStatus,
+  removeStatus,
   aggressiveProfile,
 } from '@ai-rpg-engine/modules';
+import { createEquipmentCore } from '@ai-rpg-engine/equipment';
 import * as engineModules from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatResourceProfile, IntentProfile } from '@ai-rpg-engine/modules';
 import {
@@ -39,6 +42,8 @@ import {
   colonyStatusDefinitions,
   progressionRewards,
   encounterSpawnContent,
+  itemCatalog,
+  colonyQuests,
 } from './content.js';
 import { colonyMinimalRuleset } from './ruleset.js';
 
@@ -172,6 +177,11 @@ export function createGame(seed?: number): Engine {
     // F-ENG005-encounter-spawn-wiring: the authored encounters + per-zone
     // tables drive zone-entry spawns via the world tick.
     encounterSpawn: { gameId: manifest.id, ...encounterSpawnContent },
+    // F-c07d6024-quest-loop-min: the authored quests give the push past the
+    // command module its explicit reason. quest-core validates at
+    // construction (fail loud) and drives offer → track → complete → reward
+    // off the live event stream.
+    quests: { gameId: manifest.id, quests: colonyQuests },
   });
 
   const engine = new Engine({
@@ -193,6 +203,16 @@ export function createGame(seed?: number): Engine {
       }),
       ...worldStack.modules,
       createBossPhaseListener(resonanceBoss),
+      // F-86b9145d: the equip loop — `equip`/`unequip` verbs over the pack's
+      // item catalog, mirroring starter-gladiator's F-ENG008 wiring exactly.
+      createEquipmentCore({
+        catalog: itemCatalog,
+        statuses: {
+          registerDefinitions: registerStatusDefinitions,
+          apply: applyStatus,
+          remove: removeStatus,
+        },
+      }),
       createAbilityCore({ abilities: colonyAbilities, statMapping: { power: 'engineering', precision: 'awareness', focus: 'command' } }),
       createAbilityEffects(),
       createAbilityReview(),
