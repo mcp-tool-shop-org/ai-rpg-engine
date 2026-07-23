@@ -16,7 +16,7 @@
     {
       "stage": "3-mint",
       "ok": true,
-      "note": "tesSUCCESS https://testnet.xrpl.org/transactions/5E791B87FD294CAA714CF8F5424CA5550577284E522B331CB3150A10B6F0BB43"
+      "note": "tesSUCCESS https://testnet.xrpl.org/transactions/6230670517946C0B710E3A7BD360301F62E4662BAE470CC72E80CEAAE1D20D10"
     },
     {
       "stage": "4-mint-verify",
@@ -31,7 +31,7 @@
     {
       "stage": "5b-accept",
       "ok": true,
-      "note": "tesSUCCESS https://testnet.xrpl.org/transactions/6A05C8AEE476BB41F2589AD066F87F6D0FBE6B8DF5FC91F302956A6B591B666E"
+      "note": "tesSUCCESS https://testnet.xrpl.org/transactions/AB474DABD6B63B52E4E9803667490D9CC0CFC539B80A8B31E458CFF6E78091A2"
     },
     {
       "stage": "6-transfer-verify",
@@ -41,7 +41,7 @@
     {
       "stage": "7a-modify",
       "ok": true,
-      "note": "tesSUCCESS https://testnet.xrpl.org/transactions/0ECEB77E4585842DA14C02D66E506B3D79633DED37B790D8DD4E40DEE151F6D9"
+      "note": "tesSUCCESS https://testnet.xrpl.org/transactions/E4EAD436F387A0BC0449D0EF5E372CB2D71304E67E87BA7CB03B354F6E2753A0"
     },
     {
       "stage": "7b-modify-verify",
@@ -51,22 +51,56 @@
     {
       "stage": "8-burn-compensator",
       "ok": true,
-      "note": "tesSUCCESS nftId=001800004995534B67AB8FF600B0F74ADDEF239123F48B79E02B8D4801269B8E"
+      "note": "tesSUCCESS nftId=00180000E31A3BF6CEFDA532E718895E642EA50072DED8952587203001269EB6"
+    },
+    {
+      "stage": "9-reconcile",
+      "ok": true,
+      "note": "PASS — on-ledger account_nfts confirms ownership + relic-version URI"
     }
   ],
   "proofTxids": {
-    "NFTokenMint": "5E791B87FD294CAA714CF8F5424CA5550577284E522B331CB3150A10B6F0BB43",
-    "NFTokenCreateOffer": "8F06D1A6F1A3882D5955B18451FE4E0EF0A39CE5293E8CE96DAC04C54C065B98",
-    "NFTokenAcceptOffer": "6A05C8AEE476BB41F2589AD066F87F6D0FBE6B8DF5FC91F302956A6B591B666E",
-    "NFTokenModify": "0ECEB77E4585842DA14C02D66E506B3D79633DED37B790D8DD4E40DEE151F6D9",
-    "NFTokenBurn": "231D09D29F5C4BD4F76096D1B8E28A8E272DB41B2C60D9FDCDA5199E10EB1914"
+    "NFTokenMint": "6230670517946C0B710E3A7BD360301F62E4662BAE470CC72E80CEAAE1D20D10",
+    "NFTokenCreateOffer": "B761ECC7FEDF11B46309951BF8028C21B8AB5EC4AA981367349E40E44852F814",
+    "NFTokenAcceptOffer": "AB474DABD6B63B52E4E9803667490D9CC0CFC539B80A8B31E458CFF6E78091A2",
+    "NFTokenModify": "E4EAD436F387A0BC0449D0EF5E372CB2D71304E67E87BA7CB03B354F6E2753A0",
+    "NFTokenBurn": "8A2479651C284765439E000F518E39C19D53EF9BE612F8DCC5C188DBD321EEA7"
   },
   "wallets": {
-    "issuer": "rf5nDKf9F8Lhc3bx9hRfZirM1E5aNmq8Mi",
-    "player": "r4me7xwM4B8NYmejwaXy1cmc1HYdJKXo3t"
+    "issuer": "rM6oFLG9zT4VojTQgWYeu5AxksjdCHnhSK",
+    "player": "rEnkRmQhFo1fqaZjXyR7vntXmboCqHBuXZ"
   },
-  "nftId": "001800004995534B67AB8FF600B0F74ADDEF239123F48B79C945DC4901269B8D",
+  "nftId": "00180000E31A3BF6CEFDA532E718895E642EA50072DED8950EA1733101269EB5",
   "uriV1": "ARPG-NFT|GAME:nft-replay|ITEM:cutlass|RELIC:0|TIER:0|V:1",
   "uriV2": "ARPG-NFT|GAME:nft-replay|ITEM:cutlass|RELIC:1|TIER:1|V:1",
+  "reconcile": {
+    "runId": "nft-live-replay",
+    "seed": 0,
+    "playerAddress": "rEnkRmQhFo1fqaZjXyR7vntXmboCqHBuXZ",
+    "issuerAddress": "rM6oFLG9zT4VojTQgWYeu5AxksjdCHnhSK",
+    "settlementsCount": 0,
+    "pendingCount": 0,
+    "txids": [],
+    "resources": [],
+    "memoOk": true,
+    "memoLocalOk": true,
+    "onchainMemoOk": null,
+    "nftChecks": [
+      {
+        "gameItemId": "cutlass",
+        "nftId": "00180000E31A3BF6CEFDA532E718895E642EA50072DED8950EA1733101269EB5",
+        "expectedOwner": "rEnkRmQhFo1fqaZjXyR7vntXmboCqHBuXZ",
+        "ownedOnLedger": true,
+        "expectedUri": "ARPG-NFT|GAME:nft-replay|ITEM:cutlass|RELIC:1|TIER:1|V:1",
+        "ledgerUri": "ARPG-NFT|GAME:nft-replay|ITEM:cutlass|RELIC:1|TIER:1|V:1",
+        "uriOk": true,
+        "ok": true
+      }
+    ],
+    "passed": true,
+    "notes": [
+      "memo: no on-chain memos supplied — external integrity NOT verified; memoOk reflects local consistency only"
+    ]
+  },
   "passed": true
 }

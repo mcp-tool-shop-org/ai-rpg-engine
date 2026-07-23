@@ -27,7 +27,7 @@
 // owned, matching pirate-live-replay.mjs's own precedent.
 
 import { writeFileSync } from 'node:fs';
-import { TestnetTransport, buildItemNFTUri } from '../dist/index.js';
+import { TestnetTransport, buildItemNFTUri, reconcile } from '../dist/index.js';
 
 const EXPLORER = (h) => `https://testnet.xrpl.org/transactions/${h}`;
 const GAME_ID = 'nft-replay';
@@ -109,6 +109,32 @@ async function main() {
     issuerNfts = await transport.accountNfts(issuer.address);
     const burnGone = burn.ok && !issuerNfts.some((n) => n.nftId === mint2.nftId);
     stage('8-burn-compensator', burnGone, `${burn.code} nftId=${mint2.nftId}`);
+
+    console.log('\n=== Stage 9: reconcile() — the EXTERNAL VERIFIER on live on-chain NFT ownership ===');
+    // Feed the shipped pure reconcile() the engine-side NFTokenRef for the
+    // grown gear + the REAL on-ledger truth (account_nfts). A PASS means the
+    // ledger independently confirms the player OWNS the NFT and its on-chain
+    // URI matches the relic version the engine expects — the engine can't fake
+    // either. This is the P4 acceptance: the verifier proven against live data.
+    const ref = {
+      gameItemId: ITEM_ID, nftId: mint.nftId, uri: uriV2, relicVersion: 1,
+      taxon: TAXON, mutable: true, mintTxid: mint.hash, status: 'minted',
+    };
+    const playerNftsNow = await transport.accountNfts(player.address);
+    const ledgerNfts = {};
+    for (const n of playerNftsNow) ledgerNfts[n.nftId] = { owner: player.address, uri: n.uri };
+    const report = reconcile({
+      runId: 'nft-live-replay', seed: 0,
+      mintedInitial: {}, ledgerBalances: {}, lastSettled: {},
+      settlements: [], pending: [],
+      playerAddress: player.address, issuerAddress: issuer.address,
+      nfts: [ref], ledgerNfts,
+    });
+    receipt.reconcile = report;
+    const nftCheck = report.nftChecks?.[0];
+    console.log(`  nftCheck: owned=${nftCheck?.ownedOnLedger} uriOk=${nftCheck?.uriOk} ok=${nftCheck?.ok} | report.passed=${report.passed}`);
+    stage('9-reconcile', report.passed && nftCheck?.ok === true,
+      report.passed ? 'PASS — on-ledger account_nfts confirms ownership + relic-version URI' : 'FAIL');
 
     receipt.passed = receipt.stages.every((s) => s.ok);
   } finally {
