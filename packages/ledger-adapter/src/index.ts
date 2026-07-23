@@ -49,6 +49,12 @@ export {
   settlementMemoPrefix,
 } from './contracts.js';
 
+// Wave-1 domain implementations (transport / state / security / settle).
+export * from './transport/index.js';
+export * from './state/index.js';
+export * from './security/index.js';
+export * from './settle/index.js';
+
 import type { LedgerAdapterConfig } from './contracts.js';
 
 /** Package version — single-sourced for proof packs / receipts. */
