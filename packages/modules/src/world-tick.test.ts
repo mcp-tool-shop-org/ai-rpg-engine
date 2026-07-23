@@ -72,6 +72,7 @@ import {
   getPersistedNpcObligations,
   type LoyaltyBreakpoint,
 } from './npc-agency.js';
+import { MORALE_FLOOR_FALLBACK } from './companion-reactions.js';
 import { getLeverageState } from './player-leverage.js';
 import { createProgressionCore, addCurrency } from './progression-core.js';
 
@@ -1070,6 +1071,54 @@ describe('world-tick — companion reactions (F-b595731a)', () => {
     // The ability-modifier mirror (F-66cd1cd0) recomputed too — an empty
     // party carries no hpRecoveryBonus, so any prior status is cleared.
     expect(engine.world.entities.player.statuses).toHaveLength(0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Morale-floor departure fallback (V3R-PARTY-2b, Phase-9 party-departure
+  // remediation) — the SAME end-to-end pipeline as the 'departure:' test
+  // directly above (removeCompanion, the symmetric tag strip, the
+  // companion.departed event, the ability-modifier mirror), but exercised
+  // with NO breakpoints map at all — the exact call shape
+  // player-leverage.ts's dispatchLeverageCompanionReactions uses in
+  // production, and the shape world-tick.ts's own real call site falls back
+  // to before the sibling living-npcs domain populates npc-agency profiles.
+  // ---------------------------------------------------------------------------
+
+  it('V3R-PARTY-2b: the morale-floor fallback departs a companion end-to-end when NO breakpoints are known at all', () => {
+    const engine = makeCompanionEngine();
+    engine.submitAction('recruit', { targetIds: ['mira'] });
+
+    // Force morale so obligation-betrayed's fighter delta (-8) lands the
+    // projected morale EXACTLY on MORALE_FLOOR_FALLBACK.
+    const lowMorale = { ...getPartyState(engine.world) };
+    lowMorale.companions = lowMorale.companions.map((c) => ({ ...c, morale: MORALE_FLOOR_FALLBACK + 8 }));
+    setPartyState(engine.world, lowMorale);
+
+    // No breakpoints argument at all. Before V3R-PARTY-2b, departure could
+    // NEVER fire from this call shape no matter how low morale fell.
+    applyCompanionReactions(engine, engine.world, ['obligation-betrayed'], 9);
+
+    expect(partyCompanions(engine)).toHaveLength(0); // removeCompanion ran via the fallback
+    expect(engine.world.entities.mira.tags).not.toContain(COMPANION_TAG);
+    expect(engine.world.entities.mira.tags).not.toContain(companionRoleTag('fighter'));
+    const departedEvent = engine.world.eventLog.find((e) => e.type === 'companion.departed');
+    expect(departedEvent).toBeDefined();
+    expect(departedEvent?.payload.npcId).toBe('mira');
+    expect(departedEvent?.payload.reason).toBe('has hit their breaking point');
+  });
+
+  it('V3R-PARTY-2b: one point above the morale floor with no breakpoints known, the companion stays — the fallback does not fire early', () => {
+    const engine = makeCompanionEngine();
+    engine.submitAction('recruit', { targetIds: ['mira'] });
+
+    const lowMorale = { ...getPartyState(engine.world) };
+    lowMorale.companions = lowMorale.companions.map((c) => ({ ...c, morale: MORALE_FLOOR_FALLBACK + 9 }));
+    setPartyState(engine.world, lowMorale);
+
+    applyCompanionReactions(engine, engine.world, ['obligation-betrayed'], 9);
+
+    expect(partyCompanions(engine)).toHaveLength(1);
+    expect(engine.world.eventLog.some((e) => e.type === 'companion.departed')).toBe(false);
   });
 
   it('companion.reaction events carry the trigger, morale delta, and narrator hint for narration/observability', () => {

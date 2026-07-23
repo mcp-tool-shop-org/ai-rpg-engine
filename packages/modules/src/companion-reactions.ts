@@ -222,9 +222,31 @@ function pickHint(role: CompanionRole, delta: number, seed: number): string {
 // --- Core Evaluation ---
 
 /**
+ * Hard morale floor for the breakpoint-independent departure fallback
+ * (V3R-PARTY-2b, Phase-9 party-departure remediation). Well below the
+ * breakpoint path's own 10-threshold, and well below the worst single-
+ * trigger swing in REACTION_TABLE (-10, obligation-betrayed/diplomat) — one
+ * bad event from a healthy baseline can never cross it by accident. See
+ * evaluateCompanionReactions' shouldDepart computation below for the full
+ * gating rule.
+ */
+export const MORALE_FLOOR_FALLBACK = 5;
+
+/**
  * Evaluate companion reactions to a game event trigger.
  * Returns reactions for all active companions, including morale deltas and narrator hints.
  * Checks for departure conditions after applying morale delta.
+ *
+ * Departure has two independent gates (see the `shouldDepart` computation
+ * below): the breakpoint-known path (a hostile/wavering npc-agency
+ * relationship compounds a critical morale into departure), and the
+ * MORALE_FLOOR_FALLBACK path (V3R-PARTY-2b) — when NO breakpoint is known
+ * for a companion at all (either npc-agency hasn't profiled them yet, or the
+ * calling site never forwards a breakpoints map, e.g. player-leverage.ts's
+ * dispatchLeverageCompanionReactions), departure still becomes reachable
+ * once morale bottoms out at the hard floor. Without this fallback,
+ * departure depended SOLELY on npc-agency breakpoints and could never fire
+ * from a call site or a world state that never supplies one.
  *
  * Unknown triggers (e.g. a typo like `'combat-win'` for `'combat-won'`) return
  * `[]` — indistinguishable from "no companion cares" — so they are ALSO
@@ -265,10 +287,20 @@ export function evaluateCompanionReactions(
     // Compute projected morale after delta
     const projectedMorale = Math.max(0, Math.min(100, companion.morale + baseDelta));
 
-    // Check departure conditions
+    // Check departure conditions. Two independent gates:
+    //  - breakpoint-known path (unchanged): a hostile/wavering relationship
+    //    compounds a morale crash (<=10) into departure.
+    //  - MORALE_FLOOR_FALLBACK path (V3R-PARTY-2b): gated tightly to ONLY
+    //    when the breakpoint is genuinely unknown (undefined) — a companion
+    //    with a KNOWN but benign breakpoint ('allied'/'favorable'/
+    //    'compromised') does NOT fall through to the floor; that
+    //    companion's non-departure at low morale remains the existing,
+    //    intentional contract (mirrored by evaluateDepartureRisk's own
+    //    breakpoint-gated bands below).
     const breakpoint = context.breakpoints?.get(companion.npcId);
-    const shouldDepart = projectedMorale <= 10 &&
-      (breakpoint === 'hostile' || breakpoint === 'wavering');
+    const shouldDepart = breakpoint === undefined
+      ? projectedMorale <= MORALE_FLOOR_FALLBACK
+      : projectedMorale <= 10 && (breakpoint === 'hostile' || breakpoint === 'wavering');
 
     const hint = pickHint(companion.role, baseDelta, seed + companion.npcId.length);
 
@@ -283,7 +315,9 @@ export function evaluateCompanionReactions(
       reaction.departure = true;
       reaction.departureReason = breakpoint === 'hostile'
         ? 'lost all faith in you'
-        : 'can no longer follow this path';
+        : breakpoint === 'wavering'
+          ? 'can no longer follow this path'
+          : 'has hit their breaking point';
     }
 
     reactions.push(reaction);

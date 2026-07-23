@@ -393,6 +393,85 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
     expect(report).not.toContain('Departure risk');
   });
 
+  // F-V3R-PARTY-1 (Phase-9 party-departure remediation): the PARTY section
+  // used to hardcode formatPartyForDirector(party, [], ...) — Breakpoint
+  // always read 'unknown' and goals never rendered, even in a session where
+  // npc-agency HAD already profiled the companion. Real persisted profiles
+  // (world.modules['npc-agency'].profiles) now feed it, and the resolved
+  // breakpoint now flows into evaluateDepartureRisk too — contrast this
+  // 'sable' fixture (morale 8, same as the no-breakpoint test above) against
+  // that one: identical morale, but a known 'wavering' breakpoint now lifts
+  // the assessment from 'medium' to 'high', the band that section could
+  // never reach before this fix.
+  it('F-V3R-PARTY-1: PARTY renders a real Breakpoint + goals once npc-agency has profiled the companion', () => {
+    const world = bareWorld();
+    world.modules['companion-core'] = {
+      companions: [
+        { npcId: 'sable', role: 'diplomat', joinedAtTick: 0, abilityTags: [], morale: 8, active: true },
+      ],
+    };
+    world.modules['npc-agency'] = {
+      profiles: [
+        {
+          npcId: 'sable',
+          name: 'Sable',
+          factionId: null,
+          goals: [{ id: 'g1', label: 'Find her brother', priority: 0.8, verb: 'bargain', reason: 'test fixture' }],
+          relationship: { trust: -20, fear: 10, greed: 0, loyalty: 15 },
+          breakpoint: 'wavering',
+          dominantAxis: 'trust',
+          leverageAngle: 'test',
+          knownRumors: [],
+          underPressure: false,
+        },
+      ],
+    };
+
+    const report = renderDirectorLedger(fakeEngine(world));
+
+    expect(report).toContain('Breakpoint: wavering');
+    expect(report).toContain('    Goals: Find her brother (0.8)');
+    // morale 8 (<=10) + wavering breakpoint → evaluateDepartureRisk's 'high'
+    // band, previously unreachable from this section.
+    expect(report).toContain('Departure risk: high');
+  });
+
+  // A companion with NO matching npc-agency profile still degrades exactly
+  // as before (F-834d0485's original contract) — the fix does not require
+  // every companion to be profiled, it just stops hardcoding [] for ALL of
+  // them.
+  it('F-V3R-PARTY-1: a companion absent from npc-agency profiles still degrades to "unknown" (non-regression)', () => {
+    const world = bareWorld();
+    world.modules['companion-core'] = {
+      companions: [
+        { npcId: 'sable', role: 'diplomat', joinedAtTick: 0, abilityTags: [], morale: 70, active: true },
+        { npcId: 'unprofiled', role: 'fighter', joinedAtTick: 0, abilityTags: [], morale: 70, active: true },
+      ],
+    };
+    world.modules['npc-agency'] = {
+      profiles: [
+        {
+          npcId: 'sable',
+          name: 'Sable',
+          factionId: null,
+          goals: [],
+          relationship: { trust: 0, fear: 0, greed: 0, loyalty: 0 },
+          breakpoint: 'allied',
+          dominantAxis: 'trust',
+          leverageAngle: 'test',
+          knownRumors: [],
+          underPressure: false,
+        },
+      ],
+    };
+
+    const report = renderDirectorLedger(fakeEngine(world));
+
+    expect(report).toContain('Breakpoint: allied');
+    expect(report).toContain('unprofiled (unprofiled) — Fighter');
+    expect(report).toContain('Breakpoint: unknown'); // 'unprofiled' has no npc-agency entry
+  });
+
   // F-ec5c7354/F-efdb93d1: EQUIPMENT — the section this file's own header
   // used to name as designed-but-absent, now wired via the SAME
   // formula-registry transport turns.ts uses for the ability catalog.
