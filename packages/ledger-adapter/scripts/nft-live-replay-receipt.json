@@ -1,0 +1,72 @@
+{
+  "network": "testnet",
+  "gameId": "nft-replay",
+  "itemId": "cutlass",
+  "stages": [
+    {
+      "stage": "1-connect",
+      "ok": true,
+      "note": "connected to testnet"
+    },
+    {
+      "stage": "2-fund",
+      "ok": true,
+      "note": "both funded"
+    },
+    {
+      "stage": "3-mint",
+      "ok": true,
+      "note": "tesSUCCESS https://testnet.xrpl.org/transactions/5E791B87FD294CAA714CF8F5424CA5550577284E522B331CB3150A10B6F0BB43"
+    },
+    {
+      "stage": "4-mint-verify",
+      "ok": true,
+      "note": "flags=24 mutable=true transferable=true"
+    },
+    {
+      "stage": "5a-offer",
+      "ok": true,
+      "note": "tesSUCCESS"
+    },
+    {
+      "stage": "5b-accept",
+      "ok": true,
+      "note": "tesSUCCESS https://testnet.xrpl.org/transactions/6A05C8AEE476BB41F2589AD066F87F6D0FBE6B8DF5FC91F302956A6B591B666E"
+    },
+    {
+      "stage": "6-transfer-verify",
+      "ok": true,
+      "note": "playerOwns=true issuerGone=true"
+    },
+    {
+      "stage": "7a-modify",
+      "ok": true,
+      "note": "tesSUCCESS https://testnet.xrpl.org/transactions/0ECEB77E4585842DA14C02D66E506B3D79633DED37B790D8DD4E40DEE151F6D9"
+    },
+    {
+      "stage": "7b-modify-verify",
+      "ok": true,
+      "note": "sameNftId=true uriNow=\"ARPG-NFT|GAME:nft-replay|ITEM:cutlass|RELIC:1|TIER:1|V:1\""
+    },
+    {
+      "stage": "8-burn-compensator",
+      "ok": true,
+      "note": "tesSUCCESS nftId=001800004995534B67AB8FF600B0F74ADDEF239123F48B79E02B8D4801269B8E"
+    }
+  ],
+  "proofTxids": {
+    "NFTokenMint": "5E791B87FD294CAA714CF8F5424CA5550577284E522B331CB3150A10B6F0BB43",
+    "NFTokenCreateOffer": "8F06D1A6F1A3882D5955B18451FE4E0EF0A39CE5293E8CE96DAC04C54C065B98",
+    "NFTokenAcceptOffer": "6A05C8AEE476BB41F2589AD066F87F6D0FBE6B8DF5FC91F302956A6B591B666E",
+    "NFTokenModify": "0ECEB77E4585842DA14C02D66E506B3D79633DED37B790D8DD4E40DEE151F6D9",
+    "NFTokenBurn": "231D09D29F5C4BD4F76096D1B8E28A8E272DB41B2C60D9FDCDA5199E10EB1914"
+  },
+  "wallets": {
+    "issuer": "rf5nDKf9F8Lhc3bx9hRfZirM1E5aNmq8Mi",
+    "player": "r4me7xwM4B8NYmejwaXy1cmc1HYdJKXo3t"
+  },
+  "nftId": "001800004995534B67AB8FF600B0F74ADDEF239123F48B79C945DC4901269B8D",
+  "uriV1": "ARPG-NFT|GAME:nft-replay|ITEM:cutlass|RELIC:0|TIER:0|V:1",
+  "uriV2": "ARPG-NFT|GAME:nft-replay|ITEM:cutlass|RELIC:1|TIER:1|V:1",
+  "passed": true
+}

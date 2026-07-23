@@ -6,6 +6,11 @@
 // encode/decode round-trip, tesSUCCESS/tec* result-mapping, and the CRITICAL
 // escrow FinishAfter wait discipline (via fake timers — no real sleeping).
 //
+// Also covers the P2 NFT operations (nftMint/nftBurn/nftModify/
+// nftCreateSellOffer/nftAcceptSellOffer/accountNfts) under the SAME offline
+// discipline — the submitted tx SHAPE and the TxResult/NFTMintResult/
+// NFTOfferResult mapping, never the network.
+//
 // The LIVE, on-chain acceptance lives in ../../scripts/live-replay.mjs — a
 // separate, deliberately-not-CI script (per the task: CI must never hit
 // testnet from the unit suite).
@@ -52,12 +57,21 @@ function createMockClient(overrides: Record<string, unknown> = {}): XrplClientLi
   return { ...base, ...overrides } as unknown as XrplClientLike;
 }
 
-/** A `submitAndWait` resolved value shaped like a real xrpl.js `TxResponse`. */
-function fakeTxResponse(opts: { hash?: string; transactionResult?: string; sequence?: number } = {}) {
+/** A `submitAndWait` resolved value shaped like a real xrpl.js `TxResponse`.
+ *  `affectedNodes` defaults to `[]` (every existing fungible-path caller);
+ *  the NFT `nftCreateSellOffer` tests pass a hand-built `CreatedNode` to
+ *  exercise the offerIndex meta-scan. */
+function fakeTxResponse(
+  opts: { hash?: string; transactionResult?: string; sequence?: number; affectedNodes?: unknown[] } = {},
+) {
   return {
     result: {
       hash: opts.hash ?? 'DEADBEEF00000000000000000000000000000000000000000000000000000000',
-      meta: { TransactionResult: opts.transactionResult ?? 'tesSUCCESS', TransactionIndex: 0, AffectedNodes: [] },
+      meta: {
+        TransactionResult: opts.transactionResult ?? 'tesSUCCESS',
+        TransactionIndex: 0,
+        AffectedNodes: opts.affectedNodes ?? [],
+      },
       tx_json: { Sequence: opts.sequence },
     },
   };
@@ -365,5 +379,355 @@ describe('accountLines', () => {
     const lines = await transport.accountLines(MERCHANT_ADDRESS);
 
     expect(lines).toEqual([{ account: ISSUER_ADDRESS, currency: 'COI', balance: '250', limit: '999999999' }]);
+  });
+});
+
+// ── NFT operations (P2 — contracts.ts's NFTTransport, offline mock only) ──
+
+describe('NFT operations', () => {
+  const NFT_ID = 'NFTOKEN_TEST_ID_001';
+  const NFT_TAXON = 42;
+
+  // ── nftMint ──────────────────────────────────────────────────────────────
+
+  describe('nftMint', () => {
+    it('submits NFTokenMint with Account/NFTokenTaxon/hex-encoded URI, Flags=0 for {transferable:false, mutable:false}', async () => {
+      const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ hash: 'MINT_HASH' }));
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+
+      await transport.nftMint(KNOWN_SEED, 'ipfs://example', NFT_TAXON, { transferable: false, mutable: false });
+
+      const [sentTx] = submitAndWait.mock.calls[0] as [Record<string, unknown>];
+      expect(sentTx.TransactionType).toBe('NFTokenMint');
+      expect(sentTx.Account).toBe(KNOWN_ADDRESS);
+      expect(sentTx.NFTokenTaxon).toBe(NFT_TAXON);
+      expect(sentTx.Flags).toBe(0);
+      expect(Buffer.from(sentTx.URI as string, 'hex').toString('utf8')).toBe('ipfs://example');
+      expect(sentTx).not.toHaveProperty('TransferFee');
+    });
+
+    it('sets Flags to 8 (transferable only), 16 (mutable only), and 24 (both)', async () => {
+      const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse());
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+
+      await transport.nftMint(KNOWN_SEED, 'ipfs://a', NFT_TAXON, { transferable: true, mutable: false });
+      await transport.nftMint(KNOWN_SEED, 'ipfs://b', NFT_TAXON, { transferable: false, mutable: true });
+      await transport.nftMint(KNOWN_SEED, 'ipfs://c', NFT_TAXON, { transferable: true, mutable: true });
+
+      const flags = submitAndWait.mock.calls.map((call) => (call[0] as Record<string, unknown>).Flags);
+      expect(flags).toEqual([8, 16, 24]);
+    });
+
+    it('includes TransferFee only when greater than 0', async () => {
+      const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse());
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+
+      await transport.nftMint(KNOWN_SEED, 'ipfs://a', NFT_TAXON, { transferable: true, mutable: true }, 5000);
+      const [sentTxWithFee] = submitAndWait.mock.calls[0] as [Record<string, unknown>];
+      expect(sentTxWithFee.TransferFee).toBe(5000);
+
+      await transport.nftMint(KNOWN_SEED, 'ipfs://a', NFT_TAXON, { transferable: true, mutable: true }, 0);
+      const [sentTxZeroFee] = submitAndWait.mock.calls[1] as [Record<string, unknown>];
+      expect(sentTxZeroFee).not.toHaveProperty('TransferFee');
+    });
+
+    it('maps tesSUCCESS to ok:true (nftId omitted rather than faked when getNFTokenID cannot parse the mock meta)', async () => {
+      const submitAndWait = vi
+        .fn()
+        .mockResolvedValue(fakeTxResponse({ hash: 'MINT_OK', transactionResult: 'tesSUCCESS' }));
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+
+      const result = await transport.nftMint(KNOWN_SEED, 'ipfs://a', NFT_TAXON, { transferable: true, mutable: true });
+
+      // getNFTokenID's own meta-parsing is proven by the coordinator's live
+      // replay (P0) — against this hand-built fixture meta it legitimately
+      // finds nothing, and `nftId` is correctly left undefined rather than
+      // asserted to a specific value here.
+      expect(result.ok).toBe(true);
+      expect(result.hash).toBe('MINT_OK');
+      expect(result.code).toBe('tesSUCCESS');
+    });
+
+    it('maps a tec* engine result to ok:false WITHOUT throwing, and never fabricates an nftId', async () => {
+      const submitAndWait = vi
+        .fn()
+        .mockResolvedValue(fakeTxResponse({ hash: 'MINT_FAIL', transactionResult: 'tecINSUFFICIENT_RESERVE' }));
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+
+      const result = await transport.nftMint(KNOWN_SEED, 'ipfs://a', NFT_TAXON, { transferable: true, mutable: true });
+
+      expect(result).toMatchObject({ ok: false, code: 'tecINSUFFICIENT_RESERVE', hash: 'MINT_FAIL' });
+      expect(result.nftId).toBeUndefined();
+    });
+
+    it('a network/timeout failure degrades to ok:false with error set, never throwing', async () => {
+      const submitAndWait = vi.fn().mockRejectedValue(new Error('WebSocket closed'));
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+
+      const result = await transport.nftMint(KNOWN_SEED, 'ipfs://a', NFT_TAXON, { transferable: true, mutable: true });
+
+      expect(result.ok).toBe(false);
+      expect(result.hash).toBe('');
+      expect(result.error).toMatch(/WebSocket closed/);
+      expect(result.nftId).toBeUndefined();
+    });
+  });
+
+  // ── nftBurn ──────────────────────────────────────────────────────────────
+
+  describe('nftBurn', () => {
+    it('omits Owner when no owner is given (signer holds the token)', async () => {
+      const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ hash: 'BURN_HASH' }));
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+
+      await transport.nftBurn(KNOWN_SEED, NFT_ID);
+
+      const [sentTx] = submitAndWait.mock.calls[0] as [Record<string, unknown>];
+      expect(sentTx).toMatchObject({ TransactionType: 'NFTokenBurn', Account: KNOWN_ADDRESS, NFTokenID: NFT_ID });
+      expect(sentTx).not.toHaveProperty('Owner');
+    });
+
+    it('includes Owner when burning a token the signer does not currently hold', async () => {
+      const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse());
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+
+      await transport.nftBurn(KNOWN_SEED, NFT_ID, ISSUER_ADDRESS);
+
+      const [sentTx] = submitAndWait.mock.calls[0] as [Record<string, unknown>];
+      expect(sentTx.Owner).toBe(ISSUER_ADDRESS);
+    });
+
+    it('omits Owner when the given owner equals the signer, even though passed explicitly', async () => {
+      const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse());
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+
+      await transport.nftBurn(KNOWN_SEED, NFT_ID, KNOWN_ADDRESS);
+
+      const [sentTx] = submitAndWait.mock.calls[0] as [Record<string, unknown>];
+      expect(sentTx).not.toHaveProperty('Owner');
+    });
+
+    it('maps a tec* result to ok:false without throwing', async () => {
+      const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ transactionResult: 'tecNO_ENTRY' }));
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+
+      const result = await transport.nftBurn(KNOWN_SEED, NFT_ID);
+
+      expect(result).toMatchObject({ ok: false, code: 'tecNO_ENTRY' });
+    });
+  });
+
+  // ── nftModify ────────────────────────────────────────────────────────────
+
+  describe('nftModify', () => {
+    it('hex-encodes the URI and omits Owner when the owner equals the signer', async () => {
+      const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ hash: 'MODIFY_HASH' }));
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+
+      await transport.nftModify(KNOWN_SEED, NFT_ID, 'ipfs://grown', KNOWN_ADDRESS);
+
+      const [sentTx] = submitAndWait.mock.calls[0] as [Record<string, unknown>];
+      expect(sentTx.TransactionType).toBe('NFTokenModify');
+      expect(sentTx.NFTokenID).toBe(NFT_ID);
+      expect(Buffer.from(sentTx.URI as string, 'hex').toString('utf8')).toBe('ipfs://grown');
+      expect(sentTx).not.toHaveProperty('Owner');
+    });
+
+    it('includes Owner when the current holder differs from the signer (issuer modifying a player-owned NFT)', async () => {
+      const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse());
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+
+      await transport.nftModify(KNOWN_SEED, NFT_ID, 'ipfs://grown', MERCHANT_ADDRESS);
+
+      const [sentTx] = submitAndWait.mock.calls[0] as [Record<string, unknown>];
+      expect(sentTx.Owner).toBe(MERCHANT_ADDRESS);
+    });
+
+    it('maps a tec* result (not-issuer / not-mutable) to ok:false without throwing', async () => {
+      const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ transactionResult: 'tecNO_PERMISSION' }));
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+
+      const result = await transport.nftModify(KNOWN_SEED, NFT_ID, 'ipfs://grown', KNOWN_ADDRESS);
+
+      expect(result).toMatchObject({ ok: false, code: 'tecNO_PERMISSION' });
+    });
+  });
+
+  // ── nftCreateSellOffer ───────────────────────────────────────────────────
+
+  describe('nftCreateSellOffer', () => {
+    it('submits NFTokenCreateOffer with tfSellNFToken (Flags=1) and no Destination when undirected', async () => {
+      const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ hash: 'OFFER_HASH' }));
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+
+      await transport.nftCreateSellOffer(KNOWN_SEED, NFT_ID, '0');
+
+      const [sentTx] = submitAndWait.mock.calls[0] as [Record<string, unknown>];
+      expect(sentTx).toMatchObject({
+        TransactionType: 'NFTokenCreateOffer',
+        Account: KNOWN_ADDRESS,
+        NFTokenID: NFT_ID,
+        Amount: '0',
+        Flags: 1,
+      });
+      expect(sentTx).not.toHaveProperty('Destination');
+    });
+
+    it('includes Destination for a directed (gift/transfer) sell offer', async () => {
+      const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse());
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+
+      await transport.nftCreateSellOffer(KNOWN_SEED, NFT_ID, '0', MERCHANT_ADDRESS);
+
+      const [sentTx] = submitAndWait.mock.calls[0] as [Record<string, unknown>];
+      expect(sentTx.Destination).toBe(MERCHANT_ADDRESS);
+    });
+
+    it('extracts offerIndex from the validated tx meta AffectedNodes CreatedNode, without a fallback read', async () => {
+      const submitAndWait = vi.fn().mockResolvedValue(
+        fakeTxResponse({
+          hash: 'OFFER_HASH',
+          affectedNodes: [
+            {
+              CreatedNode: {
+                LedgerEntryType: 'NFTokenOffer',
+                LedgerIndex: 'ABCD00000000000000000000000000000000000000000000000000001234',
+                NewFields: {},
+              },
+            },
+          ],
+        }),
+      );
+      const request = vi.fn();
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait, request }));
+
+      const result = await transport.nftCreateSellOffer(KNOWN_SEED, NFT_ID, '0', MERCHANT_ADDRESS);
+
+      expect(result).toMatchObject({
+        ok: true,
+        offerIndex: 'ABCD00000000000000000000000000000000000000000000000000001234',
+      });
+      expect(request).not.toHaveBeenCalled();
+    });
+
+    it('ignores a CreatedNode for an unrelated ledger entry type', async () => {
+      const submitAndWait = vi.fn().mockResolvedValue(
+        fakeTxResponse({
+          affectedNodes: [{ CreatedNode: { LedgerEntryType: 'RippleState', LedgerIndex: 'NOT_AN_OFFER' } }],
+        }),
+      );
+      const request = vi.fn().mockResolvedValue({ result: { offers: [], nft_id: NFT_ID } });
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait, request }));
+
+      const result = await transport.nftCreateSellOffer(KNOWN_SEED, NFT_ID, '0');
+
+      expect(result.ok).toBe(true);
+      expect(result.offerIndex).toBeUndefined();
+      expect(request).toHaveBeenCalledWith({ command: 'nft_sell_offers', nft_id: NFT_ID });
+    });
+
+    it('falls back to nft_sell_offers when the meta scan finds no CreatedNode', async () => {
+      const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ hash: 'OFFER_HASH', affectedNodes: [] }));
+      const request = vi.fn().mockResolvedValue({
+        result: {
+          offers: [{ nft_offer_index: 'FALLBACK_INDEX', amount: '0', flags: 1, owner: KNOWN_ADDRESS }],
+          nft_id: NFT_ID,
+        },
+      });
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait, request }));
+
+      const result = await transport.nftCreateSellOffer(KNOWN_SEED, NFT_ID, '0');
+
+      expect(result).toMatchObject({ ok: true, offerIndex: 'FALLBACK_INDEX' });
+      expect(request).toHaveBeenCalledWith({ command: 'nft_sell_offers', nft_id: NFT_ID });
+    });
+
+    it('maps a tec* result to ok:false without throwing, and never attempts the meta scan / fallback read', async () => {
+      const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ transactionResult: 'tecNO_PERMISSION' }));
+      const request = vi.fn();
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait, request }));
+
+      const result = await transport.nftCreateSellOffer(KNOWN_SEED, NFT_ID, '0');
+
+      expect(result).toMatchObject({ ok: false, code: 'tecNO_PERMISSION' });
+      expect(result.offerIndex).toBeUndefined();
+      expect(request).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── nftAcceptSellOffer ───────────────────────────────────────────────────
+
+  describe('nftAcceptSellOffer', () => {
+    it('submits NFTokenAcceptOffer with NFTokenSellOffer set to the given offerIndex', async () => {
+      const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ hash: 'ACCEPT_HASH' }));
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+
+      await transport.nftAcceptSellOffer(KNOWN_SEED, 'OFFER_INDEX_123');
+
+      const [sentTx] = submitAndWait.mock.calls[0] as [Record<string, unknown>];
+      expect(sentTx).toMatchObject({
+        TransactionType: 'NFTokenAcceptOffer',
+        Account: KNOWN_ADDRESS,
+        NFTokenSellOffer: 'OFFER_INDEX_123',
+      });
+    });
+
+    it('maps a tec* result to ok:false without throwing', async () => {
+      const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ transactionResult: 'tecOBJECT_NOT_FOUND' }));
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+
+      const result = await transport.nftAcceptSellOffer(KNOWN_SEED, 'OFFER_INDEX_123');
+
+      expect(result).toMatchObject({ ok: false, code: 'tecOBJECT_NOT_FOUND' });
+    });
+  });
+
+  // ── accountNfts ──────────────────────────────────────────────────────────
+
+  describe('accountNfts', () => {
+    it('maps account_nfts entries to NFTInfo, hex-decoding the URI', async () => {
+      const uriHex = Buffer.from('ipfs://cutlass', 'utf8').toString('hex').toUpperCase();
+      const request = vi.fn().mockResolvedValue({
+        result: {
+          account: KNOWN_ADDRESS,
+          account_nfts: [
+            { NFTokenID: NFT_ID, NFTokenTaxon: NFT_TAXON, Issuer: ISSUER_ADDRESS, Flags: 24, URI: uriHex, nft_serial: 1 },
+          ],
+        },
+      });
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ request }));
+
+      const nfts = await transport.accountNfts(KNOWN_ADDRESS);
+
+      expect(nfts).toEqual([{ nftId: NFT_ID, uri: 'ipfs://cutlass', taxon: NFT_TAXON, issuer: ISSUER_ADDRESS, flags: 24 }]);
+      expect(request).toHaveBeenCalledWith({
+        command: 'account_nfts',
+        account: KNOWN_ADDRESS,
+        ledger_index: 'validated',
+      });
+    });
+
+    it('maps a missing URI to an empty string rather than throwing', async () => {
+      const request = vi.fn().mockResolvedValue({
+        result: {
+          account: KNOWN_ADDRESS,
+          account_nfts: [{ NFTokenID: NFT_ID, NFTokenTaxon: NFT_TAXON, Issuer: ISSUER_ADDRESS, Flags: 8, nft_serial: 2 }],
+        },
+      });
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ request }));
+
+      const nfts = await transport.accountNfts(KNOWN_ADDRESS);
+
+      expect(nfts).toEqual([{ nftId: NFT_ID, uri: '', taxon: NFT_TAXON, issuer: ISSUER_ADDRESS, flags: 8 }]);
+    });
+
+    it('returns an empty array when the address owns no NFTs', async () => {
+      const request = vi.fn().mockResolvedValue({ result: { account: KNOWN_ADDRESS, account_nfts: [] } });
+      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ request }));
+
+      const nfts = await transport.accountNfts(KNOWN_ADDRESS);
+
+      expect(nfts).toEqual([]);
+    });
   });
 });
