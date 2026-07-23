@@ -35,7 +35,7 @@ Il s’agit d’un **moteur de composition**, et non d’un jeu fini. Les 10 mon
 
 ---
 
-## État actuel (version 3.0.0)
+## État actuel (v3.1.0)
 
 **Ce qui fonctionne et a été testé :**
 
@@ -73,13 +73,13 @@ Il s’agit d’un **moteur de composition**, et non d’un jeu fini. Les 10 mon
 *   Modèle initial publié sur npm (`@ai-rpg-engine/starter-template`).
 *   Suite de tests complète : **5494 tests** (déterministe lors d’exécutions répétées ; les fichiers de test sont vérifiés par type dans CI ; le seuil de couverture est appliqué).
 
-**Ce qui est imparfait ou incomplet :**
-*   L’environnement de création d’IA (couche Ollama) est moins testé que le moteur de simulation et nécessite un démon Ollama local ; il est entièrement facultatif — le moteur et la boucle `run` n’ont besoin d’aucun réseau.
-*   La pile de narration/audio génère des commandes audio déterministes, mais il n’y a **pas de module audio final** — rien ne produit de son ; les commandes servent d’interface d’intégration pour une interface graphique ou un composant web.
-*   Le mode multijoueur (deux joueurs humains partageant le même monde) n’est **pas** implémenté ; il s’agit d’une couche réseau, délibérément exclue du champ d’application ; les profils actuels sont conçus pour un seul contrôleur.
-*   `replay --replay` restaure la sauvegarde au lieu de relancer la simulation — et après la version 2.9, c’est la **solution** retenue, pas une simple option : `Engine.serialize()` est déjà un instantané complet et éprouvé de l’état, tandis qu’une nouvelle simulation devrait suivre l’évolution du monde/l’état des rencontres qui se déroulent en dehors du journal d’événements. La version 2.9 propose plusieurs emplacements de sauvegarde sur ce chemin de restauration validé ; une véritable resimulation basée sur les événements n’est pas prévue.
-*   Quelques limites de la version 3.0 subsistent : l’**approvisionnement initial** du district est toujours basé sur la valeur par défaut universelle plutôt que sur `GENRE_SUPPLY_DEFAULTS` pour chaque genre (les articles et recettes achetables sont spécifiques à chaque genre — l’approvisionnement sera introduit dans la version 3.1, les spécifications étant disponibles) ; aucun auteur de départ ne crée une recette de *réparation* spécifique au genre (la réparation fonctionne partout, mais sans saveur particulière pour chaque genre) ; et deux des vingt-et-un sous-verbes sociaux (`deny`, `bury-scandal`) nécessitent une dimension d’appariement cible avant qu’ils n’apparaissent dans le menu.
-*   La documentation est complète, mais toutes les pages du manuel ne reflètent pas les dernières API.
+**Ce qui est encore imparfait ou incomplet :**
+- Le studio de création d’univers par IA (couche Ollama) a été moins testé que le noyau de simulation et nécessite un démon Ollama local ; il est entièrement facultatif — le moteur et la boucle `run` n’ont besoin d’aucune connexion réseau.
+- La pile de narration/audio génère des commandes audio déterministes, mais il n’y a **pas de module audio final** — rien ne produit de son ; les commandes servent d’interface d’intégration pour une interface graphique ou un composant web.
+- Le mode multijoueur (deux joueurs humains partageant le même monde) n’est **pas** implémenté ; il s’agit d’une couche réseau, et ce n’est pas dans le champ d’application actuel ; les profils actuels sont conçus pour un seul contrôleur.
+- `replay --replay` restaure la sauvegarde au lieu de relancer la simulation — et après la version 2.9, c’est la **direction choisie**, et non une simple remise à plus tard : `Engine.serialize()` est déjà une méthode éprouvée pour créer un instantané complet de l’état actuel, tandis qu’une nouvelle simulation devrait suivre l’évolution du monde/l’état des événements qui se déroulent en dehors du journal d’actions. La version 2.9 propose plusieurs emplacements de sauvegarde avec cette méthode de restauration éprouvée ; une véritable resimulation basée sur les événements n’est pas prévue.
+- La version 3.1 a supprimé les trois limites définies dans la version 3.0 — le **niveau initial** des ressources du genre, les recettes de *réparation* spécifiques au genre et l’interface du menu `deny` / `bury-scandal`. Toutes ces fonctionnalités sont désormais disponibles. La seule limite restante est que les nouvelles recettes de réparation du genre incluent un `statDelta` défini (un petit bonus de statistiques) qui n’est pas encore appliqué par `resolveRepair` — la *réparation* restaure, `modify` améliore — donc la réparation en tant qu’amélioration est marquée dans le code et **reportée aux versions 3.2/3.3** en tant que fonctionnalité délibérée, et non comme un champ inerte qui ne serait pas utilisé. De plus, `obligation-exists` est livré avec une démonstration (Frère Aldric) ; cette condition est active pour permettre aux créateurs de contenu d’ajouter davantage de dialogues.
+- La documentation est complète, mais toutes les pages du manuel ne reflètent pas les dernières API.
 
 ---
 

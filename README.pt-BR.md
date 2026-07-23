@@ -35,7 +35,7 @@ Este é um **motor de composição**, não um jogo completo. Os 10 mundos inicia
 
 ---
 
-## Estado atual (versão 3.0.0)
+## Estado atual (v3.1.0)
 
 **O que funciona e foi testado:**
 
@@ -73,12 +73,12 @@ Este é um **motor de composição**, não um jogo completo. Os 10 mundos inicia
 *   Modelo inicial publicado no npm (`@ai-rpg-engine/starter-template`).
 *   Conjunto de testes completo: **5494 testes** (determinístico em execuções repetidas; arquivos de teste verificados por tipo no CI; reforço da cobertura).
 
-**O que está incompleto ou em desenvolvimento:**
-- O estúdio de criação de mundos com IA (camada Ollama) é testado de forma menos abrangente do que o núcleo da simulação e precisa de um daemon Ollama local; é totalmente opcional — o motor e o loop `run` não precisam de rede.
-- A pilha de narração/áudio cria comandos de áudio determinísticos, mas não há **nenhum backend de áudio terminal** — nada reproduz som; os comandos são um ponto de integração para uma interface gráfica/incorporação web.
+**O que está incompleto ou precisa de melhorias:**
+- O estúdio de criação de mundos com IA (camada Ollama) foi testado menos do que o núcleo da simulação e requer um daemon Ollama local; é totalmente opcional — o motor e o ciclo `run` não precisam de rede.
+- A pilha de narração/áudio gera comandos de áudio determinísticos, mas **não há nenhum backend de áudio terminal** — nada emite som; os comandos são um ponto de integração para uma interface gráfica ou incorporação web.
 - O modo multijogador (dois jogadores humanos compartilhando um mundo) **não** foi implementado — é uma camada de rede, deliberadamente fora do escopo; atualmente, os perfis têm como alvo um único controlador.
-- `replay --replay` restaura o arquivo salvo em vez de ress simular — e após a versão 2.9, essa é a **direção definida**, não um adiamento: `Engine.serialize()` já é um snapshot completo e comprovado do estado, enquanto a ressimulação teria que rastrear o estado do mundo/evento que existe fora do registro de ações. A versão 2.9 inclui slots de salvamento com vários pontos de verificação nesse caminho de restauração comprovado; uma ressimulação baseada em eventos reais não está planejada.
-- Alguns limites realistas da versão 3.0 permanecem: o **estoque inicial** do distrito ainda é baseado no padrão universal, em vez dos `GENRE_SUPPLY_DEFAULTS` de cada gênero (o estoque e as receitas que podem ser comprados são específicos para cada gênero — o fornecimento é o ponto de partida da versão 3.1, com especificações detalhadas); nenhum autor inicial cria uma receita de *reparo* específica para um gênero (o reparo funciona em todos os lugares, apenas sem características específicas do gênero); e dois dos vinte e um subverbos sociais (`deny`, `bury-scandal`) precisam de uma dimensão de pareamento de alvo de rumor antes de chegarem ao menu numerado.
+- `replay --replay` restaura o arquivo salvo em vez de ress simular — e após a v2.9, essa é a direção **definida**, não apenas um adiamento: `Engine.serialize()` já é um snapshot completo do estado que comprovadamente funciona, enquanto a ressimulação teria que rastrear o estado do mundo/evento que reside fora do registro de ações. A v2.9 inclui slots de salvamento com vários pontos de verificação nesse caminho de restauração comprovado; uma ressimulação baseada em eventos não está planejada.
+- A v3.1 encerrou os três limites definidos na v3.0 — o **estoque inicial** do gênero, as receitas de *reparo* específicas do gênero e a interface do menu `deny` / `bury-scandal` agora estão implementadas. O único limite que permanece é que essas novas receitas de reparo do gênero contêm um `statDelta` definido (um pequeno bônus de atributo) que `resolveRepair` ainda não aplica — o reparo *restaura*, `modify` *atualiza* — portanto, o reparo como atualização está marcado no código e será **adiado para a v3.2/v3.3** como uma mecânica deliberada, e não um campo inerte silencioso. E `obligation-exists` é lançado com uma demonstração definida (Irmão Aldric); a condição está ativa para que os criadores de conteúdo possam usar mais diálogos.
 - A documentação é extensa, mas nem todas as páginas do manual refletem as APIs mais recentes.
 
 ---

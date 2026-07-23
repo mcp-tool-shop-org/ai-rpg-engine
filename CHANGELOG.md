@@ -5,6 +5,61 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.1.0] - 2026-07-23
+
+Finish the loose ends. v3.0.0 made the world live; v3.1.0 closes the four honest
+ceilings v3.0 shipped with — genre-flavored *starting supply*, the last two
+social sub-verbs, the `obligation-exists` dialogue gate, and genre-specific
+repair recipes. Produced by a dogfood swarm: one feature wave (four domains in
+isolated worktrees, composed 6-gate + a family-different jury corroborating
+12/12 criteria with zero fail votes), a two-auditor **Phase-9 re-audit**
+confirming every fix manifests on the real shipped-content path — the
+played-session auditor caught the obligation gate wired-but-content-dark —
+then a remediation wave that made it reachable in a real playthrough.
+Deterministic test floor as law. Test suite: 5494 → **5512**.
+
+### Added
+
+- **Genre-flavored starting supply.** `economyGenre` threads each starter's bare
+  ruleset key through `buildWorldStack` → `createEconomyCore`, so a district
+  seeds its genre's `GENRE_SUPPLY_DEFAULTS` profile (cyberpunk runs high on
+  components/contraband; fantasy runs medicine scarce) instead of a flat
+  universal baseline — the starting supply the Director's MARKET tone and the
+  endgame inputs already read. Seven of ten starters carry a genre profile;
+  three fall back to baseline, honestly. A field separate from
+  `tradeGenre`/`craftingGenre` (three modules, three keys) so they can diverge.
+- **The full social surface, completed.** `deny` and `bury-scandal` — the
+  rumor-manipulation pair that targets an existing rumor by id rather than a
+  faction — now surface on the numbered menu via a rumor-target pairing
+  dimension (19 → 21 verbs surfaced), each row gated on its own cost/cooldown.
+- **`obligation-exists` dialogue gate.** The dialogue condition reads a named
+  NPC's persisted obligation ledger (`getPersistedNpcObligations`), honoring
+  optional `npcId`/`direction` filters. Fantasy's Brother Aldric — once he owes
+  the player a favor through ordinary npc-agency play — unlocks a `call-in-favor`
+  choice, a real gate in place of the prior silent always-true stub.
+- **Genre-specific repair recipes.** Every genre-carrying starter authors a
+  signature `repair` recipe in its genre table (fantasy `repair-rune-mend`,
+  cyberpunk `repair-nanite-weld`, weird-west `repair-frontier-forge`, …),
+  surfaced through `getAvailableRecipes` — repair is genre-flavored now, not
+  only universal.
+
+### Fixed
+
+- **The `obligation-exists` deferral comment was stale.** dialogue-core's
+  condition fell through to a silent `return true` behind a comment claiming npc
+  obligations are never persisted — false since v3.0, which persists them every
+  round a named NPC exists. Now a real read of the persisted ledger.
+- **`deny`/`bury-scandal` were registered verbs but unreachable.** The handlers
+  existed; the numbered menu deliberately excluded them for lack of a
+  rumor-target dimension. That dimension is added.
+
+### Deferred
+
+- **Repair-as-upgrade.** The new genre repair recipes carry an authored
+  `statDelta` that `resolveRepair` does not apply today (only `resolveModify`
+  reads it) — repair restores, it does not upgrade. Marked in-code and deferred
+  to v3.2/v3.3 as a deliberate mechanic decision, not a silent inert field.
+
 ## [3.0.0] - 2026-07-22
 
 Make the world live. v2.9.0 closed the economy and social *loops*; v3.0.0 makes
