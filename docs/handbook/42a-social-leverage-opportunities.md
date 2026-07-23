@@ -7,7 +7,7 @@ sidebar:
 
 # Chapter 42a — Social Leverage & Opportunities
 
-The combat layer lets you act on entities. The economy lets you act on goods. This layer lets you act on **factions and standing** — leaning on reputation, coin, threat, and rumor to bend the strategic board without drawing a weapon. It arrived complete in v2.9: four verbs, a currency economy that funds them, and an opportunity lifecycle that both pays into that economy and reads back out of it.
+The combat layer lets you act on entities. The economy lets you act on goods. This layer lets you act on **factions and standing** — leaning on reputation, coin, threat, and rumor to bend the strategic board without drawing a weapon. It arrived in v2.9 with four verbs and a currency economy that funds them, and grew in v3.0 into a full surface — twenty-five verbs across social / rumor / diplomacy / sabotage, passive leverage income that earns between opportunities, and dialogue that reads and writes this social state.
 
 > **Shipped in v2.9.** The player-leverage verbs and the opportunity spawn/resolution loop were authored across the v2.8–v2.9 arc; v2.9 connected the write side end to end — most importantly the earning path (opportunity completion grants leverage), without which the verbs were unaffordable in play.
 
@@ -50,8 +50,12 @@ Opportunities are the engine's offered goals — and, since v2.9, the primary wa
 
 The endgame's rising-power and merchant-prince arcs read the opportunities you actually resolved, so a session spent running contracts reads differently at the finale than one spent fighting.
 
-## Honest ceilings (v3.0)
+## v3.0 — the full social surface
 
-- **Passive leverage income.** Today opportunity completion is the earning path; a passive drip from reputation/milestones (`tickLeverage` / `computeLeverageGains`) is authored but not yet wired.
-- **The other 18 sub-verbs.** `player-leverage.ts` authors 22 social/rumor/diplomacy/sabotage actions; v2.9 deliberately ships four. The diplomacy and sabotage groups, plus the dialogue condition/effect vocabulary that reads this social state, are v3.0.
-- **`escort` opportunities** are a defined kind with no spawn rule yet, and the named-NPC **PEOPLE** director section awaits a persisted npc-agency producer — the coherent anchor for a v3.0 "living NPCs" release.
+Everything the v2.9 edition listed as a ceiling here shipped in v3.0:
+
+- **Passive leverage income is wired.** `tickLeverage` decays heat and reconciles influence from reputation each round; `computeLeverageGains` grants favor / blackmail / legitimacy from XP, milestones, and player-resolved pressure — so the social layer earns *between* opportunities, gated so a world with no social activity stays byte-identical to legacy replay.
+- **The full verb roster.** The diplomacy (7) and sabotage (4) groups — plus more social and rumor sub-verbs — register, taking the total to twenty-five; nineteen surface on the numbered menu, and the previously-dark `leverage-diplomacy` / `leverage-sabotage` companion reactions now fire. Dialogue conditions and effects read and write this social state (leverage / reputation / npc-relationship).
+- **`escort` opportunities spawn** on a protective-travel-in-a-dangerous-district gate, and the named-NPC **PEOPLE** director section is live — the persisted npc-agency producer runs each round (see Chapter 37 — NPC Agency).
+
+Remaining ceilings: two of the twenty-one new sub-verbs (`deny`, `bury-scandal`) need a rumor-target pairing dimension before they reach the numbered menu; and district *starting supply* still seeds from the universal baseline rather than each genre's defaults (the v3.1 opener).
