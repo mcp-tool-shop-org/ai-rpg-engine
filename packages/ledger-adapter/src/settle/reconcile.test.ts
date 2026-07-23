@@ -153,6 +153,48 @@ describe('reconcile', () => {
     expect(report.passed).toBe(false);
   });
 
+  it('passes external memo integrity when only ONE of a record\'s txids carries the memo (the real escrow shape)', () => {
+    // An escrow settlement produces EscrowCreate (carries the memo) + EscrowFinish
+    // (carries NONE). Attestation requires ONE memo-bearing txid, not all of them.
+    // (LIVE-FINDING-2, wave-2: caught by the live testnet replay, not the dry-run suite.)
+    const record = makeSettlement({ txids: ['ESCROW_CREATE', 'ESCROW_FINISH'] });
+    const report = reconcile(
+      baseInput({
+        settlements: [record],
+        // ESCROW_FINISH carries no memo — absent from the map, skipped not failed.
+        onchainMemos: { ESCROW_CREATE: record.memo },
+      }),
+    );
+    expect(report.onchainMemoOk).toBe(true);
+    expect(report.memoOk).toBe(true);
+    expect(report.passed).toBe(true);
+  });
+
+  it('fails external memo integrity when NO txid in a settlement carries the expected memo', () => {
+    const record = makeSettlement({ txids: ['TX_A', 'TX_B'] });
+    const report = reconcile(baseInput({ settlements: [record], onchainMemos: {} }));
+    expect(report.onchainMemoOk).toBe(false);
+    expect(report.memoOk).toBe(false);
+    expect(report.passed).toBe(false);
+    expect(report.notes.some((n) => n.includes('no txid carried the expected'))).toBe(true);
+  });
+
+  it("looks up ledgerBalances by the adapter's minted codes when tokenMap is supplied", () => {
+    // The adapter mints under assignTokenCode's valid 3-char codes (coin->COI);
+    // reconcile must reconcile against THOSE codes, not a re-derived 4-char 'COIN'.
+    const report = reconcile(
+      baseInput({
+        tokenMap: { coin: 'COI', potion: 'POT' },
+        ledgerBalances: { COI: 75, POT: 7 },
+      }),
+    );
+    expect(report.passed).toBe(true);
+    const coin = report.resources.find((r) => r.resource === 'coin');
+    expect(coin?.code).toBe('COI');
+    expect(coin?.ledger).toBe(75);
+    expect(coin?.balanceOk).toBe(true);
+  });
+
   it('treats an absent ledger balance as null, not a false balance match', () => {
     const report = reconcile(baseInput({ ledgerBalances: { [POTION_CODE]: 7 } }));
 

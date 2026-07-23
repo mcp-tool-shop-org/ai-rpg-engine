@@ -31,7 +31,7 @@ import {
   ASF_DEFAULT_RIPPLE,
   buildSettlementMemo,
 } from '../contracts.js';
-import { deriveCurrencyCode } from './reconcile.js';
+import { assignTokenCode } from '../state/index.js';
 
 /** Ripple-epoch seconds between an escrow's FinishAfter and its (mandatory,
  *  per XLS-85) CancelAfter. Named so the window is a documented design lever
@@ -159,9 +159,14 @@ export function createLedgerAdapter(
   function currencyCodeFor(state: LedgerAdapterState, key: string): string {
     const existing = state.tokenMap[key];
     if (existing) return existing;
-    const derived = deriveCurrencyCode(key);
-    state.tokenMap[key] = derived;
-    return derived;
+    // assignTokenCode (state-impl) produces a VALID 3-char, collision-safe XRPL
+    // currency code and records it in state.tokenMap — the SINGLE code source
+    // both the adapter mints with and reconcile() reconciles against (threaded
+    // in via ReconcileInput.tokenMap). reconcile.ts's stateless
+    // deriveCurrencyCode produced invalid codes here (e.g. 'coin' -> 'COIN', 4
+    // chars) that xrpl.js rejects client-side — caught only by the LIVE testnet
+    // replay, never by the dry-run suite. (LIVE-FINDING-1, wave-2.)
+    return assignTokenCode(state, key);
   }
 
   /** Executes one checkpoint's worth of signed deltas against the transport:

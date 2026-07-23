@@ -310,6 +310,10 @@ describe('createLedgerAdapter', () => {
       lastSettled: state.lastSettled,
       settlements: state.settlements,
       pending: state.pending,
+      // Thread the adapter's OWN minted codes so reconcile looks up
+      // ledgerBalances by state.tokenMap.coin (a valid 3-char code from
+      // assignTokenCode) rather than a re-derived 4-char 'COIN' (wave-2 fix).
+      tokenMap: state.tokenMap,
     });
 
     expect(report.resources.find((r) => r.resource === 'coin')?.conservationOk).toBe(true);

@@ -263,6 +263,15 @@ export type ReconcileInput = {
   issuerAddress?: string;
   /** txid → decoded on-chain memo text; omit for a network-free local reconcile. */
   onchainMemos?: Record<string, string>;
+  /**
+   * resource-key → XRPL currency code — the SAME map the adapter minted/settled
+   * with (`LedgerAdapterState.tokenMap`, assigned via the valid, collision-safe
+   * `assignTokenCode`). When supplied, `reconcile` looks up `ledgerBalances` by
+   * these codes so the verifier and the on-ledger truth speak the same currency
+   * codes. Omit for a synthetic/local reconcile whose test controls both sides;
+   * reconcile then falls back to a stateless derivation.
+   */
+  tokenMap?: Record<string, string>;
 };
 
 /** The pure reconciliation function signature (settle-impl owns the body). */

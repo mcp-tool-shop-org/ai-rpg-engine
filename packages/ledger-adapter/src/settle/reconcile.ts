@@ -92,7 +92,11 @@ export const reconcile: ReconcileFn = (input: ReconcileInput): ReconcileReport =
 
   // Per-resource balance + conservation checks.
   const resources: ResourceCheck[] = collectResourceKeys(input).map((key) => {
-    const code = deriveCurrencyCode(key);
+    // Prefer the adapter's OWN minted code (state.tokenMap, threaded via
+    // ReconcileInput.tokenMap) so the verifier looks up `ledgerBalances` by the
+    // exact currency code that reached the ledger. Fall back to the stateless
+    // derivation only for a synthetic/local reconcile that controls both sides.
+    const code = input.tokenMap?.[key] ?? deriveCurrencyCode(key);
     const minted = input.mintedInitial[key] ?? 0;
     const engineSettled = input.lastSettled[key] ?? 0;
     const sumDeltas = sumSettledDeltas(input.settlements, key);
@@ -167,19 +171,35 @@ export const reconcile: ReconcileFn = (input: ReconcileInput): ReconcileReport =
         continue;
       }
 
+      // Attestation requires that AT LEAST ONE of the record's txids carries the
+      // expected on-chain memo — not that EVERY txid does. An escrow settlement
+      // legitimately produces two txids: EscrowCreate (carries the memo) and
+      // EscrowFinish (carries NONE — contracts.ts's escrowFinish has no memo
+      // parameter, matching a real on-chain EscrowFinish). A memo-less txid is
+      // therefore skipped, not failed; a PRESENT-but-WRONG memo is tampering and
+      // fails; and a record where no txid carried the expected memo fails (no
+      // external attestation). (LIVE-FINDING-2, wave-2: the prior "every txid
+      // must match" made onchainMemoOk structurally unreachable for any escrow-
+      // settled record — invisible to the dry-run suite, caught by the live
+      // testnet replay.)
+      let matched = false;
       for (const txid of rec.txids) {
         const actual = onchainMemos[txid];
-        if (actual === undefined) {
-          onchainMemoOk = false;
-          notes.push(
-            `checkpoint ${rec.checkpoint}: no on-chain memo for txid ${JSON.stringify(txid)} (external integrity)`,
-          );
-        } else if (prefix === null || !actual.startsWith(prefix)) {
+        if (actual === undefined) continue; // this tx carries no memo (e.g. EscrowFinish) — legitimate
+        if (prefix !== null && actual.startsWith(prefix)) {
+          matched = true;
+        } else {
           onchainMemoOk = false;
           notes.push(
             `checkpoint ${rec.checkpoint}: on-chain memo ${JSON.stringify(actual)} does not start with expected prefix (external integrity)`,
           );
         }
+      }
+      if (!matched) {
+        onchainMemoOk = false;
+        notes.push(
+          `checkpoint ${rec.checkpoint}: no txid carried the expected on-chain memo (external integrity)`,
+        );
       }
     }
   }
