@@ -1,5 +1,7 @@
-// Transport barrel — the dry-run implementation of LedgerTransport (Phase 1,
-// offline/deterministic). Phase 2 adds a sibling testnet transport behind the
-// same LedgerTransport contract declared in ../contracts.ts.
+// Transport barrel — the two LedgerTransport implementations behind one
+// contract (../contracts.ts): DryRunTransport (Phase 1, offline/
+// deterministic) and TestnetTransport (Phase 2, real xrpl.js testnet I/O).
 
 export { DryRunTransport } from './dry-run.js';
+export { TestnetTransport } from './testnet.js';
+export type { XrplClientLike } from './testnet.js';
