@@ -66,6 +66,44 @@ describe('crafting-recipes', () => {
       expect(cyber.map((r) => r.id)).toContain('craft-stim');
     });
 
+    // Genre-flavored REPAIR recipes (repair-weapon/repair-armor were, until
+    // now, the only 'repair'-category recipes anywhere — every genre's own
+    // flavor stopped at craft/modify). Every GENRE_RECIPES key now carries at
+    // least one 'repair' entry alongside its craft/modify ones.
+    it('adds a genre-specific repair recipe for every GENRE_RECIPES genre', () => {
+      const genres = ['fantasy', 'zombie', 'cyberpunk', 'pirate', 'detective', 'colony', 'weird-west'];
+      for (const genre of genres) {
+        const repairs = getAvailableRecipes(genre).filter((r) => r.category === 'repair');
+        // repair-weapon + repair-armor (UNIVERSAL_RECIPES) are always present;
+        // a genre-specific repair recipe means this genre has strictly more.
+        expect(repairs.length, `${genre} should have a genre repair recipe beyond the 2 universal ones`).toBeGreaterThan(2);
+      }
+    });
+
+    it('resolves genre-specific repair recipes by id for representative genres', () => {
+      const fantasyRepair = getRecipeById('fantasy', 'repair-rune-mend');
+      expect(fantasyRepair).toBeDefined();
+      expect(fantasyRepair!.category).toBe('repair');
+
+      const cyberpunkRepair = getRecipeById('cyberpunk', 'repair-nanite-weld');
+      expect(cyberpunkRepair).toBeDefined();
+      expect(cyberpunkRepair!.category).toBe('repair');
+
+      const weirdWestRepair = getRecipeById('weird-west', 'repair-frontier-forge');
+      expect(weirdWestRepair).toBeDefined();
+      expect(weirdWestRepair!.category).toBe('repair');
+    });
+
+    it('genre-specific repair recipes surface through getAvailableRecipes filtered to category:\'repair\'', () => {
+      const fantasyRepairs = getAvailableRecipes('fantasy').filter((r) => r.category === 'repair');
+      expect(fantasyRepairs.map((r) => r.id)).toContain('repair-rune-mend');
+      expect(fantasyRepairs.map((r) => r.id)).toContain('repair-weapon'); // universal fallback still present
+
+      const cyberpunkRepairs = getAvailableRecipes('cyberpunk').filter((r) => r.category === 'repair');
+      expect(cyberpunkRepairs.map((r) => r.id)).toContain('repair-nanite-weld');
+      expect(cyberpunkRepairs.map((r) => r.id)).toContain('repair-armor'); // universal fallback still present
+    });
+
     it('filters recipes by required tags', () => {
       // modify-bless requires 'sacred' tag
       const without = getAvailableRecipes('fantasy');
@@ -174,6 +212,16 @@ describe('crafting-recipes', () => {
       const ctx = makeContext();
       const result = resolveRepair(item, recipe, ctx);
       expect(result.success).toBe(true);
+      expect(result.chronicleDetail).toContain('Iron Sword');
+    });
+
+    it('resolves a genre-specific repair recipe (fantasy rune-mend)', () => {
+      const item = makeItem();
+      const recipe = getRecipeById('fantasy', 'repair-rune-mend')!;
+      const ctx = makeContext();
+      const result = resolveRepair(item, recipe, ctx);
+      expect(result.success).toBe(true);
+      expect(result.materialsConsumed).toEqual(recipe.inputs);
       expect(result.chronicleDetail).toContain('Iron Sword');
     });
   });
@@ -470,6 +518,29 @@ describe('crafting-core module (F-6631dd57) — the salvage/craft/repair/modify 
         parameters: { recipeId: 'repair-weapon' },
       });
       expect(events.some((e) => e.type === 'action.rejected')).toBe(true);
+    });
+
+    it('genre config: a genre-flavored repair recipe resolves only when the genre is configured (universal-only otherwise)', () => {
+      const materials = { 'materials.components': 2, 'materials.medicine': 1 }; // repair-rune-mend's own cost
+
+      const withoutGenre = makeCraftingEngine(['iron-sword'], materials);
+      const rejected = withoutGenre.submitAction('repair', {
+        targetIds: ['iron-sword'],
+        parameters: { recipeId: 'repair-rune-mend' },
+      });
+      expect(rejected.some((e) => e.type === 'action.rejected')).toBe(true);
+      expect(rejected.some((e) => e.type === 'item.repaired')).toBe(false);
+
+      const withGenre = makeCraftingEngine(['iron-sword'], materials, 'fantasy');
+      const repaired = withGenre.submitAction('repair', {
+        targetIds: ['iron-sword'],
+        parameters: { recipeId: 'repair-rune-mend' },
+      });
+      expect(repaired.some((e) => e.type === 'item.repaired')).toBe(true);
+      expect(withGenre.world.entities.player.custom?.['materials.medicine']).toBe(0);
+      expect(withGenre.world.entities.player.custom?.['materials.components']).toBe(0);
+      // repair never removes the target item (unlike salvage).
+      expect(withGenre.world.entities.player.inventory).toContain('iron-sword');
     });
   });
 
