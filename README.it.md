@@ -26,7 +26,7 @@ Questo è un **motore di composizione**, non un gioco completo. I 10 mondi inizi
 - Un **toolkit per la composizione** — `buildCombatStack()` configura il combattimento in circa 7 righe; `new Engine({ modules })` avvia il gioco.
 - Un **ambiente di esecuzione della simulazione** — cicli deterministici, registri delle azioni riproducibili, RNG con seme.
 - Uno **studio di progettazione dell'IA** (opzionale) — scheletro, analisi critica, analisi dell'equilibrio, ottimizzazione, esperimenti tramite Ollama.
-- Un **livello opzionale sulla blockchain** — `@ai-rpg-engine/ledger-adapter` supporta la valuta e gli oggetti commerciabili di un gioco con token XRPL reali della **testnet**, regolati in punti di controllo, completamente al di fuori del nucleo deterministico (opzionale; una sessione è identica a livello di byte senza).
+- Un **livello opzionale sulla blockchain** — `@ai-rpg-engine/ledger-adapter` supporta la valuta e gli oggetti commerciabili di un gioco con token XRPL reali della **testnet**, regolati in punti di controllo, completamente al di fuori del nucleo deterministico (opzionale; un'esecuzione è identica a livello di byte senza).
 
 ## Cos'è questo progetto NON
 
@@ -36,7 +36,7 @@ Questo è un **motore di composizione**, non un gioco completo. I 10 mondi inizi
 
 ---
 
-## Stato attuale (v3.2.0)
+## Stato attuale (v3.3.0)
 
 **Cosa funziona ed è stato testato:**
 
@@ -200,32 +200,32 @@ npx @ai-rpg-engine/cli create-starter my-game
 
 ## L'adattatore della blockchain XRPL (opzionale)
 
-`@ai-rpg-engine/ledger-adapter` è un pacchetto **opzionale** che collega il livello di oggetti commerciabili di proprietà del **giocatore** — il saldo `coin` e l'inventario consumabile — alla **XRPL testnet**, in modo che tali risorse possano essere supportate da token reali sulla blockchain e regolate in punti di controllo.
+`@ai-rpg-engine/ledger-adapter` è un pacchetto **opzionale** che collega il livello di oggetti commerciabili di proprietà del **giocatore** di un gioco — il saldo `coin` e l'inventario consumabile che i verbi `buy`/`sell` di `trade-core` gestiscono già — alla **XRPL testnet**, in modo che tali risorse possano essere supportate da token reali sulla blockchain e regolate in punti di controllo.
 Un adattatore assente è esattamente il motore offline disponibile oggi.
 
 **L'invarianza del determinismo (il punto cruciale).** L'adattatore è un *canale secondario*, mai parte della simulazione:
 
 - Non viene **mai invocato all'interno del ciclo deterministico**, ma solo nei **punti di controllo** (salvataggio, ingresso in città/mercato, fine capitolo).
 - Nulla in `@ai-rpg-engine/core` o `@ai-rpg-engine/modules` lo importa (la sua unica dipendenza dal motore è un `import type` a tempo di compilazione).
-- **Una sessione è identica a livello di byte con o senza.** Un test del firewall esegue il ciclo del venditore `starter-pirate` `createGame()` su due motori — uno con l'adattatore abilitato e che regola in un punto di controllo — e verifica che i due mondi siano profondamente uguali. La riproduzione con seme 0 non viene modificata.
+- **Un'esecuzione è identica a livello di byte con o senza.** Un test firewall esegue il ciclo del venditore `starter-pirate` `createGame()` su due motori — uno con l'adattatore abilitato e la regolazione in un punto di controllo — e verifica che i due mondi siano profondamente uguali. La riproduzione con seme 0 non viene modificata.
 
 **Livelli di integrazione: un gioco lo integra quanto desidera il suo design.** Il firewall è una barriera del *determinismo*, non una regola anti-integrazione; l'invarianza sopra indicata vale a tutti i livelli:
 
 | Livello | Cosa dipende dall'adattatore | Si adatta |
 |-------|-----------------------------|------|
 | **L0 — External observer** | Niente all'interno del gioco; l'adattatore si collega dall'esterno nei punti di controllo e il gioco non ne è a conoscenza. | Adeguamento di un gioco esistente (la demo pirata fornita). |
-| **L1 — Punti di controllo guidati dal gioco** | Il flusso di salvataggio/città/progressione del gioco chiama l'adattatore in momenti definiti. | Un gioco che desidera momenti deliberati sulla blockchain. |
+| **L1: Punti di controllo guidati dal gioco** | Il flusso di salvataggio/città/progressione del gioco chiama l'adattatore in momenti definiti. | Un gioco che desidera momenti specifici sulla blockchain. |
 | **L2 — Ledger-native design** | L'economia o l'identità del gioco sono progettate *intorno* alla proprietà on-chain (emittente persistente, mercati reali). | Un gioco di commercio incentrato sulla blockchain. |
 
-La distinzione che mantiene la riproduzione sicura **non** è "quale pacchetto importa l'adattatore", ma "la chiamata è all'interno del ciclo". Un pacchetto di gioco può importare e gestire liberamente l'adattatore, a condizione che ogni chiamata avvenga in un punto di controllo al di fuori del ciclo di riproduzione guidato dal seme.
+La distinzione che mantiene la riproduzione sicura **non è** "quale pacchetto importa l'adattatore", ma "la chiamata è all'interno del ciclo". Un pacchetto di gioco può importare e gestire liberamente l'adattatore, a condizione che ogni chiamata avvenga in un punto di controllo al di fuori del ciclo di riproduzione guidato dal seme.
 
-**Tre modalità di gioco.** `offline` (predefinita — nessuna blockchain, il motore così come viene fornito) · `ledger` (valuta/oggetti supportati dai saldi della testnet, regolati nei punti di controllo) · `diary` (gioca offline, quindi ancora lo stato della sessione sulla blockchain per una ricevuta a prova di manomissione).
+**Tre modalità di gioco.** `offline` (predefinita: nessuna blockchain, il motore così come viene fornito) · `ledger` (valuta/oggetti supportati dai saldi della testnet, regolati nei punti di controllo) · `diary` (gioca offline, quindi ancora lo stato dell'esecuzione sulla blockchain per una ricevuta a prova di manomissione).
 
-**Cosa c'è sulla blockchain.** `coin` → un IOU di valuta emessa su una linea di credito; oggetti consumabili → token fungibili; il delta netto delle transazioni in un punto di controllo → un trasferimento regolato tramite **XLS-85 token escrow**. Le attrezzature uniche come NFT sono una parte successiva deliberata. L'economia distrettuale astratta (`economy-core`) *non* viene toccata: rimane una simulazione pura.
+**Cosa c'è sulla blockchain.** `coin` → un IOU di valuta emessa su una linea di credito; oggetti consumabili → token fungibili; il delta netto delle transazioni in un punto di controllo → un trasferimento regolato tramite **XLS-85 token escrow**. Le attrezzature uniche come NFT sono una fase successiva deliberata. L'economia distrettuale astratta (`economy-core`) *non* viene toccata: rimane una simulazione pura.
 
-**Misure di sicurezza.** Solo testnet, con una protezione strutturale **impossibile nel codice sulla mainnet** (non un flag di configurazione); i semi del portafoglio si trovano in un file secondario dei segreti ignorato da Git, mai nel file di salvataggio; la regolamentazione è idempotente e sicura in caso di nuovo tentativo; le prove verificano il **memo reale sulla blockchain** (non la stringa del motore); e se la blockchain non è raggiungibile, la sessione continua semplicemente, contrassegnata come *non ancorata*.
+**Misure di sicurezza.** Solo testnet, con una protezione strutturale **impossibile nel codice sulla mainnet** (non un flag di configurazione); i semi del portafoglio si trovano in un file secondario dei segreti ignorato da Git, mai nel file di salvataggio; la regolazione è idempotente e sicura in caso di nuovo tentativo; le prove verificano il **memo reale on-chain** (non la stringa del motore); e se la blockchain non è raggiungibile, l'esecuzione continua semplicemente, contrassegnata come *non ancorata*.
 
-**Dimostrato dal vivo.** Una vera sessione del venditore `starter-pirate` — vende una sciabola, acquista un proiettile di cannone — si regola sulla XRPL testnet tramite token escrow, quindi `reconcile()` conferma i saldi e i memo sulla blockchain rispetto all'economia del motore (la conservazione è valida per ogni token). La blockchain è una famiglia di sistemi diversa dal motore, quindi il motore non può falsificarla: la riconciliazione è un vero verificatore esterno. Solo testnet; le risorse sono ricevute con ambito sul gioco, non titoli.
+**Dimostrato dal vivo.** Una vera esecuzione del venditore `starter-pirate` — vende un pugnale, acquista una granata — si regola sulla XRPL testnet tramite token escrow, quindi `reconcile()` conferma i saldi e i memo sulla blockchain rispetto all'economia del motore (la conservazione è valida per ogni token). La blockchain è una famiglia di sistemi diversa dal motore, quindi il motore non può falsificarla: la riconciliazione è un verificatore esterno reale. Solo testnet; le risorse sono ricevute con ambito sul gioco, non titoli.
 
 ---
 
@@ -280,7 +280,7 @@ const warCry: AbilityDefinition = {
 | [`@ai-rpg-engine/ollama`](packages/ollama) | Creazione automatica opzionale: creazione di progetti iniziali, analisi critica, flussi di lavoro guidati, ottimizzazione, esperimenti |
 | [`@ai-rpg-engine/cli`](packages/cli) | CLI: esegui giochi, crea progetti iniziali, ispeziona salvataggi |
 | [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | Renderer terminale e livello di input |
-| [`@ai-rpg-engine/ledger-adapter`](packages/ledger-adapter) | **Opzionale:** integrazione opzionale della XRPL testnet per il livello di oggetti commerciabili di proprietà del giocatore (valuta/inventario/commercio), tramite XLS-85 token escrow nei punti di controllo, completamente al di fuori del nucleo deterministico. |
+| [`@ai-rpg-engine/ledger-adapter`](packages/ledger-adapter) | **Opzionale:** regolazione opzionale sulla XRPL testnet per il livello di oggetti commerciabili di proprietà del giocatore (valuta/inventario/commercio), tramite XLS-85 token escrow nei punti di controllo, completamente al di fuori del nucleo deterministico. |
 
 ### Esempi di progetto iniziale
 
@@ -308,7 +308,7 @@ I 10 mondi di esempio sono **esempi di composizione**: dimostrano come combinare
 | [Create Your Own Starter](site/src/content/docs/handbook/58-create-your-own-starter.md) | Crea un nuovo gioco: percorso CLI o modello manuale |
 | [Composition Guide](site/src/content/docs/handbook/57-composition-guide.md) | Costruisci il tuo gioco componendo i moduli del motore |
 | [Plug-in Profiles](site/src/content/docs/handbook/59-plugin-profiles.md) | Risoluzione delle regole per entità: combattimento con stili di gioco misti, `applyProfile`, modelli di profilo, la CLI `profile` |
-| [XRPL Ledger Adapter](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | Integrazione opzionale sulla blockchain: la barriera del determinismo, i livelli di integrazione L0/L1/L2, le modalità di gioco, le misure di sicurezza e la demo pirata dimostrata dal vivo. |
+| [XRPL Ledger Adapter](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | Regolazione opzionale sulla blockchain: la barriera del determinismo, i livelli di integrazione L0/L1/L2, le modalità di gioco, le misure di sicurezza e la demo pirata dimostrata dal vivo. |
 | [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) | Sei pilastri del combattimento, cinque azioni, stati a colpo d'occhio |
 | [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | Costruzione passo dopo passo di `buildCombatStack`, mappa delle statistiche, profili delle risorse |
 | [Handbook](site/src/content/docs/handbook/index.md) | Manuale completo: ogni sistema, più 4 appendici |
@@ -366,9 +366,9 @@ Consultare [PHILOSOPHY.md](PHILOSOPHY.md) per la spiegazione completa.
 
 ## Sicurezza
 
-Il motore principale è una **libreria di simulazione locale**: nessun telemetria, nessuna rete, nessun segreto. I file di salvataggio vanno in `.ai-rpg-engine/` solo quando richiesto esplicitamente. Due livelli **opzionali** aggiungono un percorso in uscita e solo quando li si invoca:
+Il motore principale è una **libreria di simulazione locale**: nessuna telemetria, nessuna rete, nessun segreto. I file di salvataggio vanno in `.ai-rpg-engine/` solo quando richiesto esplicitamente. Due livelli **opzionali** aggiungono un percorso in uscita e solo quando li si invoca:
 
-- Il livello dell'IA (`@ai-rpg-engine/ollama`) comunica con un daemon Ollama **locale**; la sua integrazione opzionale `webfetch` (per RAG) è limitata da una protezione SSRF (blocca loopback/link-local/CGNAT/cloud-metadata e equivalenti IPv6).
+- Il livello dell'IA (`@ai-rpg-engine/ollama`) comunica con un daemon Ollama **locale**; il suo `webfetch` opzionale (per RAG) è limitato da una protezione SSRF (blocca loopback/link-local/CGNAT/cloud-metadata e equivalenti IPv6).
 - Il livello della blockchain (`@ai-rpg-engine/ledger-adapter`) raggiunge la **XRPL testnet** — e solo la testnet: una protezione strutturale **impossibile nel codice sulla mainnet** (non un flag di configurazione) rifiuta qualsiasi host non testnet alla costruzione. I semi del portafoglio si trovano in un file secondario dei segreti ignorato da Git, mai in un file di salvataggio e il nucleo deterministico non importa mai l'adattatore.
 
 Consulta [SECURITY.md](SECURITY.md) per i dettagli.

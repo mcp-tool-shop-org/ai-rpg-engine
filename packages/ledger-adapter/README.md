@@ -97,10 +97,35 @@ adapter" but "is the call inside the tick."
 | `coin` balance | IOU over a trust line | v1 |
 | Stackable consumables | fungible token | v1 |
 | Buy / sell (`trade-core`) | settled via **token escrow** (XLS-85) at checkpoints | v1 |
-| Unique gear (`equipment`) | NFT | later slice |
+| Unique gear (`equipment`) | **NFT** — XLS-20 mint; XLS-46 `NFTokenModify` for relic growth | **v2** |
 
 The **issuer** is a config axis: a `per-run` throwaway faucet issuer (the safe
 default) or a `persistent` per-game issuer (for cross-run merchant markets).
+
+## Unique gear as NFTs (v2)
+
+The fungible layer above binds `coin` and stackable consumables. Unique gear —
+the `equipment` package's one-of-a-kind items, with rarity, provenance, and relic
+growth — is a **distinct seam** carried *alongside* it, never conflated: a
+`EquipmentSnapshot` (its own firewall-pure read path over the player's loadout),
+`NFTokenRef` state keyed one-per-`gameItemId`, and `settleEquipmentNFTs`.
+
+- **Mint at a checkpoint.** Each unique item is minted as an **XLS-20 NFT**
+  (`tfTransferable | tfMutable`, never burnable — true player ownership) and
+  transferred to the player. Idempotent per `gameItemId`: a fail-then-retry never
+  double-mints.
+- **Relic growth → `NFTokenModify`.** As an item earns its history, the issuer
+  advances the NFT's metadata URI in place (**XLS-46 DynamicNFT**) — the same
+  NFTokenID, so the asset's identity is preserved while its state evolves.
+  (Growth fires on real content once the engine's item-chronicle is populated — a
+  dormant system today; the mint path manifests on real content now.)
+- **`reconcile()` verifies ownership.** The external verifier checks on-ledger
+  `account_nfts` — the player owns the NFT and its URI matches the engine's relic
+  version — a truth the engine cannot fake.
+
+The whole layer honors the same firewall: mint/modify happen only at checkpoints,
+the engine never reads the adapter, and a run is byte-identical with or without
+it — proven on the real `starter-gladiator` game (see below).
 
 ## Play modes
 
@@ -127,12 +152,24 @@ that every on-chain memo matches — a genuine external verifier of the economy.
 A real `starter-pirate` merchant run — sell a cutlass, buy a cannon-shell —
 settles on XRPL testnet via token escrow, then reconciles against on-ledger
 balances and memos (conservation holds for every token). See the
-[handbook chapter](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/60-xrpl-ledger-adapter/),
+[ledger handbook chapter](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/60-xrpl-ledger-adapter/),
 and run it yourself:
 
 ```bash
 npm run build
 node packages/ledger-adapter/scripts/pirate-live-replay.mjs
+```
+
+For the **NFT unique-gear layer**, a real `starter-gladiator` played session —
+the player equips the shipped `trident-and-net`, which is minted as an NFT to
+their wallet, owned on-ledger, and reconciled — with the world byte-identical
+before and after. See the
+[NFT gear handbook chapter](https://mcp-tool-shop-org.github.io/ai-rpg-engine/handbook/61-xrpl-nft-gear/),
+and run it yourself:
+
+```bash
+npm run build
+node packages/ledger-adapter/scripts/gladiator-nft-live-replay.mjs
 ```
 
 ## License

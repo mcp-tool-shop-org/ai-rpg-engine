@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/soundpack-core",
-  "version": "3.2.1",
+  "version": "3.3.0",
   "description": "Sound pack manifest schema and content-addressable audio registry for AI RPG Engine",
   "type": "module",
   "main": "./dist/index.js",

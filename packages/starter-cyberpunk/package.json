@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/starter-cyberpunk",
-  "version": "3.2.1",
+  "version": "3.3.0",
   "description": "AI RPG Engine cyberpunk starter: Neon Lockbox",
   "type": "module",
   "main": "./dist/index.js",

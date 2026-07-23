@@ -72,7 +72,7 @@ export * from './engine/index.js';
 import type { LedgerAdapterConfig } from './contracts.js';
 
 /** Package version — single-sourced for proof packs / receipts. */
-export const LEDGER_ADAPTER_VERSION = '3.2.1';
+export const LEDGER_ADAPTER_VERSION = '3.3.0';
 
 /** The safest opt-in posture: offline mode, per-run issuer, escrow settlement. */
 export const DEFAULT_LEDGER_CONFIG: LedgerAdapterConfig = {

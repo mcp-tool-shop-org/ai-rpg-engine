@@ -36,7 +36,7 @@ Este es un **motor de composición**, no un juego completo. Los 10 mundos inicia
 
 ---
 
-## Estado actual (v3.2.0)
+## Estado actual (v3.3.0)
 
 **Qué funciona y ha sido probado:**
 
@@ -202,7 +202,7 @@ npx @ai-rpg-engine/cli create-starter my-game
 
 `@ai-rpg-engine/ledger-adapter` es un paquete **opcional** que vincula la
 **capa de objetos intercambiables propiedad del jugador**: el saldo de `coin` y el inventario consumible
-que los verbos `buy`/`sell` de `trade-core` ya mueven, a la **testnet XRPL**, para
+que los verbos `buy`/`sell` de `trade-core` ya gestionan, a la **testnet XRPL**, para
 que esos activos puedan estar respaldados por tokens reales en el libro mayor y liquidarse en puntos de control.
 Un adaptador ausente es exactamente el motor sin conexión que se distribuye actualmente.
 
@@ -213,12 +213,12 @@ Un adaptador ausente es exactamente el motor sin conexión que se distribuye act
 - Nada en `@ai-rpg-engine/core` o `@ai-rpg-engine/modules` lo importa (su única dependencia del motor es una `import type` en tiempo de compilación).
 - **Una ejecución es idéntica a nivel de bytes con o sin él.** Una prueba de firewall ejecuta el bucle de comerciante `starter-pirate` `createGame()` real en dos motores, uno con el adaptador habilitado y liquidando en un punto de control, y afirma que los dos mundos son profundamente iguales. La reproducción con la semilla 0 no se ve afectada.
 
-**Niveles de integración: un juego lo integra tan profundamente como su diseño lo requiera.** El firewall es una *frontera del determinismo*, no una regla anti-integración; la invariante anterior se mantiene en todos los niveles:
+**Niveles de integración: un juego lo integra tan profundamente como su diseño lo requiera.** El firewall es una *frontera del determinismo*, no una regla antiintegración; la invariante anterior se mantiene en todos los niveles:
 
 | Nivel | Qué depende del adaptador | Se ajusta |
 |-------|-----------------------------|------|
 | **L0 — External observer** | Nada dentro del juego; el adaptador se adjunta desde fuera en los puntos de control y el juego no es consciente de ello. | Adaptación de un juego existente (la demostración pirata que se distribuye). |
-| **N1: Puntos de control impulsados por el juego** | El flujo propio de guardado/ciudad/progresión meta del juego llama al adaptador en momentos definidos. | Un juego que desea momentos deliberados en el libro mayor. |
+| **N1: Puntos de control impulsados por el juego** | El propio flujo de guardado/ciudad/progresión meta del juego llama al adaptador en momentos definidos. | Un juego que desea momentos deliberados en el libro mayor. |
 | **L2 — Ledger-native design** | La economía o la identidad del juego están diseñadas *en torno a* la propiedad en cadena (emisor persistente, mercados reales). | Un juego de comerciantes centrado en el libro mayor. |
 
 La distinción que mantiene segura la reproducción **no** es "qué paquete importa el adaptador", sino "si la llamada se realiza dentro del ciclo". Un paquete de juego puede importar y controlar el adaptador libremente, siempre y cuando cada llamada se realice en un punto de control fuera del bucle de reproducción impulsado por la semilla.
@@ -227,9 +227,9 @@ La distinción que mantiene segura la reproducción **no** es "qué paquete impo
 
 **Qué hay en el libro mayor.** `coin`: una promesa de moneda emitida sobre una línea de confianza; objetos consumibles: tokens fungibles; el delta neto de comercio de un punto de control: una transferencia liquidada a través del **escrow de tokens XLS-85**. Los equipos únicos como NFT son una parte posterior deliberada. La economía abstracta del distrito (`economy-core`) *no* se ve afectada; sigue siendo una simulación pura.
 
-**Medidas de seguridad.** Solo testnet, con una protección estructural **imposible en el código para mainnet** (no una marca de configuración); las semillas de la billetera se encuentran en un archivo secundario de secretos ignorado por Git, nunca en el archivo de guardado; la liquidación es idempotente y segura en caso de reintento; las pruebas verifican el **memo real en cadena** (no la propia cadena del motor); y si la cadena no está disponible, la ejecución simplemente continúa, marcada como *sin anclar*.
+**Medidas de seguridad.** Solo testnet, con una protección estructural **imposible en el código para mainnet** (no una marca de configuración); las semillas de la billetera se almacenan en un archivo secundario de secretos ignorado por Git, nunca en el archivo de guardado; la liquidación es idempotente y segura en caso de reintento; las pruebas verifican el **memo real en cadena** (no la propia cadena del motor); y si la cadena no está disponible, la ejecución simplemente continúa, marcada como *sin anclar*.
 
-**Probado en vivo.** Una ejecución real del comerciante `starter-pirate`: vender un machete, comprar una bala de cañón; se liquida en la testnet XRPL a través del escrow de tokens y luego `reconcile()` confirma los saldos y memos en el libro mayor con la economía del motor (la conservación se mantiene para cada token). El libro mayor es una familia de sistemas diferente al motor, por lo que el motor no puede falsificarlo; la reconciliación es un verificador externo genuino. Solo testnet; los activos son recibos con alcance en el juego, no valores.
+**Probado en vivo.** Una ejecución real del comerciante `starter-pirate`: vender un alfanje, comprar una bala de cañón; se liquida en la testnet XRPL a través del escrow de tokens y luego `reconcile()` confirma los saldos y memos en el libro mayor con la economía del motor (la conservación se mantiene para cada token). El libro mayor es una familia de sistemas diferente al motor, por lo que el motor no puede falsificarlo; la reconciliación es un verificador externo genuino. Solo testnet; los activos son recibos con alcance en el juego, no valores.
 
 ---
 
@@ -372,8 +372,8 @@ Consulte [PHILOSOPHY.md](PHILOSOPHY.md) para obtener la explicación completa.
 
 El motor principal es una **biblioteca de simulación local**: sin telemetría, sin red, sin secretos. Los archivos de guardado se guardan en `.ai-rpg-engine/` solo cuando se solicita explícitamente. Dos capas **opcionales** agregan una ruta de salida y solo cuando las invoca:
 
-- La capa de IA (`@ai-rpg-engine/ollama`) se comunica con un daemon Ollama **local**; su `webfetch` opcional (para RAG) está restringido por una protección contra SSRF (bloquea el bucle invertido/enlace local/CGNAT/metadatos de la nube y los equivalentes tunelizados a través de IPv6).
-- La capa del libro mayor (`@ai-rpg-engine/ledger-adapter`) llega a la **testnet XRPL** y solo a la testnet: una protección estructural **imposible en el código para mainnet** (no una marca de configuración) rechaza cualquier host que no sea de testnet en la construcción. Las semillas de la billetera se encuentran en un archivo secundario de secretos ignorado por Git, nunca en un archivo de guardado, y el núcleo determinista nunca importa el adaptador.
+- La capa de IA (`@ai-rpg-engine/ollama`) se comunica con un daemon Ollama **local**; su `webfetch` opcional (para RAG) está restringido por una protección contra SSRF (bloquea loopback/link-local/CGNAT/cloud-metadata y los equivalentes tunelizados a través de IPv6).
+- La capa del libro mayor (`@ai-rpg-engine/ledger-adapter`) se comunica con la **testnet XRPL** e, incluso, solo con la testnet: una protección estructural **imposible en el código para mainnet** (no una marca de configuración) rechaza cualquier host que no sea de testnet en la construcción. Las semillas de la billetera se almacenan en un archivo secundario de secretos ignorado por Git, nunca en un archivo de guardado, y el núcleo determinista nunca importa el adaptador.
 
 Consulte [SECURITY.md](SECURITY.md) para obtener más detalles.
 
