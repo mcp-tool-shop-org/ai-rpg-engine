@@ -150,6 +150,22 @@ function readEquipmentCatalog(engine: Pick<Engine, 'formulas'>): ItemDefinition[
 }
 
 /**
+ * Non-attaching read of this round's persisted NPC profiles
+ * (world.modules['npc-agency'].profiles) — mirrors npc-agency.ts's own
+ * getPersistedNpcProfiles exactly (same namespace, same filter, same
+ * degrade-to-[] contract). Reimplemented locally (F-V3R-PARTY-1, Phase-9
+ * party-departure remediation) rather than imported: that function is not
+ * part of @ai-rpg-engine/modules' public export surface
+ * (packages/modules/src/index.ts), and this remediation's file scope is
+ * director*.ts only — index.ts belongs to a different domain/worktree. Feeds
+ * PARTY below; PEOPLE (above) keeps its own pre-existing inline read of the
+ * same namespace unchanged.
+ */
+function readPersistedNpcProfiles(world: WorldState): NpcProfile[] {
+  return objectArray<NpcProfile>(namespace<{ profiles: unknown }>(world, 'npc-agency')?.profiles);
+}
+
+/**
  * One ledger section: `body` returns the complete section text, or null when
  * the section's module has no state in this world (the section is skipped
  * silently — absence of state is not an error). A THROW anywhere in the body
@@ -397,17 +413,24 @@ export function renderDirectorLedger(engine: Pick<Engine, 'world' | 'formulas'>)
           maxSize: typeof compNs?.maxSize === 'number' ? compNs.maxSize : createPartyState().maxSize,
           cohesion: typeof compNs?.cohesion === 'number' ? compNs.cohesion : computePartyCohesion({ ...createPartyState(), companions }),
         };
-        // NPC profiles still have no production writer (npc-agency's
-        // relationship ledger is never persisted). Departure risk (F-b595731a)
-        // now derives from morale alone (evaluateDepartureRisk with no
-        // breakpoint) — real signal, just never 'high' (that band requires a
-        // hostile/wavering breakpoint nothing supplies yet).
+        // F-V3R-PARTY-1 (Phase-9 party-departure remediation): npc-agency now
+        // persists real per-round profiles (world-tick.ts's step 5a, v3.0
+        // F-v3-npc-agency) — the hardcoded [] this used to pass here was the
+        // bug: the Breakpoint field always read 'unknown' and goals never
+        // rendered, even in a session where npc-agency HAD already profiled
+        // this exact companion (PEOPLE, above, was proof the state existed —
+        // PARTY just never looked). Real breakpoints also now flow into
+        // evaluateDepartureRisk, so its 'high' band (previously unreachable
+        // from this section, since the second argument was always omitted)
+        // can finally show.
+        const npcProfiles = readPersistedNpcProfiles(world);
         const departureRisks: Record<string, { risk: string; reason?: string }> = {};
         for (const companion of companions) {
-          const assessment = evaluateDepartureRisk(companion);
+          const breakpoint = npcProfiles.find((p) => p.npcId === companion.npcId)?.breakpoint;
+          const assessment = evaluateDepartureRisk(companion, breakpoint);
           if (assessment.risk !== 'none') departureRisks[companion.npcId] = assessment;
         }
-        return formatPartyForDirector(party, [], departureRisks);
+        return formatPartyForDirector(party, npcProfiles, departureRisks);
       },
     },
     {
