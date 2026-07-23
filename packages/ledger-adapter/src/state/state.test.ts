@@ -48,6 +48,19 @@ function populatedState(): LedgerAdapterState {
   };
   state.settlements = [settled];
   state.pending = [pending];
+
+  state.nfts = {
+    cutlass: {
+      gameItemId: 'cutlass',
+      nftId: 'ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF12345678',
+      uri: 'ARPG-NFT|GAME:pirate|ITEM:cutlass|RELIC:1|TIER:1|V:1',
+      relicVersion: 1,
+      taxon: 0,
+      mutable: true,
+      mintTxid: 'FEDCBA9876543210FEDCBA9876543210FEDCBA98',
+      status: 'minted',
+    },
+  };
   return state;
 }
 
@@ -67,6 +80,7 @@ describe('createInitialState', () => {
       settlements: [],
       pending: [],
       lastSettleFailed: false,
+      nfts: {},
     });
   });
 
@@ -83,8 +97,24 @@ describe('createInitialState', () => {
       memo: '',
       timestamp: '',
     });
+    a.nfts!.cutlass = {
+      gameItemId: 'cutlass',
+      nftId: 'NFT1',
+      uri: 'ARPG-NFT|GAME:pirate|ITEM:cutlass|RELIC:0|TIER:0|V:1',
+      relicVersion: 0,
+      taxon: 0,
+      mutable: true,
+      mintTxid: 'HASH1',
+      status: 'minted',
+    };
     expect(b.tokenMap).toEqual({});
     expect(b.settlements).toEqual([]);
+    expect(b.nfts).toEqual({});
+  });
+
+  test('nfts starts as an empty object (the NFT unique-gear layer, optional for v3.2 back-compat)', () => {
+    const state = createInitialState(CONFIG);
+    expect(state.nfts).toEqual({});
   });
 });
 
@@ -110,6 +140,101 @@ describe('round-trip (serializeState / deserializeState)', () => {
         expect(deserializeState(serializeState(state))).toEqual(state);
       }
     }
+  });
+});
+
+describe('NFT unique-gear layer (state.nfts)', () => {
+  test('round-trips a state with multiple nfts populated (mixed minted/pending status) — deep-equal', () => {
+    const state = createInitialState(CONFIG);
+    state.nfts = {
+      cutlass: {
+        gameItemId: 'cutlass',
+        nftId: 'ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF12345678',
+        uri: 'ARPG-NFT|GAME:pirate|ITEM:cutlass|RELIC:2|TIER:1|V:1',
+        relicVersion: 2,
+        taxon: 0,
+        mutable: true,
+        mintTxid: 'FEDCBA9876543210FEDCBA9876543210FEDCBA98',
+        status: 'minted',
+      },
+      lantern: {
+        gameItemId: 'lantern',
+        nftId: '1111111111111111111111111111111111111111111111111111111111111111',
+        uri: 'ARPG-NFT|GAME:pirate|ITEM:lantern|RELIC:0|TIER:0|V:1',
+        relicVersion: 0,
+        taxon: 1,
+        mutable: true,
+        mintTxid: '2222222222222222222222222222222222222222',
+        status: 'pending',
+      },
+    };
+
+    const restored = deserializeState(serializeState(state));
+    expect(restored).toEqual(state);
+    expect(restored.nfts).toEqual(state.nfts);
+  });
+
+  test('back-compat: a serialized state that omits "nfts" entirely still deserializes, defaulting to {}', () => {
+    const state = populatedState(); // includes an nfts entry via the shared fixture
+    const obj = JSON.parse(serializeState(state)) as Record<string, unknown>;
+    expect(obj.nfts).toBeDefined(); // sanity: the fixture really did serialize one
+
+    delete obj.nfts; // simulate a v3.2 (pre-NFT-layer) save with no "nfts" key at all
+    const json = JSON.stringify(obj);
+
+    let restored: LedgerAdapterState | undefined;
+    expect(() => {
+      restored = deserializeState(json);
+    }).not.toThrow();
+    expect(restored?.nfts).toEqual({});
+    // Everything else from the v3.2-shaped payload still deserialized intact.
+    expect(restored?.issuerAddress).toBe(state.issuerAddress);
+    expect(restored?.settlements).toEqual(state.settlements);
+  });
+
+  test('throws a clear Error on a malformed nfts entry (wrong-typed field)', () => {
+    const state = createInitialState(CONFIG);
+    state.nfts = {
+      cutlass: {
+        gameItemId: 'cutlass',
+        nftId: 'ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF12345678',
+        uri: 'ARPG-NFT|GAME:pirate|ITEM:cutlass|RELIC:1|TIER:1|V:1',
+        relicVersion: 1,
+        taxon: 0,
+        mutable: true,
+        mintTxid: 'FEDCBA9876543210FEDCBA9876543210FEDCBA98',
+        status: 'minted',
+      },
+    };
+    const obj = JSON.parse(serializeState(state)) as { nfts: Record<string, Record<string, unknown>> };
+    obj.nfts.cutlass.relicVersion = 'not-a-number'; // should be a number
+    expect(() => deserializeState(JSON.stringify(obj))).toThrow(/nfts\.cutlass\.relicVersion/);
+  });
+
+  test('throws a clear Error on an invalid nfts status enum value', () => {
+    const state = createInitialState(CONFIG);
+    state.nfts = {
+      cutlass: {
+        gameItemId: 'cutlass',
+        nftId: 'ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF12345678',
+        uri: 'ARPG-NFT|GAME:pirate|ITEM:cutlass|RELIC:1|TIER:1|V:1',
+        relicVersion: 1,
+        taxon: 0,
+        mutable: true,
+        mintTxid: 'FEDCBA9876543210FEDCBA9876543210FEDCBA98',
+        status: 'minted',
+      },
+    };
+    const obj = JSON.parse(serializeState(state)) as { nfts: Record<string, Record<string, unknown>> };
+    obj.nfts.cutlass.status = 'confirmed'; // not 'minted' | 'pending'
+    expect(() => deserializeState(JSON.stringify(obj))).toThrow(/nfts\.cutlass\.status/);
+  });
+
+  test('throws a clear Error when "nfts" itself is present but not an object', () => {
+    const state = createInitialState(CONFIG);
+    const obj = JSON.parse(serializeState(state)) as Record<string, unknown>;
+    obj.nfts = 'not-an-object';
+    expect(() => deserializeState(JSON.stringify(obj))).toThrow(/nfts/);
   });
 });
 

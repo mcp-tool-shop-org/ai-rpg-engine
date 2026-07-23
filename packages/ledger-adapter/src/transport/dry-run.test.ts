@@ -254,4 +254,228 @@ describe('DryRunTransport', () => {
       expect(fresh.walletFromSeed(arbitrarySeed)).toEqual(busy.walletFromSeed(arbitrarySeed));
     });
   });
+
+  describe('NFT operations (NFTTransport)', () => {
+    const TAXON = 0;
+    const URI_V1 = 'ARPG-NFT|GAME:pirate|ITEM:cutlass|RELIC:0|TIER:0|V:1';
+    const URI_V2 = 'ARPG-NFT|GAME:pirate|ITEM:cutlass|RELIC:1|TIER:1|V:1';
+
+    it('mints an NFT owned by the issuer; accountNfts reports it with the mutable+transferable flag combination (24)', async () => {
+      const transport = new DryRunTransport();
+      const issuer = await transport.fundWallet();
+
+      const mint = await transport.nftMint(issuer.seed, URI_V1, TAXON, { transferable: true, mutable: true });
+      expect(mint.ok).toBe(true);
+      expect(mint.code).toBe('tesSUCCESS');
+      expect(typeof mint.nftId).toBe('string');
+      expect(mint.nftId).toHaveLength(64);
+
+      const owned = await transport.accountNfts(issuer.address);
+      expect(owned).toHaveLength(1);
+      expect(owned[0]).toEqual({
+        nftId: mint.nftId,
+        uri: URI_V1,
+        taxon: TAXON,
+        issuer: issuer.address,
+        flags: 24, // transferable (8) | mutable (16)
+      });
+    });
+
+    it('createSellOffer -> acceptSellOffer moves ownership from seller to accepter (accountNfts confirms both sides)', async () => {
+      const transport = new DryRunTransport();
+      const issuer = await transport.fundWallet();
+      const player = await transport.fundWallet();
+
+      const mint = await transport.nftMint(issuer.seed, URI_V1, TAXON, { transferable: true, mutable: true });
+      const nftId = mint.nftId as string;
+
+      const offer = await transport.nftCreateSellOffer(issuer.seed, nftId, '0', player.address);
+      expect(offer.ok).toBe(true);
+      expect(offer.code).toBe('tesSUCCESS');
+      expect(typeof offer.offerIndex).toBe('string');
+
+      const accept = await transport.nftAcceptSellOffer(player.seed, offer.offerIndex as string);
+      expect(accept).toMatchObject({ ok: true, code: 'tesSUCCESS' });
+
+      expect(await transport.accountNfts(issuer.address)).toEqual([]);
+      const playerNfts = await transport.accountNfts(player.address);
+      expect(playerNfts).toHaveLength(1);
+      expect(playerNfts[0].nftId).toBe(nftId);
+      expect(playerNfts[0].issuer).toBe(issuer.address); // issuer role never transfers
+    });
+
+    it('a directed sell offer rejects an accept from anyone other than its destination', async () => {
+      const transport = new DryRunTransport();
+      const issuer = await transport.fundWallet();
+      const player = await transport.fundWallet();
+      const rando = await transport.fundWallet();
+
+      const mint = await transport.nftMint(issuer.seed, URI_V1, TAXON, { transferable: true, mutable: true });
+      const nftId = mint.nftId as string;
+      const offer = await transport.nftCreateSellOffer(issuer.seed, nftId, '0', player.address);
+
+      const rejected = await transport.nftAcceptSellOffer(rando.seed, offer.offerIndex as string);
+      expect(rejected).toEqual(expect.objectContaining({ ok: false, code: 'tecNO_PERMISSION', hash: '' }));
+
+      // Ownership never moved.
+      expect(await transport.accountNfts(issuer.address)).toHaveLength(1);
+      expect(await transport.accountNfts(rando.address)).toEqual([]);
+      expect(await transport.accountNfts(player.address)).toEqual([]);
+    });
+
+    it('accepting an unknown offerIndex fails tecOBJECT_NOT_FOUND', async () => {
+      const transport = new DryRunTransport();
+      const someone = await transport.fundWallet();
+      const result = await transport.nftAcceptSellOffer(someone.seed, 'DOES-NOT-EXIST');
+      expect(result).toEqual(expect.objectContaining({ ok: false, code: 'tecOBJECT_NOT_FOUND', hash: '' }));
+    });
+
+    it('only the current holder may create a sell offer for an NFT (tecNO_PERMISSION otherwise)', async () => {
+      const transport = new DryRunTransport();
+      const issuer = await transport.fundWallet();
+      const rando = await transport.fundWallet();
+
+      const mint = await transport.nftMint(issuer.seed, URI_V1, TAXON, { transferable: true, mutable: true });
+      const nftId = mint.nftId as string;
+
+      const result = await transport.nftCreateSellOffer(rando.seed, nftId, '0');
+      expect(result).toEqual(expect.objectContaining({ ok: false, code: 'tecNO_PERMISSION', hash: '' }));
+    });
+
+    it('NFTokenModify: the issuer modifies a player-owned mutable NFT, changing only the uri (NFTokenID/owner unchanged)', async () => {
+      const transport = new DryRunTransport();
+      const issuer = await transport.fundWallet();
+      const player = await transport.fundWallet();
+
+      const mint = await transport.nftMint(issuer.seed, URI_V1, TAXON, { transferable: true, mutable: true });
+      const nftId = mint.nftId as string;
+
+      // Transfer to the player first — the real-world relic-growth scenario is
+      // the issuer mutating an NFT the PLAYER holds, not one it still holds.
+      const offer = await transport.nftCreateSellOffer(issuer.seed, nftId, '0', player.address);
+      await transport.nftAcceptSellOffer(player.seed, offer.offerIndex as string);
+
+      const modify = await transport.nftModify(issuer.seed, nftId, URI_V2, player.address);
+      expect(modify).toMatchObject({ ok: true, code: 'tesSUCCESS' });
+
+      const playerNfts = await transport.accountNfts(player.address);
+      expect(playerNfts).toHaveLength(1);
+      expect(playerNfts[0].nftId).toBe(nftId); // identity preserved
+      expect(playerNfts[0].uri).toBe(URI_V2); // uri advanced
+      expect(playerNfts[0].issuer).toBe(issuer.address);
+      expect(playerNfts[0].flags).toBe(24); // flags untouched by modify
+    });
+
+    it('NFTokenModify by a NON-issuer (even the current holder) fails tecNO_PERMISSION and leaves the uri untouched', async () => {
+      const transport = new DryRunTransport();
+      const issuer = await transport.fundWallet();
+      const player = await transport.fundWallet();
+
+      const mint = await transport.nftMint(issuer.seed, URI_V1, TAXON, { transferable: true, mutable: true });
+      const nftId = mint.nftId as string;
+
+      const result = await transport.nftModify(player.seed, nftId, URI_V2, issuer.address);
+      expect(result).toEqual(expect.objectContaining({ ok: false, code: 'tecNO_PERMISSION', hash: '' }));
+
+      const owned = await transport.accountNfts(issuer.address);
+      expect(owned[0].uri).toBe(URI_V1); // unchanged
+    });
+
+    it('NFTokenModify on a non-mutable NFT fails tecNO_PERMISSION even for the issuer', async () => {
+      const transport = new DryRunTransport();
+      const issuer = await transport.fundWallet();
+
+      const mint = await transport.nftMint(issuer.seed, URI_V1, TAXON, { transferable: true, mutable: false });
+      const nftId = mint.nftId as string;
+
+      const result = await transport.nftModify(issuer.seed, nftId, URI_V2, issuer.address);
+      expect(result).toEqual(expect.objectContaining({ ok: false, code: 'tecNO_PERMISSION', hash: '' }));
+
+      const owned = await transport.accountNfts(issuer.address);
+      expect(owned[0].uri).toBe(URI_V1); // unchanged
+      expect(owned[0].flags).toBe(8); // transferable only — never minted mutable
+    });
+
+    it('NFTokenBurn removes the NFT (the named compensator for a bad mint); a non-holder cannot burn it first', async () => {
+      const transport = new DryRunTransport();
+      const issuer = await transport.fundWallet();
+      const rando = await transport.fundWallet();
+
+      const mint = await transport.nftMint(issuer.seed, URI_V1, TAXON, { transferable: true, mutable: true });
+      const nftId = mint.nftId as string;
+
+      const deniedBurn = await transport.nftBurn(rando.seed, nftId);
+      expect(deniedBurn).toEqual(expect.objectContaining({ ok: false, code: 'tecNO_PERMISSION', hash: '' }));
+      expect(await transport.accountNfts(issuer.address)).toHaveLength(1);
+
+      const burn = await transport.nftBurn(issuer.seed, nftId);
+      expect(burn).toMatchObject({ ok: true, code: 'tesSUCCESS' });
+      expect(await transport.accountNfts(issuer.address)).toEqual([]);
+
+      // Burning again now fails "no such NFT" — the compensator is not a
+      // silent no-op success on replay.
+      const again = await transport.nftBurn(issuer.seed, nftId);
+      expect(again).toEqual(expect.objectContaining({ ok: false, code: 'tecNO_ENTRY' }));
+    });
+
+    it('accountNfts reports owned NFTs in mint order, stable across an intervening transfer', async () => {
+      const transport = new DryRunTransport();
+      const issuer = await transport.fundWallet();
+      const player = await transport.fundWallet();
+
+      const first = await transport.nftMint(issuer.seed, 'uri-1', TAXON, { transferable: true, mutable: true });
+      const second = await transport.nftMint(issuer.seed, 'uri-2', TAXON, { transferable: true, mutable: true });
+      const third = await transport.nftMint(issuer.seed, 'uri-3', TAXON, { transferable: true, mutable: true });
+
+      // Transfer the FIRST-minted item away — the remaining two must still
+      // report back in their original mint order.
+      const offer = await transport.nftCreateSellOffer(issuer.seed, first.nftId as string, '0', player.address);
+      await transport.nftAcceptSellOffer(player.seed, offer.offerIndex as string);
+
+      const remaining = await transport.accountNfts(issuer.address);
+      expect(remaining.map((n) => n.nftId)).toEqual([second.nftId, third.nftId]);
+    });
+
+    describe('determinism', () => {
+      it('two fresh transports yield identical nftIds/offerIndexes/hashes for the same NFT call sequence', async () => {
+        const runSequence = async () => {
+          const transport = new DryRunTransport();
+          const issuer = await transport.fundWallet();
+          const player = await transport.fundWallet();
+
+          const mint = await transport.nftMint(issuer.seed, URI_V1, TAXON, { transferable: true, mutable: true });
+          const offer = await transport.nftCreateSellOffer(issuer.seed, mint.nftId as string, '0', player.address);
+          const accept = await transport.nftAcceptSellOffer(player.seed, offer.offerIndex as string);
+          const modify = await transport.nftModify(issuer.seed, mint.nftId as string, URI_V2, player.address);
+          return { issuer, player, mint, offer, accept, modify };
+        };
+
+        const runA = await runSequence();
+        const runB = await runSequence();
+
+        expect(runA.issuer).toEqual(runB.issuer);
+        expect(runA.player).toEqual(runB.player);
+        expect(runA.mint.nftId).toBe(runB.mint.nftId);
+        expect(runA.mint.hash).toBe(runB.mint.hash);
+        expect(runA.offer.offerIndex).toBe(runB.offer.offerIndex);
+        expect(runA.offer.hash).toBe(runB.offer.hash);
+        expect(runA.accept.hash).toBe(runB.accept.hash);
+        expect(runA.modify.hash).toBe(runB.modify.hash);
+
+        // Every id/hash produced is unique within a single run — no blank,
+        // no accidental collision between the NFTokenID/offerIndex/tx-hash
+        // sequences (each uses its own counter + prefix).
+        const idsA = [
+          runA.mint.nftId as string,
+          runA.offer.offerIndex as string,
+          runA.mint.hash,
+          runA.offer.hash,
+          runA.accept.hash,
+          runA.modify.hash,
+        ];
+        expect(new Set(idsA).size).toBe(idsA.length);
+        expect(idsA.every((v) => v.length > 0)).toBe(true);
+      });
+    });
+  });
 });

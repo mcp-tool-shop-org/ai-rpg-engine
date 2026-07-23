@@ -16,6 +16,7 @@ import type {
   LedgerAdapterState,
   LedgerMode,
   IssuerMode,
+  NFTokenRef,
   SettlementStatus,
   SettlementRecord,
   TradeableSnapshot,
@@ -29,6 +30,12 @@ import type {
  * config's `settlement` primitive and `network` are not part of state, they
  * stay purely config); everything else starts empty/disabled. No wallets, no
  * settlements — `enable()` (settle-impl) is what populates addresses.
+ *
+ * `nfts: {}` starts the NFT unique-gear layer (contracts.ts's optional
+ * `LedgerAdapterState.nfts`) empty, ALONGSIDE the fungible fields above —
+ * never conflated with `tokenMap`/`lastSettled`. A fresh object literal every
+ * call, exactly like `tokenMap`/`lastSettled`/etc. above (no shared mutable
+ * reference across two `createInitialState` calls).
  */
 export function createInitialState(config: LedgerAdapterConfig): LedgerAdapterState {
   return {
@@ -44,6 +51,7 @@ export function createInitialState(config: LedgerAdapterConfig): LedgerAdapterSt
     settlements: [],
     pending: [],
     lastSettleFailed: false,
+    nfts: {},
   };
 }
 
@@ -135,6 +143,53 @@ function assertSettlementRecordArray(value: unknown, path: string): asserts valu
   value.forEach((entry, i) => assertSettlementRecord(entry, `${path}[${i}]`));
 }
 
+const VALID_NFT_STATUSES: readonly NFTokenRef['status'][] = ['minted', 'pending'];
+
+/** Mirrors `assertSettlementRecord` for the NFT unique-gear layer's
+ *  `NFTokenRef` shape (contracts.ts). Throws a clear `Error` naming the exact
+ *  offending field — never a silent `undefined`/`NaN` landing in state. */
+function assertNFTokenRef(value: unknown, path: string): asserts value is NFTokenRef {
+  if (!isPlainObject(value)) {
+    throw new Error(`deserializeState: "${path}" must be an object`);
+  }
+  if (typeof value.gameItemId !== 'string') {
+    throw new Error(`deserializeState: "${path}.gameItemId" must be a string`);
+  }
+  if (typeof value.nftId !== 'string') {
+    throw new Error(`deserializeState: "${path}.nftId" must be a string`);
+  }
+  if (typeof value.uri !== 'string') {
+    throw new Error(`deserializeState: "${path}.uri" must be a string`);
+  }
+  if (typeof value.relicVersion !== 'number') {
+    throw new Error(`deserializeState: "${path}.relicVersion" must be a number`);
+  }
+  if (typeof value.taxon !== 'number') {
+    throw new Error(`deserializeState: "${path}.taxon" must be a number`);
+  }
+  if (typeof value.mutable !== 'boolean') {
+    throw new Error(`deserializeState: "${path}.mutable" must be a boolean`);
+  }
+  if (typeof value.mintTxid !== 'string') {
+    throw new Error(`deserializeState: "${path}.mintTxid" must be a string`);
+  }
+  if (!VALID_NFT_STATUSES.includes(value.status as NFTokenRef['status'])) {
+    throw new Error(`deserializeState: "${path}.status" must be one of ${VALID_NFT_STATUSES.join('|')}`);
+  }
+}
+
+/** Validates `LedgerAdapterState.nfts` — a `Record<string, NFTokenRef>` keyed
+ *  by gameItemId. Only called when the key is PRESENT (see
+ *  `assertLedgerAdapterState`): `nfts` itself is optional for v3.2 back-compat. */
+function assertNFTokenRefRecord(value: unknown, path: string): asserts value is Record<string, NFTokenRef> {
+  if (!isPlainObject(value)) {
+    throw new Error(`deserializeState: "${path}" must be an object`);
+  }
+  for (const key of Object.keys(value)) {
+    assertNFTokenRef(value[key], `${path}.${key}`);
+  }
+}
+
 /** Validate an already-parsed value against the `LedgerAdapterState` shape.
  *  Throws a clear `Error` naming the first offending field on any mismatch. */
 function assertLedgerAdapterState(value: unknown): asserts value is LedgerAdapterState {
@@ -178,11 +233,25 @@ function assertLedgerAdapterState(value: unknown): asserts value is LedgerAdapte
   if (typeof value.lastSettleFailed !== 'boolean') {
     throw new Error('deserializeState: "lastSettleFailed" must be a boolean');
   }
+  // `nfts` is OPTIONAL (v3.2 back-compat: a fungible-only save has no `nfts`
+  // key at all) — deliberately NOT added to REQUIRED_STATE_KEYS above, or an
+  // old save would fail to deserialize. Only validate the shape when the key
+  // is actually present; `deserializeState` below defaults an absent key to
+  // `{}` after this assertion passes.
+  if (value.nfts !== undefined) {
+    assertNFTokenRefRecord(value.nfts, 'nfts');
+  }
 }
 
 /** Parse + validate JSON back into `LedgerAdapterState`. Rejects malformed
  *  JSON and any value missing/mistyping a required key with a clear `Error`
- *  (never a silent `undefined`/`NaN` field landing in adapter state). */
+ *  (never a silent `undefined`/`NaN` field landing in adapter state).
+ *
+ *  `nfts` back-compat: a v3.2 (fungible-only) serialized state has no `nfts`
+ *  key at all — it is NOT in `REQUIRED_STATE_KEYS` and `assertLedgerAdapterState`
+ *  only validates it when present — so such a save deserializes cleanly and
+ *  is defaulted to `{}` here (the reload-determinism CRITICAL: an old save
+ *  round-trips unchanged, never throws for a key that didn't exist yet). */
 export function deserializeState(json: string): LedgerAdapterState {
   let parsed: unknown;
   try {
@@ -192,6 +261,9 @@ export function deserializeState(json: string): LedgerAdapterState {
     throw new Error(`deserializeState: invalid JSON — ${reason}`);
   }
   assertLedgerAdapterState(parsed);
+  if (parsed.nfts === undefined) {
+    parsed.nfts = {};
+  }
   return parsed;
 }
 
