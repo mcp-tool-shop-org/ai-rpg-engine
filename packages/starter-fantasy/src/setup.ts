@@ -38,6 +38,7 @@ import {
   zones,
   districts,
   pilgrimDialogue,
+  brotherAldricDialogue,
   healingDraughtEffect,
   combatMasteryTree,
   fantasyAbilities,
@@ -170,7 +171,7 @@ export function createGame(seed?: number): Engine {
       statusCore,
       ...combat.modules,
       createInventoryCore([healingDraughtEffect]),
-      createDialogueCore([pilgrimDialogue]),
+      createDialogueCore([pilgrimDialogue, brotherAldricDialogue]),
       createPerceptionFilter(),
       createProgressionCore({
         trees: [combatMasteryTree],
