@@ -19,8 +19,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ai-rpg-engine/character-creation": "^2.0.0",
-    "@ai-rpg-engine/equipment": "^2.0.0"
+    "@ai-rpg-engine/character-creation": "^3.0.0",
+    "@ai-rpg-engine/equipment": "^3.0.0"
   },
   "license": "MIT",
   "author": "mcp-tool-shop",

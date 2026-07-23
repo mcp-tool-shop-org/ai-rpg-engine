@@ -19,7 +19,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ai-rpg-engine/presentation": "^2.0.0"
+    "@ai-rpg-engine/presentation": "^3.0.0"
   },
   "license": "MIT",
   "author": "mcp-tool-shop",

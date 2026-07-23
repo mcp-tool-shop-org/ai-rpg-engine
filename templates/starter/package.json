@@ -18,9 +18,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ai-rpg-engine/core": "^2.8.0",
-    "@ai-rpg-engine/content-schema": "^2.8.0",
-    "@ai-rpg-engine/modules": "^2.8.0"
+    "@ai-rpg-engine/core": "^3.0.0",
+    "@ai-rpg-engine/content-schema": "^3.0.0",
+    "@ai-rpg-engine/modules": "^3.0.0"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

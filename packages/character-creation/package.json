@@ -42,6 +42,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@ai-rpg-engine/core": "^2.0.0"
+    "@ai-rpg-engine/core": "^3.0.0"
   }
 }
