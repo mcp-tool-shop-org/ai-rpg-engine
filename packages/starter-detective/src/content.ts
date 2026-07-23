@@ -52,7 +52,11 @@ export const widow: EntityState = {
   blueprintId: 'widow',
   type: 'npc',
   name: 'Lady Ashford',
-  tags: ['npc', 'aristocracy', 'suspect', 'female'],
+  // 'named' (V3R-NPC-2, v3.0 Living NPCs remediation): the pack's one
+  // dialogue-bearing, non-recruitable story NPC (widowDialogue) — makes her
+  // live in npc-agency's social/PEOPLE layer without an `ai` block, which
+  // would wrongly make her a combatant.
+  tags: ['npc', 'aristocracy', 'suspect', 'female', 'named'],
   stats: { perception: 3, eloquence: 7, grit: 2 },
   resources: { hp: 8, stamina: 2, composure: 18 },
   statuses: [],

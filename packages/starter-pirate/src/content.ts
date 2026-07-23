@@ -96,7 +96,11 @@ export const governor: EntityState = {
   blueprintId: 'governor',
   type: 'npc',
   name: 'Governor Vane',
-  tags: ['npc', 'colonial', 'authority', 'male'],
+  // 'named' (V3R-NPC-2, v3.0 Living NPCs remediation): the colonial
+  // authority the player answers to — a notable, non-recruitable story NPC.
+  // Makes him live in npc-agency's social/PEOPLE layer without an `ai`
+  // block, which would wrongly make him a combatant.
+  tags: ['npc', 'colonial', 'authority', 'male', 'named'],
   stats: { brawn: 3, cunning: 6, 'sea-legs': 2 },
   resources: { hp: 10, stamina: 2, morale: 18 },
   statuses: [],
