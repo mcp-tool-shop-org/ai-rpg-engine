@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/mcp-tool-shop-org/brand/main/logos/ai-rpg-engine/readme.png" width="400" alt="AI RPG Engine">
+</p>
+
 # My Game
 
 An [ai-rpg-engine](https://mcp-tool-shop-org.github.io/ai-rpg-engine/) content
