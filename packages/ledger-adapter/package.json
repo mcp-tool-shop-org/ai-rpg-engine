@@ -28,7 +28,8 @@
   },
   "devDependencies": {
     "xrpl": "^5.0.0",
-    "@ai-rpg-engine/core": "*"
+    "@ai-rpg-engine/core": "*",
+    "@ai-rpg-engine/modules": "*"
   },
   "license": "MIT",
   "author": "mcp-tool-shop",
