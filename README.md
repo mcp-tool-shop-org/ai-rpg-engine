@@ -26,6 +26,7 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 - A **composition toolkit** — `buildCombatStack()` wires combat in ~7 lines; `new Engine({ modules })` boots the game
 - A **simulation runtime** — deterministic ticks, replayable action logs, seeded RNG
 - An **AI design studio** (optional) — scaffolding, critique, balance analysis, tuning, experiments via Ollama
+- An **optional on-ledger layer** — `@ai-rpg-engine/ledger-adapter` backs a game's coin and tradeable items with real XRPL **testnet** tokens, settled at checkpoints, entirely outside the deterministic core (opt-in; a run is byte-identical without it)
 
 ## What This Is Not
 
@@ -35,7 +36,7 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 
 ---
 
-## Current Status (v3.1.0)
+## Current Status (v3.2.0)
 
 **What works and is tested:**
 - Core runtime: world state, events, actions, ticks, replay — stable since v1.0; deterministic byte-identical replay (per-instance id counter, seeded RNG)
@@ -72,9 +73,10 @@ This is a **composition engine**, not a finished game. The 10 starter worlds are
 - **The social surface, complete (v3.1):** `deny` and `bury-scandal` — the rumor-manipulation pair that targets an existing rumor by id rather than a faction — reach the numbered menu through a rumor-target pairing dimension, closing the twenty-one-verb surface (19 → 21 surfaced)
 - **`obligation-exists` dialogue, wired and reachable (v3.1):** the dialogue condition reads a named NPC's persisted obligation ledger (`getPersistedNpcObligations`) — fantasy's Brother Aldric, once he owes you a favor through ordinary npc-agency play, unlocks a `call-in-favor` choice — a real gate where v3.0 left a silent always-true stub (a Phase-9 played-session audit proved it reachable in a real run, not just unit-green)
 - **Genre-flavored repair (v3.1):** every genre-carrying starter authors a signature `repair` recipe in its genre table (fantasy `repair-rune-mend`, cyberpunk `repair-nanite-weld`, …), surfaced through `getAvailableRecipes` — repair is flavored now, not only universal
+- **Opt-in XRPL ledger settlement (v3.2):** a new optional `@ai-rpg-engine/ledger-adapter` package binds the player-owned tradeable layer — `coin` → an IOU, consumables → fungible tokens, a checkpoint's net `buy`/`sell` delta → a settled **XLS-85 token escrow** — to the **XRPL testnet**, entirely outside the deterministic core. Nothing in `core`/`modules` imports it and a run is byte-identical with or without it (proven on the real pirate `createGame()` merchant loop). Testnet-only behind a mainnet-impossible-in-code guard, with a gitignored secrets sidecar, conservation-safe retries, on-chain memo verification, and an unanchored fallback; proven live end-to-end on testnet (settle via token escrow → `reconcile` against on-ledger balances + memos). NFT unique gear is a deliberate later slice. See [The XRPL ledger adapter](#the-xrpl-ledger-adapter-opt-in)
 - `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **5512 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
+- Full test suite: **5633 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
 
 **What is rough or incomplete:**
 - The AI worldbuilding studio (Ollama layer) is more lightly tested than the simulation core, and needs a local Ollama daemon; it is entirely optional — the engine and the `run` loop need no network
@@ -201,6 +203,68 @@ npx @ai-rpg-engine/cli create-starter my-game
 
 ---
 
+## The XRPL ledger adapter (opt-in)
+
+`@ai-rpg-engine/ledger-adapter` is an **optional** package that binds a game's
+**player-owned tradeable layer** — the `coin` balance and consumable inventory
+that `trade-core`'s `buy`/`sell` verbs already move — to the **XRPL testnet**, so
+those assets can be backed by real on-ledger tokens and settled at checkpoints.
+An absent adapter is exactly the offline engine that ships today.
+
+**The determinism invariant (the whole point).** The adapter is a *side channel*,
+never part of the simulation:
+
+- It is **never invoked inside the deterministic tick** — only at **checkpoints**
+  (save, town/market entry, chapter break).
+- Nothing in `@ai-rpg-engine/core` or `@ai-rpg-engine/modules` imports it (its
+  only engine dependency is a compile-time `import type`).
+- **A run is byte-identical with or without it.** A firewall test runs the real
+  `starter-pirate` `createGame()` merchant loop on two engines — one with the
+  adapter enabled and settling at a checkpoint — and asserts the two worlds are
+  deep-equal. Seed-0 replay is untouched.
+
+**Integration levels — a game folds it in as deeply as its design wants.** The
+firewall is a *determinism* boundary, not an anti-integration rule; the invariant
+above holds at every level:
+
+| Level | What depends on the adapter | Fits |
+|-------|-----------------------------|------|
+| **L0 — External observer** | Nothing inside the game; the adapter attaches from outside at checkpoints and the game is unaware. | Retrofitting an existing game (the shipped pirate demo). |
+| **L1 — Game-driven checkpoints** | The game's own save / town / meta-progression flow calls the adapter at defined moments. | A game that wants deliberate ledger moments. |
+| **L2 — Ledger-native design** | The game's economy or identity is designed *around* on-chain ownership (persistent issuer, real markets). | A ledger-first merchant game. |
+
+The distinction that keeps replay safe is **not** "which package imports the
+adapter" but "is the call inside the tick." A game package may import and drive
+the adapter freely, as long as every call lands at a checkpoint outside the
+seed-driven replay loop.
+
+**Three play modes.** `offline` (default — no chain, the engine as it ships) ·
+`ledger` (coin/items backed by testnet balances, settled at checkpoints) ·
+`diary` (play offline, then anchor the run's state hash on-ledger for a
+tamper-evident receipt).
+
+**What's on the ledger.** `coin` → an issued-currency IOU over a trust line;
+consumable items → fungible tokens; a checkpoint's net trade delta → a settled
+transfer via **XLS-85 token escrow**. Unique equipment as NFTs is a deliberate
+later slice. The abstract district economy (`economy-core`) is *not* touched — it
+stays a pure simulation.
+
+**Safety rails.** Testnet only, with a **mainnet-impossible-in-code** structural
+guard (not a config flag); wallet seeds live in a gitignored secrets sidecar,
+never in the save file; settlement is idempotent and conservation-safe on the
+retry path; proofs verify the **real on-chain memo** (not the engine's own
+string); and if the chain is unreachable the run simply continues, marked
+*unanchored*.
+
+**Proven live.** A real `starter-pirate` merchant run — sell a cutlass, buy a
+cannon-shell — settles on XRPL testnet via token escrow, then `reconcile()`
+confirms on-ledger balances and memos against the engine's economy (conservation
+holds for every token). The ledger is a different system family than the engine,
+so the engine cannot fake it — reconciliation is a genuine external verifier.
+Testnet only; assets are game-scoped receipts, not securities.
+
+---
+
 ## Combat System
 
 Five actions (attack, guard, disengage, brace, reposition), four combat states (guarded, off-balance, exposed, fleeing), four engagement states (engaged, protected, backline, isolated). Three stat dimensions drive every formula so a quick duelist plays differently from a heavy bruiser or a composed sentinel.
@@ -252,6 +316,7 @@ const warCry: AbilityDefinition = {
 | [`@ai-rpg-engine/ollama`](packages/ollama) | Optional AI authoring — scaffolding, critique, guided workflows, tuning, experiments |
 | [`@ai-rpg-engine/cli`](packages/cli) | CLI: run games, scaffold starters, inspect saves |
 | [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | Terminal renderer and input layer |
+| [`@ai-rpg-engine/ledger-adapter`](packages/ledger-adapter) | **Optional** — opt-in XRPL testnet settlement for the player-owned tradeable layer (coin / inventory / trade), via XLS-85 token escrow at checkpoints, entirely outside the deterministic core |
 
 ### Starter Examples
 
@@ -279,6 +344,7 @@ The 10 starter worlds are **composition examples** — they demonstrate how to c
 | [Create Your Own Starter](site/src/content/docs/handbook/58-create-your-own-starter.md) | Scaffold a new game — CLI or manual template route |
 | [Composition Guide](site/src/content/docs/handbook/57-composition-guide.md) | Build your own game by composing engine modules |
 | [Plug-in Profiles](site/src/content/docs/handbook/59-plugin-profiles.md) | Per-entity rule resolution — mixed-playstyle combat, `applyProfile`, profile templates, the `profile` CLI |
+| [XRPL Ledger Adapter](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | Opt-in on-ledger settlement — the determinism firewall, L0/L1/L2 integration levels, play modes, safety rails, and the live-proven pirate demo |
 | [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) | Six combat pillars, five actions, states at a glance |
 | [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | Step-by-step buildCombatStack, stat mapping, resource profiles |
 | [Handbook](site/src/content/docs/handbook/index.md) | Comprehensive handbook — every system, plus 4 appendices |
@@ -336,7 +402,12 @@ See [PHILOSOPHY.md](PHILOSOPHY.md) for the full explanation.
 
 ## Security
 
-The core engine is a **local-only simulation library**: no telemetry, no network, no secrets. Save files go to `.ai-rpg-engine/` only when explicitly requested. The **optional** AI layer (`@ai-rpg-engine/ollama`) talks to a **local** Ollama daemon; its opt-in `webfetch` (for RAG) is the only outbound network path and is confined by an SSRF guard (blocks loopback/link-local/CGNAT/cloud-metadata and IPv6-tunnelled equivalents) — you never reach it unless you invoke it. See [SECURITY.md](SECURITY.md) for details.
+The core engine is a **local-only simulation library**: no telemetry, no network, no secrets. Save files go to `.ai-rpg-engine/` only when explicitly requested. Two **optional** layers add an outbound path, and only when you invoke them:
+
+- The AI layer (`@ai-rpg-engine/ollama`) talks to a **local** Ollama daemon; its opt-in `webfetch` (for RAG) is confined by an SSRF guard (blocks loopback/link-local/CGNAT/cloud-metadata and IPv6-tunnelled equivalents).
+- The ledger layer (`@ai-rpg-engine/ledger-adapter`) reaches the **XRPL testnet** — and only the testnet: a **mainnet-impossible-in-code** structural guard (not a config flag) rejects any non-testnet host at construction. Wallet seeds live in a gitignored secrets sidecar, never in a save file, and the deterministic core never imports the adapter.
+
+See [SECURITY.md](SECURITY.md) for details.
 
 ## Requirements
 

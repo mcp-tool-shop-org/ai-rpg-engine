@@ -5,6 +5,58 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.2.0] - 2026-07-23
+
+Build for the future — an **opt-in XRPL ledger adapter**. A new optional
+`@ai-rpg-engine/ledger-adapter` package binds a game's player-owned tradeable
+layer (`coin`, consumable inventory, `trade-core`'s `buy`/`sell`) to the XRPL
+testnet, settling at checkpoints via XLS-85 token escrow — entirely outside the
+deterministic replayable core, which never imports it and stays seed-0
+byte-exact. Adapted from the studio's shipped escape-the-valley "ledger backpack"
+pattern; proven live on testnet against the real `starter-pirate` merchant loop.
+Test suite: 5512 → **5633**.
+
+### Added
+
+- **`@ai-rpg-engine/ledger-adapter` (opt-in, testnet).** Backs `coin` with an
+  issued-currency IOU, consumable items with fungible tokens, and a checkpoint's
+  net trade delta with a settled XLS-85 token escrow. Two transports behind one
+  interface (an offline dry-run transport for tests; a real `xrpl.js` testnet
+  transport); `enable` / `settle` / `reconcile`; three play modes (`offline`
+  default, `ledger`, `diary`); both a per-run throwaway issuer and a persistent
+  per-game issuer. `xrpl` is an optional peer dependency — dry-run mode needs
+  neither it nor a network.
+- **The determinism firewall.** Nothing in `@ai-rpg-engine/core` or
+  `@ai-rpg-engine/modules` imports the adapter (its only engine dependency is a
+  compile-time `import type`); the adapter is invoked only at checkpoints, never
+  in the tick. A firewall test runs the real `starter-pirate` `createGame()`
+  merchant loop on two engines — one with the adapter enabled and settling — and
+  asserts the two worlds are byte-identical.
+- **Integration levels (L0 / L1 / L2).** The firewall is a *determinism*
+  boundary, not an anti-integration rule: a game may fold the adapter into its
+  own non-tick layers (save flow, town/market scene, a ledger-native economy) as
+  deeply as its design calls for. The invariant — byte-identical replay — holds
+  at every level. Documented in the README and handbook.
+- **Reconciliation as an external verifier.** `reconcile()` checks on-ledger
+  balances and the real on-chain memo against the engine's settled economy;
+  conservation (`minted + Σdeltas == settled`) must hold per token. The ledger is
+  a different system family than the engine, so it cannot be faked.
+- **Live-testnet acceptance.** A live-replay script drives the full adapter on
+  real XRPL testnet from a real `starter-pirate` merchant run; the settlement
+  claim is proven on-chain, not by dry-run fixtures alone.
+- **Safety rails.** Testnet only, enforced by a mainnet-impossible-in-code guard;
+  wallet seeds in a gitignored secrets sidecar; idempotent, conservation-safe
+  settlement on the retry path; on-chain memo verification; unanchored fallback
+  when the chain is unreachable.
+
+### Fixed
+
+- **Incremental trust lines for tokens acquired mid-run.** A token first bought
+  after `enable` (a consumable the player didn't start with) had no trust line,
+  so its issuer→player mint failed `tecPATH_DRY` on live testnet — surfaced by
+  the live pirate replay, invisible to the all-dry-run suite. `settle()` now
+  opens the trust line for any new token before it is first minted or escrowed.
+
 ## [3.1.0] - 2026-07-23
 
 Finish the loose ends. v3.0.0 made the world live; v3.1.0 closes the four honest

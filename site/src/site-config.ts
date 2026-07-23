@@ -9,7 +9,7 @@ export const config: SiteConfig = {
   footerText: 'MIT Licensed — built by <a href="https://github.com/mcp-tool-shop-org" style="color:var(--color-muted);text-decoration:underline">mcp-tool-shop-org</a>',
 
   hero: {
-    badge: 'v3.0.0',
+    badge: 'v3.2.0',
     headline: 'AI RPG Engine',
     headlineAccent: 'Build worlds. Simulate them. Improve them.',
     description: 'A TypeScript toolkit for deterministic RPG simulation: a composable module runtime, six-pillar tactical combat, and an optional AI-assisted design library. Every run replays exactly.',
@@ -60,6 +60,10 @@ export const config: SiteConfig = {
         {
           title: 'Genre-Agnostic',
           desc: 'Same core runs dark fantasy, cyberpunk, detective noir, or any setting. 10 starter worlds show composition patterns to learn from and remix. Genre belongs to content packs, not the engine.',
+        },
+        {
+          title: 'Optional On-Ledger Play',
+          desc: 'An opt-in adapter backs coin and tradeable items with real XRPL testnet tokens, settled at checkpoints via XLS-85 token escrow — entirely outside the deterministic core, which never imports it. A run is byte-identical with or without it, and on-chain reconciliation is a genuine external verifier of the economy.',
         },
       ],
     },
