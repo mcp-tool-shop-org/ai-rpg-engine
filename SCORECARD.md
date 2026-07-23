@@ -13,7 +13,7 @@
 |----------|-------|-------|
 | A. Security | 10/10 | SECURITY.md, threat model, no secrets, no telemetry |
 | B. Error Handling | 10/10 | Structured events with verb + reason fields |
-| C. Operator Docs | 10/10 | README, CHANGELOG, LICENSE, handbook (61 chapters + 4 appendices) |
+| C. Operator Docs | 10/10 | README, CHANGELOG, LICENSE, handbook (62 chapters + 4 appendices) |
 | D. Shipping Hygiene | 10/10 | verify script, v2.6.0, dep scanning, clean packaging |
 | E. Identity (soft) | 10/10 | Logo, 7 translations, landing page, repo metadata |
 | **Overall** | **50/50** | |
