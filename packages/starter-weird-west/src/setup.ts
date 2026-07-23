@@ -188,6 +188,15 @@ export function createGame(seed?: number): Engine {
     // ride its explicit reason. quest-core validates at construction
     // (fail loud) and drives the loop off the live event stream.
     quests: { gameId: manifest.id, quests: weirdWestQuests },
+    // V3-GEN-1/2 (genre-mechanical fix, wave 2): this starter's own bare
+    // genre key ('weird-west-minimal' minus its '-minimal' suffix) — NOT
+    // manifest.genres (this pack's genres are ['western'], a DIFFERENT
+    // vocabulary; see world-stack.ts's file-header contract). 'weird-west'
+    // matches a GENRE_BUYABLE_STOCK/GENRE_RECIPES entry, so buy/craft/repair/
+    // modify now resolve weird-west-flavored stock/recipes instead of the
+    // universal fallback.
+    tradeGenre: 'weird-west',
+    craftingGenre: 'weird-west',
   });
 
   const engine = new Engine({

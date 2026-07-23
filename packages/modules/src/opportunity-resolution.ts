@@ -402,11 +402,11 @@ function getEscortFallout(
       if (npc) effects.push({ type: 'npc-relationship', npcId: npc, axis: 'trust', delta: -20 });
       // Companion morale hit if escorting a linked NPC — F-P9-007: same real
       // application as getFavorRequestFallout's companion-morale note
-      // (applyOpportunityFallout writes it via adjustCompanionMorale). The
-      // caveat that's STILL true: 'escort' is a fully-dark opportunity kind —
-      // evaluateOpportunities has no spawn rule that ever produces one (v3.0
-      // ceiling) — so this case is reachable only from a hand-built or
-      // imported OpportunityState, never from a live spawn.
+      // (applyOpportunityFallout writes it via adjustCompanionMorale). As of
+      // v3.0, 'escort' is live-spawnable — evaluateEscortOpportunities produces
+      // one on a protective-travel need in a dangerous district — so this
+      // 'failed' case is now reachable from real play, not only from a
+      // hand-built or imported OpportunityState.
       for (const linkedNpc of opp.linkedNpcIds) {
         effects.push({ type: 'companion-morale', npcId: linkedNpc, delta: -10 });
       }

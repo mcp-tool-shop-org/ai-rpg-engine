@@ -70,14 +70,19 @@ export function isKnownReactionTrigger(trigger: string): trigger is ReactionTrig
 // only ever fires because SOME OTHER file calls evaluateCompanionReactions
 // with that literal string. This ledger is a static, testable accounting of
 // which triggers have a real production producer TODAY, audited directly
-// against source (not just comments) as of this wave:
+// against source (not just comments):
 //   - world-tick.ts's applyCompanionReactions, fed by
 //     collectCombatReactionTriggers (combat.entity.defeated), the district-
 //     mood tone-transition check (step 0c), and the pressure-expiry step
 //     (step 3);
 //   - player-leverage.ts's dispatchLeverageCompanionReactions, called
-//     directly from the 'bribe'/'intimidate'/'petition'/'seed' verb
-//     handlers.
+//     directly from all 25 leverage verb handlers (bribe/intimidate/
+//     petition/call-in-favor/recruit-ally/disguise/stake-claim →
+//     'leverage-social'; seed/deny/frame/claim-false-credit/bury-scandal/
+//     leak-truth/spread-counter-rumor → 'leverage-rumor'; the seven
+//     diplomacy-group verbs → 'leverage-diplomacy'; the four sabotage-group
+//     verbs → 'leverage-sabotage' — v3.0 wave 1 "social-verbs" registered the
+//     21 of these that weren't wired as of the F-6be920bd audit).
 //
 // Because wiring a trigger always means editing one of those producer
 // files (or authoring a brand new one for npc-agency/item-recognition),
@@ -103,17 +108,24 @@ export type ReactionTriggerStatus = {
 };
 
 /**
- * Per-trigger reachability, audited against the two live call sites as of
- * this wave (F-6be920bd). 7 reachable, 1 wired-but-dead, 8 dark — none of
- * the 8 dark triggers are wireable from THIS file: leverage-diplomacy/
- * leverage-sabotage need a new verb-group registration in player-leverage.ts
- * (resolveSocialAction's LeverageResolution.verb is always the literal
- * 'social' — nothing today discriminates diplomacy from sabotage from plain
- * social action); betrayal-witnessed/obligation-betrayed/item-*-recognized
- * need entirely new producers in npc-agency.ts/item-recognition.ts that do
- * not exist yet (npc-agency's obligation ledger and item-recognition's
- * chronicle are both never persisted/never reach world.eventLog — honestly
- * deferred to v3.0, not force-wired here).
+ * Per-trigger reachability, audited against the live call sites (F-6be920bd
+ * audit; v3.0 wave 1 "social-verbs" extended player-leverage.ts's producer to
+ * cover all four leverage-* triggers). 9 reachable, 1 wired-but-dead, 6 dark
+ * — the 6 remaining dark triggers are NOT wireable from THIS file:
+ * betrayal-witnessed/obligation-betrayed/item-*-recognized need entirely new
+ * producers in npc-agency.ts/item-recognition.ts that do not exist yet
+ * (npc-agency's obligation ledger and item-recognition's chronicle are both
+ * never persisted/never reach world.eventLog — honestly deferred to v3.0,
+ * not force-wired here).
+ *
+ * leverage-diplomacy and leverage-sabotage WERE in the dark set as of the
+ * F-6be920bd audit (resolveSocialAction's LeverageResolution.verb was always
+ * the literal 'social', so nothing discriminated a diplomacy or sabotage
+ * action from a plain social one). v3.0 wave 1 registered player-leverage.ts's
+ * diplomacy-group and sabotage-group verbs, which resolve through
+ * resolveDiplomacyAction/resolveSabotageAction — whose LeverageResolution.verb
+ * is always the literal 'diplomacy'/'sabotage' respectively — so both are
+ * reachable now.
  */
 export const REACTION_TRIGGER_STATUS: Record<ReactionTrigger, ReactionTriggerStatus> = {
   'combat-won': {
@@ -142,19 +154,19 @@ export const REACTION_TRIGGER_STATUS: Record<ReactionTrigger, ReactionTriggerSta
   },
   'leverage-social': {
     reachability: 'reachable',
-    note: "player-leverage.ts dispatchLeverageCompanionReactions: the 'bribe'/'intimidate'/'petition' verbs (resolveSocialAction's LeverageResolution.verb is always the literal 'social')",
+    note: "player-leverage.ts dispatchLeverageCompanionReactions: all seven social-group verbs (bribe/intimidate/petition/call-in-favor/recruit-ally/disguise/stake-claim, the last four added in v3.0 wave 1 'social-verbs') — resolveSocialAction's LeverageResolution.verb is always the literal 'social'",
   },
   'leverage-rumor': {
     reachability: 'reachable',
-    note: "player-leverage.ts dispatchLeverageCompanionReactions: the 'seed' verb (resolveRumorAction)",
+    note: "player-leverage.ts dispatchLeverageCompanionReactions: all seven rumor-group verbs (seed/deny/frame/claim-false-credit/bury-scandal/leak-truth/spread-counter-rumor, the last six added in v3.0 wave 1 'social-verbs') — resolveRumorAction's LeverageResolution.verb is always the literal 'rumor'",
   },
   'leverage-diplomacy': {
-    reachability: 'dark',
-    note: "waits on a diplomacy-group verb — resolveSocialAction's LeverageResolution.verb is always the literal 'social', so nothing today can discriminate a diplomacy action from a plain social one",
+    reachability: 'reachable',
+    note: "player-leverage.ts dispatchLeverageCompanionReactions: all seven diplomacy-group verbs (request-meeting/improve-standing/cash-milestone/negotiate-access/trade-secret/temporary-alliance/broker-truce), via resolveDiplomacyAction — whose LeverageResolution.verb is always the literal 'diplomacy', distinct from resolveSocialAction's 'social' (v3.0 wave 1 'social-verbs')",
   },
   'leverage-sabotage': {
-    reachability: 'dark',
-    note: "waits on a sabotage-group verb — same resolveSocialAction('social')-only limitation as leverage-diplomacy",
+    reachability: 'reachable',
+    note: "player-leverage.ts dispatchLeverageCompanionReactions: all four sabotage-group verbs (sabotage/plant-evidence/blackmail-target/incite-riot), via resolveSabotageAction — whose LeverageResolution.verb is always the literal 'sabotage' (v3.0 wave 1 'social-verbs')",
   },
   'betrayal-witnessed': {
     reachability: 'dark',
@@ -210,9 +222,31 @@ function pickHint(role: CompanionRole, delta: number, seed: number): string {
 // --- Core Evaluation ---
 
 /**
+ * Hard morale floor for the breakpoint-independent departure fallback
+ * (V3R-PARTY-2b, Phase-9 party-departure remediation). Well below the
+ * breakpoint path's own 10-threshold, and well below the worst single-
+ * trigger swing in REACTION_TABLE (-10, obligation-betrayed/diplomat) — one
+ * bad event from a healthy baseline can never cross it by accident. See
+ * evaluateCompanionReactions' shouldDepart computation below for the full
+ * gating rule.
+ */
+export const MORALE_FLOOR_FALLBACK = 5;
+
+/**
  * Evaluate companion reactions to a game event trigger.
  * Returns reactions for all active companions, including morale deltas and narrator hints.
  * Checks for departure conditions after applying morale delta.
+ *
+ * Departure has two independent gates (see the `shouldDepart` computation
+ * below): the breakpoint-known path (a hostile/wavering npc-agency
+ * relationship compounds a critical morale into departure), and the
+ * MORALE_FLOOR_FALLBACK path (V3R-PARTY-2b) — when NO breakpoint is known
+ * for a companion at all (either npc-agency hasn't profiled them yet, or the
+ * calling site never forwards a breakpoints map, e.g. player-leverage.ts's
+ * dispatchLeverageCompanionReactions), departure still becomes reachable
+ * once morale bottoms out at the hard floor. Without this fallback,
+ * departure depended SOLELY on npc-agency breakpoints and could never fire
+ * from a call site or a world state that never supplies one.
  *
  * Unknown triggers (e.g. a typo like `'combat-win'` for `'combat-won'`) return
  * `[]` — indistinguishable from "no companion cares" — so they are ALSO
@@ -253,10 +287,20 @@ export function evaluateCompanionReactions(
     // Compute projected morale after delta
     const projectedMorale = Math.max(0, Math.min(100, companion.morale + baseDelta));
 
-    // Check departure conditions
+    // Check departure conditions. Two independent gates:
+    //  - breakpoint-known path (unchanged): a hostile/wavering relationship
+    //    compounds a morale crash (<=10) into departure.
+    //  - MORALE_FLOOR_FALLBACK path (V3R-PARTY-2b): gated tightly to ONLY
+    //    when the breakpoint is genuinely unknown (undefined) — a companion
+    //    with a KNOWN but benign breakpoint ('allied'/'favorable'/
+    //    'compromised') does NOT fall through to the floor; that
+    //    companion's non-departure at low morale remains the existing,
+    //    intentional contract (mirrored by evaluateDepartureRisk's own
+    //    breakpoint-gated bands below).
     const breakpoint = context.breakpoints?.get(companion.npcId);
-    const shouldDepart = projectedMorale <= 10 &&
-      (breakpoint === 'hostile' || breakpoint === 'wavering');
+    const shouldDepart = breakpoint === undefined
+      ? projectedMorale <= MORALE_FLOOR_FALLBACK
+      : projectedMorale <= 10 && (breakpoint === 'hostile' || breakpoint === 'wavering');
 
     const hint = pickHint(companion.role, baseDelta, seed + companion.npcId.length);
 
@@ -271,7 +315,9 @@ export function evaluateCompanionReactions(
       reaction.departure = true;
       reaction.departureReason = breakpoint === 'hostile'
         ? 'lost all faith in you'
-        : 'can no longer follow this path';
+        : breakpoint === 'wavering'
+          ? 'can no longer follow this path'
+          : 'has hit their breaking point';
     }
 
     reactions.push(reaction);

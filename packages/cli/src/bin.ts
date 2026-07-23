@@ -24,6 +24,7 @@ import { runCreateStarter } from './create-starter.js';
 import { runValidate } from './validate.js';
 import { runScaffold } from './scaffold.js';
 import { runProfile } from './profile.js';
+import { runAuditContent } from './audit-content.js';
 import { runGuardedAction } from './guard.js';
 import { runNpcTurns, runCompanionTurns } from './turns.js';
 import { runWorldTick } from '@ai-rpg-engine/modules';
@@ -68,6 +69,8 @@ function printHelp() {
   console.log('  inspect-save   Validate a save through the same checks Continue uses, then');
   console.log('                 summarize it (world, player, globals, recent events).');
   console.log('                 With a path: inspect that save file instead of the default.');
+  console.log('  audit-content  Dev tool: load a combat-content JSON file and print a');
+  console.log('                 content-audit report (encounter/boss/region/project balance).');
   console.log('  version        Print version');
   console.log('  help           Show this help');
   console.log('');
@@ -154,7 +157,7 @@ async function main() {
   // the help flag is the leading token, the explicit `help` command is used, or
   // the command has no help of its own.
   const wantsHelp = args.includes('--help') || args.includes('-h') || command === 'help';
-  const COMMANDS_WITH_OWN_HELP = new Set(['create-starter', 'validate', 'scaffold', 'profile']);
+  const COMMANDS_WITH_OWN_HELP = new Set(['create-starter', 'validate', 'scaffold', 'profile', 'audit-content']);
   if (wantsHelp && !COMMANDS_WITH_OWN_HELP.has(command)) {
     printHelp();
     closeReadline();
@@ -209,6 +212,16 @@ async function main() {
       // exiting itself — the runValidate/runProfile contract.
       const savePath = args.slice(1).find((a) => !a.startsWith('-'));
       const code = runInspectSave(savePath);
+      closeReadline();
+      if (code !== 0) process.exit(code);
+      return;
+    }
+    case 'audit-content': {
+      // V3-DIR-2: a dev-only content-audit report, NOT the player-facing
+      // Director's Ledger (renderDirectorLedger/director.ts). runAuditContent
+      // returns the exit code (0 loaded / 1 errors-or-usage) rather than
+      // exiting itself — the runValidate/runProfile/runInspectSave contract.
+      const code = runAuditContent(args.slice(1));
       closeReadline();
       if (code !== 0) process.exit(code);
       return;

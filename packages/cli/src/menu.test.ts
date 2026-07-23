@@ -4,6 +4,11 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createGame, combatMasteryTree } from '@ai-rpg-engine/starter-fantasy';
+// v3.0 wave-3 (menu-social-fix, V3R-MENU-2 — the SEED-0 proof): two of the
+// six controlled-district-start starters, aliased to avoid colliding with
+// starter-fantasy's own createGame above.
+import { createGame as gladiatorCreateGame } from '@ai-rpg-engine/starter-gladiator';
+import { createGame as roninCreateGame } from '@ai-rpg-engine/starter-ronin';
 import {
   addCurrency,
   getCurrency,
@@ -14,7 +19,10 @@ import {
   getDistrictEconomy,
   setPersistedOpportunities,
   makeOpportunity,
+  getPartyState,
+  setPartyState,
   type OpportunityState,
+  type CompanionState,
 } from '@ai-rpg-engine/modules';
 import { buildActionList, renderFullScreen, SCREEN_WIDTH } from '@ai-rpg-engine/terminal-ui';
 import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
@@ -25,7 +33,10 @@ import {
   buildSellActions,
   buildSalvageActions,
   buildCraftActions,
+  buildRepairActions,
+  buildModifyActions,
   buildLeverageActions,
+  buildRecruitActions,
   buildOpportunityActions,
   buildExtraActions,
   parseExtraSelection,
@@ -36,6 +47,7 @@ import {
   renderInspectorReport,
   renderJournal,
   derivePlayerLevel,
+  normalizeGenre,
   DEBUG_MENU_LABEL,
   DIRECTOR_MENU_LABEL,
   DIRECTOR_MENU_VERB,
@@ -67,10 +79,19 @@ function makeDivineCryptGame() {
  *  used to seed no coin, so these sentinel/idle composition tests relied on it
  *  producing only the always-on journal / director (+ env-gated debug) entries.
  *  v2.9 seeds a small starting coin, which would add `buy` entries; clearing it
- *  keeps what's under test — the sentinel routing / visibility — isolated. */
+ *  keeps what's under test — the sentinel routing / visibility — isolated.
+ *  v3.0 wave-3 (menu-social-fix): starter-fantasy's default zone
+ *  (chapel-entrance, where createGame(42) starts the player) also carries a
+ *  'recruitable'-tagged NPC (Sister Maren) — which would now add a `recruit`
+ *  entry (buildRecruitActions, V3R-MENU-3), the same way the uncleared coin
+ *  would add `buy` entries. Strip the tag here for the same reason: keep this
+ *  fixture's "truly idle" contract isolated to what each test actually means
+ *  to exercise. */
 function makeIdleGame() {
   const engine = createGame(42);
   engine.store.state.entities['player'].resources[SELL_CURRENCY] = 0;
+  const sisterMaren = engine.store.state.entities['sister-maren'];
+  if (sisterMaren) sisterMaren.tags = sisterMaren.tags.filter((t) => t !== 'recruitable');
   return engine;
 }
 
@@ -732,12 +753,18 @@ describe('buildBuyActions (F-31f15013 menu wire) — buy entries priced via quot
 
     const actions = buildBuyActions(engine.world);
     expect(actions.length).toBeGreaterThan(0);
+    // v3.0 wave-2 (V3-MENU-1): buildBuyActions now normalizes activeRuleset
+    // ('fantasy-minimal' → 'fantasy') before pricing, so the test's OWN
+    // expected-price computation must use the SAME normalized genre or it
+    // quotes against a genre that never matches (the exact bug this wave
+    // fixed) and gets back `undefined`.
+    const genre = normalizeGenre(engine.world.meta.activeRuleset);
     for (const action of actions) {
       expect(action.verb).toBe('buy');
       expect(action.group).toBe('trade');
       const itemId = action.targetIds?.[0];
       expect(typeof itemId).toBe('string');
-      const price = quoteBuyPrice(engine.world, itemId!, engine.world.meta.activeRuleset);
+      const price = quoteBuyPrice(engine.world, itemId!, genre);
       expect(price).toBeDefined();
       expect(action.label).toBe(`Buy ${itemId!.replace(/-/g, ' ')} (${price} coin)`);
     }
@@ -751,7 +778,8 @@ describe('buildBuyActions (F-31f15013 menu wire) — buy entries priced via quot
     expect(richActions.length).toBeGreaterThan(0);
     const sample = richActions[0];
     const itemId = sample.targetIds![0];
-    const price = quoteBuyPrice(engine.world, itemId, engine.world.meta.activeRuleset)!;
+    const genre = normalizeGenre(engine.world.meta.activeRuleset); // V3-MENU-1 — see test above
+    const price = quoteBuyPrice(engine.world, itemId, genre)!;
 
     player.resources[SELL_CURRENCY] = price - 1; // one short
     const poorerActions = buildBuyActions(engine.world);
@@ -768,10 +796,24 @@ describe('buildBuyActions (F-31f15013 menu wire) — buy entries priced via quot
     player.resources[SELL_CURRENCY] = 1_000_000;
 
     const extras = buildExtraActions(engine, [combatMasteryTree]);
-    const buyIndex = extras.findIndex((a) => a.group === 'trade' && a.verb === 'buy');
-    expect(buyIndex).toBeGreaterThanOrEqual(0);
-    const chosen = extras[buyIndex];
-    const price = quoteBuyPrice(engine.world, chosen.targetIds![0], engine.world.meta.activeRuleset)!;
+    const buyEntries = extras.filter((a) => a.group === 'trade' && a.verb === 'buy');
+    expect(buyEntries.length).toBeGreaterThan(0);
+    // v3.0 wave-2 (V3-MENU-1): buildBuyActions now normalizes genre, so
+    // medicine/weapons/food/luxuries/components entries are fantasy-flavored
+    // ids (e.g. 'ammo-pack' is NOT one of these — 'healing-draught' would be)
+    // that the REGISTERED 'buy' handler doesn't recognize yet —
+    // buildWorldStack still calls createTradeCore() with no genre config at
+    // all (a sibling wave-2 domain's open ceiling, documented on
+    // buildBuyActions' own doc comment). 'ammo-pack' has no 'fantasy'
+    // override in GENRE_BUYABLE_STOCK (ammunition/fuel/contraband are the
+    // three categories fantasy doesn't flavor), so it's genre-INVARIANT —
+    // picking it keeps this test's "guaranteed to execute" contract on
+    // ground both the display and the (not-yet-wired) mechanical side agree
+    // on today.
+    const chosen = buyEntries.find((a) => a.targetIds?.[0] === 'ammo-pack');
+    expect(chosen).toBeDefined();
+    const buyIndex = extras.indexOf(chosen!);
+    const price = quoteBuyPrice(engine.world, chosen!.targetIds![0], normalizeGenre(engine.world.meta.activeRuleset))!;
     const before = engine.world.entities['player'].resources[SELL_CURRENCY];
 
     const baseCount = buildActionList(engine.world).length;
@@ -837,7 +879,7 @@ describe('buildCraftActions (crafting menu wire) — craft-category recipes only
     expect(buildCraftActions(engine.world)).toEqual([]);
   });
 
-  it('offers a craft recipe once its materials are held — never repair/modify (deferred to wave 3)', () => {
+  it('offers a craft recipe once its materials are held — never repair/modify (those are buildRepairActions/buildModifyActions\' own job now, wired separately below — see their own describe blocks)', () => {
     const engine = makeDivineCryptGame();
     const player = engine.store.state.entities['player'];
     player.custom = { ...player.custom, 'materials.medicine': 2 };
@@ -898,9 +940,238 @@ describe('buildCraftActions (crafting menu wire) — craft-category recipes only
   });
 });
 
+// v3.0 wave-2 menu-surface (V3-MENU-2): repair/modify item×recipe pairing.
+// buildCraftActions' own comment above documents WHY these were deferred —
+// both need a second selection (a specific carried item) the flat entry
+// shape didn't model until now.
+describe('buildRepairActions (repair menu wire, V3-MENU-2) — item×recipe pairing, gated on canCraft', () => {
+  it('offers nothing with no item carried, even with materials held', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'materials.components': 5 };
+    expect(buildRepairActions(engine.world)).toEqual([]);
+  });
+
+  it('offers nothing with an item carried but no materials', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    engine.store.recordEvent(giveItem(player, 'iron-sword', engine.tick));
+    expect(buildRepairActions(engine.world)).toEqual([]);
+  });
+
+  it('pairs an affordable repair recipe with a carried item once both are present', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    engine.store.recordEvent(giveItem(player, 'iron-sword', engine.tick));
+    player.custom = { ...player.custom, 'materials.components': 2 }; // repair-weapon's own cost
+
+    const actions = buildRepairActions(engine.world);
+    expect(actions).toContainEqual({
+      verb: 'repair',
+      targetIds: ['iron-sword'],
+      parameters: { recipeId: 'repair-weapon' },
+      label: 'Repair Weapon → iron sword',
+      group: 'crafting',
+    });
+    expect(actions.every((a) => a.verb === 'repair' && a.group === 'crafting')).toBe(true);
+  });
+
+  it('pairs EVERY affordable repair recipe with EVERY distinct carried item (the cross product), never a duplicate item id', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    engine.store.recordEvent(giveItem(player, 'iron-sword', engine.tick));
+    engine.store.recordEvent(giveItem(player, 'iron-sword', engine.tick)); // a SECOND copy — distinct-id dedup
+    engine.store.recordEvent(giveItem(player, 'leather-armor', engine.tick));
+    player.custom = { ...player.custom, 'materials.components': 2, 'materials.luxuries': 1 }; // affords BOTH universal repair recipes
+
+    const actions = buildRepairActions(engine.world);
+    // repair-weapon × {iron-sword, leather-armor} + repair-armor × {iron-sword, leather-armor} = 4 rows,
+    // NOT 6 (a duplicate iron-sword row per copy would be a bug this dedup guards against).
+    expect(actions).toHaveLength(4);
+    expect(actions.map((a) => `${a.parameters?.recipeId}:${a.targetIds?.[0]}`).sort()).toEqual([
+      'repair-armor:iron-sword',
+      'repair-armor:leather-armor',
+      'repair-weapon:iron-sword',
+      'repair-weapon:leather-armor',
+    ]);
+  });
+
+  it('selecting a repair entry actually EXECUTES the repair verb — never rejected, and the item survives', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    engine.store.recordEvent(giveItem(player, 'iron-sword', engine.tick));
+    player.custom = { ...player.custom, 'materials.components': 2 };
+
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const idx = extras.findIndex((a) => a.verb === 'repair');
+    expect(idx).toBeGreaterThanOrEqual(0);
+
+    const baseCount = buildActionList(engine.world).length;
+    const result = handlePlayerInput(engine, String(baseCount + idx + 1), { log: vi.fn(), extras });
+
+    expect(result).toEqual({ kind: 'action', via: 'extra' });
+    expect(engine.world.eventLog.some((e) => e.type === 'item.repaired')).toBe(true);
+    expect(
+      engine.world.eventLog.some(
+        (e) => e.type === 'action.rejected' && (e.payload as { verb?: unknown }).verb === 'repair',
+      ),
+    ).toBe(false);
+    // repair never removes the target item (unlike salvage/sell).
+    expect(engine.world.entities['player'].inventory).toContain('iron-sword');
+  });
+
+  it('no district at the player\'s zone → no repair entries, no matter what is carried/held', () => {
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    engine.store.recordEvent(giveItem(player, 'iron-sword', engine.tick));
+    player.custom = { ...player.custom, 'materials.components': 5 };
+    player.zoneId = 'nowhere-zone';
+    expect(buildRepairActions(engine.world)).toEqual([]);
+  });
+});
+
+describe('buildModifyActions (modify menu wire, V3-MENU-2) — item×recipe pairing, black-market excluded', () => {
+  it('offers nothing with no item carried, even with materials held', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'materials.components': 5 };
+    expect(buildModifyActions(engine.world)).toEqual([]);
+  });
+
+  it('offers nothing with an item carried but no materials', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    engine.store.recordEvent(giveItem(player, 'iron-sword', engine.tick));
+    expect(buildModifyActions(engine.world)).toEqual([]);
+  });
+
+  it('pairs an affordable modify recipe with a carried item once both are present', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    engine.store.recordEvent(giveItem(player, 'iron-sword', engine.tick));
+    player.custom = { ...player.custom, 'materials.components': 1 }; // modify-sharpen's own cost
+
+    const actions = buildModifyActions(engine.world);
+    expect(actions).toContainEqual({
+      verb: 'modify',
+      targetIds: ['iron-sword'],
+      parameters: { recipeId: 'modify-sharpen' },
+      label: 'Sharpen Weapon → iron sword',
+      group: 'crafting',
+    });
+    expect(actions.every((a) => a.verb === 'modify' && a.group === 'crafting')).toBe(true);
+  });
+
+  it('selecting a modify entry actually EXECUTES the modify verb — never rejected, and the item survives', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    engine.store.recordEvent(giveItem(player, 'iron-sword', engine.tick));
+    player.custom = { ...player.custom, 'materials.components': 1 };
+
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const idx = extras.findIndex((a) => a.verb === 'modify');
+    expect(idx).toBeGreaterThanOrEqual(0);
+
+    const baseCount = buildActionList(engine.world).length;
+    const result = handlePlayerInput(engine, String(baseCount + idx + 1), { log: vi.fn(), extras });
+
+    expect(result).toEqual({ kind: 'action', via: 'extra' });
+    expect(engine.world.eventLog.some((e) => e.type === 'item.modified')).toBe(true);
+    expect(
+      engine.world.eventLog.some(
+        (e) => e.type === 'action.rejected' && (e.payload as { verb?: unknown }).verb === 'modify',
+      ),
+    ).toBe(false);
+    // modify never removes the target item (unlike salvage/sell).
+    expect(engine.world.entities['player'].inventory).toContain('iron-sword');
+  });
+
+  it('NEVER offers a black-market modify recipe, even when its own materials are held and its own required tag is present (documented ceiling: buildCraftingContext is module-private in crafting-recipes.ts)', () => {
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    // 'modify-black-market-tune' (cyberpunk) needs contraband×2, requiredTags
+    // ['black-market'], and modificationKind 'black-market' — set every OTHER
+    // gate so the ONLY thing that could still exclude it is this builder's
+    // own deliberate modificationKind filter.
+    engine.world.meta.activeRuleset = 'cyberpunk-minimal'; // normalizeGenre → 'cyberpunk'
+    player.tags = [...player.tags, 'black-market'];
+    engine.store.recordEvent(giveItem(player, 'chip-implant', engine.tick));
+    player.custom = { ...player.custom, 'materials.contraband': 2 };
+
+    const actions = buildModifyActions(engine.world);
+    expect(actions.some((a) => a.parameters?.recipeId === 'modify-black-market-tune')).toBe(false);
+  });
+
+  it('no district at the player\'s zone → no modify entries, no matter what is carried/held', () => {
+    const engine = createGame(42);
+    const player = engine.store.state.entities['player'];
+    engine.store.recordEvent(giveItem(player, 'iron-sword', engine.tick));
+    player.custom = { ...player.custom, 'materials.components': 5 };
+    player.zoneId = 'nowhere-zone';
+    expect(buildModifyActions(engine.world)).toEqual([]);
+  });
+});
+
+// v3.0 wave-2 menu-surface (V3-MENU-1): the genre-strip fix. buildBuyActions/
+// buildCraftActions' own tests above already exercise starter-fantasy's
+// default (unconfigured) genre path; these prove the FIX itself — that a
+// genre-tabled starter's own flavored stock/recipes now actually display,
+// where before this wave they silently degraded to the universal fallback
+// (world.meta.activeRuleset's '-minimal' suffix never matched a genre table
+// key).
+describe('genre-strip (V3-MENU-1) — buy/craft show genre-flavored stock/recipes for a genre-tabled starter', () => {
+  it('buildBuyActions offers a fantasy-flavored item (e.g. healing-draught) that DEFAULT_BUYABLE_STOCK does not list', () => {
+    const engine = createGame(42); // activeRuleset === 'fantasy-minimal'
+    const player = engine.store.state.entities['player'];
+    player.resources[SELL_CURRENCY] = 1_000_000;
+
+    const actions = buildBuyActions(engine.world);
+    // 'healing-draught' only appears in GENRE_BUYABLE_STOCK.fantasy.medicine —
+    // DEFAULT_BUYABLE_STOCK.medicine is ['medkit']. Its presence proves genre
+    // is being normalized to the bare 'fantasy' key, not left as
+    // 'fantasy-minimal' (which would silently degrade to the medkit default).
+    expect(actions.some((a) => a.targetIds?.[0] === 'healing-draught')).toBe(true);
+  });
+
+  it('buildCraftActions offers a fantasy-flavored recipe (craft-potion) once its genre-specific materials are held', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'materials.medicine': 3 }; // craft-potion's own cost
+
+    const actions = buildCraftActions(engine.world);
+    // craft-potion (GENRE_RECIPES.fantasy, 'Brew Potion') is UNREACHABLE
+    // under the pre-fix raw 'fantasy-minimal' genre string (GENRE_RECIPES
+    // has no 'fantasy-minimal' key) — its presence here proves the strip.
+    expect(actions).toContainEqual({
+      verb: 'craft',
+      parameters: { recipeId: 'craft-potion' },
+      label: 'Brew Potion',
+      group: 'crafting',
+    });
+  });
+
+  it('normalizeGenre strips the fixed suffix and is a no-op for rulesets that never had one', () => {
+    expect(normalizeGenre('fantasy-minimal')).toBe('fantasy');
+    expect(normalizeGenre('cyberpunk-minimal')).toBe('cyberpunk');
+    expect(normalizeGenre('weird-west-minimal')).toBe('weird-west');
+    expect(normalizeGenre('test')).toBe('test'); // no trailing '-minimal' — unchanged
+    expect(normalizeGenre('minimal')).toBe('minimal'); // no LEADING hyphen — unchanged, not a false-positive strip
+  });
+});
+
 describe('buildLeverageActions (leverage menu wire) — guaranteed-success entries only (afford + cooldown)', () => {
-  it('offers nothing with empty leverage, even with a controlling faction present', () => {
+  it('offers NOTHING with empty leverage, even with a controlling faction present (v3.0 wave-3 SEED-0 fix, V3R-MENU-1)', () => {
     const engine = makeDivineCryptGame(); // crypt-depths → controllingFaction 'chapel-undead'
+    // Before the SEED-0 fix, 'cash-milestone' was the ONE surfaced verb whose
+    // DIPLOMACY_REQUIREMENTS entry was genuinely `{ costs: {}, cooldownTurns: 5 }`
+    // — canAfford({}) is vacuously true at ANY leverage balance, including
+    // empty, and it carried no minimumReputation gate either — so it rendered
+    // even for a zero-engagement player. It now ALSO carries a
+    // `minimumLegitimacy` floor (CASH_MILESTONE_LEGITIMACY_FLOOR,
+    // player-leverage.ts), which an empty leverage state fails just like
+    // every other surfaced verb's real currency cost — so this is no longer
+    // an exception. See the dedicated 'cash-milestone gating' describe block
+    // below for the floor-crossing proof.
     expect(buildLeverageActions(engine.world)).toEqual([]);
   });
 
@@ -986,6 +1257,318 @@ describe('buildLeverageActions (leverage menu wire) — guaranteed-success entri
     expect(actions.some((a) => a.verb === 'bribe' || a.verb === 'intimidate' || a.verb === 'petition')).toBe(false);
     // seed has no faction requirement, so it still offers.
     expect(actions.some((a) => a.verb === 'seed')).toBe(true);
+  });
+});
+
+// v3.0 wave-3 (menu-social-fix, V3R-MENU-2 — the SEED-0 proof). Phase-9 audit
+// finding: 6 of 10 starters (gladiator/ronin/vampire/zombie/weird-west/colony)
+// start the player INSIDE a controlled district, so a completely
+// zero-engagement, turn-1 player would have seen 'cash-milestone' as a
+// numbered menu row before V3R-MENU-1's fix — a new v3.0 menu row visible to
+// a legacy/fresh player is a seed-0 byte-identity breach. gladiator is used
+// here (createGame with NO extra setup places the player at 'holding-cells',
+// inside the 'arena-stable'-controlled district) — the exact "bare
+// createGame(seed), zero further mutation" shape a legacy save/fresh player
+// exercises.
+describe('SEED-0 proof: a fresh, zero-engagement player in a controlled-district starter sees no new v3.0 leverage row (V3R-MENU-2)', () => {
+  it('gladiator: turn 1, zero engagement, controlled district — buildLeverageActions offers nothing', () => {
+    const engine = gladiatorCreateGame(42);
+    // Confirm the premise this test depends on: the player really does start
+    // inside a controlled district with zero custom leverage state (no test
+    // setup mutated either) — otherwise this proof would pass for the wrong
+    // reason (e.g. no controllingFaction at all, the ALREADY-covered case).
+    const player = engine.world.entities[engine.world.playerId];
+    expect(player.custom ?? {}).toEqual({});
+
+    const actions = buildLeverageActions(engine.world);
+    expect(actions).toEqual([]);
+  });
+
+  it('ronin: same proof, a second controlled-district starter (castle-gate → takeda-clan)', () => {
+    const engine = roninCreateGame(42);
+    const player = engine.world.entities[engine.world.playerId];
+    expect(player.custom ?? {}).toEqual({});
+
+    const actions = buildLeverageActions(engine.world);
+    expect(actions).toEqual([]);
+  });
+
+  it('gladiator: the FULL numbered menu (base + extras) carries no leverage row on turn 1 either', () => {
+    const engine = gladiatorCreateGame(42);
+    const extras = buildExtraActions(engine, []);
+    expect(extras.some((a) => a.group === 'leverage')).toBe(false);
+    // NOT a SEED-0 breach, deliberately NOT asserted absent here: gladiator's
+    // content authors a recruitable companion (Nerva) standing in the
+    // player's own starting zone (holding-cells) — a REAL, content-driven
+    // precondition (V3R-MENU-3's own gate: an in-zone 'recruitable'-tagged
+    // NPC), not a trivially-true-everywhere freebie the way cash-milestone's
+    // old "any controlling faction" gate was. This proves the two systems are
+    // independently gated: leverage rows are absent because THEIR
+    // precondition genuinely isn't met, while recruit's row is correctly
+    // present because ITS OWN precondition genuinely is.
+    expect(extras.some((a) => a.group === 'party' && a.verb === 'recruit')).toBe(true);
+  });
+});
+
+// v3.0 wave-2 menu-surface (V3-MENU-3): the curated extension surfacing
+// wave-1's 21 newly-registered leverage verbs (social/rumor's remaining
+// sub-actions, plus the brand-new diplomacy/sabotage groups). Same
+// guaranteed-success discipline as the original 4 above — every test here
+// proves a NEW verb only appears when its own afford+cooldown(+reputation)
+// gate genuinely holds, and that selecting it executes without rejection.
+describe('buildLeverageActions — v3.0 wave-2 curated extension (V3-MENU-3)', () => {
+  it('surfaces call-in-favor once its cost (debt+favor) is affordable, targeting the controlling faction', () => {
+    const engine = makeDivineCryptGame(); // crypt-depths → controllingFaction 'chapel-undead'
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'leverage.debt': 20, 'leverage.favor': 10 };
+
+    const actions = buildLeverageActions(engine.world);
+    expect(actions).toContainEqual({
+      verb: 'call-in-favor',
+      targetIds: ['chapel-undead'],
+      label: 'Call in a favor with chapel undead',
+      group: 'leverage',
+    });
+  });
+
+  it('surfaces disguise/stake-claim with NO target even though a controlling faction is present (same "seed" shape)', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'leverage.influence': 30, 'leverage.legitimacy': 20 };
+
+    const actions = buildLeverageActions(engine.world);
+    const disguise = actions.find((a) => a.verb === 'disguise');
+    const stakeClaim = actions.find((a) => a.verb === 'stake-claim');
+    expect(disguise).toMatchObject({ verb: 'disguise', label: 'Adopt a disguise', group: 'leverage' });
+    expect(disguise?.targetIds).toBeUndefined();
+    expect(stakeClaim).toMatchObject({ verb: 'stake-claim', label: 'Stake a claim here', group: 'leverage' });
+    expect(stakeClaim?.targetIds).toBeUndefined();
+  });
+
+  it('surfaces a rumor spawn-family verb (claim-false-credit) with no target requirement', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'leverage.influence': 15 };
+
+    const actions = buildLeverageActions(engine.world);
+    expect(actions).toContainEqual({
+      verb: 'claim-false-credit',
+      label: 'Claim false credit for a deed',
+      group: 'leverage',
+    });
+  });
+
+  it('NEVER surfaces deny/bury-scandal (documented ceiling: they mutate an existing rumor by id, a pairing dimension this wave does not model)', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = {
+      ...player.custom,
+      'leverage.legitimacy': 999,
+      'leverage.favor': 999,
+      'leverage.influence': 999,
+    };
+    const actions = buildLeverageActions(engine.world);
+    expect(actions.some((a) => a.verb === 'deny' || a.verb === 'bury-scandal')).toBe(false);
+  });
+
+  it('surfaces a sabotage verb with no target requirement, regardless of controlling faction', () => {
+    const engine = createGame(42); // chapel-grounds — no controllingFaction
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'leverage.blackmail': 10 };
+
+    const actions = buildLeverageActions(engine.world);
+    expect(actions).toContainEqual({ verb: 'sabotage', label: 'Sabotage something here', group: 'leverage' });
+  });
+
+  it('surfaces a diplomacy verb once affordable AND above its minimum reputation, targeting the controlling faction', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'leverage.favor': 5 }; // request-meeting's own cost
+
+    const actions = buildLeverageActions(engine.world);
+    // Default reputation toward an untouched faction is 0, which is ≥
+    // request-meeting's minimumReputation (-10) — so it should surface.
+    expect(actions).toContainEqual({
+      verb: 'request-meeting',
+      targetIds: ['chapel-undead'],
+      label: 'Request a meeting with chapel undead',
+      group: 'leverage',
+    });
+  });
+
+  it('withholds a reputation-gated diplomacy verb the instant reputation drops below its minimum (never a menu-offers-it, engine-rejects-it trap)', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'leverage.favor': 5 };
+
+    // Push reputation toward chapel-undead below request-meeting's own
+    // minimumReputation (-10) — the SAME reputation_<factionId> global
+    // trade-core.ts/player-leverage.ts's own playerReputationFor merges.
+    engine.world.globals['reputation_chapel-undead'] = -20;
+    expect(buildLeverageActions(engine.world).some((a) => a.verb === 'request-meeting')).toBe(false);
+
+    // Raise it back above the floor — the SAME state now offers it.
+    engine.world.globals['reputation_chapel-undead'] = -5;
+    expect(buildLeverageActions(engine.world).some((a) => a.verb === 'request-meeting')).toBe(true);
+  });
+
+  it('withholds cash-milestone with zero leverage held (v3.0 wave-3 SEED-0 fix, V3R-MENU-1 — was a genuinely free diplomacy verb)', () => {
+    const engine = makeDivineCryptGame();
+    const actions = buildLeverageActions(engine.world);
+    expect(actions.some((a) => a.verb === 'cash-milestone')).toBe(false);
+  });
+
+  it('offers cash-milestone once legitimacy crosses its minimumLegitimacy floor', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'leverage.legitimacy': 15 }; // CASH_MILESTONE_LEGITIMACY_FLOOR
+
+    const actions = buildLeverageActions(engine.world);
+    expect(actions).toContainEqual({
+      verb: 'cash-milestone',
+      targetIds: ['chapel-undead'],
+      label: 'Cash in a milestone with chapel undead',
+      group: 'leverage',
+    });
+  });
+
+  it('withholds cash-milestone the instant legitimacy drops back below the floor (never a menu-offers-it, engine-rejects-it trap)', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'leverage.legitimacy': 14 }; // one below the floor
+    expect(buildLeverageActions(engine.world).some((a) => a.verb === 'cash-milestone')).toBe(false);
+
+    player.custom = { ...player.custom, 'leverage.legitimacy': 15 }; // at the floor
+    expect(buildLeverageActions(engine.world).some((a) => a.verb === 'cash-milestone')).toBe(true);
+  });
+
+  it('a new verb drops off the menu the turn after it is used (cooldown gate wired the same as bribe\'s own)', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'leverage.influence': 999 };
+    expect(buildLeverageActions(engine.world).some((a) => a.verb === 'claim-false-credit')).toBe(true);
+
+    engine.submitAction('claim-false-credit', {});
+    expect(buildLeverageActions(engine.world).some((a) => a.verb === 'claim-false-credit')).toBe(false);
+  });
+
+  it('selecting a new leverage verb actually EXECUTES it through the engine — never rejected', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'leverage.debt': 20, 'leverage.favor': 10 };
+
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const idx = extras.findIndex((a) => a.verb === 'call-in-favor');
+    expect(idx).toBeGreaterThanOrEqual(0);
+
+    const baseCount = buildActionList(engine.world).length;
+    const result = handlePlayerInput(engine, String(baseCount + idx + 1), { log: vi.fn(), extras });
+
+    expect(result).toEqual({ kind: 'action', via: 'extra' });
+    expect(engine.world.eventLog.some((e) => e.type === 'leverage.resolved')).toBe(true);
+    expect(
+      engine.world.eventLog.some(
+        (e) => e.type === 'action.rejected' && (e.payload as { verb?: unknown }).verb === 'call-in-favor',
+      ),
+    ).toBe(false);
+  });
+});
+
+// v3.0 wave-3 (menu-social-fix, V3R-MENU-3/V3R-MENU-4): recruit had no
+// numbered-menu presence at all before this wave (companion-core.ts's
+// `recruit` verb was reachable only via un-hinted free text). Same
+// guaranteed-success discipline as every other builder in this file — every
+// test here proves an entry only appears when recruitHandler's own guard
+// chain would actually succeed.
+describe('buildRecruitActions (recruit menu wire) — V3R-MENU-3', () => {
+  it('offers a numbered row for a recruitable NPC standing in the player\'s own zone', () => {
+    const engine = createGame(42); // chapel-entrance: Sister Maren is here, tagged 'recruitable'
+    const actions = buildRecruitActions(engine.world);
+    expect(actions).toContainEqual({
+      verb: 'recruit',
+      targetIds: ['sister-maren'],
+      label: 'Recruit Sister Maren',
+      group: 'party',
+    });
+  });
+
+  it('offers NOTHING when no recruitable NPC shares the player\'s zone', () => {
+    const engine = makeDivineCryptGame(); // crypt-chamber — only enemies here
+    expect(buildRecruitActions(engine.world)).toEqual([]);
+  });
+
+  it('never offers an NPC that lacks the recruitable/companion-ready tag (the pilgrim, same zone as Sister Maren)', () => {
+    const engine = createGame(42);
+    const actions = buildRecruitActions(engine.world);
+    expect(actions.some((a) => a.targetIds?.[0] === 'pilgrim')).toBe(false);
+  });
+
+  it('never offers a recruitable NPC standing in a DIFFERENT zone (Brother Aldric is at chapel-nave, not chapel-entrance)', () => {
+    const engine = createGame(42);
+    const actions = buildRecruitActions(engine.world);
+    expect(actions.some((a) => a.targetIds?.[0] === 'brother-aldric')).toBe(false);
+  });
+
+  it('drops off the menu once the NPC is already recruited (not a duplicate offer)', () => {
+    const engine = createGame(42);
+    expect(buildRecruitActions(engine.world).some((a) => a.targetIds?.[0] === 'sister-maren')).toBe(true);
+
+    const recruited = engine.submitAction('recruit', { targetIds: ['sister-maren'] });
+    expect(recruited.some((e) => e.type === 'companion.recruited')).toBe(true);
+
+    expect(buildRecruitActions(engine.world).some((a) => a.targetIds?.[0] === 'sister-maren')).toBe(false);
+  });
+
+  it('offers nothing at all once the party is full (mirrors addCompanion\'s own party-full rejection)', () => {
+    const engine = createGame(42);
+    const fill: CompanionState = {
+      npcId: 'filler', role: 'scout', joinedAtTick: 0, abilityTags: [], morale: 50, active: true,
+    };
+    const party = getPartyState(engine.world);
+    setPartyState(engine.world, {
+      ...party,
+      companions: [
+        { ...fill, npcId: 'filler-1' },
+        { ...fill, npcId: 'filler-2' },
+        { ...fill, npcId: 'filler-3' },
+      ], // maxSize defaults to 3
+    });
+    expect(buildRecruitActions(engine.world)).toEqual([]);
+  });
+
+  it('id-sorts multiple recruitable candidates for deterministic ordering', () => {
+    const engine = createGame(42);
+    // Move Brother Aldric into the player's own zone alongside Sister Maren —
+    // two recruitable candidates in the same zone at once.
+    engine.world.entities['brother-aldric'].zoneId = 'chapel-entrance';
+    const actions = buildRecruitActions(engine.world);
+    const ids = actions.map((a) => a.targetIds?.[0]);
+    expect(ids).toEqual(['brother-aldric', 'sister-maren']); // id-sorted
+  });
+
+  it('selecting the recruit entry actually EXECUTES it through the engine — never rejected', () => {
+    const engine = createGame(42);
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const idx = extras.findIndex((a) => a.verb === 'recruit');
+    expect(idx).toBeGreaterThanOrEqual(0);
+    expect(extras[idx].group).toBe('party');
+
+    const baseCount = buildActionList(engine.world).length;
+    const result = handlePlayerInput(engine, String(baseCount + idx + 1), { log: vi.fn(), extras });
+
+    expect(result).toEqual({ kind: 'action', via: 'extra' });
+    expect(engine.world.eventLog.some((e) => e.type === 'companion.recruited')).toBe(true);
+    expect(
+      engine.world.eventLog.some(
+        (e) => e.type === 'action.rejected' && (e.payload as { verb?: unknown }).verb === 'recruit',
+      ),
+    ).toBe(false);
+  });
+
+  it('is spliced into buildExtraActions alongside the other conditional groups (not just standalone)', () => {
+    const engine = createGame(42);
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    expect(extras.some((a) => a.group === 'party' && a.verb === 'recruit')).toBe(true);
   });
 });
 
@@ -1141,7 +1724,7 @@ describe('buildSellActions grouping (F-13255438) — collapse duplicate carried 
   });
 });
 
-describe('buildExtraActions wiring order (v2.9) — buy, sell, salvage, craft, leverage, opportunity, then journal/director/debug', () => {
+describe('buildExtraActions wiring order (v3.0 wave-2) — buy, sell, salvage, craft, repair, modify, leverage, opportunity, then journal/director/debug', () => {
   it('a fully idle player (no coin/inventory/materials/leverage/opportunities) still only ever sees journal + director', () => {
     const engine = makeIdleGame();
     const extras = buildExtraActions(engine, [combatMasteryTree]);
@@ -1150,14 +1733,16 @@ describe('buildExtraActions wiring order (v2.9) — buy, sell, salvage, craft, l
     expect(extras[1].group).toBe('director');
   });
 
-  it('every new group appears in the documented order when all six are simultaneously live', () => {
+  it('every new group appears in the documented order when all seven are simultaneously live (repair/modify now included, V3-MENU-4)', () => {
     const engine = makeDivineCryptGame(); // controllingFaction present for leverage
     const player = engine.store.state.entities['player'];
     player.resources[SELL_CURRENCY] = 1_000_000; // buy affords, and funds sell/buy both being non-empty
     engine.store.recordEvent(giveItem(player, 'healing-draught', engine.tick)); // sell + salvage
+    engine.store.recordEvent(giveItem(player, 'iron-sword', engine.tick)); // repair + modify
     player.custom = {
       ...player.custom,
       'materials.medicine': 5, // craft
+      'materials.components': 5, // repair + modify
       'leverage.favor': 20, // leverage
     };
     setPersistedOpportunities(engine.world, [
@@ -1175,7 +1760,7 @@ describe('buildExtraActions wiring order (v2.9) — buy, sell, salvage, craft, l
     // Only the 9 groups this test seeded/always-on are checked in relative
     // order — ability/advance are absent for this player (no divine tag, no xp).
     expect(firstIndexOf('trade')).toBeGreaterThanOrEqual(0); // buy AND/OR sell
-    expect(firstIndexOf('crafting')).toBeGreaterThan(firstIndexOf('trade')); // salvage/craft after trade
+    expect(firstIndexOf('crafting')).toBeGreaterThan(firstIndexOf('trade')); // salvage/craft/repair/modify after trade
     expect(firstIndexOf('leverage')).toBeGreaterThan(firstIndexOf('crafting'));
     expect(firstIndexOf('opportunities')).toBeGreaterThan(firstIndexOf('leverage'));
     expect(firstIndexOf('journal')).toBeGreaterThan(firstIndexOf('opportunities'));
@@ -1187,6 +1772,14 @@ describe('buildExtraActions wiring order (v2.9) — buy, sell, salvage, craft, l
     if (lastBuyIdx >= 0 && firstSellIdx >= 0) {
       expect(lastBuyIdx).toBeLessThan(firstSellIdx);
     }
+    // Within 'crafting', the four builders append in FIFO order: salvage,
+    // craft, repair, modify (buildExtraActions' own spread order) — verified
+    // via each entry's FIRST occurrence, since repair/modify each contribute
+    // more than one row (the item×recipe cross product).
+    const craftingVerbs = extras.filter((e) => e.group === 'crafting').map((e) => e.verb);
+    expect(craftingVerbs.indexOf('salvage')).toBeLessThan(craftingVerbs.indexOf('craft'));
+    expect(craftingVerbs.indexOf('craft')).toBeLessThan(craftingVerbs.indexOf('repair'));
+    expect(craftingVerbs.indexOf('repair')).toBeLessThan(craftingVerbs.indexOf('modify'));
   });
 
   it('a throwing buy/salvage/craft/leverage/opportunity source degrades to one bounded line each, siblings unaffected', () => {

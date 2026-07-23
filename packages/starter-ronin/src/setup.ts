@@ -193,6 +193,15 @@ export function createGame(seed?: number): Engine {
     // explicit reason. quest-core validates at construction (fail loud) and
     // drives offer -> track -> complete -> reward off the live event stream.
     quests: { gameId: manifest.id, quests: roninQuests },
+    // V3-GEN-1/2 (genre-mechanical fix, wave 2): this starter's own bare
+    // genre key ('ronin-minimal' minus its '-minimal' suffix). 'ronin' has no
+    // GENRE_BUYABLE_STOCK/GENRE_RECIPES entry (today's fixed key set is
+    // fantasy/cyberpunk/pirate/zombie/detective/colony/weird-west), so buy/
+    // craft/repair/modify correctly keep resolving the universal/default
+    // tables — an honest fallback, not a bug to force with an invented remap
+    // (this pack is NOT rewired to 'fantasy' or any other table key).
+    tradeGenre: 'ronin',
+    craftingGenre: 'ronin',
   });
 
   const engine = new Engine({

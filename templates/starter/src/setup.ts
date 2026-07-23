@@ -98,6 +98,38 @@ export function createGame(seed?: number): Engine {
         cognition: { profiles: myIntentProfiles },
     });
 
+    // ═══════════════════════════════════════════════════════════════════
+    // STRATEGIC TIER (OPTIONAL) — buildWorldStack
+    // Every shipped starter adds a world-simulation layer (environment,
+    // factions, districts, economy/trade, crafting, companions, quests, ...)
+    // via ONE buildWorldStack({...}) call. This template stays combat-only by
+    // default — uncomment below to add it. Two things buildWorldStack itself
+    // requires registered BEFORE it (see its own file-header contract):
+    // cognition-core (already inside combat.modules above) and
+    // createPerceptionFilter() (import + register it in the modules array,
+    // ahead of ...worldStack.modules).
+    //
+    // GENRE WIRING (V3-GEN-1/2, v3.0 wave 2): pass YOUR OWN ruleset's bare
+    // genre id as BOTH tradeGenre and craftingGenre — the ruleset `id` with
+    // any '-minimal'-style suffix your naming convention adds stripped off
+    // (myRuleset.id here is already bare: 'my-game', nothing to strip). Do
+    // NOT use manifest.genres — that is a free-text flavor-tag vocabulary,
+    // a DIFFERENT vocabulary than trade-core.ts's GENRE_BUYABLE_STOCK /
+    // crafting-recipes.ts's GENRE_RECIPES table keys (e.g. a pack tagged
+    // genres: ['western'] may key its table entry 'weird-west' instead — the
+    // bare ruleset id, not the flavor tag, is what selects genre-flavored
+    // stock/recipes). A genre with no matching table entry safely falls back
+    // to the universal/default tables — an honest degrade, not a bug.
+    //
+    // import { buildWorldStack, createPerceptionFilter } from '@ai-rpg-engine/modules';
+    // ...
+    // const worldStack = buildWorldStack({
+    //   playerId: 'player',
+    //   tradeGenre: myRuleset.id,    // or a literal genre string
+    //   craftingGenre: myRuleset.id,
+    // });
+    // ═══════════════════════════════════════════════════════════════════
+
     const engine = new Engine({
         manifest,
         seed: seed ?? 42,

@@ -5,6 +5,66 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.0.0] - 2026-07-22
+
+Make the world live. v2.9.0 closed the economy and social *loops*; v3.0.0 makes
+the world *inhabited* — named NPCs with goals, relationships, obligation
+ledgers, and consequence chains; a social surface that earns passively and
+spends across twenty-one new verbs; a genre-flavored economy; and the campaign
+endings the leverage economy was always meant to gate. Produced by a dogfood
+swarm — two user-gated feature waves (systems, then economy/social surface),
+then a two-auditor composed **Phase-9 re-audit that caught the headline feature
+wired-but-inert in shipped content and the endgame reading hardcoded-zero
+leverage** (both dead-wires the green test suite hid) — followed by a
+remediation wave, verified by an independent re-audit. Deterministic test floor
+as law, family-different jury advising at every wave. Test suite: 5322 → **5494**.
+
+### Added
+
+- **Living NPCs.** The persisted npc-agency producer runs each round
+  (`runNpcAgencyTick`), lighting the Director's **PEOPLE** section — named NPCs
+  (one authored story character per starter, plus every companion you recruit)
+  carry goals, trust/fear/greed/loyalty relationships, an obligation ledger, and
+  consequence chains. Lighting the producer also lit companion favor-fallout
+  departure breakpoints, two dormant opportunity spawn rules (npc-goal +
+  obligation), and the endgame's npcProfiles/npcObligations. Gated so a world
+  with no named NPCs stays byte-identical to legacy replay.
+- **The full social surface.** The four leverage verbs become twenty-five — the
+  diplomacy and sabotage groups register (21 more sub-verbs), lighting the
+  previously-dark `leverage-diplomacy` / `leverage-sabotage` companion reactions;
+  nineteen surface on the numbered menu. Dialogue conditions and effects now read
+  and write social state (leverage / reputation / npc-relationship). Passive
+  leverage income (`tickLeverage` / `computeLeverageGains`) drips influence from
+  reputation and grants favor / blackmail / legitimacy from XP and milestones.
+- **Genre-flavored economy.** Merchant stock and crafting recipes resolve
+  per-starter genre tables (seven of ten starters; three fall back to universal)
+  across the buy/craft mechanics, the numbered menu, and the Director's RECIPES
+  section. `repair` and `modify` are numbered menu rows now (item×recipe
+  pairing); `escort` opportunities spawn on a protective-travel-in-a-dangerous-
+  district gate.
+- **`audit-content` dev CLI** — a developer content-audit command (sibling of
+  `validate`) running the six encounter/boss/combat director formatters over a
+  pack.
+
+### Fixed
+
+- **Living NPCs manifest in shipped content (Phase-9).** `isNamedNpc` required an
+  `ai` block, which only enemies carry, so no shipped starter ever triggered
+  npc-agency — the headline was wired and unit-tested green but inert in every
+  real game. Now recognizes the `'companion'` (recruited) and `'named'`
+  (authored story NPC) tags without requiring `ai`, and every starter authors a
+  named story NPC.
+- **The leverage endings are reachable (Phase-9).** `buildEndgameInputs` read
+  hardcoded-zero leverage, permanently blocking the `victory`, `puppet-master`,
+  and `quiet-retirement` endings despite the social economy writing real
+  currency. Now reads the real leverage store.
+- **Seed-0 menu identity.** A zero-cost `cash-milestone` verb rendered on turn 1
+  for a zero-engagement player in six starters; now gated behind a legitimacy
+  floor at the menu, resolve, and advisor surfaces.
+- **Companion departure reachable** via npc-agency breakpoints and a morale-floor
+  fallback; the Director's PARTY section renders real companion profiles;
+  `recruit` is now on the numbered menu and in `help`.
+
 ## [2.9.0] - 2026-07-22
 
 Close the loops. v2.8.0 opened three half-loops — a sell-only economy,

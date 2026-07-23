@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
-import type { WorldState, EntityState, ZoneState } from '@ai-rpg-engine/core';
+import type { WorldState, EntityState, ZoneState, ResolvedEvent } from '@ai-rpg-engine/core';
 import {
   tickLeverage,
   getLeverageState,
@@ -20,6 +20,9 @@ import type { CompanionState } from './companion-core.js';
 import { getFactionCognition, createFactionCognition } from './faction-cognition.js';
 import { createCognitionCore } from './cognition-core.js';
 import { getWorldTickState } from './world-tick.js';
+import { createEnvironmentCore } from './environment-core.js';
+import { createDistrictCore } from './district-core.js';
+import type { DistrictDefinition } from './district-core.js';
 
 // ---------------------------------------------------------------------------
 // Shared fixtures for the EngineModule / verb-wiring tests below
@@ -625,5 +628,484 @@ describe('F-92dd2068: a non-neutral modifier scales a cost', () => {
     // finding's "existing tests unchanged" claim. The real proof is the full
     // file passing — see the gate results in this domain's summary.
     expect(true).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v3.0 wave 1 "social-verbs": registering the remaining 21 leverage verbs.
+// ---------------------------------------------------------------------------
+
+describe('V3-SV-1: green-proof — all 21 newly-registered verbs are dispatchable', () => {
+  const NEW_VERBS: { verb: string; targetIds?: string[]; parameters?: Record<string, string> }[] = [
+    // Social group
+    { verb: 'call-in-favor', targetIds: ['guild'] },
+    { verb: 'recruit-ally', targetIds: ['guild'] },
+    { verb: 'disguise' },
+    { verb: 'stake-claim' },
+    // Rumor group
+    { verb: 'deny', parameters: { rumorId: 'whatever' } },
+    { verb: 'frame', targetIds: ['guild'] },
+    { verb: 'claim-false-credit' },
+    { verb: 'bury-scandal', parameters: { rumorId: 'whatever' } },
+    { verb: 'leak-truth', targetIds: ['guild'] },
+    { verb: 'spread-counter-rumor', targetIds: ['guild'] },
+    // Diplomacy group (all 7 hard-require a target faction)
+    { verb: 'request-meeting', targetIds: ['guild'] },
+    { verb: 'improve-standing', targetIds: ['guild'] },
+    { verb: 'cash-milestone', targetIds: ['guild'] },
+    { verb: 'negotiate-access', targetIds: ['guild'] },
+    { verb: 'trade-secret', targetIds: ['guild'] },
+    { verb: 'temporary-alliance', targetIds: ['guild'] },
+    { verb: 'broker-truce', targetIds: ['guild'] },
+    // Sabotage group
+    { verb: 'sabotage' },
+    { verb: 'plant-evidence', targetIds: ['guild'] },
+    { verb: 'blackmail-target', targetIds: ['guild'] },
+    { verb: 'incite-riot' },
+  ];
+
+  it('the fixture lists exactly 21 verbs', () => {
+    expect(NEW_VERBS).toHaveLength(21);
+  });
+
+  for (const { verb, targetIds, parameters } of NEW_VERBS) {
+    it(`"${verb}" is a known verb (never rejected as "unknown verb: ${verb}")`, () => {
+      const engine = createTestEngine({
+        modules: [createPlayerLeverageCore()],
+        entities: [makePlayerEntity({ custom: flushCustom() })],
+        zones: START_ZONES,
+      });
+      engine.submitAction(verb, { targetIds, parameters });
+      const events = engine.drainEvents();
+      const unknownVerbRejection = events.find(
+        (e) => e.type === 'action.rejected'
+          && typeof e.payload.reason === 'string'
+          && /unknown verb/.test(e.payload.reason),
+      );
+      expect(unknownVerbRejection).toBeUndefined();
+    });
+  }
+});
+
+describe('V3-SV-1: disguise needs no target (requireTargetFaction: false)', () => {
+  it('succeeds with no target at all and reduces the player_heat global', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('disguise', {});
+    const world = engine.world as WorldState;
+    expect(world.globals['player_heat']).toBe(-20);
+    expect(getLeverageState(world.entities['player'].custom ?? {}).influence).toBe(95); // 100 - 5
+    const resolved = engine.drainEvents().find((e) => e.type === 'leverage.resolved');
+    expect(resolved?.payload.subAction).toBe('disguise');
+    expect(resolved?.payload.targetFactionId).toBeNull();
+  });
+});
+
+describe('V3-SV-1: stake-claim derives its district from the actor\'s current zone', () => {
+  const districts: DistrictDefinition[] = [
+    { id: 'docks', name: 'Docks', zoneIds: ['start'], tags: [] },
+  ];
+
+  it('writes a district-metric effect for the district the actor is standing in, with no player-supplied target', () => {
+    const engine = createTestEngine({
+      modules: [
+        createEnvironmentCore(),
+        createDistrictCore({ districts }),
+        createPlayerLeverageCore(),
+      ],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+
+    engine.submitAction('stake-claim', {});
+
+    const world = engine.world as WorldState;
+    expect(world.globals['district_docks_surveillance']).toBe(10);
+    const resolved = engine.drainEvents().find((e) => e.type === 'leverage.resolved');
+    expect(resolved?.payload.subAction).toBe('stake-claim');
+    expect(resolved?.payload.targetId).toBe('docks');
+  });
+
+  it('still succeeds (as a narrower, no-op-on-space claim) when the actor\'s zone maps to no district', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()], // no district-core registered
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('stake-claim', {});
+    const rejected = engine.drainEvents().find((e) => e.type === 'action.rejected');
+    expect(rejected).toBeUndefined(); // not a no-target rejection — stake-claim never hard-requires one
+  });
+});
+
+describe('V3-SV-1: frame spawns a rumor via the generalized rumor-spawn handler', () => {
+  it('succeeds, deducts blackmail, spawns a fearsome rumor about the target faction, and raises alert', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('frame', { targetIds: ['guild'] });
+    const world = engine.world as WorldState;
+    expect(getLeverageState(world.entities['player'].custom ?? {}).blackmail).toBe(80); // 100 - 20
+    expect(world.globals['faction_alert_guild']).toBe(10);
+    const rumors = getPlayerRumorState(world).rumors;
+    expect(rumors).toHaveLength(1);
+    expect(rumors[0].claim).toBe('guild is not what they seem');
+    expect(rumors[0].valence).toBe('fearsome');
+    const seededEvent = engine.drainEvents().find((e) => e.type === 'rumor.seeded');
+    expect(seededEvent?.payload.subAction).toBe('frame');
+  });
+});
+
+describe('V3-SV-1: plant-evidence spawns a rumor (the one sabotage verb with a rumor effect)', () => {
+  it('succeeds, deducts blackmail, spawns a fearsome rumor, and raises alert', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('plant-evidence', { targetIds: ['guild'] });
+    const world = engine.world as WorldState;
+    expect(getLeverageState(world.entities['player'].custom ?? {}).blackmail).toBe(80); // 100 - 20
+    expect(world.globals['faction_alert_guild']).toBe(10);
+    const rumors = getPlayerRumorState(world).rumors;
+    expect(rumors).toHaveLength(1);
+    expect(rumors[0].claim).toBe('damning evidence discovered against guild');
+    expect(rumors[0].valence).toBe('fearsome');
+    const resolved = engine.drainEvents().find((e) => e.type === 'leverage.resolved');
+    expect(resolved?.payload.verb).toBe('sabotage');
+  });
+});
+
+describe('V3-SV-1: deny requires a rumorId and mutates the existing rumor via applyRumorManipulation', () => {
+  it('rejects with a structured reason when no rumorId is given (not a silent no-op charge)', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('deny', {});
+    const rejected = engine.drainEvents().find((e) => e.type === 'action.rejected');
+    expect(rejected?.payload.reason).toBe('no rumor specified');
+    const world = engine.world as WorldState;
+    expect(getLeverageState(world.entities['player'].custom ?? {}).legitimacy).toBe(100); // untouched
+  });
+
+  it('reduces the confidence of the specified rumor and reports rumorFound: true', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('seed', { targetIds: ['guild'], parameters: { claim: 'a curse follows the outsider' } });
+    engine.drainEvents();
+    const world = engine.world as WorldState;
+    const seeded = getPlayerRumorState(world).rumors[0];
+
+    engine.submitAction('deny', { parameters: { rumorId: seeded.id } });
+
+    const updated = getPlayerRumorState(world).rumors.find((r) => r.id === seeded.id);
+    expect(updated?.confidence).toBeCloseTo(seeded.confidence - 0.3);
+    const resolved = engine.drainEvents().find((e) => e.type === 'leverage.resolved');
+    expect(resolved?.payload.rumorFound).toBe(true);
+    // resolveRumorAction's 'deny' case nets -10 (cost) + 3 (its own "you set
+    // the record straight" legitimacy effect) = -7, not a flat -10.
+    expect(getLeverageState(world.entities['player'].custom ?? {}).legitimacy).toBe(93); // 100 - 10 + 3
+  });
+
+  it('quietly no-ops the manipulation (but still charges the mechanical cost) for an unknown rumorId', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('deny', { parameters: { rumorId: 'not-a-real-rumor' } });
+    const resolved = engine.drainEvents().find((e) => e.type === 'leverage.resolved');
+    expect(resolved?.payload.rumorFound).toBe(false);
+    const world = engine.world as WorldState;
+    expect(getLeverageState(world.entities['player'].custom ?? {}).legitimacy).toBe(93); // cost + case effect still applied
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V3-SV-5: representative diplomacy verb (improve-standing) and representative
+// sabotage verb (blackmail-target) — registered/dispatchable, affordability
+// gating, leverage deltas on success, and the companion-reaction trigger.
+// ---------------------------------------------------------------------------
+
+describe('V3-SV-5: improve-standing (representative diplomacy verb) end-to-end', () => {
+  it('is registered and dispatchable (not rejected as an unknown verb)', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('improve-standing', { targetIds: ['guild'] });
+    const events = engine.drainEvents();
+    // Fully affordable + a real target faction: dispatchable AND resolves
+    // successfully, so there is no 'action.rejected' event at all here.
+    expect(events.some((e) => e.type === 'action.rejected')).toBe(false);
+    expect(events.some((e) => e.type === 'leverage.resolved')).toBe(true);
+  });
+
+  it('affordability gate: rejects with the resolution failReason when the player cannot afford it', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: {} })], // no leverage at all
+      zones: START_ZONES,
+    });
+    engine.submitAction('improve-standing', { targetIds: ['guild'] });
+    const rejected = engine.drainEvents().find((e) => e.type === 'action.rejected');
+    expect(rejected?.payload.reason).toMatch(/Not enough/);
+  });
+
+  it('on success, applies the leverage deltas: -20 favor, +15 reputation, -5 heat global', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('improve-standing', { targetIds: ['guild'] });
+    const world = engine.world as WorldState;
+    expect(getLeverageState(world.entities['player'].custom ?? {}).favor).toBe(80); // 100 - 20
+    expect(world.globals['reputation_guild']).toBe(15);
+    expect(world.globals['player_heat']).toBe(-5);
+    const resolved = engine.drainEvents().find((e) => e.type === 'leverage.resolved');
+    expect(resolved?.payload.verb).toBe('diplomacy');
+    expect(resolved?.payload.subAction).toBe('improve-standing');
+  });
+
+  it('dispatches the leverage-diplomacy companion reaction (diplomat +5) given a companion present', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [
+        makePlayerEntity({ custom: flushCustom() }),
+        { id: 'nerva', blueprintId: 'npc', type: 'npc', name: 'Nerva', tags: ['companion', 'companion:diplomat'], stats: {}, resources: {}, statuses: [], zoneId: 'start' },
+      ],
+      zones: START_ZONES,
+    });
+    const world = engine.world as WorldState;
+    setPartyState(world, { ...createPartyState(), companions: [makeCompanion('nerva', { role: 'diplomat', morale: 50 })], cohesion: 50 });
+
+    engine.submitAction('improve-standing', { targetIds: ['guild'] });
+
+    const reaction = engine.drainEvents().find((e) => e.type === 'companion.reaction');
+    expect(reaction?.payload.npcId).toBe('nerva');
+    expect(reaction?.payload.trigger).toBe('leverage-diplomacy');
+    expect(reaction?.payload.moraleDelta).toBe(5);
+    expect(reaction?.payload.morale).toBe(55);
+  });
+});
+
+// v3.0 wave-3 (menu-social-fix, V3R-MENU-1 — the Phase-9-audited SEED-0
+// breach). 'cash-milestone' previously had `costs: {}` and NO precondition at
+// all — a genuinely free, unconditional +20 reputation/+10 influence grant
+// every 5 turns, visible on the menu the instant a controlling faction
+// existed (turn 1, for 6 of 10 starters). It now gates on a
+// `minimumLegitimacy` floor (CASH_MILESTONE_LEGITIMACY_FLOOR), checked
+// BEFORE affordability the same way minimumReputation already is, and SPENDS
+// that same amount on success — so a repeat cash-in needs a freshly
+// re-earned floor rather than remaining a free, infinitely-repeatable lever.
+describe('V3R-MENU-1: cash-milestone gates on minimumLegitimacy (the SEED-0 breach fix)', () => {
+  it('resolveDiplomacyAction: fails with zero legitimacy — no effects, a clear failReason, no grant', () => {
+    const zeroLegitimacy: LeverageState = { ...FULL_LEVERAGE, legitimacy: 0 };
+    const resolution = resolveDiplomacyAction('cash-milestone', 'guild', zeroLegitimacy, 0, undefined, 5);
+    expect(resolution.success).toBe(false);
+    expect(resolution.effects).toEqual([]);
+    expect(resolution.failReason).toMatch(/legitimacy/i);
+  });
+
+  it('resolveDiplomacyAction: fails one point below the floor', () => {
+    const belowFloor: LeverageState = { ...FULL_LEVERAGE, legitimacy: 14 }; // floor is 15
+    const resolution = resolveDiplomacyAction('cash-milestone', 'guild', belowFloor, 0, undefined, 5);
+    expect(resolution.success).toBe(false);
+  });
+
+  it('resolveDiplomacyAction: succeeds AT the floor — grants +20 reputation/+10 influence and SPENDS the legitimacy', () => {
+    const atFloor: LeverageState = { ...FULL_LEVERAGE, legitimacy: 15 };
+    const resolution = resolveDiplomacyAction('cash-milestone', 'guild', atFloor, 0, undefined, 5);
+    expect(resolution.success).toBe(true);
+    expect(resolution.effects).toContainEqual({ type: 'reputation', factionId: 'guild', delta: 20 });
+    expect(resolution.effects).toContainEqual({ type: 'leverage', currency: 'influence', delta: 10 });
+    expect(resolution.effects).toContainEqual({ type: 'leverage', currency: 'legitimacy', delta: -15 });
+  });
+
+  it('end-to-end: a zero-engagement player (no custom fields at all) submitting cash-milestone is REJECTED, never granted', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: {} })], // the exact SEED-0 shape: no custom fields at all
+      zones: START_ZONES,
+    });
+    engine.submitAction('cash-milestone', { targetIds: ['guild'] });
+    const events = engine.drainEvents();
+    const rejected = events.find((e) => e.type === 'action.rejected');
+    expect(rejected).toBeDefined();
+    expect(String(rejected?.payload.reason)).toMatch(/legitimacy/i);
+    expect(events.some((e) => e.type === 'leverage.resolved')).toBe(false);
+
+    const world = engine.world as WorldState;
+    expect(world.globals['reputation_guild']).toBeUndefined(); // no grant happened
+  });
+
+  it('end-to-end: once legitimacy is accrued (e.g. via a real milestone), cash-milestone succeeds and spends it', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: { 'leverage.legitimacy': 15 } })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('cash-milestone', { targetIds: ['guild'] });
+    const world = engine.world as WorldState;
+    expect(world.globals['reputation_guild']).toBe(20);
+    expect(getLeverageState(world.entities['player'].custom ?? {}).influence).toBe(10);
+    expect(getLeverageState(world.entities['player'].custom ?? {}).legitimacy).toBe(0); // 15 - 15 spent
+    expect(engine.drainEvents().some((e) => e.type === 'leverage.resolved')).toBe(true);
+  });
+
+  it('a REAL milestone event (computeLeverageGains) grants +5 legitimacy — the floor (15) needs three, not one incidental milestone', () => {
+    const gains = computeLeverageGains({ xpGained: 0, milestoneTriggered: { label: 'First find', tags: [] } });
+    expect(gains.legitimacy).toBe(5);
+  });
+});
+
+describe('V3-SV-5: blackmail-target (representative sabotage verb) end-to-end', () => {
+  it('is registered and dispatchable (not rejected as an unknown verb)', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('blackmail-target', { targetIds: ['guild'] });
+    const events = engine.drainEvents();
+    // Fully affordable + a real target faction: dispatchable AND resolves
+    // successfully, so there is no 'action.rejected' event at all here.
+    expect(events.some((e) => e.type === 'action.rejected')).toBe(false);
+    expect(events.some((e) => e.type === 'leverage.resolved')).toBe(true);
+  });
+
+  it('affordability gate: rejects with the resolution failReason when the player cannot afford it', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: {} })], // no leverage at all
+      zones: START_ZONES,
+    });
+    engine.submitAction('blackmail-target', { targetIds: ['guild'] });
+    const rejected = engine.drainEvents().find((e) => e.type === 'action.rejected');
+    expect(rejected?.payload.reason).toMatch(/Not enough/);
+  });
+
+  it('on success, applies the leverage deltas: -25 blackmail, +20 heat global, +15 reputation', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('blackmail-target', { targetIds: ['guild'] });
+    const world = engine.world as WorldState;
+    expect(getLeverageState(world.entities['player'].custom ?? {}).blackmail).toBe(75); // 100 - 25
+    expect(world.globals['player_heat']).toBe(20);
+    expect(world.globals['reputation_guild']).toBe(15);
+    const resolved = engine.drainEvents().find((e) => e.type === 'leverage.resolved');
+    expect(resolved?.payload.verb).toBe('sabotage');
+    expect(resolved?.payload.subAction).toBe('blackmail-target');
+  });
+
+  it('dispatches the leverage-sabotage companion reaction (smuggler +3) given a companion present', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [
+        makePlayerEntity({ custom: flushCustom() }),
+        { id: 'kess', blueprintId: 'npc', type: 'npc', name: 'Kess', tags: ['companion', 'companion:smuggler'], stats: {}, resources: {}, statuses: [], zoneId: 'start' },
+      ],
+      zones: START_ZONES,
+    });
+    const world = engine.world as WorldState;
+    setPartyState(world, { ...createPartyState(), companions: [makeCompanion('kess', { role: 'smuggler', morale: 50 })], cohesion: 50 });
+
+    engine.submitAction('blackmail-target', { targetIds: ['guild'] });
+
+    const reaction = engine.drainEvents().find((e) => e.type === 'companion.reaction');
+    expect(reaction?.payload.npcId).toBe('kess');
+    expect(reaction?.payload.trigger).toBe('leverage-sabotage');
+    expect(reaction?.payload.moraleDelta).toBe(3);
+    expect(reaction?.payload.morale).toBe(53);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V3-SV-4: SEED-0 identity — registering the 21 new verbs must not change any
+// existing seed-0 playthrough. Verbs are player-initiated (only fire when the
+// player submits that exact verb name) and every new handler gates on
+// affordability/cooldown through the SAME resolve*Action calls the
+// pre-existing 4 verbs already used, so a playthrough that never invokes one
+// of the 21 new verb names is unaffected by their registration.
+// ---------------------------------------------------------------------------
+
+describe('V3-SV-4: SEED-0 identity — new verb registration does not alter a legacy playthrough', () => {
+  it('registering the module alone (no actions submitted) produces zero events and zero world.globals mutation', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    const world = engine.world as WorldState;
+    expect(Object.keys(world.globals)).toHaveLength(0);
+    expect(engine.drainEvents()).toHaveLength(0);
+  });
+
+  it('a playthrough using only the original 4 verbs (bribe/petition/seed) produces exactly the same domain events and leverage state the pre-existing dedicated tests assert — unaffected by the 21 verbs newly registered in the same module', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    const world = engine.world as WorldState;
+
+    // Every dispatch is always wrapped by the dispatcher's own
+    // 'action.declared'/'action.resolved' pair (actions.ts) regardless of verb
+    // or module — filtering those out isolates exactly what THIS module wrote,
+    // which is the thing SEED-0 identity is actually about.
+    const domainEvents = (all: ResolvedEvent[]) =>
+      all.filter((e) => e.type !== 'action.declared' && e.type !== 'action.resolved');
+
+    engine.submitAction('bribe', { targetIds: ['guild'] });
+    let events = domainEvents(engine.drainEvents());
+    expect(events).toHaveLength(1); // exactly one leverage.resolved — no stray events from the 21 new registrations
+    expect(events[0].type).toBe('leverage.resolved');
+    expect(world.globals['reputation_guild']).toBe(10);
+    expect(getLeverageState(world.entities['player'].custom ?? {}).favor).toBe(85);
+
+    engine.submitAction('petition', { targetIds: ['guild'] });
+    events = domainEvents(engine.drainEvents());
+    expect(events).toHaveLength(2); // leverage.resolved + pressure.spawned, same as the dedicated petition test
+    expect(events.some((e) => e.type === 'pressure.spawned')).toBe(true);
+
+    engine.submitAction('seed', { targetIds: ['guild'], parameters: { claim: 'a curse follows the outsider' } });
+    events = domainEvents(engine.drainEvents());
+    expect(events).toHaveLength(1); // rumor.seeded only
+    expect(events[0].type).toBe('rumor.seeded');
+    expect(getPlayerRumorState(world).rumors).toHaveLength(1);
+  });
+
+  it('a companion present reacts only to the leverage-group trigger the invoked verb actually belongs to — no cross-firing from the 21 newly-registered verbs', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [
+        makePlayerEntity({ custom: flushCustom() }),
+        { id: 'nerva', blueprintId: 'npc', type: 'npc', name: 'Nerva', tags: ['companion', 'companion:diplomat'], stats: {}, resources: {}, statuses: [], zoneId: 'start' },
+      ],
+      zones: START_ZONES,
+    });
+    const world = engine.world as WorldState;
+    setPartyState(world, { ...createPartyState(), companions: [makeCompanion('nerva', { role: 'diplomat', morale: 50 })], cohesion: 50 });
+
+    engine.submitAction('bribe', { targetIds: ['guild'] }); // leverage-social only
+
+    const reaction = engine.drainEvents().find((e) => e.type === 'companion.reaction');
+    expect(reaction?.payload.trigger).toBe('leverage-social'); // never 'leverage-diplomacy' or 'leverage-sabotage'
+    expect(reaction?.payload.moraleDelta).toBe(2); // the SAME diplomat delta the pre-existing bribe/leverage-social test asserts
   });
 });

@@ -12,6 +12,7 @@ import {
   evaluateDepartureRisk,
   isKnownReactionTrigger,
   KNOWN_REACTION_TRIGGERS,
+  MORALE_FLOOR_FALLBACK,
   REACTION_TRIGGER_STATUS,
 } from './companion-reactions.js';
 
@@ -113,6 +114,77 @@ describe('evaluateCompanionReactions', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Morale-floor departure fallback (V3R-PARTY-2b, Phase-9 party-departure
+// remediation audit) — before this fallback, departure depended SOLELY on
+// npc-agency breakpoints: world-tick.ts's own call site only populates the
+// breakpoints map once the sibling living-npcs domain lands, and
+// player-leverage.ts's dispatchLeverageCompanionReactions never forwards a
+// breakpoints map at all (`{ tick: currentTick }`, no `breakpoints` key) —
+// so `context.breakpoints?.get(...)` was always `undefined` and departure
+// was unreachable from either real call site. These tests pin the new
+// breakpoint-independent floor path AND confirm it never fires spuriously.
+// ---------------------------------------------------------------------------
+
+describe('morale-floor departure fallback (V3R-PARTY-2b, Phase-9 party-departure remediation)', () => {
+  it('departs at the morale floor when no breakpoint is known at all (the player-leverage.ts shape)', () => {
+    // obligation-betrayed diplomat delta === -10; morale chosen so projected
+    // morale lands EXACTLY on MORALE_FLOOR_FALLBACK.
+    const reactions = evaluateCompanionReactions(
+      [makeCompanion({ npcId: 'mira', role: 'diplomat', morale: MORALE_FLOOR_FALLBACK + 10 })],
+      'obligation-betrayed',
+      { tick: 1 }, // no `breakpoints` key at all — context.breakpoints is undefined
+    );
+    expect(reactions[0].departure).toBe(true);
+    expect(reactions[0].departureReason).toBe('has hit their breaking point');
+  });
+
+  it('does NOT depart one point above the morale floor when no breakpoint is known', () => {
+    const reactions = evaluateCompanionReactions(
+      [makeCompanion({ npcId: 'mira', role: 'diplomat', morale: MORALE_FLOOR_FALLBACK + 11 })],
+      'obligation-betrayed',
+      { tick: 1 },
+    );
+    expect(reactions[0].departure).toBeUndefined();
+  });
+
+  it('does NOT fall through to the floor when a breakpoint IS known but benign (gated tightly to "undefined only")', () => {
+    const breakpoints = new Map<string, LoyaltyBreakpoint>([['mira', 'favorable']]);
+    const reactions = evaluateCompanionReactions(
+      [makeCompanion({ npcId: 'mira', role: 'diplomat', morale: MORALE_FLOOR_FALLBACK + 10 })], // at the floor
+      'obligation-betrayed',
+      { tick: 1, breakpoints },
+    );
+    // breakpoint is KNOWN (favorable, not hostile/wavering) → the primary
+    // (breakpoint) path runs instead of the fallback, and favorable never
+    // departs — the existing, intentional contract is untouched.
+    expect(reactions[0].departure).toBeUndefined();
+  });
+
+  it('a stable companion (healthy morale, no breakpoint) never departs from an ordinary trigger — SEED-0 / non-regression (V3R-PARTY-3)', () => {
+    const reactions = evaluateCompanionReactions(
+      [makeCompanion({ npcId: 'mira', role: 'diplomat', morale: 70 })],
+      'obligation-betrayed', // worst-case single trigger anywhere in REACTION_TABLE: -10
+      { tick: 1 },
+    );
+    // 70 - 10 = 60 — nowhere near MORALE_FLOOR_FALLBACK (5) or the
+    // breakpoint path's 10-threshold. One bad event from a healthy party
+    // never crosses the floor by accident.
+    expect(reactions[0].departure).toBeUndefined();
+  });
+
+  it('breakpoint-known departure (hostile/wavering + morale<=10) still fires unchanged — the fallback only ADDS a path, it never replaces this one (V3R-PARTY-2a)', () => {
+    const breakpoints = new Map<string, LoyaltyBreakpoint>([['mira', 'hostile']]);
+    const reactions = evaluateCompanionReactions(
+      [makeCompanion({ npcId: 'mira', role: 'diplomat', morale: 12 })], // 12 - 8 = 4 <= 10
+      'betrayal-witnessed',
+      { tick: 1, breakpoints },
+    );
+    expect(reactions[0].departure).toBe(true);
+    expect(reactions[0].departureReason).toBe('lost all faith in you');
+  });
+});
+
 describe('trigger registry', () => {
   it('KNOWN_REACTION_TRIGGERS is sorted and matches the predicate', () => {
     expect(KNOWN_REACTION_TRIGGERS.length).toBeGreaterThanOrEqual(16);
@@ -174,14 +246,14 @@ describe('REACTION_TRIGGER_STATUS (F-6be920bd audit)', () => {
     }
   });
 
-  it('matches the audited totals: 7 reachable, 1 wired-unreachable, 8 dark', () => {
+  it('matches the audited totals: 9 reachable, 1 wired-unreachable, 6 dark', () => {
     const values = Object.values(REACTION_TRIGGER_STATUS);
-    expect(values.filter((v) => v.reachability === 'reachable')).toHaveLength(7);
+    expect(values.filter((v) => v.reachability === 'reachable')).toHaveLength(9);
     expect(values.filter((v) => v.reachability === 'wired-unreachable')).toHaveLength(1);
-    expect(values.filter((v) => v.reachability === 'dark')).toHaveLength(8);
+    expect(values.filter((v) => v.reachability === 'dark')).toHaveLength(6);
   });
 
-  it('the two wave-2 sources (leverage-social/leverage-rumor, district-grim/district-prosperous) are reachable, alongside the earlier combat/pressure sources', () => {
+  it('the wave-2 sources (leverage-social/leverage-rumor, district-grim/district-prosperous) are reachable, alongside the earlier combat/pressure sources', () => {
     const reachable: readonly string[] = [
       'combat-won', 'combat-lost', 'pressure-resolved-badly',
       'district-grim', 'district-prosperous', 'leverage-social', 'leverage-rumor',
@@ -191,13 +263,20 @@ describe('REACTION_TRIGGER_STATUS (F-6be920bd audit)', () => {
     }
   });
 
+  it('V3-SV-3: leverage-diplomacy and leverage-sabotage flipped from dark to reachable in v3.0 wave 1 "social-verbs" — a real diplomacy/sabotage verb now produces each trigger', () => {
+    expect(REACTION_TRIGGER_STATUS['leverage-diplomacy'].reachability).toBe('reachable');
+    expect(REACTION_TRIGGER_STATUS['leverage-diplomacy'].note).toMatch(/diplomacy/);
+    expect(REACTION_TRIGGER_STATUS['leverage-sabotage'].reachability).toBe('reachable');
+    expect(REACTION_TRIGGER_STATUS['leverage-sabotage'].note).toMatch(/sabotage/);
+  });
+
   it('pressure-resolved-well is wired but unreachable (dead branch — the one production call site always passes a different literal)', () => {
     expect(REACTION_TRIGGER_STATUS['pressure-resolved-well'].reachability).toBe('wired-unreachable');
   });
 
-  it('the 8 explicitly-deferred-to-v3.0 triggers (leverage-diplomacy/sabotage, betrayal-witnessed, obligation-betrayed, item-*-recognized) are all dark, not force-wired', () => {
+  it('the 6 explicitly-deferred-to-v3.0 triggers (betrayal-witnessed, obligation-betrayed, item-*-recognized) are all dark, not force-wired', () => {
     const dark: readonly string[] = [
-      'leverage-diplomacy', 'leverage-sabotage', 'betrayal-witnessed', 'obligation-betrayed',
+      'betrayal-witnessed', 'obligation-betrayed',
       'item-faction-recognized', 'item-stolen-recognized', 'item-cursed-recognized', 'item-trophy-recognized',
     ];
     for (const trigger of dark) {

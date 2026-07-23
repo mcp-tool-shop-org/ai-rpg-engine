@@ -54,24 +54,54 @@
 //   5. heat at HEAT_WAKE_THRESHOLD opens the spawn valve: evaluatePressures
 //      runs with inputs derived from the globals (spawns stay scarce — the
 //      module's own max-active / min-gap / one-per-kind guards apply)
+//   5a. NPC agency tick (v3.0, F-v3-npc-agency): npc-agency.ts's
+//      runNpcAgencyTick was fully authored and unit-tested with ZERO
+//      production callers — named NPCs never acted, and their goals/
+//      relationships/obligations never left memory. Gated on "at least one
+//      named NPC exists this round" (SEED-0 identity: a world with none is
+//      untouched — no namespace, no events, no state write). When gated
+//      open: ticks obligation decay, builds this round's profiles, runs the
+//      tick, applies every returned NpcEffect through the SAME application
+//      style applyFallout below already uses (addGlobal for reputation/
+//      alert, makePressure for chains respecting one-active-per-kind,
+//      setPersistedOpportunities for opportunities, setBelief/addMemory for
+//      belief/memory, direct zoneId mutation for zone-change, companion-core
+//      for morale-on-a-companion and companion-departure, spawnNpcOriginated
+//      Rumor for npc-rumor), and persists profiles + last-actions +
+//      obligation ledgers to world.modules['npc-agency'] — the shape
+//      director.ts's PEOPLE section already reads. See runNpcAgencyStep's
+//      own docstring for the full contract and the effects this wave still
+//      cannot reach (the standalone 'rumor' NpcEffect — no current producer).
+//   5a2. leverage income (v3.0 wave 2, "leverage-income"): player-leverage.ts's
+//      tickLeverage/computeLeverageGains were fully authored and unit-tested
+//      with ZERO production callers — heat never decayed, the reputation-
+//      derived influence floor never reconciled, and passive gains (xp/
+//      milestone/pressure-resolution → leverage currency) never accrued;
+//      opportunity completion (5b below, a separate write-wire) was the SOLE
+//      leverage-earning path. Runs directly after step 5a and BEFORE step
+//      5b's own getLeverageState read, so the opportunity rules see this
+//      round's ticked/gained leverage rather than last round's stale
+//      snapshot. SEED-0 identity (a world that never engaged the social
+//      layer — no reputation, no new milestones, no xp gain, no player-
+//      resolved pressure, no pre-existing leverage.* key — reads nothing and
+//      writes nothing) mirrors step 5a's own gate exactly. See
+//      runLeverageIncomeStep's own docstring for the full contract.
 //   5b. opportunity spawn/tick wire (F-ceed887f): opportunity-core.ts's
 //      evaluateOpportunities/tickOpportunities were fully authored and unit-
 //      tested with ZERO production callers (its own file header: "Pure
 //      functions, no module registration") — a world could accrue every
 //      signal these rules key off and never once see a contract, bounty, or
 //      favor-request appear. Runs every round — UNLIKE pressures, none of the
-//      5 live (npc-agency-independent) rules key off heat — directly after
-//      the pressure lifecycle settles, so linkedPressureId can reference this
-//      round's own post-escalation/post-spawn pressure list. Persists
+//      5 live rules key off heat — directly after the pressure lifecycle
+//      settles, so linkedPressureId can reference this round's own
+//      post-escalation/post-spawn pressure list. Persists
 //      world.modules['opportunity-core'] = { opportunities: [...] } — the
 //      EXACT shape director.test.ts pins (director.ts's OPPORTUNITIES section
 //      needs no edit; it already reads this namespace). The 2 npc-dependent
-//      rules (npc-goal, obligation) are fed hardcoded-empty npcProfiles/
-//      npcObligations — npc-agency.ts persists neither anywhere in the engine
-//      today (endgame.ts's own buildEndgameInputs comment: "npc-agency keeps
-//      no world.modules state — nothing to read") — so they no-op cleanly;
-//      wiring npc-agency's own persistence in a future wave activates both
-//      automatically, nothing here needs to change.
+//      rules (npc-goal, obligation) are now fed REAL npcProfiles/
+//      npcObligations — step 5a above (this wave) is the production writer
+//      npc-agency.ts never had; before this wave they no-op'd cleanly on the
+//      hardcoded-empty inputs this step used to pass.
 //   5b-i. opportunity natural-expiry fallout (Phase-9 remediation): mirrors
 //      step 3's pressure-expiry block — tickOpportunities' own `expired`
 //      array used to be discarded, so every getXFallout function's
@@ -92,16 +122,32 @@
 // Honest ceilings (documented, not oversights): playerRumors is passed empty —
 // rumor-propagation's belief-transport records are a different shape from
 // PlayerRumor and inventing valence/spread here would fake a system that
-// doesn't exist yet, so the rumor-gated spawn rules stay dormant. Economy
-// inputs (F-d0b5edb5/F-6008456f): district economies now tick every round
-// (step 0b below) and buildPressureInputs sets districtEconomies from the
-// same store, so the 4 economy-driven pressure kinds (supply-crisis,
-// trade-war, black-market-boom, crafting-shortage) can fire for any pack that
-// registers economy-core (buildWorldStack does, unconditionally). Fallout
-// rumor / title-trigger / economy-shift / spawn-opportunity effects are still
-// not applied to any store — they ride the `pressure.expired` payload for
-// downstream layers (a pressure's OWN resolution fallout is a separate,
-// still-open wire from the district-economy store this file now ticks).
+// doesn't exist yet, so the rumor-gated spawn rules stay dormant. Step 5a's
+// own npc-agency tick passes the SAME undefined playerRumors for the same
+// reason. Economy inputs (F-d0b5edb5/F-6008456f): district economies now
+// tick every round (step 0b below) and buildPressureInputs sets
+// districtEconomies from the same store, so the 4 economy-driven pressure
+// kinds (supply-crisis, trade-war, black-market-boom, crafting-shortage) can
+// fire for any pack that registers economy-core (buildWorldStack does,
+// unconditionally). Fallout rumor / title-trigger / economy-shift /
+// spawn-opportunity effects are still not applied to any store — they ride
+// the `pressure.expired` payload for downstream layers (a pressure's OWN
+// resolution fallout is a separate, still-open wire from the
+// district-economy store this file now ticks). The standalone 'rumor'
+// NpcEffect (distinct from 'npc-rumor') has no current producer in
+// resolveNpcAction and no rumor writer that fits an NPC-sourced generic claim
+// without misattributing it as player-initiated (player-rumor.ts's
+// spawnIntentionalRumor tags its source as 'player-leverage') — deferred,
+// same honest-ceiling posture as the rest of this list. Step 5a2's leverage-
+// income wire (v3.0 wave 2) does not feed computeLeverageGains' reputationDelta
+// hint axis (rep-gain → favor / large-rep-loss → blackmail) — out of this
+// wave's explicit scope, xp/milestone/pressure-resolution only. Its
+// pressure-resolution axis is itself a dead branch today: this file's only
+// computeFallout call site (step 3) always passes the literal
+// 'expired-ignored', so resolutionType can never actually equal
+// 'resolved-by-player' in production — the SAME dormant path
+// companion-reactions.ts's own 'pressure-resolved-well' trigger documents.
+// Wired honestly for the day either path goes live.
 
 import type { Engine, EngineModule, ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
 import {
@@ -120,6 +166,7 @@ import {
   getPartyState,
   setPartyState,
   getCompanion,
+  isCompanion,
   adjustCompanionMorale,
   removeCompanion,
   removeCompanionTags,
@@ -127,13 +174,27 @@ import {
   syncCompanionCustomFields,
 } from './companion-core.js';
 import { evaluateCompanionReactions, type ReactionTrigger } from './companion-reactions.js';
-import type { LoyaltyBreakpoint } from './npc-agency.js';
+import {
+  isNamedNpc,
+  buildAllNpcProfiles,
+  runNpcAgencyTick,
+  tickObligations,
+  createObligation,
+  addObligation,
+  getPersistedNpcProfiles,
+  getPersistedNpcObligations,
+  getPersistedNpcLastActions,
+  setPersistedNpcState,
+  type LoyaltyBreakpoint,
+  type NpcObligationLedger,
+} from './npc-agency.js';
 import { computeDistrictMood, type DistrictMood } from './district-mood.js';
 import {
   evaluateOpportunities,
   tickOpportunities,
   getPersistedOpportunities,
   setPersistedOpportunities,
+  makeOpportunity,
   type OpportunityInputs,
   type OpportunityState,
 } from './opportunity-core.js';
@@ -143,7 +204,22 @@ import {
   appendResolvedOpportunity,
   type OpportunityFallout,
 } from './opportunity-resolution.js';
-import { getLeverageState } from './player-leverage.js';
+import {
+  getLeverageState,
+  tickLeverage,
+  computeLeverageGains,
+  applyLeverageDeltas,
+  type LeverageCurrency,
+} from './player-leverage.js';
+import { getCurrency } from './progression-core.js';
+import { getCognition, setBelief, addMemory } from './cognition-core.js';
+import {
+  spawnNpcOriginatedRumor,
+  propagateRumor,
+  getPlayerRumorState,
+  setPlayerRumorState,
+  type NpcRumorSource,
+} from './player-rumor.js';
 
 // ---------------------------------------------------------------------------
 // Tuning constants (exported so tests pin the thresholds, not magic numbers)
@@ -261,6 +337,30 @@ export type WorldTickState = {
    * resolvedPressures is.
    */
   districtTones?: Record<string, DistrictMood['tone']>;
+  /**
+   * Count of `milestones` entries already fed to computeLeverageGains by the
+   * leverage-income step (v3.0 wave 2, step 5a2 below) — a cursor into the
+   * SAME ever-growing, never-cleared array collectMilestones/applyFallout's
+   * milestone-tag effect push into, exactly like lastEventIndex is a cursor
+   * into the eventLog. Only `milestones.slice(cursor)` counts as NEW each
+   * round; without it, a milestone would re-grant its leverage gain on every
+   * subsequent tick forever. OPTIONAL and lazily written — SEED-0 IDENTITY:
+   * a world that never triggers the leverage-income step (see
+   * runLeverageIncomeStep's own gate) never gains this key at all, not even
+   * at 0 — this is a stricter posture than resolvedPressures?/districtTones?
+   * (which freshWorldTickState seeds unconditionally) because THIS field's
+   * mere presence would itself be an observable side effect the SEED-0
+   * contract forbids for an otherwise-untouched world.
+   */
+  leverageMilestoneCursor?: number;
+  /**
+   * The player's 'xp' progression-core currency balance as of the end of the
+   * previous tick this step ran — the SAME tick-over-tick delta pattern
+   * lastHeat already uses, read via progression-core's getCurrency. Feeds
+   * computeLeverageGains' xpGained hint. OPTIONAL/lazily-written for the
+   * identical SEED-0 reason leverageMilestoneCursor documents above.
+   */
+  lastXp?: number;
 };
 
 export type WorldTickOptions = {
@@ -539,11 +639,15 @@ function collectMilestones(world: WorldState, state: WorldTickState): void {
 // persisted state to key off yet: player-leverage.ts's resolveSocialAction/
 // resolveRumorAction/resolveSabotageAction emit no ResolvedEvents and have no
 // production caller; item-recognition's chronicle never reaches the world
-// eventLog; npc-agency's obligation ledger is never persisted (endgame.ts's
-// own buildEndgameInputs comment says the same: "obligation ledgers are
-// never persisted"). This is an honest ceiling, not an oversight — mirrors
-// this file's own documented ceilings in the header above — deferred to a
-// follow-up wave explicitly scoped to wire those event sources, named here
+// eventLog; npc-agency's obligation ledger IS now persisted (v3.0,
+// F-v3-npc-agency's step 5a below writes world.modules['npc-agency'] every
+// round a named NPC exists) but nothing in this file's own trigger-collection
+// logic yet SCANS it for a 'betrayed' obligation to key 'obligation-betrayed'
+// off — the ledger existing is necessary but not sufficient; that specific
+// scan is still a distinct, unscoped follow-up. This is an honest ceiling,
+// not an oversight — mirrors this file's own documented ceilings in the
+// header above — deferred to a follow-up wave explicitly scoped to wire
+// those event sources, named here
 // so it is not silently dropped.
 // ---------------------------------------------------------------------------
 
@@ -585,14 +689,14 @@ function collectCombatReactionTriggers(world: WorldState, start: number, end: nu
  *
  * `breakpoints` (optional) forwards to evaluateCompanionReactions' own
  * departure gate (`projectedMorale <= 10 && breakpoint is hostile/wavering`).
- * The real call site below passes none — npc-agency's NpcRelationship ledger
- * has no production writer yet (same honest ceiling as the 12 deferred
- * triggers; endgame.ts's own buildEndgameInputs comment says the same), so
- * departure is a fully-built, correct code path that cannot yet fire in a
- * played session. Exported and parameterized (rather than hardcoded to no
- * breakpoints) so it is both directly testable today and a one-line
- * integration point once a future wave wires relationships: pass the real
- * map, nothing else here changes.
+ * The real call site below (v3.0, F-v3-npc-agency) now passes the PREVIOUS
+ * round's persisted npc-agency breakpoints (getPersistedNpcProfiles) — this
+ * round's own fresh profiles aren't computed until step 5a, later in the
+ * same tick, so "as of the most recently known state" is the earliest this
+ * call site can honestly read. Empty when no named NPC has ever existed
+ * (SEED-0) or this is the very first round a named NPC appears. Exported and
+ * parameterized (rather than hardcoded) so it stays directly testable with a
+ * hand-built map too.
  */
 export function applyCompanionReactions(
   engine: Engine,
@@ -851,6 +955,484 @@ function applyFallout(
 }
 
 // ---------------------------------------------------------------------------
+// NPC agency (v3.0 headline wire, F-v3-npc-agency) — see file header step 5a.
+// ---------------------------------------------------------------------------
+
+/** Deadline an NPC-bargained opportunity carries (opportunity-core.ts's own
+ *  internal DEFAULT_DEADLINE is 12 but not exported — this is an independent,
+ *  intentionally-matching constant, not a re-export). */
+const NPC_OPPORTUNITY_TURNS_REMAINING = 12;
+
+/** Neutral urgency for an NPC-bargained opportunity — the effect itself
+ *  carries no urgency signal to derive a sharper number from. */
+const NPC_OPPORTUNITY_URGENCY = 0.5;
+
+const NPC_RUMOR_SOURCES = new Set<NpcRumorSource>([
+  'npc-accusation', 'npc-betrayal', 'npc-warning', 'npc-concealment', 'npc-gossip',
+]);
+
+/**
+ * Gate + drive npc-agency.ts's runNpcAgencyTick for one round, applying every
+ * returned NpcEffect and persisting the round's profiles/last-actions/
+ * obligation ledgers to world.modules['npc-agency'].
+ *
+ * SEED-0 IDENTITY (non-negotiable): a world with NO named NPCs must be
+ * byte-identical to today — no npc-agency namespace created, no events, no
+ * state mutation of any kind. The `namedNpcsPresent` check below is the
+ * entire gate; when false this function reads nothing and writes nothing.
+ *
+ * Effect application mirrors applyFallout above's posture (direct-to-ledger,
+ * same stores):
+ *   - belief/memory   → setBelief/addMemory (cognition-core.ts, already the
+ *     exported writers cognition-core's own internal listeners use)
+ *   - morale          → companion-core's adjustCompanionMorale (+ the
+ *     .custom mirror) when the entity is a party companion, else direct
+ *     CognitionState.morale mutation (the same un-wrappered mutation
+ *     cognition-core.ts's own combat listeners use — there is no separate
+ *     setter function)
+ *   - suspicion       → direct CognitionState.suspicion mutation (ditto)
+ *   - reputation/alert → addGlobal, the SAME globals defeat-fallout/
+ *     applyFallout accrue into
+ *   - zone-change     → direct entity.zoneId mutation (combat-core.ts's
+ *     disengage and traversal-core.ts's move handler both do the same; no
+ *     dedicated "moveEntity" helper exists to route through instead).
+ *     Deliberately scoped to the state change alone — NOT re-emitting
+ *     world.zone.entered (which would cascade into cognition-core's
+ *     perception listener and encounter-spawn's zone-entry check) is a
+ *     boundary this wave draws on purpose, not an oversight.
+ *   - pressure        → makePressure + push into `active`, respecting the
+ *     one-active-per-kind invariant, + `pressure.spawned` (mirrors
+ *     applyFallout's own chain-pressure spawn exactly)
+ *   - obligation      → createObligation + addObligation into the ledger
+ *     this function persists
+ *   - npc-rumor       → player-rumor.ts's spawnNpcOriginatedRumor (+
+ *     propagateRumor for any additional targetFactionIds beyond the first)
+ *   - companion-departure → companion-core's removeCompanion +
+ *     removeCompanionTags + `companion.departed` (mirrors
+ *     applyCompanionReactions' own departure handling above exactly)
+ *   - spawn-opportunity → a minimal, honestly-scoped OpportunityState via
+ *     makeOpportunity (empty rewards/risks — the effect carries no concrete
+ *     amounts to invent) appended via setPersistedOpportunities, +
+ *     `opportunity.spawned`
+ *   - rumor           → DEFERRED. No current producer in resolveNpcAction
+ *     (only 'npc-rumor' is ever emitted) and no writer fits an NPC-sourced
+ *     generic claim without misattributing it as player-initiated
+ *     (spawnIntentionalRumor tags source 'player-leverage'). Honest ceiling.
+ *
+ * Every resolved NPC action ALSO emits one bounded `npc.action.resolved`
+ * event bundling its full effects array (the SAME "embed the array in one
+ * event" posture `pressure.expired`/`opportunity.expired` already use,
+ * rather than one event per effect) — this is what lets the round's
+ * narration draw on narratorHint/dialogueHint.
+ */
+function runNpcAgencyStep(
+  engine: Engine,
+  world: WorldState,
+  active: WorldPressure[],
+  currentTick: number,
+  playerDistrictId: string | undefined,
+  genre: string,
+): void {
+  const namedNpcsPresent = Object.values(world.entities).some((e) => isNamedNpc(e, world.playerId));
+  if (!namedNpcsPresent) return; // SEED-0 identity — read and write nothing
+
+  // Age the obligation ledgers BEFORE building this round's profiles/goals —
+  // the same "age the lifecycle, then evaluate against the aged version"
+  // order tickPressures/tickOpportunities already use for their own state.
+  const obligationLedgers = new Map<string, NpcObligationLedger>();
+  for (const [npcId, ledger] of getPersistedNpcObligations(world)) {
+    obligationLedgers.set(npcId, tickObligations(ledger));
+  }
+
+  // playerRumors: undefined — the SAME honest ceiling buildPressureInputs'
+  // own playerRumors: [] already documents in this file's header.
+  const profiles = buildAllNpcProfiles(world, world.playerId, active, undefined, obligationLedgers);
+  const results = runNpcAgencyTick(world, world.playerId, active, currentTick, undefined, obligationLedgers);
+
+  // Party state and opportunities are each read once and committed once —
+  // the SAME batched-commit shape applyCompanionReactions above uses, so N
+  // effects touching companions/opportunities cost one write each, not N.
+  let party = getPartyState(world);
+  let partyChanged = false;
+  let opportunities = getPersistedOpportunities(world);
+  let opportunitiesChanged = false;
+  const rumorState = getPlayerRumorState(world);
+  let rumors = rumorState.rumors;
+  let rumorsChanged = false;
+
+  // Fresh per round from the CURRENT active set — step 3's own `activeKinds`
+  // (declared far above) stops being updated after step 3's own loop and
+  // does not see step 5's heat-wake spawn, so reusing it here would risk a
+  // stale one-active-per-kind check.
+  const activeKinds = new Set(active.map((p) => p.kind));
+
+  const lastActionsByNpc = new Map(getPersistedNpcLastActions(world).map((r) => [r.action.npcId, r]));
+
+  for (const result of results) {
+    const npc = world.entities[result.action.npcId];
+    const npcName = npc?.name ?? result.action.npcId;
+    const actingProfile = profiles.find((p) => p.npcId === result.action.npcId);
+
+    for (const effect of result.effects) {
+      switch (effect.type) {
+        case 'belief':
+          setBelief(
+            getCognition(world, effect.entityId),
+            effect.subject, effect.key, effect.value, effect.confidence,
+            'npc-agency', currentTick,
+          );
+          break;
+
+        case 'memory':
+          addMemory(world, getCognition(world, effect.entityId), effect.memType, currentTick, effect.data);
+          break;
+
+        case 'morale': {
+          if (isCompanion(party, effect.entityId)) {
+            party = adjustCompanionMorale(party, effect.entityId, effect.delta);
+            partyChanged = true;
+            const companion = getCompanion(party, effect.entityId);
+            const entity = world.entities[effect.entityId];
+            if (companion && entity) syncCompanionCustomFields(entity, companion.role, companion.morale);
+          } else {
+            const cog = getCognition(world, effect.entityId);
+            cog.morale = clamp(0, 100, cog.morale + effect.delta);
+          }
+          break;
+        }
+
+        case 'suspicion': {
+          const cog = getCognition(world, effect.entityId);
+          cog.suspicion = clamp(0, 100, cog.suspicion + effect.delta);
+          break;
+        }
+
+        case 'reputation':
+          addGlobal(world, `reputation_${effect.factionId}`, effect.delta);
+          break;
+
+        case 'alert':
+          addGlobal(world, `faction_alert_${effect.factionId}`, effect.delta);
+          break;
+
+        case 'zone-change':
+          if (world.entities[effect.entityId]) {
+            world.entities[effect.entityId].zoneId = effect.toZoneId;
+          }
+          break;
+
+        case 'pressure': {
+          if (activeKinds.has(effect.kind)) break; // one active pressure per kind (applyFallout's own invariant)
+          const pressure = makePressure(
+            {
+              kind: effect.kind,
+              sourceFactionId: effect.sourceFactionId,
+              description: effect.description,
+              triggeredBy: `npc-agency:${effect.sourceNpcId ?? result.action.npcId}`,
+              urgency: effect.urgency,
+              visibility: 'rumored', // mirrors applyFallout's own chain-pressure visibility
+              turnsRemaining: CHAIN_TURNS_REMAINING,
+              potentialOutcomes: [],
+              tags: ['npc-agency'],
+              currentTick,
+              sourceNpcId: effect.sourceNpcId ?? result.action.npcId,
+            },
+            world,
+          );
+          activeKinds.add(pressure.kind);
+          active.push(pressure);
+          emitPressureEvent(
+            engine,
+            'pressure.spawned',
+            { ...pressurePayload(pressure), triggeredBy: pressure.triggeredBy },
+            { hidden: false, priority: 'high' },
+          );
+          break;
+        }
+
+        case 'obligation': {
+          const ledger = obligationLedgers.get(effect.npcId) ?? { obligations: [] };
+          const obligation = createObligation(
+            effect.kind, effect.direction, effect.npcId, effect.counterpartyId,
+            effect.magnitude, effect.sourceTag, currentTick, effect.decayTurns,
+          );
+          obligationLedgers.set(effect.npcId, addObligation(ledger, obligation));
+          break;
+        }
+
+        case 'npc-rumor': {
+          const source = NPC_RUMOR_SOURCES.has(effect.sourceEvent as NpcRumorSource)
+            ? (effect.sourceEvent as NpcRumorSource)
+            : 'npc-gossip';
+          const [firstFactionId, ...restFactionIds] = effect.targetFactionIds;
+          const districtId = npc?.zoneId ? getDistrictForZone(world, npc.zoneId) : undefined;
+          let rumor = spawnNpcOriginatedRumor(
+            effect.claim, effect.valence, source, effect.originNpcId,
+            firstFactionId, districtId, currentTick, 0.75, world,
+          );
+          for (const extraFactionId of restFactionIds) {
+            rumor = propagateRumor(rumor, extraFactionId);
+          }
+          rumors = [...rumors, rumor];
+          rumorsChanged = true;
+          break;
+        }
+
+        case 'rumor':
+          // Honest ceiling — see this function's own docstring.
+          break;
+
+        case 'companion-departure': {
+          const companion = getCompanion(party, effect.npcId);
+          if (companion) {
+            const removal = removeCompanion(party, effect.npcId);
+            party = removal.party;
+            partyChanged = true;
+            const entity = world.entities[effect.npcId];
+            if (entity) removeCompanionTags(entity, companion.role);
+            engine.store.emitEvent('companion.departed', {
+              npcId: effect.npcId,
+              npcName: entity?.name ?? effect.npcId,
+              role: companion.role,
+              reason: effect.reason,
+            }, {
+              targetIds: [effect.npcId],
+              presentation: { channels: ['objective', 'narrator'], priority: 'high' },
+            });
+          }
+          break;
+        }
+
+        case 'spawn-opportunity': {
+          const sourceNpcId = effect.targetNpcId ?? result.action.npcId;
+          const sourcePairKey = `${effect.kind}:${sourceNpcId}`;
+          const livePairConflict = opportunities.some(
+            (o) => (o.status === 'available' || o.status === 'accepted')
+              && `${o.kind}:${o.sourceNpcId ?? o.sourceFactionId ?? 'none'}` === sourcePairKey,
+          );
+          if (livePairConflict) break; // mirrors evaluateOpportunities' own dedup guard
+          const opportunity = makeOpportunity({
+            kind: effect.kind,
+            sourceNpcId,
+            sourceFactionId: actingProfile?.factionId ?? undefined,
+            title: effect.description,
+            description: effect.description,
+            objectiveDescription: 'Follow up with them directly.',
+            linkedDistrictId: playerDistrictId,
+            linkedNpcIds: [sourceNpcId],
+            urgency: NPC_OPPORTUNITY_URGENCY,
+            turnsRemaining: NPC_OPPORTUNITY_TURNS_REMAINING,
+            visibility: 'offered',
+            rewards: [],
+            risks: [],
+            genre,
+            currentTick,
+            tags: ['npc-agency'],
+          });
+          opportunities = [...opportunities, opportunity];
+          opportunitiesChanged = true;
+          engine.store.emitEvent('opportunity.spawned', {
+            opportunityId: opportunity.id,
+            kind: opportunity.kind,
+            title: opportunity.title,
+            reason: `${npcName} (npc-agency) offered directly`,
+            urgency: opportunity.urgency,
+          }, { visibility: 'public', presentation: { channels: ['narrator'], priority: 'normal' } });
+          break;
+        }
+
+        default:
+          break; // exhaustive over NpcEffect — a future new variant needs a case added here
+      }
+    }
+
+    lastActionsByNpc.set(result.action.npcId, result);
+
+    engine.store.emitEvent('npc.action.resolved', {
+      npcId: result.action.npcId,
+      npcName,
+      verb: result.action.verb,
+      targetEntityId: result.action.targetEntityId,
+      description: result.action.description,
+      narratorHint: result.narratorHint,
+      dialogueHint: result.dialogueHint,
+      effects: result.effects,
+    }, {
+      actorId: result.action.npcId,
+      ...(result.action.targetEntityId ? { targetIds: [result.action.targetEntityId] } : {}),
+      visibility: 'public',
+      presentation: { channels: ['narrator'], priority: 'normal' },
+    });
+  }
+
+  if (partyChanged) {
+    setPartyState(world, party);
+    const player = world.entities[world.playerId];
+    if (player) {
+      const statusEvent = refreshCompanionAbilityStatus(world, party, player, currentTick);
+      if (statusEvent) engine.store.recordEvent(statusEvent);
+    }
+  }
+  if (opportunitiesChanged) setPersistedOpportunities(world, opportunities);
+  if (rumorsChanged) setPlayerRumorState(world, { rumors });
+
+  // Prune last-actions to the CURRENT roster (profiles just rebuilt fresh) —
+  // bounded to "named NPCs eligible this round", not an ever-growing history
+  // of every NPC that ever acted, including ones since dead or unnamed.
+  const currentNpcIds = new Set(profiles.map((p) => p.npcId));
+  const prunedLastActions = [...lastActionsByNpc.values()].filter((r) => currentNpcIds.has(r.action.npcId));
+
+  setPersistedNpcState(world, profiles, prunedLastActions, obligationLedgers);
+}
+
+// ---------------------------------------------------------------------------
+// Leverage income (v3.0 wave 2, "leverage-income", step 5a2) — see file
+// header. player-leverage.ts's tickLeverage/computeLeverageGains were fully
+// authored and unit-tested with ZERO production callers before this wire.
+// ---------------------------------------------------------------------------
+
+/**
+ * Combine two partial leverage-gain records, summing shared currencies.
+ * computeLeverageGains is called once per hint AXIS below (xp, each new
+ * milestone, pressure resolution) rather than once with every hint bundled
+ * into a single call — bundling would re-check `hints.xpGained >= 15` (and
+ * re-grant its blackmail gain) once per milestone in a multi-milestone
+ * round, instead of exactly once for the round's actual xp delta.
+ */
+function mergeLeverageGains(
+  a: Partial<Record<LeverageCurrency, number>>,
+  b: Partial<Record<LeverageCurrency, number>>,
+): Partial<Record<LeverageCurrency, number>> {
+  const merged = { ...a };
+  for (const [currency, amount] of Object.entries(b)) {
+    if (!amount) continue;
+    const key = currency as LeverageCurrency;
+    merged[key] = (merged[key] ?? 0) + amount;
+  }
+  return merged;
+}
+
+/**
+ * Tick passive leverage income for one round: heat decay + reputation-
+ * derived influence reconciliation (tickLeverage), then passive gains from
+ * this round's xp/milestone/pressure-resolution signals (computeLeverageGains),
+ * written back to the player entity's custom fields via applyLeverageDeltas.
+ * `reputation` is the SAME `{factionId, value}[]` buildPressureInputs already
+ * derives for the pressure/opportunity steps — reused, not re-plumbed.
+ * `expiredFallouts` is step 3's own per-round pressure-expiry ledger (in
+ * scope, not re-collected).
+ *
+ * SEED-0 IDENTITY (non-negotiable): a legacy world that never engaged the
+ * social layer — no reputation (maxRep <= 0), no NEW milestones since the
+ * cursor, no xp gained this round, no player-resolved pressure this round,
+ * AND no pre-existing `leverage.*` custom key — must be byte-identical:
+ * this function reads world/state but writes NOTHING (not playerCustom, not
+ * either WorldTickState tracking field) when every one of those signals is
+ * absent. `hasActivity` below is the entire gate, mirroring
+ * runNpcAgencyStep's own "the check is the entire gate; when false, read and
+ * write nothing" contract. A world that HAS pre-existing leverage.* state
+ * (the player used a social/rumor/diplomacy/sabotage verb directly, outside
+ * this step) keeps ticking every round from then on regardless of THIS
+ * round's own signals — heat must keep decaying even in a quiet round, the
+ * same reasoning HEAT_DECAY_PER_QUIET_TICK's own quiet-round decay exists
+ * for the world's ambient heat.
+ *
+ * MILESTONE-CURSOR TRAP: state.milestones accumulates for the WHOLE session
+ * (collectMilestones above and applyFallout's 'milestone-tag' effect both
+ * only ever PUSH, never clear or trim). Feeding computeLeverageGains the
+ * FULL array every round would re-grant every old milestone's gain on every
+ * subsequent tick. state.leverageMilestoneCursor tracks how many entries
+ * this step has already processed; only the slice PAST the cursor is fed
+ * in, and the cursor advances to state.milestones.length every round this
+ * step actually runs. It never advances on a round the SEED-0 gate skips,
+ * but a skipped round is, by construction, a round with zero NEW milestones
+ * anyway (a new milestone is itself one of the five hasActivity triggers
+ * below) — the cursor never has a chance to drift behind an unprocessed
+ * entry.
+ *
+ * OPTIONAL fields (leverageMilestoneCursor / lastXp) are tolerant-reader,
+ * `?? 0` degrading absence to "nothing processed / no xp observed yet" —
+ * but UNLIKE resolvedPressures?/districtTones? (which freshWorldTickState
+ * seeds unconditionally at 0/{} for every world), these two are lazily
+ * created ONLY inside the `hasActivity` branch below, never in
+ * freshWorldTickState. Seeding them at 0 for every world would itself be an
+ * observable difference the SEED-0 contract forbids for a world that never
+ * triggers this step.
+ *
+ * Honest ceiling: computeLeverageGains' reputationDelta hint axis (rep-gain
+ * → favor / large-rep-loss → blackmail) is NOT wired here — out of this
+ * wave's explicit scope. Its pressureResolution axis is itself a dead
+ * branch today: this file's only computeFallout call site (step 3) always
+ * passes the literal 'expired-ignored', so `playerResolvedFallout` below is
+ * never actually found in production — the SAME dormant path
+ * companion-reactions.ts's own 'pressure-resolved-well' trigger documents.
+ * Wired honestly for the day either path goes live.
+ */
+function runLeverageIncomeStep(
+  world: WorldState,
+  state: WorldTickState,
+  reputation: PressureInputs['reputation'],
+  expiredFallouts: PressureFallout[],
+): void {
+  const player = world.entities[world.playerId];
+  const playerCustom = (player?.custom ?? {}) as Record<string, string | number | boolean>;
+
+  const cursor = state.leverageMilestoneCursor ?? 0;
+  const newMilestones = state.milestones.slice(cursor);
+
+  const currentXp = getCurrency(world, world.playerId, 'xp');
+  const previousXp = state.lastXp ?? 0;
+  const xpGained = currentXp - previousXp;
+
+  const playerResolvedFallout = expiredFallouts.find(
+    (f) => f.resolution.resolutionType === 'resolved-by-player',
+  );
+
+  const maxRep = Math.max(0, ...reputation.map((r) => r.value));
+  const hasExistingLeverageState = Object.keys(playerCustom).some((k) => k.startsWith('leverage.'));
+
+  const hasActivity =
+    maxRep > 0 ||
+    hasExistingLeverageState ||
+    newMilestones.length > 0 ||
+    xpGained !== 0 ||
+    playerResolvedFallout !== undefined;
+
+  if (!hasActivity) return; // SEED-0 identity — read only, nothing written
+
+  // V3-LEV-1: heat decay + reputation-derived influence reconciliation.
+  let custom = tickLeverage(playerCustom, reputation);
+
+  // V3-LEV-2: passive gains, one hint axis at a time (see this function's
+  // own docstring for why bundling every hint into one call would
+  // double/under-count).
+  let gains: Partial<Record<LeverageCurrency, number>> = {};
+  if (xpGained !== 0) {
+    gains = mergeLeverageGains(gains, computeLeverageGains({ xpGained }));
+  }
+  for (const milestone of newMilestones) {
+    gains = mergeLeverageGains(
+      gains,
+      computeLeverageGains({ xpGained: 0, milestoneTriggered: milestone }),
+    );
+  }
+  if (playerResolvedFallout) {
+    gains = mergeLeverageGains(
+      gains,
+      computeLeverageGains({
+        xpGained: 0,
+        pressureResolution: { resolutionType: playerResolvedFallout.resolution.resolutionType },
+      }),
+    );
+  }
+  custom = applyLeverageDeltas(custom, gains);
+
+  if (player) player.custom = custom;
+  state.lastXp = currentXp;
+  state.leverageMilestoneCursor = state.milestones.length;
+}
+
+// ---------------------------------------------------------------------------
 // The tick
 // ---------------------------------------------------------------------------
 
@@ -1041,8 +1623,13 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   }
 
   // 3c. Companion reactions (F-b595731a) — this round's combat outcomes plus
-  // this tick's pressure resolutions, now that both are known.
-  applyCompanionReactions(engine, world, reactionTriggers, currentTick);
+  // this tick's pressure resolutions, now that both are known. Breakpoints
+  // (v3.0, F-v3-npc-agency) come from the PREVIOUS round's persisted
+  // npc-agency profiles — this round's own fresh profiles aren't computed
+  // until step 5a, later in this same tick. Empty when no named NPC has ever
+  // existed (SEED-0) or this is the first round one appears.
+  const npcBreakpoints = new Map(getPersistedNpcProfiles(world).map((p) => [p.npcId, p.breakpoint]));
+  applyCompanionReactions(engine, world, reactionTriggers, currentTick, npcBreakpoints);
 
   // 4. Sustained heat sharpens what's already in motion.
   const escalated: WorldPressure[] = [];
@@ -1082,16 +1669,35 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
     }
   }
 
+  // 5a. NPC agency tick (v3.0, F-v3-npc-agency) — see file header + this
+  // function's own docstring for the full contract. Runs every round (not
+  // heat-gated — a named NPC's own goals key off relationship/pressure/
+  // obligation state, not heat), directly after step 5 so an NPC-triggered
+  // pressure effect is pushed into `active` in time for step 5b's own
+  // buildPressureInputs call to see it. Gated entirely on "at least one
+  // named NPC exists" — see runNpcAgencyStep's SEED-0 identity contract.
+  runNpcAgencyStep(engine, world, active, currentTick, playerDistrictId, genre);
+
+  // 5a2. Leverage income (v3.0 wave 2, "leverage-income") — see file header
+  // + runLeverageIncomeStep's own docstring for the full SEED-0 contract.
+  // oppPressureInputs is hoisted here from its old spot at the top of step
+  // 5b below (same call, same arguments — nothing mutates world.globals/
+  // world.factions/faction-cognition/district-core/economy-core between the
+  // old call site and this one, so the result is byte-identical either way)
+  // so this step and step 5b share the ONE reputation derivation instead of
+  // computing it twice.
+  const oppPressureInputs = buildPressureInputs(world, state, genre, currentTick, active);
+  runLeverageIncomeStep(world, state, oppPressureInputs.reputation, expiredFallouts);
+
   // 5b. Opportunity spawn/tick wire (F-ceed887f) — see file header. Runs
   // every round (not heat-gated). Reuses buildPressureInputs' own
-  // reputation/factionStates/districtEconomies derivation with a second,
-  // pure, side-effect-free call (cheap, and keeps step 5 above completely
-  // untouched) so opportunity evaluation never disagrees with the pressure
-  // tick about faction standing or district economies. Ticks the persisted
-  // set FIRST (timers/visibility/expiry), then evaluates a new spawn against
-  // the ticked set's own capacity/interval/pair-conflict guards — the exact
-  // order step 2→5 already uses for pressures.
-  const oppPressureInputs = buildPressureInputs(world, state, genre, currentTick, active);
+  // reputation/factionStates/districtEconomies derivation (computed once,
+  // just above, and shared with step 5a2) so opportunity evaluation never
+  // disagrees with the pressure tick about faction standing or district
+  // economies. Ticks the persisted set FIRST (timers/visibility/expiry),
+  // then evaluates a new spawn against the ticked set's own capacity/
+  // interval/pair-conflict guards — the exact order step 2→5 already uses
+  // for pressures.
   const player = world.entities[world.playerId];
   const playerCustom = (player?.custom ?? {}) as Record<string, string | number | boolean>;
   let playerLeverage = getLeverageState(playerCustom);
@@ -1145,13 +1751,13 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   const oppInputs: OpportunityInputs = {
     activeOpportunities: tickedOpportunities,
     activePressures: active,
-    // Hardcoded-empty (v3.0 honest ceiling — see file header step 5b note):
-    // npc-agency.ts persists neither profiles nor obligations anywhere in the
-    // engine today. The 2 npc-dependent rules simply no-op on these; wiring
-    // npc-agency's own persistence in a future wave activates both without
-    // any change here.
-    npcProfiles: [],
-    npcObligations: new Map(),
+    // Real reads (v3.0, F-v3-npc-agency): step 5a above just persisted this
+    // round's profiles/obligation ledgers to world.modules['npc-agency'] —
+    // these are the SAME non-attaching accessors endgame.ts and director.ts
+    // read. [] / empty Map on a world with no named NPCs (SEED-0), same as
+    // before this wave.
+    npcProfiles: getPersistedNpcProfiles(world),
+    npcObligations: getPersistedNpcObligations(world),
     factionStates: oppPressureInputs.factionStates,
     playerReputations: oppPressureInputs.reputation,
     playerLeverage,

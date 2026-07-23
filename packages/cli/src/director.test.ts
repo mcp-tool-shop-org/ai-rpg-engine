@@ -10,6 +10,7 @@ import {
   makePressure,
   makeOpportunity,
   createDistrictEconomy,
+  runWorldTick,
 } from '@ai-rpg-engine/modules';
 import { EQUIPMENT_CATALOG_FORMULA, type ItemCatalog } from '@ai-rpg-engine/equipment';
 import { FormulaRegistry, type Engine, type WorldState } from '@ai-rpg-engine/core';
@@ -198,12 +199,13 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
   // (F-7d5c3e28) are now BOTH always-included in buildWorldStack — MARKET
   // OVERVIEW and PARTY are no longer fixture-only, they light up together
   // from one real played session (recruit + a round), not just from a
-  // zero-action engine. PEOPLE stays dark on purpose: npc-agency (its own
-  // namespace) has zero production writer anywhere in the engine — pure
-  // functions only, no EngineModule/register(ctx), confirmed by a repo-wide
-  // grep — so no amount of real play can light it up yet (see
-  // F-69ee0f88/F-f74770d2's skip notes). That is the honest ceiling, not a
-  // missed wire.
+  // zero-action engine. PEOPLE stays dark here specifically because this
+  // test only calls engine.submitAction directly — it never calls
+  // runWorldTick, and world-tick.ts's own per-round step (v3.0,
+  // F-v3-npc-agency) is npc-agency's only production writer. See the
+  // 'lights up PEOPLE too' test directly below for the positive case: the
+  // SAME recruited companion IS a named NPC, and a round that actually runs
+  // runWorldTick renders her here.
   it('F-6cc633b9: a real played session (recruit + a round) lights up MARKET OVERVIEW and PARTY together — PEOPLE stays dark', () => {
     const engine = createGame(42);
     // Sister Maren starts in the player's own zone (chapel-entrance) — no
@@ -222,6 +224,35 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
     expect(report).toContain('  sister-maren (sister-maren) — Diplomat | Morale: 60');
 
     expect(report).not.toContain('PEOPLE —');
+  });
+
+  // v3.0 (F-v3-npc-agency): the positive case the test above deliberately
+  // does NOT exercise — a round that actually calls runWorldTick (the real
+  // per-round driver, not raw submitAction) now persists
+  // world.modules['npc-agency'] whenever a named NPC (isNamedNpc: has `.ai`,
+  // alive, and either tagged 'named' or type 'npc' with a name) is present,
+  // and PEOPLE renders from that real state.
+  it("v3.0 (F-v3-npc-agency): a round that actually runs runWorldTick lights up PEOPLE too", () => {
+    const engine = createGame(42);
+    engine.world.entities['elder-vane'] = {
+      id: 'elder-vane',
+      blueprintId: 'elder-vane',
+      type: 'npc',
+      name: 'Elder Vane',
+      tags: ['npc'],
+      stats: {},
+      resources: { hp: 10 },
+      statuses: [],
+      zoneId: 'chapel-entrance',
+      ai: { profileId: 'cautious', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+    };
+
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.ok).toBe(true);
+
+    const report = renderDirectorLedger(engine);
+    expect(report).toContain('PEOPLE —');
+    expect(report).toContain('Elder Vane');
   });
 
   it('districts + market overview render from district-core and economy-core state', () => {
@@ -360,6 +391,85 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
     };
     const report = renderDirectorLedger(fakeEngine(world));
     expect(report).not.toContain('Departure risk');
+  });
+
+  // F-V3R-PARTY-1 (Phase-9 party-departure remediation): the PARTY section
+  // used to hardcode formatPartyForDirector(party, [], ...) — Breakpoint
+  // always read 'unknown' and goals never rendered, even in a session where
+  // npc-agency HAD already profiled the companion. Real persisted profiles
+  // (world.modules['npc-agency'].profiles) now feed it, and the resolved
+  // breakpoint now flows into evaluateDepartureRisk too — contrast this
+  // 'sable' fixture (morale 8, same as the no-breakpoint test above) against
+  // that one: identical morale, but a known 'wavering' breakpoint now lifts
+  // the assessment from 'medium' to 'high', the band that section could
+  // never reach before this fix.
+  it('F-V3R-PARTY-1: PARTY renders a real Breakpoint + goals once npc-agency has profiled the companion', () => {
+    const world = bareWorld();
+    world.modules['companion-core'] = {
+      companions: [
+        { npcId: 'sable', role: 'diplomat', joinedAtTick: 0, abilityTags: [], morale: 8, active: true },
+      ],
+    };
+    world.modules['npc-agency'] = {
+      profiles: [
+        {
+          npcId: 'sable',
+          name: 'Sable',
+          factionId: null,
+          goals: [{ id: 'g1', label: 'Find her brother', priority: 0.8, verb: 'bargain', reason: 'test fixture' }],
+          relationship: { trust: -20, fear: 10, greed: 0, loyalty: 15 },
+          breakpoint: 'wavering',
+          dominantAxis: 'trust',
+          leverageAngle: 'test',
+          knownRumors: [],
+          underPressure: false,
+        },
+      ],
+    };
+
+    const report = renderDirectorLedger(fakeEngine(world));
+
+    expect(report).toContain('Breakpoint: wavering');
+    expect(report).toContain('    Goals: Find her brother (0.8)');
+    // morale 8 (<=10) + wavering breakpoint → evaluateDepartureRisk's 'high'
+    // band, previously unreachable from this section.
+    expect(report).toContain('Departure risk: high');
+  });
+
+  // A companion with NO matching npc-agency profile still degrades exactly
+  // as before (F-834d0485's original contract) — the fix does not require
+  // every companion to be profiled, it just stops hardcoding [] for ALL of
+  // them.
+  it('F-V3R-PARTY-1: a companion absent from npc-agency profiles still degrades to "unknown" (non-regression)', () => {
+    const world = bareWorld();
+    world.modules['companion-core'] = {
+      companions: [
+        { npcId: 'sable', role: 'diplomat', joinedAtTick: 0, abilityTags: [], morale: 70, active: true },
+        { npcId: 'unprofiled', role: 'fighter', joinedAtTick: 0, abilityTags: [], morale: 70, active: true },
+      ],
+    };
+    world.modules['npc-agency'] = {
+      profiles: [
+        {
+          npcId: 'sable',
+          name: 'Sable',
+          factionId: null,
+          goals: [],
+          relationship: { trust: 0, fear: 0, greed: 0, loyalty: 0 },
+          breakpoint: 'allied',
+          dominantAxis: 'trust',
+          leverageAngle: 'test',
+          knownRumors: [],
+          underPressure: false,
+        },
+      ],
+    };
+
+    const report = renderDirectorLedger(fakeEngine(world));
+
+    expect(report).toContain('Breakpoint: allied');
+    expect(report).toContain('unprofiled (unprofiled) — Fighter');
+    expect(report).toContain('Breakpoint: unknown'); // 'unprofiled' has no npc-agency entry
   });
 
   // F-ec5c7354/F-efdb93d1: EQUIPMENT — the section this file's own header
@@ -527,6 +637,55 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
       const report = renderDirectorLedger(fakeEngine(world));
       expect(report).not.toContain('RECIPES');
     });
+
+    // V3-DIR-1 (v3.0 wave 2): the ceiling the comments above used to
+    // document is closed — world.meta.activeRuleset ('fantasy-minimal') is
+    // now stripped to the bare 'fantasy' GENRE_RECIPES key at the call site,
+    // so a genre-tabled starter's own recipes render alongside the universal
+    // ones, not just the universal set.
+    it('V3-DIR-1: strips the -minimal ruleset suffix so a genre-tabled starter shows its OWN recipes too', () => {
+      const world = bareWorld();
+      const player = world.entities[world.playerId];
+      player.custom = { 'materials.components': 1 };
+
+      const report = renderDirectorLedger(fakeEngine(world));
+
+      expect(report).toContain('  RECIPES');
+      // GENRE_RECIPES['fantasy']: 'craft-potion' and 'modify-enchant' carry
+      // no requiredTags, so both render regardless of player/district tags.
+      expect(report).toContain('Brew Potion');
+      expect(report).toContain('Enchant Item');
+      // 'modify-bless' DOES require the 'sacred' tag (player or district).
+      // bareWorld() wipes world.modules (no district-core namespace) and the
+      // default Wanderer carries no tags of its own beyond 'player' — so
+      // this recipe is correctly still absent. Proves the strip fixes genre
+      // RESOLUTION without bypassing the requiredTags gate.
+      expect(report).not.toContain('Bless Item');
+    });
+
+    it('V3-DIR-1: a starter with no GENRE_RECIPES table (gladiator) still shows universal-only — no cross-genre leak', () => {
+      const engine = createGladiatorGame(42);
+      const world = structuredClone(engine.world) as WorldState;
+      const player = world.entities[world.playerId];
+      player.custom = { 'materials.components': 1 };
+
+      const report = renderDirectorLedger(fakeEngine(world));
+
+      expect(report).toContain('  RECIPES');
+      expect(report).toContain('Craft Bandage'); // universal, unaffected
+      // 'gladiator-minimal' strips to 'gladiator', which has no
+      // GENRE_RECIPES entry (crafting-recipes.ts's table only has fantasy/
+      // zombie/cyberpunk/pirate/detective/colony/weird-west) — the recipe
+      // list must degrade to UNIVERSAL_RECIPES only, exactly as it did
+      // before this fix, never leaking in another genre's content.
+      for (const genreOnly of [
+        'Brew Potion', 'Enchant Item', 'Bless Item', // fantasy
+        'Improvised Weapon', 'Assemble Medkit', 'Barricade Kit', // zombie
+        'Synthesize Stim', 'Overclock', 'Black Market Tune', // cyberpunk
+      ]) {
+        expect(report).not.toContain(genreOnly);
+      }
+    });
   });
 
   // F-6631dd57: the crafting write-wire. Before createCraftingCore, no played
@@ -555,6 +714,17 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
 
     expect(report).toContain('  RECIPES');
     expect(report).toContain('Craft Bandage');
+    // V3-DIR-1: a REAL engine's world.modules['district-core'] is wired by
+    // buildWorldStack (unlike bareWorld()'s stripped fixture), so this is
+    // the fullest proof the strip closes the ceiling end to end: the player
+    // starts in 'chapel-entrance' (district 'chapel-grounds', tags
+    // ['sacred', 'aboveground']) — 'fantasy-minimal' now resolves to
+    // 'fantasy', surfacing BOTH untagged genre recipes AND the one gated on
+    // 'sacred', which only a real district's tags (not a hand-planted
+    // fixture) can satisfy.
+    expect(report).toContain('Brew Potion');
+    expect(report).toContain('Enchant Item');
+    expect(report).toContain('Bless Item');
   });
 
   it('a hostile, hot campaign renders NARRATIVE ARCS and ENDGAME TRAJECTORY from the live evaluators', () => {

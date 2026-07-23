@@ -69,6 +69,7 @@ import {
   formatNpcPeopleForDirector,
   type NpcProfile,
   type NpcActionResult,
+  type NpcObligationLedger,
   // arcs + endgame trajectory
   formatArcForDirector,
   evaluateEndgame,
@@ -146,6 +147,22 @@ function readEquipmentCatalog(engine: Pick<Engine, 'formulas'>): ItemDefinition[
   if (!engine.formulas.has(EQUIPMENT_CATALOG_FORMULA)) return [];
   const catalog = engine.formulas.get(EQUIPMENT_CATALOG_FORMULA)() as ItemCatalog | undefined;
   return catalog && Array.isArray(catalog.items) ? catalog.items : [];
+}
+
+/**
+ * Non-attaching read of this round's persisted NPC profiles
+ * (world.modules['npc-agency'].profiles) — mirrors npc-agency.ts's own
+ * getPersistedNpcProfiles exactly (same namespace, same filter, same
+ * degrade-to-[] contract). Reimplemented locally (F-V3R-PARTY-1, Phase-9
+ * party-departure remediation) rather than imported: that function is not
+ * part of @ai-rpg-engine/modules' public export surface
+ * (packages/modules/src/index.ts), and this remediation's file scope is
+ * director*.ts only — index.ts belongs to a different domain/worktree. Feeds
+ * PARTY below; PEOPLE (above) keeps its own pre-existing inline read of the
+ * same namespace unchanged.
+ */
+function readPersistedNpcProfiles(world: WorldState): NpcProfile[] {
+  return objectArray<NpcProfile>(namespace<{ profiles: unknown }>(world, 'npc-agency')?.profiles);
 }
 
 /**
@@ -330,14 +347,25 @@ export function renderDirectorLedger(engine: Pick<Engine, 'world' | 'formulas'>)
     {
       name: 'PEOPLE',
       body: () => {
-        const npcNs = namespace<{ profiles: unknown; lastActions: unknown }>(
+        // v3.0 (F-v3-npc-agency): world-tick.ts's own per-round step is now
+        // the production writer for this namespace — a world with at least
+        // one named NPC gets real profiles/lastActions/obligationLedgers
+        // here every round; a world with none (SEED-0) leaves the namespace
+        // absent, same as before this wave, and this section stays dark.
+        const npcNs = namespace<{ profiles: unknown; lastActions: unknown; obligationLedgers: unknown }>(
           world,
           'npc-agency',
         );
         const profiles = objectArray<NpcProfile>(npcNs?.profiles);
         if (profiles.length === 0) return null;
         const lastActions = objectArray<NpcActionResult>(npcNs?.lastActions);
-        return formatNpcPeopleForDirector(profiles, lastActions);
+        const npcObligations = new Map<string, NpcObligationLedger>();
+        if (npcNs?.obligationLedgers && typeof npcNs.obligationLedgers === 'object') {
+          for (const [npcId, ledger] of Object.entries(npcNs.obligationLedgers as Record<string, unknown>)) {
+            if (ledger && typeof ledger === 'object') npcObligations.set(npcId, ledger as NpcObligationLedger);
+          }
+        }
+        return formatNpcPeopleForDirector(profiles, lastActions, npcObligations);
       },
     },
     // -- Arcs & trajectory: where this campaign is heading. -----------------
@@ -385,17 +413,24 @@ export function renderDirectorLedger(engine: Pick<Engine, 'world' | 'formulas'>)
           maxSize: typeof compNs?.maxSize === 'number' ? compNs.maxSize : createPartyState().maxSize,
           cohesion: typeof compNs?.cohesion === 'number' ? compNs.cohesion : computePartyCohesion({ ...createPartyState(), companions }),
         };
-        // NPC profiles still have no production writer (npc-agency's
-        // relationship ledger is never persisted). Departure risk (F-b595731a)
-        // now derives from morale alone (evaluateDepartureRisk with no
-        // breakpoint) — real signal, just never 'high' (that band requires a
-        // hostile/wavering breakpoint nothing supplies yet).
+        // F-V3R-PARTY-1 (Phase-9 party-departure remediation): npc-agency now
+        // persists real per-round profiles (world-tick.ts's step 5a, v3.0
+        // F-v3-npc-agency) — the hardcoded [] this used to pass here was the
+        // bug: the Breakpoint field always read 'unknown' and goals never
+        // rendered, even in a session where npc-agency HAD already profiled
+        // this exact companion (PEOPLE, above, was proof the state existed —
+        // PARTY just never looked). Real breakpoints also now flow into
+        // evaluateDepartureRisk, so its 'high' band (previously unreachable
+        // from this section, since the second argument was always omitted)
+        // can finally show.
+        const npcProfiles = readPersistedNpcProfiles(world);
         const departureRisks: Record<string, { risk: string; reason?: string }> = {};
         for (const companion of companions) {
-          const assessment = evaluateDepartureRisk(companion);
+          const breakpoint = npcProfiles.find((p) => p.npcId === companion.npcId)?.breakpoint;
+          const assessment = evaluateDepartureRisk(companion, breakpoint);
           if (assessment.risk !== 'none') departureRisks[companion.npcId] = assessment;
         }
-        return formatPartyForDirector(party, [], departureRisks);
+        return formatPartyForDirector(party, npcProfiles, departureRisks);
       },
     },
     {
@@ -463,18 +498,25 @@ export function renderDirectorLedger(engine: Pick<Engine, 'world' | 'formulas'>)
         const inventory = getMaterialInventory(custom);
         if (!Object.values(inventory).some((quantity) => quantity > 0)) return null;
 
-        // Honest ceiling: world.meta.activeRuleset carries a per-starter
-        // ruleset id (e.g. 'fantasy-minimal'), not the bare 'fantasy'
-        // GENRE_RECIPES key — no pack threads a dedicated genre field through
-        // director.ts yet. getAvailableRecipes degrades an unrecognized
-        // genre to its UNIVERSAL_RECIPES table (the same safe-degrade
-        // contract every recipe lookup here already has), so the section
-        // still renders real, non-invented content — genre-flavored recipes
-        // light up once that plumbing exists.
+        // Ceiling closed (v3.0 wave 2, V3-DIR-1): world.meta.activeRuleset
+        // carries a per-starter ruleset id ('fantasy-minimal'), not the bare
+        // 'fantasy' GENRE_RECIPES key — every starter's ruleset id follows
+        // the literal '<genre>-minimal' pattern (ruleset.ts across all ten
+        // starters), including hyphenated genres ('weird-west-minimal'), so
+        // stripping the trailing '-minimal' suffix (not splitting on the
+        // first '-') recovers the exact key without mangling a multi-word
+        // genre. getAvailableRecipes still degrades an unrecognized genre to
+        // its UNIVERSAL_RECIPES table only (untouched contract, still exact
+        // for gladiator/ronin — neither has a GENRE_RECIPES entry) — this
+        // only fixes resolution for the packs that DO have one. Sibling
+        // wave-2 domains apply the identical strip to the mechanical
+        // resolution (crafting-recipes.ts's write-wire) and the menu's own
+        // buildCraftActions; this is the display-only fix for this file.
+        const genre = world.meta.activeRuleset.replace(/-minimal$/, '');
         const hereId = player?.zoneId ?? world.locationId;
         const districtId = hereId ? getDistrictForZone(world, hereId) : undefined;
         const districtTags = districtId ? getDistrictDefinition(world, districtId)?.tags ?? [] : [];
-        const recipes = getAvailableRecipes(world.meta.activeRuleset, player?.tags ?? [], districtTags);
+        const recipes = getAvailableRecipes(genre, player?.tags ?? [], districtTags);
         if (recipes.length === 0) return null;
         return formatAvailableRecipesForDirector(recipes, inventory);
       },

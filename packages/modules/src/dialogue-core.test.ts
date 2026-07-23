@@ -16,6 +16,7 @@ import { createTestEngine } from '@ai-rpg-engine/core';
 import type { EntityState, ResolvedEvent } from '@ai-rpg-engine/core';
 import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
 import { createDialogueCore } from './dialogue-core.js';
+import { getLeverageState } from './player-leverage.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -417,5 +418,268 @@ describe('dialogue-core: action.rejected payloads name the verb', () => {
     const e3 = buildEngine([]); // empty registry -> "<name> has nothing to say"
     const r3 = rejectionOf(e3.submitAction('speak', { targetIds: ['merchant'] }));
     expect(r3?.payload).toMatchObject({ verb: 'speak', reason: 'Merchant has nothing to say' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V3-DLG: dialogue vocabulary that reads/writes the social layer.
+//
+// New condition kinds (V3-DLG-1): leverage-at-least, reputation-at-least,
+// npc-relationship-at-least. New effect kinds (V3-DLG-2): leverage-adjust,
+// reputation-adjust. All four are handled EXPLICITLY before the existing
+// fallbacks (V3-DLG-3) — an unhandled condition still returns true, an
+// unhandled effect still emits dialogue.effect.unknown, both untouched.
+//
+// 'obligation-exists' is DEFERRED (see the code comment above
+// evaluateCondition's final fallback in dialogue-core.ts): no
+// NpcObligationLedger is persisted anywhere in WorldState in this engine
+// today (npc-agency.ts registers no persistence namespace; world-tick.ts
+// hardcodes npcObligations to an empty Map with an explicit "never
+// persisted" comment; core/src/types.ts has no obligation field at all) —
+// implementing it would mean inventing new persisted state outside this
+// task's dialogue-core*.ts file ownership, so it is shipped as 3 of 4
+// condition kinds, same as the task's own npc-relationship contingency.
+//
+// Tests mutate `engine.store.state...` directly to set up preconditions —
+// the same convention the pre-existing 'secretUnlocked' test above uses —
+// then read back via `engine.world...` for assertions.
+// ---------------------------------------------------------------------------
+
+const socialDialogue: DialogueDefinition = {
+  id: 'social-vocab',
+  speakers: ['merchant'],
+  entryNodeId: 'entry',
+  nodes: {
+    entry: {
+      id: 'entry',
+      speaker: 'merchant',
+      text: 'Let us speak plainly.',
+      choices: [
+        {
+          id: 'leverage-gated', text: '[favor >= 20] Call in a favor.', nextNodeId: 'shop',
+          condition: { type: 'leverage-at-least', params: { currency: 'favor', amount: 20 } },
+        },
+        {
+          id: 'reputation-gated', text: '[guild rep >= 10] Speak as a friend.', nextNodeId: 'shop',
+          condition: { type: 'reputation-at-least', params: { factionId: 'guild', amount: 10 } },
+        },
+        {
+          id: 'relationship-gated', text: '[trust >= 50] Share a secret.', nextNodeId: 'shop',
+          condition: { type: 'npc-relationship-at-least', params: { npcId: 'merchant', axis: 'trust', amount: 50 } },
+        },
+        {
+          id: 'grant-favor', text: 'Do a favor.', nextNodeId: 'shop',
+          effects: [{ type: 'leverage-adjust', params: { currency: 'favor', delta: 15 } }],
+        },
+        {
+          id: 'boost-rep', text: 'Improve standing.', nextNodeId: 'shop',
+          effects: [{ type: 'reputation-adjust', params: { factionId: 'guild', delta: 12 } }],
+        },
+      ],
+    },
+    shop: { id: 'shop', speaker: 'merchant', text: 'Very well.' },
+  },
+};
+
+function enteredChoiceIds(events: ResolvedEvent[]): string[] {
+  const entered = events.find(e => e.type === 'dialogue.node.entered')!;
+  return (entered.payload.choices as Array<{ id: string }>).map(c => c.id);
+}
+
+describe('dialogue-core: leverage-at-least condition (V3-DLG-1)', () => {
+  it('reveals the choice when the player has enough of the named currency', () => {
+    const engine = buildEngine([socialDialogue]);
+    engine.store.state.entities['player'].custom = { 'leverage.favor': 25 };
+    const events = engine.submitAction('speak', { targetIds: ['merchant'] });
+    expect(enteredChoiceIds(events)).toContain('leverage-gated');
+  });
+
+  it('hides the choice when the player does not have enough', () => {
+    const engine = buildEngine([socialDialogue]);
+    engine.store.state.entities['player'].custom = { 'leverage.favor': 5 };
+    const events = engine.submitAction('speak', { targetIds: ['merchant'] });
+    expect(enteredChoiceIds(events)).not.toContain('leverage-gated');
+  });
+
+  it('a player with no leverage custom fields at all reads as 0 (hidden)', () => {
+    const engine = buildEngine([socialDialogue]); // player.custom is undefined on the shared fixture
+    const events = engine.submitAction('speak', { targetIds: ['merchant'] });
+    expect(enteredChoiceIds(events)).not.toContain('leverage-gated');
+  });
+});
+
+describe('dialogue-core: reputation-at-least condition (V3-DLG-1)', () => {
+  it('reveals the choice when the accrued reputation_<factionId> global meets the threshold', () => {
+    const engine = buildEngine([socialDialogue]);
+    engine.store.state.globals['reputation_guild'] = 15;
+    const events = engine.submitAction('speak', { targetIds: ['merchant'] });
+    expect(enteredChoiceIds(events)).toContain('reputation-gated');
+  });
+
+  it('hides the choice when reputation is below the threshold (default 0)', () => {
+    const engine = buildEngine([socialDialogue]);
+    const events = engine.submitAction('speak', { targetIds: ['merchant'] });
+    expect(enteredChoiceIds(events)).not.toContain('reputation-gated');
+  });
+
+  it('merges the authored faction baseline with the accrued global, matching player-leverage.ts\'s reputation merge', () => {
+    const engine = buildEngine([socialDialogue]);
+    engine.store.state.factions['guild'] = { id: 'guild', name: 'The Guild', reputation: 6, disposition: 'neutral' };
+    engine.store.state.globals['reputation_guild'] = 5; // 6 + 5 = 11 >= 10
+    const events = engine.submitAction('speak', { targetIds: ['merchant'] });
+    expect(enteredChoiceIds(events)).toContain('reputation-gated');
+  });
+});
+
+describe('dialogue-core: npc-relationship-at-least condition (V3-DLG-1)', () => {
+  it('reveals the choice when the derived relationship axis meets the threshold', () => {
+    const engine = buildEngine([socialDialogue]);
+    engine.store.state.entities['merchant'].relations = { 'player-trust': 60 };
+    const events = engine.submitAction('speak', { targetIds: ['merchant'] });
+    expect(enteredChoiceIds(events)).toContain('relationship-gated');
+  });
+
+  it('hides the choice when trust defaults to neutral (0)', () => {
+    const engine = buildEngine([socialDialogue]);
+    const events = engine.submitAction('speak', { targetIds: ['merchant'] });
+    expect(enteredChoiceIds(events)).not.toContain('relationship-gated');
+  });
+});
+
+describe('dialogue-core: leverage-adjust effect (V3-DLG-2)', () => {
+  it('writes the delta via applyLeverageDeltas onto the player custom fields and emits leverage.adjusted', () => {
+    const engine = buildEngine([socialDialogue]);
+    engine.store.state.entities['player'].custom = { 'leverage.favor': 10 };
+    engine.submitAction('speak', { targetIds: ['merchant'] });
+    const events = engine.submitAction('choose', { parameters: { choiceId: 'grant-favor' } });
+
+    expect(getLeverageState(engine.world.entities['player'].custom ?? {}).favor).toBe(25); // 10 + 15
+    const adjusted = events.find(e => e.type === 'leverage.adjusted');
+    expect(adjusted).toBeDefined();
+    expect(adjusted!.payload).toMatchObject({ currency: 'favor', delta: 15, value: 25 });
+  });
+
+  it('clamps at 100 — the same MAX_LEVERAGE clamp adjustLeverage enforces for the leverage verbs', () => {
+    const engine = buildEngine([socialDialogue]);
+    engine.store.state.entities['player'].custom = { 'leverage.favor': 90 };
+    engine.submitAction('speak', { targetIds: ['merchant'] });
+    const events = engine.submitAction('choose', { parameters: { choiceId: 'grant-favor' } });
+
+    expect(getLeverageState(engine.world.entities['player'].custom ?? {}).favor).toBe(100); // clamped, not 105
+    const adjusted = events.find(e => e.type === 'leverage.adjusted');
+    expect(adjusted!.payload.value).toBe(100);
+  });
+});
+
+describe('dialogue-core: reputation-adjust effect (V3-DLG-2)', () => {
+  it('writes into the reputation_<factionId> global and emits reputation.adjusted', () => {
+    const engine = buildEngine([socialDialogue]);
+    engine.submitAction('speak', { targetIds: ['merchant'] });
+    const events = engine.submitAction('choose', { parameters: { choiceId: 'boost-rep' } });
+
+    expect(engine.world.globals['reputation_guild']).toBe(12);
+    const adjusted = events.find(e => e.type === 'reputation.adjusted');
+    expect(adjusted).toBeDefined();
+    expect(adjusted!.payload).toMatchObject({ factionId: 'guild', delta: 12, value: 12 });
+  });
+
+  it('accumulates on top of an existing accrued value rather than overwriting it', () => {
+    const engine = buildEngine([socialDialogue]);
+    engine.store.state.globals['reputation_guild'] = 5;
+    engine.submitAction('speak', { targetIds: ['merchant'] });
+    engine.submitAction('choose', { parameters: { choiceId: 'boost-rep' } });
+
+    expect(engine.world.globals['reputation_guild']).toBe(17); // 5 + 12, not overwritten to 12
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V3-DLG-4: SEED-0 IDENTITY. No pre-existing pack's dialogue content
+// references the new V3-DLG condition/effect kinds, so existing playthroughs
+// are unaffected — new branches fire only when content opts in. These tests
+// pin the three PRE-EXISTING kinds (global-equals, global-set, set-global) as
+// byte-unchanged after this wave: a dedicated fixture exercising all three
+// (global-equals had no coverage anywhere before this wave), plus a full
+// re-run of the ORIGINAL merchant-greeting conversation's exact event-type
+// trace end to end.
+// ---------------------------------------------------------------------------
+
+const seedZeroDialogue: DialogueDefinition = {
+  id: 'seed-zero-identity',
+  speakers: ['merchant'],
+  entryNodeId: 'entry',
+  nodes: {
+    entry: {
+      id: 'entry',
+      speaker: 'merchant',
+      text: 'Old business, unchanged.',
+      choices: [
+        {
+          id: 'equals-gated', text: '[mood=friendly] Chat.', nextNodeId: 'shop',
+          condition: { type: 'global-equals', params: { key: 'mood', value: 'friendly' } },
+        },
+        {
+          id: 'set-gated', text: '[secretFlag set] Whisper.', nextNodeId: 'shop',
+          condition: { type: 'global-set', params: { key: 'secretFlag' } },
+        },
+        {
+          id: 'write-flag', text: 'Mark this meeting.', nextNodeId: 'shop',
+          effects: [{ type: 'set-global', params: { key: 'meetingMarked', value: true } }],
+        },
+      ],
+    },
+    shop: { id: 'shop', speaker: 'merchant', text: 'Farewell.' },
+  },
+};
+
+describe('dialogue-core: SEED-0 identity — global-equals/global-set/set-global unchanged (V3-DLG-4)', () => {
+  it('global-equals: reveals the choice only when the global exactly matches (never tested before this wave)', () => {
+    const engineMatch = buildEngine([seedZeroDialogue]);
+    engineMatch.store.state.globals.mood = 'friendly';
+    expect(enteredChoiceIds(engineMatch.submitAction('speak', { targetIds: ['merchant'] }))).toContain('equals-gated');
+
+    const engineWrong = buildEngine([seedZeroDialogue]);
+    engineWrong.store.state.globals.mood = 'hostile';
+    expect(enteredChoiceIds(engineWrong.submitAction('speak', { targetIds: ['merchant'] }))).not.toContain('equals-gated');
+
+    const engineUnset = buildEngine([seedZeroDialogue]);
+    expect(enteredChoiceIds(engineUnset.submitAction('speak', { targetIds: ['merchant'] }))).not.toContain('equals-gated');
+  });
+
+  it('global-set: reveals the choice only when the global key is defined at all', () => {
+    const engineSet = buildEngine([seedZeroDialogue]);
+    engineSet.store.state.globals.secretFlag = true;
+    expect(enteredChoiceIds(engineSet.submitAction('speak', { targetIds: ['merchant'] }))).toContain('set-gated');
+
+    const engineUnset = buildEngine([seedZeroDialogue]);
+    expect(enteredChoiceIds(engineUnset.submitAction('speak', { targetIds: ['merchant'] }))).not.toContain('set-gated');
+  });
+
+  it('set-global: writes the global and emits world.flag.changed, exactly as before', () => {
+    const engine = buildEngine([seedZeroDialogue]);
+    engine.submitAction('speak', { targetIds: ['merchant'] });
+    const events = engine.submitAction('choose', { parameters: { choiceId: 'write-flag' } });
+
+    expect(engine.world.globals.meetingMarked).toBe(true);
+    const flagEvent = events.find(e => e.type === 'world.flag.changed');
+    expect(flagEvent).toBeDefined();
+    expect(flagEvent!.payload).toMatchObject({ key: 'meetingMarked', value: true });
+  });
+
+  it('a full run of the ORIGINAL merchant-greeting dialogue produces the exact same event-type trace as before this wave', () => {
+    const engine = buildEngine(); // default: the pre-existing `dialogue` fixture, untouched by V3-DLG
+    const speakEvents = engine.submitAction('speak', { targetIds: ['merchant'] });
+    const buyEvents = engine.submitAction('choose', { parameters: { choiceId: 'buy' } });
+    const doneEvents = engine.submitAction('choose', { parameters: { choiceId: 'done' } });
+
+    expect(speakEvents.map(e => e.type)).toEqual(['dialogue.started', 'dialogue.node.entered']);
+    expect(buyEvents.map(e => e.type)).toEqual([
+      'dialogue.choice.selected', 'world.flag.changed', 'dialogue.node.entered',
+    ]);
+    // 'done' has no effects of its own; navigating into the leaf 'farewell'
+    // node enters it, fires ITS effect, then ends — in that order (MOD-C-BH-02).
+    expect(doneEvents.map(e => e.type)).toEqual([
+      'dialogue.choice.selected', 'dialogue.node.entered', 'world.flag.changed', 'dialogue.ended',
+    ]);
   });
 });

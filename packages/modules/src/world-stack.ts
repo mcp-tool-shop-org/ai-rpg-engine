@@ -41,12 +41,29 @@
 //     encounterSpawn. economy-core seeds a DistrictEconomy for every entry in
 //     the SAME `districts` roster district-core receives (a pack with no
 //     districts registers the namespace governing {}); trade-core needs no
-//     config at all (it registers the `sell` verb and infers pricing purely
-//     from the item id — see trade-core.ts's own header). This is the
-//     write-wire that retroactively activates code that was already built and
-//     waiting: director.ts's MARKET OVERVIEW ledger + FACTIONS' economy-driven
-//     goal scoring, endgame.ts's merchant-prince arc/collapse triggers, and
-//     the 4 economy-driven pressure kinds in pressure-system.ts.
+//     REQUIRED config (it registers the `sell` verb unconditionally and the
+//     `buy` verb keyed off the optional `tradeGenre` passthrough — see
+//     trade-core.ts's own header). This is the write-wire that retroactively
+//     activates code that was already built and waiting: director.ts's
+//     MARKET OVERVIEW ledger + FACTIONS' economy-driven goal scoring,
+//     endgame.ts's merchant-prince arc/collapse triggers, and the 4
+//     economy-driven pressure kinds in pressure-system.ts.
+//   - V3-GEN-1 (genre-mechanical fix, v3.0 wave 2): before this wave,
+//     `tradeGenre`/`craftingGenre` were the only always-included modules'
+//     genre passthroughs no starter actually supplied — createTradeCore()
+//     was called with ZERO config and createCraftingCore's `genre` always
+//     resolved undefined, so every shipped world's buy/craft/repair/modify
+//     verbs resolved DEFAULT_BUYABLE_STOCK/UNIVERSAL_RECIPES only, regardless
+//     of the pack's own genre. Each starter's setup.ts now passes its OWN
+//     ruleset's bare genre id (the ruleset's `id` with any `-minimal` suffix
+//     stripped) as both fields — NOT `manifest.genres`, a free-text
+//     flavor-tag vocabulary that does not share GENRE_BUYABLE_STOCK's/
+//     GENRE_RECIPES's keys (e.g. weird-west's genres are ['western'] but its
+//     table key is 'weird-west'; gladiator's genres are ['historical'] and
+//     it has no table key at all). A pack whose bare genre id has no
+//     GENRE_BUYABLE_STOCK/GENRE_RECIPES entry correctly keeps resolving the
+//     universal/default fallback — that is the honest, intended behavior,
+//     not a residual bug to paper over with an invented remap.
 //   - companion-core (F-7d5c3e28) joins the stack the same way, same
 //     reasoning: ALWAYS included, needs no config (it registers the
 //     `recruit` verb and the flat-PartyState namespace — see companion-core.ts's
@@ -95,6 +112,7 @@ import { createCompanionCore } from './companion-core.js';
 import { createCraftingCore } from './crafting-recipes.js';
 import { createPlayerLeverageCore } from './player-leverage.js';
 import { createOpportunityCore } from './opportunity-resolution.js';
+import { createNpcAgency } from './npc-agency.js';
 
 // ---------------------------------------------------------------------------
 // buildWorldStack — eliminates the strategic-tier hand-list
@@ -150,6 +168,19 @@ export type WorldStackConfig = {
   quests?: QuestCoreConfig;
 
   /**
+   * Buyable-stock genre (trade-core.ts's GENRE_BUYABLE_STOCK key, e.g.
+   * 'fantasy'). Omit for DEFAULT_BUYABLE_STOCK only — trade-core is included
+   * either way (see the file-header contract entry above); this only
+   * selects which genre-flavored stock joins the universal per-category
+   * fallback the buy verb always offers. Same idiom, same GENRE_* table
+   * shape, as `craftingGenre` immediately below — different module, same
+   * bare genre id (this starter's ruleset id minus any `-minimal` suffix;
+   * see the V3-GEN-1 file-header contract entry above for why NOT
+   * `manifest.genres`).
+   */
+  tradeGenre?: string;
+
+  /**
    * Crafting recipe genre (crafting-recipes.ts's GENRE_RECIPES key, e.g.
    * 'fantasy'). Omit for UNIVERSAL_RECIPES only — crafting-core is included
    * either way (see the file-header contract entry above); this only
@@ -192,7 +223,7 @@ export type WorldStack = {
  *
  * Default composition (always included, in wiring order): environment-core,
  * faction-cognition, rumor-propagation, district-core, economy-core,
- * trade-core, companion-core, player-leverage, crafting-core,
+ * trade-core, companion-core, npc-agency, player-leverage, crafting-core,
  * opportunity-core, belief-provenance, observer-presentation, defeat-fallout,
  * world-tick. Presence-optional: encounter-spawn (included when
  * `encounterSpawn` is passed), quests (included when `quests` is passed).
@@ -232,10 +263,22 @@ export function buildWorldStack(config: WorldStackConfig = {}): WorldStack {
     // F-d0b5edb5/F-6c3e4fde: always included, same district roster
     // district-core received — see the file-header contract entry above.
     createEconomyCore({ districts: config.districts ?? [] }),
-    createTradeCore(),
+    // V3-GEN-1: always included, no REQUIRED config — see the file-header
+    // contract entry above. `tradeGenre` is optional passthrough (mirrors
+    // `craftingGenre` below).
+    createTradeCore({ genre: config.tradeGenre }),
     // F-7d5c3e28: always included, no config — see the file-header contract
     // entry above.
     createCompanionCore(),
+    // F-v3-npc-agency (v3.0): named-NPC individual agency — the write-wire
+    // for runNpcAgencyTick (npc-agency.ts), previously fully authored and
+    // unit-tested with ZERO production callers. Always included, no config;
+    // registers ONLY module identity (no verb, no eager namespace default —
+    // see createNpcAgency's own header for why). Placed directly after
+    // companion-core: a companion IS a named NPC, and this module is the
+    // individual-actor layer companion-core's roles/morale sit inside.
+    // world-tick.ts's per-round step is the production writer.
+    createNpcAgency(),
     // F-677e94ad (v2.9): the player-leverage write-wire — bribe/intimidate/
     // petition/seed. Always included, no config; its companion-reaction
     // dispatch places it semantically next to companion-core. Registered

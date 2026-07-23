@@ -181,6 +181,14 @@ export function createGame(seed?: number): Engine {
     // voyage its explicit reason. quest-core validates at construction
     // (fail loud) and drives the loop off the live event stream.
     quests: { gameId: manifest.id, quests: pirateQuests },
+    // V3-GEN-1/2 (genre-mechanical fix, wave 2): this starter's own bare
+    // genre key ('pirate-minimal' minus its '-minimal' suffix) — NOT
+    // manifest.genres, a different free-text vocabulary (see world-stack.ts's
+    // file-header contract). 'pirate' matches a GENRE_BUYABLE_STOCK/
+    // GENRE_RECIPES entry, so buy/craft/repair/modify now resolve
+    // pirate-flavored stock/recipes instead of the universal fallback.
+    tradeGenre: 'pirate',
+    craftingGenre: 'pirate',
   });
 
   const engine = new Engine({

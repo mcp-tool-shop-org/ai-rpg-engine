@@ -168,6 +168,14 @@ export function createGame(seed?: number): Engine {
     // construction (fail loud) and drives offer → track → complete → reward
     // off the live event stream.
     quests: { gameId: manifest.id, quests: detectiveQuests },
+    // V3-GEN-1/2 (genre-mechanical fix, wave 2): this starter's own bare
+    // genre key ('detective-minimal' minus its '-minimal' suffix) — NOT
+    // manifest.genres, a different free-text vocabulary (see world-stack.ts's
+    // file-header contract). 'detective' matches a GENRE_BUYABLE_STOCK/
+    // GENRE_RECIPES entry, so buy/craft/repair/modify now resolve
+    // detective-flavored stock/recipes instead of the universal fallback.
+    tradeGenre: 'detective',
+    craftingGenre: 'detective',
   });
 
   const engine = new Engine({

@@ -45,7 +45,11 @@ export const fixer: EntityState = {
   blueprintId: 'fixer',
   type: 'npc',
   name: 'Kira',
-  tags: ['npc', 'fixer', 'recruitable', 'fighter'],
+  // 'named' (V3R-NPC-2, v3.0 Living NPCs remediation): the pack's one
+  // dialogue-bearing story NPC (fixerDialogue) — alive in npc-agency's
+  // social/PEOPLE layer from turn 1, independent of (and ahead of) whatever
+  // 'companion' tag recruiting her later adds.
+  tags: ['npc', 'fixer', 'recruitable', 'fighter', 'named'],
   stats: { chrome: 2, reflex: 4, netrunning: 3 },
   // maxHp/stamina/maxStamina (F-4b9c5aee): a recruitable companion needs the
   // same resources shape enemies carry — without a real stamina value, every

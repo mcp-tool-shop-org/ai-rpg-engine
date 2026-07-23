@@ -302,6 +302,14 @@ function computeFeasibility(
     if (rep && rep.value < req.minimumReputation) return 0;
   }
 
+  // Legitimacy gate (v3.0 Phase-9 remediation) — mirrors the menu-surfacing and
+  // resolveDiplomacyAction gate on cash-milestone (LeverageRequirement.minimumLegitimacy),
+  // so the advisor never scores an action the player cannot actually take (and never
+  // suggests cash-milestone to a zero-engagement/turn-1 player — the SEED-0 surface).
+  if (req.minimumLegitimacy != null && inputs.leverageState.legitimacy < req.minimumLegitimacy) {
+    return 0;
+  }
+
   // Surplus ratio — how much headroom the player has
   const costs = Object.entries(req.costs).filter(([, v]) => v && v > 0);
   if (costs.length === 0) return 1; // free action

@@ -60,11 +60,21 @@ import {
   createCompanionCore,
   getPartyState,
   setPartyState,
+  syncCompanionCustomFields,
   COMPANION_TAG,
   companionRoleTag,
   type CompanionState,
 } from './companion-core.js';
-import type { LoyaltyBreakpoint } from './npc-agency.js';
+import { createCognitionCore } from './cognition-core.js';
+import { createFactionCognition } from './faction-cognition.js';
+import {
+  getPersistedNpcProfiles,
+  getPersistedNpcObligations,
+  type LoyaltyBreakpoint,
+} from './npc-agency.js';
+import { MORALE_FLOOR_FALLBACK } from './companion-reactions.js';
+import { getLeverageState } from './player-leverage.js';
+import { createProgressionCore, addCurrency } from './progression-core.js';
 
 const zones = [
   { id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbors: ['zone-b'] },
@@ -1063,6 +1073,54 @@ describe('world-tick — companion reactions (F-b595731a)', () => {
     expect(engine.world.entities.player.statuses).toHaveLength(0);
   });
 
+  // ---------------------------------------------------------------------------
+  // Morale-floor departure fallback (V3R-PARTY-2b, Phase-9 party-departure
+  // remediation) — the SAME end-to-end pipeline as the 'departure:' test
+  // directly above (removeCompanion, the symmetric tag strip, the
+  // companion.departed event, the ability-modifier mirror), but exercised
+  // with NO breakpoints map at all — the exact call shape
+  // player-leverage.ts's dispatchLeverageCompanionReactions uses in
+  // production, and the shape world-tick.ts's own real call site falls back
+  // to before the sibling living-npcs domain populates npc-agency profiles.
+  // ---------------------------------------------------------------------------
+
+  it('V3R-PARTY-2b: the morale-floor fallback departs a companion end-to-end when NO breakpoints are known at all', () => {
+    const engine = makeCompanionEngine();
+    engine.submitAction('recruit', { targetIds: ['mira'] });
+
+    // Force morale so obligation-betrayed's fighter delta (-8) lands the
+    // projected morale EXACTLY on MORALE_FLOOR_FALLBACK.
+    const lowMorale = { ...getPartyState(engine.world) };
+    lowMorale.companions = lowMorale.companions.map((c) => ({ ...c, morale: MORALE_FLOOR_FALLBACK + 8 }));
+    setPartyState(engine.world, lowMorale);
+
+    // No breakpoints argument at all. Before V3R-PARTY-2b, departure could
+    // NEVER fire from this call shape no matter how low morale fell.
+    applyCompanionReactions(engine, engine.world, ['obligation-betrayed'], 9);
+
+    expect(partyCompanions(engine)).toHaveLength(0); // removeCompanion ran via the fallback
+    expect(engine.world.entities.mira.tags).not.toContain(COMPANION_TAG);
+    expect(engine.world.entities.mira.tags).not.toContain(companionRoleTag('fighter'));
+    const departedEvent = engine.world.eventLog.find((e) => e.type === 'companion.departed');
+    expect(departedEvent).toBeDefined();
+    expect(departedEvent?.payload.npcId).toBe('mira');
+    expect(departedEvent?.payload.reason).toBe('has hit their breaking point');
+  });
+
+  it('V3R-PARTY-2b: one point above the morale floor with no breakpoints known, the companion stays — the fallback does not fire early', () => {
+    const engine = makeCompanionEngine();
+    engine.submitAction('recruit', { targetIds: ['mira'] });
+
+    const lowMorale = { ...getPartyState(engine.world) };
+    lowMorale.companions = lowMorale.companions.map((c) => ({ ...c, morale: MORALE_FLOOR_FALLBACK + 9 }));
+    setPartyState(engine.world, lowMorale);
+
+    applyCompanionReactions(engine, engine.world, ['obligation-betrayed'], 9);
+
+    expect(partyCompanions(engine)).toHaveLength(1);
+    expect(engine.world.eventLog.some((e) => e.type === 'companion.departed')).toBe(false);
+  });
+
   it('companion.reaction events carry the trigger, morale delta, and narrator hint for narration/observability', () => {
     const engine = makeCompanionEngine();
     getWorldTickState(engine.store.state);
@@ -1513,5 +1571,339 @@ describe('world-tick — district mood transitions (F-e5817c7c-adjacent rider)',
     const result = runWorldTick(engine);
     expect(result.ok).toBe(true);
     expect(getWorldTickState(engine.store.state).districtTones).toEqual({});
+  });
+});
+
+// ---------------------------------------------------------------------------
+// NPC agency wire (v3.0, F-v3-npc-agency) — npc-agency.ts's runNpcAgencyTick
+// was fully authored and unit-tested with ZERO production callers before this
+// wave. These tests prove the wire, not the domain logic (goal derivation,
+// breakpoint gating, effect payload shape) — that is npc-agency.test.ts's own
+// job and stays untouched here.
+// ---------------------------------------------------------------------------
+describe('world-tick — NPC agency wire (v3.0, F-v3-npc-agency)', () => {
+  const makeNamedNpc = (
+    id: string,
+    name: string,
+    zoneId: string,
+    overrides?: Partial<EntityState>,
+  ): EntityState => ({
+    id,
+    blueprintId: id,
+    type: 'npc',
+    name,
+    tags: ['npc'],
+    stats: { vigor: 5, instinct: 5, will: 3 },
+    resources: { hp: 20, stamina: 5 },
+    statuses: [],
+    zoneId,
+    ai: { profileId: 'cautious', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+    ...overrides,
+  });
+
+  function makeNpcAgencyEngine(npc: EntityState) {
+    return createTestEngine({
+      modules: [createCognitionCore(), createFactionCognition({ factions: [] }), createCompanionCore(), createWorldTick()],
+      entities: [makePlayer(), npc],
+      zones,
+    });
+  }
+
+  // SEED-0 IDENTITY (non-negotiable) — a world with NO named NPCs must be
+  // byte-identical to today: no npc-agency namespace created, no events, no
+  // tick-count change, across a round.
+  it('SEED-0 IDENTITY: a world with no named NPCs is untouched by the npc-agency step — no namespace, no npc events, no tick-count change', () => {
+    const engine = makeBareEngine(); // only the player entity — isNamedNpc excludes it
+    expect(engine.world.modules['npc-agency']).toBeUndefined();
+    const beforeTick = engine.world.meta.tick;
+
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.ok).toBe(true);
+
+    // No npc-agency namespace was created by this round.
+    expect(engine.world.modules['npc-agency']).toBeUndefined();
+    expect(getPersistedNpcProfiles(engine.world)).toEqual([]);
+    expect(getPersistedNpcObligations(engine.world)).toEqual(new Map());
+
+    // No npc-agency-originated events landed in the log.
+    expect(engine.world.eventLog.some((e) => e.type.startsWith('npc.'))).toBe(false);
+
+    // The tick driver itself never advances world.meta.tick (advanceTick is a
+    // separate, explicit call the CLI's round loop makes) — unaffected by
+    // this feature either way, asserted per the task's own wording.
+    expect(engine.world.meta.tick).toBe(beforeTick);
+
+    // A second round changes nothing further attributable to npc-agency —
+    // re-run and confirm the namespace is STILL absent.
+    runWorldTick(engine, { genre: 'fantasy' });
+    expect(engine.world.modules['npc-agency']).toBeUndefined();
+
+  });
+
+  it('a world with a named NPC gets a real npc-agency namespace after one round, in the shape director.ts/endgame.ts read', () => {
+    const engine = makeNpcAgencyEngine(makeNamedNpc('elder-vane', 'Elder Vane', 'zone-a'));
+    expect(engine.world.modules['npc-agency']).toBeUndefined();
+
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.ok).toBe(true);
+
+    const profiles = getPersistedNpcProfiles(engine.world);
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].npcId).toBe('elder-vane');
+    expect(profiles[0].name).toBe('Elder Vane');
+
+    // The exact namespace shape director.ts's PEOPLE section and endgame.ts's
+    // buildEndgameInputs both read directly.
+    const ns = engine.world.modules['npc-agency'] as {
+      profiles: unknown;
+      lastActions: unknown;
+      obligationLedgers: unknown;
+    };
+    expect(Array.isArray(ns.profiles)).toBe(true);
+    expect(Array.isArray(ns.lastActions)).toBe(true);
+    expect(typeof ns.obligationLedgers).toBe('object');
+    expect(getPersistedNpcObligations(engine.world)).toEqual(new Map());
+  });
+
+  it('the LAST named NPC dying drops named-NPC presence to zero — the gate skips the whole step, so the prior round\'s profile is left as-is (the gate is "at least one this round", not "keep the ledger in lockstep with the roster")', () => {
+    const engine = makeNpcAgencyEngine(makeNamedNpc('elder-vane', 'Elder Vane', 'zone-a'));
+    runWorldTick(engine, { genre: 'fantasy' });
+    expect(getPersistedNpcProfiles(engine.world)).toHaveLength(1);
+    const before = getPersistedNpcProfiles(engine.world);
+
+    engine.world.entities['elder-vane'].resources.hp = 0;
+    engine.store.advanceTick();
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+
+    // No throw, and the namespace is untouched by this round (the gate's own
+    // contract: "at least one named NPC exists THIS round" is now false, so
+    // the ENTIRE step — persistence write included — is skipped, exactly
+    // the same gate that keeps a world that never had a named NPC from ever
+    // seeing the namespace at all).
+    expect(result.ok).toBe(true);
+    expect(getPersistedNpcProfiles(engine.world)).toEqual(before);
+  });
+
+  it('an NPC action that fires resolves through the wire — narrates via npc.action.resolved, and lastActions carries it', () => {
+    // A companion synced to critically low morale (< 10) reliably produces a
+    // single, unambiguous top-priority goal (abandon @ 0.95) — every other
+    // deriveNpcGoals condition needs trust/greed/loyalty/fear signals this
+    // fixture's neutral defaults never satisfy, so this is deterministic
+    // ONE-candidate selection, not a race between competing goals.
+    const npc = makeNamedNpc('mira', 'Mira', 'zone-a', { tags: ['npc', 'companion'] });
+    const engine = makeNpcAgencyEngine(npc);
+    // Two mirrors, deliberately both seeded: deriveCompanionGoals reads
+    // entity.custom.companionMorale directly (npc-agency's own documented
+    // design — "read from custom field set by product layer"), so
+    // syncCompanionCustomFields alone makes 'abandon' the derived goal; but
+    // the companion-departure EFFECT handler looks her up via
+    // getCompanion(party, npcId) — a real party seat is required for the
+    // removal (and its companion.departed event) to actually happen, exactly
+    // as it should for an NPC nobody ever recruited.
+    syncCompanionCustomFields(engine.world.entities.mira, 'fighter', 5);
+    setPartyState(engine.world, {
+      companions: [{ npcId: 'mira', role: 'fighter', joinedAtTick: 0, abilityTags: [], morale: 5, active: true }],
+      maxSize: 3,
+      cohesion: 5,
+    });
+
+    let resolved: ResolvedEvent | undefined;
+    for (let i = 0; i < 30 && !resolved; i++) {
+      if (i > 0) engine.store.advanceTick();
+      runWorldTick(engine, { genre: 'fantasy' });
+      resolved = engine.world.eventLog.find((e) => e.type === 'npc.action.resolved');
+    }
+
+    expect(resolved).toBeDefined();
+    expect(resolved!.payload.npcId).toBe('mira');
+    expect(resolved!.payload.verb).toBe('abandon');
+    expect(resolved!.visibility).toBe('public');
+    expect(resolved!.presentation).toEqual({ channels: ['narrator'], priority: 'normal' });
+
+    // companion-departure effect (the 'abandon' verb's own resolution) ran
+    // through the SAME companion-core path applyCompanionReactions' own
+    // departure handling uses — Mira actually left the party.
+    expect(engine.world.eventLog.some((e) => e.type === 'companion.departed' && e.payload.npcId === 'mira')).toBe(true);
+    expect(getPartyState(engine.world).companions.find((c) => c.npcId === 'mira')).toBeUndefined();
+  });
+
+  it('is deterministic — same world in, same npc-agency namespace out, across independent instances', () => {
+    const run = () => {
+      const engine = makeNpcAgencyEngine(makeNamedNpc('elder-vane', 'Elder Vane', 'zone-a'));
+      runWorldTick(engine, { genre: 'fantasy' });
+      engine.store.advanceTick();
+      runWorldTick(engine, { genre: 'fantasy' });
+      return JSON.parse(JSON.stringify(engine.world.modules['npc-agency']));
+    };
+    const a = run();
+    const b = run();
+    expect(a).toEqual(b);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Leverage income wire (v3.0 wave 2, "leverage-income", step 5a2) —
+// player-leverage.ts's tickLeverage/computeLeverageGains were fully authored
+// and unit-tested with ZERO production callers before this wave; opportunity
+// completion was the sole leverage-earning path. These tests pin the wire,
+// not the pure functions themselves (already covered end-to-end in
+// player-leverage.test.ts's own 'tickLeverage influence accumulation (MW-5)'
+// and 'computeLeverageGains: blackmail accumulation' suites).
+// ---------------------------------------------------------------------------
+
+describe('world-tick — leverage income wire (v3.0 wave 2, "leverage-income")', () => {
+  function leverageOf(engine: ReturnType<typeof createTestEngine>) {
+    return getLeverageState(
+      (engine.world.entities.player.custom ?? {}) as Record<string, string | number | boolean>,
+    );
+  }
+
+  it('heat decays per round once the leverage step is active (pre-existing leverage.* state is itself an activity trigger)', () => {
+    const engine = createTestEngine({
+      modules: [],
+      entities: [makePlayer({ custom: { 'leverage.heat': 10 } })],
+      zones,
+    });
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.ok).toBe(true);
+    expect(leverageOf(engine).heat).toBe(7); // 10 - HEAT_DECAY_PER_TURN(3), player-leverage.ts's own constant
+  });
+
+  it('influence seeds from reputation on the first active round', () => {
+    const engine = makeBareEngine({ reputation_guild: 40 }); // rep 40 → floor(40/2) = 20
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.ok).toBe(true);
+    expect(leverageOf(engine).influence).toBe(20);
+  });
+
+  it('a NEW milestone grants its gain exactly ONCE — not re-granted the next round (the cursor works)', () => {
+    const engine = makeBareEngine();
+    // Force the world-tick namespace to baseline its eventLog cursor at the
+    // CURRENT (empty) log BEFORE the milestone event exists — mirroring the
+    // suite's own 'fresh world pin' test above. Without this, the milestone
+    // emitted below would land before world-tick's first-ever touch and read
+    // as "historical" (P8-WL-006's own documented behavior — see this file's
+    // 'RED-PROOF legacy Continue' test), never collected as NEW.
+    getWorldTickState(engine.world);
+    engine.store.emitEvent('defeat.fallout.milestone', { label: 'found the ruins', tags: ['boss-kill'] });
+
+    const first = runWorldTick(engine, { genre: 'fantasy' });
+    expect(first.ok).toBe(true);
+    expect(leverageOf(engine).legitimacy).toBe(5); // milestone → legitimacy +5
+
+    // A second round with NO new milestone must not re-grant it.
+    engine.store.advanceTick();
+    const second = runWorldTick(engine, { genre: 'fantasy' });
+    expect(second.ok).toBe(true);
+    expect(leverageOf(engine).legitimacy).toBe(5); // unchanged, not 10
+
+    // A third round confirms it stays put, not just "one extra grant then stops".
+    engine.store.advanceTick();
+    runWorldTick(engine, { genre: 'fantasy' });
+    expect(leverageOf(engine).legitimacy).toBe(5);
+  });
+
+  it('two NEW milestones in the SAME round each grant their own gain (not collapsed into one)', () => {
+    const engine = makeBareEngine();
+    getWorldTickState(engine.world); // baseline the cursor before emitting — see comment above
+    engine.store.emitEvent('defeat.fallout.milestone', { label: 'found the ruins', tags: ['exploration'] });
+    engine.store.emitEvent('defeat.fallout.milestone', { label: 'found the landmark', tags: ['landmark'] });
+
+    runWorldTick(engine, { genre: 'fantasy' });
+    // legitimacy: 5 + 5 = 10; blackmail: 5 (exploration) + 5 (landmark) = 10 —
+    // each milestone computed via its OWN computeLeverageGains call, summed.
+    expect(leverageOf(engine).legitimacy).toBe(10);
+    expect(leverageOf(engine).blackmail).toBe(10);
+  });
+
+  it('an xp gain of 15+ grants blackmail, and is not re-granted next round without further xp gain', () => {
+    const engine = createTestEngine({
+      modules: [createProgressionCore()],
+      entities: [makePlayer()],
+      zones,
+    });
+    addCurrency(engine.world, 'player', 'xp', 20, engine.tick);
+
+    const first = runWorldTick(engine, { genre: 'fantasy' });
+    expect(first.ok).toBe(true);
+    expect(leverageOf(engine).blackmail).toBe(5); // xpGained 20 >= 15 → +5
+
+    // No further xp gained this round — must not re-grant.
+    engine.store.advanceTick();
+    const second = runWorldTick(engine, { genre: 'fantasy' });
+    expect(second.ok).toBe(true);
+    expect(leverageOf(engine).blackmail).toBe(5);
+
+    // Another xp gain of 15+ grants again (a fresh delta, not a repeat).
+    addCurrency(engine.world, 'player', 'xp', 15, engine.tick);
+    engine.store.advanceTick();
+    runWorldTick(engine, { genre: 'fantasy' });
+    expect(leverageOf(engine).blackmail).toBe(10);
+  });
+
+  // -------------------------------------------------------------------------
+  // SEED-0 IDENTITY (non-negotiable) — a legacy world that never engaged the
+  // social layer (no reputation, no milestones, no xp gain, no
+  // player-resolved pressure) must be byte-identical: no leverage.* key
+  // written where none existed, no eventLog/tick change, and — a stricter bar
+  // than playerCustom alone — the WorldTickState's own new bookkeeping
+  // fields (leverageMilestoneCursor/lastXp) never get created either.
+  // -------------------------------------------------------------------------
+  it('SEED-0 IDENTITY: a world that never engages the social layer is untouched by the leverage-income step across several rounds', () => {
+    const engine = makeBareEngine(); // no reputation globals, no milestones, no progression-core → xp always 0
+    expect(engine.world.entities.player.custom).toBeUndefined();
+    const beforeTick = engine.world.meta.tick;
+
+    for (let i = 0; i < 5; i++) {
+      if (i > 0) engine.store.advanceTick();
+      const result = runWorldTick(engine, { genre: 'fantasy' });
+      expect(result.ok).toBe(true);
+
+      // No leverage.* key ever appears on the player entity.
+      expect(engine.world.entities.player.custom).toBeUndefined();
+
+      // The world-tick module's OWN new tracking fields never get created —
+      // their mere presence (even at 0) would itself be an observable diff.
+      const wtState = engine.world.modules['world-tick'] as WorldTickState;
+      expect(wtState.leverageMilestoneCursor).toBeUndefined();
+      expect(wtState.lastXp).toBeUndefined();
+    }
+
+    // No leverage-attributable event ever landed in the log.
+    expect(engine.world.eventLog.some((e) => e.type.startsWith('leverage.'))).toBe(false);
+
+    // world.meta.tick advanced by EXACTLY the 4 explicit advanceTick() calls
+    // this test's own loop made (i = 1..4) — runWorldTick itself never
+    // advances it (mirroring the npc-agency SEED-0 test's identical
+    // assertion, adapted here for a multi-round loop instead of a single
+    // no-advance round).
+    expect(engine.world.meta.tick).toBe(beforeTick + 4);
+  });
+
+  it('SEED-0 IDENTITY: a world with pre-existing OTHER custom fields (but no leverage engagement) gains no leverage.* keys either', () => {
+    const engine = createTestEngine({
+      modules: [],
+      entities: [makePlayer({ custom: { companionRole: 'fighter', companionMorale: 50 } })],
+      zones,
+    });
+    runWorldTick(engine, { genre: 'fantasy' });
+    runWorldTick(engine, { genre: 'fantasy' });
+    expect(engine.world.entities.player.custom).toEqual({ companionRole: 'fighter', companionMorale: 50 });
+  });
+
+  it('is deterministic — same world in, same leverage state out, across independent instances', () => {
+    const run = () => {
+      const engine = makeBareEngine({ reputation_guild: 40 });
+      engine.store.emitEvent('defeat.fallout.milestone', { label: 'found the ruins', tags: ['exploration'] });
+      runWorldTick(engine, { genre: 'fantasy' });
+      engine.store.advanceTick();
+      runWorldTick(engine, { genre: 'fantasy' });
+      return JSON.parse(JSON.stringify(engine.world.entities.player.custom));
+    };
+    const a = run();
+    const b = run();
+    expect(a).toEqual(b);
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 });

@@ -50,7 +50,11 @@ export const pilgrim: EntityState = {
   blueprintId: 'pilgrim',
   type: 'npc',
   name: 'Suspicious Pilgrim',
-  tags: ['npc'],
+  // 'named' (V3R-NPC-2, v3.0 Living NPCs remediation): the pack's one
+  // dialogue-bearing, non-recruitable story NPC (pilgrimDialogue) — makes
+  // her live in npc-agency's social/PEOPLE layer without an `ai` block,
+  // which would wrongly make her a combatant.
+  tags: ['npc', 'named'],
   stats: { vigor: 2, instinct: 3, will: 6 },
   resources: { hp: 8 },
   statuses: [],

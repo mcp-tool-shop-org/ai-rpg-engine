@@ -182,6 +182,14 @@ export function createGame(seed?: number): Engine {
     // construction (fail loud) and drives offer → track → complete → reward
     // off the live event stream.
     quests: { gameId: manifest.id, quests: colonyQuests },
+    // V3-GEN-1/2 (genre-mechanical fix, wave 2): this starter's own bare
+    // genre key ('colony-minimal' minus its '-minimal' suffix) — NOT
+    // manifest.genres, a different free-text vocabulary (see world-stack.ts's
+    // file-header contract). 'colony' matches a GENRE_BUYABLE_STOCK/
+    // GENRE_RECIPES entry, so buy/craft/repair/modify now resolve
+    // colony-flavored stock/recipes instead of the universal fallback.
+    tradeGenre: 'colony',
+    craftingGenre: 'colony',
   });
 
   const engine = new Engine({

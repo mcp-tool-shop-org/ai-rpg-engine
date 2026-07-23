@@ -14,13 +14,20 @@
 // Dust Devil's Bargain|   5   |     2     |    2     |  2   | resistance, last-stand, descent, community-builder| tragic-stab, exile, overthrow, martyrdom
 // Signal Loss         |   5   |     2     |    1     |  2   | community-builder, last-stand, descent, reckoning | tragic-stab, exile, collapse(border)
 //
-// Key findings:
-// - 6/7 packs have only 1 faction → rising-power, hunted, kingmaker, victory unreachable
-// - Only Dust Devil's Bargain (2 factions) supports political arcs
+// Key findings (v2.1 snapshot — SUPERSEDED for the leverage-gated resolutions
+// by the v3.0 correction below):
+// - Only Dust Devil's Bargain (2 factions) supports the multi-faction political arcs
 // - All packs have exactly 2 districts → collapse needs both unstable (tight)
-// - puppet-master unreachable in all packs (no blackmail content hooks)
 // - last-stand, descent, reckoning are universally reachable (combat-driven)
 // - Each pack has only 1 dialogue tree → obligation pressure is thin
+//
+// v3.0 correction (F-v3-endgame-leverage): the v2.1 "unreachable" claims for
+// victory and puppet-master assumed leverage currencies never accrued. v3.0's
+// always-on runLeverageIncomeStep (world-tick.ts) + the leverage verb handlers
+// now write real influence/blackmail/legitimacy pack-agnostically (kills,
+// reputation swings, exploration milestones), so victory (influence>=50),
+// puppet-master (blackmail>=30 + influence>=40) and quiet-retirement
+// (legitimacy>=40) are reachable today with no per-pack blackmail content hook.
 
 import type {
   ArcKind,
