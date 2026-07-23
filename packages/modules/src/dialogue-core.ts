@@ -9,17 +9,17 @@ import type {
 } from '@ai-rpg-engine/core';
 import { makeEvent } from './make-event.js';
 import type { DialogueDefinition, DialogueNode, EffectDefinition } from '@ai-rpg-engine/content-schema';
-// V3-DLG: dialogue vocabulary that reads/writes the social layer. Both are
+// V3-DLG: dialogue vocabulary that reads/writes the social layer. All are
 // read-only imports (getLeverageState/applyLeverageDeltas from player-leverage.ts,
-// deriveNpcRelationship from npc-agency.ts) — this file does not edit either
-// module. Neither module imports dialogue-core.ts (nor does anything in their
-// own dependency chains — cognition-core.ts, faction-cognition.ts,
-// pressure-system.ts, player-rumor.ts), so this is a one-directional edge, not
-// a cycle.
+// deriveNpcRelationship/getPersistedNpcObligations from npc-agency.ts) — this
+// file does not edit either module. Neither module imports dialogue-core.ts
+// (nor does anything in their own dependency chains — cognition-core.ts,
+// faction-cognition.ts, pressure-system.ts, player-rumor.ts), so this is a
+// one-directional edge, not a cycle.
 import { getLeverageState, applyLeverageDeltas } from './player-leverage.js';
 import type { LeverageCurrency } from './player-leverage.js';
-import { deriveNpcRelationship } from './npc-agency.js';
-import type { NpcRelationship } from './npc-agency.js';
+import { deriveNpcRelationship, getPersistedNpcObligations } from './npc-agency.js';
+import type { NpcRelationship, NpcObligationLedger, ObligationDirection } from './npc-agency.js';
 
 export type DialogueState = {
   activeDialogue: string | null;
@@ -401,23 +401,40 @@ function evaluateCondition(
     return rel[axis] >= amount;
   }
 
-  // 'obligation-exists' (npcId?/direction? params) is DEFERRED, not
-  // implemented — not an oversight. Verified across this task's file-
-  // ownership boundary: npc-agency.ts's NpcObligationLedger is never
-  // persisted anywhere in WorldState in this engine —
-  //   - npc-agency.ts registers NO ctx.persistence.registerNamespace call
-  //     anywhere in the file (obligations are derived-per-call-into a ledger
-  //     the CALLER supplies; nothing stores one on `world`);
-  //   - world-tick.ts hardcodes `npcObligations: new Map()` into
-  //     OpportunityInputs with an explicit comment: "npc-agency.ts persists
-  //     neither profiles nor obligations anywhere in the engine";
-  //   - packages/core/src/types.ts (WorldState, EntityState) has zero
-  //     references to "obligation" — no field exists to read one from.
-  // A condition kind that can only ever read state nothing in the engine
-  // writes would be a fake gate (always false, forever, until an unrelated
-  // future wave adds obligation persistence — out of this file's
-  // dialogue-core*.ts ownership). Falls through to the existing
-  // unknown-condition fallback below, same as any other unhandled kind.
+  // 'obligation-exists' (optional npcId/direction params). Obligations ARE
+  // persisted as of v3.0 — the comment that used to sit here claimed
+  // otherwise and was stale/wrong: world-tick.ts's setPersistedNpcState
+  // writes world.modules['npc-agency'].obligationLedgers every round a named
+  // NPC exists, and npc-agency.ts's getPersistedNpcObligations does the
+  // non-attaching read of it back out — the exact non-mutating pattern
+  // deriveNpcRelationship above already uses for the rest of the social
+  // layer. This condition just reads it.
+  if (condition.type === 'obligation-exists') {
+    const npcId = condition.params.npcId as string;
+    const direction = condition.params.direction as ObligationDirection;
+    const ledgers = getPersistedNpcObligations(world);
+    // No explicit npcId -> fall back to the dialogue's current speaker, read
+    // off the SAME world.modules['dialogue-core'] namespace speakHandler/
+    // chooseHandler populate (mirrors how npc-relationship-at-least above
+    // resolves its subject NPC, just with a default instead of a required
+    // param). Still no resolvable subject (e.g. evaluated with no active
+    // dialogue speaker) -> match across every persisted ledger rather than
+    // forcing a false.
+    const dState = world.modules['dialogue-core'] as DialogueState | undefined;
+    const subjectNpcId = npcId ?? dState?.speakerId;
+    const subjectLedgers = subjectNpcId
+      ? [ledgers.get(subjectNpcId)].filter((l): l is NpcObligationLedger => l !== undefined)
+      : Array.from(ledgers.values());
+    // No direction filter -> any obligation counts; same undefined-is-false-
+    // for-the-negative-case reasoning as the sibling conditions above, just
+    // inverted here into "no filter means no restriction."
+    return subjectLedgers.some((ledger) =>
+      ledger.obligations.some((o) => !direction || o.direction === direction),
+    );
+  }
+
+  // Unknown condition kind: warn-and-degrade default of true (V3-DLG-3,
+  // untouched — existing content may rely on it).
   return true;
 }
 

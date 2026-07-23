@@ -177,6 +177,7 @@ export function createGame(seed?: number): Engine {
     // cyberpunk-flavored stock/recipes instead of the universal fallback.
     tradeGenre: 'cyberpunk',
     craftingGenre: 'cyberpunk',
+    economyGenre: 'cyberpunk',
   });
 
   const engine = new Engine({

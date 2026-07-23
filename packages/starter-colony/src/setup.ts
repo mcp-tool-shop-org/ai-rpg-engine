@@ -190,6 +190,7 @@ export function createGame(seed?: number): Engine {
     // colony-flavored stock/recipes instead of the universal fallback.
     tradeGenre: 'colony',
     craftingGenre: 'colony',
+    economyGenre: 'colony',
   });
 
   const engine = new Engine({

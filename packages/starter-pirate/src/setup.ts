@@ -189,6 +189,7 @@ export function createGame(seed?: number): Engine {
     // pirate-flavored stock/recipes instead of the universal fallback.
     tradeGenre: 'pirate',
     craftingGenre: 'pirate',
+    economyGenre: 'pirate',
   });
 
   const engine = new Engine({

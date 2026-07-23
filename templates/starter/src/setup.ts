@@ -109,17 +109,19 @@ export function createGame(seed?: number): Engine {
     // createPerceptionFilter() (import + register it in the modules array,
     // ahead of ...worldStack.modules).
     //
-    // GENRE WIRING (V3-GEN-1/2, v3.0 wave 2): pass YOUR OWN ruleset's bare
-    // genre id as BOTH tradeGenre and craftingGenre — the ruleset `id` with
-    // any '-minimal'-style suffix your naming convention adds stripped off
-    // (myRuleset.id here is already bare: 'my-game', nothing to strip). Do
-    // NOT use manifest.genres — that is a free-text flavor-tag vocabulary,
-    // a DIFFERENT vocabulary than trade-core.ts's GENRE_BUYABLE_STOCK /
-    // crafting-recipes.ts's GENRE_RECIPES table keys (e.g. a pack tagged
-    // genres: ['western'] may key its table entry 'weird-west' instead — the
-    // bare ruleset id, not the flavor tag, is what selects genre-flavored
-    // stock/recipes). A genre with no matching table entry safely falls back
-    // to the universal/default tables — an honest degrade, not a bug.
+    // GENRE WIRING (V3-GEN-1/2, v3.0 wave 2; F-V31-ECON-GENRE, v3.1): pass
+    // YOUR OWN ruleset's bare genre id as tradeGenre, craftingGenre, AND
+    // economyGenre — the ruleset `id` with any '-minimal'-style suffix your
+    // naming convention adds stripped off (myRuleset.id here is already
+    // bare: 'my-game', nothing to strip). Do NOT use manifest.genres — that
+    // is a free-text flavor-tag vocabulary, a DIFFERENT vocabulary than
+    // trade-core.ts's GENRE_BUYABLE_STOCK / crafting-recipes.ts's
+    // GENRE_RECIPES / economy-core.ts's GENRE_SUPPLY_DEFAULTS table keys
+    // (e.g. a pack tagged genres: ['western'] may key its table entries
+    // 'weird-west' instead — the bare ruleset id, not the flavor tag, is
+    // what selects genre-flavored stock/recipes/starting supply). A genre
+    // with no matching table entry safely falls back to the universal/
+    // default tables — an honest degrade, not a bug.
     //
     // import { buildWorldStack, createPerceptionFilter } from '@ai-rpg-engine/modules';
     // ...
@@ -127,6 +129,7 @@ export function createGame(seed?: number): Engine {
     //   playerId: 'player',
     //   tradeGenre: myRuleset.id,    // or a literal genre string
     //   craftingGenre: myRuleset.id,
+    //   economyGenre: myRuleset.id,
     // });
     // ═══════════════════════════════════════════════════════════════════
 

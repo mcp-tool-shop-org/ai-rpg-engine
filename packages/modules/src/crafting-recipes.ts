@@ -202,6 +202,15 @@ const GENRE_RECIPES: Record<string, CraftingRecipe[]> = {
       description: 'Consecrate at a sacred site',
       genreFilter: ['fantasy'],
     },
+    {
+      id: 'repair-rune-mend',
+      name: 'Rune-Mend Weapon',
+      category: 'repair',
+      inputs: [{ category: 'components', quantity: 2 }, { category: 'medicine', quantity: 1 }],
+      statDelta: { attack: 1 },
+      description: 'A hedge-mage anoints a blade with rune-oil, restoring its edge and a whisper of old magic',
+      genreFilter: ['fantasy'],
+    },
   ],
   zombie: [
     {
@@ -232,6 +241,15 @@ const GENRE_RECIPES: Record<string, CraftingRecipe[]> = {
       outputSlot: 'tool',
       outputRarity: 'common',
       description: 'Fortification materials',
+      genreFilter: ['zombie'],
+    },
+    {
+      id: 'repair-scrap-splint',
+      name: 'Scrap-Splint Repair',
+      category: 'repair',
+      inputs: [{ category: 'components', quantity: 3 }],
+      statDelta: { attack: 1 },
+      description: 'Splint a cracked weapon with scavenged scrap — ugly, but it holds through one more swing',
       genreFilter: ['zombie'],
     },
   ],
@@ -267,6 +285,15 @@ const GENRE_RECIPES: Record<string, CraftingRecipe[]> = {
       description: 'Illegal performance modification',
       genreFilter: ['cyberpunk'],
     },
+    {
+      id: 'repair-nanite-weld',
+      name: 'Nanite Weld',
+      category: 'repair',
+      inputs: [{ category: 'components', quantity: 2 }, { category: 'fuel', quantity: 1 }],
+      statDelta: { defense: 1 },
+      description: 'A self-assembling nanite swarm welds hairline fractures shut from the inside out',
+      genreFilter: ['cyberpunk'],
+    },
   ],
   pirate: [
     {
@@ -298,6 +325,15 @@ const GENRE_RECIPES: Record<string, CraftingRecipe[]> = {
       description: 'Morale-boosting spirits',
       genreFilter: ['pirate'],
     },
+    {
+      id: 'repair-shipwrights-patch',
+      name: "Shipwright's Patch",
+      category: 'repair',
+      inputs: [{ category: 'components', quantity: 2 }, { category: 'weapons', quantity: 1 }],
+      statDelta: { attack: 1 },
+      description: "A ship's carpenter straightens a bent blade with salvaged cutlass parts and pitch",
+      genreFilter: ['pirate'],
+    },
   ],
   detective: [
     {
@@ -318,6 +354,15 @@ const GENRE_RECIPES: Record<string, CraftingRecipe[]> = {
       modificationKind: 'enhancement',
       statDelta: { stealth: 2 },
       description: 'Hide a weapon from inspection',
+      genreFilter: ['detective'],
+    },
+    {
+      id: 'repair-quiet-fix',
+      name: 'Quiet Fix',
+      category: 'repair',
+      inputs: [{ category: 'components', quantity: 2 }, { category: 'luxuries', quantity: 1 }],
+      statDelta: { stealth: 1 },
+      description: 'A favor and a bribe get a piece repaired off the books — no report filed',
       genreFilter: ['detective'],
     },
   ],
@@ -342,6 +387,15 @@ const GENRE_RECIPES: Record<string, CraftingRecipe[]> = {
       description: 'Rough-and-ready patch job',
       genreFilter: ['colony'],
     },
+    {
+      id: 'repair-scrap-patch',
+      name: 'Scrap-Patch Repair',
+      category: 'repair',
+      inputs: [{ category: 'components', quantity: 2 }, { category: 'food', quantity: 1 }],
+      statDelta: { durability: 1 },
+      description: "Trade field rations for a settler-mechanic's time patching failing gear",
+      genreFilter: ['colony'],
+    },
   ],
   'weird-west': [
     {
@@ -362,6 +416,15 @@ const GENRE_RECIPES: Record<string, CraftingRecipe[]> = {
       modificationKind: 'cursed',
       statDelta: { attack: 2 },
       description: 'Bind dark power to an item',
+      genreFilter: ['weird-west'],
+    },
+    {
+      id: 'repair-frontier-forge',
+      name: 'Frontier Forge Repair',
+      category: 'repair',
+      inputs: [{ category: 'components', quantity: 2 }, { category: 'ammunition', quantity: 1 }],
+      statDelta: { attack: 1 },
+      description: 'A traveling gunsmith reforges a piece at the frontier anvil, a pinch of silver dust worked into the weld',
       genreFilter: ['weird-west'],
     },
   ],

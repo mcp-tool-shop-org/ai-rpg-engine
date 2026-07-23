@@ -54,8 +54,12 @@
 //       more across the social/rumor groups plus two brand-new groups
 //       (diplomacy/sabotage). buildLeverageActions now surfaces a curated,
 //       individually-gated subset of those (afford + cooldown + minimum
-//       reputation where authored) — see its own doc comment for the two
-//       sub-actions (deny/bury-scandal) deliberately deferred.
+//       reputation where authored) — see its own doc comment. The rumor
+//       group's manipulation family (deny/bury-scandal) needed a SECOND
+//       selection dimension — which existing rumor — that wave-2 left
+//       unmodeled; v3.1 (leverage-menu, F-V31-LEV-MENU) adds that pairing
+//       dimension, fanning out one numbered row per (verb × targetable
+//       rumor) — see RUMOR_MANIPULATION_VERBS' own doc comment.
 
 import type { Engine, WorldState, EntityState, ScalarValue, QuestState } from '@ai-rpg-engine/core';
 import type { AbilityDefinition, ProgressionTreeDefinition, QuestDefinition, QuestStage } from '@ai-rpg-engine/content-schema';
@@ -65,6 +69,7 @@ import type {
   PlayerRumorVerb,
   PlayerDiplomacyVerb,
   PlayerSabotageVerb,
+  PlayerRumor,
 } from '@ai-rpg-engine/modules';
 import {
   getAvailableAbilities,
@@ -90,6 +95,7 @@ import {
   isCooldownReady,
   getSocialRequirements,
   getRumorRequirements,
+  getPlayerRumorState,
   getDiplomacyRequirements,
   getSabotageRequirements,
   getPersistedOpportunities,
@@ -628,13 +634,20 @@ export function buildModifyActions(world: WorldState): ExtraAction[] {
  * (below) surfaces a CURATED subset of them: every table here lists a verb
  * this codebase's own resolve*Action source proves is safe to gate by
  * afford + cooldown (+ minimum reputation where the requirement table sets
- * one) alone — never a raw, ungated dump. Two sub-actions are deliberately
- * EXCLUDED: 'deny'/'bury-scandal' (rumor group) mutate an EXISTING rumor by
- * id (`action.parameters.rumorId`, player-leverage.ts's own
- * rumorManipulationVerbHandler) — a third selection dimension (which rumor)
- * this wave doesn't model, the same "defer the extra pairing dimension"
- * choice buildCraftActions made for repair/modify before THIS wave wired
- * those. They stay reachable via free text and the Director's Ledger.
+ * one) alone — never a raw, ungated dump. Two sub-actions — 'deny' and
+ * 'bury-scandal' (rumor group) — mutate an EXISTING rumor by id
+ * (`action.parameters.rumorId`, player-leverage.ts's own
+ * rumorManipulationVerbHandler) instead of the faction (or nothing) every
+ * other table here pairs against, so wave-2 deferred them — the same
+ * "defer the extra pairing dimension" choice buildCraftActions made for
+ * repair/modify before that wave wired those. v3.1 (leverage-menu,
+ * F-V31-LEV-MENU) closes this gap: RUMOR_MANIPULATION_VERBS (below) fans
+ * both out over every rumor currently in the player's own ledger
+ * (getPlayerRumorState) — the SAME ledger applyRumorManipulation looks the
+ * id up against — so every emitted row is guaranteed to resolve, never a
+ * "menu offers it, engine rejects it" trap. No rumor in the ledger yet →
+ * no rows, the honest-absence posture recruit/opportunities already take
+ * when their own target list is empty.
  *
  * Social sub-actions that hard-require a controlling-faction target — same
  * shape/reasoning as bribe/intimidate/petition-authority, extended by
@@ -661,13 +674,41 @@ const SOCIAL_FREE_VERBS: { subAction: PlayerSocialVerb; label: string }[] = [
 /** Rumor's "spawn family" — same no-target shape as 'seed' (every
  *  resolveRumorAction switch case for these defaults gracefully with no
  *  target faction, mirrored exactly by player-leverage.ts's own
- *  rumorSpawnVerbHandler). deny/bury-scandal are excluded — see this
- *  section's header comment. */
+ *  rumorSpawnVerbHandler). deny/bury-scandal are the OTHER rumor family —
+ *  they target an existing rumor, not a faction — and are wired separately
+ *  below via RUMOR_MANIPULATION_VERBS; see this section's header comment. */
 const RUMOR_FREE_VERBS: { subAction: PlayerRumorVerb; label: string }[] = [
   { subAction: 'frame', label: 'Frame someone else for it' },
   { subAction: 'claim-false-credit', label: 'Claim false credit for a deed' },
   { subAction: 'leak-truth', label: 'Leak an uncomfortable truth' },
   { subAction: 'spread-counter-rumor', label: 'Spread a counter-rumor' },
+];
+
+/**
+ * Rumor's "manipulation family" (v3.1, leverage-menu, F-V31-LEV-MENU) —
+ * deny/bury-scandal mutate an EXISTING rumor by id
+ * (`action.parameters.rumorId`, player-leverage.ts's own
+ * rumorManipulationVerbHandler) instead of spawning a new one, so unlike
+ * every rumor sub-action above these need a SECOND selection dimension:
+ * which rumor. buildLeverageActions (below) fans each sub-action out over
+ * every rumor currently in `getPlayerRumorState(world).rumors` — the SAME
+ * ledger director.ts's RUMORS ABOUT YOU section reads and
+ * applyRumorManipulation looks the id up against — so every row emitted
+ * here is guaranteed to resolve with `rumorFound: true`, never a "menu
+ * offers it, engine rejects it" trap. Cost/cooldown are checked once per
+ * sub-action, not per rumor (neither varies by WHICH rumor is targeted); an
+ * empty ledger emits no rows at all for either sub-action, the same
+ * honest-absence posture recruit/opportunities already take when their own
+ * target list is empty. Neither RUMOR_REQUIREMENTS entry for these two
+ * authors a minimumLegitimacy floor today (only cash-milestone does) — the
+ * floor check in buildLeverageActions degrades to a no-op for both,
+ * included for the same parity/future-proofing reason DIPLOMACY_MENU_VERBS'
+ * loop already checks it for every diplomacy verb even though only one sets
+ * it.
+ */
+const RUMOR_MANIPULATION_VERBS: { subAction: 'deny' | 'bury-scandal'; label: (rumor: PlayerRumor) => string }[] = [
+  { subAction: 'deny', label: (rumor) => `Deny the rumor: "${rumor.claim}"` },
+  { subAction: 'bury-scandal', label: (rumor) => `Bury the scandal: "${rumor.claim}"` },
 ];
 
 /**
@@ -905,6 +946,34 @@ export function buildLeverageActions(world: WorldState): ExtraAction[] {
       isCooldownReady(custom, 'rumor', subAction, tick, req.cooldownTurns ?? 0)
     ) {
       actions.push({ verb: subAction, label, group: 'leverage' });
+    }
+  }
+
+  // Rumor's manipulation family (RUMOR_MANIPULATION_VERBS' own doc comment,
+  // v3.1 leverage-menu/F-V31-LEV-MENU) — the second selection dimension
+  // deny/bury-scandal need: which rumor. Fans out over every rumor currently
+  // in the player's own ledger once the sub-action's own
+  // afford+cooldown(+legitimacy-floor) gate holds; an empty ledger short-
+  // circuits before either sub-action is even checked.
+  const targetableRumors = getPlayerRumorState(world).rumors;
+  if (targetableRumors.length > 0) {
+    for (const { subAction, label } of RUMOR_MANIPULATION_VERBS) {
+      const req = getRumorRequirements(subAction);
+      if (req.minimumLegitimacy != null && state.legitimacy < req.minimumLegitimacy) continue;
+      if (
+        !canAfford(state, req.costs) ||
+        !isCooldownReady(custom, 'rumor', subAction, tick, req.cooldownTurns ?? 0)
+      ) {
+        continue;
+      }
+      for (const rumor of targetableRumors) {
+        actions.push({
+          verb: subAction,
+          parameters: { rumorId: rumor.id },
+          label: label(rumor),
+          group: 'leverage',
+        });
+      }
     }
   }
 

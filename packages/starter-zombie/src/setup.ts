@@ -161,6 +161,7 @@ export function createGame(seed?: number): Engine {
     // instead of the universal fallback.
     tradeGenre: 'zombie',
     craftingGenre: 'zombie',
+    economyGenre: 'zombie',
   });
 
   const engine = new Engine({

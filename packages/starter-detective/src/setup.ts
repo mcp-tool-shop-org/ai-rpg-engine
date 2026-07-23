@@ -176,6 +176,7 @@ export function createGame(seed?: number): Engine {
     // detective-flavored stock/recipes instead of the universal fallback.
     tradeGenre: 'detective',
     craftingGenre: 'detective',
+    economyGenre: 'detective',
   });
 
   const engine = new Engine({
