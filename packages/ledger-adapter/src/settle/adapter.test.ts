@@ -24,6 +24,11 @@ type FakeTransport = LedgerTransport & {
   /** The next N transport-write calls (setAccountFlag/trustSet/payment/
    *  escrowCreate/escrowFinish) return a failure instead of succeeding. */
   failNext(times: number): void;
+  /** True once `address` has opened a trust line for `currency`. Models the
+   *  live-XRPL rule the mint path below enforces (a mint to an un-trust-lined
+   *  holder fails tecPATH_DRY) — the fidelity the LIVE pirate replay needed to
+   *  surface the incremental-trust-line gap the dry-run path structurally hid. */
+  trustedFor(address: string, currency: string): boolean;
 };
 
 function createFakeTransport(): FakeTransport {
@@ -32,6 +37,9 @@ function createFakeTransport(): FakeTransport {
   let failRemaining = 0;
   const seedToAddress = new Map<string, string>();
   const balances = new Map<string, number>();
+  // `${holder}:${currency}` for every opened trust line — modeled so the mint
+  // path can enforce live XRPL's "no line -> tecPATH_DRY" rule (see trustedFor).
+  const trustLines = new Set<string>();
   const pendingEscrows = new Map<number, { destination: string; currency: string; value: number }>();
 
   function balanceKey(address: string, currency: string): string {
@@ -61,6 +69,9 @@ function createFakeTransport(): FakeTransport {
     failNext(times: number) {
       failRemaining = times;
     },
+    trustedFor(address: string, currency: string): boolean {
+      return trustLines.has(`${address}:${currency}`);
+    },
 
     async connect() {},
     async disconnect() {},
@@ -83,13 +94,25 @@ function createFakeTransport(): FakeTransport {
       return maybeFail() ?? nextTx();
     },
 
-    async trustSet(_seed: string, _issuer: string, _currency: string, _limit: string): Promise<TxResult> {
-      return maybeFail() ?? nextTx();
+    async trustSet(seed: string, _issuer: string, currency: string, _limit: string): Promise<TxResult> {
+      const failed = maybeFail();
+      if (failed) return failed;
+      const holder = seedToAddress.get(seed);
+      if (holder) trustLines.add(`${holder}:${currency}`);
+      return nextTx();
     },
 
     async payment(_seed: string, destination: string, amount: IssuedAmount, _memo?: string): Promise<TxResult> {
       const failed = maybeFail();
       if (failed) return failed;
+      // Live-XRPL fidelity: an issued-currency Payment to a holder that never
+      // opened a trust line for this currency fails tecPATH_DRY. The real mint
+      // in enable()/settle() always trust-lines the holder first (settle()'s
+      // incremental ensureTrustLinesFor is the Phase-5 fix); a mint that lands
+      // here without a line is the regression this models.
+      if (!trustLines.has(`${destination}:${amount.currency}`)) {
+        return { ok: false, hash: '', code: 'tecPATH_DRY', error: `No trust line: ${destination} for ${amount.currency}` };
+      }
       credit(destination, amount.currency, Number(amount.value));
       return nextTx();
     },
@@ -319,5 +342,33 @@ describe('createLedgerAdapter', () => {
     expect(report.resources.find((r) => r.resource === 'coin')?.conservationOk).toBe(true);
     expect(report.resources.find((r) => r.resource === 'coin')?.sumDeltas).toBe(-30);
     expect(report.passed).toBe(true);
+  });
+
+  it('INCREMENTAL TRUST LINES: a token first acquired at a checkpoint is trust-lined before its mint (else tecPATH_DRY — the live-diagnosed Phase-5 fix)', async () => {
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'testgame', runId: 'run-1' });
+    const state = freshState();
+
+    // Enable with ONLY coin — the starting trust lines cover coin alone, exactly
+    // like the pirate captain whose enable snapshot is {coin, cutlass} and who
+    // then BUYS a cannon-shell he never started with.
+    await adapter.enable(state, { coin: 30, items: {} });
+    expect(state.lastSettled).toEqual({ coin: 30 });
+
+    // A brand-new token appears for the first time at this checkpoint. Its
+    // issuer->player mint would fail tecPATH_DRY on live testnet (and now on
+    // this fidelity-hardened fake) if settle() did not open its trust line
+    // first — the exact gap the pirate live-replay surfaced and this fix closes.
+    const afterBuy: TradeableSnapshot = { coin: 27, items: { 'cannon-shell': 1 } };
+    const result = await adapter.settle(state, afterBuy, 1, 'Port Haven');
+
+    expect(result.success).toBe(true);
+    expect(result.record?.deltas).toEqual({ coin: -3, 'cannon-shell': 1 });
+    // The new token actually reached the player's balance — impossible unless
+    // its trust line was opened before the mint (the fake fails an un-lined mint).
+    expect(transport.balances.get(`${state.playerAddress}:${state.tokenMap['cannon-shell']}`)).toBe(1);
+    // BOTH holders are now trust-lined for the new token (player to receive the
+    // grant, merchant to receive a future escrowed spend of it).
+    expect(transport.trustedFor(state.playerAddress, state.tokenMap['cannon-shell'])).toBe(true);
+    expect(transport.trustedFor(state.merchantAddress, state.tokenMap['cannon-shell'])).toBe(true);
   });
 });

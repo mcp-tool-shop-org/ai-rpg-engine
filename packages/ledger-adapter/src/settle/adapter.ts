@@ -169,6 +169,43 @@ export function createLedgerAdapter(
     return assignTokenCode(state, key);
   }
 
+  /** Ensure player + merchant both trust the issuer for every given key's
+   *  token code, opening any line not up yet. INCREMENTAL trust lines: enable()
+   *  opens lines only for the tokens in the ENABLE snapshot, but a real
+   *  merchant run acquires NEW tokens mid-run (buying an item the player didn't
+   *  start with). Minting such a token to the player — or escrowing it to the
+   *  merchant — fails `tecPATH_DRY` on live testnet when its trust line was
+   *  never opened. The dry-run transport does NOT model this (it credits
+   *  balances with no trust line), so ONLY the pirate live-replay caught it
+   *  (the captain buys a `cannon-shell` absent from the starting inventory).
+   *  enable()'s comment previously deferred this to "a future phase" — this is
+   *  that phase (the live-diagnosed Phase-5 fix).
+   *
+   *  Registry = the KEYS of `state.lastSettled`: enable() seeds it with exactly
+   *  the minted (trust-lined) keys, and settle()/retryPending fold every
+   *  settled key into it — so `key in state.lastSettled` ⟺ "its trust line is
+   *  already open", an invariant that also survives save/load with NO new
+   *  serialized field (the reload-determinism CRITICAL). `trustSet` is itself
+   *  idempotent on-ledger, so a redundant re-open would be harmless; the
+   *  registry check just spares the extra round-trips. */
+  async function ensureTrustLinesFor(state: LedgerAdapterState, keys: string[]): Promise<void> {
+    const playerSeed = requireSeed(state.playerAddress);
+    const merchantSeed = requireSeed(state.merchantAddress);
+    const trustLimit = '999999999';
+    for (const key of keys) {
+      if (Object.prototype.hasOwnProperty.call(state.lastSettled, key)) continue;
+      const code = currencyCodeFor(state, key);
+      const playerTrust = await transport.trustSet(playerSeed, state.issuerAddress, code, trustLimit);
+      if (!playerTrust.ok) {
+        throw new Error(`trustSet(player, ${code}) failed: ${playerTrust.error ?? playerTrust.code}`);
+      }
+      const merchantTrust = await transport.trustSet(merchantSeed, state.issuerAddress, code, trustLimit);
+      if (!merchantTrust.ok) {
+        throw new Error(`trustSet(merchant, ${code}) failed: ${merchantTrust.error ?? merchantTrust.code}`);
+      }
+    }
+  }
+
   /** Executes one checkpoint's worth of signed deltas against the transport:
    *  a SPEND (negative) escrows player->merchant then finishes it; a GRANT
    *  (positive) is a direct issuer->player Payment. Returns every tx hash
@@ -182,6 +219,12 @@ export function createLedgerAdapter(
     const txids: string[] = [];
     const issuerSeed = requireSeed(state.issuerAddress);
     const playerSeed = requireSeed(state.playerAddress);
+
+    // Incremental trust lines FIRST: any token new since enable needs its
+    // player+merchant trust lines opened before we mint/escrow it, or live
+    // testnet rejects the transfer with tecPATH_DRY (see ensureTrustLinesFor).
+    // Runs on both the settle() and retryPending() paths (both call this).
+    await ensureTrustLinesFor(state, Object.keys(deltas));
 
     for (const key of Object.keys(deltas).sort()) {
       const diff = deltas[key];
@@ -305,9 +348,10 @@ export function createLedgerAdapter(
       state.merchantAddress = merchant.address;
 
       // Token map: pure/local, always refreshed for the current snapshot's
-      // keys (cheap; no network). New item keys introduced AFTER trust lines
-      // are already marked ready won't get their own trust line until a
-      // future phase adds incremental trust-line auditing — out of scope here.
+      // keys (cheap; no network). New item keys introduced AFTER enable (an
+      // item bought mid-run) get their trust lines opened incrementally by
+      // settle()'s executeDeltas -> ensureTrustLinesFor, right before the token
+      // is first minted/escrowed (the live-diagnosed Phase-5 fix).
       for (const key of resourceKeysOf(snapshot)) {
         currencyCodeFor(state, key);
       }

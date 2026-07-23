@@ -1,0 +1,181 @@
+{
+  "network": "testnet",
+  "gameId": "black-flag-requiem",
+  "runId": "run-pirate-live-1784819857434",
+  "seed": 1784819857434,
+  "stages": [
+    {
+      "stage": "1-connect",
+      "ok": true,
+      "note": "connected to testnet"
+    },
+    {
+      "stage": "2-enable",
+      "ok": true,
+      "note": "Ledger adapter enabled — pack is now receipted."
+    },
+    {
+      "stage": "3-play",
+      "ok": true,
+      "note": "coin 30 -> 27"
+    },
+    {
+      "stage": "4-settle",
+      "ok": true,
+      "note": "Checkpoint settled. Receipt: 92F7B7B4FEA2048917E8746BF2A7B61538143ED226C9B8CE7BF36913F097C565"
+    },
+    {
+      "stage": "5-onchain",
+      "ok": true,
+      "note": "3 trust line(s), 3 memo(s)"
+    },
+    {
+      "stage": "6-reconcile",
+      "ok": true,
+      "note": "PASS — on-ledger balances + memos confirm the real played session"
+    }
+  ],
+  "startSnapshot": {
+    "coin": 30,
+    "items": {
+      "cutlass": 1
+    }
+  },
+  "enableResult": {
+    "success": true,
+    "message": "Ledger adapter enabled — pack is now receipted.",
+    "playerAddress": "rQfvVKUP38Pr4eMCW15vCHhyE4DNAdByiL"
+  },
+  "wallets": {
+    "issuer": "rPUXPQpSsFZuVHKzjWT4AJuzuFZwbKnbkC",
+    "player": "rQfvVKUP38Pr4eMCW15vCHhyE4DNAdByiL",
+    "merchant": "rpC3GrNG9jXC5bcGvRtcoha1guZwHWxFss"
+  },
+  "tokenMap": {
+    "coin": "COI",
+    "cutlass": "CUT"
+  },
+  "spendSnapshot": {
+    "coin": 27,
+    "items": {
+      "cannon-shell": 1
+    }
+  },
+  "settleResult": {
+    "success": true,
+    "message": "Checkpoint settled. Receipt: 92F7B7B4FEA2048917E8746BF2A7B61538143ED226C9B8CE7BF36913F097C565",
+    "txids": [
+      "92F7B7B4FEA2048917E8746BF2A7B61538143ED226C9B8CE7BF36913F097C565",
+      "9CF6BAAC3E827F9E9F8CADF529C3F20C489E80439AAAB6DDA5E7335FB52729B0",
+      "7B0DA3765FCBFEB12AE03FBCDE85E49C28111053F9A48F3B504DD5525F821246",
+      "7E034C8BFDE42A8701735FFD52D1B1DD3176E263BDBC71D7EBBC5144D9ED257C",
+      "616ED6C4DF738636C9DB5994459AEC86B1E08F27C308CA5418475F4FFE2231E3"
+    ],
+    "record": {
+      "checkpoint": 1,
+      "location": "Port Haven",
+      "deltas": {
+        "cannon-shell": 1,
+        "coin": -3,
+        "cutlass": -1
+      },
+      "txids": [
+        "92F7B7B4FEA2048917E8746BF2A7B61538143ED226C9B8CE7BF36913F097C565",
+        "9CF6BAAC3E827F9E9F8CADF529C3F20C489E80439AAAB6DDA5E7335FB52729B0",
+        "7B0DA3765FCBFEB12AE03FBCDE85E49C28111053F9A48F3B504DD5525F821246",
+        "7E034C8BFDE42A8701735FFD52D1B1DD3176E263BDBC71D7EBBC5144D9ED257C",
+        "616ED6C4DF738636C9DB5994459AEC86B1E08F27C308CA5418475F4FFE2231E3"
+      ],
+      "status": "settled",
+      "memo": "ARPG|GAME:black-flag-requiem|RUN:run-pirate-live-1784819857434|CHECKPOINT:1|DELTA:cannon-shell+1,coin-3,cutlass-1|VERB:settle|V:1",
+      "timestamp": "1970-01-01T00:00:00.000Z"
+    }
+  },
+  "ledgerBalances": {
+    "CUT": 0,
+    "CAN": 1,
+    "COI": 27
+  },
+  "txLog": [
+    {
+      "hash": "92F7B7B4FEA2048917E8746BF2A7B61538143ED226C9B8CE7BF36913F097C565",
+      "explorer": "https://testnet.xrpl.org/transactions/92F7B7B4FEA2048917E8746BF2A7B61538143ED226C9B8CE7BF36913F097C565"
+    },
+    {
+      "hash": "9CF6BAAC3E827F9E9F8CADF529C3F20C489E80439AAAB6DDA5E7335FB52729B0",
+      "explorer": "https://testnet.xrpl.org/transactions/9CF6BAAC3E827F9E9F8CADF529C3F20C489E80439AAAB6DDA5E7335FB52729B0"
+    },
+    {
+      "hash": "7B0DA3765FCBFEB12AE03FBCDE85E49C28111053F9A48F3B504DD5525F821246",
+      "explorer": "https://testnet.xrpl.org/transactions/7B0DA3765FCBFEB12AE03FBCDE85E49C28111053F9A48F3B504DD5525F821246"
+    },
+    {
+      "hash": "7E034C8BFDE42A8701735FFD52D1B1DD3176E263BDBC71D7EBBC5144D9ED257C",
+      "explorer": "https://testnet.xrpl.org/transactions/7E034C8BFDE42A8701735FFD52D1B1DD3176E263BDBC71D7EBBC5144D9ED257C"
+    },
+    {
+      "hash": "616ED6C4DF738636C9DB5994459AEC86B1E08F27C308CA5418475F4FFE2231E3",
+      "explorer": "https://testnet.xrpl.org/transactions/616ED6C4DF738636C9DB5994459AEC86B1E08F27C308CA5418475F4FFE2231E3"
+    }
+  ],
+  "proofTxids": {
+    "EscrowFinish": "616ED6C4DF738636C9DB5994459AEC86B1E08F27C308CA5418475F4FFE2231E3",
+    "EscrowCreate": "7E034C8BFDE42A8701735FFD52D1B1DD3176E263BDBC71D7EBBC5144D9ED257C",
+    "Payment": "92F7B7B4FEA2048917E8746BF2A7B61538143ED226C9B8CE7BF36913F097C565",
+    "TrustSet": "F82B5F36C6880294B2ED3EC2E7D156B4874C088EB203F23F365F3AF506B0CCCB",
+    "AccountSet": "3E96E73D1C47DD93B53EE2EEB0CCD3D6A53E5763B4B20CD4B6DEEDECD55FFB53"
+  },
+  "reconcile": {
+    "runId": "run-pirate-live-1784819857434",
+    "seed": 1784819857434,
+    "playerAddress": "rQfvVKUP38Pr4eMCW15vCHhyE4DNAdByiL",
+    "issuerAddress": "rPUXPQpSsFZuVHKzjWT4AJuzuFZwbKnbkC",
+    "settlementsCount": 1,
+    "pendingCount": 0,
+    "txids": [
+      "92F7B7B4FEA2048917E8746BF2A7B61538143ED226C9B8CE7BF36913F097C565",
+      "9CF6BAAC3E827F9E9F8CADF529C3F20C489E80439AAAB6DDA5E7335FB52729B0",
+      "7B0DA3765FCBFEB12AE03FBCDE85E49C28111053F9A48F3B504DD5525F821246",
+      "7E034C8BFDE42A8701735FFD52D1B1DD3176E263BDBC71D7EBBC5144D9ED257C",
+      "616ED6C4DF738636C9DB5994459AEC86B1E08F27C308CA5418475F4FFE2231E3"
+    ],
+    "resources": [
+      {
+        "resource": "cannon-shell",
+        "code": "CAN",
+        "minted": 0,
+        "sumDeltas": 1,
+        "engineSettled": 1,
+        "ledger": 1,
+        "balanceOk": true,
+        "conservationOk": true
+      },
+      {
+        "resource": "coin",
+        "code": "COI",
+        "minted": 30,
+        "sumDeltas": -3,
+        "engineSettled": 27,
+        "ledger": 27,
+        "balanceOk": true,
+        "conservationOk": true
+      },
+      {
+        "resource": "cutlass",
+        "code": "CUT",
+        "minted": 1,
+        "sumDeltas": -1,
+        "engineSettled": 0,
+        "ledger": 0,
+        "balanceOk": true,
+        "conservationOk": true
+      }
+    ],
+    "memoOk": true,
+    "memoLocalOk": true,
+    "onchainMemoOk": true,
+    "passed": true,
+    "notes": []
+  },
+  "passed": true
+}
