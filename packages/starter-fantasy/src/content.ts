@@ -66,7 +66,24 @@ export const brotherAldric: EntityState = {
   blueprintId: 'brother-aldric',
   type: 'npc',
   name: 'Brother Aldric',
-  tags: ['npc', 'recruitable', 'healer'],
+  // 'named' + relations['player-trust'] (F-V31-OBLIG-DEMO): makes Aldric
+  // agency-eligible from turn one (npc-agency.ts's isNamedNpc path (b), the
+  // same precedent this pack's own 'pilgrim' already sets) and gives
+  // deriveNpcRelationship a starting trust reading above 10 from tick zero.
+  // He carries no faction (buildWorldStack's one faction roster in setup.ts
+  // is ash-ghoul/crypt-warden only), so deriveNpcRelationship's loyalty
+  // default is 0 — combined with trust > 10 and fear at its 0 baseline,
+  // deriveNpcGoals' branch 6 ("Low faction loyalty + player is powerful/
+  // friendly -> recruit (defect)") fires deterministically (subject only to
+  // evaluateNpcActions' per-tick stagger hash) the moment a real playthrough
+  // runs any world tick (world-tick.ts's runNpcAgencyStep, driven every
+  // round by the CLI's runHostileRound). resolveNpcAction's 'recruit' case
+  // is the engine's only 'favor'/'npc-owes-player' obligation source that
+  // needs neither a companion recruit nor an active faction pressure — the
+  // cheapest content-authorable path to a real, PERMANENT (decayTurns: null)
+  // npc-owes-player obligation this engine supports. brotherAldricDialogue
+  // below gates its 'call-in-favor' choice on exactly that obligation.
+  tags: ['npc', 'recruitable', 'healer', 'named'],
   stats: { vigor: 3, instinct: 3, will: 7 },
   // maxHp/stamina/maxStamina (F-4b9c5aee): a recruitable companion needs the
   // same resources shape enemies carry — without a real stamina value, every
@@ -76,6 +93,12 @@ export const brotherAldric: EntityState = {
   resources: { hp: 12, maxHp: 12, stamina: 3, maxStamina: 3 },
   statuses: [],
   zoneId: 'chapel-nave',
+  // player-trust: 15 (F-V31-OBLIG-DEMO): seeds deriveNpcRelationship's trust
+  // axis above the 'recruit' goal's `rel.trust > 10` threshold from tick
+  // zero — the same relations['player-trust'] shape dialogue-core.test.ts's
+  // own npc-relationship-at-least fixture already uses. The fiction reads as
+  // Aldric already marking this wanderer as different, worth watching.
+  relations: { 'player-trust': 15 },
   custom: {
     companionRole: 'healer',
     companionAbilities: 'medical-support,witness-calming',
@@ -350,6 +373,68 @@ export const pilgrimDialogue: DialogueDefinition = {
       id: 'end-info',
       speaker: 'Suspicious Pilgrim',
       text: 'Be careful, wanderer. The dead here do not rest easily.',
+    },
+  },
+};
+
+// --- Dialogue: Brother Aldric (F-V31-OBLIG-DEMO) ---
+//
+// Real-playthrough-reachable obligation-exists demo. brotherAldric above is
+// authored (tags + relations, see its own comment) so npc-agency.ts's
+// deriveNpcGoals branch 6 autonomously fires his 'recruit' goal and
+// resolveNpcAction mints a real, permanent npc-owes-player favor obligation
+// from it — no hand-seeded ledger, no core-module edit. 'call-in-favor'
+// below is the gated payoff: content-schema's obligation-exists condition
+// (npcId: 'brother-aldric', direction: 'npc-owes-player'), read by
+// dialogue-core.ts's evaluateCondition off the SAME persisted ledger
+// world-tick.ts's runNpcAgencyStep writes every round. Cashing it in pays
+// out in the mechanical mirror of the favor: player-leverage.ts's 'favor'
+// currency, via dialogue-core's already-wired 'leverage-adjust' effect —
+// the exact effect shape dialogue-core.test.ts's own socialDialogue fixture
+// uses for its 'grant-favor' choice.
+export const brotherAldricDialogue: DialogueDefinition = {
+  id: 'brother-aldric-talk',
+  speakers: ['brother-aldric'],
+  entryNodeId: 'greeting',
+  nodes: {
+    greeting: {
+      id: 'greeting',
+      speaker: 'Brother Aldric',
+      text: 'The nave is quiet, save for what scratches below. I confess I am glad of the company, wanderer.',
+      choices: [
+        {
+          id: 'ask-order',
+          text: 'Tell me of your order.',
+          nextNodeId: 'order-info',
+        },
+        {
+          id: 'call-in-favor',
+          text: 'You have been watching me since I set foot in this nave. Whatever you owe me, speak it now.',
+          nextNodeId: 'favor-called',
+          condition: { type: 'obligation-exists', params: { npcId: 'brother-aldric', direction: 'npc-owes-player' } },
+          effects: [{ type: 'leverage-adjust', params: { currency: 'favor', delta: 10 } }],
+        },
+        {
+          id: 'leave-greeting',
+          text: 'I will not keep you.',
+          nextNodeId: 'farewell',
+        },
+      ],
+    },
+    'order-info': {
+      id: 'order-info',
+      speaker: 'Brother Aldric',
+      text: 'We swore to guard what sleeps in the crypt. Most of my brothers do not walk as men any longer — I mean to be the exception, if grace allows it.',
+    },
+    'favor-called': {
+      id: 'favor-called',
+      speaker: 'Brother Aldric',
+      text: 'Then hear it plainly: I have watched you stand where better-armed men fled, and it has shaken something loose in me — a willingness to leave this order to its ash and walk out with someone worth following. That is not a small debt to carry. Here — my word, freely given, and it is yours to spend when you need it most.',
+    },
+    farewell: {
+      id: 'farewell',
+      speaker: 'Brother Aldric',
+      text: 'Go on, then. The dead below keep poor company, and worse manners.',
     },
   },
 };

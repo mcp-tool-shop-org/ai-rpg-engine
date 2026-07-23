@@ -516,11 +516,12 @@ export function buildCraftActions(world: WorldState): ExtraAction[] {
  * (normalizeGenre, V3-MENU-1) — repair shares getAvailableRecipes with craft,
  * so leaving it on the raw `<genre>-minimal` string would silently starve
  * repair of every genre-flavored recipe craft itself now shows. Same honest
- * ceiling as buildBuyActions/buildCraftActions: a genre-flavored repair
- * recipe (there are none authored today — repair-weapon/repair-armor are
- * both UNIVERSAL_RECIPES) will agree with the mechanical side once the
- * sibling wave-2 domain's world-stack fix lands; UNIVERSAL_RECIPES entries
- * need no such wiring at all and are safe today.
+ * ceiling as buildBuyActions/buildCraftActions: genre-flavored repair recipes
+ * now exist (repair-rune-mend, repair-scrap-splint, repair-nanite-weld, etc.)
+ * and surface via getAvailableRecipes alongside the universal repair-weapon/
+ * repair-armor. UNIVERSAL_RECIPES entries work today; genre-flavored ones
+ * agree with the mechanical side once the sibling wave-2 domain's world-stack
+ * fix lands.
  */
 export function buildRepairActions(world: WorldState): ExtraAction[] {
   const player = world.entities[world.playerId];

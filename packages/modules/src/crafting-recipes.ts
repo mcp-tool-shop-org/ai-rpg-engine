@@ -430,6 +430,12 @@ const GENRE_RECIPES: Record<string, CraftingRecipe[]> = {
   ],
 };
 
+/**
+ * NOTE: statDelta on repair recipes (e.g. repair-rune-mend, repair-scrap-splint)
+ * is AUTHORED BUT INTENTIONALLY NOT YET APPLIED. resolveRepair does not read it
+ * today (only resolveModify does); repair-as-upgrade is DEFERRED to v3.2/v3.3.
+ */
+
 // --- Recipe Access ---
 
 /** Get all available recipes for a genre, filtered by player/district tags */
