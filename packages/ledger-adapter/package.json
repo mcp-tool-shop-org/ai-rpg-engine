@@ -31,7 +31,8 @@
     "@ai-rpg-engine/core": "*",
     "@ai-rpg-engine/equipment": "*",
     "@ai-rpg-engine/modules": "*",
-    "@ai-rpg-engine/starter-pirate": "*"
+    "@ai-rpg-engine/starter-pirate": "*",
+    "@ai-rpg-engine/starter-gladiator": "*"
   },
   "license": "MIT",
   "author": "mcp-tool-shop",

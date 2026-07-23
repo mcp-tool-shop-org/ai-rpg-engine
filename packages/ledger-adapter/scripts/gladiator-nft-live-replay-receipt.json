@@ -1,0 +1,132 @@
+{
+  "network": "testnet",
+  "gameId": "iron-colosseum",
+  "seed": 11,
+  "stages": [
+    {
+      "stage": "1-connect",
+      "ok": true,
+      "note": "connected to testnet"
+    },
+    {
+      "stage": "2-play",
+      "ok": true,
+      "note": "equipped trident-and-net"
+    },
+    {
+      "stage": "3-snapshot",
+      "ok": true,
+      "note": "1 unique item(s); trident relicVersion=0"
+    },
+    {
+      "stage": "4-settle",
+      "ok": true,
+      "note": "NFT settlement complete: 1 minted, 0 modified, 0 unchanged. nftId=00180000514F719A47B7CA4AEABD140B93E000D0FD8E90AE5EAF670A01269FD0"
+    },
+    {
+      "stage": "5-ownership",
+      "ok": true,
+      "note": "player owns 1 NFT(s); trident uri=\"ARPG-NFT|GAME:iron-colosseum|ITEM:trident-and-net|RELIC:0|TIER:0|V:1\""
+    },
+    {
+      "stage": "6-reconcile",
+      "ok": true,
+      "note": "PASS — on-ledger account_nfts confirms the real gladiator gear is owned by the player"
+    },
+    {
+      "stage": "7-firewall",
+      "ok": true,
+      "note": "byte-identical — the adapter never mutated the game world"
+    }
+  ],
+  "proofTxids": {
+    "mint": "57E8EEA6AE81B1FE19843953B17DC8D591B2429DF769BDBA7F62AD951E1683BC"
+  },
+  "snapshot": {
+    "items": [
+      {
+        "itemId": "trident-and-net",
+        "name": "Trident & Net",
+        "slot": "weapon",
+        "rarity": "uncommon",
+        "equipped": true,
+        "relicTier": 0,
+        "relicVersion": 0
+      }
+    ]
+  },
+  "wallets": {
+    "issuer": "r3QvuP7Z8S2V7SwSc8VE1aUFP3xJeraTHs",
+    "player": "rP9DWXYewdwNnMvYyPoRp5U9cAZ78NBr43"
+  },
+  "settle": {
+    "success": true,
+    "message": "NFT settlement complete: 1 minted, 0 modified, 0 unchanged.",
+    "minted": [
+      "trident-and-net"
+    ],
+    "modified": [],
+    "skipped": [],
+    "txids": [
+      "57E8EEA6AE81B1FE19843953B17DC8D591B2429DF769BDBA7F62AD951E1683BC",
+      "D279BF62EE2D4B0BC79AB1482D11CBED09A5235EC527D2E1F68417D375079F44",
+      "8D5B948EFA7C4BF61A81E9196813BC2458A1CDC8E1FF5024F6DBC931CB3ED855"
+    ]
+  },
+  "nfts": {
+    "trident-and-net": {
+      "gameItemId": "trident-and-net",
+      "nftId": "00180000514F719A47B7CA4AEABD140B93E000D0FD8E90AE5EAF670A01269FD0",
+      "uri": "ARPG-NFT|GAME:iron-colosseum|ITEM:trident-and-net|RELIC:0|TIER:0|V:1",
+      "relicVersion": 0,
+      "taxon": 7777,
+      "mutable": true,
+      "mintTxid": "57E8EEA6AE81B1FE19843953B17DC8D591B2429DF769BDBA7F62AD951E1683BC",
+      "status": "minted"
+    }
+  },
+  "txLog": [
+    {
+      "hash": "57E8EEA6AE81B1FE19843953B17DC8D591B2429DF769BDBA7F62AD951E1683BC",
+      "explorer": "https://testnet.xrpl.org/transactions/57E8EEA6AE81B1FE19843953B17DC8D591B2429DF769BDBA7F62AD951E1683BC"
+    },
+    {
+      "hash": "D279BF62EE2D4B0BC79AB1482D11CBED09A5235EC527D2E1F68417D375079F44",
+      "explorer": "https://testnet.xrpl.org/transactions/D279BF62EE2D4B0BC79AB1482D11CBED09A5235EC527D2E1F68417D375079F44"
+    },
+    {
+      "hash": "8D5B948EFA7C4BF61A81E9196813BC2458A1CDC8E1FF5024F6DBC931CB3ED855",
+      "explorer": "https://testnet.xrpl.org/transactions/8D5B948EFA7C4BF61A81E9196813BC2458A1CDC8E1FF5024F6DBC931CB3ED855"
+    }
+  ],
+  "reconcile": {
+    "runId": "gladiator-nft-live",
+    "seed": 11,
+    "playerAddress": "rP9DWXYewdwNnMvYyPoRp5U9cAZ78NBr43",
+    "issuerAddress": "r3QvuP7Z8S2V7SwSc8VE1aUFP3xJeraTHs",
+    "settlementsCount": 0,
+    "pendingCount": 0,
+    "txids": [],
+    "resources": [],
+    "memoOk": true,
+    "memoLocalOk": true,
+    "onchainMemoOk": null,
+    "nftChecks": [
+      {
+        "gameItemId": "trident-and-net",
+        "nftId": "00180000514F719A47B7CA4AEABD140B93E000D0FD8E90AE5EAF670A01269FD0",
+        "expectedOwner": "rP9DWXYewdwNnMvYyPoRp5U9cAZ78NBr43",
+        "ownedOnLedger": true,
+        "expectedUri": "ARPG-NFT|GAME:iron-colosseum|ITEM:trident-and-net|RELIC:0|TIER:0|V:1",
+        "ledgerUri": "ARPG-NFT|GAME:iron-colosseum|ITEM:trident-and-net|RELIC:0|TIER:0|V:1",
+        "uriOk": true,
+        "ok": true
+      }
+    ],
+    "passed": true,
+    "notes": [
+      "memo: no on-chain memos supplied — external integrity NOT verified; memoOk reflects local consistency only"
+    ]
+  },
+  "passed": true
+}
