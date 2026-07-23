@@ -85,6 +85,17 @@ async function main() {
     ]);
     receipt.ledgerBalances = ledgerBalances;
     receipt.txLog = (settleResult.txids ?? []).map((h) => ({ hash: h, explorer: EXPLORER(h) }));
+    // Capture the first txid of each TransactionType across the run — the proof
+    // artifacts for xrpl-knowledge v_proven ingest (Phase 4): Payment (the
+    // issuer->player IOU mint), EscrowCreate/EscrowFinish (the token-escrow
+    // settlement), TrustSet, AccountSet.
+    receipt.proofTxids = {};
+    for (const addr of [state.issuerAddress, state.playerAddress, state.merchantAddress]) {
+      for (const e of await transport.accountTx(addr, 50)) {
+        if (e.type && !receipt.proofTxids[e.type]) receipt.proofTxids[e.type] = e.hash;
+      }
+    }
+    console.log('  proof txids by type:', receipt.proofTxids);
     stage('4-onchain', true, `${playerLines.length} trust line(s), ${Object.keys(onchainMemos).length} memo(s)`);
 
     console.log('\n=== Stage 5: reconcile() — the EXTERNAL VERIFIER (strict, on-chain memos) ===');
