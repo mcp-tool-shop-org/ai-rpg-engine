@@ -43,7 +43,11 @@ export const lordTakeda: EntityState = {
   blueprintId: 'lord-takeda',
   type: 'npc',
   name: 'Lord Takeda',
-  tags: ['npc', 'noble', 'poisoned', 'bedridden'],
+  // 'named' (V3R-NPC-2, v3.0 Living NPCs remediation): the poisoned lord at
+  // the heart of the court intrigue — a notable, non-recruitable story NPC.
+  // Makes him live in npc-agency's social/PEOPLE layer without an `ai`
+  // block, which would wrongly make him a combatant.
+  tags: ['npc', 'noble', 'poisoned', 'bedridden', 'named'],
   stats: { discipline: 6, perception: 4, composure: 7 },
   resources: { hp: 5, stamina: 2, honor: 28 },
   statuses: [],

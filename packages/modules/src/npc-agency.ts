@@ -103,15 +103,48 @@ const BASE_STAGGER_MODULUS = 4;
 
 // --- Named NPC Filter ---
 
-/** An NPC is eligible for agency if it has AI state, is alive, and is tagged 'named'. */
+/**
+ * An NPC is eligible for agency if it is alive and either:
+ *   (a) tagged 'companion' — a recruited party member (companion-core's
+ *       recruitHandler adds COMPANION_TAG at recruit time), or
+ *   (b) tagged 'named' — an authored story NPC (merchant, quest-giver,
+ *       notable character the content author marked as narratively alive), or
+ *   (c) [legacy] carries `entity.ai` and is type 'npc' with a name.
+ *
+ * Paths (a) and (b) deliberately do NOT require `entity.ai` — this was the
+ * v3.0 "Living NPCs" bug (F-v3-living-npcs remediation): buildNpcProfile's
+ * own profile derivation never touches entity.ai in the first place.
+ * deriveNpcRelationship derives trust/fear/greed/loyalty from
+ * relations/cognition/faction state; deriveCompanionGoals (called when
+ * 'companion' is present) reads role/morale straight off entity.custom (the
+ * product layer's own recruit-time mirror, companion-core's
+ * syncCompanionCustomFields). Every shipped `ai:` block lives on a
+ * type:'enemy' entity and the 'named' tag never appeared in any shipped
+ * starter — so gating (a)/(b) on `entity.ai` made isNamedNpc permanently
+ * false for every recruited companion and every authored story NPC, the
+ * entire audience this module was built for. The legacy path (c) is kept
+ * verbatim (unchanged condition, unchanged position after the ai gate) so
+ * any content or test that already relies on a bare `ai`-bearing type:'npc'
+ * entity qualifying (with no 'companion'/'named' tag) keeps working exactly
+ * as before.
+ */
 export function isNamedNpc(entity: EntityState, playerId: string): boolean {
   if (entity.id === playerId) return false;
-  if (!entity.ai) return false;
-  // Must be alive (hp > 0, or no hp stat means alive)
+  // Must be alive (hp > 0, or no hp stat means alive) — gates every path.
   const hp = entity.resources.hp ?? entity.resources.health;
   if (hp !== undefined && hp <= 0) return false;
-  // Must be tagged 'named' or be of type 'npc' with a name
-  return entity.tags.includes('named') || (entity.type === 'npc' && entity.name.length > 0);
+
+  // (a)/(b) — companion or authored-story-NPC paths qualify WITHOUT ai.
+  if (entity.tags.includes('companion') || entity.tags.includes('named')) {
+    return true;
+  }
+
+  // (c) — legacy ai-bearing path (unchanged): requires AI state, then type
+  // 'npc' with a name. ('named'-tagged entities already returned above, so
+  // this is equivalent to the original's post-ai-gate check restricted to
+  // the type/name half.)
+  if (!entity.ai) return false;
+  return entity.type === 'npc' && entity.name.length > 0;
 }
 
 // --- Relationship Derivation ---

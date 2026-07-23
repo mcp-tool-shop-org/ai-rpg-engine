@@ -52,7 +52,11 @@ export const scientist: EntityState = {
   blueprintId: 'scientist',
   type: 'npc',
   name: 'Dr. Vasquez',
-  tags: ['npc', 'colonist', 'scientist', 'female', 'recruitable', 'scholar'],
+  // 'named' (V3R-NPC-2, v3.0 Living NPCs remediation): the pack's one
+  // dialogue-bearing story NPC (scientistDialogue) — alive in npc-agency's
+  // social/PEOPLE layer from turn 1, independent of (and ahead of) whatever
+  // 'companion' tag recruiting her later adds.
+  tags: ['npc', 'colonist', 'scientist', 'female', 'recruitable', 'scholar', 'named'],
   stats: { engineering: 3, command: 2, awareness: 7 },
   // maxHp/maxStamina (F-4b9c5aee): a recruitable companion needs the same
   // resources shape enemies carry — entityHpRatio/regen both read the max

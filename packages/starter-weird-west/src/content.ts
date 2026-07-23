@@ -55,7 +55,11 @@ export const bartender: EntityState = {
   name: 'Silas',
   // F-a56f7e5d: recruitable + a bare CompanionRole tag ('scout') — the
   // town's informant is exactly a scout's stock in trade.
-  tags: ['npc', 'townsfolk', 'informant', 'male', 'recruitable', 'scout'],
+  // 'named' (V3R-NPC-2, v3.0 Living NPCs remediation): also the pack's one
+  // dialogue-bearing story NPC (bartenderDialogue) — alive in npc-agency's
+  // social/PEOPLE layer from turn 1, independent of (and ahead of) whatever
+  // 'companion' tag recruiting him later adds.
+  tags: ['npc', 'townsfolk', 'informant', 'male', 'recruitable', 'scout', 'named'],
   stats: { grit: 3, 'draw-speed': 2, lore: 5 },
   // maxHp/maxStamina (F-4b9c5aee): a recruitable companion needs the same
   // resources shape enemies carry — entityHpRatio/regen both read the max

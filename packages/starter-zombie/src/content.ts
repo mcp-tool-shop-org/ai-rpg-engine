@@ -86,7 +86,11 @@ export const scavenger: EntityState = {
   blueprintId: 'scavenger',
   type: 'npc',
   name: 'Rook',
-  tags: ['npc', 'survivor', 'scavenger', 'male'],
+  // 'named' (V3R-NPC-2, v3.0 Living NPCs remediation): a notable,
+  // non-recruitable survivor NPC. Makes him live in npc-agency's
+  // social/PEOPLE layer without an `ai` block, which would wrongly make him
+  // a combatant.
+  tags: ['npc', 'survivor', 'scavenger', 'male', 'named'],
   stats: { fitness: 6, wits: 5, nerve: 3 },
   resources: { hp: 16, stamina: 14, infection: 0 },
   statuses: [],

@@ -52,7 +52,11 @@ export const lanistaBrutus: EntityState = {
   blueprintId: 'lanista-brutus',
   type: 'npc',
   name: 'Lanista Brutus',
-  tags: ['npc', 'arena-master', 'authority'],
+  // 'named' (V3R-NPC-2, v3.0 Living NPCs remediation): the arena-master who
+  // oversees the player's fate — a notable, non-recruitable story NPC.
+  // Makes him live in npc-agency's social/PEOPLE layer without an `ai`
+  // block, which would wrongly make him a combatant.
+  tags: ['npc', 'arena-master', 'authority', 'named'],
   stats: { might: 4, agility: 3, showmanship: 6 },
   resources: { hp: 12, stamina: 2 },
   statuses: [],
