@@ -901,6 +901,76 @@ describe('V3-SV-5: improve-standing (representative diplomacy verb) end-to-end',
   });
 });
 
+// v3.0 wave-3 (menu-social-fix, V3R-MENU-1 — the Phase-9-audited SEED-0
+// breach). 'cash-milestone' previously had `costs: {}` and NO precondition at
+// all — a genuinely free, unconditional +20 reputation/+10 influence grant
+// every 5 turns, visible on the menu the instant a controlling faction
+// existed (turn 1, for 6 of 10 starters). It now gates on a
+// `minimumLegitimacy` floor (CASH_MILESTONE_LEGITIMACY_FLOOR), checked
+// BEFORE affordability the same way minimumReputation already is, and SPENDS
+// that same amount on success — so a repeat cash-in needs a freshly
+// re-earned floor rather than remaining a free, infinitely-repeatable lever.
+describe('V3R-MENU-1: cash-milestone gates on minimumLegitimacy (the SEED-0 breach fix)', () => {
+  it('resolveDiplomacyAction: fails with zero legitimacy — no effects, a clear failReason, no grant', () => {
+    const zeroLegitimacy: LeverageState = { ...FULL_LEVERAGE, legitimacy: 0 };
+    const resolution = resolveDiplomacyAction('cash-milestone', 'guild', zeroLegitimacy, 0, undefined, 5);
+    expect(resolution.success).toBe(false);
+    expect(resolution.effects).toEqual([]);
+    expect(resolution.failReason).toMatch(/legitimacy/i);
+  });
+
+  it('resolveDiplomacyAction: fails one point below the floor', () => {
+    const belowFloor: LeverageState = { ...FULL_LEVERAGE, legitimacy: 14 }; // floor is 15
+    const resolution = resolveDiplomacyAction('cash-milestone', 'guild', belowFloor, 0, undefined, 5);
+    expect(resolution.success).toBe(false);
+  });
+
+  it('resolveDiplomacyAction: succeeds AT the floor — grants +20 reputation/+10 influence and SPENDS the legitimacy', () => {
+    const atFloor: LeverageState = { ...FULL_LEVERAGE, legitimacy: 15 };
+    const resolution = resolveDiplomacyAction('cash-milestone', 'guild', atFloor, 0, undefined, 5);
+    expect(resolution.success).toBe(true);
+    expect(resolution.effects).toContainEqual({ type: 'reputation', factionId: 'guild', delta: 20 });
+    expect(resolution.effects).toContainEqual({ type: 'leverage', currency: 'influence', delta: 10 });
+    expect(resolution.effects).toContainEqual({ type: 'leverage', currency: 'legitimacy', delta: -15 });
+  });
+
+  it('end-to-end: a zero-engagement player (no custom fields at all) submitting cash-milestone is REJECTED, never granted', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: {} })], // the exact SEED-0 shape: no custom fields at all
+      zones: START_ZONES,
+    });
+    engine.submitAction('cash-milestone', { targetIds: ['guild'] });
+    const events = engine.drainEvents();
+    const rejected = events.find((e) => e.type === 'action.rejected');
+    expect(rejected).toBeDefined();
+    expect(String(rejected?.payload.reason)).toMatch(/legitimacy/i);
+    expect(events.some((e) => e.type === 'leverage.resolved')).toBe(false);
+
+    const world = engine.world as WorldState;
+    expect(world.globals['reputation_guild']).toBeUndefined(); // no grant happened
+  });
+
+  it('end-to-end: once legitimacy is accrued (e.g. via a real milestone), cash-milestone succeeds and spends it', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: { 'leverage.legitimacy': 15 } })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('cash-milestone', { targetIds: ['guild'] });
+    const world = engine.world as WorldState;
+    expect(world.globals['reputation_guild']).toBe(20);
+    expect(getLeverageState(world.entities['player'].custom ?? {}).influence).toBe(10);
+    expect(getLeverageState(world.entities['player'].custom ?? {}).legitimacy).toBe(0); // 15 - 15 spent
+    expect(engine.drainEvents().some((e) => e.type === 'leverage.resolved')).toBe(true);
+  });
+
+  it('a REAL milestone event (computeLeverageGains) grants +5 legitimacy — the floor (15) needs three, not one incidental milestone', () => {
+    const gains = computeLeverageGains({ xpGained: 0, milestoneTriggered: { label: 'First find', tags: [] } });
+    expect(gains.legitimacy).toBe(5);
+  });
+});
+
 describe('V3-SV-5: blackmail-target (representative sabotage verb) end-to-end', () => {
   it('is registered and dispatchable (not rejected as an unknown verb)', () => {
     const engine = createTestEngine({

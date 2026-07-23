@@ -94,6 +94,9 @@ import {
   getSabotageRequirements,
   getPersistedOpportunities,
   getDistrictDefinition,
+  getPartyState,
+  getCompanion,
+  isCompanionRecruitable,
 } from '@ai-rpg-engine/modules';
 import { getAbilityCatalog } from './turns.js';
 import { describeActionError } from './guard.js';
@@ -113,6 +116,7 @@ export type ExtraAction = {
     | 'debug'
     | 'crafting'
     | 'leverage'
+    | 'party'
     | 'opportunities';
 };
 
@@ -677,6 +681,15 @@ const RUMOR_FREE_VERBS: { subAction: PlayerRumorVerb; label: string }[] = [
  * replicates that same check below so an under-reputation offer never reaches
  * the menu (the "menu offers it, engine rejects it" trap this whole file
  * avoids everywhere else).
+ *
+ * v3.0 wave-3 (menu-social-fix, V3R-MENU-1 — the SEED-0 breach fix):
+ * 'cash-milestone' ALSO now gates on a `minimumLegitimacy` floor (the SAME
+ * DIPLOMACY_REQUIREMENTS field resolveDiplomacyAction checks), replicated
+ * below the same way minimumReputation is — previously this sub-action had
+ * `costs: {}` and no reputation floor either, so the only remaining gate was
+ * "a controllingFaction exists here," true from the FIRST rendered frame for
+ * 6 of 10 starters. See player-leverage.ts's CASH_MILESTONE_LEGITIMACY_FLOOR
+ * doc comment for the full history.
  */
 const DIPLOMACY_MENU_VERBS: { subAction: PlayerDiplomacyVerb; label: (factionId: string) => string }[] = [
   { subAction: 'request-meeting', label: (id) => `Request a meeting with ${id.replace(/-/g, ' ')}` },
@@ -736,7 +749,9 @@ function playerReputationForFaction(world: WorldState, factionId: string): numbe
  * groups, the same one socialVerbHandler/seedHandler themselves run before
  * resolving. resolveDiplomacyAction is the one exception — it ALSO checks
  * `minimumReputation` before affordability — replicated via
- * playerReputationForFaction above.
+ * playerReputationForFaction above — and, as of v3.0 wave-3, a
+ * `minimumLegitimacy` floor (cash-milestone only today) replicated via
+ * `state.legitimacy` directly.
  *
  * bribe/intimidate/petition/call-in-favor/recruit-ally/every diplomacy verb
  * all require a controlling faction at the player's CURRENT district
@@ -837,6 +852,12 @@ export function buildLeverageActions(world: WorldState): ExtraAction[] {
     for (const { subAction, label } of DIPLOMACY_MENU_VERBS) {
       const req = getDiplomacyRequirements(subAction);
       if (req.minimumReputation != null && playerReputation < req.minimumReputation) continue;
+      // v3.0 wave-3 (V3R-MENU-1): mirrors resolveDiplomacyAction's own
+      // minimumLegitimacy gate exactly, so this menu can never offer what the
+      // engine would reject. Only cash-milestone authors one today — a no-op
+      // for every other diplomacy verb (field absent → skipped, same
+      // "optional field" shape minimumReputation has above).
+      if (req.minimumLegitimacy != null && state.legitimacy < req.minimumLegitimacy) continue;
       if (
         canAfford(state, req.costs) &&
         isCooldownReady(custom, 'diplomacy', subAction, tick, req.cooldownTurns ?? 0)
@@ -900,6 +921,66 @@ export function buildLeverageActions(world: WorldState): ExtraAction[] {
   }
 
   return actions;
+}
+
+// ---------------------------------------------------------------------------
+// Recruit — party-companion entries (v3.0 wave-3 menu-social-fix, V3R-MENU-3)
+// ---------------------------------------------------------------------------
+
+/**
+ * Recruit entries: one numbered row per recruitable NPC standing in the
+ * player's own zone. companion-core.ts's `recruit` verb has been registered
+ * — and unconditionally included in every starter's world stack, see
+ * world-stack.ts's own "ALWAYS included, no config" header note — since
+ * F-7d5c3e28, but it never had a numbered-menu presence OR a help listing
+ * (the Phase-9 audit's "recruit is undiscoverable" finding): it was reachable
+ * only via un-hinted free text (`recruit <id>`). This builder closes the menu
+ * half of that gap; the per-starter ruleset.ts `verbs` list closes the help
+ * half (V3R-MENU-3b).
+ *
+ * Mirrors recruitHandler's (companion-core.ts) own guard order so every
+ * offered entry is guaranteed to succeed — the same "never a menu-offers-it,
+ * engine-rejects-it trap" discipline every other builder in this file holds
+ * itself to:
+ *   - actor exists and is alive (recruitHandler's own "actor is defeated" gate)
+ *   - the party has room (addCompanion's own 'party-full' rejection — checked
+ *     ONCE up front, since a full party rejects every candidate identically)
+ *   - the candidate is in the SAME zone (recruitHandler's own zone gate)
+ *   - the candidate carries the 'recruitable' (or legacy 'companion-ready')
+ *     tag (isCompanionRecruitable — companion-core.ts)
+ *   - the candidate is not ALREADY a companion (addCompanion's own
+ *     'already-present' rejection — getCompanion is the same by-id lookup
+ *     dispatchLeverageCompanionReactions/refreshCompanionAbilityStatus
+ *     already use elsewhere in this codebase)
+ *
+ * id-sorted for deterministic ordering, the same convention
+ * buildAbilityActions' own single-target candidate list already uses.
+ */
+export function buildRecruitActions(world: WorldState): ExtraAction[] {
+  const player = world.entities[world.playerId];
+  if (!player) return [];
+  if ((player.resources.hp ?? 0) <= 0) return []; // recruitHandler's own "actor is defeated" gate
+
+  const party = getPartyState(world);
+  if (party.companions.length >= party.maxSize) return []; // party-full rejects every candidate identically
+
+  const zoneId = player.zoneId ?? world.locationId;
+  const candidates = Object.values(world.entities)
+    .filter(
+      (e) =>
+        e.id !== world.playerId &&
+        (e.zoneId ?? world.locationId) === zoneId &&
+        isCompanionRecruitable(e) &&
+        !getCompanion(party, e.id),
+    )
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
+  return candidates.map((npc) => ({
+    verb: 'recruit',
+    targetIds: [npc.id],
+    label: `Recruit ${npc.name}`,
+    group: 'party' as const,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -1159,9 +1240,10 @@ export function renderInspectorReport(
 
 /** All appended entries — abilities, then unlocks, then trade (buy, sell),
  *  then crafting (salvage, craft, repair, modify), then leverage, then
- *  opportunities, then the always-on player surfaces in reading order (the
- *  Journal, then the Director's Ledger), then the env-gated debug entry last
- *  (the operator surface stays at the bottom). Stable order, pure over state.
+ *  recruit, then opportunities, then the always-on player surfaces in
+ *  reading order (the Journal, then the Director's Ledger), then the
+ *  env-gated debug entry last (the operator surface stays at the bottom).
+ *  Stable order, pure over state.
  *
  * F-03f27ace: the ability and unlock constructions are guarded — same
  * contract as turns.ts's runNpcTurns and this file's own
@@ -1170,8 +1252,8 @@ export function renderInspectorReport(
  * hand-authored or scaffolded pack) that has no other guard between here and
  * the top-level catch. A throw from either source degrades to one bounded
  * line and contributes no entries from the failing source; the other extras
- * (unlock/ability, trade, crafting, leverage, opportunities, journal,
- * director, debug) still build normally.
+ * (unlock/ability, trade, crafting, leverage, recruit, opportunities,
+ * journal, director, debug) still build normally.
  * F-6c3e4fde: buildSellActions gets the same guard — it reads district/
  * economy state the same way abilities read the ability catalog.
  * Menu-integration wave (v2.9): buildBuyActions, buildSalvageActions,
@@ -1185,6 +1267,10 @@ export function renderInspectorReport(
  * material-inventory + district state, just with an added inventory read) —
  * a throw from either degrades to its own bounded line and never takes out
  * craft/leverage/journal/director/debug alongside it.
+ * v3.0 wave-3 menu-social-fix (V3R-MENU-3): buildRecruitActions gets the
+ * SAME guard — it reads party state + zone-scoped entity tags, content-driven
+ * the same way the builders above are; a throw degrades to its own bounded
+ * line and never takes out leverage/opportunities/journal/director/debug.
  */
 export function buildExtraActions(
   engine: Engine,
@@ -1256,6 +1342,13 @@ export function buildExtraActions(
     log(`  (leverage menu unavailable this turn: ${describeActionError(err)})`);
   }
 
+  let recruitActions: ExtraAction[] = [];
+  try {
+    recruitActions = buildRecruitActions(engine.world);
+  } catch (err) {
+    log(`  (recruit menu unavailable this turn: ${describeActionError(err)})`);
+  }
+
   let opportunityActions: ExtraAction[] = [];
   try {
     opportunityActions = buildOpportunityActions(engine.world);
@@ -1273,6 +1366,7 @@ export function buildExtraActions(
     ...repairActions,
     ...modifyActions,
     ...leverageActions,
+    ...recruitActions,
     ...opportunityActions,
     ...buildJournalActions(),
     ...buildDirectorActions(),

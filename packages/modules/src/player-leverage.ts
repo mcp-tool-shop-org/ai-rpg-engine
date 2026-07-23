@@ -107,6 +107,16 @@ export type LeverageCost = Partial<Record<LeverageCurrency, number>>;
 export type LeverageRequirement = {
   costs: LeverageCost;
   minimumReputation?: number;
+  /**
+   * v3.0 wave-3 (menu-social-fix, V3R-MENU-1 — the SEED-0 breach fix): a
+   * floor on the actor's OWN accrued `legitimacy` balance, checked the same
+   * way/place `minimumReputation` is (BEFORE affordability, in both
+   * resolveDiplomacyAction and menu.ts's buildLeverageActions). Optional and
+   * unset for every sub-action except 'cash-milestone' today — a no-op for
+   * the rest, the same "most entries leave it unset" shape minimumReputation
+   * already has.
+   */
+  minimumLegitimacy?: number;
   requiredAccess?: 'normal' | 'privileged';
   cooldownTurns?: number;
 };
@@ -139,6 +149,32 @@ const ALL_CURRENCIES: LeverageCurrency[] = ['favor', 'debt', 'blackmail', 'influ
 const HEAT_DECAY_PER_TURN = 3;
 const MAX_LEVERAGE = 100;
 const MIN_LEVERAGE = 0;
+
+/**
+ * v3.0 wave-3 (menu-social-fix, V3R-MENU-1 — the Phase-9-audited SEED-0
+ * breach). 'cash-milestone' previously authored `costs: {}` and no
+ * `minimumReputation` — a genuinely zero-cost, zero-precondition lever whose
+ * ONLY remaining gate (buildLeverageActions, menu.ts) was "a controllingFaction
+ * exists on the player's current district," true from the FIRST rendered
+ * frame for 6 of 10 starters (gladiator/ronin/vampire/zombie/weird-west/
+ * colony all start the player inside a controlled district). A brand-new
+ * v3.0 menu row visible to a zero-engagement player on turn 1 is a seed-0
+ * byte-identity breach; resolveDiplomacyAction's own switch case compounded
+ * it by granting +20 reputation/+10 influence unconditionally, every 5 turns,
+ * forever, with no check that any milestone had actually occurred.
+ *
+ * The fix ties "cash in A MILESTONE" to the one currency
+ * computeLeverageGains already grants for a REAL milestone event (+5
+ * legitimacy per `milestoneTriggered` hint — see that function below; also
+ * earned via 'deny' and a player-resolved pressure) via a `minimumLegitimacy`
+ * floor, checked in BOTH buildLeverageActions (menu.ts) and
+ * resolveDiplomacyAction below, so the row can neither render nor grant
+ * without it. The same amount is then SPENT on success (see the
+ * 'cash-milestone' switch case) — "cashing in" consumes the accrued
+ * legitimacy rather than leaving it a free, infinitely-repeatable lever once
+ * unlocked once.
+ */
+const CASH_MILESTONE_LEGITIMACY_FLOOR = 15;
 
 // --- Leverage State Accessors ---
 
@@ -274,7 +310,10 @@ const RUMOR_REQUIREMENTS: Record<PlayerRumorVerb, LeverageRequirement> = {
 const DIPLOMACY_REQUIREMENTS: Record<PlayerDiplomacyVerb, LeverageRequirement> = {
   'request-meeting': { costs: { favor: 5 }, minimumReputation: -10, cooldownTurns: 2 },
   'improve-standing': { costs: { favor: 20 }, cooldownTurns: 4 },
-  'cash-milestone': { costs: {}, cooldownTurns: 5 },
+  // v3.0 wave-3 (V3R-MENU-1): costs stays {} — nothing else about this verb's
+  // cost shape changes — but minimumLegitimacy now gates BOTH surfacing and
+  // resolution (see CASH_MILESTONE_LEGITIMACY_FLOOR's own doc comment above).
+  'cash-milestone': { costs: {}, minimumLegitimacy: CASH_MILESTONE_LEGITIMACY_FLOOR, cooldownTurns: 5 },
   'negotiate-access': { costs: { favor: 15, legitimacy: 10 }, minimumReputation: -10, cooldownTurns: 5 },
   'trade-secret': { costs: { blackmail: 15 }, cooldownTurns: 4 },
   'temporary-alliance': { costs: { favor: 25, influence: 20 }, minimumReputation: 0, cooldownTurns: 8 },
@@ -653,6 +692,25 @@ export function resolveDiplomacyAction(
     };
   }
 
+  // Legitimacy gate (v3.0 wave-3, V3R-MENU-1 — the SEED-0 breach fix): most
+  // diplomacy verbs leave minimumLegitimacy unset (undefined), so this is a
+  // no-op for them — only 'cash-milestone' authors one today (see
+  // CASH_MILESTONE_LEGITIMACY_FLOOR's own doc comment). balanceOf (not a
+  // raw property read) so a malformed/missing legitimacy balance reads as 0
+  // — cannot afford — the same NaN-safety balanceOf's own doc comment
+  // documents for canAfford/getShortfall above.
+  if (req.minimumLegitimacy != null && balanceOf(leverageState, 'legitimacy') < req.minimumLegitimacy) {
+    return {
+      verb: 'diplomacy',
+      subAction,
+      targetFactionId,
+      effects: [],
+      narratorHint: '',
+      success: false,
+      failReason: 'Your legitimacy is too low',
+    };
+  }
+
   if (!canAfford(leverageState, costs)) {
     const short = getShortfall(leverageState, costs);
     return {
@@ -691,6 +749,14 @@ export function resolveDiplomacyAction(
     case 'cash-milestone':
       effects.push({ type: 'reputation', factionId: targetFactionId, delta: 20 });
       effects.push({ type: 'leverage', currency: 'influence', delta: 10 });
+      // v3.0 wave-3 (V3R-MENU-1): "cashing in" SPENDS the accrued legitimacy
+      // the minimumLegitimacy gate above just proved is present — the same
+      // amount, so a repeat cash-in needs a freshly re-earned floor rather
+      // than remaining a free, infinitely-repeatable lever once unlocked
+      // once. Independent of `costs` (which stays {}) so move-advisor.ts's
+      // own canAfford-based feasibility scoring — which reads req.costs, not
+      // this switch case — is untouched by this wave.
+      effects.push({ type: 'leverage', currency: 'legitimacy', delta: -CASH_MILESTONE_LEGITIMACY_FLOOR });
       narratorHint = 'Your deeds speak for themselves';
       break;
 
