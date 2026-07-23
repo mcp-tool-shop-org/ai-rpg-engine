@@ -4,6 +4,11 @@
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createGame, combatMasteryTree } from '@ai-rpg-engine/starter-fantasy';
+// v3.0 wave-3 (menu-social-fix, V3R-MENU-2 — the SEED-0 proof): two of the
+// six controlled-district-start starters, aliased to avoid colliding with
+// starter-fantasy's own createGame above.
+import { createGame as gladiatorCreateGame } from '@ai-rpg-engine/starter-gladiator';
+import { createGame as roninCreateGame } from '@ai-rpg-engine/starter-ronin';
 import {
   addCurrency,
   getCurrency,
@@ -14,7 +19,10 @@ import {
   getDistrictEconomy,
   setPersistedOpportunities,
   makeOpportunity,
+  getPartyState,
+  setPartyState,
   type OpportunityState,
+  type CompanionState,
 } from '@ai-rpg-engine/modules';
 import { buildActionList, renderFullScreen, SCREEN_WIDTH } from '@ai-rpg-engine/terminal-ui';
 import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
@@ -28,6 +36,7 @@ import {
   buildRepairActions,
   buildModifyActions,
   buildLeverageActions,
+  buildRecruitActions,
   buildOpportunityActions,
   buildExtraActions,
   parseExtraSelection,
@@ -70,10 +79,19 @@ function makeDivineCryptGame() {
  *  used to seed no coin, so these sentinel/idle composition tests relied on it
  *  producing only the always-on journal / director (+ env-gated debug) entries.
  *  v2.9 seeds a small starting coin, which would add `buy` entries; clearing it
- *  keeps what's under test — the sentinel routing / visibility — isolated. */
+ *  keeps what's under test — the sentinel routing / visibility — isolated.
+ *  v3.0 wave-3 (menu-social-fix): starter-fantasy's default zone
+ *  (chapel-entrance, where createGame(42) starts the player) also carries a
+ *  'recruitable'-tagged NPC (Sister Maren) — which would now add a `recruit`
+ *  entry (buildRecruitActions, V3R-MENU-3), the same way the uncleared coin
+ *  would add `buy` entries. Strip the tag here for the same reason: keep this
+ *  fixture's "truly idle" contract isolated to what each test actually means
+ *  to exercise. */
 function makeIdleGame() {
   const engine = createGame(42);
   engine.store.state.entities['player'].resources[SELL_CURRENCY] = 0;
+  const sisterMaren = engine.store.state.entities['sister-maren'];
+  if (sisterMaren) sisterMaren.tags = sisterMaren.tags.filter((t) => t !== 'recruitable');
   return engine;
 }
 
@@ -1142,22 +1160,19 @@ describe('genre-strip (V3-MENU-1) — buy/craft show genre-flavored stock/recipe
 });
 
 describe('buildLeverageActions (leverage menu wire) — guaranteed-success entries only (afford + cooldown)', () => {
-  it('offers only the one authored-free diplomacy verb with empty leverage, even with a controlling faction present', () => {
+  it('offers NOTHING with empty leverage, even with a controlling faction present (v3.0 wave-3 SEED-0 fix, V3R-MENU-1)', () => {
     const engine = makeDivineCryptGame(); // crypt-depths → controllingFaction 'chapel-undead'
-    // v3.0 wave-2 (V3-MENU-3): 'cash-milestone' is the ONE surfaced verb whose
-    // DIPLOMACY_REQUIREMENTS entry is genuinely `{ costs: {}, cooldownTurns: 5 }`
+    // Before the SEED-0 fix, 'cash-milestone' was the ONE surfaced verb whose
+    // DIPLOMACY_REQUIREMENTS entry was genuinely `{ costs: {}, cooldownTurns: 5 }`
     // — canAfford({}) is vacuously true at ANY leverage balance, including
-    // empty, and it carries no minimumReputation gate either. Every OTHER
-    // surfaced verb (old and new) costs a real currency the empty leverage
-    // state can't pay, so this is the one exception to "nothing offered."
-    expect(buildLeverageActions(engine.world)).toEqual([
-      {
-        verb: 'cash-milestone',
-        targetIds: ['chapel-undead'],
-        label: 'Cash in a milestone with chapel undead',
-        group: 'leverage',
-      },
-    ]);
+    // empty, and it carried no minimumReputation gate either — so it rendered
+    // even for a zero-engagement player. It now ALSO carries a
+    // `minimumLegitimacy` floor (CASH_MILESTONE_LEGITIMACY_FLOOR,
+    // player-leverage.ts), which an empty leverage state fails just like
+    // every other surfaced verb's real currency cost — so this is no longer
+    // an exception. See the dedicated 'cash-milestone gating' describe block
+    // below for the floor-crossing proof.
+    expect(buildLeverageActions(engine.world)).toEqual([]);
   });
 
   it('offers bribe once favor is affordable, targeting the controlling faction — executes without rejection', () => {
@@ -1242,6 +1257,56 @@ describe('buildLeverageActions (leverage menu wire) — guaranteed-success entri
     expect(actions.some((a) => a.verb === 'bribe' || a.verb === 'intimidate' || a.verb === 'petition')).toBe(false);
     // seed has no faction requirement, so it still offers.
     expect(actions.some((a) => a.verb === 'seed')).toBe(true);
+  });
+});
+
+// v3.0 wave-3 (menu-social-fix, V3R-MENU-2 — the SEED-0 proof). Phase-9 audit
+// finding: 6 of 10 starters (gladiator/ronin/vampire/zombie/weird-west/colony)
+// start the player INSIDE a controlled district, so a completely
+// zero-engagement, turn-1 player would have seen 'cash-milestone' as a
+// numbered menu row before V3R-MENU-1's fix — a new v3.0 menu row visible to
+// a legacy/fresh player is a seed-0 byte-identity breach. gladiator is used
+// here (createGame with NO extra setup places the player at 'holding-cells',
+// inside the 'arena-stable'-controlled district) — the exact "bare
+// createGame(seed), zero further mutation" shape a legacy save/fresh player
+// exercises.
+describe('SEED-0 proof: a fresh, zero-engagement player in a controlled-district starter sees no new v3.0 leverage row (V3R-MENU-2)', () => {
+  it('gladiator: turn 1, zero engagement, controlled district — buildLeverageActions offers nothing', () => {
+    const engine = gladiatorCreateGame(42);
+    // Confirm the premise this test depends on: the player really does start
+    // inside a controlled district with zero custom leverage state (no test
+    // setup mutated either) — otherwise this proof would pass for the wrong
+    // reason (e.g. no controllingFaction at all, the ALREADY-covered case).
+    const player = engine.world.entities[engine.world.playerId];
+    expect(player.custom ?? {}).toEqual({});
+
+    const actions = buildLeverageActions(engine.world);
+    expect(actions).toEqual([]);
+  });
+
+  it('ronin: same proof, a second controlled-district starter (castle-gate → takeda-clan)', () => {
+    const engine = roninCreateGame(42);
+    const player = engine.world.entities[engine.world.playerId];
+    expect(player.custom ?? {}).toEqual({});
+
+    const actions = buildLeverageActions(engine.world);
+    expect(actions).toEqual([]);
+  });
+
+  it('gladiator: the FULL numbered menu (base + extras) carries no leverage row on turn 1 either', () => {
+    const engine = gladiatorCreateGame(42);
+    const extras = buildExtraActions(engine, []);
+    expect(extras.some((a) => a.group === 'leverage')).toBe(false);
+    // NOT a SEED-0 breach, deliberately NOT asserted absent here: gladiator's
+    // content authors a recruitable companion (Nerva) standing in the
+    // player's own starting zone (holding-cells) — a REAL, content-driven
+    // precondition (V3R-MENU-3's own gate: an in-zone 'recruitable'-tagged
+    // NPC), not a trivially-true-everywhere freebie the way cash-milestone's
+    // old "any controlling faction" gate was. This proves the two systems are
+    // independently gated: leverage rows are absent because THEIR
+    // precondition genuinely isn't met, while recruit's row is correctly
+    // present because ITS OWN precondition genuinely is.
+    expect(extras.some((a) => a.group === 'party' && a.verb === 'recruit')).toBe(true);
   });
 });
 
@@ -1347,8 +1412,17 @@ describe('buildLeverageActions — v3.0 wave-2 curated extension (V3-MENU-3)', (
     expect(buildLeverageActions(engine.world).some((a) => a.verb === 'request-meeting')).toBe(true);
   });
 
-  it('offers cash-milestone (a genuinely free diplomacy verb: costs {}) with zero leverage held', () => {
+  it('withholds cash-milestone with zero leverage held (v3.0 wave-3 SEED-0 fix, V3R-MENU-1 — was a genuinely free diplomacy verb)', () => {
     const engine = makeDivineCryptGame();
+    const actions = buildLeverageActions(engine.world);
+    expect(actions.some((a) => a.verb === 'cash-milestone')).toBe(false);
+  });
+
+  it('offers cash-milestone once legitimacy crosses its minimumLegitimacy floor', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'leverage.legitimacy': 15 }; // CASH_MILESTONE_LEGITIMACY_FLOOR
+
     const actions = buildLeverageActions(engine.world);
     expect(actions).toContainEqual({
       verb: 'cash-milestone',
@@ -1356,6 +1430,16 @@ describe('buildLeverageActions — v3.0 wave-2 curated extension (V3-MENU-3)', (
       label: 'Cash in a milestone with chapel undead',
       group: 'leverage',
     });
+  });
+
+  it('withholds cash-milestone the instant legitimacy drops back below the floor (never a menu-offers-it, engine-rejects-it trap)', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'leverage.legitimacy': 14 }; // one below the floor
+    expect(buildLeverageActions(engine.world).some((a) => a.verb === 'cash-milestone')).toBe(false);
+
+    player.custom = { ...player.custom, 'leverage.legitimacy': 15 }; // at the floor
+    expect(buildLeverageActions(engine.world).some((a) => a.verb === 'cash-milestone')).toBe(true);
   });
 
   it('a new verb drops off the menu the turn after it is used (cooldown gate wired the same as bribe\'s own)', () => {
@@ -1387,6 +1471,104 @@ describe('buildLeverageActions — v3.0 wave-2 curated extension (V3-MENU-3)', (
         (e) => e.type === 'action.rejected' && (e.payload as { verb?: unknown }).verb === 'call-in-favor',
       ),
     ).toBe(false);
+  });
+});
+
+// v3.0 wave-3 (menu-social-fix, V3R-MENU-3/V3R-MENU-4): recruit had no
+// numbered-menu presence at all before this wave (companion-core.ts's
+// `recruit` verb was reachable only via un-hinted free text). Same
+// guaranteed-success discipline as every other builder in this file — every
+// test here proves an entry only appears when recruitHandler's own guard
+// chain would actually succeed.
+describe('buildRecruitActions (recruit menu wire) — V3R-MENU-3', () => {
+  it('offers a numbered row for a recruitable NPC standing in the player\'s own zone', () => {
+    const engine = createGame(42); // chapel-entrance: Sister Maren is here, tagged 'recruitable'
+    const actions = buildRecruitActions(engine.world);
+    expect(actions).toContainEqual({
+      verb: 'recruit',
+      targetIds: ['sister-maren'],
+      label: 'Recruit Sister Maren',
+      group: 'party',
+    });
+  });
+
+  it('offers NOTHING when no recruitable NPC shares the player\'s zone', () => {
+    const engine = makeDivineCryptGame(); // crypt-chamber — only enemies here
+    expect(buildRecruitActions(engine.world)).toEqual([]);
+  });
+
+  it('never offers an NPC that lacks the recruitable/companion-ready tag (the pilgrim, same zone as Sister Maren)', () => {
+    const engine = createGame(42);
+    const actions = buildRecruitActions(engine.world);
+    expect(actions.some((a) => a.targetIds?.[0] === 'pilgrim')).toBe(false);
+  });
+
+  it('never offers a recruitable NPC standing in a DIFFERENT zone (Brother Aldric is at chapel-nave, not chapel-entrance)', () => {
+    const engine = createGame(42);
+    const actions = buildRecruitActions(engine.world);
+    expect(actions.some((a) => a.targetIds?.[0] === 'brother-aldric')).toBe(false);
+  });
+
+  it('drops off the menu once the NPC is already recruited (not a duplicate offer)', () => {
+    const engine = createGame(42);
+    expect(buildRecruitActions(engine.world).some((a) => a.targetIds?.[0] === 'sister-maren')).toBe(true);
+
+    const recruited = engine.submitAction('recruit', { targetIds: ['sister-maren'] });
+    expect(recruited.some((e) => e.type === 'companion.recruited')).toBe(true);
+
+    expect(buildRecruitActions(engine.world).some((a) => a.targetIds?.[0] === 'sister-maren')).toBe(false);
+  });
+
+  it('offers nothing at all once the party is full (mirrors addCompanion\'s own party-full rejection)', () => {
+    const engine = createGame(42);
+    const fill: CompanionState = {
+      npcId: 'filler', role: 'scout', joinedAtTick: 0, abilityTags: [], morale: 50, active: true,
+    };
+    const party = getPartyState(engine.world);
+    setPartyState(engine.world, {
+      ...party,
+      companions: [
+        { ...fill, npcId: 'filler-1' },
+        { ...fill, npcId: 'filler-2' },
+        { ...fill, npcId: 'filler-3' },
+      ], // maxSize defaults to 3
+    });
+    expect(buildRecruitActions(engine.world)).toEqual([]);
+  });
+
+  it('id-sorts multiple recruitable candidates for deterministic ordering', () => {
+    const engine = createGame(42);
+    // Move Brother Aldric into the player's own zone alongside Sister Maren —
+    // two recruitable candidates in the same zone at once.
+    engine.world.entities['brother-aldric'].zoneId = 'chapel-entrance';
+    const actions = buildRecruitActions(engine.world);
+    const ids = actions.map((a) => a.targetIds?.[0]);
+    expect(ids).toEqual(['brother-aldric', 'sister-maren']); // id-sorted
+  });
+
+  it('selecting the recruit entry actually EXECUTES it through the engine — never rejected', () => {
+    const engine = createGame(42);
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const idx = extras.findIndex((a) => a.verb === 'recruit');
+    expect(idx).toBeGreaterThanOrEqual(0);
+    expect(extras[idx].group).toBe('party');
+
+    const baseCount = buildActionList(engine.world).length;
+    const result = handlePlayerInput(engine, String(baseCount + idx + 1), { log: vi.fn(), extras });
+
+    expect(result).toEqual({ kind: 'action', via: 'extra' });
+    expect(engine.world.eventLog.some((e) => e.type === 'companion.recruited')).toBe(true);
+    expect(
+      engine.world.eventLog.some(
+        (e) => e.type === 'action.rejected' && (e.payload as { verb?: unknown }).verb === 'recruit',
+      ),
+    ).toBe(false);
+  });
+
+  it('is spliced into buildExtraActions alongside the other conditional groups (not just standalone)', () => {
+    const engine = createGame(42);
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    expect(extras.some((a) => a.group === 'party' && a.verb === 'recruit')).toBe(true);
   });
 });
 
