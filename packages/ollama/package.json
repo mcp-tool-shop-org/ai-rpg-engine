@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/ollama",
-  "version": "3.2.0",
+  "version": "3.2.1",
   "description": "AI design studio for AI RPG Engine â€” scaffolding, critique, guided workflows, tuning, experiments, studio UX",
   "type": "module",
   "main": "./dist/index.js",

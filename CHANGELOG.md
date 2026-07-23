@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.2.1] - 2026-07-23
+
+Patch — polish. The `@ai-rpg-engine/ledger-adapter` and
+`@ai-rpg-engine/starter-template` npm README pages now carry the brand logo
+header the other package READMEs already use. No code changes.
+
+### Changed
+
+- **Brand logo on the ledger-adapter + starter-template READMEs.** Both package
+  READMEs now open with the shared AI RPG Engine logo (ledger-adapter also gets
+  the CI / License / Landing badges), matching the other package READMEs — so
+  every package's npm page renders the logo consistently.
+
 ## [3.2.0] - 2026-07-23
 
 Build for the future — an **opt-in XRPL ledger adapter**. A new optional
