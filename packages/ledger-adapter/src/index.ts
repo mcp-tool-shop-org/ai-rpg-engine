@@ -54,6 +54,7 @@ export * from './transport/index.js';
 export * from './state/index.js';
 export * from './security/index.js';
 export * from './settle/index.js';
+export * from './engine/index.js';
 
 import type { LedgerAdapterConfig } from './contracts.js';
 
