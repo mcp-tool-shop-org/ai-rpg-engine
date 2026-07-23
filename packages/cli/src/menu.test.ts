@@ -21,11 +21,16 @@ import {
   makeOpportunity,
   getPartyState,
   setPartyState,
+  spawnIntentionalRumor,
+  getPlayerRumorState,
+  setPlayerRumorState,
   type OpportunityState,
   type CompanionState,
+  type PlayerRumor,
 } from '@ai-rpg-engine/modules';
 import { buildActionList, renderFullScreen, SCREEN_WIDTH } from '@ai-rpg-engine/terminal-ui';
 import type { AbilityDefinition } from '@ai-rpg-engine/content-schema';
+import type { WorldState } from '@ai-rpg-engine/core';
 import {
   buildAbilityActions,
   buildUnlockActions,
@@ -93,6 +98,19 @@ function makeIdleGame() {
   const sisterMaren = engine.store.state.entities['sister-maren'];
   if (sisterMaren) sisterMaren.tags = sisterMaren.tags.filter((t) => t !== 'recruitable');
   return engine;
+}
+
+/** Seed a rumor directly into the player-rumor ledger for the deny/
+ *  bury-scandal pairing-dimension tests below (v3.1, leverage-menu,
+ *  F-V31-LEV-MENU) — spawnIntentionalRumor + getPlayerRumorState/
+ *  setPlayerRumorState is the SAME shape player-leverage.ts's own
+ *  applyLeverageEffectsAndSpawnRumor uses for 'seed' et al, so this fixture
+ *  is byte-shape-identical to a rumor a player actually spawned in-game. */
+function seedRumor(world: WorldState, claim: string): PlayerRumor {
+  const rumor = spawnIntentionalRumor(claim, 'fearsome', undefined, undefined, world.meta.tick, 0.8, world);
+  const ns = getPlayerRumorState(world);
+  setPlayerRumorState(world, { rumors: [...ns.rumors, rumor] });
+  return rumor;
 }
 
 describe('buildAbilityActions (F1d)', () => {
@@ -1358,7 +1376,7 @@ describe('buildLeverageActions — v3.0 wave-2 curated extension (V3-MENU-3)', (
     });
   });
 
-  it('NEVER surfaces deny/bury-scandal (documented ceiling: they mutate an existing rumor by id, a pairing dimension this wave does not model)', () => {
+  it('does NOT surface deny/bury-scandal when no rumor exists yet, even with affordable leverage (honest absence — no pairing target to fan out over; see the dedicated describe block below for the surfaced case, v3.1 leverage-menu/F-V31-LEV-MENU)', () => {
     const engine = makeDivineCryptGame();
     const player = engine.store.state.entities['player'];
     player.custom = {
@@ -1471,6 +1489,108 @@ describe('buildLeverageActions — v3.0 wave-2 curated extension (V3-MENU-3)', (
         (e) => e.type === 'action.rejected' && (e.payload as { verb?: unknown }).verb === 'call-in-favor',
       ),
     ).toBe(false);
+  });
+});
+
+// v3.1 (leverage-menu, F-V31-LEV-MENU): deny/bury-scandal mutate an EXISTING
+// rumor by id instead of spawning one or targeting a faction, so they need a
+// SECOND selection dimension (which rumor) the rest of buildLeverageActions
+// doesn't model. buildLeverageActions now fans both out over every rumor
+// currently in the player's own ledger (getPlayerRumorState) — one numbered
+// row per (verb × targetable rumor) — with the same guaranteed-success
+// discipline (afford + cooldown) every other entry in this file holds itself
+// to, plus honest absence when the ledger is empty (proved in the describe
+// block above).
+describe('buildLeverageActions — deny/bury-scandal rumor-target pairing dimension (v3.1 leverage-menu, F-V31-LEV-MENU)', () => {
+  it('surfaces deny/bury-scandal as one numbered row per targetable rumor, once each is affordable', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = {
+      ...player.custom,
+      'leverage.legitimacy': 10, // deny's own cost
+      'leverage.favor': 15,
+      'leverage.influence': 10, // bury-scandal's own cost
+    };
+    const rumor = seedRumor(engine.world, 'defeated the Bone Collector');
+
+    const actions = buildLeverageActions(engine.world);
+    expect(actions).toContainEqual({
+      verb: 'deny',
+      parameters: { rumorId: rumor.id },
+      label: 'Deny the rumor: "defeated the Bone Collector"',
+      group: 'leverage',
+    });
+    expect(actions).toContainEqual({
+      verb: 'bury-scandal',
+      parameters: { rumorId: rumor.id },
+      label: 'Bury the scandal: "defeated the Bone Collector"',
+      group: 'leverage',
+    });
+  });
+
+  it('fans out one row PER rumor when multiple rumors are targetable (the pairing-dimension proof), and withholds bury-scandal independently when only deny is funded', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'leverage.legitimacy': 10 }; // funds deny only
+
+    const rumorA = seedRumor(engine.world, 'defeated the Bone Collector');
+    const rumorB = seedRumor(engine.world, 'angered the chapel undead');
+
+    const actions = buildLeverageActions(engine.world);
+    const denyRows = actions.filter((a) => a.verb === 'deny');
+    expect(denyRows).toHaveLength(2);
+    expect(denyRows.map((a) => a.parameters?.rumorId).sort()).toEqual([rumorA.id, rumorB.id].sort());
+
+    // bury-scandal's own cost (favor+influence) was never funded, so it must
+    // not appear at all — even though two rumors exist to pair it against.
+    expect(actions.some((a) => a.verb === 'bury-scandal')).toBe(false);
+  });
+
+  it('deny drops off the menu the turn after it is used, while bury-scandal (an independent cooldown) still offers against the same rumor', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = {
+      ...player.custom,
+      'leverage.legitimacy': 999,
+      'leverage.favor': 999,
+      'leverage.influence': 999,
+    };
+    const rumor = seedRumor(engine.world, 'defeated the Bone Collector');
+    expect(buildLeverageActions(engine.world).some((a) => a.verb === 'deny')).toBe(true);
+
+    engine.submitAction('deny', { parameters: { rumorId: rumor.id } });
+
+    const after = buildLeverageActions(engine.world);
+    expect(after.some((a) => a.verb === 'deny')).toBe(false);
+    expect(after.some((a) => a.verb === 'bury-scandal')).toBe(true);
+  });
+
+  it('selecting a deny row actually EXECUTES it through the engine — never rejected — and denies the exact rumor it was paired with', () => {
+    const engine = makeDivineCryptGame();
+    const player = engine.store.state.entities['player'];
+    player.custom = { ...player.custom, 'leverage.legitimacy': 10 };
+    const rumor = seedRumor(engine.world, 'defeated the Bone Collector');
+
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const idx = extras.findIndex((a) => a.verb === 'deny');
+    expect(idx).toBeGreaterThanOrEqual(0);
+
+    const baseCount = buildActionList(engine.world).length;
+    const result = handlePlayerInput(engine, String(baseCount + idx + 1), { log: vi.fn(), extras });
+
+    expect(result).toEqual({ kind: 'action', via: 'extra' });
+    expect(engine.world.eventLog.some((e) => e.type === 'leverage.resolved')).toBe(true);
+    expect(
+      engine.world.eventLog.some(
+        (e) => e.type === 'action.rejected' && (e.payload as { verb?: unknown }).verb === 'deny',
+      ),
+    ).toBe(false);
+
+    // denyRumor (player-rumor.ts) reduces confidence by 0.3 — proves the
+    // rumorId this row set into parameters actually reached
+    // applyRumorManipulation, not just that SOME action resolved.
+    const updated = getPlayerRumorState(engine.world).rumors.find((r) => r.id === rumor.id);
+    expect(updated?.confidence).toBeLessThan(rumor.confidence);
   });
 });
 
