@@ -17,6 +17,8 @@ import type { EntityState, ResolvedEvent } from '@ai-rpg-engine/core';
 import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
 import { createDialogueCore } from './dialogue-core.js';
 import { getLeverageState } from './player-leverage.js';
+import { createObligation, setPersistedNpcState } from './npc-agency.js';
+import type { NpcObligationLedger } from './npc-agency.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -430,15 +432,14 @@ describe('dialogue-core: action.rejected payloads name the verb', () => {
 // fallbacks (V3-DLG-3) — an unhandled condition still returns true, an
 // unhandled effect still emits dialogue.effect.unknown, both untouched.
 //
-// 'obligation-exists' is DEFERRED (see the code comment above
-// evaluateCondition's final fallback in dialogue-core.ts): no
-// NpcObligationLedger is persisted anywhere in WorldState in this engine
-// today (npc-agency.ts registers no persistence namespace; world-tick.ts
-// hardcodes npcObligations to an empty Map with an explicit "never
-// persisted" comment; core/src/types.ts has no obligation field at all) —
-// implementing it would mean inventing new persisted state outside this
-// task's dialogue-core*.ts file ownership, so it is shipped as 3 of 4
-// condition kinds, same as the task's own npc-relationship contingency.
+// 'obligation-exists' (F-V31-OBLIG-DLG) was DEFERRED through v3.0 on a
+// claim that no NpcObligationLedger was ever persisted in WorldState — that
+// claim went stale the moment world-tick.ts's setPersistedNpcState started
+// writing world.modules['npc-agency'].obligationLedgers every round a named
+// NPC exists (v3.0). It is now implemented in its own describe block below,
+// seeded via npc-agency.ts's own setPersistedNpcState/createObligation
+// (mirrors npc-agency.test.ts's "V3R-NPC-4" persistence round-trip), rather
+// than in this shared socialDialogue fixture.
 //
 // Tests mutate `engine.store.state...` directly to set up preconditions —
 // the same convention the pre-existing 'secretUnlocked' test above uses —
@@ -543,6 +544,138 @@ describe('dialogue-core: npc-relationship-at-least condition (V3-DLG-1)', () => 
     const engine = buildEngine([socialDialogue]);
     const events = engine.submitAction('speak', { targetIds: ['merchant'] });
     expect(enteredChoiceIds(events)).not.toContain('relationship-gated');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// obligation-exists condition (F-V31-OBLIG-DLG)
+//
+// Persisted via npc-agency.ts's own setPersistedNpcState/createObligation —
+// the exact writer world-tick.ts uses every round a named NPC exists — read
+// back through getPersistedNpcObligations inside evaluateCondition. A
+// dedicated fixture (not socialDialogue above) with its own `preEntry` node
+// lets the "no resolvable speaker" fallback test force
+// world.modules['dialogue-core'] into a speakerId:null state the same way
+// the action.rejected suite above directly authors that namespace.
+// ---------------------------------------------------------------------------
+
+const obligationDialogue: DialogueDefinition = {
+  id: 'obligation-vocab',
+  speakers: ['merchant'],
+  entryNodeId: 'entry',
+  nodes: {
+    preEntry: {
+      id: 'preEntry',
+      speaker: 'merchant',
+      text: 'One moment.',
+      choices: [{ id: 'proceed', text: 'Continue.', nextNodeId: 'entry' }],
+    },
+    entry: {
+      id: 'entry',
+      speaker: 'merchant',
+      text: 'You owe me, or I owe you — let us settle it.',
+      choices: [
+        {
+          id: 'owed-by-merchant', text: '[merchant owes player] Call it in.', nextNodeId: 'shop',
+          condition: { type: 'obligation-exists', params: { npcId: 'merchant', direction: 'npc-owes-player' } },
+        },
+        {
+          id: 'owed-to-merchant', text: '[player owes merchant] Pay the debt.', nextNodeId: 'shop',
+          condition: { type: 'obligation-exists', params: { npcId: 'merchant', direction: 'player-owes-npc' } },
+        },
+        {
+          id: 'any-obligation', text: '[any obligation with merchant, either direction] Speak of it.', nextNodeId: 'shop',
+          condition: { type: 'obligation-exists', params: { npcId: 'merchant' } },
+        },
+        {
+          id: 'default-speaker-obligation', text: '[no npcId param] Hm.', nextNodeId: 'shop',
+          condition: { type: 'obligation-exists', params: {} },
+        },
+      ],
+    },
+    shop: { id: 'shop', speaker: 'merchant', text: 'Settled.' },
+  },
+};
+
+function engineWithLedgers(ledgers: Map<string, NpcObligationLedger>) {
+  const engine = buildEngine([obligationDialogue]);
+  setPersistedNpcState(engine.world, [], [], ledgers);
+  return engine;
+}
+
+describe('dialogue-core: obligation-exists condition (F-V31-OBLIG-DLG)', () => {
+  it('reveals the choice when a persisted obligation matches both npcId and direction', () => {
+    const ledgers = new Map<string, NpcObligationLedger>([
+      ['merchant', { obligations: [createObligation('favor', 'npc-owes-player', 'merchant', 'player', 3, 'test', 0, null)] }],
+    ]);
+    const events = engineWithLedgers(ledgers).submitAction('speak', { targetIds: ['merchant'] });
+    expect(enteredChoiceIds(events)).toContain('owed-by-merchant');
+    expect(enteredChoiceIds(events)).not.toContain('owed-to-merchant'); // direction filter excludes it
+  });
+
+  it('hides the choice when the persisted obligation is for the same NPC but the opposite direction', () => {
+    const ledgers = new Map<string, NpcObligationLedger>([
+      ['merchant', { obligations: [createObligation('debt', 'player-owes-npc', 'merchant', 'player', 3, 'test', 0, null)] }],
+    ]);
+    const events = engineWithLedgers(ledgers).submitAction('speak', { targetIds: ['merchant'] });
+    expect(enteredChoiceIds(events)).not.toContain('owed-by-merchant');
+    expect(enteredChoiceIds(events)).toContain('owed-to-merchant');
+  });
+
+  it('hides every obligation-gated choice when nothing is persisted at all', () => {
+    const engine = buildEngine([obligationDialogue]); // world.modules['npc-agency'] never written
+    const events = engine.submitAction('speak', { targetIds: ['merchant'] });
+    const ids = enteredChoiceIds(events);
+    expect(ids).not.toContain('owed-by-merchant');
+    expect(ids).not.toContain('owed-to-merchant');
+    expect(ids).not.toContain('any-obligation');
+    expect(ids).not.toContain('default-speaker-obligation');
+  });
+
+  it('an npcId filter with no direction matches an obligation of ANY direction for that NPC', () => {
+    const ledgers = new Map<string, NpcObligationLedger>([
+      ['merchant', { obligations: [createObligation('bribed', 'npc-owes-npc', 'merchant', 'guard', 2, 'test', 0, null)] }],
+    ]);
+    const events = engineWithLedgers(ledgers).submitAction('speak', { targetIds: ['merchant'] });
+    expect(enteredChoiceIds(events)).toContain('any-obligation');
+  });
+
+  it('an npcId filter does not match a ledger persisted under a different NPC', () => {
+    const ledgers = new Map<string, NpcObligationLedger>([
+      ['guard', { obligations: [createObligation('favor', 'npc-owes-player', 'guard', 'player', 3, 'test', 0, null)] }],
+    ]);
+    const events = engineWithLedgers(ledgers).submitAction('speak', { targetIds: ['merchant'] });
+    expect(enteredChoiceIds(events)).not.toContain('owed-by-merchant');
+    expect(enteredChoiceIds(events)).not.toContain('any-obligation');
+  });
+
+  it('an omitted npcId defaults to the dialogue\'s current speaker', () => {
+    const ledgers = new Map<string, NpcObligationLedger>([
+      ['merchant', { obligations: [createObligation('saved', 'npc-owes-player', 'merchant', 'player', 3, 'test', 0, null)] }],
+    ]);
+    const events = engineWithLedgers(ledgers).submitAction('speak', { targetIds: ['merchant'] });
+    expect(enteredChoiceIds(events)).toContain('default-speaker-obligation');
+  });
+
+  it('an omitted npcId does NOT match a ledger belonging to a different NPC than the current speaker', () => {
+    const ledgers = new Map<string, NpcObligationLedger>([
+      ['guard', { obligations: [createObligation('saved', 'npc-owes-player', 'guard', 'player', 3, 'test', 0, null)] }],
+    ]);
+    const events = engineWithLedgers(ledgers).submitAction('speak', { targetIds: ['merchant'] });
+    expect(enteredChoiceIds(events)).not.toContain('default-speaker-obligation');
+  });
+
+  it('with no npcId param AND no resolvable dialogue speaker, matches across every persisted ledger', () => {
+    const ledgers = new Map<string, NpcObligationLedger>([
+      ['guard', { obligations: [createObligation('saved', 'npc-owes-player', 'guard', 'player', 3, 'test', 0, null)] }],
+    ]);
+    const engine = engineWithLedgers(ledgers);
+    // Force the dialogue-core namespace into a state with a real active node
+    // but no speaker — the same direct-authoring technique the
+    // action.rejected suite above uses (e2's 'ghost'/e3's 'farewell' cases).
+    engine.world.modules['dialogue-core'] = { activeDialogue: 'obligation-vocab', activeNodeId: 'preEntry', speakerId: null };
+    const events = engine.submitAction('choose', { parameters: { choiceId: 'proceed' } });
+    expect(enteredChoiceIds(events)).toContain('default-speaker-obligation');
   });
 });
 
