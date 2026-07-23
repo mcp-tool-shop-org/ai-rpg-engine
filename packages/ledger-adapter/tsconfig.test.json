@@ -1,0 +1,15 @@
+{
+  "//": "Typechecks src INCLUDING *.test.ts (mirrors the repo-wide PROD-008 gate). The build tsconfig excludes tests; run: npx tsc -p packages/ledger-adapter/tsconfig.test.json",
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "noEmit": true,
+    "rootDir": "src"
+  },
+  "include": [
+    "src"
+  ]
+}

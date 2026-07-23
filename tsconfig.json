@@ -43,6 +43,7 @@
     { "path": "packages/character-profile" },
     { "path": "packages/starter-vampire" },
     { "path": "packages/starter-gladiator" },
-    { "path": "packages/starter-ronin" }
+    { "path": "packages/starter-ronin" },
+    { "path": "packages/ledger-adapter" }
   ]
 }

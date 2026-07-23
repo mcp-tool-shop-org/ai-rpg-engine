@@ -1,0 +1,57 @@
+{
+  "name": "@ai-rpg-engine/ledger-adapter",
+  "version": "3.1.0",
+  "description": "Opt-in XRPL testnet settlement for the player-owned tradeable layer (coin/inventory/trade) — entirely outside the deterministic replayable core",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "xrpl": "^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "xrpl": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "xrpl": "^5.0.0",
+    "@ai-rpg-engine/core": "*"
+  },
+  "license": "MIT",
+  "author": "mcp-tool-shop",
+  "homepage": "https://mcp-tool-shop-org.github.io/ai-rpg-engine/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
+    "directory": "packages/ledger-adapter"
+  },
+  "keywords": [
+    "rpg",
+    "game-engine",
+    "xrpl",
+    "ledger",
+    "blockchain",
+    "escrow",
+    "opt-in",
+    "testnet"
+  ],
+  "bugs": {
+    "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
