@@ -173,6 +173,24 @@ describe('buildEndgameInputs (F-ENG005) — live inputs from persisted state', (
     expect(inputs.companions).toEqual([]);
   });
 
+  // V3R-END-4 (SEED-0): a player who never wrote a single leverage.* custom
+  // field (the starter-fantasy player entity has no `custom` at all) reads
+  // back through getLeverageState as the exact same all-zero shape
+  // buildEndgameInputs used to hardcode unconditionally — byte-identical to
+  // the pre-fix { favor: 0, debt: 0, blackmail: 0, influence: 0, heat: 0,
+  // legitimacy: 0 } for every currency, not just heat.
+  it('V3R-END-4/SEED-0: playerLeverage is byte-identical to the old hardcoded zero shape when no leverage.* field was ever written', () => {
+    const engine = makeGame();
+    expect(buildEndgameInputs(engine.world).playerLeverage).toEqual({
+      favor: 0,
+      debt: 0,
+      blackmail: 0,
+      influence: 0,
+      heat: 0,
+      legitimacy: 0,
+    });
+  });
+
   // F-d0b5edb5: buildWorldStack now seeds economy-core unconditionally (the
   // write-wire this fix is for), so districtEconomies is no longer
   // permanently empty for a REAL played session — this replaces the old
@@ -194,15 +212,59 @@ describe('buildEndgameInputs (F-ENG005) — live inputs from persisted state', (
     expect(buildEndgameInputs(world).districtEconomies.size).toBe(0);
   });
 
-  it('heat is sourced from defeat-fallout\'s exact global key world.globals["player_heat"]', () => {
+  it('heat falls back to defeat-fallout\'s legacy global key world.globals["player_heat"] when the leverage store itself has no heat', () => {
     const engine = makeGame();
     engine.store.state.globals['player_heat'] = 42;
     expect(buildEndgameInputs(engine.world).playerLeverage.heat).toBe(42);
-    // The other leverage axes have no persisting writer — they stay 0.
+    // player.custom carries NO leverage.* fields at all in this test, so
+    // every OTHER currency legitimately reads 0 because nothing was written
+    // for THIS player — not because the axis itself has no writer. See the
+    // very next test for the RED-PROOF that a real leverage state DOES flow
+    // through when one exists.
     const lev = buildEndgameInputs(engine.world).playerLeverage;
     expect(lev.favor).toBe(0);
     expect(lev.influence).toBe(0);
     expect(lev.legitimacy).toBe(0);
+  });
+
+  // V3R-END-1/V3R-END-2 (Phase-9 remediation): this test used to assert the
+  // non-heat leverage currencies stay 0 with a comment claiming "no
+  // persisting writer — they stay 0". That was true before wave-2's
+  // leverage-income tick and every social/rumor/diplomacy/sabotage verb
+  // started writing player.custom['leverage.<currency>'] via
+  // player-leverage.ts's adjustLeverage — it is FALSE now, and the OLD
+  // assertion (seeding nothing, then checking for 0) could never have caught
+  // the regression it was named for: buildEndgameInputs hardcoding
+  // playerLeverage to zero even when the real store held real values. This
+  // is the RED-PROOF replacement: seed the REAL store directly (the exact
+  // 'leverage.<currency>' keys adjustLeverage writes) and assert
+  // buildEndgameInputs reads them through unchanged instead of silently
+  // discarding them.
+  it('buildEndgameInputs reads the REAL leverage state via getLeverageState, not hardcoded zeros', () => {
+    const engine = makeGame();
+    engine.store.state.entities['player'].custom = {
+      'leverage.favor': 30,
+      'leverage.debt': 20,
+      'leverage.blackmail': 15,
+      'leverage.influence': 45,
+      'leverage.legitimacy': 35,
+      'leverage.heat': 12,
+    };
+    // A stale/parallel player_heat global is ALSO present — the real
+    // leverage.heat (12) must win over it, proving the global is a fallback
+    // used ONLY when the leverage store has no heat of its own (V3R-END-1),
+    // not a second source of truth that can shadow the real one.
+    engine.store.state.globals['player_heat'] = 99;
+
+    const lev = buildEndgameInputs(engine.world).playerLeverage;
+    expect(lev).toEqual({
+      favor: 30,
+      debt: 20,
+      blackmail: 15,
+      influence: 45,
+      heat: 12,
+      legitimacy: 35,
+    });
   });
 
   it('heat accrued by the REAL defeat-fallout module flows into the evaluator (5 per kill)', () => {
@@ -438,6 +500,88 @@ describe('buildEndgameInputs (F-ENG005) — live inputs from persisted state', (
     expect(livedInputs.playerLeverage.heat).toBe(85);
     expect(freshInputs.activePressures).toHaveLength(0);
     expect(livedInputs.activePressures).toHaveLength(2);
+  });
+});
+
+// V3R-END-3 (Phase-9 remediation): before V3R-END-1, playerLeverage.favor/
+// debt/blackmail/influence/legitimacy were hardcoded to 0 forever (only heat
+// ever moved, via the player_heat global proxy) — so endgame-detection.ts's
+// influence/legitimacy/blackmail-gated resolution classes could never fire in
+// ANY played session, no matter how much real leverage the player built
+// through the social/rumor/diplomacy/sabotage verbs or the passive
+// leverage-income tick. Each test below seeds the REAL store (the same
+// player.custom['leverage.<currency>'] keys player-leverage.ts's
+// adjustLeverage writes) and proves the previously-dead resolution class is
+// now reachable end to end through evaluateSessionEnd. None of these tests
+// touch endgame-detection.ts/arc-detection.ts — they exercise the corrected
+// input through the UNCHANGED consumer, proving the fix at the boundary.
+describe('leverage-gated endings now reachable (V3R-END-3, Phase-9 remediation)', () => {
+  it('victory (checkVictory: influence >= 50 + an allied faction) is reachable with real leverage', () => {
+    const engine = makeGame();
+    engine.store.state.entities['crypt-warden'].resources.hp = 0; // base outcome: victory, player stays alive (skips martyrdom)
+
+    // checkVictory needs at least one faction with reputation > 60.
+    engine.store.state.factions['chapel-order'] = {
+      id: 'chapel-order', name: 'Chapel Order', reputation: 70, disposition: 'friendly',
+    };
+    // The REAL leverage store — before V3R-END-1 this read as a hardcoded 0
+    // no matter what, so `influence >= 50` could never pass.
+    engine.store.state.entities['player'].custom = { 'leverage.influence': 55 };
+
+    const end = evaluateSessionEnd(engine)!;
+    expect(end.resolutionClass).toBe('victory');
+    expect(end.trigger).not.toBeNull();
+    expect(end.trigger!.evidence.influence).toBe(55);
+  });
+
+  it('quiet-retirement (checkQuietRetirement: legitimacy >= 40) is reachable with real leverage', () => {
+    const engine = makeGame();
+    engine.store.state.entities['crypt-warden'].resources.hp = 0; // stay alive — skips martyrdom
+    engine.store.state.meta.tick = 45; // checkQuietRetirement needs totalTurns >= 40
+
+    // The REAL leverage store — before V3R-END-1 legitimacy read as a
+    // hardcoded 0 no matter what, so `legitimacy >= 40` could never pass.
+    engine.store.state.entities['player'].custom = { 'leverage.legitimacy': 45 };
+    // No factions/reputations touched: playerReputations stays empty, which
+    // cleanly skips victory/exile (both require playerReputations.length > 0)
+    // — checkQuietRetirement itself never reads reputation at all. Heat
+    // stays 0 via the untouched player_heat fallback, under its <= 10 gate.
+
+    const end = evaluateSessionEnd(engine)!;
+    expect(end.resolutionClass).toBe('quiet-retirement');
+    expect(end.trigger).not.toBeNull();
+    expect(end.trigger!.evidence.legitimacy).toBe(45);
+  });
+
+  it('puppet-master (checkPuppetMaster: blackmail >= 30 + influence >= 40 + 3 NPCs owed) is reachable with real leverage', () => {
+    const engine = makeGame();
+    engine.store.state.entities['crypt-warden'].resources.hp = 0; // stay alive — skips martyrdom
+
+    // The REAL leverage store — before V3R-END-1 both axes read as a
+    // hardcoded 0 no matter what, so this gate could never pass.
+    engine.store.state.entities['player'].custom = {
+      'leverage.blackmail': 35,
+      'leverage.influence': 45,
+    };
+    // 3 NPCs owing the player a favor — the OTHER half of checkPuppetMaster's
+    // gate, read from npc-agency's own persisted obligation ledgers.
+    engine.store.state.modules['npc-agency'] = {
+      obligationLedgers: {
+        'brother-aldric': {
+          obligations: [
+            { id: 'o1', kind: 'favor', direction: 'npc-owes-player', npcId: 'brother-aldric', counterpartyId: 'player', magnitude: 3, sourceTag: 'test', createdAtTick: 1, decayTurns: null },
+            { id: 'o2', kind: 'saved', direction: 'npc-owes-player', npcId: 'brother-aldric', counterpartyId: 'player', magnitude: 4, sourceTag: 'test', createdAtTick: 1, decayTurns: null },
+            { id: 'o3', kind: 'debt', direction: 'npc-owes-player', npcId: 'brother-aldric', counterpartyId: 'player', magnitude: 2, sourceTag: 'test', createdAtTick: 1, decayTurns: null },
+          ],
+        },
+      },
+    };
+
+    const end = evaluateSessionEnd(engine)!;
+    expect(end.resolutionClass).toBe('puppet-master');
+    expect(end.trigger).not.toBeNull();
+    expect(end.trigger!.evidence.blackmail).toBe(35);
+    expect(end.trigger!.evidence.influence).toBe(45);
   });
 });
 
