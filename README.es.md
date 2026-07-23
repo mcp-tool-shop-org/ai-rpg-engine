@@ -22,10 +22,11 @@ Este es un **motor de composición**, no un juego completo. Los 10 mundos inicia
 
 ## De qué se trata
 
-- Una **biblioteca de módulos**: más de 30 módulos para el motor que cubren combate, percepción, cognición, facciones, rumores, desplazamiento, compañeros y más.
+- Una **biblioteca de módulos**: más de 30 módulos del motor que cubren el combate, la percepción, la cognición, las facciones, los rumores, el desplazamiento, los compañeros y mucho más.
 - Un **conjunto de herramientas de composición**: `buildCombatStack()` configura el combate en aproximadamente 7 líneas; `new Engine({ modules })` inicia el juego.
-- Un **entorno de simulación**: ciclos deterministas, registros de acciones reproducibles, RNG con semilla.
-- Un **estudio de diseño de IA** (opcional): estructura básica, evaluación crítica, análisis de equilibrio, ajuste y experimentos a través de Ollama.
+- Un **entorno de ejecución de simulación**: ciclos deterministas, registros de acciones reproducibles, RNG con semilla.
+- Un **estudio de diseño de IA** (opcional): andamiaje, crítica, análisis de equilibrio, ajuste, experimentos a través de Ollama.
+- Una **capa opcional en el libro mayor**: `@ai-rpg-engine/ledger-adapter` respalda la moneda y los objetos intercambiables de un juego con tokens reales de la **testnet XRPL**, que se liquidan en puntos de control, completamente fuera del núcleo determinista (opcional; una ejecución es idéntica a nivel de bytes sin él).
 
 ## De qué no se trata
 
@@ -35,7 +36,7 @@ Este es un **motor de composición**, no un juego completo. Los 10 mundos inicia
 
 ---
 
-## Estado actual (versión 3.1.0)
+## Estado actual (v3.2.0)
 
 **Qué funciona y ha sido probado:**
 
@@ -197,6 +198,41 @@ npx @ai-rpg-engine/cli create-starter my-game
 
 ---
 
+## El adaptador del libro mayor XRPL (opcional)
+
+`@ai-rpg-engine/ledger-adapter` es un paquete **opcional** que vincula la
+**capa de objetos intercambiables propiedad del jugador**: el saldo de `coin` y el inventario consumible
+que los verbos `buy`/`sell` de `trade-core` ya mueven, a la **testnet XRPL**, para
+que esos activos puedan estar respaldados por tokens reales en el libro mayor y liquidarse en puntos de control.
+Un adaptador ausente es exactamente el motor sin conexión que se distribuye actualmente.
+
+**La invariante del determinismo (el objetivo principal).** El adaptador es un *canal secundario*, nunca parte de la simulación:
+
+- Nunca se invoca dentro del ciclo determinista, solo en los **puntos de control**
+(guardado, entrada a la ciudad/mercado, final del capítulo).
+- Nada en `@ai-rpg-engine/core` o `@ai-rpg-engine/modules` lo importa (su única dependencia del motor es una `import type` en tiempo de compilación).
+- **Una ejecución es idéntica a nivel de bytes con o sin él.** Una prueba de firewall ejecuta el bucle de comerciante `starter-pirate` `createGame()` real en dos motores, uno con el adaptador habilitado y liquidando en un punto de control, y afirma que los dos mundos son profundamente iguales. La reproducción con la semilla 0 no se ve afectada.
+
+**Niveles de integración: un juego lo integra tan profundamente como su diseño lo requiera.** El firewall es una *frontera del determinismo*, no una regla anti-integración; la invariante anterior se mantiene en todos los niveles:
+
+| Nivel | Qué depende del adaptador | Se ajusta |
+|-------|-----------------------------|------|
+| **L0 — External observer** | Nada dentro del juego; el adaptador se adjunta desde fuera en los puntos de control y el juego no es consciente de ello. | Adaptación de un juego existente (la demostración pirata que se distribuye). |
+| **N1: Puntos de control impulsados por el juego** | El flujo propio de guardado/ciudad/progresión meta del juego llama al adaptador en momentos definidos. | Un juego que desea momentos deliberados en el libro mayor. |
+| **L2 — Ledger-native design** | La economía o la identidad del juego están diseñadas *en torno a* la propiedad en cadena (emisor persistente, mercados reales). | Un juego de comerciantes centrado en el libro mayor. |
+
+La distinción que mantiene segura la reproducción **no** es "qué paquete importa el adaptador", sino "si la llamada se realiza dentro del ciclo". Un paquete de juego puede importar y controlar el adaptador libremente, siempre y cuando cada llamada se realice en un punto de control fuera del bucle de reproducción impulsado por la semilla.
+
+**Tres modos de juego.** `offline` (predeterminado: sin cadena, el motor tal como se distribuye) · `ledger` (moneda/objetos respaldados por saldos de testnet, liquidados en puntos de control) · `diary` (jugar sin conexión y luego anclar el hash del estado de la ejecución en el libro mayor para obtener un recibo a prueba de manipulaciones).
+
+**Qué hay en el libro mayor.** `coin`: una promesa de moneda emitida sobre una línea de confianza; objetos consumibles: tokens fungibles; el delta neto de comercio de un punto de control: una transferencia liquidada a través del **escrow de tokens XLS-85**. Los equipos únicos como NFT son una parte posterior deliberada. La economía abstracta del distrito (`economy-core`) *no* se ve afectada; sigue siendo una simulación pura.
+
+**Medidas de seguridad.** Solo testnet, con una protección estructural **imposible en el código para mainnet** (no una marca de configuración); las semillas de la billetera se encuentran en un archivo secundario de secretos ignorado por Git, nunca en el archivo de guardado; la liquidación es idempotente y segura en caso de reintento; las pruebas verifican el **memo real en cadena** (no la propia cadena del motor); y si la cadena no está disponible, la ejecución simplemente continúa, marcada como *sin anclar*.
+
+**Probado en vivo.** Una ejecución real del comerciante `starter-pirate`: vender un machete, comprar una bala de cañón; se liquida en la testnet XRPL a través del escrow de tokens y luego `reconcile()` confirma los saldos y memos en el libro mayor con la economía del motor (la conservación se mantiene para cada token). El libro mayor es una familia de sistemas diferente al motor, por lo que el motor no puede falsificarlo; la reconciliación es un verificador externo genuino. Solo testnet; los activos son recibos con alcance en el juego, no valores.
+
+---
+
 ## Sistema de combate
 
 Cinco acciones (ataque, guardia, desenganche, preparación, reposicionamiento), cuatro estados de combate (protegido, desequilibrado, expuesto, en fuga), cuatro estados de enfrentamiento (enfrentado, protegido, línea trasera, aislado). Tres dimensiones estadísticas impulsan cada fórmula, por lo que un duelista rápido juega de manera diferente a un luchador pesado o un centinela sereno.
@@ -248,6 +284,7 @@ const warCry: AbilityDefinition = {
 | [`@ai-rpg-engine/ollama`](packages/ollama) | Autoría opcional con IA: creación de proyectos base, evaluación crítica, flujos de trabajo guiados, ajuste, experimentos |
 | [`@ai-rpg-engine/cli`](packages/cli) | CLI: ejecutar juegos, crear proyectos base, inspeccionar guardados |
 | [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | Motor de renderizado terminal y capa de entrada |
+| [`@ai-rpg-engine/ledger-adapter`](packages/ledger-adapter) | **Opcional**: liquidación opcional de la testnet XRPL para la capa de objetos intercambiables propiedad del jugador (moneda/inventario/comercio), a través del escrow de tokens XLS-85 en los puntos de control, completamente fuera del núcleo determinista. |
 
 ### Ejemplos iniciales
 
@@ -275,6 +312,7 @@ Los 10 mundos iniciales son **ejemplos de composición**: demuestran cómo combi
 | [Create Your Own Starter](site/src/content/docs/handbook/58-create-your-own-starter.md) | Crear un nuevo juego: ruta CLI o plantilla manual |
 | [Composition Guide](site/src/content/docs/handbook/57-composition-guide.md) | Cree su propio juego componiendo los módulos del motor |
 | [Plug-in Profiles](site/src/content/docs/handbook/59-plugin-profiles.md) | Resolución de reglas por entidad: combate de estilo mixto, `applyProfile`, plantillas de perfil, la herramienta CLI `profile` |
+| [XRPL Ledger Adapter](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | Liquidación opcional en el libro mayor: el firewall del determinismo, niveles de integración L0/L1/L2, modos de juego, medidas de seguridad y la demostración pirata probada en vivo. |
 | [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) | Seis pilares del combate, cinco acciones, estados de un vistazo |
 | [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | Construcción paso a paso de `buildCombatStack`, mapeo de estadísticas, perfiles de recursos |
 | [Handbook](site/src/content/docs/handbook/index.md) | Manual completo: todos los sistemas, más 4 apéndices |
@@ -332,7 +370,12 @@ Consulte [PHILOSOPHY.md](PHILOSOPHY.md) para obtener la explicación completa.
 
 ## Seguridad
 
-El núcleo del motor es una **biblioteca de simulación solo local**: sin telemetría, sin red, sin secretos. Los archivos guardados se almacenan en `.ai-rpg-engine/` solo cuando se solicita explícitamente. La capa de IA **opcional** (`@ai-rpg-engine/ollama`) se comunica con un daemon Ollama **local**: su función `webfetch` (para RAG) es la única ruta de red saliente y está limitada por una protección contra SSRF (bloquea el bucle invertido/la conexión local/CGNAT/los metadatos de la nube y los equivalentes tunelizados a través de IPv6); nunca se accede a ella a menos que la invoque. Consulte [SECURITY.md](SECURITY.md) para obtener más detalles.
+El motor principal es una **biblioteca de simulación local**: sin telemetría, sin red, sin secretos. Los archivos de guardado se guardan en `.ai-rpg-engine/` solo cuando se solicita explícitamente. Dos capas **opcionales** agregan una ruta de salida y solo cuando las invoca:
+
+- La capa de IA (`@ai-rpg-engine/ollama`) se comunica con un daemon Ollama **local**; su `webfetch` opcional (para RAG) está restringido por una protección contra SSRF (bloquea el bucle invertido/enlace local/CGNAT/metadatos de la nube y los equivalentes tunelizados a través de IPv6).
+- La capa del libro mayor (`@ai-rpg-engine/ledger-adapter`) llega a la **testnet XRPL** y solo a la testnet: una protección estructural **imposible en el código para mainnet** (no una marca de configuración) rechaza cualquier host que no sea de testnet en la construcción. Las semillas de la billetera se encuentran en un archivo secundario de secretos ignorado por Git, nunca en un archivo de guardado, y el núcleo determinista nunca importa el adaptador.
+
+Consulte [SECURITY.md](SECURITY.md) para obtener más detalles.
 
 ## Requisitos
 
