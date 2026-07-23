@@ -39,6 +39,16 @@ export type {
   ReconcileInput,
   ReconcileFn,
   LedgerAdapter,
+  // NFT unique-gear layer (v2 slice).
+  UniqueItemSnapshot,
+  EquipmentSnapshot,
+  NFTMintFlags,
+  NFTInfo,
+  NFTMintResult,
+  NFTOfferResult,
+  NFTTransport,
+  NFTokenRef,
+  NFTCheck,
 } from './contracts.js';
 
 export {
@@ -47,6 +57,9 @@ export {
   MEMO_SCHEMA_VERSION,
   buildSettlementMemo,
   settlementMemoPrefix,
+  // NFT unique-gear layer (v2 slice).
+  NFT_URI_SCHEMA_VERSION,
+  buildItemNFTUri,
 } from './contracts.js';
 
 // Wave-1 domain implementations (transport / state / security / settle).
@@ -59,7 +72,7 @@ export * from './engine/index.js';
 import type { LedgerAdapterConfig } from './contracts.js';
 
 /** Package version — single-sourced for proof packs / receipts. */
-export const LEDGER_ADAPTER_VERSION = '3.2.1';
+export const LEDGER_ADAPTER_VERSION = '3.3.0';
 
 /** The safest opt-in posture: offline mode, per-run issuer, escrow settlement. */
 export const DEFAULT_LEDGER_CONFIG: LedgerAdapterConfig = {

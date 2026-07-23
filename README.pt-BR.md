@@ -36,7 +36,7 @@ Este é um **motor de composição**, não um jogo completo. Os 10 mundos inicia
 
 ---
 
-## Estado atual (v3.2.0)
+## Estado atual (versão 3.3.0)
 
 **O que funciona e foi testado:**
 

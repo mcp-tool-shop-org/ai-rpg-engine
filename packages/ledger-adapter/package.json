@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/ledger-adapter",
-  "version": "3.2.1",
+  "version": "3.3.0",
   "description": "Opt-in XRPL testnet settlement for the player-owned tradeable layer (coin/inventory/trade) — entirely outside the deterministic replayable core",
   "type": "module",
   "main": "./dist/index.js",
@@ -29,8 +29,10 @@
   "devDependencies": {
     "xrpl": "^5.0.0",
     "@ai-rpg-engine/core": "*",
+    "@ai-rpg-engine/equipment": "*",
     "@ai-rpg-engine/modules": "*",
-    "@ai-rpg-engine/starter-pirate": "*"
+    "@ai-rpg-engine/starter-pirate": "*",
+    "@ai-rpg-engine/starter-gladiator": "*"
   },
   "license": "MIT",
   "author": "mcp-tool-shop",

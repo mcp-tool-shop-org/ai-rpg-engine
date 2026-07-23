@@ -10,6 +10,7 @@
 // or memo mismatch fails the whole report — no green-washing a partial pass).
 
 import type {
+  NFTCheck,
   ReconcileFn,
   ReconcileInput,
   ReconcileReport,
@@ -208,6 +209,51 @@ export const reconcile: ReconcileFn = (input: ReconcileInput): ReconcileReport =
   // honestly-scoped local consistency.
   const memoOk = onchainMemoOk ?? memoLocalOk;
 
+  // Per-item NFT ownership + URI checks (P4) — the 1-of-1 OWNERSHIP family,
+  // distinct from the fungible ResourceCheck balance/conservation family
+  // above. ADDITIVE: input.nfts absent/empty -> nftChecks stays undefined and
+  // the fungible-only verdict is completely unchanged (nftOk below is then
+  // vacuously true). When present, EVERY NFTCheck must pass for the overall
+  // report to pass — the engine cannot fake unique-gear ownership any more
+  // than it can fake a fungible ledger balance.
+  let nftChecks: NFTCheck[] | undefined;
+  if (input.nfts !== undefined && input.nfts.length > 0) {
+    if (input.ledgerNfts === undefined) {
+      notes.push(
+        'nfts: no on-ledger NFT data supplied — NFT ownership NOT verified; every check fails (no vacuous pass)',
+      );
+    }
+    nftChecks = input.nfts.map((ref) => {
+      const gameItemId = ref.gameItemId;
+      const nftId = ref.nftId;
+      const expectedOwner = input.playerAddress ?? '';
+      const expectedUri = ref.uri;
+
+      // On-ledger truth (account_nfts, keyed by nftId). `led === undefined`
+      // covers BOTH "ledgerNfts wasn't supplied at all" and "this specific
+      // nftId is absent from what WAS supplied" — either way there is no
+      // on-ledger evidence, so ownedOnLedger/ledgerUri/uriOk/ok are honestly
+      // false (never a vacuous pass — the NFT analogue of the settled-record
+      // "no txids to verify on-chain" guard above).
+      const led = input.ledgerNfts?.[nftId];
+      const ownedOnLedger = led !== undefined && led.owner === expectedOwner;
+      const ledgerUri = led?.uri ?? null;
+      const uriOk = ledgerUri !== null && ledgerUri === expectedUri;
+      const ok = ownedOnLedger && uriOk;
+
+      if (!ownedOnLedger) {
+        notes.push(`${gameItemId}: NFT ${nftId} not owned by ${expectedOwner} on-ledger`);
+      }
+      if (!uriOk) {
+        notes.push(
+          `${gameItemId}: NFT ${nftId} on-ledger URI ${JSON.stringify(ledgerUri)} != expected URI ${JSON.stringify(expectedUri)}`,
+        );
+      }
+
+      return { gameItemId, nftId, expectedOwner, ownedOnLedger, expectedUri, ledgerUri, uriOk, ok };
+    });
+  }
+
   if (input.pending.length > 0) {
     notes.push(`${input.pending.length} settlement(s) still pending (unsettled on ledger)`);
   }
@@ -215,8 +261,17 @@ export const reconcile: ReconcileFn = (input: ReconcileInput): ReconcileReport =
   const txids: string[] = [];
   for (const rec of input.settlements) txids.push(...rec.txids);
 
+  // NFT checks fold into `passed` exactly like resources/memoOk/pending: an
+  // absent input.nfts leaves nftChecks undefined -> nftOk vacuously true ->
+  // existing fungible-only behavior is UNCHANGED (all pre-P4 reconcile tests
+  // stay green).
+  const nftOk = nftChecks === undefined || nftChecks.every((c) => c.ok);
+
   const passed =
-    resources.every((r) => r.balanceOk && r.conservationOk) && memoOk && input.pending.length === 0;
+    resources.every((r) => r.balanceOk && r.conservationOk) &&
+    memoOk &&
+    input.pending.length === 0 &&
+    nftOk;
 
   return {
     runId: input.runId,
@@ -230,6 +285,7 @@ export const reconcile: ReconcileFn = (input: ReconcileInput): ReconcileReport =
     memoOk,
     memoLocalOk,
     onchainMemoOk,
+    nftChecks,
     passed,
     notes,
   };

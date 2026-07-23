@@ -1,0 +1,106 @@
+{
+  "network": "testnet",
+  "gameId": "nft-replay",
+  "itemId": "cutlass",
+  "stages": [
+    {
+      "stage": "1-connect",
+      "ok": true,
+      "note": "connected to testnet"
+    },
+    {
+      "stage": "2-fund",
+      "ok": true,
+      "note": "both funded"
+    },
+    {
+      "stage": "3-mint",
+      "ok": true,
+      "note": "tesSUCCESS https://testnet.xrpl.org/transactions/6230670517946C0B710E3A7BD360301F62E4662BAE470CC72E80CEAAE1D20D10"
+    },
+    {
+      "stage": "4-mint-verify",
+      "ok": true,
+      "note": "flags=24 mutable=true transferable=true"
+    },
+    {
+      "stage": "5a-offer",
+      "ok": true,
+      "note": "tesSUCCESS"
+    },
+    {
+      "stage": "5b-accept",
+      "ok": true,
+      "note": "tesSUCCESS https://testnet.xrpl.org/transactions/AB474DABD6B63B52E4E9803667490D9CC0CFC539B80A8B31E458CFF6E78091A2"
+    },
+    {
+      "stage": "6-transfer-verify",
+      "ok": true,
+      "note": "playerOwns=true issuerGone=true"
+    },
+    {
+      "stage": "7a-modify",
+      "ok": true,
+      "note": "tesSUCCESS https://testnet.xrpl.org/transactions/E4EAD436F387A0BC0449D0EF5E372CB2D71304E67E87BA7CB03B354F6E2753A0"
+    },
+    {
+      "stage": "7b-modify-verify",
+      "ok": true,
+      "note": "sameNftId=true uriNow=\"ARPG-NFT|GAME:nft-replay|ITEM:cutlass|RELIC:1|TIER:1|V:1\""
+    },
+    {
+      "stage": "8-burn-compensator",
+      "ok": true,
+      "note": "tesSUCCESS nftId=00180000E31A3BF6CEFDA532E718895E642EA50072DED8952587203001269EB6"
+    },
+    {
+      "stage": "9-reconcile",
+      "ok": true,
+      "note": "PASS — on-ledger account_nfts confirms ownership + relic-version URI"
+    }
+  ],
+  "proofTxids": {
+    "NFTokenMint": "6230670517946C0B710E3A7BD360301F62E4662BAE470CC72E80CEAAE1D20D10",
+    "NFTokenCreateOffer": "B761ECC7FEDF11B46309951BF8028C21B8AB5EC4AA981367349E40E44852F814",
+    "NFTokenAcceptOffer": "AB474DABD6B63B52E4E9803667490D9CC0CFC539B80A8B31E458CFF6E78091A2",
+    "NFTokenModify": "E4EAD436F387A0BC0449D0EF5E372CB2D71304E67E87BA7CB03B354F6E2753A0",
+    "NFTokenBurn": "8A2479651C284765439E000F518E39C19D53EF9BE612F8DCC5C188DBD321EEA7"
+  },
+  "wallets": {
+    "issuer": "rM6oFLG9zT4VojTQgWYeu5AxksjdCHnhSK",
+    "player": "rEnkRmQhFo1fqaZjXyR7vntXmboCqHBuXZ"
+  },
+  "nftId": "00180000E31A3BF6CEFDA532E718895E642EA50072DED8950EA1733101269EB5",
+  "uriV1": "ARPG-NFT|GAME:nft-replay|ITEM:cutlass|RELIC:0|TIER:0|V:1",
+  "uriV2": "ARPG-NFT|GAME:nft-replay|ITEM:cutlass|RELIC:1|TIER:1|V:1",
+  "reconcile": {
+    "runId": "nft-live-replay",
+    "seed": 0,
+    "playerAddress": "rEnkRmQhFo1fqaZjXyR7vntXmboCqHBuXZ",
+    "issuerAddress": "rM6oFLG9zT4VojTQgWYeu5AxksjdCHnhSK",
+    "settlementsCount": 0,
+    "pendingCount": 0,
+    "txids": [],
+    "resources": [],
+    "memoOk": true,
+    "memoLocalOk": true,
+    "onchainMemoOk": null,
+    "nftChecks": [
+      {
+        "gameItemId": "cutlass",
+        "nftId": "00180000E31A3BF6CEFDA532E718895E642EA50072DED8950EA1733101269EB5",
+        "expectedOwner": "rEnkRmQhFo1fqaZjXyR7vntXmboCqHBuXZ",
+        "ownedOnLedger": true,
+        "expectedUri": "ARPG-NFT|GAME:nft-replay|ITEM:cutlass|RELIC:1|TIER:1|V:1",
+        "ledgerUri": "ARPG-NFT|GAME:nft-replay|ITEM:cutlass|RELIC:1|TIER:1|V:1",
+        "uriOk": true,
+        "ok": true
+      }
+    ],
+    "passed": true,
+    "notes": [
+      "memo: no on-chain memos supplied — external integrity NOT verified; memoOk reflects local consistency only"
+    ]
+  },
+  "passed": true
+}

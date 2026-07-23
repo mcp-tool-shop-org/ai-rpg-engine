@@ -36,7 +36,7 @@ Il s’agit d’un **moteur de composition**, et non d’un jeu fini. Les 10 mon
 
 ---
 
-## État actuel (v3.2.0)
+## État actuel (version 3.3.0)
 
 **Ce qui fonctionne et a été testé :**
 

@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.3.0] - 2026-07-23
+
+Bind the **unique gear** too. The opt-in `@ai-rpg-engine/ledger-adapter` now
+carries an **NFT unique-gear layer** alongside its fungible coin/consumable
+layer: the `equipment` package's one-of-a-kind items (the deliberately-deferred
+"later slice" from v3.2) are bound to **XLS-20 NFTs** (`NFTokenMint`), and relic
+growth advances a mutable NFT's metadata via **XLS-46 `NFTokenModify`** — same
+determinism firewall, minted/modified only at checkpoints, entirely outside the
+seed-0 replayable core. Proven live on XRPL testnet four ways (mint, transfer,
+modify, on-chain reconcile) plus a real `starter-gladiator` played session
+whose world is byte-identical with or without the NFT flow. The
+`@ai-rpg-engine/ledger-adapter` suite grows **121 → 189**.
+
+### Added
+
+- **NFT unique-gear layer (opt-in, testnet).** A distinct seam *alongside* the
+  fungible `TradeableSnapshot` — never conflated: `EquipmentSnapshot` (a new
+  firewall-pure read path over the `equipment-core` loadout), `NFTTransport`
+  (`nftMint`/`nftBurn`/`nftModify`/`nftCreateSellOffer`/`nftAcceptSellOffer`/
+  `accountNfts`) on both the dry-run and testnet transports, `settleEquipmentNFTs`
+  (mint one NFT per unique item at a checkpoint; relic growth → `NFTokenModify`;
+  idempotent per `gameItemId`, no double-mint on retry), and an `NFTCheck`
+  ownership family in `reconcile()` that verifies on-ledger `account_nfts` against
+  the engine's equipment state.
+- **`buildItemNFTUri`** — the deterministic on-ledger metadata URI (the NFT
+  analogue of `buildSettlementMemo`); `NFTokenModify` advancing it, on a stable
+  NFTokenID, is the on-ledger proof a relic grew.
+- **`gladiator-nft-played-session.test.ts` + `gladiator-nft-live-replay.mjs`** —
+  the load-bearing acceptance on the real shipped `starter-gladiator` game (the
+  player's `trident-and-net` minted as an NFT, owned on-ledger, reconciled),
+  with the firewall proven byte-identical on real content, live on testnet.
+
+### Notes
+
+- Unique-gear NFTs are minted `tfTransferable | tfMutable` (never `tfBurnable`) —
+  true player ownership; the issuer can evolve an item's metadata but cannot
+  destroy a player-owned NFT.
+- Relic *growth* only fires on real content once the engine's item-chronicle is
+  populated (a dormant system today); mint manifests on real content now, and the
+  growth → `NFTokenModify` path is proven live and in tests.
+
 ## [3.2.1] - 2026-07-23
 
 Patch — polish. The `@ai-rpg-engine/ledger-adapter` and

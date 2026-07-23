@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/character-profile",
-  "version": "3.2.1",
+  "version": "3.3.0",
   "description": "Persistent character profiles with progression, injuries, milestones, and save/load for AI RPG Engine",
   "type": "module",
   "main": "./dist/index.js",

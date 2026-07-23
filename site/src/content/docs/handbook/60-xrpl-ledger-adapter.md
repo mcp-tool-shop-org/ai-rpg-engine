@@ -72,7 +72,7 @@ first-class designs — not violations.
 | `coin` balance | An issued-currency **IOU** over a trust line (issuer = the game's "Merchant Authority"). |
 | Consumable items (potions, ammunition, provisions) | **Fungible tokens.** |
 | A checkpoint's net `buy`/`sell` delta | A settled transfer via **XLS-85 token escrow** (a spend escrows player → merchant and finishes; a grant mints issuer → player). |
-| Unique equipment | **NFTs** — a deliberate later slice; v1 is the fungible coin + consumable layer. |
+| Unique equipment | **NFTs** — the unique-gear layer, [Chapter 61](./61-xrpl-nft-gear.md). This chapter is the fungible coin + consumable half. |
 
 The **issuer** is a config axis: a `per-run` throwaway faucet issuer (the safe
 default — no durable key custody) or a `persistent` per-game issuer (for
