@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/starter-template",
-  "version": "2.9.0",
+  "version": "3.0.0",
   "description": "Starter template for ai-rpg-engine — scaffold a standalone game project from it",
   "type": "module",
   "engines": {
