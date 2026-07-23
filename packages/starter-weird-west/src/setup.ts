@@ -197,6 +197,7 @@ export function createGame(seed?: number): Engine {
     // universal fallback.
     tradeGenre: 'weird-west',
     craftingGenre: 'weird-west',
+    economyGenre: 'weird-west',
   });
 
   const engine = new Engine({

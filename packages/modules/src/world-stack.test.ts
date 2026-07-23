@@ -381,6 +381,22 @@ describe('buildWorldStack — config pass-through probes', () => {
     expect(withGenre.world.entities['hero'].inventory).toContain('craft-potion');
   });
 
+  it('economyGenre (F-V31-ECON-GENRE): reaches createEconomyCore — a genre-flavored seed resolves only when configured', () => {
+    const withoutGenre = makeStackEngine();
+    const baseline = getDistrictEconomy(withoutGenre.world, 'probe-district');
+    // probe-district has tags: [] (no TAG_SUPPLY_MODIFIERS entries apply), so
+    // an unconfigured economyGenre seeds pure BASELINE (economy-core.ts, 50)
+    // for every category.
+    expect(baseline?.supplies.medicine.level).toBe(50);
+
+    const withGenre = makeStackEngine({ economyGenre: 'fantasy' });
+    const flavored = getDistrictEconomy(withGenre.world, 'probe-district');
+    // GENRE_SUPPLY_DEFAULTS.fantasy.medicine is 40 (economy-core.ts) — this
+    // only resolves when economyGenre actually reaches createEconomyCore,
+    // not the BASELINE fallback above.
+    expect(flavored?.supplies.medicine.level).toBe(40);
+  });
+
   it('crafting: salvage writes materials through a real stack-built engine (crafting-core reaches actor.custom with zero starter config)', () => {
     const engine = makeStackEngine();
     engine.world.entities['hero'].inventory = ['iron-sword'];
@@ -723,12 +739,16 @@ describe('world-stack refactor — per-starter module registration pins', () => 
 describe('genre-mechanical fix (V3-GEN-1/2/3/4) — starter-level buy/craft genre resolution', () => {
   /**
    * Force a district's category supply comfortably above trade-core's
-   * BUY_SUPPLY_FLOOR (30) regardless of the starter's own tag-derived
-   * baseline (BASELINE 50, per economy-core.ts — already above the floor for
-   * every starter today since buildWorldStack's createEconomyCore call
-   * threads no genre, but this helper keeps the scenario deterministic
-   * against future tuning). What's under test here is GENRE RESOLUTION, not
-   * supply-economy tuning.
+   * BUY_SUPPLY_FLOOR (30) regardless of the starter's own baseline — true
+   * whether that baseline is genre-flavored (economyGenre now threads
+   * through every starter's setup.ts, F-V31-ECON-GENRE; e.g. cyberpunk's
+   * GENRE_SUPPLY_DEFAULTS.components is 60, pirate's ammunition is 45) or
+   * the plain BASELINE+tags a bare id with no GENRE_SUPPLY_DEFAULTS entry
+   * still falls back to (economy-core.ts, 50) — every category probed below
+   * already clears the floor either way, but this helper keeps the scenario
+   * deterministic against future tuning of any of those tables. What's
+   * under test here is GENRE RESOLUTION (buy/craft), not supply-economy
+   * tuning.
    */
   function ensureSupply(world: WorldState, districtId: string, category: SupplyCategory): void {
     const economy = getDistrictEconomy(world, districtId);

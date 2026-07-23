@@ -63,7 +63,20 @@
 //     it has no table key at all). A pack whose bare genre id has no
 //     GENRE_BUYABLE_STOCK/GENRE_RECIPES entry correctly keeps resolving the
 //     universal/default fallback — that is the honest, intended behavior,
-//     not a residual bug to paper over with an invented remap.
+//     not a residual bug to paper over with an invented remap. Economy's
+//     starting-supply genre threads through the SAME mechanism, one wave
+//     later (v3.1, F-V31-ECON-GENRE): `economyGenre` is a THIRD, separate
+//     passthrough (NOT a reuse of `tradeGenre` — three modules, three
+//     fields) resolved against economy-core.ts's OWN table,
+//     GENRE_SUPPLY_DEFAULTS, keyed by the SAME 7 bare genre ids that have
+//     GENRE_BUYABLE_STOCK/GENRE_RECIPES entries above (fantasy/cyberpunk/
+//     pirate/zombie/detective/colony/weird-west). Every starter's setup.ts
+//     passes the SAME bare genre id into `economyGenre` it already passes
+//     into `tradeGenre`/`craftingGenre`; a bare id absent from
+//     GENRE_SUPPLY_DEFAULTS (today: gladiator/ronin/vampire) correctly
+//     keeps seeding BASELINE (economy-core.ts, 50) + district-tag
+//     modifiers only — the same honest fallback as the buy/craft tables,
+//     not a bug to special-case around.
 //   - companion-core (F-7d5c3e28) joins the stack the same way, same
 //     reasoning: ALWAYS included, needs no config (it registers the
 //     `recruit` verb and the flat-PartyState namespace — see companion-core.ts's
@@ -187,6 +200,20 @@ export type WorldStackConfig = {
    * selects which genre-flavored recipes join the universal table.
    */
   craftingGenre?: string;
+
+  /**
+   * Starting-supply genre (economy-core.ts's GENRE_SUPPLY_DEFAULTS key, e.g.
+   * 'fantasy'). Omit for BASELINE (50) + district-tag modifiers only —
+   * economy-core is included either way (see the file-header contract entry
+   * above); this only selects which genre-flavored starting profile seeds
+   * each district's DistrictEconomy. Same idiom, same GENRE_* table shape,
+   * as `tradeGenre`/`craftingGenre` above — a THIRD, SEPARATE field (not a
+   * reuse of either), same bare genre id (this starter's ruleset id minus
+   * any `-minimal` suffix; see the V3-GEN-1 file-header contract entry
+   * above for why NOT `manifest.genres`, and for economy's own extension of
+   * that note).
+   */
+  economyGenre?: string;
 };
 
 export type WorldStack = {
@@ -262,7 +289,10 @@ export function buildWorldStack(config: WorldStackConfig = {}): WorldStack {
     }),
     // F-d0b5edb5/F-6c3e4fde: always included, same district roster
     // district-core received — see the file-header contract entry above.
-    createEconomyCore({ districts: config.districts ?? [] }),
+    // F-V31-ECON-GENRE: `economyGenre` is optional passthrough (mirrors
+    // `tradeGenre`/`craftingGenre` below — a SEPARATE field, not a reuse of
+    // either; see the V3-GEN-1 file-header contract entry above).
+    createEconomyCore({ districts: config.districts ?? [], genre: config.economyGenre }),
     // V3-GEN-1: always included, no REQUIRED config — see the file-header
     // contract entry above. `tradeGenre` is optional passthrough (mirrors
     // `craftingGenre` below).

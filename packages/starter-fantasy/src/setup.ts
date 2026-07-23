@@ -158,6 +158,7 @@ export function createGame(seed?: number): Engine {
     // fantasy-flavored stock/recipes instead of the universal fallback.
     tradeGenre: 'fantasy',
     craftingGenre: 'fantasy',
+    economyGenre: 'fantasy',
   });
 
   const engine = new Engine({

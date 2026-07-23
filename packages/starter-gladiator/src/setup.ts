@@ -202,6 +202,7 @@ export function createGame(seed?: number): Engine {
     // (this pack is NOT rewired to 'fantasy' or any other table key).
     tradeGenre: 'gladiator',
     craftingGenre: 'gladiator',
+    economyGenre: 'gladiator',
   });
 
   const engine = new Engine({
