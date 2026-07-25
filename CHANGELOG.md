@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.3.1] - 2026-07-25
+
+Brand refresh, no code change. The canonical logo at
+`mcp-tool-shop-org/brand → logos/ai-rpg-engine/readme.png` was replaced with a
+refined render of the sword mark (cropped to the canonical 3:2 so the ~50
+consuming READMEs keep their `width=400` layout). Every README across this
+monorepo references that asset by absolute URL, so the new mark was already
+live on npm before this release — this bump exists to ship fresh tarballs and
+force a re-render, not to change behaviour.
+
+No source, dependency, or public-API changes. 5701 tests green.
+
 ## [3.3.0] - 2026-07-23
 
 Bind the **unique gear** too. The opt-in `@ai-rpg-engine/ledger-adapter` now
