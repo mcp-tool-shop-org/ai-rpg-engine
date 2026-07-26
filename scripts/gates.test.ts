@@ -5,6 +5,7 @@
 //   PG-2  docs-integrity DOCS-05 (version vs latest release tag)
 //   PG-3  coverage ratchet declared in vitest.config.ts
 //   PG-5  packaging gate (LICENSE/README present in every publish tarball)
+//   PG-6  docs-integrity I18N-01 (translated code spans stay in the source script)
 //
 // The scripts under test run as child processes (black boxes), exactly as CI
 // invokes them — so these tests exercise the real entry points, not internals.
@@ -146,5 +147,67 @@ describe('PG-5: packaging gate (LICENSE/README in publish tarball)', () => {
     const { status, output } = runNode([checkPackaging, `--dir=${fixtureDir}`]);
     expect(output).toContain('ok    gate-fixture-pkg');
     expect(status).toBe(0);
+  }, 120_000);
+});
+
+// ---------------------------------------------------------------------------
+// PG-6 — I18N-01 must FAIL a translated README whose inline code spans were
+// transliterated out of the source script. The real failure: README.hi.md
+// shipped `रन <पथ>` for `run <path>`, `--चेकपॉइंट` for `--checkpoint`, and
+// `@ai-rpg-इंजन/कोर` for `@ai-rpg-engine/core` — a CLI command, a flag, and an
+// npm package name that do not work when copied out of the docs.
+//
+// DOCS_INTEGRITY_I18N_ROOT points the scan at a fixture tree, so the mutation
+// needs no edit to a tracked README.
+// ---------------------------------------------------------------------------
+describe('PG-6: docs-integrity I18N-01 code-span script gate', () => {
+  let i18nDir: string;
+
+  beforeAll(() => {
+    i18nDir = mkdtempSync(join(tmpdir(), 'gate-i18n-'));
+    writeFileSync(join(i18nDir, 'README.md'), 'Run `run <path>` with `@ai-rpg-engine/core`.\n');
+    // Clean translation: prose translated, identifiers left in Latin.
+    writeFileSync(join(i18nDir, 'README.es.md'), 'Ejecuta `run <path>` con `@ai-rpg-engine/core`.\n');
+  });
+
+  afterAll(() => {
+    rmSync(i18nDir, { recursive: true, force: true });
+  });
+
+  it('passes when translated code spans keep the source script', () => {
+    const { status, output } = runNode([docsIntegrity], { DOCS_INTEGRITY_I18N_ROOT: i18nDir });
+    expect(output).toMatch(/ok {3}- no translated README transliterates a code identifier/);
+    expect(status).toBe(0);
+  }, 120_000);
+
+  it('FIRES when a translated code span is transliterated (README.hi.md reproduction)', () => {
+    writeFileSync(
+      join(i18nDir, 'README.hi.md'),
+      'शुरू करने के लिए `रन <पथ>` चलाएँ, `@ai-rpg-इंजन/कोर` के साथ।\n',
+    );
+    const { status, output } = runNode([docsIntegrity], { DOCS_INTEGRITY_I18N_ROOT: i18nDir });
+    expect(status, 'a transliterated identifier must fail the script').not.toBe(0);
+    expect(output).toMatch(/FAIL - no translated README transliterates a code identifier/);
+    // The report must name the file, the offending span, and the script — a
+    // bare count would not tell a maintainer what to fix.
+    expect(output).toContain('README.hi.md');
+    expect(output).toContain('`रन <पथ>`');
+    expect(output).toContain('Devanagari');
+  }, 120_000);
+
+  it('does not flag a non-Latin code span the SOURCE already uses', () => {
+    // The invariant is "stay in the source script", not "Latin only": a source
+    // that puts Devanagari in a code span (a string literal, a locale sample)
+    // permits it downstream instead of failing a legitimate doc.
+    const okDir = mkdtempSync(join(tmpdir(), 'gate-i18n-ok-'));
+    try {
+      writeFileSync(join(okDir, 'README.md'), 'Locale sample: `नमस्ते` and `run`.\n');
+      writeFileSync(join(okDir, 'README.hi.md'), 'लोकेल नमूना: `नमस्ते` और `run`।\n');
+      const { status, output } = runNode([docsIntegrity], { DOCS_INTEGRITY_I18N_ROOT: okDir });
+      expect(output).toMatch(/ok {3}- no translated README transliterates a code identifier/);
+      expect(status).toBe(0);
+    } finally {
+      rmSync(okDir, { recursive: true, force: true });
+    }
   }, 120_000);
 });

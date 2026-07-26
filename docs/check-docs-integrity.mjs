@@ -4,14 +4,15 @@
  * documentation and metadata files. Run with: `node docs/check-docs-integrity.mjs`
  *
  * This is a test-first regression guard for the Wave A2 docs fixes. Each block
- * proves a specific finding (DOCS-01..08, hygiene, CI). It reads only docs,
- * root markdown, package.json, .gitignore, and the site handbook tree — never
- * package source — so it stays in the docs domain.
+ * proves a specific finding (DOCS-01..08, I18N-01, hygiene, CI). It reads only
+ * docs, markdown (root + per-package READMEs and their translations),
+ * package.json, .gitignore, and the site handbook tree — never package source —
+ * so it stays in the docs domain.
  */
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import assert from 'node:assert/strict';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -244,6 +245,123 @@ check('docs/handbook and site mirror carry the same chapter set', () => {
     missingFromCanon.length,
     0,
     `chapters in the site mirror with no canonical source: ${missingFromCanon.join(', ')}`,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// I18N-01 — translated READMEs must not transliterate code identifiers
+//
+// The translation pipeline (polyglot-mcp / TranslateGemma via Ollama) protects
+// fenced code blocks but NOT inline code spans, so a target language whose
+// script differs from Latin can have its identifiers transliterated. Hindi
+// shipped `रन <पथ>` for `run <path>`, `@ai-rpg-इंजन/कोर` for
+// `@ai-rpg-engine/core`, `बिल्डकॉम्बैटस्टैक` for `buildCombatStack` — CLI
+// commands, flags, and npm package names that do not work when copied.
+//
+// The invariant, stated so it holds for every language rather than blacklisting
+// Devanagari: a code span in a translated README may only use scripts that the
+// SOURCE README's code spans already use. English code spans are Latin, so any
+// non-Latin script inside a translated code span is a transliterated identifier.
+// A source that legitimately puts a non-Latin script in a code span (a CJK
+// string literal, say) permits that same script downstream automatically.
+//
+// Scope is inline spans only. Fenced blocks are copied verbatim by the pipeline
+// and were verified clean; widening this gate to them would assert a different
+// invariant than the one this defect proved.
+// ---------------------------------------------------------------------------
+console.log('I18N-01 translated code spans stay in the source script');
+
+const INLINE_CODE_SPAN = /`([^`\n]+)`/g;
+const TRANSLATED_README = /^README\.([a-z]{2}(?:-[A-Za-z]+)?)\.md$/;
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', 'coverage', '.astro']);
+
+// Named script ranges. Latin/ASCII/punctuation/symbols are deliberately absent —
+// they are the baseline every identifier is allowed to use.
+const SCRIPTS = [
+  ['Devanagari', /[ऀ-ॿ]/],
+  ['Han', /[㐀-䶿一-鿿豈-﫿]/],
+  ['Hiragana', /[぀-ゟ]/],
+  ['Katakana', /[゠-ヿㇰ-ㇿ]/],
+  ['Hangul', /[ᄀ-ᇿ㄰-㆏가-힯]/],
+  ['Cyrillic', /[Ѐ-ӿ]/],
+  ['Greek', /[Ͱ-Ͽ]/],
+  ['Arabic', /[؀-ۿݐ-ݿ]/],
+  ['Hebrew', /[֐-׿]/],
+  ['Thai', /[฀-๿]/],
+];
+
+/** Script names appearing anywhere in the inline code spans of a markdown body. */
+const scriptsInCodeSpans = (markdown) => {
+  const found = new Set();
+  for (const [, inner] of markdown.matchAll(INLINE_CODE_SPAN)) {
+    for (const [name, re] of SCRIPTS) if (re.test(inner)) found.add(name);
+  }
+  return found;
+};
+
+/** Every directory holding a README.md, walked from `from`. */
+const readmeDirs = (from) => {
+  const dirs = [];
+  const walk = (dir) => {
+    let entries;
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      return; // unreadable directory — nothing to assert about it
+    }
+    if (entries.includes('README.md')) dirs.push(dir);
+    for (const e of entries) {
+      if (SKIP_DIRS.has(e) || e.startsWith('.')) continue;
+      const full = join(dir, e);
+      try {
+        if (statSync(full).isDirectory()) walk(full);
+      } catch {
+        /* symlink or race — skip */
+      }
+    }
+  };
+  walk(from);
+  return dirs;
+};
+
+// DOCS_INTEGRITY_I18N_ROOT redirects the scan at a fixture tree so the meta-test
+// in scripts/gates.test.ts can prove this gate FIRES without contaminating a
+// tracked README (same injection style as DOCS_INTEGRITY_LATEST_TAG above).
+const i18nRoot = process.env.DOCS_INTEGRITY_I18N_ROOT
+  ? process.env.DOCS_INTEGRITY_I18N_ROOT
+  : root;
+
+const i18nViolations = [];
+let i18nFilesScanned = 0;
+for (const dir of readmeDirs(i18nRoot)) {
+  const allowed = scriptsInCodeSpans(readFileSync(join(dir, 'README.md'), 'utf8'));
+  for (const entry of readdirSync(dir)) {
+    const lang = entry.match(TRANSLATED_README)?.[1];
+    if (!lang) continue;
+    i18nFilesScanned++;
+    const body = readFileSync(join(dir, entry), 'utf8');
+    const offenders = [];
+    for (const [whole, inner] of body.matchAll(INLINE_CODE_SPAN)) {
+      const foreign = SCRIPTS.filter(([name, re]) => re.test(inner) && !allowed.has(name)).map(
+        ([name]) => name,
+      );
+      if (foreign.length) offenders.push(`${whole} (${foreign.join('+')})`);
+    }
+    if (offenders.length) {
+      const rel = relative(i18nRoot, join(dir, entry)).replace(/\\/g, '/') || entry;
+      i18nViolations.push(
+        `${rel}: ${offenders.length} transliterated code span(s) — ${[...new Set(offenders)]
+          .slice(0, 5)
+          .join(', ')}${offenders.length > 5 ? ', …' : ''}`,
+      );
+    }
+  }
+}
+check(`no translated README transliterates a code identifier (${i18nFilesScanned} translated READMEs scanned)`, () => {
+  assert.equal(
+    i18nViolations.length,
+    0,
+    `code spans must stay in the source script — an identifier in another script is unusable when copied:\n    ${i18nViolations.join('\n    ')}`,
   );
 });
 
