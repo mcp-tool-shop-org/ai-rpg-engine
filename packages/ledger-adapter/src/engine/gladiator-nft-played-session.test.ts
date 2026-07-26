@@ -30,6 +30,7 @@ import { createGame } from '@ai-rpg-engine/starter-gladiator';
 import { EQUIPMENT_CATALOG_FORMULA, getEntityLoadout } from '@ai-rpg-engine/equipment';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
 import type { LedgerAdapterConfig, LedgerAdapterState } from '../contracts.js';
+import { buildItemNFTUri } from '../contracts.js';
 import { equipmentSnapshotFromWorld } from './equipment-snapshot.js';
 import { settleEquipmentNFTs } from '../settle/nft.js';
 import { reconcile } from '../settle/reconcile.js';
@@ -190,8 +191,12 @@ describe('ledger mode on the real gladiator world — NFT layer manifests + reco
     expect(tridentSnapshot).toMatchObject({
       itemId: TRIDENT,
       equipped: true,
-      // The chronicle is dormant on real content today (equipment-snapshot.ts's
-      // own header) — every item's relicVersion is 0, un-grown.
+      // Un-grown at the moment of acquisition. This asserted 0 back when the
+      // chronicle had no producer at all; it still asserts 0 now that
+      // starter-gladiator wires item-chronicle-core, and for a better reason:
+      // `relicVersion` reads the engine's MILESTONE count, and readying a
+      // weapon crosses no milestone. Under the old entry-count axis a bare
+      // equip would already have read 1 and advanced the URI for nothing.
       relicVersion: 0,
       relicTier: 0,
     });
@@ -241,5 +246,168 @@ describe('ledger mode on the real gladiator world — NFT layer manifests + reco
 
     const countAfterSecond = (await transport.accountNfts(deps.playerAddress)).length;
     expect(countAfterSecond).toBe(countAfterFirst);
+  });
+});
+
+/**
+ * Swing until the target drops, topping up stamina as scaffolding so attrition
+ * never gates on the resource economy — the device
+ * starter-gladiator/src/{quests,relic-played-session}.test.ts both use. The
+ * kill itself is a real `combat.entity.defeated` off the dispatcher.
+ */
+function killByAttrition(engine: GladiatorEngine, targetId: string, maxSwings = 400): void {
+  for (let i = 0; i < maxSwings; i++) {
+    if ((engine.world.entities[targetId]?.resources.hp ?? 0) <= 0) return;
+    engine.submitAction('attack', { targetIds: [targetId] });
+    const hero = engine.world.entities[engine.world.playerId];
+    if (hero) hero.resources.stamina = 20;
+  }
+  throw new Error(`${targetId} still standing after ${maxSwings} swings`);
+}
+
+describe('THE LEDGER LOOP CLOSES — relic growth from real play advances the on-ledger URI', () => {
+  // The loop the NFT unique-gear slice (v3.3.0) shipped but could not exercise.
+  // Its own P3 note recorded the gap honestly: NFTokenModify was proven LIVE on
+  // testnet and in dry-run with an INJECTED chronicle, but on real content every
+  // relicVersion was 0, because nothing populated a chronicle in world state.
+  // The producer now exists (@ai-rpg-engine/equipment's item-chronicle-core) and
+  // starter-gladiator wires it, so this is the first proof that the modify
+  // branch is reachable from a PLAYED SESSION rather than a fixture.
+  //
+  // The sequence is also the natural one: gear is minted when you receive it,
+  // and grows later because of what you do with it.
+  it('mints at acquisition, then NFTokenModify advances the URI after three real kills — same NFTokenID', async () => {
+    const engine = createGame(SEED);
+    const playerId = engine.world.playerId;
+
+    // ── Act I: receive and ready the trident, and mint it as it is today ──
+    engine.submitAction('equip');
+    const catalog = resolveCatalog(engine);
+
+    const atAcquisition = equipmentSnapshotFromWorld(engine.world, playerId, catalog);
+    expect(atAcquisition.items.find((i) => i.itemId === TRIDENT)?.relicVersion).toBe(0);
+
+    const { transport, state, deps } = await setupNFTHarness();
+    const mint = await settleEquipmentNFTs(transport, state, atAcquisition, deps);
+    expect(mint.minted).toContain(TRIDENT);
+    expect(mint.modified).toEqual([]);
+
+    const mintedId = state.nfts?.[TRIDENT]?.nftId;
+    expect(mintedId).toBeTruthy();
+    expect(state.nfts?.[TRIDENT]?.uri).toBe(buildItemNFTUri(GAME_ID, TRIDENT, 0, 0));
+
+    // ── Act II: earn a reputation with it, through real combat ──
+    engine.submitAction('move', { targetIds: ['armory'] });
+    engine.submitAction('move', { targetIds: ['patron-gallery'] });
+    engine.submitAction('move', { targetIds: ['arena-floor'] });
+    killByAttrition(engine, 'war-beast');
+    killByAttrition(engine, 'arena-champion');
+    killByAttrition(engine, 'arena-overlord');
+
+    // The engine, not this test, decided the trident grew: three real
+    // `used-in-kill` entries crossed DEFAULT_WEAPON_MILESTONES' kill-count 3.
+    const afterArena = equipmentSnapshotFromWorld(engine.world, playerId, catalog);
+    const grown = afterArena.items.find((i) => i.itemId === TRIDENT);
+    expect(grown?.relicVersion).toBe(1);
+    expect(grown?.relicTier).toBe(1);
+
+    // ── Act III: the growth reaches the ledger as a MODIFY, not a re-mint ──
+    const growth = await settleEquipmentNFTs(transport, state, afterArena, deps);
+    expect(growth.modified).toContain(TRIDENT);
+    expect(growth.minted).toEqual([]); // identity preserved, nothing re-issued
+
+    // Same token, advanced metadata — the whole point of XLS-46 tfMutable.
+    expect(state.nfts?.[TRIDENT]?.nftId).toBe(mintedId);
+    expect(state.nfts?.[TRIDENT]?.uri).toBe(buildItemNFTUri(GAME_ID, TRIDENT, 1, 1));
+
+    // And the ledger itself agrees — read back through account_nfts, not state.
+    const onLedger = await transport.accountNfts(deps.playerAddress);
+    const token = onLedger.find((n) => n.nftId === mintedId);
+    expect(token?.uri).toBe(buildItemNFTUri(GAME_ID, TRIDENT, 1, 1));
+  });
+
+  it('the external verifier confirms the grown URI against account_nfts', async () => {
+    const engine = createGame(SEED);
+    const playerId = engine.world.playerId;
+    engine.submitAction('equip');
+    const catalog = resolveCatalog(engine);
+
+    const { transport, state, deps } = await setupNFTHarness();
+    await settleEquipmentNFTs(transport, state, equipmentSnapshotFromWorld(engine.world, playerId, catalog), deps);
+
+    engine.submitAction('move', { targetIds: ['armory'] });
+    engine.submitAction('move', { targetIds: ['patron-gallery'] });
+    engine.submitAction('move', { targetIds: ['arena-floor'] });
+    killByAttrition(engine, 'war-beast');
+    killByAttrition(engine, 'arena-champion');
+    killByAttrition(engine, 'arena-overlord');
+
+    await settleEquipmentNFTs(transport, state, equipmentSnapshotFromWorld(engine.world, playerId, catalog), deps);
+
+    // reconcile() predicts the URI from the engine's relicVersion and matches it
+    // against what the ledger reports. Passing here means the on-chain metadata
+    // and the played session agree about how far the trident has come — the
+    // check that was structurally unreachable while relicVersion was always 0.
+    const report = reconcile({
+      runId: 'gladiator-relic-growth-run',
+      seed: SEED,
+      mintedInitial: {},
+      ledgerBalances: {},
+      lastSettled: {},
+      settlements: [],
+      pending: [],
+      playerAddress: deps.playerAddress,
+      issuerAddress: deps.issuerAddress,
+      nfts: Object.values(state.nfts ?? {}),
+      ledgerNfts: await buildLedgerNfts(transport, deps.playerAddress),
+    });
+
+    const check = report.nftChecks?.find((c) => c.gameItemId === TRIDENT);
+    expect(check?.expectedUri).toBe(buildItemNFTUri(GAME_ID, TRIDENT, 1, 1));
+    expect(check?.uriOk).toBe(true);
+    expect(check?.ownedOnLedger).toBe(true);
+    expect(report.passed).toBe(true);
+  });
+
+  it('THE FIREWALL STILL HOLDS — the whole loop leaves the world byte-identical', async () => {
+    // The load-bearing guard, re-run with the chronicle live and a modify in the
+    // mix. Two engines play the SAME arena script; only engineA additionally
+    // runs the entire outside-the-engine mint -> grow -> modify -> reconcile
+    // flow against it. If the adapter has touched the world in any way — and it
+    // now reads a second namespace to find the growth summary — these diverge.
+    const script = (engine: GladiatorEngine) => {
+      engine.submitAction('equip');
+      engine.submitAction('move', { targetIds: ['armory'] });
+      engine.submitAction('move', { targetIds: ['patron-gallery'] });
+      engine.submitAction('move', { targetIds: ['arena-floor'] });
+      killByAttrition(engine, 'war-beast');
+      killByAttrition(engine, 'arena-champion');
+      killByAttrition(engine, 'arena-overlord');
+    };
+
+    const engineA = createGame(SEED);
+    const engineB = createGame(SEED);
+    script(engineA);
+    script(engineB);
+
+    const catalog = resolveCatalog(engineA);
+    const { transport, state, deps } = await setupNFTHarness();
+    const snapshot = equipmentSnapshotFromWorld(engineA.world, engineA.world.playerId, catalog);
+    await settleEquipmentNFTs(transport, state, snapshot, deps);
+    reconcile({
+      runId: 'gladiator-firewall-run',
+      seed: SEED,
+      mintedInitial: {},
+      ledgerBalances: {},
+      lastSettled: {},
+      settlements: [],
+      pending: [],
+      playerAddress: deps.playerAddress,
+      issuerAddress: deps.issuerAddress,
+      nfts: Object.values(state.nfts ?? {}),
+      ledgerNfts: await buildLedgerNfts(transport, deps.playerAddress),
+    });
+
+    expect(engineA.serialize()).toBe(engineB.serialize());
   });
 });

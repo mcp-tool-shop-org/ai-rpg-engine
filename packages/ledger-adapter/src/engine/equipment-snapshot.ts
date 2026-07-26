@@ -13,15 +13,40 @@
 // even installed at runtime; see firewall.test.ts for the analogous proof on
 // the fungible side.
 //
-// THE CHRONICLE IS DORMANT (P3 reality): nothing in a running game's world
-// state populates an item chronicle today — packages/modules/src/world-tick.ts
-// documents this directly ("item-recognition's chronicle never reaches the
-// world eventLog"). `chronicle` is therefore an OPTIONAL input, defaulting to
-// empty: on real content today every item's `relicVersion` is 0 (no growth).
-// Tests inject a chronicle to exercise the growth path. This module never
-// reads a chronicle off `world` itself (there is none to read there yet), and
-// never wires one into the engine — that would be a game feature, out of
-// scope for the adapter, which must never touch the tick.
+// THE CHRONICLE IS LIVE (was dormant through v3.3): `@ai-rpg-engine/equipment`'s
+// item-chronicle-core is now `recordItemEvent`'s first production caller, and
+// starter-gladiator wires it, so a played session DOES leave an item chronicle
+// in world state. `relicVersion` is therefore no longer pinned at 0 on real
+// content and `settleEquipmentNFTs` can reach its NFTokenModify branch from
+// real play. `chronicle` stays an OPTIONAL argument: a caller that omits it
+// gets the pre-chronicle behavior byte-for-byte, and this module still never
+// wires anything into the engine — populating the chronicle is a game feature
+// that lives in the engine, and the adapter still never touches the tick.
+//
+// ── WHICH NUMBER IS `relicVersion` (the tier-agreement fix) ────────────────
+// Two candidate axes existed, and they disagree:
+//   - the raw chronicle ENTRY COUNT, which this file used to compute; and
+//   - the MILESTONE count, which item-chronicle-core persists.
+// Entry count is the wrong one. `acquired` is an entry, so picking gear up
+// would advance an NFT's URI — churn, not growth — and XLS-46 NFTokenModify
+// exists to record that an asset's state actually evolved. Worse, the two
+// axes band into DIFFERENT tiers (entry count 3-5 -> tier 1 here, versus
+// evaluateRelicGrowth's >=1 milestone -> tier 1), so an item with five
+// pickups and no milestones read as tier 0 in game and tier 1 on-chain — and
+// the URI encodes the on-chain one, permanently.
+//
+// So this module now PREFERS the engine-computed summary that
+// item-chronicle-core persists at `world.modules['item-chronicle'].summaries`,
+// reading `milestoneCount` and `tier` as PLAIN DATA off a namespace — exactly
+// how it already reads `loadouts`, via a locally-declared shape and a
+// duplicated string key, with no runtime import. chronicle-core.ts's own
+// ItemRelicSummary doc comment describes this as its reason for existing. The
+// engine computes; the adapter reads. Neither can drift from the other because
+// there is only one computation.
+//
+// Fallback is preserved: with no summary namespace (a hand-built chronicle, a
+// world from before the producer existed), the entry-count banding below still
+// applies, so every pre-existing caller and test is unaffected.
 
 import type { WorldState } from '@ai-rpg-engine/core';
 import type { ItemCatalog, ItemChronicleEntry, ItemDefinition, Loadout } from '@ai-rpg-engine/equipment';
@@ -41,6 +66,37 @@ const EQUIPMENT_MODULE_KEY = 'equipment-core';
  * (not imported) for the same zero-runtime-coupling reason as the key above.
  */
 type EquipmentModuleStateShape = { loadouts?: Record<string, Loadout> };
+
+/**
+ * The `world.modules` namespace key item-chronicle-core persists under (that
+ * module's own `ITEM_CHRONICLE_STATE_KEY`). Duplicated as a literal for the
+ * same zero-runtime-coupling reason as {@link EQUIPMENT_MODULE_KEY}.
+ */
+const ITEM_CHRONICLE_MODULE_KEY = 'item-chronicle';
+
+/**
+ * The engine-computed growth summary, declared locally rather than imported —
+ * structurally the subset of chronicle-core.ts's `ItemRelicSummary` this file
+ * needs. `milestoneCount` is the meaningful-growth axis; `tier` is
+ * `evaluateRelicGrowth`'s own banding, so trusting it is what keeps the
+ * on-chain tier and the in-game tier identical by construction.
+ */
+type RelicSummaryShape = { milestoneCount?: number; tier?: number };
+
+/** The persisted shape at `world.modules[ITEM_CHRONICLE_MODULE_KEY]`. */
+type ItemChronicleStateShape = { summaries?: Record<string, RelicSummaryShape> };
+
+/**
+ * Read-only lookup of one item's engine-computed relic summary. Every level is
+ * guarded: a world with no chronicle module, no `summaries` map, or no entry
+ * for this item resolves to `undefined`, and the caller falls back to the
+ * entry-count banding.
+ */
+function readRelicSummary(world: WorldState, itemId: string): RelicSummaryShape | undefined {
+  const moduleState = world.modules[ITEM_CHRONICLE_MODULE_KEY] as ItemChronicleStateShape | undefined;
+  const summary = moduleState?.summaries?.[itemId];
+  return summary && typeof summary === 'object' ? summary : undefined;
+}
 
 /**
  * Read-only lookup of `playerId`'s persisted Loadout off the live world.
@@ -150,14 +206,27 @@ export function equipmentSnapshotFromWorld(
     const item = byId.get(itemId);
     if (!item) continue; // not in the catalog -> not unique gear, skip
 
-    const relicVersion = chronicle?.[itemId]?.length ?? 0;
+    // Prefer the engine's own computation when the producer has persisted one
+    // (see this file's header): `milestoneCount` is the growth axis, and its
+    // `tier` is evaluateRelicGrowth's banding, so in-game and on-chain tiers
+    // cannot disagree. Absent a summary, fall back to the entry-count banding
+    // this module used before the chronicle had a producer.
+    const summary = readRelicSummary(world, itemId);
+    const hasSummary = typeof summary?.milestoneCount === 'number';
+    const relicVersion = hasSummary
+      ? (summary!.milestoneCount as number)
+      : (chronicle?.[itemId]?.length ?? 0);
+    const relicTier = typeof summary?.tier === 'number'
+      ? summary.tier
+      : relicTierFromVersion(relicVersion);
+
     snapshotItems.push({
       itemId: item.id,
       name: item.name,
       slot: item.slot,
       rarity: item.rarity,
       equipped: equippedIds.has(itemId),
-      relicTier: relicTierFromVersion(relicVersion),
+      relicTier,
       relicVersion,
     });
   }
