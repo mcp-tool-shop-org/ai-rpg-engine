@@ -44,6 +44,83 @@ function rule(pal: Palette): string {
 }
 
 /**
+ * equipment/chronicle-core.ts's persisted namespace key, duplicated as a
+ * literal ON PURPOSE.
+ *
+ * This package depends on core/presentation/audio-director/soundpack-core and
+ * NOT on @ai-rpg-engine/equipment, and adding that dependency to render a
+ * name would be a real coupling bought for a cosmetic gain. The ledger
+ * adapter's equipment-snapshot.ts already set this precedent for the sibling
+ * 'equipment-core' namespace: duplicate the key, declare the shape you read
+ * locally, treat the namespace as plain data. The chronicle module persists a
+ * precomputed summary specifically so consumers can do this without ever
+ * calling evaluateRelicGrowth.
+ *
+ * Reading is tolerant and non-attaching: a world with no chronicle (any pack
+ * that has not wired the module) yields nothing and the HUD renders exactly
+ * as it did before.
+ */
+const ITEM_CHRONICLE_NAMESPACE = 'item-chronicle';
+
+/**
+ * equipment-core.ts's EQUIPMENT_STATE_KEY, duplicated for the same reason as
+ * the key above. The ledger adapter's equipment-snapshot.ts duplicates this
+ * exact literal and declares `{ loadouts?: Record<string, Loadout> }` locally
+ * rather than importing the package — same trade, same call.
+ */
+const EQUIPMENT_NAMESPACE = 'equipment-core';
+
+/**
+ * What the player currently has in their slots, as `[slot, itemId]` pairs in
+ * a stable slot order. Empty when equipment-core is not wired or this entity
+ * has never equipped anything.
+ *
+ * This exists because growth is invisible without it: equipping MOVES an item
+ * out of `entity.inventory` and into the persisted loadout, so a weapon that
+ * earns its name by being wielded is precisely the item the old `Items:` line
+ * could never show. Surfacing the chronicle without surfacing slots would put
+ * epithets only on gear sitting unused in a pack.
+ */
+function equippedPairs(world: WorldState, entityId: string): Array<[string, string]> {
+  const ns = world.modules[EQUIPMENT_NAMESPACE];
+  if (!ns || typeof ns !== 'object' || Array.isArray(ns)) return [];
+  const loadouts = (ns as { loadouts?: unknown }).loadouts;
+  if (!loadouts || typeof loadouts !== 'object') return [];
+
+  const loadout = (loadouts as Record<string, unknown>)[entityId];
+  if (!loadout || typeof loadout !== 'object') return [];
+  const equipped = (loadout as { equipped?: unknown }).equipped;
+  if (!equipped || typeof equipped !== 'object') return [];
+
+  return Object.entries(equipped as Record<string, unknown>)
+    .filter((pair): pair is [string, string] => typeof pair[1] === 'string' && pair[1].length > 0)
+    .sort(([a], [b]) => a.localeCompare(b));
+}
+
+/**
+ * Earned relic names by item id — `{}` when the chronicle is absent,
+ * malformed, or the item has not grown. Only entries carrying a real epithet
+ * are returned: an item at tier 0 has become nothing yet, and echoing its
+ * plain catalog name here would just be a second spelling of the id.
+ */
+function relicDisplayNames(world: WorldState): Record<string, string> {
+  const ns = world.modules[ITEM_CHRONICLE_NAMESPACE];
+  if (!ns || typeof ns !== 'object' || Array.isArray(ns)) return {};
+  const summaries = (ns as { summaries?: unknown }).summaries;
+  if (!summaries || typeof summaries !== 'object' || Array.isArray(summaries)) return {};
+
+  const names: Record<string, string> = {};
+  for (const [itemId, summary] of Object.entries(summaries as Record<string, unknown>)) {
+    if (!summary || typeof summary !== 'object') continue;
+    const { epithet, displayName } = summary as { epithet?: unknown; displayName?: unknown };
+    if (typeof epithet === 'string' && epithet.length > 0 && typeof displayName === 'string') {
+      names[itemId] = displayName;
+    }
+  }
+  return names;
+}
+
+/**
  * A labeled section rule: `── Label ───────…` padded to SCREEN_WIDTH visible
  * characters. The label is bold, the rule dim — the label carries the
  * information; the weight difference is only emphasis.
@@ -161,9 +238,9 @@ function entityLine(entity: EntityState, pal: Palette): string {
   const name = `${ENTITY_ICONS[kind]} ${entity.name}`;
   const paintedName =
     kind === 'enemy' ? pal.red(name)
-    : kind === 'ally' ? pal.green(name)
-    : kind === 'npc' ? pal.cyan(name)
-    : name;
+      : kind === 'ally' ? pal.green(name)
+        : kind === 'npc' ? pal.cyan(name)
+          : name;
   const line = `  ${defeated ? pal.dim(name) : paintedName}${parts.map(p => ` ${pal.dim('·')} ${defeated ? pal.dim(p) : p}`).join('')}`;
   return line;
 }
@@ -237,7 +314,21 @@ export function renderScene(world: WorldState, opts?: RenderOptions): string {
       hud.push(`  Status: ${player.statuses.map(s => humanizeStateId(s.statusId)).join(', ')}`);
     }
     if (player.inventory && player.inventory.length > 0) {
-      hud.push(`  Items: ${player.inventory.join(', ')}`);
+      // An item that has earned a name is shown under it. Everything else
+      // keeps the raw id this line has always printed — no catalog is
+      // reachable from here, so an ungrown item has no better name to offer.
+      const relicNames = relicDisplayNames(world);
+      hud.push(`  Items: ${player.inventory.map(id => relicNames[id] ?? id).join(', ')}`);
+    }
+    // Gated on there being something in a slot, so a pack that never wires
+    // equipment-core — or a player who has equipped nothing — renders the
+    // HUD exactly as before rather than gaining an empty label.
+    const equipped = equippedPairs(world, player.id);
+    if (equipped.length > 0) {
+      const relicNames = relicDisplayNames(world);
+      hud.push(
+        `  Equipped: ${equipped.map(([slot, id]) => `${slot}: ${relicNames[id] ?? id}`).join(', ')}`,
+      );
     }
     lines.push('');
     lines.push(sectionRule('Status', pal));
@@ -625,8 +716,8 @@ export function formatEventLine(event: ResolvedEvent): string | null {
       const parts: string[] = [`> You look around ${p.zoneName ?? 'the area'}.`];
       const entities = Array.isArray(p.entities)
         ? (p.entities as Array<{ id?: string; name?: string }>).filter(
-            e => typeof e?.name === 'string' && e.name.length > 0 && e.id !== event.actorId,
-          )
+          e => typeof e?.name === 'string' && e.name.length > 0 && e.id !== event.actorId,
+        )
         : [];
       if (entities.length > 0) {
         parts.push(`You see: ${entities.map(e => e.name).join(', ')}.`);

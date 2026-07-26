@@ -28,10 +28,13 @@
 // createEquipmentCore (previously only starter-gladiator did, with the other
 // 9 gating off to "no catalog available") — rule 1 above still governs the
 // section, it just no longer has a pack left to silently skip for that
-// specific reason. The Chronicle: trailer still never renders, because
-// recordItemEvent (item-chronicle.ts) has zero production callers anywhere
-// in the engine — authored provenance (origin/faction/flags/lore) is real,
-// kill/recognition counts are not, until something actually calls it.
+// specific reason. The Chronicle: trailer now RENDERS for any pack that
+// wires createItemChronicleCore (equipment/chronicle-core.ts): that module
+// is recordItemEvent's first production caller, so kill/recognition counts
+// are real state read out of world.modules['item-chronicle'], not an
+// invented []. Packs that do not wire it read back an empty chronicle and
+// the trailer stays absent exactly as before — the honest ceiling moved from
+// "nothing can ever populate this" to "this pack chose not to".
 
 import type { Engine, WorldState, ScalarValue } from '@ai-rpg-engine/core';
 import {
@@ -96,6 +99,8 @@ import {
   EQUIPMENT_CATALOG_FORMULA,
   getItemProvenance,
   formatProvenanceForDirector,
+  getItemChronicle,
+  getRelicSummary,
   type ItemCatalog,
   type ItemDefinition,
 } from '@ai-rpg-engine/equipment';
@@ -453,19 +458,33 @@ export function renderDirectorLedger(engine: Pick<Engine, 'world' | 'formulas'>)
         ].sort();
 
         const entries: string[] = [];
+        const chronicle = getItemChronicle(world);
         for (const itemId of itemIds) {
           const item = catalog.find((i) => i.id === itemId);
+          if (!item) continue;
+          const history = chronicle[itemId] ?? [];
           // Gate per-item, not per-loadout: an entity can carry ordinary
           // gear alongside provenance-bearing relics, and only the latter
           // earns a line — mirrors MATERIALS' "is there anything real to
-          // show" gate style.
-          if (!item || !getItemProvenance(item)) continue;
-          // No chronicle argument: recordItemEvent (item-chronicle.ts) has
-          // zero production callers anywhere in the engine, so passing one
-          // here would always be an invented []. formatProvenanceForDirector
-          // already treats an omitted chronicle as "no Chronicle: line" —
-          // the honest ceiling until something actually calls it.
-          entries.push(formatProvenanceForDirector(item));
+          // show" gate style. A chronicled item now qualifies on its OWN
+          // merit: an unremarkable blade that has taken twenty lives is
+          // exactly what a GM needs to see, and gating on authored
+          // provenance alone would hide the item this cycle exists to make
+          // legible.
+          if (!getItemProvenance(item) && history.length === 0) continue;
+
+          // The chronicle is passed for real now — this is the argument the
+          // header used to record as permanently absent.
+          const lines = [formatProvenanceForDirector(item, history)];
+
+          // What the item has BECOME, above what it has done. The summary is
+          // the engine's own computation (chronicle-core persists it), so the
+          // Director and the HUD cannot disagree about an item's tier.
+          const summary = getRelicSummary(world, itemId);
+          if (summary?.epithet) {
+            lines.push(`  Relic: ${summary.epithet} — tier ${summary.tier}, ${summary.milestoneCount} milestone${summary.milestoneCount === 1 ? '' : 's'}`);
+          }
+          entries.push(lines.join('\n'));
         }
         if (entries.length === 0) return null;
 

@@ -79,3 +79,22 @@ export type {
   EquipmentStatusOps,
   EquipmentStatusDefinition,
 } from './equipment-core.js';
+
+// Chronicle write side: the opt-in EngineModule that populates an item's
+// chronicle from real play, so relic growth manifests during a session
+// instead of only under test fixtures.
+export {
+  createItemChronicleCore,
+  getItemChronicle,
+  getRelicSummaries,
+  getRelicSummary,
+  getItemDisplayName,
+  refreshRelicSummaries,
+  ITEM_CHRONICLE_STATE_KEY,
+} from './chronicle-core.js';
+export type {
+  ItemChronicleCoreConfig,
+  ItemChronicleModuleState,
+  ItemRecognitionOps,
+  ItemRelicSummary,
+} from './chronicle-core.js';
