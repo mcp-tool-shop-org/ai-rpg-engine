@@ -554,14 +554,21 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
       expect(report).toContain('Trident & Net (weapon, uncommon)');
       expect(report).toContain('  Origin: Arena armory');
       expect(report).toContain('  Lore: Favored by fighters who prefer cunning to brawn');
-      // The honest ceiling: recordItemEvent has zero production callers, so
-      // no Chronicle line was ever passed and none renders.
-      // starter-gladiator wires equipment-core but NOT
-      // createItemChronicleCore, so getItemChronicle reads back {} and the
-      // trailer stays absent. This asserts a PACK's choice now, not an
-      // engine-wide dormancy — the chronicle-wired proof directly below is
-      // the other half of the pair.
-      expect(report).not.toContain('Chronicle:');
+      // The Chronicle trailer renders from the SHIPPED pack now. This
+      // assertion was `not.toContain('Chronicle:')` for as long as no pack
+      // wired the producer — first because `recordItemEvent` had zero
+      // production callers at all, then because starter-gladiator had not yet
+      // opted in. P3 of the relic-chronicle cycle wired it (setup.ts's
+      // createItemChronicleCore), so equipping the trident records `acquired`
+      // and the trailer that this file's header once called permanently absent
+      // now appears on a real engine playing a real verb.
+      //
+      // No Relic line yet: one `acquired` event crosses no milestone, so
+      // `summary.epithet` is undefined and the line is correctly withheld. The
+      // played-session proof in starter-gladiator earns the epithet over three
+      // real kills; here the point is only that the trailer is reachable.
+      expect(report).toContain('Chronicle:');
+      expect(report).not.toContain('Relic:');
     });
 
     it('renders Chronicle + Relic lines once a pack wires the chronicle module', () => {

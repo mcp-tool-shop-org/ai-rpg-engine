@@ -216,9 +216,24 @@ function findItem(catalog: ItemCatalog, itemId: string): ItemDefinition | undefi
  */
 function buildKillDetail(defeatedName: string, defeated: EntityState | undefined): string {
     const parts = [`Slew ${defeatedName}`];
-    if (defeated?.tags?.includes('boss')) parts.push('— a boss');
+    if (isBoss(defeated)) parts.push('— a boss');
     if (defeated?.faction) parts.push(`— faction ${defeated.faction}`);
     return parts.join(' ');
+}
+
+/**
+ * Is this a boss, by the convention SHIPPED CONTENT actually uses?
+ *
+ * Every one of the ten starter packs tags its boss `role:boss` — never a bare
+ * `boss` (grep `tags: \[.*boss` across packages/starter-*: ten hits, all
+ * `role:boss`). An `Array.includes('boss')` check is exact membership, so it
+ * matches none of them, and the `boss-kill` trigger stayed unreachable on real
+ * content even after the detail-literal convention was enforced. Accepting the
+ * `role:` prefix is what actually lights it up. The bare form is still honored
+ * for hand-built worlds and fixtures that predate the convention.
+ */
+function isBoss(defeated: EntityState | undefined): boolean {
+    return (defeated?.tags ?? []).some((t) => t === 'boss' || t === 'role:boss');
 }
 
 /** Recompute one item's growth summary from its full chronicle. */
@@ -452,10 +467,27 @@ export function createItemChronicleCore(config: ItemChronicleCoreConfig): Engine
 /**
  * Who noticed what the wearer is carrying, this equip.
  *
- * Scoped to NPCs sharing the wearer's zone who have a faction — recognition
- * is a faction/provenance reaction, so a factionless bystander has nothing to
- * recognize with. Iteration follows `world.entities` insertion order, which is
- * deterministic across same-seed runs.
+ * Scoped to OTHER entities sharing the wearer's zone. Iteration follows
+ * `world.entities` insertion order, which is deterministic across same-seed
+ * runs.
+ *
+ * NOT gated on the onlooker having a faction — and that distinction is the
+ * whole difference between this trigger working and not. `EntityState.faction`
+ * is optional and **no entity in any of the ten shipped starter packs sets it**
+ * (grep `^\s*faction: '` across packages/starter-*: zero hits). An earlier
+ * `if (!npc.faction) continue` guard therefore made `recognized` unreachable on
+ * every shipped pack — and with it `recognition-count`, and with THAT armor
+ * growth entirely, since DEFAULT_ARMOR_MILESTONES is only age +
+ * recognition-count.
+ *
+ * The guard was also unnecessary on its own terms: `evaluateItemRecognition`
+ * types `npcFactionId` as `string | undefined` and only consults it on the
+ * faction-match path. Its flag-based path (stolen / cursed / trophy / heirloom /
+ * blessed) and its notoriety path both fire with no faction at all — and
+ * shipped content does carry those flags (gladiator's `iron-manacles` is
+ * `flags: ['trophy']`, `patron-token` is `factionId: 'patron-circle'` +
+ * `heirloom`). Passing `undefined` straight through is what the signature asks
+ * for.
  *
  * At most ONE entry per item per equip, no matter how many onlookers react:
  * `recognition-count` milestones sit at 3 and 8, and letting a crowded room
@@ -493,7 +525,7 @@ function collectRecognitions(
     const pending: PendingEntry[] = [];
 
     for (const npc of Object.values(world.entities)) {
-        if (npc.id === holder.id || !npc.faction || npc.zoneId !== holder.zoneId) continue;
+        if (npc.id === holder.id || npc.zoneId !== holder.zoneId) continue;
 
         for (const result of ops.evaluate(equippedItems, npc.faction, chronicle, tick, world.meta.seed)) {
             if (seen.has(result.itemId)) continue;

@@ -371,15 +371,40 @@ describe('chronicle-core — recognition', () => {
         expect(history.filter((e) => e.event === 'recognized')).toHaveLength(0);
     });
 
-    it('ignores NPCs in another zone and factionless bystanders', () => {
+    it('ignores NPCs in another zone', () => {
         const engine = makeEngine({ chronicle: true, recognition: true });
         engine.store.addZone({ id: 'gate', roomId: 'gate', name: 'Gate', tags: [], neighbors: [] });
         addFoe(engine, 'elsewhere', 'Distant Warden', { faction: 'iron-wardens', zoneId: 'gate' });
-        addFoe(engine, 'nobody', 'Drunk'); // no faction, same zone
         engine.submitAction('equip', { parameters: { itemId: 'warden-mail' } });
 
         const history = getItemHistory(getItemChronicle(engine.world), 'warden-mail');
         expect(history.filter((e) => e.event === 'recognized')).toHaveLength(0);
+    });
+
+    it('a FACTIONLESS bystander in the room still recognizes flagged provenance', () => {
+        // The regression guard for the defect the played-session proof caught
+        // (starter-gladiator/src/relic-played-session.test.ts). This assertion
+        // was previously inverted — bundled into the zone test above as "…and
+        // factionless bystanders", pinning a `!npc.faction` skip as correct.
+        //
+        // It was not correct, and the cost was total: NO entity in ANY of the
+        // ten shipped starter packs sets `EntityState.faction`, so that skip
+        // made `recognized` unreachable on every shipped pack, and with it
+        // `recognition-count`, and with THAT all armor growth (armor's default
+        // milestones are age + recognition-count and nothing else).
+        //
+        // `evaluateItemRecognition` never required a faction: it types
+        // `npcFactionId` as `string | undefined` and consults it only on the
+        // faction-match path. `warden-mail` is `flags: ['stolen']`, and the
+        // flag path fires for any onlooker at all.
+        const engine = makeEngine({ chronicle: true, recognition: true });
+        addFoe(engine, 'nobody', 'Drunk'); // no faction, same zone
+        engine.submitAction('equip', { parameters: { itemId: 'warden-mail' } });
+
+        const history = getItemHistory(getItemChronicle(engine.world), 'warden-mail');
+        const recognized = history.filter((e) => e.event === 'recognized');
+        expect(recognized).toHaveLength(1);
+        expect(recognized[0]!.detail).toContain('Drunk');
     });
 
     it('records at most one recognition per item per equip, however big the crowd', () => {

@@ -613,6 +613,12 @@ const EXPECTED: Record<string, string[]> = {
     'quest-core',
     'boss-phase:arena-overlord',
     'equipment-core',
+    // item-chronicle-core: gladiator is the FIRST (and so far only) pack to
+    // wire the relic-growth producer — the arena is where a weapon earns its
+    // reputation. Every other pack's list is unchanged, which is the point of
+    // an opt-in module: the nine that do not wire it register exactly what they
+    // registered before it existed.
+    'item-chronicle-core',
     ...ABILITY_SUFFIX,
   ],
   pirate: [
@@ -686,7 +692,7 @@ describe('world-stack refactor — per-starter module registration pins', () => 
     },
   );
 
-  it('gladiator: the module SET is the pre-refactor set plus world-tick/economy-core/trade-core/companion-core/npc-agency/player-leverage/crafting-core/opportunity-core (order swap + P8-SP-003 + F-d0b5edb5/F-6c3e4fde + F-7d5c3e28 + F-v3-npc-agency + F-6631dd57 + F-677e94ad/F-ceed887f are the only deltas)', () => {
+  it('gladiator: the module SET is the pre-refactor set plus world-tick/economy-core/trade-core/companion-core/npc-agency/player-leverage/crafting-core/opportunity-core/item-chronicle-core (order swap + P8-SP-003 + F-d0b5edb5/F-6c3e4fde + F-7d5c3e28 + F-v3-npc-agency + F-6631dd57 + F-677e94ad/F-ceed887f + relic-chronicle-P3 are the only deltas)', () => {
     // The literal pre-refactor gladiator order, boss-phase before
     // encounter-spawn — carried verbatim so the set-equality claim is
     // auditable against the captured baseline, not derived from EXPECTED.
@@ -697,7 +703,8 @@ describe('world-stack refactor — per-starter module registration pins', () => 
     // write-wire; F-v3-npc-agency's named-NPC agency write-wire;
     // F-6631dd57's salvage/craft/repair/modify write-wire; F-677e94ad's
     // leverage-verb write-wire; F-ceed887f/F-f3f2a84c's opportunity
-    // spawn+resolution write-wire), asserted explicitly on top.
+    // spawn+resolution write-wire; the relic-chronicle cycle's P3 wiring of
+    // item-chronicle-core, gladiator-only), asserted explicitly on top.
     const preRefactorOrder = [
       ...COMBAT_PREFIX('combat-resources-gladiator'),
       ...CONTENT_MID,
@@ -709,7 +716,7 @@ describe('world-stack refactor — per-starter module registration pins', () => 
     ];
     const ids = registeredIds(createGladiatorGame(42));
     expect([...ids].sort()).toEqual(
-      [...preRefactorOrder, 'world-tick', 'economy-core', 'trade-core', 'companion-core', 'npc-agency', 'player-leverage', 'crafting-core', 'opportunity-core', 'quest-core'].sort(),
+      [...preRefactorOrder, 'world-tick', 'economy-core', 'trade-core', 'companion-core', 'npc-agency', 'player-leverage', 'crafting-core', 'opportunity-core', 'quest-core', 'item-chronicle-core'].sort(),
     );
   });
 

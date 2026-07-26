@@ -20,8 +20,9 @@ import {
   buildCombatStack,
   buildWorldStack,
   aggressiveProfile,
+  evaluateItemRecognition,
 } from '@ai-rpg-engine/modules';
-import { createEquipmentCore } from '@ai-rpg-engine/equipment';
+import { createEquipmentCore, createItemChronicleCore } from '@ai-rpg-engine/equipment';
 import * as engineModules from '@ai-rpg-engine/modules';
 import type { PresentationRule, CombatResourceProfile, IntentProfile } from '@ai-rpg-engine/modules';
 import {
@@ -236,6 +237,24 @@ export function createGame(seed?: number): Engine {
           apply: applyStatus,
           remove: removeStatus,
         },
+      }),
+      // Gear grows a name as it is used. The equipment package shipped relic
+      // growth (evaluateRelicGrowth -> tier + epithet) in v3.3, but nothing
+      // populated an item-chronicle in world state, so it never fired during
+      // play. This is the producer, and iron-colosseum is the FIRST shipped
+      // pack to wire it — the arena is where a weapon earns its reputation, so
+      // the retiarius trident crossing kill-count 3 into "Bloodied Trident &
+      // Net" is the pack this feature is for.
+      //
+      // OPT-IN by construction: the module registers no namespace default, so
+      // a world where nothing is ever chronicled never materializes
+      // world.modules['item-chronicle'] at all. `recognition` is injected
+      // rather than imported because @ai-rpg-engine/equipment carries no
+      // runtime dependency on @ai-rpg-engine/modules — the same seam
+      // createEquipmentCore already uses for its status ops, one line up.
+      createItemChronicleCore({
+        catalog: itemCatalog,
+        recognition: { evaluate: evaluateItemRecognition },
       }),
       createAbilityCore({ abilities: gladiatorAbilities, statMapping: { power: 'might', precision: 'agility', focus: 'showmanship' } }),
       createAbilityEffects(),
