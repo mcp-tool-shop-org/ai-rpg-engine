@@ -5,6 +5,84 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.5.0] - 2026-07-26
+
+**Salt Road Ledger** — the eleventh starter, and the first authored backwards from a
+system rather than a genre. `@ai-rpg-engine/starter-merchant` exists because the ledger
+adapter had accumulated capabilities no shipped pack was shaped to use: escrow was
+plumbing, unique gear was a sword with a receipt, and `reconcile()` was something a test
+called. This pack makes them the game. You play a factor — an agent trading on someone
+else's capital — and every mechanic is a variation on the gap between what you have
+promised and what you have delivered.
+
+Released together with the [3.4.0] entry below, which was prepared but never tagged.
+
+### Added
+
+- **`@ai-rpg-engine/starter-merchant`** — 8 zones across 4 districts, 4 NPCs, 3 hostiles,
+  a boss that is a reckoning rather than a creature, 3 quests, and an item catalog split
+  into fungible trade goods and five unique instruments. **7/7 on the pack rubric**,
+  scored against the live catalog.
+- **Five commerce verbs** (`appraise` / `haggle` / `consign` / `underwrite` / `audit`) over
+  a pack-local `contract-core` module: obligations with due ticks, lien accrual, and
+  deterministic seizure. `consign` is the only verb in the catalog whose offline semantics
+  match a settlement primitive one-to-one — value held by a third party, released at a
+  future tick, refunded on default.
+- **`mercantile` genre** added to `PackGenre`, plus `merchant` entries in
+  `GENRE_BUYABLE_STOCK`, `GENRE_SUPPLY_DEFAULTS`, and `GENRE_RECIPES`. Deliberately the
+  flattest supply profile in the set: a merchant pack's pressure is timing and obligation,
+  not scarcity.
+- **Handbook [Chapter 62](docs/handbook/62-salt-road-ledger.md)**.
+- **The merchant showcase proof** — the first played-session test to settle BOTH ledger
+  layers in one session, and the first to grow a relic through **recognition** rather than
+  kills. Proven live on XRPL testnet, 11/11 stages: a `consign` settled under memo
+  `VERB:consign`, escrow-vs-payment compared against one set of books, the Guild Seal
+  minted XLS-20 and then advanced `RELIC:0|TIER:0` → `RELIC:1|TIER:1` by `NFTokenModify`
+  with the NFTokenID preserved, and the world byte-identical to an adapter-free replay.
+
+### Changed — the ledger adapter's two inert axes are now real
+
+- **`SettlementVerb` was dead in both directions.** The union carried `buy`/`sell` but both
+  call sites passed the literal `'settle'`, so no run could emit them. `settle()` now takes
+  the verb from its caller, persists it on `SettlementRecord` (so `retryPending` cannot
+  flatten a `consign` into a generic settle on the one path that exists because the network
+  is unreliable), and `reconcile()` matches the **full** memo instead of a prefix that
+  stopped before `DELTA:` and `VERB:` — which had been written on-chain and never read.
+- **`config.settlement` had zero reads anywhere.** Selecting `'payment'` produced
+  byte-identical behaviour to `'token-escrow'` — a config flag masquerading as a feature.
+  It is now a real branch, exposed as a **per-settlement override** rather than a second
+  adapter, because two adapters would mean two states, two baselines and two reconcile
+  reports over one economy.
+- `buildLedgerNfts(NFTInfo[], owner)` is a real export, closing v3.3.0's open fast-follow.
+
+### Fixed
+
+- **`settleCheckpoint` never forwarded `options`.** The engine seam is the documented way
+  to drive the adapter, so every caller using the public path silently got `verb: 'settle'`
+  and the construction-time primitive regardless of what it asked for. Both new axes were
+  reachable only by bypassing the seam.
+- **Six dead mechanics in the new pack**, found by tracing every headline claim through a
+  real played session rather than trusting a green unit suite: a status with no producer
+  (`encumbered`), two catalog items with no acquisition path (`writ-of-passage`,
+  `deed-of-the-longshore` — the latter being the burn/seizure showcase target), a verb whose
+  documented downside could not occur (`underwrite`'s claim never fired), a margin nothing
+  read (`haggle`), and that same margin rounding away to nothing on common goods once wired.
+- Two tuning bugs from the same audit: Broker Inaya's `ledger` of 9 made the haggle formula
+  come out to exactly zero against the default factor, so the pack's main counterparty was
+  the one opponent where haggling provably did nothing; and `contraband` seeded at 25 sat
+  below `BUY_SUPPLY_FLOOR` (30), leaving the pack's only contraband item permanently
+  unpurchasable.
+
+### Determinism
+
+Obligation due dates derive from `world.meta.tick`, ids from a counter, and seizure picks
+the obligation whose item id sorts lowest — never iteration order, never a roll. The
+obligation clock rides `world.zone.entered` because `advanceTick` emits nothing. The pack
+carries **no dependency on the ledger adapter** in any manifest field or import form, and
+`firewall.test.ts` asserts it stays that way.
+
+5911 tests across 307 files.
+
 ## [3.4.0] - 2026-07-26
 
 **Gear that earns a name.** Relic growth has shipped since v3.3 — `evaluateRelicGrowth`

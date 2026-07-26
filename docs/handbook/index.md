@@ -155,6 +155,7 @@ build → simulate → analyze → tune → experiment
 44. [Crimson Court (Vampire Horror)](./44-crimson-court.md)
 45. [Iron Colosseum (Gladiator Historical)](./45-iron-colosseum.md)
 46. [Jade Veil (Feudal Mystery)](./46-jade-veil.md)
+62. [Salt Road Ledger (Mercantile)](./62-salt-road-ledger.md)
 
 ### Part VII — Character Systems
 
