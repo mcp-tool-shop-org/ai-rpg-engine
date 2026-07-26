@@ -29,6 +29,11 @@ type FakeTransport = LedgerTransport & {
    *  holder fails tecPATH_DRY) — the fidelity the LIVE pirate replay needed to
    *  surface the incremental-trust-line gap the dry-run path structurally hid. */
   trustedFor(address: string, currency: string): boolean;
+  /** Ordered log of write-method names, so a test can assert the SHAPE of the
+   *  tx sequence a settlement produced (not merely its net balance effect).
+   *  Needed to prove the `payment` primitive is materially different from
+   *  `token-escrow` rather than a config flag with no behavioral consequence. */
+  calls: string[];
 };
 
 function createFakeTransport(): FakeTransport {
@@ -41,6 +46,7 @@ function createFakeTransport(): FakeTransport {
   // path can enforce live XRPL's "no line -> tecPATH_DRY" rule (see trustedFor).
   const trustLines = new Set<string>();
   const pendingEscrows = new Map<number, { destination: string; currency: string; value: number }>();
+  const calls: string[] = [];
 
   function balanceKey(address: string, currency: string): string {
     return `${address}:${currency}`;
@@ -66,6 +72,7 @@ function createFakeTransport(): FakeTransport {
   return {
     networkName: 'fake-dry-run',
     balances,
+    calls,
     failNext(times: number) {
       failRemaining = times;
     },
@@ -103,8 +110,21 @@ function createFakeTransport(): FakeTransport {
     },
 
     async payment(_seed: string, destination: string, amount: IssuedAmount, _memo?: string): Promise<TxResult> {
+      calls.push('payment');
       const failed = maybeFail();
       if (failed) return failed;
+      // BURN direction (holder -> issuer of that same currency). Live XRPL
+      // treats returning an issued currency to its issuer as redemption: the
+      // holder's balance is destroyed and NO trust line is required on the
+      // issuer, which never trust-lines its own token. The blanket
+      // trust-line check below models the MINT direction only; applying it to
+      // a burn would fail tecPATH_DRY for a transaction the real ledger
+      // accepts. This is the path the `payment` settlement primitive uses.
+      if (destination === amount.issuer) {
+        const sender = seedToAddress.get(_seed);
+        if (sender) debit(sender, amount.currency, Number(amount.value));
+        return nextTx();
+      }
       // Live-XRPL fidelity: an issued-currency Payment to a holder that never
       // opened a trust line for this currency fails tecPATH_DRY. The real mint
       // in enable()/settle() always trust-lines the holder first (settle()'s
@@ -125,6 +145,7 @@ function createFakeTransport(): FakeTransport {
       _cancelAfter: number,
       _memo?: string,
     ): Promise<TxResult> {
+      calls.push('escrowCreate');
       const failed = maybeFail();
       if (failed) return failed;
       const sender = seedToAddress.get(seed);
@@ -139,6 +160,7 @@ function createFakeTransport(): FakeTransport {
     },
 
     async escrowFinish(_seed: string, _owner: string, offerSequence: number): Promise<TxResult> {
+      calls.push('escrowFinish');
       const failed = maybeFail();
       if (failed) return failed;
       const escrow = pendingEscrows.get(offerSequence);
@@ -370,5 +392,115 @@ describe('createLedgerAdapter', () => {
     // grant, merchant to receive a future escrowed spend of it).
     expect(transport.trustedFor(state.playerAddress, state.tokenMap['cannon-shell'])).toBe(true);
     expect(transport.trustedFor(state.merchantAddress, state.tokenMap['cannon-shell'])).toBe(true);
+  });
+  // ── P1.5 exit gate: the verb axis and the settlement primitive are REAL ──
+  // Every assertion below fails against the pre-P1.5 adapter. They exist because
+  // two axes shipped declared-but-inert: `SettlementVerb` had members no call
+  // site could emit, and `config.settlement` had zero reads in the whole
+  // implementation. Green tests on the default path do not distinguish "works"
+  // from "the flag does nothing", so these pin the difference.
+
+  it('VERB REACHES THE MEMO: a caller-supplied verb is written on-chain and persisted on the record', async () => {
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'testgame', runId: 'run-1' });
+    const state = freshState();
+    await adapter.enable(state, { coin: 100, items: {} });
+
+    const result = await adapter.settle(state, { coin: 75, items: {} }, 1, 'Saltgate', { verb: 'consign' });
+
+    expect(result.success).toBe(true);
+    expect(result.record?.verb).toBe('consign');
+    expect(result.record?.memo).toContain('VERB:consign');
+    // And the default is unchanged for a caller that passes nothing.
+    const plain = await adapter.settle(state, { coin: 70, items: {} }, 2, 'Saltgate');
+    expect(plain.record?.verb).toBe('settle');
+    expect(plain.record?.memo).toContain('VERB:settle');
+  });
+
+  it('VERB SURVIVES THE RETRY PATH un-collapsed (it used to flatten to VERB:settle)', async () => {
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'testgame', runId: 'run-1' });
+    const state = freshState();
+    await adapter.enable(state, { coin: 100, items: {} });
+
+    // Fail this settle so it lands in `pending` carrying verb 'consign'.
+    transport.failNext(1);
+    const failed = await adapter.settle(state, { coin: 75, items: {} }, 1, 'Saltgate', { verb: 'consign' });
+    expect(failed.success).toBe(false);
+    expect(state.pending).toHaveLength(1);
+    expect(state.pending[0]!.verb).toBe('consign');
+
+    // The next settle retries it first. retryPending rebuilds the memo from the
+    // RECORD — hardcoding 'settle' there is what silently destroyed the artifact
+    // on exactly the path that exists because the network is unreliable.
+    const recovered = await adapter.settle(state, { coin: 75, items: {} }, 2, 'Saltgate');
+    expect(recovered.success).toBe(true);
+    expect(state.pending).toHaveLength(0);
+
+    const replayed = state.settlements.find((r) => r.checkpoint === 1);
+    expect(replayed?.verb).toBe('consign');
+    expect(replayed?.memo).toContain('VERB:consign');
+    expect(replayed?.memo).not.toContain('VERB:settle');
+  });
+
+  it('RECONCILE VERIFIES THE VERB: an on-chain memo whose verb disagrees with the record FAILS', async () => {
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'testgame', runId: 'run-1' });
+    const state = freshState();
+    await adapter.enable(state, { coin: 100, items: {} });
+    const settled = await adapter.settle(state, { coin: 75, items: {} }, 1, 'Saltgate', { verb: 'consign' });
+    const record = settled.record!;
+
+    const honest = reconcile({
+      runId: 'run-1',
+      seed: 1,
+      mintedInitial: { coin: 100 },
+      ledgerBalances: {},
+      lastSettled: state.lastSettled,
+      settlements: state.settlements,
+      pending: [],
+      tokenMap: state.tokenMap,
+      onchainMemos: Object.fromEntries(record.txids.map((t) => [t, record.memo])),
+    });
+    expect(honest.onchainMemoOk).toBe(true);
+
+    // Same prefix, same checkpoint — only the VERB differs. Under prefix-only
+    // matching this passed, because the prefix stops at CHECKPOINT:<n> and
+    // everything after it was written and never read.
+    const tampered = record.memo.replace('VERB:consign', 'VERB:settle');
+    expect(tampered).not.toBe(record.memo);
+    const caught = reconcile({
+      runId: 'run-1',
+      seed: 1,
+      mintedInitial: { coin: 100 },
+      ledgerBalances: {},
+      lastSettled: state.lastSettled,
+      settlements: state.settlements,
+      pending: [],
+      tokenMap: state.tokenMap,
+      onchainMemos: Object.fromEntries(record.txids.map((t) => [t, tampered])),
+    });
+    expect(caught.onchainMemoOk).toBe(false);
+    expect(caught.passed).toBe(false);
+  });
+
+  it("PRIMITIVE IS REAL: 'payment' produces a burn Payment where 'token-escrow' produces EscrowCreate+EscrowFinish", async () => {
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'testgame', runId: 'run-1' });
+    const state = freshState();
+    await adapter.enable(state, { coin: 100, items: {} });
+
+    // Baseline: the construction-time config primitive (token-escrow).
+    transport.calls.length = 0;
+    await adapter.settle(state, { coin: 90, items: {} }, 1, 'Saltgate');
+    expect(transport.calls).toEqual(['escrowCreate', 'escrowFinish']);
+
+    // Same adapter, same state, same books — only the per-settlement override
+    // differs. A spend becomes a direct holder->issuer burn, no escrow object.
+    transport.calls.length = 0;
+    await adapter.settle(state, { coin: 80, items: {} }, 2, 'the Warrens', { primitive: 'payment' });
+    expect(transport.calls).toEqual(['payment']);
+    expect(transport.calls).not.toContain('escrowCreate');
+
+    // ONE set of books across both primitives — the reason this is a per-call
+    // override and not a second adapter instance.
+    expect(state.lastSettled.coin).toBe(80);
+    expect(state.settlements).toHaveLength(2);
   });
 });

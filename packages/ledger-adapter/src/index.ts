@@ -20,6 +20,8 @@ export type {
   LedgerMode,
   IssuerMode,
   SettlementPrimitive,
+  SettlementVerb,
+  SettleOptions,
   LedgerAdapterConfig,
   IssuedAmount,
   WalletHandle,
@@ -57,6 +59,7 @@ export {
   MEMO_SCHEMA_VERSION,
   buildSettlementMemo,
   settlementMemoPrefix,
+  expectedSettlementMemo,
   // NFT unique-gear layer (v2 slice).
   NFT_URI_SCHEMA_VERSION,
   buildItemNFTUri,

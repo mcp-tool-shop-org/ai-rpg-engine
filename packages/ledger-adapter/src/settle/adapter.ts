@@ -21,6 +21,8 @@ import type {
   LedgerAdapterConfig,
   LedgerAdapterState,
   LedgerTransport,
+  SettleOptions,
+  SettlementPrimitive,
   SettlementRecord,
   SettlementResult,
   TradeableSnapshot,
@@ -215,6 +217,7 @@ export function createLedgerAdapter(
     state: LedgerAdapterState,
     deltas: Record<string, number>,
     memo: string,
+    primitive: SettlementPrimitive = config.settlement,
   ): Promise<string[]> {
     const txids: string[] = [];
     const issuerSeed = requireSeed(state.issuerAddress);
@@ -231,7 +234,22 @@ export function createLedgerAdapter(
       if (diff === 0) continue;
       const code = currencyCodeFor(state, key);
 
-      if (diff < 0) {
+      if (diff < 0 && primitive === 'payment') {
+        // The `payment` primitive: a SPEND is a direct holder->issuer burn
+        // Payment, with no escrow object created at all. This branch is what
+        // makes `SettlementPrimitive` real — `config.settlement` was declared,
+        // defaulted, and never read by any code path, so selecting 'payment'
+        // produced byte-identical behavior to 'token-escrow': an inert config
+        // axis that looked like a feature. A game can now settle escrowed trades
+        // in a lawful market and direct cash sales in a black market against ONE
+        // set of books (see SettleOptions.primitive).
+        const amount: IssuedAmount = { currency: code, issuer: state.issuerAddress, value: String(-diff) };
+        const burnRes = await transport.payment(playerSeed, state.issuerAddress, amount, memo);
+        if (!burnRes.ok) {
+          throw new Error(`payment(burn ${key}) failed: ${burnRes.error ?? burnRes.code}`);
+        }
+        if (burnRes.hash) txids.push(burnRes.hash);
+      } else if (diff < 0) {
         const amount: IssuedAmount = { currency: code, issuer: state.issuerAddress, value: String(-diff) };
         const tick = nextId();
         const finishAfter = tick;
@@ -288,7 +306,13 @@ export function createLedgerAdapter(
 
     for (const record of state.pending) {
       try {
-        const memo = buildSettlementMemo(gameId, runId, record.checkpoint, record.deltas, 'settle');
+        // Replay the record's OWN verb. Hardcoding 'settle' here meant a
+        // `consign` that went pending and later cleared landed on-chain as a
+        // generic settle — the distinct artifact collapsing on exactly the path
+        // that exists because the network is unreliable. Absent verb (a record
+        // serialized before the field existed) is 'settle', which is what all
+        // such records were in fact written as.
+        const memo = buildSettlementMemo(gameId, runId, record.checkpoint, record.deltas, record.verb ?? 'settle');
         const txids = await executeDeltas(state, record.deltas, memo);
 
         record.txids = txids;
@@ -432,6 +456,7 @@ export function createLedgerAdapter(
     snapshot: TradeableSnapshot,
     checkpoint: number,
     location: string,
+    options: SettleOptions = {},
   ): Promise<SettlementResult> {
     if (!state.enabled) {
       return { success: false, message: 'Ledger adapter is not enabled.' };
@@ -455,10 +480,16 @@ export function createLedgerAdapter(
       return { success: true, message: 'No changes to settle.' };
     }
 
-    const memo = buildSettlementMemo(gameId, runId, checkpoint, deltas, 'settle');
+    // The verb comes from the CALLER now. It used to be the literal 'settle'
+    // here and in retryPending — the only two writers — so `buy`/`sell` were
+    // unreachable members of the union and the memo's VERB: field carried no
+    // information any run could vary.
+    const verb = options.verb ?? 'settle';
+    const primitive = options.primitive ?? config.settlement;
+    const memo = buildSettlementMemo(gameId, runId, checkpoint, deltas, verb);
 
     try {
-      const txids = await executeDeltas(state, deltas, memo);
+      const txids = await executeDeltas(state, deltas, memo, primitive);
 
       for (const key of keys) {
         state.lastSettled[key] = amounts[key] ?? 0;
@@ -472,6 +503,7 @@ export function createLedgerAdapter(
         status: 'settled',
         memo,
         timestamp: now(),
+        verb,
       };
       state.settlements.push(record);
       state.lastSettleFailed = false;
@@ -491,6 +523,9 @@ export function createLedgerAdapter(
         status: 'pending',
         memo,
         timestamp: now(),
+        // Carried onto the pending record so retryPending can replay the
+        // ORIGINAL verb instead of flattening it to 'settle'.
+        verb,
       };
       state.pending.push(record);
       state.lastSettleFailed = true;
