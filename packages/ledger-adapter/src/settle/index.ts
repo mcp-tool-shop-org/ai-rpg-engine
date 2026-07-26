@@ -11,5 +11,5 @@ export type { LedgerAdapterDeps } from './adapter.js';
 
 export { reconcile, deriveCurrencyCode } from './reconcile.js';
 
-export { settleEquipmentNFTs, ARPG_NFT_TAXON } from './nft.js';
+export { settleEquipmentNFTs, buildLedgerNfts, ARPG_NFT_TAXON } from './nft.js';
 export type { NFTSettlementResult } from './nft.js';

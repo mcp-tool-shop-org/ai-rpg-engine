@@ -17,6 +17,7 @@ import type {
   EnableResult,
   LedgerAdapter,
   LedgerAdapterState,
+  SettleOptions,
   SettlementResult,
 } from '../contracts.js';
 import { snapshotFromWorld } from './snapshot.js';
@@ -51,6 +52,14 @@ export function settleCheckpoint(
   state: LedgerAdapterState,
   checkpoint: number,
   location: string,
+  options?: SettleOptions,
 ): Promise<SettlementResult> {
-  return adapter.settle(state, snapshotFromWorld(world, playerId), checkpoint, location);
+  // `options` MUST be forwarded. P1.5 widened `LedgerAdapter.settle` with the
+  // verb + per-settlement primitive but left this wrapper at the old arity, so
+  // every caller reaching the adapter through the engine seam — which is the
+  // documented way to drive it — silently got `verb: 'settle'` and the
+  // construction-time primitive no matter what it asked for. Both new axes were
+  // reachable only by bypassing the seam. Caught by the merchant showcase, whose
+  // whole point is a `consign` that reads as a consign on-chain.
+  return adapter.settle(state, snapshotFromWorld(world, playerId), checkpoint, location, options);
 }
