@@ -14,11 +14,17 @@ export type PackGenre =
   | 'western'
   | 'pirate'
   | 'post-apocalyptic'
-  | 'historical';
+  | 'historical'
+  // Trade, debt, and obligation as the primary loop rather than as a shop menu
+  // (Salt Road Ledger). A closed union, so a pack occupying a genuinely new
+  // niche needs a member added here — the alternative was reusing an existing
+  // genre, which passes the rubric's distinct-narrative-fantasy dimension on a
+  // technicality while making the pack undiscoverable via filterPacks({ genre }).
+  | 'mercantile';
 
 export const VALID_GENRES: PackGenre[] = [
   'fantasy', 'sci-fi', 'cyberpunk', 'horror', 'mystery',
-  'western', 'pirate', 'post-apocalyptic', 'historical',
+  'western', 'pirate', 'post-apocalyptic', 'historical', 'mercantile',
 ];
 
 export type PackDifficulty = 'beginner' | 'intermediate' | 'advanced';

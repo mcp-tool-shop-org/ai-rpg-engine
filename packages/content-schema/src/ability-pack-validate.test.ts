@@ -1,5 +1,5 @@
 // Ability pack cross-validation tests
-// Proves: cost→resource refs, check→stat refs, effect→stat/resource refs, duplicate IDs, all 10 packs pass
+// Proves: cost→resource refs, check→stat refs, effect→stat/resource refs, duplicate IDs, all 11 packs pass
 
 import { describe, it, expect } from 'vitest';
 import { validateAbilityPack, type AbilityPackRuleset } from './validate.js';
@@ -14,7 +14,9 @@ import { weirdWestMinimalRuleset } from '../../starter-weird-west/src/ruleset.js
 import { vampireAbilities } from '../../starter-vampire/src/content.js';
 import { vampireMinimalRuleset } from '../../starter-vampire/src/ruleset.js';
 import { gladiatorAbilities } from '../../starter-gladiator/src/content.js';
+import { merchantAbilities } from '../../starter-merchant/src/content.js';
 import { gladiatorMinimalRuleset } from '../../starter-gladiator/src/ruleset.js';
+import { merchantMinimalRuleset } from '../../starter-merchant/src/ruleset.js';
 import { roninAbilities } from '../../starter-ronin/src/content.js';
 import { roninMinimalRuleset } from '../../starter-ronin/src/ruleset.js';
 import { pirateAbilities } from '../../starter-pirate/src/content.js';
@@ -232,7 +234,7 @@ describe('validateAbilityPack — advisories', () => {
   });
 });
 
-describe('validateAbilityPack — all 10 shipped packs', () => {
+describe('validateAbilityPack — all 11 shipped packs', () => {
   const packs = [
     { name: 'Fantasy', abilities: fantasyAbilities, ruleset: fantasyMinimalRuleset },
     { name: 'Cyberpunk', abilities: cyberpunkAbilities, ruleset: cyberpunkMinimalRuleset },
@@ -244,6 +246,7 @@ describe('validateAbilityPack — all 10 shipped packs', () => {
     { name: 'Detective', abilities: detectiveAbilities, ruleset: detectiveMinimalRuleset },
     { name: 'Zombie', abilities: zombieAbilities, ruleset: zombieMinimalRuleset },
     { name: 'Colony', abilities: colonyAbilities, ruleset: colonyMinimalRuleset },
+    { name: 'Merchant', abilities: merchantAbilities, ruleset: merchantMinimalRuleset },
   ];
 
   for (const { name, abilities, ruleset } of packs) {
