@@ -68,6 +68,51 @@ export const merchantMinimalRuleset: RulesetDefinition = {
     { id: 'consign', name: 'Consign', tags: ['commerce', 'obligation'], description: 'Hand goods to a broker against future payment, creating an obligation with a due date' },
     { id: 'underwrite', name: 'Underwrite', tags: ['commerce', 'risk'], description: 'Take on another party’s risk for a fee — liquidity now, lien later if the claim fires' },
     { id: 'audit', name: 'Audit', tags: ['commerce', 'verify'], description: 'Reconcile your books against a district’s records and report the discrepancies' },
+
+    // ── The trade surface (world-stack, ALWAYS registered) ──────────────────
+    // Listed because this is a MERCHANT pack. buildWorldStack registers
+    // buy/sell/salvage/craft/repair/modify unconditionally in every starter, and
+    // most starters leave them off the help table — a defensible omission for a
+    // gladiator, an absurd one here. A trade-first pack whose in-game `help`
+    // never mentions `buy` is the V3R-MENU-3b defect wearing a different hat.
+    { id: 'buy', name: 'Buy', tags: ['commerce', 'trade'], description: 'Purchase stock from the district’s merchants at the going rate' },
+    { id: 'sell', name: 'Sell', tags: ['commerce', 'trade'], description: 'Sell goods into the local market — scarcity and provenance move the price' },
+    { id: 'salvage', name: 'Salvage', tags: ['commerce', 'craft'], description: 'Break a damaged lot down for whatever the parts are still worth' },
+    { id: 'craft', name: 'Grade', tags: ['commerce', 'craft'], description: 'Sort a mixed consignment into a graded lot worth more than its parts' },
+    { id: 'repair', name: 'Recooper', tags: ['commerce', 'craft'], description: 'Restore a damaged consignment to saleable condition' },
+    { id: 'modify', name: 'Seal Under Mark', tags: ['commerce', 'craft'], description: 'Press an authority’s mark onto a lot — provenance outsells contents' },
+
+    // ── Party + social surface (world-stack, ALWAYS registered) ─────────────
+    // Every id below has a real registered handler (companion-core and
+    // player-leverage are unconditionally included by buildWorldStack), so this
+    // list stays verb-honest in BOTH directions: nothing advertised that does
+    // not work, and nothing working that a player cannot discover.
+    { id: 'recruit', name: 'Take On', tags: ['party'], description: 'Offer a willing person in your zone a place on the payroll' },
+    { id: 'bribe', name: 'Bribe', tags: ['social', 'leverage'], description: 'Spend favor to ease tension with the faction controlling your district' },
+    { id: 'intimidate', name: 'Intimidate', tags: ['social', 'leverage'], description: 'Spend heat to press the controlling faction into compliance' },
+    { id: 'petition', name: 'Petition', tags: ['social', 'leverage'], description: 'Spend legitimacy to formally petition the controlling faction' },
+    { id: 'call-in-favor', name: 'Call in a Favor', tags: ['social', 'leverage'], description: 'Spend debt and favor to restore access or standing with a faction' },
+    { id: 'recruit-ally', name: 'Recruit an Ally', tags: ['social', 'leverage'], description: 'Spend favor and influence to win a new ally within a faction' },
+    { id: 'disguise', name: 'Go Grey', tags: ['social', 'leverage'], description: 'Spend influence to shed heat and lower alert' },
+    { id: 'stake-claim', name: 'Stake a Claim', tags: ['social', 'leverage'], description: 'Spend influence and legitimacy to assert standing where you stand' },
+    { id: 'seed', name: 'Seed a Rumor', tags: ['social', 'rumor'], description: 'Spend influence to start a rumor about yourself' },
+    { id: 'deny', name: 'Deny', tags: ['social', 'rumor'], description: 'Spend legitimacy to deny an existing rumor by id' },
+    { id: 'frame', name: 'Frame', tags: ['social', 'rumor'], description: 'Spend blackmail and heat to frame a target with fabricated paperwork' },
+    { id: 'claim-false-credit', name: 'Claim False Credit', tags: ['social', 'rumor'], description: 'Spend influence to claim credit for a deal that was not yours' },
+    { id: 'bury-scandal', name: 'Bury a Scandal', tags: ['social', 'rumor'], description: "Spend favor and influence to accelerate a rumor's decay" },
+    { id: 'leak-truth', name: 'Leak the Truth', tags: ['social', 'rumor'], description: 'Spend blackmail to leak an uncomfortable truth' },
+    { id: 'spread-counter-rumor', name: 'Spread a Counter-Rumor', tags: ['social', 'rumor'], description: 'Spend influence to spread a counter-rumor' },
+    { id: 'request-meeting', name: 'Request a Meeting', tags: ['social', 'diplomacy'], description: 'Spend favor to request a meeting with the controlling faction' },
+    { id: 'improve-standing', name: 'Improve Standing', tags: ['social', 'diplomacy'], description: 'Spend favor to improve standing with the controlling faction' },
+    { id: 'cash-milestone', name: 'Cash in a Milestone', tags: ['social', 'diplomacy'], description: 'Convert accrued legitimacy into reputation with a faction' },
+    { id: 'negotiate-access', name: 'Negotiate Access', tags: ['social', 'diplomacy'], description: 'Spend favor and legitimacy to negotiate access with a faction' },
+    { id: 'trade-secret', name: 'Trade a Secret', tags: ['social', 'diplomacy'], description: 'Spend blackmail to trade a secret with a faction' },
+    { id: 'temporary-alliance', name: 'Propose a Temporary Alliance', tags: ['social', 'diplomacy'], description: 'Spend favor and influence to propose a temporary alliance' },
+    { id: 'broker-truce', name: 'Broker a Truce', tags: ['social', 'diplomacy'], description: 'Spend influence and legitimacy to broker a truce between factions' },
+    { id: 'sabotage', name: 'Sabotage', tags: ['social', 'sabotage'], description: 'Spend blackmail to sabotage something in your district' },
+    { id: 'plant-evidence', name: 'Plant Evidence', tags: ['social', 'sabotage'], description: 'Spend blackmail to plant false records against a target' },
+    { id: 'blackmail-target', name: 'Blackmail a Target', tags: ['social', 'sabotage'], description: 'Spend blackmail to force a target into compliance' },
+    { id: 'incite-riot', name: 'Incite a Riot', tags: ['social', 'sabotage'], description: 'Spend blackmail and influence to incite a riot in your district' },
   ],
 
   formulas: [

@@ -2,6 +2,7 @@
 //
 // P4 (contract-core). createGame lands in P5.
 
+export { createGame, merchantIntentProfiles } from './setup.js';
 export { merchantMinimalRuleset } from './ruleset.js';
 export {
   createContractCore,
