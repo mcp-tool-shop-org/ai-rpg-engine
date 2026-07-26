@@ -89,7 +89,12 @@ export const brokerInaya: EntityState = {
   type: 'npc',
   name: 'Broker Inaya',
   tags: ['npc', 'fence', 'unbonded'],
-  stats: { ledger: 9, tongue: 10, standing: 2 },
+  // ledger 7, not 9. At 9 the haggle formula (tongue*3 - ledger*2) came out to
+  // EXACTLY zero against the default factor's tongue of 6 — so the pack's main
+  // consignment counterparty was the one opponent where haggling provably did
+  // nothing, making a working mechanic look broken on the default path. She is
+  // still a smooth operator (tongue 10); she is just not also an accountant.
+  stats: { ledger: 7, tongue: 10, standing: 2 },
   resources: { hp: 10, maxHp: 10, stamina: 4, maxStamina: 4 },
   statuses: [],
   zoneId: 'crooked-stair',
@@ -532,7 +537,14 @@ export const lateCaravanQuest: QuestDefinition = {
       ],
     },
   ],
-  rewards: [{ type: 'xp', params: { amount: 20 } }],
+  // The writ is Drell's to give, and resolving a caravan dispute in his shed is
+  // how you earn it. Before the P8 audit this item existed in the catalog with NO
+  // acquisition path anywhere — authored, schema-valid, and unobtainable, which
+  // also meant the directed-NFT-transfer showcase had nothing real to transfer.
+  rewards: [
+    { type: 'xp', params: { amount: 20 } },
+    { type: 'item', params: { itemId: 'writ-of-passage' } },
+  ],
 };
 
 export const standingAccountQuest: QuestDefinition = {
@@ -560,7 +572,13 @@ export const standingAccountQuest: QuestDefinition = {
       ],
     },
   ],
-  rewards: [{ type: 'xp', params: { amount: 30 } }],
+  // Surviving the audit means the Crown settles up — in land, because coin would
+  // imply they were ever wrong. The deed is also the pack's burn/seizure target,
+  // so like the writ it needed a real way into the player's hands.
+  rewards: [
+    { type: 'xp', params: { amount: 30 } },
+    { type: 'item', params: { itemId: 'deed-of-the-longshore' } },
+  ],
 };
 
 export const merchantQuests: QuestDefinition[] = [openTheBooksQuest, lateCaravanQuest, standingAccountQuest];

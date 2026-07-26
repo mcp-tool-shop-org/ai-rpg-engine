@@ -71,11 +71,28 @@ export type ContractModuleState = {
   nextId: number;
 };
 
+/**
+ * Status machinery, INJECTED rather than imported — the same seam
+ * createEquipmentCore uses, and for the same reason: this module lives in a pack
+ * whose dependencies must not grow just to set a status.
+ */
+export type ContractStatusOps = {
+  apply: (entity: EntityState, statusId: string, tick: number) => unknown;
+  remove: (entity: EntityState, statusId: string, tick: number) => unknown;
+};
+
 export type ContractCoreConfig = {
   /** The pack's item catalog — the same one equipment-core is built with. */
   catalog: ItemCatalog;
   /** Ticks a consignment runs before going overdue. Defaults to DEFAULT_TERM_TICKS. */
   termTicks?: number;
+  /**
+   * Optional. Supplied, the obligation clock applies/removes the `encumbered`
+   * status as lien crosses the seizure threshold. Omitted, the status is simply
+   * never applied — which is exactly the state this module shipped in until the
+   * P8 audit noticed `encumbered` was a defined status with no producer.
+   */
+  statuses?: ContractStatusOps;
 };
 
 // ── State access (lazy, tolerant, non-attaching) ────────────────────────────
@@ -172,6 +189,22 @@ function baseValue(item: ItemDefinition): number {
   return RARITY_VALUE[item.rarity] ?? 10;
 }
 
+/**
+ * Apply a haggled margin to a base value, guaranteeing it MOVES the number.
+ *
+ * Plain rounding hid the mechanic on cheap goods: a won margin of 4% against a
+ * common lot (base 10) is 10.4, which rounds straight back to 10 — so haggling
+ * a bale of flax was provably pointless while looking wired. A won negotiation
+ * is worth at least one coin, and a lost one costs at least one, or the verb has
+ * no observable effect on exactly the goods a new factor is carrying.
+ */
+function applyMargin(base: number, marginPercent: number): number {
+  if (marginPercent === 0) return base;
+  const scaled = Math.round(base * (1 + marginPercent / 100));
+  if (marginPercent > 0) return Math.max(base + 1, scaled);
+  return Math.max(1, Math.min(base - 1, scaled));
+}
+
 /** Does the actor hold an item granting this verb? (The seal grants consign.) */
 function holdsVerbGrantingItem(actor: EntityState, catalog: ItemCatalog, verb: string): boolean {
   for (const id of actor.inventory ?? []) {
@@ -242,6 +275,11 @@ function appraiseHandler(action: ActionIntent, world: WorldState, catalog: ItemC
 
 const HAGGLE_LIQUIDITY_COST = 5;
 
+/** world.globals key holding a margin banked against one counterparty. */
+function haggleKey(counterpartyId: string): string {
+  return `haggle-margin:${counterpartyId}`;
+}
+
 function haggleHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
   const actor = world.entities[action.actorId];
   if (!actor) return reject(action, 'actor not found', 'Only a live entity can haggle.');
@@ -267,6 +305,13 @@ function haggleHandler(action: ActionIntent, world: WorldState): ResolvedEvent[]
   // yields the same margin, so a replay reproduces the price.
   const margin = Math.max(-15, Math.min(25, (actor.stats.tongue ?? 0) * 3 - (target.stats.ledger ?? 0) * 2));
 
+  // The margin is BANKED against this counterparty and consumed by the next
+  // `consign` with them (see consignHandler). Before the P8 audit this verb
+  // spent liquidity and emitted a percentage that nothing read — a number in the
+  // log, not a mechanic. Banking it makes haggle-then-consign a real sequence:
+  // you talk the terms up before you hand the goods over.
+  world.globals[haggleKey(target.id)] = margin;
+
   return [
     makeEvent(action, 'merchant.price.haggled', {
       counterparty: target.id,
@@ -274,6 +319,8 @@ function haggleHandler(action: ActionIntent, world: WorldState): ResolvedEvent[]
       marginPercent: margin,
       liquiditySpent: HAGGLE_LIQUIDITY_COST,
       won: margin > 0,
+      // Stated in the event so a UI can tell the player what it bought them.
+      appliesToNextConsignWith: target.id,
     }, { targetIds: [target.id] }),
   ];
 }
@@ -325,7 +372,16 @@ function consignHandler(
 
   const state = mutable(world);
   const id = `obl-${state.nextId++}`;
-  const value = baseValue(item);
+
+  // Consume any margin banked by a prior `haggle` with THIS counterparty. The
+  // margin is spent whether or not it helped, so haggling badly and then
+  // consigning anyway costs you — which is the point of contesting a price.
+  const bankedKey = haggleKey(counterparty.id);
+  const banked = typeof world.globals[bankedKey] === 'number' ? (world.globals[bankedKey] as number) : 0;
+  delete world.globals[bankedKey];
+  const base = baseValue(item);
+  const value = applyMargin(base, banked);
+
   const dueTick = world.meta.tick + termTicks;
 
   // The goods LEAVE your hands now. That is the whole risk: you are holding a
@@ -353,6 +409,8 @@ function consignHandler(
       counterparty: counterparty.id,
       counterpartyName: counterparty.name,
       value,
+      baseValue: base,
+      haggledMarginPercent: banked,
       dueTick,
       termTicks,
     }, { targetIds: [counterparty.id] }),
@@ -465,9 +523,21 @@ function auditHandler(action: ActionIntent, world: WorldState, catalog: ItemCata
  *   - seizure at lien >= SEIZURE_THRESHOLD takes the obligation whose itemId
  *     sorts LOWEST, not the first in iteration order and not a random pick
  */
-export function tickObligations(world: WorldState, tick: number): ResolvedEvent[] {
+export function tickObligations(
+  world: WorldState,
+  tick: number,
+  options: { termTicks?: number; statuses?: ContractStatusOps } = {},
+): ResolvedEvent[] {
+  const termTicks = options.termTicks ?? DEFAULT_TERM_TICKS;
+  const statuses = options.statuses;
   const state = peek(world);
-  if (!state || !Array.isArray(state.obligations) || state.obligations.length === 0) return [];
+  // Policies mature on this clock too, so a world with policies but no
+  // obligations still needs a pass.
+  if (!state) return [];
+  const hasWork =
+    (Array.isArray(state.obligations) && state.obligations.length > 0) ||
+    (Array.isArray(state.underwritten) && state.underwritten.length > 0);
+  if (!hasWork) return [];
 
   const player = world.entities[world.playerId];
   if (!player) return [];
@@ -518,7 +588,53 @@ export function tickObligations(world: WorldState, tick: number): ResolvedEvent[
     }
   }
 
-  // 3. Revocation — the soft fail. Announced once, and gated on the ENTRY
+  // 3. Underwriting claims MATURE. A policy is a bet that the party you
+  //    guaranteed stays good; past its term it resolves either way.
+  //
+  //    Before the P8 audit this never happened: `claimed` was written `false` at
+  //    issue and nothing ever set it, so `underwrite` was pure upside — free
+  //    liquidity with a documented downside that could not occur. A verb whose
+  //    stated risk is unreachable is not a risk mechanic.
+  for (const policy of state.underwritten) {
+    if (policy.claimed || tick < policy.issuedTick + termTicks) continue;
+    policy.claimed = true;
+    // Deterministic: the claim fires iff the party you guaranteed has actually
+    // defaulted on something. No roll.
+    const wentBad = state.obligations.some(
+      (o) => o.counterparty === policy.counterparty && o.status === 'defaulted',
+    );
+    if (wentBad) {
+      adjust(player, 'lien', policy.exposure, 100);
+      events.push(base('merchant.risk.claimed', {
+        policyId: policy.id, counterparty: policy.counterparty,
+        exposure: policy.exposure, lien: resource(player, 'lien'),
+      }));
+    } else {
+      events.push(base('merchant.risk.lapsed', {
+        policyId: policy.id, counterparty: policy.counterparty, premiumKept: policy.premium,
+      }));
+    }
+  }
+
+  // 4. The `encumbered` status — lien heavy enough that everyone can smell it.
+  //    Defined in content.ts since P3 and applied by nothing until the P8 audit.
+  if (statuses) {
+    // Gated on the ENTRY lien, like the two thresholds above and for the same
+    // reason: step 2's seizure eases the lien it collects against, so reading the
+    // CURRENT value here meant a factor who arrived at exactly 70 had already
+    // dropped to ~60 by the time this ran and was never marked. Second time this
+    // exact ordering trap has bitten in this file.
+    const marked = player.statuses.some((s) => s.statusId === 'encumbered');
+    if (lienAtEntry >= SEIZURE_THRESHOLD && !marked) {
+      statuses.apply(player, 'encumbered', tick);
+      events.push(base('merchant.factor.encumbered', { lien: lienAtEntry, threshold: SEIZURE_THRESHOLD }));
+    } else if (lienAtEntry < SEIZURE_THRESHOLD && marked) {
+      statuses.remove(player, 'encumbered', tick);
+      events.push(base('merchant.factor.unencumbered', { lien: lienAtEntry }));
+    }
+  }
+
+  // 5. Revocation — the soft fail. Announced once, and gated on the ENTRY
   //    lien so step 2's collection cannot suppress it.
   if (lienAtEntry >= REVOCATION_THRESHOLD && !world.globals['seal-revoked']) {
     world.globals['seal-revoked'] = true;
@@ -625,7 +741,7 @@ export function createContractCore(config: ContractCoreConfig): EngineModule {
       // increments meta.tick), and hanging this off movement keeps it on the
       // resolved event stream where replay reproduces it exactly.
       ctx.events.on('world.zone.entered', (event, world) => {
-        for (const produced of tickObligations(world, event.tick)) {
+        for (const produced of tickObligations(world, event.tick, { termTicks, statuses: config.statuses })) {
           world.eventLog.push(produced);
         }
       });

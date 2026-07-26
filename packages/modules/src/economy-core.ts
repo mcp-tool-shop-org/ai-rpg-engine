@@ -98,7 +98,13 @@ const GENRE_SUPPLY_DEFAULTS: Record<string, Partial<Record<SupplyCategory, numbe
   'weird-west': { ammunition: 45, medicine: 35, food: 40, luxuries: 35, fuel: 30 },
   // Flat and high across the board — see GENRE_BUYABLE_STOCK.merchant. Nothing
   // is scarce on the Salt Road; the constraint is what you owe, not what exists.
-  merchant:    { luxuries: 55, components: 60, food: 50, medicine: 35, contraband: 25, fuel: 45 },
+  //
+  // contraband is 35, not 25. BUY_SUPPLY_FLOOR is 30 (trade-core), and a category
+  // seeded below it is never offered at all — so at 25 the pack's only contraband
+  // item was permanently unpurchasable, which both contradicted the "nothing is
+  // scarce" profile above and left a catalog entry unreachable. 35 keeps
+  // contraband the hardest category to source while leaving it obtainable.
+  merchant:    { luxuries: 55, components: 60, food: 50, medicine: 35, contraband: 35, fuel: 45 },
 };
 
 /** District tag modifiers applied at creation */

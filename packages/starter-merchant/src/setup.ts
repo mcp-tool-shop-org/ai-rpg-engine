@@ -246,7 +246,13 @@ export function createGame(seed?: number): Engine {
       // The five commerce verbs and the obligation clock. Registers no namespace
       // default, so a run in which nothing is ever consigned is indistinguishable
       // from one where this module was never included.
-      createContractCore({ catalog: itemCatalog }),
+      createContractCore({
+        catalog: itemCatalog,
+        // Injected so the obligation clock can mark an over-leveraged factor
+        // `encumbered`. Without these the status is defined and never applied —
+        // which is exactly how it shipped until the P8 audit.
+        statuses: { apply: applyStatus, remove: removeStatus },
+      }),
       createAbilityCore({
         abilities: merchantAbilities,
         statMapping: { power: 'tongue', precision: 'ledger', focus: 'standing' },
