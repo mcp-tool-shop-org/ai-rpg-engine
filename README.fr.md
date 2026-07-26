@@ -36,7 +36,7 @@ Il s’agit d’un **moteur de composition**, et non d’un jeu fini. Les 10 mon
 
 ---
 
-## État actuel (version 3.3.0)
+## État actuel (v3.4.0)
 
 **Ce qui fonctionne et a été testé :**
 
@@ -221,7 +221,7 @@ La distinction qui garantit la sécurité de la sauvegarde n’est **pas** « q
 
 **Trois modes de jeu.** `offline` (par défaut — pas de chaîne, le moteur tel qu’il est livré) · `ledger` (pièces/objets adossés aux soldes du testnet, réglés aux points de contrôle) · `diary` (jouer hors ligne, puis ancrer le hachage de l’état de l’exécution sur le registre pour obtenir un reçu inviolable).
 
-**Ce qui se trouve dans le registre.** `coin` → une promesse d’une devise émise par le biais d’une ligne de confiance ; objets consommables → jetons fongibles ; le delta net des transactions à un point de contrôle → un transfert réglé via l’**escrow de jetons XLS-85**. Les équipements uniques sous forme de NFT sont une extension ultérieure délibérée. L’économie du district abstrait (`economy-core`) n’est *pas* modifiée ; elle reste une simulation pure.
+**Ce qui figure dans le registre.** `coin` → une promesse de paiement en devise émise sur une ligne de confiance ; les objets consommables → des jetons fongibles ; le delta net des échanges d’un point de contrôle → un transfert validé via le **service de dépôt fiduciaire de jetons XLS-85**. Les équipements uniques sont expédiés sous forme de **NFT XLS-20** (v3.3), et l’évolution des reliques permet de modifier les métadonnées d’un NFT mutable en temps réel, grâce à **XLS-46 `NFTokenModify`**, ce qui est basé sur le jeu réel depuis la version 3.4. L’économie abstraite du district (`economy-core`) *n’est pas* modifiée ; elle reste une simulation pure.
 
 **Mesures de sécurité.** Uniquement le testnet, avec une protection structurelle **impossible en code sur le réseau principal** (et non un simple indicateur de configuration) ; les graines du portefeuille se trouvent dans un fichier secondaire ignoré par Git, et non dans le fichier de sauvegarde ; le règlement est idempotent et sûr en cas de nouvelle tentative ; les preuves vérifient le **mémo réel sur la chaîne** (et non la propre chaîne de caractères du moteur) ; et si la chaîne est inaccessible, l’exécution se poursuit simplement, marquée comme *non ancrée*.
 
@@ -268,7 +268,7 @@ const warCry: AbilityDefinition = {
 | [`@ai-rpg-engine/content-schema`](packages/content-schema) | Schémas et validateurs canoniques pour le contenu du monde |
 | [`@ai-rpg-engine/character-profile`](packages/character-profile) | Évolution du personnage, blessures, étapes importantes, réputation. |
 | [`@ai-rpg-engine/character-creation`](packages/character-creation) | Sélection de l’archétype, création du personnage, équipement de départ. |
-| [`@ai-rpg-engine/equipment`](packages/equipment) | Types d’équipement, origine des objets, évolution des reliques. |
+| [`@ai-rpg-engine/equipment`](packages/equipment) | Types d’équipements, origine des objets et évolution des reliques, y compris `item-chronicle-core`, le module optionnel qui enregistre l’historique de l’équipement à partir du jeu réel afin que les objets obtiennent des attributs et des niveaux. |
 | [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | Mémoire intersessions, effets relationnels, état de la campagne |
 | [`@ai-rpg-engine/rumor-system`](packages/rumor-system) | Cycle de vie des rumeurs, mécanismes de propagation et de transformation, suivi de la diffusion. |
 | [`@ai-rpg-engine/presentation`](packages/presentation) | Schéma du plan narratif, contrats de prestation, profils vocaux. |

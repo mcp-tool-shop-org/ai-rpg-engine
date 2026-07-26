@@ -6,14 +6,14 @@
   <img src="https://raw.githubusercontent.com/mcp-tool-shop-org/brand/main/logos/ai-rpg-engine/readme.png" width="400" alt="AI RPG Engine">
 </p>
 
-# @ai-rpg-engine/equipment
+# @ai-rpg-engine/उपकरण
 
 [![npm](https://img.shields.io/npm/v/@ai-rpg-engine/equipment)](https://www.npmjs.com/package/@ai-rpg-engine/equipment)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/mcp-tool-shop-org/ai-rpg-engine/blob/main/LICENSE)
+[![लाइसेंस: एमआईटी](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/mcp-tool-shop-org/ai-rpg-engine/blob/main/LICENSE)
 
-[AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine) के लिए उपकरण स्लॉट, आइटम परिभाषाएं और उपकरण प्रबंधन।
+[एआई आरपीजी इंजन](https://github.com/mcp-tool-shop-org/ai-rpg-engine) के लिए उपकरण स्लॉट, आइटम परिभाषाएँ और लोडआउट प्रबंधन।
 
-## इंस्टॉलेशन
+## स्थापना करें
 
 ```bash
 npm install @ai-rpg-engine/equipment
@@ -21,11 +21,11 @@ npm install @ai-rpg-engine/equipment
 
 ## यह क्या करता है
 
-यह 5 स्लॉट (हथियार, कवच, एक्सेसरी, उपकरण, आभूषण) में पात्रों के उपकरणों का प्रबंधन करता है, जिसमें आइटम कैटलॉग, उपकरण संचालन, टैग-आधारित आवश्यकताएं और समग्र प्रभाव गणना शामिल हैं। सभी संचालन अपरिवर्तनीय हैं।
+पात्र के उपकरणों को 5 स्लॉट्स (हथियार, कवच, एक्सेसरी, उपकरण, आभूषण) में प्रबंधित करता है, जिसमें आइटम कैटलॉग, लोडआउट संचालन, टैग-आधारित आवश्यकताएं और एकत्रित प्रभाव गणना शामिल हैं। सभी संचालन अपरिवर्तनीय हैं।
 
 ## उपयोग
 
-### बनाएं और उपकरण पहनें
+### बनाएँ और लैस करें
 
 ```typescript
 import {
@@ -83,20 +83,54 @@ const result = validateLoadout(loadout, catalog, characterTags);
 
 | स्लॉट | उद्देश्य |
 |------|---------|
-| `weapon` | मुख्य आक्रामक वस्तु |
-| `armor` | सुरक्षात्मक उपकरण |
+| `weapon` | प्राथमिक आक्रामक आइटम |
+| `armor` | रक्षात्मक उपकरण |
 | `accessory` | अंगूठी, ताबीज, संवर्धक |
-| `tool` | उपयोगी वस्तु (ताला खोलने का उपकरण, स्कैनर) |
-| `trinket` | ताबीज, बैज, निष्क्रिय वस्तु |
+| `tool` | उपयोगी वस्तु (लॉकपिक, स्कैनर) |
+| `trinket` | आकर्षण, बैज, निष्क्रिय आइटम |
 
-## आइटम की दुर्लभता
+## आइटम दुर्लभता
 
-`सामान्य` | `असामान्य` | `दुर्लभ` | `पौराणिक`
+`सामान्य` | `असाधारण` | `दुर्लभ` | `पौराणिक`
 
-## AI RPG Engine का हिस्सा
+## पुरातन विकास - एक ऐसा उपकरण जो नाम अर्जित करता है
 
-यह पैकेज [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine) मोनोरिपो का हिस्सा है।
+एक आइटम जिसने कुछ किया है, वह इतिहास जमा करता है, और इतिहास से एक नाम मिलता है। एक कटलास जिसने तीन लोगों की जान ली है, वह **ब्लडीड कटलास** बन जाता है। विकास आइटम के कालक्रम से गणना की जाती है, कभी भी लेखक द्वारा नहीं।
+
+`evaluateRelicGrowth` रीड साइड है - यह एक कालक्रम को एक स्तर और एक उपनाम में बदल देता है:
+
+```typescript
+import { evaluateRelicGrowth } from '@ai-rpg-engine/equipment';
+
+const relic = evaluateRelicGrowth(item, chronicle, currentTick);
+// -> { currentEpithet: 'Bloodied Cutlass', milestonesReached: [...], tier: 1 }
+```
+
+पांच ट्रिगर इसे चलाते हैं - `किल-काउंट`, `आयु`, `मान्यता-गिनती`, `गुट-हत्याएं`, `बॉस-हत्या` - जो कालक्रम से गणना की जाती हैं। हथियार डिफ़ॉल्ट रूप से `DEFAULT_WEAPON_MILESTONES` पर सेट होते हैं, बाकी सब कुछ `DEFAULT_ARMOR_MILESTONES` पर; एक पैक प्रति आइटम इसे बदल सकता है।
+
+`createItemChronicleCore` राइट साइड है: एक **ऑप्ट-इन** `EngineModule` जो वास्तविक गेमप्ले से इतिहास रिकॉर्ड करता है।
+
+```typescript
+import { createItemChronicleCore, getItemDisplayName } from '@ai-rpg-engine/equipment';
+import { evaluateItemRecognition } from '@ai-rpg-engine/modules';
+
+// add to your engine's module list
+createItemChronicleCore({
+  catalog: itemCatalog,
+  recognition: { evaluate: evaluateItemRecognition }, // optional
+})
+
+getItemDisplayName(world, 'cutlass', 'Cutlass'); // 'Bloodied Cutlass'
+```
+
+यह `अक्वायर्ड` (पहली बार उठाना या लैस करना), `यूस्ड-इन-किल` (हत्यारे के लैस किए गए हथियार को श्रेय दिया जाता है), और `रिकॉग्नाइज्ड` (जब आपके क्षेत्र में कोई व्यक्ति आपकी उत्पत्ति पर प्रतिक्रिया करता है) रिकॉर्ड करता है। `@ai-rpg-engine/modules` पर रनटाइम निर्भरता नहीं होने के कारण, `मान्यता` आयात करने के बजाय इंजेक्ट की जाती है। `getItemDisplayName`, `getRelicSummary`, `getItemChronicle` से विकास को वापस पढ़ें, या मांग पर `refreshRelicSummaries` से फिर से आयु निर्धारित करें।
+
+रिकॉर्डिंग नियतात्मक है - घटना-संचालित, `event.tick` पर आधारित, कोई दीवार घड़ी और कोई आरएनजी ड्रा नहीं। एक ऐसा गेम जो मॉड्यूल को नहीं जोड़ता है, वह उससे पहले के संस्करण की तरह ही होगा, और मॉड्यूल कोई नामस्थान डिफ़ॉल्ट पंजीकृत नहीं करता है, इसलिए एक ऐसी दुनिया जहां कुछ भी कालक्रमबद्ध नहीं है, वह कभी भी उस स्थिति को उत्पन्न नहीं करेगी।
+
+## एआई आरपीजी इंजन का हिस्सा
+
+यह पैकेज [एआई आरपीजी इंजन](https://github.com/mcp-tool-shop-org/ai-rpg-engine) मोनोरेपो का हिस्सा है।
 
 ## लाइसेंस
 
-MIT
+एमआईटी

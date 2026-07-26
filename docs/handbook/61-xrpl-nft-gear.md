@@ -105,15 +105,40 @@ evidence. The ledger is a different system family than the engine, so the engine
 cannot fake unique-gear ownership any more than it can fake a token balance — a
 genuine external verifier.
 
-## Relic growth is dormant on shipped content (today)
+## Relic growth is live on shipped content
 
-An honest boundary: relic growth is driven by the `equipment` package's
-**item-chronicle**, and no shipped game populates a chronicle in its running world
-state yet. So on real content today, every item's relic version is `0` — **mint
-manifests, growth does not**. The read path takes the chronicle as an optional
-input (empty by default), and the growth → `NFTokenModify` path is proven live on
-testnet and in the dry-run suite. Wiring the chronicle into play is a separate,
-future engine feature — the adapter never touches the tick to do it.
+Through v3.3 this section documented a boundary: relic growth is driven by the
+`equipment` package's **item-chronicle**, and nothing populated a chronicle in a
+running world, so on real content every item's relic version was `0` — mint
+manifested, growth did not. `NFTokenModify` was proven live on testnet and in the
+dry-run suite, but only against an injected chronicle.
+
+**That loop is now closed.** `@ai-rpg-engine/equipment` ships an opt-in
+`item-chronicle-core` module (see [Chapter 30](/handbook/30-equipment/)) that
+records `acquired` / `used-in-kill` / `recognized` from real play, and
+`starter-gladiator` wires it. A gladiator who wins three arena fights crosses
+`kill-count 3`, and the next checkpoint settles that growth as a real
+`NFTokenModify`: the URI advances `RELIC:0|TIER:0` → `RELIC:1|TIER:1` while the
+NFTokenID is preserved.
+
+**Which number is `relicVersion`.** The read path uses the **milestone count**
+the engine computes, not the raw chronicle entry count. Entry count would be the
+wrong axis twice over: `acquired` is an entry, so merely picking gear up would
+advance the URI — churn, when `NFTokenModify` exists to record that an asset
+genuinely evolved — and the two axes band into different tiers, which would let
+an item read tier 0 in game and tier 1 on-chain, permanently, because the URI
+encodes the on-chain one. The adapter reads the engine's persisted summary
+(`world.modules['item-chronicle'].summaries`) as plain data off a namespace,
+exactly as it reads `loadouts`. The engine computes, the adapter reads, and there
+is only one computation for the two to disagree about.
+
+The determinism firewall is unchanged: the chronicle is read at checkpoints, the
+adapter still never touches the tick, and the engine's world is byte-identical
+before and after the whole mint → grow → modify → reconcile flow.
+
+A pack that does not wire `item-chronicle-core` behaves exactly as before — every
+relic version stays `0` and only mint fires. That is now a pack's choice rather
+than an engine-wide ceiling.
 
 ## The gladiator demo — a real played session
 

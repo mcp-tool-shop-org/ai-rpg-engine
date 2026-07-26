@@ -5,6 +5,75 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.4.0] - 2026-07-26
+
+**Gear that earns a name.** Relic growth has shipped since v3.3 — `evaluateRelicGrowth`
+turns an item's history into a tier and an epithet, so a cutlass that has taken three
+lives becomes the Bloodied Cutlass. It had never once fired during play. Nothing in a
+running game populated an item-chronicle, `recordItemEvent` had zero production callers,
+and on real content every item's relic version was permanently `0`. This release wires
+the write side, so gear grows a name because of what you did with it.
+
+### Added
+
+- **`item-chronicle-core`** (`@ai-rpg-engine/equipment`) — the chronicle's producer, and
+  `recordItemEvent`'s first production caller. An **opt-in** `EngineModule` recording
+  `acquired` (first pickup or equip), `used-in-kill` (on `combat.entity.defeated`,
+  credited to the killer's equipped weapon), and `recognized` (when someone sharing your
+  zone reacts to your provenance). Persists both the raw history and an engine-computed
+  growth summary, read back via `getItemDisplayName` / `getRelicSummary` /
+  `getItemChronicle`, plus `refreshRelicSummaries` for on-demand re-aging.
+- **`starter-gladiator` wires it** — the first shipped pack to do so. A played session in
+  the arena now ends with the retiarius trident renamed the *Bloodied Trident & Net*
+  (`relic-played-session.test.ts`, a real `createGame()` run driven only through `equip`,
+  `move` and `attack`).
+- **Growth is visible in play** — the Director's ledger renders the `Chronicle:` trailer
+  that its own header had recorded as permanently absent, plus a `Relic:` line; the
+  terminal HUD shows earned names, including a new `Equipped:` line, since equipping moves
+  an item out of `inventory` into the loadout namespace.
+- **The ledger loop closes** — with a chronicle now in world state, a checkpoint settles
+  relic growth as a real **XLS-46 `NFTokenModify`**: the URI advances
+  `RELIC:0|TIER:0` → `RELIC:1|TIER:1` with the NFTokenID preserved. This is the path the
+  v3.3.0 NFT slice shipped and honestly disclosed it could not exercise on real content.
+
+### Fixed
+
+- **`boss-kill` was unreachable on every pack.** All ten starters tag their boss
+  `role:boss`; the producer's check was exact array membership on a bare `boss`, matching
+  none of them.
+- **`recognized` was unreachable on every pack** — and with it `recognition-count`, and
+  with that **all armor growth**, since armor's default milestones are only `age` +
+  `recognition-count`. No entity in any shipped pack sets `EntityState.faction`, and the
+  producer skipped onlookers without one. The guard was never needed:
+  `evaluateItemRecognition` types `npcFactionId` as optional and consults it only on the
+  faction-match path; its flag and notoriety paths need no faction at all.
+- **The two relic-tier systems could disagree on-chain.** The ledger adapter derived
+  `relicVersion` from the raw chronicle entry count while `evaluateRelicGrowth` bands on
+  milestones — so picking gear up advanced an NFT's URI (churn, when `NFTokenModify` exists
+  to record real evolution), and an item could read tier 0 in game and tier 1 on-chain,
+  permanently, because the URI encodes the on-chain one. The adapter now reads the
+  engine-computed summary as plain data off a namespace, exactly as it already reads
+  `loadouts`. One computation, no drift, firewall intact.
+
+### Determinism
+
+Recording is in-tick but event-driven and keyed on `event.tick` — no wall clock, no RNG
+draw. Recognition deliberately uses rule-driven `evaluateItemRecognition` rather than the
+probabilistic `shouldRecognize`, because consuming a seeded roll would shift every
+subsequent roll in a run. Legacy replay is preserved by construction: a pack that does not
+add the module has exactly the engine that shipped before it existed, and the module
+registers no namespace default, so a world where nothing is chronicled never materialises
+`world.modules['item-chronicle']`. `starter-gladiator`'s opt-in is a deliberate shift, with
+its module-list pins reconciled; the other nine packs are untouched.
+
+### Known ceilings
+
+Recognition fires on equip rather than continuously (a per-tick perception pass does not
+exist). `lost` is never recorded (there is no drop verb). `faction-kills` works but no
+shipped pack populates `EntityState.faction` yet.
+
+5701 → 5754 tests.
+
 ## [3.3.1] - 2026-07-25
 
 Brand refresh, no code change. The canonical logo at

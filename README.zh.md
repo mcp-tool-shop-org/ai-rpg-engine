@@ -36,7 +36,7 @@
 
 ---
 
-## 当前状态（版本 3.3.0）
+## 当前状态（v3.4.0）
 
 **哪些功能已经实现并经过测试：**
 
@@ -226,7 +226,7 @@ npx @ai-rpg-engine/cli create-starter my-game
 
 **三种游戏模式。** `offline`（默认——没有链，即发布的引擎）· `ledger`（硬币/物品由测试网络余额支持，并在检查点处结算）· `diary`（离线游玩，然后将运行状态哈希值锚定在分账本上，以获得防篡改的收据）。
 
-**哪些内容位于分账本上。** `coin` → 针对信任线路发行的货币 IOU；消耗品 → 可替代的令牌；检查点的净交易差额 → 通过 **XLS-85 令牌托管** 进行结算的转账。作为 NFT 的独特装备是一种有意的后续扩展。抽象区域经济（`economy-core`）*不会*受到影响——它仍然是一个纯模拟。
+**账本上记录的内容。**`coin` → 一种基于信任关系的已发行货币凭证；消耗品 → 可互换的令牌；检查点的净交易差额 → 通过 **XLS-85 令牌托管** 完成的结算转账。独特的装备以 **XLS-20 NFT** 的形式存在（v3.3），并通过 **XLS-46 `NFTokenModify`** 在原地更新可变 NFT 的元数据，从而实现文物增长——从 v3.4 版本开始，这由实际游戏行为驱动。抽象区域经济体 (`economy-core`) *不会* 受到影响——它仍然是一个纯粹的模拟系统。
 
 **安全保障。**仅限测试网络，并具有一个**在代码中不可能实现的主网**结构保护（而不是配置标志）；钱包种子位于 git 忽略的 secrets 侧文件，绝不在存档文件中；结算是幂等的，并且在重试路径上可以保证资源守恒；证明会验证**真实的分账本备忘录**（而不是引擎自身的字符串）；如果无法访问链，则运行将继续进行，并标记为*未锚定*。
 
@@ -273,7 +273,7 @@ const warCry: AbilityDefinition = {
 | [`@ai-rpg-engine/content-schema`](packages/content-schema) | 用于世界内容的规范模式和验证器。 |
 | [`@ai-rpg-engine/character-profile`](packages/character-profile) | 角色发展、受伤、里程碑、声望。 |
 | [`@ai-rpg-engine/character-creation`](packages/character-creation) | 原型选择、构建生成、起始装备。 |
-| [`@ai-rpg-engine/equipment`](packages/equipment) | 装备类型、物品来源、圣物成长。 |
+| [`@ai-rpg-engine/equipment`](packages/equipment) | 装备类型、物品来源以及文物增长——包括 `item-chronicle-core`，这是一个可选模块，用于记录来自实际游戏的装备历史，以便物品获得称号和等级。 |
 | [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | 跨会话记忆、关系效果、战役状态。 |
 | [`@ai-rpg-engine/rumor-system`](packages/rumor-system) | 谣言生命周期、变异机制、传播跟踪。 |
 | [`@ai-rpg-engine/presentation`](packages/presentation) | 叙事计划模式、渲染协议、语音配置文件。 |

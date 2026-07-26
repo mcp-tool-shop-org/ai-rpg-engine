@@ -4,7 +4,7 @@
 > This is an audit snapshot — scores reflect the gate results at the date below, not a live readout.
 
 **Repo:** mcp-tool-shop-org/ai-rpg-engine
-**Date:** 2026-07-18 (v2.6.0 dogfood swarm — full health A–D + feature pass; snapshot — original audit 2026-03-06 at v1.0.0). The v2.5 swarm also made the quality gates real: pack rubric on the live catalog, docs-integrity vs the latest tag, coverage ratchet, and a LICENSE packaging gate that blocks publish (each with a mutation meta-test).
+**Date:** 2026-07-26 (v3.4.0 — item-chronicle activation; `shipcheck audit` 23 checked / 0 unchecked / 16 skipped, 100% pass, all hard gates green. Prior snapshots: v2.6.0 dogfood swarm 2026-07-18; original audit 2026-03-06 at v1.0.0). The v2.5 swarm also made the quality gates real: pack rubric on the live catalog, docs-integrity vs the latest tag, coverage ratchet, and a LICENSE packaging gate that blocks publish (each with a mutation meta-test).
 **Type tags:** `[npm]` `[library]`
 
 ## Pre-Remediation Assessment
@@ -14,7 +14,7 @@
 | A. Security | 10/10 | SECURITY.md, threat model, no secrets, no telemetry |
 | B. Error Handling | 10/10 | Structured events with verb + reason fields |
 | C. Operator Docs | 10/10 | README, CHANGELOG, LICENSE, handbook (63 chapters + 4 appendices) |
-| D. Shipping Hygiene | 10/10 | verify script, v2.6.0, dep scanning, clean packaging |
+| D. Shipping Hygiene | 10/10 | verify script, v3.4.0, dep scanning, clean packaging |
 | E. Identity (soft) | 10/10 | Logo, 7 translations, landing page, repo metadata |
 | **Overall** | **50/50** | |
 

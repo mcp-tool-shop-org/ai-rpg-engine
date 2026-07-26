@@ -36,7 +36,7 @@ Este é um **motor de composição**, não um jogo completo. Os 10 mundos inicia
 
 ---
 
-## Estado atual (versão 3.3.0)
+## Estado atual (v3.4.0)
 
 **O que funciona e foi testado:**
 
@@ -221,7 +221,7 @@ A distinção que mantém a reprodução segura **não** é "qual pacote importa
 
 **Três modos de jogo.** `offline` (padrão — sem cadeia, o motor como está lançado) · `ledger` (moedas/itens lastreados por saldos da testnet, liquidados em pontos de verificação) · `diary` (jogue offline e, em seguida, ancore o hash do estado da execução no livro-razão para um recibo à prova de adulteração).
 
-**O que está no livro-razão.** `coin` → uma promessa de moeda emitida sobre uma linha de confiança; itens consumíveis → tokens fungíveis; o delta líquido de negociação de um ponto de verificação → uma transferência liquidada por meio do **escrow de token XLS-85**. Equipamentos exclusivos como NFTs são uma etapa posterior deliberada. A economia abstrata do distrito (`economy-core`) *não* é alterada — permanece uma simulação pura.
+**O que está registrado.** `coin` → um título de dívida em moeda emitida, vinculado a uma linha de confiança; itens consumíveis → tokens fungíveis; o saldo líquido das transações de um ponto de controle → uma transferência liquidada por meio do **escrow de token XLS-85**. Equipamentos exclusivos são enviados como **NFTs XLS-20** (v3.3), com o crescimento dos artefatos avançando os metadados de um NFT mutável no local, por meio do **XLS-46 `NFTokenModify`** — impulsionado pelo jogo real a partir da versão 3.4. A economia abstrata do distrito (`economy-core`) *não* é alterada — permanece uma simulação pura.
 
 **Mecanismos de segurança.** Somente testnet, com uma proteção estrutural **impossível na mainnet em código** (não uma flag de configuração); as sementes da carteira estão em um arquivo secundário de segredos ignorado pelo Git, nunca no arquivo de salvamento; a liquidação é idempotente e segura para repetição; as provas verificam o **memo real na cadeia** (não a string do próprio motor); e se a cadeia estiver inacessível, a execução simplesmente continua, marcada como *não ancorada*.
 
@@ -268,7 +268,7 @@ const warCry: AbilityDefinition = {
 | [`@ai-rpg-engine/content-schema`](packages/content-schema) | Esquemas e validadores canônicos para conteúdo do mundo. |
 | [`@ai-rpg-engine/character-profile`](packages/character-profile) | Evolução do personagem, lesões, marcos importantes, reputação. |
 | [`@ai-rpg-engine/character-creation`](packages/character-creation) | Seleção de arquétipos, criação de configurações, equipamento inicial. |
-| [`@ai-rpg-engine/equipment`](packages/equipment) | Tipos de equipamento, origem dos itens, evolução das relíquias |
+| [`@ai-rpg-engine/equipment`](packages/equipment) | Tipos de equipamento, origem dos itens e crescimento dos artefatos — incluindo `item-chronicle-core`, o módulo opcional que registra o histórico do equipamento a partir do jogo real, para que os itens obtenham atributos e níveis. |
 | [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | Memória entre sessões, efeitos das relações, estado da campanha |
 | [`@ai-rpg-engine/rumor-system`](packages/rumor-system) | Ciclo de vida dos rumores, mecanismos de mutação, rastreamento da disseminação. |
 | [`@ai-rpg-engine/presentation`](packages/presentation) | Esquema do plano de narração, modelos de contratos de prestação de serviços e perfis de voz. |
