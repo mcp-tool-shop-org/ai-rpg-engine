@@ -186,16 +186,65 @@ describe('quests', () => {
     }
   });
 
-  it('every zone-entry trigger names a real zone', () => {
+  it('every zone-entry trigger reads the zoneId field and names a real zone', () => {
     // A quest gated on a typo'd zone id never offers and never advances — a
-    // silent dead quest, which is exactly the wired-but-inert class.
+    // silent dead quest, the wired-but-inert class.
+    //
+    // The `key === 'zoneId'` assertion is the part that matters, and the first
+    // version of this test SKIPPED any trigger whose key was not already
+    // 'zoneId' — which is precisely the malformed case. A real stage shipped
+    // reading `key: 'crooked-stair'` (the value, put where the field name goes)
+    // and this test passed it straight through; the scripted playthrough caught
+    // it instead. A validator that only inspects well-formed input is not a
+    // validator.
     for (const quest of merchantQuests) {
       const triggers = [...(quest.triggers ?? []), ...quest.stages.flatMap((s) => s.triggers ?? [])];
       for (const t of triggers) {
         if (t.event !== 'world.zone.entered') continue;
         const params = t.condition?.params as { key?: string; value?: unknown } | undefined;
-        if (params?.key !== 'zoneId') continue;
-        expect(zoneIds.has(String(params.value)), `quest '${quest.id}' triggers on unknown zone '${String(params.value)}'`).toBe(true);
+        expect(
+          params?.key,
+          `quest '${quest.id}' zone trigger reads payload field '${String(params?.key)}' — must be 'zoneId'`,
+        ).toBe('zoneId');
+        expect(zoneIds.has(String(params?.value)), `quest '${quest.id}' triggers on unknown zone '${String(params?.value)}'`).toBe(true);
+      }
+    }
+  });
+
+  it('every stage of a multi-stage quest is reachable via nextStage', () => {
+    // quest-core's completeStage falls through to completeQuest when a stage has
+    // no `nextStage`, so in a 2-stage quest without the chain the second stage
+    // stays 'locked' for the whole run. This shipped, and only the scripted
+    // playthrough noticed: the schema validates each stage in isolation and has
+    // no opinion about whether the graph connects.
+    for (const quest of merchantQuests) {
+      if (quest.stages.length < 2) continue;
+      const ids = quest.stages.map((s) => s.id);
+      const reachable = new Set([ids[0]]);
+      for (const stage of quest.stages) {
+        if (!stage.nextStage) continue;
+        expect(ids, `quest '${quest.id}' stage '${stage.id}' -> unknown '${stage.nextStage}'`).toContain(stage.nextStage);
+        reachable.add(stage.nextStage);
+      }
+      for (const id of ids) {
+        expect(reachable.has(id), `quest '${quest.id}' stage '${id}' is unreachable — no stage names it as nextStage`).toBe(true);
+      }
+    }
+  });
+
+  it('no quest is gated on ENTERING the zone the player starts in', () => {
+    // `world.zone.entered` is emitted by the `move` handler, so the start zone
+    // never fires it. A quest offered on entering `counting-house` is
+    // structurally unreachable — well-formed, schema-valid, and dead. This
+    // shipped once and the scripted playthrough is what found it.
+    for (const quest of merchantQuests) {
+      for (const t of quest.triggers ?? []) {
+        if (t.event !== 'world.zone.entered') continue;
+        const params = t.condition?.params as { key?: string; value?: unknown } | undefined;
+        expect(
+          String(params?.value),
+          `quest '${quest.id}' offers on entering the start zone — it can never fire`,
+        ).not.toBe(player.zoneId);
       }
     }
   });

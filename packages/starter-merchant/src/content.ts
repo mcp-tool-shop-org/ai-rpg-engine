@@ -453,12 +453,15 @@ export const warrensTermsDialogue: DialogueDefinition = {
 export const openTheBooksQuest: QuestDefinition = {
   id: 'open-the-books',
   name: 'Open the Books',
-  // Offered at the desk you start in front of. The tutorial that is also the
-  // ledger layer's checkpoint 0.
+  // Offered when you approach the Assay Master. NOT on entering the counting
+  // house: `world.zone.entered` is emitted by the `move` handler, so the zone a
+  // player STARTS in never fires it — a quest gated on the start zone can never
+  // be offered at all. The scripted playthrough caught this; the schema could
+  // not, because the trigger was perfectly well-formed and simply unreachable.
   triggers: [
     {
-      event: 'world.zone.entered',
-      condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'counting-house' } },
+      event: 'dialogue.started',
+      condition: { type: 'payload-equals', params: { key: 'dialogueId', value: 'guild-registration' } },
       effect: { type: 'offer', params: {} },
     },
   ],
@@ -497,6 +500,11 @@ export const lateCaravanQuest: QuestDefinition = {
       name: 'Find Out What Is Owed',
       description: 'Drell keeps the manifests. He will know how far past the date this has run.',
       objectives: ['Ask Harbourmaster Drell about the overdue consignment'],
+      // `nextStage` is what CHAINS a multi-stage quest. quest-core's
+      // completeStage falls through to completeQuest when it is absent, so
+      // without this the quest finished on stage 1 and `settle-or-default`
+      // stayed 'locked' forever — authored, schema-valid, unreachable.
+      nextStage: 'settle-or-default',
       triggers: [
         {
           event: 'world.zone.entered',
@@ -512,8 +520,13 @@ export const lateCaravanQuest: QuestDefinition = {
       objectives: ['Resolve the overdue obligation, one way or the other'],
       triggers: [
         {
+          // `key` is the PAYLOAD FIELD to read, not the value to match. This read
+          // `key: 'crooked-stair'` — a field no event carries — so the stage
+          // could never advance. My own zone-trigger validator skipped it,
+          // because it only inspected triggers whose key was already 'zoneId';
+          // the malformed one fell through the hole. Validator widened to match.
           event: 'world.zone.entered',
-          condition: { type: 'payload-equals', params: { key: 'crooked-stair', value: 'crooked-stair' } },
+          condition: { type: 'payload-equals', params: { key: 'zoneId', value: 'crooked-stair' } },
           effect: { type: 'advance', params: {} },
         },
       ],
