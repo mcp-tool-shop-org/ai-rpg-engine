@@ -5,6 +5,153 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.5.0] - 2026-07-26
+
+**Salt Road Ledger** — the eleventh starter, and the first authored backwards from a
+system rather than a genre. `@ai-rpg-engine/starter-merchant` exists because the ledger
+adapter had accumulated capabilities no shipped pack was shaped to use: escrow was
+plumbing, unique gear was a sword with a receipt, and `reconcile()` was something a test
+called. This pack makes them the game. You play a factor — an agent trading on someone
+else's capital — and every mechanic is a variation on the gap between what you have
+promised and what you have delivered.
+
+Released together with the [3.4.0] entry below, which was prepared but never tagged.
+
+### Added
+
+- **`@ai-rpg-engine/starter-merchant`** — 8 zones across 4 districts, 4 NPCs, 3 hostiles,
+  a boss that is a reckoning rather than a creature, 3 quests, and an item catalog split
+  into fungible trade goods and five unique instruments. **7/7 on the pack rubric**,
+  scored against the live catalog.
+- **Five commerce verbs** (`appraise` / `haggle` / `consign` / `underwrite` / `audit`) over
+  a pack-local `contract-core` module: obligations with due ticks, lien accrual, and
+  deterministic seizure. `consign` is the only verb in the catalog whose offline semantics
+  match a settlement primitive one-to-one — value held by a third party, released at a
+  future tick, refunded on default.
+- **`mercantile` genre** added to `PackGenre`, plus `merchant` entries in
+  `GENRE_BUYABLE_STOCK`, `GENRE_SUPPLY_DEFAULTS`, and `GENRE_RECIPES`. Deliberately the
+  flattest supply profile in the set: a merchant pack's pressure is timing and obligation,
+  not scarcity.
+- **Handbook [Chapter 62](docs/handbook/62-salt-road-ledger.md)**.
+- **The merchant showcase proof** — the first played-session test to settle BOTH ledger
+  layers in one session, and the first to grow a relic through **recognition** rather than
+  kills. Proven live on XRPL testnet, 11/11 stages: a `consign` settled under memo
+  `VERB:consign`, escrow-vs-payment compared against one set of books, the Guild Seal
+  minted XLS-20 and then advanced `RELIC:0|TIER:0` → `RELIC:1|TIER:1` by `NFTokenModify`
+  with the NFTokenID preserved, and the world byte-identical to an adapter-free replay.
+
+### Changed — the ledger adapter's two inert axes are now real
+
+- **`SettlementVerb` was dead in both directions.** The union carried `buy`/`sell` but both
+  call sites passed the literal `'settle'`, so no run could emit them. `settle()` now takes
+  the verb from its caller, persists it on `SettlementRecord` (so `retryPending` cannot
+  flatten a `consign` into a generic settle on the one path that exists because the network
+  is unreliable), and `reconcile()` matches the **full** memo instead of a prefix that
+  stopped before `DELTA:` and `VERB:` — which had been written on-chain and never read.
+- **`config.settlement` had zero reads anywhere.** Selecting `'payment'` produced
+  byte-identical behaviour to `'token-escrow'` — a config flag masquerading as a feature.
+  It is now a real branch, exposed as a **per-settlement override** rather than a second
+  adapter, because two adapters would mean two states, two baselines and two reconcile
+  reports over one economy.
+- `buildLedgerNfts(NFTInfo[], owner)` is a real export, closing v3.3.0's open fast-follow.
+
+### Fixed
+
+- **`settleCheckpoint` never forwarded `options`.** The engine seam is the documented way
+  to drive the adapter, so every caller using the public path silently got `verb: 'settle'`
+  and the construction-time primitive regardless of what it asked for. Both new axes were
+  reachable only by bypassing the seam.
+- **Six dead mechanics in the new pack**, found by tracing every headline claim through a
+  real played session rather than trusting a green unit suite: a status with no producer
+  (`encumbered`), two catalog items with no acquisition path (`writ-of-passage`,
+  `deed-of-the-longshore` — the latter being the burn/seizure showcase target), a verb whose
+  documented downside could not occur (`underwrite`'s claim never fired), a margin nothing
+  read (`haggle`), and that same margin rounding away to nothing on common goods once wired.
+- Two tuning bugs from the same audit: Broker Inaya's `ledger` of 9 made the haggle formula
+  come out to exactly zero against the default factor, so the pack's main counterparty was
+  the one opponent where haggling provably did nothing; and `contraband` seeded at 25 sat
+  below `BUY_SUPPLY_FLOOR` (30), leaving the pack's only contraband item permanently
+  unpurchasable.
+
+### Determinism
+
+Obligation due dates derive from `world.meta.tick`, ids from a counter, and seizure picks
+the obligation whose item id sorts lowest — never iteration order, never a roll. The
+obligation clock rides `world.zone.entered` because `advanceTick` emits nothing. The pack
+carries **no dependency on the ledger adapter** in any manifest field or import form, and
+`firewall.test.ts` asserts it stays that way.
+
+5911 tests across 307 files.
+
+## [3.4.0] - 2026-07-26
+
+**Gear that earns a name.** Relic growth has shipped since v3.3 — `evaluateRelicGrowth`
+turns an item's history into a tier and an epithet, so a cutlass that has taken three
+lives becomes the Bloodied Cutlass. It had never once fired during play. Nothing in a
+running game populated an item-chronicle, `recordItemEvent` had zero production callers,
+and on real content every item's relic version was permanently `0`. This release wires
+the write side, so gear grows a name because of what you did with it.
+
+### Added
+
+- **`item-chronicle-core`** (`@ai-rpg-engine/equipment`) — the chronicle's producer, and
+  `recordItemEvent`'s first production caller. An **opt-in** `EngineModule` recording
+  `acquired` (first pickup or equip), `used-in-kill` (on `combat.entity.defeated`,
+  credited to the killer's equipped weapon), and `recognized` (when someone sharing your
+  zone reacts to your provenance). Persists both the raw history and an engine-computed
+  growth summary, read back via `getItemDisplayName` / `getRelicSummary` /
+  `getItemChronicle`, plus `refreshRelicSummaries` for on-demand re-aging.
+- **`starter-gladiator` wires it** — the first shipped pack to do so. A played session in
+  the arena now ends with the retiarius trident renamed the *Bloodied Trident & Net*
+  (`relic-played-session.test.ts`, a real `createGame()` run driven only through `equip`,
+  `move` and `attack`).
+- **Growth is visible in play** — the Director's ledger renders the `Chronicle:` trailer
+  that its own header had recorded as permanently absent, plus a `Relic:` line; the
+  terminal HUD shows earned names, including a new `Equipped:` line, since equipping moves
+  an item out of `inventory` into the loadout namespace.
+- **The ledger loop closes** — with a chronicle now in world state, a checkpoint settles
+  relic growth as a real **XLS-46 `NFTokenModify`**: the URI advances
+  `RELIC:0|TIER:0` → `RELIC:1|TIER:1` with the NFTokenID preserved. This is the path the
+  v3.3.0 NFT slice shipped and honestly disclosed it could not exercise on real content.
+
+### Fixed
+
+- **`boss-kill` was unreachable on every pack.** All ten starters tag their boss
+  `role:boss`; the producer's check was exact array membership on a bare `boss`, matching
+  none of them.
+- **`recognized` was unreachable on every pack** — and with it `recognition-count`, and
+  with that **all armor growth**, since armor's default milestones are only `age` +
+  `recognition-count`. No entity in any shipped pack sets `EntityState.faction`, and the
+  producer skipped onlookers without one. The guard was never needed:
+  `evaluateItemRecognition` types `npcFactionId` as optional and consults it only on the
+  faction-match path; its flag and notoriety paths need no faction at all.
+- **The two relic-tier systems could disagree on-chain.** The ledger adapter derived
+  `relicVersion` from the raw chronicle entry count while `evaluateRelicGrowth` bands on
+  milestones — so picking gear up advanced an NFT's URI (churn, when `NFTokenModify` exists
+  to record real evolution), and an item could read tier 0 in game and tier 1 on-chain,
+  permanently, because the URI encodes the on-chain one. The adapter now reads the
+  engine-computed summary as plain data off a namespace, exactly as it already reads
+  `loadouts`. One computation, no drift, firewall intact.
+
+### Determinism
+
+Recording is in-tick but event-driven and keyed on `event.tick` — no wall clock, no RNG
+draw. Recognition deliberately uses rule-driven `evaluateItemRecognition` rather than the
+probabilistic `shouldRecognize`, because consuming a seeded roll would shift every
+subsequent roll in a run. Legacy replay is preserved by construction: a pack that does not
+add the module has exactly the engine that shipped before it existed, and the module
+registers no namespace default, so a world where nothing is chronicled never materialises
+`world.modules['item-chronicle']`. `starter-gladiator`'s opt-in is a deliberate shift, with
+its module-list pins reconciled; the other nine packs are untouched.
+
+### Known ceilings
+
+Recognition fires on equip rather than continuously (a per-tick perception pass does not
+exist). `lost` is never recorded (there is no drop verb). `faction-kills` works but no
+shipped pack populates `EntityState.faction` yet.
+
+5701 → 5754 tests.
+
 ## [3.3.1] - 2026-07-25
 
 Brand refresh, no code change. The canonical logo at

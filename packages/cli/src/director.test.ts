@@ -11,9 +11,18 @@ import {
   makeOpportunity,
   createDistrictEconomy,
   runWorldTick,
+  statusCore,
+  applyStatus,
+  removeStatus,
+  registerStatusDefinitions,
 } from '@ai-rpg-engine/modules';
-import { EQUIPMENT_CATALOG_FORMULA, type ItemCatalog } from '@ai-rpg-engine/equipment';
-import { FormulaRegistry, type Engine, type WorldState } from '@ai-rpg-engine/core';
+import {
+  EQUIPMENT_CATALOG_FORMULA,
+  createEquipmentCore,
+  createItemChronicleCore,
+  type ItemCatalog,
+} from '@ai-rpg-engine/equipment';
+import { Engine, FormulaRegistry, type WorldState } from '@ai-rpg-engine/core';
 import { renderDirectorLedger } from './director.js';
 
 /**
@@ -48,6 +57,61 @@ function formulasWithEquipmentCatalog(catalog: ItemCatalog): FormulaRegistry {
   const formulas = new FormulaRegistry();
   formulas.register(EQUIPMENT_CATALOG_FORMULA, () => catalog);
   return formulas;
+}
+
+/**
+ * A real engine wiring equipment-core AND createItemChronicleCore — the
+ * combination no shipped starter uses yet, built here so the Director's
+ * chronicle surfacing is proven against a played session rather than a
+ * hand-written namespace.
+ */
+function chronicleEngine(opts: { chronicle?: boolean } = {}): Engine {
+  const withChronicle = opts.chronicle !== false;
+  const catalog: ItemCatalog = {
+    items: [
+      {
+        id: 'oathbreaker',
+        name: 'Oathbreaker',
+        description: 'Taken from a Warden who no longer needed it.',
+        slot: 'weapon',
+        rarity: 'rare',
+        provenance: { origin: 'Warden armory', factionId: 'iron-wardens', flags: ['stolen'] },
+      },
+      {
+        id: 'plain-knife',
+        name: 'Plain Knife',
+        description: 'A knife. Nothing more.',
+        slot: 'weapon',
+        rarity: 'common',
+      },
+    ],
+  };
+
+  const engine = new Engine({
+    manifest: {
+      id: 'director-chronicle', title: 'Director Chronicle', version: '0.0.1',
+      engineVersion: '0.1.0', ruleset: 'minimal',
+      modules: ['status-core', 'equipment-core'], contentPacks: [],
+    },
+    seed: 11,
+    modules: [
+      statusCore,
+      createEquipmentCore({
+        catalog,
+        statuses: { registerDefinitions: registerStatusDefinitions, apply: applyStatus, remove: removeStatus },
+      }),
+      ...(withChronicle ? [createItemChronicleCore({ catalog })] : []),
+    ],
+  });
+  engine.store.addZone({ id: 'arena', roomId: 'arena', name: 'Arena', tags: [], neighbors: [] });
+  engine.store.addEntity({
+    id: 'player', blueprintId: 'player', type: 'player', name: 'Gladiator',
+    tags: ['player'], stats: { might: 5 }, resources: { hp: 20, maxHp: 20 },
+    statuses: [], inventory: ['oathbreaker', 'plain-knife'], zoneId: 'arena',
+  });
+  engine.store.state.playerId = 'player';
+  engine.store.state.locationId = 'arena';
+  return engine;
 }
 
 /** A well-formed pressure in the fixture voice. */
@@ -490,9 +554,101 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
       expect(report).toContain('Trident & Net (weapon, uncommon)');
       expect(report).toContain('  Origin: Arena armory');
       expect(report).toContain('  Lore: Favored by fighters who prefer cunning to brawn');
-      // The honest ceiling: recordItemEvent has zero production callers, so
-      // no Chronicle line was ever passed and none renders.
+      // The Chronicle trailer renders from the SHIPPED pack now. This
+      // assertion was `not.toContain('Chronicle:')` for as long as no pack
+      // wired the producer — first because `recordItemEvent` had zero
+      // production callers at all, then because starter-gladiator had not yet
+      // opted in. P3 of the relic-chronicle cycle wired it (setup.ts's
+      // createItemChronicleCore), so equipping the trident records `acquired`
+      // and the trailer that this file's header once called permanently absent
+      // now appears on a real engine playing a real verb.
+      //
+      // No Relic line yet: one `acquired` event crosses no milestone, so
+      // `summary.epithet` is undefined and the line is correctly withheld. The
+      // played-session proof in starter-gladiator earns the epithet over three
+      // real kills; here the point is only that the trailer is reachable.
+      expect(report).toContain('Chronicle:');
+      expect(report).not.toContain('Relic:');
+    });
+
+    it('renders Chronicle + Relic lines once a pack wires the chronicle module', () => {
+      // The line this file's header recorded as permanently absent. Built on
+      // a real engine playing real actions — a hand-written namespace fixture
+      // would prove the formatter runs, not that anything reaches it.
+      const engine = chronicleEngine();
+      engine.submitAction('equip', { parameters: { itemId: 'oathbreaker' } });
+      for (const [i, name] of ['Bone Collector', 'Pit Dog', 'The Butcher'].entries()) {
+        engine.store.addEntity({
+          id: `foe-${i}`, blueprintId: 'foe', type: 'npc', name,
+          tags: [], stats: {}, resources: { hp: 1, maxHp: 1 }, statuses: [], zoneId: 'arena',
+        });
+        engine.store.recordEvent({
+          id: '', tick: i + 1, type: 'combat.entity.defeated',
+          payload: { entityId: `foe-${i}`, entityName: name, defeatedBy: 'player', defeatZoneId: 'arena' },
+        });
+      }
+
+      const report = renderDirectorLedger(engine);
+
+      expect(report).toContain('Chronicle: 4 events, 3 kills, 0 recognitions');
+      expect(report).toContain('Relic: Bloodied Oathbreaker — tier 1, 1 milestone');
+
+      // And it keeps climbing, with the count pluralized honestly.
+      for (let i = 3; i < 10; i++) {
+        engine.store.addEntity({
+          id: `foe-${i}`, blueprintId: 'foe', type: 'npc', name: `Foe ${i}`,
+          tags: [], stats: {}, resources: { hp: 1, maxHp: 1 }, statuses: [], zoneId: 'arena',
+        });
+        engine.store.recordEvent({
+          id: '', tick: i + 1, type: 'combat.entity.defeated',
+          payload: { entityId: `foe-${i}`, entityName: `Foe ${i}`, defeatedBy: 'player', defeatZoneId: 'arena' },
+        });
+      }
+      expect(renderDirectorLedger(engine)).toContain('Relic: Oathbreaker the Reaper — tier 2, 2 milestones');
+    });
+
+    it('shows a chronicled item that carries no authored provenance', () => {
+      // The widened per-item gate. An unremarkable blade that has taken
+      // lives is exactly what a GM needs to see; gating on authored
+      // provenance alone would hide the item this cycle exists to surface.
+      const engine = chronicleEngine();
+      engine.submitAction('equip', { parameters: { itemId: 'plain-knife' } });
+
+      const report = renderDirectorLedger(engine);
+
+      expect(report).toContain('Plain Knife (weapon, common)');
+      expect(report).toContain('Chronicle: 1 events, 0 kills, 0 recognitions');
+      // Still no epithet — one acquisition crosses nothing.
+      expect(report).not.toContain('Relic:');
+    });
+
+    it('still hides ordinary gear when no chronicle module is wired', () => {
+      // The gate has to close from BOTH sides or every stick earns a line.
+      // Same engine, same equip, chronicle module omitted — an item with no
+      // authored provenance and no history is exactly as invisible as it was
+      // before this cycle. Proves the widened gate added a second way IN,
+      // not a permanently open door.
+      const engine = chronicleEngine({ chronicle: false });
+      engine.submitAction('equip', { parameters: { itemId: 'plain-knife' } });
+
+      const report = renderDirectorLedger(engine);
+
+      expect(report).not.toContain('Plain Knife');
       expect(report).not.toContain('Chronicle:');
+    });
+
+    it('a chronicled item and an unremarkable one sort out correctly in one report', () => {
+      // Both gates firing in a single render: the knife earns its line only
+      // because it has history, while provenance carries the other.
+      const engine = chronicleEngine();
+      engine.submitAction('equip', { parameters: { itemId: 'plain-knife' } });
+      engine.submitAction('equip', { parameters: { itemId: 'oathbreaker' } });
+
+      const report = renderDirectorLedger(engine);
+
+      expect(report).toContain('EQUIPMENT (2)');
+      expect(report).toContain('Plain Knife');
+      expect(report).toContain('Oathbreaker');
     });
 
     // F-P9-005: economy-core and companion-core are always-included

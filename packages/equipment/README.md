@@ -93,6 +93,40 @@ const result = validateLoadout(loadout, catalog, characterTags);
 
 `common` | `uncommon` | `rare` | `legendary`
 
+## Relic Growth — gear that earns a name
+
+An item that has done something accumulates a history, and a history earns a name. A cutlass that has taken three lives becomes the **Bloodied Cutlass**. Growth is computed from the item's chronicle, never authored.
+
+`evaluateRelicGrowth` is the read side — it turns a chronicle into a tier and an epithet:
+
+```typescript
+import { evaluateRelicGrowth } from '@ai-rpg-engine/equipment';
+
+const relic = evaluateRelicGrowth(item, chronicle, currentTick);
+// -> { currentEpithet: 'Bloodied Cutlass', milestonesReached: [...], tier: 1 }
+```
+
+Five triggers drive it — `kill-count`, `age`, `recognition-count`, `faction-kills`, `boss-kill` — counted off the chronicle. Weapons default to `DEFAULT_WEAPON_MILESTONES`, everything else to `DEFAULT_ARMOR_MILESTONES`; a pack can override per item.
+
+`createItemChronicleCore` is the write side: an **opt-in** `EngineModule` that records history from real play.
+
+```typescript
+import { createItemChronicleCore, getItemDisplayName } from '@ai-rpg-engine/equipment';
+import { evaluateItemRecognition } from '@ai-rpg-engine/modules';
+
+// add to your engine's module list
+createItemChronicleCore({
+  catalog: itemCatalog,
+  recognition: { evaluate: evaluateItemRecognition }, // optional
+})
+
+getItemDisplayName(world, 'cutlass', 'Cutlass'); // 'Bloodied Cutlass'
+```
+
+It records `acquired` (first pickup or equip), `used-in-kill` (credited to the killer's equipped weapon), and `recognized` (when someone in your zone reacts to your provenance). `recognition` is injected rather than imported because this package carries no runtime dependency on `@ai-rpg-engine/modules`. Read growth back with `getItemDisplayName`, `getRelicSummary`, `getItemChronicle`, or re-age on demand with `refreshRelicSummaries`.
+
+Recording is deterministic — event-driven, keyed on `event.tick`, no wall clock and no RNG draw. A game that does not add the module is byte-identical to one built before it existed, and the module registers no namespace default, so a world where nothing is chronicled never materialises the state at all.
+
 ## Part of AI RPG Engine
 
 This package is part of the [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine) monorepo.

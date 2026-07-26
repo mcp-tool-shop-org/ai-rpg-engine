@@ -22,76 +22,78 @@
 
 ## 这是什么
 
-- 一个**模块库**——包含 30 多个引擎模块，涵盖战斗、感知、认知、派系、谣言、移动、伙伴等。
-- 一个**组合工具包**——`buildCombatStack()` 函数用大约 7 行代码将战斗功能整合在一起；`new Engine({ modules })` 用于启动游戏。
-- 一个**模拟运行时环境**——确定性时间步进，可重放的操作日志，基于种子的随机数生成器。
-- 一个**可选的 AI 设计工作室**——提供框架、评估、平衡分析、调整和实验功能，通过 Ollama 实现。
-- 一个**可选的链上层**——`@ai-rpg-engine/ledger-adapter` 使用真实的 XRPL **测试网络**令牌来支持游戏中的货币和可交易物品，并在检查点处进行结算，完全独立于确定性核心（可选；不使用时，运行结果在字节级别上是相同的）。
+- A **module library** — 30+ engine modules covering combat, perception, cognition, factions, rumors, traversal, companions, and more
+- A **composition toolkit** — `buildCombatStack()` wires combat in ~7 lines; `new Engine({ modules })` boots the game
+- A **simulation runtime** — deterministic ticks, replayable action logs, seeded RNG
+- An **AI design studio** (optional) — scaffolding, critique, balance analysis, tuning, experiments via Ollama
+- An **optional on-ledger layer** — `@ai-rpg-engine/ledger-adapter` backs a game's coin and tradeable items with real XRPL **testnet** tokens, settled at checkpoints, entirely outside the deterministic core (opt-in; a run is byte-identical without it)
 
 ## 这不是什么
 
-- 不是一个完整的游戏——它包含 10 个可玩初始世界，你可以今天就运行它们作为示例，并且该引擎是你用来构建*自己的*游戏的工具包
-- 不是一个视觉引擎——它输出结构化事件，而不是像素
-- 不是一个故事生成器——它模拟世界；叙事是从机制中产生的
+- Not a single finished game — it ships 10 playable starter worlds you can `run` today as examples, and the engine is the toolkit you compose your *own* game from
+- Not a visual engine — it outputs structured events, not pixels
+- Not a story generator — it simulates worlds; narrative emerges from mechanics
 
 ---
 
-## 当前状态（版本 3.3.0）
+## 当前状态（版本 3.5.0）
 
-**哪些功能已经实现并经过测试：**
+**What works and is tested:**
+- Core runtime: world state, events, actions, ticks, replay — stable since v1.0; deterministic byte-identical replay (per-instance id counter, seeded RNG)
+- Combat system: 5 actions, 4 combat states, 4 engagement states, companion interception, defeat flow, AI tactics
+- Abilities: costs, cooldowns, stat checks, typed effects, 11-tag status vocabulary, AI-aware selection
+- **Party combat (v2.4):** ally-targeting (heal / buff / revive), friend/foe AoE filtering, target selectors — a healer can heal a teammate; enemy AoE spares allies
+- **Status effects (v2.4):** passive stat modifiers reach combat, deterministic DoT/HoT off the tick counter, depth-capped reactive triggers (thorns/reflect)
+- **Plug-in Profiles — per-entity rule resolution (v2.5):** a `might` fighter and a `will` mystic resolve combat in one fight, each reading stats through its own mapping. `RuleProfile` + `WorldState.ruleProfiles` + `EntityState.ruleProfileId`; `applyProfile()` attaches a profile (stat mapping, resource pools, per-entity abilities); `buildProfile()`, `validateProfileSet()` (duplicate ids rejected), 10 starter-derived templates, and a `profile` CLI command
+- **Playable `run` loop (v2.6):** the terminal game is real, not a demo — enemies act on their own AI intent profiles (`aggressive`/`cautious`/`territorial`/`calculating`), a fight ends in victory or defeat, you can save and resume, and abilities and XP are on the action menu. `run <path>` loads a game you scaffolded. Composed terminal UI with a glance-able HUD and accessible color (honors `NO_COLOR` / non-TTY)
+- **AI design studio ships as its own `ai` command (v2.6):** `npm install -g @ai-rpg-engine/ollama` → `ai chat` — scaffold, critique, and balance content against a local Ollama model
+- Unified decision layer: combat + ability scoring merged into one call (`selectBestAction`)
+- All 11 starter worlds use `buildCombatStack()` — the proven composition spine
+- Cognition config API (`cognition: CognitionCoreConfig | false`) for per-starter AI tuning
+- Tag taxonomy and validation utilities for content authoring
+- **The world reacts (v2.7):** kills accrue heat and erode district safety; a per-round world tick spawns hidden pressures that surface as rumors ("Whispers reach you…"), escalate, and expire with consequences; the ~30 authored encounter compositions fire on zone entry in all 10 starters — deterministic per-seed, bloodier districts spawn more, boss set-pieces protected
+- **A reason to return (v2.7):** a minimal quest loop on the long-shipped schema — quests offer on triggers, track kill/reach/progress objectives, and pay XP and items exactly once; four authored quests, a **Journal** screen, quest beats in the round's narration
+- **Equipment reaches combat (v2.7):** `equip`/`unequip` move real numbers through the status layer the combat formulas already read — zero combat-code changes; gladiator's trident-and-net is wired end-to-end with a test-pinned hit-chance delta
+- **Seeded runs (v2.7):** every fresh session prints its seed with the exact replay command; `--seed <n>` reproduces a session byte-for-byte; combat, resist, ability, and tactics rolls all consume the world seed — and endings read the run you actually played (live heat, pressures, faction accruals, player level)
+- **`buildWorldStack()` (v2.7):** the strategic composition spine beside `buildCombatStack()` — one call assembles environment, factions, rumors, districts, defeat fallout, encounters, and quests; plus the **Director's Ledger** strategy screen, an `AI_RPG_DEBUG=1` simulation inspector, `inspect-save` gated by the same authorities as Continue, and a module save-migration seam on the shipped restore path
+- **Act on the living economy (v2.8):** `createEconomyCore` seeds a per-district economy at pack-load and ticks it each round; a new `sell` verb prices loot through `computeItemValue` (scarcity / faction / provenance / contraband) and shifts local supply. One write-wire lit five systems that shipped dark in v2.7 — the Director's MARKET OVERVIEW + FACTIONS scoring, the endgame merchant-prince arc and collapse trigger, and four economy pressure kinds. **Sell-only this cycle** (buying → v2.9)
+- **Companions (v2.8):** a `recruit` verb builds a party — state, tags, and faction, so a companion fights *with* you; companion combat rides combat-core's interception mechanic (dark until `isAlly` got set), companions react with morale and can depart, and recruiting lights seven waiting consumers — the finale's COMPANIONS roll-call, party targeting, npc-agency goals, favor-quests, and the Director's PARTY section. **Passive interception this cycle** (independent turns → v2.9)
+- **The Director reads the whole board (v2.8):** a new EQUIPMENT Ledger section (behind the cli→equipment provenance dependency), a DIRECTOR'S SUMMARY finale trailer, the MARKET OVERVIEW + PARTY sections now fed from live producers, and district stability + economic tone in the finale's DISTRICTS section
+- **The economy's other half (v2.9):** a `buy` verb completes the loop — merchant stock offered per district at supply-category granularity (supply level *is* the restock signal), priced through the same `computeItemValue` pipeline as `sell` plus a buy/sell spread so there's no riskless round-trip. And crafting comes alive: `createCraftingCore` registers `salvage`/`craft`/`repair`/`modify` over the authored recipe tables, lighting the Director's MATERIALS + RECIPES sections that shipped dark
+- **Companions take their own turns (v2.9):** the passive-interception floor from v2.8 becomes the ceiling — recruited companions act independently each round through the previously-unused `selectBestAction` advisor, with a per-role combat bias so a fighter and a scholar fight differently, companion-on-companion interception, and party HP on the Director's PARTY line. Companion-less packs stay byte-identical (the empty-party gate preserves seed-0 legacy replay)
+- **The social layer, connected end to end (v2.9):** four leverage verbs — `bribe`, `intimidate`, `petition`, `seed` (rumor) — write real reputation / alert / heat globals that trade pricing and faction gates already read, and `seed` lights the whole player-rumor module + the Director's RUMORS ABOUT YOU section. The leverage *economy* that funds them is wired too: completing an opportunity now grants the leverage it always narrated, so the verbs are genuinely earnable in play
+- **Opportunities, the full lifecycle (v2.9):** a per-round spawner offers contracts/bounties/favors scored against live world state; you `accept`, then `complete` or `abandon`; ignoring one to its deadline now has consequences (expiry fallout), and completing a companion favor moves that companion's morale. The endgame's rising-power and merchant-prince arcs read the opportunities you actually resolved
+- **Content parity across all ten starters (v2.9):** equipment wiring, quests, recruitable companions, and a starting coin balance rolled out to every starter that lacked them — the ten worlds now share a uniform, fully-lit feature surface (equipment was gladiator-only; quests were fantasy/zombie-only; five worlds shipped `recruit` with no one to recruit). Plus a structural content validator that catches a typo'd item id across every reference surface, and multi-checkpoint save slots with `--checkpoint`/`--list-checkpoints`
+- **Living NPCs, actually alive (v3.0):** the persisted npc-agency producer lights the Director's **PEOPLE** section — named NPCs (one authored story character per starter, plus every companion you recruit) carry goals, trust/fear/greed/loyalty relationships, an obligation ledger, and consequence chains. `runNpcAgencyTick` runs each round, gated so a world with no named NPCs stays byte-identical to legacy replay. Lighting the producer also lit companion favor-fallout departure breakpoints, two dormant opportunity spawn rules (npc-goal + obligation), and the endgame's npcProfiles/npcObligations — the wire was tested green but inert in shipped content until a Phase-9 audit caught it, so the fix ships an authored named NPC in every starter
+- **The full social surface (v3.0):** the four leverage verbs become twenty-five — the diplomacy and sabotage groups register (21 more sub-verbs), lighting the previously-dark `leverage-diplomacy` / `leverage-sabotage` companion reactions; nineteen surface on the numbered menu (afford + cooldown + reputation gated). Dialogue conditions and effects now read and write social state (leverage / reputation / npc-relationship). And passive leverage income (`tickLeverage` / `computeLeverageGains`) drips influence from reputation and grants favor / blackmail / legitimacy from XP and milestones — so the social layer earns *between* opportunities, not only on completion
+- **Genre-flavored economy (v3.0):** merchant stock and crafting recipes now resolve per-starter genre tables (seven of ten starters carry authored genre content; three fall back to universal, honestly) — across the buy/craft mechanics, the numbered-menu display, and the Director's RECIPES section, all threaded from the same ruleset key so display and mechanics agree. `repair` and `modify` are numbered menu rows now (item×recipe pairing), and `escort` opportunities spawn on a protective-travel-in-a-dangerous-district gate
+- **The endgame reads the leverage you earned (v3.0):** the `victory`, `puppet-master`, and `quiet-retirement` campaign endings — long gated on influence / blackmail / legitimacy that the endgame layer read as hardcoded zero — are reachable now through the real leverage store the whole social economy writes. Companion departure is reachable too, via npc-agency breakpoints and a morale-floor fallback
+- **`audit-content` dev CLI (v3.0):** a developer content-audit command (sibling of `validate`, distinct from the player-facing Director's Ledger) that runs the six encounter / boss / combat director formatters over a pack
+- **Genre-flavored *starting supply* — v3.0's opener, delivered (v3.1):** `economyGenre` threads each starter's bare ruleset key through `buildWorldStack` → `createEconomyCore`, so a district now seeds its genre's `GENRE_SUPPLY_DEFAULTS` profile (cyberpunk runs high on components / contraband, fantasy runs medicine scarce) instead of a flat universal baseline — the starting supply the Director's MARKET tone and the endgame inputs already read. Seven of ten starters carry a genre profile; three fall back to baseline, honestly. A field separate from `tradeGenre` / `craftingGenre` so the three can diverge later
+- **The social surface, complete (v3.1):** `deny` and `bury-scandal` — the rumor-manipulation pair that targets an existing rumor by id rather than a faction — reach the numbered menu through a rumor-target pairing dimension, closing the twenty-one-verb surface (19 → 21 surfaced)
+- **`obligation-exists` dialogue, wired and reachable (v3.1):** the dialogue condition reads a named NPC's persisted obligation ledger (`getPersistedNpcObligations`) — fantasy's Brother Aldric, once he owes you a favor through ordinary npc-agency play, unlocks a `call-in-favor` choice — a real gate where v3.0 left a silent always-true stub (a Phase-9 played-session audit proved it reachable in a real run, not just unit-green)
+- **Genre-flavored repair (v3.1):** every genre-carrying starter authors a signature `repair` recipe in its genre table (fantasy `repair-rune-mend`, cyberpunk `repair-nanite-weld`, …), surfaced through `getAvailableRecipes` — repair is flavored now, not only universal
+- **Opt-in XRPL ledger settlement (v3.2):** a new optional `@ai-rpg-engine/ledger-adapter` package binds the player-owned tradeable layer — `coin` → an IOU, consumables → fungible tokens, a checkpoint's net `buy`/`sell` delta → a settled **XLS-85 token escrow** — to the **XRPL testnet**, entirely outside the deterministic core. Nothing in `core`/`modules` imports it and a run is byte-identical with or without it (proven on the real pirate `createGame()` merchant loop). Testnet-only behind a mainnet-impossible-in-code guard, with a gitignored secrets sidecar, conservation-safe retries, on-chain memo verification, and an unanchored fallback; proven live end-to-end on testnet (settle via token escrow → `reconcile` against on-ledger balances + memos). NFT unique gear lands in v3.3 (below). See [The XRPL ledger adapter](#the-xrpl-ledger-adapter-opt-in)
+- **Unique gear as NFTs (v3.3):** the `@ai-rpg-engine/ledger-adapter` binds the `equipment` package's unique gear — the deferred "later slice" from v3.2 — to XRPL NFTs: each unique item minted as an **XLS-20 NFToken** (`tfMutable`, never burnable — true player ownership) at a checkpoint, relic growth advancing a mutable NFT's metadata in place via **XLS-46 `NFTokenModify`**, and a `reconcile()` ownership family verifying on-ledger `account_nfts`. A distinct read path over the equipment loadout, carried alongside the fungible layer — same determinism firewall, byte-identical with or without it. Proven on the real `starter-gladiator` played session, live on testnet (mint the equipped `trident-and-net` as an NFT, own it on-ledger, reconcile, world unperturbed)
+- **Gear that earns a name (v3.4):** relic growth has existed since v3.3 but had never fired during play — nothing populated an item-chronicle in a running game, so every item's relic version was permanently `0`. The write side ships now: an **opt-in `item-chronicle-core`** module records `acquired` / `used-in-kill` / `recognized` from real play, and `starter-gladiator` wires it — win three arena fights and the retiarius trident is the **Bloodied Trident & Net** for the rest of the run, shown in the HUD and the Director's ledger. This also **closes the NFT loop**: a checkpoint settles that growth as a real **XLS-46 `NFTokenModify`**, advancing the on-ledger URI while preserving the NFTokenID. Fixed along the way: `boss-kill` and `recognized` were both unreachable on every shipped pack (a bare-`boss` tag check against content that tags `role:boss`, and a faction guard against content where no entity sets one) — and the latter had been silently blocking *all* armor growth. Opt-in by construction: a pack that does not wire it is byte-identical to the engine that shipped before it existed
+- **A game whose loop is debt (v3.5):** the eleventh starter, **Salt Road Ledger**, is the first authored backwards from a system rather than a genre — you play a factor trading on someone else's capital, and five commerce verbs (`appraise` / `haggle` / `consign` / `underwrite` / `audit`) carry the game while combat is priced as a penalty (the resource profile has an empty `gains` array — nothing rewards violence). `consign` is the only verb in the catalog whose offline semantics match a settlement primitive one-to-one, which makes it the reference pack for the ledger adapter while carrying **no dependency on it**. Ships with the `mercantile` genre and a merchant economy profile, and 7/7 on the pack rubric. The same cycle made two long-inert adapter axes real — the memo `VERB:` field (declared with members no call site could emit) and `config.settlement` (declared with zero reads anywhere) — and a played-session audit of the new pack found six mechanics that were wired, schema-valid, unit-green and dead
+- `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
+- Published starter template on npm (`@ai-rpg-engine/starter-template`)
+- Full test suite: **5911 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
 
-- 核心运行时：世界状态、事件、动作、时间流逝、重播——自 v1.0 版本以来一直稳定；确定性的字节级重播（每个实例的 ID 计数器，种子随机数生成器）
-- 战斗系统：5 个动作，4 种战斗状态，4 种交战状态，伙伴拦截，失败流程，AI 策略
-- 能力：消耗、冷却时间、属性检查、类型化效果、11 标签的状态词汇表，AI 感知的选择
-- **队伍战斗（v2.4）：** 盟友目标选择（治疗/增益/复活）、敌我区分的范围效果过滤、目标选择器——一个治疗者可以治疗队友；敌人范围攻击不会伤害盟友
-- **状态效果（v2.4）：** 被动属性修正影响战斗，确定性的 DoT/HoT 基于时间流逝计数器，深度限制的反应触发器（荆棘/反射）
-- **插件配置文件——每个实体的规则解析（v2.5）：** 一个“力量”战士和一个“意志”神秘者在一个战斗中解决冲突，各自读取通过自己的映射表中的属性。`RuleProfile` + `WorldState.ruleProfiles` + `EntityState.ruleProfileId`；`applyProfile()` 附加一个配置文件（属性映射、资源池、每个实体的能力）；`buildProfile()`、`validateProfileSet()`（拒绝重复的 ID），10 个基于初始模板的配置，以及一个 `profile` CLI 命令
-- **可运行的“run”循环（v2.6）：** 最终游戏是真实的，而不是演示——敌人根据自己的 AI 意图配置文件（“积极”、“谨慎”、“领地意识”、“计算”）行动，战斗以胜利或失败结束，你可以保存并恢复进度，能力和经验值显示在动作菜单中。`run <path>` 加载你构建的游戏。由一个易于查看的 HUD 和可访问的颜色方案组成的终端 UI（支持 `NO_COLOR`/非 TTY）。
-- **AI 设计工作室以其自身的“ai”命令形式提供（v2.6）：** `npm install -g @ai-rpg-engine/ollama` → `ai chat`——构建、评估和平衡内容，并与本地 Ollama 模型进行比较。
-- 统一的决策层：战斗 + 能力评分合并到一个调用中（`selectBestAction`）
-- 所有 10 个初始世界都使用 `buildCombatStack()`——经过验证的组合框架
-- 用于每个初始 AI 调整的认知配置 API (`cognition: CognitionCoreConfig | false`)
-- 内容创作的标签分类和验证工具
-- **世界会做出反应（v2.7）：** 击杀会增加热度并降低区域安全性；每回合的世界时间流逝会产生隐藏的压力，这些压力会以谣言的形式出现（“你听到了一些耳语……”），升级，并在一段时间后消失，从而产生后果；在所有 10 个初始世界中，大约有 30 个已编写好的遭遇组合会在进入区域时触发——基于种子的确定性，更危险的区域会产生更多敌人，Boss 的场景受到保护。
-- **再次返回的理由（v2.7）：** 在长期存在的架构上构建了一个最小的任务循环——任务在触发器处提供，跟踪击杀/到达/进度目标，并准确地一次性奖励经验值和物品；四个已编写好的任务、一个“日志”屏幕，以及回合叙述中的任务节点。
-- **装备影响战斗（v2.7）：** `equip`/`unequip` 会将实际数值传递到状态层，而战斗公式已经读取了这些数据——无需更改任何战斗代码；角斗士的三叉戟和渔网从头到尾都与一个经过测试的命中率差异相关联。
-- **基于种子的运行（v2.7）：** 每次新的会话都会打印其种子以及确切的重播命令；`--seed <n>` 会逐字节地重现一次会话；战斗、抗性、能力和策略掷骰子都使用世界种子——并且结局会读取你实际玩过的游戏（实时的热度、压力、派系积累、玩家等级）。
-- **`buildWorldStack()`（v2.7）：** 战略组合框架，与 `buildCombatStack()` 并行——一个调用组装环境、派系、谣言、区域、失败后果、遭遇和任务；此外还有“总监日志”策略屏幕、一个 `AI_RPG_DEBUG=1` 模拟检查器、以及由与继续功能相同的权限控制的 `inspect-save`。
-- **作用于动态经济（v2.8）：** `createEconomyCore` 在加载包时为每个区域创建一个经济系统，并在每回合中对其进行更新；一个新的“出售”动词通过 `computeItemValue` 对战利品进行定价（稀缺性/派系/来源/走私品），并改变当地的供应。一个编写好的代码点亮了五个在 v2.7 版本中处于隐藏状态的系统——总监的市场概览 + 派系评分、最终商人王子弧线和崩溃触发器，以及四种经济压力类型。“本周期仅允许出售”（购买→v2.9）。
-- **伙伴（v2.8）：** 一个“招募”动词构建一个队伍——状态、标签和派系，因此伙伴会*与你*一起战斗；伙伴的战斗依赖于战斗核心的拦截机制（在 `isAlly` 设置之前处于隐藏状态），伙伴会对士气做出反应并可能离开，并且招募会激活七个等待使用的功能——最终的“伙伴”名单、队伍目标选择、NPC 代理目标、恩惠任务以及总监的“队伍”部分。“本周期被动拦截”（独立的回合→v2.9）。
-- **总监可以查看整个棋盘（v2.8）：** 一个新的装备日志部分（基于 CLI 到装备来源的依赖关系），一个总监总结最终预告片，市场概览 + 队伍部分现在从实时生成器中获取数据，以及区域稳定性和经济基调在最终的“区域”部分中显示。
-- **经济的另一半（v2.9）：** 一个“购买”动词完成了循环——每个区域提供的商人库存以供应类别为粒度（供应水平*是*补货信号），价格通过与“出售”相同的 `computeItemValue` 管道确定，并加上买卖价差，因此不存在无风险的循环交易。并且制作功能也开始运行：`createCraftingCore` 在已编写好的配方表中注册了“回收/制作/修理/修改”，从而点亮了总监的“材料 + 配方”部分，这些部分在之前处于隐藏状态。
-- **伙伴拥有自己的回合（v2.9）：** v2.8 版本中的被动拦截机制成为上限——招募的伙伴会在每个回合中通过先前未使用的 `selectBestAction` 顾问独立行动，并具有基于角色的战斗偏好，因此战士和学者会以不同的方式战斗，伙伴之间的拦截以及队伍生命值显示在总监的“队伍”部分。没有伙伴的包仍然是字节级的（空队伍门控保留了种子 0 的旧重播）。
-- **完整的社交层面，从头到尾连接起来（v2.9）：** 四个杠杆动词——“贿赂”、“恐吓”、“请愿”、“散布”（谣言）——写入实际的声誉/警报/热度全局变量，这些变量会影响已经读取定价和派系门控的因素，并且“散布”点亮了整个玩家-谣言模块以及总监的“关于你的谣言”部分。支持它们的“杠杆经济”也连接起来：完成一个机会现在会授予它一直以来所叙述的杠杆，因此这些动词可以在游戏中真正获得。
-- **机会，完整的生命周期（v2.9）：** 每个回合的生成器都会提供根据实时世界状态评分的合同/赏金/恩惠；你“接受”，然后“完成”或“放弃”；忽略一个机会直到其截止日期现在会产生后果（过期影响），并且完成伙伴的恩惠会改变该伙伴的士气。最终游戏中不断增长的力量和商人王子弧线会读取你实际解决的机会。
-- **所有十个初始世界的内容一致性（v2.9）：** 装备连接、任务、可招募的伙伴以及起始金币余额已扩展到每个缺少这些内容的初始世界——现在这十个世界共享一个统一且完全点亮的功能表面（装备仅限于角斗士；任务仅限于奇幻/僵尸；五个世界都提供了“招募”，但没有可以招募的人）。此外还有一个结构化内容验证器，它可以捕获跨所有引用表面的拼写错误的项目 ID，以及带有 `--checkpoint`/`--list-checkpoints` 的多检查点保存槽。
-- **活着的 NPC，真正活着（v3.0）：** 持久的 npc 代理生成器点亮了总监的“人物”部分——命名的 NPC（每个初始世界都有一个已编写的故事角色，以及你招募的每个伙伴）都具有目标、信任/恐惧/贪婪/忠诚关系、义务记录和后果链。`runNpcAgencyTick` 在每个回合中运行，并进行门控，因此没有命名 NPC 的世界仍然与旧重播字节级一致。点亮生成器还点亮了伙伴恩惠-失败离开的断点，两个休眠的机会生成规则（NPC 目标 + 义务），以及最终游戏中 npcProfiles/npcObligations——该连接在已发布的内容中经过测试并且处于绿色状态，但在第 9 阶段审计中发现它处于非活动状态，因此修复程序会在每个初始世界中添加一个已编写的命名 NPC。
-- **完整的社交层面（v3.0）：** 四个杠杆动词变为二十五个——外交和破坏组注册（另外 21 个子动词），点亮了先前隐藏的 `leverage-diplomacy`/`leverage-sabotage` 伙伴反应；十九个出现在编号菜单上（负担 + 冷却 + 声誉门控）。对话条件和效果现在读取并写入社交状态（杠杆/声誉/NPC 关系）。并且被动杠杆收入 (`tickLeverage`/`computeLeverageGains`) 会从声誉中滴漏影响力，并从经验值和里程碑中授予恩惠/勒索/合法性——因此社交层面会在机会之间获得收益，而不仅仅是在完成时。
-- **具有风格的经济（v3.0）：** 商人库存和制作配方现在会解析每个初始世界的类型表（十个初始世界中有七个包含已编写的类型内容；三个回退到通用），跨购买/制作机制、编号菜单显示以及总监的“配方”部分，所有这些都来自相同的规则集密钥，因此显示和机制一致。`repair` 和 `modify` 现在是编号菜单行（项目×配方配对），并且“护送”机会会在危险区域中进行保护性旅行时生成。
-- **最终游戏会读取你获得的杠杆（v3.0）：** “胜利”、“傀儡大师”和“安静的退休”战役结局——长期以来，这些结局都依赖于影响力/勒索/合法性，而最终游戏层将其作为硬编码的零来读取——现在可以通过整个社交经济写入的实际杠杆存储来实现。伙伴离开也可以通过 NPC 代理断点和士气下限回退来实现。
-- **`audit-content` 开发 CLI（v3.0）：** 一个开发人员内容审计命令（与 `validate` 同级，不同于面向玩家的总监日志），它会在一个包上运行六个遭遇/Boss/战斗总监格式化程序。
-- **具有风格的*起始供应*——v3.0 的开场白，已交付（v3.1）：** `economyGenre` 将每个初始世界的裸规则集密钥传递到 `buildWorldStack` → `createEconomyCore`，因此一个区域现在会播种其类型的 `GENRE_SUPPLY_DEFAULTS` 配置文件（赛博朋克风格的物品供应量高/走私品，奇幻风格的药品稀缺），而不是通用的基线——总监的市场基调和最终游戏输入已经读取了起始供应。十个初始世界中有七个包含类型配置文件；三个回退到基线，这是诚实的做法。与 `tradeGenre`/`craftingGenre` 分开的一个字段，以便这三个可以在以后发生变化。
-- **完整的社交层面（v3.1）：** “否认”和“掩盖丑闻”——谣言操作对，它通过 ID 锁定现有的谣言而不是派系——到达编号菜单，通过一个谣言目标配对维度，从而关闭了二十一个动词的表面（从 19 个增加到 21 个）。
-- **`obligation-exists` 对话，已连接并可访问（v3.1）：** 该对话条件读取命名 NPC 持有的义务记录 (`getPersistedNpcObligations`)——奇幻风格中的阿尔德里克兄弟，一旦他通过普通的 NPC 代理玩法欠你一份恩情，就会解锁一个“呼叫恩惠”选项——这是一个真正的门控，而 v3.0 版本中留下了一个始终为真的静默存根（第 9 阶段的已玩会话审计证明它可以在实际游戏中访问，而不仅仅是在单元测试中）。
-- **具有风格的修理（v3.1）：** 每个包含类型的初始世界都会在其类型表中编写一个签名“修理”配方（奇幻风格的“修复符文”，赛博朋克风格的“修复纳米焊接”），并通过 `getAvailableRecipes` 进行显示——现在修理也具有风格，而不仅仅是通用的。
-- **可选的 XRPL 账本结算（v3.2）：** 一个新的可选 `@ai-rpg-engine/ledger-adapter` 包将玩家拥有的可交易层绑定在一起——“硬币”→ IOU，消耗品→可替代代币，检查点的净“购买/出售”差异→已结算的 **XLS-85 代币托管** 到 **XRPL 测试网**，完全独立于确定性核心。`core`/`modules` 中的任何内容都不会导入它，并且运行与否在字节级别上都是相同的（在实际的海盗 `createGame()` 商人循环中得到了证明）。仅限测试网，通过代码中不可能实现的保护措施进行保护，具有被忽略的秘密侧文件、安全的重试、链上备忘录验证和未锚定的回退；已在测试网上进行了端到端的实时测试（通过代币托管结算→与链上余额 + 备忘录对账）。NFT 独特的装备是一个有意的后续切片。请参阅[XRPL 账本适配器](#the-xrpl-ledger-adapter-opt-in)。
-- `ai-rpg-engine create-starter <name>`——构建一个新的游戏（独立，在单仓库外部运行）；`validate` + `scaffold` 内容命令；从 JSON 加载包。
-- 已发布的初始模板在 npm 上 (`@ai-rpg-engine/starter-template`)
-- 完整的测试套件：**5633 个测试**（跨重复运行的确定性；测试文件在 CI 中进行类型检查；覆盖率强制执行）。
-
-**哪些部分存在缺陷或不完整：**
-- 人工智能世界构建工作室（Ollama 层）的测试不如模拟核心充分，需要一个本地 Ollama 守护进程；它是完全可选的——引擎和 `run` 循环不需要网络连接。
-- 叙事/音频堆栈会生成确定性的音频命令，但**没有终端音频后端**——没有任何东西会发出声音；这些命令是 GUI/Web 集成的一个接口。
-- 多人游戏（两个人类玩家共享一个世界）**尚未构建**——它是一个网络层，有意不在设计范围内；目前的配置针对单个控制器。
-- `replay --replay` 会恢复存档而不是重新模拟——并且在 v2.9 之后，这就是**既定的**方向，而不是推迟：`Engine.serialize()` 已经是一种经过验证的完整状态快照，而重新模拟则需要跟踪存在于操作日志之外的世界时间/遭遇状态。v2.9 版本通过这种经过验证的恢复路径提供了多检查点存档插槽；真正的基于事件的重新模拟尚未计划。
-- v3.1 关闭了 v3.0 的三个既定限制——游戏**起始资源**、特定类型的*修复*配方，以及 `deny`/`bury-scandal` 菜单界面现在都已发布。剩下的唯一限制是：新的游戏修复配方包含一个作者编写的 `statDelta`（一个小幅属性加成），而 `resolveRepair` 函数尚未应用——修复*恢复*，`modify` *升级*——因此，将修复作为升级的功能在代码中标记并**推迟到 v3.2/v3.3 版本**，这是一种有意的机制调用，而不是一个静默的、不活跃的字段。并且 `obligation-exists` 附带了一个作者编写的演示示例（Brother Aldric）；该条件已激活，供内容创作者用于控制更多对话。
-- 文档非常详尽，但并非每个手册页面都反映了最新的 API。
+**What is rough or incomplete:**
+- The AI worldbuilding studio (Ollama layer) is more lightly tested than the simulation core, and needs a local Ollama daemon; it is entirely optional — the engine and the `run` loop need no network
+- The narration/audio stack builds deterministic audio commands but there is **no terminal audio backend** — nothing plays a sound; the commands are an integration hook for a GUI/web embedder
+- Multiplayer (two human players sharing one world) is **not** built — it is a networking layer, deliberately out of scope; profiles today target a single controller
+- `replay --replay` restores the save instead of re-simulating — and after v2.9 that is the **decided** direction, not a deferral: `Engine.serialize()` is already a proven full-state snapshot, whereas re-simulation would have to chase world-tick/encounter state that lives outside the action log. v2.9 ships multi-checkpoint save slots on that proven restore path; true event-sourced resim is not planned
+- v3.1 closed v3.0's three named ceilings — genre **starting supply**, genre-specific *repair* recipes, and the `deny` / `bury-scandal` menu surface all ship now. The honest ceiling that remains: those new genre repair recipes carry an authored `statDelta` (a small stat bonus) that `resolveRepair` does not apply yet — repair *restores*, `modify` *upgrades* — so repair-as-upgrade is marked in-code and **deferred to v3.2/v3.3** as a deliberate mechanic call, not a silent inert field. And `obligation-exists` ships with one authored demo (Brother Aldric); the condition is live for content authors to gate more dialogue on
+- Documentation is extensive but not every handbook page reflects the very latest APIs
 
 ---
 
 ## 它看起来是什么样？
 
-捆绑的终端 UI 将每个回合分解为带有标签的部分——场景、状态、日志和行动——并提供一目了然的 HUD。默认输出是纯文本，并在 TTY 上添加语义颜色（伤害显示红色，治疗显示绿色，拒绝显示黄色），同时遵守 `NO_COLOR` 环境变量和非 TTY 流；所有提示信息都包含在文本中，绝不会单独使用颜色。
+The bundled terminal UI composes each turn into labeled sections — scene, status, log, and actions — with a glance-able HUD. Output is plain text by default and adds semantic color on a TTY (damage red, heals green, rejections yellow), honoring `NO_COLOR` and non-TTY pipes; every cue is carried in the text too, never color alone.
 
 ```text
 ── The Crypt Gate ──────────────────────────────────────────
@@ -136,7 +138,9 @@ ai-rpg-engine create-starter my-game # scaffold a new game you can edit and run
 ai-rpg-engine run ./my-game          # run a game you scaffolded
 ```
 
-`run` 循环是一个真实的基于回合的游戏会话：敌人根据其自身的 AI 配置行动；属性、技能和经验值都可以在菜单中找到，你可以保存并恢复进度，并且战斗以胜利或失败结束。每个游戏都是确定性的，可以重复进行。
+The `run` loop is a real turn-based session: enemies act on their own AI
+profiles, abilities and XP are on the menu, you can save and resume, and a
+fight ends in victory or defeat. Every game is deterministic and replayable.
 
 可选地，AI 设计工作室可以作为独立的命令安装：
 
@@ -146,9 +150,9 @@ ai chat                              # scaffold, critique, and balance content
                                      # against a local Ollama model (see Ch. 36)
 ```
 
-该工作室与本地 [Ollama](https://ollama.com) 守护进程通信——首先运行 `ollama serve` 和 `ollama pull qwen2.5-coder`。它是完全可选的；引擎和 `run` 循环不需要网络连接。
+该工作室与本地 [Ollama](https://ollama.com) 守护进程进行通信——首先运行 `ollama serve` 和 `ollama pull qwen2.5-coder`。 这完全是可选的；引擎和 `run` 循环不需要网络连接。
 
-容器镜像已发布到 GHCR，地址为 `ghcr.io/mcp-tool-shop-org/ai-rpg-engine`，用于 CI 和沙盒运行。
+一个容器镜像被发布到 GHCR，作为 `ghcr.io/mcp-tool-shop-org/ai-rpg-engine` 用于 CI 和沙盒环境中的运行。
 
 ---
 
@@ -201,17 +205,14 @@ npx @ai-rpg-engine/cli create-starter my-game
 
 ## XRPL 分账本适配器（可选）
 
-`@ai-rpg-engine/ledger-adapter` 是一个**可选**包，它将游戏的
-**玩家拥有的可交易层**——`coin` 余额和消耗品库存，这些是 `trade-core` 的 `buy`/`sell` 命令已经处理的——绑定到 **XRPL 测试网络**，以便
-这些资产可以由实际的分账本令牌支持，并在检查点处结算。
-如果缺少适配器，则会得到今天发布的离线引擎。
+`@ai-rpg-engine/ledger-adapter` 是一个**可选**包，它将游戏中的**玩家拥有的可交易物品层**——即 `coin` 余额和消耗品库存（这些物品由 `trade-core` 的 `buy`/`sell` 命令已经处理）绑定到 **XRPL 测试网络**，以便这些资产可以由实际的链上令牌支持，并在检查点处结算。如果缺少适配器，则它就是当前发布的离线引擎。
 
 **确定性不变性（最重要的）。** 适配器是一个*侧通道*，
 它永远不会是模拟的一部分：
 
-- 它**绝不会在确定性循环内部被调用**——而仅在**检查点**处（存档、城镇/市场入口、章节结束）被调用。
-- `@ai-rpg-engine/core` 或 `@ai-rpg-engine/modules` 中没有任何内容会导入它（它唯一的引擎依赖项是编译时的 `import type`）。
-- **无论是否使用它，运行结果都是完全相同的。** 防火墙测试会在两个引擎上运行真实的 `starter-pirate` `createGame()` 商家循环——一个启用了适配器并在检查点处结算，另一个没有启用——并断言这两个世界是深度相等的。种子 0 的重放操作不受影响。
+- 它**绝不会在确定性循环中被调用**——仅在**检查点**（保存、进入城镇/市场、章节结束）时调用。
+- `@ai-rpg-engine/core` 或 `@ai-rpg-engine/modules` 中的任何内容都不会导入它（它的唯一引擎依赖项是编译时的 `import type`）。
+- **无论是否使用它，运行结果都是完全相同的。** 防火墙测试会在两个引擎上运行真实的 `starter-pirate` `createGame()` 商人循环——一个启用了适配器并在检查点处结算，另一个没有启用——并断言这两个世界是深度相等的。种子 0 重放不受影响。
 
 **集成级别——游戏可以根据其设计需求尽可能深入地将其整合。**
 防火墙是一个*确定性*边界，而不是一个反集成规则；上述不变性在所有级别都成立：
@@ -224,13 +225,21 @@ npx @ai-rpg-engine/cli create-starter my-game
 
 保持重放操作安全的关键区别**不是**“哪个包导入了适配器”，而是“调用是否在循环内部”。 游戏包可以自由地导入和驱动适配器，只要每个调用都在种子驱动的重放循环之外的检查点处进行即可。
 
-**三种游戏模式。** `offline`（默认——没有链，即发布的引擎）· `ledger`（硬币/物品由测试网络余额支持，并在检查点处结算）· `diary`（离线游玩，然后将运行状态哈希值锚定在分账本上，以获得防篡改的收据）。
+**Three play modes.** `offline` (default — no chain, the engine as it ships) ·
+`ledger` (coin/items backed by testnet balances, settled at checkpoints) ·
+`diary` (play offline, then anchor the run's state hash on-ledger for a
+tamper-evident receipt).
 
-**哪些内容位于分账本上。** `coin` → 针对信任线路发行的货币 IOU；消耗品 → 可替代的令牌；检查点的净交易差额 → 通过 **XLS-85 令牌托管** 进行结算的转账。作为 NFT 的独特装备是一种有意的后续扩展。抽象区域经济（`economy-core`）*不会*受到影响——它仍然是一个纯模拟。
+**账本上的内容。** `coin` → 通过信任线发行的货币 IOU；消耗品 → 可替代的令牌；检查点的净交易差额 → 通过 **XLS-85 令牌托管** 进行结算的转账。独特的装备以 **XLS-20 NFT**（v3.3）的形式发布，通过 **XLS-46 `NFTokenModify`**，文物增长会原地更新可变 NFT 的元数据——从 v3.4 开始，这由实际的游戏行为驱动。抽象区域经济体（`economy-core`）*不会*受到影响——它仍然是一个纯模拟。
 
 **安全保障。**仅限测试网络，并具有一个**在代码中不可能实现的主网**结构保护（而不是配置标志）；钱包种子位于 git 忽略的 secrets 侧文件，绝不在存档文件中；结算是幂等的，并且在重试路径上可以保证资源守恒；证明会验证**真实的分账本备忘录**（而不是引擎自身的字符串）；如果无法访问链，则运行将继续进行，并标记为*未锚定*。
 
-**经过实际测试。** 一个真实的 `starter-pirate` 商家运行——出售一把弯刀，购买一枚炮弹——通过令牌托管在 XRPL 测试网络上结算，然后 `reconcile()` 会将分账本余额和备忘录与引擎的经济系统进行确认（对于每个令牌都保证资源守恒）。 分账本是一个与引擎不同的系统家族，因此引擎无法伪造它——对账是一种真正的外部验证器。仅限测试网络；资产是游戏范围内的收据，而不是证券。
+**Proven live.** A real `starter-pirate` merchant run — sell a cutlass, buy a
+cannon-shell — settles on XRPL testnet via token escrow, then `reconcile()`
+confirms on-ledger balances and memos against the engine's economy (conservation
+holds for every token). The ledger is a different system family than the engine,
+so the engine cannot fake it — reconciliation is a genuine external verifier.
+Testnet only; assets are game-scoped receipts, not securities.
 
 ---
 
@@ -240,7 +249,7 @@ npx @ai-rpg-engine/cli create-starter my-game
 
 AI 对手使用统一的决策评分——战斗行动和技能在一个单一的评估中竞争，并具有可配置的阈值，以防止过度使用次要技能。
 
-包作者使用 `buildCombatStack()` 从属性映射、资源配置文件和偏差标签构建战斗系统。请参阅 [战斗概述](site/src/content/docs/handbook/49a-combat-overview.md) 和 [包作者指南](site/src/content/docs/handbook/55-combat-pack-guide.md)。
+Pack authors use `buildCombatStack()` to wire combat from a stat mapping, resource profile, and bias tags. See the [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) and [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md).
 
 ---
 
@@ -273,7 +282,7 @@ const warCry: AbilityDefinition = {
 | [`@ai-rpg-engine/content-schema`](packages/content-schema) | 用于世界内容的规范模式和验证器。 |
 | [`@ai-rpg-engine/character-profile`](packages/character-profile) | 角色发展、受伤、里程碑、声望。 |
 | [`@ai-rpg-engine/character-creation`](packages/character-creation) | 原型选择、构建生成、起始装备。 |
-| [`@ai-rpg-engine/equipment`](packages/equipment) | 装备类型、物品来源、圣物成长。 |
+| [`@ai-rpg-engine/equipment`](packages/equipment) | 装备类型、物品来源和文物增长——包括 `item-chronicle-core`，这是一个可选模块，用于记录来自真实游戏中的装备历史，以便物品获得称号和等级。 |
 | [`@ai-rpg-engine/campaign-memory`](packages/campaign-memory) | 跨会话记忆、关系效果、战役状态。 |
 | [`@ai-rpg-engine/rumor-system`](packages/rumor-system) | 谣言生命周期、变异机制、传播跟踪。 |
 | [`@ai-rpg-engine/presentation`](packages/presentation) | 叙事计划模式、渲染协议、语音配置文件。 |
@@ -285,6 +294,7 @@ const warCry: AbilityDefinition = {
 | [`@ai-rpg-engine/ollama`](packages/ollama) | 可选的 AI 创作——构建原型、提供反馈、引导工作流程、调整参数、进行实验。 |
 | [`@ai-rpg-engine/cli`](packages/cli) | CLI：运行游戏、构建示例世界、检查存档。 |
 | [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | 终端渲染器和输入层。 |
+| [`@ai-rpg-engine/starter-merchant`](packages/starter-merchant) | 商业启动器——账本适配器的参考包，不依赖于它。 |
 | [`@ai-rpg-engine/ledger-adapter`](packages/ledger-adapter) | **可选**——选择加入 XRPL 测试网络结算，用于玩家拥有的可交易层（硬币/库存/交易），通过在检查点处使用 XLS-85 令牌托管进行结算，完全位于确定性核心之外。 |
 
 ### 示例世界
@@ -301,6 +311,7 @@ const warCry: AbilityDefinition = {
 | [`starter-weird-west`](packages/starter-weird-west) | 怪异西部 | 阵营偏见，安全区恢复 |
 | [`starter-colony`](packages/starter-colony) | 科幻殖民地 | 瓶颈点、伏击区域 |
 | [`starter-ronin`](packages/starter-ronin) | 封建日本 | 隐藏通道、多个保护角色 |
+| [`starter-merchant`](packages/starter-merchant) | 商业 | 义务作为循环，战斗以惩罚的形式定价 |
 | [`starter-vampire`](packages/starter-vampire) | 吸血鬼恐怖 | 血液资源，社交操控 |
 | [`starter-gladiator`](packages/starter-gladiator) | 历史上的角斗士 | 竞技场战斗，观众的喜爱 |
 
@@ -312,7 +323,7 @@ const warCry: AbilityDefinition = {
 |----------|-------------|
 | [Create Your Own Starter](site/src/content/docs/handbook/58-create-your-own-starter.md) | 搭建新的游戏——使用 CLI 或手动模板方式 |
 | [Composition Guide](site/src/content/docs/handbook/57-composition-guide.md) | 通过组合引擎模块来构建你自己的游戏 |
-| [Plug-in Profiles](site/src/content/docs/handbook/59-plugin-profiles.md) | 每个实体的规则解析——混合战斗风格，`applyProfile`、配置文件模板、`profile` CLI |
+| [Plug-in Profiles](site/src/content/docs/handbook/59-plugin-profiles.md) | 每个实体的规则解析——混合游戏风格的战斗、`applyProfile`、配置文件模板、`profile` CLI |
 | [XRPL Ledger Adapter](site/src/content/docs/handbook/60-xrpl-ledger-adapter.md) | 选择加入分账本结算——确定性防火墙、L0/L1/L2 集成级别、游戏模式、安全保障以及经过实际测试的盗贼演示。 |
 | [Combat Overview](site/src/content/docs/handbook/49a-combat-overview.md) | 六个战斗支柱，五个动作，一目了然的状态 |
 | [Pack Author Guide](site/src/content/docs/handbook/55-combat-pack-guide.md) | 逐步构建 `buildCombatStack`，状态映射，资源配置 |
@@ -329,31 +340,31 @@ const warCry: AbilityDefinition = {
 
 ### 我们目前的进展
 
-两个主要框架均已完成——共有 5494 个测试，涵盖 280 个文件，所有 10 个起始角色都在 `buildCombatStack` **和** `buildWorldStack` 中；在打印的种子下进行确定性的字节级重复播放，完整的 AI 决策评分，以及一个可以构建、运行、验证和检查的 CLI。**v3.0 使世界栩栩如生：命名的 NPC 拥有目标、信任/恐惧/贪婪/忠诚关系、义务记录和后果链；社交层被动地获得收益并在二十一个新的外交/破坏动词中进行支出；经济根据起始角色具有类型特征；并且你获得的优势最终可以达到它所控制的战役结局。在第 9 阶段审计中发现，已发布的某些内容虽然存在但实际上没有起作用——修复方案是在每个起始角色中添加了一个命名的 NPC。**
+Both composition spines are complete — 5911 tests across 307 files, all 11 starters on `buildCombatStack` **and** `buildWorldStack`, deterministic byte-identical replay under printed seeds, full AI decision scoring, and a CLI that scaffolds, runs, validates, and inspects. **v3.0 makes the world live: named NPCs come alive with goals, trust/fear/greed/loyalty relationships, obligation ledgers, and consequence chains; the social layer earns passively and spends across twenty-one new diplomacy/sabotage verbs; the economy is genre-flavored per starter; and the leverage you earn finally reaches the campaign endings it gates. A Phase-9 audit caught the headline wired-but-inert in shipped content — the fix ships a named NPC in every starter.**
 
-**最近的发布周期（v2.4.0–v3.0.0）：**
-- v2.4.0 — 团队战斗（针对盟友/治疗/强化/复活，友方-敌方范围攻击），状态效果系统（修改器 + DoT/HoT + 反应触发器），插件配置文件第 1 阶段，内容 `validate`/`scaffold` CLI。
-- v2.5.0 — 每个实体的规则解析（混合游戏风格的战斗），`applyProfile` 加载器 + 每个实体的能力，配置文件模板 + `profile` CLI，以及完整的健康状态检查。
-- v2.6.0 — `run` 命令成为一个真正的游戏：敌人根据自己的 AI 配置文件行动，胜利/失败，保存/恢复，菜单中的能力和经验值，AI 工作室 bin，以及叙事堆栈。
-- v2.7.0 — 世界会做出反应，并且有理由再次返回：热度 → 压力 → 叙述的后果，区域入口遭遇，任务循环 + 日记，战斗中的装备，可重复播放的运行，实时的游戏结局输入，`buildWorldStack`，导演记录，以及存档迁移接口。
-- v2.8.0 — 对你所处的世界采取行动：一个实时的贸易经济 + `sell` 动词，你可以招募并与你一起战斗的伙伴，以及一个阅读整个局势的导演记录——每个系统都有一个写入线，大约有 12 个消费者，但已发布的版本中存在一些问题。
-- v2.9.0 — 完成循环：`buy` + 商人库存和制作完成经济；伙伴可以独立行动；四个社交动词（贿赂/恐吓/请愿/播种）在由机会奖励资助的杠杆经济上运行；机会会随着过期 + 好感度下降而解决；装备、任务、可招募角色和起始资金均匀地分配给所有十个起始角色。
-- **v3.0.0 — 使世界栩栩如生：NPC 代理生成器激活命名的 NPC（目标/关系/义务记录/后果链），以及每个起始角色中的一个故事 NPC；社交界面扩展到 25 个动词（外交 + 破坏），具有被动的杠杆收入和读取社会状态的对话；每个起始角色的类型特征库存 + 配方；杠杆结局（胜利/傀儡大师/平静的退休）变得可以实现；修理/修改菜单行，护送机会，以及一个 `audit-content` 开发 CLI——通过第 9 阶段审计发布，该审计发现了两个在绿色测试套件中隐藏的问题。**
+**Recent release arc (v2.4.0–v3.0.0):**
+- v2.4.0 — Party combat (ally-targeting / heal / buff / revive, friend-foe AoE), status-effect system (modifiers + DoT/HoT + reactive triggers), plug-in Profiles Phase 1, content `validate`/`scaffold` CLI
+- v2.5.0 — Per-entity rule resolution (mixed-playstyle combat), the `applyProfile` loader + per-entity abilities, profile templates + `profile` CLI, and a full health pass
+- v2.6.0 — The `run` command became a real game: enemies act on their own AI profiles, victory/defeat, save/resume, abilities and XP on the menu, the `ai` studio bin, and the narration stack
+- v2.7.0 — The world reacts and there's a reason to return: heat → pressures → narrated consequences, zone-entry encounters, a quest loop + Journal, equipment in combat, seeded replayable runs, live endgame inputs, `buildWorldStack`, the Director's Ledger, and a save-migration seam
+- v2.8.0 — Act on the world you live in: a live trade economy + `sell` verb, companions you recruit and fight beside, and a Director's Ledger reading the whole board — one write-wire per system lit ~12 consumers that shipped dark
+- v2.9.0 — Close the loops: `buy` + merchant stock and crafting complete the economy; companions take independent turns; four social verbs (bribe / intimidate / petition / seed) run on a leverage economy funded by opportunity rewards; opportunities resolve with expiry + favor-fallout consequence; and equipment, quests, recruitables, and starting coin roll out uniformly to all ten starters
+- **v3.0.0 — Make the world live: the npc-agency producer lights named NPCs (goals / relationships / obligation ledgers / consequence chains) plus a story NPC in every starter; the social surface grows to 25 verbs (diplomacy + sabotage) with passive leverage income and dialogue that reads social state; per-starter genre-flavored stock + recipes; the leverage endings (victory / puppet-master / quiet-retirement) become reachable; repair/modify menu rows, escort opportunities, and an `audit-content` dev CLI — shipped through a Phase-9 audit that caught two dead-wires the green test suite hid**
 
 ### 下一步（v2.8 的框架）
 
-- **活着的 NPC** — 持久化的 NPC 代理生成器，它激活了导演日志中的“PEOPLE”部分：具有目标、关系断点、义务记录和后果链的命名 NPC，以及伙伴士气好感度下降和反应系统已经具备的离开风险路径。
-- 具有特定风格的商人库存和制作配方（每个启动器的特定风格线程，而不是今天发布的通用回退），以及“修理”/“修改”菜单界面。
-- 杠杆经济的下一层——超出机会奖励的被动收入，以及超过已发布四个命令的社交动词（外交/破坏小组），以及读取新的社会状态的对话条件/效果词汇。
-- 多人游戏——两个*人类*玩家共享一个世界（网络层，有意推迟；单个控制器共享配置文件今天以 [`shared-profiles.ts`](docs/examples/shared-profiles.ts) 的形式发布）。
-- 可序列化的公式覆盖——每个配置文件的公式调整（受限于公式 DSL；配置文件今天包含状态映射，而不是闭包）。
-- API 文档同步——确保每个手册页面都反映了最新的 API。
+- **Living NPCs** — the persisted npc-agency producer that lights the Director's PEOPLE section: named NPCs with goals, relationship breakpoints, obligation ledgers, and consequence chains, plus companion-morale favor-fallout and the departure-risk path the reaction system already carries
+- Genre-flavored merchant stock and crafting recipes (per-starter genre threading over the universal fallback that ships today), and the `repair`/`modify` menu surface
+- The leverage economy's next layer — passive income beyond opportunity rewards, and social verbs beyond the shipped four (diplomacy / sabotage groups) — plus the dialogue condition/effect vocabulary that reads the new social state
+- Multiplayer — two *human* players sharing one world (a networking layer, deliberately deferred; single-controller shared profiles ship today as [`shared-profiles.ts`](docs/examples/shared-profiles.ts))
+- Serializable formula overrides — per-profile formula tuning (blocked on a formula DSL; profiles carry stat mappings today, not closures)
+- API documentation sync — ensure every handbook page reflects the latest APIs
 
 ### 目标：插件配置文件
 
-引擎的最终目标是 **用户定义的配置文件**——可移植的软件包，可以插入任何游戏。配置文件将状态映射、资源行为、AI 偏差标签和能力打包到一个可导入的单元中。从 v2.5 开始，一个世界中的实体都可以携带自己的配置文件并按每个实体解析战斗——“力量”战士和一个“意志”神秘主义者共享一个队伍，每个人都带来自己的游戏风格。
+The engine's end goal is **user-defined profiles** — portable bundles that slot into any game. A profile packages a stat mapping, resource behavior, AI bias tags, and abilities into a single importable unit. As of v2.5, entities in one world can each carry their own profile and resolve combat per-entity — a `might` fighter and a `will` mystic share a party, each bringing their own playstyle.
 
-架构、`applyProfile` 加载器、每个实体的能力解析以及跨配置文件的验证都已经发布。剩下的就是多人游戏——让两个 *人类* 玩家（而不仅仅是两个实体）共享一个世界——这是一个网络层。请参阅 [配置文件路线图](docs/profile-roadmap.md) 和 [feature-architecture.md](docs/feature-architecture.md)，了解设计。
+The schema, the `applyProfile` loader, per-entity ability resolution, and cross-profile validation are all shipped. What remains is multiplayer — letting two *human* players (not just two entities) share a world — which is a networking layer. See [Profile Roadmap](docs/profile-roadmap.md) and [feature-architecture.md](docs/feature-architecture.md) for the design.
 
 ---
 
@@ -371,10 +382,10 @@ AI RPG 引擎建立在三个想法之上：
 
 ## 安全性
 
-核心引擎是一个**仅本地运行的模拟库**：不收集遥测数据，不使用网络，不涉及任何敏感信息。保存文件只会应明确请求时才存储到`.ai-rpg-engine/`目录中。两个**可选**层添加了向外连接路径，并且只有在你调用它们时才会生效：
+The core engine is a **local-only simulation library**: no telemetry, no network, no secrets. Save files go to `.ai-rpg-engine/` only when explicitly requested. Two **optional** layers add an outbound path, and only when you invoke them:
 
-- AI 层（`@ai-rpg-engine/ollama`）与一个**本地** Ollama 守护进程通信；其选择性启用的 `webfetch` 功能（用于 RAG）受到 SSRF 防护的限制（阻止回环地址、链路本地地址、CGNAT、云元数据以及 IPv6 隧道等）。
-- 分账本层（`@ai-rpg-engine/ledger-adapter`）连接到**XRPL 测试网络**——并且仅连接到测试网络：一个**代码中明确禁止连接到主网**的结构性防护机制（而不是配置标志），在构建时会拒绝任何非测试网络的宿主机。钱包种子存储在一个被 git 忽略的单独文件中，绝不会存储在保存文件中，并且确定性的核心引擎永远不会导入该适配器。
+- The AI layer (`@ai-rpg-engine/ollama`) talks to a **local** Ollama daemon; its opt-in `webfetch` (for RAG) is confined by an SSRF guard (blocks loopback/link-local/CGNAT/cloud-metadata and IPv6-tunnelled equivalents).
+- The ledger layer (`@ai-rpg-engine/ledger-adapter`) reaches the **XRPL testnet** — and only the testnet: a **mainnet-impossible-in-code** structural guard (not a config flag) rejects any non-testnet host at construction. Wallet seeds live in a gitignored secrets sidecar, never in a save file, and the deterministic core never imports the adapter.
 
 详情请参阅 [SECURITY.md](SECURITY.md)。
 

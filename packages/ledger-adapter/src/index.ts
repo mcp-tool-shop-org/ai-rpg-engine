@@ -20,6 +20,8 @@ export type {
   LedgerMode,
   IssuerMode,
   SettlementPrimitive,
+  SettlementVerb,
+  SettleOptions,
   LedgerAdapterConfig,
   IssuedAmount,
   WalletHandle,
@@ -57,6 +59,7 @@ export {
   MEMO_SCHEMA_VERSION,
   buildSettlementMemo,
   settlementMemoPrefix,
+  expectedSettlementMemo,
   // NFT unique-gear layer (v2 slice).
   NFT_URI_SCHEMA_VERSION,
   buildItemNFTUri,
@@ -72,7 +75,7 @@ export * from './engine/index.js';
 import type { LedgerAdapterConfig } from './contracts.js';
 
 /** Package version — single-sourced for proof packs / receipts. */
-export const LEDGER_ADAPTER_VERSION = '3.3.0';
+export const LEDGER_ADAPTER_VERSION = '3.5.0';
 
 /** The safest opt-in posture: offline mode, per-run issuer, escrow settlement. */
 export const DEFAULT_LEDGER_CONFIG: LedgerAdapterConfig = {

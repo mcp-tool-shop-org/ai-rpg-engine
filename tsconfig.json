@@ -44,6 +44,7 @@
     { "path": "packages/starter-vampire" },
     { "path": "packages/starter-gladiator" },
     { "path": "packages/starter-ronin" },
+    { "path": "packages/starter-merchant" },
     { "path": "packages/ledger-adapter" }
   ]
 }

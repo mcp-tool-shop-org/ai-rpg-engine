@@ -397,6 +397,45 @@ const GENRE_RECIPES: Record<string, CraftingRecipe[]> = {
       genreFilter: ['colony'],
     },
   ],
+  // Salt Road Ledger. A factor does not forge; a factor REPACKAGES. Every recipe
+  // here moves value by presentation and paperwork rather than by craft — grade
+  // a mixed lot, seal it under a mark, restore a damaged consignment to
+  // saleable. Fitting for a pack where the goods were never yours to alter.
+  merchant: [
+    {
+      id: 'craft-graded-lot',
+      name: 'Graded Lot',
+      category: 'craft',
+      inputs: [{ category: 'components', quantity: 2 }, { category: 'luxuries', quantity: 1 }],
+      outputSlot: 'tool',
+      outputRarity: 'uncommon',
+      description: 'Sort a mixed consignment into a graded lot worth more than its parts',
+      genreFilter: ['merchant'],
+    },
+    {
+      id: 'modify-sealed-under-mark',
+      name: 'Sealed Under Mark',
+      category: 'modify',
+      inputs: [{ category: 'luxuries', quantity: 1 }],
+      // 'faction-mark' is the existing ModificationKind member that already
+      // means exactly this — an authority's mark pressed onto goods. Widening
+      // that closed union for a synonym would be the same over-reach as adding
+      // a `contract-count` GrowthTrigger next to `recognition-count`.
+      modificationKind: 'faction-mark',
+      statDelta: { standing: 1 },
+      description: 'Press the Guild mark over a lot — provenance is worth more than contents',
+      genreFilter: ['merchant'],
+    },
+    {
+      id: 'repair-recoopered',
+      name: 'Recoopered',
+      category: 'repair',
+      inputs: [{ category: 'components', quantity: 1 }, { category: 'fuel', quantity: 1 }],
+      statDelta: { durability: 1 },
+      description: 'Re-hoop a split cask and oil the staves so the consignment is saleable again',
+      genreFilter: ['merchant'],
+    },
+  ],
   'weird-west': [
     {
       id: 'craft-silver-bullets',

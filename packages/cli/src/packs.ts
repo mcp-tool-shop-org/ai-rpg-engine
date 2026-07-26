@@ -15,6 +15,7 @@ import * as colony from '@ai-rpg-engine/starter-colony';
 import * as vampire from '@ai-rpg-engine/starter-vampire';
 import * as gladiator from '@ai-rpg-engine/starter-gladiator';
 import * as ronin from '@ai-rpg-engine/starter-ronin';
+import * as merchant from '@ai-rpg-engine/starter-merchant';
 
 export type PackInfo = {
   meta: PackMetadata;
@@ -99,5 +100,12 @@ export const allPacks: PackInfo[] = [
     ruleset: ronin.roninMinimalRuleset,
     createGame: ronin.createGame,
     progressionTrees: [ronin.wayOfTheBladeTree],
+  },
+  {
+    meta: merchant.packMeta,
+    buildCatalog: merchant.buildCatalog,
+    ruleset: merchant.merchantMinimalRuleset,
+    createGame: merchant.createGame,
+    progressionTrees: [merchant.factorsCreditTree],
   },
 ];

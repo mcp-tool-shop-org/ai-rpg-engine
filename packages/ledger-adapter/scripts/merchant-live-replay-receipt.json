@@ -1,0 +1,296 @@
+{
+  "network": "testnet",
+  "gameId": "salt-road-ledger",
+  "runId": "merchant-live-replay",
+  "seed": 71,
+  "stages": [
+    {
+      "stage": "1-connect",
+      "ok": true,
+      "note": "connected to testnet"
+    },
+    {
+      "stage": "2-open-books",
+      "ok": true,
+      "note": "seal issued=true, merchant.books.opened=1"
+    },
+    {
+      "stage": "3-enable",
+      "ok": true,
+      "note": "Ledger adapter enabled — pack is now receipted. coin=40 goods=3"
+    },
+    {
+      "stage": "4-consign",
+      "ok": true,
+      "note": "verb=consign memo=\"ARPG|GAME:salt-road-ledger|RUN:merchant-live-replay|CHECKPOINT:1|DELTA:bale-of-flax-1|VERB:consign|V:1\""
+    },
+    {
+      "stage": "5-primitive-AB",
+      "ok": true,
+      "note": "escrow=2 tx, payment=1 tx, one state with 3 settlements"
+    },
+    {
+      "stage": "6-fungible-reconcile",
+      "ok": true,
+      "note": "conservation + on-chain memo verified, verb included"
+    },
+    {
+      "stage": "7-mint-seal",
+      "ok": true,
+      "note": "nftId=001800005EFD1AE71D8389A82397CAAD0CA452F19C3A7D33BE4AB1C00127C006 uri=\"ARPG-NFT|GAME:salt-road-ledger|ITEM:guild-seal|RELIC:0|TIER:0|V:1\""
+    },
+    {
+      "stage": "8-earn-growth",
+      "ok": true,
+      "note": "5 recognition(s); relicVersion 0 -> 1, tier 1"
+    },
+    {
+      "stage": "9-modify",
+      "ok": true,
+      "note": "modified=[guild-seal] minted=[] uri \"ARPG-NFT|GAME:salt-road-ledger|ITEM:guild-seal|RELIC:0|TIER:0|V:1\" -> \"ARPG-NFT|GAME:salt-road-ledger|ITEM:guild-seal|RELIC:1|TIER:1|V:1\" nftId PRESERVED"
+    },
+    {
+      "stage": "10-nft-reconcile",
+      "ok": true,
+      "note": "the chain agrees the seal grew, and the factor still holds it"
+    },
+    {
+      "stage": "11-firewall",
+      "ok": true,
+      "note": "byte-identical to an adapter-free replay of the same script — the adapter left no trace"
+    }
+  ],
+  "proofTxids": {
+    "consign": "E8F71D4DEE08552E365D9E423E2248FEF3D79EAF07D4D54E143482F32E47EA23",
+    "escrow-sell": "CB71B1273B8E05C3F9916D13503F48B2C025C29A674D43C8ADAC1A59B48FAF7F",
+    "cash-sell": "B8832C0AA4546B1B2CE92F964F0654560BC161C259E3D7C21B954DC89FC9F37E",
+    "mint": "C6BD5EF0F163A8970D89A1537F2C7E3E265A01B71A35E1B4337994515D4C120B",
+    "modify": "CC99125B8AF0C8530EFB8B3846602EF68091F168D09057208A0CDF5669D302E4"
+  },
+  "txLog": [
+    {
+      "hash": "E8F71D4DEE08552E365D9E423E2248FEF3D79EAF07D4D54E143482F32E47EA23",
+      "explorer": "https://testnet.xrpl.org/transactions/E8F71D4DEE08552E365D9E423E2248FEF3D79EAF07D4D54E143482F32E47EA23",
+      "label": "consign"
+    },
+    {
+      "hash": "E842311211ABECFBA53A0FC140E1FE233C148AC22582E2A86FB7A5C4BDBBBD4C",
+      "explorer": "https://testnet.xrpl.org/transactions/E842311211ABECFBA53A0FC140E1FE233C148AC22582E2A86FB7A5C4BDBBBD4C",
+      "label": "consign"
+    },
+    {
+      "hash": "CB71B1273B8E05C3F9916D13503F48B2C025C29A674D43C8ADAC1A59B48FAF7F",
+      "explorer": "https://testnet.xrpl.org/transactions/CB71B1273B8E05C3F9916D13503F48B2C025C29A674D43C8ADAC1A59B48FAF7F",
+      "label": "escrow-sell"
+    },
+    {
+      "hash": "8F612FCE58884D5DBA31C74F497BF7954DBC3B3E73387D790A6048B4C9E7D50B",
+      "explorer": "https://testnet.xrpl.org/transactions/8F612FCE58884D5DBA31C74F497BF7954DBC3B3E73387D790A6048B4C9E7D50B",
+      "label": "escrow-sell"
+    },
+    {
+      "hash": "B8832C0AA4546B1B2CE92F964F0654560BC161C259E3D7C21B954DC89FC9F37E",
+      "explorer": "https://testnet.xrpl.org/transactions/B8832C0AA4546B1B2CE92F964F0654560BC161C259E3D7C21B954DC89FC9F37E",
+      "label": "cash-sell"
+    },
+    {
+      "hash": "C6BD5EF0F163A8970D89A1537F2C7E3E265A01B71A35E1B4337994515D4C120B",
+      "explorer": "https://testnet.xrpl.org/transactions/C6BD5EF0F163A8970D89A1537F2C7E3E265A01B71A35E1B4337994515D4C120B",
+      "label": "mint"
+    },
+    {
+      "hash": "5C8592E875E9E3E5EA657D0C23C7D591C4093274B2545A0E5289FE42DA30659B",
+      "explorer": "https://testnet.xrpl.org/transactions/5C8592E875E9E3E5EA657D0C23C7D591C4093274B2545A0E5289FE42DA30659B",
+      "label": "mint"
+    },
+    {
+      "hash": "083AC0759CF5EA67F61B44F8286B8EC9BA9B6A4C53AFA5FFF719773B1B4B1889",
+      "explorer": "https://testnet.xrpl.org/transactions/083AC0759CF5EA67F61B44F8286B8EC9BA9B6A4C53AFA5FFF719773B1B4B1889",
+      "label": "mint"
+    },
+    {
+      "hash": "0CACBF195268A94F79F331305DC9B6301E3CB05B8AA778420076CFC82AE94345",
+      "explorer": "https://testnet.xrpl.org/transactions/0CACBF195268A94F79F331305DC9B6301E3CB05B8AA778420076CFC82AE94345",
+      "label": "mint"
+    },
+    {
+      "hash": "FF5A3D0B87C8F58623248099B0418AA65C8FB64C13DE00D0EACEC1478A910230",
+      "explorer": "https://testnet.xrpl.org/transactions/FF5A3D0B87C8F58623248099B0418AA65C8FB64C13DE00D0EACEC1478A910230",
+      "label": "mint"
+    },
+    {
+      "hash": "8D4DCAEA05AA7077E3CCF05CDFA586AD70F61503F37C942FA104BB38C0AD8188",
+      "explorer": "https://testnet.xrpl.org/transactions/8D4DCAEA05AA7077E3CCF05CDFA586AD70F61503F37C942FA104BB38C0AD8188",
+      "label": "mint"
+    },
+    {
+      "hash": "CC99125B8AF0C8530EFB8B3846602EF68091F168D09057208A0CDF5669D302E4",
+      "explorer": "https://testnet.xrpl.org/transactions/CC99125B8AF0C8530EFB8B3846602EF68091F168D09057208A0CDF5669D302E4",
+      "label": "modify"
+    }
+  ],
+  "wallets": {
+    "issuer": "r4yQ9arqyrXnmBCgdZhKjJV68pGSNsQwzT",
+    "player": "rH3spYpxcZBKdRqs2bBydv8H2WwnNuEmTf",
+    "merchant": "rfTZhL2PTwSq6XZyZtrygd5PFHsVfnkLeT"
+  },
+  "opening": {
+    "coin": 40,
+    "items": {
+      "bale-of-flax": 1,
+      "ledger-book": 1,
+      "guild-seal": 1
+    }
+  },
+  "consign": {
+    "checkpoint": 1,
+    "location": "The Crooked Stair",
+    "deltas": {
+      "bale-of-flax": -1
+    },
+    "txids": [
+      "E8F71D4DEE08552E365D9E423E2248FEF3D79EAF07D4D54E143482F32E47EA23",
+      "E842311211ABECFBA53A0FC140E1FE233C148AC22582E2A86FB7A5C4BDBBBD4C"
+    ],
+    "status": "settled",
+    "memo": "ARPG|GAME:salt-road-ledger|RUN:merchant-live-replay|CHECKPOINT:1|DELTA:bale-of-flax-1|VERB:consign|V:1",
+    "timestamp": "1970-01-01T00:00:00.000Z",
+    "verb": "consign"
+  },
+  "primitiveAB": {
+    "escrowTxids": [
+      "CB71B1273B8E05C3F9916D13503F48B2C025C29A674D43C8ADAC1A59B48FAF7F",
+      "8F612FCE58884D5DBA31C74F497BF7954DBC3B3E73387D790A6048B4C9E7D50B"
+    ],
+    "cashTxids": [
+      "B8832C0AA4546B1B2CE92F964F0654560BC161C259E3D7C21B954DC89FC9F37E"
+    ],
+    "settlements": 3
+  },
+  "fungibleReconcile": {
+    "runId": "merchant-live-replay",
+    "seed": 71,
+    "playerAddress": "rH3spYpxcZBKdRqs2bBydv8H2WwnNuEmTf",
+    "issuerAddress": "r4yQ9arqyrXnmBCgdZhKjJV68pGSNsQwzT",
+    "settlementsCount": 3,
+    "pendingCount": 0,
+    "txids": [
+      "E8F71D4DEE08552E365D9E423E2248FEF3D79EAF07D4D54E143482F32E47EA23",
+      "E842311211ABECFBA53A0FC140E1FE233C148AC22582E2A86FB7A5C4BDBBBD4C",
+      "CB71B1273B8E05C3F9916D13503F48B2C025C29A674D43C8ADAC1A59B48FAF7F",
+      "8F612FCE58884D5DBA31C74F497BF7954DBC3B3E73387D790A6048B4C9E7D50B",
+      "B8832C0AA4546B1B2CE92F964F0654560BC161C259E3D7C21B954DC89FC9F37E"
+    ],
+    "resources": [
+      {
+        "resource": "bale-of-flax",
+        "code": "BAL",
+        "minted": 1,
+        "sumDeltas": -1,
+        "engineSettled": 0,
+        "ledger": 0,
+        "balanceOk": true,
+        "conservationOk": true
+      },
+      {
+        "resource": "coin",
+        "code": "COI",
+        "minted": 40,
+        "sumDeltas": -14,
+        "engineSettled": 26,
+        "ledger": 26,
+        "balanceOk": true,
+        "conservationOk": true
+      },
+      {
+        "resource": "guild-seal",
+        "code": "GUI",
+        "minted": 1,
+        "sumDeltas": 0,
+        "engineSettled": 1,
+        "ledger": 1,
+        "balanceOk": true,
+        "conservationOk": true
+      },
+      {
+        "resource": "ledger-book",
+        "code": "LED",
+        "minted": 1,
+        "sumDeltas": 0,
+        "engineSettled": 1,
+        "ledger": 1,
+        "balanceOk": true,
+        "conservationOk": true
+      }
+    ],
+    "memoOk": true,
+    "memoLocalOk": true,
+    "onchainMemoOk": true,
+    "passed": true,
+    "notes": []
+  },
+  "nftWallets": {
+    "issuer": "r9CEjnkgSeDTKYVo8GMYvrpBPgq6Mjbb7c",
+    "player": "raff5QmoBCAWmdPHsVK431KMfneFvWUp7T"
+  },
+  "sealAtIssue": {
+    "itemId": "guild-seal",
+    "name": "Guild Seal",
+    "slot": "trinket",
+    "rarity": "legendary",
+    "equipped": true,
+    "relicTier": 0,
+    "relicVersion": 0
+  },
+  "sealGrown": {
+    "itemId": "guild-seal",
+    "name": "Guild Seal",
+    "slot": "trinket",
+    "rarity": "legendary",
+    "equipped": true,
+    "relicTier": 1,
+    "relicVersion": 1
+  },
+  "recognitions": 5,
+  "nftReconcile": {
+    "runId": "merchant-live-replay",
+    "seed": 71,
+    "playerAddress": "raff5QmoBCAWmdPHsVK431KMfneFvWUp7T",
+    "issuerAddress": "r9CEjnkgSeDTKYVo8GMYvrpBPgq6Mjbb7c",
+    "settlementsCount": 0,
+    "pendingCount": 0,
+    "txids": [],
+    "resources": [],
+    "memoOk": true,
+    "memoLocalOk": true,
+    "onchainMemoOk": null,
+    "nftChecks": [
+      {
+        "gameItemId": "guild-seal",
+        "nftId": "001800005EFD1AE71D8389A82397CAAD0CA452F19C3A7D33BE4AB1C00127C006",
+        "expectedOwner": "raff5QmoBCAWmdPHsVK431KMfneFvWUp7T",
+        "ownedOnLedger": true,
+        "expectedUri": "ARPG-NFT|GAME:salt-road-ledger|ITEM:guild-seal|RELIC:1|TIER:1|V:1",
+        "ledgerUri": "ARPG-NFT|GAME:salt-road-ledger|ITEM:guild-seal|RELIC:1|TIER:1|V:1",
+        "uriOk": true,
+        "ok": true
+      },
+      {
+        "gameItemId": "ledger-book",
+        "nftId": "001800005EFD1AE71D8389A82397CAAD0CA452F19C3A7D33D5309EC30127C007",
+        "expectedOwner": "raff5QmoBCAWmdPHsVK431KMfneFvWUp7T",
+        "ownedOnLedger": true,
+        "expectedUri": "ARPG-NFT|GAME:salt-road-ledger|ITEM:ledger-book|RELIC:0|TIER:0|V:1",
+        "ledgerUri": "ARPG-NFT|GAME:salt-road-ledger|ITEM:ledger-book|RELIC:0|TIER:0|V:1",
+        "uriOk": true,
+        "ok": true
+      }
+    ],
+    "passed": true,
+    "notes": [
+      "memo: no on-chain memos supplied — external integrity NOT verified; memoOk reflects local consistency only"
+    ]
+  },
+  "firewallBaselineBytes": 16636,
+  "passed": true
+}

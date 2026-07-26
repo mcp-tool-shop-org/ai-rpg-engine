@@ -21,7 +21,7 @@
     {
       "stage": "4-settle",
       "ok": true,
-      "note": "NFT settlement complete: 1 minted, 0 modified, 0 unchanged. nftId=00180000514F719A47B7CA4AEABD140B93E000D0FD8E90AE5EAF670A01269FD0"
+      "note": "NFT settlement complete: 1 minted, 0 modified, 0 unchanged. nftId=001800009025C85C39F624A523E07258B7580F07E3D238D3B89773D90127B71D"
     },
     {
       "stage": "5-ownership",
@@ -37,10 +37,31 @@
       "stage": "7-firewall",
       "ok": true,
       "note": "byte-identical — the adapter never mutated the game world"
+    },
+    {
+      "stage": "8-earn-growth",
+      "ok": true,
+      "note": "relicVersion 0 -> 1, tier 1"
+    },
+    {
+      "stage": "9-modify",
+      "ok": true,
+      "note": "modified=[trident-and-net] minted=[] uri \"ARPG-NFT|GAME:iron-colosseum|ITEM:trident-and-net|RELIC:0|TIER:0|V:1\" -> \"ARPG-NFT|GAME:iron-colosseum|ITEM:trident-and-net|RELIC:1|TIER:1|V:1\" nftId PRESERVED"
+    },
+    {
+      "stage": "10-verify-growth",
+      "ok": true,
+      "note": "PASS — the chain agrees the trident grew, and the player still owns it"
+    },
+    {
+      "stage": "11-firewall-growth",
+      "ok": true,
+      "note": "byte-identical — reading the chronicle summary + firing NFTokenModify mutated nothing in the game world"
     }
   ],
   "proofTxids": {
-    "mint": "57E8EEA6AE81B1FE19843953B17DC8D591B2429DF769BDBA7F62AD951E1683BC"
+    "mint": "5AEEAFCAA2880BDBA0EB3701A59F86AE2D11894A288F24FAF2E5177BCE79F71E",
+    "modify": "6CA146A9E82F8FF3DB0EE5A579B2B1EEC43E7325E0A7BE915E2D32AF0F38B3FF"
   },
   "snapshot": {
     "items": [
@@ -56,8 +77,8 @@
     ]
   },
   "wallets": {
-    "issuer": "r3QvuP7Z8S2V7SwSc8VE1aUFP3xJeraTHs",
-    "player": "rP9DWXYewdwNnMvYyPoRp5U9cAZ78NBr43"
+    "issuer": "rN9BZouNMStPBmpNeRqzexNhStvfdRvuYq",
+    "player": "rpid2s1TuNC7WsaLaiUK6U6oWUFrS7gk2R"
   },
   "settle": {
     "success": true,
@@ -68,42 +89,46 @@
     "modified": [],
     "skipped": [],
     "txids": [
-      "57E8EEA6AE81B1FE19843953B17DC8D591B2429DF769BDBA7F62AD951E1683BC",
-      "D279BF62EE2D4B0BC79AB1482D11CBED09A5235EC527D2E1F68417D375079F44",
-      "8D5B948EFA7C4BF61A81E9196813BC2458A1CDC8E1FF5024F6DBC931CB3ED855"
+      "5AEEAFCAA2880BDBA0EB3701A59F86AE2D11894A288F24FAF2E5177BCE79F71E",
+      "9A0B432F71C0789622323F10C3CC53820A1C30AD7CBD2021F14E70F6C40E73C0",
+      "F9CFE52DF8A2780BDFF8D16E307828C8730F2A09FFEC97739D22981BF863991C"
     ]
   },
   "nfts": {
     "trident-and-net": {
       "gameItemId": "trident-and-net",
-      "nftId": "00180000514F719A47B7CA4AEABD140B93E000D0FD8E90AE5EAF670A01269FD0",
-      "uri": "ARPG-NFT|GAME:iron-colosseum|ITEM:trident-and-net|RELIC:0|TIER:0|V:1",
-      "relicVersion": 0,
+      "nftId": "001800009025C85C39F624A523E07258B7580F07E3D238D3B89773D90127B71D",
+      "uri": "ARPG-NFT|GAME:iron-colosseum|ITEM:trident-and-net|RELIC:1|TIER:1|V:1",
+      "relicVersion": 1,
       "taxon": 7777,
       "mutable": true,
-      "mintTxid": "57E8EEA6AE81B1FE19843953B17DC8D591B2429DF769BDBA7F62AD951E1683BC",
+      "mintTxid": "5AEEAFCAA2880BDBA0EB3701A59F86AE2D11894A288F24FAF2E5177BCE79F71E",
       "status": "minted"
     }
   },
   "txLog": [
     {
-      "hash": "57E8EEA6AE81B1FE19843953B17DC8D591B2429DF769BDBA7F62AD951E1683BC",
-      "explorer": "https://testnet.xrpl.org/transactions/57E8EEA6AE81B1FE19843953B17DC8D591B2429DF769BDBA7F62AD951E1683BC"
+      "hash": "5AEEAFCAA2880BDBA0EB3701A59F86AE2D11894A288F24FAF2E5177BCE79F71E",
+      "explorer": "https://testnet.xrpl.org/transactions/5AEEAFCAA2880BDBA0EB3701A59F86AE2D11894A288F24FAF2E5177BCE79F71E"
     },
     {
-      "hash": "D279BF62EE2D4B0BC79AB1482D11CBED09A5235EC527D2E1F68417D375079F44",
-      "explorer": "https://testnet.xrpl.org/transactions/D279BF62EE2D4B0BC79AB1482D11CBED09A5235EC527D2E1F68417D375079F44"
+      "hash": "9A0B432F71C0789622323F10C3CC53820A1C30AD7CBD2021F14E70F6C40E73C0",
+      "explorer": "https://testnet.xrpl.org/transactions/9A0B432F71C0789622323F10C3CC53820A1C30AD7CBD2021F14E70F6C40E73C0"
     },
     {
-      "hash": "8D5B948EFA7C4BF61A81E9196813BC2458A1CDC8E1FF5024F6DBC931CB3ED855",
-      "explorer": "https://testnet.xrpl.org/transactions/8D5B948EFA7C4BF61A81E9196813BC2458A1CDC8E1FF5024F6DBC931CB3ED855"
+      "hash": "F9CFE52DF8A2780BDFF8D16E307828C8730F2A09FFEC97739D22981BF863991C",
+      "explorer": "https://testnet.xrpl.org/transactions/F9CFE52DF8A2780BDFF8D16E307828C8730F2A09FFEC97739D22981BF863991C"
+    },
+    {
+      "hash": "6CA146A9E82F8FF3DB0EE5A579B2B1EEC43E7325E0A7BE915E2D32AF0F38B3FF",
+      "explorer": "https://testnet.xrpl.org/transactions/6CA146A9E82F8FF3DB0EE5A579B2B1EEC43E7325E0A7BE915E2D32AF0F38B3FF"
     }
   ],
   "reconcile": {
     "runId": "gladiator-nft-live",
     "seed": 11,
-    "playerAddress": "rP9DWXYewdwNnMvYyPoRp5U9cAZ78NBr43",
-    "issuerAddress": "r3QvuP7Z8S2V7SwSc8VE1aUFP3xJeraTHs",
+    "playerAddress": "rpid2s1TuNC7WsaLaiUK6U6oWUFrS7gk2R",
+    "issuerAddress": "rN9BZouNMStPBmpNeRqzexNhStvfdRvuYq",
     "settlementsCount": 0,
     "pendingCount": 0,
     "txids": [],
@@ -114,11 +139,77 @@
     "nftChecks": [
       {
         "gameItemId": "trident-and-net",
-        "nftId": "00180000514F719A47B7CA4AEABD140B93E000D0FD8E90AE5EAF670A01269FD0",
-        "expectedOwner": "rP9DWXYewdwNnMvYyPoRp5U9cAZ78NBr43",
+        "nftId": "001800009025C85C39F624A523E07258B7580F07E3D238D3B89773D90127B71D",
+        "expectedOwner": "rpid2s1TuNC7WsaLaiUK6U6oWUFrS7gk2R",
         "ownedOnLedger": true,
         "expectedUri": "ARPG-NFT|GAME:iron-colosseum|ITEM:trident-and-net|RELIC:0|TIER:0|V:1",
         "ledgerUri": "ARPG-NFT|GAME:iron-colosseum|ITEM:trident-and-net|RELIC:0|TIER:0|V:1",
+        "uriOk": true,
+        "ok": true
+      }
+    ],
+    "passed": true,
+    "notes": [
+      "memo: no on-chain memos supplied — external integrity NOT verified; memoOk reflects local consistency only"
+    ]
+  },
+  "grownSnapshot": {
+    "items": [
+      {
+        "itemId": "trident-and-net",
+        "name": "Trident & Net",
+        "slot": "weapon",
+        "rarity": "uncommon",
+        "equipped": true,
+        "relicTier": 1,
+        "relicVersion": 1
+      }
+    ]
+  },
+  "growthSettle": {
+    "success": true,
+    "message": "NFT settlement complete: 0 minted, 1 modified, 0 unchanged.",
+    "minted": [],
+    "modified": [
+      "trident-and-net"
+    ],
+    "skipped": [],
+    "txids": [
+      "6CA146A9E82F8FF3DB0EE5A579B2B1EEC43E7325E0A7BE915E2D32AF0F38B3FF"
+    ]
+  },
+  "nftsAfterGrowth": {
+    "trident-and-net": {
+      "gameItemId": "trident-and-net",
+      "nftId": "001800009025C85C39F624A523E07258B7580F07E3D238D3B89773D90127B71D",
+      "uri": "ARPG-NFT|GAME:iron-colosseum|ITEM:trident-and-net|RELIC:1|TIER:1|V:1",
+      "relicVersion": 1,
+      "taxon": 7777,
+      "mutable": true,
+      "mintTxid": "5AEEAFCAA2880BDBA0EB3701A59F86AE2D11894A288F24FAF2E5177BCE79F71E",
+      "status": "minted"
+    }
+  },
+  "growthReconcile": {
+    "runId": "gladiator-relic-growth-live",
+    "seed": 11,
+    "playerAddress": "rpid2s1TuNC7WsaLaiUK6U6oWUFrS7gk2R",
+    "issuerAddress": "rN9BZouNMStPBmpNeRqzexNhStvfdRvuYq",
+    "settlementsCount": 0,
+    "pendingCount": 0,
+    "txids": [],
+    "resources": [],
+    "memoOk": true,
+    "memoLocalOk": true,
+    "onchainMemoOk": null,
+    "nftChecks": [
+      {
+        "gameItemId": "trident-and-net",
+        "nftId": "001800009025C85C39F624A523E07258B7580F07E3D238D3B89773D90127B71D",
+        "expectedOwner": "rpid2s1TuNC7WsaLaiUK6U6oWUFrS7gk2R",
+        "ownedOnLedger": true,
+        "expectedUri": "ARPG-NFT|GAME:iron-colosseum|ITEM:trident-and-net|RELIC:1|TIER:1|V:1",
+        "ledgerUri": "ARPG-NFT|GAME:iron-colosseum|ITEM:trident-and-net|RELIC:1|TIER:1|V:1",
         "uriOk": true,
         "ok": true
       }

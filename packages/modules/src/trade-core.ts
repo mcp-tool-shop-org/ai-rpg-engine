@@ -263,6 +263,19 @@ const GENRE_BUYABLE_STOCK: Record<string, BuyableStock> = {
     luxuries: ['gold-pocket-watch'],
     fuel: ['coal-oil-fuel'],
   },
+  // Salt Road Ledger. Deliberately the BROADEST stock table in the set: a
+  // merchant pack's pressure comes from timing and obligation, not from
+  // scarcity, so no category is withheld. Compare pirate (a smuggling curve —
+  // luxuries plentiful, medicine scarce); here the goods are always there and
+  // the question is whether you can carry the promise.
+  merchant: {
+    luxuries: ['saffron-brick', 'sealed-amphora'],
+    components: ['bale-of-flax', 'pig-iron-ingot'],
+    food: ['salt-block', 'grain-sack'],
+    medicine: ['apothecary-tincture'],
+    contraband: ['unstamped-bullion'],
+    fuel: ['lamp-oil-cask'],
+  },
 };
 
 /** Generic fallback stock — no genre configured (or genre has no entry for

@@ -163,6 +163,22 @@ export type TradeableSnapshot = {
 
 export type SettlementStatus = 'settled' | 'pending';
 
+/**
+ * What a settlement WAS — written into the on-chain memo's `VERB:` field and
+ * verified back by `reconcile`.
+ *
+ * `settle` is the generic net-delta checkpoint. `buy`/`sell` distinguish a
+ * directed trade. `consign`/`default` are the obligation lifecycle: goods handed
+ * to a counterparty against future payment, and that obligation lapsing unpaid.
+ *
+ * Every member must be REACHABLE — a verb the adapter can never emit is an inert
+ * axis, and this union had exactly that problem: `buy` and `sell` existed but both
+ * call sites passed the literal `'settle'`, so no run could ever produce them.
+ * Adding members to a union nothing writes just makes more dead ones, which is why
+ * `settle()` now takes the verb from its caller.
+ */
+export type SettlementVerb = 'buy' | 'sell' | 'settle' | 'consign' | 'default';
+
 /** One checkpoint settlement — signed deltas + the txids + the exact on-chain memo. */
 export type SettlementRecord = {
   checkpoint: number;
@@ -174,6 +190,21 @@ export type SettlementRecord = {
   /** The exact on-chain memo TEXT (so the record matches the ledger byte-for-byte). */
   memo: string;
   timestamp: string;
+  /**
+   * The verb this settlement was made under.
+   *
+   * PERSISTED because the retry path rebuilds the memo from the record: without
+   * it, `retryPending` had no choice but to hardcode `'settle'`, so a `consign`
+   * that went pending and later cleared landed on-chain as a generic settle —
+   * the distinct artifact silently collapsing on precisely the path that exists
+   * because the network is unreliable.
+   *
+   * OPTIONAL for back-compat: a serialized state written before this field
+   * existed has no `verb`, and `deserializeState` leaves it undefined rather
+   * than inventing one. Consumers treat absent as `'settle'` (what those older
+   * records were in fact all written as).
+   */
+  verb?: SettlementVerb;
 };
 
 /**
@@ -311,12 +342,55 @@ export type ReconcileFn = (input: ReconcileInput) => ReconcileReport;
  * and conservation-safe on the fail-then-retry path (Ledger Trail's CRITICAL).
  * The engine is never passed in — only a read-only `TradeableSnapshot`.
  */
+/**
+ * Per-settlement overrides — the axes a single checkpoint can vary from the
+ * adapter's construction-time config.
+ *
+ * WHY PER-CALL AND NOT PER-ADAPTER: `settlement` lives on `LedgerAdapterConfig`,
+ * fixed at `createLedgerAdapter()`. Varying it by spinning up a second adapter
+ * would mean a second `LedgerAdapterState` — two baselines, two trust-line sets,
+ * two conservation invariants, and two `reconcile()` reports over one game's
+ * economy. That fragments the single ledger truth into shards, and a verifier
+ * pointed at one shard is structurally blind to the other. One state, one
+ * conservation invariant, one reconcile; the primitive is a property of the
+ * settlement, not of the adapter.
+ */
+export type SettleOptions = {
+  /**
+   * What this settlement WAS, written into the memo's `VERB:` field.
+   * Defaults to `'settle'` (the generic net-delta checkpoint).
+   */
+  verb?: SettlementVerb;
+  /**
+   * Override the settlement primitive for THIS call only; falls back to
+   * `config.settlement`. Lets one game settle escrowed trades in a lawful market
+   * and direct payments in a black market, against one set of books.
+   */
+  primitive?: SettlementPrimitive;
+};
+
+/**
+ * The opt-in adapter. All methods are async (the testnet transport is networked);
+ * the dry-run transport resolves synchronously. `enable`/`settle` are idempotent
+ * and conservation-safe on the fail-then-retry path (Ledger Trail's CRITICAL).
+ * The engine is never passed in — only a read-only `TradeableSnapshot`.
+ */
 export interface LedgerAdapter {
   readonly config: LedgerAdapterConfig;
   /** Create/reuse wallets, set issuer flags + trust lines, mint the starting snapshot. */
   enable(state: LedgerAdapterState, snapshot: TradeableSnapshot): Promise<EnableResult>;
-  /** Settle the net delta since the last checkpoint (idempotent per checkpoint). */
-  settle(state: LedgerAdapterState, snapshot: TradeableSnapshot, checkpoint: number, location: string): Promise<SettlementResult>;
+  /**
+   * Settle the net delta since the last checkpoint (idempotent per checkpoint).
+   * `options` is optional — omitting it is exactly the previous behavior
+   * (`verb: 'settle'`, `primitive: config.settlement`).
+   */
+  settle(
+    state: LedgerAdapterState,
+    snapshot: TradeableSnapshot,
+    checkpoint: number,
+    location: string,
+    options?: SettleOptions,
+  ): Promise<SettlementResult>;
   /** Turn the adapter off; keep wallets for a potential re-enable. */
   disable(state: LedgerAdapterState): void;
 }
@@ -336,17 +410,49 @@ export function buildSettlementMemo(
   runId: string,
   checkpoint: number,
   deltas: Record<string, number>,
-  verb: 'buy' | 'sell' | 'settle',
+  verb: SettlementVerb,
 ): string {
-  const parts = Object.keys(deltas)
+  return `ARPG|GAME:${gameId}|RUN:${runId}|CHECKPOINT:${checkpoint}|DELTA:${settlementMemoDeltas(deltas)}|VERB:${verb}|V:${MEMO_SCHEMA_VERSION}`;
+}
+
+/** The canonical `DELTA:` field body — sorted keys, explicit sign. */
+function settlementMemoDeltas(deltas: Record<string, number>): string {
+  return Object.keys(deltas)
     .sort()
-    .map((k) => `${k}${deltas[k] >= 0 ? '+' : ''}${deltas[k]}`);
-  return `ARPG|GAME:${gameId}|RUN:${runId}|CHECKPOINT:${checkpoint}|DELTA:${parts.join(',')}|VERB:${verb}|V:${MEMO_SCHEMA_VERSION}`;
+    .map((k) => `${k}${deltas[k] >= 0 ? '+' : ''}${deltas[k]}`)
+    .join(',');
 }
 
 /** The prefix a settlement memo must begin with (for external verification). */
 export function settlementMemoPrefix(gameId: string, runId: string, checkpoint: number): string {
   return `ARPG|GAME:${gameId}|RUN:${runId}|CHECKPOINT:${checkpoint}`;
+}
+
+/**
+ * The FULL memo a record implies — prefix plus the `DELTA:`/`VERB:`/`V:` tail.
+ *
+ * `settlementMemoPrefix` terminates at `CHECKPOINT:<n>`, and `reconcile` matched
+ * on that prefix alone — so everything after it was written on-chain and never
+ * read back. The deltas were unverified (the engine already holds them, so
+ * checking them against the chain is free) and the verb was unverified entirely,
+ * which made it an annotation rather than a proof.
+ *
+ * This is what a verifier should match to claim the on-chain memo agrees with the
+ * engine's record. `verb` defaults to `'settle'` for pre-verb records, which is
+ * what all of them were written as.
+ */
+export function expectedSettlementMemo(
+  gameId: string,
+  runId: string,
+  record: Pick<SettlementRecord, 'checkpoint' | 'deltas' | 'verb'>,
+): string {
+  return buildSettlementMemo(
+    gameId,
+    runId,
+    record.checkpoint,
+    record.deltas,
+    record.verb ?? 'settle',
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

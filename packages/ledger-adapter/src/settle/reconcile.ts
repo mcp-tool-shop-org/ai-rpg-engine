@@ -17,7 +17,7 @@ import type {
   ResourceCheck,
   SettlementRecord,
 } from '../contracts.js';
-import { settlementMemoPrefix } from '../contracts.js';
+import { expectedSettlementMemo } from '../contracts.js';
 
 // ── Currency-code derivation ─────────────────────────────────────────────
 //
@@ -136,11 +136,15 @@ export const reconcile: ReconcileFn = (input: ReconcileInput): ReconcileReport =
       );
       continue;
     }
-    const prefix = settlementMemoPrefix(gameId, input.runId, rec.checkpoint);
-    if (!rec.memo.startsWith(prefix)) {
+    // FULL memo, not just the prefix. `settlementMemoPrefix` stops at
+    // CHECKPOINT:<n>, so DELTA: and VERB: used to be written and never read —
+    // the deltas unverified even though the engine already holds them, and the
+    // verb unverified entirely, making it an annotation rather than a proof.
+    const expected = expectedSettlementMemo(gameId, input.runId, rec);
+    if (rec.memo !== expected) {
       memoLocalOk = false;
       notes.push(
-        `checkpoint ${rec.checkpoint}: stored memo ${JSON.stringify(rec.memo)} does not start with ${JSON.stringify(prefix)} (local consistency)`,
+        `checkpoint ${rec.checkpoint}: stored memo ${JSON.stringify(rec.memo)} does not match expected ${JSON.stringify(expected)} (local consistency)`,
       );
     }
   }
@@ -160,7 +164,11 @@ export const reconcile: ReconcileFn = (input: ReconcileInput): ReconcileReport =
     onchainMemoOk = true;
     for (const rec of input.settlements) {
       const gameId = extractGameId(rec.memo);
-      const prefix = gameId === null ? null : settlementMemoPrefix(gameId, input.runId, rec.checkpoint);
+      // The FULL expected memo — deltas and verb included. Matching only the
+      // prefix left everything after CHECKPOINT:<n> unverified on-chain, so a
+      // ledger memo could disagree with the engine about WHAT was settled and
+      // still pass. This is what makes the verb a verified artifact.
+      const expected = gameId === null ? null : expectedSettlementMemo(gameId, input.runId, rec);
 
       // A settled record with NO txids cannot be verified on-chain. Without
       // this guard the loop below is simply empty and the record would pass
@@ -187,12 +195,12 @@ export const reconcile: ReconcileFn = (input: ReconcileInput): ReconcileReport =
       for (const txid of rec.txids) {
         const actual = onchainMemos[txid];
         if (actual === undefined) continue; // this tx carries no memo (e.g. EscrowFinish) — legitimate
-        if (prefix !== null && actual.startsWith(prefix)) {
+        if (expected !== null && actual === expected) {
           matched = true;
         } else {
           onchainMemoOk = false;
           notes.push(
-            `checkpoint ${rec.checkpoint}: on-chain memo ${JSON.stringify(actual)} does not start with expected prefix (external integrity)`,
+            `checkpoint ${rec.checkpoint}: on-chain memo ${JSON.stringify(actual)} does not match expected ${JSON.stringify(expected)} (external integrity)`,
           );
         }
       }

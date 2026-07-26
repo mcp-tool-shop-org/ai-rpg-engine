@@ -27,6 +27,7 @@
 import type {
   EquipmentSnapshot,
   LedgerAdapterState,
+  NFTInfo,
   NFTMintFlags,
   NFTokenRef,
   NFTTransport,
@@ -207,6 +208,29 @@ async function settleOneItem(
  * interface), and the only address either transfer call needs is the
  * player's (`nftCreateSellOffer`'s destination, `nftModify`'s owner param).
  */
+/**
+ * Shape `account_nfts` output into the `ledgerNfts` map `reconcile` expects.
+ *
+ * Closes the fast-follow the v3.3.0 NFT slice left open: the live-replay script
+ * and both played-session proofs each hand-rolled this same six-line loop, so a
+ * third consumer would have been the third copy. PURE — takes the already-fetched
+ * `NFTInfo[]` rather than a transport, so it needs no network and no mocking.
+ *
+ * Stamping `owner` on every entry is exactly correct rather than an assumption:
+ * `account_nfts` is queried PER OWNER, so every token it returns for an address
+ * is by construction currently owned by that address.
+ */
+export function buildLedgerNfts(
+  nfts: readonly NFTInfo[],
+  owner: string,
+): Record<string, { owner: string; uri: string }> {
+  const out: Record<string, { owner: string; uri: string }> = {};
+  for (const nft of nfts) {
+    out[nft.nftId] = { owner, uri: nft.uri };
+  }
+  return out;
+}
+
 export async function settleEquipmentNFTs(
   transport: NFTTransport,
   state: LedgerAdapterState,

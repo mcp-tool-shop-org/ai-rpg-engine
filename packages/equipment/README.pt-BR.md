@@ -9,9 +9,9 @@
 # @ai-rpg-engine/equipment
 
 [![npm](https://img.shields.io/npm/v/@ai-rpg-engine/equipment)](https://www.npmjs.com/package/@ai-rpg-engine/equipment)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/mcp-tool-shop-org/ai-rpg-engine/blob/main/LICENSE)
+[![Licença: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/mcp-tool-shop-org/ai-rpg-engine/blob/main/LICENSE)
 
-Slots de equipamento, definições de itens e gerenciamento de equipamentos para o [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine).
+Slots de equipamento, definições de itens e gerenciamento de equipamentos para [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine).
 
 ## Instalação
 
@@ -21,11 +21,11 @@ npm install @ai-rpg-engine/equipment
 
 ## O que faz
 
-Gerencia os equipamentos do personagem em 5 slots (arma, armadura, acessório, ferramenta, amuleto) com catálogos de itens, operações de equipamento, requisitos baseados em tags e cálculo de efeitos combinados. Todas as operações são imutáveis.
+Gerencia o equipamento do personagem em 5 slots (arma, armadura, acessório, ferramenta, amuleto) com catálogos de itens, operações de configuração de equipamentos, requisitos baseados em tags e cálculo de efeitos agregados. Todas as operações são imutáveis.
 
 ## Uso
 
-### Criar e Equipar
+### Criar e equipar
 
 ```typescript
 import {
@@ -60,7 +60,7 @@ const effects = computeLoadoutEffects(result.loadout, catalog);
 // effects.grantedTags === ['armed']
 ```
 
-### Gerenciamento de Inventário
+### Gerenciamento de inventário
 
 ```typescript
 import { addToInventory, removeFromInventory } from '@ai-rpg-engine/equipment';
@@ -81,21 +81,55 @@ const result = validateLoadout(loadout, catalog, characterTags);
 
 ## Slots
 
-| Slot | Propósito |
+| Slot | Finalidade |
 |------|---------|
-| `weapon` | Item ofensivo primário |
-| `armor` | Equipamento defensivo |
+| `weapon` | Item ofensivo principal |
+| `armor` | Equipamento de defesa |
 | `accessory` | Anel, amuleto, aprimoramento |
-| `tool` | Item de utilidade (arrombador, scanner) |
-| `trinket` | Amuleta, distintivo, item passivo |
+| `tool` | Item utilitário (gazua, scanner) |
+| `trinket` | Amuleto, insígnia, item passivo |
 
-## Raridade do Item
+## Raridade do item
 
 `comum` | `incomum` | `raro` | `lendário`
 
+## Crescimento de Relíquia — equipamento que ganha um nome
+
+Um item que realizou algo acumula uma história, e uma história ganha um nome. Um cutelo que tirou três vidas torna-se o **Cutelo Ensangrentado**. O crescimento é calculado a partir da crônica do item, nunca criado manualmente.
+
+`evaluateRelicGrowth` é o lado de leitura — transforma uma crônica em um nível e um epíteto:
+
+```typescript
+import { evaluateRelicGrowth } from '@ai-rpg-engine/equipment';
+
+const relic = evaluateRelicGrowth(item, chronicle, currentTick);
+// -> { currentEpithet: 'Bloodied Cutlass', milestonesReached: [...], tier: 1 }
+```
+
+Cinco gatilhos impulsionam-no — `kill-count`, `age`, `recognition-count`, `faction-kills`, `boss-kill` — contados a partir da crônica. Armas usam por padrão `DEFAULT_WEAPON_MILESTONES`, tudo o mais usa `DEFAULT_ARMOR_MILESTONES`; um pacote pode substituir por item.
+
+`createItemChronicleCore` é o lado de escrita: um `EngineModule` **opcional** que registra a história do jogo real.
+
+```typescript
+import { createItemChronicleCore, getItemDisplayName } from '@ai-rpg-engine/equipment';
+import { evaluateItemRecognition } from '@ai-rpg-engine/modules';
+
+// add to your engine's module list
+createItemChronicleCore({
+  catalog: itemCatalog,
+  recognition: { evaluate: evaluateItemRecognition }, // optional
+})
+
+getItemDisplayName(world, 'cutlass', 'Cutlass'); // 'Bloodied Cutlass'
+```
+
+Ele registra `acquired` (primeira coleta ou equipamento), `used-in-kill` (atribuído à arma equipada do atacante) e `recognized` (quando alguém em sua zona reage à sua origem). `recognition` é injetado em vez de importado porque este pacote não tem nenhuma dependência de tempo de execução em `@ai-rpg-engine/modules`. Leia o crescimento novamente com `getItemDisplayName`, `getRelicSummary`, `getItemChronicle` ou atualize sob demanda com `refreshRelicSummaries`.
+
+O registro é determinístico — orientado a eventos, baseado em `event.tick`, sem relógio e sem sorteio aleatório (RNG). Um jogo que não adiciona o módulo é idêntico ao que foi construído antes de sua existência, e o módulo não registra nenhum namespace padrão, portanto, um mundo onde nada é registrado nunca materializa o estado.
+
 ## Parte do AI RPG Engine
 
-Este pacote faz parte do monorepository [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine).
+Este pacote faz parte do monorepositorio [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine).
 
 ## Licença
 
