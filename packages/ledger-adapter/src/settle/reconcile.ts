@@ -91,6 +91,19 @@ function collectResourceKeys(input: ReconcileInput): string[] {
 export const reconcile: ReconcileFn = (input: ReconcileInput): ReconcileReport => {
   const notes: string[] = [];
 
+  // `diary` witnesses an economy it never custodied: no issuer, no trust lines,
+  // no mint. There is nothing on-ledger to compare a balance TO, so a balance
+  // comparison there does not fail honestly — it fails vacuously, for every
+  // resource, always. The anchor chain (memoOk, below, checked against memos
+  // read back off the ledger) is what a diary run offers instead, and it is
+  // the thing the engine cannot fabricate.
+  const isDiary = input.mode === 'diary';
+  if (isDiary) {
+    notes.push(
+      'diary mode: no on-ledger balances by design — the verdict rests on the anchor chain, not on custody',
+    );
+  }
+
   // Per-resource balance + conservation checks.
   const resources: ResourceCheck[] = collectResourceKeys(input).map((key) => {
     // Prefer the adapter's OWN minted code (state.tokenMap, threaded via
@@ -103,13 +116,21 @@ export const reconcile: ReconcileFn = (input: ReconcileInput): ReconcileReport =
     const sumDeltas = sumSettledDeltas(input.settlements, key);
     const ledger: number | null = code in input.ledgerBalances ? input.ledgerBalances[code] : null;
 
-    const balanceOk = ledger !== null && ledger === engineSettled;
+    // In diary the balance dimension is NOT APPLICABLE, not passed: there is no
+    // custody to check. Reported as `true` so it cannot drag the verdict down,
+    // and `ledger` stays null so no reader can mistake it for a verified
+    // balance. Conservation still has to hold — the arithmetic linking the
+    // opening baseline to the recorded deltas is true whether or not a token
+    // ever moved, and it is the one thing a diary run can still get wrong.
+    const balanceOk = isDiary ? true : ledger !== null && ledger === engineSettled;
     const conservationOk = minted + sumDeltas === engineSettled;
 
-    if (ledger === null) {
-      notes.push(`${key}: no on-ledger balance for ${code}`);
-    } else if (!balanceOk) {
-      notes.push(`${key}: ledger ${ledger} != engine settled ${engineSettled} (${code})`);
+    if (!isDiary) {
+      if (ledger === null) {
+        notes.push(`${key}: no on-ledger balance for ${code}`);
+      } else if (!balanceOk) {
+        notes.push(`${key}: ledger ${ledger} != engine settled ${engineSettled} (${code})`);
+      }
     }
     if (!conservationOk) {
       notes.push(

@@ -12,12 +12,32 @@
 // ── Configuration (the opt-in surface) ─────────────────────────────────────
 
 /**
- * The three play modes:
- *  - `offline`: default. No chain. Coin/items tracked purely in engine state
- *    (the engine core as it ships today; adapter absent == this mode).
- *  - `ledger`: coin/items backed by real testnet balances; settle at checkpoints.
- *  - `diary`: play offline, then anchor the run's state hash on-ledger for a
- *    tamper-evident receipt (cheap, no per-item trust lines).
+ * The three play modes.
+ *
+ * This union shipped in v3.3.0 with prose describing three behaviours and code
+ * implementing one. `state.mode` was copied at construction and validated on
+ * deserialize, and that was every read in the package — a grep for `.mode`
+ * outside tests returned exactly two assignments and two validations, and no
+ * branch anywhere. `diary` was a config flag wearing a feature's description,
+ * the same shape `config.settlement` had one release earlier in this same file.
+ *
+ * What each mode actually does now:
+ *
+ * | mode      | enable                              | settle                                   | reconcile verifies      |
+ * |-----------|-------------------------------------|------------------------------------------|-------------------------|
+ * | `offline` | nothing — adapter absent IS this    | nothing                                  | nothing                 |
+ * | `ledger`  | issuer + player + merchant wallets, | moves VALUE: mints/burns/escrows the     | on-ledger BALANCES      |
+ * |           | AccountSet flags, trust lines,      | net delta per resource key               | (`account_lines`) vs    |
+ * |           | mints the opening snapshot          |                                          | the settled baseline    |
+ * | `diary`   | ONE player wallet. No issuer, no    | moves NO VALUE: writes one memo-bearing  | the ANCHOR CHAIN        |
+ * |           | flags, no trust lines, no mint      | self-anchor carrying the checkpoint's    | (`account_tx` memos)    |
+ * |           |                                     | deltas + state hash                      |                         |
+ *
+ * `diary` is for a run that wants a tamper-evident record of what happened
+ * without putting the economy on-chain: the books are sealed and witnessed, not
+ * custodied. It costs one transaction per checkpoint and opens no trust line,
+ * so it works for any pack regardless of how many resource keys it has — which
+ * is the whole reason to want it over `ledger`.
  */
 export type LedgerMode = 'offline' | 'ledger' | 'diary';
 
@@ -134,6 +154,17 @@ export interface LedgerTransport {
   /** EscrowFinish — `owner` is the EscrowCreate account, `offerSequence` its
    *  create-tx sequence. Anyone may finish once FinishAfter has passed. */
   escrowFinish(seed: string, owner: string, offerSequence: number): Promise<TxResult>;
+
+  /**
+   * A VALUE-FREE memo anchor: a self-payment of the network minimum carrying
+   * `memo`. The `diary` mode primitive.
+   *
+   * Separate from `payment` because `payment` speaks IssuedAmount, and an
+   * IssuedAmount needs an issuer — the exact thing diary mode exists to avoid
+   * standing up. This proves a state hash existed at a point in ledger history
+   * without opening a trust line, minting a token, or moving an economy.
+   */
+  anchorMemo(seed: string, memo: string): Promise<TxResult>;
 
   /** account_lines — the holder's trust-line balances. */
   accountLines(address: string): Promise<TrustLineInfo[]>;
@@ -298,6 +329,19 @@ export type ReconcileReport = {
 export type ReconcileInput = {
   runId: string;
   seed: number;
+  /**
+   * Which mode produced these settlements. Omit for `'ledger'` — the historical
+   * behaviour and every pre-diary caller.
+   *
+   * In `'diary'` there ARE no on-ledger balances to compare against, by design:
+   * the run opened no trust lines and minted nothing. Comparing anyway would
+   * fail every resource for the honest reason that nothing was ever custodied,
+   * so a diary reconcile rests its verdict on the ANCHOR CHAIN instead — the
+   * per-checkpoint memos read back off the ledger. Conservation is still
+   * checked: the arithmetic linking the opening baseline to the recorded deltas
+   * has to hold whether or not anyone moved a token.
+   */
+  mode?: LedgerMode;
   mintedInitial: Record<string, number>;
   ledgerBalances: Record<string, number>; // keyed by XRPL currency code
   lastSettled: Record<string, number>;

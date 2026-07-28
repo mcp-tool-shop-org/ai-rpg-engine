@@ -216,6 +216,47 @@ describe('the fungible layer on real merchant content', () => {
     expect(result.record).toBeUndefined();
     expect(result.message).toContain('No changes');
   });
+
+  it('a default that COINCIDES with real deltas is stamped VERB:default on-chain', () => {
+    // The P5 wider-net audit found `default` was the one SettlementVerb member
+    // with no non-test emitter, and the reason is the test above: a default
+    // moves lien, not tradeables, so `settle` short-circuits on empty deltas
+    // and no record — and therefore no memo — is ever written under it.
+    //
+    // It is not unreachable, though. A factor who defaults and in the same
+    // checkpoint also SPENDS produces a real delta, and the artifact that lands
+    // on-chain must say what the checkpoint WAS. Pinning it here keeps the
+    // member honest: a union member no run can produce is an inert axis, which
+    // is exactly what `buy`/`sell` were before P1.5.
+    return (async () => {
+      const engine = createGame(SEED);
+      openTheBooks(engine);
+      const { state, adapter } = await harness();
+      await enableFromWorld(engine.world, PLAYER_ID, adapter, state);
+
+      engine.submitAction('move', { targetIds: ['long-quay'] });
+      engine.submitAction('move', { targetIds: ['crooked-stair'] });
+      engine.submitAction('consign', { parameters: { itemId: 'bale-of-flax' }, targetIds: ['broker-inaya'] });
+      await settleCheckpoint(engine.world, PLAYER_ID, adapter, state, 1, 'The Crooked Stair', { verb: 'consign' });
+
+      const obligation = getContractState(engine.world).obligations[0];
+      defaultObligation(engine.world, obligation.id, engine.world.meta.tick);
+
+      // The same checkpoint also carries a real spend.
+      const player = engine.world.entities[PLAYER_ID];
+      player.resources.coin = Math.max(0, player.resources.coin - 9);
+
+      const result = await settleCheckpoint(
+        engine.world, PLAYER_ID, adapter, state, 2, 'The Crooked Stair',
+        { verb: 'default' },
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.record?.verb).toBe('default');
+      expect(result.record?.memo).toContain('VERB:default');
+      expect(result.record?.deltas.coin).toBe(-9);
+    })();
+  });
 });
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -536,5 +577,193 @@ describe('THE FIREWALL on real merchant content', () => {
     const seized = engine.world.eventLog.filter((e) => e.type === 'merchant.instrument.seized');
     expect(seized).toHaveLength(1);
     expect(seized[0].payload.itemId).toBe('bale-of-flax');
+  });
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// The three rows v3.5.0 shipped UNPROVEN. Each was described in prose and
+// implemented by nothing: the writ was "tradeable" with no verb able to trade
+// it, and `diary` / `issuerMode: 'persistent'` were config values with zero
+// behavioral reads anywhere in this package. A showcase row without an
+// assertion is a promissory note.
+
+describe('the writ changes hands — title moves, obligations do not', () => {
+  it('the factor can MAKE OVER the writ, and the chronicle follows it', () => {
+    // Engine-side, and deliberately ledger-free: `give` lives in
+    // inventory-core and knows nothing about this package. The on-ledger
+    // analogue (a directed zero-value NFT offer) lives in the live replay,
+    // exactly as consign->escrow does — the pack stays firewalled.
+    const engine = createGame(SEED);
+    openTheBooks(engine);
+    engine.submitAction('move', { targetIds: ['long-quay'] });
+    engine.submitAction('move', { targetIds: ['customs-shed'] });
+    engine.submitAction('move', { targetIds: ['long-quay'] });
+    engine.submitAction('move', { targetIds: ['crooked-stair'] });
+    expect(engine.world.entities[PLAYER_ID].inventory).toContain('writ-of-passage');
+
+    const events = engine.submitAction('give', { targetIds: ['broker-inaya'], toolId: 'writ-of-passage' });
+    expect(events.find((e) => e.type === 'action.rejected')).toBeUndefined();
+    expect(engine.world.entities[PLAYER_ID].inventory).not.toContain('writ-of-passage');
+    expect(engine.world.entities['broker-inaya'].inventory).toContain('writ-of-passage');
+
+    // `lost` had no producer anywhere in the engine until `give` existed.
+    const history = getItemChronicle(engine.world)['writ-of-passage'] ?? [];
+    expect(history.map((e) => e.event)).toContain('lost');
+  });
+});
+
+describe('diary mode on real merchant content — witnessed, not custodied', () => {
+  const DIARY_CONFIG: LedgerAdapterConfig = { ...LEDGER_CONFIG, mode: 'diary' };
+
+  it('a diary run anchors its checkpoints and opens NO trust line', async () => {
+    const { transport, state, adapter } = await harness(DIARY_CONFIG);
+    const engine = createGame(SEED);
+    openTheBooks(engine);
+
+    const opening = snapshotFromWorld(engine.world, PLAYER_ID);
+    const enabled = await adapter.enable(state, opening);
+    expect(enabled.success).toBe(true);
+
+    // The negative control the mode rests on, read off the ledger rather than
+    // off adapter state: a diary run stands up no issuer and no trust lines.
+    expect(state.issuerAddress).toBe('');
+    expect(state.trustLinesReady).toBe(false);
+    expect(await balancesOf(transport, state.playerAddress)).toEqual({});
+
+    engine.submitAction('move', { targetIds: ['long-quay'] });
+    engine.submitAction('move', { targetIds: ['crooked-stair'] });
+    const player = engine.world.entities[PLAYER_ID];
+    player.resources.coin = Math.max(0, player.resources.coin - 12);
+
+    const settled = await settleCheckpoint(engine.world, PLAYER_ID, adapter, state, 1, 'crooked-stair');
+    expect(settled.success).toBe(true);
+    expect(settled.record?.txids).toHaveLength(1);
+    expect(settled.record?.deltas.coin).toBe(-12);
+    // Still nothing custodied after a settle.
+    expect(await balancesOf(transport, state.playerAddress)).toEqual({});
+  });
+
+  it('reconcile verifies the ANCHOR CHAIN, and a tampered anchor fails', async () => {
+    const { transport, state, adapter } = await harness(DIARY_CONFIG);
+    const engine = createGame(SEED);
+    openTheBooks(engine);
+    const opening = snapshotFromWorld(engine.world, PLAYER_ID);
+    await adapter.enable(state, opening);
+
+    const player = engine.world.entities[PLAYER_ID];
+    player.resources.coin = Math.max(0, player.resources.coin - 9);
+    await settleCheckpoint(engine.world, PLAYER_ID, adapter, state, 1, 'counting-house');
+
+    const onchainMemos: Record<string, string> = {};
+    for (const entry of await transport.accountTx(state.playerAddress, 50)) {
+      if (entry.memo) onchainMemos[entry.hash] = entry.memo;
+    }
+
+    const input = {
+      runId: RUN_ID,
+      seed: SEED,
+      mode: 'diary' as const,
+      mintedInitial: { coin: opening.coin, ...opening.items },
+      ledgerBalances: {},
+      lastSettled: state.lastSettled,
+      settlements: state.settlements,
+      pending: state.pending,
+      playerAddress: state.playerAddress,
+      onchainMemos,
+    };
+
+    const report = reconcile(input);
+    expect(report.passed, report.notes.join('\n')).toBe(true);
+    expect(report.onchainMemoOk).toBe(true);
+    // Honest about what it did NOT check: no balance was verified.
+    for (const r of report.resources) expect(r.ledger).toBeNull();
+
+    // Tamper with the anchor and the verdict must flip — otherwise "diary
+    // reconcile passes" would prove only that the balance check was skipped.
+    const txid = state.settlements[0].txids[0];
+    const tampered = reconcile({
+      ...input,
+      onchainMemos: { [txid]: 'ARPG|GAME:salt-road-ledger|RUN:x|CHECKPOINT:1|DELTA:coin=-1|VERB:settle' },
+    });
+    expect(tampered.passed).toBe(false);
+  });
+});
+
+describe('persistent issuer on real merchant content — a market that outlives the run', () => {
+  const PERSISTENT_CONFIG: LedgerAdapterConfig = { ...LEDGER_CONFIG, issuerMode: 'persistent' };
+
+  it('two runs of the same game share ONE issuer, where per-run gives two', async () => {
+    const transport = new DryRunTransport();
+    await transport.connect();
+    const engine = createGame(SEED);
+    openTheBooks(engine);
+    const opening = snapshotFromWorld(engine.world, PLAYER_ID);
+
+    // Run 1: faucets the issuer and surfaces its seed (in production: to the
+    // gitignored sidecar).
+    const seeds = new Map<string, string>();
+    const stateOne = createInitialState(PERSISTENT_CONFIG);
+    const runOne = createLedgerAdapter(transport, PERSISTENT_CONFIG, {
+      gameId: GAME_ID,
+      runId: `${RUN_ID}-1`,
+      putSeed: (address, seed) => seeds.set(address, seed),
+    });
+    await runOne.enable(stateOne, opening);
+    const durableSeed = seeds.get(stateOne.issuerAddress);
+    expect(durableSeed).toBeTruthy();
+
+    // Run 2: a fresh session and fresh state, handed only the durable seed.
+    const stateTwo = createInitialState(PERSISTENT_CONFIG);
+    const runTwo = createLedgerAdapter(transport, PERSISTENT_CONFIG, {
+      gameId: GAME_ID,
+      runId: `${RUN_ID}-2`,
+      persistentIssuerSeed: durableSeed,
+    });
+    await runTwo.enable(stateTwo, opening);
+
+    expect(stateTwo.issuerAddress).toBe(stateOne.issuerAddress);
+    expect(stateTwo.tokenMap).toEqual(stateOne.tokenMap);
+
+    // The control: per-run, the same two runs get two different issuers. This
+    // is what shipped, and what `persistent` was supposed to change.
+    const perRunOne = createInitialState(LEDGER_CONFIG);
+    const perRunTwo = createInitialState(LEDGER_CONFIG);
+    await createLedgerAdapter(transport, LEDGER_CONFIG, { gameId: GAME_ID, runId: 'p1' }).enable(perRunOne, opening);
+    await createLedgerAdapter(transport, LEDGER_CONFIG, { gameId: GAME_ID, runId: 'p2' }).enable(perRunTwo, opening);
+    expect(perRunTwo.issuerAddress).not.toBe(perRunOne.issuerAddress);
+  });
+
+  it('run 2 trades in the market run 1 created', async () => {
+    const transport = new DryRunTransport();
+    await transport.connect();
+    const engine = createGame(SEED);
+    openTheBooks(engine);
+    const opening = snapshotFromWorld(engine.world, PLAYER_ID);
+
+    const seeds = new Map<string, string>();
+    const stateOne = createInitialState(PERSISTENT_CONFIG);
+    await createLedgerAdapter(transport, PERSISTENT_CONFIG, {
+      gameId: GAME_ID,
+      runId: `${RUN_ID}-1`,
+      putSeed: (address, seed) => seeds.set(address, seed),
+    }).enable(stateOne, opening);
+
+    const stateTwo = createInitialState(PERSISTENT_CONFIG);
+    const runTwo = createLedgerAdapter(transport, PERSISTENT_CONFIG, {
+      gameId: GAME_ID,
+      runId: `${RUN_ID}-2`,
+      persistentIssuerSeed: seeds.get(stateOne.issuerAddress),
+    });
+    await runTwo.enable(stateTwo, opening);
+
+    const player = engine.world.entities[PLAYER_ID];
+    player.resources.coin = Math.max(0, player.resources.coin - 6);
+    const settled = await settleCheckpoint(engine.world, PLAYER_ID, runTwo, stateTwo, 1, 'counting-house');
+    expect(settled.success).toBe(true);
+
+    // The tokens run 2 holds are issued by run 1's issuer — one economy across
+    // two sessions, which is the entire point of the axis.
+    const lines = await transport.accountLines(stateTwo.playerAddress);
+    expect(lines.some((l) => l.account === stateOne.issuerAddress)).toBe(true);
   });
 });

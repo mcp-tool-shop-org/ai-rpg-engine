@@ -4,6 +4,7 @@ import type { Engine, RulesetDefinition } from '@ai-rpg-engine/core';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
+import type { ItemCatalog } from '@ai-rpg-engine/equipment';
 
 import * as fantasy from '@ai-rpg-engine/starter-fantasy';
 import * as cyberpunk from '@ai-rpg-engine/starter-cyberpunk';
@@ -28,6 +29,13 @@ export type PackInfo = {
    * verb. Each starter exports exactly one tree today.
    */
   progressionTrees: ProgressionTreeDefinition[];
+  /**
+   * The pack's full item catalog. Registered here so catalog-wide audits can
+   * reason about items a pack DEFINES rather than only items it happens to
+   * place in the world at boot — most usable items are acquired in play, so
+   * scanning starting inventories misses them (PVR-1).
+   */
+  itemCatalog: ItemCatalog;
 };
 
 export const allPacks: PackInfo[] = [
@@ -37,6 +45,7 @@ export const allPacks: PackInfo[] = [
     ruleset: fantasy.fantasyMinimalRuleset,
     createGame: fantasy.createGame,
     progressionTrees: [fantasy.combatMasteryTree],
+    itemCatalog: fantasy.itemCatalog,
   },
   {
     meta: cyberpunk.packMeta,
@@ -44,6 +53,7 @@ export const allPacks: PackInfo[] = [
     ruleset: cyberpunk.cyberpunkMinimalRuleset,
     createGame: cyberpunk.createGame,
     progressionTrees: [cyberpunk.netrunningTree],
+    itemCatalog: cyberpunk.itemCatalog,
   },
   {
     meta: detective.packMeta,
@@ -51,6 +61,7 @@ export const allPacks: PackInfo[] = [
     ruleset: detective.detectiveMinimalRuleset,
     createGame: detective.createGame,
     progressionTrees: [detective.deductionTree],
+    itemCatalog: detective.itemCatalog,
   },
   {
     meta: pirate.packMeta,
@@ -58,6 +69,7 @@ export const allPacks: PackInfo[] = [
     ruleset: pirate.pirateMinimalRuleset,
     createGame: pirate.createGame,
     progressionTrees: [pirate.seamanshipTree],
+    itemCatalog: pirate.itemCatalog,
   },
   {
     meta: zombie.packMeta,
@@ -65,6 +77,7 @@ export const allPacks: PackInfo[] = [
     ruleset: zombie.zombieMinimalRuleset,
     createGame: zombie.createGame,
     progressionTrees: [zombie.survivalTree],
+    itemCatalog: zombie.itemCatalog,
   },
   {
     meta: weirdWest.packMeta,
@@ -72,6 +85,7 @@ export const allPacks: PackInfo[] = [
     ruleset: weirdWest.weirdWestMinimalRuleset,
     createGame: weirdWest.createGame,
     progressionTrees: [weirdWest.gunslingerTree],
+    itemCatalog: weirdWest.itemCatalog,
   },
   {
     meta: colony.packMeta,
@@ -79,6 +93,7 @@ export const allPacks: PackInfo[] = [
     ruleset: colony.colonyMinimalRuleset,
     createGame: colony.createGame,
     progressionTrees: [colony.commanderTree],
+    itemCatalog: colony.itemCatalog,
   },
   {
     meta: vampire.packMeta,
@@ -86,6 +101,7 @@ export const allPacks: PackInfo[] = [
     ruleset: vampire.vampireMinimalRuleset,
     createGame: vampire.createGame,
     progressionTrees: [vampire.bloodMasteryTree],
+    itemCatalog: vampire.itemCatalog,
   },
   {
     meta: gladiator.packMeta,
@@ -93,6 +109,7 @@ export const allPacks: PackInfo[] = [
     ruleset: gladiator.gladiatorMinimalRuleset,
     createGame: gladiator.createGame,
     progressionTrees: [gladiator.arenaGloryTree],
+    itemCatalog: gladiator.itemCatalog,
   },
   {
     meta: ronin.packMeta,
@@ -100,6 +117,7 @@ export const allPacks: PackInfo[] = [
     ruleset: ronin.roninMinimalRuleset,
     createGame: ronin.createGame,
     progressionTrees: [ronin.wayOfTheBladeTree],
+    itemCatalog: ronin.itemCatalog,
   },
   {
     meta: merchant.packMeta,
@@ -107,5 +125,6 @@ export const allPacks: PackInfo[] = [
     ruleset: merchant.merchantMinimalRuleset,
     createGame: merchant.createGame,
     progressionTrees: [merchant.factorsCreditTree],
+    itemCatalog: merchant.itemCatalog,
   },
 ];

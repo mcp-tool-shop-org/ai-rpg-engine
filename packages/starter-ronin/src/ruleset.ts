@@ -29,6 +29,7 @@ export const roninMinimalRuleset: RulesetDefinition = {
     { id: 'reposition', name: 'Reposition', tags: ['combat', 'movement'], description: 'Shift position to outflank a target or escape a bad spot' },
     { id: 'disengage', name: 'Disengage', tags: ['combat', 'movement'], description: 'Attempt to break from combat and withdraw' },
     { id: 'use', name: 'Use', description: 'Use an item from your inventory' },
+    { id: 'give', name: 'Offer', description: 'Offer an item to someone standing with you' },
     { id: 'equip', name: 'Equip', tags: ['equipment'], description: 'Ready armory gear from your inventory (bare "equip" readies your only piece)' },
     { id: 'unequip', name: 'Unequip', tags: ['equipment'], description: 'Stow an equipped item back into your inventory' },
     { id: 'speak', name: 'Speak', tags: ['dialogue'], description: 'Initiate dialogue with an NPC' },

@@ -1,4 +1,4 @@
-// PG-1 — the pack rubric executed against the REAL 10-pack catalog.
+// PG-1 — the pack rubric executed against the REAL 11-pack catalog.
 //
 // PACK_RUBRIC.md says every pack "must pass this rubric before inclusion",
 // but until this file existed validatePackRubric() only ever ran on synthetic
@@ -14,6 +14,9 @@
 // no runtime dependency on any starter.
 
 import { describe, it, expect } from 'vitest';
+import { readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import { validatePackRubric } from './rubric.js';
 import type { PackEntry } from './types.js';
 
@@ -27,6 +30,7 @@ import * as colony from '@ai-rpg-engine/starter-colony';
 import * as vampire from '@ai-rpg-engine/starter-vampire';
 import * as gladiator from '@ai-rpg-engine/starter-gladiator';
 import * as ronin from '@ai-rpg-engine/starter-ronin';
+import * as merchant from '@ai-rpg-engine/starter-merchant';
 
 const realCatalog: PackEntry[] = [
   {
@@ -99,13 +103,92 @@ const realCatalog: PackEntry[] = [
     districts: ronin.districts,
     createGame: ronin.createGame,
   },
+  {
+    meta: merchant.packMeta,
+    manifest: merchant.manifest,
+    ruleset: merchant.merchantMinimalRuleset,
+    districts: merchant.districts,
+    createGame: merchant.createGame,
+  },
 ];
 
+/** Every `starter-*` workspace package that exists on disk, read from the
+ *  filesystem rather than from a list in this file. This is the whole point of
+ *  the membership guard below: a hand-maintained expected-ids literal drifts
+ *  exactly the way `realCatalog` itself drifted. */
+function starterPackagesOnDisk(): string[] {
+  const packagesDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  return readdirSync(packagesDir, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && e.name.startsWith('starter-'))
+    .map((e) => e.name)
+    .sort();
+}
+
+// --- Membership guard (F-merchant-H) ------------------------------------
+//
+// starter-merchant shipped in v3.5.0 and never entered this file. The suite
+// stayed green — it asserted a 10-pack catalog and got one — so "merchant
+// scores 7/7 against the live catalog" was measured BY HAND during that cycle
+// and attested nowhere, while every OTHER pack's cross-catalog distinctness
+// dimensions (verbs / genres / tones) were computed against a catalog missing a
+// live neighbour.
+//
+// Bumping the literal to 11 fixes the instance, not the class. This guard
+// closes the class: the catalog-of-record is checked against the packages that
+// actually exist on disk, so a twelfth starter cannot ship without either
+// entering the rubric or being explicitly excluded here.
+describe('catalog-of-record membership (F-merchant-H)', () => {
+  // meta.id is the WORLD id ('salt-road-ledger'), not the package directory
+  // ('starter-merchant'), so the two surfaces are bridged explicitly. A twelfth
+  // starter must be added here as well as to realCatalog above; omitting either
+  // fails one of the two assertions below.
+  const PACKAGE_BY_PACK_ID: Record<string, string> = {
+    'chapel-threshold': 'starter-fantasy',
+    'neon-lockbox': 'starter-cyberpunk',
+    'gaslight-detective': 'starter-detective',
+    'black-flag-requiem': 'starter-pirate',
+    'ashfall-dead': 'starter-zombie',
+    'dust-devils-bargain': 'starter-weird-west',
+    'signal-loss': 'starter-colony',
+    'crimson-court': 'starter-vampire',
+    'iron-colosseum': 'starter-gladiator',
+    'jade-veil': 'starter-ronin',
+    'salt-road-ledger': 'starter-merchant',
+  };
+
+  it('every catalog entry maps to a real package directory', () => {
+    const onDisk = new Set(starterPackagesOnDisk());
+    for (const pack of realCatalog) {
+      const pkg = PACKAGE_BY_PACK_ID[pack.meta.id];
+      expect(pkg, `pack '${pack.meta.id}' has no package mapping`).toBeTruthy();
+      expect(onDisk.has(pkg), `mapped package '${pkg}' does not exist on disk`).toBe(true);
+    }
+  });
+
+  it('every starter-* package on disk is scored by the rubric', () => {
+    const onDisk = starterPackagesOnDisk();
+    const inCatalog = new Set(realCatalog.map((p) => PACKAGE_BY_PACK_ID[p.meta.id]));
+    expect(onDisk.length).toBeGreaterThanOrEqual(11);
+    expect(
+      onDisk.filter((d) => !inCatalog.has(d)),
+      'these starter packages ship but are NOT scored by the pack rubric',
+    ).toEqual([]);
+  });
+
+  it('meta: dropping a pack from the catalog FAILS the membership guard', () => {
+    // Reproduces the actual defect: a pack on disk, absent from realCatalog.
+    const onDisk = starterPackagesOnDisk();
+    const mutated = new Set(realCatalog.slice(0, -1).map((p) => PACKAGE_BY_PACK_ID[p.meta.id]));
+    const missing = onDisk.filter((d) => !mutated.has(d));
+    expect(missing, 'the guard must notice the dropped pack').not.toEqual([]);
+  });
+});
+
 describe('pack rubric × real catalog (PG-1)', () => {
-  it('catalog sanity: 10 packs with unique ids, each declaring district topology', () => {
-    expect(realCatalog).toHaveLength(10);
+  it('catalog sanity: 11 packs with unique ids, each declaring district topology', () => {
+    expect(realCatalog).toHaveLength(11);
     const ids = realCatalog.map((p) => p.meta.id);
-    expect(new Set(ids).size).toBe(10);
+    expect(new Set(ids).size).toBe(11);
     for (const pack of realCatalog) {
       expect(pack.meta.id, 'meta.id must match manifest.id').toBe(pack.manifest.id);
       expect(
@@ -133,6 +216,23 @@ describe('pack rubric × real catalog (PG-1)', () => {
       expect(result.ok).toBe(true);
     });
   }
+
+  // v3.5.0's release record claimed "starter-merchant scores 7/7 against the
+  // live catalog". That was true, and it was measured by hand during the cycle
+  // — enforced nowhere, against a catalog that did not contain merchant. It is
+  // an assertion now. It is also the catalog's only 7/7: every other pack
+  // fails `distinct-verbs` (they share the world-stack surface), which merchant
+  // clears on its five pack-native commerce verbs.
+  it('salt-road-ledger scores a full 7/7 against the real catalog', () => {
+    const merchantEntry = realCatalog.find((p) => p.meta.id === 'salt-road-ledger');
+    expect(merchantEntry, 'merchant missing from the catalog-of-record').toBeDefined();
+    const result = validatePackRubric(merchantEntry!, realCatalog);
+    const failing = result.checks
+      .filter((c) => !c.passed)
+      .map((c) => `  ${c.dimension}: ${c.detail}`)
+      .join('\n');
+    expect(result.score, `merchant dropped a dimension:\n${failing}`).toBe(7);
+  });
 
   it('every real pack passes distinct-faction-topology (Stage A district data)', () => {
     for (const pack of realCatalog) {

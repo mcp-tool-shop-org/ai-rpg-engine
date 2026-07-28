@@ -21,6 +21,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { Engine } from '@ai-rpg-engine/core';
+import { getPartyState, getPersistedOpportunities, runWorldTick } from '@ai-rpg-engine/modules';
 import { createGame } from './setup.js';
 import { itemCatalog, merchantStatusDefinitions, merchantAbilities, buildCatalog } from './content.js';
 import {
@@ -246,6 +247,87 @@ describe('anti-inert: every verb has an observable consequence', () => {
     expect(haggled).toBeGreaterThan(plain);
   });
 
+  it('RECRUIT reaches a real companion, and she changes the PRICE', () => {
+    // F-merchant-A. This pack shipped `recruit` in its help table with zero
+    // entities tagged `recruitable` anywhere in the world — the only pack in
+    // the catalog in that state. Verb-honesty passed the whole time, because
+    // companion-core registers the handler in every world regardless of whether
+    // the content gives it anything to act on.
+    //
+    // The assertion is deliberately the CONSEQUENCE, not the roster. A
+    // companion who joins the party and changes no number is the decorative
+    // failure this cycle exists to prevent, so what is measured here is the
+    // margin `haggle` banks and `consign` pays out.
+    // BOTH arms walk the identical route — counting-house → weighing-floor
+    // (where Vessa works) → back → long-quay → crooked-stair — and differ only
+    // in whether `recruit` is submitted. An earlier draft skipped the detour
+    // entirely in the control arm, which left the two runs at different tick
+    // counts and would have credited the companion for any tick-dependent
+    // difference.
+    const marginWith = (recruit: boolean): number => {
+      const engine = createGame(71);
+      openTheBooks(engine);
+      engine.submitAction('move', { targetIds: ['weighing-floor'] });
+      if (recruit) {
+        const recruited = engine.submitAction('recruit', { targetIds: ['tally-clerk-vessa'] });
+        expect(
+          recruited.some((e) => e.type === 'action.rejected'),
+          'the recruit was rejected — the content gate is still closed',
+        ).toBe(false);
+      }
+      engine.submitAction('move', { targetIds: ['counting-house'] });
+      toTheWarrens(engine);
+      engine.submitAction('haggle', { targetIds: ['broker-inaya'] });
+      return Number(events(engine, 'merchant.price.haggled').pop()!.payload.marginPercent);
+    };
+
+    const alone = marginWith(false);
+    const withClerk = marginWith(true);
+    expect(withClerk).toBeGreaterThan(alone);
+  });
+
+  it('the recruit dual-writes all land — party, tags, and a shared faction', () => {
+    // companion-core commits three separate mirrors on a successful recruit and
+    // every downstream consumer reads a different one. A recruit that updated
+    // only the party roster would look fine in the menu and resolve the
+    // companion as an ENEMY in combat targeting.
+    const engine = createGame(71);
+    openTheBooks(engine);
+    engine.submitAction('move', { targetIds: ['weighing-floor'] });
+    engine.submitAction('recruit', { targetIds: ['tally-clerk-vessa'] });
+
+    const party = getPartyState(engine.world);
+    expect(party.companions.map((c) => c.npcId)).toContain('tally-clerk-vessa');
+
+    const vessa = engine.world.entities['tally-clerk-vessa'];
+    const factor = engine.world.entities['factor'];
+    expect(vessa.tags, 'entity tags mirror not written').toContain('companion');
+    expect(vessa.faction, 'companion has no faction — targeting reads her as an enemy').toBeTruthy();
+    expect(vessa.faction, 'companion is not on the player\'s side').toBe(factor.faction);
+    expect(events(engine, 'companion.recruited')).toHaveLength(1);
+  });
+
+  it('USE does something — the tincture moves a resource', () => {
+    // F-merchant-USE. This pack wired `createInventoryCore([])` while
+    // advertising `use`, and inventory-core emits `item.used` and consumes the
+    // item whether or not an effect is registered. So every `use` in Salt Road
+    // Ledger destroyed a saleable good and did nothing, indistinguishable from
+    // a working item unless you look for the effect's OWN events.
+    const engine = createGame(71);
+    const factor = engine.world.entities['factor'];
+    factor.resources.hp = 6;
+    factor.inventory = [...(factor.inventory ?? []), 'apothecary-tincture'];
+
+    const before = factor.resources.hp;
+    engine.submitAction('use', { toolId: 'apothecary-tincture' });
+
+    expect(engine.world.entities['factor'].resources.hp).toBeGreaterThan(before);
+    expect(
+      engine.world.entities['factor'].inventory,
+      'the tincture was drunk — the stock is gone',
+    ).not.toContain('apothecary-tincture');
+  });
+
   it('the banked margin is CONSUMED — haggling once does not pay forever', () => {
     const engine = createGame(71);
     openTheBooks(engine);
@@ -284,6 +366,181 @@ describe('anti-inert: every verb has an observable consequence', () => {
     const report = events(engine, 'merchant.audit.requested').pop()!;
     expect(report.payload.openCount).toBe(1);
     expect(Number(report.payload.receivable)).toBeGreaterThan(0);
+  });
+});
+
+describe('anti-inert: title moves, obligations do not (F-merchant-F)', () => {
+  /** Walk the Late Caravan and come back holding the writ. */
+  function withTheWrit(): Engine {
+    const engine = createGame(71);
+    engine.submitAction('move', { targetIds: ['long-quay'] });
+    engine.submitAction('move', { targetIds: ['customs-shed'] });
+    engine.submitAction('move', { targetIds: ['long-quay'] });
+    engine.submitAction('move', { targetIds: ['crooked-stair'] });
+    expect(engine.world.entities.factor.inventory).toContain('writ-of-passage');
+    return engine;
+  }
+
+  it('the writ of passage can be MADE OVER to a counterparty', () => {
+    // Until `give` existed there was no path in the engine that moved an item
+    // between two entities, so this pack could grant a tradeable exemption and
+    // then offer no way to trade it. Broker Inaya keeps the Crooked Stair,
+    // which is where the Late Caravan ends — the player arrives holding the
+    // writ, standing with someone who wants it.
+    const engine = withTheWrit();
+    const events = engine.submitAction('give', { targetIds: ['broker-inaya'], toolId: 'writ-of-passage' });
+
+    expect(events.find((e) => e.type === 'action.rejected')).toBeUndefined();
+    expect(engine.world.entities.factor.inventory).not.toContain('writ-of-passage');
+    expect(engine.world.entities['broker-inaya'].inventory).toContain('writ-of-passage');
+  });
+
+  it('a consigned lot is out of reach by CONSTRUCTION — consign already took it', () => {
+    // Worth pinning, because it is why this pack's transfer guard is aimed
+    // where it is. The obvious rule — "you may not hand away a consigned lot" —
+    // is unreachable: `consign` removes the goods from the factor's inventory
+    // when it writes the obligation, so `give` never finds them. A guard
+    // against this would be dead code wearing a safety label.
+    const engine = createGame(71);
+    openTheBooks(engine);
+    toTheWarrens(engine);
+    engine.submitAction('consign', { parameters: { itemId: 'bale-of-flax' }, targetIds: ['broker-inaya'] });
+
+    expect(getOpenObligations(engine.world).some((o) => o.itemId === 'bale-of-flax')).toBe(true);
+    expect(engine.world.entities.factor.inventory).not.toContain('bale-of-flax');
+
+    const rejected = engine
+      .submitAction('give', { targetIds: ['broker-inaya'], toolId: 'bale-of-flax' })
+      .find((e) => e.type === 'action.rejected');
+    expect(String(rejected!.payload.reason)).toContain("don't have");
+  });
+
+  it('an ATTACHED factor cannot make anything over — the seizure is not dodgeable', () => {
+    // The reachable laundering path, and the lien question answered visibly.
+    // A factor at the seizure threshold is about to lose an asset; handing the
+    // writ to a friend one step ahead of the collector would empty the seizure
+    // of meaning. The freeze is on the FACTOR, not the lot.
+    const engine = withTheWrit();
+    engine.world.entities.factor.resources.lien = SEIZURE_THRESHOLD;
+    const heldBefore = [...(engine.world.entities.factor.inventory ?? [])];
+
+    const rejected = engine
+      .submitAction('give', { targetIds: ['broker-inaya'], toolId: 'writ-of-passage' })
+      .find((e) => e.type === 'action.rejected');
+
+    expect(rejected, 'an attached factor gave an asset away').toBeDefined();
+    expect(String(rejected!.payload.reason)).toContain('attached');
+    expect(rejected!.payload.hint).toBeTruthy();
+    // The refusal cost nothing: the world is exactly as it was.
+    expect(engine.world.entities.factor.inventory).toEqual(heldBefore);
+  });
+
+  it('the freeze LIFTS — a factor back under the threshold trades again', () => {
+    // Without this, a guard that simply refused every transfer forever would
+    // pass the test above. The claim is temporary, and so is the freeze.
+    const engine = withTheWrit();
+    engine.world.entities.factor.resources.lien = SEIZURE_THRESHOLD;
+    expect(
+      engine.submitAction('give', { targetIds: ['broker-inaya'], toolId: 'writ-of-passage' })
+        .some((e) => e.type === 'action.rejected'),
+    ).toBe(true);
+
+    engine.world.entities.factor.resources.lien = SEIZURE_THRESHOLD - 1;
+    const events = engine.submitAction('give', { targetIds: ['broker-inaya'], toolId: 'writ-of-passage' });
+    expect(events.find((e) => e.type === 'action.rejected')).toBeUndefined();
+    expect(engine.world.entities['broker-inaya'].inventory).toContain('writ-of-passage');
+  });
+
+  it('the chronicle follows the object across owners — lost here, acquired there', () => {
+    // Reached by EVENT: inventory-core knows nothing about chronicles, and the
+    // chronicle's `lost` entry had no producer anywhere in the engine before
+    // this verb, because nothing could make an item change hands.
+    const engine = withTheWrit();
+    engine.submitAction('give', { targetIds: ['broker-inaya'], toolId: 'writ-of-passage' });
+
+    const chronicle = (engine.world.modules['item-chronicle'] ?? {}) as { entries?: Record<string, Array<{ event: string; detail: string }>> };
+    const writHistory = chronicle.entries?.['writ-of-passage'] ?? [];
+    expect(writHistory.map((e) => e.event), 'the transfer left no mark on the item').toContain('lost');
+    expect(writHistory.find((e) => e.event === 'lost')?.detail).toContain('Broker Inaya');
+  });
+});
+
+describe('anti-inert: opportunities emerge and resolve on shipped content', () => {
+  // F-merchant-B. opportunity-core is EMERGENT-ONLY — no pack authors
+  // opportunity content anywhere in the catalog; the only lever a pack has is
+  // its OpportunityInputs (pressures, NPC goals, faction needs, companion
+  // asks). So "does Salt Road Ledger ever offer the player work?" is an
+  // empirical question, and it had never been asked.
+  //
+  // The load-bearing detail, and the reason this went unproven for a release:
+  // `runWorldTick` is NOT a verb and NOT an event subscription. It is a
+  // per-round function the CLI calls after the player's action and the NPC
+  // round (bin.ts's runHostileRound). A test that only calls submitAction
+  // drives the player's half of a round and never the world's, so it sees zero
+  // opportunities forever and concludes the feature is dead. It is not dead —
+  // it was never being run. Every assertion below drives the round the way the
+  // CLI does.
+  const round = (engine: Engine, verb: string, opts?: Parameters<Engine['submitAction']>[1]) => {
+    engine.submitAction(verb, opts);
+    runWorldTick(engine, { genre: 'mercantile', log: () => {} });
+  };
+
+  it('a played session SPAWNS an opportunity, and the player can accept and complete it', () => {
+    const engine = createGame(71);
+    const circuit = ['weighing-floor', 'counting-house', 'long-quay', 'crooked-stair', 'long-quay', 'counting-house'];
+
+    let acceptedId: string | undefined;
+    let completed = false;
+
+    outer: for (let lap = 0; lap < 8; lap++) {
+      for (const zone of circuit) {
+        round(engine, 'move', { targetIds: [zone] });
+
+        if (!acceptedId) {
+          const available = getPersistedOpportunities(engine.world).find((o) => o.status === 'available');
+          if (available) {
+            const ev = engine.submitAction('opportunity', { parameters: { op: 'accept' }, toolId: available.id });
+            expect(
+              ev.some((e) => e.type === 'action.rejected'),
+              `accepting ${available.id} was rejected`,
+            ).toBe(false);
+            acceptedId = available.id;
+          }
+          continue;
+        }
+
+        const accepted = getPersistedOpportunities(engine.world).find((o) => o.id === acceptedId && o.status === 'accepted');
+        if (accepted) {
+          const ev = engine.submitAction('opportunity', { parameters: { op: 'complete' }, toolId: accepted.id });
+          expect(ev.some((e) => e.type === 'action.rejected'), `completing ${accepted.id} was rejected`).toBe(false);
+          completed = true;
+          break outer;
+        }
+      }
+    }
+
+    // Observable consequence, not a return value: the events a player would
+    // see, and the status the world actually carries afterwards.
+    expect(events(engine, 'opportunity.spawned').length, 'no opportunity ever spawned').toBeGreaterThan(0);
+    expect(acceptedId, 'nothing was ever available to accept').toBeTruthy();
+    expect(completed, 'the accepted opportunity never completed').toBe(true);
+    expect(events(engine, 'opportunity.accepted')).toHaveLength(1);
+    expect(events(engine, 'opportunity.completed')).toHaveLength(1);
+    expect(
+      getPersistedOpportunities(engine.world).find((o) => o.id === acceptedId)?.status,
+    ).toBe('completed');
+  });
+
+  it('meta: without the world tick, the same session sees NOTHING', () => {
+    // The negative control for the test above, and a permanent record of why
+    // this was invisible: identical session, player half only.
+    const engine = createGame(71);
+    const circuit = ['weighing-floor', 'counting-house', 'long-quay', 'crooked-stair', 'long-quay', 'counting-house'];
+    for (let lap = 0; lap < 8; lap++) {
+      for (const zone of circuit) engine.submitAction('move', { targetIds: [zone] });
+    }
+    expect(getPersistedOpportunities(engine.world)).toHaveLength(0);
+    expect(events(engine, 'opportunity.spawned')).toHaveLength(0);
   });
 });
 

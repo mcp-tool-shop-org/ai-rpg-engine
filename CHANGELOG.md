@@ -5,6 +5,121 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.6.0] - 2026-07-28
+
+**Running the instrument on purpose.** The v3.5.0 cycle established something worth
+exploiting: a pack authored to genuinely USE a system finds defects the system's own test
+suite structurally cannot. Building Salt Road Ledger surfaced three unfinished edges in a
+shipped adapter and nine dead mechanics across two packages — all unit-green in CI for at
+least one release. This cycle points that instrument at the catalog deliberately, and
+closes every showcase row v3.5.0 shipped honestly unproven.
+
+The theme throughout: **a config axis nobody reads is a feature nobody has**, and
+**a claim measured by hand is attested, not asserted**.
+
+### Added
+
+- **`give` — the engine's first entity-to-entity item transfer** (`inventory-core`). A
+  sweep of every `registerVerb` call site found no path that moved an item between two
+  entities: `use` consumes, equip/unequip move between bag and slot, and trade-core's
+  buy/sell settle against a district's abstract market rather than a counterparty's
+  inventory. A pack could make an item obtainable and have nothing able to hand it to
+  anyone — Salt Road Ledger's writ of passage is described as "tradeable, which is
+  precisely the problem", and nothing could trade it. Atomic by construction: every
+  rejection is decided before either side is touched, so no window exists where the item
+  is in both bags or neither. Advertised in all eleven rulesets.
+- **`TransferGuard`** — an optional pack policy consulted before any transfer mutates.
+  The engine owns atomicity, co-location and do-you-have-it; a pack owns which of ITS
+  items may move. Teaching `inventory-core` about liens would put a merchant's contract
+  law inside the engine's item bag.
+- **Diary mode is now a behaviour.** `enable` stands up one player wallet — no issuer, no
+  AccountSet flags, no trust lines, no opening mint. `settle` moves no value: one
+  memo-bearing anchor per checkpoint via the new `anchorMemo` transport primitive.
+  `reconcile` verifies the **anchor chain** instead of balances, and says so in its notes
+  rather than implying custody it never had. Conservation is still enforced.
+- **Persistent issuer is now a behaviour.** Run 2 reconstructs run 1's issuer from a
+  durable seed: same address, same token codes, trust lines already open. Per-run
+  throwaway custody remains the documented default; `persistent` is opt-in, gated on
+  `config.issuerMode` rather than on a seed being present, and demonstrated only in the
+  live-replay script with the seed in the gitignored sidecar.
+- **Tally-Clerk Vessa** — Salt Road Ledger's recruitable companion, and economically
+  load-bearing rather than decorative: an active `ledger-reading` companion widens the
+  margin `haggle` banks, which the next `consign` pays out. Deliberately not wired to
+  companion-core's `trade-advantage`, six of whose seven `AbilityModifiers` fields are
+  computed and read by nothing.
+- **A catalog-wide verb-reachability audit** (`packs-verb-reachability.test.ts`). Boots
+  all eleven packs and SUBMITS each verb through the real engine across three axes,
+  asking whether any target in the booted world is accepted.
+- **The canonical T0 creation family for `starter-merchant`** — it was the one starter
+  with no `resolveEntity` proof at all.
+
+### Fixed
+
+- **`recruit` was advertised in Salt Road Ledger with nobody to recruit.** The v2.9 defect
+  ("five worlds shipped recruit with no one to recruit"), re-introduced by the eleventh
+  pack and invisible to every existing gate: companion-core registers the handler in every
+  world, so verb-honesty compared the help table against the engine and never looked at
+  the content. Merchant was the only pack in the catalog with zero `recruitable` entities;
+  the other ten ship 3–9.
+- **`use` was inert across the whole of Salt Road Ledger.** The pack wired
+  `createInventoryCore([])` while advertising `use`, and `inventory-core` emits
+  `item.used` and CONSUMES the item whether or not an effect is registered — so every
+  `use` destroyed a saleable good and did nothing, indistinguishable from a working item.
+- **The `runner` archetype minted a phantom resource.** It carried `standing` in
+  `resourceOverrides`, and `standing` is a stat, already on its `statPriorities` line at
+  the same value. Creation writes every override key into `entity.resources` without
+  consulting the ruleset, and the clamp pass visits only DECLARED resources — so every
+  runner ever built carried an unbounded `resources.standing` that nothing read.
+- **`starter-merchant` was missing from the pack rubric's catalog-of-record**, and from
+  `ability-phase4-integration`'s. Two separate 10-pack suites that never learned the
+  eleventh pack existed. v3.5.0's "merchant scores 7/7 against the live catalog" was
+  measured by hand and asserted nowhere; it is an assertion now, and merchant is the
+  catalog's only 7/7.
+- **`SettlementVerb.default` could never reach the chain.** A default moves lien, not
+  tradeable value, so `settle` short-circuits on empty deltas and no memo is written under
+  it — the same inertness `buy`/`sell` had before v3.5.0. Now proven reachable and stamped
+  live.
+- **`item.lost` had no producer anywhere in the engine.** A member of
+  `ItemChronicleEvent` since the type was written, unreachable because nothing could make
+  an item change hands. `give` produces it; the chronicle subscribes by EVENT, so
+  `inventory-core` still knows nothing about the equipment package.
+- **`anchorMemo` failed `temREDUNDANT` on live testnet** while passing every synthetic
+  check — live XRPL rejects a Payment whose Account equals its Destination. Fixed to a
+  no-op `AccountSet`, and `DryRunTransport` now MODELS the rule, the same way it already
+  models `tecPATH_DRY`. A lesson written only in a commit message is one the next
+  transport-shaped bug walks straight past.
+- **The status-tag vocabulary was a stale literal.** Merchant's `obligation` — declared in
+  its own ruleset and the pack's whole distinguishing concept — read as an unknown tag
+  because nobody edited an array. Now derived from shared semantics plus each pack's own
+  declaration.
+- **`chronicle-core` misattributed the no-namespace-default contract** to
+  `opportunity-core`, which does register one.
+
+### Notes
+
+- The CLI's pack-lineup guard was `>= 10`, which can only notice packs failing to ARRIVE —
+  the direction that never broke. Now an exact id list.
+- **Opportunity emergence was unproven, not broken.** `runWorldTick` is not a verb and not
+  an event subscription; it is a per-round function the CLI drives. A probe built from
+  `submitAction` alone sees zero opportunities across any length of session in all eleven
+  packs. A committed negative control now pins the distinction.
+- **Deferred, with an owner:** `contentConventions.statusTags` is declared per pack and
+  enforced nowhere — 10 of 11 packs use status tags their own ruleset does not declare.
+  Making it binding is a content change across ten packs. Owner: next engine cycle.
+
+### Live testnet receipts (15/15 stages)
+
+| Stage | txid |
+|---|---|
+| consign | `775FADD3A3C5555F14B545719D60A6779D2772B7ADB34FDA95659C8FAA2D3042` |
+| escrow-sell | `C23969CC6D0A5FD0B4832F3399C2BF151B7F01A02D16503D7C825D187393FFA1` |
+| cash-sell | `EF59D8AA8C059976130F60861EB9EF548E278EA94639B7A31283A0CC6E1F0621` |
+| mint | `CFDFF3F103E03AB5FF2EF186B6CBA3484166BF2BAA9DBD7FD3A574590B220DB6` |
+| modify | `709549FD88259385CC06BF88D27BCCB25D46BA71D5E57AD7F2377624A3B43055` |
+| diary-anchor | `9F95AC660C714E89951C7DA9D9E1A765A06971DB311F0159E786317A2AE208A0` |
+| persist-settle | `6712FA381D6F8145DC7E5BDF9A3732A1D17E6E845C03FB042DCD0724F0ADD2EA` |
+| default | `2E487400B147BBB0DAD50AE08B1B1126FB5B3F96FB061A7CB057115FDAB1F131` |
+
 ## [3.5.0] - 2026-07-26
 
 **Salt Road Ledger** — the eleventh starter, and the first authored backwards from a

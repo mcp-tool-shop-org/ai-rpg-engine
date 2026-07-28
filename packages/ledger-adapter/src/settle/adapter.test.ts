@@ -29,6 +29,9 @@ type FakeTransport = LedgerTransport & {
    *  holder fails tecPATH_DRY) — the fidelity the LIVE pirate replay needed to
    *  surface the incremental-trust-line gap the dry-run path structurally hid. */
   trustedFor(address: string, currency: string): boolean;
+  /** txid -> the memo that tx carried, so a diary reconcile can read the
+   *  anchor chain back off the (fake) ledger rather than trusting state. */
+  memoFor(txid: string): string | undefined;
   /** Ordered log of write-method names, so a test can assert the SHAPE of the
    *  tx sequence a settlement produced (not merely its net balance effect).
    *  Needed to prove the `payment` primitive is materially different from
@@ -45,6 +48,8 @@ function createFakeTransport(): FakeTransport {
   // `${holder}:${currency}` for every opened trust line — modeled so the mint
   // path can enforce live XRPL's "no line -> tecPATH_DRY" rule (see trustedFor).
   const trustLines = new Set<string>();
+  /** txid -> memo, so a diary test can read its own anchor chain back. */
+  const memos = new Map<string, string>();
   const pendingEscrows = new Map<number, { destination: string; currency: string; value: number }>();
   const calls: string[] = [];
 
@@ -76,6 +81,10 @@ function createFakeTransport(): FakeTransport {
     failNext(times: number) {
       failRemaining = times;
     },
+    memoFor(txid: string): string | undefined {
+      return memos.get(txid);
+    },
+
     trustedFor(address: string, currency: string): boolean {
       return trustLines.has(`${address}:${currency}`);
     },
@@ -107,6 +116,15 @@ function createFakeTransport(): FakeTransport {
       const holder = seedToAddress.get(seed);
       if (holder) trustLines.add(`${holder}:${currency}`);
       return nextTx();
+    },
+
+    async anchorMemo(_seed: string, memo: string): Promise<TxResult> {
+      calls.push('anchorMemo');
+      const failed = maybeFail();
+      if (failed) return failed;
+      const tx = nextTx();
+      memos.set(tx.hash, memo);
+      return tx;
     },
 
     async payment(_seed: string, destination: string, amount: IssuedAmount, _memo?: string): Promise<TxResult> {
@@ -502,5 +520,309 @@ describe('createLedgerAdapter', () => {
     // override and not a second adapter instance.
     expect(state.lastSettled.coin).toBe(80);
     expect(state.settlements).toHaveLength(2);
+  });
+});
+
+// ── diary mode (F-merchant-D) ───────────────────────────────────────────
+//
+// `LedgerMode` shipped in v3.3.0 with prose describing three behaviours and
+// code implementing one. A grep for `.mode` across this package, tests
+// excluded, returned exactly four hits: two assignments in createInitialState
+// and two validations in deserializeState. No branch anywhere. `diary` and
+// `ledger` produced byte-identical behaviour, which made `diary` a config flag
+// wearing a feature's description — the same shape `config.settlement` had one
+// release earlier, in this same file.
+//
+// The assertions below are about what the ledger DOES and DOES NOT receive,
+// because that is the only thing that distinguishes the modes.
+
+const DIARY_CONFIG: LedgerAdapterConfig = {
+  mode: 'diary',
+  issuerMode: 'per-run',
+  settlement: 'token-escrow',
+  network: 'testnet',
+};
+
+function diaryState(): LedgerAdapterState {
+  return { ...freshState(), mode: 'diary' };
+}
+
+describe('diary mode: witnessed, not custodied', () => {
+  let transport: FakeTransport;
+  const snapshot: TradeableSnapshot = { coin: 100, items: { potion: 2 } };
+
+  beforeEach(() => {
+    transport = createFakeTransport();
+  });
+
+  it('enable opens NO trust lines and mints nothing', async () => {
+    // The negative control the whole mode rests on. If a diary run opened trust
+    // lines it would be `ledger` with extra steps, and its one selling point —
+    // works for any pack regardless of resource-key count — would be false.
+    const adapter = createLedgerAdapter(transport, DIARY_CONFIG, { gameId: 'g', runId: 'r' });
+    const state = diaryState();
+
+    const result = await adapter.enable(state, snapshot);
+    expect(result.success).toBe(true);
+    expect(state.enabled).toBe(true);
+    expect(state.playerAddress).toBeTruthy();
+
+    expect(transport.calls.filter((c) => c === 'payment'), 'a diary enable minted something').toEqual([]);
+    expect(state.trustLinesReady, 'a diary enable opened trust lines').toBe(false);
+    expect(transport.trustedFor(state.playerAddress, 'coin')).toBe(false);
+    // No issuer at all — there is nothing to issue.
+    expect(state.issuerAddress).toBe('');
+    expect(state.merchantAddress).toBe('');
+  });
+
+  it('a ledger enable, by contrast, DOES all of it', async () => {
+    // The positive half of the same control: without this, the assertions above
+    // could pass because the fake transport records nothing.
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'g', runId: 'r' });
+    const state = freshState();
+
+    await adapter.enable(state, snapshot);
+    expect(transport.calls.filter((c) => c === 'payment').length).toBeGreaterThan(0);
+    expect(state.trustLinesReady).toBe(true);
+    expect(state.issuerAddress).toBeTruthy();
+  });
+
+  it('settle writes ONE value-free anchor, not a token movement', async () => {
+    const adapter = createLedgerAdapter(transport, DIARY_CONFIG, { gameId: 'g', runId: 'r' });
+    const state = diaryState();
+    await adapter.enable(state, snapshot);
+    transport.calls.length = 0;
+
+    const result = await adapter.settle(state, { coin: 70, items: { potion: 2 } }, 1, 'the-warrens');
+
+    expect(result.success).toBe(true);
+    expect(transport.calls, 'a diary settle must be exactly one anchor').toEqual(['anchorMemo']);
+    expect(result.record?.deltas).toEqual({ coin: -30 });
+    expect(result.record?.txids).toHaveLength(1);
+  });
+
+  it('the anchor chain reconciles — verdict rests on memos, not balances', async () => {
+    const adapter = createLedgerAdapter(transport, DIARY_CONFIG, { gameId: 'g', runId: 'r' });
+    const state = diaryState();
+    await adapter.enable(state, snapshot);
+    await adapter.settle(state, { coin: 70, items: { potion: 2 } }, 1, 'the-warrens');
+    await adapter.settle(state, { coin: 55, items: { potion: 1 } }, 2, 'long-quay');
+
+    // Read the memos back off the (fake) ledger, exactly as a live driver reads
+    // account_tx — the engine cannot fabricate this side.
+    const onchainMemos: Record<string, string> = {};
+    for (const rec of state.settlements) {
+      for (const txid of rec.txids) {
+        const memo = transport.memoFor(txid);
+        if (memo !== undefined) onchainMemos[txid] = memo;
+      }
+    }
+
+    const report = reconcile({
+      runId: 'r',
+      seed: 71,
+      mode: 'diary',
+      mintedInitial: { coin: 100, potion: 2 },
+      ledgerBalances: {}, // none exist, by design
+      lastSettled: state.lastSettled,
+      settlements: state.settlements,
+      pending: state.pending,
+      playerAddress: state.playerAddress,
+      onchainMemos,
+    });
+
+    expect(report.passed, report.notes.join('\n')).toBe(true);
+    expect(report.onchainMemoOk).toBe(true);
+    expect(report.settlementsCount).toBe(2);
+    // Honest reporting: no balance was verified, and the report says so rather
+    // than implying custody it never had.
+    for (const r of report.resources) expect(r.ledger).toBeNull();
+    expect(report.notes.join(' ')).toContain('no on-ledger balances by design');
+  });
+
+  it('a TAMPERED anchor still fails — the chain is a real check', async () => {
+    // Without this, "diary reconcile passes" would prove only that the balance
+    // check was skipped, not that anything was verified.
+    const adapter = createLedgerAdapter(transport, DIARY_CONFIG, { gameId: 'g', runId: 'r' });
+    const state = diaryState();
+    await adapter.enable(state, snapshot);
+    await adapter.settle(state, { coin: 70, items: { potion: 2 } }, 1, 'the-warrens');
+
+    const txid = state.settlements[0].txids[0];
+    const report = reconcile({
+      runId: 'r',
+      seed: 71,
+      mode: 'diary',
+      mintedInitial: { coin: 100, potion: 2 },
+      ledgerBalances: {},
+      lastSettled: state.lastSettled,
+      settlements: state.settlements,
+      pending: state.pending,
+      playerAddress: state.playerAddress,
+      onchainMemos: { [txid]: 'ARPG|GAME:g|RUN:r|CHECKPOINT:1|DELTA:coin=-999|VERB:settle' },
+    });
+
+    expect(report.passed).toBe(false);
+    expect(report.onchainMemoOk).toBe(false);
+  });
+
+  it('conservation is still enforced in diary — the arithmetic must hold', async () => {
+    // The one thing a diary run CAN still get wrong. Skipping balances must not
+    // mean skipping the link between the opening baseline and the deltas.
+    const adapter = createLedgerAdapter(transport, DIARY_CONFIG, { gameId: 'g', runId: 'r' });
+    const state = diaryState();
+    await adapter.enable(state, snapshot);
+    await adapter.settle(state, { coin: 70, items: { potion: 2 } }, 1, 'the-warrens');
+
+    const report = reconcile({
+      runId: 'r',
+      seed: 71,
+      mode: 'diary',
+      mintedInitial: { coin: 1 }, // a lie: the run opened at 100
+      ledgerBalances: {},
+      lastSettled: state.lastSettled,
+      settlements: state.settlements,
+      pending: state.pending,
+      playerAddress: state.playerAddress,
+    });
+
+    expect(report.passed).toBe(false);
+    expect(report.resources.find((r) => r.resource === 'coin')?.conservationOk).toBe(false);
+  });
+
+  it('a failed anchor degrades onto the SAME pending path as a ledger settle', async () => {
+    const adapter = createLedgerAdapter(transport, DIARY_CONFIG, { gameId: 'g', runId: 'r' });
+    const state = diaryState();
+    await adapter.enable(state, snapshot);
+
+    transport.failNext(1);
+    const result = await adapter.settle(state, { coin: 70, items: { potion: 2 } }, 1, 'the-warrens');
+
+    expect(result.success).toBe(false);
+    expect(state.pending).toHaveLength(1);
+    expect(state.pending[0].deltas).toEqual({ coin: -30 });
+  });
+});
+
+// ── persistent issuer (F-merchant-E) ────────────────────────────────────
+//
+// `IssuerMode` shipped as a declared axis with no behaviour. Like `mode`, it
+// was copied into state at construction and validated on deserialize, and read
+// by nothing — so every run in either mode fauceted a throwaway issuer, and the
+// documented cross-run market was impossible. Two runs of the "same game" had
+// two different issuers, two token codes, and no shared economy.
+//
+// Custody stays deliberate: per-run remains the documented default (no durable
+// key at all), and `persistent` is opt-in, gated on the config axis rather than
+// on the seed merely being present, and demonstrated only where a testnet-only
+// warning and a gitignored sidecar are in play.
+
+const PERSISTENT_CONFIG: LedgerAdapterConfig = {
+  mode: 'ledger',
+  issuerMode: 'persistent',
+  settlement: 'token-escrow',
+  network: 'testnet',
+};
+
+describe('persistent issuer: a market that outlives the run', () => {
+  let transport: FakeTransport;
+  const snapshot: TradeableSnapshot = { coin: 100, items: { potion: 2 } };
+
+  beforeEach(() => {
+    transport = createFakeTransport();
+  });
+
+  it('per-run (the default) gives two runs two DIFFERENT issuers', async () => {
+    // The control. This is what shipped, and what `persistent` was supposed to
+    // change — without this half, the run-2 assertion below would prove nothing.
+    const runOne = createLedgerAdapter(transport, CONFIG, { gameId: 'g', runId: 'r1' });
+    const stateOne = freshState();
+    await runOne.enable(stateOne, snapshot);
+
+    const runTwo = createLedgerAdapter(transport, CONFIG, { gameId: 'g', runId: 'r2' });
+    const stateTwo = freshState();
+    await runTwo.enable(stateTwo, snapshot);
+
+    expect(stateOne.issuerAddress).toBeTruthy();
+    expect(stateTwo.issuerAddress).not.toBe(stateOne.issuerAddress);
+  });
+
+  it('persistent reuses ONE issuer across two runs of the same game', async () => {
+    // Run 1 fauces the issuer and records its seed (in production: into the
+    // gitignored sidecar).
+    const seeds = new Map<string, string>();
+    const runOne = createLedgerAdapter(transport, PERSISTENT_CONFIG, {
+      gameId: 'g',
+      runId: 'r1',
+      putSeed: (address, seed) => seeds.set(address, seed),
+    });
+    const stateOne = freshState();
+    stateOne.issuerMode = 'persistent';
+    await runOne.enable(stateOne, snapshot);
+
+    const durableSeed = seeds.get(stateOne.issuerAddress);
+    expect(durableSeed, 'run 1 never surfaced an issuer seed to persist').toBeTruthy();
+
+    // Run 2 is a FRESH state — a new session, nothing carried in memory — that
+    // supplies the durable seed and finds the same issuer waiting.
+    const runTwo = createLedgerAdapter(transport, PERSISTENT_CONFIG, {
+      gameId: 'g',
+      runId: 'r2',
+      persistentIssuerSeed: durableSeed,
+    });
+    const stateTwo = freshState();
+    stateTwo.issuerMode = 'persistent';
+    await runTwo.enable(stateTwo, snapshot);
+
+    expect(stateTwo.issuerAddress).toBe(stateOne.issuerAddress);
+    // And the market run 1 built is still there: the same issuer means the same
+    // trust lines, so run 2's player can hold run 1's tokens.
+    expect(stateTwo.tokenMap).toEqual(stateOne.tokenMap);
+    expect(transport.trustedFor(stateTwo.playerAddress, stateTwo.tokenMap.coin)).toBe(true);
+  });
+
+  it('a seed handed to a PER-RUN game is ignored — custody cannot change by accident', async () => {
+    // Gated on the config axis, not on the seed's presence. A stray seed in the
+    // deps must not silently convert a throwaway-custody game into a durable-key
+    // one; that is a custody decision, not a parameter.
+    const seeds = new Map<string, string>();
+    const first = createLedgerAdapter(transport, PERSISTENT_CONFIG, {
+      gameId: 'g',
+      runId: 'r1',
+      putSeed: (address, seed) => seeds.set(address, seed),
+    });
+    const stateOne = freshState();
+    stateOne.issuerMode = 'persistent';
+    await first.enable(stateOne, snapshot);
+    const durableSeed = seeds.get(stateOne.issuerAddress)!;
+
+    const perRun = createLedgerAdapter(transport, CONFIG, {
+      gameId: 'g',
+      runId: 'r2',
+      persistentIssuerSeed: durableSeed,
+    });
+    const stateTwo = freshState();
+    await perRun.enable(stateTwo, snapshot);
+
+    expect(stateTwo.issuerAddress).not.toBe(stateOne.issuerAddress);
+  });
+
+  it('a resumed run still resumes — persistence does not break in-run recovery', async () => {
+    // state.issuerAddress already set means "this run already has its issuer",
+    // and that path must keep winning over the durable seed, or a mid-run
+    // resume would silently re-point the economy at a different issuer.
+    const seeds = new Map<string, string>();
+    const adapter = createLedgerAdapter(transport, PERSISTENT_CONFIG, {
+      gameId: 'g',
+      runId: 'r1',
+      putSeed: (address, seed) => seeds.set(address, seed),
+    });
+    const state = freshState();
+    state.issuerMode = 'persistent';
+    await adapter.enable(state, snapshot);
+    const firstIssuer = state.issuerAddress;
+
+    await adapter.enable(state, snapshot); // resume
+    expect(state.issuerAddress).toBe(firstIssuer);
   });
 });

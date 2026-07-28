@@ -27,6 +27,7 @@
 
 import type { ActionIntent, EngineModule, EntityState, ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
 import type { ItemCatalog, ItemDefinition } from '@ai-rpg-engine/equipment';
+import { getPartyState } from '@ai-rpg-engine/modules';
 
 /** Persisted namespace key (world.modules[CONTRACT_STATE_KEY]). */
 export const CONTRACT_STATE_KEY = 'contract-core';
@@ -133,6 +134,48 @@ function mutable(world: WorldState): ContractModuleState {
 export function getOpenObligations(world: WorldState): Obligation[] {
   return getContractState(world).obligations.filter((o) => o.status === 'open');
 }
+
+/**
+ * The pack's answer to the lien question (F-merchant-F): once the Guild has
+ * moved against a factor, that factor may not dispose of assets.
+ *
+ * `give` moves title, and title must not move out from under a claim. The
+ * obvious version of that rule — "a consigned lot cannot be handed to a third
+ * party" — turns out to be UNREACHABLE in this pack, and saying so is the
+ * point: `consign` already takes physical custody (contract-core removes the
+ * lot from the factor's inventory when the obligation is written), so an item
+ * under an open obligation is never in the factor's bag for `give` to find. A
+ * guard against it would have been dead code wearing a safety label, which is
+ * exactly the class of thing this cycle exists to stop shipping.
+ *
+ * The reachable laundering path is the one that runs the other way: a factor
+ * whose lien has reached SEIZURE_THRESHOLD is about to have an asset taken,
+ * and handing the deed to a friend one step ahead of the collector would empty
+ * the seizure of meaning. So the freeze is on the FACTOR, not the lot — every
+ * transfer refuses while the Guild's claim stands, and resumes the moment the
+ * lien falls back under the threshold.
+ *
+ * Chosen over "the obligation follows the asset" deliberately. Following would
+ * be defensible with assignable paper, but a consignment here is registered
+ * against a NAMED factor; a debt cannot quietly become someone else's problem.
+ * A refusal is also the more honest failure — it tells the player the claim
+ * exists at the moment they try to escape it, rather than silently re-pointing
+ * a debt they discover later.
+ */
+export const consignedLotsAreNotTransferable = (ctx: {
+  world: WorldState;
+  from: EntityState;
+}): { reason: string; hint: string } | null => {
+  const lien = resource(ctx.from, 'lien');
+  if (lien < SEIZURE_THRESHOLD) return null;
+  const open = getOpenObligations(ctx.world);
+  return {
+    reason: `your assets are attached at lien ${lien}`,
+    hint: open.length
+      ? 'Settle or default what you owe before you make anything over.'
+      : 'Bring the lien down before you make anything over.',
+  };
+};
 
 /** Obligations past their due tick and still open. */
 export function getOverdueObligations(world: WorldState, tick: number): Obligation[] {
@@ -280,6 +323,30 @@ function haggleKey(counterpartyId: string): string {
   return `haggle-margin:${counterpartyId}`;
 }
 
+/** Margin points added per active companion who can read a counterparty's book. */
+const LEDGER_READING_MARGIN_BONUS = 5;
+
+/** The pack ability tag Tally-Clerk Vessa carries (content.ts). */
+const LEDGER_READING_ABILITY = 'ledger-reading';
+
+/**
+ * How many ACTIVE companions are reading the other side's book.
+ *
+ * Deliberately a pack-local read of companion-core's party state rather than a
+ * use of its AbilityModifiers bundle: six of the seven engine modifier fields
+ * (`commerceGainBonus` among them) are computed and then read by nothing —
+ * companion-core documents that gap and defers it to a wave that threads both
+ * modifier bundles into their resolution functions at once. Wiring Vessa to
+ * `trade-advantage` would have produced a companion who looked economic in the
+ * data and changed no price in the game, which is the exact class of defect
+ * this pack exists to catch.
+ */
+function ledgerReadersInParty(world: WorldState): number {
+  return getPartyState(world).companions.filter(
+    (c) => c.active && c.abilityTags.includes(LEDGER_READING_ABILITY),
+  ).length;
+}
+
 function haggleHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
   const actor = world.entities[action.actorId];
   if (!actor) return reject(action, 'actor not found', 'Only a live entity can haggle.');
@@ -303,7 +370,16 @@ function haggleHandler(action: ActionIntent, world: WorldState): ResolvedEvent[]
 
   // tongue vs their ledger, clamped. Deterministic — the same pairing always
   // yields the same margin, so a replay reproduces the price.
-  const margin = Math.max(-15, Math.min(25, (actor.stats.tongue ?? 0) * 3 - (target.stats.ledger ?? 0) * 2));
+  //
+  // A companion who reads ledgers adds to the RAW figure and the clamp is
+  // applied once, afterwards. Clamping first and then adding would quietly
+  // raise this verb's documented ceiling from 25 to 30 — the same
+  // evaluate-the-threshold-against-the-wrong-value trap that let seizure ease
+  // the lien it was collecting against (see tickObligations).
+  const readers = ledgerReadersInParty(world);
+  const companionBonus = readers * LEDGER_READING_MARGIN_BONUS;
+  const raw = (actor.stats.tongue ?? 0) * 3 - (target.stats.ledger ?? 0) * 2 + companionBonus;
+  const margin = Math.max(-15, Math.min(25, raw));
 
   // The margin is BANKED against this counterparty and consumed by the next
   // `consign` with them (see consignHandler). Before the P8 audit this verb
@@ -319,6 +395,11 @@ function haggleHandler(action: ActionIntent, world: WorldState): ResolvedEvent[]
       marginPercent: margin,
       liquiditySpent: HAGGLE_LIQUIDITY_COST,
       won: margin > 0,
+      // Stated so the player can see what the clerk at their shoulder bought
+      // them, and so a test can assert the companion changed the PRICE rather
+      // than merely appearing in the party roster.
+      companionMarginBonus: companionBonus,
+      ledgerReaders: readers,
       // Stated in the event so a UI can tell the player what it bought them.
       appliesToNextConsignWith: target.id,
     }, { targetIds: [target.id] }),

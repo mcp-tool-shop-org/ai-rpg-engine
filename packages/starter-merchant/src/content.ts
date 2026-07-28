@@ -10,7 +10,7 @@
 // winning still raises lien (you damaged someone's property), so a factor who
 // fights has already made a bad trade. That inversion is the point.
 
-import type { EntityState, ZoneState, GameManifest, ResolvedEvent } from '@ai-rpg-engine/core';
+import type { EntityState, ZoneState, GameManifest, ResolvedEvent, ActionIntent, WorldState } from '@ai-rpg-engine/core';
 import type { DialogueDefinition, ProgressionTreeDefinition, AbilityDefinition, StatusDefinition, QuestDefinition } from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
@@ -103,6 +103,101 @@ export const brokerInaya: EntityState = {
     // recourse, better prices. The Warrens has no controlling faction for
     // exactly this reason.
     settlesWithoutEscrow: 'true',
+  },
+};
+
+/**
+ * The pack's one item effect (F-merchant-USE).
+ *
+ * Salt Road Ledger shipped wiring `createInventoryCore([])` — an empty effect
+ * list — while advertising `use` in its help table. Every one of its fourteen
+ * catalog items therefore "worked": inventory-core's useHandler looks the item
+ * up in its effect map, finds nothing, and STILL emits `item.used` and consumes
+ * the item. So `use` on anything in this pack silently destroyed a saleable
+ * good and did nothing else, and no assertion anywhere could tell that from a
+ * working item — the catalog-wide reachability audit (PVR-1) needed a stricter
+ * reading than "the engine did not reject it" to see it at all.
+ *
+ * The tincture is the one item in the catalog that a person could plausibly
+ * consume, and consuming it is the pack's thesis in miniature: the only
+ * medicine you have is stock you owe someone for. The event says so.
+ */
+export const apothecaryTinctureEffect = {
+  itemId: 'apothecary-tincture',
+  use: (action: ActionIntent, world: WorldState): ResolvedEvent[] => {
+    const actor = world.entities[action.actorId];
+    if (!actor) return [];
+    const previous = actor.resources.hp ?? 0;
+    const ceiling = actor.resources.maxHp ?? previous;
+    actor.resources.hp = Math.min(ceiling, previous + 6);
+    return [{
+      id: '',
+      tick: action.issuedAtTick,
+      type: 'resource.changed',
+      actorId: action.actorId,
+      payload: {
+        entityId: actor.id,
+        resource: 'hp',
+        previous,
+        current: actor.resources.hp,
+        delta: actor.resources.hp - previous,
+        // Named so a UI can say what it cost: this was merchandise.
+        soldStockConsumed: 'apothecary-tincture',
+      },
+    }];
+  },
+};
+
+/**
+ * The pack's recruitable companion (F-merchant-A).
+ *
+ * Salt Road Ledger shipped in v3.5.0 advertising `recruit` with nobody in the
+ * world tagged `recruitable` or `companion-ready` — the only pack in the
+ * catalog in that state, and the exact defect v2.9 fixed across five worlds
+ * before this one re-introduced it. The pack's own verb-honesty suite could not
+ * see it: companion-core registers the handler in every world, so the help
+ * table and the handler agreed perfectly while every `recruit` in the game
+ * rejected on the content gate.
+ *
+ * She is deliberately NOT a fighter. Combat in this pack is the worse trade, so
+ * a companion who helps you win one would be arguing against the design. What
+ * she does is read the other side's book while you talk: an active
+ * `ledger-reading` companion widens the margin `haggle` banks, and the next
+ * `consign` pays that margin out (see haggleHandler in contract-core). That is
+ * the load-bearing part — she changes the price, not the fight.
+ */
+export const tallyClerkVessa: EntityState = {
+  id: 'tally-clerk-vessa',
+  blueprintId: 'tally-clerk-vessa',
+  type: 'npc',
+  name: 'Tally-Clerk Vessa',
+  // 'recruitable' is the gate companion-core's isCompanionRecruitable reads;
+  // 'scholar' is the bare CompanionRole tag deriveCompanionRole falls back to.
+  // Both are authored rather than derived — the recruit handler prefers content
+  // over defaults, and this pack has an opinion about what she is.
+  tags: ['npc', 'named', 'recruitable', 'scholar', 'clerk'],
+  // A better ledger than the factor's own (6) and a worse tongue: she is the
+  // one who reads, not the one who talks.
+  stats: { ledger: 11, tongue: 4, standing: 3 },
+  // maxHp/maxStamina are load-bearing for a recruit (F-4b9c5aee): entityHpRatio
+  // and regen both read the max fields, and an entity without them always reads
+  // as undamaged no matter what it has taken.
+  resources: { hp: 10, maxHp: 10, stamina: 4, maxStamina: 4 },
+  statuses: [],
+  // The weighing floor — she works the scales, which is where she learned to
+  // spot a book that has been dressed.
+  zoneId: 'weighing-floor',
+  custom: {
+    companionRole: 'scholar',
+    // `ledger-reading` is a PACK ability tag, read by this pack's haggle
+    // handler. It is intentionally not one of companion-core's seven engine
+    // ABILITY_EFFECTS keys: six of those seven feed AbilityModifiers fields
+    // that have no consumption layer yet (companion-core documents the gap and
+    // defers it to a wave that threads both modifier bundles at once). Handing
+    // her `trade-advantage` would have looked economic and done nothing.
+    companionAbilities: 'ledger-reading',
+    personalGoal: 'See one set of books in this city that balances honestly',
+    disposition: 'literal',
   },
 };
 
@@ -827,7 +922,17 @@ export const buildCatalog: BuildCatalog = {
       description: 'Moves goods where bonded traders will not — fast, unbonded, unloved',
       statPriorities: { ledger: 3, tongue: 6, standing: 2 },
       startingTags: ['merchant', 'runner', 'unbonded'],
-      resourceOverrides: { liquidity: 60, standing: 2 },
+      // `liquidity` only. This shipped as `{ liquidity: 60, standing: 2 }`, and
+      // `standing` is a STAT — already expressed on the statPriorities line
+      // above, at the same value. Creation writes every resourceOverrides key
+      // straight into entity.resources whether the ruleset declares it or not
+      // (validate.ts), and the clamp pass afterwards iterates only DECLARED
+      // resources — so the stray key minted a phantom `resources.standing`
+      // that no ruleset bound, nothing read, and no clamp could bound. It was
+      // never a second opinion about the runner's standing; it was a typo with
+      // a side effect, and it survived because this pack was the one starter
+      // with no creation proof at all.
+      resourceOverrides: { liquidity: 60 },
       startingInventory: ['bale-of-flax'],
       progressionTreeId: 'factors-credit',
     },

@@ -1,5 +1,5 @@
 // Phase 4 — Cross-genre integration tests
-// Proves the full 10-pack ability ecosystem works together.
+// Proves the full 11-pack ability ecosystem works together.
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
@@ -19,7 +19,7 @@ import { validateAbilityPack } from '@ai-rpg-engine/content-schema';
 import { getStatusTags } from './status-semantics.js';
 
 // ---------------------------------------------------------------------------
-// Import all 10 pack abilities + statuses + rulesets
+// Import all 11 pack abilities + statuses + rulesets
 // ---------------------------------------------------------------------------
 
 import { fantasyAbilities, fantasyStatusDefinitions } from '../../starter-fantasy/src/content.js';
@@ -32,6 +32,11 @@ import { pirateAbilities, pirateStatusDefinitions } from '../../starter-pirate/s
 import { detectiveAbilities, detectiveStatusDefinitions } from '../../starter-detective/src/content.js';
 import { zombieAbilities, zombieStatusDefinitions } from '../../starter-zombie/src/content.js';
 import { colonyAbilities, colonyStatusDefinitions } from '../../starter-colony/src/content.js';
+// F-merchant-H (second instance): this suite is a 11-pack catalog-of-record
+// that never learned the 11th pack exists — the same class as pack-registry's
+// rubric suite. Its "all N packs" claims were true of the packs it imported
+// and silent about the one it did not.
+import { merchantAbilities, merchantStatusDefinitions } from '../../starter-merchant/src/content.js';
 
 import { fantasyMinimalRuleset } from '../../starter-fantasy/src/ruleset.js';
 import { cyberpunkMinimalRuleset } from '../../starter-cyberpunk/src/ruleset.js';
@@ -43,6 +48,7 @@ import { pirateMinimalRuleset } from '../../starter-pirate/src/ruleset.js';
 import { detectiveMinimalRuleset } from '../../starter-detective/src/ruleset.js';
 import { zombieMinimalRuleset } from '../../starter-zombie/src/ruleset.js';
 import { colonyMinimalRuleset } from '../../starter-colony/src/ruleset.js';
+import { merchantMinimalRuleset } from '../../starter-merchant/src/ruleset.js';
 
 // ---------------------------------------------------------------------------
 // All packs & statuses collected
@@ -59,6 +65,7 @@ const ALL_PACKS = [
   { genre: 'detective', abilities: detectiveAbilities, statuses: detectiveStatusDefinitions, ruleset: detectiveMinimalRuleset },
   { genre: 'zombie', abilities: zombieAbilities, statuses: zombieStatusDefinitions, ruleset: zombieMinimalRuleset },
   { genre: 'colony', abilities: colonyAbilities, statuses: colonyStatusDefinitions, ruleset: colonyMinimalRuleset },
+  { genre: 'mercantile', abilities: merchantAbilities, statuses: merchantStatusDefinitions, ruleset: merchantMinimalRuleset },
 ];
 
 const ALL_STATUSES: StatusDefinition[] = ALL_PACKS.flatMap((p) => p.statuses);
@@ -86,18 +93,44 @@ describe('Phase 4 integration — status registry integrity', () => {
   });
 
   it('all statuses use known semantic tags', () => {
-    const knownTags = new Set([
+    // The CROSS-PACK semantic vocabulary — the tags shared consumers (combat,
+    // perception, presentation) branch on regardless of which pack is loaded.
+    const sharedVocabulary = [
       'buff', 'debuff', 'fear', 'control', 'blind', 'stance',
       'holy', 'breach', 'poison', 'supernatural', 'wound',
+    ];
+    // PLUS whatever each pack DECLARES for itself in contentConventions. This
+    // used to be a hardcoded literal only, which meant the check compared
+    // content against a list in this file: merchant's `obligation` — declared
+    // in its own ruleset, and the pack's whole distinguishing concept — read
+    // as an unknown tag purely because nobody edited this array. Deriving the
+    // pack-native half makes the rule "a tag must be shared vocabulary or
+    // declared by its own pack", which is the actual contract, and it needs no
+    // edit when a twelfth pack brings a twelfth idea.
+    const knownTags = new Set([
+      ...sharedVocabulary,
+      ...ALL_PACKS.flatMap((p) => p.ruleset.contentConventions?.statusTags ?? []),
     ]);
     for (const status of ALL_STATUSES) {
       for (const tag of status.tags) {
-        expect(knownTags.has(tag)).toBe(true);
+        expect(knownTags.has(tag), `status '${status.id}' uses undeclared tag '${tag}'`).toBe(true);
       }
     }
   });
 
-  it('no duplicate status IDs across all 10 packs', () => {
+  it('meta: an invented tag no pack declares is still CAUGHT', () => {
+    // The negative control. Widening the known set from a literal to a derived
+    // one risks widening it to "anything", which would make the check vacuous.
+    const knownTags = new Set([
+      'buff', 'debuff', 'fear', 'control', 'blind', 'stance',
+      'holy', 'breach', 'poison', 'supernatural', 'wound',
+      ...ALL_PACKS.flatMap((p) => p.ruleset.contentConventions?.statusTags ?? []),
+    ]);
+    expect(knownTags.has('obligation'), 'merchant declares this one').toBe(true);
+    expect(knownTags.has('not-a-real-semantic-tag')).toBe(false);
+  });
+
+  it('no duplicate status IDs across all 11 packs', () => {
     const ids = ALL_STATUSES.map((s) => s.id);
     const unique = new Set(ids);
     expect(unique.size).toBe(ids.length);
@@ -437,11 +470,11 @@ describe('Phase 4 integration — AI resistance awareness', () => {
 });
 
 // ===========================================================================
-// 5. Summary + audit with 10 packs (4 tests)
+// 5. Summary + audit with 11 packs (4 tests)
 // ===========================================================================
 
-describe('Phase 4 integration — summary & audit with 10 packs', () => {
-  it('all 10 packs summarize cleanly', () => {
+describe('Phase 4 integration — summary & audit with 11 packs', () => {
+  it('all 11 packs summarize cleanly', () => {
     for (const pack of ALL_PACKS) {
       const summary = summarizeAbilityPack(pack.genre, pack.abilities);
       expect(summary.abilityCount).toBeGreaterThanOrEqual(2);
@@ -449,7 +482,7 @@ describe('Phase 4 integration — summary & audit with 10 packs', () => {
     }
   });
 
-  it('no critical audit flags across 10 packs', () => {
+  it('no critical audit flags across 11 packs', () => {
     const audit = auditAbilityBalance(ALL_PACKS.map((p) => ({ genre: p.genre, abilities: p.abilities })));
     const warnings = audit.flags.filter((f) => f.severity === 'warning');
     // No extreme damage warnings across well-balanced packs
@@ -489,14 +522,14 @@ describe('Phase 5 integration — expanded ecosystem', () => {
     registerStatusDefinitions(ALL_STATUSES);
   });
 
-  it('all 10 packs have >= 3 abilities after expansion', () => {
+  it('all 11 packs have >= 3 abilities after expansion', () => {
     for (const pack of ALL_PACKS) {
       expect(pack.abilities.length, `${pack.genre} should have >= 3 abilities`)
         .toBeGreaterThanOrEqual(3);
     }
   });
 
-  it('all 10 packs now have cleanse coverage (detective included)', () => {
+  it('all 11 packs now have cleanse coverage (detective included)', () => {
     const packsWithCleanse = ALL_PACKS.filter((p) => {
       const summary = summarizeAbilityPack(p.genre, p.abilities);
       return summary.cleanseTagsCovered.length > 0;
@@ -531,7 +564,7 @@ describe('Phase 5 integration — expanded ecosystem', () => {
       genre: p.genre, abilities: p.abilities, statuses: p.statuses,
     }));
     const matrix = compareAbilityPacks(comparePacks);
-    expect(matrix.packs).toHaveLength(10);
+    expect(matrix.packs).toHaveLength(ALL_PACKS.length);
     // Every pack should have a profile
     for (const profile of matrix.packs) {
       expect(profile.abilityCount).toBeGreaterThanOrEqual(3);

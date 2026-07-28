@@ -34,13 +34,21 @@
 // Byte-identical legacy replay is preserved BY CONSTRUCTION, two ways:
 //   1. This is a SEPARATE, OPT-IN module. A pack that does not add it to its
 //      module list has exactly the engine that shipped before it existed.
-//   2. It registers NO namespace default — the npc-agency / opportunity-core
-//      contract. A world that opts in but never actually records anything
-//      (no catalog item ever equipped, no kill with a weapon in hand) never
-//      sees world.modules['item-chronicle'] come into being at all, not even
-//      an empty scaffold. ModuleManager.initializeNamespaces writes every
+//   2. It registers NO namespace default — the npc-agency contract. A world
+//      that opts in but never actually records anything (no catalog item ever
+//      equipped, no kill with a weapon in hand) never sees
+//      world.modules['item-chronicle'] come into being at all, not even an
+//      empty scaffold. ModuleManager.initializeNamespaces writes every
 //      REGISTERED default unconditionally, so the only way to keep that
 //      promise is to never register one.
+//
+//      NOT opportunity-core, which an earlier draft of this comment cited
+//      alongside npc-agency: createOpportunityCore DOES register a default
+//      (`{ opportunities: [], resolvedOpportunities: [] }`), so an empty
+//      scaffold lands in every world from turn zero. What it shares with
+//      npc-agency is the lazy, tolerant ACCESSOR style, which is a different
+//      axis from whether a default is registered — npc-agency's own file
+//      comment draws that distinction correctly.
 // Recording itself is deterministic: driven off the resolved event stream,
 // keyed on event.tick, no Math.random(), no Date.now(), no wall clock.
 
@@ -397,6 +405,46 @@ export function createItemChronicleCore(config: ItemChronicleCoreConfig): Engine
                             event: 'acquired',
                             detail: `Picked up by ${holder?.name ?? 'someone'}`,
                             ...(holder?.zoneId ? { zoneId: holder.zoneId } : {}),
+                        },
+                    ],
+                    event.tick,
+                );
+            });
+
+            // Changing hands. `lost` has been a member of ItemChronicleEvent
+            // since the type was written and had NO producer anywhere in the
+            // engine until inventory-core's `give` verb existed — there was no
+            // way for an item to leave one entity for another, so nothing could
+            // ever stamp it.
+            //
+            // Reached by EVENT, not by import: inventory-core lives in
+            // @ai-rpg-engine/modules and knows nothing about this package or
+            // about chronicles. It emits `item.lost` alongside `item.acquired`
+            // and both sides of a transfer land in the item's history, while a
+            // pack that never opts into chronicling is unaffected.
+            //
+            // No `alreadyAcquired`-style guard: an object can change hands many
+            // times and each is a real event in its story, unlike acquisition
+            // which is once by definition.
+            ctx.events.on('item.lost', (event, world) => {
+                const itemId = event.payload.itemId as string | undefined;
+                if (!itemId) return;
+
+                const formerHolder = world.entities[event.payload.entityId as string];
+                const recipient = world.entities[event.payload.toEntityId as string];
+                const detail = recipient
+                    ? `Handed to ${recipient.name} by ${formerHolder?.name ?? 'someone'}`
+                    : `Lost by ${formerHolder?.name ?? 'someone'}`;
+
+                applyEntries(
+                    world,
+                    config,
+                    [
+                        {
+                            itemId,
+                            event: 'lost',
+                            detail,
+                            ...(formerHolder?.zoneId ? { zoneId: formerHolder.zoneId } : {}),
                         },
                     ],
                     event.tick,

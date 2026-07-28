@@ -270,6 +270,30 @@ export class TestnetTransport implements LedgerTransport, NFTTransport {
     return this.submit(tx, wallet);
   }
 
+  /**
+   * The `diary` mode primitive: a value-free anchor carrying a memo.
+   *
+   * A no-op `AccountSet` — no flags set, no value moved — with the memo
+   * attached. The only cost is the transaction fee.
+   *
+   * NOT a 1-drop self-payment, which is the obvious shape and the one this
+   * started as: live XRPL rejects a Payment whose Account equals its
+   * Destination with `temREDUNDANT`. The DryRunTransport happily accepted it,
+   * so the whole diary suite and a full dry-run replay went green before a
+   * live testnet run failed at the first anchor. DryRunTransport now models
+   * that rule too (see its own anchorMemo), which is what stops the next
+   * transport-shaped bug from reaching the network.
+   */
+  async anchorMemo(seed: string, memo: string): Promise<TxResult> {
+    const wallet = xrpl.Wallet.fromSeed(seed);
+    const tx: xrpl.AccountSet = {
+      TransactionType: 'AccountSet',
+      Account: wallet.address,
+      Memos: [memoEntry(memo)],
+    };
+    return this.submit(tx, wallet);
+  }
+
   async payment(seed: string, destination: string, amount: IssuedAmount, memo?: string): Promise<TxResult> {
     const wallet = xrpl.Wallet.fromSeed(seed);
     const tx: xrpl.Payment = {

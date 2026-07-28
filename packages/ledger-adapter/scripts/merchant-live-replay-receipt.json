@@ -37,7 +37,7 @@
     {
       "stage": "7-mint-seal",
       "ok": true,
-      "note": "nftId=001800005EFD1AE71D8389A82397CAAD0CA452F19C3A7D33BE4AB1C00127C006 uri=\"ARPG-NFT|GAME:salt-road-ledger|ITEM:guild-seal|RELIC:0|TIER:0|V:1\""
+      "note": "nftId=001800007A864DA66255F042E35D6CC748739FD466F4DFBA5F91F50F01289ED3 uri=\"ARPG-NFT|GAME:salt-road-ledger|ITEM:guild-seal|RELIC:0|TIER:0|V:1\""
     },
     {
       "stage": "8-earn-growth",
@@ -58,81 +58,134 @@
       "stage": "11-firewall",
       "ok": true,
       "note": "byte-identical to an adapter-free replay of the same script — the adapter left no trace"
+    },
+    {
+      "stage": "12-writ-transfer",
+      "ok": true,
+      "note": "writ made over to Broker Inaya; chronicle stamped acquired+lost"
+    },
+    {
+      "stage": "13-diary-anchor",
+      "ok": true,
+      "note": "anchored 9F95AC660C714E89951C7DA9D9E1A765A06971DB311F0159E786317A2AE208A0; 0 trust lines on rD4p9px74YGbD2woUce86NhBZcXR9jsSK1 — witnessed, not custodied"
+    },
+    {
+      "stage": "13b-diary-reconcile",
+      "ok": true,
+      "note": "anchor chain verified against on-ledger memos; conservation holds with no custody"
+    },
+    {
+      "stage": "14-persistent-issuer",
+      "ok": true,
+      "note": "run 2 reused issuer r3mPdVckBnngrAnP4r4ba5hS77nNsAwqMA and settled against it — cross-run market live"
+    },
+    {
+      "stage": "15-default-verb",
+      "ok": true,
+      "note": "verb=default memo=\"ARPG|GAME:salt-road-ledger|RUN:merchant-live-replay-default|CHECKPOINT:2|DELTA:coin-9|VERB:default|V:1\" — the last inert SettlementVerb member now reaches the chain"
     }
   ],
   "proofTxids": {
-    "consign": "E8F71D4DEE08552E365D9E423E2248FEF3D79EAF07D4D54E143482F32E47EA23",
-    "escrow-sell": "CB71B1273B8E05C3F9916D13503F48B2C025C29A674D43C8ADAC1A59B48FAF7F",
-    "cash-sell": "B8832C0AA4546B1B2CE92F964F0654560BC161C259E3D7C21B954DC89FC9F37E",
-    "mint": "C6BD5EF0F163A8970D89A1537F2C7E3E265A01B71A35E1B4337994515D4C120B",
-    "modify": "CC99125B8AF0C8530EFB8B3846602EF68091F168D09057208A0CDF5669D302E4"
+    "consign": "775FADD3A3C5555F14B545719D60A6779D2772B7ADB34FDA95659C8FAA2D3042",
+    "escrow-sell": "C23969CC6D0A5FD0B4832F3399C2BF151B7F01A02D16503D7C825D187393FFA1",
+    "cash-sell": "EF59D8AA8C059976130F60861EB9EF548E278EA94639B7A31283A0CC6E1F0621",
+    "mint": "CFDFF3F103E03AB5FF2EF186B6CBA3484166BF2BAA9DBD7FD3A574590B220DB6",
+    "modify": "709549FD88259385CC06BF88D27BCCB25D46BA71D5E57AD7F2377624A3B43055",
+    "diary-anchor": "9F95AC660C714E89951C7DA9D9E1A765A06971DB311F0159E786317A2AE208A0",
+    "persist-settle": "6712FA381D6F8145DC7E5BDF9A3732A1D17E6E845C03FB042DCD0724F0ADD2EA",
+    "default": "2E487400B147BBB0DAD50AE08B1B1126FB5B3F96FB061A7CB057115FDAB1F131"
   },
   "txLog": [
     {
-      "hash": "E8F71D4DEE08552E365D9E423E2248FEF3D79EAF07D4D54E143482F32E47EA23",
-      "explorer": "https://testnet.xrpl.org/transactions/E8F71D4DEE08552E365D9E423E2248FEF3D79EAF07D4D54E143482F32E47EA23",
+      "hash": "775FADD3A3C5555F14B545719D60A6779D2772B7ADB34FDA95659C8FAA2D3042",
+      "explorer": "https://testnet.xrpl.org/transactions/775FADD3A3C5555F14B545719D60A6779D2772B7ADB34FDA95659C8FAA2D3042",
       "label": "consign"
     },
     {
-      "hash": "E842311211ABECFBA53A0FC140E1FE233C148AC22582E2A86FB7A5C4BDBBBD4C",
-      "explorer": "https://testnet.xrpl.org/transactions/E842311211ABECFBA53A0FC140E1FE233C148AC22582E2A86FB7A5C4BDBBBD4C",
+      "hash": "ABC596C9C04FCA68C759C60D49C607F474C50F0C8C077830D418B7E58D73739C",
+      "explorer": "https://testnet.xrpl.org/transactions/ABC596C9C04FCA68C759C60D49C607F474C50F0C8C077830D418B7E58D73739C",
       "label": "consign"
     },
     {
-      "hash": "CB71B1273B8E05C3F9916D13503F48B2C025C29A674D43C8ADAC1A59B48FAF7F",
-      "explorer": "https://testnet.xrpl.org/transactions/CB71B1273B8E05C3F9916D13503F48B2C025C29A674D43C8ADAC1A59B48FAF7F",
+      "hash": "C23969CC6D0A5FD0B4832F3399C2BF151B7F01A02D16503D7C825D187393FFA1",
+      "explorer": "https://testnet.xrpl.org/transactions/C23969CC6D0A5FD0B4832F3399C2BF151B7F01A02D16503D7C825D187393FFA1",
       "label": "escrow-sell"
     },
     {
-      "hash": "8F612FCE58884D5DBA31C74F497BF7954DBC3B3E73387D790A6048B4C9E7D50B",
-      "explorer": "https://testnet.xrpl.org/transactions/8F612FCE58884D5DBA31C74F497BF7954DBC3B3E73387D790A6048B4C9E7D50B",
+      "hash": "74F8B343C17BEB748E087E074E0CE74105CE389056DB43A4D3B5D77A3B0865A6",
+      "explorer": "https://testnet.xrpl.org/transactions/74F8B343C17BEB748E087E074E0CE74105CE389056DB43A4D3B5D77A3B0865A6",
       "label": "escrow-sell"
     },
     {
-      "hash": "B8832C0AA4546B1B2CE92F964F0654560BC161C259E3D7C21B954DC89FC9F37E",
-      "explorer": "https://testnet.xrpl.org/transactions/B8832C0AA4546B1B2CE92F964F0654560BC161C259E3D7C21B954DC89FC9F37E",
+      "hash": "EF59D8AA8C059976130F60861EB9EF548E278EA94639B7A31283A0CC6E1F0621",
+      "explorer": "https://testnet.xrpl.org/transactions/EF59D8AA8C059976130F60861EB9EF548E278EA94639B7A31283A0CC6E1F0621",
       "label": "cash-sell"
     },
     {
-      "hash": "C6BD5EF0F163A8970D89A1537F2C7E3E265A01B71A35E1B4337994515D4C120B",
-      "explorer": "https://testnet.xrpl.org/transactions/C6BD5EF0F163A8970D89A1537F2C7E3E265A01B71A35E1B4337994515D4C120B",
+      "hash": "CFDFF3F103E03AB5FF2EF186B6CBA3484166BF2BAA9DBD7FD3A574590B220DB6",
+      "explorer": "https://testnet.xrpl.org/transactions/CFDFF3F103E03AB5FF2EF186B6CBA3484166BF2BAA9DBD7FD3A574590B220DB6",
       "label": "mint"
     },
     {
-      "hash": "5C8592E875E9E3E5EA657D0C23C7D591C4093274B2545A0E5289FE42DA30659B",
-      "explorer": "https://testnet.xrpl.org/transactions/5C8592E875E9E3E5EA657D0C23C7D591C4093274B2545A0E5289FE42DA30659B",
+      "hash": "FF404FDA7A5D908056CD44293212A6A3604573B8B4B20183B390EC2ED7566C4B",
+      "explorer": "https://testnet.xrpl.org/transactions/FF404FDA7A5D908056CD44293212A6A3604573B8B4B20183B390EC2ED7566C4B",
       "label": "mint"
     },
     {
-      "hash": "083AC0759CF5EA67F61B44F8286B8EC9BA9B6A4C53AFA5FFF719773B1B4B1889",
-      "explorer": "https://testnet.xrpl.org/transactions/083AC0759CF5EA67F61B44F8286B8EC9BA9B6A4C53AFA5FFF719773B1B4B1889",
+      "hash": "59022F44512233A6C40FDAE78F85F5BD71EC487F5256967B42BD8B0C80D457C3",
+      "explorer": "https://testnet.xrpl.org/transactions/59022F44512233A6C40FDAE78F85F5BD71EC487F5256967B42BD8B0C80D457C3",
       "label": "mint"
     },
     {
-      "hash": "0CACBF195268A94F79F331305DC9B6301E3CB05B8AA778420076CFC82AE94345",
-      "explorer": "https://testnet.xrpl.org/transactions/0CACBF195268A94F79F331305DC9B6301E3CB05B8AA778420076CFC82AE94345",
+      "hash": "7D0886185BC6352949605579068CFD9A1DB21D07ACD687FA71D0A031E48A3FA7",
+      "explorer": "https://testnet.xrpl.org/transactions/7D0886185BC6352949605579068CFD9A1DB21D07ACD687FA71D0A031E48A3FA7",
       "label": "mint"
     },
     {
-      "hash": "FF5A3D0B87C8F58623248099B0418AA65C8FB64C13DE00D0EACEC1478A910230",
-      "explorer": "https://testnet.xrpl.org/transactions/FF5A3D0B87C8F58623248099B0418AA65C8FB64C13DE00D0EACEC1478A910230",
+      "hash": "A24C00E0C08A6D158F950806B1A3E563088DD513288F464354EDE211F25CBDBC",
+      "explorer": "https://testnet.xrpl.org/transactions/A24C00E0C08A6D158F950806B1A3E563088DD513288F464354EDE211F25CBDBC",
       "label": "mint"
     },
     {
-      "hash": "8D4DCAEA05AA7077E3CCF05CDFA586AD70F61503F37C942FA104BB38C0AD8188",
-      "explorer": "https://testnet.xrpl.org/transactions/8D4DCAEA05AA7077E3CCF05CDFA586AD70F61503F37C942FA104BB38C0AD8188",
+      "hash": "F7A19941EE47DA8F4EE3229877E39B8AD46C302D180274C5CC300B46D99D50C7",
+      "explorer": "https://testnet.xrpl.org/transactions/F7A19941EE47DA8F4EE3229877E39B8AD46C302D180274C5CC300B46D99D50C7",
       "label": "mint"
     },
     {
-      "hash": "CC99125B8AF0C8530EFB8B3846602EF68091F168D09057208A0CDF5669D302E4",
-      "explorer": "https://testnet.xrpl.org/transactions/CC99125B8AF0C8530EFB8B3846602EF68091F168D09057208A0CDF5669D302E4",
+      "hash": "709549FD88259385CC06BF88D27BCCB25D46BA71D5E57AD7F2377624A3B43055",
+      "explorer": "https://testnet.xrpl.org/transactions/709549FD88259385CC06BF88D27BCCB25D46BA71D5E57AD7F2377624A3B43055",
       "label": "modify"
+    },
+    {
+      "hash": "9F95AC660C714E89951C7DA9D9E1A765A06971DB311F0159E786317A2AE208A0",
+      "explorer": "https://testnet.xrpl.org/transactions/9F95AC660C714E89951C7DA9D9E1A765A06971DB311F0159E786317A2AE208A0",
+      "label": "diary-anchor"
+    },
+    {
+      "hash": "6712FA381D6F8145DC7E5BDF9A3732A1D17E6E845C03FB042DCD0724F0ADD2EA",
+      "explorer": "https://testnet.xrpl.org/transactions/6712FA381D6F8145DC7E5BDF9A3732A1D17E6E845C03FB042DCD0724F0ADD2EA",
+      "label": "persist-settle"
+    },
+    {
+      "hash": "B2AE45B25C6B71C8461C165391E1ED76EB91AFC255942488B1CB81D9A4E301D7",
+      "explorer": "https://testnet.xrpl.org/transactions/B2AE45B25C6B71C8461C165391E1ED76EB91AFC255942488B1CB81D9A4E301D7",
+      "label": "persist-settle"
+    },
+    {
+      "hash": "2E487400B147BBB0DAD50AE08B1B1126FB5B3F96FB061A7CB057115FDAB1F131",
+      "explorer": "https://testnet.xrpl.org/transactions/2E487400B147BBB0DAD50AE08B1B1126FB5B3F96FB061A7CB057115FDAB1F131",
+      "label": "default"
+    },
+    {
+      "hash": "741443D6F740F54E99770350ABD605B28798FEA9D51571264ACE363023490B6E",
+      "explorer": "https://testnet.xrpl.org/transactions/741443D6F740F54E99770350ABD605B28798FEA9D51571264ACE363023490B6E",
+      "label": "default"
     }
   ],
   "wallets": {
-    "issuer": "r4yQ9arqyrXnmBCgdZhKjJV68pGSNsQwzT",
-    "player": "rH3spYpxcZBKdRqs2bBydv8H2WwnNuEmTf",
-    "merchant": "rfTZhL2PTwSq6XZyZtrygd5PFHsVfnkLeT"
+    "issuer": "r4GN5XVxfpMof55Mfy8YxoB9ymxARwyFhm",
+    "player": "rspZTvnrx11n4FRUPutjyhbn3SnFEa5R6y",
+    "merchant": "rwyFVpiZdXEumnCfwE88HrEJ4KPMH6rM3D"
   },
   "opening": {
     "coin": 40,
@@ -149,8 +202,8 @@
       "bale-of-flax": -1
     },
     "txids": [
-      "E8F71D4DEE08552E365D9E423E2248FEF3D79EAF07D4D54E143482F32E47EA23",
-      "E842311211ABECFBA53A0FC140E1FE233C148AC22582E2A86FB7A5C4BDBBBD4C"
+      "775FADD3A3C5555F14B545719D60A6779D2772B7ADB34FDA95659C8FAA2D3042",
+      "ABC596C9C04FCA68C759C60D49C607F474C50F0C8C077830D418B7E58D73739C"
     ],
     "status": "settled",
     "memo": "ARPG|GAME:salt-road-ledger|RUN:merchant-live-replay|CHECKPOINT:1|DELTA:bale-of-flax-1|VERB:consign|V:1",
@@ -159,27 +212,27 @@
   },
   "primitiveAB": {
     "escrowTxids": [
-      "CB71B1273B8E05C3F9916D13503F48B2C025C29A674D43C8ADAC1A59B48FAF7F",
-      "8F612FCE58884D5DBA31C74F497BF7954DBC3B3E73387D790A6048B4C9E7D50B"
+      "C23969CC6D0A5FD0B4832F3399C2BF151B7F01A02D16503D7C825D187393FFA1",
+      "74F8B343C17BEB748E087E074E0CE74105CE389056DB43A4D3B5D77A3B0865A6"
     ],
     "cashTxids": [
-      "B8832C0AA4546B1B2CE92F964F0654560BC161C259E3D7C21B954DC89FC9F37E"
+      "EF59D8AA8C059976130F60861EB9EF548E278EA94639B7A31283A0CC6E1F0621"
     ],
     "settlements": 3
   },
   "fungibleReconcile": {
     "runId": "merchant-live-replay",
     "seed": 71,
-    "playerAddress": "rH3spYpxcZBKdRqs2bBydv8H2WwnNuEmTf",
-    "issuerAddress": "r4yQ9arqyrXnmBCgdZhKjJV68pGSNsQwzT",
+    "playerAddress": "rspZTvnrx11n4FRUPutjyhbn3SnFEa5R6y",
+    "issuerAddress": "r4GN5XVxfpMof55Mfy8YxoB9ymxARwyFhm",
     "settlementsCount": 3,
     "pendingCount": 0,
     "txids": [
-      "E8F71D4DEE08552E365D9E423E2248FEF3D79EAF07D4D54E143482F32E47EA23",
-      "E842311211ABECFBA53A0FC140E1FE233C148AC22582E2A86FB7A5C4BDBBBD4C",
-      "CB71B1273B8E05C3F9916D13503F48B2C025C29A674D43C8ADAC1A59B48FAF7F",
-      "8F612FCE58884D5DBA31C74F497BF7954DBC3B3E73387D790A6048B4C9E7D50B",
-      "B8832C0AA4546B1B2CE92F964F0654560BC161C259E3D7C21B954DC89FC9F37E"
+      "775FADD3A3C5555F14B545719D60A6779D2772B7ADB34FDA95659C8FAA2D3042",
+      "ABC596C9C04FCA68C759C60D49C607F474C50F0C8C077830D418B7E58D73739C",
+      "C23969CC6D0A5FD0B4832F3399C2BF151B7F01A02D16503D7C825D187393FFA1",
+      "74F8B343C17BEB748E087E074E0CE74105CE389056DB43A4D3B5D77A3B0865A6",
+      "EF59D8AA8C059976130F60861EB9EF548E278EA94639B7A31283A0CC6E1F0621"
     ],
     "resources": [
       {
@@ -230,8 +283,8 @@
     "notes": []
   },
   "nftWallets": {
-    "issuer": "r9CEjnkgSeDTKYVo8GMYvrpBPgq6Mjbb7c",
-    "player": "raff5QmoBCAWmdPHsVK431KMfneFvWUp7T"
+    "issuer": "rUwiKxmmMqg97YyhLtwW3VeTFXwis3XPdf",
+    "player": "rsZbyUUJgA8hZf2A9CmxySrB1QZRnpApra"
   },
   "sealAtIssue": {
     "itemId": "guild-seal",
@@ -255,8 +308,8 @@
   "nftReconcile": {
     "runId": "merchant-live-replay",
     "seed": 71,
-    "playerAddress": "raff5QmoBCAWmdPHsVK431KMfneFvWUp7T",
-    "issuerAddress": "r9CEjnkgSeDTKYVo8GMYvrpBPgq6Mjbb7c",
+    "playerAddress": "rsZbyUUJgA8hZf2A9CmxySrB1QZRnpApra",
+    "issuerAddress": "rUwiKxmmMqg97YyhLtwW3VeTFXwis3XPdf",
     "settlementsCount": 0,
     "pendingCount": 0,
     "txids": [],
@@ -267,8 +320,8 @@
     "nftChecks": [
       {
         "gameItemId": "guild-seal",
-        "nftId": "001800005EFD1AE71D8389A82397CAAD0CA452F19C3A7D33BE4AB1C00127C006",
-        "expectedOwner": "raff5QmoBCAWmdPHsVK431KMfneFvWUp7T",
+        "nftId": "001800007A864DA66255F042E35D6CC748739FD466F4DFBA5F91F50F01289ED3",
+        "expectedOwner": "rsZbyUUJgA8hZf2A9CmxySrB1QZRnpApra",
         "ownedOnLedger": true,
         "expectedUri": "ARPG-NFT|GAME:salt-road-ledger|ITEM:guild-seal|RELIC:1|TIER:1|V:1",
         "ledgerUri": "ARPG-NFT|GAME:salt-road-ledger|ITEM:guild-seal|RELIC:1|TIER:1|V:1",
@@ -277,8 +330,8 @@
       },
       {
         "gameItemId": "ledger-book",
-        "nftId": "001800005EFD1AE71D8389A82397CAAD0CA452F19C3A7D33D5309EC30127C007",
-        "expectedOwner": "raff5QmoBCAWmdPHsVK431KMfneFvWUp7T",
+        "nftId": "001800007A864DA66255F042E35D6CC748739FD466F4DFBA7677A20E01289ED4",
+        "expectedOwner": "rsZbyUUJgA8hZf2A9CmxySrB1QZRnpApra",
         "ownedOnLedger": true,
         "expectedUri": "ARPG-NFT|GAME:salt-road-ledger|ITEM:ledger-book|RELIC:0|TIER:0|V:1",
         "ledgerUri": "ARPG-NFT|GAME:salt-road-ledger|ITEM:ledger-book|RELIC:0|TIER:0|V:1",
@@ -291,6 +344,29 @@
       "memo: no on-chain memos supplied — external integrity NOT verified; memoOk reflects local consistency only"
     ]
   },
-  "firewallBaselineBytes": 16636,
+  "firewallBaselineBytes": 17127,
+  "diary": {
+    "playerAddress": "rD4p9px74YGbD2woUce86NhBZcXR9jsSK1",
+    "trustLines": 0,
+    "anchors": [
+      {
+        "checkpoint": 1,
+        "txid": "9F95AC660C714E89951C7DA9D9E1A765A06971DB311F0159E786317A2AE208A0",
+        "memo": "ARPG|GAME:salt-road-ledger|RUN:merchant-live-replay-diary|CHECKPOINT:1|DELTA:coin-11|VERB:settle|V:1"
+      }
+    ]
+  },
+  "persistentIssuer": {
+    "issuerAddress": "r3mPdVckBnngrAnP4r4ba5hS77nNsAwqMA",
+    "runOnePlayer": "rHNjEGcH2RjhQBRW2uxwHMLMR8s25zU9Sz",
+    "runTwoPlayer": "rLzfNMKo6xKsujL3hYEkaCoye8tii89eyg",
+    "sharedTokenMap": {
+      "coin": "COI",
+      "bale-of-flax": "BAL",
+      "guild-seal": "GUI",
+      "ledger-book": "LED"
+    },
+    "settleTxid": "6712FA381D6F8145DC7E5BDF9A3732A1D17E6E845C03FB042DCD0724F0ADD2EA"
+  },
   "passed": true
 }

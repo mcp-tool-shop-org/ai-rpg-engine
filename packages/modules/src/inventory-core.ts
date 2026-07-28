@@ -1,8 +1,25 @@
-// inventory-core — item ownership, use, acquire
+// inventory-core — item ownership, use, acquire, GIVE
+//
+// `give` (F-merchant-F) lives here rather than in a new sibling module because
+// this file owns CUSTODY: what it means for an entity to hold an item, and
+// every rule about an item leaving a pair of hands. Those are the things that
+// change together — a future stack limit, encumbrance rule, or soulbound flag
+// has to constrain `use` and `give` identically or it constrains neither. A
+// separate transfer module would have had to reach in here for all of it.
+//
+// Before this verb, NO path anywhere in the engine moved an item from one
+// entity to another. A sweep of all 62 registerVerb call sites found `use`
+// (consume), `equip`/`unequip` (slot), and trade-core's `buy`/`sell` (which
+// settle against a district's abstract market, not a counterparty's bag).
+// `giveItem` below is add-only — it has no source to remove from and is not
+// dispatcher-registered, so no player could ever reach it. A pack could
+// therefore make an item obtainable and still have nothing in the world able
+// to hand it to anyone.
 
 import type {
   EngineModule,
   ActionIntent,
+  EntityState,
   WorldState,
   ResolvedEvent,
 } from '@ai-rpg-engine/core';
@@ -13,7 +30,35 @@ export type ItemEffect = {
   use: (action: ActionIntent, world: WorldState) => ResolvedEvent[];
 };
 
-export function createInventoryCore(itemEffects?: ItemEffect[]): EngineModule {
+/**
+ * A pack's veto over a specific transfer, consulted by `give` BEFORE anything
+ * moves. Return `null` to allow.
+ *
+ * The engine owns the MECHANICS of custody — atomicity, co-location, do you
+ * actually have it. A pack owns the POLICY about which of its own items may
+ * change hands, because that policy is made of things the engine has never
+ * heard of. Salt Road Ledger's is the motivating case: a lot already consigned
+ * against a future payment cannot be made over to a third party, or the
+ * obligation is laundered off the asset and the whole pack stops meaning
+ * anything. Teaching inventory-core about liens to express that would put a
+ * merchant's contract law inside the engine's item bag.
+ */
+export type TransferGuard = (ctx: {
+  world: WorldState;
+  itemId: string;
+  from: EntityState;
+  to: EntityState;
+}) => { reason: string; hint: string } | null;
+
+export type InventoryCoreOptions = {
+  /** Pack policy on which items may change hands. Default: everything may. */
+  transferGuard?: TransferGuard;
+};
+
+export function createInventoryCore(
+  itemEffects?: ItemEffect[],
+  options: InventoryCoreOptions = {},
+): EngineModule {
   const effectMap = new Map<string, ItemEffect['use']>();
   if (itemEffects) {
     for (const ie of itemEffects) {
@@ -27,6 +72,11 @@ export function createInventoryCore(itemEffects?: ItemEffect[]): EngineModule {
 
     register(ctx) {
       ctx.actions.registerVerb('use', (action, world) => useHandler(action, world, effectMap));
+      ctx.actions.registerVerb('give', (action, world) => giveHandler(action, world, options.transferGuard));
+      // NO namespace default, deliberately — inventory-core has never
+      // registered one, and custody lives on the entities themselves. A world
+      // that never gives anything away is byte-identical to one built before
+      // this verb existed.
     },
   };
 }
@@ -68,6 +118,111 @@ function useHandler(
       consumed: true,
     }),
     ...effectEvents,
+  ];
+}
+
+function reject(
+  action: ActionIntent,
+  reason: string,
+  hint: string,
+  extra?: Record<string, unknown>,
+): ResolvedEvent[] {
+  return [makeEvent(action, 'action.rejected', { verb: action.verb, reason, hint, ...extra })];
+}
+
+/**
+ * `give <recipient>` — hand an item you are carrying to someone standing with
+ * you. The engine's only entity-to-entity transfer.
+ *
+ * ATOMIC BY CONSTRUCTION. Every rejection is decided BEFORE either side is
+ * touched, and the removal and the addition happen in one synchronous block
+ * with nothing between them that can throw. There is no window in which the
+ * item exists in both bags (duplication) or in neither (destruction) — which
+ * is the whole reason this is a single handler rather than a `use`-style
+ * removal composed with the `giveItem` helper.
+ *
+ * Item comes from `toolId` (or `parameters.itemId`); the recipient is
+ * `targetIds[0]`. That split matters: the ambiguous form — item in targetIds —
+ * is exactly what made the reachability audit misread every target-taking item
+ * as inert, so this verb refuses to guess.
+ */
+function giveHandler(
+  action: ActionIntent,
+  world: WorldState,
+  transferGuard?: TransferGuard,
+): ResolvedEvent[] {
+  const actor = world.entities[action.actorId];
+  if (!actor) {
+    return reject(action, 'actor not found', 'Only a live entity in the world can hand something over.');
+  }
+
+  const recipientId = action.targetIds?.[0];
+  if (!recipientId) {
+    return reject(action, 'no recipient specified', 'give <recipient> --item <item>');
+  }
+  if (recipientId === actor.id) {
+    return reject(action, 'you already have it', 'Name someone else.', { itemId: action.toolId });
+  }
+
+  const recipient = world.entities[recipientId];
+  if (!recipient) {
+    return reject(action, `${recipientId} not found`, 'give <recipient> --item <item>', { recipientId });
+  }
+  if (actor.zoneId !== recipient.zoneId) {
+    return reject(action, 'recipient not in same zone', 'Stand with them first.', { recipientId });
+  }
+
+  const itemId = action.toolId ?? (action.parameters?.itemId as string | undefined);
+  if (!itemId) {
+    return reject(action, 'no item specified', 'give <recipient> --item <item>', { recipientId });
+  }
+
+  const inventory = actor.inventory ?? [];
+  const itemIndex = inventory.indexOf(itemId);
+  if (itemIndex === -1) {
+    return reject(action, `you don't have ${itemId}`, 'Check your inventory.', { itemId, recipientId });
+  }
+
+  // Pack policy last, and still BEFORE any mutation — a vetoed transfer must
+  // leave the world exactly as it found it.
+  const veto = transferGuard?.({ world, itemId, from: actor, to: recipient });
+  if (veto) {
+    return reject(action, veto.reason, veto.hint, { itemId, recipientId });
+  }
+
+  // --- Past every gate. Commit both sides together. ---
+  inventory.splice(itemIndex, 1);
+  actor.inventory = inventory;
+  if (!recipient.inventory) recipient.inventory = [];
+  recipient.inventory.push(itemId);
+
+  // Three events, one transfer. `item.given` is the action's own record;
+  // `item.lost` and `item.acquired` are the per-side stamps the item chronicle
+  // subscribes to, so gear history follows an object between owners WITHOUT
+  // this module importing anything from the equipment package. Before this,
+  // the chronicle's `lost` event had no producer anywhere in the engine.
+  return [
+    makeEvent(action, 'item.given', {
+      itemId,
+      fromEntityId: actor.id,
+      fromName: actor.name,
+      toEntityId: recipient.id,
+      toName: recipient.name,
+    }, {
+      targetIds: [recipient.id],
+      presentation: { channels: ['objective', 'narrator'], priority: 'normal' },
+    }),
+    makeEvent(action, 'item.lost', {
+      itemId,
+      entityId: actor.id,
+      toEntityId: recipient.id,
+      reason: 'given',
+    }),
+    makeEvent(action, 'item.acquired', {
+      itemId,
+      entityId: recipient.id,
+      fromEntityId: actor.id,
+    }, { actorId: recipient.id }),
   ];
 }
 
