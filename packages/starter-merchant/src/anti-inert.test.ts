@@ -21,7 +21,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { Engine } from '@ai-rpg-engine/core';
-import { getPartyState } from '@ai-rpg-engine/modules';
+import { getPartyState, getPersistedOpportunities, runWorldTick } from '@ai-rpg-engine/modules';
 import { createGame } from './setup.js';
 import { itemCatalog, merchantStatusDefinitions, merchantAbilities, buildCatalog } from './content.js';
 import {
@@ -366,6 +366,85 @@ describe('anti-inert: every verb has an observable consequence', () => {
     const report = events(engine, 'merchant.audit.requested').pop()!;
     expect(report.payload.openCount).toBe(1);
     expect(Number(report.payload.receivable)).toBeGreaterThan(0);
+  });
+});
+
+describe('anti-inert: opportunities emerge and resolve on shipped content', () => {
+  // F-merchant-B. opportunity-core is EMERGENT-ONLY — no pack authors
+  // opportunity content anywhere in the catalog; the only lever a pack has is
+  // its OpportunityInputs (pressures, NPC goals, faction needs, companion
+  // asks). So "does Salt Road Ledger ever offer the player work?" is an
+  // empirical question, and it had never been asked.
+  //
+  // The load-bearing detail, and the reason this went unproven for a release:
+  // `runWorldTick` is NOT a verb and NOT an event subscription. It is a
+  // per-round function the CLI calls after the player's action and the NPC
+  // round (bin.ts's runHostileRound). A test that only calls submitAction
+  // drives the player's half of a round and never the world's, so it sees zero
+  // opportunities forever and concludes the feature is dead. It is not dead —
+  // it was never being run. Every assertion below drives the round the way the
+  // CLI does.
+  const round = (engine: Engine, verb: string, opts?: Parameters<Engine['submitAction']>[1]) => {
+    engine.submitAction(verb, opts);
+    runWorldTick(engine, { genre: 'mercantile', log: () => {} });
+  };
+
+  it('a played session SPAWNS an opportunity, and the player can accept and complete it', () => {
+    const engine = createGame(71);
+    const circuit = ['weighing-floor', 'counting-house', 'long-quay', 'crooked-stair', 'long-quay', 'counting-house'];
+
+    let acceptedId: string | undefined;
+    let completed = false;
+
+    outer: for (let lap = 0; lap < 8; lap++) {
+      for (const zone of circuit) {
+        round(engine, 'move', { targetIds: [zone] });
+
+        if (!acceptedId) {
+          const available = getPersistedOpportunities(engine.world).find((o) => o.status === 'available');
+          if (available) {
+            const ev = engine.submitAction('opportunity', { parameters: { op: 'accept' }, toolId: available.id });
+            expect(
+              ev.some((e) => e.type === 'action.rejected'),
+              `accepting ${available.id} was rejected`,
+            ).toBe(false);
+            acceptedId = available.id;
+          }
+          continue;
+        }
+
+        const accepted = getPersistedOpportunities(engine.world).find((o) => o.id === acceptedId && o.status === 'accepted');
+        if (accepted) {
+          const ev = engine.submitAction('opportunity', { parameters: { op: 'complete' }, toolId: accepted.id });
+          expect(ev.some((e) => e.type === 'action.rejected'), `completing ${accepted.id} was rejected`).toBe(false);
+          completed = true;
+          break outer;
+        }
+      }
+    }
+
+    // Observable consequence, not a return value: the events a player would
+    // see, and the status the world actually carries afterwards.
+    expect(events(engine, 'opportunity.spawned').length, 'no opportunity ever spawned').toBeGreaterThan(0);
+    expect(acceptedId, 'nothing was ever available to accept').toBeTruthy();
+    expect(completed, 'the accepted opportunity never completed').toBe(true);
+    expect(events(engine, 'opportunity.accepted')).toHaveLength(1);
+    expect(events(engine, 'opportunity.completed')).toHaveLength(1);
+    expect(
+      getPersistedOpportunities(engine.world).find((o) => o.id === acceptedId)?.status,
+    ).toBe('completed');
+  });
+
+  it('meta: without the world tick, the same session sees NOTHING', () => {
+    // The negative control for the test above, and a permanent record of why
+    // this was invisible: identical session, player half only.
+    const engine = createGame(71);
+    const circuit = ['weighing-floor', 'counting-house', 'long-quay', 'crooked-stair', 'long-quay', 'counting-house'];
+    for (let lap = 0; lap < 8; lap++) {
+      for (const zone of circuit) engine.submitAction('move', { targetIds: [zone] });
+    }
+    expect(getPersistedOpportunities(engine.world)).toHaveLength(0);
+    expect(events(engine, 'opportunity.spawned')).toHaveLength(0);
   });
 });
 

@@ -34,13 +34,21 @@
 // Byte-identical legacy replay is preserved BY CONSTRUCTION, two ways:
 //   1. This is a SEPARATE, OPT-IN module. A pack that does not add it to its
 //      module list has exactly the engine that shipped before it existed.
-//   2. It registers NO namespace default — the npc-agency / opportunity-core
-//      contract. A world that opts in but never actually records anything
-//      (no catalog item ever equipped, no kill with a weapon in hand) never
-//      sees world.modules['item-chronicle'] come into being at all, not even
-//      an empty scaffold. ModuleManager.initializeNamespaces writes every
+//   2. It registers NO namespace default — the npc-agency contract. A world
+//      that opts in but never actually records anything (no catalog item ever
+//      equipped, no kill with a weapon in hand) never sees
+//      world.modules['item-chronicle'] come into being at all, not even an
+//      empty scaffold. ModuleManager.initializeNamespaces writes every
 //      REGISTERED default unconditionally, so the only way to keep that
 //      promise is to never register one.
+//
+//      NOT opportunity-core, which an earlier draft of this comment cited
+//      alongside npc-agency: createOpportunityCore DOES register a default
+//      (`{ opportunities: [], resolvedOpportunities: [] }`), so an empty
+//      scaffold lands in every world from turn zero. What it shares with
+//      npc-agency is the lazy, tolerant ACCESSOR style, which is a different
+//      axis from whether a default is registered — npc-agency's own file
+//      comment draws that distinction correctly.
 // Recording itself is deterministic: driven off the resolved event stream,
 // keyed on event.tick, no Math.random(), no Date.now(), no wall clock.
 

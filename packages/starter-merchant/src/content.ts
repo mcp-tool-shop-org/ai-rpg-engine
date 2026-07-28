@@ -922,7 +922,17 @@ export const buildCatalog: BuildCatalog = {
       description: 'Moves goods where bonded traders will not — fast, unbonded, unloved',
       statPriorities: { ledger: 3, tongue: 6, standing: 2 },
       startingTags: ['merchant', 'runner', 'unbonded'],
-      resourceOverrides: { liquidity: 60, standing: 2 },
+      // `liquidity` only. This shipped as `{ liquidity: 60, standing: 2 }`, and
+      // `standing` is a STAT — already expressed on the statPriorities line
+      // above, at the same value. Creation writes every resourceOverrides key
+      // straight into entity.resources whether the ruleset declares it or not
+      // (validate.ts), and the clamp pass afterwards iterates only DECLARED
+      // resources — so the stray key minted a phantom `resources.standing`
+      // that no ruleset bound, nothing read, and no clamp could bound. It was
+      // never a second opinion about the runner's standing; it was a typo with
+      // a side effect, and it survived because this pack was the one starter
+      // with no creation proof at all.
+      resourceOverrides: { liquidity: 60 },
       startingInventory: ['bale-of-flax'],
       progressionTreeId: 'factors-credit',
     },
