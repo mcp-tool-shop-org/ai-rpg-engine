@@ -129,7 +129,12 @@ export const roninMinimalRuleset: RulesetDefinition = {
 
   contentConventions: {
     entityTypes: ['player', 'npc', 'enemy', 'item'],
-    statusTags: ['buff', 'debuff', 'dishonor', 'focused'],
+        // v3.7: widened to what this pack's statuses ACTUALLY tag, not what
+    // the declaration wished they did — shipped-truth: `stance` is the pack's whole combat idiom.
+    // Declaration-side only; no shipped status changed. Baseline before
+    // enforce: the catalog gate that now checks this would otherwise have
+    // been a gate against reality.
+    statusTags: ['buff', 'debuff', 'dishonor', 'focused', 'stance'],
     combatTags: ['melee', 'formal-duel', 'assassination'],
   },
 };

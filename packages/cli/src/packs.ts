@@ -5,6 +5,7 @@ import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ProgressionTreeDefinition } from '@ai-rpg-engine/content-schema';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
+import type { StatusDefinition } from '@ai-rpg-engine/content-schema';
 
 import * as fantasy from '@ai-rpg-engine/starter-fantasy';
 import * as cyberpunk from '@ai-rpg-engine/starter-cyberpunk';
@@ -36,6 +37,13 @@ export type PackInfo = {
    * scanning starting inventories misses them (PVR-1).
    */
   itemCatalog: ItemCatalog;
+  /**
+   * The pack's own status definitions. Registered here so a catalog-wide gate
+   * can check them against the pack's declared `contentConventions.statusTags`
+   * — the global `registerStatusDefinitions` registry merges every pack that
+   * has booted, so it cannot answer "which tags does THIS pack use".
+   */
+  statusDefinitions: StatusDefinition[];
 };
 
 export const allPacks: PackInfo[] = [
@@ -46,6 +54,7 @@ export const allPacks: PackInfo[] = [
     createGame: fantasy.createGame,
     progressionTrees: [fantasy.combatMasteryTree],
     itemCatalog: fantasy.itemCatalog,
+    statusDefinitions: fantasy.fantasyStatusDefinitions,
   },
   {
     meta: cyberpunk.packMeta,
@@ -54,6 +63,7 @@ export const allPacks: PackInfo[] = [
     createGame: cyberpunk.createGame,
     progressionTrees: [cyberpunk.netrunningTree],
     itemCatalog: cyberpunk.itemCatalog,
+    statusDefinitions: cyberpunk.cyberpunkStatusDefinitions,
   },
   {
     meta: detective.packMeta,
@@ -62,6 +72,7 @@ export const allPacks: PackInfo[] = [
     createGame: detective.createGame,
     progressionTrees: [detective.deductionTree],
     itemCatalog: detective.itemCatalog,
+    statusDefinitions: detective.detectiveStatusDefinitions,
   },
   {
     meta: pirate.packMeta,
@@ -70,6 +81,7 @@ export const allPacks: PackInfo[] = [
     createGame: pirate.createGame,
     progressionTrees: [pirate.seamanshipTree],
     itemCatalog: pirate.itemCatalog,
+    statusDefinitions: pirate.pirateStatusDefinitions,
   },
   {
     meta: zombie.packMeta,
@@ -78,6 +90,7 @@ export const allPacks: PackInfo[] = [
     createGame: zombie.createGame,
     progressionTrees: [zombie.survivalTree],
     itemCatalog: zombie.itemCatalog,
+    statusDefinitions: zombie.zombieStatusDefinitions,
   },
   {
     meta: weirdWest.packMeta,
@@ -86,6 +99,7 @@ export const allPacks: PackInfo[] = [
     createGame: weirdWest.createGame,
     progressionTrees: [weirdWest.gunslingerTree],
     itemCatalog: weirdWest.itemCatalog,
+    statusDefinitions: weirdWest.weirdWestStatusDefinitions,
   },
   {
     meta: colony.packMeta,
@@ -94,6 +108,7 @@ export const allPacks: PackInfo[] = [
     createGame: colony.createGame,
     progressionTrees: [colony.commanderTree],
     itemCatalog: colony.itemCatalog,
+    statusDefinitions: colony.colonyStatusDefinitions,
   },
   {
     meta: vampire.packMeta,
@@ -102,6 +117,7 @@ export const allPacks: PackInfo[] = [
     createGame: vampire.createGame,
     progressionTrees: [vampire.bloodMasteryTree],
     itemCatalog: vampire.itemCatalog,
+    statusDefinitions: vampire.vampireStatusDefinitions,
   },
   {
     meta: gladiator.packMeta,
@@ -110,6 +126,7 @@ export const allPacks: PackInfo[] = [
     createGame: gladiator.createGame,
     progressionTrees: [gladiator.arenaGloryTree],
     itemCatalog: gladiator.itemCatalog,
+    statusDefinitions: gladiator.gladiatorStatusDefinitions,
   },
   {
     meta: ronin.packMeta,
@@ -118,6 +135,7 @@ export const allPacks: PackInfo[] = [
     createGame: ronin.createGame,
     progressionTrees: [ronin.wayOfTheBladeTree],
     itemCatalog: ronin.itemCatalog,
+    statusDefinitions: ronin.roninStatusDefinitions,
   },
   {
     meta: merchant.packMeta,
@@ -126,5 +144,6 @@ export const allPacks: PackInfo[] = [
     createGame: merchant.createGame,
     progressionTrees: [merchant.factorsCreditTree],
     itemCatalog: merchant.itemCatalog,
+    statusDefinitions: merchant.merchantStatusDefinitions,
   },
 ];

@@ -122,7 +122,12 @@ export const weirdWestMinimalRuleset: RulesetDefinition = {
 
   contentConventions: {
     entityTypes: ['player', 'npc', 'drifter', 'enemy', 'spirit'],
-    statusTags: ['buff', 'debuff', 'cursed', 'blessed', 'dust-sick'],
+        // v3.7: widened to what this pack's statuses ACTUALLY tag, not what
+    // the declaration wished they did — shipped-truth: the pack's status carries `blind`.
+    // Declaration-side only; no shipped status changed. Baseline before
+    // enforce: the catalog gate that now checks this would otherwise have
+    // been a gate against reality.
+    statusTags: ['buff', 'debuff', 'cursed', 'blessed', 'dust-sick', 'blind'],
     combatTags: ['firearm', 'melee', 'supernatural'],
   },
 };
