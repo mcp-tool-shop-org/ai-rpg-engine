@@ -678,6 +678,8 @@ export {
   // evaluator does — a chain that could push past 5 would quietly undo the
   // measured argument for the cap existing.
   MAX_ACTIVE_OPPORTUNITIES,
+  LOCAL_FACTION_SATURATION,
+  isFactionSaturated,
   resetOpportunityCounter,
   // v2.9 write-wire (F-ceed887f/F-f3f2a84c): world.modules['opportunity-core']
   // accessors — the shared contract world-tick.ts's spawn/tick wire and

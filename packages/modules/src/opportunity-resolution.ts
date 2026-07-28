@@ -28,6 +28,7 @@ import {
   makeOpportunity,
   deadlineFor,
   MAX_ACTIVE_OPPORTUNITIES,
+  isFactionSaturated,
 } from './opportunity-core.js';
 import { adjustLeverage, type LeverageCurrency } from './player-leverage.js';
 import type { SupplyCategory } from './economy-core.js';
@@ -794,6 +795,17 @@ function addGlobal(world: WorldState, key: string, delta: number): void {
 }
 
 /**
+ * The player's standing with a faction as every consumer reads it: the
+ * authored baseline on `world.factions` plus the accrued global. Both halves
+ * matter — packs seed a starting standing (black-flag's Navy at -35) and the
+ * global carries everything play has added since.
+ */
+function currentReputation(world: WorldState, factionId: string): number {
+  const authored = world.factions?.[factionId]?.reputation ?? 0;
+  return authored + numGlobal(world, `reputation_${factionId}`);
+}
+
+/**
  * Apply a resolved opportunity's fallout to real, persisted state. `actorId`
  * is the entity whose leverage currency changes — the resolution verb
  * (opportunityHandler, below) passes action.actorId; world-tick.ts's
@@ -904,9 +916,27 @@ export function applyOpportunityFallout(world: WorldState, actorId: string, fall
           actor.custom = adjustLeverage(actor.custom ?? {}, effect.currency, effect.delta);
         }
         break;
-      case 'reputation':
+      case 'reputation': {
+        // v3.8 saturation cap, at the REAL payer.
+        //
+        // ⚠ The first attempt at this put the cap on the offer's `rewards`
+        // array, where the reputation is advertised — and measured EXACTLY
+        // ZERO change, because `OpportunityReward[]` HAS NO APPLIER. Nothing
+        // in the engine pays it: it is read by scoreCandidate (a count),
+        // formatOpportunityForDirector (display), and getSupplyRunFallout
+        // (which translates one entry into fallout). What actually pays is
+        // this switch, off the per-kind fallout. Another advertised-but-
+        // unapplied surface, found the same way as the rest of this cycle —
+        // by a number that refused to move.
+        //
+        // Only the UPWARD direction is capped. A penalty must always land: a
+        // faction you are made with can still be disappointed in you, and
+        // gating that would make standing a ratchet.
+        const current = currentReputation(world, effect.factionId);
+        if (effect.delta > 0 && isFactionSaturated(current)) break;
         addGlobal(world, `reputation_${effect.factionId}`, effect.delta);
         break;
+      }
       case 'alert':
         addGlobal(world, `faction_alert_${effect.factionId}`, effect.delta);
         break;

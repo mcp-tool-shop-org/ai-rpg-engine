@@ -874,8 +874,17 @@ function evaluateFactionOpportunities(
       urgency: 0.4,
       turnsRemaining: deadlineFor('faction-job', DEFAULT_DEADLINE + 4),
       visibility: 'known',
+      // The saturation ceiling gates the REWARD, not the offer (v3.8) — the
+      // posture findLocalFaction's own note states: "district work still
+      // SPAWNS… it simply stops paying reputation to someone who has run out
+      // of reputation to give." A faction you are already made with keeps
+      // finding you work; what it can no longer do is make you more made.
+      // Influence still pays, because your standing OUTSIDE the house keeps
+      // growing on the strength of who you work for.
       rewards: [
-        { type: 'reputation', factionId: rep.factionId, delta: 10 },
+        ...(isFactionSaturated(rep.value)
+          ? []
+          : [{ type: 'reputation' as const, factionId: rep.factionId, delta: 10 }]),
         { type: 'leverage', currency: 'influence', delta: 5 },
       ],
       risks: [],
@@ -1110,8 +1119,17 @@ function evaluateEscortOpportunities(
       urgency,
       turnsRemaining: deadlineFor('escort'),
       visibility: 'offered',
+      // Same reward ceiling as faction-job above (v3.8). The window here is
+      // the narrowest in the file — ESCORT_TRUST_THRESHOLD (50) to
+      // LOCAL_FACTION_SATURATION (70) is twenty points in which a faction
+      // trusts you enough to ask AND still has standing to pay with — which
+      // is the right shape: an escort request is a moment in a relationship,
+      // not a salary. Past the ceiling they still ask, and the favour you are
+      // owed is the whole payment.
       rewards: [
-        { type: 'reputation', factionId: trustedFaction.factionId, delta: 10 },
+        ...(isFactionSaturated(trustedFaction.value)
+          ? []
+          : [{ type: 'reputation' as const, factionId: trustedFaction.factionId, delta: 10 }]),
         { type: 'leverage', currency: 'favor', delta: 4 },
       ],
       risks: [
@@ -1256,12 +1274,34 @@ function hasPairConflict(activePairs: Set<string>, kind: OpportunityKind, source
  * reputation to give. Deliberately above ESCORT_TRUST_THRESHOLD (50) so every
  * authored gate in the file stays reachable by the ladder.
  */
-const LOCAL_FACTION_SATURATION = 70;
+export const LOCAL_FACTION_SATURATION = 70;
+
+/**
+ * Has this faction run out of standing to sell?
+ *
+ * v3.7 applied the ceiling above to the DISTRICT path only, and measurement
+ * this cycle found the other two faction-sourced paths compounding exactly the
+ * same way. A 40-round pursuing session on the shipped catalog ended with
+ * EIGHT of eleven packs holding a faction above 115, and four above 200 —
+ * ashfall-dead and signal-loss at 270, jade-veil at 240, black-flag at 210.
+ * `findLocalFaction` was capped; `evaluateFactionOpportunities` and escort's
+ * path 2 both walk `playerReputations` sorted by standing with no upper bound,
+ * so the richest relationship kept getting richer off its own rewards.
+ *
+ * The consequence is not a big number, it is a DEAD LADDER. Every
+ * reputation-gated rule in this file — faction-job's ally tier at 30, escort's
+ * ESCORT_TRUST_THRESHOLD at 50 — is a rung the player climbs once and then
+ * stands on forever with one faction, while the others stay at zero because
+ * nothing ever sends work their way.
+ */
+export function isFactionSaturated(reputation: number): boolean {
+  return reputation >= LOCAL_FACTION_SATURATION;
+}
 
 export function findLocalFaction(inputs: OpportunityInputs): string | undefined {
   // Neutral-or-better, but not already saturated (see above).
   const friendly = inputs.playerReputations
-    .filter((r) => r.value >= -10 && r.value < LOCAL_FACTION_SATURATION)
+    .filter((r) => r.value >= -10 && !isFactionSaturated(r.value))
     .sort((a, b) => b.value - a.value);
   return friendly[0]?.factionId;
 }

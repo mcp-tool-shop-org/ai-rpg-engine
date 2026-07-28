@@ -58,6 +58,7 @@ import {
   computeOpportunityFallout,
   getActivePressures,
   BOUNTY_LAPSE_ESCALATION_URGENCY,
+  LOCAL_FACTION_SATURATION,
   type OpportunityKind,
   type OpportunityState,
   type SupplyCategory,
@@ -70,7 +71,7 @@ import {
   type SessionProfile,
 } from './packs-opportunity-reachability.test.js';
 import { playUntilOffered, packById, opportunityOp } from './packs-fallout-sink.test.js';
-import type { PackInfo } from './packs.js';
+import { allPacks, type PackInfo } from './packs.js';
 
 const NOOP = (): void => {};
 
@@ -981,5 +982,109 @@ describe('sink: spawn-pressure (FSC-1)', () => {
       getActivePressures(engine.world).map((p) => p.id),
       'a completed contract spawned a pressure its fallout never announced',
     ).toEqual(getActivePressures(before).map((p) => p.id));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reward economy — the faction-standing saturation cap (P2c)
+// ---------------------------------------------------------------------------
+
+describe('faction standing saturates instead of compounding (FSC-1)', () => {
+  /** Standing with a faction, as every consumer reads it. */
+  function repOf(world: WorldState, factionId: string): number {
+    return (world.factions?.[factionId]?.reputation ?? 0) +
+      Number(world.globals[`reputation_${factionId}`] ?? 0);
+  }
+
+  /** Every faction's standing at the end of a pinned pursuing session. */
+  function standingsAfterSession(packId: string): Map<string, number> {
+    const engine = playFullSession(packId, 'pursuing');
+    const ids = new Set([
+      ...Object.keys(engine.world.factions ?? {}),
+      ...Object.keys(engine.world.globals)
+        .filter((k) => k.startsWith('reputation_'))
+        .map((k) => k.slice('reputation_'.length)),
+    ]);
+    return new Map([...ids].map((id) => [id, repOf(engine.world, id)]));
+  }
+
+  it('no faction runs away with a 40-round session', () => {
+    // MEASURED BEFORE THE FIX, on this exact seed and session: eight of eleven
+    // packs ended above 115 and four above 200 — ashfall-dead and signal-loss
+    // at 270, jade-veil 240, black-flag 210. The highest-standing faction kept
+    // winning the faction-job loop and paying itself, so the richest
+    // relationship got richer without bound.
+    //
+    // The bound is the ceiling plus one completion's worth of overshoot: a
+    // resolution that lands while standing is at 69 still pays in full, which
+    // is correct — the cap refuses to pay someone who is ALREADY made, not
+    // someone about to be.
+    for (const pack of allPacks) {
+      for (const [factionId, value] of standingsAfterSession(pack.meta.id)) {
+        expect(
+          value,
+          `${pack.meta.id}: ${factionId} reached ${value}. Standing is compounding again — ` +
+            'the saturation cap is not reaching the payer.',
+        ).toBeLessThanOrEqual(LOCAL_FACTION_SATURATION + 30);
+      }
+    }
+  });
+
+  it('and the ladder MOVES — more than one faction ends a session with standing', () => {
+    // The half that says the fix did something useful rather than merely
+    // smaller. Capping the leader is only worth doing if the work goes
+    // somewhere: crimson-court's witch-hunters went 0 -> 60 and jade-veil's
+    // takeda-clan 25 -> 50 once the leader stopped absorbing every job.
+    const multiFaction = allPacks.filter(
+      (p) => standingsAfterSession(p.meta.id).size > 1,
+    );
+    expect(multiFaction.length, 'no pack has two factions — this proves nothing').toBeGreaterThan(0);
+
+    const withTwoPositives = multiFaction.filter(
+      (p) => [...standingsAfterSession(p.meta.id).values()].filter((v) => v > 0).length >= 2,
+    );
+    expect(
+      withTwoPositives.length,
+      'every multi-faction pack still ends with exactly one patron holding all the standing',
+    ).toBeGreaterThan(0);
+  });
+
+  it('a PENALTY still lands on a saturated faction (direction control)', () => {
+    // Only the upward direction is capped. Gating penalties too would make
+    // standing a ratchet — you could bank one faction to the ceiling and then
+    // betray them for free.
+    const world = playFullSession('salt-road-ledger', 'pursuing').world;
+    const factionId = [...standingsAfterSession('salt-road-ledger').entries()]
+      .filter(([, v]) => v >= LOCAL_FACTION_SATURATION)
+      .map(([id]) => id)[0];
+    expect(factionId, 'no faction reached the ceiling — this control has nothing to test').toBeDefined();
+
+    const before = repOf(world, factionId);
+    applyOpportunityFallout(world, world.playerId, {
+      resolution: {
+        opportunityId: 'fsc-penalty', opportunityKind: 'faction-job',
+        resolutionType: 'abandoned', resolvedAtTick: world.meta.tick,
+      },
+      effects: [{ type: 'reputation', factionId, delta: -10 }],
+      summary: 'control',
+    });
+    expect(repOf(world, factionId), 'a penalty was refused on a saturated faction').toBe(before - 10);
+  });
+
+  it('and a GAIN is refused at the same moment (the other direction)', () => {
+    const world = playFullSession('salt-road-ledger', 'pursuing').world;
+    const factionId = [...standingsAfterSession('salt-road-ledger').entries()]
+      .filter(([, v]) => v >= LOCAL_FACTION_SATURATION)
+      .map(([id]) => id)[0];
+    const before = repOf(world, factionId);
+    applyOpportunityFallout(world, world.playerId, {
+      resolution: {
+        opportunityId: 'fsc-gain', opportunityKind: 'faction-job',
+        resolutionType: 'completed', resolvedAtTick: world.meta.tick,
+      },
+      effects: [{ type: 'reputation', factionId, delta: 20 }],
+      summary: 'control',
+    });
+    expect(repOf(world, factionId), 'a saturated faction still paid out').toBe(before);
   });
 });
