@@ -270,6 +270,26 @@ export class TestnetTransport implements LedgerTransport, NFTTransport {
     return this.submit(tx, wallet);
   }
 
+  /**
+   * The `diary` mode primitive: a value-free self-anchor carrying a memo.
+   *
+   * A 1-drop XRP self-payment — the canonical XRPL anchoring shape. Drops, not
+   * an IssuedAmount, precisely so no issuer and no trust line are required;
+   * that absence is what diary mode is bought for. The drop returns to the
+   * signer, so the only cost is the transaction fee.
+   */
+  async anchorMemo(seed: string, memo: string): Promise<TxResult> {
+    const wallet = xrpl.Wallet.fromSeed(seed);
+    const tx: xrpl.Payment = {
+      TransactionType: 'Payment',
+      Account: wallet.address,
+      Destination: wallet.address,
+      Amount: '1',
+      Memos: [memoEntry(memo)],
+    };
+    return this.submit(tx, wallet);
+  }
+
   async payment(seed: string, destination: string, amount: IssuedAmount, memo?: string): Promise<TxResult> {
     const wallet = xrpl.Wallet.fromSeed(seed);
     const tx: xrpl.Payment = {

@@ -61,6 +61,24 @@ export type LedgerAdapterDeps = {
    *  Seeds are ALSO cached in-memory (private to this adapter instance) so
    *  `settle()` can sign without ever reading a seed back out of `state`. */
   putSeed?: (address: string, seed: string) => void;
+  /**
+   * The durable issuer seed for `issuerMode: 'persistent'` (F-merchant-E).
+   *
+   * `IssuerMode` shipped as a declared axis with no behaviour: `persistent` was
+   * copied into state and validated on deserialize and read by nothing, so
+   * every run — in either mode — funded a throwaway faucet issuer. A cross-run
+   * market was documented and impossible.
+   *
+   * Supplying this makes run 2 reuse run 1's issuer: the same address, the same
+   * token codes, and trust lines already open, so a market built in one session
+   * is still there in the next. Read from the GITIGNORED secrets sidecar and
+   * never from `state` — a durable issuer is a durable KEY, which is exactly
+   * why per-run remains the documented default and this stays opt-in.
+   *
+   * Ignored unless `config.issuerMode === 'persistent'`, so passing it by
+   * accident cannot silently change a per-run game's custody model.
+   */
+  persistentIssuerSeed?: string;
 };
 
 function defaultClock(): () => string {
@@ -158,6 +176,24 @@ export function createLedgerAdapter(
     return wallet;
   }
 
+  /**
+   * The issuer specifically (F-merchant-E). Identical to `fundOrResume` except
+   * that a persistent game reconstructs its DURABLE issuer from the sidecar
+   * seed instead of fauceting a new one — which is the entire difference
+   * between a market that outlives a run and one that does not.
+   *
+   * Gated on `config.issuerMode`, not merely on the seed being present: a seed
+   * passed to a per-run game must not quietly convert it to persistent custody.
+   */
+  async function issuerWallet(currentAddress: string): Promise<WalletHandle> {
+    if (config.issuerMode === 'persistent' && deps.persistentIssuerSeed && !currentAddress) {
+      const wallet = transport.walletFromSeed(deps.persistentIssuerSeed);
+      registerSeed(wallet.address, wallet.seed);
+      return wallet;
+    }
+    return fundOrResume(currentAddress);
+  }
+
   function currencyCodeFor(state: LedgerAdapterState, key: string): string {
     const existing = state.tokenMap[key];
     if (existing) return existing;
@@ -213,6 +249,21 @@ export function createLedgerAdapter(
    *  (positive) is a direct issuer->player Payment. Returns every tx hash
    *  produced. Throws on the first transport failure — callers translate that
    *  into the pending/failure degradation path. */
+  /**
+   * The `diary` counterpart to executeDeltas: write the checkpoint's memo as a
+   * single value-free anchor and return its hash.
+   *
+   * Throws on transport failure exactly as executeDeltas does, so a diary run
+   * degrades onto the SAME pending/retry path — an unreachable ledger leaves a
+   * pending record that the next checkpoint replays, rather than silently
+   * losing a link in the anchor chain.
+   */
+  async function anchorDeltas(state: LedgerAdapterState, memo: string): Promise<string[]> {
+    const res = await transport.anchorMemo(requireSeed(state.playerAddress), memo);
+    if (!res.ok) throw new Error(`anchorMemo failed: ${res.error ?? res.code}`);
+    return [res.hash];
+  }
+
   async function executeDeltas(
     state: LedgerAdapterState,
     deltas: Record<string, number>,
@@ -358,11 +409,39 @@ export function createLedgerAdapter(
     );
 
     try {
+      // ── diary: seal the books, do not custody them ──────────────────────
+      // One player wallet and nothing else. No issuer, no AccountSet flags, no
+      // trust lines, no opening mint — a diary run never puts the economy
+      // on-chain, it only witnesses it. Returning here is what makes `diary` a
+      // behaviour rather than a label: before this branch existed, every mode
+      // ran the full ledger setup below and `mode` was read by nothing.
+      if (config.mode === 'diary') {
+        const diarist = await fundOrResume(state.playerAddress);
+        state.playerAddress = diarist.address;
+        // Baseline the opening snapshot WITHOUT minting it. Diary deltas are
+        // computed against this exactly as ledger deltas are; the difference is
+        // that nothing is moved to make them true.
+        if (Object.keys(state.lastSettled).length === 0) {
+          const amounts = amountsOf(snapshot);
+          const settled: Record<string, number> = {};
+          for (const key of resourceKeysOf(snapshot)) settled[key] = amounts[key] ?? 0;
+          state.lastSettled = settled;
+        }
+        state.enabled = true;
+        return {
+          success: true,
+          message: resuming
+            ? 'Diary resumed — this run is witnessed, not custodied.'
+            : 'Diary opened — checkpoints will be anchored on-ledger, no trust lines needed.',
+          playerAddress: diarist.address,
+        };
+      }
+
       // Wallets: reuse-by-address or fund fresh, one at a time, persisting
       // each address into `state` immediately (not after all three succeed)
       // so a failure partway leaves a resumable partial state, exactly like
       // backpack.py's step-by-step field writes.
-      const issuer = await fundOrResume(state.issuerAddress);
+      const issuer = await issuerWallet(state.issuerAddress);
       state.issuerAddress = issuer.address;
 
       const player = await fundOrResume(state.playerAddress);
@@ -489,7 +568,15 @@ export function createLedgerAdapter(
     const memo = buildSettlementMemo(gameId, runId, checkpoint, deltas, verb);
 
     try {
-      const txids = await executeDeltas(state, deltas, memo, primitive);
+      // In `diary` the deltas above are the RECORD of what happened, not
+      // instructions to move anything: one memo-bearing self-anchor, no
+      // trust line touched, no token minted or escrowed. The settlement
+      // record that lands in state is otherwise identical to a ledger one,
+      // which is what lets reconcile check an anchor chain with the same
+      // machinery it uses for balances.
+      const txids = config.mode === 'diary'
+        ? await anchorDeltas(state, memo)
+        : await executeDeltas(state, deltas, memo, primitive);
 
       for (const key of keys) {
         state.lastSettled[key] = amounts[key] ?? 0;
