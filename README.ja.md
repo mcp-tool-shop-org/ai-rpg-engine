@@ -36,7 +36,7 @@
 
 ---
 
-## 現在のバージョン（v3.5.0）
+## 現在のバージョン（v3.6.0）
 
 **What works and is tested:**
 - Core runtime: world state, events, actions, ticks, replay — stable since v1.0; deterministic byte-identical replay (per-instance id counter, seeded RNG)
@@ -76,6 +76,7 @@
 - **Opt-in XRPL ledger settlement (v3.2):** a new optional `@ai-rpg-engine/ledger-adapter` package binds the player-owned tradeable layer — `coin` → an IOU, consumables → fungible tokens, a checkpoint's net `buy`/`sell` delta → a settled **XLS-85 token escrow** — to the **XRPL testnet**, entirely outside the deterministic core. Nothing in `core`/`modules` imports it and a run is byte-identical with or without it (proven on the real pirate `createGame()` merchant loop). Testnet-only behind a mainnet-impossible-in-code guard, with a gitignored secrets sidecar, conservation-safe retries, on-chain memo verification, and an unanchored fallback; proven live end-to-end on testnet (settle via token escrow → `reconcile` against on-ledger balances + memos). NFT unique gear lands in v3.3 (below). See [The XRPL ledger adapter](#the-xrpl-ledger-adapter-opt-in)
 - **Unique gear as NFTs (v3.3):** the `@ai-rpg-engine/ledger-adapter` binds the `equipment` package's unique gear — the deferred "later slice" from v3.2 — to XRPL NFTs: each unique item minted as an **XLS-20 NFToken** (`tfMutable`, never burnable — true player ownership) at a checkpoint, relic growth advancing a mutable NFT's metadata in place via **XLS-46 `NFTokenModify`**, and a `reconcile()` ownership family verifying on-ledger `account_nfts`. A distinct read path over the equipment loadout, carried alongside the fungible layer — same determinism firewall, byte-identical with or without it. Proven on the real `starter-gladiator` played session, live on testnet (mint the equipped `trident-and-net` as an NFT, own it on-ledger, reconcile, world unperturbed)
 - **Gear that earns a name (v3.4):** relic growth has existed since v3.3 but had never fired during play — nothing populated an item-chronicle in a running game, so every item's relic version was permanently `0`. The write side ships now: an **opt-in `item-chronicle-core`** module records `acquired` / `used-in-kill` / `recognized` from real play, and `starter-gladiator` wires it — win three arena fights and the retiarius trident is the **Bloodied Trident & Net** for the rest of the run, shown in the HUD and the Director's ledger. This also **closes the NFT loop**: a checkpoint settles that growth as a real **XLS-46 `NFTokenModify`**, advancing the on-ledger URI while preserving the NFTokenID. Fixed along the way: `boss-kill` and `recognized` were both unreachable on every shipped pack (a bare-`boss` tag check against content that tags `role:boss`, and a faction guard against content where no entity sets one) — and the latter had been silently blocking *all* armor growth. Opt-in by construction: a pack that does not wire it is byte-identical to the engine that shipped before it existed
+- **The instrument turned on the catalog (v3.6):** the pack built to USE the ledger is now run deliberately as an engine-polishing instrument. A catalog-wide **verb-reachability audit** boots all eleven packs and SUBMITS each verb through the real engine, asking whether any target in the booted world accepts it — a gate no existing check could pass or fail, because verb-honesty compares the help table against registered handlers and never looks at the content. Run before any fix, it caught `recruit` advertised in Salt Road Ledger with zero recruitable NPCs (the v2.9 defect, re-introduced) and `use` inert across the pack's entire catalog. `give` ships as the engine's **first entity-to-entity item transfer** — atomic, structured-rejecting, chronicle-stamped by event — closing a gap where a pack could make an item obtainable and have nothing able to hand it to anyone. And the two remaining adapter axes that were config flags with **zero behavioral reads** became behaviours: `diary` mode (witnessed, not custodied — one anchor per checkpoint, no trust lines, reconcile verifies the anchor chain) and `issuerMode: 'persistent'` (a market that outlives the run). Proven **15/15 on live XRPL testnet**
 - **A game whose loop is debt (v3.5):** the eleventh starter, **Salt Road Ledger**, is the first authored backwards from a system rather than a genre — you play a factor trading on someone else's capital, and five commerce verbs (`appraise` / `haggle` / `consign` / `underwrite` / `audit`) carry the game while combat is priced as a penalty (the resource profile has an empty `gains` array — nothing rewards violence). `consign` is the only verb in the catalog whose offline semantics match a settlement primitive one-to-one, which makes it the reference pack for the ledger adapter while carrying **no dependency on it**. Ships with the `mercantile` genre and a merchant economy profile, and 7/7 on the pack rubric. The same cycle made two long-inert adapter axes real — the memo `VERB:` field (declared with members no call site could emit) and `config.settlement` (declared with zero reads anywhere) — and a played-session audit of the new pack found six mechanics that were wired, schema-valid, unit-green and dead
 - `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
@@ -205,12 +206,12 @@ npx @ai-rpg-engine/cli create-starter my-game
 
 ## XRPLレジャーアダプター（オプトイン）
 
-`@ai-rpg-engine/ledger-adapter`は、ゲームの**プレイヤーが所有する取引可能なレイヤー**（つまり、`coin`残高と消費可能なインベントリで、`trade-core`の`buy`/`sell`動詞によってすでに操作されるもの）を**XRPLテストネット**にバインドする**オプションの**パッケージです。これにより、これらのアセットは実際のオンチェーンのトークンによって裏付けられ、チェックポイントで決済できます。アダプターがない場合、それは今日出荷されているオフラインエンジンそのものです。
+`@ai-rpg-engine/ledger-adapter`は、ゲームの**プレイヤーが所有する取引可能なレイヤー**（つまり、`coin`残高と消費可能なインベントリで、`trade-core`の`buy`/`sell`動詞によってすでに操作されるもの）を**XRPLテストネット**にバインドする**オプションの**パッケージです。これにより、これらのアセットは実際のオンチェーン・トークンによって裏付けられ、チェックポイントで決済できます。アダプターがない場合、それは今日出荷されているオフラインエンジンそのものです。
 
 **決定性の不変性（最も重要な点）。** アダプターは *サイドチャネル* であり、シミュレーションの一部ではありません。
 
 - これは**決定的なティック内では決して呼び出されません**。**チェックポイント**でのみ（保存時、町/市場への入り口、チャプターの区切り）呼び出されます。
-- `@ai-rpg-engine/core`または`@ai-rpg-engine/modules`に、これを取り込むものは何もありません（唯一のエンジン依存関係は、コンパイル時の`import type`です）。
+- `@ai-rpg-engine/core`または`@ai-rpg-engine/modules`に、これを取り込むものはありません（エンジンに対する唯一の依存関係は、コンパイル時の`import type`です）。
 - **アダプターの有無にかかわらず、実行結果はバイト単位で同一になります。**ファイアウォールテストでは、実際の`starter-pirate``createGame()`マーチャントループを2つのエンジンで実行します。1つはアダプターが有効になっており、チェックポイントで決済されます。そして、2つのワールドが完全に等しいことを検証します。シード0のリプレイは変更されません。
 
 **統合レベル — ゲームは、そのデザインに応じて、これを可能な限り深く組み込むことができます。** ファイアウォールは *決定性* の境界であり、統合を妨げるものではありません。上記の不変性はすべてのレベルで保持されます。
@@ -297,7 +298,7 @@ const warCry: AbilityDefinition = {
 | [`@ai-rpg-engine/ollama`](packages/ollama) | オプションのAIによる文章作成機能：構成支援、批評、段階的なワークフロー、調整、実験 |
 | [`@ai-rpg-engine/cli`](packages/cli) | CLI：ゲームの実行、スタータープロジェクトの作成、セーブデータの確認 |
 | [`@ai-rpg-engine/terminal-ui`](packages/terminal-ui) | ターミナルレンダラーと入力レイヤー |
-| [`@ai-rpg-engine/starter-merchant`](packages/starter-merchant) | 商業スターター — レジャーアダプターの参照パックであり、それに対する依存関係はありません。 |
+| [`@ai-rpg-engine/starter-merchant`](packages/starter-merchant) | マーチャントスターター — レジャーアダプターの参照パックであり、それに対する依存関係はありません。 |
 | [`@ai-rpg-engine/ledger-adapter`](packages/ledger-adapter) | **オプション** — プレイヤーが所有する取引可能なレイヤー（コイン/インベントリ/取引）を、チェックポイントでXLS-85トークンスキューを介してXRPLテストネットに決済するためのオプトイン機能。これは完全に決定的なコアとは独立しています。 |
 
 ### スターターの例
@@ -314,7 +315,7 @@ const warCry: AbilityDefinition = {
 | [`starter-weird-west`](packages/starter-weird-west) | 奇妙な西部劇。 | 偏見をなくし、安全な環境を取り戻す。 |
 | [`starter-colony`](packages/starter-colony) | SFコロニー | 隘路、待ち伏せ地点 |
 | [`starter-ronin`](packages/starter-ronin) | 封建時代の日本 | 隠された通路、複数の防御役割 |
-| [`starter-merchant`](packages/starter-merchant) | 商業 | ループとしての義務、ペナルティとして価格設定された戦闘 |
+| [`starter-merchant`](packages/starter-merchant) | マーチャント | ループとしての義務、ペナルティとして価格設定された戦闘 |
 | [`starter-vampire`](packages/starter-vampire) | 吸血鬼ホラー。 | 血液資源、社会操作 |
 | [`starter-gladiator`](packages/starter-gladiator) | 古代の剣闘士 | アリーナでの戦闘、観客からの支持。 |
 
@@ -343,7 +344,7 @@ const warCry: AbilityDefinition = {
 
 ### 現在地はここです
 
-Both composition spines are complete — 5911 tests across 307 files, all 11 starters on `buildCombatStack` **and** `buildWorldStack`, deterministic byte-identical replay under printed seeds, full AI decision scoring, and a CLI that scaffolds, runs, validates, and inspects. **v3.0 makes the world live: named NPCs come alive with goals, trust/fear/greed/loyalty relationships, obligation ledgers, and consequence chains; the social layer earns passively and spends across twenty-one new diplomacy/sabotage verbs; the economy is genre-flavored per starter; and the leverage you earn finally reaches the campaign endings it gates. A Phase-9 audit caught the headline wired-but-inert in shipped content — the fix ships a named NPC in every starter.**
+Both composition spines are complete — 6028 tests across 309 files, all 11 starters on `buildCombatStack` **and** `buildWorldStack`, deterministic byte-identical replay under printed seeds, full AI decision scoring, and a CLI that scaffolds, runs, validates, and inspects. **v3.0 makes the world live: named NPCs come alive with goals, trust/fear/greed/loyalty relationships, obligation ledgers, and consequence chains; the social layer earns passively and spends across twenty-one new diplomacy/sabotage verbs; the economy is genre-flavored per starter; and the leverage you earn finally reaches the campaign endings it gates. A Phase-9 audit caught the headline wired-but-inert in shipped content — the fix ships a named NPC in every starter.**
 
 **Recent release arc (v2.4.0–v3.0.0):**
 - v2.4.0 — Party combat (ally-targeting / heal / buff / revive, friend-foe AoE), status-effect system (modifiers + DoT/HoT + reactive triggers), plug-in Profiles Phase 1, content `validate`/`scaffold` CLI
