@@ -20,12 +20,22 @@ import type { Engine } from '@ai-rpg-engine/core';
 import {
   getLeverageState,
   getPersistedOpportunities,
+  getDistrictEconomy,
+  getDistrictState,
+  getSupplyLevel,
   type OpportunityKind,
   type OpportunityState,
+  type SupplyCategory,
 } from '@ai-rpg-engine/modules';
 import { allPacks, type PackInfo } from './packs.js';
 import { runHostileRound } from './bin.js';
-import { POR_SEED, POR_ROUNDS, playSession, type SessionProfile } from './packs-opportunity-reachability.test.js';
+import {
+  POR_SEED,
+  POR_ROUNDS,
+  playSession,
+  playerHalfRound,
+  type SessionProfile,
+} from './packs-opportunity-reachability.test.js';
 
 const NOOP = (): void => {};
 
@@ -42,58 +52,40 @@ function playUntilOffered(
   kind: OpportunityKind,
   profile: SessionProfile = 'wandering',
 ): { engine: Engine; offer: OpportunityState } {
+  return playUntilOfferedAt(pack, kind, profile);
+}
+
+/** As `playUntilOffered`, and also reports WHERE in the session it stopped, so
+ *  a caller that wants to keep playing resumes the same walk instead of
+ *  restarting it. */
+function playUntilOfferedAt(
+  pack: PackInfo,
+  kind: OpportunityKind,
+  profile: SessionProfile = 'wandering',
+): { engine: Engine; offer: OpportunityState; round: number } {
   const engine = pack.createGame(POR_SEED);
   const fullHp = engine.world.entities[engine.world.playerId]?.resources?.hp ?? 0;
+  const visits = new Map<string, number>();
 
   for (let round = 0; round < POR_ROUNDS; round++) {
     const me = engine.world.entities[engine.world.playerId];
     if (!me) break;
     if (fullHp > 0 && me.resources) me.resources.hp = fullHp;
 
-    // One round of the SAME behaviour POR-1 drives, via its exported driver.
-    playOneRound(engine, pack, round, profile);
+    // The SAME player POR-1 drives, via its exported half-round — so the two
+    // suites can never drift about what a played session is.
+    playerHalfRound(engine, round, profile, visits);
+    runHostileRound(engine, pack, { log: NOOP });
 
     const offer = getPersistedOpportunities(engine.world).find(
       (o) => o.kind === kind && o.status === 'available',
     );
-    if (offer) return { engine, offer };
+    if (offer) return { engine, offer, round: round + 1 };
   }
   throw new Error(
     `${pack.meta.id} never offered a \`${kind}\` in ${POR_ROUNDS} rounds — POR-1 says it should. ` +
       'If POR-1 is green and this is not, the two suites disagree about what a played session is.',
   );
-}
-
-// POR-1 owns the player behaviour; this replays one round of it. Kept as a
-// thin wrapper (rather than exporting the private half-round) so the two files
-// share the DRIVER — createGame + runHostileRound — which is the part that
-// matters, without POR-1 having to expose its internals.
-function playOneRound(engine: Engine, pack: PackInfo, round: number, profile: SessionProfile): void {
-  const me = engine.world.entities[engine.world.playerId];
-  const exits = [...(engine.world.zones[me?.zoneId ?? '']?.neighbors ?? [])].sort();
-  if (profile !== 'wandering') {
-    const hostile = Object.values(engine.world.entities).find(
-      (e) => e.id !== engine.world.playerId && e.zoneId === me?.zoneId && e.type === 'enemy' && (e.resources?.hp ?? 0) > 0,
-    );
-    if (hostile) {
-      engine.submitAction('attack', { targetIds: [hostile.id] });
-      runHostileRound(engine, pack, { log: NOOP });
-      return;
-    }
-  }
-  if (round % 3 === 2) {
-    const neighbour = Object.values(engine.world.entities).find(
-      (e) => e.id !== engine.world.playerId && e.zoneId === me?.zoneId && e.type === 'npc',
-    );
-    if (neighbour) {
-      engine.submitAction('speak', { targetIds: [neighbour.id] });
-      runHostileRound(engine, pack, { log: NOOP });
-      return;
-    }
-  }
-  if (exits.length > 0) engine.submitAction('move', { targetIds: [exits[round % exits.length]] });
-  else engine.submitAction('wait', {});
-  runHostileRound(engine, pack, { log: NOOP });
 }
 
 function reputationOf(engine: Engine, factionId: string): number {
@@ -122,6 +114,28 @@ function complete(engine: Engine, offer: OpportunityState): void {
 
 function packById(id: string): PackInfo {
   return allPacks.find((p) => p.meta.id === id)!;
+}
+
+function supplyOf(engine: Engine, districtId: string, category: SupplyCategory): number {
+  const economy = getDistrictEconomy(engine.world, districtId);
+  expect(economy, `district ${districtId} has no economy`).toBeDefined();
+  return getSupplyLevel(economy!, category);
+}
+
+/** Keep playing without touching the offer, until the world tick expires it. */
+function playUntilExpired(engine: Engine, pack: PackInfo, offer: OpportunityState, fromRound: number): void {
+  const visits = new Map<string, number>();
+  const fullHp = engine.world.entities[engine.world.playerId]?.resources?.hp ?? 0;
+  for (let round = fromRound; round < fromRound + 30; round++) {
+    const me = engine.world.entities[engine.world.playerId];
+    if (!me) break;
+    if (fullHp > 0 && me.resources) me.resources.hp = fullHp;
+    playerHalfRound(engine, round, 'wandering', visits);
+    runHostileRound(engine, pack, { log: NOOP });
+    const still = getPersistedOpportunities(engine.world).find((o) => o.id === offer.id);
+    if (!still || still.status === 'expired') return;
+  }
+  throw new Error(`\`${offer.kind}\` never expired — its deadline was ${String(offer.turnsRemaining)}`);
 }
 
 describe('opportunity consequence on authored content (POC-1)', () => {
@@ -175,6 +189,95 @@ describe('opportunity consequence on authored content (POC-1)', () => {
       expect(
         stripped.kindsFired.has('contract'),
         'a contract spawned from an un-greedy Corvane — the proof above is not reading the gate it claims',
+      ).toBe(false);
+    });
+  });
+
+  describe('`supply-run` — salt-road-ledger', () => {
+    it('completing a supply run EASES the shortage that caused it', () => {
+      // The strongest consequence in the whole set: `economy-shift` is one of
+      // the few fallout effect types with a real persisted sink, so the
+      // district the offer was about measurably improves.
+      const { engine, offer } = playUntilOffered(packById('salt-road-ledger'), 'supply-run');
+
+      const districtId = offer.linkedDistrictId!;
+      const reward = offer.rewards.find((r) => r.type === 'economy-shift');
+      expect(reward, 'the supply run promised no economy shift — nothing to verify').toBeDefined();
+      if (reward?.type !== 'economy-shift') throw new Error('unreachable');
+
+      const before = supplyOf(engine, districtId, reward.category);
+      const repBefore = reputationOf(engine, offer.sourceFactionId!);
+      const legitimacyBefore = leverageOf(engine).legitimacy;
+
+      accept(engine, offer);
+      complete(engine, offer);
+
+      expect(supplyOf(engine, districtId, reward.category)).toBe(before + reward.delta);
+      expect(reputationOf(engine, offer.sourceFactionId!)).toBe(repBefore + 10);
+      expect(leverageOf(engine).legitimacy).toBe(legitimacyBefore + 5);
+    });
+
+    it('letting a supply run LAPSE makes the district worse — expiry fallout, on real content', () => {
+      // world-tick step 5b-i. Every `getXFallout` has an authored `expired`
+      // case and the array they run on used to be discarded, so a deadline was
+      // cosmetic. `supply-run` carries the richest one — reputation AND a
+      // district that goes hungrier — and it is the reason expiry reads as
+      // consequence rather than as a menu entry timing out.
+      const pack = packById('salt-road-ledger');
+      const { engine, offer, round } = playUntilOfferedAt(pack, 'supply-run');
+
+      const districtId = offer.linkedDistrictId!;
+      const foodBefore = supplyOf(engine, districtId, 'food');
+      const repBefore = reputationOf(engine, offer.sourceFactionId!);
+
+      playUntilExpired(engine, pack, offer, round);
+
+      expect(reputationOf(engine, offer.sourceFactionId!)).toBe(repBefore - 3);
+      expect(
+        supplyOf(engine, districtId, 'food'),
+        'the district ate the cost of the lapse — food should have dropped by 5',
+      ).toBeLessThan(foodBefore);
+    });
+  });
+
+  describe('`recovery` — salt-road-ledger', () => {
+    it('recovering the lost goods pays the Crown standing and legitimacy', () => {
+      const { engine, offer } = playUntilOffered(packById('salt-road-ledger'), 'recovery');
+
+      const repBefore = reputationOf(engine, offer.sourceFactionId!);
+      const legitimacyBefore = leverageOf(engine).legitimacy;
+
+      accept(engine, offer);
+      complete(engine, offer);
+
+      expect(reputationOf(engine, offer.sourceFactionId!)).toBe(repBefore + 8);
+      expect(leverageOf(engine).legitimacy).toBe(legitimacyBefore + 5);
+    });
+
+    it('recovery needs a district that has stopped trading — restore commerce and it goes dark', () => {
+      // Fix-site proof, and it took two drafts to aim correctly.
+      //
+      // The first control reopened the district's black market, on the theory
+      // that `investigation` wins the district rule whenever one is open. That
+      // is true of the FIRST branch and not of the rule: when an investigation
+      // from the same source is already live the pair-conflict guard falls
+      // THROUGH to recovery, which then only needs trade volume under 30. So
+      // reopening the market left recovery firing and the control red for a
+      // reason that had nothing to do with the fix.
+      //
+      // The load-bearing half is the trade volume, and behind it the authored
+      // `commerce: 8`. Put commerce back to the default every district in the
+      // catalog was silently using and the kind is unreachable again.
+      const stripped = playSession(packById('salt-road-ledger'), {
+        profile: 'wandering',
+        hold: (engine) => {
+          const district = getDistrictState(engine.world, 'high-counting-house');
+          if (district) district.commerce = 50;
+        },
+      });
+      expect(
+        stripped.kindsFired.has('recovery'),
+        'recovery still fired with commerce restored — the proof is not reading the trade-volume gate',
       ).toBe(false);
     });
   });

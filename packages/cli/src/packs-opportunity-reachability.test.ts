@@ -163,9 +163,28 @@ function pursueOpportunities(engine: Engine): boolean {
   return false;
 }
 
-function playerHalfRound(engine: Engine, round: number, profile: SessionProfile): void {
+/**
+ * One round of PLAYER activity. Exported so the consequence suite (POC-1)
+ * drives the SAME player rather than an approximation of one — if what "a
+ * played session" means changes, both suites move together.
+ *
+ * `visits` is the explorer's memory. An earlier draft rotated through a zone's
+ * exits by round number, which is deterministic but is not exploring: on
+ * salt-road-ledger it walked a five-zone orbit and never once entered the
+ * Warrens, so any content authored in the other three zones was invisible to
+ * the measurement. Walking toward the least-visited exit covers the graph,
+ * stays a pure function of world state, and is what a player poking around
+ * actually does.
+ */
+export function playerHalfRound(
+  engine: Engine,
+  round: number,
+  profile: SessionProfile,
+  visits: Map<string, number>,
+): void {
   const me = playerOf(engine);
   if (!me) return;
+  visits.set(me.zoneId ?? '', (visits.get(me.zoneId ?? '') ?? 0) + 1);
 
   if (profile === 'pursuing' && pursueOpportunities(engine)) return;
 
@@ -202,11 +221,14 @@ function playerHalfRound(engine: Engine, round: number, profile: SessionProfile)
     }
   }
 
-  // Wander: rotate deterministically through this zone's exits, sorted so the
-  // route is a pure function of the world rather than of insertion order.
+  // Wander toward the least-seen exit; ties broken by id so the route is a
+  // pure function of world state, not of insertion order.
   const exits = [...(engine.world.zones[me.zoneId ?? '']?.neighbors ?? [])].sort();
   if (exits.length > 0) {
-    engine.submitAction('move', { targetIds: [exits[round % exits.length]] });
+    const next = exits.reduce((best, id) =>
+      (visits.get(id) ?? 0) < (visits.get(best) ?? 0) ? id : best,
+    );
+    engine.submitAction('move', { targetIds: [next] });
     return;
   }
   engine.submitAction('wait', {});
@@ -246,6 +268,7 @@ export function playSession(
 
   const spawns: PlayedSession['spawns'] = [];
   const expiries: PlayedSession['expiries'] = [];
+  const visits = new Map<string, number>();
   let roundsPlayed = 0;
   let logCursor = engine.world.eventLog.length;
 
@@ -255,7 +278,7 @@ export function playSession(
     if (fullHp > 0 && living.resources) living.resources.hp = fullHp;
     opts.hold?.(engine, round);
 
-    playerHalfRound(engine, round, profile);
+    playerHalfRound(engine, round, profile, visits);
     runHostileRound(engine, pack, { log: NOOP });
     roundsPlayed++;
 
@@ -475,11 +498,22 @@ const REACHABLE_TODAY: Record<OpportunityKind, { reachable: boolean; measured: s
       'one faction, so there is no rival to hire you.',
   },
   'supply-run': {
-    reachable: false,
+    reachable: true,
     measured:
-      'the pressure path needs a live `supply-crisis`. The scarcity path needs a category below 20 ' +
-      'in the player district: the lowest level any pack authors is 35 (merchant medicine), and ' +
-      '`tickDistrictEconomy` drags every category back toward the 50 baseline each round anyway.',
+      'LIT in P1 by salt-road-ledger. The scarcity path needs a category below 20 in the player ' +
+      'district; the lowest any pack authored was 35, because `DistrictDefinition.tags` speak into ' +
+      'a modifier table that recognised four of the ~45 tags the catalog uses. The Warrens are ' +
+      '`contested` and that now means something. The pressure path (a live `supply-crisis`) is ' +
+      'still dark — no pressure of any kind becomes active in a played session.',
+  },
+  recovery: {
+    reachable: true,
+    measured:
+      'LIT in P1 by salt-road-ledger. Gated on trade volume under 30, which tracks district-core ' +
+      'commerce — and EVERY district in the catalog sat on the unconfigured default of 50, so the ' +
+      'branch could not fire anywhere. The High Counting House now audits trade rather than doing ' +
+      'any (commerce 8). Its `political` tag also closes the black market, which decides whether ' +
+      '`investigation` takes the rule first, but the trade volume is the load-bearing half.',
   },
   contract: {
     reachable: true,
@@ -491,13 +525,6 @@ const REACHABLE_TODAY: Record<OpportunityKind, { reachable: boolean; measured: s
       "exactly ONCE in the entire catalog (fantasy's Aldric, at 15 — under the 30 favorable bar), " +
       'so every named NPC in all eleven packs derived `wavering`. Assay Master Corvane now arrives ' +
       'bonded (trust 68) and fee-driven (greed 72), which is what the pack always said he was.',
-  },
-  recovery: {
-    reachable: false,
-    measured:
-      'the district rule returns `investigation` first whenever the black market is open, and it ' +
-      'is open in every district of every pack (see `investigation`). Even reached, it needs trade ' +
-      'volume under 30, and trade volume tracks district-core commerce, which baselines at 50.',
   },
 };
 
@@ -556,8 +583,12 @@ const WANDERING_BASELINE: Record<OpportunityKind, number> = {
   'faction-job': 0,
   'favor-request': 0,
   investigation: 11,
-  recovery: 0,
-  'supply-run': 0,
+  // P1: salt-road-ledger. Both come from the DISTRICT rather than from a
+  // person, so like `contract` they reach a player who only walks and talks —
+  // the world offering work because it needs something, which is the whole
+  // premise of opportunity-core's file header.
+  recovery: 1,
+  'supply-run': 1,
 };
 
 describe('meta: POR-1 reproduces the measured baseline (control 1)', () => {

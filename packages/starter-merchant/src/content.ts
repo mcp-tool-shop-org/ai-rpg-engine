@@ -483,6 +483,17 @@ export const districts: DistrictDefinition[] = [
     zoneIds: ['audit-chamber'],
     tags: ['crown', 'political'],
     controllingFaction: 'crown-exchequer',
+    // The Crown's own house does no trade — it AUDITS trade. Commerce 8 is
+    // what makes that true mechanically rather than only in the description:
+    // `tickDistrictEconomy` derives trade volume from district-core commerce
+    // (`commerce * 0.8 + previous * 0.2`), so a district left at the default 50
+    // reports a bustling market no matter what its fiction says. Every district
+    // in the catalog was at that default, which is half of why `recovery` — the
+    // district rule's "trade has nearly collapsed" branch, gated on trade
+    // volume under 30 — had never fired in any world. The other half is the
+    // `political` tag closing the black market (see TAG_SUPPLY_MODIFIERS);
+    // `investigation` wins this rule outright while one is open.
+    baseMetrics: { commerce: 8 },
   },
 ];
 
