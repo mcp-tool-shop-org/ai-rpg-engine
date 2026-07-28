@@ -187,6 +187,7 @@ build → simulate → analyze → tune → experiment
 41. [Crafting, Salvage & Item Transformation](./41-crafting-salvage.md)
 42. [Quest Webs & Emergent Opportunities](./42-quest-webs.md)
 43. [Endgames & Campaign Conclusions](./43-endgames.md)
+64. [Lighting a Dormant Layer](./64-lighting-a-dormant-layer.md)
 
 ### Part X — Composition
 

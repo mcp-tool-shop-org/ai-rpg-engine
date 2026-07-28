@@ -5,6 +5,98 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.7.0] - 2026-07-28
+
+**Light the dormant strategic layer.** The tier above moment-to-moment verbs — where
+opportunities spawn, companions passively matter, and districts have moods — was authored,
+unit-green, and largely unread. Seven of eight opportunity kinds had never fired in any
+world; twelve of thirteen passive modifier fields were computed and consumed by nothing;
+`use` destroyed goods silently; a contract every pack declared was enforced by none.
+
+The theme: **a system that runs for nobody is indistinguishable from a system that does not
+exist** — and none of it had a failing test, because a rule with no reachable input has no
+input to fail on.
+
+### Added
+
+- **A per-kind opportunity-reachability probe (POR-1).** Boots all eleven packs and drives
+  forty FULL rounds through `runHostileRound` — the same driver the interactive CLI calls,
+  NPC turns and companion turns and then the world tick. That is the whole trick:
+  `runWorldTick` is a per-round function rather than a verb or a subscription, so a probe
+  built from `submitAction` alone drives half a round forever and reports the entire layer
+  dead. Ships with controls in both directions — the measured baseline pinned as data, a
+  synthetic pass proving every one of the eight axes CAN go green, and strip-controls that
+  put two of them back to red on cue.
+- **An opportunity CONSEQUENCE suite (POC-1).** Spawning is necessary and not sufficient:
+  an offer a player can accept and complete for no observable result is a roster entry.
+  Each lit kind is played spawn → accept → complete, and the assertions read world state
+  through the accessors the game reads, never the fallout event's payload — `contract` is
+  why that distinction matters, since its authored `obligation` reward has no persisted
+  sink and the event announces a debt the ledger never records.
+- **A deterministic pacing regression (POP-1)** — bounds, kind mix, spawn causes, same-seed
+  identity, and a different-seed control, because without the last one "deterministic" is
+  indistinguishable from "constant".
+- **Catalog-wide gates for three drift classes**: status-tag conformance (PSC-1), faction
+  attribution surviving entity cloning (PFA-1), and a dormant-surface baseline (EDS-1) that
+  fails in BOTH directions — new dormant surface is a failure, and so is leaving a wired-up
+  function on the list.
+
+### Changed
+
+- **All eight opportunity kinds now fire on authored content**, each with a played-session
+  proof that the reward landed, and one that deliberately runs out the clock so the authored
+  expiry fallout — reputation lost, a district gone hungrier — is proven rather than assumed.
+- **District economies keep their own character.** `DistrictEconomy` now carries the
+  genre-and-tag profile it was seeded with, and the per-round drift seeks THAT instead of a
+  universal 50. Previously a sacred quarter, a contested slum and a crown audit house
+  converged on identical numbers inside ~15 rounds, which made the whole seeding cosmetic.
+  `TAG_SUPPLY_MODIFIERS` also gains `contested` and `political`; it recognised four of the
+  ~45 district tags the catalog authors.
+- **Opportunity pacing**, tuned against named findings and cited at the constant each one
+  governs: the 5-slot cap KEPT on choice-overload grounds against a measurement that wanted
+  it raised; the spawn interval raised 3 → 5 ticks; a relax-valley filter that suppresses
+  UNRELATED work during high pressure but never the offer that IS the response to it;
+  a per-kind recurrence cooldown; and per-kind deadlines, so an employer's offer and a
+  friend's request wait while a faction's emergency runs out.
+- **Twelve of thirteen passive modifier fields reach a resolution function**, through a
+  parameter seam that keeps resolution code ignorant of what a companion or a district mood
+  is. Every contribution carries a name, a source, and the post-modifier total, so a UI can
+  say who helped — one entry per contributor, never a pooled bonus.
+- **Packs author real standing.** `world.factions[].reputation` is the baseline the engine
+  explicitly merges with accrued deltas and no pack had ever set it, so every world began at
+  a flat zero with every faction and reputation could only ever go DOWN (defeat fallout is
+  its only other mover). Black Flag Requiem now opens on an outlaw captain, which is what it
+  always said it was.
+
+### Fixed
+
+- **`use` no longer silently destroys items.** Measured before changing anything: 89 of the
+  90 authored items across all eleven packs took the silent-consume path — cutlasses, armour,
+  deeds of title, signet rings. Drinking a deed was a legal move that destroyed it and
+  reported success. It now rejects before mutating, with a structured reason and hint. Packs
+  that WANT an item consumed for flavour register a one-line effect saying so, so the intent
+  is authored rather than accidental. The tell that none of this was covered: flipping the
+  behaviour broke nothing in a 6,118-test suite.
+- **Faction attribution survives cloning.** `defeat-fallout` resolves a defeated entity's
+  faction by instance id OR blueprintId so a roster claims spawned clones too — and five
+  packs spelled the two differently, so every encounter-spawned kill in those worlds accrued
+  heat and nothing else.
+- **The `statusTags` contract is bound.** Ten of eleven packs shipped statuses tagged with
+  vocabulary their own ruleset never declared. Declarations widened to shipped truth first,
+  then gated — never the reverse.
+- **District work saturates.** `findLocalFaction` paid whoever liked the player most, without
+  bound; measured at 190-200 reputation in forty rounds, on a faction the player may have
+  been actively killing members of.
+
+### Deferred, with owners
+
+Recorded rather than rushed: seven exported `compute*` functions with no production caller;
+three `contentConventions` fields declared by all eleven packs and read by none;
+`applyOpportunityFallout`'s eight effect types with no persisted sink; reward-rate tuning
+across the faction-sourced kinds; and `npcCooperationBias`, the one modifier field left
+unthreaded because the obvious landing point makes companions desert — a gameplay change
+wearing a modifier's clothes.
+
 ## [3.6.0] - 2026-07-28
 
 **Running the instrument on purpose.** The v3.5.0 cycle established something worth
