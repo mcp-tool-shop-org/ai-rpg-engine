@@ -5,6 +5,80 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [3.8.0] - 2026-07-28
+
+**Opportunities that leave real marks.** v3.7 made the strategic layer fire — offers spawn,
+resolve, and the narrator can speak the consequence. This cycle made it LAND.
+`applyOpportunityFallout` declared fourteen effect types and persisted six; the other eight
+fell through a single `break`. The event payload carried them, the Director printed them,
+and the world forgot them by the next read.
+
+The theme: **an announced consequence with no persisted sink has no reader to catch it
+lying** — the v3.7 lesson one level along, and the same disease found on a second applier
+before the cycle closed.
+
+### Added
+
+- **A fallout-sink audit (FSA-1).** For all fourteen effect types: a producer census over
+  every (kind × resolution) pair, a reachability model of which resolutions a shipped path
+  can actually reach, and a sink audit driving seven real played sessions. Both directions
+  pinned. Its first draft was VACUOUS — it asked "is the store non-neutral afterwards" and
+  scored two provably-missing sinks green, because npc-agency writes obligations for its own
+  reasons and trust is derived rather than stored. Fixed with real before/after deltas across
+  an ATOMIC `submitAction`, which runs no world tick.
+- **All eight missing sinks**, each at the owning system's own writer, each with a
+  consequence proof, an attribution control and a mutation proof: `milestone-tag` →
+  world-tick's ledger (the pressure side had recorded this since v2.x; the opportunity side
+  announced it and wrote nothing), `obligation` → npc-agency's persisted ledgers,
+  `npc-relationship` → the `relations['player-<axis>']` base two packs author and nothing
+  ever wrote, `rumor` → the NPC-originated path, `title-trigger` → a new runtime
+  earned-title record wired on BOTH appliers, `materials` → crafting-core's inventory,
+  `spawn-opportunity` → the offer list under both spawner guards, `spawn-pressure` →
+  world-tick's live pressure list.
+- **`betray`, the fourth op on the `opportunity` verb.** The argument for it is the amount
+  of authored content behind one word: six obligation sites, three rumors and all three
+  original `spawn-pressure` producers sat inside `betrayed` cases, written across several
+  releases and reached by nothing. It refuses when there is no counterparty rather than
+  degrading to `abandoned`.
+- **The fixer's ledger audit (FLA-1).** A 60-round pinned session reaching completed,
+  betrayed AND expired, reconciling every announced consequence against a persisted mark —
+  membership BOTH ways for stores that name things, movement for the numeric ones. Its first
+  run found three sinks missing on world-tick's own `applyFallout`, an applier nobody had
+  indicted.
+- **A generalized announcement sweep (AES-1).** Every event family carrying a structured
+  `effects` payload must have a named applier, measured across the whole catalog.
+- **`@ai-rpg-engine/starter-bounty-hunter` — Hue and Cry.** The twelfth starter and the
+  catalog's second 7/7: a thief-taker in a city with no police force. Six pack-native verbs,
+  a two-sided reputation (`warrant` / `infamy`), and a pursuit state derived from the
+  engine's own heat rather than a second clock.
+- **Two conformance gates (PCC-1).** `entityTypes` is gated per pack; `combatTags` and
+  `networkTags` were measured to have NO CARRIER in the content model — 31 of 37 declared
+  values appear nowhere — so they get a bidirectional coverage table with a named owner
+  instead of a check that could never fail.
+
+### Changed
+
+- **`npcCooperationBias` is threaded at CHECK TIME.** v3.7 left it unwired because the
+  obvious landing point made companions desert. The check surface it said "does not exist
+  yet" was `deriveNpcGoals` all along; the bias now lands on a copy handed to goal
+  derivation, and the stored relationship the departure rule reads never sees it.
+- **Faction standing saturates instead of compounding.** A 40-round pursuing session ended
+  with eight of eleven packs holding a faction above 115 and four above 200. The cap sits at
+  the real payer and only in the upward direction; peak standing 270 → 75, and starved
+  factions climb for the first time.
+
+### Fixed
+
+- Three effect types were dead one level EARLIER than a missing sink — `materials` and
+  `spawn-opportunity` had no producer anywhere, and every `spawn-pressure` producer sat on
+  an unreachable resolution. Producers were authored rather than sinks built for guards that
+  could never fire.
+- `world-tick`'s `applyFallout` dropped `rumor`, `economy-shift` and `spawn-opportunity`.
+- A stale doc comment justified the obligation no-op with "npc-agency's ledgers are never
+  persisted" — true when written, false since v3.0.
+- The phase-4 cross-genre sweep had no membership guard and had silently drifted twice; it
+  is now checked against the packages on disk.
+
 ## [3.7.0] - 2026-07-28
 
 **Light the dormant strategic layer.** The tier above moment-to-moment verbs — where

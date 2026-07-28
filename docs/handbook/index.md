@@ -158,6 +158,7 @@ build → simulate → analyze → tune → experiment
 62. [Salt Road Ledger (Mercantile)](./62-salt-road-ledger.md)
 63. [Running the Instrument](./63-running-the-instrument.md)
 64. [Lighting a Dormant Layer](./64-lighting-a-dormant-layer.md)
+65. [Consequences That Leave Marks](./65-consequences-that-leave-marks.md)
 
 ### Part VII — Character Systems
 

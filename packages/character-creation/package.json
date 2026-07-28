@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/character-creation",
-  "version": "3.7.0",
+  "version": "3.8.0",
   "description": "Headless character creation system â€” archetypes, backgrounds, traits, multiclassing, and build validation for AI RPG Engine",
   "type": "module",
   "main": "./dist/index.js",
@@ -42,6 +42,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@ai-rpg-engine/core": "^3.0.0"
+    "@ai-rpg-engine/core": "^3.8.0"
   }
 }
