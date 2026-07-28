@@ -485,6 +485,16 @@ export {
   resolveConsequenceChainStep,
   tickConsequenceChain,
   computeNpcRecapEntries,
+  // The persisted npc-agency slice. world-tick.ts's step 5a is the production
+  // writer and read these through the package-internal path; nothing outside
+  // the package could see an obligation ledger at all, which is why the
+  // fallout audit (FSA-1) could not check its own claim that opportunity
+  // fallout never records one. A consequence with no public read API is not a
+  // sink, so exporting the reads is part of building one.
+  getPersistedNpcProfiles,
+  getPersistedNpcLastActions,
+  getPersistedNpcObligations,
+  setPersistedNpcState,
 } from './npc-agency.js';
 export type {
   LoyaltyBreakpoint,
