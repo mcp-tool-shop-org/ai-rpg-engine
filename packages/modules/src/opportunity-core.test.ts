@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  findLocalFaction,
   evaluateOpportunities,
   tickOpportunities,
   getAvailableOpportunities,
@@ -772,5 +773,41 @@ describe('opportunity-core', () => {
       }
       expect(ids.size).toBeGreaterThan(1);
     });
+  });
+});
+
+describe('findLocalFaction saturation (v3.7 wider-net)', () => {
+  // The district rules pay whoever likes the player MOST, so the richest
+  // relationship got richer without bound — measured at 190-200 across a
+  // 40-round session, on a faction the player may have been actively killing
+  // members of. A house you are already a made member of has no more standing
+  // to sell you.
+  //
+  // Tested against the function directly rather than through
+  // evaluateOpportunities: any reputation high enough to be SATURATED is also
+  // high enough to trigger the escort rule (>= 50), so an integration fixture
+  // cannot isolate the district path at all. The first draft of these tests
+  // asserted on an `escort` it had accidentally produced.
+  const reps = (values: Array<[string, number]>) =>
+    baseInputs({ playerReputations: values.map(([factionId, value]) => ({ factionId, value })) });
+
+  it('CONSEQUENCE: a saturated faction is no longer offered as the local source', () => {
+    expect(
+      findLocalFaction(reps([['guild', 95]])),
+      'a faction at 95 was still picked — the ceiling is not being read',
+    ).toBeUndefined();
+  });
+
+  it('NEGATIVE CONTROL: below the ceiling it is still picked', () => {
+    expect(findLocalFaction(reps([['guild', 40]]))).toBe('guild');
+  });
+
+  it('a saturated faction does not shadow a lesser one that is still eligible', () => {
+    // The sort picks the highest ELIGIBLE, not "the highest, then check it".
+    expect(findLocalFaction(reps([['guild', 95], ['watch', 20]]))).toBe('watch');
+  });
+
+  it('the hostile floor still applies — deep enmity is not "local" either', () => {
+    expect(findLocalFaction(reps([['guild', -40]]))).toBeUndefined();
   });
 });

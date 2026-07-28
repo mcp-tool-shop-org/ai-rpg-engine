@@ -50,7 +50,8 @@ export const player: EntityState = {
 
 export const quartermaster: EntityState = {
   id: 'quartermaster_bly',
-  blueprintId: 'quartermaster',
+  // blueprintId == id, for the reason spelled out on navySailor below.
+  blueprintId: 'quartermaster_bly',
   type: 'npc',
   name: 'Quartermaster Bly',
   // F-a56f7e5d: recruitable + a bare CompanionRole tag ('fighter') — the
@@ -73,7 +74,8 @@ export const quartermaster: EntityState = {
 
 export const cartographer: EntityState = {
   id: 'cartographer_mara',
-  blueprintId: 'cartographer',
+  // blueprintId == id, for the reason spelled out on navySailor below.
+  blueprintId: 'cartographer_mara',
   type: 'npc',
   name: 'Mara the Cartographer',
   // F-a56f7e5d: recruitable + a bare CompanionRole tag ('scout') — her charts
@@ -93,7 +95,8 @@ export const cartographer: EntityState = {
 
 export const governor: EntityState = {
   id: 'governor_vane',
-  blueprintId: 'governor',
+  // blueprintId == id, for the reason spelled out on navySailor below.
+  blueprintId: 'governor_vane',
   type: 'npc',
   name: 'Governor Vane',
   // 'named' (V3R-NPC-2, v3.0 Living NPCs remediation): the colonial
@@ -175,7 +178,8 @@ export const navyBosun: EntityState = {
 
 export const seaBeast: EntityState = {
   id: 'drowned_guardian',
-  blueprintId: 'sea-beast',
+  // blueprintId == id, for the reason spelled out on navySailor below.
+  blueprintId: 'drowned_guardian',
   type: 'enemy',
   name: 'Drowned Guardian',
   tags: ['enemy', 'cursed', 'creature', 'aquatic', 'role:boss'],

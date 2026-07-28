@@ -49,7 +49,11 @@ export const player: EntityState = {
 
 export const scientist: EntityState = {
   id: 'dr_vasquez',
-  blueprintId: 'scientist',
+  // blueprintId == id. defeat-fallout resolves a defeated entity's faction by
+  // instance id OR blueprintId (P8-WL-004) so a roster naming an authored
+  // entity also claims its encounter-spawned CLONES — and that only works if
+  // the two agree. Five packs spelled them differently; see POR-1.
+  blueprintId: 'dr_vasquez',
   type: 'npc',
   name: 'Dr. Vasquez',
   // 'named' (V3R-NPC-2, v3.0 Living NPCs remediation): the pack's one
@@ -74,7 +78,11 @@ export const scientist: EntityState = {
 
 export const security: EntityState = {
   id: 'chief_okafor',
-  blueprintId: 'security',
+  // blueprintId == id. defeat-fallout resolves a defeated entity's faction by
+  // instance id OR blueprintId (P8-WL-004) so a roster naming an authored
+  // entity also claims its encounter-spawned CLONES — and that only works if
+  // the two agree. Five packs spelled them differently; see POR-1.
+  blueprintId: 'chief_okafor',
   type: 'npc',
   name: 'Chief Okafor',
   tags: ['npc', 'colonist', 'security', 'male', 'recruitable', 'fighter'],
@@ -94,7 +102,11 @@ export const security: EntityState = {
 
 export const drone: EntityState = {
   id: 'breached_drone',
-  blueprintId: 'drone',
+  // blueprintId == id. defeat-fallout resolves a defeated entity's faction by
+  // instance id OR blueprintId (P8-WL-004) so a roster naming an authored
+  // entity also claims its encounter-spawned CLONES — and that only works if
+  // the two agree. Five packs spelled them differently; see POR-1.
+  blueprintId: 'breached_drone',
   type: 'enemy',
   name: 'Breached Drone',
   tags: ['enemy', 'drone', 'mechanical', 'malfunctioning', 'role:bodyguard'],
@@ -114,7 +126,11 @@ export const drone: EntityState = {
 
 export const resonance: EntityState = {
   id: 'resonance_entity',
-  blueprintId: 'resonance',
+  // blueprintId == id. defeat-fallout resolves a defeated entity's faction by
+  // instance id OR blueprintId (P8-WL-004) so a roster naming an authored
+  // entity also claims its encounter-spawned CLONES — and that only works if
+  // the two agree. Five packs spelled them differently; see POR-1.
+  blueprintId: 'resonance_entity',
   type: 'enemy',
   name: 'Resonance Entity',
   tags: ['enemy', 'alien', 'energy', 'enigmatic', 'role:boss'],

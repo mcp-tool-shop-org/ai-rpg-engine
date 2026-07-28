@@ -641,6 +641,7 @@ export {
   formatOpportunityForNarrator,
   formatOpportunityForDialogue,
   makeOpportunity,
+  findLocalFaction,
   deadlineFor,
   resetOpportunityCounter,
   // v2.9 write-wire (F-ceed887f/F-f3f2a84c): world.modules['opportunity-core']

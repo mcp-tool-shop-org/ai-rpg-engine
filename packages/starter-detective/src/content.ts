@@ -49,7 +49,11 @@ export const player: EntityState = {
 
 export const widow: EntityState = {
   id: 'widow_ashford',
-  blueprintId: 'widow',
+  // blueprintId == id. defeat-fallout resolves a defeated entity's faction by
+  // instance id OR blueprintId (P8-WL-004) so a roster naming an authored
+  // entity also claims its encounter-spawned CLONES — and that only works if
+  // the two agree. Five packs spelled them differently; see POR-1.
+  blueprintId: 'widow_ashford',
   type: 'npc',
   name: 'Lady Ashford',
   // 'named' (V3R-NPC-2, v3.0 Living NPCs remediation): the pack's one
@@ -65,7 +69,11 @@ export const widow: EntityState = {
 
 export const constable: EntityState = {
   id: 'constable_pike',
-  blueprintId: 'constable',
+  // blueprintId == id. defeat-fallout resolves a defeated entity's faction by
+  // instance id OR blueprintId (P8-WL-004) so a roster naming an authored
+  // entity also claims its encounter-spawned CLONES — and that only works if
+  // the two agree. Five packs spelled them differently; see POR-1.
+  blueprintId: 'constable_pike',
   type: 'npc',
   name: 'Constable Pike',
   tags: ['npc', 'law', 'police', 'male', 'recruitable', 'fighter'],
@@ -86,7 +94,11 @@ export const constable: EntityState = {
 
 export const servant: EntityState = {
   id: 'mrs_calloway',
-  blueprintId: 'servant',
+  // blueprintId == id. defeat-fallout resolves a defeated entity's faction by
+  // instance id OR blueprintId (P8-WL-004) so a roster naming an authored
+  // entity also claims its encounter-spawned CLONES — and that only works if
+  // the two agree. Five packs spelled them differently; see POR-1.
+  blueprintId: 'mrs_calloway',
   type: 'npc',
   name: 'Mrs Calloway',
   tags: ['npc', 'servant', 'witness', 'female', 'recruitable', 'scout'],
@@ -106,7 +118,11 @@ export const servant: EntityState = {
 
 export const thug: EntityState = {
   id: 'dock_thug',
-  blueprintId: 'thug',
+  // blueprintId == id. defeat-fallout resolves a defeated entity's faction by
+  // instance id OR blueprintId (P8-WL-004) so a roster naming an authored
+  // entity also claims its encounter-spawned CLONES — and that only works if
+  // the two agree. Five packs spelled them differently; see POR-1.
+  blueprintId: 'dock_thug',
   type: 'enemy',
   name: 'Dock Thug',
   tags: ['enemy', 'criminal', 'male', 'role:minion'],

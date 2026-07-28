@@ -1240,10 +1240,28 @@ function hasPairConflict(activePairs: Set<string>, kind: OpportunityKind, source
   return activePairs.has(`${kind}:${sourceId ?? 'none'}`);
 }
 
-function findLocalFaction(inputs: OpportunityInputs): string | undefined {
-  // Find a faction the player has neutral-or-better rep with
+/**
+ * Standing past which a faction stops offering district work.
+ *
+ * `findLocalFaction` picks whoever likes the player MOST, and the district
+ * rules pay that faction +8 to +10 on every completion — so the richest
+ * relationship got richer, unboundedly. Measured at reputation 190-200 across
+ * a 40-round session, on a faction the player may have been actively killing
+ * members of, because nothing ever took the pick away.
+ *
+ * A ceiling is the diegetic reading as well as the arithmetic one: a house you
+ * are already a made member of has no more standing to sell you. Above this,
+ * district work still SPAWNS — the kind is not gated on a faction, only its
+ * reward is — it simply stops paying reputation to someone who has run out of
+ * reputation to give. Deliberately above ESCORT_TRUST_THRESHOLD (50) so every
+ * authored gate in the file stays reachable by the ladder.
+ */
+const LOCAL_FACTION_SATURATION = 70;
+
+export function findLocalFaction(inputs: OpportunityInputs): string | undefined {
+  // Neutral-or-better, but not already saturated (see above).
   const friendly = inputs.playerReputations
-    .filter((r) => r.value >= -10)
+    .filter((r) => r.value >= -10 && r.value < LOCAL_FACTION_SATURATION)
     .sort((a, b) => b.value - a.value);
   return friendly[0]?.factionId;
 }

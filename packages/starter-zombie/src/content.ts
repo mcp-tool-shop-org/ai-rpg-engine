@@ -54,7 +54,11 @@ export const player: EntityState = {
 
 export const medic: EntityState = {
   id: 'medic_chen',
-  blueprintId: 'medic',
+  // blueprintId == id. defeat-fallout resolves a defeated entity's faction by
+  // instance id OR blueprintId (P8-WL-004) so a roster naming an authored
+  // entity also claims its encounter-spawned CLONES — and that only works if
+  // the two agree. Five packs spelled them differently; see POR-1.
+  blueprintId: 'medic_chen',
   type: 'npc',
   name: 'Dr. Chen',
   // F-a56f7e5d: 'recruitable' + the bare role tag 'healer' — companion-core's
@@ -83,7 +87,11 @@ export const medic: EntityState = {
 
 export const scavenger: EntityState = {
   id: 'scavenger_rook',
-  blueprintId: 'scavenger',
+  // blueprintId == id. defeat-fallout resolves a defeated entity's faction by
+  // instance id OR blueprintId (P8-WL-004) so a roster naming an authored
+  // entity also claims its encounter-spawned CLONES — and that only works if
+  // the two agree. Five packs spelled them differently; see POR-1.
+  blueprintId: 'scavenger_rook',
   type: 'npc',
   name: 'Rook',
   // 'named' (V3R-NPC-2, v3.0 Living NPCs remediation): a notable,
@@ -99,7 +107,11 @@ export const scavenger: EntityState = {
 
 export const leader: EntityState = {
   id: 'leader_marsh',
-  blueprintId: 'leader',
+  // blueprintId == id. defeat-fallout resolves a defeated entity's faction by
+  // instance id OR blueprintId (P8-WL-004) so a roster naming an authored
+  // entity also claims its encounter-spawned CLONES — and that only works if
+  // the two agree. Five packs spelled them differently; see POR-1.
+  blueprintId: 'leader_marsh',
   type: 'npc',
   name: 'Sergeant Marsh',
   // F-a56f7e5d: the second recruitable NPC — 'recruitable' + the bare role
@@ -122,7 +134,11 @@ export const leader: EntityState = {
 
 export const shambler: EntityState = {
   id: 'shambler_1',
-  blueprintId: 'shambler',
+  // blueprintId == id. defeat-fallout resolves a defeated entity's faction by
+  // instance id OR blueprintId (P8-WL-004) so a roster naming an authored
+  // entity also claims its encounter-spawned CLONES — and that only works if
+  // the two agree. Five packs spelled them differently; see POR-1.
+  blueprintId: 'shambler_1',
   type: 'enemy',
   name: 'Shambler',
   tags: ['enemy', 'zombie', 'undead', 'slow', 'role:minion'],
@@ -142,7 +158,11 @@ export const shambler: EntityState = {
 
 export const runner: EntityState = {
   id: 'runner_1',
-  blueprintId: 'runner',
+  // blueprintId == id. defeat-fallout resolves a defeated entity's faction by
+  // instance id OR blueprintId (P8-WL-004) so a roster naming an authored
+  // entity also claims its encounter-spawned CLONES — and that only works if
+  // the two agree. Five packs spelled them differently; see POR-1.
+  blueprintId: 'runner_1',
   type: 'enemy',
   name: 'Runner',
   tags: ['enemy', 'zombie', 'undead', 'fast', 'role:skirmisher'],
