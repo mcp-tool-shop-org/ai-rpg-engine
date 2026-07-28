@@ -216,6 +216,47 @@ describe('the fungible layer on real merchant content', () => {
     expect(result.record).toBeUndefined();
     expect(result.message).toContain('No changes');
   });
+
+  it('a default that COINCIDES with real deltas is stamped VERB:default on-chain', () => {
+    // The P5 wider-net audit found `default` was the one SettlementVerb member
+    // with no non-test emitter, and the reason is the test above: a default
+    // moves lien, not tradeables, so `settle` short-circuits on empty deltas
+    // and no record — and therefore no memo — is ever written under it.
+    //
+    // It is not unreachable, though. A factor who defaults and in the same
+    // checkpoint also SPENDS produces a real delta, and the artifact that lands
+    // on-chain must say what the checkpoint WAS. Pinning it here keeps the
+    // member honest: a union member no run can produce is an inert axis, which
+    // is exactly what `buy`/`sell` were before P1.5.
+    return (async () => {
+      const engine = createGame(SEED);
+      openTheBooks(engine);
+      const { state, adapter } = await harness();
+      await enableFromWorld(engine.world, PLAYER_ID, adapter, state);
+
+      engine.submitAction('move', { targetIds: ['long-quay'] });
+      engine.submitAction('move', { targetIds: ['crooked-stair'] });
+      engine.submitAction('consign', { parameters: { itemId: 'bale-of-flax' }, targetIds: ['broker-inaya'] });
+      await settleCheckpoint(engine.world, PLAYER_ID, adapter, state, 1, 'The Crooked Stair', { verb: 'consign' });
+
+      const obligation = getContractState(engine.world).obligations[0];
+      defaultObligation(engine.world, obligation.id, engine.world.meta.tick);
+
+      // The same checkpoint also carries a real spend.
+      const player = engine.world.entities[PLAYER_ID];
+      player.resources.coin = Math.max(0, player.resources.coin - 9);
+
+      const result = await settleCheckpoint(
+        engine.world, PLAYER_ID, adapter, state, 2, 'The Crooked Stair',
+        { verb: 'default' },
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.record?.verb).toBe('default');
+      expect(result.record?.memo).toContain('VERB:default');
+      expect(result.record?.deltas.coin).toBe(-9);
+    })();
+  });
 });
 
 // ───────────────────────────────────────────────────────────────────────────

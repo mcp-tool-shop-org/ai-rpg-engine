@@ -20,7 +20,7 @@
 // Exit 0 iff every stage PASSES. Writes scripts/merchant-live-replay-receipt.json.
 
 import { writeFileSync } from 'node:fs';
-import { createGame } from '@ai-rpg-engine/starter-merchant';
+import { createGame, getContractState, defaultObligation } from '@ai-rpg-engine/starter-merchant';
 import { EQUIPMENT_CATALOG_FORMULA, getItemChronicle } from '@ai-rpg-engine/equipment';
 import {
   TestnetTransport,
@@ -441,6 +441,53 @@ async function main() {
       sharedTokenMap: runTwoState.tokenMap,
       settleTxid: runTwoSettle.record?.txids?.[0] ?? null,
     };
+
+
+    // ── Stage 15: a DEFAULT that reaches the ledger ──────────────────────
+    //
+    // P5's wider-net audit found `default` was the one SettlementVerb member
+    // with no non-test emitter anywhere. The reason is structural rather than
+    // an oversight: a default moves LIEN, not tradeable value, so `settle`
+    // short-circuits on empty deltas and no record — and therefore no memo —
+    // is ever written under it. `buy` and `sell` were inert the same way before
+    // P1.5, and the fix then was the same as the fix now: give the member a
+    // real path, or admit it is decoration.
+    //
+    // It is reachable. A factor who defaults and in the same checkpoint also
+    // spends produces a genuine delta, and the artifact that lands on-chain
+    // has to say what the checkpoint WAS.
+    console.log('\n=== Stage 15: a defaulted obligation, stamped VERB:default ===');
+    const defEngine = createGame(SEED);
+    openTheBooks(defEngine);
+    const defState = createInitialState(LEDGER_CONFIG, SEED);
+    const defAdapter = createLedgerAdapter(transport, LEDGER_CONFIG, {
+      gameId: GAME_ID,
+      runId: `${RUN_ID}-default`,
+    });
+    await defAdapter.enable(defState, snapshotFromWorld(defEngine.world, PLAYER_ID));
+
+    defEngine.submitAction('move', { targetIds: ['long-quay'] });
+    defEngine.submitAction('move', { targetIds: ['crooked-stair'] });
+    defEngine.submitAction('consign', { parameters: { itemId: 'bale-of-flax' }, targetIds: ['broker-inaya'] });
+    await settleCheckpoint(defEngine.world, PLAYER_ID, defAdapter, defState, 1, 'The Crooked Stair', { verb: 'consign' });
+
+    const defObligation = getContractState(defEngine.world).obligations[0];
+    defaultObligation(defEngine.world, defObligation.id, defEngine.world.meta.tick);
+    const defPlayer = defEngine.world.entities[PLAYER_ID];
+    defPlayer.resources.coin = Math.max(0, defPlayer.resources.coin - 9);
+
+    const defRes = capture(
+      await settleCheckpoint(defEngine.world, PLAYER_ID, defAdapter, defState, 2, 'The Crooked Stair', { verb: 'default' }),
+      'default',
+    );
+    const defOk =
+      defRes.success &&
+      defRes.record?.verb === 'default' &&
+      (defRes.record?.memo ?? '').includes('VERB:default');
+    stage('15-default-verb', defOk,
+      defOk
+        ? `verb=default memo="${defRes.record.memo}" — the last inert SettlementVerb member now reaches the chain`
+        : `success=${defRes.success} verb=${defRes.record?.verb ?? 'none'}`);
 
     receipt.passed = receipt.stages.every((s) => s.ok);
   } finally {
