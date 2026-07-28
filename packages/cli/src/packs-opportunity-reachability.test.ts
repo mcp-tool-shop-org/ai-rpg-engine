@@ -489,13 +489,16 @@ const REACHABLE_TODAY: Record<OpportunityKind, { reachable: boolean; measured: s
       'dead: no played session produces a `player-owes-npc` ledger entry at magnitude >= 4.',
   },
   bounty: {
-    reachable: false,
+    reachable: true,
     measured:
-      'the `bounty-issued` PRESSURE is gated on rep <= -50 AND faction alert >= 60, and defeat ' +
-      'fallout pays -10 rep / +15 alert per kill — so five kills of ONE faction. A 40-round ' +
-      'session lands two to four: every pack ships only a handful of authored hostiles. The ' +
-      'opportunity then needs a RIVAL faction at rep >= 10, and six of eleven packs ship exactly ' +
-      'one faction, so there is no rival to hire you.',
+      'LIT in P1 by black-flag-requiem, and it took four separate things because it is the ' +
+      'deepest kind in the set. The pressure needs rep <= -50 AND alert >= 60 AND heat at the ' +
+      'wake threshold in the SAME round; the opportunity then needs a RIVAL faction at rep >= 10 ' +
+      'to do the hiring. What was missing: `boarding_marine` answered for no faction; the ' +
+      "enemies' blueprintIds did not match their instance ids, so every encounter-spawned navy " +
+      'clone was faction-less too; the fort held one guard, so two navy dead never landed close ' +
+      'enough together for heat to still be up; and the pack shipped one faction, so nobody could ' +
+      'do the hiring. Fires for a player who fights — which is right for a price on your head.',
   },
   'supply-run': {
     reachable: true,

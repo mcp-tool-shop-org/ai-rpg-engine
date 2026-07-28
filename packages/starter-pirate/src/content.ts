@@ -111,7 +111,15 @@ export const governor: EntityState = {
 
 export const navySailor: EntityState = {
   id: 'navy_sailor',
-  blueprintId: 'navy-sailor',
+  // blueprintId MUST equal id here. defeat-fallout resolves a defeated
+  // entity's faction by instance id OR blueprintId (P8-WL-004), so that a
+  // roster naming an authored entity also claims the encounter-spawned CLONES
+  // of it — clones keep the template's blueprintId and get a fresh `enc_*` id.
+  // This pack spelled the two differently, so every spawned navy patrol the
+  // captain cut down accrued heat and NOTHING else: no reputation, no alert,
+  // no step toward the Navy caring. Measured on a played session where three
+  // of four kills were clones and faction standing did not move once.
+  blueprintId: 'navy_sailor',
   type: 'enemy',
   name: 'Navy Sailor',
   tags: ['enemy', 'colonial', 'navy', 'male', 'role:brute'],
@@ -122,6 +130,43 @@ export const navySailor: EntityState = {
   ai: {
     profileId: 'aggressive',
     goals: ['enforce-law', 'protect-governor'],
+    fears: ['mutiny'],
+    alertLevel: 0,
+    knowledge: {},
+  },
+};
+
+/**
+ * The fort's second body.
+ *
+ * A colonial stronghold guarded by exactly one sailor was thin fiction, and it
+ * also made the pack's own bounty arc unreachable. `bounty-issued` needs
+ * reputation <= -50 AND alert >= 60 AND — because the world-tick spawn valve
+ * is deliberately heat-gated, so the street does not organize against a player
+ * it has barely noticed — heat at HEAT_WAKE_THRESHOLD (10) in the SAME round.
+ * Heat is +5 a kill and decays to nothing over about eight quiet rounds, so
+ * reaching the valve means two navy dead close together, and the only two navy
+ * bodies in the world stood one on the player's own deck and one in the fort,
+ * far enough apart that heat had drained between them.
+ *
+ * Two guards at the fort means storming it is one fight rather than two
+ * errands, which is what the Navy putting a price on the captain's head has
+ * always been supposed to cost.
+ */
+export const navyBosun: EntityState = {
+  id: 'navy_bosun',
+  // blueprintId == id, for the reason spelled out on navySailor above.
+  blueprintId: 'navy_bosun',
+  type: 'enemy',
+  name: "Navy Bosun",
+  tags: ['enemy', 'colonial', 'navy', 'role:elite'],
+  stats: { brawn: 6, cunning: 4, 'sea-legs': 5 },
+  resources: { hp: 18, stamina: 6, morale: 16 },
+  statuses: [],
+  zoneId: 'governors-fort',
+  ai: {
+    profileId: 'aggressive',
+    goals: ['hold-the-gate', 'protect-governor'],
     fears: ['mutiny'],
     alertLevel: 0,
     knowledge: {},
@@ -150,7 +195,8 @@ export const seaBeast: EntityState = {
 
 export const boardingMarine: EntityState = {
   id: 'boarding_marine',
-  blueprintId: 'boarding-marine',
+  // blueprintId == id, for the reason spelled out on navySailor above.
+  blueprintId: 'boarding_marine',
   type: 'enemy',
   name: 'Boarding Marine',
   tags: ['enemy', 'colonial', 'navy', 'role:skirmisher'],

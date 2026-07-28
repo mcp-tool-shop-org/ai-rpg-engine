@@ -240,6 +240,46 @@ describe('opportunity consequence on authored content (POC-1)', () => {
     });
   });
 
+  describe('`bounty` — black-flag-requiem', () => {
+    it('collecting the Brethren bounty pays standing and blackmail leverage', () => {
+      // The deepest of the eight to reach: it needs the player to have made a
+      // real enemy AND to have made a friend worth being hired by.
+      const { engine, offer } = playUntilOffered(packById('black-flag-requiem'), 'bounty', 'engaged');
+
+      // The Navy issues the pressure; the BRETHREN offer the work. A bounty
+      // paid by the faction that wants you dead would be nonsense, and the
+      // rule is explicitly written to find a rival — which only means anything
+      // in a world with more than one faction.
+      expect(offer.sourceFactionId).toBe('brethren-of-the-coast');
+
+      const repBefore = reputationOf(engine, 'brethren-of-the-coast');
+      const blackmailBefore = leverageOf(engine).blackmail;
+
+      accept(engine, offer);
+      complete(engine, offer);
+
+      expect(reputationOf(engine, 'brethren-of-the-coast')).toBeGreaterThan(repBefore);
+      expect(leverageOf(engine).blackmail).toBeGreaterThan(blackmailBefore);
+    });
+
+    it('the Navy has to actually want the captain dead — clear the grudge and it goes dark', () => {
+      // Fix-site proof. The authored -35 baseline is what puts the
+      // `bounty-issued` gate (rep <= -50) within reach of the two navy kills a
+      // real session lands, instead of the five a flat zero would demand.
+      const stripped = playSession(packById('black-flag-requiem'), {
+        profile: 'engaged',
+        hold: (engine) => {
+          const navy = engine.world.factions['colonial-navy'];
+          if (navy) navy.reputation = 0;
+        },
+      });
+      expect(
+        stripped.kindsFired.has('bounty'),
+        'a bounty was issued with the Navy at neutral standing — the proof is not reading the reputation gate',
+      ).toBe(false);
+    });
+  });
+
   describe('`recovery` — salt-road-ledger', () => {
     it('recovering the lost goods pays the Crown standing and legitimacy', () => {
       const { engine, offer } = playUntilOffered(packById('salt-road-ledger'), 'recovery');

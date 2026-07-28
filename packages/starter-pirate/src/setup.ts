@@ -32,6 +32,7 @@ import {
   cartographer,
   governor,
   navySailor,
+  navyBosun,
   seaBeast,
   boardingMarine,
   drownedGuardianBoss,
@@ -144,11 +145,36 @@ export function createGame(seed?: number): Engine {
   // ONE faction roster feeds both faction-cognition and defeat-fallout.
   const worldStack = buildWorldStack({
     playerId: 'captain',
-    factions: [{
-      factionId: 'colonial-navy',
-      entityIds: ['navy_sailor', 'governor_vane'],
-      cohesion: 0.8,
-    }],
+    factions: [
+      {
+        factionId: 'colonial-navy',
+        // `boarding_marine` was missing here, and it is the ONLY navy hostile
+        // the player meets without assaulting the fort — it is tagged
+        // 'colonial' and 'navy' in content.ts and answered for no faction at
+        // all, so cutting marines down accrued heat but neither reputation nor
+        // alert. That is most of why the Navy never got angry enough to put a
+        // price on the captain's head: `bounty-issued` is gated on rep <= -50
+        // AND alert >= 60, defeat fallout pays -10/+15 a kill, and only one of
+        // the three navy bodies in the world was counting.
+        entityIds: ['navy_sailor', 'navy_bosun', 'boarding_marine', 'governor_vane'],
+        cohesion: 0.8,
+      },
+      {
+        // The other half of a bounty. The pressure makes the Navy WANT the
+        // captain dead; the opportunity needs someone ELSE — a faction the
+        // player stands well with — to actually offer the work
+        // (evaluatePressureLinkedOpportunities looks for a rival at rep >= 10).
+        // Six of eleven packs ship exactly one faction and therefore have
+        // nobody to do the hiring.
+        //
+        // The Brethren are not new fiction: Bly and Mara are already the
+        // captain's own people, already recruitable, already the crew this
+        // pack is about. They just had no name as a body.
+        factionId: 'brethren-of-the-coast',
+        entityIds: ['quartermaster_bly', 'cartographer_mara'],
+        cohesion: 0.65,
+      },
+    ],
     environment: {
       // Hazards mutate entity.resources directly (deterministic, clamped);
       // environment-core does not record the returned events. Return [].
@@ -243,12 +269,50 @@ export function createGame(seed?: number): Engine {
   engine.store.addEntity(cartographer);
   engine.store.addEntity(governor);
   engine.store.addEntity(navySailor);
+  engine.store.addEntity(navyBosun);
   engine.store.addEntity(seaBeast);
   engine.store.addEntity(boardingMarine);
 
   // Set player
   engine.store.state.playerId = 'captain';
   engine.store.state.locationId = 'ship-deck';
+
+  // Standing the captain already has when the game opens.
+  //
+  // `world.factions[id].reputation` is the AUTHORED BASELINE the engine
+  // explicitly merges with the accrued `reputation_<id>` delta
+  // (buildPressureInputs), and not one pack in the catalog had ever set it —
+  // so every world began at a flat, characterless zero with every faction, and
+  // reputation could only ever go DOWN from there, because defeat fallout is
+  // its only mover short of an opportunity reward.
+  //
+  // That is a strange place for THIS pack to start. Black Flag Requiem opens
+  // on an outlaw captain: the Navy's grudge is the premise, not something the
+  // player earns in the first hour. -35 with a watchful-but-not-mobilised
+  // alert of 30 says exactly that, and it is what puts `bounty-issued` — gated
+  // on rep <= -50 AND alert >= 60, at -10/+15 a kill — within reach of a
+  // couple of dead marines rather than an implausible five.
+  //
+  // The Brethren start at 15 — known, and trusted enough to be offered work,
+  // but short of the ally tier (30) that standing has to be earned into. It
+  // matters mechanically as well as in the fiction: a bounty is issued by the
+  // faction that wants you dead and OFFERED by a rival who stands well enough
+  // with you to do the hiring (rep >= 10). At a flat zero the captain had no
+  // one to be hired by, and the pack's own central arc — the Navy wants you,
+  // your own people pay you to work the coast anyway — could not occur.
+  engine.store.state.factions['colonial-navy'] = {
+    id: 'colonial-navy',
+    name: 'The Colonial Navy',
+    reputation: -35,
+    disposition: 'hostile',
+  };
+  engine.store.state.factions['brethren-of-the-coast'] = {
+    id: 'brethren-of-the-coast',
+    name: 'The Brethren of the Coast',
+    reputation: 15,
+    disposition: 'wary',
+  };
+  engine.store.state.globals['faction_alert_colonial-navy'] = 30;
 
   // Give rum barrel after cartographer deal
   engine.store.events.on('dialogue.ended', (event) => {
