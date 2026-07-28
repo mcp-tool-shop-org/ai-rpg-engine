@@ -453,7 +453,7 @@ export function sinkAudit(): Map<OpportunityFalloutEffect['type'], SinkVerdict> 
  * REACHABLE_RESOLUTIONS). It is dead one level earlier than these are.
  */
 const KNOWN_SINKLESS: Array<OpportunityFalloutEffect['type']> = [
-  'rumor',
+  // 'rumor' — SINK BUILT v3.8 (spawnNpcOriginatedRumor + setPlayerRumorState).
   // 'obligation' — SINK BUILT v3.8 (npc-agency's persisted ledgers).
   // 'npc-relationship' — SINK BUILT v3.8 (relations['player-<axis>'] base).
   // 'milestone-tag' — SINK BUILT v3.8 (recordMilestone). Removed here in the

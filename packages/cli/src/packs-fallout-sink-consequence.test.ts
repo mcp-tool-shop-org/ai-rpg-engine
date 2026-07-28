@@ -38,6 +38,8 @@ import {
   getNetObligationWeight,
   deriveLoyaltyBreakpoint,
   deriveNpcRelationship,
+  getPlayerRumorState,
+  getRumorsKnownToFaction,
   type OpportunityKind,
   type OpportunityState,
 } from '@ai-rpg-engine/modules';
@@ -65,6 +67,11 @@ const NOOP = (): void => {};
  * announcement, no write", and the wrong one for "no writes at all".
  */
 function playWithoutResolving(packId: string): Engine {
+  return playFullSession(packId, 'wandering');
+}
+
+/** A full pinned session under any profile, handing back the live engine. */
+function playFullSession(packId: string, profile: SessionProfile): Engine {
   const pack = packById(packId);
   const engine = pack.createGame(POR_SEED);
   const fullHp = engine.world.entities[engine.world.playerId]?.resources?.hp ?? 0;
@@ -73,10 +80,23 @@ function playWithoutResolving(packId: string): Engine {
     const me = engine.world.entities[engine.world.playerId];
     if (!me) break;
     if (fullHp > 0 && me.resources) me.resources.hp = fullHp;
-    playerHalfRound(engine, round, 'wandering', visits);
+    playerHalfRound(engine, round, profile, visits);
     runHostileRound(engine, pack, { log: NOOP });
   }
   return engine;
+}
+
+/** Effects of `type` announced by every `opportunity.*` event in a session. */
+function announcedInSession<T extends Record<string, unknown>>(engine: Engine, type: string): T[] {
+  const out: T[] = [];
+  for (const event of engine.world.eventLog) {
+    if (!event.type.startsWith('opportunity.')) continue;
+    const effects = Array.isArray(event.payload?.effects) ? event.payload.effects : [];
+    for (const effect of effects as Array<{ type?: string }>) {
+      if (effect.type === type) out.push(effect as unknown as T);
+    }
+  }
+  return out;
 }
 
 /** Drive a real session to a completed offer and hand back the live engine. */
@@ -414,14 +434,13 @@ describe('sink: npc-relationship (FSC-1)', () => {
     const fresh = packById('salt-road-ledger').createGame(POR_SEED);
 
     const announced = new Map<string, number>();
-    for (const event of engine.world.eventLog) {
-      if (!event.type.startsWith('opportunity.')) continue;
-      const effects = Array.isArray(event.payload?.effects) ? event.payload.effects : [];
-      for (const effect of effects as Array<{ type?: string; npcId?: string; axis?: string; delta?: number }>) {
-        if (effect.type !== 'npc-relationship' || effect.axis !== 'trust') continue;
-        if (!effect.npcId || typeof effect.delta !== 'number') continue;
-        announced.set(effect.npcId, (announced.get(effect.npcId) ?? 0) + effect.delta);
-      }
+    for (const effect of announcedInSession<{ npcId?: string; axis?: string; delta?: number }>(
+      engine,
+      'npc-relationship',
+    )) {
+      if (effect.axis !== 'trust') continue;
+      if (!effect.npcId || typeof effect.delta !== 'number') continue;
+      announced.set(effect.npcId, (announced.get(effect.npcId) ?? 0) + effect.delta);
     }
     expect(
       announced.size,
@@ -440,6 +459,99 @@ describe('sink: npc-relationship (FSC-1)', () => {
           `delta (${announced.get(id) ?? 0}) comes to ${expected}. Either something other than ` +
           'this sink is writing the store, or an announcement was dropped.',
       ).toBe(expected);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sink 4 — rumor → the player-rumor list, via the NPC-originated path
+// ---------------------------------------------------------------------------
+
+describe('sink: rumor (FSC-1)', () => {
+  it('what you did gets talked about, and the talk is readable', () => {
+    // Sixteen authored sites across every kind announce a rumor on
+    // resolution. Before v3.8 the claim rode the event payload and reached
+    // nobody — getRumorsKnownToFaction had nothing to find.
+    const { engine, offer, before } = resolveOnce('salt-road-ledger', 'contract', 'complete');
+
+    const after = getPlayerRumorState(engine.world).rumors;
+    const priorIds = new Set(getPlayerRumorState(before).rumors.map((r) => r.id));
+    const fresh = after.filter((r) => !priorIds.has(r.id));
+
+    expect(fresh, 'the completed contract announced a rumor nobody started').toHaveLength(1);
+    expect(fresh[0].claim).toContain('contract');
+    expect(fresh[0].valence).toBe('heroic');
+    // It came from the person who hired them, not from the player.
+    expect(fresh[0].sourceEvent).toBe('npc-gossip');
+    expect(fresh[0].subjectDescriptor).toContain(offer.sourceNpcId!);
+  });
+
+  it('the faction the fallout named actually hears it', () => {
+    // `spreadTo` is the whole point of the effect — a rumor that spreads
+    // nowhere is a string in a list. getRumorsKnownToFaction is the read that
+    // makes it a consequence.
+    const { engine, offer, before } = resolveOnce('salt-road-ledger', 'contract', 'complete');
+    const factionId = offer.sourceFactionId!;
+
+    const heardBefore = getRumorsKnownToFaction(getPlayerRumorState(before).rumors, factionId).length;
+    const heardAfter = getRumorsKnownToFaction(getPlayerRumorState(engine.world).rumors, factionId).length;
+    expect(
+      heardAfter - heardBefore,
+      `${factionId} was named in the fallout's spreadTo and heard nothing`,
+    ).toBe(1);
+  });
+
+  it('a fearsome claim enters as an accusation, not as gossip (register)', () => {
+    // getContractFallout('abandoned') announces `abandoned a contract —
+    // unreliable`, valence fearsome. Both registers are members of the same
+    // NpcRumorSource vocabulary world-tick already maps onto; picking by
+    // valence is what keeps a betrayal from entering the world as small talk.
+    const { engine, before } = resolveOnce('salt-road-ledger', 'contract', 'abandon');
+    const priorIds = new Set(getPlayerRumorState(before).rumors.map((r) => r.id));
+    const fresh = getPlayerRumorState(engine.world).rumors.filter((r) => !priorIds.has(r.id));
+
+    expect(fresh).toHaveLength(1);
+    expect(fresh[0].valence).toBe('fearsome');
+    expect(fresh[0].sourceEvent).toBe('npc-accusation');
+  });
+
+  it('a resolution that announces no rumor starts none (attribution)', () => {
+    // getRecoveryFallout('completed') announces a rumor; getEscortFallout's
+    // does not. Escort is the arm with obligations and no talk.
+    const { engine, before } = resolveOnce('chapel-threshold', 'escort', 'complete', 'pursuing');
+    expect(
+      getPlayerRumorState(engine.world).rumors.length,
+      'an escort completion started a rumor its fallout never announced',
+    ).toBe(getPlayerRumorState(before).rumors.length);
+  });
+
+  it('every rumor in a full session traces back to an announcement (reconciliation)', () => {
+    // The npc-relationship block's lesson applied to a store npc-agency ALSO
+    // writes: match on the announced CLAIM, so the NPC tick's own gossip
+    // cannot satisfy this.
+    //
+    // `pursuing` and not `wandering`, and that is the measurement talking: a
+    // wandering session on this pack announces no rumor at all. Every rumor
+    // site on contract/recovery/supply-run sits on `completed`, `abandoned` or
+    // `betrayed` — never on `expired` — so a player who only lets offers lapse
+    // is never talked about. Running the reconciliation on that session would
+    // have passed over an empty set, which is why the non-vacuity floor below
+    // is the first assertion and not an afterthought.
+    const engine = playFullSession('salt-road-ledger', 'pursuing');
+    const claims = new Set(
+      announcedInSession<{ claim?: string }>(engine, 'rumor')
+        .map((e) => e.claim)
+        .filter((c): c is string => typeof c === 'string'),
+    );
+    expect(
+      claims.size,
+      'the session announced no rumor at all — this reconciliation proves nothing',
+    ).toBeGreaterThan(0);
+    for (const claim of claims) {
+      expect(
+        getPlayerRumorState(engine.world).rumors.some((r) => r.claim === claim),
+        `the session announced "${claim}" and no rumor carries it`,
+      ).toBe(true);
     }
   });
 });

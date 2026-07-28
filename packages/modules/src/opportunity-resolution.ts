@@ -37,7 +37,13 @@ import {
   RELATIONSHIP_AXIS_RANGE,
 } from './npc-agency.js';
 import type { PressureKind } from './pressure-system.js';
-import type { RumorValence } from './player-rumor.js';
+import type { RumorValence, PlayerRumor } from './player-rumor.js';
+import {
+  spawnNpcOriginatedRumor,
+  propagateRumor,
+  getPlayerRumorState,
+  setPlayerRumorState,
+} from './player-rumor.js';
 import { makeEvent } from './make-event.js';
 import { getDistrictForZone } from './district-core.js';
 import { HEAT_KEY, recordMilestone } from './world-tick.js';
@@ -80,6 +86,19 @@ export type OpportunityResolution = {
   opportunityKind: OpportunityKind;
   resolutionType: OpportunityResolutionType;
   resolvedAtTick: number;
+  /**
+   * Who the resolved opportunity came from. OPTIONAL — records written before
+   * v3.8 lack both, and every reader tolerates absence.
+   *
+   * Added because applyOpportunityFallout receives the fallout and NOT the
+   * opportunity, so a sink needing to attribute a consequence to its source
+   * had nowhere to look. The `rumor` sink is the first: a rumor needs an
+   * origin, and misattributing one to the player is exactly the mistake
+   * world-tick declined to make when it left its own generic-rumor case
+   * unwired ("spawnIntentionalRumor tags source 'player-leverage'").
+   */
+  sourceNpcId?: string;
+  sourceFactionId?: string;
 };
 
 export type OpportunityFallout = {
@@ -120,6 +139,8 @@ export function computeOpportunityFallout(
     opportunityKind: opp.kind,
     resolutionType,
     resolvedAtTick: ctx.currentTick,
+    ...(opp.sourceNpcId ? { sourceNpcId: opp.sourceNpcId } : {}),
+    ...(opp.sourceFactionId ? { sourceFactionId: opp.sourceFactionId } : {}),
   };
 
   const kindEffects = getKindFallout(opp, resolutionType, ctx);
@@ -586,6 +607,14 @@ function buildFalloutSummary(opp: OpportunityState, resolutionType: OpportunityR
 /** Most recent resolved-opportunity fallout records kept (oldest dropped past the cap). */
 export const RESOLVED_OPPORTUNITIES_KEPT = 20;
 
+/**
+ * Confidence a resolution-sourced rumor enters the world at — the SAME 0.75
+ * world-tick's step 5a passes for NPC-originated rumors, because this is that
+ * same path. Word of what someone did travels a little softened; the number
+ * is not re-derived here so the two callers cannot drift.
+ */
+export const NPC_RUMOR_CONFIDENCE = 0.75;
+
 type OpportunityCoreNamespace = {
   opportunities?: unknown;
   resolvedOpportunities?: unknown;
@@ -693,7 +722,14 @@ function addGlobal(world: WorldState, key: string, delta: number): void {
  *    the range derivation can express. Two packs author this key and nothing
  *    ever wrote it; it feeds the profiles step 5a persists, hence
  *    deriveLoyaltyBreakpoint, hence which offers an NPC makes next.
- *  - rumor/materials/title-trigger/spawn-
+ *  - rumor → spawnNpcOriginatedRumor + propagateRumor + setPlayerRumorState
+ *    (v3.8 sink #4) — the SAME path world-tick step 5a applies for an NPC's
+ *    own gossip. No new transport; the playerRumors ceiling world-tick
+ *    documents stays closed. Skipped when the opportunity had neither a
+ *    source NPC nor a source faction: a rumor about the player still comes
+ *    from someone, and inventing an origin (or stamping the player as one) is
+ *    the misattribution world-tick declined to make.
+ *  - materials/title-trigger/spawn-
  *    pressure/spawn-opportunity — no persisted sink today. Honest no-op; the
  *    verb handler's emitted event payload carries the full effect list
  *    regardless, so nothing is silently lost, only not yet WRITTEN anywhere.
@@ -719,6 +755,8 @@ export function applyOpportunityFallout(world: WorldState, actorId: string, fall
   // write, not N of each. Left undefined until an obligation effect actually
   // appears, so a fallout carrying none never touches npc-agency at all.
   let obligationLedgers: Map<string, NpcObligationLedger> | undefined;
+  /** Same read-once/write-once treatment for the rumor list. */
+  let rumors: PlayerRumor[] | undefined;
 
   for (const effect of fallout.effects) {
     switch (effect.type) {
@@ -837,7 +875,50 @@ export function applyOpportunityFallout(world: WorldState, actorId: string, fall
         };
         break;
       }
-      case 'rumor':
+      case 'rumor': {
+        // v3.8 sink #4. Sixteen authored sites across every kind announce a
+        // rumor on resolution — "completed a contract for the guild",
+        // "betrayed their employer" — and the word reached nobody.
+        //
+        // REUSES the NPC-originated path world-tick step 5a already applies
+        // (spawnNpcOriginatedRumor + propagateRumor + setPlayerRumorState).
+        // No new transport: the playerRumors ceiling world-tick documents in
+        // its own header stays closed, and this is deliberately the same door
+        // an NPC's gossip goes through, because that is what this is.
+        //
+        // ORIGIN, not authorship. A rumor about the player still comes from
+        // SOMEONE — the person who hired them, or the faction that did. The
+        // one thing this must not do is tag the player as the source, which
+        // is precisely why world-tick left its own generic-rumor case unwired
+        // (spawnIntentionalRumor stamps 'player-leverage'). With neither a
+        // source NPC nor a source faction there is no honest origin, so the
+        // rumor is skipped rather than invented.
+        const originNpcId = fallout.resolution.sourceNpcId ?? fallout.resolution.sourceFactionId;
+        if (!originNpcId) break;
+        rumors ??= getPlayerRumorState(world).rumors;
+        const originEntity = world.entities[originNpcId];
+        const originZone = originEntity?.zoneId ?? actor?.zoneId;
+        const [firstFaction, ...restFactions] = effect.spreadTo;
+        let rumor = spawnNpcOriginatedRumor(
+          effect.claim,
+          effect.valence,
+          // Valence chooses the register: a fearsome claim is an accusation,
+          // anything else is talk. Both are members of the same NpcRumorSource
+          // vocabulary world-tick already maps onto.
+          effect.valence === 'fearsome' ? 'npc-accusation' : 'npc-gossip',
+          originNpcId,
+          firstFaction ?? fallout.resolution.sourceFactionId,
+          originZone ? getDistrictForZone(world, originZone) : undefined,
+          fallout.resolution.resolvedAtTick,
+          NPC_RUMOR_CONFIDENCE,
+          world,
+        );
+        for (const extraFaction of restFactions) {
+          rumor = propagateRumor(rumor, extraFaction);
+        }
+        rumors = [...rumors, rumor];
+        break;
+      }
       case 'materials':
       case 'title-trigger':
       case 'spawn-pressure':
@@ -847,6 +928,8 @@ export function applyOpportunityFallout(world: WorldState, actorId: string, fall
         break;
     }
   }
+
+  if (rumors) setPlayerRumorState(world, { rumors });
 
   if (obligationLedgers) {
     // Full-overwrite writer (npc-agency's own contract — no sibling module
