@@ -6,6 +6,7 @@ export { createGame, merchantIntentProfiles } from './setup.js';
 export { merchantMinimalRuleset } from './ruleset.js';
 export {
   createContractCore,
+  consignedLotsAreNotTransferable,
   getContractState,
   getOpenObligations,
   getOverdueObligations,

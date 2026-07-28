@@ -135,6 +135,48 @@ export function getOpenObligations(world: WorldState): Obligation[] {
   return getContractState(world).obligations.filter((o) => o.status === 'open');
 }
 
+/**
+ * The pack's answer to the lien question (F-merchant-F): once the Guild has
+ * moved against a factor, that factor may not dispose of assets.
+ *
+ * `give` moves title, and title must not move out from under a claim. The
+ * obvious version of that rule — "a consigned lot cannot be handed to a third
+ * party" — turns out to be UNREACHABLE in this pack, and saying so is the
+ * point: `consign` already takes physical custody (contract-core removes the
+ * lot from the factor's inventory when the obligation is written), so an item
+ * under an open obligation is never in the factor's bag for `give` to find. A
+ * guard against it would have been dead code wearing a safety label, which is
+ * exactly the class of thing this cycle exists to stop shipping.
+ *
+ * The reachable laundering path is the one that runs the other way: a factor
+ * whose lien has reached SEIZURE_THRESHOLD is about to have an asset taken,
+ * and handing the deed to a friend one step ahead of the collector would empty
+ * the seizure of meaning. So the freeze is on the FACTOR, not the lot — every
+ * transfer refuses while the Guild's claim stands, and resumes the moment the
+ * lien falls back under the threshold.
+ *
+ * Chosen over "the obligation follows the asset" deliberately. Following would
+ * be defensible with assignable paper, but a consignment here is registered
+ * against a NAMED factor; a debt cannot quietly become someone else's problem.
+ * A refusal is also the more honest failure — it tells the player the claim
+ * exists at the moment they try to escape it, rather than silently re-pointing
+ * a debt they discover later.
+ */
+export const consignedLotsAreNotTransferable = (ctx: {
+  world: WorldState;
+  from: EntityState;
+}): { reason: string; hint: string } | null => {
+  const lien = resource(ctx.from, 'lien');
+  if (lien < SEIZURE_THRESHOLD) return null;
+  const open = getOpenObligations(ctx.world);
+  return {
+    reason: `your assets are attached at lien ${lien}`,
+    hint: open.length
+      ? 'Settle or default what you owe before you make anything over.'
+      : 'Bring the lien down before you make anything over.',
+  };
+};
+
 /** Obligations past their due tick and still open. */
 export function getOverdueObligations(world: WorldState, tick: number): Obligation[] {
   return getOpenObligations(world).filter((o) => tick > o.dueTick);

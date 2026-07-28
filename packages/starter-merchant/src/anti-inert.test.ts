@@ -369,6 +369,102 @@ describe('anti-inert: every verb has an observable consequence', () => {
   });
 });
 
+describe('anti-inert: title moves, obligations do not (F-merchant-F)', () => {
+  /** Walk the Late Caravan and come back holding the writ. */
+  function withTheWrit(): Engine {
+    const engine = createGame(71);
+    engine.submitAction('move', { targetIds: ['long-quay'] });
+    engine.submitAction('move', { targetIds: ['customs-shed'] });
+    engine.submitAction('move', { targetIds: ['long-quay'] });
+    engine.submitAction('move', { targetIds: ['crooked-stair'] });
+    expect(engine.world.entities.factor.inventory).toContain('writ-of-passage');
+    return engine;
+  }
+
+  it('the writ of passage can be MADE OVER to a counterparty', () => {
+    // Until `give` existed there was no path in the engine that moved an item
+    // between two entities, so this pack could grant a tradeable exemption and
+    // then offer no way to trade it. Broker Inaya keeps the Crooked Stair,
+    // which is where the Late Caravan ends — the player arrives holding the
+    // writ, standing with someone who wants it.
+    const engine = withTheWrit();
+    const events = engine.submitAction('give', { targetIds: ['broker-inaya'], toolId: 'writ-of-passage' });
+
+    expect(events.find((e) => e.type === 'action.rejected')).toBeUndefined();
+    expect(engine.world.entities.factor.inventory).not.toContain('writ-of-passage');
+    expect(engine.world.entities['broker-inaya'].inventory).toContain('writ-of-passage');
+  });
+
+  it('a consigned lot is out of reach by CONSTRUCTION — consign already took it', () => {
+    // Worth pinning, because it is why this pack's transfer guard is aimed
+    // where it is. The obvious rule — "you may not hand away a consigned lot" —
+    // is unreachable: `consign` removes the goods from the factor's inventory
+    // when it writes the obligation, so `give` never finds them. A guard
+    // against this would be dead code wearing a safety label.
+    const engine = createGame(71);
+    openTheBooks(engine);
+    toTheWarrens(engine);
+    engine.submitAction('consign', { parameters: { itemId: 'bale-of-flax' }, targetIds: ['broker-inaya'] });
+
+    expect(getOpenObligations(engine.world).some((o) => o.itemId === 'bale-of-flax')).toBe(true);
+    expect(engine.world.entities.factor.inventory).not.toContain('bale-of-flax');
+
+    const rejected = engine
+      .submitAction('give', { targetIds: ['broker-inaya'], toolId: 'bale-of-flax' })
+      .find((e) => e.type === 'action.rejected');
+    expect(String(rejected!.payload.reason)).toContain("don't have");
+  });
+
+  it('an ATTACHED factor cannot make anything over — the seizure is not dodgeable', () => {
+    // The reachable laundering path, and the lien question answered visibly.
+    // A factor at the seizure threshold is about to lose an asset; handing the
+    // writ to a friend one step ahead of the collector would empty the seizure
+    // of meaning. The freeze is on the FACTOR, not the lot.
+    const engine = withTheWrit();
+    engine.world.entities.factor.resources.lien = SEIZURE_THRESHOLD;
+    const heldBefore = [...(engine.world.entities.factor.inventory ?? [])];
+
+    const rejected = engine
+      .submitAction('give', { targetIds: ['broker-inaya'], toolId: 'writ-of-passage' })
+      .find((e) => e.type === 'action.rejected');
+
+    expect(rejected, 'an attached factor gave an asset away').toBeDefined();
+    expect(String(rejected!.payload.reason)).toContain('attached');
+    expect(rejected!.payload.hint).toBeTruthy();
+    // The refusal cost nothing: the world is exactly as it was.
+    expect(engine.world.entities.factor.inventory).toEqual(heldBefore);
+  });
+
+  it('the freeze LIFTS — a factor back under the threshold trades again', () => {
+    // Without this, a guard that simply refused every transfer forever would
+    // pass the test above. The claim is temporary, and so is the freeze.
+    const engine = withTheWrit();
+    engine.world.entities.factor.resources.lien = SEIZURE_THRESHOLD;
+    expect(
+      engine.submitAction('give', { targetIds: ['broker-inaya'], toolId: 'writ-of-passage' })
+        .some((e) => e.type === 'action.rejected'),
+    ).toBe(true);
+
+    engine.world.entities.factor.resources.lien = SEIZURE_THRESHOLD - 1;
+    const events = engine.submitAction('give', { targetIds: ['broker-inaya'], toolId: 'writ-of-passage' });
+    expect(events.find((e) => e.type === 'action.rejected')).toBeUndefined();
+    expect(engine.world.entities['broker-inaya'].inventory).toContain('writ-of-passage');
+  });
+
+  it('the chronicle follows the object across owners — lost here, acquired there', () => {
+    // Reached by EVENT: inventory-core knows nothing about chronicles, and the
+    // chronicle's `lost` entry had no producer anywhere in the engine before
+    // this verb, because nothing could make an item change hands.
+    const engine = withTheWrit();
+    engine.submitAction('give', { targetIds: ['broker-inaya'], toolId: 'writ-of-passage' });
+
+    const chronicle = (engine.world.modules['item-chronicle'] ?? {}) as { entries?: Record<string, Array<{ event: string; detail: string }>> };
+    const writHistory = chronicle.entries?.['writ-of-passage'] ?? [];
+    expect(writHistory.map((e) => e.event), 'the transfer left no mark on the item').toContain('lost');
+    expect(writHistory.find((e) => e.event === 'lost')?.detail).toContain('Broker Inaya');
+  });
+});
+
 describe('anti-inert: opportunities emerge and resolve on shipped content', () => {
   // F-merchant-B. opportunity-core is EMERGENT-ONLY — no pack authors
   // opportunity content anywhere in the catalog; the only lever a pack has is

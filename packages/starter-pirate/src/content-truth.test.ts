@@ -152,6 +152,45 @@ describe('T0-verb-honesty-content: help rows match registered handlers', () => {
   });
 });
 
+// The transfer verb's SECOND consumer (F-merchant-F). `give` lives in
+// inventory-core, engine-side, precisely so it is not one pack's private
+// mechanic — a captain handing a blade to the quartermaster is the same
+// custody move as a factor making over a writ, and both must work without
+// either pack knowing about the other.
+describe('give: a captain can hand something to the crew', () => {
+  it('the cutlass moves from the captain to Quartermaster Bly', () => {
+    const engine = createGame(11);
+    const captainId = engine.world.playerId;
+    const captain = engine.world.entities[captainId];
+    const bly = engine.world.entities['quartermaster_bly'];
+
+    // Stand together — co-location is a gameplay gate, not a content defect.
+    captain.zoneId = bly.zoneId;
+    const carried = (captain.inventory ?? [])[0];
+    expect(carried, 'the captain starts empty-handed — nothing to hand over').toBeTruthy();
+
+    const events = engine.submitAction('give', { targetIds: ['quartermaster_bly'], toolId: carried });
+
+    expect(events.find((e) => e.type === 'action.rejected')).toBeUndefined();
+    expect(engine.world.entities[captainId].inventory).not.toContain(carried);
+    expect(engine.world.entities['quartermaster_bly'].inventory).toContain(carried);
+  });
+
+  it('and refuses across a deck — the recipient must be present', () => {
+    const engine = createGame(11);
+    const captain = engine.world.entities[engine.world.playerId];
+    const carried = (captain.inventory ?? [])[0];
+    const elsewhere = Object.keys(engine.world.zones).find((z) => z !== captain.zoneId)!;
+    engine.world.entities['quartermaster_bly'].zoneId = elsewhere;
+
+    const rejected = engine
+      .submitAction('give', { targetIds: ['quartermaster_bly'], toolId: carried })
+      .find((e) => e.type === 'action.rejected');
+    expect(rejected?.payload.reason).toBe('recipient not in same zone');
+    expect(engine.world.entities[engine.world.playerId].inventory).toContain(carried);
+  });
+});
+
 describe('T0-equipment-truth: every entry path can reach the equip loop (computed)', () => {
   const catalogIds = new Set(itemCatalog.items.map((i) => i.id));
 

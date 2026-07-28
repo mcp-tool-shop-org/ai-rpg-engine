@@ -34,6 +34,7 @@ export const cyberpunkMinimalRuleset: RulesetDefinition = {
     { id: 'reposition', name: 'Reposition', tags: ['combat', 'movement'], description: 'Shift position to outflank a target or escape a bad spot' },
     { id: 'disengage', name: 'Disengage', tags: ['combat', 'movement'], description: 'Attempt to break from combat and withdraw' },
     { id: 'use', name: 'Use', description: 'Use a program or item' },
+    { id: 'give', name: 'Pass', description: 'Pass an item or program to someone standing with you' },
     { id: 'equip', name: 'Equip', tags: ['equipment'], description: 'Jack in gear from your inventory (bare "equip" readies your only piece)' },
     { id: 'unequip', name: 'Unequip', tags: ['equipment'], description: 'Stow equipped gear back into your inventory' },
     { id: 'speak', name: 'Speak', tags: ['dialogue'], description: 'Talk to an NPC' },

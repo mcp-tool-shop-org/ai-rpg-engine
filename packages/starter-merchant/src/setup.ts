@@ -51,7 +51,7 @@ import {
   merchantQuests,
 } from './content.js';
 import { merchantMinimalRuleset } from './ruleset.js';
-import { createContractCore } from './contract-core.js';
+import { createContractCore, consignedLotsAreNotTransferable } from './contract-core.js';
 
 // Merchant-specific: an unbonded broker sees a bonded factor as a mark, not a
 // peer. The Warrens reads your seal as something to be relieved of.
@@ -220,7 +220,7 @@ export function createGame(seed?: number): Engine {
       traversalCore,
       statusCore,
       ...combat.modules,
-      createInventoryCore([apothecaryTinctureEffect]),
+      createInventoryCore([apothecaryTinctureEffect], { transferGuard: consignedLotsAreNotTransferable }),
       createDialogueCore([guildRegistrationDialogue, warrensTermsDialogue]),
       createPerceptionFilter({ perceptionStat: 'ledger' }),
       createProgressionCore({

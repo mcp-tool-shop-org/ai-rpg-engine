@@ -411,6 +411,46 @@ export function createItemChronicleCore(config: ItemChronicleCoreConfig): Engine
                 );
             });
 
+            // Changing hands. `lost` has been a member of ItemChronicleEvent
+            // since the type was written and had NO producer anywhere in the
+            // engine until inventory-core's `give` verb existed — there was no
+            // way for an item to leave one entity for another, so nothing could
+            // ever stamp it.
+            //
+            // Reached by EVENT, not by import: inventory-core lives in
+            // @ai-rpg-engine/modules and knows nothing about this package or
+            // about chronicles. It emits `item.lost` alongside `item.acquired`
+            // and both sides of a transfer land in the item's history, while a
+            // pack that never opts into chronicling is unaffected.
+            //
+            // No `alreadyAcquired`-style guard: an object can change hands many
+            // times and each is a real event in its story, unlike acquisition
+            // which is once by definition.
+            ctx.events.on('item.lost', (event, world) => {
+                const itemId = event.payload.itemId as string | undefined;
+                if (!itemId) return;
+
+                const formerHolder = world.entities[event.payload.entityId as string];
+                const recipient = world.entities[event.payload.toEntityId as string];
+                const detail = recipient
+                    ? `Handed to ${recipient.name} by ${formerHolder?.name ?? 'someone'}`
+                    : `Lost by ${formerHolder?.name ?? 'someone'}`;
+
+                applyEntries(
+                    world,
+                    config,
+                    [
+                        {
+                            itemId,
+                            event: 'lost',
+                            detail,
+                            ...(formerHolder?.zoneId ? { zoneId: formerHolder.zoneId } : {}),
+                        },
+                    ],
+                    event.tick,
+                );
+            });
+
             // Equipping does two things at once: it may be the first time the item
             // enters its owner's story, and it is the moment anyone nearby gets a
             // look at what they are carrying. Both are collected and committed in
