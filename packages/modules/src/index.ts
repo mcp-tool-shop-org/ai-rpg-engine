@@ -274,6 +274,11 @@ export {
   hasWorldTickState,
   getActivePressures,
   getResolvedPressures,
+  // v3.8: the milestone ledger's public surface. Both fallout appliers write
+  // through recordMilestone; getWorldMilestones is the read that makes an
+  // announced milestone checkable from outside the package (FSA-1).
+  getWorldMilestones,
+  recordMilestone,
   urgencyBand,
   HEAT_KEY,
   HEAT_WAKE_THRESHOLD,

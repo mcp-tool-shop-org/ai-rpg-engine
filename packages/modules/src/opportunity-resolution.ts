@@ -30,7 +30,7 @@ import type { PressureKind } from './pressure-system.js';
 import type { RumorValence } from './player-rumor.js';
 import { makeEvent } from './make-event.js';
 import { getDistrictForZone } from './district-core.js';
-import { HEAT_KEY } from './world-tick.js';
+import { HEAT_KEY, recordMilestone } from './world-tick.js';
 import {
   getPartyState,
   setPartyState,
@@ -665,16 +665,25 @@ function addGlobal(world: WorldState, key: string, delta: number): void {
  *    return` gate); adjustCompanionMorale is ALSO independently a no-op for
  *    an npcId absent from the party, so this gate is a clarity/cost
  *    optimization, not a correctness requirement.
- *  - npc-relationship/obligation — no persisted sink anywhere in the engine
- *    today: npc-agency's relationship/obligation ledgers are never persisted
- *    (endgame.ts's own buildEndgameInputs comment says the same). Honest
- *    no-op.
- *  - rumor/materials/milestone-tag/title-trigger/spawn-pressure/spawn-
- *    opportunity — no persisted sink today either (mirrors world-tick.ts's
- *    OWN applyFallout treatment of the identical effect kinds for pressure
- *    fallout — "rides the pressure.expired payload"). Honest no-op; the
+ *  - milestone-tag → recordMilestone (v3.8 sink #1), world-tick.ts's own
+ *    milestone ledger — the SAME store its applyFallout has written the
+ *    identical effect type into since v2.x, and the same one the genre spawn
+ *    rules' milestone conditions and runLeverageIncomeStep's cursor already
+ *    read. Labelled `opportunity:<kind>` beside the pressure side's
+ *    `pressure:<kind>`.
+ *  - npc-relationship/obligation/rumor/materials/title-trigger/spawn-
+ *    pressure/spawn-opportunity — no persisted sink today. Honest no-op; the
  *    verb handler's emitted event payload carries the full effect list
  *    regardless, so nothing is silently lost, only not yet WRITTEN anywhere.
+ *
+ *    ⚠ CORRECTED v3.8: this list used to justify the obligation/npc-
+ *    relationship no-op with "npc-agency's relationship/obligation ledgers are
+ *    never persisted". That stopped being true in v3.0, when world-tick's step
+ *    5a started writing obligation ledgers to world.modules['npc-agency']
+ *    every round. The ledgers ARE persisted and readable
+ *    (getPersistedNpcObligations); this file simply never wrote to them. The
+ *    stale reason is recorded rather than deleted because it is exactly how a
+ *    ceiling outlives the thing that made it one.
  */
 export function applyOpportunityFallout(world: WorldState, actorId: string, fallout: OpportunityFallout): void {
   const actor = world.entities[actorId];
@@ -716,11 +725,19 @@ export function applyOpportunityFallout(world: WorldState, actorId: string, fall
           partyChanged = true;
         }
         break;
+      case 'milestone-tag':
+        // v3.8 sink #1. The pressure-side applier (world-tick.ts's own
+        // applyFallout) has recorded this exact effect type into this exact
+        // ledger since v2.x; the opportunity side announced it and wrote
+        // nothing, purely because the array had no exported writer to reach
+        // from another file. Same vocabulary, same store, same label shape —
+        // `opportunity:<kind>` beside `pressure:<kind>`.
+        recordMilestone(world, `opportunity:${fallout.resolution.opportunityKind}`, [effect.tag]);
+        break;
       case 'npc-relationship':
       case 'obligation':
       case 'rumor':
       case 'materials':
-      case 'milestone-tag':
       case 'title-trigger':
       case 'spawn-pressure':
       case 'spawn-opportunity':

@@ -537,6 +537,43 @@ export function getResolvedPressures(world: WorldState): PressureFallout[] {
   return objectArray<PressureFallout>(peekState(world)?.resolvedPressures);
 }
 
+/**
+ * Milestones this world has accumulated — boss kills scraped off the event log
+ * (collectMilestones), pressure fallout's `milestone-tag` effect, and (v3.8)
+ * opportunity fallout's. Most recent last, never cleared.
+ *
+ * NEW IN v3.8 and the reason it exists: the milestone ledger had real writers
+ * and real INTERNAL readers (the genre spawn rules' milestone conditions,
+ * runLeverageIncomeStep's cursor) but no public accessor, so no consumer
+ * outside this file could tell whether an announced milestone had been
+ * recorded. A consequence with no public read API is indistinguishable from a
+ * consequence that was never written (FSA-1). Non-attaching; same contract as
+ * getActivePressures/getResolvedPressures above.
+ */
+export function getWorldMilestones(world: WorldState): Array<{ label: string; tags: string[] }> {
+  return objectArray<{ label: string; tags: string[] }>(peekState(world)?.milestones);
+}
+
+/**
+ * Record one milestone against this world.
+ *
+ * The SHARED writer for both fallout appliers. `applyFallout` below (pressure
+ * side) has pushed straight into `state.milestones` since v2.x; opportunity
+ * fallout announced `milestone-tag` and wrote nothing, because
+ * opportunity-resolution.ts lives in another file and this array had no
+ * exported writer to reach. That asymmetry — same effect type, same
+ * vocabulary, one path recording and one path forgetting — is the whole shape
+ * FSA-1 was built to find.
+ *
+ * Attaches the namespace, deliberately: a milestone exists only because
+ * something happened, so a world that gains one is a world that changed. The
+ * SEED-0 contract is about worlds where NOTHING happened, and this is never
+ * called on one.
+ */
+export function recordMilestone(world: WorldState, label: string, tags: string[]): void {
+  getWorldTickState(world).milestones.push({ label, tags });
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -946,11 +983,11 @@ function applyFallout(
         addGlobal(world, `district_${effect.districtId}_${effect.metric}`, effect.delta);
         break;
       case 'milestone-tag':
-        // Feeds back into the genre spawn rules' milestone conditions.
-        state.milestones.push({
-          label: `pressure:${fallout.resolution.pressureKind}`,
-          tags: [effect.tag],
-        });
+        // Feeds back into the genre spawn rules' milestone conditions. Routed
+        // through recordMilestone (v3.8) so this path and opportunity
+        // fallout's write the same ledger through the same door — `state` is
+        // the attached namespace object, so this is the identical write.
+        recordMilestone(world, `pressure:${fallout.resolution.pressureKind}`, [effect.tag]);
         break;
       case 'spawn-pressure': {
         const chain = makePressure(

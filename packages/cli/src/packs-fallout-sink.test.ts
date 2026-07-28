@@ -66,6 +66,7 @@ import {
   getSupplyLevel,
   getPartyState,
   getCompanion,
+  getWorldMilestones,
   deriveNpcRelationship,
   HEAT_KEY,
   type OpportunityKind,
@@ -256,10 +257,11 @@ export function readSink(world: WorldState, effect: OpportunityFalloutEffect): n
     case 'companion-morale':
       return getCompanion(getPartyState(world), effect.npcId)?.morale;
     case 'milestone-tag':
+      return getWorldMilestones(world).filter((m) => m.tags.includes(effect.tag)).length;
     case 'title-trigger':
-      // No public read API exists for either consequence anywhere in the
-      // engine. Building one is part of building the sink (a mark nobody can
-      // read is not a mark) — see this file's contract above.
+      // No public read API exists for this consequence anywhere in the engine.
+      // Building one is part of building the sink (a mark nobody can read is
+      // not a mark) — see this file's contract above.
       return undefined;
   }
 }
@@ -273,12 +275,30 @@ type Reached = {
   announced: OpportunityFalloutEffect[];
 };
 
-function packById(id: string): PackInfo {
+export function packById(id: string): PackInfo {
   return allPacks.find((p) => p.meta.id === id)!;
 }
 
-/** Play the pinned session until `kind` is offered, reporting where it stopped. */
-function playUntilOffered(
+/** Submit one leg of the `opportunity` verb and fail loudly if it was rejected. */
+export function opportunityOp(
+  engine: Engine,
+  offer: OpportunityState,
+  op: 'accept' | 'complete' | 'abandon',
+): void {
+  const events = engine.submitAction('opportunity', { toolId: offer.id, parameters: { op } });
+  const rejected = events.find((e) => e.type === 'action.rejected');
+  expect(
+    rejected,
+    `${op} on ${offer.kind} was rejected: ${String(rejected?.payload?.reason)}`,
+  ).toBeUndefined();
+}
+
+/**
+ * Play the pinned session until `kind` is offered, reporting where it stopped.
+ * Exported so each sink's own consequence suite drives the SAME session this
+ * audit does — the POC-1/POR-1 relationship, one tier down.
+ */
+export function playUntilOffered(
   pack: PackInfo,
   kind: OpportunityKind,
   profile: SessionProfile,
@@ -328,13 +348,11 @@ function resolveThroughVerb(
   profile: SessionProfile = 'wandering',
 ): Reached {
   const { engine, offer } = playUntilOffered(packById(packId), kind, profile);
-  engine.submitAction('opportunity', { toolId: offer.id, parameters: { op: 'accept' } });
+  opportunityOp(engine, offer, 'accept');
 
   const before = structuredClone(engine.world) as WorldState;
   const cursor = engine.world.eventLog.length;
-  const events = engine.submitAction('opportunity', { toolId: offer.id, parameters: { op } });
-  const rejected = events.find((e) => e.type === 'action.rejected');
-  expect(rejected, `${op} on ${kind} was rejected: ${String(rejected?.payload?.reason)}`).toBeUndefined();
+  opportunityOp(engine, offer, op);
 
   return { before, after: engine.world, announced: announcedSince(engine, cursor) };
 }
@@ -438,7 +456,8 @@ const KNOWN_SINKLESS: Array<OpportunityFalloutEffect['type']> = [
   'rumor',
   'obligation',
   'npc-relationship',
-  'milestone-tag',
+  // 'milestone-tag' — SINK BUILT v3.8 (recordMilestone). Removed here in the
+  // same commit that wired it, per this list's own contract.
   'title-trigger',
 ];
 
