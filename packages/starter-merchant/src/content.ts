@@ -65,9 +65,28 @@ export const assayMasterCorvane: EntityState = {
   resources: { hp: 12, maxHp: 12, stamina: 4, maxStamina: 4 },
   statuses: [],
   zoneId: 'counting-house',
+  // The factor arrives BONDED, not a stranger — Corvane already holds their
+  // seal, and that standing is what the pack's whole ledger premise rests on.
+  // Authored here because the strategic layer reads it: `deriveNpcRelationship`
+  // takes trust from `relations['player-trust']` and greed from `custom.greed`,
+  // and `evaluateNpcGoalOpportunities` will only offer a `contract` from an NPC
+  // who is BOTH allied (trust >= 60, faction loyalty >= 50) AND carrying a
+  // `bargain` goal (greed > 60).
+  //
+  // Those two conditions read like alternatives and are not: `favorable`
+  // requires greed < 50, so a favorable NPC can never carry a bargain goal, and
+  // ALLIED-and-greedy is the only shape that reaches this kind at all. Before
+  // this, `relations['player-trust']` was authored exactly once in the whole
+  // catalog (at 15) and every named NPC in all eleven packs derived `wavering`,
+  // so `contract` had never fired in any world. See POR-1.
+  //
+  // 68 and 72 are both deliberately just over their gates rather than maxed:
+  // Corvane is a man who trusts your paper and wants his cut, not a friend.
+  relations: { 'player-trust': 68 },
   custom: {
     personalGoal: 'Keep the Guild seal worth more than the wax it is pressed in',
     disposition: 'exacting',
+    greed: 72,
   },
 };
 
@@ -464,6 +483,17 @@ export const districts: DistrictDefinition[] = [
     zoneIds: ['audit-chamber'],
     tags: ['crown', 'political'],
     controllingFaction: 'crown-exchequer',
+    // The Crown's own house does no trade — it AUDITS trade. Commerce 8 is
+    // what makes that true mechanically rather than only in the description:
+    // `tickDistrictEconomy` derives trade volume from district-core commerce
+    // (`commerce * 0.8 + previous * 0.2`), so a district left at the default 50
+    // reports a bustling market no matter what its fiction says. Every district
+    // in the catalog was at that default, which is half of why `recovery` — the
+    // district rule's "trade has nearly collapsed" branch, gated on trade
+    // volume under 30 — had never fired in any world. The other half is the
+    // `political` tag closing the black market (see TAG_SUPPLY_MODIFIERS);
+    // `investigation` wins this rule outright while one is open.
+    baseMetrics: { commerce: 8 },
   },
 ];
 

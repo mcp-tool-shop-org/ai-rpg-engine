@@ -29,6 +29,16 @@ export type TradeContext = {
   };
   /** Active pressure kinds in the district */
   activePressureKinds: PressureKind[];
+  /**
+   * The district MOOD's price scale (DistrictModifiers.tradePriceScale) and the
+   * party's commerce bonus (AbilityModifiers.commerceGainBonus), composed by
+   * the CALLER. This file stays a pure price function and never learns what a
+   * companion or a mood is — see leverage-modifiers.ts for the seam.
+   */
+  externalModifiers?: {
+    districtMoodScale?: { scale: number; source: string };
+    companionCommerceBonus?: { amount: number; source: string };
+  };
 };
 
 /** Breakdown of all value modifiers */
@@ -45,6 +55,17 @@ export type ValueModifiers = {
   districtProsperity: number;
   /** 0.8-1.5 — active pressures inflate or deflate */
   pressureModifier: number;
+  /**
+   * 0.8-2.0 — the district's own mood on prices
+   * (DistrictModifiers.tradePriceScale), distinct from `districtProsperity`
+   * above, which reads the ECONOMY (supply balance). This reads the MOOD
+   * (safety, spirit, the descriptor a player is shown). A ruined quarter can
+   * be flush with goods and still price like a place nobody wants to stand in.
+   *
+   * Optional, and absent means "the caller composed no mood" — every
+   * hand-built TradeContext in the tree keeps its exact arithmetic.
+   */
+  districtMoodScale?: number;
 };
 
 /** Trade advice categories */
@@ -184,6 +205,9 @@ export function computeItemValue(
     contrabandPenalty: computeContrabandFactor(ctx.isContraband, blackMarketActive, ctx.playerReputation),
     districtProsperity: computeDistrictProsperity(ctx.districtEconomy),
     pressureModifier: computePressureModifier(ctx.activePressureKinds, supplyCategory),
+    ...(ctx.externalModifiers?.districtMoodScale
+      ? { districtMoodScale: ctx.externalModifiers.districtMoodScale.scale }
+      : {}),
   };
 
   const rawMult =
@@ -192,9 +216,14 @@ export function computeItemValue(
     modifiers.provenanceNotoriety *
     modifiers.contrabandPenalty *
     modifiers.districtProsperity *
-    modifiers.pressureModifier;
+    modifiers.pressureModifier *
+    (modifiers.districtMoodScale ?? 1);
 
-  const finalValue = Math.round(baseValue * rawMult);
+  // The party's commerce bonus is FLAT and applied after the multipliers, on
+  // purpose: a percentage would make a trader companion worth nothing on cheap
+  // goods and enormous on a relic, which is not what "knows the market" means.
+  const commerceBonus = ctx.externalModifiers?.companionCommerceBonus?.amount ?? 0;
+  const finalValue = Math.max(0, Math.round(baseValue * rawMult) + commerceBonus);
   const tradeAdvice = deriveTradeAdvice(modifiers, ctx.isContraband);
   const reason = buildReason(modifiers, ctx.isContraband);
 

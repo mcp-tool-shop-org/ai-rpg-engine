@@ -125,7 +125,12 @@ export const colonyMinimalRuleset: RulesetDefinition = {
 
   contentConventions: {
     entityTypes: ['player', 'npc', 'colonist', 'enemy', 'drone', 'alien'],
-    statusTags: ['buff', 'debuff', 'radiation', 'low-oxygen', 'system-failure'],
+        // v3.7: widened to what this pack's statuses ACTUALLY tag, not what
+    // the declaration wished they did — shipped-truth: hull `breach` and `control` loss are what this pack's statuses mean.
+    // Declaration-side only; no shipped status changed. Baseline before
+    // enforce: the catalog gate that now checks this would otherwise have
+    // been a gate against reality.
+    statusTags: ['buff', 'debuff', 'radiation', 'low-oxygen', 'system-failure', 'breach', 'control'],
     combatTags: ['melee', 'improvised', 'ranged', 'energy'],
   },
 };

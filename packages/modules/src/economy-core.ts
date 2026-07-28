@@ -52,6 +52,22 @@ export type DistrictEconomy = {
   /** True when contraband > 30 or any supply < 20 */
   blackMarketActive: boolean;
   lastUpdateTick: number;
+  /**
+   * What this district NORMALLY has, per category — its authored genre+tag
+   * profile, captured at creation. The per-round drift seeks these levels
+   * instead of a universal 50.
+   *
+   * Optional, and absent means "seek 50", so every hand-built economy in the
+   * tree keeps its previous behaviour exactly. It exists because without it
+   * `tickDistrictEconomy` erased district identity: a sacred quarter, a
+   * contested slum and a crown audit house all converged on the same neutral
+   * numbers inside ~15 rounds, which made the whole genre-and-tag seeding
+   * cosmetic — authored once, then read by nothing. Recovery toward what a
+   * place normally holds is also the only reading under which "this district
+   * is short of medicine" is a fact about the district rather than a fact
+   * about how recently the world was created.
+   */
+  baseline?: Partial<Record<SupplyCategory, number>>;
 };
 
 /** Derived scarcity descriptor for narration */
@@ -107,7 +123,36 @@ const GENRE_SUPPLY_DEFAULTS: Record<string, Partial<Record<SupplyCategory, numbe
   merchant:    { luxuries: 55, components: 60, food: 50, medicine: 35, contraband: 35, fuel: 45 },
 };
 
-/** District tag modifiers applied at creation */
+/**
+ * District tag modifiers applied at creation.
+ *
+ * These are the vocabulary a pack's `DistrictDefinition.tags` speak INTO. The
+ * eleven shipped starters between them author roughly forty-five distinct
+ * district tags, and before this table grew, it recognised four of them
+ * (`industrial`, `sacred`, `underground`, `wealthy`) — so six of eleven packs
+ * had NO district whose economy differed from any other, every district
+ * generated from its genre default alone. Authored, and read by nothing.
+ *
+ * The two entries added below are the ones the opportunity layer measurably
+ * needed (POR-1):
+ *
+ *  - `contested`: ground being fought over. Medicine is what runs out first
+ *    and arms are what flow in — the shape of a district in crisis, and the
+ *    only shape that reaches `evaluateScarcityOpportunities`, whose gate is a
+ *    category below 20. Nothing in the catalog authored a level under 35.
+ *  - `political`: the halls of power are watched, so contraband does not move
+ *    here. Deliberately -10 and not more: `isBlackMarketCondition` opens a
+ *    black market on contraband ABOVE 30 *or* on any category BELOW 20, so the
+ *    only quiet band is 20 < contraband <= 30 and overshooting re-opens the
+ *    very market this is closing. That closure is what lets the district rule
+ *    reach `recovery` at all — it returns `investigation` first whenever a
+ *    black market is open, which it was, everywhere, in every pack.
+ *
+ * The remaining ~39 unread tags are a real gap and NOT fixed here: widening
+ * the table shifts starting supply for packs this cycle never measured, and
+ * trade-core refuses to stock anything below BUY_SUPPLY_FLOOR (30). Owner:
+ * the P5 wider-net audit.
+ */
 const TAG_SUPPLY_MODIFIERS: Record<string, Partial<Record<SupplyCategory, number>>> = {
   market:      { food: 15, luxuries: 10, components: 5 },
   industrial:  { components: 15, fuel: 10, weapons: 5 },
@@ -119,6 +164,8 @@ const TAG_SUPPLY_MODIFIERS: Record<string, Partial<Record<SupplyCategory, number
   slums:       { contraband: 10, medicine: -10, luxuries: -15 },
   wealthy:     { luxuries: 20, medicine: 10, food: 10 },
   rural:       { food: 20, medicine: -5, components: -10 },
+  contested:   { medicine: -20, weapons: 10, contraband: 10 },
+  political:   { contraband: -10, luxuries: 15 },
 };
 
 // --- Initialization ---
@@ -151,10 +198,14 @@ export function createDistrictEconomy(
   }
 
   const supplies = {} as Record<SupplyCategory, SupplyLevel>;
+  const baseline: Partial<Record<SupplyCategory, number>> = {};
   for (const cat of ALL_CATEGORIES) {
     const base = genreDefaults[cat] ?? BASELINE;
     const tagDelta = tagMods[cat] ?? 0;
     supplies[cat] = makeSupplyLevel(cat, base + tagDelta);
+    // The district's own normal, remembered so the drift can seek it. Read
+    // back off `supplies` so it is the CLAMPED level, not the raw sum.
+    baseline[cat] = supplies[cat].level;
   }
 
   return {
@@ -162,6 +213,7 @@ export function createDistrictEconomy(
     tradeVolume: 50,
     blackMarketActive: isBlackMarketCondition({ supplies } as DistrictEconomy),
     lastUpdateTick: 0,
+    baseline,
   };
 }
 
@@ -291,7 +343,11 @@ export function tickDistrictEconomy(
   for (const cat of ALL_CATEGORIES) {
     const prev = economy.supplies[cat];
     let level = prev.level;
-    const distFromBaseline = level - BASELINE;
+    // Seek THIS district's normal when it has one (createDistrictEconomy
+    // records the genre+tag profile it seeded), else the universal 50 — which
+    // is what every economy built by hand still gets, unchanged.
+    const target = economy.baseline?.[cat] ?? BASELINE;
+    const distFromBaseline = level - target;
 
     if (Math.abs(distFromBaseline) > 1) {
       // Baseline-seeking decay
@@ -319,6 +375,12 @@ export function tickDistrictEconomy(
     tradeVolume,
     blackMarketActive: false,
     lastUpdateTick: currentTick,
+    // Carried, not recomputed: this function REBUILDS the economy rather than
+    // spreading it, so anything not named here is dropped. The first draft of
+    // the baseline work omitted this line and every district lost its profile
+    // after exactly one tick — the drift then seeked 50 again and the whole
+    // change was invisible, which is a quieter failure than a crash.
+    ...(economy.baseline ? { baseline: economy.baseline } : {}),
   };
   newEconomy.blackMarketActive = isBlackMarketCondition(newEconomy);
 

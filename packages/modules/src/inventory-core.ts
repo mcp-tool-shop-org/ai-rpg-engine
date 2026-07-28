@@ -104,9 +104,50 @@ function useHandler(
     return [makeEvent(action, 'action.rejected', { reason: `you don't have ${itemId}` })];
   }
 
-  // Apply effect if registered
+  // An item with no registered effect is NOT a consumable — it is an item
+  // nobody taught this verb how to use.
+  //
+  // This used to consume it anyway: effect looked up, missing, `effectEvents`
+  // set to [], item spliced out of the inventory regardless, and `item.used`
+  // emitted with `consumed: true`. Success-shaped destruction. Measured across
+  // the catalog before flipping it (RFC 9413's rule: retire leniency by
+  // measurement, not by assumption) — 89 of 90 authored items in all eleven
+  // packs took this path, and they are cutlasses, armour, deeds, signet rings.
+  // Drinking a deed of title was a legal move that destroyed it and told the
+  // player it had worked.
+  //
+  // Rejecting instead follows the house shape `giveHandler` below already uses
+  // — reject BEFORE mutating, structured reason + hint — and the literature is
+  // near-unanimous: Laubheimer 2015 (NN/g, Preventing User Errors) finds the
+  // strongest treatment for a slip is a constraint that blocks the action
+  // outright; Harley 2018 (NN/g, Visibility of System Status) makes the silent
+  // path a textbook violation; the DCSS design philosophy holds that losses
+  // must trace to genuine player decisions rather than hidden state; and Shore
+  // 2004 (Fail Fast, IEEE Software 21(5)) turns an unregistered effect from a
+  // player's destroyed goods into a visible authoring bug.
+  //
+  // FLAVOR CONSUMABLES ARE STILL POSSIBLE, and are now AUTHORED rather than
+  // accidental — the NetHack pattern, where even a zero-effect quaff prints
+  // "you have a strange feeling for a moment, then it passes" and the message
+  // is itself information. A pack that wants an item consumed for flavour
+  // registers an effect saying so:
+  //
+  //     { itemId: 'cheap-rum', use: (action) => [
+  //         makeEvent(action, 'item.consumed.flavor', { itemId: 'cheap-rum' }),
+  //       ] }
+  //
+  // One line, and the intent is in the content where a reader can see it.
   const effect = effectMap.get(itemId);
-  const effectEvents = effect ? effect(action, world) : [];
+  if (!effect) {
+    return reject(
+      action,
+      `${itemId} has no use`,
+      'Nothing happens when you try to use this. Equipment is worn with `equip`; ' +
+        'only items a pack registers a use-effect for can be used up.',
+      { itemId },
+    );
+  }
+  const effectEvents = effect(action, world);
 
   // Remove from inventory (consumable)
   inventory.splice(itemIndex, 1);

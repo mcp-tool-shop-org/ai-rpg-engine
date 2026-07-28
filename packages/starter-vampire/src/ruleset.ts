@@ -129,7 +129,12 @@ export const vampireMinimalRuleset: RulesetDefinition = {
 
   contentConventions: {
     entityTypes: ['player', 'npc', 'enemy', 'item'],
-    statusTags: ['buff', 'debuff', 'curse', 'bloodfrenzy'],
+        // v3.7: widened to what this pack's statuses ACTUALLY tag, not what
+    // the declaration wished they did — shipped-truth: the court's statuses are about `control`, `fear` and the `supernatural`.
+    // Declaration-side only; no shipped status changed. Baseline before
+    // enforce: the catalog gate that now checks this would otherwise have
+    // been a gate against reality.
+    statusTags: ['buff', 'debuff', 'curse', 'bloodfrenzy', 'control', 'fear', 'supernatural'],
     combatTags: ['melee', 'supernatural', 'predatory'],
   },
 };

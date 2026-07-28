@@ -99,6 +99,28 @@ export type OpportunityInputs = {
   currentTick: number;
   genre: string;
   totalTurns: number;
+  /**
+   * Kinds resolved recently, newest-irrelevant — only `resolvedAtTick` is
+   * read, against KIND_RECURRENCE_COOLDOWN. Optional: a caller that does not
+   * supply it gets exactly the pre-v3.7 behaviour, so every existing unit
+   * fixture keeps its meaning.
+   */
+  recentResolutions?: Array<{ kind: OpportunityKind; resolvedAtTick: number }>;
+  /**
+   * Tick the last offer SPAWNED, whether or not it is still live.
+   *
+   * The interval guard used to read `activeOpportunities` alone, and
+   * `tickOpportunities` drops anything resolved from that list — so a player
+   * who cleared their queue had an EMPTY active list, skipped the guard
+   * entirely, and got a fresh offer every single round. Measured at 17-20
+   * spawns across a 40-round session against a floor that should have capped
+   * it near 13. The players who engage most got the most noise, which is
+   * precisely backwards.
+   *
+   * Optional: absent means "fall back to the active list", i.e. exactly the
+   * old behaviour, so existing fixtures keep their meaning.
+   */
+  lastSpawnTick?: number;
 };
 
 export type OpportunitySpawnResult = {
@@ -116,9 +138,72 @@ export type OpportunityTickResult = {
 
 // --- Constants ---
 
+/**
+ * Cap on live offers.
+ *
+ * KEPT at 5, deliberately, against a measured session that wanted to push it
+ * up: a player who pursues offers can clear 25 in forty rounds. Iyengar &
+ * Lepper 2000 (When Choice is Demotivating, JPSP 79(6)) measured ~10x the
+ * follow-through on six-option sets versus large ones, which puts 5 on the
+ * right side of the overload boundary. The answer to "the player wants more
+ * work" is not a longer list.
+ */
 const MAX_ACTIVE_OPPORTUNITIES = 5;
-const MIN_TURNS_BETWEEN_SPAWNS = 3;
+
+/**
+ * Floor on the gap between spawns — a FLOOR, never a metronome. Värtinen,
+ * Hämäläinen & Guckelsberger 2024 (Generating RPG Quests With GPT Language
+ * Models, IEEE ToG) found in a 349-player study that VARIANCE, not average
+ * quality, produced the "this is noise" read. Spawning nothing beats spawning
+ * weak, so nothing below promotes this floor into a schedule.
+ *
+ * Raised from 3 to 5 on measurement. This is counted in TICKS, and a played
+ * round advances the tick about 1.2 times — so the old floor was roughly two
+ * and a half rounds, and a pursuing player was measured taking 17-20 offers
+ * across a 40-round session. Hazzikostas 2016 (WoW Legion world-quest
+ * interview, MMORPG.com) is the counterweight: bounded "done enough" beats
+ * clear-everything pressure, and full strategic credit should come from about
+ * two active pursuits. Five ticks is roughly four rounds, which lands the same
+ * session near nine or ten — a layer that is unmistakably alive without being
+ * a conveyor.
+ */
+export const MIN_TURNS_BETWEEN_SPAWNS = 5;
+
+/**
+ * Turns before an offer with a HARD deadline lapses. Only kinds with diegetic
+ * urgency use it — see `deadlineFor`.
+ */
 const DEFAULT_DEADLINE = 12;
+
+/**
+ * Urgency at which the world is in a high-pressure phase and stops handing out
+ * new work.
+ *
+ * Booth 2009 (The AI Systems of Left 4 Dead, AIIDE keynote) is the grounding:
+ * L4D's pacing worked because intensity peaks were followed by ENFORCED relax
+ * valleys, not because the spawn rate was tuned flat. The quiet stretches are
+ * what carry the offers. The evaluator already reads `activePressures` to
+ * decide WHAT to offer; this reads the same list to decide whether to offer at
+ * all.
+ */
+const PRESSURE_SUPPRESSION_URGENCY = 0.7;
+
+/**
+ * Turns before a kind that just resolved may be offered again.
+ *
+ * Howard 2011 (Skyrim Radiant Story interview, PC Gamer): even carefully
+ * conditionalised radiant quests read as filler once the player noticed the
+ * cycle repeat. Three offers of the same kind back to back is that cycle. 8 is
+ * long enough to break the pattern inside a session without making a kind feel
+ * like it has been switched off — the 5-slot cap already limits how much can
+ * be live at once, so this only shapes ORDER.
+ *
+ * Per-KIND rather than per-(kind, source): the resolution ledger records
+ * `opportunityKind` and `resolvedAtTick` and no source id, and widening a
+ * persisted shape to sharpen a cooldown is not a trade worth making here.
+ * `activeKindSourcePairs` already dedupes live offers by source.
+ */
+const KIND_RECURRENCE_COOLDOWN = 8;
 const VISIBILITY_ESCALATION_TICKS = 3;
 // Reputation needed before a faction (absent a companion to protect) asks the
 // player for a personal escort. Deliberately higher than faction-job's
@@ -291,13 +376,15 @@ export function evaluateOpportunities(inputs: OpportunityInputs): OpportunitySpa
   ).length;
   if (liveCount >= MAX_ACTIVE_OPPORTUNITIES) return null;
 
-  // Interval guard
-  if (inputs.activeOpportunities.length > 0) {
-    const mostRecent = Math.max(
-      ...inputs.activeOpportunities.map((o) => o.createdAtTick),
-    );
+  // Interval guard — measured against the last SPAWN, not the last surviving
+  // offer (see OpportunityInputs.lastSpawnTick).
+  const spawnTicks = inputs.activeOpportunities.map((o) => o.createdAtTick);
+  if (inputs.lastSpawnTick !== undefined) spawnTicks.push(inputs.lastSpawnTick);
+  if (spawnTicks.length > 0) {
+    const mostRecent = Math.max(...spawnTicks);
     if (inputs.currentTick - mostRecent < MIN_TURNS_BETWEEN_SPAWNS) return null;
   }
+
 
   // Existing kinds (no duplicate kinds unless different sources)
   const activeKindSourcePairs = new Set(
@@ -335,11 +422,72 @@ export function evaluateOpportunities(inputs: OpportunityInputs): OpportunitySpa
 
   if (candidates.length === 0) return null;
 
+  // Relax-valley filter (Booth 2009 — see PRESSURE_SUPPRESSION_URGENCY). While
+  // something urgent is bearing down, the world stops handing out UNRELATED
+  // side work.
+  //
+  // A filter and not an early return, which the first draft got wrong: an
+  // opportunity carrying `linkedPressureId` IS the response to the pressure —
+  // the bounty the crisis creates, the supply run the shortage needs — so
+  // suppressing those suppresses exactly the thing the intensity is supposed
+  // to produce, and it turned `bounty` and the pressure-linked `supply-run`
+  // back off the moment this shipped. Booth's finding is that you do not PILE
+  // ON during a peak; it is not that the peak should offer nothing.
+  const inHighPressure = inputs.activePressures.some(
+    (p) => p.urgency >= PRESSURE_SUPPRESSION_URGENCY,
+  );
+  const permitted = inHighPressure
+    ? candidates.filter((c) => c.opportunity.linkedPressureId !== undefined)
+    : candidates;
+  if (permitted.length === 0) return null;
+
+  // Recurrence cooldown (Howard 2011 — see KIND_RECURRENCE_COOLDOWN). Applied
+  // AFTER the rules have spoken rather than before: a suppressed kind should
+  // yield to a different kind, not silence the round. If everything on offer
+  // is on cooldown, the round stays quiet — which is the intended reading.
+  const onCooldown = new Set(
+    (inputs.recentResolutions ?? [])
+      .filter((r) => inputs.currentTick - r.resolvedAtTick < KIND_RECURRENCE_COOLDOWN)
+      .map((r) => r.kind),
+  );
+  const fresh = permitted.filter((c) => !onCooldown.has(c.opportunity.kind));
+  if (fresh.length === 0) return null;
+
   // Pick highest score
-  candidates.sort((a, b) => b.score - a.score);
-  const best = candidates[0];
+  fresh.sort((a, b) => b.score - a.score);
+  const best = fresh[0];
 
   return { opportunity: best.opportunity, reason: best.reason };
+}
+
+/**
+ * How long an offer of `kind` stands before it lapses — `null` means it waits.
+ *
+ * Zagal, Björk & Lewis 2013 (Dark Patterns in the Design of Games, FDG) name
+ * APPOINTMENT DYNAMICS — content that expires on a schedule — as the mechanism
+ * that converts play into obligation. Every kind used to carry the same flat
+ * 12-turn clock, which made a companion's personal request and a faction's
+ * emergency equally punishing to postpone.
+ *
+ * So the clock is now the fiction's, not the system's. A thing with someone
+ * else's urgency behind it runs out; a thing somebody is holding for you
+ * waits:
+ *
+ *  - `bounty`, `supply-run`, `faction-job`, `escort`, `investigation`,
+ *    `recovery` — a target gets away, a shipment is needed NOW, a convoy
+ *    leaves, a trail goes cold. These keep the deadline. (Pressure-linked
+ *    spawns override it with their own pressure's timer, which is shorter and
+ *    more specific — that path is untouched.)
+ *  - `contract` and `favor-request` — an employer who wants to hire you and a
+ *    friend who needs help are not going anywhere. These wait.
+ *
+ * Hazzikostas 2016 (WoW Legion world-quest interview) is the companion
+ * finding: bounded "done enough" beats clear-everything pressure. With the
+ * 5-slot cap and two kinds that never lapse, a player can leave things on the
+ * table without losing them.
+ */
+export function deadlineFor(kind: OpportunityKind, fallback = DEFAULT_DEADLINE): number | null {
+  return kind === 'contract' || kind === 'favor-request' ? null : fallback;
 }
 
 // --- Scoring ---
@@ -539,7 +687,7 @@ function evaluateScarcityOpportunities(
     objectiveDescription: `Acquire ${worstCategory} and deliver it to the district.`,
     linkedDistrictId: inputs.playerDistrictId,
     urgency,
-    turnsRemaining: DEFAULT_DEADLINE,
+    turnsRemaining: deadlineFor('supply-run'),
     visibility: 'known',
     rewards: [
       { type: 'reputation', factionId, delta: 8 },
@@ -586,7 +734,7 @@ function evaluateNpcGoalOpportunities(
         linkedDistrictId: inputs.playerDistrictId,
         linkedNpcIds: [npc.npcId],
         urgency: bargainGoal.priority * 0.7,
-        turnsRemaining: DEFAULT_DEADLINE,
+        turnsRemaining: deadlineFor('contract'),
         visibility: 'offered',
         rewards: [
           { type: 'leverage', currency: 'favor', delta: 5 },
@@ -619,7 +767,7 @@ function evaluateNpcGoalOpportunities(
         linkedDistrictId: inputs.playerDistrictId,
         linkedNpcIds: [npc.npcId],
         urgency: recruitGoal.priority * 0.6,
-        turnsRemaining: DEFAULT_DEADLINE + 4,
+        turnsRemaining: deadlineFor('faction-job', DEFAULT_DEADLINE + 4),
         visibility: 'offered',
         rewards: [
           { type: 'reputation', factionId: npc.factionId, delta: 15 },
@@ -673,7 +821,7 @@ function evaluateObligationOpportunities(
       linkedDistrictId: inputs.playerDistrictId,
       linkedNpcIds: [npcId],
       urgency: Math.min(1, highestDebt.magnitude / 10 + 0.3),
-      turnsRemaining: DEFAULT_DEADLINE,
+      turnsRemaining: deadlineFor('favor-request'),
       visibility: 'offered',
       rewards: [
         { type: 'obligation', kind: 'favor', direction: 'npc-owes-player', npcId, magnitude: 2 },
@@ -724,7 +872,7 @@ function evaluateFactionOpportunities(
       linkedDistrictId: inputs.playerDistrictId,
       linkedNpcIds: factionNpc ? [factionNpc.npcId] : [],
       urgency: 0.4,
-      turnsRemaining: DEFAULT_DEADLINE + 4,
+      turnsRemaining: deadlineFor('faction-job', DEFAULT_DEADLINE + 4),
       visibility: 'known',
       rewards: [
         { type: 'reputation', factionId: rep.factionId, delta: 10 },
@@ -767,7 +915,7 @@ function evaluateCompanionOpportunities(
       linkedDistrictId: inputs.playerDistrictId,
       linkedNpcIds: [comp.npcId],
       urgency: comp.morale < 40 ? 0.7 : 0.4,
-      turnsRemaining: DEFAULT_DEADLINE + 8,
+      turnsRemaining: deadlineFor('favor-request', DEFAULT_DEADLINE + 8),
       visibility: 'offered',
       rewards: [
         { type: 'obligation', kind: 'favor', direction: 'npc-owes-player', npcId: comp.npcId, magnitude: 5 },
@@ -816,7 +964,7 @@ function evaluateDistrictOpportunities(
       objectiveDescription: 'Gather information about the black market operation.',
       linkedDistrictId: inputs.playerDistrictId,
       urgency: 0.5,
-      turnsRemaining: DEFAULT_DEADLINE,
+      turnsRemaining: deadlineFor('investigation'),
       visibility: 'rumored',
       rewards: [
         ...(factionId ? [{ type: 'reputation' as const, factionId, delta: 10 }] : []),
@@ -848,7 +996,7 @@ function evaluateDistrictOpportunities(
       objectiveDescription: 'Locate and recover the missing goods.',
       linkedDistrictId: inputs.playerDistrictId,
       urgency: 0.4,
-      turnsRemaining: DEFAULT_DEADLINE,
+      turnsRemaining: deadlineFor('recovery'),
       visibility: 'known',
       rewards: [
         ...(factionId ? [{ type: 'reputation' as const, factionId, delta: 8 }] : []),
@@ -916,7 +1064,7 @@ function evaluateEscortOpportunities(
       linkedDistrictId: inputs.playerDistrictId,
       linkedNpcIds: [companion.npcId],
       urgency,
-      turnsRemaining: DEFAULT_DEADLINE,
+      turnsRemaining: deadlineFor('escort'),
       visibility: 'offered',
       rewards: [
         { type: 'leverage', currency: 'favor', delta: 4 },
@@ -960,7 +1108,7 @@ function evaluateEscortOpportunities(
       linkedDistrictId: inputs.playerDistrictId,
       linkedNpcIds: factionNpc ? [factionNpc.npcId] : [],
       urgency,
-      turnsRemaining: DEFAULT_DEADLINE,
+      turnsRemaining: deadlineFor('escort'),
       visibility: 'offered',
       rewards: [
         { type: 'reputation', factionId: trustedFaction.factionId, delta: 10 },
@@ -1092,10 +1240,28 @@ function hasPairConflict(activePairs: Set<string>, kind: OpportunityKind, source
   return activePairs.has(`${kind}:${sourceId ?? 'none'}`);
 }
 
-function findLocalFaction(inputs: OpportunityInputs): string | undefined {
-  // Find a faction the player has neutral-or-better rep with
+/**
+ * Standing past which a faction stops offering district work.
+ *
+ * `findLocalFaction` picks whoever likes the player MOST, and the district
+ * rules pay that faction +8 to +10 on every completion — so the richest
+ * relationship got richer, unboundedly. Measured at reputation 190-200 across
+ * a 40-round session, on a faction the player may have been actively killing
+ * members of, because nothing ever took the pick away.
+ *
+ * A ceiling is the diegetic reading as well as the arithmetic one: a house you
+ * are already a made member of has no more standing to sell you. Above this,
+ * district work still SPAWNS — the kind is not gated on a faction, only its
+ * reward is — it simply stops paying reputation to someone who has run out of
+ * reputation to give. Deliberately above ESCORT_TRUST_THRESHOLD (50) so every
+ * authored gate in the file stays reachable by the ladder.
+ */
+const LOCAL_FACTION_SATURATION = 70;
+
+export function findLocalFaction(inputs: OpportunityInputs): string | undefined {
+  // Neutral-or-better, but not already saturated (see above).
   const friendly = inputs.playerReputations
-    .filter((r) => r.value >= -10)
+    .filter((r) => r.value >= -10 && r.value < LOCAL_FACTION_SATURATION)
     .sort((a, b) => b.value - a.value);
   return friendly[0]?.factionId;
 }

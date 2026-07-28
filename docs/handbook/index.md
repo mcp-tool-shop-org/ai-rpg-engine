@@ -157,6 +157,7 @@ build → simulate → analyze → tune → experiment
 46. [Jade Veil (Feudal Mystery)](./46-jade-veil.md)
 62. [Salt Road Ledger (Mercantile)](./62-salt-road-ledger.md)
 63. [Running the Instrument](./63-running-the-instrument.md)
+64. [Lighting a Dormant Layer](./64-lighting-a-dormant-layer.md)
 
 ### Part VII — Character Systems
 

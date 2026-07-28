@@ -50,6 +50,7 @@ import {
   type TradeContext,
   type TradeEffect,
 } from './trade-value.js';
+import { composeTradeModifiers } from './leverage-modifiers.js';
 import { getActivePressures, HEAT_KEY } from './world-tick.js';
 
 // --- Category inference (no ItemDefinition catalog wired — see file header) ---
@@ -147,6 +148,9 @@ function sellHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
     playerHeat,
     isContraband,
     activePressureKinds,
+    // The verb layer composes; trade-value.ts stays a pure price function and
+    // never learns what a companion or a district mood is.
+    externalModifiers: composeTradeModifiers(world, actor),
   };
 
   const result = computeItemValue(SELL_BASE_VALUE, supplyCategory, ctx);
@@ -406,6 +410,11 @@ export function quoteBuyPrice(world: WorldState, itemId: string, genre?: string)
     playerHeat,
     isContraband: supplyCategory === 'contraband',
     activePressureKinds,
+    // `player`, not an actor parameter: this function is deliberately
+    // world-level (see its own docstring) and buyHandler routes through it, so
+    // the quote and the purchase read the SAME composition. A price the menu
+    // shows and a price the verb charges must not be able to disagree.
+    externalModifiers: player ? composeTradeModifiers(world, player) : undefined,
   };
 
   // Same flat base value + computeItemValue pipeline sellHandler uses — buy

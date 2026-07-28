@@ -53,6 +53,7 @@ import { getFactionCognition } from './faction-cognition.js';
 // coupling to npc-agency.ts, just the shape a future wave's
 // computeRelationshipModifiers output will pass in.
 import type { RelationshipModifiers } from './npc-agency.js';
+import { composeLeverageModifiers } from './leverage-modifiers.js';
 
 // Minimal shape of profile hints needed for leverage gain computation.
 // The full ProfileUpdateHints type lives in the product layer (turn-loop.ts).
@@ -132,6 +133,34 @@ export type LeverageEffect =
   | { type: 'access'; factionId: string; level: 'denied' | 'restricted' | 'normal' | 'privileged' }
   | { type: 'heat'; delta: number };
 
+/**
+ * One passive contribution to a resolved action, named and attributed.
+ *
+ * Hicks, Gerling, Dickinson & Vanden Abeele 2019 (Juicy Game Design, CHI PLAY)
+ * found feedback has to be UNAMBIGUOUS — connectable to one cause — so this is
+ * deliberately one entry per contributor rather than a pooled "party bonus" a
+ * UI could not decompose. Sobou 2012's Suikoden analysis is the sharper
+ * version of the same point: ~41% of that game's 108 recruits read as
+ * worthless because their contributions were indistinguishable duplicates. A
+ * companion whose modifier fires anonymously is a roster clone.
+ *
+ * Mega Crit's Slay the Spire intent display is the shape for `after`: show the
+ * number already recalculated, AND what changed it, so the player never has to
+ * infer a shift from outcomes — which Meier 2010 (The Psychology of Game
+ * Design, GDC) showed they cannot do anyway.
+ */
+export type ModifierAttribution = {
+  /** Machine-readable name of the modifier, e.g. 'companionLeverageDiscount'. */
+  name: string;
+  /** Who supplied it — a companion id, a district id, a faction id. */
+  source: string;
+  /** The contribution itself: a flat delta, or a scale where `scale` reads. */
+  delta?: number;
+  scale?: number;
+  /** The value AFTER this and every sibling modifier applied. */
+  after: number;
+};
+
 export type LeverageResolution = {
   verb: 'social' | 'rumor' | 'diplomacy' | 'sabotage';
   subAction: string;
@@ -141,7 +170,89 @@ export type LeverageResolution = {
   narratorHint: string;
   success: boolean;
   failReason?: string;
+  /**
+   * Present only when a passive actually changed something. Absent — not
+   * empty — on a world with no companions and a neutral district, so the
+   * resolution is byte-identical to its pre-v3.7 self.
+   */
+  modifiers?: ModifierAttribution[];
 };
+
+/**
+ * Passive contributions the CALLER composes and hands in.
+ *
+ * This is the wave companion-core.ts's own deferral note named: "a follow-up
+ * wave explicitly scoped to thread BOTH modifier bundles into their resolution
+ * functions together." Both arrive here as plain numbers with a source label,
+ * and this file imports NEITHER companion-core NOR district-mood — the verb
+ * layer knows about parties and districts; the resolver knows about costs.
+ */
+export type ExternalLeverageModifiers = {
+  /** Flat cost reduction from party abilities (AbilityModifiers.leverageCostDiscount). */
+  companionDiscount?: { amount: number; source: string };
+  /** District mood cost multiplier (DistrictModifiers.leverageCostScale). */
+  districtCostScale?: { scale: number; source: string };
+  /** Per-faction reputation bonus from party abilities (AbilityModifiers.reputationBonus). */
+  companionReputationBonus?: { amount: number; source: string };
+  /**
+   * How far a rumor this party seeds travels — the COMPOSED product of
+   * AbilityModifiers.rumorSpreadScale and DistrictModifiers.rumorSpreadScale,
+   * because a persuasive companion and a gossipy district multiply rather than
+   * compete. One entry, one `source` naming both contributors, because the
+   * player's decision is "who I brought, and where I did it".
+   */
+  rumorSpreadScale?: { scale: number; source: string };
+  /**
+   * How thoroughly this party can bury something
+   * (AbilityModifiers.rumorSuppressionChance).
+   *
+   * The field is NAMED a chance and is used here as a deterministic STRENGTH,
+   * and that is a deliberate reading rather than an oversight. This engine
+   * forbids unseeded randomness in resolution (no Math.random anywhere), and
+   * the functions that would roll it — `denyRumor` / `buryRumor` — are pure and
+   * hold no RNG. A 0-1 value read as "how much extra confidence this removes"
+   * is monotone in the same direction the name implies, stays replayable, and
+   * does not require plumbing the seeded RNG through three pure functions to
+   * express "sometimes it works".
+   */
+  rumorSuppression?: { strength: number; source: string };
+};
+
+const NO_EXTERNAL_MODIFIERS: ExternalLeverageModifiers = {};
+
+/**
+ * Confidence a freshly seeded rumor starts at before any modifier. Was a bare
+ * `0.8` literal at both spawn sites.
+ */
+export const BASE_RUMOR_CONFIDENCE = 0.8;
+
+/**
+ * The confidence a rumor this actor seeds should start at, and what changed it.
+ *
+ * Exported because the two spawn sites live in different verb families and both
+ * must agree — a rumor seeded through `seed` and one seeded through `frame`
+ * cannot disagree about how far a persuasive companion carries it.
+ */
+export function scaledRumorConfidence(
+  external: ExternalLeverageModifiers,
+): { confidence: number; attribution: ModifierAttribution[] } {
+  const spread = external.rumorSpreadScale;
+  if (!spread || spread.scale === 1) {
+    return { confidence: BASE_RUMOR_CONFIDENCE, attribution: [] };
+  }
+  // Clamped: confidence is a 0-1 probability-like quantity everywhere else in
+  // player-rumor.ts, and a scale above 1.25 would push it out of range.
+  const confidence = Math.min(1, Math.max(0, BASE_RUMOR_CONFIDENCE * spread.scale));
+  return {
+    confidence,
+    attribution: [{
+      name: 'rumorSpreadScale',
+      source: spread.source,
+      scale: spread.scale,
+      after: confidence,
+    }],
+  };
+}
 
 // --- Constants ---
 
@@ -368,6 +479,60 @@ const NEUTRAL_MODIFIERS: RelationshipModifiers = {
  * object — not just an equal-valued copy — so the neutral-default path never
  * even allocates, let alone rounds.
  */
+/**
+ * Apply the composed external modifiers to a cost table, and report what each
+ * one did.
+ *
+ * Order is district-then-companion and it matters: the district scales the
+ * PRICE of doing business here, the party then negotiates a flat amount off
+ * that price. Scaling a discounted cost would make a smuggler worth less in an
+ * expensive district, which is backwards.
+ *
+ * Returns `attribution: []` when nothing applied, and the caller drops the
+ * field entirely in that case — a world with no companions in a neutral
+ * district resolves byte-identically to its pre-v3.7 self.
+ */
+function applyExternalCostModifiers(
+  base: LeverageCost,
+  external: ExternalLeverageModifiers,
+): { costs: LeverageCost; attribution: ModifierAttribution[] } {
+  const attribution: ModifierAttribution[] = [];
+  let costs = base;
+
+  const districtScale = external.districtCostScale;
+  if (districtScale && districtScale.scale !== 1) {
+    costs = scaleCosts(costs, districtScale.scale);
+    attribution.push({
+      name: 'districtLeverageCostScale',
+      source: districtScale.source,
+      scale: districtScale.scale,
+      after: totalCost(costs),
+    });
+  }
+
+  const discount = external.companionDiscount;
+  if (discount && discount.amount > 0) {
+    const discounted: LeverageCost = {};
+    for (const [currency, amount] of Object.entries(costs)) {
+      if (amount) discounted[currency as LeverageCurrency] = Math.max(0, amount - discount.amount);
+    }
+    costs = discounted;
+    attribution.push({
+      name: 'companionLeverageCostDiscount',
+      source: discount.source,
+      delta: -discount.amount,
+      after: totalCost(costs),
+    });
+  }
+
+  return { costs, attribution };
+}
+
+/** Total across currencies — the single number a UI can show as "the price". */
+function totalCost(costs: LeverageCost): number {
+  return Object.values(costs).reduce<number>((sum, amount) => sum + (amount ?? 0), 0);
+}
+
 function scaleCosts(costs: LeverageCost, multiplier: number): LeverageCost {
   if (multiplier === 1) return costs;
   const scaled: LeverageCost = {};
@@ -397,9 +562,13 @@ export function resolveSocialAction(
   factionCognition: { alertLevel: number; cohesion: number } | undefined,
   currentTick: number,
   modifiers: RelationshipModifiers = NEUTRAL_MODIFIERS,
+  external: ExternalLeverageModifiers = NO_EXTERNAL_MODIFIERS,
 ): LeverageResolution {
   const req = SOCIAL_REQUIREMENTS[subAction];
-  const costs = scaleCosts(req.costs, modifiers.costMultiplier);
+  const { costs, attribution } = applyExternalCostModifiers(
+    scaleCosts(req.costs, modifiers.costMultiplier),
+    external,
+  );
   if (!canAfford(leverageState, costs)) {
     const short = getShortfall(leverageState, costs);
     return {
@@ -510,6 +679,25 @@ export function resolveSocialAction(
     }
   }
 
+  // Reputation the party earns you on top of the action's own. Applied to the
+  // reputation effects this action already produced rather than pushed as a
+  // separate effect, so a UI reads ONE reputation number with a stated
+  // reason — Hicks 2019's unambiguous-feedback rule again.
+  const repBonus = external.companionReputationBonus;
+  if (repBonus && repBonus.amount !== 0) {
+    for (const effect of effects) {
+      if (effect.type === 'reputation' && effect.delta > 0) {
+        effect.delta += repBonus.amount;
+        attribution.push({
+          name: 'companionReputationBonus',
+          source: repBonus.source,
+          delta: repBonus.amount,
+          after: effect.delta,
+        });
+      }
+    }
+  }
+
   return {
     verb: 'social',
     subAction,
@@ -518,6 +706,7 @@ export function resolveSocialAction(
     effects,
     narratorHint,
     success: true,
+    ...(attribution.length > 0 ? { modifiers: attribution } : {}),
   };
 }
 
@@ -1413,6 +1602,11 @@ function socialVerbHandler(
     playerReputation,
     cognition ? { alertLevel: cognition.alertLevel, cohesion: cognition.cohesion } : undefined,
     currentTick,
+    undefined,
+    // The verb layer composes; the resolver above stays a pure function of
+    // plain numbers and never learns what a companion or a district mood is.
+    // See leverage-modifiers.ts for why that seam is its own module.
+    composeLeverageModifiers(world, actor, targetFactionId),
   );
   if (!resolution.success) {
     return rejectLeverageAction(action, resolution.failReason ?? `cannot ${rejectVerbLabel}`);
@@ -1521,13 +1715,16 @@ function seedHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
 
   if (rumorEffect) {
     const districtId = actor.zoneId ? getDistrictForZone(world, actor.zoneId) : undefined;
+    const { confidence, attribution } = scaledRumorConfidence(
+      composeLeverageModifiers(world, actor, targetFactionId),
+    );
     const rumor = spawnIntentionalRumor(
       rumorEffect.claim,
       rumorEffect.valence,
       targetFactionId,
       districtId,
       currentTick,
-      0.8,
+      confidence,
       world,
     );
     const ns = getPlayerRumorState(world);
@@ -1594,13 +1791,16 @@ function applyLeverageEffectsAndSpawnRumor(
 
   const actor = world.entities[actorId];
   const districtId = actor?.zoneId ? getDistrictForZone(world, actor.zoneId) : undefined;
+  const { confidence } = scaledRumorConfidence(
+    actor ? composeLeverageModifiers(world, actor, originFactionId) : {},
+  );
   const rumor = spawnIntentionalRumor(
     rumorEffect.claim,
     rumorEffect.valence,
     originFactionId,
     districtId,
     currentTick,
-    0.8,
+    confidence,
     world,
   );
   const ns = getPlayerRumorState(world);
@@ -1744,7 +1944,11 @@ function rumorManipulationVerbHandler(
   applyLeverageEffects(world, action.actorId, resolution.effects, currentTick);
   actor.custom = setCooldown(actor.custom ?? {}, 'rumor', subAction, currentTick);
 
-  const manipulated = applyRumorManipulation(world, subAction, rumorId);
+  // The party's suppression strength, composed at the verb layer exactly like
+  // the cost modifiers above — the resolver and player-rumor.ts both stay
+  // ignorant of what a companion is.
+  const suppression = composeLeverageModifiers(world, actor, targetFactionId).rumorSuppression;
+  const manipulated = applyRumorManipulation(world, subAction, rumorId, suppression?.strength ?? 0);
 
   const events: ResolvedEvent[] = [
     makeEvent(action, 'leverage.resolved', {

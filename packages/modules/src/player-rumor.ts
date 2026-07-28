@@ -333,22 +333,36 @@ export function spawnIntentionalRumor(
  * Deny a rumor: reduce its confidence by 0.3.
  * Returns a new rumor with reduced confidence.
  */
-export function denyRumor(rumor: PlayerRumor): PlayerRumor {
+export function denyRumor(rumor: PlayerRumor, suppressionStrength = 0): PlayerRumor {
   return {
     ...rumor,
-    confidence: Math.max(0, rumor.confidence - 0.3),
+    confidence: Math.max(0, rumor.confidence - (0.3 + DENY_SUPPRESSION_RANGE * suppressionStrength)),
   };
 }
+
+/**
+ * How much extra confidence a fully-suppressive party strips on a `deny`, on
+ * top of the base 0.3 — so `rumorSuppressionChance: 1` roughly doubles the
+ * denial's bite and `0` leaves the base untouched.
+ *
+ * See ExternalLeverageModifiers.rumorSuppression for why a field named as a
+ * CHANCE is spent as a deterministic strength: this engine forbids unseeded
+ * randomness in resolution, and these functions are pure and hold no RNG.
+ */
+const DENY_SUPPRESSION_RANGE = 0.3;
+
+/** As DENY_SUPPRESSION_RANGE, for the heavier-handed bury. */
+const BURY_SUPPRESSION_RANGE = 0.15;
 
 /**
  * Bury a rumor: double its distortion, accelerating decay and mutation.
  * Returns a new rumor with increased distortion.
  */
-export function buryRumor(rumor: PlayerRumor): PlayerRumor {
+export function buryRumor(rumor: PlayerRumor, suppressionStrength = 0): PlayerRumor {
   return {
     ...rumor,
     distortion: Math.min(1, rumor.distortion * 2 + 0.2),
-    confidence: Math.max(0, rumor.confidence - 0.15),
+    confidence: Math.max(0, rumor.confidence - (0.15 + BURY_SUPPRESSION_RANGE * suppressionStrength)),
   };
 }
 
@@ -423,14 +437,20 @@ export function applyRumorManipulation(
   world: WorldState,
   subAction: 'deny' | 'bury-scandal',
   rumorId: string,
+  /**
+   * 0-1 party suppression strength, composed by the caller from
+   * AbilityModifiers.rumorSuppressionChance. Defaults to 0, so every existing
+   * caller and every partyless world behaves exactly as before.
+   */
+  suppressionStrength = 0,
 ): PlayerRumor | undefined {
   const state = getPlayerRumorState(world);
   const index = state.rumors.findIndex((r) => r.id === rumorId);
   if (index === -1) return undefined;
 
   const updated = subAction === 'deny'
-    ? denyRumor(state.rumors[index])
-    : buryRumor(state.rumors[index]);
+    ? denyRumor(state.rumors[index], suppressionStrength)
+    : buryRumor(state.rumors[index], suppressionStrength);
 
   const rumors = [...state.rumors];
   rumors[index] = updated;

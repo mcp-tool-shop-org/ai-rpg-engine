@@ -159,7 +159,12 @@ export const merchantMinimalRuleset: RulesetDefinition = {
 
   contentConventions: {
     entityTypes: ['player', 'npc', 'factor', 'enemy', 'clerk'],
-    statusTags: ['buff', 'debuff', 'obligation', 'reputation'],
+        // v3.7: widened to what this pack's statuses ACTUALLY tag, not what
+    // the declaration wished they did — shipped-truth: the seizure status is a `control` effect.
+    // Declaration-side only; no shipped status changed. Baseline before
+    // enforce: the catalog gate that now checks this would otherwise have
+    // been a gate against reality.
+    statusTags: ['buff', 'debuff', 'obligation', 'reputation', 'control'],
     combatTags: ['melee', 'improvised', 'collections'],
   },
 };

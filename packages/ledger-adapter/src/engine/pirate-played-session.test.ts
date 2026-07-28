@@ -20,7 +20,11 @@
 
 import { describe, expect, it } from 'vitest';
 import { createGame } from '@ai-rpg-engine/starter-pirate';
-import { SELL_BASE_VALUE, BUY_MARKUP_MULTIPLIER } from '@ai-rpg-engine/modules';
+import {
+  SELL_BASE_VALUE,
+  BUY_MARKUP_MULTIPLIER,
+  computeFactionAttitudeMultiplier,
+} from '@ai-rpg-engine/modules';
 import type { LedgerAdapterConfig } from '../contracts.js';
 import { createLedgerAdapter, reconcile } from '../settle/index.js';
 import { createInitialState } from '../state/index.js';
@@ -88,10 +92,17 @@ async function buildLedgerBalances(
 //   - BUY_ITEM 'cannon-shell' is category 'ammunition', seeded at 45 by the
 //     pirate genre profile — still inside the <=60 neutral bucket ->
 //     scarcity x1.0 too.
-//   - playerReputation stays 0 throughout: port-haven DOES have a real
-//     controllingFaction ('colonial-navy', unlike firewall.test.ts's
-//     factionless fixture), but nothing in this sequence (no attack/bribe/
-//     intimidate) ever changes it -> factionAttitude x1.0.
+//   - playerReputation is the ONE modifier that is not neutral here, and it is
+//     not neutral by authorship rather than by play. port-haven is controlled
+//     by 'colonial-navy', and v3.7 gave black-flag-requiem a starting standing
+//     with them of -35 (the captain is an outlaw before the game opens; see
+//     starter-pirate/setup.ts for why that had to become real state rather than
+//     description). Nothing in THIS sequence changes it — no attack, bribe or
+//     intimidate — so it stays exactly -35 start to finish, and
+//     computeFactionAttitudeMultiplier(-35) is a flat x1.3: a port whose
+//     garrison wants you hanged charges a risk premium in both directions.
+//     Derived below rather than hardcoded, so the arithmetic follows the
+//     authored standing instead of drifting away from it silently.
 //   - No pressure ever applies a category multiplier here, however the raw
 //     district economy/stability numbers read: world-tick.ts's
 //     HEAT_WAKE_THRESHOLD (10) gates EVERY new pressure spawn behind player
@@ -101,14 +112,20 @@ async function buildLedgerBalances(
 //     'black-market-boom'/etc can apply).
 //   - districtProsperity reads off tradeVolume (seeded 50, the <=55 neutral
 //     bucket) -> x1.0.
-// Every modifier the pricing pipeline can apply is therefore x1.0 (buy's own
-// markup aside) — the SAME neutral arithmetic firewall.test.ts's fixture
-// produces, even though this is the real shipped pirate world complete with
-// genre-skewed economy and a real controllingFaction, not a hand-built
-// neutral fixture. Both integration-test assertions below independently
-// confirm this against the live engine's own coin ledger.
-const SELL_CREDIT = SELL_BASE_VALUE;
-const CANNON_SHELL_PRICE = Math.round(SELL_BASE_VALUE * BUY_MARKUP_MULTIPLIER);
+// Every OTHER modifier the pricing pipeline can apply is x1.0, so the whole
+// sequence reduces to base x attitude (x buy's own markup). Both
+// integration-test assertions below independently confirm that against the
+// live engine's own coin ledger.
+//
+// Note what did NOT change: the firewall assertion. Whether the captain is
+// owed 10 coin or 13 is a question about the pirate world; whether attaching
+// the ledger adapter perturbs it is the question this file exists to answer,
+// and that one is still byte-identical.
+const PORT_HAVEN_ATTITUDE = computeFactionAttitudeMultiplier(-35);
+const SELL_CREDIT = Math.round(SELL_BASE_VALUE * PORT_HAVEN_ATTITUDE);
+const CANNON_SHELL_PRICE = Math.round(
+  SELL_BASE_VALUE * PORT_HAVEN_ATTITUDE * BUY_MARKUP_MULTIPLIER,
+);
 
 describe('THE FIREWALL — real pirate played session: attaching the ledger adapter never perturbs the deterministic engine', () => {
   it('a captain-driven move+sell+buy run with the adapter enabled + settled is byte-identical to the same run without it', async () => {

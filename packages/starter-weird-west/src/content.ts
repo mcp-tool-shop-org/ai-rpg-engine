@@ -50,7 +50,11 @@ export const player: EntityState = {
 
 export const bartender: EntityState = {
   id: 'bartender_silas',
-  blueprintId: 'bartender',
+  // blueprintId == id. defeat-fallout resolves a defeated entity's faction by
+  // instance id OR blueprintId (P8-WL-004) so a roster naming an authored
+  // entity also claims its encounter-spawned CLONES — and that only works if
+  // the two agree. Five packs spelled them differently; see POR-1.
+  blueprintId: 'bartender_silas',
   type: 'npc',
   name: 'Silas',
   // F-a56f7e5d: recruitable + a bare CompanionRole tag ('scout') — the
@@ -77,7 +81,11 @@ export const bartender: EntityState = {
 
 export const sheriff: EntityState = {
   id: 'sheriff_hale',
-  blueprintId: 'sheriff',
+  // blueprintId == id. defeat-fallout resolves a defeated entity's faction by
+  // instance id OR blueprintId (P8-WL-004) so a roster naming an authored
+  // entity also claims its encounter-spawned CLONES — and that only works if
+  // the two agree. Five packs spelled them differently; see POR-1.
+  blueprintId: 'sheriff_hale',
   type: 'npc',
   name: 'Sheriff Hale',
   // F-a56f7e5d: recruitable + a bare CompanionRole tag ('fighter').
@@ -98,7 +106,11 @@ export const sheriff: EntityState = {
 
 export const revenant: EntityState = {
   id: 'dust_revenant',
-  blueprintId: 'revenant',
+  // blueprintId == id. defeat-fallout resolves a defeated entity's faction by
+  // instance id OR blueprintId (P8-WL-004) so a roster naming an authored
+  // entity also claims its encounter-spawned CLONES — and that only works if
+  // the two agree. Five packs spelled them differently; see POR-1.
+  blueprintId: 'dust_revenant',
   type: 'enemy',
   name: 'Dust Revenant',
   tags: ['enemy', 'undead', 'cursed', 'gunslinger', 'role:elite'],
@@ -117,7 +129,11 @@ export const revenant: EntityState = {
 
 export const crawler: EntityState = {
   id: 'mesa_crawler',
-  blueprintId: 'crawler',
+  // blueprintId == id. defeat-fallout resolves a defeated entity's faction by
+  // instance id OR blueprintId (P8-WL-004) so a roster naming an authored
+  // entity also claims its encounter-spawned CLONES — and that only works if
+  // the two agree. Five packs spelled them differently; see POR-1.
+  blueprintId: 'mesa_crawler',
   type: 'enemy',
   name: 'Mesa Crawler',
   tags: ['enemy', 'spirit', 'beast', 'supernatural', 'role:boss'],

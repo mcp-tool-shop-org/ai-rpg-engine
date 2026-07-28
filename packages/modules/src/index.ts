@@ -347,6 +347,8 @@ export {
   isPlayerDiplomacyVerb,
   isPlayerSabotageVerb,
   resolveSocialAction,
+  BASE_RUMOR_CONFIDENCE,
+  scaledRumorConfidence,
   resolveRumorAction,
   resolveDiplomacyAction,
   resolveSabotageAction,
@@ -372,6 +374,8 @@ export type {
   LeverageRequirement,
   LeverageEffect,
   LeverageResolution,
+  ExternalLeverageModifiers,
+  ModifierAttribution,
   LeverageHints,
 } from './player-leverage.js';
 export {
@@ -637,6 +641,8 @@ export {
   formatOpportunityForNarrator,
   formatOpportunityForDialogue,
   makeOpportunity,
+  findLocalFaction,
+  deadlineFor,
   resetOpportunityCounter,
   // v2.9 write-wire (F-ceed887f/F-f3f2a84c): world.modules['opportunity-core']
   // accessors — the shared contract world-tick.ts's spawn/tick wire and
@@ -1047,3 +1053,5 @@ export {
   zombieProfile,
   fantasyProfile,
 } from './profile-templates.js';
+
+export { composeLeverageModifiers, composeTradeModifiers } from './leverage-modifiers.js';
