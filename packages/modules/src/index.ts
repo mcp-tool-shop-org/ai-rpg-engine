@@ -1053,4 +1053,4 @@ export {
   fantasyProfile,
 } from './profile-templates.js';
 
-export { composeLeverageModifiers } from './leverage-modifiers.js';
+export { composeLeverageModifiers, composeTradeModifiers } from './leverage-modifiers.js';

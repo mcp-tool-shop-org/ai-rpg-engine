@@ -14,7 +14,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { EntityState, WorldState } from '@ai-rpg-engine/core';
-import { composeLeverageModifiers } from './leverage-modifiers.js';
+import { composeLeverageModifiers, composeTradeModifiers } from './leverage-modifiers.js';
 import {
   resolveSocialAction,
   scaledRumorConfidence,
@@ -23,6 +23,8 @@ import {
 } from './player-leverage.js';
 import { denyRumor, buryRumor, type PlayerRumor } from './player-rumor.js';
 import { setPartyState, createPartyState, type PartyState } from './companion-core.js';
+import { computeItemValue } from './trade-value.js';
+import { createDistrictEconomy } from './economy-core.js';
 
 const PLAYER_ID = 'player';
 
@@ -326,5 +328,104 @@ describe('AbilityModifiers.rumorSuppressionChance reaches the burial', () => {
     expect(denyRumor(RUMOR, 0)).toEqual(denyRumor(RUMOR));
     expect(buryRumor(RUMOR, 0)).toEqual(buryRumor(RUMOR));
     expect(composeLeverageModifiers(bareWorld(), player(bareWorld())).rumorSuppression).toBeUndefined();
+  });
+});
+
+// --- Slice 3: the trade bundle ---------------------------------------------
+
+/** A party whose ability grants a flat commerce bonus. */
+function partyWithTrader(): PartyState {
+  const party = createPartyState();
+  party.companions.push({
+    npcId: 'factor-sela',
+    role: 'smuggler',
+    joinedAtTick: 0,
+    abilityTags: ['trade-advantage'],
+    morale: 70,
+    active: true,
+  });
+  return party;
+}
+
+function priceIn(world: WorldState, base = 10): number {
+  return computeItemValue(base, 'components', {
+    districtEconomy: createDistrictEconomy(),
+    playerReputation: 0,
+    playerHeat: 0,
+    isContraband: false,
+    activePressureKinds: [],
+    externalModifiers: composeTradeModifiers(world, player(world)),
+  }).finalValue;
+}
+
+describe('AbilityModifiers.commerceGainBonus reaches the price', () => {
+  it('CONSEQUENCE: a trader in the party gets more for the same goods', () => {
+    const world = bareWorld();
+    const without = priceIn(world);
+    setPartyState(world, partyWithTrader());
+    expect(
+      priceIn(world),
+      'the party carries a commerceGainBonus and the sale value did not move — still unread',
+    ).toBeGreaterThan(without);
+  });
+
+  it('the bonus is FLAT, not a percentage', () => {
+    // A percentage would make a trader companion worth nothing on cheap goods
+    // and enormous on a relic, which is not what "knows the market" means.
+    const world = bareWorld();
+    setPartyState(world, partyWithTrader());
+    const cheapDelta = priceIn(world, 10) - priceIn(bareWorld(), 10);
+    const dearDelta = priceIn(world, 500) - priceIn(bareWorld(), 500);
+    expect(cheapDelta).toBe(dearDelta);
+  });
+
+  it('NEGATIVE CONTROL: no party composes nothing and prices exactly as before', () => {
+    const world = bareWorld();
+    expect(composeTradeModifiers(world, player(world))).toBeUndefined();
+    const bare = computeItemValue(10, 'components', {
+      districtEconomy: createDistrictEconomy(),
+      playerReputation: 0, playerHeat: 0, isContraband: false, activePressureKinds: [],
+    });
+    expect(priceIn(world)).toBe(bare.finalValue);
+    expect(bare.modifiers.districtMoodScale).toBeUndefined();
+  });
+});
+
+describe('DistrictModifiers.tradePriceScale reaches the price', () => {
+  function moodWorld(safety: number, spirit: number): WorldState {
+    const world = bareWorld();
+    world.modules['district-core'] = {
+      districts: {
+        'district-a': {
+          alertPressure: 100 - safety, rumorDensity: 0, intruderLikelihood: 0,
+          surveillance: 100 - spirit, stability: safety / 10, commerce: 50, morale: spirit,
+          lastUpdateTick: 0, eventCount: 0,
+        },
+      },
+      definitions: { 'district-a': { id: 'district-a', name: 'A', zoneIds: ['zone-a'], tags: [] } },
+      zoneToDistrict: { 'zone-a': 'district-a' },
+    };
+    return world;
+  }
+
+  it('CONSEQUENCE: a district in a different MOOD prices the same goods differently', () => {
+    // Distinct from `districtProsperity`, which reads the ECONOMY. A ruined
+    // quarter can be flush with goods and still price like a place nobody
+    // wants to stand in — same DistrictEconomy in both arms here, so the only
+    // difference IS the mood.
+    const grim = priceIn(moodWorld(5, 5), 100);
+    const calm = priceIn(moodWorld(95, 95), 100);
+    expect(grim).not.toBe(calm);
+  });
+
+  it('ATTRIBUTION: the scale names the district it came from', () => {
+    const composed = composeTradeModifiers(moodWorld(5, 5), player(moodWorld(5, 5)));
+    expect(composed?.districtMoodScale?.source).toBe('district-a');
+  });
+
+  it('NEGATIVE CONTROL: a scale of exactly 1 composes no entry at all', () => {
+    const neutral = moodWorld(50, 50);
+    const composed = composeTradeModifiers(neutral, player(neutral));
+    expect(composed?.districtMoodScale).toBeUndefined();
   });
 });

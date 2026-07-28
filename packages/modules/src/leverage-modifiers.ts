@@ -34,6 +34,7 @@ import { computeDistrictMood, computeDistrictModifiers } from './district-mood.j
 import { getDistrictForZone, getDistrictState, getDistrictDefinition } from './district-core.js';
 import { getEntityFaction } from './faction-cognition.js';
 import type { ExternalLeverageModifiers } from './player-leverage.js';
+import type { TradeContext } from './trade-value.js';
 
 /**
  * Compose the party's and the district's passive contributions for one actor.
@@ -126,4 +127,45 @@ export function composeLeverageModifiers(
   }
 
   return composed;
+}
+
+/**
+ * The trade half of the same seam: the district MOOD's price scale and the
+ * party's flat commerce bonus, composed for one actor.
+ *
+ * Separate from `composeLeverageModifiers` because trade and social resolution
+ * spend different fields and share no consumer — folding them into one bundle
+ * would make every trade recompute a leverage discount it never reads.
+ * Returns `undefined` (not an empty object) when neither applies, so
+ * `computeItemValue` sees no `externalModifiers` key at all and every existing
+ * TradeContext keeps its exact arithmetic.
+ */
+export function composeTradeModifiers(
+  world: WorldState,
+  actor: EntityState,
+): TradeContext['externalModifiers'] {
+  const composed: NonNullable<TradeContext['externalModifiers']> = {};
+
+  const active = getPartyState(world).companions.filter((c) => c.active);
+  if (active.length > 0) {
+    const mods = computeAbilityModifiers(computePartyAbilities(getPartyState(world)));
+    if (mods.commerceGainBonus > 0) {
+      composed.companionCommerceBonus = {
+        amount: mods.commerceGainBonus,
+        source: active.map((c) => c.npcId).sort().join('+'),
+      };
+    }
+  }
+
+  const districtId = actor.zoneId ? getDistrictForZone(world, actor.zoneId) : undefined;
+  if (districtId) {
+    const state = getDistrictState(world, districtId);
+    if (state) {
+      const tags = getDistrictDefinition(world, districtId)?.tags ?? [];
+      const scale = computeDistrictModifiers(computeDistrictMood(state, tags)).tradePriceScale;
+      if (scale !== 1) composed.districtMoodScale = { scale, source: districtId };
+    }
+  }
+
+  return Object.keys(composed).length > 0 ? composed : undefined;
 }
