@@ -13,10 +13,10 @@
 //                  targeting, combat and perception all branch on it. So the
 //                  declaration is a live contract and can be gated the way
 //                  PSC-1 gates statusTags. One pack violated it.
-//   combatTags   — 29 of the 34 values these two declare across the catalog
+//   combatTags   — 31 of the 37 values these two declare across the catalog
 //   networkTags    appear NOWHERE in any pack's ruleset, catalog, statuses,
 //                  progression trees, or booted world. They do not describe a
-//                  field that exists. The five apparent hits are coincidences
+//                  field that exists. The six apparent hits are coincidences
 //                  (`data-vault` is a ZONE ID; `supernatural`, `energy` and
 //                  `collections` are entity/status tags that happen to share a
 //                  word). A "used ⊆ declared" gate over them would be
@@ -199,8 +199,8 @@ export function conventionCoverage(pack: PackInfo): Record<string, string[]> {
  * ruleset, catalog, statuses, progression trees or booted world.
  *
  * THE FINDING, in one table. `entityTypes` rows carry their shipped types.
- * `combatTags` and `networkTags` rows are almost entirely EMPTY: 29 of the 34
- * values those two declare across the catalog appear nowhere, and the five
+ * `combatTags` and `networkTags` rows are almost entirely EMPTY: 31 of the 37
+ * values those two declare across the catalog appear nowhere, and the six
  * that do are coincidences — `data-vault` is a zone id, `supernatural`,
  * `energy` and `collections` are entity or status tags that happen to share a
  * word with a combat idea. They name a field the content model does not have.
@@ -240,6 +240,11 @@ const MEASURED_COVERAGE: Record<string, string[]> = {
   'jade-veil/combatTags': [],
   'salt-road-ledger/entityTypes': ['enemy', 'npc', 'player'],
   'salt-road-ledger/combatTags': ['collections'],
+  // The twelfth pack, declaring shipped truth from birth rather than being
+  // widened into it later — its entityTypes row is FULL, which is the first
+  // time any pack's has been.
+  'hue-and-cry/entityTypes': ['enemy', 'npc', 'player'],
+  'hue-and-cry/combatTags': ['pursuit'],
 };
 
 function measureCoverage(): Record<string, string[]> {
@@ -269,12 +274,12 @@ describe('declared vocabulary has somewhere to live (PCC-1)', () => {
         appearing += (conventionCoverage(pack)[`${pack.meta.id}/${field}`] ?? []).length;
       }
     }
-    expect(declaredValues, 'nothing declares these any more — the finding is stale').toBe(34);
+    expect(declaredValues, 'nothing declares these any more — the finding is stale').toBe(37);
     expect(
       appearing,
       'combat/network vocabulary started appearing in content. If a carrier was built, this file\n' +
         '  should now gate conformance for that field the way it does for entityTypes.',
-    ).toBe(5);
+    ).toBe(6);
   });
 
   it('`entityTypes` is fully covered everywhere — the sweep can see a real carrier (control)', () => {

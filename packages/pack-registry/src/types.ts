@@ -20,11 +20,18 @@ export type PackGenre =
   // niche needs a member added here — the alternative was reusing an existing
   // genre, which passes the rubric's distinct-narrative-fantasy dimension on a
   // technicality while making the pack undiscoverable via filterPacks({ genre }).
-  | 'mercantile';
+  | 'mercantile'
+  // Hunting people for money as the primary loop — the board, the informant,
+  // the taking, and which half of a city will still open a door to you
+  // afterward (Hue and Cry). Added for the same reason 'mercantile' was: this
+  // union is closed, and reusing 'mystery' or 'historical' would satisfy the
+  // rubric's distinct-narrative-fantasy dimension on a technicality while
+  // making the pack undiscoverable via filterPacks({ genre: 'pursuit' }).
+  | 'pursuit';
 
 export const VALID_GENRES: PackGenre[] = [
   'fantasy', 'sci-fi', 'cyberpunk', 'horror', 'mystery',
-  'western', 'pirate', 'post-apocalyptic', 'historical', 'mercantile',
+  'western', 'pirate', 'post-apocalyptic', 'historical', 'mercantile', 'pursuit',
 ];
 
 export type PackDifficulty = 'beginner' | 'intermediate' | 'advanced';

@@ -18,6 +18,7 @@ import * as vampire from '@ai-rpg-engine/starter-vampire';
 import * as gladiator from '@ai-rpg-engine/starter-gladiator';
 import * as ronin from '@ai-rpg-engine/starter-ronin';
 import * as merchant from '@ai-rpg-engine/starter-merchant';
+import * as bountyHunter from '@ai-rpg-engine/starter-bounty-hunter';
 
 export type PackInfo = {
   meta: PackMetadata;
@@ -145,5 +146,14 @@ export const allPacks: PackInfo[] = [
     progressionTrees: [merchant.factorsCreditTree],
     itemCatalog: merchant.itemCatalog,
     statusDefinitions: merchant.merchantStatusDefinitions,
+  },
+  {
+    meta: bountyHunter.packMeta,
+    buildCatalog: bountyHunter.buildCatalog,
+    ruleset: bountyHunter.bountyHunterMinimalRuleset,
+    createGame: bountyHunter.createGame,
+    progressionTrees: [bountyHunter.thiefTakersNameTree],
+    itemCatalog: bountyHunter.itemCatalog,
+    statusDefinitions: bountyHunter.bountyHunterStatusDefinitions,
   },
 ];

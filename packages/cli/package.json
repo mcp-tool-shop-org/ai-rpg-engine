@@ -41,7 +41,8 @@
     "@ai-rpg-engine/starter-vampire": "*",
     "@ai-rpg-engine/starter-gladiator": "*",
     "@ai-rpg-engine/starter-ronin": "*",
-    "@ai-rpg-engine/starter-merchant": "*"
+    "@ai-rpg-engine/starter-merchant": "*",
+    "@ai-rpg-engine/starter-bounty-hunter": "*"
   },
   "license": "MIT",
   "author": "mcp-tool-shop",
