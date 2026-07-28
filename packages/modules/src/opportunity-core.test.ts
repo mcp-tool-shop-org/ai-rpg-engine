@@ -16,6 +16,7 @@ import {
   setPersistedOpportunities,
   type OpportunityState,
   type OpportunityInputs,
+  MIN_TURNS_BETWEEN_SPAWNS,
 } from './opportunity-core.js';
 import type { WorldState } from '@ai-rpg-engine/core';
 import type { LeverageState } from './player-leverage.js';
@@ -442,7 +443,12 @@ describe('opportunity-core', () => {
           npcProfiles: inputs.npcProfiles,
           districtEconomies: new Map([['market-district', dangerousEcon]]),
           activeOpportunities: [result!.opportunity],
-          currentTick: 24,
+          // Derived, not hardcoded: this fixture said "past
+          // MIN_TURNS_BETWEEN_SPAWNS" and then wrote 24, which stopped being
+          // past it the moment v3.7 raised the floor from 3 to 5. The
+          // assertion is about the pair-conflict guard, not about the spawn
+          // interval, so it reads the interval from the source of truth.
+          currentTick: 20 + MIN_TURNS_BETWEEN_SPAWNS,
         });
         const second = evaluateOpportunities(secondInputs);
         expect(second).not.toBeNull();

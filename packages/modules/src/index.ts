@@ -637,6 +637,7 @@ export {
   formatOpportunityForNarrator,
   formatOpportunityForDialogue,
   makeOpportunity,
+  deadlineFor,
   resetOpportunityCounter,
   // v2.9 write-wire (F-ceed887f/F-f3f2a84c): world.modules['opportunity-core']
   // accessors — the shared contract world-tick.ts's spawn/tick wire and
