@@ -482,14 +482,15 @@ const REACHABLE_TODAY: Record<OpportunityKind, { reachable: boolean; measured: s
       '`tickDistrictEconomy` drags every category back toward the 50 baseline each round anyway.',
   },
   contract: {
-    reachable: false,
+    reachable: true,
     measured:
-      'needs an NPC at breakpoint favorable-or-allied carrying a `bargain` goal. The bargain goal ' +
-      'needs greed > 60 and `favorable` requires greed < 50, so ONLY an allied (trust >= 60, ' +
-      'loyalty >= 50) AND greedy NPC can ever carry it — the two conditions that look like ' +
-      'alternatives are mutually exclusive. Trust comes from `relations[\'player-trust\']`, ' +
-      "authored exactly ONCE in the entire catalog (fantasy's Aldric, at 15 — still under the 30 " +
-      'favorable bar), so every named NPC in every pack derives `wavering`.',
+      'LIT in P1 by salt-road-ledger. Needs an NPC at favorable-or-allied carrying a `bargain` ' +
+      'goal — and those two look like alternatives but are mutually exclusive: the bargain goal ' +
+      'needs greed > 60 while `favorable` requires greed < 50, so ONLY an allied (trust >= 60, ' +
+      "loyalty >= 50) AND greedy NPC can carry it. `relations['player-trust']` had been authored " +
+      "exactly ONCE in the entire catalog (fantasy's Aldric, at 15 — under the 30 favorable bar), " +
+      'so every named NPC in all eleven packs derived `wavering`. Assay Master Corvane now arrives ' +
+      'bonded (trust 68) and fee-driven (greed 72), which is what the pack always said he was.',
   },
   recovery: {
     reachable: false,
@@ -547,7 +548,10 @@ describe('opportunity-kind reachability × real catalog (POR-1)', () => {
 
 const WANDERING_BASELINE: Record<OpportunityKind, number> = {
   bounty: 0,
-  contract: 0,
+  // P1: salt-road-ledger. A contract comes from a PERSON who already knows
+  // you, so it needs no fighting and no recruiting — it is the one kind a
+  // player at the floor can be handed.
+  contract: 1,
   escort: 0,
   'faction-job': 0,
   'favor-request': 0,
@@ -557,7 +561,7 @@ const WANDERING_BASELINE: Record<OpportunityKind, number> = {
 };
 
 describe('meta: POR-1 reproduces the measured baseline (control 1)', () => {
-  it('a purely wandering player still finds exactly one kind — investigation, in all 11 packs', () => {
+  it('a purely wandering player finds only what the world hands them unprompted', () => {
     const wandering = SESSIONS.filter((s) => s.profile === 'wandering');
     const measured = Object.fromEntries(
       ALL_OPPORTUNITY_KINDS.map((k) => [k, packsReaching(k, wandering).length]),
