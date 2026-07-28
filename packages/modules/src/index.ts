@@ -692,6 +692,7 @@ export type {
 // --- Opportunity Resolution (v1.9; write-wire v2.9 F-f3f2a84c) ---
 export {
   computeOpportunityFallout,
+  SUPPLY_RUN_RUNNERS_CUT,
   formatOpportunityFalloutForDirector,
   formatOpportunityFalloutForNarrator,
   // F-f3f2a84c: the resolution loop (accept → resolve → consequence).

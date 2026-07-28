@@ -178,7 +178,8 @@ export function producerCensus(): Map<OpportunityFalloutEffect['type'], string[]
  * can never fire, so the sink and its producer are one piece of work.
  */
 const KNOWN_UNPRODUCED: Array<OpportunityFalloutEffect['type']> = [
-  'materials',
+  // 'materials' — PRODUCER AUTHORED v3.8 (the runner's cut on a completed
+  // supply-run, the one kind that already knows which category moved).
   'spawn-opportunity',
 ];
 

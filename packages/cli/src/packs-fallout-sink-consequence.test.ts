@@ -45,8 +45,14 @@ import {
   getDisplayTitle,
   hasTitle,
   formatTitlesForDirector,
+  getMaterialInventory,
+  hasMaterials,
+  adjustMaterial,
+  getAvailableRecipes,
+  SUPPLY_RUN_RUNNERS_CUT,
   type OpportunityKind,
   type OpportunityState,
+  type SupplyCategory,
 } from '@ai-rpg-engine/modules';
 import { runHostileRound } from './bin.js';
 import {
@@ -152,6 +158,11 @@ function resolveOnce(
 /** The player entity's custom record — where leverage, materials and titles live. */
 function playerCustom(world: WorldState): Record<string, string | number | boolean> {
   return (world.entities[world.playerId]?.custom ?? {}) as Record<string, string | number | boolean>;
+}
+
+/** A custom record holding `quantity` of one category — for the affordability check. */
+function grantMaterials(quantity: number, category: SupplyCategory): Record<string, string | number | boolean> {
+  return adjustMaterial({}, category, quantity);
 }
 
 /** Net obligation weight toward the player, through the public reads only. */
@@ -668,5 +679,72 @@ describe('sink: title-trigger (FSC-1)', () => {
     // must never overwrite it — they answer different questions.
     const { engine, before } = resolveOnce('neon-lockbox', 'faction-job', 'complete', 'pursuing');
     expect(playerCustom(engine.world).title).toEqual(playerCustom(before).title);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sink 6 — materials → crafting-core's material inventory (PRODUCER + SINK)
+// ---------------------------------------------------------------------------
+
+describe('sink: materials (FSC-1)', () => {
+  it('the runner keeps a cut of what passed through their hands', () => {
+    // Two halves in one slice, because a sink for an effect nothing emits is
+    // a guard that can never fire. FSA-1's producer census found `materials`
+    // dead at the VOCABULARY level: declared on OpportunityFalloutEffect AND
+    // on OpportunityReward, formatted by formatFalloutEffect, emitted nowhere.
+    const { engine, offer, before } = resolveOnce('salt-road-ledger', 'supply-run', 'complete');
+    const reward = offer.rewards.find((r) => r.type === 'economy-shift');
+    if (reward?.type !== 'economy-shift') throw new Error('the supply run promised no shipment');
+
+    const kept = getMaterialInventory(playerCustom(engine.world))[reward.category];
+    const before_ = getMaterialInventory(playerCustom(before))[reward.category];
+    expect(
+      kept - before_,
+      'the completed run announced a cut the player never received',
+    ).toBe(SUPPLY_RUN_RUNNERS_CUT);
+  });
+
+  it('the cut is in the SAME category the district was short of', () => {
+    // The reason supply-run is the honest home for this effect: it is the one
+    // kind that already knows which category moved and how much, so the cut
+    // needs no invented vocabulary.
+    const { engine, offer, before } = resolveOnce('salt-road-ledger', 'supply-run', 'complete');
+    const reward = offer.rewards.find((r) => r.type === 'economy-shift');
+    if (reward?.type !== 'economy-shift') throw new Error('unreachable');
+
+    const after = getMaterialInventory(playerCustom(engine.world));
+    const start = getMaterialInventory(playerCustom(before));
+    for (const category of Object.keys(after) as Array<keyof typeof after>) {
+      const delta = after[category] - start[category];
+      expect(
+        delta,
+        `${category} moved on a run that shipped ${reward.category}`,
+      ).toBe(category === reward.category ? SUPPLY_RUN_RUNNERS_CUT : 0);
+    }
+  });
+
+  it('the cut buys something — it is not a number that accumulates toward nothing', () => {
+    // The grounding for the constant, asserted rather than claimed: every
+    // recipe input in crafting-recipes.ts costs 1 or 2 units, so one completed
+    // run affords one repair or craft on the round it lands.
+    const recipes = getAvailableRecipes('fantasy');
+    expect(recipes.length, 'the recipe catalog is empty — this proves nothing').toBeGreaterThan(0);
+    const cheapestInput = Math.min(
+      ...recipes.flatMap((r) => r.inputs.map((i) => i.quantity)),
+    );
+    expect(SUPPLY_RUN_RUNNERS_CUT).toBeGreaterThanOrEqual(cheapestInput);
+    expect(
+      hasMaterials(
+        getMaterialInventory(grantMaterials(SUPPLY_RUN_RUNNERS_CUT, 'components')),
+        [{ category: 'components', quantity: cheapestInput }],
+      ),
+      'one run\'s cut does not cover the cheapest recipe in the catalog',
+    ).toBe(true);
+  });
+
+  it('a resolution that announces no materials pays none (attribution)', () => {
+    const { engine, before } = resolveOnce('salt-road-ledger', 'contract', 'complete');
+    expect(getMaterialInventory(playerCustom(engine.world)))
+      .toEqual(getMaterialInventory(playerCustom(before)));
   });
 });

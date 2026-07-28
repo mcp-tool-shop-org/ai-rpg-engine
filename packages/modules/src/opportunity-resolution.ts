@@ -47,6 +47,7 @@ import {
 import { makeEvent } from './make-event.js';
 import { getDistrictForZone } from './district-core.js';
 import { grantTitleToEntity } from './player-titles.js';
+import { adjustMaterial } from './crafting-core.js';
 import { HEAT_KEY, recordMilestone } from './world-tick.js';
 import {
   getPartyState,
@@ -164,6 +165,20 @@ export function computeOpportunityFallout(
 
   return { resolution, effects, summary, ...(warnings.length > 0 ? { warnings } : {}) };
 }
+
+/**
+ * What a runner keeps of a supply run they completed.
+ *
+ * GROUNDED IN WHAT MATERIALS ARE FOR, not picked for feel: every recipe input
+ * in crafting-recipes.ts costs 1 or 2 units of a category (repair-weapon is 2
+ * components, field-medicine 2 medicine, the modification recipes 1 each). At
+ * 2, one completed run buys exactly one repair or one craft — a reward with a
+ * use on the round it lands, rather than a number that accumulates toward
+ * nothing. `adjustMaterial` clamps the store at 0-50, so a run-heavy session
+ * saturates at 25 runs' worth and stops paying, which is the same
+ * "saturation is the ceiling, not the goal" posture the district economy takes.
+ */
+export const SUPPLY_RUN_RUNNERS_CUT = 2;
 
 // --- Per-Kind Fallout ---
 
@@ -355,6 +370,16 @@ function getSupplyRunFallout(
       const economyReward = opp.rewards.find((r) => r.type === 'economy-shift');
       if (economyReward && economyReward.type === 'economy-shift') {
         effects.push({ type: 'economy-shift', districtId: economyReward.districtId, category: economyReward.category, delta: economyReward.delta, cause: 'supply-run completed' });
+        // The runner's cut (v3.8). `materials` was declared on BOTH this union
+        // and OpportunityReward, formatted by formatFalloutEffect, and emitted
+        // by nothing anywhere in the engine — FSA-1's producer census found it
+        // dead at the vocabulary level, one tier above a missing sink.
+        //
+        // A supply run is the one kind that already knows which category moved
+        // and how much, so it is the honest place for the effect to exist: you
+        // sourced the goods, the district gets the shipment, and you keep a
+        // little of what passed through your hands.
+        effects.push({ type: 'materials', category: economyReward.category, quantity: SUPPLY_RUN_RUNNERS_CUT });
       }
       effects.push({ type: 'rumor', claim: `delivered critical supplies — a reliable runner`, valence: 'heroic', spreadTo: faction ? [faction] : [] });
       break;
@@ -735,7 +760,12 @@ function addGlobal(world: WorldState, key: string, delta: number): void {
  *    Deliberately not a title subsystem: character-creation's build-time
  *    `custom.title` is untouched, and social-consequence's `evolveTitle` is
  *    left unwired because no pack authors the `TitleEvolution[]` it consumes.
- *  - materials/spawn-
+ *  - materials → crafting-core's adjustMaterial (v3.8 sink #6), the
+ *    `materials.<SupplyCategory>` store on the actor's custom that
+ *    getMaterialInventory reads and the craft/repair recipes consume. District
+ *    stock is `economy-shift`'s job; conflating the two would make them
+ *    redundant.
+ *  - spawn-
  *    pressure/spawn-opportunity — no persisted sink today. Honest no-op; the
  *    verb handler's emitted event payload carries the full effect list
  *    regardless, so nothing is silently lost, only not yet WRITTEN anywhere.
@@ -937,6 +967,18 @@ export function applyOpportunityFallout(world: WorldState, actorId: string, fall
         if (actor) grantTitleToEntity(actor, effect.tag, fallout.resolution.resolvedAtTick);
         break;
       case 'materials':
+        // v3.8 sink #6. crafting-core already owns exactly this store —
+        // `materials.<SupplyCategory>` on the actor's custom record, with
+        // getMaterialInventory as its public read and hasMaterials/craft as
+        // its consumers. The effect type is keyed by the SAME SupplyCategory,
+        // so this is a sink that was waiting to be plugged in rather than one
+        // that had to be designed. District stock is the OTHER effect type
+        // (`economy-shift`); making this one mean that too would have made
+        // the two redundant.
+        if (actor) {
+          actor.custom = adjustMaterial(actor.custom ?? {}, effect.category, effect.quantity);
+        }
+        break;
       case 'spawn-pressure':
       case 'spawn-opportunity':
         break; // no persisted sink today — see doc comment above
