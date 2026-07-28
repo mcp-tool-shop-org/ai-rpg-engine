@@ -44,6 +44,7 @@ import {
   RELATIONSHIP_AXIS_RANGE,
 } from './npc-agency.js';
 import type { PressureKind } from './pressure-system.js';
+import { makePressure } from './pressure-system.js';
 import type { RumorValence, PlayerRumor } from './player-rumor.js';
 import {
   spawnNpcOriginatedRumor,
@@ -55,7 +56,7 @@ import { makeEvent } from './make-event.js';
 import { getDistrictForZone } from './district-core.js';
 import { grantTitleToEntity } from './player-titles.js';
 import { adjustMaterial } from './crafting-core.js';
-import { HEAT_KEY, recordMilestone } from './world-tick.js';
+import { HEAT_KEY, recordMilestone, pushActivePressure, CHAIN_TURNS_REMAINING } from './world-tick.js';
 import {
   getPartyState,
   setPartyState,
@@ -206,6 +207,20 @@ export const SUPPLY_RUN_RUNNERS_CUT = 2;
  * shouted.
  */
 export const CHAINED_OPPORTUNITY_URGENCY = 0.5;
+
+/**
+ * Urgency the lapsed-bounty escalation enters at.
+ *
+ * Deliberately UNDER opportunity-core's PRESSURE_SUPPRESSION_URGENCY (0.7),
+ * which is Booth 2009's relax-valley rule: at or above it, the world stops
+ * handing out unrelated work. A consequence for missing a deadline that also
+ * shuts the offer board would punish one lapse twice — the escalation is meant
+ * to be a thing you now have to deal with, not a stop on everything else.
+ *
+ * 0.55 also sits above HEAT_URGENCY_STEP's reach from a standing start, so it
+ * reads as a distinct event rather than as ambient pressure drift.
+ */
+export const BOUNTY_LAPSE_ESCALATION_URGENCY = 0.55;
 
 // --- Per-Kind Fallout ---
 
@@ -373,6 +388,41 @@ function getBountyFallout(
       effects.push({ type: 'heat', delta: 5 });
       break;
     case 'expired':
+      // The advance you took and did nothing with (v3.8). `spawn-pressure`
+      // had three authored producers before this and every one sat inside a
+      // `betrayed` case — a resolution no shipped path reaches — so FSA-1
+      // measured it dead ONE LEVEL EARLIER than a missing sink: not
+      // unpersisted, but never announced by any session that could be played.
+      //
+      // `expired` and not `failed`, and that is the measurement talking: the
+      // verb reaches accept|complete|abandon and the tick expires, so `failed`
+      // would have reproduced the very defect being fixed.
+      //
+      // `faction-summons` and not `investigation-opened`, and THAT is the
+      // one-active-per-kind guard talking. The first draft used
+      // investigation-opened — the kind contract and supply-run already use
+      // for broken faith — and a played session showed the escalation refused
+      // five times running, because an investigation-opened pressure was
+      // already live from the ordinary pressure rules. The guard was right and
+      // the kind was wrong: a consequence that lands only when the world
+      // happens to be quiet is not a consequence.
+      //
+      // Summons is also the better reading, and it CHAINS: the issuer calls
+      // you in to explain, and evaluatePressureLinkedOpportunities turns a
+      // live faction-summons into a `faction-job` — the work that makes it
+      // right. You took their money and let the clock run out, so now there is
+      // a conversation, and the conversation has a job attached.
+      if (faction) {
+        effects.push({
+          type: 'spawn-pressure',
+          kind: 'faction-summons',
+          sourceFactionId: faction,
+          description: `${faction} summons you to explain the bounty they paid for`,
+          urgency: BOUNTY_LAPSE_ESCALATION_URGENCY,
+          tags: ['pursuit', 'bounty'],
+        });
+      }
+      break;
     case 'declined':
       break;
   }
@@ -815,9 +865,11 @@ function addGlobal(world: WorldState, key: string, delta: number): void {
  *    MAX_ACTIVE_OPPORTUNITIES cap, and one live offer per (kind, source)
  *    pair. A chain that could push past the cap would quietly undo the
  *    measured reason that cap exists.
- *  - spawn-pressure — no persisted sink today. Honest no-op; the
- *    verb handler's emitted event payload carries the full effect list
- *    regardless, so nothing is silently lost, only not yet WRITTEN anywhere.
+ *  - spawn-pressure → makePressure + pushActivePressure (v3.8 sink #8), into
+ *    world-tick's own persisted pressure list, honouring the
+ *    one-active-per-kind invariant both other spawners hold.
+ *
+ * Every one of the fourteen declared effect types now has a persisted sink.
  *
  *    ⚠ CORRECTED v3.8: this list used to justify the obligation/npc-
  *    relationship no-op with "npc-agency's relationship/obligation ledgers are
@@ -1083,8 +1135,41 @@ export function applyOpportunityFallout(world: WorldState, actorId: string, fall
         ];
         break;
       }
-      case 'spawn-pressure':
-        break; // no persisted sink today — see doc comment above
+      case 'spawn-pressure': {
+        // v3.8 sink #8, the last one. Writes into world-tick's OWN persisted
+        // pressure list — the array `state.pressures` holds and
+        // getActivePressures reads — through pushActivePressure, which exists
+        // for exactly this reason: the tick reassigns `state.pressures` at the
+        // END of its round, so a mid-tick write through the namespace would be
+        // silently discarded. See that function's contract.
+        //
+        // Respects the one-active-per-kind invariant both other spawners hold
+        // (applyFallout's chain pressures, runNpcAgencyStep's NPC-triggered
+        // ones). Without it a player who lets three bounties lapse would
+        // accumulate three identical investigations.
+        pushActivePressure(
+          world,
+          makePressure(
+            {
+              kind: effect.kind,
+              sourceFactionId: effect.sourceFactionId,
+              description: effect.description,
+              triggeredBy: `opportunity:${fallout.resolution.opportunityId}`,
+              urgency: effect.urgency,
+              // 'rumored' — fallout is word getting around by nature, the same
+              // visibility applyFallout gives its own chain pressures.
+              visibility: 'rumored',
+              turnsRemaining: CHAIN_TURNS_REMAINING,
+              potentialOutcomes: [],
+              tags: effect.tags,
+              currentTick: fallout.resolution.resolvedAtTick,
+              ...(fallout.resolution.sourceNpcId ? { sourceNpcId: fallout.resolution.sourceNpcId } : {}),
+            },
+            world,
+          ),
+        );
+        break;
+      }
       default:
         break;
     }

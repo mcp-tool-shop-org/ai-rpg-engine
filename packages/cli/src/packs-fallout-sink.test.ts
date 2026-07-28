@@ -359,6 +359,44 @@ function resolveThroughVerb(
 }
 
 /**
+ * Drive a real session to a NATURAL LAPSE through the world tick.
+ *
+ * NOT atomic, and it cannot be: `spawn-pressure`'s only reachable producer is
+ * `bounty/expired`, and expiry happens inside a world tick that moves a dozen
+ * stores at once. Attribution is recovered a different way — the sink stamps
+ * every pressure it spawns with `opportunity:<the resolved offer's id>`, so
+ * the audit can tell its write apart from the pressure rules' own without
+ * needing the round to be quiet.
+ */
+function resolveThroughLapse(
+  packId: string,
+  kind: OpportunityKind,
+  profile: SessionProfile = 'wandering',
+): Reached {
+  const pack = packById(packId);
+  const { engine, offer, round } = playUntilOffered(pack, kind, profile);
+  opportunityOp(engine, offer, 'accept');
+
+  const before = structuredClone(engine.world) as WorldState;
+  const cursor = engine.world.eventLog.length;
+  const visits = new Map<string, number>();
+  const fullHp = engine.world.entities[engine.world.playerId]?.resources?.hp ?? 0;
+
+  for (let r = round; r < round + 40; r++) {
+    const me = engine.world.entities[engine.world.playerId];
+    if (!me) break;
+    if (fullHp > 0 && me.resources) me.resources.hp = fullHp;
+    playerHalfRound(engine, r, profile, visits);
+    runHostileRound(engine, pack, { log: NOOP });
+    const still = getPersistedOpportunities(engine.world).find((o) => o.id === offer.id);
+    if (!still || still.status === 'expired') {
+      return { before, after: engine.world, announced: announcedSince(engine, cursor) };
+    }
+  }
+  throw new Error(`\`${kind}\` never lapsed — its deadline was ${String(offer.turnsRemaining)}`);
+}
+
+/**
  * Every drive the audit needs, each one a real played session. Chosen for
  * COVERAGE per drive — `salt-road-ledger`'s completed contract alone announces
  * five distinct effect types — because each entry costs up to POR_ROUNDS of
@@ -379,6 +417,11 @@ const DRIVES: Array<{ label: string; run: () => Reached }> = [
   { label: 'favor-request completed (crimson-court)', run: () => resolveThroughVerb('crimson-court', 'favor-request', 'complete', 'engaged') },
   { label: 'escort completed (chapel-threshold)', run: () => resolveThroughVerb('chapel-threshold', 'escort', 'complete', 'pursuing') },
   { label: 'investigation completed (salt-road-ledger)', run: () => resolveThroughVerb('salt-road-ledger', 'investigation', 'complete') },
+  // The one drive that is NOT a verb call, and cannot be: `spawn-pressure`'s
+  // only reachable producer is `bounty/expired`, which the world tick reaches
+  // and no verb does. Attribution survives because the sink writes a pressure
+  // tagged with this fallout's own opportunity id — see resolveThroughLapse.
+  { label: 'bounty lapsed (black-flag-requiem)', run: () => resolveThroughLapse('black-flag-requiem', 'bounty', 'engaged') },
 ];
 
 export type SinkVerdict = {
@@ -500,16 +543,48 @@ describe('fallout producer census (FSA-1)', () => {
     ).toEqual([]);
   });
 
-  it('`spawn-pressure` is emitted only on a resolution nothing reaches', () => {
-    // The finding that separates "no sink" from "no announcement". Every
-    // spawn-pressure site is a betrayal, and betrayal has no production caller
-    // — so a sink for it could not be proven by playing, only by unit test.
-    const sites = producerCensus().get('spawn-pressure') ?? [];
-    expect(sites.length, 'spawn-pressure lost its producers entirely').toBeGreaterThan(0);
+  it('every effect type is announceable by a resolution a session can reach', () => {
+    // The measurement that separates "no sink" from "no announcement", and the
+    // one this cycle's last slice closed.
+    //
+    // v3.7 shipped `spawn-pressure` with three authored producers, ALL of them
+    // inside a `betrayed` case — a resolution no shipped path reaches. It was
+    // dead one level earlier than a missing sink: a consequence no session
+    // could announce, so no sink for it could have been proven by playing.
+    // v3.8 authored a fourth producer on `bounty/expired`, which the world
+    // tick reaches every time an accepted bounty runs out its clock.
+    //
+    // Stated as a general property rather than as a note about one type: any
+    // future effect emitted only from failed/betrayed/declined lands here.
+    const census = producerCensus();
+    const unannounceable = ALL_FALLOUT_EFFECT_TYPES.filter((type) => {
+      const sites = census.get(type) ?? [];
+      if (sites.length === 0) return false; // KNOWN_UNPRODUCED's problem, not this one
+      return !sites.some((s) =>
+        REACHABLE_RESOLUTIONS.includes(s.split('/')[1] as OpportunityResolutionType),
+      );
+    });
     expect(
-      sites.filter((s) => REACHABLE_RESOLUTIONS.includes(s.split('/')[1] as OpportunityResolutionType)),
-      'a reachable resolution now emits spawn-pressure — update REACHABLE_RESOLUTIONS or this note.',
+      unannounceable,
+      'these have producers, and every one sits on a resolution nothing reaches\n' +
+        `  (${REACHABLE_RESOLUTIONS.join('|')} are the reachable ones). A sink for them could not be\n` +
+        '  proven by playing. Either author a producer on a reachable resolution, or make the\n' +
+        '  resolution reachable.',
     ).toEqual([]);
+  });
+
+  it('and the betrayal-only producers are still there, waiting on a verb (control)', () => {
+    // The three original spawn-pressure sites did not move — they are still
+    // authored, still unreachable, and they light for free the moment
+    // `betrayed` gains a caller. Without this row the check above could be
+    // satisfied by DELETING the betrayal content instead of adding a
+    // reachable producer.
+    const sites = producerCensus().get('spawn-pressure') ?? [];
+    expect(sites.filter((s) => s.endsWith('/betrayed')).sort()).toEqual([
+      'contract/betrayed',
+      'faction-job/betrayed',
+      'supply-run/betrayed',
+    ]);
   });
 });
 
@@ -551,5 +626,30 @@ describe('fallout sink audit (FSA-1)', () => {
     const verdicts = sinkAudit();
     const announced = ALL_FALLOUT_EFFECT_TYPES.filter((t) => verdicts.get(t)!.announcedBy !== undefined);
     expect(announced.length).toBeGreaterThanOrEqual(KNOWN_PERSISTED.length + KNOWN_SINKLESS.length);
+  });
+
+  it('ALL FOURTEEN effect types are announced by a real session and readable after', () => {
+    // The cycle's acceptance criterion, stated positively rather than as the
+    // absence of a pinned defect list. KNOWN_SINKLESS being empty says "no
+    // KNOWN dead sink"; this says "every declared consequence, driven from a
+    // played session, survives into a world a later read can see".
+    //
+    // It is deliberately NOT expressed as `KNOWN_SINKLESS.length === 0`. That
+    // would go green if a type stopped being announced at all — the exact
+    // failure mode `spawn-pressure` shipped with for two releases.
+    const verdicts = sinkAudit();
+    const notAnnounced = ALL_FALLOUT_EFFECT_TYPES.filter((t) => !verdicts.get(t)!.announcedBy);
+    expect(
+      notAnnounced,
+      'no drive in this suite announces these, so nothing here checks their sinks.\n' +
+        '  Add a drive that reaches a resolution emitting them.',
+    ).toEqual([]);
+
+    const notPersisted = ALL_FALLOUT_EFFECT_TYPES.filter((t) => !verdicts.get(t)!.persisted);
+    expect(
+      notPersisted,
+      'announced by a played session and not readable afterwards:\n' +
+        `  ${notPersisted.map((t) => `${t}: ${verdicts.get(t)!.detail}`).join('\n  ')}`,
+    ).toEqual([]);
   });
 });

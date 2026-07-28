@@ -56,6 +56,8 @@ import {
   deadlineFor,
   applyOpportunityFallout,
   computeOpportunityFallout,
+  getActivePressures,
+  BOUNTY_LAPSE_ESCALATION_URGENCY,
   type OpportunityKind,
   type OpportunityState,
   type SupplyCategory,
@@ -68,6 +70,7 @@ import {
   type SessionProfile,
 } from './packs-opportunity-reachability.test.js';
 import { playUntilOffered, packById, opportunityOp } from './packs-fallout-sink.test.js';
+import type { PackInfo } from './packs.js';
 
 const NOOP = (): void => {};
 
@@ -159,6 +162,37 @@ function resolveOnce(
   const before = structuredClone(engine.world) as WorldState;
   opportunityOp(engine, offer, op);
   return { engine, offer, before };
+}
+
+/** Play `n` more rounds of the same session. */
+function playRounds(engine: Engine, pack: PackInfo, n: number, profile: SessionProfile): void {
+  const visits = new Map<string, number>();
+  const fullHp = engine.world.entities[engine.world.playerId]?.resources?.hp ?? 0;
+  for (let i = 0; i < n; i++) {
+    const me = engine.world.entities[engine.world.playerId];
+    if (!me) return;
+    if (fullHp > 0 && me.resources) me.resources.hp = fullHp;
+    playerHalfRound(engine, i, profile, visits);
+    runHostileRound(engine, pack, { log: NOOP });
+  }
+}
+
+/** Keep playing until `offer` lapses, or throw. */
+function playUntilExpired(
+  engine: Engine, pack: PackInfo, offer: OpportunityState, fromRound: number, profile: SessionProfile,
+): void {
+  const visits = new Map<string, number>();
+  const fullHp = engine.world.entities[engine.world.playerId]?.resources?.hp ?? 0;
+  for (let r = fromRound; r < fromRound + 30; r++) {
+    const me = engine.world.entities[engine.world.playerId];
+    if (!me) return;
+    if (fullHp > 0 && me.resources) me.resources.hp = fullHp;
+    playerHalfRound(engine, r, profile, visits);
+    runHostileRound(engine, pack, { log: NOOP });
+    const still = getPersistedOpportunities(engine.world).find((o) => o.id === offer.id);
+    if (!still || still.status === 'expired') return;
+  }
+  throw new Error(`${offer.kind} never expired`);
 }
 
 /** The player entity's custom record — where leverage, materials and titles live. */
@@ -859,5 +893,93 @@ describe('sink: spawn-opportunity (FSC-1)', () => {
       getPersistedOpportunities(engine.world).filter((o) => !priorIds.has(o.id)),
       'a completed contract spawned a chain its fallout never announced',
     ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sink 8 — spawn-pressure → world-tick's live pressure list (PRODUCER + SINK)
+// ---------------------------------------------------------------------------
+
+describe('sink: spawn-pressure (FSC-1)', () => {
+  it('a bounty you let lapse brings the issuer asking', () => {
+    // The last of the eight, and the only one that was dead TWICE OVER:
+    // `spawn-pressure` had three authored producers before v3.8 and every one
+    // sat inside a `betrayed` case, which no shipped path reaches. So it was
+    // not an unpersisted consequence — it was one no session could announce.
+    //
+    // `expired` and not `failed`: the verb reaches accept|complete|abandon and
+    // the tick expires, so authoring the escalation on `failed` would have
+    // reproduced the exact defect being fixed.
+    const pack = packById('black-flag-requiem');
+    const { engine, offer, round } = playUntilOffered(pack, 'bounty', 'engaged');
+    opportunityOp(engine, offer, 'accept');
+
+    const before = getActivePressures(engine.world).filter((p) => p.tags.includes('bounty')).length;
+    playUntilExpired(engine, pack, offer, round, 'engaged');
+
+    const spawned = getActivePressures(engine.world).filter((p) => p.tags.includes('bounty'));
+    expect(
+      spawned.length - before,
+      'the lapsed bounty announced an escalation the world never spawned',
+    ).toBe(1);
+    expect(spawned[spawned.length - 1].kind).toBe('faction-summons');
+    expect(spawned[spawned.length - 1].triggeredBy).toContain(offer.id);
+  });
+
+  it('the escalation stays UNDER the relax-valley threshold', () => {
+    // BOUNTY_LAPSE_ESCALATION_URGENCY is deliberately below
+    // PRESSURE_SUPPRESSION_URGENCY (0.7, Booth 2009): a consequence for
+    // missing a deadline that ALSO shuts the offer board would punish one
+    // lapse twice. Asserted rather than claimed, because the two constants
+    // live in different files and nothing else would notice them crossing.
+    expect(BOUNTY_LAPSE_ESCALATION_URGENCY).toBeLessThan(0.7);
+  });
+
+  it('it survives the tick that spawned it — the write is not discarded', () => {
+    // The subtlety pushActivePressure exists for. tickWorld derives its round
+    // from a FRESH array and reassigns state.pressures at the very END, so a
+    // sink firing mid-round at step 5b-i writes into an array that is about to
+    // be overwritten. This asserts through the persisted accessor, one full
+    // round after the spawn, which is the only way to tell the difference.
+    const pack = packById('black-flag-requiem');
+    const { engine, offer, round } = playUntilOffered(pack, 'bounty', 'engaged');
+    opportunityOp(engine, offer, 'accept');
+    playUntilExpired(engine, pack, offer, round, 'engaged');
+
+    const spawnedId = getActivePressures(engine.world)
+      .filter((p) => p.tags.includes('bounty'))
+      .map((p) => p.id)
+      .pop();
+    expect(spawnedId, 'nothing spawned to survive').toBeDefined();
+
+    playRounds(engine, pack, 2, 'engaged');
+    expect(
+      getActivePressures(engine.world).some((p) => p.id === spawnedId),
+      'the escalation vanished on the next tick — the sink wrote into a discarded array',
+    ).toBe(true);
+  });
+
+  it('two lapses do not stack two identical summons (one-active-per-kind)', () => {
+    // The invariant applyFallout's chain pressures and runNpcAgencyStep's
+    // NPC-triggered ones both hold. Without it a player who lets three
+    // bounties lapse accumulates three identical summons — and this guard is
+    // not theoretical: it is what caught the FIRST choice of pressure kind
+    // being one the world already keeps live (see the producer's comment).
+    const pack = packById('black-flag-requiem');
+    const { engine, offer, round } = playUntilOffered(pack, 'bounty', 'engaged');
+    opportunityOp(engine, offer, 'accept');
+    playUntilExpired(engine, pack, offer, round, 'engaged');
+
+    const kinds = getActivePressures(engine.world).map((p) => p.kind);
+    const opened = kinds.filter((k) => k === 'faction-summons').length;
+    expect(opened, 'more than one faction-summons is live at once').toBeLessThanOrEqual(1);
+  });
+
+  it('a resolution that announces no pressure spawns none (attribution)', () => {
+    const { engine, before } = resolveOnce('salt-road-ledger', 'contract', 'complete');
+    expect(
+      getActivePressures(engine.world).map((p) => p.id),
+      'a completed contract spawned a pressure its fallout never announced',
+    ).toEqual(getActivePressures(before).map((p) => p.id));
   });
 });

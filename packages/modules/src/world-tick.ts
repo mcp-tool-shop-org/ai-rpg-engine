@@ -575,6 +575,51 @@ export function recordMilestone(world: WorldState, label: string, tags: string[]
   getWorldTickState(world).milestones.push({ label, tags });
 }
 
+/**
+ * Add `pressure` to this world's live pressure list, honouring the
+ * one-active-per-kind invariant every other spawner holds. Returns true when
+ * it landed, false when a pressure of that kind was already live.
+ *
+ * ⚠ THE SUBTLETY THIS FUNCTION EXISTS FOR. `tickWorld` derives its round's
+ * `active` array from `tickPressures(state.pressures, …)` — a NEW array — and
+ * reassigns `state.pressures = active` at the very END of the round. Anything
+ * written into the namespace's array in between is therefore DISCARDED, which
+ * is why opportunity fallout's `spawn-pressure` sink cannot simply push
+ * through getActivePressures. Mutating the array `state.pressures` currently
+ * holds is correct OUTSIDE a tick (the verb path, where that array is the
+ * live one); INSIDE a tick it would vanish.
+ *
+ * So the write goes to BOTH: the persisted array, and — when a tick is
+ * mid-round — the working array it will persist. `runningPressures` below is
+ * how the tick lends its working array to this function for the duration of
+ * its own round; outside a tick it is undefined and only the persisted array
+ * is touched.
+ */
+export function pushActivePressure(world: WorldState, pressure: WorldPressure): boolean {
+  const persisted = getWorldTickState(world);
+  const working = runningPressures.get(world);
+  const target = working ?? persisted.pressures;
+  if (target.some((p) => p.kind === pressure.kind)) return false;
+  target.push(pressure);
+  // Keep the namespace in step when a tick is running, so a read taken
+  // between now and the end of the round sees the same world the tick does.
+  if (working && persisted.pressures !== working) {
+    if (!persisted.pressures.some((p) => p.kind === pressure.kind)) persisted.pressures.push(pressure);
+  }
+  return true;
+}
+
+/**
+ * The working pressure array of an in-flight `tickWorld`, per world.
+ *
+ * A WeakMap keyed on the world rather than a module-global single slot: two
+ * engines can tick in the same process (every test file does), and a shared
+ * slot would let one world's fallout push a pressure into another's round.
+ * Cleared in a `finally` so a throwing tick cannot leave a stale array behind
+ * for the verb path to write into.
+ */
+const runningPressures = new WeakMap<WorldState, WorldPressure[]>();
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -1543,6 +1588,13 @@ export function runWorldTick(engine: Engine, opts: WorldTickOptions = {}): World
       opportunitiesSpawned: [],
       opportunitiesExpired: [],
     };
+  } finally {
+    // Take the working array back (v3.8). Outside a tick, pushActivePressure
+    // must write the PERSISTED array — that one is live then — and a stale
+    // lend would silently send the verb path's writes into an array nobody
+    // reads again. In `finally` because a tick that threw has the same
+    // problem as one that returned.
+    runningPressures.delete(engine.store.state);
   }
 }
 
@@ -1615,6 +1667,11 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   // 2. The module's own lifecycle: timers, expiry, visibility surfacing.
   const prevById = new Map(state.pressures.map((p) => [p.id, p]));
   const { active, expired } = tickPressures(state.pressures, currentTick);
+  // Lend this round's working array to pushActivePressure for the duration of
+  // the tick (v3.8) — see that function's contract. `active` is a fresh array
+  // and `state.pressures = active` only happens at the very end, so a sink
+  // firing at step 5b-i has no other way to reach the list that survives.
+  runningPressures.set(world, active);
 
   const revealed: WorldPressure[] = [];
   for (const pressure of active) {

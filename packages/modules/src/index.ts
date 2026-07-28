@@ -289,6 +289,7 @@ export {
   // announced milestone checkable from outside the package (FSA-1).
   getWorldMilestones,
   recordMilestone,
+  pushActivePressure,
   urgencyBand,
   HEAT_KEY,
   HEAT_WAKE_THRESHOLD,
@@ -698,6 +699,8 @@ export type {
 export {
   computeOpportunityFallout,
   SUPPLY_RUN_RUNNERS_CUT,
+  CHAINED_OPPORTUNITY_URGENCY,
+  BOUNTY_LAPSE_ESCALATION_URGENCY,
   formatOpportunityFalloutForDirector,
   formatOpportunityFalloutForNarrator,
   // F-f3f2a84c: the resolution loop (accept → resolve → consequence).
