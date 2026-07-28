@@ -158,6 +158,7 @@ import {
   type PressureInputs,
 } from './pressure-system.js';
 import { computeFallout, type PressureFallout } from './pressure-resolution.js';
+import { grantTitleToEntity } from './player-titles.js';
 import { getDistrictForZone, getDistrictState, getDistrictDefinition } from './district-core.js';
 import { runEncounterSpawnStep, type SpawnedEncounterReport } from './encounter-spawn.js';
 import { getEconomyCoreState, setDistrictEconomy, tickDistrictEconomy } from './economy-core.js';
@@ -989,6 +990,18 @@ function applyFallout(
         // the attached namespace object, so this is the identical write.
         recordMilestone(world, `pressure:${fallout.resolution.pressureKind}`, [effect.tag]);
         break;
+      case 'title-trigger': {
+        // v3.8. Six authored tags live on this side — bounty-survivor,
+        // trade-broker, faith-tested, iron-captain, steadfast, ghost — one per
+        // pressure kind's own resolution, and every one of them rode the
+        // pressure.expired payload into nothing. Wired here rather than left
+        // for a later wave because it is the SAME store the opportunity-side
+        // sink writes: closing one and leaving the other is exactly the
+        // asymmetry that made milestone-tag worth finding.
+        const player = world.entities[world.playerId];
+        if (player) grantTitleToEntity(player, effect.tag, currentTick);
+        break;
+      }
       case 'spawn-pressure': {
         const chain = makePressure(
           {

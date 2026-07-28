@@ -40,6 +40,11 @@ import {
   deriveNpcRelationship,
   getPlayerRumorState,
   getRumorsKnownToFaction,
+  grantTitle,
+  getEarnedTitles,
+  getDisplayTitle,
+  hasTitle,
+  formatTitlesForDirector,
   type OpportunityKind,
   type OpportunityState,
 } from '@ai-rpg-engine/modules';
@@ -86,11 +91,23 @@ function playFullSession(packId: string, profile: SessionProfile): Engine {
   return engine;
 }
 
-/** Effects of `type` announced by every `opportunity.*` event in a session. */
-function announcedInSession<T extends Record<string, unknown>>(engine: Engine, type: string): T[] {
+/**
+ * Effects of `type` announced by every event whose name starts with one of
+ * `prefixes`, across a whole session.
+ *
+ * `prefixes` defaults to opportunity fallout, and takes `pressure.` too for
+ * the effect types BOTH appliers emit — the title-trigger block below is the
+ * first to need it, because a store written by two subsystems can only be
+ * reconciled against both their announcements.
+ */
+function announcedInSession<T extends Record<string, unknown>>(
+  engine: Engine,
+  type: string,
+  prefixes: string[] = ['opportunity.'],
+): T[] {
   const out: T[] = [];
   for (const event of engine.world.eventLog) {
-    if (!event.type.startsWith('opportunity.')) continue;
+    if (!prefixes.some((p) => event.type.startsWith(p))) continue;
     const effects = Array.isArray(event.payload?.effects) ? event.payload.effects : [];
     for (const effect of effects as Array<{ type?: string }>) {
       if (effect.type === type) out.push(effect as unknown as T);
@@ -130,6 +147,11 @@ function resolveOnce(
   const before = structuredClone(engine.world) as WorldState;
   opportunityOp(engine, offer, op);
   return { engine, offer, before };
+}
+
+/** The player entity's custom record — where leverage, materials and titles live. */
+function playerCustom(world: WorldState): Record<string, string | number | boolean> {
+  return (world.entities[world.playerId]?.custom ?? {}) as Record<string, string | number | boolean>;
 }
 
 /** Net obligation weight toward the player, through the public reads only. */
@@ -553,5 +575,98 @@ describe('sink: rumor (FSC-1)', () => {
         `the session announced "${claim}" and no rumor carries it`,
       ).toBe(true);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sink 5 — title-trigger → the actor's own earned-title record
+// ---------------------------------------------------------------------------
+
+describe('sink: title-trigger (FSC-1)', () => {
+  it('carrying out a faction mission earns a title the world remembers', () => {
+    // getFactionJobFallout('completed') announces `title-trigger:
+    // faction-operative`. Before v3.8 formatFalloutEffect printed "title
+    // trigger: faction-operative" and the world had nowhere to put it.
+    const { engine, before } = resolveOnce('neon-lockbox', 'faction-job', 'complete', 'pursuing');
+    const custom = playerCustom(engine.world);
+
+    expect(
+      hasTitle(custom, 'faction-operative'),
+      'the completed faction job announced a title the player never earned',
+    ).toBe(true);
+    expect(hasTitle(playerCustom(before), 'faction-operative')).toBe(false);
+
+    const earned = getEarnedTitles(custom).find((t) => t.tag === 'faction-operative')!;
+    expect(earned.earnedAtTick).toBeGreaterThanOrEqual(0);
+    expect(getDisplayTitle(custom)).toBe('faction-operative');
+  });
+
+  it('earning it twice keeps the first tick — a title is not a counter', () => {
+    // FIRST-EARNED-WINS is what keeps "when did they become that" answerable.
+    const custom = grantTitle(grantTitle({}, 'thief-taker', 4), 'thief-taker', 40);
+    expect(getEarnedTitles(custom)).toEqual([{ tag: 'thief-taker', earnedAtTick: 4 }]);
+  });
+
+  it('the record renders in the Director ledger, and is absent until earned', () => {
+    // Presentation, not just persistence: an earned title nobody can see is
+    // the same class of gap as one nobody can read.
+    expect(formatTitlesForDirector({})).toBeNull();
+    const rendered = formatTitlesForDirector(grantTitle({}, 'faction-operative', 7));
+    expect(rendered).toContain('faction-operative');
+    expect(rendered).toContain('7');
+  });
+
+  it('titles read back in a deterministic order', () => {
+    // This feeds presentation, so two worlds that earned the same titles in
+    // the same round must render identically.
+    const a = grantTitle(grantTitle(grantTitle({}, 'ghost', 3), 'steadfast', 1), 'iron-captain', 3);
+    const b = grantTitle(grantTitle(grantTitle({}, 'iron-captain', 3), 'ghost', 3), 'steadfast', 1);
+    expect(getEarnedTitles(a)).toEqual(getEarnedTitles(b));
+    expect(getEarnedTitles(a).map((t) => t.tag)).toEqual(['steadfast', 'ghost', 'iron-captain']);
+  });
+
+  it('a resolution that announces no title earns none (attribution)', () => {
+    const engine = completeOnce('salt-road-ledger', 'contract');
+    expect(
+      getEarnedTitles(playerCustom(engine.world)),
+      'a completed contract earned a title its fallout never announced',
+    ).toEqual([]);
+  });
+
+  it('every title in a full session traces back to an announcement, from EITHER applier', () => {
+    // The reconciliation, and the reason this sink was wired on both sides in
+    // one commit: `title-trigger` has seven authored producers, one on the
+    // opportunity side and six on the pressure side, and they share a store.
+    // Closing one and leaving the other is precisely the asymmetry that made
+    // milestone-tag worth finding in the first place — so the audit reads
+    // BOTH event families and demands the sets match exactly.
+    const engine = playFullSession('neon-lockbox', 'pursuing');
+    const announced = new Set(
+      announcedInSession<{ tag?: string }>(engine, 'title-trigger', ['opportunity.', 'pressure.'])
+        .map((e) => e.tag)
+        .filter((t): t is string => typeof t === 'string'),
+    );
+    expect(
+      announced.size,
+      'the session announced no title at all — this reconciliation proves nothing',
+    ).toBeGreaterThan(0);
+
+    const earned = new Set(getEarnedTitles(playerCustom(engine.world)).map((t) => t.tag));
+    expect(
+      [...announced].sort().filter((t) => !earned.has(t)),
+      'announced and never earned — an applier dropped it',
+    ).toEqual([]);
+    expect(
+      [...earned].sort().filter((t) => !announced.has(t)),
+      'earned and never announced — something other than these two appliers is granting titles',
+    ).toEqual([]);
+  });
+
+  it('the character-creation title is a different thing and stays untouched', () => {
+    // `custom.title` is who you CHOSE to be, resolved once at build time by
+    // character-creation. This sink writes `title.<tag>` keys beside it and
+    // must never overwrite it — they answer different questions.
+    const { engine, before } = resolveOnce('neon-lockbox', 'faction-job', 'complete', 'pursuing');
+    expect(playerCustom(engine.world).title).toEqual(playerCustom(before).title);
   });
 });

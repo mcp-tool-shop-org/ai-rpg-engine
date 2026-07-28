@@ -265,6 +265,16 @@ export type {
   PressureFallout,
   FalloutContext,
 } from './pressure-resolution.js';
+// --- Player Titles (v3.8: the runtime record of what the world calls you) ---
+export {
+  grantTitle,
+  grantTitleToEntity,
+  getEarnedTitles,
+  hasTitle,
+  getDisplayTitle,
+  formatTitlesForDirector,
+} from './player-titles.js';
+export type { EarnedTitle } from './player-titles.js';
 // --- World Tick (F-ENG005: heat/safety drive the pressure lifecycle) ---
 export {
   runWorldTick,

@@ -49,6 +49,7 @@ import {
   // leverage & heat
   getLeverageState,
   formatLeverageForDirector,
+  formatTitlesForDirector,
   // factions
   buildFactionProfile,
   formatFactionProfilesForDirector,
@@ -235,6 +236,16 @@ export function renderDirectorLedger(engine: Pick<Engine, 'world' | 'formulas'>)
           parts.push(formatFalloutForDirector(fallout));
         }
         return parts.join('\n');
+      },
+    },
+    {
+      // -- What the world has started calling you (v3.8). ------------------
+      name: 'EARNED TITLES',
+      body: () => {
+        // Absent entirely until a fallout grants one — an actor who has
+        // earned nothing carries no `title.*` key, so this section simply
+        // does not render rather than printing an empty header.
+        return formatTitlesForDirector(custom);
       },
     },
     {

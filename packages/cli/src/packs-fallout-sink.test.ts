@@ -67,6 +67,7 @@ import {
   getPartyState,
   getCompanion,
   getWorldMilestones,
+  getEarnedTitles,
   deriveNpcRelationship,
   HEAT_KEY,
   type OpportunityKind,
@@ -259,10 +260,7 @@ export function readSink(world: WorldState, effect: OpportunityFalloutEffect): n
     case 'milestone-tag':
       return getWorldMilestones(world).filter((m) => m.tags.includes(effect.tag)).length;
     case 'title-trigger':
-      // No public read API exists for this consequence anywhere in the engine.
-      // Building one is part of building the sink (a mark nobody can read is
-      // not a mark) — see this file's contract above.
-      return undefined;
+      return getEarnedTitles(custom).filter((t) => t.tag === effect.tag).length;
   }
 }
 
@@ -458,7 +456,7 @@ const KNOWN_SINKLESS: Array<OpportunityFalloutEffect['type']> = [
   // 'npc-relationship' — SINK BUILT v3.8 (relations['player-<axis>'] base).
   // 'milestone-tag' — SINK BUILT v3.8 (recordMilestone). Removed here in the
   // same commit that wired it, per this list's own contract.
-  'title-trigger',
+  // 'title-trigger' — SINK BUILT v3.8 (player-titles, BOTH fallout appliers).
 ];
 
 /**

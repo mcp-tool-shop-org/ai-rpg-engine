@@ -46,6 +46,7 @@ import {
 } from './player-rumor.js';
 import { makeEvent } from './make-event.js';
 import { getDistrictForZone } from './district-core.js';
+import { grantTitleToEntity } from './player-titles.js';
 import { HEAT_KEY, recordMilestone } from './world-tick.js';
 import {
   getPartyState,
@@ -729,7 +730,12 @@ function addGlobal(world: WorldState, key: string, delta: number): void {
  *    source NPC nor a source faction: a rumor about the player still comes
  *    from someone, and inventing an origin (or stamping the player as one) is
  *    the misattribution world-tick declined to make.
- *  - materials/title-trigger/spawn-
+ *  - title-trigger → grantTitleToEntity on the actor's own custom record
+ *    (v3.8 sink #5), the same flat `prefix.key` idiom player-leverage uses.
+ *    Deliberately not a title subsystem: character-creation's build-time
+ *    `custom.title` is untouched, and social-consequence's `evolveTitle` is
+ *    left unwired because no pack authors the `TitleEvolution[]` it consumes.
+ *  - materials/spawn-
  *    pressure/spawn-opportunity — no persisted sink today. Honest no-op; the
  *    verb handler's emitted event payload carries the full effect list
  *    regardless, so nothing is silently lost, only not yet WRITTEN anywhere.
@@ -919,8 +925,18 @@ export function applyOpportunityFallout(world: WorldState, actorId: string, fall
         rumors = [...rumors, rumor];
         break;
       }
-      case 'materials':
       case 'title-trigger':
+        // v3.8 sink #5. `faction-job` completed announces `faction-operative`
+        // and the world had nowhere to put it — the same gap the pressure
+        // side carries for six more tags, closed in the same commit through
+        // the same store (world-tick.ts's applyFallout).
+        //
+        // Gated on the actor, like `leverage` above: a title belongs to
+        // somebody. Grants are first-earned-wins, so the tick answers "when
+        // did they become that" rather than "when did it last come up".
+        if (actor) grantTitleToEntity(actor, effect.tag, fallout.resolution.resolvedAtTick);
+        break;
+      case 'materials':
       case 'spawn-pressure':
       case 'spawn-opportunity':
         break; // no persisted sink today — see doc comment above
