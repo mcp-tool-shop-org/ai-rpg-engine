@@ -25,7 +25,15 @@ import { getPersistedOpportunities, setPersistedOpportunities, getOpportunityByI
 import { adjustLeverage, type LeverageCurrency } from './player-leverage.js';
 import type { SupplyCategory } from './economy-core.js';
 import { getDistrictEconomy, setDistrictEconomy, applyEconomyShift } from './economy-core.js';
-import type { ObligationKind, ObligationDirection } from './npc-agency.js';
+import type { ObligationKind, ObligationDirection, NpcObligationLedger } from './npc-agency.js';
+import {
+  createObligation,
+  addObligation,
+  getPersistedNpcObligations,
+  getPersistedNpcProfiles,
+  getPersistedNpcLastActions,
+  setPersistedNpcState,
+} from './npc-agency.js';
 import type { PressureKind } from './pressure-system.js';
 import type { RumorValence } from './player-rumor.js';
 import { makeEvent } from './make-event.js';
@@ -671,7 +679,14 @@ function addGlobal(world: WorldState, key: string, delta: number): void {
  *    rules' milestone conditions and runLeverageIncomeStep's cursor already
  *    read. Labelled `opportunity:<kind>` beside the pressure side's
  *    `pressure:<kind>`.
- *  - npc-relationship/obligation/rumor/materials/title-trigger/spawn-
+ *  - obligation → createObligation + addObligation into npc-agency's persisted
+ *    obligation ledgers (v3.8 sink #2), through setPersistedNpcState — the
+ *    SAME store world-tick's step 5a writes and four production consumers
+ *    already read: arc-detection's endgame scoring, deriveLoyaltyBreakpoint
+ *    (via getNetObligationWeight), the Director's PEOPLE section, and
+ *    opportunity-core's own obligation rule. Feeds back into the layer that
+ *    produced it.
+ *  - npc-relationship/rumor/materials/title-trigger/spawn-
  *    pressure/spawn-opportunity — no persisted sink today. Honest no-op; the
  *    verb handler's emitted event payload carries the full effect list
  *    regardless, so nothing is silently lost, only not yet WRITTEN anywhere.
@@ -690,6 +705,13 @@ export function applyOpportunityFallout(world: WorldState, actorId: string, fall
   let party = getPartyState(world);
   const hasParty = party.companions.length > 0;
   let partyChanged = false;
+
+  // Read-once / write-once for the obligation ledgers, the same batched-commit
+  // shape the party state above uses and world-tick's own runNpcAgencyStep
+  // uses for the identical store: N obligation effects cost one read and one
+  // write, not N of each. Left undefined until an obligation effect actually
+  // appears, so a fallout carrying none never touches npc-agency at all.
+  let obligationLedgers: Map<string, NpcObligationLedger> | undefined;
 
   for (const effect of fallout.effects) {
     switch (effect.type) {
@@ -734,8 +756,53 @@ export function applyOpportunityFallout(world: WorldState, actorId: string, fall
         // `opportunity:<kind>` beside `pressure:<kind>`.
         recordMilestone(world, `opportunity:${fallout.resolution.opportunityKind}`, [effect.tag]);
         break;
+      case 'obligation': {
+        // v3.8 sink #2, and the first that feeds back into the rules that
+        // produced it. npc-agency's obligation ledgers have been persisted
+        // every round since v3.0 (world-tick step 5a) and read by four
+        // production consumers — arc-detection's endgame scoring,
+        // deriveLoyaltyBreakpoint via getNetObligationWeight, the Director's
+        // PEOPLE section, and opportunity-core's own obligation rule. Every
+        // opportunity that announced a debt or a favor owed wrote to none of
+        // them.
+        //
+        // Gated on the NPC existing in this world, mirroring the `leverage`
+        // case's own actor gate above: an obligation toward nobody is not a
+        // record, and setPersistedNpcState must never be called for a world
+        // with no named NPCs (its own SEED-0 contract).
+        if (!world.entities[effect.npcId]) break;
+        obligationLedgers ??= getPersistedNpcObligations(world);
+        const ledger = obligationLedgers.get(effect.npcId) ?? { obligations: [] };
+        obligationLedgers.set(
+          effect.npcId,
+          addObligation(
+            ledger,
+            createObligation(
+              effect.kind,
+              effect.direction,
+              effect.npcId,
+              // The player is always the counterparty: opportunities are
+              // player-scoped (only the player ever accepts one), and both
+              // production callers pass the player as actorId. This is the id
+              // getNetObligationWeight is queried with downstream.
+              actorId,
+              effect.magnitude,
+              `opportunity:${fallout.resolution.opportunityKind}:${fallout.resolution.resolutionType}`,
+              fallout.resolution.resolvedAtTick,
+              // Permanent, matching createObligation's own default and the
+              // weighty half of npc-agency's own obligations (recruit,
+              // betray, protect are all `null`; only the transactional warn
+              // and bargain decay). The effect carries no decay signal, and a
+              // favor earned by finishing someone's job is not the kind of
+              // thing that quietly lapses — same posture world-tick takes
+              // when it declines to invent an urgency for an NPC-bargained
+              // opportunity.
+            ),
+          ),
+        );
+        break;
+      }
       case 'npc-relationship':
-      case 'obligation':
       case 'rumor':
       case 'materials':
       case 'title-trigger':
@@ -745,6 +812,20 @@ export function applyOpportunityFallout(world: WorldState, actorId: string, fall
       default:
         break;
     }
+  }
+
+  if (obligationLedgers) {
+    // Full-overwrite writer (npc-agency's own contract — no sibling module
+    // shares that namespace), so this round's profiles and last-actions are
+    // read back and re-supplied unchanged. On a world where step 5a has run,
+    // those are this round's real values; on one where it has not, they are
+    // [] and step 5a rebuilds them next round regardless.
+    setPersistedNpcState(
+      world,
+      getPersistedNpcProfiles(world),
+      getPersistedNpcLastActions(world),
+      obligationLedgers,
+    );
   }
 
   if (!partyChanged) return;
