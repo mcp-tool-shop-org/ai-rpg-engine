@@ -22,7 +22,15 @@ import {
   type LeverageState,
 } from './player-leverage.js';
 import { denyRumor, buryRumor, type PlayerRumor } from './player-rumor.js';
-import { deriveNpcRelationship } from './npc-agency.js';
+import {
+  deriveNpcRelationship,
+  deriveLoyaltyBreakpoint,
+  deriveCooperationTrust,
+  districtCooperationBias,
+  buildNpcProfile,
+} from './npc-agency.js';
+import { computeDistrictModifiers } from './district-mood.js';
+import { makePressure } from './pressure-system.js';
 import { setPartyState, createPartyState, type PartyState } from './companion-core.js';
 import { computeItemValue } from './trade-value.js';
 import { applyCraftingEfficiency, type CraftingContext } from './crafting-recipes.js';
@@ -475,13 +483,161 @@ describe('DistrictModifiers.craftingEfficiency reaches the material cost', () =>
   });
 });
 
-describe('DistrictModifiers.npcCooperationBias — deliberately NOT threaded', () => {
+// --- Fixtures for the cooperation seam -------------------------------------
+//
+// Trust 22 is chosen against the gate, not for flavour: `warn` requires
+// trust > 20, so a two-point margin is cleared by a thriving district's bias
+// and closed by a grim one's. Anything further from the line would test the
+// arithmetic instead of the gate.
+const INFORMANT_TRUST = 22;
+const INFORMANT_FACTION = 'the-office';
+
+const PRESSURE_ON_THEIR_FACTION = makePressure({
+  kind: 'investigation-opened',
+  sourceFactionId: INFORMANT_FACTION,
+  description: 'their people are being looked at',
+  triggeredBy: 'fixture',
+  urgency: 0.5,
+  visibility: 'known',
+  turnsRemaining: 20,
+  potentialOutcomes: [],
+  tags: [],
+  currentTick: 0,
+});
+
+function makeNpc(): EntityState {
+  return {
+    id: 'informant', blueprintId: 'informant', type: 'npc', name: 'The Informant',
+    tags: ['named'], stats: {}, resources: { hp: 10 }, statuses: [], zoneId: 'zone-a',
+    relations: { 'player-trust': INFORMANT_TRUST },
+  } as unknown as EntityState;
+}
+
+/**
+ * A world with one district around `zone-a`, whose mood is driven by
+ * `commerce`. computeDistrictMood derives prosperity as `commerce * 0.6 +
+ * stability * 4`, and computeDistrictModifiers turns prosperity into the
+ * cooperation bias — so commerce is the one dial that moves this axis.
+ */
+function worldWithDistrict(commerce: number): WorldState {
+  const world = bareWorld();
+  world.entities['informant'] = makeNpc();
+  world.modules['faction-cognition'] = {
+    factionCognition: {},
+    membership: { informant: INFORMANT_FACTION },
+    factionMembers: { [INFORMANT_FACTION]: ['informant'] },
+  };
+  world.modules['district-core'] = {
+    zoneToDistrict: { 'zone-a': 'the-liberties' },
+    districts: {
+      'the-liberties': {
+        alertPressure: 0, rumorDensity: 0, intruderLikelihood: 0, surveillance: 0,
+        stability: 5, commerce, morale: 50, lastUpdateTick: 0, eventCount: 0,
+      },
+    },
+    definitions: {
+      'the-liberties': { id: 'the-liberties', name: 'The Liberties', zoneIds: ['zone-a'], tags: [] },
+    },
+  };
+  return world;
+}
+
+describe('DistrictModifiers.npcCooperationBias — threaded at CHECK TIME (v3.8)', () => {
+  // The v3.7 note asked for this test to be deleted "in the SAME commit, with
+  // the departure question answered — not quietly updated". The question is
+  // answered below and the pin STAYS, because it never guarded "is this field
+  // threaded" — it guarded "does it go into DERIVATION", which remains the
+  // wrong answer. What changed is that the right answer now exists beside it.
+
   it('deriveNpcRelationship still takes exactly three arguments', () => {
-    // A guard on a DECISION, not on behaviour. The obvious landing point for
-    // this field makes companions desert (trust -> breakpoint -> departure
-    // rule), which is a gameplay change wearing a modifier's clothes. If a
-    // later wave threads it properly this test should be deleted in the SAME
-    // commit, with the departure question answered — not quietly updated.
+    // The DECISION, unchanged: the bias must not become part of the stored
+    // relationship. That is the path that runs trust → breakpoint → the
+    // companion departure rule, and a district's mood must not be able to end
+    // a companionship.
     expect(deriveNpcRelationship.length).toBe(3);
+  });
+
+  it('CONSEQUENCE: a grim district lowers the trust a cooperation check sees', () => {
+    // computeDistrictModifiers derives the bias from prosperity — below 50 it
+    // goes negative. The check surface is `deriveNpcGoals`, which reads trust
+    // fresh every round to decide whether an NPC warns you, conceals from you,
+    // or lies. That IS the cooperation check the field's own documentation
+    // names, and it was sitting here the whole time.
+    const grim = computeDistrictModifiers({
+      tone: 'grim', safety: 20, prosperity: 10, spirit: 20, descriptor: 'grim',
+    });
+    expect(grim.npcCooperationBias).toBeLessThan(0);
+
+    const rel = { trust: 25, fear: 10, greed: 30, loyalty: 60 };
+    expect(deriveCooperationTrust(rel, grim.npcCooperationBias)).toBeLessThan(rel.trust);
+
+    // …and a thriving one raises it, so the axis moves in both directions.
+    const thriving = computeDistrictModifiers({
+      tone: 'prosperous', safety: 80, prosperity: 90, spirit: 80, descriptor: 'prosperous',
+    });
+    expect(thriving.npcCooperationBias).toBeGreaterThan(0);
+    expect(deriveCooperationTrust(rel, thriving.npcCooperationBias)).toBeGreaterThan(rel.trust);
+  });
+
+  it('CONSEQUENCE: it flips a real goal gate, on a real profile', () => {
+    // Not the arithmetic — the behaviour. `warn` requires trust > 20; a trust
+    // of 22 clears it in a neutral district and fails it in a grim one, and
+    // nothing else about the NPC changes.
+    const warnsIn = (prosperity: number): boolean => {
+      const world = worldWithDistrict(prosperity);
+      const profile = buildNpcProfile(world, 'informant', PLAYER_ID, [PRESSURE_ON_THEIR_FACTION]);
+      return profile.goals.some((g) => g.verb === 'warn');
+    };
+    expect(warnsIn(60), 'the control arm does not warn — this test is not reading the gate').toBe(true);
+    expect(warnsIn(5), 'a grim district did not close the cooperation gate').toBe(false);
+  });
+
+  it('NEGATIVE CONTROL: the STORED relationship never sees the bias', () => {
+    // The whole seam, asserted directly. Everything departure-shaped reads
+    // `profile.relationship` and `profile.breakpoint`; both must be identical
+    // to what the unbiased derivation produces, in a district whose bias is
+    // provably non-zero.
+    const world = worldWithDistrict(5);
+    const entity = world.entities['informant'];
+    expect(districtCooperationBias(world, entity), 'the control district has no bias to hide').not.toBe(0);
+
+    const profile = buildNpcProfile(world, 'informant', PLAYER_ID, [PRESSURE_ON_THEIR_FACTION]);
+    const unbiased = deriveNpcRelationship(world, 'informant', PLAYER_ID);
+    expect(profile.relationship).toEqual(unbiased);
+    expect(profile.breakpoint).toBe(deriveLoyaltyBreakpoint(unbiased, undefined, PLAYER_ID));
+  });
+
+  it('NEGATIVE CONTROL: the grimmest district cannot push a breakpoint toward departure', () => {
+    // The v3.7 failure, aimed at directly. companion-reactions' departure rule
+    // fires on `breakpoint === 'hostile'` (and 'wavering' at low morale), and
+    // `hostile` needs trust <= -30. An NPC sitting at trust -25 is two points
+    // clear of it and nine points inside the grimmest district's bias — so if
+    // the bias reached the breakpoint at all, this NPC would flip. It does not
+    // reach it, because the breakpoint is derived before the bias exists.
+    const world = worldWithDistrict(0);
+    // Prosperity is `commerce * 0.6 + stability * 4`, so the fixture's default
+    // stability of 5 still floors the bias at -6. Zero both for the extreme.
+    (world.modules['district-core'] as { districts: Record<string, { stability: number }> })
+      .districts['the-liberties'].stability = 0;
+    world.entities['informant'].relations = { 'player-trust': -25 };
+    expect(districtCooperationBias(world, world.entities['informant'])).toBeLessThanOrEqual(-10);
+
+    const profile = buildNpcProfile(world, 'informant', PLAYER_ID, []);
+    expect(profile.relationship.trust).toBe(-25);
+    expect(
+      profile.breakpoint,
+      'the district mood reached the breakpoint — this is the v3.7 desertion bug returning',
+    ).not.toBe('hostile');
+  });
+
+  it('NEGATIVE CONTROL: a world with no district system takes the identical path', () => {
+    // `bias === 0` returns the ORIGINAL relationship object rather than a
+    // copy, so a world without districts is not merely equivalent to one
+    // before this wire — it is the same object graph.
+    const world = bareWorld();
+    world.entities['informant'] = makeNpc();
+    expect(districtCooperationBias(world, world.entities['informant'])).toBe(0);
+    const profile = buildNpcProfile(world, 'informant', PLAYER_ID, []);
+    expect(profile.relationship).toEqual(deriveNpcRelationship(world, 'informant', PLAYER_ID));
   });
 });

@@ -45,6 +45,7 @@
     { "path": "packages/starter-gladiator" },
     { "path": "packages/starter-ronin" },
     { "path": "packages/starter-merchant" },
+    { "path": "packages/starter-bounty-hunter" },
     { "path": "packages/ledger-adapter" }
   ]
 }

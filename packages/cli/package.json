@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/cli",
-  "version": "3.7.0",
+  "version": "3.8.0",
   "description": "AI RPG Engine developer CLI: run, validate, replay, inspect, scaffold",
   "type": "module",
   "main": "./dist/index.js",
@@ -41,7 +41,8 @@
     "@ai-rpg-engine/starter-vampire": "*",
     "@ai-rpg-engine/starter-gladiator": "*",
     "@ai-rpg-engine/starter-ronin": "*",
-    "@ai-rpg-engine/starter-merchant": "*"
+    "@ai-rpg-engine/starter-merchant": "*",
+    "@ai-rpg-engine/starter-bounty-hunter": "*"
   },
   "license": "MIT",
   "author": "mcp-tool-shop",

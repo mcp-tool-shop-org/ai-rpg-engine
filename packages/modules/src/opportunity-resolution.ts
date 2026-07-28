@@ -21,16 +21,43 @@
 
 import type { EngineModule, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import type { OpportunityKind, OpportunityState } from './opportunity-core.js';
-import { getPersistedOpportunities, setPersistedOpportunities, getOpportunityById } from './opportunity-core.js';
+import {
+  getPersistedOpportunities,
+  setPersistedOpportunities,
+  getOpportunityById,
+  makeOpportunity,
+  deadlineFor,
+  MAX_ACTIVE_OPPORTUNITIES,
+  isFactionSaturated,
+} from './opportunity-core.js';
 import { adjustLeverage, type LeverageCurrency } from './player-leverage.js';
 import type { SupplyCategory } from './economy-core.js';
 import { getDistrictEconomy, setDistrictEconomy, applyEconomyShift } from './economy-core.js';
-import type { ObligationKind, ObligationDirection } from './npc-agency.js';
+import type { ObligationKind, ObligationDirection, NpcObligationLedger } from './npc-agency.js';
+import {
+  createObligation,
+  addObligation,
+  getPersistedNpcObligations,
+  getPersistedNpcProfiles,
+  getPersistedNpcLastActions,
+  setPersistedNpcState,
+  relationshipBaseKey,
+  RELATIONSHIP_AXIS_RANGE,
+} from './npc-agency.js';
 import type { PressureKind } from './pressure-system.js';
-import type { RumorValence } from './player-rumor.js';
+import { makePressure } from './pressure-system.js';
+import type { RumorValence, PlayerRumor } from './player-rumor.js';
+import {
+  spawnNpcOriginatedRumor,
+  propagateRumor,
+  getPlayerRumorState,
+  setPlayerRumorState,
+} from './player-rumor.js';
 import { makeEvent } from './make-event.js';
 import { getDistrictForZone } from './district-core.js';
-import { HEAT_KEY } from './world-tick.js';
+import { grantTitleToEntity } from './player-titles.js';
+import { adjustMaterial } from './crafting-core.js';
+import { HEAT_KEY, recordMilestone, pushActivePressure, CHAIN_TURNS_REMAINING } from './world-tick.js';
 import {
   getPartyState,
   setPartyState,
@@ -70,6 +97,26 @@ export type OpportunityResolution = {
   opportunityKind: OpportunityKind;
   resolutionType: OpportunityResolutionType;
   resolvedAtTick: number;
+  /**
+   * Who the resolved opportunity came from. OPTIONAL — records written before
+   * v3.8 lack both, and every reader tolerates absence.
+   *
+   * Added because applyOpportunityFallout receives the fallout and NOT the
+   * opportunity, so a sink needing to attribute a consequence to its source
+   * had nowhere to look. The `rumor` sink is the first: a rumor needs an
+   * origin, and misattributing one to the player is exactly the mistake
+   * world-tick declined to make when it left its own generic-rumor case
+   * unwired ("spawnIntentionalRumor tags source 'player-leverage'").
+   */
+  sourceNpcId?: string;
+  sourceFactionId?: string;
+  /**
+   * The genre the resolution happened in. OPTIONAL for the same
+   * pre-v3.8-record reason as the source fields, and present for the same
+   * reason: the `spawn-opportunity` sink mints a real OpportunityState, and
+   * every one of those carries a genre.
+   */
+  genre?: string;
 };
 
 export type OpportunityFallout = {
@@ -110,6 +157,9 @@ export function computeOpportunityFallout(
     opportunityKind: opp.kind,
     resolutionType,
     resolvedAtTick: ctx.currentTick,
+    ...(opp.sourceNpcId ? { sourceNpcId: opp.sourceNpcId } : {}),
+    ...(opp.sourceFactionId ? { sourceFactionId: opp.sourceFactionId } : {}),
+    ...(ctx.genre ? { genre: ctx.genre } : {}),
   };
 
   const kindEffects = getKindFallout(opp, resolutionType, ctx);
@@ -132,6 +182,46 @@ export function computeOpportunityFallout(
 
   return { resolution, effects, summary, ...(warnings.length > 0 ? { warnings } : {}) };
 }
+
+/**
+ * What a runner keeps of a supply run they completed.
+ *
+ * GROUNDED IN WHAT MATERIALS ARE FOR, not picked for feel: every recipe input
+ * in crafting-recipes.ts costs 1 or 2 units of a category (repair-weapon is 2
+ * components, field-medicine 2 medicine, the modification recipes 1 each). At
+ * 2, one completed run buys exactly one repair or one craft — a reward with a
+ * use on the round it lands, rather than a number that accumulates toward
+ * nothing. `adjustMaterial` clamps the store at 0-50, so a run-heavy session
+ * saturates at 25 runs' worth and stops paying, which is the same
+ * "saturation is the ceiling, not the goal" posture the district economy takes.
+ */
+export const SUPPLY_RUN_RUNNERS_CUT = 2;
+
+/**
+ * Urgency a CHAINED offer enters at.
+ *
+ * Matches world-tick's NPC_OPPORTUNITY_URGENCY (0.5) for the same stated
+ * reason: the effect carries no urgency signal, so neither caller invents a
+ * sharper one. Neutral also keeps the chain out of the relax-valley filter's
+ * way — Booth 2009 (see PRESSURE_SUPPRESSION_URGENCY) suppresses UNRELATED
+ * side work during a peak, and a chained job arriving at 0.5 is offered, not
+ * shouted.
+ */
+export const CHAINED_OPPORTUNITY_URGENCY = 0.5;
+
+/**
+ * Urgency the lapsed-bounty escalation enters at.
+ *
+ * Deliberately UNDER opportunity-core's PRESSURE_SUPPRESSION_URGENCY (0.7),
+ * which is Booth 2009's relax-valley rule: at or above it, the world stops
+ * handing out unrelated work. A consequence for missing a deadline that also
+ * shuts the offer board would punish one lapse twice — the escalation is meant
+ * to be a thing you now have to deal with, not a stop on everything else.
+ *
+ * 0.55 also sits above HEAT_URGENCY_STEP's reach from a standing start, so it
+ * reads as a distinct event rather than as ambient pressure drift.
+ */
+export const BOUNTY_LAPSE_ESCALATION_URGENCY = 0.55;
 
 // --- Per-Kind Fallout ---
 
@@ -299,6 +389,41 @@ function getBountyFallout(
       effects.push({ type: 'heat', delta: 5 });
       break;
     case 'expired':
+      // The advance you took and did nothing with (v3.8). `spawn-pressure`
+      // had three authored producers before this and every one sat inside a
+      // `betrayed` case — a resolution no shipped path reaches — so FSA-1
+      // measured it dead ONE LEVEL EARLIER than a missing sink: not
+      // unpersisted, but never announced by any session that could be played.
+      //
+      // `expired` and not `failed`, and that is the measurement talking: the
+      // verb reaches accept|complete|abandon and the tick expires, so `failed`
+      // would have reproduced the very defect being fixed.
+      //
+      // `faction-summons` and not `investigation-opened`, and THAT is the
+      // one-active-per-kind guard talking. The first draft used
+      // investigation-opened — the kind contract and supply-run already use
+      // for broken faith — and a played session showed the escalation refused
+      // five times running, because an investigation-opened pressure was
+      // already live from the ordinary pressure rules. The guard was right and
+      // the kind was wrong: a consequence that lands only when the world
+      // happens to be quiet is not a consequence.
+      //
+      // Summons is also the better reading, and it CHAINS: the issuer calls
+      // you in to explain, and evaluatePressureLinkedOpportunities turns a
+      // live faction-summons into a `faction-job` — the work that makes it
+      // right. You took their money and let the clock run out, so now there is
+      // a conversation, and the conversation has a job attached.
+      if (faction) {
+        effects.push({
+          type: 'spawn-pressure',
+          kind: 'faction-summons',
+          sourceFactionId: faction,
+          description: `${faction} summons you to explain the bounty they paid for`,
+          urgency: BOUNTY_LAPSE_ESCALATION_URGENCY,
+          tags: ['pursuit', 'bounty'],
+        });
+      }
+      break;
     case 'declined':
       break;
   }
@@ -323,6 +448,16 @@ function getSupplyRunFallout(
       const economyReward = opp.rewards.find((r) => r.type === 'economy-shift');
       if (economyReward && economyReward.type === 'economy-shift') {
         effects.push({ type: 'economy-shift', districtId: economyReward.districtId, category: economyReward.category, delta: economyReward.delta, cause: 'supply-run completed' });
+        // The runner's cut (v3.8). `materials` was declared on BOTH this union
+        // and OpportunityReward, formatted by formatFalloutEffect, and emitted
+        // by nothing anywhere in the engine — FSA-1's producer census found it
+        // dead at the vocabulary level, one tier above a missing sink.
+        //
+        // A supply run is the one kind that already knows which category moved
+        // and how much, so it is the honest place for the effect to exist: you
+        // sourced the goods, the district gets the shipment, and you keep a
+        // little of what passed through your hands.
+        effects.push({ type: 'materials', category: economyReward.category, quantity: SUPPLY_RUN_RUNNERS_CUT });
       }
       effects.push({ type: 'rumor', claim: `delivered critical supplies — a reliable runner`, valence: 'heroic', spreadTo: faction ? [faction] : [] });
       break;
@@ -442,6 +577,24 @@ function getInvestigationFallout(
       effects.push({ type: 'leverage', currency: 'blackmail', delta: 8 });
       effects.push({ type: 'rumor', claim: `uncovered hidden information — knows things`, valence: 'mysterious', spreadTo: faction ? [faction] : [] });
       effects.push({ type: 'milestone-tag', tag: 'investigation-completed' });
+      // The CHAINED JOB (v3.8). `spawn-opportunity` was the second effect type
+      // FSA-1's producer census found dead at the vocabulary level — declared,
+      // formatted, emitted nowhere.
+      //
+      // An investigation that succeeds ends with a NAME, which is the one
+      // outcome that self-evidently implies more work: you now know who, and
+      // somebody wants that acted on. Chaining it to `bounty` is the only
+      // reading where the second job could not have existed without the first
+      // — a supply run or a contract would have been available anyway, and
+      // chaining to those would just be spawning.
+      if (faction) {
+        effects.push({
+          type: 'spawn-opportunity',
+          kind: 'bounty',
+          sourceFactionId: faction,
+          description: `Act on what the investigation turned up for ${faction}`,
+        });
+      }
       break;
     case 'abandoned':
       break;
@@ -576,6 +729,14 @@ function buildFalloutSummary(opp: OpportunityState, resolutionType: OpportunityR
 /** Most recent resolved-opportunity fallout records kept (oldest dropped past the cap). */
 export const RESOLVED_OPPORTUNITIES_KEPT = 20;
 
+/**
+ * Confidence a resolution-sourced rumor enters the world at — the SAME 0.75
+ * world-tick's step 5a passes for NPC-originated rumors, because this is that
+ * same path. Word of what someone did travels a little softened; the number
+ * is not re-derived here so the two callers cannot drift.
+ */
+export const NPC_RUMOR_CONFIDENCE = 0.75;
+
 type OpportunityCoreNamespace = {
   opportunities?: unknown;
   resolvedOpportunities?: unknown;
@@ -634,6 +795,17 @@ function addGlobal(world: WorldState, key: string, delta: number): void {
 }
 
 /**
+ * The player's standing with a faction as every consumer reads it: the
+ * authored baseline on `world.factions` plus the accrued global. Both halves
+ * matter — packs seed a starting standing (black-flag's Navy at -35) and the
+ * global carries everything play has added since.
+ */
+function currentReputation(world: WorldState, factionId: string): number {
+  const authored = world.factions?.[factionId]?.reputation ?? 0;
+  return authored + numGlobal(world, `reputation_${factionId}`);
+}
+
+/**
  * Apply a resolved opportunity's fallout to real, persisted state. `actorId`
  * is the entity whose leverage currency changes — the resolution verb
  * (opportunityHandler, below) passes action.actorId; world-tick.ts's
@@ -665,22 +837,77 @@ function addGlobal(world: WorldState, key: string, delta: number): void {
  *    return` gate); adjustCompanionMorale is ALSO independently a no-op for
  *    an npcId absent from the party, so this gate is a clarity/cost
  *    optimization, not a correctness requirement.
- *  - npc-relationship/obligation — no persisted sink anywhere in the engine
- *    today: npc-agency's relationship/obligation ledgers are never persisted
- *    (endgame.ts's own buildEndgameInputs comment says the same). Honest
- *    no-op.
- *  - rumor/materials/milestone-tag/title-trigger/spawn-pressure/spawn-
- *    opportunity — no persisted sink today either (mirrors world-tick.ts's
- *    OWN applyFallout treatment of the identical effect kinds for pressure
- *    fallout — "rides the pressure.expired payload"). Honest no-op; the
- *    verb handler's emitted event payload carries the full effect list
- *    regardless, so nothing is silently lost, only not yet WRITTEN anywhere.
+ *  - milestone-tag → recordMilestone (v3.8 sink #1), world-tick.ts's own
+ *    milestone ledger — the SAME store its applyFallout has written the
+ *    identical effect type into since v2.x, and the same one the genre spawn
+ *    rules' milestone conditions and runLeverageIncomeStep's cursor already
+ *    read. Labelled `opportunity:<kind>` beside the pressure side's
+ *    `pressure:<kind>`.
+ *  - obligation → createObligation + addObligation into npc-agency's persisted
+ *    obligation ledgers (v3.8 sink #2), through setPersistedNpcState — the
+ *    SAME store world-tick's step 5a writes and four production consumers
+ *    already read: arc-detection's endgame scoring, deriveLoyaltyBreakpoint
+ *    (via getNetObligationWeight), the Director's PEOPLE section, and
+ *    opportunity-core's own obligation rule. Feeds back into the layer that
+ *    produced it.
+ *  - npc-relationship → the `relations['player-<axis>']` base
+ *    deriveNpcRelationship starts from (v3.8 sink #3), clamped at the write to
+ *    the range derivation can express. Two packs author this key and nothing
+ *    ever wrote it; it feeds the profiles step 5a persists, hence
+ *    deriveLoyaltyBreakpoint, hence which offers an NPC makes next.
+ *  - rumor → spawnNpcOriginatedRumor + propagateRumor + setPlayerRumorState
+ *    (v3.8 sink #4) — the SAME path world-tick step 5a applies for an NPC's
+ *    own gossip. No new transport; the playerRumors ceiling world-tick
+ *    documents stays closed. Skipped when the opportunity had neither a
+ *    source NPC nor a source faction: a rumor about the player still comes
+ *    from someone, and inventing an origin (or stamping the player as one) is
+ *    the misattribution world-tick declined to make.
+ *  - title-trigger → grantTitleToEntity on the actor's own custom record
+ *    (v3.8 sink #5), the same flat `prefix.key` idiom player-leverage uses.
+ *    Deliberately not a title subsystem: character-creation's build-time
+ *    `custom.title` is untouched, and social-consequence's `evolveTitle` is
+ *    left unwired because no pack authors the `TitleEvolution[]` it consumes.
+ *  - materials → crafting-core's adjustMaterial (v3.8 sink #6), the
+ *    `materials.<SupplyCategory>` store on the actor's custom that
+ *    getMaterialInventory reads and the craft/repair recipes consume. District
+ *    stock is `economy-shift`'s job; conflating the two would make them
+ *    redundant.
+ *  - spawn-opportunity → makeOpportunity + setPersistedOpportunities (v3.8
+ *    sink #7), respecting BOTH of the spawner's own guards: POP-1's
+ *    MAX_ACTIVE_OPPORTUNITIES cap, and one live offer per (kind, source)
+ *    pair. A chain that could push past the cap would quietly undo the
+ *    measured reason that cap exists.
+ *  - spawn-pressure → makePressure + pushActivePressure (v3.8 sink #8), into
+ *    world-tick's own persisted pressure list, honouring the
+ *    one-active-per-kind invariant both other spawners hold.
+ *
+ * Every one of the fourteen declared effect types now has a persisted sink.
+ *
+ *    ⚠ CORRECTED v3.8: this list used to justify the obligation/npc-
+ *    relationship no-op with "npc-agency's relationship/obligation ledgers are
+ *    never persisted". That stopped being true in v3.0, when world-tick's step
+ *    5a started writing obligation ledgers to world.modules['npc-agency']
+ *    every round. The ledgers ARE persisted and readable
+ *    (getPersistedNpcObligations); this file simply never wrote to them. The
+ *    stale reason is recorded rather than deleted because it is exactly how a
+ *    ceiling outlives the thing that made it one.
  */
 export function applyOpportunityFallout(world: WorldState, actorId: string, fallout: OpportunityFallout): void {
   const actor = world.entities[actorId];
   let party = getPartyState(world);
   const hasParty = party.companions.length > 0;
   let partyChanged = false;
+
+  // Read-once / write-once for the obligation ledgers, the same batched-commit
+  // shape the party state above uses and world-tick's own runNpcAgencyStep
+  // uses for the identical store: N obligation effects cost one read and one
+  // write, not N of each. Left undefined until an obligation effect actually
+  // appears, so a fallout carrying none never touches npc-agency at all.
+  let obligationLedgers: Map<string, NpcObligationLedger> | undefined;
+  /** Same read-once/write-once treatment for the rumor list. */
+  let rumors: PlayerRumor[] | undefined;
+  /** …and for the persisted opportunity list the chain sink appends to. */
+  let spawnedOpportunities: OpportunityState[] | undefined;
 
   for (const effect of fallout.effects) {
     switch (effect.type) {
@@ -689,9 +916,27 @@ export function applyOpportunityFallout(world: WorldState, actorId: string, fall
           actor.custom = adjustLeverage(actor.custom ?? {}, effect.currency, effect.delta);
         }
         break;
-      case 'reputation':
+      case 'reputation': {
+        // v3.8 saturation cap, at the REAL payer.
+        //
+        // ⚠ The first attempt at this put the cap on the offer's `rewards`
+        // array, where the reputation is advertised — and measured EXACTLY
+        // ZERO change, because `OpportunityReward[]` HAS NO APPLIER. Nothing
+        // in the engine pays it: it is read by scoreCandidate (a count),
+        // formatOpportunityForDirector (display), and getSupplyRunFallout
+        // (which translates one entry into fallout). What actually pays is
+        // this switch, off the per-kind fallout. Another advertised-but-
+        // unapplied surface, found the same way as the rest of this cycle —
+        // by a number that refused to move.
+        //
+        // Only the UPWARD direction is capped. A penalty must always land: a
+        // faction you are made with can still be disappointed in you, and
+        // gating that would make standing a ratchet.
+        const current = currentReputation(world, effect.factionId);
+        if (effect.delta > 0 && isFactionSaturated(current)) break;
         addGlobal(world, `reputation_${effect.factionId}`, effect.delta);
         break;
+      }
       case 'alert':
         addGlobal(world, `faction_alert_${effect.factionId}`, effect.delta);
         break;
@@ -716,18 +961,265 @@ export function applyOpportunityFallout(world: WorldState, actorId: string, fall
           partyChanged = true;
         }
         break;
-      case 'npc-relationship':
-      case 'obligation':
-      case 'rumor':
-      case 'materials':
       case 'milestone-tag':
+        // v3.8 sink #1. The pressure-side applier (world-tick.ts's own
+        // applyFallout) has recorded this exact effect type into this exact
+        // ledger since v2.x; the opportunity side announced it and wrote
+        // nothing, purely because the array had no exported writer to reach
+        // from another file. Same vocabulary, same store, same label shape —
+        // `opportunity:<kind>` beside `pressure:<kind>`.
+        recordMilestone(world, `opportunity:${fallout.resolution.opportunityKind}`, [effect.tag]);
+        break;
+      case 'obligation': {
+        // v3.8 sink #2, and the first that feeds back into the rules that
+        // produced it. npc-agency's obligation ledgers have been persisted
+        // every round since v3.0 (world-tick step 5a) and read by four
+        // production consumers — arc-detection's endgame scoring,
+        // deriveLoyaltyBreakpoint via getNetObligationWeight, the Director's
+        // PEOPLE section, and opportunity-core's own obligation rule. Every
+        // opportunity that announced a debt or a favor owed wrote to none of
+        // them.
+        //
+        // Gated on the NPC existing in this world, mirroring the `leverage`
+        // case's own actor gate above: an obligation toward nobody is not a
+        // record, and setPersistedNpcState must never be called for a world
+        // with no named NPCs (its own SEED-0 contract).
+        if (!world.entities[effect.npcId]) break;
+        obligationLedgers ??= getPersistedNpcObligations(world);
+        const ledger = obligationLedgers.get(effect.npcId) ?? { obligations: [] };
+        obligationLedgers.set(
+          effect.npcId,
+          addObligation(
+            ledger,
+            createObligation(
+              effect.kind,
+              effect.direction,
+              effect.npcId,
+              // The player is always the counterparty: opportunities are
+              // player-scoped (only the player ever accepts one), and both
+              // production callers pass the player as actorId. This is the id
+              // getNetObligationWeight is queried with downstream.
+              actorId,
+              effect.magnitude,
+              `opportunity:${fallout.resolution.opportunityKind}:${fallout.resolution.resolutionType}`,
+              fallout.resolution.resolvedAtTick,
+              // Permanent, matching createObligation's own default and the
+              // weighty half of npc-agency's own obligations (recruit,
+              // betray, protect are all `null`; only the transactional warn
+              // and bargain decay). The effect carries no decay signal, and a
+              // favor earned by finishing someone's job is not the kind of
+              // thing that quietly lapses — same posture world-tick takes
+              // when it declines to invent an urgency for an NPC-bargained
+              // opportunity.
+            ),
+          ),
+        );
+        break;
+      }
+      case 'npc-relationship': {
+        // v3.8 sink #3, and the second feedback loop. deriveNpcRelationship
+        // has read `relations['player-trust']` as its trust base since v1.x,
+        // and two packs AUTHOR it (starter-fantasy 15, starter-merchant 68) —
+        // but nothing in the engine ever WROTE it, so an NPC's disposition
+        // toward the player was fixed at whatever the content declared plus
+        // whatever cognition inferred. Nine authored fallout sites announced
+        // a trust change; none of them moved it.
+        //
+        // The loop: this base feeds deriveNpcRelationship → the profiles
+        // world-tick step 5a persists → deriveLoyaltyBreakpoint →
+        // evaluateNpcGoalOpportunities, which only offers work from a
+        // favorable or allied NPC. Finishing someone's favour changes what
+        // they will ask of you next.
+        const npc = world.entities[effect.npcId];
+        if (!npc) break;
+        const key = relationshipBaseKey(effect.axis);
+        const range = RELATIONSHIP_AXIS_RANGE[effect.axis];
+        const current = Number(npc.relations?.[key] ?? 0);
+        npc.relations = {
+          ...(npc.relations ?? {}),
+          // Clamped at the WRITE, to the range derivation can express. An
+          // unclamped base could sink past -100 and then need six favours to
+          // climb back to a number the reader was already flooring anyway.
+          [key]: Math.min(range.max, Math.max(range.min, current + effect.delta)),
+        };
+        break;
+      }
+      case 'rumor': {
+        // v3.8 sink #4. Sixteen authored sites across every kind announce a
+        // rumor on resolution — "completed a contract for the guild",
+        // "betrayed their employer" — and the word reached nobody.
+        //
+        // REUSES the NPC-originated path world-tick step 5a already applies
+        // (spawnNpcOriginatedRumor + propagateRumor + setPlayerRumorState).
+        // No new transport: the playerRumors ceiling world-tick documents in
+        // its own header stays closed, and this is deliberately the same door
+        // an NPC's gossip goes through, because that is what this is.
+        //
+        // ORIGIN, not authorship. A rumor about the player still comes from
+        // SOMEONE — the person who hired them, or the faction that did. The
+        // one thing this must not do is tag the player as the source, which
+        // is precisely why world-tick left its own generic-rumor case unwired
+        // (spawnIntentionalRumor stamps 'player-leverage'). With neither a
+        // source NPC nor a source faction there is no honest origin, so the
+        // rumor is skipped rather than invented.
+        const originNpcId = fallout.resolution.sourceNpcId ?? fallout.resolution.sourceFactionId;
+        if (!originNpcId) break;
+        rumors ??= getPlayerRumorState(world).rumors;
+        const originEntity = world.entities[originNpcId];
+        const originZone = originEntity?.zoneId ?? actor?.zoneId;
+        const [firstFaction, ...restFactions] = effect.spreadTo;
+        let rumor = spawnNpcOriginatedRumor(
+          effect.claim,
+          effect.valence,
+          // Valence chooses the register: a fearsome claim is an accusation,
+          // anything else is talk. Both are members of the same NpcRumorSource
+          // vocabulary world-tick already maps onto.
+          effect.valence === 'fearsome' ? 'npc-accusation' : 'npc-gossip',
+          originNpcId,
+          firstFaction ?? fallout.resolution.sourceFactionId,
+          originZone ? getDistrictForZone(world, originZone) : undefined,
+          fallout.resolution.resolvedAtTick,
+          NPC_RUMOR_CONFIDENCE,
+          world,
+        );
+        for (const extraFaction of restFactions) {
+          rumor = propagateRumor(rumor, extraFaction);
+        }
+        rumors = [...rumors, rumor];
+        break;
+      }
       case 'title-trigger':
-      case 'spawn-pressure':
-      case 'spawn-opportunity':
-        break; // no persisted sink today — see doc comment above
+        // v3.8 sink #5. `faction-job` completed announces `faction-operative`
+        // and the world had nowhere to put it — the same gap the pressure
+        // side carries for six more tags, closed in the same commit through
+        // the same store (world-tick.ts's applyFallout).
+        //
+        // Gated on the actor, like `leverage` above: a title belongs to
+        // somebody. Grants are first-earned-wins, so the tick answers "when
+        // did they become that" rather than "when did it last come up".
+        if (actor) grantTitleToEntity(actor, effect.tag, fallout.resolution.resolvedAtTick);
+        break;
+      case 'materials':
+        // v3.8 sink #6. crafting-core already owns exactly this store —
+        // `materials.<SupplyCategory>` on the actor's custom record, with
+        // getMaterialInventory as its public read and hasMaterials/craft as
+        // its consumers. The effect type is keyed by the SAME SupplyCategory,
+        // so this is a sink that was waiting to be plugged in rather than one
+        // that had to be designed. District stock is the OTHER effect type
+        // (`economy-shift`); making this one mean that too would have made
+        // the two redundant.
+        if (actor) {
+          actor.custom = adjustMaterial(actor.custom ?? {}, effect.category, effect.quantity);
+        }
+        break;
+      case 'spawn-opportunity': {
+        // v3.8 sink #7. Mirrors world-tick's own runNpcAgencyStep handling of
+        // the identically-named NpcEffect, including both guards, because the
+        // list being written is the same list.
+        spawnedOpportunities ??= getPersistedOpportunities(world);
+
+        // Guard 1 — the CAP. POP-1's measured constant, deliberately kept at 5
+        // (Iyengar & Lepper 2000, cited at its definition): a chain that could
+        // push past the cap would make "the answer to the player wanting more
+        // work is not a longer list" untrue by the back door.
+        const live = spawnedOpportunities.filter(
+          (o) => o.status === 'available' || o.status === 'accepted',
+        );
+        if (live.length >= MAX_ACTIVE_OPPORTUNITIES) break;
+
+        // Guard 2 — one live offer per (kind, source) pair, the same dedup
+        // evaluateOpportunities applies to its own candidates and world-tick
+        // 5a applies to NPC-offered ones.
+        const source = effect.sourceNpcId ?? effect.sourceFactionId ?? 'none';
+        const pairKey = `${effect.kind}:${source}`;
+        if (live.some((o) => `${o.kind}:${o.sourceNpcId ?? o.sourceFactionId ?? 'none'}` === pairKey)) break;
+
+        const zone = actor?.zoneId;
+        spawnedOpportunities = [
+          ...spawnedOpportunities,
+          makeOpportunity({
+            kind: effect.kind,
+            sourceNpcId: effect.sourceNpcId,
+            sourceFactionId: effect.sourceFactionId,
+            title: effect.description,
+            description: effect.description,
+            objectiveDescription: 'Follow the thread this opened.',
+            linkedDistrictId: zone ? getDistrictForZone(world, zone) : undefined,
+            urgency: CHAINED_OPPORTUNITY_URGENCY,
+            // The kind's OWN authored deadline, not an invented one — a
+            // chained bounty lapses on the same clock a spawned bounty does.
+            turnsRemaining: deadlineFor(effect.kind),
+            visibility: 'offered',
+            // Empty, and deliberately: the effect carries no concrete amounts,
+            // and this file does not invent them. The kind's fallout still
+            // pays on resolution — getBountyFallout('completed') is reputation,
+            // blackmail leverage, a rumor and a milestone, none of which comes
+            // from `rewards`. Same honest scoping world-tick 5a documents for
+            // its own minimal spawn.
+            rewards: [],
+            risks: [],
+            genre: fallout.resolution.genre ?? '',
+            currentTick: fallout.resolution.resolvedAtTick,
+            tags: ['chained', `from:${fallout.resolution.opportunityKind}`],
+          }),
+        ];
+        break;
+      }
+      case 'spawn-pressure': {
+        // v3.8 sink #8, the last one. Writes into world-tick's OWN persisted
+        // pressure list — the array `state.pressures` holds and
+        // getActivePressures reads — through pushActivePressure, which exists
+        // for exactly this reason: the tick reassigns `state.pressures` at the
+        // END of its round, so a mid-tick write through the namespace would be
+        // silently discarded. See that function's contract.
+        //
+        // Respects the one-active-per-kind invariant both other spawners hold
+        // (applyFallout's chain pressures, runNpcAgencyStep's NPC-triggered
+        // ones). Without it a player who lets three bounties lapse would
+        // accumulate three identical investigations.
+        pushActivePressure(
+          world,
+          makePressure(
+            {
+              kind: effect.kind,
+              sourceFactionId: effect.sourceFactionId,
+              description: effect.description,
+              triggeredBy: `opportunity:${fallout.resolution.opportunityId}`,
+              urgency: effect.urgency,
+              // 'rumored' — fallout is word getting around by nature, the same
+              // visibility applyFallout gives its own chain pressures.
+              visibility: 'rumored',
+              turnsRemaining: CHAIN_TURNS_REMAINING,
+              potentialOutcomes: [],
+              tags: effect.tags,
+              currentTick: fallout.resolution.resolvedAtTick,
+              ...(fallout.resolution.sourceNpcId ? { sourceNpcId: fallout.resolution.sourceNpcId } : {}),
+            },
+            world,
+          ),
+        );
+        break;
+      }
       default:
         break;
     }
+  }
+
+  if (rumors) setPlayerRumorState(world, { rumors });
+  if (spawnedOpportunities) setPersistedOpportunities(world, spawnedOpportunities);
+
+  if (obligationLedgers) {
+    // Full-overwrite writer (npc-agency's own contract — no sibling module
+    // shares that namespace), so this round's profiles and last-actions are
+    // read back and re-supplied unchanged. On a world where step 5a has run,
+    // those are this round's real values; on one where it has not, they are
+    // [] and step 5a rebuilds them next round regardless.
+    setPersistedNpcState(
+      world,
+      getPersistedNpcProfiles(world),
+      getPersistedNpcLastActions(world),
+      obligationLedgers,
+    );
   }
 
   if (!partyChanged) return;
@@ -751,16 +1243,34 @@ export function applyOpportunityFallout(world: WorldState, actorId: string, fall
 // from action.toolId (mirrors trade-core's sell / inventory-core's use — "the
 // noun this verb acts on"), falling back to targetIds[0].
 //
-// The state machine's other terminal outcomes (failed/betrayed/expired/
-// declined) remain fully authored and handled end-to-end by
-// computeOpportunityFallout/applyOpportunityFallout for whatever future
-// caller reaches them (proven directly, unit-level, in this file's own
-// test — the mechanism doesn't care how a resolutionType arrived). This
-// verb reaches exactly 'completed' and 'abandoned' this wave — the same
-// "authored but not every outcome is yet reachable" honesty this engine
-// already practices elsewhere (world-tick.ts's own 'resolved-by-player'
-// resolutionType, e.g., is authored, tested, and unreached in production).
+// v3.8 adds the fourth op: `betray`. It was the last unreachable terminal
+// outcome with authored content behind it, and the amount waiting was the
+// argument for adding it — SIX obligation sites, THREE rumors, and all THREE
+// `spawn-pressure` producers sit inside `betrayed` cases, written across
+// several releases and reached by nothing. FSA-1 measured that directly: an
+// effect type whose every producer sits on an unreachable resolution is dead
+// one level earlier than a missing sink.
+//
+// Betrayal also unlocks `evaluateObligationOpportunities`, whose gate is
+// `player-owes-npc && magnitude >= 4`. Every reachable resolution's debt sat
+// below it — expiry writes 2, abandonment 3 — and only betrayal writes 4+
+// (6, 7 and 8 across contract, favor-request and escort). That evaluator was
+// never missing a sink; its threshold is authored at betrayal tier.
+//
+// It rejects when there is nobody to betray (a district's own supply run has
+// no counterparty), rather than degrading to `abandoned` — a verb that
+// quietly does something else is worse than one that says no.
+//
+// `failed` and `declined` remain authored and unreached, handled end-to-end
+// by computeOpportunityFallout/applyOpportunityFallout for whatever future
+// caller arrives (proven unit-level in this file's own test — the mechanism
+// does not care how a resolutionType arrived). That is the same "authored but
+// not every outcome is yet reachable" honesty the engine practises elsewhere,
+// now with one fewer entry on the list.
 // ---------------------------------------------------------------------------
+
+/** One usage string, so every rejection advertises the same verb surface. */
+const OPPORTUNITY_USAGE = 'opportunity accept|complete|abandon|betray <id>';
 
 function reject(action: ActionIntent, reason: string, hint: string, extra?: Record<string, unknown>): ResolvedEvent[] {
   return [makeEvent(action, 'action.rejected', { verb: action.verb, reason, hint, ...extra })];
@@ -773,13 +1283,13 @@ function opportunityHandler(action: ActionIntent, world: WorldState): ResolvedEv
   }
 
   const op = action.parameters?.op;
-  if (op !== 'accept' && op !== 'complete' && op !== 'abandon') {
-    return reject(action, `unknown op '${String(op)}'`, 'opportunity accept|complete|abandon <id>');
+  if (op !== 'accept' && op !== 'complete' && op !== 'abandon' && op !== 'betray') {
+    return reject(action, `unknown op '${String(op)}'`, OPPORTUNITY_USAGE);
   }
 
   const opportunityId = action.toolId ?? action.targetIds?.[0];
   if (!opportunityId) {
-    return reject(action, 'no opportunity specified', 'opportunity accept|complete|abandon <id>');
+    return reject(action, 'no opportunity specified', OPPORTUNITY_USAGE);
   }
 
   const opportunities = getPersistedOpportunities(world);
@@ -805,7 +1315,8 @@ function opportunityHandler(action: ActionIntent, world: WorldState): ResolvedEv
     })];
   }
 
-  // complete/abandon both require the opportunity to already be accepted.
+  // complete/abandon/betray all require the opportunity to already be
+  // accepted. Betrayal especially: you cannot sell out a job you never took.
   if (opp.status !== 'accepted') {
     return reject(
       action,
@@ -815,7 +1326,23 @@ function opportunityHandler(action: ActionIntent, world: WorldState): ResolvedEv
     );
   }
 
-  const resolutionType: OpportunityResolutionType = op === 'complete' ? 'completed' : 'abandoned';
+  // `betray` needs someone to betray. Abandoning a district's supply run is
+  // walking away from work; there is no counterparty to sell out, and the
+  // authored betrayal fallout is written entirely in terms of one — the
+  // reputation hit, the obligation, the pressure all key off a faction or an
+  // NPC. Rejecting is honest where silently degrading to `abandoned` would be
+  // a verb that quietly does something else.
+  if (op === 'betray' && !opp.sourceFactionId && !opp.sourceNpcId) {
+    return reject(
+      action,
+      'nobody to betray',
+      'This work came from the district itself, not from a person or a faction. Abandon it instead.',
+      { opportunityId },
+    );
+  }
+
+  const resolutionType: OpportunityResolutionType =
+    op === 'complete' ? 'completed' : op === 'betray' ? 'betrayed' : 'abandoned';
   const resolvedOpp: OpportunityState = { ...opp, status: resolutionType, resolvedAtTick: tick };
   setPersistedOpportunities(world, opportunities.map((o) => (o.id === opp.id ? resolvedOpp : o)));
 

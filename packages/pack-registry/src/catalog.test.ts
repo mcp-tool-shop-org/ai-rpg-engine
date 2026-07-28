@@ -31,6 +31,7 @@ import * as vampire from '@ai-rpg-engine/starter-vampire';
 import * as gladiator from '@ai-rpg-engine/starter-gladiator';
 import * as ronin from '@ai-rpg-engine/starter-ronin';
 import * as merchant from '@ai-rpg-engine/starter-merchant';
+import * as bountyHunter from '@ai-rpg-engine/starter-bounty-hunter';
 
 const realCatalog: PackEntry[] = [
   {
@@ -110,6 +111,13 @@ const realCatalog: PackEntry[] = [
     districts: merchant.districts,
     createGame: merchant.createGame,
   },
+  {
+    meta: bountyHunter.packMeta,
+    manifest: bountyHunter.manifest,
+    ruleset: bountyHunter.bountyHunterMinimalRuleset,
+    districts: bountyHunter.districts,
+    createGame: bountyHunter.createGame,
+  },
 ];
 
 /** Every `starter-*` workspace package that exists on disk, read from the
@@ -154,6 +162,7 @@ describe('catalog-of-record membership (F-merchant-H)', () => {
     'iron-colosseum': 'starter-gladiator',
     'jade-veil': 'starter-ronin',
     'salt-road-ledger': 'starter-merchant',
+    'hue-and-cry': 'starter-bounty-hunter',
   };
 
   it('every catalog entry maps to a real package directory', () => {
@@ -168,7 +177,7 @@ describe('catalog-of-record membership (F-merchant-H)', () => {
   it('every starter-* package on disk is scored by the rubric', () => {
     const onDisk = starterPackagesOnDisk();
     const inCatalog = new Set(realCatalog.map((p) => PACKAGE_BY_PACK_ID[p.meta.id]));
-    expect(onDisk.length).toBeGreaterThanOrEqual(11);
+    expect(onDisk.length).toBeGreaterThanOrEqual(12);
     expect(
       onDisk.filter((d) => !inCatalog.has(d)),
       'these starter packages ship but are NOT scored by the pack rubric',
@@ -185,10 +194,10 @@ describe('catalog-of-record membership (F-merchant-H)', () => {
 });
 
 describe('pack rubric × real catalog (PG-1)', () => {
-  it('catalog sanity: 11 packs with unique ids, each declaring district topology', () => {
-    expect(realCatalog).toHaveLength(11);
+  it('catalog sanity: 12 packs with unique ids, each declaring district topology', () => {
+    expect(realCatalog).toHaveLength(12);
     const ids = realCatalog.map((p) => p.meta.id);
-    expect(new Set(ids).size).toBe(11);
+    expect(new Set(ids).size).toBe(12);
     for (const pack of realCatalog) {
       expect(pack.meta.id, 'meta.id must match manifest.id').toBe(pack.manifest.id);
       expect(
@@ -223,6 +232,36 @@ describe('pack rubric × real catalog (PG-1)', () => {
   // an assertion now. It is also the catalog's only 7/7: every other pack
   // fails `distinct-verbs` (they share the world-stack surface), which merchant
   // clears on its five pack-native commerce verbs.
+  it('hue-and-cry scores against the real catalog — the number, reported', () => {
+    // The twelfth pack, scored rather than asserted. v3.5.0's release record
+    // claimed merchant scored 7/7 and had measured it BY HAND; this file exists
+    // because that claim was unattested. The same discipline applies to the
+    // newcomer on its first commit: the score is COMPUTED here, against the
+    // live 12-pack catalog, and every failing dimension is named in the message
+    // so a drop says which one rather than only that one happened.
+    const entry = realCatalog.find((p) => p.meta.id === 'hue-and-cry');
+    expect(entry, 'hue-and-cry is missing from the catalog-of-record').toBeDefined();
+    const result = validatePackRubric(entry!, realCatalog);
+    const failing = result.checks
+      .filter((c) => !c.passed)
+      .map((c) => `${c.dimension}: ${c.detail}`)
+      .join(' | ');
+    // 7/7 — the catalog's SECOND perfect score, and pinned as an assertion
+    // rather than as the >= 5 floor for the reason the merchant row above
+    // gives: a number measured by hand and attested nowhere is a number that
+    // silently stops being true.
+    //
+    // It took the gate to get here. The first tone set was ['gritty','tense'],
+    // identical as a SET to ashfall-dead's, and the rubric named the collision
+    // and cost a point for it. The fix was `noir`, which is the truer answer
+    // anyway — a man running informants for the office and fencing for the
+    // ward is proto-noir a century before the word.
+    expect(
+      result.score,
+      `hue-and-cry scored ${result.score}/7 — failing: ${failing}`,
+    ).toBe(7);
+  });
+
   it('salt-road-ledger scores a full 7/7 against the real catalog', () => {
     const merchantEntry = realCatalog.find((p) => p.meta.id === 'salt-road-ledger');
     expect(merchantEntry, 'merchant missing from the catalog-of-record').toBeDefined();

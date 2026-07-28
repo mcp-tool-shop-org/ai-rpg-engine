@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/equipment",
-  "version": "3.7.0",
+  "version": "3.8.0",
   "description": "Equipment slots, item definitions, and loadout management for AI RPG Engine",
   "type": "module",
   "main": "./dist/index.js",

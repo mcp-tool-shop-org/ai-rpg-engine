@@ -158,9 +158,11 @@ import {
   type PressureInputs,
 } from './pressure-system.js';
 import { computeFallout, type PressureFallout } from './pressure-resolution.js';
+import { grantTitleToEntity } from './player-titles.js';
+import { NPC_RUMOR_CONFIDENCE, CHAINED_OPPORTUNITY_URGENCY } from './opportunity-resolution.js';
 import { getDistrictForZone, getDistrictState, getDistrictDefinition } from './district-core.js';
 import { runEncounterSpawnStep, type SpawnedEncounterReport } from './encounter-spawn.js';
-import { getEconomyCoreState, setDistrictEconomy, tickDistrictEconomy } from './economy-core.js';
+import { getEconomyCoreState, setDistrictEconomy, tickDistrictEconomy, getDistrictEconomy, applyEconomyShift, type SupplyCategory } from './economy-core.js';
 import {
   COMPANION_TAG,
   getPartyState,
@@ -195,6 +197,8 @@ import {
   getPersistedOpportunities,
   setPersistedOpportunities,
   makeOpportunity,
+  deadlineFor,
+  MAX_ACTIVE_OPPORTUNITIES,
   type OpportunityInputs,
   type OpportunityState,
 } from './opportunity-core.js';
@@ -536,6 +540,88 @@ export function getActivePressures(world: WorldState): WorldPressure[] {
 export function getResolvedPressures(world: WorldState): PressureFallout[] {
   return objectArray<PressureFallout>(peekState(world)?.resolvedPressures);
 }
+
+/**
+ * Milestones this world has accumulated — boss kills scraped off the event log
+ * (collectMilestones), pressure fallout's `milestone-tag` effect, and (v3.8)
+ * opportunity fallout's. Most recent last, never cleared.
+ *
+ * NEW IN v3.8 and the reason it exists: the milestone ledger had real writers
+ * and real INTERNAL readers (the genre spawn rules' milestone conditions,
+ * runLeverageIncomeStep's cursor) but no public accessor, so no consumer
+ * outside this file could tell whether an announced milestone had been
+ * recorded. A consequence with no public read API is indistinguishable from a
+ * consequence that was never written (FSA-1). Non-attaching; same contract as
+ * getActivePressures/getResolvedPressures above.
+ */
+export function getWorldMilestones(world: WorldState): Array<{ label: string; tags: string[] }> {
+  return objectArray<{ label: string; tags: string[] }>(peekState(world)?.milestones);
+}
+
+/**
+ * Record one milestone against this world.
+ *
+ * The SHARED writer for both fallout appliers. `applyFallout` below (pressure
+ * side) has pushed straight into `state.milestones` since v2.x; opportunity
+ * fallout announced `milestone-tag` and wrote nothing, because
+ * opportunity-resolution.ts lives in another file and this array had no
+ * exported writer to reach. That asymmetry — same effect type, same
+ * vocabulary, one path recording and one path forgetting — is the whole shape
+ * FSA-1 was built to find.
+ *
+ * Attaches the namespace, deliberately: a milestone exists only because
+ * something happened, so a world that gains one is a world that changed. The
+ * SEED-0 contract is about worlds where NOTHING happened, and this is never
+ * called on one.
+ */
+export function recordMilestone(world: WorldState, label: string, tags: string[]): void {
+  getWorldTickState(world).milestones.push({ label, tags });
+}
+
+/**
+ * Add `pressure` to this world's live pressure list, honouring the
+ * one-active-per-kind invariant every other spawner holds. Returns true when
+ * it landed, false when a pressure of that kind was already live.
+ *
+ * ⚠ THE SUBTLETY THIS FUNCTION EXISTS FOR. `tickWorld` derives its round's
+ * `active` array from `tickPressures(state.pressures, …)` — a NEW array — and
+ * reassigns `state.pressures = active` at the very END of the round. Anything
+ * written into the namespace's array in between is therefore DISCARDED, which
+ * is why opportunity fallout's `spawn-pressure` sink cannot simply push
+ * through getActivePressures. Mutating the array `state.pressures` currently
+ * holds is correct OUTSIDE a tick (the verb path, where that array is the
+ * live one); INSIDE a tick it would vanish.
+ *
+ * So the write goes to BOTH: the persisted array, and — when a tick is
+ * mid-round — the working array it will persist. `runningPressures` below is
+ * how the tick lends its working array to this function for the duration of
+ * its own round; outside a tick it is undefined and only the persisted array
+ * is touched.
+ */
+export function pushActivePressure(world: WorldState, pressure: WorldPressure): boolean {
+  const persisted = getWorldTickState(world);
+  const working = runningPressures.get(world);
+  const target = working ?? persisted.pressures;
+  if (target.some((p) => p.kind === pressure.kind)) return false;
+  target.push(pressure);
+  // Keep the namespace in step when a tick is running, so a read taken
+  // between now and the end of the round sees the same world the tick does.
+  if (working && persisted.pressures !== working) {
+    if (!persisted.pressures.some((p) => p.kind === pressure.kind)) persisted.pressures.push(pressure);
+  }
+  return true;
+}
+
+/**
+ * The working pressure array of an in-flight `tickWorld`, per world.
+ *
+ * A WeakMap keyed on the world rather than a module-global single slot: two
+ * engines can tick in the same process (every test file does), and a shared
+ * slot would let one world's fallout push a pressure into another's round.
+ * Cleared in a `finally` so a throwing tick cannot leave a stale array behind
+ * for the verb path to write into.
+ */
+const runningPressures = new WeakMap<WorldState, WorldPressure[]>();
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -946,12 +1032,24 @@ function applyFallout(
         addGlobal(world, `district_${effect.districtId}_${effect.metric}`, effect.delta);
         break;
       case 'milestone-tag':
-        // Feeds back into the genre spawn rules' milestone conditions.
-        state.milestones.push({
-          label: `pressure:${fallout.resolution.pressureKind}`,
-          tags: [effect.tag],
-        });
+        // Feeds back into the genre spawn rules' milestone conditions. Routed
+        // through recordMilestone (v3.8) so this path and opportunity
+        // fallout's write the same ledger through the same door — `state` is
+        // the attached namespace object, so this is the identical write.
+        recordMilestone(world, `pressure:${fallout.resolution.pressureKind}`, [effect.tag]);
         break;
+      case 'title-trigger': {
+        // v3.8. Six authored tags live on this side — bounty-survivor,
+        // trade-broker, faith-tested, iron-captain, steadfast, ghost — one per
+        // pressure kind's own resolution, and every one of them rode the
+        // pressure.expired payload into nothing. Wired here rather than left
+        // for a later wave because it is the SAME store the opportunity-side
+        // sink writes: closing one and leaving the other is exactly the
+        // asymmetry that made milestone-tag worth finding.
+        const player = world.entities[world.playerId];
+        if (player) grantTitleToEntity(player, effect.tag, currentTick);
+        break;
+      }
       case 'spawn-pressure': {
         const chain = makePressure(
           {
@@ -972,11 +1070,98 @@ function applyFallout(
         chains.push(chain);
         break;
       }
+
+      // ── The last three, closed by P4's own audit (v3.8) ─────────────────
+      //
+      // FLA-1 reads BOTH event families and reported an `economy-shift`
+      // announced by a pressure resolution that no read could find. It was
+      // right: this applier handled six of its nine effect types and dropped
+      // rumor, economy-shift and spawn-opportunity onto the
+      // "rides the pressure.expired payload" default — the exact class this
+      // release spent itself closing, sitting on the other applier the whole
+      // time. Every writer below already existed and was already in use by
+      // opportunity fallout; none of this is new machinery, only the same
+      // door opened from the second room.
+
+      case 'economy-shift': {
+        const economy = getDistrictEconomy(world, effect.districtId);
+        if (economy) {
+          setDistrictEconomy(world, effect.districtId, applyEconomyShift(economy, {
+            districtId: effect.districtId,
+            category: effect.category as SupplyCategory,
+            delta: effect.delta,
+            cause: effect.cause,
+          }));
+        }
+        break;
+      }
+
+      case 'rumor': {
+        // Same origin discipline opportunity fallout uses: a rumor about the
+        // player still comes from SOMEONE. A pressure's own source faction is
+        // that someone, and with no faction there is no honest origin — so it
+        // is skipped rather than invented, and the player is never stamped as
+        // the source.
+        const origin = effect.spreadTo[0] ?? pressureSourceFaction(world, fallout.resolution.pressureId);
+        if (!origin) break;
+        const rumorState = getPlayerRumorState(world);
+        let rumor = spawnNpcOriginatedRumor(
+          effect.claim,
+          effect.valence,
+          effect.valence === 'fearsome' ? 'npc-accusation' : 'npc-gossip',
+          origin,
+          effect.spreadTo[0] ?? origin,
+          undefined,
+          currentTick,
+          NPC_RUMOR_CONFIDENCE,
+          world,
+        );
+        for (const extra of effect.spreadTo.slice(1)) rumor = propagateRumor(rumor, extra);
+        setPlayerRumorState(world, { rumors: [...rumorState.rumors, rumor] });
+        break;
+      }
+
+      case 'spawn-opportunity': {
+        // Both of the spawner's guards, for the reason the opportunity-side
+        // sink states: POP-1's cap is a measured argument, and a chain that
+        // could push past it would undo that argument by the back door.
+        const opportunities = getPersistedOpportunities(world);
+        const live = opportunities.filter((o) => o.status === 'available' || o.status === 'accepted');
+        if (live.length >= MAX_ACTIVE_OPPORTUNITIES) break;
+        const source = effect.sourceNpcId ?? effect.sourceFactionId ?? 'none';
+        if (live.some((o) => `${o.kind}:${o.sourceNpcId ?? o.sourceFactionId ?? 'none'}` === `${effect.kind}:${source}`)) break;
+        setPersistedOpportunities(world, [
+          ...opportunities,
+          makeOpportunity({
+            kind: effect.kind,
+            sourceNpcId: effect.sourceNpcId,
+            sourceFactionId: effect.sourceFactionId,
+            title: effect.description,
+            description: effect.description,
+            objectiveDescription: 'Follow the thread this opened.',
+            urgency: CHAINED_OPPORTUNITY_URGENCY,
+            turnsRemaining: deadlineFor(effect.kind),
+            visibility: 'offered',
+            rewards: [],
+            risks: [],
+            genre: '',
+            currentTick,
+            tags: ['chained', `from:pressure:${fallout.resolution.pressureKind}`],
+          }),
+        ]);
+        break;
+      }
+
       default:
-        break; // rides the pressure.expired payload
+        break;
     }
   }
   return chains;
+}
+
+/** The faction a live pressure names as its source, for rumor attribution. */
+function pressureSourceFaction(world: WorldState, pressureId: string): string | undefined {
+  return getActivePressures(world).find((p) => p.id === pressureId)?.sourceFactionId;
 }
 
 // ---------------------------------------------------------------------------
@@ -1493,6 +1678,13 @@ export function runWorldTick(engine: Engine, opts: WorldTickOptions = {}): World
       opportunitiesSpawned: [],
       opportunitiesExpired: [],
     };
+  } finally {
+    // Take the working array back (v3.8). Outside a tick, pushActivePressure
+    // must write the PERSISTED array — that one is live then — and a stale
+    // lend would silently send the verb path's writes into an array nobody
+    // reads again. In `finally` because a tick that threw has the same
+    // problem as one that returned.
+    runningPressures.delete(engine.store.state);
   }
 }
 
@@ -1565,6 +1757,11 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   // 2. The module's own lifecycle: timers, expiry, visibility surfacing.
   const prevById = new Map(state.pressures.map((p) => [p.id, p]));
   const { active, expired } = tickPressures(state.pressures, currentTick);
+  // Lend this round's working array to pushActivePressure for the duration of
+  // the tick (v3.8) — see that function's contract. `active` is a fresh array
+  // and `state.pressures = active` only happens at the very end, so a sink
+  // firing at step 5b-i has no other way to reach the list that survives.
+  runningPressures.set(world, active);
 
   const revealed: WorldPressure[] = [];
   for (const pressure of active) {

@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/ledger-adapter",
-  "version": "3.7.0",
+  "version": "3.8.0",
   "description": "Opt-in XRPL testnet settlement for the player-owned tradeable layer (coin/inventory/trade) — entirely outside the deterministic replayable core",
   "type": "module",
   "main": "./dist/index.js",

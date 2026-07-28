@@ -187,7 +187,18 @@ export function deriveNpcRelationship(
   if (attackMemory) trust = Math.max(-100, trust - 50);
 
   // --- Fear ---
+  // Base: from entity.relations if set, otherwise none — the exact shape the
+  // trust base above uses. Added v3.8 so `npc-relationship` fallout has a
+  // sink for BOTH axes it declares: opportunity fallout can announce
+  // `{axis:'fear'}` and, without a stored base, fear is derived end-to-end
+  // from cognition and there is nowhere for that announcement to land. No
+  // shipped content emits the fear axis today (FSA-1's producer census says
+  // so), which is precisely why it needed writing down rather than assuming.
+  // Absent key → 0 → byte-identical to every world that predates this.
   let fear = 0;
+  if (entity?.relations?.['player-fear'] !== undefined) {
+    fear = Number(entity.relations['player-fear']);
+  }
   // Low morale + combat memories = fear
   if (cognition.morale < 40) {
     fear += Math.floor((40 - cognition.morale) * 1.5);
@@ -309,22 +320,62 @@ export function deriveBestLeverageAngle(breakpoint: LoyaltyBreakpoint): string {
  */
 
 /**
- * DistrictModifiers.npcCooperationBias — the ONE field of the two bundles v3.7
- * deliberately did NOT thread, and the reason is worth keeping next to the code.
+ * DistrictModifiers.npcCooperationBias — threaded in v3.8, at CHECK TIME.
  *
- * It is documented as "-10 to +10, added to trust FOR CHECKS". The obvious
- * landing point is `deriveNpcRelationship`'s trust, and that was tried: it
- * works, and it also makes companions DESERT. Trust feeds
+ * ── THE V3.7 HISTORY, kept because it is the reason for the shape ──
+ * The field is documented as "-10 to +10, added to trust FOR CHECKS". The
+ * obvious landing point is `deriveNpcRelationship`'s trust, and that was
+ * tried: it works, and it also makes companions DESERT. Trust feeds
  * `deriveLoyaltyBreakpoint`, the breakpoint feeds companion-reactions'
- * departure rule (`breakpoint === 'hostile'` -> leave), so a grim district
+ * departure rule (`breakpoint === 'hostile'` → leave), so a grim district
  * quietly started emptying the player's party. A pinned world-tick test caught
- * it — a companion the fixture expects to still be there was gone.
+ * it — a companion the fixture expects to still be there was gone. That is a
+ * retention change wearing a modifier's clothes, and "for checks" is not what
+ * it means. It was left unthreaded with a test guarding the DECISION.
  *
- * That is a real gameplay change wearing a modifier's clothes, and "for checks"
- * is not what it means. Threading it correctly needs a check surface that is
- * separate from the persistent relationship, which does not exist yet.
- * Deferred with this note rather than shipped as a silent retention change.
+ * ── THE SEAM ──
+ * The check surface v3.7 said "does not exist yet" was already here:
+ * `deriveNpcGoals` reads `rel.trust` fresh every round to decide whether an
+ * NPC will warn you, conceal from you, lie to you, or bargain — and those ARE
+ * the cooperation checks. What it does NOT feed is the stored profile. So the
+ * bias lands on a COPY of the relationship handed to goal derivation, and
+ * `profile.relationship` / `profile.breakpoint` — the two things everything
+ * departure-shaped reads — are computed from the unbiased original and never
+ * see it.
+ *
+ * v3.7 landed the bias one level too deep: in derivation, where it became
+ * permanent, instead of at the check, where the documentation always said it
+ * belonged. `deriveNpcRelationship` still takes exactly three arguments, and
+ * the test guarding that decision still stands.
  */
+
+/**
+ * Trust as a COOPERATION CHECK sees it: the stored relationship plus the
+ * district's mood, clamped to the range trust can express.
+ *
+ * Pure and exported so the seam is testable in isolation — the whole claim is
+ * that this number differs from `relationship.trust` and that only goal
+ * derivation ever sees it.
+ */
+export function deriveCooperationTrust(relationship: NpcRelationship, bias: number): number {
+  return Math.min(100, Math.max(-100, relationship.trust + bias));
+}
+
+/**
+ * The cooperation bias of the district this entity stands in, or 0 when there
+ * is no district system, no district for their zone, or no state for it.
+ *
+ * 0 is the identity value for the seam below, so a world without districts
+ * derives byte-identical goals to one that never had this wire.
+ */
+export function districtCooperationBias(world: WorldState, entity: EntityState): number {
+  const districtId = entity.zoneId ? getDistrictForZone(world, entity.zoneId) : undefined;
+  if (!districtId) return 0;
+  const state = getDistrictState(world, districtId);
+  if (!state) return 0;
+  const tags = getDistrictDefinition(world, districtId)?.tags ?? [];
+  return computeDistrictModifiers(computeDistrictMood(state, tags)).npcCooperationBias;
+}
 
 export function buildNpcProfile(
   world: WorldState,
@@ -352,16 +403,29 @@ export function buildNpcProfile(
     ? getPressuresForFaction(activePressures, factionId).length > 0
     : false;
 
+  // Everything PERSISTENT is derived from the unbiased relationship — the
+  // breakpoint below is what companion-reactions' departure rule reads, and
+  // the district's mood must never be able to end a companionship.
   const breakpoint = deriveLoyaltyBreakpoint(relationship, obligations, playerId);
   const dominantAxis = deriveDominantAxis(relationship);
   const leverageAngle = deriveBestLeverageAngle(breakpoint);
+
+  // …and the CHECK gets the biased copy (v3.8). A grim district makes people
+  // less forthcoming with you today; it does not rewrite what they think of
+  // you, and it cannot make your companions leave. `bias === 0` returns the
+  // original object, so a world with no district system takes a path that is
+  // not merely equivalent but identical.
+  const bias = districtCooperationBias(world, entity);
+  const checkRelationship = bias === 0
+    ? relationship
+    : { ...relationship, trust: deriveCooperationTrust(relationship, bias) };
 
   const goals = deriveNpcGoals(
     world,
     npcId,
     entity,
     playerId,
-    relationship,
+    checkRelationship,
     knownRumors,
     underPressure,
     obligations,
@@ -1521,6 +1585,30 @@ export function createObligation(
     decayTurns,
   };
 }
+
+/**
+ * The `entity.relations` key holding an NPC's stored disposition toward the
+ * player on `axis` — the base deriveNpcRelationship starts from before it
+ * layers cognition on top.
+ *
+ * Exported so the one runtime writer (opportunity fallout's
+ * `npc-relationship` sink) and the reader above cannot drift apart on the key
+ * name. Until v3.8 this store had content AUTHORS (starter-fantasy seeds 15,
+ * starter-merchant 68) and a reader, and no runtime writer at all — the same
+ * shape as the milestone ledger and the obligation ledgers before their own
+ * sinks landed.
+ */
+export function relationshipBaseKey(axis: 'trust' | 'fear'): string {
+  return `player-${axis}`;
+}
+
+/** The range each stored disposition axis can express, matching the clamps
+ *  deriveNpcRelationship applies to its own output. A base stored outside
+ *  these could never be reached by derivation and would never recover. */
+export const RELATIONSHIP_AXIS_RANGE: Record<'trust' | 'fear', { min: number; max: number }> = {
+  trust: { min: -100, max: 100 },
+  fear: { min: 0, max: 100 },
+};
 
 /** Add an obligation to a ledger. Returns new ledger (immutable). */
 export function addObligation(

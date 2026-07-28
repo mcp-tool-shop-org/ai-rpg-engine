@@ -64,6 +64,9 @@
     },
     {
       "path": "../starter-merchant"
+    },
+    {
+      "path": "../starter-bounty-hunter"
     }
   ],
   "exclude": [

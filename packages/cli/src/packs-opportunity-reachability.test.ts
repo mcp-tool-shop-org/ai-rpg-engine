@@ -581,11 +581,18 @@ const WANDERING_BASELINE: Record<OpportunityKind, number> = {
   // P1: salt-road-ledger. A contract comes from a PERSON who already knows
   // you, so it needs no fighting and no recruiting — it is the one kind a
   // player at the floor can be handed.
-  contract: 1,
+  //
+  // 2 as of v3.8: hue-and-cry joins it, and NOT by accident. Clerk Hesper is
+  // authored allied-and-greedy on purpose, because that is the only NPC shape
+  // `evaluateNpcGoalOpportunities` will offer a contract from — the thing
+  // starter-merchant discovered by measurement in v3.7 and the twelfth pack
+  // was authored already knowing. A pack that reaches this kind at the
+  // WANDERING floor is one whose central NPC works.
+  contract: 2,
   escort: 0,
   'faction-job': 0,
   'favor-request': 0,
-  investigation: 11,
+  investigation: 12,
   // P1: salt-road-ledger. Both come from the DISTRICT rather than from a
   // person, so like `contract` they reach a player who only walks and talks —
   // the world offering work because it needs something, which is the whole

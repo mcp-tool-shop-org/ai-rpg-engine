@@ -265,6 +265,16 @@ export type {
   PressureFallout,
   FalloutContext,
 } from './pressure-resolution.js';
+// --- Player Titles (v3.8: the runtime record of what the world calls you) ---
+export {
+  grantTitle,
+  grantTitleToEntity,
+  getEarnedTitles,
+  hasTitle,
+  getDisplayTitle,
+  formatTitlesForDirector,
+} from './player-titles.js';
+export type { EarnedTitle } from './player-titles.js';
 // --- World Tick (F-ENG005: heat/safety drive the pressure lifecycle) ---
 export {
   runWorldTick,
@@ -274,6 +284,12 @@ export {
   hasWorldTickState,
   getActivePressures,
   getResolvedPressures,
+  // v3.8: the milestone ledger's public surface. Both fallout appliers write
+  // through recordMilestone; getWorldMilestones is the read that makes an
+  // announced milestone checkable from outside the package (FSA-1).
+  getWorldMilestones,
+  recordMilestone,
+  pushActivePressure,
   urgencyBand,
   HEAT_KEY,
   HEAT_WAKE_THRESHOLD,
@@ -460,6 +476,8 @@ export type {
 export {
   isNamedNpc,
   deriveNpcRelationship,
+  deriveCooperationTrust,
+  districtCooperationBias,
   deriveLoyaltyBreakpoint,
   deriveDominantAxis,
   deriveBestLeverageAngle,
@@ -485,6 +503,18 @@ export {
   resolveConsequenceChainStep,
   tickConsequenceChain,
   computeNpcRecapEntries,
+  // The persisted npc-agency slice. world-tick.ts's step 5a is the production
+  // writer and read these through the package-internal path; nothing outside
+  // the package could see an obligation ledger at all, which is why the
+  // fallout audit (FSA-1) could not check its own claim that opportunity
+  // fallout never records one. A consequence with no public read API is not a
+  // sink, so exporting the reads is part of building one.
+  relationshipBaseKey,
+  RELATIONSHIP_AXIS_RANGE,
+  getPersistedNpcProfiles,
+  getPersistedNpcLastActions,
+  getPersistedNpcObligations,
+  setPersistedNpcState,
 } from './npc-agency.js';
 export type {
   LoyaltyBreakpoint,
@@ -643,6 +673,13 @@ export {
   makeOpportunity,
   findLocalFaction,
   deadlineFor,
+  // v3.8: exported because opportunity fallout's `spawn-opportunity` sink is
+  // a SECOND writer of the offer list, and it must respect the same cap the
+  // evaluator does — a chain that could push past 5 would quietly undo the
+  // measured argument for the cap existing.
+  MAX_ACTIVE_OPPORTUNITIES,
+  LOCAL_FACTION_SATURATION,
+  isFactionSaturated,
   resetOpportunityCounter,
   // v2.9 write-wire (F-ceed887f/F-f3f2a84c): world.modules['opportunity-core']
   // accessors — the shared contract world-tick.ts's spawn/tick wire and
@@ -665,6 +702,9 @@ export type {
 // --- Opportunity Resolution (v1.9; write-wire v2.9 F-f3f2a84c) ---
 export {
   computeOpportunityFallout,
+  SUPPLY_RUN_RUNNERS_CUT,
+  CHAINED_OPPORTUNITY_URGENCY,
+  BOUNTY_LAPSE_ESCALATION_URGENCY,
   formatOpportunityFalloutForDirector,
   formatOpportunityFalloutForNarrator,
   // F-f3f2a84c: the resolution loop (accept → resolve → consequence).

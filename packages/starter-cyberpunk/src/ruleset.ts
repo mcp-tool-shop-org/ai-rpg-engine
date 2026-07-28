@@ -126,7 +126,20 @@ export const cyberpunkMinimalRuleset: RulesetDefinition = {
   progressionModels: [],
 
   contentConventions: {
-    entityTypes: ['runner', 'npc', 'ice-agent', 'drone', 'program'],
+    // v3.8: widened to what this pack's entities ACTUALLY are, not what the
+    // declaration wished they were. Shipped truth is `player`/`npc`/`enemy` —
+    // the runner is typed `player` and the ICE are typed `enemy`, because
+    // that is the vocabulary the engine's own targeting, combat and
+    // perception paths read. `runner`/`ice-agent`/`drone`/`program` stay as
+    // the pack's intended flavour vocabulary; they are simply not what
+    // `entity.type` carries today.
+    //
+    // This was the ONLY violation in eleven packs, and it is the same trap the
+    // v3.7 probe fell into from the other side: a reader that trusted this
+    // declaration would look for `ice-agent` and find nothing, exactly as a
+    // probe filtering for `npc` found no hostiles. Declaration-side only; no
+    // shipped entity changed. [[feedback_baseline_before_enforce]]
+    entityTypes: ['player', 'npc', 'enemy', 'runner', 'ice-agent', 'drone', 'program'],
         // v3.7: widened to what this pack's statuses ACTUALLY tag, not what
     // the declaration wished they did — shipped-truth: the ICE status is a `breach`.
     // Declaration-side only; no shipped status changed. Baseline before

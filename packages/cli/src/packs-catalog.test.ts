@@ -26,6 +26,7 @@ describe('pack registry — every shipping BuildCatalog is self-consistent (F-2a
       'crimson-court',
       'dust-devils-bargain',
       'gaslight-detective',
+      'hue-and-cry',
       'iron-colosseum',
       'jade-veil',
       'neon-lockbox',

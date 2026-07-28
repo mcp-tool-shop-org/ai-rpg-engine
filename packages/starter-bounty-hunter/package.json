@@ -1,0 +1,48 @@
+{
+  "name": "@ai-rpg-engine/starter-bounty-hunter",
+  "version": "3.8.0",
+  "description": "AI RPG Engine thief-taker starter: Hue and Cry",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ai-rpg-engine/core": "*",
+    "@ai-rpg-engine/content-schema": "*",
+    "@ai-rpg-engine/equipment": "*",
+    "@ai-rpg-engine/modules": "*"
+  },
+  "license": "MIT",
+  "author": "mcp-tool-shop",
+  "homepage": "https://mcp-tool-shop-org.github.io/ai-rpg-engine/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
+    "directory": "packages/starter-bounty-hunter"
+  },
+  "keywords": [
+    "rpg",
+    "bounty-hunter",
+    "thief-taker",
+    "pursuit",
+    "game-engine",
+    "starter",
+    "worldbuilding",
+    "content-pack"
+  ],
+  "engines": {
+    "node": ">=20"
+  }
+}
