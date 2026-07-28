@@ -476,6 +476,8 @@ export type {
 export {
   isNamedNpc,
   deriveNpcRelationship,
+  deriveCooperationTrust,
+  districtCooperationBias,
   deriveLoyaltyBreakpoint,
   deriveDominantAxis,
   deriveBestLeverageAngle,
