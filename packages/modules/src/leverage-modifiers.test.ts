@@ -15,7 +15,13 @@
 import { describe, it, expect } from 'vitest';
 import type { EntityState, WorldState } from '@ai-rpg-engine/core';
 import { composeLeverageModifiers } from './leverage-modifiers.js';
-import { resolveSocialAction, type LeverageState } from './player-leverage.js';
+import {
+  resolveSocialAction,
+  scaledRumorConfidence,
+  BASE_RUMOR_CONFIDENCE,
+  type LeverageState,
+} from './player-leverage.js';
+import { denyRumor, buryRumor, type PlayerRumor } from './player-rumor.js';
 import { setPartyState, createPartyState, type PartyState } from './companion-core.js';
 
 const PLAYER_ID = 'player';
@@ -204,5 +210,121 @@ describe('DistrictModifiers.leverageCostScale reaches the price', () => {
       'districtLeverageCostScale',
       'companionLeverageCostDiscount',
     ]);
+  });
+});
+
+// --- Slice 2: the rumor bundle ---------------------------------------------
+
+/** A party whose abilities carry rumor reach and rumor suppression. */
+function partyWithTalkers(): PartyState {
+  const party = createPartyState();
+  party.companions.push({
+    npcId: 'herald-oris',
+    role: 'diplomat',
+    joinedAtTick: 0,
+    // witness-calming scales spread to 0.7 (a calming presence DAMPENS talk);
+    // rumor-suppression adds 0.3 burial strength.
+    abilityTags: ['witness-calming', 'rumor-suppression'],
+    morale: 70,
+    active: true,
+  });
+  return party;
+}
+
+function districtWorld(safety: number, spirit: number): WorldState {
+  const world = bareWorld();
+  world.modules['district-core'] = {
+    districts: {
+      'district-a': {
+        alertPressure: 100 - safety, rumorDensity: 0, intruderLikelihood: 0,
+        surveillance: 100 - spirit, stability: safety / 10, commerce: 50, morale: spirit,
+        lastUpdateTick: 0, eventCount: 0,
+      },
+    },
+    definitions: { 'district-a': { id: 'district-a', name: 'A', zoneIds: ['zone-a'], tags: [] } },
+    zoneToDistrict: { 'zone-a': 'district-a' },
+  };
+  return world;
+}
+
+describe('AbilityModifiers.rumorSpreadScale x DistrictModifiers.rumorSpreadScale', () => {
+  it('CONSEQUENCE: a party that dampens talk seeds a rumor at lower confidence', () => {
+    const world = bareWorld();
+    const bare = scaledRumorConfidence(composeLeverageModifiers(world, player(world)));
+    expect(bare.confidence).toBe(BASE_RUMOR_CONFIDENCE);
+
+    setPartyState(world, partyWithTalkers());
+    const damped = scaledRumorConfidence(composeLeverageModifiers(world, player(world)));
+
+    expect(
+      damped.confidence,
+      'the party carries a rumorSpreadScale and the seeded confidence did not move — still unread',
+    ).toBeLessThan(bare.confidence);
+  });
+
+  it('the two scales MULTIPLY and ship as ONE attribution naming both', () => {
+    // A talkative companion in a gossipy district carries further than either
+    // alone. Two separate "rumor spread" lines would describe two systems
+    // where the player made one decision.
+    const world = districtWorld(5, 5);
+    setPartyState(world, partyWithTalkers());
+    const composed = composeLeverageModifiers(world, player(world));
+
+    expect(composed.rumorSpreadScale).toBeDefined();
+    expect(composed.rumorSpreadScale!.source).toContain('herald-oris');
+    expect(composed.rumorSpreadScale!.source).toContain('district-a');
+
+    const { attribution } = scaledRumorConfidence(composed);
+    expect(attribution).toHaveLength(1);
+    expect(attribution[0].name).toBe('rumorSpreadScale');
+    expect(attribution[0].after).toBeGreaterThan(0);
+  });
+
+  it('NEGATIVE CONTROL: no party and a neutral district leave the base confidence untouched', () => {
+    const world = districtWorld(50, 50);
+    const result = scaledRumorConfidence(composeLeverageModifiers(world, player(world)));
+    expect(result.confidence).toBe(BASE_RUMOR_CONFIDENCE);
+    expect(result.attribution).toEqual([]);
+    expect(composeLeverageModifiers(world, player(world)).rumorSpreadScale).toBeUndefined();
+  });
+
+  it('confidence stays inside 0..1 however the scales multiply', () => {
+    // Confidence is a probability-like quantity everywhere in player-rumor.ts,
+    // and two stacking scales above 1 would push it out of range.
+    const { confidence } = scaledRumorConfidence({
+      rumorSpreadScale: { scale: 99, source: 'absurd' },
+    });
+    expect(confidence).toBeLessThanOrEqual(1);
+    expect(confidence).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('AbilityModifiers.rumorSuppressionChance reaches the burial', () => {
+  const RUMOR: PlayerRumor = {
+    id: 'r1', claim: 'a claim', subjectDescriptor: 'the outsider',
+    sourceEvent: 'player-leverage', confidence: 0.9, distortion: 0,
+    mutationCount: 0, valence: 'fearsome', spreadTo: [], originTick: 0,
+  };
+
+  it('CONSEQUENCE: a suppressive party denies and buries harder', () => {
+    expect(denyRumor(RUMOR, 1).confidence).toBeLessThan(denyRumor(RUMOR).confidence);
+    expect(buryRumor(RUMOR, 1).confidence).toBeLessThan(buryRumor(RUMOR).confidence);
+  });
+
+  it('the composer supplies the strength, named and attributed to the party', () => {
+    const world = bareWorld();
+    setPartyState(world, partyWithTalkers());
+    const suppression = composeLeverageModifiers(world, player(world)).rumorSuppression;
+    expect(suppression, 'rumorSuppressionChance never reached the composer').toBeDefined();
+    expect(suppression!.strength).toBeGreaterThan(0);
+    expect(suppression!.source).toBe('herald-oris');
+  });
+
+  it('NEGATIVE CONTROL: strength 0 is byte-identical to the unmodified call', () => {
+    // The default-argument path every existing caller takes. If this differed,
+    // the change would have silently retuned every rumor in the engine.
+    expect(denyRumor(RUMOR, 0)).toEqual(denyRumor(RUMOR));
+    expect(buryRumor(RUMOR, 0)).toEqual(buryRumor(RUMOR));
+    expect(composeLeverageModifiers(bareWorld(), player(bareWorld())).rumorSuppression).toBeUndefined();
   });
 });

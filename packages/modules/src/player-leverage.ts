@@ -194,9 +194,65 @@ export type ExternalLeverageModifiers = {
   districtCostScale?: { scale: number; source: string };
   /** Per-faction reputation bonus from party abilities (AbilityModifiers.reputationBonus). */
   companionReputationBonus?: { amount: number; source: string };
+  /**
+   * How far a rumor this party seeds travels — the COMPOSED product of
+   * AbilityModifiers.rumorSpreadScale and DistrictModifiers.rumorSpreadScale,
+   * because a persuasive companion and a gossipy district multiply rather than
+   * compete. One entry, one `source` naming both contributors, because the
+   * player's decision is "who I brought, and where I did it".
+   */
+  rumorSpreadScale?: { scale: number; source: string };
+  /**
+   * How thoroughly this party can bury something
+   * (AbilityModifiers.rumorSuppressionChance).
+   *
+   * The field is NAMED a chance and is used here as a deterministic STRENGTH,
+   * and that is a deliberate reading rather than an oversight. This engine
+   * forbids unseeded randomness in resolution (no Math.random anywhere), and
+   * the functions that would roll it — `denyRumor` / `buryRumor` — are pure and
+   * hold no RNG. A 0-1 value read as "how much extra confidence this removes"
+   * is monotone in the same direction the name implies, stays replayable, and
+   * does not require plumbing the seeded RNG through three pure functions to
+   * express "sometimes it works".
+   */
+  rumorSuppression?: { strength: number; source: string };
 };
 
 const NO_EXTERNAL_MODIFIERS: ExternalLeverageModifiers = {};
+
+/**
+ * Confidence a freshly seeded rumor starts at before any modifier. Was a bare
+ * `0.8` literal at both spawn sites.
+ */
+export const BASE_RUMOR_CONFIDENCE = 0.8;
+
+/**
+ * The confidence a rumor this actor seeds should start at, and what changed it.
+ *
+ * Exported because the two spawn sites live in different verb families and both
+ * must agree — a rumor seeded through `seed` and one seeded through `frame`
+ * cannot disagree about how far a persuasive companion carries it.
+ */
+export function scaledRumorConfidence(
+  external: ExternalLeverageModifiers,
+): { confidence: number; attribution: ModifierAttribution[] } {
+  const spread = external.rumorSpreadScale;
+  if (!spread || spread.scale === 1) {
+    return { confidence: BASE_RUMOR_CONFIDENCE, attribution: [] };
+  }
+  // Clamped: confidence is a 0-1 probability-like quantity everywhere else in
+  // player-rumor.ts, and a scale above 1.25 would push it out of range.
+  const confidence = Math.min(1, Math.max(0, BASE_RUMOR_CONFIDENCE * spread.scale));
+  return {
+    confidence,
+    attribution: [{
+      name: 'rumorSpreadScale',
+      source: spread.source,
+      scale: spread.scale,
+      after: confidence,
+    }],
+  };
+}
 
 // --- Constants ---
 
@@ -1659,13 +1715,16 @@ function seedHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
 
   if (rumorEffect) {
     const districtId = actor.zoneId ? getDistrictForZone(world, actor.zoneId) : undefined;
+    const { confidence, attribution } = scaledRumorConfidence(
+      composeLeverageModifiers(world, actor, targetFactionId),
+    );
     const rumor = spawnIntentionalRumor(
       rumorEffect.claim,
       rumorEffect.valence,
       targetFactionId,
       districtId,
       currentTick,
-      0.8,
+      confidence,
       world,
     );
     const ns = getPlayerRumorState(world);
@@ -1732,13 +1791,16 @@ function applyLeverageEffectsAndSpawnRumor(
 
   const actor = world.entities[actorId];
   const districtId = actor?.zoneId ? getDistrictForZone(world, actor.zoneId) : undefined;
+  const { confidence } = scaledRumorConfidence(
+    actor ? composeLeverageModifiers(world, actor, originFactionId) : {},
+  );
   const rumor = spawnIntentionalRumor(
     rumorEffect.claim,
     rumorEffect.valence,
     originFactionId,
     districtId,
     currentTick,
-    0.8,
+    confidence,
     world,
   );
   const ns = getPlayerRumorState(world);
@@ -1882,7 +1944,11 @@ function rumorManipulationVerbHandler(
   applyLeverageEffects(world, action.actorId, resolution.effects, currentTick);
   actor.custom = setCooldown(actor.custom ?? {}, 'rumor', subAction, currentTick);
 
-  const manipulated = applyRumorManipulation(world, subAction, rumorId);
+  // The party's suppression strength, composed at the verb layer exactly like
+  // the cost modifiers above — the resolver and player-rumor.ts both stay
+  // ignorant of what a companion is.
+  const suppression = composeLeverageModifiers(world, actor, targetFactionId).rumorSuppression;
+  const manipulated = applyRumorManipulation(world, subAction, rumorId, suppression?.strength ?? 0);
 
   const events: ResolvedEvent[] = [
     makeEvent(action, 'leverage.resolved', {

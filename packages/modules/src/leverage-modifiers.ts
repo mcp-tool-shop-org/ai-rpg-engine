@@ -78,6 +78,16 @@ export function composeLeverageModifiers(
     if (repBonus) {
       composed.companionReputationBonus = { amount: repBonus, source };
     }
+    if (mods.rumorSuppressionChance > 0) {
+      composed.rumorSuppression = { strength: mods.rumorSuppressionChance, source };
+    }
+    // Held, not committed: the district's own rumor scale multiplies onto this
+    // below, and the composed pair ships as ONE attribution naming both — the
+    // player's decision is "who I brought, and where I did it", which is a
+    // single choice with two halves rather than two independent bonuses.
+    if (mods.rumorSpreadScale !== 1) {
+      composed.rumorSpreadScale = { scale: mods.rumorSpreadScale, source };
+    }
   }
 
   // --- District ---
@@ -86,12 +96,31 @@ export function composeLeverageModifiers(
     const state = getDistrictState(world, districtId);
     if (state) {
       const tags = getDistrictDefinition(world, districtId)?.tags ?? [];
-      const scale = computeDistrictModifiers(computeDistrictMood(state, tags)).leverageCostScale;
+      const district = computeDistrictModifiers(computeDistrictMood(state, tags));
+
       // Exactly 1.0 is the neutral reading and must not produce an entry —
       // an attribution saying "this changed nothing" is noise, and it would
       // also break the byte-identical guarantee above.
-      if (scale !== 1) {
-        composed.districtCostScale = { scale, source: districtId };
+      if (district.leverageCostScale !== 1) {
+        composed.districtCostScale = { scale: district.leverageCostScale, source: districtId };
+      }
+
+      // The composed pair. A talkative companion in a gossipy district carries
+      // further than either alone, so these MULTIPLY — and they ship as one
+      // attribution naming both sources, because a UI that showed two separate
+      // "rumor spread" lines would be describing two systems where the player
+      // made one decision.
+      const partyScale = composed.rumorSpreadScale?.scale ?? 1;
+      const combined = partyScale * district.rumorSpreadScale;
+      if (combined !== 1) {
+        composed.rumorSpreadScale = {
+          scale: combined,
+          source: composed.rumorSpreadScale
+            ? `${composed.rumorSpreadScale.source} in ${districtId}`
+            : districtId,
+        };
+      } else {
+        delete composed.rumorSpreadScale;
       }
     }
   }

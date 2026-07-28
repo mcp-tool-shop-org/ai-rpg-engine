@@ -347,6 +347,8 @@ export {
   isPlayerDiplomacyVerb,
   isPlayerSabotageVerb,
   resolveSocialAction,
+  BASE_RUMOR_CONFIDENCE,
+  scaledRumorConfidence,
   resolveRumorAction,
   resolveDiplomacyAction,
   resolveSabotageAction,
