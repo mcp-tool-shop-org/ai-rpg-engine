@@ -372,6 +372,8 @@ export type {
   LeverageRequirement,
   LeverageEffect,
   LeverageResolution,
+  ExternalLeverageModifiers,
+  ModifierAttribution,
   LeverageHints,
 } from './player-leverage.js';
 export {
@@ -1048,3 +1050,5 @@ export {
   zombieProfile,
   fantasyProfile,
 } from './profile-templates.js';
+
+export { composeLeverageModifiers } from './leverage-modifiers.js';
