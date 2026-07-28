@@ -1243,16 +1243,34 @@ export function applyOpportunityFallout(world: WorldState, actorId: string, fall
 // from action.toolId (mirrors trade-core's sell / inventory-core's use — "the
 // noun this verb acts on"), falling back to targetIds[0].
 //
-// The state machine's other terminal outcomes (failed/betrayed/expired/
-// declined) remain fully authored and handled end-to-end by
-// computeOpportunityFallout/applyOpportunityFallout for whatever future
-// caller reaches them (proven directly, unit-level, in this file's own
-// test — the mechanism doesn't care how a resolutionType arrived). This
-// verb reaches exactly 'completed' and 'abandoned' this wave — the same
-// "authored but not every outcome is yet reachable" honesty this engine
-// already practices elsewhere (world-tick.ts's own 'resolved-by-player'
-// resolutionType, e.g., is authored, tested, and unreached in production).
+// v3.8 adds the fourth op: `betray`. It was the last unreachable terminal
+// outcome with authored content behind it, and the amount waiting was the
+// argument for adding it — SIX obligation sites, THREE rumors, and all THREE
+// `spawn-pressure` producers sit inside `betrayed` cases, written across
+// several releases and reached by nothing. FSA-1 measured that directly: an
+// effect type whose every producer sits on an unreachable resolution is dead
+// one level earlier than a missing sink.
+//
+// Betrayal also unlocks `evaluateObligationOpportunities`, whose gate is
+// `player-owes-npc && magnitude >= 4`. Every reachable resolution's debt sat
+// below it — expiry writes 2, abandonment 3 — and only betrayal writes 4+
+// (6, 7 and 8 across contract, favor-request and escort). That evaluator was
+// never missing a sink; its threshold is authored at betrayal tier.
+//
+// It rejects when there is nobody to betray (a district's own supply run has
+// no counterparty), rather than degrading to `abandoned` — a verb that
+// quietly does something else is worse than one that says no.
+//
+// `failed` and `declined` remain authored and unreached, handled end-to-end
+// by computeOpportunityFallout/applyOpportunityFallout for whatever future
+// caller arrives (proven unit-level in this file's own test — the mechanism
+// does not care how a resolutionType arrived). That is the same "authored but
+// not every outcome is yet reachable" honesty the engine practises elsewhere,
+// now with one fewer entry on the list.
 // ---------------------------------------------------------------------------
+
+/** One usage string, so every rejection advertises the same verb surface. */
+const OPPORTUNITY_USAGE = 'opportunity accept|complete|abandon|betray <id>';
 
 function reject(action: ActionIntent, reason: string, hint: string, extra?: Record<string, unknown>): ResolvedEvent[] {
   return [makeEvent(action, 'action.rejected', { verb: action.verb, reason, hint, ...extra })];
@@ -1265,13 +1283,13 @@ function opportunityHandler(action: ActionIntent, world: WorldState): ResolvedEv
   }
 
   const op = action.parameters?.op;
-  if (op !== 'accept' && op !== 'complete' && op !== 'abandon') {
-    return reject(action, `unknown op '${String(op)}'`, 'opportunity accept|complete|abandon <id>');
+  if (op !== 'accept' && op !== 'complete' && op !== 'abandon' && op !== 'betray') {
+    return reject(action, `unknown op '${String(op)}'`, OPPORTUNITY_USAGE);
   }
 
   const opportunityId = action.toolId ?? action.targetIds?.[0];
   if (!opportunityId) {
-    return reject(action, 'no opportunity specified', 'opportunity accept|complete|abandon <id>');
+    return reject(action, 'no opportunity specified', OPPORTUNITY_USAGE);
   }
 
   const opportunities = getPersistedOpportunities(world);
@@ -1297,7 +1315,8 @@ function opportunityHandler(action: ActionIntent, world: WorldState): ResolvedEv
     })];
   }
 
-  // complete/abandon both require the opportunity to already be accepted.
+  // complete/abandon/betray all require the opportunity to already be
+  // accepted. Betrayal especially: you cannot sell out a job you never took.
   if (opp.status !== 'accepted') {
     return reject(
       action,
@@ -1307,7 +1326,23 @@ function opportunityHandler(action: ActionIntent, world: WorldState): ResolvedEv
     );
   }
 
-  const resolutionType: OpportunityResolutionType = op === 'complete' ? 'completed' : 'abandoned';
+  // `betray` needs someone to betray. Abandoning a district's supply run is
+  // walking away from work; there is no counterparty to sell out, and the
+  // authored betrayal fallout is written entirely in terms of one — the
+  // reputation hit, the obligation, the pressure all key off a faction or an
+  // NPC. Rejecting is honest where silently degrading to `abandoned` would be
+  // a verb that quietly does something else.
+  if (op === 'betray' && !opp.sourceFactionId && !opp.sourceNpcId) {
+    return reject(
+      action,
+      'nobody to betray',
+      'This work came from the district itself, not from a person or a faction. Abandon it instead.',
+      { opportunityId },
+    );
+  }
+
+  const resolutionType: OpportunityResolutionType =
+    op === 'complete' ? 'completed' : op === 'betray' ? 'betrayed' : 'abandoned';
   const resolvedOpp: OpportunityState = { ...opp, status: resolutionType, resolvedAtTick: tick };
   setPersistedOpportunities(world, opportunities.map((o) => (o.id === opp.id ? resolvedOpp : o)));
 

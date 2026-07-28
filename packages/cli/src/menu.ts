@@ -1066,13 +1066,21 @@ export function buildRecruitActions(world: WorldState): ExtraAction[] {
  * every other OpportunityStatus (completed/failed/expired/declined/abandoned/
  * betrayed) is terminal and gets no entry — the opportunity verb itself
  * rejects any op against a terminal opportunity (opportunityHandler: "accept"
- * requires status 'available', "complete"/"abandon" require 'accepted'), so
- * this mirrors that gate exactly.
+ * requires status 'available', "complete"/"abandon"/"betray" require
+ * 'accepted'), so this mirrors that gate exactly.
  *
  * An 'available' opportunity offers ONE entry (accept); an 'accepted' one
- * offers TWO (complete, abandon) — both submit the SAME verb ('opportunity')
- * with a different `parameters.op`, the shape opportunityHandler's own
- * action.parameters.op switch expects.
+ * offers up to THREE (complete, abandon, and — when there is somebody to
+ * betray — betray). All submit the SAME verb ('opportunity') with a different
+ * `parameters.op`, the shape opportunityHandler's own switch expects.
+ *
+ * BETRAY IS OFFERED ONLY WHEN IT WOULD BE ACCEPTED (v3.8): the handler
+ * rejects it on work that came from the district itself rather than from a
+ * person or a faction, because the authored betrayal fallout is written
+ * entirely in terms of a counterparty. A menu that listed a choice the verb
+ * refuses is exactly the "advertised but not real" gap this release spent its
+ * time closing — @see PVR-1, which checks every advertised verb has a
+ * reachable target.
  */
 export function buildOpportunityActions(world: WorldState): ExtraAction[] {
   const opportunities = getPersistedOpportunities(world);
@@ -1102,6 +1110,15 @@ export function buildOpportunityActions(world: WorldState): ExtraAction[] {
         label: `Abandon: ${opp.title}`,
         group: 'opportunities',
       });
+      if (opp.sourceFactionId || opp.sourceNpcId) {
+        actions.push({
+          verb: 'opportunity',
+          targetIds: [opp.id],
+          parameters: { op: 'betray' },
+          label: `Betray: ${opp.title}`,
+          group: 'opportunities',
+        });
+      }
     }
   }
 

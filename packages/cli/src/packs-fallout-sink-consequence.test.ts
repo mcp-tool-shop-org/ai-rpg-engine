@@ -64,6 +64,7 @@ import {
   type SupplyCategory,
 } from '@ai-rpg-engine/modules';
 import { runHostileRound } from './bin.js';
+import { buildOpportunityActions } from './menu.js';
 import {
   POR_SEED,
   POR_ROUNDS,
@@ -1086,5 +1087,172 @@ describe('faction standing saturates instead of compounding (FSC-1)', () => {
       summary: 'control',
     });
     expect(repOf(world, factionId), 'a saturated faction still paid out').toBe(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The `betray` op (P3) — the fourth transition, and what it lit
+// ---------------------------------------------------------------------------
+
+describe('betrayal is reachable, and the content was already there (FSC-1)', () => {
+  /** Play to an offer, accept it, then sell it out. */
+  function betrayOnce(packId: string, kind: OpportunityKind, profile: SessionProfile) {
+    const { engine, offer } = playUntilOffered(packById(packId), kind, profile);
+    opportunityOp(engine, offer, 'accept');
+    const before = structuredClone(engine.world) as WorldState;
+    opportunityOp(engine, offer, 'betray');
+    return { engine, offer, before };
+  }
+
+  it('selling out a contract costs standing, makes a debt, and starts an investigation', () => {
+    // Three consequences from one verb, all of them authored BEFORE this
+    // cycle and none of them reachable until now: the reputation hit, the
+    // `betrayed` obligation at magnitude 6, and a `spawn-pressure` that was
+    // one of only three sites for that effect type.
+    const { engine, offer, before } = betrayOnce('salt-road-ledger', 'contract', 'wandering');
+    const npcId = offer.sourceNpcId!;
+    const factionId = offer.sourceFactionId!;
+
+    const repOf = (w: WorldState) =>
+      (w.factions?.[factionId]?.reputation ?? 0) + Number(w.globals[`reputation_${factionId}`] ?? 0);
+    expect(repOf(engine.world) - repOf(before), 'betrayal cost nothing').toBe(-20);
+
+    const ledger = getPersistedNpcObligations(engine.world).get(npcId)!;
+    const debt = ledger.obligations.find((o) => o.sourceTag === 'opportunity:contract:betrayed');
+    expect(debt, 'the betrayal left no debt behind').toBeDefined();
+    expect(debt!.kind).toBe('betrayed');
+    expect(debt!.direction).toBe('player-owes-npc');
+    expect(debt!.magnitude).toBe(6);
+
+    const spawned = getActivePressures(engine.world)
+      .filter((p) => p.triggeredBy === `opportunity:${offer.id}`);
+    expect(spawned, 'no investigation opened — the spawn-pressure site is still dark').toHaveLength(1);
+    expect(spawned[0].kind).toBe('investigation-opened');
+  });
+
+  it('THE LOOP the brief asked for: a betrayal-tier debt spawns a favor-request', () => {
+    // `evaluateObligationOpportunities` gates on `player-owes-npc &&
+    // magnitude >= 4`. P1 measured every reachable resolution's debt BELOW
+    // that line - expiry writes 2, abandonment 3 - so the rule was not
+    // missing a sink; its threshold is authored at betrayal tier. Betrayal
+    // writes 6, and the evaluator reads the ledger the sink writes.
+    const { engine, offer } = betrayOnce('salt-road-ledger', 'contract', 'wandering');
+    const npcId = offer.sourceNpcId!;
+
+    const ledger = getPersistedNpcObligations(engine.world).get(npcId)!;
+    expect(
+      ledger.obligations.filter((o) => o.direction === 'player-owes-npc' && o.magnitude >= 4).length,
+      'no debt clears the evaluator gate - the loop cannot close',
+    ).toBeGreaterThan(0);
+
+    // The window is WIDE on purpose, and the number is the finding. Measured
+    // on this seed: the man you betrayed calls the debt in at round 73. The
+    // rule fires as soon as the ledger qualifies, but it is one candidate
+    // among eight and `evaluateOpportunities` takes only the highest-scoring
+    // one per spawn window - so a debt competes with every district shortage
+    // and faction job for its turn. My first draft used 25 rounds, reported
+    // "still dark", and was wrong about the engine.
+    //
+    // Recorded rather than tuned: whether a betrayal should be able to wait
+    // seventy rounds to come back on you is a pacing question for a cycle
+    // looking at pacing, not something to fix by inflating a score until a
+    // test passes sooner.
+    const pack = packById('salt-road-ledger');
+    const visits = new Map<string, number>();
+    const fullHp = engine.world.entities[engine.world.playerId]?.resources?.hp ?? 0;
+    let calledIn = false;
+    let atRound = -1;
+    for (let r = 0; r < 80 && !calledIn; r++) {
+      const me = engine.world.entities[engine.world.playerId];
+      if (!me) break;
+      if (fullHp > 0 && me.resources) me.resources.hp = fullHp;
+      playerHalfRound(engine, r, 'wandering', visits);
+      runHostileRound(engine, pack, { log: NOOP });
+      calledIn = getPersistedOpportunities(engine.world).some(
+        (o) => o.kind === 'favor-request' && o.sourceNpcId === npcId,
+      );
+      if (calledIn) atRound = r;
+    }
+    expect(
+      calledIn,
+      npcId + ' is owed a betrayal-tier debt and never called it in - ' +
+        'evaluateObligationOpportunities is still dark',
+    ).toBe(true);
+    expect(atRound, 'the loop closed instantly - re-read the pacing note above').toBeGreaterThan(0);
+  });
+
+  it('you cannot betray work that came from nobody (structured rejection)', () => {
+    // NO SHIPPED OFFER IS SOURCELESS. Measured across the catalog: every
+    // opportunity any pack spawns carries at least a `sourceFactionId`,
+    // because even the district-driven kinds resolve one through
+    // `findLocalFaction`. So this guard is INPUT VALIDATION, not a live
+    // branch - the same standing PSC-1 gives its "a status missing `tags`
+    // entirely" row: both source fields are optional on the type, and an
+    // externally loaded pack (create-starter's JSON path) is not typechecked.
+    //
+    // Saying that plainly matters more than the test passing. A guard nobody
+    // can reach through play is exactly what this cycle spent its time
+    // finding; the honest disposition for one protecting a public verb from
+    // untyped input is to keep it and LABEL it, not to imply a session
+    // exercises it.
+    const { engine } = playUntilOffered(packById('salt-road-ledger'), 'contract', 'wandering');
+    const sourceless = makeOpportunity({
+      kind: 'recovery',
+      title: 'Something the district itself wants back',
+      description: 'no counterparty', objectiveDescription: 'no counterparty',
+      urgency: 0.4, turnsRemaining: 20, visibility: 'known',
+      rewards: [], risks: [], genre: 'test', currentTick: engine.world.meta.tick,
+    });
+    setPersistedOpportunities(engine.world, [
+      ...getPersistedOpportunities(engine.world),
+      { ...sourceless, status: 'accepted', acceptedAtTick: engine.world.meta.tick },
+    ]);
+
+    const events = engine.submitAction('opportunity', {
+      toolId: sourceless.id,
+      parameters: { op: 'betray' },
+    });
+    const rejected = events.find((e) => e.type === 'action.rejected');
+    expect(rejected, 'betraying a sourceless offer was allowed').toBeDefined();
+    expect(String(rejected!.payload.reason)).toContain('nobody to betray');
+    // ...and it is a REJECTION, not a silent downgrade to `abandoned`.
+    expect(
+      getPersistedOpportunities(engine.world).find((o) => o.id === sourceless.id)?.status,
+    ).toBe('accepted');
+  });
+
+  it('the menu offers Betray exactly where the verb would accept it', () => {
+    // PVR-1's rule applied to a sub-action: an advertised choice the handler
+    // refuses is the same "advertised but not real" gap this release closed
+    // everywhere else. Since no shipped offer is sourceless, the positive arm
+    // uses real content and the negative arm uses a synthetic one.
+    const { engine, offer } = playUntilOffered(packById('salt-road-ledger'), 'contract', 'wandering');
+    opportunityOp(engine, offer, 'accept');
+    expect(
+      buildOpportunityActions(engine.world)
+        .filter((a) => a.targetIds?.[0] === offer.id && a.parameters?.op === 'betray'),
+      'the menu hid Betray on work that plainly has a counterparty',
+    ).toHaveLength(1);
+
+    const sourceless = makeOpportunity({
+      kind: 'recovery',
+      title: 'no counterparty', description: 'no counterparty', objectiveDescription: 'x',
+      urgency: 0.4, turnsRemaining: 20, visibility: 'known',
+      rewards: [], risks: [], genre: 'test', currentTick: engine.world.meta.tick,
+    });
+    setPersistedOpportunities(engine.world, [
+      ...getPersistedOpportunities(engine.world),
+      { ...sourceless, status: 'accepted', acceptedAtTick: engine.world.meta.tick },
+    ]);
+    expect(
+      buildOpportunityActions(engine.world)
+        .filter((a) => a.targetIds?.[0] === sourceless.id && a.parameters?.op === 'betray'),
+      'the menu offered Betray on work with no counterparty',
+    ).toEqual([]);
+    // The control: the other two ops ARE still offered on it, so the filter
+    // removes one choice rather than the whole entry.
+    expect(
+      buildOpportunityActions(engine.world).filter((a) => a.targetIds?.[0] === sourceless.id).length,
+    ).toBe(2);
   });
 });

@@ -198,7 +198,15 @@ const KNOWN_UNPRODUCED: Array<OpportunityFalloutEffect['type']> = [
  * `betrayed`, so no played session can announce it and no sink for it could be
  * proven by playing.
  */
-const REACHABLE_RESOLUTIONS: OpportunityResolutionType[] = ['completed', 'abandoned', 'expired'];
+const REACHABLE_RESOLUTIONS: OpportunityResolutionType[] = [
+  'completed',
+  'abandoned',
+  'expired',
+  // v3.8 added the fourth op. The amount of authored content behind this one
+  // word is why: six obligation sites, three rumors, and all three original
+  // `spawn-pressure` producers live inside `betrayed` cases.
+  'betrayed',
+];
 
 /** Effect types some reachable (kind, resolution) pair announces in principle. */
 export function announceableTypes(): Set<OpportunityFalloutEffect['type']> {
@@ -284,7 +292,7 @@ export function packById(id: string): PackInfo {
 export function opportunityOp(
   engine: Engine,
   offer: OpportunityState,
-  op: 'accept' | 'complete' | 'abandon',
+  op: 'accept' | 'complete' | 'abandon' | 'betray',
 ): void {
   const events = engine.submitAction('opportunity', { toolId: offer.id, parameters: { op } });
   const rejected = events.find((e) => e.type === 'action.rejected');
@@ -573,18 +581,24 @@ describe('fallout producer census (FSA-1)', () => {
     ).toEqual([]);
   });
 
-  it('and the betrayal-only producers are still there, waiting on a verb (control)', () => {
-    // The three original spawn-pressure sites did not move — they are still
-    // authored, still unreachable, and they light for free the moment
-    // `betrayed` gains a caller. Without this row the check above could be
-    // satisfied by DELETING the betrayal content instead of adding a
-    // reachable producer.
+  it('the three betrayal-side spawn-pressure sites are intact, and now reachable', () => {
+    // These were the loaded spring: authored across several releases, sitting
+    // inside a resolution nothing could reach. The `betray` op lit all three
+    // at once without a line of content being written.
+    //
+    // The row survives the fix because it still does a job: without it, the
+    // check above could be satisfied by DELETING betrayal content rather than
+    // by making it reachable.
     const sites = producerCensus().get('spawn-pressure') ?? [];
     expect(sites.filter((s) => s.endsWith('/betrayed')).sort()).toEqual([
       'contract/betrayed',
       'faction-job/betrayed',
       'supply-run/betrayed',
     ]);
+    expect(
+      REACHABLE_RESOLUTIONS,
+      'betrayal went unreachable again — the three sites above are dark',
+    ).toContain('betrayed');
   });
 });
 
