@@ -188,7 +188,7 @@ import {
   type LoyaltyBreakpoint,
   type NpcObligationLedger,
 } from './npc-agency.js';
-import { computeDistrictMood, type DistrictMood } from './district-mood.js';
+import { computeDistrictMood, computeDistrictModifiers, type DistrictMood } from './district-mood.js';
 import {
   evaluateOpportunities,
   tickOpportunities,
@@ -556,6 +556,22 @@ function clamp(min: number, max: number, value: number): number {
 /** Round to 2 decimals — keeps repeated +0.05 steps landing ON the band edges. */
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+
+/**
+ * The player district's own contribution to how hard a new pressure lands
+ * (DistrictModifiers.pressureUrgencyBias). 0 when the pack ships no districts,
+ * when the player is in none, or when the mood is neutral — so a world that
+ * never engages the district layer spawns pressures at exactly their authored
+ * urgency, as before.
+ */
+function districtPressureUrgencyBias(world: WorldState, districtId: string | undefined): number {
+  if (!districtId) return 0;
+  const state = getDistrictState(world, districtId);
+  if (!state) return 0;
+  const tags = getDistrictDefinition(world, districtId)?.tags ?? [];
+  return computeDistrictModifiers(computeDistrictMood(state, tags)).pressureUrgencyBias;
 }
 
 function getPlayerDistrictId(world: WorldState): string | undefined {
@@ -1663,6 +1679,16 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   if (heat >= HEAT_WAKE_THRESHOLD) {
     const result = evaluatePressures(buildPressureInputs(world, state, genre, currentTick, active));
     if (result) {
+      // DistrictModifiers.pressureUrgencyBias (0-0.15): a district already on
+      // edge sharpens whatever the world throws at it. Composed here — the
+      // caller — and applied to the spawned pressure rather than passed into
+      // evaluatePressures, so the rules keep deciding WHICH pressure and the
+      // place decides how hard it lands. 0 bias leaves the urgency byte-
+      // identical, which is every district with a neutral mood.
+      const urgencyBias = districtPressureUrgencyBias(world, playerDistrictId);
+      if (urgencyBias > 0) {
+        result.pressure.urgency = Math.min(1, round2(result.pressure.urgency + urgencyBias));
+      }
       active.push(result.pressure);
       spawned.push(result.pressure);
       emitPressureEvent(

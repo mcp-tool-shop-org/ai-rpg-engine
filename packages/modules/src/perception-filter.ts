@@ -10,6 +10,7 @@ import type {
   ResolvedEvent,
   ScalarValue,
 } from '@ai-rpg-engine/core';
+import { computeAbilityModifiers, computePartyAbilities, getPartyState } from './companion-core.js';
 import {
   getCognition,
   setBelief,
@@ -107,6 +108,21 @@ export function createPerceptionFilter(config?: PerceptionFilterConfig): EngineM
 
 // --- Core Processing ---
 
+
+/**
+ * The active party's perception contribution (AbilityModifiers.perceptionBonus),
+ * read through companion-core rather than passed in: `processEvent` is called
+ * from a module subscription with no caller to compose for it, and the
+ * alternative — threading a bundle through the whole event pipeline — would
+ * put party knowledge in every layer instead of one function. 0 on a partyless
+ * world, so clarity is byte-identical to before.
+ */
+function partyPerceptionBonus(world: WorldState): number {
+  const party = getPartyState(world);
+  if (!party.companions.some((c) => c.active)) return 0;
+  return computeAbilityModifiers(computePartyAbilities(party)).perceptionBonus;
+}
+
 function processEvent(
   event: ResolvedEvent,
   world: WorldState,
@@ -159,6 +175,15 @@ function processEvent(
       } else {
         const deficit = result.threshold - result.roll;
         clarity = Math.max(0, 0.4 - deficit / 20);
+      }
+      // AbilityModifiers.perceptionBonus: a scholar in the party sharpens what
+      // the PLAYER makes of what they saw. Applied to clarity rather than to
+      // the roll on purpose — a companion cannot make you notice a thing that
+      // was never in your line of sight, but they can tell you what it meant.
+      // Only the player benefits; an NPC's perception is its own.
+      if (entity.id === world.playerId) {
+        const bonus = partyPerceptionBonus(world);
+        if (bonus > 0) clarity = Math.min(1, clarity + bonus);
       }
 
       // Record perception

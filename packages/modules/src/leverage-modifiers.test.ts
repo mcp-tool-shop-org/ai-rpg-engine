@@ -22,8 +22,10 @@ import {
   type LeverageState,
 } from './player-leverage.js';
 import { denyRumor, buryRumor, type PlayerRumor } from './player-rumor.js';
+import { deriveNpcRelationship } from './npc-agency.js';
 import { setPartyState, createPartyState, type PartyState } from './companion-core.js';
 import { computeItemValue } from './trade-value.js';
+import { applyCraftingEfficiency, type CraftingContext } from './crafting-recipes.js';
 import { createDistrictEconomy } from './economy-core.js';
 
 const PLAYER_ID = 'player';
@@ -427,5 +429,59 @@ describe('DistrictModifiers.tradePriceScale reaches the price', () => {
     const neutral = moodWorld(50, 50);
     const composed = composeTradeModifiers(neutral, player(neutral));
     expect(composed?.districtMoodScale).toBeUndefined();
+  });
+});
+
+// --- Slice 4: crafting, perception, and the one field left alone -----------
+
+describe('DistrictModifiers.craftingEfficiency reaches the material cost', () => {
+  const INPUTS = [
+    { category: 'components' as const, quantity: 4 },
+    { category: 'fuel' as const, quantity: 2 },
+  ];
+  const ctx = (scale?: number): CraftingContext => ({
+    districtEconomy: createDistrictEconomy(),
+    districtId: 'district-a',
+    districtTags: [],
+    prosperity: 50,
+    stability: 50,
+    playerHeat: 0,
+    isBlackMarket: false,
+    ...(scale !== undefined ? { craftingEfficiency: { scale, source: 'district-a' } } : {}),
+  });
+
+  it('CONSEQUENCE: an efficient district wastes less stock', () => {
+    const efficient = applyCraftingEfficiency(INPUTS, ctx(1.2));
+    expect(
+      efficient[0].quantity,
+      'craftingEfficiency did not reach the material cost — still unread',
+    ).toBeLessThan(INPUTS[0].quantity);
+  });
+
+  it('and a struggling one wastes more', () => {
+    expect(applyCraftingEfficiency(INPUTS, ctx(0.7))[0].quantity).toBeGreaterThan(INPUTS[0].quantity);
+  });
+
+  it('never consumes nothing, however efficient the district', () => {
+    // Floors at 1 per line: an efficient district uses LESS, not free.
+    expect(applyCraftingEfficiency(INPUTS, ctx(99)).every((i) => i.quantity >= 1)).toBe(true);
+  });
+
+  it('NEGATIVE CONTROL: absent, or exactly 1, returns the SAME array untouched', () => {
+    // Identity, not just equality — proves no allocation and no rounding
+    // happens on the path every existing CraftingContext takes.
+    expect(applyCraftingEfficiency(INPUTS, ctx())).toBe(INPUTS);
+    expect(applyCraftingEfficiency(INPUTS, ctx(1))).toBe(INPUTS);
+  });
+});
+
+describe('DistrictModifiers.npcCooperationBias — deliberately NOT threaded', () => {
+  it('deriveNpcRelationship still takes exactly three arguments', () => {
+    // A guard on a DECISION, not on behaviour. The obvious landing point for
+    // this field makes companions desert (trust -> breakpoint -> departure
+    // rule), which is a gameplay change wearing a modifier's clothes. If a
+    // later wave threads it properly this test should be deleted in the SAME
+    // commit, with the departure question answered — not quietly updated.
+    expect(deriveNpcRelationship.length).toBe(3);
   });
 });

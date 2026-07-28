@@ -77,6 +77,20 @@ export type CraftingContext = {
   factionAccess?: string;
   playerHeat: number;
   isBlackMarket: boolean;
+  /**
+   * DistrictModifiers.craftingEfficiency (0.7-1.2), composed by the CALLER —
+   * this file never learns what a district mood is.
+   *
+   * Spent on MATERIALS rather than on `qualityBonus`, deliberately: the quality
+   * bonus is an integer 0-or-1, so scaling it by 1.2 rounds straight back to
+   * itself and the modifier would be computed, threaded, and invisible — the
+   * exact failure this cycle exists to stop. Wasting less stock in a
+   * well-run district is also what the word "efficiency" means.
+   *
+   * Optional; absent means 1.0, so every hand-built CraftingContext keeps its
+   * exact material cost.
+   */
+  craftingEfficiency?: { scale: number; source: string };
 };
 
 /** Side effect from crafting */
@@ -532,6 +546,24 @@ function upgradeRarity(rarity: ItemRarity): ItemRarity {
   return rarity;
 }
 
+/**
+ * Scale a recipe's material cost by the district's crafting efficiency.
+ *
+ * Higher efficiency means LESS stock consumed, so the scale divides. Floors at
+ * 1 per line: an efficient district uses less, never nothing.
+ */
+export function applyCraftingEfficiency(
+  inputs: { category: SupplyCategory; quantity: number }[],
+  context: CraftingContext,
+): { category: SupplyCategory; quantity: number }[] {
+  const scale = context.craftingEfficiency?.scale;
+  if (!scale || scale === 1) return inputs;
+  return inputs.map((input) => ({
+    ...input,
+    quantity: Math.max(1, Math.round(input.quantity / scale)),
+  }));
+}
+
 /** Compute quality bonus from crafting context */
 export function computeQualityBonus(context: CraftingContext): number {
   let bonus = 0;
@@ -638,7 +670,7 @@ export function resolveCraft(
   return {
     success: true,
     outputItem,
-    materialsConsumed: recipe.inputs,
+    materialsConsumed: applyCraftingEfficiency(recipe.inputs, context),
     qualityBonus,
     sideEffects,
     chronicleDetail: `Crafted ${recipe.name} (${outputRarity} ${recipe.outputSlot})`,
@@ -666,7 +698,7 @@ export function resolveRepair(
 
   return {
     success: true,
-    materialsConsumed: recipe.inputs,
+    materialsConsumed: applyCraftingEfficiency(recipe.inputs, context),
     qualityBonus: 0,
     sideEffects,
     chronicleDetail: `Repaired ${item.name}`,

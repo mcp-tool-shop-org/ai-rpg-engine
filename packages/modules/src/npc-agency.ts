@@ -15,6 +15,8 @@ import {
   type Memory,
 } from './cognition-core.js';
 import { getEntityFaction, getFactionCognition } from './faction-cognition.js';
+import { getDistrictForZone, getDistrictState, getDistrictDefinition } from './district-core.js';
+import { computeDistrictMood, computeDistrictModifiers } from './district-mood.js';
 import { getPressuresForFaction } from './pressure-system.js';
 import { getRumorsKnownToFaction, type PlayerRumor } from './player-rumor.js';
 
@@ -305,6 +307,25 @@ export function deriveBestLeverageAngle(breakpoint: LoyaltyBreakpoint): string {
  * Build an NPC's agency profile from world state.
  * Goals are derived fresh — not stored.
  */
+
+/**
+ * DistrictModifiers.npcCooperationBias — the ONE field of the two bundles v3.7
+ * deliberately did NOT thread, and the reason is worth keeping next to the code.
+ *
+ * It is documented as "-10 to +10, added to trust FOR CHECKS". The obvious
+ * landing point is `deriveNpcRelationship`'s trust, and that was tried: it
+ * works, and it also makes companions DESERT. Trust feeds
+ * `deriveLoyaltyBreakpoint`, the breakpoint feeds companion-reactions'
+ * departure rule (`breakpoint === 'hostile'` -> leave), so a grim district
+ * quietly started emptying the player's party. A pinned world-tick test caught
+ * it — a companion the fixture expects to still be there was gone.
+ *
+ * That is a real gameplay change wearing a modifier's clothes, and "for checks"
+ * is not what it means. Threading it correctly needs a check surface that is
+ * separate from the persistent relationship, which does not exist yet.
+ * Deferred with this note rather than shipped as a silent retention change.
+ */
+
 export function buildNpcProfile(
   world: WorldState,
   npcId: string,
