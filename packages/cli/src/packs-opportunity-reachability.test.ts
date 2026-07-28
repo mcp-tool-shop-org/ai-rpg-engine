@@ -79,14 +79,25 @@ export const ALL_OPPORTUNITY_KINDS: OpportunityKind[] = [
  * `wandering` is the FLOOR — move, and speak to whoever is standing here. It
  * is what the world offers someone merely present and sociable.
  *
- * `engaged` adds recruiting. That is not the probe stacking the deck: `recruit`
- * is advertised by every pack in the catalog and PVR-1 proves it reaches a
- * valid target in all eleven, so a session that never recruits models a player
- * who declines a core verb rather than a player at the floor. Two evaluators
- * (companion asks, escort) read the party, so measuring them against a
- * deliberately empty party would measure the probe.
+ * `engaged` adds fighting and recruiting — a player exercising the core loop.
+ * That is not the probe stacking the deck: both verbs are advertised by every
+ * pack in the catalog and PVR-1 proves `recruit` reaches a valid target in all
+ * eleven, so a session that does neither models a player who declines the game
+ * rather than a player at the floor. Several evaluators read state only those
+ * verbs produce — the party (companion asks, escort) and faction standing,
+ * which moves ONLY through defeat fallout (-10 rep, +15 alert per kill) and
+ * opportunity rewards.
+ *
+ * `pursuing` adds accepting and completing the offers the world makes. This
+ * one is load-bearing and the first draft of this file lacked it: reputation
+ * has exactly ONE upward path in the whole engine — an opportunity's
+ * `{type:'reputation'}` reward, applied on completion — because defeat fallout
+ * only ever subtracts (`reputationPerKill: -10`) and no pack authors a
+ * starting standing. A probe that never completes an opportunity therefore
+ * measures a player permanently frozen at rep 0 and reports every
+ * reputation-gated kind dead, which says more about the probe than the engine.
  */
-export type SessionProfile = 'wandering' | 'engaged';
+export type SessionProfile = 'wandering' | 'engaged' | 'pursuing';
 
 export type PlayedSession = {
   packId: string;
@@ -105,26 +116,79 @@ function playerOf(engine: Engine): EntityState | undefined {
   return engine.world.entities[engine.world.playerId];
 }
 
-function coLocatedNpcs(engine: Engine): EntityState[] {
+function coLocatedWhere(engine: Engine, keep: (e: EntityState) => boolean): EntityState[] {
   const me = playerOf(engine);
   return Object.values(engine.world.entities).filter(
-    (e) => e.id !== engine.world.playerId && e.type === 'npc' && e.zoneId === me?.zoneId,
+    (e) => e.id !== engine.world.playerId && e.zoneId === me?.zoneId && keep(e),
   );
+}
+
+/** People to talk to or recruit. */
+function coLocatedNpcs(engine: Engine): EntityState[] {
+  return coLocatedWhere(engine, (e) => e.type === 'npc');
+}
+
+/**
+ * People to fight. Shipped content types hostiles `enemy`, NOT `npc` — reading
+ * only `npc` made every hostile in the catalog invisible to this probe, so the
+ * combat half of the `engaged` profile submitted nothing and faction standing
+ * never moved. The measurement was unchanged by adding combat, which is what
+ * gave it away.
+ */
+function coLocatedHostiles(engine: Engine): EntityState[] {
+  return coLocatedWhere(engine, (e) => e.type === 'enemy' && (e.resources?.hp ?? 0) > 0);
+}
+
+/** The strategic loop: take the work on offer, then finish it. */
+function pursueOpportunities(engine: Engine): boolean {
+  const live = getPersistedOpportunities(engine.world);
+
+  // Finish first — a completed offer frees a slot AND pays its rewards, which
+  // is the only way reputation ever rises.
+  const accepted = live
+    .filter((o) => o.status === 'accepted' && engine.world.meta.tick - (o.acceptedAtTick ?? 0) >= 2)
+    .sort((a, b) => a.id.localeCompare(b.id))[0];
+  if (accepted) {
+    engine.submitAction('opportunity', { toolId: accepted.id, parameters: { op: 'complete' } });
+    return true;
+  }
+
+  const available = live
+    .filter((o) => o.status === 'available')
+    .sort((a, b) => a.id.localeCompare(b.id))[0];
+  if (available) {
+    engine.submitAction('opportunity', { toolId: available.id, parameters: { op: 'accept' } });
+    return true;
+  }
+  return false;
 }
 
 function playerHalfRound(engine: Engine, round: number, profile: SessionProfile): void {
   const me = playerOf(engine);
   if (!me) return;
 
-  // Recruiting: try once per co-located NPC per visit. The engine rejects
-  // anyone who is not recruitable, which costs the round nothing.
-  if (profile === 'engaged' && round % 4 === 1) {
-    const party = getPartyState(engine.world);
-    const alreadyIn = new Set(party.companions.map((c) => c.npcId));
-    const candidate = coLocatedNpcs(engine).find((n) => !alreadyIn.has(n.id));
-    if (candidate) {
-      engine.submitAction('recruit', { targetIds: [candidate.id] });
+  if (profile === 'pursuing' && pursueOpportunities(engine)) return;
+
+  if (profile !== 'wandering') {
+    // Fight what is fighting you. Faction standing has no other downward path
+    // — defeat fallout is the only writer of `reputation_*` and
+    // `faction_alert_*` short of an opportunity reward — so a probe that never
+    // swings can never reach the hostility the bounty pressure is gated on.
+    const hostile = coLocatedHostiles(engine)[0];
+    if (hostile) {
+      engine.submitAction('attack', { targetIds: [hostile.id] });
       return;
+    }
+
+    // Recruiting: try once per co-located NPC per visit. The engine rejects
+    // anyone who is not recruitable, which costs the round nothing.
+    if (round % 4 === 1) {
+      const alreadyIn = new Set(getPartyState(engine.world).companions.map((c) => c.npcId));
+      const candidate = coLocatedNpcs(engine).find((n) => !alreadyIn.has(n.id));
+      if (candidate) {
+        engine.submitAction('recruit', { targetIds: [candidate.id] });
+        return;
+      }
     }
   }
 
@@ -235,7 +299,7 @@ export function playSession(
  * probe reads the shape rather than inventing an export just for a test.
  */
 type NpcAgencyNamespace = {
-  profiles?: Array<{ breakpoint?: string; goals?: Array<{ verb: string; priority: number }> }>;
+  profiles?: Array<{ npcId: string; breakpoint?: string; goals?: Array<{ verb: string; priority: number }> }>;
   obligationLedgers?: Record<string, NpcObligationLedger>;
 };
 
@@ -244,17 +308,42 @@ function npcAgencyOf(engine: Engine): NpcAgencyNamespace {
   return raw && typeof raw === 'object' ? (raw as NpcAgencyNamespace) : {};
 }
 
-function describeInputs(engine: Engine): string {
+/**
+ * The faction roster the OPPORTUNITY RULES actually see, derived exactly the
+ * way `buildPressureInputs` derives it: `world.factions` UNION the
+ * `reputation_*` / `faction_alert_*` globals UNION faction-cognition's own
+ * registry.
+ *
+ * That last source is the one that matters and the one a narrower read misses.
+ * Ten of the eleven starters call `createFactionCognition`, so their worlds
+ * DO have factions the evaluators can see — sitting at reputation 0. A probe
+ * that only read `world.factions` reported "no factions exist" and would have
+ * sent P1 to author a roster that is already there. The real gap is one step
+ * further in: reputation never MOVES.
+ */
+function playerReputations(engine: Engine): Array<{ id: string; value: number }> {
   const world = engine.world;
+  const cognition =
+    (world.modules['faction-cognition'] as { factionCognition?: Record<string, unknown> } | undefined)
+      ?.factionCognition ?? {};
 
-  const factionIds = new Set<string>(Object.keys(world.factions ?? {}));
+  const ids = new Set<string>(Object.keys(world.factions ?? {}));
   for (const key of Object.keys(world.globals)) {
-    if (key.startsWith('reputation_')) factionIds.add(key.slice('reputation_'.length));
+    if (key.startsWith('reputation_')) ids.add(key.slice('reputation_'.length));
+    else if (key.startsWith('faction_alert_')) ids.add(key.slice('faction_alert_'.length));
   }
-  const reputations = [...factionIds].sort().map((id) => ({
+  for (const id of Object.keys(cognition)) ids.add(id);
+
+  return [...ids].sort().map((id) => ({
     id,
     value: (world.factions?.[id]?.reputation ?? 0) + Number(world.globals[`reputation_${id}`] ?? 0),
   }));
+}
+
+function describeInputs(engine: Engine): string {
+  const world = engine.world;
+
+  const reputations = playerReputations(engine);
   const nonZeroReps = reputations.filter((r) => r.value !== 0);
 
   const npcState = npcAgencyOf(engine);
@@ -300,6 +389,7 @@ function describeInputs(engine: Engine): string {
 const SESSIONS: PlayedSession[] = allPacks.flatMap((pack) => [
   playSession(pack, { profile: 'wandering' }),
   playSession(pack, { profile: 'engaged' }),
+  playSession(pack, { profile: 'pursuing' }),
 ]);
 
 function packsReaching(kind: OpportunityKind, sessions = SESSIONS): string[] {
@@ -319,8 +409,9 @@ export function starvationTable(sessions: PlayedSession[] = SESSIONS): string {
     const packs = packsReaching(k, sessions);
     return `  ${k.padEnd(14)} ${packs.length}/${allPacks.length} packs${packs.length ? ` — ${packs.join(', ')}` : ''}`;
   });
+  const deepest = sessions.some((s) => s.profile === 'pursuing') ? 'pursuing' : 'engaged';
   const inputs = sessions
-    .filter((s) => s.profile === 'engaged')
+    .filter((s) => s.profile === deepest)
     .map((s) => `    ${s.packId.padEnd(24)} ${s.diagnostics}`);
   return [
     header,
@@ -329,7 +420,7 @@ export function starvationTable(sessions: PlayedSession[] = SESSIONS): string {
     '  kinds reached:',
     ...totals,
     '',
-    '  evaluator inputs at session end (engaged profile):',
+    `  evaluator inputs at session end (${deepest} profile):`,
     ...inputs,
   ].join('\n');
 }
@@ -358,45 +449,47 @@ const REACHABLE_TODAY: Record<OpportunityKind, { reachable: boolean; measured: s
   escort: {
     reachable: true,
     measured:
-      'fires once the player recruits (7 of 11 packs have a companion reachable by a wandering ' +
-      'player). The faction path is dead — see `faction-job`.',
+      'fires in all 11 packs — the companion path once the player recruits, and the faction path ' +
+      'once the opportunity ladder carries reputation past ESCORT_TRUST_THRESHOLD (50).',
+  },
+  'faction-job': {
+    reachable: true,
+    measured:
+      'fires in 6 of 11 packs, but only for a player who COMPLETES opportunities. Reputation has ' +
+      'exactly one upward path in the engine — an opportunity reward — and the ally tier is 30, ' +
+      'so three completed offers is the entry fee.',
   },
   'favor-request': {
     reachable: true,
     measured:
-      'fires from the companion-ask path once the player recruits. The obligation path is dead: ' +
-      'no played session produces a `player-owes-npc` ledger entry at magnitude >= 4.',
+      'fires from the companion-ask path once the player recruits. The obligation path is still ' +
+      'dead: no played session produces a `player-owes-npc` ledger entry at magnitude >= 4.',
   },
   bounty: {
     reachable: false,
     measured:
-      'needs a live `bounty-issued` pressure AND a rival faction at rep >= 10. NO PACK IN THE ' +
-      'CATALOG POPULATES `world.factions`, and no `reputation_*` global ever accrues in a played ' +
-      'session, so `playerReputations` is empty in all 11 worlds. No pressure of that kind ever ' +
-      'becomes active either.',
-  },
-  'faction-job': {
-    reachable: false,
-    measured:
-      'needs rep >= 30 with some faction (the ally tier). Same root cause as `bounty`: there are ' +
-      'no factions to have reputation with. The NPC path needs a favorable-or-better NPC with a ' +
-      '`recruit` goal, and every named NPC in the catalog derives `wavering`.',
+      'the `bounty-issued` PRESSURE is gated on rep <= -50 AND faction alert >= 60, and defeat ' +
+      'fallout pays -10 rep / +15 alert per kill — so five kills of ONE faction. A 40-round ' +
+      'session lands two to four: every pack ships only a handful of authored hostiles. The ' +
+      'opportunity then needs a RIVAL faction at rep >= 10, and six of eleven packs ship exactly ' +
+      'one faction, so there is no rival to hire you.',
   },
   'supply-run': {
     reachable: false,
     measured:
-      'the pressure path needs a live `supply-crisis`; the scarcity path needs a supply below 20 ' +
-      'AND `findLocalFaction`, which returns undefined with no factions. Supplies sit at ~49 — ' +
-      '`tickDistrictEconomy` drags every category back toward the 50 baseline each round.',
+      'the pressure path needs a live `supply-crisis`. The scarcity path needs a category below 20 ' +
+      'in the player district: the lowest level any pack authors is 35 (merchant medicine), and ' +
+      '`tickDistrictEconomy` drags every category back toward the 50 baseline each round anyway.',
   },
   contract: {
     reachable: false,
     measured:
       'needs an NPC at breakpoint favorable-or-allied carrying a `bargain` goal. The bargain goal ' +
-      'needs greed > 60 and `favorable` requires greed < 50, so only an ALLIED (trust >= 60, ' +
-      'loyalty >= 50) AND greedy NPC can ever carry it. Trust comes from ' +
-      "`relations['player-trust']`, authored exactly ONCE in the entire catalog (fantasy's Aldric, " +
-      'at 15 — still under the 30 favorable bar), so every named NPC in every pack is `wavering`.',
+      'needs greed > 60 and `favorable` requires greed < 50, so ONLY an allied (trust >= 60, ' +
+      'loyalty >= 50) AND greedy NPC can ever carry it — the two conditions that look like ' +
+      'alternatives are mutually exclusive. Trust comes from `relations[\'player-trust\']`, ' +
+      "authored exactly ONCE in the entire catalog (fantasy's Aldric, at 15 — still under the 30 " +
+      'favorable bar), so every named NPC in every pack derives `wavering`.',
   },
   recovery: {
     reachable: false,
@@ -494,14 +587,10 @@ type KindControl = {
 };
 
 /**
- * Reputation, granted the way the engine itself grants it.
- *
- * `buildPressureInputs` derives the faction roster from `reputation_*` globals
- * UNION `world.factions` — so a global alone mints a faction the opportunity
- * rules can see, with the same neutral `factionStates` default (alert 0,
- * cohesion 0.8) any unconfigured faction gets. That matters because NO PACK IN
- * THE CATALOG POPULATES `world.factions` AT ALL, which is precisely what these
- * controls have to work around to prove the reputation-gated axes have teeth.
+ * Reputation, granted the way the engine itself grants it — through the
+ * `reputation_<faction>` global that defeat fallout and opportunity rewards
+ * both write. A global also MINTS a faction the rules can see if none exists,
+ * with the same neutral `factionStates` default any unconfigured faction gets.
  */
 function grantReputation(engine: Engine, factionId: string, value: number): void {
   const base = engine.world.factions?.[factionId]?.reputation ?? 0;
@@ -513,7 +602,7 @@ function grantReputation(engine: Engine, factionId: string, value: number): void
  * pack currently lands in the second case — see `grantReputation`.
  */
 function factionIdsOf(engine: Engine): [string, string] {
-  const authored = Object.keys(engine.world.factions ?? {}).sort();
+  const authored = playerReputations(engine).map((r) => r.id);
   return [authored[0] ?? 'por1-crown', authored[1] ?? 'por1-guild'];
 }
 
@@ -617,24 +706,33 @@ const KIND_CONTROLS: KindControl[] = [
   },
   {
     kind: 'favor-request',
-    because: 'an obligation ledger where the player owes a named NPC magnitude >= 4',
+    because: 'an obligation ledger where the player owes a PROFILED npc magnitude >= 4',
+    // `wandering` deliberately: this kind has two paths, and the companion ask
+    // is the one that already works. Running the hold under a profile that
+    // recruits made this control pass while proving nothing about the
+    // obligation ledger it exists to test — it went green on the companion
+    // path and only revealed itself when an unrelated change stopped the
+    // recruit from happening. One variable, isolated.
+    profile: 'wandering',
     hold: (engine) => {
-      const npc = Object.values(engine.world.entities).find(
-        (e) => e.id !== engine.world.playerId && e.type === 'npc' && e.name,
-      );
-      if (!npc) return;
+      // The evaluator matches the ledger key against `npcProfiles`, so the
+      // debt has to be owed to an NPC the agency step actually profiles —
+      // an arbitrary named entity is not necessarily one of those. Profiles
+      // appear after the first tick; until then this holds nothing.
+      const npcId = npcAgencyOf(engine).profiles?.[0]?.npcId;
+      if (!npcId) return;
       const namespace = npcAgencyOf(engine);
       const ledgers = { ...(namespace.obligationLedgers ?? {}) };
-      const owed = ledgers[npc.id]?.obligations ?? [];
+      const owed = ledgers[npcId]?.obligations ?? [];
       if (owed.some((o) => o.direction === 'player-owes-npc' && o.magnitude >= 4)) return;
-      ledgers[npc.id] = {
+      ledgers[npcId] = {
         obligations: [
           ...owed,
           {
-            id: `por1-${npc.id}`,
+            id: `por1-${npcId}`,
             kind: 'debt',
             direction: 'player-owes-npc',
-            npcId: npc.id,
+            npcId,
             counterpartyId: engine.world.playerId,
             magnitude: 8,
             sourceTag: 'por-1-control',
