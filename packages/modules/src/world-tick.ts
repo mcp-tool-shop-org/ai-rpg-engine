@@ -159,9 +159,10 @@ import {
 } from './pressure-system.js';
 import { computeFallout, type PressureFallout } from './pressure-resolution.js';
 import { grantTitleToEntity } from './player-titles.js';
+import { NPC_RUMOR_CONFIDENCE, CHAINED_OPPORTUNITY_URGENCY } from './opportunity-resolution.js';
 import { getDistrictForZone, getDistrictState, getDistrictDefinition } from './district-core.js';
 import { runEncounterSpawnStep, type SpawnedEncounterReport } from './encounter-spawn.js';
-import { getEconomyCoreState, setDistrictEconomy, tickDistrictEconomy } from './economy-core.js';
+import { getEconomyCoreState, setDistrictEconomy, tickDistrictEconomy, getDistrictEconomy, applyEconomyShift, type SupplyCategory } from './economy-core.js';
 import {
   COMPANION_TAG,
   getPartyState,
@@ -196,6 +197,8 @@ import {
   getPersistedOpportunities,
   setPersistedOpportunities,
   makeOpportunity,
+  deadlineFor,
+  MAX_ACTIVE_OPPORTUNITIES,
   type OpportunityInputs,
   type OpportunityState,
 } from './opportunity-core.js';
@@ -1067,11 +1070,98 @@ function applyFallout(
         chains.push(chain);
         break;
       }
+
+      // ── The last three, closed by P4's own audit (v3.8) ─────────────────
+      //
+      // FLA-1 reads BOTH event families and reported an `economy-shift`
+      // announced by a pressure resolution that no read could find. It was
+      // right: this applier handled six of its nine effect types and dropped
+      // rumor, economy-shift and spawn-opportunity onto the
+      // "rides the pressure.expired payload" default — the exact class this
+      // release spent itself closing, sitting on the other applier the whole
+      // time. Every writer below already existed and was already in use by
+      // opportunity fallout; none of this is new machinery, only the same
+      // door opened from the second room.
+
+      case 'economy-shift': {
+        const economy = getDistrictEconomy(world, effect.districtId);
+        if (economy) {
+          setDistrictEconomy(world, effect.districtId, applyEconomyShift(economy, {
+            districtId: effect.districtId,
+            category: effect.category as SupplyCategory,
+            delta: effect.delta,
+            cause: effect.cause,
+          }));
+        }
+        break;
+      }
+
+      case 'rumor': {
+        // Same origin discipline opportunity fallout uses: a rumor about the
+        // player still comes from SOMEONE. A pressure's own source faction is
+        // that someone, and with no faction there is no honest origin — so it
+        // is skipped rather than invented, and the player is never stamped as
+        // the source.
+        const origin = effect.spreadTo[0] ?? pressureSourceFaction(world, fallout.resolution.pressureId);
+        if (!origin) break;
+        const rumorState = getPlayerRumorState(world);
+        let rumor = spawnNpcOriginatedRumor(
+          effect.claim,
+          effect.valence,
+          effect.valence === 'fearsome' ? 'npc-accusation' : 'npc-gossip',
+          origin,
+          effect.spreadTo[0] ?? origin,
+          undefined,
+          currentTick,
+          NPC_RUMOR_CONFIDENCE,
+          world,
+        );
+        for (const extra of effect.spreadTo.slice(1)) rumor = propagateRumor(rumor, extra);
+        setPlayerRumorState(world, { rumors: [...rumorState.rumors, rumor] });
+        break;
+      }
+
+      case 'spawn-opportunity': {
+        // Both of the spawner's guards, for the reason the opportunity-side
+        // sink states: POP-1's cap is a measured argument, and a chain that
+        // could push past it would undo that argument by the back door.
+        const opportunities = getPersistedOpportunities(world);
+        const live = opportunities.filter((o) => o.status === 'available' || o.status === 'accepted');
+        if (live.length >= MAX_ACTIVE_OPPORTUNITIES) break;
+        const source = effect.sourceNpcId ?? effect.sourceFactionId ?? 'none';
+        if (live.some((o) => `${o.kind}:${o.sourceNpcId ?? o.sourceFactionId ?? 'none'}` === `${effect.kind}:${source}`)) break;
+        setPersistedOpportunities(world, [
+          ...opportunities,
+          makeOpportunity({
+            kind: effect.kind,
+            sourceNpcId: effect.sourceNpcId,
+            sourceFactionId: effect.sourceFactionId,
+            title: effect.description,
+            description: effect.description,
+            objectiveDescription: 'Follow the thread this opened.',
+            urgency: CHAINED_OPPORTUNITY_URGENCY,
+            turnsRemaining: deadlineFor(effect.kind),
+            visibility: 'offered',
+            rewards: [],
+            risks: [],
+            genre: '',
+            currentTick,
+            tags: ['chained', `from:pressure:${fallout.resolution.pressureKind}`],
+          }),
+        ]);
+        break;
+      }
+
       default:
-        break; // rides the pressure.expired payload
+        break;
     }
   }
   return chains;
+}
+
+/** The faction a live pressure names as its source, for rumor attribution. */
+function pressureSourceFaction(world: WorldState, pressureId: string): string | undefined {
+  return getActivePressures(world).find((p) => p.id === pressureId)?.sourceFactionId;
 }
 
 // ---------------------------------------------------------------------------
