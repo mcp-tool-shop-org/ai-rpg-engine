@@ -455,7 +455,7 @@ export function sinkAudit(): Map<OpportunityFalloutEffect['type'], SinkVerdict> 
 const KNOWN_SINKLESS: Array<OpportunityFalloutEffect['type']> = [
   'rumor',
   // 'obligation' — SINK BUILT v3.8 (npc-agency's persisted ledgers).
-  'npc-relationship',
+  // 'npc-relationship' — SINK BUILT v3.8 (relations['player-<axis>'] base).
   // 'milestone-tag' — SINK BUILT v3.8 (recordMilestone). Removed here in the
   // same commit that wired it, per this list's own contract.
   'title-trigger',

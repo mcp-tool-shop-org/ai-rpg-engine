@@ -496,6 +496,8 @@ export {
   // fallout audit (FSA-1) could not check its own claim that opportunity
   // fallout never records one. A consequence with no public read API is not a
   // sink, so exporting the reads is part of building one.
+  relationshipBaseKey,
+  RELATIONSHIP_AXIS_RANGE,
   getPersistedNpcProfiles,
   getPersistedNpcLastActions,
   getPersistedNpcObligations,

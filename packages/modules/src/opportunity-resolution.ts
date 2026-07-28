@@ -33,6 +33,8 @@ import {
   getPersistedNpcProfiles,
   getPersistedNpcLastActions,
   setPersistedNpcState,
+  relationshipBaseKey,
+  RELATIONSHIP_AXIS_RANGE,
 } from './npc-agency.js';
 import type { PressureKind } from './pressure-system.js';
 import type { RumorValence } from './player-rumor.js';
@@ -686,7 +688,12 @@ function addGlobal(world: WorldState, key: string, delta: number): void {
  *    (via getNetObligationWeight), the Director's PEOPLE section, and
  *    opportunity-core's own obligation rule. Feeds back into the layer that
  *    produced it.
- *  - npc-relationship/rumor/materials/title-trigger/spawn-
+ *  - npc-relationship → the `relations['player-<axis>']` base
+ *    deriveNpcRelationship starts from (v3.8 sink #3), clamped at the write to
+ *    the range derivation can express. Two packs author this key and nothing
+ *    ever wrote it; it feeds the profiles step 5a persists, hence
+ *    deriveLoyaltyBreakpoint, hence which offers an NPC makes next.
+ *  - rumor/materials/title-trigger/spawn-
  *    pressure/spawn-opportunity — no persisted sink today. Honest no-op; the
  *    verb handler's emitted event payload carries the full effect list
  *    regardless, so nothing is silently lost, only not yet WRITTEN anywhere.
@@ -802,7 +809,34 @@ export function applyOpportunityFallout(world: WorldState, actorId: string, fall
         );
         break;
       }
-      case 'npc-relationship':
+      case 'npc-relationship': {
+        // v3.8 sink #3, and the second feedback loop. deriveNpcRelationship
+        // has read `relations['player-trust']` as its trust base since v1.x,
+        // and two packs AUTHOR it (starter-fantasy 15, starter-merchant 68) —
+        // but nothing in the engine ever WROTE it, so an NPC's disposition
+        // toward the player was fixed at whatever the content declared plus
+        // whatever cognition inferred. Nine authored fallout sites announced
+        // a trust change; none of them moved it.
+        //
+        // The loop: this base feeds deriveNpcRelationship → the profiles
+        // world-tick step 5a persists → deriveLoyaltyBreakpoint →
+        // evaluateNpcGoalOpportunities, which only offers work from a
+        // favorable or allied NPC. Finishing someone's favour changes what
+        // they will ask of you next.
+        const npc = world.entities[effect.npcId];
+        if (!npc) break;
+        const key = relationshipBaseKey(effect.axis);
+        const range = RELATIONSHIP_AXIS_RANGE[effect.axis];
+        const current = Number(npc.relations?.[key] ?? 0);
+        npc.relations = {
+          ...(npc.relations ?? {}),
+          // Clamped at the WRITE, to the range derivation can express. An
+          // unclamped base could sink past -100 and then need six favours to
+          // climb back to a number the reader was already flooring anyway.
+          [key]: Math.min(range.max, Math.max(range.min, current + effect.delta)),
+        };
+        break;
+      }
       case 'rumor':
       case 'materials':
       case 'title-trigger':

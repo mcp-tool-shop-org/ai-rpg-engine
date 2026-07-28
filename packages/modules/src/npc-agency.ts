@@ -187,7 +187,18 @@ export function deriveNpcRelationship(
   if (attackMemory) trust = Math.max(-100, trust - 50);
 
   // --- Fear ---
+  // Base: from entity.relations if set, otherwise none — the exact shape the
+  // trust base above uses. Added v3.8 so `npc-relationship` fallout has a
+  // sink for BOTH axes it declares: opportunity fallout can announce
+  // `{axis:'fear'}` and, without a stored base, fear is derived end-to-end
+  // from cognition and there is nowhere for that announcement to land. No
+  // shipped content emits the fear axis today (FSA-1's producer census says
+  // so), which is precisely why it needed writing down rather than assuming.
+  // Absent key → 0 → byte-identical to every world that predates this.
   let fear = 0;
+  if (entity?.relations?.['player-fear'] !== undefined) {
+    fear = Number(entity.relations['player-fear']);
+  }
   // Low morale + combat memories = fear
   if (cognition.morale < 40) {
     fear += Math.floor((40 - cognition.morale) * 1.5);
@@ -1521,6 +1532,30 @@ export function createObligation(
     decayTurns,
   };
 }
+
+/**
+ * The `entity.relations` key holding an NPC's stored disposition toward the
+ * player on `axis` — the base deriveNpcRelationship starts from before it
+ * layers cognition on top.
+ *
+ * Exported so the one runtime writer (opportunity fallout's
+ * `npc-relationship` sink) and the reader above cannot drift apart on the key
+ * name. Until v3.8 this store had content AUTHORS (starter-fantasy seeds 15,
+ * starter-merchant 68) and a reader, and no runtime writer at all — the same
+ * shape as the milestone ledger and the obligation ledgers before their own
+ * sinks landed.
+ */
+export function relationshipBaseKey(axis: 'trust' | 'fear'): string {
+  return `player-${axis}`;
+}
+
+/** The range each stored disposition axis can express, matching the clamps
+ *  deriveNpcRelationship applies to its own output. A base stored outside
+ *  these could never be reached by derivation and would never recover. */
+export const RELATIONSHIP_AXIS_RANGE: Record<'trust' | 'fear', { min: number; max: number }> = {
+  trust: { min: -100, max: 100 },
+  fear: { min: 0, max: 100 },
+};
 
 /** Add an obligation to a ledger. Returns new ledger (immutable). */
 export function addObligation(

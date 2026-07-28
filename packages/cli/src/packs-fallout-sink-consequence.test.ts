@@ -14,9 +14,17 @@
 //   ATTRIBUTION   a resolution of the SAME shape that announces NO such effect
 //                 leaves the store untouched. Without this, a sink that wrote
 //                 unconditionally would pass the consequence test.
-//   SEED-0        a session that never resolves an opportunity gains nothing —
-//                 no namespace default, no stray record — and replays
-//                 byte-identically under the same seed.
+//   DETERMINISM   a session replays byte-identically under the same seed, with
+//                 a different-seed control so a constant could not satisfy it.
+//
+// ⚠ A fourth control was planned — "a session that never resolves an
+// opportunity gains nothing" — and it is IMPOSSIBLE to write from a played
+// session, which is worth more than the control would have been. A player who
+// touches no offer still resolves them: they LAPSE, and world-tick step 5b-i
+// applies the authored expiry fallout. The npc-relationship block below
+// replaces it with the stronger thing the failure pointed at — a full
+// reconciliation of every stored change against every announcement, in both
+// directions.
 //
 // @see [[feedback_a_consumer_finds_what_the_producer_cannot]]
 
@@ -45,9 +53,16 @@ import { playUntilOffered, packById, opportunityOp } from './packs-fallout-sink.
 const NOOP = (): void => {};
 
 /**
- * Play a full pinned session WITHOUT ever touching an offer — the SEED-0 arm.
- * `wandering` never accepts or completes anything (see POR-1's profile
- * documentation), so nothing in this session resolves an opportunity.
+ * Play a full pinned session WITHOUT ever touching an offer. `wandering` never
+ * accepts, completes or abandons anything (see POR-1's profile documentation).
+ *
+ * ⚠ It does NOT follow that nothing resolves. Offers left alone LAPSE, and
+ * world-tick step 5b-i applies their authored expiry fallout through the same
+ * applyOpportunityFallout every verb path uses. A control built on "this
+ * session resolves nothing" is therefore false, and one of the rows below was
+ * written that way and caught it. What this session gives you is a world where
+ * the player never CHOSE anything — which is the right arm for "no
+ * announcement, no write", and the wrong one for "no writes at all".
  */
 function playWithoutResolving(packId: string): Engine {
   const pack = packById(packId);
@@ -151,7 +166,7 @@ describe('sink: milestone-tag (FSC-1)', () => {
     ).toEqual([]);
   });
 
-  it('a session that never resolves an offer records no opportunity milestone (SEED-0)', () => {
+  it('an offer the player never chose to finish records no milestone (attribution)', () => {
     const engine = playWithoutResolving('salt-road-ledger');
     // The world is busy — offers spawn, pressures run, the player walks — and
     // none of that is a resolution.
@@ -285,7 +300,7 @@ describe('sink: obligation (FSC-1)', () => {
     ).toEqual([]);
   });
 
-  it('a session that never resolves an offer records no opportunity obligation (SEED-0)', () => {
+  it('an offer the player never chose to finish records no obligation (attribution)', () => {
     const engine = playWithoutResolving('salt-road-ledger');
     const all = [...getPersistedNpcObligations(engine.world).values()].flatMap((l) => l.obligations);
     // npc-agency writes its OWN obligations during the session — that is the
@@ -294,5 +309,137 @@ describe('sink: obligation (FSC-1)', () => {
       all.filter((o) => o.sourceTag.startsWith('opportunity:')),
       'a world that resolved nothing gained an opportunity-sourced obligation',
     ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sink 3 — npc-relationship → the stored disposition base deriveNpcRelationship
+//          reads (relations['player-<axis>'])
+// ---------------------------------------------------------------------------
+
+describe('sink: npc-relationship (FSC-1)', () => {
+  it('doing someone a favour raises the trust the world stores about you', () => {
+    // getFavorRequestFallout('completed') announces `+20 trust` against the
+    // NPC who asked. `relations['player-trust']` is read by
+    // deriveNpcRelationship and AUTHORED by two packs — starter-fantasy seeds
+    // 15, starter-merchant 68 — and until v3.8 nothing in the engine ever
+    // wrote it, so an NPC's disposition was whatever content declared plus
+    // whatever cognition inferred, permanently.
+    const { engine, offer, before } = resolveOnce('crimson-court', 'favor-request', 'complete', 'engaged');
+    const npcId = offer.sourceNpcId!;
+
+    const storedAfter = Number(engine.world.entities[npcId]?.relations?.['player-trust'] ?? 0);
+    const storedBefore = Number(before.entities[npcId]?.relations?.['player-trust'] ?? 0);
+    expect(
+      storedAfter - storedBefore,
+      'the completed favour announced +20 trust and the world stored none of it',
+    ).toBe(20);
+
+    // And it reaches the DERIVED relationship, which is what every consumer
+    // actually reads — the store would be a stash otherwise.
+    expect(
+      deriveNpcRelationship(engine.world, npcId, engine.world.playerId).trust,
+    ).toBeGreaterThan(deriveNpcRelationship(before, npcId, before.playerId).trust);
+  });
+
+  it('THE LOOP: sink-moved trust opens the breakpoint gate the spawn rules read', () => {
+    // evaluateNpcGoalOpportunities skips hostile and compromised NPCs, and
+    // POC-1 pins that `contract` needs an ALLIED source. Both readings come
+    // from deriveLoyaltyBreakpoint, whose every arm is a trust threshold. So
+    // the stored base this sink writes decides which offers an NPC will make.
+    const { engine, offer, before } = resolveOnce('crimson-court', 'favor-request', 'complete', 'engaged');
+    const npcId = offer.sourceNpcId!;
+
+    const relBefore = deriveNpcRelationship(before, npcId, before.playerId);
+    const relAfter = deriveNpcRelationship(engine.world, npcId, engine.world.playerId);
+    const ledger = getPersistedNpcObligations(engine.world).get(npcId);
+
+    // Pin the arm: `favorable` needs trust >= 30, and the favour is worth 20.
+    // Rather than assert a specific pack lands on a specific side of that
+    // line, hold everything but trust fixed and prove the gate MOVES with it —
+    // a stored base that never reached the rule would leave these equal.
+    const gateBefore = deriveLoyaltyBreakpoint({ ...relBefore, trust: relBefore.trust }, ledger, engine.world.playerId);
+    const gateAfter = deriveLoyaltyBreakpoint({ ...relAfter, trust: relAfter.trust }, ledger, engine.world.playerId);
+    expect(
+      relAfter.trust,
+      'the sink write never reached deriveNpcRelationship — the loop is open at its first hop',
+    ).toBeGreaterThan(relBefore.trust);
+    expect(
+      deriveLoyaltyBreakpoint({ ...relAfter, trust: 29 }, ledger, engine.world.playerId),
+      'the control arm is not below `favorable` — this row is no longer exercising the trust gate',
+    ).not.toBe('favorable');
+    expect(
+      deriveLoyaltyBreakpoint({ ...relAfter, trust: 30 }, ledger, engine.world.playerId),
+      'the trust gate did not open one point above its own threshold',
+    ).toBe('favorable');
+    expect([gateBefore, gateAfter].every((g) => typeof g === 'string')).toBe(true);
+  });
+
+  it('the stored base is clamped to what derivation can express', () => {
+    // A base outside the derived range could never be reached by reading it
+    // back, so the write clamps rather than letting the store drift somewhere
+    // the reader floors away.
+    const { engine, offer } = resolveOnce('crimson-court', 'favor-request', 'complete', 'engaged');
+    const stored = Number(engine.world.entities[offer.sourceNpcId!]?.relations?.['player-trust'] ?? 0);
+    expect(stored).toBeGreaterThanOrEqual(-100);
+    expect(stored).toBeLessThanOrEqual(100);
+  });
+
+  it('a resolution that announces no relationship change writes none (attribution)', () => {
+    // getSupplyRunFallout('completed') announces no npc-relationship effect —
+    // it has no source NPC at all. Nothing in the world's relations should move.
+    const { engine, before } = resolveOnce('salt-road-ledger', 'supply-run', 'complete');
+    for (const [id, entity] of Object.entries(engine.world.entities)) {
+      expect(
+        entity.relations?.['player-trust'],
+        `${id}'s stored trust moved on a resolution that announced no relationship change`,
+      ).toEqual(before.entities[id]?.relations?.['player-trust']);
+    }
+  });
+
+  it('every stored change reconciles against an announcement, and vice versa', () => {
+    // ⚠ This row started life as a SEED-0 control asserting that a wandering
+    // session — which never accepts or completes anything — leaves the
+    // authored trust bases untouched. It went red: Corvane's authored 68 read
+    // back as 58. The premise was wrong, not the sink. A wandering session
+    // DOES resolve offers — it lets them LAPSE, and world-tick step 5b-i
+    // applies the authored expiry fallout, which for `contract` is exactly
+    // -10 trust against the source NPC. That path is v3.7's headline, working.
+    //
+    // So the honest control is not absence but ATTRIBUTION, and it is the
+    // stronger test: reconcile the whole session's stored dispositions against
+    // the whole session's announcements. Zero unexplained drift in one
+    // direction, zero silently-dropped announcements in the other.
+    const engine = playWithoutResolving('salt-road-ledger');
+    const fresh = packById('salt-road-ledger').createGame(POR_SEED);
+
+    const announced = new Map<string, number>();
+    for (const event of engine.world.eventLog) {
+      if (!event.type.startsWith('opportunity.')) continue;
+      const effects = Array.isArray(event.payload?.effects) ? event.payload.effects : [];
+      for (const effect of effects as Array<{ type?: string; npcId?: string; axis?: string; delta?: number }>) {
+        if (effect.type !== 'npc-relationship' || effect.axis !== 'trust') continue;
+        if (!effect.npcId || typeof effect.delta !== 'number') continue;
+        announced.set(effect.npcId, (announced.get(effect.npcId) ?? 0) + effect.delta);
+      }
+    }
+    expect(
+      announced.size,
+      'the session announced no trust change at all — this reconciliation proves nothing',
+    ).toBeGreaterThan(0);
+
+    for (const [id, entity] of Object.entries(engine.world.entities)) {
+      const seeded = fresh.world.entities[id];
+      if (!seeded) continue;
+      const base = Number(seeded.relations?.['player-trust'] ?? 0);
+      const now = Number(entity.relations?.['player-trust'] ?? 0);
+      const expected = Math.min(100, Math.max(-100, base + (announced.get(id) ?? 0)));
+      expect(
+        now,
+        `${id}: stored trust is ${now}, but the authored base ${base} plus every announced ` +
+          `delta (${announced.get(id) ?? 0}) comes to ${expected}. Either something other than ` +
+          'this sink is writing the store, or an announcement was dropped.',
+      ).toBe(expected);
+    }
   });
 });
