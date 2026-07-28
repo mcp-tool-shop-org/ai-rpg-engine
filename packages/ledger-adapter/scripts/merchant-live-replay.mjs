@@ -24,6 +24,7 @@ import { createGame } from '@ai-rpg-engine/starter-merchant';
 import { EQUIPMENT_CATALOG_FORMULA, getItemChronicle } from '@ai-rpg-engine/equipment';
 import {
   TestnetTransport,
+  DryRunTransport,
   snapshotFromWorld,
   equipmentSnapshotFromWorld,
   enableFromWorld,
@@ -43,6 +44,7 @@ const PLAYER_ID = 'factor';
 const GAME_ID = 'salt-road-ledger';
 const RUN_ID = 'merchant-live-replay';
 const SEAL = 'guild-seal';
+const WRIT = 'writ-of-passage';
 
 const LEDGER_CONFIG = { ...DEFAULT_LEDGER_CONFIG, mode: 'ledger' };
 
@@ -53,7 +55,17 @@ function openTheBooks(engine) {
 }
 
 async function main() {
-  const transport = new TestnetTransport();
+  // --dry-run validates this script's PLUMBING without spending a live run.
+  // Carried lesson: the dry-run pass caught two bugs in this very script last
+  // cycle before either reached the network. It does not substitute for the
+  // live run — it precedes it.
+  const dryRun = process.argv.includes('--dry-run');
+  const transport = dryRun ? new DryRunTransport() : new TestnetTransport();
+  if (dryRun) console.log('*** DRY RUN — no network, plumbing validation only ***');
+  // Seeds stay in memory for the length of this script only; nothing is written
+  // to disk. The persistent-issuer stage is TESTNET ONLY (see stage 14).
+  const diarySeeds = new Map();
+  const persistSeeds = new Map();
   const receipt = { network: 'testnet', gameId: GAME_ID, runId: RUN_ID, seed: SEED, stages: [], proofTxids: {}, txLog: [] };
   const stage = (name, ok, note) => {
     receipt.stages.push({ stage: name, ok, note });
@@ -237,6 +249,7 @@ async function main() {
       nftReport.passed ? 'the chain agrees the seal grew, and the factor still holds it' : `notes: ${nftReport.notes.join(' | ')}`);
 
     console.log('\n=== Stage 11: THE FIREWALL — the game world is byte-identical ===');
+
     // Every settle, mint, modify and reconcile above read the world and wrote
     // only adapter-owned state. The gameplay between stages legitimately changed
     // the world, so the baseline is re-taken at the last gameplay action: what
@@ -261,6 +274,173 @@ async function main() {
         ? 'byte-identical to an adapter-free replay of the same script — the adapter left no trace'
         : 'WORLD DIVERGED — firewall breach');
     receipt.firewallBaselineBytes = worldBefore.length;
+
+    // ── Stage 12: the writ changes hands, and the ledger says so ─────────
+    //
+    // v3.5.0 shipped the writ of passage described as "tradeable, which is
+    // precisely the problem" — and nothing in the engine could trade it. `give`
+    // (inventory-core) is the engine-side move; the on-ledger analogue is a
+    // DIRECTED zero-value NFT sell offer accepted by the recipient, which is
+    // the same shape the issuer->player grant already uses, pointed sideways.
+    //
+    // The pack stays firewalled: `give` knows nothing about the ledger, and the
+    // NFT mirroring lives here in the showcase exactly as consign->escrow does.
+    console.log('\n=== Stage 12: make over the writ (engine) + directed transfer (ledger) ===');
+    const writEngine = createGame(SEED);
+    openTheBooks(writEngine);
+    writEngine.submitAction('move', { targetIds: ['long-quay'] });
+    writEngine.submitAction('move', { targetIds: ['customs-shed'] });
+    writEngine.submitAction('move', { targetIds: ['long-quay'] });
+    writEngine.submitAction('move', { targetIds: ['crooked-stair'] });
+    const heldWrit = (writEngine.world.entities[PLAYER_ID].inventory ?? []).includes(WRIT);
+    const giveEvents = writEngine.submitAction('give', { targetIds: ['broker-inaya'], toolId: WRIT });
+    const gaveOk =
+      heldWrit &&
+      !giveEvents.some((e) => e.type === 'action.rejected') &&
+      !(writEngine.world.entities[PLAYER_ID].inventory ?? []).includes(WRIT) &&
+      (writEngine.world.entities['broker-inaya'].inventory ?? []).includes(WRIT);
+
+    // The chronicle followed the object across owners — `lost` had NO producer
+    // anywhere in the engine before this verb existed.
+    const writChronicle = getItemChronicle(writEngine.world)[WRIT] ?? [];
+    const chronicled = writChronicle.some((e) => e.event === 'lost');
+
+    stage('12-writ-transfer', gaveOk && chronicled,
+      gaveOk
+        ? `writ made over to Broker Inaya; chronicle stamped ${writChronicle.map((e) => e.event).join('+')}`
+        : 'the writ did not change hands');
+
+    // ── Stage 13: DIARY — anchored, not custodied ────────────────────────
+    //
+    // The mode that shipped in v3.3.0 as a config flag with zero behavioral
+    // reads. A diary run settles by writing ONE memo-bearing anchor and opens
+    // NO trust line — the negative control is the point, so it is asserted
+    // against the live ledger rather than against adapter state.
+    console.log('\n=== Stage 13: diary mode on live testnet ===');
+    const diaryEngine = createGame(SEED);
+    openTheBooks(diaryEngine);
+    const diaryState = createInitialState({ ...DEFAULT_LEDGER_CONFIG, mode: 'diary' }, SEED);
+    const diaryAdapter = createLedgerAdapter(transport, { ...DEFAULT_LEDGER_CONFIG, mode: 'diary' }, {
+      gameId: GAME_ID,
+      runId: `${RUN_ID}-diary`,
+      putSeed: (address, seed) => diarySeeds.set(address, seed),
+    });
+    const diaryOpening = snapshotFromWorld(diaryEngine.world, PLAYER_ID);
+    const diaryEnable = await diaryAdapter.enable(diaryState, diaryOpening);
+
+    // Spend something, then anchor it.
+    diaryEngine.submitAction('move', { targetIds: ['long-quay'] });
+    diaryEngine.submitAction('move', { targetIds: ['crooked-stair'] });
+    const diaryPlayer = diaryEngine.world.entities[PLAYER_ID];
+    diaryPlayer.resources.coin = Math.max(0, diaryPlayer.resources.coin - 11);
+    const diarySettle = capture(
+      await diaryAdapter.settle(diaryState, snapshotFromWorld(diaryEngine.world, PLAYER_ID), 1, 'crooked-stair'),
+      'diary-anchor',
+    );
+
+    // The control, read off the LIVE ledger: a diary run's player holds no
+    // trust line, because no issuer was ever stood up.
+    const diaryLines = await transport.accountLines(diaryState.playerAddress);
+    const diaryClean =
+      diaryEnable.success &&
+      diarySettle.success &&
+      diaryState.issuerAddress === '' &&
+      diaryState.trustLinesReady === false &&
+      diaryLines.length === 0 &&
+      (diarySettle.record?.txids?.length ?? 0) === 1;
+
+    stage('13-diary-anchor', diaryClean,
+      diaryClean
+        ? `anchored ${diarySettle.record?.txids?.[0]}; 0 trust lines on ${diaryState.playerAddress} — witnessed, not custodied`
+        : `enable=${diaryEnable.success} settle=${diarySettle.success} issuer=${diaryState.issuerAddress || 'none'} lines=${diaryLines.length}`);
+
+    // The anchor chain verified against memos read back OFF the ledger.
+    const diaryTxs = await transport.accountTx(diaryState.playerAddress, 40);
+    const diaryMemos = {};
+    for (const t of diaryTxs) {
+      if (t.hash && t.memo) diaryMemos[t.hash] = t.memo;
+    }
+    const diaryReport = reconcile({
+      runId: `${RUN_ID}-diary`,
+      seed: SEED,
+      mode: 'diary',
+      mintedInitial: diaryOpening.items ? { coin: diaryOpening.coin, ...diaryOpening.items } : { coin: diaryOpening.coin },
+      ledgerBalances: {},
+      lastSettled: diaryState.lastSettled,
+      settlements: diaryState.settlements,
+      pending: diaryState.pending,
+      playerAddress: diaryState.playerAddress,
+      onchainMemos: diaryMemos,
+    });
+    stage('13b-diary-reconcile', diaryReport.passed,
+      diaryReport.passed
+        ? 'anchor chain verified against on-ledger memos; conservation holds with no custody'
+        : `notes: ${diaryReport.notes.join(' | ')}`);
+    receipt.diary = {
+      playerAddress: diaryState.playerAddress,
+      trustLines: diaryLines.length,
+      anchors: diaryState.settlements.map((s) => ({ checkpoint: s.checkpoint, txid: s.txids[0], memo: s.memo })),
+    };
+
+    // ── Stage 14: PERSISTENT ISSUER — a market that outlives the run ─────
+    //
+    // TESTNET ONLY. This is the one path that creates a DURABLE key; per-run
+    // throwaway custody remains the documented default for the pack, and this
+    // seed lives only in the gitignored sidecar for the length of this script.
+    console.log('\n=== Stage 14: persistent issuer across two runs (TESTNET ONLY) ===');
+    const persistentConfig = { ...DEFAULT_LEDGER_CONFIG, mode: 'ledger', issuerMode: 'persistent' };
+
+    const runOneEngine = createGame(SEED);
+    openTheBooks(runOneEngine);
+    const runOneState = createInitialState(persistentConfig, SEED);
+    const runOneAdapter = createLedgerAdapter(transport, persistentConfig, {
+      gameId: GAME_ID,
+      runId: `${RUN_ID}-persist-1`,
+      putSeed: (address, seed) => persistSeeds.set(address, seed),
+    });
+    const runOneEnable = await runOneAdapter.enable(runOneState, snapshotFromWorld(runOneEngine.world, PLAYER_ID));
+    const durableIssuerSeed = persistSeeds.get(runOneState.issuerAddress);
+
+    // Run 2: a FRESH session and a fresh state, handed only the durable seed.
+    const runTwoEngine = createGame(SEED);
+    openTheBooks(runTwoEngine);
+    const runTwoState = createInitialState(persistentConfig, SEED);
+    const runTwoAdapter = createLedgerAdapter(transport, persistentConfig, {
+      gameId: GAME_ID,
+      runId: `${RUN_ID}-persist-2`,
+      persistentIssuerSeed: durableIssuerSeed,
+      putSeed: (address, seed) => persistSeeds.set(address, seed),
+    });
+    const runTwoEnable = await runTwoAdapter.enable(runTwoState, snapshotFromWorld(runTwoEngine.world, PLAYER_ID));
+
+    const sameIssuer =
+      runOneEnable.success &&
+      runTwoEnable.success &&
+      !!runOneState.issuerAddress &&
+      runTwoState.issuerAddress === runOneState.issuerAddress;
+
+    // Run 2 trades in the market run 1 created: a settle against the SAME
+    // issuer, verified on-ledger.
+    const runTwoPlayer = runTwoEngine.world.entities[PLAYER_ID];
+    runTwoPlayer.resources.coin = Math.max(0, runTwoPlayer.resources.coin - 7);
+    const runTwoSettle = capture(
+      await runTwoAdapter.settle(runTwoState, snapshotFromWorld(runTwoEngine.world, PLAYER_ID), 1, 'counting-house'),
+      'persist-settle',
+    );
+    const runTwoLines = await transport.accountLines(runTwoState.playerAddress);
+    const tradedOnRunOnesIssuer = runTwoSettle.success && runTwoLines.some((l) => l.account === runOneState.issuerAddress);
+
+    stage('14-persistent-issuer', sameIssuer && tradedOnRunOnesIssuer,
+      sameIssuer
+        ? `run 2 reused issuer ${runOneState.issuerAddress} and settled against it — cross-run market live`
+        : `run1=${runOneState.issuerAddress || 'none'} run2=${runTwoState.issuerAddress || 'none'}`);
+    receipt.persistentIssuer = {
+      issuerAddress: runOneState.issuerAddress,
+      runOnePlayer: runOneState.playerAddress,
+      runTwoPlayer: runTwoState.playerAddress,
+      sharedTokenMap: runTwoState.tokenMap,
+      settleTxid: runTwoSettle.record?.txids?.[0] ?? null,
+    };
 
     receipt.passed = receipt.stages.every((s) => s.ok);
   } finally {
