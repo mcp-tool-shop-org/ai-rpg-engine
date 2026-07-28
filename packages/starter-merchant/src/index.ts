@@ -38,6 +38,8 @@ export {
   merchantStatusDefinitions,
   merchantQuests,
   encounterSpawnContent,
+  tallyClerkVessa,
+  apothecaryTinctureEffect,
   theStandingAccountBoss,
   guildRegistrationDialogue,
   warrensTermsDialogue,

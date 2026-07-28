@@ -21,6 +21,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { Engine } from '@ai-rpg-engine/core';
+import { getPartyState } from '@ai-rpg-engine/modules';
 import { createGame } from './setup.js';
 import { itemCatalog, merchantStatusDefinitions, merchantAbilities, buildCatalog } from './content.js';
 import {
@@ -244,6 +245,87 @@ describe('anti-inert: every verb has an observable consequence', () => {
     // was invisible on exactly the goods a new factor carries. A won negotiation
     // is now worth at least one coin.
     expect(haggled).toBeGreaterThan(plain);
+  });
+
+  it('RECRUIT reaches a real companion, and she changes the PRICE', () => {
+    // F-merchant-A. This pack shipped `recruit` in its help table with zero
+    // entities tagged `recruitable` anywhere in the world — the only pack in
+    // the catalog in that state. Verb-honesty passed the whole time, because
+    // companion-core registers the handler in every world regardless of whether
+    // the content gives it anything to act on.
+    //
+    // The assertion is deliberately the CONSEQUENCE, not the roster. A
+    // companion who joins the party and changes no number is the decorative
+    // failure this cycle exists to prevent, so what is measured here is the
+    // margin `haggle` banks and `consign` pays out.
+    // BOTH arms walk the identical route — counting-house → weighing-floor
+    // (where Vessa works) → back → long-quay → crooked-stair — and differ only
+    // in whether `recruit` is submitted. An earlier draft skipped the detour
+    // entirely in the control arm, which left the two runs at different tick
+    // counts and would have credited the companion for any tick-dependent
+    // difference.
+    const marginWith = (recruit: boolean): number => {
+      const engine = createGame(71);
+      openTheBooks(engine);
+      engine.submitAction('move', { targetIds: ['weighing-floor'] });
+      if (recruit) {
+        const recruited = engine.submitAction('recruit', { targetIds: ['tally-clerk-vessa'] });
+        expect(
+          recruited.some((e) => e.type === 'action.rejected'),
+          'the recruit was rejected — the content gate is still closed',
+        ).toBe(false);
+      }
+      engine.submitAction('move', { targetIds: ['counting-house'] });
+      toTheWarrens(engine);
+      engine.submitAction('haggle', { targetIds: ['broker-inaya'] });
+      return Number(events(engine, 'merchant.price.haggled').pop()!.payload.marginPercent);
+    };
+
+    const alone = marginWith(false);
+    const withClerk = marginWith(true);
+    expect(withClerk).toBeGreaterThan(alone);
+  });
+
+  it('the recruit dual-writes all land — party, tags, and a shared faction', () => {
+    // companion-core commits three separate mirrors on a successful recruit and
+    // every downstream consumer reads a different one. A recruit that updated
+    // only the party roster would look fine in the menu and resolve the
+    // companion as an ENEMY in combat targeting.
+    const engine = createGame(71);
+    openTheBooks(engine);
+    engine.submitAction('move', { targetIds: ['weighing-floor'] });
+    engine.submitAction('recruit', { targetIds: ['tally-clerk-vessa'] });
+
+    const party = getPartyState(engine.world);
+    expect(party.companions.map((c) => c.npcId)).toContain('tally-clerk-vessa');
+
+    const vessa = engine.world.entities['tally-clerk-vessa'];
+    const factor = engine.world.entities['factor'];
+    expect(vessa.tags, 'entity tags mirror not written').toContain('companion');
+    expect(vessa.faction, 'companion has no faction — targeting reads her as an enemy').toBeTruthy();
+    expect(vessa.faction, 'companion is not on the player\'s side').toBe(factor.faction);
+    expect(events(engine, 'companion.recruited')).toHaveLength(1);
+  });
+
+  it('USE does something — the tincture moves a resource', () => {
+    // F-merchant-USE. This pack wired `createInventoryCore([])` while
+    // advertising `use`, and inventory-core emits `item.used` and consumes the
+    // item whether or not an effect is registered. So every `use` in Salt Road
+    // Ledger destroyed a saleable good and did nothing, indistinguishable from
+    // a working item unless you look for the effect's OWN events.
+    const engine = createGame(71);
+    const factor = engine.world.entities['factor'];
+    factor.resources.hp = 6;
+    factor.inventory = [...(factor.inventory ?? []), 'apothecary-tincture'];
+
+    const before = factor.resources.hp;
+    engine.submitAction('use', { toolId: 'apothecary-tincture' });
+
+    expect(engine.world.entities['factor'].resources.hp).toBeGreaterThan(before);
+    expect(
+      engine.world.entities['factor'].inventory,
+      'the tincture was drunk — the stock is gone',
+    ).not.toContain('apothecary-tincture');
   });
 
   it('the banked margin is CONSUMED — haggling once does not pay forever', () => {

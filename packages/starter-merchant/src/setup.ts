@@ -30,7 +30,9 @@ import {
   assayMasterCorvane,
   harbourmasterDrell,
   brokerInaya,
+  tallyClerkVessa,
   exchequerNull,
+  apothecaryTinctureEffect,
   collectionsEnforcer,
   warrenCutpurse,
   bondedClerkThrall,
@@ -218,7 +220,7 @@ export function createGame(seed?: number): Engine {
       traversalCore,
       statusCore,
       ...combat.modules,
-      createInventoryCore([]),
+      createInventoryCore([apothecaryTinctureEffect]),
       createDialogueCore([guildRegistrationDialogue, warrensTermsDialogue]),
       createPerceptionFilter({ perceptionStat: 'ledger' }),
       createProgressionCore({
@@ -271,6 +273,7 @@ export function createGame(seed?: number): Engine {
   engine.store.addEntity(assayMasterCorvane);
   engine.store.addEntity(harbourmasterDrell);
   engine.store.addEntity(brokerInaya);
+  engine.store.addEntity(tallyClerkVessa);
   engine.store.addEntity(exchequerNull);
   engine.store.addEntity(collectionsEnforcer);
   engine.store.addEntity(warrenCutpurse);
