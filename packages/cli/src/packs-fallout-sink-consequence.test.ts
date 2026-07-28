@@ -50,6 +50,12 @@ import {
   adjustMaterial,
   getAvailableRecipes,
   SUPPLY_RUN_RUNNERS_CUT,
+  MAX_ACTIVE_OPPORTUNITIES,
+  makeOpportunity,
+  setPersistedOpportunities,
+  deadlineFor,
+  applyOpportunityFallout,
+  computeOpportunityFallout,
   type OpportunityKind,
   type OpportunityState,
   type SupplyCategory,
@@ -746,5 +752,112 @@ describe('sink: materials (FSC-1)', () => {
     const { engine, before } = resolveOnce('salt-road-ledger', 'contract', 'complete');
     expect(getMaterialInventory(playerCustom(engine.world)))
       .toEqual(getMaterialInventory(playerCustom(before)));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Sink 7 — spawn-opportunity → the persisted offer list (PRODUCER + SINK)
+// ---------------------------------------------------------------------------
+
+describe('sink: spawn-opportunity (FSC-1)', () => {
+  it('an investigation that succeeds ends with a name, and a name is work', () => {
+    // The second effect type FSA-1 found dead at the VOCABULARY level.
+    // Chained to `bounty` because that is the only reading where the second
+    // job could not have existed without the first — a supply run or a
+    // contract would have been on offer anyway, so chaining to those would
+    // just be spawning with extra steps.
+    const { engine, offer, before } = resolveOnce('salt-road-ledger', 'investigation', 'complete');
+
+    const priorIds = new Set(getPersistedOpportunities(before).map((o) => o.id));
+    const chained = getPersistedOpportunities(engine.world).filter((o) => !priorIds.has(o.id));
+
+    expect(chained, 'the completed investigation announced a chain nobody spawned').toHaveLength(1);
+    expect(chained[0].kind).toBe('bounty');
+    expect(chained[0].sourceFactionId).toBe(offer.sourceFactionId);
+    expect(chained[0].tags).toContain('chained');
+    expect(chained[0].tags).toContain('from:investigation');
+  });
+
+  it('the chained offer is real work — acceptable, and it lapses on its own clock', () => {
+    // A spawned offer nobody can take is a list entry. This one goes through
+    // the same verb every other offer does, and carries the deadline
+    // `deadlineFor` gives its kind rather than an invented one.
+    const { engine } = resolveOnce('salt-road-ledger', 'investigation', 'complete');
+    const chained = getPersistedOpportunities(engine.world).find((o) => o.tags.includes('chained'))!;
+
+    expect(chained.turnsRemaining).toBe(deadlineFor('bounty'));
+    expect(chained.status).toBe('available');
+    opportunityOp(engine, chained, 'accept');
+    expect(
+      getPersistedOpportunities(engine.world).find((o) => o.id === chained.id)?.status,
+    ).toBe('accepted');
+  });
+
+  it('the chain respects the CAP — it cannot smuggle a sixth offer past POP-1', () => {
+    // MAX_ACTIVE_OPPORTUNITIES is 5 on a measured argument (Iyengar & Lepper
+    // 2000, cited at its definition). A chain that could push past it would
+    // make "the answer to the player wanting more work is not a longer list"
+    // untrue by the back door, which is exactly the kind of quiet erosion a
+    // second spawner introduces if nobody checks.
+    // ⚠ The first draft of this control filled to the cap INCLUDING the
+    // investigation, and the chain spawned anyway — correctly. Completing an
+    // offer frees its own slot, so a world at the cap is one under it the
+    // instant the resolution lands, and the guard had nothing to refuse. The
+    // condition being tested is "already at the cap AFTER the resolution", so
+    // the fillers are counted independently of the offer being resolved.
+    const { engine, offer } = playUntilOffered(packById('salt-road-ledger'), 'investigation', 'wandering');
+    const live = getPersistedOpportunities(engine.world);
+    const filler: OpportunityState[] = [];
+    for (let i = 0; i < MAX_ACTIVE_OPPORTUNITIES; i++) {
+      filler.push(makeOpportunity({
+        kind: 'recovery',
+        sourceFactionId: `fsc-filler-${i}`,
+        title: 'filler', description: 'filler', objectiveDescription: 'filler',
+        urgency: 0.3, turnsRemaining: 30, visibility: 'known',
+        rewards: [], risks: [], genre: 'test', currentTick: engine.world.meta.tick,
+      }));
+    }
+    setPersistedOpportunities(engine.world, [...live, ...filler]);
+
+    opportunityOp(engine, offer, 'accept');
+    opportunityOp(engine, offer, 'complete');
+
+    const stillLive = getPersistedOpportunities(engine.world).filter(
+      (o) => o.status === 'available' || o.status === 'accepted',
+    ).length;
+    expect(
+      stillLive,
+      'the control did not leave the world at the cap — it is not testing the guard',
+    ).toBeGreaterThanOrEqual(MAX_ACTIVE_OPPORTUNITIES);
+    expect(
+      getPersistedOpportunities(engine.world).filter((o) => o.tags.includes('chained')),
+      'a chained offer was spawned past the cap',
+    ).toEqual([]);
+  });
+
+  it('and it cannot stack two live chains from the same source (pair dedup)', () => {
+    // The same guard evaluateOpportunities applies to its own candidates and
+    // world-tick 5a applies to NPC-offered ones.
+    const { engine, offer } = resolveOnce('salt-road-ledger', 'investigation', 'complete');
+    const chained = getPersistedOpportunities(engine.world).find((o) => o.tags.includes('chained'))!;
+    const countBefore = getPersistedOpportunities(engine.world).length;
+
+    // Replay the SAME fallout against the same world — the pair is still live.
+    applyOpportunityFallout(engine.world, engine.world.playerId, computeOpportunityFallout(
+      offer, 'completed', { currentTick: engine.world.meta.tick, genre: 'test' },
+    ));
+    expect(
+      getPersistedOpportunities(engine.world).length,
+      `a second live ${chained.kind} from ${chained.sourceFactionId} was stacked on the first`,
+    ).toBe(countBefore);
+  });
+
+  it('a resolution that announces no chain spawns none (attribution)', () => {
+    const { engine, before } = resolveOnce('salt-road-ledger', 'contract', 'complete');
+    const priorIds = new Set(getPersistedOpportunities(before).map((o) => o.id));
+    expect(
+      getPersistedOpportunities(engine.world).filter((o) => !priorIds.has(o.id)),
+      'a completed contract spawned a chain its fallout never announced',
+    ).toEqual([]);
   });
 });

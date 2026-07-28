@@ -21,7 +21,14 @@
 
 import type { EngineModule, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
 import type { OpportunityKind, OpportunityState } from './opportunity-core.js';
-import { getPersistedOpportunities, setPersistedOpportunities, getOpportunityById } from './opportunity-core.js';
+import {
+  getPersistedOpportunities,
+  setPersistedOpportunities,
+  getOpportunityById,
+  makeOpportunity,
+  deadlineFor,
+  MAX_ACTIVE_OPPORTUNITIES,
+} from './opportunity-core.js';
 import { adjustLeverage, type LeverageCurrency } from './player-leverage.js';
 import type { SupplyCategory } from './economy-core.js';
 import { getDistrictEconomy, setDistrictEconomy, applyEconomyShift } from './economy-core.js';
@@ -101,6 +108,13 @@ export type OpportunityResolution = {
    */
   sourceNpcId?: string;
   sourceFactionId?: string;
+  /**
+   * The genre the resolution happened in. OPTIONAL for the same
+   * pre-v3.8-record reason as the source fields, and present for the same
+   * reason: the `spawn-opportunity` sink mints a real OpportunityState, and
+   * every one of those carries a genre.
+   */
+  genre?: string;
 };
 
 export type OpportunityFallout = {
@@ -143,6 +157,7 @@ export function computeOpportunityFallout(
     resolvedAtTick: ctx.currentTick,
     ...(opp.sourceNpcId ? { sourceNpcId: opp.sourceNpcId } : {}),
     ...(opp.sourceFactionId ? { sourceFactionId: opp.sourceFactionId } : {}),
+    ...(ctx.genre ? { genre: ctx.genre } : {}),
   };
 
   const kindEffects = getKindFallout(opp, resolutionType, ctx);
@@ -179,6 +194,18 @@ export function computeOpportunityFallout(
  * "saturation is the ceiling, not the goal" posture the district economy takes.
  */
 export const SUPPLY_RUN_RUNNERS_CUT = 2;
+
+/**
+ * Urgency a CHAINED offer enters at.
+ *
+ * Matches world-tick's NPC_OPPORTUNITY_URGENCY (0.5) for the same stated
+ * reason: the effect carries no urgency signal, so neither caller invents a
+ * sharper one. Neutral also keeps the chain out of the relax-valley filter's
+ * way — Booth 2009 (see PRESSURE_SUPPRESSION_URGENCY) suppresses UNRELATED
+ * side work during a peak, and a chained job arriving at 0.5 is offered, not
+ * shouted.
+ */
+export const CHAINED_OPPORTUNITY_URGENCY = 0.5;
 
 // --- Per-Kind Fallout ---
 
@@ -499,6 +526,24 @@ function getInvestigationFallout(
       effects.push({ type: 'leverage', currency: 'blackmail', delta: 8 });
       effects.push({ type: 'rumor', claim: `uncovered hidden information — knows things`, valence: 'mysterious', spreadTo: faction ? [faction] : [] });
       effects.push({ type: 'milestone-tag', tag: 'investigation-completed' });
+      // The CHAINED JOB (v3.8). `spawn-opportunity` was the second effect type
+      // FSA-1's producer census found dead at the vocabulary level — declared,
+      // formatted, emitted nowhere.
+      //
+      // An investigation that succeeds ends with a NAME, which is the one
+      // outcome that self-evidently implies more work: you now know who, and
+      // somebody wants that acted on. Chaining it to `bounty` is the only
+      // reading where the second job could not have existed without the first
+      // — a supply run or a contract would have been available anyway, and
+      // chaining to those would just be spawning.
+      if (faction) {
+        effects.push({
+          type: 'spawn-opportunity',
+          kind: 'bounty',
+          sourceFactionId: faction,
+          description: `Act on what the investigation turned up for ${faction}`,
+        });
+      }
       break;
     case 'abandoned':
       break;
@@ -765,8 +810,12 @@ function addGlobal(world: WorldState, key: string, delta: number): void {
  *    getMaterialInventory reads and the craft/repair recipes consume. District
  *    stock is `economy-shift`'s job; conflating the two would make them
  *    redundant.
- *  - spawn-
- *    pressure/spawn-opportunity — no persisted sink today. Honest no-op; the
+ *  - spawn-opportunity → makeOpportunity + setPersistedOpportunities (v3.8
+ *    sink #7), respecting BOTH of the spawner's own guards: POP-1's
+ *    MAX_ACTIVE_OPPORTUNITIES cap, and one live offer per (kind, source)
+ *    pair. A chain that could push past the cap would quietly undo the
+ *    measured reason that cap exists.
+ *  - spawn-pressure — no persisted sink today. Honest no-op; the
  *    verb handler's emitted event payload carries the full effect list
  *    regardless, so nothing is silently lost, only not yet WRITTEN anywhere.
  *
@@ -793,6 +842,8 @@ export function applyOpportunityFallout(world: WorldState, actorId: string, fall
   let obligationLedgers: Map<string, NpcObligationLedger> | undefined;
   /** Same read-once/write-once treatment for the rumor list. */
   let rumors: PlayerRumor[] | undefined;
+  /** …and for the persisted opportunity list the chain sink appends to. */
+  let spawnedOpportunities: OpportunityState[] | undefined;
 
   for (const effect of fallout.effects) {
     switch (effect.type) {
@@ -979,8 +1030,60 @@ export function applyOpportunityFallout(world: WorldState, actorId: string, fall
           actor.custom = adjustMaterial(actor.custom ?? {}, effect.category, effect.quantity);
         }
         break;
+      case 'spawn-opportunity': {
+        // v3.8 sink #7. Mirrors world-tick's own runNpcAgencyStep handling of
+        // the identically-named NpcEffect, including both guards, because the
+        // list being written is the same list.
+        spawnedOpportunities ??= getPersistedOpportunities(world);
+
+        // Guard 1 — the CAP. POP-1's measured constant, deliberately kept at 5
+        // (Iyengar & Lepper 2000, cited at its definition): a chain that could
+        // push past the cap would make "the answer to the player wanting more
+        // work is not a longer list" untrue by the back door.
+        const live = spawnedOpportunities.filter(
+          (o) => o.status === 'available' || o.status === 'accepted',
+        );
+        if (live.length >= MAX_ACTIVE_OPPORTUNITIES) break;
+
+        // Guard 2 — one live offer per (kind, source) pair, the same dedup
+        // evaluateOpportunities applies to its own candidates and world-tick
+        // 5a applies to NPC-offered ones.
+        const source = effect.sourceNpcId ?? effect.sourceFactionId ?? 'none';
+        const pairKey = `${effect.kind}:${source}`;
+        if (live.some((o) => `${o.kind}:${o.sourceNpcId ?? o.sourceFactionId ?? 'none'}` === pairKey)) break;
+
+        const zone = actor?.zoneId;
+        spawnedOpportunities = [
+          ...spawnedOpportunities,
+          makeOpportunity({
+            kind: effect.kind,
+            sourceNpcId: effect.sourceNpcId,
+            sourceFactionId: effect.sourceFactionId,
+            title: effect.description,
+            description: effect.description,
+            objectiveDescription: 'Follow the thread this opened.',
+            linkedDistrictId: zone ? getDistrictForZone(world, zone) : undefined,
+            urgency: CHAINED_OPPORTUNITY_URGENCY,
+            // The kind's OWN authored deadline, not an invented one — a
+            // chained bounty lapses on the same clock a spawned bounty does.
+            turnsRemaining: deadlineFor(effect.kind),
+            visibility: 'offered',
+            // Empty, and deliberately: the effect carries no concrete amounts,
+            // and this file does not invent them. The kind's fallout still
+            // pays on resolution — getBountyFallout('completed') is reputation,
+            // blackmail leverage, a rumor and a milestone, none of which comes
+            // from `rewards`. Same honest scoping world-tick 5a documents for
+            // its own minimal spawn.
+            rewards: [],
+            risks: [],
+            genre: fallout.resolution.genre ?? '',
+            currentTick: fallout.resolution.resolvedAtTick,
+            tags: ['chained', `from:${fallout.resolution.opportunityKind}`],
+          }),
+        ];
+        break;
+      }
       case 'spawn-pressure':
-      case 'spawn-opportunity':
         break; // no persisted sink today — see doc comment above
       default:
         break;
@@ -988,6 +1091,7 @@ export function applyOpportunityFallout(world: WorldState, actorId: string, fall
   }
 
   if (rumors) setPlayerRumorState(world, { rumors });
+  if (spawnedOpportunities) setPersistedOpportunities(world, spawnedOpportunities);
 
   if (obligationLedgers) {
     // Full-overwrite writer (npc-agency's own contract — no sibling module

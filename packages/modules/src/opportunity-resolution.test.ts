@@ -266,6 +266,12 @@ describe('opportunity-resolution', () => {
 
   describe('resolution metadata', () => {
     it('resolution contains correct fields', () => {
+      // v3.8 added sourceNpcId/sourceFactionId/genre. The applier receives the
+      // fallout and NOT the opportunity, so a sink needing to attribute a
+      // consequence (the rumor's origin) or to mint a real OpportunityState
+      // (the chain) had nowhere to look. All three are OPTIONAL and omitted
+      // when absent, so pre-v3.8 records load unchanged — this exact-shape
+      // assertion is what proves the omission rather than an `undefined` key.
       const opp = makeOpp();
       const result = computeOpportunityFallout(opp, 'completed', ctx);
       expect(result.resolution).toEqual({
@@ -273,7 +279,21 @@ describe('opportunity-resolution', () => {
         opportunityKind: 'contract',
         resolutionType: 'completed',
         resolvedAtTick: 25,
+        genre: 'fantasy',
       });
+    });
+
+    it('omits the source and genre keys entirely when there is nothing to record', () => {
+      // Not `undefined` — ABSENT. A persisted record that gains three
+      // always-present keys is a schema change every save has to carry.
+      const result = computeOpportunityFallout(
+        makeOpp({ sourceNpcId: undefined, sourceFactionId: undefined }),
+        'completed',
+        { currentTick: 25, genre: '' },
+      );
+      expect(Object.keys(result.resolution).sort()).toEqual([
+        'opportunityId', 'opportunityKind', 'resolutionType', 'resolvedAtTick',
+      ].sort());
     });
 
     it('summary uses kind and title', () => {

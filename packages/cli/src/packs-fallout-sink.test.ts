@@ -180,7 +180,9 @@ export function producerCensus(): Map<OpportunityFalloutEffect['type'], string[]
 const KNOWN_UNPRODUCED: Array<OpportunityFalloutEffect['type']> = [
   // 'materials' — PRODUCER AUTHORED v3.8 (the runner's cut on a completed
   // supply-run, the one kind that already knows which category moved).
-  'spawn-opportunity',
+  // 'spawn-opportunity' — PRODUCER AUTHORED v3.8 (the chained bounty off a
+  // completed investigation). This list is now EMPTY: every declared effect
+  // type has at least one authored producer.
 ];
 
 // --- Measurement 2: which resolutions a shipped path can reach -------------
@@ -376,6 +378,7 @@ const DRIVES: Array<{ label: string; run: () => Reached }> = [
   { label: 'faction-job abandoned (neon-lockbox)', run: () => resolveThroughVerb('neon-lockbox', 'faction-job', 'abandon', 'pursuing') },
   { label: 'favor-request completed (crimson-court)', run: () => resolveThroughVerb('crimson-court', 'favor-request', 'complete', 'engaged') },
   { label: 'escort completed (chapel-threshold)', run: () => resolveThroughVerb('chapel-threshold', 'escort', 'complete', 'pursuing') },
+  { label: 'investigation completed (salt-road-ledger)', run: () => resolveThroughVerb('salt-road-ledger', 'investigation', 'complete') },
 ];
 
 export type SinkVerdict = {

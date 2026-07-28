@@ -148,7 +148,7 @@ export type OpportunityTickResult = {
  * right side of the overload boundary. The answer to "the player wants more
  * work" is not a longer list.
  */
-const MAX_ACTIVE_OPPORTUNITIES = 5;
+export const MAX_ACTIVE_OPPORTUNITIES = 5;
 
 /**
  * Floor on the gap between spawns — a FLOOR, never a metronome. Värtinen,
