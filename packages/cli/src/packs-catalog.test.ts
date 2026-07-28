@@ -13,8 +13,25 @@ import { validateBuildCatalog, formatErrors } from '@ai-rpg-engine/content-schem
 import { allPacks } from './packs.js';
 
 describe('pack registry — every shipping BuildCatalog is self-consistent (F-2ae7c051)', () => {
+  // Exact, not `>= 10`. A floor guard cannot notice a pack falling OUT of the
+  // registry — it only notices packs failing to arrive, which is the direction
+  // that never actually broke. (F-merchant-H: the sibling catalog-of-record in
+  // pack-registry drifted for a whole release behind an equality assertion that
+  // was simply never updated; a floor here would have hidden the reverse.)
   it('registers the expected pack lineup', () => {
-    expect(allPacks.length).toBeGreaterThanOrEqual(10);
+    expect(allPacks.map((p) => p.meta.id).sort()).toEqual([
+      'ashfall-dead',
+      'black-flag-requiem',
+      'chapel-threshold',
+      'crimson-court',
+      'dust-devils-bargain',
+      'gaslight-detective',
+      'iron-colosseum',
+      'jade-veil',
+      'neon-lockbox',
+      'salt-road-ledger',
+      'signal-loss',
+    ]);
   });
 
   for (const pack of allPacks) {
