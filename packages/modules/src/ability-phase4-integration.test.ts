@@ -1,7 +1,21 @@
 // Phase 4 — Cross-genre integration tests
-// Proves the full 11-pack ability ecosystem works together.
+// Proves the full 12-pack ability ecosystem works together.
+//
+// ⚠ THE LIST BELOW IS HAND-MAINTAINED, AND THAT IS THE DEFECT THIS FILE HAS
+// SHIPPED TWICE. starter-merchant was absent for a release; starter-bounty-
+// hunter was absent on its first commit. Neither went red, because a suite
+// whose "all N packs" claims are computed FROM its own import list is true of
+// the packs it imports and silent about the one it does not — the same H-class
+// drift the pack-registry catalog suite fixed with a filesystem-backed guard.
+//
+// So the guard is here now (see 'phase4 membership guard' at the bottom): the
+// import list is checked against the starter-* packages that actually exist on
+// disk, and a THIRTEENTH pack cannot arrive silently.
 
 import { describe, it, expect, beforeEach } from 'vitest';
+import { readdirSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createTestEngine } from '@ai-rpg-engine/core';
 import type { EntityState } from '@ai-rpg-engine/core';
 import type { AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
@@ -37,6 +51,7 @@ import { colonyAbilities, colonyStatusDefinitions } from '../../starter-colony/s
 // rubric suite. Its "all N packs" claims were true of the packs it imported
 // and silent about the one it did not.
 import { merchantAbilities, merchantStatusDefinitions } from '../../starter-merchant/src/content.js';
+import { bountyHunterAbilities, bountyHunterStatusDefinitions } from '../../starter-bounty-hunter/src/content.js';
 
 import { fantasyMinimalRuleset } from '../../starter-fantasy/src/ruleset.js';
 import { cyberpunkMinimalRuleset } from '../../starter-cyberpunk/src/ruleset.js';
@@ -49,6 +64,7 @@ import { detectiveMinimalRuleset } from '../../starter-detective/src/ruleset.js'
 import { zombieMinimalRuleset } from '../../starter-zombie/src/ruleset.js';
 import { colonyMinimalRuleset } from '../../starter-colony/src/ruleset.js';
 import { merchantMinimalRuleset } from '../../starter-merchant/src/ruleset.js';
+import { bountyHunterMinimalRuleset } from '../../starter-bounty-hunter/src/ruleset.js';
 
 // ---------------------------------------------------------------------------
 // All packs & statuses collected
@@ -66,7 +82,29 @@ const ALL_PACKS = [
   { genre: 'zombie', abilities: zombieAbilities, statuses: zombieStatusDefinitions, ruleset: zombieMinimalRuleset },
   { genre: 'colony', abilities: colonyAbilities, statuses: colonyStatusDefinitions, ruleset: colonyMinimalRuleset },
   { genre: 'mercantile', abilities: merchantAbilities, statuses: merchantStatusDefinitions, ruleset: merchantMinimalRuleset },
+  { genre: 'pursuit', abilities: bountyHunterAbilities, statuses: bountyHunterStatusDefinitions, ruleset: bountyHunterMinimalRuleset },
 ];
+
+/**
+ * The package directory each entry above comes from, so the membership guard
+ * can compare this list against the filesystem. Kept beside ALL_PACKS rather
+ * than derived from `genre`, because those are two different vocabularies and
+ * guessing one from the other is how a guard starts lying.
+ */
+const PACKAGE_BY_GENRE: Record<string, string> = {
+  fantasy: 'starter-fantasy',
+  cyberpunk: 'starter-cyberpunk',
+  'weird-west': 'starter-weird-west',
+  vampire: 'starter-vampire',
+  gladiator: 'starter-gladiator',
+  ronin: 'starter-ronin',
+  pirate: 'starter-pirate',
+  detective: 'starter-detective',
+  zombie: 'starter-zombie',
+  colony: 'starter-colony',
+  mercantile: 'starter-merchant',
+  pursuit: 'starter-bounty-hunter',
+};
 
 const ALL_STATUSES: StatusDefinition[] = ALL_PACKS.flatMap((p) => p.statuses);
 
@@ -581,5 +619,62 @@ describe('Phase 5 integration — expanded ecosystem', () => {
     // No thin-pack flags (all packs have >= 3 now)
     const thinFlags = audit.flags.filter((f) => f.category === 'thin-pack');
     expect(thinFlags.length).toBe(0);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// Phase4 membership guard (F-merchant-H, third instance)
+// ---------------------------------------------------------------------------
+//
+// This suite computes every "all N packs" claim from ALL_PACKS, which is a
+// hand-maintained import list — so a pack that is missing from it does not
+// make anything red, it just makes every claim quietly narrower. That has now
+// happened twice: starter-merchant was absent for a release, and
+// starter-bounty-hunter was absent on the commit that shipped it.
+//
+// Adding the import fixes the instance and resets the clock. This fixes the
+// CLASS, the same way pack-registry's catalog suite did: check the list
+// against the packages that actually exist on disk.
+
+const PACKAGES_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+function starterPackagesOnDisk(): string[] {
+  return readdirSync(PACKAGES_DIR, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && e.name.startsWith('starter-') && e.name !== 'starter-template')
+    .map((e) => e.name)
+    .sort();
+}
+
+describe('phase4 membership guard: every starter on disk is in the sweep', () => {
+  it('every pack in ALL_PACKS maps to a real package directory', () => {
+    const onDisk = new Set(starterPackagesOnDisk());
+    for (const pack of ALL_PACKS) {
+      const dir = PACKAGE_BY_GENRE[pack.genre];
+      expect(dir, `genre '${pack.genre}' has no package mapping`).toBeTruthy();
+      expect(onDisk.has(dir), `mapped package '${dir}' does not exist on disk`).toBe(true);
+    }
+  });
+
+  it('every starter-* package on disk is swept by this suite', () => {
+    const onDisk = starterPackagesOnDisk();
+    const swept = new Set(ALL_PACKS.map((p) => PACKAGE_BY_GENRE[p.genre]));
+    expect(onDisk.length).toBeGreaterThanOrEqual(12);
+    expect(
+      onDisk.filter((d) => !swept.has(d)),
+        'these starter packages ship but their abilities and statuses are NOT in the ' +
+          'phase-4 cross-genre sweep. Every "all N packs" claim here is narrower than it reads.',
+    ).toEqual([]);
+  });
+
+  it('meta: dropping a pack from the sweep FAILS the guard', () => {
+    // Reproduces the actual defect twice over — a pack on disk, absent from
+    // the import list. Without this row the guard could itself be vacuous.
+    const onDisk = starterPackagesOnDisk();
+    const mutated = new Set(ALL_PACKS.slice(0, -1).map((p) => PACKAGE_BY_GENRE[p.genre]));
+    expect(
+      onDisk.filter((d) => !mutated.has(d)),
+      'the guard must notice the dropped pack',
+    ).not.toEqual([]);
   });
 });
