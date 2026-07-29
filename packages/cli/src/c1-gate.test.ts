@@ -347,11 +347,23 @@ describe('C1/P2 — the forge export, gated live', () => {
     expect(r.checks.find((c) => c.check === 'module-ids')!.ok).toBe(true);
   });
 
-  it('the exported pack STILL fails the key allowlist — five keys remain undeclared', () => {
-    // The honest remainder. C1 declared four of C0's nine unknown keys; five are
-    // genuinely unknown to the engine (`items`, `playerTemplate` and the three
-    // raw pass-throughs with zero hits repo-wide). The gate says so instead of
-    // preserving them silently, and closing them is C3's vocabulary work.
+  it('the exported pack STILL fails the key allowlist — FOUR keys remain undeclared', () => {
+    // ⚠ FLIPPED BY C3/P1. C1 asserted FIVE — `items`, `playerTemplate`, and the
+    // three raw pass-throughs with zero engine hits repo-wide. C3/P1 declares
+    // `encounterAnchors` and gives it a real intake channel, so the honest
+    // remainder is four. The pin shrinks by exactly the key that became real.
+    //
+    // The three that stay, and why (recorded so the remainder is never mistaken
+    // for an oversight):
+    //   - `items`         — ANDON'd out of P1. The authoring side matches entity
+    //                       placement, but the runtime side needs a zone-container
+    //                       vocabulary `WorldState` has no shape for. See SPEC §3.
+    //   - `playerTemplate` — session-scoped by the same logic as `buildCatalog`:
+    //                       consumed before a world exists. Recorded, not routed.
+    //   - `factionPresences` / `pressureHotspots` — P4 evaluates mapping them onto
+    //                       the engine's faction/district state and v3.8's
+    //                       spawn-pressure producers, with the field-level reason
+    //                       either way.
     const r = runLoadGate(fixturePack(), {
       engineVersion: ENGINE_VERSION,
       registeredModuleIds: registeredIds(),
@@ -361,9 +373,29 @@ describe('C1/P2 — the forge export, gated live', () => {
     const check = r.checks.find((c) => c.check === 'key-allowlist')!;
     expect(check.actual).toContain('items');
     expect(check.actual).toContain('playerTemplate');
-    expect(check.actual).toContain('encounterAnchors');
     expect(check.actual).toContain('factionPresences');
     expect(check.actual).toContain('pressureHotspots');
+    // …and the one that became real is NO LONGER refused. This is the assertion
+    // that makes the flip a measurement rather than a relabelling.
+    expect(check.actual).not.toContain('encounterAnchors');
+  });
+
+  it('C3/P1: the newly-declared keys are accepted by the allowlist', () => {
+    // The complement, stated positively: `placements` and `encounterAnchors` are
+    // in ALLOWED_PACK_KEYS, so a pack carrying ONLY declared keys passes the
+    // allowlist check. Guards against a flip that merely deleted an assertion.
+    const pack = fixturePack() as unknown as Record<string, unknown>;
+    const declaredOnly = { ...pack };
+    for (const k of ['items', 'playerTemplate', 'factionPresences', 'pressureHotspots']) {
+      delete declaredOnly[k];
+    }
+    expect(Object.keys(declaredOnly)).toContain('placements');
+    expect(Object.keys(declaredOnly)).toContain('encounterAnchors');
+    const r = runLoadGate(declaredOnly as ContentPack, {
+      engineVersion: ENGINE_VERSION,
+      registeredModuleIds: registeredIds(),
+    });
+    expect(r.checks.find((c) => c.check === 'key-allowlist')!.ok).toBe(true);
   });
 
   it('CROSS-REPO: the forge\'s hash implementation agrees with the engine\'s', () => {
@@ -379,9 +411,12 @@ describe('C1/P2 — the forge export, gated live', () => {
     // the ranges, share one function, and an equivalence check becomes a
     // tautology. The ranges are bumped. There is still no shared function.
     // `computeContentHash` lives in `content-schema/src/gate.ts` — added to this
-    // repo's `main` by C1 and NEVER PUBLISHED. npm's `latest` is 3.8.0 from
-    // 2026-03-07, and no published 3.8.0 package exports it. The blocker was
-    // never the range; it is a release.
+    // repo's `main` by C1 and NEVER PUBLISHED. npm's `latest` is 3.8.0,
+    // published 2026-07-28T23:12Z (⚠ date corrected C3/P0: this said
+    // "2026-03-07", which was the package's CREATED timestamp — the v1.x-era
+    // first publish. Corrected it is sharper: the packages were cut HOURS
+    // BEFORE C1 merged), and no published 3.8.0 package exports it. The blocker
+    // was never the range; it is a release.
     //
     // So this stays, and stays checked rather than trusted: the value below was
     // computed by the FORGE and committed into the manifest fixture; this
@@ -389,6 +424,13 @@ describe('C1/P2 — the forge export, gated live', () => {
     // the two ever diverge, this fails, and the divergence cannot hide. Retire
     // it when a published engine carries the hasher and the forge imports it —
     // world-forge's `engine-deps-3x.test.ts` fails on that day and says so.
+    //
+    // ⚠ C3/P1 IS THE PROOF THIS TEST EARNS ITS KEEP. Adding `placements` and
+    // `encounterAnchors` to the engine's SIM_AFFECTING_KEYS turned this RED
+    // instantly — the engine hashed a subset the forge's copy did not, so the
+    // stamped and computed hashes disagreed for byte-identical content. That is
+    // the silent divergence, caught by this mechanism rather than by review, on
+    // the very first cycle after it was proposed for retirement.
     const manifest = forgeManifest();
     expect(manifest.contentHash, 'the exporter must stamp a hash').toBeDefined();
     expect(computeContentHash(fixturePack())).toBe(manifest.contentHash);

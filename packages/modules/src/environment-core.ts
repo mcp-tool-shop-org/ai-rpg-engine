@@ -10,6 +10,7 @@ import type {
   ResolvedEvent,
   ScalarValue,
 } from '@ai-rpg-engine/core';
+import { TYPED_HAZARD_STATE_KEY } from './hazard-interpreter.js';
 
 // --- Types ---
 
@@ -102,6 +103,24 @@ export function createEnvironmentCore(config?: EnvironmentCoreConfig): EngineMod
         hazardLog: [],
       } as EnvironmentState);
 
+      // ⚠ C3/P3 — the TYPED-HAZARD cursor namespace, registered HERE at boot.
+      //
+      // Found by measurement, and it is `encounter-spawn`'s P8-WL-006 lesson from
+      // the other side. The cursor baselines to the CURRENT eventLog length on
+      // first access, so that a restored save whose namespace is absent does not
+      // re-scan the whole historical log and re-apply every hazard the player ever
+      // walked into. But if nothing registers the namespace at boot, the FIRST
+      // access happens inside the step itself — after the round's
+      // `world.zone.entered` events already exist — and the cursor baselines past
+      // them, so the delta is empty and the hazard never fires. Silently.
+      //
+      // A factory default, not a static object, for exactly the reason
+      // `freshEncounterSpawnState` is one: the baseline depends on the world the
+      // namespace joins (0 for a fresh world, the full length for a legacy save).
+      ctx.persistence.registerNamespace(TYPED_HAZARD_STATE_KEY, (world: WorldState) => ({
+        cursor: world.eventLog.length,
+      }));
+
       // Register environment rules
       for (const rule of allRules) {
         ctx.events.on(rule.eventPattern, (event, world) => {
@@ -115,6 +134,21 @@ export function createEnvironmentCore(config?: EnvironmentCoreConfig): EngineMod
           checkHazard(hazard, event, world);
         });
       }
+
+      // ⚠ C3/P3 — TYPED hazards are NOT registered here, and measuring why is the
+      // finding rather than an inconvenience.
+      //
+      // `config.hazards` above is closure-captured and gets one listener PER
+      // hazard inside this `register()`, so a post-boot write cannot add a
+      // listener: the same structural class as `progressionTrees`, which C1
+      // measured and reported rather than pretended. An event listener also only
+      // receives `world`, not the engine, so it cannot reach the `emitEvent` choke
+      // point a player-visible hazard needs.
+      //
+      // So typed hazards run from the WORLD TICK, scanning the eventLog delta for
+      // `world.zone.entered` through a persisted cursor — the pattern
+      // `runEncounterSpawnStep` already proved, which has the engine handle and one
+      // canonical emit path. See `hazard-interpreter.ts`.
 
       // Register 'environment-tick' verb for tick processing (decays + tick effects)
       ctx.actions.registerVerb('environment-tick', (action, world) => {

@@ -47,6 +47,15 @@ export const ALLOWED_PACK_KEYS = [
   'districts',
   'buildCatalog',
   'progressionTrees',
+  // Declared by C3/P1 — the space vocabulary. Each arrives here in the SAME
+  // COMMIT as its `ContentPack` field and its shape guard, because a key
+  // declared without a guard is C0's silent pass and a guard without a
+  // declaration is a refusal nobody can fix.
+  'placements',
+  'encounterAnchors',
+  // C3/P3 — typed hazards. Same-commit rule: declared here, on the ContentPack
+  // type, and shape-guarded, together.
+  'hazardDefinitions',
 ] as const;
 
 /**
@@ -69,6 +78,14 @@ export const SIM_AFFECTING_KEYS = [
   'verbs',
   'itemUseEffects',
   'districts',
+  // C3/P1. Both change what the simulation computes, so both are inside the
+  // hash: moving one NPC to a different zone changes who the player meets, and
+  // an anchor's probability/cooldown changes what spawns. Editing either after
+  // export must invalidate the pack — that is the whole job of this list.
+  'placements',
+  'encounterAnchors',
+  // C3/P3 — a hazard changes what the simulation computes, so it is in the hash.
+  'hazardDefinitions',
 ] as const;
 
 // --- Report shapes --------------------------------------------------------

@@ -311,12 +311,95 @@ describe('C1/P1 — applyContentPack routes content into a booted world', () => 
     expect(r.ok).toBe(true);
   });
 
-  it('reports the placement hole rather than silently placing entities nowhere', () => {
+  it('CLOSED BY C3/P1: the placement hole is a channel now, not an advisory', () => {
+    // ⚠ FLIPPED BY C3/P1 (the pinned-test rule). C1 asserted the advisory:
+    // "reports the placement hole rather than silently placing entities
+    // nowhere" — `pack.entities` carried a note containing "zoneId" and
+    // `npc-1.zoneId` was undefined on every single ingestion. C0 called it "the
+    // single most consequential drop in the lane" (REPORT §2) and C1 could only
+    // report it, because `EntityBlueprint` has no location field.
+    //
+    // It has a channel now. The advisory that lived on `pack.entities` is GONE,
+    // and what remains is the honest remainder: a pack whose entities have no
+    // placements is told so once, from the placements pass, with the count and
+    // the names.
     const engine = bootEngine();
     const r = applyContentPack(engine, PACK);
-    const note = r.advisories.find((a) => a.path === 'pack.entities');
-    expect(note?.message).toContain('zoneId');
+
+    // The old advisory is gone from where it used to be.
+    expect(r.advisories.find((a) => a.path === 'pack.entities')).toBeUndefined();
+
+    // This pack authors no placements, so the remainder advisory fires instead —
+    // naming the count and the entity, which the old blanket note never did.
+    const note = r.advisories.find((a) => a.path === 'pack.placements');
+    expect(note?.message).toContain('no placement');
+    expect(note?.message).toContain('npc-1');
     expect(engine.world.entities['npc-1'].zoneId).toBeUndefined();
+  });
+
+  it('C3/P1: a placement PLACES the entity, and the remainder advisory falls silent', () => {
+    // The other half of the flip, and the claim that actually matters: not "the
+    // gap is reported differently" but "the gap is closed". Same pack, plus a
+    // placement.
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      ...PACK,
+      placements: [{ entityId: 'npc-1', zoneId: 'zone-a' }],
+    });
+
+    expect(r.ok).toBe(true);
+    expect(r.applied.placements).toBe(1);
+    expect(engine.world.entities['npc-1'].zoneId).toBe('zone-a');
+    // Nothing left unplaced ⇒ no advisory at all. An advisory that fires when
+    // there is nothing to report is noise, and noise is how a real one gets
+    // ignored.
+    expect(r.advisories.find((a) => a.path === 'pack.placements')).toBeUndefined();
+  });
+
+  it('C3/P1 RED: a placement into a nonexistent zone is REFUSED, not narrated', () => {
+    // The exporter already WARNS about an entity placed in a deleted zone. A
+    // warning at export time is narration; arriving at the runtime the same fact
+    // is refusable, and refusing it is the difference between "the NPC is
+    // missing" and "the pack told you which NPC and which zone".
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      ...PACK,
+      placements: [{ entityId: 'npc-1', zoneId: 'no-such-zone' }],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('no-such-zone'))).toBe(true);
+    expect(engine.world.entities['npc-1'].zoneId).toBeUndefined();
+  });
+
+  it('C3/P1 RED: a placement of an unknown entity is REFUSED', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      ...PACK,
+      placements: [{ entityId: 'ghost', zoneId: 'zone-a' }],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('ghost'))).toBe(true);
+  });
+
+  it('C3/P1: a spawnCondition is CARRIED and reported unevaluated, never silently applied', () => {
+    // Intake is not a tick: there is no actor, no party and no tick to evaluate
+    // `party-level:>=10` against. Carrying it and saying so is honest; evaluating
+    // it at the wrong moment, or dropping it silently, are the two ways to be
+    // wrong here.
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      ...PACK,
+      placements: [
+        { entityId: 'npc-1', zoneId: 'zone-a', spawnCondition: { type: 'has-item', params: { id: 'rope' } } },
+      ],
+    });
+    expect(r.ok).toBe(true);
+    // Placed unconditionally…
+    expect(engine.world.entities['npc-1'].zoneId).toBe('zone-a');
+    // …and the deferral is NAMED.
+    const drop = r.dropped.find((d) => d.path.includes('spawnCondition'));
+    expect(drop?.reason).toBe('needs-module-vocabulary');
+    expect(drop?.detail).toContain('NOT evaluated at intake');
   });
 
   it('CONTROL: an empty declared key produces no drop noise', () => {
@@ -384,7 +467,15 @@ describe('C1/P1 — session-scoped keys are not pretended to be routable', () =>
     // thing on this whole list to close" (REPORT §3.1). Right about SHAPE, wrong
     // about INGESTION — and C1's definition of "real" (reaches a runtime) is what
     // exposes it. Pinned here so the split cannot quietly re-merge.
-    expect([...MODULE_INTAKE_KEYS]).toEqual(['districts']);
+    //
+    // ⚠ WIDENED BY C3/P1. `encounterAnchors` joins the module-intake keys, for
+    // the SAME reason districts qualifies and its two siblings do not:
+    // `encounter-spawn` holds its content in a module-side registry it reads at
+    // tick time, so a registration after boot is seen by every later roll. The
+    // split itself is unchanged — this is a third key on the routable side, not
+    // a softening of the rule. The session-scoped pair is untouched, which is
+    // the part that would signal a re-merge.
+    expect([...MODULE_INTAKE_KEYS]).toEqual(['districts', 'encounterAnchors', 'hazardDefinitions']);
     expect([...SESSION_SCOPED_KEYS]).toEqual(['buildCatalog', 'progressionTrees']);
   });
 

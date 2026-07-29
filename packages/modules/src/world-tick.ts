@@ -162,6 +162,8 @@ import { grantTitleToEntity } from './player-titles.js';
 import { NPC_RUMOR_CONFIDENCE, CHAINED_OPPORTUNITY_URGENCY } from './opportunity-resolution.js';
 import { getDistrictForZone, getDistrictState, getDistrictDefinition } from './district-core.js';
 import { runEncounterSpawnStep, type SpawnedEncounterReport } from './encounter-spawn.js';
+import { runTypedHazardStep, runTypedHazardEntryStep } from './hazard-interpreter.js';
+import { runZoneStateStep } from './zone-state.js';
 import { getEconomyCoreState, setDistrictEconomy, tickDistrictEconomy, getDistrictEconomy, applyEconomyShift, type SupplyCategory } from './economy-core.js';
 import {
   COMPANION_TAG,
@@ -1710,6 +1712,32 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   // round keeps ONE world tick; its `encounter.spawned` event rides the same
   // round delta the narration presents.
   const encounters = runEncounterSpawnStep(engine);
+
+  // 0a. TYPED HAZARDS (C3/P3) — the on-enter pass, then the per-turn pass.
+  //
+  // Here rather than in an environment-core event listener, for a measured reason:
+  // `createEnvironmentCore` closure-captures `config.hazards` and registers one
+  // listener per hazard at construction, so a post-boot registration cannot add a
+  // listener (the same structural class as `progressionTrees`, C1's correction);
+  // and an event listener receives only `world`, never the engine, so it cannot
+  // reach the `emitEvent` choke point a player-visible hazard needs. The
+  // cursor-driven step above is the pattern that already solves both.
+  //
+  // ORDER MATTERS AND IS DELIBERATE: on-enter runs BEFORE the spawn step's
+  // consequences are narrated but AFTER the entry events exist, and per-turn runs
+  // after, so an entity that walks into a poison swamp takes the entry tick and
+  // then the standing tick — not two standing ticks. A pack with no typed hazards
+  // makes both calls no-ops, so all twelve shipped packs are byte-identical.
+  runTypedHazardEntryStep(engine);
+  runTypedHazardStep(engine);
+
+  // 0b. ZONE STATE (C3/P4) — the moat bridge. Re-derives each zone's condition
+  // from district stability/morale and economy tone, and emits
+  // `world.zone.state.changed` ONLY for zones that CROSSED a threshold. A state
+  // that fires every round is not a state, and the RED control checks exactly
+  // that. Runs before the economy tick below, so a change reflects the state the
+  // player just acted on rather than one round of drift later.
+  runZoneStateStep(engine);
 
   // 0b. Economy tick (F-d0b5edb5) — see file header. No events emitted (same
   // silent-ledger posture district-core's own decay tick has); the state feeds

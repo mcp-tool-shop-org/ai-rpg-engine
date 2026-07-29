@@ -80,6 +80,10 @@ const ENGINE_DECLARED_KEYS = [
   'statuses', 'verbs', 'archetypes', 'backgrounds', 'itemUseEffects',
   // Declared by C1/P1:
   'schemaVersion', 'districts', 'buildCatalog', 'progressionTrees',
+  // Declared by C3/P1 — the space vocabulary's first two keys.
+  'placements', 'encounterAnchors',
+  // Declared by C3/P3 — the typed-hazard vocabulary.
+  'hazardDefinitions',
 ] as const;
 
 /** Keys the loader shape-guard actually checks for array-ness (loader.ts:53). */
@@ -240,10 +244,14 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
 
   it('the fixture on disk is the pack world-forge actually emitted', () => {
     // Guards against this fixture drifting into a hand-tuned pack that passes.
+    // ⚠ `placements` added by C3/P1, in the position the exporter emits it
+    // (immediately after `entities`, because it is about them).
     expect(Object.keys(raw)).toEqual([
-      'schemaVersion', 'entities', 'zones', 'districts', 'dialogues', 'items',
+      'schemaVersion', 'entities', 'placements', 'zones', 'districts', 'dialogues', 'items',
       'playerTemplate', 'buildCatalog', 'progressionTrees',
       'encounterAnchors', 'factionPresences', 'pressureHotspots',
+      // C3/P3:
+      'hazardDefinitions',
     ]);
   });
 
@@ -258,17 +266,23 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
   });
 
   it('SILENT PASS: the remaining unknown keys are preserved and never mentioned', () => {
-    // ⚠ FLIPPED BY C1/P1. This asserted nine silently-preserved unknown keys.
-    // Four are now declared (see ENGINE_DECLARED_KEYS above), so the list is
-    // five. The silent-pass BEHAVIOUR is still here and still pinned — declaring
+    // ⚠ FLIPPED TWICE. C0 asserted nine silently-preserved unknown keys; C1/P1
+    // declared four, leaving five; C3/P1 declares `encounterAnchors`, leaving
+    // FOUR. The silent-pass BEHAVIOUR is still here and still pinned — declaring
     // a key stops it being unknown, it does not make the loader loud. Making it
-    // loud is C1/P2's key-allowlist gate, which flips this test again.
+    // loud is the key-allowlist gate (C1/P2), asserted in `c1-gate.test.ts`.
+    //
+    // ⚠ AND THIS PIN IS DEFINED BY SUBTRACTION, which C1's ledger entry 4 names
+    // as a shape that drifts: the subject is "exported keys minus declared keys",
+    // so it moves whenever EITHER side moves. That is tolerable here only because
+    // the expected list is written out literally below — a subtraction pin with a
+    // computed expectation would pass no matter what happened.
     const exported = Object.keys(raw);
     const unknown = exported.filter(
       (k) => !(ENGINE_DECLARED_KEYS as readonly string[]).includes(k),
     );
     expect(unknown.sort()).toEqual([
-      'encounterAnchors', 'factionPresences', 'items', 'playerTemplate', 'pressureHotspots',
+      'factionPresences', 'items', 'playerTemplate', 'pressureHotspots',
     ]);
 
     // Each one survives the load untouched…
@@ -280,7 +294,26 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
     for (const k of unknown) {
       expect(result.summary).not.toContain(k);
     }
-    expect(result.advisories).toEqual([]);
+
+    // ⚠ NARROWED BY C3/P2. This asserted `advisories` was EMPTY — the loader said
+    // nothing at all about this pack. That is no longer true, and the reason is a
+    // finding rather than noise: the refs pass now reports that the fixture's
+    // `zone-under-vault` gate names `item:rope` while its item catalog calls the
+    // same object `item-rope`, so the gate can never open (see
+    // `c3-entry-gates.test.ts`).
+    //
+    // The SILENT-PASS finding this test exists for is about UNKNOWN KEYS, and it
+    // is unchanged: the four keys above still cross without a word. So the
+    // assertion narrows from "says nothing" to "says nothing ABOUT THESE KEYS",
+    // which is the claim that was always meant.
+    for (const k of unknown) {
+      expect(
+        result.advisories.some((a) => a.message.includes(k) || a.path.includes(k)),
+        `${k} should still pass silently`,
+      ).toBe(false);
+    }
+    // And what it DOES say is the gate finding, not something unexplained.
+    expect(result.advisories.every((a) => a.message.includes('gate condition'))).toBe(true);
   });
 
   it('SILENT PASS, second axis: a pure nonsense key loads just as clean', () => {
@@ -312,7 +345,7 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
     }
   });
 
-  it('CLOSED BY C1/P2: all ten refs-iterated keys are shape-guarded, none raw-throws', () => {
+  it('CLOSED BY C1/P2: all TWELVE refs-iterated keys are shape-guarded, none raw-throws', () => {
     // ⚠ FLIPPED BY C1/P2. C0 asserted the opposite and pinned it by asserting the
     // throw: the shape guard covered four keys — entities, zones, dialogues,
     // quests — while `validateRefs` went on to do `pack.abilities?.map(...)` on
@@ -320,13 +353,21 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
     // straight past the boundary discipline loader.ts's own docstring promises
     // ("never a raw fs throw", "the caller never sees a raw SyntaxError").
     //
-    // The guard list is now the iteration list. This test walks ALL TEN and
+    // The guard list is now the iteration list. This test walks ALL TWELVE and
     // requires a structured error from every one — so the finding cannot
-    // half-regress by someone adding an eleventh iterated key without a guard.
+    // half-regress by someone adding an iterated key without a guard.
+    //
+    // ⚠ AND C3/P1 IS THE FIRST TIME THAT MATTERED. It added exactly such a pair:
+    // `placements` and `encounterAnchors` are both iterated by `validateRefs`
+    // (placement entity/zone resolution, anchor zone/enemy resolution), so both
+    // joined the guard list in the same commit as their iteration. This test is
+    // what would have caught it had they not.
     const tmp = scratchPackPath('badshape');
     const REFS_ITERATED_KEYS = [
       'entities', 'zones', 'dialogues', 'quests', 'abilities',
       'statuses', 'verbs', 'archetypes', 'backgrounds', 'itemUseEffects',
+      // C3/P1:
+      'placements', 'encounterAnchors',
     ] as const;
 
     // The four that were always guarded are still guarded…
@@ -355,16 +396,20 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
     }
   });
 
-  it('zone excess properties are accepted without comment', () => {
-    // validateZoneDefinition (validate.ts:397) has no excess-property rejection,
-    // so a zone carrying the whole dropped 2.5D vocabulary would load clean —
-    // which is why the export lane dropping it produces no error anywhere.
+  it('zone excess properties are STILL accepted without comment — for the fields that remain undeclared', () => {
+    // validateZoneDefinition (validate.ts) has no excess-property rejection, so a
+    // zone carrying the still-dropped 2.5D vocabulary loads clean — which is why
+    // the export lane dropping it produces no error anywhere.
+    //
+    // ⚠ NARROWED BY C3/P2. `entryGate` used to be in this list and is now a
+    // DECLARED, VALIDATED field, so it cannot be planted here as excess: see the
+    // next test. The finding survives for `elevation`, `stratumId`, `hazardRefs`
+    // and `physicsMode` — the C3.2 residue.
     const tmp = scratchPackPath('excess');
     const zones = (raw.zones as Record<string, unknown>[]).map((z) => ({
       ...z,
       elevation: 42,
       stratumId: 'stratum-sky',
-      entryGate: { conditions: ['item:rope'], mode: 'hard' },
       hazardRefs: ['hazard-void-drop'],
       physicsMode: 'zero-g',
     }));
@@ -375,6 +420,50 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
       expect(r.errors).toEqual([]);
       // Preserved, undeclared, unread.
       expect((r.pack.zones as unknown as Record<string, unknown>[])[0].elevation).toBe(42);
+    } finally {
+      fs.rmSync(tmp, { force: true });
+    }
+  });
+
+  it('CLOSED BY C3/P2: a MALFORMED entryGate is now refused, not preserved in silence', () => {
+    // ⚠ THE FLIP. `entryGate` was one of the excess properties above — planted as
+    // `{ conditions: ['item:rope'], mode: 'hard' }` (grammar STRINGS) and loaded
+    // clean, because nothing declared the field. It is declared and validated now,
+    // so that same shape is REFUSED: conditions must be compiled ConditionSpecs,
+    // because the engine never parses author syntax.
+    const tmp = scratchPackPath('badgate');
+    const zones = (raw.zones as Record<string, unknown>[]).map((z) => ({
+      ...z,
+      entryGate: { conditions: ['item:rope'], mode: 'hard' },
+    }));
+    fs.writeFileSync(tmp, JSON.stringify({ ...raw, zones }), 'utf-8');
+    try {
+      const r = loadContentFromFile(tmp);
+      expect(r.ok).toBe(false);
+      expect(r.errors.some((e) => e.path.includes('entryGate'))).toBe(true);
+    } finally {
+      fs.rmSync(tmp, { force: true });
+    }
+  });
+
+  it('CLOSED BY C3/P2: an EMPTY entryGate condition list is refused by name', () => {
+    // The most dangerous shape this type can take, and the reason it gets its own
+    // test: an AND-array with no members is vacuously TRUE, so an empty gate
+    // silently unlocks the zone it was authored to lock — and it is
+    // indistinguishable from a working gate by inspection. Three places refuse to
+    // produce it (exporter, validator, importer); this pins the validator.
+    const tmp = scratchPackPath('emptygate');
+    const zones = (raw.zones as Record<string, unknown>[]).map((z) => ({
+      ...z,
+      entryGate: { conditions: [], mode: 'hard', reason: 'Locked.' },
+    }));
+    fs.writeFileSync(tmp, JSON.stringify({ ...raw, zones }), 'utf-8');
+    try {
+      const r = loadContentFromFile(tmp);
+      expect(r.ok).toBe(false);
+      const err = r.errors.find((e) => e.path.includes('entryGate.conditions'));
+      expect(err, 'the empty AND-array must be named').toBeDefined();
+      expect(err!.message).toContain('vacuously TRUE');
     } finally {
       fs.rmSync(tmp, { force: true });
     }
@@ -669,6 +758,14 @@ export type { ContentPack };
 const EXPORTED_KEY_CLASSES: Array<{ key: string; class: IntakeClass; note: string }> = [
   { key: 'schemaVersion', class: 'unknown-key', note: 'Not declared by the engine ContentPack type; preserved, never read.' },
   { key: 'entities', class: 'validated-only', note: 'Declared, shape-guarded, per-element validated by validateEntityBlueprint, cross-ref checked. Reaches no runtime.' },
+  // ⚠ C3/P1. `placements` is the only key in this table whose class is
+  // `alive-as-rules` — it writes EntityState.zoneId, which every zone-scoped
+  // reader in the engine consults. The rest of this table is a C0 snapshot and
+  // stays one (the classes here describe what the C0 audit measured); this row
+  // is added because completeness is asserted against the fixture's key list on
+  // line 734, so a new exported key MUST get a row or the artifact test fails.
+  // That coupling is deliberate and it worked.
+  { key: 'placements', class: 'alive-as-rules', note: 'C3/P1: declared, shape-guarded, per-element validated by validateEntityPlacementRecord, and ROUTED — applyContentPack writes EntityState.zoneId from it. Closes C0 §2\'s single most consequential drop.' },
   { key: 'zones', class: 'validated-only', note: 'Declared, shape-guarded, per-element validated by validateZoneDefinition (which does no excess-property rejection). Reaches no runtime; no ZoneDefinition-to-ZoneState converter exists.' },
   { key: 'districts', class: 'unknown-key', note: 'NOT declared by the engine ContentPack type — yet DistrictDefinition is a real engine type with a live district-core behind it. The data arrives in a shape the engine understands, in a slot nothing reads.' },
   { key: 'dialogues', class: 'validated-only', note: 'Declared, shape-guarded, per-element validated. Reaches no runtime.' },
@@ -676,7 +773,20 @@ const EXPORTED_KEY_CLASSES: Array<{ key: string; class: IntakeClass; note: strin
   { key: 'playerTemplate', class: 'unknown-key', note: 'NOT declared, and zero hits for `playerTemplate` anywhere in the engine repo.' },
   { key: 'buildCatalog', class: 'unknown-key', note: 'NOT declared by ContentPack, though `buildCatalog` is a live engine concept — fed through PackInfo, in code, by every starter.' },
   { key: 'progressionTrees', class: 'unknown-key', note: 'NOT declared by ContentPack, though ProgressionTreeDefinition is a content-schema type and PackInfo carries progressionTrees in code.' },
-  { key: 'encounterAnchors', class: 'unknown-key', note: 'Zero hits repo-wide. Dead on arrival.' },
+  // ⚠ C3/P1 FLIPPED THIS ROW. C0's note — "Zero hits repo-wide. Dead on
+  // arrival." — was accurate and is now false: the key is declared, and an
+  // intake channel registers it into `encounter-spawn`'s own content registry,
+  // so an anchor produces real spawns off the module's existing deterministic
+  // roll. It is `alive-as-rules` on the strength of a played session, not on the
+  // strength of being declared — which is the distinction C1's `light` finding
+  // was about.
+  { key: 'encounterAnchors', class: 'alive-as-rules', note: 'C3/P1: declared and ROUTED into encounter-spawn\'s registry (was "zero hits repo-wide, dead on arrival"). Contributes per-zone spawn tables plus two axes the module had no expression for: probability and cooldownTurns.' },
+  // ⚠ C3/P3 — the row that closes C0's STRUCTURAL hole. Before this key, hazard
+  // meaning lived in pack closures, so C0 §9's verdict was that "NO data format
+  // can express it" — not that this lane lacked a field, but that no field would
+  // have helped. The typed effect union is that format, and the interpreter is
+  // what makes a data hazard move the simulation with no pack code.
+  { key: 'hazardDefinitions', class: 'alive-as-rules', note: 'C3/P3: declared and ROUTED. The closed effect union (damage / status / instakill / ignite) executes as DATA through the same site as pack closures, bound to zones by Zone.hazardRefs. THE FLIP: \'loose cobbles\' as a typed hazard moves the sim; as a bare string it stays exactly as inert as C0 measured — the contrast is preserved on purpose.' },
   { key: 'factionPresences', class: 'unknown-key', note: 'Zero hits repo-wide for the plural pack key. (The singular `factionPresence` appears as a local in district-core and as a DERIVED field in strategic-map — unrelated, and a trap for a naive grep.)' },
   { key: 'pressureHotspots', class: 'unknown-key', note: 'Zero hits repo-wide. Dead on arrival.' },
 ];

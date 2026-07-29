@@ -4,6 +4,7 @@ import type { EngineModule, ActionIntent, WorldState, ResolvedEvent } from '@ai-
 import { makeEvent } from './make-event.js';
 import { getDistrictForZone, getDistrictDefinition } from './district-core.js';
 import { getDistrictEconomy, deriveEconomyDescriptor, formatEconomyForDirector } from './economy-core.js';
+import { evaluateConditions } from './condition-eval.js';
 
 export const traversalCore: EngineModule = {
   id: 'traversal-core',
@@ -17,6 +18,13 @@ export const traversalCore: EngineModule = {
 };
 
 function moveHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  /**
+   * A soft gate's warning, held until the move succeeds so the two events are
+   * emitted in causal order (warned, then entered) rather than the warning
+   * arriving for a move that then failed for an unrelated reason.
+   */
+  let softWarning: ResolvedEvent | undefined;
+
   const targetZoneId = action.targetIds?.[0];
   if (!targetZoneId) {
     return [makeEvent(action, 'action.rejected', { reason: 'no target zone specified' })];
@@ -52,6 +60,52 @@ function moveHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
     return [makeEvent(action, 'action.rejected', { reason: `zone ${targetZoneId} does not exist` })];
   }
 
+  // --- C3/P2: the entry gate --------------------------------------------
+  //
+  // Evaluated HERE — after adjacency and target-existence, before the mutation.
+  // The position is the contract: a gate that refuses after the actor has moved
+  // is not a gate, and a gate checked before adjacency would report "you need the
+  // rope" for a zone the player cannot reach anyway.
+  //
+  // A zone with no gate takes no branch and is byte-identical to before this
+  // field existed, which is what keeps the twelve shipped packs unchanged.
+  const gate = targetZone.entryGate;
+  if (gate) {
+    const { met, unmet } = evaluateConditions(gate.conditions ?? [], world, actorId);
+    if (!met) {
+      const payload = {
+        zoneId: targetZoneId,
+        zoneName: targetZone.name,
+        fromZoneId: currentZone.id,
+        mode: gate.mode,
+        // The AUTHORED message, verbatim. The fallback is deliberately plain:
+        // an author who wrote no reason gets a true statement, not invented prose.
+        reason: gate.reason ?? `${targetZone.name} is closed to you.`,
+        unmet: unmet.map((u) => ({ type: u.condition.type, reason: u.reason, unevaluable: u.unevaluable })),
+      };
+
+      if (gate.mode === 'hard') {
+        // REFUSED. The actor does not move and `world.locationId` does not change.
+        return [
+          makeEvent(action, 'world.zone.gate.refused', payload, {
+            presentation: {
+              channels: ['objective'],
+              priority: 'high',
+              soundCues: ['gate.refused'],
+            },
+          }),
+        ];
+      }
+
+      // SOFT: warn AND permit. The warning rides the same payload shape so a
+      // renderer has one case, not two, and then the move proceeds below exactly
+      // as an ungated one would.
+      softWarning = makeEvent(action, 'world.zone.gate.warned', payload, {
+        presentation: { channels: ['narrator'], priority: 'normal' },
+      });
+    }
+  }
+
   // Move the ACTOR. world.locationId (the "current scene" pointer) only
   // follows the PLAYER — an NPC/companion moving around must never change
   // what zone the player-facing scene is anchored to.
@@ -60,20 +114,21 @@ function moveHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
     world.locationId = targetZoneId;
   }
 
-  return [
-    makeEvent(action, 'world.zone.entered', {
-      zoneId: targetZoneId,
-      zoneName: targetZone.name,
-      previousZoneId: currentZone.id,
-      tags: targetZone.tags,
-    }, {
-      presentation: {
-        channels: ['objective'],
-        priority: 'normal',
-        soundCues: ['scene.enter'],
-      },
-    }),
-  ];
+  const entered = makeEvent(action, 'world.zone.entered', {
+    zoneId: targetZoneId,
+    zoneName: targetZone.name,
+    previousZoneId: currentZone.id,
+    tags: targetZone.tags,
+  }, {
+    presentation: {
+      channels: ['objective'],
+      priority: 'normal',
+      soundCues: ['scene.enter'],
+    },
+  });
+
+  // A soft gate's warning precedes the entry it did not prevent.
+  return softWarning ? [softWarning, entered] : [entered];
 }
 
 function inspectHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {

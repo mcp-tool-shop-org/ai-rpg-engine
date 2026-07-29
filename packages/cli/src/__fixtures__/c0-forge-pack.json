@@ -74,6 +74,40 @@
       }
     }
   ],
+  "placements": [
+    {
+      "entityId": "npc-quartermaster",
+      "zoneId": "zone-surface-yard",
+      "spawnCondition": {
+        "type": "time-of-day",
+        "params": {
+          "when": "night"
+        }
+      }
+    },
+    {
+      "entityId": "enemy-vault-drowned",
+      "zoneId": "zone-under-vault",
+      "spawnCondition": {
+        "type": "quest-progress",
+        "params": {
+          "id": "vault-key",
+          "stage": "opened"
+        }
+      }
+    },
+    {
+      "entityId": "npc-gantry-runner",
+      "zoneId": "zone-sky-gantry",
+      "spawnCondition": {
+        "type": "player-level",
+        "params": {
+          "op": ">=",
+          "value": 5
+        }
+      }
+    }
+  ],
   "zones": [
     {
       "id": "zone-surface-yard",
@@ -111,7 +145,33 @@
             }
           }
         }
-      ]
+      ],
+      "entryGate": {
+        "conditions": [
+          {
+            "type": "party-size",
+            "params": {
+              "op": ">=",
+              "value": 3
+            }
+          },
+          {
+            "type": "has-flag",
+            "params": {
+              "id": "bridge-repaired"
+            }
+          }
+        ],
+        "mode": "soft",
+        "reason": "The yard gate needs three hands on the winch."
+      },
+      "hazardRefs": [
+        "hazard-scalding-steam"
+      ],
+      "scene": {
+        "timeOfDay": "dusk",
+        "dressingDensity": "normal"
+      }
     },
     {
       "id": "zone-under-vault",
@@ -159,7 +219,39 @@
             }
           }
         }
-      ]
+      ],
+      "entryGate": {
+        "conditions": [
+          {
+            "type": "has-item",
+            "params": {
+              "id": "rope"
+            }
+          },
+          {
+            "type": "party-class",
+            "params": {
+              "id": "delver"
+            }
+          },
+          {
+            "type": "party-member",
+            "params": {
+              "id": "npc-quartermaster"
+            }
+          }
+        ],
+        "mode": "hard",
+        "reason": "No one goes down without rope and a delver."
+      },
+      "hazardRefs": [
+        "hazard-black-water",
+        "hazard-void-drop"
+      ],
+      "scene": {
+        "timeOfDay": "night",
+        "dressingDensity": "normal"
+      }
     },
     {
       "id": "zone-sky-gantry",
@@ -197,7 +289,34 @@
             }
           }
         }
-      ]
+      ],
+      "entryGate": {
+        "conditions": [
+          {
+            "type": "party-level",
+            "params": {
+              "op": ">=",
+              "value": 10
+            }
+          },
+          {
+            "type": "party-size",
+            "params": {
+              "op": ">=",
+              "value": 3
+            }
+          }
+        ],
+        "mode": "hard",
+        "reason": "The gantry will not hold a green party."
+      },
+      "hazardRefs": [
+        "hazard-void-drop"
+      ],
+      "scene": {
+        "timeOfDay": "day",
+        "dressingDensity": "normal"
+      }
     }
   ],
   "districts": [
@@ -625,6 +744,101 @@
       "baseProbability": 0.35,
       "tags": [
         "water",
+        "structural"
+      ]
+    }
+  ],
+  "hazardDefinitions": [
+    {
+      "id": "hazard-scalding-steam",
+      "name": "Scalding Steam",
+      "effects": [
+        {
+          "kind": "damage",
+          "amount": 0.05,
+          "amountIsPercentMaxHp": true,
+          "tickOn": "turn-end",
+          "durationTicks": 3
+        }
+      ],
+      "trigger": "per-turn",
+      "moveCostDelta": 1,
+      "passable": "yes",
+      "blocksVision": true,
+      "weatherConditions": [
+        "cold"
+      ],
+      "immuneTags": [
+        "heat-resist"
+      ],
+      "tags": [
+        "heat",
+        "vision"
+      ]
+    },
+    {
+      "id": "hazard-black-water",
+      "name": "Black Water",
+      "effects": [
+        {
+          "kind": "status",
+          "statusId": "status-chilled",
+          "chance": 0.5,
+          "stacking": "refresh"
+        },
+        {
+          "kind": "ignite",
+          "igniteChance": 0
+        }
+      ],
+      "trigger": "on-enter",
+      "moveCostDelta": 2,
+      "passable": "flying-only",
+      "blocksVision": false,
+      "weatherConditions": [],
+      "immuneTags": [
+        "cold-immune"
+      ],
+      "tags": [
+        "water",
+        "cold"
+      ]
+    },
+    {
+      "id": "hazard-void-drop",
+      "name": "Void Drop",
+      "effects": [
+        {
+          "kind": "instakill"
+        }
+      ],
+      "trigger": "on-exit",
+      "moveCostDelta": 0,
+      "passable": "never",
+      "blocksVision": false,
+      "weatherConditions": [
+        "storm"
+      ],
+      "immuneTags": [
+        "flight"
+      ],
+      "tags": [
+        "fall",
+        "lethal"
+      ]
+    },
+    {
+      "id": "hazard-timed-collapse",
+      "name": "Timed Collapse",
+      "effects": [
+        {
+          "kind": "damage",
+          "amount": 4,
+          "tickOn": "turn-start"
+        }
+      ],
+      "trigger": "timed",
+      "tags": [
         "structural"
       ]
     }

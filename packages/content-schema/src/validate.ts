@@ -410,6 +410,94 @@ export function validateZoneDefinition(v: unknown, path = 'ZoneDefinition'): Val
   optStrArr(c, v, 'interactables');
   optStrArr(c, v, 'entities');
   c.errors.push(...optArr(`${path}.exits`, v.exits, vExitDefinition));
+  // C3/P2 — the entry gate.
+  if (v.entryGate !== undefined) {
+    c.errors.push(...vEntryGate(`${path}.entryGate`, v.entryGate));
+  }
+  return { ok: c.errors.length === 0, errors: c.errors };
+}
+
+/**
+ * `EntryGateDefinition` shape guard.
+ *
+ * ⚠ AN EMPTY `conditions` ARRAY IS REFUSED. An AND-array with no members is
+ * vacuously TRUE, so an empty gate silently unlocks the zone it was authored to
+ * lock — the most dangerous shape this type can take, and indistinguishable from
+ * a working gate by inspection. The exporter also refuses to emit one (a gate
+ * whose conditions all failed to compile exports as NO gate, with a warning);
+ * this is the second line, at the boundary, because the pack may not have come
+ * from our exporter.
+ */
+function vEntryGate(path: string, v: unknown): ValidationError[] {
+  if (!isObj(v)) return [{ path, message: 'must be an object' }];
+  const c = checker(path);
+  if (!Array.isArray(v.conditions)) {
+    c.errors.push({ path: `${path}.conditions`, message: 'required array of ConditionSpec' });
+  } else if (v.conditions.length === 0) {
+    c.errors.push({
+      path: `${path}.conditions`,
+      message:
+        'must not be empty — an AND-array with no members is vacuously TRUE, so an empty gate silently unlocks the zone. Omit `entryGate` to leave a zone ungated.',
+    });
+  } else {
+    c.errors.push(...vArr(`${path}.conditions`, v.conditions, vConditionSpec));
+  }
+  reqEnum(c, v, 'mode', ['hard', 'soft']);
+  optStr(c, v, 'reason');
+  return c.errors;
+}
+
+/**
+ * `EntityPlacementRecord` — WHERE one entity stands (C3/P1).
+ *
+ * Referential resolution (does `entityId` name a real blueprint? does `zoneId`
+ * name a real zone?) is NOT here: this is the structural guard, and the refs
+ * pass owns cross-references. Splitting them matters because a shape failure
+ * must stop the pack before `validateRefs` dereferences anything — C1's ledger
+ * entry 5 is exactly this, where widening a shape guard did not close a
+ * raw-`TypeError` hole because the refs pass ran unconditionally afterward.
+ */
+export function validateEntityPlacementRecord(v: unknown, path = 'EntityPlacementRecord'): ValidationResult {
+  if (!isObj(v)) return fail([{ path, message: 'must be an object' }]);
+  const c = checker(path);
+  reqStr(c, v, 'entityId');
+  reqStr(c, v, 'zoneId');
+  if (v.spawnCondition !== undefined) {
+    c.errors.push(...vConditionSpec(`${path}.spawnCondition`, v.spawnCondition));
+  }
+  return { ok: c.errors.length === 0, errors: c.errors };
+}
+
+/**
+ * `EncounterAnchorRecord` — a per-zone spawn-set entry (C3/P1).
+ *
+ * `probability` is range-checked here rather than clamped. A clamp turns an
+ * authoring mistake into a silent behaviour change, which is the
+ * silent-fallback shape C0 measured four separate times (`slot`, `rarity`,
+ * `difficulty`, `genre`).
+ */
+export function validateEncounterAnchorRecord(v: unknown, path = 'EncounterAnchorRecord'): ValidationResult {
+  if (!isObj(v)) return fail([{ path, message: 'must be an object' }]);
+  const c = checker(path);
+  reqStr(c, v, 'id');
+  reqStr(c, v, 'zoneId');
+  reqStr(c, v, 'encounterType');
+  reqStrArr(c, v, 'enemyIds');
+  reqNum(c, v, 'probability');
+  if (typeof v.probability === 'number' && (!Number.isFinite(v.probability) || v.probability < 0 || v.probability > 1)) {
+    c.errors.push({
+      path: `${path}.probability`,
+      message: 'must be a finite number in [0, 1] — a spawn chance outside that range is an authoring error, not a value to clamp',
+    });
+  }
+  reqNum(c, v, 'cooldownTurns');
+  if (typeof v.cooldownTurns === 'number' && (!Number.isInteger(v.cooldownTurns) || v.cooldownTurns < 0)) {
+    c.errors.push({
+      path: `${path}.cooldownTurns`,
+      message: 'must be a non-negative integer number of rounds',
+    });
+  }
+  reqStrArr(c, v, 'tags');
   return { ok: c.errors.length === 0, errors: c.errors };
 }
 

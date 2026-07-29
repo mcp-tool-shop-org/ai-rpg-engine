@@ -8,6 +8,7 @@ import type {
   QuestDefinition,
   AbilityDefinition,
   StatusDefinition,
+  ConditionSpec,
 } from './schemas.js';
 
 export type ContentPack = {
@@ -93,6 +94,94 @@ export type ContentPack = {
    * pass it to `createProgressionCore({ trees })`.
    */
   progressionTrees?: unknown[];
+  /**
+   * WHERE the pack's entities stand (C3/P1).
+   *
+   * C0's sharpest single drop: `EntityBlueprint` has no location field, so an
+   * exported pack knew every NPC and where none of them stood (REPORT §2 —
+   * "the single most consequential drop in the lane"), and C1's intake seam
+   * reported it as an advisory on every single ingestion because there was
+   * nothing better to do about it.
+   *
+   * Placement is its own record rather than a field on the blueprint, and that
+   * is deliberate: a blueprint is a TEMPLATE. `encounter-spawn` already clones
+   * templates and overrides `zoneId` per instance, so a location on the
+   * template would be a lie for every cloned participant. One template, N
+   * placements.
+   */
+  placements?: EntityPlacementRecord[];
+  /**
+   * Deterministic per-zone spawn sets (C3/P1) — the charter's Pillar 2
+   * "deterministic per-zone spawn sets with cleared/respawn state".
+   *
+   * Emitted by world-forge since the lane existed and, until now, an UNDECLARED
+   * pass-through with zero engine hits (C0 REPORT §3.1). Routed into a booted
+   * world by an injected channel that REGISTERS into `encounter-spawn`'s
+   * existing content registry — the engine already has a complete spawn system
+   * (rolls, one-live-encounter-per-zone ledger, `encounter.spawned` event), and
+   * C3 extends it rather than standing a second one beside it.
+   *
+   * Minimal structural shape, mirroring the `districts` pattern above:
+   * content-schema sits BELOW @ai-rpg-engine/modules, so importing the real
+   * `EncounterAnchor` would invert the layering.
+   */
+  encounterAnchors?: EncounterAnchorRecord[];
+  /**
+   * TYPED environmental hazards (C3/P3) — the vocabulary that lets hazard data
+   * MEAN something.
+   *
+   * C0 §3.2's sharpest measurement: hazard STRINGS carry no engine semantics
+   * ("their meaning is JavaScript the pack ships"), so a data-only export was
+   * inert by construction, and C0 §9 called closing this "the highest-value single
+   * item, because it closes a structural hole rather than a wire hole."
+   *
+   * Zones bind to these by id through `ZoneDefinition.hazardRefs`. Shape mirrored
+   * structurally (the `districts` pattern) because the interpreter lives in
+   * @ai-rpg-engine/modules, above this package.
+   */
+  hazardDefinitions?: Array<{
+    id: string;
+    name?: string;
+    effects: unknown[];
+    trigger: string;
+    moveCostDelta?: number;
+    passable?: string;
+    blocksVision?: boolean;
+    weatherConditions?: string[];
+    immuneTags?: string[];
+    tags?: string[];
+  }>;
+};
+
+/**
+ * One entity, placed in one zone, optionally gated on a compiled condition.
+ *
+ * `spawnCondition` is a {@link ConditionSpec}, not a grammar string: world-forge
+ * COMPILES its SpawnCondition grammar at export (RG-C1 Lane 2's ink pattern — a
+ * rich authoring grammar compiling to a closed, engine-owned instruction
+ * format). The engine never parses author syntax.
+ */
+export type EntityPlacementRecord = {
+  /** An `EntityBlueprint.id` in this pack. Unresolvable ⇒ refused by name. */
+  entityId: string;
+  /** A `ZoneDefinition.id` in this pack. Unresolvable ⇒ refused by name. */
+  zoneId: string;
+  /** Absent ⇒ always placed. */
+  spawnCondition?: ConditionSpec;
+};
+
+/** A per-zone encounter table entry. See {@link ContentPack.encounterAnchors}. */
+export type EncounterAnchorRecord = {
+  id: string;
+  zoneId: string;
+  /** Closed set — an unmapped value is REFUSED, never defaulted. */
+  encounterType: string;
+  enemyIds: string[];
+  /** Per-anchor spawn chance in [0, 1]. */
+  probability: number;
+  /** Rounds a zone stays quiet after this anchor fires. */
+  cooldownTurns: number;
+  tags: string[];
 };
 
 /**
@@ -184,6 +273,126 @@ export function validateRefs(pack: ContentPack): RefsResult {
         errors.push({
           path: `${path}.zone(${zone.id}).entities`,
           message: `references unknown entity "${entityId}"`,
+        });
+      }
+    }
+  }
+
+  // --- C3/P1: placements + spawn sets must resolve ------------------------
+  //
+  // These are ERRORS, not advisories. The exporter already emits a warning for
+  // an entity placed in a deleted zone ("N entity placement(s) reference zones
+  // that do not exist and will be unreachable at runtime", export.ts) — but a
+  // warning at export time is narration. Arriving at the runtime, the same fact
+  // is refusable, and refusing it is the difference between "the NPC is missing"
+  // and "the pack told you which NPC and which zone".
+  const placements = (Array.isArray(pack.placements) ? pack.placements : []).filter(isRecord) as NonNullable<ContentPack['placements']>;
+  for (let i = 0; i < placements.length; i++) {
+    const p = placements[i];
+    if (typeof p.entityId === 'string' && !entityIds.has(p.entityId)) {
+      errors.push({
+        path: `${path}.placements[${i}].entityId`,
+        message: `references unknown entity "${p.entityId}" — a placement names a blueprint in this pack's entities[]`,
+      });
+    }
+    if (typeof p.zoneId === 'string' && !zoneIds.has(p.zoneId)) {
+      errors.push({
+        path: `${path}.placements[${i}](${p.entityId}).zoneId`,
+        message: `references unknown zone "${p.zoneId}" — the entity would be placed nowhere, which is the exact gap placements exist to close`,
+      });
+    }
+  }
+  // One entity placed twice is an authoring error, not a stack of two NPCs: a
+  // blueprint converts to ONE EntityState with ONE zoneId, so the second
+  // placement would silently win. Same failure shape as the duplicate
+  // entity/zone ids above (v2.5 PC-4), and caught for the same reason.
+  const placedEntityIds = new Set<string>();
+  for (let i = 0; i < placements.length; i++) {
+    const id = placements[i].entityId;
+    if (typeof id !== 'string') continue;
+    if (placedEntityIds.has(id)) {
+      errors.push({
+        path: `${path}.placements[${i}].entityId`,
+        message: `entity "${id}" is placed more than once — a blueprint becomes one EntityState with one zoneId, so the later placement would silently win. Use one placement per entity (spawn SETS are encounterAnchors).`,
+      });
+    }
+    placedEntityIds.add(id);
+  }
+
+  const anchors = (Array.isArray(pack.encounterAnchors) ? pack.encounterAnchors : []).filter(isRecord) as NonNullable<ContentPack['encounterAnchors']>;
+  const anchorIds = new Set<string>();
+  for (let i = 0; i < anchors.length; i++) {
+    const a = anchors[i];
+    if (typeof a.id === 'string') {
+      if (anchorIds.has(a.id)) {
+        errors.push({
+          path: `${path}.encounterAnchors[${i}].id`,
+          message: `duplicate encounter anchor id "${a.id}" — anchor ids must be unique`,
+        });
+      }
+      anchorIds.add(a.id);
+    }
+    if (typeof a.zoneId === 'string' && !zoneIds.has(a.zoneId)) {
+      errors.push({
+        path: `${path}.encounterAnchors[${i}](${a.id}).zoneId`,
+        message: `references unknown zone "${a.zoneId}" — an anchor keys a per-zone spawn table, so an unknown zone makes it unreachable`,
+      });
+    }
+    for (const enemyId of Array.isArray(a.enemyIds) ? a.enemyIds : []) {
+      if (typeof enemyId === 'string' && !entityIds.has(enemyId)) {
+        errors.push({
+          path: `${path}.encounterAnchors[${i}](${a.id}).enemyIds`,
+          message: `references unknown entity "${enemyId}" — spawn participants are cloned from this pack's entity templates`,
+        });
+      }
+    }
+  }
+
+  // --- C3/P2: entry-gate operands that name pack content -------------------
+  //
+  // ⚠ FOUND BY MEASUREMENT, NOT BY DESIGN. The C0 coverage fixture authors the
+  // gate `item:rope` on `zone-under-vault` while its item catalog calls the same
+  // object `item-rope`. Nothing checked, so the pack shipped a door that can
+  // NEVER open: `has-item` looks for an id no item in the pack has. Exactly the
+  // phantom-module-id shape from C0 §5 — plausible, and dead — and exactly what
+  // C0 §4 warned about in the other direction ("the forge can NAME verbs but
+  // cannot DEFINE one; it emits dangling references into a slot it never fills").
+  //
+  // ADVISORY, not an error, and the distinction is load-bearing: an item id can
+  // legitimately be granted by pack CODE, by another pack, or by a reward this
+  // pack does not declare, so refusing would break valid content. But a gate
+  // whose item matches nothing in a pack that HAS an item catalog is almost
+  // always a typo, and saying so costs nothing.
+  const itemIds = new Set<string>();
+  for (const item of (Array.isArray((pack as { items?: unknown }).items) ? (pack as { items: unknown[] }).items : []).filter(isRecord)) {
+    const id = (item as { id?: unknown }).id;
+    if (typeof id === 'string') itemIds.add(id);
+  }
+  const memberIds = new Set<string>(entityIds);
+  for (const zone of zones) {
+    const gate = (zone as { entryGate?: { conditions?: unknown[] } }).entryGate;
+    if (!gate || !Array.isArray(gate.conditions)) continue;
+    for (const raw of gate.conditions) {
+      if (!isRecord(raw)) continue;
+      const c = raw as { type?: unknown; params?: Record<string, unknown> };
+      const refId = typeof c.params?.id === 'string' ? c.params.id : undefined;
+      if (refId === undefined) continue;
+
+      if (c.type === 'has-item' && itemIds.size > 0 && !itemIds.has(refId)) {
+        advisories.push({
+          path: `${path}.zone(${zone.id}).entryGate`,
+          message:
+            `gate condition \`has-item\` names "${refId}", which matches no item in this pack ` +
+            `(${[...itemIds].sort().join(', ')}). If nothing else grants that id, this gate can never open. ` +
+            'Advisory rather than an error because an item may be granted by pack code or another pack.',
+        });
+      }
+      if (c.type === 'party-member' && memberIds.size > 0 && !memberIds.has(refId)) {
+        advisories.push({
+          path: `${path}.zone(${zone.id}).entryGate`,
+          message:
+            `gate condition \`party-member\` names "${refId}", which is not an entity in this pack. ` +
+            'If no other pack supplies that companion, this gate can never open.',
         });
       }
     }

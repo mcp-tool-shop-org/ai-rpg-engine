@@ -672,6 +672,18 @@ export function formatEventLine(event: ResolvedEvent): string | null {
   switch (event.type) {
     case 'world.zone.entered':
       return `> Entered ${p.zoneName}`;
+
+    // C3/P2 — the "show the lock" doctrine, rendered. A gate that refuses
+    // silently is a door the player concludes is broken; the AUTHORED reason is
+    // the whole point of carrying `reason` across the wire (charter Pillar 2:
+    // access stays rule-bound while traversal feel is client-authored — the
+    // client has to be TOLD why). Two cases rather than one because the
+    // difference between "you cannot" and "you probably should not" is exactly
+    // what `mode` encodes, and collapsing them would discard it.
+    case 'world.zone.gate.refused':
+      return `> ${p.reason}`;
+    case 'world.zone.gate.warned':
+      return `> ${p.reason} (you press on anyway)`;
     case 'combat.contact.hit':
       return `> Hit!`;
     case 'combat.contact.miss':

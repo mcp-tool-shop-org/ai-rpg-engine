@@ -133,7 +133,38 @@ export {
   getDistrictThreatLevel,
   ingestDistrictDefinitions,
 } from './district-core.js';
-export { districtsChannel, createStandardChannels } from './intake-channels.js';
+export {
+  districtsChannel,
+  encounterAnchorsChannel,
+  hazardDefinitionsChannel,
+  createStandardChannels,
+} from './intake-channels.js';
+// C3/P3 — typed hazards as data.
+export {
+  registerTypedHazards,
+  unregisterTypedHazards,
+  getTypedHazardsForZone,
+  applyTypedHazards,
+  runTypedHazardStep,
+  runTypedHazardEntryStep,
+  hazardBlocksEntry,
+  HAZARD_DEPTH_LIMIT,
+} from './hazard-interpreter.js';
+export type { HazardSpec, HazardEffectSpec, HazardApplication } from './hazard-interpreter.js';
+// C3/P4 — scene descriptors + zone-state versioning (the moat bridge).
+export {
+  zoneStateCore,
+  runZoneStateStep,
+  getZoneCondition,
+  getZoneStateModuleState,
+  deriveZoneConditionWithReason,
+  variantTagsFor,
+  resolveSceneDescriptor,
+  ZONE_CONDITIONS,
+  ZONE_STATE_KEY,
+  ZONE_STATE_THRESHOLDS,
+} from './zone-state.js';
+export type { ZoneCondition, ZoneStateRecord, ZoneStateModuleState } from './zone-state.js';
 export type {
   DistrictMetrics,
   DistrictDefinition,
@@ -326,6 +357,7 @@ export {
   MIN_SPAWN_CHANCE,
   MAX_SPAWN_CHANCE,
   BOSS_ROLE_TAG,
+  mergeEncounterSpawnContent,
 } from './encounter-spawn.js';
 export type {
   EncounterSpawnContent,
@@ -333,6 +365,15 @@ export type {
   EncounterSpawnState,
   SpawnedEncounterReport,
 } from './encounter-spawn.js';
+// C3/P2 — the closed, total condition evaluator.
+export {
+  evaluateCondition,
+  evaluateConditions,
+  KNOWN_CONDITION_TYPES,
+  UNEVALUABLE_OPERANDS,
+  GATE_REFUSED_OPERANDS,
+} from './condition-eval.js';
+export type { ConditionSpecLike, ConditionVerdict, UnmetCondition } from './condition-eval.js';
 export {
   buildFactionProfile,
   evaluateFactionActions,

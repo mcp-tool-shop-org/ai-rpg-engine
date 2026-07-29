@@ -167,6 +167,33 @@ export type EntityState = {
 
 // --- Zone ---
 
+/**
+ * A party-state gate on ENTERING a zone (C3/P2).
+ *
+ * Conditions are COMPILED `ConditionSpec`s, not author syntax: World Forge
+ * authors a SpawnCondition-grammar string and compiles it at export, so the
+ * engine never parses a grammar (RG-C1 Lane 2's ink pattern). All conditions
+ * must hold — an AND-array.
+ *
+ * `mode` is the whole design in one field. `hard` refuses the move; `soft` warns
+ * and permits. Both emit an event carrying the AUTHORED reason, because
+ * "access stays rule-bound while traversal feel is client-authored"
+ * (charter Pillar 2, Dionne 2023) only works if the client is TOLD why.
+ *
+ * Pure data — serialized with state, no closures. `conditions` is typed loosely
+ * here because `ConditionSpec` lives in @ai-rpg-engine/content-schema, which
+ * sits ABOVE core; the evaluator (`evaluateConditions` in
+ * @ai-rpg-engine/modules) is structurally typed against it.
+ */
+export type ZoneEntryGate = {
+  /** Compiled ConditionSpecs — `{ type, params }`. ALL must hold. */
+  conditions: Array<{ type: string; params?: Record<string, ScalarValue> }>;
+  /** `hard` blocks entry; `soft` warns but allows. */
+  mode: 'hard' | 'soft';
+  /** The authored "show the lock" message, rendered verbatim. */
+  reason?: string;
+};
+
 export type ZoneState = {
   id: string;
   roomId: string;
@@ -179,6 +206,42 @@ export type ZoneState = {
   authority?: Record<string, number>;
   hazards?: string[];
   interactables?: string[];
+  /**
+   * Party-state gate on entering this zone (C3/P2). Absent ⇒ ungated, and a zone
+   * with no gate is byte-identical to one before this field existed.
+   */
+  entryGate?: ZoneEntryGate;
+  /**
+   * Ids of typed hazards active in this zone (C3/P3), resolved against the pack's
+   * `hazardDefinitions`. The legacy free-text `hazards: string[]` field above is
+   * UNTOUCHED and stays exactly as inert as C0 measured it — that contrast is the
+   * finding, not an oversight.
+   */
+  hazardRefs?: string[];
+  /**
+   * What the client's diorama binds to (C3/P4).
+   *
+   * STABLE KEYS ONLY — no coordinates, no asset paths, nothing a renderer could
+   * read as geometry. RG-C's decisive finding is that HD-2D's look is wholly
+   * client-side, so the sim owes a DESCRIPTOR rather than a layout
+   * (Takahashi/Miyauchi 2018), and Triangle Strategy's rule is that state flags
+   * swap lighting and dressing variants, NEVER layout. The vocabulary enforces
+   * that by having nothing else in it.
+   *
+   * The state-derived half (`variantTags`, `condition`) is NOT stored here — it
+   * lives in the zone-state module and is merged on read by
+   * `resolveSceneDescriptor`, so authored keys and derived keys cannot drift.
+   */
+  scene?: {
+    /** Stable key, e.g. 'harbour-stone'. Not prose. */
+    biome?: string;
+    /** Stable key, e.g. 'dusk'. Also the input `time-of-day` conditions needed. */
+    timeOfDay?: string;
+    /** Coarse and ordinal; the client decides what it means. */
+    dressingDensity?: 'sparse' | 'normal' | 'dense';
+    /** Authored variant hints, unioned with the state-derived ones on read. */
+    variantTags?: string[];
+  };
 };
 
 // --- Action ---

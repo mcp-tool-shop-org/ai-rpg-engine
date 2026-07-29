@@ -221,6 +221,20 @@ export type ExitDefinition = {
   condition?: ConditionSpec;
 };
 
+/**
+ * A party-state gate on entering a zone (C3/P2), as it crosses the wire.
+ *
+ * `conditions` are COMPILED `ConditionSpec`s. World Forge authors a
+ * SpawnCondition-grammar string and compiles it at export — the ink pattern from
+ * RG-C1 Lane 2 — so no author syntax reaches the engine.
+ */
+export type EntryGateDefinition = {
+  conditions: ConditionSpec[];
+  mode: 'hard' | 'soft';
+  /** The authored "show the lock" message. */
+  reason?: string;
+};
+
 export type ZoneDefinition = {
   id: string;
   name: string;
@@ -233,6 +247,24 @@ export type ZoneDefinition = {
   interactables?: string[];
   entities?: string[];
   exits?: ExitDefinition[];
+  /** C3/P2 — party-state gate on entry. Absent ⇒ ungated. */
+  entryGate?: EntryGateDefinition;
+  /**
+   * C3/P3 — ids into the pack's `hazardDefinitions`. The legacy free-text
+   * `hazards: string[]` above is UNTOUCHED and stays inert without pack code;
+   * that contrast is C0's finding and is preserved deliberately.
+   */
+  hazardRefs?: string[];
+  /**
+   * C3/P4 — the scene descriptor the client's diorama binds to. Stable keys only;
+   * see `ZoneState.scene` for the constraint and its grounding.
+   */
+  scene?: {
+    biome?: string;
+    timeOfDay?: string;
+    dressingDensity?: 'sparse' | 'normal' | 'dense';
+    variantTags?: string[];
+  };
 };
 
 export type RoomDefinition = {
