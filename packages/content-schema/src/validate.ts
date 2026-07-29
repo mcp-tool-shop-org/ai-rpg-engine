@@ -413,6 +413,60 @@ export function validateZoneDefinition(v: unknown, path = 'ZoneDefinition'): Val
   return { ok: c.errors.length === 0, errors: c.errors };
 }
 
+/**
+ * `EntityPlacementRecord` — WHERE one entity stands (C3/P1).
+ *
+ * Referential resolution (does `entityId` name a real blueprint? does `zoneId`
+ * name a real zone?) is NOT here: this is the structural guard, and the refs
+ * pass owns cross-references. Splitting them matters because a shape failure
+ * must stop the pack before `validateRefs` dereferences anything — C1's ledger
+ * entry 5 is exactly this, where widening a shape guard did not close a
+ * raw-`TypeError` hole because the refs pass ran unconditionally afterward.
+ */
+export function validateEntityPlacementRecord(v: unknown, path = 'EntityPlacementRecord'): ValidationResult {
+  if (!isObj(v)) return fail([{ path, message: 'must be an object' }]);
+  const c = checker(path);
+  reqStr(c, v, 'entityId');
+  reqStr(c, v, 'zoneId');
+  if (v.spawnCondition !== undefined) {
+    c.errors.push(...vConditionSpec(`${path}.spawnCondition`, v.spawnCondition));
+  }
+  return { ok: c.errors.length === 0, errors: c.errors };
+}
+
+/**
+ * `EncounterAnchorRecord` — a per-zone spawn-set entry (C3/P1).
+ *
+ * `probability` is range-checked here rather than clamped. A clamp turns an
+ * authoring mistake into a silent behaviour change, which is the
+ * silent-fallback shape C0 measured four separate times (`slot`, `rarity`,
+ * `difficulty`, `genre`).
+ */
+export function validateEncounterAnchorRecord(v: unknown, path = 'EncounterAnchorRecord'): ValidationResult {
+  if (!isObj(v)) return fail([{ path, message: 'must be an object' }]);
+  const c = checker(path);
+  reqStr(c, v, 'id');
+  reqStr(c, v, 'zoneId');
+  reqStr(c, v, 'encounterType');
+  reqStrArr(c, v, 'enemyIds');
+  reqNum(c, v, 'probability');
+  if (typeof v.probability === 'number' && (!Number.isFinite(v.probability) || v.probability < 0 || v.probability > 1)) {
+    c.errors.push({
+      path: `${path}.probability`,
+      message: 'must be a finite number in [0, 1] — a spawn chance outside that range is an authoring error, not a value to clamp',
+    });
+  }
+  reqNum(c, v, 'cooldownTurns');
+  if (typeof v.cooldownTurns === 'number' && (!Number.isInteger(v.cooldownTurns) || v.cooldownTurns < 0)) {
+    c.errors.push({
+      path: `${path}.cooldownTurns`,
+      message: 'must be a non-negative integer number of rounds',
+    });
+  }
+  reqStrArr(c, v, 'tags');
+  return { ok: c.errors.length === 0, errors: c.errors };
+}
+
 export function validateRoomDefinition(v: unknown, path = 'RoomDefinition'): ValidationResult {
   if (!isObj(v)) return fail([{ path, message: 'must be an object' }]);
   const c = checker(path);

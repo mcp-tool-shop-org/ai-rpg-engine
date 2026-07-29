@@ -151,8 +151,9 @@ describe('C1/P1 — the exported pack reaches a running world', () => {
   it('the fixture is still the byte-identical export C0 committed', () => {
     // Guards against this proof drifting onto a hand-tuned pack that boots.
     const raw = JSON.parse(fs.readFileSync(FIXTURE_PACK_PATH, 'utf-8')) as Record<string, unknown>;
+    // ⚠ `placements` added by C3/P1, in the position the exporter emits it.
     expect(Object.keys(raw)).toEqual([
-      'schemaVersion', 'entities', 'zones', 'districts', 'dialogues', 'items',
+      'schemaVersion', 'entities', 'placements', 'zones', 'districts', 'dialogues', 'items',
       'playerTemplate', 'buildCatalog', 'progressionTrees',
       'encounterAnchors', 'factionPresences', 'pressureHotspots',
     ]);

@@ -30,11 +30,20 @@
 // here.
 
 import type { Engine, EntityState, ZoneState } from '@ai-rpg-engine/core';
-import type { ContentPack } from './refs.js';
+import type { ContentPack, EntityPlacementRecord } from './refs.js';
 import type { EntityBlueprint, ZoneDefinition } from './schemas.js';
 import type { ValidationError } from './validate.js';
-import { validateEntityBlueprint, validateZoneDefinition } from './validate.js';
+import {
+  validateEntityBlueprint,
+  validateZoneDefinition,
+  validateEntityPlacementRecord,
+} from './validate.js';
 import { runLoadGate, type GateContext, type GateResult } from './gate.js';
+
+/** Plain-object test, used by the passes below to degrade rather than throw. */
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
 
 // --- Result shapes --------------------------------------------------------
 
@@ -274,8 +283,13 @@ export function entityBlueprintToState(bp: EntityBlueprint, dropped?: DroppedFie
 
 // --- The seam -------------------------------------------------------------
 
-/** Pack keys this seam routes directly, using core state APIs only. */
-export const CORE_INTAKE_KEYS = ['zones', 'entities'] as const;
+/**
+ * Pack keys this seam routes directly, using core state APIs only.
+ *
+ * `placements` joins them at C3/P1: it writes `EntityState.zoneId`, a core field,
+ * so it needs no module vocabulary and stays on this side of the layering.
+ */
+export const CORE_INTAKE_KEYS = ['zones', 'entities', 'placements'] as const;
 
 /**
  * Pack keys that need a module's own vocabulary and can still be routed into an
@@ -302,8 +316,15 @@ export const CORE_INTAKE_KEYS = ['zones', 'entities'] as const;
  * reads BEFORE constructing modules. All three still join the declared key list
  * (that half of C0's finding was correct and is closed by the gate); only one of
  * the three can be handed to a world that is already running.
+ *
+ * C3/P1 adds `encounterAnchors` here for the same reason `districts` qualifies:
+ * `encounter-spawn` keeps its content in a module-side registry keyed by
+ * `world.meta.gameId` and reads its per-zone tables from there at tick time, so
+ * a registration after boot is seen by every later roll. The channel REGISTERS
+ * into that existing system rather than standing a second spawn system beside
+ * it — see `encounterAnchorsChannel` in @ai-rpg-engine/modules.
  */
-export const MODULE_INTAKE_KEYS = ['districts'] as const;
+export const MODULE_INTAKE_KEYS = ['districts', 'encounterAnchors'] as const;
 
 /**
  * Pack keys carrying real content that is consumed at construction/session-setup
@@ -401,13 +422,105 @@ export function applyContentPack(
     }
     if (entities.length > 0) {
       applied.entities = count;
-      // Stated once for the whole channel rather than per entity: the pack knows
-      // every NPC and where none of them stand.
+      // ⚠ C3/P1 CLOSED THE ADVISORY THAT LIVED HERE. C1 emitted, on every single
+      // ingestion: "EntityBlueprint has no `zoneId`, so converted entities are
+      // placed nowhere." That was true and there was nothing better to do about
+      // it — C0 called it "the single most consequential drop in the lane"
+      // (REPORT §2). The `placements` channel below is the field that closes it,
+      // and `intake.test.ts` now asserts the advisory is GONE rather than
+      // present, in the same commit. A pack that carries entities and no
+      // placements still gets told so, once, from the placements pass.
+    }
+  }
+
+  // --- placements (core-only) ---
+  // WHERE the entities stand. Runs AFTER entities so the referent exists in the
+  // store — a placement is a write to an EntityState the previous pass created,
+  // not a second way to create one.
+  const placements = pack.placements ?? [];
+  if (!Array.isArray(placements)) {
+    errors.push({ path: 'pack.placements', message: 'must be an array if provided.' });
+  } else {
+    let count = 0;
+    for (let i = 0; i < placements.length; i++) {
+      const rec = placements[i];
+      const label = `placements[${i}](${isRecord(rec) ? String(rec.entityId ?? '?') : '?'})`;
+      if (!options.prevalidated) {
+        const r = validateEntityPlacementRecord(rec, label);
+        if (r.errors.length > 0) {
+          errors.push(...r.errors);
+          continue;
+        }
+      }
+      const { entityId, zoneId, spawnCondition } = rec as EntityPlacementRecord;
+
+      // Referential checks against the STORE, not against the pack. The pack's
+      // own refs pass already resolved intra-pack references; here the question
+      // is different and sharper — does this entity/zone exist in the world the
+      // pack's code built? A pack whose placements resolve on paper and not in
+      // the booted world is the "carried, therefore alive" error, and it is the
+      // one C1 measured on `light`.
+      const target = engine.store.state.entities[entityId];
+      if (!target) {
+        errors.push({
+          path: `${label}.entityId`,
+          message:
+            `no entity "${entityId}" in the booted world — a placement writes to an existing EntityState. ` +
+            'Check the entity is in this pack\'s entities[] (or was registered by pack code).',
+        });
+        continue;
+      }
+      if (!engine.store.state.zones[zoneId]) {
+        errors.push({
+          path: `${label}.zoneId`,
+          message:
+            `no zone "${zoneId}" in the booted world — the entity would be placed nowhere, ` +
+            'which is the exact gap placements exist to close.',
+        });
+        continue;
+      }
+
+      // A spawn condition is carried, NOT evaluated here. Intake is not a tick:
+      // there is no actor, no party and no tick to evaluate `party-level:>=10`
+      // against, and a condition evaluated at the wrong moment is worse than one
+      // deferred. It is REPORTED so a pack author is never left thinking a
+      // conditional placement was gated at load.
+      if (spawnCondition !== undefined) {
+        dropped.push({
+          path: `${label}.spawnCondition`,
+          reason: 'needs-module-vocabulary',
+          detail:
+            `carried and NOT evaluated at intake: the entity is placed unconditionally. ` +
+            'Conditional placement needs a tick-time evaluator with a party/inventory/flag ' +
+            'reader — the same input chain zone entry gates need (C3/P2).',
+        });
+      }
+
+      target.zoneId = zoneId;
+      count++;
+    }
+    if (placements.length > 0) applied.placements = count;
+  }
+  // Entities with no placement are named ONCE, with the count — the honest
+  // remainder of the advisory C1 had to emit for every pack.
+  if (Array.isArray(entities) && entities.length > 0) {
+    const placedIds = new Set(
+      (Array.isArray(placements) ? placements : [])
+        .filter(isRecord)
+        .map((p) => String((p as EntityPlacementRecord).entityId)),
+    );
+    const unplaced = entities
+      .filter(isRecord)
+      .map((e) => String((e as EntityBlueprint).id))
+      .filter((id) => !placedIds.has(id));
+    if (unplaced.length > 0) {
       advisories.push({
-        path: 'pack.entities',
+        path: 'pack.placements',
         message:
-          'EntityBlueprint has no `zoneId`, so converted entities are placed nowhere. ' +
-          'Zone placement needs an authoring field the schema does not have yet (REPORT §2).',
+          `${unplaced.length} of ${entities.length} converted entit${unplaced.length === 1 ? 'y has' : 'ies have'} no placement ` +
+          `and stand${unplaced.length === 1 ? 's' : ''} nowhere: ${unplaced.slice(0, 8).join(', ')}` +
+          `${unplaced.length > 8 ? `, +${unplaced.length - 8} more` : ''}. ` +
+          'Add a `placements` entry per entity that should be somewhere.',
       });
     }
   }

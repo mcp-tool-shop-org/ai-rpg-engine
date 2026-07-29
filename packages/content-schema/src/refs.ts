@@ -8,6 +8,7 @@ import type {
   QuestDefinition,
   AbilityDefinition,
   StatusDefinition,
+  ConditionSpec,
 } from './schemas.js';
 
 export type ContentPack = {
@@ -93,6 +94,69 @@ export type ContentPack = {
    * pass it to `createProgressionCore({ trees })`.
    */
   progressionTrees?: unknown[];
+  /**
+   * WHERE the pack's entities stand (C3/P1).
+   *
+   * C0's sharpest single drop: `EntityBlueprint` has no location field, so an
+   * exported pack knew every NPC and where none of them stood (REPORT §2 —
+   * "the single most consequential drop in the lane"), and C1's intake seam
+   * reported it as an advisory on every single ingestion because there was
+   * nothing better to do about it.
+   *
+   * Placement is its own record rather than a field on the blueprint, and that
+   * is deliberate: a blueprint is a TEMPLATE. `encounter-spawn` already clones
+   * templates and overrides `zoneId` per instance, so a location on the
+   * template would be a lie for every cloned participant. One template, N
+   * placements.
+   */
+  placements?: EntityPlacementRecord[];
+  /**
+   * Deterministic per-zone spawn sets (C3/P1) — the charter's Pillar 2
+   * "deterministic per-zone spawn sets with cleared/respawn state".
+   *
+   * Emitted by world-forge since the lane existed and, until now, an UNDECLARED
+   * pass-through with zero engine hits (C0 REPORT §3.1). Routed into a booted
+   * world by an injected channel that REGISTERS into `encounter-spawn`'s
+   * existing content registry — the engine already has a complete spawn system
+   * (rolls, one-live-encounter-per-zone ledger, `encounter.spawned` event), and
+   * C3 extends it rather than standing a second one beside it.
+   *
+   * Minimal structural shape, mirroring the `districts` pattern above:
+   * content-schema sits BELOW @ai-rpg-engine/modules, so importing the real
+   * `EncounterAnchor` would invert the layering.
+   */
+  encounterAnchors?: EncounterAnchorRecord[];
+};
+
+/**
+ * One entity, placed in one zone, optionally gated on a compiled condition.
+ *
+ * `spawnCondition` is a {@link ConditionSpec}, not a grammar string: world-forge
+ * COMPILES its SpawnCondition grammar at export (RG-C1 Lane 2's ink pattern — a
+ * rich authoring grammar compiling to a closed, engine-owned instruction
+ * format). The engine never parses author syntax.
+ */
+export type EntityPlacementRecord = {
+  /** An `EntityBlueprint.id` in this pack. Unresolvable ⇒ refused by name. */
+  entityId: string;
+  /** A `ZoneDefinition.id` in this pack. Unresolvable ⇒ refused by name. */
+  zoneId: string;
+  /** Absent ⇒ always placed. */
+  spawnCondition?: ConditionSpec;
+};
+
+/** A per-zone encounter table entry. See {@link ContentPack.encounterAnchors}. */
+export type EncounterAnchorRecord = {
+  id: string;
+  zoneId: string;
+  /** Closed set — an unmapped value is REFUSED, never defaulted. */
+  encounterType: string;
+  enemyIds: string[];
+  /** Per-anchor spawn chance in [0, 1]. */
+  probability: number;
+  /** Rounds a zone stays quiet after this anchor fires. */
+  cooldownTurns: number;
+  tags: string[];
 };
 
 /**
@@ -184,6 +248,76 @@ export function validateRefs(pack: ContentPack): RefsResult {
         errors.push({
           path: `${path}.zone(${zone.id}).entities`,
           message: `references unknown entity "${entityId}"`,
+        });
+      }
+    }
+  }
+
+  // --- C3/P1: placements + spawn sets must resolve ------------------------
+  //
+  // These are ERRORS, not advisories. The exporter already emits a warning for
+  // an entity placed in a deleted zone ("N entity placement(s) reference zones
+  // that do not exist and will be unreachable at runtime", export.ts) — but a
+  // warning at export time is narration. Arriving at the runtime, the same fact
+  // is refusable, and refusing it is the difference between "the NPC is missing"
+  // and "the pack told you which NPC and which zone".
+  const placements = (Array.isArray(pack.placements) ? pack.placements : []).filter(isRecord) as NonNullable<ContentPack['placements']>;
+  for (let i = 0; i < placements.length; i++) {
+    const p = placements[i];
+    if (typeof p.entityId === 'string' && !entityIds.has(p.entityId)) {
+      errors.push({
+        path: `${path}.placements[${i}].entityId`,
+        message: `references unknown entity "${p.entityId}" — a placement names a blueprint in this pack's entities[]`,
+      });
+    }
+    if (typeof p.zoneId === 'string' && !zoneIds.has(p.zoneId)) {
+      errors.push({
+        path: `${path}.placements[${i}](${p.entityId}).zoneId`,
+        message: `references unknown zone "${p.zoneId}" — the entity would be placed nowhere, which is the exact gap placements exist to close`,
+      });
+    }
+  }
+  // One entity placed twice is an authoring error, not a stack of two NPCs: a
+  // blueprint converts to ONE EntityState with ONE zoneId, so the second
+  // placement would silently win. Same failure shape as the duplicate
+  // entity/zone ids above (v2.5 PC-4), and caught for the same reason.
+  const placedEntityIds = new Set<string>();
+  for (let i = 0; i < placements.length; i++) {
+    const id = placements[i].entityId;
+    if (typeof id !== 'string') continue;
+    if (placedEntityIds.has(id)) {
+      errors.push({
+        path: `${path}.placements[${i}].entityId`,
+        message: `entity "${id}" is placed more than once — a blueprint becomes one EntityState with one zoneId, so the later placement would silently win. Use one placement per entity (spawn SETS are encounterAnchors).`,
+      });
+    }
+    placedEntityIds.add(id);
+  }
+
+  const anchors = (Array.isArray(pack.encounterAnchors) ? pack.encounterAnchors : []).filter(isRecord) as NonNullable<ContentPack['encounterAnchors']>;
+  const anchorIds = new Set<string>();
+  for (let i = 0; i < anchors.length; i++) {
+    const a = anchors[i];
+    if (typeof a.id === 'string') {
+      if (anchorIds.has(a.id)) {
+        errors.push({
+          path: `${path}.encounterAnchors[${i}].id`,
+          message: `duplicate encounter anchor id "${a.id}" — anchor ids must be unique`,
+        });
+      }
+      anchorIds.add(a.id);
+    }
+    if (typeof a.zoneId === 'string' && !zoneIds.has(a.zoneId)) {
+      errors.push({
+        path: `${path}.encounterAnchors[${i}](${a.id}).zoneId`,
+        message: `references unknown zone "${a.zoneId}" — an anchor keys a per-zone spawn table, so an unknown zone makes it unreachable`,
+      });
+    }
+    for (const enemyId of Array.isArray(a.enemyIds) ? a.enemyIds : []) {
+      if (typeof enemyId === 'string' && !entityIds.has(enemyId)) {
+        errors.push({
+          path: `${path}.encounterAnchors[${i}](${a.id}).enemyIds`,
+          message: `references unknown entity "${enemyId}" — spawn participants are cloned from this pack's entity templates`,
         });
       }
     }

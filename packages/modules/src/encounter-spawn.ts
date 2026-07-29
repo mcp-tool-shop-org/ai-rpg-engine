@@ -9,10 +9,16 @@
 //
 //   - encounter-library.ts ships pure factories only (no selection/weighting
 //     API), so selection lives here: a zone's table is a plain string[] of
-//     encounter ids — the same shape as content-schema's ZoneDefinition
-//     `encounterTable` (schemas.ts) — and WEIGHT IS REPETITION, the classic
+//     encounter ids — the same shape as content-schema's `RoomDefinition`
+//     `encounterTable` (schemas.ts:245) — and WEIGHT IS REPETITION, the classic
 //     encounter-table idiom the string[] schema affords. Two entries of
 //     'street-patrol' against one 'runner-ambush' is 2:1.
+//     (⚠ ATTRIBUTION CORRECTED C3/P1: this said `ZoneDefinition.encounterTable`.
+//     `ZoneDefinition` has no such field — it is on `RoomDefinition`, which is
+//     itself authoring-only and unconsumed. C0 filed the misattribution as
+//     engine-hygiene; corrected here rather than left, because a cross-file
+//     pointer nobody follows is exactly how EB-011's comment rotted into nine
+//     phantom module ids.)
 //   - EncounterDefinition.validZoneIds / validZoneTags are honored as authored:
 //     a table may only offer an encounter in a zone the definition itself
 //     allows (validateEncounterSpawnContent enforces it at content-test time;
@@ -127,6 +133,22 @@ export type EncounterSpawnState = {
   cursor: number;
   /** One-live-encounter-per-zone ledger: zoneId → the last spawn's members. */
   liveByZone: Record<string, { encounterId: string; entityIds: string[] }>;
+  /**
+   * C3/P1 — per-zone cooldown: zoneId → the tick at which the zone becomes live
+   * again. A zone whose last spawn is dead but whose cooldown has not elapsed
+   * stays quiet.
+   *
+   * This is the second axis an authored `EncounterAnchor` carries that this
+   * module had no expression for. It rides the SAME persisted namespace as
+   * `liveByZone` (so it survives save/reload identically) and is checked in the
+   * SAME guard, rather than becoming a second ledger with its own lifecycle.
+   *
+   * Optional so a pre-C3 restored save — whose namespace has no such field —
+   * initialises to `{}` and behaves exactly as before instead of throwing on a
+   * missing record. (The `cursor` field learned this lesson the hard way; see
+   * `freshEncounterSpawnState`.)
+   */
+  cooledUntilTick?: Record<string, number>;
 };
 
 /** What one spawn did — returned via WorldTickResult.encounters for tests/debug. */
@@ -144,6 +166,16 @@ type RegistryEntry = {
   zoneTables: Record<string, string[]>;
   baseChance: number;
   safetyStep: number;
+  /**
+   * C3/P1 — per-zone spawn chance, from an authored `EncounterAnchor.probability`.
+   * Consulted INSTEAD of `baseChance` for that zone; safety still modulates, so
+   * the F-ENG005 loop (a bloodier district answers more often) is not undone.
+   */
+  zoneChance?: Record<string, number>;
+  /**
+   * C3/P1 — per-zone cooldown in rounds, from `EncounterAnchor.cooldownTurns`.
+   */
+  zoneCooldown?: Record<string, number>;
 };
 
 // ---------------------------------------------------------------------------
@@ -155,6 +187,77 @@ const registry = new Map<string, RegistryEntry>();
 /** Exposed for tests: drop a pack's registered spawn content. */
 export function unregisterEncounterSpawnContent(gameId: string): void {
   registry.delete(gameId);
+}
+
+/**
+ * C3/P1 — MERGE authored spawn-set content into an already-registered pack.
+ *
+ * The content-intake seam's entry point. `createEncounterSpawn` registers at
+ * module construction, from code; an exported pack's `encounterAnchors` arrive
+ * AFTER boot, and this is how they join the same registry the tick already
+ * reads. There is deliberately no second registry and no second roll: this
+ * module is the engine's spawn system, and C3 extends it.
+ *
+ * Merge semantics, chosen to make code and data composable rather than rivals:
+ * - encounters and templates are ADDED; an id already registered by pack code
+ *   WINS, because code is the more specific authority (it can carry closures a
+ *   data record cannot express) and silently overwriting it would make a pack's
+ *   own set-pieces vanish when someone added an anchor.
+ * - a zone's table is REPLACED, not concatenated — an authored anchor for a zone
+ *   is a statement about that zone, and appending would make re-ingesting the
+ *   same pack twice double its weights.
+ *
+ * Returns the ids that were skipped because code already owned them, so the
+ * caller can report rather than guess.
+ */
+export function mergeEncounterSpawnContent(
+  gameId: string,
+  content: {
+    encounters?: EncounterDefinition[];
+    entityTemplates?: EntityState[];
+    zoneTables?: Record<string, string[]>;
+    zoneChance?: Record<string, number>;
+    zoneCooldown?: Record<string, number>;
+  },
+): { skippedEncounterIds: string[]; skippedTemplateIds: string[] } {
+  const existing = registry.get(gameId);
+  const entry: RegistryEntry = existing ?? {
+    encountersById: new Map(),
+    templatesById: new Map(),
+    zoneTables: {},
+    baseChance: BASE_SPAWN_CHANCE,
+    safetyStep: SAFETY_CHANCE_STEP,
+  };
+
+  const skippedEncounterIds: string[] = [];
+  const skippedTemplateIds: string[] = [];
+
+  for (const e of content.encounters ?? []) {
+    if (entry.encountersById.has(e.id)) {
+      skippedEncounterIds.push(e.id);
+      continue;
+    }
+    entry.encountersById.set(e.id, e);
+  }
+  for (const t of content.entityTemplates ?? []) {
+    if (entry.templatesById.has(t.id)) {
+      skippedTemplateIds.push(t.id);
+      continue;
+    }
+    entry.templatesById.set(t.id, t);
+  }
+  for (const [zoneId, table] of Object.entries(content.zoneTables ?? {})) {
+    entry.zoneTables[zoneId] = [...table];
+  }
+  if (content.zoneChance) {
+    entry.zoneChance = { ...(entry.zoneChance ?? {}), ...content.zoneChance };
+  }
+  if (content.zoneCooldown) {
+    entry.zoneCooldown = { ...(entry.zoneCooldown ?? {}), ...content.zoneCooldown };
+  }
+
+  registry.set(gameId, entry);
+  return { skippedEncounterIds, skippedTemplateIds };
 }
 
 // ---------------------------------------------------------------------------
@@ -175,7 +278,7 @@ const STATE_KEY = 'encounter-spawn';
  * starts from "now".
  */
 function freshEncounterSpawnState(world: WorldState): EncounterSpawnState {
-  return { cursor: world.eventLog.length, liveByZone: {} };
+  return { cursor: world.eventLog.length, liveByZone: {}, cooledUntilTick: {} };
 }
 
 export function getEncounterSpawnState(world: WorldState): EncounterSpawnState {
@@ -385,6 +488,31 @@ function zoneHasLiveEncounter(
 }
 
 /**
+ * C3/P1 — is the zone still cooling down from its last spawn?
+ *
+ * Distinct from `zoneHasLiveEncounter` and checked after it: "the pack is still
+ * alive" and "the pack is dead but the street has not settled" are different
+ * facts, and an authored `cooldownTurns` is about the second. A zone with no
+ * authored cooldown is never cooling, so packs that register no anchors are
+ * byte-identical no-ops (the invariant this whole module already holds).
+ */
+function zoneIsCoolingDown(
+  world: WorldState,
+  state: EncounterSpawnState,
+  zoneId: string,
+): boolean {
+  const until = state.cooledUntilTick?.[zoneId];
+  if (until === undefined) return false;
+  if (world.meta.tick >= until) {
+    // Elapsed — clear the record rather than letting it accumulate one entry per
+    // zone the player ever fought in.
+    delete state.cooledUntilTick![zoneId];
+    return false;
+  }
+  return true;
+}
+
+/**
  * Candidates for a zone entry: table entries resolved against the authored
  * definitions, keeping repetition (weight), dropping anything unspawnable —
  * boss-fight compositions, role:boss participants, missing templates, and
@@ -428,14 +556,23 @@ function trySpawn(
   const world = engine.store.state;
 
   if (zoneHasLiveEncounter(world, state, zoneId)) return undefined;
+  // C3/P1 — an authored cooldown keeps the zone quiet even once the pack is dead.
+  if (zoneIsCoolingDown(world, state, zoneId)) return undefined;
 
   const candidates = spawnCandidates(entry, world, zoneId);
   if (candidates.length === 0) return undefined;
 
   // Gate roll: safety modulates — a bloodier district answers more often.
+  //
+  // C3/P1: an authored `EncounterAnchor.probability` replaces the pack-wide
+  // base chance FOR THIS ZONE, and safety still modulates on top. Substituting
+  // the base rather than multiplying keeps the authored number meaning what an
+  // author would expect it to mean ("this anchor fires about a third of the
+  // time"), and keeps the safety loop intact rather than special-casing it.
   const districtId = getDistrictForZone(world, zoneId);
   const safety = districtId ? num(world.globals[`district_${districtId}_safety`]) : 0;
-  const chance = spawnChance(entry.baseChance, entry.safetyStep, safety);
+  const base = entry.zoneChance?.[zoneId] ?? entry.baseChance;
+  const chance = spawnChance(base, entry.safetyStep, safety);
   const seed = world.meta.seed;
   const tick = world.meta.tick;
   if (spawnRoll(seed, tick, zoneId, 'gate') >= chance) return undefined;
@@ -461,6 +598,15 @@ function trySpawn(
   }
 
   state.liveByZone[zoneId] = { encounterId: pick.id, entityIds };
+  // C3/P1 — arm the authored cooldown. Recorded as an absolute tick so the
+  // check is a comparison rather than a per-round decrement: a decrementing
+  // counter has to be ticked by something, and this module is only ever entered
+  // on a zone ENTRY, so a counter would stall the moment the player left.
+  const cooldown = entry.zoneCooldown?.[zoneId];
+  if (cooldown !== undefined && cooldown > 0) {
+    state.cooledUntilTick ??= {};
+    state.cooledUntilTick[zoneId] = tick + cooldown;
+  }
 
   const hooks = pick.narrativeHooks;
   // ONE renderable event through the canonical emit path. label + description

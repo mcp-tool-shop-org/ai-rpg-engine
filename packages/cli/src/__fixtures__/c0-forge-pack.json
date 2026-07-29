@@ -74,6 +74,40 @@
       }
     }
   ],
+  "placements": [
+    {
+      "entityId": "npc-quartermaster",
+      "zoneId": "zone-surface-yard",
+      "spawnCondition": {
+        "type": "time-of-day",
+        "params": {
+          "when": "night"
+        }
+      }
+    },
+    {
+      "entityId": "enemy-vault-drowned",
+      "zoneId": "zone-under-vault",
+      "spawnCondition": {
+        "type": "quest-progress",
+        "params": {
+          "id": "vault-key",
+          "stage": "opened"
+        }
+      }
+    },
+    {
+      "entityId": "npc-gantry-runner",
+      "zoneId": "zone-sky-gantry",
+      "spawnCondition": {
+        "type": "player-level",
+        "params": {
+          "op": ">=",
+          "value": 5
+        }
+      }
+    }
+  ],
   "zones": [
     {
       "id": "zone-surface-yard",

@@ -8,6 +8,8 @@ import {
   validateZoneDefinition,
   validateDialogueDefinition,
   validateQuestDefinition,
+  validateEntityPlacementRecord,
+  validateEncounterAnchorRecord,
   formatErrors,
 } from './validate.js';
 import { validateRefs, validateGameContent } from './refs.js';
@@ -57,6 +59,14 @@ const REFS_ITERATED_KEYS = [
   'archetypes',
   'backgrounds',
   'itemUseEffects',
+  // C3/P1 — the two space-vocabulary collections. `validateRefs` resolves
+  // `placements[].entityId`/`.zoneId` and `encounterAnchors[].zoneId`/`.enemyIds[]`
+  // against the pack, so by the invariant above they belong here. Added in the
+  // SAME commit as their iteration, which is the whole point of the invariant:
+  // C0's raw-`TypeError` hole existed because six keys were iterated and not
+  // guarded.
+  'placements',
+  'encounterAnchors',
 ] as const;
 
 /**
@@ -135,6 +145,19 @@ export function loadContent(pack: ContentPack): LoadResult {
     const label = `quests[${i}](${isPlainObject(quest) ? (quest.id ?? '?') : '?'})`;
     const r = validateQuestDefinition(quest, label);
     allErrors.push(...r.errors);
+  }
+  // C3/P1 — the space-vocabulary collections, validated per element like the
+  // four above. Labelled by the id an author would recognise: a placement's
+  // identity is the pair it names, not an id of its own.
+  for (let i = 0; i < (pack.placements ?? []).length; i++) {
+    const p = (pack.placements ?? [])[i];
+    const label = `placements[${i}](${isPlainObject(p) ? (p.entityId ?? '?') : '?'})`;
+    allErrors.push(...validateEntityPlacementRecord(p, label).errors);
+  }
+  for (let i = 0; i < (pack.encounterAnchors ?? []).length; i++) {
+    const a = (pack.encounterAnchors ?? [])[i];
+    const label = `encounterAnchors[${i}](${isPlainObject(a) ? (a.id ?? '?') : '?'})`;
+    allErrors.push(...validateEncounterAnchorRecord(a, label).errors);
   }
 
   // Cross-reference validation. validateRefs reads .id off elements, so only run it once
