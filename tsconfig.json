@@ -19,6 +19,7 @@
   "references": [
     { "path": "packages/core" },
     { "path": "packages/content-schema" },
+    { "path": "packages/sidecar" },
     { "path": "packages/modules" },
     { "path": "packages/terminal-ui" },
     { "path": "packages/cli" },

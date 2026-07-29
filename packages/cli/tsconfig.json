@@ -67,6 +67,9 @@
     },
     {
       "path": "../starter-bounty-hunter"
+    },
+    {
+      "path": "../sidecar"
     }
   ],
   "exclude": [

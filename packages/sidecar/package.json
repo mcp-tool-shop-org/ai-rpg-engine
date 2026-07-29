@@ -1,0 +1,46 @@
+{
+  "name": "@ai-rpg-engine/sidecar",
+  "version": "3.8.0",
+  "description": "JSON-RPC sidecar for the AI RPG Engine — one authoritative sim process, N rendering clients",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@ai-rpg-engine/core": "*"
+  },
+  "license": "MIT",
+  "author": "mcp-tool-shop",
+  "homepage": "https://mcp-tool-shop-org.github.io/ai-rpg-engine/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine.git",
+    "directory": "packages/sidecar"
+  },
+  "keywords": [
+    "rpg",
+    "json-rpc",
+    "sidecar",
+    "game-engine",
+    "protocol",
+    "deterministic"
+  ],
+  "bugs": {
+    "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

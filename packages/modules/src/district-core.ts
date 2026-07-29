@@ -79,6 +79,64 @@ const DEFAULT_DECAY: DistrictDecayConfig = {
   floor: 0,
 };
 
+// --- Seeding ---------------------------------------------------------------
+
+/**
+ * Write one district definition into a district-core state object.
+ *
+ * The single definition of what "a district in world state" means. Used by
+ * {@link createDistrictCore} at construction and by
+ * {@link ingestDistrictDefinitions} at content intake, so a district that
+ * arrives from an exported pack is byte-identical to one a pack authored in
+ * code. Duplicating this loop in the intake path is exactly how the two would
+ * drift apart.
+ */
+function seedDistrict(state: ModuleState, def: DistrictDefinition): void {
+  state.definitions[def.id] = def;
+  state.districts[def.id] = {
+    ...DEFAULT_METRICS,
+    ...def.baseMetrics,
+    lastUpdateTick: 0,
+    eventCount: 0,
+  };
+  for (const zoneId of def.zoneIds) {
+    state.zoneToDistrict[zoneId] = def.id;
+  }
+}
+
+/**
+ * Route district definitions into an ALREADY-BOOTED world (C1's intake seam).
+ *
+ * This module keeps its definitions in world state rather than in a construction
+ * closure, which is the whole reason `districts` is routable post-boot at all —
+ * `getModuleState(world)` is what every reader here calls, so a write lands and
+ * is seen. (Its two siblings in C0's "three cheap wire gaps" are not so lucky:
+ * progression-core closure-captures its tree Map, and buildCatalog is consumed
+ * before a world exists. See `MODULE_INTAKE_KEYS` in content-schema.)
+ *
+ * Re-ingesting an existing id replaces it, matching `addZone`/`addEntity`.
+ * Returns the number of definitions written.
+ *
+ * @param store a `WorldStore` — typed structurally so this module does not have
+ *   to import the class and invert nothing.
+ */
+export function ingestDistrictDefinitions(
+  store: { state: WorldState; setModuleState?: (id: string, value: unknown) => void },
+  defs: readonly DistrictDefinition[],
+): number {
+  if (defs.length === 0) return 0;
+  const world = store.state;
+  const existing = world.modules['district-core'] as ModuleState | undefined;
+  const state: ModuleState = existing ?? { districts: {}, zoneToDistrict: {}, definitions: {} };
+  for (const def of defs) seedDistrict(state, structuredClone(def) as DistrictDefinition);
+  // The namespace is normally present (registerNamespace ran at init). Writing it
+  // back covers the case where a caller applies content to a world whose
+  // district-core namespace was never initialised — without this, every write
+  // would land on a throwaway object and vanish silently.
+  world.modules['district-core'] = state;
+  return defs.length;
+}
+
 // --- Module ---
 
 export function createDistrictCore(config: DistrictCoreConfig): EngineModule {
@@ -90,18 +148,7 @@ export function createDistrictCore(config: DistrictCoreConfig): EngineModule {
     definitions: {},
   };
 
-  for (const def of config.districts) {
-    initialState.definitions[def.id] = def;
-    initialState.districts[def.id] = {
-      ...DEFAULT_METRICS,
-      ...def.baseMetrics,
-      lastUpdateTick: 0,
-      eventCount: 0,
-    };
-    for (const zoneId of def.zoneIds) {
-      initialState.zoneToDistrict[zoneId] = def.id;
-    }
-  }
+  for (const def of config.districts) seedDistrict(initialState, def);
 
   return {
     id: 'district-core',

@@ -1,0 +1,436 @@
+// intake.test.ts — the content → runtime seam, with its negative controls.
+//
+// C0 proved four ways that no route existed from a loaded pack into a
+// WorldStore (docs/c0-alignment/REPORT.md §3.3). This file proves the route
+// exists, converts what it claims to convert, and — the part that matters most —
+// NAMES what it does not.
+//
+// The controls are here because the audit's headline failure was not lost data.
+// It was data lost SILENTLY while an instrument reported losslessPercent: 100 on
+// an export that dropped 194 fields. A converter that drops without reporting
+// rebuilds that exact failure one layer down, and would pass a test suite that
+// only checked what it carried.
+
+import { describe, it, expect } from 'vitest';
+import { Engine, type GameManifest, type ZoneState, type EntityState } from '@ai-rpg-engine/core';
+import {
+  applyContentPack,
+  zoneDefinitionToState,
+  entityBlueprintToState,
+  extractSessionContent,
+  MODULE_INTAKE_KEYS,
+  SESSION_SCOPED_KEYS,
+  type ContentPack,
+  type DroppedField,
+  type IntakeChannel,
+} from './index.js';
+
+const MANIFEST: GameManifest = {
+  id: 'intake-test',
+  title: 'Intake Test',
+  version: '1.0.0',
+  engineVersion: '3.8.0',
+  ruleset: 'standard-v1',
+  modules: [],
+  contentPacks: [],
+};
+
+function bootEngine(): Engine {
+  return new Engine({ manifest: MANIFEST, seed: 71 });
+}
+
+function pathsOf(dropped: DroppedField[]): string[] {
+  return dropped.map((d) => d.path).sort();
+}
+
+// --- The converters -------------------------------------------------------
+
+describe('C1/P1 — ZoneDefinition → ZoneState', () => {
+  it('carries every field C0 measured as alive, and derives roomId', () => {
+    const state = zoneDefinitionToState({
+      id: 'zone-yard',
+      name: 'Surface Yard',
+      tags: ['outdoor', 'safe'],
+      neighbors: ['zone-vault'],
+      light: 9,
+      noise: 4,
+      hazards: ['loose cobbles'],
+      interactables: ['well'],
+    });
+
+    // The four fields the C0 sweep measured alive-as-rules across the catalog:
+    // light 12/12, noise 12/12, neighbors 11/12, tags 8+3/12.
+    expect(state.light).toBe(9);
+    expect(state.noise).toBe(4);
+    expect(state.neighbors).toEqual(['zone-vault']);
+    expect(state.tags).toEqual(['outdoor', 'safe']);
+
+    // roomId is DERIVED (CONTRACT §2.2): the store requires it, the definition
+    // has no counterpart, and C0 measured it stored-inert in 12 of 12 worlds.
+    expect(state.roomId).toBe('zone-yard');
+  });
+
+  it('defaults the two required array fields rather than emitting undefined', () => {
+    const state = zoneDefinitionToState({ id: 'z', name: 'Z' });
+    expect(state.tags).toEqual([]);
+    expect(state.neighbors).toEqual([]);
+    // Optional scalars stay absent — an explicit `undefined` would serialize
+    // differently from a pack-authored zone and break byte-identical saves.
+    expect('light' in state).toBe(false);
+    expect('noise' in state).toBe(false);
+  });
+
+  it('leaves `stability` unset — it is alive AND unauthorable', () => {
+    // C0's finding I did not expect (REPORT §6.1): stability moves 4 of 12
+    // worlds and has four readers, but ZoneDefinition has no such field. C1 does
+    // not invent one; making it authorable is a schema change, not a wire change.
+    const state = zoneDefinitionToState({ id: 'z', name: 'Z' }) as ZoneState;
+    expect(state.stability).toBeUndefined();
+    expect(state.authority).toBeUndefined();
+  });
+
+  it('CONTROL: names every field it drops, with a reason', () => {
+    const dropped: DroppedField[] = [];
+    zoneDefinitionToState(
+      {
+        id: 'z',
+        name: 'Z',
+        description: [{ text: 'prose' }],
+        exits: [{ targetZoneId: 'other', condition: { type: 'has-item', params: { id: 'rope' } } }],
+        entities: ['npc-1'],
+        hazards: ['loose cobbles'],
+      },
+      dropped,
+    );
+
+    expect(pathsOf(dropped)).toEqual([
+      'zones(z).description',
+      'zones(z).entities',
+      'zones(z).exits',
+      'zones(z).hazards',
+    ]);
+    for (const d of dropped) {
+      expect(d.detail.length, `${d.path} needs an actionable detail`).toBeGreaterThan(20);
+    }
+  });
+
+  it('does not alias the definition — the converter is clean without a store', () => {
+    // This control found a real bug in the first draft: `tags: def.tags ?? []`
+    // handed the definition's own array to the state. It was invisible through
+    // `applyContentPack` because `addZone` structuredClones on the way in — so
+    // the "store detaches" test below passed for the STORE's reason, not the
+    // converter's. These functions are exported and callable without a store.
+    const def = { id: 'z', name: 'Z', tags: ['a'], neighbors: ['n'] };
+    const state = zoneDefinitionToState(def);
+    state.tags.push('b');
+    state.neighbors.push('m');
+    expect(def.tags).toEqual(['a']);
+    expect(def.neighbors).toEqual(['n']);
+  });
+
+  it('CONTROL: a zone with nothing droppable reports NOTHING dropped', () => {
+    // The other half of the previous control. A reporter that always fires is as
+    // useless as one that never does — this is what makes the drop list evidence
+    // rather than decoration.
+    const dropped: DroppedField[] = [];
+    zoneDefinitionToState({ id: 'z', name: 'Z', tags: [], neighbors: [], light: 5 }, dropped);
+    expect(dropped).toEqual([]);
+  });
+
+  it('hazards are carried AND reported inert — the sharpest C0 measurement', () => {
+    // Same field, two mutations, twelve worlds: 'unstable floor' moves
+    // starter-fantasy because a pack closure matches it at setup.ts:137;
+    // 'loose cobbles' moves nothing anywhere. Hazard meaning is JavaScript the
+    // pack ships. So the converter carries the strings faithfully and says so.
+    const dropped: DroppedField[] = [];
+    const state = zoneDefinitionToState({ id: 'z', name: 'Z', hazards: ['loose cobbles'] }, dropped);
+
+    expect(state.hazards).toEqual(['loose cobbles']);
+    const entry = dropped.find((d) => d.path.endsWith('.hazards'));
+    expect(entry?.reason).toBe('inert-without-pack-code');
+  });
+});
+
+describe('C1/P1 — EntityBlueprint → EntityState', () => {
+  it('carries stats, resources and identity', () => {
+    const state = entityBlueprintToState({
+      id: 'npc-warden',
+      type: 'npc',
+      name: 'Warden',
+      tags: ['guard'],
+      baseStats: { might: 6 },
+      baseResources: { hp: 20 },
+      inventory: ['item-key'],
+      equipment: { hand: 'item-spear' },
+    });
+
+    expect(state.id).toBe('npc-warden');
+    expect(state.blueprintId).toBe('npc-warden');
+    expect(state.stats).toEqual({ might: 6 });
+    expect(state.resources).toEqual({ hp: 20 });
+    expect(state.statuses).toEqual([]);
+    expect(state.inventory).toEqual(['item-key']);
+  });
+
+  it('does not alias the blueprint — mutating the state leaves the source clean', () => {
+    const bp = { id: 'e', type: 'npc', name: 'E', baseStats: { might: 1 }, tags: ['a'] };
+    const state = entityBlueprintToState(bp);
+    state.stats.might = 99;
+    state.tags.push('b');
+    expect(bp.baseStats.might).toBe(1);
+    expect(bp.tags).toEqual(['a']);
+  });
+
+  it('CONTROL: names the three fields that need module vocabulary', () => {
+    const dropped: DroppedField[] = [];
+    entityBlueprintToState(
+      {
+        id: 'e',
+        type: 'npc',
+        name: 'E',
+        startingStatuses: ['status-wary'],
+        aiProfile: 'cautious',
+        scripts: ['on-enter'],
+      },
+      dropped,
+    );
+    expect(pathsOf(dropped)).toEqual([
+      'entities(e).aiProfile',
+      'entities(e).scripts',
+      'entities(e).startingStatuses',
+    ]);
+  });
+});
+
+// --- The seam -------------------------------------------------------------
+
+describe('C1/P1 — applyContentPack routes content into a booted world', () => {
+  const PACK: ContentPack = {
+    zones: [
+      { id: 'zone-a', name: 'A', tags: ['safe'], neighbors: ['zone-b'], light: 8, noise: 3 },
+      { id: 'zone-b', name: 'B', tags: [], neighbors: ['zone-a'], light: 1, noise: 1 },
+    ],
+    entities: [{ id: 'npc-1', type: 'npc', name: 'One', baseStats: { might: 3 } }],
+  };
+
+  it('zones reach the WorldStore and are readable as ZoneState', () => {
+    const engine = bootEngine();
+    expect(Object.keys(engine.world.zones)).toHaveLength(0);
+
+    const r = applyContentPack(engine, PACK);
+
+    expect(r.ok).toBe(true);
+    expect(r.errors).toEqual([]);
+    expect(r.applied.zones).toBe(2);
+    expect(Object.keys(engine.world.zones).sort()).toEqual(['zone-a', 'zone-b']);
+
+    const a = engine.world.zones['zone-a'] as ZoneState;
+    expect(a.roomId).toBe('zone-a');
+    expect(a.light).toBe(8);
+  });
+
+  it('entities reach the WorldStore', () => {
+    const engine = bootEngine();
+    applyContentPack(engine, PACK);
+    const npc = engine.world.entities['npc-1'] as EntityState;
+    expect(npc.name).toBe('One');
+    expect(npc.stats.might).toBe(3);
+  });
+
+  it('the store detaches what it ingests (no aliasing back to the pack)', () => {
+    const engine = bootEngine();
+    applyContentPack(engine, PACK);
+    (engine.world.zones['zone-a'] as ZoneState).tags.push('mutated');
+    expect(PACK.zones![0].tags).toEqual(['safe']);
+  });
+
+  it('RED: a malformed zone is refused with a structured error, never a throw', () => {
+    const engine = bootEngine();
+    const bad = { zones: [{ name: 'no id' }] } as unknown as ContentPack;
+
+    let threw: unknown;
+    let r!: ReturnType<typeof applyContentPack>;
+    try {
+      r = applyContentPack(engine, bad);
+    } catch (e) {
+      threw = e;
+    }
+
+    expect(threw, 'the seam must not raw-throw at its boundary').toBeUndefined();
+    expect(r.ok).toBe(false);
+    expect(r.errors.length).toBeGreaterThan(0);
+    expect(r.errors[0].path).toContain('zones[0]');
+    // …and the bad zone did NOT land.
+    expect(Object.keys(engine.world.zones)).toHaveLength(0);
+  });
+
+  it('RED: a non-array collection is refused, not iterated into a TypeError', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, { zones: 'not-an-array' } as unknown as ContentPack);
+    expect(r.ok).toBe(false);
+    expect(r.errors[0].path).toBe('pack.zones');
+  });
+
+  it('RED: a non-object pack is refused', () => {
+    const engine = bootEngine();
+    for (const bad of [null, 42, [], 'pack']) {
+      const r = applyContentPack(engine, bad as unknown as ContentPack);
+      expect(r.ok).toBe(false);
+      expect(r.errors[0].path).toBe('pack');
+    }
+  });
+
+  it('one bad zone does not block the good ones, and both facts are reported', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      zones: [{ id: 'good', name: 'Good' }, { name: 'bad' }],
+    } as unknown as ContentPack);
+
+    expect(r.ok).toBe(false);
+    expect(r.applied.zones).toBe(1);
+    expect(engine.world.zones.good).toBeDefined();
+  });
+
+  it('THE CONTRACT: every dropped field is named, never silently eaten', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      zones: [{ id: 'z', name: 'Z', description: [{ text: 'prose' }], entities: ['x'] }],
+      entities: [{ id: 'e', type: 'npc', name: 'E', aiProfile: 'cautious' }],
+      quests: [{ id: 'q', name: 'Q', stages: [] }],
+      verbs: [{ id: 'v' }],
+    } as unknown as ContentPack);
+
+    const paths = pathsOf(r.dropped);
+    expect(paths).toContain('zones[0](z).description');
+    expect(paths).toContain('zones[0](z).entities');
+    expect(paths).toContain('entities[0](e).aiProfile');
+    // Declared, validated, real content — and still unrouted at this rung.
+    expect(paths).toContain('pack.quests');
+    expect(paths).toContain('pack.verbs');
+    // Dropped fields never flip `ok`: this pack is valid, just not fully routed.
+    expect(r.ok).toBe(true);
+  });
+
+  it('reports the placement hole rather than silently placing entities nowhere', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, PACK);
+    const note = r.advisories.find((a) => a.path === 'pack.entities');
+    expect(note?.message).toContain('zoneId');
+    expect(engine.world.entities['npc-1'].zoneId).toBeUndefined();
+  });
+
+  it('CONTROL: an empty declared key produces no drop noise', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, { zones: [], entities: [], quests: [] });
+    expect(r.dropped).toEqual([]);
+    expect(r.applied).toEqual({});
+  });
+});
+
+// --- Channels -------------------------------------------------------------
+
+describe('C1/P1 — module-owned channels', () => {
+  it('an unhandled module key is REPORTED, not silently skipped', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, { districts: [{ id: 'd', name: 'D', zoneIds: [], tags: [] }] });
+    const note = r.advisories.find((a) => a.path === 'pack.districts');
+    expect(note?.message).toContain('no intake channel supplied');
+    expect(r.applied.districts).toBeUndefined();
+  });
+
+  it('a supplied channel receives its slice and its count is reported', () => {
+    const engine = bootEngine();
+    const seen: unknown[] = [];
+    const channel: IntakeChannel = {
+      key: 'districts',
+      apply(_e, data) {
+        seen.push(data);
+        return { applied: (data as unknown[]).length };
+      },
+    };
+    const r = applyContentPack(
+      engine,
+      { districts: [{ id: 'd', name: 'D', zoneIds: ['zone-a'], tags: [] }] },
+      { channels: [channel] },
+    );
+    expect(r.applied.districts).toBe(1);
+    expect(seen).toHaveLength(1);
+  });
+
+  it('a channel for an unrecognised key is called out, not quietly ignored', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, { zones: [] }, {
+      channels: [{ key: 'typo-districts', apply: () => ({ applied: 0 }) }],
+    });
+    expect(r.advisories.some((a) => a.path === 'channels.typo-districts')).toBe(true);
+  });
+
+  it('a channel error surfaces as a pack error', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(
+      engine,
+      { districts: 'nope' as unknown as ContentPack['districts'] },
+      { channels: [{ key: 'districts', apply: () => ({ applied: 0, errors: [{ path: 'pack.districts', message: 'bad' }] }) }] },
+    );
+    expect(r.ok).toBe(false);
+  });
+});
+
+// --- The session-scoped split (a correction this cycle earned) -------------
+
+describe('C1/P1 — session-scoped keys are not pretended to be routable', () => {
+  it('the three "cheap wire gaps" are NOT one class — only districts is routable', () => {
+    // C0 filed districts/buildCatalog/progressionTrees together as "the cheapest
+    // thing on this whole list to close" (REPORT §3.1). Right about SHAPE, wrong
+    // about INGESTION — and C1's definition of "real" (reaches a runtime) is what
+    // exposes it. Pinned here so the split cannot quietly re-merge.
+    expect([...MODULE_INTAKE_KEYS]).toEqual(['districts']);
+    expect([...SESSION_SCOPED_KEYS]).toEqual(['buildCatalog', 'progressionTrees']);
+  });
+
+  it('applyContentPack reports them as session-scoped, with the reason', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      buildCatalog: { archetypes: [] },
+      progressionTrees: [{ id: 'tree' }],
+    });
+
+    const drops = r.dropped.filter((d) => d.reason === 'session-scoped');
+    expect(pathsOf(drops)).toEqual(['pack.buildCatalog', 'pack.progressionTrees']);
+    // The detail names the mechanism, not just the verdict — this is the
+    // difference between a user who can act and a user who files an issue.
+    expect(drops.find((d) => d.path === 'pack.progressionTrees')?.detail)
+      .toContain('closure-captures');
+  });
+
+  it('extractSessionContent is the seam that DOES serve them', () => {
+    const session = extractSessionContent({
+      buildCatalog: { archetypes: [{ id: 'a' }] },
+      progressionTrees: [{ id: 'tree-1' }, { id: 'tree-2' }],
+    } as unknown as ContentPack);
+
+    expect(session.buildCatalog).toEqual({ archetypes: [{ id: 'a' }] });
+    expect(session.progressionTrees).toHaveLength(2);
+    expect(session.advisories).toEqual([]);
+  });
+
+  it('RED: extractSessionContent refuses malformed slices instead of passing them on', () => {
+    const session = extractSessionContent({
+      buildCatalog: 'not-an-object',
+      progressionTrees: 'not-an-array',
+    } as unknown as ContentPack);
+
+    expect(session.buildCatalog).toBeUndefined();
+    expect(session.progressionTrees).toBeUndefined();
+    expect(session.advisories.map((a) => a.path).sort()).toEqual([
+      'pack.buildCatalog',
+      'pack.progressionTrees',
+    ]);
+  });
+
+  it('CONTROL: a pack carrying neither key produces no advisories', () => {
+    const session = extractSessionContent({ zones: [] });
+    expect(session.advisories).toEqual([]);
+    expect(session.buildCatalog).toBeUndefined();
+  });
+});

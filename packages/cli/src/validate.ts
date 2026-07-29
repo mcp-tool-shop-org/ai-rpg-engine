@@ -15,7 +15,9 @@
 // runValidate RETURNS the exit code and accepts an injected logger so it is unit-testable
 // without spawning a process; bin.ts converts the returned code into process.exit.
 
-import { loadContentFromFile } from '@ai-rpg-engine/content-schema';
+import * as fs from 'node:fs';
+import { loadContentFromFile, runLoadGate, type GateContext } from '@ai-rpg-engine/content-schema';
+import { ENGINE_VERSION } from './engine-version.js';
 
 /** Injectable output sink (defaults to console) so tests can capture lines. */
 export interface ValidateDeps {
@@ -29,14 +31,23 @@ const defaultDeps: ValidateDeps = {
 };
 
 function printValidateHelp(log: (msg: string) => void): void {
-  log('Usage: ai-rpg-engine validate <file.json>');
+  log('Usage: ai-rpg-engine validate <file.json> [--manifest <manifest.json>] [--no-gate]');
   log('');
-  log('Loads a content pack from a JSON file and validates it.');
+  log('Loads a content pack from a JSON file, validates it, and runs the load gate.');
   log('Prints structured errors (path + message + hint) and advisories separately.');
   log('Exit code: 0 when valid, 1 when there are errors.');
   log('');
+  log('The load gate refuses a pack that carries unknown top-level keys, targets a');
+  log('different engine version, names modules this engine did not register, or does');
+  log('not match the content hash its manifest records. Checks it cannot run — module');
+  log('resolution needs a booted engine — are reported as unverified, never as passed.');
+  log('');
+  log('Options:');
+  log('  --manifest <path>  also check engineVersion and contentHash from a manifest.json');
+  log('  --no-gate          structural validation only (pre-C1 behaviour)');
+  log('');
   log('Example:');
-  log('  ai-rpg-engine validate ./content/zones.json');
+  log('  ai-rpg-engine validate ./content/content-pack.json --manifest ./content/manifest.json');
 }
 
 /**
@@ -51,8 +62,21 @@ export function runValidate(args: string[], deps: ValidateDeps = defaultDeps): n
     return 0;
   }
 
-  // First non-flag token is the file path.
-  const file = args.find((a) => !a.startsWith('-'));
+  // --manifest takes a value, so it must not be mistaken for the pack path.
+  const manifestIdx = args.indexOf('--manifest');
+  const manifestPath = manifestIdx >= 0 ? args[manifestIdx + 1] : undefined;
+  if (manifestIdx >= 0 && (manifestPath === undefined || manifestPath.startsWith('-'))) {
+    error('✗ [VALIDATE_MANIFEST_MISSING] --manifest needs a path.');
+    error('  Hint: ai-rpg-engine validate ./content-pack.json --manifest ./manifest.json');
+    return 1;
+  }
+  // NOTE the `manifestIdx >= 0` guard: without it, a missing --manifest gives
+  // manifestIdx === -1, so `manifestIdx + 1` is 0 and the FILE PATH at index 0
+  // gets filtered out as if it were the flag's value. It did exactly that on the
+  // first run.
+  const manifestValueIdx = manifestIdx >= 0 ? manifestIdx + 1 : -1;
+  const positional = args.filter((a, i) => !a.startsWith('-') && i !== manifestValueIdx);
+  const file = positional[0];
   if (!file) {
     error('✗ [VALIDATE_FILE_MISSING] Missing <file.json>.');
     error('  Hint: provide a path to a JSON content pack, e.g. ai-rpg-engine validate ./content/zones.json');
@@ -83,6 +107,44 @@ export function runValidate(args: string[], deps: ValidateDeps = defaultDeps): n
 
   if (result.errors.length > 0) {
     return 1;
+  }
+
+  // --- The load gate (C1/P2) ---
+  // Structural validity is not loadability. C0's whole headline is that a pack
+  // stamped for a two-major-old engine, carrying five keys nothing declares,
+  // passed this command clean and exited 0.
+  if (!args.includes('--no-gate')) {
+    const ctx: GateContext = { engineVersion: ENGINE_VERSION };
+    if (manifestPath !== undefined) {
+      try {
+        const parsed: unknown = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          error(`✗ gate.manifest: "${manifestPath}" is not a JSON object.`);
+          return 1;
+        }
+        ctx.manifest = parsed as GateContext['manifest'];
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        error(`✗ gate.manifest: could not read "${manifestPath}": ${reason}`);
+        error('  Hint: point --manifest at the manifest.json the exporter wrote next to the content pack.');
+        return 1;
+      }
+    }
+
+    const gate = runLoadGate(result.pack, ctx);
+    if (!gate.ok) {
+      error('');
+      for (const line of gate.report.split('\n')) error(line);
+      return 1;
+    }
+    // Unverified checks are stated, never implied to have passed.
+    for (const c of gate.checks) {
+      if (c.skipped) log(`  ⚠ gate.${c.check}: not verified — ${c.skipped}.`);
+    }
+    for (const a of gate.advisories) {
+      if (!a.path.startsWith('gate.')) continue;
+      log(`  ⚠ ${a.path}: ${a.message}`);
+    }
   }
 
   // Clean (errors === 0). Report the positive summary from the loader.

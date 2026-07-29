@@ -22,6 +22,7 @@ import { promptMenu, promptLine, closeReadline } from './prompts.js';
 import { buildCharacter } from './character-builder.js';
 import { runCreateStarter } from './create-starter.js';
 import { runValidate } from './validate.js';
+import { runSidecar } from './sidecar-command.js';
 import { runScaffold } from './scaffold.js';
 import { runProfile } from './profile.js';
 import { runAuditContent } from './audit-content.js';
@@ -157,7 +158,7 @@ async function main() {
   // the help flag is the leading token, the explicit `help` command is used, or
   // the command has no help of its own.
   const wantsHelp = args.includes('--help') || args.includes('-h') || command === 'help';
-  const COMMANDS_WITH_OWN_HELP = new Set(['create-starter', 'validate', 'scaffold', 'profile', 'audit-content']);
+  const COMMANDS_WITH_OWN_HELP = new Set(['create-starter', 'validate', 'scaffold', 'profile', 'audit-content', 'sidecar']);
   if (wantsHelp && !COMMANDS_WITH_OWN_HELP.has(command)) {
     printHelp();
     closeReadline();
@@ -171,6 +172,15 @@ async function main() {
       // runValidate returns the exit code (0 valid / 1 errors-or-usage) rather than
       // exiting itself, so it stays unit-testable. The bin turns it into the process code.
       const code = runValidate(args.slice(1));
+      closeReadline();
+      if (code !== 0) process.exit(code);
+      return;
+    }
+    case 'sidecar': {
+      // The sim as a JSON-RPC server over stdio. Returns null while the server
+      // runs -- the process stays alive on stdin, which is the point.
+      const code = runSidecar(args.slice(1));
+      if (code === null) return;
       closeReadline();
       if (code !== 0) process.exit(code);
       return;

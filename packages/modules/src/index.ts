@@ -131,7 +131,9 @@ export {
   modifyDistrictMetric,
   isDistrictOnAlert,
   getDistrictThreatLevel,
+  ingestDistrictDefinitions,
 } from './district-core.js';
+export { districtsChannel, createStandardChannels } from './intake-channels.js';
 export type {
   DistrictMetrics,
   DistrictDefinition,

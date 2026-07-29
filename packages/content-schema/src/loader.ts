@@ -33,6 +33,33 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 }
 
 /**
+ * Every collection field `validateRefs` iterates, and therefore every field the
+ * shape guard must cover.
+ *
+ * ⚠ C1/P2 CLOSES A C0 FINDING HERE. This list used to be four entries long while
+ * `validateRefs` went on to do `pack.abilities?.map(...)` on six MORE — so a
+ * non-array in any of those six escaped as a raw `TypeError`, straight past the
+ * boundary discipline this module's own docstring promises ("never a raw fs
+ * throw", "the caller never sees a raw SyntaxError"). C0 pinned it by asserting
+ * the throw; that pin is flipped in the same commit as this fix.
+ *
+ * The invariant to keep: if `validateRefs` reads a key, it belongs here. A
+ * guard list shorter than the iteration list is the bug, not a style choice.
+ */
+const REFS_ITERATED_KEYS = [
+  'entities',
+  'zones',
+  'dialogues',
+  'quests',
+  'abilities',
+  'statuses',
+  'verbs',
+  'archetypes',
+  'backgrounds',
+  'itemUseEffects',
+] as const;
+
+/**
  * Validates the top-level pack shape (CA-02). Returns a list of structured boundary
  * errors; an empty list means the pack is a plain object whose known collection fields
  * are arrays (or absent). This runs BEFORE any per-element iteration so a malformed pack
@@ -49,8 +76,8 @@ function validatePackShape(pack: unknown): ValidationError[] {
   }
 
   const errors: ValidationError[] = [];
-  // Every known collection field, when present, must be an array.
-  for (const field of ['entities', 'zones', 'dialogues', 'quests'] as const) {
+  // Every collection field validateRefs will touch, when present, must be an array.
+  for (const field of REFS_ITERATED_KEYS) {
     const v = (pack as Record<string, unknown>)[field];
     if (v !== undefined && !Array.isArray(v)) {
       errors.push({
@@ -198,8 +225,18 @@ export function loadContentFromFile(filePath: string): LoadFromFileResult {
 
   // Cross-reference pass. validateGameContent re-runs validateRefs internally and adds
   // registry-backed checks (startingStatuses, ability verbs, apply-status, …) deriving
-  // the registries from the pack itself. It is null-safe at its boundary.
-  const cross = validateGameContent(structural.pack);
+  // the registries from the pack itself.
+  //
+  // ⚠ GATED ON STRUCTURAL SUCCESS (C1/P2). It was called unconditionally, so a
+  // pack whose shape `loadContent` had ALREADY refused was still handed to
+  // `validateGameContent`, which does `pack.abilities?.map(...)` and raw-threw a
+  // TypeError — past the boundary discipline this module's docstring promises.
+  // Widening the shape guard alone did not fix it: the guard reported the error
+  // correctly and then this line threw anyway. Cross-referencing a pack that
+  // failed structural validation is meaningless work on known-bad input.
+  const cross = structural.ok
+    ? validateGameContent(structural.pack)
+    : { errors: [] as ValidationError[], advisories: [] as ValidationError[] };
 
   // Merge errors from both passes, de-duplicated by (path|message) so a reference error
   // reported by both validateRefs (inside loadContent) and validateGameContent appears

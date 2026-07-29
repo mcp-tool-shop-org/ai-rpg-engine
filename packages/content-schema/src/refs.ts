@@ -45,6 +45,54 @@ export type ContentPack = {
    * function field, if present, is simply ignored here).
    */
   itemUseEffects?: { itemId: string }[];
+  /**
+   * Pack format version. Emitted by world-forge's `exportToEngine` since the
+   * lane existed and, until C1, an UNDECLARED key — so it landed in the same
+   * silent-pass bucket as a typo (C0 REPORT §3.1: a nonsense key produced a
+   * byte-identical load report to real content). Declared here so the key
+   * allowlist can reject genuine unknowns without rejecting a real emitted key.
+   */
+  schemaVersion?: string;
+  /**
+   * District topology. Real `DistrictDefinition` data in the shape district-core
+   * understands, which arrived at a key `ContentPack` did not declare — one of
+   * C0's "cheap wire gaps" (REPORT §3.1). Routed into a booted world by
+   * `applyContentPack`'s districts channel: district-core reads its definitions
+   * from world state (`district-core.ts:212`), so a post-boot write lands.
+   *
+   * Minimal structural shape, mirroring the `archetypes`/`backgrounds` pattern
+   * above — content-schema sits BELOW @ai-rpg-engine/modules, so importing the
+   * real `DistrictDefinition` would invert the layering. A real
+   * `DistrictDefinition[]` satisfies this as-is.
+   */
+  districts?: {
+    id: string;
+    name: string;
+    zoneIds: string[];
+    tags: string[];
+    controllingFaction?: string;
+    baseMetrics?: Record<string, number>;
+  }[];
+  /**
+   * Character-creation catalog. Authored in world-forge and exported — an
+   * authoring win previously cancelled by a wire gap (REPORT §4: `archetypes`
+   * and `backgrounds` ARE authored and exported, they just landed under a key
+   * the engine did not declare).
+   *
+   * SESSION-SCOPED: consumed by character creation before a session runs, not by
+   * any world reader. Read it with `extractSessionContent`, not
+   * `applyContentPack`. Shape left open — `validateBuildCatalog` in this package
+   * is the checker.
+   */
+  buildCatalog?: Record<string, unknown>;
+  /**
+   * Progression trees. SESSION-SCOPED for a structural reason measured in C1:
+   * progression-core closure-captures its tree `Map` at construction
+   * (`progression-core.ts:70-72`) and never reads trees from world state, so a
+   * post-boot write cannot reach it. Read it with `extractSessionContent` and
+   * pass it to `createProgressionCore({ trees })`.
+   */
+  progressionTrees?: unknown[];
 };
 
 /**

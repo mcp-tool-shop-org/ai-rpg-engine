@@ -1,0 +1,25 @@
+{
+  "id": "c0-vocabulary-coverage",
+  "title": "C0 Vocabulary Coverage",
+  "version": "1.0.0",
+  "engineVersion": ">=3.8.0 <4.0.0",
+  "ruleset": "standard-v1",
+  "modules": [
+    "combat-core",
+    "traversal-core",
+    "cognition-core",
+    "dialogue-core",
+    "perception-filter",
+    "district-core",
+    "rumor-propagation",
+    "companion-core",
+    "equipment-core",
+    "economy-core",
+    "opportunity-core",
+    "crafting-core"
+  ],
+  "contentPacks": [
+    "c0-vocabulary-coverage"
+  ],
+  "contentHash": "sha256:d053d297128b2400ad44308362867e03e5f09a47f1e037b54dee37eff883473b"
+}
