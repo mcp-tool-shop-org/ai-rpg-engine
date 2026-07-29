@@ -1,3 +1,31 @@
+> ## ⚠ ADDENDUM — what C1 closed (2026-07-29)
+>
+> C1 (the Contract v1) built against this report and closed several of its
+> findings. Every closure flipped the finding's pinned test in the same commit,
+> which is why this report has not gone quietly stale. Full detail:
+> [`../contract-v1/REPORT.md`](../contract-v1/REPORT.md).
+>
+> | Finding | State |
+> |---|---|
+> | §3.3 the boot gap — no converter exists | **CLOSED**. `applyContentPack` + a `ZoneDefinition → ZoneState` converter; `roomId` derived. The exported pack boots into a played session. |
+> | §3.1 nine silently-preserved unknown keys | **PARTLY CLOSED**. Four declared (`schemaVersion`, `districts`, `buildCatalog`, `progressionTrees`); the remaining five are now REFUSED by name rather than preserved in silence. |
+> | §3.1 nonsense key indistinguishable from real content | **CLOSED**. The key allowlist refuses it, listing the allowlist. |
+> | §3.1 raw `TypeError` on six of ten declared keys | **CLOSED**. All ten shape-guarded; the cross-ref pass is gated on structural success (widening the guard alone was insufficient). |
+> | §5 item 2 — `engineVersion: '2.0.0'` read by nothing | **CLOSED**. A semver range, enforced at load. |
+> | §5 item 3 — nine phantom `DEFAULT_MODULES` ids | **CLOSED**. Twelve real ids; resolution is live against a booted engine's `ModuleManager`. |
+> | §2 the one `carried-garbled` row (exit conditions) | **CLOSED**. Compiled through `parseSpawnCondition`. |
+> | §1 `losslessPercent: 100` from zero observations | **CLOSED**. `null` + `observed: false`. Wiring every converter to the collector remains open. |
+>
+> **Corrected by C1, not closed:** §3.1's framing of `districts`, `buildCatalog`
+> and `progressionTrees` as three equivalent "cheap wire gaps". Right about
+> shape, wrong about ingestion — only `districts` is routable into a booted
+> world; the other two are session-scoped for structural reasons measured in C1.
+>
+> **Still open:** the entity-placement hole (§2, `EntityBlueprint` has no
+> `zoneId`), typed hazards (§9), quests, `authority`, `RoomDefinition`, the
+> five genuinely-undeclared keys, and world-forge's 2.x engine dependency ranges
+> (checklist item 1).
+
 # C0 — The Forge↔Engine Alignment Audit
 
 **Cycle:** first rung of the 2.5D arc ([[ai-rpg-engine-2p5d-quality-bar]] §5, row C0).
