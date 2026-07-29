@@ -1,0 +1,625 @@
+{
+  "schemaVersion": "4.5.0",
+  "entities": [
+    {
+      "id": "npc-quartermaster",
+      "type": "npc",
+      "name": "Quartermaster Hale",
+      "tags": [
+        "merchant",
+        "trader",
+        "named",
+        "faction:tidewardens"
+      ],
+      "aiProfile": "cautious",
+      "baseStats": {
+        "vigor": 2,
+        "instinct": 4,
+        "will": 4
+      },
+      "baseResources": {
+        "hp": 10,
+        "stamina": 4
+      },
+      "custom": {
+        "stall": "north-arch"
+      }
+    },
+    {
+      "id": "enemy-vault-drowned",
+      "type": "enemy",
+      "name": "The Drowned",
+      "tags": [
+        "hostile",
+        "boss",
+        "elite",
+        "undead",
+        "faction:tidewardens"
+      ],
+      "aiProfile": "aggressive",
+      "baseStats": {
+        "vigor": 6,
+        "instinct": 3,
+        "will": 5
+      },
+      "baseResources": {
+        "hp": 30,
+        "stamina": 8
+      },
+      "custom": {
+        "chronicleKey": "drowned"
+      }
+    },
+    {
+      "id": "npc-gantry-runner",
+      "type": "npc",
+      "name": "Runner Vess",
+      "tags": [
+        "recruitable",
+        "companion",
+        "faction:gantry-guild"
+      ],
+      "aiProfile": "skirmisher",
+      "baseStats": {
+        "vigor": 3,
+        "instinct": 5,
+        "will": 2
+      },
+      "baseResources": {
+        "hp": 11,
+        "stamina": 7
+      },
+      "custom": {
+        "recruitCost": "3"
+      }
+    }
+  ],
+  "zones": [
+    {
+      "id": "zone-surface-yard",
+      "name": "Surface Yard",
+      "tags": [
+        "outdoor",
+        "safe",
+        "town"
+      ],
+      "description": [
+        {
+          "text": "A cobbled yard open to the sky."
+        }
+      ],
+      "neighbors": [
+        "zone-under-vault"
+      ],
+      "light": 9,
+      "noise": 4,
+      "hazards": [
+        "loose cobbles"
+      ],
+      "interactables": [
+        "notice board",
+        "well"
+      ],
+      "exits": [
+        {
+          "targetZoneId": "zone-under-vault",
+          "label": "vault stair",
+          "condition": {
+            "type": "item:rope",
+            "params": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": "zone-under-vault",
+      "name": "Undervault",
+      "tags": [
+        "indoor",
+        "dark",
+        "underground",
+        "chokepoint"
+      ],
+      "description": [
+        {
+          "text": "A flooded vault under the yard."
+        }
+      ],
+      "neighbors": [
+        "zone-surface-yard",
+        "zone-sky-gantry"
+      ],
+      "light": 1,
+      "noise": 2,
+      "hazards": [
+        "standing water"
+      ],
+      "interactables": [
+        "sealed door"
+      ],
+      "exits": [
+        {
+          "targetZoneId": "zone-surface-yard",
+          "label": "stair up",
+          "condition": {
+            "type": "always",
+            "params": {}
+          }
+        },
+        {
+          "targetZoneId": "zone-sky-gantry",
+          "label": "shaft ladder",
+          "condition": {
+            "type": "party-level:>=10",
+            "params": {}
+          }
+        }
+      ]
+    },
+    {
+      "id": "zone-sky-gantry",
+      "name": "Sky Gantry",
+      "tags": [
+        "outdoor",
+        "high",
+        "ambush"
+      ],
+      "description": [
+        {
+          "text": "A gantry strung between two towers."
+        }
+      ],
+      "neighbors": [
+        "zone-under-vault"
+      ],
+      "light": 7,
+      "noise": 6,
+      "hazards": [
+        "crosswind"
+      ],
+      "interactables": [
+        "signal lamp",
+        "nothing here"
+      ],
+      "exits": [
+        {
+          "targetZoneId": "zone-under-vault",
+          "label": "drop shaft",
+          "condition": {
+            "type": "flag:bridge-repaired",
+            "params": {}
+          }
+        }
+      ]
+    }
+  ],
+  "districts": [
+    {
+      "id": "district-harbourside",
+      "name": "Harbourside",
+      "zoneIds": [
+        "zone-surface-yard",
+        "zone-under-vault"
+      ],
+      "tags": [
+        "docks",
+        "poor"
+      ],
+      "controllingFaction": "tidewardens",
+      "baseMetrics": {
+        "commerce": 55,
+        "morale": 35,
+        "stability": 45,
+        "surveillance": 40
+      }
+    },
+    {
+      "id": "district-upper-works",
+      "name": "Upper Works",
+      "zoneIds": [
+        "zone-sky-gantry"
+      ],
+      "tags": [
+        "industrial",
+        "guarded"
+      ],
+      "controllingFaction": "gantry-guild",
+      "baseMetrics": {
+        "commerce": 70,
+        "morale": 60,
+        "stability": 65,
+        "surveillance": 75
+      }
+    }
+  ],
+  "dialogues": [
+    {
+      "id": "dlg-quartermaster",
+      "speakers": [
+        "npc-quartermaster"
+      ],
+      "entryNodeId": "greet",
+      "nodes": {
+        "greet": {
+          "id": "greet",
+          "speaker": "Quartermaster",
+          "text": "Rope is three marks. Down is free.",
+          "choices": [
+            {
+              "id": "buy-rope",
+              "text": "I will take the rope.",
+              "nextNodeId": "sold",
+              "condition": {
+                "type": "faction-rep",
+                "params": {
+                  "id": "tidewardens",
+                  "op": ">",
+                  "value": 0
+                }
+              },
+              "effects": [
+                {
+                  "type": "grant-item",
+                  "target": "actor",
+                  "params": {
+                    "itemId": "item-rope"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "leave",
+              "text": "Another time.",
+              "nextNodeId": "end"
+            }
+          ],
+          "effects": [
+            {
+              "type": "set-flag",
+              "target": "zone",
+              "params": {
+                "flag": "met-quartermaster"
+              }
+            }
+          ]
+        },
+        "sold": {
+          "id": "sold",
+          "speaker": "Quartermaster",
+          "text": "Mind the third rung.",
+          "nextNodeId": "end",
+          "effects": [
+            {
+              "type": "adjust-standing",
+              "target": "actor",
+              "params": {
+                "faction": "tidewardens",
+                "amount": 2
+              }
+            }
+          ]
+        },
+        "end": {
+          "id": "end",
+          "speaker": "Quartermaster",
+          "text": "Go on, then."
+        }
+      }
+    }
+  ],
+  "items": [
+    {
+      "id": "item-rope",
+      "name": "Tarred Rope",
+      "description": "Forty feet, tarred against the wet.",
+      "slot": "tool",
+      "rarity": "common",
+      "statModifiers": {
+        "vigor": 1
+      },
+      "resourceModifiers": {
+        "stamina": 1
+      },
+      "grantedTags": [
+        "roped"
+      ],
+      "grantedVerbs": [
+        "rappel"
+      ]
+    },
+    {
+      "id": "item-lantern",
+      "name": "Shuttered Lantern",
+      "description": "Burns low and long.",
+      "slot": "accessory",
+      "rarity": "uncommon",
+      "statModifiers": {
+        "instinct": 1
+      },
+      "grantedTags": [
+        "lit"
+      ],
+      "provenance": {
+        "flags": [
+          "contraband"
+        ]
+      }
+    },
+    {
+      "id": "item-tide-ration",
+      "name": "Tide Ration",
+      "description": "Found in gantry locker",
+      "slot": "trinket",
+      "rarity": "common",
+      "resourceModifiers": {
+        "stamina": 2
+      }
+    }
+  ],
+  "playerTemplate": {
+    "name": "Surveyor",
+    "defaultArchetypeId": "arch-delver",
+    "defaultBackgroundId": "bg-dockhand",
+    "baseStats": {
+      "vigor": 3,
+      "instinct": 4,
+      "will": 3
+    },
+    "baseResources": {
+      "hp": 12,
+      "stamina": 6
+    },
+    "startingInventory": [
+      "item-rope",
+      "item-lantern"
+    ],
+    "startingEquipment": {
+      "tool": "item-lantern"
+    },
+    "spawnPointId": "sp-yard",
+    "tags": [
+      "player",
+      "surveyor"
+    ],
+    "custom": {
+      "chronicle": true,
+      "ledgerSeed": 7,
+      "house": "tidewardens"
+    }
+  },
+  "buildCatalog": {
+    "packId": "c0-vocabulary-coverage",
+    "statBudget": 12,
+    "maxTraits": 2,
+    "requiredFlaws": 1,
+    "archetypes": [
+      {
+        "id": "arch-delver",
+        "name": "Delver",
+        "description": "Goes down where the maps stop.",
+        "statPriorities": {
+          "vigor": 2,
+          "instinct": 3,
+          "will": 1
+        },
+        "resourceOverrides": {
+          "stamina": 8
+        },
+        "startingTags": [
+          "delver"
+        ],
+        "startingInventory": [
+          "item-rope"
+        ],
+        "progressionTreeId": "tree-delving",
+        "grantedVerbs": [
+          "rappel"
+        ]
+      }
+    ],
+    "backgrounds": [
+      {
+        "id": "bg-dockhand",
+        "name": "Dockhand",
+        "description": "Hauled rope before you carried it.",
+        "statModifiers": {
+          "vigor": 1
+        },
+        "startingTags": [
+          "dockhand"
+        ],
+        "startingInventory": [
+          "item-lantern"
+        ],
+        "factionModifiers": {
+          "tidewardens": 10
+        }
+      }
+    ],
+    "traits": [
+      {
+        "id": "trait-sure-footed",
+        "name": "Sure-Footed",
+        "description": "Wet stone does not frighten you.",
+        "category": "perk",
+        "effects": [
+          {
+            "type": "stat-modifier",
+            "stat": "vigor",
+            "amount": 1
+          }
+        ],
+        "incompatibleWith": [
+          "trait-vertigo"
+        ]
+      },
+      {
+        "id": "trait-vertigo",
+        "name": "Vertigo",
+        "description": "Height turns your stomach.",
+        "category": "flaw",
+        "effects": [
+          {
+            "type": "stat-modifier",
+            "stat": "will",
+            "amount": -1
+          }
+        ],
+        "incompatibleWith": [
+          "trait-sure-footed"
+        ]
+      }
+    ],
+    "disciplines": [
+      {
+        "id": "disc-shoring",
+        "name": "Shoring",
+        "description": "You brace what others flee.",
+        "grantedVerb": "shore",
+        "passive": {
+          "type": "resource-modifier",
+          "resource": "stamina",
+          "amount": 2
+        },
+        "drawback": {
+          "type": "stat-modifier",
+          "stat": "instinct",
+          "amount": -1
+        },
+        "requiredTags": [
+          "delver"
+        ]
+      }
+    ],
+    "crossTitles": [
+      {
+        "archetypeId": "arch-delver",
+        "disciplineId": "disc-shoring",
+        "title": "Pitwright",
+        "tags": [
+          "title",
+          "delver"
+        ]
+      }
+    ],
+    "entanglements": [
+      {
+        "id": "ent-pitwright",
+        "archetypeId": "arch-delver",
+        "disciplineId": "disc-shoring",
+        "description": "Bracing a shaft you already know pays double.",
+        "effects": [
+          {
+            "type": "grant-tag",
+            "tag": "pitwright"
+          }
+        ]
+      }
+    ]
+  },
+  "progressionTrees": [
+    {
+      "id": "tree-delving",
+      "name": "Delving",
+      "currency": "insight",
+      "nodes": [
+        {
+          "id": "node-rope-sense",
+          "name": "Rope Sense",
+          "description": "You feel a bad knot before it slips.",
+          "cost": 1,
+          "effects": [
+            {
+              "type": "stat-modifier",
+              "target": "actor",
+              "params": {
+                "stat": "instinct",
+                "amount": 1
+              }
+            }
+          ]
+        },
+        {
+          "id": "node-deep-lungs",
+          "name": "Deep Lungs",
+          "description": "Flooded galleries stop being a wall.",
+          "cost": 2,
+          "requires": [
+            "node-rope-sense"
+          ],
+          "effects": [
+            {
+              "type": "resource-modifier",
+              "target": "actor",
+              "params": {
+                "resource": "stamina",
+                "amount": 2
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "encounterAnchors": [
+    {
+      "id": "enc-vault",
+      "zoneId": "zone-under-vault",
+      "encounterType": "ambush",
+      "enemyIds": [
+        "enemy-vault-drowned"
+      ],
+      "probability": 0.45,
+      "cooldownTurns": 4,
+      "tags": [
+        "undead",
+        "water"
+      ]
+    }
+  ],
+  "factionPresences": [
+    {
+      "factionId": "tidewardens",
+      "districtIds": [
+        "district-harbourside"
+      ],
+      "influence": 65,
+      "alertLevel": 25,
+      "patrolRoutes": [
+        {
+          "zoneIds": [
+            "zone-surface-yard",
+            "zone-under-vault"
+          ]
+        }
+      ]
+    },
+    {
+      "factionId": "gantry-guild",
+      "districtIds": [
+        "district-upper-works"
+      ],
+      "influence": 80,
+      "alertLevel": 45,
+      "patrolRoutes": [
+        {
+          "zoneIds": [
+            "zone-sky-gantry"
+          ]
+        }
+      ]
+    }
+  ],
+  "pressureHotspots": [
+    {
+      "id": "ph-vault",
+      "zoneId": "zone-under-vault",
+      "pressureType": "flooding",
+      "baseProbability": 0.35,
+      "tags": [
+        "water",
+        "structural"
+      ]
+    }
+  ]
+}

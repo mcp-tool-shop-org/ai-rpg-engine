@@ -1,0 +1,391 @@
+{
+  "audit": "C0 — Engine intake truth table",
+  "direction": "exported ContentPack -> engine runtime",
+  "generatedBy": "packages/cli/src/c0-intake-table.test.ts",
+  "pins": {
+    "seed": 71,
+    "rounds": 40,
+    "calibrationPack": "chapel-threshold",
+    "packsSwept": 12
+  },
+  "loaderVerdict": {
+    "ok": true,
+    "errors": [],
+    "advisories": [],
+    "summary": "Content loaded: 3 entities, 3 zones, 1 dialogues, 0 quests",
+    "comment": "A pack the exporter stamps engineVersion 2.0.0 loads clean against the 3.8.0 validators, and the report the user reads mentions four of its twelve keys."
+  },
+  "bootGap": {
+    "loaderProductionCallSites": [
+      "packages/cli/src/validate.ts:18,63"
+    ],
+    "packEntryHasContentField": false,
+    "zoneDefinitionToZoneStateConverter": null,
+    "externalPackContract": "a JS module exporting createGame(seed?) — not a content-pack JSON",
+    "comment": "The exported pack has exactly one consumer in the engine: a command that prints a report and exits."
+  },
+  "exportedKeys": [
+    {
+      "key": "schemaVersion",
+      "class": "unknown-key",
+      "note": "Not declared by the engine ContentPack type; preserved, never read."
+    },
+    {
+      "key": "entities",
+      "class": "validated-only",
+      "note": "Declared, shape-guarded, per-element validated by validateEntityBlueprint, cross-ref checked. Reaches no runtime."
+    },
+    {
+      "key": "zones",
+      "class": "validated-only",
+      "note": "Declared, shape-guarded, per-element validated by validateZoneDefinition (which does no excess-property rejection). Reaches no runtime; no ZoneDefinition-to-ZoneState converter exists."
+    },
+    {
+      "key": "districts",
+      "class": "unknown-key",
+      "note": "NOT declared by the engine ContentPack type — yet DistrictDefinition is a real engine type with a live district-core behind it. The data arrives in a shape the engine understands, in a slot nothing reads."
+    },
+    {
+      "key": "dialogues",
+      "class": "validated-only",
+      "note": "Declared, shape-guarded, per-element validated. Reaches no runtime."
+    },
+    {
+      "key": "items",
+      "class": "unknown-key",
+      "note": "NOT declared by the engine ContentPack type. ItemDefinition is a real equipment-package type; the pack key is not."
+    },
+    {
+      "key": "playerTemplate",
+      "class": "unknown-key",
+      "note": "NOT declared, and zero hits for `playerTemplate` anywhere in the engine repo."
+    },
+    {
+      "key": "buildCatalog",
+      "class": "unknown-key",
+      "note": "NOT declared by ContentPack, though `buildCatalog` is a live engine concept — fed through PackInfo, in code, by every starter."
+    },
+    {
+      "key": "progressionTrees",
+      "class": "unknown-key",
+      "note": "NOT declared by ContentPack, though ProgressionTreeDefinition is a content-schema type and PackInfo carries progressionTrees in code."
+    },
+    {
+      "key": "encounterAnchors",
+      "class": "unknown-key",
+      "note": "Zero hits repo-wide. Dead on arrival."
+    },
+    {
+      "key": "factionPresences",
+      "class": "unknown-key",
+      "note": "Zero hits repo-wide for the plural pack key. (The singular `factionPresence` appears as a local in district-core and as a DERIVED field in strategic-map — unrelated, and a trap for a naive grep.)"
+    },
+    {
+      "key": "pressureHotspots",
+      "class": "unknown-key",
+      "note": "Zero hits repo-wide. Dead on arrival."
+    }
+  ],
+  "zoneDefinitionFields": [
+    {
+      "field": "id",
+      "class": "alive-as-rules",
+      "note": "Identity; every zone lookup keys on it."
+    },
+    {
+      "field": "name",
+      "class": "stored-inert",
+      "note": "Presentation only — measured: moves narration, never simulation."
+    },
+    {
+      "field": "tags",
+      "class": "alive-as-rules",
+      "note": "Measured live in 8 of 12 worlds via the safe-zone gate."
+    },
+    {
+      "field": "description",
+      "class": "validated-only",
+      "note": "TextBlock array; consumed by the renderer, no rule reads it."
+    },
+    {
+      "field": "neighbors",
+      "class": "alive-as-rules",
+      "note": "Measured live in 11 of 12 worlds. The movement gate."
+    },
+    {
+      "field": "light",
+      "class": "alive-as-rules",
+      "note": "Measured live. Perception threshold."
+    },
+    {
+      "field": "noise",
+      "class": "alive-as-rules",
+      "note": "Measured live. Hearing threshold."
+    },
+    {
+      "field": "hazards",
+      "class": "alive-as-rules",
+      "note": "Live ONLY where pack CODE supplies a matching closure. A data-only pack ships none, so exported hazards would arrive inert even if a converter existed."
+    },
+    {
+      "field": "interactables",
+      "class": "stored-inert",
+      "note": "Measured: moves neither simulation nor event log. Renderer-only."
+    },
+    {
+      "field": "entities",
+      "class": "unreachable-from-pack",
+      "note": "Declared on ZoneDefinition, never emitted by the export lane, and ZoneState has no matching field."
+    },
+    {
+      "field": "exits",
+      "class": "validated-only",
+      "note": "ConditionSpec is validated (validate.ts:258-267) and evaluated NOWHERE. ZoneState has no exits field at all; traversal gates on neighbors only."
+    }
+  ],
+  "zoneStateOnlyFields": [
+    "roomId",
+    "stability",
+    "authority"
+  ],
+  "zoneStateMeasurements": [
+    {
+      "field": "neighbors",
+      "probe": "sever the movement graph",
+      "intakeClass": "alive-as-rules",
+      "movedSimulationIn": [
+        "chapel-threshold",
+        "neon-lockbox",
+        "gaslight-detective",
+        "black-flag-requiem",
+        "ashfall-dead",
+        "dust-devils-bargain",
+        "signal-loss",
+        "crimson-court",
+        "iron-colosseum",
+        "salt-road-ledger",
+        "hue-and-cry"
+      ],
+      "movedNarrationOnlyIn": [],
+      "unmovedIn": [
+        "jade-veil"
+      ],
+      "note": "The movement gate (modules/src/traversal-core.ts:46) and the most consequential zone field in the engine."
+    },
+    {
+      "field": "tags",
+      "probe": "add the safe-zone tag",
+      "intakeClass": "alive-as-rules",
+      "movedSimulationIn": [
+        "neon-lockbox",
+        "gaslight-detective",
+        "black-flag-requiem",
+        "ashfall-dead",
+        "signal-loss",
+        "crimson-court",
+        "salt-road-ledger",
+        "hue-and-cry"
+      ],
+      "movedNarrationOnlyIn": [
+        "chapel-threshold",
+        "dust-devils-bargain",
+        "iron-colosseum"
+      ],
+      "unmovedIn": [
+        "jade-veil"
+      ],
+      "note": "Read by encounter-spawn validZoneTags, chokepoint/ambush selection (combat-core.ts:514, engagement-core.ts:240-422), and combat-recovery safe-zone (default safeZoneTags is [safe], combat-recovery.ts:197)."
+    },
+    {
+      "field": "light",
+      "probe": "drop every zone to pitch dark",
+      "intakeClass": "alive-as-rules",
+      "movedSimulationIn": [
+        "chapel-threshold",
+        "neon-lockbox",
+        "gaslight-detective",
+        "black-flag-requiem",
+        "ashfall-dead",
+        "dust-devils-bargain",
+        "signal-loss",
+        "crimson-court",
+        "iron-colosseum",
+        "jade-veil",
+        "salt-road-ledger",
+        "hue-and-cry"
+      ],
+      "movedNarrationOnlyIn": [],
+      "unmovedIn": [],
+      "note": "Perception threshold (perception-filter.ts:336-337)."
+    },
+    {
+      "field": "noise",
+      "probe": "raise ambient noise to maximum",
+      "intakeClass": "alive-as-rules",
+      "movedSimulationIn": [
+        "chapel-threshold",
+        "neon-lockbox",
+        "gaslight-detective",
+        "black-flag-requiem",
+        "ashfall-dead",
+        "dust-devils-bargain",
+        "signal-loss",
+        "crimson-court",
+        "iron-colosseum",
+        "jade-veil",
+        "salt-road-ledger",
+        "hue-and-cry"
+      ],
+      "movedNarrationOnlyIn": [],
+      "unmovedIn": [],
+      "note": "Hearing threshold (perception-filter.ts:342-343). Note cognition-core.ts:1172 reads only the DYNAMIC override, not this authored base."
+    },
+    {
+      "field": "hazards",
+      "probe": "add a hazard string the pack code matches",
+      "intakeClass": "alive-as-rules",
+      "movedSimulationIn": [
+        "chapel-threshold"
+      ],
+      "movedNarrationOnlyIn": [],
+      "unmovedIn": [
+        "neon-lockbox",
+        "gaslight-detective",
+        "black-flag-requiem",
+        "ashfall-dead",
+        "dust-devils-bargain",
+        "signal-loss",
+        "crimson-court",
+        "iron-colosseum",
+        "jade-veil",
+        "salt-road-ledger",
+        "hue-and-cry"
+      ],
+      "note": "ALIVE ONLY VIA PACK CODE — see the hazard-pair probe below. The string itself carries no engine semantics."
+    },
+    {
+      "field": "roomId",
+      "probe": "rewrite every room id",
+      "intakeClass": "stored-inert",
+      "movedSimulationIn": [],
+      "movedNarrationOnlyIn": [],
+      "unmovedIn": [
+        "chapel-threshold",
+        "neon-lockbox",
+        "gaslight-detective",
+        "black-flag-requiem",
+        "ashfall-dead",
+        "dust-devils-bargain",
+        "signal-loss",
+        "crimson-court",
+        "iron-colosseum",
+        "jade-veil",
+        "salt-road-ledger",
+        "hue-and-cry"
+      ],
+      "note": "Required by ZoneState, written by all twelve starters, read by nothing but its own declaration and two test files."
+    },
+    {
+      "field": "stability",
+      "probe": "set stability on every zone",
+      "intakeClass": "unreachable-from-pack",
+      "movedSimulationIn": [
+        "black-flag-requiem",
+        "crimson-court",
+        "jade-veil",
+        "salt-road-ledger"
+      ],
+      "movedNarrationOnlyIn": [],
+      "unmovedIn": [
+        "chapel-threshold",
+        "neon-lockbox",
+        "gaslight-detective",
+        "ashfall-dead",
+        "dust-devils-bargain",
+        "signal-loss",
+        "iron-colosseum",
+        "hue-and-cry"
+      ],
+      "note": "THE SHARPEST ROW IN THIS TABLE, and a correction to my own first classification: `stability` is genuinely ALIVE — district-core.ts:348 aggregates it into district stability, rumor-propagation.ts:226 gates rumour spread on it, cognition-core.ts:1173 and observer-presentation.ts:395 read it — and it is simultaneously UNAUTHORABLE, because `ZoneDefinition` has no such field. A live rule input no content pack can reach. I filed it as inert on the strength of it sitting next to `authority` in the type; the catalog sweep moved four worlds and refused the claim."
+    },
+    {
+      "field": "authority",
+      "probe": "set authority on every zone",
+      "intakeClass": "unreachable-from-pack",
+      "movedSimulationIn": [],
+      "movedNarrationOnlyIn": [],
+      "unmovedIn": [
+        "chapel-threshold",
+        "neon-lockbox",
+        "gaslight-detective",
+        "black-flag-requiem",
+        "ashfall-dead",
+        "dust-devils-bargain",
+        "signal-loss",
+        "crimson-court",
+        "iron-colosseum",
+        "jade-veil",
+        "salt-road-ledger",
+        "hue-and-cry"
+      ],
+      "note": "Zero readers repo-wide AND absent from ZoneDefinition — unauthorable and unread. The contrast with `stability`, which sits on the adjacent line of the same type and is alive in four worlds, is why this table is measured rather than read off the source."
+    },
+    {
+      "field": "interactables",
+      "probe": "replace every interactable",
+      "intakeClass": "stored-inert",
+      "movedSimulationIn": [],
+      "movedNarrationOnlyIn": [],
+      "unmovedIn": [
+        "chapel-threshold",
+        "neon-lockbox",
+        "gaslight-detective",
+        "black-flag-requiem",
+        "ashfall-dead",
+        "dust-devils-bargain",
+        "signal-loss",
+        "crimson-court",
+        "iron-colosseum",
+        "jade-veil",
+        "salt-road-ledger",
+        "hue-and-cry"
+      ],
+      "note": "Rendered at terminal-ui/src/renderer.ts:725-729 and nowhere else. Measured MORE inert than expected: it does not reach the event log either, so it is read only when a human is looking at a rendered screen."
+    },
+    {
+      "field": "name",
+      "probe": "rename every zone",
+      "intakeClass": "stored-inert",
+      "movedSimulationIn": [],
+      "movedNarrationOnlyIn": [
+        "chapel-threshold",
+        "neon-lockbox",
+        "gaslight-detective",
+        "black-flag-requiem",
+        "ashfall-dead",
+        "dust-devils-bargain",
+        "signal-loss",
+        "crimson-court",
+        "iron-colosseum",
+        "salt-road-ledger",
+        "hue-and-cry"
+      ],
+      "unmovedIn": [
+        "jade-veil"
+      ],
+      "note": "Display data that rides in event payloads. The witness for the presentation tier."
+    }
+  ],
+  "tally": {
+    "exportedKeys": {
+      "unknown-key": 9,
+      "validated-only": 3
+    },
+    "zoneDefinitionFields": {
+      "alive-as-rules": 6,
+      "stored-inert": 2,
+      "validated-only": 2,
+      "unreachable-from-pack": 1
+    }
+  }
+}
