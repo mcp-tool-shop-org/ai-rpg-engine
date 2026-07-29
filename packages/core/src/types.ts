@@ -218,6 +218,30 @@ export type ZoneState = {
    * finding, not an oversight.
    */
   hazardRefs?: string[];
+  /**
+   * What the client's diorama binds to (C3/P4).
+   *
+   * STABLE KEYS ONLY — no coordinates, no asset paths, nothing a renderer could
+   * read as geometry. RG-C's decisive finding is that HD-2D's look is wholly
+   * client-side, so the sim owes a DESCRIPTOR rather than a layout
+   * (Takahashi/Miyauchi 2018), and Triangle Strategy's rule is that state flags
+   * swap lighting and dressing variants, NEVER layout. The vocabulary enforces
+   * that by having nothing else in it.
+   *
+   * The state-derived half (`variantTags`, `condition`) is NOT stored here — it
+   * lives in the zone-state module and is merged on read by
+   * `resolveSceneDescriptor`, so authored keys and derived keys cannot drift.
+   */
+  scene?: {
+    /** Stable key, e.g. 'harbour-stone'. Not prose. */
+    biome?: string;
+    /** Stable key, e.g. 'dusk'. Also the input `time-of-day` conditions needed. */
+    timeOfDay?: string;
+    /** Coarse and ordinal; the client decides what it means. */
+    dressingDensity?: 'sparse' | 'normal' | 'dense';
+    /** Authored variant hints, unioned with the state-derived ones on read. */
+    variantTags?: string[];
+  };
 };
 
 // --- Action ---

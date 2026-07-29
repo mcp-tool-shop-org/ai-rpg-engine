@@ -163,6 +163,7 @@ import { NPC_RUMOR_CONFIDENCE, CHAINED_OPPORTUNITY_URGENCY } from './opportunity
 import { getDistrictForZone, getDistrictState, getDistrictDefinition } from './district-core.js';
 import { runEncounterSpawnStep, type SpawnedEncounterReport } from './encounter-spawn.js';
 import { runTypedHazardStep, runTypedHazardEntryStep } from './hazard-interpreter.js';
+import { runZoneStateStep } from './zone-state.js';
 import { getEconomyCoreState, setDistrictEconomy, tickDistrictEconomy, getDistrictEconomy, applyEconomyShift, type SupplyCategory } from './economy-core.js';
 import {
   COMPANION_TAG,
@@ -1729,6 +1730,14 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   // makes both calls no-ops, so all twelve shipped packs are byte-identical.
   runTypedHazardEntryStep(engine);
   runTypedHazardStep(engine);
+
+  // 0b. ZONE STATE (C3/P4) — the moat bridge. Re-derives each zone's condition
+  // from district stability/morale and economy tone, and emits
+  // `world.zone.state.changed` ONLY for zones that CROSSED a threshold. A state
+  // that fires every round is not a state, and the RED control checks exactly
+  // that. Runs before the economy tick below, so a change reflects the state the
+  // player just acted on rather than one round of drift later.
+  runZoneStateStep(engine);
 
   // 0b. Economy tick (F-d0b5edb5) — see file header. No events emitted (same
   // silent-ledger posture district-core's own decay tick has); the state feeds

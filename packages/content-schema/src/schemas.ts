@@ -255,6 +255,16 @@ export type ZoneDefinition = {
    * that contrast is C0's finding and is preserved deliberately.
    */
   hazardRefs?: string[];
+  /**
+   * C3/P4 — the scene descriptor the client's diorama binds to. Stable keys only;
+   * see `ZoneState.scene` for the constraint and its grounding.
+   */
+  scene?: {
+    biome?: string;
+    timeOfDay?: string;
+    dressingDensity?: 'sparse' | 'normal' | 'dense';
+    variantTags?: string[];
+  };
 };
 
 export type RoomDefinition = {

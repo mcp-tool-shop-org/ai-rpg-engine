@@ -235,6 +235,17 @@ export function zoneDefinitionToState(def: ZoneDefinition, dropped?: DroppedFiel
   // one of them means anything without a closure. Keeping the contrast is the
   // point (see ZONE_HAZARD_NOTE).
   if (def.hazardRefs !== undefined) state.hazardRefs = [...def.hazardRefs];
+  // C3/P4 — the scene descriptor. Copied field-by-field rather than spread, so a
+  // future authored key cannot ride across undeclared (the excess-property hole
+  // C0 measured on zones, in miniature).
+  if (def.scene !== undefined) {
+    state.scene = {
+      ...(def.scene.biome !== undefined ? { biome: def.scene.biome } : {}),
+      ...(def.scene.timeOfDay !== undefined ? { timeOfDay: def.scene.timeOfDay } : {}),
+      ...(def.scene.dressingDensity !== undefined ? { dressingDensity: def.scene.dressingDensity } : {}),
+      ...(def.scene.variantTags !== undefined ? { variantTags: [...def.scene.variantTags] } : {}),
+    };
+  }
   if (def.entryGate !== undefined) {
     state.entryGate = {
       conditions: (def.entryGate.conditions ?? []).map((c) => ({

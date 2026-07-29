@@ -167,7 +167,11 @@
       },
       "hazardRefs": [
         "hazard-scalding-steam"
-      ]
+      ],
+      "scene": {
+        "timeOfDay": "dusk",
+        "dressingDensity": "normal"
+      }
     },
     {
       "id": "zone-under-vault",
@@ -243,7 +247,11 @@
       "hazardRefs": [
         "hazard-black-water",
         "hazard-void-drop"
-      ]
+      ],
+      "scene": {
+        "timeOfDay": "night",
+        "dressingDensity": "normal"
+      }
     },
     {
       "id": "zone-sky-gantry",
@@ -304,7 +312,11 @@
       },
       "hazardRefs": [
         "hazard-void-drop"
-      ]
+      ],
+      "scene": {
+        "timeOfDay": "day",
+        "dressingDensity": "normal"
+      }
     }
   ],
   "districts": [

@@ -151,6 +151,20 @@ export {
   HAZARD_DEPTH_LIMIT,
 } from './hazard-interpreter.js';
 export type { HazardSpec, HazardEffectSpec, HazardApplication } from './hazard-interpreter.js';
+// C3/P4 — scene descriptors + zone-state versioning (the moat bridge).
+export {
+  zoneStateCore,
+  runZoneStateStep,
+  getZoneCondition,
+  getZoneStateModuleState,
+  deriveZoneConditionWithReason,
+  variantTagsFor,
+  resolveSceneDescriptor,
+  ZONE_CONDITIONS,
+  ZONE_STATE_KEY,
+  ZONE_STATE_THRESHOLDS,
+} from './zone-state.js';
+export type { ZoneCondition, ZoneStateRecord, ZoneStateModuleState } from './zone-state.js';
 export type {
   DistrictMetrics,
   DistrictDefinition,
