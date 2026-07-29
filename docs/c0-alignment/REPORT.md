@@ -26,6 +26,36 @@
 > five genuinely-undeclared keys, and world-forge's 2.x engine dependency ranges
 > (checklist item 1).
 
+> ## ⚠ ADDENDUM 2 — the engine-deps errand (2026-07-29)
+>
+> The last item of the addendum above — "world-forge's 2.x engine dependency
+> ranges (checklist item 1)" — is **CLOSED**. All six ranges are `^3.8.0` and
+> all six resolve 3.8.0. §5's checklist now stands at **5 closed, 3 open**, and
+> `version-skew.json` is regenerated to match: items 1 and 7 closed by this
+> errand, 2 and 3 closed by C1 and flipped here, 5 closed at audit time.
+>
+> Two things this errand found that §5 could not have:
+>
+> - **Item 4 is an ANDON, not an oversight.** §5 called the missing
+>   `mercantile` / `pursuit` entries a `GENRE_MAP` gap. It is a vocabulary
+>   question: world-forge has three genre lists that already disagree — a free
+>   `string` in the schema, six fixed options in the editor picker, eleven keys
+>   onto nine targets in `GENRE_MAP` — so adding two identity entries would
+>   reach genres the editor cannot author. Routed to C3.
+> - **The exporter's duplicated content hash could NOT be de-duplicated**, and
+>   the reason everyone had been carrying was wrong. It was never the 2.x
+>   ranges: `computeContentHash` lives in `content-schema/src/gate.ts`, which C1
+>   added to `main` and which has **never been published**. npm `latest` is
+>   3.8.0 from 2026-03-07, and no published 3.8.0 package exports it. The same
+>   gap explains `GameManifest.contentHash`, which the forge still has to
+>   intersect in locally. The duplicate stays, its cross-repo equivalence test
+>   stays, and both are pinned to fail when a release lifts the block.
+>
+> Still open from §5: item 4 (above), item 6 (`EntityBlueprint.type` is still a
+> bare string — nothing to verify against), item 8 (a real breaking change now
+> that item 1 is done, deferred to release-time bookkeeping; no bump, tag or
+> publish was authorised).
+
 # C0 — The Forge↔Engine Alignment Audit
 
 **Cycle:** first rung of the 2.5D arc ([[ai-rpg-engine-2p5d-quality-bar]] §5, row C0).

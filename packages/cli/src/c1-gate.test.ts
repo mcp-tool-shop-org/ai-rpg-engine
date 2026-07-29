@@ -11,10 +11,20 @@
 // has only ever refused is as unproven as one that has only ever passed
 // ([[feedback_proof_gates_that_cant_fail_prove_nothing]]).
 //
-// The module check resolves against a REAL BOOTED ENGINE's ModuleManager, which
-// is why it lives in this repo: world-forge's engine dependencies are still
-// installed at 2.x (C0 checklist item 1, open), so the forge cannot boot 3.8.0
-// to resolve anything. Its half is structural; this half is live.
+// The module check resolves against a REAL BOOTED ENGINE's ModuleManager.
+//
+// ⚠ CORRECTED 2026-07-29. This used to add "…which is why it lives in this
+// repo: world-forge's engine dependencies are still installed at 2.x (C0
+// checklist item 1, open), so the forge cannot boot 3.8.0 to resolve anything.
+// Its half is structural; this half is live." Item 1 is closed and the forge
+// boots a published starter now — `c1-manifest-truth.test.ts` resolves the same
+// ids over there.
+//
+// Both halves stay, and not out of caution: this one resolves against THIS
+// repo's `main`, the forge's resolves against what npm actually installs. Those
+// are different engines today — `main` carries a whole content-schema module
+// (`gate.ts`) that no published version has — so an id resolving in one and not
+// the other is a fact worth failing over.
 
 import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
@@ -314,8 +324,10 @@ describe('C1/P2 — gate check: top-level key allowlist', () => {
 
 describe('C1/P2 — the forge export, gated live', () => {
   it('the repaired manifest resolves EVERY module id against a booted engine', () => {
-    // The decisive cross-repo check, and the reason it lives in this repo:
-    // world-forge cannot boot a 3.8.0 engine (its engine deps are still 2.x).
+    // The cross-repo check, resolved against THIS repo's engine. As of
+    // 2026-07-29 the forge resolves the same ids against a published starter it
+    // boots itself; this one still matters because `main` and `latest` are not
+    // the same engine.
     const manifest = forgeManifest();
     const ids = registeredIds();
     const unresolved = (manifest.modules as string[]).filter((id) => !ids.includes(id));
@@ -356,15 +368,27 @@ describe('C1/P2 — the forge export, gated live', () => {
 
   it('CROSS-REPO: the forge\'s hash implementation agrees with the engine\'s', () => {
     // ⚠ THE CHECK THAT DEFENDS A DELIBERATE DUPLICATE. world-forge cannot import
-    // `computeContentHash` — its @ai-rpg-engine/* dependencies are installed at
-    // 2.x (C0 checklist item 1, open), and 2.x has no such export — so it ships
-    // its own copy in `content-hash.ts`. Two implementations of one algorithm in
-    // two repos is exactly how DEFAULT_MODULES drifted into nine phantoms.
+    // `computeContentHash`, so it ships its own copy in `content-hash.ts`. Two
+    // implementations of one algorithm in two repos is exactly how
+    // DEFAULT_MODULES drifted into nine phantoms.
     //
-    // So it is checked rather than trusted: the value below was computed by the
-    // FORGE and committed into the manifest fixture; this recomputes it with the
-    // ENGINE's implementation over the committed pack. If the two ever diverge,
-    // this fails, and the divergence cannot hide.
+    // ⚠ THE REASON CHANGED 2026-07-29, AND THIS TEST NEARLY DIED OF IT. It used
+    // to read "its @ai-rpg-engine/* dependencies are installed at 2.x (C0
+    // checklist item 1, open), and 2.x has no such export", and the dep-bump
+    // errand was briefed to retire this test on the back of that sentence: bump
+    // the ranges, share one function, and an equivalence check becomes a
+    // tautology. The ranges are bumped. There is still no shared function.
+    // `computeContentHash` lives in `content-schema/src/gate.ts` — added to this
+    // repo's `main` by C1 and NEVER PUBLISHED. npm's `latest` is 3.8.0 from
+    // 2026-03-07, and no published 3.8.0 package exports it. The blocker was
+    // never the range; it is a release.
+    //
+    // So this stays, and stays checked rather than trusted: the value below was
+    // computed by the FORGE and committed into the manifest fixture; this
+    // recomputes it with the ENGINE's implementation over the committed pack. If
+    // the two ever diverge, this fails, and the divergence cannot hide. Retire
+    // it when a published engine carries the hasher and the forge imports it —
+    // world-forge's `engine-deps-3x.test.ts` fails on that day and says so.
     const manifest = forgeManifest();
     expect(manifest.contentHash, 'the exporter must stamp a hash').toBeDefined();
     expect(computeContentHash(fixturePack())).toBe(manifest.contentHash);
