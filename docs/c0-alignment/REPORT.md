@@ -46,10 +46,19 @@
 >   the reason everyone had been carrying was wrong. It was never the 2.x
 >   ranges: `computeContentHash` lives in `content-schema/src/gate.ts`, which C1
 >   added to `main` and which has **never been published**. npm `latest` is
->   3.8.0 from 2026-03-07, and no published 3.8.0 package exports it. The same
->   gap explains `GameManifest.contentHash`, which the forge still has to
->   intersect in locally. The duplicate stays, its cross-repo equivalence test
->   stays, and both are pinned to fail when a release lifts the block.
+>   3.8.0, published **2026-07-28T23:12Z**, and no published 3.8.0 package
+>   exports it. The same gap explains `GameManifest.contentHash`, which the forge
+>   still has to intersect in locally. The duplicate stays, its cross-repo
+>   equivalence test stays, and both are pinned to fail when a release lifts the
+>   block.
+>
+>   *(⚠ DATE CORRECTED 2026-07-29 by C3/P0. This paragraph read "3.8.0 from
+>   2026-03-07", which was the package's CREATED timestamp — the v1.x-era first
+>   publish — not 3.8.0's publish time. The advisor corrected it at the errand's
+>   verification gate and the fix landed in the world-forge branch files
+>   (`0983a26`) but never reached this copy. The conclusion is unchanged and the
+>   corrected fact is sharper: the 3.8.0 packages were cut HOURS BEFORE C1
+>   merged, which is precisely why `main` and `latest` are different engines.)*
 >
 > Still open from §5: item 4 (above), item 6 (`EntityBlueprint.type` is still a
 > bare string — nothing to verify against), item 8 (a real breaking change now
