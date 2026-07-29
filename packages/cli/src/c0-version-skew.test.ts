@@ -1,14 +1,28 @@
 // c0-version-skew.test.ts — P4 of the C0 Forge↔Engine alignment audit.
 //
-// `packages/export-ai-rpg/src/ENGINE_CONTRACT.md` (world-forge) opens with:
+// `packages/export-ai-rpg/src/ENGINE_CONTRACT.md` (world-forge) opened with:
 // "This exporter depends on the ai-rpg-engine 2.x API. If the engine ships a
 // 3.x major, work through the checklist below *before* bumping the dep ranges."
-// The engine shipped 3.0.0 and has since reached 3.8.0. Not one of the eight
-// checklist boxes is ticked.
+// The engine shipped 3.0.0 and reached 3.8.0 with not one of the eight
+// checklist boxes ticked.
 //
 // This file works each item as a FINDING against current engine source. It
 // fixes nothing — every assertion PINS today's reality so a later cycle that
 // closes an item fails loudly here instead of leaving a stale report behind.
+//
+// ⚠ FOUR ITEMS FLIPPED 2026-07-29 (5 of 8 now closed). The mechanism worked as
+// designed — the report did not silently rot — but it took two cycles to
+// collect, so the flips are dated individually below rather than presented as
+// one event:
+//   - items 2 and 3 were closed by C1 (`>=3.8.0 <4.0.0` in both places; 18
+//     module ids cut to 12, all resolving). C1 did not come back to flip them
+//     here, which left this file contradicting its own sibling `c1-gate.test.ts`
+//     two directories over.
+//   - items 1 and 7 were closed by the engine-deps errand, and flipping item 1
+//     is that errand's one authorised change to this repo.
+// Items 4, 6 and 8 remain open and are NOT reframed. Item 5 was closed at
+// audit time. Where a finding is superseded rather than deleted, the original
+// sentence is quoted so the correction is legible.
 //
 // Assertions read live engine exports wherever possible; where the fact lives
 // in world-forge (a repo this suite cannot import), it is transcribed with a
@@ -83,15 +97,20 @@ function record(item: SkewItem) {
 }
 
 describe('C0/P4 — the eight 3.x-bump checklist items, worked as findings', () => {
-  it('1. dep ranges — OPEN: the exporter type-checks against the 2.x surface', () => {
-    // world-forge/packages/export-ai-rpg/package.json still pins
-    // content-schema ^2.0.1, core ^2.0.1, modules ^2.1.0, pack-registry ^2.0.2,
-    // character-creation ^2.0.2, equipment ^2.0.2 — and those exact versions are
-    // what its node_modules resolves. The engine is at 3.8.0.
+  it('1. dep ranges — CLOSED 2026-07-29: the exporter type-checks against 3.x', () => {
+    // The finding, as it stood: "world-forge/packages/export-ai-rpg/package.json
+    // still pins content-schema ^2.0.1, core ^2.0.1, modules ^2.1.0,
+    // pack-registry ^2.0.2, character-creation ^2.0.2, equipment ^2.0.2 — and
+    // those exact versions are what its node_modules resolves." It was stronger
+    // than the hard-coded string in item 2: every type the converters were
+    // checked against was the 2.x type, so a field the engine added in 3.x was
+    // not merely unset by the exporter — it was invisible to it.
     //
-    // This is stronger than the hard-coded version string in item 2: every type
-    // the converters are checked against is the 2.x type. A field the engine
-    // added in 3.x is not merely unset by the exporter — it is invisible to it.
+    // Closed by the engine-deps errand. All six ranges are ^3.8.0 and all six
+    // RESOLVE at 3.8.0, which are two different facts: that errand produced a
+    // tree where the declared ranges were all correct and content-schema@3.8.0
+    // still sat on core@2.0.1. world-forge asserts both live, in
+    // `packages/export-ai-rpg/src/__tests__/engine-deps-3x.test.ts`.
     //
     // (An earlier draft called this "two majors old". The cross-family jury's
     // glm-5.2 seat refuted it and was right: 2.x → 3.x is ONE major behind.
@@ -99,31 +118,49 @@ describe('C0/P4 — the eight 3.x-bump checklist items, worked as findings', () 
     record({
       item: 1,
       checklistText: 'Bump the six @ai-rpg-engine/* dep ranges in package.json.',
-      status: 'open',
+      status: 'closed',
       finding:
-        'Unchanged. Installed: content-schema 2.0.1, core 2.0.1, modules 2.1.0, pack-registry 2.0.2, equipment 2.0.2, character-creation 2.0.2. Engine ships 3.8.0. The export lane compiles against a surface one major behind, so every 3.x addition is invisible to it at type-check time.',
+        'CLOSED 2026-07-29 by the engine-deps errand. All six ranges declare ^3.8.0 and all six resolve 3.8.0; asserted live in world-forge engine-deps-3x.test.ts, which checks declaration and resolution separately because the first install of that errand got the declarations right and left content-schema@3.8.0 on core@2.0.1. Superseded finding: "Unchanged. Installed: content-schema 2.0.1, core 2.0.1, modules 2.1.0, pack-registry 2.0.2, equipment 2.0.2, character-creation 2.0.2. Engine ships 3.8.0. The export lane compiles against a surface one major behind, so every 3.x addition is invisible to it at type-check time."',
     });
-    expect(SKEW_FINDINGS.at(-1)!.status).toBe('open');
+    expect(SKEW_FINDINGS.at(-1)!.status).toBe('closed');
   });
 
-  it('2. engineVersion — OPEN: the pack self-reports 2.0.0 and loads clean anyway', () => {
-    // convert-pack.ts:81 and :134. The exported fixture carries it, and the
-    // 3.8.0 validators accept it without comment: engineVersion is not checked
-    // by anything on the intake path.
+  it('2. engineVersion — CLOSED by C1: the pack declares a range the gate checks', () => {
+    // Was: "the pack self-reports 2.0.0 and loads clean anyway" — convert-pack.ts
+    // :81 and :134 both carried the literal, and nothing on the intake path read
+    // it, so it was a claim no consumer checked.
+    //
+    // C1 replaced both with ENGINE_VERSION_RANGE ('>=3.8.0 <4.0.0') and gave the
+    // load gate a check that reads it. `c1-gate.test.ts` asserts the committed
+    // forge manifest carries the range and that the gate's engine-version check
+    // passes on it.
     const raw = JSON.parse(fs.readFileSync(FIXTURE_PACK_PATH, 'utf-8')) as Record<string, unknown>;
-    // The ContentPack itself carries no engineVersion — it rides on the manifest
-    // and packMeta, which the pack file does not contain.
+    // Unchanged and still pinned: the ContentPack itself carries no
+    // engineVersion — it rides on the manifest and packMeta, which the pack file
+    // does not contain. Closing item 2 did not move it into the pack.
     expect(raw.engineVersion).toBeUndefined();
     record({
       item: 2,
       checklistText: "Update hard-coded engineVersion: '2.0.0' in convert-pack.ts.",
-      status: 'open',
+      status: 'closed',
       finding:
-        "Unchanged at convert-pack.ts:81 (GameManifest) and :134 (PackMetadata). Nothing on the engine's intake path reads engineVersion, so the stale value produces no error anywhere — it is a claim no consumer checks.",
+        'CLOSED by C1. Both sites now emit ENGINE_VERSION_RANGE (">=3.8.0 <4.0.0") and the four-check load gate reads it, so it is a checked claim rather than a comment; c1-gate.test.ts asserts the committed forge manifest carries the range and passes the engine-version check. Flipped here 2026-07-29 — C1 closed it and did not return to this file. Superseded finding: "Unchanged at convert-pack.ts:81 (GameManifest) and :134 (PackMetadata). Nothing on the engine\'s intake path reads engineVersion, so the stale value produces no error anywhere — it is a claim no consumer checks."',
     });
   });
 
-  it('3. DEFAULT_MODULES — OPEN, and worse than stale: 9 of 18 ids do not exist', () => {
+  it('3. DEFAULT_MODULES — CLOSED by C1: the 18-id list that follows is HISTORY', () => {
+    // ⚠ READ THIS BEFORE THE ASSERTIONS. `FORGE_DEFAULT_MODULES` is the list as
+    // it stood at C0 — eighteen ids, nine of them naming nothing. The forge no
+    // longer emits it: C1 cut it to twelve, dropping six pure phantoms and
+    // remapping three near-misses (movement-core→traversal-core,
+    // npc-ai-core→cognition-core, rumor-core→rumor-propagation).
+    //
+    // The assertions below are kept and still pass, because they are about the
+    // OLD list and the old list has not changed — it is history. What they pin
+    // is the size of the hole C1 closed, and the near-miss facts that made it
+    // invisible. The live check on what the forge emits TODAY is in
+    // `c1-gate.test.ts` (against this repo's ModuleManager) and in world-forge's
+    // `c1-manifest-truth.test.ts` (against a booted published starter).
     const engineSet = new Set(ENGINE_MODULE_IDS);
     const phantom = FORGE_DEFAULT_MODULES.filter((m) => !engineSet.has(m));
     const real = FORGE_DEFAULT_MODULES.filter((m) => engineSet.has(m));
@@ -153,9 +190,9 @@ describe('C0/P4 — the eight 3.x-bump checklist items, worked as findings', () 
     record({
       item: 3,
       checklistText: 'Re-verify DEFAULT_MODULES against the 3.x module registry.',
-      status: 'open',
+      status: 'closed',
       finding:
-        'Unchanged, and not merely stale: NINE of the eighteen ids the exporter writes into every manifest do not exist anywhere in the engine at 3.8.0 (arc-core, endgame-core, faction-core, leverage-core, movement-core, npc-ai-core, pressure-core, relationship-core, rumor-core). Four are near-misses for real modules under different names (movement-core/traversal-core, npc-ai-core/cognition-core, rumor-core/rumor-propagation, pressure-core/pressure-system), which is why the list reads plausible. Manifest validation (core/src/manifest.ts:77-89) checks only that `modules` is an array of strings — no id is ever resolved — so a manifest naming ten nonexistent modules passes every gate the engine has.',
+        'CLOSED by C1, flipped here 2026-07-29. The 18-id list was cut to 12: six pure phantoms dropped (faction-core, leverage-core, pressure-core, relationship-core, arc-core, endgame-core) and three near-misses remapped (movement-core→traversal-core, npc-ai-core→cognition-core, rumor-core→rumor-propagation). The mechanism that failed was a comment asking a human to keep two repos in sync; it is now two live resolutions — c1-gate.test.ts against this repo\'s booted ModuleManager, and world-forge c1-manifest-truth.test.ts against a booted published starter. The 18-id list retained in this file is history, and the assertions on it still pass because history does not change. Superseded finding: "Unchanged, and not merely stale: NINE of the eighteen ids the exporter writes into every manifest do not exist anywhere in the engine at 3.8.0… Manifest validation (core/src/manifest.ts:77-89) checks only that `modules` is an array of strings — no id is ever resolved — so a manifest naming ten nonexistent modules passes every gate the engine has."',
     });
   });
 
@@ -210,7 +247,7 @@ describe('C0/P4 — the eight 3.x-bump checklist items, worked as findings', () 
     });
   });
 
-  it('7. dialogue text shape — the contract records a constraint that no longer binds', () => {
+  it('7. suite + fixtures — CLOSED 2026-07-29: run against 3.x, zero fixture churn', () => {
     // ENGINE_CONTRACT.md line 30: "Dialogue node `text` is an array of
     // `{ text: string }` blocks on 2.x." At 3.8.0 the type is
     // `string | TextBlock[]` (content-schema/src/schemas.ts:289) — widened, so
@@ -224,25 +261,31 @@ describe('C0/P4 — the eight 3.x-bump checklist items, worked as findings', () 
     record({
       item: 7,
       checklistText: 'Run the full test suite; update fixtures if engine record shapes changed.',
-      status: 'open',
+      status: 'closed',
       finding:
-        "The contract's runtime note ('Dialogue node text is an array of { text } blocks on 2.x') does not describe what the exporter emits: convert-dialogues writes a plain string. At 3.8.0 DialogueNode.text is `string | TextBlock[]` (schemas.ts:289), so the plain string is valid today — the constraint the contract records has been widened out of existence. Note the pack disagrees with itself either way: zone descriptions ARE wrapped in TextBlock arrays while dialogue text is not.",
+        "CLOSED 2026-07-29 by the engine-deps errand: world-forge's suite ran against the 3.x deps — 133 files / 2412 tests green, build clean — and NOT ONE FIXTURE CHANGED. The item's own observation is unaffected and still pinned above: the contract's runtime note ('Dialogue node text is an array of { text } blocks on 2.x') never described what the exporter emits, since convert-dialogues writes a plain string. At 3.8.0 DialogueNode.text is `string | TextBlock[]` (schemas.ts:289), so the constraint was widened out of existence rather than satisfied. The pack still disagrees with itself: zone descriptions ARE wrapped in TextBlock arrays while dialogue text is not.",
     });
   });
 
-  it('8. major version bump — OPEN, and the whole checklist is untouched', () => {
+  it('8. major version bump — OPEN, deferred to release-time bookkeeping', () => {
     record({
       item: 8,
       checklistText: "Bump this package's major version (breaking change for consumers).",
       status: 'open',
       finding:
-        '@world-forge/export-ai-rpg is at 4.5.0, versioned with the World Forge monorepo rather than against the engine surface it targets. No engine-facing major was ever cut, because item 1 was never done.',
+        '@world-forge/export-ai-rpg is at 4.5.0, versioned with the World Forge monorepo rather than against the engine surface it targets. Item 1 is now done, so the breaking change EXISTS — consumers pinning engine 2.x get a duplicated engine or a resolution failure — but the bump is release-time bookkeeping and the errand that made the change had no authority to publish, tag or bump. Recorded as a standing release note in ENGINE_CONTRACT.md; the next release of that package takes a major and says so in its CHANGELOG.',
     });
 
-    // Seven of eight open. Recorded as a single number so the report cannot
-    // drift from the file.
+    // Three of eight open, and the numbers are recorded rather than written so
+    // the report cannot drift from the file. Was 7 of 8 at the C0 audit; C1
+    // closed 2 and 3, the engine-deps errand closed 1 and 7, and 5 was closed on
+    // the day it was written. What is left is 4 (the GENRE_MAP gap, an ANDON —
+    // the forge has three genre vocabularies that disagree, so two identity
+    // entries are not the mechanical fix they look like), 6 (nothing to verify
+    // against: EntityBlueprint.type is still a bare string), and 8 above.
     expect(SKEW_FINDINGS).toHaveLength(8);
-    expect(SKEW_FINDINGS.filter((f) => f.status === 'open')).toHaveLength(7);
+    expect(SKEW_FINDINGS.filter((f) => f.status === 'open')).toHaveLength(3);
+    expect(SKEW_FINDINGS.filter((f) => f.status === 'open').map((f) => f.item)).toEqual([4, 6, 8]);
   });
 });
 
