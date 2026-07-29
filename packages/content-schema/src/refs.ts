@@ -126,6 +126,31 @@ export type ContentPack = {
    * `EncounterAnchor` would invert the layering.
    */
   encounterAnchors?: EncounterAnchorRecord[];
+  /**
+   * TYPED environmental hazards (C3/P3) — the vocabulary that lets hazard data
+   * MEAN something.
+   *
+   * C0 §3.2's sharpest measurement: hazard STRINGS carry no engine semantics
+   * ("their meaning is JavaScript the pack ships"), so a data-only export was
+   * inert by construction, and C0 §9 called closing this "the highest-value single
+   * item, because it closes a structural hole rather than a wire hole."
+   *
+   * Zones bind to these by id through `ZoneDefinition.hazardRefs`. Shape mirrored
+   * structurally (the `districts` pattern) because the interpreter lives in
+   * @ai-rpg-engine/modules, above this package.
+   */
+  hazardDefinitions?: Array<{
+    id: string;
+    name?: string;
+    effects: unknown[];
+    trigger: string;
+    moveCostDelta?: number;
+    passable?: string;
+    blocksVision?: boolean;
+    weatherConditions?: string[];
+    immuneTags?: string[];
+    tags?: string[];
+  }>;
 };
 
 /**

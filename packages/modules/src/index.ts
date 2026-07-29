@@ -133,7 +133,24 @@ export {
   getDistrictThreatLevel,
   ingestDistrictDefinitions,
 } from './district-core.js';
-export { districtsChannel, encounterAnchorsChannel, createStandardChannels } from './intake-channels.js';
+export {
+  districtsChannel,
+  encounterAnchorsChannel,
+  hazardDefinitionsChannel,
+  createStandardChannels,
+} from './intake-channels.js';
+// C3/P3 — typed hazards as data.
+export {
+  registerTypedHazards,
+  unregisterTypedHazards,
+  getTypedHazardsForZone,
+  applyTypedHazards,
+  runTypedHazardStep,
+  runTypedHazardEntryStep,
+  hazardBlocksEntry,
+  HAZARD_DEPTH_LIMIT,
+} from './hazard-interpreter.js';
+export type { HazardSpec, HazardEffectSpec, HazardApplication } from './hazard-interpreter.js';
 export type {
   DistrictMetrics,
   DistrictDefinition,

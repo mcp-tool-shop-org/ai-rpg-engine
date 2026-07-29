@@ -164,7 +164,10 @@
         ],
         "mode": "soft",
         "reason": "The yard gate needs three hands on the winch."
-      }
+      },
+      "hazardRefs": [
+        "hazard-scalding-steam"
+      ]
     },
     {
       "id": "zone-under-vault",
@@ -236,7 +239,11 @@
         ],
         "mode": "hard",
         "reason": "No one goes down without rope and a delver."
-      }
+      },
+      "hazardRefs": [
+        "hazard-black-water",
+        "hazard-void-drop"
+      ]
     },
     {
       "id": "zone-sky-gantry",
@@ -294,7 +301,10 @@
         ],
         "mode": "hard",
         "reason": "The gantry will not hold a green party."
-      }
+      },
+      "hazardRefs": [
+        "hazard-void-drop"
+      ]
     }
   ],
   "districts": [
@@ -722,6 +732,101 @@
       "baseProbability": 0.35,
       "tags": [
         "water",
+        "structural"
+      ]
+    }
+  ],
+  "hazardDefinitions": [
+    {
+      "id": "hazard-scalding-steam",
+      "name": "Scalding Steam",
+      "effects": [
+        {
+          "kind": "damage",
+          "amount": 0.05,
+          "amountIsPercentMaxHp": true,
+          "tickOn": "turn-end",
+          "durationTicks": 3
+        }
+      ],
+      "trigger": "per-turn",
+      "moveCostDelta": 1,
+      "passable": "yes",
+      "blocksVision": true,
+      "weatherConditions": [
+        "cold"
+      ],
+      "immuneTags": [
+        "heat-resist"
+      ],
+      "tags": [
+        "heat",
+        "vision"
+      ]
+    },
+    {
+      "id": "hazard-black-water",
+      "name": "Black Water",
+      "effects": [
+        {
+          "kind": "status",
+          "statusId": "status-chilled",
+          "chance": 0.5,
+          "stacking": "refresh"
+        },
+        {
+          "kind": "ignite",
+          "igniteChance": 0
+        }
+      ],
+      "trigger": "on-enter",
+      "moveCostDelta": 2,
+      "passable": "flying-only",
+      "blocksVision": false,
+      "weatherConditions": [],
+      "immuneTags": [
+        "cold-immune"
+      ],
+      "tags": [
+        "water",
+        "cold"
+      ]
+    },
+    {
+      "id": "hazard-void-drop",
+      "name": "Void Drop",
+      "effects": [
+        {
+          "kind": "instakill"
+        }
+      ],
+      "trigger": "on-exit",
+      "moveCostDelta": 0,
+      "passable": "never",
+      "blocksVision": false,
+      "weatherConditions": [
+        "storm"
+      ],
+      "immuneTags": [
+        "flight"
+      ],
+      "tags": [
+        "fall",
+        "lethal"
+      ]
+    },
+    {
+      "id": "hazard-timed-collapse",
+      "name": "Timed Collapse",
+      "effects": [
+        {
+          "kind": "damage",
+          "amount": 4,
+          "tickOn": "turn-start"
+        }
+      ],
+      "trigger": "timed",
+      "tags": [
         "structural"
       ]
     }

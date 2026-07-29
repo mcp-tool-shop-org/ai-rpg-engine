@@ -19,6 +19,7 @@ import {
   BOSS_ROLE_TAG,
 } from './encounter-spawn.js';
 import type { EncounterDefinition, EncounterComposition } from './combat-roles.js';
+import { registerTypedHazards, type HazardSpec } from './hazard-interpreter.js';
 
 /**
  * Route exported `districts` into a booted world.
@@ -303,6 +304,164 @@ export function encounterAnchorsChannel(): IntakeChannel {
 }
 
 /**
+ * Route exported `hazardDefinitions` into a booted world (C3/P3).
+ *
+ * ⚠ CLOSES THE ARC'S SHARPEST MEASUREMENT. C0 §3.2 swept one zone field two ways
+ * across twelve worlds: `'unstable floor'` moved the simulation because
+ * starter-fantasy ships a closure that matches it; `'loose cobbles'` moved nothing
+ * anywhere, because no closure references it. "Hazard strings carry no engine
+ * semantics; their meaning is JavaScript the pack ships" — so a data-only export
+ * was inert BY CONSTRUCTION, and C0 §9 called this "the highest-value single item,
+ * because it closes a structural hole rather than a wire hole."
+ *
+ * The zone→hazard binding comes from `ZoneState.hazardRefs`, which the zone
+ * converter carries, so this channel reads the world it is writing into rather
+ * than requiring the pack to repeat the mapping.
+ */
+export function hazardDefinitionsChannel(): IntakeChannel {
+  return {
+    key: 'hazardDefinitions',
+    apply(engine: Engine, data: unknown): ChannelReport {
+      if (!Array.isArray(data)) {
+        return {
+          applied: 0,
+          errors: [{ path: 'pack.hazardDefinitions', message: 'must be an array of HazardSpec.' }],
+        };
+      }
+
+      const errors: ChannelReport['errors'] = [];
+      const dropped: ChannelReport['dropped'] = [];
+      const world = engine.store.state;
+      const specs: HazardSpec[] = [];
+
+      const TRIGGERS = ['on-enter', 'per-turn', 'on-exit', 'timed'];
+      const KINDS = ['damage', 'status', 'instakill', 'ignite'];
+
+      for (let i = 0; i < data.length; i++) {
+        const h = data[i] as Record<string, unknown> | null;
+        const label = `hazardDefinitions[${i}]`;
+        if (h === null || typeof h !== 'object' || Array.isArray(h)) {
+          errors.push({ path: label, message: 'must be an object.' });
+          continue;
+        }
+        const id = typeof h.id === 'string' ? h.id : undefined;
+        if (!id) {
+          errors.push({ path: `${label}.id`, message: 'must be a non-empty string.' });
+          continue;
+        }
+        const at = `${label}(${id})`;
+        if (typeof h.trigger !== 'string' || !TRIGGERS.includes(h.trigger)) {
+          errors.push({
+            path: `${at}.trigger`,
+            message: `must be one of ${TRIGGERS.join(', ')} — refused rather than defaulted.`,
+          });
+          continue;
+        }
+        if (!Array.isArray(h.effects)) {
+          errors.push({ path: `${at}.effects`, message: 'must be an array (empty is legal for a terrain-only hazard).' });
+          continue;
+        }
+        let effectsOk = true;
+        for (const [j, e] of (h.effects as unknown[]).entries()) {
+          const kind = (e as { kind?: unknown } | null)?.kind;
+          if (typeof kind !== 'string' || !KINDS.includes(kind)) {
+            errors.push({
+              path: `${at}.effects[${j}].kind`,
+              message: `must be one of ${KINDS.join(', ')} — the effect union is CLOSED, so content selects a kind rather than defining one.`,
+            });
+            effectsOk = false;
+          }
+        }
+        if (!effectsOk) continue;
+
+        specs.push({
+          id,
+          name: typeof h.name === 'string' ? h.name : id,
+          effects: h.effects as HazardSpec['effects'],
+          trigger: h.trigger as HazardSpec['trigger'],
+          ...(typeof h.moveCostDelta === 'number' ? { moveCostDelta: h.moveCostDelta } : {}),
+          ...(typeof h.passable === 'string' ? { passable: h.passable as HazardSpec['passable'] } : {}),
+          ...(typeof h.blocksVision === 'boolean' ? { blocksVision: h.blocksVision } : {}),
+          ...(Array.isArray(h.weatherConditions) ? { weatherConditions: h.weatherConditions as string[] } : {}),
+          ...(Array.isArray(h.immuneTags) ? { immuneTags: h.immuneTags as string[] } : {}),
+          tags: Array.isArray(h.tags) ? (h.tags as string[]) : [],
+        });
+      }
+
+      if (specs.length === 0) {
+        return { applied: 0, ...(errors.length > 0 ? { errors } : {}) };
+      }
+
+      // The zone binding, read off the world the zones already landed in.
+      const byZone: Record<string, string[]> = {};
+      const declared = new Set(specs.map((s) => s.id));
+      for (const zone of Object.values(world.zones)) {
+        const refs = (zone as { hazardRefs?: unknown }).hazardRefs;
+        if (!Array.isArray(refs) || refs.length === 0) continue;
+        const resolved: string[] = [];
+        for (const ref of refs) {
+          if (typeof ref !== 'string') continue;
+          if (!declared.has(ref)) {
+            // A dangling ref is the phantom-module-id shape again: plausible, and
+            // dead. Named, not silently skipped.
+            dropped.push({
+              path: `zones(${zone.id}).hazardRefs`,
+              reason: 'needs-module-vocabulary',
+              detail: `hazardRef "${ref}" matches no hazardDefinition in this pack — the zone will not carry that hazard.`,
+            });
+            continue;
+          }
+          resolved.push(ref);
+        }
+        if (resolved.length > 0) byZone[zone.id] = resolved;
+      }
+
+      // ⚠ `statusId` LIVE RESOLUTION IS BUILT AND NOT WIRED — stated rather than
+      // implied, because the interpreter's check is fail-OPEN when the known set is
+      // empty, and an unwired check that LOOKS wired is worse than no check at all.
+      //
+      // The interpreter resolves `statusId` against a registered set, exactly as
+      // C1's gate resolves module ids against a booted `ModuleManager`. The set is
+      // empty here because `IntakeChannel.apply(engine, data)` receives only its own
+      // slice of the pack, not the pack — so this channel cannot see
+      // `pack.statuses`. Widening that signature touches `districtsChannel` and
+      // `encounterAnchorsChannel` too, and that is a contract change this phase
+      // does not authorise on the way past.
+      //
+      // Consequence, recorded: a hazard naming a status no pack declares applies an
+      // unknown id rather than being refused. `registerTypedHazards` already accepts
+      // the set, so wiring it is one argument once the channel can see the pack.
+      const knownStatusIds: string[] = [];
+
+      const { skippedIds } = registerTypedHazards(world.meta.gameId, specs, byZone, knownStatusIds);
+      for (const id of skippedIds) {
+        dropped.push({
+          path: `pack.hazardDefinitions(${id})`,
+          reason: 'needs-module-vocabulary',
+          detail: `hazard id "${id}" was already registered by pack CODE, which wins — a closure can express meaning a data record cannot.`,
+        });
+      }
+
+      if (Object.keys(byZone).length === 0) {
+        dropped.push({
+          path: 'pack.hazardDefinitions',
+          reason: 'no-runtime-field',
+          detail:
+            `${specs.length} typed hazard${specs.length === 1 ? '' : 's'} registered, but NO zone references any of them ` +
+            'via `hazardRefs` — so none of them can ever fire. Add hazardRefs to the zones they belong to.',
+        });
+      }
+
+      return {
+        applied: specs.length,
+        ...(errors.length > 0 ? { errors } : {}),
+        ...(dropped.length > 0 ? { dropped } : {}),
+      };
+    },
+  };
+}
+
+/**
  * Every module-owned intake channel this package ships. Pass to
  * `applyContentPack(engine, pack, { channels: createStandardChannels() })`.
  *
@@ -312,5 +471,5 @@ export function encounterAnchorsChannel(): IntakeChannel {
  * it does.
  */
 export function createStandardChannels(): IntakeChannel[] {
-  return [districtsChannel(), encounterAnchorsChannel()];
+  return [districtsChannel(), encounterAnchorsChannel(), hazardDefinitionsChannel()];
 }

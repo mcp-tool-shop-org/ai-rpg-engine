@@ -475,7 +475,7 @@ describe('C1/P1 — session-scoped keys are not pretended to be routable', () =>
     // split itself is unchanged — this is a third key on the routable side, not
     // a softening of the rule. The session-scoped pair is untouched, which is
     // the part that would signal a re-merge.
-    expect([...MODULE_INTAKE_KEYS]).toEqual(['districts', 'encounterAnchors']);
+    expect([...MODULE_INTAKE_KEYS]).toEqual(['districts', 'encounterAnchors', 'hazardDefinitions']);
     expect([...SESSION_SCOPED_KEYS]).toEqual(['buildCatalog', 'progressionTrees']);
   });
 

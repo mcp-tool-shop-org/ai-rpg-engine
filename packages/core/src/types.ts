@@ -211,6 +211,13 @@ export type ZoneState = {
    * with no gate is byte-identical to one before this field existed.
    */
   entryGate?: ZoneEntryGate;
+  /**
+   * Ids of typed hazards active in this zone (C3/P3), resolved against the pack's
+   * `hazardDefinitions`. The legacy free-text `hazards: string[]` field above is
+   * UNTOUCHED and stays exactly as inert as C0 measured it — that contrast is the
+   * finding, not an oversight.
+   */
+  hazardRefs?: string[];
 };
 
 // --- Action ---

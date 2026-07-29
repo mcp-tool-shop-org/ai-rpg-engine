@@ -53,6 +53,9 @@ export const ALLOWED_PACK_KEYS = [
   // declaration is a refusal nobody can fix.
   'placements',
   'encounterAnchors',
+  // C3/P3 — typed hazards. Same-commit rule: declared here, on the ContentPack
+  // type, and shape-guarded, together.
+  'hazardDefinitions',
 ] as const;
 
 /**
@@ -81,6 +84,8 @@ export const SIM_AFFECTING_KEYS = [
   // export must invalidate the pack — that is the whole job of this list.
   'placements',
   'encounterAnchors',
+  // C3/P3 — a hazard changes what the simulation computes, so it is in the hash.
+  'hazardDefinitions',
 ] as const;
 
 // --- Report shapes --------------------------------------------------------

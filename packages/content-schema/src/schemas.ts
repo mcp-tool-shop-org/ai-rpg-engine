@@ -249,6 +249,12 @@ export type ZoneDefinition = {
   exits?: ExitDefinition[];
   /** C3/P2 — party-state gate on entry. Absent ⇒ ungated. */
   entryGate?: EntryGateDefinition;
+  /**
+   * C3/P3 — ids into the pack's `hazardDefinitions`. The legacy free-text
+   * `hazards: string[]` above is UNTOUCHED and stays inert without pack code;
+   * that contrast is C0's finding and is preserved deliberately.
+   */
+  hazardRefs?: string[];
 };
 
 export type RoomDefinition = {

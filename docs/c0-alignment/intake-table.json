@@ -86,6 +86,11 @@
       "note": "C3/P1: declared and ROUTED into encounter-spawn's registry (was \"zero hits repo-wide, dead on arrival\"). Contributes per-zone spawn tables plus two axes the module had no expression for: probability and cooldownTurns."
     },
     {
+      "key": "hazardDefinitions",
+      "class": "alive-as-rules",
+      "note": "C3/P3: declared and ROUTED. The closed effect union (damage / status / instakill / ignite) executes as DATA through the same site as pack closures, bound to zones by Zone.hazardRefs. THE FLIP: 'loose cobbles' as a typed hazard moves the sim; as a bare string it stays exactly as inert as C0 measured — the contrast is preserved on purpose."
+    },
+    {
       "key": "factionPresences",
       "class": "unknown-key",
       "note": "Zero hits repo-wide for the plural pack key. (The singular `factionPresence` appears as a local in district-core and as a DERIVED field in strategic-map — unrelated, and a trap for a naive grep.)"
@@ -390,7 +395,7 @@
     "exportedKeys": {
       "unknown-key": 8,
       "validated-only": 3,
-      "alive-as-rules": 2
+      "alive-as-rules": 3
     },
     "zoneDefinitionFields": {
       "alive-as-rules": 6,

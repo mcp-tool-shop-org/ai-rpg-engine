@@ -230,6 +230,11 @@ export function zoneDefinitionToState(def: ZoneDefinition, dropped?: DroppedFiel
   // COMPILED by the exporter (the engine never parses author syntax), so this is
   // a structural copy, deep enough that a caller mutating the result cannot reach
   // back into the pack (the aliasing bug C1's own control caught on `tags`).
+  // C3/P3 — the TYPED hazard refs. The legacy `hazards` string list above is
+  // carried too and still reported `inert-without-pack-code`: both cross, and only
+  // one of them means anything without a closure. Keeping the contrast is the
+  // point (see ZONE_HAZARD_NOTE).
+  if (def.hazardRefs !== undefined) state.hazardRefs = [...def.hazardRefs];
   if (def.entryGate !== undefined) {
     state.entryGate = {
       conditions: (def.entryGate.conditions ?? []).map((c) => ({
@@ -338,7 +343,7 @@ export const CORE_INTAKE_KEYS = ['zones', 'entities', 'placements'] as const;
  * into that existing system rather than standing a second spawn system beside
  * it — see `encounterAnchorsChannel` in @ai-rpg-engine/modules.
  */
-export const MODULE_INTAKE_KEYS = ['districts', 'encounterAnchors'] as const;
+export const MODULE_INTAKE_KEYS = ['districts', 'encounterAnchors', 'hazardDefinitions'] as const;
 
 /**
  * Pack keys carrying real content that is consumed at construction/session-setup

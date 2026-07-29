@@ -82,6 +82,8 @@ const ENGINE_DECLARED_KEYS = [
   'schemaVersion', 'districts', 'buildCatalog', 'progressionTrees',
   // Declared by C3/P1 — the space vocabulary's first two keys.
   'placements', 'encounterAnchors',
+  // Declared by C3/P3 — the typed-hazard vocabulary.
+  'hazardDefinitions',
 ] as const;
 
 /** Keys the loader shape-guard actually checks for array-ness (loader.ts:53). */
@@ -248,6 +250,8 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
       'schemaVersion', 'entities', 'placements', 'zones', 'districts', 'dialogues', 'items',
       'playerTemplate', 'buildCatalog', 'progressionTrees',
       'encounterAnchors', 'factionPresences', 'pressureHotspots',
+      // C3/P3:
+      'hazardDefinitions',
     ]);
   });
 
@@ -777,6 +781,12 @@ const EXPORTED_KEY_CLASSES: Array<{ key: string; class: IntakeClass; note: strin
   // strength of being declared — which is the distinction C1's `light` finding
   // was about.
   { key: 'encounterAnchors', class: 'alive-as-rules', note: 'C3/P1: declared and ROUTED into encounter-spawn\'s registry (was "zero hits repo-wide, dead on arrival"). Contributes per-zone spawn tables plus two axes the module had no expression for: probability and cooldownTurns.' },
+  // ⚠ C3/P3 — the row that closes C0's STRUCTURAL hole. Before this key, hazard
+  // meaning lived in pack closures, so C0 §9's verdict was that "NO data format
+  // can express it" — not that this lane lacked a field, but that no field would
+  // have helped. The typed effect union is that format, and the interpreter is
+  // what makes a data hazard move the simulation with no pack code.
+  { key: 'hazardDefinitions', class: 'alive-as-rules', note: 'C3/P3: declared and ROUTED. The closed effect union (damage / status / instakill / ignite) executes as DATA through the same site as pack closures, bound to zones by Zone.hazardRefs. THE FLIP: \'loose cobbles\' as a typed hazard moves the sim; as a bare string it stays exactly as inert as C0 measured — the contrast is preserved on purpose.' },
   { key: 'factionPresences', class: 'unknown-key', note: 'Zero hits repo-wide for the plural pack key. (The singular `factionPresence` appears as a local in district-core and as a DERIVED field in strategic-map — unrelated, and a trap for a naive grep.)' },
   { key: 'pressureHotspots', class: 'unknown-key', note: 'Zero hits repo-wide. Dead on arrival.' },
 ];

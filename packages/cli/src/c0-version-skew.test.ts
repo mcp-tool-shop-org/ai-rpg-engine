@@ -297,7 +297,7 @@ describe('C0/P4 — the end-to-end chain, live', () => {
     // 12 → 13: C3/P1 added `placements`. The count is the interesting half of
     // this assertion — "the report names a third of it" was C0's point, and the
     // denominator moving is what a growing vocabulary looks like.
-    expect(Object.keys(raw)).toHaveLength(13);
+    expect(Object.keys(raw)).toHaveLength(14);
     // `ai-rpg-engine validate` prints "3 entities, 3 zones, 1 dialogues, 0 quests".
     expect(raw.entities).toHaveLength(3);
     expect(raw.zones).toHaveLength(3);

@@ -173,6 +173,8 @@ describe('C1/P1 — the exported pack reaches a running world', () => {
       'schemaVersion', 'entities', 'placements', 'zones', 'districts', 'dialogues', 'items',
       'playerTemplate', 'buildCatalog', 'progressionTrees',
       'encounterAnchors', 'factionPresences', 'pressureHotspots',
+      // C3/P3:
+      'hazardDefinitions',
     ]);
   });
 
