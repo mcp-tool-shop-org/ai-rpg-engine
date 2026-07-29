@@ -279,15 +279,32 @@ export class SidecarServer {
     const tick = this.engine.store.tick;
 
     const saved = structuredClone(this.engine.world) as WorldState;
+    // ⚠ READ THE LOG, not submitAction's return value.
+    //
+    // The first version returned what `submitAction` returned, and for `look` on
+    // starter-fantasy that is an EMPTY array while the event log grows by two
+    // (action.declared, action.rejected). Most verbs resolve their effects into
+    // the log rather than back through the return; a preview built on the return
+    // value silently under-reports exactly the outcomes a player would want
+    // telegraphed. Same shape as `commit()` for the same reason.
+    const logBefore = (this.engine.world.eventLog ?? []).length;
+    let returned: ResolvedEvent[] = [];
     let events: ResolvedEvent[] = [];
     try {
-      events = this.engine.submitAction(verb, {
+      returned = this.engine.submitAction(verb, {
         ...(Array.isArray(params.targetIds) ? { targetIds: params.targetIds as string[] } : {}),
         ...(typeof params.toolId === 'string' ? { toolId: params.toolId } : {}),
         ...(params.parameters !== undefined
           ? { parameters: params.parameters as Record<string, never> }
           : {}),
       });
+      const log = (this.engine.world.eventLog ?? []) as ResolvedEvent[];
+      const seen = new Set<string>();
+      for (const e of [...log.slice(logBefore), ...returned]) {
+        if (seen.has(e.id)) continue;
+        seen.add(e.id);
+        events.push(e);
+      }
     } finally {
       // Restore EVERY key, including ones the action added, then re-fill from the
       // saved copy. Assigning `store.state = saved` would leave any live

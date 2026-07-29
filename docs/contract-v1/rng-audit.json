@@ -1,0 +1,125 @@
+{
+  "audit": "C1/P4 — per-domain RNG audit",
+  "method": "Instrument WorldStore.rng (next/int/pick) on a booted engine, play the pinned session, count draws. Behavioural, not grep-based: a call site behind a condition that never fires is not a draw.",
+  "pins": {
+    "seed": 71,
+    "rounds": 40,
+    "packs": 12
+  },
+  "finding": "WorldStore.rng has ZERO production consumers across all twelve shipped packs. It is constructed, serialized as rngState and restored, and never advanced — dormant state, not a shared stream. The charter's question (\"does the single stream need splitting?\") is therefore the wrong question: splitting a stream nothing draws from is ceremony.",
+  "actualMechanism": [
+    "combat-core.simpleRoll(tick, attackerId, targetId, seed) — a PURE hash. Deliberately not a stateful stream, because that would couple every roll to global draw ORDER and break stateless-per-tick replay.",
+    "targeting.deriveRng(world, salt) — a FRESH SeededRNG per (worldSeed, tick, salt), salt = source/ability id. This IS per-domain separation with an avalanched seed, reached by derivation rather than by holding N stream objects."
+  ],
+  "recommendation": "NO SPLIT. There is nothing to split. The charter's bar (per-domain separation, avalanched seeds, cosmetic client RNG never touching sim streams) is already met by construction, and all three are asserted behaviourally in this file. The one honest follow-up is C3-shaped: WorldStore.rng is serialized dormant state, so either give it a consumer or retire it (engine-hygiene, REPORT §9 class).",
+  "perPack": [
+    {
+      "packId": "chapel-threshold",
+      "storeRngDraws": {
+        "next": 0,
+        "int": 0,
+        "pick": 0
+      },
+      "sessionEvents": 254
+    },
+    {
+      "packId": "neon-lockbox",
+      "storeRngDraws": {
+        "next": 0,
+        "int": 0,
+        "pick": 0
+      },
+      "sessionEvents": 297
+    },
+    {
+      "packId": "gaslight-detective",
+      "storeRngDraws": {
+        "next": 0,
+        "int": 0,
+        "pick": 0
+      },
+      "sessionEvents": 379
+    },
+    {
+      "packId": "black-flag-requiem",
+      "storeRngDraws": {
+        "next": 0,
+        "int": 0,
+        "pick": 0
+      },
+      "sessionEvents": 254
+    },
+    {
+      "packId": "ashfall-dead",
+      "storeRngDraws": {
+        "next": 0,
+        "int": 0,
+        "pick": 0
+      },
+      "sessionEvents": 416
+    },
+    {
+      "packId": "dust-devils-bargain",
+      "storeRngDraws": {
+        "next": 0,
+        "int": 0,
+        "pick": 0
+      },
+      "sessionEvents": 256
+    },
+    {
+      "packId": "signal-loss",
+      "storeRngDraws": {
+        "next": 0,
+        "int": 0,
+        "pick": 0
+      },
+      "sessionEvents": 384
+    },
+    {
+      "packId": "crimson-court",
+      "storeRngDraws": {
+        "next": 0,
+        "int": 0,
+        "pick": 0
+      },
+      "sessionEvents": 379
+    },
+    {
+      "packId": "iron-colosseum",
+      "storeRngDraws": {
+        "next": 0,
+        "int": 0,
+        "pick": 0
+      },
+      "sessionEvents": 242
+    },
+    {
+      "packId": "jade-veil",
+      "storeRngDraws": {
+        "next": 0,
+        "int": 0,
+        "pick": 0
+      },
+      "sessionEvents": 290
+    },
+    {
+      "packId": "salt-road-ledger",
+      "storeRngDraws": {
+        "next": 0,
+        "int": 0,
+        "pick": 0
+      },
+      "sessionEvents": 264
+    },
+    {
+      "packId": "hue-and-cry",
+      "storeRngDraws": {
+        "next": 0,
+        "int": 0,
+        "pick": 0
+      },
+      "sessionEvents": 270
+    }
+  ]
+}
