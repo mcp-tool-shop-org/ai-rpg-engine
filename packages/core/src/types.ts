@@ -9,10 +9,25 @@ export type GameManifest = {
   id: string;
   title: string;
   version: string;
+  /**
+   * The engine versions this pack supports — a semver RANGE (">=3.8.0 <4.0.0"),
+   * checked by the load gate. A bare version is accepted as an exact match and
+   * advised against: C0 found `engineVersion: '2.0.0'` hardcoded in the exporter
+   * and read by nothing, so eight minor releases of drift went unnoticed
+   * (docs/c0-alignment/REPORT.md §5, item 2).
+   */
   engineVersion: string;
   ruleset: string;
   modules: string[];
   contentPacks: string[];
+  /**
+   * `sha256:...` over the pack's sim-affecting content, stamped by the exporter
+   * and verified by the load gate (C1/P2). Optional: packs predating the hash
+   * are legitimate, and the gate reports "not verified" rather than passing
+   * silently when it is absent.
+   * @see computeContentHash in @ai-rpg-engine/content-schema
+   */
+  contentHash?: string;
   theme?: string;
   audioProfile?: string;
   settings?: Record<string, unknown>;

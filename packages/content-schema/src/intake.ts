@@ -34,6 +34,7 @@ import type { ContentPack } from './refs.js';
 import type { EntityBlueprint, ZoneDefinition } from './schemas.js';
 import type { ValidationError } from './validate.js';
 import { validateEntityBlueprint, validateZoneDefinition } from './validate.js';
+import { runLoadGate, type GateContext, type GateResult } from './gate.js';
 
 // --- Result shapes --------------------------------------------------------
 
@@ -100,11 +101,24 @@ export type ApplyContentPackOptions = {
    * validated it) — it is a duplicate-work switch, not a strictness switch.
    */
   prevalidated?: boolean;
+  /**
+   * Run the four-check load gate before applying anything (C1/P2). When the gate
+   * refuses, NOTHING is applied and the result carries the diff report.
+   *
+   * Opt-in by argument rather than always-on, because this is the boundary where
+   * strictness belongs: `loadContent` keeps its permissive structural validation
+   * for callers that only want to check a file, and a pack claiming it can be
+   * loaded INTO A WORLD is held to the version/module/hash/key contract. That
+   * boundary did not exist before this cycle.
+   */
+  gate?: GateContext;
 };
 
 export type ApplyContentPackResult = {
   /** False if anything was refused. Dropped fields do NOT flip this. */
   ok: boolean;
+  /** Present when `options.gate` was supplied. Carries the diff report. */
+  gate?: GateResult;
   /** Records ingested, per channel key. */
   applied: Record<string, number>;
   /** Every field the converter did not carry, named. */
@@ -332,6 +346,18 @@ export function applyContentPack(
     };
   }
 
+  // --- the load gate, before ANY mutation ---
+  // A gate that refuses after half the pack has landed is not a gate: the world
+  // would carry content from a pack the engine just said it would not accept.
+  let gateResult: GateResult | undefined;
+  if (options.gate) {
+    gateResult = runLoadGate(pack, options.gate);
+    advisories.push(...gateResult.advisories);
+    if (!gateResult.ok) {
+      return { ok: false, gate: gateResult, applied, dropped, errors: gateResult.errors, advisories };
+    }
+  }
+
   // --- zones (core-only) ---
   const zones = pack.zones ?? [];
   if (!Array.isArray(zones)) {
@@ -451,7 +477,14 @@ export function applyContentPack(
     dropped.push({ path: `pack.${key}`, reason: 'needs-module-vocabulary', detail });
   }
 
-  return { ok: errors.length === 0, applied, dropped, errors, advisories };
+  return {
+    ok: errors.length === 0,
+    ...(gateResult ? { gate: gateResult } : {}),
+    applied,
+    dropped,
+    errors,
+    advisories,
+  };
 }
 
 // --- The session-scoped seam ----------------------------------------------

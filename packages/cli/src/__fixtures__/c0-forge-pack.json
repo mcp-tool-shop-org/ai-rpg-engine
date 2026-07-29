@@ -105,8 +105,10 @@
           "targetZoneId": "zone-under-vault",
           "label": "vault stair",
           "condition": {
-            "type": "item:rope",
-            "params": {}
+            "type": "has-item",
+            "params": {
+              "id": "rope"
+            }
           }
         }
       ]
@@ -150,8 +152,11 @@
           "targetZoneId": "zone-sky-gantry",
           "label": "shaft ladder",
           "condition": {
-            "type": "party-level:>=10",
-            "params": {}
+            "type": "party-level",
+            "params": {
+              "op": ">=",
+              "value": 10
+            }
           }
         }
       ]
@@ -186,8 +191,10 @@
           "targetZoneId": "zone-under-vault",
           "label": "drop shaft",
           "condition": {
-            "type": "flag:bridge-repaired",
-            "params": {}
+            "type": "has-flag",
+            "params": {
+              "id": "bridge-repaired"
+            }
           }
         }
       ]

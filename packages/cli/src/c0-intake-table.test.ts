@@ -312,58 +312,46 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
     }
   });
 
-  it('only four of the ten refs-iterated keys get a shape guard, and the gap RAW-THROWS', () => {
-    // FINDING — still open. C1/P1 did not touch it; C1/P2's gate closes it.
+  it('CLOSED BY C1/P2: all ten refs-iterated keys are shape-guarded, none raw-throws', () => {
+    // ⚠ FLIPPED BY C1/P2. C0 asserted the opposite and pinned it by asserting the
+    // throw: the shape guard covered four keys — entities, zones, dialogues,
+    // quests — while `validateRefs` went on to do `pack.abilities?.map(...)` on
+    // six MORE, so a non-array in any of those six escaped as a raw TypeError,
+    // straight past the boundary discipline loader.ts's own docstring promises
+    // ("never a raw fs throw", "the caller never sees a raw SyntaxError").
     //
-    // loader.ts documents its boundary discipline explicitly: "A missing/
-    // unreadable file is reported as a structured `file` error, never a raw fs
-    // throw", "the caller never sees a raw SyntaxError". The shape guard
-    // (loader.ts:53) enforces array-ness for exactly four keys — entities,
-    // zones, dialogues, quests — but `validateRefs` then does `pack.abilities
-    // ?.map(...)` on six MORE keys it never guarded. A non-array in any of those
-    // six escapes as a raw TypeError instead of a structured error, straight
-    // past the discipline the module's own docstring claims.
-    //
-    // ⚠ ADJUSTED BY C1/P1, and the adjustment is a lesson about the pin, not
-    // about the finding. This list used to be derived by SUBTRACTING the guarded
-    // keys from ENGINE_DECLARED_KEYS — so when C1 declared four new keys the
-    // "gap" silently grew from 6 to 10 and the test failed for a reason that had
-    // nothing to do with raw throws. The four new keys are not read by
-    // validateRefs at all. A pin whose subject is defined by subtraction moves
-    // whenever anything else moves; naming the subject directly is what makes it
-    // pin one finding instead of drifting with the type.
+    // The guard list is now the iteration list. This test walks ALL TEN and
+    // requires a structured error from every one — so the finding cannot
+    // half-regress by someone adding an eleventh iterated key without a guard.
     const tmp = scratchPackPath('badshape');
-
-    /** The keys `validateRefs` iterates. The raw-throw finding is about THESE. */
     const REFS_ITERATED_KEYS = [
       'entities', 'zones', 'dialogues', 'quests', 'abilities',
       'statuses', 'verbs', 'archetypes', 'backgrounds', 'itemUseEffects',
     ] as const;
-    const unguarded = REFS_ITERATED_KEYS.filter(
-      (k) => !(LOADER_SHAPE_CHECKED_KEYS as readonly string[]).includes(k),
-    );
-    expect(unguarded).toEqual([
-      'abilities', 'statuses', 'verbs', 'archetypes', 'backgrounds', 'itemUseEffects',
-    ]);
 
-    // A GUARDED key: structured failure, exactly as documented.
-    fs.writeFileSync(tmp, JSON.stringify({ ...raw, quests: 'not-an-array' }), 'utf-8');
-    try {
-      const r = loadContentFromFile(tmp);
-      expect(r.ok).toBe(false);
-      expect(r.errors[0].path).toBe('pack.quests');
-    } finally {
-      fs.rmSync(tmp, { force: true });
-    }
+    // The four that were always guarded are still guarded…
+    expect(LOADER_SHAPE_CHECKED_KEYS.every((k) => (REFS_ITERATED_KEYS as readonly string[]).includes(k))).toBe(true);
 
-    // An UNGUARDED key: raw throw. Asserted so the finding is pinned — if a
-    // later cycle fixes it, this test fails loudly and the report gets updated
-    // rather than quietly going stale.
-    fs.writeFileSync(tmp, JSON.stringify({ ...raw, abilities: 'not-an-array' }), 'utf-8');
-    try {
-      expect(() => loadContentFromFile(tmp)).toThrow(TypeError);
-    } finally {
-      fs.rmSync(tmp, { force: true });
+    // …and every one of the ten now fails structurally rather than throwing.
+    for (const key of REFS_ITERATED_KEYS) {
+      fs.writeFileSync(tmp, JSON.stringify({ ...raw, [key]: 'not-an-array' }), 'utf-8');
+      try {
+        let threw: unknown;
+        let r!: ReturnType<typeof loadContentFromFile>;
+        try {
+          r = loadContentFromFile(tmp);
+        } catch (e) {
+          threw = e;
+        }
+        expect(threw, `${key} must not raw-throw`).toBeUndefined();
+        expect(r.ok, `${key} must be refused`).toBe(false);
+        expect(
+          r.errors.some((e) => e.path === `pack.${key}`),
+          `${key} must produce a structured pack.${key} error, got: ${JSON.stringify(r.errors)}`,
+        ).toBe(true);
+      } finally {
+        fs.rmSync(tmp, { force: true });
+      }
     }
   });
 
