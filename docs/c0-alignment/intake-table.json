@@ -36,6 +36,11 @@
       "note": "Declared, shape-guarded, per-element validated by validateEntityBlueprint, cross-ref checked. Reaches no runtime."
     },
     {
+      "key": "placements",
+      "class": "alive-as-rules",
+      "note": "C3/P1: declared, shape-guarded, per-element validated by validateEntityPlacementRecord, and ROUTED — applyContentPack writes EntityState.zoneId from it. Closes C0 §2's single most consequential drop."
+    },
+    {
       "key": "zones",
       "class": "validated-only",
       "note": "Declared, shape-guarded, per-element validated by validateZoneDefinition (which does no excess-property rejection). Reaches no runtime; no ZoneDefinition-to-ZoneState converter exists."
@@ -72,8 +77,8 @@
     },
     {
       "key": "encounterAnchors",
-      "class": "unknown-key",
-      "note": "Zero hits repo-wide. Dead on arrival."
+      "class": "alive-as-rules",
+      "note": "C3/P1: declared and ROUTED into encounter-spawn's registry (was \"zero hits repo-wide, dead on arrival\"). Contributes per-zone spawn tables plus two axes the module had no expression for: probability and cooldownTurns."
     },
     {
       "key": "factionPresences",
@@ -378,8 +383,9 @@
   ],
   "tally": {
     "exportedKeys": {
-      "unknown-key": 9,
-      "validated-only": 3
+      "unknown-key": 8,
+      "validated-only": 3,
+      "alive-as-rules": 2
     },
     "zoneDefinitionFields": {
       "alive-as-rules": 6,
