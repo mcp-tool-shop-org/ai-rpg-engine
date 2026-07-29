@@ -25,7 +25,7 @@ measurement rather than by assertion:
 
 - The byte-identical world-forge export **boots**. A played session through the
   CLI's own round loop runs in a world whose zones arrived through
-  `applyContentPack`, the player walks all three exported zones (11/18/11 visits),
+  `applyContentPack`, the player walks ALL THREE exported zones (asserted, each entered more than once),
   and `noise`, `neighbors` and `tags` measurably move the simulation on
   converted content.
 - A scripted session runs **over a real process boundary** against a spawned

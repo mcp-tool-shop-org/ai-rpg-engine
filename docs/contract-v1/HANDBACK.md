@@ -48,7 +48,7 @@ cycle and scope the next one.
 
 | # | Criterion | State |
 |---|---|---|
-| 1 | The C0 fixture pack boots into a played session through the real CLI; converted zones carry live rule effects (measured) | ✅ player walks all three exported zones (11/18/11 visits); `noise`, `neighbors`, `tags` move the simulation on converted content, with a no-op RED control and an inert-field control |
+| 1 | The C0 fixture pack boots into a played session through the real CLI; converted zones carry live rule effects (measured) | ✅ player walks ALL THREE exported zones, each entered more than once (asserted); `noise`, `neighbors`, `tags` move the simulation on converted content, with a no-op RED control and an inert-field control |
 | 2 | The four-check gate refuses stale version / phantom module / tampered hash / unknown key, each with a diff report and a RED control | ✅ plus a GREEN control per check |
 | 3 | The old 2.0.0 pack's refusal transcript sits beside C0's acceptance transcript | ✅ [`e2e-transcript.md`](e2e-transcript.md) |
 | 4 | A full session replays over the sidecar byte-identical to in-process; re-emission idempotent; staleness detection proven | ✅ 15 events / 1818 bytes byte-identical, same end-state hash, against a **spawned child process** |

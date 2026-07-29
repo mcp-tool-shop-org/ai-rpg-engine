@@ -230,7 +230,15 @@ describe('C1/P1 — the exported pack reaches a running world', () => {
     const visitedConverted = [...visits.keys()].filter((z) =>
       (CONVERTED_ZONE_IDS as readonly string[]).includes(z),
     );
-    expect(visitedConverted.length, `visited: ${[...visits.keys()].join(', ')}`).toBeGreaterThan(1);
+    // ALL THREE, not "more than one". The weaker assertion was what I first
+    // wrote, and it would have let the report cite a visit distribution no
+    // committed test backed — a number true when I measured it by hand and
+    // unguarded thereafter. If a claim is worth putting in the report it is
+    // worth pinning here.
+    expect(visitedConverted.sort()).toEqual([...CONVERTED_ZONE_IDS].sort());
+    for (const id of CONVERTED_ZONE_IDS) {
+      expect(visits.get(id) ?? 0, `${id} should be entered more than once`).toBeGreaterThan(1);
+    }
   });
 });
 
