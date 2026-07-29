@@ -37,6 +37,7 @@ cycle and scope the next one.
 | Engine suite | **338 files / 6684 tests** green (from 330 / 6507) |
 | Engine typecheck / typecheck:tests / lint | clean · clean · **0 errors** (696 pre-existing warnings) |
 | Engine docs-integrity | 92 / 92 |
+| Engine packaging gate | 32 / 32 publishable packages carry LICENSE + README.md |
 | world-forge suite | **132 files / 2403 tests** green (from 131 / 2392) |
 | world-forge build | clean |
 | Cross-family jury | 8/8 CONFIRMED, 0 refuted; 2 of 3 seats served on the primary run + a 4th family confirming 6/6 solo. Reported degraded, not rounded up. |

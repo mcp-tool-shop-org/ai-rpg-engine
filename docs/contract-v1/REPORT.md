@@ -285,11 +285,21 @@ itself; a build cycle with none is worse.
    under-reports exactly the outcomes a player would want telegraphed. It reads
    the log delta now.
 
-**And one process error, not an instrument error:** I committed P4 without
-re-reading lint output and shipped a `prefer-const` error through a gate whose
-whole value is being zero. Same class as running four of eight CI stages and
-calling the chain green (v3.8's ledger). Fixed in the following commit, and named
-here rather than quietly amended.
+**And two process errors, not instrument errors:**
+
+- I committed P4 without re-reading lint output and shipped a `prefer-const`
+  error through a gate whose whole value is being zero. Fixed in the following
+  commit, and named here rather than quietly amended.
+- **I ran the local gates I knew about and called the chain green.** Build,
+  typecheck, typecheck:tests, lint, tests, docs-integrity — all green locally,
+  and CI went red anyway on a stage I had not run: the **packaging gate**, which
+  requires every publishable workspace's tarball to carry LICENSE and README.md.
+  The new `@ai-rpg-engine/sidecar` package had neither. This is exactly the class
+  v3.8's ledger names — "ran 4 of 8 CI stages and called the chain green" — and I
+  cited that line in an earlier commit message *in this cycle* while doing it.
+  Knowing the failure mode by name is not the same as checking. The fix is
+  mechanical (the package gets its LICENSE and README); the lesson is that
+  "green locally" means green on the gates you remembered.
 
 **A tenth, worth separating because it is a near-miss rather than an error:** the
 conformance harness compares the in-process stream against the wire stream using
