@@ -11,7 +11,7 @@
       "item": 1,
       "checklistText": "Bump the six @ai-rpg-engine/* dep ranges in package.json.",
       "status": "open",
-      "finding": "Unchanged. Installed: content-schema 2.0.1, core 2.0.1, modules 2.1.0, pack-registry 2.0.2, equipment 2.0.2, character-creation 2.0.2. Engine ships 3.8.0. The export lane compiles against a surface two majors old, so every 3.x addition is invisible to it at type-check time."
+      "finding": "Unchanged. Installed: content-schema 2.0.1, core 2.0.1, modules 2.1.0, pack-registry 2.0.2, equipment 2.0.2, character-creation 2.0.2. Engine ships 3.8.0. The export lane compiles against a surface one major behind, so every 3.x addition is invisible to it at type-check time."
     },
     {
       "item": 2,

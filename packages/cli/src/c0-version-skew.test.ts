@@ -19,7 +19,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { VALID_GENRES, VALID_TONES, VALID_DIFFICULTIES } from '@ai-rpg-engine/pack-registry';
 import { EQUIPMENT_SLOTS, ITEM_RARITIES } from '@ai-rpg-engine/equipment';
-import { FIXTURE_PACK_PATH } from './c0-intake-table.test.js';
+import { FIXTURE_PACK_PATH } from './c0/fixture-path.js';
 
 /**
  * `DEFAULT_MODULES` as world-forge's `convert-pack.ts:48-67` declares it, with
@@ -83,21 +83,25 @@ function record(item: SkewItem) {
 }
 
 describe('C0/P4 — the eight 3.x-bump checklist items, worked as findings', () => {
-  it('1. dep ranges — OPEN: the exporter type-checks against a two-major-old surface', () => {
+  it('1. dep ranges — OPEN: the exporter type-checks against the 2.x surface', () => {
     // world-forge/packages/export-ai-rpg/package.json still pins
     // content-schema ^2.0.1, core ^2.0.1, modules ^2.1.0, pack-registry ^2.0.2,
-    // character-creation ^2.0.2, equipment ^2.0.2 — and `npm ls` in that repo
-    // resolves exactly those. The engine is at 3.8.0.
+    // character-creation ^2.0.2, equipment ^2.0.2 — and those exact versions are
+    // what its node_modules resolves. The engine is at 3.8.0.
     //
     // This is stronger than the hard-coded version string in item 2: every type
     // the converters are checked against is the 2.x type. A field the engine
     // added in 3.x is not merely unset by the exporter — it is invisible to it.
+    //
+    // (An earlier draft called this "two majors old". The cross-family jury's
+    // glm-5.2 seat refuted it and was right: 2.x → 3.x is ONE major behind.
+    // Eight minor releases of drift, one major boundary.)
     record({
       item: 1,
       checklistText: 'Bump the six @ai-rpg-engine/* dep ranges in package.json.',
       status: 'open',
       finding:
-        'Unchanged. Installed: content-schema 2.0.1, core 2.0.1, modules 2.1.0, pack-registry 2.0.2, equipment 2.0.2, character-creation 2.0.2. Engine ships 3.8.0. The export lane compiles against a surface two majors old, so every 3.x addition is invisible to it at type-check time.',
+        'Unchanged. Installed: content-schema 2.0.1, core 2.0.1, modules 2.1.0, pack-registry 2.0.2, equipment 2.0.2, character-creation 2.0.2. Engine ships 3.8.0. The export lane compiles against a surface one major behind, so every 3.x addition is invisible to it at type-check time.',
     });
     expect(SKEW_FINDINGS.at(-1)!.status).toBe('open');
   });

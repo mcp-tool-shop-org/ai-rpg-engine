@@ -43,6 +43,7 @@ import { resolveExternalEntry, loadExternalPack, PackLoadError } from './externa
 // The SAME player POR-1 / POC-1 / the fallout suites drive. Reused rather than
 // approximated: an approximated player was the first draft's whole problem.
 import { playerHalfRound } from './packs-opportunity-reachability.test.js';
+import { FIXTURE_PACK_PATH, scratchPackPath } from './c0/fixture-path.js';
 
 // --- Pins (PIN_PER_STEP) --------------------------------------------------
 
@@ -60,10 +61,7 @@ const C0_ROUNDS = 40;
  */
 const C0_PACK_ID = 'chapel-threshold';
 
-export const FIXTURE_PACK_PATH = path.resolve(
-  import.meta.dirname,
-  '__fixtures__/c0-forge-pack.json',
-);
+export { FIXTURE_PACK_PATH } from './c0/fixture-path.js';
 
 // --- Instrument 1: the loader probe --------------------------------------
 
@@ -275,7 +273,7 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
     // The instrument's own negative control for "unknown-key". If a garbage key
     // is indistinguishable from `districts`, then "the loader accepted it" is
     // not evidence the engine understands it.
-    const tmp = path.join(import.meta.dirname, '__fixtures__/c0-nonsense-key.tmp.json');
+    const tmp = scratchPackPath('nonsense-key');
     fs.writeFileSync(tmp, JSON.stringify({ ...raw, thisKeyIsNotAThing: [{ id: 'x' }] }), 'utf-8');
     try {
       const r = loadContentFromFile(tmp);
@@ -289,7 +287,7 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
   });
 
   it('RED: the loader DOES reject a malformed pack, so ok:true means something', () => {
-    const tmp = path.join(import.meta.dirname, '__fixtures__/c0-malformed.tmp.json');
+    const tmp = scratchPackPath('malformed');
     fs.writeFileSync(tmp, JSON.stringify({ ...raw, zones: [{ name: 'no id' }] }), 'utf-8');
     try {
       const r = loadContentFromFile(tmp);
@@ -311,7 +309,7 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
     // ?.map(...)` on six MORE declared keys it never guarded. A non-array in
     // any of those six escapes as a raw TypeError instead of a structured
     // error, straight past the discipline the module's own docstring claims.
-    const tmp = path.join(import.meta.dirname, '__fixtures__/c0-badshape.tmp.json');
+    const tmp = scratchPackPath('badshape');
     const unguarded = ENGINE_DECLARED_KEYS.filter(
       (k) => !(LOADER_SHAPE_CHECKED_KEYS as readonly string[]).includes(k),
     );
@@ -344,7 +342,7 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
     // validateZoneDefinition (validate.ts:397) has no excess-property rejection,
     // so a zone carrying the whole dropped 2.5D vocabulary would load clean —
     // which is why the export lane dropping it produces no error anywhere.
-    const tmp = path.join(import.meta.dirname, '__fixtures__/c0-excess.tmp.json');
+    const tmp = scratchPackPath('excess');
     const zones = (raw.zones as Record<string, unknown>[]).map((z) => ({
       ...z,
       elevation: 42,

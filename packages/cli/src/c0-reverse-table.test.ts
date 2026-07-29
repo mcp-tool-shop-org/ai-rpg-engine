@@ -21,7 +21,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as merchant from '@ai-rpg-engine/starter-merchant';
 import type { ZoneState } from '@ai-rpg-engine/core';
-import { FIXTURE_PACK_PATH } from './c0-intake-table.test.js';
+import { FIXTURE_PACK_PATH } from './c0/fixture-path.js';
 
 export type ReverseClass = 'authorable' | 'unauthorable';
 
