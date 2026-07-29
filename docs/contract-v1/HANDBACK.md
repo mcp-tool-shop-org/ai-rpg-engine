@@ -40,6 +40,8 @@ cycle and scope the next one.
 | Engine packaging gate | 32 / 32 publishable packages carry LICENSE + README.md |
 | world-forge suite | **132 files / 2403 tests** green (from 131 / 2392) |
 | world-forge build | clean |
+| Engine CI on the PR head | `build-and-test (20)` ✓ · `build-and-test (22)` ✓ · `docs-integrity` ✓ — every job |
+| world-forge CI on the PR head | `build-and-test (22)` ✓ · `build-and-test (24)` ✓ · `site-build` ✓ — every job |
 | Cross-family jury | 8/8 CONFIRMED, 0 refuted; 2 of 3 seats served on the primary run + a 4th family confirming 6/6 solo. Reported degraded, not rounded up. |
 
 ## Acceptance criteria, against §9 of the brief
@@ -52,7 +54,11 @@ cycle and scope the next one.
 | 4 | A full session replays over the sidecar byte-identical to in-process; re-emission idempotent; staleness detection proven | ✅ 15 events / 1818 bytes byte-identical, same end-state hash, against a **spawned child process** |
 | 5 | Preview proven side-effect-free; RNG audit table published | ✅ hash before == after, tick and log unchanged, stable over 20 repeats, and events still returned; [`rng-audit.json`](rng-audit.json) |
 | 6 | Every closed C0 finding's pin flipped in its closing commit; C0 REPORT gains a dated addendum | ✅ eight pins flipped; addendum at the top of [`../c0-alignment/REPORT.md`](../c0-alignment/REPORT.md) |
-| 7 | Contract doc + report + honesty ledger + jury + C2/C3 scoping + handback; both suites and CIs green; PRs open, unmerged; no publishes, no version bumps | ✅ (CI status below) |
+| 7 | Contract doc + report + honesty ledger + jury + C2/C3 scoping + handback; both suites and CIs green; PRs open, unmerged; no publishes, no version bumps | ✅ |
+
+One engine CI run shows `cancelled`: it was on a superseded SHA, killed by the
+`cancel-in-progress` concurrency group the workspace rules require. Every job on
+both current heads is green.
 
 ## Compensators — nothing beyond the authorised table was done
 
