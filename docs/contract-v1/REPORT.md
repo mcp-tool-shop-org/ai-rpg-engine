@@ -1,3 +1,53 @@
+> ## ⚠ ADDENDUM — what C3 closed, and TWO DEFECTS C3 FOUND HERE (2026-07-29)
+>
+> Full detail: [`../c3-vocabulary/REPORT.md`](../c3-vocabulary/REPORT.md).
+>
+> **Closed from §9's C3 list:** typed hazards (the `'loose cobbles'` flip, with the
+> contrast preserved) · entity placement (`placements` channel; the intake advisory
+> this cycle emitted on every ingestion is GONE) · `encounterAnchors` (registers
+> into `encounter-spawn`, and the observed rate is the authored 0.45 not the
+> module's 0.35 default) · entry gates (the SpawnCondition grammar's third broken
+> path). Two of the five undeclared keys became real vocabulary; the other three
+> are disposed with reasons in C3 REPORT §8.
+>
+> ### ⚠ Two defects this cycle introduced or left, found by C3
+>
+> **1. The exit-condition fix broke the IMPORT direction.** §3.1 records the export
+> repair correctly. `import-zones.ts:71` read `condition?.type` and discarded the
+> operands — which was harmless while the export was garbled (the whole grammar
+> string lived in `type`, so a broken export and a lossy import cancelled out) and
+> became a real break the moment the export was fixed. Measured: `item:rope`
+> imported back as `"has-item"`, which `parseSpawnCondition` rejects. Only
+> operand-free forms survived a round-trip. **The proof in §3.1 was
+> one-directional** — it asserted the exported shape, correctly, and never asked
+> what the import direction then did with it. Repaired in C3/P1 with
+> `formatSpawnCondition`, pinned over all thirteen operand families.
+>
+> **Sharpened rule, earned here: a codec change proves the ROUND-TRIP, not the
+> direction it fixed.**
+>
+> **2. A pinned row was never flipped.** This cycle's §3.1 closed the
+> `carried-garbled` behaviour and flipped its bespoke assertion in
+> `c0-export-table.test.ts`, but not the export TABLE ROW that described it — so
+> the committed artifact kept reporting `carried-garbled: 1` and kept publishing
+> the note "`parseSpawnCondition` is never called" for a full cycle after that
+> became false. The differ could not catch it: a named-transform row is verified by
+> confirming values exist at the packPath, and both forms put a string there.
+>
+> **Sharpened rule: flipping a pin includes regenerating the ARTIFACTS the pin
+> describes. `verified: true` is not `correct: true`.**
+>
+> ### Also
+>
+> §6's RNG recommendation stands unchanged and was re-confirmed: C3 added no draw
+> from `WorldStore.rng`, and every new probabilistic path (spawn gates, hazard
+> procs) uses a pure hash of `(seed, tick, …)` for the reason
+> `combat-core.simpleRoll` documents.
+>
+> C1's dispositions on the three flagged calls all held: the dep-bump ran as its own
+> errand before C3, the `validate` behaviour change is still release-note material,
+> and `WorldStore.rng` remains in the engine-hygiene batch.
+
 # C1 — The Contract v1
 
 **Cycle:** second rung of the 2.5D arc ([[ai-rpg-engine-2p5d-quality-bar]] §5, row C1).

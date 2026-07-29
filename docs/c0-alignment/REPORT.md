@@ -65,6 +65,44 @@
 > that item 1 is done, deferred to release-time bookkeeping; no bump, tag or
 > publish was authorised).
 
+> ## ⚠ ADDENDUM 3 — what C3 closed (2026-07-29)
+>
+> C3 (the space vocabulary) built against this report. Full detail:
+> [`../c3-vocabulary/REPORT.md`](../c3-vocabulary/REPORT.md).
+>
+> **The recount, mechanically:** `no-channel` **194 → 169**, and the −25
+> decomposes exactly by phase (P1 2, P2 3, P3 19, P4 1). `carried-garbled`
+> **1 → 0**. Total still 377, all rows verified.
+>
+> | Finding | State |
+> |---|---|
+> | §2 the entity-placement hole (`EntityBlueprint` has no `zoneId`) — "the single most consequential drop in the lane" | **CLOSED**. `placements` is its own pack channel; `applyContentPack` writes `EntityState.zoneId`. Authored NPCs appear in the player's own `inspect` payload. |
+> | §2 `entityPlacements[].spawnCondition` dropped | **CLOSED**. Compiles through `parseSpawnCondition`. The grammar's ORIGINAL home field now has a channel. |
+> | §2 `zones[].entryGate` (conditions / mode / reason) | **CLOSED**. Compiled at export, evaluated in `traversal-core`; a hard gate refuses with the authored reason rendered. |
+> | §2 `zones[].hazardRefs` + the whole `hazardDefinitions` domain | **CLOSED**. 19 rows. `hazardDefinitions` LEFT `DROPPED_CONTAINERS`. |
+> | §2 `zones[].timeOfDay` | **CLOSED** via the scene descriptor — which also supplies the input the `time-of-day` gate operand was measured missing. |
+> | §3.1 `encounterAnchors` "zero hits repo-wide, dead on arrival" | **CLOSED**. Registers into `encounter-spawn`'s own registry; the observed spawn rate over 40 seeds is the AUTHORED 0.45, not the module's 0.35 default. |
+> | §3.2 the hazard pair — `'loose cobbles'` inert in 12 of 12 worlds | **CLOSED, with the contrast preserved.** The typed hazard moves the sim with no pack code; the bare STRING stays exactly as inert as measured here. |
+> | §5 item 4 (`GENRE_MAP`, the inherited ANDON) | **RULED** — the engine owns the genre vocabulary; identity entries + warn-on-fallback + a drift guard derived from `VALID_GENRES`. The editor picker is a public surface and stays untouched; that half is named as remaining. |
+> | §9 "Starter comments misattributing `encounterTable` to `ZoneDefinition`" | **CLOSED**. It is on `RoomDefinition`. |
+>
+> **Corrected by C3, not closed:** §2's `carried-garbled` row for
+> `zones[].exits[].condition`. C1 fixed the behaviour and flipped its own bespoke
+> assertion but never flipped THIS row, so the artifact published
+> "`parseSpawnCondition` is never called" for a cycle after it stopped being true —
+> **and the differ cannot catch it**, because both the garbled and compiled forms
+> put a string at the same packPath. The generated evidence line admits the limit
+> ("semantics asserted separately"). A table that verifies 377 of 377 rows can
+> still be wrong about what a row MEANS.
+>
+> **Still open:** `items` (ANDON — needs a zone-container vocabulary `WorldState`
+> lacks), `playerTemplate` (session-scoped), `factionPresences` and
+> `pressureHotspots` (both EVALUATED and deliberately NOT mapped, with field-level
+> reasons in C3 REPORT §8), `economyProfile` (mapping identified onto the existing
+> `DistrictEconomy.baseline`, not built), quests, `authority`, `RoomDefinition`,
+> and the C3.2 residue (strata / elevation / overworld / markets / lootTables /
+> transitions / landmarks).
+
 # C0 — The Forge↔Engine Alignment Audit
 
 **Cycle:** first rung of the 2.5D arc ([[ai-rpg-engine-2p5d-quality-bar]] §5, row C0).
