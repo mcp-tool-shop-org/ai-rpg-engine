@@ -35,8 +35,9 @@ measurement rather than by assertion:
 
 Three numbers carry the cycle: **1 of 3** "cheap wire gaps" turned out to be
 routable, **0 of 12** shipped packs draw from the RNG stream the charter asked
-about, and **5 of 5** conformance properties hold through the wire with a RED
-control each.
+about, and **6 of 6** conformance properties hold through the wire — four of them
+with an explicit RED control, the other two structural (see §5, which says which
+is which rather than implying all six are controlled the same way).
 
 ---
 
@@ -177,9 +178,9 @@ compared.
 | Event stream byte-identical | ✅ 15 events, 1818 bytes | a doctored stream is caught |
 | End-state hash matches | ✅ | a doctored state hashes differently |
 | Re-emission idempotent | ✅ replaying a window twice is stable | replaying a DIFFERENT window differs |
-| Client rebuilds from patches alone and agrees | ✅ | — |
-| Staleness detection fires | ✅ honest mirror agrees, doctored mirror caught | (both directions in one test) |
-| Values quantized | ✅ every number survives round-trip; no NaN/Infinity | — |
+| Client rebuilds from patches alone and agrees | ✅ | none — structural: the client starts from `{}` and applies only what the wire sent, so a wrong reconstruction fails the hash |
+| Staleness detection fires | ✅ honest mirror agrees, doctored mirror caught | both directions in one test |
+| Values quantized | ✅ every number survives round-trip; no NaN/Infinity | none — asserted over every number that actually crossed, with a non-empty guard so it cannot pass vacuously |
 
 Every one spawns a real child process. An in-memory stream pair would test the
 protocol and skip the boundary, and the boundary is the part that has never
