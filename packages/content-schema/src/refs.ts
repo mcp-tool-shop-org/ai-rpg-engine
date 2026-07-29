@@ -323,6 +323,56 @@ export function validateRefs(pack: ContentPack): RefsResult {
     }
   }
 
+  // --- C3/P2: entry-gate operands that name pack content -------------------
+  //
+  // ⚠ FOUND BY MEASUREMENT, NOT BY DESIGN. The C0 coverage fixture authors the
+  // gate `item:rope` on `zone-under-vault` while its item catalog calls the same
+  // object `item-rope`. Nothing checked, so the pack shipped a door that can
+  // NEVER open: `has-item` looks for an id no item in the pack has. Exactly the
+  // phantom-module-id shape from C0 §5 — plausible, and dead — and exactly what
+  // C0 §4 warned about in the other direction ("the forge can NAME verbs but
+  // cannot DEFINE one; it emits dangling references into a slot it never fills").
+  //
+  // ADVISORY, not an error, and the distinction is load-bearing: an item id can
+  // legitimately be granted by pack CODE, by another pack, or by a reward this
+  // pack does not declare, so refusing would break valid content. But a gate
+  // whose item matches nothing in a pack that HAS an item catalog is almost
+  // always a typo, and saying so costs nothing.
+  const itemIds = new Set<string>();
+  for (const item of (Array.isArray((pack as { items?: unknown }).items) ? (pack as { items: unknown[] }).items : []).filter(isRecord)) {
+    const id = (item as { id?: unknown }).id;
+    if (typeof id === 'string') itemIds.add(id);
+  }
+  const memberIds = new Set<string>(entityIds);
+  for (const zone of zones) {
+    const gate = (zone as { entryGate?: { conditions?: unknown[] } }).entryGate;
+    if (!gate || !Array.isArray(gate.conditions)) continue;
+    for (const raw of gate.conditions) {
+      if (!isRecord(raw)) continue;
+      const c = raw as { type?: unknown; params?: Record<string, unknown> };
+      const refId = typeof c.params?.id === 'string' ? c.params.id : undefined;
+      if (refId === undefined) continue;
+
+      if (c.type === 'has-item' && itemIds.size > 0 && !itemIds.has(refId)) {
+        advisories.push({
+          path: `${path}.zone(${zone.id}).entryGate`,
+          message:
+            `gate condition \`has-item\` names "${refId}", which matches no item in this pack ` +
+            `(${[...itemIds].sort().join(', ')}). If nothing else grants that id, this gate can never open. ` +
+            'Advisory rather than an error because an item may be granted by pack code or another pack.',
+        });
+      }
+      if (c.type === 'party-member' && memberIds.size > 0 && !memberIds.has(refId)) {
+        advisories.push({
+          path: `${path}.zone(${zone.id}).entryGate`,
+          message:
+            `gate condition \`party-member\` names "${refId}", which is not an entity in this pack. ` +
+            'If no other pack supplies that companion, this gate can never open.',
+        });
+      }
+    }
+  }
+
   // Dialogue speakers should reference known entities
   for (const dialogue of dialogues) {
     for (const speaker of dialogue.speakers ?? []) {

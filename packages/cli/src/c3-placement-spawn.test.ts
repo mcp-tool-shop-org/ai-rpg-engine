@@ -35,6 +35,7 @@ import {
 import type { Engine } from '@ai-rpg-engine/core';
 import { allPacks, type PackInfo } from './packs.js';
 import { FIXTURE_PACK_PATH } from './c0/fixture-path.js';
+import { openAllGates } from './c3/open-gates.js';
 
 // --- Pins (PIN_PER_STEP) — C0's and C1's, unchanged ------------------------
 
@@ -77,7 +78,17 @@ function fixturePack(): ContentPack {
   return r.pack;
 }
 
-/** Boot the code host and route the forge export into it. */
+/**
+ * Boot the code host and route the forge export into it.
+ *
+ * ⚠ GATES ARE OPENED. C3/P2 made `entryGate` rule-bearing, and the fixture
+ * authors a HARD gate on `zone-under-vault` — the anchor's zone. This file's
+ * subject is placement and spawning, not access control, so it removes the gates
+ * from the WORLD (never from the pack) and asserts they were there to remove.
+ * Satisfying three gate conditions in every spawn test would couple this file to
+ * the fixture's gate content, so a future gate edit would break a spawn proof for
+ * no reason. Gating has its own proof in `c3-entry-gates.test.ts`.
+ */
 function bootWithExport(seed = SEED): { engine: Engine; applied: Record<string, number> } {
   const pack = hostPack();
   const engine = pack.createGame(seed);
@@ -86,6 +97,11 @@ function bootWithExport(seed = SEED): { engine: Engine; applied: Record<string, 
     prevalidated: true,
   });
   if (!r.ok) throw new Error(`intake failed: ${JSON.stringify(r.errors)}`);
+  // Asserted, not assumed: a helper that silently removed nothing would let
+  // every test below pass for the wrong reason if the gates ever moved.
+  if (openAllGates(engine) === 0) {
+    throw new Error('expected the fixture to author entry gates — none found to open');
+  }
   return { engine, applied: r.applied };
 }
 
@@ -174,6 +190,7 @@ describe('C3/P1 — CLOSES C0 §2: an exported pack can say where its NPCs stand
       prevalidated: true,
     });
     expect(r.ok).toBe(true);
+    openAllGates(engine2);
 
     for (const { entityId } of AUTHORED.placements) {
       expect(engine2.world.entities[entityId]?.zoneId, `${entityId} must be nowhere`).toBeUndefined();
@@ -288,6 +305,7 @@ describe('C3/P1 — an authored spawn set produces real spawns', () => {
         prevalidated: true,
       });
       expect(r.ok).toBe(true);
+      openAllGates(engine);
       if (enterAndSpawn(engine, AUTHORED.anchor.zoneId).length > 0) fired++;
     }
 
@@ -313,6 +331,7 @@ describe('C3/P1 — an authored spawn set produces real spawns', () => {
       prevalidated: true,
     });
     expect(r.ok).toBe(true);
+    openAllGates(engine);
 
     const reports = enterAndSpawn(engine, AUTHORED.anchor.zoneId);
     expect(reports).toEqual([]);

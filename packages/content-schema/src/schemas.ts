@@ -221,6 +221,20 @@ export type ExitDefinition = {
   condition?: ConditionSpec;
 };
 
+/**
+ * A party-state gate on entering a zone (C3/P2), as it crosses the wire.
+ *
+ * `conditions` are COMPILED `ConditionSpec`s. World Forge authors a
+ * SpawnCondition-grammar string and compiles it at export — the ink pattern from
+ * RG-C1 Lane 2 — so no author syntax reaches the engine.
+ */
+export type EntryGateDefinition = {
+  conditions: ConditionSpec[];
+  mode: 'hard' | 'soft';
+  /** The authored "show the lock" message. */
+  reason?: string;
+};
+
 export type ZoneDefinition = {
   id: string;
   name: string;
@@ -233,6 +247,8 @@ export type ZoneDefinition = {
   interactables?: string[];
   entities?: string[];
   exits?: ExitDefinition[];
+  /** C3/P2 — party-state gate on entry. Absent ⇒ ungated. */
+  entryGate?: EntryGateDefinition;
 };
 
 export type RoomDefinition = {

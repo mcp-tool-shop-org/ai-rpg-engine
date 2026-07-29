@@ -133,7 +133,7 @@ export {
   getDistrictThreatLevel,
   ingestDistrictDefinitions,
 } from './district-core.js';
-export { districtsChannel, createStandardChannels } from './intake-channels.js';
+export { districtsChannel, encounterAnchorsChannel, createStandardChannels } from './intake-channels.js';
 export type {
   DistrictMetrics,
   DistrictDefinition,
@@ -326,6 +326,7 @@ export {
   MIN_SPAWN_CHANCE,
   MAX_SPAWN_CHANCE,
   BOSS_ROLE_TAG,
+  mergeEncounterSpawnContent,
 } from './encounter-spawn.js';
 export type {
   EncounterSpawnContent,
@@ -333,6 +334,15 @@ export type {
   EncounterSpawnState,
   SpawnedEncounterReport,
 } from './encounter-spawn.js';
+// C3/P2 — the closed, total condition evaluator.
+export {
+  evaluateCondition,
+  evaluateConditions,
+  KNOWN_CONDITION_TYPES,
+  UNEVALUABLE_OPERANDS,
+  GATE_REFUSED_OPERANDS,
+} from './condition-eval.js';
+export type { ConditionSpecLike, ConditionVerdict, UnmetCondition } from './condition-eval.js';
 export {
   buildFactionProfile,
   evaluateFactionActions,

@@ -167,6 +167,33 @@ export type EntityState = {
 
 // --- Zone ---
 
+/**
+ * A party-state gate on ENTERING a zone (C3/P2).
+ *
+ * Conditions are COMPILED `ConditionSpec`s, not author syntax: World Forge
+ * authors a SpawnCondition-grammar string and compiles it at export, so the
+ * engine never parses a grammar (RG-C1 Lane 2's ink pattern). All conditions
+ * must hold — an AND-array.
+ *
+ * `mode` is the whole design in one field. `hard` refuses the move; `soft` warns
+ * and permits. Both emit an event carrying the AUTHORED reason, because
+ * "access stays rule-bound while traversal feel is client-authored"
+ * (charter Pillar 2, Dionne 2023) only works if the client is TOLD why.
+ *
+ * Pure data — serialized with state, no closures. `conditions` is typed loosely
+ * here because `ConditionSpec` lives in @ai-rpg-engine/content-schema, which
+ * sits ABOVE core; the evaluator (`evaluateConditions` in
+ * @ai-rpg-engine/modules) is structurally typed against it.
+ */
+export type ZoneEntryGate = {
+  /** Compiled ConditionSpecs — `{ type, params }`. ALL must hold. */
+  conditions: Array<{ type: string; params?: Record<string, ScalarValue> }>;
+  /** `hard` blocks entry; `soft` warns but allows. */
+  mode: 'hard' | 'soft';
+  /** The authored "show the lock" message, rendered verbatim. */
+  reason?: string;
+};
+
 export type ZoneState = {
   id: string;
   roomId: string;
@@ -179,6 +206,11 @@ export type ZoneState = {
   authority?: Record<string, number>;
   hazards?: string[];
   interactables?: string[];
+  /**
+   * Party-state gate on entering this zone (C3/P2). Absent ⇒ ungated, and a zone
+   * with no gate is byte-identical to one before this field existed.
+   */
+  entryGate?: ZoneEntryGate;
 };
 
 // --- Action ---

@@ -290,7 +290,26 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
     for (const k of unknown) {
       expect(result.summary).not.toContain(k);
     }
-    expect(result.advisories).toEqual([]);
+
+    // ⚠ NARROWED BY C3/P2. This asserted `advisories` was EMPTY — the loader said
+    // nothing at all about this pack. That is no longer true, and the reason is a
+    // finding rather than noise: the refs pass now reports that the fixture's
+    // `zone-under-vault` gate names `item:rope` while its item catalog calls the
+    // same object `item-rope`, so the gate can never open (see
+    // `c3-entry-gates.test.ts`).
+    //
+    // The SILENT-PASS finding this test exists for is about UNKNOWN KEYS, and it
+    // is unchanged: the four keys above still cross without a word. So the
+    // assertion narrows from "says nothing" to "says nothing ABOUT THESE KEYS",
+    // which is the claim that was always meant.
+    for (const k of unknown) {
+      expect(
+        result.advisories.some((a) => a.message.includes(k) || a.path.includes(k)),
+        `${k} should still pass silently`,
+      ).toBe(false);
+    }
+    // And what it DOES say is the gate finding, not something unexplained.
+    expect(result.advisories.every((a) => a.message.includes('gate condition'))).toBe(true);
   });
 
   it('SILENT PASS, second axis: a pure nonsense key loads just as clean', () => {
@@ -373,16 +392,20 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
     }
   });
 
-  it('zone excess properties are accepted without comment', () => {
-    // validateZoneDefinition (validate.ts:397) has no excess-property rejection,
-    // so a zone carrying the whole dropped 2.5D vocabulary would load clean —
-    // which is why the export lane dropping it produces no error anywhere.
+  it('zone excess properties are STILL accepted without comment — for the fields that remain undeclared', () => {
+    // validateZoneDefinition (validate.ts) has no excess-property rejection, so a
+    // zone carrying the still-dropped 2.5D vocabulary loads clean — which is why
+    // the export lane dropping it produces no error anywhere.
+    //
+    // ⚠ NARROWED BY C3/P2. `entryGate` used to be in this list and is now a
+    // DECLARED, VALIDATED field, so it cannot be planted here as excess: see the
+    // next test. The finding survives for `elevation`, `stratumId`, `hazardRefs`
+    // and `physicsMode` — the C3.2 residue.
     const tmp = scratchPackPath('excess');
     const zones = (raw.zones as Record<string, unknown>[]).map((z) => ({
       ...z,
       elevation: 42,
       stratumId: 'stratum-sky',
-      entryGate: { conditions: ['item:rope'], mode: 'hard' },
       hazardRefs: ['hazard-void-drop'],
       physicsMode: 'zero-g',
     }));
@@ -393,6 +416,50 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
       expect(r.errors).toEqual([]);
       // Preserved, undeclared, unread.
       expect((r.pack.zones as unknown as Record<string, unknown>[])[0].elevation).toBe(42);
+    } finally {
+      fs.rmSync(tmp, { force: true });
+    }
+  });
+
+  it('CLOSED BY C3/P2: a MALFORMED entryGate is now refused, not preserved in silence', () => {
+    // ⚠ THE FLIP. `entryGate` was one of the excess properties above — planted as
+    // `{ conditions: ['item:rope'], mode: 'hard' }` (grammar STRINGS) and loaded
+    // clean, because nothing declared the field. It is declared and validated now,
+    // so that same shape is REFUSED: conditions must be compiled ConditionSpecs,
+    // because the engine never parses author syntax.
+    const tmp = scratchPackPath('badgate');
+    const zones = (raw.zones as Record<string, unknown>[]).map((z) => ({
+      ...z,
+      entryGate: { conditions: ['item:rope'], mode: 'hard' },
+    }));
+    fs.writeFileSync(tmp, JSON.stringify({ ...raw, zones }), 'utf-8');
+    try {
+      const r = loadContentFromFile(tmp);
+      expect(r.ok).toBe(false);
+      expect(r.errors.some((e) => e.path.includes('entryGate'))).toBe(true);
+    } finally {
+      fs.rmSync(tmp, { force: true });
+    }
+  });
+
+  it('CLOSED BY C3/P2: an EMPTY entryGate condition list is refused by name', () => {
+    // The most dangerous shape this type can take, and the reason it gets its own
+    // test: an AND-array with no members is vacuously TRUE, so an empty gate
+    // silently unlocks the zone it was authored to lock — and it is
+    // indistinguishable from a working gate by inspection. Three places refuse to
+    // produce it (exporter, validator, importer); this pins the validator.
+    const tmp = scratchPackPath('emptygate');
+    const zones = (raw.zones as Record<string, unknown>[]).map((z) => ({
+      ...z,
+      entryGate: { conditions: [], mode: 'hard', reason: 'Locked.' },
+    }));
+    fs.writeFileSync(tmp, JSON.stringify({ ...raw, zones }), 'utf-8');
+    try {
+      const r = loadContentFromFile(tmp);
+      expect(r.ok).toBe(false);
+      const err = r.errors.find((e) => e.path.includes('entryGate.conditions'));
+      expect(err, 'the empty AND-array must be named').toBeDefined();
+      expect(err!.message).toContain('vacuously TRUE');
     } finally {
       fs.rmSync(tmp, { force: true });
     }

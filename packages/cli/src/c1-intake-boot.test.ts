@@ -35,6 +35,7 @@ import { allPacks, type PackInfo } from './packs.js';
 import { runHostileRound } from './bin.js';
 import { playerHalfRound } from './packs-opportunity-reachability.test.js';
 import { FIXTURE_PACK_PATH } from './c0/fixture-path.js';
+import { openAllGates } from './c3/open-gates.js';
 
 // --- Pins (PIN_PER_STEP) — C0's, unchanged, so the two cycles are comparable --
 
@@ -93,6 +94,22 @@ function convertedSessionFingerprint(mutate?: (engine: Engine) => void): Fingerp
     prevalidated: true,
   });
   if (!result.ok) throw new Error(`intake failed: ${JSON.stringify(result.errors)}`);
+
+  // ⚠ GATES OPENED BY C3/P2. This file's subject is whether CONVERTED ZONE
+  // FIELDS bear rules — the differential-mutation sweep C0 built. C3/P2 made
+  // `entryGate` rule-bearing, and the fixture authors a HARD gate on
+  // `zone-under-vault`, so from this cycle onward an ungeared player cannot walk
+  // the exported subgraph and every measurement below would read as `none` for a
+  // reason that has nothing to do with the field under test.
+  //
+  // That is the gate working, and it is a real interaction worth naming rather
+  // than papering over: the exported graph is no longer freely walkable, by
+  // design. The probes are unchanged; the obstacle is removed from the WORLD (not
+  // the pack) and its presence is asserted, so this cannot silently become a
+  // no-op. Gating has its own proof in `c3-entry-gates.test.ts`.
+  if (openAllGates(engine) === 0) {
+    throw new Error('expected the fixture to author entry gates — none found to open');
+  }
 
   // Stand the player in a converted zone. `playerHalfRound` walks toward the
   // least-visited exit, so from here the session traverses the exported graph
@@ -218,6 +235,14 @@ describe('C1/P1 — the exported pack reaches a running world', () => {
     // C0's ledger entry 1 records: the probe that drove no player.
     const engine = hostPack().createGame(C1_SEED);
     applyContentPack(engine, fixturePack(), { channels: createStandardChannels(), prevalidated: true });
+    // ⚠ C3/P2: this session builds its own engine, so it needs the gates opened
+    // too. Without it the player never leaves `zone-surface-yard` — the vault's
+    // HARD gate refuses, correctly, and this probe's subject is traversal rather
+    // than access. The assertion below is UNCHANGED and still demands all three
+    // zones entered more than once.
+    if (openAllGates(engine) === 0) {
+      throw new Error('expected the fixture to author entry gates — none found to open');
+    }
     const player = engine.store.getEntity(engine.world.playerId)!;
     engine.store.addEntity({ ...player, zoneId: CONVERTED_ZONE_IDS[0] });
 

@@ -410,7 +410,41 @@ export function validateZoneDefinition(v: unknown, path = 'ZoneDefinition'): Val
   optStrArr(c, v, 'interactables');
   optStrArr(c, v, 'entities');
   c.errors.push(...optArr(`${path}.exits`, v.exits, vExitDefinition));
+  // C3/P2 — the entry gate.
+  if (v.entryGate !== undefined) {
+    c.errors.push(...vEntryGate(`${path}.entryGate`, v.entryGate));
+  }
   return { ok: c.errors.length === 0, errors: c.errors };
+}
+
+/**
+ * `EntryGateDefinition` shape guard.
+ *
+ * ⚠ AN EMPTY `conditions` ARRAY IS REFUSED. An AND-array with no members is
+ * vacuously TRUE, so an empty gate silently unlocks the zone it was authored to
+ * lock — the most dangerous shape this type can take, and indistinguishable from
+ * a working gate by inspection. The exporter also refuses to emit one (a gate
+ * whose conditions all failed to compile exports as NO gate, with a warning);
+ * this is the second line, at the boundary, because the pack may not have come
+ * from our exporter.
+ */
+function vEntryGate(path: string, v: unknown): ValidationError[] {
+  if (!isObj(v)) return [{ path, message: 'must be an object' }];
+  const c = checker(path);
+  if (!Array.isArray(v.conditions)) {
+    c.errors.push({ path: `${path}.conditions`, message: 'required array of ConditionSpec' });
+  } else if (v.conditions.length === 0) {
+    c.errors.push({
+      path: `${path}.conditions`,
+      message:
+        'must not be empty — an AND-array with no members is vacuously TRUE, so an empty gate silently unlocks the zone. Omit `entryGate` to leave a zone ungated.',
+    });
+  } else {
+    c.errors.push(...vArr(`${path}.conditions`, v.conditions, vConditionSpec));
+  }
+  reqEnum(c, v, 'mode', ['hard', 'soft']);
+  optStr(c, v, 'reason');
+  return c.errors;
 }
 
 /**

@@ -145,7 +145,26 @@
             }
           }
         }
-      ]
+      ],
+      "entryGate": {
+        "conditions": [
+          {
+            "type": "party-size",
+            "params": {
+              "op": ">=",
+              "value": 3
+            }
+          },
+          {
+            "type": "has-flag",
+            "params": {
+              "id": "bridge-repaired"
+            }
+          }
+        ],
+        "mode": "soft",
+        "reason": "The yard gate needs three hands on the winch."
+      }
     },
     {
       "id": "zone-under-vault",
@@ -193,7 +212,31 @@
             }
           }
         }
-      ]
+      ],
+      "entryGate": {
+        "conditions": [
+          {
+            "type": "has-item",
+            "params": {
+              "id": "rope"
+            }
+          },
+          {
+            "type": "party-class",
+            "params": {
+              "id": "delver"
+            }
+          },
+          {
+            "type": "party-member",
+            "params": {
+              "id": "npc-quartermaster"
+            }
+          }
+        ],
+        "mode": "hard",
+        "reason": "No one goes down without rope and a delver."
+      }
     },
     {
       "id": "zone-sky-gantry",
@@ -231,7 +274,27 @@
             }
           }
         }
-      ]
+      ],
+      "entryGate": {
+        "conditions": [
+          {
+            "type": "party-level",
+            "params": {
+              "op": ">=",
+              "value": 10
+            }
+          },
+          {
+            "type": "party-size",
+            "params": {
+              "op": ">=",
+              "value": 3
+            }
+          }
+        ],
+        "mode": "hard",
+        "reason": "The gantry will not hold a green party."
+      }
     }
   ],
   "districts": [

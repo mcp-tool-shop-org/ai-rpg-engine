@@ -226,6 +226,20 @@ export function zoneDefinitionToState(def: ZoneDefinition, dropped?: DroppedFiel
   if (def.noise !== undefined) state.noise = def.noise;
   if (def.hazards !== undefined) state.hazards = [...def.hazards];
   if (def.interactables !== undefined) state.interactables = [...def.interactables];
+  // C3/P2 — the entry gate crosses as rule-bearing state. Conditions are already
+  // COMPILED by the exporter (the engine never parses author syntax), so this is
+  // a structural copy, deep enough that a caller mutating the result cannot reach
+  // back into the pack (the aliasing bug C1's own control caught on `tags`).
+  if (def.entryGate !== undefined) {
+    state.entryGate = {
+      conditions: (def.entryGate.conditions ?? []).map((c) => ({
+        type: c.type,
+        ...(c.params !== undefined ? { params: { ...c.params } } : {}),
+      })),
+      mode: def.entryGate.mode,
+      ...(def.entryGate.reason !== undefined ? { reason: def.entryGate.reason } : {}),
+    };
+  }
   return state;
 }
 
