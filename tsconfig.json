@@ -15,102 +15,38 @@
     "composite": true
   },
   "include": [],
-  "exclude": [
-    "vitest.config.ts"
-  ],
+  "exclude": ["vitest.config.ts"],
   "references": [
-    {
-      "path": "packages/core"
-    },
-    {
-      "path": "packages/content-schema"
-    },
-    {
-      "path": "packages/sidecar"
-    },
-    {
-      "path": "packages/modules"
-    },
-    {
-      "path": "packages/terminal-ui"
-    },
-    {
-      "path": "packages/cli"
-    },
-    {
-      "path": "packages/starter-fantasy"
-    },
-    {
-      "path": "packages/starter-cyberpunk"
-    },
-    {
-      "path": "packages/ollama"
-    },
-    {
-      "path": "packages/presentation"
-    },
-    {
-      "path": "packages/audio-director"
-    },
-    {
-      "path": "packages/soundpack-core"
-    },
-    {
-      "path": "packages/campaign-memory"
-    },
-    {
-      "path": "packages/rumor-system"
-    },
-    {
-      "path": "packages/starter-detective"
-    },
-    {
-      "path": "packages/starter-pirate"
-    },
-    {
-      "path": "packages/starter-zombie"
-    },
-    {
-      "path": "packages/pack-registry"
-    },
-    {
-      "path": "packages/starter-weird-west"
-    },
-    {
-      "path": "packages/starter-colony"
-    },
-    {
-      "path": "packages/character-creation"
-    },
-    {
-      "path": "packages/asset-registry"
-    },
-    {
-      "path": "packages/image-gen"
-    },
-    {
-      "path": "packages/equipment"
-    },
-    {
-      "path": "packages/character-profile"
-    },
-    {
-      "path": "packages/starter-vampire"
-    },
-    {
-      "path": "packages/starter-gladiator"
-    },
-    {
-      "path": "packages/starter-ronin"
-    },
-    {
-      "path": "packages/starter-merchant"
-    },
-    {
-      "path": "packages/starter-bounty-hunter"
-    },
-    {
-      "path": "packages/ledger-adapter"
-    }
+    { "path": "packages/core" },
+    { "path": "packages/content-schema" },
+    { "path": "packages/sidecar" },
+    { "path": "packages/modules" },
+    { "path": "packages/terminal-ui" },
+    { "path": "packages/cli" },
+    { "path": "packages/starter-fantasy" },
+    { "path": "packages/starter-cyberpunk" },
+    { "path": "packages/ollama" },
+    { "path": "packages/presentation" },
+    { "path": "packages/audio-director" },
+    { "path": "packages/soundpack-core" },
+    { "path": "packages/campaign-memory" },
+    { "path": "packages/rumor-system" },
+    { "path": "packages/starter-detective" },
+    { "path": "packages/starter-pirate" },
+    { "path": "packages/starter-zombie" },
+    { "path": "packages/pack-registry" },
+    { "path": "packages/starter-weird-west" },
+    { "path": "packages/starter-colony" },
+    { "path": "packages/character-creation" },
+    { "path": "packages/asset-registry" },
+    { "path": "packages/image-gen" },
+    { "path": "packages/equipment" },
+    { "path": "packages/character-profile" },
+    { "path": "packages/starter-vampire" },
+    { "path": "packages/starter-gladiator" },
+    { "path": "packages/starter-ronin" },
+    { "path": "packages/starter-merchant" },
+    { "path": "packages/starter-bounty-hunter" },
+    { "path": "packages/ledger-adapter" }
   ]
 }
