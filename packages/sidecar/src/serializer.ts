@@ -159,10 +159,43 @@ function resolveParent(root: unknown, path: readonly (string | number)[]): unkno
 /**
  * The per-tick state hash clients use to DETECT staleness (charter §3.3).
  *
- * Computed over the quantized state, so the hash a client can recompute from
- * what it received matches the hash the server sent. Hashing pre-quantization
- * would produce a number no client could ever reproduce — a staleness detector
- * that always fires is the same as none.
+ * Computed over the quantized state, so the hash is reproducible rather than a
+ * function of pre-quantization float noise — a staleness detector that always
+ * fires is the same as none.
+ *
+ * ⚠ REPRODUCIBLE BY A JAVASCRIPT CLIENT, AND ONLY BY ONE. This function's earlier
+ * comment said "the hash a client can recompute from what it received matches the
+ * hash the server sent", full stop. C4 measured that against a real non-JS client
+ * and it is false, for two independent reasons, both in `JSON.stringify`:
+ *
+ *   1. KEY ORDER is insertion order here. Godot's `JSON.stringify` sorts keys
+ *      alphabetically, so the same object serializes to different bytes.
+ *   2. NUMBER FORM. Godot's JSON parser produces a float for every number, and
+ *      re-serializes `5` as `5.0`.
+ *
+ * Measured on Godot 4.7.stable: `{"tick":5,...}` round-trips to
+ * `{"flag":true,...,"tick":5.0}` — different key order AND a different number
+ * literal, hence a different sha256.
+ *
+ * So a non-JS client cannot verify its own mirror against this value. What it CAN
+ * do, and what `ai-rpg-stage` does, is verify its POSITION: request a snapshot and
+ * require the server's reported tick and hash to equal the tick and hash the client
+ * recorded for where it believes it is. That fires on real client drift — a missed
+ * delta leaves the client's tick behind — without needing to reproduce these bytes.
+ *
+ * A canonical, cross-language hash (sorted keys, normalized number form) would let
+ * ANY client verify its mirror directly. It is a determinism-visible addition to a
+ * shipped wire and was ANDON'd rather than slipped into C4.
+ *
+ * DIRECTOR'S RULING (2026-07-29), so the future slice starts from the right shape:
+ * the limitation is STRUCTURAL, not cosmetic — every non-JS client inherits it, so
+ * the eventual UE5 client hits this same wall, and the item stays on the roadmap
+ * rather than being closed. When it is built it lands as a SECOND,
+ * capability-negotiated hash — `canonicalStateHash`, sorted keys and normalized
+ * numbers, requested at `initialize` by clients that want it — and NEVER as a
+ * replacement for this one. That is the additive-evolution path this protocol already
+ * lives by (`protocol.ts`: capabilities not version numbers, additive-only events),
+ * and it gets its own slice with a same-seed review rather than a ride-along.
  */
 export function stateHash(state: WorldState): string {
   return createHash('sha256').update(JSON.stringify(quantize(state))).digest('hex').slice(0, 32);
