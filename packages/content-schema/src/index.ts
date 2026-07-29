@@ -5,3 +5,4 @@ export * from './validate.js';
 export * from './refs.js';
 export * from './loader.js';
 export * from './build-catalog.js';
+export * from './intake.js';

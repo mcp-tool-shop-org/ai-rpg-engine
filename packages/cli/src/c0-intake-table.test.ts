@@ -35,7 +35,7 @@ import { describe, it, expect } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash } from 'node:crypto';
-import { loadContentFromFile, type ContentPack } from '@ai-rpg-engine/content-schema';
+import { loadContentFromFile, zoneDefinitionToState, type ContentPack } from '@ai-rpg-engine/content-schema';
 import type { Engine, ZoneState } from '@ai-rpg-engine/core';
 import { allPacks, type PackInfo } from './packs.js';
 import { runHostileRound } from './bin.js';
@@ -65,10 +65,21 @@ export { FIXTURE_PACK_PATH } from './c0/fixture-path.js';
 
 // --- Instrument 1: the loader probe --------------------------------------
 
-/** Keys the engine's own `ContentPack` type declares (content-schema/src/refs.ts). */
+/**
+ * Keys the engine's own `ContentPack` type declares (content-schema/src/refs.ts).
+ *
+ * ⚠ FLIPPED BY C1/P1 (the pinned-test rule). C0 measured ten declared keys and
+ * nine silently-preserved unknown ones. C1 declared four of those nine —
+ * `schemaVersion` (a real emitted key that had been sitting in the same bucket
+ * as a typo), plus C0's "three cheap wire gaps" `districts`, `buildCatalog` and
+ * `progressionTrees`. The finding this list pins did not go away; it got
+ * smaller, and the SILENT-PASS test below now measures the remainder.
+ */
 const ENGINE_DECLARED_KEYS = [
   'entities', 'zones', 'dialogues', 'quests', 'abilities',
   'statuses', 'verbs', 'archetypes', 'backgrounds', 'itemUseEffects',
+  // Declared by C1/P1:
+  'schemaVersion', 'districts', 'buildCatalog', 'progressionTrees',
 ] as const;
 
 /** Keys the loader shape-guard actually checks for array-ness (loader.ts:53). */
@@ -246,15 +257,18 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
     expect(result.summary).toBe('Content loaded: 3 entities, 3 zones, 1 dialogues, 0 quests');
   });
 
-  it('SILENT PASS: eight exported keys are preserved and never mentioned', () => {
+  it('SILENT PASS: the remaining unknown keys are preserved and never mentioned', () => {
+    // ⚠ FLIPPED BY C1/P1. This asserted nine silently-preserved unknown keys.
+    // Four are now declared (see ENGINE_DECLARED_KEYS above), so the list is
+    // five. The silent-pass BEHAVIOUR is still here and still pinned — declaring
+    // a key stops it being unknown, it does not make the loader loud. Making it
+    // loud is C1/P2's key-allowlist gate, which flips this test again.
     const exported = Object.keys(raw);
     const unknown = exported.filter(
       (k) => !(ENGINE_DECLARED_KEYS as readonly string[]).includes(k),
     );
     expect(unknown.sort()).toEqual([
-      'buildCatalog', 'districts', 'encounterAnchors', 'factionPresences',
-      'items', 'playerTemplate', 'pressureHotspots', 'progressionTrees',
-      'schemaVersion',
+      'encounterAnchors', 'factionPresences', 'items', 'playerTemplate', 'pressureHotspots',
     ]);
 
     // Each one survives the load untouched…
@@ -298,19 +312,34 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
     }
   });
 
-  it('only four of ten declared keys get a shape guard, and the gap RAW-THROWS', () => {
-    // FINDING (recorded, not fixed — this cycle is an audit).
+  it('only four of the ten refs-iterated keys get a shape guard, and the gap RAW-THROWS', () => {
+    // FINDING — still open. C1/P1 did not touch it; C1/P2's gate closes it.
     //
     // loader.ts documents its boundary discipline explicitly: "A missing/
     // unreadable file is reported as a structured `file` error, never a raw fs
     // throw", "the caller never sees a raw SyntaxError". The shape guard
     // (loader.ts:53) enforces array-ness for exactly four keys — entities,
     // zones, dialogues, quests — but `validateRefs` then does `pack.abilities
-    // ?.map(...)` on six MORE declared keys it never guarded. A non-array in
-    // any of those six escapes as a raw TypeError instead of a structured
-    // error, straight past the discipline the module's own docstring claims.
+    // ?.map(...)` on six MORE keys it never guarded. A non-array in any of those
+    // six escapes as a raw TypeError instead of a structured error, straight
+    // past the discipline the module's own docstring claims.
+    //
+    // ⚠ ADJUSTED BY C1/P1, and the adjustment is a lesson about the pin, not
+    // about the finding. This list used to be derived by SUBTRACTING the guarded
+    // keys from ENGINE_DECLARED_KEYS — so when C1 declared four new keys the
+    // "gap" silently grew from 6 to 10 and the test failed for a reason that had
+    // nothing to do with raw throws. The four new keys are not read by
+    // validateRefs at all. A pin whose subject is defined by subtraction moves
+    // whenever anything else moves; naming the subject directly is what makes it
+    // pin one finding instead of drifting with the type.
     const tmp = scratchPackPath('badshape');
-    const unguarded = ENGINE_DECLARED_KEYS.filter(
+
+    /** The keys `validateRefs` iterates. The raw-throw finding is about THESE. */
+    const REFS_ITERATED_KEYS = [
+      'entities', 'zones', 'dialogues', 'quests', 'abilities',
+      'statuses', 'verbs', 'archetypes', 'backgrounds', 'itemUseEffects',
+    ] as const;
+    const unguarded = REFS_ITERATED_KEYS.filter(
       (k) => !(LOADER_SHAPE_CHECKED_KEYS as readonly string[]).includes(k),
     );
     expect(unguarded).toEqual([
@@ -590,18 +619,36 @@ describe('C0/P2 — instrument 3: the boot gap, proven mechanically', () => {
     expect(err.hint).toContain('createGame');
   });
 
-  it('no ZoneDefinition → ZoneState converter exists to bridge the gap', () => {
-    // Structural, not grep: the two types are incompatible in the one field the
-    // store requires. ZoneState demands `roomId`; ZoneDefinition has no such
-    // field, so no exported pack can produce a storable zone without a
-    // converter inventing one — and no converter exists.
+  it('CLOSED BY C1/P1: a ZoneDefinition → ZoneState converter now bridges the gap', () => {
+    // ⚠ FLIPPED BY C1/P1 (the pinned-test rule: closing a finding without
+    // flipping its pin in the same commit is a defect, not a green).
+    //
+    // C0 asserted the opposite — "no exported pack can produce a storable zone
+    // without a converter inventing one, and no converter exists." The type
+    // mismatch it rests on is unchanged and still asserted below: `ZoneState`
+    // demands `roomId`, `ZoneDefinition` still has no such field. What changed
+    // is that a converter now DERIVES it (zone id), so the gap is bridged rather
+    // than closed by a schema change.
+    //
+    // The behavioural proof — that converted zones bear rules in a played
+    // session — lives in c1-intake-boot.test.ts. This stays a structural pin.
     const r = loadContentFromFile(FIXTURE_PACK_PATH);
     const zoneDef = (r.pack.zones ?? [])[0] as unknown as Record<string, unknown>;
     expect(zoneDef).toBeDefined();
-    expect(zoneDef.roomId).toBeUndefined();
+    expect(zoneDef.roomId, 'the definition still has no roomId — that has not changed').toBeUndefined();
 
-    // What a real zone in a booted world looks like, for contrast.
+    // The converter supplies it, and produces a zone the store accepts.
+    const converted = zoneDefinitionToState(r.pack.zones![0]);
+    expect(typeof converted.roomId).toBe('string');
+    expect(converted.roomId.length).toBeGreaterThan(0);
+
     const engine = packOf(C0_PACK_ID).createGame(C0_SEED);
+    engine.store.addZone(converted);
+    const stored = engine.world.zones[converted.id] as ZoneState;
+    expect(stored).toBeDefined();
+    expect(stored.roomId).toBe(converted.roomId);
+
+    // …and a code-authored zone still looks the same way, for contrast.
     const live = Object.values(engine.world.zones)[0] as ZoneState;
     expect(typeof live.roomId).toBe('string');
     expect(live.roomId.length).toBeGreaterThan(0);
