@@ -288,10 +288,9 @@ export class SidecarServer {
     // value silently under-reports exactly the outcomes a player would want
     // telegraphed. Same shape as `commit()` for the same reason.
     const logBefore = (this.engine.world.eventLog ?? []).length;
-    let returned: ResolvedEvent[] = [];
-    let events: ResolvedEvent[] = [];
+    const events: ResolvedEvent[] = [];
     try {
-      returned = this.engine.submitAction(verb, {
+      const returned = this.engine.submitAction(verb, {
         ...(Array.isArray(params.targetIds) ? { targetIds: params.targetIds as string[] } : {}),
         ...(typeof params.toolId === 'string' ? { toolId: params.toolId } : {}),
         ...(params.parameters !== undefined
