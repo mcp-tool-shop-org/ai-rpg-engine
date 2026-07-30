@@ -13,7 +13,7 @@
 
 import { startStdioServer, startSocketServer } from '@ai-rpg-engine/sidecar';
 import { applyContentPack, loadContentFromFile } from '@ai-rpg-engine/content-schema';
-import { createStandardChannels } from '@ai-rpg-engine/modules';
+import { createStandardChannels, modifyDistrictMetric } from '@ai-rpg-engine/modules';
 import { allPacks, type PackInfo } from './packs.js';
 import { runHostileRound } from './bin.js';
 import { ENGINE_VERSION } from './engine-version.js';
@@ -94,7 +94,7 @@ export function runSidecar(args: string[], deps: SidecarDeps = defaultDeps): num
   // The previous shape hard-coded one such flag (`--seed`) and excluded exactly one
   // index; with three value-flags that approach silently eats the pack id — the
   // failure the original's own comment warns about, one flag later.
-  const VALUE_FLAGS = ['--seed', '--listen', '--host', '--content', '--start'] as const;
+  const VALUE_FLAGS = ['--seed', '--listen', '--host', '--content', '--start', '--shock'] as const;
   const valueOf = (flag: string): string | undefined => {
     const i = args.indexOf(flag);
     return i >= 0 ? args[i + 1] : undefined;
@@ -110,6 +110,7 @@ export function runSidecar(args: string[], deps: SidecarDeps = defaultDeps): num
   const hostRaw = valueOf('--host');
   const contentRaw = valueOf('--content');
   const startRaw = valueOf('--start');
+  const shockRaw = valueOf('--shock');
   const packId = args.find((a, i) => !a.startsWith('-') && !valueIndices.has(i));
 
   if (!packId) {
@@ -262,6 +263,51 @@ export function runSidecar(args: string[], deps: SidecarDeps = defaultDeps): num
     error(`[sidecar] player starts in ${startRaw}`);
   }
 
+  // ── The scenario cue ────────────────────────────────────────────────────────
+  //
+  // ⚠ THIS EXISTS BECAUSE OF A MEASURED GAP, and the gap is the finding, not the flag.
+  //
+  // `world.zone.state.changed` — the event that re-dresses a place when its district's
+  // fortunes move — HAS NO REACHABLE PRODUCER FROM PLAY. Measured on Salt Road: 60 world
+  // ticks move no district metric; eight rounds of real combat produce defeat fallout, a
+  // chronicle entry, a rumour and a companion reaction, and zero zone-state changes. The
+  // only caller of `modifyDistrictMetric` positioned to cross a threshold is a test. The
+  // system is built, persisted, and carried on the wire, and nothing a player can do
+  // triggers it — the v3.8 "declared and never produced" shape, in the system C4's own
+  // sentence depends on.
+  //
+  // So a cue supplies the input an in-game event would have supplied. Two properties make
+  // it honest rather than a cheat:
+  //
+  //   1. IT IS HOST-SIDE. The client cannot request it, and no protocol method exposes it.
+  //      A client that could shock a district would be a client deciding what happens,
+  //      which is the one thing the whole contract forbids.
+  //   2. THE SIM STILL DECIDES THE OUTCOME. The cue moves one district metric. Which
+  //      zones cross which thresholds, what condition each lands in, what cause is
+  //      reported and which variant tags result are all computed by the simulation.
+  //
+  // Format: `<districtId>:<metric>:<delta>@<round>` — e.g. `dockward:stability:-25@2`.
+  let cue: { districtId: string; metric: string; delta: number; round: number } | undefined;
+  if (args.includes('--shock')) {
+    if (shockRaw === undefined) {
+      error('✗ [SIDECAR_SHOCK_MISSING_SPEC] --shock requires <districtId>:<metric>:<delta>@<round>.');
+      return 1;
+    }
+    const m = /^([\w-]+):([\w-]+):(-?\d+)@(\d+)$/.exec(shockRaw);
+    if (!m) {
+      error(`✗ [SIDECAR_SHOCK_MALFORMED] could not parse "${shockRaw}".`);
+      error('  Expected <districtId>:<metric>:<delta>@<round>, e.g. dockward:stability:-25@2');
+      return 1;
+    }
+    cue = { districtId: m[1], metric: m[2], delta: Number(m[3]), round: Number(m[4]) };
+    if (cue.round < 1) {
+      error('✗ [SIDECAR_SHOCK_BAD_ROUND] the round must be 1 or greater.');
+      return 1;
+    }
+  }
+
+  let roundsRun = 0;
+
   // Identical on both transports. That is the whole claim `stdio.ts` made about
   // attach: the server, the protocol and the serializer do not know which one they
   // are on, so a session cannot behave differently depending on how it arrived.
@@ -271,7 +317,26 @@ export function runSidecar(args: string[], deps: SidecarDeps = defaultDeps): num
     serverName: `ai-rpg-engine sidecar (${pack.meta.id})`,
     // The round driver, injected. `advance` reports the capability unavailable
     // rather than pretending when a host does not supply one.
-    advanceRound: (e: unknown) => runHostileRound(e as never, loaded as never, { log: () => {} }),
+    advanceRound: (e: unknown) => {
+      roundsRun += 1;
+      // The cue fires BEFORE the round it names, so the world tick inside that round is
+      // what observes the changed metric and derives the consequence. Firing after would
+      // leave the shock unobserved until the following round — a one-round lag that reads
+      // as a bug in the sim rather than as an ordering choice here.
+      if (cue !== undefined && roundsRun === cue.round) {
+        modifyDistrictMetric(
+          (e as { world: unknown }).world as never,
+          cue.districtId,
+          cue.metric as never,
+          cue.delta,
+        );
+        error(
+          `[sidecar] cue: ${cue.districtId}.${cue.metric} ${cue.delta > 0 ? '+' : ''}${cue.delta}`
+          + ` at round ${cue.round}`,
+        );
+      }
+      runHostileRound(e as never, loaded as never, { log: () => {} });
+    },
   };
 
   if (port !== undefined) {

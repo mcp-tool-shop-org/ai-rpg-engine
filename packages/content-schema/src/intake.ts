@@ -64,12 +64,17 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  * - `session-scoped` — real, consumable content that is read at pack-construction
  *   or session-setup time, BEFORE a world exists. Writing it into a booted world
  *   would do nothing. See {@link extractSessionContent}.
+ * - `evaluated-not-mapped` — examined, with a recorded rationale, and deliberately
+ *   NOT carried. Distinct from the three above because it is a DECISION rather than
+ *   a gap: mapping it would add fields with no consumer, or stand a second system
+ *   beside one that already exists. See {@link EVALUATED_NOT_MAPPED_KEYS}.
  */
 export type DropReason =
   | 'no-runtime-field'
   | 'needs-module-vocabulary'
   | 'inert-without-pack-code'
-  | 'session-scoped';
+  | 'session-scoped'
+  | 'evaluated-not-mapped';
 
 export type DroppedField = {
   /** Source path, e.g. `entities[2](guard).aiProfile`. */
@@ -364,6 +369,31 @@ export const MODULE_INTAKE_KEYS = ['districts', 'encounterAnchors', 'hazardDefin
 export const SESSION_SCOPED_KEYS = ['buildCatalog', 'progressionTrees'] as const;
 
 /**
+ * Pack keys the engine KNOWS about and deliberately does not carry, each with the
+ * reason a content author needs to hear.
+ *
+ * The distinction this table exists to draw: a key here is not a gap and not a typo. It
+ * was evaluated (C3 REPORT §8) and mapping it was refused on the merits. Without the
+ * distinction, the load gate has only two verdicts — carried, or fatal — and an
+ * ordinary forge export is fatal.
+ */
+export const EVALUATED_NOT_MAPPED_KEYS: Record<string, string> = {
+  items:
+    'ANDON: the runtime has no zone-container vocabulary. There is no `zone.items`, and '
+    + '`EntityState.inventory` is the only place an item id lives — carrying this needs a new '
+    + 'world-state shape, not a mapping. Place items via pack code for now.',
+  factionPresences:
+    'EVALUATED, do not map: of factionId/districtIds/influence/alertLevel/patrolRoutes, only '
+    + 'districtIds has an engine counterpart and it already arrives as '
+    + '`districts[].controllingFaction`. The rest would be fields with no reader. Entity '
+    + '`faction:` tags DO cross, so a person keeps who they answer to.',
+  pressureHotspots:
+    'EVALUATED, do not map: `{zoneId, pressureType, baseProbability}` would be a fourth '
+    + 'parallel spawn system beside encounter-spawn, the pressure system and typed hazards. '
+    + '`evaluatePressures` is driven by live district state, not by authored hotspots.',
+};
+
+/**
  * Route a validated {@link ContentPack} into a booted engine's world.
  *
  * Pre-condition: `engine` was built by pack code (`createGame`). This function
@@ -589,6 +619,18 @@ export function applyContentPack(
           `(${MODULE_INTAKE_KEYS.join(', ')}) — it will never be consulted.`,
       });
     }
+  }
+
+  // --- keys examined and deliberately not carried ---
+  //
+  // ⚠ These are DECLARED in `ALLOWED_PACK_KEYS` so a real forge export loads, and they
+  // must therefore be REPORTED, or declaring them would have converted a loud refusal
+  // into a silent acceptance — the exact silent-pass the gate replaced. C4 made both
+  // mistakes in order: first the gate refused an ordinary export, then declaring the keys
+  // swallowed them without a word.
+  for (const [key, detail] of Object.entries(EVALUATED_NOT_MAPPED_KEYS)) {
+    if (raw[key] === undefined) continue;
+    dropped.push({ path: `pack.${key}`, reason: 'evaluated-not-mapped', detail });
   }
 
   // --- session-scoped keys ---

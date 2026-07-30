@@ -56,6 +56,34 @@ export const ALLOWED_PACK_KEYS = [
   // C3/P3 — typed hazards. Same-commit rule: declared here, on the ContentPack
   // type, and shape-guarded, together.
   'hazardDefinitions',
+  // ── C4: KNOWN, EVALUATED, DELIBERATELY NOT CARRIED ────────────────────────
+  //
+  // ⚠ These three are here because the gate could not tell "a key nobody has ever
+  // heard of" from "a key we examined and decided not to map", and treated both as
+  // fatal. The first real forge export to meet a properly wired gate was REFUSED for
+  // carrying them — so `export-ai-rpg`'s ordinary output could not boot at all, which
+  // is a worse failure than the typo the check exists to catch.
+  //
+  // Each was evaluated with a recorded reason (C3 REPORT §8):
+  //
+  //   items              ANDON'd. The authoring side matches entity placement, but the
+  //                      runtime has no zone-container vocabulary — there is no
+  //                      `zone.items`, and `EntityState.inventory` is the only place an
+  //                      item id lives. That is a new world-state shape, not a mapping.
+  //   factionPresences   DO NOT MAP. Of factionId/districtIds/influence/alertLevel/
+  //                      patrolRoutes, only districtIds has an engine counterpart, and it
+  //                      is already carried as `districts[].controllingFaction`.
+  //   pressureHotspots   DO NOT MAP, and the sharper refusal: `{zoneId, pressureType,
+  //                      baseProbability}` would be a FOURTH parallel spawn system beside
+  //                      encounter-spawn, the pressure system and typed hazards.
+  //
+  // Declaring them does NOT carry them: they have no intake channel, so
+  // `applyContentPack` reports each as dropped. The honesty property is preserved — a
+  // reader of the load report still sees exactly what did not arrive. What changes is
+  // that a real export loads, while a genuine typo is still refused by name.
+  'items',
+  'factionPresences',
+  'pressureHotspots',
 ] as const;
 
 /**
