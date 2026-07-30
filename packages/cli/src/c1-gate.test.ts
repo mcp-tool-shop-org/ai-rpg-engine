@@ -353,7 +353,10 @@ describe('C1/P2 — the forge export, gated live', () => {
     // `encounterAnchors` and gives it a real intake channel, so the honest
     // remainder is four. The pin shrinks by exactly the key that became real.
     //
-    // The three that stay, and why (recorded so the remainder is never mistaken
+    // ⚠ The list below is the PRE-C4 state, kept because it records why each key was
+    // examined. C4 closed three of them — see the flip note at the assertions.
+    //
+    // The keys that stayed, and why (recorded so a remainder is never mistaken
     // for an oversight):
     //   - `items`         — ANDON'd out of P1. The authoring side matches entity
     //                       placement, but the runtime side needs a zone-container
@@ -369,14 +372,35 @@ describe('C1/P2 — the forge export, gated live', () => {
       registeredModuleIds: registeredIds(),
       manifest: forgeManifest() as GateContext['manifest'],
     });
+    // ── FLIPPED BY C4 ────────────────────────────────────────────────────────
+    //
+    // Three of the four are now DECLARED, and the reason is a measurement rather than a
+    // change of mind: C4 wired the load gate into the sidecar for real, and the first
+    // ordinary `export-ai-rpg` output to meet it was REFUSED for carrying exactly these
+    // keys. An exporter whose normal product cannot boot is a worse failure than the typo
+    // the check exists to catch, and the gate had only two verdicts — carried, or fatal —
+    // with no way to say "examined, and deliberately not carried".
+    //
+    // `EVALUATED_NOT_MAPPED_KEYS` is that third verdict. Declaring them does NOT carry
+    // them: `applyContentPack` reports each as `evaluated-not-mapped` with its rationale on
+    // every load, so the honesty property the pin protected is intact — what changed is
+    // that a real export loads.
+    //
+    // ⚠ `playerTemplate` STAYS REFUSED, and that is now an inconsistency worth naming
+    // rather than a finding still standing. C3 ruled it session-scoped "by the same logic
+    // as `buildCatalog`" — and `buildCatalog` and `progressionTrees` are both DECLARED and
+    // reported as session-scoped drops. So the same class is handled two ways, and any
+    // world that authors a player template is unloadable. Salt Road authors none, so C4 is
+    // not blocked and did not widen itself to fix it. Recorded for the Director.
     expect(r.ok).toBe(false);
     const check = r.checks.find((c) => c.check === 'key-allowlist')!;
-    expect(check.actual).toContain('items');
     expect(check.actual).toContain('playerTemplate');
-    expect(check.actual).toContain('factionPresences');
-    expect(check.actual).toContain('pressureHotspots');
-    // …and the one that became real is NO LONGER refused. This is the assertion
-    // that makes the flip a measurement rather than a relabelling.
+    // The three that C4 declared are NO LONGER refused. This is what makes the flip a
+    // measurement rather than a relabelling.
+    expect(check.actual).not.toContain('items');
+    expect(check.actual).not.toContain('factionPresences');
+    expect(check.actual).not.toContain('pressureHotspots');
+    // …and C3's flip still holds.
     expect(check.actual).not.toContain('encounterAnchors');
   });
 

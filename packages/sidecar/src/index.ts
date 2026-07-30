@@ -6,3 +6,4 @@ export * from './serializer.js';
 export * from './server.js';
 export * from './client.js';
 export * from './stdio.js';
+export * from './socket.js';
