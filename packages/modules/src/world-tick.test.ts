@@ -1043,6 +1043,49 @@ describe('world-tick — companion reactions (F-b595731a)', () => {
     expect(after).toBe(before - 3);
   });
 
+  it('F-f4c2fa00: resolve-pressure on a live bounty raises a fighter companion\'s morale (pressure-resolved-well)', () => {
+    const engine = createTestEngine({
+      modules: [createCompanionCore(), createWorldTick()],
+      entities: [
+        makePlayer(),
+        {
+          id: 'mira', blueprintId: 'mira', type: 'npc', name: 'Mira',
+          tags: ['npc', 'recruitable', 'fighter'], stats: {}, resources: { hp: 10 }, statuses: [], zoneId: 'zone-a',
+        },
+      ],
+      zones,
+    });
+    getWorldTickState(engine.store.state);
+    engine.submitAction('recruit', { targetIds: ['mira'] });
+    const before = partyCompanions(engine).find((c) => c.npcId === 'mira')!.morale;
+    expect(before).toBe(60);
+
+    const pressure = makePressure({
+      kind: 'bounty-issued',
+      sourceFactionId: 'watch',
+      description: 'watch has placed a bounty on the player',
+      triggeredBy: 'test',
+      urgency: 0.7,
+      visibility: 'rumored',
+      turnsRemaining: 8,
+      potentialOutcomes: [],
+      tags: ['hostile'],
+      currentTick: 0,
+    });
+    getWorldTickState(engine.store.state).pressures = [pressure];
+
+    const events = engine.submitAction('resolve-pressure', { targetIds: [pressure.id] });
+    expect(events.some((e) => e.type === 'pressure.resolved')).toBe(true);
+
+    const after = partyCompanions(engine).find((c) => c.npcId === 'mira')!.morale;
+    // REACTION_TABLE['pressure-resolved-well'].fighter === 2 — dispatched
+    // from the verb path, not the expiry loop.
+    expect(after).toBe(before + 2);
+    const reaction = events.find((e) => e.type === 'companion.reaction');
+    expect(reaction?.payload.trigger).toBe('pressure-resolved-well');
+    expect(reaction?.payload.moraleDelta).toBe(2);
+  });
+
   it('applyCompanionReactions: no-op (no crash, no morale change) when the party is empty', () => {
     const engine = makeCompanionEngine();
     expect(() => applyCompanionReactions(engine, engine.world, ['combat-won'], 5)).not.toThrow();
@@ -1944,6 +1987,45 @@ describe('world-tick — resolve-pressure (F-04dece4f)', () => {
     expect(engine.world.entities.player.custom?.['title.bounty-survivor']).toBe(0);
     expect(getActivePressures(engine.world).some((p) => p.id === pressure.id)).toBe(false);
     expect(getResolvedPressures(engine.world)[0]?.resolution.resolutionType).toBe('resolved-by-player');
+  });
+
+  it('F-bdd030b2: resolve-pressure on a live bounty, then one runWorldTick, writes leverage.favor +10 and leverage.legitimacy +5', () => {
+    const engine = createTestEngine({
+      modules: [createWorldTick()],
+      entities: [makePlayer()],
+      zones,
+    });
+    const pressure = makePressure({
+      kind: 'bounty-issued',
+      sourceFactionId: 'watch',
+      description: 'watch has placed a bounty on the player',
+      triggeredBy: 'test',
+      urgency: 0.7,
+      visibility: 'rumored',
+      turnsRemaining: 8,
+      potentialOutcomes: [],
+      tags: ['hostile'],
+      currentTick: 0,
+    });
+    getWorldTickState(engine.store.state).pressures = [pressure];
+
+    engine.submitAction('resolve-pressure', { targetIds: [pressure.id] });
+    runWorldTick(engine, { genre: 'fantasy' });
+
+    const leverage = getLeverageState(
+      (engine.world.entities.player.custom ?? {}) as Record<string, string | number | boolean>,
+    );
+    expect(leverage.favor).toBe(10);
+    expect(leverage.legitimacy).toBe(5);
+
+    // A later quiet tick must not re-grant the same resolution.
+    engine.store.advanceTick();
+    runWorldTick(engine, { genre: 'fantasy' });
+    const after = getLeverageState(
+      (engine.world.entities.player.custom ?? {}) as Record<string, string | number | boolean>,
+    );
+    expect(after.favor).toBe(10);
+    expect(after.legitimacy).toBe(5);
   });
 });
 

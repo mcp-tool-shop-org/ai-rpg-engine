@@ -1377,6 +1377,7 @@ function opportunityHandler(action: ActionIntent, world: WorldState): ResolvedEv
       opp.linkedPressureId,
       tick,
       opp.genre || 'fantasy',
+      action,
     );
     if (resolved) {
       events.push(makeEvent(action, 'pressure.resolved', {
@@ -1393,6 +1394,7 @@ function opportunityHandler(action: ActionIntent, world: WorldState): ResolvedEv
       }, {
         presentation: { channels: ['narrator'], priority: 'high' },
       }));
+      events.push(...resolved.companionEvents);
     }
   }
 
