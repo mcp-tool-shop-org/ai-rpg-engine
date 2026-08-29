@@ -18,7 +18,7 @@ import { describe, it, expect } from 'vitest';
 import {
   validateDialogueDefinition,
   validateAbilityPack,
-  validateStatusDefinitionPack,
+  validateStatusPackAgainstRuleset,
   formatErrors,
 } from '@ai-rpg-engine/content-schema';
 import { roninMinimalRuleset } from './ruleset.js';
@@ -36,7 +36,7 @@ describe('schema-conformance: Jade Veil content validates against content-schema
   });
 
   it('status definitions are structurally valid with unique ids', () => {
-    const result = validateStatusDefinitionPack(roninStatusDefinitions);
+    const result = validateStatusPackAgainstRuleset(roninStatusDefinitions, roninMinimalRuleset);
     expect(result.ok, formatErrors(result)).toBe(true);
   });
 });

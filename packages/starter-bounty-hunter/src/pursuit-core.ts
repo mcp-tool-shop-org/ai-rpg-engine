@@ -203,9 +203,9 @@ export const LAY_LOW_STAMINA_GAIN = 6;
 
 function reject(action: ActionIntent, reason: string, hint: string, extra?: Record<string, unknown>): ResolvedEvent[] {
   return [{
-    id: `${action.actorId}-${action.verb}-rejected`,
+    id: '',
     type: 'action.rejected',
-    tick: 0,
+    tick: action.issuedAtTick,
     actorId: action.actorId,
     payload: { verb: action.verb, reason, hint, ...extra },
   } as unknown as ResolvedEvent];
@@ -217,9 +217,9 @@ function event(
   payload: Record<string, unknown>,
 ): ResolvedEvent {
   return {
-    id: `${action.actorId}-${type}`,
+    id: '',
     type,
-    tick: 0,
+    tick: action.issuedAtTick,
     actorId: action.actorId,
     payload,
     presentation: { channels: ['objective', 'narrator'], priority: 'normal' },
@@ -236,6 +236,12 @@ function adjust(entity: EntityState, id: string, delta: number, min = 0, max = 1
     ...(entity.resources ?? {}),
     [id]: Math.min(max, Math.max(min, resource(entity, id) + delta)),
   };
+}
+
+/** Ceiling for a resource that has a max* twin (stamina/maxStamina, hp/maxHp). */
+function resourceCeiling(entity: EntityState, id: string, fallback: number): number {
+  const twin = `max${id.charAt(0).toUpperCase()}${id.slice(1)}`;
+  return resource(entity, twin) || fallback;
 }
 
 /** Everyone in the actor's zone who is not the actor. */
@@ -518,7 +524,7 @@ function layLowHandler(action: ActionIntent, world: WorldState): ResolvedEvent[]
 
   const heat = currentHeat(world);
   world.globals['player_heat'] = Math.max(0, heat - LAY_LOW_HEAT_RELIEF);
-  adjust(actor, 'stamina', LAY_LOW_STAMINA_GAIN, 0, 40);
+  adjust(actor, 'stamina', LAY_LOW_STAMINA_GAIN, 0, resourceCeiling(actor, 'stamina', 40));
 
   const after = pursuitState(world);
   const state = getPursuitState(world);

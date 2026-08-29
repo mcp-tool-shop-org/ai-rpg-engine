@@ -505,8 +505,31 @@ export const firstTicketQuest: QuestDefinition = {
     },
   ],
   stages: [
-    { id: 'find-the-runner', name: 'Find the runner', description: 'Somebody in the Rookery answers to the name on your bill.' },
-    { id: 'take-him-breathing', name: 'Take him breathing', description: 'The office pays for people, not bodies.' },
+    {
+      id: 'find-the-runner',
+      name: 'Find the runner',
+      description: 'Somebody in the Rookery answers to the name on your bill.',
+      nextStage: 'take-him-breathing',
+      triggers: [
+        {
+          event: 'pursuit.word.bought',
+          condition: { type: 'payload-equals', params: { key: 'markId', value: 'rookery-runner' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+    {
+      id: 'take-him-breathing',
+      name: 'Take him breathing',
+      description: 'The office pays for people, not bodies.',
+      triggers: [
+        {
+          event: 'pursuit.mark.collared',
+          condition: { type: 'payload-equals', params: { key: 'markId', value: 'rookery-runner' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
   ],
 };
 
@@ -521,8 +544,34 @@ export const bloodMoneyQuest: QuestDefinition = {
     },
   ],
   stages: [
-    { id: 'hear-the-terms', name: 'Hear the terms', description: 'Mother Slack will deal with a thief-taker. At a price.' },
-    { id: 'choose-a-side', name: 'Choose a side, for today', description: 'Fence what you recovered, or testify to what you took. Not both, not this week.' },
+    {
+      id: 'hear-the-terms',
+      name: 'Hear the terms',
+      description: 'Mother Slack will deal with a thief-taker. At a price.',
+      nextStage: 'choose-a-side',
+      triggers: [
+        {
+          event: 'dialogue.ended',
+          condition: { type: 'payload-equals', params: { key: 'dialogueId', value: 'flash-house-terms' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
+    {
+      id: 'choose-a-side',
+      name: 'Choose a side, for today',
+      description: 'Fence what you recovered, or testify to what you took. Not both, not this week.',
+      triggers: [
+        {
+          event: 'pursuit.goods.fenced',
+          effect: { type: 'advance', params: {} },
+        },
+        {
+          event: 'pursuit.mark.convicted',
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
   ],
 };
 
@@ -537,8 +586,18 @@ export const thiefTakerGeneralQuest: QuestDefinition = {
     },
   ],
   stages: [
-    { id: 'walk-the-road', name: 'Walk the road', description: 'Everyone on this road is going the same way. Quill is walking it the other direction.' },
-    { id: 'settle-it', name: 'Settle it', description: 'He will offer you the partnership first. He always does.' },
+    {
+      id: 'settle-it',
+      name: 'Settle it',
+      description: 'Everyone on this road is going the same way. He will offer you the partnership first. He always does.',
+      triggers: [
+        {
+          event: 'combat.entity.defeated',
+          condition: { type: 'payload-equals', params: { key: 'entityId', value: 'jonathan-quill' } },
+          effect: { type: 'advance', params: {} },
+        },
+      ],
+    },
   ],
 };
 
@@ -656,7 +715,7 @@ export const readTheBoard: AbilityDefinition = {
   target: { type: 'self' },
   checks: [{ stat: 'nose', difficulty: 6, onFail: 'abort' }],
   effects: [
-    { type: 'apply-status', target: 'actor', params: { statusId: 'on-the-scent' } },
+    { type: 'apply-status', target: 'actor', params: { statusId: 'on-the-scent', duration: 3 } },
   ],
   requirements: [{ type: 'has-tag', params: { tag: 'thief-taker' } }],
 };
@@ -670,7 +729,7 @@ export const runHimDown: AbilityDefinition = {
   target: { type: 'single' },
   checks: [{ stat: 'grip', difficulty: 7, onFail: 'abort' }],
   effects: [
-    { type: 'apply-status', target: 'target', params: { statusId: 'hobbled' } },
+    { type: 'apply-status', target: 'target', params: { statusId: 'hobbled', duration: 2 } },
   ],
   requirements: [{ type: 'has-tag', params: { tag: 'thief-taker' } }],
 };
@@ -684,7 +743,7 @@ export const quietWord: AbilityDefinition = {
   target: { type: 'self' },
   effects: [
     { type: 'resource-modify', target: 'actor', params: { resource: 'infamy', amount: 4 } },
-    { type: 'apply-status', target: 'actor', params: { statusId: 'known-below' } },
+    { type: 'apply-status', target: 'actor', params: { statusId: 'known-below', duration: 6 } },
   ],
   requirements: [{ type: 'has-tag', params: { tag: 'thief-taker' } }],
 };

@@ -20,7 +20,7 @@ import {
   validateQuestDefinition,
   validateDialogueDefinition,
   validateAbilityPack,
-  validateStatusDefinitionPack,
+  validateStatusPackAgainstRuleset,
   formatErrors,
 } from '@ai-rpg-engine/content-schema';
 import { colonyMinimalRuleset } from './ruleset.js';
@@ -54,7 +54,7 @@ describe('schema-conformance: Signal Loss content validates against content-sche
   });
 
   it('status definitions are structurally valid with unique ids', () => {
-    const result = validateStatusDefinitionPack(colonyStatusDefinitions);
+    const result = validateStatusPackAgainstRuleset(colonyStatusDefinitions, colonyMinimalRuleset);
     expect(result.ok, formatErrors(result)).toBe(true);
   });
 });

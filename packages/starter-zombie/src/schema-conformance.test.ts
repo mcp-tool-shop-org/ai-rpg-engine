@@ -20,7 +20,7 @@ import {
   validateQuestDefinition,
   validateDialogueDefinition,
   validateAbilityPack,
-  validateStatusDefinitionPack,
+  validateStatusPackAgainstRuleset,
   formatErrors,
 } from '@ai-rpg-engine/content-schema';
 import { zombieMinimalRuleset } from './ruleset.js';
@@ -60,7 +60,7 @@ describe('schema-conformance: Ashfall Dead content validates against content-sch
   });
 
   it('status definitions are structurally valid with unique ids', () => {
-    const result = validateStatusDefinitionPack(zombieStatusDefinitions);
+    const result = validateStatusPackAgainstRuleset(zombieStatusDefinitions, zombieMinimalRuleset);
     expect(result.ok, formatErrors(result)).toBe(true);
   });
 });

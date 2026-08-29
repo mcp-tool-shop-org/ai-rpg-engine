@@ -20,7 +20,7 @@ import {
   validateQuestDefinition,
   validateDialogueDefinition,
   validateAbilityPack,
-  validateStatusDefinitionPack,
+  validateStatusPackAgainstRuleset,
   formatErrors,
 } from '@ai-rpg-engine/content-schema';
 import { detectiveMinimalRuleset } from './ruleset.js';
@@ -54,7 +54,7 @@ describe('schema-conformance: Gaslight Detective content validates against conte
   });
 
   it('status definitions are structurally valid with unique ids', () => {
-    const result = validateStatusDefinitionPack(detectiveStatusDefinitions);
+    const result = validateStatusPackAgainstRuleset(detectiveStatusDefinitions, detectiveMinimalRuleset);
     expect(result.ok, formatErrors(result)).toBe(true);
   });
 });

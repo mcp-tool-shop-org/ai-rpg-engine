@@ -9,7 +9,7 @@ import {
   validateQuestDefinition,
   validateDialogueDefinition,
   validateAbilityPack,
-  validateStatusDefinitionPack,
+  validateStatusPackAgainstRuleset,
 } from '@ai-rpg-engine/content-schema';
 import {
   bountyHunterQuests,
@@ -44,7 +44,7 @@ describe('schema conformance — hue-and-cry shipped content', () => {
   });
 
   it('the status pack validates', () => {
-    const r = validateStatusDefinitionPack(bountyHunterStatusDefinitions);
+    const r = validateStatusPackAgainstRuleset(bountyHunterStatusDefinitions, bountyHunterMinimalRuleset);
     expect(r.ok, fmt(r.errors)).toBe(true);
   });
 });

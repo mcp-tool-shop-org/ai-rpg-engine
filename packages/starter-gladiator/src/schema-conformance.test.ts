@@ -19,7 +19,7 @@ import {
   validateQuestDefinition,
   validateDialogueDefinition,
   validateAbilityPack,
-  validateStatusDefinitionPack,
+  validateStatusPackAgainstRuleset,
   formatErrors,
 } from '@ai-rpg-engine/content-schema';
 import { gladiatorMinimalRuleset } from './ruleset.js';
@@ -53,7 +53,7 @@ describe('schema-conformance: Iron Colosseum content validates against content-s
   });
 
   it('status definitions are structurally valid with unique ids', () => {
-    const result = validateStatusDefinitionPack(gladiatorStatusDefinitions);
+    const result = validateStatusPackAgainstRuleset(gladiatorStatusDefinitions, gladiatorMinimalRuleset);
     expect(result.ok, formatErrors(result)).toBe(true);
   });
 });

@@ -67,6 +67,8 @@ const REFS_ITERATED_KEYS = [
   // guarded.
   'placements',
   'encounterAnchors',
+  'hazardDefinitions',
+  'items',
 ] as const;
 
 /**

@@ -14,7 +14,7 @@ import {
   validateQuestDefinition,
   validateDialogueDefinition,
   validateAbilityPack,
-  validateStatusDefinitionPack,
+  validateStatusPackAgainstRuleset,
 } from '@ai-rpg-engine/content-schema';
 import {
   merchantQuests,
@@ -49,7 +49,7 @@ describe('schema conformance — salt-road-ledger shipped content', () => {
   });
 
   it('the status pack validates', () => {
-    const r = validateStatusDefinitionPack(merchantStatusDefinitions);
+    const r = validateStatusPackAgainstRuleset(merchantStatusDefinitions, merchantMinimalRuleset);
     expect(r.ok, fmt(r.errors)).toBe(true);
   });
 

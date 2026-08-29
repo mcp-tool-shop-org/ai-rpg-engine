@@ -239,16 +239,19 @@ export function zoneDefinitionToState(def: ZoneDefinition, dropped?: DroppedFiel
   // carried too and still reported `inert-without-pack-code`: both cross, and only
   // one of them means anything without a closure. Keeping the contrast is the
   // point (see ZONE_HAZARD_NOTE).
-  if (def.hazardRefs !== undefined) state.hazardRefs = [...def.hazardRefs];
+  // Guard a non-array: `[...string]` spreads into character ids and those
+  // characters then look like hazard ids at intake. Shape refusal belongs to
+  // validateZoneDefinition; here we simply do not copy a non-array.
+  if (Array.isArray(def.hazardRefs)) state.hazardRefs = [...def.hazardRefs];
   // C3/P4 — the scene descriptor. Copied field-by-field rather than spread, so a
   // future authored key cannot ride across undeclared (the excess-property hole
   // C0 measured on zones, in miniature).
-  if (def.scene !== undefined) {
+  if (def.scene !== undefined && def.scene !== null && typeof def.scene === 'object' && !Array.isArray(def.scene)) {
     state.scene = {
       ...(def.scene.biome !== undefined ? { biome: def.scene.biome } : {}),
       ...(def.scene.timeOfDay !== undefined ? { timeOfDay: def.scene.timeOfDay } : {}),
       ...(def.scene.dressingDensity !== undefined ? { dressingDensity: def.scene.dressingDensity } : {}),
-      ...(def.scene.variantTags !== undefined ? { variantTags: [...def.scene.variantTags] } : {}),
+      ...(Array.isArray(def.scene.variantTags) ? { variantTags: [...def.scene.variantTags] } : {}),
     };
   }
   if (def.entryGate !== undefined) {
@@ -366,7 +369,7 @@ export const MODULE_INTAKE_KEYS = ['districts', 'encounterAnchors', 'hazardDefin
  * time rather than by a world reader. See {@link MODULE_INTAKE_KEYS} for the
  * measurement behind the split.
  */
-export const SESSION_SCOPED_KEYS = ['buildCatalog', 'progressionTrees'] as const;
+export const SESSION_SCOPED_KEYS = ['buildCatalog', 'archetypes', 'backgrounds', 'progressionTrees'] as const;
 
 /**
  * Pack keys the engine KNOWS about and deliberately does not carry, each with the
@@ -647,8 +650,11 @@ export function applyContentPack(
           ? 'progression-core closure-captures its tree Map at construction (progression-core.ts:70-72) and never ' +
             'reads trees from world state — a post-boot write cannot reach it. Read it with extractSessionContent() ' +
             'and pass it to createProgressionCore({ trees }).'
-          : 'the build catalog is consumed by character creation before a session runs, not by any world reader. ' +
-            'Read it with extractSessionContent() and hand it to the character builder.',
+          : key === 'buildCatalog'
+            ? 'the build catalog is consumed by character creation before a session runs, not by any world reader. ' +
+              'Read it with extractSessionContent() and hand it to the character builder.'
+            : 'chargen archetypes/backgrounds belong with the build catalog — consumed by character creation before a session runs, not by any world reader. ' +
+              'Read them with extractSessionContent() and hand them to the character builder.',
     });
   }
 
@@ -700,6 +706,10 @@ export type SessionContent = {
   buildCatalog?: unknown;
   /** Present only if the pack carried the key. */
   progressionTrees?: unknown[];
+  /** Chargen kits — same session as buildCatalog. Present only if the pack carried the key. */
+  archetypes?: unknown[];
+  /** Chargen kits — same session as buildCatalog. Present only if the pack carried the key. */
+  backgrounds?: unknown[];
   /** Keys found but unusable, with the reason — never silently omitted. */
   advisories: ValidationError[];
 };
@@ -731,6 +741,28 @@ export function extractSessionContent(pack: ContentPack): SessionContent {
     }
   }
 
+  if (raw.archetypes !== undefined) {
+    if (!Array.isArray(raw.archetypes)) {
+      advisories.push({
+        path: 'pack.archetypes',
+        message: 'must be an array of chargen archetypes — skipped.',
+      });
+    } else {
+      out.archetypes = raw.archetypes;
+    }
+  }
+
+  if (raw.backgrounds !== undefined) {
+    if (!Array.isArray(raw.backgrounds)) {
+      advisories.push({
+        path: 'pack.backgrounds',
+        message: 'must be an array of chargen backgrounds — skipped.',
+      });
+    } else {
+      out.backgrounds = raw.backgrounds;
+    }
+  }
+
   return out;
 }
 
@@ -740,7 +772,7 @@ export function extractSessionContent(pack: ContentPack): SessionContent {
  * the result so an author is never told "applied" about a pack half of which
  * went nowhere.
  */
-const UNROUTED_DECLARED_KEYS: ReadonlyArray<readonly [string, string]> = [
+export const UNROUTED_DECLARED_KEYS: ReadonlyArray<readonly [string, string]> = [
   ['dialogues', 'dialogue-core holds its registry in pack-supplied config; routing dialogues at intake is C3.'],
   ['quests', 'quest-core state is module-owned and world-forge has no quest domain at all (REPORT §4) — the largest authoring hole.'],
   ['abilities', 'ability definitions are registered through module config, not world state.'],

@@ -20,6 +20,10 @@ import {
   extractSessionContent,
   MODULE_INTAKE_KEYS,
   SESSION_SCOPED_KEYS,
+  CORE_INTAKE_KEYS,
+  EVALUATED_NOT_MAPPED_KEYS,
+  UNROUTED_DECLARED_KEYS,
+  ALLOWED_PACK_KEYS,
   type ContentPack,
   type DroppedField,
   type IntakeChannel,
@@ -126,6 +130,23 @@ describe('C1/P1 — ZoneDefinition → ZoneState', () => {
     state.neighbors.push('m');
     expect(def.tags).toEqual(['a']);
     expect(def.neighbors).toEqual(['n']);
+  });
+
+  it('does not spread a string hazardRefs into character ids', () => {
+    const state = zoneDefinitionToState({
+      id: 'z',
+      name: 'Z',
+      hazardRefs: 'hazard-void-drop',
+    } as unknown as Parameters<typeof zoneDefinitionToState>[0]);
+    expect(state.hazardRefs).toBeUndefined();
+  });
+
+  it('copies an array hazardRefs without aliasing', () => {
+    const def = { id: 'z', name: 'Z', hazardRefs: ['hazard-void-drop'] };
+    const state = zoneDefinitionToState(def);
+    expect(state.hazardRefs).toEqual(['hazard-void-drop']);
+    state.hazardRefs!.push('other');
+    expect(def.hazardRefs).toEqual(['hazard-void-drop']);
   });
 
   it('CONTROL: a zone with nothing droppable reports NOTHING dropped', () => {
@@ -476,31 +497,57 @@ describe('C1/P1 — session-scoped keys are not pretended to be routable', () =>
     // a softening of the rule. The session-scoped pair is untouched, which is
     // the part that would signal a re-merge.
     expect([...MODULE_INTAKE_KEYS]).toEqual(['districts', 'encounterAnchors', 'hazardDefinitions']);
-    expect([...SESSION_SCOPED_KEYS]).toEqual(['buildCatalog', 'progressionTrees']);
+    expect([...SESSION_SCOPED_KEYS]).toEqual(['buildCatalog', 'archetypes', 'backgrounds', 'progressionTrees']);
+  });
+
+  it('every ALLOWED_PACK_KEYS key is either applied or named', () => {
+    const named = new Set<string>([
+      ...CORE_INTAKE_KEYS,
+      ...MODULE_INTAKE_KEYS,
+      ...SESSION_SCOPED_KEYS,
+      ...Object.keys(EVALUATED_NOT_MAPPED_KEYS),
+      ...UNROUTED_DECLARED_KEYS.map(([k]) => k),
+      'schemaVersion',
+    ]);
+    for (const key of ALLOWED_PACK_KEYS) {
+      expect(named.has(key), `${key} is neither applied nor named`).toBe(true);
+    }
   });
 
   it('applyContentPack reports them as session-scoped, with the reason', () => {
     const engine = bootEngine();
     const r = applyContentPack(engine, {
       buildCatalog: { archetypes: [] },
+      archetypes: [{ id: 'gravewalker' }],
+      backgrounds: [{ id: 'oath-breaker' }],
       progressionTrees: [{ id: 'tree' }],
     });
 
     const drops = r.dropped.filter((d) => d.reason === 'session-scoped');
-    expect(pathsOf(drops)).toEqual(['pack.buildCatalog', 'pack.progressionTrees']);
+    expect(pathsOf(drops)).toEqual([
+      'pack.archetypes',
+      'pack.backgrounds',
+      'pack.buildCatalog',
+      'pack.progressionTrees',
+    ]);
     // The detail names the mechanism, not just the verdict — this is the
     // difference between a user who can act and a user who files an issue.
     expect(drops.find((d) => d.path === 'pack.progressionTrees')?.detail)
       .toContain('closure-captures');
+    expect(drops.find((d) => d.path === 'pack.archetypes')?.detail).toContain('character creation');
   });
 
   it('extractSessionContent is the seam that DOES serve them', () => {
     const session = extractSessionContent({
       buildCatalog: { archetypes: [{ id: 'a' }] },
+      archetypes: [{ id: 'gravewalker' }],
+      backgrounds: [{ id: 'oath-breaker' }],
       progressionTrees: [{ id: 'tree-1' }, { id: 'tree-2' }],
     } as unknown as ContentPack);
 
     expect(session.buildCatalog).toEqual({ archetypes: [{ id: 'a' }] });
+    expect(session.archetypes).toEqual([{ id: 'gravewalker' }]);
+    expect(session.backgrounds).toEqual([{ id: 'oath-breaker' }]);
     expect(session.progressionTrees).toHaveLength(2);
     expect(session.advisories).toEqual([]);
   });
