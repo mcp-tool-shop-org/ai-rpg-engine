@@ -615,3 +615,72 @@ describe('spread lastSpreadTick vs sim tick (F-8c128e3d)', () => {
     expect(() => engine.spread(rumor.id, defaultCtx({ currentTick: Infinity }))).toThrow(/currentTick/);
   });
 });
+
+// F-072c671e: serialize() used to return the live Map values, and
+// deserializeSafe used to Map.set the caller's objects with no clone. Mutating
+// a snapshot (or a restored engine) then rewrote the source gossip layer.
+// Persistence is a snapshot/undo boundary — clone at both sides.
+describe('serialize/deserialize detach rumor objects (F-072c671e)', () => {
+  test('mutating the serialized array does not write the live engine Map', () => {
+    const engine = new RumorEngine();
+    const rumor = createRumor(engine, { originTick: 7 });
+    engine.recordFactionUptake(rumor.id, 'guards');
+
+    const snapshot = engine.serialize();
+    expect(snapshot).toHaveLength(1);
+    expect(snapshot[0]).not.toBe(engine.get(rumor.id));
+
+    snapshot[0].status = 'dead';
+    snapshot[0].claim = 'forged claim';
+    snapshot[0].spreadPath.push('spy');
+    snapshot[0].factionUptake.push('spies');
+
+    const live = engine.get(rumor.id)!;
+    expect(live.status).toBe('spreading');
+    expect(live.claim).toBe('player killed merchant_1');
+    expect(live.spreadPath).toEqual(['guard_1']);
+    expect(live.factionUptake).toEqual(['guards']);
+  });
+
+  test('deserialize(serialize()) is a snapshot: mutating engine A does not write engine B', () => {
+    const engineA = new RumorEngine();
+    const rumor = createRumor(engineA);
+    engineA.recordFactionUptake(rumor.id, 'guards');
+
+    const engineB = RumorEngine.deserialize(engineA.serialize());
+    expect(engineB.get(rumor.id)).not.toBe(engineA.get(rumor.id));
+
+    engineA.get(rumor.id)!.status = 'dead';
+    engineA.get(rumor.id)!.claim = 'rewritten';
+    engineA.get(rumor.id)!.spreadPath.push('mutated');
+    engineA.recordFactionUptake(rumor.id, 'new_faction');
+
+    const restored = engineB.get(rumor.id)!;
+    expect(restored.status).toBe('spreading');
+    expect(restored.claim).toBe('player killed merchant_1');
+    expect(restored.spreadPath).toEqual(['guard_1']);
+    expect(restored.factionUptake).toEqual(['guards']);
+
+    engineB.get(rumor.id)!.status = 'fading';
+    engineB.get(rumor.id)!.spreadPath.push('other');
+    expect(engineA.get(rumor.id)!.status).toBe('dead');
+    expect(engineA.get(rumor.id)!.spreadPath).toEqual(['guard_1', 'mutated']);
+  });
+
+  test('mutating the deserialize input after load does not write the restored Map', () => {
+    const engine = new RumorEngine();
+    const rumor = createRumor(engine);
+    const snapshot = engine.serialize();
+
+    const restored = RumorEngine.deserialize(snapshot);
+    snapshot[0].status = 'dead';
+    snapshot[0].spreadPath.push('spy');
+    snapshot[0].factionUptake.push('spies');
+
+    const live = restored.get(rumor.id)!;
+    expect(live.status).toBe('spreading');
+    expect(live.spreadPath).toEqual(['guard_1']);
+    expect(live.factionUptake).toEqual([]);
+    expect(live).not.toBe(snapshot[0]);
+  });
+});
