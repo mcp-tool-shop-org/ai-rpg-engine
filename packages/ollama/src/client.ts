@@ -1,6 +1,10 @@
 // Ollama HTTP client — thin wrapper around the /api/generate endpoint
 
-import type { OllamaConfig } from './config.js';
+import { clampTimeoutMs, type OllamaConfig } from './config.js';
+import { readBodyWithByteCap } from './chat-webfetch.js';
+
+/** Finite generate() body budget (F-b67b6830). Multi-GB 200s are refused before any concatenate. */
+export const MAX_GENERATE_BODY_BYTES = 8 * 1024 * 1024;
 
 export type PromptInput = {
   system: string;
@@ -113,6 +117,24 @@ function modelNotFoundError(status: number, body: string, model: string): string
     + 'or pick an installed model via AI_RPG_ENGINE_OLLAMA_MODEL or --model.';
 }
 
+async function cancelBody(response: Response): Promise<void> {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // already closed or mock without cancel
+  }
+}
+
+async function readGenerateBody(response: Response): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+  try {
+    const text = await readBodyWithByteCap(response, MAX_GENERATE_BODY_BYTES);
+    return { ok: true, text };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: message };
+  }
+}
+
 export function createClient(config: OllamaConfig, options?: OllamaClientOptions): OllamaTextClient {
   const onRetry = options?.onRetry ?? defaultOnRetry;
   // Belt-and-braces for hand-built configs that predate the retry fields
@@ -120,6 +142,9 @@ export function createClient(config: OllamaConfig, options?: OllamaClientOptions
   // documented defaults instead of collapsing the loop to zero attempts.
   const maxAttempts = Math.max(1, Math.floor(config.maxAttempts ?? 3));
   const retryDelayMs = Math.max(0, Math.floor(config.retryDelayMs ?? 1000));
+  // F-b67b6830 — timeout bounds wait, not bytes; still clamp so Infinity /
+  // MAX_SAFE_INTEGER cannot disable AbortSignal.timeout or the body cap.
+  const timeoutMs = clampTimeoutMs(config.timeoutMs);
 
   return {
     async generate(input: PromptInput): Promise<PromptResult> {
@@ -142,12 +167,12 @@ export function createClient(config: OllamaConfig, options?: OllamaClientOptions
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
-            signal: AbortSignal.timeout(config.timeoutMs),
+            signal: AbortSignal.timeout(timeoutMs),
           });
         } catch (err) {
           if (attempt < maxAttempts && isRetryableFetchError(err)) {
             const reason = err instanceof DOMException
-              ? `timeout after ${config.timeoutMs}ms`
+              ? `timeout after ${timeoutMs}ms`
               : `network error: ${err.message || 'fetch failed'}`;
             onRetry({ attempt, maxAttempts, reason, delayMs: retryDelayMs });
             await sleep(retryDelayMs);
@@ -159,23 +184,32 @@ export function createClient(config: OllamaConfig, options?: OllamaClientOptions
 
         if (!res.ok) {
           if (attempt < maxAttempts && res.status >= 500) {
+            await cancelBody(res);
             onRetry({ attempt, maxAttempts, reason: `HTTP ${res.status}`, delayMs: retryDelayMs });
             await sleep(retryDelayMs);
             continue;
           }
-          const text = await res.text().catch(() => '(no body)');
+          const read = await readGenerateBody(res);
+          const text = read.ok ? read.text : '(no body)';
           const notPulled = modelNotFoundError(res.status, text, config.model);
           if (notPulled) return { ok: false, error: notPulled };
+          if (!read.ok) {
+            return { ok: false, error: `Ollama HTTP ${res.status}: ${read.error}` };
+          }
           return { ok: false, error: `Ollama HTTP ${res.status}: ${text}` };
         }
 
+        const read = await readGenerateBody(res);
+        if (!read.ok) {
+          return { ok: false, error: `Ollama response rejected: ${read.error}` };
+        }
         let json: { response?: string };
         try {
-          json = await res.json() as { response?: string };
+          json = JSON.parse(read.text) as { response?: string };
         } catch {
           // A 200 with a non-JSON body (reverse proxy / captive-portal HTML,
-          // truncated body, wrong baseUrl) makes res.json() throw a SyntaxError.
-          // Keep it inside the discriminated-union contract instead of escaping.
+          // truncated body, wrong baseUrl). Keep it inside the
+          // discriminated-union contract instead of escaping.
           return { ok: false, error: `Ollama returned a non-JSON response (HTTP ${res.status})` };
         }
         if (typeof json.response !== 'string') {

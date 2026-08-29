@@ -156,6 +156,14 @@ export function isTunableParam(param: string): boolean {
 export const MAX_EXPERIMENT_RUNS = 10_000;
 
 /**
+ * Upper bound on curve `values[]` retained on each ExperimentRunResult
+ * (F-e435ea71). Aggregates only use scalar keys; tick-series from
+ * extractMetrics (up to MAX_REPLAY_TICKS × MAX_METRIC_NAMES) must not be
+ * kept across MAX_EXPERIMENT_RUNS. 0 = drop curves entirely (scalars only).
+ */
+export const MAX_RETAINED_CURVE_VALUES = 0;
+
+/**
  * Coerce a consumer-supplied run count to a safe, non-negative integer in
  * [0, MAX_EXPERIMENT_RUNS]. Non-finite values (NaN) become 0; Infinity and
  * absurdly large values are capped; fractional values are floored.
@@ -257,7 +265,7 @@ export function runExperiment(
     const seed = seeds[i];
     try {
       const replayData = replayProducer(seed, spec.parameterOverrides, spec.tickLimit);
-      const metrics = extractScenarioMetrics(replayData);
+      const metrics = retainExperimentMetrics(extractScenarioMetrics(replayData));
       runs.push({
         runIndex: i,
         seed,
@@ -311,6 +319,30 @@ function emptyMetrics(): ScenarioMetrics {
     curves: [],
     encounterTicks: 0,
     escalationPhases: 0,
+  };
+}
+
+/**
+ * Keep scalars only on ExperimentRunResult. extractMetrics builds
+ * curves[].values of length totalTicks; storing those across runs is
+ * O(ticks × names × runs) and is never read by computeAggregate /
+ * detectVarianceFindings / compareExperiments / summarizeRun.
+ */
+function retainExperimentMetrics(metrics: ScenarioMetrics): ScenarioMetrics {
+  return {
+    totalTicks: metrics.totalTicks,
+    escalationTick: metrics.escalationTick,
+    rumorSpreadReach: metrics.rumorSpreadReach,
+    encounterDuration: metrics.encounterDuration,
+    factionHostilityPeak: metrics.factionHostilityPeak,
+    curves: MAX_RETAINED_CURVE_VALUES <= 0
+      ? []
+      : metrics.curves.map((c) => ({
+        ...c,
+        values: c.values.slice(0, MAX_RETAINED_CURVE_VALUES),
+      })),
+    encounterTicks: metrics.encounterTicks,
+    escalationPhases: metrics.escalationPhases,
   };
 }
 

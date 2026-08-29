@@ -1,7 +1,7 @@
 // Unit tests — config resolution
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { resolveConfig } from './config.js';
+import { resolveConfig, MAX_OLLAMA_TIMEOUT_MS } from './config.js';
 
 describe('resolveConfig', () => {
   const envKeys = [
@@ -68,6 +68,26 @@ describe('resolveConfig', () => {
   it('honors a valid positive timeout env var', () => {
     process.env['AI_RPG_ENGINE_OLLAMA_TIMEOUT_MS'] = '45000';
     expect(resolveConfig().timeoutMs).toBe(45_000);
+  });
+
+  // F-b67b6830 — timeoutMs had no ceiling; Infinity / MAX_SAFE_INTEGER disabled
+  // AbortSignal.timeout and let a fast host deliver a multi-GB 200.
+  it('clamps Infinity timeoutMs to MAX_OLLAMA_TIMEOUT_MS', () => {
+    const cfg = resolveConfig({ timeoutMs: Infinity });
+    expect(Number.isFinite(cfg.timeoutMs)).toBe(true);
+    expect(cfg.timeoutMs).toBe(MAX_OLLAMA_TIMEOUT_MS);
+  });
+
+  it('clamps a huge timeoutMs to MAX_OLLAMA_TIMEOUT_MS', () => {
+    expect(resolveConfig({ timeoutMs: Number.MAX_SAFE_INTEGER }).timeoutMs).toBe(MAX_OLLAMA_TIMEOUT_MS);
+    process.env['AI_RPG_ENGINE_OLLAMA_TIMEOUT_MS'] = '999999999';
+    expect(resolveConfig().timeoutMs).toBe(MAX_OLLAMA_TIMEOUT_MS);
+  });
+
+  it('falls back to default when timeoutMs override is NaN or non-positive', () => {
+    expect(resolveConfig({ timeoutMs: Number.NaN }).timeoutMs).toBe(30_000);
+    expect(resolveConfig({ timeoutMs: 0 }).timeoutMs).toBe(30_000);
+    expect(resolveConfig({ timeoutMs: -5 }).timeoutMs).toBe(30_000);
   });
 
   // v2.5 audit PA-3 — retry count/delay live in config (previously hardcoded).

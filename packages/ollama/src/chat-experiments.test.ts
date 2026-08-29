@@ -4,6 +4,7 @@ import { describe, it, expect } from 'vitest';
 import {
   deriveSeeds,
   MAX_EXPERIMENT_RUNS,
+  MAX_RETAINED_CURVE_VALUES,
   extractScenarioMetrics,
   runExperiment,
   computeAggregate,
@@ -33,6 +34,7 @@ import type {
   ReplayProducer,
 } from './chat-experiments.js';
 import type { ScenarioMetrics } from './chat-balance-analyzer.js';
+import { extractMetrics, MAX_REPLAY_TICKS, MAX_METRIC_NAMES } from './chat-balance-analyzer.js';
 import { classifyByKeywords } from './chat-router.js';
 import { findToolForIntent, getAllTools } from './chat-tools.js';
 import type { DesignSession } from './session.js';
@@ -278,6 +280,39 @@ describe('Pillar 1 — Deterministic experiment runner', () => {
       const producer = makeReplayProducer();
       const result = runExperiment(spec, producer);
       expect(result.spec).toEqual(spec);
+    });
+
+    // F-e435ea71 — product cap bounds producer calls, not retained payload.
+    // extractMetrics keeps curves[].values of length totalTicks (≤ 10000) for
+    // ≤ 64 names; storing those on every ExperimentRunResult is
+    // O(ticks × names × runs). Pin runs=10000 with a 10k-tick/64-metric
+    // fixture: retained curve values stay bounded independently of the product.
+    it('does not retain unbounded curve values for runs=10000 of a 10k-tick/64-metric fixture (F-e435ea71)', () => {
+      const TICKS = MAX_REPLAY_TICKS;
+      const NAMES = MAX_METRIC_NAMES;
+      const metrics: Record<string, number> = {};
+      for (let i = 0; i < NAMES; i++) metrics[`m${i}`] = 1;
+
+      const ticks = Array.from({ length: TICKS }, (_, t) => ({ tick: t, metrics }));
+      const extracted = extractMetrics({ ticks });
+      expect(extracted.curves).toHaveLength(NAMES);
+      expect(extracted.curves[0].values).toHaveLength(TICKS);
+
+      const heavyDump = JSON.stringify({ ticks });
+      const heavy = runExperiment(makeSpec({ runs: 1, id: 'heavy-fixture' }), () => heavyDump);
+      expect(heavy.runs[0].metrics.totalTicks).toBe(TICKS);
+
+      const cheapDump = JSON.stringify([{ tick: 0, metrics }]);
+      const many = runExperiment(makeSpec({ runs: MAX_EXPERIMENT_RUNS, id: 'many-runs' }), () => cheapDump);
+      expect(many.runs).toHaveLength(MAX_EXPERIMENT_RUNS);
+
+      let retained = 0;
+      for (const run of [...heavy.runs, ...many.runs]) {
+        for (const curve of run.metrics.curves) retained += curve.values.length;
+      }
+      const product = TICKS * NAMES * MAX_EXPERIMENT_RUNS;
+      expect(retained).toBeLessThan(product);
+      expect(retained).toBeLessThanOrEqual(MAX_RETAINED_CURVE_VALUES);
     });
   });
 });
