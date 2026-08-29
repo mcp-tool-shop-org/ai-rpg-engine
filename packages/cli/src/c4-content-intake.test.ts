@@ -17,6 +17,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { runSidecar } from './sidecar-command.js';
+import { ENGINE_VERSION } from './engine-version.js';
 
 const HOST_PACK = 'chapel-threshold';
 
@@ -41,6 +42,31 @@ function writePack(pack: unknown): string {
   return file;
 }
 
+/** Sibling manifest the four-check gate can actually run against. */
+function writeManifest(
+  packFile: string,
+  manifest: unknown = { engineVersion: `>=${ENGINE_VERSION}` },
+): string {
+  const file = path.join(path.dirname(packFile), 'manifest.json');
+  fs.writeFileSync(file, JSON.stringify(manifest), 'utf-8');
+  return file;
+}
+
+function readyLine(text: string): boolean {
+  return /\[sidecar\] \S+ ready/.test(text);
+}
+
+/** `--listen` prints the bound port from net.Server's listening callback (next tick). */
+async function waitForListening(lines: string[], ms = 1000): Promise<string> {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    const text = lines.join('\n');
+    if (text.includes('listening')) return text;
+    await new Promise((r) => setTimeout(r, 15));
+  }
+  return lines.join('\n');
+}
+
 const MINIMAL_PACK = {
   schemaVersion: '1.0.0',
   zones: [
@@ -59,7 +85,10 @@ const MINIMAL_PACK = {
 describe('sidecar --content', () => {
   it('routes an authored pack into the booted world', () => {
     const file = writePack(MINIMAL_PACK);
-    const { code, lines } = run([HOST_PACK, '--seed', '1', '--content', file, '--listen', '0']);
+    const man = writeManifest(file);
+    const { code, lines } = run([
+      HOST_PACK, '--seed', '1', '--content', file, '--manifest', man, '--start', 'quay-probe', '--listen', '0',
+    ]);
     // `null` means the server is running — the command does not exit.
     expect(code).toBeNull();
     expect(lines.join('\n')).toContain('applied');
@@ -83,10 +112,36 @@ describe('sidecar --content', () => {
         },
       ],
     });
-    const { lines } = run([HOST_PACK, '--content', file, '--listen', '0']);
+    const man = writeManifest(file);
+    const { lines } = run([
+      HOST_PACK, '--content', file, '--manifest', man, '--start', 'quay-probe', '--listen', '0',
+    ]);
     const text = lines.join('\n');
     expect(text).toContain('dropped');
     expect(text).toContain('description');
+  });
+
+  it('dropped evaluated-not-mapped keys print the ANDON/EVALUATED rationale', () => {
+    // F-2b1709d0: reason-only reporting discarded DroppedField.detail, so a real
+    // forge export's items/factionPresences/pressureHotspots landed as jargon
+    // (`evaluated-not-mapped`) without the recorded rationale.
+    const file = writePack({
+      ...MINIMAL_PACK,
+      items: [{ id: 'crate' }],
+      factionPresences: [{ factionId: 'tide' }],
+      pressureHotspots: [{ zoneId: 'quay-probe', pressureType: 'patrol', baseProbability: 0.1 }],
+    });
+    const man = writeManifest(file);
+    const { lines } = run([
+      HOST_PACK, '--content', file, '--manifest', man, '--start', 'quay-probe', '--listen', '0',
+    ]);
+    const text = lines.join('\n');
+    expect(text).toContain('pack.items');
+    expect(text).toContain('ANDON');
+    expect(text).toContain('pack.factionPresences');
+    expect(text).toContain('EVALUATED');
+    expect(text).toContain('pack.pressureHotspots');
+    expect(text).toContain('evaluated-not-mapped');
   });
 
   it('refuses a missing file with a path and a reason', () => {
@@ -102,7 +157,8 @@ describe('sidecar --content', () => {
     // world half-populated. An unknown top-level key is the cheapest of the four to
     // trigger and the one C0 measured passing silently.
     const file = writePack({ ...MINIMAL_PACK, thisKeyIsNotInTheAllowlist: [1, 2, 3] });
-    const { code, lines } = run([HOST_PACK, '--content', file]);
+    const man = writeManifest(file);
+    const { code, lines } = run([HOST_PACK, '--content', file, '--manifest', man]);
     expect(code).toBe(1);
     const text = lines.join('\n');
     expect(text).toContain('SIDECAR_CONTENT_REFUSED');
@@ -121,16 +177,61 @@ describe('sidecar --content', () => {
     // wrong "eats the pack id", which with three more value-flags is exactly what it
     // would have done.
     const file = writePack(MINIMAL_PACK);
-    const { code, lines } = run(['--content', file, '--seed', '3', HOST_PACK, '--listen', '0']);
+    const man = writeManifest(file);
+    const { code, lines } = run([
+      '--content', file, '--manifest', man, '--seed', '3', HOST_PACK, '--start', 'quay-probe', '--listen', '0',
+    ]);
     expect(code).toBeNull();
     expect(lines.join('\n')).not.toContain('SIDECAR_PACK_UNKNOWN');
+  });
+
+  it('--content without --start does not print a bare ready line', () => {
+    // F-1b1ccd30: apply MERGES authored zones into the host graph; without --start
+    // the player remains in the host opening zone. Ready without a start is a lie.
+    const file = writePack(MINIMAL_PACK);
+    const man = writeManifest(file);
+    const { code, lines } = run([HOST_PACK, '--content', file, '--manifest', man, '--listen', '0']);
+    expect(code).toBe(1);
+    const text = lines.join('\n');
+    expect(text).toContain('SIDECAR_START_REQUIRED');
+    expect(text).toContain('quay-probe');
+    expect(readyLine(text)).toBe(false);
+  });
+
+  it('--content without --manifest is refused rather than skipping the three checks', () => {
+    // F-73174f4e: without a GateContext.manifest the version/module/hash checks
+    // skip as 'not verified' and the server still starts. That is a documented
+    // gate that cannot fire.
+    const file = writePack(MINIMAL_PACK);
+    const { code, lines } = run([HOST_PACK, '--content', file, '--start', 'quay-probe', '--listen', '0']);
+    expect(code).toBe(1);
+    const text = lines.join('\n');
+    expect(text).toContain('SIDECAR_MANIFEST_REQUIRED');
+    expect(readyLine(text)).toBe(false);
+    expect(text).not.toContain('not verified');
+  });
+
+  it('a sibling manifest claiming engine 2.x is refused, not ready', () => {
+    const file = writePack(MINIMAL_PACK);
+    const man = writeManifest(file, { engineVersion: '2.0.0' });
+    const { code, lines } = run([
+      HOST_PACK, '--content', file, '--manifest', man, '--start', 'quay-probe', '--listen', '0',
+    ]);
+    expect(code).toBe(1);
+    const text = lines.join('\n');
+    expect(text).toContain('SIDECAR_CONTENT_REFUSED');
+    expect(text).toContain('2.0.0');
+    expect(readyLine(text)).toBe(false);
   });
 });
 
 describe('sidecar --start', () => {
   it('stands the player in an authored zone', () => {
     const file = writePack(MINIMAL_PACK);
-    const { code, lines } = run([HOST_PACK, '--content', file, '--start', 'quay-probe', '--listen', '0']);
+    const man = writeManifest(file);
+    const { code, lines } = run([
+      HOST_PACK, '--content', file, '--manifest', man, '--start', 'quay-probe', '--listen', '0',
+    ]);
     expect(code).toBeNull();
     expect(lines.join('\n')).toContain('player starts in quay-probe');
   });
@@ -139,7 +240,8 @@ describe('sidecar --start', () => {
     // Checked against the world after intake. A typo that silently put the player
     // nowhere would surface as a mysteriously failing first move.
     const file = writePack(MINIMAL_PACK);
-    const { code, lines } = run([HOST_PACK, '--content', file, '--start', 'quayprobe']);
+    const man = writeManifest(file);
+    const { code, lines } = run([HOST_PACK, '--content', file, '--manifest', man, '--start', 'quayprobe']);
     expect(code).toBe(1);
     const text = lines.join('\n');
     expect(text).toContain('SIDECAR_START_UNKNOWN_ZONE');
@@ -187,7 +289,71 @@ describe('sidecar — argument hygiene across four value-flags', () => {
     expect(text).toContain('--host');
     expect(text).toContain('--content');
     expect(text).toContain('--start');
+    expect(text).toContain('[--start <zone-id>]');
+    expect(text).toContain('--manifest');
     expect(text).toContain('127.0.0.1');
     expect(text).toContain('not deterministic');
+  });
+});
+
+describe('sidecar — equals-form value flags', () => {
+  it('--listen=0 enters ATTACH rather than stdio', async () => {
+    const { code, lines } = run([HOST_PACK, '--listen=0']);
+    expect(code).toBeNull();
+    expect(await waitForListening(lines)).toContain('listening');
+  });
+
+  it('--seed=N pins the world', () => {
+    const { code, lines } = run([HOST_PACK, '--seed=42', '--listen=0']);
+    expect(code).toBeNull();
+    expect(lines.join('\n')).toContain('seed 42');
+  });
+
+  it('--content=<file> --manifest=<file> --start=<zone> apply and boot the pack', () => {
+    const file = writePack(MINIMAL_PACK);
+    const man = writeManifest(file);
+    const { code, lines } = run([
+      HOST_PACK, `--content=${file}`, `--manifest=${man}`, '--start=quay-probe', '--listen=0',
+    ]);
+    expect(code).toBeNull();
+    const text = lines.join('\n');
+    expect(text).toContain('applied');
+    expect(text).toContain('player starts in quay-probe');
+  });
+
+  it('--start=<zone> moves the player against the host pack', () => {
+    const { code, lines } = run([HOST_PACK, '--start=chapel-nave', '--listen=0']);
+    expect(code).toBeNull();
+    expect(lines.join('\n')).toContain('player starts in chapel-nave');
+  });
+
+  it('--host=0.0.0.0 without --listen is refused rather than ignored', () => {
+    const { code, lines } = run([HOST_PACK, '--host=0.0.0.0']);
+    expect(code).toBe(1);
+    expect(lines.join('\n')).toContain('SIDECAR_HOST_WITHOUT_LISTEN');
+  });
+
+  it('--host=0.0.0.0 with --listen=0 binds that interface', async () => {
+    const { code, lines } = run([HOST_PACK, '--listen=0', '--host=0.0.0.0']);
+    expect(code).toBeNull();
+    expect(await waitForListening(lines)).toContain('listening 0.0.0.0:');
+  });
+
+  it('--shock=malformed is refused rather than ignored', () => {
+    const { code, lines } = run([HOST_PACK, '--shock=not-a-spec']);
+    expect(code).toBe(1);
+    expect(lines.join('\n')).toContain('SIDECAR_SHOCK_MALFORMED');
+  });
+
+  it('empty equals form is the existing MISSING_* error for every value flag', () => {
+    expect(run([HOST_PACK, '--content=']).lines.join('\n')).toContain('SIDECAR_CONTENT_MISSING_PATH');
+    expect(run([HOST_PACK, '--listen=']).lines.join('\n')).toContain('SIDECAR_LISTEN_MISSING_PORT');
+    expect(run([HOST_PACK, '--start=']).lines.join('\n')).toContain('SIDECAR_START_MISSING_ZONE');
+    expect(run([HOST_PACK, '--shock=']).lines.join('\n')).toContain('SIDECAR_SHOCK_MISSING_SPEC');
+    expect(run([HOST_PACK, '--seed=']).lines.join('\n')).toContain('SIDECAR_INVALID_SEED');
+    const file = writePack(MINIMAL_PACK);
+    expect(run([HOST_PACK, '--content', file, '--manifest=']).lines.join('\n')).toContain(
+      'SIDECAR_MANIFEST_MISSING_PATH',
+    );
   });
 });
