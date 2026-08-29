@@ -410,8 +410,9 @@ describe('portrait identity is delimiter-safe (F-525d6bb6)', () => {
     expect(metaA.tags).not.toContain(portraitIdentityTag(b));
     expect(metaB.tags).toContain(portraitIdentityTag(b));
     expect(metaB.tags).not.toContain(portraitIdentityTag(a));
-    // Prompt sanitizer strips `:` (attention/LoRA syntax). Identity lives in
-    // the JSON char: tag, not in the prompt text.
+    // Prompt sanitizer strips `:` (attention/LoRA syntax). Identity keys off
+    // the same sanitized name/archetype, so these stay distinct
+    // (AliceMage/Wizard vs Alice/MageWizard) while Alice vs Alice: share a key.
     expect(metaA.source).toContain('AliceMage');
     expect(metaB.source).toContain('Alice');
   });
@@ -457,5 +458,76 @@ describe('portrait identity is delimiter-safe (F-525d6bb6)', () => {
     expect(victimMeta.hash).not.toBe(attackerMeta.hash);
     expect(victimMeta.source).toContain('Nyx');
     expect(await store.count()).toBe(2);
+  });
+});
+
+// F-930e6b5b: identity was JSON([raw name, archetype, genre]) while the
+// provider prompt (and therefore the CAS hash) is built from sanitize()d
+// fields. 'Alice' and 'Alice:' (or 'Alice()') shared bytes but not the
+// char: tag; put() first-writer-wins then made ensurePortrait miss and
+// re-queue forever. Identity now keys off the same sanitized strings, and
+// a hash-hit unions incoming char: tags so the second name still matches.
+describe('portrait identity tracks sanitized prompt fields (F-930e6b5b)', () => {
+  function countingProvider() {
+    let calls = 0;
+    const provider: ImageProvider = {
+      name: 'comfyui',
+      async isAvailable() { return true; },
+      async generate(prompt: string, opts?: GenerationOptions): Promise<GenerationOutcome> {
+        calls += 1;
+        return {
+          ok: true,
+          image: new TextEncoder().encode(`png-bytes-for:${prompt}`),
+          mimeType: 'image/png',
+          width: opts?.width ?? 512,
+          height: opts?.height ?? 512,
+          prompt,
+          durationMs: 1,
+        };
+      },
+    };
+    return { provider, getCalls: () => calls };
+  }
+
+  it('generatePortrait(Alice) then generatePortrait(Alice:) share identity and do not re-generate on ensurePortrait', async () => {
+    const store = new MemoryAssetStore();
+    const { provider, getCalls } = countingProvider();
+    const alice: PortraitRequest = { ...testRequest, characterName: 'Alice' };
+    const aliceColon: PortraitRequest = { ...testRequest, characterName: 'Alice:' };
+
+    expect(portraitIdentityTag(alice)).toBe(portraitIdentityTag(aliceColon));
+    expect(portraitIdentityTag(alice)).toBe('char:["Alice","Penitent Knight","fantasy"]');
+
+    const first = await generatePortrait(alice, provider, store);
+    const second = await generatePortrait(aliceColon, provider, store);
+
+    expect(second.hash).toBe(first.hash);
+    expect(await store.count()).toBe(1);
+    expect(first.tags).toContain(portraitIdentityTag(alice));
+    expect(second.tags).toContain(portraitIdentityTag(aliceColon));
+    const stored = await store.getMeta(first.hash);
+    expect(stored?.tags).toContain(portraitIdentityTag(aliceColon));
+
+    const beforeEnsure = getCalls();
+    const ensured = await ensurePortrait(aliceColon, provider, store);
+    expect(ensured.hash).toBe(first.hash);
+    expect(ensured.tags).toContain(portraitIdentityTag(aliceColon));
+    expect(getCalls()).toBe(beforeEnsure);
+  });
+
+  it('Alice() shares identity with Alice (sanitize strips parens)', async () => {
+    const store = new MemoryAssetStore();
+    const { provider, getCalls } = countingProvider();
+    const alice: PortraitRequest = { ...testRequest, characterName: 'Alice' };
+    const aliceParens: PortraitRequest = { ...testRequest, characterName: 'Alice()' };
+
+    expect(portraitIdentityTag(alice)).toBe(portraitIdentityTag(aliceParens));
+
+    await generatePortrait(alice, provider, store);
+    const beforeEnsure = getCalls();
+    const ensured = await ensurePortrait(aliceParens, provider, store);
+    expect(ensured.tags).toContain(portraitIdentityTag(alice));
+    expect(getCalls()).toBe(beforeEnsure);
+    expect(await store.count()).toBe(1);
   });
 });

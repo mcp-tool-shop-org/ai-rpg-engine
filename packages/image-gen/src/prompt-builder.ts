@@ -3,13 +3,18 @@
 import type { PortraitRequest } from './types.js';
 import { getStylePreset } from './styles.js';
 
-// Strips Stable-Diffusion-style prompt-control syntax before untrusted-ish
-// fields (character/archetype/background/title/discipline/trait names) are
-// joined into the generation prompt: attention weighting `(word:1.5)`, LoRA
-// tags `<lora:...>`, and — v2.6 audit F-4d700ceb — brace/pipe alternation
-// syntax `{a|b}`, which several SD front-ends (including some ComfyUI
-// text-encode nodes) also interpret as prompt-control.
-function sanitize(s: string): string {
+/**
+ * Strip Stable-Diffusion-style prompt-control syntax before untrusted-ish
+ * fields (character/archetype/background/title/discipline/trait names) are
+ * joined into the generation prompt: attention weighting `(word:1.5)`, LoRA
+ * tags `<lora:...>`, and — v2.6 audit F-4d700ceb — brace/pipe alternation
+ * syntax `{a|b}`, which several SD front-ends (including some ComfyUI
+ * text-encode nodes) also interpret as prompt-control.
+ *
+ * Also used by portrait identity so the char: key matches the sanitized
+ * strings that actually reach the provider (F-930e6b5b).
+ */
+export function sanitize(s: string): string {
   return s.replace(/[():\[\]\\<>{}|]/g, '');
 }
 
