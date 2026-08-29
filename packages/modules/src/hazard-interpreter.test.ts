@@ -6,7 +6,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
 import type { EntityState } from '@ai-rpg-engine/core';
-import { statusCore } from './status-core.js';
+import type { QuestDefinition } from '@ai-rpg-engine/content-schema';
+import { statusCore, applyStatus } from './status-core.js';
 import { traversalCore } from './traversal-core.js';
 import { createEnvironmentCore } from './environment-core.js';
 import { createDistrictCore } from './district-core.js';
@@ -17,6 +18,9 @@ import {
 } from './companion-core.js';
 import { runWorldTick, getWorldTickState } from './world-tick.js';
 import { hazardDefinitionsChannel } from './intake-channels.js';
+import { createCombatCore } from './combat-core.js';
+import { createQuestCore, unregisterQuestContent } from './quest-core.js';
+import { registerStatusDefinitions, clearStatusRegistry } from './status-semantics.js';
 import {
   applyTypedHazards,
   registerTypedHazards,
@@ -66,6 +70,8 @@ function makeNpc(): EntityState {
 
 afterEach(() => {
   unregisterTypedHazards(GAME_ID);
+  unregisterQuestContent(GAME_ID);
+  clearStatusRegistry();
 });
 
 function spec(partial: Partial<HazardSpec> & Pick<HazardSpec, 'id' | 'trigger' | 'effects'>): HazardSpec {
@@ -117,6 +123,11 @@ describe('typed-hazard instakill emits combat.entity.defeated (F-2cd298dd)', () 
       defeatedBy: 'void-drop',
       defeatZoneId: 'zone-b',
     });
+    // Quest-core treats missing actorId as a system-attributed world
+    // reaction. Stamp the hazard spec so a swamp death does not look
+    // like a journal-owned kill (F-94928c2e).
+    expect(defeat!.actorId).toBe('void-drop');
+    expect(defeat!.actorId).not.toBe('player');
 
     const fallen = engine.world.eventLog.find((e) => e.type === 'defeat.fallout.player-fallen');
     expect(fallen, 'defeat-fallout must see the hazard kill').toBeDefined();
@@ -242,5 +253,150 @@ describe('typed-hazard on-exit and timed dispatch (F-d4256636)', () => {
     const second = runTypedHazardStep(engine);
     expect(second.some((a) => a.hazardId === 'gas' && a.applied.includes('damage'))).toBe(true);
     expect(engine.world.entities.player.resources.hp).toBe(hp0 - 2);
+  });
+});
+
+describe('typed-hazard writeHp actorId does not advance kill quests (F-94928c2e)', () => {
+  const killHunt: QuestDefinition = {
+    id: 'kill-hunt',
+    name: 'Kill Hunt',
+    triggers: [
+      { event: 'combat.entity.defeated', effect: { type: 'offer', params: {} } },
+    ],
+    stages: [{ id: 'cull', name: 'Cull' }],
+  };
+
+  function makeWolf(): EntityState {
+    return {
+      id: 'wolf',
+      blueprintId: 'wolf',
+      type: 'enemy',
+      name: 'Wolf',
+      tags: ['enemy', 'wolf'],
+      stats: { vigor: 1, instinct: 1, will: 1 },
+      resources: { hp: 1, maxHp: 1, stamina: 1 },
+      statuses: [],
+      zoneId: 'zone-a',
+    };
+  }
+
+  it('NPC on-enter instakill emits combat.entity.defeated but does not offer a kill quest; player attack-kill still does', () => {
+    const engine = createTestEngine({
+      modules: [
+        statusCore,
+        createCombatCore(),
+        createEnvironmentCore(),
+        createQuestCore({ gameId: GAME_ID, quests: [killHunt] }),
+      ],
+      entities: [
+        makePlayer({ stats: { vigor: 5, instinct: 50, will: 3 } }),
+        makeNpc(),
+        makeWolf(),
+      ],
+      zones,
+    });
+
+    registerTypedHazards(
+      engine.world.meta.gameId,
+      [spec({ id: 'void-drop', name: 'Void Drop', trigger: 'on-enter', effects: [{ kind: 'instakill' }] })],
+      { 'zone-b': ['void-drop'] },
+    );
+
+    engine.store.emitEvent(
+      'world.zone.entered',
+      { zoneId: 'zone-b', previousZoneId: 'zone-a' },
+      { actorId: 'mira' },
+    );
+    runTypedHazardEntryStep(engine);
+
+    const npcDefeat = engine.world.eventLog.find(
+      (e) => e.type === 'combat.entity.defeated' && e.payload.entityId === 'mira',
+    );
+    expect(npcDefeat, 'NPC walking into an on-enter instakill must emit combat.entity.defeated').toBeDefined();
+    expect(npcDefeat!.actorId).toBe('void-drop');
+    expect(npcDefeat!.actorId).not.toBe('mira');
+    expect(npcDefeat!.actorId).not.toBe('player');
+    expect(engine.world.quests['kill-hunt'], 'swamp kill must not offer a combat.entity.defeated quest').toBeUndefined();
+
+    let wolfDied = false;
+    for (let i = 0; i < 20 && !wolfDied; i++) {
+      engine.world.entities.player.resources.stamina = 5;
+      const swing = engine.submitAction('attack', { targetIds: ['wolf'] });
+      wolfDied = swing.some((e) => e.type === 'combat.entity.defeated' && e.payload.entityId === 'wolf');
+    }
+
+    const wolfDefeat = engine.world.eventLog.find(
+      (e) => e.type === 'combat.entity.defeated' && e.payload.entityId === 'wolf',
+    );
+    expect(wolfDefeat, 'player attack-kill must still emit combat.entity.defeated').toBeDefined();
+    expect(wolfDefeat!.actorId).toBe('player');
+    expect(engine.world.quests['kill-hunt'], 'player attack-kill must still offer the kill quest').toBeDefined();
+  });
+});
+
+describe('typed-hazard writeHp emits combat.damage.applied (F-b71568d0)', () => {
+  it('non-lethal on-enter damage produces combat.damage.applied and fires a reactive status', () => {
+    registerStatusDefinitions([
+      {
+        id: 'bramble-hide',
+        name: 'Bramble Hide',
+        tags: ['buff'],
+        stacking: 'replace',
+        triggers: [
+          {
+            event: 'combat.damage.applied',
+            effect: { type: 'heal', target: 'actor', params: { amount: 1, triggerTarget: 'self' } },
+          },
+        ],
+      },
+    ]);
+
+    const engine = createTestEngine({
+      modules: [statusCore, createEnvironmentCore()],
+      entities: [makePlayer()],
+      zones,
+    });
+    applyStatus(engine.world.entities.player, 'bramble-hide', engine.tick, { duration: 10 }, engine.world);
+
+    registerTypedHazards(
+      engine.world.meta.gameId,
+      [spec({
+        id: 'swamp',
+        name: 'Swamp',
+        trigger: 'on-enter',
+        effects: [{ kind: 'damage', amount: 3, tickOn: 'turn-end' }],
+      })],
+      { 'zone-a': ['swamp'] },
+    );
+
+    applyTypedHazards(engine, 'zone-a', engine.world.entities.player, 'on-enter');
+
+    const dmg = engine.world.eventLog.find((e) => e.type === 'combat.damage.applied');
+    expect(dmg, 'non-lethal swamp hit must emit combat.damage.applied').toBeDefined();
+    expect(dmg!.payload.targetId).toBe('player');
+    expect(dmg!.payload.damage).toBe(3);
+    expect(dmg!.payload.previousHp).toBe(40);
+    expect(dmg!.payload.currentHp).toBe(37);
+    expect(dmg!.actorId).toBe('swamp');
+
+    const rc = engine.world.eventLog.find(
+      (e) => e.type === 'resource.changed' && e.payload.cause === 'hazard',
+    );
+    expect(rc, 'swamp hit must emit resource.changed with cause hazard').toBeDefined();
+    expect(rc!.payload).toMatchObject({
+      entityId: 'player',
+      resource: 'hp',
+      previous: 40,
+      current: 37,
+      delta: -3,
+      cause: 'hazard',
+    });
+
+    expect(
+      engine.world.eventLog.some((e) => e.type === 'status.trigger.fired'),
+      'a reactive status on combat.damage.applied must fire on this swamp step',
+    ).toBe(true);
+    // Hazard wrote 37, then bramble-hide healed 1.
+    expect(engine.world.entities.player.resources.hp).toBe(38);
   });
 });

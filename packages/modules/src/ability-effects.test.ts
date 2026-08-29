@@ -6,6 +6,8 @@ import { statusCore, hasStatus } from './status-core.js';
 import { createAbilityCore } from './ability-core.js';
 import { createAbilityEffects, registerEffectHandler, getEffectHandler, clearEffectRegistry } from './ability-effects.js';
 import type { AbilityEffectHandler } from './ability-effects.js';
+import { createDistrictCore } from './district-core.js';
+import { createDefeatFallout } from './defeat-fallout.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -218,6 +220,45 @@ describe('ability-effects: damage', () => {
     expect(defeatEvent).toBeDefined();
     expect(defeatEvent!.payload.cause).toBe('ability');
     expect(defeatEvent!.payload.abilityId).toBe('fireball');
+  });
+
+  it('player ability-kill stamps defeatedBy so defeat-fallout heat/reputation land (F-45ae2d2c)', () => {
+    const player = makeEntity('player', 'pc', ['player']);
+    const enemy = makeEntity('goblin', 'npc', ['enemy'], {
+      resources: { hp: 5, mana: 0, stamina: 10 },
+      stats: { vigor: 5, instinct: 5, will: 5, maxHp: 20 },
+    });
+    const engine = createTestEngine({
+      modules: [
+        statusCore,
+        createAbilityCore({ abilities: allAbilities }),
+        createAbilityEffects(),
+        createDistrictCore({
+          districts: [{ id: 'district-1', name: 'Market', zoneIds: ['zone-a'], tags: [] }],
+        }),
+        createDefeatFallout({
+          factions: [{ factionId: 'goblins', entityIds: ['goblin'] }],
+          playerId: 'player',
+        }),
+      ],
+      entities: [player, enemy],
+      zones,
+    });
+
+    engine.processAction(makeAction('player', 'fireball', ['goblin']));
+
+    const defeat = engine.world.eventLog.find((e) => e.type === 'combat.entity.defeated');
+    expect(defeat).toBeDefined();
+    expect(defeat!.payload.defeatedBy).toBe('player');
+    expect(defeat!.payload.defeatedByName).toBe('player');
+    expect(defeat!.payload.defeatZoneId).toBe('zone-a');
+
+    expect(engine.world.globals['player_heat']).toBe(5);
+    expect(engine.world.globals['reputation_goblins']).toBe(-10);
+    const chronicle = engine.world.eventLog.find((e) => e.type === 'defeat.fallout.chronicle');
+    expect(chronicle, 'defeat-fallout chronicle must fire for an ability-kill').toBeDefined();
+    expect(chronicle!.payload.actorId).toBe('player');
+    expect(chronicle!.payload.targetId).toBe('goblin');
   });
 
   it('deals half damage when stat check fails with half-damage onFail', () => {

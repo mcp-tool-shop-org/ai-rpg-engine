@@ -51,6 +51,7 @@
 
 import type { Engine, EntityState, ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
 import { applyStatus } from './status-core.js';
+import { makeProcContext, processStatusTriggers } from './status-effects.js';
 
 // --- The closed effect vocabulary (mirrors world-forge's HazardEffect) -------
 
@@ -304,6 +305,12 @@ export function applyTypedHazards(
         events.push(ev);
       };
 
+      // Shared across this spec's HP writes so a walker hit by two effects
+      // in one pass still dedups reactive signatures the way status-core's
+      // per-tick ProcContext does.
+      const procCtx = makeProcContext();
+      const hazardActor = { actorId: spec.id, causedBy: spec.id };
+
       const writeHp = (after: number, amount: number, extra: Record<string, unknown> = {}): boolean => {
         if (!live) return false;
         const current = live;
@@ -320,10 +327,57 @@ export function applyTypedHazards(
           'hazard.damage.applied',
           { hazardId: spec.id, hazardName: spec.name, zoneId, entityId: live.id, amount, currentHp: after, ...extra },
           {
+            ...hazardActor,
             visibility: 'public',
             presentation: { channels: ['narrator'], priority: extra.instakill ? 'critical' : 'high' },
           },
         );
+        // Match attackHandler's sibling events so combat.damage.applied
+        // consumers (status-core reactive seed, cognition morale, combat-
+        // resources take-damage) and HP-bar resource.changed listeners see
+        // swamp/acid/gas hits. actorId is the hazard spec — never the
+        // victim, never omitted — so quest-core's non-player gate fires.
+        const damageEvent = engine.store.emitEvent(
+          'combat.damage.applied',
+          {
+            attackerId: spec.id,
+            targetId: live.id,
+            damage: amount,
+            amount,
+            previousHp: before,
+            currentHp: after,
+            cause: 'hazard',
+            hazardId: spec.id,
+          },
+          {
+            ...hazardActor,
+            targetIds: [live.id],
+            presentation: {
+              channels: ['objective'],
+              priority: extra.instakill ? 'critical' : 'high',
+              soundCues: extra.instakill ? undefined : ['combat.hit'],
+            },
+          },
+        );
+        engine.store.emitEvent(
+          'resource.changed',
+          {
+            entityId: live.id,
+            resource: 'hp',
+            previous: before,
+            current: after,
+            delta: after - before,
+            cause: 'hazard',
+          },
+          { ...hazardActor, targetIds: [live.id] },
+        );
+        // Hazards run after action.resolved, so status-core's tick seed
+        // already missed this hit. Process reactive triggers here so a
+        // combat.damage.applied status actually fires on this swamp step.
+        for (const ev of processStatusTriggers(damageEvent, engine.store.state, procCtx, world.meta.tick)) {
+          engine.store.recordEvent(ev);
+          events.push(ev);
+        }
         // Same choke point attackHandler uses: hp crossing 0 emits
         // combat.entity.defeated so defeat-fallout / companion combat-lost /
         // chronicle consumers all fire. Instakill of a living entity always
@@ -340,6 +394,7 @@ export function applyTypedHazards(
               wasInterceptor: false,
             },
             {
+              ...hazardActor,
               targetIds: [live.id],
               presentation: {
                 channels: ['objective', 'narrator'],

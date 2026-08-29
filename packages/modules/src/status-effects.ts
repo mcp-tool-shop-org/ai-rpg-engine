@@ -293,6 +293,7 @@ export function processPeriodicStatuses(world: WorldState, tick: number): Resolv
               cause: 'status',
               statusId: inst.statusId,
               attackerId: inst.sourceId ?? '',
+              ...defeatBySource(world, inst.sourceId, entity),
             }, { channels: ['objective', 'narrator'], priority: 'critical', soundCues: ['combat.defeat'] }));
           }
         } else if (kind === 'heal') {
@@ -572,6 +573,7 @@ function applyReaction(
         cause: 'status-trigger',
         statusId: r.statusId,
         attackerId: r.sourceId,
+        ...defeatBySource(world, r.sourceId, target),
       }, [r.targetId]));
     }
   } else if (r.effectType === 'heal') {
@@ -598,6 +600,27 @@ function applyReaction(
 // point, which stamps a deterministic per-instance id when the id is empty (the
 // same pattern status-core's makeStatusEvent uses). The global nextId() is never
 // touched, so ids stay byte-identical across same-seed runs.
+
+/**
+ * AttackHandler-shaped defeat attribution. Stamp defeatedBy only when the
+ * source is a live entity — a hazard-id source must stay omitted so the
+ * player-fallen path (keys entityId) still fires and the player-kill
+ * fallout branch does not treat a swamp as the player.
+ */
+function defeatBySource(
+  world: WorldState,
+  sourceId: string | undefined,
+  victim: EntityState,
+): Record<string, unknown> {
+  if (!sourceId) return {};
+  const source = world.entities[sourceId];
+  if (!source) return {};
+  return {
+    defeatedBy: source.id,
+    defeatedByName: source.name,
+    defeatZoneId: victim.zoneId ?? '',
+  };
+}
 
 function makePeriodicEvent(
   type: string,
