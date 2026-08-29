@@ -277,7 +277,13 @@ export class ComfyUIProvider implements ImageProvider {
     // Resolve the effective seed exactly once (PA-1): the value sent to
     // KSampler and the value reported in the result must be the same number,
     // or the portrait can never be reproduced.
-    const seed = mergedOpts.seed ?? deriveDefaultSeed(prompt, mergedOpts);
+    // Number.isFinite: NaN/Infinity are not nullish, so `seed ?? derived`
+    // would send the raw non-finite value to KSampler while identity tags
+    // JSON.stringify it as null (F-a623fcff). Treat non-finite as omitted.
+    const rawSeed = mergedOpts.seed;
+    const seed = typeof rawSeed === 'number' && Number.isFinite(rawSeed)
+      ? rawSeed
+      : deriveDefaultSeed(prompt, mergedOpts);
     const workflow = buildWorkflow(prompt, mergedOpts, seed);
     const start = Date.now();
 

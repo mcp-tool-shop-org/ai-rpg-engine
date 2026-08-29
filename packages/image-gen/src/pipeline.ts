@@ -2,7 +2,7 @@
 
 import type { AssetStore, AssetMetadata } from '@ai-rpg-engine/asset-registry';
 import type { PortraitRequest, ImageProvider, GenerationOptions, GenerationFailure } from './types.js';
-import { buildPromptPair, sanitize } from './prompt-builder.js';
+import { buildPromptPair, buildNegativePrompt, sanitize } from './prompt-builder.js';
 import { PlaceholderProvider } from './placeholder-provider.js';
 
 /**
@@ -128,20 +128,52 @@ function callerTags(tags: readonly string[] | undefined): string[] {
   return tags.filter((t) => !isEngineOwnedTag(t));
 }
 
+/** Finite number, else `fallback`. `undefined` and NaN/Infinity both miss. */
+function finiteOr(value: number | undefined, fallback: number | null): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
 /**
- * Delimiter-safe portrait identity tag (F-525d6bb6, F-930e6b5b, F-e9ea394a).
- * JSON-encodes every prompt-affecting field plus generation width/height/seed
- * so `Alice::Mage` + `Wizard` cannot collide with `Alice` + `Mage::Wizard`,
- * and Queen vs Beggar (same name/archetype/genre, different title/background/
- * traits) cannot share a hash. Name/title/discipline/background/traits/style
- * go through the same sanitize() as the generation prompt, so `Alice` and
- * `Alice:` (or `Alice()`) share one identity key matching the bytes that
- * actually land in the provider.
+ * Generation options that actually reach the provider (F-a623fcff).
+ * Matches generatePortrait's merge: width/height 512, steps 20, cfgScale 7,
+ * negativePrompt from buildNegativePrompt when omitted. Non-finite numbers
+ * coerce to those defaults so JSON.stringify cannot collapse NaN/Infinity
+ * onto `null` while the provider still sees the raw non-finite value.
+ */
+function resolveGeneration(
+  request: PortraitRequest,
+  generation?: GenerationOptions,
+): GenerationOptions {
+  const resolved: GenerationOptions = {
+    width: finiteOr(generation?.width, 512) ?? 512,
+    height: finiteOr(generation?.height, 512) ?? 512,
+    steps: finiteOr(generation?.steps, 20) ?? 20,
+    cfgScale: finiteOr(generation?.cfgScale, 7) ?? 7,
+    negativePrompt: generation?.negativePrompt !== undefined
+      ? generation.negativePrompt
+      : buildNegativePrompt(request),
+  };
+  const seed = finiteOr(generation?.seed, null);
+  if (seed !== null) resolved.seed = seed;
+  return resolved;
+}
+
+/**
+ * Delimiter-safe portrait identity tag (F-525d6bb6, F-930e6b5b, F-e9ea394a,
+ * F-a623fcff). JSON-encodes every prompt-affecting field plus every generation
+ * field that reaches the provider (width/height/seed/steps/cfgScale/
+ * negativePrompt) so `Alice::Mage` + `Wizard` cannot collide with `Alice` +
+ * `Mage::Wizard`, Queen vs Beggar cannot share a hash, and steps:20 vs
+ * steps:50 cannot return the other render. Name/title/discipline/background/
+ * traits/style go through the same sanitize() as the generation prompt, so
+ * `Alice` and `Alice:` (or `Alice()`) share one identity key matching the
+ * bytes that actually land in the provider.
  */
 export function portraitIdentityTag(
   request: PortraitRequest,
   generation?: GenerationOptions,
 ): string {
+  const g = resolveGeneration(request, generation);
   return `char:${JSON.stringify([
     sanitize(request.characterName),
     sanitize(request.archetypeName),
@@ -151,9 +183,12 @@ export function portraitIdentityTag(
     sanitize(request.backgroundName),
     request.traits.map(sanitize),
     sanitize(request.style ?? ''),
-    generation?.width ?? 512,
-    generation?.height ?? 512,
-    generation?.seed ?? null,
+    g.width,
+    g.height,
+    g.seed ?? null,
+    g.steps,
+    g.cfgScale,
+    g.negativePrompt ?? '',
   ])}`;
 }
 
@@ -167,14 +202,8 @@ export async function generatePortrait(
   store: AssetStore,
   opts?: PipelineOptions,
 ): Promise<AssetMetadata> {
-  const { prompt, negativePrompt } = buildPromptPair(request);
-
-  const genOpts: GenerationOptions = {
-    width: 512,
-    height: 512,
-    negativePrompt,
-    ...opts?.generation,
-  };
+  const { prompt } = buildPromptPair(request);
+  const genOpts = resolveGeneration(request, opts?.generation);
 
   const result = await provider.generate(prompt, genOpts);
   if (!result.ok) throw new ImageGenError(result);
