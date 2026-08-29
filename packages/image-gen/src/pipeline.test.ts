@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { MemoryAssetStore } from '@ai-rpg-engine/asset-registry';
 import { PlaceholderProvider } from './placeholder-provider.js';
-import { generatePortrait, ensurePortrait, resolveProvider, ImageGenError } from './pipeline.js';
+import { generatePortrait, ensurePortrait, resolveProvider, ImageGenError, portraitIdentityTag } from './pipeline.js';
 import type { PortraitRequest, ImageProvider, GenerationOutcome, GenerationOptions } from './types.js';
 
 afterEach(() => {
@@ -361,5 +361,100 @@ describe('provider degradation is observable + placeholders are not cached as fi
     const resolved = await ensurePortrait(testRequest, new PlaceholderProvider(), store);
     expect(resolved.hash).toBe(realMeta.hash);
     expect(resolved.mimeType).toBe('image/png');
+  });
+});
+
+// F-525d6bb6: identity was `char:${name}::${archetype}`, so 'Alice::Mage'+'Wizard'
+// collided with 'Alice'+'Mage::Wizard'. Caller tags / extraTags of `char:…` or
+// `placeholder` poisoned matching and placeholder-vs-real selection.
+describe('portrait identity is delimiter-safe (F-525d6bb6)', () => {
+  function realProvider(name = 'comfyui'): ImageProvider {
+    return {
+      name,
+      async isAvailable() { return true; },
+      async generate(prompt: string, opts?: GenerationOptions): Promise<GenerationOutcome> {
+        return {
+          ok: true,
+          image: new TextEncoder().encode(`png-bytes-for:${prompt}`),
+          mimeType: 'image/png',
+          width: opts?.width ?? 512,
+          height: opts?.height ?? 512,
+          prompt,
+          durationMs: 1,
+        };
+      },
+    };
+  }
+
+  it('does not collide on delimiter-unsafe name/archetype pairs', async () => {
+    const store = new MemoryAssetStore();
+    const provider = realProvider();
+    const a: PortraitRequest = {
+      ...testRequest,
+      characterName: 'Alice::Mage',
+      archetypeName: 'Wizard',
+    };
+    const b: PortraitRequest = {
+      ...testRequest,
+      characterName: 'Alice',
+      archetypeName: 'Mage::Wizard',
+    };
+
+    const metaA = await ensurePortrait(a, provider, store);
+    const metaB = await ensurePortrait(b, provider, store);
+
+    expect(portraitIdentityTag(a)).not.toBe(portraitIdentityTag(b));
+    expect(metaA.hash).not.toBe(metaB.hash);
+    expect(await store.count()).toBe(2);
+    expect(metaA.tags).toContain(portraitIdentityTag(a));
+    expect(metaA.tags).not.toContain(portraitIdentityTag(b));
+    expect(metaB.tags).toContain(portraitIdentityTag(b));
+    expect(metaB.tags).not.toContain(portraitIdentityTag(a));
+    expect(metaA.source).toContain('Alice::Mage');
+    expect(metaB.source).toContain('Alice');
+    expect(metaB.source).not.toContain('Alice::Mage');
+  });
+
+  it('strips caller tags that use engine-owned prefixes', async () => {
+    const store = new MemoryAssetStore();
+    const req: PortraitRequest = {
+      ...testRequest,
+      tags: ['martial', 'placeholder', 'char:Other::Class', 'provider:evil', 'player'],
+    };
+    const meta = await generatePortrait(req, realProvider(), store);
+
+    expect(meta.tags).toContain('martial');
+    expect(meta.tags).not.toContain('player');
+    expect(meta.tags).not.toContain('placeholder');
+    expect(meta.tags).not.toContain('char:Other::Class');
+    expect(meta.tags).not.toContain('provider:evil');
+    expect(meta.tags).toContain('provider:comfyui');
+  });
+
+  it('does not treat extraTags as identity keys or placeholder markers', async () => {
+    const store = new MemoryAssetStore();
+    const attacker: PortraitRequest = {
+      ...testRequest,
+      characterName: 'Aldric',
+      archetypeName: 'Penitent Knight',
+    };
+    const victim: PortraitRequest = {
+      ...testRequest,
+      characterName: 'Nyx',
+      archetypeName: 'Netrunner',
+    };
+    const victimIdentity = portraitIdentityTag(victim);
+
+    const attackerMeta = await generatePortrait(attacker, realProvider(), store, {
+      extraTags: [victimIdentity, 'placeholder', 'char:Nyx::Netrunner'],
+    });
+    expect(attackerMeta.tags).not.toContain(victimIdentity);
+    expect(attackerMeta.tags).not.toContain('placeholder');
+    expect(attackerMeta.tags).not.toContain('char:Nyx::Netrunner');
+
+    const victimMeta = await ensurePortrait(victim, realProvider(), store);
+    expect(victimMeta.hash).not.toBe(attackerMeta.hash);
+    expect(victimMeta.source).toContain('Nyx');
+    expect(await store.count()).toBe(2);
   });
 });

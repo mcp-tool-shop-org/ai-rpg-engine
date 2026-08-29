@@ -106,7 +106,16 @@ export class RumorEngine {
       throw new Error(`Rumor not found: ${rumorId}`);
     }
 
+    // F-8c128e3d: a dead rumor must not hop. aboutSubject/activeCount ignore
+    // dead records, so writing a path onto one announced the rumor without
+    // persisting it as living. Refuse rather than resurrect.
+    if (original.status === 'dead') return original;
+
     if (original.spreadPath.includes(ctx.receiverId)) return original;
+
+    if (!Number.isFinite(ctx.currentTick)) {
+      throw new Error('MutationContext.currentTick must be a finite number');
+    }
 
     let spreading: Rumor = { ...original, spreadPath: [...original.spreadPath] };
 
@@ -116,17 +125,22 @@ export class RumorEngine {
       spreading.confidence - this.confidenceDecayPerHop,
     );
 
-    // Add receiver to spread path
+    // Add receiver to spread path. Hop count is the number of edges walked
+    // (path length minus the origin), not the caller-supplied ctx.hopCount —
+    // a lying hopCount used to stamp lastSpreadTick = originTick + hopCount
+    // and kill a late-heard rumor on the same tick it announced (F-8c128e3d).
     spreading.spreadPath.push(ctx.receiverId);
-    spreading.lastSpreadTick = spreading.originTick + ctx.hopCount;
+    const hopCount = spreading.spreadPath.length - 1;
+    spreading.lastSpreadTick = ctx.currentTick;
+    const hopCtx: MutationContext = { ...ctx, hopCount, currentTick: ctx.currentTick };
 
     // Apply mutations — each rule rolls independently
     for (const rule of this.mutations) {
-      const effectiveProbability = rule.probability * (1 + ctx.environmentInstability);
-      const roll = seededRandom(rumorId, ctx.hopCount, rule.id);
+      const effectiveProbability = rule.probability * (1 + hopCtx.environmentInstability);
+      const roll = seededRandom(rumorId, hopCount, rule.id);
 
       if (roll < effectiveProbability) {
-        spreading = rule.apply(spreading, ctx);
+        spreading = rule.apply(spreading, hopCtx);
       }
     }
 
