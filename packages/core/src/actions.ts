@@ -153,9 +153,11 @@ export class ActionDispatcher {
       return [];
     }
 
-    // Record all resolved events
+    // Record all resolved events. Capture the log entries (cloned + enriched)
+    // so the returned array aliases eventLog, not the caller's pre-record object.
+    const recorded: ResolvedEvent[] = [];
     for (const event of events) {
-      store.recordEvent(event);
+      recorded.push(store.recordEvent(event));
     }
 
     // Apply registered rule effects (v2.5 C1). Each applier sees every
@@ -168,7 +170,7 @@ export class ActionDispatcher {
     // (module-level RuleEffects are additionally isolated per-effect inside
     // ModuleManager.applyEffects).
     const effectEvents: ResolvedEvent[] = [];
-    for (const event of events) {
+    for (const event of recorded) {
       for (const applier of this.effectAppliers) {
         try {
           const produced = applier(event, world);
@@ -203,8 +205,10 @@ export class ActionDispatcher {
         }
       }
     }
+
+    const recordedEffects: ResolvedEvent[] = [];
     for (const event of effectEvents) {
-      store.recordEvent(event);
+      recordedEffects.push(store.recordEvent(event));
     }
 
     // Emit action.resolved. eventCount is everything the action recorded
@@ -213,10 +217,10 @@ export class ActionDispatcher {
     store.emitEvent('action.resolved', {
       verb: action.verb,
       actorId: action.actorId,
-      eventCount: events.length + effectEvents.length,
+      eventCount: recorded.length + recordedEffects.length,
     }, { actorId: action.actorId });
 
-    return effectEvents.length > 0 ? [...events, ...effectEvents] : events;
+    return recordedEffects.length > 0 ? [...recorded, ...recordedEffects] : recorded;
   }
 
   /**

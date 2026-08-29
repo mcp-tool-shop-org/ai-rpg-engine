@@ -47,6 +47,7 @@ import {
   getWorldMilestones,
   getEarnedTitles,
   getActivePressures,
+  getResolvedPressures,
   getMaterialInventory,
   getLeverageState,
   getDistrictEconomy,
@@ -253,7 +254,8 @@ function membershipMark(world: WorldState, effect: OpportunityFalloutEffect): bo
       return getPersistedOpportunities(world).some((o) => o.kind === effect.kind && o.tags.includes('chained'))
         || getResolvedOpportunities(world).some((f) => f.resolution.opportunityKind === effect.kind);
     case 'spawn-pressure':
-      return getActivePressures(world).some((p) => p.kind === effect.kind);
+      return getActivePressures(world).some((p) => p.kind === effect.kind)
+        || getResolvedPressures(world).some((f) => f.resolution.pressureKind === effect.kind);
     default:
       return undefined;
   }

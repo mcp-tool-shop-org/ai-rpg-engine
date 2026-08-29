@@ -82,6 +82,7 @@ const APPLIED_FAMILIES: Record<string, string> = {
   'opportunity.expired': 'applyOpportunityFallout, via world-tick step 5b-i',
   'pressure.expired': 'applyFallout (world-tick.ts)',
   'npc.action.resolved': 'runNpcAgencyStep (world-tick.ts step 5a)',
+  'faction.action.resolved': 'runFactionAgencyStep (world-tick.ts step 5a1)',
 };
 
 /**

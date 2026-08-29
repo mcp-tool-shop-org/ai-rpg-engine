@@ -170,6 +170,9 @@ describe('T0-equipment-truth: every entry path can reach the equip loop', () => 
 const INTERNAL = new Set([
   'cognition-tick', 'environment-tick', 'faction-tick', 'district-tick',
   'unlock', 'opportunity',
+  // World-tick player resolve for authored pressure titles (F-04dece4f).
+  // Not a menu verb; same class as `opportunity`.
+  'resolve-pressure',
 ]);
 
 describe('T0-verb-honesty-content', () => {

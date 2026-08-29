@@ -517,18 +517,20 @@ export class WorldStore {
 
   // --- Event operations ---
 
-  recordEvent(event: ResolvedEvent): void {
+  recordEvent(event: ResolvedEvent): ResolvedEvent {
     // Single choke point for event-id assignment. Events arriving without an id
     // (the makeEvent path stamps id: '') get a deterministic id from this
     // world's per-instance counter. This is what keeps event ids byte-identical
     // across two engines with the same seed + action sequence.
     if (!event.id) event.id = this.genId('evt');
-    // Detach at ingestion (F-71ec5dcd / F-4bcdd095): the log owns a snapshot
-    // independent of the caller object, EventBus listeners, and presentation
-    // filters. Mutating the argument (or a listener's copy) never writes truth.
-    const stored = structuredClone(event);
-    this.state.eventLog.push(stored);
+    // The log aliases this object on purpose: combat/defeat/engagement
+    // narration patch description + presentation on the same reference
+    // during emit. Presentation filters clone per channel in `present()`
+    // (F-4bcdd095). Cloning here (or in EventBus.emit) made those patches
+    // write a throwaway and left every shipped narrator line undefined.
+    this.state.eventLog.push(event);
     this.events.emit(event, this.state);
+    return event;
   }
 
   /** Create and record an event */
@@ -544,8 +546,7 @@ export class WorldStore {
       payload,
       ...options,
     };
-    this.recordEvent(event);
-    return event;
+    return this.recordEvent(event);
   }
 
   // --- Pending effects ---

@@ -202,7 +202,7 @@ describe('runNpcTurns (F1a) — enemies act after the player', () => {
     engine.store.state.entities['gnasher'].ai!.profileId = 'typo-profile';
     engine.dispatcher.registerVerb('attack', (action) => [
       { id: '', tick: action.issuedAtTick, type: 'test.attacked', actorId: action.actorId, payload: {} },
-    ]);
+    ], { override: true });
 
     const results = runNpcTurns(engine, { log: vi.fn() });
     expect(results).toHaveLength(1);
@@ -215,7 +215,7 @@ describe('runNpcTurns (F1a) — enemies act after the player', () => {
     const engine = makeBareEngine();
     engine.dispatcher.registerVerb('attack', () => {
       throw new Error('combat module blew up');
-    });
+    }, { override: true });
 
     let results: ReturnType<typeof runNpcTurns> = [];
     expect(() => {
@@ -389,7 +389,7 @@ describe('runCompanionTurns (F-4b9c5aee) — companions act after the player and
     const engine = makeCryptGameWithCompanion();
     engine.dispatcher.registerVerb('attack', () => {
       throw new Error('combat module blew up');
-    });
+    }, { override: true });
 
     let results: ReturnType<typeof runCompanionTurns> = [];
     expect(() => {

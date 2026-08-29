@@ -60,6 +60,11 @@ function boot(): {
   const server = new SidecarServer({ engine, engineVersion: '3.8.0-test' }, (m) => sent.push(m));
   const call = (method: string, params: Record<string, unknown> = {}, id = sent.length + 1) => {
     server.handle({ jsonrpc: '2.0', id, method, params });
+    // submitAction/shutdown may push a notification after the RPC reply;
+    // pick the matching id so tests don't read sim/tick or sim/closing.
+    for (let i = sent.length - 1; i >= 0; i--) {
+      if (sent[i]?.id === id) return sent[i];
+    }
     return sent.at(-1);
   };
   call(METHODS.INITIALIZE, {});
@@ -94,7 +99,7 @@ describe('F-a52b99cd — present fields with the wrong type are refused', () => 
     );
     server.handle({ jsonrpc: '2.0', id: 1, method: METHODS.INITIALIZE, params: {} });
     server.handle({ jsonrpc: '2.0', id: 2, method: METHODS.ADVANCE, params: { rounds: '2' } });
-    const err = errorOf(sent.at(-1));
+    const err = errorOf(sent.find((m) => m.id === 2));
     expect(err.code).toBe(ERROR_CODES.INVALID_PARAMS);
     expect(err.message).toMatch(/rounds/);
     expect(err.message).toMatch(/safe integer|integer/i);

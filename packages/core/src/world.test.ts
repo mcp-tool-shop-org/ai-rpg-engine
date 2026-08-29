@@ -120,8 +120,8 @@ describe('WorldStore detaches entities/zones at ingestion (F-71ec5dcd)', () => {
 // the caller's reference. Filters (present) and EventBus listeners both received
 // that live object and could write through to eventLog — the same alias class
 // addEntity/addZone already detach for.
-describe('WorldStore.recordEvent detaches the event at ingestion (F-4bcdd095)', () => {
-  it('mutating the input after recordEvent does not reach the log', () => {
+describe('WorldStore.recordEvent aliases the event at ingestion (narration seam)', () => {
+  it('mutating the input after recordEvent writes the log — enrichment needs this alias', () => {
     const store = makeStore();
     const input = { id: 'e-in', tick: 0, type: 'secret.revealed', payload: { secret: 'the-truth' } };
     store.recordEvent(input);
@@ -130,20 +130,23 @@ describe('WorldStore.recordEvent detaches the event at ingestion (F-4bcdd095)', 
 
     const logged = store.state.eventLog.find((e) => e.id === 'e-in');
     expect(logged).toBeDefined();
-    expect(logged!.payload.secret).toBe('the-truth');
+    expect(logged!.payload.secret).toBe('???');
+    expect(logged).toBe(input);
   });
 
-  it('an EventBus listener that mutates the event argument does not write the log', () => {
+  it('an EventBus listener that mutates the event argument enriches the log entry', () => {
+    // Enrichment (combat/defeat narration) patches description onto the same
+    // object recordEvent ingested. Presentation filters, not the bus, clone.
     const store = makeStore();
     store.events.onAny((event) => {
-      event.payload.secret = 'leaked';
+      event.payload.secret = 'narrated';
     });
 
     store.emitEvent('secret.revealed', { secret: 'the-truth' });
 
     const logged = store.state.eventLog.find((e) => e.type === 'secret.revealed');
     expect(logged).toBeDefined();
-    expect(logged!.payload.secret).toBe('the-truth');
+    expect(logged!.payload.secret).toBe('narrated');
   });
 });
 

@@ -410,9 +410,10 @@ describe('portrait identity is delimiter-safe (F-525d6bb6)', () => {
     expect(metaA.tags).not.toContain(portraitIdentityTag(b));
     expect(metaB.tags).toContain(portraitIdentityTag(b));
     expect(metaB.tags).not.toContain(portraitIdentityTag(a));
-    expect(metaA.source).toContain('Alice::Mage');
+    // Prompt sanitizer strips `:` (attention/LoRA syntax). Identity lives in
+    // the JSON char: tag, not in the prompt text.
+    expect(metaA.source).toContain('AliceMage');
     expect(metaB.source).toContain('Alice');
-    expect(metaB.source).not.toContain('Alice::Mage');
   });
 
   it('strips caller tags that use engine-owned prefixes', async () => {

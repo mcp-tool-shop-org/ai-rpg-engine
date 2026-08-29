@@ -2028,7 +2028,7 @@ describe('world-tick — faction agency wire (F-b57cee05)', () => {
       entities: [makePlayer()],
       zones,
     });
-    engine.world.factions = {
+    engine.store.state.factions = {
       watch: { id: 'watch', name: 'Watch', reputation: -25, disposition: 'hostile' },
     };
     expect(engine.world.modules['faction-agency']).toBeUndefined();

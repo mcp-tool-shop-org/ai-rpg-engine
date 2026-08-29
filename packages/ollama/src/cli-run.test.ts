@@ -282,7 +282,7 @@ describe('runCli — apply-preview --confirm blocked write (F-77398344)', () => 
 
     const { Readable } = await import('node:stream');
     const escapePath = path.join(path.dirname(tmpDir), `escape-apply-${path.basename(tmpDir)}.yaml`);
-    const fakeStdin = Readable.from(['blocked-body']);
+    const fakeStdin = Readable.from([Buffer.from('blocked-body')]);
     const originalStdin = process.stdin;
     Object.defineProperty(process, 'stdin', { value: fakeStdin, configurable: true });
     try {

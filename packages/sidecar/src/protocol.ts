@@ -156,6 +156,9 @@ export const ERROR_CODES = {
  */
 export const RESERVED_FIELD_NAMES: readonly string[] = [];
 
+/** Re-export the framed JSON-RPC envelope so tests/clients import one module. */
+export type { RpcMessage } from './framing.js';
+
 /**
  * Assert a field name is not a recycled tombstone. Called by the server when
  * building outbound payloads, so a mistake fails in this repo's tests rather

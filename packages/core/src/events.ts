@@ -85,13 +85,15 @@ export class EventBus {
    * (see {@link invokeListener}) so a throwing subscriber cannot abort the tick
    * or stop sibling listeners from firing.
    *
-   * Listeners receive a structuredClone of `event`, not the eventLog entry
-   * (F-4bcdd095). Do not mutate the event argument — mutations stay on the
-   * per-emit snapshot and never write simulation truth. Sibling listeners of
-   * the same emit share that snapshot.
+   * Listeners receive the same object WorldStore just ingested (the eventLog
+   * entry). Enrichment modules (combat/defeat/engagement narration) patch
+   * description + presentation onto that object; that IS how those lines reach
+   * submitAction's return value and the save log. Presentation filters clone
+   * per channel in `present()` (F-4bcdd095) — do not clone here, or enrichment
+   * writes a throwaway and the product sees undefined descriptions.
    */
   emit(event: ResolvedEvent, world: import('./types.js').WorldState): void {
-    const isolated = structuredClone(event);
+    const isolated = event;
 
     // Specific listeners
     const handlers = this.listeners.get(isolated.type);
