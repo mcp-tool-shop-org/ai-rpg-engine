@@ -56,6 +56,21 @@ describe('resolveEntity', () => {
     const bad = { ...validBuild, archetypeId: 'nonexistent' };
     expect(() => resolveEntity(bad, testCatalog, testRuleset)).toThrow('Invalid build');
   });
+
+  it('lands the smuggler faction-modifier drawback on entity.relations (F-80d5ef70)', () => {
+    const entity = resolveEntity(validBuildWithDiscipline, testCatalog, testRuleset);
+    expect(entity.relations?.guard).toBe(-10);
+  });
+
+  it('lands background.factionModifiers on entity.relations alongside discipline drawbacks (F-80d5ef70)', () => {
+    const catalog = structuredClone(testCatalog);
+    const noble = catalog.backgrounds.find((b) => b.id === 'noble');
+    if (!noble) throw new Error('fixture background missing');
+    noble.factionModifiers = { court: 5 };
+    const entity = resolveEntity(validBuildWithDiscipline, catalog, testRuleset);
+    expect(entity.relations?.guard).toBe(-10);
+    expect(entity.relations?.court).toBe(5);
+  });
 });
 
 // core-spine F-6c1a8f3d: resolveEntity threw a plain `Error` — the ONE

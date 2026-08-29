@@ -26,14 +26,14 @@ export function validateBuild(
   const archetype = catalog.archetypes.find((a) => a.id === build.archetypeId);
   if (!archetype) {
     errors.push(`Unknown archetype: ${build.archetypeId}`);
-    return { ok: false, errors, warnings, resolvedTags, finalStats: {}, finalResources: {} };
+    return { ok: false, errors, warnings, resolvedTags, finalStats: {}, finalResources: {}, resolvedRelations: {} };
   }
 
   // --- Lookup background ---
   const background = catalog.backgrounds.find((b) => b.id === build.backgroundId);
   if (!background) {
     errors.push(`Unknown background: ${build.backgroundId}`);
-    return { ok: false, errors, warnings, resolvedTags, finalStats: {}, finalResources: {} };
+    return { ok: false, errors, warnings, resolvedTags, finalStats: {}, finalResources: {}, resolvedRelations: {} };
   }
 
   // --- Lookup traits ---
@@ -120,16 +120,22 @@ export function validateBuild(
     applyStatEffects([discipline.drawback], finalStats);
   }
 
-  // Apply stat allocations
+  // Apply stat allocations. Each per-stat value must be a finite number >= 0
+  // (F-3a74d1fe): a sum-only check lets { str: -5, dex: 8 } dump one stat
+  // into another while allocTotal stays inside catalog.statBudget.
   let allocTotal = 0;
   if (build.statAllocations) {
     for (const [stat, amount] of Object.entries(build.statAllocations)) {
       if (!(stat in finalStats)) {
         errors.push(`Cannot allocate to unknown stat: ${stat}`);
-      } else {
-        finalStats[stat] += amount;
-        allocTotal += amount;
+        continue;
       }
+      if (typeof amount !== 'number' || !Number.isFinite(amount) || amount < 0) {
+        errors.push(`Stat allocation for ${stat} must be a finite number >= 0`);
+        continue;
+      }
+      finalStats[stat] += amount;
+      allocTotal += amount;
     }
   }
 
@@ -210,6 +216,24 @@ export function validateBuild(
     }
   }
 
+  // --- Collect faction standings (F-80d5ef70) ---
+  // TraitEffect includes faction-modifier and backgrounds author
+  // factionModifiers, but these used to be folded nowhere — resolveEntity
+  // never wrote EntityState.relations, so every shipped discipline drawback
+  // of that type was discarded after validateBuild accepted the build.
+  const resolvedRelations: Record<string, number> = {};
+  if (background.factionModifiers) {
+    for (const [faction, amount] of Object.entries(background.factionModifiers)) {
+      resolvedRelations[faction] = (resolvedRelations[faction] ?? 0) + amount;
+    }
+  }
+  for (const trait of validTraits) {
+    applyFactionEffects(trait.effects, resolvedRelations);
+  }
+  if (discipline) {
+    applyFactionEffects([discipline.passive, discipline.drawback], resolvedRelations);
+  }
+
   // --- Resolve title ---
   let resolvedTitleStr: string | undefined;
   if (build.disciplineId) {
@@ -229,6 +253,7 @@ export function validateBuild(
       warnings.push(`Entanglement: ${ent.description}`);
       applyStatEffects(ent.effects, finalStats);
       applyResourceEffects(ent.effects, finalResources);
+      applyFactionEffects(ent.effects, resolvedRelations);
       for (const eff of ent.effects) {
         if (eff.type === 'grant-tag') resolvedTags.push(eff.tag);
       }
@@ -248,6 +273,7 @@ export function validateBuild(
     resolvedTags: [...new Set(resolvedTags)],
     finalStats,
     finalResources,
+    resolvedRelations,
   };
 }
 
@@ -263,6 +289,14 @@ function applyResourceEffects(effects: TraitEffect[], resources: Record<string, 
   for (const eff of effects) {
     if (eff.type === 'resource-modifier') {
       resources[eff.resource] = (resources[eff.resource] ?? 0) + eff.amount;
+    }
+  }
+}
+
+function applyFactionEffects(effects: TraitEffect[], relations: Record<string, number>): void {
+  for (const eff of effects) {
+    if (eff.type === 'faction-modifier') {
+      relations[eff.faction] = (relations[eff.faction] ?? 0) + eff.amount;
     }
   }
 }

@@ -84,6 +84,15 @@ describe('validateBuild', () => {
     expect(r.errors.some((e) => e.includes('Stat budget exceeded'))).toBe(true);
   });
 
+  it('rejects a negative per-stat allocation even when the sum fits the budget (F-3a74d1fe)', () => {
+    // dump str: -5 into dex: 8 → allocTotal 3 === catalog.statBudget 3.
+    // The sum-only check used to accept this; ruleset clamp then hid the dump.
+    const bad = { ...validBuild, statAllocations: { str: -5, dex: 8 } };
+    const r = validateBuild(bad, testCatalog, testRuleset);
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.includes('str') && e.includes('>= 0'))).toBe(true);
+  });
+
   it('rejects empty name', () => {
     const bad = { ...validBuild, name: '' };
     const r = validateBuild(bad, testCatalog, testRuleset);
@@ -105,9 +114,26 @@ describe('validateBuild', () => {
     // quick: dex +1 → dex 4
     // cursed: wis -1 → wis 7
     // smuggler passive: dex +1 → dex 5
-    // smuggler drawback: faction effect (no stat change)
+    // smuggler drawback: faction-modifier (no stat change)
     expect(r.finalStats.dex).toBe(5);
     expect(r.finalStats.wis).toBe(7);
+  });
+
+  it('collects the smuggler faction-modifier drawback into resolvedRelations (F-80d5ef70)', () => {
+    const r = validateBuild(validBuildWithDiscipline, testCatalog, testRuleset);
+    expect(r.ok).toBe(true);
+    expect(r.resolvedRelations.guard).toBe(-10);
+  });
+
+  it('folds background.factionModifiers into resolvedRelations (F-80d5ef70)', () => {
+    const catalog = structuredClone(testCatalog);
+    const noble = catalog.backgrounds.find((b) => b.id === 'noble');
+    if (!noble) throw new Error('fixture background missing');
+    noble.factionModifiers = { court: 5 };
+    const r = validateBuild(validBuildWithDiscipline, catalog, testRuleset);
+    expect(r.ok).toBe(true);
+    expect(r.resolvedRelations.guard).toBe(-10);
+    expect(r.resolvedRelations.court).toBe(5);
   });
 
   it('resolves cross-discipline title', () => {

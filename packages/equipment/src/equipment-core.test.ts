@@ -72,6 +72,14 @@ const catalog: ItemCatalog = {
       statModifiers: { showmanship: 2 },
       requiredTags: ['champion'],
     },
+    {
+      id: 'penitent-mail',
+      name: 'Penitent Mail',
+      description: 'Chain links inscribed with prayers of atonement.',
+      slot: 'armor',
+      rarity: 'common',
+      resourceModifiers: { hp: 5 },
+    },
   ],
 };
 
@@ -153,7 +161,12 @@ describe('registration and catalog-formula transport', () => {
     expect(engine.formulas.has(EQUIPMENT_CATALOG_FORMULA)).toBe(true);
     const published = engine.formulas.get(EQUIPMENT_CATALOG_FORMULA)() as ItemCatalog;
     expect(published).toBe(catalog); // identity — the frozen pack catalog, not a copy
-    expect(published.items.map((i) => i.id)).toEqual(['trident-and-net', 'gladius', 'champion-helm']);
+    expect(published.items.map((i) => i.id)).toEqual([
+      'trident-and-net',
+      'gladius',
+      'champion-helm',
+      'penitent-mail',
+    ]);
   });
 
   it('registers one status definition per catalog item, modifiers mirroring statModifiers', () => {
@@ -170,6 +183,7 @@ describe('registration and catalog-formula transport', () => {
       'equipped-trident-and-net',
       'equipped-gladius',
       'equipped-champion-helm',
+      'equipped-penitent-mail',
     ]);
   });
 });
@@ -370,6 +384,80 @@ describe('structured rejections carry reason + hint', () => {
       'unequip what? equipped: armor: champion-helm, weapon: trident-and-net',
     );
     expect(rejection.payload.hint).toBe('unequip <item-id-or-slot>');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Resource carry — entity.resources (F-823b8574)
+// ---------------------------------------------------------------------------
+
+describe('equip applies resourceModifiers to entity.resources (F-823b8574)', () => {
+  it('equipping +hp armor moves hp and maxHp', () => {
+    const engine = makeEngine((p) => {
+      p.inventory = ['penitent-mail'];
+    });
+    const player = engine.world.entities['player'];
+    expect(player.resources.hp).toBe(25);
+    expect(player.resources.maxHp).toBe(25);
+
+    engine.submitAction('equip', { parameters: { itemId: 'penitent-mail' } });
+
+    expect(player.resources.hp).toBe(30);
+    expect(player.resources.maxHp).toBe(30);
+    expect(hasStatus(player, equipStatusId('penitent-mail'))).toBe(true);
+  });
+
+  it('unequip reverses hp and maxHp (red-proof: numbers return to base)', () => {
+    const engine = makeEngine((p) => {
+      p.inventory = ['penitent-mail'];
+    });
+    const player = engine.world.entities['player'];
+    engine.submitAction('equip', { parameters: { itemId: 'penitent-mail' } });
+    expect(player.resources.hp).toBe(30);
+    expect(player.resources.maxHp).toBe(30);
+
+    engine.submitAction('unequip');
+
+    expect(player.resources.hp).toBe(25);
+    expect(player.resources.maxHp).toBe(25);
+    expect(hasStatus(player, equipStatusId('penitent-mail'))).toBe(false);
+  });
+
+  it('displacing +hp armor with a different armor reverses the first bonus', () => {
+    const engine = makeEngine((p) => {
+      p.tags.push('champion');
+      p.inventory = ['penitent-mail', 'champion-helm'];
+    });
+    const player = engine.world.entities['player'];
+    engine.submitAction('equip', { parameters: { itemId: 'penitent-mail' } });
+    expect(player.resources.hp).toBe(30);
+    expect(player.resources.maxHp).toBe(30);
+
+    engine.submitAction('equip', { parameters: { itemId: 'champion-helm' } });
+
+    expect(player.resources.hp).toBe(25);
+    expect(player.resources.maxHp).toBe(25);
+    expect(hasStatus(player, equipStatusId('penitent-mail'))).toBe(false);
+    expect(hasStatus(player, equipStatusId('champion-helm'))).toBe(true);
+  });
+
+  it('equip: statuses.apply throwing leaves resourceModifiers unapplied', () => {
+    const throwingApply: EquipmentStatusOps = {
+      registerDefinitions: registerStatusDefinitions,
+      apply: () => {
+        throw new Error('boom');
+      },
+      remove: removeStatus,
+    };
+    const engine = makeEngine((p) => {
+      p.inventory = ['penitent-mail'];
+    }, throwingApply);
+    const player = engine.world.entities['player'];
+
+    engine.submitAction('equip', { parameters: { itemId: 'penitent-mail' } });
+
+    expect(player.resources.hp).toBe(25);
+    expect(player.resources.maxHp).toBe(25);
   });
 });
 

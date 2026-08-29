@@ -126,4 +126,6 @@ export type BuildValidationResult = {
   resolvedTags: string[];
   finalStats: Record<string, number>;
   finalResources: Record<string, number>;
+  /** Faction standings folded from faction-modifier effects and background.factionModifiers. */
+  resolvedRelations: Record<string, number>;
 };
