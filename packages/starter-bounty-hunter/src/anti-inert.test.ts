@@ -27,10 +27,16 @@ import {
   FENCE_INFAMY_GAIN,
   INFORMANT_INFAMY_GAIN,
   LAY_LOW_HEAT_RELIEF,
+  LAY_LOW_STAMINA_GAIN,
   SEARCHED_HEAT,
   HUNTED_HEAT,
   ALERT_HUNTED,
 } from './pursuit-core.js';
+import {
+  bountyHunterAbilities,
+  bountyHunterStatusDefinitions,
+  firstTicketQuest,
+} from './content.js';
 
 const PLAYER = 'thief-taker';
 
@@ -72,6 +78,29 @@ describe('anti-inert: collar', () => {
     const marks = getPursuitState(engine.world).marks;
     expect(marks.map((m) => m.entityId)).toContain('rookery-runner');
     expect(marks[0].convicted).toBe(false);
+  });
+
+  it('two collars mint distinct evt_ ids at the action tick, not hand-rolled actor-type keys', () => {
+    const engine = boot();
+    standWith(engine, 'rookery-runner');
+    engine.world.entities['rookery-runner'].resources.hp = 2;
+    engine.world.meta.tick = 5;
+    const first = submit(engine, 'collar', {}, ['rookery-runner']);
+    const collar1 = first.find((e) => e.type === 'pursuit.mark.collared');
+    expect(collar1, 'first collar produced no event').toBeDefined();
+    expect(collar1!.id).toMatch(/^evt_/);
+    expect(collar1!.id).not.toBe(`${PLAYER}-pursuit.mark.collared`);
+    expect(collar1!.tick).toBe(5);
+
+    standWith(engine, 'bludger');
+    engine.world.entities['bludger'].resources.hp = 2;
+    engine.world.meta.tick = 8;
+    const second = submit(engine, 'collar', {}, ['bludger']);
+    const collar2 = second.find((e) => e.type === 'pursuit.mark.collared');
+    expect(collar2, 'second collar produced no event').toBeDefined();
+    expect(collar2!.id).toMatch(/^evt_/);
+    expect(collar2!.id).not.toBe(collar1!.id);
+    expect(collar2!.tick).toBe(8);
   });
 
   it('refuses a mark still on their feet — with a reason, not silence', () => {
@@ -195,6 +224,57 @@ describe('anti-inert: lay-low, and the pursuit state it moves', () => {
     const engine = boot();
     expect(pursuitState(engine.world).state).toBe('COLD');
     expect(rejection(submit(engine, 'lay-low'))).toContain('nobody is looking');
+  });
+
+  it('lay-low at full stamina does not exceed maxStamina', () => {
+    const engine = boot();
+    engine.world.globals['player_heat'] = SEARCHED_HEAT;
+    const me = engine.world.entities[PLAYER];
+    const max = Number(me.resources.maxStamina);
+    me.resources.stamina = max;
+    expect(rejection(submit(engine, 'lay-low'))).toBeUndefined();
+    expect(me.resources.stamina).toBe(max);
+  });
+
+  it('lay-low from a partial tank restores up to maxStamina, not the ruleset 40', () => {
+    const engine = boot();
+    engine.world.globals['player_heat'] = SEARCHED_HEAT;
+    const me = engine.world.entities[PLAYER];
+    const max = Number(me.resources.maxStamina);
+    me.resources.stamina = 8;
+    expect(rejection(submit(engine, 'lay-low'))).toBeUndefined();
+    expect(me.resources.stamina).toBe(Math.min(8 + LAY_LOW_STAMINA_GAIN, max));
+    expect(me.resources.stamina).toBeLessThanOrEqual(max);
+  });
+});
+
+describe('anti-inert: apply-status duration rides the effect (11-pack pattern)', () => {
+  it('every apply-status effect carries duration matching the timed definition', () => {
+    for (const ability of bountyHunterAbilities) {
+      for (const effect of ability.effects) {
+        if (effect.type !== 'apply-status') continue;
+        const statusId = effect.params.statusId;
+        expect(typeof statusId, `${ability.id} apply-status missing statusId`).toBe('string');
+        const def = bountyHunterStatusDefinitions.find((s) => s.id === statusId);
+        expect(def, `${ability.id} applies unknown status ${String(statusId)}`).toBeDefined();
+        if (def?.duration?.type === 'ticks') {
+          expect(effect.params.duration, `${ability.id} missing duration for ${String(statusId)}`).toBe(def.duration.value);
+        }
+      }
+    }
+  });
+});
+
+describe('anti-inert: first ticket advances off an authored verb', () => {
+  it('offering then informant emits quest.stage.advanced', () => {
+    const engine = boot();
+    expect(rejection(submit(engine, 'move', {}, ['shambles']))).toBeUndefined();
+    expect(engine.world.quests[firstTicketQuest.id]?.status).toBe('active');
+    expect(engine.world.quests[firstTicketQuest.id]?.currentStage).toBe('find-the-runner');
+
+    expect(rejection(submit(engine, 'informant', {}, ['rookery-runner']))).toBeUndefined();
+    expect(engine.world.eventLog.some((e) => e.type === 'quest.stage.advanced' && e.payload.questId === firstTicketQuest.id)).toBe(true);
+    expect(engine.world.quests[firstTicketQuest.id]?.currentStage).toBe('take-him-breathing');
   });
 });
 

@@ -21,7 +21,7 @@ import {
   validateQuestDefinition,
   validateDialogueDefinition,
   validateAbilityPack,
-  validateStatusDefinitionPack,
+  validateStatusPackAgainstRuleset,
   formatErrors,
 } from '@ai-rpg-engine/content-schema';
 import { weirdWestMinimalRuleset } from './ruleset.js';
@@ -55,7 +55,7 @@ describe("schema-conformance: Dust Devil's Bargain content validates against con
   });
 
   it('status definitions are structurally valid with unique ids', () => {
-    const result = validateStatusDefinitionPack(weirdWestStatusDefinitions);
+    const result = validateStatusPackAgainstRuleset(weirdWestStatusDefinitions, weirdWestMinimalRuleset);
     expect(result.ok, formatErrors(result)).toBe(true);
   });
 });

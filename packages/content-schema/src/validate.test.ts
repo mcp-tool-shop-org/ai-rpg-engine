@@ -4,6 +4,7 @@ import {
   validateAbilityDefinition,
   validateStatusDefinition,
   validateStatusDefinitionPack,
+  validateStatusPackAgainstRuleset,
   validateRulesetDefinition,
   validateZoneDefinition,
   validateRoomDefinition,
@@ -11,6 +12,7 @@ import {
   validateDialogueDefinition,
   validateProgressionTreeDefinition,
   validateSoundCueDefinition,
+  validateEncounterAnchorRecord,
   formatErrors,
 } from './validate.js';
 
@@ -132,6 +134,50 @@ describe('validateZoneDefinition', () => {
     const r = validateZoneDefinition({ id: 42, name: 'X' });
     expect(r.ok).toBe(false);
   });
+
+  it('rejects a non-array hazardRefs (string must not load-green)', () => {
+    const r = validateZoneDefinition({
+      id: 'void',
+      name: 'Void',
+      hazardRefs: 'hazard-void-drop',
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('hazardRefs'))).toBe(true);
+  });
+
+  it('accepts hazardRefs as a string array', () => {
+    const r = validateZoneDefinition({
+      id: 'void',
+      name: 'Void',
+      hazardRefs: ['hazard-void-drop'],
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects a non-object scene', () => {
+    const r = validateZoneDefinition({ id: 'z', name: 'Z', scene: 'dusk-harbour' });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('scene'))).toBe(true);
+  });
+
+  it('rejects an invalid scene.dressingDensity', () => {
+    const r = validateZoneDefinition({
+      id: 'z',
+      name: 'Z',
+      scene: { biome: 'harbour-stone', dressingDensity: 'packed' },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('dressingDensity'))).toBe(true);
+  });
+
+  it('accepts a well-shaped scene descriptor', () => {
+    const r = validateZoneDefinition({
+      id: 'z',
+      name: 'Z',
+      scene: { biome: 'harbour-stone', timeOfDay: 'dusk', dressingDensity: 'sparse', variantTags: ['wet'] },
+    });
+    expect(r.ok).toBe(true);
+  });
 });
 
 describe('validateRoomDefinition', () => {
@@ -164,7 +210,28 @@ describe('validateRoomDefinition', () => {
 });
 
 describe('validateQuestDefinition', () => {
-  it('accepts valid quest', () => {
+  it('accepts a chained multi-stage quest', () => {
+    const r = validateQuestDefinition({
+      id: 'rescue',
+      name: 'Rescue the Prisoner',
+      stages: [
+        { id: 'find', name: 'Find the key', nextStage: 'unlock', triggers: [{ event: 'world.zone.entered', effect: { type: 'advance', params: {} } }] },
+        { id: 'unlock', name: 'Unlock the cell', triggers: [{ event: 'item.acquired', effect: { type: 'advance', params: {} } }] },
+      ],
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it('accepts a single-stage quest with no nextStage (the final stage)', () => {
+    const r = validateQuestDefinition({
+      id: 'rescue',
+      name: 'Rescue the Prisoner',
+      stages: [{ id: 'find', name: 'Find the key' }],
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it('errors when a non-final stage has neither triggers nor nextStage (journal wallpaper)', () => {
     const r = validateQuestDefinition({
       id: 'rescue',
       name: 'Rescue the Prisoner',
@@ -173,7 +240,38 @@ describe('validateQuestDefinition', () => {
         { id: 'unlock', name: 'Unlock the cell' },
       ],
     });
-    expect(r.ok).toBe(true);
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('stages[0]') && e.message.includes('wallpaper'))).toBe(true);
+  });
+});
+
+describe('validateEncounterAnchorRecord', () => {
+  const valid = {
+    id: 'a1',
+    zoneId: 'yard',
+    encounterType: 'ambush',
+    enemyIds: ['goblin'],
+    probability: 0.4,
+    cooldownTurns: 3,
+    tags: [],
+  };
+
+  it('accepts a closed-set encounterType', () => {
+    for (const encounterType of ['ambush', 'patrol', 'horde', 'duel']) {
+      expect(validateEncounterAnchorRecord({ ...valid, encounterType }).ok).toBe(true);
+    }
+  });
+
+  it('refuses boss-fight (deliberately absent from the channel map)', () => {
+    const r = validateEncounterAnchorRecord({ ...valid, encounterType: 'boss-fight' });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('encounterType'))).toBe(true);
+  });
+
+  it('refuses a typo', () => {
+    const r = validateEncounterAnchorRecord({ ...valid, encounterType: 'ambushh' });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('encounterType'))).toBe(true);
   });
 });
 
@@ -484,19 +582,40 @@ describe('validateStatusDefinitionPack', () => {
     expect(r.errors.some((e) => e.message.includes('duplicate status id'))).toBe(true);
   });
 
-  it('reports advisory for unknown tags when knownTags provided', () => {
+  it('errors on unknown tags when knownTags is supplied (used ⊆ declared)', () => {
     const defs = [
       { id: 'x', name: 'X', tags: ['control', 'made-up-tag'], stacking: 'replace' },
     ];
     const r = validateStatusDefinitionPack(defs, ['control', 'debuff', 'fear']);
-    expect(r.ok).toBe(true); // advisories don't cause failure
-    expect(r.advisories.length).toBe(1);
-    expect(r.advisories[0].message).toContain('made-up-tag');
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('made-up-tag'))).toBe(true);
   });
 
-  it('no advisories when tags match known vocabulary', () => {
-    const r = validateStatusDefinitionPack(validDefs, ['control', 'debuff', 'fear']);
+  it('does not invent a vocabulary when knownTags is omitted', () => {
+    const defs = [
+      { id: 'x', name: 'X', tags: ['made-up-tag'], stacking: 'replace' },
+    ];
+    const r = validateStatusDefinitionPack(defs);
+    expect(r.ok).toBe(true);
     expect(r.advisories).toHaveLength(0);
+  });
+
+  it('no errors when tags match known vocabulary', () => {
+    const r = validateStatusDefinitionPack(validDefs, ['control', 'debuff', 'fear']);
+    expect(r.ok).toBe(true);
+    expect(r.advisories).toHaveLength(0);
+  });
+
+  it('validateStatusPackAgainstRuleset binds used ⊆ declared via contentConventions.statusTags', () => {
+    const unknown = validateStatusPackAgainstRuleset(
+      [{ id: 'x', name: 'X', tags: ['made-up'], stacking: 'replace' }],
+      { contentConventions: { statusTags: ['buff', 'debuff'] } },
+    );
+    expect(unknown.ok).toBe(false);
+    const bound = validateStatusPackAgainstRuleset(validDefs, {
+      contentConventions: { statusTags: ['control', 'debuff', 'fear'] },
+    });
+    expect(bound.ok).toBe(true);
   });
 
   it('validates structural issues in individual defs', () => {

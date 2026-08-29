@@ -20,7 +20,7 @@ import {
   validateQuestDefinition,
   validateDialogueDefinition,
   validateAbilityPack,
-  validateStatusDefinitionPack,
+  validateStatusPackAgainstRuleset,
   formatErrors,
 } from '@ai-rpg-engine/content-schema';
 import { fantasyMinimalRuleset } from './ruleset.js';
@@ -60,7 +60,7 @@ describe('schema-conformance: The Chapel Threshold content validates against con
   });
 
   it('status definitions are structurally valid with unique ids', () => {
-    const result = validateStatusDefinitionPack(fantasyStatusDefinitions);
+    const result = validateStatusPackAgainstRuleset(fantasyStatusDefinitions, fantasyMinimalRuleset);
     expect(result.ok, formatErrors(result)).toBe(true);
   });
 });

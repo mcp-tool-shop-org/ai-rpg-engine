@@ -151,6 +151,12 @@ export type ContentPack = {
     immuneTags?: string[];
     tags?: string[];
   }>;
+  /**
+   * Optional item catalog entries. Derived into the item registry by
+   * {@link validateGameContent} so a JSON pack that names items in inventory,
+   * chargen kits, or quest rewards is not green on a dangling id.
+   */
+  items?: { id: string }[];
 };
 
 /**
@@ -175,7 +181,7 @@ export type EncounterAnchorRecord = {
   id: string;
   zoneId: string;
   /** Closed set — an unmapped value is REFUSED, never defaulted. */
-  encounterType: string;
+  encounterType: 'ambush' | 'patrol' | 'horde' | 'duel' | string;
   enemyIds: string[];
   /** Per-anchor spawn chance in [0, 1]. */
   probability: number;
@@ -278,6 +284,30 @@ export function validateRefs(pack: ContentPack): RefsResult {
     }
   }
 
+  // C3/P3 — hazardRefs bind to hazardDefinitions[].id the same way placements
+  // bind to entities and anchors bind to zones: a dangling id is an ERROR, not
+  // a DroppedField later. Shape (array-of-string) is validateZoneDefinition's
+  // job; a non-array is skipped here so this pass never spreads a string.
+  const hazardDefs = (Array.isArray(pack.hazardDefinitions) ? pack.hazardDefinitions : []).filter(isRecord) as NonNullable<ContentPack['hazardDefinitions']>;
+  const hazardIds = new Set<string>();
+  for (const h of hazardDefs) {
+    const id = (h as { id?: unknown }).id;
+    if (typeof id === 'string') hazardIds.add(id);
+  }
+  for (const zone of zones) {
+    const refs = (zone as { hazardRefs?: unknown }).hazardRefs;
+    if (!Array.isArray(refs)) continue;
+    for (const ref of refs) {
+      if (typeof ref !== 'string') continue;
+      if (!hazardIds.has(ref)) {
+        errors.push({
+          path: `${path}.zone(${zone.id}).hazardRefs`,
+          message: `references unknown hazard "${ref}" — hazardRefs bind to this pack's hazardDefinitions[].id`,
+        });
+      }
+    }
+  }
+
   // --- C3/P1: placements + spawn sets must resolve ------------------------
   //
   // These are ERRORS, not advisories. The exporter already emits a warning for
@@ -364,7 +394,7 @@ export function validateRefs(pack: ContentPack): RefsResult {
   // whose item matches nothing in a pack that HAS an item catalog is almost
   // always a typo, and saying so costs nothing.
   const itemIds = new Set<string>();
-  for (const item of (Array.isArray((pack as { items?: unknown }).items) ? (pack as { items: unknown[] }).items : []).filter(isRecord)) {
+  for (const item of (Array.isArray(pack.items) ? pack.items : []).filter(isRecord)) {
     const id = (item as { id?: unknown }).id;
     if (typeof id === 'string') itemIds.add(id);
   }
@@ -529,7 +559,14 @@ export function validateGameContent(
     registries.verbIds,
     pack.verbs?.map((v) => v.id),
   );
-  const itemReg = buildRegistry(registries.itemIds, undefined);
+  // Derive from pack.items[].id the same way statuses/verbs are derived, so a
+  // JSON pack loaded with no explicit registries cannot stay green on a
+  // dangling itemId. Absent items[] AND absent registries.itemIds → skip
+  // (warn-and-degrade), matching the other categories.
+  const itemIdsFromPack = Array.isArray(pack.items)
+    ? pack.items.map((item) => item?.id).filter((id): id is string => typeof id === 'string')
+    : undefined;
+  const itemReg = buildRegistry(registries.itemIds, itemIdsFromPack);
   const abilityReg = buildRegistry(
     registries.abilityIds,
     pack.abilities?.map((a) => a.id),
@@ -597,6 +634,20 @@ export function validateGameContent(
       }
     }
 
+    // buildCatalog kits — starters put archetypes/backgrounds here, not at the
+    // top level. Same startingInventory shape, same silent-typo class.
+    const catalogKits = kitsFromBuildCatalog(pack.buildCatalog);
+    for (const kit of catalogKits) {
+      for (const item of kit.startingInventory) {
+        if (!itemReg.has(item)) {
+          errors.push({
+            path: `${path}.${kit.kind}(${kit.id}).startingInventory`,
+            message: `references unknown item "${item}" — define it in the item registry or fix the id`,
+          });
+        }
+      }
+    }
+
     // bespoke item-use-effect itemId fields → item registry (F-703048a5). Runtime
     // item-use wiring (e.g. inventory-core's ItemEffect[]) keys effects by itemId
     // with no catalog cross-check today — same silent-typo risk as above.
@@ -650,6 +701,21 @@ export function validateGameContent(
               message: `apply-status references unknown status "${statusId}" — define it in the status registry or fix the id`,
             });
           }
+          // Timed StatusDefinition.duration is unread at apply time — the
+          // effect's params.duration is what ability-effects actually uses.
+          // Eleven packs duplicate it on the effect; a missing number against
+          // a ticks-duration definition applies as permanent.
+          if (typeof statusId === 'string' && effect.params?.duration === undefined) {
+            const def = (pack.statuses ?? []).find((s) => s && s.id === statusId);
+            if (def?.duration?.type === 'ticks') {
+              errors.push({
+                path: `${path}.ability(${ability.id}).effects[${i}].params.duration`,
+                message:
+                  `apply-status on timed status "${statusId}" is missing params.duration ` +
+                  `(definition is ${def.duration.value ?? '?'} ticks) — without it the status applies as permanent`,
+              });
+            }
+          }
         }
       }
     }
@@ -668,4 +734,30 @@ function buildRegistry(
 ): Set<string> | null {
   if (explicit === undefined && fromPack === undefined) return null;
   return new Set([...(explicit ?? []), ...(fromPack ?? [])]);
+}
+
+function isKitRecord(v: unknown): v is { id: string; startingInventory?: string[] } {
+  return v !== null && typeof v === 'object' && !Array.isArray(v) && typeof (v as { id?: unknown }).id === 'string';
+}
+
+/** Chargen kits nested under buildCatalog — same shape as top-level archetypes/backgrounds. */
+function kitsFromBuildCatalog(
+  catalog: ContentPack['buildCatalog'],
+): Array<{ kind: 'archetype' | 'background'; id: string; startingInventory: string[] }> {
+  if (catalog === null || typeof catalog !== 'object' || Array.isArray(catalog)) return [];
+  const out: Array<{ kind: 'archetype' | 'background'; id: string; startingInventory: string[] }> = [];
+  const rec = catalog as { archetypes?: unknown; backgrounds?: unknown };
+  if (Array.isArray(rec.archetypes)) {
+    for (const a of rec.archetypes) {
+      if (!isKitRecord(a) || !Array.isArray(a.startingInventory)) continue;
+      out.push({ kind: 'archetype', id: a.id, startingInventory: a.startingInventory.filter((id): id is string => typeof id === 'string') });
+    }
+  }
+  if (Array.isArray(rec.backgrounds)) {
+    for (const b of rec.backgrounds) {
+      if (!isKitRecord(b) || !Array.isArray(b.startingInventory)) continue;
+      out.push({ kind: 'background', id: b.id, startingInventory: b.startingInventory.filter((id): id is string => typeof id === 'string') });
+    }
+  }
+  return out;
 }

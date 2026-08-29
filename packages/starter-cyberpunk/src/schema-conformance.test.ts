@@ -18,7 +18,7 @@ import { describe, it, expect } from 'vitest';
 import {
   validateDialogueDefinition,
   validateAbilityPack,
-  validateStatusDefinitionPack,
+  validateStatusPackAgainstRuleset,
   formatErrors,
 } from '@ai-rpg-engine/content-schema';
 import { cyberpunkMinimalRuleset } from './ruleset.js';
@@ -36,7 +36,7 @@ describe('schema-conformance: Neon Lockbox content validates against content-sch
   });
 
   it('status definitions are structurally valid with unique ids', () => {
-    const result = validateStatusDefinitionPack(cyberpunkStatusDefinitions);
+    const result = validateStatusPackAgainstRuleset(cyberpunkStatusDefinitions, cyberpunkMinimalRuleset);
     expect(result.ok, formatErrors(result)).toBe(true);
   });
 });

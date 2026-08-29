@@ -18,7 +18,7 @@ import { describe, it, expect } from 'vitest';
 import {
   validateDialogueDefinition,
   validateAbilityPack,
-  validateStatusDefinitionPack,
+  validateStatusPackAgainstRuleset,
   formatErrors,
 } from '@ai-rpg-engine/content-schema';
 import { vampireMinimalRuleset } from './ruleset.js';
@@ -36,7 +36,7 @@ describe('schema-conformance: Crimson Court content validates against content-sc
   });
 
   it('status definitions are structurally valid with unique ids', () => {
-    const result = validateStatusDefinitionPack(vampireStatusDefinitions);
+    const result = validateStatusPackAgainstRuleset(vampireStatusDefinitions, vampireMinimalRuleset);
     expect(result.ok, formatErrors(result)).toBe(true);
   });
 });

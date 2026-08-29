@@ -527,4 +527,100 @@ describe('validateGameContent', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     expect(() => validateRefs({ dialogues: [null], quests: [null] } as any)).not.toThrow();
   });
+
+  it('derives the item registry from pack.items when no explicit itemIds are supplied', () => {
+    const r = validateGameContent({
+      items: [{ id: 'chapel-lantern' }],
+      entities: [{ id: 'p', type: 'player', name: 'P', inventory: ['torch'] }],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('"torch"') && e.path.includes('inventory'))).toBe(true);
+  });
+
+  it('a pack.items catalog that covers inventory stays green (control)', () => {
+    const r = validateGameContent({
+      items: [{ id: 'chapel-lantern' }],
+      entities: [{ id: 'p', type: 'player', name: 'P', inventory: ['chapel-lantern'] }],
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it('walks buildCatalog archetypes/backgrounds startingInventory against pack.items', () => {
+    const r = validateGameContent({
+      items: [{ id: 'chapel-lantern' }],
+      buildCatalog: {
+        archetypes: [{ id: 'gravewalker', startingInventory: ['torch'] }],
+        backgrounds: [{ id: 'oath-breaker', startingInventory: ['chapel-lantern'] }],
+      },
+    });
+    expect(r.ok).toBe(false);
+    expect(
+      r.errors.some(
+        (e) => e.message.includes('"torch"') && e.path.includes('archetype(gravewalker).startingInventory'),
+      ),
+    ).toBe(true);
+    expect(r.errors.some((e) => e.path.includes('background(oath-breaker)'))).toBe(false);
+  });
+
+  it('errors when apply-status is missing duration against a timed status definition', () => {
+    const r = validateGameContent({
+      statuses: [{ id: 'on-the-scent', name: 'On the Scent', tags: ['buff'], stacking: 'replace', duration: { type: 'ticks', value: 3 } }],
+      abilities: [
+        {
+          id: 'read-the-board',
+          name: 'Read the Board',
+          verb: 'use-ability',
+          tags: [],
+          target: { type: 'self' },
+          effects: [{ type: 'apply-status', target: 'actor', params: { statusId: 'on-the-scent' } }],
+        },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('params.duration') && e.message.includes('on-the-scent'))).toBe(true);
+  });
+
+  it('apply-status with duration matching a timed definition is green (control)', () => {
+    const r = validateGameContent({
+      statuses: [{ id: 'on-the-scent', name: 'On the Scent', tags: ['buff'], stacking: 'replace', duration: { type: 'ticks', value: 3 } }],
+      abilities: [
+        {
+          id: 'read-the-board',
+          name: 'Read the Board',
+          verb: 'use-ability',
+          tags: [],
+          target: { type: 'self' },
+          effects: [{ type: 'apply-status', target: 'actor', params: { statusId: 'on-the-scent', duration: 3 } }],
+        },
+      ],
+    });
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe('validateRefs hazardRefs', () => {
+  it('errors when a hazardRef names no hazardDefinitions id', () => {
+    const r = validateRefs({
+      zones: [{ id: 'void', name: 'Void', hazardRefs: ['hazard-void-drop'] }],
+      hazardDefinitions: [{ id: 'hazard-other', effects: [], trigger: 'enter' }],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('hazard-void-drop') && e.path.includes('hazardRefs'))).toBe(true);
+  });
+
+  it('a resolving hazardRef is green (control)', () => {
+    const r = validateRefs({
+      zones: [{ id: 'void', name: 'Void', hazardRefs: ['hazard-void-drop'] }],
+      hazardDefinitions: [{ id: 'hazard-void-drop', effects: [], trigger: 'enter' }],
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it('does not treat a string hazardRefs as ids (shape is validateZoneDefinition\'s job)', () => {
+    const r = validateRefs({
+      zones: [{ id: 'void', name: 'Void', hazardRefs: 'hazard-void-drop' as unknown as string[] }],
+      hazardDefinitions: [{ id: 'hazard-void-drop', effects: [], trigger: 'enter' }],
+    });
+    expect(r.ok).toBe(true);
+  });
 });

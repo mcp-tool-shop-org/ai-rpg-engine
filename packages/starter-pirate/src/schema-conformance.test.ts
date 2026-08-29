@@ -21,7 +21,7 @@ import {
   validateQuestDefinition,
   validateDialogueDefinition,
   validateAbilityPack,
-  validateStatusDefinitionPack,
+  validateStatusPackAgainstRuleset,
   formatErrors,
 } from '@ai-rpg-engine/content-schema';
 import { pirateMinimalRuleset } from './ruleset.js';
@@ -55,7 +55,7 @@ describe('schema-conformance: Black Flag Requiem content validates against conte
   });
 
   it('status definitions are structurally valid with unique ids', () => {
-    const result = validateStatusDefinitionPack(pirateStatusDefinitions);
+    const result = validateStatusPackAgainstRuleset(pirateStatusDefinitions, pirateMinimalRuleset);
     expect(result.ok, formatErrors(result)).toBe(true);
   });
 });

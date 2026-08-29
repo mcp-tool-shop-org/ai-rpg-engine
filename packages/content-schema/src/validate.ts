@@ -341,7 +341,10 @@ export function validateStatusDefinition(v: unknown, path = 'StatusDefinition'):
  *
  * Runs `validateStatusDefinition()` on each entry, then checks:
  * - No duplicate IDs
- * - Tags reference known vocabulary (advisory, not error — returned as separate list)
+ * - When `knownTags` is supplied, used tags must be ⊆ declared (ERROR — a pack
+ *   that ships `tags: ['made-up']` against a ruleset that declared its
+ *   vocabulary is invalid). When `knownTags` is omitted the tag check is
+ *   skipped; there is no invented global vocabulary.
  */
 export function validateStatusDefinitionPack(
   defs: unknown[],
@@ -377,14 +380,15 @@ export function validateStatusDefinitionPack(
       seenIds.add(id);
     }
 
-    // Advisory: tags not in known vocabulary
+    // used ⊆ declared. Bound only when the caller supplies the declared set —
+    // that is the pack's contentConventions.statusTags, not a guessed vocab.
     if (tagSet && Array.isArray(def.tags)) {
       for (let j = 0; j < (def.tags as unknown[]).length; j++) {
         const tag = (def.tags as unknown[])[j];
         if (typeof tag === 'string' && !tagSet.has(tag)) {
-          advisories.push({
+          errors.push({
             path: `${defPath}.tags[${j}]`,
-            message: `tag "${tag}" is not in the known vocabulary`,
+            message: `tag "${tag}" is not in the declared statusTags vocabulary`,
           });
         }
       }
@@ -392,6 +396,22 @@ export function validateStatusDefinitionPack(
   }
 
   return { ok: errors.length === 0, errors, advisories };
+}
+
+/**
+ * Bind a status pack against a ruleset's `contentConventions.statusTags`.
+ *
+ * One helper for every starter's schema-conformance (and for JSON packs that
+ * have a ruleset in hand). Passes the declared tags through to
+ * {@link validateStatusDefinitionPack} so used ⊆ declared is an error, not an
+ * advisory the caller can ignore.
+ */
+export function validateStatusPackAgainstRuleset(
+  defs: unknown[],
+  ruleset: { contentConventions?: { statusTags?: string[] } },
+  path = 'StatusDefinitionPack',
+): ValidationResult & { advisories: ValidationError[] } {
+  return validateStatusDefinitionPack(defs, ruleset.contentConventions?.statusTags, path);
 }
 
 export function validateZoneDefinition(v: unknown, path = 'ZoneDefinition'): ValidationResult {
@@ -409,12 +429,27 @@ export function validateZoneDefinition(v: unknown, path = 'ZoneDefinition'): Val
   optStrArr(c, v, 'hazards');
   optStrArr(c, v, 'interactables');
   optStrArr(c, v, 'entities');
+  optStrArr(c, v, 'hazardRefs');
+  if (v.scene !== undefined) {
+    c.errors.push(...vSceneDescriptor(`${path}.scene`, v.scene));
+  }
   c.errors.push(...optArr(`${path}.exits`, v.exits, vExitDefinition));
   // C3/P2 — the entry gate.
   if (v.entryGate !== undefined) {
     c.errors.push(...vEntryGate(`${path}.entryGate`, v.entryGate));
   }
   return { ok: c.errors.length === 0, errors: c.errors };
+}
+
+/** C3/P4 scene descriptor — stable keys only, matching ZoneDefinition.scene. */
+function vSceneDescriptor(path: string, v: unknown): ValidationError[] {
+  if (!isObj(v)) return [{ path, message: 'must be an object if provided' }];
+  const c = checker(path);
+  optStr(c, v, 'biome');
+  optStr(c, v, 'timeOfDay');
+  optEnum(c, v, 'dressingDensity', ['sparse', 'normal', 'dense']);
+  optStrArr(c, v, 'variantTags');
+  return c.errors;
 }
 
 /**
@@ -475,13 +510,18 @@ export function validateEntityPlacementRecord(v: unknown, path = 'EntityPlacemen
  * authoring mistake into a silent behaviour change, which is the
  * silent-fallback shape C0 measured four separate times (`slot`, `rarity`,
  * `difficulty`, `genre`).
+ *
+ * `encounterType` is the closed map play's encounterAnchorsChannel accepts
+ * (ambush/patrol/horde/duel). `boss-fight` and `solo` are deliberately absent.
  */
+export const ENCOUNTER_ANCHOR_TYPES = ['ambush', 'patrol', 'horde', 'duel'] as const;
+
 export function validateEncounterAnchorRecord(v: unknown, path = 'EncounterAnchorRecord'): ValidationResult {
   if (!isObj(v)) return fail([{ path, message: 'must be an object' }]);
   const c = checker(path);
   reqStr(c, v, 'id');
   reqStr(c, v, 'zoneId');
-  reqStr(c, v, 'encounterType');
+  reqEnum(c, v, 'encounterType', [...ENCOUNTER_ANCHOR_TYPES]);
   reqStrArr(c, v, 'enemyIds');
   reqNum(c, v, 'probability');
   if (typeof v.probability === 'number' && (!Number.isFinite(v.probability) || v.probability < 0 || v.probability > 1)) {
@@ -544,10 +584,25 @@ export function validateQuestDefinition(v: unknown, path = 'QuestDefinition'): V
         reqStr(sc, s, 'name');
         optStr(sc, s, 'description');
         optStrArr(sc, s, 'objectives');
-        c.errors.push(...sc.errors);
-        c.errors.push(...optArr(`${sp}.triggers`, s.triggers, vTriggerDefinition));
         optStr(sc, s, 'nextStage');
         optStr(sc, s, 'failStage');
+        c.errors.push(...optArr(`${sp}.triggers`, s.triggers, vTriggerDefinition));
+        // Non-final wallpaper: a stage that is not last and has neither a
+        // trigger nor a nextStage can never leave stage 1. Final stages may
+        // omit both (single-stage quests complete via their own trigger, or
+        // are the last hop after nextStage).
+        if (i < (v.stages as unknown[]).length - 1) {
+          const hasTriggers = Array.isArray(s.triggers) && (s.triggers as unknown[]).length > 0;
+          const hasNext = typeof s.nextStage === 'string' && s.nextStage.length > 0;
+          if (!hasTriggers && !hasNext) {
+            sc.errors.push({
+              path: sp,
+              message:
+                'non-final stage has neither triggers nor nextStage — journal wallpaper that can never advance. Author a trigger (advance/progress) and/or nextStage, or drop the stage.',
+            });
+          }
+        }
+        c.errors.push(...sc.errors);
       }
     }
   }

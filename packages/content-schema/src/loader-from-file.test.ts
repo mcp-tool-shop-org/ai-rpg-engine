@@ -108,6 +108,17 @@ describe('loadContentFromFile', () => {
     expect(r.advisories.some((a) => a.message.includes('one-way'))).toBe(true);
   });
 
+  it('refuses a dangling inventory itemId derived from pack.items (file path)', () => {
+    const pack = {
+      items: [{ id: 'chapel-lantern' }],
+      entities: [{ id: 'p', type: 'player', name: 'P', inventory: ['torch'] }],
+    };
+    const file = writePack('dangling-item.json', JSON.stringify(pack));
+    const r = loadContentFromFile(file);
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('"torch"'))).toBe(true);
+  });
+
   it('is deterministic — same file yields byte-identical result twice', () => {
     const pack = {
       entities: [{ id: 'p', type: 'player', name: 'P' }],
