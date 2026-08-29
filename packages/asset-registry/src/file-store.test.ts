@@ -280,3 +280,46 @@ describe('FileAssetStore — integrity verification on read (A4)', () => {
     expect(await store.get(meta.hash, { verify: true })).toEqual(testData);
   });
 });
+
+// F-b2b8a190: File re-parses JSON so getMeta/list already isolate; pin that
+// File and Memory agree — put clones tags, mutate returned.tags, getMeta
+// unchanged. Keep byte-copy isolation of the written sidecar.
+describe('FileAssetStore metadata isolation (F-b2b8a190)', () => {
+  it('put clones tags so mutating the caller array does not poison the store', async () => {
+    const tags = ['npc', 'medieval'];
+    const meta = await store.put(testData, { ...testInput, tags });
+    expect(meta.tags).not.toBe(tags);
+    tags.push('placeholder');
+    expect(meta.tags).toEqual(['npc', 'medieval']);
+    expect((await store.getMeta(meta.hash))?.tags).toEqual(['npc', 'medieval']);
+  });
+
+  it('mutating put() return tags does not change getMeta', async () => {
+    const meta = await store.put(testData, testInput);
+    meta.tags.push('placeholder');
+    expect((await store.getMeta(meta.hash))?.tags).toEqual(['npc', 'medieval']);
+  });
+
+  it('mutating getMeta() tags does not change the next getMeta', async () => {
+    const meta = await store.put(testData, testInput);
+    const a = await store.getMeta(meta.hash);
+    a!.tags.push('placeholder');
+    const b = await store.getMeta(meta.hash);
+    expect(b?.tags).toEqual(['npc', 'medieval']);
+  });
+
+  it('mutating list() tags does not change getMeta or a later list', async () => {
+    await store.put(testData, testInput);
+    const listed = await store.list();
+    listed[0].tags.push('placeholder');
+    expect((await store.getMeta(listed[0].hash))?.tags).toEqual(['npc', 'medieval']);
+    expect((await store.list())[0].tags).toEqual(['npc', 'medieval']);
+  });
+
+  it('hash-hit merge still isolates returned tags from the store', async () => {
+    await store.put(testData, testInput);
+    const merged = await store.put(testData, { ...testInput, tags: ['other'] });
+    merged.tags.push('placeholder');
+    expect((await store.getMeta(merged.hash))?.tags).toEqual(['npc', 'medieval', 'other']);
+  });
+});

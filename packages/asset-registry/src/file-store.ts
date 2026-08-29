@@ -11,7 +11,7 @@ import * as path from 'node:path';
 import type { AssetMetadata, AssetInput, AssetFilter, AssetGetOptions, AssetStore } from './types.js';
 import { VALID_ASSET_KINDS } from './types.js';
 import { hashBytes, isValidHash } from './hash.js';
-import { matchesFilter, unionTags } from './filter.js';
+import { matchesFilter, unionTags, cloneMetadata } from './filter.js';
 
 /**
  * Runtime shape check for a parsed metadata sidecar (F-4d8f612a). The sidecar
@@ -69,10 +69,10 @@ export class FileAssetStore implements AssetStore {
     const existing = await this.getMeta(hash);
     if (existing) {
       const mergedTags = unionTags(existing.tags, input.tags);
-      if (!mergedTags) return existing;
+      if (!mergedTags) return cloneMetadata(existing);
       const merged: AssetMetadata = { ...existing, tags: mergedTags };
       await fs.writeFile(this.metaPath(hash), JSON.stringify(merged, null, 2));
-      return merged;
+      return cloneMetadata(merged);
     }
 
     const metadata: AssetMetadata = {
@@ -82,7 +82,9 @@ export class FileAssetStore implements AssetStore {
       width: input.width,
       height: input.height,
       sizeBytes: data.length,
-      tags: input.tags ?? [],
+      // Copy tags on put so the sidecar snapshot is not aliased to the
+      // caller's array across the mkdir/write awaits (F-b2b8a190).
+      tags: input.tags ? [...input.tags] : [],
       createdAt: new Date().toISOString(),
       source: input.source,
     };
@@ -92,7 +94,7 @@ export class FileAssetStore implements AssetStore {
     await fs.writeFile(this.dataPath(hash), data);
     await fs.writeFile(this.metaPath(hash), JSON.stringify(metadata, null, 2));
 
-    return metadata;
+    return cloneMetadata(metadata);
   }
 
   async get(hash: string, opts?: AssetGetOptions): Promise<Uint8Array | null> {
@@ -121,7 +123,7 @@ export class FileAssetStore implements AssetStore {
       return null;
     }
     // Valid JSON, wrong shape — corrupt sidecar, same verdict (F-4d8f612a).
-    return isAssetMetadataShape(parsed) ? parsed : null;
+    return isAssetMetadataShape(parsed) ? cloneMetadata(parsed) : null;
   }
 
   /**
@@ -176,7 +178,7 @@ export class FileAssetStore implements AssetStore {
         // matchesFilter's TypeError in this catch — same file, two behaviors.
         if (!isAssetMetadataShape(parsed)) continue;
         if (!filter || matchesFilter(parsed, filter)) {
-          results.push(parsed);
+          results.push(cloneMetadata(parsed));
         }
       }
     }

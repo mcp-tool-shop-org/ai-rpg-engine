@@ -28,7 +28,9 @@ describe('generatePortrait', () => {
     expect(meta.kind).toBe('portrait');
     expect(meta.mimeType).toBe('image/svg+xml');
     expect(meta.tags).toContain('portrait');
-    expect(meta.tags).toContain('fantasy');
+    // F-a55397ab: genre is not a free-form tag; it lives in the char: JSON.
+    expect(meta.tags).not.toContain('fantasy');
+    expect(meta.tags).toContain(portraitIdentityTag(testRequest));
     expect(meta.source).toContain('Aldric');
 
     // Verify stored in registry
@@ -496,7 +498,9 @@ describe('portrait identity tracks sanitized prompt fields (F-930e6b5b)', () => 
     const aliceColon: PortraitRequest = { ...testRequest, characterName: 'Alice:' };
 
     expect(portraitIdentityTag(alice)).toBe(portraitIdentityTag(aliceColon));
-    expect(portraitIdentityTag(alice)).toBe('char:["Alice","Penitent Knight","fantasy"]');
+    expect(portraitIdentityTag(alice)).toBe(
+      'char:["Alice","Penitent Knight","fantasy","","","Oath-Breaker",["Iron Frame","Cursed Blood"],"",512,512,null]',
+    );
 
     const first = await generatePortrait(alice, provider, store);
     const second = await generatePortrait(aliceColon, provider, store);
@@ -529,5 +533,132 @@ describe('portrait identity tracks sanitized prompt fields (F-930e6b5b)', () => 
     expect(ensured.tags).toContain(portraitIdentityTag(alice));
     expect(getCalls()).toBe(beforeEnsure);
     expect(await store.count()).toBe(1);
+  });
+});
+
+// F-a55397ab: request.genre was copied as a free-form tag and used as the
+// ensurePortrait list() filter. genre:'placeholder' therefore tagged a real
+// ComfyUI PNG as placeholder, isPlaceholderAsset treated it as degraded, and
+// ensurePortrait re-queued forever. Genre lives in the char: JSON only.
+describe('genre is not a free-form asset tag (F-a55397ab)', () => {
+  function countingProvider() {
+    let calls = 0;
+    const provider: ImageProvider = {
+      name: 'comfyui',
+      async isAvailable() { return true; },
+      async generate(prompt: string, opts?: GenerationOptions): Promise<GenerationOutcome> {
+        calls += 1;
+        return {
+          ok: true,
+          image: new TextEncoder().encode(`png-bytes-for:${prompt}`),
+          mimeType: 'image/png',
+          width: opts?.width ?? 512,
+          height: opts?.height ?? 512,
+          prompt,
+          durationMs: 1,
+        };
+      },
+    };
+    return { provider, getCalls: () => calls };
+  }
+
+  it('generatePortrait(genre:placeholder) does not mark a real PNG as placeholder', async () => {
+    const store = new MemoryAssetStore();
+    const { provider, getCalls } = countingProvider();
+    const req: PortraitRequest = { ...testRequest, genre: 'placeholder' };
+
+    const meta = await generatePortrait(req, provider, store);
+    expect(meta.mimeType).toBe('image/png');
+    expect(meta.tags).not.toContain('placeholder');
+    expect(meta.tags).toContain(portraitIdentityTag(req));
+    expect(portraitIdentityTag(req)).toContain('"placeholder"');
+
+    const before = getCalls();
+    const second = await ensurePortrait(req, provider, store);
+    const third = await ensurePortrait(req, provider, store);
+    expect(second.hash).toBe(meta.hash);
+    expect(third.hash).toBe(meta.hash);
+    expect(getCalls()).toBe(before);
+    expect(await store.count()).toBe(1);
+  });
+});
+
+// F-e9ea394a: identity was only JSON([name, archetype, genre]), but the
+// prompt interpolates title, discipline, background, traits, and style, and
+// generatePortrait forwards generation width/height/seed. Queen vs Beggar
+// sharing name/archetype/genre must not collide. Alice/Alice: still share.
+describe('portrait identity includes every prompt-affecting field (F-e9ea394a)', () => {
+  function countingProvider() {
+    let calls = 0;
+    const provider: ImageProvider = {
+      name: 'comfyui',
+      async isAvailable() { return true; },
+      async generate(prompt: string, opts?: GenerationOptions): Promise<GenerationOutcome> {
+        calls += 1;
+        return {
+          ok: true,
+          image: new TextEncoder().encode(`png-bytes-for:${prompt}`),
+          mimeType: 'image/png',
+          width: opts?.width ?? 512,
+          height: opts?.height ?? 512,
+          prompt,
+          durationMs: 1,
+        };
+      },
+    };
+    return { provider, getCalls: () => calls };
+  }
+
+  it('ensurePortrait(Queen) vs ensurePortrait(Beggar) with same name/archetype/genre are distinct', async () => {
+    const store = new MemoryAssetStore();
+    const { provider, getCalls } = countingProvider();
+    const queen: PortraitRequest = {
+      ...testRequest,
+      characterName: 'Alice',
+      archetypeName: 'Mage',
+      genre: 'fantasy',
+      title: 'Queen',
+      backgroundName: 'Royal Court',
+      traits: ['Regal'],
+    };
+    const beggar: PortraitRequest = {
+      ...testRequest,
+      characterName: 'Alice',
+      archetypeName: 'Mage',
+      genre: 'fantasy',
+      title: 'Beggar',
+      backgroundName: 'Gutters',
+      traits: ['Starving'],
+    };
+
+    expect(portraitIdentityTag(queen)).not.toBe(portraitIdentityTag(beggar));
+
+    const queenMeta = await ensurePortrait(queen, provider, store);
+    const beggarMeta = await ensurePortrait(beggar, provider, store);
+
+    expect(queenMeta.hash).not.toBe(beggarMeta.hash);
+    expect(getCalls()).toBe(2);
+    expect(await store.count()).toBe(2);
+    expect(queenMeta.source).toContain('Queen');
+    expect(beggarMeta.source).toContain('Beggar');
+    expect(beggarMeta.source).not.toContain('Queen');
+  });
+
+  it('identity includes generation width/height/seed', () => {
+    const base = { ...testRequest, characterName: 'Alice' };
+    expect(portraitIdentityTag(base, { width: 256 })).not.toBe(portraitIdentityTag(base));
+    expect(portraitIdentityTag(base, { seed: 1 })).not.toBe(portraitIdentityTag(base, { seed: 2 }));
+    expect(portraitIdentityTag(base)).toBe(portraitIdentityTag(base, { width: 512, height: 512 }));
+  });
+
+  it('ensurePortrait with generation options matches generatePortrait identity', async () => {
+    const store = new MemoryAssetStore();
+    const { provider, getCalls } = countingProvider();
+    const opts = { generation: { width: 256, height: 256, seed: 9 } };
+    const first = await generatePortrait(testRequest, provider, store, opts);
+    const before = getCalls();
+    const ensured = await ensurePortrait(testRequest, provider, store, opts);
+    expect(ensured.hash).toBe(first.hash);
+    expect(getCalls()).toBe(before);
   });
 });

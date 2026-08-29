@@ -129,20 +129,31 @@ function callerTags(tags: readonly string[] | undefined): string[] {
 }
 
 /**
- * Delimiter-safe portrait identity tag (F-525d6bb6, F-930e6b5b).
- * JSON-encodes name, archetype, and genre so `Alice::Mage` + `Wizard` cannot
- * collide with `Alice` + `Mage::Wizard`. Name and archetype go through the
- * same sanitize() as the generation prompt, so `Alice` and `Alice:` (or
- * `Alice()`) share one identity key matching the bytes that actually land
- * in the provider.
+ * Delimiter-safe portrait identity tag (F-525d6bb6, F-930e6b5b, F-e9ea394a).
+ * JSON-encodes every prompt-affecting field plus generation width/height/seed
+ * so `Alice::Mage` + `Wizard` cannot collide with `Alice` + `Mage::Wizard`,
+ * and Queen vs Beggar (same name/archetype/genre, different title/background/
+ * traits) cannot share a hash. Name/title/discipline/background/traits/style
+ * go through the same sanitize() as the generation prompt, so `Alice` and
+ * `Alice:` (or `Alice()`) share one identity key matching the bytes that
+ * actually land in the provider.
  */
 export function portraitIdentityTag(
-  request: Pick<PortraitRequest, 'characterName' | 'archetypeName' | 'genre'>,
+  request: PortraitRequest,
+  generation?: GenerationOptions,
 ): string {
   return `char:${JSON.stringify([
     sanitize(request.characterName),
     sanitize(request.archetypeName),
     request.genre,
+    request.title ? sanitize(request.title) : '',
+    request.disciplineName ? sanitize(request.disciplineName) : '',
+    sanitize(request.backgroundName),
+    request.traits.map(sanitize),
+    sanitize(request.style ?? ''),
+    generation?.width ?? 512,
+    generation?.height ?? 512,
+    generation?.seed ?? null,
   ])}`;
 }
 
@@ -177,11 +188,12 @@ export async function generatePortrait(
 
   // Engine-owned tags (`char:`, `provider:`, `placeholder`) are written here
   // only. Caller tags and extraTags that use those prefixes are stripped so
-  // they cannot poison identity matching (F-525d6bb6).
+  // they cannot poison identity matching (F-525d6bb6). Genre lives inside
+  // the char: JSON — never as a free-form tag — so genre:'placeholder'
+  // cannot mark a real PNG as degraded (F-a55397ab).
   const tags = [
     'portrait',
-    request.genre,
-    portraitIdentityTag(request),
+    portraitIdentityTag(request, opts?.generation),
     `provider:${provider.name}`,
     ...(isPlaceholderResult ? ['placeholder'] : []),
     ...callerTags(request.tags),
@@ -230,14 +242,14 @@ export async function ensurePortrait(
   store: AssetStore,
   opts?: PipelineOptions,
 ): Promise<AssetMetadata> {
-  // Look for an existing portrait with matching character tags
-  const existing = await store.list({
+  // Look for an existing portrait with this identity. Filter by the char:
+  // tag (not genre) so a genre of 'placeholder' cannot collide with the
+  // engine-owned placeholder marker (F-a55397ab).
+  const characterKey = portraitIdentityTag(request, opts?.generation);
+  const matches = await store.list({
     kind: 'portrait',
-    tag: request.genre,
+    tag: characterKey,
   });
-
-  const characterKey = portraitIdentityTag(request);
-  const matches = existing.filter((m) => m.tags?.includes(characterKey));
 
   // A real render always wins.
   const real = matches.find((m) => !isPlaceholderAsset(m));

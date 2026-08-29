@@ -150,4 +150,50 @@ describe('MemoryAssetStore', () => {
     expect(await store.get(meta.hash, { verify: true })).toEqual(testData);
     expect(await store.get('0'.repeat(64), { verify: true })).toBeNull();
   });
+
+  // F-b2b8a190: put stored the caller's tags array and getMeta/list returned
+  // the Map value, so mutating generatePortrait's returned handle (or the
+  // caller's input.tags) poisoned identity matching. File re-parses JSON;
+  // Memory must clone on put and return copies from getMeta/list.
+  describe('metadata isolation (F-b2b8a190)', () => {
+    it('put clones tags so mutating the caller array does not poison the store', async () => {
+      const tags = ['character', 'fantasy'];
+      const meta = await store.put(testData, { ...testInput, tags });
+      expect(meta.tags).not.toBe(tags);
+      tags.push('placeholder');
+      expect(meta.tags).toEqual(['character', 'fantasy']);
+      expect((await store.getMeta(meta.hash))?.tags).toEqual(['character', 'fantasy']);
+    });
+
+    it('mutating put() return tags does not change getMeta', async () => {
+      const meta = await store.put(testData, testInput);
+      meta.tags.push('placeholder');
+      expect((await store.getMeta(meta.hash))?.tags).toEqual(['character', 'fantasy']);
+      expect((await store.getMeta(meta.hash))?.tags).not.toBe(meta.tags);
+    });
+
+    it('mutating getMeta() tags does not change the next getMeta', async () => {
+      const meta = await store.put(testData, testInput);
+      const a = await store.getMeta(meta.hash);
+      a!.tags.push('placeholder');
+      const b = await store.getMeta(meta.hash);
+      expect(b?.tags).toEqual(['character', 'fantasy']);
+      expect(b?.tags).not.toBe(a!.tags);
+    });
+
+    it('mutating list() tags does not change getMeta or a later list', async () => {
+      await store.put(testData, testInput);
+      const listed = await store.list();
+      listed[0].tags.push('placeholder');
+      expect((await store.getMeta(listed[0].hash))?.tags).toEqual(['character', 'fantasy']);
+      expect((await store.list())[0].tags).toEqual(['character', 'fantasy']);
+    });
+
+    it('hash-hit merge still isolates returned tags from the store', async () => {
+      await store.put(testData, testInput);
+      const merged = await store.put(testData, { ...testInput, tags: ['different'] });
+      merged.tags.push('placeholder');
+      expect((await store.getMeta(merged.hash))?.tags).toEqual(['character', 'fantasy', 'different']);
+    });
+  });
 });
