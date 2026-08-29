@@ -21,6 +21,7 @@ function stubEngine(): unknown {
     world,
     store: { tick: 0 },
     submitAction: () => ({ ok: true, events: [] }),
+    shutdown: () => {},
     moduleManager: { getModules: () => [] },
   };
 }
@@ -289,4 +290,28 @@ describe('startSocketServer — a client that vanishes', () => {
       probe.listen(port, '127.0.0.1', () => probe.close(() => resolve()));
     });
   });
+});
+
+describe('F-009da546 — shutdown releases the listen port', () => {
+  it('a --listen port is free after shutdown, and a second attach cannot initialize', async () => {
+    const h = serve();
+    const port = await ready(h);
+    const c = await connect(port);
+    await c.request(METHODS.INITIALIZE, { clientName: 'u', clientVersion: '1', capabilities: {} });
+    const result = await c.request<{ ok: boolean }>(METHODS.SHUTDOWN);
+    expect(result.ok).toBe(true);
+
+    await new Promise<void>((resolve, reject) => {
+      const start = Date.now();
+      const tryBind = (): void => {
+        const probe = net.createServer();
+        probe.once('error', (err) => {
+          if (Date.now() - start > 4000) reject(err);
+          else setTimeout(tryBind, 25);
+        });
+        probe.listen(port, '127.0.0.1', () => probe.close(() => resolve()));
+      };
+      tryBind();
+    });
+  }, 12000);
 });

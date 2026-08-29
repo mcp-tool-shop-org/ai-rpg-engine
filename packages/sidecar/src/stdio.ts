@@ -45,7 +45,10 @@ export function startStdioServer(
   };
   const server = new SidecarServer(options, send);
   const reader = new MessageReader(
-    (msg) => server.handle(msg),
+    (msg) => {
+      server.handle(msg);
+      if (server.isClosed) input.pause?.();
+    },
     (err) => onFramingError(`${err.kind}: ${err.detail}`),
   );
   input.on('data', (chunk) => reader.push(chunk));

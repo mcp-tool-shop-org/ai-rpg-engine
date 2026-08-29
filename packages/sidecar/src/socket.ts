@@ -139,7 +139,17 @@ export function startSocketServer(
     // The two calls `stdio.ts` promised, with a different pair of streams.
     const session = new SidecarServer(options, send);
     const reader = new MessageReader(
-      (msg) => session.handle(msg),
+      (msg) => {
+        session.handle(msg);
+        if (!session.isClosed) return;
+        // Reply + sim/closing are already written. End the connection and drop
+        // the listener so a second attach cannot initialize on a stopped sim.
+        if (!socket.destroyed && !socket.writableEnded) socket.end();
+        for (const other of [...live]) {
+          if (other !== socket && !other.destroyed && !other.writableEnded) other.end();
+        }
+        if (server.listening) server.close();
+      },
       (err) => hooks.onFramingError?.(`${err.kind}: ${err.detail}`),
     );
 
@@ -170,7 +180,9 @@ export function startSocketServer(
     sessions,
     close: () =>
       new Promise<void>((resolve) => {
-        for (const s of live) s.destroy();
+        for (const s of [...live]) {
+          if (!s.destroyed) s.destroy();
+        }
         live.clear();
         server.close(() => resolve());
       }),

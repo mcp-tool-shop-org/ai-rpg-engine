@@ -16,6 +16,8 @@
 export interface ByteReadable {
   on(event: 'data', listener: (chunk: Buffer | string) => void): unknown;
   on(event: 'end', listener: () => void): unknown;
+  /** Present on Node streams; used to stop stdin after an orderly shutdown. */
+  pause?(): unknown;
 }
 
 /** The minimum surface this module needs from a writable byte stream. */

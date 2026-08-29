@@ -13,7 +13,7 @@
 // Events, by contrast, only ever GAIN fields, and a client that ignores one it
 // does not know loses nothing.
 
-import type { Engine, ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
+import { WorldStore, type Engine, type ResolvedEvent, type WorldState } from '@ai-rpg-engine/core';
 import {
   ALL_METHODS,
   ERROR_CODES,
@@ -50,6 +50,24 @@ export type SidecarServerOptions = {
 };
 
 type Outbound = (msg: RpcMessage) => void;
+
+type ActionOptions = Partial<{
+  targetIds: string[];
+  toolId: string;
+  parameters: Record<string, string | number | boolean>;
+}>;
+
+function isSafeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
 
 /**
  * The sim-side protocol handler.
@@ -126,7 +144,8 @@ export class SidecarServer {
       return;
     }
 
-    // STRICT IN, part 2: unknown FIELDS are refused too. A silently dropped
+    // STRICT IN, part 2: unknown FIELDS are refused too, and present fields of
+    // the wrong type are refused the same way. A silently dropped or coerced
     // command field is a divergent simulation — the client believes it asked for
     // something the server never heard.
     const allowed = METHOD_PARAMS[name];
@@ -141,6 +160,13 @@ export class SidecarServer {
             'Unknown command fields are refused rather than ignored: silently dropping one means the sim ' +
             'executed a different intent than the client submitted.',
         );
+      }
+      return;
+    }
+
+    if (this.closed) {
+      if (hasId) {
+        this.fail(id, ERROR_CODES.SESSION_CLOSED, 'session is closed; further methods are refused.');
       }
       return;
     }
@@ -190,18 +216,12 @@ export class SidecarServer {
       }
 
       case METHODS.SUBMIT_ACTION: {
-        const verb = params.verb;
-        if (typeof verb !== 'string' || verb.length === 0) {
-          if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"verb" must be a non-empty string.');
+        const parsed = this.parseActionParams(params);
+        if (!parsed.ok) {
+          if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, parsed.message);
           return;
         }
-        const events = this.engine.submitAction(verb, {
-          ...(Array.isArray(params.targetIds) ? { targetIds: params.targetIds as string[] } : {}),
-          ...(typeof params.toolId === 'string' ? { toolId: params.toolId } : {}),
-          ...(params.parameters !== undefined
-            ? { parameters: params.parameters as Record<string, never> }
-            : {}),
-        });
+        const events = this.engine.submitAction(parsed.verb, parsed.options);
         const result = this.commit(events);
         if (hasId) this.reply(id, result satisfies SubmitActionResult);
         this.pushTick(result);
@@ -209,6 +229,10 @@ export class SidecarServer {
       }
 
       case METHODS.ADVANCE: {
+        if (Object.hasOwn(params, 'rounds') && !isSafeInteger(params.rounds)) {
+          if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"rounds" must be a safe integer when present.');
+          return;
+        }
         if (!this.advanceRound) {
           if (hasId) {
             this.fail(
@@ -221,7 +245,7 @@ export class SidecarServer {
           return;
         }
         const rounds = typeof params.rounds === 'number' ? params.rounds : 1;
-        if (!Number.isSafeInteger(rounds) || rounds < 1 || rounds > 1000) {
+        if (rounds < 1 || rounds > 1000) {
           if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"rounds" must be an integer in [1, 1000].');
           return;
         }
@@ -233,19 +257,27 @@ export class SidecarServer {
       }
 
       case METHODS.PREVIEW: {
-        const verb = params.verb;
-        if (typeof verb !== 'string' || verb.length === 0) {
-          if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"verb" must be a non-empty string.');
+        const parsed = this.parseActionParams(params);
+        if (!parsed.ok) {
+          if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, parsed.message);
           return;
         }
-        if (hasId) this.reply(id, this.preview(verb, params));
+        if (hasId) this.reply(id, this.preview(parsed.verb, params));
         return;
       }
 
       case METHODS.REPLAY: {
+        if (Object.hasOwn(params, 'fromTick') && !isSafeInteger(params.fromTick)) {
+          if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"fromTick" must be a safe integer when present.');
+          return;
+        }
+        if (Object.hasOwn(params, 'toTick') && !isSafeInteger(params.toTick)) {
+          if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"toTick" must be a safe integer when present.');
+          return;
+        }
         const fromTick = typeof params.fromTick === 'number' ? params.fromTick : 0;
         const toTick = typeof params.toTick === 'number' ? params.toTick : this.engine.store.tick;
-        if (!Number.isSafeInteger(fromTick) || !Number.isSafeInteger(toTick) || fromTick > toTick) {
+        if (fromTick > toTick) {
           if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"fromTick" and "toTick" must be integers, from <= to.');
           return;
         }
@@ -259,6 +291,7 @@ export class SidecarServer {
 
       case METHODS.SHUTDOWN: {
         this.closed = true;
+        this.engine.shutdown();
         if (hasId) this.reply(id, { ok: true });
         this.send({ jsonrpc: '2.0', method: NOTIFICATIONS.CLOSING, params: {} });
         return;
@@ -269,51 +302,113 @@ export class SidecarServer {
   /**
    * Side-effect-free command evaluation (Into the Breach, charter §3.5).
    *
-   * Runs on a DEEP COPY of the engine's state, reads the events the copy
-   * produced, and discards it. The live world is untouched — which the
-   * conformance harness proves by hashing before and after rather than trusting
-   * this comment.
+   * Dispatches against a WorldStore.deserialize snapshot (state + rngState) and
+   * throws the copy away. The live Engine is never the dispatch target: its
+   * actionLog, rng, EventBus, and nested entity/zone identities stay untouched.
+   * Module-cached nested refs therefore remain valid across preview — they were
+   * never replaced. The conformance harness still proves this by hashing before
+   * and after rather than trusting this comment.
    */
   preview(verb: string, params: Record<string, unknown>): PreviewResult {
+    const parsed = this.parseActionParams({ ...params, verb });
+    if (!parsed.ok) throw new Error(parsed.message);
+
     const before = stateHash(this.engine.world as WorldState);
     const tick = this.engine.store.tick;
-
-    const saved = structuredClone(this.engine.world) as WorldState;
-    // ⚠ READ THE LOG, not submitAction's return value.
-    //
-    // The first version returned what `submitAction` returned, and for `look` on
-    // starter-fantasy that is an EMPTY array while the event log grows by two
-    // (action.declared, action.rejected). Most verbs resolve their effects into
-    // the log rather than back through the return; a preview built on the return
-    // value silently under-reports exactly the outcomes a player would want
-    // telegraphed. Same shape as `commit()` for the same reason.
-    const logBefore = (this.engine.world.eventLog ?? []).length;
-    const events: ResolvedEvent[] = [];
+    const liveStore = this.engine.store;
+    const clone = WorldStore.deserialize(liveStore.serialize(), undefined, this.engine.ruleset);
+    // ctx.events.emit records into moduleManager.activeStore. Point it at the
+    // copy for the duration of the preview so a handler cannot write the live log.
+    this.engine.moduleManager.rebindStore(clone);
     try {
-      const returned = this.engine.submitAction(verb, {
-        ...(Array.isArray(params.targetIds) ? { targetIds: params.targetIds as string[] } : {}),
-        ...(typeof params.toolId === 'string' ? { toolId: params.toolId } : {}),
-        ...(params.parameters !== undefined
-          ? { parameters: params.parameters as Record<string, never> }
-          : {}),
-      });
-      const log = (this.engine.world.eventLog ?? []) as ResolvedEvent[];
-      const seen = new Set<string>();
-      for (const e of [...log.slice(logBefore), ...returned]) {
-        if (seen.has(e.id)) continue;
-        seen.add(e.id);
-        events.push(e);
-      }
+      const events = this.runOnStore(clone, parsed.verb, parsed.options);
+      return { tick, hash: before, events: events.map(toWireEvent) };
     } finally {
-      // Restore EVERY key, including ones the action added, then re-fill from the
-      // saved copy. Assigning `store.state = saved` would leave any live
-      // reference held by a module pointing at the mutated object.
-      const live = this.engine.store.state as unknown as Record<string, unknown>;
-      for (const key of Object.keys(live)) delete live[key];
-      Object.assign(live, structuredClone(saved));
+      this.engine.moduleManager.rebindStore(liveStore);
+    }
+  }
+
+  /**
+   * Run one player intent against `store` — the Engine.submitAction pipeline,
+   * minus the live actionLog. Used by preview so the copy is the only thing
+   * that moves.
+   */
+  private runOnStore(
+    store: WorldStore,
+    verb: string,
+    options: ActionOptions,
+  ): ResolvedEvent[] {
+    const playerId = store.state.playerId;
+    const logBefore = (store.state.eventLog ?? []).length;
+    const returned: ResolvedEvent[] = [];
+
+    if (!store.state.entities[playerId]) {
+      store.emitEvent(
+        'action.rejected',
+        {
+          verb,
+          actorId: playerId,
+          reason:
+            playerId === ''
+              ? 'unknown actor: state.playerId is not set. Set world.playerId to the player entity\'s id (and add that entity) before submitting player actions.'
+              : `unknown actor: no entity "${playerId}" in world state for state.playerId. Add the player entity before acting, or check the id for a typo.`,
+        },
+        { actorId: playerId },
+      );
+      store.advanceTick();
+    } else {
+      const action = this.engine.dispatcher.createAction(
+        verb,
+        playerId,
+        store.tick,
+        { source: 'player', ...options },
+        store.genId('act'),
+      );
+      returned.push(...this.engine.dispatcher.dispatch(action, store));
+      for (const pending of store.processPending()) {
+        store.emitEvent(pending.type, pending.payload, { causedBy: pending.sourceEventId });
+      }
+      store.advanceTick();
     }
 
-    return { tick, hash: before, events: events.map(toWireEvent) };
+    const log = (store.state.eventLog ?? []) as ResolvedEvent[];
+    const events: ResolvedEvent[] = [];
+    const seen = new Set<string>();
+    for (const e of [...log.slice(logBefore), ...returned]) {
+      if (seen.has(e.id)) continue;
+      seen.add(e.id);
+      events.push(e);
+    }
+    return events;
+  }
+
+  private parseActionParams(params: Record<string, unknown>):
+    | { ok: true; verb: string; options: ActionOptions }
+    | { ok: false; message: string } {
+    const verb = params.verb;
+    if (typeof verb !== 'string' || verb.length === 0) {
+      return { ok: false, message: '"verb" must be a non-empty string.' };
+    }
+    if (Object.hasOwn(params, 'targetIds') && !isStringArray(params.targetIds)) {
+      return { ok: false, message: '"targetIds" must be string[] when present.' };
+    }
+    if (Object.hasOwn(params, 'toolId') && typeof params.toolId !== 'string') {
+      return { ok: false, message: '"toolId" must be a string when present.' };
+    }
+    if (Object.hasOwn(params, 'parameters') && !isPlainObject(params.parameters)) {
+      return { ok: false, message: '"parameters" must be an object when present.' };
+    }
+    return {
+      ok: true,
+      verb,
+      options: {
+        ...(isStringArray(params.targetIds) ? { targetIds: params.targetIds } : {}),
+        ...(typeof params.toolId === 'string' ? { toolId: params.toolId } : {}),
+        ...(isPlainObject(params.parameters)
+          ? { parameters: params.parameters as Record<string, string | number | boolean> }
+          : {}),
+      },
+    };
   }
 
   /** Fold newly emitted events into a tick result, deduplicated by event id. */
