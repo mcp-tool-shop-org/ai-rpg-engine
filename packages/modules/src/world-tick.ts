@@ -2098,16 +2098,12 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   const currentTick = engine.tick;
   const heat = num(world.globals[HEAT_KEY]);
 
-  // Companion reactions (F-b595731a): snapshot the round's event-log window
-  // BEFORE this tick's own steps (encounter spawn, pressure lifecycle) add
-  // anything — the same round-delta collectMilestones scans below, just
-  // captured earlier so combat.entity.defeated events from THIS round's
-  // player/NPC actions are the only thing in range (world-tick itself never
-  // emits that event type, so the exact upper bound is not load-bearing —
-  // captured early purely for clarity). Pressure-resolution triggers are
-  // collected separately, inline, in step 3 below (the resolutionType is
-  // already in hand there — no need to re-scan the log for it).
-  const reactionTriggers = collectCombatReactionTriggers(world, state.lastEventIndex, world.eventLog.length);
+  // Companion reactions (F-b595731a): collected AFTER the typed-hazard steps
+  // so an on-enter instakill's combat.entity.defeated (F-2cd298dd) is in
+  // range alongside this round's player/NPC attacks. Start cursor is still
+  // lastEventIndex — encounter spawn does not emit that type. Pressure-
+  // resolution triggers are collected separately, inline, in step 3 below.
+  const reactionTriggers: ReactionTrigger[] = [];
 
   // 0. Zone-entry encounter check (F-ENG005-encounter-spawn-wiring) — the
   // tactical layer of the same reaction loop. Runs inside this tick so the
@@ -2125,13 +2121,14 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   // reach the `emitEvent` choke point a player-visible hazard needs. The
   // cursor-driven step above is the pattern that already solves both.
   //
-  // ORDER MATTERS AND IS DELIBERATE: on-enter runs BEFORE the spawn step's
-  // consequences are narrated but AFTER the entry events exist, and per-turn runs
-  // after, so an entity that walks into a poison swamp takes the entry tick and
+  // ORDER MATTERS AND IS DELIBERATE: on-enter/on-exit run BEFORE the spawn step's
+  // consequences are narrated but AFTER the entry events exist, and per-turn/timed
+  // run after, so an entity that walks into a poison swamp takes the entry tick and
   // then the standing tick — not two standing ticks. A pack with no typed hazards
   // makes both calls no-ops, so all twelve shipped packs are byte-identical.
   runTypedHazardEntryStep(engine);
   runTypedHazardStep(engine);
+  reactionTriggers.push(...collectCombatReactionTriggers(world, state.lastEventIndex, world.eventLog.length));
 
   // 0b. ZONE STATE (C3/P4) — the moat bridge. Re-derives each zone's condition
   // from district stability/morale and economy tone, and emits

@@ -295,10 +295,65 @@ export function applyTypedHazards(
         skipped.push({ kind: 'blocksVision', reason: 'no perception reader consumes a per-zone vision block yet; carried and not enforced' });
       }
 
-      const live = engine.store.getEntity(entity.id);
+      // Re-fetch per spec so a prior spec's addEntity clone cannot leak in.
+      let live = engine.store.getEntity(entity.id);
       if (!live) break;
 
+      const recordStatus = (ev: ResolvedEvent): void => {
+        engine.store.recordEvent(ev);
+        events.push(ev);
+      };
+
+      const writeHp = (after: number, amount: number, extra: Record<string, unknown> = {}): boolean => {
+        if (!live) return false;
+        const current = live;
+        const before = num(current.resources.hp);
+        // addEntity structuredClones — keep the write on that path so the
+        // HAZARD_DEPTH_LIMIT cycle fixture (which hooks addEntity) still
+        // reaches the cap, then RE-FETCH so a later status/ignite arm cannot
+        // mutate the discarded pre-clone.
+        engine.store.addEntity({ ...current, resources: { ...current.resources, hp: after } });
+        const next = engine.store.getEntity(entity.id);
+        if (!next) return false;
+        live = next;
+        engine.store.emitEvent(
+          'hazard.damage.applied',
+          { hazardId: spec.id, hazardName: spec.name, zoneId, entityId: live.id, amount, currentHp: after, ...extra },
+          {
+            visibility: 'public',
+            presentation: { channels: ['narrator'], priority: extra.instakill ? 'critical' : 'high' },
+          },
+        );
+        // Same choke point attackHandler uses: hp crossing 0 emits
+        // combat.entity.defeated so defeat-fallout / companion combat-lost /
+        // chronicle consumers all fire. Instakill of a living entity always
+        // satisfies after===0 && before>0.
+        if (after === 0 && before > 0) {
+          engine.store.emitEvent(
+            'combat.entity.defeated',
+            {
+              entityId: live.id,
+              entityName: live.name,
+              defeatedBy: spec.id,
+              defeatedByName: spec.name,
+              defeatZoneId: zoneId,
+              wasInterceptor: false,
+            },
+            {
+              targetIds: [live.id],
+              presentation: {
+                channels: ['objective', 'narrator'],
+                priority: 'critical',
+                soundCues: ['combat.defeat'],
+              },
+            },
+          );
+        }
+        return true;
+      };
+
       for (const effect of spec.effects) {
+        if (!live) break;
         switch (effect.kind) {
           case 'damage': {
             const maxHp = num(live.resources.maxHp, num(live.resources.hp));
@@ -313,7 +368,7 @@ export function applyTypedHazards(
             if (effect.durationTicks !== undefined) {
               // Periodic damage rides status-core's EXISTING DoT machinery rather
               // than a bespoke timer — one implementation of "damage over time".
-              events.push(
+              recordStatus(
                 applyStatus(
                   live,
                   `hazard:${spec.id}`,
@@ -331,13 +386,7 @@ export function applyTypedHazards(
               break;
             }
             const before = num(live.resources.hp);
-            const after = Math.max(0, before - amount);
-            engine.store.addEntity({ ...live, resources: { ...live.resources, hp: after } });
-            engine.store.emitEvent(
-              'hazard.damage.applied',
-              { hazardId: spec.id, hazardName: spec.name, zoneId, entityId: live.id, amount, currentHp: after },
-              { visibility: 'public', presentation: { channels: ['narrator'], priority: 'high' } },
-            );
+            if (!writeHp(Math.max(0, before - amount), amount)) break;
             applied.push('damage');
             break;
           }
@@ -364,7 +413,7 @@ export function applyTypedHazards(
               skipped.push({ kind: 'status', reason: `proc roll ${roll.toFixed(3)} >= chance ${effect.chance}` });
               break;
             }
-            events.push(
+            recordStatus(
               applyStatus(
                 live,
                 effect.statusId,
@@ -380,12 +429,8 @@ export function applyTypedHazards(
           case 'instakill': {
             // Through the SAME resource path as damage, so defeat/fallout/chronicle
             // consumers all fire. A bespoke kill would bypass every one of them.
-            engine.store.addEntity({ ...live, resources: { ...live.resources, hp: 0 } });
-            engine.store.emitEvent(
-              'hazard.damage.applied',
-              { hazardId: spec.id, hazardName: spec.name, zoneId, entityId: live.id, amount: num(live.resources.hp), currentHp: 0, instakill: true },
-              { visibility: 'public', presentation: { channels: ['narrator'], priority: 'critical' } },
-            );
+            const before = num(live.resources.hp);
+            if (!writeHp(0, before, { instakill: true })) break;
             applied.push('instakill');
             break;
           }
@@ -408,7 +453,7 @@ export function applyTypedHazards(
               skipped.push({ kind: 'ignite', reason: `ignite roll ${roll.toFixed(3)} >= chance ${effect.igniteChance}` });
               break;
             }
-            events.push(applyStatus(live, burnTag.slice('burn:'.length), world.meta.tick, { stacking: 'refresh', sourceId: spec.id }, world));
+            recordStatus(applyStatus(live, burnTag.slice('burn:'.length), world.meta.tick, { stacking: 'refresh', sourceId: spec.id }, world));
             applied.push('ignite');
             break;
           }
@@ -456,11 +501,34 @@ export function runTypedHazardStep(engine: Engine): HazardApplication[] {
     const { applications } = applyTypedHazards(engine, entity.zoneId, entity, 'per-turn');
     out.push(...applications);
   }
+
+  // Timed pass: a persisted elapsed-tick cursor, so a `trigger:'timed'` pack
+  // actually fires rather than intake-greening a shape the tick ignores.
+  // First observation (no lastTimedTick, or tick has not advanced) is a
+  // baseline — same P8-WL-006 "don't re-fire on history" posture as the
+  // on-enter cursor. Subsequent ticks apply timed hazards to whoever is
+  // standing in the zone.
+  const state = getHazardStepState(world);
+  const currentTick = world.meta.tick;
+  if (state.lastTimedTick === undefined) {
+    state.lastTimedTick = currentTick;
+  } else if (currentTick > state.lastTimedTick) {
+    for (const entity of Object.values(world.entities)) {
+      if (!entity.zoneId) continue;
+      const { applications } = applyTypedHazards(engine, entity.zoneId, entity, 'timed');
+      out.push(...applications);
+    }
+    state.lastTimedTick = currentTick;
+  }
   return out;
 }
 
 /** Persisted cursor state — rides world.modules, like encounter-spawn's. */
-type HazardStepState = { cursor: number };
+type HazardStepState = {
+  cursor: number;
+  /** Last world tick a `timed` pass ran. Absent ⇒ first observation, no fire. */
+  lastTimedTick?: number;
+};
 
 /**
  * The persistence namespace the cursor lives in. Exported so `environment-core`
@@ -476,14 +544,16 @@ function getHazardStepState(world: WorldState): HazardStepState {
   // the hard way (P8-WL-006): a restored save whose namespace is absent would
   // otherwise re-scan the entire historical log and re-apply every hazard the
   // player ever walked into, in one burst.
-  const fresh: HazardStepState = { cursor: world.eventLog.length };
+  const fresh: HazardStepState = { cursor: world.eventLog.length, lastTimedTick: world.meta.tick };
   world.modules[HAZARD_STATE_KEY] = fresh;
   return fresh;
 }
 
 /**
- * The ON-ENTER step: scan the eventLog delta for `world.zone.entered` and apply
- * that zone's on-enter hazards to whoever entered.
+ * The ON-ENTER / ON-EXIT step: scan the eventLog delta for `world.zone.entered`
+ * and apply that zone's on-enter hazards to whoever entered — then the
+ * PREVIOUS zone's on-exit hazards, hanging off `payload.previousZoneId`
+ * (traversal-core already stamps it; there is no separate `world.zone.exited`).
  *
  * Cursor-driven, like `runEncounterSpawnStep`, and the cursor ALWAYS advances —
  * including for packs with no registered hazards — so a pack that registers late
@@ -498,14 +568,19 @@ export function runTypedHazardEntryStep(engine: Engine): HazardApplication[] {
   const state = getHazardStepState(world);
   const log = world.eventLog;
 
-  const entries: Array<{ zoneId: string; entityId: string }> = [];
+  const entries: Array<{ zoneId: string; entityId: string; previousZoneId?: string }> = [];
   for (let i = state.cursor; i < log.length; i++) {
     const event = log[i];
     if (event.type !== 'world.zone.entered') continue;
     const zoneId = event.payload?.zoneId;
     const entityId = event.actorId;
+    const previousZoneId = event.payload?.previousZoneId;
     if (typeof zoneId === 'string' && typeof entityId === 'string') {
-      entries.push({ zoneId, entityId });
+      entries.push({
+        zoneId,
+        entityId,
+        previousZoneId: typeof previousZoneId === 'string' ? previousZoneId : undefined,
+      });
     }
   }
   state.cursor = log.length;
@@ -513,9 +588,14 @@ export function runTypedHazardEntryStep(engine: Engine): HazardApplication[] {
   if (!registry.has(world.meta.gameId)) return [];
 
   const out: HazardApplication[] = [];
-  for (const { zoneId, entityId } of entries) {
+  for (const { zoneId, entityId, previousZoneId } of entries) {
     const entity = engine.store.getEntity(entityId);
     if (!entity) continue;
+    // Leave first: on-exit of the zone being departed, then on-enter of the
+    // destination. Same-zone re-entry is a no-op for on-exit.
+    if (previousZoneId && previousZoneId !== zoneId) {
+      out.push(...applyTypedHazards(engine, previousZoneId, entity, 'on-exit').applications);
+    }
     out.push(...applyTypedHazards(engine, zoneId, entity, 'on-enter').applications);
   }
   return out;
