@@ -29,13 +29,14 @@ export const statusCore: EngineModule = {
       const tick = world.meta.tick;
 
       // Reactive status triggers (thorns / reflect). React to THIS action's own
-      // damage events, snapshotted BEFORE the periodic pass emits more (so periodic
-      // DoT isn't re-seeded). processStatusTriggers drains the full reflect chain
-      // internally (dedup set + PROC_DEPTH_LIMIT fiat halt), so seeding the action's
-      // direct damage is sufficient and terminating. Purely additive: an entity with
-      // no matching `triggers` produces zero reactions, so content without reactive
-      // statuses is unchanged. Driven off action.resolved (not off damage events
-      // themselves), so trigger-produced events cannot re-enter this hook this tick.
+      // damage events, snapshotted BEFORE the periodic pass emits more. Periodic
+      // DoT now emits combat.damage.applied and runs processStatusTriggers inside
+      // processPeriodicStatuses (F-b000f36d), so this seed stays action-damage
+      // only and does not double-fire. processStatusTriggers drains the full
+      // reflect chain internally (dedup set + PROC_DEPTH_LIMIT fiat halt).
+      // Purely additive: an entity with no matching `triggers` produces zero
+      // reactions. Driven off action.resolved (not off damage events themselves),
+      // so trigger-produced events cannot re-enter this hook this tick.
       const seedDamage = world.eventLog.filter(
         (e) => e.tick === tick &&
           (e.type === 'combat.damage.applied' || e.type === 'ability.damage.applied'),

@@ -211,6 +211,9 @@ function strData(data: Record<string, ScalarValue> | undefined, key: string): st
 export function processPeriodicStatuses(world: WorldState, tick: number): ResolvedEvent[] {
   const events: ResolvedEvent[] = [];
   const entityIds = Object.keys(world.entities).sort();
+  // Shared across this pass so an AoE of DoT ticks dedups reactive signatures
+  // the way status-core's per-tick ProcContext and writeHp's per-spec ctx do.
+  const procCtx = makeProcContext();
 
   for (const eid of entityIds) {
     const entity = world.entities[eid];
@@ -266,6 +269,13 @@ export function processPeriodicStatuses(world: WorldState, tick: number): Resolv
         if (kind === 'damage') {
           const before = entity.resources.hp ?? 0;
           entity.resources.hp = Math.max(0, before - magnitude);
+          // Stamp like writeHp: live-entity source → that entity's id;
+          // hazard-id source → spec.id; never the victim, never omit
+          // (F-1f8eb735). Empty string when the instance has no sourceId so
+          // quest-core's non-player gate still drops unattributed kills.
+          const actorId = sourceActorId(world, inst.sourceId);
+          const fromHazard = Boolean(inst.sourceId) && !world.entities[inst.sourceId!];
+          const cause = fromHazard ? 'hazard' : 'status-periodic';
           // Player-grade description + presentation matching the sibling
           // combat.damage.applied event (channels/priority), plus a paired
           // resource.changed so HP-bar consumers see the change (MOD-C-BH-01).
@@ -277,15 +287,34 @@ export function processPeriodicStatuses(world: WorldState, tick: number): Resolv
             statusName,
             entityName: entity.name,
             description: `${entity.name} takes ${magnitude} damage from ${statusName}`,
-          }, { channels: ['objective'], priority: 'high' }));
+          }, { channels: ['objective'], priority: 'high' }, actorId));
+          // DurationTicks / DoT pulses must emit combat.damage.applied so
+          // cognition morale, combat-resources take-damage, combat-roles,
+          // district-core alerts, and reactive statuses see the tick the
+          // way writeHp's instant arm does (F-b000f36d).
+          const damageEvent = makePeriodicEvent('combat.damage.applied', entity.id, inst.statusId, tick, {
+            attackerId: inst.sourceId ?? '',
+            targetId: entity.id,
+            damage: magnitude,
+            amount: magnitude,
+            previousHp: before,
+            currentHp: entity.resources.hp,
+            cause,
+            ...(fromHazard ? { hazardId: inst.sourceId } : {}),
+          }, { channels: ['objective'], priority: 'high' }, actorId);
+          events.push(damageEvent);
           events.push(makePeriodicEvent('resource.changed', entity.id, inst.statusId, tick, {
             entityId: entity.id,
             resource: 'hp',
             previous: before,
             current: entity.resources.hp,
             delta: entity.resources.hp - before,
-            cause: 'status-periodic',
-          }));
+            cause,
+          }, undefined, actorId));
+          // status-core snapshots combat.damage.applied BEFORE this pass so
+          // periodic DoT is not re-seeded there. Process reactive triggers
+          // here the way writeHp does, on this pulse.
+          events.push(...processStatusTriggers(damageEvent, world, procCtx, tick));
           if (entity.resources.hp <= 0 && before > 0) {
             events.push(makePeriodicEvent('combat.entity.defeated', entity.id, inst.statusId, tick, {
               entityId: entity.id,
@@ -294,7 +323,7 @@ export function processPeriodicStatuses(world: WorldState, tick: number): Resolv
               statusId: inst.statusId,
               attackerId: inst.sourceId ?? '',
               ...defeatBySource(world, inst.sourceId, entity),
-            }, { channels: ['objective', 'narrator'], priority: 'critical', soundCues: ['combat.defeat'] }));
+            }, { channels: ['objective', 'narrator'], priority: 'critical', soundCues: ['combat.defeat'] }, actorId));
           }
         } else if (kind === 'heal') {
           const resource = strData(inst.data, PERIODIC_KEYS.RESOURCE) ?? 'hp';
@@ -565,7 +594,7 @@ function applyReaction(
       statusId: r.statusId,
       previousHp: before,
       currentHp: target.resources.hp,
-    }, [r.targetId]));
+    }, [r.targetId], r.sourceId));
     if (target.resources.hp <= 0 && before > 0) {
       events.push(makeTriggerEvent('combat.entity.defeated', 'status', tick, {
         entityId: target.id,
@@ -574,7 +603,7 @@ function applyReaction(
         statusId: r.statusId,
         attackerId: r.sourceId,
         ...defeatBySource(world, r.sourceId, target),
-      }, [r.targetId]));
+      }, [r.targetId], r.sourceId));
     }
   } else if (r.effectType === 'heal') {
     const before = target.resources.hp ?? 0;
@@ -622,6 +651,18 @@ function defeatBySource(
   };
 }
 
+/**
+ * Stamp actorId like writeHp: live-entity source → that entity's id;
+ * hazard-id source → spec.id; never the victim, never omit (F-1f8eb735).
+ * Missing sourceId becomes '' so quest-core's `actorId !== undefined &&
+ * actorId !== playerId` gate still drops the event (omit would be system-
+ * attributed and offer a kill quest).
+ */
+function sourceActorId(world: WorldState, sourceId: string | undefined): string {
+  if (!sourceId) return '';
+  return world.entities[sourceId]?.id ?? sourceId;
+}
+
 function makePeriodicEvent(
   type: string,
   entityId: string,
@@ -629,12 +670,13 @@ function makePeriodicEvent(
   tick: number,
   payload: Record<string, unknown>,
   presentation?: ResolvedEvent['presentation'],
+  actorId?: string,
 ): ResolvedEvent {
   return {
     id: '',
     tick,
     type,
-    actorId: entityId,
+    actorId: actorId !== undefined ? actorId : entityId,
     targetIds: [entityId],
     payload: { statusId, ...payload },
     tags: ['status', 'periodic'],
@@ -648,6 +690,7 @@ function makeTriggerEvent(
   tick: number,
   payload: Record<string, unknown>,
   targetIds?: string[],
+  actorId?: string,
 ): ResolvedEvent {
   return {
     id: '',
@@ -656,5 +699,6 @@ function makeTriggerEvent(
     payload: { causeEvent: causeEventType, ...payload },
     targetIds,
     tags: ['status', 'trigger'],
+    ...(actorId !== undefined ? { actorId } : {}),
   };
 }

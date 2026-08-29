@@ -373,6 +373,9 @@ describe('processStatusTriggers — reactive triggers + depth cap', () => {
     expect(defeat!.payload.defeatedBy).toBe('defender');
     expect(defeat!.payload.defeatedByName).toBe('Defender');
     expect(defeat!.payload.defeatZoneId).toBe('zone-1');
+    // F-1f8eb735: never omit actorId, never stamp the victim — reactor is the source.
+    expect(defeat!.actorId).toBe('defender');
+    expect(defeat!.actorId).not.toBe('attacker');
   });
 
   it('halts a reflect ping-pong loop at PROC_DEPTH_LIMIT', () => {
@@ -717,6 +720,9 @@ describe('MOD-C-BH-01: periodic events carry description + presentation + render
     expect(defeat!.payload.defeatedBy).toBe('player');
     expect(defeat!.payload.defeatedByName).toBe('Hero');
     expect(defeat!.payload.defeatZoneId).toBe('zone-1');
+    // F-1f8eb735: live-entity source → that entity's id; never the victim.
+    expect(defeat!.actorId).toBe('player');
+    expect(defeat!.actorId).not.toBe('e1');
   });
 
   it('a non-entity DoT source omits defeatedBy so player-fallen still keys entityId (F-45ae2d2c)', () => {
@@ -733,6 +739,67 @@ describe('MOD-C-BH-01: periodic events carry description + presentation + render
     expect(defeat).toBeDefined();
     expect(defeat!.payload.defeatedBy).toBeUndefined();
     expect(defeat!.payload.entityId).toBe('e1');
+    // F-1f8eb735: hazard-id source → spec.id; never the victim, never omit.
+    expect(defeat!.actorId).toBe('swamp-gas');
+    expect(defeat!.actorId).not.toBe('e1');
+  });
+
+  it('a non-lethal DoT tick emits combat.damage.applied with the walker as targetId (F-b000f36d)', () => {
+    const e = makeEntity({ resources: { hp: 20, maxHp: 20 } });
+    const world = makeWorld([e], 0);
+    applyStatus(e, 'burning', 0, {
+      duration: 4,
+      sourceId: 'scalding-steam',
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 3 },
+    }, world);
+
+    const events = processPeriodicStatuses(world, 0);
+    const dmg = events.find(ev => ev.type === 'combat.damage.applied');
+    expect(dmg, 'periodic damage arm must emit combat.damage.applied').toBeDefined();
+    expect(dmg!.payload.targetId).toBe('e1');
+    expect(dmg!.payload.damage).toBe(3);
+    expect(dmg!.payload.previousHp).toBe(20);
+    expect(dmg!.payload.currentHp).toBe(17);
+    expect(dmg!.payload.cause).toBe('hazard');
+    expect(dmg!.actorId).toBe('scalding-steam');
+    expect(dmg!.actorId).not.toBe('e1');
+    // Narrator copy stays on status.periodic.damage.
+    expect(events.some(ev => ev.type === 'status.periodic.damage')).toBe(true);
+  });
+
+  it('a combat.damage.applied reactive status fires on a periodic DoT pulse (F-b000f36d)', () => {
+    registerStatusDefinitions([
+      burning,
+      {
+        id: 'bramble-hide',
+        name: 'Bramble Hide',
+        tags: ['buff'],
+        stacking: 'replace',
+        triggers: [
+          {
+            event: 'combat.damage.applied',
+            effect: { type: 'heal', target: 'actor', params: { amount: 1, triggerTarget: 'self' } },
+          },
+        ],
+      },
+    ]);
+    const e = makeEntity({ resources: { hp: 20, maxHp: 20 } });
+    const world = makeWorld([e], 0);
+    applyStatus(e, 'bramble-hide', 0, { duration: 10 }, world);
+    applyStatus(e, 'burning', 0, {
+      duration: 4,
+      sourceId: 'scalding-steam',
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 3 },
+    }, world);
+
+    const events = processPeriodicStatuses(world, 0);
+    expect(events.some(ev => ev.type === 'combat.damage.applied')).toBe(true);
+    expect(
+      events.some(ev => ev.type === 'status.trigger.fired'),
+      'a reactive status on combat.damage.applied must fire on this DoT pulse',
+    ).toBe(true);
+    // DoT wrote 17, then bramble-hide healed 1.
+    expect(e.resources.hp).toBe(18);
   });
 
   it('descriptions stay deterministic — same seed, byte-identical periodic event payloads', () => {

@@ -5,7 +5,7 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
-import type { EntityState } from '@ai-rpg-engine/core';
+import type { EngineModule, EntityState } from '@ai-rpg-engine/core';
 import type { QuestDefinition } from '@ai-rpg-engine/content-schema';
 import { statusCore, applyStatus } from './status-core.js';
 import { traversalCore } from './traversal-core.js';
@@ -77,6 +77,26 @@ afterEach(() => {
 function spec(partial: Partial<HazardSpec> & Pick<HazardSpec, 'id' | 'trigger' | 'effects'>): HazardSpec {
   return { name: partial.id, tags: [], ...partial };
 }
+
+/** No-op verb so a resolved action can drive status-core's periodic pass. */
+const waitModule: EngineModule = {
+  id: 'wait-test',
+  version: '0.0.0',
+  register(ctx) {
+    ctx.actions.registerVerb('wait', (action) => [
+      { id: '', tick: action.issuedAtTick, type: 'wait.done', actorId: action.actorId, payload: {} },
+    ]);
+  },
+};
+
+const killHunt: QuestDefinition = {
+  id: 'kill-hunt',
+  name: 'Kill Hunt',
+  triggers: [
+    { event: 'combat.entity.defeated', effect: { type: 'offer', params: {} } },
+  ],
+  stages: [{ id: 'cull', name: 'Cull' }],
+};
 
 describe('typed-hazard instakill emits combat.entity.defeated (F-2cd298dd)', () => {
   it('on-enter instakill produces combat.entity.defeated and moves defeat-fallout / companion combat-lost', () => {
@@ -257,15 +277,6 @@ describe('typed-hazard on-exit and timed dispatch (F-d4256636)', () => {
 });
 
 describe('typed-hazard writeHp actorId does not advance kill quests (F-94928c2e)', () => {
-  const killHunt: QuestDefinition = {
-    id: 'kill-hunt',
-    name: 'Kill Hunt',
-    triggers: [
-      { event: 'combat.entity.defeated', effect: { type: 'offer', params: {} } },
-    ],
-    stages: [{ id: 'cull', name: 'Cull' }],
-  };
-
   function makeWolf(): EntityState {
     return {
       id: 'wolf',
@@ -398,5 +409,256 @@ describe('typed-hazard writeHp emits combat.damage.applied (F-b71568d0)', () => 
     ).toBe(true);
     // Hazard wrote 37, then bramble-hide healed 1.
     expect(engine.world.entities.player.resources.hp).toBe(38);
+  });
+});
+
+describe('periodic/trigger actorId stamps combat.entity.defeated quests (F-1f8eb735)', () => {
+  it('player-sourced burning that zeros an NPC offers a combat.entity.defeated quest', () => {
+    registerStatusDefinitions([
+      { id: 'burning', name: 'Burning', tags: ['poison', 'debuff'], stacking: 'refresh' },
+    ]);
+    const engine = createTestEngine({
+      modules: [
+        statusCore,
+        waitModule,
+        createQuestCore({ gameId: GAME_ID, quests: [killHunt] }),
+      ],
+      entities: [
+        makePlayer(),
+        makeNpc(),
+        {
+          id: 'wolf',
+          blueprintId: 'wolf',
+          type: 'enemy',
+          name: 'Wolf',
+          tags: ['enemy', 'wolf'],
+          stats: { vigor: 1, instinct: 1, will: 1 },
+          resources: { hp: 2, maxHp: 2, stamina: 1 },
+          statuses: [],
+          zoneId: 'zone-a',
+        },
+      ],
+      zones,
+    });
+
+    applyStatus(
+      engine.world.entities.wolf,
+      'burning',
+      engine.tick,
+      { duration: 4, sourceId: 'player', data: { periodicKind: 'damage', periodTicks: 1, amount: 5 } },
+      engine.world,
+    );
+    engine.submitAction('wait');
+
+    const defeat = engine.world.eventLog.find(
+      (e) => e.type === 'combat.entity.defeated' && e.payload.entityId === 'wolf',
+    );
+    expect(defeat, 'player-sourced burning must emit combat.entity.defeated').toBeDefined();
+    expect(defeat!.actorId).toBe('player');
+    expect(defeat!.actorId).not.toBe('wolf');
+    expect(engine.world.quests['kill-hunt'], 'player burn-kill must offer the kill quest').toBeDefined();
+  });
+
+  it('hazard durationTicks that zeros the player does not offer a kill quest', () => {
+    const engine = createTestEngine({
+      modules: [
+        statusCore,
+        waitModule,
+        createQuestCore({ gameId: GAME_ID, quests: [killHunt] }),
+      ],
+      entities: [makePlayer({ resources: { hp: 2, maxHp: 40, stamina: 5 } }), makeNpc()],
+      zones,
+    });
+
+    registerTypedHazards(
+      engine.world.meta.gameId,
+      [spec({
+        id: 'scalding-steam',
+        name: 'Scalding Steam',
+        trigger: 'on-enter',
+        effects: [{ kind: 'damage', amount: 5, tickOn: 'turn-end', durationTicks: 3 }],
+      })],
+      { 'zone-a': ['scalding-steam'] },
+    );
+
+    applyTypedHazards(engine, 'zone-a', engine.world.entities.player, 'on-enter');
+    engine.submitAction('wait');
+
+    const defeat = engine.world.eventLog.find(
+      (e) => e.type === 'combat.entity.defeated' && e.payload.entityId === 'player',
+    );
+    expect(defeat, 'hazard durationTicks that zeros the player must emit combat.entity.defeated').toBeDefined();
+    expect(defeat!.actorId).toBe('scalding-steam');
+    expect(defeat!.actorId).not.toBe('player');
+    expect(engine.world.quests['kill-hunt'], 'player swamp-DoT death must not offer a kill quest').toBeUndefined();
+  });
+
+  it('hazard durationTicks that zeros an NPC does not offer a kill quest', () => {
+    const engine = createTestEngine({
+      modules: [
+        statusCore,
+        waitModule,
+        createQuestCore({ gameId: GAME_ID, quests: [killHunt] }),
+      ],
+      entities: [makePlayer(), makeNpc()],
+      zones,
+    });
+
+    registerTypedHazards(
+      engine.world.meta.gameId,
+      [spec({
+        id: 'scalding-steam',
+        name: 'Scalding Steam',
+        trigger: 'on-enter',
+        effects: [{ kind: 'damage', amount: 20, tickOn: 'turn-end', durationTicks: 3 }],
+      })],
+      { 'zone-a': ['scalding-steam'] },
+    );
+
+    applyTypedHazards(engine, 'zone-a', engine.world.entities.mira, 'on-enter');
+    engine.submitAction('wait');
+
+    const defeat = engine.world.eventLog.find(
+      (e) => e.type === 'combat.entity.defeated' && e.payload.entityId === 'mira',
+    );
+    expect(defeat, 'hazard durationTicks that zeros an NPC must emit combat.entity.defeated').toBeDefined();
+    expect(defeat!.actorId).toBe('scalding-steam');
+    expect(defeat!.actorId).not.toBe('mira');
+    expect(defeat!.actorId).not.toBe('player');
+    expect(engine.world.quests['kill-hunt'], 'NPC swamp-DoT death must not offer a kill quest').toBeUndefined();
+  });
+
+  it('a thorns-kill of an NPC by the player still offers a combat.entity.defeated quest', () => {
+    registerStatusDefinitions([
+      {
+        id: 'thorns',
+        name: 'Thorns',
+        tags: ['buff'],
+        stacking: 'replace',
+        triggers: [
+          {
+            event: 'combat.damage.applied',
+            effect: { type: 'damage', target: 'target', params: { amount: 20, triggerTarget: 'attacker' } },
+          },
+        ],
+      },
+    ]);
+
+    const wolf: EntityState = {
+      id: 'wolf',
+      blueprintId: 'wolf',
+      type: 'enemy',
+      name: 'Wolf',
+      tags: ['enemy', 'wolf'],
+      stats: { vigor: 1, instinct: 50, will: 1 },
+      resources: { hp: 5, maxHp: 5, stamina: 5 },
+      statuses: [],
+      zoneId: 'zone-a',
+    };
+
+    const engine = createTestEngine({
+      modules: [
+        statusCore,
+        createCombatCore(),
+        createQuestCore({ gameId: GAME_ID, quests: [killHunt] }),
+      ],
+      entities: [makePlayer(), wolf],
+      zones,
+    });
+    applyStatus(engine.world.entities.player, 'thorns', engine.tick, { duration: 10 }, engine.world);
+
+    engine.submitActionAs('wolf', 'attack', { targetIds: ['player'] });
+
+    const defeat = engine.world.eventLog.find(
+      (e) => e.type === 'combat.entity.defeated' && e.payload.entityId === 'wolf',
+    );
+    expect(defeat, 'player thorns must emit combat.entity.defeated for the NPC').toBeDefined();
+    expect(defeat!.actorId).toBe('player');
+    expect(defeat!.actorId).not.toBe('wolf');
+    expect(engine.world.quests['kill-hunt'], 'player thorns-kill must still offer the kill quest').toBeDefined();
+  });
+});
+
+describe('typed-hazard durationTicks emits combat.damage.applied (F-b000f36d)', () => {
+  it('non-lethal durationTicks on-enter tick produces combat.damage.applied and fires a reactive status', () => {
+    registerStatusDefinitions([
+      {
+        id: 'bramble-hide',
+        name: 'Bramble Hide',
+        tags: ['buff'],
+        stacking: 'replace',
+        triggers: [
+          {
+            event: 'combat.damage.applied',
+            effect: { type: 'heal', target: 'actor', params: { amount: 1, triggerTarget: 'self' } },
+          },
+        ],
+      },
+    ]);
+
+    const engine = createTestEngine({
+      modules: [statusCore, waitModule, createEnvironmentCore()],
+      entities: [makePlayer()],
+      zones,
+    });
+    applyStatus(engine.world.entities.player, 'bramble-hide', engine.tick, { duration: 10 }, engine.world);
+
+    registerTypedHazards(
+      engine.world.meta.gameId,
+      [spec({
+        id: 'scalding-steam',
+        name: 'Scalding Steam',
+        trigger: 'on-enter',
+        effects: [{ kind: 'damage', amount: 3, tickOn: 'turn-end', durationTicks: 3 }],
+      })],
+      { 'zone-a': ['scalding-steam'] },
+    );
+
+    applyTypedHazards(engine, 'zone-a', engine.world.entities.player, 'on-enter');
+    engine.submitAction('wait');
+
+    const dmg = engine.world.eventLog.find((e) => e.type === 'combat.damage.applied');
+    expect(dmg, 'non-lethal durationTicks pulse must emit combat.damage.applied').toBeDefined();
+    expect(dmg!.payload.targetId).toBe('player');
+    expect(dmg!.payload.damage).toBe(3);
+    expect(dmg!.payload.previousHp).toBe(40);
+    expect(dmg!.payload.currentHp).toBe(37);
+    expect(dmg!.payload.cause).toBe('hazard');
+    expect(dmg!.actorId).toBe('scalding-steam');
+
+    expect(
+      engine.world.eventLog.some((e) => e.type === 'status.trigger.fired'),
+      'a reactive status on combat.damage.applied must fire on this durationTicks pulse',
+    ).toBe(true);
+    // DoT wrote 37, then bramble-hide healed 1.
+    expect(engine.world.entities.player.resources.hp).toBe(38);
+  });
+
+  it('non-lethal durationTicks per-turn tick produces combat.damage.applied with targetId of the walker', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, waitModule, createEnvironmentCore()],
+      entities: [makePlayer()],
+      zones,
+    });
+
+    registerTypedHazards(
+      engine.world.meta.gameId,
+      [spec({
+        id: 'acid',
+        name: 'Acid',
+        trigger: 'per-turn',
+        effects: [{ kind: 'damage', amount: 3, tickOn: 'turn-end', durationTicks: 3 }],
+      })],
+      { 'zone-a': ['acid'] },
+    );
+
+    runTypedHazardStep(engine);
+    engine.submitAction('wait');
+
+    const dmg = engine.world.eventLog.find((e) => e.type === 'combat.damage.applied');
+    expect(dmg, 'per-turn durationTicks pulse must emit combat.damage.applied').toBeDefined();
+    expect(dmg!.payload.targetId).toBe('player');
+    expect(dmg!.payload.damage).toBe(3);
+    expect(dmg!.actorId).toBe('acid');
   });
 });
