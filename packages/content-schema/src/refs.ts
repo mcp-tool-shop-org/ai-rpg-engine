@@ -199,6 +199,18 @@ export type EncounterAnchorRecord = {
  */
 export type RefsResult = ValidationResult & { advisories: ValidationError[] };
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === 'object';
+}
+
+function idsFrom(collection: unknown): string[] | undefined {
+  if (!Array.isArray(collection)) return undefined;
+  return collection
+    .filter(isRecord)
+    .map((r) => (r as { id?: unknown }).id)
+    .filter((id): id is string => typeof id === 'string');
+}
+
 export function validateRefs(pack: ContentPack): RefsResult {
   const errors: ValidationError[] = [];
   const advisories: ValidationError[] = [];
@@ -212,7 +224,6 @@ export function validateRefs(pack: ContentPack): RefsResult {
     return { ok: false, errors: [{ path: 'pack', message: 'content pack must be a plain object' }], advisories: [] };
   }
 
-  const isRecord = (v: unknown): boolean => v !== null && typeof v === 'object';
   // Normalize every collection to a safe array of record elements once, so the
   // cross-ref loops below can never raw-throw on a null/non-array collection or a
   // null element (the per-type validators enforce element shape; validateRefs is
@@ -280,6 +291,37 @@ export function validateRefs(pack: ContentPack): RefsResult {
           path: `${path}.zone(${zone.id}).entities`,
           message: `references unknown entity "${entityId}"`,
         });
+      }
+    }
+  }
+
+  // F-6fbd6e71: district zoneIds bind to pack.zones[].id the same way
+  // placements bind to entities and hazardRefs bind to hazardDefinitions.
+  // A ghost zone is an ERROR. Two districts claiming the same zone is also
+  // an error — intake last-wins (`zoneToDistrict[zoneId] = def.id`), so the
+  // earlier claim silently disappears.
+  const districts = (Array.isArray(pack.districts) ? pack.districts : []).filter(isRecord) as NonNullable<ContentPack['districts']>;
+  const claimedZones = new Map<string, string>();
+  for (let i = 0; i < districts.length; i++) {
+    const d = districts[i];
+    const districtId = typeof d.id === 'string' && d.id.length > 0 ? d.id : `districts[${i}]`;
+    const zids = Array.isArray(d.zoneIds) ? d.zoneIds : [];
+    for (const zid of zids) {
+      if (typeof zid !== 'string') continue;
+      if (!zoneIds.has(zid)) {
+        errors.push({
+          path: `${path}.district(${districtId}).zoneIds`,
+          message: `references unknown zone "${zid}" — district zoneIds bind to this pack's zones[].id`,
+        });
+      }
+      const previous = claimedZones.get(zid);
+      if (previous !== undefined) {
+        errors.push({
+          path: `${path}.district(${districtId}).zoneIds`,
+          message: `zone "${zid}" is already claimed by district "${previous}" — a zone belongs to one district; later claims silently win at intake`,
+        });
+      } else {
+        claimedZones.set(zid, districtId);
       }
     }
   }
@@ -459,8 +501,8 @@ export function validateRefs(pack: ContentPack): RefsResult {
 
   // Quest stage self-references
   for (const quest of quests) {
-    const stages = quest.stages ?? [];
-    const stageIds = new Set(stages.map((s) => s.id));
+    const stages = (Array.isArray(quest.stages) ? quest.stages : []).filter(isRecord) as NonNullable<QuestDefinition['stages']>;
+    const stageIds = new Set(stages.map((s) => s.id).filter((id): id is string => typeof id === 'string'));
     for (const stage of stages) {
       if (stage.nextStage && !stageIds.has(stage.nextStage)) {
         errors.push({
@@ -551,31 +593,28 @@ export function validateGameContent(
   const path = 'game';
 
   // Build effective registries: explicit input first, otherwise derive from the pack.
-  const statusReg = buildRegistry(
-    registries.statusIds,
-    pack.statuses?.map((s) => s.id),
-  );
-  const verbReg = buildRegistry(
-    registries.verbIds,
-    pack.verbs?.map((v) => v.id),
-  );
+  // F-b6ded9eb: filter isRecord + optional-chain .id before any .map/.verb/.effects
+  // walk so a null element cannot TypeError (validateRefs and pack.items already do).
+  const statusReg = buildRegistry(registries.statusIds, idsFrom(pack.statuses));
+  const verbReg = buildRegistry(registries.verbIds, idsFrom(pack.verbs));
   // Derive from pack.items[].id the same way statuses/verbs are derived, so a
   // JSON pack loaded with no explicit registries cannot stay green on a
   // dangling itemId. Absent items[] AND absent registries.itemIds → skip
   // (warn-and-degrade), matching the other categories.
-  const itemIdsFromPack = Array.isArray(pack.items)
-    ? pack.items.map((item) => item?.id).filter((id): id is string => typeof id === 'string')
-    : undefined;
-  const itemReg = buildRegistry(registries.itemIds, itemIdsFromPack);
-  const abilityReg = buildRegistry(
-    registries.abilityIds,
-    pack.abilities?.map((a) => a.id),
-  );
+  const itemReg = buildRegistry(registries.itemIds, idsFrom(pack.items));
+  const abilityReg = buildRegistry(registries.abilityIds, idsFrom(pack.abilities));
   void abilityReg; // reserved for future entity→ability references; no current source field
+
+  const entities = (Array.isArray(pack.entities) ? pack.entities : []).filter(isRecord) as NonNullable<ContentPack['entities']>;
+  const abilities = (Array.isArray(pack.abilities) ? pack.abilities : []).filter(isRecord) as NonNullable<ContentPack['abilities']>;
+  const statuses = (Array.isArray(pack.statuses) ? pack.statuses : []).filter(isRecord) as NonNullable<ContentPack['statuses']>;
+  const quests = (Array.isArray(pack.quests) ? pack.quests : []).filter(isRecord) as NonNullable<ContentPack['quests']>;
+  const archetypes = (Array.isArray(pack.archetypes) ? pack.archetypes : []).filter(isRecord) as NonNullable<ContentPack['archetypes']>;
+  const backgrounds = (Array.isArray(pack.backgrounds) ? pack.backgrounds : []).filter(isRecord) as NonNullable<ContentPack['backgrounds']>;
 
   // entity.startingStatuses → status registry
   if (statusReg) {
-    for (const entity of pack.entities ?? []) {
+    for (const entity of entities) {
       for (const statusId of entity.startingStatuses ?? []) {
         if (!statusReg.has(statusId)) {
           errors.push({
@@ -589,7 +628,7 @@ export function validateGameContent(
 
   // entity.inventory + entity.equipment → item registry
   if (itemReg) {
-    for (const entity of pack.entities ?? []) {
+    for (const entity of entities) {
       for (const item of entity.inventory ?? []) {
         if (!itemReg.has(item)) {
           errors.push({
@@ -611,8 +650,7 @@ export function validateGameContent(
     // chargen archetype/background startingInventory kits → item registry (F-703048a5).
     // Same bug class as entity.inventory above: a typo'd id in a character-creation
     // build-catalog kit ships silently because nothing cross-checks it.
-    for (const archetype of pack.archetypes ?? []) {
-      if (!archetype) continue;
+    for (const archetype of archetypes) {
       for (const item of archetype.startingInventory ?? []) {
         if (!itemReg.has(item)) {
           errors.push({
@@ -622,8 +660,7 @@ export function validateGameContent(
         }
       }
     }
-    for (const background of pack.backgrounds ?? []) {
-      if (!background) continue;
+    for (const background of backgrounds) {
       for (const item of background.startingInventory ?? []) {
         if (!itemReg.has(item)) {
           errors.push({
@@ -651,10 +688,10 @@ export function validateGameContent(
     // bespoke item-use-effect itemId fields → item registry (F-703048a5). Runtime
     // item-use wiring (e.g. inventory-core's ItemEffect[]) keys effects by itemId
     // with no catalog cross-check today — same silent-typo risk as above.
-    const itemUseEffects = pack.itemUseEffects ?? [];
+    const itemUseEffects = Array.isArray(pack.itemUseEffects) ? pack.itemUseEffects : [];
     for (let i = 0; i < itemUseEffects.length; i++) {
       const effect = itemUseEffects[i];
-      if (effect && !itemReg.has(effect.itemId)) {
+      if (effect && typeof effect.itemId === 'string' && !itemReg.has(effect.itemId)) {
         errors.push({
           path: `${path}.itemUseEffect[${i}].itemId`,
           message: `references unknown item "${effect.itemId}" — define it in the item registry or fix the id`,
@@ -665,8 +702,7 @@ export function validateGameContent(
     // quest.rewards item-type rewards → item registry (F-703048a5). Mirrors the
     // shape modules' quest-core.ts already expects at apply time
     // (reward.type === 'item' && typeof reward.params.itemId === 'string').
-    for (const quest of pack.quests ?? []) {
-      if (!quest) continue;
+    for (const quest of quests) {
       const rewards = quest.rewards ?? [];
       for (let i = 0; i < rewards.length; i++) {
         const reward = rewards[i];
@@ -682,7 +718,7 @@ export function validateGameContent(
   }
 
   // ability.verb → verb registry; apply-status effects → status registry
-  for (const ability of pack.abilities ?? []) {
+  for (const ability of abilities) {
     if (verbReg && typeof ability.verb === 'string' && !verbReg.has(ability.verb)) {
       errors.push({
         path: `${path}.ability(${ability.id}).verb`,
@@ -691,8 +727,9 @@ export function validateGameContent(
     }
 
     if (statusReg) {
-      for (let i = 0; i < (ability.effects ?? []).length; i++) {
-        const effect = ability.effects[i];
+      const effects = Array.isArray(ability.effects) ? ability.effects : [];
+      for (let i = 0; i < effects.length; i++) {
+        const effect = effects[i];
         if (effect && effect.type === 'apply-status') {
           const statusId = effect.params?.statusId;
           if (typeof statusId === 'string' && !statusReg.has(statusId)) {
@@ -706,7 +743,7 @@ export function validateGameContent(
           // Eleven packs duplicate it on the effect; a missing number against
           // a ticks-duration definition applies as permanent.
           if (typeof statusId === 'string' && effect.params?.duration === undefined) {
-            const def = (pack.statuses ?? []).find((s) => s && s.id === statusId);
+            const def = statuses.find((s) => s && s.id === statusId);
             if (def?.duration?.type === 'ticks') {
               errors.push({
                 path: `${path}.ability(${ability.id}).effects[${i}].params.duration`,

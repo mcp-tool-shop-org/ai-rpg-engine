@@ -541,6 +541,23 @@ export function validateEncounterAnchorRecord(v: unknown, path = 'EncounterAncho
   return { ok: c.errors.length === 0, errors: c.errors };
 }
 
+/**
+ * Structural district record (F-6fbd6e71). Shape mirrors ContentPack.districts
+ * — id/name/zoneIds/tags required; controllingFaction and baseMetrics optional.
+ * Zone-id resolution against pack.zones is validateRefs' job.
+ */
+export function validateDistrictDefinition(v: unknown, path = 'DistrictDefinition'): ValidationResult {
+  if (!isObj(v)) return fail([{ path, message: 'must be an object' }]);
+  const c = checker(path);
+  reqStr(c, v, 'id');
+  reqStr(c, v, 'name');
+  reqStrArr(c, v, 'zoneIds');
+  reqStrArr(c, v, 'tags');
+  optStr(c, v, 'controllingFaction');
+  optRecord(c, v, 'baseMetrics', 'number');
+  return { ok: c.errors.length === 0, errors: c.errors };
+}
+
 export function validateRoomDefinition(v: unknown, path = 'RoomDefinition'): ValidationResult {
   if (!isObj(v)) return fail([{ path, message: 'must be an object' }]);
   const c = checker(path);
@@ -573,8 +590,15 @@ export function validateQuestDefinition(v: unknown, path = 'QuestDefinition'): V
   if (!Array.isArray(v.stages)) {
     c.errors.push({ path: `${path}.stages`, message: 'required array of QuestStage' });
   } else {
-    for (let i = 0; i < (v.stages as unknown[]).length; i++) {
-      const s = (v.stages as unknown[])[i];
+    const stages = v.stages as unknown[];
+    // Collect ids first so nextStage/failStage can resolve against this quest
+    // the same way dialogue nextNodeId resolves against node keys (F-640e9025).
+    const stageIds = new Set<string>();
+    for (const s of stages) {
+      if (isObj(s) && typeof s.id === 'string' && s.id.length > 0) stageIds.add(s.id);
+    }
+    for (let i = 0; i < stages.length; i++) {
+      const s = stages[i];
       const sp = `${path}.stages[${i}]`;
       if (!isObj(s)) {
         c.errors.push({ path: sp, message: 'must be an object' });
@@ -591,7 +615,7 @@ export function validateQuestDefinition(v: unknown, path = 'QuestDefinition'): V
         // trigger nor a nextStage can never leave stage 1. Final stages may
         // omit both (single-stage quests complete via their own trigger, or
         // are the last hop after nextStage).
-        if (i < (v.stages as unknown[]).length - 1) {
+        if (i < stages.length - 1) {
           const hasTriggers = Array.isArray(s.triggers) && (s.triggers as unknown[]).length > 0;
           const hasNext = typeof s.nextStage === 'string' && s.nextStage.length > 0;
           if (!hasTriggers && !hasNext) {
@@ -601,6 +625,20 @@ export function validateQuestDefinition(v: unknown, path = 'QuestDefinition'): V
                 'non-final stage has neither triggers nor nextStage — journal wallpaper that can never advance. Author a trigger (advance/progress) and/or nextStage, or drop the stage.',
             });
           }
+        }
+        // A dangling hop cannot complete: nextStage/failStage, when present,
+        // must equal some stages[j].id. Error, not advisory.
+        if (typeof s.nextStage === 'string' && s.nextStage.length > 0 && !stageIds.has(s.nextStage)) {
+          sc.errors.push({
+            path: `${sp}.nextStage`,
+            message: `references unknown stage "${s.nextStage}"`,
+          });
+        }
+        if (typeof s.failStage === 'string' && s.failStage.length > 0 && !stageIds.has(s.failStage)) {
+          sc.errors.push({
+            path: `${sp}.failStage`,
+            message: `references unknown stage "${s.failStage}"`,
+          });
         }
         c.errors.push(...sc.errors);
       }

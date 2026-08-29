@@ -35,11 +35,16 @@ npm install @ai-rpg-engine/content-schema
 ## Utilizzo
 
 ```typescript
-import { validateContentPack, RoomSchema, EntitySchema } from '@ai-rpg-engine/content-schema';
+import { loadContent, validateGameContent } from '@ai-rpg-engine/content-schema';
 
-const result = validateContentPack(myContentData);
-if (!result.valid) {
+const result = loadContent(myContentData);
+if (!result.ok) {
   console.error(result.errors);
+}
+
+const refs = validateGameContent(myContentData);
+if (!refs.ok) {
+  console.error(refs.errors);
 }
 ```
 

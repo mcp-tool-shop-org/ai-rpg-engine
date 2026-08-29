@@ -10,6 +10,9 @@ import {
   validateQuestDefinition,
   validateEntityPlacementRecord,
   validateEncounterAnchorRecord,
+  validateAbilityDefinition,
+  validateStatusDefinition,
+  validateDistrictDefinition,
   formatErrors,
 } from './validate.js';
 import { validateRefs, validateGameContent } from './refs.js';
@@ -69,6 +72,7 @@ const REFS_ITERATED_KEYS = [
   'encounterAnchors',
   'hazardDefinitions',
   'items',
+  'districts',
 ] as const;
 
 /**
@@ -160,6 +164,35 @@ export function loadContent(pack: ContentPack): LoadResult {
     const a = (pack.encounterAnchors ?? [])[i];
     const label = `encounterAnchors[${i}](${isPlainObject(a) ? (a.id ?? '?') : '?'})`;
     allErrors.push(...validateEncounterAnchorRecord(a, label).errors);
+  }
+  // F-b6ded9eb: abilities/statuses/verbs were unwalked, so a null element
+  // survived as structural ok:true then TypeError'd in validateGameContent.
+  // Per-element validators report structured errors, matching entities/zones.
+  for (let i = 0; i < (pack.abilities ?? []).length; i++) {
+    const ability = (pack.abilities ?? [])[i];
+    const label = `abilities[${i}](${isPlainObject(ability) ? (ability.id ?? '?') : '?'})`;
+    allErrors.push(...validateAbilityDefinition(ability, label).errors);
+  }
+  for (let i = 0; i < (pack.statuses ?? []).length; i++) {
+    const status = (pack.statuses ?? [])[i];
+    const label = `statuses[${i}](${isPlainObject(status) ? (status.id ?? '?') : '?'})`;
+    allErrors.push(...validateStatusDefinition(status, label).errors);
+  }
+  for (let i = 0; i < (pack.verbs ?? []).length; i++) {
+    const verb = (pack.verbs ?? [])[i];
+    const label = `verbs[${i}](${isPlainObject(verb) ? (verb.id ?? '?') : '?'})`;
+    if (!isPlainObject(verb)) {
+      allErrors.push({ path: label, message: 'must be an object' });
+    } else if (typeof verb.id !== 'string' || verb.id.length === 0) {
+      allErrors.push({ path: `${label}.id`, message: 'required non-empty string' });
+    }
+  }
+  // F-6fbd6e71: per-element district shape (id/name/zoneIds/tags). Zone-id
+  // resolution is validateRefs' job and runs after this pass is clean.
+  for (let i = 0; i < (pack.districts ?? []).length; i++) {
+    const d = (pack.districts ?? [])[i];
+    const label = `districts[${i}](${isPlainObject(d) ? (d.id ?? '?') : '?'})`;
+    allErrors.push(...validateDistrictDefinition(d, label).errors);
   }
 
   // Cross-reference validation. validateRefs reads .id off elements, so only run it once
