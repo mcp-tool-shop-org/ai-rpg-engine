@@ -454,17 +454,17 @@ export class TestnetTransport implements LedgerTransport, NFTTransport {
     );
 
     const entries: TxEntry[] = [];
-    for (const entry of res.result.transactions) {
-      const tx = entry.tx_json;
-      const hash = entry.hash ?? tx?.hash ?? '';
+    for (const raw of res.result.transactions) {
+      const tx = (raw as { tx_json?: { hash?: string; TransactionType?: string; Sequence?: number; Memos?: Array<{ Memo?: { MemoData?: string } }> }; hash?: string }).tx_json;
+      const hash = (raw as { hash?: string }).hash ?? tx?.hash ?? '';
       const type = tx?.TransactionType ?? 'Unknown';
       const memoHex = tx?.Memos?.[0]?.Memo?.MemoData;
       const memo = memoHex !== undefined ? safeHexDecode(memoHex) : undefined;
       const sequence = typeof tx?.Sequence === 'number' ? tx.Sequence : undefined;
-      const entry: TxEntry = { hash, type };
-      if (memo !== undefined) entry.memo = memo;
-      if (sequence !== undefined) entry.sequence = sequence;
-      entries.push(entry);
+      const mapped: TxEntry = { hash, type };
+      if (memo !== undefined) mapped.memo = memo;
+      if (sequence !== undefined) mapped.sequence = sequence;
+      entries.push(mapped);
     }
     return entries;
   }

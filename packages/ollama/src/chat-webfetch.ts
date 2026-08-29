@@ -282,16 +282,15 @@ async function cancelBody(response: Response): Promise<void> {
 async function readBodyWithByteCap(response: Response, byteCap: number): Promise<string> {
   const rawLen = response.headers.get('content-length');
   if (rawLen === null || rawLen.trim() === '') {
-    await cancelBody(response);
+    // Do not touch response.body here: accessing/cancelling a pull-based
+    // mock stream can enqueue a chunk. Refuse before any read (F-04d727a9).
     throw new Error('Content-Length missing; refusing unbounded body');
   }
   const declared = Number(rawLen);
   if (!Number.isFinite(declared) || declared < 0) {
-    await cancelBody(response);
     throw new Error('Content-Length invalid; refusing body');
   }
   if (declared > byteCap) {
-    await cancelBody(response);
     throw new Error(`Response too large (${declared} bytes; cap ${byteCap})`);
   }
   if (declared === 0) {

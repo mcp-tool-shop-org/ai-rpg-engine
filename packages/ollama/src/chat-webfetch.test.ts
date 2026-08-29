@@ -569,7 +569,7 @@ describe('webfetch — streamed body byte cap (F-04d727a9)', () => {
           pulled++;
           controller.enqueue(new Uint8Array(1024));
         },
-      }),
+      }, { highWaterMark: 0 }),
       text: async () => {
         textCalled++;
         return 'SHOULD-NOT-MATERIALIZE';
@@ -601,7 +601,7 @@ describe('webfetch — streamed body byte cap (F-04d727a9)', () => {
           pulled++;
           controller.enqueue(new Uint8Array(1024).fill(65));
         },
-      }),
+      }, { highWaterMark: 0 }),
       text: async () => {
         throw new Error('text() would materialize the full body');
       },

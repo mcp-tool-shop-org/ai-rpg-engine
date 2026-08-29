@@ -219,7 +219,7 @@ describe('extractMetrics', () => {
     let metrics;
     expect(() => { metrics = extractMetrics({ ticks } as never); }).not.toThrow();
     expect(metrics!.totalTicks).toBeLessThanOrEqual(MAX_REPLAY_TICKS);
-    expect(metrics!.curves.every((c) => c.values.length <= MAX_REPLAY_TICKS)).toBe(true);
+    expect(metrics!.curves.every((c: { values: unknown[] }) => c.values.length <= MAX_REPLAY_TICKS)).toBe(true);
   });
 
   it('caps metric-name count before building curves', () => {
