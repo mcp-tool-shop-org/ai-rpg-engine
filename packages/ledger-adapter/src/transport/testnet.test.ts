@@ -317,6 +317,24 @@ describe('result mapping (submitAndWait -> TxResult)', () => {
       vi.useRealTimers();
     }
   });
+
+  it('returns { ok: false } when submitAndWait never resolves past the write deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const submitAndWait = vi.fn().mockImplementation(() => new Promise(() => {}));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
+      const pending = transport.setAccountFlag(KNOWN_SEED, ASF_DEFAULT_RIPPLE);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(5_000);
+      const result = await pending;
+
+      expect(result.ok).toBe(false);
+      expect(result.hash).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 // ── The CRITICAL fix: escrowFinish waits out FinishAfter before submitting ──

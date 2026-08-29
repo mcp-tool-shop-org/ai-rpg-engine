@@ -452,7 +452,12 @@ export function createLedgerAdapter(
         // such records were in fact written as.
         const memo = buildSettlementMemo(gameId, runId, record.checkpoint, record.deltas, record.verb ?? 'settle');
         if (!record.receipts) record.receipts = {};
-        const txids = await executeDeltas(state, record.deltas, memo, config.settlement, record.receipts);
+        // Diary pending records were written by a failed anchorMemo, not a
+        // token movement. Replaying them through executeDeltas would try to
+        // sign as an issuer that diary mode never funded.
+        const txids = config.mode === 'diary'
+          ? await anchorDeltas(state, memo)
+          : await executeDeltas(state, record.deltas, memo, config.settlement, record.receipts);
 
         record.txids = txids;
         record.status = 'settled';
@@ -634,6 +639,19 @@ export function createLedgerAdapter(
     // Retry pending FIRST (conservation-on-retry folds any cleared deltas
     // into the baseline before the fresh delta computation below runs).
     await retryPending(state);
+
+    // lastSettled only advances when a pending record clears. Snapshot-vs-
+    // lastSettled while a spend is still pending would queue a second overlapping
+    // record (town -30 still pending, market snapshot 50 vs baseline 100 → -50)
+    // and execute both when the ledger recovers.
+    if (state.pending.length > 0) {
+      return {
+        success: false,
+        message:
+          "The ledger is quiet — couldn't settle this checkpoint (a previous checkpoint is still pending). Your run continues offline for now; we'll retry at the next checkpoint.",
+        record: state.pending[0],
+      };
+    }
 
     const amounts = amountsOf(snapshot);
     const keys = allKnownKeys(state, snapshot);

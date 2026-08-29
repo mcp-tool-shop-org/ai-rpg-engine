@@ -432,6 +432,52 @@ describe('createLedgerAdapter', () => {
     expect(report.passed).toBe(true);
   });
 
+  it('two consecutive settle failures with an intervening snapshot change do not overlap deltas', async () => {
+    // Town spend fails (pending coin-30). Player keeps playing; market snapshot
+    // is coin-50 vs lastSettled 100. A second pending of -50 alongside the
+    // first -30 would execute both on recovery and break conservation.
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'testgame', runId: 'run-1' });
+    const state = freshState();
+    await adapter.enable(state, { coin: 100, items: {} });
+    const mintedInitial = { ...state.lastSettled };
+
+    transport.failNext(1);
+    const town = await adapter.settle(state, { coin: 70, items: {} }, 1, 'town');
+    expect(town.success).toBe(false);
+    expect(state.pending).toHaveLength(1);
+    expect(state.pending[0].deltas).toEqual({ coin: -30 });
+    expect(state.lastSettled).toEqual({ coin: 100 });
+
+    transport.failNext(1);
+    const market = await adapter.settle(state, { coin: 50, items: {} }, 2, 'market');
+    expect(market.success).toBe(false);
+    expect(state.pending).toHaveLength(1);
+    expect(state.pending[0].deltas).toEqual({ coin: -30 });
+    expect(state.lastSettled).toEqual({ coin: 100 });
+    expect(state.settlements).toHaveLength(0);
+
+    const recovered = await adapter.settle(state, { coin: 50, items: {} }, 3, 'market');
+    expect(recovered.success).toBe(true);
+    expect(state.pending).toHaveLength(0);
+    expect(state.lastSettled.coin).toBe(50);
+    expect(transport.balances.get(`${state.playerAddress}:${state.tokenMap.coin}`)).toBe(50);
+    expect(state.settlements.map((r) => r.deltas.coin)).toEqual([-30, -20]);
+
+    const report = reconcile({
+      runId: 'run-1',
+      seed: 0,
+      mintedInitial,
+      ledgerBalances: { [state.tokenMap.coin]: 50 },
+      lastSettled: state.lastSettled,
+      settlements: state.settlements,
+      pending: state.pending,
+      tokenMap: state.tokenMap,
+    });
+    expect(report.resources.find((r) => r.resource === 'coin')?.conservationOk).toBe(true);
+    expect(report.resources.find((r) => r.resource === 'coin')?.sumDeltas).toBe(-50);
+    expect(report.passed).toBe(true);
+  });
+
   it('retryPending does not replay a key that already landed when a later key fails', async () => {
     const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'testgame', runId: 'run-1' });
     const state = freshState();
@@ -771,6 +817,46 @@ describe('diary mode: witnessed, not custodied', () => {
     expect(result.success).toBe(false);
     expect(state.pending).toHaveLength(1);
     expect(state.pending[0].deltas).toEqual({ coin: -30 });
+  });
+
+  it('two consecutive diary-anchor failures with an intervening snapshot change do not overlap deltas', async () => {
+    const adapter = createLedgerAdapter(transport, DIARY_CONFIG, { gameId: 'g', runId: 'r' });
+    const state = diaryState();
+    await adapter.enable(state, snapshot);
+
+    transport.failNext(1);
+    const first = await adapter.settle(state, { coin: 70, items: { potion: 2 } }, 1, 'the-warrens');
+    expect(first.success).toBe(false);
+    expect(state.pending).toHaveLength(1);
+    expect(state.pending[0].deltas).toEqual({ coin: -30 });
+
+    transport.failNext(1);
+    const second = await adapter.settle(state, { coin: 50, items: { potion: 2 } }, 2, 'long-quay');
+    expect(second.success).toBe(false);
+    expect(state.pending).toHaveLength(1);
+    expect(state.pending[0].deltas).toEqual({ coin: -30 });
+    expect(state.lastSettled.coin).toBe(100);
+
+    const recovered = await adapter.settle(state, { coin: 50, items: { potion: 2 } }, 3, 'long-quay');
+    expect(recovered.success).toBe(true);
+    expect(state.pending).toHaveLength(0);
+    expect(state.lastSettled.coin).toBe(50);
+    expect(state.settlements.map((r) => r.deltas.coin)).toEqual([-30, -20]);
+
+    const report = reconcile({
+      runId: 'r',
+      seed: 71,
+      mode: 'diary',
+      mintedInitial: { coin: 100, potion: 2 },
+      ledgerBalances: {},
+      lastSettled: state.lastSettled,
+      settlements: state.settlements,
+      pending: state.pending,
+      playerAddress: state.playerAddress,
+    });
+    expect(report.passed, report.notes.join('\n')).toBe(true);
+    expect(report.resources.find((r) => r.resource === 'coin')?.conservationOk).toBe(true);
+    expect(report.resources.find((r) => r.resource === 'coin')?.sumDeltas).toBe(-50);
   });
 });
 

@@ -67,6 +67,10 @@ import { assertTestnetHost, resolveTestnetEndpoint } from '../security/index.js'
 // hanging the caller forever.
 const REQUEST_DEADLINE_MS = 30_000; // a single request/response round-trip (connect, account_lines, account_tx)
 const WRITE_DEADLINE_MS = 60_000; // submitAndWait's own validation-poll loop (2x the request deadline)
+/** After the write deadline fires, observe a dangling submitAndWait this long
+ *  so a late tesSUCCESS is still checkpointed. If the node is actually stalled,
+ *  this second race returns `{ ok: false }` instead of hanging the caller. */
+const LATE_SUBMIT_OBSERVE_MS = 5_000;
 
 // ── Escrow FinishAfter timing (the CRITICAL synchronous create->finish fix) ──
 const ESCROW_FINISH_BUFFER_SECONDS = 8; // FinishAfter = rippleNow() + this
@@ -641,8 +645,15 @@ export class TestnetTransport implements LedgerTransport, NFTTransport {
       // Deadline fired, but the dangling submitAndWait cannot be cancelled and
       // may still (or may already) have validated tesSUCCESS. Observe that
       // result so a retry does not submit a second write for a tx that landed.
+      // Bound the observe window: an unbounded `await work` would freeze the
+      // caller if the testnet node is actually stalled (the case the deadline
+      // exists for).
       try {
-        const res = await work;
+        const res = await withDeadline(
+          work,
+          LATE_SUBMIT_OBSERVE_MS,
+          `submitAndWait(${tx.TransactionType}) late observe`,
+        );
         return mapSubmitResponse(res);
       } catch {
         return { result: { ok: false, hash: '', code: 'local-error', error: errorMessage(err) }, meta: undefined };
