@@ -11,6 +11,37 @@ vi.mock('node:dns/promises', () => ({
   lookup: vi.fn(),
 }));
 
+/** 200 with a streaming body and honest Content-Length. webfetch must not
+ *  call .text() — that would buffer the entire payload (F-04d727a9). */
+function streamedTextResponse(text: string, contentType = 'text/plain'): {
+  ok: true;
+  status: number;
+  statusText: string;
+  headers: Headers;
+  body: ReadableStream<Uint8Array>;
+  text: () => Promise<string>;
+} {
+  const bytes = new TextEncoder().encode(text);
+  return {
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    headers: new Headers({
+      'content-type': contentType,
+      'content-length': String(bytes.byteLength),
+    }),
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    }),
+    text: async () => {
+      throw new Error('response.text() must not buffer the body');
+    },
+  };
+}
+
 // --- isAllowedUrl ---
 
 describe('isAllowedUrl', () => {
@@ -343,11 +374,7 @@ describe('webfetch — DNS-resolution SSRF gate (F-f268b81a)', () => {
   it('allows a hostname that resolves to a normal public address through to fetch', async () => {
     vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
     const realFetch = globalThis.fetch;
-    const fetchSpy = vi.fn(async () => ({
-      ok: true,
-      headers: new Headers({ 'content-type': 'text/plain' }),
-      text: async () => 'hello',
-    })) as unknown as typeof fetch;
+    const fetchSpy = vi.fn(async () => streamedTextResponse('hello')) as unknown as typeof fetch;
     globalThis.fetch = fetchSpy;
     try {
       const { webfetch } = await import('./chat-webfetch.js');
@@ -474,11 +501,7 @@ describe('webfetch — redirect-follow SSRF gate (F-23749236)', () => {
         } as unknown as Response;
       }
       if (url === 'http://final.example/page') {
-        return {
-          ok: true, status: 200,
-          headers: new Headers({ 'content-type': 'text/plain' }),
-          text: async () => 'PUBLIC-FINAL',
-        } as unknown as Response;
+        return streamedTextResponse('PUBLIC-FINAL') as unknown as Response;
       }
       return {
         ok: false, status: 404, statusText: 'Not Found',
@@ -515,6 +538,128 @@ describe('webfetch — redirect-follow SSRF gate (F-23749236)', () => {
       expect(result.error).toMatch(/too many redirects/i);
       // Bounded: the manual loop caps hops rather than calling fetch forever.
       expect(hops).toBeLessThanOrEqual(6);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+});
+
+// F-04d727a9 — truncatedTo/maxChars used to apply only after response.text(),
+// which buffers the entire HTTP body. Stream with a hard byte cap; refuse
+// oversized or missing Content-Length; never materialize a multi-GB string.
+describe('webfetch — streamed body byte cap (F-04d727a9)', () => {
+  beforeEach(() => {
+    vi.mocked(lookup).mockReset();
+  });
+
+  it('refuses an oversized Content-Length without pulling the body or calling text()', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+    let pulled = 0;
+    let textCalled = 0;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        'content-type': 'text/plain',
+        'content-length': String(2_000_000_000),
+      }),
+      body: new ReadableStream({
+        pull(controller) {
+          pulled++;
+          controller.enqueue(new Uint8Array(1024));
+        },
+      }),
+      text: async () => {
+        textCalled++;
+        return 'SHOULD-NOT-MATERIALIZE';
+      },
+    })) as unknown as typeof fetch;
+    try {
+      const { webfetch } = await import('./chat-webfetch.js');
+      const result = await webfetch('https://public.example/huge', { maxChars: 64 });
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/too large|byte cap|content-length/i);
+      expect(pulled).toBe(0);
+      expect(textCalled).toBe(0);
+      expect(result.content).not.toContain('SHOULD-NOT-MATERIALIZE');
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('refuses a missing Content-Length without reading the body', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+    let pulled = 0;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'text/plain' }),
+      body: new ReadableStream({
+        pull(controller) {
+          pulled++;
+          controller.enqueue(new Uint8Array(1024).fill(65));
+        },
+      }),
+      text: async () => {
+        throw new Error('text() would materialize the full body');
+      },
+    })) as unknown as typeof fetch;
+    try {
+      const { webfetch } = await import('./chat-webfetch.js');
+      const result = await webfetch('https://public.example/chunked');
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/content-length/i);
+      expect(pulled).toBe(0);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('fails closed on a lying Content-Length without concatenating the full stream', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+    let enqueued = 0;
+    const chunk = new Uint8Array(1024).fill(65);
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        'content-type': 'text/plain',
+        'content-length': '100',
+      }),
+      body: new ReadableStream({
+        pull(controller) {
+          enqueued += chunk.byteLength;
+          controller.enqueue(chunk);
+        },
+      }),
+      text: async () => {
+        throw new Error('text() would materialize the full body');
+      },
+    })) as unknown as typeof fetch;
+    try {
+      const { webfetch } = await import('./chat-webfetch.js');
+      const result = await webfetch('https://public.example/lie', { maxChars: 200 });
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/exceeded|byte cap|content-length/i);
+      // Stopped after the first oversize chunk — never a multi-GB buffer.
+      expect(enqueued).toBeLessThan(16_384);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  it('returns a small streamed body without calling text()', async () => {
+    vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => streamedTextResponse('hello-stream')) as unknown as typeof fetch;
+    try {
+      const { webfetch } = await import('./chat-webfetch.js');
+      const result = await webfetch('https://public.example/ok');
+      expect(result.ok).toBe(true);
+      expect(result.content).toContain('hello-stream');
     } finally {
       globalThis.fetch = realFetch;
     }

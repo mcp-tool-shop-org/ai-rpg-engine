@@ -263,6 +263,76 @@ function stripTags(html: string): string {
     .trim();
 }
 
+// --- Capped body read (F-04d727a9) ---
+
+async function cancelBody(response: Response): Promise<void> {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // already closed or mock without cancel
+  }
+}
+
+/**
+ * Stream `response` up to `byteCap` bytes. Refuse before any read when
+ * Content-Length is missing/invalid or declares a size above the cap.
+ * Fail closed if the stream overruns the declared length or the cap so a
+ * lying header cannot force a multi-GB buffer. Never calls response.text().
+ */
+async function readBodyWithByteCap(response: Response, byteCap: number): Promise<string> {
+  const rawLen = response.headers.get('content-length');
+  if (rawLen === null || rawLen.trim() === '') {
+    await cancelBody(response);
+    throw new Error('Content-Length missing; refusing unbounded body');
+  }
+  const declared = Number(rawLen);
+  if (!Number.isFinite(declared) || declared < 0) {
+    await cancelBody(response);
+    throw new Error('Content-Length invalid; refusing body');
+  }
+  if (declared > byteCap) {
+    await cancelBody(response);
+    throw new Error(`Response too large (${declared} bytes; cap ${byteCap})`);
+  }
+  if (declared === 0) {
+    await cancelBody(response);
+    return '';
+  }
+
+  const body = response.body;
+  if (!body) {
+    throw new Error('Response body missing; refusing unstreamable body');
+  }
+
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value || value.byteLength === 0) continue;
+      received += value.byteLength;
+      if (received > byteCap || received > declared) {
+        await reader.cancel();
+        throw new Error('Response body exceeded Content-Length or byte cap');
+      }
+      chunks.push(value);
+    }
+  } catch (err) {
+    try { await reader.cancel(); } catch { /* already cancelled */ }
+    throw err;
+  }
+
+  const merged = new Uint8Array(received);
+  let offset = 0;
+  for (const c of chunks) {
+    merged.set(c, offset);
+    offset += c.byteLength;
+  }
+  return new TextDecoder('utf-8').decode(merged);
+}
+
 // --- Fetch ---
 
 /** Max redirect hops webfetch() will follow before giving up (fail closed). */
@@ -349,7 +419,16 @@ export async function webfetch(url: string, options?: WebfetchOptions): Promise<
       }
 
       const contentType = response.headers.get('content-type') ?? '';
-      const raw = await response.text();
+      // F-04d727a9 — never buffer via response.text(). Stream with a hard
+      // byte cap (2× maxChars); refuse missing/oversized/lying Content-Length.
+      const byteCap = Math.max(1, maxChars) * 2;
+      let raw: string;
+      try {
+        raw = await readBodyWithByteCap(response, byteCap);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return failClosed(msg);
+      }
 
       let title: string;
       let content: string;
