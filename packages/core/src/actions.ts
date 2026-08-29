@@ -37,6 +37,11 @@ function describeValue(value: unknown): string {
   return typeof value;
 }
 
+/** recordEvent reads event.id; null/undefined/array/primitive elements throw. */
+function isEventObject(value: unknown): value is ResolvedEvent {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export class ActionDispatcher {
   private verbs: Map<string, VerbHandler> = new Map();
   private validators: ActionValidator[] = [];
@@ -98,10 +103,19 @@ export class ActionDispatcher {
     // Validate. A validator is consumer-supplied code (module rule checks run
     // through one); a throwing validator must degrade to a structured
     // action.rejected naming the verb, not abort the tick with a raw stack.
+    // result.valid is read AFTER this try (F-208d62e4): undefined/null returns
+    // used to TypeError outside the catch and abort the tick declared-only.
     for (const validator of this.validators) {
       let result: ActionValidationResult;
       try {
         result = validator(action, world);
+        if (!(result && typeof result.valid === 'boolean')) {
+          store.emitEvent('action.rejected', {
+            verb: action.verb,
+            reason: `validator for "${action.verb}" returned non-object: ${describeValue(result)}`,
+          }, { actorId: action.actorId });
+          return [];
+        }
       } catch (err) {
         store.emitEvent('action.rejected', {
           verb: action.verb,
@@ -153,6 +167,22 @@ export class ActionDispatcher {
       return [];
     }
 
+    // Array.isArray is not enough: `return [maybeEvent]` with a failed
+    // construction is a valid-looking array of null/undefined. recordEvent
+    // reads event.id and would throw outside the handler try (F-208d62e4).
+    // Reject the action without recording any element so we never leave a
+    // partial handler event next to a hanging declared-only log.
+    for (let i = 0; i < events.length; i++) {
+      if (!isEventObject(events[i])) {
+        store.emitEvent('action.rejected', {
+          verb: action.verb,
+          index: i,
+          reason: `handler for "${action.verb}" returned non-object element at index ${i}: ${describeValue(events[i])}`,
+        }, { actorId: action.actorId });
+        return [];
+      }
+    }
+
     // Record all resolved events. Capture the log entries (cloned + enriched)
     // so the returned array aliases eventLog, not the caller's pre-record object.
     const recorded: ResolvedEvent[] = [];
@@ -189,7 +219,27 @@ export class ActionDispatcher {
               causedBy: event.id,
             });
           } else {
-            effectEvents.push(...produced);
+            // [null] passes Array.isArray then throws in the unguarded
+            // recordEvent loop after this try (F-208d62e4). Skip the hole;
+            // name the index; keep later elements and action.resolved.
+            for (let i = 0; i < produced.length; i++) {
+              const item = produced[i];
+              if (!isEventObject(item)) {
+                effectEvents.push({
+                  id: '',
+                  tick: event.tick,
+                  type: 'rule.effect.failed',
+                  payload: {
+                    sourceEventId: event.id,
+                    index: i,
+                    reason: `rule-effect applier returned non-object element at index ${i}: ${describeValue(item)}`,
+                  },
+                  causedBy: event.id,
+                });
+              } else {
+                effectEvents.push(item);
+              }
+            }
           }
         } catch (err) {
           effectEvents.push({

@@ -191,6 +191,35 @@ describe('core-c1 — registered rule effects actually execute (meta-test)', () 
     expect(loaded.serialize()).toBe(b.serialize());
   });
 
+  it('F-208d62e4: an effect.apply that returns [null] degrades to rule.effect.failed naming the effect and index', () => {
+    const mod: EngineModule = {
+      id: 'fx',
+      version: '0.1.0',
+      register(ctx) {
+        ctx.actions.registerVerb('echo', (action: ActionIntent): ResolvedEvent[] => [
+          { id: '', tick: action.issuedAtTick, type: 'test.echo', actorId: action.actorId, payload: {} },
+        ]);
+        ctx.rules.registerEffect({
+          id: 'fx-null-el',
+          apply: () => [null] as unknown as ResolvedEvent[],
+        });
+      },
+    };
+    const engine = new Engine({ manifest, seed: 1, modules: [mod] });
+    engine.store.addEntity(hero());
+    engine.store.state.playerId = 'hero';
+
+    expect(() => engine.submitAction('echo')).not.toThrow();
+    const failed = engine.world.eventLog.find((e) => e.type === 'rule.effect.failed');
+    expect(failed).toBeDefined();
+    expect(failed!.payload.effectId).toBe('fx-null-el');
+    expect(String(failed!.payload.reason).toLowerCase()).toContain('non-object');
+    expect(String(failed!.payload.reason)).toContain('index 0');
+    expect(engine.tick).toBe(1);
+    expect(engine.world.eventLog.some((e) => e.type === 'action.resolved')).toBe(true);
+    expect(engine.world.eventLog.some((e) => e.type === 'test.echo')).toBe(true);
+  });
+
   it('core-c1-007: an effect.apply that returns undefined degrades to rule.effect.failed (F-daece5c6 sibling)', () => {
     const mod: EngineModule = {
       id: 'fx',

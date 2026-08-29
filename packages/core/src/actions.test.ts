@@ -6,13 +6,18 @@
 // `return [...]`) threw an uncaught TypeError, aborted the tick, and left
 // eventLog as action.declared with no rejected/resolved.
 //
+// F-208d62e4: Array.isArray is not enough. Handler `[null]`/`[undefined]`, a
+// validator returning undefined/null, and an effect applier returning `[null]`
+// still threw TypeError outside try/catch (event.id / result.valid), aborting
+// the tick with a declared-only eventLog.
+//
 // F-b71bccf1: registerVerb was Map.set last-wins. Two modules registering the
 // same verb constructed successfully and the first handler was silently
 // dropped — the accidental-clobber class FormulaRegistry and ModuleManager
 // already fail loud for.
 
 import { describe, it, expect } from 'vitest';
-import { ActionDispatcher } from './actions.js';
+import { ActionDispatcher, type ActionValidationResult } from './actions.js';
 import { Engine } from './engine.js';
 import { WorldStore } from './world.js';
 import type {
@@ -150,6 +155,140 @@ describe('F-daece5c6 — non-array verb return is isolated (does not abort the t
     expect(rejected).toBeDefined();
     expect(rejected!.payload.verb).toBe('oops');
     expect(store.state.eventLog.some((e) => e.type === 'action.resolved')).toBe(false);
+  });
+});
+
+describe('F-208d62e4 — non-object array elements and validator returns are isolated', () => {
+  const handlerHoles: Array<{ name: string; returned: unknown[]; needle: string }> = [
+    { name: '[null]', returned: [null], needle: 'null' },
+    { name: '[undefined]', returned: [undefined], needle: 'undefined' },
+  ];
+
+  for (const { name, returned, needle } of handlerHoles) {
+    it(`handler returning ${name} yields action.rejected, advances the tick, and does not throw`, () => {
+      const engine = new Engine({
+        manifest: { ...testManifest, modules: ['bad'] },
+        seed: 1,
+        modules: [moduleWithVerb('bad', 'oops', () => returned)],
+      });
+      withPlayer(engine);
+
+      expect(() => engine.submitAction('oops')).not.toThrow();
+
+      const types = engine.world.eventLog.map((e) => e.type);
+      expect(types).toContain('action.declared');
+      expect(types).toContain('action.rejected');
+      // Same terminal as the F-daece5c6 non-array path — not a hanging
+      // declared-only log, and not action.resolved as if the handler succeeded.
+      expect(types).not.toContain('action.resolved');
+
+      const rejected = engine.world.eventLog.find((e) => e.type === 'action.rejected');
+      expect(rejected).toBeDefined();
+      expect(rejected!.payload.verb).toBe('oops');
+      expect(String(rejected!.payload.reason)).toContain('oops');
+      expect(String(rejected!.payload.reason).toLowerCase()).toContain('non-object');
+      expect(String(rejected!.payload.reason)).toContain('index 0');
+      expect(String(rejected!.payload.reason).toLowerCase()).toContain(needle);
+
+      expect(engine.tick).toBe(1);
+      expect(engine.getActionLog()).toHaveLength(1);
+    });
+  }
+
+  const validatorHoles: Array<{ name: string; returned: unknown; needle: string }> = [
+    { name: 'undefined', returned: undefined, needle: 'undefined' },
+    { name: 'null', returned: null, needle: 'null' },
+  ];
+
+  for (const { name, returned, needle } of validatorHoles) {
+    it(`validator returning ${name} yields action.rejected, advances the tick, and does not throw`, () => {
+      const engine = new Engine({
+        manifest: { ...testManifest, modules: ['ok'] },
+        seed: 1,
+        modules: [
+          moduleWithVerb('ok', 'wave', (action: ActionIntent) => [
+            { id: '', tick: action.issuedAtTick, type: 'test.waved', actorId: action.actorId, payload: {} },
+          ]),
+        ],
+      });
+      withPlayer(engine);
+      engine.dispatcher.registerValidator(
+        () => returned as ActionValidationResult,
+      );
+
+      expect(() => engine.submitAction('wave')).not.toThrow();
+
+      const types = engine.world.eventLog.map((e) => e.type);
+      expect(types).toContain('action.declared');
+      expect(types).toContain('action.rejected');
+      expect(types).not.toContain('action.resolved');
+      expect(types).not.toContain('test.waved');
+
+      const rejected = engine.world.eventLog.find((e) => e.type === 'action.rejected');
+      expect(rejected).toBeDefined();
+      expect(rejected!.payload.verb).toBe('wave');
+      expect(String(rejected!.payload.reason)).toContain('wave');
+      expect(String(rejected!.payload.reason).toLowerCase()).toContain('non-object');
+      expect(String(rejected!.payload.reason).toLowerCase()).toContain(needle);
+
+      expect(engine.tick).toBe(1);
+      expect(engine.getActionLog()).toHaveLength(1);
+    });
+  }
+
+  it('effect applier returning [null] yields rule.effect.failed, still resolves, advances the tick', () => {
+    const engine = new Engine({
+      manifest: { ...testManifest, modules: ['ok'] },
+      seed: 1,
+      modules: [
+        moduleWithVerb('ok', 'wave', (action: ActionIntent) => [
+          { id: '', tick: action.issuedAtTick, type: 'test.waved', actorId: action.actorId, payload: {} },
+        ]),
+      ],
+    });
+    withPlayer(engine);
+    engine.dispatcher.registerEffectApplier(
+      () => [null] as unknown as ResolvedEvent[],
+    );
+
+    expect(() => engine.submitAction('wave')).not.toThrow();
+
+    const types = engine.world.eventLog.map((e) => e.type);
+    expect(types).toContain('action.declared');
+    expect(types).toContain('test.waved');
+    expect(types).toContain('rule.effect.failed');
+    expect(types).toContain('action.resolved');
+
+    const failed = engine.world.eventLog.find((e) => e.type === 'rule.effect.failed');
+    expect(failed).toBeDefined();
+    expect(String(failed!.payload.reason).toLowerCase()).toContain('non-object');
+    expect(String(failed!.payload.reason)).toContain('index 0');
+    expect(String(failed!.payload.reason).toLowerCase()).toContain('null');
+
+    expect(engine.tick).toBe(1);
+    expect(engine.getActionLog()).toHaveLength(1);
+  });
+
+  it('handler returning [valid, null] rejects without recording the valid element', () => {
+    const engine = new Engine({
+      manifest: { ...testManifest, modules: ['bad'] },
+      seed: 1,
+      modules: [
+        moduleWithVerb('bad', 'oops', (action: ActionIntent) => [
+          { id: '', tick: action.issuedAtTick, type: 'test.should-not-land', actorId: action.actorId, payload: {} },
+          null,
+        ]),
+      ],
+    });
+    withPlayer(engine);
+
+    expect(() => engine.submitAction('oops')).not.toThrow();
+    expect(engine.world.eventLog.some((e) => e.type === 'test.should-not-land')).toBe(false);
+    const rejected = engine.world.eventLog.find((e) => e.type === 'action.rejected');
+    expect(rejected).toBeDefined();
+    expect(String(rejected!.payload.reason)).toContain('index 1');
+    expect(engine.world.eventLog.some((e) => e.type === 'action.resolved')).toBe(false);
+    expect(engine.tick).toBe(1);
   });
 });
 

@@ -33,6 +33,11 @@ function describeValue(value: unknown): string {
   return typeof value;
 }
 
+/** recordEvent reads event.id; null/undefined/array/primitive elements throw. */
+function isEventObject(value: unknown): value is ResolvedEvent {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export class ModuleManager {
   private modules: Map<string, EngineModule> = new Map();
   private moduleContexts: Map<string, ModuleRegistrationContext> = new Map();
@@ -172,7 +177,28 @@ export class ModuleManager {
           });
           continue;
         }
-        additional.push(...produced);
+        // [null] passes Array.isArray then throws in dispatch's recordEvent
+        // loop (F-208d62e4). Replace the hole with rule.effect.failed naming
+        // this effect and the index; later elements still record.
+        for (let i = 0; i < produced.length; i++) {
+          const item = produced[i];
+          if (!isEventObject(item)) {
+            additional.push({
+              id: '',
+              tick: event.tick,
+              type: 'rule.effect.failed',
+              payload: {
+                effectId: effect.id,
+                sourceEventId: event.id,
+                index: i,
+                reason: `effect "${effect.id}" returned non-object element at index ${i}: ${describeValue(item)}`,
+              },
+              causedBy: event.id,
+            });
+          } else {
+            additional.push(item);
+          }
+        }
       } catch (err) {
         additional.push({
           id: '', // stamped deterministically by recordEvent
