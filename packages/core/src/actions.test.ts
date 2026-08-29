@@ -24,6 +24,7 @@ import type {
   ActionIntent,
   EngineModule,
   ResolvedEvent,
+  VerbHandler,
 } from './types.js';
 
 const testManifest = {
@@ -53,13 +54,13 @@ function withPlayer(engine: Engine, id = 'p1'): void {
 function moduleWithVerb(
   id: string,
   verb: string,
-  handler: () => ResolvedEvent[] | unknown,
+  handler: (action: ActionIntent) => ResolvedEvent[] | unknown,
 ): EngineModule {
   return {
     id,
     version: '0.1.0',
     register(ctx) {
-      ctx.actions.registerVerb(verb, handler as () => ResolvedEvent[]);
+      ctx.actions.registerVerb(verb, handler as VerbHandler);
     },
   };
 }

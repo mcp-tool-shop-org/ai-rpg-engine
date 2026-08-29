@@ -345,7 +345,7 @@ describe('analyzeBalance', () => {
     const huge = 'x'.repeat(MAX_REPLAY_JSON_BYTES + 1);
     let analysis;
     expect(() => { analysis = analyzeBalance(huge, null); }).not.toThrow();
-    expect(analysis!.findings.some((f) => f.code === 'PARSE_FAILURE')).toBe(true);
+    expect(analysis!.findings.some((f: { code: string }) => f.code === 'PARSE_FAILURE')).toBe(true);
     expect(analysis!.metrics.totalTicks).toBe(0);
   });
 
