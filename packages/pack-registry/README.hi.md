@@ -69,9 +69,9 @@ const beginnerPacks = filterPacks({ difficulty: 'beginner' });
 विशिष्टता के 7 आयामों के आधार पर पैकों को मान्य करें:
 
 ```typescript
-import { validatePackRubric } from '@ai-rpg-engine/pack-registry';
+import { validatePackRubric, getAllPacks } from '@ai-rpg-engine/pack-registry';
 
-const result = validatePackRubric(packEntry);
+const result = validatePackRubric(packEntry, getAllPacks());
 // result.ok === true (score >= 5/7)
 // result.score === 7
 // result.checks === [{ dimension: 'distinct-verbs', passed: true, detail: '...' }, ...]

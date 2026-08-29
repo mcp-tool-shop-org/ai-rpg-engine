@@ -69,9 +69,9 @@ Ogni pacchetto di avvio esporta un `packMeta: PackMetadata` con campi strutturat
 Valuta i pacchetti in base a 7 dimensioni di originalità:
 
 ```typescript
-import { validatePackRubric } from '@ai-rpg-engine/pack-registry';
+import { validatePackRubric, getAllPacks } from '@ai-rpg-engine/pack-registry';
 
-const result = validatePackRubric(packEntry);
+const result = validatePackRubric(packEntry, getAllPacks());
 // result.ok === true (score >= 5/7)
 // result.score === 7
 // result.checks === [{ dimension: 'distinct-verbs', passed: true, detail: '...' }, ...]

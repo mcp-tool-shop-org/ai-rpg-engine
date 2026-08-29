@@ -6,7 +6,8 @@ const BASE_VERBS = new Set(['move', 'inspect', 'attack', 'use', 'speak', 'choose
 
 export function validatePackRubric(
   pack: PackEntry,
-  allPacks: PackEntry[],
+  // Defaults to [pack] so a one-arg call cannot throw on allPacks.filter.
+  allPacks: PackEntry[] = [pack],
 ): RubricResult {
   const others = allPacks.filter((p) => p.meta.id !== pack.meta.id);
   const checks: RubricCheck[] = [];

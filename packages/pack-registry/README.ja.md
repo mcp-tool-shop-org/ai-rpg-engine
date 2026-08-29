@@ -69,9 +69,9 @@ const beginnerPacks = filterPacks({ difficulty: 'beginner' });
 パックを、以下の7つの特徴の観点から評価します。
 
 ```typescript
-import { validatePackRubric } from '@ai-rpg-engine/pack-registry';
+import { validatePackRubric, getAllPacks } from '@ai-rpg-engine/pack-registry';
 
-const result = validatePackRubric(packEntry);
+const result = validatePackRubric(packEntry, getAllPacks());
 // result.ok === true (score >= 5/7)
 // result.score === 7
 // result.checks === [{ dimension: 'distinct-verbs', passed: true, detail: '...' }, ...]
