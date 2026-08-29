@@ -99,6 +99,7 @@ export function startSocketServer(
   const maxConnections = options.maxConnections ?? 1;
   const sessions: SidecarServer[] = [];
   const live = new Set<net.Socket>();
+  const liveSessions = new Map<net.Socket, SidecarServer>();
   let accepted = 0;
 
   const server = net.createServer((socket) => {
@@ -137,7 +138,20 @@ export function startSocketServer(
     };
 
     // The two calls `stdio.ts` promised, with a different pair of streams.
-    const session = new SidecarServer(options, send);
+    let session!: SidecarServer;
+    session = new SidecarServer(
+      {
+        ...options,
+        onWorldCommitted: () => {
+          options.onWorldCommitted?.();
+          for (const [sock, peer] of liveSessions) {
+            if (peer === session || peer.isClosed || sock.destroyed) continue;
+            peer.replicatePeerCommit();
+          }
+        },
+      },
+      send,
+    );
     const reader = new MessageReader(
       (msg) => {
         session.handle(msg);
@@ -155,11 +169,13 @@ export function startSocketServer(
 
     (socket as unknown as ByteReadable).on('data', (chunk) => reader.push(chunk));
     sessions.push(session);
+    liveSessions.set(socket, session);
     hooks.onConnection?.(index);
 
     socket.on('error', (err) => hooks.onError?.(err));
     socket.on('close', () => {
       live.delete(socket);
+      liveSessions.delete(socket);
       hooks.onDisconnect?.(index);
     });
   });

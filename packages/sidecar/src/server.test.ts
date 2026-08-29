@@ -4,7 +4,8 @@
 // isolation and actionLog/rng pins can fail for the reasons the findings name.
 
 import { describe, it, expect } from 'vitest';
-import { createTestEngine, type EngineModule, type EntityState } from '@ai-rpg-engine/core';
+import { createTestEngine, type EngineModule, type EntityState, type WorldState } from '@ai-rpg-engine/core';
+import { SidecarClient } from './client.js';
 import { SidecarServer } from './server.js';
 import { ERROR_CODES, METHODS, NOTIFICATIONS, type RpcMessage } from './protocol.js';
 
@@ -212,5 +213,140 @@ describe('F-4dbb32eb — preview never dispatches on the live engine', () => {
     expect(hero.tags).toContain('previewed');
     expect(liveBusFires).toBeGreaterThan(0);
     expect(engine.store.rng.getState()).not.toBe(rngBefore);
+  });
+});
+
+function npcEntity(): EntityState {
+  return {
+    id: 'npc-1',
+    blueprintId: 'npc',
+    type: 'npc',
+    name: 'Witness',
+    tags: [],
+    stats: {},
+    resources: {},
+    statuses: [],
+    zoneId: 'room',
+  };
+}
+
+function spawnModule(): EngineModule {
+  return {
+    id: 'spawn',
+    version: '1.0.0',
+    register(ctx) {
+      ctx.actions.registerVerb('spawn-npc', (_action, world) => {
+        world.entities['npc-1'] = npcEntity();
+        return [
+          {
+            id: 'evt-spawn-npc',
+            tick: world.meta.tick,
+            type: 'probe.spawned',
+            actorId: 'hero',
+            payload: { id: 'npc-1' },
+          },
+        ];
+      });
+      ctx.actions.registerVerb('despawn-npc', (_action, world) => {
+        delete world.entities['npc-1'];
+        return [
+          {
+            id: 'evt-despawn-npc',
+            tick: world.meta.tick,
+            type: 'probe.despawned',
+            actorId: 'hero',
+            payload: { id: 'npc-1' },
+          },
+        ];
+      });
+    },
+  };
+}
+
+function dualLoopback(fanout: boolean): {
+  engine: ReturnType<typeof createTestEngine>;
+  a: { server: SidecarServer; client: SidecarClient };
+  b: { server: SidecarServer; client: SidecarClient };
+} {
+  const engine = createTestEngine({
+    modules: [spawnModule()],
+    playerId: 'hero',
+    startZone: 'room',
+    entities: [
+      {
+        id: 'hero',
+        blueprintId: 'hero',
+        type: 'player',
+        name: 'Hero',
+        tags: ['player'],
+        stats: {},
+        resources: { hp: 10 },
+        statuses: [],
+        zoneId: 'room',
+      },
+    ],
+    zones: [{ id: 'room', roomId: 'room', name: 'Room', tags: [], neighbors: [] }],
+  });
+
+  const servers: SidecarServer[] = [];
+  const notifyPeers = (origin: SidecarServer) => {
+    if (!fanout) return;
+    for (const peer of servers) {
+      if (peer !== origin) peer.replicatePeerCommit();
+    }
+  };
+
+  const pair = () => {
+    let client!: SidecarClient;
+    let server!: SidecarServer;
+    server = new SidecarServer(
+      { engine, engineVersion: '3.8.0-test', onWorldCommitted: () => notifyPeers(server) },
+      (m) => client.handle(m),
+    );
+    client = new SidecarClient((msg) => server.handle(msg));
+    servers.push(server);
+    return { server, client };
+  };
+
+  return { engine, a: pair(), b: pair() };
+}
+
+function mirroredEntities(client: SidecarClient): Record<string, unknown> {
+  const state = client.mirroredState as WorldState;
+  return (state.entities ?? {}) as Record<string, unknown>;
+}
+
+describe('F-98b60cd0 — SNAPSHOT rebases lastState; 1:N sessions share ticks', () => {
+  it('RED: B snapshots after A spawned, then despawns — B\'s mirror must not keep a ghost', async () => {
+    // No fan-out: this is the documented resync path, which used to leave
+    // lastState at construct-time so the despawn diff omitted the remove.
+    const { a, b, engine } = dualLoopback(false);
+    await a.client.initialize();
+    await b.client.initialize();
+
+    await a.client.request(METHODS.SUBMIT_ACTION, { verb: 'spawn-npc' });
+    expect(engine.world.entities['npc-1']).toBeTruthy();
+    expect(b.client.receivedTicks).toEqual([]);
+
+    await b.client.snapshot();
+    expect(mirroredEntities(b.client)['npc-1']).toBeTruthy();
+
+    await b.client.request(METHODS.SUBMIT_ACTION, { verb: 'despawn-npc' });
+    expect(engine.world.entities['npc-1']).toBeUndefined();
+    expect(mirroredEntities(b.client)['npc-1']).toBeUndefined();
+    expect(b.client.stalenessReports).toEqual([]);
+  });
+
+  it('an idle B receives A\'s sim/tick so the spawned entity lands without a snapshot', async () => {
+    const { a, b } = dualLoopback(true);
+    await a.client.initialize();
+    await b.client.initialize();
+    await a.client.snapshot();
+    await b.client.snapshot();
+
+    await a.client.request(METHODS.SUBMIT_ACTION, { verb: 'spawn-npc' });
+    expect(b.client.receivedTicks.some((t) => t.delta.some((p) => p.path.includes('npc-1')))).toBe(true);
+    expect(mirroredEntities(b.client)['npc-1']).toBeTruthy();
+    expect(b.client.stalenessReports).toEqual([]);
   });
 });
