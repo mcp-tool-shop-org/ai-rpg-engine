@@ -47,6 +47,12 @@ export type SidecarServerOptions = {
    * Omit and `advance` reports the capability unavailable rather than pretending.
    */
   advanceRound?: (engine: Engine) => void;
+  /**
+   * Fired after this session commits a world mutation and has pushed its own
+   * `sim/tick`. The socket server uses this to catch every other live session
+   * up so 1:N clients share one tick stream. Must not recurse into the origin.
+   */
+  onWorldCommitted?: () => void;
 };
 
 type Outbound = (msg: RpcMessage) => void;
@@ -84,6 +90,7 @@ export class SidecarServer {
   private readonly engineVersion: string;
   private readonly serverName: string;
   private readonly advanceRound?: (engine: Engine) => void;
+  private readonly onWorldCommitted?: () => void;
   /** Events already pushed, keyed by id — the basis of idempotent re-emission. */
   private readonly emitted = new Set<string>();
   private lastState: WorldState;
@@ -97,6 +104,7 @@ export class SidecarServer {
     this.engineVersion = options.engineVersion;
     this.serverName = options.serverName ?? '@ai-rpg-engine/sidecar';
     this.advanceRound = options.advanceRound;
+    this.onWorldCommitted = options.onWorldCommitted;
     this.lastState = structuredClone(this.engine.world) as WorldState;
     for (const e of this.engine.world.eventLog ?? []) this.emitted.add(e.id);
   }
@@ -206,6 +214,10 @@ export class SidecarServer {
 
       case METHODS.SNAPSHOT: {
         const state = this.engine.world as WorldState;
+        // SNAPSHOT is a resync: the next incremental diff must start from this
+        // world, not construct-time lastState (F-98b60cd0).
+        this.lastState = structuredClone(state) as WorldState;
+        for (const e of state.eventLog ?? []) this.emitted.add(e.id);
         const result: SnapshotResult = {
           tick: this.engine.store.tick,
           hash: stateHash(state),
@@ -225,6 +237,7 @@ export class SidecarServer {
         const result = this.commit(events);
         if (hasId) this.reply(id, result satisfies SubmitActionResult);
         this.pushTick(result);
+        this.onWorldCommitted?.();
         return;
       }
 
@@ -253,6 +266,7 @@ export class SidecarServer {
         const result = this.commit([]);
         if (hasId) this.reply(id, result);
         this.pushTick(result);
+        this.onWorldCommitted?.();
         return;
       }
 
@@ -445,6 +459,16 @@ export class SidecarServer {
       delta: result.delta,
     };
     this.send({ jsonrpc: '2.0', method: NOTIFICATIONS.TICK, params: notification });
+  }
+
+  /**
+   * Catch this session up after another session committed against the shared
+   * Engine. Diffs vs this session's lastState so each client gets the delta
+   * that matches its own mirror — not the origin's.
+   */
+  replicatePeerCommit(): void {
+    if (this.closed || !this.initialized) return;
+    this.pushTick(this.commit([]));
   }
 
   private reply(id: unknown, result: unknown): void {

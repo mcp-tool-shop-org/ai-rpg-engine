@@ -10,6 +10,8 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import * as net from 'node:net';
+import { createTestEngine, type EngineModule, type EntityState, type WorldState } from '@ai-rpg-engine/core';
+import { SidecarClient } from './client.js';
 import { startSocketServer, type SocketServerHandles } from './socket.js';
 import { MessageReader, encodeMessage, type RpcMessage } from './framing.js';
 import { METHODS, ERROR_CODES } from './protocol.js';
@@ -313,5 +315,126 @@ describe('F-009da546 — shutdown releases the listen port', () => {
       };
       tryBind();
     });
+  }, 12000);
+});
+
+function spawnModule(): EngineModule {
+  const npc = (): EntityState => ({
+    id: 'npc-1',
+    blueprintId: 'npc',
+    type: 'npc',
+    name: 'Witness',
+    tags: [],
+    stats: {},
+    resources: {},
+    statuses: [],
+    zoneId: 'room',
+  });
+  return {
+    id: 'spawn',
+    version: '1.0.0',
+    register(ctx) {
+      ctx.actions.registerVerb('spawn-npc', (_action, world) => {
+        world.entities['npc-1'] = npc();
+        return [
+          {
+            id: 'evt-spawn-npc',
+            tick: world.meta.tick,
+            type: 'probe.spawned',
+            actorId: 'hero',
+            payload: { id: 'npc-1' },
+          },
+        ];
+      });
+      ctx.actions.registerVerb('despawn-npc', (_action, world) => {
+        delete world.entities['npc-1'];
+        return [
+          {
+            id: 'evt-despawn-npc',
+            tick: world.meta.tick,
+            type: 'probe.despawned',
+            actorId: 'hero',
+            payload: { id: 'npc-1' },
+          },
+        ];
+      });
+    },
+  };
+}
+
+function liveEngine(): ReturnType<typeof createTestEngine> {
+  return createTestEngine({
+    modules: [spawnModule()],
+    playerId: 'hero',
+    startZone: 'room',
+    entities: [
+      {
+        id: 'hero',
+        blueprintId: 'hero',
+        type: 'player',
+        name: 'Hero',
+        tags: ['player'],
+        stats: {},
+        resources: { hp: 10 },
+        statuses: [],
+        zoneId: 'room',
+      },
+    ],
+    zones: [{ id: 'room', roomId: 'room', name: 'Room', tags: [], neighbors: [] }],
+  });
+}
+
+async function waitUntil(pred: () => boolean, label: string, ms = 4000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    if (pred()) return;
+    await new Promise((r) => setTimeout(r, 15));
+  }
+  throw new Error(`timeout waiting for ${label}`);
+}
+
+async function connectClient(port: number): Promise<{ client: SidecarClient; socket: net.Socket }> {
+  const socket = await new Promise<net.Socket>((resolve, reject) => {
+    const s = net.createConnection({ port, host: '127.0.0.1' }, () => resolve(s));
+    s.on('error', reject);
+  });
+  sockets.push(socket);
+  const client = new SidecarClient((msg) => {
+    socket.write(encodeMessage(msg));
+  });
+  const reader = new MessageReader(
+    (msg) => client.handle(msg),
+    () => undefined,
+  );
+  socket.on('data', (c: Buffer) => reader.push(c));
+  return { client, socket };
+}
+
+describe('F-98b60cd0 — two TCP sessions: snapshot rebases, idle peer gets the tick', () => {
+  it('A spawns, idle B receives sim/tick; B snapshots then despawns without a ghost', async () => {
+    const engine = liveEngine();
+    const h = serve({ engine, maxConnections: 2 });
+    const port = await ready(h);
+    const a = await connectClient(port);
+    const b = await connectClient(port);
+    await a.client.initialize();
+    await b.client.initialize();
+    await a.client.snapshot();
+    await b.client.snapshot();
+
+    await a.client.request(METHODS.SUBMIT_ACTION, { verb: 'spawn-npc' });
+    await waitUntil(
+      () => b.client.receivedTicks.some((t) => t.delta.some((p) => p.path.includes('npc-1'))),
+      'idle B sim/tick for spawn',
+    );
+    expect((b.client.mirroredState as WorldState).entities['npc-1']).toBeTruthy();
+
+    await b.client.snapshot();
+    expect((b.client.mirroredState as WorldState).entities['npc-1']).toBeTruthy();
+
+    await b.client.request(METHODS.SUBMIT_ACTION, { verb: 'despawn-npc' });
+    expect(engine.world.entities['npc-1']).toBeUndefined();
+    expect((b.client.mirroredState as WorldState).entities['npc-1']).toBeUndefined();
+    expect(b.client.stalenessReports).toEqual([]);
   }, 12000);
 });
