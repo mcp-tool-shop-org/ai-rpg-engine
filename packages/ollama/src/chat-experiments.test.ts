@@ -577,6 +577,27 @@ describe('Pillar 4 — Parameter sweeps', () => {
       const values = generateSweepValues(0.1, 0.3, 0.1);
       expect(values).toEqual([0.1, 0.2, 0.3]);
     });
+
+    // F-a30244c1 — a tiny step (or a huge from/to span) must be truncated at
+    // MAX_EXPERIMENT_RUNS, matching the seedList cap. Without this, a typo
+    // like `/experiment-sweep rumorClarity 0 1 1e-8` allocates ~1e8 points.
+    it('caps a tiny step at MAX_EXPERIMENT_RUNS', () => {
+      const values = generateSweepValues(0, 1, 1e-8);
+      expect(values).toHaveLength(MAX_EXPERIMENT_RUNS);
+      expect(values[0]).toBe(0);
+    });
+
+    it('caps a huge from/to span at MAX_EXPERIMENT_RUNS', () => {
+      const values = generateSweepValues(0, 1_000_000_000, 1);
+      expect(values).toHaveLength(MAX_EXPERIMENT_RUNS);
+      expect(values[0]).toBe(0);
+      expect(values[MAX_EXPERIMENT_RUNS - 1]).toBe(MAX_EXPERIMENT_RUNS - 1);
+    });
+
+    it('rejects a step too small to advance the start value', () => {
+      // 1 + Number.MIN_VALUE === 1 in IEEE-754, so the loop cannot progress.
+      expect(generateSweepValues(1, 2, Number.MIN_VALUE)).toEqual([1]);
+    });
   });
 
   describe('runParameterSweep', () => {
@@ -640,6 +661,20 @@ describe('Pillar 4 — Parameter sweeps', () => {
       };
       const result = runParameterSweep(sweepSpec, producer);
       expect(result.points).toHaveLength(1);
+    });
+
+    it('caps a huge values array at MAX_EXPERIMENT_RUNS', () => {
+      const producer = makeReplayProducer();
+      const values = Array.from({ length: MAX_EXPERIMENT_RUNS + 50 }, (_, i) => i);
+      const sweepSpec: ParameterSweepSpec = {
+        param: 'rumorClarity',
+        values,
+        baseExperiment: makeSpec({ runs: 0 }),
+      };
+      const result = runParameterSweep(sweepSpec, producer);
+      expect(result.points).toHaveLength(MAX_EXPERIMENT_RUNS);
+      expect(result.points[0].value).toBe(0);
+      expect(result.points[MAX_EXPERIMENT_RUNS - 1].value).toBe(MAX_EXPERIMENT_RUNS - 1);
     });
   });
 

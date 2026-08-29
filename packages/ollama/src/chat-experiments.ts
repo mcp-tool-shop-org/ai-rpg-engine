@@ -79,6 +79,7 @@ export type ExperimentComparison = {
 /** Parameter sweep specification. */
 export type ParameterSweepSpec = {
   param: string;
+  /** Sweep axis. Truncated to MAX_EXPERIMENT_RUNS the same way seedList is. */
   values: Array<number | string | boolean>;
   baseExperiment: ExperimentSpec;
 };
@@ -141,11 +142,13 @@ export function isTunableParam(param: string): boolean {
 // ============================================================
 
 /**
- * Upper bound on how many runs a single experiment will derive seeds for.
- * `spec.runs` and `spec.seedList` are consumer-supplied (CLI flag, chat param,
- * sweep config). A typo or hostile value like 1e9 / a million-long seedList
- * would allocate and run unbounded. We clamp both paths to keep the runner
- * bounded and deterministic.
+ * Upper bound on how many runs a single experiment will derive seeds for,
+ * and on how many points a parameter sweep will generate or execute.
+ * `spec.runs`, `spec.seedList`, `generateSweepValues(from,to,step)`, and
+ * `sweepSpec.values` are consumer-supplied (CLI flag, chat param, sweep
+ * config). A typo or hostile value like 1e9 / a million-long seedList /
+ * `/experiment-sweep rumorClarity 0 1 1e-8` would allocate and run
+ * unbounded. We clamp every path to keep the runner bounded and deterministic.
  */
 export const MAX_EXPERIMENT_RUNS = 10_000;
 
@@ -605,9 +608,12 @@ export function generateSweepValues(
 ): number[] {
   if (step <= 0) return [from];
   const values: number[] = [];
-  // Use epsilon to handle floating-point edge cases
-  for (let v = from; v <= to + step * 0.001; v += step) {
+  // Use epsilon to handle floating-point edge cases.
+  // Cap at MAX_EXPERIMENT_RUNS so a tiny step cannot allocate millions.
+  for (let v = from; v <= to + step * 0.001 && values.length < MAX_EXPERIMENT_RUNS; v += step) {
     values.push(Math.round(v * 1000) / 1000);
+    // Reject a step too small to advance `v` (would inf-loop / exceed the cap).
+    if (!Number.isFinite(v) || v + step === v) break;
   }
   return values;
 }
@@ -617,8 +623,9 @@ export function runParameterSweep(
   replayProducer: ReplayProducer,
 ): ParameterSweepResult {
   const points: SweepPoint[] = [];
+  const values = sweepSpec.values.slice(0, MAX_EXPERIMENT_RUNS);
 
-  for (const value of sweepSpec.values) {
+  for (const value of values) {
     const experimentSpec: ExperimentSpec = {
       ...sweepSpec.baseExperiment,
       id: `${sweepSpec.baseExperiment.id}_${sweepSpec.param}_${value}`,

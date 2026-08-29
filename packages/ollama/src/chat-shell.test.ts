@@ -9,6 +9,7 @@ import { mkdtemp, rm, writeFile, readFile, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { handleSlashCommand, runChatShell, persistTranscriptAtExit } from './chat-shell.js';
+import { MAX_EXPERIMENT_RUNS } from './chat-experiments.js';
 import { createChatEngine } from './chat-engine.js';
 import { createTranscript, addToTranscript, defaultTranscriptPath } from './chat-transcript.js';
 import { createBuildState, type BuildPlan, type BuildStep } from './chat-build-planner.js';
@@ -158,6 +159,18 @@ describe('handleSlashCommand — /experiment-run + /experiment-sweep NaN guards 
     const logged = logSpy.mock.calls.flat().join('\n');
     expect(logged).toContain('Sweep: rumorClarity from 0.4 to 0.8 step 0.2');
     expect(logged).not.toContain('Usage: /experiment-sweep');
+  });
+
+  it('/experiment-sweep with a tiny step is capped, never millions of points', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const result = await handleSlashCommand(
+      '/experiment-sweep rumorClarity 0 1 1e-8',
+      makeEngine(), createTranscript(null), '/fake/project-root', false,
+    );
+    expect(result).toBe('handled');
+    const logged = logSpy.mock.calls.flat().join('\n');
+    expect(logged).toContain(`(${MAX_EXPERIMENT_RUNS} points)`);
+    expect(logged).not.toMatch(/\(\d{6,} points\)/);
   });
 });
 
