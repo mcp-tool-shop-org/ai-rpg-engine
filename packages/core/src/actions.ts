@@ -29,13 +29,38 @@ function errMessage(err: unknown): string {
   return String(err);
 }
 
+/** One-word description of a handler/applier return for rejection reasons. */
+function describeValue(value: unknown): string {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  if (Array.isArray(value)) return 'an array';
+  return typeof value;
+}
+
 export class ActionDispatcher {
   private verbs: Map<string, VerbHandler> = new Map();
   private validators: ActionValidator[] = [];
   private effectAppliers: RuleEffectApplier[] = [];
 
-  /** Register a verb handler */
-  registerVerb(verb: string, handler: VerbHandler): void {
+  /**
+   * Register a verb handler.
+   *
+   * A duplicate verb throws by default: two registrations under one verb would
+   * silently clobber each other (second wins, no error) — a real pack collision
+   * on 'move'/'talk' dead-letters the first module's mechanic. Fail loud,
+   * matching FormulaRegistry.register and ModuleManager.register (F-b71bccf1).
+   *
+   * Pass `{ override: true }` for the intentional replacement case (test
+   * doubles, pack overrides).
+   */
+  registerVerb(verb: string, handler: VerbHandler, opts?: { override?: boolean }): void {
+    if (this.verbs.has(verb) && !opts?.override) {
+      throw new Error(
+        `Verb "${verb}" is already registered. ` +
+          `Verbs must be unique; a module has already claimed this verb. ` +
+          `Rename one of the conflicting verbs, remove the duplicate registration, or pass { override: true } to replace intentionally.`,
+      );
+    }
     this.verbs.set(verb, handler);
   }
 
@@ -106,6 +131,10 @@ export class ActionDispatcher {
     // Resolve. The handler is module-supplied; a throw must surface as a
     // structured action.rejected (verb + that the handler threw) so a single
     // buggy verb cannot crash the tick or leak a stack to the player.
+    // A non-array return (undefined/null/plain object — forgetting `return [...]`)
+    // is the same class: the `for...of` below used to sit outside this try and
+    // abort the tick with TypeError (F-daece5c6). Guard Array.isArray before
+    // iterating — strings are iterable, so a typeof/try wrap is not enough.
     let events: ResolvedEvent[];
     try {
       events = handler(action, world);
@@ -113,6 +142,13 @@ export class ActionDispatcher {
       store.emitEvent('action.rejected', {
         verb: action.verb,
         reason: `handler for "${action.verb}" threw: ${errMessage(err)}`,
+      }, { actorId: action.actorId });
+      return [];
+    }
+    if (!Array.isArray(events)) {
+      store.emitEvent('action.rejected', {
+        verb: action.verb,
+        reason: `handler for "${action.verb}" returned non-array: ${describeValue(events)}`,
       }, { actorId: action.actorId });
       return [];
     }
@@ -135,7 +171,24 @@ export class ActionDispatcher {
     for (const event of events) {
       for (const applier of this.effectAppliers) {
         try {
-          effectEvents.push(...applier(event, world));
+          const produced = applier(event, world);
+          if (!Array.isArray(produced)) {
+            // Same non-array class as verb handlers (F-daece5c6). The spread
+            // was already inside try so the tick survived, but a named
+            // rule.effect.failed is the structured signal, not "X is not iterable".
+            effectEvents.push({
+              id: '',
+              tick: event.tick,
+              type: 'rule.effect.failed',
+              payload: {
+                sourceEventId: event.id,
+                reason: `rule-effect applier returned non-array: ${describeValue(produced)}`,
+              },
+              causedBy: event.id,
+            });
+          } else {
+            effectEvents.push(...produced);
+          }
         } catch (err) {
           effectEvents.push({
             id: '',

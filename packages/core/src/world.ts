@@ -523,7 +523,11 @@ export class WorldStore {
     // world's per-instance counter. This is what keeps event ids byte-identical
     // across two engines with the same seed + action sequence.
     if (!event.id) event.id = this.genId('evt');
-    this.state.eventLog.push(event);
+    // Detach at ingestion (F-71ec5dcd / F-4bcdd095): the log owns a snapshot
+    // independent of the caller object, EventBus listeners, and presentation
+    // filters. Mutating the argument (or a listener's copy) never writes truth.
+    const stored = structuredClone(event);
+    this.state.eventLog.push(stored);
     this.events.emit(event, this.state);
   }
 

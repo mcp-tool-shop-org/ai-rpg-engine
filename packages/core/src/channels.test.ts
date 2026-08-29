@@ -118,3 +118,56 @@ describe('pc5 — a throwing presentation filter is isolated (warn-and-degrade)'
     expect(results[0].payload.redacted).toBe(true);
   });
 });
+
+// F-4bcdd095: present() used to set `current` to the caller's ResolvedEvent and
+// feed that live object to filters. An in-place redaction filter
+// (`event.payload.x = …; return event`) wrote through to eventLog, and
+// `_filtered` stayed false because the flag was `result !== input` (identity).
+describe('F-4bcdd095 — presentation filters cannot mutate the eventLog entry', () => {
+  it('an in-place redaction filter does not write through to the source event', () => {
+    const source = evt('secret-1');
+    const channels = new PresentationChannels();
+    channels.addFilter('objective', (event) => {
+      event.payload.secret = '???';
+      return event;
+    });
+
+    const results = channels.present(source);
+
+    expect(source.payload.secret).toBe('the-truth');
+    expect(results).toHaveLength(1);
+    expect(results[0].payload.secret).toBe('???');
+    // Content changed even though the filter returned the same reference it
+    // received (the working clone), so _filtered must be true.
+    expect(results[0]._filtered).toBe(true);
+  });
+
+  it('in-place mutation on one channel does not leak into another channel of the same event', () => {
+    const source = evt('secret-2', ['objective', 'system']);
+    const channels = new PresentationChannels();
+    channels.addFilter('objective', (event) => {
+      event.payload.secret = '???';
+      return event;
+    });
+
+    const results = channels.present(source);
+    const objective = results.find((r) => r._channel === 'objective');
+    const system = results.find((r) => r._channel === 'system');
+
+    expect(source.payload.secret).toBe('the-truth');
+    expect(objective?.payload.secret).toBe('???');
+    expect(system?.payload.secret).toBe('the-truth');
+    expect(objective?._filtered).toBe(true);
+    expect(system?._filtered).toBe(false);
+  });
+
+  it('an identity-returning filter that does not change fields leaves _filtered false', () => {
+    const channels = new PresentationChannels();
+    channels.addFilter('objective', (event) => event);
+    const results = channels.present(evt('e-passthrough'));
+    expect(results).toHaveLength(1);
+    expect(results[0]._filtered).toBe(false);
+    expect(results[0].payload.secret).toBe('the-truth');
+  });
+});
+

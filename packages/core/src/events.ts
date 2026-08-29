@@ -84,27 +84,34 @@ export class EventBus {
    * Emit an event to all matching listeners. Each listener runs in isolation
    * (see {@link invokeListener}) so a throwing subscriber cannot abort the tick
    * or stop sibling listeners from firing.
+   *
+   * Listeners receive a structuredClone of `event`, not the eventLog entry
+   * (F-4bcdd095). Do not mutate the event argument — mutations stay on the
+   * per-emit snapshot and never write simulation truth. Sibling listeners of
+   * the same emit share that snapshot.
    */
   emit(event: ResolvedEvent, world: import('./types.js').WorldState): void {
+    const isolated = structuredClone(event);
+
     // Specific listeners
-    const handlers = this.listeners.get(event.type);
+    const handlers = this.listeners.get(isolated.type);
     if (handlers) {
       const snapshot = [...handlers];
       for (const handler of snapshot) {
-        this.invokeListener(handler, event, world);
+        this.invokeListener(handler, isolated, world);
       }
     }
 
     // Domain wildcard: "combat.*" matches "combat.contact.hit"
-    const dotIndex = event.type.indexOf('.');
+    const dotIndex = isolated.type.indexOf('.');
     if (dotIndex !== -1) {
-      const domain = event.type.substring(0, dotIndex);
+      const domain = isolated.type.substring(0, dotIndex);
       const domainWildcard = `${domain}.*`;
       const domainHandlers = this.listeners.get(domainWildcard);
       if (domainHandlers) {
         const domainSnapshot = [...domainHandlers];
         for (const handler of domainSnapshot) {
-          this.invokeListener(handler, event, world);
+          this.invokeListener(handler, isolated, world);
         }
       }
     }
@@ -112,7 +119,7 @@ export class EventBus {
     // Wildcard listeners
     const wildcardSnapshot = [...this.wildcardListeners];
     for (const handler of wildcardSnapshot) {
-      this.invokeListener(handler, event, world);
+      this.invokeListener(handler, isolated, world);
     }
   }
 

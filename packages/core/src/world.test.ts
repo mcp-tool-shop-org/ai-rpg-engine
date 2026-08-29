@@ -115,3 +115,35 @@ describe('WorldStore detaches entities/zones at ingestion (F-71ec5dcd)', () => {
     expect(b.getEntity('e1')!.resources).not.toBe(a.getEntity('e1')!.resources);
   });
 });
+
+// F-4bcdd095 sibling: recordEvent was the one ingestion seam that still stored
+// the caller's reference. Filters (present) and EventBus listeners both received
+// that live object and could write through to eventLog — the same alias class
+// addEntity/addZone already detach for.
+describe('WorldStore.recordEvent detaches the event at ingestion (F-4bcdd095)', () => {
+  it('mutating the input after recordEvent does not reach the log', () => {
+    const store = makeStore();
+    const input = { id: 'e-in', tick: 0, type: 'secret.revealed', payload: { secret: 'the-truth' } };
+    store.recordEvent(input);
+
+    input.payload.secret = '???';
+
+    const logged = store.state.eventLog.find((e) => e.id === 'e-in');
+    expect(logged).toBeDefined();
+    expect(logged!.payload.secret).toBe('the-truth');
+  });
+
+  it('an EventBus listener that mutates the event argument does not write the log', () => {
+    const store = makeStore();
+    store.events.onAny((event) => {
+      event.payload.secret = 'leaked';
+    });
+
+    store.emitEvent('secret.revealed', { secret: 'the-truth' });
+
+    const logged = store.state.eventLog.find((e) => e.type === 'secret.revealed');
+    expect(logged).toBeDefined();
+    expect(logged!.payload.secret).toBe('the-truth');
+  });
+});
+

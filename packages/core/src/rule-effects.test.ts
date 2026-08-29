@@ -191,6 +191,33 @@ describe('core-c1 — registered rule effects actually execute (meta-test)', () 
     expect(loaded.serialize()).toBe(b.serialize());
   });
 
+  it('core-c1-007: an effect.apply that returns undefined degrades to rule.effect.failed (F-daece5c6 sibling)', () => {
+    const mod: EngineModule = {
+      id: 'fx',
+      version: '0.1.0',
+      register(ctx) {
+        ctx.actions.registerVerb('echo', (action: ActionIntent): ResolvedEvent[] => [
+          { id: '', tick: action.issuedAtTick, type: 'test.echo', actorId: action.actorId, payload: {} },
+        ]);
+        ctx.rules.registerEffect({
+          id: 'fx-undef',
+          apply: () => undefined as unknown as ResolvedEvent[],
+        });
+      },
+    };
+    const engine = new Engine({ manifest, seed: 1, modules: [mod] });
+    engine.store.addEntity(hero());
+    engine.store.state.playerId = 'hero';
+
+    expect(() => engine.submitAction('echo')).not.toThrow();
+    const failed = engine.world.eventLog.find((e) => e.type === 'rule.effect.failed');
+    expect(failed).toBeDefined();
+    expect(failed!.payload.effectId).toBe('fx-undef');
+    expect(String(failed!.payload.reason).toLowerCase()).toContain('non-array');
+    expect(engine.tick).toBe(1);
+    expect(engine.world.eventLog.some((e) => e.type === 'action.resolved')).toBe(true);
+  });
+
   it('core-c1-006: with no effects registered the pipeline is unchanged (eventCount pins handler events)', () => {
     const bare: EngineModule = {
       id: 'fx',

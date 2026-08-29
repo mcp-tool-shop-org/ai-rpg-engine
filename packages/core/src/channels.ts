@@ -21,6 +21,15 @@ export type PresentationChannelsOptions = {
   onFilterError?: ChannelFilterErrorHook;
 };
 
+function cloneEvent(event: ResolvedEvent): ResolvedEvent {
+  return structuredClone(event);
+}
+
+/** Stable fingerprint of truth-bearing fields for `_filtered` (content, not identity). */
+function eventFingerprint(event: ResolvedEvent): string {
+  return JSON.stringify(event);
+}
+
 export class PresentationChannels {
   private filters: Map<EventChannel, ChannelFilter[]> = new Map();
   private onFilterError?: ChannelFilterErrorHook;
@@ -54,19 +63,21 @@ export class PresentationChannels {
   present(event: ResolvedEvent): PresentedEvent[] {
     const channels = event.presentation?.channels ?? ['objective'];
     const results: PresentedEvent[] = [];
+    // Fingerprint the SOURCE (eventLog entry / caller object) before any
+    // filter runs. Each channel starts from its own clone so an in-place
+    // redaction cannot write through to the log or to sibling channels
+    // (F-4bcdd095 / F-71ec5dcd alias class).
+    const sourceFingerprint = eventFingerprint(event);
 
     for (const channel of channels) {
-      let current: ResolvedEvent | null = event;
+      let current: ResolvedEvent | null = cloneEvent(event);
       const filters = this.filters.get(channel) ?? [];
-      let wasFiltered = false;
 
       for (const filter of filters) {
         if (!current) break;
         const input: ResolvedEvent = current;
         try {
-          const result = filter(input);
-          if (result !== input) wasFiltered = true;
-          current = result;
+          current = filter(input);
         } catch (err) {
           if (this.onFilterError) this.onFilterError(err, input, channel);
           // Fail closed: suppress this event on this channel (see doc above).
@@ -78,7 +89,9 @@ export class PresentationChannels {
         results.push({
           ...current,
           _channel: channel,
-          _filtered: wasFiltered,
+          // Content, not identity: an in-place mutator returns the same
+          // reference it received (the clone) but still redacted the payload.
+          _filtered: eventFingerprint(current) !== sourceFingerprint,
         });
       }
     }

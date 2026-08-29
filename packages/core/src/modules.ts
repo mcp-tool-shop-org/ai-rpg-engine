@@ -25,6 +25,14 @@ import type { ActionDispatcher } from './actions.js';
 import { EventBus } from './events.js';
 import { FormulaRegistry } from './formulas.js';
 
+/** One-word description of an effect.apply return for rule.effect.failed. */
+function describeValue(value: unknown): string {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  if (Array.isArray(value)) return 'an array';
+  return typeof value;
+}
+
 export class ModuleManager {
   private modules: Map<string, EngineModule> = new Map();
   private moduleContexts: Map<string, ModuleRegistrationContext> = new Map();
@@ -147,7 +155,24 @@ export class ModuleManager {
     const additional: ResolvedEvent[] = [];
     for (const effect of this.ruleEffects) {
       try {
-        additional.push(...effect.apply(event, world));
+        const produced = effect.apply(event, world);
+        if (!Array.isArray(produced)) {
+          // Non-array return (forgetting `return []`) used to throw inside this
+          // try as "produced is not iterable" (F-daece5c6 sibling). Name it.
+          additional.push({
+            id: '',
+            tick: event.tick,
+            type: 'rule.effect.failed',
+            payload: {
+              effectId: effect.id,
+              sourceEventId: event.id,
+              reason: `effect "${effect.id}" returned non-array: ${describeValue(produced)}`,
+            },
+            causedBy: event.id,
+          });
+          continue;
+        }
+        additional.push(...produced);
       } catch (err) {
         additional.push({
           id: '', // stamped deterministically by recordEvent
@@ -213,8 +238,8 @@ export class ModuleManager {
     const self = this;
 
     const actions: ActionRegistry = {
-      registerVerb(verb: string, handler: VerbHandler): void {
-        self.dispatcher.registerVerb(verb, handler);
+      registerVerb(verb: string, handler: VerbHandler, opts?: { override?: boolean }): void {
+        self.dispatcher.registerVerb(verb, handler, opts);
       },
     };
 
@@ -251,7 +276,17 @@ export class ModuleManager {
     };
 
     const persistence: PersistenceRegistry = {
-      registerNamespace(modId: string, defaults: unknown): void {
+      registerNamespace(modId: string, defaults: unknown, opts?: { override?: boolean }): void {
+        // Same accidental-clobber class as registerVerb / FormulaRegistry
+        // (F-b71bccf1): two modules claiming one world.modules key used to
+        // silently last-wins. Fail loud unless the replacement is explicit.
+        if (self.namespaceDefaults.has(modId) && !opts?.override) {
+          throw new Error(
+            `Persistence namespace "${modId}" is already registered. ` +
+              `Namespace keys must be unique; a module has already claimed this world.modules key. ` +
+              `Rename one namespace, remove the duplicate registration, or pass { override: true } to replace intentionally.`,
+          );
+        }
         self.namespaceDefaults.set(modId, defaults);
       },
     };

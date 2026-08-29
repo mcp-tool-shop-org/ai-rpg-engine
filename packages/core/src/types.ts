@@ -409,7 +409,7 @@ export type ModuleRegistrationContext = {
 
 // Registry interfaces — will be fleshed out in Step 5
 export interface ActionRegistry {
-  registerVerb(verb: string, handler: VerbHandler): void;
+  registerVerb(verb: string, handler: VerbHandler, opts?: { override?: boolean }): void;
 }
 
 export interface RuleRegistry {
@@ -448,7 +448,11 @@ export interface PersistenceRegistry {
    * world at initialization time (its result is cloned; never store a bare
    * function as literal default data — functions don't serialize anyway).
    */
-  registerNamespace(moduleId: string, defaults: unknown | NamespaceDefaultsFactory): void;
+  registerNamespace(
+    moduleId: string,
+    defaults: unknown | NamespaceDefaultsFactory,
+    opts?: { override?: boolean },
+  ): void;
 }
 
 export interface UIRegistry {
