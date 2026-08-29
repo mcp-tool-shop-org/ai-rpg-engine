@@ -21,6 +21,11 @@ export type ApplyPreviewResult = {
   preview: string;
 };
 
+/** Confirmed write: success lands a file, failure never does. */
+export type ApplyWriteResult =
+  | { ok: true; path: string; bytes: number }
+  | { ok: false; error: string };
+
 /**
  * True when `resolved` is the project root or a descendant of it.
  * Exported as THE sandbox predicate for every path that lands AI output on
@@ -32,8 +37,17 @@ export function withinRoot(resolved: string, projectRoot?: string): boolean {
   return resolved === root || resolved.startsWith(root + '/') || resolved.startsWith(root + '\\');
 }
 
+/**
+ * Resolve a caller-supplied target against the sandbox root.
+ * Relative paths land under `projectRoot` (default: process.cwd());
+ * absolute paths replace the base (path.resolve already does this).
+ */
+export function resolveUnderRoot(targetPath: string, projectRoot?: string): string {
+  return resolve(projectRoot ?? process.cwd(), targetPath);
+}
+
 export async function generatePreview(input: ApplyPreviewInput): Promise<ApplyPreviewResult> {
-  const resolved = resolve(input.targetPath);
+  const resolved = resolveUnderRoot(input.targetPath, input.projectRoot);
 
   // Security: preview shares the same sandbox as the confirmed write. A
   // model/user-supplied targetPath that escapes the project root must NOT be
@@ -98,12 +112,12 @@ export async function generatePreview(input: ApplyPreviewInput): Promise<ApplyPr
   };
 }
 
-export async function applyConfirmed(input: ApplyPreviewInput): Promise<string> {
-  const resolved = resolve(input.targetPath);
+export async function applyConfirmed(input: ApplyPreviewInput): Promise<ApplyWriteResult> {
+  const resolved = resolveUnderRoot(input.targetPath, input.projectRoot);
   if (!withinRoot(resolved, input.projectRoot)) {
-    return `Error: target path escapes project root (${resolved})`;
+    return { ok: false, error: `Error: target path escapes project root (${resolved})` };
   }
   await mkdir(dirname(resolved), { recursive: true });
   await writeFile(resolved, input.content, 'utf-8');
-  return `Written: ${resolved} (${input.content.length} bytes)`;
+  return { ok: true, path: resolved, bytes: input.content.length };
 }

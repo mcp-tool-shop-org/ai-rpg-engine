@@ -20,6 +20,7 @@ export type ExperimentSpec = {
   scenarioId?: string;
   runs: number;
   seedStart?: number;
+  /** Explicit seeds. When non-empty, takes priority over seedStart/runs and is truncated to MAX_EXPERIMENT_RUNS. */
   seedList?: number[];
   tickLimit?: number;
   focusMetrics?: string[];
@@ -141,10 +142,10 @@ export function isTunableParam(param: string): boolean {
 
 /**
  * Upper bound on how many runs a single experiment will derive seeds for.
- * `spec.runs` is consumer-supplied (CLI flag, chat param, sweep config). A typo
- * or hostile value like 1e9 would make `Array.from({ length })` allocate a
- * multi-billion-element array and OOM the process; a non-integer/NaN would loop
- * unpredictably. We clamp to keep the runner bounded and deterministic.
+ * `spec.runs` and `spec.seedList` are consumer-supplied (CLI flag, chat param,
+ * sweep config). A typo or hostile value like 1e9 / a million-long seedList
+ * would allocate and run unbounded. We clamp both paths to keep the runner
+ * bounded and deterministic.
  */
 export const MAX_EXPERIMENT_RUNS = 10_000;
 
@@ -165,7 +166,7 @@ function clampRuns(runs: number): number {
 
 export function deriveSeeds(spec: ExperimentSpec): number[] {
   if (spec.seedList && spec.seedList.length > 0) {
-    return [...spec.seedList];
+    return spec.seedList.slice(0, MAX_EXPERIMENT_RUNS);
   }
   const start = spec.seedStart ?? 1;
   const count = clampRuns(spec.runs);

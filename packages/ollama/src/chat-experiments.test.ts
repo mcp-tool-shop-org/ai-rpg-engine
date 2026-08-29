@@ -181,6 +181,14 @@ describe('Pillar 1 — Deterministic experiment runner', () => {
       const seeds = deriveSeeds(makeSpec({ runs: 1_000_000_000 }));
       expect(seeds).toHaveLength(MAX_EXPERIMENT_RUNS);
     });
+
+    it('caps a huge seedList at MAX_EXPERIMENT_RUNS', () => {
+      const seedList = Array.from({ length: MAX_EXPERIMENT_RUNS + 50 }, (_, i) => i + 1);
+      const seeds = deriveSeeds(makeSpec({ seedList, runs: 1 }));
+      expect(seeds).toHaveLength(MAX_EXPERIMENT_RUNS);
+      expect(seeds[0]).toBe(1);
+      expect(seeds[MAX_EXPERIMENT_RUNS - 1]).toBe(MAX_EXPERIMENT_RUNS);
+    });
   });
 
   describe('runExperiment', () => {

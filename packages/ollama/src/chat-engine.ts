@@ -496,15 +496,23 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     // Use apply-preview's confirmed write. Pass projectRoot so the path-escape
     // confinement uses the configured sandbox, not process.cwd().
     const { applyConfirmed } = await import('./apply-preview.js');
-    const msg = await applyConfirmed({ content, targetPath: suggestedPath, label, projectRoot });
+    const result = await applyConfirmed({ content, targetPath: suggestedPath, label, projectRoot });
+
+    if (!result.ok) {
+      // Keep pendingWrite so the user can retry a safer path. Do not record
+      // content_applied — the write never landed.
+      const response = result.error;
+      addMessage(memory, { role: 'assistant', content: response, timestamp: new Date().toISOString() });
+      return response;
+    }
 
     if (session) {
-      recordEvent(session, 'content_applied', suggestedPath);
+      recordEvent(session, 'content_applied', result.path);
       await saveSession(projectRoot, session);
     }
 
     pendingWrite = null;
-    const response = msg;
+    const response = `Written: ${result.path} (${result.bytes} bytes)`;
     addMessage(memory, { role: 'assistant', content: response, timestamp: new Date().toISOString() });
     return response;
   }

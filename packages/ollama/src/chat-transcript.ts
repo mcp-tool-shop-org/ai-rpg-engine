@@ -3,9 +3,14 @@
 // Chat engine calls save() after each exchange. Reads are on demand.
 
 import { writeFile, readFile, mkdir } from 'node:fs/promises';
-import { join, dirname, resolve } from 'node:path';
-import { withinRoot } from './apply-preview.js';
+import { join, dirname } from 'node:path';
+import { withinRoot, resolveUnderRoot } from './apply-preview.js';
 import type { ChatMessage, ChatTranscript } from './chat-types.js';
+
+/** Sandboxed save: success returns the path written, failure never writes. */
+export type TranscriptSaveResult =
+  | { ok: true; path: string }
+  | { ok: false; error: string };
 
 export function createTranscript(sessionName: string | null): ChatTranscript {
   return {
@@ -42,10 +47,10 @@ export async function saveTranscript(
   path: string,
   transcript: ChatTranscript,
   projectRoot?: string,
-): Promise<string> {
-  const resolved = resolve(path);
+): Promise<TranscriptSaveResult> {
+  const resolved = resolveUnderRoot(path, projectRoot);
   if (!withinRoot(resolved, projectRoot)) {
-    return `Error: target path escapes project root (${resolved})`;
+    return { ok: false, error: `Error: target path escapes project root (${resolved})` };
   }
 
   const header = JSON.stringify({
@@ -67,7 +72,7 @@ export async function saveTranscript(
 
   await mkdir(dirname(resolved), { recursive: true });
   await writeFile(resolved, lines.join('\n') + '\n', 'utf-8');
-  return resolved;
+  return { ok: true, path: resolved };
 }
 
 /**
@@ -79,7 +84,7 @@ export async function saveTranscript(
  * for arbitrary on-disk paths outside the project.
  */
 export async function loadTranscript(path: string, projectRoot?: string): Promise<ChatTranscript | null> {
-  const resolved = resolve(path);
+  const resolved = resolveUnderRoot(path, projectRoot);
   if (!withinRoot(resolved, projectRoot)) return null;
 
   let raw: string;

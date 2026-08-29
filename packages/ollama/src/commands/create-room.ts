@@ -78,8 +78,13 @@ export async function createRoom(
   });
 
   if (!repairResult.ok) {
-    // Repair failed — return the original with its diagnostics
-    return { ok: true, yaml, validation };
+    return {
+      ok: true,
+      yaml,
+      validation,
+      repaired: false,
+      repairNote: `Repair failed: ${repairResult.error}`,
+    };
   }
 
   const repairedYaml = extractYaml(repairResult.text);

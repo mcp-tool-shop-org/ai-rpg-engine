@@ -75,7 +75,13 @@ export async function createQuest(
   });
 
   if (!repairResult.ok) {
-    return { ok: true, yaml, validation };
+    return {
+      ok: true,
+      yaml,
+      validation,
+      repaired: false,
+      repairNote: `Repair failed: ${repairResult.error}`,
+    };
   }
 
   const repairedYaml = extractYaml(repairResult.text);
