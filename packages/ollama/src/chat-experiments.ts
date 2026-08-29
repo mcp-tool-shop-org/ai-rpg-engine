@@ -79,7 +79,7 @@ export type ExperimentComparison = {
 /** Parameter sweep specification. */
 export type ParameterSweepSpec = {
   param: string;
-  /** Sweep axis. Truncated to MAX_EXPERIMENT_RUNS the same way seedList is. */
+  /** Sweep axis. Truncated so values.length * runsPerPoint stays at MAX_EXPERIMENT_RUNS. */
   values: Array<number | string | boolean>;
   baseExperiment: ExperimentSpec;
 };
@@ -143,12 +143,15 @@ export function isTunableParam(param: string): boolean {
 
 /**
  * Upper bound on how many runs a single experiment will derive seeds for,
- * and on how many points a parameter sweep will generate or execute.
+ * on how many points a parameter sweep will generate, and on the product
+ * values.length * runsPerPoint executed by runParameterSweep.
  * `spec.runs`, `spec.seedList`, `generateSweepValues(from,to,step)`, and
  * `sweepSpec.values` are consumer-supplied (CLI flag, chat param, sweep
  * config). A typo or hostile value like 1e9 / a million-long seedList /
  * `/experiment-sweep rumorClarity 0 1 1e-8` would allocate and run
- * unbounded. We clamp every path to keep the runner bounded and deterministic.
+ * unbounded. Per-axis clamps still compose (1e4 values × 1e4 runs); the
+ * product is clamped too. We clamp every path to keep the runner bounded
+ * and deterministic.
  */
 export const MAX_EXPERIMENT_RUNS = 10_000;
 
@@ -165,6 +168,14 @@ function clampRuns(runs: number): number {
   const floored = Math.floor(runs);
   if (floored <= 0) return 0;
   return Math.min(floored, MAX_EXPERIMENT_RUNS);
+}
+
+/** Producer calls one runExperiment(spec) will make (seedList or clamped runs). */
+function runsPerPoint(spec: ExperimentSpec): number {
+  if (spec.seedList && spec.seedList.length > 0) {
+    return Math.min(spec.seedList.length, MAX_EXPERIMENT_RUNS);
+  }
+  return clampRuns(spec.runs);
 }
 
 export function deriveSeeds(spec: ExperimentSpec): number[] {
@@ -185,11 +196,13 @@ export function deriveSeeds(spec: ExperimentSpec): number[] {
  * Delegates to the existing extractMetrics/parseReplayData from balance analyzer.
  */
 export function extractScenarioMetrics(replayData: string): ScenarioMetrics {
-  const parsed = parseReplayData(replayData);
-  if (!parsed) {
-    return { totalTicks: 0, escalationTick: null, rumorSpreadReach: 0, encounterDuration: 0, factionHostilityPeak: 0, curves: [], encounterTicks: 0, escalationPhases: 0 };
+  try {
+    const parsed = parseReplayData(replayData);
+    if (!parsed) return emptyMetrics();
+    return extractMetrics(parsed);
+  } catch {
+    return emptyMetrics();
   }
-  return extractMetrics(parsed);
 }
 
 /**
@@ -623,7 +636,13 @@ export function runParameterSweep(
   replayProducer: ReplayProducer,
 ): ParameterSweepResult {
   const points: SweepPoint[] = [];
-  const values = sweepSpec.values.slice(0, MAX_EXPERIMENT_RUNS);
+  // F-ed01752b — per-axis slice still allows values.length * runs to hit 1e8.
+  // Cap the product so a 10000-value sweep with runs>1 cannot execute 10000 batches.
+  const perPoint = runsPerPoint(sweepSpec.baseExperiment);
+  const maxValues = perPoint <= 0
+    ? MAX_EXPERIMENT_RUNS
+    : Math.max(1, Math.floor(MAX_EXPERIMENT_RUNS / perPoint));
+  const values = sweepSpec.values.slice(0, Math.min(MAX_EXPERIMENT_RUNS, maxValues));
 
   for (const value of values) {
     const experimentSpec: ExperimentSpec = {

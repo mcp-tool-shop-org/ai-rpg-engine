@@ -4,6 +4,8 @@ import { describe, it, expect } from 'vitest';
 import {
   parseReplayData,
   extractMetrics,
+  MAX_REPLAY_TICKS,
+  MAX_METRIC_NAMES,
   analyzeBalance,
   formatBalanceAnalysis,
   parseDesignIntent,
@@ -115,6 +117,22 @@ describe('parseReplayData', () => {
   it('returns null for non-replay structure', () => {
     expect(parseReplayData('"just a string"')).toBeNull();
   });
+
+  // F-90a1ce80 — null/non-object ticks must fail closed, not reach extractMetrics.
+  it('returns null for [null] ticks', () => {
+    expect(parseReplayData('[null]')).toBeNull();
+  });
+
+  it('returns null for {"ticks":[null]}', () => {
+    expect(parseReplayData('{"ticks":[null]}')).toBeNull();
+  });
+
+  it('caps ticks at MAX_REPLAY_TICKS', () => {
+    const ticks = Array.from({ length: MAX_REPLAY_TICKS + 50 }, (_, i) => ({ tick: i }));
+    const result = parseReplayData(JSON.stringify(ticks));
+    expect(result).not.toBeNull();
+    expect(result!.ticks).toHaveLength(MAX_REPLAY_TICKS);
+  });
 });
 
 // ========================================
@@ -184,6 +202,32 @@ describe('extractMetrics', () => {
     expect(curve!.peakTick).toBe(2);
     expect(curve!.mean).toBeCloseTo(0.2);
   });
+
+  // F-90a1ce80 — null ticks and a 200k-tick dump must not throw (Math.max spread
+  // RangeError / tick.metrics TypeError). Cap length; loop for min/max.
+  it('skips null ticks instead of throwing', () => {
+    expect(() => extractMetrics({ ticks: [null] } as never)).not.toThrow();
+    const metrics = extractMetrics({ ticks: [null] } as never);
+    expect(metrics.totalTicks).toBe(0);
+  });
+
+  it('does not throw on a 200k-tick fixture and caps curve length', () => {
+    const ticks = Array.from({ length: 200_000 }, (_, i) => ({
+      tick: i,
+      metrics: { alertPressure: 0.1 },
+    }));
+    let metrics;
+    expect(() => { metrics = extractMetrics({ ticks } as never); }).not.toThrow();
+    expect(metrics!.totalTicks).toBeLessThanOrEqual(MAX_REPLAY_TICKS);
+    expect(metrics!.curves.every((c) => c.values.length <= MAX_REPLAY_TICKS)).toBe(true);
+  });
+
+  it('caps metric-name count before building curves', () => {
+    const many: Record<string, number> = {};
+    for (let i = 0; i < MAX_METRIC_NAMES + 40; i++) many[`m${i}`] = i;
+    const metrics = extractMetrics({ ticks: [{ tick: 0, metrics: many }] } as never);
+    expect(metrics.curves.length).toBeLessThanOrEqual(MAX_METRIC_NAMES);
+  });
 });
 
 // ========================================
@@ -229,6 +273,28 @@ describe('analyzeBalance', () => {
     const analysis = analyzeBalance('not json', null);
     expect(analysis.findings).toHaveLength(1);
     expect(analysis.findings[0].code).toBe('PARSE_FAILURE');
+  });
+
+  // F-90a1ce80 — [null] used to TypeError inside extractMetrics; must surface
+  // as PARSE_FAILURE findings, never throw.
+  it('returns PARSE_FAILURE findings for [null] instead of throwing', () => {
+    expect(() => analyzeBalance('[null]', null)).not.toThrow();
+    const analysis = analyzeBalance('[null]', null);
+    expect(analysis.findings.some((f) => f.code === 'PARSE_FAILURE')).toBe(true);
+  });
+
+  it('returns PARSE_FAILURE findings for {"ticks":[null]} instead of throwing', () => {
+    expect(() => analyzeBalance('{"ticks":[null]}', null)).not.toThrow();
+    const analysis = analyzeBalance('{"ticks":[null]}', null);
+    expect(analysis.findings.some((f) => f.code === 'PARSE_FAILURE')).toBe(true);
+  });
+
+  it('does not throw on a 200k-tick replay and returns findings', () => {
+    const raw = JSON.stringify(Array.from({ length: 200_000 }, (_, i) => ({ tick: i })));
+    let analysis;
+    expect(() => { analysis = analyzeBalance(raw, null); }).not.toThrow();
+    expect(Array.isArray(analysis!.findings)).toBe(true);
+    expect(analysis!.metrics.totalTicks).toBeLessThanOrEqual(MAX_REPLAY_TICKS);
   });
 
   it('correlates session escalation issues with replay', () => {

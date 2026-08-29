@@ -227,6 +227,15 @@ export type TuningState = {
 // Replay data parsing
 // ============================================================
 
+/** Upper bound on ticks retained from a user-supplied replay (F-90a1ce80). */
+export const MAX_REPLAY_TICKS = 10_000;
+/** Upper bound on named metric curves built from one replay. */
+export const MAX_METRIC_NAMES = 64;
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
 /** Minimal typed replay structure we expect from JSON. */
 type ReplayTick = {
   tick: number;
@@ -250,19 +259,33 @@ type ParsedReplay = {
   metadata?: Record<string, unknown>;
 };
 
+/** Fail closed on any non-record element; cap length. */
+function asReplayTicks(raw: unknown): ReplayTick[] | null {
+  if (!Array.isArray(raw)) return null;
+  const ticks: ReplayTick[] = [];
+  for (const item of raw) {
+    if (!isRecord(item)) return null;
+    ticks.push(item as ReplayTick);
+    if (ticks.length >= MAX_REPLAY_TICKS) break;
+  }
+  return ticks;
+}
+
 export function parseReplayData(raw: string): ParsedReplay | null {
   try {
     const data = JSON.parse(raw);
     // Handle array of ticks
     if (Array.isArray(data)) {
-      return { ticks: data as ReplayTick[] };
+      const ticks = asReplayTicks(data);
+      return ticks ? { ticks } : null;
     }
     // Handle object with ticks field
     if (data && typeof data === 'object' && Array.isArray(data.ticks)) {
-      return { ticks: data.ticks as ReplayTick[], metadata: data.metadata };
+      const ticks = asReplayTicks(data.ticks);
+      return ticks ? { ticks, metadata: data.metadata } : null;
     }
     // Handle single tick
-    if (data && typeof data === 'object' && typeof data.tick === 'number') {
+    if (isRecord(data) && typeof data.tick === 'number') {
       return { ticks: [data as ReplayTick] };
     }
     return null;
@@ -275,29 +298,54 @@ export function parseReplayData(raw: string): ParsedReplay | null {
 // Metric extraction
 // ============================================================
 
+function peakOf(values: number[]): { peak: number; peakTick: number } {
+  let peak = 0;
+  let peakTick = 0;
+  for (let i = 0; i < values.length; i++) {
+    if (values[i] > peak) {
+      peak = values[i];
+      peakTick = i;
+    }
+  }
+  return { peak, peakTick };
+}
+
+function collectTicks(replay: ParsedReplay): ReplayTick[] {
+  const raw = Array.isArray(replay.ticks) ? replay.ticks : [];
+  const ticks: ReplayTick[] = [];
+  for (const tick of raw) {
+    if (!isRecord(tick)) continue;
+    ticks.push(tick as ReplayTick);
+    if (ticks.length >= MAX_REPLAY_TICKS) break;
+  }
+  return ticks;
+}
+
 export function extractMetrics(replay: ParsedReplay): ScenarioMetrics {
-  const ticks = replay.ticks;
+  const ticks = collectTicks(replay);
   const totalTicks = ticks.length;
   const curves: MetricCurve[] = [];
 
-  // Collect all metric names across ticks
+  // Collect all metric names across ticks (capped).
   const metricNames = new Set<string>();
   for (const tick of ticks) {
-    if (tick.metrics) {
-      for (const name of Object.keys(tick.metrics)) {
-        metricNames.add(name);
-      }
+    if (!isRecord(tick.metrics)) continue;
+    for (const name of Object.keys(tick.metrics)) {
+      metricNames.add(name);
+      if (metricNames.size >= MAX_METRIC_NAMES) break;
     }
+    if (metricNames.size >= MAX_METRIC_NAMES) break;
   }
 
-  // Build curves for each metric
+  // Build curves for each metric — loop for peak, never Math.max spread.
   for (const name of metricNames) {
     const values: number[] = [];
     for (const tick of ticks) {
-      values.push(tick.metrics?.[name] ?? 0);
+      const metrics = isRecord(tick.metrics) ? tick.metrics : undefined;
+      const v = metrics?.[name];
+      values.push(typeof v === 'number' && Number.isFinite(v) ? v : 0);
     }
-    const peak = Math.max(...values, 0);
-    const peakTick = values.indexOf(peak);
+    const { peak, peakTick } = peakOf(values);
     const mean = values.length > 0
       ? values.reduce((a, b) => a + b, 0) / values.length
       : 0;
@@ -318,11 +366,11 @@ export function extractMetrics(replay: ParsedReplay): ScenarioMetrics {
   let rumorSpreadReach = 0;
   const factionsReached = new Set<string>();
   for (const tick of ticks) {
-    if (tick.events) {
-      for (const event of tick.events) {
-        if (event.type === 'rumor_spread' || event.type === 'gossip_received') {
-          if (event.target) factionsReached.add(event.target);
-        }
+    if (!Array.isArray(tick.events)) continue;
+    for (const event of tick.events) {
+      if (!isRecord(event)) continue;
+      if (event.type === 'rumor_spread' || event.type === 'gossip_received') {
+        if (typeof event.target === 'string') factionsReached.add(event.target);
       }
     }
   }
@@ -331,7 +379,9 @@ export function extractMetrics(replay: ParsedReplay): ScenarioMetrics {
   // Encounter duration — ticks with active encounters
   let encounterTicks = 0;
   for (const tick of ticks) {
-    if (tick.events?.some(e => e.type === 'encounter_active' || e.type === 'encounter_tick')) {
+    if (Array.isArray(tick.events) && tick.events.some(e =>
+      isRecord(e) && (e.type === 'encounter_active' || e.type === 'encounter_tick')
+    )) {
       encounterTicks++;
     }
   }
@@ -373,45 +423,53 @@ export function extractMetrics(replay: ParsedReplay): ScenarioMetrics {
 // P1 — Balance Analysis
 // ============================================================
 
+function parseFailureAnalysis(summary = 'Balance analysis failed: could not parse replay data.'): BalanceAnalysis {
+  return {
+    metrics: emptyMetrics(),
+    findings: [{
+      code: 'PARSE_FAILURE',
+      summary: 'Could not parse replay data.',
+      area: 'replay',
+      severity: 'critical',
+      category: 'general',
+      likelyCause: 'Invalid or missing replay JSON.',
+    }],
+    summary,
+  };
+}
+
 export function analyzeBalance(
   replayData: string,
   session: DesignSession | null,
 ): BalanceAnalysis {
-  const replay = parseReplayData(replayData);
-  if (!replay) {
+  try {
+    const replay = parseReplayData(replayData);
+    if (!replay) {
+      return parseFailureAnalysis();
+    }
+
+    const metrics = extractMetrics(replay);
+    const findings = runBalanceChecks(metrics, session);
+
+    const criticalCount = findings.filter(f => f.severity === 'critical').length;
+    const warningCount = findings.filter(f => f.severity === 'warning').length;
+    const infoCount = findings.filter(f => f.severity === 'info').length;
+
+    const summaryParts: string[] = [];
+    summaryParts.push(`Analyzed ${metrics.totalTicks} ticks.`);
+    if (criticalCount > 0) summaryParts.push(`${criticalCount} critical finding(s).`);
+    if (warningCount > 0) summaryParts.push(`${warningCount} warning(s).`);
+    if (infoCount > 0) summaryParts.push(`${infoCount} informational note(s).`);
+    if (findings.length === 0) summaryParts.push('No balance issues detected.');
+
     return {
-      metrics: emptyMetrics(),
-      findings: [{
-        code: 'PARSE_FAILURE',
-        summary: 'Could not parse replay data.',
-        area: 'replay',
-        severity: 'critical',
-        category: 'general',
-        likelyCause: 'Invalid or missing replay JSON.',
-      }],
-      summary: 'Balance analysis failed: could not parse replay data.',
+      metrics,
+      findings,
+      summary: summaryParts.join(' '),
     };
+  } catch {
+    return parseFailureAnalysis();
   }
-
-  const metrics = extractMetrics(replay);
-  const findings = runBalanceChecks(metrics, session);
-
-  const criticalCount = findings.filter(f => f.severity === 'critical').length;
-  const warningCount = findings.filter(f => f.severity === 'warning').length;
-  const infoCount = findings.filter(f => f.severity === 'info').length;
-
-  const summaryParts: string[] = [];
-  summaryParts.push(`Analyzed ${metrics.totalTicks} ticks.`);
-  if (criticalCount > 0) summaryParts.push(`${criticalCount} critical finding(s).`);
-  if (warningCount > 0) summaryParts.push(`${warningCount} warning(s).`);
-  if (infoCount > 0) summaryParts.push(`${infoCount} informational note(s).`);
-  if (findings.length === 0) summaryParts.push('No balance issues detected.');
-
-  return {
-    metrics,
-    findings,
-    summary: summaryParts.join(' '),
-  };
 }
 
 function runBalanceChecks(
@@ -623,8 +681,13 @@ export function compareIntent(
   replayData: string,
   session: DesignSession | null,
 ): IntentComparison {
-  const replay = parseReplayData(replayData);
-  const metrics = replay ? extractMetrics(replay) : emptyMetrics();
+  let metrics: ScenarioMetrics;
+  try {
+    const replay = parseReplayData(replayData);
+    metrics = replay ? extractMetrics(replay) : emptyMetrics();
+  } catch {
+    metrics = emptyMetrics();
+  }
 
   const results: OutcomeResult[] = [];
 
@@ -855,44 +918,48 @@ export function analyzeWindow(
   endTick: number,
   focus?: string,
 ): WindowAnalysis {
-  const replay = parseReplayData(replayData);
-  if (!replay) {
+  const parseFail: WindowAnalysis = {
+    startTick,
+    endTick,
+    metrics: emptyMetrics(),
+    findings: [{
+      code: 'PARSE_FAILURE',
+      summary: 'Could not parse replay data.',
+      area: 'replay',
+      severity: 'critical',
+      category: 'general',
+      likelyCause: 'Invalid or missing replay JSON.',
+    }],
+    summary: 'Window analysis failed: could not parse replay data.',
+  };
+
+  try {
+    const replay = parseReplayData(replayData);
+    if (!replay) return parseFail;
+
+    // Slice to window
+    const windowed = replay.ticks.filter(t => t.tick >= startTick && t.tick <= endTick);
+    const windowReplay: ParsedReplay = { ticks: windowed, metadata: replay.metadata };
+    const metrics = extractMetrics(windowReplay);
+    const findings = runBalanceChecks(metrics, null);
+
+    // Focus filter — keep only findings in the requested category
+    const filteredFindings = focus
+      ? findings.filter(f => f.category === focus || f.area.toLowerCase().includes(focus.toLowerCase()))
+      : findings;
+
+    const summary = `Window ticks ${startTick}–${endTick}: ${windowed.length} ticks analyzed, ${filteredFindings.length} finding(s).`;
+
     return {
       startTick,
       endTick,
-      metrics: emptyMetrics(),
-      findings: [{
-        code: 'PARSE_FAILURE',
-        summary: 'Could not parse replay data.',
-        area: 'replay',
-        severity: 'critical',
-        category: 'general',
-        likelyCause: 'Invalid or missing replay JSON.',
-      }],
-      summary: 'Window analysis failed: could not parse replay data.',
+      metrics,
+      findings: filteredFindings,
+      summary,
     };
+  } catch {
+    return parseFail;
   }
-
-  // Slice to window
-  const windowed = replay.ticks.filter(t => t.tick >= startTick && t.tick <= endTick);
-  const windowReplay: ParsedReplay = { ticks: windowed, metadata: replay.metadata };
-  const metrics = extractMetrics(windowReplay);
-  const findings = runBalanceChecks(metrics, null);
-
-  // Focus filter — keep only findings in the requested category
-  const filteredFindings = focus
-    ? findings.filter(f => f.category === focus || f.area.toLowerCase().includes(focus.toLowerCase()))
-    : findings;
-
-  const summary = `Window ticks ${startTick}–${endTick}: ${windowed.length} ticks analyzed, ${filteredFindings.length} finding(s).`;
-
-  return {
-    startTick,
-    endTick,
-    metrics,
-    findings: filteredFindings,
-    summary,
-  };
 }
 
 // ============================================================
@@ -1003,11 +1070,17 @@ export function compareScenarios(
   afterData: string,
   intent?: DesignIntent,
 ): ScenarioComparison {
-  const beforeReplay = parseReplayData(beforeData);
-  const afterReplay = parseReplayData(afterData);
-
-  const before = beforeReplay ? extractMetrics(beforeReplay) : emptyMetrics();
-  const after = afterReplay ? extractMetrics(afterReplay) : emptyMetrics();
+  let before: ScenarioMetrics;
+  let after: ScenarioMetrics;
+  try {
+    const beforeReplay = parseReplayData(beforeData);
+    const afterReplay = parseReplayData(afterData);
+    before = beforeReplay ? extractMetrics(beforeReplay) : emptyMetrics();
+    after = afterReplay ? extractMetrics(afterReplay) : emptyMetrics();
+  } catch {
+    before = emptyMetrics();
+    after = emptyMetrics();
+  }
 
   const changes: DimensionChange[] = [];
 

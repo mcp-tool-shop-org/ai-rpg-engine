@@ -676,6 +676,44 @@ describe('Pillar 4 — Parameter sweeps', () => {
       expect(result.points[0].value).toBe(0);
       expect(result.points[MAX_EXPERIMENT_RUNS - 1].value).toBe(MAX_EXPERIMENT_RUNS - 1);
     });
+
+    // F-ed01752b — per-axis clamps still compose: 10000 values × runs>1 is
+    // more than MAX_EXPERIMENT_RUNS producer calls. Cap the product.
+    it('caps values.length * runs at MAX_EXPERIMENT_RUNS', () => {
+      let calls = 0;
+      const inner = makeReplayProducer();
+      const producer: ReplayProducer = (seed, overrides, tickLimit) => {
+        calls++;
+        return inner(seed, overrides, tickLimit);
+      };
+      const values = Array.from({ length: MAX_EXPERIMENT_RUNS }, (_, i) => i);
+      const result = runParameterSweep({
+        param: 'rumorClarity',
+        values,
+        baseExperiment: makeSpec({ runs: 2 }),
+      }, producer);
+      expect(calls).toBeLessThanOrEqual(MAX_EXPERIMENT_RUNS);
+      expect(result.points.length * 2).toBeLessThanOrEqual(MAX_EXPERIMENT_RUNS);
+      expect(result.points.length).toBe(Math.floor(MAX_EXPERIMENT_RUNS / 2));
+    });
+
+    it('caps values.length * seedList length at MAX_EXPERIMENT_RUNS', () => {
+      let calls = 0;
+      const inner = makeReplayProducer();
+      const producer: ReplayProducer = (seed, overrides, tickLimit) => {
+        calls++;
+        return inner(seed, overrides, tickLimit);
+      };
+      const values = Array.from({ length: 100 }, (_, i) => i);
+      const seedList = Array.from({ length: 200 }, (_, i) => i + 1);
+      const result = runParameterSweep({
+        param: 'rumorClarity',
+        values,
+        baseExperiment: makeSpec({ runs: 5, seedList }),
+      }, producer);
+      expect(calls).toBeLessThanOrEqual(MAX_EXPERIMENT_RUNS);
+      expect(result.points.length * 200).toBeLessThanOrEqual(MAX_EXPERIMENT_RUNS);
+    });
   });
 
   describe('isTunableParam', () => {
