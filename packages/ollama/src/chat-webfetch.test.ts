@@ -665,3 +665,75 @@ describe('webfetch — streamed body byte cap (F-04d727a9)', () => {
     }
   });
 });
+
+// F-aa58bf30 — byteCap was `Math.max(1, maxChars) * 2` with no absolute or
+// finite clamp. Infinity / NaN / MAX_SAFE_INTEGER made byteCap non-finite or
+// huge, so a multi-GB Content-Length never tripped the streamed cap.
+describe('webfetch — finite absolute maxChars clamp (F-aa58bf30)', () => {
+  beforeEach(() => {
+    vi.mocked(lookup).mockReset();
+  });
+
+  async function fetchWithHugeContentLength(maxChars: number): Promise<{
+    result: Awaited<ReturnType<typeof import('./chat-webfetch.js').webfetch>>;
+    pulled: number;
+    textCalled: number;
+  }> {
+    vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+    let pulled = 0;
+    let textCalled = 0;
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        'content-type': 'text/plain',
+        'content-length': String(2_000_000_000),
+      }),
+      body: new ReadableStream({
+        pull(controller) {
+          pulled++;
+          controller.enqueue(new Uint8Array(1024));
+        },
+      }, { highWaterMark: 0 }),
+      text: async () => {
+        textCalled++;
+        return 'SHOULD-NOT-MATERIALIZE';
+      },
+    })) as unknown as typeof fetch;
+    try {
+      const { webfetch } = await import('./chat-webfetch.js');
+      const result = await webfetch('https://public.example/huge', { maxChars });
+      return { result, pulled, textCalled };
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  }
+
+  it('rejects oversized Content-Length when maxChars is Infinity and never concatenates the body', async () => {
+    const { result, pulled, textCalled } = await fetchWithHugeContentLength(Infinity);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/too large|byte cap|content-length|finite/i);
+    expect(pulled).toBe(0);
+    expect(textCalled).toBe(0);
+    expect(result.content).not.toContain('SHOULD-NOT-MATERIALIZE');
+  });
+
+  it('rejects oversized Content-Length when maxChars is NaN and never concatenates the body', async () => {
+    const { result, pulled, textCalled } = await fetchWithHugeContentLength(Number.NaN);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/too large|byte cap|content-length|finite/i);
+    expect(pulled).toBe(0);
+    expect(textCalled).toBe(0);
+    expect(result.content).not.toContain('SHOULD-NOT-MATERIALIZE');
+  });
+
+  it('rejects oversized Content-Length when maxChars is MAX_SAFE_INTEGER and never concatenates the body', async () => {
+    const { result, pulled, textCalled } = await fetchWithHugeContentLength(Number.MAX_SAFE_INTEGER);
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/too large|byte cap|content-length|finite/i);
+    expect(pulled).toBe(0);
+    expect(textCalled).toBe(0);
+    expect(result.content).not.toContain('SHOULD-NOT-MATERIALIZE');
+  });
+});

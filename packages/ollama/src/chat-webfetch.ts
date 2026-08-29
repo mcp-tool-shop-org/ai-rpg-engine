@@ -23,11 +23,33 @@ export type WebfetchResult = {
 };
 
 export type WebfetchOptions = {
-  /** Max content characters to extract. */
+  /**
+   * Max content characters to extract. Must be finite; non-finite values are
+   * refused (clamped to a tiny finite cap so byteCap cannot become Infinity/NaN).
+   * Finite values are floored and clamped to [1, MAX_WEBFETCH_CHARS].
+   */
   maxChars?: number;
   /** Request timeout in milliseconds. */
   timeoutMs?: number;
 };
+
+/** Absolute ceiling on webfetch maxChars (F-aa58bf30). 1 MiB of extracted text. */
+export const MAX_WEBFETCH_CHARS = 1_048_576;
+const DEFAULT_WEBFETCH_CHARS = 4000;
+
+/**
+ * Coerce caller maxChars to a finite integer in [1, MAX_WEBFETCH_CHARS].
+ * Same shape as clampRuns: Infinity is the absolute ceiling; NaN / -Infinity
+ * collapse to 1 so byteCap stays a tiny finite number. Never returns non-finite.
+ */
+function clampMaxChars(maxChars: number): number {
+  if (!Number.isFinite(maxChars)) {
+    return maxChars === Infinity ? MAX_WEBFETCH_CHARS : 1;
+  }
+  const floored = Math.floor(maxChars);
+  if (floored <= 0) return 1;
+  return Math.min(floored, MAX_WEBFETCH_CHARS);
+}
 
 // --- Validation ---
 
@@ -280,6 +302,9 @@ async function cancelBody(response: Response): Promise<void> {
  * lying header cannot force a multi-GB buffer. Never calls response.text().
  */
 async function readBodyWithByteCap(response: Response, byteCap: number): Promise<string> {
+  if (!Number.isFinite(byteCap) || byteCap <= 0) {
+    throw new Error('byte cap is not a finite positive number');
+  }
   const rawLen = response.headers.get('content-length');
   if (rawLen === null || rawLen.trim() === '') {
     // Do not touch response.body here: accessing/cancelling a pull-based
@@ -338,7 +363,11 @@ async function readBodyWithByteCap(response: Response, byteCap: number): Promise
 const MAX_REDIRECTS = 5;
 
 export async function webfetch(url: string, options?: WebfetchOptions): Promise<WebfetchResult> {
-  const maxChars = options?.maxChars ?? 4000;
+  // F-aa58bf30 — clamp before deriving byteCap so Infinity/NaN/MAX_SAFE_INTEGER
+  // cannot disable the streamed body cap. Non-finite values are refused as a
+  // cap (Infinity → absolute ceiling; NaN/-Infinity → 1).
+  const maxChars = clampMaxChars(options?.maxChars ?? DEFAULT_WEBFETCH_CHARS);
+  const byteCap = maxChars * 2;
   const timeoutMs = options?.timeoutMs ?? 10_000;
   const fetchedAt = new Date().toISOString();
 
@@ -418,9 +447,9 @@ export async function webfetch(url: string, options?: WebfetchOptions): Promise<
       }
 
       const contentType = response.headers.get('content-type') ?? '';
-      // F-04d727a9 — never buffer via response.text(). Stream with a hard
-      // byte cap (2× maxChars); refuse missing/oversized/lying Content-Length.
-      const byteCap = Math.max(1, maxChars) * 2;
+      // F-04d727a9 / F-aa58bf30 — never buffer via response.text(). Stream
+      // with a hard finite byte cap (2× clamped maxChars, itself bounded by
+      // MAX_WEBFETCH_CHARS); refuse missing/oversized/lying Content-Length.
       let raw: string;
       try {
         raw = await readBodyWithByteCap(response, byteCap);

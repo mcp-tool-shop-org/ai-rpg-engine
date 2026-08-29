@@ -192,7 +192,7 @@ export { WORLDBUILDER_PROFILE, ANALYST_PROFILE, GENERATOR_PROFILE, ROUTER_PROFIL
 export type { PersonalityProfile } from './chat-personality.js';
 
 // Webfetch adapter
-export { webfetch, isAllowedUrlResolved, formatWebfetchForPrompt } from './chat-webfetch.js';
+export { webfetch, isAllowedUrlResolved, formatWebfetchForPrompt, MAX_WEBFETCH_CHARS } from './chat-webfetch.js';
 // The syntax-only URL check is exported under a self-documenting name so no
 // consumer mistakes it for the live SSRF gate — that gate is
 // isAllowedUrlResolved(), which resolves DNS and re-checks every address

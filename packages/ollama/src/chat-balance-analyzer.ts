@@ -231,6 +231,12 @@ export type TuningState = {
 export const MAX_REPLAY_TICKS = 10_000;
 /** Upper bound on named metric curves built from one replay. */
 export const MAX_METRIC_NAMES = 64;
+/** Refuse parseReplayData input above this many UTF-16 code units (F-670ab50a). */
+export const MAX_REPLAY_JSON_BYTES = 8 * 1024 * 1024;
+/** Upper bound on events retained per tick (F-670ab50a). */
+export const MAX_EVENTS_PER_TICK = 16;
+/** Upper bound on entities retained per tick (F-670ab50a). */
+export const MAX_ENTITIES_PER_TICK = 16;
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -259,19 +265,52 @@ type ParsedReplay = {
   metadata?: Record<string, unknown>;
 };
 
-/** Fail closed on any non-record element; cap length. */
+function takeCapped<T>(arr: unknown, max: number): T[] | undefined {
+  if (!Array.isArray(arr)) return undefined;
+  if (arr.length <= max) return arr as T[];
+  return arr.slice(0, max) as T[];
+}
+
+/** Shallow-copy a tick and truncate events/entities/metrics so retained ticks stay bounded. */
+function capTick(item: Record<string, unknown>): ReplayTick {
+  const out = { ...item } as ReplayTick;
+  const events = takeCapped<NonNullable<ReplayTick['events']>[number]>(item.events, MAX_EVENTS_PER_TICK);
+  if (events) out.events = events;
+  const entities = takeCapped<NonNullable<ReplayTick['entities']>[number]>(item.entities, MAX_ENTITIES_PER_TICK);
+  if (entities) out.entities = entities;
+  if (isRecord(item.metrics)) {
+    const keys = Object.keys(item.metrics);
+    if (keys.length > MAX_METRIC_NAMES) {
+      const metrics: Record<string, number> = {};
+      for (let i = 0; i < MAX_METRIC_NAMES; i++) {
+        const k = keys[i];
+        const v = item.metrics[k];
+        metrics[k] = typeof v === 'number' && Number.isFinite(v) ? v : 0;
+      }
+      out.metrics = metrics;
+    }
+  }
+  return out;
+}
+
+/** Fail closed on any non-record element; cap length and per-tick collections. */
 function asReplayTicks(raw: unknown): ReplayTick[] | null {
   if (!Array.isArray(raw)) return null;
   const ticks: ReplayTick[] = [];
   for (const item of raw) {
     if (!isRecord(item)) return null;
-    ticks.push(item as ReplayTick);
+    ticks.push(capTick(item));
     if (ticks.length >= MAX_REPLAY_TICKS) break;
   }
   return ticks;
 }
 
 export function parseReplayData(raw: string): ParsedReplay | null {
+  // F-670ab50a — refuse before JSON.parse so a million-tick dump never
+  // materializes as an unbounded object graph.
+  if (typeof raw !== 'string' || raw.length > MAX_REPLAY_JSON_BYTES) {
+    return null;
+  }
   try {
     const data = JSON.parse(raw);
     // Handle array of ticks
@@ -286,7 +325,7 @@ export function parseReplayData(raw: string): ParsedReplay | null {
     }
     // Handle single tick
     if (isRecord(data) && typeof data.tick === 'number') {
-      return { ticks: [data as ReplayTick] };
+      return { ticks: [capTick(data)] };
     }
     return null;
   } catch {
@@ -315,10 +354,19 @@ function collectTicks(replay: ParsedReplay): ReplayTick[] {
   const ticks: ReplayTick[] = [];
   for (const tick of raw) {
     if (!isRecord(tick)) continue;
-    ticks.push(tick as ReplayTick);
+    ticks.push(capTick(tick));
     if (ticks.length >= MAX_REPLAY_TICKS) break;
   }
   return ticks;
+}
+
+function forEachCappedEvent(tick: ReplayTick, fn: (event: Record<string, unknown>) => void): void {
+  if (!Array.isArray(tick.events)) return;
+  const n = Math.min(tick.events.length, MAX_EVENTS_PER_TICK);
+  for (let i = 0; i < n; i++) {
+    const event = tick.events[i];
+    if (isRecord(event)) fn(event);
+  }
 }
 
 export function extractMetrics(replay: ParsedReplay): ScenarioMetrics {
@@ -362,28 +410,26 @@ export function extractMetrics(replay: ParsedReplay): ScenarioMetrics {
     if (idx >= 0) escalationTick = idx;
   }
 
-  // Rumor spread — count distinct factions reached
+  // Rumor spread — count distinct factions reached (per-tick event cap).
   let rumorSpreadReach = 0;
   const factionsReached = new Set<string>();
   for (const tick of ticks) {
-    if (!Array.isArray(tick.events)) continue;
-    for (const event of tick.events) {
-      if (!isRecord(event)) continue;
+    forEachCappedEvent(tick, (event) => {
       if (event.type === 'rumor_spread' || event.type === 'gossip_received') {
         if (typeof event.target === 'string') factionsReached.add(event.target);
       }
-    }
+    });
   }
   rumorSpreadReach = factionsReached.size;
 
-  // Encounter duration — ticks with active encounters
+  // Encounter duration — ticks with active encounters (bounded .some).
   let encounterTicks = 0;
   for (const tick of ticks) {
-    if (Array.isArray(tick.events) && tick.events.some(e =>
-      isRecord(e) && (e.type === 'encounter_active' || e.type === 'encounter_tick')
-    )) {
-      encounterTicks++;
-    }
+    let active = false;
+    forEachCappedEvent(tick, (event) => {
+      if (event.type === 'encounter_active' || event.type === 'encounter_tick') active = true;
+    });
+    if (active) encounterTicks++;
   }
   const encounterDuration = encounterTicks;
 
