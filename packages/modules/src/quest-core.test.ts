@@ -296,7 +296,7 @@ describe('quest-core construction validation', () => {
       ...huntQuest,
       stages: [{ id: 's1', name: 'S1', nextStage: 'ghost' }],
     };
-    expect(make([bad])).toThrow(/nextStage "ghost" does not exist/);
+    expect(make([bad])).toThrow(/unknown stage "ghost"/);
   });
 
   it('throws on duplicate quest ids', () => {
