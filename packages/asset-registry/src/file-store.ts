@@ -11,7 +11,7 @@ import * as path from 'node:path';
 import type { AssetMetadata, AssetInput, AssetFilter, AssetGetOptions, AssetStore } from './types.js';
 import { VALID_ASSET_KINDS } from './types.js';
 import { hashBytes, isValidHash } from './hash.js';
-import { matchesFilter } from './filter.js';
+import { matchesFilter, unionTags } from './filter.js';
 
 /**
  * Runtime shape check for a parsed metadata sidecar (F-4d8f612a). The sidecar
@@ -63,9 +63,17 @@ export class FileAssetStore implements AssetStore {
   async put(data: Uint8Array, input: AssetInput): Promise<AssetMetadata> {
     const hash = hashBytes(data);
 
-    // Dedup — if already stored, return existing metadata
+    // Dedup — same bytes reuse the stored asset. Union incoming tags so a
+    // second writer (e.g. char:Alice: after char:Alice) is still findable
+    // (F-930e6b5b). Other metadata stays first-writer-wins.
     const existing = await this.getMeta(hash);
-    if (existing) return existing;
+    if (existing) {
+      const mergedTags = unionTags(existing.tags, input.tags);
+      if (!mergedTags) return existing;
+      const merged: AssetMetadata = { ...existing, tags: mergedTags };
+      await fs.writeFile(this.metaPath(hash), JSON.stringify(merged, null, 2));
+      return merged;
+    }
 
     const metadata: AssetMetadata = {
       hash,

@@ -57,6 +57,24 @@ describe('FileAssetStore', () => {
     const meta2 = await store.put(testData, { ...testInput, tags: ['other'] });
     expect(meta1.hash).toBe(meta2.hash);
     expect(await store.count()).toBe(1);
+    // F-930e6b5b: hash hit unions incoming tags instead of first-writer-wins
+    expect(meta2.tags).toEqual(['npc', 'medieval', 'other']);
+  });
+
+  it('hash-hit unions a new char: identity tag and persists the sidecar (F-930e6b5b)', async () => {
+    const aliceTag = 'char:["Alice","Mage","fantasy"]';
+    const aliceColonTag = 'char:["Alice:","Mage","fantasy"]';
+    const first = await store.put(testData, { ...testInput, tags: [aliceTag] });
+    const second = await store.put(testData, { ...testInput, tags: [aliceColonTag] });
+    expect(second.hash).toBe(first.hash);
+    expect(second.tags).toContain(aliceTag);
+    expect(second.tags).toContain(aliceColonTag);
+    expect(await store.count()).toBe(1);
+
+    const sidecarPath = path.join(tmpDir, first.hash.slice(0, 2), `${first.hash}.json`);
+    const parsed = JSON.parse(await fs.readFile(sidecarPath, 'utf-8')) as { tags: string[] };
+    expect(parsed.tags).toContain(aliceTag);
+    expect(parsed.tags).toContain(aliceColonTag);
   });
 
   it('retrieves metadata by hash', async () => {

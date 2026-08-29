@@ -43,8 +43,27 @@ describe('MemoryAssetStore', () => {
     const meta1 = await store.put(testData, testInput);
     const meta2 = await store.put(testData, { ...testInput, tags: ['different'] });
     expect(meta1.hash).toBe(meta2.hash);
-    // Original metadata is preserved (first write wins)
-    expect(meta2.tags).toEqual(['character', 'fantasy']);
+    expect(await store.count()).toBe(1);
+    // F-930e6b5b: hash hit unions incoming tags; other metadata stays first-writer
+    expect(meta2.tags).toEqual(['character', 'fantasy', 'different']);
+    expect(meta2.source).toBe('test');
+    expect((await store.getMeta(meta1.hash))?.tags).toEqual(['character', 'fantasy', 'different']);
+  });
+
+  it('hash-hit tag union is idempotent when tags already present (F-930e6b5b)', async () => {
+    const meta1 = await store.put(testData, testInput);
+    const meta2 = await store.put(testData, testInput);
+    expect(meta2.tags).toEqual(meta1.tags);
+    expect(meta2.createdAt).toBe(meta1.createdAt);
+  });
+
+  it('hash-hit unions a new char: identity tag onto stored metadata (F-930e6b5b)', async () => {
+    const aliceTag = 'char:["Alice","Mage","fantasy"]';
+    const aliceColonTag = 'char:["Alice:","Mage","fantasy"]';
+    await store.put(testData, { ...testInput, tags: [aliceTag] });
+    const meta2 = await store.put(testData, { ...testInput, tags: [aliceColonTag] });
+    expect(meta2.tags).toContain(aliceTag);
+    expect(meta2.tags).toContain(aliceColonTag);
     expect(await store.count()).toBe(1);
   });
 

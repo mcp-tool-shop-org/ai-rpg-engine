@@ -73,7 +73,11 @@ export type AssetGetOptions = {
  * addressing scheme.
  */
 export interface AssetStore {
-  /** Store bytes and metadata. Returns the content-addressed metadata. Deduplicates by hash. */
+  /**
+   * Store bytes and metadata. Returns the content-addressed metadata.
+   * Deduplicates by hash. On a hash hit, unions incoming tags into the stored
+   * metadata (F-930e6b5b); other fields stay first-writer-wins.
+   */
   put(data: Uint8Array, input: AssetInput): Promise<AssetMetadata>;
   /** Retrieve raw bytes by hash. Returns null if not found, if `hash` is malformed, or (with `verify`) on an integrity mismatch. */
   get(hash: string, opts?: AssetGetOptions): Promise<Uint8Array | null>;

@@ -2,7 +2,7 @@
 
 import type { AssetMetadata, AssetInput, AssetFilter, AssetGetOptions, AssetStore } from './types.js';
 import { hashBytes } from './hash.js';
-import { matchesFilter } from './filter.js';
+import { matchesFilter, unionTags } from './filter.js';
 
 export class MemoryAssetStore implements AssetStore {
   private data = new Map<string, Uint8Array>();
@@ -11,9 +11,17 @@ export class MemoryAssetStore implements AssetStore {
   async put(data: Uint8Array, input: AssetInput): Promise<AssetMetadata> {
     const hash = hashBytes(data);
 
-    // Dedup — if already stored, return existing metadata
+    // Dedup — same bytes reuse the stored asset. Union incoming tags so a
+    // second writer (e.g. char:Alice: after char:Alice) is still findable
+    // (F-930e6b5b). Other metadata stays first-writer-wins.
     const existing = this.meta.get(hash);
-    if (existing) return existing;
+    if (existing) {
+      const mergedTags = unionTags(existing.tags, input.tags);
+      if (!mergedTags) return existing;
+      const merged: AssetMetadata = { ...existing, tags: mergedTags };
+      this.meta.set(hash, merged);
+      return merged;
+    }
 
     const metadata: AssetMetadata = {
       hash,

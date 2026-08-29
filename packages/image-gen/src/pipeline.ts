@@ -2,7 +2,7 @@
 
 import type { AssetStore, AssetMetadata } from '@ai-rpg-engine/asset-registry';
 import type { PortraitRequest, ImageProvider, GenerationOptions, GenerationFailure } from './types.js';
-import { buildPromptPair } from './prompt-builder.js';
+import { buildPromptPair, sanitize } from './prompt-builder.js';
 import { PlaceholderProvider } from './placeholder-provider.js';
 
 /**
@@ -129,14 +129,21 @@ function callerTags(tags: readonly string[] | undefined): string[] {
 }
 
 /**
- * Delimiter-safe portrait identity tag (F-525d6bb6).
+ * Delimiter-safe portrait identity tag (F-525d6bb6, F-930e6b5b).
  * JSON-encodes name, archetype, and genre so `Alice::Mage` + `Wizard` cannot
- * collide with `Alice` + `Mage::Wizard`.
+ * collide with `Alice` + `Mage::Wizard`. Name and archetype go through the
+ * same sanitize() as the generation prompt, so `Alice` and `Alice:` (or
+ * `Alice()`) share one identity key matching the bytes that actually land
+ * in the provider.
  */
 export function portraitIdentityTag(
   request: Pick<PortraitRequest, 'characterName' | 'archetypeName' | 'genre'>,
 ): string {
-  return `char:${JSON.stringify([request.characterName, request.archetypeName, request.genre])}`;
+  return `char:${JSON.stringify([
+    sanitize(request.characterName),
+    sanitize(request.archetypeName),
+    request.genre,
+  ])}`;
 }
 
 /**
