@@ -243,9 +243,12 @@ export class RumorEngine {
     return count;
   }
 
-  /** Serializable state */
+  /**
+   * Serializable snapshot. Cloned so mutating the returned array (or nested
+   * `spreadPath` / `factionUptake`) cannot write the live Map (F-072c671e).
+   */
   serialize(): Rumor[] {
-    return Array.from(this.rumors.values());
+    return structuredClone(Array.from(this.rumors.values()));
   }
 
   /**
@@ -294,7 +297,9 @@ export class RumorEngine {
         continue;
       }
 
-      engine.rumors.set(rumor.id, rumor);
+      // F-072c671e: clone at ingestion so the restored Map does not alias
+      // the caller's array (or another engine loaded from the same snapshot).
+      engine.rumors.set(rumor.id, structuredClone(rumor));
       restored++;
 
       // Advance THIS instance's counter past the highest RESTORED id (CP-02).
