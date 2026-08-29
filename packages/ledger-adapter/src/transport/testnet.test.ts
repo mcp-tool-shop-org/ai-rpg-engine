@@ -1,7 +1,9 @@
 // TestnetTransport — OFFLINE unit tests. NEVER opens a real network
-// connection: `xrpl.Client` is injected via TestnetTransport's second
-// constructor argument (`XrplClientLike`) and every call is a `vi.fn()`
-// mock. Covers: the mainnet-impossible-in-code guard at construction,
+// connection: `xrpl.Client` is injected via TestnetTransport.forTests
+// (`XrplClientLike`) and every call is a `vi.fn()` mock. The public
+// constructor does not accept a client (the mainnet-impossible guard
+// must not have an injected-client hatch). Covers: the guard at
+// construction, forTests host-checking the injected client,
 // `walletFromSeed`'s real (offline) cryptographic derivation, the memo hex
 // encode/decode round-trip, tesSUCCESS/tec* result-mapping, and the CRITICAL
 // escrow FinishAfter wait discipline (via fake timers — no real sleeping).
@@ -113,11 +115,20 @@ describe('TestnetTransport constructor — mainnet-impossible-in-code guard', ()
   });
 
   it('accepts the testnet host', () => {
-    expect(() => new TestnetTransport('wss://s.altnet.rippletest.net:51233', createMockClient())).not.toThrow();
+    expect(() => new TestnetTransport('wss://s.altnet.rippletest.net:51233')).not.toThrow();
   });
 
   it('accepts the devnet host', () => {
-    expect(() => new TestnetTransport('wss://s.devnet.rippletest.net:51233', createMockClient())).not.toThrow();
+    expect(() => new TestnetTransport('wss://s.devnet.rippletest.net:51233')).not.toThrow();
+  });
+
+  it('forTests rejects an injected xrpl.Client pointed at mainnet even when the URL argument is testnet', () => {
+    const mainnetClient = new xrpl.Client('wss://s1.ripple.com');
+    expect(() => TestnetTransport.forTests(TESTNET_URL, mainnetClient)).toThrow(/non-testnet host/i);
+  });
+
+  it('forTests accepts a mock client with no URL of its own', () => {
+    expect(() => TestnetTransport.forTests(TESTNET_URL, createMockClient())).not.toThrow();
   });
 
   it('accepts the default constructor argument with no network call made', () => {
@@ -128,7 +139,7 @@ describe('TestnetTransport constructor — mainnet-impossible-in-code guard', ()
   });
 
   it('sets networkName to "testnet"', () => {
-    const transport = new TestnetTransport(TESTNET_URL, createMockClient());
+    const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient());
     expect(transport.networkName).toBe('testnet');
   });
 });
@@ -137,12 +148,12 @@ describe('TestnetTransport constructor — mainnet-impossible-in-code guard', ()
 
 describe('walletFromSeed', () => {
   it('derives the correct classic address for a known seed (offline, real xrpl.Wallet)', () => {
-    const transport = new TestnetTransport(TESTNET_URL, createMockClient());
+    const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient());
     expect(transport.walletFromSeed(KNOWN_SEED)).toEqual({ address: KNOWN_ADDRESS, seed: KNOWN_SEED });
   });
 
   it('is a pure function of the seed — two calls agree', () => {
-    const transport = new TestnetTransport(TESTNET_URL, createMockClient());
+    const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient());
     expect(transport.walletFromSeed(KNOWN_SEED)).toEqual(transport.walletFromSeed(KNOWN_SEED));
   });
 });
@@ -154,7 +165,7 @@ describe('memo hex encode/decode round-trip', () => {
 
   it('payment() hex-encodes the memo onto the wire tx', async () => {
     const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse());
-    const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+    const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
     await transport.payment(
       KNOWN_SEED,
@@ -177,7 +188,7 @@ describe('memo hex encode/decode round-trip', () => {
     const request = vi
       .fn()
       .mockResolvedValue(fakeAccountTxResponse([{ hash: 'HASH1', type: 'EscrowCreate', memoHex: sentHex }]));
-    const transport = new TestnetTransport(TESTNET_URL, createMockClient({ request }));
+    const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ request }));
 
     const entries = await transport.accountTx(MERCHANT_ADDRESS);
 
@@ -186,7 +197,7 @@ describe('memo hex encode/decode round-trip', () => {
 
   it('accountTx() omits `memo` (rather than throwing) for a transaction with no memo', async () => {
     const request = vi.fn().mockResolvedValue(fakeAccountTxResponse([{ hash: 'HASH2', type: 'TrustSet' }]));
-    const transport = new TestnetTransport(TESTNET_URL, createMockClient({ request }));
+    const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ request }));
 
     const entries = await transport.accountTx(MERCHANT_ADDRESS);
 
@@ -200,7 +211,7 @@ describe('memo hex encode/decode round-trip', () => {
 describe('result mapping (submitAndWait -> TxResult)', () => {
   it('maps a tesSUCCESS result to { ok: true, hash, code }', async () => {
     const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ hash: 'HASH_OK', transactionResult: 'tesSUCCESS' }));
-    const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+    const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
     const result = await transport.setAccountFlag(KNOWN_SEED, ASF_DEFAULT_RIPPLE);
 
@@ -211,7 +222,7 @@ describe('result mapping (submitAndWait -> TxResult)', () => {
     const submitAndWait = vi
       .fn()
       .mockResolvedValue(fakeTxResponse({ hash: 'HASH_FAIL', transactionResult: 'tecUNFUNDED_PAYMENT' }));
-    const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+    const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
     const result = await transport.payment(KNOWN_SEED, MERCHANT_ADDRESS, {
       currency: 'COI',
@@ -227,7 +238,7 @@ describe('result mapping (submitAndWait -> TxResult)', () => {
 
   it('a tem* local-validation result also maps to ok:false, never throwing', async () => {
     const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ transactionResult: 'temBAD_AMOUNT' }));
-    const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+    const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
     const result = await transport.trustSet(KNOWN_SEED, ISSUER_ADDRESS, 'COI', '1000000');
 
@@ -238,7 +249,7 @@ describe('result mapping (submitAndWait -> TxResult)', () => {
     const submitAndWait = vi
       .fn()
       .mockResolvedValue(fakeTxResponse({ hash: 'HASH_ESC', transactionResult: 'tesSUCCESS', sequence: 42 }));
-    const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+    const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
     const result = await transport.escrowCreate(
       KNOWN_SEED,
@@ -253,7 +264,7 @@ describe('result mapping (submitAndWait -> TxResult)', () => {
 
   it('escrowCreate computes real ripple-epoch FinishAfter/CancelAfter, ignoring the adapter\'s tick params', async () => {
     const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ transactionResult: 'tesSUCCESS', sequence: 1 }));
-    const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+    const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
     // The adapter passes tiny deterministic-counter ticks (0, 3600) — a real
     // ripple-epoch FinishAfter must be nowhere near those values.
@@ -273,13 +284,38 @@ describe('result mapping (submitAndWait -> TxResult)', () => {
 
   it('a network/timeout failure maps to { ok: false, error }, never throwing', async () => {
     const submitAndWait = vi.fn().mockRejectedValue(new Error('WebSocket closed'));
-    const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+    const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
     const result = await transport.trustSet(KNOWN_SEED, ISSUER_ADDRESS, 'COI', '1000000');
 
     expect(result.ok).toBe(false);
     expect(result.hash).toBe('');
     expect(result.error).toMatch(/WebSocket closed/);
+  });
+
+  it('surfaces the hash when submitAndWait resolves after the write deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      let release!: (value: unknown) => void;
+      const submitAndWait = vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            release = resolve;
+          }),
+      );
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
+      const pending = transport.setAccountFlag(KNOWN_SEED, ASF_DEFAULT_RIPPLE);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      release(fakeTxResponse({ hash: 'LATE_OK', transactionResult: 'tesSUCCESS' }));
+      const result = await pending;
+
+      expect(result.ok).toBe(true);
+      expect(result.hash).toBe('LATE_OK');
+      expect(result.code).toBe('tesSUCCESS');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -294,7 +330,7 @@ describe('escrowFinish — waits out the escrow FinishAfter before submitting', 
         .mockResolvedValueOnce(fakeTxResponse({ hash: 'CREATE_HASH', transactionResult: 'tesSUCCESS', sequence: 7 }))
         .mockResolvedValueOnce(fakeTxResponse({ hash: 'FINISH_HASH', transactionResult: 'tesSUCCESS' }));
       const client = createMockClient({ submitAndWait });
-      const transport = new TestnetTransport(TESTNET_URL, client);
+      const transport = TestnetTransport.forTests(TESTNET_URL, client);
 
       const createResult = await transport.escrowCreate(
         KNOWN_SEED,
@@ -326,7 +362,7 @@ describe('escrowFinish — waits out the escrow FinishAfter before submitting', 
 
   it('submits immediately for an UNTRACKED escrow (not created by this instance) — no wait', async () => {
     const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ hash: 'FINISH_HASH', transactionResult: 'tesSUCCESS' }));
-    const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+    const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
     const result = await transport.escrowFinish(KNOWN_SEED, MERCHANT_ADDRESS, 999);
 
@@ -342,7 +378,7 @@ describe('escrowFinish — waits out the escrow FinishAfter before submitting', 
         .mockResolvedValueOnce(fakeTxResponse({ transactionResult: 'tesSUCCESS', sequence: 3 })) // create
         .mockResolvedValueOnce(fakeTxResponse({ transactionResult: 'tecNO_PERMISSION' })) // finish attempt 1: too early
         .mockResolvedValueOnce(fakeTxResponse({ hash: 'FINISH_OK', transactionResult: 'tesSUCCESS' })); // finish attempt 2
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
       await transport.escrowCreate(
         KNOWN_SEED,
@@ -374,7 +410,7 @@ describe('accountLines', () => {
         lines: [{ account: ISSUER_ADDRESS, currency: 'COI', balance: '250', limit: '999999999' }],
       },
     });
-    const transport = new TestnetTransport(TESTNET_URL, createMockClient({ request }));
+    const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ request }));
 
     const lines = await transport.accountLines(MERCHANT_ADDRESS);
 
@@ -393,7 +429,7 @@ describe('NFT operations', () => {
   describe('nftMint', () => {
     it('submits NFTokenMint with Account/NFTokenTaxon/hex-encoded URI, Flags=0 for {transferable:false, mutable:false}', async () => {
       const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ hash: 'MINT_HASH' }));
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
       await transport.nftMint(KNOWN_SEED, 'ipfs://example', NFT_TAXON, { transferable: false, mutable: false });
 
@@ -408,7 +444,7 @@ describe('NFT operations', () => {
 
     it('sets Flags to 8 (transferable only), 16 (mutable only), and 24 (both)', async () => {
       const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse());
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
       await transport.nftMint(KNOWN_SEED, 'ipfs://a', NFT_TAXON, { transferable: true, mutable: false });
       await transport.nftMint(KNOWN_SEED, 'ipfs://b', NFT_TAXON, { transferable: false, mutable: true });
@@ -420,7 +456,7 @@ describe('NFT operations', () => {
 
     it('includes TransferFee only when greater than 0', async () => {
       const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse());
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
       await transport.nftMint(KNOWN_SEED, 'ipfs://a', NFT_TAXON, { transferable: true, mutable: true }, 5000);
       const [sentTxWithFee] = submitAndWait.mock.calls[0] as [Record<string, unknown>];
@@ -435,7 +471,7 @@ describe('NFT operations', () => {
       const submitAndWait = vi
         .fn()
         .mockResolvedValue(fakeTxResponse({ hash: 'MINT_OK', transactionResult: 'tesSUCCESS' }));
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
       const result = await transport.nftMint(KNOWN_SEED, 'ipfs://a', NFT_TAXON, { transferable: true, mutable: true });
 
@@ -452,7 +488,7 @@ describe('NFT operations', () => {
       const submitAndWait = vi
         .fn()
         .mockResolvedValue(fakeTxResponse({ hash: 'MINT_FAIL', transactionResult: 'tecINSUFFICIENT_RESERVE' }));
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
       const result = await transport.nftMint(KNOWN_SEED, 'ipfs://a', NFT_TAXON, { transferable: true, mutable: true });
 
@@ -462,7 +498,7 @@ describe('NFT operations', () => {
 
     it('a network/timeout failure degrades to ok:false with error set, never throwing', async () => {
       const submitAndWait = vi.fn().mockRejectedValue(new Error('WebSocket closed'));
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
       const result = await transport.nftMint(KNOWN_SEED, 'ipfs://a', NFT_TAXON, { transferable: true, mutable: true });
 
@@ -478,7 +514,7 @@ describe('NFT operations', () => {
   describe('nftBurn', () => {
     it('omits Owner when no owner is given (signer holds the token)', async () => {
       const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ hash: 'BURN_HASH' }));
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
       await transport.nftBurn(KNOWN_SEED, NFT_ID);
 
@@ -489,7 +525,7 @@ describe('NFT operations', () => {
 
     it('includes Owner when burning a token the signer does not currently hold', async () => {
       const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse());
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
       await transport.nftBurn(KNOWN_SEED, NFT_ID, ISSUER_ADDRESS);
 
@@ -499,7 +535,7 @@ describe('NFT operations', () => {
 
     it('omits Owner when the given owner equals the signer, even though passed explicitly', async () => {
       const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse());
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
       await transport.nftBurn(KNOWN_SEED, NFT_ID, KNOWN_ADDRESS);
 
@@ -509,7 +545,7 @@ describe('NFT operations', () => {
 
     it('maps a tec* result to ok:false without throwing', async () => {
       const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ transactionResult: 'tecNO_ENTRY' }));
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
       const result = await transport.nftBurn(KNOWN_SEED, NFT_ID);
 
@@ -522,7 +558,7 @@ describe('NFT operations', () => {
   describe('nftModify', () => {
     it('hex-encodes the URI and omits Owner when the owner equals the signer', async () => {
       const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ hash: 'MODIFY_HASH' }));
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
       await transport.nftModify(KNOWN_SEED, NFT_ID, 'ipfs://grown', KNOWN_ADDRESS);
 
@@ -535,7 +571,7 @@ describe('NFT operations', () => {
 
     it('includes Owner when the current holder differs from the signer (issuer modifying a player-owned NFT)', async () => {
       const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse());
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
       await transport.nftModify(KNOWN_SEED, NFT_ID, 'ipfs://grown', MERCHANT_ADDRESS);
 
@@ -545,7 +581,7 @@ describe('NFT operations', () => {
 
     it('maps a tec* result (not-issuer / not-mutable) to ok:false without throwing', async () => {
       const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ transactionResult: 'tecNO_PERMISSION' }));
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
       const result = await transport.nftModify(KNOWN_SEED, NFT_ID, 'ipfs://grown', KNOWN_ADDRESS);
 
@@ -558,7 +594,7 @@ describe('NFT operations', () => {
   describe('nftCreateSellOffer', () => {
     it('submits NFTokenCreateOffer with tfSellNFToken (Flags=1) and no Destination when undirected', async () => {
       const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ hash: 'OFFER_HASH' }));
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
       await transport.nftCreateSellOffer(KNOWN_SEED, NFT_ID, '0');
 
@@ -575,7 +611,7 @@ describe('NFT operations', () => {
 
     it('includes Destination for a directed (gift/transfer) sell offer', async () => {
       const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse());
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
       await transport.nftCreateSellOffer(KNOWN_SEED, NFT_ID, '0', MERCHANT_ADDRESS);
 
@@ -599,7 +635,7 @@ describe('NFT operations', () => {
         }),
       );
       const request = vi.fn();
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait, request }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait, request }));
 
       const result = await transport.nftCreateSellOffer(KNOWN_SEED, NFT_ID, '0', MERCHANT_ADDRESS);
 
@@ -617,7 +653,7 @@ describe('NFT operations', () => {
         }),
       );
       const request = vi.fn().mockResolvedValue({ result: { offers: [], nft_id: NFT_ID } });
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait, request }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait, request }));
 
       const result = await transport.nftCreateSellOffer(KNOWN_SEED, NFT_ID, '0');
 
@@ -634,7 +670,7 @@ describe('NFT operations', () => {
           nft_id: NFT_ID,
         },
       });
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait, request }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait, request }));
 
       const result = await transport.nftCreateSellOffer(KNOWN_SEED, NFT_ID, '0');
 
@@ -645,7 +681,7 @@ describe('NFT operations', () => {
     it('maps a tec* result to ok:false without throwing, and never attempts the meta scan / fallback read', async () => {
       const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ transactionResult: 'tecNO_PERMISSION' }));
       const request = vi.fn();
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait, request }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait, request }));
 
       const result = await transport.nftCreateSellOffer(KNOWN_SEED, NFT_ID, '0');
 
@@ -660,7 +696,7 @@ describe('NFT operations', () => {
   describe('nftAcceptSellOffer', () => {
     it('submits NFTokenAcceptOffer with NFTokenSellOffer set to the given offerIndex', async () => {
       const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ hash: 'ACCEPT_HASH' }));
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
       await transport.nftAcceptSellOffer(KNOWN_SEED, 'OFFER_INDEX_123');
 
@@ -674,7 +710,7 @@ describe('NFT operations', () => {
 
     it('maps a tec* result to ok:false without throwing', async () => {
       const submitAndWait = vi.fn().mockResolvedValue(fakeTxResponse({ transactionResult: 'tecOBJECT_NOT_FOUND' }));
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ submitAndWait }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ submitAndWait }));
 
       const result = await transport.nftAcceptSellOffer(KNOWN_SEED, 'OFFER_INDEX_123');
 
@@ -695,7 +731,7 @@ describe('NFT operations', () => {
           ],
         },
       });
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ request }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ request }));
 
       const nfts = await transport.accountNfts(KNOWN_ADDRESS);
 
@@ -714,7 +750,7 @@ describe('NFT operations', () => {
           account_nfts: [{ NFTokenID: NFT_ID, NFTokenTaxon: NFT_TAXON, Issuer: ISSUER_ADDRESS, Flags: 8, nft_serial: 2 }],
         },
       });
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ request }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ request }));
 
       const nfts = await transport.accountNfts(KNOWN_ADDRESS);
 
@@ -723,7 +759,7 @@ describe('NFT operations', () => {
 
     it('returns an empty array when the address owns no NFTs', async () => {
       const request = vi.fn().mockResolvedValue({ result: { account: KNOWN_ADDRESS, account_nfts: [] } });
-      const transport = new TestnetTransport(TESTNET_URL, createMockClient({ request }));
+      const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ request }));
 
       const nfts = await transport.accountNfts(KNOWN_ADDRESS);
 

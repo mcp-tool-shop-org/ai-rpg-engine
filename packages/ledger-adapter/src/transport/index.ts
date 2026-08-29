@@ -4,4 +4,5 @@
 
 export { DryRunTransport } from './dry-run.js';
 export { TestnetTransport } from './testnet.js';
-export type { XrplClientLike } from './testnet.js';
+// XrplClientLike is deliberately NOT re-exported: the injected-client seam is
+// test-only (`TestnetTransport.forTests`) and must not appear on the public barrel.
