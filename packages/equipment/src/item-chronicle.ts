@@ -17,12 +17,16 @@ export function recordItemEvent(
   };
 }
 
-/** Get the full history for a specific item. */
+/** Get the full history for a specific item. Snapshot — callers cannot write through. */
 export function getItemHistory(
   chronicle: Record<string, ItemChronicleEntry[]>,
   itemId: string,
 ): ItemChronicleEntry[] {
-  return chronicle[itemId] ?? [];
+  // F-fe938876: checkpoint reads are snapshots. Returning the live array
+  // let getItemHistory(getItemChronicle(world), id)[0].detail = 'hacked'
+  // rewrite the module namespace.
+  const entries = chronicle[itemId];
+  return entries === undefined ? [] : structuredClone(entries);
 }
 
 /** Count how many kills an item has been used for. */

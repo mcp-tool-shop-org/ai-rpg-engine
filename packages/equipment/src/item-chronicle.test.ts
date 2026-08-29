@@ -72,6 +72,16 @@ describe('getItemHistory', () => {
     };
     expect(getItemHistory(chronicle, 'sword-1')).toHaveLength(2);
   });
+
+  it('returns a snapshot so mutating history cannot write through (F-fe938876)', () => {
+    const chronicle = {
+      'sword-1': [{ event: 'acquired' as const, tick: 1, detail: 'Found' }],
+    };
+    const history = getItemHistory(chronicle, 'sword-1');
+    history[0]!.detail = 'hacked';
+    expect(chronicle['sword-1'][0]!.detail).toBe('Found');
+    expect(history).not.toBe(chronicle['sword-1']);
+  });
 });
 
 describe('getItemKillCount', () => {

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { CharacterBuild } from '@ai-rpg-engine/character-creation';
 import { createProfile, incrementTurns, setCustom, getProfileSummary } from './profile.js';
+import { serializeProfile } from './serialize.js';
 import { PROFILE_VERSION } from './types.js';
 
 const testBuild: CharacterBuild = {
@@ -60,9 +61,24 @@ describe('createProfile', () => {
 
   it('does not share reference to input objects', () => {
     const stats = { vigor: 5 };
-    const profile = createProfile(testBuild, stats, testResources, testTags, 'fantasy');
+    const build: CharacterBuild = {
+      ...testBuild,
+      traitIds: [...testBuild.traitIds],
+      statAllocations: { vigor: 2 },
+    };
+    const profile = createProfile(build, stats, testResources, testTags, 'fantasy');
     stats.vigor = 99;
+    build.traitIds.push('illegal');
+    build.statAllocations!.vigor = 99;
+    build.disciplineId = 'hijacked';
     expect(profile.stats.vigor).toBe(5);
+    expect(profile.build).not.toBe(build);
+    expect(profile.build.traitIds).toEqual(['iron-frame', 'cursed-blood']);
+    expect(profile.build.statAllocations).toEqual({ vigor: 2 });
+    expect(profile.build.disciplineId).toBe('occultist');
+    // F-68f549c2: CharacterProfile is the persistence boundary — a caller
+    // mutation of the input build must not land in serializeProfile.
+    expect(serializeProfile(profile)).not.toContain('illegal');
   });
 
   // CP-05: persisted IDs must be deterministic (no Date.now / Math.random),

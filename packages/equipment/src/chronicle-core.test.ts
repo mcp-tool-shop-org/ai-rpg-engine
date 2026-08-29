@@ -34,10 +34,12 @@ import { evaluateRelicGrowth, type GrowthMilestone } from './relic-growth.js';
 import {
     createItemChronicleCore,
     getItemChronicle,
+    getRelicSummaries,
     getRelicSummary,
     getItemDisplayName,
     refreshRelicSummaries,
     ITEM_CHRONICLE_STATE_KEY,
+    type ItemChronicleModuleState,
     type ItemRecognitionOps,
 } from './chronicle-core.js';
 
@@ -570,6 +572,47 @@ describe('chronicle-core — the detail authoring convention', () => {
         const detail = getItemHistory(getItemChronicle(engine.world), 'gladius')[1]!.detail.toLowerCase();
         expect(detail).not.toContain('boss');
         expect(detail).not.toContain('faction');
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Checkpoint reads are snapshots (F-fe938876)
+// ---------------------------------------------------------------------------
+
+describe('chronicle-core — checkpoint reads are snapshots (F-fe938876)', () => {
+    it('mutating getItemChronicle(world)[id][0] leaves the live namespace unchanged', () => {
+        const engine = makeEngine({ chronicle: true });
+        engine.submitAction('equip', { parameters: { itemId: 'gladius' } });
+
+        const live = engine.world.modules[ITEM_CHRONICLE_STATE_KEY] as ItemChronicleModuleState;
+        const ser = getItemChronicle(engine.world);
+        expect(ser).not.toBe(live.entries);
+        expect(ser['gladius']).not.toBe(live.entries['gladius']);
+        ser['gladius']![0]!.detail = 'hacked';
+        expect(live.entries['gladius']![0]!.detail).not.toBe('hacked');
+        expect(live.entries['gladius']![0]!.event).toBe('acquired');
+    });
+
+    it('getItemHistory returns a copied array off the live chronicle', () => {
+        const engine = makeEngine({ chronicle: true });
+        engine.submitAction('equip', { parameters: { itemId: 'gladius' } });
+
+        const live = engine.world.modules[ITEM_CHRONICLE_STATE_KEY] as ItemChronicleModuleState;
+        const history = getItemHistory(live.entries, 'gladius');
+        expect(history).not.toBe(live.entries['gladius']);
+        history[0]!.detail = 'hacked';
+        expect(live.entries['gladius']![0]!.detail).not.toBe('hacked');
+    });
+
+    it('mutating getRelicSummaries(world)[id] leaves peek summaries unchanged', () => {
+        const engine = makeEngine({ chronicle: true });
+        engine.submitAction('equip', { parameters: { itemId: 'gladius' } });
+
+        const live = engine.world.modules[ITEM_CHRONICLE_STATE_KEY] as ItemChronicleModuleState;
+        const summaries = getRelicSummaries(engine.world);
+        expect(summaries).not.toBe(live.summaries);
+        summaries['gladius']!.displayName = 'hacked';
+        expect(live.summaries['gladius']!.displayName).toBe('Gladius');
     });
 });
 
