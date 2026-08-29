@@ -76,6 +76,12 @@ describe('getReputationConsequence bands', () => {
     expect(getReputationConsequence(-60).priceModifier).toBe(1.5);
     expect(getReputationConsequence(60).priceModifier).toBe(0.7);
   });
+
+  it('a stored access override wins over the reputation-derived band (F-cd5a8eec)', () => {
+    expect(getReputationConsequence(-60, 'privileged').accessLevel).toBe('privileged');
+    expect(getReputationConsequence(-60, 'privileged').priceModifier).toBe(1.5);
+    expect(getReputationConsequence(60, 'denied').accessLevel).toBe('denied');
+  });
 });
 
 describe('evolveTitle', () => {

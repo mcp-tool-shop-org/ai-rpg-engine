@@ -142,14 +142,16 @@
 // income wire (v3.0 wave 2) does not feed computeLeverageGains' reputationDelta
 // hint axis (rep-gain → favor / large-rep-loss → blackmail) — out of this
 // wave's explicit scope, xp/milestone/pressure-resolution only. Its
-// pressure-resolution axis is itself a dead branch today: this file's only
-// computeFallout call site (step 3) always passes the literal
-// 'expired-ignored', so resolutionType can never actually equal
-// 'resolved-by-player' in production — the SAME dormant path
-// companion-reactions.ts's own 'pressure-resolved-well' trigger documents.
-// Wired honestly for the day either path goes live.
+// pressure-resolution axis still keys off THIS TICK's expiry ledger, so a
+// player resolve via `resolve-pressure` / opportunity-complete is recorded
+// in resolvedPressures but is not itself a leverage-income signal this
+// round — documented ceiling. The live resolved-by-player path is
+// resolvePressureByPlayer (the `resolve-pressure` verb and the
+// opportunity-complete mapping). Step 5a1 wires faction-agency the same
+// way step 5a wired npc-agency; SEED-0: a world with no factions is
+// untouched.
 
-import type { Engine, EngineModule, ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
+import type { ActionIntent, Engine, EngineModule, ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
 import {
   tickPressures,
   evaluatePressures,
@@ -160,7 +162,18 @@ import {
 import { computeFallout, type PressureFallout } from './pressure-resolution.js';
 import { grantTitleToEntity } from './player-titles.js';
 import { NPC_RUMOR_CONFIDENCE, CHAINED_OPPORTUNITY_URGENCY } from './opportunity-resolution.js';
-import { getDistrictForZone, getDistrictState, getDistrictDefinition } from './district-core.js';
+import { getDistrictForZone, getDistrictState, getDistrictDefinition, modifyDistrictMetric, type DistrictMetrics } from './district-core.js';
+import { makeEvent } from './make-event.js';
+import { getFactionCognition } from './faction-cognition.js';
+import {
+  runFactionAgencyTick,
+  buildFactionProfile,
+  getPersistedFactionLastActions,
+  getPersistedFactionMemberCounts,
+  setPersistedFactionState,
+  type FactionActionResult,
+  type FactionProfile,
+} from './faction-agency.js';
 import { runEncounterSpawnStep, type SpawnedEncounterReport } from './encounter-spawn.js';
 import { runTypedHazardStep, runTypedHazardEntryStep } from './hazard-interpreter.js';
 import { runZoneStateStep } from './zone-state.js';
@@ -472,6 +485,12 @@ export function createWorldTick(): EngineModule {
       ctx.persistence.registerNamespace(STATE_KEY, (world: WorldState) =>
         freshWorldTickState(world),
       );
+      // F-04dece4f: the player resolve op. Expiry still passes
+      // 'expired-ignored'; this verb is the live 'resolved-by-player' path
+      // that earns pressure titles (bounty-survivor and siblings).
+      ctx.actions.registerVerb('resolve-pressure', (action, world) =>
+        resolvePressureHandler(action, world),
+      );
     },
   };
 }
@@ -637,6 +656,42 @@ function addGlobal(world: WorldState, key: string, delta: number): void {
   world.globals[key] = num(world.globals[key]) + delta;
 }
 
+const DISTRICT_LIVE_METRICS = new Set<keyof DistrictMetrics>([
+  'alertPressure', 'rumorDensity', 'intruderLikelihood', 'surveillance',
+  'stability', 'commerce', 'morale',
+]);
+
+/**
+ * Route a district / district-metric fallout effect to the store that actually
+ * has a reader (F-59e9be66).
+ *
+ * `stability` (and the alias `safety`) land on `district_<id>_safety` — the
+ * key family defeat-fallout writes and the one buildPressureInputs / encounter-
+ * spawn already read. Interpolating an unbound metric name into that family
+ * (`district_<id>_commerce`, `district_<id>_surveillance`) was a ghost write:
+ * nothing consumed it.
+ *
+ * commerce / surveillance / morale / alertPressure / rumorDensity /
+ * intruderLikelihood go through modifyDistrictMetric onto district-core's
+ * live DistrictState. `stability` is NOT also written there: district-core's
+ * own stability is a ~0–10 zone-property aggregate, a different scale from
+ * the 0–100 safety-derived figure evaluatePressures consumes.
+ */
+export function applyDistrictMetricEffect(
+  world: WorldState,
+  districtId: string,
+  metric: string,
+  delta: number,
+): void {
+  if (metric === 'stability' || metric === 'safety') {
+    addGlobal(world, `district_${districtId}_safety`, delta);
+    return;
+  }
+  if (DISTRICT_LIVE_METRICS.has(metric as keyof DistrictMetrics)) {
+    modifyDistrictMetric(world, districtId, metric as keyof DistrictMetrics, delta);
+  }
+}
+
 function clamp(min: number, max: number, value: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -737,11 +792,13 @@ function collectMilestones(world: WorldState, state: WorldTickState): void {
 //     that round's event-log delta. The code path stays as the honest
 //     ceiling it is, not wired away.
 //   - pressure.expired: 'resolved-by-player' → 'pressure-resolved-well'
-//     (wired but UNREACHABLE today — this file's only computeFallout call
-//     site, step 3 below, always passes the literal 'expired-ignored', so
-//     resolutionType can never equal 'resolved-by-player' in production);
-//     every other resolutionType (today, always that same literal) →
-//     'pressure-resolved-badly' (reachable).
+//     (reachable via the `resolve-pressure` verb / opportunity-complete
+//     mapping, which call computeFallout(..., 'resolved-by-player') and
+//     applyFallout; step 3's expiry loop still passes 'expired-ignored');
+//     every other resolutionType (expiry) → 'pressure-resolved-badly'
+//     (reachable). The companion trigger itself still fires only from this
+//     expiry loop, so 'pressure-resolved-well' remains unwired as a
+//     companion reaction until a future dispatch from the verb path.
 // v2.9 (F-e5817c7c-adjacent rider): +2 more, +1 event source —
 //   - district-core's live DistrictState, read every tick through district-
 //     mood.ts's computeDistrictMood (step 0c above) → 'district-grim' /
@@ -1030,8 +1087,7 @@ function applyFallout(
         addGlobal(world, `faction_alert_${effect.factionId}`, effect.delta);
         break;
       case 'district':
-        // Same key family defeat-fallout writes (district_<id>_safety).
-        addGlobal(world, `district_${effect.districtId}_${effect.metric}`, effect.delta);
+        applyDistrictMetricEffect(world, effect.districtId, effect.metric, effect.delta);
         break;
       case 'milestone-tag':
         // Feeds back into the genre spawn rules' milestone conditions. Routed
@@ -1164,6 +1220,100 @@ function applyFallout(
 /** The faction a live pressure names as its source, for rumor attribution. */
 function pressureSourceFaction(world: WorldState, pressureId: string): string | undefined {
   return getActivePressures(world).find((p) => p.id === pressureId)?.sourceFactionId;
+}
+
+export type PlayerPressureResolution = {
+  pressure: WorldPressure;
+  fallout: PressureFallout;
+  chains: WorldPressure[];
+};
+
+/**
+ * Resolve a live pressure as `resolved-by-player` (F-04dece4f).
+ *
+ * Removes it from the live list (honouring the in-tick working array the same
+ * way pushActivePressure does), computes fallout with resolutionType
+ * 'resolved-by-player', applies it through applyFallout (titles, rumours,
+ * economy, district metrics — the same door expiry uses), records the
+ * fallout on the resolvedPressures ledger, and pushes any chain pressures.
+ *
+ * Returns undefined when `pressureId` is not currently live.
+ */
+export function resolvePressureByPlayer(
+  world: WorldState,
+  pressureId: string,
+  currentTick: number,
+  genre: string,
+): PlayerPressureResolution | undefined {
+  const state = getWorldTickState(world);
+  const working = runningPressures.get(world);
+  const list = working ?? state.pressures;
+  const idx = list.findIndex((p) => p.id === pressureId);
+  if (idx < 0) return undefined;
+  const [pressure] = list.splice(idx, 1);
+  if (!pressure) return undefined;
+  if (working && state.pressures !== working) {
+    const persistedIdx = state.pressures.findIndex((p) => p.id === pressureId);
+    if (persistedIdx >= 0) state.pressures.splice(persistedIdx, 1);
+  }
+
+  const fallout = computeFallout(pressure, 'resolved-by-player', genre, {
+    resolvedBy: 'player',
+    currentTick,
+    playerDistrictId: getPlayerDistrictId(world),
+    resolutionVisibility: pressure.visibility,
+  });
+  const chains = applyFallout(world, state, fallout, currentTick);
+  for (const chain of chains) {
+    pushActivePressure(world, chain);
+  }
+  const ledger = (state.resolvedPressures ??= []);
+  ledger.push(fallout);
+  if (ledger.length > RESOLVED_PRESSURES_KEPT) {
+    ledger.splice(0, ledger.length - RESOLVED_PRESSURES_KEPT);
+  }
+  return { pressure, fallout, chains };
+}
+
+function resolvePressureHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
+  const pressureId =
+    (typeof action.parameters?.pressureId === 'string' && action.parameters.pressureId) ||
+    action.toolId ||
+    action.targetIds?.[0];
+  if (!pressureId) {
+    return [makeEvent(action, 'action.rejected', { verb: action.verb, reason: 'no pressure specified' })];
+  }
+  const genre = typeof action.parameters?.genre === 'string' && action.parameters.genre
+    ? action.parameters.genre
+    : 'fantasy';
+  const resolved = resolvePressureByPlayer(world, pressureId, action.issuedAtTick, genre);
+  if (!resolved) {
+    return [makeEvent(action, 'action.rejected', {
+      verb: action.verb,
+      reason: `pressure ${pressureId} not found`,
+    })];
+  }
+  const events: ResolvedEvent[] = [
+    makeEvent(action, 'pressure.resolved', {
+      ...pressurePayload(resolved.pressure),
+      summary: resolved.fallout.summary,
+      resolutionType: resolved.fallout.resolution.resolutionType,
+      effects: resolved.fallout.effects,
+      ...(resolved.fallout.warnings ? { warnings: resolved.fallout.warnings } : {}),
+    }, {
+      presentation: { channels: ['narrator'], priority: 'high' },
+    }),
+  ];
+  for (const chain of resolved.chains) {
+    events.push(makeEvent(action, 'pressure.spawned', {
+      ...pressurePayload(chain),
+      triggeredBy: chain.triggeredBy,
+      chainedFrom: chain.chainedFrom,
+    }, {
+      presentation: { channels: ['narrator'], priority: 'high' },
+    }));
+  }
+  return events;
 }
 
 // ---------------------------------------------------------------------------
@@ -1498,6 +1648,161 @@ function runNpcAgencyStep(
 }
 
 // ---------------------------------------------------------------------------
+// Faction agency (F-b57cee05) — npc-agency's faction sibling that v3.0 never
+// wired. runFactionAgencyTick was fully authored with ZERO production callers.
+// ---------------------------------------------------------------------------
+
+/**
+ * Gate + drive faction-agency.ts's runFactionAgencyTick for one round,
+ * applying every returned FactionEffect and persisting profiles / lastActions
+ * / memberCounts to world.modules['faction-agency'] — the shape director.ts's
+ * FACTIONS section already reads via lastActions.
+ *
+ * SEED-0 IDENTITY (non-negotiable): a world with NO factions must be
+ * byte-identical to today — no faction-agency namespace created, no events,
+ * no state mutation of any kind. The `factionIds.length === 0` check is the
+ * entire gate.
+ */
+function runFactionAgencyStep(
+  engine: Engine,
+  world: WorldState,
+  active: WorldPressure[],
+  currentTick: number,
+): void {
+  const factionIds = Object.keys(world.factions ?? {}).sort();
+  if (factionIds.length === 0) return; // SEED-0 identity — read and write nothing
+
+  const playerReputations = factionIds.map((factionId) => ({
+    factionId,
+    value: (world.factions?.[factionId]?.reputation ?? 0) + num(world.globals[`reputation_${factionId}`]),
+  }));
+  const districtEconomies = new Map(Object.entries(getEconomyCoreState(world).districts));
+  const results = runFactionAgencyTick(world, playerReputations, active, currentTick, districtEconomies);
+
+  const memberCounts = { ...getPersistedFactionMemberCounts(world) };
+  const rumorState = getPlayerRumorState(world);
+  let rumors = rumorState.rumors;
+  let rumorsChanged = false;
+  const activeKinds = new Set(active.map((p) => p.kind));
+  const lastActionsByFaction = new Map(
+    getPersistedFactionLastActions(world).map((r) => [r.action.factionId, r] as const),
+  );
+
+  for (const result of results) {
+    for (const effect of result.effects) {
+      switch (effect.type) {
+        case 'reputation':
+          addGlobal(world, `reputation_${effect.factionId}`, effect.delta);
+          break;
+        case 'alert':
+          addGlobal(world, `faction_alert_${effect.factionId}`, effect.delta);
+          break;
+        case 'district-metric':
+          applyDistrictMetricEffect(world, effect.districtId, effect.metric, effect.delta);
+          break;
+        case 'cohesion': {
+          const cognition = getFactionCognition(world, effect.factionId);
+          cognition.cohesion = clamp(0, 1, cognition.cohesion + effect.delta);
+          break;
+        }
+        case 'pressure': {
+          if (activeKinds.has(effect.kind)) break;
+          const pressure = makePressure(
+            {
+              kind: effect.kind,
+              sourceFactionId: effect.sourceFactionId,
+              description: effect.description,
+              triggeredBy: `faction-agency:${result.action.factionId}`,
+              urgency: effect.urgency,
+              visibility: 'rumored',
+              turnsRemaining: CHAIN_TURNS_REMAINING,
+              potentialOutcomes: [],
+              tags: ['faction-agency'],
+              currentTick,
+            },
+            world,
+          );
+          activeKinds.add(pressure.kind);
+          active.push(pressure);
+          emitPressureEvent(
+            engine,
+            'pressure.spawned',
+            { ...pressurePayload(pressure), triggeredBy: pressure.triggeredBy },
+            { hidden: false, priority: 'high' },
+          );
+          break;
+        }
+        case 'rumor': {
+          const origin = result.action.factionId;
+          const [firstFaction, ...restFactions] = effect.targetFactionIds;
+          let rumor = spawnNpcOriginatedRumor(
+            effect.claim,
+            effect.valence,
+            effect.valence === 'fearsome' ? 'npc-accusation' : 'npc-gossip',
+            origin,
+            firstFaction ?? origin,
+            undefined,
+            currentTick,
+            NPC_RUMOR_CONFIDENCE,
+            world,
+          );
+          for (const extra of restFactions) rumor = propagateRumor(rumor, extra);
+          rumors = [...rumors, rumor];
+          rumorsChanged = true;
+          break;
+        }
+        case 'economy-shift': {
+          const economy = getDistrictEconomy(world, effect.districtId);
+          if (economy) {
+            setDistrictEconomy(world, effect.districtId, applyEconomyShift(economy, {
+              districtId: effect.districtId,
+              category: effect.category as SupplyCategory,
+              delta: effect.delta,
+              cause: effect.cause,
+            }));
+          }
+          break;
+        }
+        case 'member-count':
+          memberCounts[effect.factionId] = (memberCounts[effect.factionId] ?? 0) + effect.delta;
+          break;
+        default:
+          break;
+      }
+    }
+
+    lastActionsByFaction.set(result.action.factionId, result);
+    engine.store.emitEvent('faction.action.resolved', {
+      factionId: result.action.factionId,
+      verb: result.action.verb,
+      description: result.action.description,
+      narratorHint: result.narratorHint,
+      effects: result.effects,
+      ...(result.warning ? { warning: result.warning } : {}),
+    }, {
+      visibility: 'public',
+      presentation: { channels: ['narrator'], priority: 'normal' },
+    });
+  }
+
+  if (rumorsChanged) setPlayerRumorState(world, { rumors });
+
+  const profiles: FactionProfile[] = [];
+  for (const factionId of factionIds) {
+    const rep = playerReputations.find((r) => r.factionId === factionId)?.value ?? 0;
+    const profile = buildFactionProfile(factionId, world, rep, active, districtEconomies);
+    const extra = memberCounts[factionId] ?? 0;
+    if (extra) profile.memberCount = Math.max(0, profile.memberCount + extra);
+    profiles.push(profile);
+  }
+  const currentFactionIds = new Set(factionIds);
+  const prunedLastActions: FactionActionResult[] = [...lastActionsByFaction.values()]
+    .filter((r) => currentFactionIds.has(r.action.factionId));
+
+  setPersistedFactionState(world, profiles, prunedLastActions, memberCounts);
+}
+
+// ---------------------------------------------------------------------------
 // Leverage income (v3.0 wave 2, "leverage-income", step 5a2) — see file
 // header. player-leverage.ts's tickLeverage/computeLeverageGains were fully
 // authored and unit-tested with ZERO production callers before this wire.
@@ -1573,12 +1878,10 @@ function mergeLeverageGains(
  *
  * Honest ceiling: computeLeverageGains' reputationDelta hint axis (rep-gain
  * → favor / large-rep-loss → blackmail) is NOT wired here — out of this
- * wave's explicit scope. Its pressureResolution axis is itself a dead
- * branch today: this file's only computeFallout call site (step 3) always
- * passes the literal 'expired-ignored', so `playerResolvedFallout` below is
- * never actually found in production — the SAME dormant path
- * companion-reactions.ts's own 'pressure-resolved-well' trigger documents.
- * Wired honestly for the day either path goes live.
+ * wave's explicit scope. Its pressureResolution axis keys off THIS TICK's
+ * expiry ledger (`expiredFallouts`); a player resolve via resolve-pressure
+ * records into resolvedPressures outside that array, so this axis stays a
+ * documented ceiling rather than a silent miss.
  */
 function runLeverageIncomeStep(
   world: WorldState,
@@ -1819,10 +2122,9 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
 
     // Companion reactions (F-b595731a): 'resolved-by-player' is the one
     // resolutionType that unambiguously means the player actively dealt with
-    // the threat; every other value (today, always 'expired-ignored' — this
-    // loop is the only computeFallout call site in production and always
-    // passes that literal) reads as the world moving on WITHOUT a successful
-    // player intervention.
+    // the threat. This expiry loop always passes 'expired-ignored'; the live
+    // resolved-by-player path is the `resolve-pressure` verb (and the
+    // opportunity-complete mapping) via resolvePressureByPlayer.
     reactionTriggers.push(
       fallout.resolution.resolutionType === 'resolved-by-player'
         ? 'pressure-resolved-well'
@@ -1938,14 +2240,17 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   // named NPC exists" — see runNpcAgencyStep's SEED-0 identity contract.
   runNpcAgencyStep(engine, world, active, currentTick, playerDistrictId, genre);
 
+  // 5a1. Faction agency tick (F-b57cee05) — npc-agency's faction sibling.
+  // Gated on "at least one faction exists" — see runFactionAgencyStep's
+  // SEED-0 identity contract. Runs after 5a so an NPC-triggered pressure
+  // is visible to faction goals, and before 5a2/5b so faction-spawned
+  // pressures land in `active` in time for buildPressureInputs.
+  runFactionAgencyStep(engine, world, active, currentTick);
+
   // 5a2. Leverage income (v3.0 wave 2, "leverage-income") — see file header
   // + runLeverageIncomeStep's own docstring for the full SEED-0 contract.
-  // oppPressureInputs is hoisted here from its old spot at the top of step
-  // 5b below (same call, same arguments — nothing mutates world.globals/
-  // world.factions/faction-cognition/district-core/economy-core between the
-  // old call site and this one, so the result is byte-identical either way)
-  // so this step and step 5b share the ONE reputation derivation instead of
-  // computing it twice.
+  // Computed AFTER 5a/5a1 so NPC- and faction-spawned pressures and their
+  // reputation/alert writes are visible to opportunity evaluation.
   const oppPressureInputs = buildPressureInputs(world, state, genre, currentTick, active);
   runLeverageIncomeStep(world, state, oppPressureInputs.reputation, expiredFallouts);
 

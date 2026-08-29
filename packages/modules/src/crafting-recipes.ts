@@ -25,6 +25,12 @@ import { getDistrictForZone, getDistrictState, getDistrictDefinition } from './d
 import { computeDistrictMood } from './district-mood.js';
 import { HEAT_KEY } from './world-tick.js';
 import { makeEvent } from './make-event.js';
+import {
+  spawnNpcOriginatedRumor,
+  getPlayerRumorState,
+  setPlayerRumorState,
+  type RumorValence,
+} from './player-rumor.js';
 import type {
   ItemDefinition,
   EquipmentSlot,
@@ -907,15 +913,18 @@ function simpleHash(s: string): number {
 // director.ts's own EQUIPMENT/Chronicle section documents for a real gap
 // rather than papering over it.
 //
-// Side effects: only the 'economy-shift' CraftEffect variant is applied to
-// persisted state (folded into the district economy, same as salvage).
-// 'rumor'/'heat'/'reputation'/'suspicion' effects are surfaced in the
-// emitted event's payload but not written — those targets (world.globals
-// player_heat, world.factions[id].reputation) are single-writer state owned
-// by world-tick.ts elsewhere in this package; writing them directly here
-// would contest that ownership. Exactly trade-core.ts's own restraint (its
-// sellHandler applies economy-shift only, leaving TradeEffect's other
-// variants declared but unconsumed).
+// Side effects: economy-shift, heat, reputation, and rumor are applied to
+// persisted state through the same writers opportunity fallout already uses
+// (applyEconomyShift, addGlobal HEAT_KEY / reputation_<id>,
+// spawnNpcOriginatedRumor + setPlayerRumorState). The prior ceiling that
+// those stores were "single-writer, owned by world-tick" is stale —
+// applyOpportunityFallout and applyLeverageEffects already write heat,
+// reputation, and rumors from other files. 'suspicion' still rides the
+// emitted event's payload (no matching opportunity-fallout writer).
+// modify's mechanical output (statDelta, newProvenance, loreAppend) still
+// has nowhere to persist against a bare inventory string — it rides the
+// event payload, the same restraint director.ts's EQUIPMENT section
+// documents.
 
 export type CraftingCoreConfig = {
   /**
@@ -1022,30 +1031,75 @@ function consumeMaterials(
   return applyMaterialDeltas(custom, deltas);
 }
 
-/** Fold every 'economy-shift' CraftEffect into the district economy (persisting the result); returns the remaining, non-economy effects for payload-only surfacing (see module header). */
-function applyCraftEconomyShifts(
+const RUMOR_VALENCES = new Set<RumorValence>(['heroic', 'fearsome', 'tragic', 'mysterious']);
+
+function asRumorValence(value: string): RumorValence {
+  return RUMOR_VALENCES.has(value as RumorValence) ? (value as RumorValence) : 'mysterious';
+}
+
+/**
+ * Persist craft/repair/modify side effects. Economy-shift, heat, reputation,
+ * and rumor write through the same stores opportunity fallout uses; remaining
+ * kinds (today: suspicion) ride the event payload.
+ */
+function applyCraftEffects(
   world: WorldState,
+  actor: EntityState,
   districtId: string,
   startingEconomy: DistrictEconomy,
   effects: CraftEffect[],
+  currentTick: number,
 ): CraftEffect[] {
   let economy = startingEconomy;
-  let touched = false;
+  let touchedEconomy = false;
   const rest: CraftEffect[] = [];
+  let rumors = getPlayerRumorState(world).rumors;
+  let rumorsChanged = false;
+  const controllingFaction = getDistrictDefinition(world, districtId)?.controllingFaction;
+
   for (const effect of effects) {
-    if (effect.type === 'economy-shift') {
-      economy = applyEconomyShift(economy, {
-        districtId: effect.districtId,
-        category: effect.category,
-        delta: effect.delta,
-        cause: effect.cause,
-      });
-      touched = true;
-    } else {
-      rest.push(effect);
+    switch (effect.type) {
+      case 'economy-shift':
+        economy = applyEconomyShift(economy, {
+          districtId: effect.districtId,
+          category: effect.category,
+          delta: effect.delta,
+          cause: effect.cause,
+        });
+        touchedEconomy = true;
+        break;
+      case 'heat':
+        world.globals[HEAT_KEY] = numGlobal(world, HEAT_KEY) + effect.delta;
+        break;
+      case 'reputation':
+        world.globals[`reputation_${effect.factionId}`] =
+          numGlobal(world, `reputation_${effect.factionId}`) + effect.delta;
+        break;
+      case 'rumor': {
+        const valence = asRumorValence(effect.valence);
+        const origin = controllingFaction ?? actor.id;
+        const rumor = spawnNpcOriginatedRumor(
+          effect.claim,
+          valence,
+          valence === 'fearsome' ? 'npc-accusation' : 'npc-gossip',
+          origin,
+          controllingFaction,
+          districtId,
+          currentTick,
+          0.75,
+          world,
+        );
+        rumors = [...rumors, rumor];
+        rumorsChanged = true;
+        break;
+      }
+      default:
+        rest.push(effect);
+        break;
     }
   }
-  if (touched) setDistrictEconomy(world, districtId, economy);
+  if (touchedEconomy) setDistrictEconomy(world, districtId, economy);
+  if (rumorsChanged) setPlayerRumorState(world, { rumors });
   return rest;
 }
 
@@ -1133,7 +1187,7 @@ function craftHandler(action: ActionIntent, world: WorldState, genre: string): R
   // Produce the item: the recipe IS the item's identity (see module header).
   actor.inventory = [...(actor.inventory ?? []), recipe.id];
 
-  const otherEffects = applyCraftEconomyShifts(world, district.districtId, district.economy, result.sideEffects);
+  const otherEffects = applyCraftEffects(world, actor, district.districtId, district.economy, result.sideEffects, world.meta.tick);
 
   return [
     makeEvent(action, 'item.crafted', {
@@ -1185,7 +1239,7 @@ function repairHandler(action: ActionIntent, world: WorldState, genre: string): 
   const result = resolveRepair(item, recipe, context);
 
   actor.custom = consumeMaterials(actor.custom ?? {}, result.materialsConsumed);
-  const otherEffects = applyCraftEconomyShifts(world, district.districtId, district.economy, result.sideEffects);
+  const otherEffects = applyCraftEffects(world, actor, district.districtId, district.economy, result.sideEffects, world.meta.tick);
 
   return [
     makeEvent(action, 'item.repaired', {
@@ -1234,7 +1288,7 @@ function modifyHandler(action: ActionIntent, world: WorldState, genre: string): 
   const result = resolveModify(item, recipe, context);
 
   actor.custom = consumeMaterials(actor.custom ?? {}, recipe.inputs);
-  const otherEffects = applyCraftEconomyShifts(world, district.districtId, district.economy, result.sideEffects);
+  const otherEffects = applyCraftEffects(world, actor, district.districtId, district.economy, result.sideEffects, world.meta.tick);
 
   return [
     makeEvent(action, 'item.modified', {

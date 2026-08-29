@@ -75,6 +75,11 @@ import {
 import { MORALE_FLOOR_FALLBACK } from './companion-reactions.js';
 import { getLeverageState } from './player-leverage.js';
 import { createProgressionCore, addCurrency } from './progression-core.js';
+import { hasTitle } from './player-titles.js';
+import {
+  getPersistedFactionProfiles,
+  getPersistedFactionLastActions,
+} from './faction-agency.js';
 
 const zones = [
   { id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbors: ['zone-b'] },
@@ -1032,10 +1037,9 @@ describe('world-tick — companion reactions (F-b595731a)', () => {
     expect(result.expired).toHaveLength(1); // sanity: the pressure really did expire this tick
 
     const after = partyCompanions(engine).find((c) => c.npcId === 'sable')!.morale;
-    // REACTION_TABLE['pressure-resolved-badly'].diplomat === -3. Every
-    // production computeFallout call is 'expired-ignored' today (world-tick
-    // never calls it with any other resolutionType — see this file's own
-    // header) — this pins that reality to 'badly', not 'well'.
+    // REACTION_TABLE['pressure-resolved-badly'].diplomat === -3. Step 3's
+    // expiry loop still always passes 'expired-ignored' — this pins that
+    // path to 'badly', not 'well'. Player resolve is a separate verb.
     expect(after).toBe(before - 3);
   });
 
@@ -1905,5 +1909,144 @@ describe('world-tick — leverage income wire (v3.0 wave 2, "leverage-income")',
     const b = run();
     expect(a).toEqual(b);
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-04dece4f: player resolve-pressure earns titles that sat on
+// resolved-by-player while the only production computeFallout call passed
+// expired-ignored.
+// ---------------------------------------------------------------------------
+describe('world-tick — resolve-pressure (F-04dece4f)', () => {
+  it('a resolved bounty writes title.bounty-survivor after an atomic submitAction', () => {
+    const engine = createTestEngine({
+      modules: [createWorldTick()],
+      entities: [makePlayer()],
+      zones,
+    });
+    const pressure = makePressure({
+      kind: 'bounty-issued',
+      sourceFactionId: 'watch',
+      description: 'watch has placed a bounty on the player',
+      triggeredBy: 'test',
+      urgency: 0.7,
+      visibility: 'rumored',
+      turnsRemaining: 8,
+      potentialOutcomes: [],
+      tags: ['hostile'],
+      currentTick: 0,
+    });
+    getWorldTickState(engine.store.state).pressures = [pressure];
+
+    const events = engine.submitAction('resolve-pressure', { targetIds: [pressure.id] });
+    expect(events.some((e) => e.type === 'pressure.resolved')).toBe(true);
+    expect(hasTitle(engine.world.entities.player.custom ?? {}, 'bounty-survivor')).toBe(true);
+    expect(engine.world.entities.player.custom?.['title.bounty-survivor']).toBe(0);
+    expect(getActivePressures(engine.world).some((p) => p.id === pressure.id)).toBe(false);
+    expect(getResolvedPressures(engine.world)[0]?.resolution.resolutionType).toBe('resolved-by-player');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-59e9be66: expired supply-crisis stability must move the figure
+// evaluatePressures / buildPressureInputs consume (district_<id>_safety).
+// ---------------------------------------------------------------------------
+describe('world-tick — district fallout routes stability onto the safety global (F-59e9be66)', () => {
+  it('an expired supply-crisis moves the stability figure evaluatePressures consumes', () => {
+    const engine = createTestEngine({
+      modules: [
+        createEnvironmentCore(),
+        createDistrictCore({ districts }),
+        createEconomyCore({ districts: districts.map((d) => ({ id: d.id, tags: d.tags })) }),
+        createWorldTick(),
+      ],
+      entities: [makePlayer()],
+      zones,
+    });
+    getWorldTickState(engine.store.state).pressures = [makePressure({
+      kind: 'supply-crisis',
+      sourceFactionId: 'watch',
+      description: 'food stores are failing',
+      triggeredBy: 'test',
+      urgency: 0.5,
+      visibility: 'known',
+      turnsRemaining: 0,
+      potentialOutcomes: [],
+      tags: ['economy'],
+      currentTick: 0,
+    })];
+
+    const before = buildPressureInputs(
+      engine.world,
+      getWorldTickState(engine.world),
+      'fantasy',
+      0,
+      [],
+    ).districtMetrics?.['district-1']?.stability;
+    expect(before).toBe(DISTRICT_STABILITY_BASE);
+
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.expired).toHaveLength(1);
+
+    const after = buildPressureInputs(
+      engine.world,
+      getWorldTickState(engine.world),
+      'fantasy',
+      0,
+      getActivePressures(engine.world),
+    ).districtMetrics?.['district-1']?.stability;
+    expect(engine.world.globals['district_district-1_safety']).toBe(-10);
+    expect(after).toBe(DISTRICT_STABILITY_BASE - 10);
+    expect(engine.world.globals['district_district-1_stability']).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-b57cee05: faction-agency wire — SEED-0 on worlds with no factions;
+// a world with a faction roster grows the namespace director.ts reads.
+// ---------------------------------------------------------------------------
+describe('world-tick — faction agency wire (F-b57cee05)', () => {
+  it('SEED-0 IDENTITY: a world with no factions is untouched — no namespace, no faction events', () => {
+    const engine = makeBareEngine();
+    expect(engine.world.modules['faction-agency']).toBeUndefined();
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.ok).toBe(true);
+    expect(engine.world.modules['faction-agency']).toBeUndefined();
+    expect(getPersistedFactionProfiles(engine.world)).toEqual([]);
+    expect(engine.world.eventLog.some((e) => e.type.startsWith('faction.'))).toBe(false);
+    runWorldTick(engine, { genre: 'fantasy' });
+    expect(engine.world.modules['faction-agency']).toBeUndefined();
+  });
+
+  it('a world with a faction roster gets a real faction-agency namespace after one round', () => {
+    const engine = createTestEngine({
+      modules: [
+        createCognitionCore(),
+        createFactionCognition({ factions: [{ factionId: 'watch', entityIds: [], cohesion: 0.8 }] }),
+        createWorldTick(),
+      ],
+      entities: [makePlayer()],
+      zones,
+    });
+    engine.world.factions = {
+      watch: { id: 'watch', name: 'Watch', reputation: -25, disposition: 'hostile' },
+    };
+    expect(engine.world.modules['faction-agency']).toBeUndefined();
+
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.ok).toBe(true);
+
+    const profiles = getPersistedFactionProfiles(engine.world);
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].factionId).toBe('watch');
+    const ns = engine.world.modules['faction-agency'] as {
+      profiles: unknown;
+      lastActions: unknown;
+      memberCounts: unknown;
+    };
+    expect(Array.isArray(ns.profiles)).toBe(true);
+    expect(Array.isArray(ns.lastActions)).toBe(true);
+    expect(typeof ns.memberCounts).toBe('object');
+    expect(getPersistedFactionLastActions(engine.world)).toEqual(ns.lastActions);
   });
 });

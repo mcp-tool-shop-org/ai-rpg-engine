@@ -233,6 +233,7 @@ export type {
 export {
   deriveStance,
   getReputationConsequence,
+  getFactionAccess,
   evolveTitle,
   buildPlayerDescriptor,
 } from './social-consequence.js';
@@ -323,6 +324,8 @@ export {
   getWorldMilestones,
   recordMilestone,
   pushActivePressure,
+  applyDistrictMetricEffect,
+  resolvePressureByPlayer,
   urgencyBand,
   HEAT_KEY,
   HEAT_WAKE_THRESHOLD,
@@ -341,6 +344,7 @@ export type {
   WorldTickOptions,
   WorldTickResult,
   UrgencyBand,
+  PlayerPressureResolution,
 } from './world-tick.js';
 export {
   createEncounterSpawn,
@@ -381,6 +385,11 @@ export {
   runFactionAgencyTick,
   formatFactionProfilesForDirector,
   formatFactionAgencyForNarrator,
+  createFactionAgency,
+  getPersistedFactionProfiles,
+  getPersistedFactionLastActions,
+  getPersistedFactionMemberCounts,
+  setPersistedFactionState,
 } from './faction-agency.js';
 export type {
   FactionActionVerb,
@@ -419,6 +428,8 @@ export {
   // v1.1 write-wire (F-677e94ad/F-19a23718): the 4-verb EngineModule + its
   // effect-translation helper
   applyLeverageEffects,
+  grantFactionAccess,
+  getStoredFactionAccess,
   createPlayerLeverageCore,
   playerLeverageCore,
 } from './player-leverage.js';
@@ -436,6 +447,7 @@ export type {
   ExternalLeverageModifiers,
   ModifierAttribution,
   LeverageHints,
+  FactionAccessLevel,
 } from './player-leverage.js';
 export {
   buildStrategicMap,

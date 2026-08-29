@@ -29,11 +29,10 @@ export type ReputationConsequence = {
    */
   priceModifier: number;
   /**
-   * Access level granted by the faction. No production caller yet (F-4684385c)
-   * — reserved for a future dialogue/gating consumer (targeted v3.0), same as
-   * dialogueBias below. Unlike priceModifier, nothing else in this codebase
-   * computes an access level from reputation, so this stays the intended
-   * eventual source rather than a deprecated one.
+   * Access level granted by the faction. Derived from the reputation band
+   * unless a stored `access.<factionId>` override is passed in (F-cd5a8eec —
+   * applyLeverageEffects persists negotiate-access / call-in-favor here).
+   * getFactionAccess is the helper that prefers the stored mark.
    */
   accessLevel: 'denied' | 'restricted' | 'normal' | 'privileged';
   /**
@@ -83,22 +82,41 @@ export function deriveStance(
  * Map a reputation value to mechanical consequences. See
  * {@link ReputationConsequence.priceModifier} — deprecated (F-4684385c),
  * trade-value.ts's computeItemValue is the live reputation→price mapping.
- * accessLevel/dialogueBias are unaffected and unchanged by this note.
+ * accessLevel is the derived band unless `storedAccess` is supplied — a
+ * persisted override (player-leverage.ts's `access.<factionId>` sink) wins
+ * over the reputation curve, because negotiate-access / call-in-favor
+ * announce a door opening that reputation alone has not earned yet.
  */
-export function getReputationConsequence(reputationValue: number): ReputationConsequence {
+export function getReputationConsequence(
+  reputationValue: number,
+  storedAccess?: ReputationConsequence['accessLevel'],
+): ReputationConsequence {
+  let result: ReputationConsequence;
   if (reputationValue <= -60) {
-    return { priceModifier: 1.5, accessLevel: 'denied', dialogueBias: 'This one is not welcome here.' };
+    result = { priceModifier: 1.5, accessLevel: 'denied', dialogueBias: 'This one is not welcome here.' };
+  } else if (reputationValue <= -20) {
+    result = { priceModifier: 1.3, accessLevel: 'restricted', dialogueBias: 'Watch this one carefully.' };
+  } else if (reputationValue >= 60) {
+    result = { priceModifier: 0.7, accessLevel: 'privileged', dialogueBias: 'We are honored by your presence.' };
+  } else if (reputationValue >= 20) {
+    result = { priceModifier: 0.9, accessLevel: 'normal', dialogueBias: 'A friend of the faction.' };
+  } else {
+    result = { priceModifier: 1.0, accessLevel: 'normal', dialogueBias: '' };
   }
-  if (reputationValue <= -20) {
-    return { priceModifier: 1.3, accessLevel: 'restricted', dialogueBias: 'Watch this one carefully.' };
-  }
-  if (reputationValue >= 60) {
-    return { priceModifier: 0.7, accessLevel: 'privileged', dialogueBias: 'We are honored by your presence.' };
-  }
-  if (reputationValue >= 20) {
-    return { priceModifier: 0.9, accessLevel: 'normal', dialogueBias: 'A friend of the faction.' };
-  }
-  return { priceModifier: 1.0, accessLevel: 'normal', dialogueBias: '' };
+  if (storedAccess) return { ...result, accessLevel: storedAccess };
+  return result;
+}
+
+/**
+ * Prefer a persisted access mark over the reputation-derived band.
+ * `storedAccess` is the `access.<factionId>` custom value applyLeverageEffects
+ * writes; omit it to read the derived band alone.
+ */
+export function getFactionAccess(
+  reputationValue: number,
+  storedAccess?: ReputationConsequence['accessLevel'],
+): ReputationConsequence['accessLevel'] {
+  return getReputationConsequence(reputationValue, storedAccess).accessLevel;
 }
 
 // --- Title Evolution ---
