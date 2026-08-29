@@ -375,6 +375,23 @@ describe('ComfyUIProvider.generate — PA-1: seed reproducibility', () => {
     expect(mockPromise.sent).toEqual([1234]);
   });
 
+  it('PA1-nonfinite: NaN/Infinity seed is treated as omitted and derives a finite default (F-a623fcff)', async () => {
+    const mockPromise = seedCapturingMock();
+    const mock = await mockPromise;
+    const provider = makeProvider(mock.url);
+
+    const omitted = await provider.generate('a knight');
+    const nanSeed = await provider.generate('a knight', { seed: Number.NaN });
+    const infSeed = await provider.generate('a knight', { seed: Number.POSITIVE_INFINITY });
+    expect(omitted.ok && nanSeed.ok && infSeed.ok).toBe(true);
+    if (omitted.ok && nanSeed.ok && infSeed.ok) {
+      expect(Number.isFinite(omitted.seed!)).toBe(true);
+      expect(nanSeed.seed).toBe(omitted.seed);
+      expect(infSeed.seed).toBe(omitted.seed);
+      expect(mockPromise.sent).toEqual([omitted.seed, omitted.seed, omitted.seed]);
+    }
+  });
+
   it('PA1-default: with no seed, a concrete seed is used, reported (never undefined), and matches what was sent', async () => {
     const mockPromise = seedCapturingMock();
     const mock = await mockPromise;

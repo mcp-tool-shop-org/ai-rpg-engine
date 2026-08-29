@@ -499,7 +499,7 @@ describe('portrait identity tracks sanitized prompt fields (F-930e6b5b)', () => 
 
     expect(portraitIdentityTag(alice)).toBe(portraitIdentityTag(aliceColon));
     expect(portraitIdentityTag(alice)).toBe(
-      'char:["Alice","Penitent Knight","fantasy","","","Oath-Breaker",["Iron Frame","Cursed Blood"],"",512,512,null]',
+      'char:["Alice","Penitent Knight","fantasy","","","Oath-Breaker",["Iron Frame","Cursed Blood"],"",512,512,null,20,7,"modern clothing, technology, cartoon, anime, blurry, deformed"]',
     );
 
     const first = await generatePortrait(alice, provider, store);
@@ -651,6 +651,12 @@ describe('portrait identity includes every prompt-affecting field (F-e9ea394a)',
     expect(portraitIdentityTag(base)).toBe(portraitIdentityTag(base, { width: 512, height: 512 }));
   });
 
+  it('Alice/Alice: still share a key after generation fields are added to identity', () => {
+    const alice: PortraitRequest = { ...testRequest, characterName: 'Alice' };
+    const aliceColon: PortraitRequest = { ...testRequest, characterName: 'Alice:' };
+    expect(portraitIdentityTag(alice)).toBe(portraitIdentityTag(aliceColon));
+  });
+
   it('ensurePortrait with generation options matches generatePortrait identity', async () => {
     const store = new MemoryAssetStore();
     const { provider, getCalls } = countingProvider();
@@ -660,5 +666,154 @@ describe('portrait identity includes every prompt-affecting field (F-e9ea394a)',
     const ensured = await ensurePortrait(testRequest, provider, store, opts);
     expect(ensured.hash).toBe(first.hash);
     expect(getCalls()).toBe(before);
+  });
+});
+
+// F-a623fcff: identity keyed width/height/seed but generatePortrait also
+// forwards steps/cfgScale/negativePrompt, and ComfyUI derives the default
+// seed from those. ensurePortrait therefore returned the steps:20 bytes for
+// a steps:50 request. JSON.stringify(NaN/Infinity) is `null`, collapsing
+// non-finite seed/size/steps/cfg onto the omitted-key while the provider
+// still saw the raw non-finite value.
+describe('portrait identity includes every generation field that reaches the provider (F-a623fcff)', () => {
+  const fantasyNegative = 'modern clothing, technology, cartoon, anime, blurry, deformed';
+
+  function countingProvider() {
+    let calls = 0;
+    const provider: ImageProvider = {
+      name: 'comfyui',
+      async isAvailable() { return true; },
+      async generate(prompt: string, opts?: GenerationOptions): Promise<GenerationOutcome> {
+        calls += 1;
+        // Bytes must depend on generation fields — otherwise CAS would hide
+        // a missed identity key behind a hash collision (the original probe
+        // used a provider whose bytes ignored steps).
+        return {
+          ok: true,
+          image: new TextEncoder().encode(
+            `png:${prompt}|w:${opts?.width}|h:${opts?.height}|seed:${opts?.seed}`
+            + `|steps:${opts?.steps}|cfg:${opts?.cfgScale}|neg:${opts?.negativePrompt}`,
+          ),
+          mimeType: 'image/png',
+          width: opts?.width ?? 512,
+          height: opts?.height ?? 512,
+          prompt,
+          durationMs: 1,
+        };
+      },
+    };
+    return { provider, getCalls: () => calls };
+  }
+
+  it('ensurePortrait(steps:20) vs ensurePortrait(steps:50) with no explicit seed are two hashes and two provider calls', async () => {
+    const store = new MemoryAssetStore();
+    const { provider, getCalls } = countingProvider();
+    const req: PortraitRequest = { ...testRequest, characterName: 'Alice' };
+
+    expect(portraitIdentityTag(req, { steps: 20 })).not.toBe(portraitIdentityTag(req, { steps: 50 }));
+
+    const first = await ensurePortrait(req, provider, store, { generation: { steps: 20 } });
+    const second = await ensurePortrait(req, provider, store, { generation: { steps: 50 } });
+
+    expect(second.hash).not.toBe(first.hash);
+    expect(getCalls()).toBe(2);
+    expect(await store.count()).toBe(2);
+  });
+
+  it('identity includes cfgScale and negativePrompt, using generatePortrait defaults when omitted', () => {
+    const base = { ...testRequest, characterName: 'Alice' };
+    expect(portraitIdentityTag(base, { cfgScale: 7 })).toBe(portraitIdentityTag(base));
+    expect(portraitIdentityTag(base, { cfgScale: 12 })).not.toBe(portraitIdentityTag(base));
+    expect(portraitIdentityTag(base, { steps: 20 })).toBe(portraitIdentityTag(base));
+    expect(portraitIdentityTag(base, { negativePrompt: fantasyNegative })).toBe(portraitIdentityTag(base));
+    expect(portraitIdentityTag(base, { negativePrompt: 'blurry' })).not.toBe(portraitIdentityTag(base));
+    expect(portraitIdentityTag(base)).toBe(
+      `char:["Alice","Penitent Knight","fantasy","","","Oath-Breaker",["Iron Frame","Cursed Blood"],"",512,512,null,20,7,${JSON.stringify(fantasyNegative)}]`,
+    );
+  });
+
+  it('non-finite seed/width/height/steps/cfgScale coerce to the omitted defaults (do not stringify as null-collision)', () => {
+    const base = { ...testRequest, characterName: 'Alice' };
+    expect(portraitIdentityTag(base, { seed: Number.NaN })).toBe(portraitIdentityTag(base));
+    expect(portraitIdentityTag(base, { seed: Number.POSITIVE_INFINITY })).toBe(portraitIdentityTag(base));
+    expect(portraitIdentityTag(base, { width: Number.NaN })).toBe(portraitIdentityTag(base));
+    expect(portraitIdentityTag(base, { height: Number.POSITIVE_INFINITY })).toBe(portraitIdentityTag(base));
+    expect(portraitIdentityTag(base, { steps: Number.NaN })).toBe(portraitIdentityTag(base));
+    expect(portraitIdentityTag(base, { cfgScale: Number.NEGATIVE_INFINITY })).toBe(portraitIdentityTag(base));
+    // A finite explicit seed still differs from the coerced-NaN/omitted key.
+    expect(portraitIdentityTag(base, { seed: 1 })).not.toBe(portraitIdentityTag(base, { seed: Number.NaN }));
+  });
+
+  it('generatePortrait does not forward non-finite generation numbers to the provider', async () => {
+    const store = new MemoryAssetStore();
+    let seen: GenerationOptions | undefined;
+    const provider: ImageProvider = {
+      name: 'comfyui',
+      async isAvailable() { return true; },
+      async generate(prompt: string, opts?: GenerationOptions): Promise<GenerationOutcome> {
+        seen = opts;
+        return {
+          ok: true,
+          image: new TextEncoder().encode(`png:${opts?.seed}:${opts?.width}:${opts?.steps}:${opts?.cfgScale}`),
+          mimeType: 'image/png',
+          width: opts?.width ?? 512,
+          height: opts?.height ?? 512,
+          prompt,
+          durationMs: 1,
+        };
+      },
+    };
+
+    await generatePortrait(testRequest, provider, store, {
+      generation: {
+        seed: Number.NaN,
+        width: Number.POSITIVE_INFINITY,
+        height: Number.NaN,
+        steps: Number.NaN,
+        cfgScale: Number.POSITIVE_INFINITY,
+      },
+    });
+
+    expect(seen).toBeDefined();
+    expect(seen!.seed).toBeUndefined();
+    expect(seen!.width).toBe(512);
+    expect(seen!.height).toBe(512);
+    expect(seen!.steps).toBe(20);
+    expect(seen!.cfgScale).toBe(7);
+    expect(Number.isFinite(seen!.width)).toBe(true);
+    expect(Number.isFinite(seen!.height)).toBe(true);
+    expect(Number.isFinite(seen!.steps)).toBe(true);
+    expect(Number.isFinite(seen!.cfgScale)).toBe(true);
+  });
+
+  it('Queen vs Beggar remain distinct when generation fields are identical', async () => {
+    const store = new MemoryAssetStore();
+    const { provider, getCalls } = countingProvider();
+    const queen: PortraitRequest = {
+      ...testRequest,
+      characterName: 'Alice',
+      archetypeName: 'Mage',
+      genre: 'fantasy',
+      title: 'Queen',
+      backgroundName: 'Royal Court',
+      traits: ['Regal'],
+    };
+    const beggar: PortraitRequest = {
+      ...testRequest,
+      characterName: 'Alice',
+      archetypeName: 'Mage',
+      genre: 'fantasy',
+      title: 'Beggar',
+      backgroundName: 'Gutters',
+      traits: ['Starving'],
+    };
+    const gen = { generation: { steps: 20 } };
+
+    expect(portraitIdentityTag(queen, gen.generation)).not.toBe(portraitIdentityTag(beggar, gen.generation));
+    const queenMeta = await ensurePortrait(queen, provider, store, gen);
+    const beggarMeta = await ensurePortrait(beggar, provider, store, gen);
+    expect(queenMeta.hash).not.toBe(beggarMeta.hash);
+    expect(getCalls()).toBe(2);
+    expect(await store.count()).toBe(2);
   });
 });
