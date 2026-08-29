@@ -205,4 +205,24 @@ describe('validatePackRubric', () => {
     const check = result.checks.find((c) => c.dimension === 'distinct-failure-mode');
     expect(check?.passed).toBe(true);
   });
+
+  it('F-94cfb964: one-arg call does not throw; defaults allPacks to [pack]', () => {
+    const pack = makePack('solo', {
+      verbs: [
+        { id: 'move', name: 'Move' },
+        { id: 'interrogate', name: 'Interrogate' },
+      ],
+      resources: [
+        { id: 'hp', name: 'HP', min: 0, max: 100, default: 50 },
+        { id: 'composure', name: 'Composure', min: 0, max: 20, default: 12 },
+      ],
+      genres: ['mystery'],
+      tones: ['noir'],
+      districts: [{ id: 'old-quarter', controllingFaction: 'the-syndicate' }],
+    });
+    expect(() => validatePackRubric(pack)).not.toThrow();
+    const oneArg = validatePackRubric(pack);
+    const twoArg = validatePackRubric(pack, [pack]);
+    expect(oneArg).toEqual(twoArg);
+  });
 });
