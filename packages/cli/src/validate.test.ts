@@ -127,4 +127,48 @@ describe('runValidate', () => {
       expect(code).toBe(0);
     }).not.toThrow();
   });
+
+  // F-5c018d2c — `--manifest` must accept equals-form the way sidecar `readFlag`
+  // and `parseRunArgs` already do. `indexOf('--manifest')` dropped `--manifest=…`
+  // with no VALIDATE_MANIFEST_* error, left ctx.manifest unset, and a pack
+  // stamped engine 2.x still printed ✓ Content valid and exited 0.
+  it('--manifest=<file> with engineVersion 2.0.0 exits 1 with the gate report, not a green valid line', () => {
+    const file = writePack('stale-pack.json', {
+      entities: [{ id: 'player', type: 'player', name: 'Wanderer' }],
+      zones: [{ id: 'cave', name: 'Cave', neighbors: [] }],
+    });
+    const man = writePack('stale-manifest.json', { engineVersion: '2.0.0' });
+    const out = capture();
+    const code = runValidate([file, `--manifest=${man}`], { log: out.log, error: out.log });
+    expect(code).toBe(1);
+    const text = out.text();
+    expect(text).toContain('REFUSED');
+    expect(text).toContain('engine-version');
+    expect(text).toContain('2.0.0');
+    expect(text).not.toMatch(/✓ Content valid/);
+  });
+
+  it('--manifest <file> space form still fires the engine-version gate', () => {
+    const file = writePack('stale-pack-space.json', {
+      entities: [{ id: 'player', type: 'player', name: 'Wanderer' }],
+      zones: [{ id: 'cave', name: 'Cave', neighbors: [] }],
+    });
+    const man = writePack('stale-manifest-space.json', { engineVersion: '2.0.0' });
+    const out = capture();
+    const code = runValidate([file, '--manifest', man], { log: out.log, error: out.log });
+    expect(code).toBe(1);
+    expect(out.text()).toContain('engine-version');
+    expect(out.text()).not.toMatch(/✓ Content valid/);
+  });
+
+  it('empty --manifest= is VALIDATE_MANIFEST_MISSING', () => {
+    const file = writePack('needs-manifest.json', {
+      zones: [{ id: 'z', name: 'Z', neighbors: [] }],
+    });
+    const out = capture();
+    const code = runValidate([file, '--manifest='], { log: out.log, error: out.log });
+    expect(code).toBe(1);
+    expect(out.text()).toContain('VALIDATE_MANIFEST_MISSING');
+    expect(out.text()).not.toMatch(/✓ Content valid/);
+  });
 });

@@ -30,6 +30,23 @@ const defaultDeps: ValidateDeps = {
   error: (m) => console.error(m),
 };
 
+/** One value-flag: space form (`--flag value`) or equals form (`--flag=value`).
+ *  Same shape as sidecar-command `readFlag` — `indexOf(flag)` alone dropped
+ *  `--manifest=…` with no VALIDATE_MANIFEST_* error (F-5c018d2c). */
+function readFlag(args: string[], flag: string): {
+  present: boolean;
+  raw: string | undefined;
+  valueSlot: number;
+} {
+  const eq = `${flag}=`;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === flag) return { present: true, raw: args[i + 1], valueSlot: i + 1 };
+    if (arg.startsWith(eq)) return { present: true, raw: arg.slice(eq.length), valueSlot: -1 };
+  }
+  return { present: false, raw: undefined, valueSlot: -1 };
+}
+
 function printValidateHelp(log: (msg: string) => void): void {
   log('Usage: ai-rpg-engine validate <file.json> [--manifest <manifest.json>] [--no-gate]');
   log('');
@@ -44,6 +61,7 @@ function printValidateHelp(log: (msg: string) => void): void {
   log('');
   log('Options:');
   log('  --manifest <path>  also check engineVersion and contentHash from a manifest.json');
+  log('                     (--manifest=<path> is accepted too)');
   log('  --no-gate          structural validation only (pre-C1 behaviour)');
   log('');
   log('Example:');
@@ -62,20 +80,22 @@ export function runValidate(args: string[], deps: ValidateDeps = defaultDeps): n
     return 0;
   }
 
-  // --manifest takes a value, so it must not be mistaken for the pack path.
-  const manifestIdx = args.indexOf('--manifest');
-  const manifestPath = manifestIdx >= 0 ? args[manifestIdx + 1] : undefined;
-  if (manifestIdx >= 0 && (manifestPath === undefined || manifestPath.startsWith('-'))) {
+  // --manifest takes a value (space form AND equals form), so it must not be
+  // mistaken for the pack path. Present-but-empty `--manifest=` is a missing
+  // path, not an absent flag — otherwise engine-version/content-hash skip as
+  // 'not verified' and a structurally valid pack still prints ✓ Content valid.
+  const manifest = readFlag(args, '--manifest');
+  const manifestPath = manifest.raw;
+  if (manifest.present && (manifestPath === undefined || manifestPath === '' || manifestPath.startsWith('-'))) {
     error('✗ [VALIDATE_MANIFEST_MISSING] --manifest needs a path.');
     error('  Hint: ai-rpg-engine validate ./content-pack.json --manifest ./manifest.json');
     return 1;
   }
-  // NOTE the `manifestIdx >= 0` guard: without it, a missing --manifest gives
-  // manifestIdx === -1, so `manifestIdx + 1` is 0 and the FILE PATH at index 0
-  // gets filtered out as if it were the flag's value. It did exactly that on the
-  // first run.
-  const manifestValueIdx = manifestIdx >= 0 ? manifestIdx + 1 : -1;
-  const positional = args.filter((a, i) => !a.startsWith('-') && i !== manifestValueIdx);
+  // Skip the space-form value slot so the pack path is not eaten. Equals-form
+  // has valueSlot === -1 (the token itself starts with '-'), so nothing extra
+  // is filtered — a missing --manifest used to compute index 0 and drop the
+  // file path.
+  const positional = args.filter((a, i) => !a.startsWith('-') && i !== manifest.valueSlot);
   const file = positional[0];
   if (!file) {
     error('✗ [VALIDATE_FILE_MISSING] Missing <file.json>.');
