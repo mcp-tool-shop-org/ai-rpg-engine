@@ -2,7 +2,7 @@
 
 import type { AssetMetadata, AssetInput, AssetFilter, AssetGetOptions, AssetStore } from './types.js';
 import { hashBytes } from './hash.js';
-import { matchesFilter, unionTags } from './filter.js';
+import { matchesFilter, unionTags, cloneMetadata } from './filter.js';
 
 export class MemoryAssetStore implements AssetStore {
   private data = new Map<string, Uint8Array>();
@@ -17,10 +17,10 @@ export class MemoryAssetStore implements AssetStore {
     const existing = this.meta.get(hash);
     if (existing) {
       const mergedTags = unionTags(existing.tags, input.tags);
-      if (!mergedTags) return existing;
+      if (!mergedTags) return cloneMetadata(existing);
       const merged: AssetMetadata = { ...existing, tags: mergedTags };
       this.meta.set(hash, merged);
-      return merged;
+      return cloneMetadata(merged);
     }
 
     const metadata: AssetMetadata = {
@@ -30,14 +30,17 @@ export class MemoryAssetStore implements AssetStore {
       width: input.width,
       height: input.height,
       sizeBytes: data.length,
-      tags: input.tags ?? [],
+      // Clone tags on put so the Map is not aliased to the caller's array
+      // (F-b2b8a190). File stringify/re-parse already isolates; Memory must
+      // copy explicitly.
+      tags: input.tags ? [...input.tags] : [],
       createdAt: new Date().toISOString(),
       source: input.source,
     };
 
     this.data.set(hash, new Uint8Array(data));
     this.meta.set(hash, metadata);
-    return metadata;
+    return cloneMetadata(metadata);
   }
 
   async get(hash: string, opts?: AssetGetOptions): Promise<Uint8Array | null> {
@@ -51,7 +54,8 @@ export class MemoryAssetStore implements AssetStore {
   }
 
   async getMeta(hash: string): Promise<AssetMetadata | null> {
-    return this.meta.get(hash) ?? null;
+    const stored = this.meta.get(hash);
+    return stored ? cloneMetadata(stored) : null;
   }
 
   async has(hash: string): Promise<boolean> {
@@ -60,8 +64,8 @@ export class MemoryAssetStore implements AssetStore {
 
   async list(filter?: AssetFilter): Promise<AssetMetadata[]> {
     const all = [...this.meta.values()];
-    if (!filter) return all;
-    return all.filter((m) => matchesFilter(m, filter));
+    const matched = filter ? all.filter((m) => matchesFilter(m, filter)) : all;
+    return matched.map(cloneMetadata);
   }
 
   async delete(hash: string): Promise<boolean> {

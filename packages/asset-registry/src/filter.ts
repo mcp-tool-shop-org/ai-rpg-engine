@@ -17,6 +17,11 @@ export function unionTags(
   return [...existing, ...extra];
 }
 
+/** Copy metadata so callers cannot mutate a stored handle (F-b2b8a190). */
+export function cloneMetadata(m: AssetMetadata): AssetMetadata {
+  return { ...m, tags: [...m.tags] };
+}
+
 /** Check if metadata matches a filter. */
 export function matchesFilter(meta: AssetMetadata, filter: AssetFilter): boolean {
   if (filter.kind && meta.kind !== filter.kind) return false;
