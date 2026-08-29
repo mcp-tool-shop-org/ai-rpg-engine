@@ -1,10 +1,13 @@
 // Tests — chat balance analyzer: simulation-guided balancing
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   parseReplayData,
   extractMetrics,
   MAX_REPLAY_TICKS,
+  MAX_REPLAY_JSON_BYTES,
+  MAX_EVENTS_PER_TICK,
+  MAX_ENTITIES_PER_TICK,
   MAX_METRIC_NAMES,
   analyzeBalance,
   formatBalanceAnalysis,
@@ -133,6 +136,36 @@ describe('parseReplayData', () => {
     expect(result).not.toBeNull();
     expect(result!.ticks).toHaveLength(MAX_REPLAY_TICKS);
   });
+
+  // F-670ab50a — tick cap used to run after JSON.parse(raw). A million-tick
+  // dump still materialized the whole graph. Refuse oversized input before parse.
+  it('rejects a huge string without JSON.parse (F-670ab50a)', () => {
+    const huge = 'x'.repeat(MAX_REPLAY_JSON_BYTES + 1);
+    const spy = vi.spyOn(JSON, 'parse');
+    try {
+      expect(parseReplayData(huge)).toBeNull();
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('truncates per-tick events and entities on a 10k-tick dump (F-670ab50a)', () => {
+    const overEvents = MAX_EVENTS_PER_TICK + 8;
+    const overEntities = MAX_ENTITIES_PER_TICK + 8;
+    const eventsJson = JSON.stringify(Array.from({ length: overEvents }, () => ({ type: 'e' })));
+    const entitiesJson = JSON.stringify(Array.from({ length: overEntities }, () => ({ id: 'x' })));
+    const tickJson = `{"tick":0,"events":${eventsJson},"entities":${entitiesJson}}`;
+    const raw = `[${new Array(MAX_REPLAY_TICKS).fill(tickJson).join(',')}]`;
+    expect(raw.length).toBeLessThanOrEqual(MAX_REPLAY_JSON_BYTES);
+    const result = parseReplayData(raw);
+    expect(result).not.toBeNull();
+    expect(result!.ticks).toHaveLength(MAX_REPLAY_TICKS);
+    for (const tick of result!.ticks) {
+      expect(tick.events?.length ?? 0).toBeLessThanOrEqual(MAX_EVENTS_PER_TICK);
+      expect(tick.entities?.length ?? 0).toBeLessThanOrEqual(MAX_ENTITIES_PER_TICK);
+    }
+  });
 });
 
 // ========================================
@@ -228,6 +261,15 @@ describe('extractMetrics', () => {
     const metrics = extractMetrics({ ticks: [{ tick: 0, metrics: many }] } as never);
     expect(metrics.curves.length).toBeLessThanOrEqual(MAX_METRIC_NAMES);
   });
+
+  it('caps per-tick event walks so rumor reach cannot grow with an uncapped array (F-670ab50a)', () => {
+    const events = Array.from({ length: MAX_EVENTS_PER_TICK + 50 }, (_, i) => ({
+      type: 'rumor_spread',
+      target: `faction-${i}`,
+    }));
+    const metrics = extractMetrics({ ticks: [{ tick: 0, events }] } as never);
+    expect(metrics.rumorSpreadReach).toBeLessThanOrEqual(MAX_EVENTS_PER_TICK);
+  });
 });
 
 // ========================================
@@ -290,11 +332,21 @@ describe('analyzeBalance', () => {
   });
 
   it('does not throw on a 200k-tick replay and returns findings', () => {
-    const raw = JSON.stringify(Array.from({ length: 200_000 }, (_, i) => ({ tick: i })));
+    // In-memory ticks — parseReplayData refuses a serialized million-tick dump
+    // before JSON.parse (F-670ab50a); extractMetrics still caps a huge array.
+    const ticks = Array.from({ length: 200_000 }, (_, i) => ({ tick: i }));
     let analysis;
-    expect(() => { analysis = analyzeBalance(raw, null); }).not.toThrow();
+    expect(() => { analysis = analyzeBalance(JSON.stringify(ticks.slice(0, MAX_REPLAY_TICKS)), null); }).not.toThrow();
     expect(Array.isArray(analysis!.findings)).toBe(true);
     expect(analysis!.metrics.totalTicks).toBeLessThanOrEqual(MAX_REPLAY_TICKS);
+  });
+
+  it('returns PARSE_FAILURE for an oversized replay string without throwing (F-670ab50a)', () => {
+    const huge = 'x'.repeat(MAX_REPLAY_JSON_BYTES + 1);
+    let analysis;
+    expect(() => { analysis = analyzeBalance(huge, null); }).not.toThrow();
+    expect(analysis!.findings.some((f) => f.code === 'PARSE_FAILURE')).toBe(true);
+    expect(analysis!.metrics.totalTicks).toBe(0);
   });
 
   it('correlates session escalation issues with replay', () => {
