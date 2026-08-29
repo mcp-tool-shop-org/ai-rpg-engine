@@ -26,7 +26,12 @@ export function recordMilestone(
   milestone: Omit<Milestone, 'id'>,
   id?: string,
 ): CharacterProfile {
-  const full: Milestone = { ...milestone, id: id ?? nextMilestoneId(profile) };
+  // F-b5c1a27e: clone nested tags at ingest. A shallow spread stored the
+  // caller's tags array by identity.
+  const full: Milestone = structuredClone({
+    ...milestone,
+    id: id ?? nextMilestoneId(profile),
+  });
   return touch({
     ...profile,
     milestones: [...profile.milestones, full],

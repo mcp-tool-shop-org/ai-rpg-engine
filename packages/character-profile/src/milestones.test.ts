@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { CharacterBuild } from '@ai-rpg-engine/character-creation';
 import type { Milestone } from './types.js';
 import { createProfile } from './profile.js';
+import { serializeProfile } from './serialize.js';
 import {
   recordMilestone,
   getMilestonesByTag,
@@ -82,6 +83,23 @@ describe('recordMilestone', () => {
   it('honors a caller-supplied milestone id', () => {
     const profile = recordMilestone(makeProfile(), first, 'ms-custom');
     expect(profile.milestones[0]!.id).toBe('ms-custom');
+  });
+
+  // F-b5c1a27e swept sibling: recordMilestone shallow-spread tags the
+  // same way addInjury shallow-spread grantedTags.
+  it('does not share nested tags with the input (F-b5c1a27e)', () => {
+    const tags = ['exploration', 'chapel'];
+    const profile = recordMilestone(makeProfile(), {
+      label: 'Chapel Entered',
+      description: 'First entered the ruined chapel.',
+      at: 'turn-1',
+      tags,
+    });
+
+    expect(profile.milestones[0]!.tags).not.toBe(tags);
+    tags.push('hacked');
+    expect(profile.milestones[0]!.tags).toEqual(['exploration', 'chapel']);
+    expect(serializeProfile(profile)).not.toContain('hacked');
   });
 });
 

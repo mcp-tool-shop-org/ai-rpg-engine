@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { CharacterBuild } from '@ai-rpg-engine/character-creation';
 import type { Injury } from './types.js';
 import { createProfile } from './profile.js';
+import { serializeProfile } from './serialize.js';
 import {
   addInjury,
   healInjury,
@@ -91,6 +92,53 @@ describe('addInjury', () => {
   it('honors a caller-supplied injury id', () => {
     const profile = addInjury(makeProfile(), cut, 'inj-custom');
     expect(profile.injuries[0]!.id).toBe('inj-custom');
+  });
+
+  // F-b5c1a27e: addInjury is an ingest seam on the persistence boundary.
+  // A shallow spread of injury aliases caller-owned statPenalties /
+  // resourcePenalties / grantedTags — mutating those after addInjury
+  // rewrote serializeProfile and computeInjuryPenalties.
+  it('does not share nested injury fields with the input (F-b5c1a27e)', () => {
+    const penalties = { vigor: -2 };
+    const resourcePenalties = { hp: -5 };
+    const tags = ['injured'];
+    const profile = addInjury(makeProfile(), {
+      name: 'Broken Arm',
+      description: 'Fractured in combat.',
+      statPenalties: penalties,
+      resourcePenalties,
+      grantedTags: tags,
+      sustainedAt: 'turn-10',
+    });
+
+    expect(profile.injuries[0]!.statPenalties).not.toBe(penalties);
+    expect(profile.injuries[0]!.resourcePenalties).not.toBe(resourcePenalties);
+    expect(profile.injuries[0]!.grantedTags).not.toBe(tags);
+
+    penalties.vigor = -99;
+    resourcePenalties.hp = -99;
+    tags.push('hacked');
+
+    expect(profile.injuries[0]!.statPenalties).toEqual({ vigor: -2 });
+    expect(profile.injuries[0]!.resourcePenalties).toEqual({ hp: -5 });
+    expect(profile.injuries[0]!.grantedTags).toEqual(['injured']);
+
+    const penaltiesOut = computeInjuryPenalties(profile);
+    expect(penaltiesOut.statPenalties.vigor).toBe(-2);
+    expect(penaltiesOut.resourcePenalties.hp).toBe(-5);
+    expect(penaltiesOut.grantedTags).toEqual(['injured']);
+
+    const saved = JSON.parse(serializeProfile(profile)) as {
+      injuries: Array<{
+        statPenalties: Record<string, number>;
+        resourcePenalties: Record<string, number>;
+        grantedTags: string[];
+      }>;
+    };
+    expect(saved.injuries[0]!.statPenalties).toEqual({ vigor: -2 });
+    expect(saved.injuries[0]!.resourcePenalties).toEqual({ hp: -5 });
+    expect(saved.injuries[0]!.grantedTags).toEqual(['injured']);
+    expect(serializeProfile(profile)).not.toContain('hacked');
   });
 });
 

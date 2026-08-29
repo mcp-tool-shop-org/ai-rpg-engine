@@ -26,11 +26,13 @@ export function addInjury(
   injury: Omit<Injury, 'id' | 'healed' | 'healedAt'>,
   id?: string,
 ): CharacterProfile {
-  const full: Injury = {
+  // F-b5c1a27e: clone nested statPenalties/resourcePenalties/grantedTags at
+  // ingest. A shallow spread stored the caller's objects by identity.
+  const full: Injury = structuredClone({
     ...injury,
     id: id ?? nextInjuryId(profile),
     healed: false,
-  };
+  });
   return touch({
     ...profile,
     injuries: [...profile.injuries, full],

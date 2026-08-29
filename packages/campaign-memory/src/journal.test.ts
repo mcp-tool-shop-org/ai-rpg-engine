@@ -168,6 +168,29 @@ describe('CampaignJournal', () => {
     expect(journal.get(id)!.significance).toBe(0.7);
   });
 
+  // F-36f53181: record() is the write-path ingest. A shallow spread of
+  // entry aliases caller-owned witnesses[] / data — mutating those after
+  // record() rewrote the running chronicle and the next serialize().
+  test('mutating record() input witnesses/data does not write the journal (F-36f53181)', () => {
+    const journal = new CampaignJournal();
+    const witnesses = ['bystander_1'];
+    const data: Record<string, unknown> = { weapon: 'dagger' };
+    const recorded = journal.record(makeRecord({ witnesses, data }));
+
+    expect(journal.get(recorded.id)).toBe(recorded);
+    expect(recorded.witnesses).not.toBe(witnesses);
+    expect(recorded.data).not.toBe(data);
+
+    witnesses.push('spy');
+    data.weapon = 'hacked';
+
+    const live = journal.get(recorded.id)!;
+    expect(live.witnesses).toEqual(['bystander_1']);
+    expect(live.data).toEqual({ weapon: 'dagger' });
+    expect(journal.serialize().records[0].witnesses).toEqual(['bystander_1']);
+    expect(journal.serialize().records[0].data).toEqual({ weapon: 'dagger' });
+  });
+
   test('results are sorted by tick', () => {
     const journal = new CampaignJournal();
     journal.record(makeRecord({ tick: 20 }));

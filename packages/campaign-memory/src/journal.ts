@@ -26,7 +26,9 @@ export class CampaignJournal {
 
   /** Record a significant event. Returns the created record with generated ID. */
   record(entry: Omit<CampaignRecord, 'id'>): CampaignRecord {
-    const record: CampaignRecord = { id: this.generateId(), ...entry };
+    // F-36f53181: clone at ingest the same way deserialize does. A shallow
+    // spread would alias caller-owned witnesses[] / data into the Map.
+    const record = cloneCampaignRecord({ id: this.generateId(), ...entry });
     this.records.set(record.id, record);
     return record;
   }
