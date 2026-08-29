@@ -11,12 +11,35 @@
 // above the engine — `runWorldTick` is a per-round function the CLI drives, not
 // a verb, which v3.6 learned by shipping a probe that could never have seen it.
 
+import * as fs from 'node:fs';
 import { startStdioServer, startSocketServer } from '@ai-rpg-engine/sidecar';
-import { applyContentPack, loadContentFromFile } from '@ai-rpg-engine/content-schema';
+import { applyContentPack, loadContentFromFile, type GateContext } from '@ai-rpg-engine/content-schema';
 import { createStandardChannels, modifyDistrictMetric } from '@ai-rpg-engine/modules';
 import { allPacks, type PackInfo } from './packs.js';
 import { runHostileRound } from './bin.js';
 import { ENGINE_VERSION } from './engine-version.js';
+
+/** One value-flag: space form (`--flag value`) or equals form (`--flag=value`). */
+type FlagRead = {
+  present: boolean;
+  raw: string | undefined;
+  /** Index of the following value token in space form; -1 for equals form or absent. */
+  valueSlot: number;
+};
+
+function readFlag(args: string[], flag: string): FlagRead {
+  const eq = `${flag}=`;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === flag) return { present: true, raw: args[i + 1], valueSlot: i + 1 };
+    if (arg.startsWith(eq)) return { present: true, raw: arg.slice(eq.length), valueSlot: -1 };
+  }
+  return { present: false, raw: undefined, valueSlot: -1 };
+}
+
+function isMissingValue(read: FlagRead): boolean {
+  return read.present && (read.raw === undefined || read.raw === '');
+}
 
 export interface SidecarDeps {
   /** Diagnostics sink. NEVER stdout: stdout carries framed protocol only. */
@@ -28,7 +51,7 @@ const defaultDeps: SidecarDeps = { error: (m) => process.stderr.write(`${m}\n`) 
 function printSidecarHelp(error: (msg: string) => void): void {
   error(
     'Usage: ai-rpg-engine sidecar <pack-id> [--seed <n>] [--listen <port>] [--host <addr>]'
-    + ' [--content <pack.json>]',
+    + ' [--content <pack.json>] [--start <zone-id>] [--manifest <manifest.json>]',
   );
   error('');
   error('Runs the simulation as a JSON-RPC server. One authoritative sim, N rendering');
@@ -59,12 +82,19 @@ function printSidecarHelp(error: (msg: string) => void): void {
   error('                   top-level key or a failed content hash is refused rather');
   error('                   than half-applied. Applied counts, dropped fields and');
   error('                   advisories are all reported to stderr — nothing is eaten.');
+  error('                   --manifest is required: without it the version, module-id,');
+  error('                   and content-hash checks cannot run.');
+  error('');
+  error('  --manifest <manifest.json>');
+  error('                   The exporter\'s sibling manifest (engineVersion, modules,');
+  error('                   contentHash). Same contract as `validate --manifest`.');
   error('');
   error('  --start <zone-id>');
   error('                   Stand the player in a zone after intake. Authored zones are');
   error('                   MERGED into the host pack\'s world and the two graphs are');
   error('                   not connected, so without this the player begins in the');
   error('                   host\'s opening zone with no path to the authored world.');
+  error('                   Required when --content applied at least one zone.');
   error('');
   error('One client at a time under --listen. Two clients would interleave in socket');
   error('arrival order, which is not deterministic, and determinism through the wire is');
@@ -91,26 +121,25 @@ export function runSidecar(args: string[], deps: SidecarDeps = defaultDeps): num
   }
 
   // Every flag that takes a VALUE, so the positional scan can skip those values.
-  // The previous shape hard-coded one such flag (`--seed`) and excluded exactly one
-  // index; with three value-flags that approach silently eats the pack id — the
-  // failure the original's own comment warns about, one flag later.
-  const VALUE_FLAGS = ['--seed', '--listen', '--host', '--content', '--start', '--shock'] as const;
-  const valueOf = (flag: string): string | undefined => {
-    const i = args.indexOf(flag);
-    return i >= 0 ? args[i + 1] : undefined;
-  };
+  // Space form (`--flag value`) AND equals form (`--flag=value`) — `run` already
+  // accepts `--seed=<n>` and `replay` already accepts `--checkpoint=<selector>`.
+  // `indexOf(flag)` alone dropped every equals-form sidecar flag with no error.
+  const seed = readFlag(args, '--seed');
+  const listen = readFlag(args, '--listen');
+  const host = readFlag(args, '--host');
+  const content = readFlag(args, '--content');
+  const start = readFlag(args, '--start');
+  const shock = readFlag(args, '--shock');
+  const manifest = readFlag(args, '--manifest');
   const valueIndices = new Set<number>();
-  for (const flag of VALUE_FLAGS) {
-    const i = args.indexOf(flag);
-    if (i >= 0) valueIndices.add(i + 1);
+  for (const read of [seed, listen, host, content, start, shock, manifest]) {
+    if (read.valueSlot >= 0) valueIndices.add(read.valueSlot);
   }
 
-  const seedRaw = valueOf('--seed');
-  const listenRaw = valueOf('--listen');
-  const hostRaw = valueOf('--host');
-  const contentRaw = valueOf('--content');
-  const startRaw = valueOf('--start');
-  const shockRaw = valueOf('--shock');
+  const seedRaw = seed.raw;
+  const listenRaw = listen.raw;
+  const hostRaw = host.present && host.raw !== '' ? host.raw : undefined;
+  const contentRaw = content.present && content.raw !== '' ? content.raw : undefined;
   const packId = args.find((a, i) => !a.startsWith('-') && !valueIndices.has(i));
 
   if (!packId) {
@@ -119,18 +148,22 @@ export function runSidecar(args: string[], deps: SidecarDeps = defaultDeps): num
     return 1;
   }
 
-  let seed: number | undefined;
-  if (seedRaw !== undefined) {
-    seed = Number(seedRaw);
-    if (!Number.isSafeInteger(seed) || seed < 0) {
+  let seedValue: number | undefined;
+  if (seed.present) {
+    if (isMissingValue(seed) || seedRaw === undefined) {
+      error(`✗ [SIDECAR_INVALID_SEED] --seed must be a non-negative integer, got "${seedRaw ?? '(missing)'}".`);
+      return 1;
+    }
+    seedValue = Number(seedRaw);
+    if (!Number.isSafeInteger(seedValue) || seedValue < 0) {
       error(`✗ [SIDECAR_INVALID_SEED] --seed must be a non-negative integer, got "${seedRaw}".`);
       return 1;
     }
   }
 
   let port: number | undefined;
-  if (args.includes('--listen')) {
-    if (listenRaw === undefined) {
+  if (listen.present) {
+    if (isMissingValue(listen)) {
       error('✗ [SIDECAR_LISTEN_MISSING_PORT] --listen requires a port (use 0 for an ephemeral one).');
       return 1;
     }
@@ -155,12 +188,18 @@ export function runSidecar(args: string[], deps: SidecarDeps = defaultDeps): num
     return 1;
   }
 
-  if (args.includes('--content') && contentRaw === undefined) {
+  if (content.present && isMissingValue(content)) {
     error('✗ [SIDECAR_CONTENT_MISSING_PATH] --content requires a path to an exported content pack.');
     return 1;
   }
 
-  const engine = pack.createGame(seed);
+  if (content.present && manifest.present && (isMissingValue(manifest) || (manifest.raw?.startsWith('-') ?? false))) {
+    error('✗ [SIDECAR_MANIFEST_MISSING_PATH] --manifest needs a path.');
+    error('  Hint: ai-rpg-engine sidecar <pack-id> --content ./content-pack.json --manifest ./manifest.json --start <zone-id>');
+    return 1;
+  }
+
+  const engine = pack.createGame(seedValue);
   const loaded = { meta: pack.meta, createGame: pack.createGame };
 
   // ── Authored content into the booted world ──────────────────────────────────
@@ -197,15 +236,33 @@ export function runSidecar(args: string[], deps: SidecarDeps = defaultDeps): num
     // `registeredModuleIds` comes from the ENGINE, not from a catalog: resolution
     // against reality is what kills C0's phantom nine and what lets a pack ship its own
     // module without being wrongly refused.
+    if (!manifest.present) {
+      error('✗ [SIDECAR_MANIFEST_REQUIRED] --content requires --manifest <manifest.json>.');
+      error('  Hint: the four-check load gate cannot verify engine-version, module-ids, or content-hash without the exporter\'s sibling manifest.');
+      return 1;
+    }
+
+    let gateManifest: GateContext['manifest'];
+    try {
+      const parsed: unknown = JSON.parse(fs.readFileSync(manifest.raw!, 'utf-8'));
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        error(`✗ [SIDECAR_MANIFEST_INVALID] "${manifest.raw}" is not a JSON object.`);
+        return 1;
+      }
+      gateManifest = parsed as GateContext['manifest'];
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      error(`✗ [SIDECAR_MANIFEST_INVALID] could not read "${manifest.raw}": ${reason}`);
+      error('  Hint: point --manifest at the manifest.json the exporter wrote next to the content pack.');
+      return 1;
+    }
+
     const applied = applyContentPack(engine, load.pack, {
       channels: createStandardChannels(),
       gate: {
         engineVersion: ENGINE_VERSION,
         registeredModuleIds: engine.moduleManager.getModules().map((m) => m.id),
-        ...(typeof (load.pack as { manifest?: unknown }).manifest === 'object'
-          && (load.pack as { manifest?: unknown }).manifest !== null
-          ? { manifest: (load.pack as { manifest: Record<string, unknown> }).manifest }
-          : {}),
+        manifest: gateManifest,
       },
     });
     if (!applied.ok) {
@@ -229,8 +286,22 @@ export function runSidecar(args: string[], deps: SidecarDeps = defaultDeps): num
     error(`[sidecar] applied ${contentRaw}${counts ? ` (${counts})` : ''}`);
     // Dropped fields are announced, every time, on a transport whose whole purpose is
     // that a renderer can be trusted about what it received.
-    for (const d of applied.dropped) error(`[sidecar] dropped ${d.path}: ${d.reason}`);
+    for (const d of applied.dropped) error(`[sidecar] dropped ${d.path}: ${d.reason} — ${d.detail}`);
     for (const a of applied.advisories) error(`[sidecar] advisory ${a.path}: ${a.message}`);
+
+    // Authored zones merge into the host graph and the two are not connected.
+    // Applying without --start leaves the player in the host opening zone.
+    const authoredZoneIds = (Array.isArray(load.pack.zones) ? load.pack.zones : [])
+      .map((z) => (z && typeof z === 'object' && typeof (z as { id?: unknown }).id === 'string'
+        ? (z as { id: string }).id
+        : null))
+      .filter((id): id is string => id !== null);
+    if ((applied.applied.zones ?? 0) > 0 && !start.present) {
+      error('✗ [SIDECAR_START_REQUIRED] --content applied authored zones but --start was not given.');
+      error(`  Zones: ${authoredZoneIds.join(', ')}`);
+      error('  Hint: pass --start <zone-id> so the player stands in the authored world (the graphs are not connected).');
+      return 1;
+    }
   }
 
   // ── Where the session begins ────────────────────────────────────────────────
@@ -247,20 +318,21 @@ export function runSidecar(args: string[], deps: SidecarDeps = defaultDeps): num
   // player entity's `zoneId` together, which is the bookkeeping a caller writing
   // `locationId` from outside would get half-right (a C3 ledger entry, learned by
   // doing exactly that).
-  if (args.includes('--start')) {
-    if (startRaw === undefined) {
+  if (start.present) {
+    const zoneId = start.raw;
+    if (zoneId === undefined || zoneId === '') {
       error('✗ [SIDECAR_START_MISSING_ZONE] --start requires a zone id.');
       return 1;
     }
     // Checked against the world AFTER intake, so a typo names the zones that exist
     // rather than putting the player nowhere and letting the first move fail.
-    if (engine.world.zones[startRaw] === undefined) {
-      error(`✗ [SIDECAR_START_UNKNOWN_ZONE] no zone "${startRaw}" in the booted world.`);
+    if (engine.world.zones[zoneId] === undefined) {
+      error(`✗ [SIDECAR_START_UNKNOWN_ZONE] no zone "${zoneId}" in the booted world.`);
       error(`  Zones: ${Object.keys(engine.world.zones).sort().join(', ')}`);
       return 1;
     }
-    engine.store.setPlayerLocation(startRaw);
-    error(`[sidecar] player starts in ${startRaw}`);
+    engine.store.setPlayerLocation(zoneId);
+    error(`[sidecar] player starts in ${zoneId}`);
   }
 
   // ── The scenario cue ────────────────────────────────────────────────────────
@@ -288,14 +360,15 @@ export function runSidecar(args: string[], deps: SidecarDeps = defaultDeps): num
   //
   // Format: `<districtId>:<metric>:<delta>@<round>` — e.g. `dockward:stability:-25@2`.
   let cue: { districtId: string; metric: string; delta: number; round: number } | undefined;
-  if (args.includes('--shock')) {
-    if (shockRaw === undefined) {
+  if (shock.present) {
+    const spec = shock.raw;
+    if (spec === undefined || spec === '') {
       error('✗ [SIDECAR_SHOCK_MISSING_SPEC] --shock requires <districtId>:<metric>:<delta>@<round>.');
       return 1;
     }
-    const m = /^([\w-]+):([\w-]+):(-?\d+)@(\d+)$/.exec(shockRaw);
+    const m = /^([\w-]+):([\w-]+):(-?\d+)@(\d+)$/.exec(spec);
     if (!m) {
-      error(`✗ [SIDECAR_SHOCK_MALFORMED] could not parse "${shockRaw}".`);
+      error(`✗ [SIDECAR_SHOCK_MALFORMED] could not parse "${spec}".`);
       error('  Expected <districtId>:<metric>:<delta>@<round>, e.g. dockward:stability:-25@2');
       return 1;
     }
@@ -354,12 +427,12 @@ export function runSidecar(args: string[], deps: SidecarDeps = defaultDeps): num
         onError: (err) => error(`[sidecar] transport error: ${err.message}`),
       },
     );
-    error(`[sidecar] ${pack.meta.id} ready${seed !== undefined ? ` (seed ${seed})` : ''}`);
+    error(`[sidecar] ${pack.meta.id} ready${seedValue !== undefined ? ` (seed ${seedValue})` : ''}`);
     return null; // keep the process alive; the socket drives it
   }
 
   startStdioServer(serverOptions);
 
-  error(`[sidecar] ${pack.meta.id} ready${seed !== undefined ? ` (seed ${seed})` : ''}`);
+  error(`[sidecar] ${pack.meta.id} ready${seedValue !== undefined ? ` (seed ${seedValue})` : ''}`);
   return null; // keep the process alive; stdin drives it
 }

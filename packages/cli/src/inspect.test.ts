@@ -18,7 +18,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { Engine, WorldStore, SaveLoadError, type ResolvedEvent } from '@ai-rpg-engine/core';
+import { Engine, WorldStore, SaveLoadError, type EngineModule, type ResolvedEvent } from '@ai-rpg-engine/core';
 import { renderEventLog } from '@ai-rpg-engine/terminal-ui';
 import {
   runInspectSave,
@@ -30,6 +30,7 @@ import {
 } from './inspect.js';
 import { restoreSessionFromSave } from './bin.js';
 import { allPacks } from './packs.js';
+import type { LoadedPack } from './external-pack.js';
 
 // --- Fixtures ----------------------------------------------------------------
 
@@ -558,5 +559,56 @@ describe('runInspectSave — the load authorities render the verdict', () => {
     const { deps } = makeDeps();
     expect(runInspectSave(undefined, deps)).toBe(0);
     expect(fs.readFileSync(path.join(tmpDir, '.ai-rpg-engine', 'save.json'), 'utf-8')).toBe(saved);
+  });
+
+  // F-816b7ce7: inspect-save used to stop at WorldStore.deserialize, so a
+  // version-drifted module slice whose migrateState throws exited 0 here
+  // and failed Continue. Same drift-mod fixture as bin.test.ts.
+  it('a throwing migrateState rejects inspect-save with SAVE_MODULE_MIGRATION_FAILED', () => {
+    function makeDriftPack(
+      version: string,
+      migrateState?: (slice: unknown, from: string) => unknown,
+    ): LoadedPack {
+      const mod: EngineModule = {
+        id: 'drift-mod',
+        version,
+        register(ctx) {
+          ctx.persistence.registerNamespace('drift-mod', { shape: `authored-at-${version}` });
+        },
+        ...(migrateState ? { migrateState } : {}),
+      };
+      return {
+        meta: { id: 'drift-game', name: 'Drift Game' },
+        createGame: (seed?: number) =>
+          new Engine({
+            manifest: {
+              id: 'drift-game',
+              title: 'Drift Game',
+              version: '0.0.0',
+              engineVersion: '0.1.0',
+              ruleset: 'test',
+              modules: ['drift-mod'],
+              contentPacks: [],
+            },
+            seed: seed ?? 1,
+            modules: [mod],
+          }),
+      };
+    }
+
+    const packV1 = makeDriftPack('1.0.0');
+    const saved = JSON.parse(packV1.createGame(9).serialize()) as unknown;
+    writeSave(JSON.stringify(saved));
+
+    const packV2 = makeDriftPack('2.0.0', () => {
+      throw new Error('cannot read v1 shard layout');
+    });
+
+    const { deps, err } = makeDeps();
+    expect(runInspectSave(undefined, { ...deps, packs: [packV2] })).toBe(1);
+    const text = err.join('\n');
+    expect(text).toContain('Cannot load save [SAVE_MODULE_MIGRATION_FAILED]:');
+    expect(text).toContain('drift-mod');
+    expect(text).toContain('Hint:');
   });
 });

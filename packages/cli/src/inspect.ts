@@ -5,11 +5,11 @@
 // whole command bypassed every SaveLoadError authority the run → Continue
 // path enforces. This module is the fix:
 //
-//   runInspectSave    — validate through WorldStore.deserialize (THE single
-//                       load authority both restoreSessionFromSave and
-//                       Engine.deserialize funnel into), then render a
-//                       bounded summary. Exit-code contract: 0 valid /
-//                       1 structured failure — never a stack.
+//   runInspectSave    — validate through restoreSessionFromSave (the same
+//                       Continue/replay sequence: deserialize, rebind,
+//                       migrateModuleStates, initializeNamespaces), then
+//                       render a bounded summary. Exit-code contract:
+//                       0 valid / 1 structured failure — never a stack.
 //   renderSaveReport  — the pure render (endgame.ts stats-block voice),
 //                       exported so tests can pin it byte-for-byte.
 //
@@ -29,6 +29,8 @@ import { hasWorldTickState, getActivePressures } from '@ai-rpg-engine/modules';
 import { renderEventLog } from '@ai-rpg-engine/terminal-ui';
 import { allPacks } from './packs.js';
 import { derivePlayerLevel } from './menu.js';
+import type { LoadedPack } from './external-pack.js';
+import { restoreSessionFromSave } from './restore-session.js';
 
 /**
  * Default save location, cwd-relative like every other CLI command
@@ -41,6 +43,8 @@ export const DEFAULT_SAVE_FILE = path.join('.ai-rpg-engine', 'save.json');
 export interface InspectDeps {
   log: (msg: string) => void;
   error: (msg: string) => void;
+  /** Pack catalog used to resolve the saved gameId. Defaults to bundled starters. */
+  packs?: readonly LoadedPack[];
 }
 
 const defaultDeps: InspectDeps = {
@@ -297,14 +301,13 @@ export function renderSaveReport(state: WorldState, opts: SaveReportOptions = {}
  * — the bin turns it into the process code (the runValidate/runProfile pattern).
  *
  * Validation is THE restore authority, reused read-only:
- * WorldStore.deserialize — the single load gate `run` → Continue reaches via
- * restoreSessionFromSave (bin.ts) and `replay` reaches via the same call, and
- * Engine.deserialize funnels into (engine.ts: "WorldStore.deserialize is the
- * single load authority"). It runs, in order: the JSON gate, the
- * state/meta-presence gate, the rngState guard, the save-version migration
- * chain (SAVE_VERSION_UNSUPPORTED on newer saves), assertSaveMetaShape, and
- * assertSaveStateShape. Nothing is written — deserialize builds an in-memory
- * store; the save file is only read.
+ * restoreSessionFromSave — the load gate `run` → Continue and `replay` share,
+ * which itself funnels through WorldStore.deserialize (JSON gate, meta
+ * presence, rngState, save-version migration, assertSaveMetaShape,
+ * assertSaveStateShape) and then the ENG-009 module-migration seam
+ * (migrateModuleStates + initializeNamespaces). A throwing migrateState
+ * rejects with SAVE_MODULE_MIGRATION_FAILED, same frame as Continue.
+ * Nothing is written — the save file is only read.
  *
  * When the file itself is not valid JSON, the raw text is handed to that same
  * gate so ITS structured error (code + message + hint) is the verdict —
@@ -355,18 +358,25 @@ export function runInspectSave(savePath?: string, deps: InspectDeps = defaultDep
     ? (envelope as { world?: { state?: { meta?: { gameId?: unknown } } } } | null)?.world?.state
         ?.meta?.gameId
     : undefined;
-  const pack = allPacks.find((p) => p.meta.id === savedGameId) ?? null;
+  const catalog = deps.packs ?? allPacks;
+  const pack = catalog.find((p) => p.meta.id === savedGameId) ?? null;
 
   let store: WorldStore;
   try {
-    // Unparseable file → raw text through the same gate (its JSON error is the
-    // verdict). Parseable envelope → its `world` payload, exactly the string
-    // restoreSessionFromSave builds. A missing/absent `world` stringifies to
-    // undefined and fails the authority's JSON gate — same as the restore path.
-    const worldJson = parsed
-      ? JSON.stringify((envelope as { world?: unknown } | null)?.world)
-      : raw;
-    store = WorldStore.deserialize(worldJson, undefined, pack?.ruleset ?? undefined);
+    if (pack !== null && parsed) {
+      // Same sequence Continue uses: createGame, deserialize, rebind,
+      // migrateModuleStates, initializeNamespaces. Stopping at deserialize
+      // let a version-drifted save exit 0 here and fail Continue.
+      store = restoreSessionFromSave(pack, envelope).engine.store;
+    } else {
+      // Unparseable file → raw text through the same gate (its JSON error is
+      // the verdict). Pack-not-installed → deserialize only; there is no
+      // module list to migrate against.
+      const worldJson = parsed
+        ? JSON.stringify((envelope as { world?: unknown } | null)?.world)
+        : raw;
+      store = WorldStore.deserialize(worldJson, undefined, pack?.ruleset ?? undefined);
+    }
   } catch (e) {
     if (e instanceof SaveLoadError) {
       deps.error(`  Cannot load save [${e.code}]: ${e.message}`);
