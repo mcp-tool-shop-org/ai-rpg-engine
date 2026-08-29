@@ -119,6 +119,7 @@ export function createEnvironmentCore(config?: EnvironmentCoreConfig): EngineMod
       // namespace joins (0 for a fresh world, the full length for a legacy save).
       ctx.persistence.registerNamespace(TYPED_HAZARD_STATE_KEY, (world: WorldState) => ({
         cursor: world.eventLog.length,
+        lastTimedTick: world.meta.tick,
       }));
 
       // Register environment rules
