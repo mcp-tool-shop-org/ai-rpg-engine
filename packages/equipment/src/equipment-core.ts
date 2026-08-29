@@ -6,9 +6,10 @@
 // exported and then dropped at the CLI's PackInfo boundary. This module closes
 // the loop with the audit-recommended smallest-real slice: `equip` / `unequip`
 // verbs that move an item between an entity's inventory and a persisted
-// per-entity Loadout, and mirror the item's statModifiers into a STATUS so the
+// per-entity Loadout, mirror the item's statModifiers into a STATUS so the
 // existing status machinery (effectiveStat's GAS band) carries the numbers into
-// combat formulas and the HUD's Status line — with zero combat-code changes.
+// combat formulas, and apply resourceModifiers onto entity.resources (hp/maxHp
+// at least) so survival and HUD bars move.
 //
 // WHY THIS FILE LIVES IN packages/equipment (and not packages/modules):
 //  - @ai-rpg-engine/modules' dependency surface is deliberately pinned to
@@ -195,6 +196,34 @@ export function buildEquipmentStatusDefinitions(catalog: ItemCatalog): Equipment
 // ---------------------------------------------------------------------------
 // Shared handler helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Apply (sign=+1) or reverse (sign=-1) an item's resourceModifiers on the
+ * wearer (F-823b8574). Status modifiers only carry stats through
+ * effectiveStat; there is no resource channel, so combat survival and HUD
+ * bars read entity.resources directly.
+ *
+ * When the item authors `hp` but not `maxHp`, the same delta is mirrored
+ * onto maxHp so +hp armor expands the pool rather than overflowing a stale
+ * cap. hp is then clamped to [0, maxHp] when a cap is present.
+ */
+function applyResourceCarry(actor: EntityState, item: ItemDefinition | undefined, sign: 1 | -1): void {
+  const mods = item?.resourceModifiers;
+  if (!mods) return;
+  const resources = actor.resources;
+  for (const [res, amount] of Object.entries(mods)) {
+    if (!Number.isFinite(amount)) continue;
+    resources[res] = (resources[res] ?? 0) + sign * amount;
+  }
+  if (mods.hp !== undefined && mods.maxHp === undefined && Number.isFinite(mods.hp)) {
+    if (resources.maxHp !== undefined) {
+      resources.maxHp += sign * mods.hp;
+    }
+  }
+  if (resources.maxHp !== undefined && resources.hp !== undefined) {
+    resources.hp = Math.max(0, Math.min(resources.maxHp, resources.hp));
+  }
+}
 
 /** Empty-id event; WorldStore.recordEvent stamps the deterministic id. */
 function makeEvent(
@@ -397,8 +426,9 @@ function equipHandler(
   // loadout/inventory/equipment mutated behind a rejected action.
 
   // Swap: retire the displaced item's status first so the log reads in order.
+  let displaced: ItemDefinition | undefined;
   if (displacedId && displacedId !== item.id) {
-    const displaced = findItem(catalog, displacedId);
+    displaced = findItem(catalog, displacedId);
     const removed = statuses.remove(actor, equipStatusId(displacedId), tick);
     if (removed) {
       removed.payload.description = `Unequipped: ${displaced?.name ?? displacedId}.`;
@@ -424,6 +454,10 @@ function equipHandler(
   events.push(applied);
 
   // Both status ops succeeded — commit the loadout now, last, not first.
+  // Resource carry mutates entity.resources in the same commit window so a
+  // throw above cannot leave hp/maxHp changed behind action.rejected.
+  if (displaced) applyResourceCarry(actor, displaced, -1);
+  applyResourceCarry(actor, item, 1);
   commitLoadout(world, state, actor, result.loadout);
 
   // Objective record for consumers/tests (terminal-ui renders unknown types
@@ -529,6 +563,7 @@ function unequipHandler(
   }
 
   // Status removal succeeded — commit the loadout now, last, not first.
+  applyResourceCarry(actor, item, -1);
   commitLoadout(world, state, actor, next);
 
   events.push(
@@ -572,12 +607,15 @@ export type EquipmentCoreConfig = {
  *   modifiers mirror the item's statModifiers; modules' effectiveStat
  *   aggregates them into every combat formula read. Definitions re-register on
  *   every construction, so save/load restores the numbers.
+ * - Resource carry: item.resourceModifiers are applied to entity.resources on
+ *   equip and reversed on unequip (hp is mirrored onto maxHp when the item
+ *   does not author maxHp itself) so combat survival and HUD bars move.
  * - Slot semantics: this package's own equipItem/unequipItem — occupied slot
  *   swaps the displaced item back to inventory; requiredTags gate rejects with
  *   the package's own error strings.
  *
  * Non-goals of this slice (reported in item.equipped payloads, not applied):
- * grantedTags, grantedVerbs, and resourceModifiers.
+ * grantedTags, grantedVerbs.
  */
 export function createEquipmentCore(config: EquipmentCoreConfig): EngineModule {
   return {

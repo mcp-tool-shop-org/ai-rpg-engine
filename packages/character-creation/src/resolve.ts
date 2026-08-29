@@ -96,5 +96,8 @@ export function resolveEntity(
     statuses: [],
     inventory,
     custom,
+    ...(Object.keys(result.resolvedRelations).length > 0
+      ? { relations: { ...result.resolvedRelations } }
+      : {}),
   };
 }
