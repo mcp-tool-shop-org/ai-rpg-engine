@@ -18,6 +18,15 @@ export function sanitize(s: string): string {
   return s.replace(/[():\[\]\\<>{}|]/g, '');
 }
 
+/**
+ * Style string that actually reaches the provider (F-5cafb6fc).
+ * Empty-string style is a real override (chargen empty form field), not a
+ * missing value — `??` only falls through for omitted/undefined style.
+ */
+export function resolvedPortraitStyle(request: PortraitRequest): string {
+  return sanitize(request.style ?? getStylePreset(request.genre).style);
+}
+
 /** Build a portrait generation prompt from character data. */
 export function buildPortraitPrompt(request: PortraitRequest): string {
   const parts: string[] = [];
@@ -54,9 +63,8 @@ export function buildPortraitPrompt(request: PortraitRequest): string {
   // stripping (v2.6 audit F-ece77541). This is a no-op for every built-in
   // STYLE_PRESETS value (none contain the stripped characters); it only bites
   // a crafted override trying to smuggle prompt-control syntax through.
-  const preset = getStylePreset(request.genre);
-  const style = sanitize(request.style ?? preset.style);
-  parts.push(style);
+  // Identity keys this same resolved string (F-5cafb6fc).
+  parts.push(resolvedPortraitStyle(request));
 
   return parts.join(', ');
 }

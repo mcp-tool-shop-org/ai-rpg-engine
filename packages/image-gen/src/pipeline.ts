@@ -2,7 +2,7 @@
 
 import type { AssetStore, AssetMetadata } from '@ai-rpg-engine/asset-registry';
 import type { PortraitRequest, ImageProvider, GenerationOptions, GenerationFailure } from './types.js';
-import { buildPromptPair, buildNegativePrompt, sanitize } from './prompt-builder.js';
+import { buildPromptPair, buildNegativePrompt, sanitize, resolvedPortraitStyle } from './prompt-builder.js';
 import { PlaceholderProvider } from './placeholder-provider.js';
 
 /**
@@ -160,14 +160,16 @@ function resolveGeneration(
 
 /**
  * Delimiter-safe portrait identity tag (F-525d6bb6, F-930e6b5b, F-e9ea394a,
- * F-a623fcff). JSON-encodes every prompt-affecting field plus every generation
- * field that reaches the provider (width/height/seed/steps/cfgScale/
+ * F-a623fcff, F-5cafb6fc). JSON-encodes every prompt-affecting field plus every
+ * generation field that reaches the provider (width/height/seed/steps/cfgScale/
  * negativePrompt) so `Alice::Mage` + `Wizard` cannot collide with `Alice` +
  * `Mage::Wizard`, Queen vs Beggar cannot share a hash, and steps:20 vs
  * steps:50 cannot return the other render. Name/title/discipline/background/
  * traits/style go through the same sanitize() as the generation prompt, so
  * `Alice` and `Alice:` (or `Alice()`) share one identity key matching the
- * bytes that actually land in the provider.
+ * bytes that actually land in the provider. Style is the resolved provider
+ * string (omitted falls through to the genre preset; empty-string is a real
+ * override), so chargen `style:''` cannot reuse the preset-painted bytes.
  */
 export function portraitIdentityTag(
   request: PortraitRequest,
@@ -182,7 +184,7 @@ export function portraitIdentityTag(
     request.disciplineName ? sanitize(request.disciplineName) : '',
     sanitize(request.backgroundName),
     request.traits.map(sanitize),
-    sanitize(request.style ?? ''),
+    resolvedPortraitStyle(request),
     g.width,
     g.height,
     g.seed ?? null,

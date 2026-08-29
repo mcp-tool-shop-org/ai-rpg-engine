@@ -499,7 +499,7 @@ describe('portrait identity tracks sanitized prompt fields (F-930e6b5b)', () => 
 
     expect(portraitIdentityTag(alice)).toBe(portraitIdentityTag(aliceColon));
     expect(portraitIdentityTag(alice)).toBe(
-      'char:["Alice","Penitent Knight","fantasy","","","Oath-Breaker",["Iron Frame","Cursed Blood"],"",512,512,null,20,7,"modern clothing, technology, cartoon, anime, blurry, deformed"]',
+      'char:["Alice","Penitent Knight","fantasy","","","Oath-Breaker",["Iron Frame","Cursed Blood"],"dark fantasy oil painting, dramatic lighting, detailed armor and cloth textures, medieval setting",512,512,null,20,7,"modern clothing, technology, cartoon, anime, blurry, deformed"]',
     );
 
     const first = await generatePortrait(alice, provider, store);
@@ -728,7 +728,7 @@ describe('portrait identity includes every generation field that reaches the pro
     expect(portraitIdentityTag(base, { negativePrompt: fantasyNegative })).toBe(portraitIdentityTag(base));
     expect(portraitIdentityTag(base, { negativePrompt: 'blurry' })).not.toBe(portraitIdentityTag(base));
     expect(portraitIdentityTag(base)).toBe(
-      `char:["Alice","Penitent Knight","fantasy","","","Oath-Breaker",["Iron Frame","Cursed Blood"],"",512,512,null,20,7,${JSON.stringify(fantasyNegative)}]`,
+      `char:["Alice","Penitent Knight","fantasy","","","Oath-Breaker",["Iron Frame","Cursed Blood"],"dark fantasy oil painting, dramatic lighting, detailed armor and cloth textures, medieval setting",512,512,null,20,7,${JSON.stringify(fantasyNegative)}]`,
     );
   });
 
@@ -813,6 +813,96 @@ describe('portrait identity includes every generation field that reaches the pro
     const queenMeta = await ensurePortrait(queen, provider, store, gen);
     const beggarMeta = await ensurePortrait(beggar, provider, store, gen);
     expect(queenMeta.hash).not.toBe(beggarMeta.hash);
+    expect(getCalls()).toBe(2);
+    expect(await store.count()).toBe(2);
+  });
+});
+
+// F-5cafb6fc: identity keyed sanitize(request.style ?? '') while the provider
+// prompt interpolates sanitize(request.style ?? getStylePreset(genre).style).
+// Omitted style therefore painted the genre preset into the prompt while
+// empty-string style (chargen empty form field) and sanitize-to-empty '()'
+// keyed the same identity with a different prompt. Key identity off the same
+// resolved style that actually reaches the provider.
+describe('portrait identity keys the resolved style that reaches the provider (F-5cafb6fc)', () => {
+  const fantasyStyle = 'dark fantasy oil painting, dramatic lighting, detailed armor and cloth textures, medieval setting';
+
+  function countingProvider() {
+    let calls = 0;
+    const provider: ImageProvider = {
+      name: 'comfyui',
+      async isAvailable() { return true; },
+      async generate(prompt: string, opts?: GenerationOptions): Promise<GenerationOutcome> {
+        calls += 1;
+        return {
+          ok: true,
+          image: new TextEncoder().encode(`png-bytes-for:${prompt}`),
+          mimeType: 'image/png',
+          width: opts?.width ?? 512,
+          height: opts?.height ?? 512,
+          prompt,
+          durationMs: 1,
+        };
+      },
+    };
+    return { provider, getCalls: () => calls };
+  }
+
+  it('ensurePortrait(style omitted) vs ensurePortrait({style:\'\'}) are two hashes and two provider calls', async () => {
+    const store = new MemoryAssetStore();
+    const { provider, getCalls } = countingProvider();
+    const omitted: PortraitRequest = {
+      ...testRequest,
+      characterName: 'Alice',
+      archetypeName: 'Mage',
+      genre: 'fantasy',
+    };
+    const empty: PortraitRequest = { ...omitted, style: '' };
+
+    expect(portraitIdentityTag(omitted)).not.toBe(portraitIdentityTag(empty));
+
+    const omittedMeta = await ensurePortrait(omitted, provider, store);
+    const emptyMeta = await ensurePortrait(empty, provider, store);
+
+    expect(emptyMeta.hash).not.toBe(omittedMeta.hash);
+    expect(getCalls()).toBe(2);
+    expect(await store.count()).toBe(2);
+    expect(omittedMeta.source).toContain('dark fantasy oil painting');
+    expect(emptyMeta.source).not.toContain('dark fantasy oil painting');
+  });
+
+  it("style:'()' shares identity and prompt with empty-string style", async () => {
+    const store = new MemoryAssetStore();
+    const { provider, getCalls } = countingProvider();
+    const empty: PortraitRequest = { ...testRequest, characterName: 'Alice', style: '' };
+    const parens: PortraitRequest = { ...testRequest, characterName: 'Alice', style: '()' };
+
+    expect(portraitIdentityTag(empty)).toBe(portraitIdentityTag(parens));
+
+    const first = await ensurePortrait(empty, provider, store);
+    const before = getCalls();
+    const second = await ensurePortrait(parens, provider, store);
+    expect(second.hash).toBe(first.hash);
+    expect(getCalls()).toBe(before);
+    expect(await store.count()).toBe(1);
+    expect(first.source).not.toContain('dark fantasy oil painting');
+  });
+
+  it('explicit style equal to the genre preset shares identity with omitted style', () => {
+    const omitted: PortraitRequest = { ...testRequest, characterName: 'Alice' };
+    const explicit: PortraitRequest = { ...testRequest, characterName: 'Alice', style: fantasyStyle };
+    expect(portraitIdentityTag(omitted)).toBe(portraitIdentityTag(explicit));
+  });
+
+  it('generatePortrait of omitted vs empty style produces two hashes', async () => {
+    const store = new MemoryAssetStore();
+    const { provider, getCalls } = countingProvider();
+    const omitted: PortraitRequest = { ...testRequest, characterName: 'Alice' };
+    const empty: PortraitRequest = { ...omitted, style: '' };
+
+    const first = await generatePortrait(omitted, provider, store);
+    const second = await generatePortrait(empty, provider, store);
+    expect(second.hash).not.toBe(first.hash);
     expect(getCalls()).toBe(2);
     expect(await store.count()).toBe(2);
   });
