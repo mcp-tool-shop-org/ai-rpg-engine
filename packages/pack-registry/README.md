@@ -29,13 +29,13 @@ The pack registry is a runtime catalog of starter packs. Register packs, browse 
 
 ```typescript
 import { registerPack, getAllPacks, filterPacks, getPackSummaries } from '@ai-rpg-engine/pack-registry';
-import { content, createGame, packMeta } from '@ai-rpg-engine/starter-fantasy';
+import { createGame, packMeta, manifest, fantasyMinimalRuleset } from '@ai-rpg-engine/starter-fantasy';
 
 // Register a pack
 registerPack({
   meta: packMeta,
-  manifest: content.manifest,
-  ruleset: content.ruleset,
+  manifest,
+  ruleset: fantasyMinimalRuleset,
   createGame,
 });
 

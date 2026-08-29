@@ -119,6 +119,16 @@ describe('loadContentFromFile', () => {
     expect(r.errors.some((e) => e.message.includes('"torch"'))).toBe(true);
   });
 
+  it('reports abilities:[null] as a structured error, never a TypeError', () => {
+    const file = writePack('null-ability.json', JSON.stringify({ abilities: [null] }));
+    let r!: ReturnType<typeof loadContentFromFile>;
+    expect(() => {
+      r = loadContentFromFile(file);
+    }).not.toThrow();
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('abilities'))).toBe(true);
+  });
+
   it('is deterministic — same file yields byte-identical result twice', () => {
     const pack = {
       entities: [{ id: 'p', type: 'player', name: 'P' }],

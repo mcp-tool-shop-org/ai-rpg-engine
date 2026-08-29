@@ -170,4 +170,52 @@ describe('loadContent', () => {
     expect(r.ok).toBe(false);
     expect(r.errors.some((e) => e.path.includes('zones'))).toBe(true);
   });
+
+  // F-b6ded9eb: abilities/statuses/verbs were unwalked, so a null element
+  // survived loadContent as ok:true then TypeError'd in validateGameContent.
+  it('does not throw on a null element in abilities — reports it structurally', () => {
+    let r!: ReturnType<typeof loadContent>;
+    expect(() => {
+      r = loadContent({ abilities: [null] } as any);
+    }).not.toThrow();
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('abilities'))).toBe(true);
+  });
+
+  it('does not throw on a null element in statuses — reports it structurally', () => {
+    let r!: ReturnType<typeof loadContent>;
+    expect(() => {
+      r = loadContent({ statuses: [null] } as any);
+    }).not.toThrow();
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('statuses'))).toBe(true);
+  });
+
+  it('does not throw on a null element in verbs — reports it structurally', () => {
+    let r!: ReturnType<typeof loadContent>;
+    expect(() => {
+      r = loadContent({ verbs: [null] } as any);
+    }).not.toThrow();
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('verbs'))).toBe(true);
+  });
+
+  // F-6fbd6e71: districts were an unvalidated collection; a null element or a
+  // record missing id/name/zoneIds/tags must fail structurally, not green.
+  it('does not throw on a null element in districts — reports it structurally', () => {
+    let r!: ReturnType<typeof loadContent>;
+    expect(() => {
+      r = loadContent({ districts: [null] } as any);
+    }).not.toThrow();
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('districts'))).toBe(true);
+  });
+
+  it('rejects a district missing zoneIds', () => {
+    const r = loadContent({
+      districts: [{ id: 'd', name: 'D', tags: [] } as any],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('zoneIds'))).toBe(true);
+  });
 });

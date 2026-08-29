@@ -1,6 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import { validateRefs, validateGameContent } from './refs.js';
 import type { ContentPack } from './refs.js';
+import * as fantasy from '../../starter-fantasy/src/content.js';
+import * as cyberpunk from '../../starter-cyberpunk/src/content.js';
+import * as detective from '../../starter-detective/src/content.js';
+import * as pirate from '../../starter-pirate/src/content.js';
+import * as zombie from '../../starter-zombie/src/content.js';
+import * as weirdWest from '../../starter-weird-west/src/content.js';
+import * as colony from '../../starter-colony/src/content.js';
+import * as vampire from '../../starter-vampire/src/content.js';
+import * as gladiator from '../../starter-gladiator/src/content.js';
+import * as ronin from '../../starter-ronin/src/content.js';
+import * as merchant from '../../starter-merchant/src/content.js';
+import * as bountyHunter from '../../starter-bounty-hunter/src/content.js';
 
 describe('validateRefs', () => {
   const validPack: ContentPack = {
@@ -528,6 +540,18 @@ describe('validateGameContent', () => {
     expect(() => validateRefs({ dialogues: [null], quests: [null] } as any)).not.toThrow();
   });
 
+  // F-b6ded9eb: validateGameContent built registries with `.map((s) => s.id)`
+  // on abilities/statuses/verbs. A null element TypeError'd. Filter isRecord
+  // (and optional-chain .id) the same way validateRefs and pack.items already do.
+  it('does not throw on abilities:[null] / statuses:[null] / verbs:[null]', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(() => validateGameContent({ abilities: [null] } as any)).not.toThrow();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(() => validateGameContent({ statuses: [null] } as any)).not.toThrow();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(() => validateGameContent({ verbs: [null] } as any)).not.toThrow();
+  });
+
   it('derives the item registry from pack.items when no explicit itemIds are supplied', () => {
     const r = validateGameContent({
       items: [{ id: 'chapel-lantern' }],
@@ -622,5 +646,65 @@ describe('validateRefs hazardRefs', () => {
       hazardDefinitions: [{ id: 'hazard-void-drop', effects: [], trigger: 'enter' }],
     });
     expect(r.ok).toBe(true);
+  });
+});
+
+describe('validateRefs districts', () => {
+  it('errors when a district zoneId names no pack.zones id', () => {
+    const r = validateRefs({
+      zones: [{ id: 'town', name: 'Town' }],
+      districts: [{ id: 'd1', name: 'D', zoneIds: ['ghost'], tags: [] }],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('ghost') && e.path.includes('district'))).toBe(true);
+  });
+
+  it('errors when two districts claim the same zone (last-wins at intake)', () => {
+    const r = validateRefs({
+      zones: [{ id: 'town', name: 'Town' }],
+      districts: [
+        { id: 'alpha', name: 'Alpha', zoneIds: ['town'], tags: [] },
+        { id: 'beta', name: 'Beta', zoneIds: ['town'], tags: [] },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    expect(
+      r.errors.some(
+        (e) => e.message.includes('town') && e.message.includes('already claimed'),
+      ),
+    ).toBe(true);
+  });
+
+  it('a resolving district zoneId is green (control)', () => {
+    const r = validateRefs({
+      zones: [{ id: 'town', name: 'Town' }],
+      districts: [{ id: 'd1', name: 'D', zoneIds: ['town'], tags: [] }],
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it("the 12 starters' district zoneIds resolve", () => {
+    const starters: Array<{ name: string; zones: { id: string; name?: string }[]; districts: ContentPack['districts'] }> = [
+      { name: 'fantasy', zones: fantasy.zones, districts: fantasy.districts },
+      { name: 'cyberpunk', zones: cyberpunk.zones, districts: cyberpunk.districts },
+      { name: 'detective', zones: detective.zones, districts: detective.districts },
+      { name: 'pirate', zones: pirate.zones, districts: pirate.districts },
+      { name: 'zombie', zones: zombie.zones, districts: zombie.districts },
+      { name: 'weird-west', zones: weirdWest.zones, districts: weirdWest.districts },
+      { name: 'colony', zones: colony.zones, districts: colony.districts },
+      { name: 'vampire', zones: vampire.zones, districts: vampire.districts },
+      { name: 'gladiator', zones: gladiator.zones, districts: gladiator.districts },
+      { name: 'ronin', zones: ronin.zones, districts: ronin.districts },
+      { name: 'merchant', zones: merchant.zones, districts: merchant.districts },
+      { name: 'hue-and-cry', zones: bountyHunter.zones, districts: bountyHunter.districts },
+    ];
+    expect(starters).toHaveLength(12);
+    for (const pack of starters) {
+      const r = validateRefs({
+        zones: pack.zones.map((z) => ({ id: z.id, name: z.name ?? z.id })),
+        districts: pack.districts,
+      });
+      expect(r.ok, pack.name).toBe(true);
+    }
   });
 });

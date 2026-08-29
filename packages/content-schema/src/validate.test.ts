@@ -13,8 +13,12 @@ import {
   validateProgressionTreeDefinition,
   validateSoundCueDefinition,
   validateEncounterAnchorRecord,
+  validateDistrictDefinition,
   formatErrors,
 } from './validate.js';
+import { fantasyQuests } from '../../starter-fantasy/src/content.js';
+import { merchantQuests } from '../../starter-merchant/src/content.js';
+import { bountyHunterQuests } from '../../starter-bounty-hunter/src/content.js';
 
 describe('validateEntityBlueprint', () => {
   it('accepts valid minimal blueprint', () => {
@@ -242,6 +246,71 @@ describe('validateQuestDefinition', () => {
     });
     expect(r.ok).toBe(false);
     expect(r.errors.some((e) => e.path.includes('stages[0]') && e.message.includes('wallpaper'))).toBe(true);
+  });
+
+  // F-640e9025: nextStage/failStage were optStr only. `nextStage: 'later'` with
+  // no such stage passed the wallpaper gate (a string is present) and left
+  // quest-core unable to hop. Sibling of dialogue nextNodeId in this file.
+  it('errors when nextStage names a stage that does not exist', () => {
+    const r = validateQuestDefinition({
+      id: 'rescue',
+      name: 'Rescue the Prisoner',
+      stages: [
+        { id: 'find', name: 'Find the key', nextStage: 'does-not-exist' },
+        { id: 'unlock', name: 'Unlock the cell' },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    expect(
+      r.errors.some(
+        (e) => e.path.includes('nextStage') && e.message.includes('does-not-exist'),
+      ),
+    ).toBe(true);
+  });
+
+  it('errors when failStage names a stage that does not exist', () => {
+    const r = validateQuestDefinition({
+      id: 'rescue',
+      name: 'Rescue the Prisoner',
+      stages: [{ id: 'find', name: 'Find the key', failStage: 'does-not-exist' }],
+    });
+    expect(r.ok).toBe(false);
+    expect(
+      r.errors.some(
+        (e) => e.path.includes('failStage') && e.message.includes('does-not-exist'),
+      ),
+    ).toBe(true);
+  });
+
+  it('fantasy/merchant/Hue-and-Cry quest hops resolve (control)', () => {
+    for (const quest of [...fantasyQuests, ...merchantQuests, ...bountyHunterQuests]) {
+      const r = validateQuestDefinition(quest);
+      expect(r.ok, quest.id).toBe(true);
+    }
+  });
+});
+
+describe('validateDistrictDefinition', () => {
+  it('accepts a district with id/name/zoneIds/tags', () => {
+    const r = validateDistrictDefinition({
+      id: 'chapel-grounds',
+      name: 'Chapel Grounds',
+      zoneIds: ['chapel-nave'],
+      tags: ['sacred'],
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects a null district', () => {
+    const r = validateDistrictDefinition(null);
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('object'))).toBe(true);
+  });
+
+  it('rejects a district missing zoneIds', () => {
+    const r = validateDistrictDefinition({ id: 'd', name: 'D', tags: [] });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('zoneIds'))).toBe(true);
   });
 });
 
