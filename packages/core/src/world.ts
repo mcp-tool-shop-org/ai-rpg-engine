@@ -518,19 +518,21 @@ export class WorldStore {
   // --- Event operations ---
 
   recordEvent(event: ResolvedEvent): ResolvedEvent {
-    // Single choke point for event-id assignment. Events arriving without an id
-    // (the makeEvent path stamps id: '') get a deterministic id from this
-    // world's per-instance counter. This is what keeps event ids byte-identical
-    // across two engines with the same seed + action sequence.
-    if (!event.id) event.id = this.genId('evt');
-    // The log aliases this object on purpose: combat/defeat/engagement
-    // narration patch description + presentation on the same reference
-    // during emit. Presentation filters clone per channel in `present()`
-    // (F-4bcdd095). Cloning here (or in EventBus.emit) made those patches
-    // write a throwaway and left every shipped narrator line undefined.
-    this.state.eventLog.push(event);
-    this.events.emit(event, this.state);
-    return event;
+    // Frozen/sealed/non-extensible handler (or effect) events still have a
+    // valid type, so isEventObject admits them; then `event.id =` TypeError
+    // ("object is not extensible") aborted the tick declared-only
+    // (F-208d62e4). Copy to a plain object before stamping; never mutate the
+    // caller's frozen value. Extensible events still alias the log:
+    // combat/defeat/engagement narration patch description + presentation on
+    // the same reference during emit. Presentation filters clone per channel
+    // in `present()` (F-4bcdd095). Cloning extensible events here (or in
+    // EventBus.emit) made those patches write a throwaway and left every
+    // shipped narrator line undefined.
+    const recorded: ResolvedEvent = Object.isExtensible(event) ? event : { ...event };
+    if (!recorded.id) recorded.id = this.genId('evt');
+    this.state.eventLog.push(recorded);
+    this.events.emit(recorded, this.state);
+    return recorded;
   }
 
   /** Create and record an event */

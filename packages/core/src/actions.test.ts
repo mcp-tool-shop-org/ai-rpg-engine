@@ -11,7 +11,8 @@
 // still threw TypeError outside try/catch (event.id / result.valid), aborting
 // the tick with a declared-only eventLog. Wave 11 sibling: a non-null object
 // with no string type (`[{ payload: {} }]`) still reached EventBus.emit
-// type.indexOf and aborted the same way.
+// type.indexOf and aborted the same way. Wave 13 sibling: a frozen event with
+// a valid type still TypeError'd on `event.id =` (object is not extensible).
 //
 // F-b71bccf1: registerVerb was Map.set last-wins. Two modules registering the
 // same verb constructed successfully and the first handler was silently
@@ -362,6 +363,73 @@ describe('F-208d62e4 — non-object array elements and validator returns are iso
     expect(failed).toBeDefined();
     expect(String(failed!.payload.reason)).toContain('index 0');
     expect(String(failed!.payload.reason).toLowerCase()).toMatch(/type/);
+
+    expect(engine.tick).toBe(1);
+    expect(engine.getActionLog()).toHaveLength(1);
+  });
+});
+
+// Wave 13 sibling: a frozen/sealed/non-extensible event with a valid type
+// still passes isEventObject, then recordEvent's `event.id =` TypeError-aborts
+// the tick declared-only. Copy at the choke point; do not reject.
+describe('F-208d62e4 — frozen handler/effect events are copied, not mutated', () => {
+  it("handler returning [Object.freeze({ type: 'test.ok', payload: {} })] records a stamped copy, advances the tick, and does not throw", () => {
+    const frozen = Object.freeze({ type: 'test.ok', payload: {} });
+    const engine = new Engine({
+      manifest: { ...testManifest, modules: ['ok'] },
+      seed: 1,
+      modules: [moduleWithVerb('ok', 'wave', () => [frozen])],
+    });
+    withPlayer(engine);
+
+    expect(() => engine.submitAction('wave')).not.toThrow();
+
+    const types = engine.world.eventLog.map((e) => e.type);
+    expect(types).toContain('action.declared');
+    expect(types).toContain('test.ok');
+    expect(types).toContain('action.resolved');
+    expect(types).not.toContain('action.rejected');
+
+    const logged = engine.world.eventLog.find((e) => e.type === 'test.ok');
+    expect(logged).toBeDefined();
+    expect(logged).not.toBe(frozen);
+    expect(typeof logged!.id).toBe('string');
+    expect(logged!.id.length).toBeGreaterThan(0);
+    expect(Object.isExtensible(logged!)).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(frozen, 'id')).toBe(false);
+
+    expect(engine.tick).toBe(1);
+    expect(engine.getActionLog()).toHaveLength(1);
+  });
+
+  it('effect applier returning a frozen event records a stamped copy, still resolves, advances the tick', () => {
+    const frozen = Object.freeze({ type: 'test.effect.ok', payload: {} });
+    const engine = new Engine({
+      manifest: { ...testManifest, modules: ['ok'] },
+      seed: 1,
+      modules: [
+        moduleWithVerb('ok', 'wave', (action: ActionIntent) => [
+          { id: '', tick: action.issuedAtTick, type: 'test.waved', actorId: action.actorId, payload: {} },
+        ]),
+      ],
+    });
+    withPlayer(engine);
+    engine.dispatcher.registerEffectApplier(() => [frozen] as unknown as ResolvedEvent[]);
+
+    expect(() => engine.submitAction('wave')).not.toThrow();
+
+    const types = engine.world.eventLog.map((e) => e.type);
+    expect(types).toContain('action.declared');
+    expect(types).toContain('test.waved');
+    expect(types).toContain('test.effect.ok');
+    expect(types).toContain('action.resolved');
+    expect(types).not.toContain('rule.effect.failed');
+
+    const logged = engine.world.eventLog.find((e) => e.type === 'test.effect.ok');
+    expect(logged).toBeDefined();
+    expect(logged).not.toBe(frozen);
+    expect(typeof logged!.id).toBe('string');
+    expect(logged!.id.length).toBeGreaterThan(0);
 
     expect(engine.tick).toBe(1);
     expect(engine.getActionLog()).toHaveLength(1);

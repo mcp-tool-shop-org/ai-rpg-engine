@@ -10,7 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { WorldStore } from './world.js';
-import type { EntityState, GameManifest, ZoneState } from './types.js';
+import type { EntityState, GameManifest, ResolvedEvent, ZoneState } from './types.js';
 
 const manifest: GameManifest = {
   id: 'ingest-game',
@@ -147,6 +147,78 @@ describe('WorldStore.recordEvent aliases the event at ingestion (narration seam)
     const logged = store.state.eventLog.find((e) => e.type === 'secret.revealed');
     expect(logged).toBeDefined();
     expect(logged!.payload.secret).toBe('narrated');
+  });
+});
+
+// F-208d62e4 sibling: a frozen/sealed/non-extensible event with a valid type
+// still TypeError'd on `event.id =` ("object is not extensible"). Copy to a
+// plain object at ingestion; do not mutate the caller's value. Extensible
+// events still alias (block above).
+describe('WorldStore.recordEvent copies frozen/non-extensible events (F-208d62e4)', () => {
+  it('Object.freeze event is copied, stamped, and does not throw', () => {
+    const store = makeStore();
+    const frozen = Object.freeze({ type: 'test.ok', payload: {} });
+    let recorded: ResolvedEvent | undefined;
+    expect(() => {
+      recorded = store.recordEvent(frozen as unknown as ResolvedEvent);
+    }).not.toThrow();
+
+    expect(recorded).toBeDefined();
+    expect(recorded).not.toBe(frozen);
+    expect(recorded!.type).toBe('test.ok');
+    expect(typeof recorded!.id).toBe('string');
+    expect(recorded!.id.length).toBeGreaterThan(0);
+    expect(Object.isExtensible(recorded!)).toBe(true);
+    expect(store.state.eventLog[store.state.eventLog.length - 1]).toBe(recorded);
+    expect(Object.prototype.hasOwnProperty.call(frozen, 'id')).toBe(false);
+  });
+
+  it('Object.seal event without id is copied rather than TypeError', () => {
+    const store = makeStore();
+    const sealed = Object.seal({ type: 'test.sealed', payload: {} });
+    let recorded: ResolvedEvent | undefined;
+    expect(() => {
+      recorded = store.recordEvent(sealed as unknown as ResolvedEvent);
+    }).not.toThrow();
+
+    expect(recorded).not.toBe(sealed);
+    expect(recorded!.id.length).toBeGreaterThan(0);
+    expect(Object.prototype.hasOwnProperty.call(sealed, 'id')).toBe(false);
+  });
+
+  it('Object.preventExtensions event without id is copied rather than TypeError', () => {
+    const store = makeStore();
+    const locked = Object.preventExtensions({ type: 'test.locked', payload: {} });
+    let recorded: ResolvedEvent | undefined;
+    expect(() => {
+      recorded = store.recordEvent(locked as unknown as ResolvedEvent);
+    }).not.toThrow();
+
+    expect(recorded).not.toBe(locked);
+    expect(recorded!.id.length).toBeGreaterThan(0);
+    expect(Object.prototype.hasOwnProperty.call(locked, 'id')).toBe(false);
+  });
+
+  it('an EventBus listener can enrich the logged copy of a frozen event', () => {
+    const store = makeStore();
+    store.events.onAny((event) => {
+      event.payload.secret = 'narrated';
+    });
+    const frozen = Object.freeze({
+      id: '',
+      tick: 0,
+      type: 'secret.revealed',
+      payload: { secret: 'the-truth' },
+    });
+
+    expect(() => store.recordEvent(frozen as unknown as ResolvedEvent)).not.toThrow();
+
+    const logged = store.state.eventLog.find((e) => e.type === 'secret.revealed');
+    expect(logged).toBeDefined();
+    expect(logged).not.toBe(frozen);
+    expect(logged!.payload.secret).toBe('narrated');
+    expect(logged!.id.length).toBeGreaterThan(0);
+    expect(frozen.id).toBe('');
   });
 });
 
