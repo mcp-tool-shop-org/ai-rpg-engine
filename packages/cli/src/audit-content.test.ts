@@ -111,6 +111,85 @@ describe('runAuditContent', () => {
     expect((out.text() + errOut.text())).toContain('entities[0]');
   });
 
+  // F-b8479808: null collection elements must be path'd structured errors,
+  // never a TypeError from buildSyntheticWorld / analyzeEncounter, and never
+  // a ✓ line followed by a raw stack.
+  it('exits 1 with ✗ districts[0] when districts contains a null element — no TypeError', () => {
+    const file = writeFile('null-district.json', {
+      entities: [{ id: 'hero', tags: ['player'] }],
+      districts: [null],
+    });
+    const out = capture();
+    const errOut = capture();
+    let code = 0;
+    expect(() => {
+      code = runAuditContent([file], { log: out.log, error: errOut.log });
+    }).not.toThrow();
+    expect(code).toBe(1);
+    expect(errOut.text()).toContain('✗ districts[0]');
+    expect(out.text() + errOut.text()).not.toMatch(/TypeError/);
+    expect(out.text()).not.toContain('✓ Content-audit loaded');
+  });
+
+  it('exits 1 with ✗ encounters[0] when encounters contains a null element — no TypeError', () => {
+    const file = writeFile('null-encounter.json', {
+      entities: [{ id: 'hero', tags: ['player'] }],
+      encounters: [null],
+    });
+    const out = capture();
+    const errOut = capture();
+    let code = 0;
+    expect(() => {
+      code = runAuditContent([file], { log: out.log, error: errOut.log });
+    }).not.toThrow();
+    expect(code).toBe(1);
+    expect(errOut.text()).toContain('✗ encounters[0]');
+    expect(out.text() + errOut.text()).not.toMatch(/TypeError/);
+    expect(out.text()).not.toContain('✓ Content-audit loaded');
+  });
+
+  it('exits 1 with ✗ bossDefinitions[0] when bossDefinitions contains a null element', () => {
+    const file = writeFile('null-boss.json', {
+      entities: [{ id: 'hero', tags: ['player'] }],
+      bossDefinitions: [null],
+    });
+    const out = capture();
+    const errOut = capture();
+    const code = runAuditContent([file], { log: out.log, error: errOut.log });
+    expect(code).toBe(1);
+    expect(errOut.text()).toContain('✗ bossDefinitions[0]');
+  });
+
+  it('exits 1 when an entity tags field is not an array of strings', () => {
+    const file = writeFile('bad-tags.json', {
+      entities: [{ id: 'hero', tags: 1 }],
+    });
+    const out = capture();
+    const errOut = capture();
+    let code = 0;
+    expect(() => {
+      code = runAuditContent([file], { log: out.log, error: errOut.log });
+    }).not.toThrow();
+    expect(code).toBe(1);
+    expect((out.text() + errOut.text()).toLowerCase()).toContain('tags');
+  });
+
+  it('a formatter throw after load is exit 1 with no ✓ line and no TypeError stack', () => {
+    const file = writeFile('empty-encounter-object.json', {
+      entities: [{ id: 'hero', tags: ['player'] }],
+      encounters: [{}],
+    });
+    const out = capture();
+    const errOut = capture();
+    let code = 0;
+    expect(() => {
+      code = runAuditContent([file], { log: out.log, error: errOut.log });
+    }).not.toThrow();
+    expect(code).toBe(1);
+    expect(out.text()).not.toContain('✓ Content-audit loaded');
+    expect(out.text() + errOut.text()).not.toMatch(/TypeError/);
+  });
+
   it('exits nonzero when no player entity resolves (no playerId, no "player" tag)', () => {
     const file = writeFile('no-player.json', {
       entities: [{ id: 'goblin', tags: ['enemy'] }],
@@ -306,5 +385,30 @@ describe('runAuditContent', () => {
     const first = buildContentAuditReport(loaded);
     const second = buildContentAuditReport(loaded);
     expect(first).toBe(second);
+  });
+
+  it('loadAuditContentFile itself does not throw on districts:[null] or encounters:[null]', () => {
+    const districtsFile = writeFile('load-null-district.json', {
+      entities: [{ id: 'hero', tags: ['player'] }],
+      districts: [null],
+    });
+    const encountersFile = writeFile('load-null-encounter.json', {
+      entities: [{ id: 'hero', tags: ['player'] }],
+      encounters: [null],
+    });
+    let districtsResult: ReturnType<typeof loadAuditContentFile> | undefined;
+    let encountersResult: ReturnType<typeof loadAuditContentFile> | undefined;
+    expect(() => {
+      districtsResult = loadAuditContentFile(districtsFile);
+      encountersResult = loadAuditContentFile(encountersFile);
+    }).not.toThrow();
+    expect(districtsResult?.ok).toBe(false);
+    expect(encountersResult?.ok).toBe(false);
+    if (districtsResult && !districtsResult.ok) {
+      expect(districtsResult.errors.some((e) => e.path === 'districts[0]')).toBe(true);
+    }
+    if (encountersResult && !encountersResult.ok) {
+      expect(encountersResult.errors.some((e) => e.path === 'encounters[0]')).toBe(true);
+    }
   });
 });

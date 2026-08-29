@@ -138,6 +138,14 @@ function describe(v: unknown): string {
   return typeof v;
 }
 
+function isStringArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((el) => typeof el === 'string');
+}
+
+function isNumberRecord(v: unknown): v is Record<string, number> {
+  return isPlainObject(v) && Object.values(v).every((n) => typeof n === 'number');
+}
+
 /** Fill AuditEntityInput's optional fields with the engine-shape defaults EntityState requires. */
 function toEntityState(input: AuditEntityInput): EntityState {
   return {
@@ -266,8 +274,21 @@ export function loadAuditContentFile(filePath: string): LoadAuditContentResult {
   }
   for (const field of ['encounters', 'bossDefinitions', 'districts'] as const) {
     const v = parsed[field];
-    if (v !== undefined && !Array.isArray(v)) {
+    if (v === undefined) continue;
+    if (!Array.isArray(v)) {
       errors.push({ path: field, message: `must be an array if provided (got ${describe(v)})` });
+      continue;
+    }
+    // F-b8479808: null / non-object elements TypeError in buildSyntheticWorld
+    // (district.id) or analyzeEncounter (encounter.participants) instead of a
+    // path'd structured error.
+    for (let i = 0; i < v.length; i++) {
+      if (!isPlainObject(v[i])) {
+        errors.push({
+          path: `${field}[${i}]`,
+          message: `must be an object (got ${describe(v[i])})`,
+        });
+      }
     }
   }
   if (errors.length > 0) return { ok: false, errors };
@@ -275,9 +296,18 @@ export function loadAuditContentFile(filePath: string): LoadAuditContentResult {
   const entityInputs = rawEntities as unknown[];
   for (let i = 0; i < entityInputs.length; i++) {
     const e = entityInputs[i];
-    const idOk = isPlainObject(e) && typeof e.id === 'string' && e.id !== '';
-    if (!idOk) {
+    if (!isPlainObject(e) || typeof e.id !== 'string' || e.id === '') {
       errors.push({ path: `entities[${i}]`, message: 'must be an object with a non-empty string "id"' });
+      continue;
+    }
+    if (e.tags !== undefined && !isStringArray(e.tags)) {
+      errors.push({ path: `entities[${i}].tags`, message: 'must be an array of strings if provided' });
+    }
+    if (e.stats !== undefined && !isNumberRecord(e.stats)) {
+      errors.push({ path: `entities[${i}].stats`, message: 'must be an object of numbers if provided' });
+    }
+    if (e.resources !== undefined && !isNumberRecord(e.resources)) {
+      errors.push({ path: `entities[${i}].resources`, message: 'must be an object of numbers if provided' });
     }
   }
   if (errors.length > 0) return { ok: false, errors };
@@ -474,10 +504,29 @@ export function runAuditContent(args: string[], deps: AuditContentDeps = default
     return 1;
   }
 
-  const loaded = loadAuditContentFile(file);
+  let loaded: LoadAuditContentResult;
+  try {
+    loaded = loadAuditContentFile(file);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    error(`✗ Content-audit file invalid — load threw: ${reason}`);
+    return 1;
+  }
   if (!loaded.ok) {
     error(`✗ Content-audit file invalid — ${loaded.errors.length} error${loaded.errors.length === 1 ? '' : 's'} in ${file}:`);
     for (const e of loaded.errors) error(`  ✗ ${e.path}: ${e.message}`);
+    return 1;
+  }
+
+  // F-b8479808: build the report BEFORE the ✓ line so a formatter throw
+  // (encounters:[{}] walking .participants, etc.) never prints success then
+  // a raw stack.
+  let report: string;
+  try {
+    report = buildContentAuditReport(loaded);
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    error(`✗ Content-audit report failed: ${reason}`);
     return 1;
   }
 
@@ -487,6 +536,6 @@ export function runAuditContent(args: string[], deps: AuditContentDeps = default
       `${loaded.bossDefinitions.length} boss definitions, ${loaded.districts.length} districts`,
   );
   log('');
-  log(buildContentAuditReport(loaded));
+  log(report);
   return 0;
 }

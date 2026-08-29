@@ -987,7 +987,9 @@ export function handlePlayerInput(
   // Dialogue mode — a number selects a dialogue choice.
   const dState = engine.world.modules['dialogue-core'] as { activeDialogue: string | null } | undefined;
   if (dState?.activeDialogue) {
-    const choiceIndex = parseInt(trimmed, 10);
+    // F-7d5f3da9: whole-token digits only. parseInt('1a', 10) === 1 would
+    // fire choice 0; mixed tokens fall through as unknown, never a choose.
+    const choiceIndex = /^\d+$/.test(trimmed) ? parseInt(trimmed, 10) : NaN;
     if (!isNaN(choiceIndex) && choiceIndex >= 1) {
       const logLenBefore = engine.world.eventLog.length;
       const ok = runGuardedAction(
@@ -1091,14 +1093,13 @@ export function handlePlayerInput(
     }
   }
 
-  // P8-PS-001: a number that resolved to NEITHER the base menu NOR the extras
-  // range must never fall through to the free-text parser — that submitted it
-  // to the engine as a bogus verb ('99' → verb '99'), the engine rejected it,
-  // and because the result was kind 'action' every living hostile got a free
-  // attack on a mistyped menu number. Digits are a menu gesture: answer with
-  // the menu's real range and consume nothing (the extras entries' own
-  // no-turn contract, applied to the whole numbered range).
-  if (/^\d+$/.test(trimmed)) {
+  // P8-PS-001 / F-7d5f3da9: a leading-digit token that resolved to NEITHER
+  // the base menu NOR the extras range must never fall through to the
+  // free-text parser. Pure digits ('99') used to become verb '99'; mixed
+  // tokens ('1a', '99a', '1.5', '1e2') prefix-parsed as a menu index or
+  // became a bogus verb — both returned kind 'action' and ran the hostile
+  // round. Digits are a menu gesture: consume nothing.
+  if (/^\d/.test(trimmed)) {
     const menuSize = buildActionList(engine.world).length + (opts.extras?.length ?? 0);
     log(`  Please enter a number between 1 and ${menuSize}.`);
     return { kind: 'unknown' };

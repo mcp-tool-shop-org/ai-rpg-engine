@@ -496,7 +496,11 @@ export function parseActionSelection(
 ): { verb: string; targetIds?: string[]; toolId?: string; parameters?: Record<string, ScalarValue> } | null {
   const actions = buildActionList(world);
 
-  const num = parseInt(input, 10);
+  // F-7d5f3da9: whole-token digits only — parseInt('1a'/'1.5'/'1e2', 10)
+  // prefix-parses as 1 and would fire action 1. Same gate as parseExtraSelection.
+  const token = input.trim();
+  if (!/^\d+$/.test(token)) return null;
+  const num = parseInt(token, 10);
   if (!isNaN(num) && num >= 1 && num <= actions.length) {
     const action = actions[num - 1];
     const result: { verb: string; targetIds?: string[]; toolId?: string; parameters?: Record<string, ScalarValue> } = {
