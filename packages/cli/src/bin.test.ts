@@ -486,6 +486,29 @@ describe('handlePlayerInput — dialogue choose rejection falls through (CS-C-00
       ),
     ).toBe(false);
   });
+
+  // F-7d5f3da9: dialogue choose used parseInt without a whole-token check, so
+  // '1a' selected choice 0. Mixed tokens are not a choose index.
+  it("mixed token '1a' during live dialogue does not fire choose 1", () => {
+    const engine = makeEngine();
+    engine.dispatcher.registerVerb('choose', (action) => [
+      {
+        id: '',
+        tick: action.issuedAtTick,
+        type: 'test.chosen',
+        actorId: action.actorId,
+        payload: { choiceIndex: action.parameters?.choiceIndex ?? -1 },
+      },
+    ]);
+    engine.world.modules['dialogue-core'] = { activeDialogue: 'live-dialogue' };
+
+    const result = handlePlayerInput(engine, '1a', { log: vi.fn() });
+
+    expect(result).toEqual({ kind: 'unknown' });
+    expect(eventTypes(engine)).not.toContain('test.chosen');
+    expect(eventTypes(engine)).not.toContain('test.moved');
+    expect(engine.world.eventLog).toHaveLength(0);
+  });
 });
 
 // Dialogue-trap amplifier — REAL dialogue-core module (CS-C-001, real-engine proof)
@@ -1350,6 +1373,41 @@ describe('handlePlayerInput — out-of-range menu numbers cost nothing (P8-PS-00
     const engine = makeEngine();
     const result = handlePlayerInput(engine, 'move hall', { log: vi.fn() });
     expect(result).toEqual({ kind: 'action', via: 'text' });
+  });
+
+  // F-7d5f3da9: mixed tokens that are not whole-digit menu/extras indexes must
+  // never fire a numbered action and never fall through as a free-text verb.
+  // runSession only calls runHostileRound on kind 'action'.
+  it("'1a' does not fire action 1 — mixed tokens are unknown, not a prefix-parsed menu hit", () => {
+    const engine = makeEngine();
+    const log = vi.fn();
+    const result = handlePlayerInput(engine, '1a', { log });
+
+    expect(result).toEqual({ kind: 'unknown' });
+    expect(engine.world.eventLog).toHaveLength(0);
+    expect(engine.tick).toBe(0);
+    expect(eventTypes(engine)).not.toContain('test.moved');
+  });
+
+  it("'99a' does not runHostileRound — mixed out-of-range tokens are unknown, never a verb", () => {
+    const engine = makeEngine();
+    const pack = {
+      meta: { id: 'test-game', name: 'Test Game' },
+      createGame: () => engine,
+    } as LoadedPack;
+    const npcTurns = vi.fn();
+    const worldTick = vi.fn();
+    const result = handlePlayerInput(engine, '99a', { log: vi.fn() });
+
+    expect(result).toEqual({ kind: 'unknown' });
+    expect(result.kind).not.toBe('action');
+    expect(engine.world.eventLog).toHaveLength(0);
+    // Same gate runSession uses: only kind 'action' runs the hostile round.
+    if (result.kind === 'action') {
+      runHostileRound(engine, pack, { npcTurns, worldTick });
+    }
+    expect(npcTurns).not.toHaveBeenCalled();
+    expect(worldTick).not.toHaveBeenCalled();
   });
 });
 

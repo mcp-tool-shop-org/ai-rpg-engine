@@ -235,6 +235,19 @@ describe('parseActionSelection', () => {
     const world = makeWorld();
     expect(parseActionSelection('look', world)).toBeNull();
   });
+
+  // F-7d5f3da9: parseInt prefix-parsed mixed tokens as the leading integer, so
+  // '1a' / '1.5' / '1e2' fired action 1. Whole-token digits only — same as
+  // parseExtraSelection.
+  it("returns null for mixed tokens that prefix-parse as a menu index ('1a', '1.5', '1e2')", () => {
+    const world = makeWorld();
+    const first = parseActionSelection('1', world);
+    expect(first).not.toBeNull();
+    expect(parseActionSelection('1a', world)).toBeNull();
+    expect(parseActionSelection('1.5', world)).toBeNull();
+    expect(parseActionSelection('1e2', world)).toBeNull();
+    expect(parseActionSelection('99a', world)).toBeNull();
+  });
 });
 
 describe('render functions — smoke coverage', () => {
