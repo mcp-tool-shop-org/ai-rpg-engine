@@ -404,6 +404,33 @@ function equipHandler(
   const staged = stageLoadout(state, actor);
   const displacedId = staged.equipped[item.slot];
 
+  // F-b6e5274a: inventory is id-based (giveItem/trade push duplicate strings).
+  // When the slot already holds this same id, skip resource carry — unequip
+  // only reverses once, so a second +1 would permanently inflate hp/maxHp.
+  if (displacedId === item.id) {
+    return [
+      makeEvent(
+        action,
+        'item.equipped',
+        {
+          entityId: actor.id,
+          entityName: actor.name,
+          itemId: item.id,
+          itemName: item.name,
+          slot: item.slot,
+          alreadyEquipped: true,
+          ...(item.statModifiers ? { statModifiers: { ...item.statModifiers } } : {}),
+          ...(item.resourceModifiers ? { resourceModifiers: { ...item.resourceModifiers } } : {}),
+        },
+        {
+          targetIds: [actor.id],
+          tags: ['equipment'],
+          presentation: presentation(['objective'], 'low'),
+        },
+      ),
+    ];
+  }
+
   // The equipment package's OWN transition: occupied slot → swap (displaced
   // item returns to inventory), requiredTags gate → error strings verbatim.
   const result = equipItem(staged, item.id, catalog, actor.tags);
@@ -610,6 +637,8 @@ export type EquipmentCoreConfig = {
  * - Resource carry: item.resourceModifiers are applied to entity.resources on
  *   equip and reversed on unequip (hp is mirrored onto maxHp when the item
  *   does not author maxHp itself) so combat survival and HUD bars move.
+ *   Equip is idempotent per item id: a second copy of an already-equipped id
+ *   is a no-op and does not re-apply resourceModifiers.
  * - Slot semantics: this package's own equipItem/unequipItem — occupied slot
  *   swaps the displaced item back to inventory; requiredTags gate rejects with
  *   the package's own error strings.

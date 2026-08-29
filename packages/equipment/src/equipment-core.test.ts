@@ -24,6 +24,7 @@ import {
   getStatusDefinition,
   effectiveStat,
   hasStatus,
+  giveItem,
 } from '@ai-rpg-engine/modules';
 import type { ItemCatalog, Loadout } from './types.js';
 import { createEmptyLoadout, equipItem } from './loadout.js';
@@ -458,6 +459,36 @@ describe('equip applies resourceModifiers to entity.resources (F-823b8574)', () 
 
     expect(player.resources.hp).toBe(25);
     expect(player.resources.maxHp).toBe(25);
+  });
+
+  it('re-equipping a second copy of the same item id does not double-apply resourceModifiers (F-b6e5274a)', () => {
+    const engine = makeEngine((p) => {
+      p.inventory = [];
+    });
+    const player = engine.world.entities['player'];
+    const tick = engine.world.meta.tick;
+    engine.store.recordEvent(giveItem(player, 'penitent-mail', tick));
+    engine.store.recordEvent(giveItem(player, 'penitent-mail', tick));
+    expect(player.inventory).toEqual(['penitent-mail', 'penitent-mail']);
+    expect(player.resources.hp).toBe(25);
+    expect(player.resources.maxHp).toBe(25);
+
+    engine.submitAction('equip', { parameters: { itemId: 'penitent-mail' } });
+    expect(player.resources.hp).toBe(30);
+    expect(player.resources.maxHp).toBe(30);
+    expect(player.inventory).toEqual(['penitent-mail']);
+
+    engine.submitAction('equip', { parameters: { itemId: 'penitent-mail' } });
+    expect(player.resources.hp).toBe(30);
+    expect(player.resources.maxHp).toBe(30);
+    expect(hasStatus(player, equipStatusId('penitent-mail'))).toBe(true);
+    expect(getEntityLoadout(engine.world, 'player')?.equipped.armor).toBe('penitent-mail');
+    expect(player.inventory).toEqual(['penitent-mail']);
+
+    engine.submitAction('unequip');
+    expect(player.resources.hp).toBe(25);
+    expect(player.resources.maxHp).toBe(25);
+    expect(hasStatus(player, equipStatusId('penitent-mail'))).toBe(false);
   });
 });
 
