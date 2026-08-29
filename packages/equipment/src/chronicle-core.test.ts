@@ -419,6 +419,33 @@ describe('chronicle-core — recognition', () => {
         expect(history.filter((e) => e.event === 'recognized')).toHaveLength(1);
     });
 
+    it('already-equipped no-op does not farm recognized entries (F-ff179b5b)', () => {
+        // Inventory is id-based: two giveItem of the same id, first equip is a
+        // real wear, every subsequent equip of the leftover copy is a resource
+        // no-op. Emitting item.equipped (or collecting recognitions) on that
+        // no-op would advance recognition-count / milestoneCount without the
+        // item ever leaving the slot.
+        const engine = makeEngine({
+            chronicle: true,
+            recognition: true,
+            milestones: { 'warden-mail': [{ trigger: 'recognition-count', threshold: 3, epithet: 'Infamous {name}' }] },
+        });
+        addWarden(engine);
+        const player = engine.world.entities['player'];
+        player.inventory = ['trident-and-net', 'gladius'];
+        const tick = engine.world.meta.tick;
+        engine.store.recordEvent(giveItem(player, 'warden-mail', tick));
+        engine.store.recordEvent(giveItem(player, 'warden-mail', tick));
+
+        for (let i = 0; i < 3; i++) {
+            engine.submitAction('equip', { parameters: { itemId: 'warden-mail' } });
+        }
+
+        const history = getItemHistory(getItemChronicle(engine.world), 'warden-mail');
+        expect(history.filter((e) => e.event === 'recognized')).toHaveLength(1);
+        expect(getRelicSummary(engine.world, 'warden-mail')?.milestoneCount ?? 0).toBe(0);
+    });
+
     it('drives armor to a recognition milestone across repeated equips', () => {
         // The payoff: before this, armor could not grow at all — its default
         // milestones are age and recognition-count, and neither had a producer.

@@ -205,20 +205,25 @@ export function buildEquipmentStatusDefinitions(catalog: ItemCatalog): Equipment
  *
  * When the item authors `hp` but not `maxHp`, the same delta is mirrored
  * onto maxHp so +hp armor expands the pool rather than overflowing a stale
- * cap. hp is then clamped to [0, maxHp] when a cap is present.
+ * cap. On reverse, shrink maxHp and clamp current hp to the new cap — do
+ * not subtract the bonus from current hp, or taking the armor off deals
+ * the bonus as damage and can mark the wearer defeated (F-bf0de04d).
+ * Equip still fills current hp by the bonus (don-at-full: 25/25 → 30/30).
+ * hp is then clamped to [0, maxHp] when a cap is present.
  */
 function applyResourceCarry(actor: EntityState, item: ItemDefinition | undefined, sign: 1 | -1): void {
   const mods = item?.resourceModifiers;
   if (!mods) return;
   const resources = actor.resources;
+  const hpBonus = mods.hp;
+  const hpPoolBonus = hpBonus !== undefined && mods.maxHp === undefined && Number.isFinite(hpBonus);
   for (const [res, amount] of Object.entries(mods)) {
     if (!Number.isFinite(amount)) continue;
+    if (hpPoolBonus && res === 'hp' && sign === -1) continue;
     resources[res] = (resources[res] ?? 0) + sign * amount;
   }
-  if (mods.hp !== undefined && mods.maxHp === undefined && Number.isFinite(mods.hp)) {
-    if (resources.maxHp !== undefined) {
-      resources.maxHp += sign * mods.hp;
-    }
+  if (hpPoolBonus && hpBonus !== undefined && resources.maxHp !== undefined) {
+    resources.maxHp += sign * hpBonus;
   }
   if (resources.maxHp !== undefined && resources.hp !== undefined) {
     resources.hp = Math.max(0, Math.min(resources.maxHp, resources.hp));
@@ -407,11 +412,14 @@ function equipHandler(
   // F-b6e5274a: inventory is id-based (giveItem/trade push duplicate strings).
   // When the slot already holds this same id, skip resource carry — unequip
   // only reverses once, so a second +1 would permanently inflate hp/maxHp.
+  // F-ff179b5b: do not emit item.equipped for this no-op — chronicle-core
+  // collects recognitions on that type, and a leftover copy would farm
+  // recognized entries (and relicVersion) without the item leaving the slot.
   if (displacedId === item.id) {
     return [
       makeEvent(
         action,
-        'item.equipped',
+        'item.already-equipped',
         {
           entityId: actor.id,
           entityName: actor.name,
@@ -635,10 +643,14 @@ export type EquipmentCoreConfig = {
  *   aggregates them into every combat formula read. Definitions re-register on
  *   every construction, so save/load restores the numbers.
  * - Resource carry: item.resourceModifiers are applied to entity.resources on
- *   equip and reversed on unequip (hp is mirrored onto maxHp when the item
- *   does not author maxHp itself) so combat survival and HUD bars move.
+ *   equip and reversed on unequip (hp-without-maxHp is a pool bonus: mirrored
+ *   onto maxHp on equip; reverse shrinks maxHp and clamps current, and does
+ *   not subtract the bonus from current hp — F-bf0de04d) so combat survival
+ *   and HUD bars move.
  *   Equip is idempotent per item id: a second copy of an already-equipped id
- *   is a no-op and does not re-apply resourceModifiers.
+ *   is a no-op and does not re-apply resourceModifiers. The no-op emits
+ *   `item.already-equipped` (not `item.equipped`) so chronicle recognition
+ *   does not re-fire (F-ff179b5b).
  * - Slot semantics: this package's own equipItem/unequipItem — occupied slot
  *   swaps the displaced item back to inventory; requiredTags gate rejects with
  *   the package's own error strings.

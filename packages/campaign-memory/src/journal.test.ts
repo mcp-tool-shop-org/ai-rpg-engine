@@ -112,6 +112,62 @@ describe('CampaignJournal', () => {
     expect(restored.get(serialized.records[0].id)).toBeDefined();
   });
 
+  // F-33569a8d: serialize/deserialize is the persistence boundary. Returning
+  // live Map values (or storing the envelope's objects on restore) aliases
+  // the running chronicle to the snapshot — mutating a "copy" rewrites
+  // description/significance/witnesses/data in the live journal.
+  test('mutating serialize().records leaves the live journal unchanged (F-33569a8d)', () => {
+    const journal = new CampaignJournal();
+    const recorded = journal.record(
+      makeRecord({
+        significance: 0.7,
+        description: 'Player attacked the guard',
+        witnesses: ['bystander_1'],
+        data: { damage: 15 },
+      }),
+    );
+
+    const ser = journal.serialize();
+    expect(ser.records[0]).not.toBe(journal.get(recorded.id));
+
+    ser.records[0].significance = 1;
+    ser.records[0].description = 'rewritten';
+    ser.records[0].witnesses.push('spy');
+    ser.records[0].data.damage = 99;
+
+    const live = journal.get(recorded.id)!;
+    expect(live.significance).toBe(0.7);
+    expect(live.description).toBe('Player attacked the guard');
+    expect(live.witnesses).toEqual(['bystander_1']);
+    expect(live.data).toEqual({ damage: 15 });
+  });
+
+  test('two deserialize()s of one envelope do not share record refs (F-33569a8d)', () => {
+    const journal = new CampaignJournal();
+    journal.record(makeRecord({ significance: 0.7 }));
+    const envelope = journal.serialize();
+    const id = envelope.records[0].id;
+
+    const a = CampaignJournal.deserialize(envelope);
+    const b = CampaignJournal.deserialize(envelope);
+
+    expect(a.get(id)).not.toBe(b.get(id));
+    expect(a.get(id)).not.toBe(envelope.records[0]);
+    expect(b.get(id)).not.toBe(envelope.records[0]);
+
+    a.get(id)!.significance = 1;
+    a.get(id)!.description = 'rewritten';
+    a.get(id)!.witnesses.push('spy');
+    a.get(id)!.data.damage = 99;
+
+    expect(b.get(id)!.significance).toBe(0.7);
+    expect(b.get(id)!.description).toBe('Player attacked the guard');
+    expect(b.get(id)!.witnesses).toEqual(['bystander_1']);
+    expect(b.get(id)!.data).toEqual({ damage: 15 });
+    expect(envelope.records[0].significance).toBe(0.7);
+    expect(journal.get(id)!.significance).toBe(0.7);
+  });
+
   test('results are sorted by tick', () => {
     const journal = new CampaignJournal();
     journal.record(makeRecord({ tick: 20 }));

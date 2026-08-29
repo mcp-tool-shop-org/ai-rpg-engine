@@ -424,6 +424,27 @@ describe('equip applies resourceModifiers to entity.resources (F-823b8574)', () 
     expect(hasStatus(player, equipStatusId('penitent-mail'))).toBe(false);
   });
 
+  it('unequip after damage shrinks maxHp and clamps current instead of dealing the bonus (F-bf0de04d)', () => {
+    // 25/25 → equip 30/30 → damage 3/30 → unequip 3/25, not 0/25.
+    // Subtracting the +hp bonus from current hp treats taking the armor off
+    // as damage and the defeated gate (hp <= 0) would then mark the wearer dead.
+    const engine = makeEngine((p) => {
+      p.inventory = ['penitent-mail'];
+    });
+    const player = engine.world.entities['player'];
+    engine.submitAction('equip', { parameters: { itemId: 'penitent-mail' } });
+    expect(player.resources.hp).toBe(30);
+    expect(player.resources.maxHp).toBe(30);
+
+    player.resources.hp = 3;
+
+    engine.submitAction('unequip');
+
+    expect(player.resources.hp).toBe(3);
+    expect(player.resources.maxHp).toBe(25);
+    expect(hasStatus(player, equipStatusId('penitent-mail'))).toBe(false);
+  });
+
   it('displacing +hp armor with a different armor reverses the first bonus', () => {
     const engine = makeEngine((p) => {
       p.tags.push('champion');
@@ -437,6 +458,23 @@ describe('equip applies resourceModifiers to entity.resources (F-823b8574)', () 
     engine.submitAction('equip', { parameters: { itemId: 'champion-helm' } });
 
     expect(player.resources.hp).toBe(25);
+    expect(player.resources.maxHp).toBe(25);
+    expect(hasStatus(player, equipStatusId('penitent-mail'))).toBe(false);
+    expect(hasStatus(player, equipStatusId('champion-helm'))).toBe(true);
+  });
+
+  it('swapping +hp armor onto a non-hp item after damage does not defeat (F-bf0de04d)', () => {
+    const engine = makeEngine((p) => {
+      p.tags.push('champion');
+      p.inventory = ['penitent-mail', 'champion-helm'];
+    });
+    const player = engine.world.entities['player'];
+    engine.submitAction('equip', { parameters: { itemId: 'penitent-mail' } });
+    player.resources.hp = 3;
+
+    engine.submitAction('equip', { parameters: { itemId: 'champion-helm' } });
+
+    expect(player.resources.hp).toBe(3);
     expect(player.resources.maxHp).toBe(25);
     expect(hasStatus(player, equipStatusId('penitent-mail'))).toBe(false);
     expect(hasStatus(player, equipStatusId('champion-helm'))).toBe(true);
@@ -484,6 +522,13 @@ describe('equip applies resourceModifiers to entity.resources (F-823b8574)', () 
     expect(hasStatus(player, equipStatusId('penitent-mail'))).toBe(true);
     expect(getEntityLoadout(engine.world, 'player')?.equipped.armor).toBe('penitent-mail');
     expect(player.inventory).toEqual(['penitent-mail']);
+    expect(eventsOfType(engine, 'item.equipped')).toHaveLength(1);
+
+    engine.submitAction('equip', { parameters: { itemId: 'penitent-mail' } });
+    expect(player.resources.hp).toBe(30);
+    expect(player.resources.maxHp).toBe(30);
+    expect(eventsOfType(engine, 'item.equipped')).toHaveLength(1);
+    expect(eventsOfType(engine, 'item.already-equipped')).toHaveLength(2);
 
     engine.submitAction('unequip');
     expect(player.resources.hp).toBe(25);

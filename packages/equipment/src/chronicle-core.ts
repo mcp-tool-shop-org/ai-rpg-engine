@@ -458,6 +458,8 @@ export function createItemChronicleCore(config: ItemChronicleCoreConfig): Engine
             ctx.events.on('item.equipped', (event, world) => {
                 const itemId = event.payload.itemId as string | undefined;
                 if (!itemId) return;
+                // F-ff179b5b: already-equipped no-op is not a new look.
+                if (event.payload.alreadyEquipped === true) return;
 
                 const holder = world.entities[event.payload.entityId as string];
                 const pending: PendingEntry[] = [];

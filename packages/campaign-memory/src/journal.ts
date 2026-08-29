@@ -76,10 +76,15 @@ export class CampaignJournal {
    * so a future record-schema change has a number to migrate on.
    */
   serialize(): SerializedJournal {
-    return {
-      version: CAMPAIGN_MEMORY_VERSION,
-      records: Array.from(this.records.values()).sort((a, b) => a.tick - b.tick),
-    };
+    // F-33569a8d: clone at the persistence boundary (NpcMemoryBank's JSON
+    // round-trip). Returning live Map values would let a caller mutate
+    // serialize().records[0] and rewrite the running chronicle.
+    return JSON.parse(
+      JSON.stringify({
+        version: CAMPAIGN_MEMORY_VERSION,
+        records: Array.from(this.records.values()).sort((a, b) => a.tick - b.tick),
+      }),
+    ) as SerializedJournal;
   }
 
   /**
@@ -151,7 +156,7 @@ export class CampaignJournal {
           `CampaignJournal.deserialize: record[${i}] is invalid — ${detail}`,
         );
       }
-      const valid = record as CampaignRecord;
+      const valid = cloneCampaignRecord(record as CampaignRecord);
       journal.records.set(valid.id, valid);
       restored.push(valid);
     }
@@ -166,4 +171,9 @@ export class CampaignJournal {
     journal.nextRecordId = maxNum + 1;
     return journal;
   }
+}
+
+/** Detach a record from caller-owned envelopes (F-33569a8d). */
+function cloneCampaignRecord(record: CampaignRecord): CampaignRecord {
+  return JSON.parse(JSON.stringify(record)) as CampaignRecord;
 }
