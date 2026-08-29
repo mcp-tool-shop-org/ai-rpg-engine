@@ -164,16 +164,21 @@ function peekChronicleState(world: WorldState): ItemChronicleModuleState | undef
  * absent (nothing has ever been recorded in this world) or malformed — never
  * throws, never attaches. This is the value a checkpoint driver passes to the
  * ledger adapter's `equipmentSnapshotFromWorld(world, playerId, catalog, chronicle)`.
+ *
+ * Snapshot, not the live module object (F-fe938876): mutating the return
+ * value must not rewrite `world.modules['item-chronicle'].entries`.
  */
 export function getItemChronicle(world: WorldState): Record<string, ItemChronicleEntry[]> {
     const entries = peekChronicleState(world)?.entries;
-    return entries && typeof entries === 'object' && !Array.isArray(entries) ? entries : {};
+    if (!entries || typeof entries !== 'object' || Array.isArray(entries)) return {};
+    return structuredClone(entries);
 }
 
-/** Every engine-computed relic summary, keyed by item id. `{}` when absent. */
+/** Every engine-computed relic summary, keyed by item id. `{}` when absent. Snapshot (F-fe938876). */
 export function getRelicSummaries(world: WorldState): Record<string, ItemRelicSummary> {
     const summaries = peekChronicleState(world)?.summaries;
-    return summaries && typeof summaries === 'object' && !Array.isArray(summaries) ? summaries : {};
+    if (!summaries || typeof summaries !== 'object' || Array.isArray(summaries)) return {};
+    return structuredClone(summaries);
 }
 
 /** One item's summary, or undefined when it has no recorded history. */

@@ -445,6 +445,42 @@ describe('equip applies resourceModifiers to entity.resources (F-823b8574)', () 
     expect(hasStatus(player, equipStatusId('penitent-mail'))).toBe(false);
   });
 
+  it('hp-without-maxHp reverse restores a wearer that has no maxHp (F-b90e156c)', () => {
+    // Ash-ghoul / crypt-stalker / pilgrim shape: { hp } only. Reverse used
+    // to skip the hp debit (F-bf0de04d) AND the maxHp shrink when the cap
+    // was missing, so equip left a permanent +5 — farmable on re-equip.
+    const engine = makeEngine((p) => {
+      p.inventory = ['penitent-mail'];
+      p.resources = { hp: 12 };
+    });
+    const player = engine.world.entities['player'];
+    expect(player.resources.maxHp).toBeUndefined();
+
+    engine.submitAction('equip', { parameters: { itemId: 'penitent-mail' } });
+    expect(player.resources.hp).toBe(17);
+
+    engine.submitAction('unequip');
+    expect(player.resources.hp).toBe(12);
+
+    engine.submitAction('equip', { parameters: { itemId: 'penitent-mail' } });
+    expect(player.resources.hp).toBe(17);
+    engine.submitAction('unequip');
+    expect(player.resources.hp).toBe(12);
+  });
+
+  it('hp-without-maxHp reverse after damage does not defeat a no-maxHp wearer (F-b90e156c)', () => {
+    const engine = makeEngine((p) => {
+      p.inventory = ['penitent-mail'];
+      p.resources = { hp: 12 };
+    });
+    const player = engine.world.entities['player'];
+    engine.submitAction('equip', { parameters: { itemId: 'penitent-mail' } });
+    player.resources.hp = 3;
+    engine.submitAction('unequip');
+    expect(player.resources.hp).toBe(3);
+    expect(player.resources.maxHp).toBe(12);
+  });
+
   it('displacing +hp armor with a different armor reverses the first bonus', () => {
     const engine = makeEngine((p) => {
       p.tags.push('champion');

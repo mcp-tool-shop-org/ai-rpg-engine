@@ -49,7 +49,10 @@ export function createProfile(
   return {
     id: id ?? deriveProfileId(build, packId),
     version: PROFILE_VERSION,
-    build,
+    // F-68f549c2: isolate the nested build (traitIds, statAllocations,
+    // disciplineId) the same way stats/resources/tags are copied. Assigning
+    // `build` by identity let a caller push onto traitIds and persist it.
+    build: structuredClone(build),
     stats: { ...stats },
     resources: { ...resources },
     tags: [...tags],

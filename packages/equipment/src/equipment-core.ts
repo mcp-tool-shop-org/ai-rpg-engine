@@ -210,6 +210,12 @@ export function buildEquipmentStatusDefinitions(catalog: ItemCatalog): Equipment
  * the bonus as damage and can mark the wearer defeated (F-bf0de04d).
  * Equip still fills current hp by the bonus (don-at-full: 25/25 → 30/30).
  * hp is then clamped to [0, maxHp] when a cap is present.
+ *
+ * A wearer with no maxHp at all (ash-ghoul / crypt-stalker / pilgrim:
+ * `{ hp }` only) still has a current-hp pool. Seed the cap from current
+ * hp so reverse can shrink+clamp; otherwise reverse skips both the hp
+ * debit and the maxHp shrink, and the equip-time hp += bonus is permanent
+ * — farmable across unequip/re-equip (F-b90e156c).
  */
 function applyResourceCarry(actor: EntityState, item: ItemDefinition | undefined, sign: 1 | -1): void {
   const mods = item?.resourceModifiers;
@@ -217,13 +223,16 @@ function applyResourceCarry(actor: EntityState, item: ItemDefinition | undefined
   const resources = actor.resources;
   const hpBonus = mods.hp;
   const hpPoolBonus = hpBonus !== undefined && mods.maxHp === undefined && Number.isFinite(hpBonus);
+  if (hpPoolBonus && resources.maxHp === undefined) {
+    resources.maxHp = resources.hp ?? 0;
+  }
   for (const [res, amount] of Object.entries(mods)) {
     if (!Number.isFinite(amount)) continue;
     if (hpPoolBonus && res === 'hp' && sign === -1) continue;
     resources[res] = (resources[res] ?? 0) + sign * amount;
   }
-  if (hpPoolBonus && hpBonus !== undefined && resources.maxHp !== undefined) {
-    resources.maxHp += sign * hpBonus;
+  if (hpPoolBonus && hpBonus !== undefined) {
+    resources.maxHp = (resources.maxHp ?? 0) + sign * hpBonus;
   }
   if (resources.maxHp !== undefined && resources.hp !== undefined) {
     resources.hp = Math.max(0, Math.min(resources.maxHp, resources.hp));
@@ -644,7 +653,8 @@ export type EquipmentCoreConfig = {
  *   every construction, so save/load restores the numbers.
  * - Resource carry: item.resourceModifiers are applied to entity.resources on
  *   equip and reversed on unequip (hp-without-maxHp is a pool bonus: mirrored
- *   onto maxHp on equip; reverse shrinks maxHp and clamps current, and does
+ *   onto maxHp on equip, seeding maxHp from current hp when the wearer has
+ *   none — F-b90e156c; reverse shrinks maxHp and clamps current, and does
  *   not subtract the bonus from current hp — F-bf0de04d) so combat survival
  *   and HUD bars move.
  *   Equip is idempotent per item id: a second copy of an already-equipped id
