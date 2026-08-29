@@ -66,6 +66,22 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** Recover an NFTokenID from the issuer's account_nfts by canonical URI.
+ *  Used when NFTokenMint tesSUCCESS'd but getNFTokenID could not parse meta,
+ *  and on retry of an unindexed pending ref — never mint a second token. */
+async function recoverNftId(
+  transport: NFTTransport,
+  issuerAddress: string,
+  uri: string,
+): Promise<string | undefined> {
+  try {
+    const owned = await transport.accountNfts(issuerAddress);
+    return owned.find((nft) => nft.uri === uri)?.nftId;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Directed issuer -> player transfer: NFTokenCreateOffer (a 0-value sell
  * directed at the player) then NFTokenAcceptOffer. Used both right after a
@@ -111,7 +127,7 @@ async function settleOneItem(
   transport: NFTTransport,
   nfts: Record<string, NFTokenRef>,
   item: EquipmentSnapshot['items'][number],
-  deps: { gameId: string; issuerSeed: string; playerSeed: string; playerAddress: string },
+  deps: { gameId: string; issuerAddress: string; issuerSeed: string; playerSeed: string; playerAddress: string },
   txids: string[],
   minted: string[],
   modified: string[],
@@ -123,19 +139,63 @@ async function settleOneItem(
 
   if (!ref) {
     // MINT: no ref at all — this item has never been settled as an NFT.
+    // Before submitting a new mint, recover an already-issued token with this
+    // URI from the issuer's account_nfts (tesSUCCESS whose nftId was unparsed).
     const uri = buildItemNFTUri(deps.gameId, gameItemId, item.relicVersion, item.relicTier);
+    const preexisting = await recoverNftId(transport, deps.issuerAddress, uri);
+    if (preexisting) {
+      const recovered: NFTokenRef = {
+        gameItemId,
+        nftId: preexisting,
+        uri,
+        relicVersion: item.relicVersion,
+        taxon: ARPG_NFT_TAXON,
+        mutable: true,
+        mintTxid: '',
+        status: 'pending',
+      };
+      nfts[gameItemId] = recovered;
+      const transferred = await transferToPlayer(transport, deps, recovered.nftId, gameItemId, txids, failures);
+      if (transferred) {
+        recovered.status = 'minted';
+        minted.push(gameItemId);
+      }
+      return;
+    }
+
     const mintRes = await transport.nftMint(deps.issuerSeed, uri, ARPG_NFT_TAXON, MINT_FLAGS);
     if (mintRes.hash) txids.push(mintRes.hash);
-    if (!mintRes.ok || !mintRes.nftId) {
+    if (!mintRes.ok) {
       failures.push(`mint(${gameItemId}) failed: ${mintRes.error ?? mintRes.code}`);
       return; // don't throw the whole batch — next item still gets a chance
+    }
+
+    let nftId = mintRes.nftId ?? (await recoverNftId(transport, deps.issuerAddress, uri));
+    if (!nftId) {
+      // tesSUCCESS without a parsed nftId: fail CLOSED. Persist an unindexed
+      // pending ref so a later checkpoint recovers via account_nfts and NEVER
+      // takes the mint branch again for this item/URI.
+      nfts[gameItemId] = {
+        gameItemId,
+        nftId: '',
+        uri,
+        relicVersion: item.relicVersion,
+        taxon: ARPG_NFT_TAXON,
+        mutable: true,
+        mintTxid: mintRes.hash,
+        status: 'pending',
+      };
+      failures.push(
+        `mint(${gameItemId}) tesSUCCESS without nftId; not reminting until account_nfts indexes it`,
+      );
+      return;
     }
 
     // Write the ref BEFORE the transfer — IDEMPOTENCY: this is what prevents
     // a double-mint if the transfer below fails and a later call retries.
     const newRef: NFTokenRef = {
       gameItemId,
-      nftId: mintRes.nftId,
+      nftId,
       uri,
       relicVersion: item.relicVersion,
       taxon: ARPG_NFT_TAXON,
@@ -156,7 +216,16 @@ async function settleOneItem(
 
   if (ref.status === 'pending') {
     // RESUME: the mint already happened (never re-mint) — only the transfer
-    // needs finishing.
+    // needs finishing. An empty nftId is an unindexed tesSUCCESS: recover
+    // from account_nfts or fail closed again, never mint a second token.
+    if (!ref.nftId) {
+      const recovered = await recoverNftId(transport, deps.issuerAddress, ref.uri);
+      if (!recovered) {
+        failures.push(`mint(${gameItemId}) still unindexed; not reminting`);
+        return;
+      }
+      ref.nftId = recovered;
+    }
     const transferred = await transferToPlayer(transport, deps, ref.nftId, gameItemId, txids, failures);
     if (transferred) {
       ref.status = 'minted';
@@ -200,13 +269,9 @@ async function settleOneItem(
  * partial batch still returns whatever DID settle in `minted`/`modified`/
  * `skipped`/`txids`.
  *
- * `deps.issuerAddress` is accepted for parity with `LedgerAdapterState`'s own
- * issuerAddress/playerAddress pair (and for a future caller that wants to
- * assert it against `state.issuerAddress`) but is not read by any NFTTransport
- * call this slice makes: `nftMint`/`nftModify` sign as the issuer via
- * `issuerSeed` alone (the seed IS the identity on every method in this
- * interface), and the only address either transfer call needs is the
- * player's (`nftCreateSellOffer`'s destination, `nftModify`'s owner param).
+ * `deps.issuerAddress` is the account_nfts recovery target when NFTokenMint
+ * tesSUCCESS's without a parsed nftId (fail closed, never remint). Mint/modify
+ * still sign via `issuerSeed`; transfer calls still need the player's address.
  */
 /**
  * Shape `account_nfts` output into the `ledgerNfts` map `reconcile` expects.

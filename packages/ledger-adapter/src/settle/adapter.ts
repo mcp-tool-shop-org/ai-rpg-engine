@@ -22,6 +22,7 @@ import type {
   LedgerAdapterState,
   LedgerTransport,
   SettleOptions,
+  SettlementKeyReceipt,
   SettlementPrimitive,
   SettlementRecord,
   SettlementResult,
@@ -94,17 +95,23 @@ function defaultCounter(): () => number {
 }
 
 /** True once enable() has completed EVERY step: wallets funded, trust lines
- *  ready, starting snapshot minted. Mirrors backpack.py's `_setup_complete`.
+ *  ready, AND every snapshot key checkpointed in lastSettled. A half-minted
+ *  pack (some keys receipted, a later payment failed) is NOT complete — the
+ *  next enable() must resume remaining mints, not take the no-op path.
  *  Deliberately does NOT check `state.enabled` (disable() only flips that
  *  flag) so a previously-disabled-but-complete pack re-enables via the same
  *  fast, no-network no-op path as an already-enabled one. */
-function isSetupComplete(state: LedgerAdapterState): boolean {
-  return Boolean(
-    state.issuerAddress &&
-      state.playerAddress &&
-      state.merchantAddress &&
-      state.trustLinesReady &&
-      Object.keys(state.lastSettled).length > 0,
+function isSetupComplete(state: LedgerAdapterState, snapshot: TradeableSnapshot): boolean {
+  if (
+    !state.issuerAddress ||
+    !state.playerAddress ||
+    !state.merchantAddress ||
+    !state.trustLinesReady
+  ) {
+    return false;
+  }
+  return resourceKeysOf(snapshot).every((key) =>
+    Object.prototype.hasOwnProperty.call(state.lastSettled, key),
   );
 }
 
@@ -207,6 +214,43 @@ export function createLedgerAdapter(
     return assignTokenCode(state, key);
   }
 
+  /** Player's issued-currency balance from account_lines, or null if unknown
+   *  (network error). A missing line is a known 0 — not unknown. */
+  async function readIssuedBalance(address: string, currency: string): Promise<number | null> {
+    try {
+      const lines = await transport.accountLines(address);
+      const line = lines.find((l) => l.currency === currency);
+      if (!line) return 0;
+      const n = Number(line.balance);
+      return Number.isFinite(n) ? n : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function onLedgerAlreadyMatches(
+    state: LedgerAdapterState,
+    key: string,
+    expected: number,
+  ): Promise<boolean> {
+    const code = currencyCodeFor(state, key);
+    const bal = await readIssuedBalance(state.playerAddress, code);
+    return bal !== null && bal === expected;
+  }
+
+  function markReceipt(
+    receipts: Record<string, SettlementKeyReceipt>,
+    key: string,
+    patch: SettlementKeyReceipt,
+  ): void {
+    const prev = receipts[key];
+    receipts[key] = {
+      txids: [...(prev?.txids ?? []), ...patch.txids],
+      sequence: patch.sequence ?? prev?.sequence,
+      done: patch.done ?? prev?.done,
+    };
+  }
+
   /** Ensure player + merchant both trust the issuer for every given key's
    *  token code, opening any line not up yet. INCREMENTAL trust lines: enable()
    *  opens lines only for the tokens in the ENABLE snapshot, but a real
@@ -269,6 +313,7 @@ export function createLedgerAdapter(
     deltas: Record<string, number>,
     memo: string,
     primitive: SettlementPrimitive = config.settlement,
+    receipts: Record<string, SettlementKeyReceipt> = {},
   ): Promise<string[]> {
     const txids: string[] = [];
     const issuerSeed = requireSeed(state.issuerAddress);
@@ -284,6 +329,23 @@ export function createLedgerAdapter(
       const diff = deltas[key];
       if (diff === 0) continue;
       const code = currencyCodeFor(state, key);
+      const expected = (state.lastSettled[key] ?? 0) + diff;
+
+      // Skip a key whose receipt already marks the write complete, or whose
+      // on-ledger player balance already equals lastSettled+delta (a tesSUCCESS
+      // that timed out before we checkpointed). Never remint/re-escrow it.
+      if (receipts[key]?.done) {
+        txids.push(...receipts[key].txids);
+        continue;
+      }
+      if (diff > 0 || primitive === 'payment') {
+        if (await onLedgerAlreadyMatches(state, key, expected)) {
+          if (receipts[key]) receipts[key].done = true;
+          else receipts[key] = { txids: [], done: true };
+          txids.push(...(receipts[key].txids ?? []));
+          continue;
+        }
+      }
 
       if (diff < 0 && primitive === 'payment') {
         // The `payment` primitive: a SPEND is a direct holder->issuer burn
@@ -297,43 +359,64 @@ export function createLedgerAdapter(
         const amount: IssuedAmount = { currency: code, issuer: state.issuerAddress, value: String(-diff) };
         const burnRes = await transport.payment(playerSeed, state.issuerAddress, amount, memo);
         if (!burnRes.ok) {
+          if (burnRes.hash) markReceipt(receipts, key, { txids: [burnRes.hash] });
           throw new Error(`payment(burn ${key}) failed: ${burnRes.error ?? burnRes.code}`);
         }
         if (burnRes.hash) txids.push(burnRes.hash);
+        markReceipt(receipts, key, { txids: burnRes.hash ? [burnRes.hash] : [], done: true });
       } else if (diff < 0) {
         const amount: IssuedAmount = { currency: code, issuer: state.issuerAddress, value: String(-diff) };
-        const tick = nextId();
-        const finishAfter = tick;
-        const cancelAfter = tick + ESCROW_CANCEL_WINDOW_TICKS;
+        const existing = receipts[key];
+        let sequence = existing?.sequence;
 
-        const createRes = await transport.escrowCreate(
-          playerSeed,
-          state.merchantAddress,
-          amount,
-          finishAfter,
-          cancelAfter,
-          memo,
-        );
-        if (!createRes.ok) {
-          throw new Error(`escrowCreate(${key}) failed: ${createRes.error ?? createRes.code}`);
-        }
-        if (createRes.sequence === undefined) {
-          throw new Error(`escrowCreate(${key}) succeeded without a sequence — cannot finish it`);
-        }
-        if (createRes.hash) txids.push(createRes.hash);
+        if (sequence === undefined) {
+          const tick = nextId();
+          const finishAfter = tick;
+          const cancelAfter = tick + ESCROW_CANCEL_WINDOW_TICKS;
 
-        const finishRes = await transport.escrowFinish(playerSeed, state.playerAddress, createRes.sequence);
+          const createRes = await transport.escrowCreate(
+            playerSeed,
+            state.merchantAddress,
+            amount,
+            finishAfter,
+            cancelAfter,
+            memo,
+          );
+          if (!createRes.ok) {
+            if (createRes.hash) markReceipt(receipts, key, { txids: [createRes.hash] });
+            throw new Error(`escrowCreate(${key}) failed: ${createRes.error ?? createRes.code}`);
+          }
+          if (createRes.sequence === undefined) {
+            throw new Error(`escrowCreate(${key}) succeeded without a sequence — cannot finish it`);
+          }
+          if (createRes.hash) txids.push(createRes.hash);
+          // Persist sequence BEFORE escrowFinish so a finish failure retries
+          // only the finish, never a second EscrowCreate.
+          markReceipt(receipts, key, {
+            txids: createRes.hash ? [createRes.hash] : [],
+            sequence: createRes.sequence,
+          });
+          sequence = createRes.sequence;
+        } else {
+          txids.push(...(existing?.txids ?? []));
+        }
+
+        const finishRes = await transport.escrowFinish(playerSeed, state.playerAddress, sequence);
         if (!finishRes.ok) {
+          if (finishRes.hash) markReceipt(receipts, key, { txids: [finishRes.hash] });
           throw new Error(`escrowFinish(${key}) failed: ${finishRes.error ?? finishRes.code}`);
         }
         if (finishRes.hash) txids.push(finishRes.hash);
+        markReceipt(receipts, key, { txids: finishRes.hash ? [finishRes.hash] : [], sequence, done: true });
       } else {
         const amount: IssuedAmount = { currency: code, issuer: state.issuerAddress, value: String(diff) };
         const payRes = await transport.payment(issuerSeed, state.playerAddress, amount, memo);
         if (!payRes.ok) {
+          if (payRes.hash) markReceipt(receipts, key, { txids: [payRes.hash] });
           throw new Error(`payment(${key}) failed: ${payRes.error ?? payRes.code}`);
         }
         if (payRes.hash) txids.push(payRes.hash);
+        markReceipt(receipts, key, { txids: payRes.hash ? [payRes.hash] : [], done: true });
       }
     }
 
@@ -348,7 +431,11 @@ export function createLedgerAdapter(
    *  retried portion. Without this, the next settle() recomputes
    *  (current - baseline) across the WHOLE interval — including the
    *  just-retried delta — paying it on-chain twice and double-summing it in
-   *  reconcile(), breaking `minted + Σdeltas == settled`. */
+   *  reconcile(), breaking `minted + Σdeltas == settled`.
+   *
+   *  Per-key receipts (and on-ledger balance comparison) make a PARTIAL
+   *  multi-key failure idempotent: keys whose tx already landed are skipped
+   *  instead of replaying the whole record. */
   async function retryPending(state: LedgerAdapterState): Promise<void> {
     if (state.pending.length === 0) return;
 
@@ -364,7 +451,8 @@ export function createLedgerAdapter(
         // serialized before the field existed) is 'settle', which is what all
         // such records were in fact written as.
         const memo = buildSettlementMemo(gameId, runId, record.checkpoint, record.deltas, record.verb ?? 'settle');
-        const txids = await executeDeltas(state, record.deltas, memo);
+        if (!record.receipts) record.receipts = {};
+        const txids = await executeDeltas(state, record.deltas, memo, config.settlement, record.receipts);
 
         record.txids = txids;
         record.status = 'settled';
@@ -395,7 +483,7 @@ export function createLedgerAdapter(
     // disabled. No network calls, no re-fund, no re-mint (that would strand
     // the old wallets' tokens and double-mint). Mirrors backpack.py's
     // `_setup_complete` check exactly (it does not gate on `enabled` either).
-    if (isSetupComplete(state)) {
+    if (isSetupComplete(state, snapshot)) {
       state.enabled = true;
       return {
         success: true,
@@ -490,29 +578,31 @@ export function createLedgerAdapter(
         state.trustLinesReady = true;
       }
 
-      // Mint the starting snapshot, issuer -> player. Guarded on
-      // `lastSettled` being empty — CRITICAL: unlike flags/trust-lines, a
-      // repeat mint is NOT idempotent, it doubles the player's balance and
-      // breaks conservation. Only set `lastSettled` after the FULL mint loop
-      // completes, so a half-minted pack stays "incomplete" and resumes the
-      // remaining mints on the next enable() rather than being declared done.
-      if (Object.keys(state.lastSettled).length === 0) {
-        const amounts = amountsOf(snapshot);
-        for (const key of resourceKeysOf(snapshot)) {
-          const amount = amounts[key] ?? 0;
-          if (amount > 0) {
-            const code = currencyCodeFor(state, key);
-            const mintRes = await transport.payment(issuer.seed, player.address, {
-              currency: code,
-              issuer: issuer.address,
-              value: String(amount),
-            });
-            if (!mintRes.ok) throw new Error(`mint payment(${key}) failed: ${mintRes.error ?? mintRes.code}`);
-          }
+      // Mint the starting snapshot, issuer -> player. Checkpoint EACH
+      // successful mint into lastSettled BEFORE the next payment so a
+      // fail-then-retry enable skips keys already issued. A half-minted
+      // pack stays incomplete (isSetupComplete requires every snapshot key)
+      // and resumes only the remaining mints — never remints a key whose
+      // on-ledger balance already matches the opening snapshot.
+      const amounts = amountsOf(snapshot);
+      for (const key of resourceKeysOf(snapshot)) {
+        if (Object.prototype.hasOwnProperty.call(state.lastSettled, key)) continue;
+        const amount = amounts[key] ?? 0;
+        const code = currencyCodeFor(state, key);
+        const onLedger = await readIssuedBalance(player.address, code);
+        if (onLedger !== null && onLedger === amount) {
+          state.lastSettled[key] = amount;
+          continue;
         }
-        const settled: Record<string, number> = {};
-        for (const key of resourceKeysOf(snapshot)) settled[key] = amounts[key] ?? 0;
-        state.lastSettled = settled;
+        if (amount > 0) {
+          const mintRes = await transport.payment(issuer.seed, player.address, {
+            currency: code,
+            issuer: issuer.address,
+            value: String(amount),
+          });
+          if (!mintRes.ok) throw new Error(`mint payment(${key}) failed: ${mintRes.error ?? mintRes.code}`);
+        }
+        state.lastSettled[key] = amount;
       }
 
       state.enabled = true;
@@ -566,6 +656,7 @@ export function createLedgerAdapter(
     const verb = options.verb ?? 'settle';
     const primitive = options.primitive ?? config.settlement;
     const memo = buildSettlementMemo(gameId, runId, checkpoint, deltas, verb);
+    const receipts: Record<string, SettlementKeyReceipt> = {};
 
     try {
       // In `diary` the deltas above are the RECORD of what happened, not
@@ -576,7 +667,7 @@ export function createLedgerAdapter(
       // machinery it uses for balances.
       const txids = config.mode === 'diary'
         ? await anchorDeltas(state, memo)
-        : await executeDeltas(state, deltas, memo, primitive);
+        : await executeDeltas(state, deltas, memo, primitive, receipts);
 
       for (const key of keys) {
         state.lastSettled[key] = amounts[key] ?? 0;
@@ -591,6 +682,7 @@ export function createLedgerAdapter(
         memo,
         timestamp: now(),
         verb,
+        receipts,
       };
       state.settlements.push(record);
       state.lastSettleFailed = false;
@@ -606,13 +698,15 @@ export function createLedgerAdapter(
         checkpoint,
         location,
         deltas,
-        txids: [],
+        txids: Object.values(receipts).flatMap((r) => r.txids),
         status: 'pending',
         memo,
         timestamp: now(),
         // Carried onto the pending record so retryPending can replay the
         // ORIGINAL verb instead of flattening it to 'settle'.
         verb,
+        // Per-key receipts so retryPending skips writes that already landed.
+        receipts,
       };
       state.pending.push(record);
       state.lastSettleFailed = true;

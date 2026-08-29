@@ -134,6 +134,19 @@ function assertSettlementRecord(value: unknown, path: string): asserts value is 
   if (typeof value.timestamp !== 'string') {
     throw new Error(`deserializeState: "${path}.timestamp" must be a string`);
   }
+  if (value.receipts !== undefined) {
+    if (!isPlainObject(value.receipts)) {
+      throw new Error(`deserializeState: "${path}.receipts" must be an object`);
+    }
+    for (const [key, receipt] of Object.entries(value.receipts)) {
+      if (!isPlainObject(receipt)) {
+        throw new Error(`deserializeState: "${path}.receipts.${key}" must be an object`);
+      }
+      if (!Array.isArray(receipt.txids) || !receipt.txids.every((t) => typeof t === 'string')) {
+        throw new Error(`deserializeState: "${path}.receipts.${key}.txids" must be a string[]`);
+      }
+    }
+  }
 }
 
 function assertSettlementRecordArray(value: unknown, path: string): asserts value is SettlementRecord[] {

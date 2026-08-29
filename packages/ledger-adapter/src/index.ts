@@ -32,6 +32,7 @@ export type {
   TradeableSnapshot,
   SettlementStatus,
   SettlementRecord,
+  SettlementKeyReceipt,
   LedgerAdapterState,
   SecretsSidecar,
   EnableResult,

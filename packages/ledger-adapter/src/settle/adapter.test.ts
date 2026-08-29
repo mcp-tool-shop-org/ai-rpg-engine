@@ -24,6 +24,9 @@ type FakeTransport = LedgerTransport & {
   /** The next N transport-write calls (setAccountFlag/trustSet/payment/
    *  escrowCreate/escrowFinish) return a failure instead of succeeding. */
   failNext(times: number): void;
+  /** The Nth subsequent write (1-indexed, counting from this call) fails.
+   *  Used to fail the second mint / second resource without failing the first. */
+  failOnNth(n: number): void;
   /** True once `address` has opened a trust line for `currency`. Models the
    *  live-XRPL rule the mint path below enforces (a mint to an un-trust-lined
    *  holder fails tecPATH_DRY) — the fidelity the LIVE pirate replay needed to
@@ -43,8 +46,11 @@ function createFakeTransport(): FakeTransport {
   let walletCounter = 0;
   let txCounter = 0;
   let failRemaining = 0;
+  let writeCount = 0;
+  let failAt: number | null = null;
   const seedToAddress = new Map<string, string>();
   const balances = new Map<string, number>();
+  const issuersByCurrency = new Map<string, string>();
   // `${holder}:${currency}` for every opened trust line — modeled so the mint
   // path can enforce live XRPL's "no line -> tecPATH_DRY" rule (see trustedFor).
   const trustLines = new Set<string>();
@@ -56,13 +62,19 @@ function createFakeTransport(): FakeTransport {
   function balanceKey(address: string, currency: string): string {
     return `${address}:${currency}`;
   }
-  function credit(address: string, currency: string, amount: number): void {
+  function credit(address: string, currency: string, amount: number, issuer?: string): void {
     balances.set(balanceKey(address, currency), (balances.get(balanceKey(address, currency)) ?? 0) + amount);
+    if (issuer) issuersByCurrency.set(currency, issuer);
   }
   function debit(address: string, currency: string, amount: number): void {
     balances.set(balanceKey(address, currency), (balances.get(balanceKey(address, currency)) ?? 0) - amount);
   }
   function maybeFail(): TxResult | null {
+    writeCount++;
+    if (failAt !== null && writeCount === failAt) {
+      failAt = null;
+      return { ok: false, hash: '', code: 'tecFAKE_FAILURE', error: 'fake transport failure' };
+    }
     if (failRemaining > 0) {
       failRemaining--;
       return { ok: false, hash: '', code: 'tecFAKE_FAILURE', error: 'fake transport failure' };
@@ -80,6 +92,10 @@ function createFakeTransport(): FakeTransport {
     calls,
     failNext(times: number) {
       failRemaining = times;
+    },
+    failOnNth(n: number) {
+      writeCount = 0;
+      failAt = n;
     },
     memoFor(txid: string): string | undefined {
       return memos.get(txid);
@@ -151,7 +167,7 @@ function createFakeTransport(): FakeTransport {
       if (!trustLines.has(`${destination}:${amount.currency}`)) {
         return { ok: false, hash: '', code: 'tecPATH_DRY', error: `No trust line: ${destination} for ${amount.currency}` };
       }
-      credit(destination, amount.currency, Number(amount.value));
+      credit(destination, amount.currency, Number(amount.value), amount.issuer);
       return nextTx();
     },
 
@@ -168,6 +184,7 @@ function createFakeTransport(): FakeTransport {
       if (failed) return failed;
       const sender = seedToAddress.get(seed);
       if (sender) debit(sender, amount.currency, Number(amount.value));
+      issuersByCurrency.set(amount.currency, amount.issuer);
       const tx = nextTx();
       pendingEscrows.set(tx.sequence as number, {
         destination,
@@ -183,14 +200,26 @@ function createFakeTransport(): FakeTransport {
       if (failed) return failed;
       const escrow = pendingEscrows.get(offerSequence);
       if (escrow) {
-        credit(escrow.destination, escrow.currency, escrow.value);
+        credit(escrow.destination, escrow.currency, escrow.value, issuersByCurrency.get(escrow.currency));
         pendingEscrows.delete(offerSequence);
       }
       return nextTx();
     },
 
-    async accountLines(_address: string): Promise<TrustLineInfo[]> {
-      return [];
+    async accountLines(address: string): Promise<TrustLineInfo[]> {
+      const prefix = `${address}:`;
+      const lines: TrustLineInfo[] = [];
+      for (const [key, balance] of balances) {
+        if (!key.startsWith(prefix)) continue;
+        const currency = key.slice(prefix.length);
+        lines.push({
+          account: issuersByCurrency.get(currency) ?? '',
+          currency,
+          balance: String(balance),
+          limit: '999999999',
+        });
+      }
+      return lines;
     },
 
     async accountTx(_address: string, _limit?: number): Promise<TxEntry[]> {
@@ -284,6 +313,25 @@ describe('createLedgerAdapter', () => {
     expect(second.success).toBe(true);
     expect(state.playerAddress).toBe(playerAddress);
     expect(transport.balances.get(`${playerAddress}:${state.tokenMap.coin}`)).toBe(walletCountAfterFirst);
+  });
+
+  it('enable checkpoints each mint: failing the second resource does not remint the first on retry', async () => {
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'testgame', runId: 'run-1' });
+    const state = freshState();
+    const snapshot: TradeableSnapshot = { coin: 100, items: { potion: 5 } };
+
+    // 2 AccountSet flags + 4 TrustSets (player+merchant × coin+potion) + coin mint, then potion mint fails.
+    transport.failOnNth(8);
+    const first = await adapter.enable(state, snapshot);
+    expect(first.success).toBe(false);
+    expect(state.lastSettled).toEqual({ coin: 100 });
+    expect(transport.balances.get(`${state.playerAddress}:${state.tokenMap.coin}`)).toBe(100);
+
+    const second = await adapter.enable(state, snapshot);
+    expect(second.success).toBe(true);
+    expect(transport.balances.get(`${state.playerAddress}:${state.tokenMap.coin}`)).toBe(100);
+    expect(transport.balances.get(`${state.playerAddress}:${state.tokenMap.potion}`)).toBe(5);
+    expect(state.lastSettled).toEqual({ coin: 100, potion: 5 });
   });
 
   it('disable then re-enable brings the same wallets back online without re-minting', async () => {
@@ -382,6 +430,28 @@ describe('createLedgerAdapter', () => {
     expect(report.resources.find((r) => r.resource === 'coin')?.conservationOk).toBe(true);
     expect(report.resources.find((r) => r.resource === 'coin')?.sumDeltas).toBe(-30);
     expect(report.passed).toBe(true);
+  });
+
+  it('retryPending does not replay a key that already landed when a later key fails', async () => {
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'testgame', runId: 'run-1' });
+    const state = freshState();
+    await adapter.enable(state, { coin: 100, items: { potion: 5 } });
+
+    // Spend both keys. token-escrow: escrowCreate+escrowFinish for coin, then potion create fails.
+    transport.failOnNth(3);
+    const failed = await adapter.settle(state, { coin: 90, items: { potion: 4 } }, 1, 'Cedar Wake');
+    expect(failed.success).toBe(false);
+    expect(state.pending).toHaveLength(1);
+    expect(state.pending[0].receipts?.coin?.done).toBe(true);
+    expect(transport.balances.get(`${state.playerAddress}:${state.tokenMap.coin}`)).toBe(90);
+    expect(transport.balances.get(`${state.playerAddress}:${state.tokenMap.potion}`)).toBe(5);
+
+    const retried = await adapter.settle(state, { coin: 90, items: { potion: 4 } }, 2, 'Cedar Wake');
+    expect(retried.success).toBe(true);
+    expect(state.pending).toHaveLength(0);
+    expect(transport.balances.get(`${state.playerAddress}:${state.tokenMap.coin}`)).toBe(90);
+    expect(transport.balances.get(`${state.playerAddress}:${state.tokenMap.potion}`)).toBe(4);
+    expect(state.lastSettled).toEqual({ coin: 90, potion: 4 });
   });
 
   it('INCREMENTAL TRUST LINES: a token first acquired at a checkpoint is trust-lined before its mint (else tecPATH_DRY — the live-diagnosed Phase-5 fix)', async () => {

@@ -28,6 +28,58 @@ import type { NFTSettlementResult } from './nft.js';
 
 // ── A thin fail-on-demand WRAPPER over the real DryRunTransport ─────────────
 
+/** Wraps DryRunTransport and strips nftId from the first `omitCount` successful mints
+ *  (the tesSUCCESS-without-nftId hatch). accountNfts is delayed `hideFromAccountNfts`
+ *  times so a test can exercise fail-closed-until-indexed. */
+class UnindexedMintTransport implements NFTTransport {
+  private omitRemaining: number;
+  private hideRemaining: number;
+  mintCalls = 0;
+
+  constructor(
+    private readonly inner: DryRunTransport,
+    omitCount = 1,
+    hideFromAccountNfts = 0,
+  ) {
+    this.omitRemaining = omitCount;
+    this.hideRemaining = hideFromAccountNfts;
+  }
+
+  async nftMint(seed: string, uri: string, taxon: number, flags: NFTMintFlags, transferFee?: number): Promise<NFTMintResult> {
+    this.mintCalls++;
+    const res = await this.inner.nftMint(seed, uri, taxon, flags, transferFee);
+    if (res.ok && this.omitRemaining > 0) {
+      this.omitRemaining--;
+      return { ok: res.ok, hash: res.hash, code: res.code, error: res.error, sequence: res.sequence };
+    }
+    return res;
+  }
+
+  async nftBurn(seed: string, nftId: string, owner?: string): Promise<TxResult> {
+    return this.inner.nftBurn(seed, nftId, owner);
+  }
+
+  async nftModify(seed: string, nftId: string, uri: string, owner: string): Promise<TxResult> {
+    return this.inner.nftModify(seed, nftId, uri, owner);
+  }
+
+  async nftCreateSellOffer(seed: string, nftId: string, amount: string, destination?: string): Promise<NFTOfferResult> {
+    return this.inner.nftCreateSellOffer(seed, nftId, amount, destination);
+  }
+
+  async nftAcceptSellOffer(seed: string, offerIndex: string): Promise<TxResult> {
+    return this.inner.nftAcceptSellOffer(seed, offerIndex);
+  }
+
+  async accountNfts(address: string): Promise<NFTInfo[]> {
+    if (this.hideRemaining > 0) {
+      this.hideRemaining--;
+      return [];
+    }
+    return this.inner.accountNfts(address);
+  }
+}
+
 class FlakyNFTTransport implements NFTTransport {
   private failuresRemaining: number;
 
@@ -333,6 +385,47 @@ describe('settleEquipmentNFTs — retry-safety (a pending ref resumes without re
 
     const playerNfts = await inner.accountNfts(DEPS.playerAddress);
     expect(playerNfts).toHaveLength(2);
+  });
+
+  it('tesSUCCESS without nftId recovers from account_nfts and never remints', async () => {
+    const inner = new DryRunTransport();
+    const unindexed = new UnindexedMintTransport(inner, 1, 0);
+    const state = freshState();
+
+    const first = await settleEquipmentNFTs(unindexed, state, { items: [makeItem()] }, DEPS);
+    expect(first.success).toBe(true);
+    expect(unindexed.mintCalls).toBe(1);
+    expect(state.nfts?.cutlass.status).toBe('minted');
+    expect(state.nfts?.cutlass.nftId).toBeTruthy();
+
+    const second = await settleEquipmentNFTs(unindexed, state, { items: [makeItem()] }, DEPS);
+    expect(second.skipped).toEqual(['cutlass']);
+    expect(unindexed.mintCalls).toBe(1);
+    expect((await inner.accountNfts(DEPS.playerAddress))).toHaveLength(1);
+    expect((await inner.accountNfts(DEPS.issuerAddress))).toHaveLength(0);
+  });
+
+  it('tesSUCCESS without nftId fails closed until account_nfts indexes; retry does not remint', async () => {
+    const inner = new DryRunTransport();
+    // Strip nftId AND hide the token from the first two accountNfts reads
+    // (pre-mint preexisting check + post-mint recovery) so the first settle
+    // persists an unindexed pending ref.
+    const unindexed = new UnindexedMintTransport(inner, 1, 2);
+    const state = freshState();
+
+    const first = await settleEquipmentNFTs(unindexed, state, { items: [makeItem()] }, DEPS);
+    expect(first.success).toBe(false);
+    expect(unindexed.mintCalls).toBe(1);
+    expect(state.nfts?.cutlass.status).toBe('pending');
+    expect(state.nfts?.cutlass.nftId).toBe('');
+
+    const retry = await settleEquipmentNFTs(unindexed, state, { items: [makeItem()] }, DEPS);
+    expect(retry.success).toBe(true);
+    expect(retry.minted).toEqual(['cutlass']);
+    expect(unindexed.mintCalls).toBe(1);
+    expect(state.nfts?.cutlass.status).toBe('minted');
+    expect(state.nfts?.cutlass.nftId).toBeTruthy();
+    expect((await inner.accountNfts(DEPS.playerAddress))).toHaveLength(1);
   });
 });
 

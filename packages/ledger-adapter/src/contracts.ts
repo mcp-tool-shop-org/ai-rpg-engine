@@ -210,6 +210,19 @@ export type SettlementStatus = 'settled' | 'pending';
  */
 export type SettlementVerb = 'buy' | 'sell' | 'settle' | 'consign' | 'default';
 
+/**
+ * Per-resource write receipt. Persisted on the settlement record BEFORE the
+ * next key is submitted so a fail-then-retry path can skip keys whose tx
+ * already landed (hash / escrow sequence) instead of replaying the whole set.
+ */
+export type SettlementKeyReceipt = {
+  txids: string[];
+  /** EscrowCreate sequence, so a retry can EscrowFinish without creating a second escrow. */
+  sequence?: number;
+  /** True once this key's on-ledger write is complete (payment landed, or escrow finished). */
+  done?: boolean;
+};
+
 /** One checkpoint settlement — signed deltas + the txids + the exact on-chain memo. */
 export type SettlementRecord = {
   checkpoint: number;
@@ -221,6 +234,12 @@ export type SettlementRecord = {
   /** The exact on-chain memo TEXT (so the record matches the ledger byte-for-byte). */
   memo: string;
   timestamp: string;
+  /**
+   * Per-key receipts for idempotent retry. OPTIONAL: records written before
+   * this field existed have none, and a retry without receipts falls back to
+   * on-ledger balance / account_tx comparison.
+   */
+  receipts?: Record<string, SettlementKeyReceipt>;
   /**
    * The verb this settlement was made under.
    *

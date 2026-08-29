@@ -59,7 +59,7 @@ import type {
   TxResult,
   WalletHandle,
 } from '../contracts.js';
-import { resolveTestnetEndpoint } from '../security/index.js';
+import { assertTestnetHost, resolveTestnetEndpoint } from '../security/index.js';
 
 // ── Wall-clock write discipline (backpack.py XRPL_REQUEST_TIMEOUT/WRITE_DEADLINE) ──
 // Every network call this transport makes is bounded by a wall-clock deadline
@@ -177,7 +177,7 @@ function escrowKey(owner: string, sequence: number): string {
 // offline test suite can inject a plain object built with `vi.fn()` instead
 // of opening a real WebSocket connection. `xrpl.Client` satisfies this
 // structurally — production code always gets the real thing via the
-// constructor's default. `fundWallet` is redeclared without xrpl.js's own
+// constructor; tests inject a mock through `forTests`. `fundWallet` is redeclared without xrpl.js's own
 // `this: Client` parameter (the only method on `Client` that carries one) so
 // a plain mock object — which has no `Client` identity to bind `this` to —
 // can implement it directly.
@@ -187,6 +187,36 @@ export interface XrplClientLike {
   fundWallet(): Promise<{ wallet: xrpl.Wallet; balance: number }>;
   submitAndWait: xrpl.Client['submitAndWait'];
   request: xrpl.Client['request'];
+}
+
+
+function injectedClientUrl(client: XrplClientLike): string | undefined {
+  const conn = (client as { connection?: { getUrl?: () => string; url?: unknown } }).connection;
+  if (conn && typeof conn.getUrl === 'function') {
+    const url = conn.getUrl();
+    if (url) return url;
+  }
+  if (conn && typeof conn.url === 'string' && conn.url.length > 0) {
+    return conn.url;
+  }
+  if ('url' in client && typeof (client as { url: unknown }).url === 'string') {
+    const url = (client as { url: string }).url;
+    return url.length > 0 ? url : undefined;
+  }
+  return undefined;
+}
+
+function mapSubmitResponse(res: {
+  result: { hash?: string; meta?: unknown; tx_json?: { Sequence?: number } };
+}): { result: TxResult; meta: unknown } {
+  const code = resultCodeOf(res.result.meta);
+  const hash = res.result.hash ?? '';
+  if (code !== 'tesSUCCESS') {
+    return { result: { ok: false, hash, code, error: `engine result ${code}` }, meta: res.result.meta };
+  }
+  const sequence = res.result.tx_json?.Sequence;
+  const result: TxResult = sequence !== undefined ? { ok: true, hash, code, sequence } : { ok: true, hash, code };
+  return { result, meta: res.result.meta };
 }
 
 /**
@@ -199,7 +229,7 @@ export interface XrplClientLike {
 export class TestnetTransport implements LedgerTransport, NFTTransport {
   readonly networkName = 'testnet';
 
-  private readonly client: XrplClientLike;
+  private client: XrplClientLike;
   private connected = false;
 
   /** (owner, sequence) -> the real ripple-epoch FinishAfter `escrowCreate`
@@ -211,11 +241,28 @@ export class TestnetTransport implements LedgerTransport, NFTTransport {
    *  wait, exactly like DryRunTransport's clockless "always finishable". */
   private readonly escrowFinishAfter = new Map<string, number>();
 
-  /** `client` is an injection seam for tests (see `XrplClientLike` above) —
-   *  production callers always omit it and get a real `xrpl.Client`. */
-  constructor(url: string = DEFAULT_TESTNET_URL, client?: XrplClientLike) {
+  constructor(url: string = DEFAULT_TESTNET_URL) {
     const resolved = resolveTestnetEndpoint(url);
-    this.client = client ?? new xrpl.Client(resolved);
+    this.client = new xrpl.Client(resolved);
+  }
+
+  /**
+   * Test-only injection seam. NOT on the public package barrel — production
+   * callers construct `new TestnetTransport(url)` and always get a real
+   * `xrpl.Client` pointed at a host that passed `resolveTestnetEndpoint`.
+   * An injected client that itself exposes a URL/connection must ALSO pass
+   * `assertTestnetHost` so `forTests(testnetUrl, new xrpl.Client(mainnet))`
+   * cannot punch through the mainnet-impossible guard.
+   */
+  static forTests(url: string, client: XrplClientLike): TestnetTransport {
+    resolveTestnetEndpoint(url);
+    const injectedUrl = injectedClientUrl(client);
+    if (injectedUrl !== undefined) {
+      assertTestnetHost(injectedUrl);
+    }
+    const transport = new TestnetTransport(url);
+    transport.client = client;
+    return transport;
   }
 
   async connect(): Promise<void> {
@@ -586,22 +633,20 @@ export class TestnetTransport implements LedgerTransport, NFTTransport {
     tx: T,
     wallet: xrpl.Wallet,
   ): Promise<{ result: TxResult; meta: unknown }> {
+    const work = this.client.submitAndWait<T>(tx, { wallet, autofill: true });
     try {
-      const res = await withDeadline(
-        this.client.submitAndWait<T>(tx, { wallet, autofill: true }),
-        WRITE_DEADLINE_MS,
-        `submitAndWait(${tx.TransactionType})`,
-      );
-      const code = resultCodeOf(res.result.meta);
-      const hash = res.result.hash;
-      if (code !== 'tesSUCCESS') {
-        return { result: { ok: false, hash, code, error: `engine result ${code}` }, meta: res.result.meta };
-      }
-      const sequence = res.result.tx_json.Sequence;
-      const result: TxResult = sequence !== undefined ? { ok: true, hash, code, sequence } : { ok: true, hash, code };
-      return { result, meta: res.result.meta };
+      const res = await withDeadline(work, WRITE_DEADLINE_MS, `submitAndWait(${tx.TransactionType})`);
+      return mapSubmitResponse(res);
     } catch (err) {
-      return { result: { ok: false, hash: '', code: 'local-error', error: errorMessage(err) }, meta: undefined };
+      // Deadline fired, but the dangling submitAndWait cannot be cancelled and
+      // may still (or may already) have validated tesSUCCESS. Observe that
+      // result so a retry does not submit a second write for a tx that landed.
+      try {
+        const res = await work;
+        return mapSubmitResponse(res);
+      } catch {
+        return { result: { ok: false, hash: '', code: 'local-error', error: errorMessage(err) }, meta: undefined };
+      }
     }
   }
 
