@@ -9,6 +9,7 @@ export {
   parseActionSelection,
   parseTextInput,
   buildActionList,
+  visibleDialogueChoices,
   humanizeStateId,
   textBar,
   formatEventLine,
@@ -19,6 +20,7 @@ export {
   type FullScreenOptions,
   type ActionOption,
   type ExtraMenuEntry,
+  type DialogueChoiceOnScreen,
 } from './renderer.js';
 
 export {
