@@ -10,6 +10,7 @@
 // heard of must be harmless, which is what makes additive-only evolution real
 // rather than aspirational.
 
+import type { WorldState } from '@ai-rpg-engine/core';
 import type { RpcMessage } from './framing.js';
 import {
   METHODS,
@@ -17,10 +18,15 @@ import {
   type ClientCapabilities,
   type InitializeResult,
   type StatePatch,
+  type SubmitActionResult,
   type TickNotification,
   type WireEvent,
 } from './protocol.js';
-import { applyPatches } from './serializer.js';
+import { applyPatches, stateHash } from './serializer.js';
+
+function defaultHashState(state: unknown): string {
+  return stateHash(state as WorldState);
+}
 
 export type PendingResolver = {
   resolve: (value: unknown) => void;
@@ -42,15 +48,17 @@ export class SidecarClient {
   private readonly staleness: StalenessReport[] = [];
   private serverInfo?: InitializeResult;
   private closed = false;
+  private hashesEnabled = true;
+  private notificationsEnabled = true;
 
   constructor(
     private readonly send: (msg: RpcMessage) => void,
     /**
-     * Recompute the hash of the client's mirrored state. Injected so the client
-     * package stays free of a hashing dependency and so the harness can supply a
-     * DOCTORED one to prove staleness detection actually fires.
+     * Recompute the hash of the client's mirrored state. Defaults to the
+     * package `stateHash` so `capabilities.hashes=true` is honest. Inject a
+     * DOCTORED function to prove staleness detection actually fires.
      */
-    private readonly hashState?: (state: unknown) => string,
+    private readonly hashState: ((state: unknown) => string) | undefined = defaultHashState,
   ) {}
 
   /** Feed one inbound message (response or notification). */
@@ -84,29 +92,30 @@ export class SidecarClient {
       // server may add channels this client predates.
       return;
     }
+    if (!this.notificationsEnabled) return;
     const tick = params as unknown as TickNotification;
     this.ticks.push(tick);
     this.state = applyPatches(this.state, tick.delta ?? []);
-
-    // Detect staleness; NEVER correct the sim. The client's only move is to say
-    // so and, in a real renderer, ask for a fresh snapshot.
-    if (this.hashState) {
-      const actual = this.hashState(this.state);
-      if (actual !== tick.hash) {
-        this.staleness.push({ tick: tick.tick, expected: tick.hash, actual });
-      }
-    }
+    this.noteHash(tick.tick, tick.hash);
   }
 
   request<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
     const id = this.nextId++;
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
+      this.pending.set(id, {
+        resolve: (value: unknown) => {
+          this.ingestResult(method, value);
+          resolve(value as T);
+        },
+        reject,
+      });
       this.send({ jsonrpc: '2.0', id, method, params });
     });
   }
 
   async initialize(capabilities: ClientCapabilities = { notifications: true, hashes: true }): Promise<InitializeResult> {
+    this.hashesEnabled = capabilities.hashes !== false;
+    this.notificationsEnabled = capabilities.notifications !== false;
     const result = await this.request<InitializeResult>(METHODS.INITIALIZE, {
       clientName: '@ai-rpg-engine/sidecar client',
       clientVersion: '1.0.0',
@@ -120,7 +129,25 @@ export class SidecarClient {
   async snapshot(): Promise<{ tick: number; hash: string; delta: StatePatch[] }> {
     const result = await this.request<{ tick: number; hash: string; delta: StatePatch[] }>(METHODS.SNAPSHOT);
     this.state = applyPatches({}, result.delta);
+    this.noteHash(result.tick, result.hash);
     return result;
+  }
+
+  private ingestResult(method: string, value: unknown): void {
+    if (this.notificationsEnabled) return;
+    if (method !== METHODS.SUBMIT_ACTION && method !== METHODS.ADVANCE) return;
+    const result = value as SubmitActionResult;
+    if (!result || typeof result !== 'object' || !Array.isArray(result.delta)) return;
+    this.state = applyPatches(this.state, result.delta);
+    this.noteHash(result.tick, result.hash);
+  }
+
+  private noteHash(tick: number, expected: string): void {
+    if (!this.hashesEnabled || !this.hashState) return;
+    const actual = this.hashState(this.state);
+    if (actual !== expected) {
+      this.staleness.push({ tick, expected, actual });
+    }
   }
 
   get mirroredState(): unknown {

@@ -136,6 +136,8 @@ export const ERROR_CODES = {
   CAPABILITY_UNAVAILABLE: -32002,
   /** The sim refused the intent (an ordinary game outcome, not a wire fault). */
   ACTION_REJECTED: -32003,
+  /** The session has shut down; further methods are refused. */
+  SESSION_CLOSED: -32004,
 } as const;
 
 // --- The reserved graveyard ----------------------------------------------
