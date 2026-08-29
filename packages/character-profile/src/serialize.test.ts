@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { CharacterBuild } from '@ai-rpg-engine/character-creation';
+import { recordItemEvent } from '@ai-rpg-engine/equipment';
 import { createProfile } from './profile.js';
 import {
   serializeProfile,
@@ -24,6 +25,41 @@ describe('serializeProfile', () => {
     const profile = makeProfile();
     const json = serializeProfile(profile);
     expect(() => JSON.parse(json)).not.toThrow();
+  });
+});
+
+// F-f47911ff: recordItemEvent stored existing ItemChronicleEntry objects by
+// identity. CharacterProfile.itemChronicle is that shape, so mutating the
+// input after the "immutable" write persisted through serializeProfile.
+describe('serializeProfile — recordItemEvent isolation (F-f47911ff)', () => {
+  it('mutating input entries after recordItemEvent does not persist', () => {
+    const entries = [{ event: 'acquired' as const, tick: 1, detail: 'Found' }];
+    const original = { 'sword-1': entries };
+    const result = recordItemEvent(original, 'sword-1', {
+      event: 'used-in-kill',
+      detail: 'Kill',
+    }, 10);
+    const profile = { ...makeProfile(), itemChronicle: result };
+
+    entries[0]!.detail = 'hacked';
+
+    expect(result['sword-1'][0]!.detail).toBe('Found');
+    expect(serializeProfile(profile)).not.toContain('hacked');
+  });
+
+  it('mutating input sibling-key entries after recordItemEvent does not persist', () => {
+    const entries = [{ event: 'acquired' as const, tick: 1, detail: 'Found' }];
+    const original = { 'sword-1': entries };
+    const result = recordItemEvent(original, 'shield-1', {
+      event: 'acquired',
+      detail: 'B',
+    }, 2);
+    const profile = { ...makeProfile(), itemChronicle: result };
+
+    entries[0]!.detail = 'hacked';
+
+    expect(result['sword-1'][0]!.detail).toBe('Found');
+    expect(serializeProfile(profile)).not.toContain('hacked');
   });
 });
 

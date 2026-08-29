@@ -49,6 +49,52 @@ describe('recordItemEvent', () => {
     expect(result['sword-1']).toHaveLength(2);
   });
 
+  // F-f47911ff: `{ ...chronicle, [itemId]: [...existing, { ...entry, tick }] }`
+  // copies the array, not the entries. Mutating the input after the call
+  // rewrote the "immutable" result.
+  it('clones existing entries so mutating the input cannot write through (F-f47911ff)', () => {
+    const entries = [{ event: 'acquired' as const, tick: 1, detail: 'Found' }];
+    const original = { 'sword-1': entries };
+    const result = recordItemEvent(original, 'sword-1', {
+      event: 'used-in-kill',
+      detail: 'Kill',
+    }, 10);
+
+    entries[0]!.detail = 'hacked';
+
+    expect(result['sword-1'][0]!.detail).toBe('Found');
+    expect(result['sword-1'][0]).not.toBe(entries[0]);
+    expect(result['sword-1']).toHaveLength(2);
+  });
+
+  it('clones sibling arrays so mutating the input cannot write the result (F-f47911ff)', () => {
+    const entries = [{ event: 'acquired' as const, tick: 1, detail: 'Found' }];
+    const original = { 'sword-1': entries };
+    const result = recordItemEvent(original, 'shield-1', {
+      event: 'acquired',
+      detail: 'B',
+    }, 2);
+
+    entries[0]!.detail = 'hacked';
+
+    expect(result['sword-1'][0]!.detail).toBe('Found');
+    expect(result['sword-1']).not.toBe(entries);
+  });
+
+  it('clones sibling arrays so mutating the result cannot write the input (F-f47911ff)', () => {
+    const entries = [{ event: 'acquired' as const, tick: 1, detail: 'Found' }];
+    const original = { 'sword-1': entries };
+    const result = recordItemEvent(original, 'shield-1', {
+      event: 'acquired',
+      detail: 'B',
+    }, 2);
+
+    result['sword-1'][0]!.detail = 'hacked';
+
+    expect(original['sword-1'][0]!.detail).toBe('Found');
+    expect(entries[0]!.detail).toBe('Found');
+  });
+
   it('adds events for different items independently', () => {
     let chronicle = recordItemEvent({}, 'sword-1', { event: 'acquired', detail: 'A' }, 1);
     chronicle = recordItemEvent(chronicle, 'shield-1', { event: 'acquired', detail: 'B' }, 2);

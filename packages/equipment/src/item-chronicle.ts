@@ -11,10 +11,15 @@ export function recordItemEvent(
   tick: number,
 ): Record<string, ItemChronicleEntry[]> {
   const existing = chronicle[itemId] ?? [];
-  return {
+  // F-f47911ff: a shallow `{ ...chronicle, [itemId]: [...existing, { ...entry, tick }] }`
+  // stored existing entries and sibling arrays by identity. Mutating the
+  // caller's entries after the call rewrote the "immutable" result (and
+  // serializeProfile of CharacterProfile.itemChronicle). Snapshot the whole
+  // chronicle the way getItemHistory snapshots a per-item array.
+  return structuredClone({
     ...chronicle,
     [itemId]: [...existing, { ...entry, tick }],
-  };
+  });
 }
 
 /** Get the full history for a specific item. Snapshot — callers cannot write through. */
