@@ -50,8 +50,19 @@ export type MutationContext = {
   receiverFactionId?: string;
   /** 0-1, environmental chaos multiplier */
   environmentInstability: number;
-  /** How many hops this rumor has traveled */
+  /**
+   * How many hops this rumor has traveled. `RumorEngine.spread` derives the
+   * hop count from `spreadPath.length` and passes that derived value into
+   * mutation rules — callers may still supply this field, but the engine does
+   * not trust it for `lastSpreadTick` or mutation rolls.
+   */
   hopCount: number;
+  /**
+   * Sim tick at which this hop occurs. Written to `lastSpreadTick` so a
+   * rumor first heard long after `originTick` does not die on the same frame
+   * it announced (F-8c128e3d).
+   */
+  currentTick: number;
 };
 
 /** Rule defining how a rumor mutates during spread */

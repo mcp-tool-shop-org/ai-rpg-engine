@@ -107,9 +107,37 @@ export async function resolveProvider(
 export type PipelineOptions = {
   /** Override generation options. */
   generation?: GenerationOptions;
-  /** Additional tags to attach to the stored asset. */
+  /**
+   * Additional tags to attach to the stored asset. Never used as identity
+   * keys — engine-owned prefixes (`char:`, `provider:`) and the
+   * `placeholder` tag are stripped (F-525d6bb6).
+   */
   extraTags?: string[];
 };
+
+const ENGINE_OWNED_EXACT = new Set(['placeholder', 'player']);
+const ENGINE_OWNED_PREFIXES = ['char:', 'provider:'] as const;
+
+function isEngineOwnedTag(tag: string): boolean {
+  if (ENGINE_OWNED_EXACT.has(tag)) return true;
+  return ENGINE_OWNED_PREFIXES.some((prefix) => tag.startsWith(prefix));
+}
+
+function callerTags(tags: readonly string[] | undefined): string[] {
+  if (!tags || tags.length === 0) return [];
+  return tags.filter((t) => !isEngineOwnedTag(t));
+}
+
+/**
+ * Delimiter-safe portrait identity tag (F-525d6bb6).
+ * JSON-encodes name, archetype, and genre so `Alice::Mage` + `Wizard` cannot
+ * collide with `Alice` + `Mage::Wizard`.
+ */
+export function portraitIdentityTag(
+  request: Pick<PortraitRequest, 'characterName' | 'archetypeName' | 'genre'>,
+): string {
+  return `char:${JSON.stringify([request.characterName, request.archetypeName, request.genre])}`;
+}
 
 /**
  * Generate a portrait and store it in the asset registry.
@@ -133,8 +161,6 @@ export async function generatePortrait(
   const result = await provider.generate(prompt, genOpts);
   if (!result.ok) throw new ImageGenError(result);
 
-  const characterKey = `${request.characterName}::${request.archetypeName}`;
-
   // Mark WHO produced this asset (v2.6 Stage C F-6c3d9a48): without a
   // registry-level tell, a degraded placeholder was indistinguishable from a
   // real render, and ensurePortrait would treat it as final forever. The
@@ -142,14 +168,17 @@ export async function generatePortrait(
   const isPlaceholderResult = provider.name === 'placeholder'
     || result.mimeType === 'image/svg+xml';
 
+  // Engine-owned tags (`char:`, `provider:`, `placeholder`) are written here
+  // only. Caller tags and extraTags that use those prefixes are stripped so
+  // they cannot poison identity matching (F-525d6bb6).
   const tags = [
     'portrait',
     request.genre,
-    `char:${characterKey}`,
+    portraitIdentityTag(request),
     `provider:${provider.name}`,
     ...(isPlaceholderResult ? ['placeholder'] : []),
-    ...request.tags.filter((t) => t !== 'player'),
-    ...(opts?.extraTags ?? []),
+    ...callerTags(request.tags),
+    ...callerTags(opts?.extraTags),
   ];
 
   const metadata = await store.put(result.image, {
@@ -200,7 +229,7 @@ export async function ensurePortrait(
     tag: request.genre,
   });
 
-  const characterKey = `char:${request.characterName}::${request.archetypeName}`;
+  const characterKey = portraitIdentityTag(request);
   const matches = existing.filter((m) => m.tags?.includes(characterKey));
 
   // A real render always wins.

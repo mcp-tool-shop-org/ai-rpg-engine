@@ -80,14 +80,29 @@ export const attributeShiftMutation: MutationRule = {
   probability: 0.08,
   apply(rumor: Rumor, ctx: MutationContext): Rumor {
     const mutated = { ...rumor };
-    // The claim gets attributed to the spreader instead of the source
-    if (mutated.claim.includes(mutated.sourceId)) {
-      mutated.claim = mutated.claim.replace(mutated.sourceId, ctx.spreaderId);
+    // Whole-token match only (F-208059bc): sourceId 'guard_1' must not rewrite
+    // a claim about 'guard_10'. Entity ids are [A-Za-z0-9_-] with numbered suffixes.
+    const shifted = replaceWholeIdToken(mutated.claim, mutated.sourceId, ctx.spreaderId);
+    if (shifted !== null) {
+      mutated.claim = shifted;
       mutated.mutationCount++;
     }
     return mutated;
   },
 };
+
+/**
+ * Replace `id` in `text` only when it appears as a whole id-token (bounded by
+ * non-id characters or string edges). First match only, matching the previous
+ * non-global String.replace. Returns null when no whole-token match exists.
+ */
+function replaceWholeIdToken(text: string, id: string, replacement: string): string | null {
+  if (id.length === 0) return null;
+  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp(`(?<![A-Za-z0-9_-])${escaped}(?![A-Za-z0-9_-])`);
+  if (!re.test(text)) return null;
+  return text.replace(re, replacement);
+}
 
 /**
  * Embellish: emotional charge intensifies without changing factual content.

@@ -28,6 +28,7 @@ function defaultCtx(overrides: Partial<MutationContext> = {}): MutationContext {
     receiverId: 'guard_3',
     environmentInstability: 0,
     hopCount: 1,
+    currentTick: 0,
     ...overrides,
   };
 }
@@ -528,5 +529,89 @@ describe('validateRumor tick-field hardening (F-1f8c5a94)', () => {
     for (const r of engine.serialize()) {
       expect(validateRumor(r)).toEqual([]);
     }
+  });
+});
+
+// F-8c128e3d: spread() stamped lastSpreadTick as originTick + hopCount, so a
+// rumor created at tick 0 and first heard at tick 50 with hopCount 1 was
+// stored as lastSpreadTick=1. tick(50) then computed ticksSinceSpread=49 and
+// killed the rumor on the same frame it announced. hopCount is derived from
+// spreadPath; dead rumors refuse the hop.
+describe('spread lastSpreadTick vs sim tick (F-8c128e3d)', () => {
+  test('originTick=0, first heard at tick 50, tick(50) leaves the rumor living', () => {
+    const engine = new RumorEngine();
+    const rumor = createRumor(engine, { originTick: 0 });
+
+    const spread = engine.spread(rumor.id, defaultCtx({
+      hopCount: 1,
+      currentTick: 50,
+      receiverId: 'npc_late',
+    }));
+
+    expect(spread.lastSpreadTick).toBe(50);
+    expect(spread.status).toBe('spreading');
+    expect(spread.spreadPath).toContain('npc_late');
+
+    engine.tick(50);
+    const after = engine.get(rumor.id)!;
+    expect(after.status).toBe('spreading');
+    expect(engine.activeCount()).toBe(1);
+    expect(engine.aboutSubject('player')).toHaveLength(1);
+  });
+
+  test('spread stamps lastSpreadTick from currentTick, not originTick+hopCount', () => {
+    const engine = new RumorEngine();
+    const rumor = createRumor(engine, { originTick: 0 });
+    const spread = engine.spread(rumor.id, defaultCtx({
+      hopCount: 99,
+      currentTick: 12,
+      receiverId: 'e1',
+    }));
+    expect(spread.lastSpreadTick).toBe(12);
+    expect(spread.spreadPath).toEqual(['guard_1', 'e1']);
+  });
+
+  test('spread refuses to hop a dead rumor', () => {
+    const engine = new RumorEngine({ deathThreshold: 30 });
+    const rumor = createRumor(engine, { originTick: 0 });
+    engine.tick(50);
+    expect(engine.get(rumor.id)?.status).toBe('dead');
+
+    const result = engine.spread(rumor.id, defaultCtx({
+      hopCount: 1,
+      currentTick: 50,
+      receiverId: 'late_hearer',
+    }));
+    expect(result.status).toBe('dead');
+    expect(result.spreadPath).toEqual(['guard_1']);
+    expect(result.lastSpreadTick).toBe(0);
+    expect(engine.aboutSubject('player')).toHaveLength(0);
+    expect(engine.activeCount()).toBe(0);
+  });
+
+  test('mutation rules receive hopCount derived from spreadPath, not ctx.hopCount', () => {
+    let seen = -1;
+    const spy: MutationRule = {
+      id: 'spy-hop',
+      type: 'embellish',
+      probability: 1,
+      apply: (rumor, ctx) => {
+        seen = ctx.hopCount;
+        return rumor;
+      },
+    };
+    const engine = new RumorEngine({ mutations: [spy], confidenceDecayPerHop: 0 });
+    const rumor = createRumor(engine);
+    engine.spread(rumor.id, defaultCtx({ hopCount: 99, currentTick: 3, receiverId: 'e1' }));
+    expect(seen).toBe(1);
+    engine.spread(rumor.id, defaultCtx({ hopCount: 99, currentTick: 4, receiverId: 'e2' }));
+    expect(seen).toBe(2);
+  });
+
+  test('spread throws when currentTick is not finite', () => {
+    const engine = new RumorEngine();
+    const rumor = createRumor(engine);
+    expect(() => engine.spread(rumor.id, defaultCtx({ currentTick: NaN }))).toThrow(/currentTick/);
+    expect(() => engine.spread(rumor.id, defaultCtx({ currentTick: Infinity }))).toThrow(/currentTick/);
   });
 });

@@ -52,6 +52,7 @@ const spread = engine.spread(rumor.id, {
   receiverFactionId: 'town_guard',
   environmentInstability: 0.3,
   hopCount: 1,
+  currentTick: 42,
 });
 
 // Track which factions absorbed the rumor

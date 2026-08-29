@@ -39,6 +39,7 @@ function defaultCtx(overrides: Partial<MutationContext> = {}): MutationContext {
     receiverId: 'guard_3',
     environmentInstability: 0,
     hopCount: 1,
+    currentTick: 0,
     ...overrides,
   };
 }
@@ -70,5 +71,27 @@ describe('attributeShiftMutation', () => {
     rumor = attributeShiftMutation.apply(rumor, defaultCtx({ spreaderId: 'guard_3' }));
     expect(rumor.claim).toBe('guard_2 killed the merchant');
     expect(rumor.mutationCount).toBe(1);
+  });
+
+  // F-208059bc: claim.includes(sourceId) + non-global replace treated IDs as
+  // raw substrings, so sourceId 'guard_1' matched inside 'guard_10' and the
+  // replace produced '<spreader>0'. Match whole id tokens only.
+  test("sourceId 'guard_1' does not mutate a claim containing 'guard_10' (F-208059bc)", () => {
+    const rumor = baseRumor({ claim: 'guard_10 killed the merchant', sourceId: 'guard_1' });
+    const mutated = attributeShiftMutation.apply(rumor, defaultCtx({ spreaderId: 'guard_2' }));
+
+    expect(mutated.claim).toBe('guard_10 killed the merchant');
+    expect(mutated.mutationCount).toBe(0);
+  });
+
+  test('replaces a whole-token sourceId without touching a longer sibling id (F-208059bc)', () => {
+    const rumor = baseRumor({
+      claim: 'guard_1 saw guard_10 near the gate',
+      sourceId: 'guard_1',
+    });
+    const mutated = attributeShiftMutation.apply(rumor, defaultCtx({ spreaderId: 'npc_5' }));
+
+    expect(mutated.claim).toBe('npc_5 saw guard_10 near the gate');
+    expect(mutated.mutationCount).toBe(1);
   });
 });
