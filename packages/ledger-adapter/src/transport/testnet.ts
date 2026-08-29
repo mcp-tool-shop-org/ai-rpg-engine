@@ -460,7 +460,11 @@ export class TestnetTransport implements LedgerTransport, NFTTransport {
       const type = tx?.TransactionType ?? 'Unknown';
       const memoHex = tx?.Memos?.[0]?.Memo?.MemoData;
       const memo = memoHex !== undefined ? safeHexDecode(memoHex) : undefined;
-      entries.push(memo !== undefined ? { hash, type, memo } : { hash, type });
+      const sequence = typeof tx?.Sequence === 'number' ? tx.Sequence : undefined;
+      const entry: TxEntry = { hash, type };
+      if (memo !== undefined) entry.memo = memo;
+      if (sequence !== undefined) entry.sequence = sequence;
+      entries.push(entry);
     }
     return entries;
   }

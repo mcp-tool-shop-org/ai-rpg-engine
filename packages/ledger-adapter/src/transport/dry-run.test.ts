@@ -176,6 +176,7 @@ describe('DryRunTransport', () => {
       const createdFromPlayer = playerTx.find((tx) => tx.type === 'EscrowCreate');
       expect(createdFromPlayer?.memo).toBe(memo);
       expect(createdFromPlayer?.hash).toBe(escrow.hash);
+      expect(createdFromPlayer?.sequence).toBe(escrow.sequence);
 
       const merchantTx = await transport.accountTx(merchant.address);
       const createdFromMerchant = merchantTx.find((tx) => tx.type === 'EscrowCreate');

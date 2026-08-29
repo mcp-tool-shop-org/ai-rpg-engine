@@ -238,6 +238,21 @@ export function createLedgerAdapter(
     return bal !== null && bal === expected;
   }
 
+  /** Recover an EscrowCreate OfferSequence from account_tx by the persisted
+   *  tesSUCCESS hash. Used when create returned ok:true without `sequence`
+   *  — never submit a second EscrowCreate for the same delta. */
+  async function recoverOfferSequence(address: string, hash: string): Promise<number | undefined> {
+    try {
+      const entries = await transport.accountTx(address);
+      const hit = entries.find(
+        (e) => e.hash === hash && e.type === 'EscrowCreate' && typeof e.sequence === 'number',
+      );
+      return hit?.sequence;
+    } catch {
+      return undefined;
+    }
+  }
+
   function markReceipt(
     receipts: Record<string, SettlementKeyReceipt>,
     key: string,
@@ -334,17 +349,19 @@ export function createLedgerAdapter(
       // Skip a key whose receipt already marks the write complete, or whose
       // on-ledger player balance already equals lastSettled+delta (a tesSUCCESS
       // that timed out before we checkpointed). Never remint/re-escrow it.
+      // An unfinished escrow receipt (hash persisted, sequence not yet known)
+      // must NOT take this skip — recover OfferSequence and finish instead.
       if (receipts[key]?.done) {
         txids.push(...receipts[key].txids);
         continue;
       }
-      if (diff > 0 || primitive === 'payment') {
-        if (await onLedgerAlreadyMatches(state, key, expected)) {
-          if (receipts[key]) receipts[key].done = true;
-          else receipts[key] = { txids: [], done: true };
-          txids.push(...(receipts[key].txids ?? []));
-          continue;
-        }
+      const unfinishedEscrow =
+        diff < 0 && primitive !== 'payment' && receipts[key] !== undefined && receipts[key].done !== true;
+      if (!unfinishedEscrow && (await onLedgerAlreadyMatches(state, key, expected))) {
+        if (receipts[key]) receipts[key].done = true;
+        else receipts[key] = { txids: [], done: true };
+        txids.push(...(receipts[key].txids ?? []));
+        continue;
       }
 
       if (diff < 0 && primitive === 'payment') {
@@ -369,6 +386,21 @@ export function createLedgerAdapter(
         const existing = receipts[key];
         let sequence = existing?.sequence;
 
+        if (sequence === undefined && existing) {
+          // tesSUCCESS without sequence: recover OfferSequence from account_tx
+          // by the persisted hash. Never EscrowCreate again for this key.
+          const priorHash = existing.txids.find((h) => h.length > 0);
+          if (priorHash) {
+            sequence = await recoverOfferSequence(state.playerAddress, priorHash);
+          }
+          if (sequence === undefined) {
+            throw new Error(
+              `escrowCreate(${key}) tesSUCCESS without sequence; not creating again until account_tx indexes OfferSequence`,
+            );
+          }
+          markReceipt(receipts, key, { txids: [], sequence });
+        }
+
         if (sequence === undefined) {
           const tick = nextId();
           const finishAfter = tick;
@@ -386,10 +418,17 @@ export function createLedgerAdapter(
             if (createRes.hash) markReceipt(receipts, key, { txids: [createRes.hash] });
             throw new Error(`escrowCreate(${key}) failed: ${createRes.error ?? createRes.code}`);
           }
-          if (createRes.sequence === undefined) {
-            throw new Error(`escrowCreate(${key}) succeeded without a sequence — cannot finish it`);
-          }
           if (createRes.hash) txids.push(createRes.hash);
+          if (createRes.sequence === undefined) {
+            // Persist hash, fail closed. Retry recovers OfferSequence from
+            // account_tx and never submits a second EscrowCreate.
+            markReceipt(receipts, key, {
+              txids: createRes.hash ? [createRes.hash] : [],
+            });
+            throw new Error(
+              `escrowCreate(${key}) tesSUCCESS without sequence; not creating again until account_tx indexes OfferSequence`,
+            );
+          }
           // Persist sequence BEFORE escrowFinish so a finish failure retries
           // only the finish, never a second EscrowCreate.
           markReceipt(receipts, key, {

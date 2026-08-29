@@ -110,6 +110,9 @@ export type TxEntry = {
   type: string; // TransactionType
   /** Decoded UTF-8 memo text of the first Memo, if any (already un-hexed). */
   memo?: string;
+  /** Submitted Sequence of this tx. An EscrowCreate's Sequence is the
+   *  OfferSequence EscrowFinish consumes; recovered when tesSUCCESS omitted it. */
+  sequence?: number;
 };
 
 /**
