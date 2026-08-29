@@ -74,7 +74,9 @@ export function isKnownReactionTrigger(trigger: string): trigger is ReactionTrig
 //   - world-tick.ts's applyCompanionReactions, fed by
 //     collectCombatReactionTriggers (combat.entity.defeated), the district-
 //     mood tone-transition check (step 0c), and the pressure-expiry step
-//     (step 3);
+//     (step 3 → pressure-resolved-badly);
+//   - world-tick.ts's resolvePressureByPlayer (the resolve-pressure verb
+//     and the opportunity-complete mapping) → pressure-resolved-well;
 //   - player-leverage.ts's dispatchLeverageCompanionReactions, called
 //     directly from all 25 leverage verb handlers (bribe/intimidate/
 //     petition/call-in-favor/recruit-ally/disguise/stake-claim →
@@ -110,13 +112,14 @@ export type ReactionTriggerStatus = {
 /**
  * Per-trigger reachability, audited against the live call sites (F-6be920bd
  * audit; v3.0 wave 1 "social-verbs" extended player-leverage.ts's producer to
- * cover all four leverage-* triggers). 9 reachable, 1 wired-but-dead, 6 dark
- * — the 6 remaining dark triggers are NOT wireable from THIS file:
- * betrayal-witnessed/obligation-betrayed/item-*-recognized need entirely new
- * producers in npc-agency.ts/item-recognition.ts that do not exist yet
- * (npc-agency's obligation ledger and item-recognition's chronicle are both
- * never persisted/never reach world.eventLog — honestly deferred to v3.0,
- * not force-wired here).
+ * cover all four leverage-* triggers; F-f4c2fa00 flipped
+ * pressure-resolved-well from wired-unreachable to reachable). 10 reachable,
+ * 0 wired-but-dead, 6 dark — the 6 remaining dark triggers are NOT wireable
+ * from THIS file: betrayal-witnessed/obligation-betrayed/item-*-recognized
+ * need entirely new producers in npc-agency.ts/item-recognition.ts that do
+ * not exist yet (npc-agency's obligation ledger and item-recognition's
+ * chronicle are both never persisted/never reach world.eventLog — honestly
+ * deferred to v3.0, not force-wired here).
  *
  * leverage-diplomacy and leverage-sabotage WERE in the dark set as of the
  * F-6be920bd audit (resolveSocialAction's LeverageResolution.verb was always
@@ -137,8 +140,8 @@ export const REACTION_TRIGGER_STATUS: Record<ReactionTrigger, ReactionTriggerSta
     note: "world-tick.ts combatReactionTrigger: a companion is defeated (the player-defeat sub-case is unreachable in the shipped CLI — bin.ts's \"no tick over a corpse\" gate always returns before this file's round scan runs)",
   },
   'pressure-resolved-well': {
-    reachability: 'wired-unreachable',
-    note: "computeFallout(..., 'resolved-by-player') is live via the resolve-pressure verb and opportunity-complete mapping (F-04dece4f, titles now earnable). This companion trigger is still only dispatched from world-tick step 3's expiry loop, which still passes 'expired-ignored', so the morale bump itself remains unwired",
+    reachability: 'reachable',
+    note: "resolvePressureByPlayer (the resolve-pressure verb and the opportunity-complete mapping) dispatches this trigger on the live resolved-by-player path (F-f4c2fa00); step 3's expiry loop stays on pressure-resolved-badly",
   },
   'pressure-resolved-badly': {
     reachability: 'reachable',

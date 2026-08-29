@@ -142,14 +142,12 @@
 // income wire (v3.0 wave 2) does not feed computeLeverageGains' reputationDelta
 // hint axis (rep-gain → favor / large-rep-loss → blackmail) — out of this
 // wave's explicit scope, xp/milestone/pressure-resolution only. Its
-// pressure-resolution axis still keys off THIS TICK's expiry ledger, so a
-// player resolve via `resolve-pressure` / opportunity-complete is recorded
-// in resolvedPressures but is not itself a leverage-income signal this
-// round — documented ceiling. The live resolved-by-player path is
-// resolvePressureByPlayer (the `resolve-pressure` verb and the
-// opportunity-complete mapping). Step 5a1 wires faction-agency the same
-// way step 5a wired npc-agency; SEED-0: a world with no factions is
-// untouched.
+// pressure-resolution axis reads THIS TICK's resolved-by-player fallouts
+// from state.resolvedPressures (resolvePressureByPlayer — the
+// `resolve-pressure` verb and the opportunity-complete mapping), not the
+// expiry ledger, which still always stamps 'expired-ignored'. Step 5a1
+// wires faction-agency the same way step 5a wired npc-agency; SEED-0: a
+// world with no factions is untouched.
 
 import type { ActionIntent, Engine, EngineModule, ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
 import {
@@ -389,6 +387,14 @@ export type WorldTickState = {
    * identical SEED-0 reason leverageMilestoneCursor documents above.
    */
   lastXp?: number;
+  /**
+   * resolvedAtTick of the last player-resolved pressure already fed to
+   * computeLeverageGains' pressureResolution axis (F-bdd030b2). The
+   * resolvedPressures ledger is append-only (bounded) and a later quiet
+   * tick would otherwise re-find the same record. OPTIONAL/lazily-written
+   * for the identical SEED-0 reason lastXp documents above.
+   */
+  leveragePressureResolutionTick?: number;
 };
 
 export type WorldTickOptions = {
@@ -791,14 +797,12 @@ function collectMilestones(world: WorldState, state: WorldTickState): void {
 //     in the exact round the player is defeated, so this file never scans
 //     that round's event-log delta. The code path stays as the honest
 //     ceiling it is, not wired away.
-//   - pressure.expired: 'resolved-by-player' → 'pressure-resolved-well'
-//     (reachable via the `resolve-pressure` verb / opportunity-complete
-//     mapping, which call computeFallout(..., 'resolved-by-player') and
-//     applyFallout; step 3's expiry loop still passes 'expired-ignored');
-//     every other resolutionType (expiry) → 'pressure-resolved-badly'
-//     (reachable). The companion trigger itself still fires only from this
-//     expiry loop, so 'pressure-resolved-well' remains unwired as a
-//     companion reaction until a future dispatch from the verb path.
+//   - pressure.expired / expiry loop → 'pressure-resolved-badly'
+//     (reachable; the loop always stamps 'expired-ignored').
+//     'pressure-resolved-well' is dispatched from resolvePressureByPlayer
+//     (the `resolve-pressure` verb and the opportunity-complete mapping),
+//     the same way player-leverage dispatches leverage-social/rumor from
+//     the verb path rather than waiting for the tick (F-f4c2fa00).
 // v2.9 (F-e5817c7c-adjacent rider): +2 more, +1 event source —
 //   - district-core's live DistrictState, read every tick through district-
 //     mood.ts's computeDistrictMood (step 0c above) → 'district-grim' /
@@ -1226,7 +1230,82 @@ export type PlayerPressureResolution = {
   pressure: WorldPressure;
   fallout: PressureFallout;
   chains: WorldPressure[];
+  companionEvents: ResolvedEvent[];
 };
+
+/**
+ * Apply the 'pressure-resolved-well' companion reaction on the live player-
+ * resolve path (F-f4c2fa00). Mirrors player-leverage.ts's
+ * dispatchLeverageCompanionReactions: VerbHandler has world-only access, so
+ * events are returned for the caller's recordEvent loop rather than emitted
+ * via engine.store. Empty party → no-op. `action` is optional so a direct
+ * resolvePressureByPlayer call still moves morale even when no verb events
+ * will be recorded.
+ */
+function dispatchPressureResolvedWell(
+  world: WorldState,
+  currentTick: number,
+  action?: ActionIntent,
+): ResolvedEvent[] {
+  let party = getPartyState(world);
+  if (party.companions.length === 0) return [];
+
+  const events: ResolvedEvent[] = [];
+  let changed = false;
+  const reactions = evaluateCompanionReactions(party.companions, 'pressure-resolved-well', { tick: currentTick });
+  for (const reaction of reactions) {
+    const companion = getCompanion(party, reaction.npcId);
+    if (!companion) continue;
+
+    party = adjustCompanionMorale(party, reaction.npcId, reaction.moraleDelta);
+    changed = true;
+    const newMorale = getCompanion(party, reaction.npcId)?.morale ?? 0;
+    const entityForSync = world.entities[reaction.npcId];
+    if (entityForSync) syncCompanionCustomFields(entityForSync, companion.role, newMorale);
+
+    if (action) {
+      events.push(makeEvent(action, 'companion.reaction', {
+        npcId: reaction.npcId,
+        trigger: reaction.trigger,
+        moraleDelta: reaction.moraleDelta,
+        morale: newMorale,
+        narratorHint: reaction.narratorHint,
+      }, {
+        targetIds: [reaction.npcId],
+        presentation: { channels: ['narrator'], priority: 'low' },
+      }));
+    }
+
+    if (reaction.departure) {
+      const removal = removeCompanion(party, reaction.npcId);
+      party = removal.party;
+      const entity = world.entities[reaction.npcId];
+      if (entity) removeCompanionTags(entity, companion.role);
+      if (action) {
+        events.push(makeEvent(action, 'companion.departed', {
+          npcId: reaction.npcId,
+          npcName: entity?.name ?? reaction.npcId,
+          role: companion.role,
+          reason: reaction.departureReason ?? 'left the party',
+        }, {
+          targetIds: [reaction.npcId],
+          presentation: { channels: ['objective', 'narrator'], priority: 'high' },
+        }));
+      }
+    }
+  }
+
+  if (!changed) return events;
+  setPartyState(world, party);
+
+  const player = world.entities[world.playerId];
+  if (player) {
+    const statusEvent = refreshCompanionAbilityStatus(world, party, player, currentTick);
+    if (statusEvent && action) events.push(statusEvent);
+  }
+
+  return events;
+}
 
 /**
  * Resolve a live pressure as `resolved-by-player` (F-04dece4f).
@@ -1235,7 +1314,13 @@ export type PlayerPressureResolution = {
  * way pushActivePressure does), computes fallout with resolutionType
  * 'resolved-by-player', applies it through applyFallout (titles, rumours,
  * economy, district metrics — the same door expiry uses), records the
- * fallout on the resolvedPressures ledger, and pushes any chain pressures.
+ * fallout on the resolvedPressures ledger, pushes any chain pressures, and
+ * dispatches 'pressure-resolved-well' companion reactions (F-f4c2fa00) so
+ * the verb and the opportunity-complete mapping both move morale.
+ *
+ * `action` is the originating verb (resolve-pressure or opportunity-complete)
+ * when one exists — companion.reaction events ride that action's recordEvent
+ * loop. Direct callers may omit it; morale still moves.
  *
  * Returns undefined when `pressureId` is not currently live.
  */
@@ -1244,6 +1329,7 @@ export function resolvePressureByPlayer(
   pressureId: string,
   currentTick: number,
   genre: string,
+  action?: ActionIntent,
 ): PlayerPressureResolution | undefined {
   const state = getWorldTickState(world);
   const working = runningPressures.get(world);
@@ -1272,7 +1358,8 @@ export function resolvePressureByPlayer(
   if (ledger.length > RESOLVED_PRESSURES_KEPT) {
     ledger.splice(0, ledger.length - RESOLVED_PRESSURES_KEPT);
   }
-  return { pressure, fallout, chains };
+  const companionEvents = dispatchPressureResolvedWell(world, currentTick, action);
+  return { pressure, fallout, chains, companionEvents };
 }
 
 function resolvePressureHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
@@ -1286,7 +1373,7 @@ function resolvePressureHandler(action: ActionIntent, world: WorldState): Resolv
   const genre = typeof action.parameters?.genre === 'string' && action.parameters.genre
     ? action.parameters.genre
     : 'fantasy';
-  const resolved = resolvePressureByPlayer(world, pressureId, action.issuedAtTick, genre);
+  const resolved = resolvePressureByPlayer(world, pressureId, action.issuedAtTick, genre, action);
   if (!resolved) {
     return [makeEvent(action, 'action.rejected', {
       verb: action.verb,
@@ -1313,6 +1400,7 @@ function resolvePressureHandler(action: ActionIntent, world: WorldState): Resolv
       presentation: { channels: ['narrator'], priority: 'high' },
     }));
   }
+  events.push(...resolved.companionEvents);
   return events;
 }
 
@@ -1836,8 +1924,9 @@ function mergeLeverageGains(
  * written back to the player entity's custom fields via applyLeverageDeltas.
  * `reputation` is the SAME `{factionId, value}[]` buildPressureInputs already
  * derives for the pressure/opportunity steps — reused, not re-plumbed.
- * `expiredFallouts` is step 3's own per-round pressure-expiry ledger (in
- * scope, not re-collected).
+ * Player-resolved fallouts are read from `state.resolvedPressures` (the
+ * ledger resolvePressureByPlayer writes), filtered to this tick — not from
+ * step 3's expiry array, which still always stamps 'expired-ignored'.
  *
  * SEED-0 IDENTITY (non-negotiable): a legacy world that never engaged the
  * social layer — no reputation (maxRep <= 0), no NEW milestones since the
@@ -1878,16 +1967,20 @@ function mergeLeverageGains(
  *
  * Honest ceiling: computeLeverageGains' reputationDelta hint axis (rep-gain
  * → favor / large-rep-loss → blackmail) is NOT wired here — out of this
- * wave's explicit scope. Its pressureResolution axis keys off THIS TICK's
- * expiry ledger (`expiredFallouts`); a player resolve via resolve-pressure
- * records into resolvedPressures outside that array, so this axis stays a
- * documented ceiling rather than a silent miss.
+ * wave's explicit scope. Its pressureResolution axis reads THIS TICK's
+ * resolved-by-player fallouts from state.resolvedPressures (F-bdd030b2).
+ * submitAction stamps issuedAtTick then advances, so a played round of
+ * resolve-pressure + runWorldTick records resolvedAtTick as engine.tick - 1;
+ * a same-tick resolve (no subsequent advance) stamps resolvedAtTick ===
+ * currentTick. Both identities count as this tick. The lazy
+ * leveragePressureResolutionTick cursor prevents a later quiet tick from
+ * re-granting the same record.
  */
 function runLeverageIncomeStep(
   world: WorldState,
   state: WorldTickState,
   reputation: PressureInputs['reputation'],
-  expiredFallouts: PressureFallout[],
+  currentTick: number,
 ): void {
   const player = world.entities[world.playerId];
   const playerCustom = (player?.custom ?? {}) as Record<string, string | number | boolean>;
@@ -1899,8 +1992,13 @@ function runLeverageIncomeStep(
   const previousXp = state.lastXp ?? 0;
   const xpGained = currentXp - previousXp;
 
-  const playerResolvedFallout = expiredFallouts.find(
-    (f) => f.resolution.resolutionType === 'resolved-by-player',
+  const alreadyGrantedTick = state.leveragePressureResolutionTick;
+  const playerResolvedFallout = (state.resolvedPressures ?? []).find(
+    (f) =>
+      f.resolution.resolutionType === 'resolved-by-player' &&
+      f.resolution.resolvedAtTick !== alreadyGrantedTick &&
+      (f.resolution.resolvedAtTick === currentTick ||
+        f.resolution.resolvedAtTick === currentTick - 1),
   );
 
   const maxRep = Math.max(0, ...reputation.map((r) => r.value));
@@ -1939,6 +2037,7 @@ function runLeverageIncomeStep(
         pressureResolution: { resolutionType: playerResolvedFallout.resolution.resolutionType },
       }),
     );
+    state.leveragePressureResolutionTick = playerResolvedFallout.resolution.resolvedAtTick;
   }
   custom = applyLeverageDeltas(custom, gains);
 
@@ -2120,16 +2219,11 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
     const chains = applyFallout(world, state, fallout, currentTick);
     expiredFallouts.push(fallout);
 
-    // Companion reactions (F-b595731a): 'resolved-by-player' is the one
-    // resolutionType that unambiguously means the player actively dealt with
-    // the threat. This expiry loop always passes 'expired-ignored'; the live
-    // resolved-by-player path is the `resolve-pressure` verb (and the
-    // opportunity-complete mapping) via resolvePressureByPlayer.
-    reactionTriggers.push(
-      fallout.resolution.resolutionType === 'resolved-by-player'
-        ? 'pressure-resolved-well'
-        : 'pressure-resolved-badly',
-    );
+    // Companion reactions (F-f4c2fa00): expiry is always 'expired-ignored'
+    // → pressure-resolved-badly. The live resolved-by-player path dispatches
+    // pressure-resolved-well from resolvePressureByPlayer (the verb and the
+    // opportunity-complete mapping), not from this loop.
+    reactionTriggers.push('pressure-resolved-badly');
 
     const wasHidden = pressure.visibility === 'hidden';
     emitPressureEvent(
@@ -2252,7 +2346,7 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   // Computed AFTER 5a/5a1 so NPC- and faction-spawned pressures and their
   // reputation/alert writes are visible to opportunity evaluation.
   const oppPressureInputs = buildPressureInputs(world, state, genre, currentTick, active);
-  runLeverageIncomeStep(world, state, oppPressureInputs.reputation, expiredFallouts);
+  runLeverageIncomeStep(world, state, oppPressureInputs.reputation, currentTick);
 
   // 5b. Opportunity spawn/tick wire (F-ceed887f) — see file header. Runs
   // every round (not heat-gated). Reuses buildPressureInputs' own

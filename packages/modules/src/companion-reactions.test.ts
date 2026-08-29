@@ -246,10 +246,10 @@ describe('REACTION_TRIGGER_STATUS (F-6be920bd audit)', () => {
     }
   });
 
-  it('matches the audited totals: 9 reachable, 1 wired-unreachable, 6 dark', () => {
+  it('matches the audited totals: 10 reachable, 0 wired-unreachable, 6 dark', () => {
     const values = Object.values(REACTION_TRIGGER_STATUS);
-    expect(values.filter((v) => v.reachability === 'reachable')).toHaveLength(9);
-    expect(values.filter((v) => v.reachability === 'wired-unreachable')).toHaveLength(1);
+    expect(values.filter((v) => v.reachability === 'reachable')).toHaveLength(10);
+    expect(values.filter((v) => v.reachability === 'wired-unreachable')).toHaveLength(0);
     expect(values.filter((v) => v.reachability === 'dark')).toHaveLength(6);
   });
 
@@ -270,8 +270,9 @@ describe('REACTION_TRIGGER_STATUS (F-6be920bd audit)', () => {
     expect(REACTION_TRIGGER_STATUS['leverage-sabotage'].note).toMatch(/sabotage/);
   });
 
-  it('pressure-resolved-well is wired but unreachable (dead branch — the one production call site always passes a different literal)', () => {
-    expect(REACTION_TRIGGER_STATUS['pressure-resolved-well'].reachability).toBe('wired-unreachable');
+  it('F-f4c2fa00: pressure-resolved-well is reachable — resolvePressureByPlayer (resolve-pressure / opportunity-complete) dispatches it', () => {
+    expect(REACTION_TRIGGER_STATUS['pressure-resolved-well'].reachability).toBe('reachable');
+    expect(REACTION_TRIGGER_STATUS['pressure-resolved-well'].note).toMatch(/resolve-pressure/);
   });
 
   it('the 6 explicitly-deferred-to-v3.0 triggers (betrayal-witnessed, obligation-betrayed, item-*-recognized) are all dark, not force-wired', () => {
