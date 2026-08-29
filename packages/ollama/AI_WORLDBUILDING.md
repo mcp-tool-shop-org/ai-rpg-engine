@@ -617,7 +617,7 @@ experiment-plan <goal> → plan with steps + estimated runs
 | `escalationGain` | 0.0–1.0 | ratio |
 | `encounterDifficulty` | 0.0–1.0 | ratio |
 
-`generateSweepValues(from, to, step)` produces float-safe ranges. Each point runs the full experiment and a recommendation is generated from results.
+`generateSweepValues(from, to, step)` produces float-safe ranges, capped at `MAX_EXPERIMENT_RUNS` (a tiny step is truncated, same bound as `seedList`). `runParameterSweep` slices `sweepSpec.values` the same way. Each point runs the full experiment and a recommendation is generated from results.
 
 #### P5 — Experiment Comparison
 
