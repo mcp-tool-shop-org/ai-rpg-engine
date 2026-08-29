@@ -20,7 +20,7 @@ Western + supernatural. Gunslingers, dust spirits, and a mesa cult. The Dust res
 import { createGame } from '@ai-rpg-engine/starter-weird-west';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## Content

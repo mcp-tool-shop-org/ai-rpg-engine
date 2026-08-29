@@ -18,7 +18,7 @@
 import { createGame } from '@ai-rpg-engine/starter-weird-west';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## 内容

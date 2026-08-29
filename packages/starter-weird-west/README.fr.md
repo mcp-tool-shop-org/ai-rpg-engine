@@ -18,7 +18,7 @@ Western + surnaturel. Tireurs, esprits de poussière et un culte du plateau. La 
 import { createGame } from '@ai-rpg-engine/starter-weird-west';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## Contenu

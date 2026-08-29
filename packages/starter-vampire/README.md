@@ -30,7 +30,7 @@ Gothic horror + vampire court politics. Bloodlust rises each tick — if it hits
 import { createGame } from '@ai-rpg-engine/starter-vampire';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## Patterns Demonstrated

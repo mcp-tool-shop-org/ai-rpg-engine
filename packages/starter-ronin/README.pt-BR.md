@@ -30,7 +30,7 @@ Mistério feudal + intrigas da corte. A honra é frágil — falsas acusações 
 import { createGame } from '@ai-rpg-engine/starter-ronin';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## Padrões Demonstrados

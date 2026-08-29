@@ -20,7 +20,7 @@ SF風の植民地運営 + 異星人との接触。電力は植民地全体の共
 import { createGame } from '@ai-rpg-engine/starter-colony';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## 示されているパターン

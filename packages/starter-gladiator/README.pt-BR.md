@@ -30,7 +30,7 @@ Combate em arena romana + política de patrocínio. O Favor da Multidão oscila 
 import { createGame } from '@ai-rpg-engine/starter-gladiator';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## Padrões Demonstrados
