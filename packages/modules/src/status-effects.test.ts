@@ -340,6 +340,41 @@ describe('processStatusTriggers — reactive triggers + depth cap', () => {
     expect(attacker.resources.hp).toBe(18); // took 2 reflect
   });
 
+  it('a lethal reflect stamps defeatedBy from the reactor entity (F-45ae2d2c)', () => {
+    registerStatusDefinitions([
+      {
+        id: 'spiked', name: 'Spiked', tags: ['buff'], stacking: 'replace',
+        triggers: [
+          {
+            event: 'combat.damage.applied',
+            effect: { type: 'damage', target: 'target', params: { amount: 20, triggerTarget: 'attacker' } },
+          },
+        ],
+      },
+    ]);
+    const defender = makeEntity({ id: 'defender', name: 'Defender', zoneId: 'zone-1' });
+    const attacker = makeEntity({
+      id: 'attacker', name: 'Attacker',
+      resources: { hp: 5, maxHp: 20 },
+      zoneId: 'zone-1',
+    });
+    defender.statuses = [{ id: 's1', statusId: 'spiked', stacks: 1, appliedAtTick: 0, sourceId: 'defender' }];
+    const world = makeWorld([defender, attacker], 1);
+
+    const incoming = {
+      id: 'evt1', tick: 1, type: 'combat.damage.applied',
+      actorId: 'attacker', targetIds: ['defender'],
+      payload: { attackerId: 'attacker', targetId: 'defender', damage: 5 },
+    };
+    const events = processStatusTriggers(incoming, world, makeProcContext(), 1);
+    const defeat = events.find(ev => ev.type === 'combat.entity.defeated');
+    expect(defeat).toBeDefined();
+    expect(defeat!.payload.entityId).toBe('attacker');
+    expect(defeat!.payload.defeatedBy).toBe('defender');
+    expect(defeat!.payload.defeatedByName).toBe('Defender');
+    expect(defeat!.payload.defeatZoneId).toBe('zone-1');
+  });
+
   it('halts a reflect ping-pong loop at PROC_DEPTH_LIMIT', () => {
     // Two entities each reflect damage taken back at the source. Left unbounded
     // this ping-pongs forever (MTG-104.4b-style mandatory loop).
@@ -664,6 +699,40 @@ describe('MOD-C-BH-01: periodic events carry description + presentation + render
     expect(defeat).toBeDefined();
     expect(defeat!.presentation?.channels).toContain('narrator');
     expect(defeat!.presentation?.priority).toBe('critical');
+  });
+
+  it('a player-sourced DoT kill stamps defeatedBy so fallout can attribute the kill (F-45ae2d2c)', () => {
+    const player = makeEntity({ id: 'player', name: 'Hero' });
+    const victim = makeEntity({ id: 'e1', name: 'E1', resources: { hp: 2, maxHp: 20 }, zoneId: 'zone-1' });
+    const world = makeWorld([player, victim], 0);
+    applyStatus(victim, 'burning', 0, {
+      duration: 4,
+      sourceId: 'player',
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 5 },
+    }, world);
+
+    const events = processPeriodicStatuses(world, 0);
+    const defeat = events.find(ev => ev.type === 'combat.entity.defeated');
+    expect(defeat).toBeDefined();
+    expect(defeat!.payload.defeatedBy).toBe('player');
+    expect(defeat!.payload.defeatedByName).toBe('Hero');
+    expect(defeat!.payload.defeatZoneId).toBe('zone-1');
+  });
+
+  it('a non-entity DoT source omits defeatedBy so player-fallen still keys entityId (F-45ae2d2c)', () => {
+    const e = makeEntity({ resources: { hp: 2, maxHp: 20 } });
+    const world = makeWorld([e], 0);
+    applyStatus(e, 'burning', 0, {
+      duration: 4,
+      sourceId: 'swamp-gas',
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 5 },
+    }, world);
+
+    const events = processPeriodicStatuses(world, 0);
+    const defeat = events.find(ev => ev.type === 'combat.entity.defeated');
+    expect(defeat).toBeDefined();
+    expect(defeat!.payload.defeatedBy).toBeUndefined();
+    expect(defeat!.payload.entityId).toBe('e1');
   });
 
   it('descriptions stay deterministic — same seed, byte-identical periodic event payloads', () => {

@@ -191,6 +191,11 @@ function handleDamage(effect: EffectDefinition, ctx: EffectContext): ResolvedEve
         abilityName: ctx.ability.name,
         attackerId: ctx.actor.id,
         attackerName: ctx.actor.name,
+        // Match attackHandler so defeat-fallout's player-kill branch
+        // (payload.defeatedBy === playerId) actually writes heat/reputation.
+        defeatedBy: ctx.actor.id,
+        defeatedByName: ctx.actor.name,
+        defeatZoneId: target.zoneId ?? '',
       }, {
         targetIds: [target.id],
         tags: ['combat', 'defeat', 'ability'],
