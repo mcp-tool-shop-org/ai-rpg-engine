@@ -6,6 +6,7 @@ import { statusCore, hasStatus } from './status-core.js';
 import { createAbilityCore } from './ability-core.js';
 import { createAbilityEffects, registerEffectHandler, getEffectHandler, clearEffectRegistry } from './ability-effects.js';
 import type { AbilityEffectHandler } from './ability-effects.js';
+import { createEnvironmentCore } from './environment-core.js';
 import { createDistrictCore } from './district-core.js';
 import { createDefeatFallout } from './defeat-fallout.js';
 
@@ -233,6 +234,7 @@ describe('ability-effects: damage', () => {
         statusCore,
         createAbilityCore({ abilities: allAbilities }),
         createAbilityEffects(),
+        createEnvironmentCore(),
         createDistrictCore({
           districts: [{ id: 'district-1', name: 'Market', zoneIds: ['zone-a'], tags: [] }],
         }),
