@@ -423,6 +423,9 @@ export function applyTypedHazards(
             if (effect.durationTicks !== undefined) {
               // Periodic damage rides status-core's EXISTING DoT machinery rather
               // than a bespoke timer — one implementation of "damage over time".
+              // Pulses emit combat.damage.applied + processStatusTriggers from
+              // processPeriodicStatuses (F-b000f36d); actorId is spec.id via
+              // sourceId, never the walker (F-1f8eb735).
               recordStatus(
                 applyStatus(
                   live,
