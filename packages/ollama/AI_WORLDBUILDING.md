@@ -154,6 +154,7 @@ Without `--validate`, the honest default stands: the draft is emitted with its v
 What you'll see on stderr:
 - `Repaired: 3 validation error(s) fixed.` — repair succeeded
 - `Repair attempted: 3 original error(s), 1 remaining.` — partial repair
+- `Repair failed: ...` — the repair generate call itself failed (daemon down, timeout, model not pulled); original draft is kept
 - `Generated on first pass (has validation warnings).` — valid enough but not perfect
 
 `--validate` and `--repair` compose: with both, `create-room` / `create-quest` attempts a repair first, then still refuses to emit if the result is invalid.
@@ -583,7 +584,7 @@ experiment-plan <goal> → plan with steps + estimated runs
 
 #### P1 — Deterministic Experiment Runner
 
-`runExperiment(spec, producer)` batch-runs a scenario N times. Each run gets its own seed via `deriveSeeds()` (from `seedList` or `seedStart`). Results are reproducible across machines. Failed runs are recorded with errors; successful runs still aggregate.
+`runExperiment(spec, producer)` batch-runs a scenario N times. Each run gets its own seed via `deriveSeeds()` (from `seedList` or `seedStart`; both capped at `MAX_EXPERIMENT_RUNS`). Results are reproducible across machines. Failed runs are recorded with errors; successful runs still aggregate.
 
 #### P2 — Scenario Metrics Extraction
 

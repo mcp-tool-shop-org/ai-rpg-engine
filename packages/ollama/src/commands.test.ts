@@ -171,6 +171,29 @@ describe('createRoom', () => {
     }
   });
 
+  it('surfaces a failed repair pass instead of swallowing the generate error', async () => {
+    let callCount = 0;
+    const client: OllamaTextClient = {
+      async generate(_input: PromptInput): Promise<PromptResult> {
+        callCount++;
+        if (callCount === 1) {
+          return { ok: true, text: 'id: broken_room' };
+        }
+        return { ok: false, error: 'Could not reach the Ollama server. Start it with "ollama serve".' };
+      },
+    };
+    const result = await createRoom(client, { theme: 'test', repair: true });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.repaired).toBe(false);
+      expect(result.yaml).toContain('broken_room');
+      expect(result.repairNote).toMatch(/Repair failed/i);
+      expect(result.repairNote).toContain('ollama serve');
+      expect(result.validation.valid).toBe(false);
+    }
+    expect(callCount).toBe(2);
+  });
+
   it('skips repair when first output is valid-looking', async () => {
     let callCount = 0;
     const client: OllamaTextClient = {
@@ -390,6 +413,29 @@ describe('createQuest (repair)', () => {
       expect(result.yaml).toContain('fixed_quest');
       expect(result.repairNote).toBeDefined();
     }
+  });
+
+  it('surfaces a failed repair pass instead of swallowing the generate error', async () => {
+    let callCount = 0;
+    const client: OllamaTextClient = {
+      async generate(_input: PromptInput): Promise<PromptResult> {
+        callCount++;
+        if (callCount === 1) {
+          return { ok: true, text: 'id: broken_quest' };
+        }
+        return { ok: false, error: 'Model "qwen2.5-coder" is not installed. Pull it first with "ollama pull qwen2.5-coder".' };
+      },
+    };
+    const result = await createQuest(client, { theme: 'test', repair: true });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.repaired).toBe(false);
+      expect(result.yaml).toContain('broken_quest');
+      expect(result.repairNote).toMatch(/Repair failed/i);
+      expect(result.repairNote).toContain('ollama pull');
+      expect(result.validation.valid).toBe(false);
+    }
+    expect(callCount).toBe(2);
   });
 });
 

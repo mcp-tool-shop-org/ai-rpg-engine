@@ -63,6 +63,21 @@ describe('cli emit() --write sandbox (A2)', () => {
     expect(await fs.readFile(target, 'utf-8')).toBe('id: room-1\n');
   });
 
+  it('resolves a relative --write path against projectRoot, not cwd', async () => {
+    const cwdDir = path.join(tmpDir, 'cwd');
+    await fs.mkdir(cwdDir, { recursive: true });
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const prevCwd = process.cwd();
+    try {
+      process.chdir(cwdDir);
+      await emit('id: rel\n', 'out.yaml', projectRoot);
+      expect(await fs.readFile(path.join(projectRoot, 'out.yaml'), 'utf-8')).toBe('id: rel\n');
+      await expect(fs.access(path.join(cwdDir, 'out.yaml'))).rejects.toThrow();
+    } finally {
+      process.chdir(prevCwd);
+    }
+  });
+
   it('without --write, emits to stdout and touches no files', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 

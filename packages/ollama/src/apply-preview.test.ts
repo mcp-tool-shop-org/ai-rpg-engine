@@ -91,24 +91,29 @@ describe('apply-preview', () => {
   describe('applyConfirmed', () => {
     it('writes file to disk', async () => {
       const target = join(tempDir, 'output.yaml');
-      const msg = await applyConfirmed({
+      const result = await applyConfirmed({
         content: 'id: written\nname: Written Room',
         targetPath: target,
         projectRoot: tempDir,
       });
 
-      expect(msg).toContain('Written');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.path).toBe(resolve(target));
+        expect(result.bytes).toBe('id: written\nname: Written Room'.length);
+      }
       const onDisk = await readFile(target, 'utf-8');
       expect(onDisk).toBe('id: written\nname: Written Room');
     });
 
     it('creates parent directories', async () => {
       const target = join(tempDir, 'sub', 'deep', 'output.yaml');
-      await applyConfirmed({
+      const result = await applyConfirmed({
         content: 'id: nested',
         targetPath: target,
         projectRoot: tempDir,
       });
+      expect(result.ok).toBe(true);
 
       const onDisk = await readFile(target, 'utf-8');
       expect(onDisk).toBe('id: nested');
@@ -117,11 +122,12 @@ describe('apply-preview', () => {
     it('overwrites existing file', async () => {
       const target = join(tempDir, 'overwrite.yaml');
       await writeFile(target, 'old', 'utf-8');
-      await applyConfirmed({
+      const result = await applyConfirmed({
         content: 'new',
         targetPath: target,
         projectRoot: tempDir,
       });
+      expect(result.ok).toBe(true);
 
       const onDisk = await readFile(target, 'utf-8');
       expect(onDisk).toBe('new');
@@ -161,8 +167,56 @@ describe('apply-preview', () => {
     });
 
     it('applyConfirmed refuses to write outside projectRoot', async () => {
-      const msg = await applyConfirmed({ content: 'x', targetPath: secret, projectRoot: root });
-      expect(msg).toContain('escapes project root');
+      const result = await applyConfirmed({ content: 'x', targetPath: secret, projectRoot: root });
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toContain('escapes project root');
+      await expect(readFile(secret, 'utf-8')).resolves.toBe('id: SECRET\nsize: 9999\n');
+    });
+  });
+
+  // Relative targets must resolve against projectRoot, not process.cwd()
+  // (F-10f397f0). Chat scaffold pendingWrite uses `${artifactId}.yaml`.
+  describe('relative targets resolve against projectRoot', () => {
+    it('applyConfirmed writes a relative path under projectRoot when cwd differs', async () => {
+      const project = join(tempDir, 'project');
+      const cwdDir = join(tempDir, 'cwd');
+      await mkdir(project, { recursive: true });
+      await mkdir(cwdDir, { recursive: true });
+      const prevCwd = process.cwd();
+      try {
+        process.chdir(cwdDir);
+        const result = await applyConfirmed({
+          content: 'id: rel',
+          targetPath: 'rel.yaml',
+          projectRoot: project,
+        });
+        expect(result.ok).toBe(true);
+        expect(await readFile(join(project, 'rel.yaml'), 'utf-8')).toBe('id: rel');
+        await expect(readFile(join(cwdDir, 'rel.yaml'), 'utf-8')).rejects.toThrow();
+      } finally {
+        process.chdir(prevCwd);
+      }
+    });
+
+    it('generatePreview previews a relative path under projectRoot when cwd differs', async () => {
+      const project = join(tempDir, 'project');
+      const cwdDir = join(tempDir, 'cwd');
+      await mkdir(project, { recursive: true });
+      await mkdir(cwdDir, { recursive: true });
+      const prevCwd = process.cwd();
+      try {
+        process.chdir(cwdDir);
+        const result = await generatePreview({
+          content: 'id: rel',
+          targetPath: 'rel.yaml',
+          projectRoot: project,
+        });
+        expect(result.preview).not.toContain('BLOCKED');
+        expect(result.preview).toContain('CREATE');
+        expect(result.targetPath).toBe(resolve(project, 'rel.yaml'));
+      } finally {
+        process.chdir(prevCwd);
+      }
     });
   });
 });

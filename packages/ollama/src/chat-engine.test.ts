@@ -318,9 +318,39 @@ describe('engine.process — confirmed write confines against projectRoot', () =
 
     const response = await engine.process('yes');
     expect(response).toMatch(/escapes project root/i);
-    // No file written outside the sandbox.
+    // No file written outside the sandbox, and pendingWrite is kept so the
+    // user can retry a safer path instead of losing the staged content.
     await expect(access(escapeTarget)).rejects.toBeTruthy();
+    expect(engine.pendingWrite).not.toBeNull();
+    expect(engine.pendingWrite!.suggestedPath).toBe(escapeTarget);
     try { await rm(outside, { recursive: true, force: true }); } catch { /* ignore */ }
+  });
+
+  it('writes a relative pending path under projectRoot when cwd differs', async () => {
+    projectRoot = await mkdtemp(join(tmpdir(), 'ollama-engine-rel-'));
+    const cwdDir = await mkdtemp(join(tmpdir(), 'ollama-engine-cwd-'));
+    const prevCwd = process.cwd();
+    const engine = createChatEngine({
+      client: mockClient('ack'),
+      projectRoot,
+      rawMode: true,
+    });
+    engine.pendingWrite = {
+      content: 'id: rel-artifact',
+      suggestedPath: 'artifact.yaml',
+      label: 'relative artifact',
+    };
+    try {
+      process.chdir(cwdDir);
+      const response = await engine.process('yes');
+      expect(response).toContain('Written');
+      expect(engine.pendingWrite).toBeNull();
+      await expect(access(join(projectRoot, 'artifact.yaml'))).resolves.toBeUndefined();
+      await expect(access(join(cwdDir, 'artifact.yaml'))).rejects.toBeTruthy();
+    } finally {
+      process.chdir(prevCwd);
+      try { await rm(cwdDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
   });
 });
 

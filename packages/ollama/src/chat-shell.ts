@@ -70,9 +70,9 @@ export type ChatShellOptions = {
  * readline 'close' handler, which fires for /quit, Ctrl+D, and Ctrl+C alike.
  *
  * It also surfaces failure honestly: saveTranscript signals a sandbox
- * violation by RETURNING an 'Error: ...' string and can THROW on disk errors
- * (mkdir/writeFile) — both used to be swallowed while "Transcript saved"
- * printed regardless. Returns the saved path, or null when nothing was saved.
+ * violation with {ok:false} and can THROW on disk errors (mkdir/writeFile) —
+ * both used to be swallowed while "Transcript saved" printed regardless.
+ * Returns the saved path, or null when nothing was saved.
  * Never throws (it runs at exit — the one moment a crash also loses the data
  * it exists to protect).
  *
@@ -87,12 +87,12 @@ export async function persistTranscriptAtExit(
   const path = defaultTranscriptPath(projectRoot, transcript.sessionName);
   try {
     const saved = await saveTranscript(path, transcript, projectRoot);
-    if (saved.startsWith('Error:')) {
-      console.error(`Transcript NOT saved — ${saved}`);
+    if (!saved.ok) {
+      console.error(`Transcript NOT saved — ${saved.error}`);
       return null;
     }
-    console.log(`Transcript saved to ${saved}`);
-    return saved;
+    console.log(`Transcript saved to ${saved.path}`);
+    return saved.path;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`Transcript NOT saved — ${msg}`);
@@ -213,15 +213,15 @@ export async function handleSlashCommand(
         return 'handled';
       }
       const path = defaultTranscriptPath(projectRoot, transcript.sessionName);
-      // saveTranscript signals sandbox failure by RETURNING an 'Error: ...'
-      // string; printing an unconditional success line was a false receipt
-      // (v2.6 Stage C F-77c30d19). Disk errors (mkdir/writeFile) throw and are
-      // caught by the shell's slash-command try/catch (F-2ef8b590).
+      // saveTranscript signals sandbox failure with {ok:false}; printing an
+      // unconditional success line was a false receipt (v2.6 Stage C F-77c30d19).
+      // Disk errors (mkdir/writeFile) throw and are caught by the shell's
+      // slash-command try/catch (F-2ef8b590).
       const saved = await saveTranscript(path, transcript, projectRoot);
-      if (saved.startsWith('Error:')) {
-        console.log(`Transcript NOT saved — ${saved}`);
+      if (!saved.ok) {
+        console.log(`Transcript NOT saved — ${saved.error}`);
       } else {
-        console.log(`Transcript saved to ${saved}`);
+        console.log(`Transcript saved to ${saved.path}`);
       }
       return 'handled';
     }

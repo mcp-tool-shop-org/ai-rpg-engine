@@ -3,7 +3,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, mkdir, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   createTranscript, addToTranscript, saveTranscript, loadTranscript,
   defaultTranscriptPath,
@@ -187,7 +187,8 @@ describe('saveTranscript + loadTranscript — project-root sandbox (F-2992b0cf)'
     const t = createTranscript('escape-attempt');
 
     const result = await saveTranscript(escapee, t, root);
-    expect(result).toContain('escapes project root');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toContain('escapes project root');
     await expect(readFile(join(outside, 'escaped.jsonl'), 'utf-8')).rejects.toThrow(); // nothing written
   });
 
@@ -196,7 +197,8 @@ describe('saveTranscript + loadTranscript — project-root sandbox (F-2992b0cf)'
     const t = createTranscript('inside-session');
 
     const result = await saveTranscript(inside, t, root);
-    expect(result).not.toContain('escapes project root');
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.path).toBe(resolve(inside));
     expect(await readFile(inside, 'utf-8')).toContain('inside-session');
   });
 
@@ -222,5 +224,25 @@ describe('saveTranscript + loadTranscript — project-root sandbox (F-2992b0cf)'
     const loaded = await loadTranscript(inside, root);
     expect(loaded).not.toBeNull();
     expect(loaded!.sessionName).toBe('inside-session');
+  });
+
+  it('resolves a relative path against projectRoot, not cwd', async () => {
+    const cwdDir = join(tempDir, 'cwd');
+    await mkdir(cwdDir, { recursive: true });
+    const t = createTranscript('rel-session');
+    const prevCwd = process.cwd();
+    try {
+      process.chdir(cwdDir);
+      const saved = await saveTranscript('chat.jsonl', t, root);
+      expect(saved.ok).toBe(true);
+      expect(await readFile(join(root, 'chat.jsonl'), 'utf-8')).toContain('rel-session');
+      await expect(readFile(join(cwdDir, 'chat.jsonl'), 'utf-8')).rejects.toThrow();
+
+      const loaded = await loadTranscript('chat.jsonl', root);
+      expect(loaded).not.toBeNull();
+      expect(loaded!.sessionName).toBe('rel-session');
+    } finally {
+      process.chdir(prevCwd);
+    }
   });
 });

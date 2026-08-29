@@ -31,7 +31,7 @@ import {
   scaffoldAndCritique, compareAndFix, planAndGenerate,
   type MacroProgress, type ScaffoldKind,
 } from './macros.js';
-import { generatePreview, applyConfirmed, withinRoot } from './apply-preview.js';
+import { generatePreview, applyConfirmed, withinRoot, resolveUnderRoot } from './apply-preview.js';
 import {
   loadSession, saveSession, deleteSession, createSession,
   addThemes, addConstraints, addArtifact, addCritiqueIssues,
@@ -166,7 +166,7 @@ export async function emit(
   projectRoot: string = process.cwd(),
 ): Promise<void> {
   if (writePath) {
-    const resolved = resolve(writePath);
+    const resolved = resolveUnderRoot(writePath, projectRoot);
     if (!withinRoot(resolved, projectRoot)) {
       console.error(`Error: --write target escapes the project root (${resolved})`);
       console.error(`Writes are sandboxed to ${resolve(projectRoot)}. Choose a path inside the project.`);
@@ -247,6 +247,18 @@ function printValidationWarnings(validation: GeneratedContentResult): void {
   }
   console.error('(Drafts are validated strictly at engine load; add --validate to refuse invalid output here.'
     + ' For a plain-English fix guide, pipe the errors to "ai explain-validation-error".)');
+}
+
+/** Print repair outcome (including a failed repair pass) before the validate gate. */
+function printGenerationNotes(result: {
+  repairNote?: string;
+  validation: GeneratedContentResult;
+}): void {
+  if (result.repairNote) {
+    console.error(result.repairNote);
+  } else if (!result.validation.valid) {
+    console.error('Generated on first pass (has validation warnings).');
+  }
 }
 
 /**
@@ -477,13 +489,8 @@ async function runCliInner(args: string[]): Promise<void> {
         process.exit(1);
       }
 
+      printGenerationNotes(result);
       enforceValidationGate('room', result.validation, flags.validate);
-
-      if (result.repaired && result.repairNote) {
-        console.error(result.repairNote);
-      } else if (!result.validation.valid) {
-        console.error('Generated on first pass (has validation warnings).');
-      }
       await emit(result.yaml, flags.write);
       printValidationWarnings(result.validation);
       if (session) {
@@ -545,13 +552,8 @@ async function runCliInner(args: string[]): Promise<void> {
         process.exit(1);
       }
 
+      printGenerationNotes(result);
       enforceValidationGate('quest', result.validation, flags.validate);
-
-      if (result.repaired && result.repairNote) {
-        console.error(result.repairNote);
-      } else if (!result.validation.valid) {
-        console.error('Generated on first pass (has validation warnings).');
-      }
       await emit(result.yaml, flags.write);
       printValidationWarnings(result.validation);
       if (session) {
@@ -1284,10 +1286,17 @@ async function runCliInner(args: string[]): Promise<void> {
       }
 
       if (flags.confirm) {
-        const msg = await applyConfirmed({ content: input, targetPath, label: flags.contentType, projectRoot });
-        console.log(msg);
+        const result = await applyConfirmed({ content: input, targetPath, label: flags.contentType, projectRoot });
+        if (!result.ok) {
+          throw new CliError(
+            'WRITE_BLOCKED',
+            result.error,
+            `Writes are sandboxed to ${resolve(projectRoot)}. Choose a path inside the project.`,
+          );
+        }
+        console.log(`Written: ${result.path} (${result.bytes} bytes)`);
         if (session) {
-          recordEvent(session, 'content_applied', targetPath);
+          recordEvent(session, 'content_applied', result.path);
           await saveSession(projectRoot, session);
         }
       } else {

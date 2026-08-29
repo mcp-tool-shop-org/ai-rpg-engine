@@ -272,3 +272,91 @@ describe('runCli — help banner version (F-8d5c2ea9)', () => {
     expect(stdout).not.toContain('v1.0.0');
   });
 });
+
+// F-77398344 — a blocked apply-preview --confirm used to console.log the
+// "Error: ..." string, record content_applied, and leave exitCode 0.
+describe('runCli — apply-preview --confirm blocked write (F-77398344)', () => {
+  it('treats a sandbox-blocked confirm as WRITE_BLOCKED (exit 1, nothing written)', async () => {
+    await runCli(['session', 'start', 'blocked-write']);
+    process.exitCode = 0;
+
+    const { Readable } = await import('node:stream');
+    const escapePath = path.join(path.dirname(tmpDir), `escape-apply-${path.basename(tmpDir)}.yaml`);
+    const fakeStdin = Readable.from(['blocked-body']);
+    const originalStdin = process.stdin;
+    Object.defineProperty(process, 'stdin', { value: fakeStdin, configurable: true });
+    try {
+      await runCli(['apply-preview', '--stdin', '--write', escapePath, '--confirm']);
+    } finally {
+      Object.defineProperty(process, 'stdin', { value: originalStdin, configurable: true });
+    }
+
+    expect(process.exitCode).toBe(1);
+    expect(stderrText()).toContain('WRITE_BLOCKED');
+    expect(stderrText()).toMatch(/escapes/i);
+    expect(stdoutText()).not.toMatch(/Written:/);
+    await expect(fs.access(escapePath)).rejects.toThrow();
+    const sessionRaw = await fs.readFile(sessionFile(), 'utf-8');
+    expect(sessionRaw).not.toContain('content_applied');
+  });
+});
+
+// F-420e99d8 — a failed repair generate (daemon down / model not pulled)
+// used to return the original invalid draft as a quiet first-pass success.
+describe('runCli — --repair generate failure (F-420e99d8)', () => {
+  function mockOllamaThenHttpError(firstText: string, status: number, body: string): void {
+    let calls = 0;
+    globalThis.fetch = vi.fn(async () => {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ response: firstText }),
+          text: async () => '',
+          headers: new Headers(),
+        } as unknown as Response;
+      }
+      return {
+        ok: false,
+        status,
+        json: async () => JSON.parse(body),
+        text: async () => body,
+        headers: new Headers(),
+      } as unknown as Response;
+    }) as unknown as typeof fetch;
+  }
+
+  it('prints Repair failed (not "Generated on first pass") and keeps the original draft', async () => {
+    mockOllamaThenHttpError(
+      'id: broken_room',
+      404,
+      '{"error":"model \\"qwen2.5-coder\\" not found, try pulling it first"}',
+    );
+
+    await runCli(['create-room', '--theme', 'crypt', '--repair']);
+
+    expect(process.exitCode ?? 0).toBe(0);
+    const stderr = stderrText();
+    expect(stderr).toMatch(/Repair failed/i);
+    expect(stderr).toMatch(/ollama pull/i);
+    expect(stderr).not.toContain('Generated on first pass');
+    expect(stdoutText()).toContain('broken_room');
+  });
+
+  it('--validate refuses to emit after a failed repair pass', async () => {
+    mockOllamaThenHttpError(
+      'id: broken_room',
+      404,
+      '{"error":"model \\"qwen2.5-coder\\" not found, try pulling it first"}',
+    );
+    const target = path.join(tmpDir, 'room.yaml');
+
+    await runCli(['create-room', '--theme', 'crypt', '--repair', '--validate', '--write', target]);
+
+    expect(process.exitCode).toBe(1);
+    expect(stderrText()).toMatch(/Repair failed/i);
+    expect(stderrText()).toContain('INVALID_CONTENT');
+    await expect(fs.access(target)).rejects.toThrow();
+  });
+});
