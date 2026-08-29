@@ -126,6 +126,7 @@ import { createCraftingCore } from './crafting-recipes.js';
 import { createPlayerLeverageCore } from './player-leverage.js';
 import { createOpportunityCore } from './opportunity-resolution.js';
 import { createNpcAgency } from './npc-agency.js';
+import { createFactionAgency } from './faction-agency.js';
 
 // ---------------------------------------------------------------------------
 // buildWorldStack — eliminates the strategic-tier hand-list
@@ -309,6 +310,12 @@ export function buildWorldStack(config: WorldStackConfig = {}): WorldStack {
     // individual-actor layer companion-core's roles/morale sit inside.
     // world-tick.ts's per-round step is the production writer.
     createNpcAgency(),
+    // F-b57cee05: faction-agency, the npc-agency sibling v3.0 never wired.
+    // Always included, no config; registers ONLY module identity (no verb,
+    // no eager namespace default — SEED-0: a world with no factions never
+    // grows world.modules['faction-agency']). world-tick.ts's per-round
+    // step is the production writer.
+    createFactionAgency(),
     // F-677e94ad (v2.9): the player-leverage write-wire — bribe/intimidate/
     // petition/seed. Always included, no config; its companion-reaction
     // dispatch places it semantically next to companion-core. Registered

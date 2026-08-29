@@ -82,8 +82,8 @@ const WORLD_STACK_PRE_WORLD_TICK = [
 
 /** The always-included strategic tier, in wiring order. world-tick joined
  *  this wave (P8-SP-003): the driver's slice enters the version-stamped set
- *  and the ENG-009 seam; registration is namespace-only (no verbs, no event
- *  subscriptions), so the addition is behavior-inert at registration time.
+ *  and the ENG-009 seam; registration is namespace-only except the
+ *  `resolve-pressure` verb (F-04dece4f) and no event subscriptions.
  *  economy-core + trade-core join THIS wave (F-d0b5edb5/F-6c3e4fde), inserted
  *  right after district-core — the same district roster it reads. economy-
  *  core is namespace-only like world-tick; trade-core registers exactly one
@@ -113,6 +113,7 @@ const WORLD_STACK_DEFAULT = [
   // siblings below already have. Recomputed from the REAL built module list
   // (registeredIds against a freshly built starter), not guessed.
   'npc-agency',
+  'faction-agency',
   'player-leverage',
   'crafting-core',
   'opportunity-core',
@@ -218,7 +219,7 @@ function makeStackEngine(config: StackConfig = {}, extraEntities: EntityState[] 
 // ---------------------------------------------------------------------------
 
 describe('buildWorldStack — composition', () => {
-  it('default composition is the fifteen always-on strategic modules, in wiring order', () => {
+  it('default composition is the sixteen always-on strategic modules, in wiring order', () => {
     const stack = buildWorldStack();
     expect(stack.modules.map((m) => m.id)).toEqual(WORLD_STACK_DEFAULT);
     expect(stack.warnings).toEqual([]);
@@ -716,7 +717,7 @@ describe('world-stack refactor — per-starter module registration pins', () => 
     ];
     const ids = registeredIds(createGladiatorGame(42));
     expect([...ids].sort()).toEqual(
-      [...preRefactorOrder, 'world-tick', 'economy-core', 'trade-core', 'companion-core', 'npc-agency', 'player-leverage', 'crafting-core', 'opportunity-core', 'quest-core', 'item-chronicle-core'].sort(),
+      [...preRefactorOrder, 'world-tick', 'economy-core', 'trade-core', 'companion-core', 'npc-agency', 'faction-agency', 'player-leverage', 'crafting-core', 'opportunity-core', 'quest-core', 'item-chronicle-core'].sort(),
     );
   });
 

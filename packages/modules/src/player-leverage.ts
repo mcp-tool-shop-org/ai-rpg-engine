@@ -36,7 +36,7 @@ import type { RumorValence, PlayerRumorState, PlayerRumor } from './player-rumor
 import { spawnIntentionalRumor, getPlayerRumorState, setPlayerRumorState, applyRumorManipulation } from './player-rumor.js';
 import type { PressureKind } from './pressure-system.js';
 import { makePressure, type WorldPressure } from './pressure-system.js';
-import { getWorldTickState, getActivePressures, HEAT_KEY } from './world-tick.js';
+import { getWorldTickState, getActivePressures, HEAT_KEY, applyDistrictMetricEffect } from './world-tick.js';
 import {
   getPartyState,
   setPartyState,
@@ -1346,6 +1346,35 @@ function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
+/** Key prefix for a negotiated-access record. Mirrors `title.<tag>` / `leverage.<currency>`. */
+const ACCESS_PREFIX = 'access.';
+
+const ACCESS_LEVELS = new Set(['denied', 'restricted', 'normal', 'privileged']);
+
+export type FactionAccessLevel = 'denied' | 'restricted' | 'normal' | 'privileged';
+
+/**
+ * Persist that this actor now holds `level` access with `factionId`.
+ * Last write wins — access is a living arrangement, renegotiable, not a
+ * first-earned title.
+ */
+export function grantFactionAccess(
+  custom: Record<string, string | number | boolean>,
+  factionId: string,
+  level: FactionAccessLevel,
+): Record<string, string | number | boolean> {
+  return { ...custom, [`${ACCESS_PREFIX}${factionId}`]: level };
+}
+
+/** The stored access override for a faction, or undefined when none has been negotiated. */
+export function getStoredFactionAccess(
+  custom: Record<string, string | number | boolean> | undefined,
+  factionId: string,
+): FactionAccessLevel | undefined {
+  const value = custom?.[`${ACCESS_PREFIX}${factionId}`];
+  return typeof value === 'string' && ACCESS_LEVELS.has(value) ? (value as FactionAccessLevel) : undefined;
+}
+
 /**
  * Reputation merge: authored faction baseline + the accrued delta global —
  * the SAME merge trade-core.ts's sellHandler and world-tick.ts's
@@ -1364,24 +1393,28 @@ function playerReputationFor(world: WorldState, factionId: string): number {
  *   - 'reputation'      → world.globals.reputation_<factionId>
  *   - 'alert'           → world.globals.faction_alert_<factionId>
  *   - 'heat'            → world.globals[HEAT_KEY] ('player_heat')
- *   - 'district-metric' → world.globals.district_<id>_<metric>
+ *   - 'district-metric' → applyDistrictMetricEffect (stability/safety → the
+ *                         `district_<id>_safety` global buildPressureInputs
+ *                         reads; commerce/surveillance/morale/alertPressure
+ *                         → modifyDistrictMetric)
  *   - 'cohesion'        → faction-cognition's per-faction cohesion (0-1 clamp)
  *   - 'pressure'        → makePressure + getWorldTickState(world).pressures,
  *                         respecting the one-active-pressure-per-kind
  *                         invariant world-tick.ts's own chain spawn honors
+ *   - 'access'          → actor.custom `access.<factionId>` = level (the same
+ *                         flat prefixed-key idiom grantTitleToEntity uses).
+ *                         getReputationConsequence / getFactionAccess prefer
+ *                         this stored override over the reputation-derived
+ *                         band. call-in-favor and negotiate-access both emit
+ *                         this on the live path.
  *
  * 'rumor' effects are a documented ceiling HERE — deliberately NOT handled by
  * this generic translator. Spawning a PlayerRumor needs district/confidence
  * context this function doesn't have, and the namespace push is the 'seed'
  * verb's own job (F-19a23718); a 'rumor' effect reaching this function is
  * silently dropped — same "rides elsewhere, not this choke point" contract
- * applyFallout documents for its own unwired effect types. 'access' has no
- * wired store anywhere in this codebase yet (accessLevel today is only ever
- * DERIVED on the fly by social-consequence.ts's getReputationConsequence,
- * never persisted) — also an honest ceiling. Neither is ever produced by the
- * 4 wired verbs' resolutions (bribe/intimidate/petition-authority never emit
- * 'rumor'; none of the 4 emit 'access'), so both are documented-unreached
- * branches today, not a silent behavior gap for anything this wave wires.
+ * applyFallout documents for its own unwired effect types. applyLeverageEffectsAndSpawnRumor
+ * extracts rumor before this choke point.
  *
  * Returns any newly spawned pressures (empty when none) so the caller can
  * emit a matching 'pressure.spawned' event — the same split applyFallout
@@ -1417,7 +1450,7 @@ export function applyLeverageEffects(
         break;
 
       case 'district-metric':
-        addGlobal(world, `district_${effect.districtId}_${effect.metric}`, effect.delta);
+        applyDistrictMetricEffect(world, effect.districtId, effect.metric, effect.delta);
         break;
 
       case 'cohesion': {
@@ -1453,10 +1486,15 @@ export function applyLeverageEffects(
         break;
       }
 
-      case 'rumor':
       case 'access':
+        if (actor) {
+          actor.custom = grantFactionAccess(actor.custom ?? {}, effect.factionId, effect.level);
+        }
+        break;
+
+      case 'rumor':
       default:
-        break; // documented ceiling — see function doc comment
+        break; // rumor is extracted before this choke point — see function doc comment
     }
   }
 

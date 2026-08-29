@@ -11,8 +11,10 @@ import {
   resolveDiplomacyAction,
   resolveSabotageAction,
   applyLeverageEffects,
+  getStoredFactionAccess,
   createPlayerLeverageCore,
 } from './player-leverage.js';
+import { getReputationConsequence } from './social-consequence.js';
 import type { LeverageHints, LeverageState, LeverageEffect } from './player-leverage.js';
 import { getPlayerRumorState, formatRumorForDirector } from './player-rumor.js';
 import { setPartyState, createPartyState } from './companion-core.js';
@@ -21,7 +23,7 @@ import { getFactionCognition, createFactionCognition } from './faction-cognition
 import { createCognitionCore } from './cognition-core.js';
 import { getWorldTickState } from './world-tick.js';
 import { createEnvironmentCore } from './environment-core.js';
-import { createDistrictCore } from './district-core.js';
+import { createDistrictCore, getDistrictMetric } from './district-core.js';
 import type { DistrictDefinition } from './district-core.js';
 
 // ---------------------------------------------------------------------------
@@ -254,13 +256,14 @@ describe('applyLeverageEffects (F-677e94ad)', () => {
     expect(world.globals['player_heat']).toBe(10);
   });
 
-  it('writes district-metric effects to district_<id>_<metric>', () => {
+  it('maps district-metric stability onto the safety global buildPressureInputs reads', () => {
     const engine = bareEngine();
     const world = engine.world as WorldState;
     applyLeverageEffects(world, 'player', [
       { type: 'district-metric', districtId: 'docks', metric: 'stability', delta: -5 },
     ], 0);
-    expect(world.globals['district_docks_stability']).toBe(-5);
+    expect(world.globals['district_docks_safety']).toBe(-5);
+    expect(world.globals['district_docks_stability']).toBeUndefined();
   });
 
   it('clamps cohesion effects to 0-1 on faction-cognition state', () => {
@@ -307,13 +310,43 @@ describe('applyLeverageEffects (F-677e94ad)', () => {
     expect(getWorldTickState(world).pressures).toHaveLength(1);
   });
 
-  it('drops rumor and access effects silently (documented ceiling, not this choke point)', () => {
+  it('drops rumor effects silently (documented ceiling, not this choke point)', () => {
     const engine = bareEngine();
     const world = engine.world as WorldState;
     expect(() => applyLeverageEffects(world, 'player', [
       { type: 'rumor', claim: 'x', valence: 'heroic', targetFactionIds: [] },
-      { type: 'access', factionId: 'guild', level: 'normal' },
     ], 0)).not.toThrow();
+  });
+
+  it('persists access onto actor.custom as access.<factionId> (F-cd5a8eec)', () => {
+    const engine = bareEngine();
+    const world = engine.world as WorldState;
+    applyLeverageEffects(world, 'player', [
+      { type: 'access', factionId: 'guild', level: 'privileged' },
+    ], 0);
+    expect(world.entities['player'].custom?.['access.guild']).toBe('privileged');
+    expect(getStoredFactionAccess(world.entities['player'].custom, 'guild')).toBe('privileged');
+    expect(getReputationConsequence(0, getStoredFactionAccess(world.entities['player'].custom, 'guild')).accessLevel).toBe('privileged');
+  });
+});
+
+describe('F-cd5a8eec: negotiate-access leaves a readable access mark', () => {
+  it('negotiate-access succeeds and writes access.guild after an atomic submitAction', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+
+    engine.submitAction('negotiate-access', { targetIds: ['guild'] });
+
+    const world = engine.world as WorldState;
+    const custom = world.entities['player'].custom ?? {};
+    expect(custom['access.guild']).toBe('normal');
+    expect(getStoredFactionAccess(custom, 'guild')).toBe('normal');
+    expect(getReputationConsequence(0, getStoredFactionAccess(custom, 'guild')).accessLevel).toBe('normal');
+    const resolved = engine.drainEvents().find((e) => e.type === 'leverage.resolved');
+    expect(resolved?.payload.subAction).toBe('negotiate-access');
   });
 });
 
@@ -723,7 +756,8 @@ describe('V3-SV-1: stake-claim derives its district from the actor\'s current zo
     engine.submitAction('stake-claim', {});
 
     const world = engine.world as WorldState;
-    expect(world.globals['district_docks_surveillance']).toBe(10);
+    expect(getDistrictMetric(world, 'docks', 'surveillance')).toBe(10);
+    expect(world.globals['district_docks_surveillance']).toBeUndefined();
     const resolved = engine.drainEvents().find((e) => e.type === 'leverage.resolved');
     expect(resolved?.payload.subAction).toBe('stake-claim');
     expect(resolved?.payload.targetId).toBe('docks');

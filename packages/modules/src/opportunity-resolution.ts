@@ -57,7 +57,7 @@ import { makeEvent } from './make-event.js';
 import { getDistrictForZone } from './district-core.js';
 import { grantTitleToEntity } from './player-titles.js';
 import { adjustMaterial } from './crafting-core.js';
-import { HEAT_KEY, recordMilestone, pushActivePressure, CHAIN_TURNS_REMAINING } from './world-tick.js';
+import { HEAT_KEY, recordMilestone, pushActivePressure, CHAIN_TURNS_REMAINING, resolvePressureByPlayer } from './world-tick.js';
 import {
   getPartyState,
   setPartyState,
@@ -1356,7 +1356,7 @@ function opportunityHandler(action: ActionIntent, world: WorldState): ResolvedEv
   applyOpportunityFallout(world, action.actorId, fallout);
   appendResolvedOpportunity(world, fallout);
 
-  return [makeEvent(action, `opportunity.${resolutionType}`, {
+  const events: ResolvedEvent[] = [makeEvent(action, `opportunity.${resolutionType}`, {
     opportunityId: opp.id,
     kind: opp.kind,
     title: opp.title,
@@ -1366,6 +1366,37 @@ function opportunityHandler(action: ActionIntent, world: WorldState): ResolvedEv
   }, {
     presentation: { channels: ['objective', 'narrator'], priority: 'high' },
   })];
+
+  // F-04dece4f: completing a pressure-linked opportunity is the natural
+  // "I dealt with this" mapping — computeFallout(..., 'resolved-by-player')
+  // + applyFallout, so bounty-survivor and the other five pressure titles
+  // are actually earnable. Abandon/betray leave the pressure to expire.
+  if (op === 'complete' && opp.linkedPressureId) {
+    const resolved = resolvePressureByPlayer(
+      world,
+      opp.linkedPressureId,
+      tick,
+      opp.genre || 'fantasy',
+    );
+    if (resolved) {
+      events.push(makeEvent(action, 'pressure.resolved', {
+        pressureId: resolved.pressure.id,
+        kind: resolved.pressure.kind,
+        description: resolved.pressure.description,
+        urgency: resolved.pressure.urgency,
+        visibility: resolved.pressure.visibility,
+        sourceFactionId: resolved.pressure.sourceFactionId,
+        summary: resolved.fallout.summary,
+        resolutionType: resolved.fallout.resolution.resolutionType,
+        effects: resolved.fallout.effects,
+        ...(resolved.fallout.warnings ? { warnings: resolved.fallout.warnings } : {}),
+      }, {
+        presentation: { channels: ['narrator'], priority: 'high' },
+      }));
+    }
+  }
+
+  return events;
 }
 
 /**

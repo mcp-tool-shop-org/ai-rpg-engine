@@ -138,7 +138,7 @@ export const REACTION_TRIGGER_STATUS: Record<ReactionTrigger, ReactionTriggerSta
   },
   'pressure-resolved-well': {
     reachability: 'wired-unreachable',
-    note: "world-tick.ts's only computeFallout call site always passes the literal 'expired-ignored' as resolutionType, so fallout.resolution.resolutionType can never equal 'resolved-by-player' in production — dead branch, not a live path",
+    note: "computeFallout(..., 'resolved-by-player') is live via the resolve-pressure verb and opportunity-complete mapping (F-04dece4f, titles now earnable). This companion trigger is still only dispatched from world-tick step 3's expiry loop, which still passes 'expired-ignored', so the morale bump itself remains unwired",
   },
   'pressure-resolved-badly': {
     reachability: 'reachable',

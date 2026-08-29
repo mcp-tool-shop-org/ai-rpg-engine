@@ -2,7 +2,7 @@
 // Pure functions. Goals derived from state (not stored). Deterministic evaluation.
 // Actions produce effects through existing systems: pressures, rumors, districts, reputation.
 
-import type { WorldState } from '@ai-rpg-engine/core';
+import type { EngineModule, WorldState } from '@ai-rpg-engine/core';
 import type { DistrictMetrics, DistrictDefinition } from './district-core.js';
 import type { RumorValence } from './player-rumor.js';
 import type { PressureKind, WorldPressure } from './pressure-system.js';
@@ -725,4 +725,95 @@ export function formatFactionAgencyForNarrator(
   results: FactionActionResult[],
 ): string[] {
   return results.slice(0, 2).map((r) => r.narratorHint);
+}
+
+// ---------------------------------------------------------------------------
+// Module identity + persistence (the write-wire, F-b57cee05).
+//
+// faction-agency.ts was fully authored and unit-tested with ZERO production
+// callers (runFactionAgencyTick had no caller anywhere in the engine — the
+// npc-agency sibling that v3.0 never wired). createFactionAgency() registers
+// ONLY the module id/version — deliberately NOT a persistence namespace
+// default. SEED-0 IDENTITY: a world with no factions must never see
+// world.modules['faction-agency'] come into being at all. world-tick.ts's
+// per-round step is the only production writer, and it gates the write
+// itself on Object.keys(world.factions).length > 0.
+// ---------------------------------------------------------------------------
+
+/**
+ * faction-agency's EngineModule identity. No verb: faction effects are a
+ * direct-to-ledger FactionEffect union applied by world-tick.ts's per-round
+ * step, never routed through submitAction. No namespace default either —
+ * SEED-0 identity requires the namespace to stay genuinely absent until
+ * there is a faction roster to persist.
+ */
+export function createFactionAgency(): EngineModule {
+  return {
+    id: 'faction-agency',
+    version: '1.0.0',
+    register(_ctx) {
+      // Intentionally empty — see the file-level comment above.
+    },
+  };
+}
+
+type FactionAgencyNamespace = {
+  profiles?: unknown;
+  lastActions?: unknown;
+  memberCounts?: unknown;
+};
+
+function peekFactionAgencyNamespace(world: WorldState): FactionAgencyNamespace | undefined {
+  const ns = world.modules['faction-agency'];
+  return ns && typeof ns === 'object' && !Array.isArray(ns) ? (ns as FactionAgencyNamespace) : undefined;
+}
+
+/** Non-attaching read of this round's persisted faction profiles. [] when absent. */
+export function getPersistedFactionProfiles(world: WorldState): FactionProfile[] {
+  const value = peekFactionAgencyNamespace(world)?.profiles;
+  return Array.isArray(value)
+    ? value.filter((v): v is FactionProfile => typeof v === 'object' && v !== null)
+    : [];
+}
+
+/** Non-attaching read of the last resolved action per faction. [] when absent. */
+export function getPersistedFactionLastActions(world: WorldState): FactionActionResult[] {
+  const value = peekFactionAgencyNamespace(world)?.lastActions;
+  return Array.isArray(value)
+    ? value.filter((v): v is FactionActionResult => typeof v === 'object' && v !== null)
+    : [];
+}
+
+/**
+ * Recruited/lost member overlay, keyed by factionId. buildFactionProfile
+ * derives memberCount from living entities; this overlay is the store the
+ * 'member-count' FactionEffect had nowhere to land. 0 when absent.
+ */
+export function getPersistedFactionMemberCounts(world: WorldState): Record<string, number> {
+  const raw = peekFactionAgencyNamespace(world)?.memberCounts;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: Record<string, number> = {};
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === 'number' && Number.isFinite(value)) out[id] = value;
+  }
+  return out;
+}
+
+/**
+ * Persist this round's faction agency state. The ONLY writer (world-tick.ts's
+ * per-round step) gates this call on "at least one faction exists this
+ * round" — SEED-0 identity depends on this function never being invoked for
+ * a world with none.
+ */
+export function setPersistedFactionState(
+  world: WorldState,
+  profiles: FactionProfile[],
+  lastActions: FactionActionResult[],
+  memberCounts: Record<string, number>,
+): void {
+  world.modules['faction-agency'] = {
+    profiles,
+    lastActions,
+    memberCounts,
+  };
 }

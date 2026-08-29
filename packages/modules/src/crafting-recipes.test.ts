@@ -14,7 +14,8 @@ import {
   createCraftingCore,
 } from './crafting-recipes.js';
 import { getMaterialInventory } from './crafting-core.js';
-import { createDistrictEconomy, createEconomyCore, getSupplyLevel, type EconomyCoreState } from './economy-core.js';
+import { createDistrictEconomy, createEconomyCore, getSupplyLevel, getDistrictEconomy, setDistrictEconomy, applyEconomyShift, type EconomyCoreState } from './economy-core.js';
+import { HEAT_KEY } from './world-tick.js';
 import { createEnvironmentCore } from './environment-core.js';
 import { createDistrictCore } from './district-core.js';
 import type { ItemDefinition } from '@ai-rpg-engine/equipment';
@@ -565,6 +566,34 @@ describe('crafting-core module (F-6631dd57) — the salvage/craft/repair/modify 
         parameters: { recipeId: 'modify-sharpen' },
       });
       expect(events.some((e) => e.type === 'action.rejected')).toBe(true);
+    });
+
+    it('black-market modify writes player_heat (F-81505fc7)', () => {
+      const engine = createTestEngine({
+        modules: [
+          createEnvironmentCore(),
+          createDistrictCore({ districts: craftingDistricts }),
+          createEconomyCore({ districts: craftingDistricts.map((d) => ({ id: d.id, tags: d.tags })) }),
+          createCraftingCore({ genre: 'cyberpunk' }),
+        ],
+        entities: [makeCraftingPlayer(['iron-sword'], { 'materials.contraband': 2 })],
+        zones: craftingZones,
+      });
+      const eco = getDistrictEconomy(engine.world, 'district-1');
+      expect(eco).toBeDefined();
+      setDistrictEconomy(engine.world, 'district-1', applyEconomyShift(eco!, {
+        districtId: 'district-1',
+        category: 'contraband',
+        delta: 40,
+        cause: 'test',
+      }));
+
+      const events = engine.submitAction('modify', {
+        targetIds: ['iron-sword'],
+        parameters: { recipeId: 'modify-black-market-tune' },
+      });
+      expect(events.some((e) => e.type === 'item.modified')).toBe(true);
+      expect(engine.world.globals[HEAT_KEY]).toBe(10);
     });
   });
 });
