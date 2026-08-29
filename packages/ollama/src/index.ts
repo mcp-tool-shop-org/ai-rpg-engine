@@ -280,7 +280,7 @@ export {
   generateSweepValues, isTunableParam, getTunableParams,
   formatExperimentSummary, formatExperimentComparison,
   formatParameterSweepResult, formatExperimentPlan,
-  formatRunResults, MAX_EXPERIMENT_RUNS,
+  formatRunResults, MAX_EXPERIMENT_RUNS, MAX_RETAINED_CURVE_VALUES,
 } from './chat-experiments.js';
 export type {
   ExperimentSpec, ExperimentRunResult, ExperimentSummary,

@@ -15,6 +15,9 @@ export type OllamaConfig = {
   retryDelayMs: number;
 };
 
+/** Absolute ceiling on generate() wait (F-b67b6830). Bounds AbortSignal.timeout; bytes are capped separately. */
+export const MAX_OLLAMA_TIMEOUT_MS = 600_000;
+
 const DEFAULTS: OllamaConfig = {
   baseUrl: 'http://localhost:11434',
   model: 'qwen2.5-coder',
@@ -23,6 +26,19 @@ const DEFAULTS: OllamaConfig = {
   maxAttempts: 3,
   retryDelayMs: 1000,
 };
+
+/**
+ * Coerce a caller-supplied timeout to a finite integer in (0, MAX_OLLAMA_TIMEOUT_MS].
+ * Infinity → ceiling; NaN / non-positive → default. Never returns non-finite.
+ */
+export function clampTimeoutMs(raw: number | undefined): number {
+  if (raw === undefined) return DEFAULTS.timeoutMs;
+  if (!Number.isFinite(raw)) {
+    return raw === Infinity ? MAX_OLLAMA_TIMEOUT_MS : DEFAULTS.timeoutMs;
+  }
+  if (raw <= 0) return DEFAULTS.timeoutMs;
+  return Math.min(Math.floor(raw), MAX_OLLAMA_TIMEOUT_MS);
+}
 
 export function resolveConfig(overrides?: Partial<OllamaConfig>): OllamaConfig {
   return {
@@ -34,9 +50,10 @@ export function resolveConfig(overrides?: Partial<OllamaConfig>): OllamaConfig {
       overrides?.model
       ?? process.env['AI_RPG_ENGINE_OLLAMA_MODEL']
       ?? DEFAULTS.model,
-    timeoutMs:
+    timeoutMs: clampTimeoutMs(
       overrides?.timeoutMs
       ?? resolveTimeoutMs(process.env['AI_RPG_ENGINE_OLLAMA_TIMEOUT_MS']),
+    ),
     temperature: overrides?.temperature ?? DEFAULTS.temperature,
     maxTokens: overrides?.maxTokens,
     maxAttempts: resolveMaxAttempts(overrides?.maxAttempts),
@@ -61,13 +78,13 @@ function resolveRetryDelayMs(raw: number | undefined): number {
 }
 
 /**
- * Parse the timeout env var into a valid milliseconds value.
- * A malformed (NaN), empty, zero, or negative value falls back to the default —
- * an unvalidated Number() yields NaN, which makes AbortSignal.timeout misbehave.
+ * Parse the timeout env var into a number for clampTimeoutMs.
+ * Non-numeric / empty / non-positive values become undefined so the clamp
+ * falls back to the default — never a raw NaN handed to AbortSignal.timeout.
  */
-function resolveTimeoutMs(raw: string | undefined): number {
-  if (raw === undefined) return DEFAULTS.timeoutMs;
+function resolveTimeoutMs(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
   const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULTS.timeoutMs;
+  if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
   return parsed;
 }

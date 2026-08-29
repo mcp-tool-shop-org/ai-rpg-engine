@@ -301,7 +301,7 @@ async function cancelBody(response: Response): Promise<void> {
  * Fail closed if the stream overruns the declared length or the cap so a
  * lying header cannot force a multi-GB buffer. Never calls response.text().
  */
-async function readBodyWithByteCap(response: Response, byteCap: number): Promise<string> {
+export async function readBodyWithByteCap(response: Response, byteCap: number): Promise<string> {
   if (!Number.isFinite(byteCap) || byteCap <= 0) {
     throw new Error('byte cap is not a finite positive number');
   }

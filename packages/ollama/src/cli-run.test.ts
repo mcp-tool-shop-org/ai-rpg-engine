@@ -48,16 +48,33 @@ function stdoutText(): string {
   return logSpy.mock.calls.flat().join('\n');
 }
 
+function streamedOllamaResponse(init: {
+  ok: boolean;
+  status: number;
+  payload?: unknown;
+  bodyText?: string;
+}): Response {
+  const bodyText = init.bodyText ?? JSON.stringify(init.payload ?? {});
+  const bytes = new TextEncoder().encode(bodyText);
+  return {
+    ok: init.ok,
+    status: init.status,
+    headers: new Headers({ 'content-length': String(bytes.byteLength) }),
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    }),
+    json: async () => JSON.parse(bodyText),
+    text: async () => bodyText,
+  } as unknown as Response;
+}
+
 /** Mock the Ollama HTTP endpoint to return a fixed model response. */
 function mockOllama(responseText: string): void {
   globalThis.fetch = vi.fn(async () =>
-    ({
-      ok: true,
-      status: 200,
-      json: async () => ({ response: responseText }),
-      text: async () => '',
-      headers: new Headers(),
-    }) as unknown as Response,
+    streamedOllamaResponse({ ok: true, status: 200, payload: { response: responseText } }),
   ) as unknown as typeof fetch;
 }
 
@@ -309,21 +326,17 @@ describe('runCli — --repair generate failure (F-420e99d8)', () => {
     globalThis.fetch = vi.fn(async () => {
       calls += 1;
       if (calls === 1) {
-        return {
+        return streamedOllamaResponse({
           ok: true,
           status: 200,
-          json: async () => ({ response: firstText }),
-          text: async () => '',
-          headers: new Headers(),
-        } as unknown as Response;
+          payload: { response: firstText },
+        });
       }
-      return {
+      return streamedOllamaResponse({
         ok: false,
         status,
-        json: async () => JSON.parse(body),
-        text: async () => body,
-        headers: new Headers(),
-      } as unknown as Response;
+        bodyText: body,
+      });
     }) as unknown as typeof fetch;
   }
 

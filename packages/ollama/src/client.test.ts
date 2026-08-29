@@ -4,8 +4,9 @@
 // captive portal HTML, truncated body, wrong baseUrl).
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { createClient } from './client.js';
-import { resolveConfig } from './config.js';
+import { createClient, MAX_GENERATE_BODY_BYTES } from './client.js';
+import type { OllamaTextClient } from './client.js';
+import { resolveConfig, MAX_OLLAMA_TIMEOUT_MS } from './config.js';
 
 const realFetch = globalThis.fetch;
 
@@ -14,25 +15,47 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+function streamedBytes(text: string): ReadableStream<Uint8Array> {
+  const bytes = new TextEncoder().encode(text);
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(bytes);
+      controller.close();
+    },
+  });
+}
+
 function makeResponse(init: {
   ok: boolean;
   status: number;
-  json?: () => Promise<unknown>;
-  text?: () => Promise<string>;
+  payload?: unknown;
+  bodyText?: string;
+  contentLength?: string | null;
 }): Response {
+  const bodyText = init.bodyText ?? JSON.stringify(init.payload ?? {});
+  const bytes = new TextEncoder().encode(bodyText);
+  const headers = new Headers();
+  if (init.contentLength !== null) {
+    headers.set('content-length', init.contentLength ?? String(bytes.byteLength));
+  }
   return {
     ok: init.ok,
     status: init.status,
-    json: init.json ?? (async () => ({})),
-    text: init.text ?? (async () => ''),
-    headers: new Headers(),
+    headers,
+    body: streamedBytes(bodyText),
+    json: async () => {
+      throw new Error('response.json() must not buffer the body');
+    },
+    text: async () => {
+      throw new Error('response.text() must not buffer the body');
+    },
   } as unknown as Response;
 }
 
 describe('createClient.generate — contract safety', () => {
   it('returns {ok:true,text} for a normal JSON response', async () => {
     globalThis.fetch = vi.fn(async () =>
-      makeResponse({ ok: true, status: 200, json: async () => ({ response: 'hello world' }) }),
+      makeResponse({ ok: true, status: 200, payload: { response: 'hello world' } }),
     ) as unknown as typeof fetch;
 
     const client = createClient(resolveConfig());
@@ -48,9 +71,7 @@ describe('createClient.generate — contract safety', () => {
       makeResponse({
         ok: true,
         status: 200,
-        // Simulate res.json() throwing on HTML / truncated body
-        json: async () => { throw new SyntaxError('Unexpected token < in JSON at position 0'); },
-        text: async () => '<html>captive portal</html>',
+        bodyText: '<html>captive portal</html>',
       }),
     ) as unknown as typeof fetch;
 
@@ -70,7 +91,7 @@ describe('createClient.generate — contract safety', () => {
 
   it('returns {ok:false} when JSON parses but response field is missing/non-string', async () => {
     globalThis.fetch = vi.fn(async () =>
-      makeResponse({ ok: true, status: 200, json: async () => ({ notResponse: 42 }) }),
+      makeResponse({ ok: true, status: 200, payload: { notResponse: 42 } }),
     ) as unknown as typeof fetch;
 
     const client = createClient(resolveConfig());
@@ -133,7 +154,7 @@ describe('createClient.generate — model-not-pulled 404 (F-9d02e714)', () => {
       makeResponse({
         ok: false,
         status: 404,
-        text: async () => '{"error":"model \\"qwen2.5-coder\\" not found, try pulling it first"}',
+        bodyText: '{"error":"model \\"qwen2.5-coder\\" not found, try pulling it first"}',
       }),
     ) as unknown as typeof fetch;
 
@@ -154,7 +175,7 @@ describe('createClient.generate — model-not-pulled 404 (F-9d02e714)', () => {
       makeResponse({
         ok: false,
         status: 404,
-        text: async () => '{"error":"model \\"lama3\\" not found, try pulling it first"}',
+        bodyText: '{"error":"model \\"lama3\\" not found, try pulling it first"}',
       }),
     ) as unknown as typeof fetch;
 
@@ -170,7 +191,7 @@ describe('createClient.generate — model-not-pulled 404 (F-9d02e714)', () => {
       makeResponse({
         ok: false,
         status: 404,
-        text: async () => '<html><head><title>404 Not Found</title></head></html>',
+        bodyText: '<html><head><title>404 Not Found</title></head></html>',
       }),
     ) as unknown as typeof fetch;
 
@@ -204,7 +225,7 @@ describe('createClient.generate — retry/backoff (PA-3)', () => {
     globalThis.fetch = vi.fn(async () => {
       call++;
       if (call === 1) throw new TypeError('fetch failed');
-      return makeResponse({ ok: true, status: 200, json: async () => ({ response: 'recovered' }) });
+      return makeResponse({ ok: true, status: 200, payload: { response: 'recovered' } });
     }) as unknown as typeof fetch;
 
     const { calls, onRetry } = collectRetries();
@@ -230,7 +251,7 @@ describe('createClient.generate — retry/backoff (PA-3)', () => {
     globalThis.fetch = vi.fn(async () => {
       call++;
       if (call === 1) throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
-      return makeResponse({ ok: true, status: 200, json: async () => ({ response: 'recovered' }) });
+      return makeResponse({ ok: true, status: 200, payload: { response: 'recovered' } });
     }) as unknown as typeof fetch;
 
     const { calls, onRetry } = collectRetries();
@@ -280,7 +301,7 @@ describe('createClient.generate — retry/backoff (PA-3)', () => {
 
   it('retries a 5xx and surfaces the final HTTP error after max attempts', async () => {
     globalThis.fetch = vi.fn(async () =>
-      makeResponse({ ok: false, status: 503, text: async () => 'overloaded' }),
+      makeResponse({ ok: false, status: 503, bodyText: 'overloaded' }),
     ) as unknown as typeof fetch;
 
     const { calls, onRetry } = collectRetries();
@@ -314,7 +335,7 @@ describe('createClient.generate — retry/backoff (PA-3)', () => {
 
   it('does not retry a 4xx client error', async () => {
     globalThis.fetch = vi.fn(async () =>
-      makeResponse({ ok: false, status: 400, text: async () => 'bad request' }),
+      makeResponse({ ok: false, status: 400, bodyText: 'bad request' }),
     ) as unknown as typeof fetch;
 
     const { calls, onRetry } = collectRetries();
@@ -361,7 +382,7 @@ describe('createClient.generate — retry/backoff (PA-3)', () => {
     globalThis.fetch = vi.fn(async () => {
       call++;
       if (call === 1) throw new TypeError('fetch failed');
-      return makeResponse({ ok: true, status: 200, json: async () => ({ response: 'ok' }) });
+      return makeResponse({ ok: true, status: 200, payload: { response: 'ok' } });
     }) as unknown as typeof fetch;
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
@@ -372,5 +393,155 @@ describe('createClient.generate — retry/backoff (PA-3)', () => {
     const stderr = errSpy.mock.calls.flat().join('\n');
     expect(stderr).toContain('[ollama] attempt 1/3 failed');
     expect(stderr).toContain('retrying in 0ms');
+  });
+});
+
+// F-b67b6830 — generate() used to res.json()/res.text() the raw body with no
+// Content-Length check and no byte budget. Reuse the webfetch streamed cap:
+// refuse missing/oversized/non-finite Content-Length; never concatenate a
+// multi-GB 200. timeoutMs is clamped so Infinity/huge cannot disable the cap.
+describe('createClient.generate — streamed body byte cap (F-b67b6830)', () => {
+  function hugeLengthResponse(contentLength: string): {
+    response: Response;
+    counters: { pulled: number; textCalled: number; jsonCalled: number };
+  } {
+    const counters = { pulled: 0, textCalled: 0, jsonCalled: 0 };
+    const response = {
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        'content-type': 'application/json',
+        'content-length': contentLength,
+      }),
+      body: new ReadableStream({
+        pull(controller) {
+          counters.pulled++;
+          controller.enqueue(new Uint8Array(1024));
+        },
+      }, { highWaterMark: 0 }),
+      text: async () => {
+        counters.textCalled++;
+        return 'SHOULD-NOT-MATERIALIZE';
+      },
+      json: async () => {
+        counters.jsonCalled++;
+        return { response: 'SHOULD-NOT-MATERIALIZE' };
+      },
+    } as unknown as Response;
+    return { response, counters };
+  }
+
+  async function generateAgainstHuge(
+    timeoutMs: number,
+    contentLength = String(2_000_000_000),
+  ): Promise<{
+    result: Awaited<ReturnType<OllamaTextClient['generate']>>;
+    counters: { pulled: number; textCalled: number; jsonCalled: number };
+  }> {
+    const { response, counters } = hugeLengthResponse(contentLength);
+    globalThis.fetch = vi.fn(async () => response) as unknown as typeof fetch;
+    const client = createClient(resolveConfig({
+      timeoutMs,
+      retryDelayMs: 0,
+      maxAttempts: 1,
+    }));
+    const result = await client.generate({ system: 's', prompt: 'p' });
+    return { result, counters };
+  }
+
+  it('rejects a 200 with multi-GB Content-Length without concatenating or calling json()/text()', async () => {
+    expect(2_000_000_000).toBeGreaterThan(MAX_GENERATE_BODY_BYTES);
+    const { result, counters } = await generateAgainstHuge(30_000);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/too large|byte cap|content-length/i);
+    expect(counters.pulled).toBe(0);
+    expect(counters.textCalled).toBe(0);
+    expect(counters.jsonCalled).toBe(0);
+  });
+
+  it('rejects a 200 with multi-GB Content-Length when timeoutMs is Infinity', async () => {
+    const { result, counters } = await generateAgainstHuge(Infinity);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/too large|byte cap|content-length|finite/i);
+    expect(counters.pulled).toBe(0);
+    expect(counters.textCalled).toBe(0);
+    expect(counters.jsonCalled).toBe(0);
+    expect(Number.isFinite(resolveConfig({ timeoutMs: Infinity }).timeoutMs)).toBe(true);
+    expect(resolveConfig({ timeoutMs: Infinity }).timeoutMs).toBe(MAX_OLLAMA_TIMEOUT_MS);
+  });
+
+  it('rejects a 200 with multi-GB Content-Length when timeoutMs is MAX_SAFE_INTEGER', async () => {
+    const { result, counters } = await generateAgainstHuge(Number.MAX_SAFE_INTEGER);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/too large|byte cap|content-length|finite/i);
+    expect(counters.pulled).toBe(0);
+    expect(counters.textCalled).toBe(0);
+    expect(counters.jsonCalled).toBe(0);
+    expect(resolveConfig({ timeoutMs: Number.MAX_SAFE_INTEGER }).timeoutMs).toBe(MAX_OLLAMA_TIMEOUT_MS);
+    expect(Number.isFinite(resolveConfig({ timeoutMs: Number.MAX_SAFE_INTEGER }).timeoutMs)).toBe(true);
+  });
+
+  it('refuses a missing Content-Length without reading the body', async () => {
+    let pulled = 0;
+    let textCalled = 0;
+    let jsonCalled = 0;
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: new ReadableStream({
+        pull(controller) {
+          pulled++;
+          controller.enqueue(new Uint8Array(1024).fill(65));
+        },
+      }, { highWaterMark: 0 }),
+      text: async () => {
+        textCalled++;
+        return 'SHOULD-NOT-MATERIALIZE';
+      },
+      json: async () => {
+        jsonCalled++;
+        return { response: 'SHOULD-NOT-MATERIALIZE' };
+      },
+    })) as unknown as typeof fetch;
+
+    const client = createClient(resolveConfig({ retryDelayMs: 0, maxAttempts: 1 }));
+    const result = await client.generate({ system: 's', prompt: 'p' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/content-length/i);
+    expect(pulled).toBe(0);
+    expect(textCalled).toBe(0);
+    expect(jsonCalled).toBe(0);
+  });
+
+  it('fails closed on a lying Content-Length without concatenating the full stream', async () => {
+    let enqueued = 0;
+    const chunk = new Uint8Array(1024).fill(65);
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({
+        'content-type': 'application/json',
+        'content-length': '100',
+      }),
+      body: new ReadableStream({
+        pull(controller) {
+          enqueued += chunk.byteLength;
+          controller.enqueue(chunk);
+        },
+      }),
+      text: async () => {
+        throw new Error('text() would materialize the full body');
+      },
+      json: async () => {
+        throw new Error('json() would materialize the full body');
+      },
+    })) as unknown as typeof fetch;
+
+    const client = createClient(resolveConfig({ retryDelayMs: 0, maxAttempts: 1 }));
+    const result = await client.generate({ system: 's', prompt: 'p' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/exceeded|byte cap|content-length/i);
+    expect(enqueued).toBeLessThan(16_384);
   });
 });
