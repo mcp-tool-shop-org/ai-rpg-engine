@@ -13,6 +13,7 @@ import {
   buildActionList,
   parseActionSelection,
   parseTextInput,
+  visibleDialogueChoices,
   TurnPresenter,
 } from '@ai-rpg-engine/terminal-ui';
 import { resolveEntity } from '@ai-rpg-engine/character-creation';
@@ -417,9 +418,10 @@ export function computeExtras(engine: Engine, pack: LoadedPack): ExtraAction[] {
  *    closing rule, sharing one number width. (The old pattern appended them
  *    after the frame's return: the closing rule bisected the menu on every
  *    frame and the number columns misaligned at the seam.)
- * BOTH menu layers vanish during active dialogue (terminal-ui suppresses the
- *  whole Actions section, extras included) — the numbers on screen belong to
- *  the dialogue choices.
+ * BOTH menu layers vanish while dialogue choices are on screen (terminal-ui
+ *  suppresses the whole Actions section, extras included) — those numbers
+ *  belong to the choices. The original trap (activeDialogue, no visible
+ *  choices) keeps the base menu; extras still vanish via computeExtras.
  * `opts.menu: false` suppresses both layers outright: the session-end frame
  *  keeps the scene/HUD/log panels but offers a corpse no action menu (the
  *  finale's New game / Quit prompt owns the numbers there).
@@ -1013,12 +1015,19 @@ export function handlePlayerInput(
       if (ok && !chooseRejected) {
         return { kind: 'action', via: 'dialogue-choice' };
       }
-      // Dialogue-trap guard (pairs with the modules-side dialogue.ended fix):
-      // dialogue is flagged active but `choose` was rejected — e.g. the node
-      // has no choices and the menu on screen is a numbered ACTION menu.
-      // Previously the doomed hijack returned here anyway, so every numeric
-      // input died in a rejected `choose` and the menu was dead: a stuck
-      // session. Fall through to normal number/text handling instead.
+      // F-c7ac6a7c: if dialogue choices are on screen, a rejected (or thrown)
+      // choose is an out-of-range dialogue number — same as P8-PS-001. Never
+      // parseActionSelection: those numbers belong to the choices, so a hit
+      // on hidden action N+1..M would move/attack/inspect mid-conversation
+      // and runSession would runHostileRound.
+      const onScreen = visibleDialogueChoices(engine.world);
+      if (onScreen.length > 0) {
+        log(`  Please enter a number between 1 and ${onScreen.length}.`);
+        return { kind: 'unknown' };
+      }
+      // Original trap: dialogue is flagged active but no choices are on
+      // screen (no node, or a choiceless node). Fall through to the action
+      // menu — renderFullScreen shows it in this case, matching this comment.
     }
   }
 

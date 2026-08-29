@@ -961,6 +961,27 @@ function findRecentEvent(
   return undefined;
 }
 
+/** A numbered dialogue choice currently printed on the Dialogue section. */
+export type DialogueChoiceOnScreen = { id: string; text: string; index: number };
+
+/**
+ * F-c7ac6a7c: the choices renderDialogue would number on this frame — the
+ * same `dialogue.node.entered` payload, the same lookback. Empty when
+ * dialogue is not active, when the node is out of the lookback window, or
+ * when the node has no choices (the original dialogue-trap: no numbers on
+ * screen, the Actions section is the live menu). CLI routing uses this so a
+ * rejected `choose` cannot fall through into parseActionSelection while
+ * these numbers own the frame.
+ */
+export function visibleDialogueChoices(world: WorldState): DialogueChoiceOnScreen[] {
+  const dState = world.modules['dialogue-core'] as { activeDialogue?: string | null } | undefined;
+  if (!dState?.activeDialogue) return [];
+  const nodeEvent = findRecentEvent(world.eventLog, e => e.type === 'dialogue.node.entered');
+  if (!nodeEvent) return [];
+  const choices = nodeEvent.payload.choices as DialogueChoiceOnScreen[] | undefined;
+  return Array.isArray(choices) && choices.length > 0 ? choices : [];
+}
+
 export function renderDialogue(world: WorldState, opts?: RenderOptions): string | null {
   const pal = paletteFor(opts);
   const dState = world.modules['dialogue-core'] as { activeDialogue: string | null } | undefined;
@@ -1049,15 +1070,16 @@ export function renderFullScreen(world: WorldState, recentEvents: ResolvedEvent[
     sections.push(`${sectionRule('Log', pal)}\n${eventLog}`);
   }
 
-  // The numbered Actions section is suppressed while a dialogue is ACTIVE:
-  // the numbers on screen belong to the dialogue choices, and rendering both
-  // lists put two colliding `[1]`/`[2]` columns on one frame (the input
-  // router resolves numbers to dialogue choices first, so the base menu's
-  // numbers were lying). The just-ended echo frame (activeDialogue null,
-  // last spoken line shown) keeps its menu — no choices are on screen there.
-  // Callers can also suppress explicitly via `actions: false` (end frames).
-  const dState = world.modules['dialogue-core'] as { activeDialogue?: string | null } | undefined;
-  const showActions = (opts?.actions ?? true) && !dState?.activeDialogue;
+  // The numbered Actions section is suppressed while dialogue CHOICES are
+  // on screen: those numbers own the frame, and rendering both lists put
+  // two colliding `[1]`/`[2]` columns on one (the input router resolves
+  // numbers to dialogue choices first, so the base menu's numbers were
+  // lying). The original trap (activeDialogue set, no visible choices) and
+  // the just-ended echo frame (activeDialogue null) keep the action menu —
+  // F-c7ac6a7c: fall-through to parseActionSelection is only honest when
+  // this list is actually rendered. Callers can also suppress explicitly
+  // via `actions: false` (end frames).
+  const showActions = (opts?.actions ?? true) && visibleDialogueChoices(world).length === 0;
   if (showActions) {
     sections.push(
       `${sectionRule('Actions', pal)}\n${renderActions(world, { ...resolved, extras: opts?.extraActions })}`,

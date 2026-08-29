@@ -616,6 +616,152 @@ describe('handlePlayerInput — dialogue choose rejection falls through (CS-C-00
   });
 });
 
+// F-c7ac6a7c — while live dialogue choices are on screen, a rejected choose
+// must return kind 'unknown' (P8-PS-001), never parseActionSelection.
+// renderFullScreen suppresses the Actions section whenever those choices own
+// the numbers, so input N+1 matching hidden world action N+1 used to submit
+// that verb (move/attack/inspect mid-conversation) and runSession ran
+// runHostileRound. Fall-through stays only for the original trap: no
+// visible choices (the CS-C-001 tests above).
+describe('handlePlayerInput — live dialogue numbers never hit the hidden action menu (F-c7ac6a7c)', () => {
+  const talk: DialogueDefinition = {
+    id: 'talk',
+    speakers: ['npc'],
+    entryNodeId: 'entry',
+    nodes: {
+      entry: {
+        id: 'entry',
+        speaker: 'npc',
+        text: 'Well?',
+        choices: [
+          { id: 'hello', text: 'Hello.', nextNodeId: 'nowhere' },
+          { id: 'bye', text: 'Goodbye.', nextNodeId: 'nowhere' },
+        ],
+      },
+    },
+  };
+
+  /** Real dialogue-core, a 2-choice live node, and a world whose hidden
+   *  ACTION list has a 3rd entry (Inspect) — the finding's exact pin. */
+  function makeLiveTwoChoiceEngine(): Engine {
+    const engine = new Engine({
+      manifest: testManifest,
+      seed: 7,
+      modules: [createDialogueCore([talk])],
+    });
+    engine.store.state.zones = {
+      cell: { id: 'cell', roomId: 'r1', name: 'Cell', tags: [], neighbors: ['hall'] },
+      hall: { id: 'hall', roomId: 'r1', name: 'Hall', tags: [], neighbors: ['cell'] },
+    };
+    engine.store.state.locationId = 'cell';
+    engine.store.addEntity({
+      id: 'hero',
+      blueprintId: 'bp',
+      type: 'player',
+      name: 'Hero',
+      tags: [],
+      stats: {},
+      resources: { hp: 10 },
+      statuses: [],
+      zoneId: 'cell',
+    });
+    engine.store.state.playerId = 'hero';
+    engine.store.addEntity({
+      id: 'npc',
+      blueprintId: 'bp',
+      type: 'npc',
+      name: 'Bram',
+      tags: ['npc'],
+      stats: {},
+      resources: { hp: 10 },
+      statuses: [],
+      zoneId: 'cell',
+    });
+    engine.dispatcher.registerVerb('move', (action) => [
+      {
+        id: '',
+        tick: action.issuedAtTick,
+        type: 'test.moved',
+        actorId: action.actorId,
+        payload: { to: action.targetIds?.[0] ?? '' },
+      },
+    ]);
+    engine.dispatcher.registerVerb('inspect', (action) => [
+      {
+        id: '',
+        tick: action.issuedAtTick,
+        type: 'test.inspected',
+        actorId: action.actorId,
+        payload: { target: action.targetIds?.[0] ?? '' },
+      },
+    ]);
+    return engine;
+  }
+
+  it("2-choice live dialogue, input '3' matching hidden action 3, does not submit that verb and does not runHostileRound", () => {
+    const engine = makeLiveTwoChoiceEngine();
+    // Enter the conversation so the two choices are actually on screen
+    // (dialogue.node.entered payload.choices — the same source renderDialogue
+    // numbers from). Without this, the original-trap fall-through still fires.
+    engine.submitAction('speak', { targetIds: ['npc'] });
+    expect(engine.world.modules['dialogue-core']).toMatchObject({ activeDialogue: 'talk' });
+    const entered = engine.world.eventLog.find((e) => e.type === 'dialogue.node.entered');
+    expect((entered?.payload as { choices?: unknown[] }).choices).toHaveLength(2);
+
+    const actions = buildActionList(engine.world);
+    // [1] Move to Hall, [2] Speak to Bram, [3] Inspect Bram, [4] Look around.
+    expect(actions.length).toBeGreaterThanOrEqual(3);
+    expect(actions[2]).toMatchObject({ verb: 'inspect' });
+
+    const pack = {
+      meta: { id: 'test-game', name: 'Test Game' },
+      createGame: () => engine,
+    } as LoadedPack;
+    const npcTurns = vi.fn();
+    const worldTick = vi.fn();
+    const log = vi.fn();
+    const logLenBefore = engine.world.eventLog.length;
+
+    const result = handlePlayerInput(engine, '3', { log });
+
+    expect(result).toEqual({ kind: 'unknown' });
+    expect(result.kind).not.toBe('action');
+    const delta = engine.world.eventLog.slice(logLenBefore);
+    // The doomed choose was rejected (out of range for 2 on-screen choices)…
+    expect(
+      delta.some(
+        (e) => e.type === 'action.rejected' && (e.payload as { verb?: unknown }).verb === 'choose',
+      ),
+    ).toBe(true);
+    // …and hidden action 3 was NOT submitted — no inspect, no move, no speak.
+    expect(delta.some((e) => e.type === 'test.inspected')).toBe(false);
+    expect(delta.some((e) => e.type === 'test.moved')).toBe(false);
+    expect(delta.some((e) => e.type === 'dialogue.started')).toBe(false);
+    // Guidance names the on-screen choice range, not the hidden ACTION list.
+    expect(log.mock.calls.map((c) => String(c[0])).join('\n')).toContain(
+      'Please enter a number between 1 and 2.',
+    );
+    // Same gate runSession uses: only kind 'action' runs the hostile round.
+    if (result.kind === 'action') {
+      runHostileRound(engine, pack, { npcTurns, worldTick });
+    }
+    expect(npcTurns).not.toHaveBeenCalled();
+    expect(worldTick).not.toHaveBeenCalled();
+  });
+
+  it("a VALID choice on the 2-choice node is still consumed as the dialogue selection (control)", () => {
+    const engine = makeLiveTwoChoiceEngine();
+    engine.submitAction('speak', { targetIds: ['npc'] });
+
+    const result = handlePlayerInput(engine, '1', { log: vi.fn() });
+
+    expect(result).toEqual({ kind: 'action', via: 'dialogue-choice' });
+    expect(eventTypes(engine)).toContain('dialogue.choice.selected');
+    expect(eventTypes(engine)).not.toContain('test.moved');
+    expect(eventTypes(engine)).not.toContain('test.inspected');
+  });
+});
+
 // F-7ea8fdaf — runSession built its extras unconditionally every turn
 // (bin.ts, `buildExtraActions(engine, pack.progressionTrees ?? [])`), unlike
 // renderFrame's own extras (`menu && !dState?.activeDialogue ? ... : []`).
@@ -1101,6 +1247,20 @@ describe('renderFrame — menu suppression (T0-menu-collisions)', () => {
     expect(frame).not.toContain('Move to Hall');
     // Exactly ONE numbered column on screen: the dialogue's.
     expect(frame.match(/\[1\]/g)).toHaveLength(1);
+  });
+
+  // F-c7ac6a7c: fall-through to parseActionSelection is only for the
+  // original trap, and only honest when the action menu is actually shown.
+  it('the original trap (activeDialogue, no visible choices) still shows the action menu', () => {
+    const engine = makeEngine();
+    engine.world.modules['dialogue-core'] = { activeDialogue: 'stuck-dialogue' };
+    const { lines, print } = capture();
+
+    renderFrame(engine, packFor(engine), { print });
+
+    const frame = lines.join('\n');
+    expect(frame).toContain('── Actions ');
+    expect(frame).toContain('[1] Move to Hall');
   });
 
   it('a normal frame still renders the numbered menu (control)', () => {

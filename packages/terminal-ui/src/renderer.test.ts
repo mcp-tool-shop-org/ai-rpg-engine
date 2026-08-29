@@ -16,6 +16,7 @@ import {
   renderDialogue,
   renderFullScreen,
   buildActionList,
+  visibleDialogueChoices,
   formatEventLine,
   textBar,
   DIALOGUE_LOOKBACK,
@@ -1097,6 +1098,57 @@ describe('Stage D — labeled section rules frame the screen', () => {
       const lines = screen.split('\n');
       expect(lines[lines.length - 1]).toBe('─'.repeat(SCREEN_WIDTH));
     });
+
+    // F-c7ac6a7c: the original trap (activeDialogue, no visible choices) is
+    // the one case the CLI still falls through to parseActionSelection — so
+    // the Actions section must actually be on screen, matching that comment.
+    it('the original trap (activeDialogue, no visible choices) still shows the action menu', () => {
+      const world = makeWorld();
+      world.modules['dialogue-core'] = { activeDialogue: 'stuck-dialogue' };
+      const screen = renderFullScreen(world, [], PLAIN);
+      expect(screen).toContain('── Actions ');
+      expect(screen).toContain('Look around');
+      expect(visibleDialogueChoices(world)).toEqual([]);
+    });
+  });
+
+  // F-c7ac6a7c: "choices on screen" is the same event-log payload
+  // renderDialogue numbers from — CLI routing and the Actions-section
+  // gate share this so they cannot drift.
+  describe('visibleDialogueChoices (F-c7ac6a7c)', () => {
+    it('is empty when dialogue is not active, even if a node.entered is in the log', () => {
+      const world = makeWorld();
+      world.modules['dialogue-core'] = { activeDialogue: null };
+      (world as { eventLog: ResolvedEvent[] }).eventLog = [
+        {
+          id: 'e1', tick: 1, type: 'dialogue.node.entered',
+          payload: { speaker: 'Bram', text: 'Well met.', choices: [{ id: 'c1', text: 'And you.', index: 0 }] },
+        },
+      ];
+      expect(visibleDialogueChoices(world)).toEqual([]);
+    });
+
+    it('is empty during the original trap — activeDialogue but no node.entered', () => {
+      const world = makeWorld();
+      world.modules['dialogue-core'] = { activeDialogue: 'stuck-dialogue' };
+      expect(visibleDialogueChoices(world)).toEqual([]);
+    });
+
+    it('returns the numbered choices renderDialogue would print', () => {
+      const world = makeWorld();
+      world.modules['dialogue-core'] = { activeDialogue: 'bram-talk' };
+      const choices = [
+        { id: 'c1', text: 'Hello.', index: 0 },
+        { id: 'c2', text: 'Goodbye.', index: 1 },
+      ];
+      (world as { eventLog: ResolvedEvent[] }).eventLog = [
+        {
+          id: 'e1', tick: 1, type: 'dialogue.node.entered',
+          payload: { speaker: 'Bram', text: 'Well?', choices },
+        },
+      ];
+      expect(visibleDialogueChoices(world)).toEqual(choices);
+    });
   });
 
   it('never emits double blank lines or two rules back to back', () => {
@@ -1216,6 +1268,12 @@ describe('renderFullScreen — appended menu entries inside the frame (P8-PS-005
   it('extras are suppressed with the Actions section: dialogue frames and actions:false', () => {
     const world = makeWorld();
     world.modules['dialogue-core'] = { activeDialogue: 'bram-talk' };
+    (world as { eventLog: ResolvedEvent[] }).eventLog = [
+      {
+        id: 'e1', tick: 1, type: 'dialogue.node.entered',
+        payload: { speaker: 'Bram', text: 'Well met.', choices: [{ id: 'c1', text: 'And you.', index: 0 }] },
+      },
+    ];
     const dialogueScreen = renderFullScreen(world, [], { ...PLAIN, extraActions: EXTRAS });
     expect(dialogueScreen).not.toContain('Rally the Crowd');
 
