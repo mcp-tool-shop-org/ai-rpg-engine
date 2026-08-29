@@ -30,7 +30,7 @@ Feudal mystery + court intrigue. Honor is fragile — false accusations cost dea
 import { createGame } from '@ai-rpg-engine/starter-ronin';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## Patterns Demonstrated

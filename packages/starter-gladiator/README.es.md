@@ -30,7 +30,7 @@ Combate en la arena romana + política de patrocinio. El favor del público var�
 import { createGame } from '@ai-rpg-engine/starter-gladiator';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## Patrones demostrados

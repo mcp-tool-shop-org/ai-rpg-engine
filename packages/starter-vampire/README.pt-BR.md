@@ -30,7 +30,7 @@ Horror gótico + política da corte de vampiros. A sede aumenta a cada instante 
 import { createGame } from '@ai-rpg-engine/starter-vampire';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## Padrões Demonstrados

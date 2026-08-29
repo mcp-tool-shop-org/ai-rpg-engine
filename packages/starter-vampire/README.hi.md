@@ -30,7 +30,7 @@
 import { createGame } from '@ai-rpg-engine/starter-vampire';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## प्रदर्शित किए गए पैटर्न

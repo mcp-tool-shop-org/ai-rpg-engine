@@ -30,7 +30,7 @@
 import { createGame } from '@ai-rpg-engine/starter-vampire';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## 演示模式

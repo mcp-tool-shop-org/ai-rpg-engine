@@ -20,7 +20,7 @@
 import { createGame } from '@ai-rpg-engine/starter-colony';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## 演示模式

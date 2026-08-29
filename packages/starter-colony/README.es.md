@@ -20,7 +20,7 @@ Gestión de una colonia de ciencia ficción + contacto con seres alienígenas. L
 import { createGame } from '@ai-rpg-engine/starter-colony';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## Patrones Demostrados

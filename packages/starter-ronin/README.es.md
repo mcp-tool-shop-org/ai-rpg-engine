@@ -30,7 +30,7 @@ Misterio feudal + intrigas palaciegas. El honor es frágil: las falsas acusacion
 import { createGame } from '@ai-rpg-engine/starter-ronin';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## Patrones demostrados

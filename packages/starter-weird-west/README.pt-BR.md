@@ -18,7 +18,7 @@ Oeste + sobrenatural. Pistoleiros, espíritos da poeira e um culto na mesa. O re
 import { createGame } from '@ai-rpg-engine/starter-weird-west';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## Conteúdo

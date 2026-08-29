@@ -30,7 +30,7 @@ Roman arena combat + patronage politics. Crowd Favor swings wildly on spectacle 
 import { createGame } from '@ai-rpg-engine/starter-gladiator';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## Patterns Demonstrated

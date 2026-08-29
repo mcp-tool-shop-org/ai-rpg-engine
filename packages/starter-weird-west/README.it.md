@@ -18,7 +18,7 @@ Western + soprannaturale. Pistoleri, spiriti della polvere e una setta del plate
 import { createGame } from '@ai-rpg-engine/starter-weird-west';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## Contenuti

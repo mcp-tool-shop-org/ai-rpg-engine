@@ -30,7 +30,7 @@
 import { createGame } from '@ai-rpg-engine/starter-ronin';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## प्रदर्शित पैटर्न

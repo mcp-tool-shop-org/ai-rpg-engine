@@ -20,7 +20,7 @@ Gestione di una colonia fantascientifica + contatto con una forma di vita aliena
 import { createGame } from '@ai-rpg-engine/starter-colony';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## Modelli dimostrati

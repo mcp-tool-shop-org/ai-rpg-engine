@@ -30,7 +30,7 @@ Combats d'arène romains + politique de mécénat. L'approbation de la foule flu
 import { createGame } from '@ai-rpg-engine/starter-gladiator';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## Exemples de réalisations

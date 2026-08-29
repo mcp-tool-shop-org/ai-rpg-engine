@@ -30,7 +30,7 @@ Terror gótico + política de la corte de vampiros. La sed de sangre aumenta con
 import { createGame } from '@ai-rpg-engine/starter-vampire';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## Patrones demostrados

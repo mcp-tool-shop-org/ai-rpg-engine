@@ -30,7 +30,7 @@ Horreur gothique + intrigues politiques au sein de la cour des vampires. La soif
 import { createGame } from '@ai-rpg-engine/starter-vampire';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## Fonctionnalités illustrées

@@ -30,7 +30,7 @@ Mystère féodal + intrigues de cour. L'honneur est fragile : les fausses accusa
 import { createGame } from '@ai-rpg-engine/starter-ronin';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## Exemples illustrés

@@ -20,7 +20,7 @@ Gerenciamento de colônia de ficção científica + contato com alienígenas. A 
 import { createGame } from '@ai-rpg-engine/starter-colony';
 
 const engine = createGame();
-engine.start();
+engine.submitAction('inspect');
 ```
 
 ## Padrões Demonstrados

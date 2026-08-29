@@ -60,7 +60,7 @@ import { createGame } from '@ai-rpg-engine/starter-detective';
 const engine = createGame(42);
 
 // Or import pieces individually:
-import { manifest, detectiveMinimalRuleset, deductionMasteryTree } from '@ai-rpg-engine/starter-detective';
+import { manifest, detectiveMinimalRuleset, deductionTree } from '@ai-rpg-engine/starter-detective';
 ```
 
 ## ドキュメント
