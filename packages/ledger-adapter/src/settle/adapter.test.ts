@@ -27,6 +27,16 @@ type FakeTransport = LedgerTransport & {
   /** The Nth subsequent write (1-indexed, counting from this call) fails.
    *  Used to fail the second mint / second resource without failing the first. */
   failOnNth(n: number): void;
+  /** Next escrowCreate tesSUCCESS's, debits, and records the escrow, but
+   *  omits `sequence` from the returned TxResult (the tesSUCCESS-without-
+   *  sequence hatch). OfferSequence remains recoverable via accountTx. */
+  omitNextEscrowSequence(): void;
+  /** Next escrowCreate debits the holder then returns ok:false with no hash
+   *  — a create that tesSUCCESS'd on-ledger and timed out before checkpoint. */
+  debitThenFailNextEscrowCreate(): void;
+  /** When true, accountTx strips `sequence` from EscrowCreate entries so a
+   *  retry must fail closed until the index lands. */
+  hideSequenceFromAccountTx(hide: boolean): void;
   /** True once `address` has opened a trust line for `currency`. Models the
    *  live-XRPL rule the mint path below enforces (a mint to an un-trust-lined
    *  holder fails tecPATH_DRY) — the fidelity the LIVE pirate replay needed to
@@ -48,6 +58,9 @@ function createFakeTransport(): FakeTransport {
   let failRemaining = 0;
   let writeCount = 0;
   let failAt: number | null = null;
+  let omitSequenceOnce = false;
+  let debitThenFailOnce = false;
+  let hideAccountTxSequence = false;
   const seedToAddress = new Map<string, string>();
   const balances = new Map<string, number>();
   const issuersByCurrency = new Map<string, string>();
@@ -58,6 +71,7 @@ function createFakeTransport(): FakeTransport {
   const memos = new Map<string, string>();
   const pendingEscrows = new Map<number, { destination: string; currency: string; value: number }>();
   const calls: string[] = [];
+  const txLog: TxEntry[] = [];
 
   function balanceKey(address: string, currency: string): string {
     return `${address}:${currency}`;
@@ -96,6 +110,15 @@ function createFakeTransport(): FakeTransport {
     failOnNth(n: number) {
       writeCount = 0;
       failAt = n;
+    },
+    omitNextEscrowSequence() {
+      omitSequenceOnce = true;
+    },
+    debitThenFailNextEscrowCreate() {
+      debitThenFailOnce = true;
+    },
+    hideSequenceFromAccountTx(hide: boolean) {
+      hideAccountTxSequence = hide;
     },
     memoFor(txid: string): string | undefined {
       return memos.get(txid);
@@ -177,12 +200,17 @@ function createFakeTransport(): FakeTransport {
       amount: IssuedAmount,
       _finishAfter: number,
       _cancelAfter: number,
-      _memo?: string,
+      memo?: string,
     ): Promise<TxResult> {
       calls.push('escrowCreate');
+      const sender = seedToAddress.get(seed);
+      if (debitThenFailOnce) {
+        debitThenFailOnce = false;
+        if (sender) debit(sender, amount.currency, Number(amount.value));
+        return { ok: false, hash: '', code: 'telNETWORK', error: 'timeout after tesSUCCESS' };
+      }
       const failed = maybeFail();
       if (failed) return failed;
-      const sender = seedToAddress.get(seed);
       if (sender) debit(sender, amount.currency, Number(amount.value));
       issuersByCurrency.set(amount.currency, amount.issuer);
       const tx = nextTx();
@@ -191,6 +219,16 @@ function createFakeTransport(): FakeTransport {
         currency: amount.currency,
         value: Number(amount.value),
       });
+      const entry: TxEntry = { hash: tx.hash, type: 'EscrowCreate', sequence: tx.sequence };
+      if (memo !== undefined) {
+        entry.memo = memo;
+        memos.set(tx.hash, memo);
+      }
+      txLog.push(entry);
+      if (omitSequenceOnce) {
+        omitSequenceOnce = false;
+        return { ok: true, hash: tx.hash, code: tx.code };
+      }
       return tx;
     },
 
@@ -223,7 +261,11 @@ function createFakeTransport(): FakeTransport {
     },
 
     async accountTx(_address: string, _limit?: number): Promise<TxEntry[]> {
-      return [];
+      if (!hideAccountTxSequence) return txLog.map((e) => ({ ...e }));
+      return txLog.map((e) => {
+        const { sequence: _sequence, ...rest } = e;
+        return rest;
+      });
     },
   };
 }
@@ -498,6 +540,113 @@ describe('createLedgerAdapter', () => {
     expect(transport.balances.get(`${state.playerAddress}:${state.tokenMap.coin}`)).toBe(90);
     expect(transport.balances.get(`${state.playerAddress}:${state.tokenMap.potion}`)).toBe(4);
     expect(state.lastSettled).toEqual({ coin: 90, potion: 4 });
+  });
+
+  it('tesSUCCESS without sequence persists hash, recovers OfferSequence from account_tx, and never EscrowCreates again', async () => {
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'testgame', runId: 'run-1' });
+    const state = freshState();
+    await adapter.enable(state, { coin: 100, items: {} });
+    const mintedInitial = { ...state.lastSettled };
+
+    transport.omitNextEscrowSequence();
+    transport.calls.length = 0;
+    const failed = await adapter.settle(state, { coin: 70, items: {} }, 1, 'Cedar Wake');
+
+    expect(failed.success).toBe(false);
+    expect(state.pending).toHaveLength(1);
+    expect(state.pending[0]!.receipts?.coin?.sequence).toBeUndefined();
+    expect(state.pending[0]!.receipts?.coin?.txids.length).toBeGreaterThan(0);
+    expect(state.lastSettled).toEqual({ coin: 100 });
+    expect(transport.calls.filter((c) => c === 'escrowCreate')).toHaveLength(1);
+    expect(transport.balances.get(`${state.playerAddress}:${state.tokenMap.coin}`)).toBe(70);
+
+    const retried = await adapter.settle(state, { coin: 70, items: {} }, 2, 'Cedar Wake');
+
+    expect(retried.success).toBe(true);
+    expect(state.pending).toHaveLength(0);
+    expect(transport.calls.filter((c) => c === 'escrowCreate')).toHaveLength(1);
+    expect(transport.balances.get(`${state.playerAddress}:${state.tokenMap.coin}`)).toBe(70);
+    expect(transport.balances.get(`${state.merchantAddress}:${state.tokenMap.coin}`)).toBe(30);
+    expect(state.lastSettled.coin).toBe(70);
+
+    const report = reconcile({
+      runId: 'run-1',
+      seed: 0,
+      mintedInitial,
+      ledgerBalances: { [state.tokenMap.coin]: 70 },
+      lastSettled: state.lastSettled,
+      settlements: state.settlements,
+      pending: state.pending,
+      tokenMap: state.tokenMap,
+    });
+    expect(report.resources.find((r) => r.resource === 'coin')?.conservationOk).toBe(true);
+    expect(report.passed).toBe(true);
+  });
+
+  it('tesSUCCESS without sequence fails closed until account_tx indexes OfferSequence; retry does not EscrowCreate again', async () => {
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'testgame', runId: 'run-1' });
+    const state = freshState();
+    await adapter.enable(state, { coin: 100, items: {} });
+
+    transport.omitNextEscrowSequence();
+    transport.hideSequenceFromAccountTx(true);
+    transport.calls.length = 0;
+    const failed = await adapter.settle(state, { coin: 70, items: {} }, 1, 'Cedar Wake');
+    expect(failed.success).toBe(false);
+    expect(transport.calls.filter((c) => c === 'escrowCreate')).toHaveLength(1);
+    expect(state.lastSettled.coin).toBe(100);
+
+    const stillClosed = await adapter.settle(state, { coin: 70, items: {} }, 2, 'Cedar Wake');
+    expect(stillClosed.success).toBe(false);
+    expect(state.pending).toHaveLength(1);
+    expect(transport.calls.filter((c) => c === 'escrowCreate')).toHaveLength(1);
+    expect(state.lastSettled.coin).toBe(100);
+    expect(transport.balances.get(`${state.playerAddress}:${state.tokenMap.coin}`)).toBe(70);
+
+    transport.hideSequenceFromAccountTx(false);
+    const recovered = await adapter.settle(state, { coin: 70, items: {} }, 3, 'Cedar Wake');
+    expect(recovered.success).toBe(true);
+    expect(state.pending).toHaveLength(0);
+    expect(transport.calls.filter((c) => c === 'escrowCreate')).toHaveLength(1);
+    expect(state.lastSettled.coin).toBe(70);
+    expect(transport.balances.get(`${state.merchantAddress}:${state.tokenMap.coin}`)).toBe(30);
+  });
+
+  it('escrow spend whose create timed out after tesSUCCESS skips via on-ledger balance and never EscrowCreates again', async () => {
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'testgame', runId: 'run-1' });
+    const state = freshState();
+    await adapter.enable(state, { coin: 100, items: {} });
+    const mintedInitial = { ...state.lastSettled };
+
+    transport.debitThenFailNextEscrowCreate();
+    transport.calls.length = 0;
+    const failed = await adapter.settle(state, { coin: 70, items: {} }, 1, 'Cedar Wake');
+    expect(failed.success).toBe(false);
+    expect(state.pending).toHaveLength(1);
+    expect(state.pending[0]!.receipts?.coin).toBeUndefined();
+    expect(transport.calls.filter((c) => c === 'escrowCreate')).toHaveLength(1);
+    expect(transport.balances.get(`${state.playerAddress}:${state.tokenMap.coin}`)).toBe(70);
+    expect(state.lastSettled.coin).toBe(100);
+
+    const retried = await adapter.settle(state, { coin: 70, items: {} }, 2, 'Cedar Wake');
+    expect(retried.success).toBe(true);
+    expect(state.pending).toHaveLength(0);
+    expect(transport.calls.filter((c) => c === 'escrowCreate')).toHaveLength(1);
+    expect(transport.balances.get(`${state.playerAddress}:${state.tokenMap.coin}`)).toBe(70);
+    expect(state.lastSettled.coin).toBe(70);
+
+    const report = reconcile({
+      runId: 'run-1',
+      seed: 0,
+      mintedInitial,
+      ledgerBalances: { [state.tokenMap.coin]: 70 },
+      lastSettled: state.lastSettled,
+      settlements: state.settlements,
+      pending: state.pending,
+      tokenMap: state.tokenMap,
+    });
+    expect(report.resources.find((r) => r.resource === 'coin')?.conservationOk).toBe(true);
+    expect(report.passed).toBe(true);
   });
 
   it('INCREMENTAL TRUST LINES: a token first acquired at a checkpoint is trust-lined before its mint (else tecPATH_DRY — the live-diagnosed Phase-5 fix)', async () => {
