@@ -37,9 +37,30 @@ function describeValue(value: unknown): string {
   return typeof value;
 }
 
-/** recordEvent reads event.id; null/undefined/array/primitive elements throw. */
-function isEventObject(value: unknown): value is ResolvedEvent {
+/** Non-null non-array object — not yet a recordable event (type may be missing). */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * recordEvent stamps id then EventBus.emit does type.indexOf. Null/undefined/
+ * array/primitive elements throw on event.id; a plain object with a missing,
+ * empty, or non-string type throws on indexOf (F-208d62e4 sibling).
+ */
+function isEventObject(value: unknown): value is ResolvedEvent {
+  return (
+    isPlainObject(value) &&
+    typeof value.type === 'string' &&
+    value.type.length > 0
+  );
+}
+
+/** Why a handler/applier array element is not a recordable event. */
+function describeInvalidEventElement(value: unknown, index: number): string {
+  if (!isPlainObject(value)) {
+    return `non-object element at index ${index}: ${describeValue(value)}`;
+  }
+  return `element at index ${index} with missing, empty, or non-string type`;
 }
 
 export class ActionDispatcher {
@@ -170,14 +191,15 @@ export class ActionDispatcher {
     // Array.isArray is not enough: `return [maybeEvent]` with a failed
     // construction is a valid-looking array of null/undefined. recordEvent
     // reads event.id and would throw outside the handler try (F-208d62e4).
-    // Reject the action without recording any element so we never leave a
-    // partial handler event next to a hanging declared-only log.
+    // A non-null object with no string type (`[{ payload: {} }]`) passes the
+    // object check then EventBus.emit type.indexOf TypeError-aborts the tick
+    // declared-only. Reject the action without recording any element.
     for (let i = 0; i < events.length; i++) {
       if (!isEventObject(events[i])) {
         store.emitEvent('action.rejected', {
           verb: action.verb,
           index: i,
-          reason: `handler for "${action.verb}" returned non-object element at index ${i}: ${describeValue(events[i])}`,
+          reason: `handler for "${action.verb}" returned ${describeInvalidEventElement(events[i], i)}`,
         }, { actorId: action.actorId });
         return [];
       }
@@ -219,9 +241,9 @@ export class ActionDispatcher {
               causedBy: event.id,
             });
           } else {
-            // [null] passes Array.isArray then throws in the unguarded
-            // recordEvent loop after this try (F-208d62e4). Skip the hole;
-            // name the index; keep later elements and action.resolved.
+            // [null] and [{ payload }] pass Array.isArray then throw in the
+            // unguarded recordEvent loop after this try (F-208d62e4). Skip
+            // the hole; name the index; keep later elements and action.resolved.
             for (let i = 0; i < produced.length; i++) {
               const item = produced[i];
               if (!isEventObject(item)) {
@@ -232,7 +254,7 @@ export class ActionDispatcher {
                   payload: {
                     sourceEventId: event.id,
                     index: i,
-                    reason: `rule-effect applier returned non-object element at index ${i}: ${describeValue(item)}`,
+                    reason: `rule-effect applier returned ${describeInvalidEventElement(item, i)}`,
                   },
                   causedBy: event.id,
                 });

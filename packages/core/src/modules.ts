@@ -33,9 +33,30 @@ function describeValue(value: unknown): string {
   return typeof value;
 }
 
-/** recordEvent reads event.id; null/undefined/array/primitive elements throw. */
-function isEventObject(value: unknown): value is ResolvedEvent {
+/** Non-null non-array object — not yet a recordable event (type may be missing). */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * recordEvent stamps id then EventBus.emit does type.indexOf. Null/undefined/
+ * array/primitive elements throw on event.id; a plain object with a missing,
+ * empty, or non-string type throws on indexOf (F-208d62e4 sibling).
+ */
+function isEventObject(value: unknown): value is ResolvedEvent {
+  return (
+    isPlainObject(value) &&
+    typeof value.type === 'string' &&
+    value.type.length > 0
+  );
+}
+
+/** Why an effect.apply array element is not a recordable event. */
+function describeInvalidEventElement(value: unknown, index: number): string {
+  if (!isPlainObject(value)) {
+    return `non-object element at index ${index}: ${describeValue(value)}`;
+  }
+  return `element at index ${index} with missing, empty, or non-string type`;
 }
 
 export class ModuleManager {
@@ -177,9 +198,9 @@ export class ModuleManager {
           });
           continue;
         }
-        // [null] passes Array.isArray then throws in dispatch's recordEvent
-        // loop (F-208d62e4). Replace the hole with rule.effect.failed naming
-        // this effect and the index; later elements still record.
+        // [null] and [{ payload }] pass Array.isArray then throw in dispatch's
+        // recordEvent loop (F-208d62e4). Replace the hole with rule.effect.failed
+        // naming this effect and the index; later elements still record.
         for (let i = 0; i < produced.length; i++) {
           const item = produced[i];
           if (!isEventObject(item)) {
@@ -191,7 +212,7 @@ export class ModuleManager {
                 effectId: effect.id,
                 sourceEventId: event.id,
                 index: i,
-                reason: `effect "${effect.id}" returned non-object element at index ${i}: ${describeValue(item)}`,
+                reason: `effect "${effect.id}" returned ${describeInvalidEventElement(item, i)}`,
               },
               causedBy: event.id,
             });

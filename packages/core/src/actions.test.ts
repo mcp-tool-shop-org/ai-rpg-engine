@@ -9,7 +9,9 @@
 // F-208d62e4: Array.isArray is not enough. Handler `[null]`/`[undefined]`, a
 // validator returning undefined/null, and an effect applier returning `[null]`
 // still threw TypeError outside try/catch (event.id / result.valid), aborting
-// the tick with a declared-only eventLog.
+// the tick with a declared-only eventLog. Wave 11 sibling: a non-null object
+// with no string type (`[{ payload: {} }]`) still reached EventBus.emit
+// type.indexOf and aborted the same way.
 //
 // F-b71bccf1: registerVerb was Map.set last-wins. Two modules registering the
 // same verb constructed successfully and the first handler was silently
@@ -290,6 +292,79 @@ describe('F-208d62e4 — non-object array elements and validator returns are iso
     expect(String(rejected!.payload.reason)).toContain('index 1');
     expect(engine.world.eventLog.some((e) => e.type === 'action.resolved')).toBe(false);
     expect(engine.tick).toBe(1);
+  });
+
+  // Wave 11 sibling: isEventObject used to admit any non-null non-array object.
+  // recordEvent then EventBus.emit does type.indexOf and TypeError-aborts the
+  // tick declared-only. Reject before recordEvent; name the verb and index.
+  const typelessHoles: Array<{ name: string; returned: unknown[] }> = [
+    { name: '[{ payload: {} }] (no type)', returned: [{ payload: {} }] },
+    { name: '[{ type: 42, payload: {} }]', returned: [{ type: 42, payload: {} }] },
+    { name: '[{ type: "", payload: {} }]', returned: [{ type: '', payload: {} }] },
+  ];
+
+  for (const { name, returned } of typelessHoles) {
+    it(`handler returning ${name} yields action.rejected, advances the tick, and does not throw`, () => {
+      const engine = new Engine({
+        manifest: { ...testManifest, modules: ['bad'] },
+        seed: 1,
+        modules: [moduleWithVerb('bad', 'oops', () => returned)],
+      });
+      withPlayer(engine);
+
+      expect(() => engine.submitAction('oops')).not.toThrow();
+
+      const types = engine.world.eventLog.map((e) => e.type);
+      expect(types).toContain('action.declared');
+      expect(types).toContain('action.rejected');
+      expect(types).not.toContain('action.resolved');
+      // The typeless object must not land in the log (recordEvent would stamp
+      // it then emit would throw, leaving declared-without-resolved).
+      expect(engine.world.eventLog.every((e) => typeof e.type === 'string' && e.type.length > 0)).toBe(true);
+
+      const rejected = engine.world.eventLog.find((e) => e.type === 'action.rejected');
+      expect(rejected).toBeDefined();
+      expect(rejected!.payload.verb).toBe('oops');
+      expect(String(rejected!.payload.reason)).toContain('oops');
+      expect(String(rejected!.payload.reason)).toContain('index 0');
+      expect(String(rejected!.payload.reason).toLowerCase()).toMatch(/type/);
+
+      expect(engine.tick).toBe(1);
+      expect(engine.getActionLog()).toHaveLength(1);
+    });
+  }
+
+  it('effect applier returning [{ payload: {} }] yields rule.effect.failed, still resolves, advances the tick', () => {
+    const engine = new Engine({
+      manifest: { ...testManifest, modules: ['ok'] },
+      seed: 1,
+      modules: [
+        moduleWithVerb('ok', 'wave', (action: ActionIntent) => [
+          { id: '', tick: action.issuedAtTick, type: 'test.waved', actorId: action.actorId, payload: {} },
+        ]),
+      ],
+    });
+    withPlayer(engine);
+    engine.dispatcher.registerEffectApplier(
+      () => [{ payload: {} }] as unknown as ResolvedEvent[],
+    );
+
+    expect(() => engine.submitAction('wave')).not.toThrow();
+
+    const types = engine.world.eventLog.map((e) => e.type);
+    expect(types).toContain('action.declared');
+    expect(types).toContain('test.waved');
+    expect(types).toContain('rule.effect.failed');
+    expect(types).toContain('action.resolved');
+    expect(engine.world.eventLog.every((e) => typeof e.type === 'string' && e.type.length > 0)).toBe(true);
+
+    const failed = engine.world.eventLog.find((e) => e.type === 'rule.effect.failed');
+    expect(failed).toBeDefined();
+    expect(String(failed!.payload.reason)).toContain('index 0');
+    expect(String(failed!.payload.reason).toLowerCase()).toMatch(/type/);
+
+    expect(engine.tick).toBe(1);
+    expect(engine.getActionLog()).toHaveLength(1);
   });
 });
 
