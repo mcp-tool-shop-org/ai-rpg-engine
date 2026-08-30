@@ -7,7 +7,14 @@
 // exercising the happy path.
 
 import { describe, it, expect } from 'vitest';
-import { MessageReader, encodeMessage, MAX_MESSAGE_BYTES, type FramingError, type RpcMessage } from './framing.js';
+import {
+  MessageReader,
+  MessageTooLargeError,
+  encodeMessage,
+  MAX_MESSAGE_BYTES,
+  type FramingError,
+  type RpcMessage,
+} from './framing.js';
 
 function collect(): {
   reader: MessageReader;
@@ -128,4 +135,17 @@ describe('C1/P3 — Content-Length framing', () => {
     expect(messages).toHaveLength(1);
     expect(MAX_MESSAGE_BYTES).toBe(16 * 1024 * 1024);
   });
+
+  it('RED: encodeMessage refuses a body above MAX_MESSAGE_BYTES (SNAPSHOT_TOO_LARGE)', () => {
+    const huge = { jsonrpc: '2.0', id: 1, result: 'x'.repeat(MAX_MESSAGE_BYTES) };
+    try {
+      encodeMessage(huge);
+    } catch (err) {
+      expect(err).toBeInstanceOf(MessageTooLargeError);
+      expect((err as MessageTooLargeError).code).toBe('SNAPSHOT_TOO_LARGE');
+      expect((err as Error).message).toMatch(/ceiling/i);
+      return;
+    }
+    throw new Error('expected encodeMessage to throw');
+  }, 20000);
 });

@@ -39,12 +39,33 @@ export type FramingError = { kind: FramingErrorKind; detail: string };
  */
 export const MAX_MESSAGE_BYTES = 16 * 1024 * 1024;
 
+/**
+ * Thrown when {@link encodeMessage} would emit a frame the peer's
+ * {@link MessageReader} refuses (`Content-Length > MAX_MESSAGE_BYTES`).
+ * The transport must not write the frame; fail the RPC instead.
+ */
+export class MessageTooLargeError extends Error {
+  readonly code = 'SNAPSHOT_TOO_LARGE';
+  readonly byteLength: number;
+  constructor(byteLength: number) {
+    super(
+      `encoded message is ${byteLength} bytes; ceiling is ${MAX_MESSAGE_BYTES}. ` +
+        'Refusing to write a frame the peer cannot parse. Request a smaller window via replay, not a full snapshot.',
+    );
+    this.name = 'MessageTooLargeError';
+    this.byteLength = byteLength;
+  }
+}
+
 /** Encode one message with its Content-Length header. */
 export function encodeMessage(message: RpcMessage): string {
   const body = JSON.stringify(message);
   // Byte length, not character length — a multi-byte character would otherwise
   // under-declare the frame and desynchronise the reader permanently.
   const length = Buffer.byteLength(body, 'utf-8');
+  if (length > MAX_MESSAGE_BYTES) {
+    throw new MessageTooLargeError(length);
+  }
   return `Content-Length: ${length}\r\n\r\n${body}`;
 }
 

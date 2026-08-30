@@ -91,6 +91,10 @@ export type SocketServerHandles = {
  * connection cap matters: sharing a world between two writers whose commands
  * arrive in network order is not the same world twice.
  */
+function logStderr(line: string): void {
+  process.stderr.write(`[sidecar] ${line}\n`);
+}
+
 export function startSocketServer(
   options: SidecarServerOptions & SocketServerOptions,
   hooks: SocketServerHooks = {},
@@ -102,6 +106,15 @@ export function startSocketServer(
   const liveSessions = new Map<net.Socket, SidecarServer>();
   let accepted = 0;
 
+  // Same visibility stdio already has for framing: a hook replaces the
+  // default, it does not have to opt the library into logging.
+  const onFramingError = hooks.onFramingError ?? ((detail: string) => logStderr(`framing error: ${detail}`));
+  const onListening = hooks.onListening ?? ((port: number, boundHost: string) => logStderr(`listening on ${boundHost}:${port}`));
+  const onConnection = hooks.onConnection ?? ((index: number) => logStderr(`accepted connection ${index}`));
+  const onRefused = hooks.onRefused ?? ((reason: string) => logStderr(reason));
+  const onDisconnect = hooks.onDisconnect ?? ((index: number) => logStderr(`disconnected ${index}`));
+  const onError = hooks.onError ?? ((err: Error) => logStderr(err.message));
+
   const server = net.createServer((socket) => {
     if (live.size >= maxConnections) {
       // Refused, with the reason on the wire rather than a silent hangup. A client
@@ -110,7 +123,7 @@ export function startSocketServer(
         `refused: this sidecar serves ${maxConnections} client${maxConnections === 1 ? '' : 's'} at a time. ` +
         'Concurrent writers would interleave in socket arrival order, which is not deterministic — ' +
         'the one property this wire exists to preserve. Disconnect the other client, or start a second sidecar.';
-      hooks.onRefused?.(reason);
+      onRefused(reason);
       socket.end(
         encodeMessage({
           jsonrpc: '2.0',
@@ -134,7 +147,14 @@ export function startSocketServer(
       // A client can vanish between the sim deciding something and the write. That
       // is ordinary, not an error, and must not take the sim down.
       if (socket.destroyed || socket.writableEnded) return;
-      socket.write(encodeMessage(msg));
+      const frame = encodeMessage(msg);
+      const ok = socket.write(frame);
+      if (!ok && !socket.destroyed) {
+        socket.pause();
+        socket.once('drain', () => {
+          if (!socket.destroyed) socket.resume();
+        });
+      }
     };
 
     // The two calls `stdio.ts` promised, with a different pair of streams.
@@ -164,27 +184,28 @@ export function startSocketServer(
         }
         if (server.listening) server.close();
       },
-      (err) => hooks.onFramingError?.(`${err.kind}: ${err.detail}`),
+      (err) => onFramingError(`${err.kind}: ${err.detail}`),
     );
 
     (socket as unknown as ByteReadable).on('data', (chunk) => reader.push(chunk));
     sessions.push(session);
     liveSessions.set(socket, session);
-    hooks.onConnection?.(index);
+    onConnection(index);
 
-    socket.on('error', (err) => hooks.onError?.(err));
+    socket.on('error', (err) => onError(err));
     socket.on('close', () => {
       live.delete(socket);
       liveSessions.delete(socket);
-      hooks.onDisconnect?.(index);
+      session.detach();
+      onDisconnect(index);
     });
   });
 
-  server.on('error', (err) => hooks.onError?.(err));
+  server.on('error', (err) => onError(err));
   server.listen(options.port, host, () => {
     const addr = server.address();
     const bound = typeof addr === 'object' && addr !== null ? addr.port : options.port;
-    hooks.onListening?.(bound, host);
+    onListening(bound, host);
   });
 
   return {

@@ -6,8 +6,9 @@
 import { describe, it, expect } from 'vitest';
 import { createTestEngine, type EngineModule, type EntityState, type WorldState } from '@ai-rpg-engine/core';
 import { SidecarClient } from './client.js';
-import { SidecarServer } from './server.js';
+import { SidecarServer, attachedServerCount } from './server.js';
 import { ERROR_CODES, METHODS, NOTIFICATIONS, type RpcMessage } from './protocol.js';
+import { encodeMessage, MessageTooLargeError, MAX_MESSAGE_BYTES } from './framing.js';
 
 function brandModule(): EngineModule {
   return {
@@ -428,3 +429,153 @@ describe('F-98b60cd0 — SNAPSHOT rebases lastState; 1:N sessions share ticks', 
     expect(b.client.stalenessReports).toEqual([]);
   });
 });
+
+describe('F-c5d12205 — initialize and nested parameters are typed, not coerced', () => {
+  it('initialize {capabilities:1} is INVALID_PARAMS', () => {
+    const engine = createTestEngine({
+      modules: [brandModule()],
+      playerId: 'hero',
+      startZone: 'room',
+      entities: [
+        {
+          id: 'hero',
+          blueprintId: 'hero',
+          type: 'player',
+          name: 'Hero',
+          tags: ['player'],
+          stats: {},
+          resources: { hp: 10 },
+          statuses: [],
+          zoneId: 'room',
+        },
+      ],
+      zones: [{ id: 'room', roomId: 'room', name: 'Room', tags: [], neighbors: [] }],
+    });
+    const sent: RpcMessage[] = [];
+    const server = new SidecarServer({ engine, engineVersion: '3.8.0-test' }, (m) => sent.push(m));
+    server.handle({ jsonrpc: '2.0', id: 1, method: METHODS.INITIALIZE, params: { capabilities: 1 } });
+    const err = errorOf(sent.find((m) => m.id === 1));
+    expect(err.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(err.message).toMatch(/capabilities/);
+    expect(server.negotiatedClientCapabilities).toEqual({});
+  });
+
+  it('submitAction parameters:{n:{}} is INVALID_PARAMS and the verb does not fire', () => {
+    const { engine, call } = boot();
+    const logBefore = engine.world.eventLog.length;
+    const actionsBefore = engine.getActionLog().length;
+    const err = errorOf(call(METHODS.SUBMIT_ACTION, { verb: 'brand', parameters: { n: {} } }));
+    expect(err.code).toBe(ERROR_CODES.INVALID_PARAMS);
+    expect(err.message).toMatch(/parameters\.n/);
+    expect(engine.world.eventLog.length).toBe(logBefore);
+    expect(engine.getActionLog().length).toBe(actionsBefore);
+  });
+
+  it('CONTROL: initialize keeps clientName for logs; a boolean capability is stored', () => {
+    const { engine } = boot();
+    const sent: RpcMessage[] = [];
+    const server = new SidecarServer({ engine, engineVersion: '3.8.0-test' }, (m) => sent.push(m));
+    server.handle({
+      jsonrpc: '2.0',
+      id: 1,
+      method: METHODS.INITIALIZE,
+      params: { clientName: 'godot-stage', clientVersion: '4.7', capabilities: { hashes: true } },
+    });
+    expect(sent.find((m) => m.id === 1)?.error).toBeUndefined();
+    expect(server.sessionClientName).toBe('godot-stage');
+    expect(server.sessionClientVersion).toBe('4.7');
+    expect(server.negotiatedClientCapabilities).toEqual({ hashes: true });
+  });
+});
+
+describe('F-d76f8f25 — a known method without an id must not mutate', () => {
+  it('submitAction without id does not append eventLog / actionLog and does not push sim/tick', () => {
+    const { engine, server, sent, call } = boot();
+    const logBefore = engine.world.eventLog.length;
+    const actionsBefore = engine.getActionLog().length;
+    const ticksBefore = sent.filter((m) => m.method === NOTIFICATIONS.TICK).length;
+    server.handle({ jsonrpc: '2.0', method: METHODS.SUBMIT_ACTION, params: { verb: 'brand' } });
+    expect(engine.world.eventLog.length).toBe(logBefore);
+    expect(engine.getActionLog().length).toBe(actionsBefore);
+    expect(sent.filter((m) => m.method === NOTIFICATIONS.TICK).length).toBe(ticksBefore);
+
+    const ok = call(METHODS.SUBMIT_ACTION, { verb: 'brand' });
+    expect(ok?.error).toBeUndefined();
+    expect(engine.getActionLog().length).toBeGreaterThan(actionsBefore);
+    expect(sent.some((m) => m.method === NOTIFICATIONS.TICK)).toBe(true);
+  });
+
+  it('shutdown without an id still stops the sim (fire-and-forget)', () => {
+    const { server, call, engine } = boot();
+    server.handle({ jsonrpc: '2.0', method: METHODS.SHUTDOWN, params: {} });
+    expect(server.isClosed).toBe(true);
+    const logBefore = engine.world.eventLog.length;
+    const err = errorOf(call(METHODS.SUBMIT_ACTION, { verb: 'brand' }));
+    expect(err.code).toBe(ERROR_CODES.SESSION_CLOSED);
+    expect(engine.world.eventLog.length).toBe(logBefore);
+  });
+});
+
+describe('F-f64330ad — SimGate unregisters on detach so reconnect cannot leak', () => {
+  it('a loop of construct+detach against one Engine does not retain N lastState clones', () => {
+    const { engine } = boot();
+    expect(attachedServerCount(engine)).toBe(1);
+    for (let i = 0; i < 8; i++) {
+      const extra = new SidecarServer({ engine, engineVersion: '3.8.0-test' }, () => undefined);
+      expect(attachedServerCount(engine)).toBe(2);
+      extra.detach();
+      expect(attachedServerCount(engine)).toBe(1);
+    }
+    expect(attachedServerCount(engine)).toBe(1);
+  });
+
+  it('SHUTDOWN fan-out detaches every session sharing the Engine', () => {
+    const { engine, call, server } = boot();
+    const sibling = new SidecarServer({ engine, engineVersion: '3.8.0-test' }, () => undefined);
+    expect(attachedServerCount(engine)).toBe(2);
+    call(METHODS.SHUTDOWN, {});
+    expect(server.isClosed).toBe(true);
+    expect(sibling.isClosed).toBe(true);
+    expect(attachedServerCount(engine)).toBe(0);
+  });
+});
+
+describe('F-8b1563f6 — an oversized snapshot fails the RPC rather than writing the frame', () => {
+  it('a >16 MiB snapshot is SNAPSHOT_TOO_LARGE, not a frame the reader would refuse', () => {
+    const engine = createTestEngine({
+      modules: [brandModule()],
+      playerId: 'hero',
+      startZone: 'room',
+      entities: [
+        {
+          id: 'hero',
+          blueprintId: 'hero',
+          type: 'player',
+          name: 'Hero',
+          tags: ['player'],
+          stats: {},
+          resources: { hp: 10 },
+          statuses: [],
+          zoneId: 'room',
+        },
+      ],
+      zones: [{ id: 'room', roomId: 'room', name: 'Room', tags: [], neighbors: [] }],
+    });
+    (engine.world as { blob?: string }).blob = 'x'.repeat(MAX_MESSAGE_BYTES);
+    const sent: RpcMessage[] = [];
+    const server = new SidecarServer(
+      { engine, engineVersion: '3.8.0-test' },
+      (m) => {
+        encodeMessage(m);
+        sent.push(m);
+      },
+    );
+    server.handle({ jsonrpc: '2.0', id: 1, method: METHODS.INITIALIZE, params: {} });
+    server.handle({ jsonrpc: '2.0', id: 2, method: METHODS.SNAPSHOT, params: {} });
+    const err = errorOf(sent.find((m) => m.id === 2));
+    expect(err.code).toBe(ERROR_CODES.SNAPSHOT_TOO_LARGE);
+    expect(err.message).toMatch(/ceiling/i);
+    expect(() => encodeMessage(sent.find((m) => m.id === 2)!)).not.toThrow(MessageTooLargeError);
+  }, 30000);
+});
+

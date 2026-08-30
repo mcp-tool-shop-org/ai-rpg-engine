@@ -75,10 +75,24 @@ function walk(
     return;
   }
 
-  // Arrays are replaced wholesale. Element-wise array patching needs stable
-  // identity the engine's arrays do not carry (an event log is append-only, a
-  // tag list is a set), and a wrong guess about identity is a rendering bug that
-  // looks like a sim bug. Wholesale is honest and, for these shapes, cheap.
+  // eventLog is append-only (engine contract). Clients already receive the new
+  // events on `sim/tick` and can `replay` a window; a wholesale SET of the log
+  // on every tick is O(N) on the wire and will eventually exceed the reader's
+  // 16 MiB ceiling. Emit only the new tail so the incremental patch is O(k).
+  if (Array.isArray(before) && Array.isArray(after) && path.length === 1 && path[0] === 'eventLog') {
+    if (after.length >= before.length) {
+      for (let i = before.length; i < after.length; i++) {
+        out.push({ op: 'set', path: [...path, i], value: quantize(after[i]) });
+      }
+      return;
+    }
+    out.push({ op: 'set', path: [...path], value: quantize(after) });
+    return;
+  }
+
+  // Other arrays are replaced wholesale. Element-wise array patching needs
+  // stable identity the engine's arrays do not carry (a tag list is a set), and
+  // a wrong guess about identity is a rendering bug that looks like a sim bug.
   if (depthLeft <= 0 || Array.isArray(before) !== Array.isArray(after) || Array.isArray(after)) {
     if (!deepEqual(before, after)) out.push({ op: 'set', path: [...path], value: quantize(after) });
     return;

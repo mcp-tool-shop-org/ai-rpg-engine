@@ -10,9 +10,10 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import * as net from 'node:net';
-import { createTestEngine, type EngineModule, type EntityState, type WorldState } from '@ai-rpg-engine/core';
+import { createTestEngine, type Engine, type EngineModule, type EntityState, type WorldState } from '@ai-rpg-engine/core';
 import { SidecarClient } from './client.js';
 import { startSocketServer, type SocketServerHandles } from './socket.js';
+import { attachedServerCount } from './server.js';
 import { MessageReader, encodeMessage, type RpcMessage } from './framing.js';
 import { METHODS, ERROR_CODES } from './protocol.js';
 
@@ -407,6 +408,8 @@ async function connectClient(port: number): Promise<{ client: SidecarClient; soc
     () => undefined,
   );
   socket.on('data', (c: Buffer) => reader.push(c));
+  socket.on('close', () => client.disconnect());
+  socket.on('error', (err) => client.disconnect(err));
   return { client, socket };
 }
 
@@ -438,3 +441,56 @@ describe('F-98b60cd0 — two TCP sessions: snapshot rebases, idle peer gets the 
     expect(b.client.stalenessReports).toEqual([]);
   }, 12000);
 });
+
+function captureStderr(): { lines: string[]; restore: () => void } {
+  const lines: string[] = [];
+  const orig = process.stderr.write.bind(process.stderr);
+  process.stderr.write = ((chunk: unknown) => {
+    lines.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+  return {
+    lines,
+    restore: () => {
+      process.stderr.write = orig;
+    },
+  };
+}
+
+describe('F-1842358a — TCP framing faults are visible with default hooks', () => {
+  it('a bad Content-Length on the TCP transport writes a framing-error line even with hooks={}', async () => {
+    const cap = captureStderr();
+    try {
+      const h = serve();
+      const port = await ready(h);
+      const c = await connect(port);
+      c.socket.write('Content-Length: 99999999999999\r\n\r\n');
+      await waitUntil(
+        () => cap.lines.some((l) => l.includes('framing error') && l.includes('bad-length')),
+        'framing-error stderr',
+      );
+      expect(cap.lines.some((l) => l.includes('listening on'))).toBe(true);
+    } finally {
+      cap.restore();
+    }
+  }, 12000);
+});
+
+describe('F-f64330ad — destroy+reconnect does not leak SidecarServers on the gate', () => {
+  it('destroy+reconnect leaves attachedServerCount === 1', async () => {
+    const engine = stubEngine() as Engine;
+    const h = serve({ engine });
+    const port = await ready(h);
+    const first = await connect(port);
+    await first.request(METHODS.INITIALIZE, { clientName: 'a', clientVersion: '1', capabilities: {} });
+    expect(attachedServerCount(engine)).toBe(1);
+
+    first.socket.destroy();
+    await waitUntil(() => attachedServerCount(engine) === 0, 'gate emptied after destroy');
+
+    const second = await connect(port);
+    await second.request(METHODS.INITIALIZE, { clientName: 'b', clientVersion: '1', capabilities: {} });
+    expect(attachedServerCount(engine)).toBe(1);
+  }, 12000);
+});
+

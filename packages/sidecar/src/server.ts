@@ -32,7 +32,7 @@ import {
   type WireEvent,
 } from './protocol.js';
 import { diffState, snapshotDelta, stateHash, toWireEvent } from './serializer.js';
-import type { RpcMessage } from './framing.js';
+import { MessageTooLargeError, type RpcMessage } from './framing.js';
 
 export type SidecarServerOptions = {
   /** The booted sim. Built by pack CODE — this server never constructs one. */
@@ -86,6 +86,18 @@ function attachSession(engine: Engine, server: SidecarServer): SimGate {
   return gate;
 }
 
+function detachSession(engine: Engine, server: SidecarServer): void {
+  simGates.get(engine)?.servers.delete(server);
+}
+
+/**
+ * How many SidecarServers currently share this Engine's sim-local gate.
+ * Used by reconnect tests so a leak is a count, not a GC race.
+ */
+export function attachedServerCount(engine: Engine): number {
+  return simGates.get(engine)?.servers.size ?? 0;
+}
+
 function isSafeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value);
 }
@@ -118,6 +130,8 @@ export class SidecarServer {
   private readonly emitted = new Set<string>();
   private lastState: WorldState;
   private clientCapabilities: ClientCapabilities = {};
+  private clientName = '';
+  private clientVersion = '';
   private readonly gate: SimGate;
 
   constructor(
@@ -171,6 +185,17 @@ export class SidecarServer {
       return;
     }
     const name = method as MethodName;
+
+    // Known methods are request/response. A notification-shaped command (no id)
+    // cannot be answered, so it must not mutate. Shutdown is the one
+    // fire-and-forget exception — an orderly stop should still run if the id
+    // was dropped on a truncated frame.
+    if (!hasId && name !== METHODS.SHUTDOWN) {
+      process.stderr.write(
+        `[sidecar] refusing "${method}" without a request id; methods are request/response.\n`,
+      );
+      return;
+    }
 
     const params = (message.params ?? {}) as Record<string, unknown>;
     if (params === null || typeof params !== 'object' || Array.isArray(params)) {
@@ -226,8 +251,15 @@ export class SidecarServer {
           if (hasId) this.fail(id, ERROR_CODES.ALREADY_INITIALIZED, '"initialize" has already been called.');
           return;
         }
+        const handshake = this.parseInitializeParams(params);
+        if (!handshake.ok) {
+          if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, handshake.message);
+          return;
+        }
         this.initialized = true;
-        this.clientCapabilities = (params.capabilities ?? {}) as ClientCapabilities;
+        this.clientName = handshake.clientName;
+        this.clientVersion = handshake.clientVersion;
+        this.clientCapabilities = handshake.capabilities;
         const result: InitializeResult = {
           serverName: this.serverName,
           engineVersion: this.engineVersion,
@@ -337,6 +369,9 @@ export class SidecarServer {
         this.closeSharedSim();
         if (hasId) this.reply(id, { ok: true });
         this.fanoutClosing();
+        // Unregister every session so a reconnect loop cannot retain lastState
+        // clones via the gate (F-f64330ad). Fan-out first, while the set is live.
+        this.detachAll();
         return;
       }
     }
@@ -438,8 +473,19 @@ export class SidecarServer {
     if (Object.hasOwn(params, 'toolId') && typeof params.toolId !== 'string') {
       return { ok: false, message: '"toolId" must be a string when present.' };
     }
-    if (Object.hasOwn(params, 'parameters') && !isPlainObject(params.parameters)) {
-      return { ok: false, message: '"parameters" must be an object when present.' };
+    if (Object.hasOwn(params, 'parameters')) {
+      if (!isPlainObject(params.parameters)) {
+        return { ok: false, message: '"parameters" must be an object when present.' };
+      }
+      for (const [key, value] of Object.entries(params.parameters)) {
+        const t = typeof value;
+        if (t !== 'string' && t !== 'number' && t !== 'boolean') {
+          return {
+            ok: false,
+            message: `"parameters.${key}" must be a string, number, or boolean.`,
+          };
+        }
+      }
     }
     return {
       ok: true,
@@ -451,6 +497,43 @@ export class SidecarServer {
           ? { parameters: params.parameters as Record<string, string | number | boolean> }
           : {}),
       },
+    };
+  }
+
+  private parseInitializeParams(params: Record<string, unknown>):
+    | { ok: true; clientName: string; clientVersion: string; capabilities: ClientCapabilities }
+    | { ok: false; message: string } {
+    if (Object.hasOwn(params, 'clientName') && (typeof params.clientName !== 'string' || params.clientName.length === 0)) {
+      return { ok: false, message: '"clientName" must be a non-empty string when present.' };
+    }
+    if (
+      Object.hasOwn(params, 'clientVersion') &&
+      (typeof params.clientVersion !== 'string' || params.clientVersion.length === 0)
+    ) {
+      return { ok: false, message: '"clientVersion" must be a non-empty string when present.' };
+    }
+    let capabilities: ClientCapabilities = {};
+    if (Object.hasOwn(params, 'capabilities')) {
+      if (!isPlainObject(params.capabilities)) {
+        return { ok: false, message: '"capabilities" must be an object when present.' };
+      }
+      for (const key of ['notifications', 'hashes'] as const) {
+        if (Object.hasOwn(params.capabilities, key) && typeof params.capabilities[key] !== 'boolean') {
+          return { ok: false, message: `"capabilities.${key}" must be a boolean when present.` };
+        }
+      }
+      capabilities = {
+        ...(typeof params.capabilities.notifications === 'boolean'
+          ? { notifications: params.capabilities.notifications }
+          : {}),
+        ...(typeof params.capabilities.hashes === 'boolean' ? { hashes: params.capabilities.hashes } : {}),
+      };
+    }
+    return {
+      ok: true,
+      clientName: typeof params.clientName === 'string' ? params.clientName : '',
+      clientVersion: typeof params.clientVersion === 'string' ? params.clientVersion : '',
+      capabilities,
     };
   }
 
@@ -489,8 +572,20 @@ export class SidecarServer {
   /** `sim/closing` on every session's send, not only the requester. */
   private fanoutClosing(): void {
     for (const peer of this.gate.servers) {
-      peer.send({ jsonrpc: '2.0', method: NOTIFICATIONS.CLOSING, params: {} });
+      peer.outbound({ jsonrpc: '2.0', method: NOTIFICATIONS.CLOSING, params: {} });
     }
+  }
+
+  private detachAll(): void {
+    for (const peer of [...this.gate.servers]) peer.detach();
+  }
+
+  /**
+   * Drop this session from the sim-local gate. Socket close and SHUTDOWN
+   * fan-out call this so a reconnect loop cannot retain lastState clones.
+   */
+  detach(): void {
+    detachSession(this.engine, this);
   }
 
   private pushTick(result: SubmitActionResult): void {
@@ -501,7 +596,7 @@ export class SidecarServer {
       events: result.events,
       delta: result.delta,
     };
-    this.send({ jsonrpc: '2.0', method: NOTIFICATIONS.TICK, params: notification });
+    this.outbound({ jsonrpc: '2.0', method: NOTIFICATIONS.TICK, params: notification });
   }
 
   /**
@@ -515,11 +610,35 @@ export class SidecarServer {
   }
 
   private reply(id: unknown, result: unknown): void {
-    this.send({ jsonrpc: '2.0', id: id as string | number, result });
+    this.outbound({ jsonrpc: '2.0', id: id as string | number, result }, id);
   }
 
   private fail(id: unknown, code: number, message: string): void {
-    this.send({ jsonrpc: '2.0', id: id as string | number, error: { code, message } });
+    this.outbound({ jsonrpc: '2.0', id: id as string | number, error: { code, message } });
+  }
+
+  /**
+   * Write one outbound frame. If encodeMessage (in the transport) refuses a
+   * body above MAX_MESSAGE_BYTES, fail the originating RPC with
+   * SNAPSHOT_TOO_LARGE instead of emitting a frame the peer cannot parse.
+   */
+  private outbound(msg: RpcMessage, requestId?: unknown): void {
+    try {
+      this.send(msg);
+    } catch (err) {
+      if (err instanceof MessageTooLargeError) {
+        process.stderr.write(`[sidecar] ${err.message}\n`);
+        if (requestId !== undefined && requestId !== null && msg.error === undefined) {
+          this.send({
+            jsonrpc: '2.0',
+            id: requestId as string | number,
+            error: { code: ERROR_CODES.SNAPSHOT_TOO_LARGE, message: err.message },
+          });
+        }
+        return;
+      }
+      throw err;
+    }
   }
 
   get isClosed(): boolean {
@@ -529,5 +648,14 @@ export class SidecarServer {
   /** Exposed for the conformance harness; not part of the wire. */
   get negotiatedClientCapabilities(): ClientCapabilities {
     return this.clientCapabilities;
+  }
+
+  /** Present on initialize; used to attribute 1:N attach sessions in logs. */
+  get sessionClientName(): string {
+    return this.clientName;
+  }
+
+  get sessionClientVersion(): string {
+    return this.clientVersion;
   }
 }
