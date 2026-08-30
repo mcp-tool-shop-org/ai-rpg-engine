@@ -63,6 +63,29 @@ type ActionOptions = Partial<{
   parameters: Record<string, string | number | boolean>;
 }>;
 
+/**
+ * Live SidecarServers sharing one Engine. Closed is sim-local, not
+ * process-wide: two independent SidecarServers wrapping two Engines must
+ * not close each other. Session-local `closed` was F-009da546; the remaining
+ * hole (F-aca8c299) is a sibling session whose instance flag stayed false.
+ */
+type SimGate = {
+  closed: boolean;
+  servers: Set<SidecarServer>;
+};
+
+const simGates = new WeakMap<Engine, SimGate>();
+
+function attachSession(engine: Engine, server: SidecarServer): SimGate {
+  let gate = simGates.get(engine);
+  if (!gate) {
+    gate = { closed: false, servers: new Set() };
+    simGates.set(engine, gate);
+  }
+  gate.servers.add(server);
+  return gate;
+}
+
 function isSafeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value);
 }
@@ -95,6 +118,7 @@ export class SidecarServer {
   private readonly emitted = new Set<string>();
   private lastState: WorldState;
   private clientCapabilities: ClientCapabilities = {};
+  private readonly gate: SimGate;
 
   constructor(
     options: SidecarServerOptions,
@@ -107,6 +131,8 @@ export class SidecarServer {
     this.onWorldCommitted = options.onWorldCommitted;
     this.lastState = structuredClone(this.engine.world) as WorldState;
     for (const e of this.engine.world.eventLog ?? []) this.emitted.add(e.id);
+    this.gate = attachSession(this.engine, this);
+    if (this.gate.closed) this.closed = true;
   }
 
   get capabilities(): ServerCapabilities {
@@ -172,7 +198,7 @@ export class SidecarServer {
       return;
     }
 
-    if (this.closed) {
+    if (this.closed || this.gate.closed) {
       if (hasId) {
         this.fail(id, ERROR_CODES.SESSION_CLOSED, 'session is closed; further methods are refused.');
       }
@@ -304,10 +330,13 @@ export class SidecarServer {
       }
 
       case METHODS.SHUTDOWN: {
-        this.closed = true;
-        this.engine.shutdown();
+        // Flip the sim-local gate BEFORE engine.shutdown so a sibling
+        // handle() cannot submitAction after this session has decided to stop.
+        // Engine.shutdown() only teardowns modules; it does not refuse
+        // submitAction; the gate is the refusal (F-aca8c299).
+        this.closeSharedSim();
         if (hasId) this.reply(id, { ok: true });
-        this.send({ jsonrpc: '2.0', method: NOTIFICATIONS.CLOSING, params: {} });
+        this.fanoutClosing();
         return;
       }
     }
@@ -450,8 +479,22 @@ export class SidecarServer {
     return { tick: this.engine.store.tick, hash: stateHash(state), events: fresh, delta };
   }
 
+  /** Mark every session sharing this Engine closed, then tear the sim down. */
+  private closeSharedSim(): void {
+    this.gate.closed = true;
+    for (const peer of this.gate.servers) peer.closed = true;
+    this.engine.shutdown();
+  }
+
+  /** `sim/closing` on every session's send, not only the requester. */
+  private fanoutClosing(): void {
+    for (const peer of this.gate.servers) {
+      peer.send({ jsonrpc: '2.0', method: NOTIFICATIONS.CLOSING, params: {} });
+    }
+  }
+
   private pushTick(result: SubmitActionResult): void {
-    if (this.closed) return;
+    if (this.closed || this.gate.closed) return;
     const notification: TickNotification = {
       tick: result.tick,
       hash: result.hash,
@@ -467,7 +510,7 @@ export class SidecarServer {
    * that matches its own mirror — not the origin's.
    */
   replicatePeerCommit(): void {
-    if (this.closed || !this.initialized) return;
+    if (this.closed || this.gate.closed || !this.initialized) return;
     this.pushTick(this.commit([]));
   }
 
@@ -480,7 +523,7 @@ export class SidecarServer {
   }
 
   get isClosed(): boolean {
-    return this.closed;
+    return this.closed || this.gate.closed;
   }
 
   /** Exposed for the conformance harness; not part of the wire. */
