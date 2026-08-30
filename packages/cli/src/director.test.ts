@@ -162,9 +162,9 @@ describe("renderDirectorLedger (F-ENG005) — the Director's Ledger", () => {
 
     expect(report).toBe(
       [
-        `  ${'═'.repeat(60)}`,
+        '─'.repeat(60),
         "  THE DIRECTOR'S LEDGER",
-        `  ${'═'.repeat(60)}`,
+        '─'.repeat(60),
         `  Turn ${world.meta.tick} — ${hereName}`,
         '',
         '  Nothing on the books yet — no strategic system carries state',

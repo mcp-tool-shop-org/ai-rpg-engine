@@ -12,7 +12,19 @@ import {
   resolveTitle,
 } from '@ai-rpg-engine/character-creation';
 import { validateBuildCatalog } from '@ai-rpg-engine/content-schema';
+import { clipToWidth, frameRule, SCREEN_WIDTH, wrapToWidth } from '@ai-rpg-engine/terminal-ui';
 import { promptText, promptMenu, promptMultiSelect, promptOptionalMenu, promptConfirm } from './prompts.js';
+
+const TITLE_WIDTH = SCREEN_WIDTH - 2;
+
+function printFrame(title: string, extraLines: string[] = []): void {
+  console.log(`\n${frameRule()}`);
+  console.log(`  ${clipToWidth(title, TITLE_WIDTH)}`);
+  for (const line of extraLines) {
+    for (const wrapped of wrapToWidth(`  ${line}`)) console.log(wrapped);
+  }
+  console.log(frameRule());
+}
 
 function formatStatPriorities(stats: Record<string, number>): string {
   return Object.entries(stats)
@@ -144,23 +156,17 @@ export async function buildCharacter(
 
         const perks = available.filter((t) => t.category === 'perk');
         const flaws = available.filter((t) => t.category === 'flaw');
-        const items: { label: string; detail?: string; id: string }[] = [];
+        const items: { label: string; detail?: string; id: string; group?: string }[] = [];
 
-        if (perks.length > 0) {
-          console.log('  [Perks]');
-          for (const p of perks) {
-            items.push({ label: p.name, detail: p.description, id: p.id });
-          }
+        for (const p of perks) {
+          items.push({ label: p.name, detail: p.description, id: p.id, group: 'Perks' });
         }
-        if (flaws.length > 0) {
-          if (perks.length > 0) console.log('  [Flaws]');
-          for (const f of flaws) {
-            items.push({ label: `${f.name} (flaw)`, detail: f.description, id: f.id });
-          }
+        for (const f of flaws) {
+          items.push({ label: `${f.name} (flaw)`, detail: f.description, id: f.id, group: 'Flaws' });
         }
 
         const selected = await promptMultiSelect(
-          items.map((i) => ({ label: i.label, detail: i.detail })),
+          items.map((i) => ({ label: i.label, detail: i.detail, group: i.group })),
           {
             min: catalog.requiredFlaws > 0 ? 1 : 0,
             max: catalog.maxTraits - selectedTraitIds.length,
@@ -256,42 +262,28 @@ export async function buildCharacter(
       // from the TRAIT step — name, archetype, and background are preserved —
       // instead of restarting the whole wizard from name entry.
       if (!validation.ok) {
-        console.log('\n  ═══════════════════════════════════════');
-        console.log('  This build is not valid:');
-        for (const err of validation.errors) {
-          console.log(`  ✗ ${err}`);
-        }
-        console.log('  ═══════════════════════════════════════');
+        printFrame('This build is not valid:', validation.errors.map((err) => `✗ ${err}`));
         console.log("\n  Let's fix that — back to trait selection (your name, archetype, and background are kept)...\n");
         continue;
       }
 
       const title = disciplineId ? resolveTitle(archetype.id, disciplineId, catalog) : undefined;
 
-      console.log('\n  ═══════════════════════════════════════');
-      console.log(`  ${name.toUpperCase()}${title ? ` — ${title}` : ''}`);
-      console.log(`  ${archetype.name}${disciplineId ? ` / ${disciplines.find((d) => d.id === disciplineId)?.name}` : ''} / ${background.name}`);
-      console.log(`  ${formatStatPriorities(validation.finalStats)}`);
-
+      const summaryLines: string[] = [
+        `${archetype.name}${disciplineId ? ` / ${disciplines.find((d) => d.id === disciplineId)?.name}` : ''} / ${background.name}`,
+        formatStatPriorities(validation.finalStats),
+      ];
       const resEntries = Object.entries(validation.finalResources);
       if (resEntries.length > 0) {
-        console.log(`  ${resEntries.map(([k, v]) => `${k.toUpperCase()} ${v}`).join(' / ')}`);
+        summaryLines.push(resEntries.map(([k, v]) => `${k.toUpperCase()} ${v}`).join(' / '));
       }
-
       if (validation.resolvedTags.length > 0) {
         const displayTags = validation.resolvedTags.filter((t) => t !== 'player');
-        if (displayTags.length > 0) {
-          console.log(`  Tags: ${displayTags.join(', ')}`);
-        }
+        if (displayTags.length > 0) summaryLines.push(`Tags: ${displayTags.join(', ')}`);
       }
-
-      if (validation.warnings.length > 0) {
-        for (const w of validation.warnings) {
-          console.log(`  ⚠ ${w}`);
-        }
-      }
-
-      console.log('  ═══════════════════════════════════════\n');
+      for (const w of validation.warnings) summaryLines.push(`⚠ ${w}`);
+      printFrame(`${name.toUpperCase()}${title ? ` — ${title}` : ''}`, summaryLines);
+      console.log('');
 
       const confirmed = await promptConfirm('Begin your journey?');
       if (!confirmed) {

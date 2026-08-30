@@ -142,6 +142,28 @@ export async function promptText(label: string): Promise<string> {
   }
 }
 
+/** Right-aligned `[ 9]` / `[10]` — same padStart width P8-PS-005 uses in-game. */
+export function paddedMenuIndex(index: number, count: number): string {
+  const width = String(Math.max(count, 1)).length;
+  return `[${String(index + 1).padStart(width)}]`;
+}
+
+function printMenuItems(
+  items: { label: string; detail?: string; group?: string }[],
+): void {
+  let prevGroup: string | undefined;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item.group !== undefined && item.group !== prevGroup) {
+      if (prevGroup !== undefined) console.log();
+      console.log(`  [${item.group}]`);
+      prevGroup = item.group;
+    }
+    console.log(`  ${paddedMenuIndex(i, items.length)} ${item.label}`);
+    if (item.detail) console.log(`      ${item.detail}`);
+  }
+}
+
 /**
  * Prompt for a single selection from a numbered menu. Returns the 0-based index.
  * `opts.footer` renders a pre-formatted block between the item list and the
@@ -149,14 +171,10 @@ export async function promptText(label: string): Promise<string> {
  * part of the numbered range.
  */
 export async function promptMenu(
-  items: { label: string; detail?: string }[],
+  items: { label: string; detail?: string; group?: string }[],
   opts: { footer?: string } = {},
 ): Promise<number> {
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    console.log(`  [${i + 1}] ${item.label}`);
-    if (item.detail) console.log(`      ${item.detail}`);
-  }
+  printMenuItems(items);
   if (opts.footer) {
     console.log();
     console.log(opts.footer);
@@ -181,18 +199,14 @@ export async function promptMenu(
  * fail only at end-of-wizard validation.
  */
 export async function promptMultiSelect(
-  items: { label: string; detail?: string }[],
+  items: { label: string; detail?: string; group?: string }[],
   opts: { min?: number; max?: number; hint?: string } = {},
 ): Promise<number[]> {
   const min = opts.min ?? 0;
   const max = opts.max ?? items.length;
   const hint = opts.hint ? ` — ${opts.hint}` : '';
 
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    console.log(`  [${i + 1}] ${item.label}`);
-    if (item.detail) console.log(`      ${item.detail}`);
-  }
+  printMenuItems(items);
   console.log();
   console.log(`  Enter numbers separated by spaces (${min}-${max} selections${hint}):`);
 
@@ -216,13 +230,9 @@ export async function promptConfirm(question: string, defaultYes = true): Promis
 
 /** Prompt for optional selection (Enter to skip). Returns 0-based index or -1 for skip. */
 export async function promptOptionalMenu(
-  items: { label: string; detail?: string }[],
+  items: { label: string; detail?: string; group?: string }[],
 ): Promise<number> {
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    console.log(`  [${i + 1}] ${item.label}`);
-    if (item.detail) console.log(`      ${item.detail}`);
-  }
+  printMenuItems(items);
   console.log();
   console.log('  Press Enter to skip.');
 

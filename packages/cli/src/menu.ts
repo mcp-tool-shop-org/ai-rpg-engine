@@ -104,6 +104,7 @@ import {
   getCompanion,
   isCompanionRecruitable,
 } from '@ai-rpg-engine/modules';
+import { frameRule, wrapToWidth, clipToWidth, SCREEN_WIDTH } from '@ai-rpg-engine/terminal-ui';
 import { getAbilityCatalog } from './turns.js';
 import { describeActionError } from './guard.js';
 
@@ -1145,13 +1146,13 @@ export function buildJournalActions(): ExtraAction[] {
   return [{ verb: JOURNAL_MENU_VERB, label: JOURNAL_MENU_LABEL, group: 'journal' }];
 }
 
-const JOURNAL_RULE = '═'.repeat(60);
+const JOURNAL_RULE = frameRule();
 
 /** One active quest's journal lines: banner, stage position + hook, objectives. */
 function journalQuestLines(instance: QuestState, def: QuestDefinition | undefined): string[] {
   const lines: string[] = [''];
   const name = def?.name ?? instance.questId;
-  lines.push(`  ── ${name} ──`);
+  lines.push(...wrapToWidth(`  ── ${name} ──`));
 
   const stage: QuestStage | undefined = def?.stages.find((s) => s.id === instance.currentStage);
   if (!def || !stage) {
@@ -1167,7 +1168,7 @@ function journalQuestLines(instance: QuestState, def: QuestDefinition | undefine
     ? ` (${Math.min(questProgressCount(instance, stage.id), required)}/${required})`
     : '';
   const hook = stage.description ? ` — ${stage.description}` : '';
-  lines.push(`  Stage ${stageIndex}/${def.stages.length}: ${stage.name}${progress}${hook}`);
+  lines.push(...wrapToWidth(`  Stage ${stageIndex}/${def.stages.length}: ${stage.name}${progress}${hook}`));
   for (const objective of stage.objectives ?? []) {
     lines.push(`    • ${objective}`);
   }
@@ -1190,9 +1191,9 @@ export function renderJournal(world: WorldState): string {
   const failed = instances.filter((q) => q.status === 'failed');
 
   const lines: string[] = [];
-  lines.push(`  ${JOURNAL_RULE}`);
-  lines.push(`  JOURNAL — ACTIVE QUESTS (${active.length}) · COMPLETED (${completed.length})`);
-  lines.push(`  ${JOURNAL_RULE}`);
+  lines.push(JOURNAL_RULE);
+  lines.push(`  ${clipToWidth(`JOURNAL — ACTIVE QUESTS (${active.length}) · COMPLETED (${completed.length})`, SCREEN_WIDTH - 2)}`);
+  lines.push(JOURNAL_RULE);
 
   if (instances.length === 0) {
     lines.push('');
@@ -1212,8 +1213,8 @@ export function renderJournal(world: WorldState): string {
       lines.push(...journalQuestLines(instance, defs.get(instance.questId)));
     } catch (err) {
       lines.push('');
-      lines.push(`  ── ${instance.questId} ──`);
-      lines.push(`  [quest entry failed: ${describeActionError(err)}]`);
+      lines.push(...wrapToWidth(`  ── ${instance.questId} ──`));
+      lines.push(...wrapToWidth(`  [quest entry failed: ${describeActionError(err)}]`));
     }
   }
 
@@ -1282,7 +1283,7 @@ export function buildDebugActions(
   return [{ verb: DEBUG_MENU_VERB, label: DEBUG_MENU_LABEL, group: 'debug' }];
 }
 
-const DEBUG_RULE = '═'.repeat(60);
+const DEBUG_RULE = frameRule();
 
 /**
  * Render every registered inspector's output (Engine.getInspectors — the 14
@@ -1300,9 +1301,9 @@ export function renderInspectorReport(
 ): string {
   const inspectors = engine.getInspectors();
   const lines: string[] = [];
-  lines.push(`  ${DEBUG_RULE}`);
-  lines.push(`  DEBUG — SIMULATION INSPECTORS (${inspectors.length})`);
-  lines.push(`  ${DEBUG_RULE}`);
+  lines.push(DEBUG_RULE);
+  lines.push(`  ${clipToWidth(`DEBUG — SIMULATION INSPECTORS (${inspectors.length})`, SCREEN_WIDTH - 2)}`);
+  lines.push(DEBUG_RULE);
 
   if (inspectors.length === 0) {
     lines.push('');

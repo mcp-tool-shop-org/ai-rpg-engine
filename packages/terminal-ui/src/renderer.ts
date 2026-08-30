@@ -15,11 +15,66 @@
 //     plain screen (tested), so nothing is ever communicated by color alone.
 
 import type { WorldState, ResolvedEvent, EntityState, ScalarValue } from '@ai-rpg-engine/core';
-import { detectColorEnabled, makePalette, type Palette } from './styles.js';
+import { detectColorEnabled, makePalette, stripAnsi, type Palette } from './styles.js';
 
 /** Visible width of every rule line the renderer emits. */
 export const SCREEN_WIDTH = 60;
 const RULE_CHAR = '─';
+/** Body copy indent — scene lines, HUD, log, dialogue, journal hooks. */
+export const BODY_INDENT = '  ';
+
+/** Flush-left frame rule: one character, SCREEN_WIDTH columns, indent 0. */
+export function frameRule(): string {
+  return RULE_CHAR.repeat(SCREEN_WIDTH);
+}
+
+/** Ellipsis `text` so its visible length is at most `width`. */
+export function clipToWidth(text: string, width: number = SCREEN_WIDTH): string {
+  if (text.length <= width) return text;
+  if (width <= 0) return '';
+  if (width === 1) return '…';
+  return text.slice(0, width - 1) + '…';
+}
+
+/**
+ * Wrap a body line to `width` visible columns. Continuation lines use
+ * `indent` (default two spaces) so a 60-col pane never bisects a meter or
+ * a sentence at the terminal edge. Operates on the visible (stripAnsi) form;
+ * a line that already fits is returned unchanged, ANSI codes included.
+ */
+export function wrapToWidth(
+  text: string,
+  width: number = SCREEN_WIDTH,
+  indent: string = BODY_INDENT,
+): string[] {
+  const vis = stripAnsi(text);
+  if (vis.length <= width) return [text];
+
+  const leading = vis.match(/^ */)?.[0] ?? '';
+  let rest = vis.slice(leading.length);
+  const lines: string[] = [];
+  let prefix = leading;
+
+  while (rest.length > 0) {
+    const budget = Math.max(1, width - prefix.length);
+    if (rest.length <= budget) {
+      lines.push(prefix + rest);
+      break;
+    }
+    let breakAt = rest.lastIndexOf(' ', budget);
+    if (breakAt <= 0) breakAt = budget;
+    lines.push(prefix + rest.slice(0, breakAt).trimEnd());
+    rest = rest.slice(breakAt).trimStart();
+    prefix = indent;
+  }
+  return lines.length > 0 ? lines : [text];
+}
+
+/** Right-aligned `[ 9]` / `[10]` — one padStart width for the whole range. */
+export function paddedMenuIndex(index: number, count: number): string {
+  const width = String(Math.max(count, 1)).length;
+  return `[${String(index + 1).padStart(width)}]`;
+}
 
 /** Below this fraction of max HP the HUD appends a plain-text `(low)` marker. */
 const LOW_HP_RATIO = 0.25;
@@ -40,7 +95,7 @@ function paletteFor(opts?: RenderOptions): Palette {
 
 /** A full-width plain rule (screen closer, unlabeled separators). */
 function rule(pal: Palette): string {
-  return pal.dim(RULE_CHAR.repeat(SCREEN_WIDTH));
+  return pal.dim(frameRule());
 }
 
 /**
@@ -126,8 +181,11 @@ function relicDisplayNames(world: WorldState): Record<string, string> {
  * information; the weight difference is only emphasis.
  */
 function sectionRule(label: string, pal: Palette): string {
-  const fill = Math.max(0, SCREEN_WIDTH - 4 - label.length);
-  return pal.dim(`${RULE_CHAR}${RULE_CHAR} `) + pal.bold(label) + pal.dim(` ${RULE_CHAR.repeat(fill)}`);
+  // `── ` + label + ` ` + fill  === SCREEN_WIDTH. Clamp the label so fill
+  // is never forced to 0 by an over-long zone name (F-9916b83c).
+  const clipped = clipToWidth(label, SCREEN_WIDTH - 4);
+  const fill = Math.max(0, SCREEN_WIDTH - 4 - clipped.length);
+  return pal.dim(`${RULE_CHAR}${RULE_CHAR} `) + pal.bold(clipped) + pal.dim(` ${RULE_CHAR.repeat(fill)}`);
 }
 
 /**
@@ -177,8 +235,9 @@ export function textBar(current: number, max: number, width = 10): string {
 }
 
 /** Color the HP bar by remaining fraction — redundant with the numbers. */
-function paintedBar(current: number, max: number, pal: Palette): string {
-  const bar = textBar(current, max);
+function paintedBar(current: number, max: number, pal: Palette, width = 10): string {
+  const bar = textBar(current, max, width);
+  if (!bar) return '';
   const ratio = max > 0 ? current / max : 0;
   if (ratio <= LOW_HP_RATIO) return pal.red(bar);
   if (ratio <= 0.5) return pal.yellow(bar);
@@ -246,29 +305,70 @@ function entityLine(entity: EntityState, pal: Palette): string {
 }
 
 /**
- * The player vitals line: `HP 18/20 [#########-]  Stamina 10/12  Mana 4`.
- * HP leads with its bar; every other (non-max) resource the world actually
- * tracks follows with `cur/max` when a max is known, bare value otherwise.
- * At ≤25% of a known max HP, a plain-text `(low)` marker appears — the
- * warning is words, the red is emphasis.
+ * Join resource chips onto indented lines that never exceed SCREEN_WIDTH.
+ * Used for the vitals overflow (stamina/mana/xp/level) so the HP bar on
+ * line 1 cannot be bisected by terminal wrap (F-1d24d0ce).
  */
-function playerVitals(player: EntityState, pal: Palette): string {
-  const parts: string[] = [];
+function wrapJoined(parts: string[], width: number = SCREEN_WIDTH, indent: string = BODY_INDENT): string[] {
+  if (parts.length === 0) return [];
+  const lines: string[] = [];
+  let current = indent;
+  let vis = indent.length;
+  for (const part of parts) {
+    const partVis = stripAnsi(part).length;
+    const sep = vis === indent.length ? '' : '  ';
+    if (vis > indent.length && vis + sep.length + partVis > width) {
+      lines.push(current);
+      const clipped = partVis > width - indent.length
+        ? clipToWidth(stripAnsi(part), width - indent.length)
+        : part;
+      current = indent + clipped;
+      vis = indent.length + stripAnsi(clipped).length;
+    } else {
+      current += sep + part;
+      vis += sep.length + partVis;
+      if (vis > width) {
+        const clipped = clipToWidth(stripAnsi(current.slice(indent.length)), width - indent.length);
+        current = indent + clipped;
+        vis = indent.length + clipped.length;
+      }
+    }
+  }
+  if (current.length > indent.length) lines.push(current);
+  return lines;
+}
+
+/** HP + bar + optional (low) on its own line, shrinking the bar if needed. */
+function hpVitalsLine(player: EntityState, pal: Palette): string {
   const hp = player.resources.hp ?? 0;
   const maxHp = maxOf(player, 'hp');
-  if (maxHp !== undefined) {
-    const low = hp / maxHp <= LOW_HP_RATIO;
-    parts.push(`HP ${hp}/${maxHp} ${paintedBar(hp, maxHp, pal)}${low ? ` ${pal.red('(low)')}` : ''}`);
-  } else {
-    parts.push(`HP ${hp}`);
+  if (maxHp === undefined) return `${BODY_INDENT}HP ${hp}`;
+  const low = hp / maxHp <= LOW_HP_RATIO;
+  const lowMark = low ? ` ${pal.red('(low)')}` : '';
+  let barWidth = 10;
+  while (barWidth >= 0) {
+    const bar = barWidth > 0 ? ` ${paintedBar(hp, maxHp, pal, barWidth)}` : '';
+    const line = `${BODY_INDENT}HP ${hp}/${maxHp}${bar}${lowMark}`;
+    if (stripAnsi(line).length <= SCREEN_WIDTH) return line;
+    barWidth -= 1;
   }
+  return clipToWidth(`${BODY_INDENT}HP ${hp}/${maxHp}${lowMark}`, SCREEN_WIDTH);
+}
+
+/**
+ * The player vitals block: HP + bar + `(low)` on line 1; remaining
+ * resources wrap onto indented follow-on lines so no Status line exceeds
+ * SCREEN_WIDTH and the ASCII bar never splits (F-1d24d0ce).
+ */
+function playerVitals(player: EntityState, pal: Palette): string {
+  const rest: string[] = [];
   for (const [resource, value] of Object.entries(player.resources)) {
     if (resource === 'hp' || resource.startsWith('max')) continue;
     const max = maxOf(player, resource);
     const label = humanizeStateId(resource);
-    parts.push(max !== undefined ? `${label} ${value}/${max}` : `${label} ${value}`);
+    rest.push(max !== undefined ? `${label} ${value}/${max}` : `${label} ${value}`);
   }
-  return `  ${parts.join('  ')}`;
+  return [hpVitalsLine(player, pal), ...wrapJoined(rest)].join('\n');
 }
 
 export function renderScene(world: WorldState, opts?: RenderOptions): string {
@@ -282,23 +382,23 @@ export function renderScene(world: WorldState, opts?: RenderOptions): string {
   const groups: string[] = [];
 
   if (zone.tags.length > 0) {
-    groups.push(`  ${pal.dim(`[${zone.tags.join(', ')}]`)}`);
+    groups.push(wrapToWidth(`  ${pal.dim(`[${zone.tags.join(', ')}]`)}`).join('\n'));
   }
 
   const entities = Object.values(world.entities).filter(
     e => e.zoneId === zone.id && e.id !== world.playerId
   );
   if (entities.length > 0) {
-    groups.push(entities.map(e => entityLine(e, pal)).join('\n'));
+    groups.push(entities.map(e => wrapToWidth(entityLine(e, pal)).join('\n')).join('\n'));
   }
 
   if (zone.interactables && zone.interactables.length > 0) {
-    groups.push(zone.interactables.map(item => `  * ${item}`).join('\n'));
+    groups.push(zone.interactables.map(item => wrapToWidth(`  * ${item}`).join('\n')).join('\n'));
   }
 
   if (zone.neighbors.length > 0) {
     const names = zone.neighbors.map(n => world.zones[n]?.name ?? n).join(', ');
-    groups.push(`  Exits: ${names}`);
+    groups.push(wrapToWidth(`  Exits: ${names}`).join('\n'));
   }
 
   const lines: string[] = [sectionRule(zone.name, pal)];
@@ -309,26 +409,29 @@ export function renderScene(world: WorldState, opts?: RenderOptions): string {
   // Player HUD — its own labeled section so status reads at a glance.
   const player = world.entities[world.playerId];
   if (player) {
-    const hud: string[] = [playerVitals(player, pal)];
+    const hud: string[] = playerVitals(player, pal).split('\n');
     if (player.statuses.length > 0) {
-      hud.push(`  Status: ${player.statuses.map(s => humanizeStateId(s.statusId)).join(', ')}`);
+      hud.push(...wrapToWidth(
+        `${BODY_INDENT}Status: ${player.statuses.map(s => humanizeStateId(s.statusId)).join(', ')}`,
+      ));
     }
+    const relicNames = relicDisplayNames(world);
     if (player.inventory && player.inventory.length > 0) {
-      // An item that has earned a name is shown under it. Everything else
-      // keeps the raw id this line has always printed — no catalog is
-      // reachable from here, so an ungrown item has no better name to offer.
-      const relicNames = relicDisplayNames(world);
-      hud.push(`  Items: ${player.inventory.map(id => relicNames[id] ?? id).join(', ')}`);
+      // Grown epithets win; ungrown ids are title-cased the same way
+      // statuses are (rusted-mace → Rusted Mace) so the HUD never leaks
+      // kebab catalog keys (F-bfd20ef8).
+      const names = player.inventory.map(id => relicNames[id] ?? humanizeStateId(id));
+      hud.push(...wrapToWidth(`${BODY_INDENT}Items: ${names.join(', ')}`));
     }
     // Gated on there being something in a slot, so a pack that never wires
     // equipment-core — or a player who has equipped nothing — renders the
     // HUD exactly as before rather than gaining an empty label.
     const equipped = equippedPairs(world, player.id);
     if (equipped.length > 0) {
-      const relicNames = relicDisplayNames(world);
-      hud.push(
-        `  Equipped: ${equipped.map(([slot, id]) => `${slot}: ${relicNames[id] ?? id}`).join(', ')}`,
+      const names = equipped.map(
+        ([slot, id]) => `${humanizeStateId(slot)}: ${relicNames[id] ?? humanizeStateId(id)}`,
       );
+      hud.push(...wrapToWidth(`${BODY_INDENT}Equipped: ${names.join(', ')}`));
     }
     lines.push('');
     lines.push(sectionRule('Status', pal));
@@ -375,7 +478,9 @@ export function renderEventLog(events: ResolvedEvent[], limit = 8, opts?: Render
   for (let i = scanStart; i < events.length; i++) {
     const formatted = formatEventLine(events[i]);
     if (formatted) {
-      lines.push(`  ${paintEventLine(events[i].type, formatted, pal)}`);
+      for (const wrapped of wrapToWidth(`${BODY_INDENT}${formatted}`)) {
+        lines.push(paintEventLine(events[i].type, wrapped, pal));
+      }
     }
   }
 
@@ -435,11 +540,13 @@ export function buildActionList(world: WorldState): ActionOption[] {
       actions.push({ verb: 'inspect', targetIds: [entity.id], label: `Inspect ${entity.name}`, group: 'interact' });
     }
 
-    // Items in player inventory
+    // Items in player inventory — labels are humanized; toolId stays the raw id.
     const player = world.entities[world.playerId];
     if (player?.inventory) {
+      const relicNames = relicDisplayNames(world);
       for (const itemId of player.inventory) {
-        actions.push({ verb: 'use', toolId: itemId, label: `Use ${itemId}`, group: 'items' });
+        const name = relicNames[itemId] ?? humanizeStateId(itemId);
+        actions.push({ verb: 'use', toolId: itemId, label: `Use ${name}`, group: 'items' });
       }
     }
   }
@@ -469,7 +576,7 @@ export function renderActions(
   // ONE width for the whole numbered range — base and appended entries share
   // it, so the seam can never misalign ('[8] Look around' vs '[ 9] Rally')
   // the way the two-renderer split did (P8-PS-005).
-  const width = String(actions.length + extras.length).length;
+  const total = actions.length + extras.length;
   const lines: string[] = [];
   let prevGroup: string | undefined;
   const push = (label: string, group: string, index: number) => {
@@ -477,7 +584,7 @@ export function renderActions(
       lines.push('');
     }
     prevGroup = group;
-    const num = `[${String(index + 1).padStart(width)}]`;
+    const num = paddedMenuIndex(index, total);
     lines.push(`  ${pal.cyan(num)} ${label}`);
   };
   actions.forEach((action, i) => push(action.label, action.group, i));
@@ -1008,13 +1115,20 @@ export function renderDialogue(world: WorldState, opts?: RenderOptions): string 
   if (!nodeEvent) return null;
 
   const lines: string[] = [];
-  lines.push(`  ${pal.bold(String(nodeEvent.payload.speaker))}: "${nodeEvent.payload.text}"`);
+  const speaker = String(nodeEvent.payload.speaker);
+  const spoken = String(nodeEvent.payload.text);
+  const spokenLines = wrapToWidth(`${BODY_INDENT}${speaker}: "${spoken}"`);
+  spokenLines.forEach((line, i) => {
+    lines.push(i === 0 ? line.replace(`${speaker}:`, `${pal.bold(speaker)}:`) : line);
+  });
 
   const choices = nodeEvent.payload.choices as Array<{ id: string; text: string; index: number }> | undefined;
   if (choices && choices.length > 0) {
     lines.push('');
+    const count = Math.max(choices.length, ...choices.map(c => c.index + 1));
     for (const choice of choices) {
-      lines.push(`  ${pal.cyan(`[${choice.index + 1}]`)} ${choice.text}`);
+      const num = paddedMenuIndex(choice.index, count);
+      lines.push(...wrapToWidth(`  ${pal.cyan(num)} ${choice.text}`));
     }
   }
 

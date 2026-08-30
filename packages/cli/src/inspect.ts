@@ -26,7 +26,7 @@ import {
   type EntityState,
 } from '@ai-rpg-engine/core';
 import { hasWorldTickState, getActivePressures } from '@ai-rpg-engine/modules';
-import { renderEventLog } from '@ai-rpg-engine/terminal-ui';
+import { renderEventLog, frameRule, clipToWidth, SCREEN_WIDTH } from '@ai-rpg-engine/terminal-ui';
 import { allPacks } from './packs.js';
 import { derivePlayerLevel } from './menu.js';
 import type { LoadedPack } from './external-pack.js';
@@ -61,11 +61,11 @@ const GLOBAL_VALUE_MAX = 80;
 /** Event lines in the RECENT EVENTS tail (renderEventLog's `limit`). */
 export const EVENT_TAIL = 5;
 
-/** Section rule — endgame.ts's stats-block voice (STATS_RULE width). */
-const RULE = '─'.repeat(60);
+/** Section rule — same flush-left SCREEN_WIDTH frame as the play closer. */
+const RULE = frameRule();
 
 function sectionHeader(title: string): string[] {
-  return [`  ${RULE}`, `  ${title}`, `  ${RULE}`, ''];
+  return [RULE, `  ${clipToWidth(title, SCREEN_WIDTH - 2)}`, RULE, ''];
 }
 
 // --- Module-namespace reads (display-only) -----------------------------------

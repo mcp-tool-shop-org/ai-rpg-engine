@@ -85,7 +85,7 @@ describe('HUD — equipped line', () => {
         // equipped, must render the HUD exactly as it did before this cycle.
         const out = scene(makeEngine());
         expect(out).not.toContain('Equipped:');
-        expect(out).toContain('Items: gladius, warden-mail, healing-draught');
+        expect(out).toContain('Items: Gladius, Warden Mail, Healing Draught');
     });
 
     it('shows equipped gear by slot, and drops it from Items', () => {
@@ -96,7 +96,7 @@ describe('HUD — equipped line', () => {
         engine.submitAction('equip', { parameters: { itemId: 'gladius' } });
 
         const out = scene(engine);
-        expect(out).toContain('Equipped: weapon: gladius');
+        expect(out).toContain('Equipped: Weapon: Gladius');
         expect(out).not.toMatch(/Items:.*gladius/);
     });
 
@@ -111,7 +111,7 @@ describe('HUD — equipped line', () => {
 
         const line = (out: string) => out.split('\n').find(l => l.includes('Equipped:'));
         expect(line(scene(a))).toBe(line(scene(b)));
-        expect(line(scene(a))).toContain('armor: warden-mail, weapon: gladius');
+        expect(line(scene(a))).toContain('Armor: Warden Mail, Weapon: Gladius');
     });
 });
 
@@ -123,7 +123,7 @@ describe('HUD — earned names', () => {
         slay(engine, 3);
 
         const out = scene(engine);
-        expect(out).toContain('Equipped: weapon: Bloodied Gladius');
+        expect(out).toContain('Equipped: Weapon: Bloodied Gladius');
         expect(out).not.toContain('weapon: gladius');
     });
 
@@ -132,18 +132,18 @@ describe('HUD — earned names', () => {
         engine.submitAction('equip', { parameters: { itemId: 'gladius' } });
         slay(engine, 10);
 
-        expect(scene(engine)).toContain('Equipped: weapon: Gladius the Reaper');
+        expect(scene(engine)).toContain('Equipped: Weapon: Gladius the Reaper');
     });
 
-    it('an item below its first milestone keeps its raw id', () => {
-        // Tier 0 has become nothing yet. Echoing the catalog name here would be
-        // a second spelling of the id, not information.
+    it('an item below its first milestone is title-cased, not kebab-id', () => {
+        // Tier 0 has become nothing yet. The catalog id is humanized the same
+        // way statuses are (gladius → Gladius); grown epithets appear later.
         const engine = makeEngine();
         engine.submitAction('equip', { parameters: { itemId: 'gladius' } });
         slay(engine, 2);
 
         const out = scene(engine);
-        expect(out).toContain('Equipped: weapon: gladius');
+        expect(out).toContain('Equipped: Weapon: Gladius');
         expect(out).not.toContain('Bloodied');
     });
 
@@ -160,7 +160,7 @@ describe('HUD — earned names', () => {
 });
 
 describe('HUD — tolerance of a missing or malformed chronicle', () => {
-    it('renders raw ids when no chronicle module is wired', () => {
+    it('humanizes ungrown ids when no chronicle module is wired', () => {
         // The accessor is non-attaching: reading must never create the
         // namespace, or an unwired pack would start serializing empty state.
         const engine = makeEngine({ chronicle: false });
@@ -168,7 +168,7 @@ describe('HUD — tolerance of a missing or malformed chronicle', () => {
         slay(engine, 3);
 
         const out = scene(engine);
-        expect(out).toContain('Equipped: weapon: gladius');
+        expect(out).toContain('Equipped: Weapon: Gladius');
         expect(engine.world.modules['item-chronicle']).toBeUndefined();
     });
 
@@ -180,7 +180,7 @@ describe('HUD — tolerance of a missing or malformed chronicle', () => {
             (engine.world.modules as Record<string, unknown>)['item-chronicle'] = corrupt;
 
             expect(() => renderScene(engine.world)).not.toThrow();
-            expect(scene(engine)).toContain('Equipped: weapon: gladius');
+            expect(scene(engine)).toContain('Equipped: Weapon: Gladius');
         }
     });
 

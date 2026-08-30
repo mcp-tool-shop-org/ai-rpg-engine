@@ -156,6 +156,20 @@ describe('buildCharacter — trait offer shape (pins the exploit precondition)',
     const [items] = mockPromptMultiSelect.mock.calls[0];
     expect(items.map((i) => i.label)).toEqual(['Brave', 'Reckless (flaw)', 'Lucky (flaw)']);
   });
+
+  it('passes Perks/Flaws groups into the numbered list, never stacked empty headers (F-3414d208)', async () => {
+    const catalog = makeCatalog();
+    mockPromptMultiSelect.mockResolvedValueOnce([2]);
+    mockPromptConfirm.mockResolvedValueOnce(true);
+
+    await buildCharacter(catalog, ruleset);
+
+    const [items] = mockPromptMultiSelect.mock.calls[0] as [{ label: string; group?: string }[]];
+    expect(items.map((i) => i.group)).toEqual(['Perks', 'Flaws', 'Flaws']);
+    const lines = loggedLines();
+    const stacked = lines.some((l, i) => l.includes('[Perks]') && (lines[i + 1] ?? '').includes('[Flaws]'));
+    expect(stacked).toBe(false);
+  });
 });
 
 describe('buildCharacter — F-2c013eff: never returns an invalid build, never throws', () => {

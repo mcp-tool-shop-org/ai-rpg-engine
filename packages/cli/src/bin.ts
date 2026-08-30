@@ -15,6 +15,9 @@ import {
   parseTextInput,
   visibleDialogueChoices,
   TurnPresenter,
+  SCREEN_WIDTH,
+  frameRule,
+  clipToWidth,
 } from '@ai-rpg-engine/terminal-ui';
 import { resolveEntity } from '@ai-rpg-engine/character-creation';
 import { SaveLoadError, type Engine, type EntityState, type RulesetDefinition } from '@ai-rpg-engine/core';
@@ -261,11 +264,34 @@ async function main() {
   }
 }
 
+const TITLE_WIDTH = SCREEN_WIDTH - 2;
+
+/** Flush-left SCREEN_WIDTH rule around a 2-space-indented title (+ optional subtitle). */
+export function formatFrameBanner(title: string, subtitle?: string): string {
+  const lines = ['', frameRule(), `  ${clipToWidth(title, TITLE_WIDTH)}`];
+  if (subtitle) lines.push(`  ${clipToWidth(subtitle, TITLE_WIDTH)}`);
+  lines.push(frameRule(), '');
+  return lines.join('\n');
+}
+
+export function formatWelcomeBanner(): string {
+  return formatFrameBanner('AI RPG ENGINE', 'Choose your adventure');
+}
+
+export function formatSessionBanner(pack: LoadedPack, opts: { external?: boolean } = {}): string {
+  const subtitle = opts.external
+    ? (pack.meta.tagline ? pack.meta.tagline : undefined)
+    : 'An AI RPG Engine Starter';
+  return formatFrameBanner(pack.meta.name.toUpperCase(), subtitle);
+}
+
+/** First-run controls line printed under the session banner before the first `>`. */
+export function formatFirstRunLegend(): string {
+  return '  Type a number to select. Type help for verbs, save or quit to leave.';
+}
+
 async function selectPack(): Promise<LoadedPack> {
-  console.log('\n  ═══════════════════════════════════════');
-  console.log('  AI RPG ENGINE');
-  console.log('  Choose your adventure');
-  console.log('  ═══════════════════════════════════════\n');
+  console.log(formatWelcomeBanner());
 
   // Recent completed runs (runs.jsonl) render under the pack list — the table
   // remembers how the last stories ended. No history, no section.
@@ -319,9 +345,7 @@ async function maybeOfferResume(external: LoadedPack | null): Promise<Session | 
     : (allPacks.find((p) => p.meta.id === summary.gameId) ?? null);
   if (!pack) return null;
 
-  console.log('\n  ═══════════════════════════════════════');
-  console.log(`  A saved game exists — ${pack.meta.name} (turn ${summary.tick})`);
-  console.log('  ═══════════════════════════════════════\n');
+  console.log(formatFrameBanner(`A saved game exists — ${pack.meta.name} (turn ${summary.tick})`));
   const choice = await promptMenu([
     { label: 'Continue', detail: `Resume ${pack.meta.name} from ${path.resolve(SAVE_FILE)}` },
     { label: 'New game', detail: 'Start fresh (the old save remains until you save again)' },
@@ -382,9 +406,7 @@ export async function createNewSession(pack: LoadedPack, seed: number = mintSeed
   // packs may omit them (the starter template does) — the pack's authored
   // default player is used as-is.
   if (pack.buildCatalog && pack.ruleset) {
-    console.log('\n  ═══════════════════════════════════════');
-    console.log(`  CHARACTER CREATION — ${pack.meta.name}`);
-    console.log('  ═══════════════════════════════════════\n');
+    console.log(formatFrameBanner(`CHARACTER CREATION — ${pack.meta.name}`));
 
     const build = await buildCharacter(pack.buildCatalog, pack.ruleset);
     const playerEntity = resolveEntity(build, pack.buildCatalog, pack.ruleset);
@@ -394,11 +416,8 @@ export async function createNewSession(pack: LoadedPack, seed: number = mintSeed
   return { engine, pack };
 }
 
-function printSessionBanner(pack: LoadedPack) {
-  console.log(`\n  ═══════════════════════════════════════`);
-  console.log(`  ${pack.meta.name.toUpperCase()}`);
-  console.log(`  An AI RPG Engine Starter`);
-  console.log(`  ═══════════════════════════════════════\n`);
+function printSessionBanner(pack: LoadedPack, opts: { external?: boolean } = {}) {
+  console.log(formatSessionBanner(pack, opts));
 }
 
 /**
@@ -650,11 +669,12 @@ async function playSessions(
       session = await createNewSession(pack, opts.seedOverride ?? undefined);
       fresh = true;
     }
-    printSessionBanner(session.pack);
+    printSessionBanner(session.pack, { external: external !== null });
     if (fresh) {
       // Read the seed back from world truth, not from what we requested —
       // a pack that ignores its seed argument then prints an honest line.
       console.log(formatSeedLine(session.engine.world.meta.seed, opts.packPath ?? undefined) + '\n');
+      console.log(formatFirstRunLegend() + '\n');
     }
     const outcome = await runSession(session.engine, session.pack);
     if (outcome === 'quit') return;
