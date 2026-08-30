@@ -356,4 +356,37 @@ describe('sidecar — equals-form value flags', () => {
       'SIDECAR_MANIFEST_MISSING_PATH',
     );
   });
+
+  // F-3d3c8eb5 — sidecar --seed/--listen must share run's whole-token digit gate.
+  it('--seed=1e2 is SIDECAR_INVALID_SEED (not Number() → 100)', () => {
+    const { code, lines } = run([HOST_PACK, '--seed=1e2']);
+    expect(code).toBe(1);
+    const text = lines.join('\n');
+    expect(text).toContain('SIDECAR_INVALID_SEED');
+    expect(text).toContain('--seed');
+    expect(text).toMatch(/--seed /);
+    expect(text).toMatch(/--seed=/);
+  });
+
+  it('--seed=0x10 is SIDECAR_INVALID_SEED (not Number() → 16)', () => {
+    const { code, lines } = run([HOST_PACK, '--seed=0x10']);
+    expect(code).toBe(1);
+    expect(lines.join('\n')).toContain('SIDECAR_INVALID_SEED');
+  });
+
+  it('a seed above MAX_SEED is SIDECAR_INVALID_SEED', () => {
+    const { code, lines } = run([HOST_PACK, '--seed=2147483648']);
+    expect(code).toBe(1);
+    expect(lines.join('\n')).toContain('SIDECAR_INVALID_SEED');
+  });
+
+  it('--listen=1e3 is SIDECAR_INVALID_PORT (not Number() → 1000)', () => {
+    const { code, lines } = run([HOST_PACK, '--listen=1e3']);
+    expect(code).toBe(1);
+    const text = lines.join('\n');
+    expect(text).toContain('SIDECAR_INVALID_PORT');
+    expect(text).toContain('--listen');
+    expect(text).toMatch(/--listen /);
+    expect(text).toMatch(/--listen=/);
+  });
 });

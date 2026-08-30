@@ -66,6 +66,46 @@ export function closeReadline(): void {
   rl.close();
 }
 
+/** Queue a line as if the user typed it. Exported so tests can drive promptMenu
+ *  without racing stdin (the same buffer promptLine already serves). */
+export function queueInputLine(line: string): void {
+  lineQueue.push(line);
+}
+
+/** Drop queued lines between tests so one suite cannot feed the next. */
+export function drainInputQueue(): void {
+  lineQueue.length = 0;
+}
+
+/**
+ * Whole-token digits only, matching parseExtraSelection / parseActionSelection
+ * (F-7d5f3da9). `parseInt('1a', 10) === 1` must not select item 1.
+ * Returns a 0-based index, or null to re-prompt.
+ */
+export function parseMenuIndex(answer: string, itemCount: number): number | null {
+  if (!/^\d+$/.test(answer)) return null;
+  const n = parseInt(answer, 10);
+  if (n >= 1 && n <= itemCount) return n - 1;
+  return null;
+}
+
+/**
+ * Per-token whole-digit parse for multi-select. Any suffix token (`1a`, `foo`)
+ * rejects the whole answer so `1,foo` cannot count as a legal pick of 1.
+ */
+export function parseMultiSelectIndices(answer: string, itemCount: number): number[] | null {
+  const tokens = answer.split(/[\s,]+/).filter((t) => t.length > 0);
+  if (tokens.length === 0) return null;
+  const indices: number[] = [];
+  for (const token of tokens) {
+    if (!/^\d+$/.test(token)) return null;
+    const n = parseInt(token, 10);
+    if (n < 1 || n > itemCount) return null;
+    indices.push(n - 1);
+  }
+  return [...new Set(indices)];
+}
+
 /**
  * Print `prompt` and read one line — from the buffer when scripted input has
  * already arrived, else awaiting the next line. Rejects with InputEndedError
@@ -125,8 +165,8 @@ export async function promptMenu(
 
   while (true) {
     const answer = await ask('  > ');
-    const n = parseInt(answer, 10);
-    if (!isNaN(n) && n >= 1 && n <= items.length) return n - 1;
+    const idx = parseMenuIndex(answer, items.length);
+    if (idx !== null) return idx;
     console.log(`  Please enter a number between 1 and ${items.length}.`);
   }
 }
@@ -158,12 +198,9 @@ export async function promptMultiSelect(
 
   while (true) {
     const answer = await ask('  > ');
-    const nums = answer.split(/[\s,]+/).map((s) => parseInt(s, 10));
-    const valid = nums.filter((n) => !isNaN(n) && n >= 1 && n <= items.length);
-    const unique = [...new Set(valid)];
-
-    if (unique.length >= min && unique.length <= max) {
-      return unique.map((n) => n - 1);
+    const unique = parseMultiSelectIndices(answer, items.length);
+    if (unique !== null && unique.length >= min && unique.length <= max) {
+      return unique;
     }
     console.log(`  Please select ${min}-${max} items${hint}.`);
   }
@@ -192,8 +229,8 @@ export async function promptOptionalMenu(
   while (true) {
     const answer = await ask('  > ');
     if (answer === '') return -1;
-    const n = parseInt(answer, 10);
-    if (!isNaN(n) && n >= 1 && n <= items.length) return n - 1;
+    const idx = parseMenuIndex(answer, items.length);
+    if (idx !== null) return idx;
     console.log(`  Enter a number (1-${items.length}) or press Enter to skip.`);
   }
 }

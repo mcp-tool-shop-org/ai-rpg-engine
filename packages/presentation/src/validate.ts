@@ -28,6 +28,15 @@ export type ValidationError = {
   message: string;
 };
 
+/** JSON-legal numbers plus in-process callers: reject NaN/Infinity (typeof 'number' is not enough). */
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isNonNegativeFinite(value: unknown): value is number {
+  return isFiniteNumber(value) && value >= 0;
+}
+
 /** Validate a NarrationPlan, returning errors if any. */
 export function validateNarrationPlan(plan: unknown): ValidationError[] {
   const errors: ValidationError[] = [];
@@ -68,8 +77,8 @@ export function validateNarrationPlan(plan: unknown): ValidationError[] {
       if (!['immediate', 'with-text', 'after-text'].includes(sfx.timing as string)) {
         errors.push({ field: `sfx[${i}].timing`, message: 'timing must be immediate, with-text, or after-text' });
       }
-      if (typeof sfx.intensity !== 'number' || sfx.intensity < 0 || sfx.intensity > 1) {
-        errors.push({ field: `sfx[${i}].intensity`, message: 'intensity must be a number between 0 and 1' });
+      if (!isFiniteNumber(sfx.intensity) || sfx.intensity < 0 || sfx.intensity > 1) {
+        errors.push({ field: `sfx[${i}].intensity`, message: 'intensity must be a finite number between 0 and 1' });
       }
     }
   }
@@ -92,11 +101,11 @@ export function validateNarrationPlan(plan: unknown): ValidationError[] {
           message: `action must be one of: ${VALID_AMBIENT_ACTIONS.join(', ')}`,
         });
       }
-      if (typeof layer.volume !== 'number') {
-        errors.push({ field: `ambientLayers[${i}].volume`, message: 'volume must be a number' });
+      if (!isNonNegativeFinite(layer.volume)) {
+        errors.push({ field: `ambientLayers[${i}].volume`, message: 'volume must be a finite non-negative number' });
       }
-      if (typeof layer.fadeMs !== 'number') {
-        errors.push({ field: `ambientLayers[${i}].fadeMs`, message: 'fadeMs must be a number' });
+      if (!isNonNegativeFinite(layer.fadeMs)) {
+        errors.push({ field: `ambientLayers[${i}].fadeMs`, message: 'fadeMs must be a finite non-negative number' });
       }
     }
   }
@@ -116,8 +125,8 @@ export function validateNarrationPlan(plan: unknown): ValidationError[] {
           message: `type must be one of: ${VALID_UI_EFFECT_TYPES.join(', ')}`,
         });
       }
-      if (typeof effect.durationMs !== 'number') {
-        errors.push({ field: `uiEffects[${i}].durationMs`, message: 'durationMs must be a number' });
+      if (!isNonNegativeFinite(effect.durationMs)) {
+        errors.push({ field: `uiEffects[${i}].durationMs`, message: 'durationMs must be a finite non-negative number' });
       }
       if (effect.color !== undefined && typeof effect.color !== 'string') {
         errors.push({ field: `uiEffects[${i}].color`, message: 'color must be a string when present' });
@@ -146,8 +155,8 @@ export function validateNarrationPlan(plan: unknown): ValidationError[] {
       if (typeof speaker.emotion !== 'string') {
         errors.push({ field: 'speaker.emotion', message: 'emotion must be a string' });
       }
-      if (typeof speaker.speed !== 'number') {
-        errors.push({ field: 'speaker.speed', message: 'speed must be a number' });
+      if (!isFiniteNumber(speaker.speed)) {
+        errors.push({ field: 'speaker.speed', message: 'speed must be a finite number' });
       }
       if (typeof speaker.text !== 'string') {
         errors.push({ field: 'speaker.text', message: 'text must be a string' });
@@ -169,8 +178,8 @@ export function validateNarrationPlan(plan: unknown): ValidationError[] {
       if (musicCue.trackId !== undefined && typeof musicCue.trackId !== 'string') {
         errors.push({ field: 'musicCue.trackId', message: 'trackId must be a string when present' });
       }
-      if (typeof musicCue.fadeMs !== 'number') {
-        errors.push({ field: 'musicCue.fadeMs', message: 'fadeMs must be a number' });
+      if (!isNonNegativeFinite(musicCue.fadeMs)) {
+        errors.push({ field: 'musicCue.fadeMs', message: 'fadeMs must be a finite non-negative number' });
       }
     }
   }
@@ -192,8 +201,8 @@ export function validateNarrationPlan(plan: unknown): ValidationError[] {
       if (typeof voiceProfile.emotion !== 'string') {
         errors.push({ field: 'voiceProfile.emotion', message: 'emotion must be a string' });
       }
-      if (typeof voiceProfile.speed !== 'number') {
-        errors.push({ field: 'voiceProfile.speed', message: 'speed must be a number' });
+      if (!isFiniteNumber(voiceProfile.speed)) {
+        errors.push({ field: 'voiceProfile.speed', message: 'speed must be a finite number' });
       }
     }
   }

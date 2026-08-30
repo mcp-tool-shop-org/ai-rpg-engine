@@ -15,6 +15,7 @@ import {
   formatRecentRuns,
   RUNS_FILE_NAME,
   RECENT_RUNS_SHOWN,
+  HISTORY_MAX_BYTES,
   type RunRecord,
 } from './history.js';
 
@@ -106,6 +107,36 @@ describe('appendRunRecord / readRunHistory (T0-run-history)', () => {
 
     const recent = readRunHistory(saveDir);
     expect(recent.map((r) => r.rounds)).toEqual([2, 1]);
+  });
+
+  // F-39d0f4c5 — cap + size budget. A 100-line fixture still returns 3 recent
+  // runs; a file above HISTORY_MAX_BYTES degrades to [] with one structured line.
+  it('a 100-line fixture still returns 3 recent runs', () => {
+    fs.mkdirSync(saveDir, { recursive: true });
+    const lines: string[] = [];
+    for (let i = 1; i <= 100; i++) {
+      lines.push(JSON.stringify(record({ rounds: i })));
+    }
+    fs.writeFileSync(path.join(saveDir, RUNS_FILE_NAME), lines.join('\n') + '\n', 'utf-8');
+
+    const recent = readRunHistory(saveDir);
+    expect(recent).toHaveLength(RECENT_RUNS_SHOWN);
+    expect(recent.map((r) => r.rounds)).toEqual([100, 99, 98]);
+  });
+
+  it('a file above the byte budget degrades to [] with one structured line, no throw', () => {
+    fs.mkdirSync(saveDir, { recursive: true });
+    const huge = path.join(saveDir, RUNS_FILE_NAME);
+    fs.writeFileSync(huge, 'x'.repeat(HISTORY_MAX_BYTES + 1), 'utf-8');
+    const log = vi.fn();
+
+    let recent: RunRecord[] = [{ ...record() }];
+    expect(() => {
+      recent = readRunHistory(saveDir, RECENT_RUNS_SHOWN, log);
+    }).not.toThrow();
+    expect(recent).toEqual([]);
+    const logged = log.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(logged).toContain('[HISTORY_TOO_LARGE]');
   });
 });
 

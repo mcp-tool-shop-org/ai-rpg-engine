@@ -53,6 +53,21 @@ function titleCase(s: string): string {
     .join(' ');
 }
 
+/** One value-flag: space form (`--flag value`) or equals form (`--flag=value`). */
+function readFlag(args: string[], flag: string): {
+  present: boolean;
+  raw: string | undefined;
+  valueSlot: number;
+} {
+  const eq = `${flag}=`;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === flag) return { present: true, raw: args[i + 1], valueSlot: i + 1 };
+    if (arg.startsWith(eq)) return { present: true, raw: arg.slice(eq.length), valueSlot: -1 };
+  }
+  return { present: false, raw: undefined, valueSlot: -1 };
+}
+
 /**
  * Build the content-pack object for one stub. Each stub is the MINIMAL shape that passes
  * the corresponding content-schema validator AND validateGameContent's cross-reference
@@ -212,7 +227,7 @@ export function scaffoldContent(opts: ScaffoldOptions): string {
 }
 
 function printScaffoldHelp(): void {
-  console.log('Usage: ai-rpg-engine scaffold <kind> <name> [--force] [--out=<file>]');
+  console.log('Usage: ai-rpg-engine scaffold <kind> <name> [--force] [--out <file>]');
   console.log('');
   console.log('Writes a minimal, valid content stub you can fill in.');
   console.log(`The stub passes "ai-rpg-engine validate" out of the box.`);
@@ -221,6 +236,7 @@ function printScaffoldHelp(): void {
   console.log('');
   console.log('Examples:');
   console.log('  ai-rpg-engine scaffold ability fire-bolt');
+  console.log('  ai-rpg-engine scaffold zone harbor-district --out ./content/harbor.json');
   console.log('  ai-rpg-engine scaffold zone harbor-district --out=./content/harbor.json');
   console.log('  ai-rpg-engine scaffold status on-fire --force');
 }
@@ -237,26 +253,25 @@ export function runScaffold(args: string[]): void {
 
   const force = args.includes('--force');
 
-  // Collect positionals (non-flag tokens): <kind> <name>.
-  const positionals = args.filter((a) => !a.startsWith('-'));
-  const kind = positionals[0];
-  const name = positionals[1];
-
-  // --out=<file> (same empty-value guard as create-starter's CLI-012): a present-but-empty
-  // value is a likely shell mishap and must fail loudly rather than defaulting silently.
-  const outToken = args.find((a) => a === '--out' || a.startsWith('--out='));
+  // Space form (`--out file`) AND equals form (`--out=file`) — same empty-value
+  // guard as create-starter's CLI-012.
+  const out = readFlag(args, '--out');
   let outFile: string | undefined;
-  if (outToken !== undefined) {
-    const eq = outToken.indexOf('=');
-    const rawValue = eq === -1 ? '' : outToken.slice(eq + 1);
-    if (rawValue.trim().length === 0) {
+  if (out.present) {
+    const rawValue = out.raw;
+    if (rawValue === undefined || rawValue.trim().length === 0 || rawValue.startsWith('-')) {
       console.error('✗ [CLI_OUT_EMPTY] --out was given but its value is empty.');
-      console.error('  Hint: pass a target file, e.g. --out=./content/fire.json — or omit --out to write <name>.json.');
+      console.error('  Hint: pass a target file, e.g. --out ./content/fire.json or --out=./content/fire.json — or omit --out to write <name>.json.');
       process.exit(1);
       return; // unreachable in production; lets tests that stub process.exit stop here
     }
     outFile = path.resolve(rawValue);
   }
+
+  // Collect positionals (non-flag tokens): <kind> <name>. Skip the --out value slot.
+  const positionals = args.filter((a, i) => !a.startsWith('-') && i !== out.valueSlot);
+  const kind = positionals[0];
+  const name = positionals[1];
 
   if (!kind) {
     console.error('✗ [SCAFFOLD_KIND_MISSING] Missing <kind>.');

@@ -160,9 +160,7 @@ describe('create-starter', () => {
 
     it('overwrites with --force', () => {
         const outDir = path.join(tmpDir, 'starter-force');
-        fs.mkdirSync(outDir, { recursive: true });
-        fs.writeFileSync(path.join(outDir, 'old.txt'), 'old');
-
+        createStarter({ name: 'force', outDir });
         createStarter({ name: 'force', outDir, force: true });
 
         expect(fs.existsSync(path.join(outDir, 'src/setup.ts'))).toBe(true);
@@ -192,20 +190,30 @@ describe('create-starter', () => {
         expect(() => createStarter({ name: 'dark-souls-2', outDir: path.join(tmpDir, 'w3') })).not.toThrow();
     });
 
-    // CLI-004 — --force must not leave stale files from a previous scaffold
-    it('--force clears stale files from the target directory', () => {
+    // F-6394381d — --force must not wipe a non-scaffold occupied tree.
+    it('--force refuses a non-empty non-scaffold tree and leaves it intact', () => {
         const outDir = path.join(tmpDir, 'starter-stale');
         fs.mkdirSync(path.join(outDir, 'src'), { recursive: true });
-        // A leftover file that is NOT part of the template — must be gone after --force.
         fs.writeFileSync(path.join(outDir, 'src/leftover-orphan.ts'), 'export const stale = true;');
         fs.writeFileSync(path.join(outDir, 'STALE_ROOT.md'), 'stale');
 
-        createStarter({ name: 'stale', outDir, force: true });
+        expect(() => createStarter({ name: 'stale', outDir, force: true })).toThrow(/--force/);
+        expect(fs.existsSync(path.join(outDir, 'src/leftover-orphan.ts'))).toBe(true);
+        expect(fs.existsSync(path.join(outDir, 'STALE_ROOT.md'))).toBe(true);
+        expect(fs.existsSync(path.join(outDir, 'src/setup.ts'))).toBe(false);
+    });
 
-        expect(fs.existsSync(path.join(outDir, 'src/leftover-orphan.ts'))).toBe(false);
-        expect(fs.existsSync(path.join(outDir, 'STALE_ROOT.md'))).toBe(false);
-        // The real scaffold is present
+    it('--force on a previous scaffold replaces template files and leaves extras', () => {
+        const outDir = path.join(tmpDir, 'starter-stale2');
+        createStarter({ name: 'stale2', outDir });
+        fs.writeFileSync(path.join(outDir, 'src/leftover-orphan.ts'), 'export const stale = true;');
+        fs.writeFileSync(path.join(outDir, 'STALE_ROOT.md'), 'stale');
+
+        createStarter({ name: 'stale2', outDir, force: true });
+
         expect(fs.existsSync(path.join(outDir, 'src/setup.ts'))).toBe(true);
+        expect(fs.existsSync(path.join(outDir, 'src/leftover-orphan.ts'))).toBe(true);
+        expect(fs.existsSync(path.join(outDir, 'STALE_ROOT.md'))).toBe(true);
     });
 
     // CLI-005 — a validation failure must not leave a half-written invalid scaffold
@@ -327,5 +335,72 @@ describe('runCreateStarter --out validation (CLI-012)', () => {
         expect(combined).not.toMatch(/--out/);
         // And it actually produced a scaffold at the named location.
         expect(fs.existsSync(path.join(outDir, 'src/setup.ts'))).toBe(true);
+    });
+
+    // F-25af9571 — space form used to be diagnosed as CLI_OUT_EMPTY.
+    it('accepts space-form --out <dir> and writes there (not CLI_OUT_EMPTY)', () => {
+        const outDir = path.join(tmpDir, 'space-form');
+        runCreateStarter(['western', '--out', outDir]);
+        expect(exitSpy).not.toHaveBeenCalled();
+        const combined = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+        expect(combined).not.toMatch(/CLI_OUT_EMPTY/);
+        expect(fs.existsSync(path.join(outDir, 'src/setup.ts'))).toBe(true);
+    });
+
+    it('bare --out with no following token still trips CLI_OUT_EMPTY and names both forms', () => {
+        expect(() => runCreateStarter(['western', '--out'])).toThrow('__exit__1');
+        const combined = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+        expect(combined).toContain('CLI_OUT_EMPTY');
+        expect(combined).toMatch(/--out /);
+        expect(combined).toMatch(/--out=/);
+    });
+});
+
+// F-6394381d — --force --out=. must refuse and leave non-template files.
+describe('runCreateStarter --force safety (F-6394381d)', () => {
+    let tmpDir: string;
+    let originalCwd: string;
+    let exitSpy: MockInstance<typeof process.exit>;
+    let errSpy: ReturnType<typeof vi.spyOn>;
+    let logSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+        tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-force-test-'));
+        originalCwd = process.cwd();
+        exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+            throw new Error(`__exit__${code}`);
+        }) as never);
+        errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+        logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+        process.chdir(originalCwd);
+        exitSpy.mockRestore();
+        errSpy.mockRestore();
+        logSpy.mockRestore();
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it('--force --out=. exits 1 and leaves the directory\'s non-template files in place', () => {
+        process.chdir(tmpDir);
+        fs.writeFileSync(path.join(tmpDir, 'KEEP_ME.txt'), 'alive');
+        expect(() => runCreateStarter(['western', '--force', '--out=.'])).toThrow('__exit__1');
+        const combined = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+        expect(combined).toMatch(/--force/);
+        expect(combined).toMatch(/--out /);
+        expect(combined).toMatch(/--out=/);
+        expect(fs.readFileSync(path.join(tmpDir, 'KEEP_ME.txt'), 'utf-8')).toBe('alive');
+        expect(fs.existsSync(path.join(tmpDir, 'src/setup.ts'))).toBe(false);
+    });
+
+    it('--force --out=.. refuses and leaves the parent tree in place', () => {
+        const child = path.join(tmpDir, 'child');
+        fs.mkdirSync(child);
+        fs.writeFileSync(path.join(tmpDir, 'PARENT.txt'), 'parent');
+        process.chdir(child);
+        expect(() => runCreateStarter(['western', '--force', '--out=..'])).toThrow('__exit__1');
+        expect(fs.readFileSync(path.join(tmpDir, 'PARENT.txt'), 'utf-8')).toBe('parent');
+        expect(fs.existsSync(path.join(tmpDir, 'src/setup.ts'))).toBe(false);
     });
 });
