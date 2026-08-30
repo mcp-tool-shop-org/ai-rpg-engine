@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { sessionDoctor, formatDoctorReport } from './session-doctor.js';
-import { createSession, addThemes, addConstraints, addArtifact, addCritiqueIssues, acceptSuggestion } from './session.js';
+import { createSession, addThemes, addConstraints, addArtifact, addCritiqueIssues, acceptSuggestion, MAX_SESSION_HISTORY_EVENTS } from './session.js';
 import type { CritiqueIssue } from './parsers.js';
 
 describe('sessionDoctor', () => {
@@ -85,6 +85,19 @@ describe('sessionDoctor', () => {
     addCritiqueIssues(s, issues);
     const result = sessionDoctor(s);
     expect(result.diagnostics.some(d => d.code === 'MISSING_TARGETS')).toBe(true);
+  });
+
+  it('warns when session history is at the retention cap (F-1582fb3d)', () => {
+    const s = createSession('long-hist');
+    addThemes(s, ['gothic']);
+    s.history = Array.from({ length: MAX_SESSION_HISTORY_EVENTS }, (_, i) => ({
+      timestamp: '2026-01-01T00:00:00.000Z',
+      kind: 'theme_added' as const,
+      detail: `theme_${i}`,
+    }));
+    const result = sessionDoctor(s);
+    expect(result.healthy).toBe(false);
+    expect(result.diagnostics.some(d => d.code === 'HISTORY_AT_CAP')).toBe(true);
   });
 
   it('does not flag issues targeting global', () => {

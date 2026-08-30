@@ -35,9 +35,9 @@ export type RetrievalQuery = {
   userMessage: string;
   /** Keywords extracted from the message (auto-extracted if not provided). */
   keywords?: string[];
-  /** Max snippets to return. */
+  /** Max snippets to return. Clamped to [1, MAX_RETRIEVE_SNIPPETS]. */
   maxSnippets?: number;
-  /** Max total characters across all snippets. */
+  /** Max total characters across all snippets. Clamped to [1, MAX_RETRIEVE_CHARS]. */
   maxChars?: number;
   /** If set, only retrieve from these source kinds (loadout-gated). */
   allowedSources?: SourceKind[];
@@ -56,6 +56,39 @@ export type RetrievalResult = {
   /** Total candidate snippets before budget filtering. */
   totalCandidates: number;
 };
+
+/** Absolute ceiling on retrieve() snippet count (F-6bccfdfb). */
+export const MAX_RETRIEVE_SNIPPETS = 32;
+/** Absolute ceiling on retrieve() total characters (F-6bccfdfb). 32 KiB. */
+export const MAX_RETRIEVE_CHARS = 32 * 1024;
+const DEFAULT_RETRIEVE_SNIPPETS = 8;
+const DEFAULT_RETRIEVE_CHARS = 6000;
+
+/**
+ * Coerce caller maxSnippets to a finite integer in [1, MAX_RETRIEVE_SNIPPETS].
+ * Infinity → ceiling; NaN / non-positive → default. Never returns non-finite.
+ */
+function clampMaxSnippets(raw: number | undefined): number {
+  if (raw === undefined || !Number.isFinite(raw)) {
+    return raw === Infinity ? MAX_RETRIEVE_SNIPPETS : DEFAULT_RETRIEVE_SNIPPETS;
+  }
+  const floored = Math.floor(raw);
+  if (floored <= 0) return DEFAULT_RETRIEVE_SNIPPETS;
+  return Math.min(floored, MAX_RETRIEVE_SNIPPETS);
+}
+
+/**
+ * Coerce caller maxChars to a finite integer in [1, MAX_RETRIEVE_CHARS].
+ * Same shape as clampMaxChars: Infinity → ceiling; NaN / non-positive → default.
+ */
+function clampRetrieveChars(raw: number | undefined): number {
+  if (raw === undefined || !Number.isFinite(raw)) {
+    return raw === Infinity ? MAX_RETRIEVE_CHARS : DEFAULT_RETRIEVE_CHARS;
+  }
+  const floored = Math.floor(raw);
+  if (floored <= 0) return DEFAULT_RETRIEVE_CHARS;
+  return Math.min(floored, MAX_RETRIEVE_CHARS);
+}
 
 // --- Keyword extraction ---
 
@@ -211,11 +244,11 @@ function retrieveFromSession(session: DesignSession, keywords: string[]): Retrie
     }
   }
 
-  // Recent history events — look for replay/critique/plan events
-  const history = session.history ?? [];
-  const replayEvents = history.filter(e =>
-    e.kind === 'replay_compared' || e.kind === 'plan_generated'
-  );
+  // Recent history events — look for replay/critique/plan events.
+  // Slice matching events so a long history cannot concatenate unbounded RAG text.
+  const replayEvents = (session.history ?? [])
+    .filter(e => e.kind === 'replay_compared' || e.kind === 'plan_generated')
+    .slice(-20);
   if (replayEvents.length > 0) {
     const replayText = replayEvents.map(e =>
       `${e.kind} (${e.timestamp}): ${e.detail}`
@@ -343,8 +376,8 @@ export async function retrieve(
   projectRoot: string,
 ): Promise<RetrievalResult> {
   const keywords = query.keywords ?? extractKeywords(query.userMessage);
-  const maxSnippets = query.maxSnippets ?? 8;
-  const maxChars = query.maxChars ?? 6000;
+  const maxSnippets = clampMaxSnippets(query.maxSnippets);
+  const maxChars = clampRetrieveChars(query.maxChars);
 
   if (keywords.length === 0) {
     return { snippets: [], sourcesScanned: 0, excludedSources: [], droppedByBudget: 0, truncatedCount: 0, totalCandidates: 0 };

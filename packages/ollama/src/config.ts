@@ -17,6 +17,10 @@ export type OllamaConfig = {
 
 /** Absolute ceiling on generate() wait (F-b67b6830). Bounds AbortSignal.timeout; bytes are capped separately. */
 export const MAX_OLLAMA_TIMEOUT_MS = 600_000;
+/** Absolute ceiling on generate() attempts, including the first (F-75b0ce0e). */
+export const MAX_OLLAMA_ATTEMPTS = 8;
+/** Absolute ceiling on the delay between retry attempts (F-75b0ce0e). */
+export const MAX_RETRY_DELAY_MS = 30_000;
 
 const DEFAULTS: OllamaConfig = {
   baseUrl: 'http://localhost:11434',
@@ -56,25 +60,28 @@ export function resolveConfig(overrides?: Partial<OllamaConfig>): OllamaConfig {
     ),
     temperature: overrides?.temperature ?? DEFAULTS.temperature,
     maxTokens: overrides?.maxTokens,
-    maxAttempts: resolveMaxAttempts(overrides?.maxAttempts),
-    retryDelayMs: resolveRetryDelayMs(overrides?.retryDelayMs),
+    maxAttempts: clampMaxAttempts(overrides?.maxAttempts),
+    retryDelayMs: clampRetryDelayMs(overrides?.retryDelayMs),
   };
 }
 
 /**
- * Clamp a caller-supplied attempt count to a sane integer ≥ 1. A non-finite or
- * sub-1 value falls back to the default — a NaN/0 count would silently skip
- * every attempt and return "max retries exceeded" without ever calling fetch.
+ * Clamp a caller-supplied attempt count to a sane integer in [1, MAX_OLLAMA_ATTEMPTS].
+ * A non-finite or sub-1 value falls back to the default — Infinity must not
+ * become an infinite generate() loop, and 1e9 must not retry for days.
  */
-function resolveMaxAttempts(raw: number | undefined): number {
+export function clampMaxAttempts(raw: number | undefined): number {
   if (raw === undefined || !Number.isFinite(raw)) return DEFAULTS.maxAttempts;
-  return Math.max(1, Math.floor(raw));
+  return Math.min(MAX_OLLAMA_ATTEMPTS, Math.max(1, Math.floor(raw)));
 }
 
-/** Clamp a caller-supplied retry delay to a finite non-negative integer (0 is valid: retry immediately). */
-function resolveRetryDelayMs(raw: number | undefined): number {
+/**
+ * Clamp a caller-supplied retry delay to a finite non-negative integer
+ * (0 is valid: retry immediately) with an absolute ceiling of MAX_RETRY_DELAY_MS.
+ */
+export function clampRetryDelayMs(raw: number | undefined): number {
   if (raw === undefined || !Number.isFinite(raw) || raw < 0) return DEFAULTS.retryDelayMs;
-  return Math.floor(raw);
+  return Math.min(MAX_RETRY_DELAY_MS, Math.floor(raw));
 }
 
 /**

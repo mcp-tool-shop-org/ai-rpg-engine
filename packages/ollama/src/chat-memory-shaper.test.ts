@@ -1,7 +1,7 @@
 // Tests — memory shaper: class assignment, shaping, budget enforcement, formatting
 
 import { describe, it, expect } from 'vitest';
-import { shapeMemory, formatShapedContext } from './chat-memory-shaper.js';
+import { shapeMemory, formatShapedContext, MAX_SHAPED_MEMORY_CHARS } from './chat-memory-shaper.js';
 import type { MemoryClass, ShapedContext } from './chat-memory-shaper.js';
 import type { DesignSession } from './session.js';
 import type { RetrievedSnippet } from './chat-rag.js';
@@ -131,6 +131,18 @@ describe('shapeMemory — budget', () => {
     });
     const result = shapeMemory({ session, ragSnippets: [], maxChars: 200 });
     expect(result.totalChars).toBeLessThanOrEqual(200);
+  });
+
+  it('clamps Infinity/NaN/0 maxChars so totalChars stay inside the ceiling (F-6bccfdfb)', () => {
+    const snippets: RetrievedSnippet[] = [
+      { source: 'artifact', origin: 'a.yaml', content: 'keyword '.repeat(5000), score: 2 },
+      { source: 'doc', origin: 'b.md', content: 'keyword '.repeat(5000), score: 1 },
+    ];
+    for (const raw of [Infinity, Number.NaN, 0]) {
+      const result = shapeMemory({ session: null, ragSnippets: snippets, maxChars: raw });
+      expect(Number.isFinite(result.totalChars)).toBe(true);
+      expect(result.totalChars).toBeLessThanOrEqual(MAX_SHAPED_MEMORY_CHARS);
+    }
   });
 
   it('truncates last memory if partially fits', () => {

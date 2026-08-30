@@ -1,7 +1,7 @@
 // Session doctor — structural health check for .ai-session.json
 // Pure function, no LLM call. Reports issues with the session file itself.
 
-import type { DesignSession } from './session.js';
+import { MAX_SESSION_HISTORY_EVENTS, type DesignSession } from './session.js';
 
 export type SessionDiagnostic = {
   code: string;
@@ -67,6 +67,16 @@ export function sessionDoctor(session: DesignSession): SessionDoctorResult {
       code: 'EMPTY_SESSION',
       severity: 'info',
       message: 'Session has no themes, artifacts, or issues — still a blank slate',
+    });
+  }
+
+  // History length — recordEvent drops from the front at the cap; warn when at/over it.
+  const historyLen = (session.history ?? []).length;
+  if (historyLen >= MAX_SESSION_HISTORY_EVENTS) {
+    diagnostics.push({
+      code: 'HISTORY_AT_CAP',
+      severity: 'warning',
+      message: `Session history has ${historyLen} events (cap ${MAX_SESSION_HISTORY_EVENTS}) — oldest events are being dropped`,
     });
   }
 

@@ -29,13 +29,16 @@ export type WebfetchOptions = {
    * Finite values are floored and clamped to [1, MAX_WEBFETCH_CHARS].
    */
   maxChars?: number;
-  /** Request timeout in milliseconds. */
+  /** Request timeout in milliseconds. Clamped to (0, MAX_WEBFETCH_TIMEOUT_MS]. */
   timeoutMs?: number;
 };
 
 /** Absolute ceiling on webfetch maxChars (F-aa58bf30). 1 MiB of extracted text. */
 export const MAX_WEBFETCH_CHARS = 1_048_576;
 const DEFAULT_WEBFETCH_CHARS = 4000;
+/** Absolute ceiling on webfetch wait, including DNS (F-c5981073). 120s. */
+export const MAX_WEBFETCH_TIMEOUT_MS = 120_000;
+const DEFAULT_WEBFETCH_TIMEOUT_MS = 10_000;
 
 /**
  * Coerce caller maxChars to a finite integer in [1, MAX_WEBFETCH_CHARS].
@@ -49,6 +52,20 @@ function clampMaxChars(maxChars: number): number {
   const floored = Math.floor(maxChars);
   if (floored <= 0) return 1;
   return Math.min(floored, MAX_WEBFETCH_CHARS);
+}
+
+/**
+ * Coerce caller timeoutMs to a finite integer in (0, MAX_WEBFETCH_TIMEOUT_MS].
+ * Infinity → ceiling; NaN / non-positive → default. Never returns non-finite
+ * so AbortSignal.timeout cannot throw RangeError or hang for days.
+ */
+function clampWebfetchTimeoutMs(raw: number | undefined): number {
+  if (raw === undefined) return DEFAULT_WEBFETCH_TIMEOUT_MS;
+  if (!Number.isFinite(raw)) {
+    return raw === Infinity ? MAX_WEBFETCH_TIMEOUT_MS : DEFAULT_WEBFETCH_TIMEOUT_MS;
+  }
+  if (raw <= 0) return DEFAULT_WEBFETCH_TIMEOUT_MS;
+  return Math.min(Math.floor(raw), MAX_WEBFETCH_TIMEOUT_MS);
 }
 
 // --- Validation ---
@@ -169,7 +186,7 @@ function traversal(parsed: URL): boolean {
 // --- DNS-resolved validation (the gate webfetch() actually enforces) ---
 
 /** Default budget for the DNS resolution step in isAllowedUrlResolved(). */
-const DEFAULT_RESOLVE_TIMEOUT_MS = 5_000;
+export const DEFAULT_RESOLVE_TIMEOUT_MS = 5_000;
 
 /**
  * The real SSRF gate: isAllowedUrl() plus DNS resolution for plain hostnames.
@@ -368,7 +385,7 @@ export async function webfetch(url: string, options?: WebfetchOptions): Promise<
   // cap (Infinity → absolute ceiling; NaN/-Infinity → 1).
   const maxChars = clampMaxChars(options?.maxChars ?? DEFAULT_WEBFETCH_CHARS);
   const byteCap = maxChars * 2;
-  const timeoutMs = options?.timeoutMs ?? 10_000;
+  const timeoutMs = clampWebfetchTimeoutMs(options?.timeoutMs);
   const fetchedAt = new Date().toISOString();
 
   const failClosed = (error: string): WebfetchResult => ({
@@ -402,14 +419,23 @@ export async function webfetch(url: string, options?: WebfetchOptions): Promise<
 
   try {
     for (let hop = 0; ; hop++) {
-      // Gate EVERY hop, not just the first — the entire point of the fix.
-      if (!(await isAllowedUrlResolved(currentUrl))) {
-        return failClosed('URL not allowed: must be public http/https');
+      // Shared deadline covers DNS as well as fetch: check remaining BEFORE
+      // lookup, and pass min(default DNS budget, remaining) so a slow resolver
+      // cannot spend a full 5s per hop past timeoutMs (F-c4a128fc).
+      const remainingBeforeDns = deadline - Date.now();
+      if (remainingBeforeDns <= 0) {
+        return failClosed(`Request timed out after ${timeoutMs}ms`);
       }
 
+      const dnsTimeout = Math.min(DEFAULT_RESOLVE_TIMEOUT_MS, remainingBeforeDns);
+      const dnsStarted = Date.now();
+      const allowed = await isAllowedUrlResolved(currentUrl, dnsTimeout);
       const remaining = deadline - Date.now();
-      if (remaining <= 0) {
+      if (remaining <= 0 || (!allowed && Date.now() - dnsStarted >= dnsTimeout)) {
         return failClosed(`Request timed out after ${timeoutMs}ms`);
+      }
+      if (!allowed) {
+        return failClosed('URL not allowed: must be public http/https');
       }
 
       const response = await fetch(currentUrl, {
@@ -485,6 +511,9 @@ export async function webfetch(url: string, options?: WebfetchOptions): Promise<
       };
     }
   } catch (err) {
+    if (err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+      return failClosed(`Request timed out after ${timeoutMs}ms`);
+    }
     const msg = err instanceof Error ? err.message : String(err);
     return failClosed(msg);
   }

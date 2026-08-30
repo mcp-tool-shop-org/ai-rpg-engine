@@ -1,7 +1,7 @@
 // Tests — RAG retrieval: keyword extraction, scoring, retrieval, formatting
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { extractKeywords, retrieve, formatRetrievedContext } from './chat-rag.js';
+import { extractKeywords, retrieve, formatRetrievedContext, MAX_RETRIEVE_SNIPPETS, MAX_RETRIEVE_CHARS } from './chat-rag.js';
 import type { RetrievedSnippet, RetrievalResult } from './chat-rag.js';
 import type { DesignSession } from './session.js';
 import { mkdtemp, mkdir, writeFile, rm, utimes } from 'node:fs/promises';
@@ -359,6 +359,20 @@ describe('retrieve — budget enforcement', () => {
     );
     const totalChars = result.snippets.reduce((sum, s) => sum + s.content.length, 0);
     expect(totalChars).toBeLessThanOrEqual(500);
+  });
+
+  it('clamps Infinity/NaN/0 so snippet count and totalChars stay inside the ceiling (F-6bccfdfb)', async () => {
+    for (const raw of [Infinity, Number.NaN, 0]) {
+      const result = await retrieve(
+        { userMessage: 'dark chapel horror faction', maxSnippets: raw, maxChars: raw },
+        null,
+        tmpDir,
+      );
+      expect(result.snippets.length).toBeLessThanOrEqual(MAX_RETRIEVE_SNIPPETS);
+      const totalChars = result.snippets.reduce((sum, s) => sum + s.content.length, 0);
+      expect(Number.isFinite(totalChars)).toBe(true);
+      expect(totalChars).toBeLessThanOrEqual(MAX_RETRIEVE_CHARS);
+    }
   });
 });
 

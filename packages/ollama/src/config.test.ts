@@ -1,7 +1,7 @@
 // Unit tests — config resolution
 
 import { describe, it, expect, afterEach } from 'vitest';
-import { resolveConfig, MAX_OLLAMA_TIMEOUT_MS } from './config.js';
+import { resolveConfig, MAX_OLLAMA_TIMEOUT_MS, MAX_OLLAMA_ATTEMPTS, MAX_RETRY_DELAY_MS } from './config.js';
 
 describe('resolveConfig', () => {
   const envKeys = [
@@ -116,6 +116,16 @@ describe('resolveConfig', () => {
       expect(resolveConfig({ retryDelayMs: 0 }).retryDelayMs).toBe(0);
       expect(resolveConfig({ retryDelayMs: -1 }).retryDelayMs).toBe(1000);
       expect(resolveConfig({ retryDelayMs: Number.NaN }).retryDelayMs).toBe(1000);
+    });
+
+    it('clamps a huge finite maxAttempts to MAX_OLLAMA_ATTEMPTS (F-75b0ce0e)', () => {
+      expect(resolveConfig({ maxAttempts: 1e9 }).maxAttempts).toBe(MAX_OLLAMA_ATTEMPTS);
+      expect(resolveConfig({ maxAttempts: Number.MAX_SAFE_INTEGER }).maxAttempts).toBe(MAX_OLLAMA_ATTEMPTS);
+    });
+
+    it('clamps a huge retryDelayMs to MAX_RETRY_DELAY_MS (F-75b0ce0e)', () => {
+      expect(resolveConfig({ retryDelayMs: 1e9 }).retryDelayMs).toBe(MAX_RETRY_DELAY_MS);
+      expect(resolveConfig({ retryDelayMs: Infinity }).retryDelayMs).toBe(1000);
     });
   });
 });

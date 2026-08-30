@@ -4,6 +4,7 @@ import type { OllamaTextClient } from '../client.js';
 import { analyzeReplayPrompt } from '../prompts/analyze-replay.js';
 import { parseCritiqueOutput } from '../parsers.js';
 import type { CritiqueIssue, CritiqueSuggestion } from '../parsers.js';
+import { MAX_REPLAY_JSON_BYTES } from '../chat-balance-analyzer.js';
 
 export type AnalyzeReplayInput = {
   replay: string;
@@ -27,6 +28,13 @@ export async function analyzeReplay(
   client: OllamaTextClient,
   input: AnalyzeReplayInput,
 ): Promise<AnalyzeReplayResult> {
+  if (typeof input.replay !== 'string' || input.replay.length > MAX_REPLAY_JSON_BYTES) {
+    return {
+      ok: false,
+      error: `budget exceeded: replay is over the ${MAX_REPLAY_JSON_BYTES} byte cap`,
+    };
+  }
+
   const result = await client.generate({
     system: analyzeReplayPrompt.system,
     prompt: analyzeReplayPrompt.render({

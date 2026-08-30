@@ -17,6 +17,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { runCli } from './cli.js';
+import { MAX_REPLAY_JSON_BYTES } from './chat-balance-analyzer.js';
 
 const realFetch = globalThis.fetch;
 const realCwd = process.cwd();
@@ -315,6 +316,36 @@ describe('runCli — apply-preview --confirm blocked write (F-77398344)', () => 
     await expect(fs.access(escapePath)).rejects.toThrow();
     const sessionRaw = await fs.readFile(sessionFile(), 'utf-8');
     expect(sessionRaw).not.toContain('content_applied');
+  });
+});
+
+// F-999d9ed1 — readStdin concatenated every chunk with no byte budget, then
+// analyze-replay stuffed the whole dump into generate(). Cap before JSON.parse.
+describe('runCli — stdin byte budget (F-999d9ed1)', () => {
+  it('refuses >8 MiB stdin before JSON.parse or generate()', async () => {
+    const parseSpy = vi.spyOn(JSON, 'parse');
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    const huge = Buffer.alloc(MAX_REPLAY_JSON_BYTES + 1, 0x78);
+    const { Readable } = await import('node:stream');
+    const fakeStdin = Readable.from([huge]);
+    const originalStdin = process.stdin;
+    Object.defineProperty(process, 'stdin', { value: fakeStdin, configurable: true });
+    try {
+      await runCli(['analyze-replay', '--stdin']);
+    } finally {
+      Object.defineProperty(process, 'stdin', { value: originalStdin, configurable: true });
+    }
+
+    expect(process.exitCode).toBe(1);
+    expect(stderrText()).toContain('BUDGET_EXCEEDED');
+    expect(stderrText()).toMatch(/budget exceeded/i);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    const oversizedParses = parseSpy.mock.calls.filter(
+      ([arg]) => typeof arg === 'string' && arg.length > MAX_REPLAY_JSON_BYTES,
+    );
+    expect(oversizedParses).toHaveLength(0);
+    parseSpy.mockRestore();
   });
 });
 

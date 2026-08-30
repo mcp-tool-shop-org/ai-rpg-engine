@@ -20,6 +20,7 @@ import { critiqueContent } from './commands/critique-content.js';
 import { normalizeContent } from './commands/normalize-content.js';
 import { diffSummary } from './commands/diff-summary.js';
 import { analyzeReplay } from './commands/analyze-replay.js';
+import { MAX_REPLAY_JSON_BYTES } from './chat-balance-analyzer.js';
 import { explainWhy } from './commands/explain-why.js';
 import { suggestNext } from './commands/suggest-next.js';
 import { planDistrict } from './commands/plan-district.js';
@@ -990,6 +991,22 @@ describe('analyzeReplay', () => {
       replay: '{}',
     });
     expect(result.ok).toBe(false);
+  });
+
+  it('refuses a replay over the byte budget without calling generate (F-999d9ed1)', async () => {
+    let called = 0;
+    const client: OllamaTextClient = {
+      async generate(): Promise<PromptResult> {
+        called += 1;
+        return { ok: true, text: 'should not run' };
+      },
+    };
+    const result = await analyzeReplay(client, {
+      replay: 'x'.repeat(MAX_REPLAY_JSON_BYTES + 1),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/budget/i);
+    expect(called).toBe(0);
   });
 });
 

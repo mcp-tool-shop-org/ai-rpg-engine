@@ -737,3 +737,80 @@ describe('webfetch — finite absolute maxChars clamp (F-aa58bf30)', () => {
     expect(result.content).not.toContain('SHOULD-NOT-MATERIALIZE');
   });
 });
+
+// F-c5981073 — timeoutMs was taken as-is, so 2e9 hung for ~24 days and
+// Infinity/NaN/MAX_SAFE_INTEGER threw RangeError inside AbortSignal.timeout.
+describe('webfetch — timeoutMs clamp (F-c5981073)', () => {
+  beforeEach(() => {
+    vi.mocked(lookup).mockReset();
+  });
+
+  async function captureAbortTimeouts(timeoutMs: number): Promise<{
+    captured: number[];
+    result: Awaited<ReturnType<typeof import('./chat-webfetch.js').webfetch>>;
+  }> {
+    const captured: number[] = [];
+    const spy = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms: number) => {
+      captured.push(ms);
+      return AbortSignal.abort();
+    });
+    vi.mocked(lookup).mockResolvedValue([{ address: '93.184.216.34', family: 4 }] as never);
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    }) as unknown as typeof fetch;
+    try {
+      const { webfetch } = await import('./chat-webfetch.js');
+      const result = await webfetch('https://public.example/', { timeoutMs });
+      return { captured, result };
+    } finally {
+      spy.mockRestore();
+      globalThis.fetch = realFetch;
+    }
+  }
+
+  for (const raw of [Infinity, Number.NaN, Number.MAX_SAFE_INTEGER, 2e9]) {
+    it(`clamps timeoutMs ${String(raw)} to a finite ceiling so the request aborts named, not at Node's 32-bit timer max`, async () => {
+      const { MAX_WEBFETCH_TIMEOUT_MS } = await import('./chat-webfetch.js');
+      const { captured, result } = await captureAbortTimeouts(raw);
+      expect(captured.length).toBeGreaterThan(0);
+      for (const ms of captured) {
+        expect(Number.isFinite(ms)).toBe(true);
+        expect(ms).toBeGreaterThan(0);
+        expect(ms).toBeLessThanOrEqual(MAX_WEBFETCH_TIMEOUT_MS);
+      }
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/timed out/i);
+    });
+  }
+});
+
+// F-c4a128fc — DNS lookup used a fixed 5s budget per hop, ignoring the shared
+// deadline. A hanging resolver on hop 1 must return the named timeout without
+// waiting the extra DEFAULT_RESOLVE_TIMEOUT_MS.
+describe('webfetch — DNS shares the request deadline (F-c4a128fc)', () => {
+  beforeEach(() => {
+    vi.mocked(lookup).mockReset();
+  });
+
+  it('returns a named timeout when hop-1 lookup exceeds timeoutMs without waiting the extra 5s', async () => {
+    vi.mocked(lookup).mockImplementation(() => new Promise(() => {}));
+    const { webfetch, DEFAULT_RESOLVE_TIMEOUT_MS } = await import('./chat-webfetch.js');
+    const realFetch = globalThis.fetch;
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+    const timeoutMs = 40;
+    const start = Date.now();
+    try {
+      const result = await webfetch('https://slow-dns.example/', { timeoutMs });
+      const elapsed = Date.now() - start;
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/timed out/i);
+      expect(elapsed).toBeLessThan(DEFAULT_RESOLVE_TIMEOUT_MS);
+      expect(elapsed).toBeLessThan(2000);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+});

@@ -23,6 +23,7 @@ import { critiqueContent } from './commands/critique-content.js';
 import { normalizeContent } from './commands/normalize-content.js';
 import { diffSummary } from './commands/diff-summary.js';
 import { analyzeReplay } from './commands/analyze-replay.js';
+import { MAX_REPLAY_JSON_BYTES } from './chat-balance-analyzer.js';
 import { explainWhy } from './commands/explain-why.js';
 import { suggestNext } from './commands/suggest-next.js';
 import { planDistrict } from './commands/plan-district.js';
@@ -144,14 +145,6 @@ function buildConfig(flags: CliFlags): OllamaConfig {
   });
 }
 
-async function readStdin(): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) {
-    chunks.push(chunk as Buffer);
-  }
-  return Buffer.concat(chunks).toString('utf-8');
-}
-
 /**
  * Emit command output — stdout by default, or to a file with `--write`.
  *
@@ -194,6 +187,24 @@ class CliError extends Error {
     this.code = code;
     this.hint = hint;
   }
+}
+
+async function readStdin(byteCap = MAX_REPLAY_JSON_BYTES): Promise<string> {
+  const chunks: Buffer[] = [];
+  let received = 0;
+  for await (const chunk of process.stdin) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+    received += buf.byteLength;
+    if (received > byteCap) {
+      throw new CliError(
+        'BUDGET_EXCEEDED',
+        `stdin exceeds the ${byteCap} byte budget (${received} bytes so far)`,
+        'Pipe a smaller payload. The CLI refuses to JSON.parse or prompt-inject past this cap.',
+      );
+    }
+    chunks.push(buf);
+  }
+  return Buffer.concat(chunks).toString('utf-8');
 }
 
 /**
