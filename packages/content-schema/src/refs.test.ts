@@ -145,6 +145,58 @@ describe('validateRefs', () => {
     expect(r.errors.some((e) => e.message.includes('duplicate'))).toBe(false);
   });
 
+  it('F-9c5db864: duplicate hazard ids fail with a unique-id error naming the field', () => {
+    const r = validateRefs({
+      hazardDefinitions: [
+        { id: 'fire', effects: [], trigger: 'enter' },
+        { id: 'fire', effects: [], trigger: 'enter' },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('duplicate hazard id "fire"') && e.message.includes('unique'))).toBe(true);
+  });
+
+  it('F-9c5db864: duplicate district ids fail with a unique-id error naming the field', () => {
+    const r = validateRefs({
+      districts: [
+        { id: 'docks', name: 'Docks', zoneIds: [], tags: [] },
+        { id: 'docks', name: 'Docks copy', zoneIds: [], tags: [] },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('duplicate district id "docks"') && e.message.includes('rename'))).toBe(true);
+  });
+
+  it('F-9c5db864: duplicate quest ids fail with a unique-id error naming the field', () => {
+    const r = validateRefs({
+      quests: [
+        { id: 'rescue', name: 'A', stages: [] },
+        { id: 'rescue', name: 'B', stages: [] },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('duplicate quest id "rescue"'))).toBe(true);
+  });
+
+  it('F-9c5db864: duplicate dialogue ids fail with a unique-id error naming the field', () => {
+    const r = validateRefs({
+      dialogues: [
+        { id: 'talk', speakers: [], entryNodeId: 's', nodes: {} },
+        { id: 'talk', speakers: [], entryNodeId: 's', nodes: {} },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('duplicate dialogue id "talk"'))).toBe(true);
+  });
+
+  it('F-9c5db864: duplicate item ids fail with a unique-id error naming the field', () => {
+    const r = validateRefs({
+      items: [{ id: 'rope' }, { id: 'rope' }],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('duplicate item id "rope"'))).toBe(true);
+  });
+
   it('catches bad quest stage references', () => {
     const r = validateRefs({
       quests: [

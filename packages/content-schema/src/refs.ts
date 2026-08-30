@@ -203,6 +203,28 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === 'object';
 }
 
+function duplicateIdMessage(kind: string, id: string): string {
+  return `duplicate ${kind} id "${id}" — ${kind} ids must be unique; rename one of the copies (at load, the later definition silently replaces the earlier one)`;
+}
+
+function collectUniqueIds(
+  records: Array<{ id?: unknown }>,
+  kind: string,
+  pathFor: (id: string, index: number) => string,
+  errors: ValidationError[],
+): Set<string> {
+  const ids = new Set<string>();
+  for (let i = 0; i < records.length; i++) {
+    const id = records[i].id;
+    if (typeof id !== 'string') continue;
+    if (ids.has(id)) {
+      errors.push({ path: pathFor(id, i), message: duplicateIdMessage(kind, id) });
+    }
+    ids.add(id);
+  }
+  return ids;
+}
+
 function idsFrom(collection: unknown): string[] | undefined {
   if (!Array.isArray(collection)) return undefined;
   return collection
@@ -232,38 +254,15 @@ export function validateRefs(pack: ContentPack): RefsResult {
   const entities = (Array.isArray(pack.entities) ? pack.entities : []).filter(isRecord) as NonNullable<ContentPack['entities']>;
   const dialogues = (Array.isArray(pack.dialogues) ? pack.dialogues : []).filter(isRecord) as NonNullable<ContentPack['dialogues']>;
   const quests = (Array.isArray(pack.quests) ? pack.quests : []).filter(isRecord) as NonNullable<ContentPack['quests']>;
-  // Build the id registries WITH duplicate detection (v2.5 PC-4). A plain
-  // `new Set(map(id))` silently dedups, so a copy-pasted entity/zone whose id
-  // was never renamed passed validation clean and then silently clobbered at
-  // WorldStore.addEntity/addZone (last definition wins) — one authored
-  // entity/zone missing from the shipped game with zero diagnostic. Every
-  // other content category already enforces unique ids (status, verb, ability,
-  // per-entity inventory items); entities/zones were the gap. Non-string ids
-  // are skipped here — element shape is the per-type validators' job.
-  const entityIds = new Set<string>();
-  for (const entity of entities) {
-    const id = (entity as { id?: unknown }).id;
-    if (typeof id !== 'string') continue;
-    if (entityIds.has(id)) {
-      errors.push({
-        path: `${path}.entity(${id}).id`,
-        message: `duplicate entity id "${id}" — entity ids must be unique; rename one of the copies (at load, the later definition silently replaces the earlier one)`,
-      });
-    }
-    entityIds.add(id);
-  }
-  const zoneIds = new Set<string>();
-  for (const zone of zones) {
-    const id = (zone as { id?: unknown }).id;
-    if (typeof id !== 'string') continue;
-    if (zoneIds.has(id)) {
-      errors.push({
-        path: `${path}.zone(${id}).id`,
-        message: `duplicate zone id "${id}" — zone ids must be unique; rename one of the copies (at load, the later definition silently replaces the earlier one)`,
-      });
-    }
-    zoneIds.add(id);
-  }
+  // Build the id registries WITH duplicate detection (v2.5 PC-4, F-9c5db864).
+  // A plain `new Set(map(id))` silently dedups, so a copy-pasted record whose
+  // id was never renamed passed validation clean and then silently clobbered
+  // at WorldStore / MODULE_INTAKE last-wins — one authored thing missing from
+  // the shipped game with zero diagnostic.
+  const entityIds = collectUniqueIds(entities, 'entity', (id) => `${path}.entity(${id}).id`, errors);
+  const zoneIds = collectUniqueIds(zones, 'zone', (id) => `${path}.zone(${id}).id`, errors);
+  collectUniqueIds(dialogues, 'dialogue', (id) => `${path}.dialogue(${id}).id`, errors);
+  collectUniqueIds(quests, 'quest', (id) => `${path}.quest(${id}).id`, errors);
 
   // Zone neighbors must reference existing zones
   for (const zone of zones) {
@@ -301,6 +300,7 @@ export function validateRefs(pack: ContentPack): RefsResult {
   // an error — intake last-wins (`zoneToDistrict[zoneId] = def.id`), so the
   // earlier claim silently disappears.
   const districts = (Array.isArray(pack.districts) ? pack.districts : []).filter(isRecord) as NonNullable<ContentPack['districts']>;
+  collectUniqueIds(districts, 'district', (id) => `${path}.district(${id}).id`, errors);
   const claimedZones = new Map<string, string>();
   for (let i = 0; i < districts.length; i++) {
     const d = districts[i];
@@ -331,11 +331,7 @@ export function validateRefs(pack: ContentPack): RefsResult {
   // a DroppedField later. Shape (array-of-string) is validateZoneDefinition's
   // job; a non-array is skipped here so this pass never spreads a string.
   const hazardDefs = (Array.isArray(pack.hazardDefinitions) ? pack.hazardDefinitions : []).filter(isRecord) as NonNullable<ContentPack['hazardDefinitions']>;
-  const hazardIds = new Set<string>();
-  for (const h of hazardDefs) {
-    const id = (h as { id?: unknown }).id;
-    if (typeof id === 'string') hazardIds.add(id);
-  }
+  const hazardIds = collectUniqueIds(hazardDefs, 'hazard', (id) => `${path}.hazard(${id}).id`, errors);
   for (const zone of zones) {
     const refs = (zone as { hazardRefs?: unknown }).hazardRefs;
     if (!Array.isArray(refs)) continue;
@@ -392,18 +388,9 @@ export function validateRefs(pack: ContentPack): RefsResult {
   }
 
   const anchors = (Array.isArray(pack.encounterAnchors) ? pack.encounterAnchors : []).filter(isRecord) as NonNullable<ContentPack['encounterAnchors']>;
-  const anchorIds = new Set<string>();
+  collectUniqueIds(anchors, 'encounter anchor', (id, i) => `${path}.encounterAnchors[${i}].id`, errors);
   for (let i = 0; i < anchors.length; i++) {
     const a = anchors[i];
-    if (typeof a.id === 'string') {
-      if (anchorIds.has(a.id)) {
-        errors.push({
-          path: `${path}.encounterAnchors[${i}].id`,
-          message: `duplicate encounter anchor id "${a.id}" — anchor ids must be unique`,
-        });
-      }
-      anchorIds.add(a.id);
-    }
     if (typeof a.zoneId === 'string' && !zoneIds.has(a.zoneId)) {
       errors.push({
         path: `${path}.encounterAnchors[${i}](${a.id}).zoneId`,
@@ -435,11 +422,8 @@ export function validateRefs(pack: ContentPack): RefsResult {
   // pack does not declare, so refusing would break valid content. But a gate
   // whose item matches nothing in a pack that HAS an item catalog is almost
   // always a typo, and saying so costs nothing.
-  const itemIds = new Set<string>();
-  for (const item of (Array.isArray(pack.items) ? pack.items : []).filter(isRecord)) {
-    const id = (item as { id?: unknown }).id;
-    if (typeof id === 'string') itemIds.add(id);
-  }
+  const itemRecords = (Array.isArray(pack.items) ? pack.items : []).filter(isRecord) as Array<{ id?: unknown }>;
+  const itemIds = collectUniqueIds(itemRecords, 'item', (id) => `${path}.item(${id}).id`, errors);
   const memberIds = new Set<string>(entityIds);
   for (const zone of zones) {
     const gate = (zone as { entryGate?: { conditions?: unknown[] } }).entryGate;

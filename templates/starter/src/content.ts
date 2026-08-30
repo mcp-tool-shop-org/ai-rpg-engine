@@ -8,7 +8,7 @@ export const manifest: GameManifest = {
     id: 'my-game',
     title: 'My Game',
     version: '0.1.0',
-    engineVersion: '0.1.0',
+    engineVersion: '>=3.8.0 <4.0.0',
     ruleset: 'my-game',
     modules: ['traversal-core', 'status-core', 'combat-core'],
     contentPacks: ['my-game'],
@@ -29,6 +29,7 @@ export const packMeta = {
     name: 'My Game',
     description: 'A brief description of your game',
     version: '0.1.0',
+    engineVersion: '>=3.8.0 <4.0.0',
 };
 
 // ═══════════════════════════════════════════════════════════════════

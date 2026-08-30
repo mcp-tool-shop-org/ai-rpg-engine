@@ -478,6 +478,50 @@ describe('C1/P1 — module-owned channels', () => {
     );
     expect(r.ok).toBe(false);
   });
+
+  it('F-f7358f53: a throwing channel does not rethrow and rolls back core writes', () => {
+    const engine = bootEngine();
+    let result!: ReturnType<typeof applyContentPack>;
+    expect(() => {
+      result = applyContentPack(
+        engine,
+        {
+          zones: [{ id: 'z', name: 'Z' }],
+          districts: [{ id: 'd', name: 'D', zoneIds: ['z'], tags: [] }],
+        },
+        {
+          channels: [{
+            key: 'districts',
+            apply: () => {
+              throw new Error('garbage district');
+            },
+          }],
+        },
+      );
+    }).not.toThrow();
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => e.path === 'pack.districts' && e.message.includes('threw') && e.message.includes('districts'))).toBe(true);
+    expect(engine.world.zones.z).toBeUndefined();
+    expect(result.applied.zones).toBeUndefined();
+  });
+
+  it('F-f7358f53: duplicate channel keys warn and keep the first handler', () => {
+    const engine = bootEngine();
+    const order: string[] = [];
+    const r = applyContentPack(
+      engine,
+      { districts: [{ id: 'd', name: 'D', zoneIds: [], tags: [] }] },
+      {
+        channels: [
+          { key: 'districts', apply: () => { order.push('first'); return { applied: 1 }; } },
+          { key: 'districts', apply: () => { order.push('second'); return { applied: 99 }; } },
+        ],
+      },
+    );
+    expect(order).toEqual(['first']);
+    expect(r.applied.districts).toBe(1);
+    expect(r.advisories.some((a) => a.path === 'channels.districts' && a.message.includes('duplicate intake channel key'))).toBe(true);
+  });
 });
 
 // --- The session-scoped split (a correction this cycle earned) -------------

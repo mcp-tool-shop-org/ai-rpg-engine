@@ -111,6 +111,49 @@ function describe(v: unknown): string {
   return typeof v;
 }
 
+const CORE_SUMMARY_KEYS = ['entities', 'zones', 'dialogues', 'quests'] as const;
+
+/**
+ * Human-readable collection counts for the load report.
+ * The four core keys always appear first (even at 0) so existing tests that
+ * match '2 entities' / '1 zones' still pass. Other REFS_ITERATED_KEYS collections
+ * are named only when present (F-da9018b8).
+ */
+function formatCollectionCounts(pack: ContentPack): string {
+  const raw = pack as unknown as Record<string, unknown>;
+  const parts: string[] = [];
+  for (const key of CORE_SUMMARY_KEYS) {
+    const v = raw[key];
+    parts.push(`${Array.isArray(v) ? v.length : 0} ${key}`);
+  }
+  for (const key of REFS_ITERATED_KEYS) {
+    if ((CORE_SUMMARY_KEYS as readonly string[]).includes(key)) continue;
+    const v = raw[key];
+    if (v === undefined) continue;
+    if (Array.isArray(v)) parts.push(`${v.length} ${key}`);
+  }
+  return parts.join(', ');
+}
+
+function collectDuplicateIds(items: unknown[], pathKey: string, kind: string): ValidationError[] {
+  const seen = new Set<string>();
+  const errors: ValidationError[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (!isPlainObject(item)) continue;
+    const id = item.id;
+    if (typeof id !== 'string') continue;
+    if (seen.has(id)) {
+      errors.push({
+        path: `${pathKey}[${i}](${id}).id`,
+        message: `duplicate ${kind} id "${id}" — ${kind} ids must be unique; rename one of the copies (at load, the later definition silently replaces the earlier one)`,
+      });
+    }
+    seen.add(id);
+  }
+  return errors;
+}
+
 export function loadContent(pack: ContentPack): LoadResult {
   // CA-02: guard the boundary first. If the pack shape is wrong, bail with structured
   // errors rather than iterating into a TypeError or silently returning ok:true.
@@ -195,6 +238,13 @@ export function loadContent(pack: ContentPack): LoadResult {
     allErrors.push(...validateDistrictDefinition(d, label).errors);
   }
 
+  // F-9c5db864: pack-level uniqueness for abilities/statuses lives on this
+  // load path (validateAbilityPack / validateStatusDefinitionPack are catalog
+  // helpers that need a ruleset; inline the seenIds loop so a duplicate id
+  // cannot loadContent-green).
+  allErrors.push(...collectDuplicateIds(pack.abilities ?? [], 'abilities', 'ability'));
+  allErrors.push(...collectDuplicateIds(pack.statuses ?? [], 'statuses', 'status'));
+
   // Cross-reference validation. validateRefs reads .id off elements, so only run it once
   // per-element structural validation has confirmed shapes (errors above already flag bad
   // elements). It is null-safe for the fields it touches here.
@@ -204,12 +254,7 @@ export function loadContent(pack: ContentPack): LoadResult {
   }
 
   const ok = allErrors.length === 0;
-  const counts = [
-    `${(pack.entities ?? []).length} entities`,
-    `${(pack.zones ?? []).length} zones`,
-    `${(pack.dialogues ?? []).length} dialogues`,
-    `${(pack.quests ?? []).length} quests`,
-  ].join(', ');
+  const counts = formatCollectionCounts(pack);
 
   const summary = ok
     ? `Content loaded: ${counts}`

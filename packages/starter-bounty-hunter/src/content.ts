@@ -34,7 +34,7 @@ export const manifest: GameManifest = {
   id: 'hue-and-cry',
   title: 'Hue and Cry',
   version: '0.1.0',
-  engineVersion: '0.1.0',
+  engineVersion: '>=3.8.0 <4.0.0',
   ruleset: 'bounty-hunter-minimal',
   modules: ['traversal-core', 'status-core', 'combat-core', 'inventory-core', 'dialogue-core'],
   contentPacks: ['hue-and-cry'],
@@ -807,7 +807,7 @@ export const packMeta: PackMetadata = {
   // proto-noir, a century before the word. noir+tense is unclaimed.
   tones: ['noir', 'tense'],
   tags: ['bounty', 'thief-taker', 'pursuit', 'informants', 'double-life', 'early-modern'],
-  engineVersion: '3.0.0',
+  engineVersion: '>=3.8.0 <4.0.0',
   version: '3.8.0',
   description: 'Take thieves for money in a city with no police. Buy words from informants, post prices on names, fence what comes back — and decide, one job at a time, whether you are the office’s man or the ward’s.',
   narratorTone: 'plain, unhurried, period-precise, unsentimental about hanging',

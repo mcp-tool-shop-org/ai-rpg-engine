@@ -21,7 +21,7 @@ export const manifest: GameManifest = {
   id: 'salt-road-ledger',
   title: 'Salt Road Ledger',
   version: '0.1.0',
-  engineVersion: '0.1.0',
+  engineVersion: '>=3.8.0 <4.0.0',
   ruleset: 'merchant-minimal',
   modules: ['traversal-core', 'status-core', 'combat-core', 'inventory-core', 'dialogue-core'],
   contentPacks: ['salt-road-ledger'],
@@ -914,7 +914,7 @@ export const packMeta: PackMetadata = {
   // (rubric dimension 4). The register is wry-then-ruinous, not jokey.
   tones: ['comedic', 'tense'],
   tags: ['trade', 'debt', 'obligation', 'ledger', 'escrow', 'audio-coin-count'],
-  engineVersion: '3.0.0',
+  engineVersion: '>=3.8.0 <4.0.0',
   version: '3.5.0',
   description: 'Trade on someone else’s capital along the Salt Road. Appraise, haggle, and consign goods you do not own — then keep the liens from closing over you before the Crown audits your books.',
   narratorTone: 'mercantile, wry, precise about money, quietly ruinous',

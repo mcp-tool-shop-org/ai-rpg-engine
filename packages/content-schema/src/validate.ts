@@ -66,9 +66,25 @@ function reqStr(c: Checker, obj: Record<string, unknown>, field: string): void {
   }
 }
 
+function describeNumber(v: unknown): string {
+  if (typeof v !== 'number') return v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v;
+  if (Number.isNaN(v)) return 'NaN';
+  if (v === Infinity) return 'Infinity';
+  if (v === -Infinity) return '-Infinity';
+  return String(v);
+}
+
+/** Non-finite numbers (NaN / ±Infinity, including JSON 1e1000 overflow) are authoring errors, not values to clamp. */
+function finiteNumMessage(field: string, v: unknown, required: boolean): string {
+  const got = describeNumber(v);
+  const requirement = required ? 'required finite number' : `must be a finite number if provided`;
+  return `${requirement} (got ${got}) — NaN/Infinity is an authoring error, not a value to clamp. Set ${field} to a finite number (JSON 1e1000 overflows to Infinity).`;
+}
+
 function reqNum(c: Checker, obj: Record<string, unknown>, field: string): void {
-  if (typeof obj[field] !== 'number') {
-    c.errors.push({ path: `${c.path}.${field}`, message: `required number` });
+  const v = obj[field];
+  if (typeof v !== 'number' || !Number.isFinite(v)) {
+    c.errors.push({ path: `${c.path}.${field}`, message: finiteNumMessage(field, v, true) });
   }
 }
 
@@ -81,8 +97,9 @@ function optStr(c: Checker, obj: Record<string, unknown>, field: string): void {
 
 function optNum(c: Checker, obj: Record<string, unknown>, field: string): void {
   const v = obj[field];
-  if (v !== undefined && typeof v !== 'number') {
-    c.errors.push({ path: `${c.path}.${field}`, message: `must be a number if provided` });
+  if (v === undefined) return;
+  if (typeof v !== 'number' || !Number.isFinite(v)) {
+    c.errors.push({ path: `${c.path}.${field}`, message: finiteNumMessage(field, v, false) });
   }
 }
 
@@ -121,7 +138,14 @@ function optRecord(c: Checker, obj: Record<string, unknown>, field: string, valT
     return;
   }
   for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
-    if (typeof val !== valType) {
+    if (valType === 'number') {
+      if (typeof val !== 'number' || !Number.isFinite(val)) {
+        c.errors.push({
+          path: `${c.path}.${field}.${k}`,
+          message: finiteNumMessage(`${field}.${k}`, val, false),
+        });
+      }
+    } else if (typeof val !== valType) {
       c.errors.push({ path: `${c.path}.${field}.${k}`, message: `must be a ${valType}` });
     }
   }
@@ -375,7 +399,10 @@ export function validateStatusDefinitionPack(
     const id = def.id;
     if (typeof id === 'string') {
       if (seenIds.has(id)) {
-        errors.push({ path: `${defPath}.id`, message: `duplicate status id "${id}"` });
+        errors.push({
+          path: `${defPath}.id`,
+          message: `duplicate status id "${id}" — status ids must be unique; rename one of the copies`,
+        });
       }
       seenIds.add(id);
     }
@@ -524,7 +551,7 @@ export function validateEncounterAnchorRecord(v: unknown, path = 'EncounterAncho
   reqEnum(c, v, 'encounterType', [...ENCOUNTER_ANCHOR_TYPES]);
   reqStrArr(c, v, 'enemyIds');
   reqNum(c, v, 'probability');
-  if (typeof v.probability === 'number' && (!Number.isFinite(v.probability) || v.probability < 0 || v.probability > 1)) {
+  if (typeof v.probability === 'number' && Number.isFinite(v.probability) && (v.probability < 0 || v.probability > 1)) {
     c.errors.push({
       path: `${path}.probability`,
       message: 'must be a finite number in [0, 1] — a spawn chance outside that range is an authoring error, not a value to clamp',
@@ -1057,7 +1084,10 @@ export function validateAbilityPack(
     const id = ab.id;
     if (typeof id === 'string') {
       if (seenIds.has(id)) {
-        errors.push({ path: `${abPath}.id`, message: `duplicate ability id "${id}"` });
+        errors.push({
+          path: `${abPath}.id`,
+          message: `duplicate ability id "${id}" — ability ids must be unique; rename one of the copies`,
+        });
       }
       seenIds.add(id);
     }

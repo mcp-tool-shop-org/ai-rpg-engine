@@ -442,6 +442,16 @@ export function applyContentPack(
     }
   }
 
+  // Snapshot before core writes so a throwing module channel can roll the
+  // world back (F-f7358f53). structuredClone can fail if module state holds
+  // closures; in that case we still catch the throw and skip rollback.
+  let preApply: unknown;
+  try {
+    preApply = structuredClone(engine.store.state);
+  } catch {
+    preApply = undefined;
+  }
+
   // --- zones (core-only) ---
   const zones = pack.zones ?? [];
   if (!Array.isArray(zones)) {
@@ -589,10 +599,25 @@ export function applyContentPack(
   }
 
   // --- module-owned channels (injected) ---
+  // First-wins on duplicate keys, with an advisory — last-wins silently
+  // dropped the first handler (F-f7358f53).
   const byKey = new Map<string, IntakeChannel>();
-  for (const ch of options.channels ?? []) byKey.set(ch.key, ch);
+  for (const ch of options.channels ?? []) {
+    if (byKey.has(ch.key)) {
+      advisories.push({
+        path: `channels.${ch.key}`,
+        message:
+          `duplicate intake channel key "${ch.key}" — channel keys must be unique; ` +
+          'the first channel for this key is used and later copies are ignored. ' +
+          'Rename one of the copies or drop the duplicate.',
+      });
+      continue;
+    }
+    byKey.set(ch.key, ch);
+  }
 
   const raw = pack as unknown as Record<string, unknown>;
+  let channelThrew = false;
   for (const key of MODULE_INTAKE_KEYS) {
     if (raw[key] === undefined) continue;
     const channel = byKey.get(key);
@@ -605,10 +630,34 @@ export function applyContentPack(
       });
       continue;
     }
-    const report = channel.apply(engine, raw[key]);
+    let report: ChannelReport;
+    try {
+      report = channel.apply(engine, raw[key]);
+    } catch (err) {
+      channelThrew = true;
+      const reason = err instanceof Error ? err.message : String(err);
+      errors.push({
+        path: `pack.${key}`,
+        message:
+          `intake channel "${key}" threw: ${reason} — wrap channel.apply so garbage in this collection ` +
+          'becomes a structured error, not a raw throw. The pack was not applied (rolled back).',
+      });
+      break;
+    }
     if (report.errors?.length) errors.push(...report.errors);
     if (report.dropped?.length) dropped.push(...report.dropped);
     applied[key] = report.applied;
+  }
+
+  if (channelThrew && preApply !== undefined && isRecord(preApply)) {
+    const state = engine.store.state as unknown as Record<string, unknown>;
+    const restored = structuredClone(preApply) as Record<string, unknown>;
+    for (const key of Object.keys(state)) {
+      if (!(key in restored)) delete state[key];
+    }
+    Object.assign(state, restored);
+    for (const key of CORE_INTAKE_KEYS) delete applied[key];
+    for (const key of MODULE_INTAKE_KEYS) delete applied[key];
   }
 
   // Any channel supplied for a key the pack does not carry is worth saying —
