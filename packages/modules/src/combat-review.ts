@@ -366,7 +366,10 @@ export function createCombatReview(config: CombatReviewConfig): {
       // 2. combat.contact.hit
       ctx.events.on('combat.contact.hit', (event, world) => {
         if (!pending) return;
-        pending.outcome = 'hit';
+        // Intercept emits contact.hit + damage.applied on the interceptor
+        // after combat.companion.intercepted (F-165d681b). Do not overwrite
+        // the intercepted outcome with a plain hit.
+        if (pending.outcome !== 'intercepted') pending.outcome = 'hit';
         pending.roll = event.payload.roll as number;
         const hitTrace = buildHitChanceTrace(event.payload.hitChance as number, world);
         if (hitTrace) pending.formulas!.push(hitTrace);

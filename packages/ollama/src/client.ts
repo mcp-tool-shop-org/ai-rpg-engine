@@ -179,6 +179,12 @@ export function createClient(config: OllamaConfig, options?: OllamaClientOptions
             await sleep(retryDelayMs);
             continue;
           }
+          if (attempt >= maxAttempts && isRetryableFetchError(err)) {
+            const reason = err instanceof DOMException
+              ? `timeout after ${timeoutMs}ms`
+              : `network error: ${err.message || 'fetch failed'}`;
+            return { ok: false, error: `Ollama request failed: too many attempts (max retries exceeded) (${reason}). ${offlineHint(config.baseUrl)}` };
+          }
           const message = err instanceof Error ? err.message : String(err);
           return { ok: false, error: `Ollama request failed: ${message}. ${offlineHint(config.baseUrl)}` };
         }

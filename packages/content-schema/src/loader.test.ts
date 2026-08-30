@@ -220,7 +220,7 @@ describe('loadContent', () => {
   });
 
   it('F-9c5db864: duplicate ability ids fail loadContent with a unique-id error', () => {
-    const ability = { id: 'slash', name: 'Slash', verb: 'attack', tags: [], effects: [] };
+    const ability = { id: 'slash', name: 'Slash', verb: 'attack', tags: [], effects: [], target: { type: 'single' as const } };
     const r = loadContent({ abilities: [ability, { ...ability }] });
     expect(r.ok).toBe(false);
     expect(r.errors.some((e) => e.message.includes('duplicate ability id "slash"') && e.message.includes('unique'))).toBe(true);

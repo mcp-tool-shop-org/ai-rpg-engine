@@ -796,6 +796,7 @@ describe('typed-hazard durationTicks apply-tick pulse and refresh clock (F-7793d
 
   it("F-bc6233d3: durationTicks:1 tickOn turn-end on-enter then one wait deals on the wait, not the enter round; turn-start still deals on enter", () => {
     function enterThenWait(tickOn: 'turn-start' | 'turn-end') {
+      unregisterTypedHazards(GAME_ID);
       const engine = createTestEngine({
         modules: [traversalCore, statusCore, waitModule, createEnvironmentCore()],
         entities: [makePlayer()],

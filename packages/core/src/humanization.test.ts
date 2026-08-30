@@ -272,6 +272,7 @@ describe('F-447f5abe — partial-entity accessors do not TypeError', () => {
       name: 'Bare',
       tags: [],
       stats: {},
+      resources: {},
       statuses: [],
     } as EntityState;
     expect(() => store.modifyResource('nores', 'hp', 5)).not.toThrow();

@@ -2048,7 +2048,10 @@ function runLeverageIncomeStep(
   if (xpGained !== 0) {
     gains = mergeLeverageGains(gains, computeLeverageGains({ xpGained }));
   }
-  if (reputationDelta) {
+  // Skip reputationDelta on a tick that already granted pressureResolution
+  // (F-bdd030b2 pin: resolve-pressure favor+10 must not also stack the
+  // reputation-gain favor+5 from the same bounty clearing).
+  if (reputationDelta && !playerResolvedFallout) {
     gains = mergeLeverageGains(
       gains,
       computeLeverageGains({ xpGained: 0, reputationDelta }),

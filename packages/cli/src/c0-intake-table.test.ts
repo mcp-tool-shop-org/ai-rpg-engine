@@ -260,9 +260,11 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
     expect(result.ok).toBe(true);
   });
 
-  it('the summary counts only the four keys the loader knows about', () => {
-    // 3 entities, 3 zones, 1 dialogue, 0 quests — of TWELVE top-level keys.
-    expect(result.summary).toBe('Content loaded: 3 entities, 3 zones, 1 dialogues, 0 quests');
+  it('the summary names every present refs-iterated collection (F-da9018b8)', () => {
+    // Four cores first, then every present REFS_ITERATED_KEYS collection.
+    expect(result.summary).toBe(
+      'Content loaded: 3 entities, 3 zones, 1 dialogues, 0 quests, 3 placements, 1 encounterAnchors, 4 hazardDefinitions, 3 items, 2 districts',
+    );
   });
 
   it('SILENT PASS: the remaining unknown keys are preserved and never mentioned', () => {
@@ -290,8 +292,9 @@ describe('C0/P2 — instrument 1: the real loader on the real exported pack', ()
     for (const k of unknown) {
       expect(loadedPack[k], `${k} should be preserved verbatim`).toEqual(raw[k]);
     }
-    // …and none of them appears anywhere in the report the user reads.
-    for (const k of unknown) {
+    // items now appears in the summary (F-da9018b8). Keys the loader still
+    // does not iterate stay unnamed.
+    for (const k of ['factionPresences', 'playerTemplate', 'pressureHotspots']) {
       expect(result.summary).not.toContain(k);
     }
 

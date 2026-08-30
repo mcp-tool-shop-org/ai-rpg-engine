@@ -339,7 +339,7 @@ describe('runCli — stdin byte budget (F-999d9ed1)', () => {
 
     expect(process.exitCode).toBe(1);
     expect(stderrText()).toContain('BUDGET_EXCEEDED');
-    expect(stderrText()).toMatch(/budget exceeded/i);
+    expect(stderrText()).toMatch(/byte budget/i);
     expect(fetchSpy).not.toHaveBeenCalled();
     const oversizedParses = parseSpy.mock.calls.filter(
       ([arg]) => typeof arg === 'string' && arg.length > MAX_REPLAY_JSON_BYTES,
