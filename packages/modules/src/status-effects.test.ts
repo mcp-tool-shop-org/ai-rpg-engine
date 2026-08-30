@@ -297,6 +297,23 @@ describe('processPeriodicStatuses — DoT/HoT', () => {
     expect(events.filter(ev => ev.type === 'status.periodic.damage')).toHaveLength(0);
     expect(e.resources.hp).toBe(0);
   });
+
+  it('a second processPeriodicStatuses on the same tick does not double-hit (F-7793de81)', () => {
+    const e = makeEntity({ resources: { hp: 20, maxHp: 20 } });
+    const world = makeWorld([e], 0);
+    applyStatus(e, 'burning', 0, {
+      duration: 4,
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 3 },
+    }, world);
+
+    const first = processPeriodicStatuses(world, 0);
+    const hpAfterFirst = e.resources.hp;
+    const second = processPeriodicStatuses(world, 0);
+
+    expect(first.filter(ev => ev.type === 'status.periodic.damage')).toHaveLength(1);
+    expect(second.filter(ev => ev.type === 'status.periodic.damage')).toHaveLength(0);
+    expect(e.resources.hp).toBe(hpAfterFirst);
+  });
 });
 
 // ---------------------------------------------------------------------------
