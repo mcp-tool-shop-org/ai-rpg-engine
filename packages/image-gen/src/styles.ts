@@ -48,7 +48,20 @@ export const STYLE_PRESETS: StylePreset[] = [
     style: 'historical portrait painting, period-accurate clothing, classical composition, natural lighting',
     negativePrompt: 'modern clothing, technology, cartoon, anime, blurry, deformed',
   },
+  {
+    genre: 'pursuit',
+    style: 'thief-taker portrait, dusty warrants and folded paper, frontier coats and badge metal, lantern light, weathered leather, oil painting',
+    negativePrompt: 'neon, chrome, spaceship, cartoon, anime, blurry, deformed',
+  },
+  {
+    genre: 'mercantile',
+    style: 'caravanserai merchant portrait, ledgers and coin, trade-road cloth, spice-market lanterns, silk and warm earth palette, painterly',
+    negativePrompt: 'combat armor, neon, cartoon, anime, blurry, deformed',
+  },
 ];
+
+/** Generic fallback used only when `genre` is not in {@link STYLE_PRESETS}. */
+export const GENERIC_STYLE = 'detailed character portrait, cinematic lighting, painterly style';
 
 /** Look up style preset by genre. Returns a generic preset if genre not found. */
 export function getStylePreset(genre: string): StylePreset {
@@ -56,7 +69,7 @@ export function getStylePreset(genre: string): StylePreset {
   if (preset) return preset;
   return {
     genre,
-    style: 'detailed character portrait, cinematic lighting, painterly style',
+    style: GENERIC_STYLE,
     negativePrompt: 'blurry, deformed, low quality, cartoon',
   };
 }

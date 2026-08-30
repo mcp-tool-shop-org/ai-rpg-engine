@@ -82,6 +82,28 @@ describe('PlaceholderProvider', () => {
     expect(svgA).not.toBe(svgB);
   });
 
+  it('uses title/class as subtitle, not the SD prompt (F-e27ee3c1)', async () => {
+    const prompt = 'Portrait of Aldric, Grave Warden, Penitent Knight and Occultist, Oath-Breaker origin, known for being Iron Frame and Cursed Blood, dark fantasy oil painting, dramatic lighting, detailed armor and cloth textures, medieval setting';
+    const result = await generate(prompt);
+    const svg = new TextDecoder().decode(result.image);
+
+    expect(svg).toContain('Grave Warden');
+    expect(svg).not.toContain('dark fantasy oil painting');
+    expect(svg).not.toContain('Portrait of Aldric, Grave Warden, Penitent Knight and Occ');
+    expect(svg).toMatch(/<title[^>]*>Portrait placeholder: Aldric<\/title>/);
+    expect(svg).toContain('role="img"');
+    expect(svg).toMatch(/>(placeholder)</);
+    expect(svg).toContain('fill="#ffffff"');
+    expect(svg).toContain('clip-path=');
+  });
+
+  it('falls back to archetype when the prompt has no title', async () => {
+    const result = await generate('Portrait of Aldric, Penitent Knight, Oath-Breaker origin, dark fantasy oil painting');
+    const svg = new TextDecoder().decode(result.image);
+    expect(svg).toContain('Penitent Knight');
+    expect(svg).not.toContain('dark fantasy oil painting');
+  });
+
   // PM-04: initials are interpolated into <text>; they must be XML-escaped like the subtitle.
   it('escapes XML-special characters in the initials', async () => {
     // Prompt -> name "<x" -> initials "<". The bold text node renders the initials.

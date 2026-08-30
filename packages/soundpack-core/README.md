@@ -78,10 +78,16 @@ Gameplay modules emit cue ids in their own vocabulary (`combat.hit`, `ability.ho
 | `combat.hit` | `alert_warning` | exact |
 | `combat.defeat` | `alert_critical` | exact |
 | `combat.victory` | `ui_success` | exact |
+| `gate.refused` | `ui_error` | exact |
 | `scene.enter` | `ui_whoosh` | exact |
+| `scene.*-reveal` | `ui_whoosh` | exact |
+| `scene.arena-roar` | `alert_info` | exact |
+| `scene.conviction` | `ui_success` | exact |
+| `scene.seizure` | `alert_warning` | exact |
 | `ability.*` | `ui_pop` | namespace |
 | `scene.*` | `ui_attention` | namespace |
 | `combat.*` | `alert_warning` | namespace |
+| `gate.*` | `ui_error` | namespace |
 | anything else | `ui_notification` | fallback |
 
 ```typescript

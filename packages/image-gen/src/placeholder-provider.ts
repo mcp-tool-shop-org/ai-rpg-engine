@@ -24,28 +24,83 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
+/**
+ * Pull character name plus title/class from an engine portrait prompt.
+ * Engine prompts are `Portrait of {name}[, {title}], {archetype}…, {origin}, {style}`.
+ * Style/origin/trait tails are dropped so the subtitle is the class or title,
+ * not a mid-prompt fragment of the SD string (F-e27ee3c1).
+ */
+function extractNameAndSubtitle(prompt: string): { name: string; subtitle: string } {
+  const nameMatch = prompt.match(/Portrait of ([^,]+)/);
+  const name = (nameMatch?.[1] ?? 'Unknown').trim() || 'Unknown';
+  const afterName = nameMatch
+    ? prompt.slice((nameMatch.index ?? 0) + nameMatch[0].length).replace(/^,\s*/, '')
+    : '';
+  const identity: string[] = [];
+  for (const raw of afterName.split(',')) {
+    const seg = raw.trim();
+    if (!seg) continue;
+    const lower = seg.toLowerCase();
+    if (/\borigin\b/.test(lower)) break;
+    if (/^known for being\b/.test(lower)) break;
+    if (/^[.…]+$/.test(seg)) break;
+    if (/\b(oil painting|digital art|concept art|cinematic lighting|painterly|illustration|neon lighting|dramatic lighting|high contrast)\b/i.test(seg)) {
+      break;
+    }
+    identity.push(seg.replace(/[.…]+$/u, '').trim());
+  }
+  return { name, subtitle: identity.find(Boolean) ?? '' };
+}
+
+function clipId(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return Math.abs(hash).toString(36);
+}
+
 /** Generate an SVG portrait placeholder. */
 function generateSvg(
   name: string,
-  prompt: string,
+  subtitle: string,
   width: number,
   height: number,
 ): Uint8Array {
   const bg = stringToColor(name);
   const letters = initials(name) || '??';
   const fontSize = Math.floor(Math.min(width, height) * 0.35);
-  const subtitleSize = Math.floor(fontSize * 0.22);
-
-  // Extract the class/title from the prompt for subtitle
-  const subtitle = prompt.length > 60 ? prompt.slice(0, 57) + '...' : prompt;
+  const subtitleSize = Math.max(10, Math.floor(fontSize * 0.22));
+  const markSize = Math.max(10, Math.floor(Math.min(width, height) * 0.04));
+  const pad = Math.max(12, Math.floor(width * 0.05));
+  const clipW = Math.max(1, width - pad * 2);
+  const subY = height * 0.72;
+  const clipH = Math.max(subtitleSize * 1.6, 1);
+  const id = clipId(name);
+  const clipPathId = `ph-clip-${id}`;
+  const titleId = `ph-title-${id}`;
+  const maxChars = Math.max(8, Math.floor(clipW / (subtitleSize * 0.55)));
+  const shown = subtitle.length > maxChars
+    ? `${subtitle.slice(0, Math.max(1, maxChars - 1))}\u2026`
+    : subtitle;
 
   const svg = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="${titleId}">`,
+    `  <title id="${titleId}">Portrait placeholder: ${escapeXml(name)}</title>`,
+    `  <desc>Initials placeholder for ${escapeXml(name)}${shown ? `, ${escapeXml(shown)}` : ''}. Not a final portrait.</desc>`,
+    `  <defs>`,
+    `    <clipPath id="${clipPathId}">`,
+    `      <rect x="${pad}" y="${subY - clipH * 0.75}" width="${clipW}" height="${clipH}"/>`,
+    `    </clipPath>`,
+    `  </defs>`,
     `  <rect width="${width}" height="${height}" fill="${bg}"/>`,
-    `  <text x="${width / 2}" y="${height * 0.45}" font-size="${fontSize}" fill="rgba(255,255,255,0.9)" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-weight="bold">${escapeXml(letters)}</text>`,
-    `  <text x="${width / 2}" y="${height * 0.72}" font-size="${subtitleSize}" fill="rgba(255,255,255,0.5)" text-anchor="middle" font-family="sans-serif">${escapeXml(subtitle)}</text>`,
+    `  <text x="${width / 2}" y="${height * 0.45}" font-size="${fontSize}" fill="#ffffff" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-weight="bold">${escapeXml(letters)}</text>`,
+    shown
+      ? `  <text x="${width / 2}" y="${subY}" font-size="${subtitleSize}" fill="#ffffff" text-anchor="middle" font-family="sans-serif" clip-path="url(#${clipPathId})">${escapeXml(shown)}</text>`
+      : '',
+    `  <text x="${width - pad}" y="${height - pad}" font-size="${markSize}" fill="#ffffff" text-anchor="end" font-family="sans-serif">placeholder</text>`,
     `</svg>`,
-  ].join('\n');
+  ].filter((line) => line.length > 0).join('\n');
 
   return new TextEncoder().encode(svg);
 }
@@ -62,11 +117,8 @@ export class PlaceholderProvider implements ImageProvider {
     const height = opts?.height ?? 512;
     const start = Date.now();
 
-    // Extract character name from prompt (first "Portrait of X," segment)
-    const nameMatch = prompt.match(/Portrait of ([^,]+)/);
-    const charName = nameMatch?.[1] ?? 'Unknown';
-
-    const image = generateSvg(charName, prompt, width, height);
+    const { name, subtitle } = extractNameAndSubtitle(prompt);
+    const image = generateSvg(name, subtitle, width, height);
 
     // Local + synchronous: this provider has no failure modes, so it always
     // resolves the ok:true arm of the GenerationOutcome contract.
