@@ -54,6 +54,8 @@ export type PollErrorInfo = { status: number; attempt: number; url: string };
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_IMAGE_BYTES = 64 * 1024 * 1024;
+/** Cap for non-image HTTP bodies (queue error, queue JSON, history poll). */
+const ERROR_BODY_CAP = 64 * 1024;
 
 function defaultOnPollError(info: PollErrorInfo): void {
   console.error(
@@ -218,14 +220,23 @@ export async function readBodyCapped(res: Response, cap: number): Promise<Uint8A
   return out;
 }
 
+async function readTextCapped(res: Response, cap: number): Promise<string | 'too-large'> {
+  const bytes = await readBodyCapped(res, cap);
+  if (bytes === 'too-large') return 'too-large';
+  return new TextDecoder().decode(bytes);
+}
+
 export class ComfyUIProvider implements ImageProvider {
   readonly name = 'comfyui';
+  /** Checkpoint actually sent to KSampler (F-b36de2d4). */
+  readonly model: string;
   private readonly baseUrl: string;
   private readonly opts: ComfyUIProviderOptions;
 
   constructor(opts?: ComfyUIProviderOptions) {
     this.opts = opts ?? {};
     this.baseUrl = (opts?.baseUrl ?? 'http://localhost:8188').replace(/\/$/, '');
+    this.model = opts?.checkpoint ?? 'sd_xl_base_1.0.safetensors';
   }
 
   async isAvailable(): Promise<boolean> {
@@ -274,6 +285,14 @@ export class ComfyUIProvider implements ImageProvider {
     opts?: GenerationOptions,
   ): Promise<GenerationOutcome> {
     const mergedOpts = { ...this.opts, ...opts };
+    // GenerationOptions.model is the same checkpoint identity the pipeline
+    // keys portraits on (F-b36de2d4). Prefer it over the constructor default
+    // so identity and the workflow see one value.
+    if (typeof opts?.model === 'string' && opts.model.length > 0) {
+      mergedOpts.checkpoint = opts.model;
+    } else if (!mergedOpts.checkpoint) {
+      mergedOpts.checkpoint = this.model;
+    }
     // Resolve the effective seed exactly once (PA-1): the value sent to
     // KSampler and the value reported in the result must be the same number,
     // or the portrait can never be reproduced.
@@ -296,13 +315,28 @@ export class ComfyUIProvider implements ImageProvider {
     });
 
     if (!queueRes.ok) {
-      const text = await queueRes.text().catch(() => '(no body)');
-      return fail('http_error', `ComfyUI queue failed (HTTP ${queueRes.status}): ${excerpt(text)}`);
+      // F-3d137abb: cap before excerpt — queueRes.text() used to buffer the
+      // whole error page (proxy dump, busy daemon) then slice 200 chars.
+      const text = await readTextCapped(queueRes, ERROR_BODY_CAP);
+      if (text === 'too-large') {
+        return fail(
+          'http_error',
+          `ComfyUI queue failed (HTTP ${queueRes.status}): error body exceeded the ${ERROR_BODY_CAP}-byte cap`,
+        );
+      }
+      return fail('http_error', `ComfyUI queue failed (HTTP ${queueRes.status}): ${excerpt(text || '(no body)')}`);
     }
 
+    const queueBytes = await readBodyCapped(queueRes, ERROR_BODY_CAP);
+    if (queueBytes === 'too-large') {
+      return fail(
+        'invalid_response',
+        `ComfyUI queue response exceeded the ${ERROR_BODY_CAP}-byte cap`,
+      );
+    }
     let queueJson: { prompt_id?: unknown };
     try {
-      queueJson = (await queueRes.json()) as { prompt_id?: unknown };
+      queueJson = JSON.parse(new TextDecoder().decode(queueBytes)) as { prompt_id?: unknown };
     } catch {
       return fail(
         'invalid_response',
@@ -348,9 +382,16 @@ export class ComfyUIProvider implements ImageProvider {
         continue;
       }
 
+      const historyBytes = await readBodyCapped(historyRes, ERROR_BODY_CAP);
+      if (historyBytes === 'too-large') {
+        return fail(
+          'invalid_response',
+          `ComfyUI history response exceeded the ${ERROR_BODY_CAP}-byte cap`,
+        );
+      }
       let history: Record<string, HistoryEntry>;
       try {
-        history = (await historyRes.json()) as Record<string, HistoryEntry>;
+        history = JSON.parse(new TextDecoder().decode(historyBytes)) as Record<string, HistoryEntry>;
       } catch {
         // A 200 with a non-JSON body means we are not talking to ComfyUI;
         // retrying inside the deadline cannot fix that. Fail fast + typed.
@@ -431,7 +472,7 @@ export class ComfyUIProvider implements ImageProvider {
       negativePrompt: opts?.negativePrompt,
       // The seed actually used — never the (possibly absent) caller value (PA-1).
       seed,
-      model: this.opts.checkpoint ?? 'default',
+      model: mergedOpts.checkpoint ?? this.model,
       durationMs: Date.now() - start,
     };
   }

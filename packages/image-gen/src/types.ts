@@ -36,6 +36,12 @@ export type GenerationOptions = {
   steps?: number;
   /** Classifier-free guidance scale (diffusion models). */
   cfgScale?: number;
+  /**
+   * Model / checkpoint identifier that actually reaches the provider
+   * (F-b36de2d4). Same request with two checkpoints must not share a
+   * cached portrait.
+   */
+  model?: string;
 };
 
 /** Result from an image provider. */
@@ -92,6 +98,12 @@ export type GenerationOutcome = GenerationSuccess | GenerationFailure;
 export interface ImageProvider {
   /** Provider name (e.g. 'placeholder', 'comfyui', 'stable-diffusion'). */
   readonly name: string;
+  /**
+   * Optional model/checkpoint identifier. When set, the pipeline tags and
+   * matches portraits by this value so swapping weights cannot silently
+   * reuse a previous render (F-b36de2d4).
+   */
+  readonly model?: string;
   /**
    * Generate an image from a text prompt.
    *

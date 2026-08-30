@@ -95,7 +95,7 @@ export class SoundRegistry {
         });
       }
 
-      this.entries.set(entry.id, entry);
+      this.entries.set(entry.id, cloneEntry(entry));
       loaded++;
     }
 
@@ -116,14 +116,15 @@ export class SoundRegistry {
         const hasMood = q.mood.some((m) => entry.mood.includes(m));
         if (!hasMood) continue;
       }
-      results.push(entry);
+      results.push(cloneEntry(entry));
     }
     return results;
   }
 
-  /** Get a specific entry by ID. */
+  /** Get a specific entry by ID. Returned object is a clone (F-74ba230b). */
   get(id: string): SoundEntry | undefined {
-    return this.entries.get(id);
+    const entry = this.entries.get(id);
+    return entry ? cloneEntry(entry) : undefined;
   }
 
   /**
@@ -155,6 +156,16 @@ export class SoundRegistry {
   get size(): number {
     return this.entries.size;
   }
+}
+
+/** Copy tags/mood/variants so the Map is not aliased to caller handles (F-74ba230b). */
+function cloneEntry(entry: SoundEntry): SoundEntry {
+  return {
+    ...entry,
+    tags: Array.isArray(entry.tags) ? [...entry.tags] : [],
+    mood: Array.isArray(entry.mood) ? [...entry.mood] : [],
+    variants: Array.isArray(entry.variants) ? [...entry.variants] : [],
+  };
 }
 
 /** Human-readable type description for error messages. */

@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { MemoryAssetStore } from '@ai-rpg-engine/asset-registry';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { MemoryAssetStore, FileAssetStore } from '@ai-rpg-engine/asset-registry';
 import { PlaceholderProvider } from './placeholder-provider.js';
 import { generatePortrait, ensurePortrait, resolveProvider, ImageGenError, portraitIdentityTag } from './pipeline.js';
 import type { PortraitRequest, ImageProvider, GenerationOutcome, GenerationOptions } from './types.js';
@@ -423,7 +426,7 @@ describe('portrait identity is delimiter-safe (F-525d6bb6)', () => {
     const store = new MemoryAssetStore();
     const req: PortraitRequest = {
       ...testRequest,
-      tags: ['martial', 'placeholder', 'char:Other::Class', 'provider:evil', 'player'],
+      tags: ['martial', 'placeholder', 'char:Other::Class', 'provider:evil', 'model:evil', 'player'],
     };
     const meta = await generatePortrait(req, realProvider(), store);
 
@@ -432,6 +435,7 @@ describe('portrait identity is delimiter-safe (F-525d6bb6)', () => {
     expect(meta.tags).not.toContain('placeholder');
     expect(meta.tags).not.toContain('char:Other::Class');
     expect(meta.tags).not.toContain('provider:evil');
+    expect(meta.tags).not.toContain('model:evil');
     expect(meta.tags).toContain('provider:comfyui');
   });
 
@@ -905,5 +909,95 @@ describe('portrait identity keys the resolved style that reaches the provider (F
     expect(second.hash).not.toBe(first.hash);
     expect(getCalls()).toBe(2);
     expect(await store.count()).toBe(2);
+  });
+});
+
+// F-b36de2d4: identity keyed prompt + generation options but not the
+// provider's checkpoint. Two same-named providers with different weights
+// silently served the first render. Model is a tag + GenerationOptions slot,
+// not part of the char: JSON (so a real render still wins over placeholder).
+describe('portrait cache keys provider model/checkpoint (F-b36de2d4)', () => {
+  function countingProvider(model: string, marker: string) {
+    let calls = 0;
+    const provider: ImageProvider = {
+      name: 'comfyui',
+      model,
+      async isAvailable() { return true; },
+      async generate(prompt: string, opts?: GenerationOptions): Promise<GenerationOutcome> {
+        calls += 1;
+        return {
+          ok: true,
+          image: new TextEncoder().encode(`png:${marker}:${prompt}:${opts?.model ?? model}`),
+          mimeType: 'image/png',
+          width: opts?.width ?? 512,
+          height: opts?.height ?? 512,
+          prompt,
+          durationMs: 1,
+        };
+      },
+    };
+    return { provider, getCalls: () => calls };
+  }
+
+  it('ensurePortrait(ckpt A) vs ensurePortrait(ckpt B) with identical request → two hashes, two provider calls', async () => {
+    const store = new MemoryAssetStore();
+    const a = countingProvider('CHECKPOINT-A', 'CHECKPOINT-A');
+    const b = countingProvider('CHECKPOINT-B', 'CHECKPOINT-B');
+
+    const first = await ensurePortrait(testRequest, a.provider, store);
+    const second = await ensurePortrait(testRequest, b.provider, store);
+
+    expect(second.hash).not.toBe(first.hash);
+    expect(a.getCalls()).toBe(1);
+    expect(b.getCalls()).toBe(1);
+    expect(await store.count()).toBe(2);
+    expect(first.tags).toContain('model:CHECKPOINT-A');
+    expect(second.tags).toContain('model:CHECKPOINT-B');
+    const bytesA = await store.get(first.hash);
+    const bytesB = await store.get(second.hash);
+    expect(new TextDecoder().decode(bytesA!)).toContain('CHECKPOINT-A');
+    expect(new TextDecoder().decode(bytesB!)).toContain('CHECKPOINT-B');
+  });
+});
+
+// F-88cc4bdd: ensurePortrait treated a sidecar without bytes as a finished
+// real portrait and never re-queued. Require a verified blob before reuse.
+describe('ensurePortrait regenerates when the stored blob is missing (F-88cc4bdd)', () => {
+  it('FileAssetStore put, unlink bin, ensurePortrait → provider calls increment and get() returns bytes', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'portrait-ghost-'));
+    try {
+      const store = new FileAssetStore(tmp);
+      let calls = 0;
+      const provider: ImageProvider = {
+        name: 'comfyui',
+        async isAvailable() { return true; },
+        async generate(prompt: string, opts?: GenerationOptions): Promise<GenerationOutcome> {
+          calls += 1;
+          return {
+            ok: true,
+            image: new TextEncoder().encode(`png-bytes-for:${prompt}`),
+            mimeType: 'image/png',
+            width: opts?.width ?? 512,
+            height: opts?.height ?? 512,
+            prompt,
+            durationMs: 1,
+          };
+        },
+      };
+
+      const first = await generatePortrait(testRequest, provider, store);
+      expect(calls).toBe(1);
+      const binPath = path.join(tmp, first.hash.slice(0, 2), `${first.hash}.bin`);
+      await fs.unlink(binPath);
+      expect(await store.get(first.hash)).toBeNull();
+
+      const second = await ensurePortrait(testRequest, provider, store);
+      expect(calls).toBe(2);
+      const bytes = await store.get(second.hash);
+      expect(bytes).not.toBeNull();
+      expect(bytes!.byteLength).toBeGreaterThan(0);
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true });
+    }
   });
 });

@@ -596,3 +596,43 @@ describe('ComfyUIProvider.isAvailable', () => {
     expect(await new ComfyUIProvider({ baseUrl: url }).isAvailable()).toBe(false);
   });
 });
+
+// F-3d137abb: queue/history bodies were fully buffered then excerpted.
+// Cap them the same way as the image path so a 1 MiB error page cannot stick.
+describe('ComfyUIProvider.generate — F-3d137abb: capped queue/history bodies', () => {
+  it('a 1 MiB error body on POST /prompt does not retain the full string and returns {ok:false}', async () => {
+    const huge = 'x'.repeat(1024 * 1024);
+    const mock = await startMock((_req, res) => {
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end(huge);
+    });
+
+    const result = await makeProvider(mock.url).generate('p');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('http_error');
+      expect(result.error.length).toBeLessThan(1024);
+      expect(result.error).not.toContain(huge.slice(0, 10_000));
+    }
+  });
+
+  it('a 1 MiB 200 history poll fails typed without buffering the whole dump', async () => {
+    const huge = `{${'x'.repeat(1024 * 1024)}`;
+    const mock = await startMock((req, res) => {
+      if (req.method === 'POST' && req.url === '/prompt') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ prompt_id: 'p1' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(huge);
+    });
+
+    const result = await makeProvider(mock.url).generate('p');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe('invalid_response');
+      expect(result.error.length).toBeLessThan(1024);
+    }
+  });
+});

@@ -116,7 +116,7 @@ export type PipelineOptions = {
 };
 
 const ENGINE_OWNED_EXACT = new Set(['placeholder', 'player']);
-const ENGINE_OWNED_PREFIXES = ['char:', 'provider:'] as const;
+const ENGINE_OWNED_PREFIXES = ['char:', 'provider:', 'model:'] as const;
 
 function isEngineOwnedTag(tag: string): boolean {
   if (ENGINE_OWNED_EXACT.has(tag)) return true;
@@ -155,7 +155,30 @@ function resolveGeneration(
   };
   const seed = finiteOr(generation?.seed, null);
   if (seed !== null) resolved.seed = seed;
+  const model = generation?.model;
+  if (typeof model === 'string' && model.length > 0) resolved.model = model;
   return resolved;
+}
+
+/** Checkpoint/model the provider will actually sample with (F-b36de2d4). */
+function resolveProviderModel(provider: ImageProvider, generation?: GenerationOptions): string {
+  const fromGen = generation?.model;
+  if (typeof fromGen === 'string' && fromGen.length > 0) return fromGen;
+  const fromProvider = provider.model;
+  if (typeof fromProvider === 'string' && fromProvider.length > 0) return fromProvider;
+  return '';
+}
+
+function matchesProviderModel(meta: AssetMetadata, providerName: string, model: string): boolean {
+  if (!meta.tags.includes(`provider:${providerName}`)) return false;
+  if (!model) return !meta.tags.some((t) => t.startsWith('model:'));
+  return meta.tags.includes(`model:${model}`);
+}
+
+/** True when the stored blob is present and still matches its content address. */
+async function readableMeta(store: AssetStore, meta: AssetMetadata): Promise<AssetMetadata | undefined> {
+  const bytes = await store.get(meta.hash, { verify: true });
+  return bytes ? meta : undefined;
 }
 
 /**
@@ -206,6 +229,8 @@ export async function generatePortrait(
 ): Promise<AssetMetadata> {
   const { prompt } = buildPromptPair(request);
   const genOpts = resolveGeneration(request, opts?.generation);
+  const model = resolveProviderModel(provider, genOpts);
+  if (model && genOpts.model === undefined) genOpts.model = model;
 
   const result = await provider.generate(prompt, genOpts);
   if (!result.ok) throw new ImageGenError(result);
@@ -226,6 +251,7 @@ export async function generatePortrait(
     'portrait',
     portraitIdentityTag(request, opts?.generation),
     `provider:${provider.name}`,
+    ...(model ? [`model:${model}`] : []),
     ...(isPlaceholderResult ? ['placeholder'] : []),
     ...callerTags(request.tags),
     ...callerTags(opts?.extraTags),
@@ -277,20 +303,38 @@ export async function ensurePortrait(
   // tag (not genre) so a genre of 'placeholder' cannot collide with the
   // engine-owned placeholder marker (F-a55397ab).
   const characterKey = portraitIdentityTag(request, opts?.generation);
+  const model = resolveProviderModel(provider, opts?.generation);
   const matches = await store.list({
     kind: 'portrait',
     tag: characterKey,
   });
 
-  // A real render always wins.
-  const real = matches.find((m) => !isPlaceholderAsset(m));
-  if (real) return real;
+  const reals = matches.filter((m) => !isPlaceholderAsset(m));
+  if (provider.name !== 'placeholder') {
+    // Same-named providers with different checkpoints must not reuse each
+    // other's bytes (F-b36de2d4). Provider+model tags, not the char: JSON,
+    // so a real render still wins when a later call is handed a placeholder
+    // (F-6c3d9a48).
+    const keyed = reals.filter((m) => matchesProviderModel(m, provider.name, model));
+    for (const m of keyed) {
+      const hit = await readableMeta(store, m);
+      if (hit) return hit;
+    }
+  } else {
+    for (const m of reals) {
+      const hit = await readableMeta(store, m);
+      if (hit) return hit;
+    }
+  }
 
   // Only a placeholder is cached. Reuse it when this call would just make
   // another placeholder; regenerate when a real provider is available.
-  const cachedPlaceholder = matches[0];
+  // F-88cc4bdd: a sidecar without bytes is not a finished portrait — fall
+  // through to generatePortrait rather than returning unreadable metadata.
+  const cachedPlaceholder = matches.find((m) => isPlaceholderAsset(m));
   if (cachedPlaceholder && provider.name === 'placeholder') {
-    return cachedPlaceholder;
+    const hit = await readableMeta(store, cachedPlaceholder);
+    if (hit) return hit;
   }
 
   return generatePortrait(request, provider, store, opts);

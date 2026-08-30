@@ -227,4 +227,47 @@ describe('SoundRegistry', () => {
       expect(result.warnings.filter((w) => w.field === 'entries[]')).toHaveLength(2);
     });
   });
+
+  // F-74ba230b: load() stored the caller's object; get/query returned it.
+  // Mutating a pack constant or a query result poisoned later lookups.
+  describe('entry isolation (F-74ba230b)', () => {
+    const entry = (id: string, tag: string) => ({
+      id,
+      tags: [tag],
+      domain: 'sfx' as const,
+      intensity: 'low' as const,
+      mood: ['neutral'],
+      durationClass: 'oneshot' as const,
+      cooldownMs: 0,
+      variants: [`${tag}.wav`],
+      source: 'file' as const,
+    });
+
+    it('load(), mutate the input entry and a query() result, get() is unchanged', () => {
+      const registry = new SoundRegistry();
+      const input = entry('boom', 'first');
+      registry.load({
+        name: 'iso',
+        version: '1.0.0',
+        description: 'isolation',
+        author: 'test',
+        entries: [input],
+      });
+
+      input.tags.push('poison');
+      input.mood.push('dread');
+      expect(registry.get('boom')!.tags).toEqual(['first']);
+      expect(registry.get('boom')!.mood).toEqual(['neutral']);
+      expect(registry.query({ tags: ['poison'] })).toHaveLength(0);
+
+      const queried = registry.query({ tags: ['first'] });
+      queried[0].tags.push('poison');
+      queried[0].mood.push('dread');
+      queried[0].variants.push('evil.wav');
+      expect(registry.get('boom')!.tags).toEqual(['first']);
+      expect(registry.get('boom')!.mood).toEqual(['neutral']);
+      expect(registry.get('boom')!.variants).toEqual(['first.wav']);
+      expect(registry.query({ tags: ['poison'] })).toHaveLength(0);
+    });
+  });
 });
