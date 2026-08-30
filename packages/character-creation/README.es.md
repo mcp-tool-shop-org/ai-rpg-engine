@@ -29,7 +29,7 @@ Los personajes no son hojas de cálculo; son identidades. Este paquete gestiona 
 
 ```typescript
 import { validateBuild } from '@ai-rpg-engine/character-creation';
-import { content, buildCatalog } from '@ai-rpg-engine/starter-fantasy';
+import { buildCatalog, fantasyMinimalRuleset } from '@ai-rpg-engine/starter-fantasy';
 
 const build = {
   name: 'Aldric',
@@ -40,7 +40,7 @@ const build = {
   statAllocations: { vigor: 2, instinct: 1 },
 };
 
-const result = validateBuild(build, buildCatalog, content.ruleset);
+const result = validateBuild(build, buildCatalog, fantasyMinimalRuleset);
 // result.ok === true
 // result.resolvedTitle === 'Grave Warden'
 // result.finalStats === { vigor: 8, instinct: 6, will: 1 }
@@ -52,7 +52,7 @@ const result = validateBuild(build, buildCatalog, content.ruleset);
 ```typescript
 import { resolveEntity } from '@ai-rpg-engine/character-creation';
 
-const entity = resolveEntity(build, buildCatalog, content.ruleset);
+const entity = resolveEntity(build, buildCatalog, fantasyMinimalRuleset);
 // Full EntityState ready for the engine:
 // entity.id === 'player'
 // entity.blueprintId === 'penitent-knight'
