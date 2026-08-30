@@ -71,6 +71,10 @@ class UnindexedMintTransport implements NFTTransport {
     return this.inner.nftAcceptSellOffer(seed, offerIndex);
   }
 
+  async nftSellOffers(nftId: string) {
+    return this.inner.nftSellOffers(nftId);
+  }
+
   async accountNfts(address: string): Promise<NFTInfo[]> {
     if (this.hideRemaining > 0) {
       this.hideRemaining--;
@@ -139,6 +143,69 @@ class FlakyNFTTransport implements NFTTransport {
     return this.inner.nftAcceptSellOffer(seed, offerIndex);
   }
 
+  async nftSellOffers(nftId: string) {
+    if (this.failMethod === 'nftSellOffers') {
+      const forced = this.forcedFailure();
+      if (forced) throw new Error(forced.error);
+    }
+    return this.inner.nftSellOffers(nftId);
+  }
+
+  async accountNfts(address: string): Promise<NFTInfo[]> {
+    return this.inner.accountNfts(address);
+  }
+}
+
+/** tesSUCCESS-without-offerIndex / accept-fail-after-create hatch. */
+class OfferHatchTransport implements NFTTransport {
+  createCalls = 0;
+  acceptCalls = 0;
+  private omitRemaining: number;
+  private hideRemaining: number;
+  private failAcceptRemaining: number;
+
+  constructor(
+    private readonly inner: DryRunTransport,
+    opts: { omitOfferIndex?: number; hideSellOffers?: number; failAccept?: number } = {},
+  ) {
+    this.omitRemaining = opts.omitOfferIndex ?? 0;
+    this.hideRemaining = opts.hideSellOffers ?? 0;
+    this.failAcceptRemaining = opts.failAccept ?? 0;
+  }
+
+  async nftMint(seed: string, uri: string, taxon: number, flags: NFTMintFlags, transferFee?: number): Promise<NFTMintResult> {
+    return this.inner.nftMint(seed, uri, taxon, flags, transferFee);
+  }
+  async nftBurn(seed: string, nftId: string, owner?: string): Promise<TxResult> {
+    return this.inner.nftBurn(seed, nftId, owner);
+  }
+  async nftModify(seed: string, nftId: string, uri: string, owner: string): Promise<TxResult> {
+    return this.inner.nftModify(seed, nftId, uri, owner);
+  }
+  async nftCreateSellOffer(seed: string, nftId: string, amount: string, destination?: string): Promise<NFTOfferResult> {
+    this.createCalls++;
+    const res = await this.inner.nftCreateSellOffer(seed, nftId, amount, destination);
+    if (res.ok && this.omitRemaining > 0) {
+      this.omitRemaining--;
+      return { ok: res.ok, hash: res.hash, code: res.code, error: res.error, sequence: res.sequence };
+    }
+    return res;
+  }
+  async nftAcceptSellOffer(seed: string, offerIndex: string): Promise<TxResult> {
+    this.acceptCalls++;
+    if (this.failAcceptRemaining > 0) {
+      this.failAcceptRemaining--;
+      return { ok: false, hash: '', code: 'tecFAKE_FAILURE', error: 'forced accept failure' };
+    }
+    return this.inner.nftAcceptSellOffer(seed, offerIndex);
+  }
+  async nftSellOffers(nftId: string) {
+    if (this.hideRemaining > 0) {
+      this.hideRemaining--;
+      return [];
+    }
+    return this.inner.nftSellOffers(nftId);
+  }
   async accountNfts(address: string): Promise<NFTInfo[]> {
     return this.inner.accountNfts(address);
   }
@@ -425,6 +492,72 @@ describe('settleEquipmentNFTs — retry-safety (a pending ref resumes without re
     expect(unindexed.mintCalls).toBe(1);
     expect(state.nfts?.cutlass.status).toBe('minted');
     expect(state.nfts?.cutlass.nftId).toBeTruthy();
+    expect((await inner.accountNfts(DEPS.playerAddress))).toHaveLength(1);
+  });
+
+  it('tesSUCCESS without offerIndex recovers via nft_sell_offers and never creates a second offer', async () => {
+    const inner = new DryRunTransport();
+    const hatch = new OfferHatchTransport(inner, { omitOfferIndex: 1 });
+    const state = freshState();
+
+    const first = await settleEquipmentNFTs(hatch, state, { items: [makeItem()] }, DEPS);
+    expect(first.success).toBe(false);
+    expect(hatch.createCalls).toBe(1);
+    expect(state.nfts?.cutlass.status).toBe('pending');
+    expect(state.nfts?.cutlass.offerIndex).toBe('');
+    expect(state.nfts?.cutlass.nftId).toBeTruthy();
+
+    const retry = await settleEquipmentNFTs(hatch, state, { items: [makeItem()] }, DEPS);
+    expect(retry.success).toBe(true);
+    expect(retry.minted).toEqual(['cutlass']);
+    expect(hatch.createCalls).toBe(1);
+    expect(hatch.acceptCalls).toBe(1);
+    expect(state.nfts?.cutlass.status).toBe('minted');
+    expect(state.nfts?.cutlass.offerIndex).toBeUndefined();
+    expect((await inner.accountNfts(DEPS.playerAddress))).toHaveLength(1);
+    expect((await inner.accountNfts(DEPS.issuerAddress))).toHaveLength(0);
+  });
+
+  it('tesSUCCESS without offerIndex fails closed until nft_sell_offers indexes; retry does not create a second offer', async () => {
+    const inner = new DryRunTransport();
+    const hatch = new OfferHatchTransport(inner, { omitOfferIndex: 1, hideSellOffers: 2 });
+    const state = freshState();
+
+    const first = await settleEquipmentNFTs(hatch, state, { items: [makeItem()] }, DEPS);
+    expect(first.success).toBe(false);
+    expect(hatch.createCalls).toBe(1);
+
+    const stillClosed = await settleEquipmentNFTs(hatch, state, { items: [makeItem()] }, DEPS);
+    expect(stillClosed.success).toBe(false);
+    expect(hatch.createCalls).toBe(1);
+    expect(stillClosed.message).toMatch(/nft_sell_offers/);
+    expect(stillClosed.message).toMatch(/cutlass/);
+
+    const recovered = await settleEquipmentNFTs(hatch, state, { items: [makeItem()] }, DEPS);
+    expect(recovered.success).toBe(true);
+    expect(hatch.createCalls).toBe(1);
+    expect(hatch.acceptCalls).toBe(1);
+    expect((await inner.accountNfts(DEPS.playerAddress))).toHaveLength(1);
+  });
+
+  it('accept-fail-after-create persists offerIndex and retries only the accept, never a second offer', async () => {
+    const inner = new DryRunTransport();
+    const hatch = new OfferHatchTransport(inner, { failAccept: 1 });
+    const state = freshState();
+
+    const first = await settleEquipmentNFTs(hatch, state, { items: [makeItem()] }, DEPS);
+    expect(first.success).toBe(false);
+    expect(hatch.createCalls).toBe(1);
+    expect(hatch.acceptCalls).toBe(1);
+    expect(state.nfts?.cutlass.status).toBe('pending');
+    expect(state.nfts?.cutlass.offerIndex).toBeTruthy();
+    expect(first.message).toMatch(/offerIndex/);
+
+    const retry = await settleEquipmentNFTs(hatch, state, { items: [makeItem()] }, DEPS);
+    expect(retry.success).toBe(true);
+    expect(hatch.createCalls).toBe(1);
+    expect(hatch.acceptCalls).toBe(2);
+    expect(state.nfts?.cutlass.status).toBe('minted');
     expect((await inner.accountNfts(DEPS.playerAddress))).toHaveLength(1);
   });
 });

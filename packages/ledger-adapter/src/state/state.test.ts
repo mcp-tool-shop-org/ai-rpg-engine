@@ -426,4 +426,43 @@ describe('malformed deserialize', () => {
     expect(() => deserializeState('null')).toThrow(/deserializeState/);
     expect(() => deserializeState('[]')).toThrow(/deserializeState/);
   });
+
+  test('rejects Infinity-valued lastSettled (JSON 1e400) the way NaN-as-null already fails', () => {
+    const json = serializeState(populatedState()).replace(/"coin":100/, '"coin":1e400');
+    expect(() => deserializeState(json)).toThrow(/lastSettled/);
+  });
+
+  test('rejects Infinity-valued checkpoint and deltas', () => {
+    const infCheckpoint = serializeState(populatedState()).replace(/"checkpoint":1/, '"checkpoint":1e400');
+    expect(() => deserializeState(infCheckpoint)).toThrow(/checkpoint/);
+    const infDelta = serializeState(populatedState()).replace(/"coin":-25/, '"coin":1e400');
+    expect(() => deserializeState(infDelta)).toThrow(/deltas/);
+  });
+
+  test('rejects receipts.done that is a truthy string and receipts.sequence that is Infinity', () => {
+    const state = populatedState();
+    const obj = JSON.parse(serializeState(state)) as {
+      pending: Array<{ receipts?: Record<string, Record<string, unknown>> }>;
+    };
+    obj.pending[0].receipts = { coin: { txids: ['HASH1'], done: 'true' } };
+    expect(() => deserializeState(JSON.stringify(obj))).toThrow(/receipts\.coin\.done/);
+
+    obj.pending[0].receipts = { coin: { txids: ['HASH1'], sequence: JSON.parse('1e400') } };
+    const infSeq = JSON.stringify(obj).replace(/"sequence":null/, '"sequence":1e400');
+    expect(() => deserializeState(infSeq)).toThrow(/receipts\.coin\.sequence/);
+  });
+
+  test('rejects a verb that is not a SettlementVerb', () => {
+    const state = populatedState();
+    const obj = JSON.parse(serializeState(state)) as { pending: Array<{ verb?: string }> };
+    obj.pending[0].verb = 'explode';
+    expect(() => deserializeState(JSON.stringify(obj))).toThrow(/pending\[0\]\.verb/);
+  });
+
+  test('rejects Infinity-valued NFT relicVersion and taxon', () => {
+    const infRelic = serializeState(populatedState()).replace(/"relicVersion":1/, '"relicVersion":1e400');
+    expect(() => deserializeState(infRelic)).toThrow(/relicVersion/);
+    const infTaxon = serializeState(populatedState()).replace(/"taxon":0/, '"taxon":1e400');
+    expect(() => deserializeState(infTaxon)).toThrow(/taxon/);
+  });
 });

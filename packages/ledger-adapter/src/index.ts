@@ -49,6 +49,7 @@ export type {
   NFTInfo,
   NFTMintResult,
   NFTOfferResult,
+  NFTSellOfferInfo,
   NFTTransport,
   NFTokenRef,
   NFTCheck,

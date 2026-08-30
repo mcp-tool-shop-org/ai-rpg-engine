@@ -12,6 +12,8 @@ import type {
 } from '../contracts.js';
 import { createLedgerAdapter } from './adapter.js';
 import { reconcile } from './reconcile.js';
+import { serializeState, deserializeState } from '../state/index.js';
+import { DEFAULT_LEDGER_CONFIG } from '../index.js';
 
 // ── A MINIMAL in-memory fake LedgerTransport ────────────────────────────
 // Deliberately NOT importing the real transport domain (out of bounds for
@@ -19,6 +21,8 @@ import { reconcile } from './reconcile.js';
 // enable/settle/retry logic against believable balance movement.
 
 type FakeTransport = LedgerTransport & {
+  /** How many wallets `fundWallet` has issued. */
+  readonly fundedWallets: number;
   /** `${address}:${currency}` -> balance. */
   balances: Map<string, number>;
   /** The next N transport-write calls (setAccountFlag/trustSet/payment/
@@ -126,6 +130,10 @@ function createFakeTransport(): FakeTransport {
 
     trustedFor(address: string, currency: string): boolean {
       return trustLines.has(`${address}:${currency}`);
+    },
+
+    get fundedWallets() {
+      return walletCounter;
     },
 
     async connect() {},
@@ -1129,5 +1137,126 @@ describe('persistent issuer: a market that outlives the run', () => {
 
     await adapter.enable(state, snapshot); // resume
     expect(state.issuerAddress).toBe(firstIssuer);
+  });
+});
+
+describe('offline mode (DEFAULT_LEDGER_CONFIG)', () => {
+  let transport: FakeTransport;
+
+  beforeEach(() => {
+    transport = createFakeTransport();
+  });
+
+  it('DEFAULT enable does not call fundWallet and never mints', async () => {
+    const adapter = createLedgerAdapter(transport, DEFAULT_LEDGER_CONFIG, { gameId: 'g', runId: 'r1' });
+    const state = freshState();
+    state.mode = 'offline';
+    const result = await adapter.enable(state, { coin: 100, items: { potion: 1 } });
+
+    expect(result.success).toBe(true);
+    expect(result.message).toMatch(/offline/i);
+    expect(transport.fundedWallets).toBe(0);
+    expect(state.issuerAddress).toBe('');
+    expect(state.playerAddress).toBe('');
+    expect(transport.calls).toEqual([]);
+  });
+
+  it('offline settle is a success no-op (no submit)', async () => {
+    const adapter = createLedgerAdapter(transport, DEFAULT_LEDGER_CONFIG, { gameId: 'g', runId: 'r1' });
+    const state = freshState();
+    state.mode = 'offline';
+    await adapter.enable(state, { coin: 100, items: {} });
+    const settled = await adapter.settle(state, { coin: 70, items: {} }, 1, 'town');
+
+    expect(settled.success).toBe(true);
+    expect(settled.message).toMatch(/offline/i);
+    expect(transport.calls).toEqual([]);
+    expect(state.pending).toHaveLength(0);
+    expect(state.settlements).toHaveLength(0);
+  });
+});
+
+describe('seed restore and attributable retry', () => {
+  let transport: FakeTransport;
+  const snapshot: TradeableSnapshot = { coin: 100, items: {} };
+
+  beforeEach(() => {
+    transport = createFakeTransport();
+  });
+
+  it('deserialize + new adapter hydrates seedCache from getSeed and can settle', async () => {
+    const seeds = new Map<string, string>();
+    const first = createLedgerAdapter(transport, CONFIG, {
+      gameId: 'g',
+      runId: 'r1',
+      putSeed: (address, seed) => seeds.set(address, seed),
+    });
+    const state = freshState();
+    const enabled = await first.enable(state, snapshot);
+    expect(enabled.success).toBe(true);
+
+    const restored = deserializeState(serializeState(state));
+    const resumed = createLedgerAdapter(transport, CONFIG, {
+      gameId: 'g',
+      runId: 'r1',
+      getSeed: (address) => seeds.get(address),
+    });
+    const reenable = await resumed.enable(restored, snapshot);
+    expect(reenable.success).toBe(true);
+    expect(reenable.message).toMatch(/already online/);
+
+    const settled = await resumed.settle(restored, { coin: 90, items: {} }, 1, 'Cedar Wake');
+    expect(settled.success).toBe(true);
+    expect(restored.lastSettled.coin).toBe(90);
+  });
+
+  it('fast-path enable fails closed when the sidecar has no seed for a named wallet', async () => {
+    const seeds = new Map<string, string>();
+    const first = createLedgerAdapter(transport, CONFIG, {
+      gameId: 'g',
+      runId: 'r1',
+      putSeed: (address, seed) => seeds.set(address, seed),
+    });
+    const state = freshState();
+    await first.enable(state, snapshot);
+    const restored = deserializeState(serializeState(state));
+
+    const orphan = createLedgerAdapter(transport, CONFIG, { gameId: 'g', runId: 'r1' });
+    const result = await orphan.enable(restored, snapshot);
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(/missing seed/);
+    expect(result.message).toMatch(restored.playerAddress);
+    expect(result.message).toMatch(/sidecar/);
+    expect(restored.enabled).toBe(false);
+  });
+
+  it('a requireSeed miss on retry is visible in the still-pending message and names the record', async () => {
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'g', runId: 'r1' });
+    const state = freshState();
+    await adapter.enable(state, snapshot);
+
+    transport.failNext(1);
+    const failed = await adapter.settle(state, { coin: 70, items: {} }, 1, 'Cedar Wake');
+    expect(failed.success).toBe(false);
+    expect(state.pending).toHaveLength(1);
+    expect(state.pending[0].lastError).toBeTruthy();
+
+    const orphan = createLedgerAdapter(transport, CONFIG, { gameId: 'g', runId: 'r1' });
+    const retried = await orphan.settle(state, { coin: 70, items: {} }, 2, 'Market Row');
+    expect(retried.success).toBe(false);
+    expect(retried.message).toMatch(/checkpoint 1 at Cedar Wake/);
+    expect(retried.message).toMatch(/no seed cached/);
+    expect(retried.record?.lastError).toMatch(/no seed cached/);
+    expect(retried.record?.lastError).toMatch(/rFAKE/);
+  });
+
+  it('enable names connect() when the transport cannot connect', async () => {
+    transport.connect = async () => {
+      throw new Error('connect() failed: websocket is down');
+    };
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'g', runId: 'r1' });
+    const result = await adapter.enable(freshState(), snapshot);
+    expect(result.success).toBe(false);
+    expect(result.message).toMatch(/connect\(\)/);
   });
 });

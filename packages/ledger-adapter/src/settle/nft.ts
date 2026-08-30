@@ -82,37 +82,85 @@ async function recoverNftId(
   }
 }
 
+/** Recover a directed issuer→player sell offer from nft_sell_offers.
+ *  Prefer Destination=player; never invent a second offer. */
+async function recoverOfferIndex(
+  transport: NFTTransport,
+  nftId: string,
+  playerAddress: string,
+): Promise<string | undefined> {
+  try {
+    const offers = await transport.nftSellOffers(nftId);
+    const directed = offers.find((o) => o.destination === playerAddress);
+    return directed?.offerIndex ?? offers.find((o) => o.destination === undefined)?.offerIndex;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Directed issuer -> player transfer: NFTokenCreateOffer (a 0-value sell
- * directed at the player) then NFTokenAcceptOffer. Used both right after a
- * fresh mint and to RESUME a 'pending' ref's stalled transfer — the same
- * two calls either way, since a pending ref means "minted, not yet
- * transferred" regardless of how it got there. Returns `true` only if both
- * calls succeed; any txid produced (even on a path that partially fails) is
- * still recorded in `txids`.
+ * directed at the player) then NFTokenAcceptOffer. Offer-idempotent: a pending
+ * ref that already has offerIndex (or tesSUCCESS'd without one — `offerIndex
+ * === ''`) resumes ONLY the accept / recover path, never a second create.
+ * Returns `true` only if accept succeeds; any txid produced is still recorded.
  */
 async function transferToPlayer(
   transport: NFTTransport,
   deps: { issuerSeed: string; playerSeed: string; playerAddress: string },
-  nftId: string,
+  ref: NFTokenRef,
   gameItemId: string,
   txids: string[],
   failures: string[],
 ): Promise<boolean> {
-  const offerRes = await transport.nftCreateSellOffer(deps.issuerSeed, nftId, '0', deps.playerAddress);
-  if (offerRes.hash) txids.push(offerRes.hash);
-  if (!offerRes.ok || !offerRes.offerIndex) {
-    failures.push(`createSellOffer(${gameItemId}) failed: ${offerRes.error ?? offerRes.code}`);
+  const nftId = ref.nftId;
+  const createAlreadyLanded = typeof ref.offerIndex === 'string';
+  let offerIndex = ref.offerIndex && ref.offerIndex.length > 0 ? ref.offerIndex : undefined;
+
+  if (!offerIndex) {
+    const recovered = await recoverOfferIndex(transport, nftId, deps.playerAddress);
+    if (recovered) {
+      offerIndex = recovered;
+      ref.offerIndex = recovered;
+    }
+  }
+
+  if (!offerIndex && createAlreadyLanded) {
+    failures.push(
+      `createSellOffer(${gameItemId}) tesSUCCESS without offerIndex; nft ${nftId} not creating again until nft_sell_offers indexes a directed offer to ${deps.playerAddress}`,
+    );
     return false;
   }
 
-  const acceptRes = await transport.nftAcceptSellOffer(deps.playerSeed, offerRes.offerIndex);
+  if (!offerIndex) {
+    const offerRes = await transport.nftCreateSellOffer(deps.issuerSeed, nftId, '0', deps.playerAddress);
+    if (offerRes.hash) txids.push(offerRes.hash);
+    if (!offerRes.ok) {
+      failures.push(`createSellOffer(${gameItemId}) failed: ${offerRes.error ?? offerRes.code}`);
+      return false;
+    }
+    if (!offerRes.offerIndex) {
+      // tesSUCCESS without offerIndex: persist the unindexed hatch so a later
+      // checkpoint recovers via nft_sell_offers and NEVER creates a second offer.
+      ref.offerIndex = '';
+      failures.push(
+        `createSellOffer(${gameItemId}) tesSUCCESS without offerIndex; nft ${nftId} not creating again until nft_sell_offers indexes a directed offer to ${deps.playerAddress}`,
+      );
+      return false;
+    }
+    offerIndex = offerRes.offerIndex;
+    ref.offerIndex = offerIndex;
+  }
+
+  const acceptRes = await transport.nftAcceptSellOffer(deps.playerSeed, offerIndex);
   if (acceptRes.hash) txids.push(acceptRes.hash);
   if (!acceptRes.ok) {
-    failures.push(`acceptSellOffer(${gameItemId}) failed: ${acceptRes.error ?? acceptRes.code}`);
+    failures.push(
+      `acceptSellOffer(${gameItemId}) failed: ${acceptRes.error ?? acceptRes.code} (offerIndex ${offerIndex})`,
+    );
     return false;
   }
-
+  delete ref.offerIndex;
   return true;
 }
 
@@ -155,7 +203,7 @@ async function settleOneItem(
         status: 'pending',
       };
       nfts[gameItemId] = recovered;
-      const transferred = await transferToPlayer(transport, deps, recovered.nftId, gameItemId, txids, failures);
+      const transferred = await transferToPlayer(transport, deps, recovered, gameItemId, txids, failures);
       if (transferred) {
         recovered.status = 'minted';
         minted.push(gameItemId);
@@ -205,7 +253,7 @@ async function settleOneItem(
     };
     nfts[gameItemId] = newRef;
 
-    const transferred = await transferToPlayer(transport, deps, newRef.nftId, gameItemId, txids, failures);
+    const transferred = await transferToPlayer(transport, deps, newRef, gameItemId, txids, failures);
     if (transferred) {
       newRef.status = 'minted';
       minted.push(gameItemId);
@@ -226,7 +274,7 @@ async function settleOneItem(
       }
       ref.nftId = recovered;
     }
-    const transferred = await transferToPlayer(transport, deps, ref.nftId, gameItemId, txids, failures);
+    const transferred = await transferToPlayer(transport, deps, ref, gameItemId, txids, failures);
     if (transferred) {
       ref.status = 'minted';
       minted.push(gameItemId);

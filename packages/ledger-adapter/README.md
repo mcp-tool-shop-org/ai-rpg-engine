@@ -40,9 +40,11 @@ import {
   DEFAULT_LEDGER_CONFIG,
 } from '@ai-rpg-engine/ledger-adapter';
 
-const config  = { ...DEFAULT_LEDGER_CONFIG, mode: 'ledger' };
-const state   = createInitialState(config);
-const adapter = createLedgerAdapter(new TestnetTransport(), config, {
+const config    = { ...DEFAULT_LEDGER_CONFIG, mode: 'ledger' };
+const state     = createInitialState(config);
+const transport = new TestnetTransport();
+await transport.connect();
+const adapter   = createLedgerAdapter(transport, config, {
   gameId: 'my-game',
   runId: 'run-1',
 });

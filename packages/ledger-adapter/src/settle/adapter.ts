@@ -63,6 +63,15 @@ export type LedgerAdapterDeps = {
    *  `settle()` can sign without ever reading a seed back out of `state`. */
   putSeed?: (address: string, seed: string) => void;
   /**
+   * Inbound seed lookup for save/reload (the secrets sidecar). `putSeed` is
+   * outbound-only; without this, a new adapter instance after deserialize has
+   * an empty seedCache, fast-path enable claims "already online", and the
+   * next settle requireSeed-throws. Fast-path enable hydrates issuer/player/
+   * merchant from this before returning; a miss fails enable rather than
+   * claiming the pack is online.
+   */
+  getSeed?: (address: string) => string | undefined;
+  /**
    * The durable issuer seed for `issuerMode: 'persistent'` (F-merchant-E).
    *
    * `IssuerMode` shipped as a declared axis with no behaviour: `persistent` was
@@ -149,6 +158,7 @@ export function createLedgerAdapter(
   const now = deps.now ?? defaultClock();
   const nextId = deps.nextId ?? defaultCounter();
   const putSeed = deps.putSeed ?? ((_address: string, _seed: string) => {});
+  const getSeed = deps.getSeed;
 
   // Private to this adapter instance — NEVER part of `state`. Populated on
   // every fund/resume so `settle()` can sign across checkpoint calls without
@@ -160,14 +170,53 @@ export function createLedgerAdapter(
     putSeed(address, seed);
   }
 
+  /** Pull a seed into the in-memory cache from getSeed / persistentIssuerSeed. */
+  function hydrateSeed(address: string): string | undefined {
+    if (!address) return undefined;
+    const cached = seedCache.get(address);
+    if (cached !== undefined) return cached;
+    const fromSidecar = getSeed?.(address);
+    if (fromSidecar !== undefined) {
+      seedCache.set(address, fromSidecar);
+      return fromSidecar;
+    }
+    if (config.issuerMode === 'persistent' && deps.persistentIssuerSeed) {
+      const wallet = transport.walletFromSeed(deps.persistentIssuerSeed);
+      if (wallet.address === address) {
+        registerSeed(address, wallet.seed);
+        return wallet.seed;
+      }
+    }
+    return undefined;
+  }
+
   function requireSeed(address: string): string {
-    const seed = seedCache.get(address);
+    const seed = hydrateSeed(address);
     if (seed === undefined) {
       throw new Error(
         `no seed cached in-memory for address ${address} — cannot sign without re-authenticating via the secrets sidecar`,
       );
     }
     return seed;
+  }
+
+  /** Hydrate issuer/player/merchant before a fast-path enable claims "already
+   *  online". Returns role+address strings for every miss so the operator can
+   *  re-auth the sidecar for the named wallet. */
+  function missingSetupSeeds(state: LedgerAdapterState): string[] {
+    const missing: string[] = [];
+    const roles: Array<['issuer' | 'player' | 'merchant', string]> = [
+      ['issuer', state.issuerAddress],
+      ['player', state.playerAddress],
+      ['merchant', state.merchantAddress],
+    ];
+    for (const [role, address] of roles) {
+      if (!address) continue;
+      if (hydrateSeed(address) === undefined) {
+        missing.push(`${role} ${address}`);
+      }
+    }
+    return missing;
   }
 
   /** Reuse an existing wallet (by address, resolving its seed from the cache)
@@ -507,8 +556,10 @@ export function createLedgerAdapter(
         for (const [key, val] of Object.entries(record.deltas)) {
           state.lastSettled[key] = (state.lastSettled[key] ?? 0) + val;
         }
+        delete record.lastError;
         moved++;
-      } catch {
+      } catch (err) {
+        record.lastError = errorMessage(err);
         stillPending.push(record);
       }
     }
@@ -522,12 +573,43 @@ export function createLedgerAdapter(
   }
 
   async function enable(state: LedgerAdapterState, snapshot: TradeableSnapshot): Promise<EnableResult> {
+    // `offline` is the documented no-op: an absent adapter IS this mode.
+    // DEFAULT_LEDGER_CONFIG.mode is 'offline' because this branch exists —
+    // enable never faucets, never mints, never submits.
+    if (config.mode === 'offline') {
+      state.enabled = true;
+      return {
+        success: true,
+        message: 'Offline mode — no chain. Adapter stays off the ledger.',
+      };
+    }
+
     // Fast idempotent path: a COMPLETE pack (funded, trust lines, minted)
     // flips back on in place, whether it was already enabled or freshly
     // disabled. No network calls, no re-fund, no re-mint (that would strand
     // the old wallets' tokens and double-mint). Mirrors backpack.py's
     // `_setup_complete` check exactly (it does not gate on `enabled` either).
+    // Seeds MUST be hydrated from the sidecar first: without getSeed a new
+    // instance would claim "already online" then fail the next settle.
     if (isSetupComplete(state, snapshot)) {
+      const missing = missingSetupSeeds(state);
+      if (missing.length > 0) {
+        state.enabled = false;
+        return {
+          success: false,
+          message:
+            `Could not enable the ledger adapter: missing seed(s) for ${missing.join(', ')} — ` +
+            `re-authenticate via the secrets sidecar. Adapter stays off — you can try again at the next checkpoint.`,
+        };
+      }
+      try {
+        await transport.connect();
+      } catch (err) {
+        return {
+          success: false,
+          message: `Could not enable the ledger adapter: ${errorMessage(err)}. Adapter stays off — you can try again at the next checkpoint.`,
+        };
+      }
       state.enabled = true;
       return {
         success: true,
@@ -541,6 +623,7 @@ export function createLedgerAdapter(
     );
 
     try {
+      await transport.connect();
       // ── diary: seal the books, do not custody them ──────────────────────
       // One player wallet and nothing else. No issuer, no AccountSet flags, no
       // trust lines, no opening mint — a diary run never puts the economy
@@ -671,6 +754,10 @@ export function createLedgerAdapter(
     location: string,
     options: SettleOptions = {},
   ): Promise<SettlementResult> {
+    if (config.mode === 'offline') {
+      return { success: true, message: 'Offline mode — no chain. Nothing to settle.' };
+    }
+
     if (!state.enabled) {
       return { success: false, message: 'Ledger adapter is not enabled.' };
     }
@@ -684,11 +771,13 @@ export function createLedgerAdapter(
     // record (town -30 still pending, market snapshot 50 vs baseline 100 → -50)
     // and execute both when the ledger recovers.
     if (state.pending.length > 0) {
+      const stuck = state.pending[0];
+      const where = `checkpoint ${stuck.checkpoint} at ${stuck.location}`;
+      const why = stuck.lastError ? `${where} still pending: ${stuck.lastError}` : `${where} is still pending`;
       return {
         success: false,
-        message:
-          "The ledger is quiet — couldn't settle this checkpoint (a previous checkpoint is still pending). Your run continues offline for now; we'll retry at the next checkpoint.",
-        record: state.pending[0],
+        message: `The ledger is quiet — couldn't settle this checkpoint (${why}). Your run continues offline for now; we'll retry at the next checkpoint.`,
+        record: stuck,
       };
     }
 
@@ -764,6 +853,7 @@ export function createLedgerAdapter(
         verb,
         // Per-key receipts so retryPending skips writes that already landed.
         receipts,
+        lastError: errorMessage(err),
       };
       state.pending.push(record);
       state.lastSettleFailed = true;

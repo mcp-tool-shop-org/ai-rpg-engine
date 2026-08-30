@@ -53,6 +53,7 @@ import type {
   NFTMintFlags,
   NFTMintResult,
   NFTOfferResult,
+  NFTSellOfferInfo,
   NFTTransport,
   TrustLineInfo,
   TxEntry,
@@ -67,6 +68,10 @@ import { assertTestnetHost, resolveTestnetEndpoint } from '../security/index.js'
 // hanging the caller forever.
 const REQUEST_DEADLINE_MS = 30_000; // a single request/response round-trip (connect, account_lines, account_tx)
 const WRITE_DEADLINE_MS = 60_000; // submitAndWait's own validation-poll loop (2x the request deadline)
+/** Bound on account_lines / account_nfts / account_tx / nft_sell_offers marker loops. */
+const MAX_LEDGER_PAGES = 32;
+/** Per-page size when accountTx is asked for every page (rippled max is 400). */
+const ACCOUNT_TX_PAGE = 400;
 /** After the write deadline fires, observe a dangling submitAndWait this long
  *  so a late tesSUCCESS is still checkpointed. If the node is actually stalled,
  *  this second race returns `{ ok: false }` instead of hanging the caller. */
@@ -275,6 +280,38 @@ export class TestnetTransport implements LedgerTransport, NFTTransport {
     this.connected = true;
   }
 
+  /** Auto-connect once, like xrpl.js clients that open the socket on first use. */
+  private async ensureConnected(): Promise<void> {
+    if (!this.connected) await this.connect();
+  }
+
+  /** Follow result.marker until exhausted or `maxItems` collected. Page failures
+   *  name the command so a stalled node is distinguishable from an empty book. */
+  private async collectPages<T>(
+    label: string,
+    fetchPage: (marker: unknown | undefined) => Promise<{ items: T[]; marker?: unknown }>,
+    maxItems?: number,
+  ): Promise<T[]> {
+    const out: T[] = [];
+    let marker: unknown | undefined;
+    for (let page = 0; page < MAX_LEDGER_PAGES; page++) {
+      let items: T[];
+      let next: unknown | undefined;
+      try {
+        const res = await fetchPage(marker);
+        items = res.items;
+        next = res.marker;
+      } catch (err) {
+        throw new Error(`${label} page ${page + 1} failed: ${errorMessage(err)}`);
+      }
+      out.push(...items);
+      if (maxItems !== undefined && out.length >= maxItems) return out.slice(0, maxItems);
+      if (next === undefined) return out;
+      marker = next;
+    }
+    return out;
+  }
+
   async disconnect(): Promise<void> {
     if (!this.connected) return;
     this.connected = false;
@@ -287,6 +324,7 @@ export class TestnetTransport implements LedgerTransport, NFTTransport {
   }
 
   async fundWallet(): Promise<WalletHandle> {
+    await this.ensureConnected();
     const { wallet } = await withDeadline(this.client.fundWallet(), WRITE_DEADLINE_MS, 'fundWallet()');
     if (wallet.seed === undefined) {
       throw new Error(
@@ -431,42 +469,61 @@ export class TestnetTransport implements LedgerTransport, NFTTransport {
   }
 
   async accountLines(address: string): Promise<TrustLineInfo[]> {
-    const res = await withDeadline(
-      this.client.request<xrpl.AccountLinesRequest>({ command: 'account_lines', account: address }),
-      REQUEST_DEADLINE_MS,
-      'account_lines',
-    );
-    return res.result.lines.map((line) => ({
-      account: line.account,
-      currency: line.currency,
-      balance: line.balance,
-      limit: line.limit,
-    }));
+    await this.ensureConnected();
+    return this.collectPages(`account_lines(${address})`, async (marker) => {
+      const req: xrpl.AccountLinesRequest = { command: 'account_lines', account: address };
+      if (marker !== undefined) req.marker = marker as xrpl.AccountLinesRequest['marker'];
+      const res = await withDeadline(
+        this.client.request<xrpl.AccountLinesRequest>(req),
+        REQUEST_DEADLINE_MS,
+        'account_lines',
+      );
+      return {
+        items: res.result.lines.map((line) => ({
+          account: line.account,
+          currency: line.currency,
+          balance: line.balance,
+          limit: line.limit,
+        })),
+        marker: res.result.marker,
+      };
+    });
   }
 
   /** account_tx — most recent first (rippled's default `forward: false`),
-   *  matching DryRunTransport's own "most recent first" convention. */
+   *  matching DryRunTransport's own "most recent first" convention.
+   *  Omitted `limit` follows every marker page (bounded); a numeric limit
+   *  still paginates until that many entries are collected. */
   async accountTx(address: string, limit?: number): Promise<TxEntry[]> {
-    const res = await withDeadline(
-      this.client.request<xrpl.AccountTxRequest>({ command: 'account_tx', account: address, limit: limit ?? 50 }),
-      REQUEST_DEADLINE_MS,
-      'account_tx',
+    await this.ensureConnected();
+    const pageLimit = limit !== undefined ? Math.min(Math.max(limit, 1), ACCOUNT_TX_PAGE) : ACCOUNT_TX_PAGE;
+    return this.collectPages(
+      `account_tx(${address})`,
+      async (marker) => {
+        const req: xrpl.AccountTxRequest = { command: 'account_tx', account: address, limit: pageLimit };
+        if (marker !== undefined) req.marker = marker as xrpl.AccountTxRequest['marker'];
+        const res = await withDeadline(
+          this.client.request<xrpl.AccountTxRequest>(req),
+          REQUEST_DEADLINE_MS,
+          'account_tx',
+        );
+        const entries: TxEntry[] = [];
+        for (const raw of res.result.transactions) {
+          const tx = (raw as { tx_json?: { hash?: string; TransactionType?: string; Sequence?: number; Memos?: Array<{ Memo?: { MemoData?: string } }> }; hash?: string }).tx_json;
+          const hash = (raw as { hash?: string }).hash ?? tx?.hash ?? '';
+          const type = tx?.TransactionType ?? 'Unknown';
+          const memoHex = tx?.Memos?.[0]?.Memo?.MemoData;
+          const memo = memoHex !== undefined ? safeHexDecode(memoHex) : undefined;
+          const sequence = typeof tx?.Sequence === 'number' ? tx.Sequence : undefined;
+          const mapped: TxEntry = { hash, type };
+          if (memo !== undefined) mapped.memo = memo;
+          if (sequence !== undefined) mapped.sequence = sequence;
+          entries.push(mapped);
+        }
+        return { items: entries, marker: res.result.marker };
+      },
+      limit,
     );
-
-    const entries: TxEntry[] = [];
-    for (const raw of res.result.transactions) {
-      const tx = (raw as { tx_json?: { hash?: string; TransactionType?: string; Sequence?: number; Memos?: Array<{ Memo?: { MemoData?: string } }> }; hash?: string }).tx_json;
-      const hash = (raw as { hash?: string }).hash ?? tx?.hash ?? '';
-      const type = tx?.TransactionType ?? 'Unknown';
-      const memoHex = tx?.Memos?.[0]?.Memo?.MemoData;
-      const memo = memoHex !== undefined ? safeHexDecode(memoHex) : undefined;
-      const sequence = typeof tx?.Sequence === 'number' ? tx.Sequence : undefined;
-      const mapped: TxEntry = { hash, type };
-      if (memo !== undefined) mapped.memo = memo;
-      if (sequence !== undefined) mapped.sequence = sequence;
-      entries.push(mapped);
-    }
-    return entries;
   }
 
   // ── NFT operations (XLS-20 mint/transfer/burn, XLS-46 NFTokenModify) ─────
@@ -580,24 +637,54 @@ export class TestnetTransport implements LedgerTransport, NFTTransport {
     return this.submit(tx, wallet);
   }
 
+  async nftSellOffers(nftId: string): Promise<NFTSellOfferInfo[]> {
+    await this.ensureConnected();
+    return this.collectPages(`nft_sell_offers(${nftId})`, async (marker) => {
+      const req: xrpl.NFTSellOffersRequest = { command: 'nft_sell_offers', nft_id: nftId };
+      if (marker !== undefined) req.marker = marker as xrpl.NFTSellOffersRequest['marker'];
+      const res = await withDeadline(
+        this.client.request<xrpl.NFTSellOffersRequest>(req),
+        REQUEST_DEADLINE_MS,
+        'nft_sell_offers',
+      );
+      return {
+        items: (res.result.offers ?? []).map((o) => ({
+          offerIndex: o.nft_offer_index,
+          nftId,
+          destination: o.destination,
+          owner: o.owner,
+        })),
+        marker: res.result.marker,
+      };
+    });
+  }
+
   /** account_nfts — the external-verifier read: every NFT `address` owns. */
   async accountNfts(address: string): Promise<NFTInfo[]> {
-    const res = await withDeadline(
-      this.client.request<xrpl.AccountNFTsRequest>({
+    await this.ensureConnected();
+    return this.collectPages(`account_nfts(${address})`, async (marker) => {
+      const req: xrpl.AccountNFTsRequest = {
         command: 'account_nfts',
         account: address,
         ledger_index: 'validated',
-      }),
-      REQUEST_DEADLINE_MS,
-      'account_nfts',
-    );
-    return res.result.account_nfts.map((n) => ({
-      nftId: n.NFTokenID,
-      uri: n.URI ? safeHexDecode(n.URI) ?? '' : '',
-      taxon: n.NFTokenTaxon,
-      issuer: n.Issuer,
-      flags: n.Flags,
-    }));
+      };
+      if (marker !== undefined) req.marker = marker as xrpl.AccountNFTsRequest['marker'];
+      const res = await withDeadline(
+        this.client.request<xrpl.AccountNFTsRequest>(req),
+        REQUEST_DEADLINE_MS,
+        'account_nfts',
+      );
+      return {
+        items: res.result.account_nfts.map((n) => ({
+          nftId: n.NFTokenID,
+          uri: n.URI ? safeHexDecode(n.URI) ?? '' : '',
+          taxon: n.NFTokenTaxon,
+          issuer: n.Issuer,
+          flags: n.Flags,
+        })),
+        marker: res.result.marker,
+      };
+    });
   }
 
   // ── Internal helpers ────────────────────────────────────────────────────
@@ -641,6 +728,7 @@ export class TestnetTransport implements LedgerTransport, NFTTransport {
     tx: T,
     wallet: xrpl.Wallet,
   ): Promise<{ result: TxResult; meta: unknown }> {
+    await this.ensureConnected();
     const work = this.client.submitAndWait<T>(tx, { wallet, autofill: true });
     try {
       const res = await withDeadline(work, WRITE_DEADLINE_MS, `submitAndWait(${tx.TransactionType})`);
@@ -696,12 +784,8 @@ export class TestnetTransport implements LedgerTransport, NFTTransport {
    *  re-look-up the offer itself later. */
   private async lookupSellOfferIndex(nftId: string): Promise<string | undefined> {
     try {
-      const res = await withDeadline(
-        this.client.request<xrpl.NFTSellOffersRequest>({ command: 'nft_sell_offers', nft_id: nftId }),
-        REQUEST_DEADLINE_MS,
-        'nft_sell_offers',
-      );
-      return res.result.offers[0]?.nft_offer_index;
+      const offers = await this.nftSellOffers(nftId);
+      return offers[0]?.offerIndex;
     } catch {
       return undefined;
     }
