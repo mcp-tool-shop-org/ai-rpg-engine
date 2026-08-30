@@ -14,6 +14,7 @@ import {
   getRumorLog,
   getRumorsFrom,
   getRumorsToFaction,
+  DEFAULT_MAX_RUMOR_LOG,
 } from './rumor-propagation.js';
 
 function makeGuard(id: string, zone: string) {
@@ -244,5 +245,23 @@ describe('rumor-propagation', () => {
     const rumors = getRumorsFrom(engine.world, 'guard_1');
     const hostileRumors = rumors.filter(r => r.key === 'hostile');
     expect(hostileRumors.length).toBe(1);
+  });
+
+  test('F-646067f5: 250 distinct propagations leave rumorLog.length === cap, oldest dropped', () => {
+    const engine = createEngine({ propagationDelay: 0, confidenceThreshold: 0 });
+    engine.drainEvents();
+    const cog = getCognition(engine.world, 'guard_1');
+    for (let i = 0; i < 250; i++) {
+      setBelief(cog, `foe_${i}`, 'hostile', true, 0.9, 'observed', 1);
+      engine.store.emitEvent('combat.contact.hit', {
+        attackerId: `foe_${i}`,
+        targetId: 'guard_1',
+        damage: 1,
+      }, { actorId: `foe_${i}`, targetIds: ['guard_1'] });
+    }
+    const log = getRumorLog(engine.world);
+    expect(log.length).toBe(DEFAULT_MAX_RUMOR_LOG);
+    expect(log[0].subject).toBe('foe_50');
+    expect(log[log.length - 1].subject).toBe('foe_249');
   });
 });

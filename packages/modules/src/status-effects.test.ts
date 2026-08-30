@@ -314,6 +314,32 @@ describe('processPeriodicStatuses — DoT/HoT', () => {
     expect(second.filter(ev => ev.type === 'status.periodic.damage')).toHaveLength(0);
     expect(e.resources.hp).toBe(hpAfterFirst);
   });
+
+  it('F-bc6233d3: tickOn turn-end skips elapsed===0 and deals at expiry; turn-start still deals on apply', () => {
+    const start = makeEntity({ id: 'start', resources: { hp: 20, maxHp: 20 } });
+    const end = makeEntity({ id: 'end', resources: { hp: 20, maxHp: 20 } });
+    const world = makeWorld([start, end], 0);
+    applyStatus(start, 'burning', 0, {
+      duration: 1,
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 5, tickOn: 'turn-start' },
+    }, world);
+    applyStatus(end, 'burning', 0, {
+      duration: 1,
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 5, tickOn: 'turn-end' },
+    }, world);
+
+    const enter = processPeriodicStatuses(world, 0);
+    expect(enter.filter((ev) => ev.type === 'status.periodic.damage' && ev.targetIds?.[0] === 'start')).toHaveLength(1);
+    expect(enter.filter((ev) => ev.type === 'status.periodic.damage' && ev.targetIds?.[0] === 'end')).toHaveLength(0);
+    expect(start.resources.hp).toBe(15);
+    expect(end.resources.hp).toBe(20);
+
+    world.meta.tick = 1;
+    const wait = processPeriodicStatuses(world, 1);
+    expect(wait.filter((ev) => ev.type === 'status.periodic.damage' && ev.targetIds?.[0] === 'end')).toHaveLength(1);
+    expect(end.resources.hp).toBe(15);
+    expect(end.statuses.some((s) => s.statusId === 'burning')).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -462,6 +488,40 @@ describe('processStatusTriggers — reactive triggers + depth cap', () => {
     const hpAfterSecond = attacker.resources.hp;
     // The dedup set blocks the second identical proc.
     expect(hpAfterSecond).toBe(hpAfterFirst);
+  });
+
+  it('F-b6b2ff9b: a combat.damage.applied thorns pulse emits resource.changed with a negative delta equal to the thorns amount', () => {
+    registerStatusDefinitions([
+      {
+        id: 'thorns', name: 'Thorns', tags: ['buff'], stacking: 'replace',
+        triggers: [
+          {
+            event: 'combat.damage.applied',
+            effect: { type: 'damage', target: 'target', params: { amount: 4, triggerTarget: 'attacker' } },
+          },
+        ],
+      },
+    ]);
+    const defender = makeEntity({ id: 'defender', resources: { hp: 50, maxHp: 50 } });
+    const attacker = makeEntity({ id: 'attacker', resources: { hp: 50, maxHp: 50 } });
+    defender.statuses = [{ id: 's1', statusId: 'thorns', stacks: 1, appliedAtTick: 0, sourceId: 'defender' }];
+    const world = makeWorld([defender, attacker], 1);
+
+    const incoming = {
+      id: 'evt1', tick: 1, type: 'combat.damage.applied',
+      actorId: 'attacker', targetIds: ['defender'],
+      payload: { attackerId: 'attacker', targetId: 'defender', damage: 5 },
+    };
+    const events = processStatusTriggers(incoming, world, makeProcContext(), 1);
+    const rc = events.find((ev) => ev.type === 'resource.changed');
+    expect(rc, 'applyReaction damage must emit resource.changed').toBeDefined();
+    expect(rc!.payload.entityId).toBe('attacker');
+    expect(rc!.payload.resource).toBe('hp');
+    expect(rc!.payload.previous).toBe(50);
+    expect(rc!.payload.current).toBe(46);
+    expect(rc!.payload.delta).toBe(-4);
+    expect(rc!.payload.cause).toBe('status-trigger');
+    expect(attacker.resources.hp).toBe(46);
   });
 
   it('ignores triggers whose event does not match', () => {

@@ -8,8 +8,11 @@
 // is its own.
 
 import { describe, it, expect } from 'vitest';
-import type { WorldState } from '@ai-rpg-engine/core';
+import { createTestEngine } from '@ai-rpg-engine/core';
+import type { EntityState, WorldState } from '@ai-rpg-engine/core';
 import { computeAbilityModifiers, computePartyAbilities, createPartyState, setPartyState } from './companion-core.js';
+import { createCognitionCore } from './cognition-core.js';
+import { createPerceptionFilter, getPerceptionLog } from './perception-filter.js';
 
 function partyWith(abilityTags: string[], active = true) {
   const party = createPartyState();
@@ -52,5 +55,82 @@ describe('the perception filter reads the party only for the PLAYER', () => {
     setPartyState(world, dormant);
     const active = dormant.companions.filter((c) => c.active);
     expect(active).toHaveLength(0);
+  });
+
+  it('F-a8c93f50: a scholar in the party raises the PLAYER log clarity 0.1 on a zone.entered they did not act', () => {
+    const player: EntityState = {
+      id: 'player',
+      blueprintId: 'player',
+      type: 'player',
+      name: 'Hero',
+      tags: ['player'],
+      stats: { vigor: 5, instinct: 2 },
+      resources: { hp: 20, stamina: 5 },
+      statuses: [],
+      zoneId: 'b',
+    };
+    const walker: EntityState = {
+      id: 'walker',
+      blueprintId: 'walker',
+      type: 'npc',
+      name: 'Walker',
+      tags: ['npc'],
+      stats: { vigor: 5, instinct: 5 },
+      resources: { hp: 20, stamina: 5 },
+      statuses: [],
+      zoneId: 'b',
+      visibility: { hidden: true },
+      ai: { profileId: 'cautious', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+    };
+    const bystander: EntityState = {
+      id: 'guard',
+      blueprintId: 'guard',
+      type: 'npc',
+      name: 'Guard',
+      tags: ['npc'],
+      stats: { vigor: 5, instinct: 2 },
+      resources: { hp: 20, stamina: 5 },
+      statuses: [],
+      zoneId: 'b',
+      ai: { profileId: 'cautious', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+    };
+    const zones = [
+      { id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: ['b'] },
+      { id: 'b', roomId: 'test', name: 'B', tags: [], neighbors: ['a'], light: 0 },
+    ];
+
+    function scene(withScholar: boolean) {
+      const engine = createTestEngine({
+        modules: [createCognitionCore(), createPerceptionFilter()],
+        entities: [
+          { ...player, stats: { ...player.stats }, resources: { ...player.resources }, statuses: [] },
+          { ...walker, stats: { ...walker.stats }, resources: { ...walker.resources }, statuses: [], visibility: { hidden: true }, ai: { ...walker.ai! } },
+          { ...bystander, stats: { ...bystander.stats }, resources: { ...bystander.resources }, statuses: [], ai: { ...bystander.ai! } },
+        ],
+        zones,
+        playerId: 'player',
+        startZone: 'b',
+        seed: 1,
+      });
+      if (withScholar) setPartyState(engine.world, partyWith(['scholarly-insight']));
+      engine.store.emitEvent('world.zone.entered', { zoneId: 'b' }, { actorId: 'walker' });
+      return {
+        playerLog: getPerceptionLog(engine.world, 'player'),
+        guardLog: getPerceptionLog(engine.world, 'guard'),
+      };
+    }
+
+    const without = scene(false);
+    const withScholar = scene(true);
+
+    expect(without.playerLog.length, 'player without ai must still perceive').toBeGreaterThan(0);
+    expect(withScholar.playerLog.length).toBeGreaterThan(0);
+    const base = without.playerLog[0].clarity;
+    const boosted = withScholar.playerLog[0].clarity;
+    expect(boosted).toBeCloseTo(Math.min(1, base + 0.1), 5);
+    expect(boosted).toBeGreaterThan(base);
+
+    // NPC perceivers do not get the party bonus.
+    expect(without.guardLog[0].clarity).toBeCloseTo(withScholar.guardLog[0].clarity, 5);
   });
 });

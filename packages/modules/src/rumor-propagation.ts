@@ -53,6 +53,13 @@ const DEFAULT_DELAY = 2;
 const DEFAULT_DISTORTION = 0.05;
 const DEFAULT_CONFIDENCE_THRESHOLD = 0.3;
 const DEFAULT_INSTABILITY_FACTOR = 0.1;
+/**
+ * Ring-buffer cap for persisted rumorLog (rides WorldStore.serialize).
+ * Same shift-when-over-cap pattern as perception-filter (F-c68e150a).
+ * lastPropagated rate-limits re-propagation of the same key; it does not
+ * bound log growth (F-646067f5).
+ */
+export const DEFAULT_MAX_RUMOR_LOG = 200;
 
 export function createRumorPropagation(config?: RumorPropagationConfig): EngineModule {
   const delay = config?.propagationDelay ?? DEFAULT_DELAY;
@@ -156,6 +163,9 @@ function scheduleRumors(
         originTick: event.tick,
         hops: 1,
       });
+      while (state.rumorLog.length > DEFAULT_MAX_RUMOR_LOG) {
+        state.rumorLog.shift();
+      }
 
       state.lastPropagated[dedupKey] = event.tick;
     }

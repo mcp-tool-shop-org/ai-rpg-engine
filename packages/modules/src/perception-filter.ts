@@ -149,8 +149,12 @@ function processEvent(
     if (entity.id === actorId) continue;
     // Skip direct targets (cognition-core handles direct experience)
     if (event.targetIds?.includes(entity.id)) continue;
-    // Skip non-AI entities
-    if (!entity.ai) continue;
+    // Skip non-AI furniture — but not the player. Shipped players are
+    // type:'player' with no ai block, and AbilityModifiers.perceptionBonus
+    // only applies when entity.id === world.playerId. Dropping them here
+    // made scholarly-insight a no-op (F-a8c93f50). Other non-ai entities
+    // still skip.
+    if (!entity.ai && entity.id !== world.playerId) continue;
 
     for (const layer of matchingLayers) {
       const isInZone = entity.zoneId === eventZone;

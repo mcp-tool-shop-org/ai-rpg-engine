@@ -499,6 +499,23 @@ describe('world-tick — guarded like the NPC round', () => {
     expect(line.length).toBeLessThan(260);
     expect(line).not.toContain('\n');
   });
+
+  it('F-39229b3b: a throw after heat is already 40 reports result.heat===40, not a fabricated 0', () => {
+    const engine = makeBareEngine({ [HEAT_KEY]: 40 });
+    engine.store.state.modules['world-tick'] = { pressures: 42 }; // for..of throws
+    const log = vi.fn();
+
+    const result = runWorldTick(engine, { log });
+
+    expect(result.ok).toBe(false);
+    expect(result.heat).toBe(40);
+    expect(result.spawned).toEqual([]);
+    expect(result.revealed).toEqual([]);
+    expect(result.escalated).toEqual([]);
+    expect(result.expired).toEqual([]);
+    expect(result.active).toEqual([]);
+    expect(log).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('world-tick — the encounter spawn step rides the ONE world tick (F-ENG005-encounter-spawn-wiring)', () => {
@@ -1915,6 +1932,7 @@ describe('world-tick — leverage income wire (v3.0 wave 2, "leverage-income")',
       const wtState = engine.world.modules['world-tick'] as WorldTickState;
       expect(wtState.leverageMilestoneCursor).toBeUndefined();
       expect(wtState.lastXp).toBeUndefined();
+      expect(wtState.lastReputation).toBeUndefined();
     }
 
     // No leverage-attributable event ever landed in the log.
@@ -1926,6 +1944,38 @@ describe('world-tick — leverage income wire (v3.0 wave 2, "leverage-income")',
     // assertion, adapted here for a multi-round loop instead of a single
     // no-advance round).
     expect(engine.world.meta.tick).toBe(beforeTick + 4);
+  });
+
+  it('F-9b836ed9: a reputation drop of more than 10 then one runWorldTick writes leverage.blackmail +3, and a quiet tick does not re-grant', () => {
+    const engine = makeBareEngine({ reputation_guild: 0 });
+    engine.world.entities.player.custom = { 'leverage.blackmail': 0 };
+    runWorldTick(engine, { genre: 'fantasy' }); // snapshot lastReputation at 0
+    expect(leverageOf(engine).blackmail).toBe(0);
+
+    engine.world.globals['reputation_guild'] = -15; // intimidate/sabotage-scale tank
+    const first = runWorldTick(engine, { genre: 'fantasy' });
+    expect(first.ok).toBe(true);
+    expect(leverageOf(engine).blackmail).toBe(3);
+
+    engine.store.advanceTick();
+    const second = runWorldTick(engine, { genre: 'fantasy' });
+    expect(second.ok).toBe(true);
+    expect(leverageOf(engine).blackmail).toBe(3);
+  });
+
+  it('F-9b836ed9: a reputation gain then one runWorldTick writes leverage.favor +5, and a quiet tick does not re-grant', () => {
+    const engine = makeBareEngine({ reputation_guild: 0 });
+    engine.world.entities.player.custom = { 'leverage.favor': 0 };
+    runWorldTick(engine, { genre: 'fantasy' });
+    expect(leverageOf(engine).favor).toBe(0);
+
+    engine.world.globals['reputation_guild'] = 12;
+    runWorldTick(engine, { genre: 'fantasy' });
+    expect(leverageOf(engine).favor).toBe(5);
+
+    engine.store.advanceTick();
+    runWorldTick(engine, { genre: 'fantasy' });
+    expect(leverageOf(engine).favor).toBe(5);
   });
 
   it('SEED-0 IDENTITY: a world with pre-existing OTHER custom fields (but no leverage engagement) gains no leverage.* keys either', () => {

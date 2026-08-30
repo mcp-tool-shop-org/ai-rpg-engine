@@ -251,6 +251,42 @@ function attackHandler(
           presentation: { channels: ['objective', 'narrator'], priority: 'high' },
         }));
 
+        // Same contact/damage pair the direct-hit path emits, with the
+        // interceptor as targetId, so cognition morale-on-damage, take-damage
+        // momentum, combat-roles, district combat.* alerts, and status-core's
+        // action.resolved seed (processStatusTriggers on combat.damage.applied)
+        // all see the blow. combat.companion.intercepted stays for narration
+        // (F-165d681b).
+        const interceptAtk = getStat(attacker, mapping, 'attack', 5, world);
+        const interceptPrecision = getStat(attacker, mapping, 'precision', 5, world);
+        const interceptHitStyle = interceptPrecision > interceptAtk ? 'precise'
+          : interceptAtk > interceptPrecision ? 'forceful'
+          : 'balanced';
+        events.push(makeEvent(action, 'combat.contact.hit', {
+          attackerId: attacker.id,
+          targetId: interceptor.id,
+          roll,
+          hitChance,
+          hitStyle: interceptHitStyle,
+        }, {
+          targetIds: [interceptor.id],
+          presentation: { channels: ['objective'], priority: 'normal' },
+        }));
+        events.push(makeEvent(action, 'combat.damage.applied', {
+          attackerId: attacker.id,
+          targetId: interceptor.id,
+          damage: interceptDamage,
+          previousHp: interceptorPrevHp,
+          currentHp: interceptor.resources.hp,
+        }, {
+          targetIds: [interceptor.id],
+          presentation: {
+            channels: ['objective'],
+            priority: 'high',
+            soundCues: ['combat.hit'],
+          },
+        }));
+
         events.push(makeEvent(action, 'resource.changed', {
           entityId: interceptor.id,
           resource: 'hp',

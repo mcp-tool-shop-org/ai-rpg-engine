@@ -19,6 +19,7 @@ export {
   getBeliefValue,
   believes,
   addMemory,
+  DEFAULT_MAX_MEMORIES,
   getMemories,
   getRecentMemories,
   checkPerception,
@@ -116,6 +117,7 @@ export {
   getRumorsFrom,
   getRumorsToFaction,
   getRumorLog,
+  DEFAULT_MAX_RUMOR_LOG,
 } from './rumor-propagation.js';
 export type {
   RumorRecord,
