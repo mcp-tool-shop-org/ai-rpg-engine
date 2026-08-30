@@ -2,13 +2,12 @@
 # Self-contained: builds the monorepo from source and exposes the `ai-rpg-engine`
 # CLI as the entrypoint. `docker run ghcr.io/mcp-tool-shop-org/ai-rpg-engine --help`.
 
-# Pinned to node:22 deliberately: ci.yml's test matrix covers Node 20 and 22
-# only, so 22 is the newest runtime this repo actually verifies. Bumping this
-# ahead of the CI matrix (e.g. to 24) would ship a production runtime with
-# zero test coverage — move this only after adding the version to ci.yml.
+# Pinned to node:24: ci.yml's test matrix covers Node 22 (gate runner) and 24
+# (current LTS). This image tracks the production LTS the matrix actually
+# exercises — do not bump ahead of ci.yml.
 
 # --- build stage: compile the whole workspace ---
-FROM node:22-bookworm-slim AS build
+FROM node:24-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.json ./
 COPY packages ./packages
@@ -17,7 +16,7 @@ RUN npm ci
 RUN npm run build
 
 # --- runtime stage: prod deps + built dist only ---
-FROM node:22-bookworm-slim AS runtime
+FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 # Bring the built workspace (each package's dist/) + manifests, then install only
