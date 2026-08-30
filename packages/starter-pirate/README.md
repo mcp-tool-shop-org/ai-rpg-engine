@@ -16,7 +16,7 @@
 
 > **Composition Example** — This starter demonstrates how to wire the engine for pirate adventure. It is an example to learn from, not a template to copy. See the [Composition Guide](../../docs/handbook/57-composition-guide.md) to build your own game.
 
-**Black Flag Requiem** — a high-seas pirate starter world for AI RPG Engine.
+**Black Flag Requiem** — Your ship is your kingdom, and beneath the waves the drowned dead wait.
 
 ## Install
 

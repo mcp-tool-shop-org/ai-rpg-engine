@@ -62,6 +62,8 @@ Chaque pack de démarrage exporte un `packMeta: PackMetadata` avec des champs st
 | tones | PackTone[] | Descripteurs de tonalité narrative |
 | tags | string[] | Étiquettes libres pour la recherche |
 | engineVersion | string | Version minimale du moteur (semver) |
+| version | string | Version du pack |
+| description | string | Courte description (1-3 phrases) — sous-titre du listing |
 | narratorTone | string | Tonalité pour le narrateur |
 
 ### Grille d'évaluation

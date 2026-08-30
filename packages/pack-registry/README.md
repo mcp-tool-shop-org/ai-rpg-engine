@@ -41,7 +41,7 @@ registerPack({
 
 // Browse all registered packs
 const summaries = getPackSummaries();
-// [{ id: 'chapel-threshold', name: 'The Chapel Threshold', tagline: '...', genres: ['fantasy'], difficulty: 'beginner' }]
+// [{ id, name, tagline, description, version, genres, genreLabels, difficulty, tones }]
 
 // Filter by genre, difficulty, or tone
 const darkPacks = filterPacks({ tone: 'dark' });
@@ -56,12 +56,14 @@ Each starter pack exports a `packMeta: PackMetadata` with structured fields:
 |-------|------|-------------|
 | id | string | Unique identifier (matches manifest.id) |
 | name | string | Human-readable name |
-| tagline | string | One-line marketing tagline |
+| tagline | string | One-line marketing tagline (listing title) |
 | genres | PackGenre[] | Genre tags for filtering |
 | difficulty | PackDifficulty | beginner, intermediate, or advanced |
 | tones | PackTone[] | Narrative tone descriptors |
 | tags | string[] | Free-form tags for search |
 | engineVersion | string | Minimum engine version (semver) |
+| version | string | Pack version |
+| description | string | Short description (1-3 sentences) — listing subtitle |
 | narratorTone | string | Tone string for the narrator |
 
 ### Quality Rubric

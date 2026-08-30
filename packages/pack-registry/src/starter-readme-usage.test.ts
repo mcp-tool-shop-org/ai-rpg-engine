@@ -148,4 +148,31 @@ describe('F-5ff2b341 / F-122e1140: starter README fences are live', () => {
       }
     }
   });
+
+  it('F-703f101c: every starter README ships the engine logo and CI / License / Landing_Page badges', () => {
+    for (const pkg of starters) {
+      for (const file of README_FILES) {
+        const src = readFileSync(join(packagesDir, pkg, file), 'utf8');
+        expect(src, `${pkg}/${file} missing readme.png`).toContain('readme.png');
+        expect(src, `${pkg}/${file} missing CI badge.svg`).toContain('badge.svg');
+        expect(src, `${pkg}/${file} missing License badge`).toContain('License-MIT');
+        expect(src, `${pkg}/${file} missing Landing_Page badge`).toContain('Landing_Page');
+      }
+    }
+  });
+
+  it('F-98b01fde: English README hero is packMeta.name — packMeta.tagline', () => {
+    for (const pkg of starters) {
+      const meta = barrels[pkg]?.packMeta as { name?: string; tagline?: string } | undefined;
+      expect(meta?.name, `${pkg} barrel missing packMeta.name`).toBeTruthy();
+      expect(meta?.tagline, `${pkg} barrel missing packMeta.tagline`).toBeTruthy();
+      const src = readFileSync(join(packagesDir, pkg, 'README.md'), 'utf8');
+      expect(src, `${pkg}/README.md hero must be **${meta!.name}** — ${meta!.tagline}`).toContain(
+        `**${meta!.name}** — ${meta!.tagline}`,
+      );
+      expect(src, `${pkg}/README.md must not ship a generic 'a {genre} starter world' hero`).not.toMatch(
+        /a .+ starter world for AI RPG Engine/i,
+      );
+    }
+  });
 });

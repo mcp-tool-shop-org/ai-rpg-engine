@@ -18,8 +18,9 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { validatePackRubric } from './rubric.js';
-import type { PackEntry } from './types.js';
+import { PACK_GENRE_LABELS, type PackEntry } from './types.js';
 import { satisfiesRange, isBareVersion } from '@ai-rpg-engine/content-schema';
+import { clearRegistry, getPackSummaries, registerPack } from './registry.js';
 
 import * as fantasy from '@ai-rpg-engine/starter-fantasy';
 import * as cyberpunk from '@ai-rpg-engine/starter-cyberpunk';
@@ -121,17 +122,37 @@ const realCatalog: PackEntry[] = [
   },
 ];
 
+const packagesDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
 /** Every `starter-*` workspace package that exists on disk, read from the
  *  filesystem rather than from a list in this file. This is the whole point of
  *  the membership guard below: a hand-maintained expected-ids literal drifts
  *  exactly the way `realCatalog` itself drifted. */
 function starterPackagesOnDisk(): string[] {
-  const packagesDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
   return readdirSync(packagesDir, { withFileTypes: true })
     .filter((e) => e.isDirectory() && e.name.startsWith('starter-'))
     .map((e) => e.name)
     .sort();
 }
+
+// meta.id is the WORLD id ('salt-road-ledger'), not the package directory
+// ('starter-merchant'), so the two surfaces are bridged explicitly. A twelfth
+// starter must be added here as well as to realCatalog above; omitting either
+// fails one of the two assertions below.
+const PACKAGE_BY_PACK_ID: Record<string, string> = {
+  'chapel-threshold': 'starter-fantasy',
+  'neon-lockbox': 'starter-cyberpunk',
+  'gaslight-detective': 'starter-detective',
+  'black-flag-requiem': 'starter-pirate',
+  'ashfall-dead': 'starter-zombie',
+  'dust-devils-bargain': 'starter-weird-west',
+  'signal-loss': 'starter-colony',
+  'crimson-court': 'starter-vampire',
+  'iron-colosseum': 'starter-gladiator',
+  'jade-veil': 'starter-ronin',
+  'salt-road-ledger': 'starter-merchant',
+  'hue-and-cry': 'starter-bounty-hunter',
+};
 
 // --- Membership guard (F-merchant-H) ------------------------------------
 //
@@ -147,25 +168,6 @@ function starterPackagesOnDisk(): string[] {
 // actually exist on disk, so a twelfth starter cannot ship without either
 // entering the rubric or being explicitly excluded here.
 describe('catalog-of-record membership (F-merchant-H)', () => {
-  // meta.id is the WORLD id ('salt-road-ledger'), not the package directory
-  // ('starter-merchant'), so the two surfaces are bridged explicitly. A twelfth
-  // starter must be added here as well as to realCatalog above; omitting either
-  // fails one of the two assertions below.
-  const PACKAGE_BY_PACK_ID: Record<string, string> = {
-    'chapel-threshold': 'starter-fantasy',
-    'neon-lockbox': 'starter-cyberpunk',
-    'gaslight-detective': 'starter-detective',
-    'black-flag-requiem': 'starter-pirate',
-    'ashfall-dead': 'starter-zombie',
-    'dust-devils-bargain': 'starter-weird-west',
-    'signal-loss': 'starter-colony',
-    'crimson-court': 'starter-vampire',
-    'iron-colosseum': 'starter-gladiator',
-    'jade-veil': 'starter-ronin',
-    'salt-road-ledger': 'starter-merchant',
-    'hue-and-cry': 'starter-bounty-hunter',
-  };
-
   it('every catalog entry maps to a real package directory', () => {
     const onDisk = new Set(starterPackagesOnDisk());
     for (const pack of realCatalog) {
@@ -311,7 +313,7 @@ describe('pack rubric × real catalog (PG-1)', () => {
     expect(check?.detail).toContain('duplicates another pack');
   });
 
-  it('F-abed87fc: every catalog pack stamps a real engineVersion range that satisfies the workspace engine and locksteps packMeta', () => {
+  it('F-abed87fc / F-7a4caf77: engineVersion range satisfies the workspace engine; pack version locksteps package.json, packMeta, and manifest', () => {
     const rootPkg = JSON.parse(
       readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'package.json'), 'utf8'),
     ) as { version: string };
@@ -337,6 +339,38 @@ describe('pack rubric × real catalog (PG-1)', () => {
         lockstep,
         `${pack.meta.id} packMeta.engineVersion "${metaVer}" must equal or fall inside manifest.engineVersion "${claimed}"`,
       ).toBe(true);
+
+      const pkgDir = PACKAGE_BY_PACK_ID[pack.meta.id];
+      expect(pkgDir, `${pack.meta.id} has no package mapping`).toBeTruthy();
+      const pkgJson = JSON.parse(
+        readFileSync(resolve(packagesDir, pkgDir, 'package.json'), 'utf8'),
+      ) as { version: string };
+      expect(
+        pack.manifest.version,
+        `${pack.meta.id} manifest.version "${pack.manifest.version}" must equal package.json version "${pkgJson.version}"`,
+      ).toBe(pkgJson.version);
+      expect(
+        pack.meta.version,
+        `${pack.meta.id} packMeta.version "${pack.meta.version}" must equal package.json version "${pkgJson.version}"`,
+      ).toBe(pkgJson.version);
     }
+  });
+
+  it("F-7af3a342: Hue and Cry's listing label is not the bare token 'pursuit'", () => {
+    const pack = realCatalog.find((p) => p.meta.id === 'hue-and-cry');
+    expect(pack, 'hue-and-cry is missing from the catalog-of-record').toBeDefined();
+    expect(pack!.meta.genres).toContain('pursuit');
+    const labels = pack!.meta.genres.map((g) => PACK_GENRE_LABELS[g]);
+    expect(labels).toContain('Pursuit / thief-taker');
+    expect(labels).not.toContain('pursuit');
+
+    clearRegistry();
+    registerPack(pack!);
+    const summary = getPackSummaries().find((s) => s.id === 'hue-and-cry');
+    expect(summary?.genreLabels).toEqual(['Pursuit / thief-taker']);
+    expect(summary?.description).toBe(pack!.meta.description);
+    expect(summary?.version).toBe(pack!.meta.version);
+    expect(summary?.tones).toEqual(pack!.meta.tones);
+    clearRegistry();
   });
 });

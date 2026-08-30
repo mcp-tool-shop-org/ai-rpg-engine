@@ -16,7 +16,7 @@
 
 > **Composition Example** — This starter demonstrates how to wire the engine for cyberpunk. It is an example to learn from, not a template to copy. See the [Composition Guide](../../docs/handbook/57-composition-guide.md) to build your own game.
 
-**Neon Lockbox** — a cyberpunk starter world for AI RPG Engine.
+**Neon Lockbox** — A rain-slicked alley hides a data vault guarded by autonomous ICE.
 
 ## Install
 

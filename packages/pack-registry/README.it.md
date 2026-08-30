@@ -62,6 +62,8 @@ Ogni pacchetto di avvio esporta un `packMeta: PackMetadata` con campi strutturat
 | toni | PackTone[] | Descrittori del tono narrativo |
 | tag | stringa[] | Tag liberi per la ricerca |
 | engineVersion | stringa | Versione minima del motore (semver) |
+| version | stringa | Versione del pacchetto |
+| description | stringa | Breve descrizione (1-3 frasi) — sottotitolo del listing |
 | narratorTone | stringa | Tono per il narratore |
 
 ### Griglia di valutazione

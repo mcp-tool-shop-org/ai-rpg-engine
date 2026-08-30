@@ -16,6 +16,8 @@ export type {
 
 export {
   VALID_GENRES,
+  PACK_GENRE_LABELS,
+  genreLabel,
   VALID_DIFFICULTIES,
   VALID_TONES,
   RUBRIC_DIMENSIONS,

@@ -12,7 +12,7 @@ import type { ItemCatalog } from '@ai-rpg-engine/equipment';
 export const manifest: GameManifest = {
   id: 'dust-devils-bargain',
   title: "Dust Devil's Bargain",
-  version: '0.1.0',
+  version: '3.8.0',
   engineVersion: '>=3.8.0 <4.0.0',
   ruleset: 'weird-west-minimal',
   modules: [
@@ -684,7 +684,7 @@ export const packMeta: PackMetadata = {
   tones: ['eerie', 'gritty'],
   tags: ['supernatural', 'frontier', 'duel', 'spirits', 'cult'],
   engineVersion: '>=3.8.0 <4.0.0',
-  version: '2.0.0',
+  version: '3.8.0',
   description: 'Drift into a cursed frontier town. Investigate a mesa cult, duel undead gunslingers, and commune with spirits before the dust takes you.',
   narratorTone: 'weird western, laconic, sun-bleached, haunted',
 };

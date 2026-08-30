@@ -62,6 +62,8 @@ Cada paquete inicial exporta un `packMeta: PackMetadata` con campos estructurado
 | tones | PackTone[] | Descriptores de tono narrativo |
 | tags | string[] | Etiquetas de formato libre para la búsqueda |
 | engineVersion | string | Versión mínima del motor (semver) |
+| version | string | Versión del paquete |
+| description | string | Descripción breve (1-3 oraciones) — subtítulo del listado |
 | narratorTone | string | Tono para el narrador |
 
 ### Rúbrica de Calidad

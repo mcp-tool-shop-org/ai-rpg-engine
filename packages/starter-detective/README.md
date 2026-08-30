@@ -16,7 +16,7 @@
 
 > **Composition Example** — This starter demonstrates how to wire the engine for Victorian mystery. It is an example to learn from, not a template to copy. See the [Composition Guide](../../docs/handbook/57-composition-guide.md) to build your own game.
 
-**Gaslight Detective** — a Victorian mystery starter world for AI RPG Engine.
+**Gaslight Detective** — A locked-room murder in a fog-choked Victorian estate.
 
 ## Install
 

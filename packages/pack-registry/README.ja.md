@@ -62,6 +62,8 @@ const beginnerPacks = filterPacks({ difficulty: 'beginner' });
 | tones | PackTone[] | 物語の雰囲気の説明 |
 | tags | string[] | 検索用の自由形式タグ |
 | engineVersion | string | 最小エンジンバージョン（セマンティックバージョニング） |
+| version | string | パックのバージョン |
+| description | string | 短い説明（1〜3文）— 一覧のサブタイトル |
 | narratorTone | string | ナレーターの雰囲気（文字列） |
 
 ### 品質評価基準

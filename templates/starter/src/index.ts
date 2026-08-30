@@ -1,4 +1,4 @@
-// @ai-rpg-engine/starter-YOURNAME
+// @ai-rpg-engine/starter-template
 
 export { createGame, myIntentProfiles } from './setup.js';
 export { manifest, packMeta } from './content.js';

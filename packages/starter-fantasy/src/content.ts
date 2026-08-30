@@ -12,7 +12,7 @@ import type { AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content
 export const manifest: GameManifest = {
   id: 'chapel-threshold',
   title: 'The Chapel Threshold',
-  version: '0.1.0',
+  version: '3.8.0',
   engineVersion: '>=3.8.0 <4.0.0',
   ruleset: 'fantasy-minimal',
   modules: ['traversal-core', 'status-core', 'combat-core', 'inventory-core', 'dialogue-core'],
@@ -759,7 +759,7 @@ export const packMeta: PackMetadata = {
   tones: ['dark', 'atmospheric'],
   tags: ['undead', 'dungeon', 'sacred', 'combat'],
   engineVersion: '>=3.8.0 <4.0.0',
-  version: '2.0.0',
+  version: '3.8.0',
   description: 'Explore a ruined chapel and descend into its cursed crypt. Face an ash ghoul, speak with a suspicious pilgrim, and survive the threshold.',
   narratorTone: 'dark fantasy, concise, atmospheric, foreboding',
 };

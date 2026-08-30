@@ -16,7 +16,7 @@
 
 > **Composition Example** — This starter demonstrates how to build a game whose loop is obligation rather than combat. It is an example to learn from, not a template to copy. See the [Composition Guide](../../docs/handbook/57-composition-guide.md) to build your own game.
 
-**Salt Road Ledger** — You are a factor of a small trading house. You do not own the goods you move; you owe for them. Every coin you are owed is a knife someone else is holding.
+**Salt Road Ledger** — Every coin you are owed is a knife someone else is holding.
 
 Part of the [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine) starter pack catalog.
 

@@ -8,7 +8,7 @@ import {
   getPackSummaries,
   clearRegistry,
 } from './registry.js';
-import type { PackEntry } from './types.js';
+import { PACK_GENRE_LABELS, VALID_GENRES, type PackEntry } from './types.js';
 
 function makePack(overrides: Partial<PackEntry['meta']> = {}): PackEntry {
   const id = overrides.id ?? 'test-pack';
@@ -123,9 +123,48 @@ describe('PackRegistry', () => {
       id: 'x',
       name: 'Pack X',
       tagline: 'Tagline X',
+      description: 'A test starter pack.',
+      version: '2.0.0',
       genres: ['fantasy'],
+      genreLabels: ['Fantasy'],
       difficulty: 'beginner',
+      tones: ['dark'],
     });
+  });
+
+  it('F-7af3a342: listing labels are display names, not raw genre tokens', () => {
+    registerPack(makePack({
+      id: 'hue-and-cry',
+      name: 'Hue and Cry',
+      tagline: 'There is no law here. There is a price, and there is you.',
+      genres: ['pursuit'],
+      tones: ['noir', 'tense'],
+    }));
+    const [summary] = getPackSummaries();
+    expect(summary.genres).toEqual(['pursuit']);
+    expect(summary.genreLabels).toEqual(['Pursuit / thief-taker']);
+    expect(summary.genreLabels).not.toContain('pursuit');
+    expect(summary.tones).toEqual(['noir', 'tense']);
+  });
+
+  it('F-d58978bc: summaries carry description and version for the listing subtitle', () => {
+    registerPack(makePack({
+      id: 'listed',
+      description: 'Explore a ruined chapel.',
+      version: '3.8.0',
+    }));
+    const [summary] = getPackSummaries();
+    expect(summary.description).toBe('Explore a ruined chapel.');
+    expect(summary.version).toBe('3.8.0');
+    expect(summary.tagline).toBe('A test pack');
+  });
+
+  it('F-7af3a342: every PackGenre has a display label; jargon tokens are not the listing text', () => {
+    expect(Object.keys(PACK_GENRE_LABELS).sort()).toEqual([...VALID_GENRES].sort());
+    expect(PACK_GENRE_LABELS.pursuit).toBe('Pursuit / thief-taker');
+    expect(PACK_GENRE_LABELS.mercantile).toBe('Mercantile');
+    expect(PACK_GENRE_LABELS['sci-fi']).toBe('Sci-fi');
+    expect(PACK_GENRE_LABELS.pursuit).not.toBe('pursuit');
   });
 
   it('clears the registry', () => {
