@@ -9,6 +9,7 @@ import {
   promptMenu,
   promptOptionalMenu,
   promptMultiSelect,
+  paddedMenuIndex,
   queueInputLine,
   drainInputQueue,
 } from './prompts.js';
@@ -71,5 +72,82 @@ describe('promptMenu suffix tokens (F-85e1d9f1)', () => {
       { min: 1, max: 2 },
     );
     expect(idx).toEqual([0]);
+  });
+});
+
+describe('promptMenu padStart (F-da435841)', () => {
+  beforeEach(() => {
+    drainInputQueue();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    drainInputQueue();
+    vi.restoreAllMocks();
+  });
+
+  it('a 12-item list (selectPack starters) shares a column for [ 1] and [12]', async () => {
+    const logs: string[] = [];
+    vi.mocked(console.log).mockImplementation((msg?: unknown) => {
+      logs.push(String(msg ?? ''));
+    });
+    queueInputLine('12');
+    const items = Array.from({ length: 12 }, (_, i) => ({ label: `Pack ${i + 1}` }));
+    await promptMenu(items);
+    const text = logs.join('\n');
+    expect(text).toContain('[ 1] Pack 1');
+    expect(text).toContain('[12] Pack 12');
+    expect(paddedMenuIndex(0, 12)).toBe('[ 1]');
+    expect(paddedMenuIndex(11, 12)).toBe('[12]');
+  });
+});
+
+describe('promptMultiSelect group headers (F-3414d208)', () => {
+  beforeEach(() => {
+    drainInputQueue();
+  });
+
+  afterEach(() => {
+    drainInputQueue();
+    vi.restoreAllMocks();
+  });
+
+  it('prints [Perks] above perk numbers and [Flaws] above flaw numbers, never stacked empty', async () => {
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg?: unknown) => {
+      logs.push(String(msg ?? ''));
+    });
+    queueInputLine('1');
+    await promptMultiSelect(
+      [
+        { label: 'Tough', group: 'Perks' },
+        { label: 'Frail (flaw)', group: 'Flaws' },
+      ],
+      { min: 1, max: 2 },
+    );
+    const text = logs.join('\n');
+    expect(text).not.toContain('[Perks]\n  [Flaws]\n');
+    const perksAt = text.indexOf('[Perks]');
+    const toughAt = text.indexOf('Tough');
+    const flawsAt = text.indexOf('[Flaws]');
+    const frailAt = text.indexOf('Frail');
+    expect(perksAt).toBeGreaterThan(-1);
+    expect(flawsAt).toBeGreaterThan(-1);
+    expect(perksAt).toBeLessThan(toughAt);
+    expect(toughAt).toBeLessThan(flawsAt);
+    expect(flawsAt).toBeLessThan(frailAt);
+  });
+
+  it('always emits [Flaws] when flaws are offered with no perks', async () => {
+    const logs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((msg?: unknown) => {
+      logs.push(String(msg ?? ''));
+    });
+    queueInputLine('1');
+    await promptMultiSelect(
+      [{ label: 'Frail (flaw)', group: 'Flaws' }],
+      { min: 1, max: 1 },
+    );
+    expect(logs.join('\n')).toContain('[Flaws]');
   });
 });

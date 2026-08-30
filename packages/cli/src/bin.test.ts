@@ -6,7 +6,7 @@ import { Engine, SaveLoadError, type EngineModule, type EntityState, type Rulese
 import { createGame as createFantasyGame } from '@ai-rpg-engine/starter-fantasy';
 import { createDialogueCore } from '@ai-rpg-engine/modules';
 import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
-import { buildActionList } from '@ai-rpg-engine/terminal-ui';
+import { buildActionList, renderFullScreen, SCREEN_WIDTH } from '@ai-rpg-engine/terminal-ui';
 import { ABILITY_CATALOG_FORMULA } from '@ai-rpg-engine/modules';
 import {
   runGuardedAction,
@@ -22,6 +22,9 @@ import {
   installCreatedPlayer,
   parseRunArgs,
   formatSeedLine,
+  formatWelcomeBanner,
+  formatSessionBanner,
+  formatFirstRunLegend,
   mintSeed,
   createNewSession,
   listCheckpoints,
@@ -37,6 +40,7 @@ import { allPacks } from './packs.js';
 import type { LoadedPack } from './external-pack.js';
 import { runNpcTurns } from './turns.js';
 import { buildExtraActions } from './menu.js';
+import { renderSessionEnd } from './endgame.js';
 
 // --- Shared fixtures for the interactive-loop tests -------------------------
 
@@ -1089,6 +1093,52 @@ describe('run seeds (F-SEED-combat-rolls-seed-blind)', () => {
       expect(formatSeedLine(7, './my-pack')).toBe(
         '  Seed: 7 — replay this run with: ai-rpg-engine run ./my-pack --seed 7',
       );
+    });
+  });
+
+  describe('first-run legend and session banner (F-e324b731)', () => {
+    it('the first-run legend names numbers, help, save, and quit', () => {
+      const line = formatFirstRunLegend();
+      expect(line.toLowerCase()).toContain('number');
+      expect(line.toLowerCase()).toContain('help');
+      expect(line.toLowerCase()).toContain('save');
+      expect(line.toLowerCase()).toContain('quit');
+    });
+
+    it('an external pack banner does not claim to be a Starter', () => {
+      const bundled = formatSessionBanner({ meta: { id: 'fantasy', name: 'Chapel Threshold' } } as LoadedPack);
+      expect(bundled).toContain('Starter');
+      const external = formatSessionBanner(
+        { meta: { id: 'custom', name: 'My Pack', tagline: 'A custom tale' } } as LoadedPack,
+        { external: true },
+      );
+      expect(external).not.toContain('Starter');
+      expect(external).toContain('A custom tale');
+      const untitled = formatSessionBanner(
+        { meta: { id: 'custom', name: 'My Pack' } } as LoadedPack,
+        { external: true },
+      );
+      expect(untitled).not.toContain('Starter');
+    });
+  });
+
+  describe('one frame width (F-fe70f1bf)', () => {
+    it('selectPack banner, play closer, and VICTORY rule share SCREEN_WIDTH', () => {
+      const welcomeRules = formatWelcomeBanner().split('\n').filter((l) => /^─+$/.test(l));
+      expect(welcomeRules.length).toBeGreaterThanOrEqual(2);
+      expect(welcomeRules[0]).toHaveLength(SCREEN_WIDTH);
+
+      const closer = renderFullScreen(makeEngine().world, [], { color: false }).split('\n').at(-1);
+      expect(closer).toBe('─'.repeat(SCREEN_WIDTH));
+      expect(closer).toHaveLength(welcomeRules[0].length);
+
+      const victory = renderSessionEnd(
+        { kind: 'victory', resolutionClass: 'victory', narratorLine: 'You win.', trigger: null },
+        makeEngine().world,
+      );
+      const victoryRule = victory.split('\n').find((l) => /^─+$/.test(l));
+      expect(victoryRule).toBe(welcomeRules[0]);
+      expect(victoryRule).toHaveLength(SCREEN_WIDTH);
     });
   });
 

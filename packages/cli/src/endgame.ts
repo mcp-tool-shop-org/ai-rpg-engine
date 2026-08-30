@@ -45,6 +45,7 @@ import {
   type FinaleFactionInput,
   type FinaleDistrictInput,
 } from '@ai-rpg-engine/campaign-memory';
+import { frameRule } from '@ai-rpg-engine/terminal-ui';
 import { derivePlayerLevel } from './menu.js';
 
 export type SessionEndKind = 'defeat' | 'victory';
@@ -468,14 +469,14 @@ export function computeSessionStats(
   return stats;
 }
 
-const STATS_RULE = '─'.repeat(60);
+const STATS_RULE = frameRule();
 
 /** The stats block for the finale screen, in the epilogue's section style. */
 export function renderSessionStats(stats: SessionStats): string {
   const lines: string[] = [];
-  lines.push(`  ${STATS_RULE}`);
+  lines.push(STATS_RULE);
   lines.push('  THE RUN IN NUMBERS');
-  lines.push(`  ${STATS_RULE}`);
+  lines.push(STATS_RULE);
   lines.push('');
   lines.push(`  Rounds Survived: ${stats.rounds}`);
   lines.push(`  Enemies Defeated: ${stats.enemiesDefeated}`);
@@ -589,7 +590,7 @@ function buildFinaleDistricts(
   return districts;
 }
 
-const END_RULE = '═'.repeat(60);
+const END_RULE = frameRule();
 
 /**
  * The full end screen: banner, narrator line, the run's stats tally
@@ -607,9 +608,9 @@ export function renderSessionEnd(
 ): string {
   const lines: string[] = [];
   lines.push('');
-  lines.push(`  ${END_RULE}`);
+  lines.push(END_RULE);
   lines.push(`  ${end.kind === 'victory' ? 'VICTORY' : 'DEFEAT'}`);
-  lines.push(`  ${END_RULE}`);
+  lines.push(END_RULE);
   lines.push('');
   lines.push(`  ${end.narratorLine}`);
   lines.push('');
@@ -652,9 +653,9 @@ export function renderSessionEnd(
   // small-divider trailer, not a duplicate of the narrative epilogue just
   // shown — "the numbers behind the story you just got."
   lines.push('');
-  lines.push(`  ${STATS_RULE}`);
+  lines.push(STATS_RULE);
   lines.push("  THE DIRECTOR'S SUMMARY");
-  lines.push(`  ${STATS_RULE}`);
+  lines.push(STATS_RULE);
   lines.push('');
   lines.push(formatFinaleForDirector(outline));
 

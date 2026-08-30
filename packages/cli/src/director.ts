@@ -105,10 +105,11 @@ import {
   type ItemCatalog,
   type ItemDefinition,
 } from '@ai-rpg-engine/equipment';
+import { frameRule } from '@ai-rpg-engine/terminal-ui';
 import { buildEndgameInputs } from './endgame.js';
 import { describeActionError } from './guard.js';
 
-const LEDGER_RULE = '═'.repeat(60);
+const LEDGER_RULE = frameRule();
 
 /** Narrow an unknown to an array of plain objects (endgame.ts's read idiom). */
 function objectArray<T>(value: unknown): T[] {
@@ -554,9 +555,9 @@ export function renderDirectorLedger(engine: Pick<Engine, 'world' | 'formulas'>)
   ];
 
   const lines: string[] = [];
-  lines.push(`  ${LEDGER_RULE}`);
+  lines.push(LEDGER_RULE);
   lines.push("  THE DIRECTOR'S LEDGER");
-  lines.push(`  ${LEDGER_RULE}`);
+  lines.push(LEDGER_RULE);
   const hereId = player?.zoneId ?? world.locationId;
   lines.push(`  Turn ${world.meta.tick} — ${world.zones[hereId]?.name ?? hereId}`);
 

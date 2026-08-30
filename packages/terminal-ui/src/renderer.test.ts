@@ -21,6 +21,11 @@ import {
   textBar,
   DIALOGUE_LOOKBACK,
   SCREEN_WIDTH,
+  wrapToWidth,
+  clipToWidth,
+  frameRule,
+  paddedMenuIndex,
+  humanizeStateId,
 } from './renderer.js';
 import { detectColorEnabled, makePalette, stripAnsi } from './styles.js';
 
@@ -1181,11 +1186,15 @@ describe('Stage D — labeled section rules frame the screen', () => {
     expect(parseActionSelection('1', world)).toEqual({ verb: 'inspect' });
   });
 
-  it('a zone name longer than the rule width still renders without throwing', () => {
+  it('a zone name longer than the rule width is ellipsized to SCREEN_WIDTH (F-9916b83c)', () => {
     const world = makeWorld();
     world.zones['town-square'].name = 'The Extraordinarily Long-Named Grand Plaza of the Ancient Merchant Republic';
-    const screen = renderFullScreen(world, [], PLAIN);
-    expect(screen).toContain('Grand Plaza');
+    const screen = stripAnsi(renderFullScreen(world, [], PLAIN));
+    const zoneRule = screen.split('\n').find(l => l.startsWith('─') && l.includes('Grand Plaza'));
+    expect(zoneRule).toBeDefined();
+    expect(zoneRule).toHaveLength(SCREEN_WIDTH);
+    expect(zoneRule).toContain('Grand Plaza');
+    expect(zoneRule).toContain('…');
   });
 });
 
@@ -1313,9 +1322,9 @@ describe('Stage D — HUD vitals: HP bar and resource readout', () => {
   it('shows a bare HP value and NO bar when the world does not track maxHp', () => {
     const world = makeWorld(); // hero: hp 20, stamina 10, no maxHp
     const text = renderScene(world, PLAIN);
-    const vitals = text.split('\n').find(l => l.startsWith('  HP '));
-    expect(vitals).toBeDefined();
-    expect(vitals).toBe('  HP 20  Stamina 10');
+    const hpLine = text.split('\n').find(l => l.startsWith('  HP '));
+    expect(hpLine).toBe('  HP 20');
+    expect(text).toContain('  Stamina 10');
   });
 
   it('lists every tracked resource, with cur/max when a max exists', () => {
@@ -1380,7 +1389,7 @@ describe('Stage D — action menu grouping, alignment, and parse sync', () => {
     const world = makeWorld();
     const text = renderActions(world, PLAIN);
     expect(text).toContain('Move to Back Alley\n\n  [2] Speak to Merchant Bram');
-    expect(text).toContain('Use healing-draught\n\n  [7] Look around');
+    expect(text).toContain('Use Healing Draught\n\n  [7] Look around');
   });
 
   it('right-aligns numbers when the menu reaches double digits', () => {
@@ -1537,5 +1546,117 @@ describe('Stage D — colored output degrades to byte-identical plain text', () 
     // disable auto-color, keeping every assertion in this file deterministic.
     const screen = renderFullScreen(richWorld(), []);
     expect(screen).not.toContain('\u001b');
+  });
+});
+
+describe('wrapToWidth / clipToWidth / frameRule (F-9916b83c, F-fe70f1bf)', () => {
+  it('clipToWidth ellipsizes at the budget and never exceeds it', () => {
+    expect(clipToWidth('Town Square', 56)).toBe('Town Square');
+    expect(clipToWidth('x'.repeat(80), 10)).toHaveLength(10);
+    expect(clipToWidth('x'.repeat(80), 10).endsWith('…')).toBe(true);
+  });
+
+  it('wrapToWidth continues at the 2-space indent instead of the terminal edge', () => {
+    const long = '  ' + 'word '.repeat(20).trim();
+    const lines = wrapToWidth(long, SCREEN_WIDTH);
+    expect(lines.length).toBeGreaterThan(1);
+    for (const line of lines) {
+      expect(line.length).toBeLessThanOrEqual(SCREEN_WIDTH);
+    }
+    expect(lines[1].startsWith('  ')).toBe(true);
+  });
+
+  it('frameRule is exactly SCREEN_WIDTH of the play-screen rule character', () => {
+    expect(frameRule()).toBe('─'.repeat(SCREEN_WIDTH));
+    expect(frameRule()).toHaveLength(SCREEN_WIDTH);
+  });
+});
+
+describe('HUD vitals wrap to SCREEN_WIDTH (F-1d24d0ce)', () => {
+  it('hp+stamina+mana+xp+level+(low) never exceeds 60 visible columns or splits the bar', () => {
+    const world = makeWorld();
+    world.entities['hero'].resources = {
+      hp: 5, maxHp: 20, stamina: 8, maxStamina: 12, mana: 4, xp: 0, level: 1,
+    };
+    const text = stripAnsi(renderScene(world, PLAIN));
+    const lines = text.split('\n');
+    const statusAt = lines.findIndex(l => l.startsWith('── Status'));
+    expect(statusAt).toBeGreaterThan(-1);
+    let end = lines.length;
+    for (let i = statusAt + 1; i < lines.length; i++) {
+      if (lines[i].startsWith('─')) { end = i; break; }
+    }
+    const hud = lines.slice(statusAt + 1, end).filter(l => l.length > 0);
+    for (const line of hud) {
+      expect(line.length).toBeLessThanOrEqual(SCREEN_WIDTH);
+      if (line.includes('[')) expect(line).toContain(']');
+    }
+    expect(hud[0]).toMatch(/HP 5\/20 \[[#\-]+\] \(low\)/);
+    expect(hud.some(l => l.includes('Stamina 8/12'))).toBe(true);
+    expect(hud.some(l => l.includes('Mana 4'))).toBe(true);
+    expect(hud.some(l => l.includes('Xp 0'))).toBe(true);
+    expect(hud.some(l => l.includes('Level 1'))).toBe(true);
+  });
+
+  it('wraps a long Items line instead of overflowing the frame', () => {
+    const world = makeWorld();
+    world.entities['hero'].inventory = [
+      'ancient-bronze-ceremonial-warhammer',
+      'bloodstained-heirloom-family-locket',
+      'weathered-travelers-field-journal',
+    ];
+    const text = stripAnsi(renderScene(world, PLAIN));
+    const itemLines = text.split('\n').filter(l =>
+      l.includes('Items:') || l.includes('Warhammer') || l.includes('Locket') || l.includes('Journal'),
+    );
+    expect(itemLines.length).toBeGreaterThan(0);
+    for (const line of itemLines) {
+      if (line.startsWith('──')) continue;
+      expect(line.length).toBeLessThanOrEqual(SCREEN_WIDTH);
+    }
+  });
+});
+
+describe('humanize ungrown item ids (F-bfd20ef8)', () => {
+  it("a fresh hero carrying rusted-mace shows 'Rusted Mace' on HUD and Use, not the kebab id", () => {
+    const world = makeWorld();
+    world.entities['hero'].inventory = ['rusted-mace'];
+    const scene = renderScene(world, PLAIN);
+    expect(scene).toContain('Items: Rusted Mace');
+    expect(scene).not.toContain('rusted-mace');
+    const actions = renderActions(world, PLAIN);
+    expect(actions).toContain('Use Rusted Mace');
+    expect(actions).not.toContain('Use rusted-mace');
+    expect(humanizeStateId('rusted-mace')).toBe('Rusted Mace');
+  });
+});
+
+describe('dialogue choice padStart (F-da435841)', () => {
+  it('a 10-choice dialogue node matches the action-menu tens width', () => {
+    const world = makeWorld();
+    world.modules['dialogue-core'] = { activeDialogue: 'bram-talk' };
+    const choices = Array.from({ length: 10 }, (_, i) => ({
+      id: `c${i}`, text: `Choice ${i + 1}`, index: i,
+    }));
+    (world as { eventLog: ResolvedEvent[] }).eventLog = [
+      {
+        id: 'e1', tick: 1, type: 'dialogue.node.entered',
+        payload: { speaker: 'Bram', text: 'Pick.', choices },
+      },
+    ];
+    const dialogue = renderDialogue(world, PLAIN)!;
+    expect(dialogue).toContain('[ 1] Choice 1');
+    expect(dialogue).toContain('[10] Choice 10');
+    expect(paddedMenuIndex(0, 10)).toBe('[ 1]');
+    expect(paddedMenuIndex(9, 10)).toBe('[10]');
+
+    for (let i = 0; i < 6; i++) {
+      const id = `road-${i}`;
+      world.zones[id] = { id, roomId: 'test', name: `Road ${i}`, tags: [], neighbors: [] };
+      world.zones['town-square'].neighbors.push(id);
+    }
+    const actions = renderActions(world, PLAIN);
+    expect(actions).toContain('[ 1] Move to Back Alley');
+    expect(actions).toContain('[10]');
   });
 });
