@@ -1659,6 +1659,59 @@ describe('runHostileRound — end-gates around NPC turns and the world tick (P8-
     expect(npcTurns).not.toHaveBeenCalled();
     expect(worldTick).not.toHaveBeenCalled();
   });
+
+  it('threads deps.log into NPC and companion turns the same way the world tick already receives it (F-166c7804)', () => {
+    const engine = makeEngine();
+    const log = vi.fn();
+    const npcTurns = vi.fn();
+    const companionTurns = vi.fn();
+    const worldTick = vi.fn();
+    runHostileRound(engine, pack, { npcTurns, companionTurns, worldTick, log });
+    expect(npcTurns).toHaveBeenCalledWith(engine, { log });
+    expect(companionTurns).toHaveBeenCalledWith(engine, { log });
+    expect(worldTick).toHaveBeenCalledWith(engine, { genre: undefined, log });
+  });
+
+  it('ADVANCE-shaped log sink: a throwing NPC verb writes no unframed bytes to stdout (F-166c7804)', () => {
+    // Sidecar ADVANCE passes { log: () => {} } so stdout stays framed JSON-RPC.
+    // runNpcTurns / runCompanionTurns used to ignore that sink and default to
+    // console.log, leaking the CLI-010 guard line onto the protocol pipe.
+    const engine = makeEngine();
+    engine.store.addEntity({
+      id: 'gnasher',
+      blueprintId: 'bp',
+      type: 'enemy',
+      name: 'Gnasher',
+      tags: ['enemy'],
+      stats: {},
+      resources: { hp: 6 },
+      statuses: [],
+      zoneId: 'cell',
+      ai: { profileId: 'aggressive', goals: [], fears: [], alertLevel: 0, knowledge: {} },
+    });
+    (engine as unknown as { submitActionAs: () => never }).submitActionAs = () => {
+      throw new Error('npc verb exploded');
+    };
+
+    const sink = vi.fn();
+    const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      expect(() => {
+        runHostileRound(engine, pack, { log: sink, worldTick: vi.fn() });
+      }).not.toThrow();
+
+      const sinkText = sink.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(sinkText).toContain('That action could not be completed');
+      expect(sinkText).toContain('npc verb exploded');
+
+      const stdoutText = consoleSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(stdoutText).not.toContain('That action could not be completed');
+      expect(stdoutText).not.toContain('npc verb exploded');
+      expect(stdoutText).not.toContain('hesitates');
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
 });
 
 // F-b369c8c5 — multi-checkpoint save slots. Every save-to-disk (saveGameGuarded)

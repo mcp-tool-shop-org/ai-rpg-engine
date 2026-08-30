@@ -499,23 +499,26 @@ export function runHostileRound(
   engine: Engine,
   pack: LoadedPack,
   deps: {
-    npcTurns?: (engine: Engine) => unknown;
-    companionTurns?: (engine: Engine) => unknown;
+    npcTurns?: (engine: Engine, opts: { log: (msg: string) => void }) => unknown;
+    companionTurns?: (engine: Engine, opts: { log: (msg: string) => void }) => unknown;
     worldTick?: (engine: Engine, opts: { genre?: string; log: (msg: string) => void }) => unknown;
     log?: (msg: string) => void;
   } = {},
 ): void {
+  // Sidecar ADVANCE passes { log: () => {} } so guarded throws stay off the
+  // JSON-RPC stdout pipe. Interactive `run` defaults to console.log.
+  const log = deps.log ?? console.log;
   if (evaluateSessionEnd(engine)) return;
-  (deps.npcTurns ?? runNpcTurns)(engine);
+  (deps.npcTurns ?? runNpcTurns)(engine, { log });
   if (evaluateSessionEnd(engine)) return; // P8-WL-010 — no tick over a corpse
   // F-4b9c5aee (v2.9): recruited companions take their independent turns after
   // the hostiles, before the world tick. runCompanionTurns early-returns on an
   // empty party (byte-identical to legacy for companion-less packs), so the
   // seed-0 legacy-identity law holds. Its own end-gate below: a companion can
   // down the last boss, and we must not tick past a won session.
-  (deps.companionTurns ?? runCompanionTurns)(engine);
+  (deps.companionTurns ?? runCompanionTurns)(engine, { log });
   if (evaluateSessionEnd(engine)) return; // companions can end combat — no tick over a finished fight
-  (deps.worldTick ?? runWorldTick)(engine, { genre: pack.meta.genres?.[0], log: deps.log ?? console.log });
+  (deps.worldTick ?? runWorldTick)(engine, { genre: pack.meta.genres?.[0], log });
 }
 
 /**
