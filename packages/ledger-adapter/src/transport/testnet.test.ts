@@ -434,6 +434,128 @@ describe('accountLines', () => {
 
     expect(lines).toEqual([{ account: ISSUER_ADDRESS, currency: 'COI', balance: '250', limit: '999999999' }]);
   });
+
+  it('follows a marker once and merges the second page', async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({
+        result: {
+          account: MERCHANT_ADDRESS,
+          lines: [{ account: ISSUER_ADDRESS, currency: 'COI', balance: '1', limit: '9' }],
+          marker: 'PAGE2',
+        },
+      })
+      .mockResolvedValueOnce({
+        result: {
+          account: MERCHANT_ADDRESS,
+          lines: [{ account: ISSUER_ADDRESS, currency: 'POT', balance: '2', limit: '9' }],
+        },
+      });
+    const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ request }));
+
+    const lines = await transport.accountLines(MERCHANT_ADDRESS);
+
+    expect(lines.map((l) => l.currency).sort()).toEqual(['COI', 'POT']);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect((request.mock.calls[1][0] as { marker?: unknown }).marker).toBe('PAGE2');
+  });
+});
+
+describe('account_tx / account_nfts pagination', () => {
+  it('accountTx follows a marker and merges the second page', async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({
+        result: {
+          account: MERCHANT_ADDRESS,
+          ledger_index_min: 1,
+          ledger_index_max: 2,
+          limit: 400,
+          marker: 'TX2',
+          transactions: [
+            {
+              hash: 'HASH1',
+              ledger_index: 1,
+              validated: true,
+              meta: { TransactionResult: 'tesSUCCESS', TransactionIndex: 0, AffectedNodes: [] },
+              tx_json: { TransactionType: 'EscrowCreate', Sequence: 7 },
+            },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({
+        result: {
+          account: MERCHANT_ADDRESS,
+          ledger_index_min: 1,
+          ledger_index_max: 2,
+          limit: 400,
+          transactions: [
+            {
+              hash: 'HASH2',
+              ledger_index: 1,
+              validated: true,
+              meta: { TransactionResult: 'tesSUCCESS', TransactionIndex: 0, AffectedNodes: [] },
+              tx_json: { TransactionType: 'Payment', Sequence: 6 },
+            },
+          ],
+        },
+      });
+    const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ request }));
+
+    const entries = await transport.accountTx(MERCHANT_ADDRESS);
+
+    expect(entries.map((e) => e.hash)).toEqual(['HASH1', 'HASH2']);
+    expect(entries[0].sequence).toBe(7);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect((request.mock.calls[1][0] as { marker?: unknown }).marker).toBe('TX2');
+  });
+
+  it('accountNfts follows a marker and merges the second page', async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({
+        result: {
+          account: KNOWN_ADDRESS,
+          account_nfts: [
+            { NFTokenID: 'NFT_A', NFTokenTaxon: 1, Issuer: ISSUER_ADDRESS, Flags: 8, nft_serial: 1 },
+          ],
+          marker: 'NFT2',
+        },
+      })
+      .mockResolvedValueOnce({
+        result: {
+          account: KNOWN_ADDRESS,
+          account_nfts: [
+            { NFTokenID: 'NFT_B', NFTokenTaxon: 1, Issuer: ISSUER_ADDRESS, Flags: 8, nft_serial: 2 },
+          ],
+        },
+      });
+    const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ request }));
+
+    const nfts = await transport.accountNfts(KNOWN_ADDRESS);
+
+    expect(nfts.map((n) => n.nftId)).toEqual(['NFT_A', 'NFT_B']);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect((request.mock.calls[1][0] as { marker?: unknown }).marker).toBe('NFT2');
+  });
+
+  it('names the command and page when a later page fails', async () => {
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({
+        result: {
+          account: MERCHANT_ADDRESS,
+          lines: [{ account: ISSUER_ADDRESS, currency: 'COI', balance: '1', limit: '9' }],
+          marker: 'PAGE2',
+        },
+      })
+      .mockRejectedValueOnce(new Error('rippled stalled'));
+    const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient({ request }));
+
+    await expect(transport.accountLines(MERCHANT_ADDRESS)).rejects.toThrow(
+      /account_lines\([^)]+\) page 2 failed/,
+    );
+  });
 });
 
 // ── NFT operations (P2 — contracts.ts's NFTTransport, offline mock only) ──

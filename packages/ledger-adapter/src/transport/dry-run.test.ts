@@ -13,6 +13,12 @@ async function coiBalance(transport: DryRunTransport, holder: string): Promise<n
 }
 
 describe('DryRunTransport', () => {
+  it('auto-connects on first write so a never-connected instance can fund', async () => {
+    const transport = new DryRunTransport();
+    const wallet = await transport.fundWallet();
+    expect(wallet.address).toMatch(/^rDRYRUN/);
+  });
+
   describe('escrow lifecycle (mirrors the proven live spike, in-memory)', () => {
     it('mints, escrows, and finishes a token escrow end-to-end', async () => {
       const transport = new DryRunTransport();
@@ -294,6 +300,11 @@ describe('DryRunTransport', () => {
       expect(offer.ok).toBe(true);
       expect(offer.code).toBe('tesSUCCESS');
       expect(typeof offer.offerIndex).toBe('string');
+
+      const listed = await transport.nftSellOffers(nftId);
+      expect(listed).toHaveLength(1);
+      expect(listed[0].offerIndex).toBe(offer.offerIndex);
+      expect(listed[0].destination).toBe(player.address);
 
       const accept = await transport.nftAcceptSellOffer(player.seed, offer.offerIndex as string);
       expect(accept).toMatchObject({ ok: true, code: 'tesSUCCESS' });

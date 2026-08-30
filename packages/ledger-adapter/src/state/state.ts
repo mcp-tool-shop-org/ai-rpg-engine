@@ -19,6 +19,7 @@ import type {
   NFTokenRef,
   SettlementStatus,
   SettlementRecord,
+  SettlementVerb,
   TradeableSnapshot,
 } from '../contracts.js';
 
@@ -96,6 +97,7 @@ const REQUIRED_STATE_KEYS = [
 const VALID_MODES: readonly LedgerMode[] = ['offline', 'ledger', 'diary'];
 const VALID_ISSUER_MODES: readonly IssuerMode[] = ['per-run', 'persistent'];
 const VALID_STATUSES: readonly SettlementStatus[] = ['settled', 'pending'];
+const VALID_VERBS: readonly SettlementVerb[] = ['buy', 'sell', 'settle', 'consign', 'default'];
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -105,16 +107,20 @@ function isRecordOfStrings(value: unknown): value is Record<string, string> {
   return isPlainObject(value) && Object.values(value).every((v) => typeof v === 'string');
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
 function isRecordOfNumbers(value: unknown): value is Record<string, number> {
-  return isPlainObject(value) && Object.values(value).every((v) => typeof v === 'number');
+  return isPlainObject(value) && Object.values(value).every(isFiniteNumber);
 }
 
 function assertSettlementRecord(value: unknown, path: string): asserts value is SettlementRecord {
   if (!isPlainObject(value)) {
     throw new Error(`deserializeState: "${path}" must be an object`);
   }
-  if (typeof value.checkpoint !== 'number') {
-    throw new Error(`deserializeState: "${path}.checkpoint" must be a number`);
+  if (!isFiniteNumber(value.checkpoint)) {
+    throw new Error(`deserializeState: "${path}.checkpoint" must be a finite number`);
   }
   if (typeof value.location !== 'string') {
     throw new Error(`deserializeState: "${path}.location" must be a string`);
@@ -134,6 +140,12 @@ function assertSettlementRecord(value: unknown, path: string): asserts value is 
   if (typeof value.timestamp !== 'string') {
     throw new Error(`deserializeState: "${path}.timestamp" must be a string`);
   }
+  if (value.verb !== undefined && !VALID_VERBS.includes(value.verb as SettlementVerb)) {
+    throw new Error(`deserializeState: "${path}.verb" must be one of ${VALID_VERBS.join('|')}`);
+  }
+  if (value.lastError !== undefined && typeof value.lastError !== 'string') {
+    throw new Error(`deserializeState: "${path}.lastError" must be a string`);
+  }
   if (value.receipts !== undefined) {
     if (!isPlainObject(value.receipts)) {
       throw new Error(`deserializeState: "${path}.receipts" must be an object`);
@@ -144,6 +156,12 @@ function assertSettlementRecord(value: unknown, path: string): asserts value is 
       }
       if (!Array.isArray(receipt.txids) || !receipt.txids.every((t) => typeof t === 'string')) {
         throw new Error(`deserializeState: "${path}.receipts.${key}.txids" must be a string[]`);
+      }
+      if (receipt.sequence !== undefined && !isFiniteNumber(receipt.sequence)) {
+        throw new Error(`deserializeState: "${path}.receipts.${key}.sequence" must be a finite number`);
+      }
+      if (receipt.done !== undefined && typeof receipt.done !== 'boolean') {
+        throw new Error(`deserializeState: "${path}.receipts.${key}.done" must be a boolean`);
       }
     }
   }
@@ -174,11 +192,11 @@ function assertNFTokenRef(value: unknown, path: string): asserts value is NFToke
   if (typeof value.uri !== 'string') {
     throw new Error(`deserializeState: "${path}.uri" must be a string`);
   }
-  if (typeof value.relicVersion !== 'number') {
-    throw new Error(`deserializeState: "${path}.relicVersion" must be a number`);
+  if (!isFiniteNumber(value.relicVersion)) {
+    throw new Error(`deserializeState: "${path}.relicVersion" must be a finite number`);
   }
-  if (typeof value.taxon !== 'number') {
-    throw new Error(`deserializeState: "${path}.taxon" must be a number`);
+  if (!isFiniteNumber(value.taxon)) {
+    throw new Error(`deserializeState: "${path}.taxon" must be a finite number`);
   }
   if (typeof value.mutable !== 'boolean') {
     throw new Error(`deserializeState: "${path}.mutable" must be a boolean`);
@@ -188,6 +206,9 @@ function assertNFTokenRef(value: unknown, path: string): asserts value is NFToke
   }
   if (!VALID_NFT_STATUSES.includes(value.status as NFTokenRef['status'])) {
     throw new Error(`deserializeState: "${path}.status" must be one of ${VALID_NFT_STATUSES.join('|')}`);
+  }
+  if (value.offerIndex !== undefined && typeof value.offerIndex !== 'string') {
+    throw new Error(`deserializeState: "${path}.offerIndex" must be a string`);
   }
 }
 

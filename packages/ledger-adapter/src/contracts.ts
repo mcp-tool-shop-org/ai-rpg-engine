@@ -258,6 +258,12 @@ export type SettlementRecord = {
    * records were in fact all written as).
    */
   verb?: SettlementVerb;
+  /**
+   * Last retry/settle error for THIS record. OPTIONAL: older saves omit it.
+   * The still-pending SettlementResult interpolates this so a sidecar miss,
+   * tecPATH_DRY, unindexed OfferSequence, and a stalled node are distinguishable.
+   */
+  lastError?: string;
 };
 
 /**
@@ -642,6 +648,15 @@ export type NFTMintResult = TxResult & { nftId?: string };
  *  (the argument NFTokenAcceptOffer consumes). */
 export type NFTOfferResult = TxResult & { offerIndex?: string };
 
+/** One live sell offer as read back from `nft_sell_offers` — used to recover a
+ *  tesSUCCESS CreateOffer whose `offerIndex` was missing from submit meta. */
+export type NFTSellOfferInfo = {
+  offerIndex: string;
+  nftId: string;
+  destination?: string;
+  owner?: string;
+};
+
 /**
  * The NFT transport seam — a SEPARATE interface from `LedgerTransport` (the
  * fungible seam) so the NFT capability is additive: DryRunTransport and
@@ -686,6 +701,10 @@ export interface NFTTransport {
    *  transfer atomically). */
   nftAcceptSellOffer(seed: string, offerIndex: string): Promise<TxResult>;
 
+  /** nft_sell_offers — live sell offers against `nftId` (recover a tesSUCCESS
+   *  CreateOffer whose offerIndex never made it into submit meta). */
+  nftSellOffers(nftId: string): Promise<NFTSellOfferInfo[]>;
+
   /** account_nfts — the NFTs an address owns (the external-verifier read). */
   accountNfts(address: string): Promise<NFTInfo[]>;
 }
@@ -707,6 +726,14 @@ export type NFTokenRef = {
   taxon: number; // collection id
   mutable: boolean; // minted tfMutable (always true per the mint-all-mutable decision)
   mintTxid: string; // the NFTokenMint tx hash (provenance)
+  /**
+   * Directed sell-offer ledger index for a pending issuer→player transfer.
+   * Present (including `''`) once NFTokenCreateOffer tesSUCCESS'd: a nonempty
+   * value is accepted on resume; `''` means tesSUCCESS without a parsed index
+   * (recover via nft_sell_offers, never create a second offer). Absent means
+   * no offer has been submitted yet.
+   */
+  offerIndex?: string;
   /** 'pending' = mint submitted but not yet confirmed owned on-ledger (retry-safe);
    *  'minted' = confirmed. A retry sees the existing ref and never re-mints. */
   status: 'minted' | 'pending';
