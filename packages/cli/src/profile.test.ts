@@ -317,4 +317,14 @@ describe('runProfile — scaffold subcommand', () => {
     expect(code).not.toBe(0);
     expect(errOut.text()).toContain('CLI_OUT_EMPTY');
   });
+
+  it('accepts space-form --out <file> and does not print CLI_OUT_EMPTY', () => {
+    const out = capture();
+    const errOut = capture();
+    const target = path.join(tmpDir, 'space.profile.json');
+    const code = runProfile(['scaffold', 'storm-mystic', '--out', target], { log: out.log, error: errOut.log });
+    expect(code).toBe(0);
+    expect(errOut.text()).not.toContain('CLI_OUT_EMPTY');
+    expect(fs.existsSync(target)).toBe(true);
+  });
 });

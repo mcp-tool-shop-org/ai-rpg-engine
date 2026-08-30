@@ -33,6 +33,12 @@ export const RUNS_FILE_NAME = 'runs.jsonl';
 /** How many history entries the adventure select shows. */
 export const RECENT_RUNS_SHOWN = 3;
 
+/** Retained JSONL lines after prune-on-append (a small multiple of the display cap). */
+export const HISTORY_KEEP_LINES = RECENT_RUNS_SHOWN * 10;
+
+/** Skip readFileSync (and degrade to []) when runs.jsonl is larger than this. */
+export const HISTORY_MAX_BYTES = 64 * 1024;
+
 /**
  * Append one run record to `<saveDir>/runs.jsonl` (creating the directory on
  * first write, same as the save path). Returns false — never throws — when
@@ -44,17 +50,35 @@ export function appendRunRecord(
   log: (msg: string) => void = console.log,
 ): boolean {
   const filePath = path.join(saveDir, RUNS_FILE_NAME);
+  const line = JSON.stringify(record) + '\n';
   try {
     if (!fs.existsSync(saveDir)) {
       fs.mkdirSync(saveDir, { recursive: true });
     }
-    fs.appendFileSync(filePath, JSON.stringify(record) + '\n', 'utf-8');
+    // Over-budget files are rotated (rewrite as this one record) rather than
+    // appended-then-fully-read: the read of a multi-MB jsonl is the OOM the
+    // header promises never to take inside the interactive loop.
+    if (fs.existsSync(filePath) && fs.statSync(filePath).size > HISTORY_MAX_BYTES) {
+      fs.writeFileSync(filePath, line, 'utf-8');
+      return true;
+    }
+    fs.appendFileSync(filePath, line, 'utf-8');
+    pruneRunHistory(filePath);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     log(`  [HISTORY_WRITE_FAILED] Could not record this run in ${path.resolve(filePath)}: ${reason}`);
     return false;
   }
   return true;
+}
+
+/** Keep the last HISTORY_KEEP_LINES non-empty records. Best-effort — a prune
+ *  failure leaves the extra lines in place rather than losing the append. */
+function pruneRunHistory(filePath: string): void {
+  const raw = fs.readFileSync(filePath, 'utf-8');
+  const lines = raw.split('\n').filter((l) => l.trim().length > 0);
+  if (lines.length <= HISTORY_KEEP_LINES) return;
+  fs.writeFileSync(filePath, lines.slice(-HISTORY_KEEP_LINES).join('\n') + '\n', 'utf-8');
 }
 
 /** Shape guard for one parsed history line — foreign/corrupt lines are skipped. */
@@ -76,11 +100,20 @@ function isRunRecord(value: unknown): value is RunRecord {
  * unreadable file, and corrupt lines all degrade to "less history" — never
  * a throw (the adventure select must render with or without a past).
  */
-export function readRunHistory(saveDir: string, limit = RECENT_RUNS_SHOWN): RunRecord[] {
+export function readRunHistory(
+  saveDir: string,
+  limit = RECENT_RUNS_SHOWN,
+  log: (msg: string) => void = console.log,
+): RunRecord[] {
   const filePath = path.join(saveDir, RUNS_FILE_NAME);
   let raw: string;
   try {
     if (!fs.existsSync(filePath)) return [];
+    const size = fs.statSync(filePath).size;
+    if (size > HISTORY_MAX_BYTES) {
+      log(`  [HISTORY_TOO_LARGE] ${path.resolve(filePath)} is ${size} bytes (limit ${HISTORY_MAX_BYTES}); skipping history rather than loading it.`);
+      return [];
+    }
     raw = fs.readFileSync(filePath, 'utf-8');
   } catch {
     return [];

@@ -43,14 +43,14 @@ function printProfileHelp(log: (msg: string) => void): void {
   log('');
   log('Subcommands:');
   log('  profile validate <file.json>                     Validate a profile or profile-set JSON');
-  log('  profile scaffold <name> [--force] [--out=<file>] Write a starter profile template');
+  log('  profile scaffold <name> [--force] [--out <file>] Write a starter profile template');
   log('');
   log('validate accepts a single profile object, an array of profiles, or');
   log('{ "profiles": [...] }. Cross-profile ERRORS (duplicate ability ids, conflicting');
   log('resource caps) block with exit code 1. Per-profile build warnings and');
   log('cross-profile advisories are printed separately and never affect the exit code.');
   log('');
-  log('scaffold writes <name>.profile.json (override with --out=<file>); the stub');
+  log('scaffold writes <name>.profile.json (override with --out <file> or --out=<file>); the stub');
   log('passes "ai-rpg-engine profile validate" out of the box.');
   log('');
   log('Examples:');
@@ -285,6 +285,21 @@ function titleCase(s: string): string {
     .join(' ');
 }
 
+/** One value-flag: space form (`--flag value`) or equals form (`--flag=value`). */
+function readFlag(args: string[], flag: string): {
+  present: boolean;
+  raw: string | undefined;
+  valueSlot: number;
+} {
+  const eq = `${flag}=`;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === flag) return { present: true, raw: args[i + 1], valueSlot: i + 1 };
+    if (arg.startsWith(eq)) return { present: true, raw: arg.slice(eq.length), valueSlot: -1 };
+  }
+  return { present: false, raw: undefined, valueSlot: -1 };
+}
+
 /**
  * Build the starter profile stub for one name. The MINIMAL shape that passes
  * `profile validate` with zero errors and zero warnings:
@@ -323,25 +338,23 @@ function runProfileScaffold(args: string[], deps: ProfileCliDeps): number {
 
   const force = args.includes('--force');
 
-  // First positional (non-flag token) is the profile name.
-  const positionals = args.filter((a) => !a.startsWith('-'));
-  const name = positionals[0];
-
-  // --out=<file> (same empty-value guard as create-starter/scaffold, CLI-012): a
-  // present-but-empty value is a likely shell mishap and must fail loudly rather
-  // than defaulting silently.
-  const outToken = args.find((a) => a === '--out' || a.startsWith('--out='));
+  // Space form (`--out file`) AND equals form (`--out=file`) — same empty-value
+  // guard as create-starter/scaffold, CLI-012.
+  const out = readFlag(args, '--out');
   let outFile: string | undefined;
-  if (outToken !== undefined) {
-    const eq = outToken.indexOf('=');
-    const rawValue = eq === -1 ? '' : outToken.slice(eq + 1);
-    if (rawValue.trim().length === 0) {
+  if (out.present) {
+    const rawValue = out.raw;
+    if (rawValue === undefined || rawValue.trim().length === 0 || rawValue.startsWith('-')) {
       error('✗ [CLI_OUT_EMPTY] --out was given but its value is empty.');
-      error('  Hint: pass a target file, e.g. --out=./profiles/mystic.profile.json — or omit --out to write <name>.profile.json.');
+      error('  Hint: pass a target file, e.g. --out ./profiles/mystic.profile.json or --out=./profiles/mystic.profile.json — or omit --out to write <name>.profile.json.');
       return 1;
     }
     outFile = path.resolve(rawValue);
   }
+
+  // First positional (non-flag token) is the profile name. Skip the --out value slot.
+  const positionals = args.filter((a, i) => !a.startsWith('-') && i !== out.valueSlot);
+  const name = positionals[0];
 
   if (!name) {
     error('✗ [PROFILE_NAME_MISSING] Missing <name>.');

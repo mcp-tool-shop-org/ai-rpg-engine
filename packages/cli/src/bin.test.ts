@@ -1047,9 +1047,33 @@ describe('run seeds (F-SEED-combat-rolls-seed-blind)', () => {
       const parsed = parseRunArgs(args as string[]);
       expect(parsed.ok).toBe(false);
       if (!parsed.ok) {
+        expect(parsed.code).toBe('INVALID_SEED');
         expect(parsed.message).toContain('--seed');
         expect(parsed.message).toContain('non-negative integer');
-        expect(parsed.hint.length).toBeGreaterThan(0);
+        expect(parsed.hint).toMatch(/--seed /);
+        expect(parsed.hint).toMatch(/--seed=/);
+      }
+    });
+
+    // F-d464da79 — unknown flags used to be dropped; `--seee 482913` then
+    // became the pack path. Hard-refuse, name the flag, show both seed forms.
+    it('rejects --seee 482913 as INVALID_FLAG and does not take 482913 as the pack path', () => {
+      const parsed = parseRunArgs(['--seee', '482913']);
+      expect(parsed.ok).toBe(false);
+      if (!parsed.ok) {
+        expect(parsed.code).toBe('INVALID_FLAG');
+        expect(parsed.message).toContain('--seee');
+        expect(parsed.hint).toMatch(/--seed /);
+        expect(parsed.hint).toMatch(/--seed=/);
+      }
+    });
+
+    it('rejects retired flags (--json, --debug) instead of silently skipping them', () => {
+      const parsed = parseRunArgs(['--json', './pack']);
+      expect(parsed.ok).toBe(false);
+      if (!parsed.ok) {
+        expect(parsed.code).toBe('INVALID_FLAG');
+        expect(parsed.message).toContain('--json');
       }
     });
   });

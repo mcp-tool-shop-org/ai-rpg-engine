@@ -81,7 +81,7 @@ function printHelp() {
   console.log('');
   console.log('Flags:');
   console.log('  --seed <n>     With run: fix the world seed (replay a specific run exactly).');
-  console.log('                 Omitted, each new session mints and prints its own seed.');
+  console.log('                 --seed=<n> is accepted too. Omitted, each new session mints and prints its own.');
   console.log('  --version, -v  Print version');
   console.log('  --help, -h     Show this help');
 }
@@ -96,7 +96,7 @@ function printHelp() {
 
 /** Upper bound accepted for --seed: int32-positive so seed mixing in the roll
  *  hash stays exact-integer float math (see modules' simpleRoll). */
-const MAX_SEED = 2147483647;
+export const MAX_SEED = 2147483647;
 
 /** Mint a session seed. Non-deterministic BY DESIGN — two fresh runs must
  *  differ. Small enough (6 digits) to read off the screen and retype. */
@@ -115,14 +115,16 @@ export function formatSeedLine(seed: number, packPath?: string): string {
 
 export type ParsedRunArgs =
   | { ok: true; path: string | null; seed: number | null }
-  | { ok: false; message: string; hint: string };
+  | { ok: false; message: string; hint: string; code: 'INVALID_SEED' | 'INVALID_FLAG' };
 
 /**
  * Parse `run` arguments: an optional pack path (first non-flag token, as
  * before) plus `--seed <n>` / `--seed=<n>`. The seed VALUE is consumed so it
  * can never be mistaken for the pack path. Validation is strict — decimal
  * digits only, 0..MAX_SEED — with a structured rejection (message + hint)
- * instead of a silent NaN world. Exported for unit testing.
+ * instead of a silent NaN world. Unknown `--*` tokens are refused (named)
+ * rather than dropped, so a typo like `--seee 482913` cannot become a pack
+ * path. Exported for unit testing.
  */
 export function parseRunArgs(runArgs: string[]): ParsedRunArgs {
   let seed: number | null = null;
@@ -134,12 +136,23 @@ export function parseRunArgs(runArgs: string[]): ParsedRunArgs {
       if (raw === undefined || raw === '' || !/^\d+$/.test(raw) || Number(raw) > MAX_SEED) {
         return {
           ok: false,
+          code: 'INVALID_SEED',
           message: `--seed must be a non-negative integer (0-${MAX_SEED}), got ${raw === undefined || raw === '' ? '(missing)' : `"${raw}"`}.`,
-          hint: 'Pass the whole number a previous session printed, e.g. --seed 482913.',
+          hint: `Pass the whole number a previous session printed, e.g. --seed 482913 or --seed=482913.`,
         };
       }
       seed = Number(raw);
-    } else if (!arg.startsWith('-') && pathArg === null) {
+    } else if (arg.startsWith('-')) {
+      // Consume a following non-flag value so `--seee 482913` cannot land in
+      // the pack-path slot (F-d464da79). Hard-refuse: naming then starting a
+      // live game is still a silent skip of the operator's intent.
+      return {
+        ok: false,
+        code: 'INVALID_FLAG',
+        message: `"${arg}" is not a recognized run flag.`,
+        hint: `run accepts --seed <n> or --seed=<n> (0-${MAX_SEED}). Unknown flags are refused so a typo cannot be mistaken for a pack path.`,
+      };
+    } else if (pathArg === null) {
       pathArg = arg;
     }
   }
@@ -653,7 +666,7 @@ async function runGame(runArgs: string[] = []) {
   // invalid value is a structured rejection, not a silently-ignored token.
   const parsed = parseRunArgs(runArgs);
   if (!parsed.ok) {
-    console.error(`  ✗ [INVALID_SEED] ${parsed.message}`);
+    console.error(`  ✗ [${parsed.code}] ${parsed.message}`);
     console.error(`  Hint: ${parsed.hint}`);
     closeReadline();
     process.exit(1);

@@ -166,4 +166,54 @@ describe('validateNarrationPlan', () => {
       expect(errors).toHaveLength(0);
     });
   });
+
+  // F-0363af9b: typeof === 'number' accepts NaN/Infinity; intensity: NaN used to
+  // pass because NaN < 0 and NaN > 1 are both false. Number.isFinite on every
+  // numeric field; reject negative duration/fade/volume. Must not throw.
+  describe('non-finite / negative numerics (F-0363af9b)', () => {
+    it('rejects intensity: NaN as a field error, isValidNarrationPlan false, no throw', () => {
+      let errors: ReturnType<typeof validateNarrationPlan> = [];
+      expect(() => {
+        errors = validateNarrationPlan({
+          ...validPlan,
+          sfx: [{ effectId: 'x', timing: 'immediate', intensity: NaN }],
+        });
+      }).not.toThrow();
+      expect(errors.some((e) => e.field === 'sfx[0].intensity')).toBe(true);
+      expect(isValidNarrationPlan({
+        ...validPlan,
+        sfx: [{ effectId: 'x', timing: 'immediate', intensity: NaN }],
+      })).toBe(false);
+    });
+
+    it('rejects durationMs: Infinity as a field error, isValidNarrationPlan false, no throw', () => {
+      let errors: ReturnType<typeof validateNarrationPlan> = [];
+      expect(() => {
+        errors = validateNarrationPlan({
+          ...validPlan,
+          uiEffects: [{ type: 'flash', durationMs: Infinity }],
+        });
+      }).not.toThrow();
+      expect(errors.some((e) => e.field === 'uiEffects[0].durationMs')).toBe(true);
+      expect(isValidNarrationPlan({
+        ...validPlan,
+        uiEffects: [{ type: 'flash', durationMs: Infinity }],
+      })).toBe(false);
+    });
+
+    it('rejects volume: -1 as a field error, isValidNarrationPlan false, no throw', () => {
+      let errors: ReturnType<typeof validateNarrationPlan> = [];
+      expect(() => {
+        errors = validateNarrationPlan({
+          ...validPlan,
+          ambientLayers: [{ layerId: 'drone', action: 'start', volume: -1, fadeMs: 500 }],
+        });
+      }).not.toThrow();
+      expect(errors.some((e) => e.field === 'ambientLayers[0].volume')).toBe(true);
+      expect(isValidNarrationPlan({
+        ...validPlan,
+        ambientLayers: [{ layerId: 'drone', action: 'start', volume: -1, fadeMs: 500 }],
+      })).toBe(false);
+    });
+  });
 });

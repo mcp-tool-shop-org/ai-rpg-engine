@@ -136,6 +136,15 @@ describe('runScaffold (CLI entry)', () => {
     expect(result.ok).toBe(true);
   });
 
+  it('accepts space-form --out <file> and does not print CLI_OUT_EMPTY', () => {
+    const outFile = path.join(tmpDir, 'space.json');
+    runScaffold(['zone', 'harbor-district', '--out', outFile]);
+    expect(exitSpy).not.toHaveBeenCalled();
+    const combined = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(combined).not.toMatch(/CLI_OUT_EMPTY/);
+    expect(fs.existsSync(outFile)).toBe(true);
+  });
+
   it('exits nonzero with a structured error on an unknown kind', () => {
     expect(() => runScaffold(['monster', 'grumpkin', `--out=${path.join(tmpDir, 'x.json')}`])).toThrow(
       /__exit__/,

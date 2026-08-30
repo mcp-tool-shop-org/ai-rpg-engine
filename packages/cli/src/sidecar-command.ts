@@ -148,32 +148,35 @@ export function runSidecar(args: string[], deps: SidecarDeps = defaultDeps): num
     return 1;
   }
 
+  // Same seed gate as parseRunArgs (digit-only whole token, 0..MAX_SEED) so
+  // `sidecar --seed=1e2` cannot pin a different stream than `run --seed=1e2`.
+  const MAX_SEED = 2147483647;
+
   let seedValue: number | undefined;
   if (seed.present) {
-    if (isMissingValue(seed) || seedRaw === undefined) {
-      error(`✗ [SIDECAR_INVALID_SEED] --seed must be a non-negative integer, got "${seedRaw ?? '(missing)'}".`);
+    if (isMissingValue(seed) || seedRaw === undefined || !/^\d+$/.test(seedRaw) || Number(seedRaw) > MAX_SEED) {
+      error(`✗ [SIDECAR_INVALID_SEED] --seed must be a whole-token decimal integer (0-${MAX_SEED}), got "${seedRaw ?? '(missing)'}".`);
+      error(`  Hint: pass --seed <n> or --seed=<n>, matching run (e.g. --seed 482913 or --seed=482913).`);
       return 1;
     }
     seedValue = Number(seedRaw);
-    if (!Number.isSafeInteger(seedValue) || seedValue < 0) {
-      error(`✗ [SIDECAR_INVALID_SEED] --seed must be a non-negative integer, got "${seedRaw}".`);
-      return 1;
-    }
   }
 
   let port: number | undefined;
   if (listen.present) {
     if (isMissingValue(listen)) {
       error('✗ [SIDECAR_LISTEN_MISSING_PORT] --listen requires a port (use 0 for an ephemeral one).');
+      error('  Hint: pass --listen <port> or --listen=<port>.');
+      return 1;
+    }
+    // Whole-token digits only — Number('1e3') is 1000 and would silently bind
+    // a different port than the spelling the operator typed (F-3d3c8eb5).
+    if (listenRaw === undefined || !/^\d+$/.test(listenRaw) || Number(listenRaw) > 65535) {
+      error(`✗ [SIDECAR_INVALID_PORT] --listen must be a whole-token decimal port in 0..65535, got "${listenRaw}".`);
+      error('  Hint: pass --listen <port> or --listen=<port> (use 0 for an ephemeral port).');
       return 1;
     }
     port = Number(listenRaw);
-    // 0 is legal and means "pick one". Ports above 65535 do not exist, and a
-    // privileged port is a decision, not a typo we should quietly bind.
-    if (!Number.isSafeInteger(port) || port < 0 || port > 65535) {
-      error(`✗ [SIDECAR_INVALID_PORT] --listen must be a port in 0..65535, got "${listenRaw}".`);
-      return 1;
-    }
   }
 
   if (hostRaw !== undefined && port === undefined) {
