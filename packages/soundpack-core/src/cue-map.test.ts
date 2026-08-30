@@ -193,3 +193,17 @@ describe('cue-map: extendCueMap overrides', () => {
     expect(resolve('ability.purify')).toEqual(resolveSoundCue('ability.purify'));
   });
 });
+
+// F-d7c3c40a: ordinary object lookup inherited Object.prototype keys, so
+// resolveSoundCue('toString') claimed via:'exact' with no effectId.
+describe('cue-map: prototype keys fall through to fallback (F-d7c3c40a)', () => {
+  it("resolveSoundCue('toString'|'constructor.foo'|'__proto__') is via fallback with FALLBACK_CUE.effectId", () => {
+    for (const cue of ['toString', 'constructor.foo', '__proto__', 'valueOf', 'hasOwnProperty', 'constructor']) {
+      const resolved = resolveSoundCue(cue);
+      expect(resolved.via, cue).toBe('fallback');
+      expect(resolved.effectId, cue).toBe(FALLBACK_CUE.effectId);
+      expect(resolved.timing).toBe(FALLBACK_CUE.timing);
+      expect(resolved.intensity).toBe(FALLBACK_CUE.intensity);
+    }
+  });
+});

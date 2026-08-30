@@ -323,3 +323,44 @@ describe('FileAssetStore metadata isolation (F-b2b8a190)', () => {
     expect((await store.getMeta(merged.hash))?.tags).toEqual(['npc', 'medieval', 'other']);
   });
 });
+
+// F-628ee72f: blob and sidecar can diverge; hash-hit used to rewrite only JSON
+// and never restore the .bin. getMeta/list must not advertise a ghost sidecar.
+describe('FileAssetStore repairs a missing blob on hash-hit (F-628ee72f)', () => {
+  it('put, unlink bin, put same bytes → has() true and get() returns the bytes', async () => {
+    const meta = await store.put(testData, testInput);
+    const binPath = path.join(tmpDir, meta.hash.slice(0, 2), `${meta.hash}.bin`);
+    await fs.unlink(binPath);
+
+    expect(await store.has(meta.hash)).toBe(false);
+    expect(await store.get(meta.hash)).toBeNull();
+    expect(await store.getMeta(meta.hash)).toBeNull();
+    expect(await store.list()).toHaveLength(0);
+    expect(await store.count()).toBe(0);
+
+    const repaired = await store.put(testData, { ...testInput, tags: ['extra'] });
+    expect(repaired.hash).toBe(meta.hash);
+    expect(await store.has(meta.hash)).toBe(true);
+    expect(await store.get(meta.hash)).toEqual(testData);
+    expect((await store.getMeta(meta.hash))?.tags).toEqual(['npc', 'medieval', 'extra']);
+    expect(await store.list()).toHaveLength(1);
+  });
+
+  it('a sidecar without a blob is omitted from list and getMeta', async () => {
+    const meta = await store.put(testData, testInput);
+    const binPath = path.join(tmpDir, meta.hash.slice(0, 2), `${meta.hash}.bin`);
+    await fs.unlink(binPath);
+    expect(await store.getMeta(meta.hash)).toBeNull();
+    expect(await store.list()).toEqual([]);
+  });
+
+  it('hash-hit rewrites a swapped blob whose bytes no longer match the hash', async () => {
+    const meta = await store.put(testData, testInput);
+    const binPath = path.join(tmpDir, meta.hash.slice(0, 2), `${meta.hash}.bin`);
+    await fs.writeFile(binPath, Buffer.from('tampered!'));
+    expect(await store.get(meta.hash, { verify: true })).toBeNull();
+
+    await store.put(testData, testInput);
+    expect(await store.get(meta.hash, { verify: true })).toEqual(testData);
+  });
+});

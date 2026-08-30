@@ -526,7 +526,7 @@ describe('validateRumor tick-field hardening (F-1f8c5a94)', () => {
       engine.spread(rumor.id, defaultCtx({ receiverId: `npc_${hop}`, hopCount: hop, environmentInstability: 1 }));
     }
     engine.tick(50);
-    for (const r of engine.serialize()) {
+    for (const r of engine.serialize({ includeDead: true })) {
       expect(validateRumor(r)).toEqual([]);
     }
   });
@@ -650,10 +650,9 @@ describe('serialize/deserialize detach rumor objects (F-072c671e)', () => {
     const engineB = RumorEngine.deserialize(engineA.serialize());
     expect(engineB.get(rumor.id)).not.toBe(engineA.get(rumor.id));
 
-    engineA.get(rumor.id)!.status = 'dead';
-    engineA.get(rumor.id)!.claim = 'rewritten';
-    engineA.get(rumor.id)!.spreadPath.push('mutated');
+    // Live accessors return clones (F-4d5522db); mutate through engine APIs.
     engineA.recordFactionUptake(rumor.id, 'new_faction');
+    engineA.spread(rumor.id, defaultCtx({ receiverId: 'spy', currentTick: 3 }));
 
     const restored = engineB.get(rumor.id)!;
     expect(restored.status).toBe('spreading');
@@ -661,10 +660,11 @@ describe('serialize/deserialize detach rumor objects (F-072c671e)', () => {
     expect(restored.spreadPath).toEqual(['guard_1']);
     expect(restored.factionUptake).toEqual(['guards']);
 
-    engineB.get(rumor.id)!.status = 'fading';
-    engineB.get(rumor.id)!.spreadPath.push('other');
-    expect(engineA.get(rumor.id)!.status).toBe('dead');
-    expect(engineA.get(rumor.id)!.spreadPath).toEqual(['guard_1', 'mutated']);
+    engineB.recordFactionUptake(rumor.id, 'other');
+    expect(engineA.get(rumor.id)!.factionUptake).toEqual(['guards', 'new_faction']);
+    expect(engineA.get(rumor.id)!.spreadPath).toEqual(['guard_1', 'spy']);
+    expect(engineB.get(rumor.id)!.factionUptake).toEqual(['guards', 'other']);
+    expect(engineB.get(rumor.id)!.spreadPath).toEqual(['guard_1']);
   });
 
   test('mutating the deserialize input after load does not write the restored Map', () => {
@@ -682,5 +682,82 @@ describe('serialize/deserialize detach rumor objects (F-072c671e)', () => {
     expect(live.spreadPath).toEqual(['guard_1']);
     expect(live.factionUptake).toEqual([]);
     expect(live).not.toBe(snapshot[0]);
+  });
+});
+
+// F-4d5522db: get/query/aboutSubject used to return the Map's own objects, so
+// mutating a caller handle rewrote live gossip. Isolation belongs at the
+// public read seam; recordFactionUptake/tick still write the Map directly.
+describe('live accessors detach rumor objects (F-4d5522db)', () => {
+  test('get(), mutate status and spreadPath, next get() is unchanged', () => {
+    const engine = new RumorEngine();
+    const rumor = createRumor(engine);
+    engine.recordFactionUptake(rumor.id, 'guards');
+
+    const got = engine.get(rumor.id)!;
+    got.status = 'dead';
+    got.spreadPath.push('poison');
+    got.factionUptake.push('spies');
+    got.claim = 'forged';
+
+    const again = engine.get(rumor.id)!;
+    expect(again.status).toBe('spreading');
+    expect(again.spreadPath).toEqual(['guard_1']);
+    expect(again.factionUptake).toEqual(['guards']);
+    expect(again.claim).toBe('player killed merchant_1');
+    expect(engine.activeCount()).toBe(1);
+  });
+
+  test('mutating query()/aboutSubject results does not write the live Map', () => {
+    const engine = new RumorEngine();
+    createRumor(engine);
+
+    const queried = engine.query({ subject: 'player' });
+    queried[0].status = 'dead';
+    queried[0].spreadPath.push('poison');
+    expect(engine.get(queried[0].id)!.status).toBe('spreading');
+    expect(engine.get(queried[0].id)!.spreadPath).toEqual(['guard_1']);
+
+    const about = engine.aboutSubject('player');
+    about[0].status = 'dead';
+    expect(engine.get(about[0].id)!.status).toBe('spreading');
+  });
+});
+
+// F-97a47e88: tick() marked dead but never deleted; serialize() dumped the
+// whole Map. Dead is a lifecycle end — omit from saves, prune from the Map.
+describe('dead rumors are omitted from serialize and can be pruned (F-97a47e88)', () => {
+  test('tick past deathThreshold: serialize excludes dead unless includeDead; pruneDead drops them', () => {
+    const engine = new RumorEngine({ deathThreshold: 5 });
+    const rumor = createRumor(engine, { originTick: 0 });
+
+    engine.tick(10);
+    expect(engine.activeCount()).toBe(0);
+    expect(engine.get(rumor.id)?.status).toBe('dead');
+    expect(engine.serialize().every((r) => r.status !== 'dead')).toBe(true);
+    expect(engine.serialize()).toHaveLength(0);
+    expect(engine.serialize({ includeDead: true })).toHaveLength(1);
+    expect(engine.serialize({ includeDead: true })[0].status).toBe('dead');
+
+    expect(engine.pruneDead()).toBe(1);
+    expect(engine.get(rumor.id)).toBeUndefined();
+    expect(engine.serialize({ includeDead: true })).toHaveLength(0);
+    expect(engine.pruneDead()).toBe(0);
+  });
+
+  test('tick caps the Map by dropping oldest dead first', () => {
+    const engine = new RumorEngine({ deathThreshold: 5, maxDeadRumors: 3 });
+    const ids: string[] = [];
+    for (let i = 0; i < 8; i++) {
+      ids.push(createRumor(engine, { originTick: 0, sourceId: `src_${i}` }).id);
+    }
+    engine.tick(10);
+    expect(engine.activeCount()).toBe(0);
+    const kept = engine.serialize({ includeDead: true });
+    expect(kept).toHaveLength(3);
+    expect(kept.every((r) => r.status === 'dead')).toBe(true);
+    // Oldest ids (rum_1..) drop first; the last three survive the cap.
+    expect(engine.get(ids[0])).toBeUndefined();
+    expect(engine.get(ids[ids.length - 1])?.status).toBe('dead');
   });
 });

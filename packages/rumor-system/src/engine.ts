@@ -39,7 +39,18 @@ const DEFAULT_CONFIG = {
   confidenceDecayPerHop: 0.1,
   fadingThreshold: 10,
   deathThreshold: 30,
+  maxDeadRumors: 64,
 };
+
+/** Options for {@link RumorEngine.serialize}. */
+export type SerializeOptions = {
+  /** Include status==='dead' rumors. Default: omit them (F-97a47e88). */
+  includeDead?: boolean;
+};
+
+function cloneRumor(r: Rumor): Rumor {
+  return structuredClone(r);
+}
 
 export class RumorEngine {
   private rumors: Map<string, Rumor> = new Map();
@@ -48,6 +59,7 @@ export class RumorEngine {
   private confidenceDecayPerHop: number;
   private fadingThreshold: number;
   private deathThreshold: number;
+  private maxDeadRumors: number;
   /**
    * Per-instance ID counter. Rumor IDs depend only on (this engine's history),
    * never on cross-instance order — see CP-02. Two engines number independently.
@@ -63,6 +75,7 @@ export class RumorEngine {
     this.confidenceDecayPerHop = config?.confidenceDecayPerHop ?? DEFAULT_CONFIG.confidenceDecayPerHop;
     this.fadingThreshold = config?.fadingThreshold ?? DEFAULT_CONFIG.fadingThreshold;
     this.deathThreshold = config?.deathThreshold ?? DEFAULT_CONFIG.deathThreshold;
+    this.maxDeadRumors = Math.max(0, config?.maxDeadRumors ?? DEFAULT_CONFIG.maxDeadRumors);
     this.mutations = config?.mutations ?? DEFAULT_MUTATIONS;
   }
 
@@ -194,6 +207,33 @@ export class RumorEngine {
         rumor.status = 'fading';
       }
     }
+    this.capDead();
+  }
+
+  /**
+   * Drop every rumor whose status is `dead`. Returns how many were removed.
+   * Persistence and `get()` after this return undefined for those ids
+   * (F-97a47e88).
+   */
+  pruneDead(): number {
+    let n = 0;
+    for (const [id, rumor] of this.rumors) {
+      if (rumor.status === 'dead') {
+        this.rumors.delete(id);
+        n++;
+      }
+    }
+    return n;
+  }
+
+  /** Drop oldest dead rumors until the live Map is within maxDeadRumors. */
+  private capDead(): void {
+    const dead = [...this.rumors.values()]
+      .filter((r) => r.status === 'dead')
+      .sort((a, b) => a.lastSpreadTick - b.lastSpreadTick || a.originTick - b.originTick || a.id.localeCompare(b.id));
+    const overflow = dead.length - this.maxDeadRumors;
+    if (overflow <= 0) return;
+    for (let i = 0; i < overflow; i++) this.rumors.delete(dead[i].id);
   }
 
   /** Query rumors with filters. All filters are ANDed. */
@@ -219,19 +259,21 @@ export class RumorEngine {
       results = results.filter((r) => r.originTick > q.afterTick!);
     }
 
-    return results.sort((a, b) => b.confidence - a.confidence);
+    return results.sort((a, b) => b.confidence - a.confidence).map(cloneRumor);
   }
 
-  /** Get a specific rumor by ID */
+  /** Get a specific rumor by ID. Returned object is a clone (F-4d5522db). */
   get(id: string): Rumor | undefined {
-    return this.rumors.get(id);
+    const rumor = this.rumors.get(id);
+    return rumor ? cloneRumor(rumor) : undefined;
   }
 
   /** Get all active rumors about a subject */
   aboutSubject(subject: string): Rumor[] {
     return Array.from(this.rumors.values())
       .filter((r) => r.subject === subject && r.status !== 'dead')
-      .sort((a, b) => b.confidence - a.confidence);
+      .sort((a, b) => b.confidence - a.confidence)
+      .map(cloneRumor);
   }
 
   /** Count of non-dead rumors */
@@ -246,9 +288,14 @@ export class RumorEngine {
   /**
    * Serializable snapshot. Cloned so mutating the returned array (or nested
    * `spreadPath` / `factionUptake`) cannot write the live Map (F-072c671e).
+   * Dead rumors are omitted unless `{ includeDead: true }` — they are a
+   * lifecycle end, not retained history (F-97a47e88).
    */
-  serialize(): Rumor[] {
-    return structuredClone(Array.from(this.rumors.values()));
+  serialize(opts?: SerializeOptions): Rumor[] {
+    const values = opts?.includeDead
+      ? Array.from(this.rumors.values())
+      : Array.from(this.rumors.values()).filter((r) => r.status !== 'dead');
+    return structuredClone(values);
   }
 
   /**
@@ -311,6 +358,7 @@ export class RumorEngine {
     }
 
     engine.nextRumorId = maxNum + 1;
+    engine.capDead();
     return { engine, restored, warnings };
   }
 

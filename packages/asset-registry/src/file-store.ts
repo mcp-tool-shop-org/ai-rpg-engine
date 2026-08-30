@@ -66,8 +66,18 @@ export class FileAssetStore implements AssetStore {
     // Dedup — same bytes reuse the stored asset. Union incoming tags so a
     // second writer (e.g. char:Alice: after char:Alice) is still findable
     // (F-930e6b5b). Other metadata stays first-writer-wins.
-    const existing = await this.getMeta(hash);
+    // F-628ee72f: read the sidecar even when the blob is missing, so a
+    // hash-hit can restore the .bin instead of rewriting only JSON.
+    const existing = await this.readSidecar(hash);
     if (existing) {
+      // Rewrite when the blob is missing OR no longer matches its hash
+      // (crash/split, deleted .bin, swapped file). Tag union still runs.
+      const intact = await this.get(hash, { verify: true });
+      if (!intact) {
+        const dir = this.shardDir(hash);
+        await fs.mkdir(dir, { recursive: true });
+        await fs.writeFile(this.dataPath(hash), data);
+      }
       const mergedTags = unionTags(existing.tags, input.tags);
       if (!mergedTags) return cloneMetadata(existing);
       const merged: AssetMetadata = { ...existing, tags: mergedTags };
@@ -112,25 +122,33 @@ export class FileAssetStore implements AssetStore {
     }
   }
 
-  async getMeta(hash: string): Promise<AssetMetadata | null> {
+  /** Sidecar only — does not require the blob (used by put to repair ghosts). */
+  private async readSidecar(hash: string): Promise<AssetMetadata | null> {
     if (!isValidHash(hash)) return null;
     let parsed: unknown;
     try {
       const json = await fs.readFile(this.metaPath(hash), 'utf-8');
       parsed = JSON.parse(json);
     } catch {
-      // Missing file or invalid JSON — not found.
       return null;
     }
-    // Valid JSON, wrong shape — corrupt sidecar, same verdict (F-4d8f612a).
     return isAssetMetadataShape(parsed) ? cloneMetadata(parsed) : null;
+  }
+
+  async getMeta(hash: string): Promise<AssetMetadata | null> {
+    const meta = await this.readSidecar(hash);
+    if (!meta) return null;
+    // F-628ee72f: a sidecar without bytes is corrupt, not a live asset.
+    if (!(await this.has(hash))) return null;
+    return meta;
   }
 
   /**
    * NOTE: has() only guarantees the `.bin` BLOB exists — it does not confirm
    * the metadata sidecar is present or well-shaped, so `has(h) === true` does
-   * NOT imply `getMeta(h)` will succeed. Callers that need the metadata should
-   * call getMeta() and handle null (F-4d8f612a).
+   * NOT imply `getMeta(h)` will succeed. The reverse is also false: getMeta
+   * and list require BOTH files, so a leftover sidecar without a blob is
+   * treated as corrupt (F-4d8f612a, F-628ee72f).
    */
   async has(hash: string): Promise<boolean> {
     if (!isValidHash(hash)) return false;
@@ -177,6 +195,13 @@ export class FileAssetStore implements AssetStore {
         // the malformed object while a filtered list() silently swallowed
         // matchesFilter's TypeError in this catch — same file, two behaviors.
         if (!isAssetMetadataShape(parsed)) continue;
+        // F-628ee72f: skip a sidecar whose blob is missing — list must not
+        // advertise metadata for unreadable bytes.
+        try {
+          await fs.access(path.join(shardPath, `${parsed.hash}.bin`));
+        } catch {
+          continue;
+        }
         if (!filter || matchesFilter(parsed, filter)) {
           results.push(cloneMetadata(parsed));
         }
@@ -188,11 +213,20 @@ export class FileAssetStore implements AssetStore {
 
   async delete(hash: string): Promise<boolean> {
     if (!isValidHash(hash)) return false;
-    const existed = await this.has(hash);
+    let existed = false;
+    try {
+      await fs.unlink(this.dataPath(hash));
+      existed = true;
+    } catch {
+      // Blob already gone.
+    }
+    try {
+      await fs.unlink(this.metaPath(hash));
+      existed = true;
+    } catch {
+      // Sidecar already gone.
+    }
     if (!existed) return false;
-
-    await fs.unlink(this.dataPath(hash)).catch(() => {});
-    await fs.unlink(this.metaPath(hash)).catch(() => {});
 
     // Try to remove empty shard directory
     const dir = this.shardDir(hash);

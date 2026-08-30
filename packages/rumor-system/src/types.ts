@@ -85,6 +85,12 @@ export type RumorEngineConfig = {
   fadingThreshold?: number;
   /** Ticks of inactivity before status becomes 'dead' (default: 30) */
   deathThreshold?: number;
+  /**
+   * Max dead rumors retained in the live Map (default: 64). Oldest dead
+   * (by lastSpreadTick, then originTick) drop first so a missing pruneDead()
+   * cannot unbounded-grow a campaign (F-97a47e88).
+   */
+  maxDeadRumors?: number;
   /** Custom mutation rules (replaces defaults if provided) */
   mutations?: MutationRule[];
 };

@@ -78,8 +78,13 @@ export type ResolvedSfxCue = {
 
 type CueTarget = Omit<ResolvedSfxCue, 'via'>;
 
+/** Null-prototype map so inherited Object.prototype keys cannot masquerade as cues (F-d7c3c40a). */
+function freezeNullProto<T extends Record<string, CueTarget>>(entries: T): T {
+  return Object.freeze(Object.assign(Object.create(null), entries)) as T;
+}
+
 /** Exact-match tier: the cues modules and starters emit by literal id. */
-export const EXACT_CUE_MAP: Readonly<Record<string, CueTarget>> = Object.freeze({
+export const EXACT_CUE_MAP: Readonly<Record<string, CueTarget>> = freezeNullProto({
   'combat.hit': { effectId: 'alert_warning', timing: 'with-text', intensity: 0.6 },
   'combat.defeat': { effectId: 'alert_critical', timing: 'with-text', intensity: 0.9 },
   'combat.victory': { effectId: 'ui_success', timing: 'after-text', intensity: 0.8 },
@@ -91,7 +96,7 @@ export const EXACT_CUE_MAP: Readonly<Record<string, CueTarget>> = Object.freeze(
  * entry exists. Covers open-ended families — every `ability.<id>` cue a
  * content pack invents, every `scene.<moment>` stinger a starter emits.
  */
-export const NAMESPACE_CUE_MAP: Readonly<Record<string, CueTarget>> = Object.freeze({
+export const NAMESPACE_CUE_MAP: Readonly<Record<string, CueTarget>> = freezeNullProto({
   ability: { effectId: 'ui_pop', timing: 'with-text', intensity: 0.5 },
   scene: { effectId: 'ui_attention', timing: 'immediate', intensity: 0.7 },
   combat: { effectId: 'alert_warning', timing: 'with-text', intensity: 0.5 },
@@ -122,13 +127,16 @@ export const KNOWN_EVENT_SOUND_CUES: readonly string[] = Object.freeze(
  * @param cue A gameplay cue id (e.g. `combat.hit`, `ability.holy-smite`).
  */
 export function resolveSoundCue(cue: string): ResolvedSfxCue {
-  const exact = EXACT_CUE_MAP[cue];
-  if (exact) return { ...exact, via: 'exact' };
+  if (Object.hasOwn(EXACT_CUE_MAP, cue)) {
+    return { ...EXACT_CUE_MAP[cue], via: 'exact' };
+  }
 
   const dot = cue.indexOf('.');
   if (dot > 0) {
-    const ns = NAMESPACE_CUE_MAP[cue.slice(0, dot)];
-    if (ns) return { ...ns, via: 'namespace' };
+    const nsKey = cue.slice(0, dot);
+    if (Object.hasOwn(NAMESPACE_CUE_MAP, nsKey)) {
+      return { ...NAMESPACE_CUE_MAP[nsKey], via: 'namespace' };
+    }
   }
 
   return { ...FALLBACK_CUE, via: 'fallback' };
@@ -147,8 +155,9 @@ export function extendCueMap(
   overrides: Record<string, CueTarget>,
 ): (cue: string) => ResolvedSfxCue {
   return (cue: string): ResolvedSfxCue => {
-    const hit = overrides[cue];
-    if (hit) return { ...hit, via: 'exact' };
+    if (Object.hasOwn(overrides, cue)) {
+      return { ...overrides[cue], via: 'exact' };
+    }
     return resolveSoundCue(cue);
   };
 }
