@@ -39,7 +39,12 @@ export const statusCore: EngineModule = {
       // so trigger-produced events cannot re-enter this hook this tick.
       const seedDamage = world.eventLog.filter(
         (e) => e.tick === tick &&
-          (e.type === 'combat.damage.applied' || e.type === 'ability.damage.applied'),
+          (e.type === 'combat.damage.applied' || e.type === 'ability.damage.applied') &&
+          // Hazard / periodic pulses already ran processStatusTriggers at
+          // writeHp or inside processPeriodicStatuses. World-tick pulses
+          // share this tick number with the next action.resolved (F-7793de81).
+          e.payload?.cause !== 'hazard' &&
+          e.payload?.cause !== 'status-periodic',
       );
       if (seedDamage.length > 0) {
         const procCtx = makeProcContext();
@@ -99,6 +104,24 @@ function withPeriodicSnapshot(
 }
 
 /**
+ * Refresh / at-max-stack fall-through: move expiry AND restart the periodic
+ * clock (F-09c95e49). processPeriodicStatuses prefers frozen data.durationTicks
+ * over the expiresAtTick window and expires at (tick - appliedAtTick) >= that
+ * snapshot, so extending expiresAtTick alone cannot recast a DoT or keep a
+ * per-turn hazard pulsing for the authored durationTicks.
+ *
+ * Non-periodic instances still only need expiresAtTick; appliedAtTick is
+ * reset with it so any later periodic bookkeeping sees a coherent window.
+ */
+function restartPeriodicClock(existing: AppliedStatus, tick: number, duration: number): void {
+  existing.expiresAtTick = tick + duration;
+  existing.appliedAtTick = tick;
+  if (existing.data && typeof existing.data[PERIODIC_KEYS.KIND] === 'string') {
+    existing.data = { ...existing.data, [PERIODIC_KEYS.DURATION]: duration };
+  }
+}
+
+/**
  * Apply a status to an entity. Returns the event to record.
  *
  * `world` is optional: when provided, the AppliedStatus id is minted from the
@@ -136,7 +159,7 @@ export function applyStatus(
         // At max stacks, just refresh. `!== undefined` (not truthiness): a
         // duration of 0 means "expires now", only undefined means "no expiry" (M5).
         if (options?.duration !== undefined) {
-          existing.expiresAtTick = tick + options.duration;
+          restartPeriodicClock(existing, tick, options.duration);
         }
         return makeStatusEvent('status.stacked', entity.id, statusId, tick, {
           stacks: existing.stacks ?? 1,
@@ -147,7 +170,7 @@ export function applyStatus(
         // `!== undefined` (not truthiness): duration 0 refreshes the expiry to
         // the current tick; only undefined leaves the expiry untouched (M5).
         if (options?.duration !== undefined) {
-          existing.expiresAtTick = tick + options.duration;
+          restartPeriodicClock(existing, tick, options.duration);
         }
         return makeStatusEvent('status.applied', entity.id, statusId, tick, {
           refreshed: true,

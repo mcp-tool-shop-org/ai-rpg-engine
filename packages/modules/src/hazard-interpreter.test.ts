@@ -662,3 +662,135 @@ describe('typed-hazard durationTicks emits combat.damage.applied (F-b000f36d)', 
     expect(dmg!.actorId).toBe('acid');
   });
 });
+
+describe('typed-hazard durationTicks apply-tick pulse and refresh clock (F-7793de81 / F-09c95e49)', () => {
+  function hazardDamagePulses() {
+    return (e: { type: string; payload: Record<string, unknown> }) =>
+      e.type === 'combat.damage.applied' && e.payload.cause === 'hazard';
+  }
+
+  it('F-09c95e49: durationTicks:3 per-turn, three waits in the zone, three pulses and no skip', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, waitModule, createEnvironmentCore()],
+      entities: [makePlayer()],
+      zones,
+    });
+    registerTypedHazards(
+      engine.world.meta.gameId,
+      [spec({
+        id: 'scalding-steam',
+        name: 'Scalding Steam',
+        trigger: 'per-turn',
+        effects: [{ kind: 'damage', amount: 3, tickOn: 'turn-end', durationTicks: 3 }],
+      })],
+      { 'zone-a': ['scalding-steam'] },
+    );
+
+    const hpStart = engine.world.entities.player.resources.hp as number;
+    const cumulative: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      engine.submitAction('wait');
+      runWorldTick(engine);
+      cumulative.push(engine.world.eventLog.filter(hazardDamagePulses()).length);
+    }
+
+    expect(cumulative, 'standing steam must pulse every round with no skip tick').toEqual([1, 2, 3]);
+    expect(engine.world.entities.player.resources.hp).toBe(hpStart - 9);
+  });
+
+  it('F-7793de81: durationTicks:1 on-enter then one wait deals the amount', () => {
+    const engine = createTestEngine({
+      modules: [traversalCore, statusCore, waitModule, createEnvironmentCore()],
+      entities: [makePlayer()],
+      zones,
+      startZone: 'zone-a',
+    });
+    registerTypedHazards(
+      engine.world.meta.gameId,
+      [spec({
+        id: 'scalding-steam',
+        name: 'Scalding Steam',
+        trigger: 'on-enter',
+        effects: [{ kind: 'damage', amount: 5, tickOn: 'turn-end', durationTicks: 1 }],
+      })],
+      { 'zone-b': ['scalding-steam'] },
+    );
+
+    getWorldTickState(engine.store.state);
+    const moved = engine.submitAction('move', { targetIds: ['zone-b'] });
+    expect(moved.some((e) => e.type === 'world.zone.entered'), 'move must succeed').toBe(true);
+    runWorldTick(engine);
+
+    expect(engine.world.entities.player.resources.hp).toBe(35);
+    const dmg = engine.world.eventLog.find(hazardDamagePulses());
+    expect(dmg, 'durationTicks:1 must deal its amount on the enter round').toBeDefined();
+    expect(dmg!.payload.damage).toBe(5);
+    expect(dmg!.payload.currentHp).toBe(35);
+  });
+
+  it('F-7793de81: durationTicks:3 on-enter then three waits deals three pulses then expires', () => {
+    const engine = createTestEngine({
+      modules: [traversalCore, statusCore, waitModule, createEnvironmentCore()],
+      entities: [makePlayer()],
+      zones,
+      startZone: 'zone-a',
+    });
+    registerTypedHazards(
+      engine.world.meta.gameId,
+      [spec({
+        id: 'scalding-steam',
+        name: 'Scalding Steam',
+        trigger: 'on-enter',
+        effects: [{ kind: 'damage', amount: 3, tickOn: 'turn-end', durationTicks: 3 }],
+      })],
+      { 'zone-b': ['scalding-steam'] },
+    );
+
+    getWorldTickState(engine.store.state);
+    engine.submitAction('move', { targetIds: ['zone-b'] });
+    runWorldTick(engine);
+    engine.submitAction('wait');
+    runWorldTick(engine);
+    engine.submitAction('wait');
+    runWorldTick(engine);
+
+    const afterThree = engine.world.eventLog.filter(hazardDamagePulses());
+    expect(afterThree).toHaveLength(3);
+    expect(engine.world.entities.player.resources.hp).toBe(31);
+
+    engine.submitAction('wait');
+    runWorldTick(engine);
+    expect(engine.world.eventLog.filter(hazardDamagePulses())).toHaveLength(3);
+    expect(
+      engine.world.entities.player.statuses.some((s) => s.statusId === 'hazard:scalding-steam'),
+    ).toBe(false);
+  });
+
+  it('F-7793de81: instant damage of the same amount still hits on the enter round without a wait', () => {
+    const engine = createTestEngine({
+      modules: [traversalCore, statusCore, waitModule, createEnvironmentCore()],
+      entities: [makePlayer()],
+      zones,
+      startZone: 'zone-a',
+    });
+    registerTypedHazards(
+      engine.world.meta.gameId,
+      [spec({
+        id: 'acid',
+        name: 'Acid',
+        trigger: 'on-enter',
+        effects: [{ kind: 'damage', amount: 5, tickOn: 'turn-end' }],
+      })],
+      { 'zone-b': ['acid'] },
+    );
+
+    getWorldTickState(engine.store.state);
+    engine.submitAction('move', { targetIds: ['zone-b'] });
+    runWorldTick(engine);
+
+    expect(engine.world.entities.player.resources.hp).toBe(35);
+    const dmg = engine.world.eventLog.find(hazardDamagePulses());
+    expect(dmg, 'instant hazard damage must hit on the enter round').toBeDefined();
+    expect(dmg!.payload.damage).toBe(5);
+  });
+});

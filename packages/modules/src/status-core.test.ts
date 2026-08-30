@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
 import type { EntityState, WorldState, EngineModule } from '@ai-rpg-engine/core';
 import { statusCore, applyStatus } from './status-core.js';
-import { PERIODIC_KEYS } from './status-effects.js';
+import { PERIODIC_KEYS, processPeriodicStatuses } from './status-effects.js';
 import { registerStatusDefinitions, clearStatusRegistry } from './status-semantics.js';
 
 /** Minimal module exposing a no-op 'wait' verb so an action can resolve a tick
@@ -171,5 +171,87 @@ describe('M5: applyStatus duration:0 vs undefined', () => {
     // Already at max stacks → the "refresh at max" path.
     applyStatus(e, 'venom', 6, { stacking: 'stack', maxStacks: 1, duration: 0 }, world);
     expect(e.statuses[0].expiresAtTick).toBe(6);
+  });
+});
+
+// F-09c95e49: refresh / at-max previously only wrote expiresAtTick, so the
+// periodic engine (frozen data.durationTicks + original appliedAtTick) ignored
+// the recast and a per-turn hazard could not extend a DoT.
+describe('F-09c95e49: refresh restarts the periodic clock', () => {
+  it('refresh resets appliedAtTick and rewrites data.durationTicks', () => {
+    const e = makeEntity();
+    const world = makeWorld(e, 0);
+    applyStatus(e, 'burning', 0, {
+      duration: 4,
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 2 },
+    }, world);
+    expect(e.statuses[0].appliedAtTick).toBe(0);
+    expect(e.statuses[0].data?.[PERIODIC_KEYS.DURATION]).toBe(4);
+
+    applyStatus(e, 'burning', 2, {
+      stacking: 'refresh',
+      duration: 4,
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 2 },
+    }, world);
+
+    expect(e.statuses).toHaveLength(1);
+    expect(e.statuses[0].appliedAtTick).toBe(2);
+    expect(e.statuses[0].expiresAtTick).toBe(6);
+    expect(e.statuses[0].data?.[PERIODIC_KEYS.DURATION]).toBe(4);
+  });
+
+  it('at-max stack fall-through resets appliedAtTick and rewrites data.durationTicks', () => {
+    const e = makeEntity();
+    const world = makeWorld(e, 0);
+    applyStatus(e, 'venom', 0, {
+      stacking: 'stack',
+      maxStacks: 1,
+      duration: 4,
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 2 },
+    }, world);
+
+    applyStatus(e, 'venom', 2, {
+      stacking: 'stack',
+      maxStacks: 1,
+      duration: 4,
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 2 },
+    }, world);
+
+    expect(e.statuses).toHaveLength(1);
+    expect(e.statuses[0].appliedAtTick).toBe(2);
+    expect(e.statuses[0].expiresAtTick).toBe(6);
+    expect(e.statuses[0].data?.[PERIODIC_KEYS.DURATION]).toBe(4);
+  });
+
+  it('recast a duration:4 burn at elapsed 2 still pulses through original-apply+4', () => {
+    const e = makeEntity({ resources: { hp: 50, maxHp: 50 } });
+    const world = makeWorld(e, 0);
+    applyStatus(e, 'burning', 0, {
+      duration: 4,
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 1 },
+    }, world);
+
+    const ticksThatFire: number[] = [];
+    for (let t = 0; t <= 1; t++) {
+      world.meta.tick = t;
+      const events = processPeriodicStatuses(world, t);
+      if (events.some(ev => ev.type === 'status.periodic.damage')) ticksThatFire.push(t);
+    }
+
+    applyStatus(e, 'burning', 2, {
+      stacking: 'refresh',
+      duration: 4,
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 1 },
+    }, world);
+
+    for (let t = 2; t <= 6; t++) {
+      world.meta.tick = t;
+      const events = processPeriodicStatuses(world, t);
+      if (events.some(ev => ev.type === 'status.periodic.damage')) ticksThatFire.push(t);
+    }
+
+    expect(ticksThatFire).toContain(4);
+    expect(ticksThatFire).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(e.statuses.some(s => s.statusId === 'burning')).toBe(false);
   });
 });

@@ -69,6 +69,13 @@ export const PERIODIC_KEYS = {
   SNAPSHOT: 'snapshotAmount',
   /** Duration in ticks, stored so expiry is computable without expiresAtTick. */
   DURATION: 'durationTicks',
+  /**
+   * Tick this instance last pulsed. World-tick (after typed hazards) and the
+   * next action.resolved share a tick number, so without this stamp an
+   * apply-tick pulse (F-7793de81) and the following action.resolved would
+   * both fire elapsed=0.
+   */
+  LAST_FIRED: 'lastFiredTick',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -260,7 +267,9 @@ export function processPeriodicStatuses(world: WorldState, tick: number): Resolv
       // Fire on-period, but never on a defeated entity (no ticking a corpse).
       const onPeriod = elapsed >= 0 && period > 0 && elapsed % period === 0;
       const alive = (entity.resources.hp ?? 0) > 0;
-      if (onPeriod && alive) {
+      const lastFired = numData(inst.data, PERIODIC_KEYS.LAST_FIRED);
+      if (onPeriod && alive && lastFired !== tick) {
+        if (inst.data) inst.data = { ...inst.data, [PERIODIC_KEYS.LAST_FIRED]: tick };
         const magnitude =
           numData(inst.data, PERIODIC_KEYS.SNAPSHOT) ??
           numData(inst.data, PERIODIC_KEYS.AMOUNT) ??

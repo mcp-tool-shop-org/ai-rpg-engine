@@ -426,6 +426,13 @@ export function applyTypedHazards(
               // Pulses emit combat.damage.applied + processStatusTriggers from
               // processPeriodicStatuses (F-b000f36d); actorId is spec.id via
               // sourceId, never the walker (F-1f8eb735).
+              //
+              // Do NOT writeHp the first pulse here. tickWorld runs
+              // processPeriodicStatuses after the typed-hazard steps so
+              // elapsed=0 fires this round (F-7793de81). writeHp plus that
+              // pass (and a refresh that restarts appliedAtTick, F-09c95e49)
+              // would double-hit standing walkers. stacking:'refresh' is the
+              // per-turn recast; applyStatus restarts the periodic clock.
               recordStatus(
                 applyStatus(
                   live,

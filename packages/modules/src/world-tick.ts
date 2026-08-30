@@ -174,6 +174,7 @@ import {
 } from './faction-agency.js';
 import { runEncounterSpawnStep, type SpawnedEncounterReport } from './encounter-spawn.js';
 import { runTypedHazardStep, runTypedHazardEntryStep } from './hazard-interpreter.js';
+import { processPeriodicStatuses } from './status-effects.js';
 import { runZoneStateStep } from './zone-state.js';
 import { getEconomyCoreState, setDistrictEconomy, tickDistrictEconomy, getDistrictEconomy, applyEconomyShift, type SupplyCategory } from './economy-core.js';
 import {
@@ -2128,6 +2129,16 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   // makes both calls no-ops, so all twelve shipped packs are byte-identical.
   runTypedHazardEntryStep(engine);
   runTypedHazardStep(engine);
+  // F-7793de81: durationTicks applyStatus runs here, AFTER this round's
+  // action.resolved periodic pass. Pulse elapsed=0 now so durationTicks:1
+  // deals damage this round and durationTicks:N deals N pulses. lastFiredTick
+  // in processPeriodicStatuses stops the next action.resolved (same tick
+  // number) from double-hitting. Player-applied DoTs still pulse on
+  // action.resolved at elapsed 0..N-1 because that pass runs before the tick
+  // advances into this world tick.
+  for (const ev of processPeriodicStatuses(world, currentTick)) {
+    engine.store.recordEvent(ev);
+  }
   reactionTriggers.push(...collectCombatReactionTriggers(world, state.lastEventIndex, world.eventLog.length));
 
   // 0b. ZONE STATE (C3/P4) — the moat bridge. Re-derives each zone's condition
