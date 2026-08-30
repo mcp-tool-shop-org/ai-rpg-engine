@@ -287,19 +287,57 @@ export function createLedgerAdapter(
     return bal !== null && bal === expected;
   }
 
-  /** Recover an EscrowCreate OfferSequence from account_tx by the persisted
-   *  tesSUCCESS hash. Used when create returned ok:true without `sequence`
-   *  — never submit a second EscrowCreate for the same delta. */
-  async function recoverOfferSequence(address: string, hash: string): Promise<number | undefined> {
+  /** Recover an EscrowCreate OfferSequence from account_tx. Prefer the
+   *  persisted tesSUCCESS hash; otherwise match Destination+currency+value
+   *  (hash-less timeout / crash before the receipt was written). Never submit
+   *  a second EscrowCreate for the same delta. */
+  async function recoverOfferSequence(
+    address: string,
+    opts: { hash?: string; destination: string; currency: string; value: string },
+  ): Promise<number | undefined> {
     try {
       const entries = await transport.accountTx(address);
-      const hit = entries.find(
-        (e) => e.hash === hash && e.type === 'EscrowCreate' && typeof e.sequence === 'number',
-      );
-      return hit?.sequence;
+      const spend = Number(opts.value);
+      let best: number | undefined;
+      for (const entry of entries) {
+        if (entry.type !== 'EscrowCreate' || typeof entry.sequence !== 'number') continue;
+        const hashHit = Boolean(opts.hash) && entry.hash === opts.hash;
+        const spendHit =
+          entry.destination === opts.destination &&
+          entry.currency === opts.currency &&
+          entry.value !== undefined &&
+          Number.isFinite(Number(entry.value)) &&
+          Number.isFinite(spend) &&
+          Number(entry.value) === spend;
+        if (!hashHit && !spendHit) continue;
+        if (best === undefined || entry.sequence > best) best = entry.sequence;
+      }
+      return best;
     } catch {
       return undefined;
     }
+  }
+
+  /** Completed token-escrow spends already in `state.settlements` for `key`. */
+  function priorMerchantCredits(state: LedgerAdapterState, key: string): number {
+    let credited = 0;
+    for (const record of state.settlements) {
+      const delta = record.deltas[key];
+      if (typeof delta === 'number' && Number.isFinite(delta) && delta < 0) credited += -delta;
+    }
+    return credited;
+  }
+
+  /** True when the merchant already holds this spend (FINISH landed). */
+  async function merchantAlreadyCredited(
+    state: LedgerAdapterState,
+    key: string,
+    code: string,
+    spend: number,
+  ): Promise<boolean> {
+    const bal = await readIssuedBalance(state.merchantAddress, code);
+    if (bal === null) return false;
+    return bal >= priorMerchantCredits(state, key) + spend;
   }
 
   function markReceipt(
@@ -378,6 +416,7 @@ export function createLedgerAdapter(
     memo: string,
     primitive: SettlementPrimitive = config.settlement,
     receipts: Record<string, SettlementKeyReceipt> = {},
+    recordLabel = 'unrecorded settlement',
   ): Promise<string[]> {
     const txids: string[] = [];
     const issuerSeed = requireSeed(state.issuerAddress);
@@ -395,20 +434,45 @@ export function createLedgerAdapter(
       const code = currencyCodeFor(state, key);
       const expected = (state.lastSettled[key] ?? 0) + diff;
 
-      // Skip a key whose receipt already marks the write complete, or whose
-      // on-ledger player balance already equals lastSettled+delta (a tesSUCCESS
-      // that timed out before we checkpointed). Never remint/re-escrow it.
-      // An unfinished escrow receipt (hash persisted, sequence not yet known)
-      // must NOT take this skip — recover OfferSequence and finish instead.
+      // Skip a key whose receipt already marks the write complete.
+      // Player-balance match is NOT settlement-complete for token-escrow
+      // spends: XLS-85 debits the holder on CREATE and credits the merchant
+      // only on FINISH. Recover OfferSequence and finish instead, unless the
+      // merchant already holds the spend (FINISH landed / escrow gone).
       if (receipts[key]?.done) {
         txids.push(...receipts[key].txids);
         continue;
       }
-      const unfinishedEscrow =
-        diff < 0 && primitive !== 'payment' && receipts[key] !== undefined && receipts[key].done !== true;
-      if (!unfinishedEscrow && (await onLedgerAlreadyMatches(state, key, expected))) {
-        if (receipts[key]) receipts[key].done = true;
-        else receipts[key] = { txids: [], done: true };
+      const isTokenEscrowSpend = diff < 0 && primitive !== 'payment';
+      const playerMatches = await onLedgerAlreadyMatches(state, key, expected);
+      if (playerMatches && isTokenEscrowSpend) {
+        const spend = -diff;
+        if (await merchantAlreadyCredited(state, key, code, spend)) {
+          markReceipt(receipts, key, {
+            txids: receipts[key]?.txids ?? [],
+            sequence: receipts[key]?.sequence,
+            done: true,
+          });
+          txids.push(...(receipts[key].txids ?? []));
+          continue;
+        }
+        if (receipts[key]?.sequence === undefined) {
+          const priorHash = receipts[key]?.txids.find((h) => h.length > 0);
+          const recovered = await recoverOfferSequence(state.playerAddress, {
+            hash: priorHash,
+            destination: state.merchantAddress,
+            currency: code,
+            value: String(spend),
+          });
+          if (recovered === undefined) {
+            throw new Error(
+              `${recordLabel}: escrowCreate(${key}) landed on the ledger (player ${code} already equals lastSettled+delta) but OfferSequence could not be recovered from account_tx — no EscrowCreate matching destination ${state.merchantAddress} amount ${spend} ${code}; not creating again`,
+            );
+          }
+          markReceipt(receipts, key, { txids: receipts[key]?.txids ?? [], sequence: recovered });
+        }
+      } else if (playerMatches) {
+        markReceipt(receipts, key, { txids: receipts[key]?.txids ?? [], done: true });
         txids.push(...(receipts[key].txids ?? []));
         continue;
       }
@@ -436,15 +500,21 @@ export function createLedgerAdapter(
         let sequence = existing?.sequence;
 
         if (sequence === undefined && existing) {
-          // tesSUCCESS without sequence: recover OfferSequence from account_tx
-          // by the persisted hash. Never EscrowCreate again for this key.
+          // tesSUCCESS without sequence, or a hash-less create that landed:
+          // recover OfferSequence from account_tx. Never EscrowCreate again.
           const priorHash = existing.txids.find((h) => h.length > 0);
-          if (priorHash) {
-            sequence = await recoverOfferSequence(state.playerAddress, priorHash);
-          }
+          sequence = await recoverOfferSequence(state.playerAddress, {
+            hash: priorHash,
+            destination: state.merchantAddress,
+            currency: code,
+            value: String(-diff),
+          });
           if (sequence === undefined) {
+            const why = priorHash
+              ? `account_tx has not indexed OfferSequence for hash ${priorHash}`
+              : `account_tx has no EscrowCreate matching destination ${state.merchantAddress} amount ${-diff} ${code}`;
             throw new Error(
-              `escrowCreate(${key}) tesSUCCESS without sequence; not creating again until account_tx indexes OfferSequence`,
+              `${recordLabel}: escrowCreate(${key}) tesSUCCESS without sequence; ${why}; not creating again`,
             );
           }
           markReceipt(receipts, key, { txids: [], sequence });
@@ -464,8 +534,15 @@ export function createLedgerAdapter(
             memo,
           );
           if (!createRes.ok) {
-            if (createRes.hash) markReceipt(receipts, key, { txids: [createRes.hash] });
-            throw new Error(`escrowCreate(${key}) failed: ${createRes.error ?? createRes.code}`);
+            if (createRes.hash || createRes.sequence !== undefined) {
+              markReceipt(receipts, key, {
+                txids: createRes.hash ? [createRes.hash] : [],
+                sequence: createRes.sequence,
+              });
+            }
+            throw new Error(
+              `${recordLabel}: escrowCreate(${key}) failed: ${createRes.error ?? createRes.code}`,
+            );
           }
           if (createRes.hash) txids.push(createRes.hash);
           if (createRes.sequence === undefined) {
@@ -475,11 +552,11 @@ export function createLedgerAdapter(
               txids: createRes.hash ? [createRes.hash] : [],
             });
             throw new Error(
-              `escrowCreate(${key}) tesSUCCESS without sequence; not creating again until account_tx indexes OfferSequence`,
+              `${recordLabel}: escrowCreate(${key}) tesSUCCESS without sequence; not creating again until account_tx indexes OfferSequence`,
             );
           }
-          // Persist sequence BEFORE escrowFinish so a finish failure retries
-          // only the finish, never a second EscrowCreate.
+          // Persist hash+sequence BEFORE escrowFinish so a finish failure
+          // retries only the finish, never a second EscrowCreate.
           markReceipt(receipts, key, {
             txids: createRes.hash ? [createRes.hash] : [],
             sequence: createRes.sequence,
@@ -492,7 +569,9 @@ export function createLedgerAdapter(
         const finishRes = await transport.escrowFinish(playerSeed, state.playerAddress, sequence);
         if (!finishRes.ok) {
           if (finishRes.hash) markReceipt(receipts, key, { txids: [finishRes.hash] });
-          throw new Error(`escrowFinish(${key}) failed: ${finishRes.error ?? finishRes.code}`);
+          throw new Error(
+            `${recordLabel}: escrowFinish(${key}) failed: ${finishRes.error ?? finishRes.code}`,
+          );
         }
         if (finishRes.hash) txids.push(finishRes.hash);
         markReceipt(receipts, key, { txids: finishRes.hash ? [finishRes.hash] : [], sequence, done: true });
@@ -543,9 +622,10 @@ export function createLedgerAdapter(
         // Diary pending records were written by a failed anchorMemo, not a
         // token movement. Replaying them through executeDeltas would try to
         // sign as an issuer that diary mode never funded.
+        const recordLabel = `checkpoint ${record.checkpoint} at ${record.location}`;
         const txids = config.mode === 'diary'
           ? await anchorDeltas(state, memo)
-          : await executeDeltas(state, record.deltas, memo, config.settlement, record.receipts);
+          : await executeDeltas(state, record.deltas, memo, config.settlement, record.receipts, recordLabel);
 
         record.txids = txids;
         record.status = 'settled';
@@ -811,9 +891,10 @@ export function createLedgerAdapter(
       // record that lands in state is otherwise identical to a ledger one,
       // which is what lets reconcile check an anchor chain with the same
       // machinery it uses for balances.
+      const recordLabel = `checkpoint ${checkpoint} at ${location}`;
       const txids = config.mode === 'diary'
         ? await anchorDeltas(state, memo)
-        : await executeDeltas(state, deltas, memo, primitive, receipts);
+        : await executeDeltas(state, deltas, memo, primitive, receipts, recordLabel);
 
       for (const key of keys) {
         state.lastSettled[key] = amounts[key] ?? 0;
