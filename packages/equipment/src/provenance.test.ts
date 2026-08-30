@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   normalizeProvenance,
   getItemProvenance,
@@ -122,6 +122,17 @@ describe('computeItemNotoriety', () => {
     ];
     // 3 kills × 0.05 = 0.15
     expect(computeItemNotoriety(baseItem, kills)).toBeCloseTo(0.15);
+  });
+
+  it('warns and does not silently score an unknown rarity as 0 (F-3ab4affd)', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const forged = { ...baseItem, rarity: 'mythic' as ItemDefinition['rarity'] };
+    const score = computeItemNotoriety(forged, []);
+    expect(score).toBe(0);
+    expect(warn).toHaveBeenCalled();
+    expect(String(warn.mock.calls[0])).toMatch(/rarity/i);
+    expect(String(warn.mock.calls[0])).toMatch(/dropped/i);
+    warn.mockRestore();
   });
 
   it('caps at 1.0', () => {

@@ -1,7 +1,13 @@
 // Item provenance — structured origin, faction association, behavioral flags
 // Pure functions for normalization, notoriety computation, and formatting.
 
-import type { ItemDefinition, ItemProvenance, ItemProvenanceFlag, ItemChronicleEntry } from './types.js';
+import type {
+  ItemDefinition,
+  ItemProvenance,
+  ItemProvenanceFlag,
+  ItemChronicleEntry,
+  ItemRarity,
+} from './types.js';
 
 // --- Normalization ---
 
@@ -39,14 +45,16 @@ export function getItemFaction(item: ItemDefinition): string | undefined {
 
 // --- Notoriety ---
 
-const RARITY_NOTORIETY: Record<string, number> = {
+// F-3ab4affd: exhaustively keyed so adding a rarity/flag without a score is a
+// compile error (same pattern as ITEM_CHRONICLE_EVENT_FLAGS). No `?? 0`.
+const RARITY_NOTORIETY: Record<ItemRarity, number> = {
   common: 0.0,
   uncommon: 0.1,
   rare: 0.3,
   legendary: 0.6,
 };
 
-const FLAG_NOTORIETY: Record<string, number> = {
+const FLAG_NOTORIETY: Record<ItemProvenanceFlag, number> = {
   stolen: 0.1,
   cursed: 0.2,
   blessed: 0.1,
@@ -54,6 +62,12 @@ const FLAG_NOTORIETY: Record<string, number> = {
   contraband: 0.15,
   trophy: 0.15,
 };
+
+function warnDroppedNotoriety(kind: 'rarity' | 'flag', key: string): void {
+  console.warn(
+    `computeItemNotoriety: unknown ${kind} "${key}" — notoriety contribution dropped (not silently scored as 0)`,
+  );
+}
 
 /**
  * Compute item notoriety (0-1) based on rarity, provenance flags, and chronicle length.
@@ -63,12 +77,23 @@ export function computeItemNotoriety(
   item: ItemDefinition,
   chronicle: ItemChronicleEntry[],
 ): number {
-  let score = RARITY_NOTORIETY[item.rarity] ?? 0;
+  const rarityScore = RARITY_NOTORIETY[item.rarity];
+  let score = 0;
+  if (typeof rarityScore === 'number') {
+    score += rarityScore;
+  } else {
+    warnDroppedNotoriety('rarity', String(item.rarity));
+  }
 
   const prov = getItemProvenance(item);
   if (prov?.flags) {
     for (const flag of prov.flags) {
-      score += FLAG_NOTORIETY[flag] ?? 0;
+      const flagScore = FLAG_NOTORIETY[flag];
+      if (typeof flagScore === 'number') {
+        score += flagScore;
+      } else {
+        warnDroppedNotoriety('flag', String(flag));
+      }
     }
   }
 

@@ -74,6 +74,10 @@ export type FinaleOutline = {
   legacy: LegacyEntry[];
   /** Structured epilogue data points for LLM narration */
   epilogueSeeds: string[];
+  /** Cross-discipline title, when the host supplied one (F-c453f8da). */
+  playerTitle?: string;
+  /** computeLevel result, when the host supplied one (F-c453f8da). */
+  playerLevel?: number;
 };
 
 // --- Internal Helpers ---
@@ -169,12 +173,27 @@ function buildEpilogueSeeds(
   companionFates: NpcFate[],
   dominantArc: string | null,
   legacy: LegacyEntry[],
+  playerTitle?: string,
+  playerLevel?: number,
 ): string[] {
   const seeds: string[] = [];
 
   // Resolution seed
   const label = resolutionClass.replace(/-/g, ' ');
   seeds.push(`The campaign concluded in ${label}.`);
+
+  // F-c453f8da: player identity was threaded into buildFinaleOutline and then
+  // dropped. Surface it in the epilogue so the climactic screen can name who
+  // the campaign was about.
+  if (playerTitle) {
+    seeds.push(
+      playerLevel !== undefined
+        ? `This was the tale of ${playerTitle}, who stood at level ${playerLevel}.`
+        : `This was the tale of ${playerTitle}.`,
+    );
+  } else if (playerLevel !== undefined) {
+    seeds.push(`The protagonist stood at level ${playerLevel}.`);
+  }
 
   // Faction seeds
   for (const f of factionFates) {
@@ -344,6 +363,7 @@ export function buildFinaleOutline(
   // Epilogue seeds
   const epilogueSeeds = buildEpilogueSeeds(
     resolutionClass, factionFates, companionFates, dominantArc, legacy,
+    playerTitle, playerLevel,
   );
 
   return {
@@ -358,6 +378,8 @@ export function buildFinaleOutline(
     companionFates,
     legacy,
     epilogueSeeds,
+    ...(playerTitle !== undefined ? { playerTitle } : {}),
+    ...(playerLevel !== undefined ? { playerLevel } : {}),
   };
 }
 
@@ -370,6 +392,8 @@ const DIVIDER = '─'.repeat(62);
 export function formatFinaleForDirector(outline: FinaleOutline): string {
   const lines: string[] = [];
   lines.push(`  Resolution: ${outline.resolutionClass}`);
+  if (outline.playerTitle) lines.push(`  Player: ${outline.playerTitle}`);
+  if (outline.playerLevel !== undefined) lines.push(`  Level: ${outline.playerLevel}`);
   if (outline.dominantArc) lines.push(`  Dominant Arc: ${outline.dominantArc}`);
   lines.push(`  Duration: ${outline.campaignDuration} turns, ${outline.totalChronicleEvents} events`);
   lines.push('');
@@ -409,6 +433,15 @@ export function formatFinaleForTerminal(outline: FinaleOutline): string {
 
   const label = outline.resolutionClass.replace(/-/g, ' ').toUpperCase();
   lines.push(`  Resolution: ${label}`);
+  if (outline.playerTitle) {
+    lines.push(
+      outline.playerLevel !== undefined
+        ? `  ${outline.playerTitle}, level ${outline.playerLevel}`
+        : `  ${outline.playerTitle}`,
+    );
+  } else if (outline.playerLevel !== undefined) {
+    lines.push(`  Level ${outline.playerLevel}`);
+  }
   if (outline.dominantArc) {
     lines.push(`  Dominant Arc: ${outline.dominantArc.replace(/-/g, ' ')}`);
   }

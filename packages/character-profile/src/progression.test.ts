@@ -111,6 +111,22 @@ describe('grantXp', () => {
     expect(result.profile.progression.xp).toBe(200);
     expect(result.profile.progression.level).toBe(2);
   });
+
+  // F-586e744e: Math.max(0, xp + NaN) is NaN.
+  it('skips a non-finite grant rather than writing NaN xp', () => {
+    const profile = makeProfile();
+    const result = grantXp(profile, NaN);
+    expect(result.profile.progression.xp).toBe(0);
+    expect(Number.isFinite(result.profile.progression.xp)).toBe(true);
+    expect(result.leveledUp).toBe(false);
+  });
+
+  it('skips an Infinity grant rather than writing Infinity xp', () => {
+    const profile = makeProfile();
+    const result = grantXp(profile, Infinity);
+    expect(result.profile.progression.xp).toBe(0);
+    expect(result.leveledUp).toBe(false);
+  });
 });
 
 describe('advanceArchetypeRank', () => {

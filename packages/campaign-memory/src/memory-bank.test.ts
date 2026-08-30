@@ -252,6 +252,49 @@ describe('NpcMemoryBank schema versioning + substructure guards (CM-02)', () => 
     expect(() => NpcMemoryBank.deserialize(state)).toThrowError(/salience/i);
   });
 
+  // F-0ed561bd: fragment.tick was never inspected; a missing/NaN tick loaded
+  // and then consolidate did currentTick - undefined = NaN salience.
+  test('corrupt fragment: missing tick is rejected, naming tick', () => {
+    const state = makeState() as any;
+    delete state.subjects['player'].memories[0].tick;
+    expect(() => NpcMemoryBank.deserialize(state)).toThrowError(/tick/i);
+  });
+
+  test('corrupt fragment: NaN tick is rejected, naming tick as non-finite', () => {
+    const state = makeState() as any;
+    state.subjects['player'].memories[0].tick = NaN;
+    expect(() => NpcMemoryBank.deserialize(state)).toThrowError(/tick/i);
+    expect(() => NpcMemoryBank.deserialize(state)).toThrowError(/NaN|non-finite/i);
+  });
+
+  test('corrupt fragment: NaN salience is rejected, naming salience as non-finite', () => {
+    const state = makeState() as any;
+    state.subjects['player'].memories[0].salience = NaN;
+    expect(() => NpcMemoryBank.deserialize(state)).toThrowError(/salience/i);
+    expect(() => NpcMemoryBank.deserialize(state)).toThrowError(/NaN|non-finite/i);
+  });
+
+  test('corrupt subject: NaN lastInteractionTick is rejected, naming the field as non-finite', () => {
+    const state = makeState() as any;
+    state.subjects['player'].lastInteractionTick = NaN;
+    expect(() => NpcMemoryBank.deserialize(state)).toThrowError(/lastInteractionTick/i);
+    expect(() => NpcMemoryBank.deserialize(state)).toThrowError(/NaN|non-finite/i);
+  });
+
+  test('corrupt subject: Infinity interactionCount is rejected, naming the field as non-finite', () => {
+    const state = makeState() as any;
+    state.subjects['player'].interactionCount = Infinity;
+    expect(() => NpcMemoryBank.deserialize(state)).toThrowError(/interactionCount/i);
+    expect(() => NpcMemoryBank.deserialize(state)).toThrowError(/Infinity|non-finite/i);
+  });
+
+  test('corrupt subject: NaN relationship axis is rejected, naming the axis as non-finite', () => {
+    const state = makeState() as any;
+    state.subjects['player'].relationship.trust = NaN;
+    expect(() => NpcMemoryBank.deserialize(state)).toThrowError(/trust/i);
+    expect(() => NpcMemoryBank.deserialize(state)).toThrowError(/NaN|non-finite/i);
+  });
+
   test('corrupt subject: non-numeric interactionCount is rejected', () => {
     const state = makeState() as any;
     state.subjects['player'].interactionCount = 'many';

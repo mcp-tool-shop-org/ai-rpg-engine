@@ -396,6 +396,41 @@ describe('deserializeProfile — itemChronicle ELEMENT shape validation (F-08afa
   });
 });
 
+// F-586e744e: JSON.parse('{"n":1e400}').n === Infinity, Number.isNaN(Infinity)
+// is false, and JSON.stringify({n:Infinity}) === '{"n":null}'. A save that
+// loaded as valid then poisoned the next write. Pin the 1e400 fixture so the
+// load path cannot go green on a value stringify will null.
+describe('deserializeProfile — rejects non-finite persisted numbers (F-586e744e)', () => {
+  function poisonField(json: string, field: string, literal: string): string {
+    return json.replace(new RegExp(`"${field}":\\s*-?\\d+(\\.\\d+)?([eE][+-]?\\d+)?`), `"${field}":${literal}`);
+  }
+
+  it('rejects totalTurns of 1e400 (JSON Infinity) as malformed, naming the field', () => {
+    const json = poisonField(serializeProfile(makeProfile()), 'totalTurns', '1e400');
+    expect(JSON.parse(json).totalTurns).toBe(Infinity);
+    const result = deserializeProfile(json);
+    expect(result.profile).toBeNull();
+    expect(result.errors.some((e) => e.includes('totalTurns') && /non-finite/i.test(e))).toBe(true);
+  });
+
+  it('rejects progression.xp of 1e400 as malformed, naming the field', () => {
+    const json = poisonField(serializeProfile(makeProfile()), 'xp', '1e400');
+    expect(JSON.parse(json).progression.xp).toBe(Infinity);
+    const result = deserializeProfile(json);
+    expect(result.profile).toBeNull();
+    expect(result.errors.some((e) => e.includes('progression.xp') && /non-finite/i.test(e))).toBe(true);
+  });
+
+  it('rejects a 1e400 version as malformed, not as newer-than-supported', () => {
+    const json = poisonField(serializeProfile(makeProfile()), 'version', '1e400');
+    expect(JSON.parse(json).version).toBe(Infinity);
+    const result = deserializeProfile(json);
+    expect(result.profile).toBeNull();
+    expect(result.errors.some((e) => e.includes('version') && /non-finite/i.test(e))).toBe(true);
+    expect(result.errors.some((e) => /newer than supported/i.test(e))).toBe(false);
+  });
+});
+
 describe('validateSerializedProfile', () => {
   it('returns ok for valid profile', () => {
     const profile = makeProfile();

@@ -39,17 +39,22 @@ export function addInjury(
   });
 }
 
-/** Heal an injury by ID. */
+/**
+ * Heal an injury by ID. `healedAt` is the event time (sibling of
+ * `sustainedAt`) — callers supply it so two replays of the same heal serialize
+ * identically (F-c3cedcb3). `touch()` still stamps `updatedAt` as a save-clock.
+ */
 export function healInjury(
   profile: CharacterProfile,
   injuryId: string,
+  healedAt: string,
 ): { profile: CharacterProfile; found: boolean } {
   const idx = profile.injuries.findIndex((i) => i.id === injuryId);
   if (idx === -1) return { profile, found: false };
 
   const updated = profile.injuries.map((i) =>
     i.id === injuryId
-      ? { ...i, healed: true, healedAt: new Date().toISOString() }
+      ? { ...i, healed: true, healedAt }
       : i,
   );
 
