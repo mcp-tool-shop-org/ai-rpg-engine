@@ -80,7 +80,7 @@ Gameplay modules emit cue ids in their own vocabulary (`combat.hit`, `ability.ho
 | `combat.victory` | `ui_success` | exact |
 | `gate.refused` | `ui_error` | exact |
 | `scene.enter` | `ui_whoosh` | exact |
-| `scene.*-reveal` | `ui_whoosh` | exact |
+| `scene.*-reveal` | `ui_attention` | exact |
 | `scene.arena-roar` | `alert_info` | exact |
 | `scene.conviction` | `ui_success` | exact |
 | `scene.seizure` | `alert_warning` | exact |

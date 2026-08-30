@@ -263,17 +263,17 @@ describe('finale', () => {
       }
     });
 
-    it('formatFinaleForDirector skips empty sections', () => {
+    it('formatFinaleForDirector always emits the four trailer labels', () => {
       const outline = buildFinaleOutline(
         'victory', null, new CampaignJournal(),
         [], [], [], 0,
       );
       const text = formatFinaleForDirector(outline);
       expect(text).toContain('Resolution: VICTORY');
-      expect(text).not.toContain('Key Moments:');
-      expect(text).not.toContain('NPC Fates:');
-      expect(text).not.toContain('Faction Fates:');
-      expect(text).not.toContain('Legacy:');
+      expect(text).toContain('Key Moments:');
+      expect(text).toContain('NPC Fates:');
+      expect(text).toContain('Faction Fates:');
+      expect(text).toContain('Legacy:');
     });
 
     it('both formatters title-case kebab faction ids and agree on resolution casing', () => {

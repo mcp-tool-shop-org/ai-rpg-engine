@@ -115,7 +115,7 @@ describe('cue-map: targets exist in CORE_SOUND_PACK', () => {
 
 describe('cue-map: mapping table is stable', () => {
   it('pins the exact tier (documented mapping table)', () => {
-    const reveal = { effectId: 'ui_whoosh', timing: 'immediate', intensity: 0.7 };
+    const reveal = { effectId: 'ui_attention', timing: 'immediate', intensity: 0.7 };
     expect(EXACT_CUE_MAP).toEqual({
       'combat.hit': { effectId: 'alert_warning', timing: 'with-text', intensity: 0.6 },
       'combat.defeat': { effectId: 'alert_critical', timing: 'with-text', intensity: 0.9 },

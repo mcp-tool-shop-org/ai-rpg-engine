@@ -420,35 +420,28 @@ export function formatFinaleForDirector(outline: FinaleOutline): string {
   if (outline.playerLevel !== undefined) lines.push(`  Level: ${outline.playerLevel}`);
   if (outline.dominantArc) lines.push(`  Dominant Arc: ${humanizeArc(outline.dominantArc)}`);
   lines.push(`  Duration: ${outline.campaignDuration} turns, ${outline.totalChronicleEvents} events`);
-  // Skip empty sections the same way formatFinaleForTerminal already does
-  // (F-498ec3b1): an unused header is an empty shrine to events that never happened.
-  if (outline.keyMoments.length > 0) {
-    lines.push('');
-    lines.push('  Key Moments:');
-    for (const m of outline.keyMoments.slice(0, 5)) {
-      lines.push(`    [${m.tick}] ${m.description} (${m.category}, sig: ${m.significance.toFixed(1)})`);
-    }
+  // Always emit the four structured trailer labels (F-2bf933bd). Empty
+  // sections still get the header so the end-screen director summary is
+  // a stable shape; 60-col + kebab humanize stay (F-498ec3b1).
+  lines.push('');
+  lines.push('  Key Moments:');
+  for (const m of outline.keyMoments.slice(0, 5)) {
+    lines.push(`    [${m.tick}] ${m.description} (${m.category}, sig: ${m.significance.toFixed(1)})`);
   }
-  if (outline.npcFates.length > 0) {
-    lines.push('');
-    lines.push('  NPC Fates:');
-    for (const f of outline.npcFates) {
-      lines.push(`    ${f.name}: ${f.outcome} (${f.finalBreakpoint})`);
-    }
+  lines.push('');
+  lines.push('  NPC Fates:');
+  for (const f of outline.npcFates) {
+    lines.push(`    ${f.name}: ${f.outcome} (${f.finalBreakpoint})`);
   }
-  if (outline.factionFates.length > 0) {
-    lines.push('');
-    lines.push('  Faction Fates:');
-    for (const f of outline.factionFates) {
-      lines.push(`    ${humanizeId(f.factionId)}: ${f.outcome} (rep: ${f.playerReputation}, cohesion: ${f.cohesion})`);
-    }
+  lines.push('');
+  lines.push('  Faction Fates:');
+  for (const f of outline.factionFates) {
+    lines.push(`    ${humanizeId(f.factionId)}: ${f.outcome} (rep: ${f.playerReputation}, cohesion: ${f.cohesion})`);
   }
-  if (outline.legacy.length > 0) {
-    lines.push('');
-    lines.push('  Legacy:');
-    for (const l of outline.legacy) {
-      lines.push(`    ${l.label} — ${l.category}`);
-    }
+  lines.push('');
+  lines.push('  Legacy:');
+  for (const l of outline.legacy) {
+    lines.push(`    ${l.label} — ${l.category}`);
   }
   return lines.join('\n');
 }

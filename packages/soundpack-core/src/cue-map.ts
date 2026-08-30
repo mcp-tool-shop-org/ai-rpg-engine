@@ -37,7 +37,7 @@
 //   | combat.victory       | ui_success       | after-text | 0.8       | exact     |
 //   | gate.refused         | ui_error         | with-text  | 0.6       | exact     |
 //   | scene.enter          | ui_whoosh        | immediate  | 0.3       | exact     |
-//   | scene.*-reveal       | ui_whoosh        | immediate  | 0.7       | exact     |
+//   | scene.*-reveal       | ui_attention     | immediate  | 0.7       | exact     |
 //   | scene.arena-roar     | alert_info       | immediate  | 0.9       | exact     |
 //   | scene.conviction     | ui_success       | with-text  | 0.8       | exact     |
 //   | scene.seizure        | alert_warning    | with-text  | 0.7       | exact     |
@@ -92,7 +92,7 @@ function freezeNullProto<T extends Record<string, CueTarget>>(entries: T): T {
   return Object.freeze(Object.assign(Object.create(null), entries)) as T;
 }
 
-const REVEAL_STINGER: CueTarget = Object.freeze({ effectId: 'ui_whoosh', timing: 'immediate', intensity: 0.7 });
+const REVEAL_STINGER: CueTarget = Object.freeze({ effectId: 'ui_attention', timing: 'immediate', intensity: 0.7 });
 
 /** Exact-match tier: the cues modules and starters emit by literal id. */
 export const EXACT_CUE_MAP: Readonly<Record<string, CueTarget>> = freezeNullProto({

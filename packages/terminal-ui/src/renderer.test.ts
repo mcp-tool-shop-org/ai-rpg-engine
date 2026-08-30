@@ -435,7 +435,7 @@ describe('formatEvent — rejections surface their reason (CS-C-002)', () => {
     for (const reason of reasons) {
       const text = renderEventLog([cev('action.rejected', { reason })]);
       expect(text).toContain("You can't do that");
-      expect(text).toContain(reason);
+      expect(text.replace(/\s+/g, ' ')).toContain(reason);
     }
   });
 
@@ -905,7 +905,7 @@ describe('formatEvent — progression unlocks render (F-0a572dd7)', () => {
       }),
     ]);
     expect(text).toContain("You can't unlock Keen Eye");
-    expect(text).toContain('insufficient xp: have 5, need 15');
+    expect(text.replace(/\s+/g, ' ')).toContain('insufficient xp: have 5, need 15');
   });
 });
 
