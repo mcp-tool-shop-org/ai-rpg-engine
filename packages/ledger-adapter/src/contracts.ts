@@ -113,6 +113,13 @@ export type TxEntry = {
   /** Submitted Sequence of this tx. An EscrowCreate's Sequence is the
    *  OfferSequence EscrowFinish consumes; recovered when tesSUCCESS omitted it. */
   sequence?: number;
+  /** EscrowCreate Destination — used to recover OfferSequence when the
+   *  submit result timed out without a hash. */
+  destination?: string;
+  /** EscrowCreate issued-currency code (token escrow). */
+  currency?: string;
+  /** EscrowCreate issued-currency value string (token escrow). */
+  value?: string;
 };
 
 /**

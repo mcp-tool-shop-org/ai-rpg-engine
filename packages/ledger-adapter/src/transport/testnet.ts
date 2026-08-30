@@ -509,7 +509,17 @@ export class TestnetTransport implements LedgerTransport, NFTTransport {
         );
         const entries: TxEntry[] = [];
         for (const raw of res.result.transactions) {
-          const tx = (raw as { tx_json?: { hash?: string; TransactionType?: string; Sequence?: number; Memos?: Array<{ Memo?: { MemoData?: string } }> }; hash?: string }).tx_json;
+          const tx = (raw as {
+            tx_json?: {
+              hash?: string;
+              TransactionType?: string;
+              Sequence?: number;
+              Destination?: string;
+              Amount?: { currency?: string; value?: string } | string;
+              Memos?: Array<{ Memo?: { MemoData?: string } }>;
+            };
+            hash?: string;
+          }).tx_json;
           const hash = (raw as { hash?: string }).hash ?? tx?.hash ?? '';
           const type = tx?.TransactionType ?? 'Unknown';
           const memoHex = tx?.Memos?.[0]?.Memo?.MemoData;
@@ -518,6 +528,12 @@ export class TestnetTransport implements LedgerTransport, NFTTransport {
           const mapped: TxEntry = { hash, type };
           if (memo !== undefined) mapped.memo = memo;
           if (sequence !== undefined) mapped.sequence = sequence;
+          if (typeof tx?.Destination === 'string') mapped.destination = tx.Destination;
+          const amount = tx?.Amount;
+          if (amount && typeof amount === 'object') {
+            if (typeof amount.currency === 'string') mapped.currency = amount.currency;
+            if (typeof amount.value === 'string') mapped.value = amount.value;
+          }
           entries.push(mapped);
         }
         return { items: entries, marker: res.result.marker };

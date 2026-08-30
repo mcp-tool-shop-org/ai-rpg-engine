@@ -212,27 +212,38 @@ function createFakeTransport(): FakeTransport {
     ): Promise<TxResult> {
       calls.push('escrowCreate');
       const sender = seedToAddress.get(seed);
+      const landCreate = (): TxResult => {
+        if (sender) debit(sender, amount.currency, Number(amount.value));
+        issuersByCurrency.set(amount.currency, amount.issuer);
+        const tx = nextTx();
+        pendingEscrows.set(tx.sequence as number, {
+          destination,
+          currency: amount.currency,
+          value: Number(amount.value),
+        });
+        const entry: TxEntry = {
+          hash: tx.hash,
+          type: 'EscrowCreate',
+          sequence: tx.sequence,
+          destination,
+          currency: amount.currency,
+          value: amount.value,
+        };
+        if (memo !== undefined) {
+          entry.memo = memo;
+          memos.set(tx.hash, memo);
+        }
+        txLog.push(entry);
+        return tx;
+      };
       if (debitThenFailOnce) {
         debitThenFailOnce = false;
-        if (sender) debit(sender, amount.currency, Number(amount.value));
+        landCreate();
         return { ok: false, hash: '', code: 'telNETWORK', error: 'timeout after tesSUCCESS' };
       }
       const failed = maybeFail();
       if (failed) return failed;
-      if (sender) debit(sender, amount.currency, Number(amount.value));
-      issuersByCurrency.set(amount.currency, amount.issuer);
-      const tx = nextTx();
-      pendingEscrows.set(tx.sequence as number, {
-        destination,
-        currency: amount.currency,
-        value: Number(amount.value),
-      });
-      const entry: TxEntry = { hash: tx.hash, type: 'EscrowCreate', sequence: tx.sequence };
-      if (memo !== undefined) {
-        entry.memo = memo;
-        memos.set(tx.hash, memo);
-      }
-      txLog.push(entry);
+      const tx = landCreate();
       if (omitSequenceOnce) {
         omitSequenceOnce = false;
         return { ok: true, hash: tx.hash, code: tx.code };
@@ -601,12 +612,17 @@ describe('createLedgerAdapter', () => {
     transport.calls.length = 0;
     const failed = await adapter.settle(state, { coin: 70, items: {} }, 1, 'Cedar Wake');
     expect(failed.success).toBe(false);
+    expect(failed.message).toContain('checkpoint 1 at Cedar Wake');
+    expect(failed.message).toContain('escrowCreate(coin)');
     expect(transport.calls.filter((c) => c === 'escrowCreate')).toHaveLength(1);
     expect(state.lastSettled.coin).toBe(100);
 
     const stillClosed = await adapter.settle(state, { coin: 70, items: {} }, 2, 'Cedar Wake');
     expect(stillClosed.success).toBe(false);
     expect(state.pending).toHaveLength(1);
+    expect(stillClosed.message).toContain('checkpoint 1 at Cedar Wake');
+    expect(stillClosed.message).toContain('escrowCreate(coin)');
+    expect(stillClosed.message).toMatch(/OfferSequence|account_tx/);
     expect(transport.calls.filter((c) => c === 'escrowCreate')).toHaveLength(1);
     expect(state.lastSettled.coin).toBe(100);
     expect(transport.balances.get(`${state.playerAddress}:${state.tokenMap.coin}`)).toBe(70);
@@ -620,7 +636,7 @@ describe('createLedgerAdapter', () => {
     expect(transport.balances.get(`${state.merchantAddress}:${state.tokenMap.coin}`)).toBe(30);
   });
 
-  it('escrow spend whose create timed out after tesSUCCESS skips via on-ledger balance and never EscrowCreates again', async () => {
+  it('create-landed with empty receipts recovers OfferSequence and finishes; lastSettled advances only after finish', async () => {
     const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'testgame', runId: 'run-1' });
     const state = freshState();
     await adapter.enable(state, { coin: 100, items: {} });
@@ -633,14 +649,18 @@ describe('createLedgerAdapter', () => {
     expect(state.pending).toHaveLength(1);
     expect(state.pending[0]!.receipts?.coin).toBeUndefined();
     expect(transport.calls.filter((c) => c === 'escrowCreate')).toHaveLength(1);
+    expect(transport.calls.filter((c) => c === 'escrowFinish')).toHaveLength(0);
     expect(transport.balances.get(`${state.playerAddress}:${state.tokenMap.coin}`)).toBe(70);
+    expect(transport.balances.get(`${state.merchantAddress}:${state.tokenMap.coin}`) ?? 0).toBe(0);
     expect(state.lastSettled.coin).toBe(100);
 
     const retried = await adapter.settle(state, { coin: 70, items: {} }, 2, 'Cedar Wake');
     expect(retried.success).toBe(true);
     expect(state.pending).toHaveLength(0);
     expect(transport.calls.filter((c) => c === 'escrowCreate')).toHaveLength(1);
+    expect(transport.calls.filter((c) => c === 'escrowFinish')).toHaveLength(1);
     expect(transport.balances.get(`${state.playerAddress}:${state.tokenMap.coin}`)).toBe(70);
+    expect(transport.balances.get(`${state.merchantAddress}:${state.tokenMap.coin}`)).toBe(30);
     expect(state.lastSettled.coin).toBe(70);
 
     const report = reconcile({
@@ -655,6 +675,54 @@ describe('createLedgerAdapter', () => {
     });
     expect(report.resources.find((r) => r.resource === 'coin')?.conservationOk).toBe(true);
     expect(report.passed).toBe(true);
+  });
+
+  it('crash after create with empty receipts (pending lost) still produces one escrow and one finish', async () => {
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'testgame', runId: 'run-1' });
+    const state = freshState();
+    await adapter.enable(state, { coin: 100, items: {} });
+
+    transport.debitThenFailNextEscrowCreate();
+    transport.calls.length = 0;
+    const failed = await adapter.settle(state, { coin: 70, items: {} }, 1, 'Cedar Wake');
+    expect(failed.success).toBe(false);
+    expect(state.lastSettled.coin).toBe(100);
+
+    // Process crash after CREATE landed and before the pending record persisted.
+    state.pending = [];
+    state.lastSettleFailed = false;
+
+    const retried = await adapter.settle(state, { coin: 70, items: {} }, 2, 'Cedar Wake');
+    expect(retried.success).toBe(true);
+    expect(state.pending).toHaveLength(0);
+    expect(transport.calls.filter((c) => c === 'escrowCreate')).toHaveLength(1);
+    expect(transport.calls.filter((c) => c === 'escrowFinish')).toHaveLength(1);
+    expect(state.lastSettled.coin).toBe(70);
+    expect(transport.balances.get(`${state.merchantAddress}:${state.tokenMap.coin}`)).toBe(30);
+  });
+
+  it('create-landed empty receipts fail closed naming the record when OfferSequence cannot be recovered', async () => {
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'testgame', runId: 'run-1' });
+    const state = freshState();
+    await adapter.enable(state, { coin: 100, items: {} });
+
+    transport.debitThenFailNextEscrowCreate();
+    transport.hideSequenceFromAccountTx(true);
+    const failed = await adapter.settle(state, { coin: 70, items: {} }, 1, 'Cedar Wake');
+    expect(failed.success).toBe(false);
+    expect(state.lastSettled.coin).toBe(100);
+
+    const stillClosed = await adapter.settle(state, { coin: 70, items: {} }, 2, 'Cedar Wake');
+    expect(stillClosed.success).toBe(false);
+    expect(state.pending).toHaveLength(1);
+    expect(stillClosed.message).toContain('checkpoint 1 at Cedar Wake');
+    expect(stillClosed.message).toContain('escrowCreate(coin)');
+    expect(stillClosed.message).toMatch(/OfferSequence could not be recovered/i);
+    expect(stillClosed.message).toContain('account_tx');
+    expect(transport.calls.filter((c) => c === 'escrowCreate')).toHaveLength(1);
+    expect(transport.calls.filter((c) => c === 'escrowFinish')).toHaveLength(0);
+    expect(state.lastSettled.coin).toBe(100);
+    expect(transport.balances.get(`${state.merchantAddress}:${state.tokenMap.coin}`) ?? 0).toBe(0);
   });
 
   it('INCREMENTAL TRUST LINES: a token first acquired at a checkpoint is trust-lined before its mint (else tecPATH_DRY — the live-diagnosed Phase-5 fix)', async () => {
