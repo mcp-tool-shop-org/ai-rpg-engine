@@ -41,9 +41,13 @@ concurrency:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       matrix:
-        node-version: [20, 22]
+        # Node 20 reached EOL 2026-04-30. Matrix is current LTS (24) plus the
+        # previous LTS (22) as the single-leg gate runner. Root engines is
+        # still ">=20" (package.json is outside this workflow's bump).
+        node-version: [22, 24]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 

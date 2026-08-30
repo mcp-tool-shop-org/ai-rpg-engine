@@ -4,7 +4,7 @@
 // Covers:
 //   PG-2  docs-integrity DOCS-05 (version vs latest release tag)
 //   PG-3  coverage ratchet declared in vitest.config.ts
-//   PG-5  packaging gate (LICENSE/README present in every publish tarball)
+//   PG-5  packaging gate (LICENSE/README + advertised main/types/bin/exports)
 //   PG-6  docs-integrity I18N-01 (translated code spans stay in the source script)
 //
 // The scripts under test run as child processes (black boxes), exactly as CI
@@ -147,6 +147,40 @@ describe('PG-5: packaging gate (LICENSE/README in publish tarball)', () => {
     const { status, output } = runNode([checkPackaging, `--dir=${fixtureDir}`]);
     expect(output).toContain('ok    gate-fixture-pkg');
     expect(status).toBe(0);
+  }, 120_000);
+});
+
+// PG-5 advertised entry points: files[] listing dist/index.js is not proof
+// the tarball contains it. npm drops the missing path; LICENSE+README still
+// pack and the old gate printed ok. A publishable package whose `main`
+// points at a dist that was never built must FAIL.
+describe('PG-5: packaging gate advertised entry points (main in tarball)', () => {
+  it('FIRES when files lists dist/index.js, main points at it, and dist is missing', () => {
+    const emptyDistDir = mkdtempSync(join(tmpdir(), 'gate-empty-dist-'));
+    try {
+      writeFileSync(
+        join(emptyDistDir, 'package.json'),
+        JSON.stringify(
+          {
+            name: 'gate-fixture-empty-dist',
+            version: '0.0.0',
+            main: './dist/index.js',
+            files: ['dist/index.js', 'LICENSE', 'README.md'],
+            license: 'MIT',
+          },
+          null,
+          2,
+        ),
+      );
+      writeFileSync(join(emptyDistDir, 'LICENSE'), 'MIT\n');
+      writeFileSync(join(emptyDistDir, 'README.md'), '# empty dist fixture\n');
+      const { status, output } = runNode([checkPackaging, `--dir=${emptyDistDir}`]);
+      expect(status, 'missing advertised main must fail the gate').not.toBe(0);
+      expect(output).toContain('gate-fixture-empty-dist');
+      expect(output).toMatch(/dist\/index\.js/);
+    } finally {
+      rmSync(emptyDistDir, { recursive: true, force: true });
+    }
   }, 120_000);
 });
 

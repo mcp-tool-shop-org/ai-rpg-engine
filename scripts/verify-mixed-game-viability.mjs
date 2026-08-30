@@ -61,10 +61,14 @@ function main() {
 
   try {
     console.log('[1/2] Compiling docs/mixed-game-viability-proof.ts (strict, via root tsconfig)...');
-    execSync('npx tsc -p scripts/mixed-game-viability-proof.tsconfig.json', { cwd: ROOT, stdio: 'inherit' });
+    execSync('npx tsc -p scripts/mixed-game-viability-proof.tsconfig.json', {
+      cwd: ROOT,
+      stdio: 'inherit',
+      timeout: 120_000,
+    });
 
     console.log('[2/2] Running the proof (wiring all 4 archetypes + 6 encounter zones)...');
-    execSync(`node "${PROOF_JS}"`, { cwd: ROOT, stdio: 'inherit' });
+    execSync(`node "${PROOF_JS}"`, { cwd: ROOT, stdio: 'inherit', timeout: 120_000 });
 
     console.log('\nRelease gate PASS: 4 archetypes / 6 encounter modes wired with zero hacks.');
   } finally {

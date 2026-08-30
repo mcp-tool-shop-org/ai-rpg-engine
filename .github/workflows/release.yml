@@ -2,7 +2,9 @@ name: Release
 
 # Publishes every @ai-rpg-engine/* package to npm via OIDC Trusted Publishing
 # (no long-lived token) and the CLI image to GHCR. Fires on a published GitHub
-# Release. workflow_dispatch offers a dry-run to validate the pipeline first.
+# Release (including prereleases — those publish with --tag next and never
+# retag `latest`). workflow_dispatch offers a dry-run to validate the pipeline
+# first.
 #
 # Kept separate from ci.yml/pages.yml (dogfood-swarm F-a160dfa6, one of 4
 # workflow files vs the org's 2-file guideline): this is the only workflow
@@ -12,6 +14,9 @@ name: Release
 # surface with ci.yml's push/PR-on-any-branch test runs.
 on:
   release:
+    # `published` fires for full releases AND prereleases. `released` would
+    # drop the prerelease path (npm --tag next / image semver only). Latest
+    # dist-tag and GHCR `latest` are gated on prerelease == false below.
     types: [published]
   workflow_dispatch:
     inputs:
@@ -38,14 +43,15 @@ jobs:
   npm:
     name: Publish npm packages (OIDC)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
         with:
-          # Pinned to a CI-tested version (ci.yml matrix is [20, 22]); the
-          # publish job must run on a runtime the test suite actually exercises.
-          node-version: 22
+          # Pinned to the production LTS the ci.yml matrix actually exercises
+          # (matrix is [22, 24]; 22 remains the single-leg gate runner).
+          node-version: 24
           registry-url: 'https://registry.npmjs.org'
           cache: npm
 
@@ -56,20 +62,22 @@ jobs:
       - run: npm test
 
       # Packaging gate (PG-5): refuse to publish any package whose tarball
-      # lacks LICENSE or README.md. npm silently drops `files` entries that
-      # don't exist on disk — this dry-run inspection is the only reliable
-      # check, and it is the gate that would have caught the G3 LICENSE gap
-      # before it reached npm.
-      - name: Packaging gate (LICENSE/README in every publishable tarball)
+      # lacks LICENSE, README.md, or advertised main/types/bin/exports paths.
+      # npm silently drops `files` entries that don't exist on disk — this
+      # dry-run inspection is the only reliable check, and it is the gate
+      # that would have caught the G3 LICENSE gap before it reached npm.
+      - name: Packaging gate (LICENSE/README + advertised entry points)
         run: node scripts/check-packaging.mjs
 
       # Idempotent per-package publish: skip private packages and any version
       # already on npm, so a re-run after a partial failure completes the release
       # without erroring on already-published packages. Real publish errors still
-      # halt the job (bash -e).
+      # halt the job (bash -e). npm view failures that are NOT "version not
+      # found" fail the step instead of falling through to a credentialed write.
       - name: Publish (dry-run)
         if: github.event_name == 'workflow_dispatch' && inputs.dry_run
         run: |
+          set -euo pipefail
           for dir in packages/* templates/*; do
             [ -f "$dir/package.json" ] || continue
             priv=$(node -p "require('./$dir/package.json').private === true")
@@ -82,25 +90,53 @@ jobs:
 
       - name: Publish (live, idempotent)
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+        env:
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
+          set -euo pipefail
+          TAG_ARGS=()
+          if [ "${RELEASE_PRERELEASE:-}" = "true" ]; then
+            TAG_ARGS=(--tag next)
+            echo "GitHub prerelease: publishing with --tag next (never latest)"
+          fi
           for dir in packages/* templates/*; do
             [ -f "$dir/package.json" ] || continue
             priv=$(node -p "require('./$dir/package.json').private === true")
             [ "$priv" = "true" ] && { echo "skip private $dir"; continue; }
             name=$(node -p "require('./$dir/package.json').name")
             ver=$(node -p "require('./$dir/package.json').version")
-            if npm view "$name@$ver" version >/dev/null 2>&1; then
-              echo "skip $name@$ver (already published)"
-            else
-              echo "::group::publish $name@$ver"
-              npm publish -w "$name" --access public --provenance
-              echo "::endgroup::"
+            view_out=""
+            view_ec=0
+            view_out="$(npm view "$name@$ver" version 2>&1)" && view_ec=0 || view_ec=$?
+            if [ "$view_ec" -eq 0 ]; then
+              echo "skip $name@$ver — already on registry"
+              continue
             fi
+            unpublished=0
+            if echo "$view_out" | grep -Eq 'code E404|E404|404 Not Found|is not in this registry|version not found'; then
+              unpublished=1
+            elif echo "$view_out" | grep -q 'E403' && echo "$view_out" | grep -Eqi 'not found|not in this registry|version not found'; then
+              unpublished=1
+            fi
+            if [ "$unpublished" -ne 1 ]; then
+              echo "::error::npm view $name@$ver failed with exit $view_ec (not a version-not-found signal) — refusing to publish"
+              echo "$view_out"
+              exit 1
+            fi
+            if [ ${#TAG_ARGS[@]} -gt 0 ]; then
+              echo "publish $name@$ver — not on registry (tag next)"
+            else
+              echo "publish $name@$ver — not on registry"
+            fi
+            echo "::group::publish $name@$ver"
+            npm publish -w "$name" --access public --provenance "${TAG_ARGS[@]}"
+            echo "::endgroup::"
           done
 
   docker:
     name: Build & push CLI image (GHCR)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -119,8 +155,8 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name != 'release' || github.event.release.prerelease == false }}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' && github.event.release.prerelease == false }}
             type=raw,value=edge,enable=${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Build & push
