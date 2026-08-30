@@ -138,6 +138,11 @@ export const ERROR_CODES = {
   ACTION_REJECTED: -32003,
   /** The session has shut down; further methods are refused. */
   SESSION_CLOSED: -32004,
+  /**
+   * An outbound snapshot or tick exceeded `MAX_MESSAGE_BYTES`. The frame is
+   * not written — a peer that received it could not parse it.
+   */
+  SNAPSHOT_TOO_LARGE: -32005,
 } as const;
 
 // --- The reserved graveyard ----------------------------------------------

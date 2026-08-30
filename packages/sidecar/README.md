@@ -67,13 +67,21 @@ const result = await request(METHODS.SUBMIT_ACTION, { verb: 'move' });
 | **Capabilities, not versions** | `initialize` exchanges capability flags, so a partial client and a fuller server interoperate without either bumping a number. |
 | **Push, not poll** | Derived state arrives as tick-stamped notifications. Clients never gate tick advancement. |
 | **One serializer** | A snapshot is `diff({}, state)` — the incremental path against an empty baseline. Snapshot and stream cannot diverge, because there is only one of them. |
-| **Per-tick hashes** | Clients detect staleness and report it. They never correct the simulation. |
-| **Strict in, tolerant out** | Unknown commands *and* unknown command fields are refused: a silently dropped field means the sim ran a different intent than you submitted. Events only ever gain fields, so a client that ignores what it does not know loses nothing. |
+| **Per-tick hashes** | Clients detect staleness and report it. They never correct the simulation. `SidecarClient` records `stalenessReports` and fires an optional `onStale` hook (and a stderr line if you omit the hook). Hosts must call `snapshot()` on staleness and re-render from that delta — never patch the mirror locally. |
+| **Strict in, tolerant out** | Unknown commands *and* unknown command fields are refused: a silently dropped field means the sim ran a different intent than you submitted. Events only ever gain fields, so a client that ignores what it does not know loses nothing. Methods are request/response: a known method with no JSON-RPC `id` is refused and does not run. `shutdown` is the one fire-and-forget exception (an orderly stop should still run if the id was dropped). |
 | **Additive-only events** | With a reserved graveyard, so a removed field's name is never recycled with a new meaning. |
 | **Side-effect-free preview** | Run a command on a copy, get the events, discard. The world hash before equals the world hash after. |
 
 Transport is a constructor argument. `stdio.ts` is the only module that names
 one, so a socket server is the same two calls with a different pair of streams.
+Attach (TCP) logs framing errors, bind address/port, accepts, cap-refusals, and
+disconnects to stderr by default — the same visibility stdio already had for
+framing. Pass a hook to replace a default; you do not have to opt the library
+into logging.
+
+`SidecarClient.request` times out (30s default) and `sim/closing` / `disconnect()`
+reject every in-flight Promise with `SESSION_CLOSED`, so a dead peer cannot hang
+the renderer.
 
 ## Methods
 
@@ -85,7 +93,7 @@ one, so a socket server is the same two calls with a different pair of streams.
 | `advance` | Advance the world without a player action. |
 | `preview` | Evaluate a command with no side effects. |
 | `replay` | Re-emit a closed tick window. Idempotent by `(tick, event id)`. |
-| `shutdown` | Orderly stop. |
+| `shutdown` | Orderly stop. May omit `id` (fire-and-forget). |
 
 Notifications: `sim/tick` (events + delta + hash), `sim/closing`.
 
