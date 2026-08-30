@@ -2,7 +2,7 @@
 
 import type { CharacterBuild } from '@ai-rpg-engine/character-creation';
 import { createEmptyLoadout } from '@ai-rpg-engine/equipment';
-import type { CharacterProfile } from './types.js';
+import type { CharacterProfile, Injury } from './types.js';
 import { PROFILE_VERSION } from './types.js';
 
 /**
@@ -105,6 +105,29 @@ export function setCustom(
   });
 }
 
+/**
+ * Title-case a kebab/snake id the same way terminal-ui humanizeStateId does.
+ * Ids already hyphenate the display names, so no catalog lookup is required.
+ */
+function humanizeId(id: string): string {
+  const base = id.includes(':') ? id.slice(id.indexOf(':') + 1) : id;
+  return base
+    .split(/[_\-\s]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+/** Compact print of an active injury, e.g. 'Broken Arm (vigor -2)'. */
+function formatActiveInjury(injury: Injury): string {
+  const parts: string[] = [];
+  for (const [stat, amount] of Object.entries(injury.statPenalties)) {
+    if (typeof amount !== 'number' || amount === 0) continue;
+    parts.push(`${stat} ${amount}`);
+  }
+  return parts.length > 0 ? `${injury.name} (${parts.join(', ')})` : injury.name;
+}
+
 /** Get a summary of the profile for display. */
 export function getProfileSummary(profile: CharacterProfile): {
   name: string;
@@ -113,7 +136,7 @@ export function getProfileSummary(profile: CharacterProfile): {
   archetype: string;
   background: string;
   discipline: string | undefined;
-  activeInjuries: number;
+  activeInjuries: string[];
   milestoneCount: number;
   totalTurns: number;
 } {
@@ -121,10 +144,12 @@ export function getProfileSummary(profile: CharacterProfile): {
     name: profile.build.name,
     level: profile.progression.level,
     xp: profile.progression.xp,
-    archetype: profile.build.archetypeId,
-    background: profile.build.backgroundId,
-    discipline: profile.build.disciplineId,
-    activeInjuries: profile.injuries.filter((i) => !i.healed).length,
+    archetype: humanizeId(profile.build.archetypeId),
+    background: humanizeId(profile.build.backgroundId),
+    discipline: profile.build.disciplineId
+      ? humanizeId(profile.build.disciplineId)
+      : undefined,
+    activeInjuries: profile.injuries.filter((i) => !i.healed).map(formatActiveInjury),
     milestoneCount: profile.milestones.length,
     totalTurns: profile.totalTurns,
   };

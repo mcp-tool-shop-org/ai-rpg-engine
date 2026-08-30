@@ -204,10 +204,11 @@ describe('finale', () => {
       );
 
       const text = formatFinaleForDirector(outline);
-      expect(text).toContain('victory');
-      expect(text).toContain('rising-power');
+      expect(text).toContain('VICTORY');
+      expect(text).toContain('rising power');
       expect(text).toContain('NPC Fates');
       expect(text).toContain('Faction Fates');
+      expect(text).toContain('Merchant Guild');
     });
 
     it('formatFinaleForTerminal includes dividers and sections', () => {
@@ -245,6 +246,51 @@ describe('finale', () => {
       const director = formatFinaleForDirector(outline);
       expect(director).toContain('Gravetouched Knight');
       expect(director).toContain('Level: 7');
+    });
+
+    // F-498ec3b1: both formatters share SCREEN_WIDTH 60, skip empty director
+    // sections, and title-case kebab faction ids.
+    it('formatFinaleForTerminal dividers are 60 wide', () => {
+      const outline = buildFinaleOutline(
+        'exile', null, makeJournal(),
+        npcs, factions, districts, 25,
+      );
+      const text = formatFinaleForTerminal(outline);
+      const rules = text.split('\n').filter((l) => /^  [═─]+$/.test(l));
+      expect(rules.length).toBeGreaterThan(0);
+      for (const line of rules) {
+        expect(line.trim()).toHaveLength(60);
+      }
+    });
+
+    it('formatFinaleForDirector skips empty sections', () => {
+      const outline = buildFinaleOutline(
+        'victory', null, new CampaignJournal(),
+        [], [], [], 0,
+      );
+      const text = formatFinaleForDirector(outline);
+      expect(text).toContain('Resolution: VICTORY');
+      expect(text).not.toContain('Key Moments:');
+      expect(text).not.toContain('NPC Fates:');
+      expect(text).not.toContain('Faction Fates:');
+      expect(text).not.toContain('Legacy:');
+    });
+
+    it('both formatters title-case kebab faction ids and agree on resolution casing', () => {
+      const outline = buildFinaleOutline(
+        'exile', 'rising-power', makeJournal(),
+        npcs, factions, districts, 25,
+      );
+      const terminal = formatFinaleForTerminal(outline);
+      const director = formatFinaleForDirector(outline);
+      expect(terminal).toContain('Resolution: EXILE');
+      expect(director).toContain('Resolution: EXILE');
+      expect(terminal).toContain('Dominant Arc: rising power');
+      expect(director).toContain('Dominant Arc: rising power');
+      expect(terminal).toContain('Merchant Guild: allied');
+      expect(director).toContain('Merchant Guild: allied');
+      expect(terminal).not.toMatch(/merchant-guild:/);
+      expect(director).not.toMatch(/merchant-guild:/);
     });
   });
 });

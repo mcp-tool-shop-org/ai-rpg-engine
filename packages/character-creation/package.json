@@ -1,7 +1,7 @@
 {
   "name": "@ai-rpg-engine/character-creation",
   "version": "3.8.0",
-  "description": "Headless character creation system â€” archetypes, backgrounds, traits, multiclassing, and build validation for AI RPG Engine",
+  "description": "Headless character creation system — archetypes, backgrounds, traits, multiclassing, and build validation for AI RPG Engine",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -70,3 +70,43 @@ describe('character-creation README Usage names real starter-fantasy exports', (
     }
   });
 });
+
+// F-d30d74fe: the first Usage fence documents a live validateBuild of the
+// shipped chapel-threshold catalog. Pin the numbers so a catalog or formula
+// change cannot silently re-lie. Distinct from F-84b809de (import identifiers).
+const USAGE_BUILD = {
+  name: 'Aldric',
+  archetypeId: 'penitent-knight',
+  backgroundId: 'oath-breaker',
+  traitIds: ['iron-frame', 'cursed-blood'],
+  disciplineId: 'occultist',
+  statAllocations: { vigor: 2, instinct: 1 },
+};
+
+const LIVE_FINAL_STATS = { vigor: 9, instinct: 5, will: 1 };
+const FINAL_STATS_COMMENT =
+  'result.finalStats === { vigor: 9, instinct: 5, will: 1 }';
+
+describe('character-creation README Usage finalStats match live validateBuild (F-d30d74fe)', () => {
+  it('live validateBuild of the fence build is vigor 9, instinct 5, will 1', () => {
+    const result = characterCreation.validateBuild(
+      USAGE_BUILD,
+      fantasy.buildCatalog,
+      fantasy.fantasyMinimalRuleset,
+    );
+    expect(result.ok).toBe(true);
+    expect(result.resolvedTitle).toBe('Grave Warden');
+    expect(result.finalStats).toEqual(LIVE_FINAL_STATS);
+  });
+
+  it('source README and seven translations pin those live numbers', () => {
+    for (const file of README_FILES) {
+      const [block] = typescriptFences(
+        readFileSync(join(pkgRoot, file), 'utf8'),
+        file,
+      );
+      expect(block, file).toContain(FINAL_STATS_COMMENT);
+      expect(block, file).not.toContain('vigor: 8, instinct: 6');
+    }
+  });
+});

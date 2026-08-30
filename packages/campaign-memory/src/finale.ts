@@ -383,38 +383,72 @@ export function buildFinaleOutline(
   };
 }
 
-const HEAVY_DIVIDER = '═'.repeat(62);
-const DIVIDER = '─'.repeat(62);
+// F-498ec3b1: one width shared by both formatters. Must match terminal-ui
+// SCREEN_WIDTH and CLI END_RULE (60) so the stacked campaign-end screen
+// is not ragged by two columns.
+const SCREEN_WIDTH = 60;
+const HEAVY_DIVIDER = '═'.repeat(SCREEN_WIDTH);
+const DIVIDER = '─'.repeat(SCREEN_WIDTH);
+
+/** Title-case a kebab/snake id the same way terminal-ui humanizeStateId does. */
+function humanizeId(id: string): string {
+  const base = id.includes(':') ? id.slice(id.indexOf(':') + 1) : id;
+  return base
+    .split(/[_\-\s]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+/** Match the terminal formatter's resolution label so stacked sections agree. */
+function humanizeResolution(id: string): string {
+  return id.replace(/[-_]+/g, ' ').toUpperCase();
+}
+
+/** Match the terminal formatter's dominant-arc label (kebab to spaced words). */
+function humanizeArc(id: string): string {
+  return id.replace(/[-_]+/g, ' ');
+}
 
 /**
  * Format finale for director mode.
  */
 export function formatFinaleForDirector(outline: FinaleOutline): string {
   const lines: string[] = [];
-  lines.push(`  Resolution: ${outline.resolutionClass}`);
+  lines.push(`  Resolution: ${humanizeResolution(outline.resolutionClass)}`);
   if (outline.playerTitle) lines.push(`  Player: ${outline.playerTitle}`);
   if (outline.playerLevel !== undefined) lines.push(`  Level: ${outline.playerLevel}`);
-  if (outline.dominantArc) lines.push(`  Dominant Arc: ${outline.dominantArc}`);
+  if (outline.dominantArc) lines.push(`  Dominant Arc: ${humanizeArc(outline.dominantArc)}`);
   lines.push(`  Duration: ${outline.campaignDuration} turns, ${outline.totalChronicleEvents} events`);
-  lines.push('');
-  lines.push('  Key Moments:');
-  for (const m of outline.keyMoments.slice(0, 5)) {
-    lines.push(`    [${m.tick}] ${m.description} (${m.category}, sig: ${m.significance.toFixed(1)})`);
+  // Skip empty sections the same way formatFinaleForTerminal already does
+  // (F-498ec3b1): an unused header is an empty shrine to events that never happened.
+  if (outline.keyMoments.length > 0) {
+    lines.push('');
+    lines.push('  Key Moments:');
+    for (const m of outline.keyMoments.slice(0, 5)) {
+      lines.push(`    [${m.tick}] ${m.description} (${m.category}, sig: ${m.significance.toFixed(1)})`);
+    }
   }
-  lines.push('');
-  lines.push('  NPC Fates:');
-  for (const f of outline.npcFates) {
-    lines.push(`    ${f.name}: ${f.outcome} (${f.finalBreakpoint})`);
+  if (outline.npcFates.length > 0) {
+    lines.push('');
+    lines.push('  NPC Fates:');
+    for (const f of outline.npcFates) {
+      lines.push(`    ${f.name}: ${f.outcome} (${f.finalBreakpoint})`);
+    }
   }
-  lines.push('');
-  lines.push('  Faction Fates:');
-  for (const f of outline.factionFates) {
-    lines.push(`    ${f.factionId}: ${f.outcome} (rep: ${f.playerReputation}, cohesion: ${f.cohesion})`);
+  if (outline.factionFates.length > 0) {
+    lines.push('');
+    lines.push('  Faction Fates:');
+    for (const f of outline.factionFates) {
+      lines.push(`    ${humanizeId(f.factionId)}: ${f.outcome} (rep: ${f.playerReputation}, cohesion: ${f.cohesion})`);
+    }
   }
-  lines.push('');
-  lines.push('  Legacy:');
-  for (const l of outline.legacy) {
-    lines.push(`    ${l.label} — ${l.category}`);
+  if (outline.legacy.length > 0) {
+    lines.push('');
+    lines.push('  Legacy:');
+    for (const l of outline.legacy) {
+      lines.push(`    ${l.label} — ${l.category}`);
+    }
   }
   return lines.join('\n');
 }
@@ -431,8 +465,7 @@ export function formatFinaleForTerminal(outline: FinaleOutline): string {
   lines.push(`  ${HEAVY_DIVIDER}`);
   lines.push('');
 
-  const label = outline.resolutionClass.replace(/-/g, ' ').toUpperCase();
-  lines.push(`  Resolution: ${label}`);
+  lines.push(`  Resolution: ${humanizeResolution(outline.resolutionClass)}`);
   if (outline.playerTitle) {
     lines.push(
       outline.playerLevel !== undefined
@@ -443,7 +476,7 @@ export function formatFinaleForTerminal(outline: FinaleOutline): string {
     lines.push(`  Level ${outline.playerLevel}`);
   }
   if (outline.dominantArc) {
-    lines.push(`  Dominant Arc: ${outline.dominantArc.replace(/-/g, ' ')}`);
+    lines.push(`  Dominant Arc: ${humanizeArc(outline.dominantArc)}`);
   }
   lines.push(`  Campaign Duration: ${outline.campaignDuration} turns`);
   lines.push(`  Chronicle Events: ${outline.totalChronicleEvents}`);
@@ -469,7 +502,7 @@ export function formatFinaleForTerminal(outline: FinaleOutline): string {
     lines.push(`  ${DIVIDER}`);
     lines.push('');
     for (const f of outline.factionFates) {
-      lines.push(`  ${f.factionId}: ${f.outcome}`);
+      lines.push(`  ${humanizeId(f.factionId)}: ${f.outcome}`);
     }
   }
 

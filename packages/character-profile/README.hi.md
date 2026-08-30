@@ -69,6 +69,19 @@ const penalties = computeInjuryPenalties(wounded);
 // penalties.statPenalties.vigor === -2
 ```
 
+### प्रदर्शन सारांश
+
+```typescript
+import { getProfileSummary } from '@ai-rpg-engine/character-profile';
+
+const summary = getProfileSummary(wounded);
+// summary.name === 'Aldric'
+// summary.archetype === 'Penitent Knight'
+// summary.background === 'Oath Breaker'
+// summary.discipline === 'Occultist'
+// summary.activeInjuries === ['Broken Arm (vigor -2)']
+```
+
 ### महत्वपूर्ण घटनाएं और प्रतिष्ठा
 
 ```typescript

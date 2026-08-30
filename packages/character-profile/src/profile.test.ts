@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { CharacterBuild } from '@ai-rpg-engine/character-creation';
 import { createProfile, incrementTurns, setCustom, getProfileSummary } from './profile.js';
+import { addInjury, healInjury } from './injuries.js';
 import { serializeProfile } from './serialize.js';
 import { PROFILE_VERSION } from './types.js';
 
@@ -143,16 +144,45 @@ describe('setCustom', () => {
 });
 
 describe('getProfileSummary', () => {
-  it('returns a summary object', () => {
+  it('returns a display-ready summary with humanized ids', () => {
     const profile = createProfile(testBuild, testStats, testResources, testTags, 'fantasy');
     const summary = getProfileSummary(profile);
     expect(summary.name).toBe('Aldric');
     expect(summary.level).toBe(1);
-    expect(summary.archetype).toBe('penitent-knight');
-    expect(summary.background).toBe('oath-breaker');
-    expect(summary.discipline).toBe('occultist');
-    expect(summary.activeInjuries).toBe(0);
+    expect(summary.archetype).toBe('Penitent Knight');
+    expect(summary.background).toBe('Oath Breaker');
+    expect(summary.discipline).toBe('Occultist');
+    expect(summary.activeInjuries).toEqual([]);
     expect(summary.milestoneCount).toBe(0);
     expect(summary.totalTurns).toBe(0);
+  });
+
+  it('prints active injury names and compact penalties (F-ca340f5d)', () => {
+    const profile = createProfile(testBuild, testStats, testResources, testTags, 'fantasy');
+    const wounded = addInjury(profile, {
+      name: 'Broken Arm',
+      description: 'Fractured in combat.',
+      statPenalties: { vigor: -2 },
+      resourcePenalties: {},
+      grantedTags: ['injured'],
+      sustainedAt: 'turn-10',
+    });
+    const summary = getProfileSummary(wounded);
+    expect(summary.activeInjuries).toEqual(['Broken Arm (vigor -2)']);
+  });
+
+  it('omits healed injuries from the display list', () => {
+    let profile = createProfile(testBuild, testStats, testResources, testTags, 'fantasy');
+    profile = addInjury(profile, {
+      name: 'Broken Arm',
+      description: 'Fractured in combat.',
+      statPenalties: { vigor: -2 },
+      resourcePenalties: {},
+      grantedTags: ['injured'],
+      sustainedAt: 'turn-10',
+    });
+    const injuryId = profile.injuries[0]!.id;
+    const healed = healInjury(profile, injuryId, 'turn-12').profile;
+    expect(getProfileSummary(healed).activeInjuries).toEqual([]);
   });
 });

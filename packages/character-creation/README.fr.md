@@ -43,7 +43,7 @@ const build = {
 const result = validateBuild(build, buildCatalog, fantasyMinimalRuleset);
 // result.ok === true
 // result.resolvedTitle === 'Grave Warden'
-// result.finalStats === { vigor: 8, instinct: 6, will: 1 }
+// result.finalStats === { vigor: 9, instinct: 5, will: 1 }
 // result.resolvedTags includes 'martial', 'oath-broken', 'curse-touched', 'grave-warden'
 ```
 
