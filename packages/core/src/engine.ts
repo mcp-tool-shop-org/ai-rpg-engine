@@ -10,7 +10,7 @@ import type {
 } from './types.js';
 import { WorldStore, SaveLoadError, migrateModuleStates } from './world.js';
 import { ActionDispatcher } from './actions.js';
-import { ModuleManager } from './modules.js';
+import { ModuleManager, type ModuleLifecycleErrorHook } from './modules.js';
 import type { FormulaRegistry } from './formulas.js';
 import type { EventBus, EventBusListenerErrorHook } from './events.js';
 
@@ -25,7 +25,19 @@ export type EngineOptions = {
    * surface the failure to a dev overlay / log instead of swallowing it.
    */
   onListenerError?: EventBusListenerErrorHook;
+  /**
+   * Optional hook to observe isolated module init/teardown failures.
+   * When omitted, {@link onListenerError} is used as a fallback so a host
+   * that only supplies the listener hook still sees lifecycle errors.
+   */
+  onModuleError?: ModuleLifecycleErrorHook;
 };
+
+/** Options accepted by {@link Engine.deserialize} — code plus observability hooks. */
+export type EngineDeserializeOptions = Pick<
+  EngineOptions,
+  'modules' | 'ruleset' | 'onListenerError' | 'onModuleError'
+>;
 
 export class Engine {
   readonly store: WorldStore;
@@ -34,6 +46,7 @@ export class Engine {
   readonly ruleset?: RulesetDefinition;
 
   private actionLog: ActionIntent[] = [];
+  private closed = false;
 
   constructor(options: EngineOptions) {
     this.ruleset = options.ruleset;
@@ -46,10 +59,27 @@ export class Engine {
     });
 
     this.dispatcher = new ActionDispatcher();
-    this.moduleManager = new ModuleManager(this.dispatcher, this.store.events);
+    this.moduleManager = new ModuleManager(
+      this.dispatcher,
+      this.store.events,
+      options.onModuleError ??
+        (options.onListenerError
+          ? (err, phase, moduleId) => {
+              options.onListenerError!(err, {
+                id: '',
+                tick: 0,
+                type: `module.${phase}.failed`,
+                payload: { moduleId },
+              });
+            }
+          : undefined),
+    );
 
     // Register modules
     if (options.modules) {
+      // Claim every id first so dependsOn succeeds for peers later in the
+      // same array (F-46bb43bc), then register in listed order.
+      this.moduleManager.claimAll(options.modules);
       for (const mod of options.modules) {
         this.moduleManager.register(mod, this.store);
       }
@@ -63,7 +93,14 @@ export class Engine {
         moduleVersions[mod.id] = mod.version;
       }
       this.moduleManager.initializeNamespaces(this.store);
-      this.moduleManager.initAll();
+      try {
+        this.moduleManager.initAll();
+      } catch (err) {
+        // A broken init must not leave a half-registered world: teardown
+        // already-inited modules (isolated) before the constructor throw.
+        this.moduleManager.teardownAll();
+        throw err;
+      }
     }
 
     // Register global validator that runs module rule checks
@@ -88,6 +125,7 @@ export class Engine {
 
   /** Submit a player action */
   submitAction(verb: string, options?: Partial<Pick<ActionIntent, 'targetIds' | 'toolId' | 'parameters'>>): ResolvedEvent[] {
+    if (this.closed) return this.rejectShutdown(verb, this.store.state.playerId);
     // Ghost-actor guard, symmetric with submitActionAs (v2.5 C2): the default
     // playerId is '' and nothing forces a consumer to register the player
     // entity before acting. A verb handler reading entities[actorId] for a
@@ -122,6 +160,7 @@ export class Engine {
    *  Like submitAction but for non-player actors — avoids the need to
    *  manually create actions via dispatcher.createAction(). */
   submitActionAs(entityId: string, verb: string, options?: Partial<Pick<ActionIntent, 'targetIds' | 'toolId' | 'parameters'>>): ResolvedEvent[] {
+    if (this.closed) return this.rejectShutdown(verb, entityId);
     // Guard against dispatching for a ghost actor (a typo'd or already-removed
     // entity id). A verb handler reading state.entities[actorId] for a missing
     // actor would either crash or silently act on undefined; short-circuit to a
@@ -150,6 +189,7 @@ export class Engine {
 
   /** Process any action through the pipeline */
   processAction(action: ActionIntent): ResolvedEvent[] {
+    if (this.closed) return this.rejectShutdown(action.verb, action.actorId);
     // Ghost-actor guard (v2.5 C2), symmetric with submitActionAs: this method
     // is public and accepts a caller-built ActionIntent, so the actor must be
     // validated here too. Guarded BEFORE the actionLog push so a ghost action
@@ -168,12 +208,26 @@ export class Engine {
     this.actionLog.push(action);
     const events = this.dispatcher.dispatch(action, this.store);
 
-    // Process pending effects that are due
+    // Process pending effects that are due. Isolate each emit the way dispatch
+    // isolates handler events so one bad due effect cannot abort the tick
+    // after action.resolved is already in the log (F-0a03d557).
     const due = this.store.processPending();
     for (const pending of due) {
-      this.store.emitEvent(pending.type, pending.payload, {
-        causedBy: pending.sourceEventId,
-      });
+      try {
+        const payload =
+          pending.payload && typeof pending.payload === 'object' && !Array.isArray(pending.payload)
+            ? pending.payload
+            : {};
+        this.store.emitEvent(pending.type, payload, {
+          causedBy: pending.sourceEventId,
+        });
+      } catch (err) {
+        this.store.emitEvent('pending.failed', {
+          pendingId: pending.id,
+          type: pending.type,
+          reason: `Due pending effect "${pending.id}" failed to emit: ${err instanceof Error ? err.message : String(err)}. Later due effects still run.`,
+        }, { causedBy: pending.sourceEventId });
+      }
     }
 
     // Advance tick after each action
@@ -184,6 +238,7 @@ export class Engine {
 
   /** Get available actions for the player in current context */
   getAvailableActions(): string[] {
+    if (this.closed) return [];
     return this.dispatcher.getRegisteredVerbs();
   }
 
@@ -198,10 +253,24 @@ export class Engine {
   }
 
   /** Tear down all modules. Call on engine shutdown so modules can release any
-   *  resources they hold (timers, listeners, file handles). Idempotent from the
-   *  caller's view — teardown() on a module is invoked at most once per call. */
+   *  resources they hold (timers, listeners, file handles). After this returns
+   *  the engine is closed: submitAction/submitActionAs/processAction emit a
+   *  structured action.rejected naming shutdown and do not dispatch.
+   *  Idempotent from the caller's view — teardown() on a module is invoked at
+   *  most once per call. */
   shutdown(): void {
+    this.closed = true;
     this.moduleManager.teardownAll();
+  }
+
+  private rejectShutdown(verb: string, actorId?: string): ResolvedEvent[] {
+    this.store.emitEvent('action.rejected', {
+      verb,
+      actorId,
+      reason:
+        'engine is shut down. Engine.shutdown() already ran; this instance will not dispatch further actions. Create a new Engine or deserialize a save to continue play.',
+    }, actorId !== undefined ? { actorId } : undefined);
+    return [];
   }
 
   /** Get the action log for replay */
@@ -244,7 +313,7 @@ export class Engine {
    */
   static deserialize(
     serialized: string,
-    options: { modules?: EngineModule[]; ruleset?: RulesetDefinition } = {},
+    options: EngineDeserializeOptions = {},
   ): Engine {
     let data: { world: { state: WorldState; rngState: number }; actionLog?: ActionIntent[] };
     try {
@@ -306,6 +375,8 @@ export class Engine {
       seed: meta.seed,
       modules: options.modules,
       ruleset: options.ruleset,
+      onListenerError: options.onListenerError,
+      onModuleError: options.onModuleError,
     });
 
     // Swap the fresh construction store for the restored one, threading the

@@ -59,9 +59,18 @@ function describeInvalidEventElement(value: unknown, index: number): string {
   return `element at index ${index} with missing, empty, or non-string type`;
 }
 
+/** Host hook for isolated module init/teardown failures (F-64f9ad98). */
+export type ModuleLifecycleErrorHook = (
+  err: unknown,
+  phase: 'init' | 'teardown',
+  moduleId: string,
+) => void;
+
 export class ModuleManager {
   private modules: Map<string, EngineModule> = new Map();
   private moduleContexts: Map<string, ModuleRegistrationContext> = new Map();
+  /** Ids claimed for the current Engine constructor list, before register(). */
+  private claimedIds: Set<string> = new Set();
   private ruleChecks: RuleCheck[] = [];
   private ruleEffects: RuleEffect[] = [];
   private panels: PanelDefinition[] = [];
@@ -80,14 +89,32 @@ export class ModuleManager {
   constructor(
     private dispatcher: ActionDispatcher,
     private eventBus: EventBus,
+    private onModuleError?: ModuleLifecycleErrorHook,
   ) {}
+
+  /**
+   * Claim every module id in a constructor list before {@link register} so
+   * `dependsOn` succeeds for peers later in the same array (F-46bb43bc).
+   * Duplicate ids in the list (or against already-registered modules) throw.
+   */
+  claimAll(modules: readonly EngineModule[]): void {
+    for (const mod of modules) {
+      if (this.modules.has(mod.id) || this.claimedIds.has(mod.id)) {
+        throw new Error(
+          `Module id "${mod.id}" is already registered. ` +
+            `Module ids must be unique; rename one of the conflicting modules or remove the duplicate from the engine's modules list.`,
+        );
+      }
+      this.claimedIds.add(mod.id);
+    }
+  }
 
   /** Register and initialize a module */
   register(module: EngineModule, store: WorldStore): void {
     // Duplicate module id is a real config mistake (two modules claiming the
     // same id would silently clobber each other's context and verbs). Fail
     // loud and actionable rather than degrade — there is no safe way to run
-    // two modules under one id.
+    // two modules under one id. claimAll already caught list-internal dups.
     if (this.modules.has(module.id)) {
       throw new Error(
         `Module id "${module.id}" is already registered. ` +
@@ -95,10 +122,13 @@ export class ModuleManager {
       );
     }
 
-    // Check dependencies
+    // Check dependencies against already-registered modules AND ids claimed
+    // for this constructor list, so listing a child before its parent in
+    // options.modules is not a hard fail (F-46bb43bc). Still throw when the
+    // dep is not in this engine at all.
     if (module.dependsOn) {
       for (const dep of module.dependsOn) {
-        if (!this.modules.has(dep)) {
+        if (!this.modules.has(dep) && !this.claimedIds.has(dep)) {
           throw new Error(`Module "${module.id}" depends on "${dep}" which is not registered`);
         }
       }
@@ -111,6 +141,7 @@ export class ModuleManager {
     module.register(ctx);
     this.modules.set(module.id, module);
     this.moduleContexts.set(module.id, ctx);
+    this.claimedIds.delete(module.id);
   }
 
   /**
@@ -237,20 +268,67 @@ export class ModuleManager {
     return additional;
   }
 
-  /** Call init() on all modules (after all are registered, before first tick) */
+  /** Call init() on all modules (after all are registered, before first tick).
+   *  Each init is isolated: a throw is routed to onModuleError and a structured
+   *  `module.init.failed` event, then remaining modules still init. If any
+   *  init failed, the first error is rethrown after the loop so Engine
+   *  construction can teardown already-inited modules (F-64f9ad98). */
   initAll(): void {
+    let firstError: unknown;
     for (const [id, mod] of this.modules) {
-      if (mod.init) {
-        const ctx = this.moduleContexts.get(id);
-        if (ctx) mod.init(ctx);
+      if (!mod.init) continue;
+      const ctx = this.moduleContexts.get(id);
+      if (!ctx) continue;
+      try {
+        mod.init(ctx);
+      } catch (err) {
+        this.routeModuleError(err, 'init', id);
+        if (firstError === undefined) firstError = err;
       }
+    }
+    if (firstError !== undefined) {
+      throw firstError instanceof Error
+        ? firstError
+        : new Error(String(firstError));
     }
   }
 
-  /** Call teardown() on all modules (on shutdown) */
+  /** Call teardown() on all modules (on shutdown). Each teardown is isolated
+   *  so one throw cannot leak the rest of the pack's timers/handles. After
+   *  every module.teardown() has run, the bus is cleared. */
   teardownAll(): void {
-    for (const mod of this.modules.values()) {
-      if (mod.teardown) mod.teardown();
+    for (const [id, mod] of this.modules) {
+      if (!mod.teardown) continue;
+      try {
+        mod.teardown();
+      } catch (err) {
+        this.routeModuleError(err, 'teardown', id);
+      }
+    }
+    this.eventBus.clear();
+  }
+
+  private routeModuleError(
+    err: unknown,
+    phase: 'init' | 'teardown',
+    moduleId: string,
+  ): void {
+    const reason = err instanceof Error ? err.message : String(err);
+    try {
+      this.onModuleError?.(err, phase, moduleId);
+    } catch {
+      // Host hook must not abort remaining module lifecycle.
+    }
+    try {
+      this.activeStore?.emitEvent(`module.${phase}.failed`, {
+        moduleId,
+        reason:
+          phase === 'init'
+            ? `Module "${moduleId}" init failed: ${reason}. Remaining modules still initialized; construction will abort and already-inited modules will be torn down.`
+            : `Module "${moduleId}" teardown failed: ${reason}. Remaining modules still tear down.`,
+      });
+    } catch {
+      // Emitting the structured signal must not abort remaining teardowns.
     }
   }
 
@@ -307,6 +385,16 @@ export class ModuleManager {
           self.eventBus.on(eventType, handler);
         }
       },
+      off(eventType: string, handler: EventHandler): void {
+        if (eventType === '*') {
+          self.eventBus.offAny(handler);
+        } else {
+          self.eventBus.off(eventType, handler);
+        }
+      },
+      offAny(handler: EventHandler): void {
+        self.eventBus.offAny(handler);
+      },
       emit(event: ResolvedEvent): void {
         // Record into the CURRENT active store, not one captured at register
         // time — deserialize rebinds via rebindStore so post-load emits hit the
@@ -351,7 +439,7 @@ export class ModuleManager {
     };
 
     const formulas: FormulaRegistryAccess = {
-      register: (id, fn) => self.formulas.register(id, fn),
+      register: (id, fn, opts) => self.formulas.register(id, fn, opts),
       get: (id) => self.formulas.get(id),
       has: (id) => self.formulas.has(id),
     };

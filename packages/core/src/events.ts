@@ -94,9 +94,14 @@ export class EventBus {
    */
   emit(event: ResolvedEvent, world: import('./types.js').WorldState): void {
     const isolated = event;
+    // Snapshot type before any listener runs. Narration patches this same
+    // object (description/presentation); a subscriber that rewrites `type` to
+    // a non-string must not TypeError `indexOf` on the later domain-wildcard
+    // pass (F-a97d5916). Do not clone — enrichment writes the log entry.
+    const type = isolated.type;
 
     // Specific listeners
-    const handlers = this.listeners.get(isolated.type);
+    const handlers = typeof type === 'string' ? this.listeners.get(type) : undefined;
     if (handlers) {
       const snapshot = [...handlers];
       for (const handler of snapshot) {
@@ -105,15 +110,17 @@ export class EventBus {
     }
 
     // Domain wildcard: "combat.*" matches "combat.contact.hit"
-    const dotIndex = isolated.type.indexOf('.');
-    if (dotIndex !== -1) {
-      const domain = isolated.type.substring(0, dotIndex);
-      const domainWildcard = `${domain}.*`;
-      const domainHandlers = this.listeners.get(domainWildcard);
-      if (domainHandlers) {
-        const domainSnapshot = [...domainHandlers];
-        for (const handler of domainSnapshot) {
-          this.invokeListener(handler, isolated, world);
+    if (typeof type === 'string') {
+      const dotIndex = type.indexOf('.');
+      if (dotIndex !== -1) {
+        const domain = type.substring(0, dotIndex);
+        const domainWildcard = `${domain}.*`;
+        const domainHandlers = this.listeners.get(domainWildcard);
+        if (domainHandlers) {
+          const domainSnapshot = [...domainHandlers];
+          for (const handler of domainSnapshot) {
+            this.invokeListener(handler, isolated, world);
+          }
         }
       }
     }

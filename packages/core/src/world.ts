@@ -433,12 +433,12 @@ export class WorldStore {
 
   /** Get all entities in a zone */
   entitiesInZone(zoneId: string): EntityState[] {
-    return Object.values(this.state.entities).filter(e => e.zoneId === zoneId);
+    return Object.values(this.state.entities).filter(e => e?.zoneId === zoneId);
   }
 
   /** Get all entities matching a tag */
   entitiesByTag(tag: string): EntityState[] {
-    return Object.values(this.state.entities).filter(e => e.tags.includes(tag));
+    return Object.values(this.state.entities).filter(e => (e?.tags ?? []).includes(tag));
   }
 
   // --- Zone operations ---
@@ -459,12 +459,23 @@ export class WorldStore {
   // --- Resource operations ---
 
   getResource(entityId: string, resourceId: string): number {
-    return this.state.entities[entityId]?.resources[resourceId] ?? 0;
+    return this.state.entities[entityId]?.resources?.[resourceId] ?? 0;
   }
 
   modifyResource(entityId: string, resourceId: string, delta: number): number {
     const entity = this.state.entities[entityId];
-    if (!entity) return 0;
+    if (!entity) {
+      this.emitEvent('resource.modify.missed', {
+        entityId,
+        resourceId,
+        delta,
+        reason: `No entity "${entityId}" in world state. Add the entity before modifying "${resourceId}", or check the id for a typo.`,
+      });
+      return 0;
+    }
+    if (!entity.resources || typeof entity.resources !== 'object' || Array.isArray(entity.resources)) {
+      entity.resources = {};
+    }
     const current = entity.resources[resourceId] ?? 0;
     // Clamp into the ruleset-declared range when this store was built with a
     // ruleset that bounds the resource (v2.5 C7 — there was no upper clamp).
@@ -483,7 +494,7 @@ export class WorldStore {
   getStat(entityId: string, statId: string): number {
     const entity = this.state.entities[entityId];
     if (!entity) return 0;
-    const value = entity.stats[statId] ?? 0;
+    const value = entity.stats?.[statId] ?? 0;
     // Honor ruleset stat bounds when declared (v2.5 C7 — bounds were ignored
     // and `value` was a dead intermediate). Undeclared stats, declared stats
     // without min/max, and stores built without a ruleset return the raw
@@ -554,16 +565,61 @@ export class WorldStore {
   // --- Pending effects ---
 
   addPending(effect: Omit<PendingEffect, 'id'>): PendingEffect {
+    if (typeof effect.type !== 'string' || effect.type.length === 0) {
+      throw new Error(
+        `Pending effect type must be a non-empty string, got ${describeJsonValue(effect.type)}. ` +
+          `Pass a string type so the effect can be emitted when it comes due.`,
+      );
+    }
+    if (typeof effect.executeAtTick !== 'number' || !Number.isFinite(effect.executeAtTick)) {
+      throw new Error(
+        `Pending effect executeAtTick must be a finite number, got ${describeJsonValue(effect.executeAtTick)}. ` +
+          `A non-finite tick is neither due nor kept by processPending and would be dropped.`,
+      );
+    }
     const pending: PendingEffect = { id: this.genId('pend'), ...effect };
     this.state.pending.push(pending);
     return pending;
   }
 
-  /** Process all pending effects due at or before current tick */
+  /** Process all pending effects due at or before current tick.
+   *  Non-object entries and non-finite executeAtTick are dropped with a
+   *  structured pending.skipped event rather than throwing (F-0a03d557). */
   processPending(): PendingEffect[] {
     const tick = this.state.meta.tick;
-    const due = this.state.pending.filter(p => p.executeAtTick <= tick);
-    this.state.pending = this.state.pending.filter(p => p.executeAtTick > tick);
+    const due: PendingEffect[] = [];
+    const kept: PendingEffect[] = [];
+    const skipped: { index: number; reason: string }[] = [];
+    for (let i = 0; i < this.state.pending.length; i++) {
+      const p = this.state.pending[i];
+      if (!isPendingObject(p)) {
+        skipped.push({
+          index: i,
+          reason: `pending[${i}] is not an object (${describeJsonValue(p)}). The entry was dropped so later actions can proceed.`,
+        });
+        continue;
+      }
+      if (typeof p.type !== 'string' || p.type.length === 0) {
+        skipped.push({
+          index: i,
+          reason: `pending[${i}] type must be a non-empty string, got ${describeJsonValue(p.type)}. The entry was dropped so later actions can proceed.`,
+        });
+        continue;
+      }
+      if (typeof p.executeAtTick !== 'number' || !Number.isFinite(p.executeAtTick)) {
+        skipped.push({
+          index: i,
+          reason: `pending[${i}] executeAtTick must be a finite number, got ${describeJsonValue(p.executeAtTick)}. The entry was dropped so later actions can proceed.`,
+        });
+        continue;
+      }
+      if (p.executeAtTick <= tick) due.push(p);
+      else kept.push(p);
+    }
+    this.state.pending = kept;
+    for (const skip of skipped) {
+      this.emitEvent('pending.skipped', skip);
+    }
     return due;
   }
 
@@ -691,8 +747,16 @@ function highestIdCounter(state: WorldState): number {
     if (Number.isFinite(n) && n > max) max = n;
   };
   consider(state.meta.worldId);
-  for (const e of state.eventLog) consider(e.id);
-  for (const p of state.pending) consider(p.id);
+  for (const e of state.eventLog) {
+    if (e && typeof e === 'object' && typeof e.id === 'string') consider(e.id);
+  }
+  for (const p of state.pending) {
+    if (p && typeof p === 'object' && typeof p.id === 'string') consider(p.id);
+  }
   for (const id of Object.keys(state.entities)) consider(id);
   return max;
+}
+
+function isPendingObject(value: unknown): value is PendingEffect {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

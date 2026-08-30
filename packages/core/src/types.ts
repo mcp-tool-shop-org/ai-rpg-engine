@@ -419,6 +419,10 @@ export interface RuleRegistry {
 
 export interface EventRegistry {
   on(eventType: string, handler: EventHandler): void;
+  /** Unsubscribe a specific-type (or `'*'`) listener previously passed to {@link on}. */
+  off(eventType: string, handler: EventHandler): void;
+  /** Unsubscribe a wildcard listener previously passed to `on('*')` / `onAny`. */
+  offAny(handler: EventHandler): void;
   emit(event: ResolvedEvent): void;
 }
 
@@ -464,7 +468,11 @@ export interface DebugRegistry {
 }
 
 export interface FormulaRegistryAccess {
-  register(id: string, fn: (...args: unknown[]) => unknown): void;
+  register(
+    id: string,
+    fn: (...args: unknown[]) => unknown,
+    opts?: { override?: boolean },
+  ): void;
   get(id: string): (...args: unknown[]) => unknown;
   has(id: string): boolean;
 }
