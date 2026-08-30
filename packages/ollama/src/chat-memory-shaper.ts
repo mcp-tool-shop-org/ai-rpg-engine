@@ -181,19 +181,32 @@ function shapeSnippetGroup(cls: MemoryClass, snippets: RetrievedSnippet[]): Shap
 export type ShapeOptions = {
   session: DesignSession | null;
   ragSnippets: RetrievedSnippet[];
-  /** Max total characters for shaped context. */
+  /** Max total characters for shaped context. Clamped to [1, MAX_SHAPED_MEMORY_CHARS]. */
   maxChars?: number;
   /** Include session-derived memory even without matching RAG snippets. */
   includeSessionBaseline?: boolean;
 };
 
+/** Absolute ceiling on shapeMemory total characters (F-6bccfdfb). 32 KiB. */
+export const MAX_SHAPED_MEMORY_CHARS = 32 * 1024;
+const DEFAULT_SHAPED_MEMORY_CHARS = 5000;
+
+function clampShapeChars(raw: number | undefined): number {
+  if (raw === undefined || !Number.isFinite(raw)) {
+    return raw === Infinity ? MAX_SHAPED_MEMORY_CHARS : DEFAULT_SHAPED_MEMORY_CHARS;
+  }
+  const floored = Math.floor(raw);
+  if (floored <= 0) return DEFAULT_SHAPED_MEMORY_CHARS;
+  return Math.min(floored, MAX_SHAPED_MEMORY_CHARS);
+}
+
 export function shapeMemory(options: ShapeOptions): ShapedContext {
   const {
     session,
     ragSnippets,
-    maxChars = 5000,
     includeSessionBaseline = true,
   } = options;
+  const maxChars = clampShapeChars(options.maxChars);
 
   const memories: ShapedMemory[] = [];
 

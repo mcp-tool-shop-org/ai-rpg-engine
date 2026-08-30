@@ -6,7 +6,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createClient, MAX_GENERATE_BODY_BYTES } from './client.js';
 import type { OllamaTextClient } from './client.js';
-import { resolveConfig, MAX_OLLAMA_TIMEOUT_MS } from './config.js';
+import { resolveConfig, MAX_OLLAMA_TIMEOUT_MS, MAX_OLLAMA_ATTEMPTS } from './config.js';
 
 const realFetch = globalThis.fetch;
 
@@ -393,6 +393,33 @@ describe('createClient.generate — retry/backoff (PA-3)', () => {
     const stderr = errSpy.mock.calls.flat().join('\n');
     expect(stderr).toContain('[ollama] attempt 1/3 failed');
     expect(stderr).toContain('retrying in 0ms');
+  });
+
+  it('treats a hand-built Infinity maxAttempts as the default, not an infinite loop (F-75b0ce0e)', async () => {
+    globalThis.fetch = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+
+    const cfg = { ...resolveConfig({ retryDelayMs: 0 }), maxAttempts: Infinity };
+    const client = createClient(cfg);
+    const result = await client.generate({ system: 's', prompt: 'p' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/too many attempts|max retries exceeded/i);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  it('caps 1e9 maxAttempts at the ceiling and generate() returns (F-75b0ce0e)', async () => {
+    globalThis.fetch = vi.fn(async () => {
+      throw new TypeError('fetch failed');
+    }) as unknown as typeof fetch;
+
+    const client = createClient(resolveConfig({ retryDelayMs: 0, maxAttempts: 1e9 }));
+    const result = await client.generate({ system: 's', prompt: 'p' });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/too many attempts|max retries exceeded/i);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(MAX_OLLAMA_ATTEMPTS);
   });
 });
 

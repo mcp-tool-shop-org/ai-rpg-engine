@@ -2,9 +2,14 @@
 // Stores evolving world context in .ai-session.json at the project root.
 // Commands read session state to enrich prompts but never require it.
 
-import { readFile, writeFile, unlink } from 'node:fs/promises';
+import { readFile, writeFile, unlink, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { CritiqueIssue, CritiqueSuggestion } from './parsers.js';
+
+/** Drop oldest events once history exceeds this many entries (F-1582fb3d). */
+export const MAX_SESSION_HISTORY_EVENTS = 1000;
+/** Refuse loadSession before JSON.parse when the file exceeds this many bytes. */
+export const MAX_SESSION_JSON_BYTES = 8 * 1024 * 1024;
 
 // --- Types ---
 
@@ -101,17 +106,21 @@ function sessionPath(projectRoot: string): string {
  * shape the CLI renders.
  */
 export class SessionLoadError extends Error {
-  readonly code = 'SESSION_CORRUPT';
+  readonly code: string;
   /** Absolute path of the offending session file. */
   readonly path: string;
   readonly hint: string;
-  constructor(path: string, detail: string) {
-    super(`Session file is corrupt: ${path} (${detail})`);
+  constructor(path: string, detail: string, code = 'SESSION_CORRUPT') {
+    const label = code === 'SESSION_BUDGET_EXCEEDED' ? 'too large' : 'corrupt';
+    super(`Session file is ${label}: ${path} (${detail})`);
     this.name = 'SessionLoadError';
+    this.code = code;
     this.path = path;
-    this.hint =
-      'The file was left untouched. Fix the JSON by hand, restore it from git, '
-      + 'or discard it with "ai session end" to start fresh.';
+    this.hint = code === 'SESSION_BUDGET_EXCEEDED'
+      ? 'The file was left untouched. Trim .ai-session.json history, restore it from git, '
+        + 'or discard it with "ai session end" to start fresh.'
+      : 'The file was left untouched. Fix the JSON by hand, restore it from git, '
+        + 'or discard it with "ai session end" to start fresh.';
   }
 }
 
@@ -153,6 +162,21 @@ function sessionShapeProblem(v: unknown): string | null {
  */
 export async function loadSession(projectRoot: string): Promise<DesignSession | null> {
   const file = sessionPath(projectRoot);
+  let fileSize: number;
+  try {
+    fileSize = (await stat(file)).size;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException | null)?.code === 'ENOENT') return null;
+    const message = err instanceof Error ? err.message : String(err);
+    throw new SessionLoadError(file, `unreadable: ${message}`);
+  }
+  if (fileSize > MAX_SESSION_JSON_BYTES) {
+    throw new SessionLoadError(
+      file,
+      `budget exceeded: session file is ${fileSize} bytes (cap ${MAX_SESSION_JSON_BYTES})`,
+      'SESSION_BUDGET_EXCEEDED',
+    );
+  }
   let raw: string;
   try {
     raw = await readFile(file, 'utf-8');
@@ -170,7 +194,11 @@ export async function loadSession(projectRoot: string): Promise<DesignSession | 
   }
   const problem = sessionShapeProblem(parsed);
   if (problem) throw new SessionLoadError(file, problem);
-  return parsed as DesignSession;
+  const session = parsed as DesignSession;
+  if (Array.isArray(session.history) && session.history.length > MAX_SESSION_HISTORY_EVENTS) {
+    session.history = session.history.slice(-MAX_SESSION_HISTORY_EVENTS);
+  }
+  return session;
 }
 
 /**
@@ -236,6 +264,9 @@ export function recordEvent(session: DesignSession, kind: SessionEventKind, deta
     kind,
     detail,
   });
+  if (session.history.length > MAX_SESSION_HISTORY_EVENTS) {
+    session.history.splice(0, session.history.length - MAX_SESSION_HISTORY_EVENTS);
+  }
 }
 
 // --- Mutators ---

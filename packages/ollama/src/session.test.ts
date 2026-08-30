@@ -19,6 +19,8 @@ import {
   formatSessionStatus,
   recordEvent,
   formatSessionHistory,
+  MAX_SESSION_HISTORY_EVENTS,
+  MAX_SESSION_JSON_BYTES,
 } from './session.js';
 import type { DesignSession, SessionEvent } from './session.js';
 import type { CritiqueIssue } from './parsers.js';
@@ -176,6 +178,21 @@ describe('session', () => {
       const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       expect(await tryLoadSession(tempDir)).toBeNull();
       expect(errSpy).not.toHaveBeenCalled();
+    });
+
+    it('throws SessionLoadError with SESSION_BUDGET_EXCEEDED before JSON.parse when the file is over the byte cap (F-1582fb3d)', async () => {
+      const parseSpy = vi.spyOn(JSON, 'parse');
+      await writeFile(sessionFile(), Buffer.alloc(MAX_SESSION_JSON_BYTES + 1, 0x78));
+      const err = await loadSession(tempDir).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(SessionLoadError);
+      const loadError = err as SessionLoadError;
+      expect(loadError.code).toBe('SESSION_BUDGET_EXCEEDED');
+      expect(loadError.message).toMatch(/budget exceeded/i);
+      const oversizedParses = parseSpy.mock.calls.filter(
+        ([arg]) => typeof arg === 'string' && arg.length > MAX_SESSION_JSON_BYTES,
+      );
+      expect(oversizedParses).toHaveLength(0);
+      parseSpy.mockRestore();
     });
   });
 
@@ -338,6 +355,31 @@ describe('session', () => {
       recordEvent(s, 'content_applied', 'Wrote room to disk');
       expect(s.history).toHaveLength(1);
       expect(s.history[0].kind).toBe('content_applied');
+    });
+
+    it('drops oldest events once history exceeds the retention cap (F-1582fb3d)', () => {
+      const s = createSession('capped-hist');
+      s.history = [];
+      for (let i = 0; i < 10_000; i++) {
+        recordEvent(s, 'theme_added', `theme_${i}`);
+      }
+      expect(s.history.length).toBe(MAX_SESSION_HISTORY_EVENTS);
+      expect(s.history[0].detail).toBe('theme_9000');
+      expect(s.history[s.history.length - 1].detail).toBe('theme_9999');
+    });
+
+    it('keeps a 10k-event session save and load bounded (F-1582fb3d)', async () => {
+      const s = createSession('ten-k');
+      for (let i = 0; i < 10_000; i++) {
+        recordEvent(s, 'theme_added', `t${i}`);
+      }
+      expect(s.history.length).toBeLessThanOrEqual(MAX_SESSION_HISTORY_EVENTS);
+      await saveSession(tempDir, s);
+      const raw = await readFile(join(tempDir, '.ai-session.json'), 'utf-8');
+      expect(Buffer.byteLength(raw, 'utf-8')).toBeLessThanOrEqual(MAX_SESSION_JSON_BYTES);
+      const loaded = await loadSession(tempDir);
+      expect(loaded).not.toBeNull();
+      expect(loaded!.history.length).toBeLessThanOrEqual(MAX_SESSION_HISTORY_EVENTS);
     });
   });
 

@@ -1,6 +1,6 @@
 // Ollama HTTP client — thin wrapper around the /api/generate endpoint
 
-import { clampTimeoutMs, type OllamaConfig } from './config.js';
+import { clampTimeoutMs, clampMaxAttempts, clampRetryDelayMs, type OllamaConfig } from './config.js';
 import { readBodyWithByteCap } from './chat-webfetch.js';
 
 /** Finite generate() body budget (F-b67b6830). Multi-GB 200s are refused before any concatenate. */
@@ -138,10 +138,11 @@ async function readGenerateBody(response: Response): Promise<{ ok: true; text: s
 export function createClient(config: OllamaConfig, options?: OllamaClientOptions): OllamaTextClient {
   const onRetry = options?.onRetry ?? defaultOnRetry;
   // Belt-and-braces for hand-built configs that predate the retry fields
-  // (resolveConfig always sets them): missing values fall back to the
-  // documented defaults instead of collapsing the loop to zero attempts.
-  const maxAttempts = Math.max(1, Math.floor(config.maxAttempts ?? 3));
-  const retryDelayMs = Math.max(0, Math.floor(config.retryDelayMs ?? 1000));
+  // (resolveConfig always sets them): missing / non-finite values fall back
+  // to the documented defaults instead of collapsing the loop to zero
+  // attempts or looping forever on Infinity (F-75b0ce0e).
+  const maxAttempts = clampMaxAttempts(config.maxAttempts);
+  const retryDelayMs = clampRetryDelayMs(config.retryDelayMs);
   // F-b67b6830 — timeout bounds wait, not bytes; still clamp so Infinity /
   // MAX_SAFE_INTEGER cannot disable AbortSignal.timeout or the body cap.
   const timeoutMs = clampTimeoutMs(config.timeoutMs);
@@ -219,7 +220,7 @@ export function createClient(config: OllamaConfig, options?: OllamaClientOptions
         return { ok: true, text: json.response };
       }
 
-      return { ok: false, error: `Ollama request failed: max retries exceeded. ${offlineHint(config.baseUrl)}` };
+      return { ok: false, error: `Ollama request failed: too many attempts (max retries exceeded). ${offlineHint(config.baseUrl)}` };
     },
   };
 }

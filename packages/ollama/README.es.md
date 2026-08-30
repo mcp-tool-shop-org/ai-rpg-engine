@@ -38,14 +38,15 @@ npm install @ai-rpg-engine/ollama
 ## Uso
 
 ```typescript
-import { translateMarkdown, ChatEngine, createSession } from '@ai-rpg-engine/ollama';
+import { resolveConfig, createClient, createChatEngine } from '@ai-rpg-engine/ollama';
 
-// Start a design session
-const session = createSession('haunted-chapel');
+const config = resolveConfig({ model: 'qwen2.5-coder' });
+const client = createClient(config);
 
-// Use the chat engine
-const engine = new ChatEngine({ session });
-const response = await engine.chat('scaffold a haunted chapel district');
+const engine = createChatEngine({ client, projectRoot: process.cwd() });
+
+const response = await engine.process('scaffold a haunted chapel district');
+console.log(response);
 ```
 
 ## Documentación

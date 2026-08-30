@@ -1,7 +1,15 @@
 // @ai-rpg-engine/ollama — optional local AI layer
 
 // Config
-export { resolveConfig } from './config.js';
+export {
+  resolveConfig,
+  clampTimeoutMs,
+  clampMaxAttempts,
+  clampRetryDelayMs,
+  MAX_OLLAMA_TIMEOUT_MS,
+  MAX_OLLAMA_ATTEMPTS,
+  MAX_RETRY_DELAY_MS,
+} from './config.js';
 export type { OllamaConfig } from './config.js';
 
 // Client
@@ -124,6 +132,8 @@ export {
   renderSessionContext,
   formatSessionStatus,
   formatSessionHistory,
+  MAX_SESSION_HISTORY_EVENTS,
+  MAX_SESSION_JSON_BYTES,
 } from './session.js';
 export type {
   DesignSession,
@@ -180,11 +190,11 @@ export { runChatShell, persistTranscriptAtExit } from './chat-shell.js';
 export type { ChatShellOptions } from './chat-shell.js';
 
 // RAG — project-grounded retrieval
-export { retrieve, extractKeywords, formatRetrievedContext } from './chat-rag.js';
+export { retrieve, extractKeywords, formatRetrievedContext, MAX_RETRIEVE_SNIPPETS, MAX_RETRIEVE_CHARS } from './chat-rag.js';
 export type { SourceKind, RetrievedSnippet, RetrievalQuery, RetrievalResult } from './chat-rag.js';
 
 // Memory shaping
-export { shapeMemory, formatShapedContext } from './chat-memory-shaper.js';
+export { shapeMemory, formatShapedContext, MAX_SHAPED_MEMORY_CHARS } from './chat-memory-shaper.js';
 export type { MemoryClass, ShapedMemory, ShapedContext } from './chat-memory-shaper.js';
 
 // Personality profiles
@@ -192,7 +202,7 @@ export { WORLDBUILDER_PROFILE, ANALYST_PROFILE, GENERATOR_PROFILE, ROUTER_PROFIL
 export type { PersonalityProfile } from './chat-personality.js';
 
 // Webfetch adapter
-export { webfetch, isAllowedUrlResolved, formatWebfetchForPrompt, MAX_WEBFETCH_CHARS } from './chat-webfetch.js';
+export { webfetch, isAllowedUrlResolved, formatWebfetchForPrompt, MAX_WEBFETCH_CHARS, MAX_WEBFETCH_TIMEOUT_MS } from './chat-webfetch.js';
 // The syntax-only URL check is exported under a self-documenting name so no
 // consumer mistakes it for the live SSRF gate — that gate is
 // isAllowedUrlResolved(), which resolves DNS and re-checks every address
