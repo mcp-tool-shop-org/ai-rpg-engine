@@ -1677,6 +1677,10 @@ describe('runHostileRound — end-gates around NPC turns and the world tick (P8-
     // runNpcTurns / runCompanionTurns used to ignore that sink and default to
     // console.log, leaking the CLI-010 guard line onto the protocol pipe.
     const engine = makeEngine();
+    // Aggressive profiles target the 'player' tag. makeEngine()'s hero is
+    // untagged so selectActionForEntity would idle on 'inspect' and skip
+    // submitActionAs — the sink would stay empty and the pin would miss.
+    engine.store.state.entities['hero'].tags = ['player'];
     engine.store.addEntity({
       id: 'gnasher',
       blueprintId: 'bp',
