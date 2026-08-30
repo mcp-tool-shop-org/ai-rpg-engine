@@ -139,9 +139,9 @@
 // without misattributing it as player-initiated (player-rumor.ts's
 // spawnIntentionalRumor tags its source as 'player-leverage') — deferred,
 // same honest-ceiling posture as the rest of this list. Step 5a2's leverage-
-// income wire (v3.0 wave 2) does not feed computeLeverageGains' reputationDelta
-// hint axis (rep-gain → favor / large-rep-loss → blackmail) — out of this
-// wave's explicit scope, xp/milestone/pressure-resolution only. Its
+// income wire (v3.0 wave 2) feeds computeLeverageGains' reputationDelta
+// hint axis via lastReputation (rep-gain → favor / large-rep-loss →
+// blackmail) alongside xp/milestone/pressure-resolution (F-9b836ed9). Its
 // pressure-resolution axis reads THIS TICK's resolved-by-player fallouts
 // from state.resolvedPressures (resolvePressureByPlayer — the
 // `resolve-pressure` verb and the opportunity-complete mapping), not the
@@ -388,6 +388,14 @@ export type WorldTickState = {
    * identical SEED-0 reason leverageMilestoneCursor documents above.
    */
   lastXp?: number;
+  /**
+   * Per-faction reputation snapshot as of the end of the previous tick this
+   * step ran — the SAME tick-over-tick delta pattern lastXp uses. Feeds
+   * computeLeverageGains' reputationDelta hint (largest-magnitude faction
+   * delta this round). OPTIONAL/lazily-written for the identical SEED-0
+   * reason lastXp documents above (F-9b836ed9).
+   */
+  lastReputation?: Record<string, number>;
   /**
    * resolvedAtTick of the last player-resolved pressure already fed to
    * computeLeverageGains' pressureResolution axis (F-bdd030b2). The
@@ -1953,11 +1961,11 @@ function mergeLeverageGains(
  * in, and the cursor advances to state.milestones.length every round this
  * step actually runs. It never advances on a round the SEED-0 gate skips,
  * but a skipped round is, by construction, a round with zero NEW milestones
- * anyway (a new milestone is itself one of the five hasActivity triggers
+ * anyway (a new milestone is itself one of the hasActivity triggers
  * below) — the cursor never has a chance to drift behind an unprocessed
  * entry.
  *
- * OPTIONAL fields (leverageMilestoneCursor / lastXp) are tolerant-reader,
+ * OPTIONAL fields (leverageMilestoneCursor / lastXp / lastReputation) are tolerant-reader,
  * `?? 0` degrading absence to "nothing processed / no xp observed yet" —
  * but UNLIKE resolvedPressures?/districtTones? (which freshWorldTickState
  * seeds unconditionally at 0/{} for every world), these two are lazily
@@ -1966,9 +1974,10 @@ function mergeLeverageGains(
  * observable difference the SEED-0 contract forbids for a world that never
  * triggers this step.
  *
- * Honest ceiling: computeLeverageGains' reputationDelta hint axis (rep-gain
- * → favor / large-rep-loss → blackmail) is NOT wired here — out of this
- * wave's explicit scope. Its pressureResolution axis reads THIS TICK's
+ * computeLeverageGains' reputationDelta hint axis (rep-gain → favor /
+ * large-rep-loss → blackmail) is wired via lastReputation the same way
+ * lastXp feeds xpGained (F-9b836ed9): per-faction deltas, largest-magnitude
+ * wins, quiet ticks do not re-grant. Its pressureResolution axis reads THIS TICK's
  * resolved-by-player fallouts from state.resolvedPressures (F-bdd030b2).
  * submitAction stamps issuedAtTick then advances, so a played round of
  * resolve-pressure + runWorldTick records resolvedAtTick as engine.tick - 1;
@@ -1993,6 +2002,20 @@ function runLeverageIncomeStep(
   const previousXp = state.lastXp ?? 0;
   const xpGained = currentXp - previousXp;
 
+  const previousRep = state.lastReputation ?? {};
+  let reputationDelta: { factionId: string; delta: number } | undefined;
+  for (const r of reputation) {
+    const delta = r.value - (previousRep[r.factionId] ?? 0);
+    if (delta === 0) continue;
+    if (
+      !reputationDelta ||
+      Math.abs(delta) > Math.abs(reputationDelta.delta) ||
+      (Math.abs(delta) === Math.abs(reputationDelta.delta) && r.factionId < reputationDelta.factionId)
+    ) {
+      reputationDelta = { factionId: r.factionId, delta };
+    }
+  }
+
   const alreadyGrantedTick = state.leveragePressureResolutionTick;
   const playerResolvedFallout = (state.resolvedPressures ?? []).find(
     (f) =>
@@ -2010,6 +2033,7 @@ function runLeverageIncomeStep(
     hasExistingLeverageState ||
     newMilestones.length > 0 ||
     xpGained !== 0 ||
+    reputationDelta !== undefined ||
     playerResolvedFallout !== undefined;
 
   if (!hasActivity) return; // SEED-0 identity — read only, nothing written
@@ -2023,6 +2047,12 @@ function runLeverageIncomeStep(
   let gains: Partial<Record<LeverageCurrency, number>> = {};
   if (xpGained !== 0) {
     gains = mergeLeverageGains(gains, computeLeverageGains({ xpGained }));
+  }
+  if (reputationDelta) {
+    gains = mergeLeverageGains(
+      gains,
+      computeLeverageGains({ xpGained: 0, reputationDelta }),
+    );
   }
   for (const milestone of newMilestones) {
     gains = mergeLeverageGains(
@@ -2044,6 +2074,7 @@ function runLeverageIncomeStep(
 
   if (player) player.custom = custom;
   state.lastXp = currentXp;
+  state.lastReputation = Object.fromEntries(reputation.map((r) => [r.factionId, r.value]));
   state.leverageMilestoneCursor = state.milestones.length;
 }
 
@@ -2071,14 +2102,17 @@ export function runWorldTick(engine: Engine, opts: WorldTickOptions = {}): World
     if (!line) line = 'unknown error';
     if (line.length > 200) line = line.slice(0, 199) + '…';
     log(`  (the world's pressures slip out of focus this round: ${line})`);
+    // Partial-round application is real (heat/pressures may already have
+    // moved). Report the live ledger, not fabricated zeros (F-39229b3b).
+    const world = engine.store.state;
     return {
       ok: false,
-      heat: 0,
+      heat: num(world.globals[HEAT_KEY]),
       spawned: [],
       revealed: [],
       escalated: [],
       expired: [],
-      active: [],
+      active: getActivePressures(world),
       encounters: [],
       opportunitiesSpawned: [],
       opportunitiesExpired: [],

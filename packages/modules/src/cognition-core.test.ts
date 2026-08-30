@@ -9,6 +9,7 @@ import {
   getBeliefValue,
   believes,
   addMemory,
+  DEFAULT_MAX_MEMORIES,
   getMemories,
   getRecentMemories,
   checkPerception,
@@ -155,6 +156,21 @@ describe('Memory system', () => {
     // Distinct within an instance, and stamped from the per-instance counter.
     expect(new Set(idsA).size).toBe(idsA.length);
     expect(idsA[0].startsWith('mem_')).toBe(true);
+  });
+
+  it('F-646067f5: addMemory past the cap keeps the most recent N, oldest dropped', () => {
+    const engine = createTestEngine({
+      modules: [createCognitionCore()],
+      entities: [makePlayer('a'), makeAIEntity('guard', 'Guard', 'a')],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+    const cog = getCognition(engine.world, 'guard');
+    for (let i = 0; i < DEFAULT_MAX_MEMORIES + 50; i++) {
+      addMemory(engine.world, cog, `mem-${i}`, i, { i });
+    }
+    expect(cog.memories).toHaveLength(DEFAULT_MAX_MEMORIES);
+    expect(cog.memories[0].type).toBe('mem-50');
+    expect(cog.memories[cog.memories.length - 1].type).toBe(`mem-${DEFAULT_MAX_MEMORIES + 49}`);
   });
 });
 

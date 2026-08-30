@@ -51,6 +51,14 @@ export type CognitionState = {
   suspicion: number;   // 0-100, affects alert behavior
 };
 
+/**
+ * Ring-buffer cap for persisted Memory[] (rides WorldStore.serialize).
+ * Same shift-when-over-cap pattern as perception-filter (F-c68e150a) and
+ * rumor-propagation rumorLog (F-646067f5). processBeliefDecay prunes
+ * beliefs only; memories need their own cap.
+ */
+export const DEFAULT_MAX_MEMORIES = 200;
+
 // --- Perception ---
 
 export type PerceptionCheck = {
@@ -492,6 +500,12 @@ export function addMemory(
     zoneId,
     data,
   });
+  // Ring-buffer cap (F-646067f5): one push per call, so a single shift
+  // keeps the invariant; the while also self-heals memories persisted
+  // over-cap by an older save.
+  while (cognition.memories.length > DEFAULT_MAX_MEMORIES) {
+    cognition.memories.shift();
+  }
 }
 
 export function getMemories(

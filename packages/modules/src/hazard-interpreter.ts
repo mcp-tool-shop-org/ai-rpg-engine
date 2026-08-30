@@ -250,6 +250,15 @@ export function applyTypedHazards(
   const events: ResolvedEvent[] = [];
   const applications: HazardApplication[] = [];
 
+  // Corpses do not take per-turn/timed/on-enter hits. writeHp on hp already 0
+  // still emitted combat.damage.applied every round, and applyStatus refresh
+  // restarted the periodic clock (F-09c95e49) so a body in steam never
+  // reached elapsed>=duration (F-fb21bb60). processPeriodicStatuses already
+  // skips pulses on hp<=0 and still expires by elapsed.
+  if ((entity.resources.hp ?? 0) <= 0) {
+    return { events, applications };
+  }
+
   // ⚠ THE FIAT HALT. Past the cap we stop, and we stop LOUDLY — a silent halt
   // would make a runaway cycle look like a hazard that simply did not fire.
   if (depth >= HAZARD_DEPTH_LIMIT) {
@@ -563,6 +572,7 @@ export function runTypedHazardStep(engine: Engine): HazardApplication[] {
   const out: HazardApplication[] = [];
   for (const entity of Object.values(world.entities)) {
     if (!entity.zoneId) continue;
+    if ((entity.resources.hp ?? 0) <= 0) continue;
     const { applications } = applyTypedHazards(engine, entity.zoneId, entity, 'per-turn');
     out.push(...applications);
   }
@@ -580,6 +590,7 @@ export function runTypedHazardStep(engine: Engine): HazardApplication[] {
   } else if (currentTick > state.lastTimedTick) {
     for (const entity of Object.values(world.entities)) {
       if (!entity.zoneId) continue;
+      if ((entity.resources.hp ?? 0) <= 0) continue;
       const { applications } = applyTypedHazards(engine, entity.zoneId, entity, 'timed');
       out.push(...applications);
     }
@@ -656,6 +667,7 @@ export function runTypedHazardEntryStep(engine: Engine): HazardApplication[] {
   for (const { zoneId, entityId, previousZoneId } of entries) {
     const entity = engine.store.getEntity(entityId);
     if (!entity) continue;
+    if ((entity.resources.hp ?? 0) <= 0) continue;
     // Leave first: on-exit of the zone being departed, then on-enter of the
     // destination. Same-zone re-entry is a no-op for on-exit.
     if (previousZoneId && previousZoneId !== zoneId) {

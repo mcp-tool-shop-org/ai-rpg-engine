@@ -76,6 +76,14 @@ export const PERIODIC_KEYS = {
    * both fire elapsed=0.
    */
   LAST_FIRED: 'lastFiredTick',
+  /**
+   * HazardEffectSpec.damage.tickOn, persisted on durationTicks instances.
+   * 'turn-start' (or absent) keeps the apply-tick pulse F-7793de81 locked.
+   * 'turn-end' skips elapsed===0 and takes the last pulse at expiry so a
+   * durationTicks:1 on-enter deals on the wait, not the enter round
+   * (F-bc6233d3). Not a second clock — same elapsed % period schedule.
+   */
+  TICK_ON: 'tickOn',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -247,28 +255,23 @@ export function processPeriodicStatuses(world: WorldState, tick: number): Resolv
       // unregistered statusId falls back to the raw id, never throws.
       const statusName = getStatusDefinition(inst.statusId)?.name ?? inst.statusId;
 
-      // Expiry (>= duration). Periodic instances own their own expiry here so the
-      // periodic schedule and the removal are decided by one integer comparison.
-      // Because this removal happens BEFORE status-core's expiry sweep, the
-      // standard status.expired never fires for periodic instances — so THIS
-      // event carries the player-grade description/presentation the UI renders
-      // (MOD-C-BH-01; emitting status.expired as well would double the UI line).
-      if (duration !== undefined && elapsed >= duration) {
-        events.push(makePeriodicEvent('status.periodic.expired', entity.id, inst.statusId, tick, {
-          appliedAtTick: inst.appliedAtTick,
-          durationTicks: duration,
-          statusName,
-          entityName: entity.name,
-          description: `${statusName} fades from ${entity.name}`,
-        }, { channels: ['objective'], priority: 'low' }));
-        continue; // drop (do not push to survivors)
-      }
-
-      // Fire on-period, but never on a defeated entity (no ticking a corpse).
-      const onPeriod = elapsed >= 0 && period > 0 && elapsed % period === 0;
+      // Expiry (>= duration) is decided after the pulse check so turn-end
+      // durationTicks can deal its last tick at elapsed===duration (F-bc6233d3)
+      // without inventing a second clock. Turn-start / absent tickOn still
+      // expire WITHOUT a pulse at elapsed>=duration — that is the F-7793de81
+      // durationTicks:N == N pulses contract (pulses at 0..N-1).
+      const expiring = duration !== undefined && elapsed >= duration;
+      const skipApplyTick = strData(inst.data, PERIODIC_KEYS.TICK_ON) === 'turn-end';
+      const onPeriod = elapsed >= 0 && period > 0 && elapsed % period === 0
+        && !(skipApplyTick && elapsed === 0);
       const alive = (entity.resources.hp ?? 0) > 0;
       const lastFired = numData(inst.data, PERIODIC_KEYS.LAST_FIRED);
-      if (onPeriod && alive && lastFired !== tick) {
+      const turnEndTail = skipApplyTick && expiring && period > 0 && elapsed % period === 0;
+      const shouldPulse = alive && lastFired !== tick && (
+        (!expiring && onPeriod) || turnEndTail
+      );
+
+      if (shouldPulse) {
         if (inst.data) inst.data = { ...inst.data, [PERIODIC_KEYS.LAST_FIRED]: tick };
         const magnitude =
           numData(inst.data, PERIODIC_KEYS.SNAPSHOT) ??
@@ -361,6 +364,17 @@ export function processPeriodicStatuses(world: WorldState, tick: number): Resolv
             cause: 'status-periodic',
           }));
         }
+      }
+
+      if (expiring) {
+        events.push(makePeriodicEvent('status.periodic.expired', entity.id, inst.statusId, tick, {
+          appliedAtTick: inst.appliedAtTick,
+          durationTicks: duration ?? elapsed,
+          statusName,
+          entityName: entity.name,
+          description: `${statusName} fades from ${entity.name}`,
+        }, { channels: ['objective'], priority: 'low' }));
+        continue; // drop (do not push to survivors)
       }
 
       survivors.push(inst);
@@ -604,6 +618,14 @@ function applyReaction(
       previousHp: before,
       currentHp: target.resources.hp,
     }, [r.targetId], r.sourceId));
+    events.push(makeTriggerEvent('resource.changed', 'status', tick, {
+      entityId: r.targetId,
+      resource: 'hp',
+      previous: before,
+      current: target.resources.hp,
+      delta: target.resources.hp - before,
+      cause: 'status-trigger',
+    }, [r.targetId], r.sourceId));
     if (target.resources.hp <= 0 && before > 0) {
       events.push(makeTriggerEvent('combat.entity.defeated', 'status', tick, {
         entityId: target.id,
@@ -625,6 +647,14 @@ function applyReaction(
       statusId: r.statusId,
       sourceId: r.sourceId,
     }, [r.targetId]));
+    events.push(makeTriggerEvent('resource.changed', 'status', tick, {
+      entityId: r.targetId,
+      resource: 'hp',
+      previous: before,
+      current: target.resources.hp,
+      delta: target.resources.hp - before,
+      cause: 'status-trigger',
+    }, [r.targetId], r.sourceId));
   }
 
   return { events };

@@ -340,4 +340,56 @@ describe('companion-on-companion interception (F-e2d3aa7c)', () => {
     }
     expect(hitCount).toBeGreaterThan(0);
   });
+
+  it('F-165d681b: intercept emits combat.damage.applied with targetId of the interceptor, and a thorns status on the interceptor fires', () => {
+    registerStatusDefinitions([
+      {
+        id: 'thorns',
+        name: 'Thorns',
+        tags: ['buff'],
+        stacking: 'replace',
+        triggers: [
+          {
+            event: 'combat.damage.applied',
+            effect: { type: 'damage', target: 'target', params: { amount: 3, triggerTarget: 'attacker' } },
+          },
+        ],
+      },
+    ]);
+
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore({ isAlly, interceptChance: () => 100 })],
+      entities: [
+        makeEntity('player', 'z', { type: 'player', tags: ['player'] }),
+        makeCompanion('guardian', 'z', { resources: { hp: 20, maxHp: 20, stamina: 5 } }),
+        makeEntity('foe', 'z', {
+          type: 'enemy',
+          tags: ['enemy'],
+          stats: { vigor: 8, instinct: 50, will: 3 },
+          resources: { hp: 50, maxHp: 50, stamina: 5 },
+        }),
+      ],
+      zones: [{ id: 'z', roomId: 'r', name: 'Z', tags: [], neighbors: [] }],
+      playerId: 'player',
+      seed: 0,
+    });
+    applyStatus(engine.world.entities.guardian, 'thorns', engine.tick, { duration: 10 }, engine.world as never);
+
+    const foeHpBefore = engine.world.entities.foe.resources.hp ?? 0;
+    const events = engine.submitActionAs('foe', 'attack', { targetIds: ['player'] });
+    const intercepted = events.find((e) => e.type === 'combat.companion.intercepted');
+    expect(intercepted, 'expected a companion intercept').toBeDefined();
+
+    const applied = events.find((e) => e.type === 'combat.damage.applied' && e.payload.targetId === 'guardian');
+    expect(applied, 'intercept must emit combat.damage.applied').toBeDefined();
+    expect(applied!.payload.attackerId).toBe('foe');
+    expect(engine.world.entities.guardian.resources.hp).toBeLessThan(20);
+    expect(engine.world.entities.player.resources.hp).toBe(50);
+
+    const thorns = engine.world.eventLog.find(
+      (e) => e.type === 'status.trigger.fired' && e.payload.statusId === 'thorns',
+    );
+    expect(thorns, 'thorns on the interceptor must pulse from combat.damage.applied').toBeDefined();
+    expect(engine.world.entities.foe.resources.hp).toBe(foeHpBefore - 3);
+  });
 });

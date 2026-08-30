@@ -560,15 +560,17 @@ export function setPartyState(world: WorldState, party: PartyState): void {
 // `stacking: 'replace'` (not 'refresh'): a refresh leaves `data` untouched,
 // so the magnitude must be recomputed fresh, not just the expiry extended.
 //
-// The other six AbilityModifiers fields (leverageCostDiscount,
-// commerceGainBonus, rumorSpreadScale, rumorSuppressionChance,
-// perceptionBonus, reputationBonus) have NO equivalent generic consumption
-// layer to piggyback on today — player-leverage.ts's resolveSocialAction
-// takes a hardcoded SOCIAL_REQUIREMENTS cost table with no external-modifier
-// parameter, and district-mood.ts's own DistrictModifiers sit in the
-// identical unwired gap. Deferred to a follow-up wave explicitly scoped to
-// thread BOTH modifier bundles into their resolution functions together —
-// named here so it isn't silently dropped.
+// perceptionBonus is consumed by perception-filter.ts (clarity, player
+// only — F-a8c93f50). The other five AbilityModifiers fields
+// (leverageCostDiscount, commerceGainBonus, rumorSpreadScale,
+// rumorSuppressionChance, reputationBonus) have NO equivalent generic
+// consumption layer to piggyback on today — player-leverage.ts's
+// resolveSocialAction takes a hardcoded SOCIAL_REQUIREMENTS cost table
+// with no external-modifier parameter, and district-mood.ts's own
+// DistrictModifiers sit in the identical unwired gap. Deferred to a
+// follow-up wave explicitly scoped to thread BOTH modifier bundles into
+// their resolution functions together — named here so it isn't silently
+// dropped.
 // ---------------------------------------------------------------------------
 
 /** Status id carrying the party's passive HP-recovery bonus. */

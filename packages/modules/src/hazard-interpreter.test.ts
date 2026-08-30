@@ -476,7 +476,7 @@ describe('periodic/trigger actorId stamps combat.entity.defeated quests (F-1f8eb
         id: 'scalding-steam',
         name: 'Scalding Steam',
         trigger: 'on-enter',
-        effects: [{ kind: 'damage', amount: 5, tickOn: 'turn-end', durationTicks: 3 }],
+        effects: [{ kind: 'damage', amount: 5, tickOn: 'turn-start', durationTicks: 3 }],
       })],
       { 'zone-a': ['scalding-steam'] },
     );
@@ -510,7 +510,7 @@ describe('periodic/trigger actorId stamps combat.entity.defeated quests (F-1f8eb
         id: 'scalding-steam',
         name: 'Scalding Steam',
         trigger: 'on-enter',
-        effects: [{ kind: 'damage', amount: 20, tickOn: 'turn-end', durationTicks: 3 }],
+        effects: [{ kind: 'damage', amount: 20, tickOn: 'turn-start', durationTicks: 3 }],
       })],
       { 'zone-a': ['scalding-steam'] },
     );
@@ -609,7 +609,7 @@ describe('typed-hazard durationTicks emits combat.damage.applied (F-b000f36d)', 
         id: 'scalding-steam',
         name: 'Scalding Steam',
         trigger: 'on-enter',
-        effects: [{ kind: 'damage', amount: 3, tickOn: 'turn-end', durationTicks: 3 }],
+        effects: [{ kind: 'damage', amount: 3, tickOn: 'turn-start', durationTicks: 3 }],
       })],
       { 'zone-a': ['scalding-steam'] },
     );
@@ -647,7 +647,7 @@ describe('typed-hazard durationTicks emits combat.damage.applied (F-b000f36d)', 
         id: 'acid',
         name: 'Acid',
         trigger: 'per-turn',
-        effects: [{ kind: 'damage', amount: 3, tickOn: 'turn-end', durationTicks: 3 }],
+        effects: [{ kind: 'damage', amount: 3, tickOn: 'turn-start', durationTicks: 3 }],
       })],
       { 'zone-a': ['acid'] },
     );
@@ -681,7 +681,7 @@ describe('typed-hazard durationTicks apply-tick pulse and refresh clock (F-7793d
         id: 'scalding-steam',
         name: 'Scalding Steam',
         trigger: 'per-turn',
-        effects: [{ kind: 'damage', amount: 3, tickOn: 'turn-end', durationTicks: 3 }],
+        effects: [{ kind: 'damage', amount: 3, tickOn: 'turn-start', durationTicks: 3 }],
       })],
       { 'zone-a': ['scalding-steam'] },
     );
@@ -711,7 +711,7 @@ describe('typed-hazard durationTicks apply-tick pulse and refresh clock (F-7793d
         id: 'scalding-steam',
         name: 'Scalding Steam',
         trigger: 'on-enter',
-        effects: [{ kind: 'damage', amount: 5, tickOn: 'turn-end', durationTicks: 1 }],
+        effects: [{ kind: 'damage', amount: 5, tickOn: 'turn-start', durationTicks: 1 }],
       })],
       { 'zone-b': ['scalding-steam'] },
     );
@@ -741,7 +741,7 @@ describe('typed-hazard durationTicks apply-tick pulse and refresh clock (F-7793d
         id: 'scalding-steam',
         name: 'Scalding Steam',
         trigger: 'on-enter',
-        effects: [{ kind: 'damage', amount: 3, tickOn: 'turn-end', durationTicks: 3 }],
+        effects: [{ kind: 'damage', amount: 3, tickOn: 'turn-start', durationTicks: 3 }],
       })],
       { 'zone-b': ['scalding-steam'] },
     );
@@ -792,5 +792,109 @@ describe('typed-hazard durationTicks apply-tick pulse and refresh clock (F-7793d
     const dmg = engine.world.eventLog.find(hazardDamagePulses());
     expect(dmg, 'instant hazard damage must hit on the enter round').toBeDefined();
     expect(dmg!.payload.damage).toBe(5);
+  });
+
+  it("F-bc6233d3: durationTicks:1 tickOn turn-end on-enter then one wait deals on the wait, not the enter round; turn-start still deals on enter", () => {
+    function enterThenWait(tickOn: 'turn-start' | 'turn-end') {
+      const engine = createTestEngine({
+        modules: [traversalCore, statusCore, waitModule, createEnvironmentCore()],
+        entities: [makePlayer()],
+        zones,
+        startZone: 'zone-a',
+      });
+      registerTypedHazards(
+        engine.world.meta.gameId,
+        [spec({
+          id: 'scalding-steam',
+          name: 'Scalding Steam',
+          trigger: 'on-enter',
+          effects: [{ kind: 'damage', amount: 5, tickOn, durationTicks: 1 }],
+        })],
+        { 'zone-b': ['scalding-steam'] },
+      );
+      getWorldTickState(engine.store.state);
+      engine.submitAction('move', { targetIds: ['zone-b'] });
+      runWorldTick(engine);
+      const afterEnter = engine.world.eventLog.filter(hazardDamagePulses()).length;
+      const hpAfterEnter = engine.world.entities.player.resources.hp as number;
+      engine.submitAction('wait');
+      runWorldTick(engine);
+      return {
+        afterEnter,
+        hpAfterEnter,
+        afterWait: engine.world.eventLog.filter(hazardDamagePulses()).length,
+        hpAfterWait: engine.world.entities.player.resources.hp as number,
+      };
+    }
+
+    const turnEnd = enterThenWait('turn-end');
+    expect(turnEnd.afterEnter, 'turn-end must not deal on the enter round').toBe(0);
+    expect(turnEnd.hpAfterEnter).toBe(40);
+    expect(turnEnd.afterWait, 'turn-end must deal on the wait').toBe(1);
+    expect(turnEnd.hpAfterWait).toBe(35);
+
+    const turnStart = enterThenWait('turn-start');
+    expect(turnStart.afterEnter, 'turn-start still deals on enter').toBe(1);
+    expect(turnStart.hpAfterEnter).toBe(35);
+  });
+});
+
+describe('typed-hazard skips corpses (F-fb21bb60)', () => {
+  it('kill an NPC in a per-turn swamp, two more ticks produce no further combat.damage.applied and do not refresh-restart a durationTicks instance', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, waitModule, createEnvironmentCore()],
+      entities: [
+        makePlayer(),
+        {
+          id: 'mira',
+          blueprintId: 'mira',
+          type: 'npc',
+          name: 'Mira',
+          tags: ['npc'],
+          stats: {},
+          resources: { hp: 4, maxHp: 10 },
+          statuses: [],
+          zoneId: 'zone-a',
+        },
+      ],
+      zones,
+    });
+    registerTypedHazards(
+      engine.world.meta.gameId,
+      [spec({
+        id: 'swamp',
+        name: 'Swamp',
+        trigger: 'per-turn',
+        effects: [{ kind: 'damage', amount: 3, tickOn: 'turn-start', durationTicks: 8 }],
+      })],
+      { 'zone-a': ['swamp'] },
+    );
+
+    getWorldTickState(engine.store.state);
+    engine.submitAction('wait');
+    runWorldTick(engine);
+    expect(engine.world.entities.mira.resources.hp).toBe(1);
+
+    engine.submitAction('wait');
+    runWorldTick(engine);
+    expect(engine.world.entities.mira.resources.hp).toBe(0);
+    const inst = engine.world.entities.mira.statuses.find((s) => s.statusId === 'hazard:swamp');
+    expect(inst, 'durationTicks instance should still be on the corpse').toBeDefined();
+    const appliedAtDeath = inst!.appliedAtTick;
+    const dmgAtDeath = engine.world.eventLog.filter(
+      (e) => e.type === 'combat.damage.applied' && e.payload.targetId === 'mira',
+    ).length;
+
+    engine.submitAction('wait');
+    runWorldTick(engine);
+    engine.submitAction('wait');
+    runWorldTick(engine);
+
+    const dmgAfter = engine.world.eventLog.filter(
+      (e) => e.type === 'combat.damage.applied' && e.payload.targetId === 'mira',
+    ).length;
+    expect(dmgAfter, 'corpse must not take further combat.damage.applied').toBe(dmgAtDeath);
+    const still = engine.world.entities.mira.statuses.find((s) => s.statusId === 'hazard:swamp');
+    expect(still?.appliedAtTick).toBe(appliedAtDeath);
   });
 });
