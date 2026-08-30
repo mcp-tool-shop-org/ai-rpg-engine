@@ -960,6 +960,41 @@ describe('portrait cache keys provider model/checkpoint (F-b36de2d4)', () => {
   });
 });
 
+// F-541dc81c: generatePortrait tagged every SVG as placeholder, so a real
+// vector-art provider never converged — ensurePortrait re-queued forever.
+describe('vector SVG providers are not tagged as placeholders (F-541dc81c)', () => {
+  it('ensurePortrait of a vector-art SVG provider reuses the same hash and does not write placeholder', async () => {
+    const store = new MemoryAssetStore();
+    let calls = 0;
+    const vectorArt: ImageProvider = {
+      name: 'vector-art',
+      async isAvailable() { return true; },
+      async generate(prompt: string, opts?: GenerationOptions): Promise<GenerationOutcome> {
+        calls += 1;
+        return {
+          ok: true,
+          image: new TextEncoder().encode(`<svg xmlns="http://www.w3.org/2000/svg">${prompt}</svg>`),
+          mimeType: 'image/svg+xml',
+          width: opts?.width ?? 512,
+          height: opts?.height ?? 512,
+          prompt,
+          durationMs: 1,
+        };
+      },
+    };
+
+    const first = await ensurePortrait(testRequest, vectorArt, store);
+    expect(first.tags).toContain('provider:vector-art');
+    expect(first.tags).not.toContain('placeholder');
+    expect(first.mimeType).toBe('image/svg+xml');
+
+    const second = await ensurePortrait(testRequest, vectorArt, store);
+    expect(second.hash).toBe(first.hash);
+    expect(calls).toBe(1);
+    expect(await store.count()).toBe(1);
+  });
+});
+
 // F-88cc4bdd: ensurePortrait treated a sidecar without bytes as a finished
 // real portrait and never re-queued. Require a verified blob before reuse.
 describe('ensurePortrait regenerates when the stored blob is missing (F-88cc4bdd)', () => {

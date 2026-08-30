@@ -13,6 +13,18 @@
 
 Headless portrait generation pipeline with provider abstraction for [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine).
 
+Placeholder output for the Aldric / Grave Warden request below (initials card — not a final portrait):
+
+<p align="center">
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160" role="img" aria-label="Portrait placeholder: Aldric">
+  <title>Portrait placeholder: Aldric</title>
+  <rect width="160" height="160" fill="hsl(27, 45%, 35%)"/>
+  <text x="80" y="70" font-size="56" fill="#ffffff" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-weight="bold">A</text>
+  <text x="80" y="118" font-size="14" fill="#ffffff" text-anchor="middle" font-family="sans-serif">Grave Warden</text>
+  <text x="150" y="150" font-size="9" fill="#ffffff" text-anchor="end" font-family="sans-serif">placeholder</text>
+</svg>
+</p>
+
 ## Install
 
 ```bash
@@ -123,7 +135,7 @@ class MyProvider implements ImageProvider {
 
 ## Genre Style Presets
 
-Built-in style presets for 9 genres:
+Built-in style presets for 11 genres:
 
 | Genre | Style |
 |-------|-------|
@@ -136,6 +148,8 @@ Built-in style presets for 9 genres:
 | sci-fi | Concept art, futuristic setting, cinematic |
 | post-apocalyptic | Ruined urban, survival gear, gritty textures |
 | historical | Period-accurate, classical composition |
+| pursuit | Dusty warrants, frontier coats, lantern light (Hue and Cry) |
+| mercantile | Ledgers, caravanserai, trade-road cloth (Salt Road Ledger) |
 
 ## Integration
 

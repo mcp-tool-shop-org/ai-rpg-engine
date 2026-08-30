@@ -239,8 +239,9 @@ export async function generatePortrait(
   // registry-level tell, a degraded placeholder was indistinguishable from a
   // real render, and ensurePortrait would treat it as final forever. The
   // 'placeholder' tag is what lets a later real render replace it.
-  const isPlaceholderResult = provider.name === 'placeholder'
-    || result.mimeType === 'image/svg+xml';
+  // Written only for the engine PlaceholderProvider (F-541dc81c) — a real
+  // SVG illustrator must not be tagged degraded just because its mime is svg.
+  const isPlaceholderResult = provider.name === 'placeholder';
 
   // Engine-owned tags (`char:`, `provider:`, `placeholder`) are written here
   // only. Caller tags and extraTags that use those prefixes are stripped so
@@ -272,12 +273,16 @@ export async function generatePortrait(
 /**
  * True when a stored asset is a degraded placeholder, not a real render.
  * Primary signal: the 'placeholder' tag written by {@link generatePortrait}.
- * Fallback signal for assets stored before tagging existed: the
- * PlaceholderProvider is the pipeline's only SVG producer, so
- * `image/svg+xml` identifies legacy placeholders too.
+ * Fallback for assets stored before tagging existed: SVG with no
+ * non-placeholder `provider:` tag (F-541dc81c — a tagged vector-art SVG
+ * is a real render and must not re-queue).
  */
 function isPlaceholderAsset(m: AssetMetadata): boolean {
-  return (m.tags?.includes('placeholder') ?? false) || m.mimeType === 'image/svg+xml';
+  if (m.tags?.includes('placeholder')) return true;
+  if (m.mimeType !== 'image/svg+xml') return false;
+  const providerTag = (m.tags ?? []).find((t) => t.startsWith('provider:'));
+  if (providerTag && providerTag !== 'provider:placeholder') return false;
+  return true;
 }
 
 /**

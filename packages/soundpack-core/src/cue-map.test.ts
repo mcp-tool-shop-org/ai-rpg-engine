@@ -19,14 +19,14 @@ import { CORE_SOUND_PACK } from './core-pack.js';
 // Enumerated from the actual emit sites (2026-07, dogfood/v2.6):
 //   - combat-core.ts:   soundCues ['combat.hit'], ['combat.defeat']
 //   - status-effects.ts: soundCues ['combat.defeat']
-//   - traversal-core.ts: soundCues ['scene.enter']
+//   - traversal-core.ts: soundCues ['scene.enter'], ['gate.refused']
 //   - ability-core.ts:  soundCues [ability.ui.soundCue] → every starter
 //                       defines `ability.<slug>` ids (39 across ten starters)
 //   - starter setup.ts audio.cue.requested cueIds: 'combat.victory' plus one
-//     scene.<moment> stinger per starter
+//     scene.<moment> stinger per starter (including conviction / seizure)
 // If a module starts emitting a NEW cue family, add it here — the totality
 // test below is the contract that no emitted cue rides the fallback tier.
-const MODULE_EVENT_CUES = ['combat.hit', 'combat.defeat', 'scene.enter'];
+const MODULE_EVENT_CUES = ['combat.hit', 'combat.defeat', 'scene.enter', 'gate.refused'];
 
 const STARTER_STINGER_CUES = [
   'combat.victory',
@@ -40,6 +40,8 @@ const STARTER_STINGER_CUES = [
   'scene.cellar-descent', // vampire
   'scene.arena-roar', // gladiator
   'scene.hidden-passage-reveal', // ronin
+  'scene.conviction', // bounty-hunter
+  'scene.seizure', // merchant
 ];
 
 // Representative sample of the ability.* family (one per starter).
@@ -113,11 +115,25 @@ describe('cue-map: targets exist in CORE_SOUND_PACK', () => {
 
 describe('cue-map: mapping table is stable', () => {
   it('pins the exact tier (documented mapping table)', () => {
+    const reveal = { effectId: 'ui_whoosh', timing: 'immediate', intensity: 0.7 };
     expect(EXACT_CUE_MAP).toEqual({
       'combat.hit': { effectId: 'alert_warning', timing: 'with-text', intensity: 0.6 },
       'combat.defeat': { effectId: 'alert_critical', timing: 'with-text', intensity: 0.9 },
       'combat.victory': { effectId: 'ui_success', timing: 'after-text', intensity: 0.8 },
+      'gate.refused': { effectId: 'ui_error', timing: 'with-text', intensity: 0.6 },
       'scene.enter': { effectId: 'ui_whoosh', timing: 'immediate', intensity: 0.3 },
+      'scene.crypt-reveal': reveal,
+      'scene.vault-reveal': reveal,
+      'scene.crime-scene-reveal': reveal,
+      'scene.sunken-shrine-reveal': reveal,
+      'scene.hospital-reveal': reveal,
+      'scene.spirit-hollow-reveal': reveal,
+      'scene.alien-cavern-reveal': reveal,
+      'scene.hidden-passage-reveal': reveal,
+      'scene.cellar-descent': reveal,
+      'scene.arena-roar': { effectId: 'alert_info', timing: 'immediate', intensity: 0.9 },
+      'scene.conviction': { effectId: 'ui_success', timing: 'with-text', intensity: 0.8 },
+      'scene.seizure': { effectId: 'alert_warning', timing: 'with-text', intensity: 0.7 },
     });
     expect([...KNOWN_EVENT_SOUND_CUES].sort()).toEqual(Object.keys(EXACT_CUE_MAP).sort());
   });
@@ -127,7 +143,26 @@ describe('cue-map: mapping table is stable', () => {
       ability: { effectId: 'ui_pop', timing: 'with-text', intensity: 0.5 },
       scene: { effectId: 'ui_attention', timing: 'immediate', intensity: 0.7 },
       combat: { effectId: 'alert_warning', timing: 'with-text', intensity: 0.5 },
+      gate: { effectId: 'ui_error', timing: 'with-text', intensity: 0.5 },
     });
+  });
+
+  it('gate.refused is exact ui_error, not the notification fallback (F-612f46dd)', () => {
+    const resolved = resolveSoundCue('gate.refused');
+    expect(resolved.via).toBe('exact');
+    expect(resolved.effectId).toBe('ui_error');
+    expect(resolved.effectId).not.toBe(FALLBACK_CUE.effectId);
+  });
+
+  it('authored scene stingers resolve to distinct effectIds (F-bbfd268f)', () => {
+    expect(resolveSoundCue('scene.arena-roar').effectId)
+      .not.toBe(resolveSoundCue('scene.conviction').effectId);
+    expect(resolveSoundCue('scene.arena-roar').via).toBe('exact');
+    expect(resolveSoundCue('scene.conviction').via).toBe('exact');
+    expect(resolveSoundCue('scene.seizure').via).toBe('exact');
+    expect(resolveSoundCue('scene.conviction').effectId).toBe('ui_success');
+    expect(resolveSoundCue('scene.seizure').effectId).toBe('alert_warning');
+    expect(resolveSoundCue('scene.arena-roar').effectId).toBe('alert_info');
   });
 
   it('same cue resolves identically across calls (deterministic, no state)', () => {

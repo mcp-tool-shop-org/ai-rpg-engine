@@ -4,9 +4,9 @@
 //
 //   1. Module event cues — what gameplay modules attach to events:
 //      `event.presentation.soundCues` (`combat.hit` / `combat.defeat` from
-//      combat-core and status-effects, `scene.enter` from traversal-core,
-//      `ability.<id>` forwarded from `ability.ui.soundCue` by ability-core)
-//      plus the starters' `audio.cue.requested` stingers
+//      combat-core and status-effects, `scene.enter` / `gate.refused` from
+//      traversal-core, `ability.<id>` forwarded from `ability.ui.soundCue`
+//      by ability-core) plus the starters' `audio.cue.requested` stingers
 //      (`combat.victory`, `scene.crypt-reveal`, `scene.arena-roar`, …).
 //   2. Soundpack entry ids — what CORE_SOUND_PACK actually defines
 //      (`ui_success`, `alert_critical`, `ambient_drone`, …). These are the
@@ -30,20 +30,29 @@
 //
 // Mapping table (canonical, keep in sync with the constants below):
 //
-//   | gameplay cue    | soundpack id     | timing     | intensity | tier      |
-//   |-----------------|------------------|------------|-----------|-----------|
-//   | combat.hit      | alert_warning    | with-text  | 0.6       | exact     |
-//   | combat.defeat   | alert_critical   | with-text  | 0.9       | exact     |
-//   | combat.victory  | ui_success       | after-text | 0.8       | exact     |
-//   | scene.enter     | ui_whoosh        | immediate  | 0.3       | exact     |
-//   | ability.*       | ui_pop           | with-text  | 0.5       | namespace |
-//   | scene.*         | ui_attention     | immediate  | 0.7       | namespace |
-//   | combat.*        | alert_warning    | with-text  | 0.5       | namespace |
-//   | (anything else) | ui_notification  | with-text  | 0.4       | fallback  |
+//   | gameplay cue         | soundpack id     | timing     | intensity | tier      |
+//   |----------------------|------------------|------------|-----------|-----------|
+//   | combat.hit           | alert_warning    | with-text  | 0.6       | exact     |
+//   | combat.defeat        | alert_critical   | with-text  | 0.9       | exact     |
+//   | combat.victory       | ui_success       | after-text | 0.8       | exact     |
+//   | gate.refused         | ui_error         | with-text  | 0.6       | exact     |
+//   | scene.enter          | ui_whoosh        | immediate  | 0.3       | exact     |
+//   | scene.*-reveal       | ui_whoosh        | immediate  | 0.7       | exact     |
+//   | scene.arena-roar     | alert_info       | immediate  | 0.9       | exact     |
+//   | scene.conviction     | ui_success       | with-text  | 0.8       | exact     |
+//   | scene.seizure        | alert_warning    | with-text  | 0.7       | exact     |
+//   | ability.*            | ui_pop           | with-text  | 0.5       | namespace |
+//   | scene.*              | ui_attention     | immediate  | 0.7       | namespace |
+//   | combat.*             | alert_warning    | with-text  | 0.5       | namespace |
+//   | gate.*               | ui_error         | with-text  | 0.5       | namespace |
+//   | (anything else)      | ui_notification  | with-text  | 0.4       | fallback  |
 //
 // HONEST CEILING: the core pack is a small procedural-chime vocabulary, so
 // this is a SEMANTIC APPROXIMATION — every ability maps to the same generic
-// accent, every scene stinger to the same attention chime. A shipping game
+// accent, and unlisted scene.* cues still share the attention chime. Authored
+// climactic stingers (reveals / arena-roar / conviction / seizure) and
+// gate.refused have distinct exact ids so a host mapping effectId→icon does
+// not draw the same glyph for a refused door and a toast. A shipping game
 // loads a richer pack and overrides entries via `extendCueMap` (per-cue
 // overrides) rather than editing this table.
 
@@ -83,23 +92,40 @@ function freezeNullProto<T extends Record<string, CueTarget>>(entries: T): T {
   return Object.freeze(Object.assign(Object.create(null), entries)) as T;
 }
 
+const REVEAL_STINGER: CueTarget = Object.freeze({ effectId: 'ui_whoosh', timing: 'immediate', intensity: 0.7 });
+
 /** Exact-match tier: the cues modules and starters emit by literal id. */
 export const EXACT_CUE_MAP: Readonly<Record<string, CueTarget>> = freezeNullProto({
   'combat.hit': { effectId: 'alert_warning', timing: 'with-text', intensity: 0.6 },
   'combat.defeat': { effectId: 'alert_critical', timing: 'with-text', intensity: 0.9 },
   'combat.victory': { effectId: 'ui_success', timing: 'after-text', intensity: 0.8 },
+  'gate.refused': { effectId: 'ui_error', timing: 'with-text', intensity: 0.6 },
   'scene.enter': { effectId: 'ui_whoosh', timing: 'immediate', intensity: 0.3 },
+  'scene.crypt-reveal': REVEAL_STINGER,
+  'scene.vault-reveal': REVEAL_STINGER,
+  'scene.crime-scene-reveal': REVEAL_STINGER,
+  'scene.sunken-shrine-reveal': REVEAL_STINGER,
+  'scene.hospital-reveal': REVEAL_STINGER,
+  'scene.spirit-hollow-reveal': REVEAL_STINGER,
+  'scene.alien-cavern-reveal': REVEAL_STINGER,
+  'scene.hidden-passage-reveal': REVEAL_STINGER,
+  'scene.cellar-descent': REVEAL_STINGER,
+  'scene.arena-roar': { effectId: 'alert_info', timing: 'immediate', intensity: 0.9 },
+  'scene.conviction': { effectId: 'ui_success', timing: 'with-text', intensity: 0.8 },
+  'scene.seizure': { effectId: 'alert_warning', timing: 'with-text', intensity: 0.7 },
 });
 
 /**
  * Namespace tier: matched on the segment before the first `.` when no exact
  * entry exists. Covers open-ended families — every `ability.<id>` cue a
- * content pack invents, every `scene.<moment>` stinger a starter emits.
+ * content pack invents, every unlisted `scene.<moment>` stinger a starter
+ * emits, and any future `gate.*` refusal besides `gate.refused`.
  */
 export const NAMESPACE_CUE_MAP: Readonly<Record<string, CueTarget>> = freezeNullProto({
   ability: { effectId: 'ui_pop', timing: 'with-text', intensity: 0.5 },
   scene: { effectId: 'ui_attention', timing: 'immediate', intensity: 0.7 },
   combat: { effectId: 'alert_warning', timing: 'with-text', intensity: 0.5 },
+  gate: { effectId: 'ui_error', timing: 'with-text', intensity: 0.5 },
 });
 
 /** Final tier: any cue from an unknown namespace degrades to a neutral chime. */
