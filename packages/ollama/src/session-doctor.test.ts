@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { sessionDoctor, formatDoctorReport } from './session-doctor.js';
 import { createSession, addThemes, addConstraints, addArtifact, addCritiqueIssues, acceptSuggestion, MAX_SESSION_HISTORY_EVENTS } from './session.js';
+import { formatHeading } from './chat-studio.js';
 import type { CritiqueIssue } from './parsers.js';
 
 describe('sessionDoctor', () => {
@@ -134,5 +135,69 @@ describe('formatDoctorReport', () => {
     expect(report).toContain('has issues');
     expect(report).toContain('DUPLICATE_THEMES');
     expect(report).toContain('EMPTY_SESSION');
+  });
+
+  it('groups Warnings then Notes and prints a counts line (F-f4a94524)', () => {
+    const report = formatDoctorReport({
+      healthy: false,
+      diagnostics: [
+        { code: 'DUPLICATE_THEMES', severity: 'warning', message: 'Duplicate themes: gothic' },
+        { code: 'EMPTY_SESSION', severity: 'info', message: 'Session is empty' },
+      ],
+    });
+    expect(report).toContain('1 warning, 1 note');
+    expect(report).toContain(formatHeading('Warnings'));
+    expect(report).toContain(formatHeading('Notes'));
+    expect(report).toContain('[warn] [DUPLICATE_THEMES]');
+    expect(report).toContain('[info] [EMPTY_SESSION]');
+    expect(report).not.toContain('⚠');
+    expect(report).not.toContain('ℹ');
+    expect(report.indexOf('Warnings')).toBeLessThan(report.indexOf('Notes'));
+    expect(report.indexOf('DUPLICATE_THEMES')).toBeLessThan(report.indexOf('EMPTY_SESSION'));
+  });
+
+  it('pins HISTORY_AT_CAP in Warnings above ORPHANED_SUGGESTIONS / MISSING_TARGETS (F-f4a94524)', () => {
+    const s = createSession('mixed');
+    addThemes(s, ['gothic']);
+    acceptSuggestion(s, 'ADD_TRAP');
+    s.history = Array.from({ length: MAX_SESSION_HISTORY_EVENTS }, (_, i) => ({
+      timestamp: '2026-01-01T00:00:00.000Z',
+      kind: 'theme_added' as const,
+      detail: `theme_${i}`,
+    }));
+    addCritiqueIssues(s, [{
+      code: 'BAD_REF',
+      severity: 'high',
+      location: 'nonexistent_room',
+      summary: 'References missing room',
+      simulation_impact: 'test',
+    }]);
+
+    const result = sessionDoctor(s);
+    expect(result.diagnostics.map(d => d.code)).toEqual([
+      'ORPHANED_SUGGESTIONS',
+      'HISTORY_AT_CAP',
+      'MISSING_TARGETS',
+    ]);
+
+    const report = formatDoctorReport(result);
+    expect(report).toContain('1 warning, 2 notes');
+    expect(report).toContain(formatHeading('Warnings'));
+    expect(report).toContain(formatHeading('Notes'));
+
+    const warnAt = report.indexOf(formatHeading('Warnings'));
+    const notesAt = report.indexOf(formatHeading('Notes'));
+    const histAt = report.indexOf('HISTORY_AT_CAP');
+    const orphanAt = report.indexOf('ORPHANED_SUGGESTIONS');
+    const missingAt = report.indexOf('MISSING_TARGETS');
+
+    expect(warnAt).toBeGreaterThanOrEqual(0);
+    expect(notesAt).toBeGreaterThan(warnAt);
+    expect(histAt).toBeGreaterThan(warnAt);
+    expect(histAt).toBeLessThan(notesAt);
+    expect(orphanAt).toBeGreaterThan(notesAt);
+    expect(missingAt).toBeGreaterThan(notesAt);
+    expect(histAt).toBeLessThan(orphanAt);
+    expect(histAt).toBeLessThan(missingAt);
   });
 });

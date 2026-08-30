@@ -6,7 +6,7 @@ import { createInterface } from 'node:readline';
 import type { OllamaTextClient } from './client.js';
 import { createChatEngine, type ChatEngine } from './chat-engine.js';
 import { createTranscript, addToTranscript, saveTranscript, defaultTranscriptPath } from './chat-transcript.js';
-import type { ChatTranscript } from './chat-types.js';
+import type { ChatMessage, ChatTranscript } from './chat-types.js';
 import { formatContextSnapshot, formatSources, formatLoadoutHistory } from './chat-context-browser.js';
 import { formatLoadoutRoute } from './chat-loadout.js';
 import {
@@ -43,7 +43,7 @@ import {
   gatherFindings, formatFindingBrowser,
   formatExperimentBrowser,
   formatOnboarding,
-  setDisplayMode, getDisplayMode,
+  setDisplayMode, getDisplayMode, formatHeading,
   type HistoryFilter, type IssueFilter, type FindingFilter, type DisplayMode,
 } from './chat-studio.js';
 
@@ -53,6 +53,8 @@ export type ChatShellOptions = {
   maxMemory?: number;
   saveTranscripts?: boolean;
   transcriptDir?: string;
+  /** Honor `ai chat --write <path>` — JSONL destination, sandboxed via saveTranscript. */
+  transcriptPath?: string;
   /** Enable loadout-guided context routing. */
   loadoutEnabled?: boolean;
   /** Input stream override (default process.stdin). Exposed for tests. */
@@ -60,6 +62,64 @@ export type ChatShellOptions = {
   /** Output stream override (default process.stdout). Exposed for tests. */
   output?: NodeJS.WritableStream;
 };
+
+/** Role-labeled turn frame so the visual transcript matches JSONL (F-8819f045). */
+export function formatChatTurn(message: ChatMessage): string {
+  const label = message.role === 'user' ? 'You'
+    : message.role === 'assistant' ? 'Assistant'
+    : 'System';
+  const ts = getDisplayMode() === 'verbose' && message.timestamp
+    ? ` [${message.timestamp}]`
+    : '';
+  return `${label}${ts}: ${message.content}`;
+}
+
+/** Pretty-print the in-memory transcript with the same labels as the REPL. */
+export function formatTranscriptPretty(transcript: ChatTranscript): string {
+  if (transcript.messages.length === 0) return '(empty transcript)';
+  const lines: string[] = [];
+  if (getDisplayMode() === 'verbose') {
+    lines.push(`Session: ${transcript.sessionName}`);
+    lines.push(`Started: ${transcript.startedAt}`);
+    lines.push('');
+  }
+  for (const msg of transcript.messages) {
+    lines.push(formatChatTurn(msg));
+    lines.push('');
+  }
+  return lines.join('\n').trimEnd();
+}
+
+const THINKING_TEXT = '(thinking...)';
+const CLEAR_LINE = '\r\x1b[K';
+
+/**
+ * Liveness affordance (F-4be7a3c2 / F-8819f045): a single TTY line overwritten
+ * with CR + clear-to-end so '(thinking...)' never stays in scrollback. Skipped
+ * when the stream is not a TTY (piped/captured stdout must match JSONL).
+ * Returns an erase callback — always safe to call once.
+ */
+export function beginThinking(stream: NodeJS.WritableStream): () => void {
+  const tty = Boolean((stream as NodeJS.WriteStream).isTTY);
+  if (!tty) return () => {};
+  stream.write(THINKING_TEXT);
+  let erased = false;
+  return () => {
+    if (erased) return;
+    erased = true;
+    stream.write(CLEAR_LINE);
+  };
+}
+
+function resolveTranscriptDest(
+  projectRoot: string,
+  sessionName: string | null,
+  transcriptPath?: string,
+): string {
+  return (transcriptPath && transcriptPath.length > 0)
+    ? transcriptPath
+    : defaultTranscriptPath(projectRoot, sessionName);
+}
 
 /**
  * Persist the transcript when the REPL exits (v2.6 Stage C F-77c30d19).
@@ -76,15 +136,19 @@ export type ChatShellOptions = {
  * Never throws (it runs at exit — the one moment a crash also loses the data
  * it exists to protect).
  *
+ * `transcriptPath` honors `ai chat --write <path>`; empty/omitted uses
+ * defaultTranscriptPath() (F-ef949bc5).
+ *
  * Exported for tests.
  */
 export async function persistTranscriptAtExit(
   transcript: ChatTranscript,
   projectRoot: string,
   saveTranscripts: boolean,
+  transcriptPath?: string,
 ): Promise<string | null> {
   if (!saveTranscripts || transcript.messages.length === 0) return null;
-  const path = defaultTranscriptPath(projectRoot, transcript.sessionName);
+  const path = resolveTranscriptDest(projectRoot, transcript.sessionName, transcriptPath);
   try {
     const saved = await saveTranscript(path, transcript, projectRoot);
     if (!saved.ok) {
@@ -102,13 +166,15 @@ export async function persistTranscriptAtExit(
 
 export async function runChatShell(options: ChatShellOptions): Promise<void> {
   const { client, projectRoot, maxMemory, saveTranscripts = false, loadoutEnabled = false } = options;
+  const transcriptPath = options.transcriptPath;
+  const out = options.output ?? process.stdout;
 
   const engine = createChatEngine({ client, projectRoot, maxMemory, loadoutEnabled });
   const transcript = createTranscript(null);
 
   const rl = createInterface({
     input: options.input ?? process.stdin,
-    output: options.output ?? process.stdout,
+    output: out,
     prompt: 'chat> ',
   });
 
@@ -134,7 +200,7 @@ export async function runChatShell(options: ChatShellOptions): Promise<void> {
     // unsaved transcript.
     if (trimmed.startsWith('/')) {
       try {
-        const handled = await handleSlashCommand(trimmed, engine, transcript, projectRoot, saveTranscripts);
+        const handled = await handleSlashCommand(trimmed, engine, transcript, projectRoot, saveTranscripts, transcriptPath);
         if (handled === 'quit') {
           // Transcript persistence happens in the 'close' handler — the single
           // exit-save path shared with Ctrl+D / Ctrl+C (F-77c30d19).
@@ -150,21 +216,26 @@ export async function runChatShell(options: ChatShellOptions): Promise<void> {
     }
 
     // Process through chat engine
+    const userMsg: ChatMessage = { role: 'user', content: trimmed, timestamp: new Date().toISOString() };
+    addToTranscript(transcript, userMsg);
+    console.log(formatChatTurn(userMsg));
+
+    // Liveness affordance (F-4be7a3c2 / F-8819f045): TTY line overwritten so
+    // '(thinking...)' is never a permanent row between You: and Assistant:.
+    const endThinking = beginThinking(out);
     try {
-      const now = new Date().toISOString();
-      addToTranscript(transcript, { role: 'user', content: trimmed, timestamp: now });
-
-      // Liveness affordance (F-4be7a3c2): a turn can be 1-3 sequential LLM
-      // calls, and a cold model load alone can take 30s+. One line beats
-      // wondering whether the REPL froze.
-      console.log('(thinking...)');
       const response = await engine.process(trimmed);
+      endThinking();
+      const assistantMsg: ChatMessage = {
+        role: 'assistant',
+        content: response,
+        timestamp: new Date().toISOString(),
+      };
+      console.log(formatChatTurn(assistantMsg));
       console.log('');
-      console.log(response);
-      console.log('');
-
-      addToTranscript(transcript, { role: 'assistant', content: response, timestamp: new Date().toISOString() });
+      addToTranscript(transcript, assistantMsg);
     } catch (err) {
+      endThinking();
       const msg = err instanceof Error ? err.message : String(err);
       console.error(`Error: ${msg}`);
     }
@@ -179,7 +250,7 @@ export async function runChatShell(options: ChatShellOptions): Promise<void> {
     // transcript lands (or the failure is reported).
     if (exitSaveStarted) return;
     exitSaveStarted = true;
-    void persistTranscriptAtExit(transcript, projectRoot, saveTranscripts);
+    void persistTranscriptAtExit(transcript, projectRoot, saveTranscripts, transcriptPath);
   });
 }
 
@@ -190,6 +261,7 @@ export async function handleSlashCommand(
   transcript: ChatTranscript,
   projectRoot: string,
   saveTranscripts: boolean,
+  transcriptPath?: string,
 ): Promise<'quit' | 'handled'> {
   const parts = input.slice(1).split(/\s+/);
   const cmd = resolveAlias(parts[0].toLowerCase());
@@ -207,12 +279,24 @@ export async function handleSlashCommand(
       console.log('');
       return 'handled';
 
+    case 'transcript': {
+      if (transcript.messages.length === 0) {
+        console.log('Nothing in the transcript yet.');
+        return 'handled';
+      }
+      console.log('');
+      console.log(formatHeading('Transcript'));
+      console.log(formatTranscriptPretty(transcript));
+      console.log('');
+      return 'handled';
+    }
+
     case 'save': {
       if (transcript.messages.length === 0) {
         console.log('Nothing to save yet.');
         return 'handled';
       }
-      const path = defaultTranscriptPath(projectRoot, transcript.sessionName);
+      const path = resolveTranscriptDest(projectRoot, transcript.sessionName, transcriptPath);
       // saveTranscript signals sandbox failure with {ok:false}; printing an
       // unconditional success line was a false receipt (v2.6 Stage C F-77c30d19).
       // Disk errors (mkdir/writeFile) throw and are caught by the shell's

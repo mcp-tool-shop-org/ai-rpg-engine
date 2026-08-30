@@ -101,7 +101,18 @@ function parseFlags(args: string[]): { command: string; flags: CliFlags } {
       case '--label-after': flags.labelAfter = next; i++; break;
       case '--constraints': flags.constraints = next?.split(','); i++; break;
       case '--themes': flags.themes = next?.split(','); i++; break;
-      case '--write': flags.write = next; i++; break;
+      case '--write': {
+        // Bare `--write` (end of argv, or followed by another flag) is the
+        // boolean enable used by `ai chat --write`. A path is still consumed
+        // for create-*/apply-preview and `ai chat --write <path>` (F-ef949bc5).
+        if (next !== undefined && !next.startsWith('-')) {
+          flags.write = next;
+          i++;
+        } else {
+          flags.write = '';
+        }
+        break;
+      }
       case '--session': flags.session = next; i++; break;
       case '--question': flags.question = next; i++; break;
       case '--target-type': flags.targetType = next; i++; break;
@@ -249,6 +260,144 @@ async function packageVersion(): Promise<string> {
   }
 }
 
+/** Description column starts at index 30 (`  ` + padEnd(28)). Shared by the
+ *  main banner and `ai session` so signatures/copy cannot drift (F-ef949bc5). */
+const HELP_SIG_WIDTH = 28;
+
+const SESSION_COMMANDS: ReadonlyArray<{ signature: string; description: string }> = [
+  { signature: 'session start <name>', description: 'Start a named design session' },
+  { signature: 'session status', description: 'Show current session state' },
+  { signature: 'session end', description: 'End the current session' },
+  { signature: 'session add-theme <text>', description: 'Add a theme to the active session' },
+  { signature: 'session add-constraint <t>', description: 'Add a constraint to the active session' },
+  { signature: 'session doctor', description: 'Health check the session file' },
+  { signature: 'session resolve <code>', description: 'Resolve an open issue by code' },
+  { signature: 'session history [limit]', description: 'Show session event timeline' },
+];
+
+function helpRow(signature: string, description: string, sigWidth = HELP_SIG_WIDTH): string {
+  return `  ${signature.padEnd(sigWidth)}${description}`;
+}
+
+/** Exported for tests — `ai session` and the main Session: block share this table. */
+export function formatSessionCommandList(heading: string): string {
+  const lines = [heading];
+  for (const cmd of SESSION_COMMANDS) {
+    lines.push(helpRow(cmd.signature, cmd.description));
+  }
+  return lines.join('\n');
+}
+
+function flagRow(flag: string, description: string): string {
+  return `    ${flag.padEnd(22)}${description}`;
+}
+
+/** Exported for tests (F-ef949bc5). */
+export function formatCliHelp(version: string): string {
+  const lines: string[] = [
+    `@ai-rpg-engine/ollama v${version}`,
+    '',
+    'Usage: ai <command> [flags]',
+    '',
+    formatSessionCommandList('Session:'),
+    '',
+    'Scaffold:',
+    helpRow('create-room', 'Generate a room definition'),
+    helpRow('create-faction', 'Generate a faction configuration'),
+    helpRow('create-quest', 'Generate a quest definition'),
+    helpRow('create-district', 'Generate a district configuration'),
+    helpRow('create-location-pack', 'Generate district + rooms bundle'),
+    helpRow('create-encounter-pack', 'Generate room + entities + quest bundle'),
+    '',
+    'Iterate:',
+    helpRow('improve-content', 'Revise content toward a goal (pipe YAML)'),
+    helpRow('expand-pack', 'Add content to an existing pack (pipe YAML)'),
+    helpRow('critique-content', 'Senior designer review (pipe YAML)'),
+    helpRow('normalize-content', 'Clean up style + schema conformance (pipe YAML)'),
+    helpRow('diff-summary', 'Explain changes between two versions (pipe JSON)'),
+    '',
+    'Diagnose:',
+    helpRow('explain-validation-error', 'Explain validation errors (pipe JSON)'),
+    helpRow('explain-lint', 'Explain lint findings (pipe JSON)'),
+    helpRow('explain-belief-divergence', 'Compare two belief traces (pipe JSON)'),
+    helpRow('explain-district-state', 'Explain district metrics (pipe JSON)'),
+    helpRow('explain-faction-alert', 'Explain faction alert level (pipe JSON)'),
+    helpRow('summarize-belief-trace', 'Summarize a belief trace (pipe JSON)'),
+    '',
+    'Simulate:',
+    helpRow('analyze-replay', 'Analyze replay output for design issues (pipe JSON)'),
+    helpRow('explain-why', 'Causal explanation for simulation state (pipe JSON)'),
+    '',
+    'Guide:',
+    helpRow('suggest-next', 'Session-aware next-action recommendations'),
+    helpRow('plan-district', 'Multi-step district design plan'),
+    helpRow('compare-replays', 'Before/after simulation comparison (pipe JSON)'),
+    '',
+    'Workflow:',
+    helpRow('scaffold-and-critique', 'Generate + critique + suggest-next'),
+    helpRow('compare-and-fix', 'Compare replays + suggest fixes'),
+    helpRow('plan-and-generate', 'Plan district + auto-execute steps + critique'),
+    '',
+    'Apply:',
+    helpRow('apply-preview', 'Preview a file write (pipe content, --write <path>)'),
+    helpRow('', 'Add --confirm to actually write'),
+    '',
+    'Chat:',
+    helpRow('chat [--write]', 'Interactive conversational design assistant'),
+    helpRow('', '--write enables transcript save (JSONL)'),
+    helpRow('', 'Default: .ai-transcripts/<session>-<date>.jsonl'),
+    helpRow('', '--write <path> saves to that path (sandboxed to the project root)'),
+    '',
+    'Flags (global):',
+    flagRow('--model <name>', 'Ollama model (default: qwen2.5-coder)'),
+    flagRow('--url <url>', 'Ollama base URL (default: http://localhost:11434)'),
+    flagRow('--format <fmt>', 'Output format: plain, forensic, author'),
+    flagRow('--stdin', 'Read input from stdin'),
+    flagRow('--session <name>', 'Session name (for session start)'),
+    '',
+    'Flags (create-* / scaffold):',
+    flagRow('--theme <text>', 'Theme for content generation'),
+    flagRow('--themes <texts>', 'Comma-separated themes (for session start)'),
+    flagRow('--ruleset <id>', 'Ruleset ID for context'),
+    flagRow('--district <id>', 'District ID for context'),
+    flagRow('--factions <ids>', 'Comma-separated faction IDs'),
+    flagRow('--districts <ids>', 'Comma-separated district IDs'),
+    flagRow('--zones <ids>', 'Comma-separated existing zone IDs'),
+    flagRow('--constraints <c>', 'Comma-separated constraints'),
+    flagRow('--difficulty <level>', 'Encounter difficulty hint'),
+    flagRow('--kind <type>', 'Scaffold kind: room, faction, district, location-pack, encounter-pack'),
+    flagRow('--repair', 'Attempt to fix invalid generated content'),
+    flagRow('--validate', 'Refuse to emit/write create-* content that fails schema validation'),
+    flagRow('--write <path>', 'Write generated output to file instead of stdout (sandboxed)'),
+    '',
+    'Flags (iterate / diagnose / simulate / guide):',
+    flagRow('--goal <text>', 'Improvement/expansion goal'),
+    flagRow('--content-type <t>', 'Content type hint (room, district, quest, etc.)'),
+    flagRow('--focus <text>', 'Focus area for critique/analysis'),
+    flagRow('--question <text>', 'Question for explain-why'),
+    flagRow('--target-type <t>', 'Target kind for explain-why (entity, faction, district)'),
+    flagRow('--target-id <id>', 'Target ID for explain-why'),
+    flagRow('--tick-range <r>', 'Tick range for analyze-replay (e.g. "0-50")'),
+    flagRow('--label-before <t>', 'Label for "before" version in diff'),
+    flagRow('--label-after <t>', 'Label for "after" version in diff'),
+    '',
+    'Flags (workflow):',
+    flagRow('--auto-execute <n>', 'Plan-and-generate: steps to auto-execute (1-3, default 1)'),
+    flagRow('--kind <type>', 'Scaffold kind for scaffold-and-critique / plan-and-generate'),
+    flagRow('--write <path>', 'Write generated output to file instead of stdout (sandboxed)'),
+    '',
+    'Flags (apply-preview):',
+    flagRow('--write <path>', 'Target path for the preview/write (sandboxed to the project root)'),
+    flagRow('--confirm', 'Confirm apply-preview (actually write the file)'),
+    flagRow('--content-type <t>', 'Content type hint (room, district, quest, etc.)'),
+    '',
+    'Flags (chat):',
+    flagRow('--write', 'Enable transcript save to .ai-transcripts/<session>-<date>.jsonl'),
+    flagRow('--write <path>', 'Save transcript JSONL to <path> (sandboxed to the project root)'),
+  ];
+  return lines.join('\n');
+}
+
 /** Print validation warnings for an emitted-anyway draft (stderr, advisory). */
 function printValidationWarnings(validation: GeneratedContentResult): void {
   if (validation.valid) return;
@@ -384,15 +533,7 @@ async function runCliInner(args: string[]): Promise<void> {
         return;
       }
       default:
-        console.log('Session commands:');
-        console.log('  session start <name>       Start a new design session');
-        console.log('  session status             Show current session state');
-        console.log('  session end                End the current session');
-        console.log('  session add-theme <t>      Add theme(s) to session');
-        console.log('  session add-constraint <c> Add constraint(s) to session');
-        console.log('  session doctor             Health check the session file');
-        console.log('  session resolve <code>     Resolve an open issue by code');
-        console.log('  session history [limit]    Show session event timeline');
+        console.log(formatSessionCommandList('Session commands:'));
         return;
     }
   }
@@ -1324,97 +1465,13 @@ async function runCliInner(args: string[]): Promise<void> {
         projectRoot,
         maxMemory: 50,
         saveTranscripts: flags.write !== undefined,
+        transcriptPath: flags.write || undefined,
       });
       break;
     }
 
     default:
-      console.log(`@ai-rpg-engine/ollama v${await packageVersion()}`);
-      console.log('');
-      console.log('Session:');
-      console.log('  session start <name>        Start a named design session');
-      console.log('  session status              Show current session state');
-      console.log('  session end                 End the current session');
-      console.log('  session add-theme <text>    Add a theme to the active session');
-      console.log('  session add-constraint <t>  Add a constraint to the active session');
-      console.log('  session doctor              Health check the session file');
-      console.log('  session resolve <code>      Resolve an open issue by code');
-      console.log('  session history [limit]     Show session event timeline');
-      console.log('');
-      console.log('Scaffold:');
-      console.log('  create-room                 Generate a room definition');
-      console.log('  create-faction              Generate a faction configuration');
-      console.log('  create-quest                Generate a quest definition');
-      console.log('  create-district             Generate a district configuration');
-      console.log('  create-location-pack        Generate district + rooms bundle');
-      console.log('  create-encounter-pack       Generate room + entities + quest bundle');
-      console.log('');
-      console.log('Iterate:');
-      console.log('  improve-content             Revise content toward a goal (pipe YAML)');
-      console.log('  expand-pack                 Add content to an existing pack (pipe YAML)');
-      console.log('  critique-content            Senior designer review (pipe YAML)');
-      console.log('  normalize-content           Clean up style + schema conformance (pipe YAML)');
-      console.log('  diff-summary                Explain changes between two versions (pipe JSON)');
-      console.log('');
-      console.log('Diagnose:');
-      console.log('  explain-validation-error    Explain validation errors (pipe JSON)');
-      console.log('  explain-lint                Explain lint findings (pipe JSON)');
-      console.log('  explain-belief-divergence   Compare two belief traces (pipe JSON)');
-      console.log('  explain-district-state      Explain district metrics (pipe JSON)');
-      console.log('  explain-faction-alert       Explain faction alert level (pipe JSON)');
-      console.log('  summarize-belief-trace      Summarize a belief trace (pipe JSON)');
-      console.log('');
-      console.log('Simulate:');
-      console.log('  analyze-replay              Analyze replay output for design issues (pipe JSON)');
-      console.log('  explain-why                 Causal explanation for simulation state (pipe JSON)');
-      console.log('');
-      console.log('Guide:');
-      console.log('  suggest-next                Session-aware next-action recommendations');
-      console.log('  plan-district               Multi-step district design plan');
-      console.log('  compare-replays             Before/after simulation comparison (pipe JSON)');
-      console.log('');
-      console.log('Workflow:');
-      console.log('  scaffold-and-critique       Generate + critique + suggest-next');
-      console.log('  compare-and-fix             Compare replays + suggest fixes');
-      console.log('  plan-and-generate           Plan district + auto-execute steps + critique');
-      console.log('');
-      console.log('Apply:');
-      console.log('  apply-preview               Preview a file write (pipe content, --write <path>)');
-      console.log('                              Add --confirm to actually write');
-      console.log('');
-      console.log('Chat:');
-      console.log('  chat                        Interactive conversational design assistant');
-      console.log('');
-      console.log('Flags:');
-      console.log('  --model <name>       Ollama model (default: qwen2.5-coder)');
-      console.log('  --url <url>          Ollama base URL (default: http://localhost:11434)');
-      console.log('  --theme <text>       Theme for content generation');
-      console.log('  --themes <texts>     Comma-separated themes (for session start)');
-      console.log('  --goal <text>        Improvement/expansion goal');
-      console.log('  --content-type <t>   Content type hint (room, district, quest, etc.)');
-      console.log('  --focus <text>       Focus area for critique/analysis');
-      console.log('  --question <text>    Question for explain-why');
-      console.log('  --target-type <t>    Target kind for explain-why (entity, faction, district)');
-      console.log('  --target-id <id>     Target ID for explain-why');
-      console.log('  --tick-range <r>     Tick range for analyze-replay (e.g. "0-50")');
-      console.log('  --session <name>     Session name (for session start)');
-      console.log('  --ruleset <id>       Ruleset ID for context');
-      console.log('  --district <id>      District ID for context');
-      console.log('  --factions <ids>     Comma-separated faction IDs');
-      console.log('  --districts <ids>    Comma-separated district IDs');
-      console.log('  --zones <ids>        Comma-separated existing zone IDs');
-      console.log('  --constraints <c>    Comma-separated constraints');
-      console.log('  --difficulty <level>  Encounter difficulty hint');
-      console.log('  --label-before <t>   Label for "before" version in diff');
-      console.log('  --label-after <t>    Label for "after" version in diff');
-      console.log('  --repair             Attempt to fix invalid generated content');
-      console.log('  --validate           Refuse to emit/write create-* content that fails schema validation');
-      console.log('  --confirm            Confirm apply-preview (actually write the file)');
-      console.log('  --kind <type>        Scaffold kind: room, faction, district, location-pack, encounter-pack');
-      console.log('  --auto-execute <n>   Plan-and-generate: steps to auto-execute (1-3, default 1)');
-      console.log('  --write <path>       Write output to file instead of stdout (sandboxed to the project root)');
-      console.log('  --format <fmt>       Output format: plain, forensic, author');
-      console.log('  --stdin              Read input from stdin');
+      console.log(formatCliHelp(await packageVersion()));
       break;
   }
 }
