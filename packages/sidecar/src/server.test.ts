@@ -175,6 +175,84 @@ describe('F-009da546 — shutdown actually stops serving', () => {
   });
 });
 
+describe('F-aca8c299 — shutdown is sim-local, not session-local', () => {
+  it('two sessions: A shutdown, B submitAction is SESSION_CLOSED and the live hero is untagged', () => {
+    const engine = createTestEngine({
+      modules: [brandModule()],
+      playerId: 'hero',
+      startZone: 'room',
+      entities: [
+        {
+          id: 'hero',
+          blueprintId: 'hero',
+          type: 'player',
+          name: 'Hero',
+          tags: ['player'],
+          stats: {},
+          resources: { hp: 10 },
+          statuses: [],
+          zoneId: 'room',
+        },
+      ],
+      zones: [{ id: 'room', roomId: 'room', name: 'Room', tags: [], neighbors: [] }],
+    });
+    const sentA: RpcMessage[] = [];
+    const sentB: RpcMessage[] = [];
+    const a = new SidecarServer({ engine, engineVersion: '3.8.0-test' }, (m) => sentA.push(m));
+    const b = new SidecarServer({ engine, engineVersion: '3.8.0-test' }, (m) => sentB.push(m));
+    a.handle({ jsonrpc: '2.0', id: 1, method: METHODS.INITIALIZE, params: {} });
+    b.handle({ jsonrpc: '2.0', id: 1, method: METHODS.INITIALIZE, params: {} });
+
+    a.handle({ jsonrpc: '2.0', id: 2, method: METHODS.SHUTDOWN, params: {} });
+    expect(sentA.find((m) => m.id === 2)?.result).toEqual({ ok: true });
+    expect(a.isClosed).toBe(true);
+    expect(b.isClosed).toBe(true);
+    expect(sentA.some((m) => m.method === NOTIFICATIONS.CLOSING)).toBe(true);
+    expect(sentB.some((m) => m.method === NOTIFICATIONS.CLOSING)).toBe(true);
+
+    const hero = engine.world.entities['hero']!;
+    const tagsBefore = [...hero.tags];
+    const logBefore = engine.world.eventLog.length;
+    const actionsBefore = engine.getActionLog().length;
+    b.handle({ jsonrpc: '2.0', id: 3, method: METHODS.SUBMIT_ACTION, params: { verb: 'brand' } });
+    const err = errorOf(sentB.find((m) => m.id === 3));
+    expect(err.code).toBe(ERROR_CODES.SESSION_CLOSED);
+    expect(err.message).toMatch(/closed/i);
+    expect(hero.tags).toEqual(tagsBefore);
+    expect(hero.tags).not.toContain('previewed');
+    expect(engine.world.eventLog.length).toBe(logBefore);
+    expect(engine.getActionLog().length).toBe(actionsBefore);
+  });
+
+  it('CONTROL: a second SidecarServer wrapping a different Engine stays open', () => {
+    const { call: shutdownA, server: serverA } = boot();
+    const { call: callB, server: serverB, hero } = boot();
+    shutdownA(METHODS.SHUTDOWN, {});
+    expect(serverA.isClosed).toBe(true);
+    expect(serverB.isClosed).toBe(false);
+    const ok = callB(METHODS.SUBMIT_ACTION, { verb: 'brand' });
+    expect(ok?.error).toBeUndefined();
+    expect(hero.tags).toContain('previewed');
+  });
+
+  it('dualLoopback B receives sim/closing and cannot spawn after A shutdown', async () => {
+    const { a, b, engine } = dualLoopback(true);
+    await a.client.initialize();
+    await b.client.initialize();
+
+    await a.client.request(METHODS.SHUTDOWN, {});
+    expect(a.server.isClosed).toBe(true);
+    expect(b.server.isClosed).toBe(true);
+    expect(b.client.isClosed).toBe(true);
+
+    const hadNpc = Boolean(engine.world.entities['npc-1']);
+    await expect(b.client.request(METHODS.SUBMIT_ACTION, { verb: 'spawn-npc' })).rejects.toMatchObject({
+      code: ERROR_CODES.SESSION_CLOSED,
+    });
+    expect(Boolean(engine.world.entities['npc-1'])).toBe(hadNpc);
+  });
+});
+
 describe('F-4dbb32eb — preview never dispatches on the live engine', () => {
   it('leaves getActionLog, rng state, nested entity identity, and live EventBus draws untouched', () => {
     const { engine, server, hero } = boot();
