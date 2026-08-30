@@ -2,6 +2,7 @@
 // Pure function, no LLM call. Reports issues with the session file itself.
 
 import { MAX_SESSION_HISTORY_EVENTS, type DesignSession } from './session.js';
+import { formatHeading } from './chat-studio.js';
 
 export type SessionDiagnostic = {
   code: string;
@@ -112,6 +113,10 @@ export function sessionDoctor(session: DesignSession): SessionDoctorResult {
   };
 }
 
+function countLabel(n: number, singular: string, plural: string): string {
+  return `${n} ${n === 1 ? singular : plural}`;
+}
+
 export function formatDoctorReport(result: SessionDoctorResult): string {
   const lines: string[] = [];
 
@@ -120,12 +125,29 @@ export function formatDoctorReport(result: SessionDoctorResult): string {
     return lines.join('\n');
   }
 
+  // Partition by severity so a mixed check-order dump (info then warn then
+  // info) cannot interleave Notes between Warnings. Warnings first, then
+  // info; insertion order is preserved within each group (F-f4a94524).
+  const warnings = result.diagnostics.filter(d => d.severity === 'warning');
+  const notes = result.diagnostics.filter(d => d.severity === 'info');
+
   lines.push(result.healthy ? 'Session is healthy (with notes):' : 'Session has issues:');
+  lines.push(`${countLabel(warnings.length, 'warning', 'warnings')}, ${countLabel(notes.length, 'note', 'notes')}`);
   lines.push('');
 
-  for (const d of result.diagnostics) {
-    const icon = d.severity === 'warning' ? '⚠' : 'ℹ';
-    lines.push(`  ${icon} [${d.code}] ${d.message}`);
+  if (warnings.length > 0) {
+    lines.push(formatHeading('Warnings'));
+    for (const d of warnings) {
+      lines.push(`  [warn] [${d.code}] ${d.message}`);
+    }
+    if (notes.length > 0) lines.push('');
+  }
+
+  if (notes.length > 0) {
+    lines.push(formatHeading('Notes'));
+    for (const d of notes) {
+      lines.push(`  [info] [${d.code}] ${d.message}`);
+    }
   }
 
   return lines.join('\n');

@@ -8,7 +8,11 @@ import { PassThrough } from 'node:stream';
 import { mkdtemp, rm, writeFile, readFile, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { handleSlashCommand, runChatShell, persistTranscriptAtExit } from './chat-shell.js';
+import {
+  handleSlashCommand, runChatShell, persistTranscriptAtExit,
+  formatChatTurn, formatTranscriptPretty, beginThinking,
+} from './chat-shell.js';
+import { setDisplayMode, formatHeading } from './chat-studio.js';
 import { MAX_EXPERIMENT_RUNS } from './chat-experiments.js';
 import { createChatEngine } from './chat-engine.js';
 import { createTranscript, addToTranscript, defaultTranscriptPath } from './chat-transcript.js';
@@ -373,5 +377,237 @@ describe('persistTranscriptAtExit', () => {
 
     expect(saved).toBeNull();
     expect(errSpy.mock.calls.flat().join('\n')).toContain('Transcript NOT saved');
+  });
+
+  it('honors transcriptPath instead of the default .ai-transcripts dest (F-ef949bc5)', async () => {
+    projectRoot = await mkdtemp(join(tmpdir(), 'persist-exit-path-'));
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const custom = join(projectRoot, 'notes.txt');
+    const transcript = createTranscript('path-test');
+    addToTranscript(transcript, { role: 'user', content: 'keep me', timestamp: 't' });
+
+    const saved = await persistTranscriptAtExit(transcript, projectRoot, true, custom);
+
+    expect(saved).toBeTruthy();
+    const onDisk = await readFile(saved!, 'utf-8');
+    expect(onDisk).toContain('keep me');
+    expect(await readFile(custom, 'utf-8')).toContain('keep me');
+    expect(logSpy.mock.calls.flat().join('\n')).toContain('Transcript saved to');
+    await expect(access(defaultTranscriptPath(projectRoot, 'path-test'))).rejects.toThrow();
+  });
+});
+
+describe('formatChatTurn + formatTranscriptPretty (F-8819f045)', () => {
+  afterEach(() => setDisplayMode('compact'));
+
+  it('labels user/assistant turns You/Assistant in compact mode', () => {
+    setDisplayMode('compact');
+    expect(formatChatTurn({ role: 'user', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' }))
+      .toBe('You: hello');
+    expect(formatChatTurn({ role: 'assistant', content: 'hi', timestamp: '2026-01-01T00:00:01.000Z' }))
+      .toBe('Assistant: hi');
+    expect(formatChatTurn({ role: 'user', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' }))
+      .not.toContain('2026-01-01');
+  });
+
+  it('includes the stored timestamp in verbose mode', () => {
+    setDisplayMode('verbose');
+    expect(formatChatTurn({ role: 'user', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' }))
+      .toBe('You [2026-01-01T00:00:00.000Z]: hello');
+    expect(formatChatTurn({ role: 'assistant', content: 'hi', timestamp: '2026-01-01T00:00:01.000Z' }))
+      .toBe('Assistant [2026-01-01T00:00:01.000Z]: hi');
+  });
+
+  it('pretty-prints the in-memory transcript with the same labels as the REPL', () => {
+    setDisplayMode('compact');
+    const t = createTranscript('pretty');
+    addToTranscript(t, { role: 'user', content: 'hello', timestamp: '2026-01-01T00:00:00.000Z' });
+    addToTranscript(t, { role: 'assistant', content: 'hi there', timestamp: '2026-01-01T00:00:01.000Z' });
+    const pretty = formatTranscriptPretty(t);
+    expect(pretty).toContain('You: hello');
+    expect(pretty).toContain('Assistant: hi there');
+    expect(pretty).not.toContain('(thinking...)');
+  });
+});
+
+describe('beginThinking (F-8819f045)', () => {
+  it('writes then erases (thinking...) on a TTY', () => {
+    const chunks: string[] = [];
+    const stream = new PassThrough();
+    (stream as unknown as { isTTY: boolean }).isTTY = true;
+    stream.on('data', (c: Buffer | string) => chunks.push(String(c)));
+    const end = beginThinking(stream);
+    end();
+    const written = chunks.join('');
+    expect(written).toContain('(thinking...)');
+    expect(written).toContain('\r\x1b[K');
+  });
+
+  it('is a no-op when the stream is not a TTY', () => {
+    const chunks: string[] = [];
+    const stream = new PassThrough();
+    stream.on('data', (c: Buffer | string) => chunks.push(String(c)));
+    const end = beginThinking(stream);
+    end();
+    expect(chunks.join('')).toBe('');
+  });
+});
+
+describe('runChatShell — labeled turns, no leftover thinking (F-8819f045)', () => {
+  let projectRoot: string;
+
+  afterEach(async () => {
+    setDisplayMode('compact');
+    if (projectRoot) {
+      try { await rm(projectRoot, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+  });
+
+  function logged(spy: { mock: { calls: unknown[][] } }): string {
+    return spy.mock.calls.flat().join('\n');
+  }
+
+  it('prints You:/Assistant: labels and never leaves (thinking...) on stdout', async () => {
+    projectRoot = await mkdtemp(join(tmpdir(), 'chat-shell-labels-'));
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const input = new PassThrough();
+    const output = new PassThrough();
+    output.resume();
+    void runChatShell({
+      client: mockClient('MOCK_REPLY'),
+      projectRoot,
+      saveTranscripts: false,
+      input,
+      output,
+    });
+
+    input.write('hello there\n');
+    await vi.waitFor(() => expect(logged(logSpy)).toMatch(/Assistant:/));
+
+    const out = logged(logSpy);
+    expect(out).toContain('You: hello there');
+    expect(out).toMatch(/Assistant:/);
+    expect(out).not.toContain('(thinking...)');
+    input.end();
+  });
+
+  it('includes timestamps in verbose display mode', async () => {
+    setDisplayMode('verbose');
+    projectRoot = await mkdtemp(join(tmpdir(), 'chat-shell-verbose-'));
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const input = new PassThrough();
+    const output = new PassThrough();
+    output.resume();
+    void runChatShell({
+      client: mockClient('MOCK_REPLY'),
+      projectRoot,
+      saveTranscripts: false,
+      input,
+      output,
+    });
+
+    input.write('hello there\n');
+    await vi.waitFor(() => expect(logged(logSpy)).toMatch(/Assistant \[/));
+
+    const out = logged(logSpy);
+    expect(out).toMatch(/You \[[0-9T:.Z-]+\]: hello there/);
+    expect(out).toMatch(/Assistant \[[0-9T:.Z-]+\]:/);
+    expect(out).not.toContain('(thinking...)');
+    input.end();
+  });
+
+  it('erases (thinking...) on a TTY before the assistant reply', async () => {
+    projectRoot = await mkdtemp(join(tmpdir(), 'chat-shell-tty-'));
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const input = new PassThrough();
+    const output = new PassThrough();
+    (output as unknown as { isTTY: boolean }).isTTY = true;
+    const chunks: string[] = [];
+    output.on('data', (c: Buffer | string) => chunks.push(String(c)));
+    void runChatShell({
+      client: mockClient('MOCK_REPLY'),
+      projectRoot,
+      saveTranscripts: false,
+      input,
+      output,
+    });
+
+    input.write('hello there\n');
+    await vi.waitFor(() => expect(logged(logSpy)).toMatch(/Assistant:/));
+
+    const written = chunks.join('');
+    expect(written).toContain('(thinking...)');
+    expect(written).toContain('\r\x1b[K');
+    expect(logged(logSpy)).not.toContain('(thinking...)');
+    input.end();
+  });
+
+  it('saves to --write <path> on exit, not the default .ai-transcripts file (F-ef949bc5)', async () => {
+    projectRoot = await mkdtemp(join(tmpdir(), 'chat-shell-write-'));
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const custom = join(projectRoot, 'notes.txt');
+    const input = new PassThrough();
+    const output = new PassThrough();
+    output.resume();
+    void runChatShell({
+      client: mockClient('MOCK_REPLY'),
+      projectRoot,
+      saveTranscripts: true,
+      transcriptPath: custom,
+      input,
+      output,
+    });
+
+    input.write('hello there\n');
+    await vi.waitFor(() => expect(logged(logSpy)).toMatch(/Assistant:/));
+    input.end();
+
+    await vi.waitFor(async () => { await access(custom); });
+    const onDisk = await readFile(custom, 'utf-8');
+    expect(onDisk).toContain('hello there');
+    await expect(access(defaultTranscriptPath(projectRoot, 'unnamed'))).rejects.toThrow();
+  });
+});
+
+describe('handleSlashCommand — /transcript pretty-print (F-8819f045)', () => {
+  afterEach(() => setDisplayMode('compact'));
+
+  it('prints the labeled transcript via formatHeading', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const transcript = createTranscript(null);
+    addToTranscript(transcript, { role: 'user', content: 'hello', timestamp: 't0' });
+    addToTranscript(transcript, { role: 'assistant', content: 'hi', timestamp: 't1' });
+
+    const result = await handleSlashCommand(
+      '/transcript', makeEngine(), transcript, '/fake/project-root', false,
+    );
+
+    expect(result).toBe('handled');
+    const logged = logSpy.mock.calls.flat().join('\n');
+    expect(logged).toContain(formatHeading('Transcript'));
+    expect(logged).toContain('You: hello');
+    expect(logged).toContain('Assistant: hi');
+    expect(logged).not.toContain('(thinking...)');
+  });
+
+  it('/save writes to a custom transcriptPath (F-ef949bc5)', async () => {
+    const projectRoot = await mkdtemp(join(tmpdir(), 'chat-save-path-'));
+    try {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const custom = join(projectRoot, 'notes.txt');
+      const transcript = createTranscript('save-path');
+      addToTranscript(transcript, { role: 'user', content: 'keep me', timestamp: 't' });
+
+      const result = await handleSlashCommand(
+        '/save', makeEngine(projectRoot), transcript, projectRoot, true, custom,
+      );
+
+      expect(result).toBe('handled');
+      expect(logSpy.mock.calls.flat().join('\n')).toContain('Transcript saved to');
+      const onDisk = await readFile(custom, 'utf-8');
+      expect(onDisk).toContain('keep me');
+    } finally {
+      await rm(projectRoot, { recursive: true, force: true });
+    }
   });
 });

@@ -16,7 +16,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { runCli } from './cli.js';
+import { runCli, formatCliHelp, formatSessionCommandList } from './cli.js';
 import { MAX_REPLAY_JSON_BYTES } from './chat-balance-analyzer.js';
 
 const realFetch = globalThis.fetch;
@@ -402,5 +402,72 @@ describe('runCli — --repair generate failure (F-420e99d8)', () => {
     expect(stderrText()).toMatch(/Repair failed/i);
     expect(stderrText()).toContain('INVALID_CONTENT');
     await expect(fs.access(target)).rejects.toThrow();
+  });
+});
+
+// F-ef949bc5 — help banner --write must match chat behavior; Usage line;
+// session listing generated from the same table; flags grouped.
+describe('runCli — help banner chat --write + session listing (F-ef949bc5)', () => {
+  it('prints Usage, chat [--write], and the real transcript destination', async () => {
+    await runCli([]);
+    const stdout = stdoutText();
+    expect(stdout).toContain('Usage: ai <command> [flags]');
+    expect(stdout).toContain('chat [--write]');
+    expect(stdout).toContain('.ai-transcripts/<session>-<date>.jsonl');
+    expect(stdout).toContain('Flags (chat):');
+    expect(stdout).toContain('Flags (apply-preview):');
+    expect(stdout).toContain('Flags (create-* / scaffold):');
+    expect(stdout).not.toMatch(/chat\s+Interactive conversational design assistant/);
+  });
+
+  it('generates `ai session` from the same table as the main Session: block', async () => {
+    await runCli([]);
+    const main = stdoutText();
+    logSpy.mockClear();
+    await runCli(['session']);
+    const sessionHelp = stdoutText();
+
+    const rowRe = /^ {2}session .+$/gm;
+    const mainRows = main.match(rowRe);
+    const sessionRows = sessionHelp.match(rowRe);
+    expect(mainRows).not.toBeNull();
+    expect(sessionRows).toEqual(mainRows);
+    expect(main).toContain('session add-theme <text>');
+    expect(main).toContain('Add a theme to the active session');
+    expect(sessionHelp).toContain('session add-theme <text>');
+    expect(sessionHelp).toContain('Add a theme to the active session');
+    expect(sessionHelp).not.toContain('add-theme <t>');
+    expect(sessionHelp).not.toContain('Add theme(s) to session');
+
+    for (const row of mainRows!) {
+      // Description column is index 30: two-space indent + padEnd(28).
+      expect(row.slice(30).trim().length).toBeGreaterThan(0);
+      expect(row[30]).not.toBe(' ');
+      expect(row.slice(2, 30).trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it('formatSessionCommandList pads descriptions to column 30', () => {
+    const listing = formatSessionCommandList('Session:');
+    const rows = listing.split('\n').slice(1);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(row.startsWith('  ')).toBe(true);
+      expect(row[30]).not.toBe(' ');
+    }
+  });
+
+  it('formatCliHelp groups --write under chat vs create-* vs apply-preview', () => {
+    const help = formatCliHelp('9.9.9');
+    expect(help).toContain('Usage: ai <command> [flags]');
+    const chatFlagsAt = help.indexOf('Flags (chat):');
+    const applyFlagsAt = help.indexOf('Flags (apply-preview):');
+    const createFlagsAt = help.indexOf('Flags (create-* / scaffold):');
+    expect(chatFlagsAt).toBeGreaterThan(0);
+    expect(applyFlagsAt).toBeGreaterThan(0);
+    expect(createFlagsAt).toBeGreaterThan(0);
+    expect(help.slice(chatFlagsAt)).toContain('.ai-transcripts/<session>-<date>.jsonl');
+    expect(help.slice(applyFlagsAt)).toContain('Confirm apply-preview');
+    expect(help.slice(createFlagsAt, chatFlagsAt)).toContain('Write generated output to file');
   });
 });

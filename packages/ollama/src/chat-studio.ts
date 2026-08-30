@@ -775,7 +775,8 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     description: 'Session management',
     commands: [
       { cmd: '/help', aliases: ['/h'], description: 'Show help (or /help <topic>)' },
-      { cmd: '/save', aliases: [], description: 'Save transcript now' },
+      { cmd: '/transcript', aliases: [], description: 'Show the conversation with You/Assistant labels' },
+      { cmd: '/save', aliases: [], description: 'Save transcript now (JSONL)' },
       { cmd: '/pending', aliases: [], description: 'Show pending write' },
       { cmd: '/quit', aliases: ['/exit', '/q'], description: 'Exit chat' },
     ],

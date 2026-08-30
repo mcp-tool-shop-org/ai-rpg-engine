@@ -186,7 +186,7 @@ export type {
 } from './chat-engine.js';
 export { createTranscript, addToTranscript, saveTranscript, loadTranscript, defaultTranscriptPath } from './chat-transcript.js';
 export type { TranscriptSaveResult } from './chat-transcript.js';
-export { runChatShell, persistTranscriptAtExit } from './chat-shell.js';
+export { runChatShell, persistTranscriptAtExit, formatChatTurn, formatTranscriptPretty } from './chat-shell.js';
 export type { ChatShellOptions } from './chat-shell.js';
 
 // RAG — project-grounded retrieval
