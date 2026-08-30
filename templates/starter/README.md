@@ -12,14 +12,7 @@ tests anywhere — no engine monorepo required.
 
 ## Getting started
 
-If you are reading this inside `templates/starter`, scaffold your own copy
-first (it names everything for you):
-
-```bash
-npx --package=@ai-rpg-engine/cli ai-rpg-engine create-starter my-game --out=./my-game
-```
-
-Then, from the project directory:
+From the project directory:
 
 ```bash
 npm install        # pulls @ai-rpg-engine/* plus typescript + vitest
@@ -32,8 +25,8 @@ npx vitest run     # run the pack's tests
 | File | What to edit |
 |------|--------------|
 | `package.json` | name and description |
+| `src/content.ts` | `packMeta` (tagline, genres, difficulty, tones, tags, description, version) plus entities and zones — keep each enemy's `ai.profileId` paired with a profile in setup. `getPackSummaries()` / the CLI pack selector list a pack only after those catalog fields exist. |
 | `src/ruleset.ts` | your stats, resources, verbs |
-| `src/content.ts` | entities and zones — keep each enemy's `ai.profileId` paired with a profile in setup |
 | `src/setup.ts` | wire your modules alongside `buildCombatStack`; the intent profiles list lives here |
 | `src/starter.test.ts` | grows with your content — register dialogues/abilities in the integrity lists |
 

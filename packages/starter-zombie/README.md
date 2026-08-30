@@ -16,7 +16,7 @@
 
 > **Composition Example** — This starter demonstrates how to wire the engine for zombie survival. It is an example to learn from, not a template to copy. See the [Composition Guide](../../docs/handbook/57-composition-guide.md) to build your own game.
 
-**Ashfall Dead** — a zombie survival starter world for AI RPG Engine.
+**Ashfall Dead** — Society has snapped in half. You decide who gets saved.
 
 ## Install
 

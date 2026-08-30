@@ -215,6 +215,25 @@ describe('starter template — standalone scaffold', () => {
         expect(readme.toLowerCase()).not.toContain('copy this directory to `packages/');
         expect(readme).not.toMatch(/cp -r templates\/starter/);
     });
+
+    it('F-3dcac63f: first-run README is the game title, not a scaffold-yourself instruction', () => {
+        const readme = read('../README.md');
+        expect(readme).toMatch(/^# My Game$/m);
+        expect(readme).not.toMatch(/scaffold your own copy/i);
+        expect(readme).not.toContain('templates/starter');
+        expect(readme).toContain('tagline');
+        expect(readme).toContain('getPackSummaries()');
+    });
+
+    it('F-3dcac63f: packMeta carries the catalog fields getPackSummaries() lists on', () => {
+        const src = read('./content.ts');
+        for (const field of ['tagline', 'genres', 'difficulty', 'tones', 'tags', 'description', 'version', 'narratorTone']) {
+            expect(src, `packMeta must declare ${field}`).toMatch(new RegExp(`\\b${field}\\s*:`));
+        }
+        const index = read('./index.ts');
+        expect(index).toContain('@ai-rpg-engine/starter-template');
+        expect(index).not.toContain('starter-YOURNAME');
+    });
 });
 
 // ═══════════════════════════════════════════════════════════════════

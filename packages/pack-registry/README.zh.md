@@ -62,6 +62,8 @@ const beginnerPacks = filterPacks({ difficulty: 'beginner' });
 | tones | PackTone[] | 叙事风格描述 |
 | tags | string[] | 用于搜索的自由标签 |
 | engineVersion | string | 最小引擎版本（语义化版本） |
+| version | string | 内容包版本 |
+| description | string | 简短描述（1–3 句）— 列表副标题 |
 | narratorTone | string | 旁白风格 |
 
 ### 质量评估标准

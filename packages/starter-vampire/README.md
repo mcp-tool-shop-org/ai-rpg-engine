@@ -16,7 +16,7 @@
 
 > **Composition Example** — This starter demonstrates how to wire the engine for gothic vampire horror. It is an example to learn from, not a template to copy. See the [Composition Guide](../../docs/handbook/57-composition-guide.md) to build your own game.
 
-**Crimson Court** — A decaying aristocratic manor during a masked ball. Three vampire houses vie for dominance while the hunger threatens to consume you.
+**Crimson Court** — A masked ball where the predators are the guests.
 
 Part of the [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine) starter pack catalog.
 

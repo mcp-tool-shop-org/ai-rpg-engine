@@ -16,7 +16,7 @@
 
 > **Composition Example** — This starter demonstrates how to build a game whose loop is pursuit, and whose real currency is which half of a city will still open a door to you. It is an example to learn from, not a template to copy. See the [Composition Guide](../../docs/handbook/57-composition-guide.md) to build your own game.
 
-**Hue and Cry** — You are a thief-taker in a city with no police force and no wish for one. There is no law here. There is a price, and there is you.
+**Hue and Cry** — There is no law here. There is a price, and there is you.
 
 Part of the [AI RPG Engine](https://github.com/mcp-tool-shop-org/ai-rpg-engine) starter pack catalog.
 

@@ -33,7 +33,7 @@ import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyR
 export const manifest: GameManifest = {
   id: 'hue-and-cry',
   title: 'Hue and Cry',
-  version: '0.1.0',
+  version: '3.8.0',
   engineVersion: '>=3.8.0 <4.0.0',
   ruleset: 'bounty-hunter-minimal',
   modules: ['traversal-core', 'status-core', 'combat-core', 'inventory-core', 'dialogue-core'],

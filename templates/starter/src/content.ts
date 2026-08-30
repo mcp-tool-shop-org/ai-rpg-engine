@@ -16,20 +16,24 @@ export const manifest: GameManifest = {
 
 // ═══════════════════════════════════════════════════════════════════
 // PACK METADATA
-// This is a minimal subset to keep the template dependency-light. To list
-// your pack in the CLI pack selector, export the full PackMetadata shape
-// from @ai-rpg-engine/pack-registry (adds: tagline, genres, difficulty,
-// tones, tags, engineVersion, narratorTone) plus a BuildCatalog from
-// @ai-rpg-engine/character-creation — see any packages/starter-* content.ts
-// for a complete example.
+// Full PackMetadata shape so a copied pack can appear in getPackSummaries()
+// / the CLI pack selector without a second trip to the docs. Keep this
+// dependency-light (no pack-registry import). See any packages/starter-*
+// content.ts for a typed PackMetadata + BuildCatalog example.
 // ═══════════════════════════════════════════════════════════════════
 
 export const packMeta = {
     id: 'my-game',
     name: 'My Game',
-    description: 'A brief description of your game',
-    version: '0.1.0',
+    tagline: 'A one-line pitch for your game.',
+    genres: ['fantasy'],
+    difficulty: 'beginner',
+    tones: ['heroic'],
+    tags: ['starter'],
     engineVersion: '>=3.8.0 <4.0.0',
+    version: '0.1.0',
+    description: 'A brief description of your game. One to three sentences that appear as the listing subtitle.',
+    narratorTone: 'A short narrator-voice note.',
 };
 
 // ═══════════════════════════════════════════════════════════════════

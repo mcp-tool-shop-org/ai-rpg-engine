@@ -34,6 +34,29 @@ export const VALID_GENRES: PackGenre[] = [
   'western', 'pirate', 'post-apocalyptic', 'historical', 'mercantile', 'pursuit',
 ];
 
+/**
+ * Human listing labels for PackGenre tokens. `genres` stays the closed-union
+ * filter key (`filterPacks({ genre: 'pursuit' })`); a pack-selection UI that
+ * interpolates summary.genreLabels never prints the raw token.
+ */
+export const PACK_GENRE_LABELS: Record<PackGenre, string> = {
+  fantasy: 'Fantasy',
+  'sci-fi': 'Sci-fi',
+  cyberpunk: 'Cyberpunk',
+  horror: 'Horror',
+  mystery: 'Mystery',
+  western: 'Western',
+  pirate: 'Pirate',
+  'post-apocalyptic': 'Post-apocalyptic',
+  historical: 'Historical',
+  mercantile: 'Mercantile',
+  pursuit: 'Pursuit / thief-taker',
+};
+
+export function genreLabel(genre: PackGenre): string {
+  return PACK_GENRE_LABELS[genre];
+}
+
 export type PackDifficulty = 'beginner' | 'intermediate' | 'advanced';
 
 export const VALID_DIFFICULTIES: PackDifficulty[] = ['beginner', 'intermediate', 'advanced'];
@@ -112,9 +135,18 @@ export type PackEntry = {
 export type PackSummary = {
   id: string;
   name: string;
+  /** One-line listing title */
   tagline: string;
+  /** Short description (1-3 sentences) — listing subtitle */
+  description: string;
+  /** Pack version, lockstep with the package.json version */
+  version: string;
   genres: PackGenre[];
+  /** Human labels parallel to `genres` (e.g. pursuit → 'Pursuit / thief-taker') */
+  genreLabels: string[];
   difficulty: PackDifficulty;
+  /** Tone chips for the listing */
+  tones: PackTone[];
 };
 
 // --- Filter ---

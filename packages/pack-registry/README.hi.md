@@ -62,6 +62,8 @@ const beginnerPacks = filterPacks({ difficulty: 'beginner' });
 | टोन | PackTone[] | कथात्मक टोन विवरण |
 | टैग | string[] | खोज के लिए स्वतंत्र टैग |
 | engineVersion | string | न्यूनतम इंजन संस्करण (सेमवर्) |
+| version | string | पैक संस्करण |
+| description | string | संक्षिप्त विवरण (1-3 वाक्य) — सूची का उपशीर्षक |
 | narratorTone | string | वक्ता के लिए टोन स्ट्रिंग |
 
 ### गुणवत्ता मानदंड

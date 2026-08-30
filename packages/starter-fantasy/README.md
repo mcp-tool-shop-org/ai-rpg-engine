@@ -16,7 +16,7 @@
 
 > **Composition Example** — This starter demonstrates how to wire the engine for dark fantasy. It is an example to learn from, not a template to copy. See the [Composition Guide](../../docs/handbook/57-composition-guide.md) to build your own game.
 
-**The Chapel Threshold** — a dark fantasy starter world for AI RPG Engine.
+**The Chapel Threshold** — A ruined chapel conceals horrors beneath its crumbling stones.
 
 ## Install
 

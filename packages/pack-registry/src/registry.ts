@@ -1,6 +1,6 @@
 // Pack registry — in-memory catalog of starter packs
 
-import type { PackEntry, PackFilter, PackSummary } from './types.js';
+import { PACK_GENRE_LABELS, type PackEntry, type PackFilter, type PackSummary } from './types.js';
 
 const entries: Map<string, PackEntry> = new Map();
 
@@ -80,8 +80,12 @@ export function getPackSummaries(): PackSummary[] {
     id: e.meta.id,
     name: e.meta.name,
     tagline: e.meta.tagline,
+    description: e.meta.description,
+    version: e.meta.version,
     genres: e.meta.genres,
+    genreLabels: e.meta.genres.map((g) => PACK_GENRE_LABELS[g] ?? g),
     difficulty: e.meta.difficulty,
+    tones: e.meta.tones,
   }));
 }
 
