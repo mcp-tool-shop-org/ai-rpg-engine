@@ -12,7 +12,7 @@
 // pack injects it); core supplies the Engine. Both are declared
 // devDependencies of this package — runtime source stays dependency-free.
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Engine } from '@ai-rpg-engine/core';
 import type { EntityState, GameManifest, ResolvedEvent, ZoneState } from '@ai-rpg-engine/core';
 import {
@@ -723,5 +723,35 @@ describe('save/load preserves loadout + status (and re-registers code-side piece
     const state = getEquipmentState(engine.store.state);
     expect(state).toEqual({ loadouts: {} });
     expect(engine.world.modules[EQUIPMENT_STATE_KEY]).toBe(state);
+  });
+
+  // F-ad8bb401: loadouts: [] is truthy, so the old check treated an array as
+  // healthy. commitLoadout then wrote named properties onto the array, and
+  // JSON.stringify omitted them (`[]`) — Engine.serialize dropped the armory.
+  it('array-shaped loadouts is replaced so stringify cannot drop named loadouts', () => {
+    const engine = makeEngine();
+    const poisoned: unknown[] = [];
+    (poisoned as unknown as Record<string, unknown>).player = {
+      equipped: { weapon: 'gladius' },
+      inventory: [],
+    };
+    expect(JSON.stringify(poisoned)).toBe('[]');
+    engine.world.modules[EQUIPMENT_STATE_KEY] = { loadouts: poisoned } as unknown as EquipmentModuleState;
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const state = getEquipmentState(engine.store.state);
+    expect(Array.isArray(state.loadouts)).toBe(false);
+    expect(state.loadouts).toEqual({});
+    expect(warn).toHaveBeenCalled();
+    expect(String(warn.mock.calls[0])).toMatch(/loadouts/);
+    expect(String(warn.mock.calls[0])).toMatch(/dropped/i);
+    warn.mockRestore();
+
+    state.loadouts['player'] = {
+      equipped: { weapon: 'trident-and-net', armor: null, accessory: null, tool: null, trinket: null },
+      inventory: [],
+    };
+    const round = JSON.parse(JSON.stringify(engine.world.modules[EQUIPMENT_STATE_KEY])) as EquipmentModuleState;
+    expect(round.loadouts['player']?.equipped.weapon).toBe('trident-and-net');
   });
 });

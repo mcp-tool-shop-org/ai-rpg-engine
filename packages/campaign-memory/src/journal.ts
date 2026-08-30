@@ -26,6 +26,15 @@ export class CampaignJournal {
 
   /** Record a significant event. Returns the created record with generated ID. */
   record(entry: Omit<CampaignRecord, 'id'>): CampaignRecord {
+    // F-0ed561bd: validate before ingest so the write path cannot store what
+    // deserialize would throw on (NaN tick/significance used to pass the
+    // `typeof === 'number' && n >= 0` check and then NaN-sort inside query()).
+    const pending = { id: 'cr_pending', ...entry };
+    const errors = validateCampaignRecord(pending);
+    if (errors.length > 0) {
+      const detail = errors.map((e) => `${e.field} ${e.message}`).join('; ');
+      throw new Error(`CampaignJournal.record: refused to store — ${detail}`);
+    }
     // F-36f53181: clone at ingest the same way deserialize does. A shallow
     // spread would alias caller-owned witnesses[] / data into the Map.
     const record = cloneCampaignRecord({ id: this.generateId(), ...entry });

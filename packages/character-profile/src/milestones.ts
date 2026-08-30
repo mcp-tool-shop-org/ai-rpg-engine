@@ -49,8 +49,17 @@ export function adjustReputation(
   factionId: string,
   delta: number,
 ): CharacterProfile {
+  // F-586e744e: Math.min/max do not collapse NaN, so a non-finite delta used
+  // to write NaN reputation (stringify later emits null). Skip the mutation.
+  if (!Number.isFinite(delta)) {
+    return profile;
+  }
   const existing = profile.reputation.find((r) => r.factionId === factionId);
-  const newValue = Math.max(-100, Math.min(100, (existing?.value ?? 0) + delta));
+  const current = existing?.value ?? 0;
+  if (!Number.isFinite(current)) {
+    return profile;
+  }
+  const newValue = Math.max(-100, Math.min(100, current + delta));
 
   const updated: ReputationEntry[] = existing
     ? profile.reputation.map((r) =>

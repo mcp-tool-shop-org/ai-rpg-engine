@@ -157,6 +157,14 @@ describe('adjustReputation', () => {
     const updated = adjustReputation(profile, 'guild', -200);
     expect(getReputation(updated, 'guild')).toBe(-100);
   });
+
+  // F-586e744e: Math.min/max do not collapse NaN.
+  it('skips a non-finite delta rather than writing NaN reputation', () => {
+    const profile = makeProfile();
+    const updated = adjustReputation(profile, 'guild', NaN);
+    expect(getReputation(updated, 'guild')).toBe(0);
+    expect(Number.isFinite(getReputation(updated, 'guild'))).toBe(true);
+  });
 });
 
 describe('getReputation', () => {

@@ -350,6 +350,33 @@ describe('CampaignJournal schema versioning + substructure guards (CM-01)', () =
     expect(() => CampaignJournal.deserialize([bad])).toThrowError(/\[0\]/);
   });
 
+  // F-0ed561bd: NaN fails every < / > comparison, so the old
+  // `typeof === 'number' && tick >= 0` guard admitted it. Name the field.
+  test('corrupt substructure: NaN tick is rejected, naming tick as non-finite', () => {
+    const bad = { ...makeRecord(), id: 'cr_1', tick: NaN } as any;
+    expect(() => CampaignJournal.deserialize([bad])).toThrowError(/tick/i);
+    expect(() => CampaignJournal.deserialize([bad])).toThrowError(/NaN|non-finite/i);
+  });
+
+  test('corrupt substructure: NaN significance is rejected, naming significance as non-finite', () => {
+    const bad = { ...makeRecord(), id: 'cr_1', significance: NaN } as any;
+    expect(() => CampaignJournal.deserialize([bad])).toThrowError(/significance/i);
+    expect(() => CampaignJournal.deserialize([bad])).toThrowError(/NaN|non-finite/i);
+  });
+
+  test('record() refuses to store a NaN tick (write path matches deserialize)', () => {
+    const journal = new CampaignJournal();
+    expect(() => journal.record(makeRecord({ tick: NaN }))).toThrowError(/tick/i);
+    expect(() => journal.record(makeRecord({ tick: NaN }))).toThrowError(/NaN|non-finite/i);
+    expect(journal.size()).toBe(0);
+  });
+
+  test('record() refuses to store a NaN significance', () => {
+    const journal = new CampaignJournal();
+    expect(() => journal.record(makeRecord({ significance: NaN }))).toThrowError(/significance/i);
+    expect(journal.size()).toBe(0);
+  });
+
   test('corrupt substructure: out-of-range significance is rejected', () => {
     const bad = { ...makeRecord(), id: 'cr_1', significance: 7 } as any;
     expect(() => CampaignJournal.deserialize([bad])).toThrowError(/significance/i);

@@ -3,12 +3,50 @@
 import type {
   CampaignRecord,
   RelationshipAxes,
-  MemoryFragment,
-  NpcMemoryState,
 } from './types.js';
 import { VALID_CATEGORIES, VALID_CONSOLIDATIONS } from './types.js';
 
 export type ValidationError = { field: string; message: string };
+
+/** Human-readable label for a numeric value that failed a finite check. */
+export function describeNumeric(value: unknown): string {
+  if (typeof value !== 'number') return value === null ? 'null' : typeof value;
+  if (Number.isNaN(value)) return 'NaN';
+  if (value === Infinity) return 'Infinity';
+  if (value === -Infinity) return '-Infinity';
+  return String(value);
+}
+
+function requireFiniteInRange(
+  errors: ValidationError[],
+  field: string,
+  value: unknown,
+  min: number,
+  max: number,
+): void {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    errors.push({
+      field,
+      message: `must be a finite number between ${min} and ${max} (got ${describeNumeric(value)})`,
+    });
+    return;
+  }
+  if (value < min || value > max) {
+    errors.push({
+      field,
+      message: `must be a finite number between ${min} and ${max} (got ${value})`,
+    });
+  }
+}
+
+function requireFiniteNonNegative(errors: ValidationError[], field: string, value: unknown): void {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+    errors.push({
+      field,
+      message: `must be a finite non-negative number (got ${describeNumeric(value)})`,
+    });
+  }
+}
 
 export function validateCampaignRecord(record: unknown): ValidationError[] {
   const errors: ValidationError[] = [];
@@ -20,9 +58,9 @@ export function validateCampaignRecord(record: unknown): ValidationError[] {
   if (typeof r.id !== 'string' || r.id.length === 0) {
     errors.push({ field: 'id', message: 'must be a non-empty string' });
   }
-  if (typeof r.tick !== 'number' || r.tick < 0) {
-    errors.push({ field: 'tick', message: 'must be a non-negative number' });
-  }
+  // F-0ed561bd: NaN fails every < / > comparison, so `typeof === 'number' && tick >= 0`
+  // admitted NaN (and Infinity). Name the field when it is non-finite.
+  requireFiniteNonNegative(errors, 'tick', r.tick);
   if (!(VALID_CATEGORIES as readonly string[]).includes(r.category as string)) {
     errors.push({ field: 'category', message: `must be one of: ${VALID_CATEGORIES.join(', ')}` });
   }
@@ -32,9 +70,7 @@ export function validateCampaignRecord(record: unknown): ValidationError[] {
   if (typeof r.description !== 'string') {
     errors.push({ field: 'description', message: 'must be a string' });
   }
-  if (typeof r.significance !== 'number' || r.significance < 0 || r.significance > 1) {
-    errors.push({ field: 'significance', message: 'must be a number between 0 and 1' });
-  }
+  requireFiniteInRange(errors, 'significance', r.significance, 0, 1);
   if (!Array.isArray(r.witnesses)) {
     errors.push({ field: 'witnesses', message: 'must be an array' });
   }
@@ -49,18 +85,10 @@ export function validateRelationshipAxes(axes: unknown): ValidationError[] {
   }
   const a = axes as Record<string, unknown>;
 
-  if (typeof a.trust !== 'number' || a.trust < -1 || a.trust > 1) {
-    errors.push({ field: 'trust', message: 'must be a number between -1 and 1' });
-  }
-  if (typeof a.fear !== 'number' || a.fear < 0 || a.fear > 1) {
-    errors.push({ field: 'fear', message: 'must be a number between 0 and 1' });
-  }
-  if (typeof a.admiration !== 'number' || a.admiration < -1 || a.admiration > 1) {
-    errors.push({ field: 'admiration', message: 'must be a number between -1 and 1' });
-  }
-  if (typeof a.familiarity !== 'number' || a.familiarity < 0 || a.familiarity > 1) {
-    errors.push({ field: 'familiarity', message: 'must be a number between 0 and 1' });
-  }
+  requireFiniteInRange(errors, 'trust', a.trust, -1, 1);
+  requireFiniteInRange(errors, 'fear', a.fear, 0, 1);
+  requireFiniteInRange(errors, 'admiration', a.admiration, -1, 1);
+  requireFiniteInRange(errors, 'familiarity', a.familiarity, 0, 1);
 
   return errors;
 }
@@ -75,15 +103,15 @@ export function validateMemoryFragment(fragment: unknown): ValidationError[] {
   if (typeof f.recordId !== 'string' || f.recordId.length === 0) {
     errors.push({ field: 'recordId', message: 'must be a non-empty string' });
   }
-  if (typeof f.salience !== 'number' || f.salience < 0 || f.salience > 1) {
-    errors.push({ field: 'salience', message: 'must be a number between 0 and 1' });
-  }
-  if (typeof f.emotionalCharge !== 'number' || f.emotionalCharge < -1 || f.emotionalCharge > 1) {
-    errors.push({ field: 'emotionalCharge', message: 'must be a number between -1 and 1' });
-  }
+  requireFiniteInRange(errors, 'salience', f.salience, 0, 1);
+  requireFiniteInRange(errors, 'emotionalCharge', f.emotionalCharge, -1, 1);
   if (!(VALID_CONSOLIDATIONS as readonly string[]).includes(f.consolidation as string)) {
     errors.push({ field: 'consolidation', message: `must be one of: ${VALID_CONSOLIDATIONS.join(', ')}` });
   }
+  // F-0ed561bd: MemoryFragment.tick is the decay clock in consolidate/recall
+  // withinTicks. Missing or non-finite tick used to load, then currentTick -
+  // undefined produced NaN salience.
+  requireFiniteNonNegative(errors, 'tick', f.tick);
 
   return errors;
 }

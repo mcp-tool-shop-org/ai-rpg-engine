@@ -143,9 +143,27 @@ export type EquipmentModuleState = {
  * namespace was never initialized (pure-WorldState harness, no engine) gets a
  * fresh default written back, so reads and writes always land on the world.
  */
+function isPlainLoadoutsMap(value: unknown): value is Record<string, Loadout> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export function getEquipmentState(world: WorldState): EquipmentModuleState {
-  const existing = world.modules[EQUIPMENT_STATE_KEY] as EquipmentModuleState | undefined;
-  if (existing && typeof existing === 'object' && existing.loadouts) return existing;
+  const existing = world.modules[EQUIPMENT_STATE_KEY];
+  if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+    const loadouts = (existing as EquipmentModuleState).loadouts;
+    // F-ad8bb401: arrays are truthy, so loadouts: [] used to be treated as
+    // healthy. commitLoadout then wrote named properties onto the array, and
+    // JSON.stringify omitted them (`[]`). Only a non-null non-array object is
+    // a valid loadouts map.
+    if (isPlainLoadoutsMap(loadouts)) {
+      return existing as EquipmentModuleState;
+    }
+    console.warn(
+      `getEquipmentState: world.modules['${EQUIPMENT_STATE_KEY}'].loadouts is ${
+        Array.isArray(loadouts) ? 'an array' : loadouts === null ? 'null' : typeof loadouts
+      } — dropped; replacing with {} so Engine.serialize cannot omit named loadout keys`,
+    );
+  }
   const fresh: EquipmentModuleState = { loadouts: {} };
   world.modules[EQUIPMENT_STATE_KEY] = fresh;
   return fresh;

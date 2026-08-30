@@ -52,9 +52,14 @@ export function deserializeProfile(json: string): {
     }
   }
 
-  // Version check
+  // Version check. F-586e744e: JSON.parse('{"n":1e400}').n === Infinity, and
+  // Infinity > PROFILE_VERSION is true — that used to report "newer than
+  // supported" (upgrade the engine) instead of malformed. Number.isNaN does
+  // not catch Infinity.
   if (typeof obj['version'] !== 'number') {
     errors.push('Missing or invalid version');
+  } else if (!Number.isFinite(obj['version'])) {
+    errors.push(`version is non-finite (${String(obj['version'])}) — not a supported schema version`);
   } else if (obj['version'] > PROFILE_VERSION) {
     errors.push(`Profile version ${obj['version']} is newer than supported version ${PROFILE_VERSION}`);
   }
@@ -150,8 +155,12 @@ export function deserializeProfile(json: string): {
 
   // Required scalar / plain-object fields (CP-04). A save missing these
   // deserialized as a "valid" but corrupt profile before this check existed.
-  if (typeof obj['totalTurns'] !== 'number' || Number.isNaN(obj['totalTurns'])) {
+  // F-586e744e: Number.isNaN(Infinity) is false, so a 1e400 JSON overflow
+  // loaded, then JSON.stringify wrote null and the next load rejected it.
+  if (typeof obj['totalTurns'] !== 'number') {
     errors.push('Missing or invalid totalTurns');
+  } else if (!Number.isFinite(obj['totalTurns'])) {
+    errors.push(`totalTurns is non-finite (${String(obj['totalTurns'])})`);
   }
   if (
     typeof obj['custom'] !== 'object' ||
@@ -168,8 +177,11 @@ export function deserializeProfile(json: string): {
   if (typeof obj['progression'] === 'object' && obj['progression'] !== null && !Array.isArray(obj['progression'])) {
     const prog = obj['progression'] as Record<string, unknown>;
     for (const numField of ['xp', 'level', 'archetypeRank', 'disciplineRank'] as const) {
-      if (typeof prog[numField] !== 'number' || Number.isNaN(prog[numField])) {
+      const value = prog[numField];
+      if (typeof value !== 'number') {
         errors.push(`Missing or invalid progression.${numField}`);
+      } else if (!Number.isFinite(value)) {
+        errors.push(`progression.${numField} is non-finite (${String(value)})`);
       }
     }
     if (prog['traitEvolutions'] === undefined) {

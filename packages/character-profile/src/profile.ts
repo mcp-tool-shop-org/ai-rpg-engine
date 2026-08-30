@@ -84,7 +84,13 @@ export function touch(profile: CharacterProfile): CharacterProfile {
 
 /** Increment the turn counter. */
 export function incrementTurns(profile: CharacterProfile, count = 1): CharacterProfile {
-  return touch({ ...profile, totalTurns: profile.totalTurns + count });
+  // F-586e744e: a non-finite count used to poison totalTurns (NaN + n = NaN;
+  // Infinity persists and later stringify emits null). Skip the mutation
+  // rather than coerce; floor a finite result at 0 like grantXp floors xp.
+  if (!Number.isFinite(count) || !Number.isFinite(profile.totalTurns)) {
+    return profile;
+  }
+  return touch({ ...profile, totalTurns: Math.max(0, profile.totalTurns + count) });
 }
 
 /** Set a custom metadata value. */

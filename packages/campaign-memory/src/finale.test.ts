@@ -223,5 +223,28 @@ describe('finale', () => {
       expect(text).toContain('FACTION OUTCOMES');
       expect(text).toContain('COMPANIONS');
     });
+
+    // F-c453f8da: playerTitle/playerLevel were threaded into buildFinaleOutline
+    // and then dropped. Passing the resolved title and computeLevel result
+    // must appear on the climactic screen.
+    it('formatFinaleForTerminal names a Gravetouched Knight at level 7', () => {
+      const outline = buildFinaleOutline(
+        'victory', 'rising-power', makeJournal(),
+        npcs, factions, districts, 25,
+        'Gravetouched Knight',
+        7,
+      );
+      expect(outline.playerTitle).toBe('Gravetouched Knight');
+      expect(outline.playerLevel).toBe(7);
+      expect(outline.epilogueSeeds.some((s) => s.includes('Gravetouched Knight') && s.includes('7'))).toBe(true);
+
+      const terminal = formatFinaleForTerminal(outline);
+      expect(terminal).toContain('Gravetouched Knight');
+      expect(terminal).toContain('level 7');
+
+      const director = formatFinaleForDirector(outline);
+      expect(director).toContain('Gravetouched Knight');
+      expect(director).toContain('Level: 7');
+    });
   });
 });

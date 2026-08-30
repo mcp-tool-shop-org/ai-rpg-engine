@@ -49,6 +49,7 @@ export type {
 
 export type { ValidationError } from './validate.js';
 export {
+  describeNumeric,
   validateCampaignRecord,
   validateRelationshipAxes,
   validateMemoryFragment,

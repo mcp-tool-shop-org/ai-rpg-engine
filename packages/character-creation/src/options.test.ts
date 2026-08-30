@@ -5,6 +5,7 @@ import {
   getAvailableTraits,
   getAvailableDisciplines,
   getStatBudgetRemaining,
+  inspectStatBudgetRemaining,
 } from './options.js';
 import { testCatalog } from './test-fixtures.js';
 
@@ -90,5 +91,32 @@ describe('getStatBudgetRemaining', () => {
 
   it('returns zero when fully spent', () => {
     expect(getStatBudgetRemaining({ statAllocations: { str: 2, dex: 1 } }, testCatalog)).toBe(0);
+  });
+
+  // F-d86a0a70 / F-3a74d1fe: {str:-5, dex:8} sums to the budget (3) if the
+  // dump is counted, so remaining used to report 0 — "spent to the penny" —
+  // while validateBuild rejects the spread. Drop the negative; remaining is
+  // budget - 8, not 0.
+  it('does not go green on the F-3a74d1fe dump {str:-5, dex:8}', () => {
+    const remaining = getStatBudgetRemaining({ statAllocations: { str: -5, dex: 8 } }, testCatalog);
+    expect(remaining).not.toBe(0);
+    expect(remaining).toBe(3 - 8);
+    const report = inspectStatBudgetRemaining(
+      { statAllocations: { str: -5, dex: 8 } },
+      testCatalog,
+    );
+    expect(report.remaining).toBe(remaining);
+    expect(report.errors.some((e) => e.includes('statAllocations.str'))).toBe(true);
+    expect(report.errors.some((e) => /non-finite or negative/i.test(e))).toBe(true);
+  });
+
+  it('drops a NaN allocation by name instead of reporting remaining NaN', () => {
+    const report = inspectStatBudgetRemaining(
+      { statAllocations: { str: NaN } },
+      testCatalog,
+    );
+    expect(Number.isNaN(report.remaining)).toBe(false);
+    expect(report.remaining).toBe(3);
+    expect(report.errors.some((e) => e.includes('statAllocations.str') && /NaN/.test(e))).toBe(true);
   });
 });

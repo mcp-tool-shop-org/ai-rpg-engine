@@ -34,6 +34,15 @@ export function grantXp(
   profile: CharacterProfile,
   amount: number,
 ): { profile: CharacterProfile; leveledUp: boolean; newLevel: number } {
+  // F-586e744e: Math.max(0, xp + NaN) is NaN; Infinity persists until
+  // JSON.stringify writes null. Skip a non-finite grant rather than coerce.
+  if (!Number.isFinite(amount) || !Number.isFinite(profile.progression.xp)) {
+    return {
+      profile,
+      leveledUp: false,
+      newLevel: profile.progression.level,
+    };
+  }
   const newXp = Math.max(0, profile.progression.xp + amount);
   const newLevel = computeLevel(newXp);
   const leveledUp = newLevel > profile.progression.level;

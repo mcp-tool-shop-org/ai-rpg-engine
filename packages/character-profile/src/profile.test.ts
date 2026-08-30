@@ -115,6 +115,23 @@ describe('incrementTurns', () => {
     const updated = incrementTurns(profile, 5);
     expect(updated.totalTurns).toBe(5);
   });
+
+  // F-586e744e: non-finite count used to poison totalTurns.
+  it('skips a non-finite count rather than writing NaN', () => {
+    const profile = createProfile(testBuild, testStats, testResources, testTags, 'fantasy');
+    const updated = incrementTurns(profile, NaN);
+    expect(updated.totalTurns).toBe(0);
+    expect(Number.isFinite(updated.totalTurns)).toBe(true);
+  });
+
+  it('floors totalTurns at 0 on a large negative count', () => {
+    const profile = incrementTurns(
+      createProfile(testBuild, testStats, testResources, testTags, 'fantasy'),
+      3,
+    );
+    const updated = incrementTurns(profile, -100);
+    expect(updated.totalTurns).toBe(0);
+  });
 });
 
 describe('setCustom', () => {

@@ -154,16 +154,40 @@ describe('healInjury', () => {
       sustainedAt: 'turn-10',
     });
     const injuryId = profile.injuries[0]!.id;
-    const result = healInjury(profile, injuryId);
+    const result = healInjury(profile, injuryId, 'turn-12');
     expect(result.found).toBe(true);
     expect(result.profile.injuries[0]!.healed).toBe(true);
-    expect(result.profile.injuries[0]!.healedAt).toBeTruthy();
+    expect(result.profile.injuries[0]!.healedAt).toBe('turn-12');
   });
 
   it('returns false for unknown injury', () => {
     const profile = makeProfile();
-    const result = healInjury(profile, 'nonexistent');
+    const result = healInjury(profile, 'nonexistent', 'turn-12');
     expect(result.found).toBe(false);
+  });
+
+  // F-c3cedcb3: healedAt used to be new Date().toISOString(), so two replays
+  // of the same heal produced different serializeProfile JSON. Callers supply
+  // the event time (sibling of sustainedAt).
+  it('two heals of the same injury with a supplied at value share serialized healedAt', () => {
+    const wounded = addInjury(makeProfile(), {
+      name: 'Broken Arm',
+      description: 'Fractured.',
+      statPenalties: { vigor: -2 },
+      resourcePenalties: {},
+      grantedTags: ['injured'],
+      sustainedAt: 'turn-10',
+    });
+    const injuryId = wounded.injuries[0]!.id;
+    const a = healInjury(wounded, injuryId, 'turn-12');
+    const b = healInjury(wounded, injuryId, 'turn-12');
+    expect(a.profile.injuries[0]!.healedAt).toBe('turn-12');
+    expect(b.profile.injuries[0]!.healedAt).toBe('turn-12');
+    expect(a.profile.injuries[0]!.healedAt).toBe(b.profile.injuries[0]!.healedAt);
+    const savedA = JSON.parse(serializeProfile(a.profile)) as { injuries: Array<{ healedAt?: string }> };
+    const savedB = JSON.parse(serializeProfile(b.profile)) as { injuries: Array<{ healedAt?: string }> };
+    expect(savedA.injuries[0]!.healedAt).toBe(savedB.injuries[0]!.healedAt);
+    expect(savedA.injuries[0]!.healedAt).toBe('turn-12');
   });
 });
 
@@ -187,7 +211,7 @@ describe('getActiveInjuries', () => {
       sustainedAt: 'turn-8',
     });
     const cutId = profile.injuries[0]!.id;
-    profile = healInjury(profile, cutId).profile;
+    profile = healInjury(profile, cutId, 'turn-9').profile;
 
     const active = getActiveInjuries(profile);
     expect(active).toHaveLength(1);
@@ -234,7 +258,7 @@ describe('computeInjuryPenalties', () => {
       sustainedAt: 'turn-5',
     });
     const cutId = profile.injuries[0]!.id;
-    profile = healInjury(profile, cutId).profile;
+    profile = healInjury(profile, cutId, 'turn-9').profile;
 
     const penalties = computeInjuryPenalties(profile);
     expect(penalties.statPenalties).toEqual({});

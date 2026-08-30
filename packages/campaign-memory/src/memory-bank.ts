@@ -10,7 +10,7 @@ import type {
   RelationshipAxes,
 } from './types.js';
 import { CAMPAIGN_MEMORY_VERSION, createDefaultRelationship } from './types.js';
-import { validateMemoryFragment, validateRelationshipAxes } from './validate.js';
+import { describeNumeric, validateMemoryFragment, validateRelationshipAxes } from './validate.js';
 
 const DEFAULT_CONFIG: Required<CampaignMemoryConfig> = {
   fadeThreshold: 0.3,
@@ -311,14 +311,16 @@ function validateSubjectEntry(subjectId: string, entry: unknown): void {
     }
   }
 
-  if (typeof e.lastInteractionTick !== 'number' || Number.isNaN(e.lastInteractionTick)) {
+  // F-0ed561bd: Number.isNaN(Infinity) is false, so a 1e400 JSON overflow
+  // loaded as a "valid" tick/count. Name the field when it is non-finite.
+  if (typeof e.lastInteractionTick !== 'number' || !Number.isFinite(e.lastInteractionTick)) {
     throw new Error(
-      `NpcMemoryBank.deserialize: ${at}.lastInteractionTick must be a number (got ${typeof e.lastInteractionTick})`,
+      `NpcMemoryBank.deserialize: ${at}.lastInteractionTick must be a finite number (got ${describeNumeric(e.lastInteractionTick)})`,
     );
   }
-  if (typeof e.interactionCount !== 'number' || Number.isNaN(e.interactionCount)) {
+  if (typeof e.interactionCount !== 'number' || !Number.isFinite(e.interactionCount) || e.interactionCount < 0) {
     throw new Error(
-      `NpcMemoryBank.deserialize: ${at}.interactionCount must be a number (got ${typeof e.interactionCount})`,
+      `NpcMemoryBank.deserialize: ${at}.interactionCount must be a finite non-negative number (got ${describeNumeric(e.interactionCount)})`,
     );
   }
 }

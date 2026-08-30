@@ -25,7 +25,9 @@ export {
   getAvailableTraits,
   getAvailableDisciplines,
   getStatBudgetRemaining,
+  inspectStatBudgetRemaining,
 } from './options.js';
+export type { StatBudgetRemainingResult } from './options.js';
 export { resolveTitle, resolveEntanglements } from './titles.js';
 export { serializeBuild, deserializeBuild, validateSerializedBuild, BuildLoadError } from './serialize.js';
 export type { BuildLoadErrorShape } from './serialize.js';
