@@ -51,7 +51,7 @@
 
 import type { Engine, EntityState, ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
 import { applyStatus } from './status-core.js';
-import { makeProcContext, processStatusTriggers } from './status-effects.js';
+import { makeProcContext, PERIODIC_KEYS, processStatusTriggers } from './status-effects.js';
 
 // --- The closed effect vocabulary (mirrors world-forge's HazardEffect) -------
 
@@ -451,7 +451,19 @@ export function applyTypedHazards(
                     duration: effect.durationTicks,
                     stacking: 'refresh',
                     sourceId: spec.id,
-                    data: { periodicKind: 'damage', amount, tickOn: effect.tickOn },
+                    data: {
+                      periodicKind: 'damage',
+                      amount,
+                      tickOn: effect.tickOn,
+                      // Per-turn/timed birth is a standing round, not an
+                      // on-enter birth: skip elapsed===0 would drop the first
+                      // wait forever once refresh resets appliedAtTick
+                      // (F-f7a9f8e7). On-enter omits this stamp so
+                      // durationTicks:1 tickOn:turn-end still deals on the wait.
+                      ...(spec.trigger === 'per-turn' || spec.trigger === 'timed'
+                        ? { [PERIODIC_KEYS.CLOCK_RESTARTED]: world.meta.tick }
+                        : {}),
+                    },
                   },
                   world,
                 ),

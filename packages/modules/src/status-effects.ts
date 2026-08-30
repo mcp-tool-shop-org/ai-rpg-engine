@@ -79,11 +79,21 @@ export const PERIODIC_KEYS = {
   /**
    * HazardEffectSpec.damage.tickOn, persisted on durationTicks instances.
    * 'turn-start' (or absent) keeps the apply-tick pulse F-7793de81 locked.
-   * 'turn-end' skips elapsed===0 and takes the last pulse at expiry so a
-   * durationTicks:1 on-enter deals on the wait, not the enter round
-   * (F-bc6233d3). Not a second clock — same elapsed % period schedule.
+   * 'turn-end' skips elapsed===0 on first apply so a durationTicks:1
+   * on-enter deals on the wait, not the enter round (F-bc6233d3), and
+   * takes the last pulse at expiry. A refresh-restart onto this tick is
+   * a standing recast and must still pulse at elapsed===0 (F-f7a9f8e7).
+   * Not a second clock — same elapsed % period schedule.
    */
   TICK_ON: 'tickOn',
+  /**
+   * Tick restartPeriodicClock last reset appliedAtTick (or a per-turn/timed
+   * durationTicks birth stamped as a standing round). Skip elapsed===0 on
+   * turn-end only when this is absent or a different tick, so first apply
+   * of an on-enter DoT still waits (F-bc6233d3) while a recast onto this
+   * tick is the standing pulse (F-f7a9f8e7).
+   */
+  CLOCK_RESTARTED: 'clockRestartedTick',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -262,8 +272,13 @@ export function processPeriodicStatuses(world: WorldState, tick: number): Resolv
       // durationTicks:N == N pulses contract (pulses at 0..N-1).
       const expiring = duration !== undefined && elapsed >= duration;
       const skipApplyTick = strData(inst.data, PERIODIC_KEYS.TICK_ON) === 'turn-end';
+      // F-f7a9f8e7: refresh-restart onto this tick (appliedAtTick===tick AND
+      // the instance already existed) IS the standing pulse. Keep the
+      // elapsed===0 skip only on first apply so on-enter durationTicks:1
+      // tickOn:turn-end still deals on the wait, not enter.
+      const restartedThisTick = numData(inst.data, PERIODIC_KEYS.CLOCK_RESTARTED) === tick;
       const onPeriod = elapsed >= 0 && period > 0 && elapsed % period === 0
-        && !(skipApplyTick && elapsed === 0);
+        && !(skipApplyTick && elapsed === 0 && !restartedThisTick);
       const alive = (entity.resources.hp ?? 0) > 0;
       const lastFired = numData(inst.data, PERIODIC_KEYS.LAST_FIRED);
       const turnEndTail = skipApplyTick && expiring && period > 0 && elapsed % period === 0;

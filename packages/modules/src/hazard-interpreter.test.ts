@@ -838,6 +838,66 @@ describe('typed-hazard durationTicks apply-tick pulse and refresh clock (F-7793d
     expect(turnStart.afterEnter, 'turn-start still deals on enter').toBe(1);
     expect(turnStart.hpAfterEnter).toBe(35);
   });
+
+  it('F-f7a9f8e7: forge scalding-steam per-turn tickOn turn-end durationTicks:3 pulses every standing wait; on-enter durationTicks:1 still deals on the wait, not enter', () => {
+    const standing = createTestEngine({
+      modules: [statusCore, waitModule, createEnvironmentCore()],
+      entities: [makePlayer()],
+      zones,
+    });
+    registerTypedHazards(
+      standing.world.meta.gameId,
+      [spec({
+        id: 'scalding-steam',
+        name: 'Scalding Steam',
+        trigger: 'per-turn',
+        effects: [{ kind: 'damage', amount: 3, tickOn: 'turn-end', durationTicks: 3 }],
+      })],
+      { 'zone-a': ['scalding-steam'] },
+    );
+
+    const hpStart = standing.world.entities.player.resources.hp as number;
+    const cumulative: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      standing.submitAction('wait');
+      runWorldTick(standing);
+      cumulative.push(standing.world.eventLog.filter(hazardDamagePulses()).length);
+    }
+
+    expect(cumulative, 'standing turn-end steam must pulse every round with no skip tick').toEqual([1, 2, 3]);
+    expect(standing.world.entities.player.resources.hp).toBe(hpStart - 9);
+
+    // Duplicate spec ids are skipped on re-register of the same gameId.
+    unregisterTypedHazards(GAME_ID);
+
+    const onEnter = createTestEngine({
+      modules: [traversalCore, statusCore, waitModule, createEnvironmentCore()],
+      entities: [makePlayer()],
+      zones,
+      startZone: 'zone-a',
+    });
+    registerTypedHazards(
+      onEnter.world.meta.gameId,
+      [spec({
+        id: 'scalding-steam',
+        name: 'Scalding Steam',
+        trigger: 'on-enter',
+        effects: [{ kind: 'damage', amount: 5, tickOn: 'turn-end', durationTicks: 1 }],
+      })],
+      { 'zone-b': ['scalding-steam'] },
+    );
+
+    getWorldTickState(onEnter.store.state);
+    onEnter.submitAction('move', { targetIds: ['zone-b'] });
+    runWorldTick(onEnter);
+    expect(onEnter.world.eventLog.filter(hazardDamagePulses()).length, 'turn-end must not deal on the enter round').toBe(0);
+    expect(onEnter.world.entities.player.resources.hp).toBe(40);
+
+    onEnter.submitAction('wait');
+    runWorldTick(onEnter);
+    expect(onEnter.world.eventLog.filter(hazardDamagePulses()).length, 'turn-end must deal on the wait').toBe(1);
+    expect(onEnter.world.entities.player.resources.hp).toBe(35);
+  });
 });
 
 describe('typed-hazard skips corpses (F-fb21bb60)', () => {

@@ -117,7 +117,13 @@ function restartPeriodicClock(existing: AppliedStatus, tick: number, duration: n
   existing.expiresAtTick = tick + duration;
   existing.appliedAtTick = tick;
   if (existing.data && typeof existing.data[PERIODIC_KEYS.KIND] === 'string') {
-    existing.data = { ...existing.data, [PERIODIC_KEYS.DURATION]: duration };
+    existing.data = {
+      ...existing.data,
+      [PERIODIC_KEYS.DURATION]: duration,
+      // F-f7a9f8e7: this recast IS the standing pulse. processPeriodicStatuses
+      // must not skip elapsed===0 on a turn-end instance restarted onto this tick.
+      [PERIODIC_KEYS.CLOCK_RESTARTED]: tick,
+    };
   }
 }
 

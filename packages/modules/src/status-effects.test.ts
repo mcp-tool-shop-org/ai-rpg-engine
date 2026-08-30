@@ -340,6 +340,31 @@ describe('processPeriodicStatuses — DoT/HoT', () => {
     expect(end.resources.hp).toBe(15);
     expect(end.statuses.some((s) => s.statusId === 'burning')).toBe(false);
   });
+
+  it('F-f7a9f8e7: turn-end refresh-restarted onto this tick pulses at elapsed===0; first apply still skips', () => {
+    const e = makeEntity({ resources: { hp: 20, maxHp: 20 } });
+    const world = makeWorld([e], 0);
+    applyStatus(e, 'burning', 0, {
+      stacking: 'refresh',
+      duration: 3,
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 4, tickOn: 'turn-end' },
+    }, world);
+
+    const birth = processPeriodicStatuses(world, 0);
+    expect(birth.filter((ev) => ev.type === 'status.periodic.damage')).toHaveLength(0);
+    expect(e.resources.hp).toBe(20);
+    expect(e.statuses.some((s) => s.statusId === 'burning')).toBe(true);
+
+    applyStatus(e, 'burning', 1, {
+      stacking: 'refresh',
+      duration: 3,
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 4, tickOn: 'turn-end' },
+    }, world);
+    world.meta.tick = 1;
+    const recast = processPeriodicStatuses(world, 1);
+    expect(recast.filter((ev) => ev.type === 'combat.damage.applied')).toHaveLength(1);
+    expect(e.resources.hp).toBe(16);
+  });
 });
 
 // ---------------------------------------------------------------------------
