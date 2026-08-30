@@ -13,7 +13,7 @@ export const manifest: GameManifest = {
   id: 'gaslight-detective',
   title: 'Gaslight Detective',
   version: '0.1.0',
-  engineVersion: '0.1.0',
+  engineVersion: '>=3.8.0 <4.0.0',
   ruleset: 'detective-minimal',
   modules: [
     'traversal-core',
@@ -696,7 +696,7 @@ export const packMeta: PackMetadata = {
   difficulty: 'intermediate',
   tones: ['noir', 'dark'],
   tags: ['investigation', 'victorian', 'interrogation', 'deduction'],
-  engineVersion: '2.0.0',
+  engineVersion: '>=3.8.0 <4.0.0',
   version: '2.0.0',
   description: 'Investigate a locked-room murder at Ashford Estate. Interrogate suspects, gather evidence, and survive the back alleys.',
   narratorTone: 'victorian noir, measured, atmospheric, suspenseful',

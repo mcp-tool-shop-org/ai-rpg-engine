@@ -225,4 +225,47 @@ describe('validatePackRubric', () => {
     const twoArg = validatePackRubric(pack, [pack]);
     expect(oneArg).toEqual(twoArg);
   });
+
+  it('F-ee2bf238: verbs:undefined is ok:false with a structured detail, not a TypeError', () => {
+    const pack = makePack('no-verbs');
+    (pack.ruleset as { verbs?: unknown }).verbs = undefined;
+    let result!: ReturnType<typeof validatePackRubric>;
+    expect(() => { result = validatePackRubric(pack); }).not.toThrow();
+    expect(result.ok).toBe(false);
+    const check = result.checks.find((c) => c.dimension === 'distinct-verbs');
+    expect(check?.passed).toBe(false);
+    expect(check?.detail).toContain('pack.ruleset.verbs');
+    expect(check?.detail).toContain('array of { id }');
+  });
+
+  it('F-ee2bf238: verbs:[null] is ok:false, not a TypeError', () => {
+    const pack = makePack('null-verbs');
+    (pack.ruleset as { verbs?: unknown }).verbs = [null];
+    let result!: ReturnType<typeof validatePackRubric>;
+    expect(() => { result = validatePackRubric(pack, [pack]); }).not.toThrow();
+    expect(result.ok).toBe(false);
+    const check = result.checks.find((c) => c.dimension === 'distinct-verbs');
+    expect(check?.passed).toBe(false);
+  });
+
+  it('F-ee2bf238: a catalog neighbour with verbs:[null] does not take the call down', () => {
+    const good = makePack('good', {
+      verbs: [
+        { id: 'move', name: 'Move' },
+        { id: 'interrogate', name: 'Interrogate' },
+      ],
+      resources: [
+        { id: 'hp', name: 'HP', min: 0, max: 100, default: 50 },
+        { id: 'composure', name: 'Composure', min: 0, max: 20, default: 12 },
+      ],
+      genres: ['mystery'],
+      tones: ['noir'],
+      districts: [{ id: 'old-quarter', controllingFaction: 'the-syndicate' }],
+    });
+    const neighbour = makePack('neighbour');
+    (neighbour.ruleset as { verbs?: unknown }).verbs = [null];
+    let result!: ReturnType<typeof validatePackRubric>;
+    expect(() => { result = validatePackRubric(good, [good, neighbour]); }).not.toThrow();
+    expect(result.checks.find((c) => c.dimension === 'distinct-verbs')?.passed).toBe(true);
+  });
 });

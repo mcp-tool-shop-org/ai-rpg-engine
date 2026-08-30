@@ -133,4 +133,29 @@ describe('PackRegistry', () => {
     clearRegistry();
     expect(getAllPacks()).toHaveLength(0);
   });
+
+  it('F-ff841673: refuses a missing meta.id with a structured throw naming the field', () => {
+    const pack = makePack();
+    (pack.meta as { id?: string }).id = '';
+    expect(() => registerPack(pack)).toThrow(/meta\.id must be a non-empty string/);
+    expect(() => registerPack(pack)).toThrow(/set meta\.id/);
+  });
+
+  it('F-ff841673: refuses non-array genres/tones/tags with a structured throw naming the field', () => {
+    const pack = makePack({ id: 'no-genres' });
+    (pack.meta as { genres?: unknown }).genres = undefined;
+    expect(() => registerPack(pack)).toThrow(/meta\.genres must be an array/);
+    expect(() => registerPack(pack)).toThrow(/set meta\.genres/);
+  });
+
+  it('F-ff841673: filterPacks treats a missing/non-array field as non-matching instead of throwing', () => {
+    const pack = makePack({ id: 'later-mutated', genres: ['fantasy'] });
+    registerPack(pack);
+    (pack.meta as { genres?: unknown }).genres = undefined;
+    expect(() => filterPacks({ genre: 'fantasy' })).not.toThrow();
+    expect(filterPacks({ genre: 'fantasy' })).toHaveLength(0);
+    (pack.meta as { tones?: unknown }).tones = 'dark';
+    expect(() => filterPacks({ tone: 'dark' })).not.toThrow();
+    expect(filterPacks({ tone: 'dark' })).toHaveLength(0);
+  });
 });

@@ -14,11 +14,12 @@
 // no runtime dependency on any starter.
 
 import { describe, it, expect } from 'vitest';
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { validatePackRubric } from './rubric.js';
 import type { PackEntry } from './types.js';
+import { satisfiesRange, isBareVersion } from '@ai-rpg-engine/content-schema';
 
 import * as fantasy from '@ai-rpg-engine/starter-fantasy';
 import * as cyberpunk from '@ai-rpg-engine/starter-cyberpunk';
@@ -308,5 +309,34 @@ describe('pack rubric × real catalog (PG-1)', () => {
     const check = result.checks.find((c) => c.dimension === 'distinct-narrative-fantasy');
     expect(check?.passed).toBe(false);
     expect(check?.detail).toContain('duplicates another pack');
+  });
+
+  it('F-abed87fc: every catalog pack stamps a real engineVersion range that satisfies the workspace engine and locksteps packMeta', () => {
+    const rootPkg = JSON.parse(
+      readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'package.json'), 'utf8'),
+    ) as { version: string };
+    const workspaceEngine = rootPkg.version;
+    expect(workspaceEngine).toMatch(/^\d+\.\d+\.\d+/);
+
+    for (const pack of realCatalog) {
+      const claimed = pack.manifest.engineVersion;
+      expect(typeof claimed, `${pack.meta.id} manifest.engineVersion must be a string`).toBe('string');
+      expect(
+        isBareVersion(claimed),
+        `${pack.meta.id} manifest.engineVersion "${claimed}" is a bare version; stamp a range like ">=${workspaceEngine} <4.0.0"`,
+      ).toBe(false);
+      expect(
+        satisfiesRange(workspaceEngine, claimed),
+        `${pack.meta.id} manifest.engineVersion "${claimed}" does not satisfy workspace engine ${workspaceEngine} — set manifest.engineVersion to a range such as ">=${workspaceEngine} <4.0.0"`,
+      ).toBe(true);
+      const metaVer = pack.meta.engineVersion;
+      const lockstep =
+        metaVer === claimed ||
+        (typeof metaVer === 'string' && isBareVersion(metaVer) && satisfiesRange(metaVer, claimed));
+      expect(
+        lockstep,
+        `${pack.meta.id} packMeta.engineVersion "${metaVer}" must equal or fall inside manifest.engineVersion "${claimed}"`,
+      ).toBe(true);
+    }
   });
 });

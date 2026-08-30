@@ -4,12 +4,34 @@ import type { PackEntry, RubricCheck, RubricResult } from './types.js';
 
 const BASE_VERBS = new Set(['move', 'inspect', 'attack', 'use', 'speak', 'choose']);
 
+function recordIds(raw: unknown): { ids: string[]; missing: boolean } {
+  if (!Array.isArray(raw)) return { ids: [], missing: true };
+  const ids: string[] = [];
+  for (const item of raw) {
+    if (item === null || item === undefined) continue;
+    if (typeof item === 'object' && typeof (item as { id?: unknown }).id === 'string') {
+      ids.push((item as { id: string }).id);
+    }
+  }
+  return { ids, missing: false };
+}
+
+function stringArray(raw: unknown): { values: string[]; missing: boolean } {
+  if (!Array.isArray(raw)) return { values: [], missing: true };
+  return { values: raw.filter((v): v is string => typeof v === 'string'), missing: false };
+}
+
 export function validatePackRubric(
   pack: PackEntry,
   // Defaults to [pack] so a one-arg call cannot throw on allPacks.filter.
   allPacks: PackEntry[] = [pack],
 ): RubricResult {
-  const others = allPacks.filter((p) => p.meta.id !== pack.meta.id);
+  if (pack === null || typeof pack !== 'object') {
+    return { packId: '', ok: false, checks: [], score: 0 };
+  }
+  const catalog = Array.isArray(allPacks) ? allPacks : [pack];
+  const packId = typeof pack.meta?.id === 'string' ? pack.meta.id : '';
+  const others = catalog.filter((p) => p?.meta?.id !== packId);
   const checks: RubricCheck[] = [];
 
   checks.push(checkDistinctVerbs(pack, others));
@@ -21,18 +43,30 @@ export function validatePackRubric(
   checks.push(checkDistinctNarrativeFantasy(pack, others));
 
   const score = checks.filter((c) => c.passed).length;
+  const verbs = recordIds(pack.ruleset?.verbs);
+  const resources = recordIds(pack.ruleset?.resources);
+  const structuralGap = verbs.missing || resources.missing;
   return {
-    packId: pack.meta.id,
-    ok: score >= 5,
+    packId,
+    ok: score >= 5 && !structuralGap,
     checks,
     score,
   };
 }
 
 function checkDistinctVerbs(pack: PackEntry, others: PackEntry[]): RubricCheck {
-  const packVerbs = pack.ruleset.verbs.map((v) => v.id);
+  const own = recordIds(pack.ruleset?.verbs);
+  if (own.missing) {
+    return {
+      dimension: 'distinct-verbs',
+      passed: false,
+      detail:
+        'pack.ruleset.verbs is missing or not an array — set ruleset.verbs to an array of { id } records (null elements are skipped). A missing verbs list cannot prove distinct-verbs.',
+    };
+  }
+  const packVerbs = own.ids;
   const nonBaseVerbs = packVerbs.filter((v) => !BASE_VERBS.has(v));
-  const otherVerbSets = others.map((o) => new Set(o.ruleset.verbs.map((v) => v.id)));
+  const otherVerbSets = others.map((o) => new Set(recordIds(o?.ruleset?.verbs).ids));
   // "Distinct" means distinct across the catalog: at least one non-base verb
   // that no other pack declares. Existence alone is not distinctness.
   const trulyUnique = nonBaseVerbs.filter((v) =>
@@ -57,7 +91,16 @@ function checkDistinctVerbs(pack: PackEntry, others: PackEntry[]): RubricCheck {
 }
 
 function checkDistinctResourcePressure(pack: PackEntry): RubricCheck {
-  const nonHp = pack.ruleset.resources.filter((r) => r.id !== 'hp').map((r) => r.id);
+  const own = recordIds(pack.ruleset?.resources);
+  if (own.missing) {
+    return {
+      dimension: 'distinct-resource-pressure',
+      passed: false,
+      detail:
+        'pack.ruleset.resources is missing or not an array — set ruleset.resources to an array of { id } records (null elements are skipped).',
+    };
+  }
+  const nonHp = own.ids.filter((id) => id !== 'hp');
 
   return {
     dimension: 'distinct-resource-pressure',
@@ -96,9 +139,18 @@ function checkDistinctFactionTopology(pack: PackEntry): RubricCheck {
 }
 
 function checkDistinctPresentationRule(pack: PackEntry, others: PackEntry[]): RubricCheck {
-  const packTones = new Set(pack.meta.tones);
+  const own = stringArray(pack.meta?.tones);
+  if (own.missing) {
+    return {
+      dimension: 'distinct-presentation-rule',
+      passed: false,
+      detail:
+        "pack.meta.tones is missing or not an array — set meta.tones to an array of tone strings, e.g. ['dark'].",
+    };
+  }
+  const packTones = new Set(own.values);
   const isDuplicate = others.some((o) => {
-    const oTones = new Set(o.meta.tones);
+    const oTones = new Set(stringArray(o?.meta?.tones).values);
     return packTones.size === oTones.size && [...packTones].every((t) => oTones.has(t));
   });
 
@@ -112,8 +164,9 @@ function checkDistinctPresentationRule(pack: PackEntry, others: PackEntry[]): Ru
 }
 
 function checkDistinctAudioPalette(pack: PackEntry): RubricCheck {
-  const hasAudio = pack.meta.tags.some((t) => t.includes('audio')) ||
-    pack.manifest.audioProfile !== undefined;
+  const tags = Array.isArray(pack.meta?.tags) ? pack.meta.tags : [];
+  const hasAudio = tags.some((t) => typeof t === 'string' && t.includes('audio')) ||
+    pack.manifest?.audioProfile !== undefined;
 
   return {
     dimension: 'distinct-audio-palette',
@@ -125,18 +178,21 @@ function checkDistinctAudioPalette(pack: PackEntry): RubricCheck {
 }
 
 function checkDistinctFailureMode(pack: PackEntry, others: PackEntry[]): RubricCheck {
-  const failureIds = pack.ruleset.resources
-    .filter((r) => r.id !== 'hp' && r.id !== 'stamina')
-    .map((r) => r.id);
+  const own = recordIds(pack.ruleset?.resources);
+  if (own.missing) {
+    return {
+      dimension: 'distinct-failure-mode',
+      passed: false,
+      detail:
+        'pack.ruleset.resources is missing or not an array — set ruleset.resources to an array of { id } records (null elements are skipped).',
+    };
+  }
+  const failureIds = own.ids.filter((id) => id !== 'hp' && id !== 'stamina');
   // "Distinct" means distinct across the catalog: at least one failure-pressure
   // resource no other pack declares. A shared pressure resource is a shared
   // failure mode, not a distinct one.
   const otherFailureSets = others.map(
-    (o) => new Set(
-      o.ruleset.resources
-        .filter((r) => r.id !== 'hp' && r.id !== 'stamina')
-        .map((r) => r.id),
-    ),
+    (o) => new Set(recordIds(o?.ruleset?.resources).ids.filter((id) => id !== 'hp' && id !== 'stamina')),
   );
   const trulyUnique = failureIds.filter((id) =>
     otherFailureSets.every((set) => !set.has(id)),
@@ -159,9 +215,18 @@ function checkDistinctFailureMode(pack: PackEntry, others: PackEntry[]): RubricC
 }
 
 function checkDistinctNarrativeFantasy(pack: PackEntry, others: PackEntry[]): RubricCheck {
-  const genreKey = [...pack.meta.genres].sort().join('+');
+  const own = stringArray(pack.meta?.genres);
+  if (own.missing) {
+    return {
+      dimension: 'distinct-narrative-fantasy',
+      passed: false,
+      detail:
+        "pack.meta.genres is missing or not an array — set meta.genres to an array of genre strings, e.g. ['fantasy'].",
+    };
+  }
+  const genreKey = [...own.values].sort().join('+');
   const isDuplicate = others.some(
-    (o) => [...o.meta.genres].sort().join('+') === genreKey,
+    (o) => [...stringArray(o?.meta?.genres).values].sort().join('+') === genreKey,
   );
 
   return {

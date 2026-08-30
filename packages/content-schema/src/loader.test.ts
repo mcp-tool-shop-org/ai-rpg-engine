@@ -218,4 +218,53 @@ describe('loadContent', () => {
     expect(r.ok).toBe(false);
     expect(r.errors.some((e) => e.path.includes('zoneIds'))).toBe(true);
   });
+
+  it('F-9c5db864: duplicate ability ids fail loadContent with a unique-id error', () => {
+    const ability = { id: 'slash', name: 'Slash', verb: 'attack', tags: [], effects: [] };
+    const r = loadContent({ abilities: [ability, { ...ability }] });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('duplicate ability id "slash"') && e.message.includes('unique'))).toBe(true);
+  });
+
+  it('F-9c5db864: duplicate status ids fail loadContent with a unique-id error', () => {
+    const status = { id: 'burn', name: 'Burn', tags: ['fire'], stacking: 'replace' as const };
+    const r = loadContent({ statuses: [status, { ...status }] });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('duplicate status id "burn"') && e.message.includes('unique'))).toBe(true);
+  });
+
+  it('F-da9018b8: summary names present REFS_ITERATED_KEYS collections after the four cores', () => {
+    const r = loadContent({
+      entities: [{ id: 'p', type: 'player', name: 'P' }],
+      zones: [{ id: 'z', name: 'Z' }],
+      hazardDefinitions: [{ id: 'fire', effects: [], trigger: 'enter' }],
+      districts: [{ id: 'd', name: 'D', zoneIds: ['z'], tags: [] }],
+      items: [{ id: 'rope' }],
+    } as any);
+    expect(r.ok).toBe(true);
+    expect(r.summary).toContain('1 entities');
+    expect(r.summary).toContain('1 zones');
+    expect(r.summary).toContain('0 dialogues');
+    expect(r.summary).toContain('0 quests');
+    expect(r.summary).toContain('1 hazardDefinitions');
+    expect(r.summary).toContain('1 districts');
+    expect(r.summary).toContain('1 items');
+    expect(r.summary.indexOf('entities')).toBeLessThan(r.summary.indexOf('hazardDefinitions'));
+  });
+
+  it('F-da9018b8: absent extra collections are omitted from the summary', () => {
+    const r = loadContent({ entities: [{ id: 'p', type: 'player', name: 'P' }] });
+    expect(r.summary).toContain('1 entities');
+    expect(r.summary).not.toContain('hazardDefinitions');
+    expect(r.summary).not.toContain('abilities');
+  });
+
+  it('F-8ff6c29c: JSON 1e1000 cooldown fails loadContent, not ok:true', () => {
+    const parsed = JSON.parse(
+      '{"abilities":[{"id":"slash","name":"Slash","verb":"attack","tags":[],"effects":[],"cooldown":1e1000}]}',
+    );
+    const r = loadContent(parsed);
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('cooldown') && e.message.includes('finite'))).toBe(true);
+  });
 });

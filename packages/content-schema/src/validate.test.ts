@@ -695,6 +695,52 @@ describe('validateStatusDefinitionPack', () => {
   });
 });
 
+describe('F-8ff6c29c — finite numbers at the content boundary', () => {
+  it('JSON 1e1000 overflows to Infinity and ability.cooldown is refused', () => {
+    const parsed = JSON.parse(
+      '{"id":"slash","name":"Slash","verb":"attack","tags":[],"effects":[],"cooldown":1e1000}',
+    );
+    expect(parsed.cooldown).toBe(Infinity);
+    const r = validateAbilityDefinition(parsed);
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('cooldown') && e.message.includes('finite'))).toBe(true);
+    expect(r.errors.some((e) => e.message.includes('JSON 1e1000'))).toBe(true);
+  });
+
+  it('in-memory NaN ResourceCost.amount is refused', () => {
+    const r = validateAbilityDefinition({
+      id: 'slash',
+      name: 'Slash',
+      verb: 'attack',
+      tags: [],
+      effects: [],
+      costs: [{ resourceId: 'stamina', amount: NaN }],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('amount') && e.message.includes('finite'))).toBe(true);
+    expect(r.errors.some((e) => e.message.includes('amount'))).toBe(true);
+  });
+
+  it('in-memory NaN EntityBlueprint.baseStats is refused', () => {
+    const r = validateEntityBlueprint({
+      id: 'goblin',
+      type: 'enemy',
+      name: 'Goblin',
+      baseStats: { vigor: NaN },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('baseStats.vigor') && e.message.includes('finite'))).toBe(true);
+  });
+
+  it('JSON 1e1000 EntityBlueprint.baseStats is refused', () => {
+    const parsed = JSON.parse('{"id":"g","type":"enemy","name":"G","baseStats":{"vigor":1e1000}}');
+    expect(parsed.baseStats.vigor).toBe(Infinity);
+    const r = validateEntityBlueprint(parsed);
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('baseStats.vigor') && e.message.includes('Infinity'))).toBe(true);
+  });
+});
+
 describe('formatErrors', () => {
   it('returns Valid for ok result', () => {
     expect(formatErrors({ ok: true, errors: [] })).toBe('Valid');
