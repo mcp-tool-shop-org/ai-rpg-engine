@@ -15,11 +15,17 @@ export type NarrationPlan = {
   /**
    * TTS-pipeline expansion (wave-2 R4 ruling): the current turn's dialogue
    * content the terminal renders in its Dialogue section — textureHint,
-   * dialogueBias, the spoken line itself, then partyPresence/pressureHint/
-   * opportunityHint — as separate narratable fragments in on-screen reading
-   * order, so a spoken-output embedder gets the same story beats the screen
-   * shows even though dialogue.node.entered is structurally excluded from
-   * `sceneText` (see terminal-ui's formatEventLine). Plain prose, no
+   * dialogueBias, then partyPresence/pressureHint/opportunityHint — as
+   * separate narratable fragments in on-screen reading order, so a
+   * spoken-output embedder gets the same story beats the screen shows even
+   * though dialogue.node.entered is structurally excluded from `sceneText`
+   * (see terminal-ui's formatEventLine). The spoken line itself is
+   * deliberately NOT included here (F-f1c74adc): {@link SpeakerCue.text}
+   * (via `speaker`) already carries it, and {@link PresentationRenderer.playVoice}
+   * is the one hook an embedder uses to speak it — duplicating it into
+   * `asides` would double-speak the same turn. An embedder that consumes
+   * both `speaker` and `asides` should treat them as disjoint: asides is the
+   * surrounding texture, speaker is the line. Plain prose, no
    * bracket/parenthetical display typography — that is the terminal's
    * markup, not the script's content. Optional and omitted (not `[]`) when
    * the turn has no dialogue, so a plan with no dialogue is unchanged from

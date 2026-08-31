@@ -457,23 +457,30 @@ describe('buildNarrationPlan: dialogue asides (TTS pipeline expansion)', () => {
     expect(validateNarrationPlan(plan)).toEqual([]);
   });
 
-  it('a plain dialogue node (no hints) contributes just its spoken line', () => {
+  it('a plain dialogue node (no hints) contributes nothing to asides — the spoken line reaches an embedder via speaker, not asides (F-f1c74adc)', () => {
     const plan = buildNarrationPlan({ sceneText: 'The pilgrim leans close.', events: [dialogueEvent] });
-    expect(plan.asides).toEqual(['Turn back, traveler.']);
+    expect(plan.asides).toBeUndefined();
+    expect(plan.speaker?.text).toBe('Turn back, traveler.');
     expect(validateNarrationPlan(plan)).toEqual([]);
   });
 
-  it('a fully-hinted dialogue node composes texture -> bias -> line -> party/pressure/opportunity, in that order, verbatim (no dialogueHint, no display parens/labels)', () => {
+  it('a fully-hinted dialogue node composes texture -> bias -> party/pressure/opportunity, in that order, verbatim (no spoken line, no dialogueHint, no display parens/labels) (F-f1c74adc)', () => {
     const plan = buildNarrationPlan({ sceneText: 'ignored for this check', events: [fullHintEvent] });
     expect(plan.asides).toEqual([
       'Mira edging toward the exit, eyes darting',
       'A friend of the faction.',
-      "I don't know what you're talking about.",
       'Accompanied by Doc (support, HP 8/8, cautious)',
       'faction-retaliation (imminent): the Ironclad Watch are mustering to move against you.',
       'delivery (available): Smuggle medicine past the checkpoint — 3 turns remaining',
     ]);
     expect(validateNarrationPlan(plan)).toEqual([]);
+  });
+
+  it('never duplicates the spoken line into asides when both speaker and asides are set (F-f1c74adc)', () => {
+    const plan = buildNarrationPlan({ sceneText: 'ignored for this check', events: [fullHintEvent] });
+    expect(plan.speaker?.text).toBe("I don't know what you're talking about.");
+    expect(plan.asides).toBeDefined();
+    expect(plan.asides).not.toContain(plan.speaker?.text);
   });
 
   it('a dialogue node with no text contributes nothing (matches deriveSpeaker\'s own no-text exclusion)', () => {
@@ -495,14 +502,19 @@ describe('buildNarrationPlan: dialogue asides (TTS pipeline expansion)', () => {
     expect(plan.asides).toBeUndefined();
   });
 
-  it('multiple dialogue nodes in one turn contribute in event order', () => {
-    const later: NarrationSourceEvent = {
+  it('multiple dialogue nodes in one turn contribute their surrounding fragments in event order (F-f1c74adc: spoken lines excluded from both)', () => {
+    const first: NarrationSourceEvent = {
       type: 'dialogue.node.entered',
-      payload: { nodeId: 'warn', speaker: 'Weary Pilgrim', text: 'The crypt hungers.' },
+      payload: { nodeId: 'entry', speaker: 'Weary Pilgrim', text: 'Turn back, traveler.', textureHint: 'The pilgrim raises a hand.' },
       presentation: { priority: 'high' },
     };
-    const plan = buildNarrationPlan({ sceneText: 'ignored', events: [dialogueEvent, later] });
-    expect(plan.asides).toEqual(['Turn back, traveler.', 'The crypt hungers.']);
+    const later: NarrationSourceEvent = {
+      type: 'dialogue.node.entered',
+      payload: { nodeId: 'warn', speaker: 'Weary Pilgrim', text: 'The crypt hungers.', textureHint: 'His voice drops.' },
+      presentation: { priority: 'high' },
+    };
+    const plan = buildNarrationPlan({ sceneText: 'ignored', events: [first, later] });
+    expect(plan.asides).toEqual(['The pilgrim raises a hand.', 'His voice drops.']);
   });
 
   describe('deriveSpeaker emotion (dialogueHint -> SpeakerCue.emotion, verbatim)', () => {
