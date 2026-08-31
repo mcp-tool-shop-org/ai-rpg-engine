@@ -57,11 +57,26 @@ export type CampaignMemoryCoreConfig = {
  * INTERCEPTOR is the actor, not the attacker who dealt the blow (event.actorId
  * is the attacker, per make-event.ts); resolveActorTarget reads payload's
  * interceptorId explicitly.
+ * combat.encounter.cleared → combat (F-32948b79/F-6a2e9f14, modules' new
+ * victory event, wave-2 addendum) — RecordCategory has no exact
+ * 'victory'/'encounter-cleared' value today; folded into the existing
+ * (previously orphan — no prior producer) 'combat' bucket rather than adding
+ * one, because a new RecordCategory value is a required key in
+ * relationship-effects.ts's DEFAULT_RELATIONSHIP_EFFECTS (a TOTAL
+ * Record<RecordCategory, ...> map — a missing key fails to compile) and
+ * would also need a types.ts VALID_CATEGORIES entry, while 'combat' already
+ * satisfies both with zero changes — smallest type blast radius. No
+ * targetId (the finalOpponent is already the 'kill'/'death' target from its
+ * own combat.entity.defeated; this event is additive, not a second target
+ * relationship). data.participants carries the event's own
+ * payload.participants (survivors + finalOpponent) verbatim, truthy-gated —
+ * this module reads it, it never re-derives clearance itself.
  *
  * F-c1949ae0 (consolidate) is still not called from this file.
  */
 const EVENT_CATEGORY: Record<string, RecordCategory | readonly RecordCategory[]> = {
   'combat.entity.defeated': ['kill', 'death'],
+  'combat.encounter.cleared': 'combat',
   'campaign.kill': 'kill',
   'campaign.gift': 'gift',
   'item.gifted': 'gift',
@@ -180,6 +195,26 @@ function stringPayload(payload: Record<string, unknown>, key: string): string | 
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
+/**
+ * combat.encounter.cleared's payload.participants ({ survivors, finalOpponent }),
+ * read verbatim off the event and truthy-gated — a malformed or future event
+ * missing the field must not crash the write path or leave a
+ * `participants: undefined` key on the record's data. This module never
+ * recomputes survivors/finalOpponent itself (that is modules' job).
+ */
+function encounterParticipants(payload: Record<string, unknown>): Record<string, unknown> | undefined {
+  const participants = payload.participants;
+  return isPlainObject(participants) ? participants : undefined;
+}
+
+/** payload.participants.finalOpponent.name, for a readable description. */
+function finalOpponentName(participants: Record<string, unknown> | undefined): string | undefined {
+  const finalOpponent = participants?.finalOpponent;
+  if (!isPlainObject(finalOpponent)) return undefined;
+  const name = finalOpponent.name;
+  return typeof name === 'string' && name.length > 0 ? name : undefined;
+}
+
 function zoneOccupants(world: WorldState, zoneId: string | undefined): EntityState[] {
   if (!zoneId) return [];
   return Object.values(world.entities)
@@ -195,6 +230,7 @@ function isAlive(entity: EntityState | undefined): boolean {
 function describeEvent(category: RecordCategory, actorName: string, targetName: string | undefined): string {
   if (category === 'kill') return `${actorName} killed ${targetName ?? 'someone'}`;
   if (category === 'death') return `${targetName ?? 'someone'} died`;
+  if (category === 'combat') return `${actorName} cleared the encounter${targetName ? `, defeating ${targetName} last` : ''}`;
   if (category === 'gift') return `${actorName} gave a gift${targetName ? ` to ${targetName}` : ''}`;
   if (category === 'rescue') return `${actorName} rescued ${targetName ?? 'someone'}`;
   if (category === 'betrayal') return `${actorName} betrayed ${targetName ?? 'someone'}`;
@@ -383,6 +419,11 @@ function recordLiveEvent(
   const { actorId, targetId } = resolveActorTarget(event, category);
   if (!actorId) return;
 
+  // F-32948b79/F-6a2e9f14: combat.encounter.cleared's own participants,
+  // read verbatim — never re-derived from world state.
+  const participants =
+    event.type === 'combat.encounter.cleared' ? encounterParticipants(payload) : undefined;
+
   const actor = world.entities[actorId];
   const target = targetId ? world.entities[targetId] : undefined;
   const zoneId =
@@ -424,11 +465,13 @@ function recordLiveEvent(
           ? (stringPayload(payload, 'itemName') ?? stringPayload(payload, 'itemId'))
           : category === 'alliance'
             ? (stringPayload(payload, 'targetFactionId') ?? stringPayload(payload, 'targetId') ?? target?.name)
-            : (category === 'kill' || category === 'death' ? stringPayload(payload, 'entityName') : undefined) ??
-              stringPayload(payload, 'npcName') ??
-              stringPayload(payload, 'toName') ??
-              target?.name ??
-              targetId;
+            : event.type === 'combat.encounter.cleared'
+              ? finalOpponentName(participants)
+              : (category === 'kill' || category === 'death' ? stringPayload(payload, 'entityName') : undefined) ??
+                stringPayload(payload, 'npcName') ??
+                stringPayload(payload, 'toName') ??
+                target?.name ??
+                targetId;
 
   const record = journal.record({
     tick: event.tick,
@@ -444,6 +487,11 @@ function recordLiveEvent(
       // F-908f2341: surface itemId for item-transformed consumers. Scoped to
       // this one category so every other category's data shape is untouched.
       ...(category === 'item-transformed' ? { itemId: stringPayload(payload, 'itemId') } : {}),
+      // F-32948b79/F-6a2e9f14: survivors + finalOpponent verbatim off the
+      // event, so a journal read can say who stood at the end without this
+      // module re-deriving clearance. Truthy-gated — omitted entirely
+      // (never `participants: undefined`) when the event carries none.
+      ...(participants ? { participants } : {}),
     },
   });
 

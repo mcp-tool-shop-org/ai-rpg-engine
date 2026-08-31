@@ -568,3 +568,108 @@ describe('F-908f2341: item.crafted/modified/repaired/salvaged journal item-trans
     expect(getNpcMemory(engine.world, 'guard')).toBeUndefined();
   });
 });
+
+describe('F-32948b79/F-6a2e9f14: combat.encounter.cleared journals a combat row (wave-2 addendum)', () => {
+  it('journals a combat-category row alongside the kill/death rows, not a kill/death row itself (category-mapping)', () => {
+    const engine = makeEngine();
+    engine.store.recordEvent({
+      id: '',
+      tick: 4,
+      type: 'combat.entity.defeated',
+      payload: {
+        entityId: 'merchant',
+        entityName: 'Merchant',
+        defeatedBy: 'player',
+        defeatedByName: 'Aldric',
+        defeatZoneId: 'market',
+        wasInterceptor: false,
+      },
+    });
+    // combat.entity.defeated only journals here — it never mutates hp.
+    // Zero it to match modules' real ordering (the encounter-cleared check
+    // runs after the victim's hp is already 0), so isAlive correctly
+    // excludes the (dead) finalOpponent from witnesses below.
+    engine.world.entities['merchant'].resources.hp = 0;
+    engine.store.recordEvent({
+      id: '',
+      tick: 4,
+      type: 'combat.encounter.cleared',
+      actorId: 'player',
+      payload: {
+        zoneId: 'market',
+        outcome: 'victory',
+        finalDefeatEventId: 'evt-defeat-1',
+        participants: {
+          survivors: ['player', 'guard'],
+          finalOpponent: { id: 'merchant', name: 'Merchant' },
+        },
+      },
+      tags: ['combat', 'encounter', 'cleared'],
+    });
+
+    const journal = getCampaignJournal(engine.world);
+    // No-regression: combat.entity.defeated's own kill/death rows are
+    // untouched by the new mapping.
+    expect(journal.query({ category: 'kill' })).toHaveLength(1);
+    expect(journal.query({ category: 'death' })).toHaveLength(1);
+
+    const row = journal.query({ category: 'combat' })[0];
+    expect(row).toBeDefined();
+    expect(row!.actorId).toBe('player');
+    expect(row!.targetId).toBeUndefined();
+    expect(row!.zoneId).toBe('market');
+    expect(row!.witnesses).toContain('guard');
+    expect(row!.witnesses).not.toContain('player');
+    expect(row!.witnesses).not.toContain('merchant');
+    expect(row!.description).toContain('Merchant');
+  });
+
+  it('carries payload.participants (survivors + finalOpponent) onto data, verbatim (attach)', () => {
+    const engine = makeEngine();
+    const participants = {
+      survivors: ['player', 'guard'],
+      finalOpponent: { id: 'merchant', name: 'Merchant' },
+    };
+    engine.store.recordEvent({
+      id: '',
+      tick: 6,
+      type: 'combat.encounter.cleared',
+      actorId: 'player',
+      payload: {
+        zoneId: 'market',
+        outcome: 'victory',
+        finalDefeatEventId: 'evt-defeat-2',
+        participants,
+      },
+    });
+
+    const row = getCampaignJournal(engine.world).query({ category: 'combat' })[0];
+    expect(row).toBeDefined();
+    // Carried verbatim off the payload — this module never re-derives
+    // clearance (recomputes survivors/finalOpponent) itself.
+    expect(row!.data).toMatchObject({ eventType: 'combat.encounter.cleared', participants });
+  });
+
+  it('omits data.participants and falls back to a generic description when the payload carries none (omit)', () => {
+    const engine = makeEngine();
+    expect(() =>
+      engine.store.recordEvent({
+        id: '',
+        tick: 7,
+        type: 'combat.encounter.cleared',
+        actorId: 'player',
+        payload: {
+          zoneId: 'market',
+          outcome: 'victory',
+          finalDefeatEventId: 'evt-defeat-3',
+        },
+      }),
+    ).not.toThrow();
+
+    const row = getCampaignJournal(engine.world).query({ category: 'combat' })[0];
+    expect(row).toBeDefined();
+    // Truthy-gated: never a `participants: undefined` key.
+    expect(row!.data).not.toHaveProperty('participants');
+    expect(row!.description).toBe('Aldric cleared the encounter');
+  });
+});
