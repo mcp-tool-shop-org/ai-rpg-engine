@@ -37,7 +37,7 @@ import { runNpcTurns, runCompanionTurns } from './turns.js';
 import { runWorldTick } from '@ai-rpg-engine/modules';
 import { evaluateSessionEnd, renderSessionEnd, computeSessionStats } from './endgame.js';
 import { appendRunRecord, readRunHistory, formatRecentRuns } from './history.js';
-import { buildExtraActions, parseExtraSelection, buildHudWorld, renderInspectorReport, renderJournal, type ExtraAction } from './menu.js';
+import { buildExtraActions, parseExtraSelection, buildHudWorld, buildPartyStatusLine, renderInspectorReport, renderJournal, type ExtraAction } from './menu.js';
 import { renderDirectorLedger } from './director.js';
 import { loadExternalPack, PackLoadError, type LoadedPack } from './external-pack.js';
 import { runInspectSave } from './inspect.js';
@@ -621,10 +621,17 @@ export function renderFrame(
   // rendered here and the numbers handlePlayerInput can resolve never drift.
   const extras = menu ? computeExtras(engine, pack) : [];
 
+  // F-dc8a82be / F-b30e754a: read from engine.world, not the display-only
+  // buildHudWorld copy — party membership is untouched by the HUD's
+  // xp/level decoration. Threaded into BOTH branches so the line survives
+  // even on a menu:false end-frame (a corpse's screen should still show who
+  // was traveling with them).
+  const partyLine = buildPartyStatusLine(engine.world);
+
   const screen = renderFullScreen(
     buildHudWorld(engine.world, trees),
     engine.world.eventLog.slice(-8),
-    menu ? { extraActions: extras } : { actions: false },
+    menu ? { extraActions: extras, partyLine } : { actions: false, partyLine },
   );
 
   print('\n' + screen);
