@@ -319,6 +319,9 @@ export class SidecarServer {
         if (typeof world.playerId === 'string' && world.playerId.length > 0) {
           result.playerId = world.playerId;
         }
+        if (typeof world.locationId === 'string' && world.locationId.length > 0) {
+          result.locationId = world.locationId;
+        }
         if (hasId) this.reply(id, result);
         return;
       }

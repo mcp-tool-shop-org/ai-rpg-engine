@@ -901,3 +901,28 @@ describe('F-bb72a8ab — N-writer serial queue (observers stay)', () => {
   });
 });
 
+describe('F-40634a98 — initialize surfaces locationId alongside playerId', () => {
+  it('a stamped world (playerId + locationId both set) returns both as additive fields', () => {
+    const { sent } = boot();
+    const result = sent[0]?.result as { playerId?: string; locationId?: string } | undefined;
+    expect(result?.playerId).toBe('hero');
+    expect(result?.locationId).toBe('room');
+  });
+
+  it('omits locationId when the world has no location set, same as playerId', () => {
+    const engine = createTestEngine({
+      modules: [],
+      playerId: '',
+      startZone: '',
+      entities: [],
+      zones: [],
+    });
+    const sent: RpcMessage[] = [];
+    const server = new SidecarServer({ engine, engineVersion: '3.8.0-test' }, (m) => sent.push(m));
+    server.handle({ jsonrpc: '2.0', id: 1, method: METHODS.INITIALIZE, params: {} });
+    const result = sent[0]?.result as { playerId?: string; locationId?: string } | undefined;
+    expect(result?.playerId).toBeUndefined();
+    expect(result?.locationId).toBeUndefined();
+  });
+});
+

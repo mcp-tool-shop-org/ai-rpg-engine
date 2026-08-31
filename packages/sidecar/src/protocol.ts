@@ -199,6 +199,8 @@ export type InitializeResult = {
   packId?: string;
   /** Current player entity id. Additive. */
   playerId?: string;
+  /** Current player location (zone) id. Additive; stamped in lockstep with playerId. */
+  locationId?: string;
 };
 
 // --- Errors ---------------------------------------------------------------
