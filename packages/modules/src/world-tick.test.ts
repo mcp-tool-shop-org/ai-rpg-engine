@@ -47,6 +47,7 @@ import {
   getActivePressures,
   getResolvedPressures,
   applyCompanionReactions,
+  resolvePressureByFaction,
   HEAT_KEY,
   HEAT_WAKE_THRESHOLD,
   HEAT_ESCALATION_THRESHOLD,
@@ -70,12 +71,14 @@ import { createFactionCognition } from './faction-cognition.js';
 import {
   getPersistedNpcProfiles,
   getPersistedNpcObligations,
+  createObligation,
+  setPersistedNpcState,
   type LoyaltyBreakpoint,
 } from './npc-agency.js';
 import { MORALE_FLOOR_FALLBACK } from './companion-reactions.js';
 import { getLeverageState } from './player-leverage.js';
 import { createProgressionCore, addCurrency } from './progression-core.js';
-import { hasTitle } from './player-titles.js';
+import { hasTitle, getDisplayTitle } from './player-titles.js';
 import {
   getPersistedFactionProfiles,
   getPersistedFactionLastActions,
@@ -2037,6 +2040,7 @@ describe('world-tick — resolve-pressure (F-04dece4f)', () => {
     expect(engine.world.entities.player.custom?.['title.bounty-survivor']).toBe(0);
     expect(getActivePressures(engine.world).some((p) => p.id === pressure.id)).toBe(false);
     expect(getResolvedPressures(engine.world)[0]?.resolution.resolutionType).toBe('resolved-by-player');
+    expect(getDisplayTitle(engine.world.entities.player.custom ?? {})).toBe('the Bounty-Breaker');
   });
 
   it('F-bdd030b2: resolve-pressure on a live bounty, then one runWorldTick, writes leverage.favor +10 and leverage.legitimacy +5', () => {
@@ -2076,6 +2080,71 @@ describe('world-tick — resolve-pressure (F-04dece4f)', () => {
     );
     expect(after.favor).toBe(10);
     expect(after.legitimacy).toBe(5);
+  });
+});
+
+describe('world-tick — resolvePressureByFaction (F-35aa8ed0)', () => {
+  it('a faction hunt closes bounty-issued, moves alert, and expiry does not also fire', () => {
+    const engine = createTestEngine({
+      modules: [createWorldTick()],
+      entities: [makePlayer()],
+      zones,
+      globals: { faction_alert_watch: 20 },
+    });
+    const pressure = makePressure({
+      kind: 'bounty-issued',
+      sourceFactionId: 'watch',
+      description: 'watch has placed a bounty on the player',
+      triggeredBy: 'test',
+      urgency: 0.7,
+      visibility: 'rumored',
+      turnsRemaining: 1,
+      potentialOutcomes: [],
+      tags: ['hostile'],
+      currentTick: 0,
+    });
+    getWorldTickState(engine.store.state).pressures = [pressure];
+
+    const closed = resolvePressureByFaction(engine.world, pressure.id, 'watch', engine.tick, 'fantasy');
+    expect(closed).toBeDefined();
+    expect(closed!.fallout.resolution.resolutionType).toBe('resolved-by-faction');
+    expect(getActivePressures(engine.world).some((p) => p.id === pressure.id)).toBe(false);
+    expect(engine.world.globals['faction_alert_watch']).toBe(10);
+    expect(getResolvedPressures(engine.world)[0]?.resolution.resolutionType).toBe('resolved-by-faction');
+
+    const result = runWorldTick(engine, { genre: 'fantasy' });
+    expect(result.expired.some((f) => f.resolution.pressureId === pressure.id)).toBe(false);
+    expect(getResolvedPressures(engine.world).filter((f) => f.resolution.pressureId === pressure.id))
+      .toHaveLength(1);
+  });
+});
+
+describe('world-tick — betrayed obligations (F-b7196370)', () => {
+  it('a new kind:betrayed obligation this tick drops a diplomat companion\'s morale', () => {
+    const engine = createTestEngine({
+      modules: [createCompanionCore(), createWorldTick()],
+      entities: [
+        makePlayer(),
+        {
+          id: 'sable', blueprintId: 'sable', type: 'npc', name: 'Sable',
+          tags: ['npc', 'recruitable', 'diplomat'], stats: {}, resources: { hp: 10 }, statuses: [], zoneId: 'zone-a',
+        },
+      ],
+      zones,
+    });
+    getWorldTickState(engine.store.state);
+    engine.submitAction('recruit', { targetIds: ['sable'] });
+    const before = partyCompanions(engine).find((c) => c.npcId === 'sable')!.morale;
+
+    const ledger = {
+      obligations: [createObligation('betrayed', 'player-owes-npc', 'traitor', 'player', 5, 'betray', engine.tick, null)],
+    };
+    setPersistedNpcState(engine.world, [], [], new Map([['traitor', ledger]]));
+
+    runWorldTick(engine);
+
+    const after = partyCompanions(engine).find((c) => c.npcId === 'sable')!.morale;
+    expect(after).toBe(before - 10);
   });
 });
 

@@ -52,6 +52,9 @@ import {
 } from './trade-value.js';
 import { composeTradeModifiers } from './leverage-modifiers.js';
 import { getActivePressures, HEAT_KEY } from './world-tick.js';
+import { getStoredFactionAccess } from './player-leverage.js';
+import { getFactionAccess } from './social-consequence.js';
+import type { FactionAccessLevel } from './player-leverage.js';
 
 // --- Category inference (no ItemDefinition catalog wired — see file header) ---
 
@@ -93,6 +96,17 @@ export const SELL_CURRENCY = 'coin';
 function numGlobal(world: WorldState, key: string): number {
   const value = world.globals[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function factionTradeAccess(
+  world: WorldState,
+  actor: { custom?: Record<string, string | number | boolean> } | undefined,
+  factionId: string | undefined,
+): FactionAccessLevel | undefined {
+  if (!factionId) return undefined;
+  const reputation =
+    (world.factions?.[factionId]?.reputation ?? 0) + numGlobal(world, `reputation_${factionId}`);
+  return getFactionAccess(reputation, getStoredFactionAccess(actor?.custom, factionId));
 }
 
 /**
@@ -153,9 +167,17 @@ function sellHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
     externalModifiers: composeTradeModifiers(world, actor),
   };
 
+  const access = factionTradeAccess(world, actor, controllingFactionId);
+  if (access === 'denied') {
+    return [makeEvent(action, 'action.rejected', { reason: 'you are not welcome here' })];
+  }
+
   const result = computeItemValue(SELL_BASE_VALUE, supplyCategory, ctx);
   if (result.tradeAdvice === 'untradeable') {
     return [makeEvent(action, 'action.rejected', { reason: result.reason })];
+  }
+  if (access === 'privileged') {
+    result.finalValue = Math.round(result.finalValue * 1.15);
   }
 
   // Remove from inventory (sold, same splice inventory-core's 'use' verb performs).
@@ -423,7 +445,11 @@ export function quoteBuyPrice(world: WorldState, itemId: string, genre?: string)
   const result = computeItemValue(SELL_BASE_VALUE, supplyCategory, ctx);
   if (result.tradeAdvice === 'untradeable') return undefined;
 
-  return Math.round(result.finalValue * BUY_MARKUP_MULTIPLIER);
+  const access = factionTradeAccess(world, player, controllingFactionId);
+  if (access === 'denied') return undefined;
+
+  const marked = Math.round(result.finalValue * BUY_MARKUP_MULTIPLIER);
+  return access === 'privileged' ? Math.round(marked * 0.85) : marked;
 }
 
 /**
@@ -469,6 +495,12 @@ function buyHandler(action: ActionIntent, world: WorldState, genre?: string): Re
   // called it untradeable (contraband, no black market) — the only way
   // quoteBuyPrice can return undefined once findBuyableCategory has already
   // succeeded above.
+  const controllingFactionId = getDistrictDefinition(world, districtId)?.controllingFaction;
+  const access = factionTradeAccess(world, actor, controllingFactionId);
+  if (access === 'denied') {
+    return [makeEvent(action, 'action.rejected', { reason: 'you are not welcome here' })];
+  }
+
   const price = quoteBuyPrice(world, itemId, genre);
   if (price === undefined) {
     return [makeEvent(action, 'action.rejected', { reason: `${itemId} cannot be traded here` })];

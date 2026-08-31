@@ -22,6 +22,7 @@ import type { CompanionState } from './companion-core.js';
 import { getFactionCognition, createFactionCognition } from './faction-cognition.js';
 import { createCognitionCore } from './cognition-core.js';
 import { getWorldTickState } from './world-tick.js';
+import { evaluateCondition } from './condition-eval.js';
 import { createEnvironmentCore } from './environment-core.js';
 import { createDistrictCore, getDistrictMetric } from './district-core.js';
 import type { DistrictDefinition } from './district-core.js';
@@ -347,6 +348,21 @@ describe('F-cd5a8eec: negotiate-access leaves a readable access mark', () => {
     expect(getReputationConsequence(0, getStoredFactionAccess(custom, 'guild')).accessLevel).toBe('normal');
     const resolved = engine.drainEvents().find((e) => e.type === 'leverage.resolved');
     expect(resolved?.payload.subAction).toBe('negotiate-access');
+  });
+
+  it('F-7d2c4c59: negotiate-access then a faction-access gate opens', () => {
+    const engine = createTestEngine({
+      modules: [createPlayerLeverageCore()],
+      entities: [makePlayerEntity({ custom: flushCustom() })],
+      zones: START_ZONES,
+    });
+    engine.submitAction('negotiate-access', { targetIds: ['guild'] });
+    const verdict = evaluateCondition(
+      { type: 'faction-access', params: { factionId: 'guild', minLevel: 'normal' } },
+      engine.world as WorldState,
+      'player',
+    );
+    expect(verdict.ok).toBe(true);
   });
 });
 

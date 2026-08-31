@@ -14,7 +14,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { EntityState, WorldState } from '@ai-rpg-engine/core';
-import { composeLeverageModifiers, composeTradeModifiers } from './leverage-modifiers.js';
+import { composeLeverageModifiers, composeTradeModifiers, composeCraftModifiers } from './leverage-modifiers.js';
 import {
   resolveSocialAction,
   scaledRumorConfidence,
@@ -480,6 +480,19 @@ describe('DistrictModifiers.craftingEfficiency reaches the material cost', () =>
     // happens on the path every existing CraftingContext takes.
     expect(applyCraftingEfficiency(INPUTS, ctx())).toBe(INPUTS);
     expect(applyCraftingEfficiency(INPUTS, ctx(1))).toBe(INPUTS);
+  });
+});
+
+describe('composeCraftModifiers (F-88872722)', () => {
+  it('emits scale+source only when the district mood is not 1.0', () => {
+    const prosperous = districtWorld(80, 80);
+    const composed = composeCraftModifiers(prosperous, player(prosperous));
+    expect(composed?.scale).toBe(1.2);
+    expect(composed?.source).toBe('district-a');
+  });
+
+  it('NEGATIVE CONTROL: a scale of exactly 1 composes nothing', () => {
+    expect(composeCraftModifiers(districtWorld(50, 50), player(districtWorld(50, 50)))).toBeUndefined();
   });
 });
 

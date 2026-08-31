@@ -113,13 +113,10 @@ export type ReactionTriggerStatus = {
  * Per-trigger reachability, audited against the live call sites (F-6be920bd
  * audit; v3.0 wave 1 "social-verbs" extended player-leverage.ts's producer to
  * cover all four leverage-* triggers; F-f4c2fa00 flipped
- * pressure-resolved-well from wired-unreachable to reachable). 10 reachable,
- * 0 wired-but-dead, 6 dark — the 6 remaining dark triggers are NOT wireable
- * from THIS file: betrayal-witnessed/obligation-betrayed/item-*-recognized
- * need entirely new producers in npc-agency.ts/item-recognition.ts that do
- * not exist yet (npc-agency's obligation ledger and item-recognition's
- * chronicle are both never persisted/never reach world.eventLog — honestly
- * deferred to v3.0, not force-wired here).
+ * pressure-resolved-well from wired-unreachable to reachable; F-29f4a5ff
+ * and F-b7196370 flipped the remaining six item-*-recognized /
+ * betrayal-witnessed / obligation-betrayed triggers from dark to reachable).
+ * 16 reachable, 0 wired-but-dead, 0 dark.
  *
  * leverage-diplomacy and leverage-sabotage WERE in the dark set as of the
  * F-6be920bd audit (resolveSocialAction's LeverageResolution.verb was always
@@ -172,28 +169,28 @@ export const REACTION_TRIGGER_STATUS: Record<ReactionTrigger, ReactionTriggerSta
     note: "player-leverage.ts dispatchLeverageCompanionReactions: all four sabotage-group verbs (sabotage/plant-evidence/blackmail-target/incite-riot), via resolveSabotageAction — whose LeverageResolution.verb is always the literal 'sabotage' (v3.0 wave 1 'social-verbs')",
   },
   'betrayal-witnessed': {
-    reachability: 'dark',
-    note: 'waits on npc-agency emitting a witnessed-betrayal signal — no producer exists yet (v3.0)',
+    reachability: 'reachable',
+    note: "world-tick.ts runNpcAgencyStep emits npc.betrayal.witnessed from resolveNpcAction's betray case; collectBetrayalReactionTriggers dispatches this trigger (F-b7196370)",
   },
   'obligation-betrayed': {
-    reachability: 'dark',
-    note: "waits on npc-agency's obligation ledger being persisted — it is not today (endgame.ts's own buildEndgameInputs comment confirms the same ceiling; v3.0)",
+    reachability: 'reachable',
+    note: "world-tick.ts scans persisted npc-agency obligation ledgers for a new kind:'betrayed' this tick and dispatches this trigger (F-b7196370)",
   },
   'item-faction-recognized': {
-    reachability: 'dark',
-    note: "waits on item-recognition's chronicle reaching world.eventLog — it does not today (v3.0)",
+    reachability: 'reachable',
+    note: 'applyZoneItemRecognition on world.zone.entered (traversal-core move) dispatches this when evaluateItemRecognition returns faction-item (F-29f4a5ff)',
   },
   'item-stolen-recognized': {
-    reachability: 'dark',
-    note: 'same item-recognition ceiling as item-faction-recognized (v3.0)',
+    reachability: 'reachable',
+    note: 'applyZoneItemRecognition on world.zone.entered dispatches this when evaluateItemRecognition returns stolen-item (F-29f4a5ff)',
   },
   'item-cursed-recognized': {
-    reachability: 'dark',
-    note: 'same item-recognition ceiling as item-faction-recognized (v3.0)',
+    reachability: 'reachable',
+    note: 'applyZoneItemRecognition on world.zone.entered dispatches this when evaluateItemRecognition returns cursed-item (F-29f4a5ff)',
   },
   'item-trophy-recognized': {
-    reachability: 'dark',
-    note: 'same item-recognition ceiling as item-faction-recognized (v3.0)',
+    reachability: 'reachable',
+    note: 'applyZoneItemRecognition on world.zone.entered dispatches this when evaluateItemRecognition returns trophy-item (F-29f4a5ff)',
   },
 };
 

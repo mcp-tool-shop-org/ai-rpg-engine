@@ -9,7 +9,7 @@
 // The properties are the binding ones from Lane 2, and each is asserted in
 // `condition-eval.test.ts`:
 //
-//   - CLOSED. Thirteen operand families, enumerated below. Content selects and
+//   - CLOSED. Fourteen operand families, enumerated below. Content selects and
 //     parameterizes; it never defines a predicate. (Bethesda's CTDA row: one
 //     enumerated condition-function table reused across ~20 record types is what
 //     makes mass data authoring safe.)
@@ -36,6 +36,7 @@
 //   has-flag        ✓ world.globals (empty at boot; gameplay populates it)
 //   quest-progress  ✓ world.quests
 //   faction-rep     ✓ world.factions + `reputation_<id>` globals
+//   faction-access  ✓ actor.custom `access.<factionId>` then reputation band (F-7d2c4c59)
 //   party-size      ✓ companion-core: { companions: [], maxSize: 3, cohesion: 0 }
 //   party-member    ✓ same
 //   party-class     ✓ same
@@ -51,6 +52,9 @@
 
 import type { WorldState, EntityState } from '@ai-rpg-engine/core';
 import { getActiveCompanions, getPartyState } from './companion-core.js';
+import { getFactionAccess } from './social-consequence.js';
+
+type FactionAccessLevel = 'denied' | 'restricted' | 'normal' | 'privileged';
 
 /** The compiled condition shape the wire carries. Structurally typed. */
 export type ConditionSpecLike = {
@@ -112,6 +116,7 @@ export const KNOWN_CONDITION_TYPES = [
   'has-flag',
   'quest-progress',
   'faction-rep',
+  'faction-access',
   'party-size',
   'party-member',
   'party-class',
@@ -120,6 +125,18 @@ export const KNOWN_CONDITION_TYPES = [
   'time-of-day',
   'random-probability',
 ] as const;
+
+/** Rank of a faction access level. denied is fail-closed against any higher gate. */
+const ACCESS_RANK: Record<FactionAccessLevel, number> = {
+  denied: 0,
+  restricted: 1,
+  normal: 2,
+  privileged: 3,
+};
+
+function asAccessLevel(value: unknown): FactionAccessLevel | undefined {
+  return typeof value === 'string' && value in ACCESS_RANK ? (value as FactionAccessLevel) : undefined;
+}
 
 // --- Operand readers ------------------------------------------------------
 
@@ -246,6 +263,25 @@ export function evaluateCondition(
       return current === stage
         ? { ok: true, evaluable: true }
         : { ok: false, evaluable: true, reason: `quest "${id}" is at "${String(current)}", not "${stage}"` };
+    }
+
+    case 'faction-access': {
+      const factionId = str(params, 'factionId');
+      const minLevel = asAccessLevel(params?.minLevel);
+      if (!factionId || !minLevel) {
+        return { ok: false, evaluable: false, reason: 'faction-access needs `factionId` and `minLevel`' };
+      }
+      const faction = world.factions[factionId] as { reputation?: number } | undefined;
+      const global = world.globals[`reputation_${factionId}`];
+      const rep = (faction?.reputation ?? 0) + (typeof global === 'number' ? global : 0);
+      const storedRaw = actor.custom?.[`access.${factionId}`];
+      const stored = asAccessLevel(storedRaw);
+      const level = getFactionAccess(rep, stored);
+      // Denied is fail-closed against any gate that asks for more than denied.
+      const ok = ACCESS_RANK[level] >= ACCESS_RANK[minLevel];
+      return ok
+        ? { ok: true, evaluable: true }
+        : { ok: false, evaluable: true, reason: `access with "${factionId}" is ${level}, not ${minLevel}` };
     }
 
     case 'faction-rep': {

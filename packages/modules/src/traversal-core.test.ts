@@ -200,3 +200,49 @@ describe('traversal-core: inspectHandler district drill-down (F-5ef2c8f5)', () =
     expect(inspected!.payload).not.toHaveProperty('economyReport');
   });
 });
+
+describe('traversal-core: faction-access gate (F-7d2c4c59)', () => {
+  const gatedZones: ZoneState[] = [
+    { id: 'zone-a', roomId: 'test', name: 'Street', tags: [], neighbors: ['guild-hall'] },
+    {
+      id: 'guild-hall', roomId: 'test', name: 'Guild Hall', tags: [], neighbors: ['zone-a'],
+      entryGate: {
+        conditions: [{ type: 'faction-access', params: { factionId: 'guild', minLevel: 'normal' } }],
+        mode: 'hard',
+        reason: 'The guild door stays shut.',
+      },
+    },
+  ];
+
+  it('negotiate-access then walk a previously locked exit', () => {
+    const engine = createTestEngine({
+      modules: [traversalCore],
+      entities: [makePlayer('zone-a')],
+      zones: gatedZones,
+      playerId: 'player',
+      startZone: 'zone-a',
+    });
+
+    const refused = engine.submitAction('move', { targetIds: ['guild-hall'] });
+    expect(refused.some((e) => e.type === 'world.zone.gate.refused')).toBe(true);
+    expect(engine.world.entities.player.zoneId).toBe('zone-a');
+
+    engine.world.entities.player.custom = { 'access.guild': 'normal' };
+    const entered = engine.submitAction('move', { targetIds: ['guild-hall'] });
+    expect(entered.some((e) => e.type === 'world.zone.entered')).toBe(true);
+    expect(engine.world.entities.player.zoneId).toBe('guild-hall');
+  });
+
+  it('denied is fail-closed', () => {
+    const engine = createTestEngine({
+      modules: [traversalCore],
+      entities: [makePlayer('zone-a', { custom: { 'access.guild': 'denied' } })],
+      zones: gatedZones,
+      playerId: 'player',
+      startZone: 'zone-a',
+    });
+    const events = engine.submitAction('move', { targetIds: ['guild-hall'] });
+    expect(events.some((e) => e.type === 'world.zone.gate.refused')).toBe(true);
+    expect(engine.world.entities.player.zoneId).toBe('zone-a');
+  });
+});

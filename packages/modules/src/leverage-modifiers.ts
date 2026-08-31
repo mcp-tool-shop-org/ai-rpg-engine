@@ -169,3 +169,23 @@ export function composeTradeModifiers(
 
   return Object.keys(composed).length > 0 ? composed : undefined;
 }
+
+/**
+ * The craft half of the same seam: DistrictModifiers.craftingEfficiency,
+ * composed for one actor. Emits `{scale, source}` only when scale !== 1 so
+ * every hand-built CraftingContext keeps its exact material cost.
+ * buildCraftingContext attaches the result (F-88872722).
+ */
+export function composeCraftModifiers(
+  world: WorldState,
+  actor: EntityState,
+): { scale: number; source: string } | undefined {
+  const districtId = actor.zoneId ? getDistrictForZone(world, actor.zoneId) : undefined;
+  if (!districtId) return undefined;
+  const state = getDistrictState(world, districtId);
+  if (!state) return undefined;
+  const tags = getDistrictDefinition(world, districtId)?.tags ?? [];
+  const scale = computeDistrictModifiers(computeDistrictMood(state, tags)).craftingEfficiency;
+  if (scale === 1) return undefined;
+  return { scale, source: districtId };
+}

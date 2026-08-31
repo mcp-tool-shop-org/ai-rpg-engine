@@ -865,8 +865,8 @@ function currentReputation(world: WorldState, factionId: string): number {
  *  - title-trigger → grantTitleToEntity on the actor's own custom record
  *    (v3.8 sink #5), the same flat `prefix.key` idiom player-leverage uses.
  *    Deliberately not a title subsystem: character-creation's build-time
- *    `custom.title` is untouched, and social-consequence's `evolveTitle` is
- *    left unwired because no pack authors the `TitleEvolution[]` it consumes.
+ *    `custom.title` is untouched. F-025fd000 wires evolveTitle through
+ *    grantTitleToEntity / getDisplayTitle via DEFAULT_TITLE_EVOLUTIONS.
  *  - materials → crafting-core's adjustMaterial (v3.8 sink #6), the
  *    `materials.<SupplyCategory>` store on the actor's custom that
  *    getMaterialInventory reads and the craft/repair recipes consume. District

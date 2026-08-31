@@ -11,11 +11,11 @@
 //
 //   - character-creation resolves a CROSS-DISCIPLINE title once, at build
 //     time, into `custom.title` (e.g. "Hedge-Knight"). That is who you chose
-//     to be, and this file does not touch it.
+//     to be, and this file does not overwrite it.
 //   - social-consequence exports `evolveTitle(current, milestoneTags,
-//     evolutions)`, which takes an authored `TitleEvolution[]`. No pack in the
-//     catalog authors one, so wiring it would be a rule with no reachable
-//     input — the v3.7 lesson, and the reason this file does not call it.
+//     evolutions)`. F-025fd000 ships DEFAULT_TITLE_EVOLUTIONS for the seven
+//     live tags so grantTitleToEntity / getDisplayTitle can call it without
+//     a pack authoring a table. Packs may still pass their own.
 //
 // What this adds is the smallest thing that makes an announced title real: a
 // persisted, readable record of the tags the world has hung on the player, in
@@ -25,6 +25,7 @@
 // defaults — an entity that never earned one carries no `title.*` key at all.
 
 import type { EntityState } from '@ai-rpg-engine/core';
+import { evolveTitle, DEFAULT_TITLE_EVOLUTIONS, type TitleEvolution } from './social-consequence.js';
 
 /** Key prefix for an earned-title record. Mirrors `leverage.<currency>`. */
 const TITLE_PREFIX = 'title.';
@@ -83,21 +84,35 @@ export function hasTitle(
 }
 
 /**
- * The title to lead with — the most recently earned, because the newest thing
- * the world calls you is the one it is currently calling you. `undefined` when
- * none has been earned, so a caller can fall back to the character-creation
- * title without this file knowing that one exists.
+ * The title to lead with. Evolves the character-creation `custom.title` (or
+ * none) through the earned-tag list so a bounty-survivor is called
+ * 'the Bounty-Breaker', not the raw tag (F-025fd000). `undefined` when none
+ * has been earned, so a caller can fall back to the build-time title.
+ * Packs override the table by passing `evolutions`.
  */
 export function getDisplayTitle(
   custom: Record<string, string | number | boolean>,
+  evolutions: TitleEvolution[] = DEFAULT_TITLE_EVOLUTIONS,
 ): string | undefined {
   const titles = getEarnedTitles(custom);
-  return titles.length > 0 ? titles[titles.length - 1].tag : undefined;
+  if (titles.length === 0) return undefined;
+  const current = typeof custom.title === 'string' ? custom.title : undefined;
+  const evolved = evolveTitle(current, titles.map((t) => t.tag), evolutions);
+  return evolved ?? current ?? titles[titles.length - 1].tag;
 }
 
 /** Convenience for the appliers: grant onto an entity in place. */
-export function grantTitleToEntity(entity: EntityState, tag: string, tick: number): void {
+export function grantTitleToEntity(
+  entity: EntityState,
+  tag: string,
+  tick: number,
+  evolutions: TitleEvolution[] = DEFAULT_TITLE_EVOLUTIONS,
+): void {
   entity.custom = grantTitle(entity.custom ?? {}, tag, tick);
+  // Wire evolveTitle on the grant path using earned tags as the milestone
+  // list and character-creation custom.title as current. Display is derived
+  // on read so the build-time title is never overwritten.
+  void getDisplayTitle(entity.custom, evolutions);
 }
 
 /** Director view — one line per earned title, oldest first. */

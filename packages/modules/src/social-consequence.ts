@@ -56,6 +56,21 @@ export type TitleEvolution = {
   minCount?: number;
 };
 
+/**
+ * Built-in evolutions for the seven live title-trigger tags (F-025fd000).
+ * Six pressure-side tags plus the opportunity-side `faction-operative`.
+ * Packs may pass a different table to evolveTitle / getDisplayTitle.
+ */
+export const DEFAULT_TITLE_EVOLUTIONS: TitleEvolution[] = [
+  { replace: 'the Bounty-Breaker', requiredTags: ['bounty-survivor'] },
+  { suffix: 'of the Docks', requiredTags: ['trade-broker'] },
+  { replace: 'the Faith-Tested', requiredTags: ['faith-tested'] },
+  { replace: 'the Iron Captain', requiredTags: ['iron-captain'] },
+  { replace: 'the Steadfast', requiredTags: ['steadfast'] },
+  { replace: 'the Ghost', requiredTags: ['ghost'] },
+  { replace: 'the Operative', requiredTags: ['faction-operative'] },
+];
+
 // --- Stance Derivation ---
 
 /**

@@ -5,6 +5,7 @@ import { makeEvent } from './make-event.js';
 import { getDistrictForZone, getDistrictDefinition } from './district-core.js';
 import { getDistrictEconomy, deriveEconomyDescriptor, formatEconomyForDirector } from './economy-core.js';
 import { evaluateConditions } from './condition-eval.js';
+import { applyZoneItemRecognition } from './item-recognition.js';
 
 export const traversalCore: EngineModule = {
   id: 'traversal-core',
@@ -127,8 +128,12 @@ function moveHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
     },
   });
 
+  // F-29f4a5ff: equipped-item recognition against this zone's controlling
+  // faction. No-op when the actor carries nothing with provenance.
+  const recognition = applyZoneItemRecognition(action, world, targetZoneId);
+
   // A soft gate's warning precedes the entry it did not prevent.
-  return softWarning ? [softWarning, entered] : [entered];
+  return softWarning ? [softWarning, entered, ...recognition] : [entered, ...recognition];
 }
 
 function inspectHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
