@@ -352,6 +352,46 @@ describe('ComfyUIProvider img2img (F-9daede34)', () => {
     expect(workflow!['5']?.inputs?.model).toEqual(['1', 0]);
   });
 
+  it('loras + ipadapter chain together — IPAdapterApply reads the LoRA tail, not the raw checkpoint (F-bdc5a692)', async () => {
+    const png = tinyPng(8, 8);
+    let workflow: Record<string, { class_type?: string; inputs?: Record<string, unknown> }> | undefined;
+    const mock = await startMock((req, res) => {
+      if (req.method === 'POST' && req.url === '/upload/image') {
+        req.resume();
+        req.on('end', () => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ name: 'control.png', subfolder: '', type: 'input' }));
+        });
+        return;
+      }
+      comfyFlow(
+        (_req, viewRes) => {
+          viewRes.writeHead(200, { 'Content-Type': 'image/png' });
+          viewRes.end(png);
+        },
+        (w) => { workflow = w as typeof workflow; },
+      )(req, res);
+    });
+
+    const result = await makeProvider(mock.url).generate('disguised knight', {
+      loras: [{ name: 'knight_face_v2', weight: 0.75 }],
+      controlImage: new Uint8Array([1, 2, 3, 4]),
+      ipadapter: 0.8,
+    });
+    expect(result.ok).toBe(true);
+    // The LoRA chain still builds, still starting from the raw checkpoint.
+    expect(workflow!['20']?.class_type).toBe('LoraLoader');
+    expect(workflow!['20']?.inputs?.model).toEqual(['1', 0]);
+    // IPAdapterApply must read the LoRA chain's tail ('20'), not the raw
+    // checkpoint ('1') — before the fix this was hardcoded to ['1', 0],
+    // silently discarding the LoRA whenever ipadapter was also requested.
+    expect(workflow!['15']?.class_type).toBe('IPAdapterApply');
+    expect(workflow!['15']?.inputs?.model).toEqual(['20', 0]);
+    // KSampler is fed by IPAdapterApply's output, which now carries the
+    // LoRA's effect forward instead of losing it.
+    expect(workflow!['5']?.inputs?.model).toEqual(['15', 0]);
+  });
+
   it('two otherwise-identical requests differing only by lora set derive different seeds (F-fcf4f488)', async () => {
     const png = tinyPng(8, 8);
     const mock = await startMock(comfyFlow((_req, res) => {
