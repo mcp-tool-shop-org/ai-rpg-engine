@@ -56,6 +56,12 @@ export const ALLOWED_PACK_KEYS = [
   // C3/P3 — typed hazards. Same-commit rule: declared here, on the ContentPack
   // type, and shape-guarded, together.
   'hazardDefinitions',
+  // F-4ed3d82e: items apply onto EntityState.inventory/equipment; itemPlacements
+  // is the authored giveItem. entityAi resolves EntityBlueprint.aiProfile.
+  // F-53fd73dc: optional pack-authored RulesetDefinition.
+  'itemPlacements',
+  'entityAi',
+  'ruleset',
   // ── C4: KNOWN, EVALUATED, DELIBERATELY NOT CARRIED ────────────────────────
   //
   // ⚠ These three are here because the gate could not tell "a key nobody has ever
@@ -114,6 +120,9 @@ export const SIM_AFFECTING_KEYS = [
   'encounterAnchors',
   // C3/P3 — a hazard changes what the simulation computes, so it is in the hash.
   'hazardDefinitions',
+  'items',
+  'itemPlacements',
+  'entityAi',
 ] as const;
 
 // --- Report shapes --------------------------------------------------------

@@ -1,5 +1,6 @@
 // Cross-reference validation — checks that IDs reference real content
 
+import type { RulesetDefinition } from '@ai-rpg-engine/core';
 import type { ValidationError, ValidationResult } from './validate.js';
 import type {
   EntityBlueprint,
@@ -154,6 +155,41 @@ export type ContentPack = {
    * that only names ids still loads.
    */
   items?: ItemDefinition[];
+  /**
+   * Authored giveItem: place a catalog item onto an entity's inventory at
+   * intake. `itemId` binds to `items[].id`; `entityId` binds to `entities[].id`.
+   * Zone containers stay forbidden (`zone.items` is ANDON'd).
+   */
+  itemPlacements?: ItemPlacementRecord[];
+  /**
+   * Per-entity runtime AI overlay, keyed by EntityBlueprint.id. When present,
+   * applyContentPack writes EntityState.ai from this record (or from
+   * ApplyContentPackOptions.profiles matching aiProfile) instead of dropping
+   * the name.
+   */
+  entityAi?: Record<string, EntityAiState>;
+  /**
+   * Optional RulesetDefinition the rest of the pack is written against.
+   * Overlay-only packs omit this and reuse the host ruleset. When present,
+   * loadContent runs validateRulesetDefinition then validateAbilityPack /
+   * validateStatusPackAgainstRuleset against it.
+   */
+  ruleset?: RulesetDefinition;
+};
+
+/** Runtime AI overlay a JSON pack can author (structural AIState). */
+export type EntityAiState = {
+  profileId: string;
+  goals?: string[];
+  fears?: string[];
+  alertLevel?: number;
+  knowledge?: Record<string, unknown>;
+};
+
+/** Authored giveItem — place `itemId` onto `entityId`'s inventory at intake. */
+export type ItemPlacementRecord = {
+  itemId: string;
+  entityId: string;
 };
 
 /**
@@ -384,6 +420,17 @@ export function validateRefs(pack: ContentPack): RefsResult {
     placedEntityIds.add(id);
   }
 
+  const itemPlacements = (Array.isArray(pack.itemPlacements) ? pack.itemPlacements : []).filter(isRecord) as NonNullable<ContentPack['itemPlacements']>;
+  for (let i = 0; i < itemPlacements.length; i++) {
+    const rec = itemPlacements[i];
+    if (typeof rec.entityId === 'string' && !entityIds.has(rec.entityId)) {
+      errors.push({
+        path: `${path}.itemPlacements[${i}].entityId`,
+        message: `references unknown entity "${rec.entityId}" — itemPlacements give an item to a blueprint in this pack's entities[]`,
+      });
+    }
+  }
+
   const anchors = (Array.isArray(pack.encounterAnchors) ? pack.encounterAnchors : []).filter(isRecord) as NonNullable<ContentPack['encounterAnchors']>;
   collectUniqueIds(anchors, 'encounter anchor', (id, i) => `${path}.encounterAnchors[${i}].id`, errors);
   for (let i = 0; i < anchors.length; i++) {
@@ -421,6 +468,15 @@ export function validateRefs(pack: ContentPack): RefsResult {
   // always a typo, and saying so costs nothing.
   const itemRecords = (Array.isArray(pack.items) ? pack.items : []).filter(isRecord) as Array<{ id?: unknown }>;
   const itemIds = collectUniqueIds(itemRecords, 'item', (id) => `${path}.item(${id}).id`, errors);
+  for (let i = 0; i < itemPlacements.length; i++) {
+    const rec = itemPlacements[i];
+    if (typeof rec.itemId === 'string' && itemIds.size > 0 && !itemIds.has(rec.itemId)) {
+      errors.push({
+        path: `${path}.itemPlacements[${i}].itemId`,
+        message: `references unknown item "${rec.itemId}" — itemPlacements bind to this pack's items[].id`,
+      });
+    }
+  }
   const memberIds = new Set<string>(entityIds);
   for (const zone of zones) {
     const gate = (zone as { entryGate?: { conditions?: unknown[] } }).entryGate;

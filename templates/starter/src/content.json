@@ -18,6 +18,15 @@
       "aiProfile": "aggressive"
     }
   ],
+  "entityAi": {
+    "grunt": {
+      "profileId": "aggressive",
+      "goals": ["guard-zone"],
+      "fears": [],
+      "alertLevel": 0,
+      "knowledge": {}
+    }
+  },
   "zones": [
     {
       "id": "start",

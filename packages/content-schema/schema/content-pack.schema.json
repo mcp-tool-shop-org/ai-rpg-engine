@@ -106,8 +106,22 @@
     },
     "items": {
       "type": "array",
-      "description": "Item catalog. Structural subset of @ai-rpg-engine/equipment ItemDefinition; id is required. That package is the canonical runtime item schema.",
+      "description": "Item catalog. Structural subset of @ai-rpg-engine/equipment ItemDefinition; id is required. That package is the canonical runtime item schema. Applied onto EntityState.inventory/equipment at intake.",
       "items": { "$ref": "#/$defs/ItemDefinition" }
+    },
+    "itemPlacements": {
+      "type": "array",
+      "description": "Authored giveItem: place a catalog item onto an entity's inventory at intake.",
+      "items": { "$ref": "#/$defs/ItemPlacementRecord" }
+    },
+    "entityAi": {
+      "type": "object",
+      "description": "Per-entity runtime AI overlay, keyed by EntityBlueprint.id. Resolves aiProfile into EntityState.ai.",
+      "additionalProperties": { "$ref": "#/$defs/EntityAiState" }
+    },
+    "ruleset": {
+      "description": "Optional RulesetDefinition the rest of the pack is written against. Overlay-only packs omit this.",
+      "$ref": "#/$defs/RulesetDefinition"
     },
     "factionPresences": {
       "description": "Evaluated, not mapped by intake. Allowed so a forge export is not refused."
@@ -361,6 +375,45 @@
         "name": { "type": "string", "minLength": 1 },
         "currency": { "type": "string", "minLength": 1 },
         "nodes": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "ItemPlacementRecord": {
+      "type": "object",
+      "required": ["itemId", "entityId"],
+      "additionalProperties": true,
+      "properties": {
+        "itemId": { "type": "string", "minLength": 1 },
+        "entityId": { "type": "string", "minLength": 1 }
+      }
+    },
+    "EntityAiState": {
+      "type": "object",
+      "required": ["profileId"],
+      "additionalProperties": true,
+      "properties": {
+        "profileId": { "type": "string", "minLength": 1 },
+        "goals": { "type": "array", "items": { "type": "string" } },
+        "fears": { "type": "array", "items": { "type": "string" } },
+        "alertLevel": { "type": "number" },
+        "knowledge": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "RulesetDefinition": {
+      "type": "object",
+      "required": ["id", "name", "version", "stats", "resources", "verbs", "formulas", "defaultModules", "progressionModels"],
+      "additionalProperties": true,
+      "description": "Structural RulesetDefinition. Runtime validation is validateRulesetDefinition.",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "stats": { "type": "array", "items": { "type": "object" } },
+        "resources": { "type": "array", "items": { "type": "object" } },
+        "verbs": { "type": "array", "items": { "type": "object" } },
+        "formulas": { "type": "array", "items": { "type": "object" } },
+        "defaultModules": { "type": "array", "items": { "type": "string" } },
+        "progressionModels": { "type": "array", "items": { "type": "string" } },
+        "contentConventions": { "type": "object", "additionalProperties": true }
       }
     }
   }

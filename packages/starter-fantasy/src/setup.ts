@@ -25,6 +25,7 @@ import {
 import { createEquipmentCore } from '@ai-rpg-engine/equipment';
 import * as engineModules from '@ai-rpg-engine/modules';
 import type { PresentationRule, IntentProfile } from '@ai-rpg-engine/modules';
+import { applyContentPack } from '@ai-rpg-engine/content-schema';
 import {
   manifest,
   player,
@@ -35,7 +36,6 @@ import {
   cryptWarden,
   cryptStalker,
   cryptWardenBoss,
-  zones,
   districts,
   pilgrimDialogue,
   brotherAldricDialogue,
@@ -47,6 +47,7 @@ import {
   encounterSpawnContent,
   fantasyQuests,
   itemCatalog,
+  pack,
 } from './content.js';
 import { fantasyMinimalRuleset } from './ruleset.js';
 
@@ -203,21 +204,25 @@ export function createGame(seed?: number): Engine {
     ],
   });
 
-  // Add zones
-  for (const zone of zones) {
-    engine.store.addZone(zone);
+  const applied = applyContentPack(engine, pack, { profiles: fantasyIntentProfiles });
+  if (!applied.ok) {
+    const detail = applied.errors.map((e) => `${e.path}: ${e.message}`).join('\n');
+    throw new Error(`applyContentPack failed:\n${detail}`);
   }
 
-  // Add entities
-  engine.store.addEntity(player);
-  engine.store.addEntity(pilgrim);
-  engine.store.addEntity(brotherAldric);
-  engine.store.addEntity(sisterMaren);
-  engine.store.addEntity(ashGhoul);
-  engine.store.addEntity(cryptStalker);
-  engine.store.addEntity(cryptWarden);
+  // Runtime overlays intake cannot yet carry (relations, custom, resistances).
+  // AI is applied from pack.entityAi / options.profiles (F-035ac806); copy
+  // the full authored AIState so goals/fears stay byte-identical to the
+  // previous EntityState constants.
+  for (const src of [player, pilgrim, brotherAldric, sisterMaren, ashGhoul, cryptStalker, cryptWarden]) {
+    const entity = engine.store.state.entities[src.id];
+    if (!entity) continue;
+    if (src.relations) entity.relations = structuredClone(src.relations);
+    if (src.custom) entity.custom = structuredClone(src.custom);
+    if (src.resistances) entity.resistances = structuredClone(src.resistances);
+    if (src.ai) entity.ai = structuredClone(src.ai);
+  }
 
-  // Set player
   engine.store.state.playerId = 'player';
   engine.store.state.locationId = 'chapel-entrance';
 

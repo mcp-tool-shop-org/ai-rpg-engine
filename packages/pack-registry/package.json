@@ -19,7 +19,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ai-rpg-engine/core": "*"
+    "@ai-rpg-engine/core": "*",
+    "@ai-rpg-engine/content-schema": "*"
   },
   "license": "MIT",
   "author": "mcp-tool-shop",

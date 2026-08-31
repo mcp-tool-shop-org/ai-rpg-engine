@@ -7,11 +7,14 @@
 // packMeta + createGame, lift the session catalogs with the same structural
 // typing districts already uses, registerPack, return PackEntry[].
 
+import { basename } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Engine, GameManifest, RulesetDefinition } from '@ai-rpg-engine/core';
 import { getPack, registerPack } from './registry.js';
 import type {
   DiscoverInstalledPacksOptions,
   PackBuildCatalog,
+  PackContent,
   PackEntry,
   PackItemCatalog,
   PackMetadata,
@@ -109,27 +112,46 @@ function findStatusDefinitions(mod: Record<string, unknown>): PackStatusDefiniti
   return undefined;
 }
 
-/**
- * Lift a pack module (the public barrel: packMeta + createGame + catalogs)
- * into a {@link PackEntry}. Does not register. Returns null when the module
- * does not advertise packMeta + createGame.
- */
-export function packEntryFromModule(mod: unknown): PackEntry | null {
-  if (!isObj(mod)) return null;
-  if (!isPackMeta(mod.packMeta)) return null;
-  if (typeof mod.createGame !== 'function') return null;
+function liftContent(mod: Record<string, unknown>): PackContent | undefined {
+  if (typeof mod.toContentPack === 'function') {
+    try {
+      const packed = (mod.toContentPack as () => unknown)();
+      if (isObj(packed)) return packed as PackContent;
+    } catch {
+      // fall through to mod.pack
+    }
+  }
+  if (isObj(mod.pack)) return mod.pack as PackContent;
+  return undefined;
+}
 
-  const ruleset = findRuleset(mod);
-  const manifest = isManifest(mod.manifest) ? mod.manifest : undefined;
-  if (!ruleset || !manifest) return null;
-
-  const entry: PackEntry = {
-    meta: mod.packMeta,
-    manifest,
-    ruleset,
-    createGame: mod.createGame as (seed?: number) => Engine,
+function stubRuleset(meta: PackMetadata): RulesetDefinition {
+  return {
+    id: meta.id,
+    name: meta.name,
+    version: meta.version,
+    stats: [],
+    resources: [],
+    verbs: [],
+    formulas: [],
+    defaultModules: [],
+    progressionModels: [],
   };
+}
 
+function stubManifest(meta: PackMetadata, ruleset: RulesetDefinition): GameManifest {
+  return {
+    id: meta.id,
+    title: meta.name,
+    version: meta.version,
+    engineVersion: meta.engineVersion,
+    ruleset: ruleset.id,
+    modules: [],
+    contentPacks: [meta.id],
+  };
+}
+
+function attachCatalogs(entry: PackEntry, mod: Record<string, unknown>): void {
   if (Array.isArray(mod.districts)) {
     entry.districts = mod.districts as PackEntry['districts'];
   }
@@ -143,7 +165,43 @@ export function packEntryFromModule(mod: unknown): PackEntry | null {
   if (trees) entry.progressionTrees = trees;
   const statuses = findStatusDefinitions(mod);
   if (statuses) entry.statusDefinitions = statuses;
+}
 
+/**
+ * Lift a pack module (the public barrel: packMeta + createGame + catalogs,
+ * and/or pack / toContentPack()) into a {@link PackEntry}. Does not register.
+ * Returns null when the module advertises neither a playable factory nor a
+ * data pack.
+ */
+export function packEntryFromModule(mod: unknown): PackEntry | null {
+  if (!isObj(mod)) return null;
+  if (!isPackMeta(mod.packMeta)) return null;
+
+  const content = liftContent(mod);
+  const hasCreateGame = typeof mod.createGame === 'function';
+  if (!hasCreateGame && !content) return null;
+
+  const fromContent = content && isRuleset(content.ruleset) ? content.ruleset : undefined;
+  const ruleset = findRuleset(mod) ?? fromContent;
+  const manifest = isManifest(mod.manifest) ? mod.manifest : undefined;
+
+  // Playable entries still need ruleset + manifest. Catalog-only JSON/data
+  // packs synthesize both so they can list in getPackSummaries.
+  if (hasCreateGame && (!ruleset || !manifest)) return null;
+
+  const resolvedRuleset = ruleset ?? stubRuleset(mod.packMeta);
+  const entry: PackEntry = {
+    meta: mod.packMeta,
+    manifest: manifest ?? stubManifest(mod.packMeta, resolvedRuleset),
+    ruleset: resolvedRuleset,
+  };
+  if (hasCreateGame) {
+    entry.createGame = mod.createGame as (seed?: number) => Engine;
+  } else {
+    entry.needsRuntimeHost = true;
+  }
+  if (content) entry.content = content;
+  attachCatalogs(entry, mod);
   return entry;
 }
 
@@ -155,8 +213,9 @@ export function registerFromModule(mod: unknown, source = 'module'): PackEntry {
   const entry = packEntryFromModule(mod);
   if (!entry) {
     throw new Error(
-      `registerFromModule: ${source} does not advertise packMeta + createGame ` +
-        `(got ${describeValue(mod)}) — export packMeta, createGame, manifest, and a RulesetDefinition`,
+      `registerFromModule: ${source} does not advertise packMeta + (createGame or pack/toContentPack) ` +
+        `(got ${describeValue(mod)}) — export packMeta and either createGame or a ContentPack ` +
+        '(mod.pack / toContentPack()), plus manifest and a RulesetDefinition for a playable entry',
     );
   }
   const existing = getPack(entry.meta.id);
@@ -178,7 +237,7 @@ function collectSpecs(options: DiscoverInstalledPacksOptions): string[] {
     throw new Error(
       'discoverInstalledPacks: from.moduleUrls and from.nodeResolution are both empty — ' +
         "pass package names (e.g. { from: { nodeResolution: ['@ai-rpg-engine/starter-fantasy'] } }) " +
-        'or file URLs in from.moduleUrls',
+        'or file URLs / .json ContentPack paths in from.moduleUrls',
     );
   }
   for (let i = 0; i < specs.length; i++) {
@@ -191,10 +250,67 @@ function collectSpecs(options: DiscoverInstalledPacksOptions): string[] {
   return specs;
 }
 
+function isJsonSpecifier(spec: string): boolean {
+  const path = spec.startsWith('file:') ? spec.slice('file:'.length) : spec;
+  return path.split('?')[0].toLowerCase().endsWith('.json');
+}
+
+function jsonFilePath(spec: string): string {
+  if (spec.startsWith('file:')) return fileURLToPath(spec);
+  return spec;
+}
+
+function metaFromJsonSpec(pack: PackContent, spec: string): PackMetadata {
+  const stem = basename(jsonFilePath(spec)).replace(/\.json$/i, '') || 'json-pack';
+  return {
+    id: stem,
+    name: stem,
+    tagline: 'JSON content pack',
+    genres: [],
+    difficulty: 'beginner',
+    tones: [],
+    tags: ['json'],
+    engineVersion: '*',
+    version: typeof pack.schemaVersion === 'string' ? pack.schemaVersion : '0.0.0',
+    description: `Loaded from ${spec}. Catalog-only until a runtime host supplies createGame.`,
+    narratorTone: '',
+  };
+}
+
+async function packEntryFromJsonFile(
+  spec: string,
+  options: DiscoverInstalledPacksOptions,
+): Promise<PackEntry> {
+  const filePath = jsonFilePath(spec);
+  const { loadContentFromFile } = await import('@ai-rpg-engine/content-schema');
+  const loaded = loadContentFromFile(filePath);
+  if (!loaded.ok) {
+    throw new Error(
+      `discoverInstalledPacks: JSON "${spec}" failed loadContentFromFile: ${loaded.summary}`,
+    );
+  }
+  const content = loaded.pack as PackContent;
+  const meta = metaFromJsonSpec(content, spec);
+  const ruleset = isRuleset(content.ruleset) ? content.ruleset : stubRuleset(meta);
+  const entry: PackEntry = {
+    meta,
+    manifest: stubManifest(meta, ruleset),
+    ruleset,
+    content,
+  };
+  if (typeof options.createGame === 'function') {
+    const host = options.createGame;
+    entry.createGame = (seed?: number) => host(content, seed);
+  } else {
+    entry.needsRuntimeHost = true;
+  }
+  return entry;
+}
+
 /**
- * Import packages that advertise packMeta + createGame, register each, and
- * return the resulting {@link PackEntry}[]. Hosts pass the specifiers — this
- * is the replacement for a hardcoded 12-import table.
+ * Import packages that advertise packMeta + createGame (and/or pack /
+ * toContentPack), register each, and return the resulting {@link PackEntry}[].
+ * JSON specifiers in `from.moduleUrls` go through loadContentFromFile.
  *
  * Already-registered ids are returned as-is (idempotent).
  */
@@ -204,6 +320,17 @@ export async function discoverInstalledPacks(
   const specs = collectSpecs(options);
   const found: PackEntry[] = [];
   for (const spec of specs) {
+    if (isJsonSpecifier(spec)) {
+      const jsonEntry = await packEntryFromJsonFile(spec, options);
+      const existing = getPack(jsonEntry.meta.id);
+      if (existing) {
+        found.push(existing);
+        continue;
+      }
+      registerPack(jsonEntry);
+      found.push(jsonEntry);
+      continue;
+    }
     let mod: unknown;
     try {
       mod = await import(spec);
@@ -211,14 +338,14 @@ export async function discoverInstalledPacks(
       const reason = err instanceof Error ? err.message : String(err);
       throw new Error(
         `discoverInstalledPacks: failed to import "${spec}": ${reason} — ` +
-          'check the package is installed and exports packMeta + createGame',
+          'check the package is installed and exports packMeta + createGame (or pack / toContentPack)',
       );
     }
     const entry = packEntryFromModule(mod);
     if (!entry) {
       throw new Error(
-        `discoverInstalledPacks: "${spec}" does not advertise packMeta + createGame — ` +
-          'export packMeta, createGame, manifest, and a RulesetDefinition from the package barrel',
+        `discoverInstalledPacks: "${spec}" does not advertise packMeta + createGame ` +
+          '(or pack / toContentPack) — export packMeta and either a playable factory or a ContentPack',
       );
     }
     found.push(registerFromModule(mod, spec));

@@ -10,16 +10,16 @@
 // and identical across two same-seed engines, and pins it against regression.
 
 import { describe, it, expect } from 'vitest';
+import { fileURLToPath } from 'node:url';
 import { validateEncounterSpawnContent } from '@ai-rpg-engine/modules';
 import { encounterSpawnContent, zones as authoredZones } from './content.js';
-import { validateGameContent, validateAbilityPack } from '@ai-rpg-engine/content-schema';
-import type { ContentPack } from '@ai-rpg-engine/content-schema';
+import { validateGameContent, validateAbilityPack, loadContent, loadContentFromFile } from '@ai-rpg-engine/content-schema';
 import { createGame } from './setup.js';
 import {
-  pilgrimDialogue,
+  pack,
+  toContentPack,
   combatMasteryTree,
   fantasyAbilities,
-  fantasyStatusDefinitions,
   buildCatalog,
 } from './content.js';
 import { fantasyMinimalRuleset } from './ruleset.js';
@@ -66,28 +66,28 @@ describe('fantasy content — healing-draught event id determinism', () => {
 // the real shipped content (built via createGame(), not a hand-duplicated
 // copy) through those validators.
 describe('fantasy content — cross-reference integrity (F-4806a2c9)', () => {
-  it('zones, dialogue speakers, and ids have no dangling references or duplicate ids', () => {
-    const engine = createGame(1);
-    const pack: ContentPack = {
-      zones: Object.values(engine.store.state.zones) as unknown as ContentPack['zones'],
-      entities: Object.values(engine.store.state.entities) as unknown as ContentPack['entities'],
-      dialogues: [pilgrimDialogue],
-      abilities: fantasyAbilities,
-      statuses: fantasyStatusDefinitions,
-    };
+  it('F-83947d13: authored pack is loadContent-valid (not a cast of live store state)', () => {
+    const r = loadContent(pack);
+    expect(r.ok).toBe(true);
+    expect(r.errors).toEqual([]);
+    expect(loadContent(toContentPack()).ok).toBe(true);
+  });
 
+  it('F-83947d13: src/content.json is a loadable fixture', () => {
+    const file = fileURLToPath(new URL('./content.json', import.meta.url));
+    const r = loadContentFromFile(file);
+    expect(r.ok).toBe(true);
+    expect(r.errors).toEqual([]);
+  });
+
+  it('zones, dialogue speakers, and ids have no dangling references or duplicate ids', () => {
     const result = validateGameContent(pack);
     expect(result.errors).toEqual([]);
     expect(result.ok).toBe(true);
   });
 
   it('has no one-way zone passages (neighbor symmetry advisory)', () => {
-    const engine = createGame(1);
-    const pack: ContentPack = {
-      zones: Object.values(engine.store.state.zones) as unknown as ContentPack['zones'],
-    };
-
-    const result = validateGameContent(pack);
+    const result = validateGameContent({ zones: pack.zones });
     expect(result.advisories).toEqual([]);
   });
 

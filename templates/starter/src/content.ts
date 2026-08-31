@@ -15,6 +15,7 @@ import type {
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
+import { myRuleset } from './ruleset.js';
 
 export const manifest: GameManifest = {
     id: 'my-game',
@@ -70,15 +71,14 @@ export const enemy: EntityBlueprint = {
     // provided in setup.ts (`cognition: { profiles: [...] }`) — without that
     // pairing the enemy never selects an intent and just stands there.
     // Built-ins: 'aggressive' (attack on sight) and 'cautious' (observe first).
-    // applyContentPack drops the name (needs module vocabulary); setup.ts
-    // overlays the runtime AIState from entityAi after intake.
+    // applyContentPack resolves this name against ContentPack.entityAi and
+    // ApplyContentPackOptions.profiles (setup.ts).
     aiProfile: 'aggressive',
 };
 
-// Runtime-only AI overlay. Not part of the ContentPack; applyContentPack
-// cannot construct AIState from a profile name. setup.ts writes this onto
-// the converted entity after intake.
-export const entityAi: Record<string, EntityState['ai']> = {
+// Per-entity AI overlay. applyContentPack writes this onto EntityState.ai
+// when the entity's id is present here (F-035ac806).
+export const entityAi: Record<string, NonNullable<EntityState['ai']>> = {
     grunt: { profileId: 'aggressive', goals: ['guard-zone'], fears: [], alertLevel: 0, knowledge: {} },
 };
 
@@ -192,6 +192,8 @@ export const pack: ContentPack = {
     progressionTrees: [progressionTree],
     statuses: statusDefinitions,
     items: itemCatalog.items as ContentPack['items'],
+    entityAi,
+    ruleset: myRuleset,
 };
 
 /** Identity today — reserved for stripping any runtime-only fields later. */

@@ -18,7 +18,7 @@ import {
 } from '@ai-rpg-engine/modules';
 import type { IntentProfile } from '@ai-rpg-engine/modules';
 import { applyContentPack } from '@ai-rpg-engine/content-schema';
-import { manifest, pack, entityAi } from './content.js';
+import { manifest, pack } from './content.js';
 import { myRuleset } from './ruleset.js';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -150,17 +150,12 @@ export function createGame(seed?: number): Engine {
     });
 
     // Author data → runtime. applyContentPack converts EntityBlueprint /
-    // ZoneDefinition / placements into store state (roomId derived from zone
-    // id). Runtime-only AI is overlaid after intake — a profile NAME cannot
-    // become AIState without the pack that defines it.
-    const applied = applyContentPack(engine, pack);
+    // ZoneDefinition / placements into store state and resolves aiProfile
+    // against cognition profiles + pack.entityAi (F-035ac806).
+    const applied = applyContentPack(engine, pack, { profiles: myIntentProfiles });
     if (!applied.ok) {
         const detail = applied.errors.map((e) => `${e.path}: ${e.message}`).join('\n');
         throw new Error(`applyContentPack failed:\n${detail}`);
-    }
-    for (const [id, ai] of Object.entries(entityAi)) {
-        const entity = engine.store.state.entities[id];
-        if (entity && ai) entity.ai = structuredClone(ai);
     }
 
     // Set player context

@@ -530,6 +530,15 @@ export function validateEntityPlacementRecord(v: unknown, path = 'EntityPlacemen
   return { ok: c.errors.length === 0, errors: c.errors };
 }
 
+/** Authored giveItem: itemId onto entityId. */
+export function validateItemPlacementRecord(v: unknown, path = 'ItemPlacementRecord'): ValidationResult {
+  if (!isObj(v)) return fail([{ path, message: 'must be an object' }]);
+  const c = checker(path);
+  reqStr(c, v, 'itemId');
+  reqStr(c, v, 'entityId');
+  return { ok: c.errors.length === 0, errors: c.errors };
+}
+
 /**
  * `EncounterAnchorRecord` — a per-zone spawn-set entry (C3/P1).
  *
