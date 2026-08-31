@@ -155,6 +155,32 @@ describe('dialogue-core: speakHandler', () => {
     expect(warm.payload.dialogueBias).toBeUndefined();
   });
 
+  it('WO-dialogueBias-reachability: a plain entity.faction tag (no createFactionCognition registration -- the shape every shipped starter actually uses) still attaches dialogueBias at a friendly reputation', () => {
+    // getEntityFaction (faction-cognition.ts) reads a SEPARATE membership
+    // registry that is populated ONLY when a pack explicitly registers
+    // createFactionCognition({ factions: [{ factionId, entityIds }] }) --
+    // verified by grep that NONE of the 12 shipped starters register that
+    // module in production (only a starter-cyberpunk TEST file references
+    // it), so getEntityFaction returned undefined for every speaker in every
+    // shipped pack and dialogueBiasForSpeaker was unreachable dead code
+    // end to end. Every sibling faction consumer in this file reads the
+    // entity-level `faction` tag directly instead (targeting.ts's
+    // affiliationOf, combat-intent.ts, companion-core.ts) -- the same plain
+    // faction standing this test authors.
+    const taggedNpc: EntityState = { ...npc, faction: 'guild' };
+    const engine = createTestEngine({
+      modules: [createDialogueCore([dialogue])],
+      entities: [player, taggedNpc],
+      zones,
+      factions: { guild: { id: 'guild', name: 'Guild', reputation: 55, disposition: 'friendly' } },
+    });
+
+    const entered = engine.submitAction('speak', { targetIds: ['merchant'] })
+      .find(e => e.type === 'dialogue.node.entered')!;
+
+    expect(entered.payload.dialogueBias).toBe('A friend of the faction.');
+  });
+
   it('F-0e4732b4: a warn last-action attaches its dialogueHint; no last-action omits the field', () => {
     const named: EntityState = { ...npc, tags: ['npc', 'named'] };
     const warned = createTestEngine({
