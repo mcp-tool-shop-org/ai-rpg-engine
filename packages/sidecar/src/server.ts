@@ -33,6 +33,7 @@ import {
   type ListActionsResult,
   type LoadResult,
   type MethodName,
+  type PackIntakeSummary,
   type PreviewResult,
   type ReplayResult,
   type SaveResult,
@@ -65,6 +66,14 @@ export type SidecarServerOptions = {
    * up so 1:N clients share one tick stream. Must not recurse into the origin.
    */
   onWorldCommitted?: () => void;
+  /**
+   * What the content-pack gate dropped or noted while this world was built.
+   * Mapped from content-schema's DroppedField/ValidationError by the CLI's
+   * sidecar-command.ts — content-schema types never enter this package.
+   * Stamped onto `initialize`'s result only when there is something to
+   * report (F-9b3f6d21).
+   */
+  packIntake?: PackIntakeSummary;
 };
 
 type Outbound = (msg: RpcMessage) => void;
@@ -147,6 +156,8 @@ export class SidecarServer {
   private readonly serverName: string;
   private readonly advanceRound: (engine: Engine) => void;
   private readonly onWorldCommitted?: () => void;
+  /** What the content-pack gate reported, if the host passed one. Additive on initialize. */
+  private readonly packIntake?: PackIntakeSummary;
   /** Events already pushed, keyed by id — the basis of idempotent re-emission. */
   private readonly emitted = new Set<string>();
   private lastState: WorldState;
@@ -177,6 +188,7 @@ export class SidecarServer {
     this.serverName = options.serverName ?? '@ai-rpg-engine/sidecar';
     this.advanceRound = options.advanceRound ?? ((engine) => engine.advanceRound(1));
     this.onWorldCommitted = options.onWorldCommitted;
+    this.packIntake = options.packIntake;
     this.lastState = structuredClone(this.engine.world) as WorldState;
     for (const e of this.engine.world.eventLog ?? []) this.emitted.add(e.id);
     this.gate = attachSession(this.engine, this);
@@ -321,6 +333,9 @@ export class SidecarServer {
         }
         if (typeof world.locationId === 'string' && world.locationId.length > 0) {
           result.locationId = world.locationId;
+        }
+        if (this.packIntake && (this.packIntake.dropped.length > 0 || this.packIntake.advisories.length > 0)) {
+          result.packIntake = this.packIntake;
         }
         if (hasId) this.reply(id, result);
         return;

@@ -188,6 +188,41 @@ export type ClientCapabilities = {
   presentation?: boolean;
 };
 
+/**
+ * Why one field from an authored content pack did not make it into this
+ * world. DUPLICATED from content-schema's `DropReason` (intake.ts:80-85),
+ * not imported: `@ai-rpg-engine/sidecar` depends on `@ai-rpg-engine/core`
+ * only (package.json), and pulling a content-schema type across that
+ * boundary for a five-value closed union is not worth the layering leak.
+ * Same structural-typing precedent as `IntentProfileRef` (intake.ts:114-121).
+ */
+export type PackIntakeDrop = {
+  /** Source path, e.g. `entities[2](guard).aiProfile`. */
+  path: string;
+  reason:
+    | 'no-runtime-field'
+    | 'needs-module-vocabulary'
+    | 'inert-without-pack-code'
+    | 'session-scoped'
+    | 'evaluated-not-mapped';
+  /** Why, in one sentence a content author can act on. */
+  detail: string;
+};
+
+/** One non-fatal note the content-pack gate raised while loading this world. */
+export type PackIntakeNote = { path: string; message: string };
+
+/**
+ * What the content-pack gate (`runLoadGate` / `applyContentPack`, both in
+ * content-schema) dropped or advised while this world was built. Carried on
+ * `SidecarServerOptions` and stamped onto `initialize`'s result only when
+ * there is something to report (F-9b3f6d21).
+ */
+export type PackIntakeSummary = {
+  dropped: PackIntakeDrop[];
+  advisories: PackIntakeNote[];
+};
+
 export type InitializeResult = {
   serverName: string;
   /** The engine's version — informational. Compatibility is by capability. */
@@ -201,6 +236,8 @@ export type InitializeResult = {
   playerId?: string;
   /** Current player location (zone) id. Additive; stamped in lockstep with playerId. */
   locationId?: string;
+  /** Additive (F-9b3f6d21). Present only when there is something to report. */
+  packIntake?: PackIntakeSummary;
 };
 
 // --- Errors ---------------------------------------------------------------
