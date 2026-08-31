@@ -305,8 +305,55 @@ export async function runChatShell(options: ChatShellOptions): Promise<void> {
     // transcript lands (or the failure is reported).
     if (exitSaveStarted) return;
     exitSaveStarted = true;
+    // F-a63c0e57: warn before the process actually goes away when unconfirmed
+    // staged content would otherwise be silently and permanently lost (no
+    // session persistence for in-flight batches exists yet — that is a
+    // roadmap item, not built here; this wave is warn-on-exit only).
+    const warning = formatExitStagedWarning(engine);
+    if (warning) console.error(warning);
     void persistTranscriptAtExit(transcript, projectRoot, saveTranscripts, transcriptPath);
   });
+}
+
+/**
+ * Build the exit warning for unconfirmed staged content (F-a63c0e57,
+ * scope-ruled to warn-on-exit only this wave). Checks activeBuild/
+ * activeTuning's own stagedWrites pools directly rather than only
+ * engine.pendingWriteBatch: stagedWrites accumulates from the very first
+ * step a batch stages, while pendingWriteBatch is only populated later (the
+ * flush gate firing, or the plan completing) — checking stagedWrites catches
+ * mid-batch content pendingWriteBatch alone would miss entirely. Named
+ * per-flow (goal + every staged path) so the operator knows exactly what a
+ * crash/Ctrl+C/closed terminal would lose. Returns null when nothing is
+ * staged. Exported for tests.
+ */
+export function formatExitStagedWarning(engine: ChatEngine): string | null {
+  const sections: string[] = [];
+
+  const buildEntries = engine.activeBuild ? Object.values(engine.activeBuild.stagedWrites) : [];
+  if (buildEntries.length > 0) {
+    sections.push(
+      `Build "${engine.activeBuild!.plan.goal}" — ${buildEntries.length} staged file(s) not yet written:\n`
+      + buildEntries.map((e) => `  - ${e.suggestedPath}`).join('\n'),
+    );
+  }
+
+  const tuningEntries = engine.activeTuning ? Object.values(engine.activeTuning.stagedWrites) : [];
+  if (tuningEntries.length > 0) {
+    sections.push(
+      `Tuning "${engine.activeTuning!.plan.goal}" — ${tuningEntries.length} staged file(s) not yet written:\n`
+      + tuningEntries.map((e) => `  - ${e.suggestedPath}`).join('\n'),
+    );
+  }
+
+  if (sections.length === 0) return null;
+  return [
+    'Warning: exiting now will lose unconfirmed staged content:',
+    '',
+    ...sections,
+    '',
+    'Say "yes" to write it, or run /step / /tune-step to keep going, before exiting.',
+  ].join('\n');
 }
 
 /** Exported for tests (v2.6 audit F-ed21662f). */

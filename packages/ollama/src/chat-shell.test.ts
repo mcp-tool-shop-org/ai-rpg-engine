@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import {
   handleSlashCommand, runChatShell, persistTranscriptAtExit,
   formatChatTurn, formatTranscriptPretty, beginThinking,
+  formatExitStagedWarning,
 } from './chat-shell.js';
 import { setDisplayMode, formatHeading } from './chat-studio.js';
 import { MAX_EXPERIMENT_RUNS } from './chat-experiments.js';
@@ -740,5 +741,144 @@ describe('handleSlashCommand — /undo and /models', () => {
     expect(result).toBe('handled');
     const logged = logSpy.mock.calls.flat().join('\n');
     expect(logged).toContain('Configured model:');
+  });
+});
+
+// F-a63c0e57 (wave-4, addendum-scoped: warn-on-exit ONLY this wave -- full
+// BuildState/TuningState session persistence is a roadmap item, not built
+// here). Before this fix, a crash/Ctrl+C/closed terminal between the flush
+// gate firing (or any step staging content) and the user answering yes/no
+// permanently and silently destroyed every byte of unconfirmed staged
+// content, with zero warning anywhere.
+describe('formatExitStagedWarning (F-a63c0e57)', () => {
+  function scaffoldStep(id: number): BuildStep {
+    return {
+      id, description: `step ${id}`, command: 'create-room', intent: 'scaffold',
+      params: { kind: 'room', theme: `theme-${id}` }, dependencies: [],
+      artifactOutputs: ['rooms'], usePriorContent: false, status: 'pending',
+    };
+  }
+  function tuningStep(id: number): TuningStep {
+    return {
+      id, description: `tune ${id}`, command: 'create-room', intent: 'scaffold',
+      params: { kind: 'room', theme: `tune-${id}` }, dependencies: [],
+      expectedEffect: 'none', status: 'pending',
+    };
+  }
+
+  it('returns null when nothing is staged', () => {
+    const engine = makeEngine();
+    expect(formatExitStagedWarning(engine)).toBeNull();
+  });
+
+  it('returns null when a build exists but has not staged anything yet', () => {
+    const engine = makeEngine();
+    engine.activeBuild = createBuildState({
+      goal: 'haunted market', steps: [scaffoldStep(1)], estimatedSteps: 1, warnings: [],
+    } satisfies BuildPlan);
+    expect(formatExitStagedWarning(engine)).toBeNull();
+  });
+
+  it('names the build goal and every staged path when activeBuild.stagedWrites is non-empty', () => {
+    const engine = makeEngine();
+    engine.activeBuild = createBuildState({
+      goal: 'haunted market', steps: [scaffoldStep(1)], estimatedSteps: 1, warnings: [],
+    } satisfies BuildPlan);
+    engine.activeBuild.stagedWrites['content/rooms/market-hall.yaml'] = {
+      content: 'id: market-hall', suggestedPath: 'content/rooms/market-hall.yaml',
+      label: 'room: market-hall', sourceStepId: 1,
+    };
+    const warning = formatExitStagedWarning(engine);
+    expect(warning).not.toBeNull();
+    expect(warning).toContain('haunted market');
+    expect(warning).toContain('content/rooms/market-hall.yaml');
+    expect(warning).toMatch(/lose|lost/i);
+  });
+
+  it('names the tuning goal and every staged path when activeTuning.stagedWrites is non-empty', () => {
+    const engine = makeEngine();
+    engine.activeTuning = createTuningState({
+      goal: 'paranoia pass', steps: [tuningStep(1)], warnings: [],
+    } satisfies TuningPlan);
+    engine.activeTuning.stagedWrites['content/rooms/tuned-room.yaml'] = {
+      content: 'id: tuned-room', suggestedPath: 'content/rooms/tuned-room.yaml',
+      label: 'room: tuned-room', sourceStepId: 1,
+    };
+    const warning = formatExitStagedWarning(engine);
+    expect(warning).not.toBeNull();
+    expect(warning).toContain('paranoia pass');
+    expect(warning).toContain('content/rooms/tuned-room.yaml');
+  });
+
+  it('names both when build and tuning are simultaneously staged', () => {
+    const engine = makeEngine();
+    engine.activeBuild = createBuildState({
+      goal: 'build goal', steps: [scaffoldStep(1)], estimatedSteps: 1, warnings: [],
+    } satisfies BuildPlan);
+    engine.activeBuild.stagedWrites['content/rooms/b.yaml'] = {
+      content: 'id: b', suggestedPath: 'content/rooms/b.yaml', label: 'room: b', sourceStepId: 1,
+    };
+    engine.activeTuning = createTuningState({
+      goal: 'tune goal', steps: [tuningStep(1)], warnings: [],
+    } satisfies TuningPlan);
+    engine.activeTuning.stagedWrites['content/rooms/t.yaml'] = {
+      content: 'id: t', suggestedPath: 'content/rooms/t.yaml', label: 'room: t', sourceStepId: 1,
+    };
+    const warning = formatExitStagedWarning(engine);
+    expect(warning).toContain('build goal');
+    expect(warning).toContain('content/rooms/b.yaml');
+    expect(warning).toContain('tune goal');
+    expect(warning).toContain('content/rooms/t.yaml');
+  });
+});
+
+// Wiring proof: the REPL 'close' handler (Ctrl+D, /quit, Ctrl+C) actually
+// prints formatExitStagedWarning's text, not just that the formatter itself
+// is correct in isolation.
+describe('runChatShell — warns on exit with unconfirmed staged content (F-a63c0e57)', () => {
+  let projectRoot: string;
+
+  afterEach(async () => {
+    if (projectRoot) {
+      try { await rm(projectRoot, { recursive: true, force: true }); } catch { /* ignore */ }
+    }
+  });
+
+  it('prints a staged-content warning to stderr on Ctrl+D when a build step has staged unconfirmed content', async () => {
+    projectRoot = await mkdtemp(join(tmpdir(), 'chat-shell-exit-warn-'));
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const input = new PassThrough();
+    const output = new PassThrough();
+    output.resume();
+    const rulesetYaml = [
+      'id: warn-ruleset', 'name: Warn Ruleset', 'version: 0.1.0',
+      'stats:', '  - id: vigor', '    name: Vigor', '    default: 5',
+      'resources:', '  - id: hp', '    name: HP', '    default: 20',
+      'verbs:', '  - id: move', '    name: Move',
+      'formulas: []', 'defaultModules: []', 'progressionModels: []',
+    ].join('\n');
+    void runChatShell({
+      client: mockClient(rulesetYaml),
+      projectRoot,
+      saveTranscripts: false,
+      input,
+      output,
+    });
+
+    input.write('/build a haunted market district\n');
+    await vi.waitFor(() => expect(logSpy.mock.calls.flat().join('\n')).toContain('Build Plan'));
+
+    input.write('/step\n');
+    await vi.waitFor(() => expect(logSpy.mock.calls.flat().join('\n')).toContain('Step 1'));
+
+    input.end(); // Ctrl+D
+
+    await vi.waitFor(() => {
+      const err = errSpy.mock.calls.flat().join('\n');
+      expect(err).toMatch(/unconfirmed staged content/i);
+      expect(err).toContain('haunted market district');
+    });
   });
 });
