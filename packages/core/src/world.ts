@@ -17,6 +17,26 @@ import { SeededRNG } from './rng.js';
 import { EventBus, type EventBusListenerErrorHook } from './events.js';
 import { validateGameManifest } from './manifest.js';
 
+/** Filters for WorldStore.queryEvents (handbook 34 / sidecar REPLAY). */
+export type EventQuery = {
+  type?: string;
+  typePrefix?: string;
+  actorId?: string;
+  fromTick?: number;
+  toTick?: number;
+  limit?: number;
+};
+
+/**
+ * Host-set policy, not persisted world state. `keep-all` is the default and a
+ * no-op; the other modes drop a prefix of eventLog and emit `event.log.compacted`
+ * so module cursors can rebase.
+ */
+export type EventLogRetention =
+  | { mode: 'keep-all' }
+  | { mode: 'keep-last-ticks'; ticks: number }
+  | { mode: 'checkpoint-compact'; sealedThroughTick: number };
+
 export type WorldStoreOptions = {
   manifest: GameManifest;
   seed?: number;
@@ -29,6 +49,13 @@ export type WorldStoreOptions = {
   ruleset?: RulesetDefinition;
   /** Optional hook to observe consumer-listener failures (see EventBus). */
   onListenerError?: EventBusListenerErrorHook;
+  /**
+   * Event-log retention. Default `keep-all` so byte-identical replay tests
+   * stay green. Compaction runs from compactEventLog (Engine.serialize and
+   * Engine.advanceRound); WorldStore.serialize itself never drops events, so
+   * preview clones stay side-effect-free.
+   */
+  eventLogRetention?: EventLogRetention;
 };
 
 /**
@@ -351,6 +378,7 @@ export class WorldStore {
    *  caller supplies the ruleset again on deserialize. */
   private readonly statBounds: ReadonlyMap<string, StatDefinition>;
   private readonly resourceBounds: ReadonlyMap<string, ResourceDefinition>;
+  private eventLogRetention: EventLogRetention;
 
   constructor(options: WorldStoreOptions) {
     // Fail loud + structured on a malformed manifest before any field is
@@ -363,6 +391,7 @@ export class WorldStore {
     this.events = new EventBus({ onListenerError: options.onListenerError });
     this.statBounds = new Map((options.ruleset?.stats ?? []).map((s) => [s.id, s]));
     this.resourceBounds = new Map((options.ruleset?.resources ?? []).map((r) => [r.id, r]));
+    this.eventLogRetention = options.eventLogRetention ?? { mode: 'keep-all' };
 
     this.state = {
       meta: {
@@ -544,6 +573,77 @@ export class WorldStore {
     this.state.eventLog.push(recorded);
     this.events.emit(recorded, this.state);
     return recorded;
+  }
+
+  /**
+   * Filter the event log. Combinators are AND. Results are in log order
+   * (oldest first). Does not copy event objects — same aliasing as eventLog.
+   */
+  queryEvents(query: EventQuery = {}): ResolvedEvent[] {
+    const { type, typePrefix, actorId, fromTick, toTick, limit } = query;
+    const out: ResolvedEvent[] = [];
+    for (const event of this.state.eventLog) {
+      if (!event || typeof event !== 'object') continue;
+      if (type !== undefined && event.type !== type) continue;
+      if (typePrefix !== undefined) {
+        if (typeof event.type !== 'string' || !event.type.startsWith(typePrefix)) continue;
+      }
+      if (actorId !== undefined && event.actorId !== actorId) continue;
+      if (fromTick !== undefined && event.tick < fromTick) continue;
+      if (toTick !== undefined && event.tick > toTick) continue;
+      out.push(event);
+      if (limit !== undefined && out.length >= limit) break;
+    }
+    return out;
+  }
+
+  setEventLogRetention(retention: EventLogRetention): void {
+    this.eventLogRetention = retention;
+  }
+
+  getEventLogRetention(): EventLogRetention {
+    return this.eventLogRetention;
+  }
+
+  /**
+   * Apply the current retention policy. Default keep-all is a no-op (no event
+   * emitted). When events are dropped, records `event.log.compacted` so
+   * eventLog-cursor modules can rebase.
+   */
+  compactEventLog(): ResolvedEvent | undefined {
+    const policy = this.eventLogRetention;
+    if (!policy || policy.mode === 'keep-all') return undefined;
+
+    const log = this.state.eventLog;
+    const before = log.length;
+    let kept: ResolvedEvent[];
+    let minKeptTick: number | undefined;
+
+    if (policy.mode === 'keep-last-ticks') {
+      const ticks = Number.isFinite(policy.ticks) ? Math.max(0, Math.floor(policy.ticks)) : 0;
+      const minTick = this.state.meta.tick - ticks + (ticks > 0 ? 1 : 0);
+      kept = log.filter((e) => e && typeof e.tick === 'number' && e.tick >= minTick);
+      minKeptTick = ticks > 0 ? minTick : undefined;
+    } else {
+      const sealed = policy.sealedThroughTick;
+      kept = log.filter((e) => e && typeof e.tick === 'number' && e.tick > sealed);
+      minKeptTick = sealed + 1;
+    }
+
+    const droppedCount = before - kept.length;
+    if (droppedCount <= 0) return undefined;
+
+    this.state.eventLog = kept;
+    const payload: Record<string, unknown> = {
+      mode: policy.mode,
+      droppedCount,
+      keptCount: kept.length,
+    };
+    if (minKeptTick !== undefined) payload.minKeptTick = minKeptTick;
+    if (policy.mode === 'checkpoint-compact') {
+      payload.sealedThroughTick = policy.sealedThroughTick;
+    }
+    return this.emitEvent('event.log.compacted', payload);
   }
 
   /** Create and record an event */

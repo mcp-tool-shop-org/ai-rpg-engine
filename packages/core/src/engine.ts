@@ -7,12 +7,18 @@ import type {
   ResolvedEvent,
   RulesetDefinition,
   WorldState,
+  AvailableAction,
+  AvailableActionExpansion,
+  ChannelFilter,
+  EventChannel,
 } from './types.js';
-import { WorldStore, SaveLoadError, migrateModuleStates } from './world.js';
+import { WorldStore, SaveLoadError, migrateModuleStates, type EventQuery, type EventLogRetention } from './world.js';
 import { ActionDispatcher } from './actions.js';
 import { ModuleManager, type ModuleLifecycleErrorHook } from './modules.js';
 import type { FormulaRegistry } from './formulas.js';
 import type { EventBus, EventBusListenerErrorHook } from './events.js';
+import { PresentationChannels, type PresentedEvent } from './channels.js';
+import { stateHash } from './state-hash.js';
 
 export type EngineOptions = {
   manifest: GameManifest;
@@ -31,6 +37,12 @@ export type EngineOptions = {
    * that only supplies the listener hook still sees lifecycle errors.
    */
   onModuleError?: ModuleLifecycleErrorHook;
+  /**
+   * Event-log retention. Default keep-all (byte-identical replay). Applied by
+   * {@link Engine.serialize} and {@link Engine.advanceRound}, never by a
+   * preview clone snapshot.
+   */
+  eventLogRetention?: EventLogRetention;
 };
 
 /** Options accepted by {@link Engine.deserialize} — code plus observability hooks. */
@@ -39,11 +51,34 @@ export type EngineDeserializeOptions = Pick<
   'modules' | 'ruleset' | 'onListenerError' | 'onModuleError'
 >;
 
+/** Emit due pending effects with the same isolation processAction uses. */
+function emitDuePending(store: WorldStore): void {
+  const due = store.processPending();
+  for (const pending of due) {
+    try {
+      const payload =
+        pending.payload && typeof pending.payload === 'object' && !Array.isArray(pending.payload)
+          ? pending.payload
+          : {};
+      store.emitEvent(pending.type, payload, {
+        causedBy: pending.sourceEventId,
+      });
+    } catch (err) {
+      store.emitEvent('pending.failed', {
+        pendingId: pending.id,
+        type: pending.type,
+        reason: `Due pending effect "${pending.id}" failed to emit: ${err instanceof Error ? err.message : String(err)}. Later due effects still run.`,
+      }, { causedBy: pending.sourceEventId });
+    }
+  }
+}
+
 export class Engine {
   readonly store: WorldStore;
   readonly dispatcher: ActionDispatcher;
   readonly moduleManager: ModuleManager;
   readonly ruleset?: RulesetDefinition;
+  private readonly presentation: PresentationChannels;
 
   private actionLog: ActionIntent[] = [];
   private closed = false;
@@ -56,6 +91,13 @@ export class Engine {
       seed: options.seed,
       ruleset: options.ruleset,
       onListenerError: options.onListenerError,
+      eventLogRetention: options.eventLogRetention,
+    });
+
+    this.presentation = new PresentationChannels({
+      onFilterError: options.onListenerError
+        ? (err, event) => options.onListenerError!(err, event)
+        : undefined,
     });
 
     this.dispatcher = new ActionDispatcher();
@@ -73,6 +115,7 @@ export class Engine {
               });
             }
           : undefined),
+      this.presentation,
     );
 
     // Register modules
@@ -211,24 +254,7 @@ export class Engine {
     // Process pending effects that are due. Isolate each emit the way dispatch
     // isolates handler events so one bad due effect cannot abort the tick
     // after action.resolved is already in the log (F-0a03d557).
-    const due = this.store.processPending();
-    for (const pending of due) {
-      try {
-        const payload =
-          pending.payload && typeof pending.payload === 'object' && !Array.isArray(pending.payload)
-            ? pending.payload
-            : {};
-        this.store.emitEvent(pending.type, payload, {
-          causedBy: pending.sourceEventId,
-        });
-      } catch (err) {
-        this.store.emitEvent('pending.failed', {
-          pendingId: pending.id,
-          type: pending.type,
-          reason: `Due pending effect "${pending.id}" failed to emit: ${err instanceof Error ? err.message : String(err)}. Later due effects still run.`,
-        }, { causedBy: pending.sourceEventId });
-      }
-    }
+    emitDuePending(this.store);
 
     // Advance tick after each action
     this.store.advanceTick();
@@ -236,10 +262,164 @@ export class Engine {
     return events;
   }
 
-  /** Get available actions for the player in current context */
+  /**
+   * Side-effect-free dispatch: clone the world, rebind modules onto the copy,
+   * run the verb, return the clone's events, restore the live store.
+   * Live tick, actionLog, rngState, and eventLog are unchanged.
+   */
+  preview(
+    verb: string,
+    options?: Partial<Pick<ActionIntent, 'targetIds' | 'toolId' | 'parameters'>>,
+  ): ResolvedEvent[] {
+    if (this.closed) return [];
+    const liveStore = this.store;
+    const clone = WorldStore.deserialize(liveStore.serialize(), undefined, this.ruleset);
+    this.moduleManager.rebindStore(clone);
+    try {
+      return this.runPlayerIntentOnStore(clone, verb, options);
+    } finally {
+      this.moduleManager.rebindStore(liveStore);
+    }
+  }
+
+  /**
+   * Player-facing legal verbs in the current context (dry validators, no emit).
+   * Returns passing verb ids so existing catalog consumers keep working.
+   * Rejection reasons live on {@link getAvailableActionsFor}.
+   */
   getAvailableActions(): string[] {
     if (this.closed) return [];
+    return this.listAvailableActions(this.store.state.playerId)
+      .filter((a) => a.available)
+      .map((a) => a.verb);
+  }
+
+  /** Unfiltered registered-verb catalog (no legality dry-run). */
+  getRegisteredVerbs(): string[] {
     return this.dispatcher.getRegisteredVerbs();
+  }
+
+  /**
+   * Dry-run every registered verb for `actorId`: pass/fail + reason, plus
+   * module-registered target/tool expansions.
+   */
+  getAvailableActionsFor(actorId: string): AvailableAction[] {
+    if (this.closed) return [];
+    return this.listAvailableActions(actorId);
+  }
+
+  /**
+   * Advance the living-world half of a turn: due pending, module onRound
+   * hooks (registration order, isolated), optional log compaction, then tick.
+   */
+  advanceRound(rounds = 1): ResolvedEvent[] {
+    if (this.closed) return [];
+    const n = Number.isFinite(rounds) ? Math.min(1000, Math.max(1, Math.floor(rounds))) : 1;
+    const events: ResolvedEvent[] = [];
+    for (let i = 0; i < n; i++) {
+      if (this.closed) break;
+      events.push(...this.advanceOneRound());
+    }
+    return events;
+  }
+
+  /** Canonical state hash (sorted keys, quantized numbers). */
+  hash(): string {
+    return stateHash(this.store.state);
+  }
+
+  /** Present one event through the engine-owned PresentationChannels. */
+  present(event: ResolvedEvent): PresentedEvent[] {
+    return this.presentation.present(event);
+  }
+
+  /** Present a batch through the engine-owned PresentationChannels. */
+  presentAll(events: ResolvedEvent[]): PresentedEvent[] {
+    return this.presentation.presentAll(events);
+  }
+
+  addChannelFilter(channel: EventChannel, filter: ChannelFilter): void {
+    this.presentation.addFilter(channel, filter);
+  }
+
+  queryEvents(query: EventQuery = {}): ResolvedEvent[] {
+    return this.store.queryEvents(query);
+  }
+
+  compactEventLog(): ResolvedEvent | undefined {
+    return this.store.compactEventLog();
+  }
+
+  private runPlayerIntentOnStore(
+    store: WorldStore,
+    verb: string,
+    options?: Partial<Pick<ActionIntent, 'targetIds' | 'toolId' | 'parameters'>>,
+  ): ResolvedEvent[] {
+    const playerId = store.state.playerId;
+    const logBefore = store.state.eventLog.length;
+    if (!store.state.entities[playerId]) {
+      store.emitEvent('action.rejected', {
+        verb,
+        actorId: playerId,
+        reason: playerId === ''
+          ? 'unknown actor: state.playerId is not set. Set world.playerId to the player entity\'s id (and add that entity) before submitting player actions.'
+          : `unknown actor: no entity "${playerId}" in world state for state.playerId. Add the player entity before acting, or check the id for a typo.`,
+      }, { actorId: playerId });
+      store.advanceTick();
+    } else {
+      const action = this.dispatcher.createAction(
+        verb,
+        playerId,
+        store.tick,
+        { source: 'player', ...options },
+        store.genId('act'),
+      );
+      this.dispatcher.dispatch(action, store);
+      emitDuePending(store);
+      store.advanceTick();
+    }
+    return store.state.eventLog.slice(logBefore);
+  }
+
+  private listAvailableActions(actorId: string): AvailableAction[] {
+    const world = this.store.state;
+    const verbs = this.dispatcher.getRegisteredVerbs();
+    const out: AvailableAction[] = [];
+    for (const verb of verbs) {
+      const bare = this.dispatcher.createAction(verb, actorId, this.store.tick, { source: 'player' }, '');
+      const validation = this.dispatcher.validate(bare, world);
+      const expansions: AvailableActionExpansion[] = [];
+      for (const expansion of this.dispatcher.expandVerb(verb, actorId, world)) {
+        const expanded = this.dispatcher.createAction(
+          verb,
+          actorId,
+          this.store.tick,
+          {
+            source: 'player',
+            targetIds: expansion.targetIds,
+            toolId: expansion.toolId,
+            parameters: expansion.parameters,
+          },
+          '',
+        );
+        if (this.dispatcher.validate(expanded, world).valid) expansions.push(expansion);
+      }
+      const available = validation.valid || expansions.length > 0;
+      const entry: AvailableAction = { verb, available };
+      if (!validation.valid) entry.reason = validation.reason;
+      if (expansions.length > 0) entry.expansions = expansions;
+      out.push(entry);
+    }
+    return out;
+  }
+
+  private advanceOneRound(): ResolvedEvent[] {
+    const logBefore = this.store.state.eventLog.length;
+    emitDuePending(this.store);
+    this.moduleManager.runRound();
+    this.store.compactEventLog();
+    this.store.advanceTick();
+    return this.store.state.eventLog.slice(logBefore);
   }
 
   /** Get debug inspectors registered by modules (thin pass-through). */
@@ -280,6 +460,7 @@ export class Engine {
 
   /** Serialize full engine state */
   serialize(): string {
+    this.store.compactEventLog();
     return JSON.stringify({
       world: JSON.parse(this.store.serialize()),
       actionLog: this.actionLog,

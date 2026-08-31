@@ -1,8 +1,6 @@
 // Presentation channels — route events to UI through layered truth filters
 
-import type { ResolvedEvent, EventChannel } from './types.js';
-
-export type ChannelFilter = (event: ResolvedEvent) => ResolvedEvent | null;
+import type { ResolvedEvent, EventChannel, ChannelFilter } from './types.js';
 
 /**
  * Optional hook invoked when a channel filter throws during

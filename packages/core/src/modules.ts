@@ -10,6 +10,7 @@ import type {
   PersistenceRegistry,
   UIRegistry,
   DebugRegistry,
+  LifecycleRegistry,
   FormulaRegistryAccess,
   VerbHandler,
   RuleCheck,
@@ -19,11 +20,15 @@ import type {
   DebugInspector,
   ResolvedEvent,
   WorldState,
+  ActionExpander,
+  ChannelFilter,
+  EventChannel,
 } from './types.js';
 import type { WorldStore } from './world.js';
 import type { ActionDispatcher } from './actions.js';
 import { EventBus } from './events.js';
 import { FormulaRegistry } from './formulas.js';
+import type { PresentationChannels } from './channels.js';
 
 /** One-word description of an effect.apply return for rule.effect.failed. */
 function describeValue(value: unknown): string {
@@ -59,10 +64,10 @@ function describeInvalidEventElement(value: unknown, index: number): string {
   return `element at index ${index} with missing, empty, or non-string type`;
 }
 
-/** Host hook for isolated module init/teardown failures (F-64f9ad98). */
+/** Host hook for isolated module init/teardown/round failures (F-64f9ad98). */
 export type ModuleLifecycleErrorHook = (
   err: unknown,
-  phase: 'init' | 'teardown',
+  phase: 'init' | 'teardown' | 'round',
   moduleId: string,
 ) => void;
 
@@ -76,6 +81,10 @@ export class ModuleManager {
   private panels: PanelDefinition[] = [];
   private inspectors: DebugInspector[] = [];
   private namespaceDefaults: Map<string, unknown> = new Map();
+  private roundHooks: Array<{
+    moduleId: string;
+    handler: (ctx: ModuleRegistrationContext) => void;
+  }> = [];
   readonly formulas: FormulaRegistry = new FormulaRegistry();
   /**
    * The store that module event emits (`ctx.events.emit`) record into. Held as
@@ -90,6 +99,7 @@ export class ModuleManager {
     private dispatcher: ActionDispatcher,
     private eventBus: EventBus,
     private onModuleError?: ModuleLifecycleErrorHook,
+    private presentation?: PresentationChannels,
   ) {}
 
   /**
@@ -293,6 +303,22 @@ export class ModuleManager {
     }
   }
 
+  /**
+   * Invoke registered onRound hooks in registration order. Isolated like
+   * teardown: one throw becomes `module.round.failed` and later hooks still run.
+   */
+  runRound(): void {
+    for (const { moduleId, handler } of this.roundHooks) {
+      const ctx = this.moduleContexts.get(moduleId);
+      if (!ctx) continue;
+      try {
+        handler(ctx);
+      } catch (err) {
+        this.routeModuleError(err, 'round', moduleId);
+      }
+    }
+  }
+
   /** Call teardown() on all modules (on shutdown). Each teardown is isolated
    *  so one throw cannot leak the rest of the pack's timers/handles. After
    *  every module.teardown() has run, the bus is cleared. */
@@ -310,7 +336,7 @@ export class ModuleManager {
 
   private routeModuleError(
     err: unknown,
-    phase: 'init' | 'teardown',
+    phase: 'init' | 'teardown' | 'round',
     moduleId: string,
   ): void {
     const reason = err instanceof Error ? err.message : String(err);
@@ -319,13 +345,16 @@ export class ModuleManager {
     } catch {
       // Host hook must not abort remaining module lifecycle.
     }
+    const message =
+      phase === 'init'
+        ? `Module "${moduleId}" init failed: ${reason}. Remaining modules still initialized; construction will abort and already-inited modules will be torn down.`
+        : phase === 'teardown'
+          ? `Module "${moduleId}" teardown failed: ${reason}. Remaining modules still tear down.`
+          : `Module "${moduleId}" onRound failed: ${reason}. Remaining round hooks still run.`;
     try {
       this.activeStore?.emitEvent(`module.${phase}.failed`, {
         moduleId,
-        reason:
-          phase === 'init'
-            ? `Module "${moduleId}" init failed: ${reason}. Remaining modules still initialized; construction will abort and already-inited modules will be torn down.`
-            : `Module "${moduleId}" teardown failed: ${reason}. Remaining modules still tear down.`,
+        reason: message,
       });
     } catch {
       // Emitting the structured signal must not abort remaining teardowns.
@@ -365,6 +394,9 @@ export class ModuleManager {
     const actions: ActionRegistry = {
       registerVerb(verb: string, handler: VerbHandler, opts?: { override?: boolean }): void {
         self.dispatcher.registerVerb(verb, handler, opts);
+      },
+      registerExpander(verb: string, expander: ActionExpander): void {
+        self.dispatcher.registerExpander(verb, expander);
       },
     };
 
@@ -430,6 +462,15 @@ export class ModuleManager {
       registerPanel(panel: PanelDefinition): void {
         self.panels.push(panel);
       },
+      addChannelFilter(channel: EventChannel, filter: ChannelFilter): void {
+        self.presentation?.addFilter(channel, filter);
+      },
+    };
+
+    const lifecycle: LifecycleRegistry = {
+      onRound(handler: (c: ModuleRegistrationContext) => void): void {
+        self.roundHooks.push({ moduleId, handler });
+      },
     };
 
     const debug: DebugRegistry = {
@@ -444,6 +485,6 @@ export class ModuleManager {
       has: (id) => self.formulas.has(id),
     };
 
-    return { actions, rules, events, content, persistence, ui, debug, formulas };
+    return { actions, rules, events, content, persistence, ui, debug, formulas, lifecycle };
   }
 }

@@ -1,7 +1,9 @@
 // Action pipeline — the one front door into simulation
 
 import type {
+  ActionExpander,
   ActionIntent,
+  AvailableActionExpansion,
   ResolvedEvent,
   VerbHandler,
   WorldState,
@@ -67,6 +69,7 @@ export class ActionDispatcher {
   private verbs: Map<string, VerbHandler> = new Map();
   private validators: ActionValidator[] = [];
   private effectAppliers: RuleEffectApplier[] = [];
+  private expanders: Map<string, ActionExpander[]> = new Map();
 
   /**
    * Register a verb handler.
@@ -100,6 +103,63 @@ export class ActionDispatcher {
     this.effectAppliers.push(applier);
   }
 
+  /** Register a target/tool expander for a verb (getAvailableActionsFor). */
+  registerExpander(verb: string, expander: ActionExpander): void {
+    const list = this.expanders.get(verb) ?? [];
+    list.push(expander);
+    this.expanders.set(verb, list);
+  }
+
+  /**
+   * Run registered expanders for a verb. A throwing expander is isolated so one
+   * broken target enumerator cannot hide the rest of the catalog.
+   */
+  expandVerb(verb: string, actorId: string, world: WorldState): AvailableActionExpansion[] {
+    const list = this.expanders.get(verb);
+    if (!list || list.length === 0) return [];
+    const out: AvailableActionExpansion[] = [];
+    for (const expander of list) {
+      try {
+        const items = expander(verb, actorId, world);
+        if (Array.isArray(items)) out.push(...items);
+      } catch {
+        // Isolate: skip this expander, keep later ones.
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Run validators (and the unknown-verb check) without emitting. Does not
+   * mutate the event log. Validators themselves are still expected to be pure.
+   */
+  validate(action: ActionIntent, world: WorldState): ActionValidationResult {
+    for (const validator of this.validators) {
+      let result: ActionValidationResult;
+      try {
+        result = validator(action, world);
+        if (!(result && typeof result.valid === 'boolean')) {
+          return {
+            valid: false,
+            reason: `validator for "${action.verb}" returned non-object: ${describeValue(result)}`,
+          };
+        }
+      } catch (err) {
+        return {
+          valid: false,
+          reason: `validator for "${action.verb}" threw: ${errMessage(err)}`,
+        };
+      }
+      if (!result.valid) {
+        return { valid: false, reason: result.reason ?? 'validation failed' };
+      }
+    }
+    if (!this.verbs.has(action.verb)) {
+      return { valid: false, reason: `unknown verb: ${action.verb}` };
+    }
+    return { valid: true };
+  }
+
   /** Get all registered verb names */
   getRegisteredVerbs(): string[] {
     return [...this.verbs.keys()];
@@ -121,39 +181,18 @@ export class ActionDispatcher {
       targetIds: action.targetIds,
     }, { actorId: action.actorId });
 
-    // Validate. A validator is consumer-supplied code (module rule checks run
-    // through one); a throwing validator must degrade to a structured
-    // action.rejected naming the verb, not abort the tick with a raw stack.
-    // result.valid is read AFTER this try (F-208d62e4): undefined/null returns
-    // used to TypeError outside the catch and abort the tick declared-only.
-    for (const validator of this.validators) {
-      let result: ActionValidationResult;
-      try {
-        result = validator(action, world);
-        if (!(result && typeof result.valid === 'boolean')) {
-          store.emitEvent('action.rejected', {
-            verb: action.verb,
-            reason: `validator for "${action.verb}" returned non-object: ${describeValue(result)}`,
-          }, { actorId: action.actorId });
-          return [];
-        }
-      } catch (err) {
-        store.emitEvent('action.rejected', {
-          verb: action.verb,
-          reason: `validator for "${action.verb}" threw: ${errMessage(err)}`,
-        }, { actorId: action.actorId });
-        return [];
-      }
-      if (!result.valid) {
-        store.emitEvent('action.rejected', {
-          verb: action.verb,
-          reason: result.reason ?? 'validation failed',
-        }, { actorId: action.actorId });
-        return [];
-      }
+    // Validate without a second emit path — ActionDispatcher.validate is the
+    // dry-run used by Engine.getAvailableActions / preview legality.
+    const validation = this.validate(action, world);
+    if (!validation.valid) {
+      store.emitEvent('action.rejected', {
+        verb: action.verb,
+        reason: validation.reason ?? 'validation failed',
+      }, { actorId: action.actorId });
+      return [];
     }
 
-    // Find verb handler
+    // Find verb handler (unknown verbs already rejected by validate)
     const handler = this.verbs.get(action.verb);
     if (!handler) {
       store.emitEvent('action.rejected', {

@@ -17,6 +17,8 @@ export type HarnessOptions = {
   startZone?: string;
   seed?: number;
   globals?: Record<string, string | number | boolean>;
+  /** When true, each submitAction also runs one Engine.advanceRound(). */
+  advanceRoundAfterSubmit?: boolean;
 };
 
 export type TestEngine = Engine & {
@@ -100,6 +102,14 @@ export function createTestEngine(options: HarnessOptions): TestEngine {
     if (!z) throw new Error(`Zone "${engine.store.state.locationId}" not found`);
     return z;
   };
+
+  if (options.advanceRoundAfterSubmit) {
+    const originalSubmit = engine.submitAction.bind(engine);
+    testEngine.submitAction = ((verb, submitOptions) => {
+      const events = originalSubmit(verb, submitOptions);
+      return events.concat(engine.advanceRound(1));
+    }) as Engine['submitAction'];
+  }
 
   return testEngine;
 }

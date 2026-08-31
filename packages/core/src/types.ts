@@ -259,6 +259,28 @@ export type ActionIntent = {
   issuedAtTick: number;
 };
 
+/** One concrete parameterization of a verb (targets/tools) from a module expander. */
+export type AvailableActionExpansion = {
+  targetIds?: string[];
+  toolId?: string;
+  parameters?: Record<string, ScalarValue>;
+  label?: string;
+};
+
+/** Legality of one registered verb for an actor, plus optional expansions. */
+export type AvailableAction = {
+  verb: string;
+  available: boolean;
+  reason?: string;
+  expansions?: AvailableActionExpansion[];
+};
+
+export type ActionExpander = (
+  verb: string,
+  actorId: string,
+  world: WorldState,
+) => AvailableActionExpansion[];
+
 // --- Events ---
 
 export type EventChannel = 'objective' | 'narrator' | 'dialogue' | 'system' | 'glitch';
@@ -285,6 +307,9 @@ export type ResolvedEvent = {
   presentation?: EventPresentation;
   causedBy?: string;
 };
+
+/** Fog-of-war / truth-layer filter. Returning null suppresses the event on that channel. */
+export type ChannelFilter = (event: ResolvedEvent) => ResolvedEvent | null;
 
 // --- Status ---
 
@@ -405,11 +430,14 @@ export type ModuleRegistrationContext = {
   ui: UIRegistry;
   debug: DebugRegistry;
   formulas: FormulaRegistryAccess;
+  lifecycle: LifecycleRegistry;
 };
 
 // Registry interfaces — will be fleshed out in Step 5
 export interface ActionRegistry {
   registerVerb(verb: string, handler: VerbHandler, opts?: { override?: boolean }): void;
+  /** Optional target/tool expander so getAvailableActionsFor can list in-zone options. */
+  registerExpander(verb: string, expander: ActionExpander): void;
 }
 
 export interface RuleRegistry {
@@ -461,6 +489,13 @@ export interface PersistenceRegistry {
 
 export interface UIRegistry {
   registerPanel(panel: PanelDefinition): void;
+  /** Register a fog-of-war / truth filter on the engine-owned PresentationChannels. */
+  addChannelFilter(channel: EventChannel, filter: ChannelFilter): void;
+}
+
+export interface LifecycleRegistry {
+  /** Invoked by Engine.advanceRound in registration order; isolated like init/teardown. */
+  onRound(handler: (ctx: ModuleRegistrationContext) => void): void;
 }
 
 export interface DebugRegistry {
