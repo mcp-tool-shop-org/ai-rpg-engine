@@ -174,13 +174,18 @@ jobs:
       - name: Smoke — create-starter writes under /tmp
         run: docker run --rm ai-rpg-engine:ci-smoke create-starter ci-smoke --out /tmp/ci-smoke
 
-      # Image CVE gate: OS + library HIGH/CRITICAL on the loaded tag.
-      # ignore-unfixed stays off — the FROM digest pin is the known snapshot,
-      # not a silent ignore of whatever Hub serves today.
+      # Image CVE gate: HIGH/CRITICAL that have a published fix. Debian
+      # bookworm's snapshot carries will_not_fix / empty-Fixed-Version rows
+      # (zlib MiniZip, perl deferred). Node's official image also ships a
+      # bundled npm tree we do not lock. Those are not our app layer.
+      # ignore-unfixed + skip Node's npm: a fixable HIGH in our prod
+      # node_modules or a patched OS package still fails the job.
       - name: Scan CLI image (HIGH,CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ai-rpg-engine:ci-smoke
           severity: HIGH,CRITICAL
           vuln-type: os,library
+          ignore-unfixed: true
+          skip-dirs: /usr/local/lib/node_modules/npm
           exit-code: '1'
