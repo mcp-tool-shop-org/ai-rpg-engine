@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { AudioDirector } from './director.js';
-import type { SoundLookup } from './types.js';
+import { compareAudioCommands } from './scheduler.js';
+import type { SoundLookup, AudioCommand } from './types.js';
+import { DEFAULT_DOMAIN_PRIORITIES } from './types.js';
 import type { NarrationPlan } from '@ai-rpg-engine/presentation';
 
 const makePlan = (overrides: Partial<NarrationPlan> = {}): NarrationPlan => ({
@@ -440,6 +442,167 @@ describe('AudioDirector', () => {
       director.scheduleSting('music_victory_sting');
       // No cooldown bookkeeping is created for the sting's resourceId.
       expect(director.isOnCooldown('music_victory_sting', 0)).toBe(false);
+    });
+  });
+
+  // F-b4f0d758 / F-6d29e174 (wave-4 composed amend, filed wave-3): the only
+  // production call site (TurnPresenter.present(), packages/terminal-ui/src/
+  // presentation.ts:251-253) appended the sting via a bare
+  // `audioCommands.push(director.scheduleSting(id))` AFTER `schedule()` had
+  // already returned its timing/priority-sorted array. A sting always
+  // carries `timing: 0` (scheduleSting, above), so a bare push silently put
+  // it LAST whenever every other command in the turn had a strictly later
+  // timing. Invisible for a 'with-text' sfx (flat 200ms) but severe for the
+  // real 'combat.victory' cue: soundpack-core's EXACT_CUE_MAP resolves it to
+  // `{ effectId: 'ui_success', timing: 'after-text' }` (cue-map.ts:101), and
+  // scheduler.ts's after-text formula (speechDurationMs + 100) can push that
+  // sfx several seconds out — so the victory fanfare sting landed physically
+  // after a multi-second-delayed blip it was meant to accompany. The only
+  // regression test covering this (terminal-ui's presentation.test.ts:130-138)
+  // pins `audioCommands[length-1].action === 'sting'` as correct, using a
+  // cleared() fixture that (unlike the real combat.encounter.cleared event)
+  // omits soundCues, so the collision was never exercised there.
+  //
+  // scheduleStingInto is the correct merge seam: push via scheduleSting, then
+  // re-sort with the SAME comparator schedule()/scheduleAll() already use
+  // (compareAudioCommands, below) — so a caller holding
+  // `const audioCommands = director.schedule(...)` can swap the bare push for
+  // one ordering-safe call.
+  describe('scheduleStingInto ordering (F-b4f0d758 / F-6d29e174)', () => {
+    it('inserts a sting BEFORE an after-text sfx command, not after it (the combat.victory shape)', () => {
+      const director = new AudioDirector();
+      // Mirrors the real production shape: EXACT_CUE_MAP resolves
+      // 'combat.victory' to { effectId: 'ui_success', timing: 'after-text' }
+      // (soundpack-core/src/cue-map.ts:101), and an 11-word turn narration
+      // pushes the after-text sfx timing to several seconds — exactly the
+      // "final kill during a zone-entry turn" scenario the finding names.
+      const plan = makePlan({
+        sceneText: 'The last raider falls and the courtyard falls silent at last.',
+        sfx: [{ effectId: 'ui_success', timing: 'after-text', intensity: 0.8 }],
+      });
+
+      const commands = director.schedule(plan, 0);
+      const sfxCmd = commands.find((c) => c.domain === 'sfx');
+      expect(sfxCmd).toBeDefined();
+      // Multi-second after-text delay, matching the finding's ~4-12s range.
+      expect(sfxCmd!.timing).toBeGreaterThan(1000);
+
+      const result = director.scheduleStingInto(commands, 'music_victory_sting');
+      const stingCmd = result.find((c) => c.action === 'sting');
+      expect(stingCmd).toBeDefined();
+      expect(stingCmd!.timing).toBe(0);
+
+      // The bug: a bare push would put the sting (timing:0) AFTER this sfx
+      // command despite sorting strictly earlier by timing.
+      expect(result.indexOf(stingCmd!)).toBeLessThan(result.indexOf(sfxCmd!));
+    });
+
+    it('re-sorts by the full (timing, priority) contract rather than unconditionally inserting at the front', () => {
+      const director = new AudioDirector();
+      // Two hand-built timing:0 commands straddling the sting's default
+      // priority (DEFAULT_DOMAIN_PRIORITIES.music = 50): a higher-priority
+      // voice command and a lower-priority ambient command. A naive
+      // "unshift the sting at index 0" implementation would satisfy the
+      // previous test but fail this one.
+      const high: AudioCommand = {
+        domain: 'voice', action: 'play', resourceId: 'v',
+        priority: DEFAULT_DOMAIN_PRIORITIES.voice, timing: 0, params: {},
+      };
+      const low: AudioCommand = {
+        domain: 'ambient', action: 'start', resourceId: 'a',
+        priority: DEFAULT_DOMAIN_PRIORITIES.ambient, timing: 0, params: {},
+      };
+      const commands = [high, low];
+
+      const result = director.scheduleStingInto(commands, 'music_victory_sting');
+      const stingIdx = result.findIndex((c) => c.action === 'sting');
+
+      expect(result.indexOf(high)).toBeLessThan(stingIdx);
+      expect(stingIdx).toBeLessThan(result.indexOf(low));
+    });
+
+    it('mutates the passed array in place AND returns it, so a bare `.push()` call site swaps in directly', () => {
+      const director = new AudioDirector();
+      const commands = director.schedule(makePlan(), 0);
+      const before = commands;
+
+      const result = director.scheduleStingInto(commands, 'music_victory_sting');
+
+      expect(result).toBe(before);
+      expect(commands.some((c) => c.action === 'sting')).toBe(true);
+    });
+
+    it('forwards opts (priority/fadeMs) to the underlying scheduleSting, same as calling it directly', () => {
+      const director = new AudioDirector();
+      const commands = director.schedule(makePlan(), 0);
+
+      const result = director.scheduleStingInto(commands, 'music_victory_sting', { priority: 999, fadeMs: 250 });
+
+      const sting = result.find((c) => c.action === 'sting');
+      expect(sting!.priority).toBe(999);
+      expect(sting!.params.fadeMs).toBe(250);
+    });
+
+    it('does not mutate activeMusicId/activeLayers, same non-stem contract as scheduleSting (F-fa44e956)', () => {
+      const director = new AudioDirector();
+      const commands = director.schedule(makePlan({
+        musicCue: { action: 'play', trackId: 'crypt_theme', fadeMs: 800 },
+      }), 0);
+
+      director.scheduleStingInto(commands, 'music_victory_sting');
+
+      expect(director.getActiveMusic()).toBe('crypt_theme');
+    });
+  });
+
+  // The comparator schedule() (director.ts) and scheduleAll() (scheduler.ts)
+  // both independently sorted by — duplicated inline in both places pre-fix.
+  // Exported so scheduleStingInto (above) and any external caller merging
+  // commands from a second source can preserve the identical contract
+  // instead of re-deriving `(a,b) => a.timing - b.timing || b.priority - b.priority`
+  // by hand.
+  describe('compareAudioCommands (shared ordering contract, F-b4f0d758 / F-6d29e174)', () => {
+    const cmd = (overrides: Partial<AudioCommand>): AudioCommand => ({
+      domain: 'sfx', action: 'play', resourceId: 'x', priority: 50, timing: 0, params: {},
+      ...overrides,
+    });
+
+    it('is exported as a real function (guards the two tests below against Array.sort(undefined) silently no-op-ing to the default comparator)', () => {
+      expect(typeof compareAudioCommands).toBe('function');
+    });
+
+    it('sorts ascending by timing', () => {
+      const later = cmd({ timing: 500 });
+      const earlier = cmd({ timing: 100 });
+      expect(compareAudioCommands(later, earlier)).toBeGreaterThan(0);
+      expect(compareAudioCommands(earlier, later)).toBeLessThan(0);
+    });
+
+    it('breaks a timing tie by descending priority (higher priority sorts first)', () => {
+      const low = cmd({ priority: DEFAULT_DOMAIN_PRIORITIES.ambient, timing: 0 });
+      const high = cmd({ priority: DEFAULT_DOMAIN_PRIORITIES.voice, timing: 0 });
+      expect(compareAudioCommands(high, low)).toBeLessThan(0);
+      expect(compareAudioCommands(low, high)).toBeGreaterThan(0);
+    });
+
+    it('is the exact comparator schedule() applies internally (re-sorting scheduled output with it is a no-op)', () => {
+      const director = new AudioDirector();
+      const plan = makePlan({
+        speaker: {
+          entityId: 'npc', voiceId: 'af_bella', emotion: 'calm', speed: 1,
+          text: 'Two words spoken here for timing purposes only.',
+        },
+        sfx: [
+          { effectId: 'ui_success', timing: 'after-text', intensity: 0.8 },
+          { effectId: 'ui_click', timing: 'with-text', intensity: 0.5 },
+        ],
+        ambientLayers: [{ layerId: 'ambient_drone', action: 'start', volume: 0.3, fadeMs: 1000 }],
+      });
+
+      const scheduled = director.schedule(plan, 0);
+      const reSorted = [...scheduled].sort(compareAudioCommands);
+
+      expect(reSorted).toEqual(scheduled);
     });
   });
 });

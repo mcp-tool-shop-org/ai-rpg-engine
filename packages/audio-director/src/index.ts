@@ -21,4 +21,5 @@ export {
   scheduleAmbient,
   scheduleMusic,
   scheduleVoice,
+  compareAudioCommands,
 } from './scheduler.js';
