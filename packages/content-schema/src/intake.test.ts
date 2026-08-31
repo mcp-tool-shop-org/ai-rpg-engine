@@ -670,6 +670,23 @@ describe('C1/P1 — session-scoped keys are not pretended to be routable', () =>
     expect((session.ruleset as { id: string }).id).toBe('r');
   });
 
+  it('F-df51e0bf: extractSessionContent surfaces pack.manifest', () => {
+    const session = extractSessionContent({
+      manifest: { id: 'g', title: 'G', version: '1.0.0', engineVersion: '3.8.0', ruleset: 'r', modules: [] },
+    } as unknown as ContentPack);
+    expect(session.manifest).toBeDefined();
+    expect((session.manifest as { id: string }).id).toBe('g');
+    expect(session.advisories).toEqual([]);
+  });
+
+  it('F-df51e0bf: a malformed pack.manifest is advisory-skipped, not carried', () => {
+    const session = extractSessionContent({ manifest: 'nope' } as unknown as ContentPack);
+    expect(session.manifest).toBeUndefined();
+    expect(session.advisories).toEqual([
+      { path: 'pack.manifest', message: 'must be a GameManifest object — skipped.' },
+    ]);
+  });
+
   it('F-82b17cb3: extractSessionContent surfaces dialogues/quests/abilities/statuses/items', () => {
     const session = extractSessionContent({
       dialogues: [{ id: 'd' }],
@@ -746,6 +763,11 @@ describe('C1/P1 — session-scoped keys are not pretended to be routable', () =>
     expect(session.districts).toBeDefined();
     expect(Array.isArray(session.districts)).toBe(true);
     expect((session.districts as { id: string }[]).some((d) => d.id === 'chapel-grounds')).toBe(true);
+    // F-df51e0bf: EngineOptions.manifest is REQUIRED (no default) — a JSON pack
+    // that authors one must have it lifted the same way ruleset is, or the
+    // documented boot recipe is missing a required constructor argument.
+    expect(session.manifest).toBeDefined();
+    expect((session.manifest as { id: string }).id).toBe('chapel-threshold');
     expect(session.advisories).toEqual([]);
   });
 
@@ -753,12 +775,15 @@ describe('C1/P1 — session-scoped keys are not pretended to be routable', () =>
     const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'intake.ts'), 'utf8');
     expect(src).toContain('districts: session.districts');
     expect(src).toContain('channels: createStandardChannels()');
+    // F-df51e0bf: the recipe must supply the required `manifest` constructor arg.
+    expect(src).toContain('manifest: session.manifest');
     expect(src).toContain("from '@ai-rpg-engine/modules'");
     expect(src).not.toMatch(/^import .* from '@ai-rpg-engine\/modules'/m);
     expect([...SIM_AFFECTING_KEYS]).toContain('districts');
     expect([...SIM_AFFECTING_KEYS]).toContain('encounterAnchors');
     expect([...SIM_AFFECTING_KEYS]).toContain('hazardDefinitions');
     expect([...SIM_AFFECTING_KEYS]).not.toContain('ruleProfiles');
+    expect([...SIM_AFFECTING_KEYS]).not.toContain('factions');
   });
 
   it('F-82b17cb3: applyContentPack stays UNROUTED for dialogues/quests/abilities/statuses', () => {
@@ -960,6 +985,208 @@ describe('F-0987c369 — pack.ruleProfiles clones onto WorldState.ruleProfiles',
     expect([...ALLOWED_PACK_KEYS]).toContain('ruleProfiles');
     expect([...CORE_INTAKE_KEYS]).toContain('ruleProfiles');
     expect([...SIM_AFFECTING_KEYS]).not.toContain('ruleProfiles');
+  });
+});
+
+describe('F-67786a6c — identity stamp: playerId/locationId from a single type:player entity', () => {
+  it('stamps playerId + locationId when the pack authors exactly one type:player entity, placed', () => {
+    const engine = bootEngine();
+    expect(engine.store.state.playerId).toBe('');
+    const r = applyContentPack(engine, {
+      zones: [{ id: 'start', name: 'Start' }],
+      entities: [{ id: 'hero', type: 'player', name: 'Hero' }],
+      placements: [{ entityId: 'hero', zoneId: 'start' }],
+    });
+    expect(r.ok).toBe(true);
+    expect(engine.store.state.playerId).toBe('hero');
+    expect(engine.store.state.locationId).toBe('start');
+  });
+
+  it('stamps playerId only — never guesses locationId — when the player entity has no placement', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      entities: [{ id: 'hero', type: 'player', name: 'Hero' }],
+    });
+    expect(r.ok).toBe(true);
+    expect(engine.store.state.playerId).toBe('hero');
+    expect(engine.store.state.locationId).toBe('');
+  });
+
+  it('does not overwrite a playerId a host already set before calling applyContentPack', () => {
+    const engine = bootEngine();
+    engine.store.state.playerId = 'host-hero';
+    const r = applyContentPack(engine, {
+      entities: [{ id: 'hero', type: 'player', name: 'Hero' }],
+    });
+    expect(r.ok).toBe(true);
+    expect(engine.store.state.playerId).toBe('host-hero');
+  });
+
+  it('zero type:player entities: leaves playerId untouched, no advisory noise', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      entities: [{ id: 'npc-1', type: 'npc', name: 'One' }],
+    });
+    expect(r.ok).toBe(true);
+    expect(engine.store.state.playerId).toBe('');
+    expect(r.advisories.find((a) => a.path === 'pack.playerId')).toBeUndefined();
+  });
+
+  it('two or more type:player entities: ambiguous, advisory only, never guesses', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      entities: [
+        { id: 'hero-a', type: 'player', name: 'Hero A' },
+        { id: 'hero-b', type: 'player', name: 'Hero B' },
+      ],
+    });
+    expect(r.ok).toBe(true);
+    expect(engine.store.state.playerId).toBe('');
+    const note = r.advisories.find((a) => a.path === 'pack.playerId');
+    expect(note?.message).toContain('hero-a');
+    expect(note?.message).toContain('hero-b');
+  });
+
+  it('F-67786a6c: applyContentPack on the real chapel-threshold content.json stamps playerId/locationId with no manual stamp line', () => {
+    const chapelPath = join(
+      dirname(fileURLToPath(import.meta.url)),
+      '..', '..', 'starter-fantasy', 'src', 'content.json',
+    );
+    const pack = JSON.parse(readFileSync(chapelPath, 'utf8')) as ContentPack;
+    const engine = bootEngine();
+    expect(engine.store.state.playerId).toBe('');
+    expect(engine.store.state.locationId).toBe('');
+    const r = applyContentPack(engine, pack);
+    expect(r.ok).toBe(true);
+    // No manual `engine.store.state.playerId = ...` line above — applyContentPack
+    // alone resolves it from the pack's single type:'player' entity + placement.
+    expect(engine.store.state.playerId).toBe('player');
+    expect(engine.store.state.locationId).toBe('chapel-entrance');
+  });
+});
+
+describe('F-d54f4d67 — pack.factions merges onto WorldState.factions', () => {
+  it('writes a cloned map onto engine.store.state.factions when present', () => {
+    const engine = bootEngine();
+    const pack: ContentPack = {
+      entities: [{ id: 'aldric', type: 'npc', name: 'Aldric', faction: 'chapel-order' }],
+      factions: {
+        'chapel-order': { id: 'chapel-order', name: 'The Chapel Order', reputation: 10, disposition: 'friendly' },
+      },
+    };
+    const r = applyContentPack(engine, pack);
+    expect(r.ok).toBe(true);
+    expect(r.applied.factions).toBe(1);
+    expect(engine.store.state.factions).toEqual({
+      'chapel-order': { id: 'chapel-order', name: 'The Chapel Order', reputation: 10, disposition: 'friendly' },
+    });
+    expect(engine.world.entities['aldric'].faction).toBe('chapel-order');
+    engine.store.state.factions['chapel-order'].reputation = 999;
+    expect(pack.factions!['chapel-order'].reputation).toBe(10);
+  });
+
+  it('MERGES onto factions a host already registered, never replaces the map', () => {
+    const engine = bootEngine();
+    engine.store.state.factions['colonial-navy'] = {
+      id: 'colonial-navy', name: 'The Colonial Navy', reputation: -35, disposition: 'hostile',
+    };
+    const r = applyContentPack(engine, {
+      factions: {
+        'brethren-of-the-coast': { id: 'brethren-of-the-coast', name: 'The Brethren', reputation: 15, disposition: 'wary' },
+      },
+    });
+    expect(r.ok).toBe(true);
+    expect(engine.store.state.factions['colonial-navy']).toBeDefined();
+    expect(engine.store.state.factions['brethren-of-the-coast']).toBeDefined();
+  });
+
+  it('an entity faction id resolving only against a HOST-registered faction is not reported unresolved', () => {
+    const engine = bootEngine();
+    engine.store.state.factions['colonial-navy'] = {
+      id: 'colonial-navy', name: 'The Colonial Navy', reputation: -35, disposition: 'hostile',
+    };
+    const r = applyContentPack(engine, {
+      entities: [{ id: 'marine', type: 'npc', name: 'Marine', faction: 'colonial-navy' }],
+      factions: {
+        'brethren-of-the-coast': { id: 'brethren-of-the-coast', name: 'The Brethren', reputation: 15, disposition: 'wary' },
+      },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.dropped.find((d) => d.path.includes('.faction'))).toBeUndefined();
+  });
+
+  it('a missing faction id lands in dropped[] only — does not flip ok', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      entities: [{ id: 'aldric', type: 'npc', name: 'Aldric', faction: 'ghost-faction' }],
+      factions: {
+        'chapel-order': { id: 'chapel-order', name: 'The Chapel Order', reputation: 10, disposition: 'friendly' },
+      },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.errors).toEqual([]);
+    expect(engine.world.entities['aldric'].faction).toBe('ghost-faction');
+    expect(r.dropped.some((d) => d.path.includes('.faction') && d.detail.includes('ghost-faction'))).toBe(true);
+  });
+
+  it('overlay packs that omit the key keep copy-the-string, and do not check unresolved refs', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      entities: [{ id: 'aldric', type: 'npc', name: 'Aldric', faction: 'chapel-order' }],
+    });
+    expect(r.ok).toBe(true);
+    expect(r.applied.factions).toBeUndefined();
+    expect(engine.store.state.factions).toEqual({});
+    expect(engine.world.entities['aldric'].faction).toBe('chapel-order');
+    expect(r.dropped.find((d) => d.path.includes('.faction'))).toBeUndefined();
+  });
+
+  it('malformed factions entries stay dropped[] only — overlay intake still loads', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      entities: [{ id: 'aldric', type: 'npc', name: 'Aldric', faction: 'chapel-order' }],
+      factions: {
+        'chapel-order': { id: 'chapel-order', name: 'The Chapel Order' },
+      } as unknown as ContentPack['factions'],
+    });
+    expect(r.ok).toBe(true);
+    expect(engine.world.entities['aldric'].faction).toBe('chapel-order');
+    expect(r.dropped.some((d) => d.path === 'pack.factions.chapel-order')).toBe(true);
+    expect(engine.store.state.factions).toEqual({});
+  });
+
+  it('a non-object pack.factions stays dropped[] only — overlay intake still loads', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      entities: [{ id: 'aldric', type: 'npc', name: 'Aldric' }],
+      factions: 'nope' as unknown as ContentPack['factions'],
+    });
+    expect(r.ok).toBe(true);
+    expect(r.dropped.some((d) => d.path === 'pack.factions')).toBe(true);
+    expect(engine.store.state.factions).toEqual({});
+  });
+
+  it('factions is allowlisted, core-intake, and is NOT sim-affecting', () => {
+    expect([...ALLOWED_PACK_KEYS]).toContain('factions');
+    expect([...CORE_INTAKE_KEYS]).toContain('factions');
+    expect([...SIM_AFFECTING_KEYS]).not.toContain('factions');
+  });
+
+  it('a throwing module channel also rolls back factions writes and clears applied.factions', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(
+      engine,
+      {
+        factions: {
+          'chapel-order': { id: 'chapel-order', name: 'The Chapel Order', reputation: 10, disposition: 'friendly' },
+        },
+        districts: [{ id: 'd', name: 'D', zoneIds: [], tags: [] }],
+      },
+      { channels: [{ key: 'districts', apply: () => { throw new Error('garbage district'); } }] },
+    );
+    expect(r.ok).toBe(false);
+    expect(engine.store.state.factions).toEqual({});
+    expect(r.applied.factions).toBeUndefined();
   });
 });
 

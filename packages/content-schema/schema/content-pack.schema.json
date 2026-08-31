@@ -136,6 +136,11 @@
       "description": "Optional GameManifest. Overlay packs omit this; packEntryFromJsonFile prefers it over a filename stub. Not sim-affecting.",
       "$ref": "#/$defs/GameManifest"
     },
+    "factions": {
+      "type": "object",
+      "description": "Optional faction registry keyed by EntityBlueprint.faction. Overlay packs omit this; apply then keeps copy-the-string on EntityState.faction. applyContentPack MERGES it onto WorldState.factions — never replaces. Not sim-affecting.",
+      "additionalProperties": { "$ref": "#/$defs/FactionRecord" }
+    },
     "factionPresences": {
       "description": "Evaluated, not mapped by intake. Allowed so a forge export is not refused."
     },
@@ -444,6 +449,18 @@
             "resolve": { "type": "string", "minLength": 1 }
           }
         }
+      }
+    },
+    "FactionRecord": {
+      "type": "object",
+      "required": ["id", "name", "reputation", "disposition"],
+      "additionalProperties": true,
+      "description": "Structural copy of core FactionState. id/name/reputation/disposition only — data is reserved.",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "reputation": { "type": "number" },
+        "disposition": { "type": "string", "minLength": 1 }
       }
     },
     "RulesetDefinition": {

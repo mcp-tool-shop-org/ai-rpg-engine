@@ -35,6 +35,7 @@ import type {
   EntityAiState,
   EntityPlacementRecord,
   ItemPlacementRecord,
+  PackFactionRecord,
   PackRuleProfile,
 } from './refs.js';
 import type { EntityBlueprint, ZoneDefinition } from './schemas.js';
@@ -462,7 +463,7 @@ export function entityBlueprintToState(
  * `placements` joins them at C3/P1: it writes `EntityState.zoneId`, a core field,
  * so it needs no module vocabulary and stays on this side of the layering.
  */
-export const CORE_INTAKE_KEYS = ['zones', 'entities', 'placements', 'items', 'itemPlacements', 'entityAi', 'ruleProfiles'] as const;
+export const CORE_INTAKE_KEYS = ['zones', 'entities', 'placements', 'items', 'itemPlacements', 'entityAi', 'ruleProfiles', 'factions'] as const;
 
 /**
  * Pack keys that need a module's own vocabulary and can still be routed into an
@@ -744,6 +745,52 @@ export function applyContentPack(
     }
   }
 
+  // --- identity stamp (F-67786a6c) ---
+  // WHO the player is. Without this, `state.playerId` keeps WorldStore's
+  // untouched default ('') and every player action hits engine.ts's ghost-actor
+  // refusal ("unknown actor: state.playerId is not set") until a host hand-
+  // stamps `engine.store.state.playerId` (and `locationId`) after this call
+  // returns — which every starter today does, every time.
+  //
+  // Guarded to the exact unambiguous case, run AFTER the placements pass so a
+  // placed player's EntityState.zoneId is already written (line ~718 above):
+  // only fires on the store's untouched default (a host that already set its
+  // own playerId before calling applyContentPack keeps it), and only when this
+  // pack's just-applied entities contain EXACTLY one `type: 'player'` record.
+  // Two or more is a genuine ambiguity — advised, never guessed, never flips
+  // `ok`. Zero is not an ambiguity to report: most packs are overlays that
+  // author no player at all, and an advisory that fires when there is nothing
+  // to report is noise (the same reasoning the placements remainder advisory
+  // above already applies) — so it stays silent, identical to today's
+  // behavior. locationId is set only when the placements pass actually wrote a
+  // zoneId for that entity; an unplaced player leaves locationId untouched
+  // rather than guessing a zone.
+  if (engine.store.state.playerId === '' && Array.isArray(entities)) {
+    const playerBps = entities
+      .filter(isRecord)
+      .filter((e) => (e as EntityBlueprint).type === 'player') as EntityBlueprint[];
+    if (playerBps.length === 1) {
+      const playerId = playerBps[0].id;
+      const stored = engine.store.state.entities[playerId];
+      // stored is undefined only if this blueprint failed validation above and
+      // was never added — in that case `errors` already carries the reason;
+      // nothing to stamp onto a world that never got the entity.
+      if (stored) {
+        engine.store.state.playerId = playerId;
+        if (stored.zoneId !== undefined) {
+          engine.store.state.locationId = stored.zoneId;
+        }
+      }
+    } else if (playerBps.length > 1) {
+      advisories.push({
+        path: 'pack.playerId',
+        message:
+          `${playerBps.length} entities declare type: 'player' (${playerBps.map((e) => e.id).join(', ')}) — ` +
+          'cannot infer world.playerId from an ambiguous pack. Set engine.store.state.playerId explicitly.',
+      });
+    }
+  }
+
   // --- items (core catalog + entity inventory already copied) ---
   // pack.items is no longer evaluated-not-mapped: inventory/equipment ids that
   // resolve against it already sit on EntityState (entityBlueprintToState +
@@ -816,6 +863,39 @@ export function applyContentPack(
               detail:
                 `unresolved ruleProfileId "${bp.ruleProfileId}" — pack.ruleProfiles has no entry for this id. ` +
                 'The pointer is copied; the registry is not. Dropped, not refused (does not flip applyContentPack.ok).',
+            });
+          }
+        }
+      }
+    }
+  }
+
+  // --- factions (core WorldState, F-d54f4d67) ---
+  // Overlay packs that omit the key keep copy-the-string (entityBlueprintToState
+  // already wrote EntityState.faction). When the map is present, MERGE it onto
+  // the store — never replace, unlike ruleProfiles above — so an overlay pack
+  // layers over factions a host already registered (createGame code, or an
+  // earlier pack) rather than wiping them. A missing id is dropped[] only —
+  // never flips ok. The unresolved check reads the store AFTER the merge, so an
+  // entity's faction resolves against host-registered factions too, not just
+  // the ones this specific pack declared — the whole point of merging.
+  if (pack.factions !== undefined) {
+    const cloned = cloneFactions(pack.factions, dropped);
+    if (cloned !== undefined) {
+      engine.store.state.factions = { ...engine.store.state.factions, ...cloned };
+      applied.factions = Object.keys(cloned).length;
+      if (Array.isArray(entities)) {
+        for (let i = 0; i < entities.length; i++) {
+          const bp = entities[i];
+          if (!isRecord(bp) || typeof bp.faction !== 'string') continue;
+          if (engine.store.state.factions[bp.faction] === undefined) {
+            dropped.push({
+              path: `entities[${i}](${idOf(bp)}).faction`,
+              reason: 'needs-module-vocabulary',
+              detail:
+                `unresolved faction "${bp.faction}" — pack.factions (merged with any host-registered ` +
+                'factions) has no entry for this id. The pointer is copied; the registry is not. ' +
+                'Dropped, not refused (does not flip applyContentPack.ok).',
             });
           }
         }
@@ -974,6 +1054,10 @@ export function applyContentPack(
  * pass session.districts into buildWorldStack, and inject
  * createStandardChannels() so apply still routes via channels (do not
  * auto-inject; do not import @ai-rpg-engine/modules into this package).
+ * `manifest` (F-df51e0bf) is lifted here too and belongs in the `new Engine()`
+ * call below — `EngineOptions.manifest` is REQUIRED with no default, so a
+ * recipe that omits it is missing a required constructor argument, not just
+ * skipping an optional one.
  *
  * ```ts
  * import { buildWorldStack, createStandardChannels } from '@ai-rpg-engine/modules';
@@ -981,6 +1065,7 @@ export function applyContentPack(
  * const session = extractSessionContent(pack);
  * registerStatusDefinitions(session.statuses ?? []);
  * const engine = new Engine({
+ *   manifest: session.manifest ?? hostManifest,
  *   ruleset: session.ruleset ?? hostRuleset,
  *   modules: [
  *     createDialogueCore(session.dialogues ?? []),
@@ -995,6 +1080,16 @@ export function applyContentPack(
  * });
  * applyContentPack(engine, pack, { profiles, channels: createStandardChannels() });
  * ```
+ *
+ * `applyContentPack` in that last line also stamps `world.playerId` (and
+ * `world.locationId`, when placed) the moment the pack's own `entities[]`
+ * contains EXACTLY one `type: 'player'` record and the store still carries
+ * WorldStore's untouched default (F-67786a6c — see the identity-stamp block
+ * right after the placements pass, above). This recipe needs no separate
+ * `engine.store.state.playerId = ...` line for the common one-player pack; a
+ * host that already set its own playerId, or a pack declaring zero or several
+ * `type: 'player'` entities, is left untouched (the ambiguous case is an
+ * advisory, never a guess).
  *
  * Deliberately untyped beyond `unknown[]`/`unknown`: `BuildCatalog` lives in
  * @ai-rpg-engine/character-creation and `ProgressionTreeDefinition` in this
@@ -1011,6 +1106,13 @@ export type SessionContent = {
   archetypes?: unknown[];
   /** Chargen kits — same session as buildCatalog. Present only if the pack carried the key. */
   backgrounds?: unknown[];
+  /**
+   * Pack-authored GameManifest (F-df51e0bf). Present only if the pack carried
+   * the key. `EngineOptions.manifest` is REQUIRED with no default — bind this
+   * at Engine construction (`manifest: session.manifest ?? hostManifest`), the
+   * same way `ruleset` binds below.
+   */
+  manifest?: unknown;
   /**
    * Pack-authored RulesetDefinition. Present only if the pack carried the key.
    * Bind it at Engine construction; loadContent already validated it.
@@ -1104,6 +1206,19 @@ export function extractSessionContent(pack: ContentPack): SessionContent {
       });
     } else {
       out.ruleset = raw.ruleset;
+    }
+  }
+
+  // F-df51e0bf: EngineOptions.manifest is REQUIRED with no default. Lifted the
+  // identical advisory-skip shape as ruleset just above.
+  if (raw.manifest !== undefined) {
+    if (raw.manifest === null || typeof raw.manifest !== 'object' || Array.isArray(raw.manifest)) {
+      advisories.push({
+        path: 'pack.manifest',
+        message: 'must be a GameManifest object — skipped.',
+      });
+    } else {
+      out.manifest = raw.manifest;
     }
   }
 
@@ -1219,6 +1334,54 @@ function cloneRuleProfiles(
         precision: mapping.precision,
         resolve: mapping.resolve,
       },
+    };
+  }
+  return out;
+}
+
+/**
+ * Clone pack.factions onto a WorldState-shaped map. Malformed entries land in
+ * dropped[] — never throw, never flip applyContentPack.ok. Mirrors
+ * cloneRuleProfiles exactly: an authoring mistake here degrades to "this one
+ * faction did not resolve", never to a refused pack.
+ */
+function cloneFactions(
+  raw: unknown,
+  dropped: DroppedField[],
+): Record<string, PackFactionRecord> | undefined {
+  if (!isRecord(raw)) {
+    dropped.push({
+      path: 'pack.factions',
+      reason: 'needs-module-vocabulary',
+      detail:
+        'must be a Record of { id, name, reputation, disposition } — skipped. ' +
+        'Dropped, not refused (does not flip applyContentPack.ok).',
+    });
+    return undefined;
+  }
+  const out: Record<string, PackFactionRecord> = {};
+  for (const [id, rec] of Object.entries(raw)) {
+    if (
+      !isRecord(rec) ||
+      typeof rec.id !== 'string' || rec.id.length === 0 ||
+      typeof rec.name !== 'string' || rec.name.length === 0 ||
+      typeof rec.reputation !== 'number' ||
+      typeof rec.disposition !== 'string' || rec.disposition.length === 0
+    ) {
+      dropped.push({
+        path: `pack.factions.${id}`,
+        reason: 'needs-module-vocabulary',
+        detail:
+          `unresolved faction "${id}" — expected { id, name, reputation, disposition }. ` +
+          'Dropped, not refused (does not flip applyContentPack.ok).',
+      });
+      continue;
+    }
+    out[id] = {
+      id: rec.id,
+      name: rec.name,
+      reputation: rec.reputation,
+      disposition: rec.disposition,
     };
   }
   return out;

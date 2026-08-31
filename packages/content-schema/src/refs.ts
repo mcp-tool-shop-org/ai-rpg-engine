@@ -196,6 +196,18 @@ export type ContentPack = {
    * Not sim-affecting.
    */
   ruleProfiles?: Record<string, PackRuleProfile>;
+  /**
+   * Optional faction registry keyed by {@link EntityBlueprint.faction} (F-d54f4d67).
+   * `EntityBlueprint.faction` was always copied verbatim onto EntityState.faction
+   * at intake, but until now no pack key could ship the record that id resolves
+   * against — the pointer landed, the registry did not. Overlay packs omit this
+   * — apply then keeps copy-the-string on the id, unchanged. When present,
+   * applyContentPack clones it and MERGES it onto WorldState.factions (never
+   * replaces — an overlay pack must layer over factions a host already
+   * registered). Not sim-affecting — do not add to SIM_AFFECTING_KEYS
+   * (world-forge hasher pin, same as ruleProfiles / entityAi / meta / manifest).
+   */
+  factions?: Record<string, PackFactionRecord>;
 };
 
 /**
@@ -205,6 +217,21 @@ export type ContentPack = {
  */
 export type PackRuleProfile = {
   statMapping: { attack: string; precision: string; resolve: string };
+};
+
+/**
+ * Per-faction registry entry a JSON pack can author, keyed by
+ * {@link EntityBlueprint.faction} (F-d54f4d67). Structural copy of core's
+ * FactionState — content-schema sits beside core so the real type is
+ * assignable, but this stays a separate named type (mirrors PackRuleProfile)
+ * so the pack-authoring contract does not drift with FactionState's own
+ * optional `data` field, which is not authorable here.
+ */
+export type PackFactionRecord = {
+  id: string;
+  name: string;
+  reputation: number;
+  disposition: string;
 };
 
 /**
