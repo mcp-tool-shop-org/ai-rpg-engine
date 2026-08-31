@@ -697,3 +697,206 @@ describe('F-decfe897 — omitEventLog snapshot is hash-matching and later ticks 
   });
 });
 
+function catalogModule(): EngineModule {
+  return {
+    id: 'catalog',
+    version: '1.0.0',
+    register(ctx) {
+      ctx.actions.registerVerb('echo', (action): { id: string; tick: number; type: string; payload: Record<string, unknown> }[] => [
+        { id: '', tick: action.issuedAtTick, type: 'probe.echo', payload: {} },
+      ]);
+      ctx.actions.registerVerb('attack', (action): { id: string; tick: number; type: string; payload: Record<string, unknown> }[] => [
+        { id: '', tick: action.issuedAtTick, type: 'combat.hit', payload: { target: action.targetIds?.[0] } },
+      ]);
+      ctx.actions.registerExpander('attack', (_verb, _actor, world) =>
+        Object.values(world.entities)
+          .filter((e) => e.tags.includes('hostile'))
+          .map((e) => ({ targetIds: [e.id], label: e.name })),
+      );
+      ctx.ui.addChannelFilter('objective', (event) => {
+        if (event.visibility === 'hidden') return null;
+        if (event.payload && typeof event.payload === 'object' && 'secret' in event.payload) {
+          return { ...event, payload: { ...event.payload, secret: '[redacted]' } };
+        }
+        return event;
+      });
+    },
+  };
+}
+
+function catalogBoot() {
+  const engine = createTestEngine({
+    modules: [catalogModule()],
+    playerId: 'hero',
+    startZone: 'room',
+    entities: [
+      {
+        id: 'hero',
+        blueprintId: 'hero',
+        type: 'player',
+        name: 'Hero',
+        tags: ['player'],
+        stats: {},
+        resources: { hp: 10 },
+        statuses: [],
+        zoneId: 'room',
+      },
+      {
+        id: 'goblin',
+        blueprintId: 'npc',
+        type: 'npc',
+        name: 'Goblin',
+        tags: ['hostile'],
+        stats: {},
+        resources: {},
+        statuses: [],
+        zoneId: 'room',
+      },
+    ],
+    zones: [{ id: 'room', roomId: 'room', name: 'Room', tags: [], neighbors: [] }],
+  });
+  engine.dispatcher.registerValidator((action) =>
+    action.verb === 'attack' && (!action.targetIds || action.targetIds.length === 0)
+      ? { valid: false, reason: 'no target' }
+      : { valid: true },
+  );
+  const sent: RpcMessage[] = [];
+  const server = new SidecarServer({ engine, engineVersion: '3.8.0-test' }, (m) => sent.push(m));
+  const call = (method: string, params: Record<string, unknown> = {}, id = sent.length + 1) => {
+    server.handle({ jsonrpc: '2.0', id, method, params });
+    for (let i = sent.length - 1; i >= 0; i--) {
+      if (sent[i]?.id === id) return sent[i];
+    }
+    return sent.at(-1);
+  };
+  return { engine, server, sent, call };
+}
+
+describe('F-71cddf22 — listActions wraps Engine.getAvailableActionsFor', () => {
+  it('tick-0 catalog matches getAvailableActions and includes an expander row', () => {
+    const { engine, call } = catalogBoot();
+    call(METHODS.INITIALIZE, { capabilities: { listActions: true } });
+    const reply = call(METHODS.LIST_ACTIONS, {});
+    expect(reply?.error).toBeUndefined();
+    const result = reply?.result as { actorId: string; actions: { verb: string; available: boolean; expansions?: { targetIds?: string[] }[] }[] };
+    expect(result.actorId).toBe('hero');
+    const passing = result.actions.filter((a) => a.available).map((a) => a.verb);
+    expect(passing.sort()).toEqual([...engine.getAvailableActions()].sort());
+    const attack = result.actions.find((a) => a.verb === 'attack');
+    expect(attack?.available).toBe(true);
+    expect(attack?.expansions?.some((e) => e.targetIds?.includes('goblin'))).toBe(true);
+  });
+
+  it('observers may call listActions', async () => {
+    const { a, b } = dualLoopback(true);
+    await a.client.initialize({ notifications: true, hashes: true, writes: true, listActions: true });
+    await b.client.initialize({ notifications: true, hashes: true, writes: false, listActions: true });
+    expect(b.server.capabilities.listActions).toBe(true);
+    const listed = await b.client.listActions();
+    expect(listed.actorId).toBe('hero');
+    expect(Array.isArray(listed.actions)).toBe(true);
+  });
+});
+
+describe('F-f62432fc — save/load round-trips Engine.serialize, not SNAPSHOT delta', () => {
+  it('save → load keeps tick, canonicalHash, and the next submitAction id sequence', async () => {
+    const { a, engine } = dualLoopback(false);
+    await a.client.initialize({ notifications: true, hashes: true, canonicalHashes: true });
+    await a.client.snapshot();
+    await a.client.request(METHODS.SUBMIT_ACTION, { verb: 'spawn-npc' });
+    const tickBefore = engine.store.tick;
+    const hashBefore = canonicalStateHash(engine.world);
+    const idsBefore = engine.world.eventLog.map((e) => e.id);
+
+    const saved = await a.client.save();
+    expect(saved.serialized).toContain('rngState');
+    expect(saved.serialized).toContain('actionLog');
+    expect(JSON.parse(saved.serialized).world.rngState).toEqual(expect.any(Number));
+
+    await a.client.request(METHODS.SUBMIT_ACTION, { verb: 'despawn-npc' });
+    expect(engine.world.entities['npc-1']).toBeUndefined();
+
+    const loaded = await a.client.load(saved.serialized);
+    expect(loaded.tick).toBe(tickBefore);
+    expect(engine.store.tick).toBe(tickBefore);
+    expect(canonicalStateHash(engine.world)).toBe(hashBefore);
+    expect(loaded.canonicalHash).toBe(hashBefore);
+
+    await a.client.request(METHODS.SUBMIT_ACTION, { verb: 'despawn-npc' });
+    const newIds = engine.world.eventLog.map((e) => e.id).filter((id) => !idsBefore.includes(id));
+    expect(newIds.every((id) => !idsBefore.includes(id))).toBe(true);
+  });
+
+  it('an omitEventLog client can still save a full store; observers cannot', async () => {
+    const { a, b, engine } = dualLoopback(true);
+    await a.client.initialize({ notifications: true, hashes: true, writes: true });
+    await b.client.initialize({ notifications: true, hashes: true, writes: false });
+    await a.client.snapshot({ omitEventLog: true });
+    await b.client.snapshot({ omitEventLog: true });
+    await a.client.request(METHODS.SUBMIT_ACTION, { verb: 'spawn-npc' });
+
+    await expect(b.client.save()).rejects.toMatchObject({ code: ERROR_CODES.CAPABILITY_UNAVAILABLE });
+    const saved = await a.client.save();
+    expect(JSON.parse(saved.serialized).world.state.eventLog.length).toBeGreaterThan(0);
+    expect(engine.world.entities['npc-1']).toBeTruthy();
+  });
+});
+
+describe('F-b44675d2 — presentation-negotiated ticks drop hidden events; replay filters', () => {
+  it('a hidden event is absent from a presentation tick and present on a raw observer tick', async () => {
+    const { a, b, engine } = dualLoopback(true);
+    engine.dispatcher.registerVerb('whisper', (action) => [
+      {
+        id: 'evt-hidden',
+        tick: action.issuedAtTick,
+        type: 'probe.secret',
+        actorId: 'hero',
+        payload: { secret: 'the-truth' },
+        visibility: 'hidden',
+        presentation: { channels: ['objective'] },
+      },
+    ]);
+    await a.client.initialize({ notifications: true, hashes: true, presentation: true, writes: true });
+    await b.client.initialize({ notifications: true, hashes: true, presentation: false, writes: false });
+    expect(a.server.capabilities.presentation).toBe(true);
+    await a.client.snapshot();
+    await b.client.snapshot();
+
+    await a.client.request(METHODS.SUBMIT_ACTION, { verb: 'whisper' });
+    const viewTick = a.client.receivedTicks.at(-1);
+    const overlayTick = b.client.receivedTicks.at(-1);
+    expect(viewTick?.events.some((e) => e.id === 'evt-hidden' || e.type === 'probe.secret')).toBe(false);
+    expect(overlayTick?.events.some((e) => e.id === 'evt-hidden' || e.type === 'probe.secret')).toBe(true);
+  });
+
+  it("replay typePrefix: 'combat.' returns only those types", () => {
+    const { engine, call } = catalogBoot();
+    call(METHODS.INITIALIZE, { capabilities: { presentation: true } });
+    engine.store.emitEvent('combat.hit', { dmg: 1 }, { actorId: 'hero' });
+    engine.store.emitEvent('probe.echo', { ok: true }, { actorId: 'hero' });
+    engine.store.emitEvent('combat.miss', { dmg: 0 }, { actorId: 'hero' });
+    const reply = call(METHODS.REPLAY, { typePrefix: 'combat.' });
+    const events = (reply?.result as { events: { type: string }[] }).events;
+    expect(events.length).toBeGreaterThan(0);
+    expect(events.every((e) => e.type.startsWith('combat.'))).toBe(true);
+  });
+});
+
+describe('F-bb72a8ab — N-writer serial queue (observers stay)', () => {
+  it('two writers: B enqueued first still commits after A (sessionOrder, not arrival)', async () => {
+    const { a, b } = dualLoopback(true);
+    await a.client.initialize({ notifications: true, hashes: true, writes: true });
+    await b.client.initialize({ notifications: true, hashes: true, writes: true });
+    expect(a.server.sessionRole).toBe('writer');
+    expect(b.server.sessionRole).toBe('writer');
+    expect(a.server.sessionOrder).toBeLessThan(b.server.sessionOrder);
+
+    const order: number[] = [];
+    b.server.queueWrite(1, () => order.push(b.server.sessionOrder));
+    a.server.queueWrite(1, () => order.push(a.server.sessionOrder));
+    expect(order).toEqual([]);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(order).toEqual([a.server.sessionOrder, b.server.sessionOrder]);
+  });
+});
+

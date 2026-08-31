@@ -82,14 +82,20 @@ ai-rpg-engine sidecar chapel-threshold --seed 71 --listen 7731
 ```gdscript
 var client := SidecarAttachClient.new()
 client.connect_to_host("127.0.0.1", 7731)
-client.initialize({
+var init_id := client.initialize({
   "notifications": true,
   "hashes": true,
   "canonicalHashes": true,  # cross-language hash; do not JSON.stringify
   "writes": true,           # false = observer overlay (ticks only)
+  "listActions": true,
+  "presentation": true,     # presentAll + FOW; omit for raw ticks
 })
+# await client.completed for init_id, then:
 client.snapshot({ "omitEventLog": true })  # replay covers presentation
-# per-frame: client.poll()
+client.advance(1)  # sends METHOD_ADVANCE with a JSON-RPC id
+# per-frame: client.poll()  # watches StreamPeerTCP.get_status(); STATUS_NONE/ERROR emits closing and clears _pending
+# Save is Engine.serialize (rngState + actionLog), not a SNAPSHOT delta:
+# client.save() / client.load_save(serialized)
 ```
 
 ## Design
@@ -120,17 +126,20 @@ the renderer.
 
 | Method | Purpose |
 |---|---|
-| `initialize` | Capability handshake. Required first. |
+| `initialize` | Capability handshake. Required first. Returns `packId` / `playerId` additively. |
 | `snapshot` | The whole world, as a delta from empty. Optional `omitEventLog` / `collections` window the resync. |
-| `submitAction` | Submit a player intent. Observers (`writes: false`) are refused. |
+| `submitAction` | Submit a player intent. Optional `actorId` (else `world.playerId`). Observers (`writes: false`) are refused. |
 | `advance` | Advance the world without a player action. Observers refused. |
 | `preview` | Evaluate a command with no side effects. |
-| `replay` | Re-emit a closed tick window. Idempotent by `(tick, event id)`. |
+| `replay` | Re-emit a closed tick window. Optional `typePrefix` / `actorId` / `limit` via `queryEvents`. |
+| `listActions` | Legal-action catalog (`getAvailableActionsFor`). Observers may call it. |
+| `save` | `Engine.serialize` checkpoint (rngState + actionLog). Not a SNAPSHOT delta. Writers only. |
+| `load` | `Engine.deserialize`, rebase every live session, push a snapshot-shaped baseline. Writers only. |
 | `shutdown` | Orderly stop. May omit `id` (fire-and-forget). Observers refused. |
 
 Notifications: `sim/tick` (events + delta + hash + `snapshotSeq`; `canonicalHash` when negotiated), `sim/closing`.
 
-`initialize` capabilities: `notifications`, `hashes`, `canonicalHashes` (second hash, never a replacement for the JS `hash`), `writes` / `role` (`writer` \| `observer`). Incremental ticks are withheld until that session has served `snapshot`.
+`initialize` capabilities: `notifications`, `hashes`, `canonicalHashes` (second hash, never a replacement for the JS `hash`), `writes` / `role` (`writer` \| `observer`), `listActions`, `presentation` (tick/replay events are `engine.presentAll`; hidden events dropped). Incremental ticks are withheld until that session has served `snapshot`. Two `writes: true` sessions serialize mutations by session-order then JSON-RPC id.
 
 ## License
 

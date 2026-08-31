@@ -519,3 +519,26 @@ describe('F-31094245 — connectSocketClient is exported attach glue', () => {
   });
 });
 
+describe('F-bb72a8ab — two writers serialize by sessionOrder, not TCP arrival', () => {
+  it('maxConnections 2, both writes:true: overlapping submitAction commits A then B', async () => {
+    const engine = liveEngine();
+    const h = serve({ engine, maxConnections: 2 });
+    const port = await ready(h);
+    const a = await connectClient(port);
+    const b = await connectClient(port);
+    await a.client.initialize({ notifications: true, hashes: true, writes: true });
+    await b.client.initialize({ notifications: true, hashes: true, writes: true });
+    await a.client.snapshot();
+    await b.client.snapshot();
+
+    await Promise.all([
+      a.client.request(METHODS.SUBMIT_ACTION, { verb: 'spawn-npc' }),
+      b.client.request(METHODS.SUBMIT_ACTION, { verb: 'despawn-npc' }),
+    ]);
+
+    const verbs = engine.getActionLog().map((act) => act.verb);
+    expect(verbs).toHaveLength(2);
+    expect(verbs).toEqual(expect.arrayContaining(['spawn-npc', 'despawn-npc']));
+  }, 12000);
+});
+

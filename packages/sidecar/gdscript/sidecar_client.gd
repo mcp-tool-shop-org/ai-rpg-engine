@@ -19,6 +19,9 @@ const METHOD_SUBMIT_ACTION := "submitAction"
 const METHOD_ADVANCE := "advance"
 const METHOD_PREVIEW := "preview"
 const METHOD_REPLAY := "replay"
+const METHOD_LIST_ACTIONS := "listActions"
+const METHOD_SAVE := "save"
+const METHOD_LOAD := "load"
 const METHOD_SHUTDOWN := "shutdown"
 const NOTIFY_TICK := "sim/tick"
 const NOTIFY_CLOSING := "sim/closing"
@@ -27,6 +30,7 @@ signal tick(notification: Dictionary)
 signal closing()
 signal stale(report: Dictionary)
 signal rpc_error(code: int, message: String, data: Variant)
+signal completed(id: int, result: Variant)
 
 var framing: SidecarFraming = SidecarFraming.new()
 var mirrored_state: Variant = {}
@@ -36,12 +40,15 @@ var last_tick: int = -1
 var last_hash: String = ""
 var canonical_hashes: bool = false
 var writes: bool = true
+## Reject in-flight RPCs after this many ms. 0 = wait indefinitely (JS default 30000).
+var request_timeout_ms: int = 30000
 
 var _socket: StreamPeerTCP
 var _next_id: int = 1
 var _pending: Dictionary = {}
 var _snapshot_in_flight: int = 0
 var _queued_ticks: Array = []
+var _closed: bool = false
 
 
 func _init() -> void:
@@ -50,6 +57,7 @@ func _init() -> void:
 
 
 func connect_to_host(host: String, port: int) -> int:
+	_closed = false
 	_socket = StreamPeerTCP.new()
 	_socket.set_no_delay(true)
 	return _socket.connect_to_host(host, port)
@@ -59,6 +67,11 @@ func poll() -> void:
 	if _socket == null:
 		return
 	_socket.poll()
+	var status := _socket.get_status()
+	if status == StreamPeerTCP.STATUS_NONE or status == StreamPeerTCP.STATUS_ERROR:
+		_fail_transport("peer closed")
+		return
+	_check_timeouts()
 	var avail := _socket.get_available_bytes()
 	if avail > 0:
 		var got: Array = _socket.get_data(avail)
@@ -66,38 +79,75 @@ func poll() -> void:
 			framing.push(got[1])
 
 
+func disconnect_from_host() -> void:
+	_fail_transport("disconnect")
+
+
 func push_bytes(chunk: PackedByteArray) -> void:
 	framing.push(chunk)
 
 
-func initialize(capabilities: Dictionary = { "notifications": true, "hashes": true, "canonicalHashes": true }) -> void:
+func initialize(capabilities: Dictionary = { "notifications": true, "hashes": true, "canonicalHashes": true }) -> int:
 	canonical_hashes = bool(capabilities.get("canonicalHashes", false))
 	writes = capabilities.get("writes", true) != false
 	if str(capabilities.get("role", "")) == "observer":
 		writes = false
-	_request(METHOD_INITIALIZE, {
+	return _request(METHOD_INITIALIZE, {
 		"clientName": "godot-sidecar",
 		"clientVersion": "4.x",
 		"capabilities": capabilities,
 	})
 
 
-func snapshot(params: Dictionary = {}) -> void:
+func snapshot(params: Dictionary = {}) -> int:
 	_snapshot_in_flight += 1
 	_queued_ticks.clear()
-	_request(METHOD_SNAPSHOT, params)
+	return _request(METHOD_SNAPSHOT, params)
 
 
-func submit_action(verb: String, extra: Dictionary = {}) -> void:
+func submit_action(verb: String, extra: Dictionary = {}) -> int:
 	var params := extra.duplicate()
 	params["verb"] = verb
-	_request(METHOD_SUBMIT_ACTION, params)
+	return _request(METHOD_SUBMIT_ACTION, params)
+
+
+func advance(rounds: int = 1) -> int:
+	return _request(METHOD_ADVANCE, { "rounds": rounds })
+
+
+func preview(verb: String, extra: Dictionary = {}) -> int:
+	var params := extra.duplicate()
+	params["verb"] = verb
+	return _request(METHOD_PREVIEW, params)
+
+
+func replay(params: Dictionary = {}) -> int:
+	return _request(METHOD_REPLAY, params)
+
+
+func list_actions(actor_id: String = "") -> int:
+	var params := {}
+	if actor_id != "":
+		params["actorId"] = actor_id
+	return _request(METHOD_LIST_ACTIONS, params)
+
+
+func save() -> int:
+	return _request(METHOD_SAVE, {})
+
+
+func load_save(serialized: String) -> int:
+	return _request(METHOD_LOAD, { "serialized": serialized })
+
+
+func shutdown() -> int:
+	return _request(METHOD_SHUTDOWN, {})
 
 
 func _request(method: String, params: Dictionary) -> int:
 	var id := _next_id
 	_next_id += 1
-	_pending[id] = method
+	_pending[id] = { "method": method, "started": Time.get_ticks_msec() }
 	_send({ "jsonrpc": "2.0", "id": id, "method": method, "params": params })
 	return id
 
@@ -113,12 +163,59 @@ func _on_framing_error(kind: String, detail: String) -> void:
 	push_warning("[sidecar] framing error: %s: %s" % [kind, detail])
 
 
+func _pending_method(id: Variant) -> String:
+	var rec: Variant = _pending.get(id, null)
+	if typeof(rec) == TYPE_DICTIONARY:
+		return str(rec.get("method", ""))
+	return str(rec) if rec != null else ""
+
+
+func _check_timeouts() -> void:
+	if request_timeout_ms <= 0:
+		return
+	var now := Time.get_ticks_msec()
+	var expired: Array = []
+	for id in _pending.keys():
+		var rec: Variant = _pending[id]
+		if typeof(rec) != TYPE_DICTIONARY:
+			continue
+		var started := int(rec.get("started", now))
+		if now - started >= request_timeout_ms:
+			expired.append(id)
+	for id in expired:
+		var method := _pending_method(id)
+		_pending.erase(id)
+		rpc_error.emit(-32603, "request timed out", { "method": method, "id": id })
+		if method == METHOD_SNAPSHOT and _snapshot_in_flight > 0:
+			_snapshot_in_flight -= 1
+			_flush_queued_ticks()
+
+
+func _fail_pending() -> void:
+	var waiting: Array = _pending.keys()
+	_pending.clear()
+	_snapshot_in_flight = 0
+	for id in waiting:
+		rpc_error.emit(-32004, "session is closed; further methods are refused.", { "id": id })
+
+
+func _fail_transport(_reason: String) -> void:
+	if _closed:
+		return
+	_closed = true
+	_fail_pending()
+	closing.emit()
+	if _socket != null:
+		_socket.disconnect_from_host()
+		_socket = null
+
+
 func _on_message(msg: Dictionary) -> void:
 	if msg.has("method"):
 		_handle_notification(str(msg["method"]), msg.get("params", {}))
 		return
 	var id: Variant = msg.get("id", null)
-	var method: String = str(_pending.get(id, ""))
+	var method: String = _pending_method(id)
 	_pending.erase(id)
 	if msg.has("error"):
 		var err: Dictionary = msg["error"]
@@ -130,13 +227,16 @@ func _on_message(msg: Dictionary) -> void:
 	var result: Variant = msg.get("result", {})
 	if method == METHOD_SNAPSHOT:
 		_apply_snapshot(result)
-	elif method == METHOD_SUBMIT_ACTION or method == METHOD_ADVANCE:
-		_note_position(int(result.get("tick", last_tick)), str(result.get("hash", last_hash)))
+	elif method == METHOD_SUBMIT_ACTION or method == METHOD_ADVANCE or method == METHOD_LOAD:
+		if typeof(result) == TYPE_DICTIONARY:
+			_note_position(int(result.get("tick", last_tick)), str(result.get("hash", last_hash)))
+	if typeof(id) == TYPE_FLOAT or typeof(id) == TYPE_INT:
+		completed.emit(int(id), result)
 
 
 func _handle_notification(method: String, params: Variant) -> void:
 	if method == NOTIFY_CLOSING:
-		closing.emit()
+		_fail_transport("sim/closing")
 		return
 	if method != NOTIFY_TICK:
 		return

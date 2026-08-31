@@ -49,3 +49,28 @@ describe('F-31094245 — GDScript framing fixture matches Node MessageReader', (
     });
   }
 });
+
+describe('F-c53b68ee — GDScript kit is awaitable and watches transport liveness', () => {
+  const kitDir = join(fileURLToPath(dirname(import.meta.url)), '..', 'gdscript');
+  const src = readFileSync(join(kitDir, 'sidecar_client.gd'), 'utf8');
+
+  it('documents advance(1) as METHOD_ADVANCE with a request id', () => {
+    expect(src).toMatch(/func advance\(rounds: int = 1\) -> int:/);
+    expect(src).toMatch(/METHOD_ADVANCE/);
+    expect(src).toMatch(/_request\(METHOD_ADVANCE,\s*\{\s*"rounds":\s*rounds\s*\}\)/);
+    expect(src).toMatch(/func preview\(/);
+    expect(src).toMatch(/func replay\(/);
+    expect(src).toMatch(/func shutdown\(/);
+    expect(src).toMatch(/signal completed\(id: int, result: Variant\)/);
+  });
+
+  it('poll watches get_status and fails _pending on NONE/ERROR without leaving it growing', () => {
+    expect(src).toMatch(/get_status\(\)/);
+    expect(src).toMatch(/STATUS_NONE/);
+    expect(src).toMatch(/STATUS_ERROR/);
+    expect(src).toMatch(/func _fail_pending\(\)/);
+    expect(src).toMatch(/_pending\.clear\(\)/);
+    expect(src).toMatch(/func disconnect_from_host\(\)/);
+    expect(src).toContain('_fail_transport("peer closed")');
+  });
+});

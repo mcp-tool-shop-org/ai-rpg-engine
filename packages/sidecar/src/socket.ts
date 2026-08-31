@@ -30,8 +30,9 @@
 //      why when maxConnections is 1 (the default). Write arbitration is now a
 //      negotiated session role (`capabilities.writes` / `role: observer|writer`):
 //      raise maxConnections for observer overlays; observers cannot SUBMIT_ACTION,
-//      ADVANCE, or SHUTDOWN. N writers is still a serial-lock problem and is not
-//      the supported production mode.
+//      ADVANCE, SHUTDOWN, SAVE, or LOAD. Two writers:true sessions serialize
+//      mutations through a per-Engine queue (sessionOrder then JSON-RPC id), so
+//      commit order is not TCP arrival order.
 //
 //   3. DIAGNOSTICS STILL GO TO STDERR. Under this transport stdout is not the
 //      protocol, so writing to it would be harmless — which is precisely the
@@ -43,6 +44,7 @@ import type { ByteReadable, ByteWritable, RpcMessage } from './framing.js';
 import { MessageReader, encodeMessage } from './framing.js';
 import { SidecarClient, type SidecarClientOptions } from './client.js';
 import { SidecarServer, type SidecarServerOptions } from './server.js';
+import { WRITE_METHODS, type MethodName } from './protocol.js';
 
 export type SocketServerOptions = {
   /** TCP port. `0` binds an ephemeral port; read the real one from `address()`. */
@@ -54,8 +56,8 @@ export type SocketServerOptions = {
   host?: string;
   /**
    * How many clients may be connected at once. Defaults to 1 — see decision 2.
-   * Raise this for observer overlays (`capabilities.writes: false`). Two
-   * writers on one Engine is still arrival-order nondeterminism.
+   * Raise this for observer overlays (`capabilities.writes: false`) or two
+   * writers. N writers serialize through SidecarServer.queueWrite.
    */
   maxConnections?: number;
 };
@@ -175,17 +177,30 @@ export function startSocketServer(
       },
       send,
     );
+    const afterHandle = (): void => {
+      if (!session.isClosed) return;
+      // Reply + sim/closing are already written. End the connection and drop
+      // the listener so a second attach cannot initialize on a stopped sim.
+      if (!socket.destroyed && !socket.writableEnded) socket.end();
+      for (const other of [...live]) {
+        if (other !== socket && !other.destroyed && !other.writableEnded) other.end();
+      }
+      if (server.listening) server.close();
+    };
     const reader = new MessageReader(
       (msg) => {
-        session.handle(msg);
-        if (!session.isClosed) return;
-        // Reply + sim/closing are already written. End the connection and drop
-        // the listener so a second attach cannot initialize on a stopped sim.
-        if (!socket.destroyed && !socket.writableEnded) socket.end();
-        for (const other of [...live]) {
-          if (other !== socket && !other.destroyed && !other.writableEnded) other.end();
+        const method = msg.method;
+        const isWrite =
+          typeof method === 'string' && (WRITE_METHODS as readonly string[]).includes(method as MethodName);
+        if (isWrite) {
+          session.queueWrite(msg.id, () => {
+            session.handle(msg);
+            afterHandle();
+          });
+          return;
         }
-        if (server.listening) server.close();
+        session.handle(msg);
+        afterHandle();
       },
       (err) => onFramingError(`${err.kind}: ${err.detail}`),
     );
