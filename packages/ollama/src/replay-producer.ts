@@ -296,8 +296,18 @@ function runEngineReplay(
   const modules = loadPlayableModules(pack);
   // Bind the pack's own ruleset id when it has one (content-schema's
   // SessionContent.ruleset doc comment: "Bind it at Engine construction").
-  // Overlay-only packs omit ruleset and keep the 'test' fallback.
-  const ruleset = isRecord(pack) && typeof pack.ruleset === 'string' ? pack.ruleset : 'test';
+  // pack.ruleset is a full RulesetDefinition object ({id, name, stats, ...}
+  // — intake.ts:1005-1018, refs.ts ContentPack.ruleset), not a bare string,
+  // so the manifest's string ruleset field binds pack.ruleset.id. A bare
+  // string is also accepted defensively. Overlay-only packs omit ruleset
+  // and keep the 'test' fallback.
+  const ruleset = !isRecord(pack) || pack.ruleset === undefined
+    ? 'test'
+    : typeof pack.ruleset === 'string'
+      ? pack.ruleset
+      : isRecord(pack.ruleset) && typeof pack.ruleset.id === 'string'
+        ? pack.ruleset.id
+        : 'test';
   const engine = new Engine({
     manifest: {
       id: 'experiment-run',

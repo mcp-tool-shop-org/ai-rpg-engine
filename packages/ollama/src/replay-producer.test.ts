@@ -211,8 +211,42 @@ describe('createDefaultReplayProducer (F-fc88ce5e)', () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it('binds pack.ruleset into the engine manifest instead of the hardcoded "test"', () => {
-    const root = mkdtempSync(join(tmpdir(), 'replay-ruleset-'));
+  it('binds pack.ruleset.id into the engine manifest instead of the hardcoded "test" (realistic: pack.ruleset is a full RulesetDefinition object)', () => {
+    // intake.ts:1005-1018's SessionContent.ruleset doc comment: "Pack-authored
+    // RulesetDefinition" — this is what assembleContentPack/create-ruleset
+    // actually produce, NOT a bare string. The manifest's ruleset field is a
+    // string, so it binds pack.ruleset.id.
+    const root = mkdtempSync(join(tmpdir(), 'replay-ruleset-obj-'));
+    mkdirSync(join(root, 'content'));
+    writeFileSync(join(root, 'content', 'pack.json'), JSON.stringify({
+      ruleset: {
+        id: 'fantasy-minimal',
+        name: 'Fantasy Minimal',
+        version: '0.1.0',
+        stats: [], resources: [], verbs: [], formulas: [],
+        defaultModules: [], progressionModels: [],
+      },
+    }));
+    let seenRuleset: string | undefined;
+    const FakeEngine = function FakeEngine(this: {
+      store: { state: { globals: Record<string, string | number | boolean> } };
+      advanceRound: () => unknown[];
+      queryEvents: () => [];
+    }, options: { manifest: { ruleset: string } }) {
+      seenRuleset = options.manifest.ruleset;
+      this.store = { state: { globals: {} } };
+      this.advanceRound = () => [];
+      this.queryEvents = () => [];
+    } as unknown as EngineConstructor;
+
+    const producer = createDefaultReplayProducer({ Engine: FakeEngine, projectRoot: root });
+    producer(1, undefined, 1);
+    expect(seenRuleset).toBe('fantasy-minimal');
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('also accepts a bare ruleset id string defensively', () => {
+    const root = mkdtempSync(join(tmpdir(), 'replay-ruleset-str-'));
     mkdirSync(join(root, 'content'));
     writeFileSync(join(root, 'content', 'pack.json'), JSON.stringify({
       ruleset: 'fantasy-minimal',
