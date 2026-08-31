@@ -41,7 +41,7 @@ describe('registerFromModule / packEntryFromModule', () => {
 
   it('refuses a module that does not advertise packMeta + createGame', () => {
     expect(() => registerFromModule({ packMeta: { id: 'x' } }, 'partial')).toThrow(
-      /does not advertise packMeta \+ createGame/,
+      /does not advertise packMeta \+ \(createGame or pack\/toContentPack\)/,
     );
   });
 });

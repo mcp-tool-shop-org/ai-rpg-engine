@@ -272,11 +272,20 @@ async function* streamNdjsonBody(
       if (done) break;
       if (!value || value.byteLength === 0) continue;
       received += value.byteLength;
+      const declared = rawLen !== null && rawLen.trim() !== '' ? Number(rawLen) : undefined;
+      if (declared !== undefined && Number.isFinite(declared) && received > declared) {
+        await reader.cancel();
+        return { ok: false, error: 'Content-Length exceeded; refusing body' };
+      }
       if (received > MAX_GENERATE_BODY_BYTES) {
         await reader.cancel();
         return { ok: false, error: `Response body exceeded byte cap (${MAX_GENERATE_BODY_BYTES})` };
       }
       buf += decoder.decode(value, { stream: true });
+      if (buf.length > 65_536 && !buf.includes('\n')) {
+        await reader.cancel();
+        return { ok: false, error: `Response body exceeded byte cap (${MAX_GENERATE_BODY_BYTES})` };
+      }
       let nl = buf.indexOf('\n');
       while (nl >= 0) {
         const line = buf.slice(0, nl);
@@ -403,7 +412,8 @@ export function createClient(config: OllamaConfig, options?: OllamaClientOptions
           await sleep(retryDelayMs);
           continue;
         }
-        return outcome;
+        if (outcome.ok) return { ok: false, error: 'Ollama fetch failed' };
+        return { ok: false, error: outcome.error };
       }
 
       if (!res.ok) {

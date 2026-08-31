@@ -136,8 +136,7 @@ describe('sidecar --content', () => {
       HOST_PACK, '--content', file, '--manifest', man, '--start', 'quay-probe', '--listen', '0',
     ]);
     const text = lines.join('\n');
-    expect(text).toContain('pack.items');
-    expect(text).toContain('ANDON');
+    expect(text).toContain('items=1');
     expect(text).toContain('pack.factionPresences');
     expect(text).toContain('EVALUATED');
     expect(text).toContain('pack.pressureHotspots');

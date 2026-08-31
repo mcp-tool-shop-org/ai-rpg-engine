@@ -120,9 +120,9 @@ export const SIM_AFFECTING_KEYS = [
   'encounterAnchors',
   // C3/P3 — a hazard changes what the simulation computes, so it is in the hash.
   'hazardDefinitions',
-  'items',
-  'itemPlacements',
-  'entityAi',
+  // items / itemPlacements / entityAi are sim-affecting at intake (F-4ed3d82e /
+  // F-035ac806) but must not join this list until world-forge's hasher copy
+  // ships the same keys — c1-gate.test.ts CROSS-REPO pin.
 ] as const;
 
 // --- Report shapes --------------------------------------------------------

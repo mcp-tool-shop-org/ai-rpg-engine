@@ -74,7 +74,6 @@ const KNOWN_DORMANT = [
   'computeItemNotoriety',
   'computeLoadoutEffects',
   'computeNpcRecapEntries',
-  'computeRelationshipModifiers',
   'computeRelicBonuses',
 ];
 

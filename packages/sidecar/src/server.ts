@@ -859,7 +859,7 @@ export class SidecarServer {
     (restored as { events: (typeof restored)['events'] }).events = this.engine.store.events;
     (this.engine as { store: typeof restored }).store = restored;
     this.engine.moduleManager.rebindStore(restored);
-    (this.engine as { actionLog: ActionIntent[] }).actionLog = [...loaded.getActionLog()];
+    (this.engine as unknown as { actionLog: ActionIntent[] }).actionLog = [...loaded.getActionLog()];
   }
 
   private rebaseAllSessions(): void {

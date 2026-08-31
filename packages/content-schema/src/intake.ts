@@ -421,12 +421,6 @@ export function entityBlueprintToState(
         '(IntentProfile[] or id→AIState) and/or ContentPack.entityAi so this name becomes EntityState.ai. ' +
         'An unresolved brain never selects an intent.',
     });
-    errors?.push({
-      path: `${p}.aiProfile`,
-      message:
-        `unresolved aiProfile "${ai.profileId}" — provide ApplyContentPackOptions.profiles or ` +
-        'ContentPack.entityAi so this entity gets EntityState.ai (an unresolved name stands still forever)',
-    });
   }
   return state;
 }

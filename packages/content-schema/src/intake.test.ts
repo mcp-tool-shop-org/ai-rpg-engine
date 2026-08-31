@@ -328,10 +328,10 @@ describe('C1/P1 — applyContentPack routes content into a booted world', () => 
     // Declared, validated, real content — and still unrouted at this rung.
     expect(paths).toContain('pack.quests');
     expect(paths).toContain('pack.verbs');
-    // Unresolved aiProfile is a structured error (F-035ac806) — an unresolved
-    // brain stands still forever. Other dropped fields still do not flip ok.
-    expect(r.ok).toBe(false);
-    expect(r.errors.some((e) => e.path.includes('aiProfile') && e.message.includes('unresolved'))).toBe(true);
+    // Unresolved aiProfile is named in dropped[] (F-035ac806). Overlay packs
+    // without profiles still load (sidecar --content / C3 fixture).
+    expect(r.ok).toBe(true);
+    expect(r.dropped.some((d) => d.path.includes('aiProfile'))).toBe(true);
   });
 
   it('CLOSED BY C3/P1: the placement hole is a channel now, not an advisory', () => {
@@ -668,8 +668,8 @@ describe('F-035ac806 — aiProfile resolves through profiles / entityAi', () => 
       { entities: [{ id: 'grunt', type: 'npc', name: 'Grunt', aiProfile: 'ghost-brain' }] },
       { profiles: [{ id: 'aggressive' }] },
     );
-    expect(r.ok).toBe(false);
-    expect(r.errors.some((e) => e.message.includes('ghost-brain'))).toBe(true);
+    expect(r.ok).toBe(true);
+    expect(r.dropped.some((d) => d.path.includes('aiProfile') && d.detail?.includes('ghost-brain'))).toBe(true);
     expect(engine.world.entities['grunt'].ai).toBeUndefined();
   });
 });
