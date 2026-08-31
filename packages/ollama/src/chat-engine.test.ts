@@ -655,6 +655,139 @@ describe('tuning steps stage into activeTuning.stagedWrites (F-591fae03)', () =>
   });
 });
 
+// --- Shared pendingWriteBatch slot ownership (F-71e4a9c3, wave-4) ---
+// The independent-pools test above proves STAGING never crosses flows. This
+// covers the separate bug one layer up: pendingWriteBatch is a single
+// engine-level REFERENCE into whichever pool most recently became
+// confirmable. Before this fix, a build's flush-gate consent could be
+// silently overwritten by a tuning plan completing later, and confirm/reject
+// unconditionally cleared BOTH stagedWrites pools regardless of which one
+// pendingWriteBatch actually pointed at -- so confirming the visible
+// (tuning) batch destroyed the invisible (build) one without ever writing
+// it, and declining the visible batch also silently destroyed the batch the
+// user could not see.
+describe('pendingWriteBatch ownership survives a second flow completing (F-71e4a9c3)', () => {
+  function roomStep(id: number, theme: string): BuildStep {
+    return {
+      id, description: `room ${theme}`, command: 'create-room', intent: 'scaffold',
+      params: { kind: 'room', theme }, dependencies: [],
+      artifactOutputs: ['rooms'], usePriorContent: false, status: 'pending',
+    };
+  }
+  function tuneRoomStep(id: number, theme: string): TuningStep {
+    return {
+      id, description: `tune room ${theme}`, command: 'create-room', intent: 'scaffold',
+      params: { kind: 'room', theme }, dependencies: [], expectedEffect: 'none', status: 'pending',
+    };
+  }
+
+  it('a later-completing tuning batch does not silently overwrite an unconfirmed build batch', async () => {
+    const responses = [
+      'id: build-room\nname: Build Room\nzones:\n  - id: nave\n    name: Nave',
+      'id: tune-room\nname: Tune Room\nzones:\n  - id: nave\n    name: Nave',
+    ];
+    let call = 0;
+    const dir = await mkdtemp(join(tmpdir(), 'chat-batch-ownership-'));
+    try {
+      const engine = createChatEngine({
+        client: {
+          async generate(_input: PromptInput): Promise<PromptResult> {
+            return { ok: true, text: responses[Math.min(call++, responses.length - 1)] };
+          },
+        },
+        projectRoot: dir,
+        rawMode: true,
+      });
+
+      // Build: a single-step plan completes on its own first /step, so its
+      // completion-promotion surfaces pendingWriteBatch = build's entry.
+      engine.activeBuild = createBuildState(buildPlanOf([roomStep(1, 'build one')]));
+      const buildResult = await engine.executeBuildStep();
+      expect(buildResult).toContain('file(s) staged -- write all?');
+      expect(engine.pendingWriteBatch).not.toBeNull();
+      expect(engine.pendingWriteBatch).toHaveLength(1);
+      expect(engine.pendingWriteBatch![0].content).toContain('build-room');
+      // Names the owning flow so the consent itself is unambiguous.
+      expect(buildResult).toContain('build');
+      expect(buildResult.toLowerCase()).toContain('build one');
+
+      // Tuning: also a single-step plan, ALSO completes on its own first
+      // step -- its completion-promotion tries to claim pendingWriteBatch
+      // too, while the build's batch is still unconfirmed.
+      engine.activeTuning = createTuningState({
+        goal: 'test tuning', steps: [tuneRoomStep(1, 'tune one')], warnings: [],
+      } satisfies TuningPlan);
+      const tuneResult = await engine.executeTuningStep();
+
+      // The build's batch is still the one exposed for confirmation --
+      // NOT silently replaced by tuning's.
+      expect(engine.pendingWriteBatch).not.toBeNull();
+      expect(engine.pendingWriteBatch).toHaveLength(1);
+      expect(engine.pendingWriteBatch![0].content).toContain('build-room');
+      // Tuning's own content is neither lost nor silently confirmed --
+      // it stays staged, waiting its turn.
+      expect(Object.values(engine.activeTuning!.stagedWrites)).toHaveLength(1);
+      expect(Object.values(engine.activeTuning!.stagedWrites)[0].content).toContain('tune-room');
+      // The tuning step's own result says SOMETHING sensible instead of
+      // silently completing with content the user was never asked about.
+      expect(tuneResult).not.toContain('file(s) staged -- write all?');
+
+      // Confirming (twice: preview, then apply) applies ONLY the build's
+      // batch. The tuning room must NOT land on disk as a side effect.
+      await engine.process('yes');
+      const applied = await engine.process('yes');
+      expect(applied).toContain('Written');
+      await access(join(dir, 'content', 'rooms', 'build-room.yaml'));
+      await expect(access(join(dir, 'content', 'rooms', 'tune-room.yaml'))).rejects.toThrow();
+
+      // Confirming the build's batch cleared ONLY the build pool -- the
+      // tuning pool the user never confirmed is untouched.
+      expect(engine.activeBuild!.stagedWrites).toEqual({});
+      expect(Object.values(engine.activeTuning!.stagedWrites)).toHaveLength(1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('declining the build batch does not destroy an already-staged tuning batch it never surfaced', async () => {
+    const responses = [
+      'id: build-room\nname: Build Room\nzones:\n  - id: nave\n    name: Nave',
+      'id: tune-room\nname: Tune Room\nzones:\n  - id: nave\n    name: Nave',
+    ];
+    let call = 0;
+    const engine = createChatEngine({
+      client: {
+        async generate(_input: PromptInput): Promise<PromptResult> {
+          return { ok: true, text: responses[Math.min(call++, responses.length - 1)] };
+        },
+      },
+      projectRoot: '/tmp/nonexistent-' + Date.now(),
+      rawMode: true,
+    });
+
+    engine.activeBuild = createBuildState(buildPlanOf([roomStep(1, 'build one')]));
+    await engine.executeBuildStep();
+    expect(engine.pendingWriteBatch).not.toBeNull();
+
+    engine.activeTuning = createTuningState({
+      goal: 'test tuning', steps: [tuneRoomStep(1, 'tune one')], warnings: [],
+    } satisfies TuningPlan);
+    await engine.executeTuningStep();
+    expect(Object.values(engine.activeTuning!.stagedWrites)).toHaveLength(1);
+
+    // Decline the (build-owned) visible batch.
+    const declined = await engine.process('no');
+    expect(declined).toMatch(/cancelled/i);
+
+    // The build pool was the one actually declined.
+    expect(engine.activeBuild!.stagedWrites).toEqual({});
+    // The tuning pool -- never surfaced, never part of this consent --
+    // survives the decline untouched.
+    expect(Object.values(engine.activeTuning!.stagedWrites)).toHaveLength(1);
+    expect(Object.values(engine.activeTuning!.stagedWrites)[0].content).toContain('tune-room');
+  });
+});
+
 // --- The roundtrip that would have caught the original bug (F-591fae03
 // recommendation item 10). A plan with 2+ scaffold steps followed by an
 // emit-pack tail, run through executeAllBuildSteps() and confirmed twice:

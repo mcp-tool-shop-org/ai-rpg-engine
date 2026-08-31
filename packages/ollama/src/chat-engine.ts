@@ -258,6 +258,16 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
   let pendingWrite: { content: string; suggestedPath: string; label: string; previewShown?: boolean } | null = null;
   let pendingWriteBatch: StagedWriteEntry[] | null = null;
   let pendingWriteBatchPreviewShown = false;
+  /**
+   * Which flow (build|tuning) currently owns `pendingWriteBatch` (F-71e4a9c3).
+   * Without this, /build and /tune's independent stagedWrites pools shared
+   * ONE reference into "the" confirmable batch: whichever flow finished a
+   * step last simply reassigned pendingWriteBatch, silently orphaning the
+   * other flow's still-real, still-unwritten stagedWrites -- and confirm/
+   * reject then acted on BOTH pools unconditionally, actually destroying
+   * whichever one wasn't visible. Null exactly when pendingWriteBatch is.
+   */
+  let pendingWriteBatchOwner: 'build' | 'tuning' | null = null;
   let lastContextSnapshot: ContextSnapshot | null = null;
   let lastLoadoutPlan: LoadoutRoutePlan | null = null;
   const loadoutHistory: LoadoutHistoryEntry[] = [];
@@ -276,10 +286,25 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
    * real — would otherwise have no further step left to gate on, stranding
    * it with no way to confirm). Resets the preview flag: a freshly
    * (re)computed batch always needs its own preview pass.
+   *
+   * F-71e4a9c3: tags the batch with its owning flow, and REFUSES to
+   * overwrite an unconfirmed batch already owned by the OTHER flow — the
+   * other flow's stagedWrites stays fully intact and simply waits its turn
+   * (surfaced once the current batch is confirmed/declined, or the next
+   * time this flow's own gate/completion re-checks). Returns null on
+   * refusal so the caller can say something honest instead of silently
+   * dropping the content or clobbering the visible consent.
    */
-  function refreshPendingWriteBatch(stagedWrites: Record<string, StagedWriteEntry>): StagedWriteEntry[] | null {
+  function refreshPendingWriteBatch(
+    stagedWrites: Record<string, StagedWriteEntry>,
+    owner: 'build' | 'tuning',
+  ): StagedWriteEntry[] | null {
+    if (pendingWriteBatch && pendingWriteBatchOwner && pendingWriteBatchOwner !== owner) {
+      return null;
+    }
     const entries = Object.values(stagedWrites);
     pendingWriteBatch = entries.length > 0 ? entries : null;
+    pendingWriteBatchOwner = pendingWriteBatch ? owner : null;
     pendingWriteBatchPreviewShown = false;
     return pendingWriteBatch;
   }
@@ -314,10 +339,17 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       // The emit-pack step (if gated) stays 'pending', visibly incomplete in
       // /status, so nothing is silently lost or silently assumed-done.
       pendingWrite = null;
+      // F-71e4a9c3: clear ONLY the pool that actually produced the batch
+      // being declined — the other flow's stagedWrites (if any) was never
+      // part of this consent and must survive untouched, not get destroyed
+      // by an unconditional dual-clear.
+      if (pendingWriteBatch) {
+        if (pendingWriteBatchOwner === 'build' && activeBuild) activeBuild.stagedWrites = {};
+        if (pendingWriteBatchOwner === 'tuning' && activeTuning) activeTuning.stagedWrites = {};
+      }
       pendingWriteBatch = null;
+      pendingWriteBatchOwner = null;
       pendingWriteBatchPreviewShown = false;
-      if (activeBuild) activeBuild.stagedWrites = {};
-      if (activeTuning) activeTuning.stagedWrites = {};
       const msg = 'Write cancelled.';
       addMessage(memory, { role: 'assistant', content: msg, timestamp: new Date().toISOString() });
       return msg;
@@ -664,10 +696,14 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       await saveSession(projectRoot, session);
     }
 
+    // F-71e4a9c3: clear ONLY the pool that produced this confirmed batch —
+    // never both unconditionally. The other flow's stagedWrites (if any)
+    // was never part of this consent and must survive to be surfaced later.
+    if (pendingWriteBatchOwner === 'build' && activeBuild) activeBuild.stagedWrites = {};
+    if (pendingWriteBatchOwner === 'tuning' && activeTuning) activeTuning.stagedWrites = {};
     pendingWriteBatch = null;
+    pendingWriteBatchOwner = null;
     pendingWriteBatchPreviewShown = false;
-    if (activeBuild) activeBuild.stagedWrites = {};
-    if (activeTuning) activeTuning.stagedWrites = {};
 
     const response = lines.join('\n');
     addMessage(memory, { role: 'assistant', content: response, timestamp: new Date().toISOString() });
@@ -739,7 +775,19 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
           recordEvent(session, 'build_plan_completed', `Build completed: ${activeBuild.plan.goal}`);
           await saveSession(projectRoot, session);
         }
-        return formatBuildStatus(activeBuild) + '\n\n' + formatBuildDiagnostics(diag);
+        // F-71e4a9c3: an earlier completion-promotion may have been refused
+        // because a tuning batch was still unconfirmed at the time — retry
+        // surfacing here so calling /step again after resolving that other
+        // batch does not leave this build's content permanently stranded
+        // with no route back to a consent prompt.
+        let consentSuffix = '';
+        if (Object.keys(activeBuild.stagedWrites).length > 0) {
+          const batch = refreshPendingWriteBatch(activeBuild.stagedWrites, 'build');
+          if (batch) {
+            consentSuffix = '\n\n' + formatBatchConsent(batch, { flow: 'build', goal: activeBuild.plan.goal });
+          }
+        }
+        return formatBuildStatus(activeBuild) + '\n\n' + formatBuildDiagnostics(diag) + consentSuffix;
       }
       return 'No pending steps.';
     }
@@ -767,8 +815,16 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     // step stays 'pending' — untouched — so nextPendingStep keeps returning
     // it on every subsequent /step until stagedWrites is empty again.
     if (step.command === 'emit-pack' && Object.keys(activeBuild.stagedWrites).length > 0) {
-      const batch = refreshPendingWriteBatch(activeBuild.stagedWrites)!;
-      return formatBatchConsent(batch);
+      const batch = refreshPendingWriteBatch(activeBuild.stagedWrites, 'build');
+      // F-71e4a9c3: refused when a tuning batch is already awaiting
+      // confirmation — the step stays 'pending' (untouched, same as the
+      // ordinary gate-closed case) so a later /step, once the other batch
+      // is resolved, opens this gate for real instead of the two flows
+      // silently swapping which one is visible.
+      if (!batch) {
+        return `${Object.keys(activeBuild.stagedWrites).length} file(s) staged for this build, but a tuning batch is awaiting confirmation first -- say "yes" or "no" to resolve it, then /step again.`;
+      }
+      return formatBatchConsent(batch, { flow: 'build', goal: activeBuild.plan.goal });
     }
 
     // Prepare params — inject accumulated content for critique steps
@@ -843,10 +899,18 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       // result accumulates into stagedWrites the same as any step's — but
       // with no further step left to gate on, nothing would otherwise ever
       // surface it for confirmation. Surfacing it here, the moment there's
-      // truly nothing left to run, means no staged content is ever stranded.
+      // truly nothing left to run, means no staged content is ever stranded
+      // (unless another flow's batch is already pending -- F-71e4a9c3 --
+      // in which case it waits: nextPendingStep returns null from here on
+      // for this build, so the "no pending step, isBuildComplete" branch
+      // above retries surfacing on every subsequent /step).
       if (Object.keys(activeBuild.stagedWrites).length > 0) {
-        const batch = refreshPendingWriteBatch(activeBuild.stagedWrites)!;
-        consentSuffix = '\n\n' + formatBatchConsent(batch);
+        const batch = refreshPendingWriteBatch(activeBuild.stagedWrites, 'build');
+        if (batch) {
+          consentSuffix = '\n\n' + formatBatchConsent(batch, { flow: 'build', goal: activeBuild.plan.goal });
+        } else {
+          consentSuffix = `\n\n${Object.keys(activeBuild.stagedWrites).length} file(s) staged for this build, but a tuning batch is awaiting confirmation first -- say "yes" or "no" to resolve it, then /step again.`;
+        }
       }
     }
 
@@ -934,7 +998,17 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
           recordEvent(session, 'tune_plan_completed', `Tuning completed: ${activeTuning.plan.goal}`);
           await saveSession(projectRoot, session);
         }
-        return formatTuningStatus(activeTuning);
+        // F-71e4a9c3: mirrors executeBuildStep's identical retry — an
+        // earlier completion-promotion may have been refused because a
+        // build batch was still unconfirmed at the time.
+        let consentSuffix = '';
+        if (Object.keys(activeTuning.stagedWrites).length > 0) {
+          const batch = refreshPendingWriteBatch(activeTuning.stagedWrites, 'tuning');
+          if (batch) {
+            consentSuffix = '\n\n' + formatBatchConsent(batch, { flow: 'tuning', goal: activeTuning.plan.goal });
+          }
+        }
+        return formatTuningStatus(activeTuning) + consentSuffix;
       }
       return 'No pending tuning steps.';
     }
@@ -1018,9 +1092,17 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       // there's truly nothing left to run, surface whatever's still staged
       // so /tune-execute's final summary shows the batch consent surface
       // instead of the old single-file "Content staged for X" line.
+      // F-71e4a9c3: refused when a build batch is already awaiting
+      // confirmation — this tuning content stays staged, and the
+      // "no pending step, isTuningComplete" branch above retries surfacing
+      // it on every subsequent /tune-step once that build batch resolves.
       if (Object.keys(activeTuning.stagedWrites).length > 0) {
-        const batch = refreshPendingWriteBatch(activeTuning.stagedWrites)!;
-        consentSuffix = '\n\n' + formatBatchConsent(batch);
+        const batch = refreshPendingWriteBatch(activeTuning.stagedWrites, 'tuning');
+        if (batch) {
+          consentSuffix = '\n\n' + formatBatchConsent(batch, { flow: 'tuning', goal: activeTuning.plan.goal });
+        } else {
+          consentSuffix = `\n\n${Object.keys(activeTuning.stagedWrites).length} file(s) staged for this tuning plan, but a build batch is awaiting confirmation first -- say "yes" or "no" to resolve it, then /tune-step again.`;
+        }
       }
     }
 
@@ -1135,13 +1217,17 @@ export function capturePlanFromOutput<T>(
 }
 
 /**
- * Format the batched-write consent prompt (F-591fae03). Exact wording is
+ * Format the batched-write consent prompt (F-591fae03). Core wording is
  * Director-specified: a `${N} file(s) staged -- write all?` header, one
  * indented bullet per entry mirroring formatBuildStatus's existing bullet
- * style, then the yes/no instruction line.
+ * style, then the yes/no instruction line. F-71e4a9c3: names the owning
+ * flow and its goal so the prompt itself is unambiguous about which plan's
+ * content it holds — no textual cue existed before this, so a user with a
+ * build AND a tuning plan both in flight had no way to tell which one a
+ * consent prompt belonged to.
  */
-function formatBatchConsent(entries: StagedWriteEntry[]): string {
-  const lines = [`${entries.length} file(s) staged -- write all?`];
+function formatBatchConsent(entries: StagedWriteEntry[], source: { flow: 'build' | 'tuning'; goal: string }): string {
+  const lines = [`${entries.length} file(s) staged -- write all? (${source.flow} "${source.goal}")`];
   for (const entry of entries) {
     lines.push(`  - ${entry.suggestedPath} (${entry.content.length} bytes)`);
   }
