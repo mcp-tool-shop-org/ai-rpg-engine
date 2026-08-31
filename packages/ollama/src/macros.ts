@@ -220,6 +220,7 @@ async function runScaffold(
         rulesetId: input.rulesetId,
         districtId: input.districtId,
         sessionContext: input.sessionContext,
+        repair: true,
       });
       return r.ok ? { ok: true, yaml: r.yaml } : r;
     }
@@ -228,6 +229,7 @@ async function runScaffold(
         theme: input.theme,
         rulesetId: input.rulesetId,
         sessionContext: input.sessionContext,
+        repair: true,
       });
       return r.ok ? { ok: true, yaml: r.yaml } : r;
     }
@@ -237,6 +239,7 @@ async function runScaffold(
         rulesetId: input.rulesetId,
         factions: input.factions,
         sessionContext: input.sessionContext,
+        repair: true,
       });
       return r.ok ? { ok: true, yaml: r.yaml } : r;
     }
@@ -246,6 +249,7 @@ async function runScaffold(
         rulesetId: input.rulesetId,
         factions: input.factions,
         sessionContext: input.sessionContext,
+        repair: true,
       });
       return r.ok ? { ok: true, yaml: r.yaml } : r;
     }
@@ -257,6 +261,7 @@ async function runScaffold(
         factions: input.factions,
         difficulty: input.difficulty,
         sessionContext: input.sessionContext,
+        repair: true,
       });
       return r.ok ? { ok: true, yaml: r.yaml } : r;
     }

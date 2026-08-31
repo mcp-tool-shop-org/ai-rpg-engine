@@ -4,6 +4,9 @@ import {
   validateRoomDefinition,
   validateQuestDefinition,
   validateEntityBlueprint,
+  validateDialogueDefinition,
+  validateAbilityDefinition,
+  validateStatusDefinition,
 } from '@ai-rpg-engine/content-schema';
 import type { ValidationResult, ValidationError } from '@ai-rpg-engine/content-schema';
 
@@ -392,5 +395,33 @@ export function validateGeneratedLocationPack(raw: string, parsed: unknown): Gen
 /** Validate a parsed encounter pack (wrapper mirroring validateGeneratedRoom). */
 export function validateGeneratedEncounterPack(raw: string, parsed: unknown): GeneratedContentResult {
   const validation = validateEncounterPackDefinition(parsed);
+  return { valid: validation.ok, content: parsed, validation, raw };
+}
+
+/** Validate a parsed entity blueprint (content-schema EntityBlueprint). */
+export function validateGeneratedEntity(raw: string, parsed: unknown): GeneratedContentResult {
+  const obj = (typeof parsed === 'object' && parsed !== null) ? parsed : {};
+  const validation = validateEntityBlueprint(obj);
+  return { valid: validation.ok, content: parsed, validation, raw };
+}
+
+/** Validate a parsed dialogue tree (content-schema DialogueDefinition). */
+export function validateGeneratedDialogue(raw: string, parsed: unknown): GeneratedContentResult {
+  const obj = (typeof parsed === 'object' && parsed !== null) ? parsed : {};
+  const validation = validateDialogueDefinition(obj);
+  return { valid: validation.ok, content: parsed, validation, raw };
+}
+
+/** Validate a parsed ability (content-schema AbilityDefinition). */
+export function validateGeneratedAbility(raw: string, parsed: unknown): GeneratedContentResult {
+  const obj = (typeof parsed === 'object' && parsed !== null) ? parsed : {};
+  const validation = validateAbilityDefinition(obj);
+  return { valid: validation.ok, content: parsed, validation, raw };
+}
+
+/** Validate a parsed status (content-schema StatusDefinition). */
+export function validateGeneratedStatus(raw: string, parsed: unknown): GeneratedContentResult {
+  const obj = (typeof parsed === 'object' && parsed !== null) ? parsed : {};
+  const validation = validateStatusDefinition(obj);
   return { valid: validation.ok, content: parsed, validation, raw };
 }

@@ -5,7 +5,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { tmpdir } from 'node:os';
 import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { generatePreview, applyConfirmed } from './apply-preview.js';
+import { generatePreview, applyConfirmed, formatUnifiedDiff, restoreFromBackup } from './apply-preview.js';
 
 describe('apply-preview', () => {
   let tempDir: string;
@@ -48,6 +48,25 @@ describe('apply-preview', () => {
       expect(result.existingLength).toBe('old content'.length);
       expect(result.delta).toBeGreaterThan(0);
       expect(result.preview).toContain('OVERWRITE');
+    });
+
+    it('emits a unified diff of existing vs new on OVERWRITE', async () => {
+      const target = join(tempDir, 'chapel.yaml');
+      await writeFile(target, 'id: chapel\nname: Old Chapel\n', 'utf-8');
+
+      const result = await generatePreview({
+        content: 'id: chapel\nname: Ruined Chapel\n',
+        targetPath: target,
+        projectRoot: tempDir,
+      });
+
+      expect(result.preview).toContain('OVERWRITE');
+      expect(result.preview).toContain('--- ');
+      expect(result.preview).toContain('+++ ');
+      expect(result.preview).toContain('-name: Old Chapel');
+      expect(result.preview).toContain('+name: Ruined Chapel');
+      // Must not look like a CREATE-shaped dump of only the new payload.
+      expect(result.preview).not.toMatch(/^ {2}id: chapel$/m);
     });
 
     it('includes label in preview header', async () => {
@@ -131,6 +150,55 @@ describe('apply-preview', () => {
 
       const onDisk = await readFile(target, 'utf-8');
       expect(onDisk).toBe('new');
+    });
+
+    it('writes a sibling .bak then the new payload on OVERWRITE', async () => {
+      const target = join(tempDir, 'chapel.yaml');
+      await writeFile(target, 'id: old\n', 'utf-8');
+      const result = await applyConfirmed({
+        content: 'id: new\n',
+        targetPath: target,
+        projectRoot: tempDir,
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.backupPath).toBe(`${target}.bak`);
+      }
+      expect(await readFile(target, 'utf-8')).toBe('id: new\n');
+      expect(await readFile(`${target}.bak`, 'utf-8')).toBe('id: old\n');
+      await expect(readFile(`${target}.tmp`, 'utf-8')).rejects.toThrow();
+    });
+
+    it('does not write a .bak on CREATE', async () => {
+      const target = join(tempDir, 'fresh.yaml');
+      const result = await applyConfirmed({
+        content: 'id: fresh\n',
+        targetPath: target,
+        projectRoot: tempDir,
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.backupPath).toBeUndefined();
+      await expect(readFile(`${target}.bak`, 'utf-8')).rejects.toThrow();
+    });
+
+    it('restoreFromBackup puts the .bak body back', async () => {
+      const target = join(tempDir, 'undo.yaml');
+      await writeFile(target, 'before\n', 'utf-8');
+      await applyConfirmed({ content: 'after\n', targetPath: target, projectRoot: tempDir });
+      const restored = await restoreFromBackup({ targetPath: target, projectRoot: tempDir });
+      expect(restored.ok).toBe(true);
+      expect(await readFile(target, 'utf-8')).toBe('before\n');
+    });
+  });
+
+  describe('formatUnifiedDiff', () => {
+    it('marks changed lines with +/-', () => {
+      const diff = formatUnifiedDiff('a\nb\nc\n', 'a\nB\nc\n', 'file.yaml');
+      expect(diff).toContain('--- file.yaml');
+      expect(diff).toContain('+++ file.yaml');
+      expect(diff).toContain('-b');
+      expect(diff).toContain('+B');
+      expect(diff).toMatch(/^ a$/m);
     });
   });
 

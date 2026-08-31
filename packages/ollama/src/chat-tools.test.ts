@@ -276,6 +276,58 @@ describe('scaffold tool', () => {
     }));
     expect(result.ok).toBe(false);
     expect(result.summary).toContain('Unknown kind');
+    expect(result.summary).toContain('dialogue');
+    expect(result.summary).toContain('entity');
+  });
+
+  it('generates a dialogue and maps the artifact bucket', async () => {
+    const yaml = [
+      'id: pilgrim_talk',
+      'speakers:',
+      '  - pilgrim',
+      'entryNodeId: greeting',
+      'nodes:',
+      '  greeting:',
+      '    id: greeting',
+      '    speaker: pilgrim',
+      '    text: Hello.',
+    ].join('\n');
+    const tool = findToolForIntent('scaffold')!;
+    const result = await tool.execute(makeParams({
+      client: mockClient(yaml),
+      params: { kind: 'dialogue', theme: 'chapel pilgrim' },
+    }));
+    expect(result.ok).toBe(true);
+    expect(result.pendingWrite).toBeDefined();
+    expect(result.sessionEvents?.[0]?.detail).toContain('dialogues/');
+  });
+
+  it('passes repair:true so an invalid first draft triggers a second generate', async () => {
+    let calls = 0;
+    const client: OllamaTextClient = {
+      async generate(): Promise<PromptResult> {
+        calls++;
+        if (calls === 1) return { ok: true, text: 'id: broken_room' };
+        return {
+          ok: true,
+          text: [
+            'id: ruined_chapel',
+            'name: Ruined Chapel',
+            'zones:',
+            '  - id: nave',
+            '    name: Nave',
+          ].join('\n'),
+        };
+      },
+    };
+    const tool = findToolForIntent('scaffold')!;
+    const result = await tool.execute(makeParams({
+      client,
+      params: { kind: 'room', theme: 'chapel' },
+    }));
+    expect(result.ok).toBe(true);
+    expect(calls).toBe(2);
+    expect(result.output).toContain('ruined_chapel');
   });
 
   it('fails when client errors', async () => {

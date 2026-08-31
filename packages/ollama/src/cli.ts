@@ -15,6 +15,10 @@ import { createDistrict } from './commands/create-district.js';
 import { explainBeliefDivergence } from './commands/explain-belief-divergence.js';
 import { createLocationPack } from './commands/create-location-pack.js';
 import { createEncounterPack } from './commands/create-encounter-pack.js';
+import { createDialogue } from './commands/create-dialogue.js';
+import { createEntity } from './commands/create-entity.js';
+import { createAbility } from './commands/create-ability.js';
+import { createStatus } from './commands/create-status.js';
 import { explainDistrictState } from './commands/explain-district-state.js';
 import { explainFactionAlert } from './commands/explain-faction-alert.js';
 import { improveContent } from './commands/improve-content.js';
@@ -34,10 +38,12 @@ import {
 } from './macros.js';
 import { generatePreview, applyConfirmed, withinRoot, resolveUnderRoot } from './apply-preview.js';
 import {
-  loadSession, saveSession, deleteSession, createSession,
+  loadSession, saveSession, createSession,
   addThemes, addConstraints, addArtifact, addCritiqueIssues,
   resolveIssue, recordEvent, renderSessionContext, formatSessionStatus,
   formatSessionHistory,
+  listSessions, formatSessionList, switchSession, resumeNamedSession,
+  endSession, exportSession, artifactBucketForKind, ARTIFACT_KINDS,
 } from './session.js';
 import { sessionDoctor, formatDoctorReport } from './session-doctor.js';
 import type { DesignSession } from './session.js';
@@ -237,7 +243,7 @@ function enforceValidationGate(
     'INVALID_CONTENT',
     `generated ${kind} failed schema validation (${errors.length} error(s)):\n${list}`,
     'Nothing was emitted or written. Re-run without --validate to inspect the draft, '
-    + 'tighten --theme/--constraints, or use --repair (room/quest) for an automatic fix attempt. '
+    + 'tighten --theme/--constraints, or use --repair for an automatic fix attempt. '
     + 'Pipe the errors to "ai explain-validation-error" for a plain-English fix guide.',
   );
 }
@@ -267,7 +273,10 @@ const HELP_SIG_WIDTH = 28;
 const SESSION_COMMANDS: ReadonlyArray<{ signature: string; description: string }> = [
   { signature: 'session start <name>', description: 'Start a named design session' },
   { signature: 'session status', description: 'Show current session state' },
-  { signature: 'session end', description: 'End the current session' },
+  { signature: 'session list', description: 'List named design sessions' },
+  { signature: 'session switch <name>', description: 'Switch to a named session' },
+  { signature: 'session export [path]', description: 'Export the active session' },
+  { signature: 'session end', description: 'Archive and end the session' },
   { signature: 'session add-theme <text>', description: 'Add a theme to the active session' },
   { signature: 'session add-constraint <t>', description: 'Add a constraint to the active session' },
   { signature: 'session doctor', description: 'Health check the session file' },
@@ -308,6 +317,10 @@ export function formatCliHelp(version: string): string {
     helpRow('create-district', 'Generate a district configuration'),
     helpRow('create-location-pack', 'Generate district + rooms bundle'),
     helpRow('create-encounter-pack', 'Generate room + entities + quest bundle'),
+    helpRow('create-dialogue', 'Generate a dialogue tree'),
+    helpRow('create-entity', 'Generate an entity blueprint'),
+    helpRow('create-ability', 'Generate an ability definition'),
+    helpRow('create-status', 'Generate a status definition'),
     '',
     'Iterate:',
     helpRow('improve-content', 'Revise content toward a goal (pipe YAML)'),
@@ -365,7 +378,7 @@ export function formatCliHelp(version: string): string {
     flagRow('--zones <ids>', 'Comma-separated existing zone IDs'),
     flagRow('--constraints <c>', 'Comma-separated constraints'),
     flagRow('--difficulty <level>', 'Encounter difficulty hint'),
-    flagRow('--kind <type>', 'Scaffold kind: room, faction, district, location-pack, encounter-pack'),
+    flagRow('--kind <type>', 'Scaffold kind: room, faction, district, quest, pack, dialogue, entity, ability, status'),
     flagRow('--repair', 'Attempt to fix invalid generated content'),
     flagRow('--validate', 'Refuse to emit/write create-* content that fails schema validation'),
     flagRow('--write <path>', 'Write generated output to file instead of stdout (sandboxed)'),
@@ -461,11 +474,41 @@ async function runCliInner(args: string[]): Promise<void> {
           console.error(`Session "${existing.name}" already active. End it first with: ai session end`);
           process.exit(1);
         }
+        const resumed = await resumeNamedSession(projectRoot, name);
+        if (resumed) {
+          console.log(`Resumed session "${resumed.name}".`);
+          return;
+        }
         const session = createSession(name);
         if (flags.themes?.length) addThemes(session, flags.themes);
         if (flags.constraints?.length) addConstraints(session, flags.constraints);
         await saveSession(projectRoot, session);
         console.log(`Session "${name}" started.`);
+        return;
+      }
+      case 'list': {
+        const slots = await listSessions(projectRoot);
+        console.log(formatSessionList(slots));
+        return;
+      }
+      case 'switch': {
+        const name = args[2] ?? flags.session;
+        if (!name) {
+          console.error('Provide a session name to switch to.');
+          process.exit(1);
+        }
+        const switched = await switchSession(projectRoot, name);
+        console.log(`Switched to session "${switched.name}".`);
+        return;
+      }
+      case 'export': {
+        const dest = (args[2] && !args[2].startsWith('-')) ? args[2] : flags.write;
+        const exported = await exportSession(projectRoot, dest);
+        if (exported.path) {
+          console.log(`Exported session to ${exported.path}`);
+        } else {
+          console.log(exported.json);
+        }
         return;
       }
       case 'status': {
@@ -478,8 +521,12 @@ async function runCliInner(args: string[]): Promise<void> {
         return;
       }
       case 'end': {
-        const deleted = await deleteSession(projectRoot);
-        console.log(deleted ? 'Session ended.' : 'No active session to end.');
+        const ended = await endSession(projectRoot);
+        if (ended.archived) {
+          console.log(`Session archived: ${ended.archivePath}`);
+        } else {
+          console.log('No active session to end.');
+        }
         return;
       }
       case 'add-theme': {
@@ -547,13 +594,9 @@ async function runCliInner(args: string[]): Promise<void> {
 
   if (session) {
     const n = session.artifacts;
-    const counts = [
-      n.districts.length && `${n.districts.length} districts`,
-      n.factions.length && `${n.factions.length} factions`,
-      n.quests.length && `${n.quests.length} quests`,
-      n.rooms.length && `${n.rooms.length} rooms`,
-      n.packs.length && `${n.packs.length} packs`,
-    ].filter(Boolean);
+    const counts = ARTIFACT_KINDS
+      .map((kind) => n[kind].length && `${n[kind].length} ${kind}`)
+      .filter(Boolean);
     const openIssues = session.issues.filter(i => i.status === 'open').length;
     const parts = [session.name, ...counts];
     if (openIssues) parts.push(`${openIssues} open issues`);
@@ -664,6 +707,8 @@ async function runCliInner(args: string[]): Promise<void> {
         theme,
         rulesetId: flags.ruleset,
         districtIds: flags.districts,
+        constraints: flags.constraints,
+        repair: flags.repair,
         sessionContext: sessionCtx,
       });
 
@@ -672,6 +717,7 @@ async function runCliInner(args: string[]): Promise<void> {
         process.exit(1);
       }
 
+      printGenerationNotes(result);
       enforceValidationGate('faction', result.validation, flags.validate);
       await emit(result.yaml, flags.write);
       printValidationWarnings(result.validation);
@@ -755,6 +801,8 @@ async function runCliInner(args: string[]): Promise<void> {
         rulesetId: flags.ruleset,
         factions: flags.factions,
         existingZones: flags.zones,
+        constraints: flags.constraints,
+        repair: flags.repair,
         sessionContext: sessionCtx,
       });
 
@@ -763,6 +811,7 @@ async function runCliInner(args: string[]): Promise<void> {
         process.exit(1);
       }
 
+      printGenerationNotes(result);
       enforceValidationGate('district', result.validation, flags.validate);
       await emit(result.yaml, flags.write);
       printValidationWarnings(result.validation);
@@ -818,6 +867,8 @@ async function runCliInner(args: string[]): Promise<void> {
         theme,
         rulesetId: flags.ruleset,
         factions: flags.factions,
+        constraints: flags.constraints,
+        repair: flags.repair,
         sessionContext: sessionCtx,
       });
 
@@ -826,6 +877,7 @@ async function runCliInner(args: string[]): Promise<void> {
         process.exit(1);
       }
 
+      printGenerationNotes(result);
       enforceValidationGate('location pack', result.validation, flags.validate);
       await emit(result.yaml, flags.write);
       printValidationWarnings(result.validation);
@@ -850,6 +902,8 @@ async function runCliInner(args: string[]): Promise<void> {
         districtId: flags.district,
         factions: flags.factions,
         difficulty: flags.difficulty,
+        constraints: flags.constraints,
+        repair: flags.repair,
         sessionContext: sessionCtx,
       });
 
@@ -858,12 +912,50 @@ async function runCliInner(args: string[]): Promise<void> {
         process.exit(1);
       }
 
+      printGenerationNotes(result);
       enforceValidationGate('encounter pack', result.validation, flags.validate);
       await emit(result.yaml, flags.write);
       printValidationWarnings(result.validation);
       if (session) {
         const idMatch = result.yaml.match(/^id:\s*(\S+)/m);
         if (idMatch) addArtifact(session, 'packs', idMatch[1]);
+        await saveSession(projectRoot, session);
+      }
+      break;
+    }
+
+    case 'create-dialogue':
+    case 'create-entity':
+    case 'create-ability':
+    case 'create-status': {
+      const theme = flags.theme;
+      if (!theme) {
+        console.error('--theme is required');
+        process.exit(1);
+      }
+      const kind = command.replace('create-', '');
+      const run = kind === 'dialogue' ? createDialogue
+        : kind === 'entity' ? createEntity
+        : kind === 'ability' ? createAbility
+        : createStatus;
+      const result = await run(client, {
+        theme,
+        rulesetId: flags.ruleset,
+        constraints: flags.constraints,
+        repair: flags.repair,
+        sessionContext: sessionCtx,
+      });
+      if (!result.ok) {
+        console.error(result.error);
+        process.exit(1);
+      }
+      printGenerationNotes(result);
+      enforceValidationGate(kind, result.validation, flags.validate);
+      await emit(result.yaml, flags.write);
+      printValidationWarnings(result.validation);
+      if (session) {
+        const idMatch = result.yaml.match(/^id:\s*(\S+)/m);
+        if (idMatch) addArtifact(session, artifactBucketForKind(kind), idMatch[1]);
         await saveSession(projectRoot, session);
       }
       break;

@@ -50,6 +50,21 @@ export type { CreateLocationPackInput, GeneratedLocationPackResult } from './com
 export { createEncounterPack } from './commands/create-encounter-pack.js';
 export type { CreateEncounterPackInput, GeneratedEncounterPackResult } from './commands/create-encounter-pack.js';
 
+export { createDialogue } from './commands/create-dialogue.js';
+export type { CreateDialogueInput, GeneratedDialogueResult } from './commands/create-dialogue.js';
+
+export { createEntity } from './commands/create-entity.js';
+export type { CreateEntityInput, GeneratedEntityResult } from './commands/create-entity.js';
+
+export { createAbility } from './commands/create-ability.js';
+export type { CreateAbilityInput, GeneratedAbilityResult } from './commands/create-ability.js';
+
+export { createStatus } from './commands/create-status.js';
+export type { CreateStatusInput, GeneratedStatusResult } from './commands/create-status.js';
+
+export { generateWithRepair } from './generate-with-repair.js';
+export type { GeneratedTextResult as GeneratedRepairResult, GenerateWithRepairInput } from './generate-with-repair.js';
+
 export { explainDistrictState } from './commands/explain-district-state.js';
 export type { DistrictStateInput } from './commands/explain-district-state.js';
 
@@ -107,6 +122,10 @@ export {
   validateGeneratedDistrict,
   validateGeneratedLocationPack,
   validateGeneratedEncounterPack,
+  validateGeneratedEntity,
+  validateGeneratedDialogue,
+  validateGeneratedAbility,
+  validateGeneratedStatus,
   validateFactionDefinition,
   validateDistrictDefinition,
   validateLocationPackDefinition,
@@ -121,6 +140,12 @@ export {
   SessionLoadError,
   saveSession,
   deleteSession,
+  endSession,
+  listSessions,
+  formatSessionList,
+  switchSession,
+  resumeNamedSession,
+  exportSession,
   createSession,
   addThemes,
   addConstraints,
@@ -132,8 +157,18 @@ export {
   renderSessionContext,
   formatSessionStatus,
   formatSessionHistory,
+  sessionSlug,
+  artifactBucketForKind,
+  emptyArtifacts,
+  normalizeArtifacts,
+  countArtifacts,
   MAX_SESSION_HISTORY_EVENTS,
   MAX_SESSION_JSON_BYTES,
+  ARTIFACT_KINDS,
+  REQUIRED_ARTIFACT_KINDS,
+  OPTIONAL_ARTIFACT_KINDS,
+  SESSION_FILENAME,
+  SESSIONS_DIR,
 } from './session.js';
 export type {
   DesignSession,
@@ -141,6 +176,8 @@ export type {
   SessionIssue,
   SessionEvent,
   SessionEventKind,
+  SessionSlot,
+  ArtifactKind,
 } from './session.js';
 
 // Session doctor
@@ -167,7 +204,7 @@ export type {
 } from './macros.js';
 
 // Apply preview
-export { generatePreview, applyConfirmed } from './apply-preview.js';
+export { generatePreview, applyConfirmed, formatUnifiedDiff, restoreFromBackup } from './apply-preview.js';
 export type { ApplyPreviewInput, ApplyPreviewResult, ApplyWriteResult } from './apply-preview.js';
 
 // Chat

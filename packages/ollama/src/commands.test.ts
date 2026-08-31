@@ -12,6 +12,10 @@ import { createDistrict } from './commands/create-district.js';
 import { explainBeliefDivergence } from './commands/explain-belief-divergence.js';
 import { createLocationPack } from './commands/create-location-pack.js';
 import { createEncounterPack } from './commands/create-encounter-pack.js';
+import { createDialogue } from './commands/create-dialogue.js';
+import { createEntity } from './commands/create-entity.js';
+import { createAbility } from './commands/create-ability.js';
+import { createStatus } from './commands/create-status.js';
 import { explainDistrictState } from './commands/explain-district-state.js';
 import { explainFactionAlert } from './commands/explain-faction-alert.js';
 import { improveContent } from './commands/improve-content.js';
@@ -1292,5 +1296,107 @@ describe('compareReplays', () => {
       after: '{}',
     });
     expect(result.ok).toBe(false);
+  });
+});
+
+describe('createFaction (repair)', () => {
+  it('runs a repair pass when requested and first output is invalid', async () => {
+    let callCount = 0;
+    const client: OllamaTextClient = {
+      async generate(_input: PromptInput): Promise<PromptResult> {
+        callCount++;
+        if (callCount === 1) return { ok: true, text: 'id: broken_faction' };
+        return {
+          ok: true,
+          text: 'id: dock_rats\nname: The Dock Rats\nmembers:\n  - rat_boss',
+        };
+      },
+    };
+    const result = await createFaction(client, { theme: 'test', repair: true });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.repaired).toBe(true);
+      expect(result.yaml).toContain('dock_rats');
+    }
+    expect(callCount).toBe(2);
+  });
+});
+
+describe('createDialogue / createEntity / createAbility / createStatus', () => {
+  it('createDialogue returns yaml and validation', async () => {
+    const yaml = [
+      'id: pilgrim_talk',
+      'speakers:',
+      '  - pilgrim',
+      'entryNodeId: greeting',
+      'nodes:',
+      '  greeting:',
+      '    id: greeting',
+      '    speaker: pilgrim',
+      '    text: Hello.',
+    ].join('\n');
+    const result = await createDialogue(mockClient(yaml), { theme: 'chapel pilgrim' });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.yaml).toContain('pilgrim_talk');
+      expect(result.validation).toBeDefined();
+    }
+  });
+
+  it('createEntity returns yaml and validation', async () => {
+    const yaml = 'id: chapel_guard\ntype: npc\nname: Chapel Guard';
+    const result = await createEntity(mockClient(yaml), { theme: 'chapel guard' });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.yaml).toContain('chapel_guard');
+  });
+
+  it('createAbility returns yaml and validation', async () => {
+    const yaml = [
+      'id: fireball',
+      'name: Fireball',
+      'verb: cast',
+      'tags:',
+      '  - magic',
+      'target:',
+      '  type: single',
+      'effects:',
+      '  - type: damage',
+      '    params:',
+      '      amount: 10',
+    ].join('\n');
+    const result = await createAbility(mockClient(yaml), { theme: 'fire magic' });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.yaml).toContain('fireball');
+  });
+
+  it('createStatus returns yaml and validation', async () => {
+    const yaml = [
+      'id: burning',
+      'name: Burning',
+      'tags:',
+      '  - fire',
+      'stacking: refresh',
+    ].join('\n');
+    const result = await createStatus(mockClient(yaml), { theme: 'on fire' });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.yaml).toContain('burning');
+  });
+
+  it('createEntity runs a repair pass when requested', async () => {
+    let callCount = 0;
+    const client: OllamaTextClient = {
+      async generate(_input: PromptInput): Promise<PromptResult> {
+        callCount++;
+        if (callCount === 1) return { ok: true, text: 'id: broken_npc' };
+        return { ok: true, text: 'id: chapel_guard\ntype: npc\nname: Chapel Guard' };
+      },
+    };
+    const result = await createEntity(client, { theme: 'guard', repair: true });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.repaired).toBe(true);
+      expect(result.yaml).toContain('chapel_guard');
+    }
+    expect(callCount).toBe(2);
   });
 });

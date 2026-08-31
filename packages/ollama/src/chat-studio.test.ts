@@ -684,6 +684,11 @@ describe('COMMAND_GROUPS', () => {
     expect(COMMAND_GROUPS.some(g => g.name === 'Studio')).toBe(true);
   });
 
+  it('Studio group includes /session', () => {
+    const studio = COMMAND_GROUPS.find(g => g.name === 'Studio');
+    expect(studio?.commands.some(c => c.cmd === '/session')).toBe(true);
+  });
+
   it('includes Scaffold group', () => {
     expect(COMMAND_GROUPS.some(g => g.name === 'Scaffold')).toBe(true);
   });
@@ -763,6 +768,7 @@ describe('formatGroupedHelp', () => {
     expect(output).toContain('Studio');
     expect(output).toContain('/studio');
     expect(output).toContain('/history');
+    expect(output).toContain('/session');
     expect(output).not.toContain('AI RPG ENGINE — Commands');
   });
 

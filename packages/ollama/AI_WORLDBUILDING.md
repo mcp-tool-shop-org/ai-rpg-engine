@@ -128,7 +128,7 @@ Formats: `plain` (default), `forensic` (step-by-step with tick numbers), `author
 
 Every `create-*` command validates its generated content against the engine schemas. Two flags control what happens to an invalid draft.
 
-### `--validate` — refuse invalid output (all six `create-*` commands)
+### `--validate` — refuse invalid output (all `create-*` commands)
 
 With `--validate`, content that fails schema validation is neither printed nor written. The command reports a structured `INVALID_CONTENT` error (the failing paths + messages) and exits `1`:
 
@@ -139,9 +139,9 @@ ai create-district --theme "underground fungal caverns" --validate
 
 Without `--validate`, the honest default stands: the draft is emitted with its validation warnings on stderr, and the engine validates strictly at load anyway.
 
-### `--repair` — attempt a fix (`create-room` and `create-quest` only)
+### `--repair` — attempt a fix (all `create-*` commands)
 
-`create-room` and `create-quest` can feed validation errors back to the model for one correction pass:
+Every `create-*` command can feed validation errors back to the model for one correction pass:
 
 1. First pass: generate content from the theme
 2. Validate against the engine schema
@@ -157,7 +157,7 @@ What you'll see on stderr:
 - `Repair failed: ...` — the repair generate call itself failed (daemon down, timeout, model not pulled); original draft is kept
 - `Generated on first pass (has validation warnings).` — valid enough but not perfect
 
-`--validate` and `--repair` compose: with both, `create-room` / `create-quest` attempts a repair first, then still refuses to emit if the result is invalid.
+`--validate` and `--repair` compose: with both, the command attempts a repair first, then still refuses to emit if the result is invalid.
 
 ---
 
@@ -241,13 +241,17 @@ Both are clamped to sane values: a non-finite or sub-1 `maxAttempts`, or a negat
 | Command | Input | Output |
 |---------|-------|--------|
 | `create-room` | `--theme` | Room YAML (validated, repairable) |
-| `create-faction` | `--theme` | Faction config YAML (validated) |
+| `create-faction` | `--theme` | Faction config YAML (validated, repairable) |
 | `create-quest` | `--theme` | Quest YAML (validated, repairable) |
-| `create-district` | `--theme` | District config YAML (validated) |
-| `create-location-pack` | `--theme` | District + rooms YAML (validated) |
-| `create-encounter-pack` | `--theme` | Room + entities + quest YAML (validated) |
+| `create-district` | `--theme` | District config YAML (validated, repairable) |
+| `create-location-pack` | `--theme` | District + rooms YAML (validated, repairable) |
+| `create-encounter-pack` | `--theme` | Room + entities + quest YAML (validated, repairable) |
+| `create-dialogue` | `--theme` | Dialogue tree YAML (validated, repairable) |
+| `create-entity` | `--theme` | Entity blueprint YAML (validated, repairable) |
+| `create-ability` | `--theme` | Ability YAML (validated, repairable) |
+| `create-status` | `--theme` | Status YAML (validated, repairable) |
 
-All six `create-*` commands validate against the engine schemas and honor `--validate`.
+All `create-*` commands validate against the engine schemas and honor `--validate` / `--repair`.
 
 ### Diagnose
 | Command | Input | Output |
@@ -262,8 +266,8 @@ All six `create-*` commands validate against the engine schemas and honor `--val
 ### Validate & Repair
 | Flag | Commands | Behavior |
 |------|----------|----------|
-| `--validate` | all six `create-*` | Refuse to emit/write content that fails schema validation (exit 1) |
-| `--repair` | `create-room`, `create-quest` | Single automatic repair pass on validation failure |
+| `--validate` | all `create-*` | Refuse to emit/write content that fails schema validation (exit 1) |
+| `--repair` | all `create-*` | Single automatic repair pass on validation failure |
 
 ---
 
