@@ -62,6 +62,8 @@ export {
   buildSettlementMemo,
   settlementMemoPrefix,
   expectedSettlementMemo,
+  ledgerNetworkLabel,
+  ledgerNetworkQualifier,
   // NFT unique-gear layer (v2 slice).
   NFT_URI_SCHEMA_VERSION,
   buildItemNFTUri,

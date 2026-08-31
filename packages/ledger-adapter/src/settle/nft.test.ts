@@ -562,6 +562,70 @@ describe('settleEquipmentNFTs — retry-safety (a pending ref resumes without re
   });
 });
 
+describe('settleEquipmentNFTs — loadout-aware release', () => {
+  it('a minted item that left the snapshot is transferred back and burned, not skipped', async () => {
+    const transport = new DryRunTransport();
+    const state = freshState();
+    const first = await settleEquipmentNFTs(transport, state, { items: [makeItem()] }, DEPS);
+    expect(first.minted).toEqual(['cutlass']);
+    expect(first.items[0]).toMatchObject({ itemId: 'cutlass', name: 'Cutlass', status: 'minted' });
+    expect(first.message).toMatch(/Cutlass \([^)]+\) is now yours on Dry-run/);
+    expect(first.message).toMatch(state.nfts?.cutlass.nftId as string);
+    const nftId = state.nfts?.cutlass.nftId as string;
+    expect((await transport.accountNfts(DEPS.playerAddress)).map((n) => n.nftId)).toEqual([nftId]);
+
+    const empty = await settleEquipmentNFTs(transport, state, { items: [] }, DEPS);
+    expect(empty.success).toBe(true);
+    expect(empty.skipped).toEqual([]);
+    expect(empty.released).toEqual(['cutlass']);
+    expect(empty.pending).toEqual([]);
+    expect(empty.items.some((i) => i.status === 'skipped')).toBe(false);
+    expect(empty.message).toMatch(/left the loadout and was released on Dry-run/);
+    expect(empty.message).toMatch(nftId);
+    expect(state.nfts?.cutlass).toBeUndefined();
+    expect(await transport.accountNfts(DEPS.playerAddress)).toHaveLength(0);
+    expect(await transport.accountNfts(DEPS.issuerAddress)).toHaveLength(0);
+  });
+
+  it('a pending leftover (issuer still holds) is burned without treating it as skipped', async () => {
+    const inner = new DryRunTransport();
+    const flaky = new FlakyNFTTransport(inner, 'nftCreateSellOffer', 1);
+    const state = freshState();
+    const first = await settleEquipmentNFTs(flaky, state, { items: [makeItem()] }, DEPS);
+    expect(first.success).toBe(false);
+    expect(state.nfts?.cutlass.status).toBe('pending');
+    expect(first.pending).toContain('cutlass');
+    expect(await inner.accountNfts(DEPS.issuerAddress)).toHaveLength(1);
+
+    const empty = await settleEquipmentNFTs(inner, state, { items: [] }, DEPS);
+    expect(empty.released).toEqual(['cutlass']);
+    expect(empty.skipped).toEqual([]);
+    expect(state.nfts?.cutlass).toBeUndefined();
+    expect(await inner.accountNfts(DEPS.playerAddress)).toHaveLength(0);
+    expect(await inner.accountNfts(DEPS.issuerAddress)).toHaveLength(0);
+  });
+
+  it('a failed release accept resumes only the accept, never a second reverse offer', async () => {
+    const inner = new DryRunTransport();
+    const state = freshState();
+    await settleEquipmentNFTs(inner, state, { items: [makeItem()] }, DEPS);
+    const hatch = new OfferHatchTransport(inner, { failAccept: 1 });
+    const first = await settleEquipmentNFTs(hatch, state, { items: [] }, DEPS);
+    expect(first.success).toBe(false);
+    expect(first.pending).toContain('cutlass');
+    expect(first.released).toEqual([]);
+    expect(hatch.createCalls).toBe(1);
+    expect(state.nfts?.cutlass.releaseOfferIndex).toBeTruthy();
+
+    const retry = await settleEquipmentNFTs(hatch, state, { items: [] }, DEPS);
+    expect(retry.success).toBe(true);
+    expect(retry.released).toEqual(['cutlass']);
+    expect(hatch.createCalls).toBe(1);
+    expect(hatch.acceptCalls).toBe(2);
+    expect(state.nfts?.cutlass).toBeUndefined();
+  });
+});
+
 describe('settleEquipmentNFTs — determinism', () => {
   it('two independent fresh runs against fresh transports produce identical results', async () => {
     async function run(): Promise<{ result: NFTSettlementResult; nftId: string; uri: string }> {

@@ -1328,3 +1328,46 @@ describe('seed restore and attributable retry', () => {
     expect(result.message).toMatch(/connect\(\)/);
   });
 });
+
+describe('network-named copy and public getSeed', () => {
+  let transport: FakeTransport;
+  const snapshot: TradeableSnapshot = { coin: 100, items: {} };
+
+  beforeEach(() => {
+    transport = createFakeTransport();
+  });
+
+  it('stamps network on enable/settle and names Dry-run in success and quiet-ledger copy', async () => {
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'g', runId: 'r1' });
+    const state = freshState();
+    const enabled = await adapter.enable(state, snapshot);
+    expect(enabled.success).toBe(true);
+    expect(enabled.network).toBe('fake-dry-run');
+    expect(enabled.message).toMatch(/Dry-run — no real value/);
+    expect(enabled.message).toMatch(/receipted/i);
+
+    const settled = await adapter.settle(state, { coin: 90, items: {} }, 1, 'Cedar Wake');
+    expect(settled.success).toBe(true);
+    expect(settled.network).toBe('fake-dry-run');
+    expect(settled.message).toMatch(/^Settled on Dry-run\. Receipt:/);
+
+    transport.failNext(1);
+    const quiet = await adapter.settle(state, { coin: 80, items: {} }, 2, 'Market Row');
+    expect(quiet.success).toBe(false);
+    expect(quiet.network).toBe('fake-dry-run');
+    expect(quiet.message).toMatch(/^Dry-run was quiet/);
+    expect(quiet.message).toMatch(/not mainnet value/);
+    expect(quiet.message).toMatch(/fake transport failure|tecFAKE/);
+  });
+
+  it('exposes getSeed after enable so a host can hydrate NFT settlement without re-plumbing', async () => {
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'g', runId: 'r1' });
+    const state = freshState();
+    await adapter.enable(state, snapshot);
+    expect(adapter.gameId).toBe('g');
+    expect(adapter.runId).toBe('r1');
+    expect(adapter.getSeed(state.playerAddress)).toBeTruthy();
+    expect(adapter.getSeed(state.issuerAddress)).toBeTruthy();
+    expect(adapter.getSeed('rNobody')).toBeUndefined();
+  });
+});

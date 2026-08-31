@@ -5,7 +5,15 @@
 // test networks are accepted.
 
 import { describe, it, expect } from 'vitest';
-import { TESTNET_HOSTS, assertTestnetHost, resolveTestnetEndpoint } from './guard.js';
+import {
+  TESTNET_HOSTS,
+  TESTNET_NETWORK_IDS,
+  MAINNET_NETWORK_ID,
+  assertTestnetHost,
+  assertTestnetLedgerIdentity,
+  networkNameFromEndpoint,
+  resolveTestnetEndpoint,
+} from './guard.js';
 
 describe('guard — TESTNET_HOSTS', () => {
   it('contains exactly the two allowed testnet hosts', () => {
@@ -81,5 +89,32 @@ describe('guard — accepts testnet', () => {
   it('resolveTestnetEndpoint returns the devnet url unchanged', () => {
     const url = 'wss://s.devnet.rippletest.net:51233';
     expect(resolveTestnetEndpoint(url)).toBe(url);
+  });
+});
+
+describe('guard — post-connect ledger identity', () => {
+  it('allows testnet network_id 1 and devnet network_id 2', () => {
+    expect(TESTNET_NETWORK_IDS.has(1)).toBe(true);
+    expect(TESTNET_NETWORK_IDS.has(2)).toBe(true);
+    expect(TESTNET_NETWORK_IDS.has(MAINNET_NETWORK_ID)).toBe(false);
+    expect(() => assertTestnetLedgerIdentity({ network_id: 1 })).not.toThrow();
+    expect(() => assertTestnetLedgerIdentity({ network_id: 2, network: 'devnet' })).not.toThrow();
+    expect(() => assertTestnetLedgerIdentity({ network: 'testnet' })).not.toThrow();
+  });
+
+  it('refuses mainnet network_id 0 with the same Error class as assertTestnetHost', () => {
+    expect(() => assertTestnetLedgerIdentity({ network_id: 0, network: 'mainnet' })).toThrow(Error);
+    expect(() => assertTestnetLedgerIdentity({ network_id: 0 })).toThrow(/non-testnet ledger identity/i);
+    expect(() => assertTestnetLedgerIdentity({ network: 'mainnet' })).toThrow(/no override/i);
+  });
+
+  it('fails closed on missing identity', () => {
+    expect(() => assertTestnetLedgerIdentity({})).toThrow(/unrecognized ledger identity/i);
+    expect(() => assertTestnetLedgerIdentity({ network_id: 99 })).toThrow(/unrecognized ledger identity/i);
+  });
+
+  it('networkNameFromEndpoint maps altnet -> testnet and devnet host -> devnet', () => {
+    expect(networkNameFromEndpoint('wss://s.altnet.rippletest.net:51233')).toBe('testnet');
+    expect(networkNameFromEndpoint('wss://s.devnet.rippletest.net:51233')).toBe('devnet');
   });
 });

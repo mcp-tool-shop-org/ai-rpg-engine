@@ -14,7 +14,7 @@
 // XRPL seed shows up anywhere in it, however deeply nested.
 
 import { dirname, join } from 'node:path';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import type { LedgerAdapterState, SecretsSidecar } from '../contracts.js';
 
 // ── Sidecar CRUD (pure — no file IO) ────────────────────────────────────────
@@ -130,4 +130,31 @@ export function loadSidecar(path: string): SecretsSidecar {
 export function saveSidecar(path: string, sidecar: SecretsSidecar): void {
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, serializeSidecar(sidecar), 'utf-8');
+}
+
+/** `putSeed` / `getSeed` callbacks for createLedgerAdapter wired to a sidecar file. */
+export type SidecarBindings = {
+  putSeed: (address: string, seed: string) => void;
+  getSeed: (address: string) => string | undefined;
+};
+
+/**
+ * Load (or create) `<gameDir>/.secrets/ledger-secrets.json` and return the
+ * `{ putSeed, getSeed }` pair `createLedgerAdapter` accepts. Every `putSeed`
+ * persists immediately so a restarted process that calls `bindSidecar` again
+ * can hydrate `seedCache` without the host re-plumbing secrets.
+ */
+export function bindSidecar(gameDir: string): SidecarBindings {
+  const path = sidecarPath(gameDir);
+  let sidecar: SecretsSidecar = existsSync(path) ? loadSidecar(path) : createSidecar();
+  return {
+    // Arrow functions so the names resolve to the module-level CRUD helpers,
+    // not to these properties (a method shorthand is a named function expression
+    // and would recurse into itself).
+    putSeed: (address: string, seed: string): void => {
+      putSeed(sidecar, address, seed);
+      saveSidecar(path, sidecar);
+    },
+    getSeed: (address: string): string | undefined => getSeed(sidecar, address),
+  };
 }

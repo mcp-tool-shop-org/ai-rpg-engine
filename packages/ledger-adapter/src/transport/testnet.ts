@@ -60,7 +60,12 @@ import type {
   TxResult,
   WalletHandle,
 } from '../contracts.js';
-import { assertTestnetHost, resolveTestnetEndpoint } from '../security/index.js';
+import {
+  assertTestnetHost,
+  assertTestnetLedgerIdentity,
+  networkNameFromEndpoint,
+  resolveTestnetEndpoint,
+} from '../security/index.js';
 
 // ── Wall-clock write discipline (backpack.py XRPL_REQUEST_TIMEOUT/WRITE_DEADLINE) ──
 // Every network call this transport makes is bounded by a wall-clock deadline
@@ -236,7 +241,7 @@ function mapSubmitResponse(res: {
  * construction, before any transport method could ever be called.
  */
 export class TestnetTransport implements LedgerTransport, NFTTransport {
-  readonly networkName = 'testnet';
+  readonly networkName: 'testnet' | 'devnet';
 
   private client: XrplClientLike;
   private connected = false;
@@ -252,6 +257,7 @@ export class TestnetTransport implements LedgerTransport, NFTTransport {
 
   constructor(url: string = DEFAULT_TESTNET_URL) {
     const resolved = resolveTestnetEndpoint(url);
+    this.networkName = networkNameFromEndpoint(resolved);
     this.client = new xrpl.Client(resolved);
   }
 
@@ -277,6 +283,24 @@ export class TestnetTransport implements LedgerTransport, NFTTransport {
   async connect(): Promise<void> {
     if (this.connected) return;
     await withDeadline(this.client.connect(), REQUEST_DEADLINE_MS, 'connect()');
+    try {
+      const res = await withDeadline(
+        this.client.request({ command: 'server_info' } as xrpl.ServerInfoRequest),
+        REQUEST_DEADLINE_MS,
+        'server_info',
+      );
+      const info = (res as { result?: { info?: { network_id?: unknown; network?: unknown } } }).result
+        ?.info;
+      assertTestnetLedgerIdentity(info ?? {});
+    } catch (err) {
+      this.connected = false;
+      try {
+        await withDeadline(this.client.disconnect(), REQUEST_DEADLINE_MS, 'disconnect() after identity miss');
+      } catch {
+        // Best-effort close — the identity failure is what the caller sees.
+      }
+      throw err instanceof Error ? err : new Error(errorMessage(err));
+    }
     this.connected = true;
   }
 

@@ -37,6 +37,9 @@ import {
   TestnetTransport,
   enableFromWorld,
   settleCheckpoint,
+  settleAllFromWorld,
+  bindSidecar,
+  resumeAdapter,
   DEFAULT_LEDGER_CONFIG,
 } from '@ai-rpg-engine/ledger-adapter';
 
@@ -44,9 +47,14 @@ const config    = { ...DEFAULT_LEDGER_CONFIG, mode: 'ledger' };
 const state     = createInitialState(config);
 const transport = new TestnetTransport();
 await transport.connect();
-const adapter   = createLedgerAdapter(transport, config, {
+
+// Bind the gitignored sidecar so save/reload can sign without re-plumbing seeds.
+// Default putSeed is a no-op; without getSeed a restarted process cannot settle.
+const sidecar = bindSidecar(gameDir); // <gameDir>/.secrets/ledger-secrets.json
+const adapter = createLedgerAdapter(transport, config, {
   gameId: 'my-game',
   runId: 'run-1',
+  ...sidecar,
 });
 
 // At run start (a checkpoint): mint the player's starting coin + inventory.
@@ -56,7 +64,39 @@ await enableFromWorld(world, playerId, adapter, state);
 
 // At the next checkpoint (town / market / save): settle the net delta on testnet.
 await settleCheckpoint(world, playerId, adapter, state, 1, 'Market Row');
+
+// Same checkpoint, including unique-gear NFTs (mint / resume pending / relic growth).
+await settleAllFromWorld(world, playerId, adapter, state, 1, 'Market Row', {
+  transport,
+  catalog, // the pack's ItemCatalog
+});
 ```
+
+`EnableResult` / `SettlementResult` / `NFTSettlementResult` stamp `network` from
+the transport (`testnet` | `devnet` | `dry-run`) and name it in the message
+(`Settled on XRPL Testnet. Receipt: …`). After `connect()`, the live transport
+asks `server_info` and refuses unless `network_id` is testnet (1) or devnet (2).
+
+### Save / reload
+
+Wallet seeds never go in the save file. After `deserializeState`, a **new**
+adapter instance needs the sidecar:
+
+```ts
+const restored = deserializeState(save.ledger);
+const adapter  = createLedgerAdapter(transport, config, {
+  gameId: 'my-game',
+  runId: 'run-1',
+  ...bindSidecar(gameDir),
+});
+await resumeAdapter(adapter, restored, snapshot, {
+  transport,
+  snapshot: equipmentSnapshot, // finishes any status:'pending' NFT transfer
+});
+```
+
+`adapter.getSeed(address)` is public — checkpoint NFT wrappers hydrate issuer
+and player seeds from this cache instead of taking faucet seeds per call.
 
 For dry-run tests, swap `TestnetTransport` for `DryRunTransport` — no network, no
 `xrpl` dependency.
@@ -110,7 +150,10 @@ The fungible layer above binds `coin` and stackable consumables. Unique gear —
 the `equipment` package's one-of-a-kind items, with rarity, provenance, and relic
 growth — is a **distinct seam** carried *alongside* it, never conflated: a
 `EquipmentSnapshot` (its own firewall-pure read path over the player's loadout),
-`NFTokenRef` state keyed one-per-`gameItemId`, and `settleEquipmentNFTs`.
+`NFTokenRef` state keyed one-per-`gameItemId`, and `settleEquipmentFromWorld`
+(invoked from `settleAllFromWorld` at the same coordinator checkpoint as the
+fungible settle — never inside the tick). `settleEquipmentNFTs` remains the
+low-level worker.
 
 - **Mint at a checkpoint.** Each unique item is minted as an **XLS-20 NFT**
   (`tfTransferable | tfMutable`, never burnable — true player ownership) and

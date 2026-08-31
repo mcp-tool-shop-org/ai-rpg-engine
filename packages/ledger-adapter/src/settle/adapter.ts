@@ -16,11 +16,13 @@
 
 import type {
   EnableResult,
+  EquipmentSnapshot,
   IssuedAmount,
   LedgerAdapter,
   LedgerAdapterConfig,
   LedgerAdapterState,
   LedgerTransport,
+  NFTTransport,
   SettleOptions,
   SettlementKeyReceipt,
   SettlementPrimitive,
@@ -33,8 +35,12 @@ import {
   ASF_ALLOW_TRUSTLINE_LOCKING,
   ASF_DEFAULT_RIPPLE,
   buildSettlementMemo,
+  ledgerNetworkLabel,
+  ledgerNetworkQualifier,
 } from '../contracts.js';
 import { assignTokenCode } from '../state/index.js';
+import { settleEquipmentNFTs } from './nft.js';
+import type { NFTSettlementResult } from './nft.js';
 
 /** Ripple-epoch seconds between an escrow's FinishAfter and its (mandatory,
  *  per XLS-85) CancelAfter. Named so the window is a documented design lever
@@ -146,6 +152,10 @@ function amountsOf(snapshot: TradeableSnapshot): Record<string, number> {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function networkOf(transport: LedgerTransport): string {
+  return transport.networkName;
 }
 
 export function createLedgerAdapter(
@@ -660,6 +670,7 @@ export function createLedgerAdapter(
       state.enabled = true;
       return {
         success: true,
+        network: networkOf(transport),
         message: 'Offline mode — no chain. Adapter stays off the ledger.',
       };
     }
@@ -677,6 +688,7 @@ export function createLedgerAdapter(
         state.enabled = false;
         return {
           success: false,
+          network: networkOf(transport),
           message:
             `Could not enable the ledger adapter: missing seed(s) for ${missing.join(', ')} — ` +
             `re-authenticate via the secrets sidecar. Adapter stays off — you can try again at the next checkpoint.`,
@@ -687,13 +699,15 @@ export function createLedgerAdapter(
       } catch (err) {
         return {
           success: false,
+          network: networkOf(transport),
           message: `Could not enable the ledger adapter: ${errorMessage(err)}. Adapter stays off — you can try again at the next checkpoint.`,
         };
       }
       state.enabled = true;
       return {
         success: true,
-        message: 'Ledger adapter re-enabled — existing setup is already online.',
+        network: networkOf(transport),
+        message: `Ledger adapter re-enabled — existing setup is already online. ${ledgerNetworkQualifier(networkOf(transport))}.`,
         playerAddress: state.playerAddress,
       };
     }
@@ -725,9 +739,10 @@ export function createLedgerAdapter(
         state.enabled = true;
         return {
           success: true,
+          network: networkOf(transport),
           message: resuming
-            ? 'Diary resumed — this run is witnessed, not custodied.'
-            : 'Diary opened — checkpoints will be anchored on-ledger, no trust lines needed.',
+            ? `Diary resumed — this run is witnessed, not custodied. ${ledgerNetworkQualifier(networkOf(transport))}.`
+            : `Diary opened — checkpoints will be anchored on-ledger, no trust lines needed. ${ledgerNetworkQualifier(networkOf(transport))}.`,
           playerAddress: diarist.address,
         };
       }
@@ -816,12 +831,16 @@ export function createLedgerAdapter(
 
       return {
         success: true,
-        message: resuming ? 'Ledger adapter setup resumed — pack is now receipted.' : 'Ledger adapter enabled — pack is now receipted.',
+        network: networkOf(transport),
+        message: resuming
+          ? `Ledger adapter setup resumed — pack is now receipted. ${ledgerNetworkQualifier(networkOf(transport))}.`
+          : `Ledger adapter enabled — pack is now receipted. ${ledgerNetworkQualifier(networkOf(transport))}.`,
         playerAddress: player.address,
       };
     } catch (err) {
       return {
         success: false,
+        network: networkOf(transport),
         message: `Could not enable the ledger adapter: ${errorMessage(err)}. Adapter stays off — you can try again at the next checkpoint.`,
       };
     }
@@ -835,11 +854,19 @@ export function createLedgerAdapter(
     options: SettleOptions = {},
   ): Promise<SettlementResult> {
     if (config.mode === 'offline') {
-      return { success: true, message: 'Offline mode — no chain. Nothing to settle.' };
+      return {
+        success: true,
+        network: networkOf(transport),
+        message: 'Offline mode — no chain. Nothing to settle.',
+      };
     }
 
     if (!state.enabled) {
-      return { success: false, message: 'Ledger adapter is not enabled.' };
+      return {
+        success: false,
+        network: networkOf(transport),
+        message: 'Ledger adapter is not enabled.',
+      };
     }
 
     // Retry pending FIRST (conservation-on-retry folds any cleared deltas
@@ -856,7 +883,8 @@ export function createLedgerAdapter(
       const why = stuck.lastError ? `${where} still pending: ${stuck.lastError}` : `${where} is still pending`;
       return {
         success: false,
-        message: `The ledger is quiet — couldn't settle this checkpoint (${why}). Your run continues offline for now; we'll retry at the next checkpoint.`,
+        network: networkOf(transport),
+        message: `${ledgerNetworkLabel(networkOf(transport))} was quiet — couldn't settle this checkpoint (${why}). Your run continues; this is not mainnet value.`,
         record: stuck,
       };
     }
@@ -872,7 +900,11 @@ export function createLedgerAdapter(
     }
 
     if (Object.keys(deltas).length === 0) {
-      return { success: true, message: 'No changes to settle.' };
+      return {
+        success: true,
+        network: networkOf(transport),
+        message: 'No changes to settle.',
+      };
     }
 
     // The verb comes from the CALLER now. It used to be the literal 'settle'
@@ -916,7 +948,8 @@ export function createLedgerAdapter(
 
       return {
         success: true,
-        message: `Checkpoint settled. Receipt: ${txids[0] ?? 'none'}`,
+        network: networkOf(transport),
+        message: `Settled on ${ledgerNetworkLabel(networkOf(transport))}. Receipt: ${txids[0] ?? 'none'}`,
         txids,
         record,
       };
@@ -941,7 +974,8 @@ export function createLedgerAdapter(
 
       return {
         success: false,
-        message: `The ledger is quiet — couldn't settle this checkpoint (${errorMessage(err)}). Your run continues offline for now; we'll retry at the next checkpoint.`,
+        network: networkOf(transport),
+        message: `${ledgerNetworkLabel(networkOf(transport))} was quiet — couldn't settle this checkpoint (${errorMessage(err)}). Your run continues; this is not mainnet value.`,
         record,
       };
     }
@@ -953,8 +987,65 @@ export function createLedgerAdapter(
 
   return {
     config,
+    gameId,
+    runId,
+    getSeed: hydrateSeed,
     enable,
     settle,
     disable,
   };
+}
+
+/** Optional NFT inputs for {@link resumeAdapter} — finishes pending unique-gear transfers. */
+export type ResumeNftOpts = {
+  transport: NFTTransport;
+  snapshot: EquipmentSnapshot;
+};
+
+/**
+ * Re-enable a deserialized adapter after process restart, then finish any
+ * pending unique-gear NFT transfers. Seeds come from `adapter.getSeed`
+ * (typically `bindSidecar(gameDir)` wired into createLedgerAdapter).
+ */
+export async function resumeAdapter(
+  adapter: LedgerAdapter,
+  state: LedgerAdapterState,
+  snapshot: TradeableSnapshot,
+  nft?: ResumeNftOpts,
+): Promise<{ enable: EnableResult; nft?: NFTSettlementResult }> {
+  const enable = await adapter.enable(state, snapshot);
+  const pending = Object.values(state.nfts ?? {}).some((ref) => ref.status === 'pending');
+  if (!nft || !pending) return { enable };
+
+  const issuerSeed = adapter.getSeed(state.issuerAddress);
+  const playerSeed = adapter.getSeed(state.playerAddress);
+  if (!issuerSeed || !playerSeed) {
+    const network = enable.network ?? 'dry-run';
+    return {
+      enable,
+      nft: {
+        success: false,
+        network,
+        message: `Could not resume pending NFT transfers: missing seed(s) — re-authenticate via the secrets sidecar.`,
+        minted: [],
+        modified: [],
+        skipped: [],
+        pending: Object.entries(state.nfts ?? {})
+          .filter(([, ref]) => ref.status === 'pending')
+          .map(([id]) => id),
+        released: [],
+        items: [],
+        txids: [],
+      },
+    };
+  }
+
+  const nftResult = await settleEquipmentNFTs(nft.transport, state, nft.snapshot, {
+    gameId: adapter.gameId,
+    issuerAddress: state.issuerAddress,
+    playerAddress: state.playerAddress,
+    issuerSeed,
+    playerSeed,
+  });
+  return { enable, nft: nftResult };
 }

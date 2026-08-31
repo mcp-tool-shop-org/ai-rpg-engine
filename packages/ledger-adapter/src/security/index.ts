@@ -4,7 +4,15 @@
 // escape-the-valley grounding (backpack.py's TESTNET_HOSTS host check and the
 // "seeds out of run.json" lesson).
 
-export { TESTNET_HOSTS, assertTestnetHost, resolveTestnetEndpoint } from './guard.js';
+export {
+  TESTNET_HOSTS,
+  TESTNET_NETWORK_IDS,
+  MAINNET_NETWORK_ID,
+  assertTestnetHost,
+  assertTestnetLedgerIdentity,
+  networkNameFromEndpoint,
+  resolveTestnetEndpoint,
+} from './guard.js';
 
 export {
   createSidecar,
@@ -16,4 +24,6 @@ export {
   assertNoSeedsInState,
   loadSidecar,
   saveSidecar,
+  bindSidecar,
 } from './secrets.js';
+export type { SidecarBindings } from './secrets.js';

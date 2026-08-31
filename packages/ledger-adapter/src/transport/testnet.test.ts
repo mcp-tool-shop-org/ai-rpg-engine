@@ -24,6 +24,7 @@ import { ASF_DEFAULT_RIPPLE } from '../contracts.js';
 import { TestnetTransport, type XrplClientLike } from './testnet.js';
 
 const TESTNET_URL = 'wss://s.altnet.rippletest.net:51233';
+const DEVNET_URL = 'wss://s.devnet.rippletest.net:51233';
 
 // A real XRPL seed/address pair — computed offline via the installed
 // `xrpl.Wallet.fromSeed` itself (this is the well-known xrpl.js example
@@ -48,15 +49,37 @@ afterEach(() => {
  *  boundary (never `any`) — xrpl.js's generic `submitAndWait`/`request`
  *  signatures are awkward to hand-satisfy exactly with `vi.fn()`, and the
  *  transport under test only ever calls methods this mock actually implements. */
+function fakeServerInfo(opts: { network_id?: number; network?: string } = {}) {
+  return {
+    result: {
+      info: {
+        build_version: '2.4.0',
+        network_id: opts.network_id ?? 1,
+        network: opts.network ?? 'testnet',
+      },
+    },
+  };
+}
+
 function createMockClient(overrides: Record<string, unknown> = {}): XrplClientLike {
+  const identity = (overrides.serverInfo as ReturnType<typeof fakeServerInfo> | undefined) ?? fakeServerInfo();
+  const userRequest = overrides.request as ((req: unknown) => unknown) | undefined;
+  const request = vi.fn().mockImplementation(async (req: { command?: string }) => {
+    if (req?.command === 'server_info') return identity;
+    if (typeof userRequest === 'function') return userRequest(req);
+    return { result: {} };
+  });
   const base = {
     connect: vi.fn().mockResolvedValue(undefined),
     disconnect: vi.fn().mockResolvedValue(undefined),
     fundWallet: vi.fn().mockResolvedValue({ wallet: xrpl.Wallet.fromSeed(KNOWN_SEED), balance: 1000 }),
     submitAndWait: vi.fn(),
-    request: vi.fn(),
+    request,
   };
-  return { ...base, ...overrides } as unknown as XrplClientLike;
+  const rest = { ...overrides };
+  delete rest.request;
+  delete rest.serverInfo;
+  return { ...base, ...rest, request } as unknown as XrplClientLike;
 }
 
 /** A `submitAndWait` resolved value shaped like a real xrpl.js `TxResponse`.
@@ -141,6 +164,50 @@ describe('TestnetTransport constructor — mainnet-impossible-in-code guard', ()
   it('sets networkName to "testnet"', () => {
     const transport = TestnetTransport.forTests(TESTNET_URL, createMockClient());
     expect(transport.networkName).toBe('testnet');
+  });
+
+  it('sets networkName to "devnet" for the Devnet host', () => {
+    const transport = TestnetTransport.forTests(DEVNET_URL, createMockClient());
+    expect(transport.networkName).toBe('devnet');
+  });
+});
+
+describe('TestnetTransport.connect — post-connect network_id assertion', () => {
+  it('requests server_info and accepts testnet network_id 1', async () => {
+    const client = createMockClient();
+    const transport = TestnetTransport.forTests(TESTNET_URL, client);
+    await transport.connect();
+    expect(client.request).toHaveBeenCalledWith({ command: 'server_info' });
+  });
+
+  it('accepts devnet network_id 2', async () => {
+    const transport = TestnetTransport.forTests(
+      DEVNET_URL,
+      createMockClient({ serverInfo: fakeServerInfo({ network_id: 2, network: 'devnet' }) }),
+    );
+    await expect(transport.connect()).resolves.toBeUndefined();
+    expect(transport.networkName).toBe('devnet');
+  });
+
+  it('refuses mainnet network_id 0 and disconnects', async () => {
+    const disconnect = vi.fn().mockResolvedValue(undefined);
+    const transport = TestnetTransport.forTests(
+      TESTNET_URL,
+      createMockClient({
+        disconnect,
+        serverInfo: fakeServerInfo({ network_id: 0, network: 'mainnet' }),
+      }),
+    );
+    await expect(transport.connect()).rejects.toThrow(/non-testnet ledger identity/i);
+    expect(disconnect).toHaveBeenCalled();
+  });
+
+  it('fails closed when server_info omits network identity', async () => {
+    const transport = TestnetTransport.forTests(
+      TESTNET_URL,
+      createMockClient({ serverInfo: { result: { info: {} } } }),
+    );
+    await expect(transport.connect()).rejects.toThrow(/unrecognized ledger identity/i);
   });
 });
 
