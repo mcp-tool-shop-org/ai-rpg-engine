@@ -8,10 +8,9 @@ name: Release
 #
 # Kept separate from ci.yml/pages.yml (dogfood-swarm F-a160dfa6, one of 4
 # workflow files vs the org's 2-file guideline): this is the only workflow
-# triggered by `release: published`, and it's the only one holding
-# `id-token: write` (npm OIDC) + `packages: write` (GHCR push) together —
-# irreversible, credentialed publish actions that should not share a trigger
-# surface with ci.yml's push/PR-on-any-branch test runs.
+# triggered by `release: published`. npm OIDC and GHCR credentials are
+# job-scoped — a compromised docker/* action cannot mint the npm provenance
+# token, and the docker job cannot push when npm is red (`needs: [npm]`).
 on:
   release:
     # `published` fires for full releases AND prereleases. `released` would
@@ -25,10 +24,10 @@ on:
         type: boolean
         default: true
 
+# Default is contents: read. Credential writes live on the job that needs
+# them: npm gets id-token (OIDC), docker gets packages (GHCR).
 permissions:
   contents: read
-  id-token: write # npm Trusted Publishing (OIDC)
-  packages: write # GHCR docker push
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -44,6 +43,9 @@ jobs:
     name: Publish npm packages (OIDC)
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write # npm Trusted Publishing (OIDC). GHCR push stays on docker.
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
@@ -55,10 +57,22 @@ jobs:
           registry-url: 'https://registry.npmjs.org'
           cache: npm
 
-      # Trusted Publishing requires a recent npm (OIDC support).
-      - run: npm install -g npm@latest
+      # Trusted Publishing requires npm >=11.5 (OIDC). Pin an EXACT 11.x
+      # version with --ignore-scripts — never a floating latest tag. This job
+      # holds the npm OIDC token; a floating latest resolves whatever tree is
+      # newest at install time (no lockfile, no integrity pin). Stay on 11.x:
+      # check-packaging.mjs already special-cases npm 12's pack --json shape,
+      # but the publish tool itself should not float onto that line unannounced.
+      - name: Install pinned npm for OIDC
+        run: npm install -g npm@11.19.1 --ignore-scripts
+
       - run: npm ci
+      - run: npm run lint
       - run: npm run build
+      - name: Typecheck test files
+        run: npm run typecheck:tests
+      - name: Release gate — mixed-game viability proof
+        run: node scripts/verify-mixed-game-viability.mjs
       - run: npm test
 
       # Packaging gate (PG-5): refuse to publish any package whose tarball
@@ -68,6 +82,11 @@ jobs:
       # that would have caught the G3 LICENSE gap before it reached npm.
       - name: Packaging gate (LICENSE/README + advertised entry points)
         run: node scripts/check-packaging.mjs
+
+      # Packed-tarball consumer proof (SHIP_GATE §F) — same script ci.yml
+      # runs on the node-22 leg. Must pass before any npm publish.
+      - name: Isolated-consumer proof (packed tarball)
+        run: node scripts/verify-isolated-consumer.mjs
 
       # Idempotent per-package publish: skip private packages and any version
       # already on npm, so a re-run after a partial failure completes the release
@@ -135,18 +154,17 @@ jobs:
 
   docker:
     name: Build & push CLI image (GHCR)
+    needs: [npm]
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write # GHCR docker push. npm OIDC stays on the npm job.
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
-      - name: Log in to GHCR
-        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Image metadata
         id: meta
@@ -159,10 +177,39 @@ jobs:
             type=raw,value=latest,enable=${{ github.event_name == 'release' && github.event.release.prerelease == false }}
             type=raw,value=edge,enable=${{ github.event_name == 'workflow_dispatch' }}
 
-      - name: Build & push
+      # Always load locally so smoke can docker-run before any push. Dry-run
+      # dispatch builds without pushing. Live publish pushes the already-loaded
+      # tags only after --help (and create-starter) exit 0.
+      - name: Build CLI image (load, no push)
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
-          push: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run) }}
-          tags: ${{ steps.meta.outputs.tags }}
+          load: true
+          push: false
+          tags: |
+            ai-rpg-engine:ci-smoke
+            ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Smoke — CLI --help
+        run: docker run --rm ai-rpg-engine:ci-smoke --help
+
+      - name: Smoke — create-starter writes under /tmp
+        run: docker run --rm ai-rpg-engine:ci-smoke create-starter ci-smoke --out /tmp/ci-smoke
+
+      - name: Log in to GHCR
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+        run: |
+          set -euo pipefail
+          echo "${{ steps.meta.outputs.tags }}" | while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            docker push "$tag"
+          done

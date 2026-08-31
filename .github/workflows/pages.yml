@@ -3,14 +3,18 @@ name: Deploy site to GitHub Pages
 # Kept separate from ci.yml/release.yml (dogfood-swarm F-a160dfa6, one of 4
 # workflow files vs the org's 2-file guideline): this is the only workflow
 # that needs `pages: write` + `id-token: write` for the GitHub Pages OIDC
-# deploy, and its trigger (push to main, site/** only) doesn't line up with
-# either ci.yml (push/PR on any branch, code paths) or release.yml
-# (release: published). Folding it into either would mean granting pages-
-# deploy permissions to a workflow that doesn't need them for its other jobs.
+# deploy. Pull requests compile the Astro handbook (build job, contents: read);
+# deploy stays main-only. Folding this into ci.yml/release.yml would grant
+# pages-deploy permissions to a workflow that doesn't need them for its
+# other jobs.
 
 on:
   push:
     branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/pages.yml'
+  pull_request:
     paths:
       - 'site/**'
       - '.github/workflows/pages.yml'
@@ -46,7 +50,9 @@ jobs:
         working-directory: site
         run: npm run build
 
+      # PRs compile only. Artifact upload is for the main-gated deploy job.
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        if: github.event_name != 'pull_request'
         with:
           path: site/dist
 

@@ -143,9 +143,9 @@ for (const dir of packageDirs()) {
     const report = JSON.parse(out);
     // `npm pack --dry-run --json` changed shape in npm 12: it was an array
     // `[{ name, files, ... }]` through npm 11, and is now a name-keyed object
-    // `{ "<pkg>": { files, ... } }`. The publish job runs `npm install -g
-    // npm@latest`, so this gate must read either shape or it throws
-    // "Cannot read properties of undefined (reading 'files')" under npm 12.
+    // `{ "<pkg>": { files, ... } }`. release.yml pins npm 11.x for OIDC, but
+    // this gate still reads either shape so a local npm 12 CLI cannot throw
+    // "Cannot read properties of undefined (reading 'files')".
     const entry = Array.isArray(report) ? report[0] : Object.values(report)[0];
     fileSet = new Set(entry.files.map((f) => String(f.path).replace(/\\/g, '/')));
   } catch (err) {
