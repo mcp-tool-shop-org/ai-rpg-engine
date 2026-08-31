@@ -50,6 +50,13 @@ export type CampaignMemoryCoreConfig = {
  * leverage.resolved maps only temporary-alliance / broker-truce /
  * recruit-ally → alliance (F-385c6d86); other verbs do not invent theft
  * or insult producers.
+ * item.crafted/item.modified/item.repaired/item.salvaged → item-transformed
+ * (F-908f2341) — the crafter is the actor, witnesses only, no NPC target
+ * (matches item-recognized's shape).
+ * combat.companion.intercepted → companion-saved-player (F-3c4931ec) — the
+ * INTERCEPTOR is the actor, not the attacker who dealt the blow (event.actorId
+ * is the attacker, per make-event.ts); resolveActorTarget reads payload's
+ * interceptorId explicitly.
  *
  * F-c1949ae0 (consolidate) is still not called from this file.
  */
@@ -62,6 +69,10 @@ const EVENT_CATEGORY: Record<string, RecordCategory | readonly RecordCategory[]>
   'item.acquired': 'item-acquired',
   'item.lost': 'item-lost',
   'item.recognized': 'item-recognized',
+  'item.crafted': 'item-transformed',
+  'item.modified': 'item-transformed',
+  'item.repaired': 'item-transformed',
+  'item.salvaged': 'item-transformed',
   'campaign.rescue': 'rescue',
   'social.rescue': 'rescue',
   'campaign.betrayal': 'betrayal',
@@ -69,6 +80,7 @@ const EVENT_CATEGORY: Record<string, RecordCategory | readonly RecordCategory[]>
   'companion.recruited': 'companion-joined',
   'companion.joined': 'companion-joined',
   'companion.departed': 'companion-departed',
+  'combat.companion.intercepted': 'companion-saved-player',
   'opportunity.accepted': 'opportunity-accepted',
   'opportunity.completed': 'opportunity-completed',
   'opportunity.abandoned': 'opportunity-abandoned',
@@ -188,9 +200,11 @@ function describeEvent(category: RecordCategory, actorName: string, targetName: 
   if (category === 'betrayal') return `${actorName} betrayed ${targetName ?? 'someone'}`;
   if (category === 'companion-joined') return `${targetName ?? actorName} joined the party`;
   if (category === 'companion-departed') return `${targetName ?? actorName} left the party`;
+  if (category === 'companion-saved-player') return `${actorName} intercepted a blow meant for ${targetName ?? 'someone'}`;
   if (category === 'item-acquired') return `${actorName} acquired an item`;
   if (category === 'item-lost') return `${actorName} lost an item`;
   if (category === 'item-recognized') return `${actorName}'s ${targetName ?? 'item'} was recognized`;
+  if (category === 'item-transformed') return `${actorName} transformed an item`;
   if (category === 'alliance') return `${actorName} formed an alliance${targetName ? ` with ${targetName}` : ''}`;
   if (category === 'discovery') return `${actorName} entered ${targetName ?? 'a new place'}`;
   if (category === 'action') return `${actorName} unlocked ${targetName ?? 'an advancement'}`;
@@ -199,8 +213,16 @@ function describeEvent(category: RecordCategory, actorName: string, targetName: 
 
 function significanceFor(category: RecordCategory): number {
   if (category === 'kill' || category === 'betrayal' || category === 'death') return 0.9;
-  if (category === 'rescue' || category === 'companion-joined' || category === 'companion-departed') return 0.8;
+  if (
+    category === 'rescue' ||
+    category === 'companion-joined' ||
+    category === 'companion-departed' ||
+    category === 'companion-saved-player'
+  ) {
+    return 0.8;
+  }
   if (category === 'gift' || category === 'alliance' || category === 'opportunity-completed') return 0.6;
+  if (category === 'item-transformed') return 0.5;
   return 0.5;
 }
 
@@ -266,6 +288,31 @@ function resolveActorTarget(
       actorId: event.actorId ?? stringPayload(payload, 'actorId'),
       targetId: npcId ?? stringPayload(payload, 'targetId'),
     };
+  }
+
+  // F-3c4931ec: the INTERCEPTOR is the actor (the one who took the blow to
+  // save the target), not the attacker who dealt it. event.actorId here is
+  // the ORIGINAL ATTACKER — make-event.ts binds actorId from action.actorId,
+  // and combat-core.ts's attack handler runs as the attacker's action — so
+  // the untouched default fallback would misattribute the save backwards.
+  // targetId already resolves correctly through the untouched default since
+  // the payload's key is literally named 'targetId'; only actorId needs the
+  // explicit read.
+  if (category === 'companion-saved-player') {
+    return {
+      actorId: stringPayload(payload, 'interceptorId'),
+      targetId: stringPayload(payload, 'targetId'),
+    };
+  }
+
+  // F-908f2341: the crafter is the actor (event.actorId, exactly as
+  // make-event.ts sets it from action.actorId) — no NPC target, matching
+  // item-recognized's witnesses-only shape. Left to the untouched default,
+  // targetId would resolve to entityId (== actorId on all four crafting
+  // events), and a non-player crafter would gain a self-directed
+  // relationship entry via the target-perspective branch.
+  if (category === 'item-transformed') {
+    return { actorId: event.actorId, targetId: undefined };
   }
 
   // Zone-enter / node-unlock: the mover/unlocker is the actor. Live
@@ -378,7 +425,12 @@ function recordLiveEvent(
     description: describeEvent(category, actorName, targetName),
     significance: significanceFor(category),
     witnesses,
-    data: { eventType: event.type },
+    data: {
+      eventType: event.type,
+      // F-908f2341: surface itemId for item-transformed consumers. Scoped to
+      // this one category so every other category's data shape is untouched.
+      ...(category === 'item-transformed' ? { itemId: stringPayload(payload, 'itemId') } : {}),
+    },
   });
 
   const banks: Record<string, NpcMemoryState> = { ...state.banks };
