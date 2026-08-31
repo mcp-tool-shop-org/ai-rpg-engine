@@ -394,6 +394,20 @@ function recordLiveEvent(
   const exclude = new Set<string>([actorId]);
   if (targetId) exclude.add(targetId);
 
+  // F-78337c0e: the attacker (payload.attackerId) is a THIRD combat
+  // participant on companion-saved-player events — distinct from the
+  // interceptor (actorId, already excluded above) and the saved entity
+  // (targetId, already excluded above). combat-core.ts's ally-selection
+  // guard (`e.id !== target.id && e.id !== attacker.id`) guarantees this,
+  // and the attacker's own hp is untouched by the intercept, so left
+  // unexcluded they pass zoneOccupants' isAlive filter and land in
+  // `witnesses` every time — gaining the same positive relationship delta
+  // toward the interceptor as an uninvolved bystander would.
+  if (category === 'companion-saved-player') {
+    const attackerId = stringPayload(payload, 'attackerId');
+    if (attackerId) exclude.add(attackerId);
+  }
+
   const witnesses = zoneOccupants(world, zoneId)
     .filter((e) => !exclude.has(e.id) && isAlive(e))
     .map((e) => e.id);
