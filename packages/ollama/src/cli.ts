@@ -1537,6 +1537,8 @@ async function runCliInner(args: string[]): Promise<void> {
         districtId: flags.district,
         factions: flags.factions,
         difficulty: flags.difficulty,
+        projectRoot,
+        session: session ? { name: session.name, themes: session.themes } : undefined,
       }, onProgress);
 
       // Output the first step's content (the generated YAML)

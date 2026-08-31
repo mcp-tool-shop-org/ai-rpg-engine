@@ -1,7 +1,10 @@
 // Unit tests — macro framework and workflow macros
 // No live Ollama needed. Client is mocked.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { OllamaTextClient, PromptInput, PromptResult } from './client.js';
 import {
   createMacroProgress,
@@ -199,7 +202,7 @@ describe('scaffoldAndCritique', () => {
     '```',
   ].join('\n');
 
-  it('completes 3-step pipeline with session context', async () => {
+  it('completes the 4-step pipeline with session context (emit-pack skipped without a projectRoot)', async () => {
     const client = sequenceClient(roomYaml, critiqueYaml, suggestYaml);
     const steps: string[] = [];
     const result = await scaffoldAndCritique(client, {
@@ -210,11 +213,16 @@ describe('scaffoldAndCritique', () => {
 
     expect(result.ok).toBe(true);
     expect(result.name).toBe('scaffold-and-critique');
-    expect(result.steps).toHaveLength(3);
+    expect(result.steps).toHaveLength(4);
     expect(result.steps[0].status).toBe('done');
     expect(result.steps[0].output).toContain('chapel');
     expect(result.steps[1].status).toBe('done');
     expect(result.steps[2].status).toBe('done');
+    // F-35cc73ce: emit-pack is the new 4th step. No projectRoot was given
+    // here (unlike the CLI, which always has one), so it skips rather than
+    // walking process.cwd() — never touch the filesystem without an
+    // explicit, caller-supplied root.
+    expect(result.steps[3].status).toBe('skipped');
     expect(steps.length).toBeGreaterThan(0);
   });
 
@@ -268,6 +276,69 @@ describe('scaffoldAndCritique', () => {
       const result = await scaffoldAndCritique(client, { kind, theme: 'test' });
       expect(result.steps[0].status).toBe('done');
     }
+  });
+
+  // F-35cc73ce: scaffoldAndCritique ran scaffold -> critique -> suggest-next
+  // with no assembleContentPack/emit-pack call anywhere in the function, so
+  // `ai scaffold-and-critique` never produced a loadable content/pack.json.
+  describe('emit-pack step (F-35cc73ce)', () => {
+    let root: string;
+
+    beforeEach(async () => {
+      root = await mkdtemp(join(tmpdir(), 'macros-emit-pack-'));
+    });
+
+    afterEach(async () => {
+      await rm(root, { recursive: true, force: true });
+    });
+
+    it('writes content/pack.json when given a projectRoot', async () => {
+      const client = sequenceClient(roomYaml, critiqueYaml);
+      const result = await scaffoldAndCritique(client, {
+        kind: 'room',
+        theme: 'ruined chapel',
+        projectRoot: root,
+      });
+      expect(result.ok).toBe(true);
+      expect(result.steps[3].status).toBe('done');
+      const written = JSON.parse(await readFile(join(root, 'content', 'pack.json'), 'utf-8'));
+      // The room scaffold step's own output was never written to disk by
+      // this macro (that's the CLI's --write job) — emit-pack only
+      // assembles whatever is ALREADY on disk under projectRoot.
+      expect(written.zones ?? []).toEqual([]);
+    });
+
+    it('assembles pre-existing project files, not just the scaffold step output', async () => {
+      await writeFile(join(root, 'guard.yaml'), 'id: chapel_guard\ntype: npc\nname: Chapel Guard\n');
+      const client = sequenceClient(roomYaml, critiqueYaml);
+      const result = await scaffoldAndCritique(client, {
+        kind: 'room',
+        theme: 'ruined chapel',
+        projectRoot: root,
+      });
+      expect(result.ok).toBe(true);
+      const written = JSON.parse(await readFile(join(root, 'content', 'pack.json'), 'utf-8'));
+      expect(written.entities).toEqual(
+        expect.arrayContaining([expect.objectContaining({ id: 'chapel_guard' })]),
+      );
+    });
+
+    it('mirrors the CLI fail-closed guard: skips the write and reports errors instead of throwing', async () => {
+      // Dangling placement reference — a deterministic loadContent failure.
+      await writeFile(join(root, 'ghost.yaml'), 'entityId: ghost\nzoneId: nowhere\n');
+      const client = sequenceClient(roomYaml, critiqueYaml);
+      const result = await scaffoldAndCritique(client, {
+        kind: 'room',
+        theme: 'ruined chapel',
+        projectRoot: root,
+      });
+      // The scaffold/critique steps still succeeded — only the write is skipped.
+      expect(result.steps[0].status).toBe('done');
+      expect(result.steps[1].status).toBe('done');
+      expect(result.steps[3].status).toBe('skipped');
+      expect(result.steps[3].output).toContain('ghost');
+      await expect(readFile(join(root, 'content', 'pack.json'), 'utf-8')).rejects.toThrow();
+    });
   });
 });
 

@@ -526,3 +526,37 @@ describe('runCli — help banner chat --write + session listing (F-ef949bc5)', (
     expect(help).toContain('models');
   });
 });
+
+// F-35cc73ce: scaffoldAndCritique ran scaffold -> critique -> suggest-next
+// with no assembleContentPack/emit-pack call — `ai scaffold-and-critique`
+// generated content but never produced a loadable content/pack.json.
+describe('runCli — scaffold-and-critique emits content/pack.json (F-35cc73ce)', () => {
+  function mockOllamaSequence(...texts: string[]): void {
+    let calls = 0;
+    globalThis.fetch = vi.fn(async () => {
+      const text = texts[calls] ?? texts[texts.length - 1];
+      calls += 1;
+      return streamedOllamaResponse({ ok: true, status: 200, payload: { response: text } });
+    }) as unknown as typeof fetch;
+  }
+
+  it('writes content/pack.json under the CLI project root after the pipeline completes', async () => {
+    // The scaffold step's own YAML lives only in-memory during this single
+    // macro call (the CLI's --write for step 1's output happens AFTER
+    // scaffoldAndCritique returns) — emit-pack assembles whatever is
+    // ALREADY on disk under projectRoot, the same contract the /build
+    // guided-chat emit-pack step follows. Pre-seed a file to stand in for
+    // content already authored/imported in the project.
+    await fs.writeFile(path.join(tmpDir, 'guard.yaml'), 'id: chapel_guard\ntype: npc\nname: Chapel Guard\n');
+    mockOllamaSequence(
+      'id: chapel\nname: Ruined Chapel\nzones:\n  - id: nave\n    name: Nave',
+      'Solid room. No structural issues.',
+    );
+    await runCli(['scaffold-and-critique', '--kind', 'room', '--theme', 'ruined chapel']);
+    expect(process.exitCode).not.toBe(1);
+    const written = JSON.parse(await fs.readFile(path.join(tmpDir, 'content', 'pack.json'), 'utf-8'));
+    expect(written.entities).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'chapel_guard' })]),
+    );
+  });
+});

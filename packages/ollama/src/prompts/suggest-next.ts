@@ -18,6 +18,10 @@ Scaffold (create new content):
   create-encounter-pack --theme <text>          Generate room + entities + quest bundle
   create-encounter-anchor --theme <text>        Generate a spawn-SET encounter anchor
   create-progression-tree --theme <text>        Generate a chargen progression tree
+  create-ruleset --theme <text>                 Generate a ruleset (stats/resources/verbs)
+  create-rule-profile --theme <text>            Generate a per-archetype combat stat mapping
+  create-item-placement --item <id> --entity-id <id>  Give a catalog item to an entity
+  emit-pack --write                             Assemble content/pack.json from authored YAML
 
 Iterate (improve existing content):
   improve-content --goal <text>                 Revise content toward a goal (pipe YAML)

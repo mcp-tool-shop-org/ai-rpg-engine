@@ -28,6 +28,7 @@ import { createProgressionTree } from './commands/create-progression-tree.js';
 import { createRuleset } from './commands/create-ruleset.js';
 import { createRuleProfile } from './commands/create-rule-profile.js';
 import { createItemPlacement, itemPlacementRecordId } from './commands/create-item-placement.js';
+import { suggestNextPrompt } from './prompts/suggest-next.js';
 import { explainDistrictState } from './commands/explain-district-state.js';
 import { explainFactionAlert } from './commands/explain-faction-alert.js';
 import { improveContent } from './commands/improve-content.js';
@@ -1069,6 +1070,14 @@ describe('explainWhy', () => {
       state: '{}',
     });
     expect(result.ok).toBe(false);
+  });
+});
+
+// F-35cc73ce: the Scaffold command block never listed emit-pack, so the
+// AI's own next-action recommendations never named the step either.
+describe('suggestNextPrompt', () => {
+  it('lists emit-pack in the Scaffold command block', () => {
+    expect(suggestNextPrompt.system).toContain('emit-pack');
   });
 });
 
