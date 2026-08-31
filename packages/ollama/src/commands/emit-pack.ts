@@ -276,6 +276,14 @@ function mergePackJson(pack: MutablePack, src: Record<string, unknown>, notes: s
   if (isRecord(src.ruleProfiles)) {
     pack.ruleProfiles = { ...pack.ruleProfiles, ...src.ruleProfiles as Record<string, unknown> };
   }
+  // factions is Record<string, PackFactionRecord> (F-d54f4d67 — the registry
+  // EntityBlueprint.faction pointers resolve against, refs.ts:210), also
+  // keyed like ruleProfiles rather than array-shaped — same object-merge so
+  // re-emitting a pack that already carries a populated factions registry
+  // does not silently drop it (F-d905ad26).
+  if (isRecord(src.factions)) {
+    pack.factions = { ...pack.factions, ...src.factions as Record<string, unknown> };
+  }
 }
 
 type MutablePack = {
@@ -301,6 +309,7 @@ type MutablePack = {
   manifest?: Record<string, unknown>;
   ruleset?: unknown;
   ruleProfiles: Record<string, unknown>;
+  factions: Record<string, unknown>;
 };
 
 function emptyPack(): MutablePack {
@@ -323,6 +332,7 @@ function emptyPack(): MutablePack {
     encounterAnchors: [],
     progressionTrees: [],
     ruleProfiles: {},
+    factions: {},
   };
 }
 
@@ -480,6 +490,7 @@ function toContentPack(pack: MutablePack): ContentPack {
   if (pack.manifest) out.manifest = pack.manifest as ContentPack['manifest'];
   if (pack.ruleset !== undefined) out.ruleset = pack.ruleset as ContentPack['ruleset'];
   if (Object.keys(pack.ruleProfiles).length) out.ruleProfiles = pack.ruleProfiles as ContentPack['ruleProfiles'];
+  if (Object.keys(pack.factions).length) out.factions = pack.factions as ContentPack['factions'];
   return out;
 }
 
@@ -605,6 +616,7 @@ export function idsFromPack(pack: ContentPack): Partial<SessionArtifacts> {
       .map((p) => (p.itemId && p.entityId ? `${p.itemId}@${p.entityId}` : ''))
       .filter(Boolean),
     ruleProfiles: pack.ruleProfiles ? Object.keys(pack.ruleProfiles) : [],
+    factions: pack.factions ? Object.keys(pack.factions) : [],
     entityAi: pack.entityAi ? Object.keys(pack.entityAi) : [],
     catalogs: asId((pack.buildCatalog as { packId?: unknown } | undefined)?.packId)
       ? [asId((pack.buildCatalog as { packId?: unknown }).packId)!]
