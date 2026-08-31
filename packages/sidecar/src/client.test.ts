@@ -209,3 +209,65 @@ describe('F-8cf8ccfe — staleness is reported to the host, not only an array', 
   });
 });
 
+describe('F-071522b2 — SidecarClient drops pre-baseline ticks', () => {
+  it('a tick before snapshot() leaves the mirror {} and a later snapshot is clean', async () => {
+    const { client, replyWith } = loopback();
+    const hash = stateHash(world);
+    const delta = snapshotDelta(world);
+    replyWith((msg) => {
+      if (msg.method === METHODS.INITIALIZE) return initOk(msg);
+      if (msg.method === METHODS.SNAPSHOT) {
+        return { jsonrpc: '2.0', id: msg.id, result: { tick: 0, hash, snapshotSeq: 1, delta } };
+      }
+      return undefined;
+    });
+
+    await client.initialize();
+    client.handle({
+      jsonrpc: '2.0',
+      method: NOTIFICATIONS.TICK,
+      params: {
+        tick: 1,
+        hash: 'pre-baseline',
+        snapshotSeq: 0,
+        events: [],
+        delta: [{ op: 'set', path: ['entities', 'ghost'], value: { id: 'ghost' } }],
+      },
+    });
+    expect(client.mirroredState).toEqual({});
+
+    await client.snapshot();
+    expect((client.mirroredState as WorldState).locationId).toBe('chapel');
+    expect((client.mirroredState as { entities?: Record<string, unknown> }).entities?.ghost).toBeUndefined();
+  });
+
+  it('ticks queued while snapshot() is in flight with seq < applied snapshot are ignored', async () => {
+    const { client, replyWith } = loopback();
+    const hash = stateHash(world);
+    const delta = snapshotDelta(world);
+    replyWith((msg) => {
+      if (msg.method === METHODS.INITIALIZE) return initOk(msg);
+      if (msg.method === METHODS.SNAPSHOT) {
+        client.handle({
+          jsonrpc: '2.0',
+          method: NOTIFICATIONS.TICK,
+          params: {
+            tick: 1,
+            hash: 'stale-seq',
+            snapshotSeq: 0,
+            events: [],
+            delta: [{ op: 'set', path: ['ghost'], value: true }],
+          },
+        });
+        return { jsonrpc: '2.0', id: msg.id, result: { tick: 0, hash, snapshotSeq: 1, delta } };
+      }
+      return undefined;
+    });
+
+    await client.initialize();
+    await client.snapshot();
+    expect((client.mirroredState as { ghost?: boolean }).ghost).toBeUndefined();
+    expect((client.mirroredState as WorldState).locationId).toBe('chapel');
+  });
+});
+

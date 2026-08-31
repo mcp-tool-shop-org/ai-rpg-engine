@@ -2,7 +2,9 @@
 //
 // LSP's framing, chosen because it is unambiguous over a byte stream (a JSON
 // document can contain newlines; a length prefix cannot be confused by content)
-// and because every client ecosystem already has a reader for it.
+// and because every client ecosystem already has a reader for it. The Godot
+// attach kit (`packages/sidecar/gdscript/framing.gd`) reimplements these same
+// resync rules; shared vectors live in `gdscript/fixtures/split-frames.json`.
 //
 // ⚠ TRANSPORT-AGNOSTIC ON PURPOSE. This module knows about `Readable`/`Writable`
 // and nothing else — not stdio, not sockets. DAP makes launch (spawn over stdio)
@@ -50,7 +52,9 @@ export class MessageTooLargeError extends Error {
   constructor(byteLength: number) {
     super(
       `encoded message is ${byteLength} bytes; ceiling is ${MAX_MESSAGE_BYTES}. ` +
-        'Refusing to write a frame the peer cannot parse. Request a smaller window via replay, not a full snapshot.',
+        'Refusing to write a frame the peer cannot parse. ' +
+        'Retry snapshot with omitEventLog: true (clients already have replay for presentation), ' +
+        'or pass collections: [\'entities\',\'zones\',...] to window the resync.',
     );
     this.name = 'MessageTooLargeError';
     this.byteLength = byteLength;

@@ -10,7 +10,7 @@
 // drift between what the sim computed and what the client renders.
 
 import { createHash } from 'node:crypto';
-import type { StatePatch, WireEvent } from './protocol.js';
+import type { SnapshotView, StatePatch, WireEvent } from './protocol.js';
 import type { ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
 
 /**
@@ -127,8 +127,29 @@ function deepEqual(a: unknown, b: unknown): boolean {
  * with `{}`. There is deliberately no separate snapshot serializer to keep in
  * sync, because keeping two serializers in sync is the failure mode.
  */
-export function snapshotDelta(state: WorldState): StatePatch[] {
+export function snapshotDelta(state: WorldState | unknown): StatePatch[] {
   return diffState({}, state);
+}
+
+/**
+ * Project a world onto a snapshot view. SNAPSHOT and incremental ticks share
+ * this so a session that omitted `eventLog` (or scoped `collections`) never
+ * has a later tick assume the client holds the omitted keys.
+ */
+export function projectState(state: unknown, view: SnapshotView = {}): unknown {
+  if (state === null || typeof state !== 'object' || Array.isArray(state)) return state;
+  const src = state as Record<string, unknown>;
+  let out: Record<string, unknown>;
+  if (view.collections && view.collections.length > 0) {
+    out = {};
+    for (const key of view.collections) {
+      if (Object.hasOwn(src, key) && src[key] !== undefined) out[key] = src[key];
+    }
+  } else {
+    out = { ...src };
+  }
+  if (view.omitEventLog) delete out.eventLog;
+  return out;
 }
 
 /** Apply patches. The client's half — and what the conformance harness uses. */
@@ -201,18 +222,61 @@ function resolveParent(root: unknown, path: readonly (string | number)[]): unkno
  * ANY client verify its mirror directly. It is a determinism-visible addition to a
  * shipped wire and was ANDON'd rather than slipped into C4.
  *
- * DIRECTOR'S RULING (2026-07-29), so the future slice starts from the right shape:
- * the limitation is STRUCTURAL, not cosmetic — every non-JS client inherits it, so
- * the eventual UE5 client hits this same wall, and the item stays on the roadmap
- * rather than being closed. When it is built it lands as a SECOND,
- * capability-negotiated hash — `canonicalStateHash`, sorted keys and normalized
- * numbers, requested at `initialize` by clients that want it — and NEVER as a
- * replacement for this one. That is the additive-evolution path this protocol already
- * lives by (`protocol.ts`: capabilities not version numbers, additive-only events),
- * and it gets its own slice with a same-seed review rather than a ride-along.
+ * DIRECTOR'S RULING (2026-07-29): the JS hash is NEVER replaced. The second,
+ * capability-negotiated hash is {@link canonicalStateHash} — sorted keys and
+ * normalized numbers, requested at `initialize` as `canonicalHashes`.
  */
-export function stateHash(state: WorldState): string {
+export function stateHash(state: WorldState | unknown): string {
   return createHash('sha256').update(JSON.stringify(quantize(state))).digest('hex').slice(0, 32);
+}
+
+/**
+ * Canonical JSON for a quantized value. Integers stay integers (`5`, never
+ * `5.0`); non-integers are `WIRE_PRECISION` with trailing zeros stripped;
+ * object keys are sorted. A Godot host implements this encoder rather than
+ * `JSON.stringify`, which alphabetizes keys AND emits `5.0`.
+ */
+export function canonicalJson(value: unknown): string {
+  return writeCanonical(quantize(value));
+}
+
+function writeCanonical(value: unknown): string {
+  if (value === null) return 'null';
+  if (value === true) return 'true';
+  if (value === false) return 'false';
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return 'null';
+    if (Object.is(value, -0)) return '0';
+    if (Number.isInteger(value)) return String(value);
+    let s = value.toFixed(WIRE_PRECISION);
+    s = s.replace(/0+$/, '');
+    if (s.endsWith('.')) s += '0';
+    return s;
+  }
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return `[${value.map(writeCanonical).join(',')}]`;
+  }
+  if (typeof value === 'object') {
+    const keys = Object.keys(value as Record<string, unknown>).sort();
+    const parts: string[] = [];
+    for (const k of keys) {
+      const v = (value as Record<string, unknown>)[k];
+      if (v === undefined) continue;
+      parts.push(`${JSON.stringify(k)}:${writeCanonical(v)}`);
+    }
+    return `{${parts.join(',')}}`;
+  }
+  return 'null';
+}
+
+/**
+ * Capability-negotiated cross-language hash. SHA-256 of {@link canonicalJson},
+ * hex-truncated to 32 like {@link stateHash}. Requested as
+ * `capabilities.canonicalHashes`; never a replacement for `stateHash`.
+ */
+export function canonicalStateHash(state: WorldState | unknown): string {
+  return createHash('sha256').update(canonicalJson(state), 'utf8').digest('hex').slice(0, 32);
 }
 
 /** A `ResolvedEvent` on the wire: quantized, key-ordered, undefined-free. */

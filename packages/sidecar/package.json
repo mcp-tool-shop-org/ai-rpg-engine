@@ -12,7 +12,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "gdscript"
   ],
   "scripts": {
     "build": "tsc",

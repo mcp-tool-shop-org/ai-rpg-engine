@@ -18,15 +18,20 @@ import {
   NOTIFICATIONS,
   type ClientCapabilities,
   type InitializeResult,
-  type StatePatch,
+  type SnapshotParams,
+  type SnapshotResult,
   type SubmitActionResult,
   type TickNotification,
   type WireEvent,
 } from './protocol.js';
-import { applyPatches, stateHash } from './serializer.js';
+import { applyPatches, canonicalStateHash, stateHash } from './serializer.js';
 
 function defaultHashState(state: unknown): string {
   return stateHash(state as WorldState);
+}
+
+function defaultCanonicalHashState(state: unknown): string {
+  return canonicalStateHash(state);
 }
 
 function sessionClosedError(): Error & { code: number } {
@@ -82,8 +87,16 @@ export class SidecarClient {
   private closed = false;
   private hashesEnabled = true;
   private notificationsEnabled = true;
+  private canonicalHashesEnabled = false;
+  /** Applied SNAPSHOT generation. Ticks with a lower seq are dropped. */
+  private appliedSnapshotSeq = 0;
+  /** False until a SNAPSHOT result has rebuilt the mirror from empty. */
+  private hasBaseline = false;
+  private snapshotInFlight = 0;
+  private readonly queuedTicks: TickNotification[] = [];
   private readonly send: (msg: RpcMessage) => void;
   private readonly hashState: ((state: unknown) => string) | undefined;
+  private readonly hashCanonical: ((state: unknown) => string) | undefined;
   private readonly onStale?: (report: StalenessReport) => void;
   private readonly requestTimeoutMs: number;
 
@@ -95,10 +108,12 @@ export class SidecarClient {
     this.send = send;
     if (typeof hashStateOrOptions === 'function') {
       this.hashState = hashStateOrOptions;
+      this.hashCanonical = defaultCanonicalHashState;
       this.onStale = options?.onStale;
       this.requestTimeoutMs = options?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     } else {
       this.hashState = defaultHashState;
+      this.hashCanonical = defaultCanonicalHashState;
       const opts = hashStateOrOptions ?? options ?? {};
       this.onStale = opts.onStale;
       this.requestTimeoutMs = opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
@@ -141,8 +156,20 @@ export class SidecarClient {
     if (!this.notificationsEnabled) return;
     const tick = params as unknown as TickNotification;
     this.ticks.push(tick);
+    if (this.snapshotInFlight > 0) {
+      this.queuedTicks.push(tick);
+      return;
+    }
+    this.applyTick(tick);
+  }
+
+  private applyTick(tick: TickNotification): void {
+    // Never patch an empty mirror with an incremental delta. A late joiner
+    // that has not snapshotted stays {} until SNAPSHOT rebuilds from empty.
+    if (!this.hasBaseline) return;
+    if (tick.snapshotSeq !== undefined && tick.snapshotSeq < this.appliedSnapshotSeq) return;
     this.state = applyPatches(this.state, tick.delta ?? []);
-    this.noteHash(tick.tick, tick.hash);
+    this.noteHash(tick.tick, tick.hash, tick.canonicalHash);
   }
 
   /**
@@ -199,6 +226,7 @@ export class SidecarClient {
   async initialize(capabilities: ClientCapabilities = { notifications: true, hashes: true }): Promise<InitializeResult> {
     this.hashesEnabled = capabilities.hashes !== false;
     this.notificationsEnabled = capabilities.notifications !== false;
+    this.canonicalHashesEnabled = capabilities.canonicalHashes === true;
     const result = await this.request<InitializeResult>(METHODS.INITIALIZE, {
       clientName: '@ai-rpg-engine/sidecar client',
       clientVersion: '1.0.0',
@@ -208,12 +236,22 @@ export class SidecarClient {
     return result;
   }
 
-  /** Load the full world, as a delta from empty — the same path as a tick. */
-  async snapshot(): Promise<{ tick: number; hash: string; delta: StatePatch[] }> {
-    const result = await this.request<{ tick: number; hash: string; delta: StatePatch[] }>(METHODS.SNAPSHOT);
-    this.state = applyPatches({}, result.delta);
-    this.noteHash(result.tick, result.hash);
-    return result;
+  /** Load the world as a delta from empty — the same path as a tick. */
+  async snapshot(params: SnapshotParams = {}): Promise<SnapshotResult> {
+    this.snapshotInFlight += 1;
+    this.queuedTicks.length = 0;
+    try {
+      const result = await this.request<SnapshotResult>(METHODS.SNAPSHOT, params as Record<string, unknown>);
+      this.state = applyPatches({}, result.delta);
+      this.hasBaseline = true;
+      this.appliedSnapshotSeq = result.snapshotSeq ?? this.appliedSnapshotSeq + 1;
+      this.noteHash(result.tick, result.hash, result.canonicalHash);
+      return result;
+    } finally {
+      const queued = this.queuedTicks.splice(0);
+      this.snapshotInFlight -= 1;
+      for (const tick of queued) this.applyTick(tick);
+    }
   }
 
   private ingestResult(method: string, value: unknown): void {
@@ -222,23 +260,29 @@ export class SidecarClient {
     const result = value as SubmitActionResult;
     if (!result || typeof result !== 'object' || !Array.isArray(result.delta)) return;
     this.state = applyPatches(this.state, result.delta);
-    this.noteHash(result.tick, result.hash);
+    this.noteHash(result.tick, result.hash, result.canonicalHash);
   }
 
-  private noteHash(tick: number, expected: string): void {
+  private noteHash(tick: number, expected: string, canonical?: string): void {
+    if (this.canonicalHashesEnabled && canonical !== undefined && this.hashCanonical) {
+      const actual = this.hashCanonical(this.state);
+      if (actual !== canonical) this.reportStale(tick, canonical, actual);
+    }
     if (!this.hashesEnabled || !this.hashState) return;
     const actual = this.hashState(this.state);
-    if (actual !== expected) {
-      const report: StalenessReport = { tick, expected, actual };
-      this.staleness.push(report);
-      if (this.onStale) {
-        this.onStale(report);
-      } else {
-        process.stderr.write(
-          `[sidecar] stale mirror at tick ${tick}: expected ${expected}, got ${actual}. ` +
-            'Call snapshot() to resync; do not correct the mirror locally.\n',
-        );
-      }
+    if (actual !== expected) this.reportStale(tick, expected, actual);
+  }
+
+  private reportStale(tick: number, expected: string, actual: string): void {
+    const report: StalenessReport = { tick, expected, actual };
+    this.staleness.push(report);
+    if (this.onStale) {
+      this.onStale(report);
+    } else {
+      process.stderr.write(
+        `[sidecar] stale mirror at tick ${tick}: expected ${expected}, got ${actual}. ` +
+          'Call snapshot() to resync; do not correct the mirror locally.\n',
+      );
     }
   }
 

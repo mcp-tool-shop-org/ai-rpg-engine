@@ -26,12 +26,14 @@ import {
   type PreviewResult,
   type ReplayResult,
   type ServerCapabilities,
+  type SessionRole,
   type SnapshotResult,
+  type SnapshotView,
   type SubmitActionResult,
   type TickNotification,
   type WireEvent,
 } from './protocol.js';
-import { diffState, snapshotDelta, stateHash, toWireEvent } from './serializer.js';
+import { canonicalStateHash, diffState, projectState, snapshotDelta, stateHash, toWireEvent } from './serializer.js';
 import { MessageTooLargeError, type RpcMessage } from './framing.js';
 
 export type SidecarServerOptions = {
@@ -132,6 +134,17 @@ export class SidecarServer {
   private clientCapabilities: ClientCapabilities = {};
   private clientName = '';
   private clientVersion = '';
+  /**
+   * Snapshot generation. Starts at 0; SNAPSHOT increments. Ticks carry the
+   * current seq so a client can drop pre-baseline patches (F-071522b2).
+   */
+  private snapshotSeq = 0;
+  /** Withhold `sim/tick` until this session has served SNAPSHOT. */
+  private hasSnapshotted = false;
+  /** Projection SNAPSHOT and later diffs share, so omitted keys stay omitted. */
+  private snapshotView: SnapshotView = {};
+  /** Observer sessions cannot SUBMIT_ACTION / ADVANCE / SHUTDOWN. */
+  private sessionWrites = true;
   private readonly gate: SimGate;
 
   constructor(
@@ -150,12 +163,20 @@ export class SidecarServer {
   }
 
   get capabilities(): ServerCapabilities {
-    return {
+    // Keep the four v1 flags as the unconditional body so a client that
+    // exact-matches initialize.capabilities (c1-sidecar) is not broken by
+    // additive negotiation. Extra flags are echoed only when requested.
+    const caps: ServerCapabilities = {
       preview: true,
       hashes: true,
       replay: true,
       snapshot: true,
     };
+    if (this.clientCapabilities.canonicalHashes) caps.canonicalHashes = true;
+    if (this.clientCapabilities.writes !== undefined || this.clientCapabilities.role !== undefined) {
+      caps.writes = this.sessionWrites;
+    }
+    return caps;
   }
 
   /** Feed one inbound message. Responses and notifications go out via `send`. */
@@ -260,6 +281,7 @@ export class SidecarServer {
         this.clientName = handshake.clientName;
         this.clientVersion = handshake.clientVersion;
         this.clientCapabilities = handshake.capabilities;
+        this.sessionWrites = handshake.capabilities.writes !== false;
         const result: InitializeResult = {
           serverName: this.serverName,
           engineVersion: this.engineVersion,
@@ -271,21 +293,36 @@ export class SidecarServer {
       }
 
       case METHODS.SNAPSHOT: {
+        const view = this.parseSnapshotParams(params);
+        if (!view.ok) {
+          if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, view.message);
+          return;
+        }
+        this.snapshotView = view.view;
         const state = this.engine.world as WorldState;
+        const projected = projectState(state, this.snapshotView);
         // SNAPSHOT is a resync: the next incremental diff must start from this
-        // world, not construct-time lastState (F-98b60cd0).
-        this.lastState = structuredClone(state) as WorldState;
+        // projection, not construct-time lastState (F-98b60cd0) and not from
+        // keys the client omitted (F-decfe897).
+        this.lastState = structuredClone(projected) as WorldState;
         for (const e of state.eventLog ?? []) this.emitted.add(e.id);
+        this.snapshotSeq += 1;
+        this.hasSnapshotted = true;
         const result: SnapshotResult = {
           tick: this.engine.store.tick,
-          hash: stateHash(state),
-          delta: snapshotDelta(state), // the SAME serializer, from an empty baseline
+          hash: stateHash(projected),
+          snapshotSeq: this.snapshotSeq,
+          delta: snapshotDelta(projected),
         };
+        if (this.clientCapabilities.canonicalHashes) {
+          result.canonicalHash = canonicalStateHash(projected);
+        }
         if (hasId) this.reply(id, result);
         return;
       }
 
       case METHODS.SUBMIT_ACTION: {
+        if (this.refuseWrites(id, hasId, METHODS.SUBMIT_ACTION)) return;
         const parsed = this.parseActionParams(params);
         if (!parsed.ok) {
           if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, parsed.message);
@@ -300,6 +337,7 @@ export class SidecarServer {
       }
 
       case METHODS.ADVANCE: {
+        if (this.refuseWrites(id, hasId, METHODS.ADVANCE)) return;
         if (Object.hasOwn(params, 'rounds') && !isSafeInteger(params.rounds)) {
           if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"rounds" must be a safe integer when present.');
           return;
@@ -362,6 +400,7 @@ export class SidecarServer {
       }
 
       case METHODS.SHUTDOWN: {
+        if (this.refuseWrites(id, hasId, METHODS.SHUTDOWN)) return;
         // Flip the sim-local gate BEFORE engine.shutdown so a sibling
         // handle() cannot submitAction after this session has decided to stop.
         // Engine.shutdown() only teardowns modules; it does not refuse
@@ -517,16 +556,41 @@ export class SidecarServer {
       if (!isPlainObject(params.capabilities)) {
         return { ok: false, message: '"capabilities" must be an object when present.' };
       }
-      for (const key of ['notifications', 'hashes'] as const) {
+      for (const key of ['notifications', 'hashes', 'canonicalHashes', 'writes'] as const) {
         if (Object.hasOwn(params.capabilities, key) && typeof params.capabilities[key] !== 'boolean') {
           return { ok: false, message: `"capabilities.${key}" must be a boolean when present.` };
         }
+      }
+      if (Object.hasOwn(params.capabilities, 'role')) {
+        const role = params.capabilities.role;
+        if (role !== 'writer' && role !== 'observer') {
+          return { ok: false, message: '"capabilities.role" must be "writer" or "observer" when present.' };
+        }
+      }
+      const role = params.capabilities.role as SessionRole | undefined;
+      let writes: boolean | undefined =
+        typeof params.capabilities.writes === 'boolean' ? params.capabilities.writes : undefined;
+      if (role === 'observer') {
+        if (writes === true) {
+          return { ok: false, message: '"capabilities.role": "observer" conflicts with "capabilities.writes": true.' };
+        }
+        writes = false;
+      } else if (role === 'writer') {
+        if (writes === false) {
+          return { ok: false, message: '"capabilities.role": "writer" conflicts with "capabilities.writes": false.' };
+        }
+        writes = true;
       }
       capabilities = {
         ...(typeof params.capabilities.notifications === 'boolean'
           ? { notifications: params.capabilities.notifications }
           : {}),
         ...(typeof params.capabilities.hashes === 'boolean' ? { hashes: params.capabilities.hashes } : {}),
+        ...(typeof params.capabilities.canonicalHashes === 'boolean'
+          ? { canonicalHashes: params.capabilities.canonicalHashes }
+          : {}),
+        ...(writes !== undefined ? { writes } : {}),
+        ...(role === 'writer' || role === 'observer' ? { role } : {}),
       };
     }
     return {
@@ -535,6 +599,36 @@ export class SidecarServer {
       clientVersion: typeof params.clientVersion === 'string' ? params.clientVersion : '',
       capabilities,
     };
+  }
+
+  private parseSnapshotParams(
+    params: Record<string, unknown>,
+  ): { ok: true; view: SnapshotView } | { ok: false; message: string } {
+    if (Object.hasOwn(params, 'omitEventLog') && typeof params.omitEventLog !== 'boolean') {
+      return { ok: false, message: '"omitEventLog" must be a boolean when present.' };
+    }
+    if (Object.hasOwn(params, 'collections')) {
+      if (!isStringArray(params.collections) || params.collections.length === 0) {
+        return { ok: false, message: '"collections" must be a non-empty string[] when present.' };
+      }
+    }
+    const view: SnapshotView = {
+      ...(typeof params.omitEventLog === 'boolean' ? { omitEventLog: params.omitEventLog } : {}),
+      ...(isStringArray(params.collections) ? { collections: params.collections } : {}),
+    };
+    return { ok: true, view };
+  }
+
+  private refuseWrites(id: unknown, hasId: boolean, method: string): boolean {
+    if (this.sessionWrites) return false;
+    if (hasId) {
+      this.fail(
+        id,
+        ERROR_CODES.CAPABILITY_UNAVAILABLE,
+        `"${method}" requires a writer session; this client negotiated capabilities.writes: false (observer).`,
+      );
+    }
+    return true;
   }
 
   /** Fold newly emitted events into a tick result, deduplicated by event id. */
@@ -555,11 +649,21 @@ export class SidecarServer {
       fresh.push(toWireEvent(e));
     }
 
-    const state = this.engine.world as WorldState;
-    const delta = diffState(this.lastState, state);
-    this.lastState = structuredClone(state) as WorldState;
+    const projected = projectState(this.engine.world, this.snapshotView);
+    const delta = diffState(this.lastState, projected);
+    this.lastState = structuredClone(projected) as WorldState;
 
-    return { tick: this.engine.store.tick, hash: stateHash(state), events: fresh, delta };
+    const result: SubmitActionResult = {
+      tick: this.engine.store.tick,
+      hash: stateHash(projected),
+      events: fresh,
+      delta,
+      snapshotSeq: this.snapshotSeq,
+    };
+    if (this.clientCapabilities.canonicalHashes) {
+      result.canonicalHash = canonicalStateHash(projected);
+    }
+    return result;
   }
 
   /** Mark every session sharing this Engine closed, then tear the sim down. */
@@ -589,23 +693,28 @@ export class SidecarServer {
   }
 
   private pushTick(result: SubmitActionResult): void {
-    if (this.closed || this.gate.closed) return;
+    // Fence: never push an incremental tick onto a session that has not
+    // applied a SNAPSHOT. The delta would be lastState-at-connect → now,
+    // which applied to {} is a partial world (F-071522b2).
+    if (this.closed || this.gate.closed || !this.hasSnapshotted) return;
     const notification: TickNotification = {
       tick: result.tick,
       hash: result.hash,
       events: result.events,
       delta: result.delta,
+      snapshotSeq: this.snapshotSeq,
     };
+    if (result.canonicalHash !== undefined) notification.canonicalHash = result.canonicalHash;
     this.outbound({ jsonrpc: '2.0', method: NOTIFICATIONS.TICK, params: notification });
   }
 
   /**
    * Catch this session up after another session committed against the shared
    * Engine. Diffs vs this session's lastState so each client gets the delta
-   * that matches its own mirror — not the origin's.
+   * that matches its own mirror — not the origin's. Withheld until SNAPSHOT.
    */
   replicatePeerCommit(): void {
-    if (this.closed || this.gate.closed || !this.initialized) return;
+    if (this.closed || this.gate.closed || !this.initialized || !this.hasSnapshotted) return;
     this.pushTick(this.commit([]));
   }
 
@@ -613,8 +722,10 @@ export class SidecarServer {
     this.outbound({ jsonrpc: '2.0', id: id as string | number, result }, id);
   }
 
-  private fail(id: unknown, code: number, message: string): void {
-    this.outbound({ jsonrpc: '2.0', id: id as string | number, error: { code, message } });
+  private fail(id: unknown, code: number, message: string, data?: unknown): void {
+    const error: Record<string, unknown> = { code, message };
+    if (data !== undefined) error.data = data;
+    this.outbound({ jsonrpc: '2.0', id: id as string | number, error });
   }
 
   /**
@@ -632,7 +743,14 @@ export class SidecarServer {
           this.send({
             jsonrpc: '2.0',
             id: requestId as string | number,
-            error: { code: ERROR_CODES.SNAPSHOT_TOO_LARGE, message: err.message },
+            error: {
+              code: ERROR_CODES.SNAPSHOT_TOO_LARGE,
+              message: err.message,
+              data: {
+                byteLength: err.byteLength,
+                retry: { omitEventLog: true },
+              },
+            },
           });
         }
         return;
@@ -657,5 +775,10 @@ export class SidecarServer {
 
   get sessionClientVersion(): string {
     return this.clientVersion;
+  }
+
+  /** Writer vs observer, after initialize. Default writer. */
+  get sessionRole(): SessionRole {
+    return this.sessionWrites ? 'writer' : 'observer';
   }
 }

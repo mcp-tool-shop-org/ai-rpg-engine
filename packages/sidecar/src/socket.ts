@@ -23,13 +23,15 @@
 //      accepting commands is not a thing to expose to a LAN because a default was
 //      convenient. A non-loopback bind must be asked for by name.
 //
-//   2. ONE CONNECTION AT A TIME, by default. The protocol's topology is one server
-//      to N clients, and this transport could trivially accept N — but two clients
+//   2. ONE WRITER AT A TIME, by default. The protocol's topology is one server
+//      to N clients, and this transport could trivially accept N — but two WRITERS
 //      submitting actions interleave in SOCKET ARRIVAL ORDER, and arrival order is
-//      not deterministic. That would put a nondeterminism hole under the one
-//      property C1 exists to guarantee, silently. So a second connection is
-//      REFUSED with a message that says why, and lifting the cap is a decision
-//      about write arbitration rather than a config change nobody reviewed.
+//      not deterministic. A second connection is REFUSED with a message that says
+//      why when maxConnections is 1 (the default). Write arbitration is now a
+//      negotiated session role (`capabilities.writes` / `role: observer|writer`):
+//      raise maxConnections for observer overlays; observers cannot SUBMIT_ACTION,
+//      ADVANCE, or SHUTDOWN. N writers is still a serial-lock problem and is not
+//      the supported production mode.
 //
 //   3. DIAGNOSTICS STILL GO TO STDERR. Under this transport stdout is not the
 //      protocol, so writing to it would be harmless — which is precisely the
@@ -39,6 +41,7 @@
 import * as net from 'node:net';
 import type { ByteReadable, ByteWritable, RpcMessage } from './framing.js';
 import { MessageReader, encodeMessage } from './framing.js';
+import { SidecarClient, type SidecarClientOptions } from './client.js';
 import { SidecarServer, type SidecarServerOptions } from './server.js';
 
 export type SocketServerOptions = {
@@ -51,8 +54,8 @@ export type SocketServerOptions = {
   host?: string;
   /**
    * How many clients may be connected at once. Defaults to 1 — see decision 2.
-   * Raising this above 1 without deciding how concurrent writes are ordered
-   * reintroduces the nondeterminism the cap exists to prevent.
+   * Raise this for observer overlays (`capabilities.writes: false`). Two
+   * writers on one Engine is still arrival-order nondeterminism.
    */
   maxConnections?: number;
 };
@@ -231,3 +234,45 @@ export function startSocketServer(
  * asserted by the compiler rather than assumed by a comment.
  */
 export type SocketAsWritable = ByteWritable;
+
+export type SocketClientHandles = {
+  client: SidecarClient;
+  socket: net.Socket;
+  close: () => void;
+};
+
+/**
+ * Official TCP attach helper. The same glue `socket.test.ts` used to keep
+ * private as `connectClient` — a Godot host has the GDScript kit; a JS host
+ * should not have to copy the test harness.
+ */
+export function connectSocketClient(
+  port: number,
+  host = '127.0.0.1',
+  options?: SidecarClientOptions,
+): Promise<SocketClientHandles> {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection({ port, host }, () => {
+      const client = new SidecarClient((msg) => {
+        if (socket.destroyed || socket.writableEnded) return;
+        socket.write(encodeMessage(msg));
+      }, options);
+      const reader = new MessageReader(
+        (msg) => client.handle(msg),
+        () => undefined,
+      );
+      socket.on('data', (c: Buffer) => reader.push(c));
+      socket.on('close', () => client.disconnect());
+      socket.on('error', (err) => client.disconnect(err));
+      resolve({
+        client,
+        socket,
+        close: () => {
+          client.disconnect();
+          if (!socket.destroyed) socket.destroy();
+        },
+      });
+    });
+    socket.once('error', reject);
+  });
+}

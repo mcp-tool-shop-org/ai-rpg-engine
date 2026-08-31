@@ -61,13 +61,37 @@ export const ALL_METHODS: readonly MethodName[] = Object.values(METHODS);
  */
 export const METHOD_PARAMS: Record<MethodName, readonly string[]> = {
   [METHODS.INITIALIZE]: ['clientName', 'clientVersion', 'capabilities'],
-  [METHODS.SNAPSHOT]: [],
+  [METHODS.SNAPSHOT]: ['omitEventLog', 'collections'],
   [METHODS.SUBMIT_ACTION]: ['verb', 'targetIds', 'toolId', 'parameters'],
   [METHODS.ADVANCE]: ['rounds'],
   [METHODS.PREVIEW]: ['verb', 'targetIds', 'toolId', 'parameters'],
   [METHODS.REPLAY]: ['fromTick', 'toTick'],
   [METHODS.SHUTDOWN]: [],
 };
+
+/** Optional SNAPSHOT window. Same serializer, possibly projected baseline. */
+export type SnapshotParams = {
+  /**
+   * Drop `eventLog` from the delta. Clients already have `replay` for
+   * presentation; omitting the log is how a long session stays under the
+   * 16 MiB frame ceiling.
+   */
+  omitEventLog?: boolean;
+  /**
+   * Restrict the snapshot (and this session's subsequent incremental diffs)
+   * to these top-level WorldState keys, e.g. `['entities', 'zones']`.
+   */
+  collections?: string[];
+};
+
+/** How a session projects the world onto the wire after SNAPSHOT. */
+export type SnapshotView = {
+  omitEventLog?: boolean;
+  collections?: readonly string[];
+};
+
+/** Session mutation role. Observers receive ticks; they do not command. */
+export type SessionRole = 'writer' | 'observer';
 
 // --- Notifications (server → client, push) --------------------------------
 
@@ -101,6 +125,16 @@ export type ServerCapabilities = {
   replay: boolean;
   /** `snapshot` is available. */
   snapshot: boolean;
+  /**
+   * Echoed when the client requested `canonicalHashes`. The JS `hash` is
+   * unchanged; `canonicalHash` is additive.
+   */
+  canonicalHashes?: boolean;
+  /**
+   * Echoed when the client negotiated `writes` or `role`. `false` means this
+   * session is an observer: snapshot/replay/preview/ticks only.
+   */
+  writes?: boolean;
 };
 
 export type ClientCapabilities = {
@@ -108,6 +142,18 @@ export type ClientCapabilities = {
   notifications?: boolean;
   /** The client verifies per-tick hashes and reports staleness. */
   hashes?: boolean;
+  /**
+   * Request the capability-negotiated canonical hash (sorted keys, integers
+   * stay integers). Never a replacement for `hashes` / `hash`.
+   */
+  canonicalHashes?: boolean;
+  /**
+   * `false` = observer. Omitted defaults to writer so existing clients keep
+   * commanding. `role: 'observer'` is the same switch.
+   */
+  writes?: boolean;
+  /** Explicit session role; `observer` forces `writes: false`. */
+  role?: SessionRole;
 };
 
 export type InitializeResult = {
@@ -190,6 +236,16 @@ export function assertNotReserved(name: string): void {
 export type TickNotification = {
   tick: number;
   hash: string;
+  /**
+   * Canonical cross-language hash. Present only when this session requested
+   * `capabilities.canonicalHashes`.
+   */
+  canonicalHash?: string;
+  /**
+   * Snapshot generation. Ticks with `snapshotSeq` less than the last applied
+   * snapshot are pre-baseline and must be dropped.
+   */
+  snapshotSeq?: number;
   /** Events resolved during this tick, in emission order. */
   events: WireEvent[];
   /** State changes since the previous tick, same serializer as `snapshot`. */
@@ -223,13 +279,19 @@ export type StatePatch =
 export type SnapshotResult = {
   tick: number;
   hash: string;
-  /** The whole world, as a delta from an EMPTY baseline (Quake 3). */
+  /** Canonical hash; present only when `capabilities.canonicalHashes`. */
+  canonicalHash?: string;
+  /** Snapshot generation; ticks with a lower seq are pre-baseline. */
+  snapshotSeq: number;
+  /** The whole world (or a projection), as a delta from an EMPTY baseline. */
   delta: StatePatch[];
 };
 
 export type SubmitActionResult = {
   tick: number;
   hash: string;
+  canonicalHash?: string;
+  snapshotSeq?: number;
   events: WireEvent[];
   delta: StatePatch[];
 };

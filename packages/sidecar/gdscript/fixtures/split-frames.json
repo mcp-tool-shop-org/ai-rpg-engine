@@ -1,0 +1,74 @@
+{
+  "description": "Shared Content-Length vectors. Node MessageReader (framing.ts) and gdscript/framing.gd must reconstruct the same RpcMessage from these split chunks. Pin for F-31094245.",
+  "maxMessageBytes": 16777216,
+  "cases": [
+    {
+      "name": "split-snapshot-mid-header",
+      "chunks": [
+        "Content-Length: 5",
+        "6\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"snapshot\",\"params\":{}}"
+      ],
+      "messages": [
+        { "jsonrpc": "2.0", "id": 7, "method": "snapshot", "params": {} }
+      ],
+      "errors": []
+    },
+    {
+      "name": "split-snapshot-mid-body",
+      "chunks": [
+        "Content-Length: 56\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":7,",
+        "\"method\":\"snapshot\",\"params\":{}}"
+      ],
+      "messages": [
+        { "jsonrpc": "2.0", "id": 7, "method": "snapshot", "params": {} }
+      ],
+      "errors": []
+    },
+    {
+      "name": "split-byte-at-a-time-prefix",
+      "chunks": [
+        "C", "o", "n", "t", "e", "n", "t", "-", "L", "e", "n", "g", "t", "h", ":", " ", "5", "6",
+        "\r", "\n", "\r", "\n",
+        "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"snapshot\",\"params\":{}}"
+      ],
+      "messages": [
+        { "jsonrpc": "2.0", "id": 7, "method": "snapshot", "params": {} }
+      ],
+      "errors": []
+    },
+    {
+      "name": "two-messages-one-then-split",
+      "chunks": [
+        "Content-Length: 56\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"snapshot\",\"params\":{}}Content-Length: 58\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"",
+        ",\"params\":{}}"
+      ],
+      "messages": [
+        { "jsonrpc": "2.0", "id": 7, "method": "snapshot", "params": {} },
+        { "jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {} }
+      ],
+      "errors": []
+    },
+    {
+      "name": "malformed-header-resync",
+      "chunks": [
+        "Content-Type: nonsense\r\n\r\n",
+        "Content-Length: 56\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"snapshot\",\"params\":{}}"
+      ],
+      "messages": [
+        { "jsonrpc": "2.0", "id": 7, "method": "snapshot", "params": {} }
+      ],
+      "errors": ["malformed-header"]
+    },
+    {
+      "name": "bad-length-resync",
+      "chunks": [
+        "Content-Length: 99999999999999\r\n\r\n",
+        "Content-Length: 56\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"snapshot\",\"params\":{}}"
+      ],
+      "messages": [
+        { "jsonrpc": "2.0", "id": 7, "method": "snapshot", "params": {} }
+      ],
+      "errors": ["bad-length"]
+    }
+  ]
+}

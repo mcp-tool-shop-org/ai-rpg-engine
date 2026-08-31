@@ -12,7 +12,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import * as net from 'node:net';
 import { createTestEngine, type Engine, type EngineModule, type EntityState, type WorldState } from '@ai-rpg-engine/core';
 import { SidecarClient } from './client.js';
-import { startSocketServer, type SocketServerHandles } from './socket.js';
+import { connectSocketClient, startSocketServer, type SocketServerHandles } from './socket.js';
 import { attachedServerCount } from './server.js';
 import { MessageReader, encodeMessage, type RpcMessage } from './framing.js';
 import { METHODS, ERROR_CODES } from './protocol.js';
@@ -395,22 +395,9 @@ async function waitUntil(pred: () => boolean, label: string, ms = 4000): Promise
 }
 
 async function connectClient(port: number): Promise<{ client: SidecarClient; socket: net.Socket }> {
-  const socket = await new Promise<net.Socket>((resolve, reject) => {
-    const s = net.createConnection({ port, host: '127.0.0.1' }, () => resolve(s));
-    s.on('error', reject);
-  });
-  sockets.push(socket);
-  const client = new SidecarClient((msg) => {
-    socket.write(encodeMessage(msg));
-  });
-  const reader = new MessageReader(
-    (msg) => client.handle(msg),
-    () => undefined,
-  );
-  socket.on('data', (c: Buffer) => reader.push(c));
-  socket.on('close', () => client.disconnect());
-  socket.on('error', (err) => client.disconnect(err));
-  return { client, socket };
+  const h = await connectSocketClient(port);
+  sockets.push(h.socket);
+  return { client: h.client, socket: h.socket };
 }
 
 describe('F-98b60cd0 — two TCP sessions: snapshot rebases, idle peer gets the tick', () => {
@@ -492,5 +479,43 @@ describe('F-f64330ad — destroy+reconnect does not leak SidecarServers on the g
     await second.request(METHODS.INITIALIZE, { clientName: 'b', clientVersion: '1', capabilities: {} });
     expect(attachedServerCount(engine)).toBe(1);
   }, 12000);
+});
+
+describe('F-bb72a8ab — TCP observer overlay: B cannot write, still gets the tick', () => {
+  it('maxConnections 2, B writes:false, B submitAction refused, A commits, B sees spawn', async () => {
+    const engine = liveEngine();
+    const h = serve({ engine, maxConnections: 2 });
+    const port = await ready(h);
+    const a = await connectClient(port);
+    const b = await connectClient(port);
+    await a.client.initialize({ notifications: true, hashes: true, writes: true });
+    await b.client.initialize({ notifications: true, hashes: true, writes: false });
+    await a.client.snapshot();
+    await b.client.snapshot();
+
+    await expect(b.client.request(METHODS.SUBMIT_ACTION, { verb: 'spawn-npc' })).rejects.toMatchObject({
+      code: ERROR_CODES.CAPABILITY_UNAVAILABLE,
+    });
+    expect(engine.world.entities['npc-1']).toBeUndefined();
+
+    await a.client.request(METHODS.SUBMIT_ACTION, { verb: 'spawn-npc' });
+    await waitUntil(
+      () => Boolean((b.client.mirroredState as WorldState).entities?.['npc-1']),
+      'observer B tick for spawn',
+    );
+    expect((b.client.mirroredState as WorldState).entities['npc-1']).toBeTruthy();
+  }, 12000);
+});
+
+describe('F-31094245 — connectSocketClient is exported attach glue', () => {
+  it('initialize over the helper matches the session protocol', async () => {
+    const h = serve();
+    const port = await ready(h);
+    const { client, socket } = await connectSocketClient(port);
+    sockets.push(socket);
+    const init = await client.initialize({ notifications: true, hashes: true });
+    expect(init.capabilities).toHaveProperty('hashes');
+    expect(init.serverName).toBeTruthy();
+  });
 });
 
