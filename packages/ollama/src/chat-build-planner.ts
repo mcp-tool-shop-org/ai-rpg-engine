@@ -3,7 +3,7 @@
 // Plans use existing tools — no hidden builders, no magic mutations.
 // Everything is previewable, confirmable, and traceable.
 
-import type { DesignSession, SessionArtifacts } from './session.js';
+import { emptyArtifacts, type DesignSession, type SessionArtifacts } from './session.js';
 import type { ChatIntent } from './chat-types.js';
 
 // --- Types ---
@@ -459,9 +459,7 @@ export function generateBuildPlan(
     }
   }
 
-  const existing = session?.artifacts ?? {
-    districts: [], factions: [], quests: [], rooms: [], packs: [],
-  };
+  const existing = session?.artifacts ?? emptyArtifacts();
 
   for (const tmplStep of template.steps) {
     // Smart skip: if session already has matching artifacts

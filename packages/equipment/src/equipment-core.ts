@@ -810,7 +810,7 @@ export function createEquipmentCore(config: EquipmentCoreConfig): EngineModule {
         return unequipHandler(action, world, readCatalog, config.statuses);
       });
 
-      ctx.persistence.registerNamespace(EQUIPMENT_STATE_KEY, (world) => {
+      ctx.persistence.registerNamespace(EQUIPMENT_STATE_KEY, (world: Readonly<WorldState>) => {
         bindAutoWear(world as WorldState, config.catalog, config.statuses);
         return { loadouts: {} } satisfies EquipmentModuleState;
       });
