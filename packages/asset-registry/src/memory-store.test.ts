@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { MemoryAssetStore } from './memory-store.js';
+import { OverQuotaError } from './quota.js';
 import type { AssetInput } from './types.js';
 
 const testInput: AssetInput = {
@@ -195,5 +196,55 @@ describe('MemoryAssetStore', () => {
       merged.tags.push('placeholder');
       expect((await store.getMeta(merged.hash))?.tags).toEqual(['character', 'fantasy', 'different']);
     });
+  });
+});
+
+describe('MemoryAssetStore quota (F-158910cc)', () => {
+  it('totalBytes sums sizeBytes and evictUntil drops oldest by createdAt', async () => {
+    const store = new MemoryAssetStore();
+    const a = await store.put(new Uint8Array([1, 2, 3]), testInput);
+    const b = await store.put(new Uint8Array([4, 5]), testInput);
+    expect(await store.totalBytes()).toBe(5);
+    expect(await store.evictUntil({ maxCount: 1, policy: 'evict-oldest' })).toBe(1);
+    expect(await store.count()).toBe(1);
+    expect((await store.has(a.hash) ? 1 : 0) + (await store.has(b.hash) ? 1 : 0)).toBe(1);
+  });
+
+  it('reject policy throws OverQuotaError and does not write the new blob', async () => {
+    const store = new MemoryAssetStore({ maxCount: 1, policy: 'reject' });
+    await store.put(testData, testInput);
+    await expect(store.put(new Uint8Array([9, 8, 7]), testInput)).rejects.toMatchObject({
+      name: 'OverQuotaError',
+      code: 'over_quota',
+    });
+    expect(await store.count()).toBe(1);
+    try {
+      await store.put(new Uint8Array([9, 8, 7]), testInput);
+    } catch (err) {
+      expect(err).toBeInstanceOf(OverQuotaError);
+    }
+  });
+
+  it('reject policy still allows a hash-hit put (CAS identity is not quota)', async () => {
+    const store = new MemoryAssetStore({ maxCount: 1, maxBytes: testData.length, policy: 'reject' });
+    await store.put(testData, testInput);
+    const again = await store.put(testData, { ...testInput, tags: ['extra'] });
+    expect(again.tags).toContain('extra');
+    expect(await store.count()).toBe(1);
+  });
+
+  it('evict-oldest put makes room then stores the incoming blob', async () => {
+    const store = new MemoryAssetStore({ maxCount: 1, policy: 'evict-oldest' });
+    const first = await store.put(new Uint8Array([1]), testInput);
+    const second = await store.put(new Uint8Array([2]), testInput);
+    expect(await store.count()).toBe(1);
+    expect(await store.has(first.hash)).toBe(false);
+    expect(await store.has(second.hash)).toBe(true);
+  });
+
+  it('reject policy throws when a single blob exceeds maxBytes even when empty', async () => {
+    const store = new MemoryAssetStore({ maxBytes: 2, policy: 'reject' });
+    await expect(store.put(new Uint8Array([1, 2, 3]), testInput)).rejects.toBeInstanceOf(OverQuotaError);
+    expect(await store.count()).toBe(0);
   });
 });

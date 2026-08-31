@@ -31,7 +31,7 @@ function initials(name: string): string {
  * not a mid-prompt fragment of the SD string (F-e27ee3c1).
  */
 function extractNameAndSubtitle(prompt: string): { name: string; subtitle: string } {
-  const nameMatch = prompt.match(/Portrait of ([^,]+)/);
+  const nameMatch = prompt.match(/(?:Portrait|Scene|Background|Icon) of ([^,]+)/i);
   const name = (nameMatch?.[1] ?? 'Unknown').trim() || 'Unknown';
   const afterName = nameMatch
     ? prompt.slice((nameMatch.index ?? 0) + nameMatch[0].length).replace(/^,\s*/, '')
@@ -109,6 +109,19 @@ function escapeXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
+/** Overlay a corner mark so img2img variants are visually distinct (F-9daede34). */
+function overlayVariantMark(svgBytes: Uint8Array, width: number, height: number): Uint8Array {
+  const text = new TextDecoder().decode(svgBytes);
+  if (!text.includes('<svg')) return svgBytes;
+  const markW = Math.max(8, Math.floor(width * 0.12));
+  const markH = Math.max(8, Math.floor(height * 0.12));
+  const mark = `  <rect x="0" y="0" width="${markW}" height="${markH}" fill="#c9a227" data-variant="1"/>`;
+  const patched = text.includes('</svg>')
+    ? text.replace('</svg>', `${mark}\n</svg>`)
+    : `${text}\n${mark}`;
+  return new TextEncoder().encode(patched);
+}
+
 export class PlaceholderProvider implements ImageProvider {
   readonly name = 'placeholder';
 
@@ -118,7 +131,13 @@ export class PlaceholderProvider implements ImageProvider {
     const start = Date.now();
 
     const { name, subtitle } = extractNameAndSubtitle(prompt);
-    const image = generateSvg(name, subtitle, width, height);
+    let image = generateSvg(name, subtitle, width, height);
+    if (opts?.initImage && opts.initImage.length > 0) {
+      const asText = new TextDecoder().decode(opts.initImage);
+      image = asText.includes('<svg')
+        ? overlayVariantMark(opts.initImage, width, height)
+        : overlayVariantMark(image, width, height);
+    }
 
     // Local + synchronous: this provider has no failure modes, so it always
     // resolves the ok:true arm of the GenerationOutcome contract.

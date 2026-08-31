@@ -52,8 +52,9 @@ export type SoundLookup = {
 export type AudioDirectorConfig = {
   defaultCooldownMs?: number;
   /**
-   * When set, sfx/ambient play commands with a matching file-source entry
-   * have `resourceId` rewritten to the ingested hash (or variant filename).
+   * When set, sfx/ambient/music/voice play commands with a matching
+   * file-source entry have `resourceId` rewritten to the ingested hash
+   * (or variant filename).
    */
   soundRegistry?: SoundLookup;
   /** Deterministic roll in [0, 1] forwarded to `pickVariant`. Default 0. */

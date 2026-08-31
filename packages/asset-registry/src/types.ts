@@ -65,6 +65,19 @@ export type AssetGetOptions = {
 };
 
 /**
+ * Capacity limit for an {@link AssetStore} backend (F-158910cc).
+ * `maxBytes` / `maxCount` omitted means that axis is unbounded.
+ * CAS hash identity is unchanged — a hash-hit put never consumes quota.
+ */
+export type QuotaPolicy = 'reject' | 'evict-oldest';
+
+export type StoreQuota = {
+  maxBytes?: number;
+  maxCount?: number;
+  policy: QuotaPolicy;
+};
+
+/**
  * Abstract storage backend. All methods are async to support remote backends.
  *
  * Hash contract: `hash` parameters are SHA-256 hex digests (`/^[a-f0-9]{64}$/`).
@@ -95,4 +108,12 @@ export interface AssetStore {
   delete(hash: string): Promise<boolean>;
   /** Total number of stored assets. */
   count(): Promise<number>;
+  /** Sum of stored `sizeBytes` (blob lengths). */
+  totalBytes(): Promise<number>;
+  /**
+   * Delete oldest assets (by `createdAt`, then hash) until the store is within
+   * `quota.maxBytes` / `quota.maxCount`. Returns how many assets were removed.
+   * File backends delete blob + sidecar; memory backends drop both maps.
+   */
+  evictUntil(quota: StoreQuota): Promise<number>;
 }

@@ -182,6 +182,66 @@ describe('AudioDirector', () => {
       expect(allowed.filter((c) => c.domain === 'sfx' && c.action === 'play')).toHaveLength(1);
     });
 
+    it('emits stop of the previous music stem then play of the new one (F-c53caff0)', () => {
+      const director = new AudioDirector();
+      director.schedule(makePlan({
+        musicCue: { action: 'play', trackId: 'theme_a', fadeMs: 800 },
+      }), 0);
+      expect(director.getActiveMusic()).toBe('theme_a');
+
+      const next = director.schedule(makePlan({
+        musicCue: { action: 'play', trackId: 'theme_b', fadeMs: 400 },
+      }), 1000);
+      const music = next.filter((c) => c.domain === 'music');
+      const stop = music.find((c) => c.action === 'stop');
+      const play = music.find((c) => c.action === 'play');
+      expect(stop?.resourceId).toBe('theme_a');
+      expect(stop?.params.fadeMs).toBe(400);
+      expect(play?.resourceId).toBe('theme_b');
+      expect(music.indexOf(stop!)).toBeLessThan(music.indexOf(play!));
+      expect(director.getActiveMusic()).toBe('theme_b');
+      expect(director.getActiveLayers().get('theme_b')?.domain).toBe('music');
+    });
+
+    it('resolves music and voice file-source hashes (F-c53caff0)', () => {
+      const musicHash = 'b'.repeat(64);
+      const voiceHash = 'c'.repeat(64);
+      const director = new AudioDirector({
+        variantRoll: 0,
+        soundRegistry: {
+          get(id) {
+            if (id === 'theme_file') {
+              return { source: 'file', variants: ['theme.ogg'], hashes: { 'theme.ogg': musicHash } };
+            }
+            if (id === 'npc_voice') {
+              return { source: 'file', variants: ['npc.wav'], hashes: { 'npc.wav': voiceHash } };
+            }
+            return undefined;
+          },
+          pickVariant(id) {
+            if (id === 'theme_file') return 'theme.ogg';
+            if (id === 'npc_voice') return 'npc.wav';
+            return undefined;
+          },
+        },
+      });
+      const commands = director.schedule(makePlan({
+        musicCue: { action: 'play', trackId: 'theme_file', fadeMs: 200 },
+        speaker: {
+          entityId: 'npc',
+          voiceId: 'npc_voice',
+          emotion: 'calm',
+          speed: 1,
+          text: 'Hello.',
+        },
+      }), 0);
+      const music = commands.find((c) => c.domain === 'music' && c.action === 'play');
+      const voice = commands.find((c) => c.domain === 'voice' && c.action === 'play');
+      expect(music!.resourceId).toBe(musicHash);
+      expect(voice!.resourceId).toBe(voiceHash);
+      expect(director.getActiveMusic()).toBe(musicHash);
+    });
+
     it('two directors driven by the same explicit clock produce byte-identical command streams', () => {
       const plan = makePlan({
         sfx: [{ effectId: 'alert_warning', timing: 'immediate', intensity: 0.8 }],

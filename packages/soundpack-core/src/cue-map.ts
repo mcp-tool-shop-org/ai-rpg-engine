@@ -135,6 +135,63 @@ export const FALLBACK_CUE: Readonly<CueTarget> = Object.freeze({
   intensity: 0.4,
 });
 
+type BedTarget = { layerId: string };
+
+/**
+ * Optional ambient-bed hints for scene.* gameplay cues (F-57203b5e).
+ * Independent of {@link EXACT_CUE_MAP} / {@link NAMESPACE_CUE_MAP} so existing
+ * SFX exact/namespace rows (e.g. scene.enter → ui_whoosh) stay unchanged.
+ */
+export const SCENE_BED_MAP: Readonly<Record<string, BedTarget>> = Object.freeze(
+  Object.assign(Object.create(null), {
+    'scene.enter': { layerId: 'ambient_white_noise' },
+    'scene.crypt-reveal': { layerId: 'ambient_drone' },
+    'scene.vault-reveal': { layerId: 'ambient_drone' },
+    'scene.crime-scene-reveal': { layerId: 'ambient_drone' },
+    'scene.sunken-shrine-reveal': { layerId: 'ambient_drone' },
+    'scene.hospital-reveal': { layerId: 'ambient_drone' },
+    'scene.spirit-hollow-reveal': { layerId: 'ambient_drone' },
+    'scene.alien-cavern-reveal': { layerId: 'ambient_drone' },
+    'scene.hidden-passage-reveal': { layerId: 'ambient_drone' },
+    'scene.cellar-descent': { layerId: 'ambient_drone' },
+    'scene.arena-roar': { layerId: 'ambient_drone' },
+    'scene.conviction': { layerId: 'ambient_white_noise' },
+    'scene.seizure': { layerId: 'ambient_drone' },
+  }),
+);
+
+export const NAMESPACE_BED_MAP: Readonly<Record<string, BedTarget>> = Object.freeze(
+  Object.assign(Object.create(null), {
+    scene: { layerId: 'ambient_white_noise' },
+  }),
+);
+
+/**
+ * Optional ambient bed for a gameplay cue. Undefined when the cue has no bed
+ * hint (combat.* / ability.* / unknown namespaces) — hosts then keep the
+ * current mix. Does not emit an SFX cue.
+ */
+export function resolveAmbientBed(cue: string): { layerId: string; via: CueMatchTier } | undefined {
+  if (Object.hasOwn(SCENE_BED_MAP, cue)) {
+    return { layerId: SCENE_BED_MAP[cue].layerId, via: 'exact' };
+  }
+  const dot = cue.indexOf('.');
+  if (dot > 0) {
+    const nsKey = cue.slice(0, dot);
+    if (Object.hasOwn(NAMESPACE_BED_MAP, nsKey)) {
+      return { layerId: NAMESPACE_BED_MAP[nsKey].layerId, via: 'namespace' };
+    }
+  }
+  return undefined;
+}
+
+export function sceneBedTargetIds(): string[] {
+  const ids = new Set<string>();
+  for (const target of Object.values(SCENE_BED_MAP)) ids.add(target.layerId);
+  for (const target of Object.values(NAMESPACE_BED_MAP)) ids.add(target.layerId);
+  return [...ids].sort();
+}
+
 /**
  * The exact-tier cue ids, for docs and totality tests. Namespace families are
  * open-ended by design and therefore not enumerable here.
@@ -250,6 +307,13 @@ if (!cueMapIsCoveredBy(CORE_SOUND_PACK.entries.map((e) => e.id))) {
   throw new Error(
     '[soundpack-core] cue-map points at a sound id missing from CORE_SOUND_PACK. ' +
       'Fix the mapping table in cue-map.ts (see cueMapTargetIds()).',
+  );
+}
+const coreIds = new Set(CORE_SOUND_PACK.entries.map((e) => e.id));
+if (!sceneBedTargetIds().every((id) => coreIds.has(id))) {
+  throw new Error(
+    '[soundpack-core] scene bed map points at a sound id missing from CORE_SOUND_PACK. ' +
+      'Fix SCENE_BED_MAP / NAMESPACE_BED_MAP in cue-map.ts.',
   );
 }
 /* v8 ignore stop */

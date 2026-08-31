@@ -1,8 +1,19 @@
 // Portrait generation pipeline — prompt → generate → store
 
 import type { AssetStore, AssetMetadata } from '@ai-rpg-engine/asset-registry';
-import type { PortraitRequest, ImageProvider, GenerationOptions, GenerationFailure } from './types.js';
-import { buildPromptPair, buildNegativePrompt, sanitize, resolvedPortraitStyle } from './prompt-builder.js';
+import type { PortraitRequest, SceneRequest, IconRequest, ImageProvider, GenerationOptions, GenerationFailure } from './types.js';
+import {
+  buildPromptPair,
+  buildNegativePrompt,
+  buildScenePrompt,
+  buildSceneNegativePrompt,
+  buildIconPrompt,
+  buildIconNegativePrompt,
+  sanitize,
+  resolvedPortraitStyle,
+  resolvedSceneStyle,
+  resolvedIconStyle,
+} from './prompt-builder.js';
 import { PlaceholderProvider } from './placeholder-provider.js';
 
 /**
@@ -116,7 +127,7 @@ export type PipelineOptions = {
 };
 
 const ENGINE_OWNED_EXACT = new Set(['placeholder', 'player']);
-const ENGINE_OWNED_PREFIXES = ['char:', 'provider:', 'model:'] as const;
+const ENGINE_OWNED_PREFIXES = ['char:', 'provider:', 'model:', 'zone:', 'item:', 'variant:'] as const;
 
 function isEngineOwnedTag(tag: string): boolean {
   if (ENGINE_OWNED_EXACT.has(tag)) return true;
@@ -140,24 +151,38 @@ function finiteOr(value: number | undefined, fallback: number | null): number | 
  * coerce to those defaults so JSON.stringify cannot collapse NaN/Infinity
  * onto `null` while the provider still sees the raw non-finite value.
  */
-function resolveGeneration(
-  request: PortraitRequest,
-  generation?: GenerationOptions,
+function resolveGenerationBase(
+  generation: GenerationOptions | undefined,
+  defaults: { width: number; height: number; negativePrompt: string },
 ): GenerationOptions {
   const resolved: GenerationOptions = {
-    width: finiteOr(generation?.width, 512) ?? 512,
-    height: finiteOr(generation?.height, 512) ?? 512,
+    width: finiteOr(generation?.width, defaults.width) ?? defaults.width,
+    height: finiteOr(generation?.height, defaults.height) ?? defaults.height,
     steps: finiteOr(generation?.steps, 20) ?? 20,
     cfgScale: finiteOr(generation?.cfgScale, 7) ?? 7,
     negativePrompt: generation?.negativePrompt !== undefined
       ? generation.negativePrompt
-      : buildNegativePrompt(request),
+      : defaults.negativePrompt,
   };
   const seed = finiteOr(generation?.seed, null);
   if (seed !== null) resolved.seed = seed;
   const model = generation?.model;
   if (typeof model === 'string' && model.length > 0) resolved.model = model;
+  const denoise = finiteOr(generation?.denoise, null);
+  if (denoise !== null) resolved.denoise = denoise;
+  if (generation?.initImage) resolved.initImage = generation.initImage;
   return resolved;
+}
+
+function resolveGeneration(
+  request: PortraitRequest,
+  generation?: GenerationOptions,
+): GenerationOptions {
+  return resolveGenerationBase(generation, {
+    width: 512,
+    height: 512,
+    negativePrompt: buildNegativePrompt(request),
+  });
 }
 
 /** Checkpoint/model the provider will actually sample with (F-b36de2d4). */
@@ -343,4 +368,265 @@ export async function ensurePortrait(
   }
 
   return generatePortrait(request, provider, store, opts);
+}
+
+export function sceneIdentityTag(
+  request: SceneRequest,
+  generation?: GenerationOptions,
+): string {
+  const g = resolveGenerationBase(generation, {
+    width: 768,
+    height: 512,
+    negativePrompt: buildSceneNegativePrompt(request),
+  });
+  return `zone:${JSON.stringify([
+    sanitize(request.zoneId),
+    sanitize(request.locationName ?? ''),
+    sanitize(request.description),
+    request.genre,
+    resolvedSceneStyle(request),
+    g.width,
+    g.height,
+    g.seed ?? null,
+    g.steps,
+    g.cfgScale,
+    g.negativePrompt ?? '',
+  ])}`;
+}
+
+export function iconIdentityTag(
+  request: IconRequest,
+  generation?: GenerationOptions,
+): string {
+  const g = resolveGenerationBase(generation, {
+    width: 256,
+    height: 256,
+    negativePrompt: buildIconNegativePrompt(request),
+  });
+  return `item:${JSON.stringify([
+    sanitize(request.itemId),
+    sanitize(request.name),
+    sanitize(request.description ?? ''),
+    request.genre,
+    resolvedIconStyle(request),
+    g.width,
+    g.height,
+    g.seed ?? null,
+    g.steps,
+    g.cfgScale,
+    g.negativePrompt ?? '',
+  ])}`;
+}
+
+export function portraitVariantIdentityTag(
+  baseHash: string,
+  variant: string,
+  request: PortraitRequest,
+  generation?: GenerationOptions,
+): string {
+  const g = resolveGeneration(request, generation);
+  return `variant:${JSON.stringify([
+    baseHash,
+    sanitize(variant),
+    portraitIdentityTag(request, generation),
+    g.denoise ?? null,
+  ])}`;
+}
+
+async function putGenerated(
+  kind: 'portrait' | 'background' | 'icon',
+  identityTag: string,
+  requestTags: readonly string[] | undefined,
+  provider: ImageProvider,
+  store: AssetStore,
+  prompt: string,
+  genOpts: GenerationOptions,
+  extraTags?: readonly string[],
+): Promise<AssetMetadata> {
+  const model = resolveProviderModel(provider, genOpts);
+  if (model && genOpts.model === undefined) genOpts.model = model;
+  const result = await provider.generate(prompt, genOpts);
+  if (!result.ok) throw new ImageGenError(result);
+  const isPlaceholderResult = provider.name === 'placeholder';
+  const tags = [
+    kind,
+    identityTag,
+    `provider:${provider.name}`,
+    ...(model ? [`model:${model}`] : []),
+    ...(isPlaceholderResult ? ['placeholder'] : []),
+    ...callerTags(requestTags),
+    ...callerTags(extraTags),
+  ];
+  return store.put(result.image, {
+    kind,
+    mimeType: result.mimeType,
+    width: result.width,
+    height: result.height,
+    tags,
+    source: result.prompt,
+  });
+}
+
+async function ensureByIdentity(
+  kind: 'portrait' | 'background' | 'icon',
+  identityTag: string,
+  provider: ImageProvider,
+  store: AssetStore,
+  generate: () => Promise<AssetMetadata>,
+  generation?: GenerationOptions,
+): Promise<AssetMetadata> {
+  const model = resolveProviderModel(provider, generation);
+  const matches = await store.list({ kind, tag: identityTag });
+  const reals = matches.filter((m) => !isPlaceholderAsset(m));
+  if (provider.name !== 'placeholder') {
+    const keyed = reals.filter((m) => matchesProviderModel(m, provider.name, model));
+    for (const m of keyed) {
+      const hit = await readableMeta(store, m);
+      if (hit) return hit;
+    }
+  } else {
+    for (const m of reals) {
+      const hit = await readableMeta(store, m);
+      if (hit) return hit;
+    }
+  }
+  const cachedPlaceholder = matches.find((m) => isPlaceholderAsset(m));
+  if (cachedPlaceholder && provider.name === 'placeholder') {
+    const hit = await readableMeta(store, cachedPlaceholder);
+    if (hit) return hit;
+  }
+  return generate();
+}
+
+/** Generate a zone background and store it as kind `'background'`. */
+export async function generateBackground(
+  request: SceneRequest,
+  provider: ImageProvider,
+  store: AssetStore,
+  opts?: PipelineOptions,
+): Promise<AssetMetadata> {
+  const genOpts = resolveGenerationBase(opts?.generation, {
+    width: 768,
+    height: 512,
+    negativePrompt: buildSceneNegativePrompt(request),
+  });
+  return putGenerated(
+    'background',
+    sceneIdentityTag(request, opts?.generation),
+    request.tags,
+    provider,
+    store,
+    buildScenePrompt(request),
+    genOpts,
+    opts?.extraTags,
+  );
+}
+
+/** Generate only if no matching zone background exists. */
+export async function ensureBackground(
+  request: SceneRequest,
+  provider: ImageProvider,
+  store: AssetStore,
+  opts?: PipelineOptions,
+): Promise<AssetMetadata> {
+  return ensureByIdentity(
+    'background',
+    sceneIdentityTag(request, opts?.generation),
+    provider,
+    store,
+    () => generateBackground(request, provider, store, opts),
+    opts?.generation,
+  );
+}
+
+/** Generate an item icon and store it as kind `'icon'`. */
+export async function generateIcon(
+  request: IconRequest,
+  provider: ImageProvider,
+  store: AssetStore,
+  opts?: PipelineOptions,
+): Promise<AssetMetadata> {
+  const genOpts = resolveGenerationBase(opts?.generation, {
+    width: 256,
+    height: 256,
+    negativePrompt: buildIconNegativePrompt(request),
+  });
+  return putGenerated(
+    'icon',
+    iconIdentityTag(request, opts?.generation),
+    request.tags,
+    provider,
+    store,
+    buildIconPrompt(request),
+    genOpts,
+    opts?.extraTags,
+  );
+}
+
+/** Generate only if no matching item icon exists. */
+export async function ensureIcon(
+  request: IconRequest,
+  provider: ImageProvider,
+  store: AssetStore,
+  opts?: PipelineOptions,
+): Promise<AssetMetadata> {
+  return ensureByIdentity(
+    'icon',
+    iconIdentityTag(request, opts?.generation),
+    provider,
+    store,
+    () => generateIcon(request, provider, store, opts),
+    opts?.generation,
+  );
+}
+
+export type VariantPipelineOptions = PipelineOptions & {
+  /** Variant slot (e.g. `'scarred'`, `'aged'`, `'disguise'`, `'dead'`). */
+  variant: string;
+};
+
+/**
+ * Img2img portrait variant keyed by `baseHash` + variant slot (F-9daede34).
+ * Loads the base asset as `initImage` unless the caller already supplied one.
+ */
+export async function ensurePortraitVariant(
+  baseHash: string,
+  request: PortraitRequest,
+  provider: ImageProvider,
+  store: AssetStore,
+  opts: VariantPipelineOptions,
+): Promise<AssetMetadata> {
+  const identity = portraitVariantIdentityTag(baseHash, opts.variant, request, opts.generation);
+  const existing = await ensureByIdentity(
+    'portrait',
+    identity,
+    provider,
+    store,
+    async () => {
+      const generation: GenerationOptions = { ...opts.generation };
+      if (!generation.initImage) {
+        const base = await store.get(baseHash, { verify: true });
+        if (!base) {
+          throw new Error(`[image-gen] ensurePortraitVariant: no asset at hash ${baseHash}`);
+        }
+        generation.initImage = base;
+      }
+      if (generation.denoise === undefined) generation.denoise = 0.55;
+      const genOpts = resolveGeneration(request, generation);
+      const { prompt } = buildPromptPair(request);
+      const meta = await putGenerated(
+        'portrait',
+        identity,
+        request.tags,
+        provider,
+        store,
+        prompt,
+        genOpts,
+        opts.extraTags,
+      );
+      return meta;
+    },
+    opts.generation,
+  );
+  return existing;
 }

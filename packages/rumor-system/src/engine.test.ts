@@ -806,3 +806,72 @@ describe('dead rumors are omitted from serialize and can be pruned (F-97a47e88)'
     expect(engine.get(ids[ids.length - 1])?.status).toBe('dead');
   });
 });
+
+describe('corroborate / contradict (F-d81fd1b9)', () => {
+  test('findBySubjectKey returns the live rumor for a (subject, key)', () => {
+    const engine = new RumorEngine();
+    const rumor = createRumor(engine);
+    const found = engine.findBySubjectKey('player', 'killed');
+    expect(found?.id).toBe(rumor.id);
+    expect(found).not.toBe(rumor);
+    expect(engine.findBySubjectKey('player', 'missing')).toBeUndefined();
+  });
+
+  test('create still mints siblings; corroborate unions a second witness', () => {
+    const engine = new RumorEngine();
+    const first = createRumor(engine, { sourceId: 'guard_1', confidence: 0.5 });
+    createRumor(engine, { sourceId: 'guard_2', confidence: 0.4 });
+    expect(engine.aboutSubject('player')).toHaveLength(2);
+
+    const updated = engine.corroborate({ subject: 'player', key: 'killed' }, {
+      witnessId: 'guard_3',
+      currentTick: 20,
+      confidenceDelta: 0.2,
+    });
+    expect(updated?.id).toBe(first.id);
+    expect(updated?.spreadPath).toEqual(['guard_1', 'guard_3']);
+    expect(updated?.confidence).toBeCloseTo(0.7);
+    expect(updated?.lastSpreadTick).toBe(20);
+    expect(updated?.originalValue).toBe(true);
+  });
+
+  test('corroborate by id clamps confidence to 1', () => {
+    const engine = new RumorEngine();
+    const rumor = createRumor(engine, { confidence: 0.95 });
+    const updated = engine.corroborate(rumor.id, {
+      witnessId: 'guard_9',
+      currentTick: 11,
+      confidenceDelta: 0.5,
+    });
+    expect(updated?.confidence).toBe(1);
+  });
+
+  test('contradict inverts a boolean value without killing the rumor', () => {
+    const engine = new RumorEngine();
+    const rumor = createRumor(engine, { value: true, confidence: 0.8 });
+    const denied = engine.contradict({ subject: 'player', key: 'killed' }, {
+      sourceId: 'captain',
+      currentTick: 15,
+    });
+    expect(denied?.value).toBe(false);
+    expect(denied?.originalValue).toBe(true);
+    expect(denied?.status).toBe('spreading');
+    expect(denied?.mutationCount).toBe(1);
+    expect(denied?.spreadPath).toContain('captain');
+    expect(denied?.confidence).toBeCloseTo(0.6);
+    expect(engine.get(rumor.id)?.value).toBe(false);
+  });
+
+  test('contradict({kill:true}) marks the rumor dead from a named source', () => {
+    const engine = new RumorEngine();
+    const rumor = createRumor(engine);
+    const dead = engine.contradict(rumor.id, {
+      sourceId: 'herald',
+      currentTick: 12,
+      kill: true,
+    });
+    expect(dead?.status).toBe('dead');
+    expect(dead?.spreadPath).toContain('herald');
+    expect(engine.heardBy('herald')).toHaveLength(0);
+  });
+});

@@ -84,6 +84,15 @@ function deriveDefaultSeed(
   prompt: string,
   opts: GenerationOptions & ComfyUIProviderOptions,
 ): number {
+  const init = opts.initImage;
+  let initSig = '';
+  if (init && init.length > 0) {
+    let h = init.length;
+    for (let i = 0; i < init.length; i += Math.max(1, Math.floor(init.length / 32))) {
+      h = (h * 33 + init[i]) >>> 0;
+    }
+    initSig = `${init.length}:${h}`;
+  }
   const key = [
     prompt,
     opts.negativePrompt ?? '',
@@ -91,6 +100,8 @@ function deriveDefaultSeed(
     opts.height ?? 512,
     opts.steps ?? 20,
     opts.cfgScale ?? 7,
+    opts.denoise ?? '',
+    initSig,
   ].join(' ');
   let hash = 0x811c9dc5; // FNV offset basis
   for (let i = 0; i < key.length; i++) {
@@ -100,11 +111,12 @@ function deriveDefaultSeed(
   return hash >>> 0;
 }
 
-/** Build a minimal txt2img workflow JSON for ComfyUI. */
+/** Build a txt2img (EmptyLatentImage) or img2img (LoadImage + VAEEncode) workflow. */
 function buildWorkflow(
   prompt: string,
   opts: GenerationOptions & ComfyUIProviderOptions,
   seed: number,
+  initImageName?: string,
 ): Record<string, unknown> {
   const width = opts.width ?? 512;
   const height = opts.height ?? 512;
@@ -119,6 +131,29 @@ function buildWorkflow(
     typeof rawBatch === 'number' && Number.isFinite(rawBatch) && rawBatch >= 1
       ? Math.floor(rawBatch)
       : 1;
+  const rawDenoise = opts.denoise;
+  const denoise =
+    typeof rawDenoise === 'number' && Number.isFinite(rawDenoise)
+      ? Math.min(1, Math.max(0, rawDenoise))
+      : (initImageName ? 0.7 : 1.0);
+
+  const latentNode: Record<string, unknown> = initImageName
+    ? {
+        '4': {
+          class_type: 'LoadImage',
+          inputs: { image: initImageName },
+        },
+        '8': {
+          class_type: 'VAEEncode',
+          inputs: { pixels: ['4', 0], vae: ['1', 2] },
+        },
+      }
+    : {
+        '4': {
+          class_type: 'EmptyLatentImage',
+          inputs: { width, height, batch_size: batchSize },
+        },
+      };
 
   return {
     '1': {
@@ -133,23 +168,20 @@ function buildWorkflow(
       class_type: 'CLIPTextEncode',
       inputs: { text: negative, clip: ['1', 1] },
     },
-    '4': {
-      class_type: 'EmptyLatentImage',
-      inputs: { width, height, batch_size: batchSize },
-    },
+    ...latentNode,
     '5': {
       class_type: 'KSampler',
       inputs: {
         model: ['1', 0],
         positive: ['2', 0],
         negative: ['3', 0],
-        latent_image: ['4', 0],
+        latent_image: initImageName ? ['8', 0] : ['4', 0],
         seed,
         steps,
         cfg,
         sampler_name: sampler,
         scheduler,
-        denoise: 1.0,
+        denoise,
       },
     },
     '6': {
@@ -264,6 +296,53 @@ export class ComfyUIProvider implements ImageProvider {
     return `Is ComfyUI running at ${this.baseUrl}? Start it (or fix baseUrl), then retry.`;
   }
 
+  /** POST /upload/image so LoadImage can see the init frame (F-9daede34). */
+  private async uploadInitImage(
+    bytes: Uint8Array,
+    timeout: number,
+  ): Promise<string | GenerationFailure> {
+    const form = new FormData();
+    const copy = new Uint8Array(bytes);
+    form.append('image', new Blob([copy], { type: 'image/png' }), 'init.png');
+    form.append('overwrite', 'true');
+    const res = await fetch(`${this.baseUrl}/upload/image`, {
+      method: 'POST',
+      body: form,
+      signal: AbortSignal.timeout(timeout),
+    });
+    if (!res.ok) {
+      const text = await readTextCapped(res, ERROR_BODY_CAP);
+      if (text === 'too-large') {
+        return fail(
+          'http_error',
+          `ComfyUI image upload failed (HTTP ${res.status}): error body exceeded the ${ERROR_BODY_CAP}-byte cap`,
+        );
+      }
+      return fail(
+        'http_error',
+        `ComfyUI image upload failed (HTTP ${res.status}): ${excerpt(text || '(no body)')}`,
+      );
+    }
+    const body = await readBodyCapped(res, ERROR_BODY_CAP);
+    if (body === 'too-large') {
+      return fail('invalid_response', `ComfyUI upload response exceeded the ${ERROR_BODY_CAP}-byte cap`);
+    }
+    let json: { name?: unknown; subfolder?: unknown };
+    try {
+      json = JSON.parse(new TextDecoder().decode(body)) as { name?: unknown; subfolder?: unknown };
+    } catch {
+      return fail(
+        'invalid_response',
+        'ComfyUI returned a non-JSON response from POST /upload/image (HTTP 200)',
+      );
+    }
+    if (typeof json.name !== 'string' || json.name.length === 0) {
+      return fail('invalid_response', 'ComfyUI upload response did not include an image name');
+    }
+    const sub = typeof json.subfolder === 'string' && json.subfolder.length > 0 ? `${json.subfolder}/` : '';
+    return `${sub}${json.name}`;
+  }
+
   /**
    * Generate an image via the queue → history-poll → view flow.
    *
@@ -313,7 +392,13 @@ export class ComfyUIProvider implements ImageProvider {
     const seed = typeof rawSeed === 'number' && Number.isFinite(rawSeed)
       ? rawSeed
       : deriveDefaultSeed(prompt, mergedOpts);
-    const workflow = buildWorkflow(prompt, mergedOpts, seed);
+    let initImageName: string | undefined;
+    if (opts?.initImage && opts.initImage.length > 0) {
+      const uploaded = await this.uploadInitImage(opts.initImage, timeout);
+      if (typeof uploaded !== 'string') return uploaded;
+      initImageName = uploaded;
+    }
+    const workflow = buildWorkflow(prompt, mergedOpts, seed, initImageName);
     const start = Date.now();
 
     // 1. Queue the prompt — bounded + non-JSON-safe (A1).

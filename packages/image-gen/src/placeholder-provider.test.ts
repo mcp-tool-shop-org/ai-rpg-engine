@@ -116,4 +116,22 @@ describe('PlaceholderProvider', () => {
     // After the fix the initial appears escaped inside that node.
     expect(svg).toMatch(/font-weight="bold">&lt;/);
   });
+
+  it('overlays a variant mark on an initImage SVG (F-9daede34)', async () => {
+    const base = await generate('Portrait of Aldric, Penitent Knight');
+    const variant = await generate('Portrait of Aldric, Penitent Knight', {
+      initImage: base.image,
+      denoise: 0.55,
+    });
+    const svg = new TextDecoder().decode(variant.image);
+    expect(svg).toContain('data-variant="1"');
+    expect(svg).toContain('Aldric');
+  });
+
+  it('parses Scene of / Icon of prompts for initials', async () => {
+    const scene = await generate('Scene of Ashen Chapel, cracked stone nave');
+    expect(new TextDecoder().decode(scene.image)).toContain('AC');
+    const icon = await generate('Icon of Ashen Chalice, tarnished silver');
+    expect(new TextDecoder().decode(icon.image)).toContain('AC');
+  });
 });

@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { FileAssetStore } from './file-store.js';
+import { OverQuotaError } from './quota.js';
 import type { AssetInput } from './types.js';
 
 const testInput: AssetInput = {
@@ -362,5 +363,49 @@ describe('FileAssetStore repairs a missing blob on hash-hit (F-628ee72f)', () =>
 
     await store.put(testData, testInput);
     expect(await store.get(meta.hash, { verify: true })).toEqual(testData);
+  });
+});
+
+describe('FileAssetStore quota (F-158910cc)', () => {
+  it('totalBytes sums sidecar sizeBytes', async () => {
+    await store.put(testData, testInput);
+    await store.put(new Uint8Array([1, 2, 3]), testInput);
+    expect(await store.totalBytes()).toBe(testData.length + 3);
+  });
+
+  it('evictUntil deletes blob and sidecar of the oldest asset', async () => {
+    const first = await store.put(new Uint8Array([1]), testInput);
+    const second = await store.put(new Uint8Array([2]), testInput);
+    expect(await store.evictUntil({ maxCount: 1, policy: 'evict-oldest' })).toBe(1);
+    expect(await store.count()).toBe(1);
+    const gone = (await store.has(first.hash)) ? second : first;
+    expect(await store.has(gone.hash)).toBe(false);
+    const shard = path.join(tmpDir, gone.hash.slice(0, 2));
+    await expect(fs.access(path.join(shard, `${gone.hash}.bin`))).rejects.toThrow();
+    await expect(fs.access(path.join(shard, `${gone.hash}.json`))).rejects.toThrow();
+  });
+
+  it('reject policy throws OverQuotaError and leaves the tree unchanged', async () => {
+    const limited = new FileAssetStore(tmpDir, { maxCount: 1, policy: 'reject' });
+    await limited.put(testData, testInput);
+    await expect(limited.put(new Uint8Array([9]), testInput)).rejects.toBeInstanceOf(OverQuotaError);
+    expect(await limited.count()).toBe(1);
+  });
+
+  it('evict-oldest constructor quota makes room on put', async () => {
+    const limited = new FileAssetStore(tmpDir, { maxCount: 1, policy: 'evict-oldest' });
+    const first = await limited.put(new Uint8Array([1]), testInput);
+    const second = await limited.put(new Uint8Array([2]), testInput);
+    expect(await limited.count()).toBe(1);
+    expect(await limited.has(first.hash)).toBe(false);
+    expect(await limited.has(second.hash)).toBe(true);
+  });
+
+  it('hash-hit put does not consume quota', async () => {
+    const limited = new FileAssetStore(tmpDir, { maxCount: 1, policy: 'reject' });
+    await limited.put(testData, testInput);
+    const again = await limited.put(testData, { ...testInput, tags: ['extra'] });
+    expect(again.tags).toContain('extra');
+    expect(await limited.count()).toBe(1);
   });
 });

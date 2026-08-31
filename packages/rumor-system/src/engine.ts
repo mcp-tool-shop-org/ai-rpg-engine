@@ -2,11 +2,13 @@
 
 import type {
   Rumor,
-  RumorStatus,
   RumorEngineConfig,
   RumorQuery,
   MutationContext,
   MutationRule,
+  RumorSubjectKey,
+  CorroborateOptions,
+  ContradictOptions,
 } from './types.js';
 import { DEFAULT_MUTATIONS } from './mutations.js';
 import { validateRumor } from './validate.js';
@@ -271,6 +273,86 @@ export class RumorEngine {
     return rumor ? cloneRumor(rumor) : undefined;
   }
 
+  /**
+   * Live (non-dead) rumor for this (subject, key), highest confidence first.
+   * Two `create()` calls for the same fact stay two records — hosts look up
+   * here and call {@link corroborate} instead of minting a sibling (F-d81fd1b9).
+   */
+  findBySubjectKey(subject: string, key: string): Rumor | undefined {
+    const hit = this.lookupLive(subject, key);
+    return hit ? cloneRumor(hit) : undefined;
+  }
+
+  /**
+   * Second witness for an existing fact: union `witnessId` onto `spreadPath`
+   * and raise confidence (clamped). Target is a rumor id or `{subject, key}`.
+   */
+  corroborate(target: string | RumorSubjectKey, opts: CorroborateOptions): Rumor | undefined {
+    if (!Number.isFinite(opts.currentTick)) {
+      throw new Error('corroborate() currentTick must be a finite number');
+    }
+    const stored = this.resolveTarget(target);
+    if (!stored || stored.status === 'dead') return stored ? cloneRumor(stored) : undefined;
+
+    const spreading: Rumor = { ...stored, spreadPath: [...stored.spreadPath] };
+    if (!spreading.spreadPath.includes(opts.witnessId)) {
+      spreading.spreadPath.push(opts.witnessId);
+    }
+    const delta = Number.isFinite(opts.confidenceDelta) ? opts.confidenceDelta! : 0.1;
+    spreading.confidence = Math.max(0, Math.min(1, spreading.confidence + delta));
+    spreading.lastSpreadTick = opts.currentTick;
+    if (spreading.status === 'fading') spreading.status = 'spreading';
+    this.rumors.set(spreading.id, spreading);
+    return cloneRumor(spreading);
+  }
+
+  /**
+   * Denial from a named source. Inverts boolean/number `value` (formatter
+   * interpolates the mutated value) or, with `{kill: true}` / a non-invertible
+   * value, marks the rumor dead. Does not rewrite `originalValue`.
+   */
+  contradict(target: string | RumorSubjectKey, opts: ContradictOptions): Rumor | undefined {
+    if (!Number.isFinite(opts.currentTick)) {
+      throw new Error('contradict() currentTick must be a finite number');
+    }
+    const stored = this.resolveTarget(target);
+    if (!stored || stored.status === 'dead') return stored ? cloneRumor(stored) : undefined;
+
+    const spreading: Rumor = { ...stored, spreadPath: [...stored.spreadPath] };
+    if (!spreading.spreadPath.includes(opts.sourceId)) {
+      spreading.spreadPath.push(opts.sourceId);
+    }
+    const delta = Number.isFinite(opts.confidenceDelta) ? opts.confidenceDelta! : -0.2;
+    spreading.confidence = Math.max(0, Math.min(1, spreading.confidence + delta));
+    spreading.lastSpreadTick = opts.currentTick;
+
+    const invertible = typeof spreading.value === 'boolean' || typeof spreading.value === 'number';
+    if (opts.kill || !invertible) {
+      spreading.status = 'dead';
+    } else {
+      spreading.value = invertClaimValue(spreading.value);
+      spreading.mutationCount++;
+      if (typeof spreading.value === 'boolean') {
+        spreading.emotionalCharge = Math.max(-1, Math.min(1, spreading.emotionalCharge * -1));
+      }
+    }
+    this.rumors.set(spreading.id, spreading);
+    if (spreading.status === 'dead') this.capDead();
+    return cloneRumor(spreading);
+  }
+
+  private lookupLive(subject: string, key: string): Rumor | undefined {
+    const hits = [...this.rumors.values()]
+      .filter((r) => r.subject === subject && r.key === key && r.status !== 'dead');
+    hits.sort((a, b) => b.confidence - a.confidence || a.originTick - b.originTick || a.id.localeCompare(b.id));
+    return hits[0];
+  }
+
+  private resolveTarget(target: string | RumorSubjectKey): Rumor | undefined {
+    if (typeof target === 'string') return this.rumors.get(target);
+    return this.lookupLive(target.subject, target.key);
+  }
+
   /** Get all active rumors about a subject */
   aboutSubject(subject: string): Rumor[] {
     return Array.from(this.rumors.values())
@@ -391,6 +473,12 @@ function describeType(value: unknown): string {
   if (value === null) return 'null';
   if (Array.isArray(value)) return 'an array';
   return typeof value;
+}
+
+function invertClaimValue(value: unknown): unknown {
+  if (typeof value === 'boolean') return !value;
+  if (typeof value === 'number') return -value;
+  return value;
 }
 
 // Deterministic pseudo-random based on rumor ID, hop count, and rule ID

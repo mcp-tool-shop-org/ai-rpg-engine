@@ -95,6 +95,37 @@ export type RumorEngineConfig = {
   mutations?: MutationRule[];
 };
 
+/** Subject + belief key that identify one board line (F-d81fd1b9). */
+export type RumorSubjectKey = {
+  subject: string;
+  key: string;
+};
+
+/** Options for {@link RumorEngine.corroborate}. */
+export type CorroborateOptions = {
+  /** Second witness — unioned onto `spreadPath`. */
+  witnessId: string;
+  /** Sim tick of the corroboration (written to `lastSpreadTick`). */
+  currentTick: number;
+  /** Added to confidence and clamped to [0, 1]. Default 0.1. */
+  confidenceDelta?: number;
+};
+
+/** Options for {@link RumorEngine.contradict}. */
+export type ContradictOptions = {
+  /** Named source of the denial / retraction. */
+  sourceId: string;
+  currentTick: number;
+  /**
+   * When true, mark the rumor `dead` (trusted retraction).
+   * When omitted, invert a boolean/number value; non-invertible values are
+   * marked dead instead.
+   */
+  kill?: boolean;
+  /** Added to confidence and clamped to [0, 1]. Default -0.2. */
+  confidenceDelta?: number;
+};
+
 /** Query for filtering rumors */
 export type RumorQuery = {
   subject?: string;

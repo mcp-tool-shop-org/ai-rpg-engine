@@ -1,12 +1,15 @@
 // In-memory asset store — useful for testing and ephemeral sessions
 
-import type { AssetMetadata, AssetInput, AssetFilter, AssetGetOptions, AssetStore } from './types.js';
+import type { AssetMetadata, AssetInput, AssetFilter, AssetGetOptions, AssetStore, StoreQuota } from './types.js';
 import { hashBytes } from './hash.js';
 import { matchesFilter, unionTags, cloneMetadata } from './filter.js';
+import { OverQuotaError, wouldExceedQuota, sortOldestFirst, reserveQuota } from './quota.js';
 
 export class MemoryAssetStore implements AssetStore {
   private data = new Map<string, Uint8Array>();
   private meta = new Map<string, AssetMetadata>();
+
+  constructor(private readonly quota?: StoreQuota) {}
 
   async put(data: Uint8Array, input: AssetInput): Promise<AssetMetadata> {
     const hash = hashBytes(data);
@@ -22,6 +25,8 @@ export class MemoryAssetStore implements AssetStore {
       this.meta.set(hash, merged);
       return cloneMetadata(merged);
     }
+
+    await this.enforceQuota(data.length);
 
     const metadata: AssetMetadata = {
       hash,
@@ -77,5 +82,48 @@ export class MemoryAssetStore implements AssetStore {
 
   async count(): Promise<number> {
     return this.data.size;
+  }
+
+  async totalBytes(): Promise<number> {
+    let total = 0;
+    for (const m of this.meta.values()) total += m.sizeBytes;
+    return total;
+  }
+
+  async evictUntil(quota: StoreQuota): Promise<number> {
+    const ordered = sortOldestFirst([...this.meta.values()]);
+    let count = ordered.length;
+    let bytes = ordered.reduce((s, m) => s + m.sizeBytes, 0);
+    let n = 0;
+    for (const meta of ordered) {
+      const overCount = quota.maxCount !== undefined && count > quota.maxCount;
+      const overBytes = quota.maxBytes !== undefined && bytes > quota.maxBytes;
+      if (!overCount && !overBytes) break;
+      const deleted = await this.delete(meta.hash);
+      if (deleted) {
+        count--;
+        bytes -= meta.sizeBytes;
+        n++;
+      }
+    }
+    return n;
+  }
+
+  /** New-blob puts only — hash-hits never consume quota (CAS identity). */
+  private async enforceQuota(incomingBytes: number): Promise<void> {
+    const quota = this.quota;
+    if (!quota) return;
+    if (quota.policy === 'evict-oldest') {
+      await this.evictUntil(reserveQuota(quota, incomingBytes));
+    }
+    const count = await this.count();
+    const bytes = await this.totalBytes();
+    if (wouldExceedQuota(count, bytes, quota, 1, incomingBytes)) {
+      throw new OverQuotaError({
+        sizeBytes: bytes + incomingBytes,
+        count: count + 1,
+        quota,
+      });
+    }
   }
 }
