@@ -1059,38 +1059,90 @@ export function applyContentPack(
  * `applyContentPack` writes into a booted world. These two are read at
  * construction time and handed to the things that close over them:
  *
- * JSON-pack boot recipe (F-82b17cb3 / F-5b62643f): extractSessionContent →
+ * JSON-pack boot recipe (F-82b17cb3 / F-5b62643f / F-c9309691): extractSessionContent →
  * construct modules from the bag → applyContentPack({ profiles, channels }).
  * applyContentPack stays UNROUTED for dialogues/quests/abilities/statuses
  * (those modules freeze their registries at construction). items also live
  * here so a host can hand them to createEquipmentCore; apply still resolves
  * entity inventory/equipment against pack.items. districts / encounterAnchors
  * / hazardDefinitions are construction-time slices AND module-intake keys —
- * pass session.districts into buildWorldStack, and inject
- * createStandardChannels() so apply still routes via channels (do not
- * auto-inject; do not import @ai-rpg-engine/modules into this package).
- * `manifest` (F-df51e0bf) is lifted here too and belongs in the `new Engine()`
- * call below — `EngineOptions.manifest` is REQUIRED with no default, so a
- * recipe that omits it is missing a required constructor argument, not just
- * skipping an optional one.
+ * inject createStandardChannels() so apply still routes encounterAnchors /
+ * hazardDefinitions via channels (do not auto-inject; do not import
+ * @ai-rpg-engine/modules into this package). `manifest` (F-df51e0bf) is
+ * lifted here too and belongs in the `new Engine()` call below —
+ * `EngineOptions.manifest` is REQUIRED with no default, so a recipe that
+ * omits it is missing a required constructor argument, not just skipping an
+ * optional one.
+ *
+ * ⚠ F-c9309691 — the recipe below does NOT call `buildWorldStack()`. The
+ * documented recipe used to (`...buildWorldStack({ quests: session.quests ??
+ * [], districts: session.districts ?? [] }).modules`) and could not
+ * construct, two independent ways: (1) `WorldStackConfig.quests` is a
+ * {@link QuestCoreConfig}-shaped object (`{ gameId, quests }`), never a bare
+ * array — `session.quests ?? []` is truthy even when empty (`[]` is truthy in
+ * JS), so `buildWorldStack`'s own `if (config.quests)` guard always fired and
+ * handed a bare array straight to `createQuestCore`, which reads
+ * `config.quests` off it (`undefined`) and throws iterating it, quest content
+ * or not; (2) `buildWorldStack`'s faction-cognition / rumor-propagation /
+ * belief-provenance modules require `cognition-core` and `perception-filter`
+ * registered BEFORE the stack (world-stack.ts's own file-header contract),
+ * and this seam has no host UI to wire perception through. The list below
+ * mirrors `@ai-rpg-engine/ollama`'s `loadPlayableModules` instead — the
+ * engine's own tested minimal playable stack — proven end-to-end in
+ * packages/starter-fantasy/src/json-boot-recipe.test.ts:
  *
  * ```ts
- * import { buildWorldStack, createStandardChannels } from '@ai-rpg-engine/modules';
+ * import {
+ *   traversalCore, statusCore, combatCore, inventoryCore,
+ *   createCognitionCore, createEnvironmentCore, createDistrictCore,
+ *   createEncounterSpawn, createQuestCore, createDialogueCore,
+ *   createAbilityCore, createProgressionCore, createWorldTick,
+ *   createStandardChannels, registerStatusDefinitions, applyStatus, removeStatus,
+ * } from '@ai-rpg-engine/modules';
+ * import { createEquipmentCore } from '@ai-rpg-engine/equipment';
  *
  * const session = extractSessionContent(pack);
+ * const gameId = (session.manifest as { id?: string } | undefined)?.id ?? hostManifest.id;
  * registerStatusDefinitions(session.statuses ?? []);
  * const engine = new Engine({
  *   manifest: session.manifest ?? hostManifest,
  *   ruleset: session.ruleset ?? hostRuleset,
  *   modules: [
- *     createDialogueCore(session.dialogues ?? []),
- *     createAbilityCore({ abilities: session.abilities ?? [] }),
+ *     traversalCore,
+ *     statusCore,
+ *     // Presence-gated, NOT length-gated (contrast quests below): an
+ *     // authored `abilities: []` still constructs the module — matches
+ *     // loadPlayableModules's own Array.isArray guard.
+ *     ...(session.abilities ? [createAbilityCore({ abilities: session.abilities })] : []),
+ *     combatCore,
+ *     inventoryCore,
+ *     createCognitionCore(),
+ *     createEnvironmentCore(),
+ *     createDistrictCore({ districts: session.districts ?? [] }),
+ *     createEncounterSpawn({ gameId, encounters: [], entityTemplates: [], zoneTables: {} }),
+ *     // Length-gated, NOT presence-gated: QuestCoreConfig is { gameId,
+ *     // quests }, never a bare array, and an empty array must not construct
+ *     // the module (see the ⚠ note above — this guard IS the fix).
+ *     ...(session.quests && session.quests.length > 0
+ *       ? [createQuestCore({ gameId, quests: session.quests })]
+ *       : []),
+ *     ...(session.dialogues && session.dialogues.length > 0
+ *       ? [createDialogueCore(session.dialogues)]
+ *       : []),
  *     createProgressionCore({ trees: session.progressionTrees ?? [] }),
- *     createEquipmentCore({ catalog: { items: session.items ?? [] } }),
- *     ...buildWorldStack({
- *       quests: session.quests ?? [],
- *       districts: session.districts ?? [],
- *     }).modules,
+ *     createWorldTick(),
+ *     // Optional: only when the pack authors an item catalog.
+ *     // EquipmentCoreConfig REQUIRES both `catalog` AND `statuses` (neither
+ *     // is `?` — equipment-core.ts:746-751, EquipmentStatusOps); `statuses`
+ *     // is the same { registerDefinitions, apply, remove } triple every
+ *     // starter wires from this engine build's own module ops (see e.g.
+ *     // starter-fantasy/src/setup.ts).
+ *     ...(session.items
+ *       ? [createEquipmentCore({
+ *           catalog: { items: session.items },
+ *           statuses: { registerDefinitions: registerStatusDefinitions, apply: applyStatus, remove: removeStatus },
+ *         })]
+ *       : []),
  *   ],
  * });
  * applyContentPack(engine, pack, { profiles, channels: createStandardChannels() });

@@ -197,8 +197,11 @@ export function createGame(seed?: number): Engine {
     ],
   });
 
-  // JSON hosts: extractSessionContent(pack) → construct modules
-  // (buildWorldStack({ districts: session.districts })) →
+  // JSON hosts: extractSessionContent(pack) → construct modules (traversalCore
+  // /statusCore/combatCore/inventoryCore/cognitionCore/environmentCore/
+  // districtCore/encounterSpawn + presence/length-gated quests/dialogues/
+  // abilities/equipment — NOT buildWorldStack; see content-schema's
+  // extractSessionContent JSDoc for the full recipe, F-c9309691) →
   // applyContentPack({ profiles, channels: createStandardChannels() }).
   // createStandardChannels is imported from @ai-rpg-engine/modules, not
   // content-schema. This factory still wires named catalogs at construction;
