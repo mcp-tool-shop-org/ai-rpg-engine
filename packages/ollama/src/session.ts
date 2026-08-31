@@ -26,6 +26,7 @@ export const REQUIRED_ARTIFACT_KINDS = [
 export const OPTIONAL_ARTIFACT_KINDS = [
   'entities', 'dialogues', 'abilities', 'statuses', 'items', 'hazards',
   'archetypes', 'backgrounds', 'catalogs', 'placements', 'entityAi',
+  'anchors', 'trees',
 ] as const;
 
 export const ARTIFACT_KINDS = [
@@ -57,6 +58,10 @@ export type SessionArtifacts = {
   placements?: string[];
   /** Entity AI overlay ids (entity ids with a brain). */
   entityAi?: string[];
+  /** EncounterAnchorRecord ids (spawn SETs). Load-tolerant: older session JSON omits this. */
+  anchors?: string[];
+  /** ProgressionTreeDefinition ids. Load-tolerant: older session JSON omits this. */
+  trees?: string[];
 };
 
 const ARTIFACT_LABELS: Record<ArtifactKind, string> = {
@@ -76,6 +81,8 @@ const ARTIFACT_LABELS: Record<ArtifactKind, string> = {
   catalogs: 'catalogs',
   placements: 'placements',
   entityAi: 'entityAi',
+  anchors: 'anchors',
+  trees: 'trees',
 };
 
 export function countArtifacts(artifacts: SessionArtifacts): number {
@@ -100,6 +107,8 @@ export function emptyArtifacts(): SessionArtifacts {
     catalogs: [],
     placements: [],
     entityAi: [],
+    anchors: [],
+    trees: [],
   };
 }
 
@@ -782,6 +791,12 @@ export function artifactBucketForKind(kind: string): keyof SessionArtifacts {
     case 'entity-ai':
     case 'entityAi':
     case 'npc-ai': return 'entityAi';
+    case 'encounter-anchor':
+    case 'anchor':
+    case 'anchors': return 'anchors';
+    case 'progression-tree':
+    case 'tree':
+    case 'trees': return 'trees';
     default: return 'packs';
   }
 }

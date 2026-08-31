@@ -11,6 +11,8 @@ import {
   validateHazardDefinition,
   validateBuildCatalog,
   validateEntityPlacementRecord,
+  validateEncounterAnchorRecord,
+  validateProgressionTreeDefinition,
 } from '@ai-rpg-engine/content-schema';
 import type { ValidationResult, ValidationError } from '@ai-rpg-engine/content-schema';
 
@@ -597,5 +599,17 @@ export function validateGeneratedEntityAi(raw: string, parsed: unknown): Generat
 export function validateGeneratedPlacement(raw: string, parsed: unknown): GeneratedContentResult {
   const obj = isRecord(parsed) ? parsed : {};
   const validation = validateEntityPlacementRecord(obj);
+  return { valid: validation.ok, content: parsed, validation, raw };
+}
+
+export function validateGeneratedEncounterAnchor(raw: string, parsed: unknown): GeneratedContentResult {
+  const obj = isRecord(parsed) ? parsed : {};
+  const validation = validateEncounterAnchorRecord(obj);
+  return { valid: validation.ok, content: parsed, validation, raw };
+}
+
+export function validateGeneratedProgressionTree(raw: string, parsed: unknown): GeneratedContentResult {
+  const obj = isRecord(parsed) ? parsed : {};
+  const validation = validateProgressionTreeDefinition(obj);
   return { valid: validation.ok, content: parsed, validation, raw };
 }

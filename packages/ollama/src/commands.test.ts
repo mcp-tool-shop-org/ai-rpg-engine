@@ -23,6 +23,8 @@ import { createBackground } from './commands/create-background.js';
 import { createBuildCatalog } from './commands/create-build-catalog.js';
 import { createEntityAi } from './commands/create-entity-ai.js';
 import { createPlacement, placementYaml } from './commands/create-placement.js';
+import { createEncounterAnchor } from './commands/create-encounter-anchor.js';
+import { createProgressionTree } from './commands/create-progression-tree.js';
 import { explainDistrictState } from './commands/explain-district-state.js';
 import { explainFactionAlert } from './commands/explain-faction-alert.js';
 import { improveContent } from './commands/improve-content.js';
@@ -1357,6 +1359,22 @@ describe('createDialogue / createEntity / createAbility / createStatus / createI
     if (result.ok) expect(result.yaml).toContain('chapel_guard');
   });
 
+  it('createEntity prompt lists optional Wave 31 keys', async () => {
+    let system = '';
+    const client: OllamaTextClient = {
+      async generate(input: PromptInput): Promise<PromptResult> {
+        system = input.system ?? '';
+        return { ok: true, text: 'id: chapel_guard\ntype: npc\nname: Chapel Guard' };
+      },
+    };
+    await createEntity(client, { theme: 'chapel guard' });
+    expect(system).toContain('relations');
+    expect(system).toContain('custom');
+    expect(system).toContain('resistances');
+    expect(system).toContain('faction');
+    expect(system).toContain('ruleProfileId');
+  });
+
   it('createAbility returns yaml and validation', async () => {
     const yaml = [
       'id: fireball',
@@ -1510,5 +1528,114 @@ describe('createArchetype / createBackground / createBuildCatalog / createEntity
       expect(result.yaml).toBe(placementYaml('chapel_guard', 'nave'));
       expect(result.validation.valid).toBe(true);
     }
+  });
+});
+
+describe('createEncounterAnchor / createProgressionTree', () => {
+  it('createEncounterAnchor returns yaml and validation', async () => {
+    const yaml = [
+      'id: nave_ambush',
+      'zoneId: nave',
+      'encounterType: ambush',
+      'enemyIds:',
+      '  - ash_ghoul',
+      'probability: 0.35',
+      'cooldownTurns: 4',
+      'tags:',
+      '  - undead',
+    ].join('\n');
+    const result = await createEncounterAnchor(mockClient(yaml), {
+      theme: 'chapel ambush',
+      zoneId: 'nave',
+      enemies: ['ash_ghoul'],
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.yaml).toContain('nave_ambush');
+      expect(result.validation.valid).toBe(true);
+    }
+  });
+
+  it('createEncounterAnchor passes zone and enemies into the prompt', async () => {
+    let captured = '';
+    const client: OllamaTextClient = {
+      async generate(input: PromptInput): Promise<PromptResult> {
+        captured = input.prompt;
+        return {
+          ok: true,
+          text: [
+            'id: nave_ambush',
+            'zoneId: nave',
+            'encounterType: ambush',
+            'enemyIds:',
+            '  - ash_ghoul',
+            'probability: 0.35',
+            'cooldownTurns: 4',
+            'tags:',
+            '  - undead',
+          ].join('\n'),
+        };
+      },
+    };
+    await createEncounterAnchor(client, { theme: 'ambush', zoneId: 'nave', enemies: ['ash_ghoul'] });
+    expect(captured).toContain('nave');
+    expect(captured).toContain('ash_ghoul');
+  });
+
+  it('createProgressionTree returns yaml and validation', async () => {
+    const yaml = [
+      'id: combat_mastery',
+      'name: Combat Mastery',
+      'currency: xp',
+      'nodes:',
+      '  - id: toughened',
+      '    name: Toughened',
+      '    cost: 10',
+      '    effects:',
+      '      - type: resource-boost',
+      '        params:',
+      '          resource: hp',
+      '          amount: 5',
+    ].join('\n');
+    const result = await createProgressionTree(mockClient(yaml), { theme: 'chapel combat' });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.yaml).toContain('combat_mastery');
+      expect(result.validation.valid).toBe(true);
+    }
+  });
+
+  it('createProgressionTree runs a repair pass when requested', async () => {
+    let callCount = 0;
+    const client: OllamaTextClient = {
+      async generate(_input: PromptInput): Promise<PromptResult> {
+        callCount++;
+        if (callCount === 1) return { ok: true, text: 'id: broken_tree' };
+        return {
+          ok: true,
+          text: [
+            'id: combat_mastery',
+            'name: Combat Mastery',
+            'currency: xp',
+            'nodes:',
+            '  - id: toughened',
+            '    name: Toughened',
+            '    cost: 10',
+            '    effects:',
+            '      - type: resource-boost',
+            '        params:',
+            '          resource: hp',
+            '          amount: 5',
+          ].join('\n'),
+        };
+      },
+    };
+    const result = await createProgressionTree(client, { theme: 'combat', repair: true });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.repaired).toBe(true);
+      expect(result.yaml).toContain('combat_mastery');
+    }
+    expect(callCount).toBe(2);
   });
 });

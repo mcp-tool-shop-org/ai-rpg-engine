@@ -35,6 +35,11 @@ entities:
     inventory: optional string array
     equipment: optional object (slot → item_id)
     aiProfile: optional string (e.g. aggressive, cautious, fleeing)
+    relations: optional object mapping names to string/number/boolean
+    custom: optional object mapping names to string/number/boolean
+    resistances: optional object mapping names to immune | resistant | vulnerable
+    faction: optional string
+    ruleProfileId: optional string
 
 quest:
   id: string (lowercase_snake_case)
@@ -46,12 +51,23 @@ quest:
   rewards: optional string array
   failConditions: optional string array
 
+anchor:
+  id: string (lowercase_snake_case)
+  zoneId: string (must match a room.zones[].id)
+  encounterType: ambush | patrol | horde | duel
+  enemyIds: string array of hostile entities[].id values
+  probability: number in [0, 1]
+  cooldownTurns: non-negative integer
+  tags: string array
+  (optional but preferred: a spawn SET so emit-pack keeps encounterAnchors)
+
 Coherency rules:
 - Entity IDs referenced in room.zones[].entities MUST match entities[].id
 - The quest should involve the entities and take place in the room
 - Generate 1–3 entities and 1 quest with 2–4 stages
 - Entity types and stats should fit the theme and difficulty
 - Quest stages should form a logical progression
+- When hostiles exist, emit anchor.enemyIds from those hostiles and anchor.zoneId from their zone
 
 General rules:
 - Output ONLY valid YAML, no explanations, no markdown fences, no commentary

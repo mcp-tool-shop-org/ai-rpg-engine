@@ -5,7 +5,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { extname, join, relative, resolve } from 'node:path';
 import { loadContent, type ContentPack, type LoadResult } from '@ai-rpg-engine/content-schema';
 import { parseYamlish } from '../validators.js';
-import type { SessionArtifacts } from '../session.js';
+import { sessionSlug, type SessionArtifacts } from '../session.js';
 
 const SKIP_DIRS = new Set([
   'node_modules', 'dist', '.git', '.swarm', 'coverage', '.ai-sessions',
@@ -83,6 +83,17 @@ export function classifyDocument(parsed: unknown, filePath = ''): ClassifiedDoc 
   }
   if (typeof parsed.entityId === 'string' && typeof parsed.zoneId === 'string') {
     return { kind: 'placement', id: `${parsed.entityId}@${parsed.zoneId}`, value: parsed, path: filePath };
+  }
+  if (
+    typeof parsed.encounterType === 'string'
+    && Array.isArray(parsed.enemyIds)
+    && typeof parsed.probability === 'number'
+    && typeof parsed.cooldownTurns === 'number'
+  ) {
+    return { kind: 'encounter-anchor', id: asId(parsed.id), value: parsed, path: filePath };
+  }
+  if (typeof parsed.currency === 'string' && Array.isArray(parsed.nodes) && typeof parsed.id === 'string') {
+    return { kind: 'progression-tree', id: parsed.id, value: parsed, path: filePath };
   }
   if (isRecord(parsed.statPriorities) && typeof parsed.progressionTreeId === 'string') {
     return { kind: 'archetype', id: asId(parsed.id), value: parsed, path: filePath };
@@ -214,12 +225,17 @@ function mergePackJson(pack: MutablePack, src: Record<string, unknown>, notes: s
   take('archetypes', 'archetypes');
   take('backgrounds', 'backgrounds');
   take('placements', 'placements');
+  take('encounterAnchors', 'encounterAnchors');
+  take('progressionTrees', 'progressionTrees');
   if (isRecord(src.entityAi)) {
     pack.entityAi = { ...pack.entityAi, ...src.entityAi as Record<string, Record<string, unknown>> };
   }
   if (isRecord(src.buildCatalog) && !pack.buildCatalog) {
     pack.buildCatalog = src.buildCatalog;
   }
+  if (isRecord(src.meta) && !pack.meta) pack.meta = src.meta;
+  if (isRecord(src.manifest) && !pack.manifest) pack.manifest = src.manifest;
+  if (src.ruleset !== undefined && pack.ruleset === undefined) pack.ruleset = src.ruleset;
 }
 
 type MutablePack = {
@@ -238,6 +254,11 @@ type MutablePack = {
   placements: Array<{ entityId: string; zoneId: string } & Record<string, unknown>>;
   entityAi: Record<string, Record<string, unknown>>;
   buildCatalog?: Record<string, unknown>;
+  encounterAnchors: Record<string, unknown>[];
+  progressionTrees: Record<string, unknown>[];
+  meta?: Record<string, unknown>;
+  manifest?: Record<string, unknown>;
+  ruleset?: unknown;
 };
 
 function emptyPack(): MutablePack {
@@ -256,6 +277,8 @@ function emptyPack(): MutablePack {
     backgrounds: [],
     placements: [],
     entityAi: {},
+    encounterAnchors: [],
+    progressionTrees: [],
   };
 }
 
@@ -280,6 +303,12 @@ function ingest(pack: MutablePack, doc: ClassifiedDoc, notes: string[]): void {
         }
       }
       if (isRecord(v.quest)) pushUnique(pack.quests, v.quest, 'id');
+      if (isRecord(v.anchor)) pushUnique(pack.encounterAnchors, v.anchor, 'id');
+      if (Array.isArray(v.encounterAnchors)) {
+        for (const a of v.encounterAnchors) {
+          if (isRecord(a)) pushUnique(pack.encounterAnchors, a, 'id');
+        }
+      }
       break;
     }
     case 'location-pack': {
@@ -350,6 +379,12 @@ function ingest(pack: MutablePack, doc: ClassifiedDoc, notes: string[]): void {
         if (isRecord(ai)) pack.entityAi[id] = ai;
       }
       break;
+    case 'encounter-anchor':
+      pushUnique(pack.encounterAnchors, v, 'id');
+      break;
+    case 'progression-tree':
+      pushUnique(pack.progressionTrees, v, 'id');
+      break;
     case 'pack-json':
       mergePackJson(pack, v, notes);
       break;
@@ -376,12 +411,46 @@ function toContentPack(pack: MutablePack): ContentPack {
   if (pack.placements.length) out.placements = pack.placements as ContentPack['placements'];
   if (Object.keys(pack.entityAi).length) out.entityAi = pack.entityAi as ContentPack['entityAi'];
   if (pack.buildCatalog) out.buildCatalog = pack.buildCatalog;
+  if (pack.encounterAnchors.length) out.encounterAnchors = pack.encounterAnchors as ContentPack['encounterAnchors'];
+  if (pack.progressionTrees.length) out.progressionTrees = pack.progressionTrees as ContentPack['progressionTrees'];
+  if (pack.meta) out.meta = pack.meta as ContentPack['meta'];
+  if (pack.manifest) out.manifest = pack.manifest as ContentPack['manifest'];
+  if (pack.ruleset !== undefined) out.ruleset = pack.ruleset as ContentPack['ruleset'];
   return out;
+}
+
+export type AssembleContentPackOptions = {
+  extraPaths?: string[];
+  artifacts?: SessionArtifacts;
+  /** Active session identity used to fill pack.meta when the sources omit it. */
+  session?: { name: string; themes?: string[] };
+  /** Optional --id overlay for pack.meta.id. */
+  packId?: string;
+  /** Optional --name overlay for pack.meta.name. */
+  packName?: string;
+};
+
+function applyListingIdentity(pack: MutablePack, options: AssembleContentPackOptions): void {
+  const flagId = asId(options.packId);
+  const flagName = asId(options.packName);
+  const sessionName = asId(options.session?.name);
+  if (!pack.meta && !flagId && !flagName && !sessionName) return;
+  const existing = isRecord(pack.meta) ? { ...pack.meta } : {};
+  const id = flagId ?? asId(existing.id) ?? (sessionName ? sessionSlug(sessionName) : undefined) ?? (flagName ? sessionSlug(flagName) : undefined);
+  const name = flagName ?? asId(existing.name) ?? sessionName ?? flagId;
+  if (!id || !name) return;
+  const meta: Record<string, unknown> = { ...existing, id, name };
+  if (!asId(meta.tagline) && sessionName) meta.tagline = sessionName;
+  const genres = options.session?.themes?.filter((t) => typeof t === 'string' && t.length > 0);
+  if ((!Array.isArray(meta.genres) || meta.genres.length === 0) && genres && genres.length > 0) {
+    meta.genres = genres;
+  }
+  pack.meta = meta;
 }
 
 export async function assembleContentPack(
   projectRoot: string,
-  options: { extraPaths?: string[]; artifacts?: SessionArtifacts } = {},
+  options: AssembleContentPackOptions = {},
 ): Promise<EmitPackResult> {
   const notes: string[] = [];
   const filesRead: string[] = [];
@@ -411,6 +480,8 @@ export async function assembleContentPack(
     ingest(pack, doc, notes);
   }
 
+  applyListingIdentity(pack, options);
+
   const contentPack = toContentPack(pack);
   const load = loadContent(contentPack);
   return { pack: contentPack, load, filesRead, notes };
@@ -426,6 +497,15 @@ export function formatEmitPackReport(result: EmitPackResult): string {
   }
   if (result.pack.entityAi) {
     lines.push(`entityAi overlays: ${Object.keys(result.pack.entityAi).length}.`);
+  }
+  if (result.pack.encounterAnchors && result.pack.encounterAnchors.length > 0) {
+    lines.push(`Encounter anchors: ${result.pack.encounterAnchors.length}.`);
+  }
+  if (result.pack.progressionTrees && result.pack.progressionTrees.length > 0) {
+    lines.push(`Progression trees: ${result.pack.progressionTrees.length}.`);
+  }
+  if (result.pack.meta && typeof result.pack.meta.id === 'string') {
+    lines.push(`Pack meta: ${result.pack.meta.id}.`);
   }
   return lines.join('\n');
 }
@@ -461,6 +541,8 @@ export function idsFromPack(pack: ContentPack): Partial<SessionArtifacts> {
     catalogs: asId((pack.buildCatalog as { packId?: unknown } | undefined)?.packId)
       ? [asId((pack.buildCatalog as { packId?: unknown }).packId)!]
       : [],
+    anchors: pick(pack.encounterAnchors as Array<{ id?: string }> | undefined),
+    trees: pick(pack.progressionTrees as Array<{ id?: string }> | undefined),
   };
   return out;
 }

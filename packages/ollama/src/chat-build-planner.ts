@@ -78,12 +78,21 @@ type BuildTemplate = {
 
 const CHARGEN_STEPS: TemplateStep[] = [
   {
+    command: 'create-progression-tree',
+    intent: 'scaffold',
+    descriptionSuffix: 'progression tree',
+    artifactKind: 'trees',
+    paramBuilder: (goal) => ({ kind: 'progression-tree', theme: `progression tree for ${goal}` }),
+    dependsOnPrevious: false,
+    usePriorContent: false,
+  },
+  {
     command: 'create-archetype',
     intent: 'scaffold',
     descriptionSuffix: 'player class / archetype',
     artifactKind: 'archetypes',
     paramBuilder: (goal) => ({ kind: 'archetype', theme: `player class for ${goal}` }),
-    dependsOnPrevious: false,
+    dependsOnPrevious: true,
     usePriorContent: false,
   },
   {

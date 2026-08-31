@@ -26,6 +26,8 @@ import { createBackground } from './commands/create-background.js';
 import { createBuildCatalog } from './commands/create-build-catalog.js';
 import { createEntityAi } from './commands/create-entity-ai.js';
 import { createPlacement, placementYaml, placementRecordId } from './commands/create-placement.js';
+import { createEncounterAnchor } from './commands/create-encounter-anchor.js';
+import { createProgressionTree } from './commands/create-progression-tree.js';
 import { assembleContentPack, defaultPackWritePath, formatEmitPackReport, packJson } from './commands/emit-pack.js';
 import { importSessionArtifacts } from './session-import.js';
 import { explainDistrictState } from './commands/explain-district-state.js';
@@ -91,6 +93,10 @@ type CliFlags = {
   session?: string;
   placeIn?: string;
   entityId?: string;
+  zone?: string;
+  enemies?: string[];
+  id?: string;
+  name?: string;
 };
 
 function parseFlags(args: string[]): { command: string; flags: CliFlags } {
@@ -164,6 +170,10 @@ function parseFlags(args: string[]): { command: string; flags: CliFlags } {
       case '--stdin': flags.stdin = true; break;
       case '--place-in': flags.placeIn = next; i++; break;
       case '--entity-id': flags.entityId = next; i++; break;
+      case '--zone': flags.zone = next; i++; break;
+      case '--enemies': flags.enemies = next?.split(','); i++; break;
+      case '--id': flags.id = next; i++; break;
+      case '--name': flags.name = next; i++; break;
     }
   }
 
@@ -344,6 +354,8 @@ export function formatCliHelp(version: string): string {
     helpRow('create-build-catalog', 'Generate a chargen catalog'),
     helpRow('create-entity-ai', 'Generate an NPC AI overlay'),
     helpRow('create-placement', 'Generate an entity placement'),
+    helpRow('create-encounter-anchor', 'Generate a spawn-SET encounter anchor'),
+    helpRow('create-progression-tree', 'Generate a chargen progression tree'),
     helpRow('emit-pack', 'Assemble ContentPack JSON from YAML'),
     '',
     'Iterate:',
@@ -404,12 +416,16 @@ export function formatCliHelp(version: string): string {
     flagRow('--zones <ids>', 'Comma-separated existing zone IDs'),
     flagRow('--constraints <c>', 'Comma-separated constraints'),
     flagRow('--difficulty <level>', 'Encounter difficulty hint'),
-    flagRow('--kind <type>', 'Scaffold kind: room, faction, district, quest, pack, dialogue, entity, ability, status, item, hazard, archetype, background, build-catalog, entity-ai, placement'),
+    flagRow('--kind <type>', 'Scaffold kind: room, faction, district, quest, pack, dialogue, entity, ability, status, item, hazard, archetype, background, build-catalog, entity-ai, placement, encounter-anchor, progression-tree'),
     flagRow('--repair', 'Attempt to fix invalid generated content'),
     flagRow('--validate', 'Refuse to emit/write create-* content that fails schema validation'),
     flagRow('--write <path>', 'Write generated output to file instead of stdout (sandboxed)'),
     flagRow('--place-in <zone>', 'create-entity: also emit a placement into this zone'),
     flagRow('--entity-id <id>', 'create-entity-ai / create-placement: bind to this entity'),
+    flagRow('--zone <id>', 'create-encounter-anchor: zoneId to roll the spawn SET in'),
+    flagRow('--enemies <ids>', 'create-encounter-anchor: comma-separated enemy entity ids'),
+    flagRow('--id <id>', 'emit-pack: pack.meta.id overlay'),
+    flagRow('--name <name>', 'emit-pack: pack.meta.name overlay'),
     '',
     'Flags (iterate / diagnose / simulate / guide):',
     flagRow('--goal <text>', 'Improvement/expansion goal'),
@@ -623,7 +639,12 @@ async function runCliInner(args: string[]): Promise<void> {
   }
 
   if (command === 'emit-pack') {
-    const assembled = await assembleContentPack(projectRoot);
+    const listingSession = await loadSession(projectRoot);
+    const assembled = await assembleContentPack(projectRoot, {
+      session: listingSession ? { name: listingSession.name, themes: listingSession.themes } : undefined,
+      packId: flags.id,
+      packName: flags.name,
+    });
     const json = packJson(assembled.pack);
     const writePath = flags.write === undefined
       ? undefined
@@ -638,7 +659,7 @@ async function runCliInner(args: string[]): Promise<void> {
     }
     await emit(json, writePath, projectRoot);
     console.error(formatEmitPackReport(assembled));
-    const session = await loadSession(projectRoot);
+    const session = listingSession;
     if (session) {
       recordEvent(session, 'pack_emitted', `emit-pack: ${assembled.load.ok ? 'valid' : 'invalid'} (${assembled.filesRead.length} files)`);
       await saveSession(projectRoot, session);
@@ -1002,7 +1023,9 @@ async function runCliInner(args: string[]): Promise<void> {
     case 'create-background':
     case 'create-build-catalog':
     case 'create-entity-ai':
-    case 'create-placement': {
+    case 'create-placement':
+    case 'create-encounter-anchor':
+    case 'create-progression-tree': {
       const theme = flags.theme ?? (command === 'create-placement' && flags.entityId && flags.placeIn ? 'placement' : undefined);
       if (!theme) {
         console.error('--theme is required');
@@ -1019,6 +1042,8 @@ async function runCliInner(args: string[]): Promise<void> {
         : kind === 'background' ? createBackground
         : kind === 'build-catalog' ? createBuildCatalog
         : kind === 'entity-ai' ? createEntityAi
+        : kind === 'encounter-anchor' ? createEncounterAnchor
+        : kind === 'progression-tree' ? createProgressionTree
         : createPlacement;
       const result = await run(client, {
         theme,
@@ -1027,7 +1052,8 @@ async function runCliInner(args: string[]): Promise<void> {
         repair: flags.repair,
         sessionContext: sessionCtx,
         entityId: flags.entityId,
-        zoneId: flags.placeIn,
+        zoneId: flags.placeIn ?? flags.zone,
+        enemies: flags.enemies,
       } as never);
       if (!result.ok) {
         console.error(result.error);

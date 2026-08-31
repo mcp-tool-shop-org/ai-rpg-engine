@@ -35,6 +35,31 @@ describe('classifyDocument', () => {
     const doc = classifyDocument({ entityId: 'chapel_guard', profileId: 'sentinel', goals: ['hold'] }, 'ai.yaml');
     expect(doc?.kind).toBe('entityAi');
   });
+
+  it('classifies an encounter anchor (spawn SET)', () => {
+    const doc = classifyDocument({
+      id: 'nave_ambush',
+      zoneId: 'nave',
+      encounterType: 'ambush',
+      enemyIds: ['ash_ghoul'],
+      probability: 0.35,
+      cooldownTurns: 4,
+      tags: ['undead'],
+    }, 'anchor.yaml');
+    expect(doc?.kind).toBe('encounter-anchor');
+    expect(doc?.id).toBe('nave_ambush');
+  });
+
+  it('classifies a progression tree', () => {
+    const doc = classifyDocument({
+      id: 'combat_mastery',
+      name: 'Combat Mastery',
+      currency: 'xp',
+      nodes: [{ id: 'toughened', name: 'Toughened', cost: 10, effects: [] }],
+    }, 'tree.yaml');
+    expect(doc?.kind).toBe('progression-tree');
+    expect(doc?.id).toBe('combat_mastery');
+  });
 });
 
 describe('assembleContentPack', () => {
@@ -91,9 +116,100 @@ describe('assembleContentPack', () => {
       entities: [{ id: 'g', type: 'npc', name: 'G' }],
       placements: [{ entityId: 'g', zoneId: 'nave' }],
       entityAi: { g: { profileId: 'sentinel' } },
+      encounterAnchors: [{
+        id: 'nave_ambush', zoneId: 'nave', encounterType: 'ambush',
+        enemyIds: ['g'], probability: 0.3, cooldownTurns: 2, tags: ['undead'],
+      }],
+      progressionTrees: [{ id: 'combat_mastery', name: 'Combat Mastery', currency: 'xp', nodes: [] }],
     });
     expect(ids.entities).toEqual(['g']);
     expect(ids.placements).toEqual(['g@nave']);
     expect(ids.entityAi).toEqual(['g']);
+    expect(ids.anchors).toEqual(['nave_ambush']);
+    expect(ids.trees).toEqual(['combat_mastery']);
+  });
+
+  it('keeps encounterAnchors, progressionTrees, and meta when walking pack JSON', async () => {
+    await writeFile(join(root, 'content.json'), JSON.stringify({
+      schemaVersion: '1',
+      meta: { id: 'chapel-threshold', name: 'The Chapel Threshold', tagline: 'JSON content pack' },
+      manifest: { id: 'chapel-threshold', title: 'The Chapel Threshold', version: '1.0.0', engineVersion: '>=1', ruleset: 'fantasy', modules: [], contentPacks: [] },
+      ruleset: { id: 'fantasy', name: 'Fantasy' },
+      entities: [{ id: 'chapel_guard', type: 'npc', name: 'Chapel Guard' }],
+      zones: [{ id: 'nave', name: 'Nave' }],
+      encounterAnchors: [{
+        id: 'nave_ambush', zoneId: 'nave', encounterType: 'ambush',
+        enemyIds: ['chapel_guard'], probability: 0.4, cooldownTurns: 3, tags: ['undead'],
+      }],
+      progressionTrees: [{
+        id: 'combat_mastery', name: 'Combat Mastery', currency: 'xp',
+        nodes: [{ id: 'toughened', name: 'Toughened', cost: 10, effects: [{ type: 'resource-boost', params: { resource: 'hp', amount: 5 } }] }],
+      }],
+    }));
+
+    const result = await assembleContentPack(root);
+    expect(result.pack.encounterAnchors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'nave_ambush', zoneId: 'nave' })]),
+    );
+    expect(result.pack.progressionTrees).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'combat_mastery' })]),
+    );
+    expect(result.pack.meta).toEqual(expect.objectContaining({ id: 'chapel-threshold', name: 'The Chapel Threshold' }));
+    expect(result.pack.manifest).toEqual(expect.objectContaining({ id: 'chapel-threshold' }));
+    expect(result.pack.ruleset).toEqual(expect.objectContaining({ id: 'fantasy' }));
+  });
+
+  it('fills pack.meta from session identity when sources omit it', async () => {
+    await writeFile(join(root, 'guard.yaml'), 'id: chapel_guard\ntype: npc\nname: Chapel Guard\n');
+    const result = await assembleContentPack(root, {
+      session: { name: 'Haunted Chapel', themes: ['gothic', 'undead'] },
+    });
+    expect(result.pack.meta).toEqual(expect.objectContaining({
+      id: 'haunted-chapel',
+      name: 'Haunted Chapel',
+      tagline: 'Haunted Chapel',
+      genres: ['gothic', 'undead'],
+    }));
+  });
+
+  it('does not invent meta on overlay-only packs with no session', async () => {
+    await writeFile(join(root, 'guard.yaml'), 'id: chapel_guard\ntype: npc\nname: Chapel Guard\n');
+    const result = await assembleContentPack(root);
+    expect(result.pack.meta).toBeUndefined();
+  });
+
+  it('lifts an encounter-pack nested anchor into encounterAnchors', async () => {
+    await writeFile(join(root, 'ambush.yaml'), [
+      'room:',
+      '  id: chapel',
+      '  name: Chapel',
+      '  zones:',
+      '    - id: nave',
+      '      name: Nave',
+      'entities:',
+      '  - id: ash_ghoul',
+      '    type: enemy',
+      '    name: Ash Ghoul',
+      'quest:',
+      '  id: hush_the_nave',
+      '  name: Hush the Nave',
+      '  stages:',
+      '    - id: enter',
+      '      name: Enter',
+      'anchor:',
+      '  id: nave_ambush',
+      '  zoneId: nave',
+      '  encounterType: ambush',
+      '  enemyIds:',
+      '    - ash_ghoul',
+      '  probability: 0.4',
+      '  cooldownTurns: 3',
+      '  tags:',
+      '    - undead',
+    ].join('\n'));
+    const result = await assembleContentPack(root);
+    expect(result.pack.encounterAnchors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'nave_ambush', zoneId: 'nave' })]),
+    );
   });
 });
