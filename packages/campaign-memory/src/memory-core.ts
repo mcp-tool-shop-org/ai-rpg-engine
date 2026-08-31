@@ -44,6 +44,12 @@ export type CampaignMemoryCoreConfig = {
  * move gift-trust; a bare pickup is item-acquired.
  * world.zone.entered → discovery and progression.node.unlocked → action so
  * first-visits and tree unlocks reach the live journal (F-0df0c914).
+ * item.recognized → item-recognized (F-4b375c5d) — wearer is the actor,
+ * zone occupants stay witnesses. Chronicle-core's equip-only recognition
+ * ceiling (F-611c93c9) is untouched.
+ * leverage.resolved maps only temporary-alliance / broker-truce /
+ * recruit-ally → alliance (F-385c6d86); other verbs do not invent theft
+ * or insult producers.
  *
  * F-c1949ae0 (consolidate) is still not called from this file.
  */
@@ -55,6 +61,7 @@ const EVENT_CATEGORY: Record<string, RecordCategory | readonly RecordCategory[]>
   'social.gift': 'gift',
   'item.acquired': 'item-acquired',
   'item.lost': 'item-lost',
+  'item.recognized': 'item-recognized',
   'campaign.rescue': 'rescue',
   'social.rescue': 'rescue',
   'campaign.betrayal': 'betrayal',
@@ -69,12 +76,20 @@ const EVENT_CATEGORY: Record<string, RecordCategory | readonly RecordCategory[]>
   'opportunity.failed': 'opportunity-failed',
   'world.zone.entered': 'discovery',
   'progression.node.unlocked': 'action',
+  'leverage.resolved': 'alliance',
 };
+
+/** Diplomacy / social verbs that are a live alliance, not a generic resolve. */
+const ALLIANCE_SUBACTIONS = new Set(['temporary-alliance', 'broker-truce', 'recruit-ally']);
 
 function categoriesFor(event: ResolvedEvent): RecordCategory[] {
   if (event.type === 'item.acquired') {
     const fromId = event.payload?.fromEntityId;
     return [typeof fromId === 'string' && fromId.length > 0 ? 'gift' : 'item-acquired'];
+  }
+  if (event.type === 'leverage.resolved') {
+    const sub = event.payload?.subAction;
+    return typeof sub === 'string' && ALLIANCE_SUBACTIONS.has(sub) ? ['alliance'] : [];
   }
   const mapped = EVENT_CATEGORY[event.type];
   if (!mapped) return [];
@@ -175,6 +190,8 @@ function describeEvent(category: RecordCategory, actorName: string, targetName: 
   if (category === 'companion-departed') return `${targetName ?? actorName} left the party`;
   if (category === 'item-acquired') return `${actorName} acquired an item`;
   if (category === 'item-lost') return `${actorName} lost an item`;
+  if (category === 'item-recognized') return `${actorName}'s ${targetName ?? 'item'} was recognized`;
+  if (category === 'alliance') return `${actorName} formed an alliance${targetName ? ` with ${targetName}` : ''}`;
   if (category === 'discovery') return `${actorName} entered ${targetName ?? 'a new place'}`;
   if (category === 'action') return `${actorName} unlocked ${targetName ?? 'an advancement'}`;
   return `${actorName} — ${category}`;
@@ -183,7 +200,7 @@ function describeEvent(category: RecordCategory, actorName: string, targetName: 
 function significanceFor(category: RecordCategory): number {
   if (category === 'kill' || category === 'betrayal' || category === 'death') return 0.9;
   if (category === 'rescue' || category === 'companion-joined' || category === 'companion-departed') return 0.8;
-  if (category === 'gift' || category === 'opportunity-completed') return 0.6;
+  if (category === 'gift' || category === 'alliance' || category === 'opportunity-completed') return 0.6;
   return 0.5;
 }
 
@@ -191,7 +208,7 @@ function emotionalCharge(category: RecordCategory, perspective: 'target' | 'witn
   const base =
     category === 'kill' || category === 'betrayal' || category === 'death' || category === 'companion-departed'
       ? -0.8
-      : category === 'rescue' || category === 'gift' || category === 'companion-joined' || category === 'opportunity-completed'
+      : category === 'rescue' || category === 'gift' || category === 'alliance' || category === 'companion-joined' || category === 'opportunity-completed'
         ? 0.6
         : 0;
   return perspective === 'witness' ? base * 0.5 : base;
@@ -224,6 +241,23 @@ function resolveActorTarget(
     return {
       actorId: event.actorId ?? stringPayload(payload, 'actorId') ?? entityId,
       targetId: stringPayload(payload, 'targetId') ?? toId,
+    };
+  }
+
+  // F-4b375c5d: the wearer is the actor; zone occupants stay witnesses.
+  if (category === 'item-recognized') {
+    return {
+      actorId: event.actorId ?? stringPayload(payload, 'actorId') ?? stringPayload(payload, 'wearerId') ?? entityId,
+      targetId: stringPayload(payload, 'targetId') ?? npcId,
+    };
+  }
+
+  // F-385c6d86: diplomacy/social alliance verbs. Target is the faction when
+  // no entity id is present — witnesses still come from the actor's zone.
+  if (category === 'alliance') {
+    return {
+      actorId: event.actorId ?? stringPayload(payload, 'actorId') ?? entityId,
+      targetId: stringPayload(payload, 'targetId') ?? stringPayload(payload, 'targetFactionId') ?? npcId,
     };
   }
 
@@ -325,11 +359,15 @@ function recordLiveEvent(
       ? (stringPayload(payload, 'zoneName') ?? stringPayload(payload, 'zoneId') ?? target?.name)
       : category === 'action'
         ? (stringPayload(payload, 'nodeId') ?? stringPayload(payload, 'treeId') ?? target?.name)
-        : (category === 'kill' || category === 'death' ? stringPayload(payload, 'entityName') : undefined) ??
-          stringPayload(payload, 'npcName') ??
-          stringPayload(payload, 'toName') ??
-          target?.name ??
-          targetId;
+        : category === 'item-recognized'
+          ? (stringPayload(payload, 'itemName') ?? stringPayload(payload, 'itemId'))
+          : category === 'alliance'
+            ? (stringPayload(payload, 'targetFactionId') ?? stringPayload(payload, 'targetId') ?? target?.name)
+            : (category === 'kill' || category === 'death' ? stringPayload(payload, 'entityName') : undefined) ??
+              stringPayload(payload, 'npcName') ??
+              stringPayload(payload, 'toName') ??
+              target?.name ??
+              targetId;
 
   const record = journal.record({
     tick: event.tick,
@@ -371,8 +409,8 @@ function recordLiveEvent(
 /**
  * Live campaign-memory EngineModule. Opt-in: a pack adds this to its module
  * list to journal kills/gifts/rescues/betrayals plus live item/companion/
- * opportunity/death/discovery/unlock events with zone witnesses and to move
- * the four-axis relationship model during play.
+ * opportunity/death/discovery/unlock/recognition/alliance events with zone
+ * witnesses and to move the four-axis relationship model during play.
  *
  * Does NOT call consolidate (F-c1949ae0 — decay-clock overwrite — left to a
  * later health amend).

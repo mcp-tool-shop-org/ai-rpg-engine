@@ -47,10 +47,11 @@ export type {
   FinaleOutline,
 } from './finale.js';
 
-// Live write side (F-6594b19b / F-34f5622c / F-0df0c914): opt-in EngineModule
-// that journals kills / gifts / rescues / betrayals plus live item/companion/
-// opportunity/death/zone-enter/node-unlock events with zone witnesses, copies
-// attitude onto EntityState, and persists NPC banks via registerNamespace.
+// Live write side (F-6594b19b / F-34f5622c / F-0df0c914 / F-4b375c5d /
+// F-385c6d86): opt-in EngineModule that journals kills / gifts / rescues /
+// betrayals plus live item/companion/opportunity/death/zone-enter/node-unlock/
+// item-recognized/alliance events with zone witnesses, copies attitude onto
+// EntityState, and persists NPC banks via registerNamespace.
 // Does not call consolidate (F-c1949ae0).
 export {
   createCampaignMemoryCore,

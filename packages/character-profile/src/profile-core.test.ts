@@ -343,6 +343,113 @@ describe('F-8e83bda3: leveledUp advances archetype (and discipline) rank', () =>
   });
 });
 
+describe('F-4016307c: leveledUp copies ranks onto actor.custom', () => {
+  it('after crossing XP_THRESHOLDS[1], actor.custom.archetypeRank === 2', () => {
+    const engine = makeEngine();
+    const killsNeeded = Math.ceil(XP_THRESHOLDS[1]! / DEFAULT_XP_PER_KILL);
+    for (let i = 0; i < killsNeeded; i++) {
+      const foeId = `foe-rank-${i}`;
+      engine.store.addEntity({
+        id: foeId,
+        blueprintId: 'foe',
+        type: 'npc',
+        name: `Foe ${i}`,
+        tags: ['enemy'],
+        stats: { vigor: 1 },
+        resources: { hp: 1, maxHp: 1 },
+        statuses: [],
+        zoneId: 'cell',
+      });
+      defeat(engine, foeId, `Foe ${i}`, i + 1);
+    }
+    const actor = engine.world.entities['player'];
+    expect(actor.custom?.archetypeRank).toBe(2);
+    expect(getEntityProfile(engine.world, 'player')!.progression.archetypeRank).toBe(2);
+  });
+
+  it('optional ProgressionOps spends progressionTreeId and evolveTrait', () => {
+    const spent: Array<{ treeId: string; rank: number }> = [];
+    const catalog = {
+      packId: 'fantasy',
+      statBudget: 3,
+      maxTraits: 3,
+      requiredFlaws: 0,
+      archetypes: [
+        {
+          id: 'penitent-knight',
+          name: 'Penitent Knight',
+          description: 'A knight.',
+          statPriorities: { vigor: 6 },
+          startingTags: ['martial'],
+          progressionTreeId: 'combat-mastery',
+        },
+      ],
+      backgrounds: [],
+      traits: [],
+      disciplines: [],
+      crossTitles: [],
+      entanglements: [],
+    };
+    const profile = createProfile(
+      testBuild,
+      { vigor: 6, instinct: 4, will: 3 },
+      { hp: 25, maxHp: 25 },
+      ['player'],
+      'fantasy',
+      'player',
+    );
+    const engine = new Engine({
+      manifest,
+      seed: 7,
+      modules: [
+        statusCore,
+        createCombatCore(),
+        createProfileCore({
+          statuses: statusOps,
+          packId: 'fantasy',
+          profiles: { player: profile },
+          catalog,
+          progression: {
+            spendTree: (_world, _entityId, treeId, rank) => {
+              spent.push({ treeId, rank });
+            },
+            evolvedFormFor: (traitId, rank) =>
+              traitId === 'iron-frame' && rank >= 2 ? 'adamantine-frame' : undefined,
+          },
+        }),
+      ],
+    });
+    const zone: ZoneState = { id: 'cell', roomId: 'cell', name: 'Cell', tags: [], neighbors: [] };
+    engine.store.addZone(zone);
+    engine.store.addEntity(makePlayer());
+    engine.store.state.playerId = 'player';
+    engine.store.state.locationId = 'cell';
+
+    const killsNeeded = Math.ceil(XP_THRESHOLDS[1]! / DEFAULT_XP_PER_KILL);
+    for (let i = 0; i < killsNeeded; i++) {
+      const foeId = `foe-ops-${i}`;
+      engine.store.addEntity({
+        id: foeId,
+        blueprintId: 'foe',
+        type: 'npc',
+        name: `Foe ${i}`,
+        tags: ['enemy'],
+        stats: { vigor: 1 },
+        resources: { hp: 1, maxHp: 1 },
+        statuses: [],
+        zoneId: 'cell',
+      });
+      defeat(engine, foeId, `Foe ${i}`, i + 1);
+    }
+
+    expect(engine.world.entities['player'].custom?.archetypeRank).toBe(2);
+    expect(spent.some((s) => s.treeId === 'combat-mastery' && s.rank === 2)).toBe(true);
+    const live = getEntityProfile(engine.world, 'player')!;
+    expect(live.progression.traitEvolutions).toHaveLength(1);
+    expect(live.progression.traitEvolutions[0]!.evolvedTraitId).toBe('adamantine-frame');
+  });
+});
+
 describe('F-c95f4820: profile copies loadout + item chronicle on write', () => {
   it('after ensureStartingLoadouts + a kill credited to the weapon, serializeProfile has the slot and used-in-kill', () => {
     const catalog: ItemCatalog = {

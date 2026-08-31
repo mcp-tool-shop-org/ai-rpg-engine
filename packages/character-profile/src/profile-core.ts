@@ -12,7 +12,8 @@
 // under a registered namespace so Engine.serialize round-trips it.
 //
 // - combat.entity.defeated → grantXp on the killer's profile; on leveledUp,
-//   advanceArchetypeRank (and advanceDisciplineRank when a discipline is set)
+//   advanceArchetypeRank (and advanceDisciplineRank when a discipline is set),
+//   copy ranks onto actor.custom, optional ProgressionOps spend/evolve
 // - combat.aftermath.injury / combat.defeat.survived → addInjury whose
 //   computeInjuryPenalties become one `injured-<id>` status (same GAS band
 //   as equipped-<itemId>)
@@ -42,11 +43,11 @@ import type {
   ScalarValue,
   WorldState,
 } from '@ai-rpg-engine/core';
-import type { CharacterBuild, PortraitOps } from '@ai-rpg-engine/character-creation';
+import type { BuildCatalog, CharacterBuild, PortraitOps } from '@ai-rpg-engine/character-creation';
 import { getAllItems, getEntityLoadout, getItemChronicle } from '@ai-rpg-engine/equipment';
 import type { CharacterProfile, Injury } from './types.js';
 import { createProfile, incrementTurns } from './profile.js';
-import { grantXp, advanceArchetypeRank, advanceDisciplineRank } from './progression.js';
+import { grantXp, advanceArchetypeRank, advanceDisciplineRank, evolveTrait } from './progression.js';
 import { addInjury, computeInjuryPenalties, getActiveInjuries, healInjury } from './injuries.js';
 import { adjustReputation, recordMilestone } from './milestones.js';
 
@@ -111,6 +112,30 @@ export type ProfileStatusOps = {
     world?: WorldState,
   ) => ResolvedEvent;
   remove: (entity: EntityState, statusId: string, tick: number) => ResolvedEvent | null;
+};
+
+/**
+ * Optional rank-up inject (F-4016307c). Pack wiring of createProgressionCore
+ * is out of domain — this is the missing spend/evolve hook on the owned
+ * profile write. Omit it and ranks still copy onto actor.custom.
+ */
+export type ProgressionOps = {
+  /**
+   * Spend the archetype's progressionTreeId (pack wires unlockNode, or a stub).
+   * Called after advanceArchetypeRank; getEntityLoadout stays a pure read.
+   */
+  spendTree?: (
+    world: WorldState,
+    entityId: string,
+    treeId: string,
+    rank: number,
+    tick: number,
+  ) => void;
+  /**
+   * When the catalog names an evolved form for a trait at this rank, return
+   * the evolved id so profile-core can call evolveTrait.
+   */
+  evolvedFormFor?: (traitId: string, rank: number) => string | undefined;
 };
 
 // ---------------------------------------------------------------------------
@@ -285,6 +310,60 @@ function copyReputation(profile: CharacterProfile, actor: EntityState): void {
     relations[entry.factionId] = entry.value;
   }
   actor.relations = relations;
+}
+
+/**
+ * Stamp progression ranks onto actor.custom the same way resolveEntity
+ * stamps custom.title (F-4016307c). Combat formulas / verb lists that
+ * read EntityState.custom can then see the live rank.
+ */
+function copyRanksOntoActor(profile: CharacterProfile, actor: EntityState): void {
+  const custom: Record<string, ScalarValue> = { ...(actor.custom ?? {}) };
+  custom.archetypeRank = profile.progression.archetypeRank;
+  custom.disciplineRank = profile.progression.disciplineRank;
+  actor.custom = custom;
+}
+
+/**
+ * Optional ProgressionOps on rank-up (F-4016307c). Rank increment itself is
+ * F-8e83bda3 and is not reopened here. Failures in the inject must not
+ * roll back the rank stamp.
+ */
+function applyRankUpInject(
+  world: WorldState,
+  actor: EntityState,
+  profile: CharacterProfile,
+  config: ProfileCoreConfig,
+  tick: number,
+): CharacterProfile {
+  const ops = config.progression;
+  if (!ops) return profile;
+
+  const treeId = config.catalog?.archetypes.find((a) => a.id === profile.build.archetypeId)?.progressionTreeId;
+  if (treeId && ops.spendTree) {
+    try {
+      ops.spendTree(world, actor.id, treeId, profile.progression.archetypeRank, tick);
+    } catch {
+      // Keep the rank copy even if the injected spend throws.
+    }
+  }
+
+  if (!ops.evolvedFormFor) return profile;
+  let next = profile;
+  const already = new Set(next.progression.traitEvolutions.map((e) => e.originalTraitId));
+  for (const traitId of next.build.traitIds) {
+    if (already.has(traitId)) continue;
+    let evolved: string | undefined;
+    try {
+      evolved = ops.evolvedFormFor(traitId, next.progression.archetypeRank);
+    } catch {
+      continue;
+    }
+    if (typeof evolved !== 'string' || evolved.length === 0) continue;
+    next = evolveTrait(next, traitId, evolved, `tick:${tick}`);
+    already.add(traitId);
+  }
+  return next;
 }
 
 function seedReputationFromEntity(profile: CharacterProfile, actor: EntityState): CharacterProfile {
@@ -492,6 +571,13 @@ export type ProfileCoreConfig = {
   profiles?: Record<string, CharacterProfile>;
   /** Optional portrait inject, forwarded to createProfile. */
   portraits?: PortraitOps;
+  /**
+   * Optional chargen catalog — used to resolve ArchetypeDefinition.progressionTreeId
+   * when ProgressionOps.spendTree is wired (F-4016307c).
+   */
+  catalog?: BuildCatalog;
+  /** Optional rank-up inject (progression-core spend / trait evolution). */
+  progression?: ProgressionOps;
 };
 
 /**
@@ -535,6 +621,12 @@ export function createProfileCore(config: ProfileCoreConfig): EngineModule {
           if (profile.build.disciplineId) {
             profile = advanceDisciplineRank(profile).profile;
           }
+          // F-4016307c: copy ranks onto actor.custom (same stamp as
+          // custom.title). Optional inject spends progressionTreeId /
+          // evolveTrait — pack wiring of createProgressionCore is out of
+          // domain. getEntityLoadout stays a pure read.
+          profile = applyRankUpInject(world, killer, profile, config, tick);
+          copyRanksOntoActor(profile, killer);
         }
 
         const defeatedName =

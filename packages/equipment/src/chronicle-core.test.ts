@@ -31,6 +31,7 @@ import type { ItemCatalog } from './types.js';
 import { createEquipmentCore, type EquipmentStatusOps } from './equipment-core.js';
 import { getItemKillCount, getItemHistory } from './item-chronicle.js';
 import { evaluateRelicGrowth, type GrowthMilestone } from './relic-growth.js';
+import { computeItemNotoriety } from './provenance.js';
 import {
     createItemChronicleCore,
     getItemChronicle,
@@ -676,6 +677,21 @@ describe('chronicle-core — relic growth from real play', () => {
         expect(summary.tier).toBe(direct.tier);
         expect(summary.milestoneCount).toBe(direct.milestonesReached.length);
         expect(summary.epithet).toBe(direct.currentEpithet);
+    });
+
+    it('persists computeItemNotoriety on the relic summary after a credited kill', () => {
+        // F-ea6b2a41: hosts and recognition injects read one number off the
+        // namespace. Do not reopen F-517c0c6f (statBonus onto equipped-<itemId>).
+        const engine = makeEngine({ chronicle: true });
+        engine.submitAction('equip', { parameters: { itemId: 'gladius' } });
+        addFoe(engine, 'foe-1', 'Bone Collector');
+        defeat(engine, 'foe-1', 'Bone Collector', 1);
+
+        const item = catalog.items.find((it) => it.id === 'gladius')!;
+        const chronicle = getItemHistory(getItemChronicle(engine.world), 'gladius');
+        const summary = getRelicSummary(engine.world, 'gladius')!;
+        expect(summary.notoriety).toBe(computeItemNotoriety(item, chronicle));
+        expect(chronicle.some((e) => e.event === 'used-in-kill')).toBe(true);
     });
 });
 

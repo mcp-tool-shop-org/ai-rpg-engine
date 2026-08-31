@@ -56,6 +56,7 @@ import type { EngineModule, EntityState, WorldState } from '@ai-rpg-engine/core'
 import type { ItemCatalog, ItemChronicleEntry, ItemDefinition } from './types.js';
 import { recordItemEvent } from './item-chronicle.js';
 import { evaluateRelicGrowth, type GrowthMilestone } from './relic-growth.js';
+import { computeItemNotoriety } from './provenance.js';
 import { getEntityLoadout } from './equipment-core.js';
 
 /** Persisted module-state namespace key (world.modules[ITEM_CHRONICLE_STATE_KEY]). */
@@ -89,6 +90,11 @@ export type ItemRelicSummary = {
     displayName: string;
     /** The current epithet, when one has been earned. */
     epithet?: string;
+    /**
+     * 0–1 notoriety from `computeItemNotoriety` (F-ea6b2a41), persisted so
+     * hosts and recognition injects read one number off the namespace.
+     */
+    notoriety: number;
 };
 
 /** The persisted shape at world.modules[ITEM_CHRONICLE_STATE_KEY]. */
@@ -262,6 +268,7 @@ function summarize(
         milestoneCount: relic.milestonesReached.length,
         tier: relic.tier,
         displayName: relic.currentEpithet ?? item.name,
+        notoriety: computeItemNotoriety(item, chronicle),
         ...(relic.currentEpithet ? { epithet: relic.currentEpithet } : {}),
     };
 }

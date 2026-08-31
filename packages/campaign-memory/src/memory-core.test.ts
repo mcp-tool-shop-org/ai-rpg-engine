@@ -262,6 +262,114 @@ describe('F-0df0c914: zone-enter and node-unlock journal discovery/action', () =
   });
 });
 
+describe('F-4b375c5d: item.recognized journals item-recognized with a witness', () => {
+  it('a player zone-enter that emits item.recognized journals a non-kill item-recognized row with a witness', () => {
+    const engine = makeEngine();
+    engine.store.addZone({ id: 'chapel', roomId: 'chapel', name: 'Chapel', tags: [], neighbors: [] });
+    engine.store.addEntity(npc('priest', 'Priest', { zoneId: 'chapel' }));
+    engine.store.recordEvent({
+      id: '',
+      tick: 3,
+      type: 'world.zone.entered',
+      actorId: 'player',
+      payload: { zoneId: 'chapel', zoneName: 'Chapel', entityId: 'player' },
+    });
+    engine.store.recordEvent({
+      id: '',
+      tick: 3,
+      type: 'item.recognized',
+      actorId: 'player',
+      payload: {
+        itemId: 'stolen-seal',
+        itemName: 'Stolen Seal',
+        recognitionType: 'stolen',
+        stanceDelta: -1,
+        narratorHint: 'the priest clocks the stolen seal',
+        factionId: 'chapel',
+        zoneId: 'chapel',
+      },
+    });
+
+    const journal = getCampaignJournal(engine.world);
+    expect(journal.query({ category: 'kill' })).toHaveLength(0);
+    const row = journal.query({ category: 'item-recognized' })[0];
+    expect(row).toBeDefined();
+    expect(row!.actorId).toBe('player');
+    expect(row!.zoneId).toBe('chapel');
+    expect(row!.witnesses).toContain('priest');
+    expect(row!.witnesses).not.toContain('player');
+    expect(row!.description).toContain('Stolen Seal');
+
+    const priest = getNpcMemory(engine.world, 'priest');
+    expect(priest).toBeDefined();
+    expect(priest!.getRelationship('player').familiarity).toBeGreaterThan(0);
+  });
+});
+
+describe('F-385c6d86: leverage.resolved alliance verbs journal alliance', () => {
+  it('a successful diplomacy.temporary-alliance in a populated zone journals a non-kill alliance row with a witness', () => {
+    const engine = makeEngine();
+    engine.store.recordEvent({
+      id: '',
+      tick: 8,
+      type: 'leverage.resolved',
+      actorId: 'player',
+      payload: {
+        verb: 'diplomacy',
+        subAction: 'temporary-alliance',
+        actorId: 'player',
+        targetFactionId: 'market-guild',
+        effects: [],
+        narratorHint: 'a temporary alliance is struck',
+        zoneId: 'market',
+      },
+    });
+
+    const journal = getCampaignJournal(engine.world);
+    expect(journal.query({ category: 'kill' })).toHaveLength(0);
+    const row = journal.query({ category: 'alliance' })[0];
+    expect(row).toBeDefined();
+    expect(row!.actorId).toBe('player');
+    expect(row!.targetId).toBe('market-guild');
+    expect(row!.witnesses).toContain('merchant');
+    expect(row!.witnesses).not.toContain('player');
+    expect(row!.description.toLowerCase()).toContain('alliance');
+
+    const merchant = getNpcMemory(engine.world, 'merchant');
+    expect(merchant).toBeDefined();
+    expect(merchant!.getRelationship('player').trust).toBeGreaterThan(0);
+  });
+
+  it('broker-truce and recruit-ally also journal alliance; other subActions do not', () => {
+    const engine = makeEngine();
+    engine.store.recordEvent({
+      id: '',
+      tick: 9,
+      type: 'leverage.resolved',
+      actorId: 'player',
+      payload: { verb: 'diplomacy', subAction: 'broker-truce', actorId: 'player', targetFactionId: 'wardens' },
+    });
+    engine.store.recordEvent({
+      id: '',
+      tick: 10,
+      type: 'leverage.resolved',
+      actorId: 'player',
+      payload: { verb: 'social', subAction: 'recruit-ally', actorId: 'player', targetId: 'guard' },
+    });
+    engine.store.recordEvent({
+      id: '',
+      tick: 11,
+      type: 'leverage.resolved',
+      actorId: 'player',
+      payload: { verb: 'sabotage', subAction: 'sabotage-supply', actorId: 'player', targetFactionId: 'wardens' },
+    });
+
+    const alliances = getCampaignJournal(engine.world).query({ category: 'alliance' });
+    expect(alliances).toHaveLength(2);
+    expect(alliances.map((r) => r.targetId).sort()).toEqual(['guard', 'wardens']);
+  });
+});
+
 describe('F-d1973aae: NPC attitude copies onto EntityState.relations', () => {
   it('a witnessed kill leaves the witness entity relations non-default without getNpcMemory', () => {
     const engine = makeEngine();

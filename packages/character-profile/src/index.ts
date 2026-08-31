@@ -65,4 +65,5 @@ export type {
   ProfileModuleState,
   ProfileStatusOps,
   ProfileStatusDefinition,
+  ProgressionOps,
 } from './profile-core.js';
