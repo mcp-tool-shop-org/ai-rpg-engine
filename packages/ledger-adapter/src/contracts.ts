@@ -535,6 +535,7 @@ export type LedgerReceiptNft = {
   minted?: string[];
   modified?: string[];
   released?: string[];
+  transferred?: string[];
   txids?: string[];
 };
 
@@ -928,6 +929,19 @@ export type NFTokenRef = {
    * nft_sell_offers, never a second offer.
    */
   releaseOfferIndex?: string;
+  /**
+   * Directed player→recipient sell-offer ledger index while unique gear is
+   * being made over (give). Same empty-string hatch as `offerIndex`. Distinct
+   * from `releaseOfferIndex` so a pending sideways transfer is never resumed
+   * as a return-to-issuer burn.
+   */
+  transferOfferIndex?: string;
+  /**
+   * Current on-ledger holder. Set after a confirmed directed transfer
+   * (issuer→player mint, or player→counterparty give). Reconcile uses this
+   * as `expectedOwner` (fallback `playerAddress` for pre-field saves).
+   */
+  ownerAddress?: string;
   /** Display name from the last EquipmentSnapshot — used when the item later leaves the loadout. */
   name?: string;
   /** 'pending' = mint submitted but not yet confirmed owned on-ledger (retry-safe);
@@ -940,14 +954,15 @@ export type NFTokenRef = {
 
 /**
  * Per-item NFT reconciliation of ledger vs engine. A PASS means `account_nfts`
- * independently confirms the player OWNS the tracked NFT AND its on-chain URI
+ * independently confirms the tracked owner holds the NFT AND its on-chain URI
  * matches the relic version the engine expects — the engine cannot fake either.
  */
 export type NFTCheck = {
   gameItemId: string;
   nftId: string;
-  expectedOwner: string; // the player's address
-  ownedOnLedger: boolean; // account_nfts(player) contains nftId
+  /** `NFTokenRef.ownerAddress` when set, else the player address. */
+  expectedOwner: string;
+  ownedOnLedger: boolean; // account_nfts(expectedOwner) contains nftId
   expectedUri: string; // the URI the engine's relicVersion implies (buildItemNFTUri)
   ledgerUri: string | null; // the URI account_nfts reports (null if the NFT is absent)
   uriOk: boolean; // ledgerUri === expectedUri (relic version matches on-chain)

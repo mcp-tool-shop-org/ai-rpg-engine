@@ -288,6 +288,33 @@ describe('reconcile — NFT ownership checks (P4)', () => {
     expect(report.passed).toBe(true);
   });
 
+  it('uses NFTokenRef.ownerAddress as expectedOwner when set', () => {
+    const ref = makeNftRef({ ownerAddress: 'rMerchant' });
+    const report = reconcile(
+      nftOnlyInput({
+        nfts: [ref],
+        ledgerNfts: { [ref.nftId]: { owner: 'rMerchant', uri: ref.uri } },
+      }),
+    );
+
+    expect(report.nftChecks?.[0]?.expectedOwner).toBe('rMerchant');
+    expect(report.nftChecks?.[0]?.ownedOnLedger).toBe(true);
+    expect(report.nftChecks?.[0]?.ok).toBe(true);
+    expect(report.passed).toBe(true);
+  });
+
+  it('falls back to playerAddress when ownerAddress is absent', () => {
+    const ref = makeNftRef();
+    const report = reconcile(
+      nftOnlyInput({
+        nfts: [ref],
+        ledgerNfts: { [ref.nftId]: { owner: 'rPlayer', uri: ref.uri } },
+      }),
+    );
+    expect(report.nftChecks?.[0]?.expectedOwner).toBe('rPlayer');
+    expect(report.passed).toBe(true);
+  });
+
   it('fails ownedOnLedger (and passed) when the on-ledger owner does not match the player address', () => {
     const ref = makeNftRef();
     const report = reconcile(

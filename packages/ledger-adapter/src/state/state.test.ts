@@ -225,6 +225,27 @@ describe('NFT unique-gear layer (state.nfts)', () => {
     expect(restored?.settlements).toEqual(state.settlements);
   });
 
+  test('round-trips ownerAddress and transferOfferIndex', () => {
+    const state = createInitialState(CONFIG);
+    state.nfts = {
+      writ: {
+        gameItemId: 'writ',
+        nftId: 'ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF12345678',
+        uri: 'ARPG-NFT|GAME:merchant|ITEM:writ|RELIC:0|TIER:0|V:1',
+        relicVersion: 0,
+        taxon: 0,
+        mutable: true,
+        mintTxid: 'HASH1',
+        status: 'minted',
+        ownerAddress: 'rMerchantAddressExample111111111',
+        transferOfferIndex: '',
+      },
+    };
+    const restored = deserializeState(serializeState(state));
+    expect(restored.nfts?.writ.ownerAddress).toBe('rMerchantAddressExample111111111');
+    expect(restored.nfts?.writ.transferOfferIndex).toBe('');
+  });
+
   test('throws a clear Error on a malformed nfts entry (wrong-typed field)', () => {
     const state = createInitialState(CONFIG);
     state.nfts = {
@@ -242,6 +263,25 @@ describe('NFT unique-gear layer (state.nfts)', () => {
     const obj = JSON.parse(serializeState(state)) as { nfts: Record<string, Record<string, unknown>> };
     obj.nfts.cutlass.relicVersion = 'not-a-number'; // should be a number
     expect(() => deserializeState(JSON.stringify(obj))).toThrow(/nfts\.cutlass\.relicVersion/);
+  });
+
+  test('throws a clear Error on a wrong-typed ownerAddress', () => {
+    const state = createInitialState(CONFIG);
+    state.nfts = {
+      cutlass: {
+        gameItemId: 'cutlass',
+        nftId: 'ABCDEF1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF12345678',
+        uri: 'ARPG-NFT|GAME:pirate|ITEM:cutlass|RELIC:1|TIER:1|V:1',
+        relicVersion: 1,
+        taxon: 0,
+        mutable: true,
+        mintTxid: 'FEDCBA9876543210FEDCBA9876543210FEDCBA98',
+        status: 'minted',
+      },
+    };
+    const obj = JSON.parse(serializeState(state)) as { nfts: Record<string, Record<string, unknown>> };
+    obj.nfts.cutlass.ownerAddress = 12;
+    expect(() => deserializeState(JSON.stringify(obj))).toThrow(/nfts\.cutlass\.ownerAddress/);
   });
 
   test('throws a clear Error on an invalid nfts status enum value', () => {

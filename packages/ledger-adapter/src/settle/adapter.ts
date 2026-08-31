@@ -1094,6 +1094,7 @@ export async function resumeAdapter(
           .filter(([, ref]) => ref.status === 'pending')
           .map(([id]) => id),
         released: [],
+        transferred: [],
         items: [],
         txids: [],
       },

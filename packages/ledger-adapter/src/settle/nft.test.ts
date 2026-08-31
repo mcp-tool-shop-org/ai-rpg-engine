@@ -23,7 +23,7 @@ import type {
 } from '../contracts.js';
 import { buildItemNFTUri } from '../contracts.js';
 import { DryRunTransport } from '../transport/dry-run.js';
-import { settleEquipmentNFTs, ARPG_NFT_TAXON } from './nft.js';
+import { settleEquipmentNFTs, transferUniqueGear, ARPG_NFT_TAXON } from './nft.js';
 import type { NFTSettlementResult } from './nft.js';
 
 // ── A thin fail-on-demand WRAPPER over the real DryRunTransport ─────────────
@@ -226,8 +226,10 @@ class OfferHatchTransport implements NFTTransport {
 const bootstrapTransport = new DryRunTransport();
 const ISSUER_SEED = 'sISSUERSEED';
 const PLAYER_SEED = 'sPLAYERSEED';
+const MERCHANT_SEED = 'sMERCHANTSEED';
 const ISSUER_ADDRESS = bootstrapTransport.walletFromSeed(ISSUER_SEED).address;
 const PLAYER_ADDRESS = bootstrapTransport.walletFromSeed(PLAYER_SEED).address;
+const MERCHANT_ADDRESS = bootstrapTransport.walletFromSeed(MERCHANT_SEED).address;
 
 function freshState(): LedgerAdapterState {
   return {
@@ -236,7 +238,7 @@ function freshState(): LedgerAdapterState {
     enabled: true,
     issuerAddress: ISSUER_ADDRESS,
     playerAddress: PLAYER_ADDRESS,
-    merchantAddress: 'rMERCHANT',
+    merchantAddress: MERCHANT_ADDRESS,
     trustLinesReady: true,
     tokenMap: {},
     lastSettled: {},
@@ -280,11 +282,13 @@ describe('settleEquipmentNFTs — mint + transfer', () => {
     expect(result.minted).toEqual(['cutlass']);
     expect(result.modified).toEqual([]);
     expect(result.skipped).toEqual([]);
+    expect(result.transferred).toEqual([]);
     expect(result.txids).toHaveLength(3); // mint + createSellOffer + acceptSellOffer
 
     const ref = state.nfts?.cutlass;
     expect(ref).toBeDefined();
     expect(ref?.status).toBe('minted');
+    expect(ref?.ownerAddress).toBe(PLAYER_ADDRESS);
     expect(ref?.taxon).toBe(ARPG_NFT_TAXON);
     expect(ref?.mutable).toBe(true);
     expect(ref?.uri).toBe(buildItemNFTUri('pirate-game', 'cutlass', 0, 0));
@@ -623,6 +627,116 @@ describe('settleEquipmentNFTs — loadout-aware release', () => {
     expect(hatch.createCalls).toBe(1);
     expect(hatch.acceptCalls).toBe(2);
     expect(state.nfts?.cutlass).toBeUndefined();
+  });
+});
+
+describe('transferUniqueGear — player → recipient, never a burn', () => {
+  it('moves a minted NFT to the recipient and persists ownerAddress', async () => {
+    const transport = new DryRunTransport();
+    const state = freshState();
+    await settleEquipmentNFTs(transport, state, { items: [makeItem()] }, DEPS);
+    const nftId = state.nfts?.cutlass.nftId as string;
+
+    let burnCalls = 0;
+    const origBurn = transport.nftBurn.bind(transport);
+    (transport as NFTTransport).nftBurn = async (seed, id, owner) => {
+      burnCalls += 1;
+      return origBurn(seed, id, owner);
+    };
+
+    const result = await transferUniqueGear(transport, state, 'cutlass', MERCHANT_ADDRESS, {
+      playerSeed: PLAYER_SEED,
+      recipientSeed: MERCHANT_SEED,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.transferred).toEqual(['cutlass']);
+    expect(result.released).toEqual([]);
+    expect(burnCalls).toBe(0);
+    expect(state.nfts?.cutlass.ownerAddress).toBe(MERCHANT_ADDRESS);
+    expect((await transport.accountNfts(MERCHANT_ADDRESS)).map((n) => n.nftId)).toEqual([nftId]);
+    expect(await transport.accountNfts(PLAYER_ADDRESS)).toHaveLength(0);
+    expect(await transport.accountNfts(ISSUER_ADDRESS)).toHaveLength(0);
+  });
+
+  it('a failed accept resumes only the accept, never a second offer', async () => {
+    const inner = new DryRunTransport();
+    const state = freshState();
+    await settleEquipmentNFTs(inner, state, { items: [makeItem()] }, DEPS);
+    const hatch = new OfferHatchTransport(inner, { failAccept: 1 });
+
+    const first = await transferUniqueGear(hatch, state, 'cutlass', MERCHANT_ADDRESS, {
+      playerSeed: PLAYER_SEED,
+      recipientSeed: MERCHANT_SEED,
+    });
+    expect(first.success).toBe(false);
+    expect(first.pending).toContain('cutlass');
+    expect(hatch.createCalls).toBe(1);
+    expect(state.nfts?.cutlass.transferOfferIndex).toBeTruthy();
+
+    const retry = await transferUniqueGear(hatch, state, 'cutlass', MERCHANT_ADDRESS, {
+      playerSeed: PLAYER_SEED,
+      recipientSeed: MERCHANT_SEED,
+    });
+    expect(retry.success).toBe(true);
+    expect(retry.transferred).toEqual(['cutlass']);
+    expect(hatch.createCalls).toBe(1);
+    expect(hatch.acceptCalls).toBe(2);
+    expect(state.nfts?.cutlass.ownerAddress).toBe(MERCHANT_ADDRESS);
+    expect(state.nfts?.cutlass.transferOfferIndex).toBeUndefined();
+  });
+
+  it('settleEquipmentNFTs with given transfers instead of burning leftovers', async () => {
+    const transport = new DryRunTransport();
+    const state = freshState();
+    await settleEquipmentNFTs(transport, state, { items: [makeItem()] }, DEPS);
+    const nftId = state.nfts?.cutlass.nftId as string;
+
+    let burnCalls = 0;
+    const origBurn = transport.nftBurn.bind(transport);
+    (transport as NFTTransport).nftBurn = async (seed, id, owner) => {
+      burnCalls += 1;
+      return origBurn(seed, id, owner);
+    };
+
+    const empty = await settleEquipmentNFTs(
+      transport,
+      state,
+      { items: [] },
+      DEPS,
+      {
+        given: {
+          cutlass: { recipientAddress: MERCHANT_ADDRESS, recipientSeed: MERCHANT_SEED },
+        },
+      },
+    );
+
+    expect(empty.success).toBe(true);
+    expect(empty.released).toEqual([]);
+    expect(empty.transferred).toEqual(['cutlass']);
+    expect(empty.skipped).toEqual([]);
+    expect(burnCalls).toBe(0);
+    expect(state.nfts?.cutlass).toBeDefined();
+    expect(state.nfts?.cutlass.ownerAddress).toBe(MERCHANT_ADDRESS);
+    expect((await transport.accountNfts(MERCHANT_ADDRESS)).map((n) => n.nftId)).toEqual([nftId]);
+    expect(await transport.accountNfts(PLAYER_ADDRESS)).toHaveLength(0);
+    expect(await transport.accountNfts(ISSUER_ADDRESS)).toHaveLength(0);
+  });
+
+  it('skipRelease without a recipient seed does not burn', async () => {
+    const transport = new DryRunTransport();
+    const state = freshState();
+    await settleEquipmentNFTs(transport, state, { items: [makeItem()] }, DEPS);
+
+    const empty = await settleEquipmentNFTs(transport, state, { items: [] }, DEPS, {
+      skipRelease: ['cutlass'],
+    });
+
+    expect(empty.released).toEqual([]);
+    expect(empty.pending).toContain('cutlass');
+    expect(state.nfts?.cutlass).toBeDefined();
+    expect(await transport.accountNfts(PLAYER_ADDRESS)).toHaveLength(1);
+    expect(await transport.accountNfts(ISSUER_ADDRESS)).toHaveLength(0);
   });
 });
 

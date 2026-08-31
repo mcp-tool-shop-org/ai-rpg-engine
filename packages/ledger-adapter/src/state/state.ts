@@ -219,6 +219,12 @@ function assertNFTokenRef(value: unknown, path: string): asserts value is NFToke
   if (value.releaseOfferIndex !== undefined && typeof value.releaseOfferIndex !== 'string') {
     throw new Error(`deserializeState: "${path}.releaseOfferIndex" must be a string`);
   }
+  if (value.transferOfferIndex !== undefined && typeof value.transferOfferIndex !== 'string') {
+    throw new Error(`deserializeState: "${path}.transferOfferIndex" must be a string`);
+  }
+  if (value.ownerAddress !== undefined && typeof value.ownerAddress !== 'string') {
+    throw new Error(`deserializeState: "${path}.ownerAddress" must be a string`);
+  }
   if (value.name !== undefined && typeof value.name !== 'string') {
     throw new Error(`deserializeState: "${path}.name" must be a string`);
   }

@@ -35,7 +35,7 @@ import { buildItemNFTUri, buildSettlementMemo } from '../contracts.js';
 import { snapshotFromWorld } from './snapshot.js';
 import { equipmentSnapshotFromWorld } from './equipment-snapshot.js';
 import { enableFromWorld, settleAllFromWorld, settleCheckpoint, witnessStateHash } from './checkpoint.js';
-import { createLedgerAdapter, reconcile } from '../settle/index.js';
+import { createLedgerAdapter, reconcile, reconcileAgainstLedger } from '../settle/index.js';
 import { settleEquipmentNFTs, buildLedgerNfts } from '../settle/nft.js';
 import { createInitialState } from '../state/index.js';
 import { DryRunTransport } from '../transport/index.js';
@@ -626,6 +626,58 @@ describe('the writ changes hands — title moves, obligations do not', () => {
     // `lost` had no producer anywhere in the engine until `give` existed.
     const history = getItemChronicle(engine.world)['writ-of-passage'] ?? [];
     expect(history.map((e) => e.event)).toContain('lost');
+  });
+
+  it('settleAllFromWorld after give leaves the merchant holding the NFT and does not burn', async () => {
+    const { transport, state, adapter } = await harness();
+    const engine = createGame(SEED);
+    openTheBooks(engine);
+    await enableFromWorld(engine.world, PLAYER_ID, adapter, state);
+
+    engine.submitAction('move', { targetIds: ['long-quay'] });
+    engine.submitAction('move', { targetIds: ['customs-shed'] });
+    engine.submitAction('move', { targetIds: ['long-quay'] });
+    engine.submitAction('move', { targetIds: ['crooked-stair'] });
+    expect(engine.world.entities[PLAYER_ID].inventory).toContain('writ-of-passage');
+
+    engine.submitAction('equip', { parameters: { itemId: 'writ-of-passage' } });
+    const catalog = resolveCatalog(engine);
+
+    const minted = await settleAllFromWorld(
+      engine.world, PLAYER_ID, adapter, state, 1, 'crooked-stair', { transport, catalog },
+    );
+    expect(minted.nft.minted).toContain('writ-of-passage');
+    const nftId = state.nfts?.['writ-of-passage']?.nftId;
+    expect(nftId).toBeTruthy();
+    expect((await transport.accountNfts(state.playerAddress)).some((n) => n.nftId === nftId)).toBe(true);
+
+    engine.submitAction('unequip', { parameters: { itemId: 'writ-of-passage' } });
+    const giveEvents = engine.submitAction('give', { targetIds: ['broker-inaya'], toolId: 'writ-of-passage' });
+    expect(giveEvents.find((e) => e.type === 'action.rejected')).toBeUndefined();
+
+    let burnCalls = 0;
+    const origBurn = transport.nftBurn.bind(transport);
+    (transport as { nftBurn: typeof origBurn }).nftBurn = async (seed, id, owner) => {
+      burnCalls += 1;
+      return origBurn(seed, id, owner);
+    };
+
+    const settled = await settleAllFromWorld(
+      engine.world, PLAYER_ID, adapter, state, 2, 'crooked-stair', { transport, catalog },
+    );
+
+    expect(settled.nft.success, settled.nft.message).toBe(true);
+    expect(settled.nft.released).not.toContain('writ-of-passage');
+    expect(settled.nft.transferred).toContain('writ-of-passage');
+    expect(burnCalls).toBe(0);
+    expect(state.nfts?.['writ-of-passage']?.ownerAddress).toBe(state.merchantAddress);
+    expect((await transport.accountNfts(state.merchantAddress)).some((n) => n.nftId === nftId)).toBe(true);
+    expect((await transport.accountNfts(state.playerAddress)).some((n) => n.nftId === nftId)).toBe(false);
+
+    const report = await reconcileAgainstLedger(transport, state, { runId: RUN_ID, seed: SEED });
+    const check = report.nftChecks?.find((c) => c.gameItemId === 'writ-of-passage');
+    expect(check?.expectedOwner).toBe(state.merchantAddress);
+    expect(check?.ok).toBe(true);
   });
 });
 

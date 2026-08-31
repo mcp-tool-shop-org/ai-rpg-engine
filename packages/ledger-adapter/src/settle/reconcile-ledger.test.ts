@@ -4,7 +4,7 @@ import { reconcileAgainstLedger } from './reconcile-ledger.js';
 import { createInitialState } from '../state/index.js';
 import { DryRunTransport } from '../transport/dry-run.js';
 import { buildItemNFTUri } from '../contracts.js';
-import { ARPG_NFT_TAXON, settleEquipmentNFTs } from './nft.js';
+import { ARPG_NFT_TAXON, settleEquipmentNFTs, transferUniqueGear } from './nft.js';
 import type { LedgerAdapterConfig } from '../contracts.js';
 
 const CONFIG: LedgerAdapterConfig = {
@@ -72,6 +72,52 @@ describe('reconcileAgainstLedger', () => {
 
     const report = await reconcileAgainstLedger(transport, state, { runId: 'run-nft', seed: 0 });
     expect(report.nftChecks).toHaveLength(1);
+    expect(report.nftChecks?.[0].ok).toBe(true);
+    expect(report.passed).toBe(true);
+  });
+
+  it('fetches accountNfts for NFTokenRef.ownerAddress when the player is not the holder', async () => {
+    const transport = new DryRunTransport();
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'pirate', runId: 'run-give' });
+    const state = createInitialState(CONFIG);
+    await adapter.enable(state, { coin: 10, items: {} });
+
+    const issuerSeed = adapter.getSeed(state.issuerAddress)!;
+    const playerSeed = adapter.getSeed(state.playerAddress)!;
+    const merchantSeed = adapter.getSeed(state.merchantAddress)!;
+    await settleEquipmentNFTs(
+      transport,
+      state,
+      {
+        items: [
+          {
+            itemId: 'cutlass',
+            name: 'Cutlass',
+            slot: 'weapon',
+            rarity: 'rare',
+            equipped: true,
+            relicTier: 0,
+            relicVersion: 0,
+          },
+        ],
+      },
+      {
+        gameId: 'pirate',
+        issuerAddress: state.issuerAddress,
+        playerAddress: state.playerAddress,
+        issuerSeed,
+        playerSeed,
+      },
+    );
+
+    await transferUniqueGear(transport, state, 'cutlass', state.merchantAddress, {
+      playerSeed,
+      recipientSeed: merchantSeed,
+    });
+    expect(state.nfts?.cutlass.ownerAddress).toBe(state.merchantAddress);
+
+    const report = await reconcileAgainstLedger(transport, state, { runId: 'run-give', seed: 0 });
+    expect(report.nftChecks?.[0].expectedOwner).toBe(state.merchantAddress);
     expect(report.nftChecks?.[0].ok).toBe(true);
     expect(report.passed).toBe(true);
   });

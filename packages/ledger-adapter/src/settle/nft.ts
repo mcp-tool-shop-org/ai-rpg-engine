@@ -27,7 +27,8 @@
 // Loadout-aware release: after the snapshot loop, refs whose gameItemId is
 // absent from the snapshot are transferred back to the issuer and burned
 // (pending-safe on releaseOfferIndex). Leftovers are `released` / `pending`,
-// never `skipped`.
+// never `skipped`. Give (player→counterparty) is a distinct leftover branch:
+// those itemIds are directed-transferred, never burned.
 
 import type {
   EquipmentSnapshot,
@@ -58,7 +59,7 @@ export type NFTItemSettlement = {
   itemId: string;
   name: string;
   nftId: string;
-  status: 'minted' | 'pending' | 'modified' | 'skipped' | 'released';
+  status: 'minted' | 'pending' | 'modified' | 'skipped' | 'released' | 'transferred';
   explorerUrl?: string;
 };
 
@@ -74,14 +75,29 @@ export type NFTSettlementResult = {
   modified: string[];
   /** gameItemIds already minted, unchanged relicVersion — no-op THIS call. */
   skipped: string[];
-  /** gameItemIds still transferring (issuer→player or player→issuer release). */
+  /** gameItemIds still transferring (issuer→player, player→issuer release, or player→recipient give). */
   pending: string[];
   /** gameItemIds that left the loadout and were transferred-back/burned THIS call. */
   released: string[];
+  /** gameItemIds made over to a counterparty THIS call (give — never burned). */
+  transferred: string[];
   /** Per-item rows with name + nftId — the coordinator-printable surface. */
   items: NFTItemSettlement[];
   /** Every tx hash produced by THIS call, across all items, in call order. */
   txids: string[];
+};
+
+/** Recipient of a player→counterparty unique-gear transfer (give). */
+export type GivenGearRecipient = {
+  recipientAddress: string;
+  recipientSeed: string;
+};
+
+export type SettleEquipmentNftOpts = {
+  /** gameItemId → recipient. Those ids transfer instead of releaseOneItem. */
+  given?: Record<string, GivenGearRecipient>;
+  /** Given ids that must not burn even when the recipient seed is missing. */
+  skipRelease?: ReadonlySet<string> | readonly string[];
 };
 
 function errorMessage(err: unknown): string {
@@ -120,6 +136,7 @@ function composeNftMessage(opts: {
   const minted = opts.items.filter((i) => i.status === 'minted');
   const modified = opts.items.filter((i) => i.status === 'modified');
   const released = opts.items.filter((i) => i.status === 'released');
+  const transferred = opts.items.filter((i) => i.status === 'transferred');
   const pending = opts.items.filter((i) => i.status === 'pending');
   const parts: string[] = [];
   const withId = (row: NFTItemSettlement): string =>
@@ -133,6 +150,11 @@ function composeNftMessage(opts: {
     parts.push(`${withId(modified[0])} grew on ${label}`);
   } else if (modified.length > 1) {
     parts.push(`${joinNames(modified.map(withId))} grew on ${label}`);
+  }
+  if (transferred.length === 1) {
+    parts.push(`${withId(transferred[0])} changed hands on ${label}`);
+  } else if (transferred.length > 1) {
+    parts.push(`${joinNames(transferred.map(withId))} changed hands on ${label}`);
   }
   if (released.length === 1) {
     parts.push(`${withId(released[0])} left the loadout and was released on ${label}`);
@@ -195,6 +217,75 @@ async function recoverOfferIndex(
   }
 }
 
+type DirectedOfferField = 'offerIndex' | 'releaseOfferIndex' | 'transferOfferIndex';
+
+/**
+ * Directed 0-value CreateOffer/AcceptOffer. Offer-idempotent on `indexField`
+ * (including `''` tesSUCCESS-without-index): a retry recovers via
+ * nft_sell_offers and NEVER creates a second offer.
+ */
+async function directedZeroValueTransfer(
+  transport: NFTTransport,
+  ref: NFTokenRef,
+  indexField: DirectedOfferField,
+  fromSeed: string,
+  toSeed: string,
+  toAddress: string,
+  gameItemId: string,
+  txids: string[],
+  failures: string[],
+  labels: { create: string; accept: string },
+): Promise<boolean> {
+  const nftId = ref.nftId;
+  const current = ref[indexField];
+  const createAlreadyLanded = typeof current === 'string';
+  let offerIndex = current && current.length > 0 ? current : undefined;
+
+  if (!offerIndex) {
+    const recovered = await recoverOfferIndex(transport, nftId, toAddress);
+    if (recovered) {
+      offerIndex = recovered;
+      ref[indexField] = recovered;
+    }
+  }
+
+  if (!offerIndex && createAlreadyLanded) {
+    failures.push(
+      `${labels.create}(${gameItemId}) tesSUCCESS without offerIndex; nft ${nftId} not creating again until nft_sell_offers indexes a directed offer to ${toAddress}`,
+    );
+    return false;
+  }
+
+  if (!offerIndex) {
+    const offerRes = await transport.nftCreateSellOffer(fromSeed, nftId, '0', toAddress);
+    if (offerRes.hash) txids.push(offerRes.hash);
+    if (!offerRes.ok) {
+      failures.push(`${labels.create}(${gameItemId}) failed: ${offerRes.error ?? offerRes.code}`);
+      return false;
+    }
+    if (!offerRes.offerIndex) {
+      ref[indexField] = '';
+      failures.push(
+        `${labels.create}(${gameItemId}) tesSUCCESS without offerIndex; nft ${nftId} not creating again until nft_sell_offers indexes a directed offer to ${toAddress}`,
+      );
+      return false;
+    }
+    offerIndex = offerRes.offerIndex;
+    ref[indexField] = offerIndex;
+  }
+
+  const acceptRes = await transport.nftAcceptSellOffer(toSeed, offerIndex);
+  if (acceptRes.hash) txids.push(acceptRes.hash);
+  if (!acceptRes.ok) {
+    failures.push(
+      `${labels.accept}(${gameItemId}) failed: ${acceptRes.error ?? acceptRes.code} (offerIndex ${offerIndex})`,
+    );
+    return false;
+  }
+  delete ref[indexField];
+  return true;
+}
+
 /**
  * Directed issuer -> player transfer: NFTokenCreateOffer (a 0-value sell
  * directed at the player) then NFTokenAcceptOffer. Offer-idempotent: a pending
@@ -210,55 +301,20 @@ async function transferToPlayer(
   txids: string[],
   failures: string[],
 ): Promise<boolean> {
-  const nftId = ref.nftId;
-  const createAlreadyLanded = typeof ref.offerIndex === 'string';
-  let offerIndex = ref.offerIndex && ref.offerIndex.length > 0 ? ref.offerIndex : undefined;
-
-  if (!offerIndex) {
-    const recovered = await recoverOfferIndex(transport, nftId, deps.playerAddress);
-    if (recovered) {
-      offerIndex = recovered;
-      ref.offerIndex = recovered;
-    }
-  }
-
-  if (!offerIndex && createAlreadyLanded) {
-    failures.push(
-      `createSellOffer(${gameItemId}) tesSUCCESS without offerIndex; nft ${nftId} not creating again until nft_sell_offers indexes a directed offer to ${deps.playerAddress}`,
-    );
-    return false;
-  }
-
-  if (!offerIndex) {
-    const offerRes = await transport.nftCreateSellOffer(deps.issuerSeed, nftId, '0', deps.playerAddress);
-    if (offerRes.hash) txids.push(offerRes.hash);
-    if (!offerRes.ok) {
-      failures.push(`createSellOffer(${gameItemId}) failed: ${offerRes.error ?? offerRes.code}`);
-      return false;
-    }
-    if (!offerRes.offerIndex) {
-      // tesSUCCESS without offerIndex: persist the unindexed hatch so a later
-      // checkpoint recovers via nft_sell_offers and NEVER creates a second offer.
-      ref.offerIndex = '';
-      failures.push(
-        `createSellOffer(${gameItemId}) tesSUCCESS without offerIndex; nft ${nftId} not creating again until nft_sell_offers indexes a directed offer to ${deps.playerAddress}`,
-      );
-      return false;
-    }
-    offerIndex = offerRes.offerIndex;
-    ref.offerIndex = offerIndex;
-  }
-
-  const acceptRes = await transport.nftAcceptSellOffer(deps.playerSeed, offerIndex);
-  if (acceptRes.hash) txids.push(acceptRes.hash);
-  if (!acceptRes.ok) {
-    failures.push(
-      `acceptSellOffer(${gameItemId}) failed: ${acceptRes.error ?? acceptRes.code} (offerIndex ${offerIndex})`,
-    );
-    return false;
-  }
-  delete ref.offerIndex;
-  return true;
+  const ok = await directedZeroValueTransfer(
+    transport,
+    ref,
+    'offerIndex',
+    deps.issuerSeed,
+    deps.playerSeed,
+    deps.playerAddress,
+    gameItemId,
+    txids,
+    failures,
+    { create: 'createSellOffer', accept: 'acceptSellOffer' },
+  );
+  if (ok) ref.ownerAddress = deps.playerAddress;
+  return ok;
 }
 
 /**
@@ -274,53 +330,46 @@ async function transferToIssuer(
   txids: string[],
   failures: string[],
 ): Promise<boolean> {
-  const nftId = ref.nftId;
-  const createAlreadyLanded = typeof ref.releaseOfferIndex === 'string';
-  let offerIndex = ref.releaseOfferIndex && ref.releaseOfferIndex.length > 0 ? ref.releaseOfferIndex : undefined;
+  return directedZeroValueTransfer(
+    transport,
+    ref,
+    'releaseOfferIndex',
+    deps.playerSeed,
+    deps.issuerSeed,
+    deps.issuerAddress,
+    gameItemId,
+    txids,
+    failures,
+    { create: 'releaseCreateSellOffer', accept: 'releaseAcceptSellOffer' },
+  );
+}
 
-  if (!offerIndex) {
-    const recovered = await recoverOfferIndex(transport, nftId, deps.issuerAddress);
-    if (recovered) {
-      offerIndex = recovered;
-      ref.releaseOfferIndex = recovered;
-    }
-  }
-
-  if (!offerIndex && createAlreadyLanded) {
-    failures.push(
-      `releaseCreateSellOffer(${gameItemId}) tesSUCCESS without offerIndex; nft ${nftId} not creating again until nft_sell_offers indexes a directed offer to ${deps.issuerAddress}`,
-    );
-    return false;
-  }
-
-  if (!offerIndex) {
-    const offerRes = await transport.nftCreateSellOffer(deps.playerSeed, nftId, '0', deps.issuerAddress);
-    if (offerRes.hash) txids.push(offerRes.hash);
-    if (!offerRes.ok) {
-      failures.push(`releaseCreateSellOffer(${gameItemId}) failed: ${offerRes.error ?? offerRes.code}`);
-      return false;
-    }
-    if (!offerRes.offerIndex) {
-      ref.releaseOfferIndex = '';
-      failures.push(
-        `releaseCreateSellOffer(${gameItemId}) tesSUCCESS without offerIndex; nft ${nftId} not creating again until nft_sell_offers indexes a directed offer to ${deps.issuerAddress}`,
-      );
-      return false;
-    }
-    offerIndex = offerRes.offerIndex;
-    ref.releaseOfferIndex = offerIndex;
-  }
-
-  const acceptRes = await transport.nftAcceptSellOffer(deps.issuerSeed, offerIndex);
-  if (acceptRes.hash) txids.push(acceptRes.hash);
-  if (!acceptRes.ok) {
-    failures.push(
-      `releaseAcceptSellOffer(${gameItemId}) failed: ${acceptRes.error ?? acceptRes.code} (offerIndex ${offerIndex})`,
-    );
-    return false;
-  }
-  delete ref.releaseOfferIndex;
-  return true;
+/**
+ * Directed player -> recipient transfer (give). Offer-idempotent on
+ * `transferOfferIndex`. Does not burn.
+ */
+async function transferToRecipient(
+  transport: NFTTransport,
+  deps: { playerSeed: string; recipientSeed: string; recipientAddress: string },
+  ref: NFTokenRef,
+  gameItemId: string,
+  txids: string[],
+  failures: string[],
+): Promise<boolean> {
+  const ok = await directedZeroValueTransfer(
+    transport,
+    ref,
+    'transferOfferIndex',
+    deps.playerSeed,
+    deps.recipientSeed,
+    deps.recipientAddress,
+    gameItemId,
+    txids,
+    failures,
+    { create: 'transferCreateSellOffer', accept: 'transferAcceptSellOffer' },
+  );
+  if (ok) ref.ownerAddress = deps.recipientAddress;
+  return ok;
 }
 
 async function nftHeldBy(
@@ -334,6 +383,129 @@ async function nftHeldBy(
   } catch {
     return false;
   }
+}
+
+function emptyNftResult(
+  success: boolean,
+  message: string,
+  network: string,
+  extra: Partial<NFTSettlementResult> = {},
+): NFTSettlementResult {
+  return {
+    success,
+    message,
+    network,
+    minted: [],
+    modified: [],
+    skipped: [],
+    pending: [],
+    released: [],
+    transferred: [],
+    items: [],
+    txids: [],
+    ...extra,
+  };
+}
+
+/**
+ * Directed player→recipient 0-value CreateOffer/AcceptOffer for unique gear
+ * that was given in-world. Pending-safe on `transferOfferIndex` like
+ * issuer→player {@link transferToPlayer}. Never burns. No mainnet path.
+ */
+export async function transferUniqueGear(
+  transport: NFTTransport,
+  state: LedgerAdapterState,
+  gameItemId: string,
+  recipientAddress: string,
+  seeds: { playerSeed: string; recipientSeed: string },
+): Promise<NFTSettlementResult> {
+  const network = transportNetworkName(transport);
+  if (!recipientAddress) {
+    return emptyNftResult(false, `transferUniqueGear(${gameItemId}): missing recipientAddress`, network);
+  }
+  if (!state.nfts) state.nfts = {};
+  const ref = state.nfts[gameItemId];
+  if (!ref) {
+    return emptyNftResult(false, `transferUniqueGear(${gameItemId}): no NFTokenRef`, network);
+  }
+  const name = ref.name ?? gameItemId;
+  const txids: string[] = [];
+  const failures: string[] = [];
+  const items: NFTItemSettlement[] = [];
+
+  if (!ref.nftId) {
+    const recovered =
+      (await recoverNftId(transport, state.playerAddress, ref.uri)) ??
+      (await recoverNftId(transport, state.issuerAddress, ref.uri));
+    if (!recovered) {
+      failures.push(`transfer(${gameItemId}) still unindexed; not reminting`);
+      items.push(itemRow(gameItemId, name, '', 'pending', network));
+      return emptyNftResult(false, composeNftMessage({ success: false, network, items, failures }), network, {
+        pending: [gameItemId],
+        items,
+        txids,
+      });
+    }
+    ref.nftId = recovered;
+  }
+
+  if (await nftHeldBy(transport, ref.nftId, recipientAddress)) {
+    const already = ref.ownerAddress === recipientAddress;
+    ref.ownerAddress = recipientAddress;
+    delete ref.transferOfferIndex;
+    if (already) {
+      items.push(itemRow(gameItemId, name, ref.nftId, 'skipped', network));
+      return emptyNftResult(
+        true,
+        composeNftMessage({ success: true, network, items, failures: [] }),
+        network,
+        { skipped: [gameItemId], items, txids },
+      );
+    }
+    items.push(itemRow(gameItemId, name, ref.nftId, 'transferred', network));
+    return emptyNftResult(
+      true,
+      composeNftMessage({ success: true, network, items, failures: [] }),
+      network,
+      { transferred: [gameItemId], items, txids },
+    );
+  }
+
+  const playerHolds = await nftHeldBy(transport, ref.nftId, state.playerAddress);
+  if (!playerHolds) {
+    failures.push(`transfer(${gameItemId}) nft ${ref.nftId} not on player or recipient`);
+    items.push(itemRow(gameItemId, name, ref.nftId, 'pending', network));
+    return emptyNftResult(false, composeNftMessage({ success: false, network, items, failures }), network, {
+      pending: [gameItemId],
+      items,
+      txids,
+    });
+  }
+
+  const ok = await transferToRecipient(
+    transport,
+    { playerSeed: seeds.playerSeed, recipientSeed: seeds.recipientSeed, recipientAddress },
+    ref,
+    gameItemId,
+    txids,
+    failures,
+  );
+  if (!ok) {
+    items.push(itemRow(gameItemId, name, ref.nftId, 'pending', network));
+    return emptyNftResult(false, composeNftMessage({ success: false, network, items, failures }), network, {
+      pending: [gameItemId],
+      items,
+      txids,
+    });
+  }
+
+  items.push(itemRow(gameItemId, name, ref.nftId, 'transferred', network));
+  return emptyNftResult(
+    true,
+    composeNftMessage({ success: true, network, items, failures: [] }),
+    network,
+    { transferred: [gameItemId], items, txids },
+  );
 }
 
 /**
@@ -430,6 +602,14 @@ async function settleOneItem(
   const displayName = item.name;
   const ref = nfts[gameItemId];
   if (ref && !ref.name) ref.name = displayName;
+
+  // Title already moved off the player (give). Do not mint/modify/resume as
+  // if they still hold it — even if a stale snapshot still lists the item.
+  if (ref && ref.ownerAddress && ref.ownerAddress !== deps.playerAddress) {
+    skipped.push(gameItemId);
+    items.push(itemRow(gameItemId, displayName, ref.nftId, 'skipped', network));
+    return;
+  }
 
   if (!ref) {
     // MINT: no ref at all — this item has never been settled as an NFT.
@@ -622,6 +802,7 @@ export async function settleEquipmentNFTs(
     issuerSeed: string;
     playerSeed: string;
   },
+  opts?: SettleEquipmentNftOpts,
 ): Promise<NFTSettlementResult> {
   if (!state.nfts) {
     state.nfts = {};
@@ -633,14 +814,25 @@ export async function settleEquipmentNFTs(
   const skipped: string[] = [];
   const pending: string[] = [];
   const released: string[] = [];
+  const transferred: string[] = [];
   const items: NFTItemSettlement[] = [];
   const txids: string[] = [];
   const failures: string[] = [];
   const network = transportNetworkName(transport);
 
   const snapshotIds = new Set(snapshot.items.map((item) => item.itemId));
+  const given = opts?.given ?? {};
+  const skipRelease = new Set<string>([
+    ...Object.keys(given),
+    ...(opts?.skipRelease ? [...opts.skipRelease] : []),
+  ]);
 
   for (const item of snapshot.items) {
+    // Given items with a minted ref are title-moves, not loadout skips.
+    // Still mint if this checkpoint is the first time the item is seen.
+    if (given[item.itemId] && nfts[item.itemId]?.status === 'minted') {
+      continue;
+    }
     try {
       await settleOneItem(
         transport,
@@ -661,10 +853,53 @@ export async function settleEquipmentNFTs(
     }
   }
 
+  // Give: directed player→recipient transfer for itemIds named by the
+  // coordinator (from recent item.given events). Runs even if a stale
+  // snapshot still lists the item — that is not a burn. Never nftBurn.
+  for (const gameItemId of Object.keys(given)) {
+    const recipient = given[gameItemId];
+    const ref = nfts[gameItemId];
+    if (!ref || !recipient) continue;
+    try {
+      const result = await transferUniqueGear(
+        transport,
+        state,
+        gameItemId,
+        recipient.recipientAddress,
+        { playerSeed: deps.playerSeed, recipientSeed: recipient.recipientSeed },
+      );
+      txids.push(...result.txids);
+      items.push(...result.items);
+      transferred.push(...result.transferred);
+      pending.push(...result.pending);
+      skipped.push(...result.skipped);
+      if (!result.success) {
+        failures.push(result.message);
+      }
+    } catch (err) {
+      failures.push(`${gameItemId}: ${errorMessage(err)}`);
+    }
+  }
+
+  for (const gameItemId of skipRelease) {
+    if (given[gameItemId]) continue;
+    const ref = nfts[gameItemId];
+    if (!ref) continue;
+    if (ref.ownerAddress && ref.ownerAddress !== deps.playerAddress) continue;
+    failures.push(`transfer(${gameItemId}) missing recipient seed — not burning`);
+    pending.push(gameItemId);
+    items.push(itemRow(gameItemId, ref.name ?? gameItemId, ref.nftId, 'pending', network));
+  }
+
   // Loadout-aware: minted refs whose gameItemId has left the snapshot are
-  // transferred back / burned. Never treated as skipped.
+  // transferred back / burned. Never treated as skipped. Given / already-
+  // transferred ids are excluded (title moved; burning would destroy it).
   for (const gameItemId of Object.keys(nfts)) {
     if (snapshotIds.has(gameItemId)) continue;
+    if (skipRelease.has(gameItemId)) continue;
+    const ref = nfts[gameItemId];
+    if (ref.ownerAddress && ref.ownerAddress !== deps.playerAddress) continue;
+    if (typeof ref.transferOfferIndex === 'string') continue;
     try {
       await releaseOneItem(
         transport,
@@ -686,5 +921,5 @@ export async function settleEquipmentNFTs(
   const success = failures.length === 0;
   const message = composeNftMessage({ success, network, items, failures });
 
-  return { success, message, network, minted, modified, skipped, pending, released, items, txids };
+  return { success, message, network, minted, modified, skipped, pending, released, transferred, items, txids };
 }
