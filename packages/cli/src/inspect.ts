@@ -26,7 +26,7 @@ import {
   type EntityState,
 } from '@ai-rpg-engine/core';
 import { hasWorldTickState, getActivePressures } from '@ai-rpg-engine/modules';
-import { renderEventLog, frameRule, clipToWidth, SCREEN_WIDTH } from '@ai-rpg-engine/terminal-ui';
+import { renderEventLog, frameRule, clipToWidth, SCREEN_WIDTH, glyphsFor } from '@ai-rpg-engine/terminal-ui';
 import { allPacks } from './packs.js';
 import { derivePlayerLevel } from './menu.js';
 import type { LoadedPack } from './external-pack.js';
@@ -266,8 +266,11 @@ export function renderSaveReport(state: WorldState, opts: SaveReportOptions = {}
   } else {
     for (const key of globalKeys.slice(0, GLOBALS_SHOWN)) {
       const rendered = JSON.stringify(state.globals[key]) ?? 'undefined';
+      const ellipsis = glyphsFor().ellipsis;
       const bounded =
-        rendered.length > GLOBAL_VALUE_MAX ? `${rendered.slice(0, GLOBAL_VALUE_MAX - 1)}…` : rendered;
+        rendered.length > GLOBAL_VALUE_MAX
+          ? `${rendered.slice(0, Math.max(0, GLOBAL_VALUE_MAX - ellipsis.length))}${ellipsis}`
+          : rendered;
       lines.push(`  ${key}: ${bounded}`);
     }
     if (globalKeys.length > GLOBALS_SHOWN) {

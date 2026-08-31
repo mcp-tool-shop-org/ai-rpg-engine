@@ -156,13 +156,35 @@ describe('formatRecentRuns — the adventure-select block', () => {
       names,
     );
     expect(block).toContain('Recent runs:');
-    expect(block).toContain('✓ Victory — Chapel Threshold · 30 rounds, 9 kills · 2026-07-20');
-    expect(block).toContain('✗ Defeat — Chapel Threshold · 12 rounds, 3 kills · 2026-07-19');
+    expect(block).toContain('✓ Victory');
+    expect(block).toContain('Chapel Threshold');
+    expect(block).toContain('30 rounds, 9 kills');
+    expect(block).toContain('2026-07-20');
+    expect(block).toContain('Defeat');
+    expect(block).toContain('12 rounds, 3 kills');
+    expect(block).toContain('2026-07-19');
   });
 
   it('singular counts read as prose, and unknown pack ids fall back to the raw id', () => {
     const block = formatRecentRuns([record({ packId: 'gone-pack', rounds: 1, kills: 1 })], names);
     expect(block).toContain('gone-pack');
-    expect(block).toContain('1 round, 1 kill ·');
+    expect(block).toMatch(/1 round, 1 kill/);
+  });
+
+  it('ASCII_ONLY swaps ticks for 7-bit marks (F-99681db1)', () => {
+    const prev = process.env.ASCII_ONLY;
+    process.env.ASCII_ONLY = '1';
+    try {
+      const block = formatRecentRuns(
+        [record({ outcome: 'victory' }), record({ outcome: 'defeat' })],
+        names,
+      );
+      expect(block).toContain('+ Victory');
+      expect(block).toContain('x Defeat');
+      for (const ch of block) expect(ch.codePointAt(0)!).toBeLessThanOrEqual(127);
+    } finally {
+      if (prev === undefined) delete process.env.ASCII_ONLY;
+      else process.env.ASCII_ONLY = prev;
+    }
   });
 });

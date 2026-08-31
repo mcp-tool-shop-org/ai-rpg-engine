@@ -11,6 +11,9 @@
 //   3. Piped / redirected output (stdout not a TTY) gets plain text, so CI
 //      captures, logs, and screen readers reading a transcript never see
 //      escape codes.
+//   4. Glyphs are a SEPARATE gate (glyphs.ts): ASCII_ONLY / --ascii /
+//      TERM=dumb swap box-drawing and ticks for 7-bit stand-ins. NO_COLOR
+//      does not flip glyphs.
 
 export type Palette = {
   /** True when this palette emits ANSI codes; false = every helper is identity. */

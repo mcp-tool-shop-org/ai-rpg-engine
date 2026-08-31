@@ -16,24 +16,34 @@
 
 import type { WorldState, ResolvedEvent, EntityState, ScalarValue } from '@ai-rpg-engine/core';
 import { detectColorEnabled, makePalette, stripAnsi, type Palette } from './styles.js';
+import {
+  applyGlyphPunctuation,
+  detectAsciiOnly,
+  glyphsFor,
+  withGlyphs,
+} from './glyphs.js';
 
 /** Visible width of every rule line the renderer emits. */
 export const SCREEN_WIDTH = 60;
-const RULE_CHAR = '─';
 /** Body copy indent — scene lines, HUD, log, dialogue, journal hooks. */
 export const BODY_INDENT = '  ';
 
 /** Flush-left frame rule: one character, SCREEN_WIDTH columns, indent 0. */
-export function frameRule(): string {
-  return RULE_CHAR.repeat(SCREEN_WIDTH);
+export function frameRule(opts?: { ascii?: boolean }): string {
+  return glyphsFor(opts).rule.repeat(SCREEN_WIDTH);
 }
 
 /** Ellipsis `text` so its visible length is at most `width`. */
-export function clipToWidth(text: string, width: number = SCREEN_WIDTH): string {
+export function clipToWidth(
+  text: string,
+  width: number = SCREEN_WIDTH,
+  opts?: { ascii?: boolean },
+): string {
   if (text.length <= width) return text;
   if (width <= 0) return '';
-  if (width === 1) return '…';
-  return text.slice(0, width - 1) + '…';
+  const ellipsis = glyphsFor(opts).ellipsis;
+  if (width < ellipsis.length) return ellipsis.slice(0, width);
+  return text.slice(0, width - ellipsis.length) + ellipsis;
 }
 
 /**
@@ -87,6 +97,11 @@ export type RenderOptions = {
    * output is piped or captured.
    */
   color?: boolean;
+  /**
+   * Explicit ASCII-glyph override. Omitted → auto-detect via detectAsciiOnly():
+   * ASCII_ONLY / TERM=dumb. NO_COLOR does not flip this.
+   */
+  ascii?: boolean;
 };
 
 function paletteFor(opts?: RenderOptions): Palette {
@@ -183,9 +198,10 @@ function relicDisplayNames(world: WorldState): Record<string, string> {
 function sectionRule(label: string, pal: Palette): string {
   // `── ` + label + ` ` + fill  === SCREEN_WIDTH. Clamp the label so fill
   // is never forced to 0 by an over-long zone name (F-9916b83c).
+  const rule = glyphsFor().rule;
   const clipped = clipToWidth(label, SCREEN_WIDTH - 4);
   const fill = Math.max(0, SCREEN_WIDTH - 4 - clipped.length);
-  return pal.dim(`${RULE_CHAR}${RULE_CHAR} `) + pal.bold(clipped) + pal.dim(` ${RULE_CHAR.repeat(fill)}`);
+  return pal.dim(`${rule}${rule} `) + pal.bold(clipped) + pal.dim(` ${rule.repeat(fill)}`);
 }
 
 /**
@@ -300,7 +316,8 @@ function entityLine(entity: EntityState, pal: Palette): string {
       : kind === 'ally' ? pal.green(name)
         : kind === 'npc' ? pal.cyan(name)
           : name;
-  const line = `  ${defeated ? pal.dim(name) : paintedName}${parts.map(p => ` ${pal.dim('·')} ${defeated ? pal.dim(p) : p}`).join('')}`;
+  const dot = glyphsFor().midDot;
+  const line = `  ${defeated ? pal.dim(name) : paintedName}${parts.map(p => ` ${pal.dim(dot)} ${defeated ? pal.dim(p) : p}`).join('')}`;
   return line;
 }
 
@@ -373,6 +390,11 @@ function playerVitals(player: EntityState, pal: Palette): string {
 
 export function renderScene(world: WorldState, opts?: RenderOptions): string {
   const pal = paletteFor(opts);
+  const ascii = opts?.ascii ?? detectAsciiOnly();
+  return withGlyphs(ascii, () => renderSceneInner(world, pal));
+}
+
+function renderSceneInner(world: WorldState, pal: Palette): string {
   const zone = world.zones[world.locationId];
   if (!zone) {
     return `${sectionRule('Scene', pal)}\n  You are nowhere.\n`;
@@ -468,6 +490,11 @@ function paintEventLine(type: string, line: string, pal: Palette): string {
 
 export function renderEventLog(events: ResolvedEvent[], limit = 8, opts?: RenderOptions): string {
   const pal = paletteFor(opts);
+  const ascii = opts?.ascii ?? detectAsciiOnly();
+  return withGlyphs(ascii, () => renderEventLogInner(events, limit, pal));
+}
+
+function renderEventLogInner(events: ResolvedEvent[], limit: number, pal: Palette): string {
   // CS-C-004: filter to renderable events FIRST, then take the last `limit`.
   // The old order (slice(-limit), then format) let unrenderable bookkeeping —
   // defeat fallout, flag changes, audio cues — occupy window slots and push
@@ -570,8 +597,16 @@ export function renderActions(
   opts?: RenderOptions & { extras?: readonly ExtraMenuEntry[] },
 ): string {
   const pal = paletteFor(opts);
+  const ascii = opts?.ascii ?? detectAsciiOnly();
+  return withGlyphs(ascii, () => renderActionsInner(world, pal, opts?.extras ?? []));
+}
+
+function renderActionsInner(
+  world: WorldState,
+  pal: Palette,
+  extras: readonly ExtraMenuEntry[],
+): string {
   const actions = buildActionList(world);
-  const extras = opts?.extras ?? [];
   // Right-align numbers when the menu reaches double digits: [ 9] / [10].
   // ONE width for the whole numbered range — base and appended entries share
   // it, so the seam can never misalign ('[8] Look around' vs '[ 9] Rally')
@@ -779,6 +814,11 @@ function describedOr(payload: Record<string, unknown>, fallback: string): string
  * can never drift from the printed log.
  */
 export function formatEventLine(event: ResolvedEvent): string | null {
+  const line = formatEventLineRaw(event);
+  return line === null ? null : applyGlyphPunctuation(line);
+}
+
+function formatEventLineRaw(event: ResolvedEvent): string | null {
   const p = event.payload;
   switch (event.type) {
     case 'world.zone.entered':
@@ -1091,6 +1131,11 @@ export function visibleDialogueChoices(world: WorldState): DialogueChoiceOnScree
 
 export function renderDialogue(world: WorldState, opts?: RenderOptions): string | null {
   const pal = paletteFor(opts);
+  const ascii = opts?.ascii ?? detectAsciiOnly();
+  return withGlyphs(ascii, () => renderDialogueInner(world, pal));
+}
+
+function renderDialogueInner(world: WorldState, pal: Palette): string | null {
   const dState = world.modules['dialogue-core'] as { activeDialogue: string | null } | undefined;
   if (!dState?.activeDialogue) {
     // Show the last spoken line briefly if dialogue just ended. The tick
@@ -1156,11 +1201,13 @@ export type FullScreenOptions = RenderOptions & {
 };
 
 export function renderFullScreen(world: WorldState, recentEvents: ResolvedEvent[], opts?: FullScreenOptions): string {
-  // Resolve color ONCE per screen so every section renders under the same
-  // decision — no mid-frame flips if the environment changes under us.
+  // Resolve color AND glyphs ONCE per screen so every section renders under
+  // the same decision — no mid-frame flips if the environment changes under us.
   const pal = paletteFor(opts);
-  const resolved: RenderOptions = { color: pal.enabled };
+  const ascii = opts?.ascii ?? detectAsciiOnly();
+  const resolved: RenderOptions = { color: pal.enabled, ascii };
 
+  return withGlyphs(ascii, () => {
   const sections: string[] = [];
 
   sections.push(renderScene(world, resolved));
@@ -1203,4 +1250,5 @@ export function renderFullScreen(world: WorldState, recentEvents: ResolvedEvent[
   // Sections each end with '\n'; joining with '\n' yields exactly one blank
   // line between blocks. The closing rule sits tight under the last line.
   return sections.join('\n') + rule(pal);
+  });
 }
