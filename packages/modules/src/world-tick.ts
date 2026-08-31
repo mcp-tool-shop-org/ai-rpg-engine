@@ -208,6 +208,7 @@ import {
   getPersistedNpcLastActions,
   getPersistedNpcChains,
   setPersistedNpcState,
+  computeNpcRecapEntries,
   evaluateConsequenceChainTrigger,
   buildConsequenceChain,
   tickConsequenceChain,
@@ -1905,7 +1906,15 @@ function runNpcAgencyStep(
   const prunedLastActions = [...lastActionsByNpc.values()].filter((r) => currentNpcIds.has(r.action.npcId));
   const prunedChains = chains.filter((c) => currentNpcIds.has(c.npcId));
 
-  setPersistedNpcState(world, profiles, prunedLastActions, obligationLedgers, prunedChains);
+  const chainMap = new Map(prunedChains.map((c) => [c.npcId, c] as const));
+  const recapEntries = computeNpcRecapEntries(
+    profiles,
+    previousBreakpoints,
+    obligationLedgers,
+    chainMap,
+  );
+
+  setPersistedNpcState(world, profiles, prunedLastActions, obligationLedgers, prunedChains, recapEntries);
 }
 
 // ---------------------------------------------------------------------------

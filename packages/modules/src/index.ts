@@ -580,6 +580,7 @@ export {
   getPersistedNpcLastActions,
   getPersistedNpcObligations,
   getPersistedNpcChains,
+  getPersistedNpcRecapEntries,
   setPersistedNpcState,
 } from './npc-agency.js';
 export type {

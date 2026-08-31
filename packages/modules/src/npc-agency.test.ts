@@ -17,8 +17,10 @@ import {
   getPersistedNpcProfiles,
   getPersistedNpcLastActions,
   getPersistedNpcObligations,
+  computeNpcRecapEntries,
+  formatNpcPeopleForDirector,
 } from './npc-agency.js';
-import type { NpcObligationLedger } from './npc-agency.js';
+import type { LoyaltyBreakpoint, NpcObligationLedger, NpcProfile } from './npc-agency.js';
 import { makePressure, type WorldPressure } from './pressure-system.js';
 import { createCompanionCore, syncCompanionCustomFields } from './companion-core.js';
 import { statusCore } from './status-core.js';
@@ -586,5 +588,54 @@ describe("V3R-NPC-4: world.modules['npc-agency'] persistence populates for a wor
     expect(getPersistedNpcProfiles(engine.world)[0].npcId).toBe('pilgrim');
     expect(getPersistedNpcLastActions(engine.world)).toEqual(results);
     expect(getPersistedNpcObligations(engine.world)).toEqual(ledgers);
+  });
+});
+
+describe('F-c3b0f88a: PEOPLE recap from computeNpcRecapEntries', () => {
+  it('allied→hostile recap contains shifted:true and activeChainKind retaliation; a quiet allied NPC is absent', () => {
+    const shifted: NpcProfile = {
+      npcId: 'rival',
+      name: 'Rival',
+      factionId: 'watch',
+      goals: [],
+      relationship: { trust: -40, fear: 50, greed: 0, loyalty: 0 },
+      breakpoint: 'hostile',
+      dominantAxis: 'fear',
+      leverageAngle: 'fear',
+      knownRumors: [],
+      underPressure: false,
+    };
+    const quiet: NpcProfile = {
+      npcId: 'friend',
+      name: 'Friend',
+      factionId: 'watch',
+      goals: [],
+      relationship: { trust: 70, fear: 0, greed: 0, loyalty: 0 },
+      breakpoint: 'allied',
+      dominantAxis: 'trust',
+      leverageAngle: 'trust',
+      knownRumors: [],
+      underPressure: false,
+    };
+    const previous = new Map<string, LoyaltyBreakpoint>([
+      ['rival', 'allied'],
+      ['friend', 'allied'],
+    ]);
+    const chain = buildConsequenceChain('rival', 'retaliation', 'loyalty collapsed to hostile', 1);
+    const recap = computeNpcRecapEntries(
+      [shifted, quiet],
+      previous,
+      new Map(),
+      new Map([['rival', chain]]),
+    );
+    expect(recap.some((e) => e.npcId === 'rival' && e.shifted === true && e.activeChainKind === 'retaliation')).toBe(true);
+    expect(recap.some((e) => e.npcId === 'friend')).toBe(false);
+
+    const people = formatNpcPeopleForDirector([shifted, quiet], [], new Map(), recap);
+    expect(people).toMatch(/shifted:allied→hostile/);
+    expect(people).toMatch(/chain:retaliation/);
+    expect(people).toContain('Rival');
+    expect(people).toContain('Friend');
+    expect(people).not.toMatch(/Friend[\s\S]*shifted:/);
   });
 });

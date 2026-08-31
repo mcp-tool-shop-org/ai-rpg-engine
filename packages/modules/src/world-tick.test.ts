@@ -72,6 +72,7 @@ import {
   getPersistedNpcProfiles,
   getPersistedNpcObligations,
   getPersistedNpcChains,
+  getPersistedNpcRecapEntries,
   createObligation,
   setPersistedNpcState,
   type LoyaltyBreakpoint,
@@ -1694,6 +1695,7 @@ describe('world-tick — NPC agency wire (v3.0, F-v3-npc-agency)', () => {
     expect(engine.world.modules['npc-agency']).toBeUndefined();
     expect(getPersistedNpcProfiles(engine.world)).toEqual([]);
     expect(getPersistedNpcObligations(engine.world)).toEqual(new Map());
+    expect(getPersistedNpcRecapEntries(engine.world)).toEqual([]);
 
     // No npc-agency-originated events landed in the log.
     expect(engine.world.eventLog.some((e) => e.type.startsWith('npc.'))).toBe(false);
@@ -1728,10 +1730,12 @@ describe('world-tick — NPC agency wire (v3.0, F-v3-npc-agency)', () => {
       profiles: unknown;
       lastActions: unknown;
       obligationLedgers: unknown;
+      recapEntries: unknown;
     };
     expect(Array.isArray(ns.profiles)).toBe(true);
     expect(Array.isArray(ns.lastActions)).toBe(true);
     expect(typeof ns.obligationLedgers).toBe('object');
+    expect(Array.isArray(ns.recapEntries)).toBe(true);
     expect(getPersistedNpcObligations(engine.world)).toEqual(new Map());
   });
 
@@ -1875,6 +1879,9 @@ describe('world-tick — NPC agency wire (v3.0, F-v3-npc-agency)', () => {
     runWorldTick(engine, { genre: 'fantasy' }); // collapse — chain minted, delay 2
     expect(getPersistedNpcProfiles(engine.world)[0].breakpoint).toBe('hostile');
     expect(getPersistedNpcChains(engine.world).some((c) => c.kind === 'retaliation' && !c.resolved)).toBe(true);
+    expect(getPersistedNpcRecapEntries(engine.world).some(
+      (e) => e.npcId === 'rival' && e.shifted === true && e.activeChainKind === 'retaliation',
+    )).toBe(true);
     expect(engine.world.eventLog.some((e) => e.type === 'npc.action.resolved')).toBe(false);
 
     engine.store.advanceTick();
@@ -1919,6 +1926,7 @@ describe('world-tick — NPC agency wire (v3.0, F-v3-npc-agency)', () => {
     }
     expect(getPersistedNpcProfiles(engine.world)[0].breakpoint).toBe('allied');
     expect(getPersistedNpcChains(engine.world)).toEqual([]);
+    expect(getPersistedNpcRecapEntries(engine.world).some((e) => e.npcId === 'friend')).toBe(false);
     expect(engine.world.eventLog.some((e) => e.type === 'npc.action.resolved')).toBe(false);
   });
 });
