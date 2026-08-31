@@ -53,6 +53,15 @@ export type AdvisorInputs = {
 export type MoveRecommendation = {
   top3: ScoredMove[];
   situationTag: 'safe' | 'pressured' | 'crisis' | 'opportunity';
+  /**
+   * Player-facing strategic-map line (F-7d890283) — formatStrategicMapForPlayer's
+   * output over the SAME StrategicMap runMoveAdvisorStep already builds every
+   * round. Attached by the world-tick caller, not by recommendMoves itself
+   * (which only sees districtViews/factionViews, not the full StrategicMap) —
+   * absent when there is neither a hot district nor a hostile/high-alert
+   * faction, matching formatStrategicMapForPlayer's own empty-string contract.
+   */
+  situationHint?: string;
 };
 
 // --- Static Impact Table ---
