@@ -1,7 +1,7 @@
 // Content schema types — author-facing definitions
 // These are the stable contracts for content packs.
 
-import type { ScalarValue } from '@ai-rpg-engine/core';
+import type { ResistanceLevel, ScalarValue } from '@ai-rpg-engine/core';
 
 // --- Entity Blueprint ---
 
@@ -17,6 +17,29 @@ export type EntityBlueprint = {
   equipment?: Record<string, string>;
   aiProfile?: string;
   scripts?: string[];
+  /**
+   * Structural copy of EntityState.relations (npc-agency trust, etc.).
+   * Copied by entityBlueprintToState when present.
+   */
+  relations?: Record<string, ScalarValue>;
+  /**
+   * Structural copy of EntityState.custom (companion role, personalGoal, …).
+   */
+  custom?: Record<string, ScalarValue>;
+  /**
+   * Structural copy of EntityState.resistances (holy/fire/…). Unknown
+   * level names are dropped at intake, not refused.
+   */
+  resistances?: Record<string, ResistanceLevel>;
+  /**
+   * Structural copy of EntityState.faction (affiliationOf). Opaque string.
+   */
+  faction?: string;
+  /**
+   * Structural copy of EntityState.ruleProfileId. Opaque string; combat
+   * resolves it against WorldState.ruleProfiles after boot.
+   */
+  ruleProfileId?: string;
 };
 
 // --- Ability ---

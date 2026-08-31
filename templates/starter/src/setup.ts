@@ -149,9 +149,11 @@ export function createGame(seed?: number): Engine {
         ],
     });
 
-    // Author data → runtime. applyContentPack converts EntityBlueprint /
-    // ZoneDefinition / placements into store state and resolves aiProfile
-    // against cognition profiles + pack.entityAi (F-035ac806).
+    // Author data → runtime. JSON hosts: extractSessionContent(pack) →
+    // construct modules → applyContentPack({ profiles }). This factory still
+    // wires named catalogs at construction; apply copies EntityBlueprint
+    // relations/custom/resistances/faction/ruleProfileId and resolves aiProfile
+    // against cognition profiles + pack.entityAi.
     const applied = applyContentPack(engine, pack, { profiles: myIntentProfiles });
     if (!applied.ok) {
         const detail = applied.errors.map((e) => `${e.path}: ${e.message}`).join('\n');

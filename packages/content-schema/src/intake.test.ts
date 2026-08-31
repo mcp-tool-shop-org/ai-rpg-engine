@@ -221,6 +221,42 @@ describe('C1/P1 — EntityBlueprint → EntityState', () => {
       'entities(e).startingStatuses',
     ]);
   });
+
+  it('F-cf3fc257: copies relations/custom/resistances/faction/ruleProfileId', () => {
+    const bp = {
+      id: 'aldric',
+      type: 'npc',
+      name: 'Aldric',
+      relations: { 'player-trust': 15 },
+      custom: { companionRole: 'healer' },
+      resistances: { holy: 'immune' as const },
+      faction: 'chapel-order',
+      ruleProfileId: 'healer',
+    };
+    const state = entityBlueprintToState(bp);
+    expect(state.relations).toEqual({ 'player-trust': 15 });
+    expect(state.custom).toEqual({ companionRole: 'healer' });
+    expect(state.resistances).toEqual({ holy: 'immune' });
+    expect(state.faction).toBe('chapel-order');
+    expect(state.ruleProfileId).toBe('healer');
+    state.relations!['player-trust'] = 0;
+    expect(bp.relations['player-trust']).toBe(15);
+  });
+
+  it('F-cf3fc257: unknown resistance names land in dropped[] and do not skip the entity', () => {
+    const dropped: DroppedField[] = [];
+    const state = entityBlueprintToState(
+      {
+        id: 'ghoul',
+        type: 'enemy',
+        name: 'Ghoul',
+        resistances: { holy: 'immune', fire: 'wet' as 'immune' },
+      },
+      dropped,
+    );
+    expect(state.resistances).toEqual({ holy: 'immune' });
+    expect(dropped.some((d) => d.path.includes('resistances.fire') && d.reason === 'needs-module-vocabulary')).toBe(true);
+  });
 });
 
 // --- The seam -------------------------------------------------------------
@@ -554,6 +590,8 @@ describe('C1/P1 — session-scoped keys are not pretended to be routable', () =>
       ...Object.keys(EVALUATED_NOT_MAPPED_KEYS),
       ...UNROUTED_DECLARED_KEYS.map(([k]) => k),
       'schemaVersion',
+      'meta',
+      'manifest',
     ]);
     for (const key of ALLOWED_PACK_KEYS) {
       expect(named.has(key), `${key} is neither applied nor named`).toBe(true);
@@ -625,6 +663,58 @@ describe('C1/P1 — session-scoped keys are not pretended to be routable', () =>
     expect(session.ruleset).toBeDefined();
     expect((session.ruleset as { id: string }).id).toBe('r');
   });
+
+  it('F-82b17cb3: extractSessionContent surfaces dialogues/quests/abilities/statuses/items', () => {
+    const session = extractSessionContent({
+      dialogues: [{ id: 'd' }],
+      quests: [{ id: 'q' }],
+      abilities: [{ id: 'a' }],
+      statuses: [{ id: 's' }],
+      items: [{ id: 'i' }],
+    } as unknown as ContentPack);
+    expect(session.dialogues).toEqual([{ id: 'd' }]);
+    expect(session.quests).toEqual([{ id: 'q' }]);
+    expect(session.abilities).toEqual([{ id: 'a' }]);
+    expect(session.statuses).toEqual([{ id: 's' }]);
+    expect(session.items).toEqual([{ id: 'i' }]);
+    expect(session.advisories).toEqual([]);
+  });
+
+  it('F-82b17cb3: malformed construction-time slices are advisory-skipped', () => {
+    const session = extractSessionContent({
+      dialogues: 'nope',
+      quests: {},
+      abilities: 1,
+      statuses: null,
+      items: 'nope',
+    } as unknown as ContentPack);
+    expect(session.dialogues).toBeUndefined();
+    expect(session.quests).toBeUndefined();
+    expect(session.abilities).toBeUndefined();
+    expect(session.statuses).toBeUndefined();
+    expect(session.items).toBeUndefined();
+    expect(session.advisories.map((a) => a.path).sort()).toEqual([
+      'pack.abilities',
+      'pack.dialogues',
+      'pack.items',
+      'pack.quests',
+      'pack.statuses',
+    ]);
+  });
+
+  it('F-82b17cb3: applyContentPack stays UNROUTED for dialogues/quests/abilities/statuses', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      dialogues: [{ id: 'd' }],
+      quests: [{ id: 'q' }],
+      abilities: [{ id: 'a' }],
+      statuses: [{ id: 's' }],
+    } as unknown as ContentPack);
+    expect(r.ok).toBe(true);
+    const paths = r.dropped.map((d) => d.path).sort();
+    expect(paths).toEqual(['pack.abilities', 'pack.dialogues', 'pack.quests', 'pack.statuses']);
+    expect(r.dropped.every((d) => d.reason === 'needs-module-vocabulary')).toBe(true);
+  });
 });
 
 describe('F-035ac806 — aiProfile resolves through profiles / entityAi', () => {
@@ -671,6 +761,23 @@ describe('F-035ac806 — aiProfile resolves through profiles / entityAi', () => 
     expect(r.ok).toBe(true);
     expect(r.dropped.some((d) => d.path.includes('aiProfile') && d.detail?.includes('ghost-brain'))).toBe(true);
     expect(engine.world.entities['grunt'].ai).toBeUndefined();
+  });
+
+  it('F-cf3fc257: unknown resistance names stay dropped[] only — do not flip ok', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      entities: [{
+        id: 'warden',
+        type: 'enemy',
+        name: 'Warden',
+        resistances: { holy: 'immune', fire: 'soggy' as 'immune' },
+        relations: { 'player-trust': 1 },
+      }],
+    });
+    expect(r.ok).toBe(true);
+    expect(engine.world.entities['warden'].resistances).toEqual({ holy: 'immune' });
+    expect(engine.world.entities['warden'].relations).toEqual({ 'player-trust': 1 });
+    expect(r.dropped.some((d) => d.path.includes('resistances.fire'))).toBe(true);
   });
 });
 

@@ -219,6 +219,14 @@ export type PackContent = {
   items?: unknown[];
   dialogues?: unknown[];
   quests?: unknown[];
+  districts?: unknown[];
+  buildCatalog?: unknown;
+  progressionTrees?: unknown[];
+  statuses?: unknown[];
+  abilities?: unknown[];
+  meta?: unknown;
+  manifest?: unknown;
+  ruleset?: unknown;
   [key: string]: unknown;
 };
 

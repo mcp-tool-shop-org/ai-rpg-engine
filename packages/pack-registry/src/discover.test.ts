@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   clearRegistry,
   getPack,
@@ -102,6 +105,55 @@ describe('discoverInstalledPacks', () => {
     expect(Array.isArray(entry.districts) && entry.districts!.length >= 1).toBe(true);
   });
 
+  it('F-4374f28f: named TS catalog exports override content-derived catalogs', () => {
+    const entry = packEntryFromModule({
+      packMeta: {
+        id: 'override-pack',
+        name: 'Override',
+        tagline: '',
+        genres: [],
+        difficulty: 'beginner',
+        tones: [],
+        tags: [],
+        engineVersion: '*',
+        version: '1',
+        description: '',
+        narratorTone: '',
+      },
+      manifest: {
+        id: 'override-pack',
+        title: 'Override',
+        version: '1',
+        engineVersion: '*',
+        ruleset: 'r',
+        modules: [],
+        contentPacks: [],
+      },
+      ruleset: {
+        id: 'r',
+        name: 'R',
+        version: '1',
+        stats: [],
+        resources: [],
+        verbs: [],
+        formulas: [],
+        defaultModules: [],
+        progressionModels: [],
+      },
+      createGame: () => ({}),
+      buildCatalog: { packId: 'from-export' },
+      pack: {
+        buildCatalog: { packId: 'from-content' },
+        items: [{ id: 'from-content-item' }],
+        districts: [{ id: 'd', controllingFaction: 'f' }],
+      },
+    });
+    expect(entry).not.toBeNull();
+    expect(entry!.buildCatalog).toEqual({ packId: 'from-export' });
+    expect(entry!.itemCatalog).toEqual({ items: [{ id: 'from-content-item' }] });
+    expect(entry!.districts).toEqual([{ id: 'd', controllingFaction: 'f' }]);
+  });
+
   it('F-91a5ec29: lifts mod.pack / toContentPack() onto PackEntry.content', () => {
     const entry = packEntryFromModule(starterTemplate);
     expect(entry).not.toBeNull();
@@ -122,5 +174,60 @@ describe('discoverInstalledPacks', () => {
     expect(typeof packs[0].createGame).not.toBe('function');
     const [summary] = getPackSummaries();
     expect(summary.needsRuntimeHost).toBe(true);
+  });
+
+  it('F-4374f28f: JSON specifier with buildCatalog lifts entry.buildCatalog from content', async () => {
+    const jsonUrl = new URL('../../../templates/starter/src/content.json', import.meta.url);
+    const packs = await discoverInstalledPacks({
+      from: { moduleUrls: [jsonUrl.href] },
+    });
+    expect(packs[0].buildCatalog).toBeDefined();
+    expect(packs[0].itemCatalog).toBeDefined();
+    expect(Array.isArray(packs[0].itemCatalog?.items) && packs[0].itemCatalog!.items!.length >= 1).toBe(true);
+    expect(Array.isArray(packs[0].progressionTrees) && packs[0].progressionTrees!.length >= 1).toBe(true);
+    expect(Array.isArray(packs[0].districts) && packs[0].districts!.length >= 1).toBe(true);
+    expect(Array.isArray(packs[0].statusDefinitions)).toBe(true);
+  });
+
+  it('F-b2d31aad: JSON specifier prefers authored meta/manifest over the filename stub', async () => {
+    const jsonUrl = new URL('../../../templates/starter/src/content.json', import.meta.url);
+    const packs = await discoverInstalledPacks({
+      from: { moduleUrls: [jsonUrl.href] },
+    });
+    expect(packs[0].meta.id).toBe('my-game');
+    expect(packs[0].meta.name).toBe('My Game');
+    expect(packs[0].manifest.id).toBe('my-game');
+    expect(packs[0].manifest.title).toBe('My Game');
+  });
+
+  it('F-b2d31aad / F-4374f28f: starter-fantasy content.json lists as Chapel Threshold with catalogs', async () => {
+    const jsonUrl = new URL('../../starter-fantasy/src/content.json', import.meta.url);
+    const packs = await discoverInstalledPacks({
+      from: { moduleUrls: [jsonUrl.href] },
+    });
+    expect(packs[0].meta.id).toBe('chapel-threshold');
+    expect(packs[0].meta.name).toBe('The Chapel Threshold');
+    expect(packs[0].buildCatalog).toBeDefined();
+    expect(Array.isArray(packs[0].itemCatalog?.items) && packs[0].itemCatalog!.items!.length >= 1).toBe(true);
+    expect(Array.isArray(packs[0].statusDefinitions) && packs[0].statusDefinitions!.length >= 1).toBe(true);
+    expect(packs[0].needsRuntimeHost).toBe(true);
+  });
+
+  it('F-b2d31aad: overlay JSON without meta/manifest keeps the filename stub', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'w31-json-pack-'));
+    const file = join(dir, 'overlay-only.json');
+    writeFileSync(file, JSON.stringify({
+      entities: [{ id: 'e', type: 'npc', name: 'E' }],
+      zones: [{ id: 'z', name: 'Z' }],
+    }));
+    try {
+      const packs = await discoverInstalledPacks({ from: { moduleUrls: [file] } });
+      expect(packs[0].meta.id).toBe('overlay-only');
+      expect(packs[0].meta.name).toBe('overlay-only');
+      expect(packs[0].meta.tagline).toBe('JSON content pack');
+      expect(packs[0].needsRuntimeHost).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

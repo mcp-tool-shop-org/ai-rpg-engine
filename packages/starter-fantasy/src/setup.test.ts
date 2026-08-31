@@ -58,6 +58,21 @@ describe('fantasy setup — unstable-floor hazard (ST-04)', () => {
 // WorldStore.addEntity/addZone detach their argument at ingestion. Same
 // class as F-71ec5dcd.
 // ═══════════════════════════════════════════════════════════════════
+describe('fantasy setup — EntityBlueprint relations/resistances survive apply (F-cf3fc257)', () => {
+  it('Brother Aldric keeps player-trust and companion custom without an overlay loop', () => {
+    const engine = createGame(42);
+    const aldric = engine.store.state.entities['brother-aldric'];
+    expect(aldric.relations).toEqual({ 'player-trust': 15 });
+    expect(aldric.custom).toMatchObject({ companionRole: 'healer' });
+  });
+
+  it('Crypt Warden and Crypt Stalker keep holy resistances', () => {
+    const engine = createGame(42);
+    expect(engine.store.state.entities['crypt-warden'].resistances).toEqual({ holy: 'immune' });
+    expect(engine.store.state.entities['crypt-stalker'].resistances).toEqual({ holy: 'vulnerable' });
+  });
+});
+
 describe('fantasy setup — cross-instance state isolation', () => {
   it('killing an enemy in engine A does not carry into a fresh engine B', () => {
     const a = createGame(7);

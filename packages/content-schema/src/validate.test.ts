@@ -41,6 +41,11 @@ describe('validateEntityBlueprint', () => {
       equipment: { weapon: 'sword' },
       aiProfile: 'guard',
       scripts: ['patrol.js'],
+      relations: { 'player-trust': 15 },
+      custom: { companionRole: 'healer' },
+      resistances: { holy: 'immune' },
+      faction: 'chapel-order',
+      ruleProfileId: 'healer',
     });
     expect(r.ok).toBe(true);
   });

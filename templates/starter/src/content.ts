@@ -184,6 +184,8 @@ export const statusDefinitions: StatusDefinition[] = [];
 // ═══════════════════════════════════════════════════════════════════
 
 export const pack: ContentPack = {
+    meta: packMeta,
+    manifest,
     entities: [player, enemy],
     zones,
     placements,
@@ -191,6 +193,9 @@ export const pack: ContentPack = {
     buildCatalog: buildCatalog as ContentPack['buildCatalog'],
     progressionTrees: [progressionTree],
     statuses: statusDefinitions,
+    dialogues: [],
+    quests: [],
+    abilities: [],
     items: itemCatalog.items as ContentPack['items'],
     entityAi,
     ruleset: myRuleset,

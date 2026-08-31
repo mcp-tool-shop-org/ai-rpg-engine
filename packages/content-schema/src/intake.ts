@@ -29,7 +29,7 @@
 // module's state shape lives with that module; the stable wire mechanism lives
 // here.
 
-import type { AIState, Engine, EntityState, ZoneState } from '@ai-rpg-engine/core';
+import type { AIState, Engine, EntityState, ResistanceLevel, ZoneState } from '@ai-rpg-engine/core';
 import type {
   ContentPack,
   EntityAiState,
@@ -408,6 +408,34 @@ export function entityBlueprintToState(
   };
   if (bp.inventory !== undefined) state.inventory = [...bp.inventory];
   if (bp.equipment !== undefined) state.equipment = { ...bp.equipment };
+
+  // F-cf3fc257: structural copies of live EntityState fields. Unknown
+  // resistance names land in dropped[] only — never flip applyContentPack.ok.
+  if (bp.relations !== undefined && isRecord(bp.relations)) {
+    state.relations = { ...bp.relations };
+  }
+  if (bp.custom !== undefined && isRecord(bp.custom)) {
+    state.custom = { ...bp.custom };
+  }
+  if (bp.resistances !== undefined && isRecord(bp.resistances)) {
+    const copied: NonNullable<EntityState['resistances']> = {};
+    for (const [k, v] of Object.entries(bp.resistances)) {
+      if (v === 'immune' || v === 'resistant' || v === 'vulnerable') {
+        copied[k] = v as ResistanceLevel;
+      } else {
+        dropped?.push({
+          path: `${p}.resistances.${k}`,
+          reason: 'needs-module-vocabulary',
+          detail:
+            `unresolved resistance level ${JSON.stringify(v)} — expected immune|resistant|vulnerable. ` +
+            'Dropped, not refused (an unresolved name never flips applyContentPack.ok).',
+        });
+      }
+    }
+    if (Object.keys(copied).length > 0) state.resistances = copied;
+  }
+  if (typeof bp.faction === 'string') state.faction = bp.faction;
+  if (typeof bp.ruleProfileId === 'string') state.ruleProfileId = bp.ruleProfileId;
 
   const ai = resolveEntityAi(bp, lookup);
   if (ai?.ok === true) {
@@ -908,12 +936,27 @@ export function applyContentPack(
  * `applyContentPack` writes into a booted world. These two are read at
  * construction time and handed to the things that close over them:
  *
+ * JSON-pack boot recipe (F-82b17cb3): extractSessionContent → construct
+ * modules from the bag → applyContentPack({ profiles }). applyContentPack
+ * stays UNROUTED for dialogues/quests/abilities/statuses (those modules
+ * freeze their registries at construction). items also live here so a host
+ * can hand them to createEquipmentCore; apply still resolves entity
+ * inventory/equipment against pack.items.
+ *
  * ```ts
  * const session = extractSessionContent(pack);
- * const engine = createGame(seed, {
- *   modules: [createProgressionCore({ trees: session.progressionTrees })],
+ * registerStatusDefinitions(session.statuses ?? []);
+ * const engine = new Engine({
+ *   ruleset: session.ruleset ?? hostRuleset,
+ *   modules: [
+ *     createDialogueCore(session.dialogues ?? []),
+ *     createAbilityCore({ abilities: session.abilities ?? [] }),
+ *     createProgressionCore({ trees: session.progressionTrees ?? [] }),
+ *     createEquipmentCore({ catalog: { items: session.items ?? [] } }),
+ *     ...buildWorldStack({ quests: session.quests ?? [] }).modules,
+ *   ],
  * });
- * applyContentPack(engine, pack, { channels: createStandardChannels() });
+ * applyContentPack(engine, pack, { profiles });
  * ```
  *
  * Deliberately untyped beyond `unknown[]`/`unknown`: `BuildCatalog` lives in
@@ -936,6 +979,16 @@ export type SessionContent = {
    * Bind it at Engine construction; loadContent already validated it.
    */
   ruleset?: unknown;
+  /** Dialogue trees for createDialogueCore. Present only if the pack carried the key. */
+  dialogues?: unknown[];
+  /** Quest definitions for buildWorldStack({ quests }). Present only if the pack carried the key. */
+  quests?: unknown[];
+  /** Ability definitions for createAbilityCore. Present only if the pack carried the key. */
+  abilities?: unknown[];
+  /** Status definitions for registerStatusDefinitions. Present only if the pack carried the key. */
+  statuses?: unknown[];
+  /** Item catalog for createEquipmentCore({ catalog: { items } }). Present only if the pack carried the key. */
+  items?: unknown[];
   /** Keys found but unusable, with the reason — never silently omitted. */
   advisories: ValidationError[];
 };
@@ -1000,7 +1053,28 @@ export function extractSessionContent(pack: ContentPack): SessionContent {
     }
   }
 
+  liftSessionArray(raw, 'dialogues', 'must be an array of DialogueDefinition — skipped.', out, advisories);
+  liftSessionArray(raw, 'quests', 'must be an array of QuestDefinition — skipped.', out, advisories);
+  liftSessionArray(raw, 'abilities', 'must be an array of AbilityDefinition — skipped.', out, advisories);
+  liftSessionArray(raw, 'statuses', 'must be an array of StatusDefinition — skipped.', out, advisories);
+  liftSessionArray(raw, 'items', 'must be an array of ItemDefinition — skipped.', out, advisories);
+
   return out;
+}
+
+function liftSessionArray(
+  raw: Record<string, unknown>,
+  key: 'dialogues' | 'quests' | 'abilities' | 'statuses' | 'items',
+  message: string,
+  out: SessionContent,
+  advisories: ValidationError[],
+): void {
+  if (raw[key] === undefined) return;
+  if (!Array.isArray(raw[key])) {
+    advisories.push({ path: `pack.${key}`, message });
+    return;
+  }
+  out[key] = raw[key] as unknown[];
 }
 
 /**

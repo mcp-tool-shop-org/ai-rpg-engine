@@ -1,6 +1,6 @@
 // Cross-reference validation — checks that IDs reference real content
 
-import type { RulesetDefinition } from '@ai-rpg-engine/core';
+import type { GameManifest, RulesetDefinition } from '@ai-rpg-engine/core';
 import type { ValidationError, ValidationResult } from './validate.js';
 import type {
   EntityBlueprint,
@@ -175,6 +175,38 @@ export type ContentPack = {
    * validateStatusPackAgainstRuleset against it.
    */
   ruleset?: RulesetDefinition;
+  /**
+   * Optional listing identity (PackMetadata-shaped). Overlay-only packs omit
+   * this — packEntryFromJsonFile then stubs id/name from the filename.
+   * When present, the JSON path prefers it over the filename stub.
+   * Not sim-affecting (listing, not world writes).
+   */
+  meta?: PackListingMeta;
+  /**
+   * Optional GameManifest. Overlay-only packs omit this. When present,
+   * packEntryFromJsonFile prefers it over a stub built from filename + meta.
+   * Not sim-affecting.
+   */
+  manifest?: GameManifest;
+};
+
+/**
+ * Listing identity a JSON ContentPack may author. Structural subset of
+ * pack-registry's PackMetadata — content-schema sits below that package,
+ * so the real type is not imported. A real PackMetadata is assignable.
+ */
+export type PackListingMeta = {
+  id: string;
+  name: string;
+  tagline?: string;
+  genres?: string[];
+  difficulty?: string;
+  tones?: string[];
+  tags?: string[];
+  engineVersion?: string;
+  version?: string;
+  description?: string;
+  narratorTone?: string;
 };
 
 /** Runtime AI overlay a JSON pack can author (structural AIState). */
