@@ -392,6 +392,28 @@ function ingest(pack: MutablePack, doc: ClassifiedDoc, notes: string[]): void {
     case 'district':
       pushUnique(pack.districts, v, 'id');
       break;
+    // F-4d81f6b3: classifyDocument already recognizes a standalone
+    // scaffolded faction YAML (kind:'faction'), but this switch had no arm
+    // for it — it fell through to default:break and was silently discarded.
+    // PackFactionRecord (refs.ts) is a narrow 4-field runtime registry
+    // {id, name, reputation, disposition}; a scaffolded FactionDefinition
+    // (validators.ts) is richer (members/cohesion/tags/goals/districtIds/
+    // rumorHooks/attitudes/initialBeliefs) but has NO reputation/disposition
+    // fields at all. Deliberately narrow to the 4 fields the pack format
+    // actually carries rather than spreading `rest` — a naive rest-spread
+    // would just relocate today's silent discard from emit-pack time to
+    // cloneFactions/intake time (intake.ts drops any factions[id] entry
+    // missing reputation/disposition), not close it. The richer authoring
+    // fields have no ContentPack destination today — out of scope here.
+    case 'faction': {
+      const id = asId(v.id);
+      if (id) {
+        const name = typeof v.name === 'string' && v.name.length > 0 ? v.name : id;
+        pack.factions[id] = { id, name, reputation: 0, disposition: 'neutral' };
+        notes.push(`registered faction ${id} (reputation/disposition defaulted -- FactionDefinition has no stance fields)`);
+      }
+      break;
+    }
     case 'ability':
       pushUnique(pack.abilities, v, 'id');
       break;
