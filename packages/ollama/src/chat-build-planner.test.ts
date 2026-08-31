@@ -150,7 +150,36 @@ describe('generateBuildPlan — basic', () => {
   it('all steps have valid intents', () => {
     const plan = makePlan();
     for (const step of plan.steps) {
-      expect(['scaffold', 'critique', 'suggest_next', 'improve']).toContain(step.intent);
+      expect(['scaffold', 'critique', 'suggest_next', 'improve', 'emit_pack']).toContain(step.intent);
+    }
+  });
+
+  // F-8ec253bf: CHARGEN_STEPS opened with create-progression-tree — no
+  // ruleset authoring step existed anywhere, even though stats/verbs should
+  // exist before archetypes reference statPriorities.
+  it('opens every template with create-ruleset, before create-progression-tree', () => {
+    for (const goal of ['dark market district', 'cyberpunk heist scenario', 'thieves guild network']) {
+      const plan = generateBuildPlan(goal, makeSession());
+      const commands = plan.steps.map(s => s.command);
+      expect(commands[0]).toBe('create-ruleset');
+      expect(commands.indexOf('create-ruleset')).toBeLessThan(commands.indexOf('create-progression-tree'));
+      const rulesetStep = plan.steps[0];
+      expect(rulesetStep.intent).toBe('scaffold');
+      expect(rulesetStep.params.kind).toBe('ruleset');
+    }
+  });
+
+  // F-35cc73ce: none of the three templates ever scheduled an emit-pack
+  // step — the guided /build path generated content but never assembled
+  // content/pack.json, so ReplayProducer's default loader found nothing.
+  it('ends every template with an emit-pack step, after suggest-next', () => {
+    for (const goal of ['dark market district', 'cyberpunk heist scenario', 'thieves guild network']) {
+      const plan = generateBuildPlan(goal, makeSession());
+      const last = plan.steps[plan.steps.length - 1];
+      expect(last.command).toBe('emit-pack');
+      expect(last.intent).toBe('emit_pack');
+      const commands = plan.steps.map(s => s.command);
+      expect(commands.indexOf('suggest-next')).toBeLessThan(commands.indexOf('emit-pack'));
     }
   });
 });

@@ -78,6 +78,17 @@ type BuildTemplate = {
 
 const CHARGEN_STEPS: TemplateStep[] = [
   {
+    // F-8ec253bf: stats/verbs should exist before archetypes reference
+    // statPriorities — the shared head of CHARGEN_STEPS (spread into all
+    // three templates below) is the natural single insertion point.
+    command: 'create-ruleset',
+    intent: 'scaffold',
+    descriptionSuffix: 'ruleset',
+    paramBuilder: (goal) => ({ kind: 'ruleset', theme: `ruleset for ${goal}` }),
+    dependsOnPrevious: false,
+    usePriorContent: false,
+  },
+  {
     command: 'create-progression-tree',
     intent: 'scaffold',
     descriptionSuffix: 'progression tree',
@@ -114,6 +125,21 @@ const CHARGEN_STEPS: TemplateStep[] = [
     usePriorContent: false,
   },
 ];
+
+// F-35cc73ce: none of the three templates ever scheduled an emit-pack step
+// — the guided /build path generated content but never assembled
+// content/pack.json, so the default ReplayProducer (which loads only from
+// that conventional path) found nothing and a host who only ran /build
+// ticked an empty world. Shared tail step (mirrors CHARGEN_STEPS' shared
+// head), appended after every template's own suggest-next step.
+const EMIT_PACK_STEP: TemplateStep = {
+  command: 'emit-pack',
+  intent: 'emit_pack',
+  descriptionSuffix: 'assemble content/pack.json',
+  paramBuilder: () => ({}),
+  dependsOnPrevious: true,
+  usePriorContent: false,
+};
 
 const DISTRICT_TEMPLATE: BuildTemplate = {
   name: 'district',
@@ -181,6 +207,7 @@ const DISTRICT_TEMPLATE: BuildTemplate = {
       dependsOnPrevious: true,
       usePriorContent: false,
     },
+    EMIT_PACK_STEP,
   ],
 };
 
@@ -250,6 +277,7 @@ const SCENARIO_TEMPLATE: BuildTemplate = {
       dependsOnPrevious: true,
       usePriorContent: false,
     },
+    EMIT_PACK_STEP,
   ],
 };
 
@@ -310,6 +338,7 @@ const FACTION_TEMPLATE: BuildTemplate = {
       dependsOnPrevious: true,
       usePriorContent: false,
     },
+    EMIT_PACK_STEP,
   ],
 };
 
