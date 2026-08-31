@@ -18,6 +18,7 @@ import { applyStatus, removeStatus, hasStatus } from './status-core.js';
 import { COMBAT_STATES, DEFAULT_STAT_MAPPING, defaultInterceptChance } from './combat-core.js';
 import type { CombatFormulas } from './combat-core.js';
 import { affiliationOf } from './targeting.js';
+import { getEncounterSpawnState } from './encounter-spawn.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -105,6 +106,32 @@ function hasProtectorInZone(
 
 function isBacklineCandidate(entity: EntityState, backlineTags: string[]): boolean {
   return backlineTags.some(tag => entity.tags.includes(tag));
+}
+
+/**
+ * Same-tick de-dup guard for combat.encounter.cleared (F-32948b79). A single
+ * action that clears the last 2+ hostiles in one AoE re-enters the
+ * 'combat.entity.defeated' handler once per defeat in that action (the
+ * F-fc282589-documented same-tick double-fire hazard — see the
+ * frontline-collapse comment below); without this guard each of those
+ * defeats would independently observe zero remaining player-zone hostiles
+ * and emit its own encounter-cleared. Bounded backward scan only, no
+ * persisted ledger needed: ctx.events.emit -> store.recordEvent pushes to
+ * world.eventLog BEFORE dispatching handlers (synchronously/recursively), so
+ * eventLog ticks are monotonic non-decreasing and the first tick mismatch
+ * walking backward from the tail marks the start of the CURRENT tick's
+ * segment.
+ */
+function hasEncounterClearedThisTick(world: WorldState, zoneId: string, tick: number): boolean {
+  const log = world.eventLog;
+  for (let i = log.length - 1; i >= 0; i--) {
+    const entry = log[i];
+    if (entry.tick !== tick) break;
+    if (entry.type === 'combat.encounter.cleared' && entry.payload.zoneId === zoneId) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function safeApply(entity: EntityState, statusId: string, tick: number, world: WorldState): void {
@@ -221,6 +248,61 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
                 presentation: { channels: ['narrator'], priority: 'high' },
               });
             }
+          }
+        }
+
+        // --- Encounter cleared: the PLAYER's zone has no living hostiles
+        // left (F-32948b79, carried:F-defb93a6). Extends this handler rather
+        // than adding a second listener. Scoped to the player's zone via the
+        // same affiliationOf/hasEnemiesInZone predicate this file already
+        // uses for positional texture (not combat-recovery.ts's tag-based
+        // checkZoneClearance — that sibling still drifts on the margin; a
+        // migration to affiliationOf there is a separate follow-up).
+        //
+        // ALIVE-PLAYER GATE (Director ruling): requiring hp > 0 AT CHECK TIME
+        // means a mutual/simultaneous kill — the player and the last hostile
+        // falling in the same action — reads as defeat, never victory.
+        const playerEntity = world.entities[playerId];
+        if (
+          playerEntity?.zoneId
+          && (playerEntity.resources.hp ?? 0) > 0
+          && !hasEnemiesInZone(world, playerEntity)
+        ) {
+          const clearedZoneId = playerEntity.zoneId;
+          // DE-DUP GUARD: a same-tick multi-kill AoE runs this handler once
+          // per defeat; only the first to observe zero remaining hostiles
+          // may emit.
+          if (!hasEncounterClearedThisTick(world, clearedZoneId, tick)) {
+            // participants.survivors is recomputed fresh from the PLAYER's
+            // zone — deliberately NOT the outer `zoneEntities` above, which
+            // is scoped to `defeated.zoneId` and may be a different zone
+            // when the triggering defeat happened elsewhere.
+            const survivorIds = getEntitiesInZone(world, clearedZoneId).map(e => e.id);
+            const encounterState = getEncounterSpawnState(world);
+            const encounterId = encounterState.liveByZone[clearedZoneId]?.encounterId;
+            ctx.events.emit({
+              id: genId(world, 'evt'),
+              tick,
+              type: 'combat.encounter.cleared',
+              actorId: playerId,
+              targetIds: survivorIds,
+              payload: {
+                zoneId: clearedZoneId,
+                outcome: 'victory',
+                finalDefeatEventId: event.id,
+                participants: {
+                  survivors: survivorIds,
+                  finalOpponent: { id: event.payload.entityId, name: event.payload.entityName },
+                },
+                ...(encounterId ? { encounterRef: encounterId } : {}),
+              },
+              tags: ['combat', 'encounter', 'cleared'],
+              presentation: {
+                channels: ['objective', 'narrator'],
+                priority: 'critical',
+                soundCues: ['combat.victory'],
+              },
+            });
           }
         }
       });
