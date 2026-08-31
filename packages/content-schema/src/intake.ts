@@ -1164,6 +1164,37 @@ export type SessionContent = {
   advisories: ValidationError[];
 };
 
+/**
+ * Structural GameManifest check (F-2f4bfcdf), mirrored from pack-registry's
+ * discover.ts `isManifest()` (id/title/version/engineVersion/ruleset all
+ * present as the right primitive type — id additionally non-empty — and
+ * modules an array) so a structurally incomplete session.manifest degrades
+ * to an advisory here the same way it already does on the catalog/listing
+ * path, instead of being handed straight into `new Engine({ manifest:
+ * session.manifest, ... })` below — EngineOptions.manifest is REQUIRED, and
+ * WorldStore's constructor does `gameId: options.manifest.id` with no
+ * validation of its own (packages/core/src/world.ts), silently producing
+ * `world.meta.gameId = undefined` threaded through every gameId-keyed
+ * registry otherwise.
+ *
+ * content-schema must not import @ai-rpg-engine/pack-registry (this package
+ * sits BELOW it in the layering), so the check is duplicated here rather than
+ * imported. Diff against pack-registry/src/discover.ts's isManifest() when
+ * either changes — same fields, same rules, kept in lockstep by this comment
+ * on both sides.
+ */
+function isManifestShape(v: unknown): boolean {
+  return (
+    isRecord(v) &&
+    typeof v.id === 'string' && v.id.length > 0 &&
+    typeof v.title === 'string' &&
+    typeof v.version === 'string' &&
+    typeof v.engineVersion === 'string' &&
+    typeof v.ruleset === 'string' &&
+    Array.isArray(v.modules)
+  );
+}
+
 export function extractSessionContent(pack: ContentPack): SessionContent {
   const raw = pack as unknown as Record<string, unknown>;
   const advisories: ValidationError[] = [];
@@ -1226,8 +1257,15 @@ export function extractSessionContent(pack: ContentPack): SessionContent {
 
   // F-df51e0bf: EngineOptions.manifest is REQUIRED with no default. Lifted the
   // identical advisory-skip shape as ruleset just above.
+  //
+  // F-2f4bfcdf: the shape check is the full GameManifest structural check
+  // (isManifestShape, mirroring pack-registry's isManifest()), not merely
+  // isRecord — every OTHER branch in this function enforces its own shape
+  // (buildCatalog/progressionTrees/archetypes/backgrounds/ruleset above) and
+  // manifest guards a REQUIRED Engine constructor argument, so it must be at
+  // least as strict, not the shallowest check in the group.
   if (raw.manifest !== undefined) {
-    if (raw.manifest === null || typeof raw.manifest !== 'object' || Array.isArray(raw.manifest)) {
+    if (!isManifestShape(raw.manifest)) {
       advisories.push({
         path: 'pack.manifest',
         message: 'must be a GameManifest object — skipped.',
