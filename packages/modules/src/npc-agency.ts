@@ -14,7 +14,7 @@ import {
   type CognitionState,
   type Memory,
 } from './cognition-core.js';
-import { getEntityFaction, getFactionCognition } from './faction-cognition.js';
+import { resolveEntityFaction, getFactionCognition } from './faction-cognition.js';
 import { getDistrictForZone, getDistrictState, getDistrictDefinition } from './district-core.js';
 import { computeDistrictMood, computeDistrictModifiers } from './district-mood.js';
 import { getPressuresForFaction } from './pressure-system.js';
@@ -162,7 +162,7 @@ export function deriveNpcRelationship(
 ): NpcRelationship {
   const entity = world.entities[npcId];
   const cognition = getCognition(world, npcId);
-  const factionId = getEntityFaction(world, npcId);
+  const factionId = resolveEntityFaction(world,npcId);
 
   // --- Trust ---
   // Base: from entity.relations if set, otherwise neutral
@@ -386,7 +386,7 @@ export function buildNpcProfile(
   obligations?: NpcObligationLedger,
 ): NpcProfile {
   const entity = world.entities[npcId];
-  const factionId = getEntityFaction(world, npcId);
+  const factionId = resolveEntityFaction(world,npcId);
   const relationship = deriveNpcRelationship(world, npcId, playerId);
 
   // Gather rumors this NPC knows about
@@ -826,7 +826,7 @@ export function resolveNpcAction(
   let dialogueHint: string | undefined;
   const npc = world.entities[action.npcId];
   const npcName = npc?.name ?? action.npcId;
-  const factionId = getEntityFaction(world, action.npcId);
+  const factionId = resolveEntityFaction(world,action.npcId);
 
   switch (action.verb) {
     case 'warn':

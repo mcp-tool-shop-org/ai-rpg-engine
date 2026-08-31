@@ -8,7 +8,7 @@ import type { ActionIntent, EntityState, ResolvedEvent, WorldState } from '@ai-r
 import type { ItemDefinition, ItemProvenanceFlag, ItemChronicleEntry } from '@ai-rpg-engine/equipment';
 import { makeEvent } from './make-event.js';
 import { getDistrictForZone, getDistrictDefinition } from './district-core.js';
-import { getEntityFaction } from './faction-cognition.js';
+import { resolveEntityFaction } from './faction-cognition.js';
 import {
   spawnNpcOriginatedRumor,
   getPlayerRumorState,
@@ -451,13 +451,13 @@ export function applyZoneItemRecognition(
     : undefined;
   const witnesses = npcsInZone(world, zoneId, actorId);
   const factionWitnesses = controllingFaction
-    ? witnesses.filter((npc) => (getEntityFaction(world, npc.id) ?? controllingFaction) === controllingFaction)
-    : witnesses.filter((npc) => Boolean(getEntityFaction(world, npc.id)));
+    ? witnesses.filter((npc) => (resolveEntityFaction(world, npc.id) ?? controllingFaction) === controllingFaction)
+    : witnesses.filter((npc) => Boolean(resolveEntityFaction(world, npc.id)));
   const observers = factionWitnesses.length > 0 ? factionWitnesses : witnesses;
   if (observers.length === 0) return [];
 
   const npcFactionId = controllingFaction
-    ?? getEntityFaction(world, observers[0].id);
+    ?? resolveEntityFaction(world, observers[0].id);
   if (!npcFactionId) return [];
 
   const tick = action.issuedAtTick;

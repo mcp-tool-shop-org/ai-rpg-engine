@@ -100,6 +100,7 @@ export {
   createFactionCognition,
   getFactionCognition,
   getEntityFaction,
+  resolveEntityFaction,
   getFactionMembers,
   setFactionBelief,
   getFactionBelief,

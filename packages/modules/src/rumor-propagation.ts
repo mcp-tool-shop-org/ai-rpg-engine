@@ -12,7 +12,7 @@ import type {
 import { genId } from '@ai-rpg-engine/core';
 import { getCognition, getBelief } from './cognition-core.js';
 import type { Belief } from './cognition-core.js';
-import { getEntityFaction } from './faction-cognition.js';
+import { resolveEntityFaction } from './faction-cognition.js';
 import { getZoneProperty } from './environment-core.js';
 
 // --- Types ---
@@ -109,7 +109,7 @@ function scheduleRumors(
   for (const entity of Object.values(world.entities)) {
     if (!entity.ai) continue;
 
-    const factionId = getEntityFaction(world, entity.id);
+    const factionId = resolveEntityFaction(world, entity.id);
     if (!factionId) continue;
 
     // Check if this entity is involved in or aware of the event

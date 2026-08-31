@@ -10,7 +10,7 @@ import { getCognition } from './cognition-core.js';
 import type { Belief, Memory } from './cognition-core.js';
 import { getPerceptionLog } from './perception-filter.js';
 import type { PerceivedEvent } from './perception-filter.js';
-import { getFactionCognition, getEntityFaction, getFactionMembers } from './faction-cognition.js';
+import { getFactionCognition, resolveEntityFaction, getFactionMembers } from './faction-cognition.js';
 import type { FactionCognitionState, FactionBelief } from './faction-cognition.js';
 import { getRumorLog, getRumorsToFaction } from './rumor-propagation.js';
 import type { RumorRecord } from './rumor-propagation.js';
@@ -358,7 +358,7 @@ export function inspectEntity(
     id: entity.id,
     name: entity.name,
     zone: entity.zoneId,
-    faction: getEntityFaction(world, entityId),
+    faction: resolveEntityFaction(world, entityId),
     combatRole: getEntityRole(entity),
     cognition: {
       beliefs: cog.beliefs,

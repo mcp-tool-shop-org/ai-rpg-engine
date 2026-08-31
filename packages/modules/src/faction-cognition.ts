@@ -116,6 +116,22 @@ export function getEntityFaction(world: WorldState, entityId: string): string | 
   return getModuleState(world).membership[entityId];
 }
 
+/**
+ * Resolve an entity's faction for IDENTITY purposes: the membership registry
+ * when a pack registered createFactionCognition, else the entity's own
+ * authored `faction` field — the same plain signal targeting.ts's
+ * affiliationOf, combat-intent, and companion-core already read directly.
+ *
+ * Read-side only; the registry mechanism is untouched. Exists because zero
+ * shipped starters register createFactionCognition, so every consumer that
+ * read getEntityFaction alone was faction-blind (or inverted) in every
+ * shipped pack. Consumers needing registry SEMANTICS beyond identity
+ * (beliefs, cohesion, members) still read the registry deliberately.
+ */
+export function resolveEntityFaction(world: WorldState, entityId: string): string | undefined {
+  return getModuleState(world).membership[entityId] ?? world.entities[entityId]?.faction;
+}
+
 /** Get all entity IDs in a faction */
 export function getFactionMembers(world: WorldState, factionId: string): string[] {
   return getModuleState(world).factionMembers[factionId] ?? [];

@@ -32,7 +32,7 @@ import type { EntityState, WorldState } from '@ai-rpg-engine/core';
 import { computeAbilityModifiers, computePartyAbilities, getPartyState } from './companion-core.js';
 import { computeDistrictMood, computeDistrictModifiers } from './district-mood.js';
 import { getDistrictForZone, getDistrictState, getDistrictDefinition } from './district-core.js';
-import { getEntityFaction } from './faction-cognition.js';
+import { resolveEntityFaction } from './faction-cognition.js';
 import type { ExternalLeverageModifiers } from './player-leverage.js';
 import type { TradeContext } from './trade-value.js';
 
@@ -56,12 +56,14 @@ export function composeLeverageModifiers(
   const party = getPartyState(world);
   const active = party.companions.filter((c) => c.active);
   if (active.length > 0) {
-    // A companion's faction is not on CompanionState — it lives in
-    // faction-cognition's membership registry, the same place npc-agency reads
-    // it. Looked up rather than duplicated onto the party record so the two
-    // can never disagree about who someone answers to.
+    // A companion's faction is not on CompanionState — resolved via
+    // resolveEntityFaction (registry when a pack populated it, else the
+    // companion entity's own authored `faction` field), the same identity
+    // signal npc-agency reads. Looked up rather than duplicated onto the
+    // party record so the two can never disagree about who someone answers
+    // to.
     const factionIds = Object.fromEntries(
-      active.map((c) => [c.npcId, getEntityFaction(world, c.npcId) ?? null]),
+      active.map((c) => [c.npcId, resolveEntityFaction(world, c.npcId) ?? null]),
     );
     const mods = computeAbilityModifiers(computePartyAbilities(party), factionIds);
 

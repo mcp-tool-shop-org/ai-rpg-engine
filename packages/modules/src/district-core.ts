@@ -11,7 +11,7 @@ import type {
   ScalarValue,
 } from '@ai-rpg-engine/core';
 import { getZoneProperty } from './environment-core.js';
-import { getEntityFaction, getFactionCognition } from './faction-cognition.js';
+import { resolveEntityFaction, getFactionCognition } from './faction-cognition.js';
 
 // --- Types ---
 
@@ -188,7 +188,7 @@ export function createDistrictCore(config: DistrictCoreConfig): EngineModule {
 
         // Non-faction members raise intruder likelihood
         if (def.controllingFaction) {
-          const actorFaction = getEntityFaction(world, actorId);
+          const actorFaction = resolveEntityFaction(world, actorId);
           if (actorFaction !== def.controllingFaction) {
             district.intruderLikelihood = Math.min(100, district.intruderLikelihood + 10);
           }
@@ -377,7 +377,7 @@ function processDistrictTick(world: WorldState, decayConfig: DistrictDecayConfig
       for (const zoneId of def.zoneIds) {
         for (const entity of Object.values(world.entities)) {
           if (entity.zoneId === zoneId && entity.ai) {
-            const faction = getEntityFaction(world, entity.id);
+            const faction = resolveEntityFaction(world, entity.id);
             if (faction === def.controllingFaction) {
               factionPresence++;
             }
