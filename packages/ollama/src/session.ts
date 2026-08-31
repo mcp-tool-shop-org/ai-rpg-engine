@@ -553,9 +553,9 @@ export function addConstraints(session: DesignSession, constraints: string[]): v
 }
 
 export function addArtifact(session: DesignSession, kind: keyof SessionArtifacts, id: string): void {
-  if (!session.artifacts[kind]) session.artifacts[kind] = [];
-  if (!session.artifacts[kind].includes(id)) {
-    session.artifacts[kind].push(id);
+  const bucket = session.artifacts[kind] ?? (session.artifacts[kind] = []);
+  if (!bucket.includes(id)) {
+    bucket.push(id);
     recordEvent(session, 'artifact_created', `${kind}/${id}`);
   }
 }

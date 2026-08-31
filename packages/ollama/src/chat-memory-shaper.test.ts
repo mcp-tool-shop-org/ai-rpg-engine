@@ -13,7 +13,7 @@ function makeSession(overrides: Partial<DesignSession> = {}): DesignSession {
     createdAt: '2025-01-01',
     themes: ['horror', 'gothic'],
     constraints: ['no magic', 'medieval only'],
-    artifacts: { districts: ['old-quarter'], factions: ['thieves-guild'], quests: [], rooms: ['dark-chapel'], packs: [] },
+    artifacts: { districts: ['old-quarter'], factions: ['thieves-guild'], quests: [], rooms: ['dark-chapel'], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
     issues: [
       { severity: 'warning', code: 'PACING', target: 'dark-chapel', summary: 'Room pacing is slow', status: 'open' },
       { severity: 'error', code: 'MISSING_EXIT', target: 'dark-chapel', summary: 'No exit defined', status: 'open' },

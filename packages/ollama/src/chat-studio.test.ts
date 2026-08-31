@@ -42,6 +42,10 @@ function makeSession(overrides: Partial<DesignSession> = {}): DesignSession {
       districts: ['d1'],
       quests: [],
       packs: [],
+      entities: [],
+      dialogues: [],
+      abilities: [],
+      statuses: [],
     },
     issues: [],
     acceptedSuggestions: [],
@@ -211,7 +215,7 @@ describe('buildStudioSnapshot', () => {
 
   it('suggests creating content when empty', () => {
     const session = makeSession({
-      artifacts: { rooms: [], factions: [], districts: [], quests: [], packs: [] },
+      artifacts: { rooms: [], factions: [], districts: [], quests: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
     });
     const snap = buildStudioSnapshot(session);
     expect(snap.suggestedActions.some(a => a.includes('/build'))).toBe(true);

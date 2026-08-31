@@ -29,7 +29,7 @@ function makeSession(overrides: Partial<DesignSession> = {}): DesignSession {
     updatedAt: '2025-01-01',
     themes: ['dark fantasy'],
     constraints: [],
-    artifacts: { districts: [], factions: [], quests: [], rooms: [], packs: [] },
+    artifacts: { districts: [], factions: [], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
     issues: [],
     acceptedSuggestions: [],
     history: [],
@@ -181,7 +181,7 @@ describe('generateBuildPlan — session warnings', () => {
 describe('generateBuildPlan — artifact skipping', () => {
   it('skips district if session already has a matching one', () => {
     const session = makeSession({
-      artifacts: { districts: ['market_district'], factions: [], quests: [], rooms: [], packs: [] },
+      artifacts: { districts: ['market_district'], factions: [], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
     });
     const plan = generateBuildPlan('market district zone', session);
     const districtStep = plan.steps.find(s => s.command === 'create-district');
@@ -191,7 +191,7 @@ describe('generateBuildPlan — artifact skipping', () => {
 
   it('skips factions if session already has matching ones', () => {
     const session = makeSession({
-      artifacts: { districts: [], factions: ['market_guild'], quests: [], rooms: [], packs: [] },
+      artifacts: { districts: [], factions: ['market_guild'], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
     });
     const plan = generateBuildPlan('market district', session);
     const factionSteps = plan.steps.filter(s => s.command === 'create-faction');
@@ -201,7 +201,7 @@ describe('generateBuildPlan — artifact skipping', () => {
 
   it('does not skip when artifacts are unrelated', () => {
     const session = makeSession({
-      artifacts: { districts: ['neon_alley'], factions: [], quests: [], rooms: [], packs: [] },
+      artifacts: { districts: ['neon_alley'], factions: [], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
     });
     const plan = generateBuildPlan('haunted chapel scenario', session);
     const districtStep = plan.steps.find(s => s.command === 'create-district');
@@ -644,7 +644,7 @@ describe('buildDiagnostics', () => {
   it('reports missing artifact categories', () => {
     const state = createBuildState(makePlan());
     const session = makeSession({
-      artifacts: { districts: ['d1'], factions: [], quests: [], rooms: [], packs: [] },
+      artifacts: { districts: ['d1'], factions: [], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
     });
     const diag = buildDiagnostics(state, session);
     expect(diag.some(d => d.includes('factions'))).toBe(true);

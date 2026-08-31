@@ -10,6 +10,7 @@ import { SidecarServer, attachedServerCount } from './server.js';
 import { ERROR_CODES, METHODS, NOTIFICATIONS, type RpcMessage } from './protocol.js';
 import { encodeMessage, MessageTooLargeError, MAX_MESSAGE_BYTES } from './framing.js';
 import { applyPatches, canonicalStateHash, stateHash } from './serializer.js';
+import type { StatePatch } from './protocol.js';
 
 function brandModule(): EngineModule {
   return {
@@ -674,7 +675,7 @@ describe('F-decfe897 — omitEventLog snapshot is hash-matching and later ticks 
     server.handle({ jsonrpc: '2.0', id: 3, method: METHODS.SNAPSHOT, params: { omitEventLog: true } });
     const ok = sent.find((m) => m.id === 3);
     expect(ok?.error).toBeUndefined();
-    const result = ok?.result as { hash: string; delta: unknown[] };
+    const result = ok?.result as { hash: string; delta: readonly StatePatch[] };
     const mirrored = applyPatches({}, result.delta);
     expect(stateHash(mirrored)).toBe(result.hash);
     expect((mirrored as { eventLog?: unknown }).eventLog).toBeUndefined();

@@ -97,7 +97,7 @@ describe('buildTaskString', () => {
 
   it('counts artifacts correctly with empty categories', () => {
     const session = makeSession({
-      artifacts: { districts: [], factions: [], quests: [], rooms: [], packs: [] },
+      artifacts: { districts: [], factions: [], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
     });
     const result = buildTaskString('test', 'scaffold', session);
     expect(result).toContain('0 artifacts');

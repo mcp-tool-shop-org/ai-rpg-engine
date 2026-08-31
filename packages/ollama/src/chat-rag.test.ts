@@ -80,7 +80,7 @@ function makeSession(overrides: Partial<DesignSession> = {}): DesignSession {
     createdAt: '2025-01-01',
     themes: ['horror', 'gothic'],
     constraints: ['no magic'],
-    artifacts: { districts: [], factions: [], quests: [], rooms: ['dark-chapel'], packs: [] },
+    artifacts: { districts: [], factions: [], quests: [], rooms: ['dark-chapel'], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
     issues: [
       { severity: 'warning', code: 'PACING', target: 'dark-chapel', summary: 'Room pacing is too slow', status: 'open' },
       { severity: 'info', code: 'THEME', target: 'dark-chapel', summary: 'Consider darker tone', status: 'resolved' },
