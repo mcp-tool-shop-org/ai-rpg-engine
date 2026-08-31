@@ -163,10 +163,7 @@ export function startSocketServer(
     };
 
     // The two calls `stdio.ts` promised, with a different pair of streams.
-    // Assigned once; `let` + definite-assignment because onWorldCommitted
-    // closes over `session` during construction (TDZ if `const`).
-    // eslint-disable-next-line prefer-const
-    let session!: SidecarServer;
+    let session!: SidecarServer; // eslint-disable-line prefer-const -- closes over construction
     session = new SidecarServer(
       {
         ...options,
