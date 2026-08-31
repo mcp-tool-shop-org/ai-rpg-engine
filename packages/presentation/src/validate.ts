@@ -184,6 +184,18 @@ export function validateNarrationPlan(plan: unknown): ValidationError[] {
     }
   }
 
+  if (p.asides !== undefined) {
+    if (!Array.isArray(p.asides)) {
+      errors.push({ field: 'asides', message: 'asides must be an array when present' });
+    } else {
+      for (let i = 0; i < p.asides.length; i++) {
+        if (typeof p.asides[i] !== 'string') {
+          errors.push({ field: `asides[${i}]`, message: 'asides entries must be strings' });
+        }
+      }
+    }
+  }
+
   if (p.voiceProfile !== undefined) {
     const voiceProfile = p.voiceProfile as Record<string, unknown>;
     if (!voiceProfile || typeof voiceProfile !== 'object') {

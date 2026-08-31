@@ -9,6 +9,7 @@ import { createDialogueCore } from '@ai-rpg-engine/modules';
 import type { DialogueDefinition } from '@ai-rpg-engine/content-schema';
 import { buildActionList, renderFullScreen, SCREEN_WIDTH } from '@ai-rpg-engine/terminal-ui';
 import { ABILITY_CATALOG_FORMULA } from '@ai-rpg-engine/modules';
+import { getPartyState, setPartyState, type CompanionState } from '@ai-rpg-engine/modules';
 import {
   runGuardedAction,
   replayGame,
@@ -1465,6 +1466,67 @@ describe('renderFrame — menu suppression (T0-menu-collisions)', () => {
     expect(frame).toContain('── Actions ');
     expect(frame).toContain('[1] Move to Hall');
     expect(frame).toContain('Look around');
+  });
+});
+
+// F-dc8a82be / F-b30e754a: renderFrame threads buildPartyStatusLine(engine.world)
+// into BOTH branches of the options object it builds — read from engine.world
+// (not the display-only buildHudWorld copy), so a party survives even on a
+// menu:false end-frame ("a corpse's screen should still show who was
+// traveling with them").
+describe('renderFrame — party status line (F-dc8a82be)', () => {
+  function capture() {
+    const lines: string[] = [];
+    return { lines, print: (line: string) => lines.push(line) };
+  }
+
+  function packFor(engine: Engine) {
+    return { meta: { id: 'test-game', name: 'Test Game' }, createGame: () => engine };
+  }
+
+  function withActiveCompanion(engine: Engine): void {
+    engine.store.addEntity({
+      id: 'doc', blueprintId: 'bp', type: 'npc', name: 'Doc',
+      tags: [], stats: {}, resources: { hp: 8, maxHp: 8 }, statuses: [], zoneId: 'cell',
+    });
+    const companion: CompanionState = {
+      npcId: 'doc', role: 'healer', joinedAtTick: 0, abilityTags: [], morale: 70, active: true,
+    };
+    const party = getPartyState(engine.world);
+    setPartyState(engine.world, { ...party, companions: [companion] });
+  }
+
+  it('a normal frame (menu shown) includes the party line inside Status when a party is active', () => {
+    const engine = makeEngine();
+    withActiveCompanion(engine);
+    const { lines, print } = capture();
+
+    renderFrame(engine, packFor(engine), { print });
+
+    const frame = lines.join('\n');
+    expect(frame).toContain('Party:');
+    expect(frame).toContain('Doc');
+  });
+
+  it('a menu:false end-frame STILL includes the party line — a corpse\'s screen shows who was traveling with them', () => {
+    const engine = makeEngine();
+    withActiveCompanion(engine);
+    const { lines, print } = capture();
+
+    renderFrame(engine, packFor(engine), { menu: false, print });
+
+    const frame = lines.join('\n');
+    expect(frame).toContain('Party:');
+    expect(frame).toContain('Doc');
+  });
+
+  it('no active party: no "Party:" label appears at all (byte-compat — the option existing does not force a line)', () => {
+    const engine = makeEngine();
+    const { lines, print } = capture();
+
+    renderFrame(engine, packFor(engine), { print });
+
+    expect(lines.join('\n')).not.toContain('Party:');
   });
 });
 

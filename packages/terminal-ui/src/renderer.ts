@@ -102,6 +102,16 @@ export type RenderOptions = {
    * ASCII_ONLY / TERM=dumb. NO_COLOR does not flip this.
    */
   ascii?: boolean;
+  /**
+   * F-dc8a82be / F-b30e754a: the CLI-composed party status line (menu.ts's
+   * buildPartyStatusLine, wrapping modules' formatPartyStatusLine) — plain
+   * text, already carrying its own two-space indent. Rendered as one more
+   * Status HUD line, after Equipped. Omitted (or the composer's own
+   * undefined for an empty party) renders nothing — no empty "Party:" label
+   * ever appears, and the HUD is byte-identical to before this option
+   * existed.
+   */
+  partyLine?: string;
 };
 
 function paletteFor(opts?: RenderOptions): Palette {
@@ -414,10 +424,10 @@ function playerVitals(player: EntityState, pal: Palette): string {
 export function renderScene(world: WorldState, opts?: RenderOptions): string {
   const pal = paletteFor(opts);
   const ascii = opts?.ascii ?? detectAsciiOnly();
-  return withGlyphs(ascii, () => renderSceneInner(world, pal));
+  return withGlyphs(ascii, () => renderSceneInner(world, pal, opts?.partyLine));
 }
 
-function renderSceneInner(world: WorldState, pal: Palette): string {
+function renderSceneInner(world: WorldState, pal: Palette, partyLine?: string): string {
   const zone = world.zones[world.locationId];
   if (!zone) {
     return `${sectionRule('Scene', pal)}\n  You are nowhere.\n`;
@@ -484,6 +494,11 @@ function renderSceneInner(world: WorldState, pal: Palette): string {
       );
       hud.push(...wrapToWidth(`${BODY_INDENT}Equipped: ${names.join(', ')}`));
     }
+    // F-dc8a82be: party is whole-player-state information like the rest of
+    // the Status section, but least tied to the player's own body, so it
+    // closes out the block. formatPartyStatusLine's own output already
+    // carries the same two-space indent every other HUD line uses.
+    if (partyLine) hud.push(...wrapToWidth(partyLine));
     lines.push('');
     lines.push(sectionRule('Status', pal));
     lines.push(hud.join('\n'));
@@ -850,8 +865,15 @@ export function formatEventLine(event: ResolvedEvent): string | null {
 function formatEventLineRaw(event: ResolvedEvent): string | null {
   const p = event.payload;
   switch (event.type) {
-    case 'world.zone.entered':
-      return `> Entered ${p.zoneName}`;
+    case 'world.zone.entered': {
+      // F-fdc1f590 (R4): moodHint is a district-mood aside appended verbatim
+      // in parens — formatDistrictMoodForNarrator already emits its own
+      // 'District: descriptor' shape, so a period separates the two clauses
+      // rather than concatenating them without one. Omitted, this is
+      // byte-identical to the line before this hint existed.
+      const moodHint = payloadString(p, 'moodHint');
+      return moodHint ? `> Entered ${p.zoneName}. (${moodHint})` : `> Entered ${p.zoneName}`;
+    }
 
     // C3/P2 — the "show the lock" doctrine, rendered. A gate that refuses
     // silently is a door the player concludes is broken; the AUTHORED reason is
@@ -925,6 +947,13 @@ function formatEventLineRaw(event: ResolvedEvent): string | null {
         : [];
       if (hazards.length > 0) {
         parts.push(`Hazards: ${hazards.map(humanizeStateId).join(', ')}.`);
+      }
+      // F-fdc1f590 (R4): one more labeled clause, same shape as its
+      // You-see/Points-of-interest/Hazards siblings above. Omitted, this is
+      // byte-identical to the line before this hint existed.
+      const situationHint = payloadString(p, 'situationHint');
+      if (situationHint) {
+        parts.push(`Situation: ${situationHint}.`);
       }
       return parts.join(' ');
     }
@@ -1188,15 +1217,31 @@ function renderDialogueInner(world: WorldState, pal: Palette): string | null {
   const nodeEvent = findRecentEvent(world.eventLog, e => e.type === 'dialogue.node.entered');
   if (!nodeEvent) return null;
 
+  const payload = nodeEvent.payload;
   const lines: string[] = [];
-  const speaker = String(nodeEvent.payload.speaker);
-  const spoken = String(nodeEvent.payload.text);
-  const spokenLines = wrapToWidth(`${BODY_INDENT}${speaker}: "${spoken}"`);
+
+  // F-fdc1f590 (R4): textureHint — its own line, verbatim, ABOVE the speaker
+  // line (already a complete clause; npc-agency's generateNpcTextures).
+  const textureHint = payloadString(payload, 'textureHint');
+  if (textureHint) lines.push(...wrapToWidth(`${BODY_INDENT}${textureHint}`));
+
+  // dialogueBias — its own line, verbatim, between textureHint and speaker
+  // (social-consequence.ts already produces complete sentences).
+  const dialogueBias = payloadString(payload, 'dialogueBias');
+  if (dialogueBias) lines.push(...wrapToWidth(`${BODY_INDENT}${dialogueBias}`));
+
+  const speaker = String(payload.speaker);
+  const spoken = String(payload.text);
+  // dialogueHint — a stage-direction FRAGMENT, not a sentence: a
+  // parenthetical appended to the speaker name on the SAME line.
+  const dialogueHint = payloadString(payload, 'dialogueHint');
+  const speakerLabel = dialogueHint ? `${speaker} (${dialogueHint})` : speaker;
+  const spokenLines = wrapToWidth(`${BODY_INDENT}${speakerLabel}: "${spoken}"`);
   spokenLines.forEach((line, i) => {
-    lines.push(i === 0 ? line.replace(`${speaker}:`, `${pal.bold(speaker)}:`) : line);
+    lines.push(i === 0 ? line.replace(`${speakerLabel}:`, `${pal.bold(speakerLabel)}:`) : line);
   });
 
-  const choices = nodeEvent.payload.choices as Array<{ id: string; text: string; index: number }> | undefined;
+  const choices = payload.choices as Array<{ id: string; text: string; index: number }> | undefined;
   if (choices && choices.length > 0) {
     lines.push('');
     const count = Math.max(choices.length, ...choices.map(c => c.index + 1));
@@ -1204,6 +1249,24 @@ function renderDialogueInner(world: WorldState, pal: Palette): string | null {
       const num = paddedMenuIndex(choice.index, count);
       lines.push(...wrapToWidth(`  ${pal.cyan(num)} ${choice.text}`));
     }
+  }
+
+  // partyPresence / pressureHint / opportunityHint — world/party-scoped
+  // asides unrelated to the immediate speaker turn: a trailing footer block
+  // AFTER the numbered choices, each independently gated, each its own
+  // line. Labels ("Meanwhile:", "Unfinished business:") are this renderer's
+  // own framing; the hint STRINGS themselves render verbatim (producer-owned
+  // punctuation — no invented trailing periods).
+  const footer: string[] = [];
+  const partyPresence = payloadString(payload, 'partyPresence');
+  if (partyPresence) footer.push(...wrapToWidth(`${BODY_INDENT}(${partyPresence})`));
+  const pressureHint = payloadString(payload, 'pressureHint');
+  if (pressureHint) footer.push(...wrapToWidth(`${BODY_INDENT}(Meanwhile: ${pressureHint})`));
+  const opportunityHint = payloadString(payload, 'opportunityHint');
+  if (opportunityHint) footer.push(...wrapToWidth(`${BODY_INDENT}(Unfinished business: ${opportunityHint})`));
+  if (footer.length > 0) {
+    lines.push('');
+    lines.push(...footer);
   }
 
   return lines.join('\n') + '\n';
@@ -1234,7 +1297,7 @@ export function renderFullScreen(world: WorldState, recentEvents: ResolvedEvent[
   // the same decision — no mid-frame flips if the environment changes under us.
   const pal = paletteFor(opts);
   const ascii = opts?.ascii ?? detectAsciiOnly();
-  const resolved: RenderOptions = { color: pal.enabled, ascii };
+  const resolved: RenderOptions = { color: pal.enabled, ascii, partyLine: opts?.partyLine };
 
   return withGlyphs(ascii, () => {
   const sections: string[] = [];

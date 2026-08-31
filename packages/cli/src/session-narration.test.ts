@@ -30,6 +30,10 @@ const testManifest = {
  *   wander → world.zone.entered      "Entered Hall"            (calm)
  *   strike → combat.damage.applied   "4 damage dealt (HP: 6)"  (combat/elevated)
  *   slay   → combat.entity.defeated  "Gnasher defeated!"       (triumph/critical)
+ *            + combat.encounter.cleared (F-32948b79: Gnasher is the world's
+ *            only hostile, so slaying it also clears the encounter — the
+ *            authoritative event triumph/flash are re-keyed off, not the
+ *            bare defeat alone)
  *   ponder → world.flag.changed      (bookkeeping — renders null)
  */
 function makeEngine(): Engine {
@@ -95,6 +99,17 @@ function makeEngine(): Engine {
         priority: 'critical',
         soundCues: ['combat.defeat'],
       },
+    },
+    // F-32948b79: Gnasher is the only hostile this bare engine seeds, so
+    // slaying it clears the encounter — the same two-event shape a real
+    // combat module emits for a fight's final kill.
+    {
+      id: '',
+      tick: action.issuedAtTick,
+      type: 'combat.encounter.cleared',
+      actorId: action.actorId,
+      payload: {},
+      presentation: { channels: ['objective', 'narrator'], priority: 'high' },
     },
   ]);
   engine.dispatcher.registerVerb('ponder', (action) => [

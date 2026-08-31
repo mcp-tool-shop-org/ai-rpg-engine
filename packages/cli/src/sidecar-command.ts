@@ -49,6 +49,29 @@ export interface SidecarDeps {
 
 const defaultDeps: SidecarDeps = { error: (m) => process.stderr.write(`${m}\n`) };
 
+/**
+ * F-c6ff0f97 (cli-side half): a JSON-RPC client gets the same pack-intake
+ * signal the stderr loop below already announces — mapped 1:1 from
+ * `applied.dropped` / `applied.advisories` (content-schema's
+ * `applyContentPack` result) — so a non-terminal renderer (the whole reason
+ * this command exists — see the module doc comment) can show "3 fields
+ * dropped" in its own UI instead of a stderr stream it may not even be
+ * attached to.
+ *
+ * Mirrors @ai-rpg-engine/sidecar's own `PackIntakeSummary` (protocol.ts),
+ * which lands THIS WAVE — not yet present in this worktree at the time of
+ * this edit (confirmed by grep: no such export exists in sidecar's src).
+ * packages/sidecar sits outside this domain's glob, so this is declared
+ * LOCALLY rather than imported; swap for
+ * `import type { PackIntakeSummary } from '@ai-rpg-engine/sidecar'` once the
+ * sibling type lands (the coordinator reconciles the two shapes — declared
+ * identical here, field for field — at the stitch).
+ */
+type PackIntakeSummary = {
+  dropped: Array<{ path: string; reason: string; detail: string }>;
+  advisories: Array<{ path: string; message: string }>;
+};
+
 /** True when the positional is a filesystem path, not a bundled pack id. */
 function looksLikePath(token: string): boolean {
   return /[\\/]/.test(token) || token.startsWith('.') || /^[A-Za-z]:/.test(token);
@@ -247,6 +270,14 @@ export async function runSidecar(args: string[], deps: SidecarDeps = defaultDeps
   // rather than half-applied. And `dropped` is reported rather than swallowed: C0's
   // headline failure was not that data was lost, it was that data was lost SILENTLY
   // while an instrument reported 100% lossless.
+  //
+  // F-c6ff0f97: declared outside the block (like `cue` below) so its value
+  // survives to the serverOptions construction further down. Stays
+  // undefined when --content is never passed, or when nothing was dropped
+  // or advised — a JSON-RPC client sees no `packIntake` field at all rather
+  // than an empty-but-present one (matches the pack keys' own byte-absent
+  // convention elsewhere in this engine).
+  let packIntakeSummary: PackIntakeSummary | undefined;
   if (contentRaw !== undefined) {
     const load = loadContentFromFile(contentRaw);
     if (!load.ok) {
@@ -318,6 +349,16 @@ export async function runSidecar(args: string[], deps: SidecarDeps = defaultDeps
     // that a renderer can be trusted about what it received.
     for (const d of applied.dropped) error(`[sidecar] dropped ${d.path}: ${d.reason} — ${d.detail}`);
     for (const a of applied.advisories) error(`[sidecar] advisory ${a.path}: ${a.message}`);
+
+    // F-c6ff0f97: the same signal, structured, for a JSON-RPC client — 1:1
+    // field mapping off applied.dropped / applied.advisories, the exact
+    // arrays the stderr loop above just walked.
+    if (applied.dropped.length > 0 || applied.advisories.length > 0) {
+      packIntakeSummary = {
+        dropped: applied.dropped.map((d) => ({ path: d.path, reason: d.reason, detail: d.detail })),
+        advisories: applied.advisories.map((a) => ({ path: a.path, message: a.message })),
+      };
+    }
 
     // Authored zones merge into the host graph and the two are not connected.
     // Applying without --start leaves the player in the host opening zone.
@@ -418,6 +459,11 @@ export async function runSidecar(args: string[], deps: SidecarDeps = defaultDeps
     engine,
     engineVersion: ENGINE_VERSION,
     serverName: `ai-rpg-engine sidecar (${pack.meta.id})`,
+    // F-c6ff0f97: present only when --content actually dropped or advised
+    // something (packIntakeSummary stays undefined otherwise) — a spread of
+    // `{}` adds no key, matching every other conditional field in this
+    // engine's byte-absent-when-quiet convention.
+    ...(packIntakeSummary ? { packIntake: packIntakeSummary } : {}),
     // The round driver, injected. `advance` reports the capability unavailable
     // rather than pretending when a host does not supply one.
     advanceRound: (e: unknown) => {

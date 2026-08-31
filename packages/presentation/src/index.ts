@@ -27,7 +27,9 @@ export {
   collectSoundCues,
   deriveTone,
   deriveUrgency,
+  deriveStingCue,
   type BuildNarrationPlanInput,
   type NarrationSourceEvent,
   type SoundCueResolver,
+  type ZoneMoodResolver,
 } from './builder.js';

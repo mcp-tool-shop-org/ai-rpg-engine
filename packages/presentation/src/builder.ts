@@ -16,6 +16,8 @@
 // see TurnPresenter there.
 
 import type {
+  AmbientCue,
+  MusicCue,
   NarrationPlan,
   NarrationTone,
   SfxCue,
@@ -67,18 +69,49 @@ export type BuildNarrationPlanInput = {
   resolveSoundCue?: SoundCueResolver;
   /**
    * The player entity id — lets defeat events distinguish "you fell"
-   * (sorrow) from "the enemy fell" (triumph). Omitted ⇒ every defeat reads
-   * as triumph.
+   * (sorrow) from anything else. Omitted ⇒ no defeat can ever read as
+   * sorrow (there is no player to attribute it to); tone falls through to
+   * 'combat'/'calm' exactly as an unattributable defeat always has.
    */
   playerId?: string;
   /** Optional voice profile passed through to the plan (TTS embedders). */
   voiceProfile?: VoiceProfile;
+  /**
+   * Resolves a zone's district "tone" (world.zone.entered's `tone` payload
+   * field) into a music/ambient target for a zone-entry turn. DEFAULT
+   * undefined — a caller opts in by injecting soundpack-core's
+   * districtToneToSoundMood bridge composed with a loaded SoundRegistry's
+   * pickMusicStem/pickAmbientBed (see terminal-ui's TurnPresenter). Returning
+   * undefined, or omitting either trackId/layerId, falls through per-field to
+   * the documented 'scene.enter' fallback. Only consulted on turns containing
+   * a presentation-bearing world.zone.entered event; ignored otherwise.
+   */
+  resolveZoneMood?: ZoneMoodResolver;
 };
+
+/**
+ * See {@link BuildNarrationPlanInput.resolveZoneMood}. presentation stays
+ * dependency-free of soundpack-core (matches this file's resolveSoundCue
+ * injection posture) — the real districtToneToSoundMood-backed resolver is
+ * composed by the caller, not imported here.
+ */
+export type ZoneMoodResolver = (tone: string) => { trackId?: string; layerId?: string } | undefined;
 
 /** Event types whose presence marks a turn as combat presentation. */
 const DEFEAT_EVENT = 'combat.entity.defeated';
 const DIALOGUE_NODE_EVENT = 'dialogue.node.entered';
 const AUDIO_CUE_EVENT = 'audio.cue.requested';
+const ZONE_ENTERED_EVENT = 'world.zone.entered';
+/**
+ * The authoritative "the fight is over" signal (R2, modules' engagement-core;
+ * consumed here, not defined here). F-32948b79: deriveTone/deriveUiEffects
+ * used to read ANY non-player defeat as triumph/flash, so a companion's
+ * death (or any single non-final kill in a multi-enemy fight) rendered as a
+ * triumphant beat. Re-keyed to this event — a defeat alone no longer implies
+ * the encounter ended. Also the sting trigger (deriveStingCue) — one event,
+ * one meaning, shared by every derivation that cares "did the fight end".
+ */
+const ENCOUNTER_CLEARED_EVENT = 'combat.encounter.cleared';
 
 const IDENTITY_RESOLVER: SoundCueResolver = (cue) => ({
   effectId: cue,
@@ -130,29 +163,35 @@ function presentable(event: NarrationSourceEvent): boolean {
 /**
  * Derive tone from presentation-bearing event kinds. Precedence (first
  * match wins):
- *   1. the player was defeated            → 'sorrow'
- *   2. any entity was defeated            → 'triumph'
- *   3. any combat.* event occurred        → 'combat'
- *   4. otherwise (dialogue, travel, idle) → 'calm'
+ *   1. the player was defeated                    → 'sorrow'
+ *   2. the encounter was cleared (combat.encounter.cleared) → 'triumph'
+ *   3. any combat.* event occurred                → 'combat'
+ *   4. otherwise (dialogue, travel, idle)          → 'calm'
  * The remaining tones (tense/dread/wonder) are authored space — a game with
  * scripted moments builds its plan directly (or post-edits this one) rather
  * than expecting the generic derivation to guess atmosphere.
+ *
+ * F-32948b79: 'triumph' is keyed off {@link ENCOUNTER_CLEARED_EVENT}, NOT off
+ * "any non-player defeat" (the old rule — a companion's death, or the first
+ * of several kills in a multi-enemy fight, used to read as triumphant). A
+ * bare defeat with no clearance now reads as the conservative 'combat' tone.
+ * Player defeat still outranks everything, including a same-turn clearance
+ * (a mutual kill fades out, never flashes triumphant — mirrors
+ * deriveStingCue's identical precedence call).
  */
 export function deriveTone(
   events: readonly NarrationSourceEvent[],
   playerId?: string,
 ): NarrationTone {
-  let sawDefeat = false;
+  let sawCleared = false;
   let sawCombat = false;
   for (const event of events) {
     if (!presentable(event)) continue;
-    if (event.type === DEFEAT_EVENT) {
-      if (isPlayerDefeat(event, playerId)) return 'sorrow';
-      sawDefeat = true;
-    }
+    if (event.type === DEFEAT_EVENT && isPlayerDefeat(event, playerId)) return 'sorrow';
+    if (event.type === ENCOUNTER_CLEARED_EVENT) sawCleared = true;
     if (event.type.startsWith('combat.')) sawCombat = true;
   }
-  if (sawDefeat) return 'triumph';
+  if (sawCleared) return 'triumph';
   if (sawCombat) return 'combat';
   return 'calm';
 }
@@ -177,6 +216,71 @@ export function deriveUrgency(events: readonly NarrationSourceEvent[]): Urgency 
   return elevated ? 'elevated' : 'normal';
 }
 
+/**
+ * Which music STING (a one-shot fanfare/stinger, distinct from the sfx
+ * pipeline's blips) this turn calls for, in the canonical soundpack cue
+ * vocabulary soundpack-core's `resolveMusicSting` resolves — 'combat.defeat'
+ * / 'combat.victory' / undefined. F-0671a25f / F-b5150ad5: TurnPresenter is
+ * the repo's only per-turn AudioCommand composition point and never called
+ * AudioDirector.scheduleSting, so the documented sting hook could never
+ * actually carry a sting to a player or embedder; this is the pure half of
+ * the fix (terminal-ui's TurnPresenter does the thin scheduling call).
+ *
+ * Precedence mirrors deriveTone exactly: a player defeat wins even alongside
+ * a same-turn combat.encounter.cleared (a mutual kill defeats, it does not
+ * also victory-sting) — pinned by the Director ruling that ties this
+ * derivation's precedence to deriveTone's.
+ *
+ * Deliberately keys off the event TYPE only (no dependency on
+ * combat.encounter.cleared's eventual payload shape) — the lowest-coupling
+ * trigger available.
+ */
+export function deriveStingCue(
+  events: readonly NarrationSourceEvent[],
+  playerId?: string,
+): string | undefined {
+  let cleared = false;
+  for (const event of events) {
+    if (!presentable(event)) continue;
+    if (event.type === DEFEAT_EVENT && isPlayerDefeat(event, playerId)) return 'combat.defeat';
+    if (event.type === ENCOUNTER_CLEARED_EVENT) cleared = true;
+  }
+  return cleared ? 'combat.victory' : undefined;
+}
+
+/**
+ * The current turn's dialogue content and hints, as narratable prose
+ * fragments in on-screen reading order — the producer half of
+ * {@link NarrationPlan.asides}. One dialogue.node.entered event's worth of
+ * fragments, in the SAME order the R4-approved Dialogue section renders them
+ * (texture -> bias -> the line itself -> world/party asides), because that
+ * is also the more natural SPOKEN order: a stage direction precedes the
+ * line, it does not trail it. dialogueHint is deliberately excluded — see
+ * deriveSpeaker, which routes it into SpeakerCue.emotion instead. Returns []
+ * for a node with no text (never a partial/broken fragment) or one the
+ * modules did not mark presentation-bearing (matches every other
+ * derivation's bookkeeping exclusion).
+ */
+function dialogueAsides(event: NarrationSourceEvent): string[] {
+  if (!presentable(event)) return [];
+  const payload = event.payload;
+  const text = payload?.text;
+  if (typeof text !== 'string' || text.length === 0) return [];
+
+  const asides: string[] = [];
+  const push = (key: string): void => {
+    const value = payload?.[key];
+    if (typeof value === 'string' && value.length > 0) asides.push(value);
+  };
+  push('textureHint');
+  push('dialogueBias');
+  asides.push(text);
+  push('partyPresence');
+  push('pressureHint');
+  push('opportunityHint');
+  return asides;
+}
+
 /** The most recent dialogue node in the turn, as a SpeakerCue (or undefined). */
 function deriveSpeaker(events: readonly NarrationSourceEvent[]): SpeakerCue | undefined {
   for (let i = events.length - 1; i >= 0; i--) {
@@ -189,10 +293,16 @@ function deriveSpeaker(events: readonly NarrationSourceEvent[]): SpeakerCue | un
     // for entityId, and derive a stable per-speaker voice id from it. A TTS
     // embedder maps voice ids to actual voices; the terminal ignores them.
     const name = typeof speaker === 'string' && speaker.length > 0 ? speaker : 'narrator';
+    // dialogueHint is a manner/delivery fragment ("evasive, deflecting,
+    // changing subject") — exactly what SpeakerCue.emotion wants, and it is
+    // already a freeform string, so this is a zero-schema-change read: use
+    // it verbatim when present, 'neutral' otherwise (unchanged default).
+    const dialogueHint = event.payload?.dialogueHint;
+    const emotion = typeof dialogueHint === 'string' && dialogueHint.length > 0 ? dialogueHint : 'neutral';
     return {
       entityId: name,
       voiceId: `voice.${name.toLowerCase().replace(/\s+/g, '-')}`,
-      emotion: 'neutral',
+      emotion,
       speed: 1,
       text,
     };
@@ -202,28 +312,52 @@ function deriveSpeaker(events: readonly NarrationSourceEvent[]): SpeakerCue | un
 
 /**
  * Visual accents for GUI embedders (terminal-ui renders text only and does
- * not apply these): a defeat flashes; the player's own fall fades out.
+ * not apply these): a cleared encounter flashes; the player's own fall fades
+ * out.
  *
  * F-77706f09: scans the WHOLE turn for a player defeat before falling back to
- * the first non-player defeat — the same precedence order deriveTone uses.
- * A turn with two defeats (a non-player entity, then later the player) must
- * fade out, not flash: plan.tone and plan.uiEffects can never disagree about
- * whether the player died this turn.
+ * clearance — the same precedence order deriveTone uses. A turn with a
+ * defeat AND a same-turn clearance (a mutual kill) must fade out, not flash:
+ * plan.tone and plan.uiEffects can never disagree about whether the player
+ * died this turn.
+ *
+ * F-32948b79: the flash trigger is re-keyed off {@link ENCOUNTER_CLEARED_EVENT},
+ * matching deriveTone's re-key — "any non-player defeat" used to flash a
+ * companion's death exactly as it would a won fight. Gated on presentable()
+ * for the SAME reason deriveStingCue gates it (the sibling derivation for
+ * this exact event): a bookkeeping combat.encounter.cleared with no
+ * presentation block should not flash the screen the player never saw
+ * announced. The existing player-defeat/fade-out branch is NOT gated on
+ * presentable() — unchanged from before this fix, out of this fix's scope.
  */
 function deriveUiEffects(
   events: readonly NarrationSourceEvent[],
   playerId?: string,
 ): UiEffect[] {
-  let sawNonPlayerDefeat = false;
+  let sawCleared = false;
   for (const event of events) {
-    if (event.type !== DEFEAT_EVENT) continue;
-    if (isPlayerDefeat(event, playerId)) {
+    if (event.type === DEFEAT_EVENT && isPlayerDefeat(event, playerId)) {
       return [{ type: 'fade-out', durationMs: 600 }];
     }
-    sawNonPlayerDefeat = true;
+    if (event.type === ENCOUNTER_CLEARED_EVENT && presentable(event)) sawCleared = true;
   }
-  return sawNonPlayerDefeat ? [{ type: 'flash', durationMs: 250 }] : [];
+  return sawCleared ? [{ type: 'flash', durationMs: 250 }] : [];
 }
+
+/**
+ * Zone-entry music/ambient default. Mirrors soundpack-core's
+ * `resolveMusicStem('scene.enter')` / `resolveAmbientBed('scene.enter')` —
+ * SCENE_MUSIC_MAP / SCENE_BED_MAP's 'scene.enter' rows, both resolved at the
+ * 'exact' tier. Duplicated as a literal rather than imported: presentation
+ * stays dependency-free of soundpack-core (matches this file's
+ * resolveSoundCue injection posture, and cue-map.ts's own precedent of
+ * duplicating stable literals across the package boundary rather than
+ * importing across it).
+ */
+const ZONE_ENTER_FALLBACK: { trackId: string; layerId: string } = {
+  trackId: 'music_calm',
+  layerId: 'ambient_white_noise',
+};
 
 /**
  * Build a valid NarrationPlan from a turn's events + scene text.
@@ -233,10 +367,14 @@ function deriveUiEffects(
  * schedule() accepts builder output unconditionally.
  *
  * Honest scope notes (deliberate ceilings of this slice, not oversights):
- *   - `ambientLayers` is always [] — deriving ambient beds needs zone-state
- *     tracking across turns (a start/stop state machine), not per-turn events.
- *   - `musicCue` is always undefined — same reason; music direction is a
- *     cross-turn concern for a future music-state module.
+ *   - `ambientLayers` / `musicCue` are populated ONLY on turns carrying a
+ *     presentation-bearing world.zone.entered event (F-901767f5's
+ *     composition half) — every other turn leaves them [] / undefined
+ *     exactly as before this field was wired. Cross-turn concerns (fading
+ *     the PREVIOUS stem out, tracking which ambient layers are already
+ *     running so a repeat zone entry does not restart them) remain a future
+ *     music-state module's job — this slice derives the per-turn TARGET,
+ *     never the transition.
  */
 export function buildNarrationPlan(input: BuildNarrationPlanInput): NarrationPlan {
   const events = input.events ?? [];
@@ -258,12 +396,43 @@ export function buildNarrationPlan(input: BuildNarrationPlanInput): NarrationPla
 
   const urgency = deriveUrgency(events);
 
+  // F-901767f5 (composition half): a zone-entry turn gets a music/ambient
+  // target — the tone-aware resolver when the caller injects one and the
+  // event carries a `tone`, else the documented scene.enter fallback.
+  // Missing/undefined resolve PER FIELD, not all-or-nothing, so a resolver
+  // that only knows music still gets the fallback ambient bed.
+  let musicCue: MusicCue | undefined;
+  let ambientLayers: AmbientCue[] = [];
+  const zoneEnteredEvent = events.find(
+    (event) => event.type === ZONE_ENTERED_EVENT && presentable(event),
+  );
+  if (zoneEnteredEvent) {
+    const tone = zoneEnteredEvent.payload?.tone;
+    const resolved =
+      typeof tone === 'string' && tone.length > 0 && input.resolveZoneMood
+        ? input.resolveZoneMood(tone)
+        : undefined;
+    musicCue = {
+      action: 'play',
+      trackId: resolved?.trackId ?? ZONE_ENTER_FALLBACK.trackId,
+      fadeMs: 1000,
+    };
+    ambientLayers = [
+      {
+        layerId: resolved?.layerId ?? ZONE_ENTER_FALLBACK.layerId,
+        action: 'start',
+        volume: 0.3,
+        fadeMs: 1000,
+      },
+    ];
+  }
+
   const plan: NarrationPlan = {
     sceneText,
     tone: deriveTone(events, input.playerId),
     urgency,
     sfx,
-    ambientLayers: [],
+    ambientLayers,
     uiEffects: deriveUiEffects(events, input.playerId),
     // Big moments hold the floor: a critical beat asks renderers not to let
     // the player skip mid-line (soft — never a hard lock from generic
@@ -274,6 +443,15 @@ export function buildNarrationPlan(input: BuildNarrationPlanInput): NarrationPla
   const speaker = deriveSpeaker(events);
   if (speaker) plan.speaker = speaker;
   if (input.voiceProfile) plan.voiceProfile = input.voiceProfile;
+  if (musicCue) plan.musicCue = musicCue;
+
+  // TTS pipeline expansion (wave-2 R4 ruling): dialogue content + hints,
+  // additive and byte-compat — a turn with no dialogue events leaves
+  // `asides` unset, identical to the plan shape before this field existed.
+  const asides = events
+    .filter((event) => event.type === DIALOGUE_NODE_EVENT)
+    .flatMap(dialogueAsides);
+  if (asides.length > 0) plan.asides = asides;
 
   return plan;
 }

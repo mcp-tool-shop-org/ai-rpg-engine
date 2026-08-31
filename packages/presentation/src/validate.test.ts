@@ -165,6 +165,30 @@ describe('validateNarrationPlan', () => {
       });
       expect(errors).toHaveLength(0);
     });
+
+    // asides (TTS-pipeline expansion, wave-2 R4): optional string[], validated
+    // the same "only checked when present" way as speaker/musicCue/voiceProfile.
+    it('does not require asides — absent is valid', () => {
+      const errors = validateNarrationPlan(validPlan);
+      expect(errors).toHaveLength(0);
+    });
+
+    it('rejects a non-array asides when present', () => {
+      const errors = validateNarrationPlan({ ...validPlan, asides: 'not an array' });
+      expect(errors.some((e) => e.field === 'asides')).toBe(true);
+    });
+
+    it('rejects a non-string entry inside asides', () => {
+      const errors = validateNarrationPlan({ ...validPlan, asides: ['fine', 42, 'also fine'] });
+      expect(errors.some((e) => e.field === 'asides[1]')).toBe(true);
+    });
+
+    it('accepts a well-formed asides array, including empty', () => {
+      expect(validateNarrationPlan({ ...validPlan, asides: [] })).toHaveLength(0);
+      expect(
+        validateNarrationPlan({ ...validPlan, asides: ['Mira edging toward the exit.', 'A friend of the faction.'] }),
+      ).toHaveLength(0);
+    });
   });
 
   // F-0363af9b: typeof === 'number' accepts NaN/Infinity; intensity: NaN used to

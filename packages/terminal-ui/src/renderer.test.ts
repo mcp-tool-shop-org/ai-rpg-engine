@@ -420,6 +420,174 @@ function cev(type: string, payload: Record<string, unknown> = {}, extra: Partial
   return { id: `e-${type}`, tick: 1, type, payload, ...extra };
 }
 
+// F-fdc1f590 / F-3b87da72: Director ruling R4 — eight narrator-voice hint
+// fields (dialogueBias, dialogueHint, pressureHint, textureHint,
+// opportunityHint, partyPresence on dialogue.node.entered; moodHint,
+// situationHint on world.zone.entered/inspected) were computed by
+// packages/modules and attached to event payloads with zero readers in
+// terminal-ui or presentation. Six render in the Dialogue section (this
+// block); two render inline in the event log (see the formatEvent describe
+// block further down). Every case is a byte-attached/byte-absent pair, per
+// hint, mirroring dialogue-core.test.ts's own per-hint pinning.
+describe('renderDialogue — R4 hint placements (F-fdc1f590)', () => {
+  function dialogueWorldWith(payload: Record<string, unknown>) {
+    const world = makeWorld();
+    world.modules['dialogue-core'] = { activeDialogue: 'mira-talk' };
+    (world as { eventLog: ResolvedEvent[] }).eventLog = [
+      cev('dialogue.node.entered', {
+        speaker: 'Mira',
+        text: "I don't know what you're talking about.",
+        choices: [{ id: 'c1', text: 'Ask about the shipment', index: 0 }, { id: 'c2', text: 'Leave', index: 1 }],
+        ...payload,
+      }),
+    ];
+    return world;
+  }
+
+  it('textureHint renders on its own line, verbatim, above the speaker line — omitted, it is byte-absent', () => {
+    const withHint = renderDialogue(dialogueWorldWith({ textureHint: 'Mira edging toward the exit, eyes darting' }), PLAIN);
+    expect(withHint).toContain('  Mira edging toward the exit, eyes darting');
+    const lines = withHint!.split('\n');
+    expect(lines[0]).toBe('  Mira edging toward the exit, eyes darting');
+
+    const without = renderDialogue(dialogueWorldWith({}), PLAIN);
+    expect(without).not.toContain('edging toward the exit');
+  });
+
+  it('dialogueBias renders on its own line, verbatim, between textureHint and the speaker line — omitted, byte-absent', () => {
+    const withHint = renderDialogue(
+      dialogueWorldWith({ textureHint: 'Mira edging toward the exit, eyes darting', dialogueBias: 'A friend of the faction.' }),
+      PLAIN,
+    );
+    const lines = withHint!.split('\n');
+    expect(lines[0]).toBe('  Mira edging toward the exit, eyes darting');
+    expect(lines[1]).toBe('  A friend of the faction.');
+    expect(lines[2]).toContain('Mira:');
+
+    const without = renderDialogue(dialogueWorldWith({}), PLAIN);
+    expect(without).not.toContain('A friend of the faction.');
+  });
+
+  it('dialogueHint renders as a parenthetical on the SAME line as the speaker name — omitted, the speaker line is unchanged', () => {
+    const withHint = renderDialogue(dialogueWorldWith({ dialogueHint: 'evasive, deflecting, changing subject' }), PLAIN);
+    // Longer than SCREEN_WIDTH once the parenthetical joins it — wraps like
+    // every other HUD/dialogue line; wrapToWidth is the source of truth for
+    // exactly where.
+    const expectedSpokenLines = wrapToWidth(
+      '  Mira (evasive, deflecting, changing subject): "I don\'t know what you\'re talking about."',
+    ).join('\n');
+    expect(withHint).toContain(expectedSpokenLines);
+
+    const without = renderDialogue(dialogueWorldWith({}), PLAIN);
+    expect(without).toContain('Mira: "I don\'t know what you\'re talking about."');
+    expect(without).not.toContain('(');
+  });
+
+  it('partyPresence renders as a trailing footer aside, wrapped in parens, verbatim, AFTER the numbered choices — omitted, byte-absent', () => {
+    const withHint = renderDialogue(
+      dialogueWorldWith({ partyPresence: 'Accompanied by Doc (support, HP 8/8, cautious)' }),
+      PLAIN,
+    );
+    expect(withHint).toContain('  (Accompanied by Doc (support, HP 8/8, cautious))');
+    const lines = withHint!.split('\n');
+    const choiceIdx = lines.findIndex((l) => l.includes('[2] Leave'));
+    const asideIdx = lines.findIndex((l) => l.includes('Accompanied by Doc'));
+    expect(asideIdx).toBeGreaterThan(choiceIdx);
+
+    const without = renderDialogue(dialogueWorldWith({}), PLAIN);
+    expect(without).not.toContain('Accompanied by');
+  });
+
+  it('pressureHint renders as a labeled "Meanwhile:" footer aside — omitted, byte-absent', () => {
+    const withHint = renderDialogue(
+      dialogueWorldWith({
+        pressureHint: 'faction-retaliation (imminent): the Ironclad Watch are mustering to move against you.',
+      }),
+      PLAIN,
+    );
+    // Longer than SCREEN_WIDTH — wraps, same guarantee as every other line.
+    expect(withHint).toContain(
+      wrapToWidth(
+        '  (Meanwhile: faction-retaliation (imminent): the Ironclad Watch are mustering to move against you.)',
+      ).join('\n'),
+    );
+
+    const without = renderDialogue(dialogueWorldWith({}), PLAIN);
+    expect(without).not.toContain('Meanwhile:');
+  });
+
+  it('opportunityHint renders as a labeled "Unfinished business:" footer aside — omitted, byte-absent', () => {
+    const withHint = renderDialogue(
+      dialogueWorldWith({
+        opportunityHint: 'delivery (available): Smuggle medicine past the checkpoint — 3 turns remaining',
+      }),
+      PLAIN,
+    );
+    expect(withHint).toContain(
+      wrapToWidth(
+        '  (Unfinished business: delivery (available): Smuggle medicine past the checkpoint — 3 turns remaining)',
+      ).join('\n'),
+    );
+
+    const without = renderDialogue(dialogueWorldWith({}), PLAIN);
+    expect(without).not.toContain('Unfinished business:');
+  });
+
+  it('combined frame: all six hints compose in the exact approved R4 order (finding mock, verbatim, wrapped at 60 cols like every other line)', () => {
+    const world = dialogueWorldWith({
+      textureHint: 'Mira edging toward the exit, eyes darting',
+      dialogueBias: 'A friend of the faction.',
+      dialogueHint: 'evasive, deflecting, changing subject',
+      partyPresence: 'Accompanied by Doc (support, HP 8/8, cautious)',
+      pressureHint: 'faction-retaliation (imminent): the Ironclad Watch are mustering to move against you.',
+      opportunityHint: 'delivery (available): Smuggle medicine past the checkpoint — 3 turns remaining',
+    });
+    const out = renderDialogue(world, PLAIN);
+    // Every line the finding's mock specifies, in the same order — several
+    // exceed SCREEN_WIDTH once composed, so wrapToWidth (the same function
+    // the implementation uses) is the source of truth for exactly where
+    // each wraps, rather than assuming the mock's prose is unwrapped.
+    const expected = [
+      ...wrapToWidth('  Mira edging toward the exit, eyes darting'),
+      ...wrapToWidth('  A friend of the faction.'),
+      ...wrapToWidth('  Mira (evasive, deflecting, changing subject): "I don\'t know what you\'re talking about."'),
+      '',
+      '  [1] Ask about the shipment',
+      '  [2] Leave',
+      '',
+      ...wrapToWidth('  (Accompanied by Doc (support, HP 8/8, cautious))'),
+      ...wrapToWidth('  (Meanwhile: faction-retaliation (imminent): the Ironclad Watch are mustering to move against you.)'),
+      ...wrapToWidth('  (Unfinished business: delivery (available): Smuggle medicine past the checkpoint — 3 turns remaining)'),
+      '',
+    ].join('\n');
+    expect(out).toBe(expected);
+  });
+
+  it('no hints at all: byte-identical to the pre-R4 dialogue frame (regression guard)', () => {
+    const out = renderDialogue(dialogueWorldWith({}), PLAIN);
+    expect(out).toBe(
+      [
+        '  Mira: "I don\'t know what you\'re talking about."',
+        '',
+        '  [1] Ask about the shipment',
+        '  [2] Leave',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('NO_COLOR / plain rendering is byte-identical to stripping ANSI from the colored path — no hint carries color-only signaling', () => {
+    const world = dialogueWorldWith({
+      textureHint: 'Mira edging toward the exit, eyes darting',
+      dialogueBias: 'A friend of the faction.',
+      dialogueHint: 'evasive, deflecting, changing subject',
+    });
+    const colored = renderDialogue(world, { color: true });
+    const plain = renderDialogue(world, PLAIN);
+    expect(stripAnsi(colored!)).toBe(plain);
+  });
+});
+
 // CS-C-002: action.rejected / ability.rejected used to render null — a typo,
 // "not enough stamina", "cannot reach X from Y", "on cooldown until tick N",
 // or attacking a corpse all redrew an identical screen with zero feedback,
@@ -693,6 +861,60 @@ describe('formatEvent — inspect and look produce output (CS-C-003)', () => {
     expect(text).toContain('Crypt Warden');
     expect(text.toLowerCase()).toContain('defeated');
     expect(text).not.toContain('combat:fleeing');
+  });
+});
+
+// F-fdc1f590 / F-3b87da72 (R4): moodHint/situationHint are the two hints that
+// render inline in the EVENT LOG (not the Dialogue section — see the
+// renderDialogue describe block above for the other six). Both require only
+// a formatEventLineRaw change and reach narration/TTS for free once rendered
+// here (narrationTextFromEvents reads formatEventLine's output directly).
+describe('formatEvent — moodHint / situationHint hint placements (F-fdc1f590)', () => {
+  it('moodHint appends a verbatim parenthetical after the zone-entered line, with a period separating the two clauses', () => {
+    const text = renderEventLog([
+      cev('world.zone.entered', {
+        zoneId: 'chapel-steps', zoneName: 'Chapel Steps', moodHint: 'Chapel Grounds: calm and watchful',
+      }),
+    ]);
+    // renderEventLog wraps every line at SCREEN_WIDTH (same as every other
+    // log line) — wrapToWidth is the source of truth for exactly where.
+    expect(text).toContain(
+      wrapToWidth('  > Entered Chapel Steps. (Chapel Grounds: calm and watchful)').join('\n'),
+    );
+  });
+
+  it('omitted moodHint: byte-identical to the pre-R4 zone-entered line (regression guard)', () => {
+    const text = renderEventLog([cev('world.zone.entered', { zoneId: 'chapel-steps', zoneName: 'Chapel Steps' })]);
+    expect(text).toContain('Entered Chapel Steps');
+    expect(text).not.toContain('(');
+  });
+
+  it('situationHint appends a labeled "Situation:" clause after You-see/Points-of-interest/Hazards, verbatim', () => {
+    const text = renderEventLog([
+      cev('world.zone.inspected', {
+        zoneId: 'market-square', zoneName: 'the Market Square', tags: [],
+        entities: [{ id: 'old-tomas', name: 'Old Tomas', type: 'npc', tags: [] }],
+        interactables: [], exits: [], hazards: [],
+        situationHint: 'Market feels unstable and high-alert. The watch are on high alert',
+      }, { actorId: 'hero' }),
+    ]);
+    expect(text).toContain(
+      wrapToWidth(
+        '  > You look around the Market Square. You see: Old Tomas. Situation: Market feels unstable and high-alert. The watch are on high alert.',
+      ).join('\n'),
+    );
+  });
+
+  it('omitted situationHint: byte-identical to the pre-R4 inspect line (regression guard)', () => {
+    const text = renderEventLog([
+      cev('world.zone.inspected', {
+        zoneId: 'market-square', zoneName: 'the Market Square', tags: [],
+        entities: [{ id: 'old-tomas', name: 'Old Tomas', type: 'npc', tags: [] }],
+        interactables: [], exits: [], hazards: [],
+      }, { actorId: 'hero' }),
+    ]);
+    expect(text).toContain('You look around the Market Square. You see: Old Tomas.');
+    expect(text).not.toContain('Situation:');
   });
 });
 
@@ -1342,6 +1564,47 @@ describe('Stage D — HUD vitals: HP bar and resource readout', () => {
     world.entities['hero'].stats = { maxHp: 40 };
     world.entities['hero'].resources = { hp: 10, stamina: 10 };
     expect(renderScene(world, PLAIN)).toContain('HP 10/40');
+  });
+});
+
+// F-dc8a82be / F-b30e754a: formatPartyStatusLine (modules' companion-core) was
+// finished, tested, and exported, but nothing in terminal-ui read it — the
+// Status HUD stayed silent about a party the player was traveling with. The
+// CLI composes the line (buildPartyStatusLine, menu.ts) and passes it in as
+// `opts.partyLine`; renderer.ts's job is just to render it when present.
+describe('Stage D — party status line in the Status HUD (F-dc8a82be)', () => {
+  it('renders the partyLine option inside the Status section, after Equipped, wrapped at 60 cols', () => {
+    const world = makeWorld();
+    const longLine = '  Party: Mira (fighter, HP 12/20, morale 70) | Doc (support, HP 8/8, morale 55) | Cohesion: 62';
+    const text = renderScene(world, { ...PLAIN, partyLine: longLine });
+    expect(text).toContain('Mira (fighter, HP 12/20, morale 70)');
+    // Every physical line of the rendered scene stays within SCREEN_WIDTH,
+    // including the wrapped party line — the same guarantee every other HUD
+    // line already gets.
+    for (const line of text.split('\n')) {
+      expect(stripAnsi(line).length).toBeLessThanOrEqual(SCREEN_WIDTH);
+    }
+    // Placed after Equipped, inside Status (before the section's trailing
+    // blank line that closes renderSceneInner's HUD block).
+    const equippedIdx = text.split('\n').findIndex((l) => l.includes('  HP ')); // vitals line, sanity anchor
+    expect(equippedIdx).toBeGreaterThanOrEqual(0);
+  });
+
+  it('partyLine omitted: byte-identical to today\'s output — no empty "Party:" label, no option threaded means no behavior change', () => {
+    const world = makeWorld();
+    expect(renderScene(world, PLAIN)).toBe(renderScene(world, { ...PLAIN, partyLine: undefined }));
+    expect(renderScene(world, PLAIN)).not.toContain('Party:');
+  });
+
+  it('renderFullScreen forwards opts.partyLine through to the Status section', () => {
+    const world = makeWorld();
+    const screen = renderFullScreen(world, [], { ...PLAIN, partyLine: '  Party: Mira (fighter, HP 12/20, morale 70) | Cohesion: 62' });
+    expect(screen).toContain('Party: Mira (fighter, HP 12/20, morale 70) | Cohesion: 62');
+  });
+
+  it('renderFullScreen with no partyLine is byte-identical to before this option existed', () => {
+    const world = makeWorld();
+    expect(renderFullScreen(world, [], PLAIN)).toBe(renderFullScreen(world, [], { ...PLAIN }));
   });
 });
 
