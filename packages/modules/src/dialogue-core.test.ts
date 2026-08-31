@@ -23,6 +23,8 @@ import { createFactionCognition } from './faction-cognition.js';
 import { createCognitionCore } from './cognition-core.js';
 import { createWorldTick, getWorldTickState } from './world-tick.js';
 import { makePressure, formatPressureForDialogue } from './pressure-system.js';
+import { createCompanionCore, getPartyState, setPartyState, adjustCompanionMorale } from './companion-core.js';
+import { makeOpportunity, setPersistedOpportunities, formatOpportunityForDialogue } from './opportunity-core.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -265,6 +267,78 @@ describe('dialogue-core: speakHandler', () => {
       .find(e => e.type === 'dialogue.node.entered')!;
     expect(bare.payload.text).toBe('Welcome, traveler.');
     expect(bare.payload.textureHint).toBeUndefined();
+  });
+
+  it('F-472cf3c4: an active party attaches partyPresence; no companions omits the field', () => {
+    const heroWithHp: EntityState = { ...player, resources: { hp: 20, maxHp: 20 } };
+    const mira: EntityState = {
+      id: 'mira', blueprintId: 'mira', type: 'npc', name: 'Mira',
+      tags: ['npc', 'recruitable', 'fighter'], stats: {}, resources: {}, statuses: [], zoneId: 'zone-a',
+    };
+    const withParty = createTestEngine({
+      modules: [createCompanionCore(), createDialogueCore([dialogue])],
+      entities: [heroWithHp, npc, mira],
+      zones,
+    });
+    withParty.submitAction('recruit', { targetIds: ['mira'] });
+    // Bump morale 60 -> 70 via the public accessors so the mood adjective
+    // matches the filed example ('confident') rather than recruit's default
+    // 'cautious' — getPartyState/setPartyState/adjustCompanionMorale are the
+    // only accessors this touches, same ones the fix itself must use.
+    setPartyState(withParty.world, adjustCompanionMorale(getPartyState(withParty.world), 'mira', 10));
+
+    const hinted = withParty.submitAction('speak', { targetIds: ['merchant'] })
+      .find(e => e.type === 'dialogue.node.entered')!;
+    expect(hinted.payload.text).toBe('Welcome, traveler.');
+    expect(hinted.payload.partyPresence).toBe('Accompanied by Mira (fighter, confident)');
+
+    const solo = createTestEngine({
+      modules: [createCompanionCore(), createDialogueCore([dialogue])],
+      entities: [heroWithHp, npc],
+      zones,
+    });
+    const bare = solo.submitAction('speak', { targetIds: ['merchant'] })
+      .find(e => e.type === 'dialogue.node.entered')!;
+    expect(bare.payload.text).toBe('Welcome, traveler.');
+    expect(bare.payload.partyPresence).toBeUndefined();
+  });
+
+  it('F-e7fc9018: a visible available opportunity linked to the speaker attaches opportunityHint; none omits the field', () => {
+    const withOffer = createTestEngine({
+      modules: [createDialogueCore([dialogue])],
+      entities: [player, npc],
+      zones,
+    });
+    const offer = makeOpportunity({
+      kind: 'contract',
+      sourceNpcId: 'merchant',
+      title: 'Deliver the Crates',
+      description: 'The merchant needs crates moved.',
+      objectiveDescription: 'Move the crates to the dock.',
+      urgency: 0.6,
+      turnsRemaining: null,
+      visibility: 'offered',
+      rewards: [],
+      risks: [],
+      genre: 'fantasy',
+      currentTick: 0,
+    });
+    setPersistedOpportunities(withOffer.world, [offer]);
+
+    const hinted = withOffer.submitAction('speak', { targetIds: ['merchant'] })
+      .find(e => e.type === 'dialogue.node.entered')!;
+    expect(hinted.payload.text).toBe('Welcome, traveler.');
+    expect(hinted.payload.opportunityHint).toBe(formatOpportunityForDialogue(offer));
+
+    const quiet = createTestEngine({
+      modules: [createDialogueCore([dialogue])],
+      entities: [player, npc],
+      zones,
+    });
+    const bare = quiet.submitAction('speak', { targetIds: ['merchant'] })
+      .find(e => e.type === 'dialogue.node.entered')!;
+    expect(bare.payload.text).toBe('Welcome, traveler.');
+    expect(bare.payload.opportunityHint).toBeUndefined();
   });
 
   it('finds dialogue by explicit dialogueId parameter', () => {
