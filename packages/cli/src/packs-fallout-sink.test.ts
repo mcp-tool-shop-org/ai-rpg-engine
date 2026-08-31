@@ -353,7 +353,7 @@ function announcedSince(engine: Engine, cursor: number): OpportunityFalloutEffec
 function resolveThroughVerb(
   packId: string,
   kind: OpportunityKind,
-  op: 'complete' | 'abandon',
+  op: 'complete' | 'abandon' | 'betray',
   profile: SessionProfile = 'wandering',
 ): Reached {
   const { engine, offer } = playUntilOffered(packById(packId), kind, profile);
@@ -425,11 +425,18 @@ const DRIVES: Array<{ label: string; run: () => Reached }> = [
   { label: 'favor-request completed (crimson-court)', run: () => resolveThroughVerb('crimson-court', 'favor-request', 'complete', 'engaged') },
   { label: 'escort completed (chapel-threshold)', run: () => resolveThroughVerb('chapel-threshold', 'escort', 'complete', 'pursuing') },
   { label: 'investigation completed (salt-road-ledger)', run: () => resolveThroughVerb('salt-road-ledger', 'investigation', 'complete') },
-  // The one drive that is NOT a verb call, and cannot be: `spawn-pressure`'s
-  // only reachable producer is `bounty/expired`, which the world tick reaches
-  // and no verb does. Attribution survives because the sink writes a pressure
-  // tagged with this fallout's own opportunity id — see resolveThroughLapse.
-  { label: 'bounty lapsed (black-flag-requiem)', run: () => resolveThroughLapse('black-flag-requiem', 'bounty', 'engaged') },
+  // Was `bounty lapsed (black-flag-requiem)` via resolveThroughLapse, proving
+  // `spawn-pressure` off the fourth producer (`bounty/expired`). Lost at v3.10:
+  // deleting the 9 legacy per-starter victory-cue listeners (wave-4 F-6dc0efb7)
+  // shifted the deterministic event stream, and `bounty` no longer fires in any
+  // pack's played session (see POR-1's REACHABLE_TODAY.bounty) — so
+  // playUntilOffered(_, 'bounty', _) now throws unconditionally and this drive
+  // can never run. `spawn-pressure` still has three OTHER intact, reachable
+  // producers — the `betrayed` sites the producer census's own "three
+  // betrayal-side spawn-pressure sites are intact, and now reachable" row
+  // proves are still live — so this drive moved to one of those instead. It is
+  // a verb call now, same as the other eight.
+  { label: 'contract betrayed (salt-road-ledger)', run: () => resolveThroughVerb('salt-road-ledger', 'contract', 'betray') },
 ];
 
 export type SinkVerdict = {

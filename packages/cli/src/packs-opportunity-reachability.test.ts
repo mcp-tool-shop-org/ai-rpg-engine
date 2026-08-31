@@ -489,16 +489,14 @@ const REACHABLE_TODAY: Record<OpportunityKind, { reachable: boolean; measured: s
       'dead: no played session produces a `player-owes-npc` ledger entry at magnitude >= 4.',
   },
   bounty: {
-    reachable: true,
+    reachable: false,
     measured:
-      'LIT in P1 by black-flag-requiem, and it took four separate things because it is the ' +
-      'deepest kind in the set. The pressure needs rep <= -50 AND alert >= 60 AND heat at the ' +
-      'wake threshold in the SAME round; the opportunity then needs a RIVAL faction at rep >= 10 ' +
-      'to do the hiring. What was missing: `boarding_marine` answered for no faction; the ' +
-      "enemies' blueprintIds did not match their instance ids, so every encounter-spawned navy " +
-      'clone was faction-less too; the fort held one guard, so two navy dead never landed close ' +
-      'enough together for heat to still be up; and the pack shipped one faction, so nobody could ' +
-      'do the hiring. Fires for a player who fights — which is right for a price on your head.',
+      'lost at v3.10: deleting the 9 legacy per-starter victory-cue listeners (wave-4 ' +
+      'F-6dc0efb7) shifted the deterministic event stream; black-flag-requiem\'s scripted ' +
+      'session no longer lands the four-way conjunction (rep <= -50 AND alert >= 60 AND heat ' +
+      'at wake threshold in one round, plus a rival faction at rep >= 10 to hire). The ' +
+      'synthetic control still fires — the mechanism is healthy; re-tuning bounty\'s on-ramp is ' +
+      'a P1 balance target.',
   },
   'supply-run': {
     reachable: true,

@@ -20,7 +20,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 254
+      "sessionEvents": 252
     },
     {
       "packId": "neon-lockbox",
@@ -29,7 +29,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 297
+      "sessionEvents": 299
     },
     {
       "packId": "gaslight-detective",
@@ -38,7 +38,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 379
+      "sessionEvents": 378
     },
     {
       "packId": "black-flag-requiem",
@@ -47,7 +47,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 268
+      "sessionEvents": 265
     },
     {
       "packId": "ashfall-dead",
@@ -56,7 +56,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 416
+      "sessionEvents": 413
     },
     {
       "packId": "dust-devils-bargain",
@@ -65,7 +65,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 256
+      "sessionEvents": 254
     },
     {
       "packId": "signal-loss",
@@ -74,7 +74,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 385
+      "sessionEvents": 380
     },
     {
       "packId": "crimson-court",
@@ -83,7 +83,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 380
+      "sessionEvents": 376
     },
     {
       "packId": "iron-colosseum",
@@ -92,7 +92,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 242
+      "sessionEvents": 240
     },
     {
       "packId": "jade-veil",
@@ -101,7 +101,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 290
+      "sessionEvents": 288
     },
     {
       "packId": "salt-road-ledger",
