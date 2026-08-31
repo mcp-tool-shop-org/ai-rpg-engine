@@ -243,14 +243,14 @@ export class TurnPresenter {
     const now = opts?.now ?? world.meta.tick * PRESENTATION_TICK_MS;
     const audioCommands = this.director.schedule(plan, now);
 
-    // F-0671a25f / F-b5150ad5: the sting hook, finally wired. Deliberately
-    // APPENDED (never prepended) so ordering stays deterministic — the
-    // regular schedule() output lands first, the sting last, matching
-    // scheduleSting's own contract ("layers over whatever stem is already
-    // playing").
+    // F-0671a25f / F-b5150ad5 sting hook + F-b4f0d758 (wave-4 stitch):
+    // scheduleStingInto merges the sting into schedule()'s array UNDER the
+    // same timing/priority comparator schedule() itself sorts by, so a
+    // timing-0 sting lands where the contract says instead of trailing
+    // after-text commands. Still layers over the stem — never replaces it.
     const stingCue = deriveStingCue(events, world.playerId);
     const sting = stingCue ? resolveMusicSting(stingCue) : undefined;
-    if (sting) audioCommands.push(this.director.scheduleSting(sting.trackId));
+    if (sting) this.director.scheduleStingInto(audioCommands, sting.trackId);
 
     return {
       plan,

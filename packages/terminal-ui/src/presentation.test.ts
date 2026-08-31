@@ -10,6 +10,7 @@ import { createTestEngine } from '@ai-rpg-engine/core';
 import type { EntityState, ResolvedEvent, ZoneState } from '@ai-rpg-engine/core';
 import { validateNarrationPlan } from '@ai-rpg-engine/presentation';
 import { CORE_SOUND_PACK, SoundRegistry, extendCueMap } from '@ai-rpg-engine/soundpack-core';
+import { compareAudioCommands } from '@ai-rpg-engine/audio-director';
 import {
   TurnPresenter,
   presentTurn,
@@ -123,19 +124,24 @@ describe('TurnPresenter: combat turn', () => {
 // — the documented sting hook (music-layer fanfare/stinger, distinct from
 // the sfx pipeline's blips) could never actually reach a player or embedder.
 // present() now derives a sting cue (deriveStingCue, presentation) and, when
-// one resolves (soundpack-core's resolveMusicSting), appends ONE 'sting'
-// AudioCommand — layered over whatever schedule() already produced, never
-// replacing it (append, not prepend — ordering stays deterministic).
+// one resolves (soundpack-core's resolveMusicSting), merges ONE 'sting'
+// AudioCommand into schedule()'s output via scheduleStingInto (F-b4f0d758,
+// wave-4 stitch) — sorted under the same comparator schedule() uses, layered
+// over the stem, never replacing it.
 describe('TurnPresenter: victory/defeat stings (F-0671a25f)', () => {
-  it('a cleared encounter appends a combat.victory sting AFTER the regular schedule() output', () => {
+  it('a cleared encounter merges a combat.victory sting in comparator order, not appended last', () => {
     const world = makeWorld();
     const result = new TurnPresenter().present(world, [hit(), defeat(), cleared()], { color: false });
     const stings = result.audioCommands.filter((c) => c.action === 'sting');
     expect(stings).toHaveLength(1);
     expect(stings[0].resourceId).toBe('music_victory_sting');
     expect(stings[0].domain).toBe('music');
-    // Append, not prepend: the sting is the LAST command in the array.
-    expect(result.audioCommands[result.audioCommands.length - 1].action).toBe('sting');
+    // F-b4f0d758: the whole array holds schedule()'s sorted-contract — a
+    // timing-0 sting must NOT trail after-text commands. Verify global order
+    // under the exported comparator (the exact invariant the old
+    // append-last assertion violated).
+    const sorted = [...result.audioCommands].sort(compareAudioCommands);
+    expect(result.audioCommands).toEqual(sorted);
   });
 
   it('the player falling appends a combat.defeat sting — shippable today without combat.encounter.cleared existing at all', () => {

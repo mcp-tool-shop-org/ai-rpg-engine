@@ -74,7 +74,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 384
+      "sessionEvents": 385
     },
     {
       "packId": "crimson-court",
@@ -83,7 +83,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 379
+      "sessionEvents": 380
     },
     {
       "packId": "iron-colosseum",
@@ -110,7 +110,7 @@
         "int": 0,
         "pick": 0
       },
-      "sessionEvents": 264
+      "sessionEvents": 265
     },
     {
       "packId": "hue-and-cry",

@@ -14,7 +14,7 @@
 import * as fs from 'node:fs';
 import { startStdioServer, startSocketServer, type PackIntakeSummary } from '@ai-rpg-engine/sidecar';
 import { applyContentPack, loadContentFromFile, type GateContext } from '@ai-rpg-engine/content-schema';
-import { createStandardChannels, modifyDistrictMetric } from '@ai-rpg-engine/modules';
+import { createStandardChannels, modifyDistrictMetric, emitZoneEnteredForPlacement } from '@ai-rpg-engine/modules';
 import { allPacks } from './packs.js';
 import { runHostileRound } from './bin.js';
 import { ENGINE_VERSION } from './engine-version.js';
@@ -395,6 +395,11 @@ export async function runSidecar(args: string[], deps: SidecarDeps = defaultDeps
       return 1;
     }
     engine.store.setPlayerLocation(zoneId);
+    // F-96e9a5f4 (wave-4 stitch): setPlayerLocation emits nothing, so the
+    // starting zone would skip every world.zone.entered listener (moodHint,
+    // tone, district events). Emit the same arrival the walked-into path
+    // produces so the first frame's zone surfaces are real.
+    emitZoneEnteredForPlacement(engine, zoneId);
     error(`[sidecar] player starts in ${zoneId}`);
   }
 
