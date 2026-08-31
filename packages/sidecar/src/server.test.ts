@@ -7,7 +7,7 @@ import { describe, it, expect } from 'vitest';
 import { createTestEngine, type EngineModule, type EntityState, type WorldState } from '@ai-rpg-engine/core';
 import { SidecarClient } from './client.js';
 import { SidecarServer, attachedServerCount } from './server.js';
-import { ERROR_CODES, METHODS, NOTIFICATIONS, type RpcMessage } from './protocol.js';
+import { ERROR_CODES, METHODS, NOTIFICATIONS, type PackIntakeSummary, type RpcMessage } from './protocol.js';
 import { encodeMessage, MessageTooLargeError, MAX_MESSAGE_BYTES } from './framing.js';
 import { applyPatches, canonicalStateHash, stateHash } from './serializer.js';
 import type { StatePatch } from './protocol.js';
@@ -923,6 +923,77 @@ describe('F-40634a98 — initialize surfaces locationId alongside playerId', () 
     const result = sent[0]?.result as { playerId?: string; locationId?: string } | undefined;
     expect(result?.playerId).toBeUndefined();
     expect(result?.locationId).toBeUndefined();
+  });
+});
+
+describe('F-9b3f6d21 — packIntake surfaces gate dropped/advisories on initialize', () => {
+  it('options carry a packIntake summary: initialize returns it verbatim', () => {
+    const engine = createTestEngine({
+      modules: [],
+      playerId: 'hero',
+      startZone: 'room',
+      entities: [
+        {
+          id: 'hero',
+          blueprintId: 'hero',
+          type: 'player',
+          name: 'Hero',
+          tags: ['player'],
+          stats: {},
+          resources: { hp: 10 },
+          statuses: [],
+          zoneId: 'room',
+        },
+      ],
+      zones: [{ id: 'room', roomId: 'room', name: 'Room', tags: [], neighbors: [] }],
+    });
+    const packIntake: PackIntakeSummary = {
+      dropped: [
+        { path: 'entities[0](guard).aiProfile', reason: 'no-runtime-field', detail: 'no runtime field for aiProfile' },
+      ],
+      advisories: [{ path: 'items.torch', message: 'torch has no description' }],
+    };
+    const sent: RpcMessage[] = [];
+    const server = new SidecarServer({ engine, engineVersion: '3.8.0-test', packIntake }, (m) => sent.push(m));
+    server.handle({ jsonrpc: '2.0', id: 1, method: METHODS.INITIALIZE, params: {} });
+    const result = sent[0]?.result as { packIntake?: PackIntakeSummary } | undefined;
+    expect(result?.packIntake).toEqual(packIntake);
+  });
+
+  it('options omit packIntake entirely: result.packIntake is undefined (byte-compat pin)', () => {
+    const { sent } = boot();
+    const result = sent[0]?.result as { packIntake?: PackIntakeSummary } | undefined;
+    expect(result?.packIntake).toBeUndefined();
+  });
+
+  it('dropped and advisories both empty: still omitted (server-side omission policy pin)', () => {
+    const engine = createTestEngine({
+      modules: [],
+      playerId: 'hero',
+      startZone: 'room',
+      entities: [
+        {
+          id: 'hero',
+          blueprintId: 'hero',
+          type: 'player',
+          name: 'Hero',
+          tags: ['player'],
+          stats: {},
+          resources: { hp: 10 },
+          statuses: [],
+          zoneId: 'room',
+        },
+      ],
+      zones: [{ id: 'room', roomId: 'room', name: 'Room', tags: [], neighbors: [] }],
+    });
+    const sent: RpcMessage[] = [];
+    const server = new SidecarServer(
+      { engine, engineVersion: '3.8.0-test', packIntake: { dropped: [], advisories: [] } },
+      (m) => sent.push(m),
+    );
+    server.handle({ jsonrpc: '2.0', id: 1, method: METHODS.INITIALIZE, params: {} });
+    const result = sent[0]?.result as { packIntake?: PackIntakeSummary } | undefined;
+    expect(result?.packIntake).toBeUndefined();
   });
 });
 
