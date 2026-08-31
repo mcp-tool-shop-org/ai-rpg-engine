@@ -19,6 +19,11 @@ An EntityBlueprint has:
   equipment: optional object mapping slot names to item ids
   aiProfile: optional string
   scripts: optional string array
+  relations: optional object mapping names to string/number/boolean (NPC relationships)
+  custom: optional object mapping names to string/number/boolean (author flags)
+  resistances: optional object mapping damage/status names to immune | resistant | vulnerable
+  faction: optional string (EntityState.faction)
+  ruleProfileId: optional string (EntityState.ruleProfileId)
 
 Rules:
 - Output ONLY valid YAML, no explanations, no markdown fences, no commentary
@@ -26,6 +31,7 @@ Rules:
 - Prefer type: npc unless the theme is a creature or object
 - Give 2–4 tags that the simulation can filter on
 - Keep baseStats/baseResources small and plausible
+- Prefer filling relations, faction, and resistances when the theme names allies, a house, or a damage type
 - Do not invent schema fields that aren't listed above`,
 
   (ctx) => {

@@ -85,6 +85,12 @@ export type { CreateEntityAiInput, GeneratedEntityAiResult } from './commands/cr
 export { createPlacement, placementYaml, placementRecordId } from './commands/create-placement.js';
 export type { CreatePlacementInput, GeneratedPlacementResult } from './commands/create-placement.js';
 
+export { createEncounterAnchor } from './commands/create-encounter-anchor.js';
+export type { CreateEncounterAnchorInput, GeneratedEncounterAnchorResult } from './commands/create-encounter-anchor.js';
+
+export { createProgressionTree } from './commands/create-progression-tree.js';
+export type { CreateProgressionTreeInput, GeneratedProgressionTreeResult } from './commands/create-progression-tree.js';
+
 export { assembleContentPack, classifyDocument, idsFromPack, packJson } from './commands/emit-pack.js';
 export type { EmitPackResult, ClassifiedDoc } from './commands/emit-pack.js';
 

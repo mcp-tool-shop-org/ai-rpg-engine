@@ -88,9 +88,11 @@ describe('generateBuildPlan — basic', () => {
     expect(commands).toContain('create-faction');
     expect(commands).toContain('create-location-pack');
     expect(commands).toContain('create-encounter-pack');
+    expect(commands).toContain('create-progression-tree');
     expect(commands).toContain('create-archetype');
     expect(commands).toContain('create-background');
     expect(commands).toContain('create-build-catalog');
+    expect(commands.indexOf('create-progression-tree')).toBeLessThan(commands.indexOf('create-archetype'));
     expect(commands).toContain('critique-content');
     expect(commands).toContain('suggest-next');
   });

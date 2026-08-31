@@ -1056,7 +1056,10 @@ export async function handleSlashCommand(
 
     case 'emit-pack': {
       try {
-        const assembled = await assembleContentPack(projectRoot);
+        const listingSession = await tryLoadSession(projectRoot);
+        const assembled = await assembleContentPack(projectRoot, listingSession
+          ? { session: { name: listingSession.name, themes: listingSession.themes } }
+          : {});
         const writeArg = parts[1];
         const writePath = writeArg && !writeArg.startsWith('-')
           ? writeArg
@@ -1076,7 +1079,7 @@ export async function handleSlashCommand(
         await writeFile(resolved, packJson(assembled.pack), 'utf-8');
         console.log(`Wrote ${resolved}`);
         console.log(formatEmitPackReport(assembled));
-        const session = await tryLoadSession(projectRoot);
+        const session = listingSession;
         if (session) {
           const { recordEvent } = await import('./session.js');
           recordEvent(session, 'pack_emitted', `chat /emit-pack → ${writePath}`);

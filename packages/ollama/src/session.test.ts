@@ -66,6 +66,8 @@ describe('session', () => {
       expect(s.artifacts.catalogs).toEqual([]);
       expect(s.artifacts.placements).toEqual([]);
       expect(s.artifacts.entityAi).toEqual([]);
+      expect(s.artifacts.anchors).toEqual([]);
+      expect(s.artifacts.trees).toEqual([]);
       expect(s.issues).toEqual([]);
       expect(s.acceptedSuggestions).toEqual([]);
       expect(s.history).toHaveLength(1);
@@ -589,6 +591,10 @@ describe('session', () => {
       expect(artifactBucketForKind('build-catalog')).toBe('catalogs');
       expect(artifactBucketForKind('placement')).toBe('placements');
       expect(artifactBucketForKind('entity-ai')).toBe('entityAi');
+      expect(artifactBucketForKind('encounter-anchor')).toBe('anchors');
+      expect(artifactBucketForKind('anchor')).toBe('anchors');
+      expect(artifactBucketForKind('progression-tree')).toBe('trees');
+      expect(artifactBucketForKind('tree')).toBe('trees');
     });
   });
 });

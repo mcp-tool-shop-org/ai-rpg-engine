@@ -28,6 +28,8 @@ import { createBackground } from './commands/create-background.js';
 import { createBuildCatalog } from './commands/create-build-catalog.js';
 import { createEntityAi } from './commands/create-entity-ai.js';
 import { createPlacement } from './commands/create-placement.js';
+import { createEncounterAnchor } from './commands/create-encounter-anchor.js';
+import { createProgressionTree } from './commands/create-progression-tree.js';
 import { formatSessionStatus, renderSessionContext, artifactBucketForKind } from './session.js';
 import { generatePreview } from './apply-preview.js';
 import { planFromSession, formatPlan } from './chat-planner.js';
@@ -144,11 +146,12 @@ const SCAFFOLD_KINDS = [
   'room', 'faction', 'district', 'quest', 'location-pack', 'encounter-pack',
   'dialogue', 'entity', 'ability', 'status', 'item', 'hazard',
   'archetype', 'background', 'build-catalog', 'entity-ai', 'placement',
+  'encounter-anchor', 'progression-tree',
 ] as const;
 
 const scaffoldTool: ChatTool = {
   name: 'scaffold',
-  description: 'Generate new content (room, faction, district, quest, pack, dialogue, entity, ability, status, item, hazard, archetype, background, catalog, entity-ai, placement)',
+  description: 'Generate new content (room, faction, district, quest, pack, dialogue, entity, ability, status, item, hazard, archetype, background, catalog, entity-ai, placement, encounter-anchor, progression-tree)',
   intents: ['scaffold'],
   mutates: false,
   async execute(p: ChatToolParams): Promise<ChatToolResult> {
@@ -296,6 +299,31 @@ const scaffoldTool: ChatTool = {
           entityId: p.params.entityId,
           zoneId: p.params.placeIn ?? p.params.zoneId,
         });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        validation = r.validation;
+        break;
+      }
+      case 'encounter-anchor':
+      case 'anchor': {
+        const enemies = p.params.enemies
+          ? p.params.enemies.split(',').map((s) => s.trim()).filter(Boolean)
+          : undefined;
+        const r = await createEncounterAnchor(p.client, {
+          theme,
+          sessionContext,
+          repair,
+          zoneId: p.params.zone ?? p.params.zoneId ?? p.params.placeIn,
+          enemies,
+        });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        validation = r.validation;
+        break;
+      }
+      case 'progression-tree':
+      case 'tree': {
+        const r = await createProgressionTree(p.client, { theme, sessionContext, repair });
         if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
         yaml = r.yaml;
         validation = r.validation;

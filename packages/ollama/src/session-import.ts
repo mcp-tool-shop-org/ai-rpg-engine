@@ -73,6 +73,8 @@ function idsFromDoc(doc: ClassifiedDoc): Partial<SessionArtifacts> {
     case 'placement': return { placements: id ? [id] : [] };
     case 'entityAi': return { entityAi: id ? [id] : [] };
     case 'entityAi-map': return { entityAi: Object.keys(doc.value) };
+    case 'encounter-anchor': return { anchors: id ? [id] : [] };
+    case 'progression-tree': return { trees: id ? [id] : [] };
     case 'faction': return { factions: id ? [id] : [] };
     case 'encounter-pack':
     case 'location-pack':
@@ -99,6 +101,8 @@ export function extractIdsFromContentTs(src: string): Partial<SessionArtifacts> 
     { key: 'hazards', re: /hazardDefinitions\s*:\s*\[([\s\S]*?)\]/ },
     { key: 'abilities', re: /abilities\s*:\s*\[([\s\S]*?)\]/ },
     { key: 'statuses', re: /statuses\s*:\s*\[([\s\S]*?)\]/ },
+    { key: 'anchors', re: /encounterAnchors\s*:\s*\[([\s\S]*?)\]/ },
+    { key: 'trees', re: /progressionTrees\s*:\s*\[([\s\S]*?)\]/ },
   ];
   const idRe = /\bid\s*:\s*['"]([a-z0-9_:-]+)['"]/gi;
   for (const { key, re } of sections) {

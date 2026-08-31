@@ -16,6 +16,8 @@ Scaffold (create new content):
   create-district --theme <text>                Generate a district configuration
   create-location-pack --theme <text>           Generate district + rooms bundle
   create-encounter-pack --theme <text>          Generate room + entities + quest bundle
+  create-encounter-anchor --theme <text>        Generate a spawn-SET encounter anchor
+  create-progression-tree --theme <text>        Generate a chargen progression tree
 
 Iterate (improve existing content):
   improve-content --goal <text>                 Revise content toward a goal (pipe YAML)

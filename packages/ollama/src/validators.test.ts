@@ -21,6 +21,8 @@ import {
   validateGeneratedBuildCatalog,
   validateGeneratedEntityAi,
   validateGeneratedPlacement,
+  validateGeneratedEncounterAnchor,
+  validateGeneratedProgressionTree,
 } from './validators.js';
 
 describe('parseYamlish', () => {
@@ -534,6 +536,61 @@ describe('validateGenerated chargen / entityAi / placement', () => {
 
   it('rejects a placement missing zoneId', () => {
     const result = validateGeneratedPlacement('x', { entityId: 'chapel_guard' });
+    expect(result.valid).toBe(false);
+  });
+
+  it('accepts a valid encounter anchor', () => {
+    const yaml = [
+      'id: nave_ambush',
+      'zoneId: nave',
+      'encounterType: ambush',
+      'enemyIds:',
+      '  - ash_ghoul',
+      'probability: 0.35',
+      'cooldownTurns: 4',
+      'tags:',
+      '  - undead',
+    ].join('\n');
+    const result = validateGeneratedEncounterAnchor(yaml, parseYamlish(yaml));
+    expect(result.valid).toBe(true);
+  });
+
+  it('rejects an encounter anchor with probability outside [0, 1]', () => {
+    const result = validateGeneratedEncounterAnchor('x', {
+      id: 'nave_ambush',
+      zoneId: 'nave',
+      encounterType: 'ambush',
+      enemyIds: ['ash_ghoul'],
+      probability: 35,
+      cooldownTurns: 4,
+      tags: ['undead'],
+    });
+    expect(result.valid).toBe(false);
+  });
+
+  it('accepts a valid progression tree', () => {
+    const yaml = [
+      'id: combat_mastery',
+      'name: Combat Mastery',
+      'currency: xp',
+      'nodes:',
+      '  - id: toughened',
+      '    name: Toughened',
+      '    cost: 10',
+      '    effects:',
+      '      - type: resource-boost',
+      '        params:',
+      '          resource: hp',
+      '          amount: 5',
+    ].join('\n');
+    const result = validateGeneratedProgressionTree(yaml, parseYamlish(yaml));
+    expect(result.valid).toBe(true);
+  });
+
+  it('rejects a progression tree missing nodes', () => {
+    const result = validateGeneratedProgressionTree('x', {
+      id: 'combat_mastery', name: 'Combat Mastery', currency: 'xp',
+    });
     expect(result.valid).toBe(false);
   });
 });

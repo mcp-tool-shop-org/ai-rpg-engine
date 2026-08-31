@@ -105,4 +105,57 @@ describe('createDefaultReplayProducer (F-fc88ce5e)', () => {
     }));
     rmSync(root, { recursive: true, force: true });
   });
+
+  it('registers combat-core, cognition, district-core, and encounter-spawn', () => {
+    let seen: Array<{ id?: string }> | undefined;
+    const FakeEngine = function FakeEngine(this: {
+      store: { state: { globals: Record<string, string | number | boolean> } };
+      advanceRound: () => unknown[];
+      queryEvents: () => [];
+    }, options: { modules?: Array<{ id?: string }> }) {
+      seen = options.modules;
+      this.store = { state: { globals: {} } };
+      this.advanceRound = () => [];
+      this.queryEvents = () => [];
+    } as unknown as EngineConstructor;
+
+    const producer = createDefaultReplayProducer({ Engine: FakeEngine });
+    producer(1, undefined, 1);
+    const ids = (seen ?? []).map((m) => m.id);
+    expect(ids).toContain('combat-core');
+    expect(ids).toContain('inventory-core');
+    expect(ids).toContain('cognition-core');
+    expect(ids).toContain('district-core');
+    expect(ids).toContain('encounter-spawn');
+  });
+
+  it('constructs progression-core from pack.progressionTrees', () => {
+    const root = mkdtempSync(join(tmpdir(), 'replay-trees-'));
+    mkdirSync(join(root, 'content'));
+    writeFileSync(join(root, 'content', 'pack.json'), JSON.stringify({
+      progressionTrees: [{
+        id: 'combat_mastery',
+        name: 'Combat Mastery',
+        currency: 'xp',
+        nodes: [{ id: 'toughened', name: 'Toughened', cost: 10, effects: [{ type: 'resource-boost', params: { resource: 'hp', amount: 5 } }] }],
+      }],
+    }));
+    let seen: Array<{ id?: string }> | undefined;
+    const FakeEngine = function FakeEngine(this: {
+      store: { state: { globals: Record<string, string | number | boolean> } };
+      advanceRound: () => unknown[];
+      queryEvents: () => [];
+    }, options: { modules?: Array<{ id?: string }> }) {
+      seen = options.modules;
+      this.store = { state: { globals: {} } };
+      this.advanceRound = () => [];
+      this.queryEvents = () => [];
+    } as unknown as EngineConstructor;
+
+    const producer = createDefaultReplayProducer({ Engine: FakeEngine, projectRoot: root });
+    producer(1, undefined, 1);
+    const ids = (seen ?? []).map((m) => m.id);
+    expect(ids).toContain('progression-core');
+    rmSync(root, { recursive: true, force: true });
+  });
 });
