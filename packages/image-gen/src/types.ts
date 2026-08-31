@@ -78,6 +78,12 @@ export type GenerationOptions = {
    * set, providers default to a lower img2img value (~0.7).
    */
   denoise?: number;
+  /**
+   * Optional inpaint mask (F-f4a0a8ec). When set with `initImage`, ComfyUI
+   * uses LoadImageMask + VAEEncodeForInpaint instead of whole-frame VAEEncode.
+   * PlaceholderProvider clips the variant overlay to the mask bounding box.
+   */
+  mask?: Uint8Array;
 };
 
 /** Result from an image provider. */

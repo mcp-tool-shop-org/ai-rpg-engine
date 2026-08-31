@@ -3,7 +3,14 @@
 import type { AssetMetadata, AssetInput, AssetFilter, AssetGetOptions, AssetStore, StoreQuota } from './types.js';
 import { hashBytes } from './hash.js';
 import { matchesFilter, unionTags, cloneMetadata } from './filter.js';
-import { OverQuotaError, wouldExceedQuota, sortOldestFirst, reserveQuota } from './quota.js';
+import {
+  OverQuotaError,
+  wouldExceedQuota,
+  sortOldestFirst,
+  reserveQuota,
+  applyPinFlags,
+  tagsRequestPin,
+} from './quota.js';
 
 export class MemoryAssetStore implements AssetStore {
   private data = new Map<string, Uint8Array>();
@@ -42,10 +49,11 @@ export class MemoryAssetStore implements AssetStore {
       createdAt: new Date().toISOString(),
       source: input.source,
     };
+    const stored = tagsRequestPin(metadata.tags) ? applyPinFlags(metadata, true) : metadata;
 
     this.data.set(hash, new Uint8Array(data));
-    this.meta.set(hash, metadata);
-    return cloneMetadata(metadata);
+    this.meta.set(hash, stored);
+    return cloneMetadata(stored);
   }
 
   async get(hash: string, opts?: AssetGetOptions): Promise<Uint8Array | null> {
@@ -90,10 +98,11 @@ export class MemoryAssetStore implements AssetStore {
     return total;
   }
 
-  async evictUntil(quota: StoreQuota): Promise<number> {
-    const ordered = sortOldestFirst([...this.meta.values()]);
-    let count = ordered.length;
-    let bytes = ordered.reduce((s, m) => s + m.sizeBytes, 0);
+  async evictUntil(quota: StoreQuota, keepHashes?: readonly string[]): Promise<number> {
+    const all = [...this.meta.values()];
+    const ordered = sortOldestFirst(all, keepHashes);
+    let count = all.length;
+    let bytes = all.reduce((s, m) => s + m.sizeBytes, 0);
     let n = 0;
     for (const meta of ordered) {
       const overCount = quota.maxCount !== undefined && count > quota.maxCount;
@@ -107,6 +116,20 @@ export class MemoryAssetStore implements AssetStore {
       }
     }
     return n;
+  }
+
+  async pin(hash: string): Promise<boolean> {
+    const stored = this.meta.get(hash);
+    if (!stored) return false;
+    this.meta.set(hash, applyPinFlags(stored, true));
+    return true;
+  }
+
+  async unpin(hash: string): Promise<boolean> {
+    const stored = this.meta.get(hash);
+    if (!stored) return false;
+    this.meta.set(hash, applyPinFlags(stored, false));
+    return true;
   }
 
   /** New-blob puts only — hash-hits never consume quota (CAS identity). */

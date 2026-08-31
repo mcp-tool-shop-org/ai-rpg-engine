@@ -12,6 +12,10 @@ import {
   generateIcon,
   ensureIcon,
   ensurePortraitVariant,
+  ensureBackgroundVariant,
+  ensureIconVariant,
+  sceneIdentityVariantTag,
+  iconIdentityVariantTag,
   resolveProvider,
   ImageGenError,
   portraitIdentityTag,
@@ -1128,6 +1132,70 @@ describe('ensurePortraitVariant (F-9daede34)', () => {
     await expect(
       ensurePortraitVariant('0'.repeat(64), testRequest, new PlaceholderProvider(), store, {
         variant: 'aged',
+      }),
+    ).rejects.toThrow(/no asset at hash/);
+  });
+
+  it('threads a mask into the variant identity so two masks do not collide (F-f4a0a8ec)', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new PlaceholderProvider();
+    const base = await generatePortrait(testRequest, provider, store);
+    const maskA = new Uint8Array(512 * 512);
+    maskA[0] = 255;
+    const maskB = new Uint8Array(512 * 512);
+    maskB[10] = 255;
+    const a = await ensurePortraitVariant(base.hash, testRequest, provider, store, {
+      variant: 'scarred',
+      generation: { mask: maskA },
+    });
+    const b = await ensurePortraitVariant(base.hash, testRequest, provider, store, {
+      variant: 'scarred',
+      generation: { mask: maskB },
+    });
+    expect(a.hash).not.toBe(b.hash);
+  });
+});
+
+describe('ensureBackgroundVariant / ensureIconVariant (F-fabbd6d2)', () => {
+  it('img2img-keys a scene variant slot from the base background', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new PlaceholderProvider();
+    const base = await generateBackground(chapel, provider, store);
+    const night = await ensureBackgroundVariant(base.hash, chapel, provider, store, {
+      variant: 'night',
+    });
+    expect(night.kind).toBe('background');
+    expect(night.hash).not.toBe(base.hash);
+    expect(night.tags).toContain(sceneIdentityVariantTag(base.hash, 'night', chapel));
+    const svg = new TextDecoder().decode((await store.get(night.hash))!);
+    expect(svg).toContain('data-variant="1"');
+    const again = await ensureBackgroundVariant(base.hash, chapel, provider, store, {
+      variant: 'night',
+    });
+    expect(again.hash).toBe(night.hash);
+  });
+
+  it('img2img-keys an icon variant slot from the base icon', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new PlaceholderProvider();
+    const base = await generateIcon(relic, provider, store);
+    const cracked = await ensureIconVariant(base.hash, relic, provider, store, {
+      variant: 'cracked',
+    });
+    expect(cracked.kind).toBe('icon');
+    expect(cracked.hash).not.toBe(base.hash);
+    expect(cracked.tags).toContain(iconIdentityVariantTag(base.hash, 'cracked', relic));
+    const again = await ensureIconVariant(base.hash, relic, provider, store, {
+      variant: 'cracked',
+    });
+    expect(again.hash).toBe(cracked.hash);
+  });
+
+  it('throws when the base background hash is missing', async () => {
+    const store = new MemoryAssetStore();
+    await expect(
+      ensureBackgroundVariant('0'.repeat(64), chapel, new PlaceholderProvider(), store, {
+        variant: 'burning',
       }),
     ).rejects.toThrow(/no asset at hash/);
   });

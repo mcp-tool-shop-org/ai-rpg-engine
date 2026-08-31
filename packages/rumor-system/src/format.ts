@@ -130,3 +130,80 @@ export function formatRumorForPlayer(rumor: Rumor, opts?: FormatRumorOptions): P
     mutated: isMutated(rumor),
   };
 }
+
+export type FormatRumorBoardOptions = FormatRumorOptions & {
+  /** Include dead rumors as denied board lines. Default: live statuses only. */
+  includeDead?: boolean;
+};
+
+export type RumorBoardLine = PlayerRumorView & {
+  subject: string;
+  key: string;
+  /** Unique witnesses (`sourceId` ∪ `spreadPath`) across the collapsed group. */
+  witnessCount: number;
+  /** Value inverted vs `originalValue`, or the winning row is dead. */
+  denied: boolean;
+  /** Player-facing denial when {@link RumorBoardLine.denied} — else omitted. */
+  denialLine?: string;
+};
+
+function isDenied(rumor: Rumor): boolean {
+  if (rumor.status === 'dead') return true;
+  if (typeof rumor.value === 'boolean' && typeof rumor.originalValue === 'boolean') {
+    return rumor.value !== rumor.originalValue;
+  }
+  if (typeof rumor.value === 'number' && typeof rumor.originalValue === 'number') {
+    return rumor.value === -rumor.originalValue && rumor.value !== rumor.originalValue;
+  }
+  return false;
+}
+
+/**
+ * Collapse rumors into one board line per `(subject, key)` (F-823e0edf).
+ * Picks the highest-confidence row, keeps {@link formatRumorForPlayer} as the
+ * spoken line, and attaches witness count plus a denial flag/line.
+ * Does not mint or corroborate — `create()` stays mint-always.
+ */
+export function formatRumorBoard(
+  rumors: readonly Rumor[],
+  opts?: FormatRumorBoardOptions,
+): RumorBoardLine[] {
+  const includeDead = opts?.includeDead === true;
+  const groups = new Map<string, Rumor[]>();
+  for (const rumor of rumors) {
+    if (!includeDead && rumor.status === 'dead') continue;
+    const groupKey = `${rumor.subject}\0${rumor.key}`;
+    const list = groups.get(groupKey);
+    if (list) list.push(rumor);
+    else groups.set(groupKey, [rumor]);
+  }
+
+  const lines: RumorBoardLine[] = [];
+  for (const group of groups.values()) {
+    group.sort(
+      (a, b) => b.confidence - a.confidence || a.originTick - b.originTick || a.id.localeCompare(b.id),
+    );
+    const top = group[0];
+    const witnesses = new Set<string>();
+    for (const r of group) {
+      if (r.sourceId) witnesses.add(r.sourceId);
+      for (const id of r.spreadPath) witnesses.add(id);
+    }
+    const view = formatRumorForPlayer(top, opts);
+    const denied = isDenied(top);
+    const line: RumorBoardLine = {
+      ...view,
+      subject: top.subject,
+      key: top.key,
+      witnessCount: witnesses.size,
+      denied,
+    };
+    if (denied) line.denialLine = view.spoken;
+    lines.push(line);
+  }
+
+  lines.sort(
+    (a, b) => b.confidencePct - a.confidencePct || a.subject.localeCompare(b.subject) || a.key.localeCompare(b.key),
+  );
+  return lines;
+}

@@ -15,6 +15,9 @@ import {
   KNOWN_EVENT_SOUND_CUES,
   resolveAmbientBed,
   sceneBedTargetIds,
+  resolveMusicStem,
+  sceneMusicTargetIds,
+  SCENE_MUSIC_MAP,
 } from './cue-map.js';
 import { CORE_SOUND_PACK } from './core-pack.js';
 
@@ -280,5 +283,33 @@ describe('cue-map: optional scene bed hints (F-57203b5e)', () => {
   it('bed targets exist in CORE_SOUND_PACK', () => {
     const have = new Set(CORE_SOUND_PACK.entries.map((e) => e.id));
     expect(sceneBedTargetIds().every((id) => have.has(id))).toBe(true);
+  });
+});
+
+describe('cue-map: optional scene music stems (F-768980bb)', () => {
+  it('does not change existing SFX exact/namespace rows', () => {
+    expect(resolveSoundCue('scene.enter').effectId).toBe('ui_whoosh');
+    expect(resolveSoundCue('scene.crypt-reveal').effectId).toBe('ui_attention');
+    expect(resolveSoundCue('combat.hit').effectId).toBe('alert_warning');
+  });
+
+  it('resolves scene cues to music stems without touching ambient beds', () => {
+    expect(resolveMusicStem('scene.enter')).toEqual({ trackId: 'music_calm', via: 'exact' });
+    expect(resolveMusicStem('scene.crypt-reveal')).toEqual({ trackId: 'music_dread', via: 'exact' });
+    expect(resolveMusicStem('scene.arena-roar')).toEqual({ trackId: 'music_triumph', via: 'exact' });
+    expect(resolveMusicStem('scene.unlisted-moment')).toEqual({ trackId: 'music_calm', via: 'namespace' });
+    expect(resolveMusicStem('combat.hit')).toBeUndefined();
+    expect(resolveAmbientBed('scene.enter')?.layerId).toBe('ambient_white_noise');
+    expect(SCENE_MUSIC_MAP['scene.enter'].trackId).toBe('music_calm');
+  });
+
+  it('music targets exist as domain:music long-loops in CORE_SOUND_PACK', () => {
+    const have = new Set(CORE_SOUND_PACK.entries.map((e) => e.id));
+    expect(sceneMusicTargetIds().every((id) => have.has(id))).toBe(true);
+    for (const id of sceneMusicTargetIds()) {
+      const entry = CORE_SOUND_PACK.entries.find((e) => e.id === id);
+      expect(entry?.domain).toBe('music');
+      expect(entry?.durationClass).toBe('long-loop');
+    }
   });
 });

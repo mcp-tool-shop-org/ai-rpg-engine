@@ -116,6 +116,19 @@ describe('SoundRegistry', () => {
       expect(registry.pickAmbientBed({ mood: ['nope'] }, 0)).toBeUndefined();
     });
 
+    it('pickMusicStem indexes id-sorted music loops like pickAmbientBed (F-768980bb)', () => {
+      const registry = new SoundRegistry();
+      registry.load(CORE_SOUND_PACK);
+      const first = registry.pickMusicStem({}, 0);
+      const last = registry.pickMusicStem({}, 1);
+      expect(first?.id).toBe('music_calm');
+      expect(last?.id).toBe('music_triumph');
+      expect(registry.pickMusicStem({ mood: ['dread'] }, 0)?.id).toBe('music_dread');
+      expect(registry.pickMusicStem({ mood: ['triumph'] }, 0)?.id).toBe('music_triumph');
+      expect(registry.pickMusicStem({ mood: ['nope'] }, 0)).toBeUndefined();
+      expect(registry.pickAmbientBed({ mood: ['dread'] }, 0)?.id).toBe('ambient_drone');
+    });
+
     it('diffAmbientLayers emits start/stop against getActiveLayers-shaped maps', () => {
       const active = new Map([
         ['ambient_rain', { domain: 'ambient' as const, resourceId: 'ambient_rain' }],

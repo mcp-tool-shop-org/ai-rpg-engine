@@ -128,6 +128,28 @@ describe('PlaceholderProvider', () => {
     expect(svg).toContain('Aldric');
   });
 
+  it('clips the overlay to the mask bounding box (F-f4a0a8ec)', async () => {
+    const base = await generate('Portrait of Aldric, Penitent Knight');
+    const width = 512;
+    const height = 512;
+    const mask = new Uint8Array(width * height);
+    for (let y = 40; y < 80; y++) {
+      for (let x = 100; x < 140; x++) mask[y * width + x] = 255;
+    }
+    const variant = await generate('Portrait of Aldric, Penitent Knight', {
+      initImage: base.image,
+      mask,
+      denoise: 0.55,
+    });
+    const svg = new TextDecoder().decode(variant.image);
+    expect(svg).toContain('data-variant="1"');
+    expect(svg).toContain('data-mask="1"');
+    expect(svg).toContain('x="100"');
+    expect(svg).toContain('y="40"');
+    expect(svg).toContain('width="40"');
+    expect(svg).toContain('height="40"');
+  });
+
   it('parses Scene of / Icon of prompts for initials', async () => {
     const scene = await generate('Scene of Ashen Chapel, cracked stone nave');
     expect(new TextDecoder().decode(scene.image)).toContain('AC');

@@ -192,6 +192,63 @@ export function sceneBedTargetIds(): string[] {
   return [...ids].sort();
 }
 
+type MusicTarget = { trackId: string };
+
+/**
+ * Optional music-stem hints for scene.* gameplay cues (F-768980bb).
+ * Independent of SFX exact/namespace rows and of {@link SCENE_BED_MAP} so
+ * hosts can pick a stem without changing ambient beds or one-shot cues.
+ */
+export const SCENE_MUSIC_MAP: Readonly<Record<string, MusicTarget>> = Object.freeze(
+  Object.assign(Object.create(null), {
+    'scene.enter': { trackId: 'music_calm' },
+    'scene.crypt-reveal': { trackId: 'music_dread' },
+    'scene.vault-reveal': { trackId: 'music_dread' },
+    'scene.crime-scene-reveal': { trackId: 'music_dread' },
+    'scene.sunken-shrine-reveal': { trackId: 'music_dread' },
+    'scene.hospital-reveal': { trackId: 'music_dread' },
+    'scene.spirit-hollow-reveal': { trackId: 'music_dread' },
+    'scene.alien-cavern-reveal': { trackId: 'music_dread' },
+    'scene.hidden-passage-reveal': { trackId: 'music_dread' },
+    'scene.cellar-descent': { trackId: 'music_dread' },
+    'scene.arena-roar': { trackId: 'music_triumph' },
+    'scene.conviction': { trackId: 'music_triumph' },
+    'scene.seizure': { trackId: 'music_dread' },
+  }),
+);
+
+export const NAMESPACE_MUSIC_MAP: Readonly<Record<string, MusicTarget>> = Object.freeze(
+  Object.assign(Object.create(null), {
+    scene: { trackId: 'music_calm' },
+  }),
+);
+
+/**
+ * Optional music stem for a gameplay cue. Undefined when the cue has no music
+ * hint (combat.* / ability.* / unknown namespaces). Does not emit an SFX cue
+ * and does not change ambient beds.
+ */
+export function resolveMusicStem(cue: string): { trackId: string; via: CueMatchTier } | undefined {
+  if (Object.hasOwn(SCENE_MUSIC_MAP, cue)) {
+    return { trackId: SCENE_MUSIC_MAP[cue].trackId, via: 'exact' };
+  }
+  const dot = cue.indexOf('.');
+  if (dot > 0) {
+    const nsKey = cue.slice(0, dot);
+    if (Object.hasOwn(NAMESPACE_MUSIC_MAP, nsKey)) {
+      return { trackId: NAMESPACE_MUSIC_MAP[nsKey].trackId, via: 'namespace' };
+    }
+  }
+  return undefined;
+}
+
+export function sceneMusicTargetIds(): string[] {
+  const ids = new Set<string>();
+  for (const target of Object.values(SCENE_MUSIC_MAP)) ids.add(target.trackId);
+  for (const target of Object.values(NAMESPACE_MUSIC_MAP)) ids.add(target.trackId);
+  return [...ids].sort();
+}
+
 /**
  * The exact-tier cue ids, for docs and totality tests. Namespace families are
  * open-ended by design and therefore not enumerable here.
@@ -314,6 +371,12 @@ if (!sceneBedTargetIds().every((id) => coreIds.has(id))) {
   throw new Error(
     '[soundpack-core] scene bed map points at a sound id missing from CORE_SOUND_PACK. ' +
       'Fix SCENE_BED_MAP / NAMESPACE_BED_MAP in cue-map.ts.',
+  );
+}
+if (!sceneMusicTargetIds().every((id) => coreIds.has(id))) {
+  throw new Error(
+    '[soundpack-core] scene music map points at a sound id missing from CORE_SOUND_PACK. ' +
+      'Fix SCENE_MUSIC_MAP / NAMESPACE_MUSIC_MAP in cue-map.ts.',
   );
 }
 /* v8 ignore stop */

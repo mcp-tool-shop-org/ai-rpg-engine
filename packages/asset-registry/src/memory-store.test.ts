@@ -248,3 +248,78 @@ describe('MemoryAssetStore quota (F-158910cc)', () => {
     expect(await store.count()).toBe(0);
   });
 });
+
+describe('MemoryAssetStore pin / keepHashes (F-0b108b56)', () => {
+  it('pin skips the first portrait when evict-oldest makes room', async () => {
+    const store = new MemoryAssetStore({ maxCount: 2, policy: 'evict-oldest' });
+    const portrait = await store.put(new Uint8Array([1]), testInput);
+    expect(await store.pin(portrait.hash)).toBe(true);
+    const meta = await store.getMeta(portrait.hash);
+    expect(meta?.pinned).toBe(true);
+    expect(meta?.keep).toBe(true);
+    expect(meta?.tags).toContain('pinned');
+
+    const junk = await store.put(new Uint8Array([2]), { ...testInput, kind: 'icon' });
+    const later = await store.put(new Uint8Array([3]), { ...testInput, kind: 'icon' });
+    expect(await store.has(portrait.hash)).toBe(true);
+    expect(await store.has(junk.hash)).toBe(false);
+    expect(await store.has(later.hash)).toBe(true);
+    expect(await store.count()).toBe(2);
+  });
+
+  it('keepHashes protects a live zone background without pin()', async () => {
+    const store = new MemoryAssetStore();
+    const bg = await store.put(new Uint8Array([1]), { ...testInput, kind: 'background' });
+    const junk = await store.put(new Uint8Array([2]), { ...testInput, kind: 'icon' });
+    expect(await store.evictUntil({ maxCount: 1, policy: 'evict-oldest' }, [bg.hash])).toBe(1);
+    expect(await store.has(bg.hash)).toBe(true);
+    expect(await store.has(junk.hash)).toBe(false);
+  });
+
+  it('tags.includes("pinned") is skipped by sortOldestFirst', async () => {
+    const store = new MemoryAssetStore();
+    const pinned = await store.put(new Uint8Array([1]), { ...testInput, tags: ['pinned'] });
+    expect(pinned.pinned).toBe(true);
+    await store.put(new Uint8Array([2]), testInput);
+    expect(await store.evictUntil({ maxCount: 1, policy: 'evict-oldest' })).toBe(1);
+    expect(await store.has(pinned.hash)).toBe(true);
+    expect(await store.count()).toBe(1);
+  });
+
+  it('unpin returns the asset to FIFO eviction', async () => {
+    const store = new MemoryAssetStore();
+    const first = await store.put(new Uint8Array([1]), testInput);
+    await store.pin(first.hash);
+    const second = await store.put(new Uint8Array([2]), testInput);
+    expect(await store.unpin(first.hash)).toBe(true);
+    expect((await store.getMeta(first.hash))?.pinned).toBeUndefined();
+    expect(await store.evictUntil({ maxCount: 1, policy: 'evict-oldest' })).toBe(1);
+    expect(await store.has(first.hash)).toBe(false);
+    expect(await store.has(second.hash)).toBe(true);
+  });
+
+  it('hash-hit put still never consumes quota while pinned', async () => {
+    const store = new MemoryAssetStore({ maxCount: 1, policy: 'reject' });
+    const first = await store.put(testData, testInput);
+    await store.pin(first.hash);
+    const again = await store.put(testData, { ...testInput, tags: ['extra'] });
+    expect(again.tags).toContain('extra');
+    expect(again.pinned).toBe(true);
+    expect(await store.count()).toBe(1);
+  });
+
+  it('pin of a missing hash is false', async () => {
+    const store = new MemoryAssetStore();
+    expect(await store.pin('0'.repeat(64))).toBe(false);
+    expect(await store.unpin('0'.repeat(64))).toBe(false);
+  });
+
+  it('evict-oldest still throws OverQuotaError when only pinned assets remain', async () => {
+    const store = new MemoryAssetStore({ maxCount: 1, policy: 'evict-oldest' });
+    const first = await store.put(new Uint8Array([1]), testInput);
+    await store.pin(first.hash);
+    await expect(store.put(new Uint8Array([2]), testInput)).rejects.toBeInstanceOf(OverQuotaError);
+    expect(await store.has(first.hash)).toBe(true);
+    expect(await store.count()).toBe(1);
+  });
+});
