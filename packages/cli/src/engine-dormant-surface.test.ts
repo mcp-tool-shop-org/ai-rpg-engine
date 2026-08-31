@@ -71,9 +71,7 @@ function dormantComputeFunctions(): string[] {
  */
 const KNOWN_DORMANT = [
   'computeDeltas',
-  'computeItemNotoriety',
   'computeLoadoutEffects',
-  'computeNpcRecapEntries',
   'computeRelicBonuses',
 ];
 

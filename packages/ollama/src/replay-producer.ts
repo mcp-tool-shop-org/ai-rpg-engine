@@ -7,6 +7,21 @@
 import { createRequire } from 'node:module';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  combatCore,
+  inventoryCore,
+  traversalCore,
+  statusCore,
+  createCognitionCore,
+  createEnvironmentCore,
+  createDistrictCore,
+  createEncounterSpawn,
+  createQuestCore,
+  createDialogueCore,
+  createProgressionCore,
+  createWorldTick,
+  createStandardChannels,
+} from '@ai-rpg-engine/modules';
 import type { ReplayProducer } from './chat-experiments.js';
 
 const DEFAULT_TICK_LIMIT = 30;
@@ -43,10 +58,8 @@ export type DefaultReplayProducerOptions = {
 };
 
 let cachedEngine: EngineConstructor | null | undefined;
-let cachedModNs: Record<string, unknown> | null | undefined;
 let cachedApply: ((engine: unknown, pack: unknown, options?: unknown) => unknown) | null | undefined;
 let cachedExtract: ((pack: unknown) => { progressionTrees?: unknown[] }) | null | undefined;
-let cachedChannels: unknown[] | null | undefined;
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -62,17 +75,6 @@ function loadEngineSync(): EngineConstructor | null {
     cachedEngine = null;
   }
   return cachedEngine;
-}
-
-function loadModNs(): Record<string, unknown> | null {
-  if (cachedModNs !== undefined) return cachedModNs;
-  try {
-    const require = createRequire(import.meta.url);
-    cachedModNs = require('@ai-rpg-engine/modules') as Record<string, unknown>;
-  } catch {
-    cachedModNs = null;
-  }
-  return cachedModNs;
 }
 
 function tryPush(into: unknown[], factory: () => unknown): void {
@@ -91,22 +93,16 @@ function tryPush(into: unknown[], factory: () => unknown): void {
  * progression-core (trees from extractSessionContent).
  */
 function loadPlayableModules(pack: unknown | null): unknown[] {
-  const mods = loadModNs();
-  if (!mods) return [];
   const loaded: unknown[] = [];
-  if (mods['traversalCore']) loaded.push(mods['traversalCore']);
-  if (mods['statusCore']) loaded.push(mods['statusCore']);
-  if (mods['combatCore']) loaded.push(mods['combatCore']);
-  if (mods['inventoryCore']) loaded.push(mods['inventoryCore']);
-
-  const create = (name: string): ((...args: unknown[]) => unknown) | undefined =>
-    typeof mods[name] === 'function' ? mods[name] as (...args: unknown[]) => unknown : undefined;
-
-  tryPush(loaded, () => create('createCognitionCore')?.());
-  tryPush(loaded, () => create('createEnvironmentCore')?.());
+  tryPush(loaded, () => traversalCore);
+  tryPush(loaded, () => statusCore);
+  tryPush(loaded, () => combatCore);
+  tryPush(loaded, () => inventoryCore);
+  tryPush(loaded, () => createCognitionCore());
+  tryPush(loaded, () => createEnvironmentCore());
   const districts = isRecord(pack) && Array.isArray(pack.districts) ? pack.districts : [];
-  tryPush(loaded, () => create('createDistrictCore')?.({ districts }));
-  tryPush(loaded, () => create('createEncounterSpawn')?.({
+  tryPush(loaded, () => createDistrictCore({ districts: districts as never }));
+  tryPush(loaded, () => createEncounterSpawn({
     gameId: 'experiment-run',
     encounters: [],
     entityTemplates: [],
@@ -115,11 +111,11 @@ function loadPlayableModules(pack: unknown | null): unknown[] {
 
   const quests = isRecord(pack) && Array.isArray(pack.quests) ? pack.quests : [];
   if (quests.length > 0) {
-    tryPush(loaded, () => create('createQuestCore')?.({ gameId: 'experiment-run', quests }));
+    tryPush(loaded, () => createQuestCore({ gameId: 'experiment-run', quests: quests as never }));
   }
   const dialogues = isRecord(pack) && Array.isArray(pack.dialogues) ? pack.dialogues : [];
   if (dialogues.length > 0) {
-    tryPush(loaded, () => create('createDialogueCore')?.(dialogues));
+    tryPush(loaded, () => createDialogueCore(dialogues as never));
   }
 
   let trees: unknown[] = [];
@@ -131,8 +127,8 @@ function loadPlayableModules(pack: unknown | null): unknown[] {
       trees = [];
     }
   }
-  tryPush(loaded, () => create('createProgressionCore')?.({ trees }));
-  tryPush(loaded, () => create('createWorldTick')?.());
+  tryPush(loaded, () => createProgressionCore({ trees: trees as never }));
+  tryPush(loaded, () => createWorldTick());
   return loaded;
 }
 
@@ -165,20 +161,12 @@ function loadExtractSync(): ((pack: unknown) => { progressionTrees?: unknown[] }
 }
 
 function loadChannelsSync(): unknown[] {
-  if (cachedChannels !== undefined) return cachedChannels ?? [];
   try {
-    const mods = loadModNs();
-    const factory = mods?.['createStandardChannels'];
-    if (typeof factory === 'function') {
-      const channels = (factory as () => unknown)();
-      cachedChannels = Array.isArray(channels) ? channels : [];
-      return cachedChannels;
-    }
+    const channels = createStandardChannels();
+    return Array.isArray(channels) ? channels : [];
   } catch {
-    // optional — apply still runs without module channels
+    return [];
   }
-  cachedChannels = [];
-  return cachedChannels;
 }
 
 function clampTicks(tickLimit?: number): number {
@@ -387,12 +375,6 @@ export async function preloadDefaultReplayProducer(
       }
     } catch {
       // loadEngineSync will try createRequire; failing both yields synthetic
-    }
-    try {
-      const mods = await import('@ai-rpg-engine/modules');
-      cachedModNs = mods as unknown as Record<string, unknown>;
-    } catch {
-      // optional
     }
   }
   return createDefaultReplayProducer(options);

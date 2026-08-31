@@ -72,6 +72,7 @@ function makeNftRef(overrides: Partial<NFTokenRef> = {}): NFTokenRef {
     mutable: overrides.mutable ?? true,
     mintTxid: overrides.mintTxid ?? 'MINT_TX_1',
     status: overrides.status ?? 'minted',
+    ...(overrides.ownerAddress !== undefined ? { ownerAddress: overrides.ownerAddress } : {}),
   };
 }
 
