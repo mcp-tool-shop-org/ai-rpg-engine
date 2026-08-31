@@ -12,6 +12,20 @@ export type NarrationPlan = {
   uiEffects: UiEffect[];
   interruptibility: Interruptibility;
   voiceProfile?: VoiceProfile;
+  /**
+   * TTS-pipeline expansion (wave-2 R4 ruling): the current turn's dialogue
+   * content the terminal renders in its Dialogue section — textureHint,
+   * dialogueBias, the spoken line itself, then partyPresence/pressureHint/
+   * opportunityHint — as separate narratable fragments in on-screen reading
+   * order, so a spoken-output embedder gets the same story beats the screen
+   * shows even though dialogue.node.entered is structurally excluded from
+   * `sceneText` (see terminal-ui's formatEventLine). Plain prose, no
+   * bracket/parenthetical display typography — that is the terminal's
+   * markup, not the script's content. Optional and omitted (not `[]`) when
+   * the turn has no dialogue, so a plan with no dialogue is unchanged from
+   * before this field existed.
+   */
+  asides?: string[];
 };
 
 export type NarrationTone =
