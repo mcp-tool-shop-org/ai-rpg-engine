@@ -271,15 +271,6 @@ export function createGame(seed?: number): Engine {
     }
   });
 
-  // Audio cue on combat defeat
-  engine.store.events.on('combat.entity.defeated', () => {
-    engine.store.emitEvent('audio.cue.requested', {
-      cueId: 'combat.victory',
-      channel: 'stinger',
-      priority: 'high',
-    });
-  });
-
   // --- Colony-specific: ally defeated morale penalty (not covered by profile) ---
   // Allied colonists carry the 'colonist' tag (there is no 'ally' tag in this
   // pack). Losing one of the crew — anyone but the commander, and not by the
