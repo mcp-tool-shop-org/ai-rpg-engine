@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assembleContentPack, classifyDocument, idsFromPack } from './commands/emit-pack.js';
+import { assembleContentPack, classifyDocument, idsFromPack, packJson } from './commands/emit-pack.js';
 import { parseYamlish } from './validators.js';
 
 describe('classifyDocument', () => {
@@ -336,6 +336,87 @@ describe('assembleContentPack', () => {
     await writeFile(join(root, 'ip.yaml'), 'itemId: rusty_key\nentityId: chapel_guard\n');
     const result = await assembleContentPack(root);
     expect(result.pack.placements ?? []).toEqual([]);
+  });
+
+  // F-4d81f6b3: classifyDocument already recognized a standalone scaffolded
+  // faction YAML (kind:'faction'), but ingest()'s switch had no arm for it —
+  // it fell through to default:break and the document was silently
+  // discarded. Only an ALREADY-ASSEMBLED pack.json's factions map survived a
+  // re-walk (mergePackJson, F-d905ad26 below); a freshly scaffolded,
+  // never-yet-assembled faction file did not. This is the "author half" —
+  // the standalone-file counterpart to the "re-walk half" tested below.
+  it('walks a standalone faction file into pack.factions', async () => {
+    await writeFile(join(root, 'chapel-order.yaml'), [
+      'id: chapel_order',
+      'name: Chapel Order',
+      'members:',
+      '  - guard_1',
+      '  - guard_2',
+    ].join('\n'));
+    const result = await assembleContentPack(root);
+    expect(result.pack.factions?.chapel_order).toEqual({
+      id: 'chapel_order', name: 'Chapel Order', reputation: 0, disposition: 'neutral',
+    });
+  });
+
+  // Locks in the intentional narrowing (PackFactionRecord is a narrow
+  // 4-field runtime registry; a scaffolded FactionDefinition is much richer)
+  // so a future refactor doesn't silently reintroduce the shape mismatch by
+  // rest-spreading the full authored doc onto pack.factions.
+  it('does not carry FactionDefinition-only fields onto pack.factions', async () => {
+    await writeFile(join(root, 'chapel-order.yaml'), [
+      'id: chapel_order',
+      'name: Chapel Order',
+      'members:',
+      '  - guard_1',
+      '  - guard_2',
+    ].join('\n'));
+    const result = await assembleContentPack(root);
+    expect(result.pack.factions?.chapel_order).not.toHaveProperty('members');
+  });
+
+  // The literal scaffold-to-ingest-to-pack.json roundtrip: proves the new
+  // author-half (this fix) and the already-shipped re-walk-half (F-d905ad26)
+  // compose correctly end to end, the way a real /build → emit-pack →
+  // re-emit-pack session would exercise it.
+  it('roundtrips a standalone faction scaffold through emit-pack write and re-walk', async () => {
+    await writeFile(join(root, 'chapel-order.yaml'), [
+      'id: chapel_order',
+      'name: Chapel Order',
+      'members:',
+      '  - guard_1',
+      '  - guard_2',
+    ].join('\n'));
+    const first = await assembleContentPack(root);
+    expect(first.pack.factions?.chapel_order).toBeDefined();
+
+    await mkdir(join(root, 'content'), { recursive: true });
+    await writeFile(join(root, 'content', 'pack.json'), packJson(first.pack));
+
+    const second = await assembleContentPack(root);
+    expect(second.pack.factions?.chapel_order).toEqual({
+      id: 'chapel_order', name: 'Chapel Order', reputation: 0, disposition: 'neutral',
+    });
+  });
+
+  // Parity/determinism check mirroring the established ruleProfiles/entityAi
+  // convention (whichever file walkFiles visits LAST wins outright for that
+  // id) rather than leaving faction id collisions untested.
+  it('a later faction file wins on id collision', async () => {
+    await writeFile(join(root, 'a-chapel-order.yaml'), [
+      'id: chapel_order',
+      'name: Chapel Order (first)',
+      'members:',
+      '  - guard_1',
+    ].join('\n'));
+    await writeFile(join(root, 'b-chapel-order.yaml'), [
+      'id: chapel_order',
+      'name: Chapel Order (second)',
+      'members:',
+      '  - guard_2',
+    ].join('\n'));
+    const result = await assembleContentPack(root);
+    expect(result.pack.factions?.chapel_order?.name).toBe('Chapel Order (second)');
   });
 
   // mergePackJson: re-walking an existing pack JSON that already carries

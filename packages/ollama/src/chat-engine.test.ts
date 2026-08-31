@@ -651,6 +651,104 @@ describe('tuning steps stage into activeTuning.stagedWrites (F-591fae03)', () =>
   });
 });
 
+// --- The roundtrip that would have caught the original bug (F-591fae03
+// recommendation item 10). A plan with 2+ scaffold steps followed by an
+// emit-pack tail, run through executeAllBuildSteps() and confirmed twice:
+// asserts BOTH scaffolded files land on disk AND that emit-pack's own
+// re-walk (once the gate lets it run for real) picks up both — proving the
+// write-ordering fix (F-591fae03) and the faction-ingest fix (F-4d81f6b3)
+// compose correctly end to end. ---
+
+describe('multi-step build + emit-pack roundtrip (F-591fae03 item 10, composes with F-4d81f6b3)', () => {
+  function factionScaffoldStep(id: number, description: string): BuildStep {
+    return {
+      id,
+      description,
+      command: 'create-faction',
+      intent: 'scaffold',
+      params: { kind: 'faction', theme: `theme-${id}` },
+      dependencies: [],
+      artifactOutputs: ['factions'],
+      usePriorContent: false,
+      status: 'pending',
+    };
+  }
+
+  function emitPackStep(id: number): BuildStep {
+    return {
+      id,
+      description: 'emit-pack — assemble content/pack.json',
+      command: 'emit-pack',
+      intent: 'emit_pack',
+      params: {},
+      dependencies: [],
+      artifactOutputs: [],
+      usePriorContent: false,
+      status: 'pending',
+    };
+  }
+
+  it('lands both scaffolded factions on disk and into the re-walked pack.factions', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'chat-build-emit-pack-'));
+    try {
+      const responses = [
+        'id: faction_a\nname: Faction A\nmembers:\n  - captain_a',
+        'id: faction_b\nname: Faction B\nmembers:\n  - captain_b',
+      ];
+      let call = 0;
+      const engine = createChatEngine({
+        client: {
+          async generate(_input: PromptInput): Promise<PromptResult> {
+            return { ok: true, text: responses[Math.min(call++, responses.length - 1)] };
+          },
+        },
+        projectRoot: dir,
+        rawMode: true,
+      });
+
+      engine.activeBuild = createBuildState(buildPlanOf([
+        factionScaffoldStep(1, 'first faction'),
+        factionScaffoldStep(2, 'second faction'),
+        emitPackStep(3),
+      ]));
+
+      // Run the batch: both scaffold steps execute for real and accumulate;
+      // the flush gate blocks emit-pack's own execution and stops the loop
+      // (the REQUIRED companion fix — no infinite loop on the gated step).
+      const batchResult = await engine.executeAllBuildSteps();
+      expect(batchResult).toContain('file(s) staged -- write all?');
+      expect(engine.activeBuild!.plan.steps[2].status).toBe('pending');
+
+      // Confirm twice: preview, then apply — both scaffold files land.
+      await engine.process('yes');
+      const response = await engine.process('yes');
+      expect(response).toContain('Written');
+      await access(join(dir, 'faction_a.yaml'));
+      await access(join(dir, 'faction_b.yaml'));
+      expect(engine.activeBuild!.stagedWrites).toEqual({});
+
+      // The gate is now open (nothing staged) — the next step call finally
+      // lets emit-pack's real assembleContentPack() run, against a disk
+      // that now has both scaffolded factions.
+      const finalResult = await engine.executeBuildStep();
+      expect(finalResult).not.toContain('failed');
+
+      // emit-pack's own result reaches pack.factions (F-4d81f6b3 composes
+      // with the write-ordering fix): surfaced via the completion-promotion
+      // that closes the "emit-pack's own staged write is otherwise never
+      // confirmable" gap once there's nothing left to run.
+      expect(engine.pendingWriteBatch).not.toBeNull();
+      const packEntry = engine.pendingWriteBatch!.find(e => e.suggestedPath === 'content/pack.json');
+      expect(packEntry).toBeDefined();
+      const assembled = JSON.parse(packEntry!.content);
+      expect(assembled.factions.faction_a).toBeDefined();
+      expect(assembled.factions.faction_b).toBeDefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('executeAllTuningSteps — per-step progress + early abort (F-4be7a3c2)', () => {
   it('fires onStep per tuning step', async () => {
     const yaml = 'id: tuned-room\ntype: room\nname: Tuned Room';
