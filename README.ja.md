@@ -36,10 +36,11 @@
 
 ---
 
-## 現在のステータス（v3.8.1）
+## 現在の状況（v3.9.0）
 
 **What works and is tested:**
-- **The host surface is on the Engine (v3.8.1):** `hash`, `present`, `preview`, `getAvailableActions`, `advanceRound`, sidecar `listActions` + save/load, studio `emit-pack`, JSON pack catalogs and `ruleProfiles`. A Godot attach and a JSON `--content` boot no longer copy CLI internals to invent those seams. 7893 tests.
+- **The pack you author is the game you play (v3.9):** the studio now authors everything the engine boots — `create-ruleset`, `create-rule-profile`, and `create-item-placement` join the scaffold verbs, and both `/build` plans and `ai scaffold-and-critique` end by emitting `content/pack.json`. `applyContentPack` stamps `playerId`/`locationId` from a one-player pack, lands faction reputation baselines and rule-profile registries (merged, never wiping the host's), and carries the pack's manifest and ruleset through `extractSessionContent` — the documented JSON boot recipe is corrected and pinned by an end-to-end test. Dialogue gains live texture: an NPC mentions the contract actually on the table, arriving with companions or into a grim district reads that way, and the move advisor speaks a player-facing line. Campaign memory journals companion saves and crafted items, image variants keep their identity locks (with LoRA support), rumor stances fade, and a victory sting no longer kills the zone theme. 8042 tests.
+- **The host surface is on the Engine (v3.8.1):** `hash`, `present`, `preview`, `getAvailableActions`, `advanceRound`, sidecar `listActions` + save/load, studio `emit-pack`, JSON pack catalogs and `ruleProfiles`. A Godot attach and a JSON `--content` boot no longer copy CLI internals to invent those seams.
 - Core runtime: world state, events, actions, ticks, replay — stable since v1.0; deterministic byte-identical replay (per-instance id counter, seeded RNG)
 - Combat system: 5 actions, 4 combat states, 4 engagement states, companion interception, defeat flow, AI tactics
 - Abilities: costs, cooldowns, stat checks, typed effects, 11-tag status vocabulary, AI-aware selection
@@ -83,7 +84,7 @@
 - **A game whose loop is debt (v3.5):** the eleventh starter, **Salt Road Ledger**, is the first authored backwards from a system rather than a genre — you play a factor trading on someone else's capital, and five commerce verbs (`appraise` / `haggle` / `consign` / `underwrite` / `audit`) carry the game while combat is priced as a penalty (the resource profile has an empty `gains` array — nothing rewards violence). `consign` is the only verb in the catalog whose offline semantics match a settlement primitive one-to-one, which makes it the reference pack for the ledger adapter while carrying **no dependency on it**. Ships with the `mercantile` genre and a merchant economy profile, and 7/7 on the pack rubric. The same cycle made two long-inert adapter axes real — the memo `VERB:` field (declared with members no call site could emit) and `config.settlement` (declared with zero reads anywhere) — and a played-session audit of the new pack found six mechanics that were wired, schema-valid, unit-green and dead
 - `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **7893 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
+- Full test suite: **8042 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
 
 **不完全または未完成な点:**
 - AIを活用したワールド構築スタジオ（Ollamaレイヤー）は、シミュレーションコアよりもテストが不十分であり、ローカルのOllamaデーモンが必要。これは完全にオプションであり、エンジンと`run`ループにはネットワークは不要。
@@ -340,7 +341,7 @@ const warCry: AbilityDefinition = {
 
 ### 現在の状況
 
-両方の構成の主要部分が完了 — 326個のファイルにわたる6412個のテスト、すべての12個のスターターが`buildCombatStack`と`buildWorldStack`で利用可能、印刷されたシードに基づいて決定的なバイト単位での同一の再生、完全なAIの意思決定スコアリング、および雛形を作成、実行、検証、および検査するCLI。**v3.0は世界を活性化します。名前付きのNPCが目標、信頼/恐怖/貪欲/忠誠関係、義務台帳、および結果の連鎖を持って生き生きと動き出します。ソーシャルレイヤーは受動的に収益を上げ、21の新しい外交/妨害動詞を使用して消費します。経済はスターターごとにジャンルに合わせて調整され、獲得した優位性が最終的にキャンペーンの終盤に到達します。フェーズ9の監査で、出荷されたコンテンツに「接続されているが機能しない」という問題が発見されました。修正版では、すべてのスターターに名前付きのNPCが追加されます。**
+両方の構成要素は完成 — **381個のファイルにわたる8042回のテスト**、`buildCombatStack`と`buildWorldStack`の12個の初期設定、印刷されたシードに基づいて決定的なバイト単位の一致した再現、完全なAIによる意思決定スコアリング、および、スキャフォールディング、実行、検証、および検査を行うCLI。v3.xの段階で、世界が生き生きと動き出す（名前付きのNPC、25種類の動詞を使用したソーシャルシステム、ジャンル経済 — v3.0〜v3.1）、プレイヤーが所有するアセットをXRPLテストネットにオプトインサイドチャネルとして配置（v3.2〜v3.4）、2つのシステム優先の初期設定を作成し、それらをエンジンを改良するためのツールに変える（v3.5〜v3.6）、戦略レイヤーを強化し、その結果が現実的な影響を与えるまで（v3.7〜v3.8）、ホストにエンジンサーフェスにGodotをアタッチするための機能を提供する（v3.8.1）、そして、**作成ループを閉じて、スタジオセッションまたは単純なJSONパックから、最初から最後までプレイ可能な世界を生成できるようにする（v3.9）**。
 
 **最近のリリース（v2.4.0〜v3.0.0）：**
 - v2.4.0 — パーティー戦闘（味方ターゲティング/回復/バフ/蘇生、ステータス効果システム（修正子+DoT/HoT+リアクティブトリガー）、プラグインプロファイルフェーズ1、コンテンツ`validate`/`scaffold` CLI）
@@ -351,14 +352,17 @@ const warCry: AbilityDefinition = {
 - v2.9.0 — ループを閉じる：`buy`+商人在庫とクラフトが経済を完成させます。仲間は独立したターンを実行します。4つのソーシャル動詞（賄賂/威嚇/嘆願/種）が、機会報酬によって資金提供される優位性経済で実行されます。機会は期限切れ+好意の低下の結果で解決し、装備、クエスト、募集可能なキャラクター、および開始時のコインがすべて10個のスターターに均等に配布されます。
 - **v3.0.0 — 世界を活性化する：NPCエージェンシープロデューサーが、目標/関係/義務台帳/結果の連鎖を持つ名前付きのNPCを活性化し、すべてのスターターにストーリーNPCを追加します。ソーシャルレイヤーは25の動詞（外交+妨害）に拡張され、受動的な優位性収入とソーシャル状態を読み取るダイアログが含まれます。スターターごとのジャンルに合わせた在庫+レシピ。優位性の終盤（勝利/操り人形/静かな引退）に到達可能になります。修理/変更メニュー行、護衛の機会、および`audit-content`開発CLI — フェーズ9の監査で、グリーンテストスイートが隠していた2つのデッドワイヤーが発見され、修正版が出荷されました。**
 
-### 次（v3.0の主要部分）
+### 次（消費者層のサイクル）
 
-- **生きているNPC** — ディレクターの「人々」セクションを活性化する、永続的なNPCエージェンシープロデューサー：目標、関係のブレークポイント、義務台帳、および結果の連鎖を持つ名前付きのNPC、およびすでに存在する反応システムによって処理される仲間士気、好意の低下、および離脱リスクのパス
-- ジャンルに合わせた商人在庫とクラフトレシピ（今日の出荷される普遍的なフォールバックに比べて、スターターごとにジャンルを調整）、および`repair`/`modify`メニューの表面
-- 優位性経済の次のレイヤー — 機会報酬を超えた受動的な収入、および出荷された4つの（外交/妨害グループ）を超えたソーシャル動詞 — さらに、新しいソーシャル状態を読み取るダイアログ条件/効果語彙
-- マルチプレイヤー — 1つの世界を共有する2人の*人間*プレイヤー（ネットワークレイヤー、意図的に延期されています。共有プロファイルは、[`shared-profiles.ts`](docs/examples/shared-profiles.ts)として本日出荷されます）
-- シリアライズ可能な式の上書き — プロファイルごとの式調整（式DSLでブロックされています。プロファイルは今日、クロージャではなくステータスマッピングを保持します）
-- APIドキュメントの同期 — すべてのハンドブックページが最新のAPIを反映していることを確認します
+現在、2つのプロデューサーサイクルが消費者サイクルを上回っており、次のサイクルは、プレイヤーが実際にそれらを目にするというものです。
+
+- **ヒントがプレイヤーに伝わる** — 8つのナレーターの声によるヒントフィールド（対話の偏り/ヒント、プレッシャー、質感、機会、パーティーの存在、地区の雰囲気、状況）が今日のイベントに影響を与え、ターミナルUIには何も表示されません。これらをナレーション（および同じ関数のTTSパス）に組み込むことが、最も重要な課題です。
+- **戦闘の結果がサウンドトラックに反映される** — v3.9で出荷された、衝撃を表現するリゾルバーとCORE衝撃リソースですが、まだどのゲームプレイイベントも、これらに勝利/敗北をマッピングしていません（また、`combat.victory`はイベントとして存在しません — エンゲージメントレイヤーはすでに敵を排除したかどうかを計算しています）。
+- **常に表示されるHUDにパーティーの状況が表示される** — `formatPartyStatusLine`は完了し、未読です。
+- **ネットワーク上のパックゲートに関する通知** — `--listen`のサイドカークライアントは、現在、パックの取り込みデータの損失に関する情報を取得できません（CLIの標準エラー出力のみ）。
+- **`/build`の書き込みモデル** — ガイド付きのバッチ実行により、今日の最終的な書き込みのみが行われます（ステップごとのステージングと、1つのバッチ処理された同意は、設計された修正です）。
+- マルチプレイヤー — 1つの世界を共有する2人の*人間*プレイヤー（ネットワークレイヤーは意図的に延期されています。単一コントローラーで共有されるプロファイルは、[`shared-profiles.ts`](docs/examples/shared-profiles.ts)として本日出荷されます）。
+- シリアライズ可能な数式の上書き — プロファイルごとの数式の調整（数式DSLに依存しています。プロファイルは、クロージャではなく、統計マッピングを保持します）。
 
 ### 目的：プラグインプロファイル
 

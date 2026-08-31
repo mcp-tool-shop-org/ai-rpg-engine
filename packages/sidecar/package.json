@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/sidecar",
-  "version": "3.8.1",
+  "version": "3.9.0",
   "description": "JSON-RPC sidecar for the AI RPG Engine — one authoritative sim process, N rendering clients",
   "type": "module",
   "main": "./dist/index.js",

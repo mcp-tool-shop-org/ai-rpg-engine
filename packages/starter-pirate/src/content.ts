@@ -12,7 +12,7 @@ import type { ItemCatalog } from '@ai-rpg-engine/equipment';
 export const manifest: GameManifest = {
   id: 'black-flag-requiem',
   title: 'Black Flag Requiem',
-  version: '3.8.1',
+  version: '3.9.0',
   engineVersion: '>=3.8.0 <4.0.0',
   ruleset: 'pirate-minimal',
   modules: [
@@ -756,7 +756,7 @@ export const packMeta: PackMetadata = {
   tones: ['gritty', 'atmospheric'],
   tags: ['naval', 'treasure', 'cursed', 'exploration'],
   engineVersion: '>=3.8.0 <4.0.0',
-  version: '3.8.1',
+  version: '3.9.0',
   description: 'Captain a pirate vessel through port towns and cursed waters. Strike deals, fight the navy, and brave a sunken shrine.',
   narratorTone: 'pirate adventure, salty, atmospheric, treacherous',
 };

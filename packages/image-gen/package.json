@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/image-gen",
-  "version": "3.8.1",
+  "version": "3.9.0",
   "description": "Headless image generation pipeline — portrait prompts, provider abstraction, and asset storage for AI RPG Engine",
   "type": "module",
   "main": "./dist/index.js",

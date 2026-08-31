@@ -36,10 +36,11 @@ Il s’agit d’un **moteur de composition**, et non d’un jeu fini. Les 12 mon
 
 ---
 
-## État actuel (v3.8.1)
+## État actuel (v3.9.0)
 
 **What works and is tested:**
-- **The host surface is on the Engine (v3.8.1):** `hash`, `present`, `preview`, `getAvailableActions`, `advanceRound`, sidecar `listActions` + save/load, studio `emit-pack`, JSON pack catalogs and `ruleProfiles`. A Godot attach and a JSON `--content` boot no longer copy CLI internals to invent those seams. 7893 tests.
+- **The pack you author is the game you play (v3.9):** the studio now authors everything the engine boots — `create-ruleset`, `create-rule-profile`, and `create-item-placement` join the scaffold verbs, and both `/build` plans and `ai scaffold-and-critique` end by emitting `content/pack.json`. `applyContentPack` stamps `playerId`/`locationId` from a one-player pack, lands faction reputation baselines and rule-profile registries (merged, never wiping the host's), and carries the pack's manifest and ruleset through `extractSessionContent` — the documented JSON boot recipe is corrected and pinned by an end-to-end test. Dialogue gains live texture: an NPC mentions the contract actually on the table, arriving with companions or into a grim district reads that way, and the move advisor speaks a player-facing line. Campaign memory journals companion saves and crafted items, image variants keep their identity locks (with LoRA support), rumor stances fade, and a victory sting no longer kills the zone theme. 8042 tests.
+- **The host surface is on the Engine (v3.8.1):** `hash`, `present`, `preview`, `getAvailableActions`, `advanceRound`, sidecar `listActions` + save/load, studio `emit-pack`, JSON pack catalogs and `ruleProfiles`. A Godot attach and a JSON `--content` boot no longer copy CLI internals to invent those seams.
 - Core runtime: world state, events, actions, ticks, replay — stable since v1.0; deterministic byte-identical replay (per-instance id counter, seeded RNG)
 - Combat system: 5 actions, 4 combat states, 4 engagement states, companion interception, defeat flow, AI tactics
 - Abilities: costs, cooldowns, stat checks, typed effects, 11-tag status vocabulary, AI-aware selection
@@ -83,7 +84,7 @@ Il s’agit d’un **moteur de composition**, et non d’un jeu fini. Les 12 mon
 - **A game whose loop is debt (v3.5):** the eleventh starter, **Salt Road Ledger**, is the first authored backwards from a system rather than a genre — you play a factor trading on someone else's capital, and five commerce verbs (`appraise` / `haggle` / `consign` / `underwrite` / `audit`) carry the game while combat is priced as a penalty (the resource profile has an empty `gains` array — nothing rewards violence). `consign` is the only verb in the catalog whose offline semantics match a settlement primitive one-to-one, which makes it the reference pack for the ledger adapter while carrying **no dependency on it**. Ships with the `mercantile` genre and a merchant economy profile, and 7/7 on the pack rubric. The same cycle made two long-inert adapter axes real — the memo `VERB:` field (declared with members no call site could emit) and `config.settlement` (declared with zero reads anywhere) — and a played-session audit of the new pack found six mechanics that were wired, schema-valid, unit-green and dead
 - `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **7893 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
+- Full test suite: **8042 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
 
 **Ce qui est imparfait ou incomplet :**
 - L’atelier de création de mondes par IA (couche Ollama) est moins testé que le noyau de simulation et nécessite un démon Ollama local ; il est entièrement facultatif — le moteur et la boucle `run` n’ont besoin d’aucun réseau.
@@ -335,7 +336,7 @@ Les 12 mondes de départ sont des **exemples de composition** — ils montrent c
 
 ### Où nous en sommes
 
-Les deux axes de composition sont terminés — 6412 tests sur 326 fichiers, tous les 12 modèles de départ sur `buildCombatStack` **et** `buildWorldStack`, relecture byte-identical déterministe sous des séquences imprimées, notation complète des décisions de l'IA et une interface en ligne de commande qui crée, exécute, valide et inspecte. **La v3.0 donne vie au monde : les PNJ nommés prennent vie avec des objectifs, des relations de confiance/peur/avidité/loyauté, des registres d'obligations et des chaînes de conséquences ; la couche sociale gagne passivement et dépense sur vingt-et-un nouveaux verbes de diplomatie/sabotage ; l'économie est adaptée au genre pour chaque modèle de départ ; et l'influence que vous gagnez atteint enfin les fins de campagne qu'elle ouvre. Un audit de la phase 9 a détecté un élément principal fonctionnel mais inerte dans le contenu livré — la correction inclut un PNJ nommé dans chaque modèle de départ.**
+Les deux ensembles de données de base sont complets — **8 042 tests sur 381 fichiers**, les 12 éléments de départ sur `buildCombatStack` **et** `buildWorldStack`, relecture déterministe et identique au niveau des octets à partir des séquences imprimées, évaluation complète des décisions de l’IA, et une interface en ligne de commande qui permet de créer, d’exécuter, de valider et d’inspecter. L’arc v3.x a donné vie au monde (PNJ nommés, la surface sociale à 25 verbes, économies de genre — v3.0 à v3.1), a placé les actifs appartenant aux joueurs sur le testnet XRPL en tant que canal secondaire facultatif (v3.2 à v3.4), a créé deux éléments de départ inédits et les a transformés en outils d’amélioration du moteur (v3.5 à v3.6), a affiné et renforcé la couche stratégique jusqu’à ce que les conséquences laissent des marques réelles (v3.7 à v3.8), a fourni aux hôtes la surface du moteur et les besoins d’intégration Godot (v3.8.1), et **a fermé la boucle de création afin qu’une session en studio ou un simple ensemble de données JSON produise un monde jouable de bout en bout (v3.9)**.
 
 **Dernière série de versions (v2.4.0–v3.0.0) :**
 - v2.4.0 — Combat de groupe (ciblage des alliés / soin / amélioration / réanimation, système d'effets de statut (modificateurs + DoT/HoT + déclencheurs réactifs), phase 1 des profils plug-in, contenu CLI `validate`/`scaffold`
@@ -346,14 +347,17 @@ Les deux axes de composition sont terminés — 6412 tests sur 326 fichiers, tou
 - v2.9.0 — Fermez les boucles : `buy` + les stocks des marchands et l'artisanat complètent l'économie ; les compagnons effectuent des tours indépendants ; quatre verbes sociaux (corruption / intimidation / requête / amorce) fonctionnent sur une économie d'influence financée par des récompenses d'opportunité ; les opportunités se résolvent avec une date d'expiration + des conséquences de faveur ; et l'équipement, les quêtes, les recrues et la monnaie de départ sont distribués uniformément à tous les dix modèles de départ
 - **v3.0.0 — Donnez vie au monde : le producteur d'agence des PNJ allume les PNJ nommés (objectifs / relations / registres d'obligations / chaînes de conséquences) plus un PNJ narratif dans chaque modèle de départ ; la surface sociale s'étend à 25 verbes (diplomatie + sabotage) avec un revenu d'influence passif et un dialogue qui lit l'état social ; stocks et recettes adaptés au genre par modèle de départ ; les fins d'influence (victoire / maître marionnettiste / retraite tranquille) deviennent accessibles ; lignes de menu de réparation/modification, opportunités d'escorte et une CLI de développement `audit-content` — livrés grâce à un audit de la phase 9 qui a détecté deux fils morts que la suite de tests verts a masqués**
 
-### Prochain (l'axe de la v3.0)
+### Prochainement (le cycle de la surface utilisateur)
 
-- **PNJ vivants** — le producteur d'agence des PNJ persistant qui allume la section PEOPLE du directeur : PNJ nommés avec des objectifs, des points de rupture des relations, des registres d'obligations et des chaînes de conséquences, plus la faveur/les conséquences de moral des compagnons et le chemin de risque de départ que le système de réaction porte déjà
-- Stocks et recettes d'artisanat adaptés au genre (par modèle de départ, en filigrane sur la valeur par défaut universelle qui est livrée aujourd'hui), et la surface du menu `repair`/`modify`
-- La prochaine couche de l'économie d'influence — un revenu passif au-delà des récompenses d'opportunité et des verbes sociaux au-delà des quatre verbes livrés (groupes de diplomatie / sabotage) — plus le vocabulaire de condition/effet du dialogue qui lit le nouveau statut social
-- Multijoueur — deux joueurs *humains* partageant un monde (une couche de mise en réseau, délibérément différée ; les profils partagés à contrôleur unique sont livrés aujourd'hui sous la forme de [`shared-profiles.ts`](docs/examples/shared-profiles.ts))
-- Substitutions de formules sérialisables — réglage des formules par profil (bloqué sur un DSL de formule ; les profils contiennent aujourd'hui des mappages de statistiques, et non des fermetures)
-- Synchronisation de la documentation de l'API — assurez-vous que chaque page du manuel reflète les dernières API
+Deux cycles de producteurs dépassent désormais leurs consommateurs, et le cycle suivant porte sur le fait que le joueur les voit réellement :
+
+- **Les indices parviennent au joueur** — huit champs d’indices avec la voix du narrateur (biais/indice de dialogue, pression, texture, opportunité, présence du groupe, ambiance du quartier, situation) influencent les événements d’aujourd’hui et sont affichés sans rien dans l’interface utilisateur du terminal ; les intégrer à la narration (et au même chemin TTS des fonctions) est l’élément principal.
+- **Les résultats des combats parviennent à la bande sonore** — le résolveur de « sting » et les ressources CORE « sting » sont inclus dans la version 3.9, mais aucun événement de jeu ne les associe encore à la victoire ou à la défaite (et `combat.victory` n’existe pas en tant qu’événement — la couche d’engagement calcule déjà les ennemis éliminés).
+- **Une ligne d’information sur l’interface HUD toujours active** — `formatPartyStatusLine` est terminé et n’a pas été lu.
+- **Avis sur le flux de données** — un client secondaire `--listen` n’a actuellement aucune visibilité sur la perte de données lors de la réception des données. (seul le stderr de l’interface en ligne de commande).
+- **Le modèle d’écriture `/build`** — les exécutions par lots guidées ne préparent que l’écriture finale aujourd’hui (la préparation par étape avec un consentement par lots est la solution envisagée).
+- Multijoueur — deux joueurs *humains* partageant un monde (une couche de mise en réseau, délibérément reportée ; les profils partagés avec un seul contrôleur sont disponibles aujourd’hui sous la forme de [`shared-profiles.ts`](docs/examples/shared-profiles.ts)).
+- Remplacements de formules sérialisables — réglage des formules par profil (bloqué sur un DSL de formules ; les profils contiennent aujourd’hui des mappages de statistiques, et non des fonctions).
 
 ### Destination : Profils plug-in
 

@@ -36,10 +36,11 @@
 
 ---
 
-## वर्तमान स्थिति (v3.8.1)
+## वर्तमान स्थिति (संस्करण 3.9.0)
 
 **What works and is tested:**
-- **The host surface is on the Engine (v3.8.1):** `hash`, `present`, `preview`, `getAvailableActions`, `advanceRound`, sidecar `listActions` + save/load, studio `emit-pack`, JSON pack catalogs and `ruleProfiles`. A Godot attach and a JSON `--content` boot no longer copy CLI internals to invent those seams. 7893 tests.
+- **The pack you author is the game you play (v3.9):** the studio now authors everything the engine boots — `create-ruleset`, `create-rule-profile`, and `create-item-placement` join the scaffold verbs, and both `/build` plans and `ai scaffold-and-critique` end by emitting `content/pack.json`. `applyContentPack` stamps `playerId`/`locationId` from a one-player pack, lands faction reputation baselines and rule-profile registries (merged, never wiping the host's), and carries the pack's manifest and ruleset through `extractSessionContent` — the documented JSON boot recipe is corrected and pinned by an end-to-end test. Dialogue gains live texture: an NPC mentions the contract actually on the table, arriving with companions or into a grim district reads that way, and the move advisor speaks a player-facing line. Campaign memory journals companion saves and crafted items, image variants keep their identity locks (with LoRA support), rumor stances fade, and a victory sting no longer kills the zone theme. 8042 tests.
+- **The host surface is on the Engine (v3.8.1):** `hash`, `present`, `preview`, `getAvailableActions`, `advanceRound`, sidecar `listActions` + save/load, studio `emit-pack`, JSON pack catalogs and `ruleProfiles`. A Godot attach and a JSON `--content` boot no longer copy CLI internals to invent those seams.
 - Core runtime: world state, events, actions, ticks, replay — stable since v1.0; deterministic byte-identical replay (per-instance id counter, seeded RNG)
 - Combat system: 5 actions, 4 combat states, 4 engagement states, companion interception, defeat flow, AI tactics
 - Abilities: costs, cooldowns, stat checks, typed effects, 11-tag status vocabulary, AI-aware selection
@@ -83,7 +84,7 @@
 - **A game whose loop is debt (v3.5):** the eleventh starter, **Salt Road Ledger**, is the first authored backwards from a system rather than a genre — you play a factor trading on someone else's capital, and five commerce verbs (`appraise` / `haggle` / `consign` / `underwrite` / `audit`) carry the game while combat is priced as a penalty (the resource profile has an empty `gains` array — nothing rewards violence). `consign` is the only verb in the catalog whose offline semantics match a settlement primitive one-to-one, which makes it the reference pack for the ledger adapter while carrying **no dependency on it**. Ships with the `mercantile` genre and a merchant economy profile, and 7/7 on the pack rubric. The same cycle made two long-inert adapter axes real — the memo `VERB:` field (declared with members no call site could emit) and `config.settlement` (declared with zero reads anywhere) — and a played-session audit of the new pack found six mechanics that were wired, schema-valid, unit-green and dead
 - `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **7893 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
+- Full test suite: **8042 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
 
 **क्या कच्चा या अधूरा है:**
 - एआई दुनिया-निर्माण स्टूडियो (ओलामा परत) सिमुलेशन कोर की तुलना में कम परीक्षण किया गया है, और इसे एक स्थानीय ओलामा डेमॉन की आवश्यकता होती है; यह पूरी तरह से वैकल्पिक है - इंजन और `run` लूप को किसी नेटवर्क की आवश्यकता नहीं है।
@@ -345,7 +346,7 @@ const warCry: AbilityDefinition = {
 
 ### हम अभी कहाँ हैं
 
-दोनों रचना रीढ़ की हड्डी पूरी हो गई है - 326 फ़ाइलों में 6412 परीक्षण, `buildCombatStack` और `buildWorldStack` पर सभी 12 स्टार्टर, मुद्रित बीज के तहत नियतिवादी बाइट-समान रीप्ले, पूर्ण AI निर्णय स्कोरिंग, और एक CLI जो बनाता है, चलाता है, मान्य करता है और निरीक्षण करता है। **v3.0 दुनिया को जीवंत बनाता है: नामित NPC लक्ष्य, विश्वास/भय/लालच/वफ़ादारी संबंध, दायित्व लेज़र और परिणाम श्रृंखला के साथ जीवंत हो जाते हैं; सामाजिक परत निष्क्रिय रूप से कमाती है और इक्कीस नए कूटनीति/विध्वंस क्रियाओं में खर्च करती है; अर्थव्यवस्था प्रति स्टार्टर शैली-आधारित होती है; और आपके द्वारा अर्जित लाभ अंततः उस अभियान के अंत तक पहुँचता है जिसे यह नियंत्रित करता है। चरण-9 ऑडिट में शिप किए गए सामग्री में एक प्रमुख त्रुटि पाई गई - सुधार एक नामित NPC को प्रत्येक स्टार्टर में भेजता है।**
+दोनों रचना के आधार पूर्ण हैं — **381 फ़ाइलों में 8042 परीक्षण**, `buildCombatStack` और `buildWorldStack` पर सभी 12 शुरुआती बिंदु, मुद्रित बीज के तहत नियतात्मक बाइट-समान पुनरावृत्ति, पूर्ण एआई निर्णय स्कोरिंग, और एक CLI जो ढांचा बनाता है, चलाता है, मान्य करता है और निरीक्षण करता है। v3.x आर्क ने दुनिया को जीवंत बना दिया (नाम वाले NPC, 25-क्रिया सामाजिक सतह, शैली अर्थव्यवस्थाएं — v3.0–v3.1), खिलाड़ी के स्वामित्व वाली संपत्तियों को XRPL टेस्टनेट पर एक वैकल्पिक साइड चैनल के रूप में रखा (v3.2–v3.4), दो सिस्टम-प्रथम शुरुआती बिंदुओं को बनाया और उन्हें इंजन-पॉलिशिंग उपकरणों में बदल दिया (v3.5–v3.6), रणनीतिक परत को तब तक प्रकाशित और मजबूत किया जब तक कि परिणामों से वास्तविक निशान न पड़ जाएं (v3.7–v3.8), मेजबानों को इंजन सतह पर गॉडोट अटैच की आवश्यकता दी (v3.8.1), और **लेखन लूप को बंद कर दिया ताकि एक स्टूडियो सत्र या एक साधारण JSON पैक एक खेलने योग्य दुनिया को शुरुआत से अंत तक उत्पन्न करे (v3.9)**।
 
 **Recent release arc (v2.4.0–v3.0.0):**
 - v2.4.0 — Party combat (ally-targeting / heal / buff / revive, friend-foe AoE), status-effect system (modifiers + DoT/HoT + reactive triggers), plug-in Profiles Phase 1, content `validate`/`scaffold` CLI
@@ -356,14 +357,17 @@ const warCry: AbilityDefinition = {
 - v2.9.0 — Close the loops: `buy` + merchant stock and crafting complete the economy; companions take independent turns; four social verbs (bribe / intimidate / petition / seed) run on a leverage economy funded by opportunity rewards; opportunities resolve with expiry + favor-fallout consequence; and equipment, quests, recruitables, and starting coin roll out uniformly to all ten starters
 - **v3.0.0 — Make the world live: the npc-agency producer lights named NPCs (goals / relationships / obligation ledgers / consequence chains) plus a story NPC in every starter; the social surface grows to 25 verbs (diplomacy + sabotage) with passive leverage income and dialogue that reads social state; per-starter genre-flavored stock + recipes; the leverage endings (victory / puppet-master / quiet-retirement) become reachable; repair/modify menu rows, escort opportunities, and an `audit-content` dev CLI — shipped through a Phase-9 audit that caught two dead-wires the green test suite hid**
 
-### अगला (v3.0 रीढ़ की हड्डी)
+### अगला (उपभोक्ता-सतह चक्र)
 
-- **जीवंत NPC** - लगातार npc-एजेंसी निर्माता जो निर्देशक के PEOPLE अनुभाग को रोशन करता है: नामित NPC लक्ष्य, संबंध ब्रेकपॉइंट, दायित्व लेज़र और परिणाम श्रृंखला के साथ, साथ ही साथी-मनोबल पक्षपात-पतन और प्रस्थान-जोखिम पथ जो प्रतिक्रिया प्रणाली में पहले से मौजूद है
-- शैली-आधारित व्यापारी स्टॉक और क्राफ्टिंग रेसिपी (प्रति-स्टार्टर शैली थ्रेडिंग आज भेजे गए सार्वभौमिक फ़ॉलबैक पर), और `repair`/`modify` मेनू सतह
-- लाभ अर्थव्यवस्था की अगली परत - अवसर पुरस्कारों से परे निष्क्रिय आय, और चार भेजे गए सामाजिक क्रियाओं से परे सामाजिक क्रियाएं (कूटनीति / विध्वंस समूह) - साथ ही संवाद स्थिति/प्रभाव शब्दावली जो नई सामाजिक स्थिति को पढ़ती है
-- मल्टीप्लेयर - एक ही दुनिया को साझा करने वाले दो *मानव* खिलाड़ी (एक नेटवर्किंग परत, जानबूझकर स्थगित; एकल-नियंत्रक साझा प्रोफ़ाइल आज भेजे गए हैं [`shared-profiles.ts`](docs/examples/shared-profiles.ts))
-- क्रमबद्ध सूत्र ओवरराइड - प्रति-प्रोफ़ाइल सूत्र ट्यूनिंग (एक सूत्र DSL पर अवरुद्ध; प्रोफ़ाइल में आज आँकड़ा मैपिंग है, क्लोजर नहीं)
-- API प्रलेखन सिंक्रनाइज़ेशन - सुनिश्चित करें कि प्रत्येक हैंडबुक पृष्ठ नवीनतम API को दर्शाता है
+निर्माताओं के दो चक्र अब अपने उपभोक्ताओं से आगे निकल गए हैं, और अगला चक्र इस बारे में है कि खिलाड़ी वास्तव में उन्हें कैसे देखता है:
+
+- **संकेत खिलाड़ी तक पहुंचते हैं** — आठ कथाकार-आवाज संकेत फ़ील्ड (संवाद पूर्वाग्रह/संकेत, दबाव, बनावट, अवसर, पार्टी उपस्थिति, जिला मनोदशा, स्थिति) आज घटनाओं को चलाते हैं और टर्मिनल UI में कुछ भी नहीं द्वारा प्रस्तुत किए जाते हैं; उन्हें कथन में जोड़ना (और समान कार्यों का TTS पथ) मुख्य आइटम है।
+- **लड़ाई के परिणाम ध्वनि ट्रैक तक पहुंचते हैं** — v3.9 में स्टिंग रिज़ॉल्वर और CORE स्टिंग संसाधन भेजे गए, लेकिन अभी तक कोई भी गेमप्ले घटना उन्हें जीत/हार से नहीं जोड़ती है (और `combat.victory` एक घटना के रूप में मौजूद नहीं है — जुड़ाव परत पहले से ही शत्रु-मुक्त की गणना करती है)।
+- **हमेशा चालू रहने वाले HUD पर एक पार्टी लाइन** — `formatPartyStatusLine` समाप्त हो गया है और अपठित है।
+- **तार पर पैक-गेट सलाह** — एक `--listen` साइडकार क्लाइंट के पास वर्तमान में पैक-इनटेक डेटा हानि की कोई जानकारी नहीं है (केवल CLI stderr)।
+- **`/build` लेखन मॉडल** — निर्देशित बैच रन केवल आज अंतिम लेखन को ही मंचित करते हैं (प्रति-चरण मंचन जिसमें एक बैच सहमति शामिल है, यह डिज़ाइन किया गया समाधान है)।
+- मल्टीप्लेयर — एक ही दुनिया साझा करने वाले दो *मानव* खिलाड़ी (एक नेटवर्किंग परत, जानबूझकर स्थगित; एकल-नियंत्रक साझा प्रोफाइल आज [`shared-profiles.ts`](docs/examples/shared-profiles.ts) के रूप में भेजे जाते हैं)।
+- क्रमबद्ध सूत्र ओवरराइड — प्रति-प्रोफ़ाइल सूत्र ट्यूनिंग (एक सूत्र DSL पर अवरुद्ध; प्रोफ़ाइल आज क्लोजर नहीं, बल्कि स्टेट मैपिंग ले जाते हैं)।
 
 ### गंतव्य: प्लग-इन प्रोफ़ाइल
 

@@ -17,7 +17,7 @@
         "message": "gate condition `has-item` names \"rope\", which matches no item in this pack (item-lantern, item-rope, item-tide-ration). If nothing else grants that id, this gate can never open. Advisory rather than an error because an item may be granted by pack code or another pack."
       }
     ],
-    "summary": "Content loaded: 3 entities, 3 zones, 1 dialogues, 0 quests",
+    "summary": "Content loaded: 3 entities, 3 zones, 1 dialogues, 0 quests, 3 placements, 1 encounterAnchors, 4 hazardDefinitions, 3 items, 2 districts",
     "comment": "A pack the exporter stamps engineVersion 2.0.0 loads clean against the 3.8.0 validators, and the report the user reads mentions four of its twelve keys."
   },
   "bootGap": {

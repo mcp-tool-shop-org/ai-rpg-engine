@@ -1,0 +1,375 @@
+{
+  "run_id": "swarm-1788159243-5e8c",
+  "repo": "mcp-tool-shop-org/ai-rpg-engine",
+  "compiled_from": {
+    "commit_sha": "10ecfb609e8c80222e3b048999ba95cb5e5fc552"
+  },
+  "open_summary": {
+    "open": 0,
+    "deferred": 7,
+    "approved": 0
+  },
+  "grandfathered_drain": {
+    "frozen_total": 0,
+    "drained": 0,
+    "outstanding": []
+  },
+  "recurrence_stats": {
+    "top_recurring": [
+      {
+        "fingerprint": "386ac72886d650a73f3fa54d",
+        "description": "Live handbook Print and play section tells people to print 28 Event cards and 22 Deal+Voucher cards (12 Deals + 10 Vouchers) from assets/print/. The shipped PDFs and docs/print-and-play.md are 20 events, 10 deals, 10 vouchers. Engine content.py does have 28 events (20 core + 8 Town Hall market-shift) and 12 deals, so the handbook matches the digital deck and contradicts the print pack it is instructing operators to cut. GitHub Pages currently serves the 28/12 counts.",
+        "run_count": 2,
+        "severity": "MEDIUM",
+        "first_seen": "2026-08-26T23:34:53Z",
+        "last_seen": "2026-08-27T21:39:13Z"
+      },
+      {
+        "fingerprint": "4d7467be43b10b3bf30aa768",
+        "description": "`client.games()` failures are collapsed to an empty list: Audit `loadGames` catch sets `[]` (empty-state 'No games yet' / `sov play campfire_v1`); Index.tsx:35-37 catch also sets `[]` ('Welcome' / start first game). A 401, 500, or network error is indistinguishable from zero games, so the operator can start a duplicate game or believe the differentiator has nothing to show. `useGameState` at least surfaces `String(e)`.",
+        "run_count": 2,
+        "severity": "MEDIUM",
+        "first_seen": "2026-08-26T23:34:53Z",
+        "last_seen": "2026-08-27T21:39:13Z"
+      },
+      {
+        "fingerprint": "58f6fb53153baecd86887997",
+        "description": "`atomic_write_text(..., mode=0o600)` writes the sibling `.tmp` with umask-default mode (typically 0644), `os.replace`s it onto the target, then `os.chmod`s after the rename. Token-bearing files (`wallet_seed.txt`, `pending-anchors.json`, `rng_seed.txt`, daemon handshake) therefore appear world-readable on POSIX for the tmp lifetime plus the window between replace and chmod. A local user with directory listing or inotify on `.sov/` can read a bearer seed/token in that window. The helper's own docstring still describes chmod-after-rename as the contract.",
+        "run_count": 2,
+        "severity": "MEDIUM",
+        "first_seen": "2026-08-26T23:34:53Z",
+        "last_seen": "2026-08-27T21:39:13Z"
+      },
+      {
+        "fingerprint": "6a56da096db81cfcae981f8a",
+        "description": "Lying pin of Mike's PanicModal-outside-DaemonProvider lock. The test name and comment claim to assert that PanicModal's <dialog> is a sibling of (not a descendant of) the DaemonProvider tree. The assertion is only container.querySelector('dialog') !== null after daemonStatus rejects. DaemonProvider always renders {children} even when status is 'error' (Provider wraps children unconditionally; it emits no DOM node). A dialog-exists check cannot distinguish inside vs outside. Moving <PanicModal /> inside <DaemonProvider> leaves this test green. App.tsx currently mounts PanicModal as a sibling (correct), but the mechanical pin does not lock it.",
+        "run_count": 2,
+        "severity": "HIGH",
+        "first_seen": "2026-08-26T23:34:53Z",
+        "last_seen": "2026-08-27T21:39:13Z"
+      },
+      {
+        "fingerprint": "d26e60149578eabb41236052",
+        "description": "Command reference lists `sov verify --tx <txid>` with no proof file. verify() requires positional proof_file (sov_cli/main.py:1880-1881). Typer rejects the documented invocation. Diary-mode later in the same README (line 267) and handbook reference.md:75 use the working form `sov verify proof.json --tx <txid>` / `sov verify <proof_file> --tx <txid>`. Repeated in every README.{es,fr,hi,it,ja,pt-BR,zh}.md.",
+        "run_count": 2,
+        "severity": "MEDIUM",
+        "first_seen": "2026-08-26T23:34:53Z",
+        "last_seen": "2026-08-27T21:39:13Z"
+      },
+      {
+        "fingerprint": "fb2e5e843d890a9b802619a8",
+        "description": "README Three-tiers section links docs/roadmap.md as current. That file still says `Where we are: v2.0.0 (next ship)` and `currently 2.0.0rc1`. Package, PyPI, and GH latest are 2.2.1; v2.0.0, v2.1.0, and v2.2.x already shipped. Operators following the linked roadmap are told the next release is a year-old rc.",
+        "run_count": 2,
+        "severity": "MEDIUM",
+        "first_seen": "2026-08-26T23:34:53Z",
+        "last_seen": "2026-08-27T21:39:13Z"
+      },
+      {
+        "fingerprint": "0fdda22c7a47bf681196f31c",
+        "description": "convertPackMeta silently falls back on an unrecognized `genre` (line 153: `safeLookup(GENRE_MAP, project.genre) ?? 'fantasy'`) and an unrecognized `difficulty` (line 172: `safeLookup(DIFFICULTY_MAP, project.difficulty) ?? 'intermediate'`) with NO warning pushed in either case — but the `tones` fallback three lines in between (154-171, in the SAME function) DOES collect every unrecognized value into `invalidTones` and pushes an explicit warning ('Unrecognized tone values skipped: ...'). Proven by direct execution against the real convertPackMeta: calling it with `genre: 'mercantile'`, `tones: ['nonexistent-tone', 'dark']`, `difficulty: 'nightmare'` produced `warnings = [\"Unrecognized tone values skipped: 'nonexistent-tone'. Valid tones: dark, gritty, heroic, noir, comedic, eerie, tense, atmospheric\"]` — one warning, naming only the bad tone; `meta.genres` silently became `['fantasy']` and `meta.difficulty` silently became `'intermediate'` with zero mention anywhere in `warnings`. Since `project.genre`/`project.difficulty` have zero schema validation (this package's own ENGINE_CONTRACT.md item 4 already documents GENRE_MAP itself is missing two engine-recognized targets, `mercantile`/`pursuit`, for exactly this reason), an author who authors either field with a typo or a stale value gets a pack that silently reports a DIFFERENT genre/difficulty than what they wrote, discoverable only by diffing the exported PackMetadata against their source project by hand.",
+        "run_count": 2,
+        "severity": "MEDIUM",
+        "first_seen": "2026-08-04T08:22:42Z",
+        "last_seen": "2026-08-27T08:51:11Z"
+      },
+      {
+        "fingerprint": "38ec48e4e0016e8b40452ec4",
+        "description": "runEngineExport (lines 125-199), runUnrealExport (207-275), and runGodotExport (280-340) each perform `const { exportToX } = await import('@world-forge/export-*')` (lines 136, 218, 290) and call the resulting function BEFORE their own try/catch begins (try starts at 146, 234, 300 respectively -- after the dynamic import and the synchronous export call). If the dynamic import itself rejects -- the well-documented Vite/Rollup 'stale chunk' failure mode, where a user has the app open across a redeploy and later triggers a lazy import whose hashed chunk URL 404s -- nothing here catches it. packages/editor/vite.config.ts confirms a real Vite build with no manualChunks override, so these three import() calls do become separate lazy-loaded chunks in the shipped app. ExportModal.tsx's callers (handleExport/handleExportUnreal/handleExportGodot, lines 72-85) all invoke these as a bare `void runXExport(...)` with no .catch(). Grep across packages/editor/src confirms there is no `window.addEventListener('unhandledrejection', ...)` anywhere in the app, so a chunk-load failure becomes a genuine unhandled promise rejection with zero user-facing signal: `cb.setStatus('idle')` was already called at the top of the handler and never updated again, leaving the modal showing neither an error nor a success state, and the Export buttons give no indication anything went wrong. No existing test exercises this: ed-b-humanization.test.ts and export-depth-regression.test.ts both call these handlers with the real (workspace-resolved, always-succeeds-in-Node) dynamic import and only stub env.downloadJson, never mocking a rejected module import.",
+        "run_count": 2,
+        "severity": "MEDIUM",
+        "first_seen": "2026-08-04T08:22:42Z",
+        "last_seen": "2026-08-27T08:51:11Z"
+      },
+      {
+        "fingerprint": "8360c1fb4ca9268362d7f44a",
+        "description": "`const cellSizeCm = MODE_TO_CELL_SIZE_CM[mode];` has no fallback for a `mode` value outside the 7-entry `AuthoringMode` union, unlike every sibling enum-lookup in this codebase: convert-entities.ts's `ROLE_TO_BP_TAG[placement.role]` is explicitly typed `| undefined` and falls back to `FALLBACK_BP_TAG` with a fidelity warning (lines 130-145); entity-renderer.ts's `ROLE_COLORS[ep.role] ?? 0xcccccc` and zone-renderer.ts's `DISTRICT_COLORS[idx % ...] ?? 0x888888` both guard with `??`. Here there is no guard, and the precondition is reachable: `validateProject` (packages/schema/src/validate.ts) never checks `project.mode` against `AuthoringMode` — the purpose-built type guard `isValidMode()` (packages/schema/src/authoring-mode.ts:12) exists but is never called from validate.ts. So `cli.ts`'s unchecked `JSON.parse(raw) as WorldProject` combined with a schema-validation gap lets a `mode` value like a typo or a value from a newer/older schema version pass validation and reach this exact unguarded lookup. `MODE_TO_CELL_SIZE_CM[mode]` becomes `undefined`, `Math.ceil(widthCm / cellSizeCm)` becomes `NaN`, and `JSON.stringify` silently turns `CellSizeCm: undefined` into an omitted key and `CellsX/CellsY: NaN` into `null` in the shipped world-partition.json — the exact file the README (line 110) tells the UE5 loader to consult to 'size the streaming grid.' No fidelity entry is emitted for this case (convertWorldPartition's only fidelity push is for `gridWidth/gridHeight < 1`, an unrelated guard).",
+        "run_count": 2,
+        "severity": "MEDIUM",
+        "first_seen": "2026-08-04T08:22:42Z",
+        "last_seen": "2026-08-27T08:51:11Z"
+      },
+      {
+        "fingerprint": "a4323dfa2a397cb66ed02206",
+        "description": "saveJson calls localStorage.setItem with no try/catch. template-store.persist and editor-store hidden-id writes catch quota/SecurityError; auto-save has a full transactional path. Pin/recent/group/macro updates will throw out of the zustand setter when storage is full or blocked, aborting the in-memory update as well.",
+        "run_count": 2,
+        "severity": "MEDIUM",
+        "first_seen": "2026-08-04T08:22:42Z",
+        "last_seen": "2026-08-27T08:51:11Z"
+      },
+      {
+        "fingerprint": "b7f0d6a6e0a35dd350ec29bc",
+        "description": "Live tab icon is a 404. site-theme BaseLayout emits `<link rel=\"icon\" href=\"/grok-bot-os/favicon.svg\">`; Starlight handbook pages emit the same default (`shortcut icon` → `/grok-bot-os/favicon.svg`). GET https://mcp-tool-shop-org.github.io/grok-bot-os/favicon.svg and https://mcp-tool-shop-org.github.io/grok-bot-os/favicon.ico both return GitHub Pages 404. There is no `site/public/` directory. xrpl-lab ships `site/public/favicon.svg` and the live tab works. Every landing and handbook tab (getting-started, usage, queue, routing, architecture, security all loaded) therefore shows a generic/broken mark.",
+        "run_count": 2,
+        "severity": "MEDIUM",
+        "first_seen": "2026-08-26T17:17:58Z",
+        "last_seen": "2026-08-27T08:51:11Z"
+      },
+      {
+        "fingerprint": "e920cda5e59b834764dbacbe",
+        "description": "API intro still says 'For Godot (planned), see @world-forge/export-godot'. The Godot exporter has shipped (v4.5/v4.6); calling it planned misdirects consumers choosing a target.",
+        "run_count": 2,
+        "severity": "LOW",
+        "first_seen": "2026-08-04T08:22:42Z",
+        "last_seen": "2026-08-27T08:51:11Z"
+      },
+      {
+        "fingerprint": "f2564ffacb4ff90b60030215",
+        "description": "Undo/redo are fully implemented in project-store (depth 100, labeled stack, toolbar buttons) but HOTKEY_BINDINGS has no Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y. KeyZ without ctrl is the zone tool; Ctrl+Z currently matches nothing and dispatchHotkey returns handled:false, so the standard editor undo chord does nothing. Copy/paste/duplicate are chords; undo is not.",
+        "run_count": 2,
+        "severity": "MEDIUM",
+        "first_seen": "2026-08-04T08:22:42Z",
+        "last_seen": "2026-08-27T08:51:11Z"
+      },
+      {
+        "fingerprint": "38794a9cac28e79459f76a80",
+        "description": "`ci.yml` has no `concurrency` block. xrpl-lab and ai-jam-sessions both use `group: ${{ github.workflow }}-${{ github.ref }}` with `cancel-in-progress: true` on CI. A PR that pushes five times still queues five `verify`+`site` jobs (Python 3.12 + `npm ci` + Astro build); none cancel. Stale greens can also appear in the Checks UI beside a newer red.",
+        "run_count": 2,
+        "severity": "LOW",
+        "first_seen": "2026-08-26T17:17:58Z",
+        "last_seen": "2026-08-26T20:59:22Z"
+      },
+      {
+        "fingerprint": "5e16930968a4fab275315a29",
+        "description": "Wave 11 stacked unlayered zinc surfaces on `:root` (`--sl-color-bg/nav/sidebar/black: #09090b`, `--sl-color-text: #e4e4e7`) with the closed-F-a230338f light accent `#0e7490` only on `:root[data-theme='light']`. Starlight 0.37 keeps those surface tokens inside `@layer starlight.base`; customCss is imported unlayered from Page.astro, so the `:root` zinc literals beat Starlight's layered light resets (and Starlight light never sets `--sl-color-bg` at all). Auto/Light and `prefers-color-scheme: light` therefore keep zinc chrome. `#0e7490` on `#09090b` is ~3.4:1 (WCAG AA needs 4.5:1 for links/body). Dark still uses `--sl-color-text-accent: #67e8f9` (~12:1) and passes. The closed `#06b6d4`-on-white hole cannot reproduce because white never appears. Landing is dark-only, so OS-light users still hit this on every handbook page. testing-os scopes zinc to `html[data-theme='dark']` so the light accent actually sits on white.",
+        "run_count": 2,
+        "severity": "MEDIUM",
+        "first_seen": "2026-08-26T17:17:58Z",
+        "last_seen": "2026-08-26T20:59:22Z"
+      },
+      {
+        "fingerprint": "7d1bfafad9799612b20c0d14",
+        "description": "SHIP_GATE C marks `[complex] HANDBOOK.md: daily ops, warn/critical response, recovery procedures` as done, citing Starlight usage.md, queue.md, security.md, and architecture.md. Those pages cover the Orchestrator loop, four fields, clone Never-list, and when to escalate. They do not contain warn vs critical response or recovery procedures: no play for dead `gh` auth, missing/corrupt last-sha (how to re-seed), hung poller, GitHub compare truncated beyond the routing.md note, VM unreachable from the Coordinator workstation, or Actions never attaching beyond the one-liner that Coordinator `--admin`s later. Handbook routing.md has a `When it goes quiet` stall 🛑 (last-sha behind HEAD after more than one quiet interval) that SHIP_GATE does not cite, and there is no HANDBOOK.md in this repo. SCORECARD post-remediation still rates Operator Docs 9/10 on that attestation. Operators treating the gate as truth have no runbook when the silent path is a failure other than a stale last-sha.",
+        "run_count": 2,
+        "severity": "MEDIUM",
+        "first_seen": "2026-08-26T17:17:58Z",
+        "last_seen": "2026-08-26T20:59:22Z"
+      },
+      {
+        "fingerprint": "87ddfabe255c53160990bb88",
+        "description": "Production Pages deploy is not pinned to `main`. `workflow_dispatch` can be started from the Actions tab on any branch that contains this file; neither `build` nor `deploy` has `if: github.ref == 'refs/heads/main'`. Concurrency is `group: ${{ github.workflow }}-${{ github.ref }}` with `cancel-in-progress: true`, so a dispatch on a feature branch does not serialize with the `main` deploy — both write the same `github-pages` environment, and a newer non-main run can abort an in-flight production upload. The post-deploy smoke GETs whatever landed at PAGE_URL; it does not constrain which ref is allowed to publish. Official GitHub Pages starter uses a single `pages` group and `cancel-in-progress: false`.",
+        "run_count": 2,
+        "severity": "MEDIUM",
+        "first_seen": "2026-08-26T17:17:58Z",
+        "last_seen": "2026-08-26T20:59:22Z"
+      },
+      {
+        "fingerprint": "990401c5a1ff28ae1df7fdbb",
+        "description": "The site-build recipe is copy-pasted and has already drifted. `ci.yml` `site` caches npm with `cache-dependency-path: site/package-lock.json`; `pages.yml` `setup-node` only sets `node-version: 22`, so every production deploy is a cold registry fetch. A registry blip fails the only ship path while CI may still be green from cache. Any future `npm audit`, `--ignore-scripts`, or `/grok-bot-os/` grep added to only one job will not protect Pages (`workflow_dispatch` / main push of `site/**` never runs `ci.yml`'s extra steps).",
+        "run_count": 2,
+        "severity": "LOW",
+        "first_seen": "2026-08-26T17:17:58Z",
+        "last_seen": "2026-08-26T20:59:22Z"
+      },
+      {
+        "fingerprint": "a160dfa65dd55e9698420fa1",
+        "description": "Workflow file count violates org rule. This repo contains 4 workflow files (ci.yml, docs-integrity.yml, release.yml, pages.yml) but org rule specifies max 2 per repo. docs-integrity.yml is intentionally separate to avoid running full 2-node matrix on doc-only changes (cost saving), and pages.yml handles GitHub Pages deployment, but the total still exceeds the stated limit.",
+        "run_count": 2,
+        "severity": "MEDIUM",
+        "first_seen": "2026-07-18T12:07:34Z",
+        "last_seen": "2026-08-04T08:22:42Z"
+      }
+    ],
+    "recurrence_rate": {
+      "total_runs": 37,
+      "distinct_fingerprints": 3710,
+      "recurring_fingerprints": 19,
+      "recurrence_rate": 0.005121293800539084,
+      "window_days": null
+    }
+  },
+  "attention": {
+    "advisory": true,
+    "items": [
+      {
+        "file": ".dockerignore",
+        "score": 0,
+        "components": {
+          "churn": 0.004934210526315789,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": ".gitattributes",
+        "score": 0,
+        "components": {
+          "churn": 0.004385964912280702,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": ".github/workflows/ci.yml",
+        "score": 0,
+        "components": {
+          "churn": 0.004413377192982456,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": ".github/workflows/docs-integrity.yml",
+        "score": 0,
+        "components": {
+          "churn": 0.005339435545385202,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": ".github/workflows/pages.yml",
+        "score": 0,
+        "components": {
+          "churn": 0.002595529920692141,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": ".github/workflows/release.yml",
+        "score": 0,
+        "components": {
+          "churn": 0.007394831163931333,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": ".gitignore",
+        "score": 0,
+        "components": {
+          "churn": 0.002476780185758514,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": ".signalfire/save.json",
+        "score": 0,
+        "components": {
+          "churn": 0.005263157894736842,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "CHANGELOG.md",
+        "score": 0,
+        "components": {
+          "churn": 0.0035077099528482225,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "Dockerfile",
+        "score": 0,
+        "components": {
+          "churn": 0.0073908174692049276,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "PHILOSOPHY.md",
+        "score": 0,
+        "components": {
+          "churn": 0.00010632642211589581,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "README.es.md",
+        "score": 0,
+        "components": {
+          "churn": 0.018546365914786967,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "README.fr.md",
+        "score": 0,
+        "components": {
+          "churn": 0.01630391768895924,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "README.hi.md",
+        "score": 0,
+        "components": {
+          "churn": 0.016909020718054304,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "README.it.md",
+        "score": 0,
+        "components": {
+          "churn": 0.018611366321039505,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "README.ja.md",
+        "score": 0,
+        "components": {
+          "churn": 0.017417926003126628,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "README.md",
+        "score": 0,
+        "components": {
+          "churn": 0.005035885167464115,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "README.pt-BR.md",
+        "score": 0,
+        "components": {
+          "churn": 0.015172594828717679,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "README.zh.md",
+        "score": 0,
+        "components": {
+          "churn": 0.01902123730378578,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      },
+      {
+        "file": "SCORECARD.md",
+        "score": 0,
+        "components": {
+          "churn": 0.00553306342780027,
+          "recency": 0,
+          "fragmentation": 0
+        }
+      }
+    ]
+  },
+  "compiled_at": "2026-08-31T06:54:03.000Z",
+  "operator_notes": [],
+  "expired_notes": [],
+  "drain_queue": {
+    "entries": [],
+    "overdue_ids": []
+  },
+  "notesPath": "dogfood/roadmap-notes.json",
+  "sequence": 1,
+  "content_hash": "5e9068aa0ce55280de522cf3e3ba0a5cc08db397652cfbe19b2bff1144fa0be6"
+}

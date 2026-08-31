@@ -7,7 +7,7 @@ sidebar:
 
 A guide to building simulation-driven RPG worlds — from first room to experiment-driven balancing.
 
-Current release: **v3.8.1**. The Engine now hashes, previews, lists legal verbs, and advances rounds; the sidecar save/loads and defaults ADVANCE; the studio emits a loadable ContentPack. See the [CHANGELOG](https://github.com/mcp-tool-shop-org/ai-rpg-engine/blob/main/CHANGELOG.md).
+Current release: **v3.9.0**. The authoring loop is closed: the studio authors rulesets, rule profiles, and item placements, guided builds end by emitting `content/pack.json`, and `applyContentPack` stamps player identity, faction baselines, and rule-profile registries from a bare JSON pack — the documented boot recipe is pinned by an end-to-end test. See the [CHANGELOG](https://github.com/mcp-tool-shop-org/ai-rpg-engine/blob/main/CHANGELOG.md).
 
 ---
 

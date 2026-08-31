@@ -20,7 +20,7 @@ import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyR
 export const manifest: GameManifest = {
   id: 'salt-road-ledger',
   title: 'Salt Road Ledger',
-  version: '3.8.1',
+  version: '3.9.0',
   engineVersion: '>=3.8.0 <4.0.0',
   ruleset: 'merchant-minimal',
   modules: ['traversal-core', 'status-core', 'combat-core', 'inventory-core', 'dialogue-core'],
@@ -915,7 +915,7 @@ export const packMeta: PackMetadata = {
   tones: ['comedic', 'tense'],
   tags: ['trade', 'debt', 'obligation', 'ledger', 'escrow', 'audio-coin-count'],
   engineVersion: '>=3.8.0 <4.0.0',
-  version: '3.8.1',
+  version: '3.9.0',
   description: 'Trade on someone else’s capital along the Salt Road. Appraise, haggle, and consign goods you do not own — then keep the liens from closing over you before the Crown audits your books.',
   narratorTone: 'mercantile, wry, precise about money, quietly ruinous',
 };

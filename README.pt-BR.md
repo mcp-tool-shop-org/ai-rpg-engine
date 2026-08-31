@@ -36,10 +36,11 @@ Este é um **motor de composição**, não um jogo completo. Os 12 mundos inicia
 
 ---
 
-## Status atual (v3.8.1)
+## Estado atual (v3.9.0)
 
 **What works and is tested:**
-- **The host surface is on the Engine (v3.8.1):** `hash`, `present`, `preview`, `getAvailableActions`, `advanceRound`, sidecar `listActions` + save/load, studio `emit-pack`, JSON pack catalogs and `ruleProfiles`. A Godot attach and a JSON `--content` boot no longer copy CLI internals to invent those seams. 7893 tests.
+- **The pack you author is the game you play (v3.9):** the studio now authors everything the engine boots — `create-ruleset`, `create-rule-profile`, and `create-item-placement` join the scaffold verbs, and both `/build` plans and `ai scaffold-and-critique` end by emitting `content/pack.json`. `applyContentPack` stamps `playerId`/`locationId` from a one-player pack, lands faction reputation baselines and rule-profile registries (merged, never wiping the host's), and carries the pack's manifest and ruleset through `extractSessionContent` — the documented JSON boot recipe is corrected and pinned by an end-to-end test. Dialogue gains live texture: an NPC mentions the contract actually on the table, arriving with companions or into a grim district reads that way, and the move advisor speaks a player-facing line. Campaign memory journals companion saves and crafted items, image variants keep their identity locks (with LoRA support), rumor stances fade, and a victory sting no longer kills the zone theme. 8042 tests.
+- **The host surface is on the Engine (v3.8.1):** `hash`, `present`, `preview`, `getAvailableActions`, `advanceRound`, sidecar `listActions` + save/load, studio `emit-pack`, JSON pack catalogs and `ruleProfiles`. A Godot attach and a JSON `--content` boot no longer copy CLI internals to invent those seams.
 - Core runtime: world state, events, actions, ticks, replay — stable since v1.0; deterministic byte-identical replay (per-instance id counter, seeded RNG)
 - Combat system: 5 actions, 4 combat states, 4 engagement states, companion interception, defeat flow, AI tactics
 - Abilities: costs, cooldowns, stat checks, typed effects, 11-tag status vocabulary, AI-aware selection
@@ -83,7 +84,7 @@ Este é um **motor de composição**, não um jogo completo. Os 12 mundos inicia
 - **A game whose loop is debt (v3.5):** the eleventh starter, **Salt Road Ledger**, is the first authored backwards from a system rather than a genre — you play a factor trading on someone else's capital, and five commerce verbs (`appraise` / `haggle` / `consign` / `underwrite` / `audit`) carry the game while combat is priced as a penalty (the resource profile has an empty `gains` array — nothing rewards violence). `consign` is the only verb in the catalog whose offline semantics match a settlement primitive one-to-one, which makes it the reference pack for the ledger adapter while carrying **no dependency on it**. Ships with the `mercantile` genre and a merchant economy profile, and 7/7 on the pack rubric. The same cycle made two long-inert adapter axes real — the memo `VERB:` field (declared with members no call site could emit) and `config.settlement` (declared with zero reads anywhere) — and a played-session audit of the new pack found six mechanics that were wired, schema-valid, unit-green and dead
 - `ai-rpg-engine create-starter <name>` — scaffold a new game (standalone, runs outside the monorepo); `validate` + `scaffold` content commands; load packs from JSON
 - Published starter template on npm (`@ai-rpg-engine/starter-template`)
-- Full test suite: **7893 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
+- Full test suite: **8042 tests** (deterministic across repeated runs; test files typechecked in CI; coverage ratchet-enforced)
 
 **O que é incompleto ou inacabado:**
 - O estúdio de criação de mundos de IA (camada Ollama) é testado de forma menos rigorosa do que o núcleo de simulação e precisa de um daemon Ollama local; é totalmente opcional — o motor e o loop `run` não precisam de rede.
@@ -337,7 +338,7 @@ Os 12 mundos iniciais são **exemplos de composição** — eles demonstram como
 
 ### Onde estamos agora
 
-Ambas as estruturas de composição estão completas — 6412 testes em 326 arquivos, todos os 12 iniciadores em `buildCombatStack` **e** `buildWorldStack`, reprodução determinística e idêntica em bytes sob sementes impressas, pontuação completa das decisões da IA e uma CLI que cria, executa, valida e inspeciona. **A v3.0 torna o mundo vivo: NPCs nomeados ganham vida com objetivos, relacionamentos de confiança/medo/ganância/lealdade, livros-razão de obrigação e cadeias de consequências; a camada social ganha passivamente e gasta em vinte e um novos verbos de diplomacia/sabotagem; a economia é personalizada por gênero para cada iniciador; e a vantagem que você ganha finalmente alcança os finais da campanha que ela controla. Uma auditoria da Fase 9 detectou um problema que estava presente no conteúdo lançado, mas inativo — a correção lança um NPC nomeado em cada iniciador.**
+Ambas as estruturas de composição estão completas — **8042 testes em 381 arquivos**, todos os 12 personagens iniciais em `buildCombatStack` **e** `buildWorldStack`, reprodução determinística e idêntica em termos de bytes com base nas sementes definidas, pontuação completa das decisões da IA e uma CLI que cria a estrutura, executa, valida e inspeciona. O ciclo v3.x tornou o mundo dinâmico (personagens não jogáveis com nomes, a camada social de 25 verbos, economias de gênero — v3.0–v3.1), colocou os ativos de propriedade do jogador na testnet XRPL como um canal secundário opcional (v3.2–v3.4), criou dois personagens iniciais inovadores e transformou-os em ferramentas de aprimoramento do motor (v3.5–v3.6), aprimorou e fortaleceu a camada estratégica até que as consequências deixem marcas reais (v3.7–v3.8), forneceu aos hosts a superfície do motor com as necessidades de conexão do Godot (v3.8.1) e **fechou o ciclo de criação para que uma sessão de estúdio ou um pacote JSON básico produza um mundo jogável de ponta a ponta (v3.9)**.
 
 **Ciclo de lançamento recente (v2.4.0–v3.0.0):**
 - v2.4.0 — Combate em grupo (ataque/cura/buff/revive em aliados, efeito de status (modificadores + DoT/HoT + gatilhos reativos), Fase 1 dos Perfis plug-in, conteúdo CLI `validate`/`scaffold`
@@ -348,14 +349,17 @@ Ambas as estruturas de composição estão completas — 6412 testes em 326 arqu
 - v2.9.0 — Feche os ciclos: `buy` + estoque de mercador e artesanato completam a economia; os companheiros fazem jogadas independentes; quatro verbos sociais (suborno / intimidação / petição / semente) são executados em uma economia de vantagem financiada por recompensas de oportunidade; as oportunidades são resolvidas com expiração + consequência de queda de favor; e equipamento, missões, recrutáveis e moeda inicial são distribuídos uniformemente para todos os dez iniciadores
 - **v3.0.0 — Torne o mundo vivo: o produtor de agência de NPC acende NPCs nomeados (objetivos / relacionamentos / livros-razão de obrigação / cadeias de consequências) mais um NPC de história em cada iniciador; a superfície social cresce para 25 verbos (diplomacia + sabotagem) com renda passiva de vantagem e diálogo que lê o estado social; estoque e receitas personalizadas por gênero para cada iniciador; os finais de vantagem (vitória / mestre de marionetes / aposentadoria tranquila) se tornam alcançáveis; linhas de menu de reparo/modificação, oportunidades de escolta e uma CLI de desenvolvimento `audit-content` — lançados por meio de uma auditoria da Fase 9 que detectou dois fios mortos que o conjunto de testes verde ocultou**
 
-### Próximo (a estrutura da v3.0)
+### Próximo (o ciclo da superfície do consumidor)
 
-- **NPCs vivos** — o produtor de agência de NPC persistente que acende a seção PEOPLE do Diretor: NPCs nomeados com objetivos, pontos de interrupção de relacionamento, livros-razão de obrigação e cadeias de consequências, mais favor-queda de moral do companheiro e o caminho de risco de partida que o sistema de reação já carrega
-- Estoque de mercador e receitas de artesanato personalizados por gênero (por iniciador, com base na opção padrão universal que é lançada hoje) e a superfície do menu `repair`/`modify`
-- A próxima camada da economia de vantagem — renda passiva além das recompensas de oportunidade e verbos sociais além dos quatro lançados (grupos de diplomacia / sabotagem) — mais o vocabulário de condição/efeito de diálogo que lê o novo estado social
+Dois ciclos de produtores agora superam seus consumidores, e o próximo ciclo tem como objetivo que o jogador realmente os veja:
+
+- **As dicas chegam ao jogador** — oito campos de dicas com a voz do narrador (viés/dica de diálogo, pressão, textura, oportunidade, presença do grupo, humor do distrito, situação) acompanham os eventos de hoje e são renderizados sem nada na interface do usuário do terminal; conectá-los à narração (e ao caminho TTS das mesmas funções) é o principal objetivo
+- **Os resultados do combate chegam à trilha sonora** — o resolvedor de momentos de tensão e os recursos CORE de momentos de tensão foram lançados na v3.9, mas nenhum evento de jogabilidade os associa ainda à vitória/derrota (e `combat.victory` não existe como um evento — a camada de interação já calcula os inimigos eliminados)
+- **Uma linha de comunicação na HUD sempre ativa** — `formatPartyStatusLine` está concluído e não foi lido
+- **Avisos de pacote na rede** — um cliente secundário `--listen` atualmente não tem visibilidade sobre a perda de dados de entrada de pacotes (apenas stderr da CLI)
+- **O modelo de gravação `/build`** — execuções guiadas em lote preparam apenas a gravação final hoje (o preparo por etapa com um consentimento em lote é a solução planejada)
 - Multijogador — dois jogadores *humanos* compartilhando um mundo (uma camada de rede, deliberadamente adiada; perfis compartilhados de controlador único são lançados hoje como [`shared-profiles.ts`](docs/examples/shared-profiles.ts))
 - Substituições de fórmula serializáveis — ajuste de fórmula por perfil (bloqueado em uma DSL de fórmula; os perfis carregam mapeamentos de estatísticas hoje, não closures)
-- Sincronização da documentação da API — garantir que cada página do manual reflita as APIs mais recentes
 
 ### Destino: Perfis plug-in
 

@@ -1,6 +1,6 @@
 {
   "name": "@ai-rpg-engine/character-profile",
-  "version": "3.8.1",
+  "version": "3.9.0",
   "description": "Persistent character profiles with progression, injuries, milestones, and save/load for AI RPG Engine",
   "type": "module",
   "main": "./dist/index.js",
@@ -19,8 +19,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ai-rpg-engine/character-creation": "^3.8.1",
-    "@ai-rpg-engine/equipment": "^3.8.1"
+    "@ai-rpg-engine/character-creation": "^3.9.0",
+    "@ai-rpg-engine/equipment": "^3.9.0"
   },
   "devDependencies": {
     "@ai-rpg-engine/core": "*",
