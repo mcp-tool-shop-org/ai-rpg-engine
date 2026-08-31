@@ -444,6 +444,57 @@ describe('F-3c4931ec: combat.companion.intercepted journals companion-saved-play
   });
 });
 
+describe('F-78337c0e: combat.companion.intercepted witnesses exclude the attacker', () => {
+  it('a witnessed intercept moves a genuine bystander toward the interceptor but leaves the attacker untouched', () => {
+    // Pin for F-78337c0e: recordLiveEvent's exclude set only ever held
+    // actorId (the interceptor) and targetId (the saved entity) — never
+    // payload.attackerId. combat-core.ts's ally-selection guard
+    // (`e.id !== target.id && e.id !== attacker.id`) guarantees the
+    // attacker is a THIRD entity, alive and in the same zone, so they
+    // passed zoneOccupants' isAlive filter and landed in `witnesses`
+    // alongside any genuine bystander — gaining the same admiring
+    // trust/admiration bump for having just been the one dealing the blow.
+    const engine = makeEngine();
+    engine.store.addEntity(npc('bystander', 'Bystander'));
+    engine.store.recordEvent({
+      id: '',
+      tick: 5,
+      type: 'combat.companion.intercepted',
+      actorId: 'player',
+      payload: {
+        interceptorId: 'guard',
+        interceptorName: 'Guard',
+        targetId: 'merchant',
+        targetName: 'Merchant',
+        attackerId: 'player',
+        damage: 4,
+        interceptChance: 30,
+        interceptorHpBefore: 10,
+        interceptorHpAfter: 6,
+        interceptorMaxHp: 10,
+      },
+    });
+
+    const row = getCampaignJournal(engine.world).query({ category: 'companion-saved-player' })[0];
+    expect(row).toBeDefined();
+    expect(row!.witnesses).toContain('bystander');
+    expect(row!.witnesses).not.toContain('player');
+
+    // A genuine bystander's bank moves toward the interceptor...
+    const bystander = getNpcMemory(engine.world, 'bystander');
+    expect(bystander).toBeDefined();
+    const bystanderRel = bystander!.getRelationship('guard');
+    const defaults = createDefaultRelationship();
+    expect(bystanderRel.trust).toBeGreaterThan(defaults.trust);
+    expect(bystanderRel.admiration).toBeGreaterThan(defaults.admiration);
+
+    // ...but the attacker (payload.attackerId) — whose own blow was just
+    // intercepted — must never be counted as an admiring onlooker: no bank
+    // is ever opened for them via the witness path.
+    expect(getNpcMemory(engine.world, 'player')).toBeUndefined();
+  });
+});
+
 describe('F-908f2341: item.crafted/modified/repaired/salvaged journal item-transformed with a witness', () => {
   it('a successful craft in a populated zone journals a non-kill item-transformed row with a witness', () => {
     const engine = makeEngine();
