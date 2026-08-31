@@ -84,6 +84,37 @@ export function classifyDocument(parsed: unknown, filePath = ''): ClassifiedDoc 
   if (typeof parsed.entityId === 'string' && typeof parsed.zoneId === 'string') {
     return { kind: 'placement', id: `${parsed.entityId}@${parsed.zoneId}`, value: parsed, path: filePath };
   }
+  // Item placement (authored giveItem): {itemId, entityId}, no zoneId — the
+  // zoneId===undefined guard keeps this disjoint from the entity-placement
+  // branch above (F-bd8034ea).
+  if (
+    typeof parsed.itemId === 'string'
+    && typeof parsed.entityId === 'string'
+    && parsed.zoneId === undefined
+  ) {
+    return { kind: 'item-placement', id: `${parsed.itemId}@${parsed.entityId}`, value: parsed, path: filePath };
+  }
+  // Rule profile (PackRuleProfile): { statMapping: { attack, precision, resolve } },
+  // narrow enough that it cannot collide with any other branch here (F-0bf295ac).
+  if (
+    isRecord(parsed.statMapping)
+    && typeof parsed.statMapping.attack === 'string'
+    && typeof parsed.statMapping.precision === 'string'
+    && typeof parsed.statMapping.resolve === 'string'
+  ) {
+    return { kind: 'rule-profile', id: asId(parsed.id), value: parsed, path: filePath };
+  }
+  // Standalone RulesetDefinition: stats+resources+verbs arrays mirror
+  // validateRulesetDefinition's required fields (F-8ec253bf).
+  if (
+    Array.isArray(parsed.stats)
+    && Array.isArray(parsed.resources)
+    && Array.isArray(parsed.verbs)
+    && typeof parsed.id === 'string'
+    && typeof parsed.name === 'string'
+  ) {
+    return { kind: 'ruleset', id: parsed.id, value: parsed, path: filePath };
+  }
   if (
     typeof parsed.encounterType === 'string'
     && Array.isArray(parsed.enemyIds)
@@ -203,10 +234,12 @@ function mergePackJson(pack: MutablePack, src: Record<string, unknown>, notes: s
     const dest = pack[key] as unknown as Record<string, unknown>[];
     for (const item of v) {
       if (isRecord(item)) {
-        const idKey = key === 'placements' ? 'entityId' : 'id';
         if (key === 'placements' && typeof item.entityId === 'string' && typeof item.zoneId === 'string') {
           if (!dest.some((p) => p.entityId === item.entityId && p.zoneId === item.zoneId)) dest.push(item);
+        } else if (key === 'itemPlacements' && typeof item.itemId === 'string' && typeof item.entityId === 'string') {
+          if (!dest.some((p) => p.itemId === item.itemId && p.entityId === item.entityId)) dest.push(item);
         } else {
+          const idKey = key === 'placements' ? 'entityId' : key === 'itemPlacements' ? 'itemId' : 'id';
           pushUnique(dest, item, idKey);
         }
       }
@@ -225,6 +258,7 @@ function mergePackJson(pack: MutablePack, src: Record<string, unknown>, notes: s
   take('archetypes', 'archetypes');
   take('backgrounds', 'backgrounds');
   take('placements', 'placements');
+  take('itemPlacements', 'itemPlacements');
   take('encounterAnchors', 'encounterAnchors');
   take('progressionTrees', 'progressionTrees');
   if (isRecord(src.entityAi)) {
@@ -236,6 +270,12 @@ function mergePackJson(pack: MutablePack, src: Record<string, unknown>, notes: s
   if (isRecord(src.meta) && !pack.meta) pack.meta = src.meta;
   if (isRecord(src.manifest) && !pack.manifest) pack.manifest = src.manifest;
   if (src.ruleset !== undefined && pack.ruleset === undefined) pack.ruleset = src.ruleset;
+  // ruleProfiles is Record<string, PackRuleProfile>, not an array — a plain
+  // object-merge (not take()'s array-dedup logic) so re-emitting an existing
+  // pack does not silently drop it (F-0bf295ac).
+  if (isRecord(src.ruleProfiles)) {
+    pack.ruleProfiles = { ...pack.ruleProfiles, ...src.ruleProfiles as Record<string, unknown> };
+  }
 }
 
 type MutablePack = {
@@ -252,6 +292,7 @@ type MutablePack = {
   archetypes: Record<string, unknown>[];
   backgrounds: Record<string, unknown>[];
   placements: Array<{ entityId: string; zoneId: string } & Record<string, unknown>>;
+  itemPlacements: Array<{ itemId: string; entityId: string } & Record<string, unknown>>;
   entityAi: Record<string, Record<string, unknown>>;
   buildCatalog?: Record<string, unknown>;
   encounterAnchors: Record<string, unknown>[];
@@ -259,6 +300,7 @@ type MutablePack = {
   meta?: Record<string, unknown>;
   manifest?: Record<string, unknown>;
   ruleset?: unknown;
+  ruleProfiles: Record<string, unknown>;
 };
 
 function emptyPack(): MutablePack {
@@ -276,9 +318,11 @@ function emptyPack(): MutablePack {
     archetypes: [],
     backgrounds: [],
     placements: [],
+    itemPlacements: [],
     entityAi: {},
     encounterAnchors: [],
     progressionTrees: [],
+    ruleProfiles: {},
   };
 }
 
@@ -366,6 +410,24 @@ function ingest(pack: MutablePack, doc: ClassifiedDoc, notes: string[]): void {
         }
       }
       break;
+    case 'item-placement':
+      if (typeof v.itemId === 'string' && typeof v.entityId === 'string') {
+        if (!pack.itemPlacements.some((p) => p.itemId === v.itemId && p.entityId === v.entityId)) {
+          pack.itemPlacements.push({ itemId: v.itemId, entityId: v.entityId, ...v });
+        }
+      }
+      break;
+    case 'rule-profile': {
+      const id = asId(v.id);
+      if (id) {
+        const { id: _i, ...rest } = v;
+        pack.ruleProfiles[id] = rest;
+      }
+      break;
+    }
+    case 'ruleset':
+      if (!pack.ruleset) pack.ruleset = v;
+      break;
     case 'entityAi': {
       const id = asId(v.entityId) ?? asId(v.id);
       if (id) {
@@ -409,6 +471,7 @@ function toContentPack(pack: MutablePack): ContentPack {
   if (pack.archetypes.length) out.archetypes = pack.archetypes as ContentPack['archetypes'];
   if (pack.backgrounds.length) out.backgrounds = pack.backgrounds as ContentPack['backgrounds'];
   if (pack.placements.length) out.placements = pack.placements as ContentPack['placements'];
+  if (pack.itemPlacements.length) out.itemPlacements = pack.itemPlacements as ContentPack['itemPlacements'];
   if (Object.keys(pack.entityAi).length) out.entityAi = pack.entityAi as ContentPack['entityAi'];
   if (pack.buildCatalog) out.buildCatalog = pack.buildCatalog;
   if (pack.encounterAnchors.length) out.encounterAnchors = pack.encounterAnchors as ContentPack['encounterAnchors'];
@@ -416,6 +479,7 @@ function toContentPack(pack: MutablePack): ContentPack {
   if (pack.meta) out.meta = pack.meta as ContentPack['meta'];
   if (pack.manifest) out.manifest = pack.manifest as ContentPack['manifest'];
   if (pack.ruleset !== undefined) out.ruleset = pack.ruleset as ContentPack['ruleset'];
+  if (Object.keys(pack.ruleProfiles).length) out.ruleProfiles = pack.ruleProfiles as ContentPack['ruleProfiles'];
   return out;
 }
 
@@ -537,6 +601,10 @@ export function idsFromPack(pack: ContentPack): Partial<SessionArtifacts> {
     placements: (pack.placements ?? [])
       .map((p) => (p.entityId && p.zoneId ? `${p.entityId}@${p.zoneId}` : ''))
       .filter(Boolean),
+    itemPlacements: (pack.itemPlacements ?? [])
+      .map((p) => (p.itemId && p.entityId ? `${p.itemId}@${p.entityId}` : ''))
+      .filter(Boolean),
+    ruleProfiles: pack.ruleProfiles ? Object.keys(pack.ruleProfiles) : [],
     entityAi: pack.entityAi ? Object.keys(pack.entityAi) : [],
     catalogs: asId((pack.buildCatalog as { packId?: unknown } | undefined)?.packId)
       ? [asId((pack.buildCatalog as { packId?: unknown }).packId)!]

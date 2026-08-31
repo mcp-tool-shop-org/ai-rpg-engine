@@ -60,6 +60,49 @@ describe('classifyDocument', () => {
     expect(doc?.kind).toBe('progression-tree');
     expect(doc?.id).toBe('combat_mastery');
   });
+
+  // F-8ec253bf: classifyDocument had no branch recognizing a standalone
+  // ruleset document — such a file dropped into a project was never picked
+  // up by assembleContentPack's walk.
+  it('classifies a ruleset', () => {
+    const doc = classifyDocument({
+      id: 'fantasy-minimal',
+      name: 'Fantasy Minimal',
+      version: '0.1.0',
+      stats: [{ id: 'vigor', name: 'Vigor', default: 5 }],
+      resources: [{ id: 'hp', name: 'HP', default: 20 }],
+      verbs: [{ id: 'move', name: 'Move' }],
+      formulas: [],
+      defaultModules: [],
+      progressionModels: [],
+    }, 'ruleset.yaml');
+    expect(doc?.kind).toBe('ruleset');
+    expect(doc?.id).toBe('fantasy-minimal');
+  });
+
+  // F-0bf295ac: no branch matched a bare PackRuleProfile document
+  // ({ statMapping: { attack, precision, resolve } }).
+  it('classifies a rule profile', () => {
+    const doc = classifyDocument({
+      id: 'veteran_soldier',
+      statMapping: { attack: 'strength', precision: 'dexterity', resolve: 'willpower' },
+    }, 'profile.yaml');
+    expect(doc?.kind).toBe('rule-profile');
+    expect(doc?.id).toBe('veteran_soldier');
+  });
+
+  // F-bd8034ea: the nearest branch (kind 'placement') requires zoneId, so a
+  // bare {itemId, entityId} document fell through every check unclassified.
+  it('classifies an item placement, disjoint from entity placement', () => {
+    const doc = classifyDocument({ itemId: 'rusty_key', entityId: 'chapel_guard' }, 'ip.yaml');
+    expect(doc?.kind).toBe('item-placement');
+    expect(doc?.id).toBe('rusty_key@chapel_guard');
+  });
+
+  it('still classifies an entity placement when zoneId is present', () => {
+    const doc = classifyDocument({ entityId: 'chapel_guard', zoneId: 'nave' }, 'p.yaml');
+    expect(doc?.kind).toBe('placement');
+  });
 });
 
 describe('assembleContentPack', () => {
@@ -127,6 +170,16 @@ describe('assembleContentPack', () => {
     expect(ids.entityAi).toEqual(['g']);
     expect(ids.anchors).toEqual(['nave_ambush']);
     expect(ids.trees).toEqual(['combat_mastery']);
+  });
+
+  // F-0bf295ac / F-bd8034ea: idsFromPack had no ruleProfiles/itemPlacements bucket.
+  it('idsFromPack extracts ruleProfiles and itemPlacements buckets', () => {
+    const ids = idsFromPack({
+      ruleProfiles: { veteran_soldier: { statMapping: { attack: 'strength', precision: 'dexterity', resolve: 'willpower' } } },
+      itemPlacements: [{ itemId: 'rusty_key', entityId: 'chapel_guard' }],
+    });
+    expect(ids.ruleProfiles).toEqual(['veteran_soldier']);
+    expect(ids.itemPlacements).toEqual(['rusty_key@chapel_guard']);
   });
 
   it('keeps encounterAnchors, progressionTrees, and meta when walking pack JSON', async () => {
@@ -211,5 +264,101 @@ describe('assembleContentPack', () => {
     expect(result.pack.encounterAnchors).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: 'nave_ambush', zoneId: 'nave' })]),
     );
+  });
+
+  // F-8ec253bf: walking a standalone ruleset file into pack.ruleset.
+  it('walks a standalone ruleset file into pack.ruleset', async () => {
+    await writeFile(join(root, 'ruleset.yaml'), [
+      'id: fantasy-minimal',
+      'name: Fantasy Minimal',
+      'version: 0.1.0',
+      'stats:',
+      '  - id: vigor',
+      '    name: Vigor',
+      '    default: 5',
+      'resources:',
+      '  - id: hp',
+      '    name: HP',
+      '    default: 20',
+      'verbs:',
+      '  - id: move',
+      '    name: Move',
+      'formulas:',
+      '  - id: hit-chance',
+      '    name: Hit Chance',
+      '    inputs:',
+      '      - attacker.vigor',
+      '    output: number',
+      'defaultModules:',
+      '  - combat-core',
+      'progressionModels:',
+      '  - linear',
+    ].join('\n'));
+    const result = await assembleContentPack(root);
+    expect(result.pack.ruleset).toEqual(expect.objectContaining({ id: 'fantasy-minimal' }));
+  });
+
+  // F-0bf295ac: walking a standalone rule-profile file into pack.ruleProfiles,
+  // keyed by the doc's id (with `id` itself stripped from the stored value).
+  it('walks a standalone rule-profile file into pack.ruleProfiles', async () => {
+    await writeFile(join(root, 'profile.yaml'), [
+      'id: veteran_soldier',
+      'statMapping:',
+      '  attack: strength',
+      '  precision: dexterity',
+      '  resolve: willpower',
+    ].join('\n'));
+    const result = await assembleContentPack(root);
+    expect(result.pack.ruleProfiles?.veteran_soldier).toEqual({
+      statMapping: { attack: 'strength', precision: 'dexterity', resolve: 'willpower' },
+    });
+  });
+
+  // F-bd8034ea: walking a standalone item-placement file into pack.itemPlacements.
+  it('walks a standalone item-placement file into pack.itemPlacements', async () => {
+    await writeFile(join(root, 'ip.yaml'), 'itemId: rusty_key\nentityId: chapel_guard\n');
+    const result = await assembleContentPack(root);
+    expect(result.pack.itemPlacements).toEqual(
+      expect.arrayContaining([expect.objectContaining({ itemId: 'rusty_key', entityId: 'chapel_guard' })]),
+    );
+  });
+
+  it('does not double-classify an item placement as an entity placement', async () => {
+    await writeFile(join(root, 'ip.yaml'), 'itemId: rusty_key\nentityId: chapel_guard\n');
+    const result = await assembleContentPack(root);
+    expect(result.pack.placements ?? []).toEqual([]);
+  });
+
+  // mergePackJson: re-walking an existing pack JSON that already carries
+  // ruleProfiles/itemPlacements must not silently drop them. (classifyDocument's
+  // pack-json detection keys off entities/zones/quests, so a realistic
+  // re-emitted pack.json — the actual scenario the finding describes — always
+  // carries at least one of those alongside ruleProfiles/itemPlacements.)
+  it('merges ruleProfiles and itemPlacements when re-walking pack JSON', async () => {
+    await writeFile(join(root, 'content.json'), JSON.stringify({
+      schemaVersion: '1',
+      entities: [{ id: 'chapel_guard', type: 'npc', name: 'Chapel Guard' }],
+      ruleProfiles: { veteran_soldier: { statMapping: { attack: 'strength', precision: 'dexterity', resolve: 'willpower' } } },
+      itemPlacements: [{ itemId: 'rusty_key', entityId: 'chapel_guard' }],
+    }));
+    const result = await assembleContentPack(root);
+    expect(result.pack.ruleProfiles?.veteran_soldier).toBeDefined();
+    expect(result.pack.itemPlacements).toEqual(
+      expect.arrayContaining([expect.objectContaining({ itemId: 'rusty_key', entityId: 'chapel_guard' })]),
+    );
+  });
+
+  it('dedups itemPlacements on the compound itemId+entityId key when re-walking pack JSON', async () => {
+    await writeFile(join(root, 'content.json'), JSON.stringify({
+      schemaVersion: '1',
+      entities: [{ id: 'chapel_guard', type: 'npc', name: 'Chapel Guard' }],
+      itemPlacements: [
+        { itemId: 'rusty_key', entityId: 'chapel_guard' },
+        { itemId: 'rusty_key', entityId: 'chapel_guard' },
+        { itemId: 'rusty_key', entityId: 'sacristan' },
+      ],
+    }));
+    const result = await assembleContentPack(root);
+    expect(result.pack.itemPlacements).toHaveLength(2);
   });
 });
