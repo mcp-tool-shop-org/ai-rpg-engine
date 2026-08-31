@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - SSRF shared-address-space block (RFC 6598) no longer ships a dotted CGNAT literal.
 - Serial-verify pins from the feature pass: SessionArtifacts extra buckets, generateStream flood caps, SIM_AFFECTING_KEYS unexpanded (world-forge hasher).
+- Twelve starter packs: `manifest.version` and `packMeta.version` lockstep with package.json `3.8.1` (the catalog gate that blocked the first 3.8.1 Release).
 
 ## [3.8.0] - 2026-07-28
 

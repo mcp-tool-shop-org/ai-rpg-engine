@@ -11,7 +11,7 @@ import type { DistrictDefinition, EncounterDefinition, BossDefinition, CurrencyR
 export const manifest: GameManifest = {
   id: 'iron-colosseum',
   title: 'Iron Colosseum',
-  version: '3.8.0',
+  version: '3.8.1',
   engineVersion: '>=3.8.0 <4.0.0',
   ruleset: 'gladiator-minimal',
   modules: ['traversal-core', 'status-core', 'combat-core', 'inventory-core', 'dialogue-core'],
@@ -732,7 +732,7 @@ export const packMeta: PackMetadata = {
   tones: ['gritty', 'heroic'],
   tags: ['gladiator', 'arena', 'combat', 'freedom', 'spectacle', 'roman'],
   engineVersion: '>=3.8.0 <4.0.0',
-  version: '3.8.0',
+  version: '3.8.1',
   description: 'Fight for freedom in a crumbling arena. Earn crowd favor through spectacle, secure patrons, and survive long enough to challenge the undefeated champion.',
   narratorTone: 'roman arena, visceral, theatrical, defiant',
 };
