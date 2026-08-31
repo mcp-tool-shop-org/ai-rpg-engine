@@ -1551,6 +1551,21 @@ async function runCliInner(args: string[]): Promise<void> {
         console.error(`[${p.currentStep}/${p.totalSteps}] ${step.label}: ${step.status}`);
       };
 
+      // Wave-2 stitch: resolve + confine the --write target BEFORE the macro
+      // runs and hand it in, so the scaffolded YAML lands before the
+      // emit-pack step assembles — otherwise every run emitted a pack one
+      // artifact behind. Same sandbox check emit() applies, just earlier.
+      let scaffoldWritePath: string | undefined;
+      if (flags.write) {
+        const resolved = resolveUnderRoot(flags.write, projectRoot);
+        if (!withinRoot(resolved, projectRoot)) {
+          console.error(`Error: --write target escapes the project root (${resolved})`);
+          console.error(`Writes are sandboxed to ${resolve(projectRoot)}. Choose a path inside the project.`);
+          process.exit(1);
+        }
+        scaffoldWritePath = resolved;
+      }
+
       const result = await scaffoldAndCritique(client, {
         kind,
         theme,
@@ -1561,12 +1576,19 @@ async function runCliInner(args: string[]): Promise<void> {
         difficulty: flags.difficulty,
         projectRoot,
         session: session ? { name: session.name, themes: session.themes } : undefined,
+        scaffoldWritePath,
       }, onProgress);
 
-      // Output the first step's content (the generated YAML)
+      // Output the first step's content (the generated YAML). The macro
+      // already persisted it when --write was given (it must land before the
+      // emit-pack step assembles), so only echo/report here.
       const scaffoldStep = result.steps[0];
       if (scaffoldStep?.output) {
-        await emit(scaffoldStep.output, flags.write);
+        if (scaffoldWritePath) {
+          console.error(`Wrote ${scaffoldWritePath}`);
+        } else {
+          console.log(scaffoldStep.output);
+        }
       }
 
       // Critique and suggestions to stderr

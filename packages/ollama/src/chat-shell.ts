@@ -482,6 +482,12 @@ export async function handleSlashCommand(
       const result = await engine.executeBuildStep();
       console.log('');
       console.log(result);
+      // Wave-2 stitch: the step's staged write is live on the engine now —
+      // say so at the moment it is true, or the tool summaries' "save this"
+      // instructions point at nothing.
+      if (engine.pendingWrite) {
+        console.log(`Content staged for ${engine.pendingWrite.suggestedPath} — say "yes" to review and write it, or "no" to discard.`);
+      }
       console.log('');
       return 'handled';
     }
@@ -500,6 +506,14 @@ export async function handleSlashCommand(
       });
       console.log('');
       console.log(result);
+      // Wave-2 stitch: after a batch, the LAST step's staged write (the
+      // emit-pack tail in the fixed templates) survives on the engine.
+      // Surface it once, where it is true — intermediate steps' stages were
+      // superseded as the batch ran.
+      if (engine.pendingWrite) {
+        console.log('');
+        console.log(`Content staged for ${engine.pendingWrite.suggestedPath} — say "yes" to review and write it, or "no" to discard.`);
+      }
       console.log('');
       return 'handled';
     }

@@ -292,29 +292,52 @@ describe('scaffoldAndCritique', () => {
       await rm(root, { recursive: true, force: true });
     });
 
-    it('writes content/pack.json when given a projectRoot', async () => {
+    it('writes content/pack.json CONTAINING the scaffolded artifact when persisting (scaffoldWritePath)', async () => {
+      const client = sequenceClient(roomYaml, critiqueYaml);
+      const result = await scaffoldAndCritique(client, {
+        kind: 'room',
+        theme: 'ruined chapel',
+        projectRoot: root,
+        scaffoldWritePath: join(root, 'chapel.yaml'),
+      });
+      expect(result.ok).toBe(true);
+      expect(result.steps[3].status).toBe('done');
+      const raw = await readFile(join(root, 'content', 'pack.json'), 'utf-8');
+      // INVERTED (wave-2 stitch): this test used to pin the off-by-one —
+      // assembly ran before the CLI's own --write landed the YAML, so every
+      // run emitted a pack one artifact behind. The macro now lands the
+      // scaffolded YAML BEFORE the emit-pack step assembles, so the pack
+      // contains the artifact this very run produced.
+      expect(raw).toContain('nave');
+      await readFile(join(root, 'chapel.yaml'), 'utf-8');
+    });
+
+    it('does not write content/pack.json — or anything — without scaffoldWritePath (consent pin)', async () => {
       const client = sequenceClient(roomYaml, critiqueYaml);
       const result = await scaffoldAndCritique(client, {
         kind: 'room',
         theme: 'ruined chapel',
         projectRoot: root,
       });
+      // Pre-stitch the macro wrote content/pack.json even when the caller
+      // asked for nothing to be persisted (`ai scaffold-and-critique` with
+      // no --write) — a filesystem write the user never requested, and one
+      // the CLI's own emit() convention gates on --write. The emit-pack
+      // step now assembles and REPORTS but skips the write.
       expect(result.ok).toBe(true);
-      expect(result.steps[3].status).toBe('done');
-      const written = JSON.parse(await readFile(join(root, 'content', 'pack.json'), 'utf-8'));
-      // The room scaffold step's own output was never written to disk by
-      // this macro (that's the CLI's --write job) — emit-pack only
-      // assembles whatever is ALREADY on disk under projectRoot.
-      expect(written.zones ?? []).toEqual([]);
+      expect(result.steps[3].status).toBe('skipped');
+      expect(result.steps[3].output).toContain('not written');
+      await expect(readFile(join(root, 'content', 'pack.json'), 'utf-8')).rejects.toThrow();
     });
 
-    it('assembles pre-existing project files, not just the scaffold step output', async () => {
+    it('assembles pre-existing project files alongside the scaffold step output', async () => {
       await writeFile(join(root, 'guard.yaml'), 'id: chapel_guard\ntype: npc\nname: Chapel Guard\n');
       const client = sequenceClient(roomYaml, critiqueYaml);
       const result = await scaffoldAndCritique(client, {
         kind: 'room',
         theme: 'ruined chapel',
         projectRoot: root,
+        scaffoldWritePath: join(root, 'chapel.yaml'),
       });
       expect(result.ok).toBe(true);
       const written = JSON.parse(await readFile(join(root, 'content', 'pack.json'), 'utf-8'));
@@ -323,7 +346,7 @@ describe('scaffoldAndCritique', () => {
       );
     });
 
-    it('mirrors the CLI fail-closed guard: skips the write and reports errors instead of throwing', async () => {
+    it('mirrors the CLI fail-closed guard: skips the pack write, reports errors, but keeps the scaffold YAML', async () => {
       // Dangling placement reference — a deterministic loadContent failure.
       await writeFile(join(root, 'ghost.yaml'), 'entityId: ghost\nzoneId: nowhere\n');
       const client = sequenceClient(roomYaml, critiqueYaml);
@@ -331,13 +354,17 @@ describe('scaffoldAndCritique', () => {
         kind: 'room',
         theme: 'ruined chapel',
         projectRoot: root,
+        scaffoldWritePath: join(root, 'chapel.yaml'),
       });
-      // The scaffold/critique steps still succeeded — only the write is skipped.
+      // The scaffold/critique steps still succeeded — only the pack write is
+      // skipped. The user's own requested YAML write stands: its validity was
+      // never in question, and refusing it would throw away the run's work.
       expect(result.steps[0].status).toBe('done');
       expect(result.steps[1].status).toBe('done');
       expect(result.steps[3].status).toBe('skipped');
       expect(result.steps[3].output).toContain('ghost');
       await expect(readFile(join(root, 'content', 'pack.json'), 'utf-8')).rejects.toThrow();
+      await readFile(join(root, 'chapel.yaml'), 'utf-8');
     });
   });
 });

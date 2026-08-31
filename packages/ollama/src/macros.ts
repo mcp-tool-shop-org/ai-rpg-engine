@@ -155,6 +155,17 @@ export type ScaffoldAndCritiqueInput = {
   session?: { name: string; themes?: string[] };
   packId?: string;
   packName?: string;
+  /**
+   * Absolute, caller-confined path to persist the scaffolded YAML to,
+   * BEFORE the emit-pack step assembles (wave-2 stitch). Without it the
+   * emitted pack was always one artifact behind: the CLI wrote the YAML
+   * only after this macro returned, so the assembly walked a disk that did
+   * not yet contain the artifact this very run produced. Doubles as the
+   * persistence-intent flag: when absent, the emit-pack step assembles and
+   * REPORTS but writes nothing (`ai scaffold-and-critique` without --write
+   * must not touch the filesystem).
+   */
+  scaffoldWritePath?: string;
 };
 
 export async function scaffoldAndCritique(
@@ -183,6 +194,16 @@ export async function scaffoldAndCritique(
   } catch (e) {
     failStep(progress, String(e), onProgress);
     return buildMacroResult(progress);
+  }
+
+  // Land the scaffolded YAML before anything assembles (wave-2 stitch): the
+  // emit-pack step below walks the disk, so the write has to precede it or
+  // the pack omits the artifact this run just made. The caller resolves and
+  // sandbox-confines the path; this macro still never writes without an
+  // explicit caller-supplied target.
+  if (input.scaffoldWritePath) {
+    await mkdir(dirname(input.scaffoldWritePath), { recursive: true });
+    await writeFile(input.scaffoldWritePath, yaml, 'utf-8');
   }
 
   // Step 2: Critique
@@ -229,7 +250,17 @@ export async function scaffoldAndCritique(
       packId: input.packId,
       packName: input.packName,
     });
-    if (assembled.load.ok) {
+    if (assembled.load.ok && !input.scaffoldWritePath) {
+      // No persistence intent (no --write): assemble for the report's
+      // validation value, but write nothing — pre-stitch this branch wrote
+      // content/pack.json on every run, a filesystem write the caller never
+      // asked for and the CLI's own emit() convention gates on --write.
+      skipStep(
+        progress,
+        `${formatEmitPackReport(assembled)}\n\npack not written — pass --write <path> to persist the scaffold and content/pack.json.`,
+        onProgress,
+      );
+    } else if (assembled.load.ok) {
       const writePath = defaultPackWritePath(input.projectRoot);
       await mkdir(dirname(writePath), { recursive: true });
       await writeFile(writePath, packJson(assembled.pack), 'utf-8');

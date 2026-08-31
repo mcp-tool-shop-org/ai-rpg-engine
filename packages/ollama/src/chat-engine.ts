@@ -661,6 +661,18 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       engineState: { lastAnalysis, lastExperiment, baselineExperiment, activeBuild, activeTuning },
     });
 
+    // Wave-2 stitch (F-35cc73ce composed surface): stage the step's
+    // pendingWrite on the engine instead of dropping it. Every mutating tool
+    // in the registry stages via pendingWrite ("never writes without
+    // consent"), so dropping it here meant no /step //execute content —
+    // scaffold YAML or the emit-pack tail's assembled pack — could ever be
+    // saved, while the tool summaries still said "say yes to save". Each
+    // step overwrites the previous stage (last one wins), and the normal
+    // confirmation flow (preview → yes) takes it from there.
+    if (toolResult.pendingWrite) {
+      pendingWrite = toolResult.pendingWrite;
+    }
+
     if (toolResult.ok) {
       markStepExecuted(activeBuild, step.id, toolResult.summary, toolResult.output);
       if (session) {

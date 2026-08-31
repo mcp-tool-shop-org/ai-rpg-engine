@@ -489,6 +489,52 @@ describe('executeAllBuildSteps — per-step progress callback (F-4be7a3c2)', () 
   });
 });
 
+// --- Build steps stage pendingWrite (wave-2 stitch, F-35cc73ce composed surface) ---
+// executeBuildStep read ok/summary/output/sessionEvents from each step tool and
+// dropped pendingWrite, so every /build step's staged write — scaffold YAML and
+// the emit-pack tail's assembled pack alike — was silently discarded, and the
+// emit-pack summary's "say yes to save" instruction was a dead affordance on
+// the /step //execute path. The engine now stages each step's pendingWrite
+// (last one wins), and the normal confirmation flow takes it from there.
+
+describe('build steps stage pendingWrite on the engine', () => {
+  it('executeBuildStep stages the step tool pendingWrite instead of dropping it', async () => {
+    const yaml = 'id: staged-room\ntype: room\nname: Staged Room';
+    const engine = createChatEngine({
+      client: mockClient(yaml),
+      projectRoot: '/tmp/nonexistent-' + Date.now(),
+      rawMode: true,
+    });
+    engine.activeBuild = createBuildState(buildPlanOf([scaffoldStep(1, 'staged room')]));
+    await engine.executeBuildStep();
+    expect(engine.pendingWrite).not.toBeNull();
+    expect(engine.pendingWrite!.content).toContain('staged-room');
+  });
+
+  it('after a batch the staged write is live and confirmable through the normal yes flow', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'chat-build-stage-'));
+    try {
+      const yaml = 'id: staged-room\ntype: room\nname: Staged Room';
+      const engine = createChatEngine({ client: mockClient(yaml), projectRoot: dir, rawMode: true });
+      engine.activeBuild = createBuildState(buildPlanOf([scaffoldStep(1, 'one')]));
+      await engine.executeAllBuildSteps();
+      expect(engine.pendingWrite).not.toBeNull();
+      const suggested = engine.pendingWrite!.suggestedPath;
+      // First "yes" previews (staged writes show a preview before landing),
+      // second "yes" writes under the sandbox.
+      await engine.process('yes');
+      expect(engine.pendingWrite).not.toBeNull();
+      expect(engine.pendingWrite!.previewShown).toBe(true);
+      const response = await engine.process('yes');
+      expect(response).toContain('Written');
+      await access(join(dir, suggested));
+      expect(engine.pendingWrite).toBeNull();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('executeAllTuningSteps — per-step progress + early abort (F-4be7a3c2)', () => {
   it('fires onStep per tuning step', async () => {
     const yaml = 'id: tuned-room\ntype: room\nname: Tuned Room';
