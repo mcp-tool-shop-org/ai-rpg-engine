@@ -396,3 +396,124 @@ describe('F-d1973aae: NPC attitude copies onto EntityState.relations', () => {
     expect(lines.some((line) => line.includes('Guard') && line.includes('Aldric'))).toBe(true);
   });
 });
+
+describe('F-3c4931ec: combat.companion.intercepted journals companion-saved-player with the interceptor as actor', () => {
+  it('a witnessed intercept journals a non-kill companion-saved-player row with actorId = the interceptor, not the attacker', () => {
+    const engine = makeEngine();
+    // Shape verified against combat-core.ts:238-252. event.actorId mirrors
+    // make-event.ts's action.actorId — the ORIGINAL ATTACKER ('player' here),
+    // never the interceptor. If resolveActorTarget fell to the untouched
+    // default, actorId would misattribute the save to 'player'.
+    engine.store.recordEvent({
+      id: '',
+      tick: 5,
+      type: 'combat.companion.intercepted',
+      actorId: 'player',
+      payload: {
+        interceptorId: 'guard',
+        interceptorName: 'Guard',
+        targetId: 'merchant',
+        targetName: 'Merchant',
+        attackerId: 'player',
+        damage: 4,
+        interceptChance: 30,
+        interceptorHpBefore: 10,
+        interceptorHpAfter: 6,
+        interceptorMaxHp: 10,
+      },
+    });
+
+    const journal = getCampaignJournal(engine.world);
+    expect(journal.query({ category: 'kill' })).toHaveLength(0);
+    const row = journal.query({ category: 'companion-saved-player' })[0];
+    expect(row).toBeDefined();
+    expect(row!.actorId).toBe('guard');
+    expect(row!.actorId).not.toBe('player');
+    expect(row!.targetId).toBe('merchant');
+    expect(row!.zoneId).toBe('market');
+    expect(row!.description.toLowerCase()).toContain('intercept');
+
+    // The saved entity (merchant, non-player) gains warmer feelings toward
+    // the interceptor via the target-perspective branch (memory-core.ts:390-396).
+    const merchant = getNpcMemory(engine.world, 'merchant');
+    expect(merchant).toBeDefined();
+    const rel = merchant!.getRelationship('guard');
+    const defaults = createDefaultRelationship();
+    expect(rel.trust).toBeGreaterThan(defaults.trust);
+    expect(rel.admiration).toBeGreaterThan(defaults.admiration);
+  });
+});
+
+describe('F-908f2341: item.crafted/modified/repaired/salvaged journal item-transformed with a witness', () => {
+  it('a successful craft in a populated zone journals a non-kill item-transformed row with a witness', () => {
+    const engine = makeEngine();
+    engine.store.recordEvent({
+      id: '',
+      tick: 7,
+      type: 'item.crafted',
+      actorId: 'guard',
+      payload: {
+        entityId: 'guard',
+        recipeId: 'iron-dagger',
+        recipeName: 'Iron Dagger',
+        itemId: 'iron-dagger',
+        chronicleDetail: 'Forged an iron dagger',
+      },
+    });
+
+    const journal = getCampaignJournal(engine.world);
+    expect(journal.query({ category: 'kill' })).toHaveLength(0);
+    const row = journal.query({ category: 'item-transformed' })[0];
+    expect(row).toBeDefined();
+    expect(row!.actorId).toBe('guard');
+    expect(row!.witnesses).toContain('player');
+    expect(row!.witnesses).toContain('merchant');
+    expect(row!.witnesses).not.toContain('guard');
+    expect(row!.data).toMatchObject({ itemId: 'iron-dagger' });
+    expect(row!.description.toLowerCase()).toContain('transform');
+  });
+
+  it('modified/repaired/salvaged also journal item-transformed', () => {
+    const engine = makeEngine();
+    const cases: Array<{ type: string; itemId: string }> = [
+      { type: 'item.modified', itemId: 'gladius' },
+      { type: 'item.repaired', itemId: 'gladius' },
+      { type: 'item.salvaged', itemId: 'gladius' },
+    ];
+    cases.forEach(({ type, itemId }, i) => {
+      engine.store.recordEvent({
+        id: '',
+        tick: 10 + i,
+        type,
+        actorId: 'player',
+        payload: { entityId: 'player', itemId, chronicleDetail: `${type} event` },
+      });
+    });
+
+    const rows = getCampaignJournal(engine.world).query({ category: 'item-transformed' });
+    expect(rows).toHaveLength(3);
+  });
+
+  it('a non-player crafter gains no self-directed relationship entry (regression pin)', () => {
+    // Left to the untouched default, resolveActorTarget would resolve
+    // targetId to entityId (== actorId on all four crafting events), and the
+    // target-perspective branch would give a non-player crafter a
+    // relationship entry about themselves.
+    const engine = makeEngine();
+    engine.store.recordEvent({
+      id: '',
+      tick: 7,
+      type: 'item.crafted',
+      actorId: 'guard',
+      payload: {
+        entityId: 'guard',
+        recipeId: 'iron-dagger',
+        itemId: 'iron-dagger',
+        chronicleDetail: 'Forged an iron dagger',
+      },
+    });
+
+    // No target-perspective bank was ever opened for the crafter themselves.
+    expect(getNpcMemory(engine.world, 'guard')).toBeUndefined();
+  });
+});

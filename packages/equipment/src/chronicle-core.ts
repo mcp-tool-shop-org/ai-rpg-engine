@@ -52,7 +52,7 @@
 // Recording itself is deterministic: driven off the resolved event stream,
 // keyed on event.tick, no Math.random(), no Date.now(), no wall clock.
 
-import type { EngineModule, EntityState, WorldState } from '@ai-rpg-engine/core';
+import type { EngineModule, EntityState, ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
 import type { ItemCatalog, ItemChronicleEntry, ItemDefinition } from './types.js';
 import { recordItemEvent } from './item-chronicle.js';
 import { evaluateRelicGrowth, type GrowthMilestone } from './relic-growth.js';
@@ -354,6 +354,40 @@ function alreadyAcquired(world: WorldState, itemId: string): boolean {
 }
 
 /**
+ * Record a `transformed` entry for item.crafted / item.modified /
+ * item.repaired / item.salvaged (F-4c41cc2c).
+ *
+ * crafting-recipes.ts (packages/modules) stamps a `chronicleDetail` string on
+ * all four events for exactly this consumer, and sets each event's actorId to
+ * the crafter via make-event.ts's `actorId: action.actorId` — so the crafter's
+ * current zone (not a payload field, none of the four carry one) is where the
+ * chronicle entry is scoped.
+ *
+ * No `alreadyAcquired`-style guard, matching item.lost: a craft, modify,
+ * repair, or salvage is a real event in the item's story each time it
+ * happens, not a one-time acquisition.
+ */
+function recordTransformed(world: WorldState, config: ItemChronicleCoreConfig, event: ResolvedEvent): void {
+    const itemId = event.payload.itemId as string | undefined;
+    if (!itemId) return;
+
+    const crafter = event.actorId ? world.entities[event.actorId] : undefined;
+    applyEntries(
+        world,
+        config,
+        [
+            {
+                itemId,
+                event: 'transformed',
+                detail: event.payload.chronicleDetail as string,
+                ...(crafter?.zoneId ? { zoneId: crafter.zoneId } : {}),
+            },
+        ],
+        event.tick,
+    );
+}
+
+/**
  * Re-age every chronicled item against `tick` without recording anything.
  *
  * For callers that need current ages at a moment no chronicle write happened
@@ -390,6 +424,9 @@ export function refreshRelicSummaries(
  *                      currently-equipped weapon
  *   - `recognized`   — when an NPC sharing the wearer's zone reacts to
  *                      equipped provenance (requires `config.recognition`)
+ *   - `transformed`  — on `item.crafted` / `item.modified` / `item.repaired` /
+ *                      `item.salvaged` (F-4c41cc2c), detail taken straight
+ *                      from the producer's `chronicleDetail`
  */
 export function createItemChronicleCore(config: ItemChronicleCoreConfig): EngineModule {
     return {
@@ -522,6 +559,15 @@ export function createItemChronicleCore(config: ItemChronicleCoreConfig): Engine
                     event.tick,
                 );
             });
+
+            // Crafting, modifying, repairing, and salvaging each change an
+            // item's story the same way a kill or a recognition does. See
+            // recordTransformed for why there is no alreadyAcquired-style
+            // guard here.
+            ctx.events.on('item.crafted', (event, world) => recordTransformed(world, config, event));
+            ctx.events.on('item.modified', (event, world) => recordTransformed(world, config, event));
+            ctx.events.on('item.repaired', (event, world) => recordTransformed(world, config, event));
+            ctx.events.on('item.salvaged', (event, world) => recordTransformed(world, config, event));
         },
     };
 }

@@ -581,6 +581,117 @@ describe('chronicle-core — the detail authoring convention', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Transformation — craft/modify/repair/salvage (F-4c41cc2c)
+// ---------------------------------------------------------------------------
+
+describe('chronicle-core — transformation (F-4c41cc2c)', () => {
+    it('records `transformed` after a credited craft, with the recipe\'s chronicleDetail', () => {
+        const engine = makeEngine({ chronicle: true });
+        engine.store.recordEvent({
+            id: '',
+            tick: 2,
+            type: 'item.crafted',
+            actorId: 'player',
+            payload: {
+                entityId: 'player',
+                recipeId: 'gladius',
+                recipeName: 'Gladius',
+                itemId: 'gladius',
+                outputItem: 'gladius',
+                qualityBonus: 0,
+                materialsConsumed: {},
+                districtId: 'salt-road',
+                chronicleDetail: 'Forged a gladius from scavenged iron',
+            },
+        });
+
+        const history = getItemHistory(getItemChronicle(engine.world), 'gladius');
+        const transformed = history.filter((e) => e.event === 'transformed');
+        expect(transformed).toHaveLength(1);
+        expect(transformed[0]!.detail).toBe('Forged a gladius from scavenged iron');
+        expect(transformed[0]!.zoneId).toBe('arena');
+    });
+
+    it('records `transformed` for modified/repaired/salvaged the same way', () => {
+        const engine = makeEngine({ chronicle: true });
+        const cases: Array<{ type: string; detail: string }> = [
+            { type: 'item.modified', detail: 'Reforged the edge' },
+            { type: 'item.repaired', detail: 'Patched the haft' },
+            { type: 'item.salvaged', detail: 'Broken down for parts' },
+        ];
+        cases.forEach(({ type, detail }, i) => {
+            engine.store.recordEvent({
+                id: '',
+                tick: i + 1,
+                type,
+                actorId: 'player',
+                payload: { entityId: 'player', itemId: 'trident-and-net', chronicleDetail: detail },
+            });
+        });
+
+        const history = getItemHistory(getItemChronicle(engine.world), 'trident-and-net');
+        const transformed = history.filter((e) => e.event === 'transformed');
+        expect(transformed.map((e) => e.detail)).toEqual([
+            'Reforged the edge',
+            'Patched the haft',
+            'Broken down for parts',
+        ]);
+    });
+
+    it('repeats on every craft/modify/repair/salvage — no alreadyAcquired-style guard', () => {
+        const engine = makeEngine({ chronicle: true });
+        engine.store.recordEvent({
+            id: '',
+            tick: 1,
+            type: 'item.crafted',
+            actorId: 'player',
+            payload: { entityId: 'player', itemId: 'gladius', chronicleDetail: 'First forging' },
+        });
+        engine.store.recordEvent({
+            id: '',
+            tick: 2,
+            type: 'item.modified',
+            actorId: 'player',
+            payload: { entityId: 'player', itemId: 'gladius', chronicleDetail: 'Reforged again' },
+        });
+
+        const transformed = getItemHistory(getItemChronicle(engine.world), 'gladius').filter(
+            (e) => e.event === 'transformed',
+        );
+        expect(transformed).toHaveLength(2);
+    });
+
+    it('ignores an item id that is not in the catalog', () => {
+        const engine = makeEngine({ chronicle: true });
+        engine.store.recordEvent({
+            id: '',
+            tick: 1,
+            type: 'item.crafted',
+            actorId: 'player',
+            payload: { entityId: 'player', itemId: 'ghost-blade', chronicleDetail: 'Forged from nothing' },
+        });
+
+        expect(engine.world.modules[ITEM_CHRONICLE_STATE_KEY]).toBeUndefined();
+    });
+
+    it('a transformed entry feeds into the persisted relic summary', () => {
+        const milestones: Record<string, GrowthMilestone[]> = {
+            gladius: [{ trigger: 'age', threshold: 0, epithet: 'Reworked {name}' }],
+        };
+        const engine = makeEngine({ chronicle: true, milestones });
+        engine.store.recordEvent({
+            id: '',
+            tick: 1,
+            type: 'item.crafted',
+            actorId: 'player',
+            payload: { entityId: 'player', itemId: 'gladius', chronicleDetail: 'Forged a gladius' },
+        });
+
+        expect(getRelicSummary(engine.world, 'gladius')).toBeDefined();
+    });
+});
+
+// ---------------------------------------------------------------------------
 // Checkpoint reads are snapshots (F-fe938876)
 // ---------------------------------------------------------------------------
 
