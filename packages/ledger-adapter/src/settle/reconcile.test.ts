@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { NFTokenRef, ReconcileInput, SettlementRecord } from '../contracts.js';
-import { buildItemNFTUri, buildSettlementMemo } from '../contracts.js';
+import {
+  buildItemNFTUri,
+  buildSettlementMemo,
+  formatReconcileReport,
+  stampLedgerReceipt,
+} from '../contracts.js';
 import { deriveCurrencyCode, reconcile } from './reconcile.js';
+import { LEDGER_ADAPTER_VERSION } from '../index.js';
 
 // Mirrors escape-the-valley's tests/test_ledger_proof.py drift-detection
 // suite: a happy path that passes, then one test per way the ledger can lie
@@ -16,7 +22,9 @@ const POTION_CODE = deriveCurrencyCode('potion');
 function makeSettlement(overrides: Partial<SettlementRecord> = {}): SettlementRecord {
   const checkpoint = overrides.checkpoint ?? 1;
   const deltas = overrides.deltas ?? { coin: -25, potion: 2 };
-  const memo = overrides.memo ?? buildSettlementMemo(GAME_ID, RUN_ID, checkpoint, deltas, 'settle');
+  const verb = overrides.verb ?? 'settle';
+  const memo =
+    overrides.memo ?? buildSettlementMemo(GAME_ID, RUN_ID, checkpoint, deltas, verb, overrides.stateHash);
   return {
     checkpoint,
     location: overrides.location ?? 'Cedar Wake',
@@ -25,6 +33,8 @@ function makeSettlement(overrides: Partial<SettlementRecord> = {}): SettlementRe
     status: overrides.status ?? 'settled',
     memo,
     timestamp: overrides.timestamp ?? '1970-01-01T00:00:00.000Z',
+    ...(overrides.verb ? { verb: overrides.verb } : {}),
+    ...(overrides.stateHash ? { stateHash: overrides.stateHash } : {}),
   };
 }
 
@@ -356,5 +366,88 @@ describe('reconcile — NFT ownership checks (P4)', () => {
     expect(report.pendingCount).toBe(0);
     expect(report.nftChecks?.[0]?.ok).toBe(false);
     expect(report.passed).toBe(false);
+  });
+});
+
+describe('stateHash on the settlement memo', () => {
+  it('expectedSettlementMemo / reconcile verify HASH when the record has one', () => {
+    const hash = 'c'.repeat(64);
+    const deltas = { coin: -25, potion: 2 };
+    const rec = makeSettlement({
+      stateHash: hash,
+      memo: buildSettlementMemo(GAME_ID, RUN_ID, 1, deltas, 'settle', hash),
+    });
+    const report = reconcile(baseInput({ settlements: [rec] }));
+    expect(report.memoLocalOk).toBe(true);
+    expect(report.passed).toBe(true);
+  });
+
+  it('fails when the stored memo omits HASH the record claims', () => {
+    const rec = makeSettlement();
+    rec.stateHash = 'c'.repeat(64);
+    const report = reconcile(baseInput({ settlements: [rec] }));
+    expect(report.memoLocalOk).toBe(false);
+    expect(report.passed).toBe(false);
+  });
+
+  it('a record without stateHash still matches the historical grammar', () => {
+    const rec = makeSettlement();
+    expect(rec.memo).not.toContain('|HASH:');
+    expect(reconcile(baseInput({ settlements: [rec] })).memoLocalOk).toBe(true);
+  });
+});
+
+describe('formatReconcileReport + stampLedgerReceipt', () => {
+  it('interpolates passed/fail, per-resource conservation, memoOk, and testnet explorers', () => {
+    const report = reconcile(baseInput({ onchainMemos: { TX1: makeSettlement().memo } }));
+    const formatted = formatReconcileReport(report, 'testnet');
+    expect(formatted.message).toContain('Reconcile PASSED');
+    expect(formatted.message).toContain('coin');
+    expect(formatted.message).toContain('balance=OK');
+    expect(formatted.message).toContain('conservation=OK');
+    expect(formatted.message).toContain('memoOk=true');
+    expect(formatted.explorerUrls).toEqual(['https://testnet.xrpl.org/transactions/TX1']);
+  });
+
+  it('omits explorerUrls on dry-run and never invents a mainnet explorer', () => {
+    const report = reconcile(baseInput());
+    expect(formatReconcileReport(report, 'dry-run').explorerUrls).toBeUndefined();
+    expect(formatReconcileReport(report, 'mainnet').explorerUrls).toBeUndefined();
+    const formatted = formatReconcileReport(report, 'dry-run');
+    expect(formatted.message).toContain('Reconcile PASSED');
+  });
+
+  it('includes nftChecks when present', () => {
+    const ref = makeNftRef();
+    const report = reconcile(
+      nftOnlyInput({
+        nfts: [ref],
+        ledgerNfts: { [ref.nftId]: { owner: 'rPlayer', uri: ref.uri } },
+      }),
+    );
+    const formatted = formatReconcileReport(report, 'devnet');
+    expect(formatted.message).toContain(`nft ${ref.gameItemId}`);
+    expect(formatted.message).toContain('owned=true');
+    expect(formatted.message).toContain('uriOk=true');
+  });
+
+  it('stampLedgerReceipt writes version + formatted reconcile (LEDGER_ADAPTER_VERSION as given)', () => {
+    const report = reconcile(baseInput());
+    const stamped = stampLedgerReceipt({
+      version: LEDGER_ADAPTER_VERSION,
+      network: 'testnet',
+      enable: { success: true, message: 'ok' },
+      settlement: { success: true, message: 'settled' },
+      nft: { success: true, message: 'minted', minted: ['cutlass'] },
+      reconcile: report,
+    });
+    expect(stamped.version).toBe(LEDGER_ADAPTER_VERSION);
+    expect(stamped.network).toBe('testnet');
+    expect(stamped.enable?.success).toBe(true);
+    expect(stamped.settlement?.success).toBe(true);
+    expect(stamped.nft?.minted).toEqual(['cutlass']);
+    expect(Array.isArray(stamped.formatted) ? stamped.formatted[0].message : stamped.formatted?.message).toContain(
+      'Reconcile PASSED',
+    );
   });
 });

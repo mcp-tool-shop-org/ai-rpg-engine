@@ -1088,6 +1088,57 @@ describe('diary mode: witnessed, not custodied', () => {
     expect(report.resources.find((r) => r.resource === 'coin')?.conservationOk).toBe(true);
     expect(report.resources.find((r) => r.resource === 'coin')?.sumDeltas).toBe(-50);
   });
+
+  it('an explicit stateHash is written into the diary memo and record', async () => {
+    const adapter = createLedgerAdapter(transport, DIARY_CONFIG, { gameId: 'g', runId: 'r' });
+    const state = diaryState();
+    await adapter.enable(state, snapshot);
+    const hash = 'a'.repeat(64);
+
+    const result = await adapter.settle(state, { coin: 70, items: { potion: 2 } }, 1, 'the-warrens', {
+      stateHash: hash,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.record?.stateHash).toBe(hash);
+    expect(result.record?.memo).toContain(`|HASH:${hash}`);
+    expect(result.record?.memo).toBe(
+      `ARPG|GAME:g|RUN:r|CHECKPOINT:1|DELTA:coin-30|VERB:settle|V:1|HASH:${hash}`,
+    );
+  });
+
+  it('retryPending replays HASH from the pending diary record', async () => {
+    const adapter = createLedgerAdapter(transport, DIARY_CONFIG, { gameId: 'g', runId: 'r' });
+    const state = diaryState();
+    await adapter.enable(state, snapshot);
+    const hash = 'b'.repeat(64);
+
+    transport.failNext(1);
+    const failed = await adapter.settle(state, { coin: 70, items: { potion: 2 } }, 1, 'the-warrens', {
+      stateHash: hash,
+    });
+    expect(failed.success).toBe(false);
+    expect(state.pending[0]?.stateHash).toBe(hash);
+
+    const recovered = await adapter.settle(state, { coin: 70, items: { potion: 2 } }, 2, 'the-warrens');
+    expect(recovered.success).toBe(true);
+    expect(state.pending).toHaveLength(0);
+    expect(state.settlements[0]?.memo).toContain(`|HASH:${hash}`);
+    expect(state.settlements[0]?.stateHash).toBe(hash);
+  });
+});
+
+describe('ledger settle omits HASH unless the host passed one', () => {
+  it('a ledger settle without stateHash writes the historical memo grammar', async () => {
+    const transport = createFakeTransport();
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'g', runId: 'r' });
+    const state = freshState();
+    await adapter.enable(state, { coin: 100, items: { potion: 2 } });
+    const result = await adapter.settle(state, { coin: 70, items: { potion: 2 } }, 1, 'town');
+    expect(result.success).toBe(true);
+    expect(result.record?.stateHash).toBeUndefined();
+    expect(result.record?.memo).not.toContain('|HASH:');
+  });
 });
 
 // ── persistent issuer (F-merchant-E) ────────────────────────────────────

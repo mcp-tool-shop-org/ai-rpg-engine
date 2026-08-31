@@ -660,7 +660,14 @@ export function createLedgerAdapter(
         // that exists because the network is unreliable. Absent verb (a record
         // serialized before the field existed) is 'settle', which is what all
         // such records were in fact written as.
-        const memo = buildSettlementMemo(gameId, runId, record.checkpoint, record.deltas, record.verb ?? 'settle');
+        const memo = buildSettlementMemo(
+          gameId,
+          runId,
+          record.checkpoint,
+          record.deltas,
+          record.verb ?? 'settle',
+          record.stateHash,
+        );
         if (!record.receipts) record.receipts = {};
         // Diary pending records were written by a failed anchorMemo, not a
         // token movement. Replaying them through executeDeltas would try to
@@ -958,7 +965,8 @@ export function createLedgerAdapter(
     // information any run could vary.
     const verb = options.verb ?? 'settle';
     const primitive = options.primitive ?? config.settlement;
-    const memo = buildSettlementMemo(gameId, runId, checkpoint, deltas, verb);
+    const stateHash = options.stateHash;
+    const memo = buildSettlementMemo(gameId, runId, checkpoint, deltas, verb, stateHash);
     const receipts: Record<string, SettlementKeyReceipt> = {};
 
     try {
@@ -987,6 +995,7 @@ export function createLedgerAdapter(
         timestamp: now(),
         verb,
         receipts,
+        ...(stateHash ? { stateHash } : {}),
       };
       state.settlements.push(record);
       state.lastSettleFailed = false;
@@ -1018,6 +1027,7 @@ export function createLedgerAdapter(
         // Per-key receipts so retryPending skips writes that already landed.
         receipts,
         lastError: errorMessage(err),
+        ...(stateHash ? { stateHash } : {}),
       };
       state.pending.push(record);
       state.lastSettleFailed = true;

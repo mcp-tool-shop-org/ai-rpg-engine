@@ -27,9 +27,18 @@
 // owned, matching pirate-live-replay.mjs's own precedent.
 
 import { writeFileSync } from 'node:fs';
-import { TestnetTransport, buildItemNFTUri, reconcile } from '../dist/index.js';
+import {
+  TestnetTransport,
+  buildItemNFTUri,
+  reconcile,
+  formatReconcileReport,
+  stampLedgerReceipt,
+  LEDGER_ADAPTER_VERSION,
+  txExplorerUrl,
+} from '../dist/index.js';
 
-const EXPLORER = (h) => `https://testnet.xrpl.org/transactions/${h}`;
+const NETWORK = 'testnet';
+const explorer = (h) => txExplorerUrl(NETWORK, h) ?? h;
 const GAME_ID = 'nft-replay';
 const ITEM_ID = 'cutlass';
 const TAXON = 7777;
@@ -68,7 +77,7 @@ async function main() {
     receipt.nftId = mint.nftId;
     receipt.uriV1 = uriV1;
     console.log(`  code=${mint.code}  nftId=${mint.nftId}  uri="${uriV1}"`);
-    if (!stage('3-mint', mint.ok && !!mint.nftId, `${mint.code} ${EXPLORER(mint.hash)}`)) throw new Error('mint failed');
+    if (!stage('3-mint', mint.ok && !!mint.nftId, `${mint.code} ${explorer(mint.hash)}`)) throw new Error('mint failed');
 
     console.log('\n=== Stage 4: verify issuer owns + lsfMutable on-ledger ===');
     let issuerNfts = await transport.accountNfts(issuer.address);
@@ -82,7 +91,7 @@ async function main() {
     console.log(`  offer code=${offer.code}  offerIndex=${offer.offerIndex}`);
     if (!stage('5a-offer', offer.ok && !!offer.offerIndex, offer.code)) throw new Error('create offer failed');
     const accept = capture('NFTokenAcceptOffer', await transport.nftAcceptSellOffer(player.seed, offer.offerIndex));
-    if (!stage('5b-accept', accept.ok, `${accept.code} ${EXPLORER(accept.hash)}`)) throw new Error('accept failed');
+    if (!stage('5b-accept', accept.ok, `${accept.code} ${explorer(accept.hash)}`)) throw new Error('accept failed');
 
     console.log('\n=== Stage 6: verify transfer (player owns, issuer gone) ===');
     let playerNfts = await transport.accountNfts(player.address);
@@ -96,7 +105,7 @@ async function main() {
     receipt.uriV2 = uriV2;
     const modify = capture('NFTokenModify', await transport.nftModify(issuer.seed, mint.nftId, uriV2, player.address));
     console.log(`  modify code=${modify.code}  uri -> "${uriV2}"`);
-    if (!stage('7a-modify', modify.ok, `${modify.code} ${EXPLORER(modify.hash)}`)) throw new Error('modify failed');
+    if (!stage('7a-modify', modify.ok, `${modify.code} ${explorer(modify.hash)}`)) throw new Error('modify failed');
     playerNfts = await transport.accountNfts(player.address);
     const grown = playerNfts.find((n) => n.nftId === mint.nftId);
     const identityPreserved = !!grown && grown.nftId === mint.nftId;
@@ -131,6 +140,8 @@ async function main() {
       nfts: [ref], ledgerNfts,
     });
     receipt.reconcile = report;
+    const formatted = formatReconcileReport(report, NETWORK);
+    console.log(formatted.message);
     const nftCheck = report.nftChecks?.[0];
     console.log(`  nftCheck: owned=${nftCheck?.ownedOnLedger} uriOk=${nftCheck?.uriOk} ok=${nftCheck?.ok} | report.passed=${report.passed}`);
     stage('9-reconcile', report.passed && nftCheck?.ok === true,
@@ -139,13 +150,20 @@ async function main() {
     receipt.passed = receipt.stages.every((s) => s.ok);
   } finally {
     await transport.disconnect();
-    writeFileSync(new URL('./nft-live-replay-receipt.json', import.meta.url), JSON.stringify(receipt, null, 2));
+    writeFileSync(new URL('./nft-live-replay-receipt.json', import.meta.url), JSON.stringify({
+      ...receipt,
+      ...stampLedgerReceipt({
+        version: LEDGER_ADAPTER_VERSION,
+        network: receipt.network,
+        reconcile: receipt.reconcile,
+      }),
+    }, null, 2));
   }
 
   const pass = receipt.stages.every((s) => s.ok) && receipt.passed;
   console.log(`\n=== NFT LIVE REPLAY ${pass ? 'PASSED' : 'FAILED'} ===`);
   console.log('Proof txids by type:', receipt.proofTxids);
-  for (const [type, hash] of Object.entries(receipt.proofTxids)) console.log(`  ${type.padEnd(22)} ${EXPLORER(hash)}`);
+  for (const [type, hash] of Object.entries(receipt.proofTxids)) console.log(`  ${type.padEnd(22)} ${explorer(hash)}`);
   console.log('Receipt: packages/ledger-adapter/scripts/nft-live-replay-receipt.json');
   process.exit(pass ? 0 : 1);
 }

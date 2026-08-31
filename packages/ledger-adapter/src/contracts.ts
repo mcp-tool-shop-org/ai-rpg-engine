@@ -271,6 +271,14 @@ export type SettlementRecord = {
    * tecPATH_DRY, unindexed OfferSequence, and a stalled node are distinguishable.
    */
   lastError?: string;
+  /**
+   * Optional hex digest of the run's witness payload, written into the memo's
+   * `HASH:` field. OPTIONAL for back-compat: records written before this field
+   * have none, and `expectedSettlementMemo` omits `HASH` when absent. Diary
+   * settleCheckpoint writes a firewall-pure digest of `{ seed, tick, snapshot }`;
+   * ledger may omit.
+   */
+  stateHash?: string;
 };
 
 /**
@@ -484,6 +492,87 @@ export type ReconcileInput = {
 /** The pure reconciliation function signature (settle-impl owns the body). */
 export type ReconcileFn = (input: ReconcileInput) => ReconcileReport;
 
+/** Player-facing reconcile printout — interpolates the verdict, never a host-invented loop. */
+export type FormattedReconcileReport = {
+  message: string;
+  /** Testnet/devnet transaction explorers for `report.txids`. Omitted on dry-run; never mainnet. */
+  explorerUrls?: string[];
+};
+
+/**
+ * Render a {@link ReconcileReport} for a host (handbook Ch. 62 audit printout).
+ * Explorer URLs come from {@link txExplorerUrl} — omitted on dry-run, never mainnet.
+ */
+export function formatReconcileReport(report: ReconcileReport, network: string): FormattedReconcileReport {
+  const lines: string[] = [report.passed ? 'Reconcile PASSED' : 'Reconcile FAILED'];
+  for (const r of report.resources) {
+    const ledger = r.ledger === null ? 'n/a' : String(r.ledger);
+    lines.push(
+      `${r.resource} (${r.code}) minted=${r.minted} Σ=${r.sumDeltas} engine=${r.engineSettled} ledger=${ledger} balance=${r.balanceOk ? 'OK' : 'FAIL'} conservation=${r.conservationOk ? 'OK' : 'FAIL'}`,
+    );
+  }
+  lines.push(`memoOk=${report.memoOk} (local=${report.memoLocalOk} onchain=${report.onchainMemoOk})`);
+  if (report.nftChecks) {
+    for (const c of report.nftChecks) {
+      lines.push(`nft ${c.gameItemId}: owned=${c.ownedOnLedger} uriOk=${c.uriOk} ok=${c.ok}`);
+    }
+  }
+  for (const note of report.notes) lines.push(`- ${note}`);
+
+  const explorerUrls = report.txids
+    .map((hash) => txExplorerUrl(network, hash))
+    .filter((url): url is string => url !== undefined);
+
+  const formatted: FormattedReconcileReport = { message: lines.join('\n') };
+  if (explorerUrls.length > 0) formatted.explorerUrls = explorerUrls;
+  return formatted;
+}
+
+/** Unique-gear slice of a stamped receipt — structural so this file stays free of nft.ts. */
+export type LedgerReceiptNft = {
+  success: boolean;
+  message: string;
+  minted?: string[];
+  modified?: string[];
+  released?: string[];
+  txids?: string[];
+};
+
+export type StampLedgerReceiptInput = {
+  version: string;
+  network: string;
+  enable?: EnableResult;
+  settlement?: SettlementResult;
+  nft?: LedgerReceiptNft;
+  reconcile?: ReconcileReport | ReconcileReport[];
+};
+
+export type StampedLedgerReceipt = StampLedgerReceiptInput & {
+  formatted?: FormattedReconcileReport | FormattedReconcileReport[];
+};
+
+/**
+ * Stamp a proof-pack / live-replay receipt with the package version and a
+ * formatted reconcile printout. Hosts pass the package version constant as
+ * `version` — this helper does not invent one.
+ */
+export function stampLedgerReceipt(input: StampLedgerReceiptInput): StampedLedgerReceipt {
+  const stamped: StampedLedgerReceipt = {
+    version: input.version,
+    network: input.network,
+  };
+  if (input.enable) stamped.enable = input.enable;
+  if (input.settlement) stamped.settlement = input.settlement;
+  if (input.nft) stamped.nft = input.nft;
+  if (input.reconcile !== undefined) {
+    stamped.reconcile = input.reconcile;
+    stamped.formatted = Array.isArray(input.reconcile)
+      ? input.reconcile.map((r) => formatReconcileReport(r, input.network))
+      : formatReconcileReport(input.reconcile, input.network);
+  }
+  return stamped;
+}
+
 // ── The adapter public API (settle-impl owns the body) ──────────────────────
 
 /**
@@ -517,6 +606,12 @@ export type SettleOptions = {
    * and direct payments in a black market, against one set of books.
    */
   primitive?: SettlementPrimitive;
+  /**
+   * Optional hex digest of the run's witness payload. When present,
+   * `buildSettlementMemo` appends `|HASH:<hex>`. Diary `settleCheckpoint`
+   * defaults a firewall-pure hash of `{ seed, tick, snapshot }`; ledger may omit.
+   */
+  stateHash?: string;
 };
 
 /**
@@ -564,6 +659,7 @@ export const MEMO_SCHEMA_VERSION = 1;
  * Trail's `TRAIL|RUN:…` grammar). The `ARPG|GAME:<id>|RUN:<id>|CHECKPOINT:<n>`
  * prefix is what the external verifier matches; deltas + version follow.
  * Example: `ARPG|GAME:pirate|RUN:abc|CHECKPOINT:3|DELTA:coin-25,potion+2|VERB:sell|V:1`
+ * When `stateHash` is present: the same string plus `|HASH:<hex>`.
  */
 export function buildSettlementMemo(
   gameId: string,
@@ -571,8 +667,10 @@ export function buildSettlementMemo(
   checkpoint: number,
   deltas: Record<string, number>,
   verb: SettlementVerb,
+  stateHash?: string,
 ): string {
-  return `ARPG|GAME:${gameId}|RUN:${runId}|CHECKPOINT:${checkpoint}|DELTA:${settlementMemoDeltas(deltas)}|VERB:${verb}|V:${MEMO_SCHEMA_VERSION}`;
+  const base = `ARPG|GAME:${gameId}|RUN:${runId}|CHECKPOINT:${checkpoint}|DELTA:${settlementMemoDeltas(deltas)}|VERB:${verb}|V:${MEMO_SCHEMA_VERSION}`;
+  return stateHash ? `${base}|HASH:${stateHash}` : base;
 }
 
 /** The canonical `DELTA:` field body — sorted keys, explicit sign. */
@@ -604,7 +702,7 @@ export function settlementMemoPrefix(gameId: string, runId: string, checkpoint: 
 export function expectedSettlementMemo(
   gameId: string,
   runId: string,
-  record: Pick<SettlementRecord, 'checkpoint' | 'deltas' | 'verb'>,
+  record: Pick<SettlementRecord, 'checkpoint' | 'deltas' | 'verb' | 'stateHash'>,
 ): string {
   return buildSettlementMemo(
     gameId,
@@ -612,6 +710,7 @@ export function expectedSettlementMemo(
     record.checkpoint,
     record.deltas,
     record.verb ?? 'settle',
+    record.stateHash,
   );
 }
 

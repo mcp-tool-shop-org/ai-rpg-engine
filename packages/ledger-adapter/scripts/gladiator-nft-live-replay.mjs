@@ -45,9 +45,14 @@ import {
   reconcile,
   createInitialState,
   DEFAULT_LEDGER_CONFIG,
+  formatReconcileReport,
+  stampLedgerReceipt,
+  LEDGER_ADAPTER_VERSION,
+  txExplorerUrl,
 } from '../dist/index.js';
 
-const EXPLORER = (h) => `https://testnet.xrpl.org/transactions/${h}`;
+const NETWORK = 'testnet';
+const explorer = (h) => txExplorerUrl(NETWORK, h) ?? h;
 const SEED = 11; // the seed the gladiator equipment-integration test uses
 const GAME_ID = 'iron-colosseum'; // starter-gladiator's real manifest.id (content.ts)
 const EXPECT_ITEM = 'trident-and-net'; // the armory's issued gear
@@ -126,7 +131,7 @@ async function main() {
     }));
     receipt.settle = settleRes;
     receipt.nfts = state.nfts;
-    receipt.txLog = (settleRes.txids ?? []).map((h) => ({ hash: h, explorer: EXPLORER(h) }));
+    receipt.txLog = (settleRes.txids ?? []).map((h) => ({ hash: h, explorer: explorer(h) }));
     for (const h of settleRes.txids ?? []) if (!receipt.proofTxids.mint) receipt.proofTxids.mint = h;
     const ref = state.nfts?.[EXPECT_ITEM];
     stage('4-settle', settleRes.success && settleRes.minted.includes(EXPECT_ITEM) && ref?.status === 'minted',
@@ -149,6 +154,8 @@ async function main() {
       nfts: Object.values(state.nfts), ledgerNfts,
     });
     receipt.reconcile = report;
+    const formatted = formatReconcileReport(report, NETWORK);
+    console.log(formatted.message);
     const nftCheck = report.nftChecks?.find((c) => c.gameItemId === EXPECT_ITEM);
     console.log(`  nftCheck: owned=${nftCheck?.ownedOnLedger} uriOk=${nftCheck?.uriOk} ok=${nftCheck?.ok} | report.passed=${report.passed}`);
     stage('6-reconcile', report.passed && nftCheck?.ok === true,
@@ -192,7 +199,7 @@ async function main() {
     receipt.growthSettle = growthRes;
     receipt.nftsAfterGrowth = state.nfts;
     for (const h of growthRes.txids ?? []) {
-      receipt.txLog.push({ hash: h, explorer: EXPLORER(h) });
+      receipt.txLog.push({ hash: h, explorer: explorer(h) });
       if (!receipt.proofTxids.modify) receipt.proofTxids.modify = h;
     }
     const refAfter = state.nfts?.[EXPECT_ITEM];
@@ -216,6 +223,8 @@ async function main() {
       nfts: Object.values(state.nfts), ledgerNfts: ledgerNftsAfter,
     });
     receipt.growthReconcile = growthReport;
+    const growthFormatted = formatReconcileReport(growthReport, NETWORK);
+    console.log(growthFormatted.message);
     const growthCheck = growthReport.nftChecks?.find((c) => c.gameItemId === EXPECT_ITEM);
     console.log(`  on-ledger uri="${grownOnLedger?.uri}" | expected="${growthCheck?.expectedUri}" uriOk=${growthCheck?.uriOk} passed=${growthReport.passed}`);
     stage('10-verify-growth', growthReport.passed && growthCheck?.uriOk === true && growthCheck?.ownedOnLedger === true,
@@ -233,7 +242,15 @@ async function main() {
     receipt.passed = receipt.stages.every((s) => s.ok);
   } finally {
     await transport.disconnect();
-    writeFileSync(new URL('./gladiator-nft-live-replay-receipt.json', import.meta.url), JSON.stringify(receipt, null, 2));
+    writeFileSync(new URL('./gladiator-nft-live-replay-receipt.json', import.meta.url), JSON.stringify({
+      ...receipt,
+      ...stampLedgerReceipt({
+        version: LEDGER_ADAPTER_VERSION,
+        network: receipt.network,
+        nft: receipt.settle,
+        reconcile: [receipt.reconcile, receipt.growthReconcile].filter(Boolean),
+      }),
+    }, null, 2));
   }
 
   const pass = receipt.stages.every((s) => s.ok) && receipt.passed;

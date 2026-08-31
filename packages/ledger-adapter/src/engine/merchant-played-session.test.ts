@@ -34,7 +34,7 @@ import type { LedgerAdapterConfig, LedgerAdapterState } from '../contracts.js';
 import { buildItemNFTUri, buildSettlementMemo } from '../contracts.js';
 import { snapshotFromWorld } from './snapshot.js';
 import { equipmentSnapshotFromWorld } from './equipment-snapshot.js';
-import { enableFromWorld, settleCheckpoint } from './checkpoint.js';
+import { enableFromWorld, settleAllFromWorld, settleCheckpoint, witnessStateHash } from './checkpoint.js';
 import { createLedgerAdapter, reconcile } from '../settle/index.js';
 import { settleEquipmentNFTs, buildLedgerNfts } from '../settle/nft.js';
 import { createInitialState } from '../state/index.js';
@@ -656,6 +656,9 @@ describe('diary mode on real merchant content — witnessed, not custodied', () 
     expect(settled.success).toBe(true);
     expect(settled.record?.txids).toHaveLength(1);
     expect(settled.record?.deltas.coin).toBe(-12);
+    const expectedHash = witnessStateHash(engine.world, snapshotFromWorld(engine.world, PLAYER_ID));
+    expect(settled.record?.stateHash).toBe(expectedHash);
+    expect(settled.record?.memo).toContain(`|HASH:${expectedHash}`);
     // Still nothing custodied after a settle.
     expect(await balancesOf(transport, state.playerAddress)).toEqual({});
   });
@@ -703,6 +706,39 @@ describe('diary mode on real merchant content — witnessed, not custodied', () 
       onchainMemos: { [txid]: 'ARPG|GAME:salt-road-ledger|RUN:x|CHECKPOINT:1|DELTA:coin=-1|VERB:settle' },
     });
     expect(tampered.passed).toBe(false);
+  });
+
+  it('settleAllFromWorld with a catalog still nft.success===true and no nftMint', async () => {
+    const { transport, state, adapter } = await harness(DIARY_CONFIG);
+    const engine = createGame(SEED);
+    openTheBooks(engine);
+    await adapter.enable(state, snapshotFromWorld(engine.world, PLAYER_ID));
+
+    engine.submitAction('equip', { parameters: { itemId: 'guild-seal' } });
+    const catalog = resolveCatalog(engine);
+    const player = engine.world.entities[PLAYER_ID];
+    player.resources.coin = Math.max(0, player.resources.coin - 5);
+
+    const { settlement, nft } = await settleAllFromWorld(
+      engine.world,
+      PLAYER_ID,
+      adapter,
+      state,
+      1,
+      'counting-house',
+      { transport, catalog },
+    );
+
+    expect(settlement.success).toBe(true);
+    expect(settlement.record?.stateHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(nft.success).toBe(true);
+    expect(nft.message).toBe('Diary mode — unique gear is witnessed, not minted');
+    expect(nft.minted).toEqual([]);
+    expect(nft.modified).toEqual([]);
+    expect(nft.released).toEqual([]);
+    expect(nft.txids).toEqual([]);
+    expect(state.nfts ?? {}).toEqual({});
+    expect(await transport.accountNfts(state.playerAddress)).toEqual([]);
   });
 });
 
