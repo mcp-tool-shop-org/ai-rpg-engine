@@ -185,6 +185,18 @@ describe('RumorEngine', () => {
     expect(results).toHaveLength(1);
   });
 
+  test('query filters by hearerId on spreadPath (F-c20f0a41)', () => {
+    const engine = new RumorEngine({ mutations: [] });
+    const heard = createRumor(engine, { confidence: 0.8 });
+    const other = createRumor(engine, { confidence: 0.9 });
+    engine.spread(heard.id, defaultCtx({ receiverId: 'player' }));
+
+    const results = engine.query({ hearerId: 'player' });
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe(heard.id);
+    void other;
+  });
+
   test('aboutSubject returns non-dead rumors sorted by confidence', () => {
     const engine = new RumorEngine({ deathThreshold: 5 });
     createRumor(engine, { subject: 'player', confidence: 0.5, originTick: 0 });
@@ -721,6 +733,39 @@ describe('live accessors detach rumor objects (F-4d5522db)', () => {
     const about = engine.aboutSubject('player');
     about[0].status = 'dead';
     expect(engine.get(about[0].id)!.status).toBe('spreading');
+  });
+});
+
+describe('heardBy hearer index (F-c20f0a41)', () => {
+  test('returns rumors whose spreadPath includes the entity, excluding dead, sorted by confidence', () => {
+    const engine = new RumorEngine({ mutations: [], deathThreshold: 5 });
+    const loud = createRumor(engine, { confidence: 0.4, originTick: 100 });
+    const quiet = createRumor(engine, { confidence: 0.9, originTick: 100 });
+    const dead = createRumor(engine, { confidence: 0.99, originTick: 0 });
+    const unheard = createRumor(engine, { confidence: 1, originTick: 100 });
+
+    engine.spread(loud.id, defaultCtx({ receiverId: 'player', currentTick: 100 }));
+    engine.spread(quiet.id, defaultCtx({ receiverId: 'player', currentTick: 100 }));
+    engine.spread(dead.id, defaultCtx({ receiverId: 'player', currentTick: 0 }));
+    engine.tick(10);
+
+    const heard = engine.heardBy('player');
+    expect(heard.map((r) => r.id)).toEqual([quiet.id, loud.id]);
+    expect(heard.every((r) => r.status !== 'dead')).toBe(true);
+    expect(engine.get(dead.id)?.status).toBe('dead');
+    expect(heard.find((r) => r.id === unheard.id)).toBeUndefined();
+  });
+
+  test('clone-on-read: mutating heardBy() cannot rewrite the live Map', () => {
+    const engine = new RumorEngine({ mutations: [] });
+    const rumor = createRumor(engine);
+    engine.spread(rumor.id, defaultCtx({ receiverId: 'player' }));
+
+    const heard = engine.heardBy('player');
+    heard[0].status = 'dead';
+    heard[0].spreadPath.push('poison');
+    expect(engine.get(rumor.id)!.status).toBe('spreading');
+    expect(engine.get(rumor.id)!.spreadPath).not.toContain('poison');
   });
 });
 

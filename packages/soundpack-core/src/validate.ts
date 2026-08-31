@@ -98,6 +98,18 @@ export function validateManifest(manifest: unknown): ManifestError[] {
     if (e.voiceSoundboardEffect !== undefined && typeof e.voiceSoundboardEffect !== 'string') {
       errors.push({ field: `${prefix}.voiceSoundboardEffect`, message: 'voiceSoundboardEffect must be a string when present' });
     }
+
+    if (e.hashes !== undefined) {
+      if (!e.hashes || typeof e.hashes !== 'object' || Array.isArray(e.hashes)) {
+        errors.push({ field: `${prefix}.hashes`, message: 'hashes must be an object of string values when present' });
+      } else {
+        for (const [k, v] of Object.entries(e.hashes as Record<string, unknown>)) {
+          if (typeof v !== 'string') {
+            errors.push({ field: `${prefix}.hashes.${k}`, message: 'hash values must be strings' });
+          }
+        }
+      }
+    }
   }
 
   return errors;

@@ -8,6 +8,7 @@ import {
   extendCueMap,
   cueMapTargetIds,
   cueMapIsCoveredBy,
+  cueMapCoverage,
   EXACT_CUE_MAP,
   NAMESPACE_CUE_MAP,
   FALLBACK_CUE,
@@ -101,6 +102,13 @@ describe('cue-map: targets exist in CORE_SOUND_PACK', () => {
 
   it('cueMapIsCoveredBy reports false for an incomplete entry set', () => {
     expect(cueMapIsCoveredBy(['ui_notification'])).toBe(false);
+  });
+
+  it('cueMapCoverage lists missing built-in targets for an incomplete set', () => {
+    const cov = cueMapCoverage(['ui_notification']);
+    expect(cov.covered).toEqual(['ui_notification']);
+    expect(cov.missing.length).toBeGreaterThan(0);
+    expect(cov.missing).toContain('alert_warning');
   });
 
   it('resolved sfx targets only sfx-domain entries (never ambient loops)', () => {

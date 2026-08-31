@@ -20,6 +20,7 @@ export {
   extendCueMap,
   cueMapTargetIds,
   cueMapIsCoveredBy,
+  cueMapCoverage,
   EXACT_CUE_MAP,
   NAMESPACE_CUE_MAP,
   FALLBACK_CUE,
@@ -27,9 +28,24 @@ export {
   type ResolvedSfxCue,
   type SfxCueTiming,
   type CueMatchTier,
+  type CueMapCoverage,
 } from './cue-map.js';
 export {
   validateManifest,
   isValidManifest,
   type ManifestError,
 } from './validate.js';
+export {
+  loadJson,
+  loadFile,
+  scaffoldManifest,
+  type LoadJsonOptions,
+  type ScaffoldManifestOptions,
+} from './authoring.js';
+export {
+  ingestFilePack,
+  type AudioAssetSink,
+  type IngestError,
+  type IngestFilePackOptions,
+  type IngestResult,
+} from './ingest.js';

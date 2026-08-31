@@ -38,9 +38,26 @@ export type CooldownEntry = {
   cooldownMs: number;
 };
 
+/**
+ * Optional soundpack lookup so {@link AudioDirector.schedule} can resolve
+ * a NarrationPlan effectId to a file variant / content-address hash.
+ * Structural (not imported from soundpack-core) so the packages stay decoupled.
+ */
+export type SoundLookup = {
+  get(id: string): { source: string; variants: string[]; hashes?: Record<string, string> } | undefined;
+  pickVariant(id: string, roll: number): string | undefined;
+};
+
 /** Configuration for the AudioDirector. */
 export type AudioDirectorConfig = {
   defaultCooldownMs?: number;
+  /**
+   * When set, sfx/ambient play commands with a matching file-source entry
+   * have `resourceId` rewritten to the ingested hash (or variant filename).
+   */
+  soundRegistry?: SoundLookup;
+  /** Deterministic roll in [0, 1] forwarded to `pickVariant`. Default 0. */
+  variantRoll?: number;
   /**
    * Per-resource cooldown overrides keyed by resourceId. A resource not listed
    * here falls back to `defaultCooldownMs`. Lets distinct sounds (e.g. a 200ms

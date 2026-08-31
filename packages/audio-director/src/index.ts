@@ -5,6 +5,7 @@ export type {
   CooldownEntry,
   AudioDirectorConfig,
   ScheduleWarning,
+  SoundLookup,
 } from './types.js';
 
 export {

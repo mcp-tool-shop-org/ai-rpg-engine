@@ -44,6 +44,34 @@ describe('AudioDirector', () => {
     expect(sfxCmd!.resourceId).toBe('alert_warning');
   });
 
+  it('resolves file-source effectIds to ingested hashes via soundRegistry (F-2f138ec3)', () => {
+    const hash = 'a'.repeat(64);
+    const director = new AudioDirector({
+      variantRoll: 0,
+      soundRegistry: {
+        get(id) {
+          if (id !== 'tavern_chatter') return undefined;
+          return {
+            source: 'file',
+            variants: ['tavern_chatter_01.wav'],
+            hashes: { 'tavern_chatter_01.wav': hash },
+          };
+        },
+        pickVariant(id, _roll) {
+          return id === 'tavern_chatter' ? 'tavern_chatter_01.wav' : undefined;
+        },
+      },
+    });
+    const plan = makePlan({
+      sfx: [{ effectId: 'tavern_chatter', timing: 'immediate', intensity: 0.5 }],
+    });
+    const commands = director.schedule(plan, 0);
+    const sfxCmd = commands.find((c) => c.domain === 'sfx' && c.action === 'play');
+    expect(sfxCmd!.resourceId).toBe(hash);
+    expect(sfxCmd!.params.effectId).toBe('tavern_chatter');
+    expect(sfxCmd!.params.variant).toBe('tavern_chatter_01.wav');
+  });
+
   it('should schedule ambient commands', () => {
     const director = new AudioDirector();
     const plan = makePlan({

@@ -22,6 +22,8 @@ export type SoundEntry = {
   source: SoundSource;
   /** Maps to a voice-soundboard procedural effect name. */
   voiceSoundboardEffect?: string;
+  /** Content-address hashes for file variants, keyed by variant filename. Written by ingestFilePack. */
+  hashes?: Record<string, string>;
 };
 
 export type SoundDomain = 'sfx' | 'ambient' | 'music' | 'voice';
