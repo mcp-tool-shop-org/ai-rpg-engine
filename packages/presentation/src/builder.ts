@@ -253,13 +253,17 @@ export function deriveStingCue(
  * fragments in on-screen reading order — the producer half of
  * {@link NarrationPlan.asides}. One dialogue.node.entered event's worth of
  * fragments, in the SAME order the R4-approved Dialogue section renders them
- * (texture -> bias -> the line itself -> world/party asides), because that
- * is also the more natural SPOKEN order: a stage direction precedes the
- * line, it does not trail it. dialogueHint is deliberately excluded — see
- * deriveSpeaker, which routes it into SpeakerCue.emotion instead. Returns []
- * for a node with no text (never a partial/broken fragment) or one the
- * modules did not mark presentation-bearing (matches every other
- * derivation's bookkeeping exclusion).
+ * (texture -> bias -> world/party asides), because that is also the more
+ * natural SPOKEN order: a stage direction precedes the line it accompanies.
+ * dialogueHint is deliberately excluded — see deriveSpeaker, which routes it
+ * into SpeakerCue.emotion instead. The spoken line itself (payload.text) is
+ * ALSO deliberately excluded, for the same overlap-avoidance reason
+ * (F-f1c74adc): deriveSpeaker already routes it into SpeakerCue.text, and an
+ * embedder speaks it exactly once via playVoice — asides carries only the
+ * SURROUNDING fragments, never the line a caller already got from
+ * plan.speaker. Returns [] for a node with no text (never a partial/broken
+ * fragment) or one the modules did not mark presentation-bearing (matches
+ * every other derivation's bookkeeping exclusion).
  */
 function dialogueAsides(event: NarrationSourceEvent): string[] {
   if (!presentable(event)) return [];
@@ -274,18 +278,31 @@ function dialogueAsides(event: NarrationSourceEvent): string[] {
   };
   push('textureHint');
   push('dialogueBias');
-  asides.push(text);
+  // F-f1c74adc: the spoken line (`text`) is intentionally NOT pushed here.
+  // plan.speaker already carries it (see deriveSpeaker below), and an
+  // embedder speaks it exactly once through playVoice — pushing it into
+  // asides too would double-speak the same turn. `text` above is still used
+  // as the "is this really a spoken dialogue turn" presence gate.
   push('partyPresence');
   push('pressureHint');
   push('opportunityHint');
   return asides;
 }
 
-/** The most recent dialogue node in the turn, as a SpeakerCue (or undefined). */
+/**
+ * The most recent dialogue node in the turn, as a SpeakerCue (or undefined).
+ *
+ * F-25e3c162: gated on presentable(), matching every sibling derivation over
+ * this same event set (deriveTone, deriveUrgency, deriveStingCue, and this
+ * file's dialogueAsides) — a bookkeeping-only dialogue.node.entered (no
+ * presentation block) must not populate plan.speaker any more than it can
+ * populate plan.asides.
+ */
 function deriveSpeaker(events: readonly NarrationSourceEvent[]): SpeakerCue | undefined {
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i];
     if (event.type !== DIALOGUE_NODE_EVENT) continue;
+    if (!presentable(event)) continue;
     const text = event.payload?.text;
     const speaker = event.payload?.speaker;
     if (typeof text !== 'string' || text.length === 0) continue;
