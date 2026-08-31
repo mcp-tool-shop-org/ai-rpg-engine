@@ -64,6 +64,25 @@ describe('player-rumor id determinism (MW-2)', () => {
 // player-rumor namespace accessors (F-19a23718)
 // ---------------------------------------------------------------------------
 
+describe('subjectDescriptor uses getDisplayTitle (F-5b14f100)', () => {
+  it('spawnPlayerRumor with earned bounty-survivor leads with the Bounty-Breaker', () => {
+    const titled = {
+      ...profile,
+      custom: { 'title.bounty-survivor': 0 },
+    } as unknown as CharacterProfile;
+    const rumor = spawnPlayerRumor(milestone, titled, 'order', 'keep', 5);
+    expect(rumor.subjectDescriptor).toContain('the Bounty-Breaker');
+    expect(titled.custom.title).toBeUndefined();
+  });
+
+  it('spawnIntentionalRumor accepts an evolved display title and otherwise stays the outsider', () => {
+    const titled = spawnIntentionalRumor('a lie', 'fearsome', 'order', 'keep', 5, 0.8, undefined, 'the Bounty-Breaker');
+    expect(titled.subjectDescriptor).toBe('the Bounty-Breaker');
+    const plain = spawnIntentionalRumor('a lie', 'fearsome', 'order', 'keep', 5);
+    expect(plain.subjectDescriptor).toBe('the outsider');
+  });
+});
+
 describe('getPlayerRumorState / setPlayerRumorState', () => {
   it('defaults to an empty ledger when the namespace is absent', () => {
     const engine = createTestEngine({ modules: [], entities: [], zones: [] });

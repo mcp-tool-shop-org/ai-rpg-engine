@@ -21,6 +21,8 @@ import { createObligation, setPersistedNpcState } from './npc-agency.js';
 import type { NpcObligationLedger } from './npc-agency.js';
 import { createFactionCognition } from './faction-cognition.js';
 import { createCognitionCore } from './cognition-core.js';
+import { createWorldTick, getWorldTickState } from './world-tick.js';
+import { makePressure, formatPressureForDialogue } from './pressure-system.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -149,6 +151,71 @@ describe('dialogue-core: speakHandler', () => {
       .find(e => e.type === 'dialogue.node.entered')!;
     expect(warm.payload.text).toBe('Welcome, traveler.');
     expect(warm.payload.dialogueBias).toBeUndefined();
+  });
+
+  it('F-0e4732b4: a warn last-action attaches its dialogueHint; no last-action omits the field', () => {
+    const named: EntityState = { ...npc, tags: ['npc', 'named'] };
+    const warned = createTestEngine({
+      modules: [createDialogueCore([dialogue])],
+      entities: [player, named],
+      zones,
+    });
+    setPersistedNpcState(warned.world, [], [{
+      action: { npcId: 'merchant', verb: 'warn', description: 'warns the player' },
+      effects: [],
+      narratorHint: 'glances around nervously',
+      dialogueHint: 'urgent, checking if overheard',
+    }], new Map());
+    const hinted = warned.submitAction('speak', { targetIds: ['merchant'] })
+      .find(e => e.type === 'dialogue.node.entered')!;
+    expect(hinted.payload.text).toBe('Welcome, traveler.');
+    expect(hinted.payload.dialogueHint).toBe('urgent, checking if overheard');
+
+    const quiet = createTestEngine({
+      modules: [createDialogueCore([dialogue])],
+      entities: [player, named],
+      zones,
+    });
+    const bare = quiet.submitAction('speak', { targetIds: ['merchant'] })
+      .find(e => e.type === 'dialogue.node.entered')!;
+    expect(bare.payload.text).toBe('Welcome, traveler.');
+    expect(bare.payload.dialogueHint).toBeUndefined();
+  });
+
+  it('F-da7751a0: a visible high-urgency bounty-issued attaches pressureHint; none omits the field', () => {
+    const pressured = createTestEngine({
+      modules: [createDialogueCore([dialogue]), createWorldTick()],
+      entities: [player, npc],
+      zones,
+    });
+    getWorldTickState(pressured.world).pressures = [makePressure({
+      kind: 'bounty-issued',
+      sourceFactionId: 'watch',
+      description: 'the watch has posted a bounty',
+      triggeredBy: 'test',
+      urgency: 0.8,
+      visibility: 'known',
+      turnsRemaining: 8,
+      potentialOutcomes: [],
+      tags: [],
+      currentTick: 0,
+    })];
+    const hinted = pressured.submitAction('speak', { targetIds: ['merchant'] })
+      .find(e => e.type === 'dialogue.node.entered')!;
+    expect(hinted.payload.text).toBe('Welcome, traveler.');
+    expect(hinted.payload.pressureHint).toBe(
+      formatPressureForDialogue(getWorldTickState(pressured.world).pressures[0]),
+    );
+
+    const quiet = createTestEngine({
+      modules: [createDialogueCore([dialogue])],
+      entities: [player, npc],
+      zones,
+    });
+    const bare = quiet.submitAction('speak', { targetIds: ['merchant'] })
+      .find(e => e.type === 'dialogue.node.entered')!;
+    expect(bare.payload.text).toBe('Welcome, traveler.');
+    expect(bare.payload.pressureHint).toBeUndefined();
   });
 
   it('finds dialogue by explicit dialogueId parameter', () => {

@@ -5,6 +5,8 @@ import { describe, it, expect } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
 import type { EntityState, ZoneState } from '@ai-rpg-engine/core';
 import { evaluateCondition, UNEVALUABLE_OPERANDS } from './condition-eval.js';
+import { createObligation, setPersistedNpcState } from './npc-agency.js';
+import type { NpcObligationLedger } from './npc-agency.js';
 
 const player: EntityState = {
   id: 'player',
@@ -84,5 +86,88 @@ describe('time-of-day (F-ddccdcc7)', () => {
     expect(verdict.ok).toBe(false);
     expect(verdict.evaluable).toBe(false);
     expect(verdict.reason).toMatch(/player-level/);
+  });
+});
+
+describe('social operands (F-d7bab077)', () => {
+  it('leverage-at-least favor>=20 is ok when the actor holds favor 20', () => {
+    const world = worldAt('dusk');
+    world.entities.player.custom = { 'leverage.favor': 20 };
+    const verdict = evaluateCondition(
+      { type: 'leverage-at-least', params: { currency: 'favor', amount: 20 } },
+      world,
+      'player',
+    );
+    expect(verdict).toEqual({ ok: true, evaluable: true });
+  });
+
+  it('leverage-at-least is ok:false when favor is short', () => {
+    const world = worldAt('dusk');
+    world.entities.player.custom = { 'leverage.favor': 5 };
+    const verdict = evaluateCondition(
+      { type: 'leverage-at-least', params: { currency: 'favor', amount: 20 } },
+      world,
+      'player',
+    );
+    expect(verdict.ok).toBe(false);
+    expect(verdict.evaluable).toBe(true);
+  });
+
+  it('reputation-at-least merges faction baseline + accrued global', () => {
+    const world = worldAt('dusk');
+    world.factions['guild'] = { id: 'guild', name: 'Guild', reputation: 6, disposition: 'neutral' };
+    world.globals['reputation_guild'] = 5;
+    const verdict = evaluateCondition(
+      { type: 'reputation-at-least', params: { factionId: 'guild', amount: 10 } },
+      world,
+      'player',
+    );
+    expect(verdict).toEqual({ ok: true, evaluable: true });
+  });
+
+  it('npc-relationship-at-least reads stored player-trust', () => {
+    const world = worldAt('dusk');
+    world.entities['merchant'] = {
+      ...player,
+      id: 'merchant',
+      type: 'npc',
+      name: 'Merchant',
+      tags: ['npc'],
+      relations: { 'player-trust': 60 },
+    };
+    const verdict = evaluateCondition(
+      { type: 'npc-relationship-at-least', params: { npcId: 'merchant', axis: 'trust', amount: 50 } },
+      world,
+      'player',
+    );
+    expect(verdict).toEqual({ ok: true, evaluable: true });
+  });
+
+  it('obligation-exists is ok when a player-owes-npc ledger is planted', () => {
+    const world = worldAt('dusk');
+    const ledger: NpcObligationLedger = {
+      obligations: [createObligation('debt', 'player-owes-npc', 'merchant', 'player', 3, 'test', 0, null)],
+    };
+    setPersistedNpcState(world, [], [], new Map([['merchant', ledger]]));
+    const verdict = evaluateCondition(
+      { type: 'obligation-exists', params: { npcId: 'merchant', direction: 'player-owes-npc' } },
+      world,
+      'player',
+    );
+    expect(verdict).toEqual({ ok: true, evaluable: true });
+  });
+
+  it('unknown types still fail-closed; player-level stays unevaluable', () => {
+    const world = worldAt('dusk');
+    const unknown = evaluateCondition({ type: 'not-a-real-operand', params: {} }, world, 'player');
+    expect(unknown.ok).toBe(false);
+    expect(unknown.evaluable).toBe(false);
+    const level = evaluateCondition(
+      { type: 'party-level', params: { op: '>=', value: 3 } },
+      world,
+      'player',
+    );
+    expect(level.ok).toBe(false);
+    expect(level.evaluable).toBe(false);
   });
 });

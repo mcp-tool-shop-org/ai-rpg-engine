@@ -9,7 +9,7 @@
 // The properties are the binding ones from Lane 2, and each is asserted in
 // `condition-eval.test.ts`:
 //
-//   - CLOSED. Fourteen operand families, enumerated below. Content selects and
+//   - CLOSED. Eighteen operand families, enumerated below. Content selects and
 //     parameterizes; it never defines a predicate. (Bethesda's CTDA row: one
 //     enumerated condition-function table reused across ~20 record types is what
 //     makes mass data authoring safe.)
@@ -47,10 +47,16 @@
 //   party-level     ✗ NO INPUT — derived from player-level.
 //   time-of-day     ✓ Zone.scene.timeOfDay (C3/P4) — resolveSceneDescriptor
 //                     spreads the same key; missing scene/timeOfDay fail-closes.
+//   leverage-at-least          ✓ actor.custom `leverage.<currency>` (F-d7bab077)
+//   reputation-at-least        ✓ faction baseline + reputation_<id> global
+//   npc-relationship-at-least  ✓ deriveNpcRelationship (npc-agency)
+//   obligation-exists          ✓ getPersistedNpcObligations (npc-agency)
 //   random-probability ⊘ REFUSED for gates by design, not for want of an input.
 
 import type { WorldState, EntityState } from '@ai-rpg-engine/core';
 import { getActiveCompanions, getPartyState } from './companion-core.js';
+import { deriveNpcRelationship, getPersistedNpcObligations } from './npc-agency.js';
+import type { NpcObligationLedger, NpcRelationship } from './npc-agency.js';
 
 type FactionAccessLevel = 'denied' | 'restricted' | 'normal' | 'privileged';
 
@@ -119,6 +125,10 @@ export const KNOWN_CONDITION_TYPES = [
   'player-level',
   'party-level',
   'time-of-day',
+  'leverage-at-least',
+  'reputation-at-least',
+  'npc-relationship-at-least',
+  'obligation-exists',
   'random-probability',
 ] as const;
 
@@ -373,6 +383,84 @@ export function evaluateCondition(
       return timeOfDay === expected
         ? { ok: true, evaluable: true }
         : { ok: false, evaluable: true, reason: `time of day is "${timeOfDay}", not "${expected}"` };
+    }
+
+    case 'leverage-at-least': {
+      // Same params dialogue-core already authored: {currency, amount}.
+      // Reads actor.custom `leverage.<currency>` — the same prefixed keys
+      // getLeverageState uses — so a Guild-hall exit and a dialogue choice
+      // cannot disagree about favor>=20 (F-d7bab077).
+      const currency = str(params, 'currency');
+      const amount = num(params, 'amount');
+      if (!currency || amount === undefined) {
+        return { ok: false, evaluable: false, reason: 'leverage-at-least needs `currency` and a numeric `amount`' };
+      }
+      const raw = actor.custom?.[`leverage.${currency}`];
+      const value = typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
+      return value >= amount
+        ? { ok: true, evaluable: true }
+        : { ok: false, evaluable: true, reason: `leverage.${currency} is ${value}, not >= ${amount}` };
+    }
+
+    case 'reputation-at-least': {
+      const factionId = str(params, 'factionId');
+      const amount = num(params, 'amount');
+      if (!factionId || amount === undefined) {
+        return { ok: false, evaluable: false, reason: 'reputation-at-least needs `factionId` and a numeric `amount`' };
+      }
+      const faction = world.factions[factionId] as { reputation?: number } | undefined;
+      const global = world.globals[`reputation_${factionId}`];
+      const rep = (faction?.reputation ?? 0) + (typeof global === 'number' ? global : 0);
+      return rep >= amount
+        ? { ok: true, evaluable: true }
+        : { ok: false, evaluable: true, reason: `reputation with "${factionId}" is ${rep}, not >= ${amount}` };
+    }
+
+    case 'npc-relationship-at-least': {
+      const npcId = str(params, 'npcId');
+      const axis = str(params, 'axis') as keyof NpcRelationship | undefined;
+      const amount = num(params, 'amount');
+      if (!npcId || !axis || amount === undefined) {
+        return {
+          ok: false,
+          evaluable: false,
+          reason: 'npc-relationship-at-least needs `npcId`, `axis`, and a numeric `amount`',
+        };
+      }
+      const rel = deriveNpcRelationship(world, npcId, actor.id);
+      const value = rel[axis];
+      if (typeof value !== 'number') {
+        return { ok: false, evaluable: true, reason: `unknown relationship axis "${String(axis)}"` };
+      }
+      return value >= amount
+        ? { ok: true, evaluable: true }
+        : { ok: false, evaluable: true, reason: `${String(axis)} with "${npcId}" is ${value}, not >= ${amount}` };
+    }
+
+    case 'obligation-exists': {
+      // Params match dialogue-core: optional npcId / direction. Missing npcId
+      // falls back to the active dialogue speaker (peek, no dialogue-core
+      // import); still no subject → any persisted ledger matches.
+      const npcId = str(params, 'npcId');
+      const direction = str(params, 'direction');
+      const ledgers = getPersistedNpcObligations(world);
+      let subjectNpcId = npcId;
+      if (!subjectNpcId) {
+        const dState = world.modules['dialogue-core'];
+        const speaker = dState && typeof dState === 'object' && !Array.isArray(dState)
+          ? (dState as { speakerId?: unknown }).speakerId
+          : undefined;
+        if (typeof speaker === 'string' && speaker.length > 0) subjectNpcId = speaker;
+      }
+      const subjectLedgers: NpcObligationLedger[] = subjectNpcId
+        ? [ledgers.get(subjectNpcId)].filter((l): l is NpcObligationLedger => l !== undefined)
+        : Array.from(ledgers.values());
+      const found = subjectLedgers.some((ledger) =>
+        ledger.obligations.some((o) => !direction || o.direction === direction),
+      );
+      return found
+        ? { ok: true, evaluable: true }
+        : { ok: false, evaluable: true, reason: 'no matching obligation' };
     }
 
     default:

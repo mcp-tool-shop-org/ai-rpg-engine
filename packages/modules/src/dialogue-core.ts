@@ -9,20 +9,19 @@ import type {
 } from '@ai-rpg-engine/core';
 import { makeEvent } from './make-event.js';
 import type { DialogueDefinition, DialogueNode, EffectDefinition } from '@ai-rpg-engine/content-schema';
-// V3-DLG: dialogue vocabulary that reads/writes the social layer. All are
-// read-only imports (getLeverageState/applyLeverageDeltas from player-leverage.ts,
-// deriveNpcRelationship/getPersistedNpcObligations from npc-agency.ts) — this
-// file does not edit either module. Neither module imports dialogue-core.ts
-// (nor does anything in their own dependency chains — cognition-core.ts,
-// faction-cognition.ts, pressure-system.ts, player-rumor.ts), so this is a
-// one-directional edge, not a cycle.
+// V3-DLG: dialogue vocabulary that reads/writes the social layer. Social
+// READ conditions route through condition-eval (F-d7bab077). Last-action
+// dialogueHint and live pressureHint attach on enterNode without rewriting
+// authored node.text. Write effects still call player-leverage. Neither
+// player-leverage nor npc-agency import dialogue-core.ts, so this stays a
+// one-directional edge.
 import { getLeverageState, applyLeverageDeltas, getStoredFactionAccess } from './player-leverage.js';
 import { evaluateCondition as evaluateCompiledCondition } from './condition-eval.js';
 import type { LeverageCurrency } from './player-leverage.js';
-import { deriveNpcRelationship, getPersistedNpcObligations } from './npc-agency.js';
-import type { NpcRelationship, NpcObligationLedger, ObligationDirection } from './npc-agency.js';
+import { getPersistedNpcLastActions } from './npc-agency.js';
 import { getReputationConsequence } from './social-consequence.js';
 import { getEntityFaction } from './faction-cognition.js';
+import { getVisiblePressures, formatPressureForDialogue, type WorldPressure } from './pressure-system.js';
 
 export type DialogueState = {
   activeDialogue: string | null;
@@ -229,7 +228,10 @@ function enterNode(
     ?.filter(c => !c.condition || evaluateCondition(c.condition, world))
     .map((c, i) => ({ id: c.id, text: c.text, index: i })) ?? [];
 
-  const dialogueBias = dialogueBiasForSpeaker(world, node.speaker || dState.speakerId);
+  const speakerId = node.speaker || dState.speakerId;
+  const dialogueBias = dialogueBiasForSpeaker(world, speakerId);
+  const dialogueHint = dialogueHintForSpeaker(world, speakerId);
+  const pressureHint = pressureHintForWorld(world);
 
   const events: ResolvedEvent[] = [
     makeEvent(action, 'dialogue.node.entered', {
@@ -239,6 +241,8 @@ function enterNode(
       choices: availableChoices,
       hasChoices: availableChoices.length > 0,
       ...(dialogueBias ? { dialogueBias } : {}),
+      ...(dialogueHint ? { dialogueHint } : {}),
+      ...(pressureHint ? { pressureHint } : {}),
     }, {
       presentation: {
         channels: ['dialogue'],
@@ -374,6 +378,42 @@ function dialogueBiasForSpeaker(world: WorldState, speakerId: string | null | un
   return getReputationConsequence(factionReputationFor(world, factionId), stored).dialogueBias;
 }
 
+/**
+ * Last-action dialogueHint for this speaker (F-0e4732b4). Reads the same
+ * NpcActionResult.dialogueHint resolveNpcAction authors; empty last-action
+ * (or a speaker with none) leaves the field off the payload.
+ */
+function dialogueHintForSpeaker(world: WorldState, speakerId: string | null | undefined): string {
+  if (!speakerId) return '';
+  const last = getPersistedNpcLastActions(world).find((r) => r.action.npcId === speakerId);
+  return typeof last?.dialogueHint === 'string' ? last.dialogueHint : '';
+}
+
+/**
+ * Highest-urgency visible pressure, formatted by formatPressureForDialogue
+ * (F-da7751a0). Peeks the world-tick namespace rather than importing the
+ * tick driver (player-leverage already cycles with world-tick). Empty when
+ * no visible pressure is persisted.
+ */
+function peekActivePressures(world: WorldState): WorldPressure[] {
+  const ns = world.modules['world-tick'];
+  if (!ns || typeof ns !== 'object' || Array.isArray(ns)) return [];
+  const pressures = (ns as { pressures?: unknown }).pressures;
+  return Array.isArray(pressures)
+    ? pressures.filter((p): p is WorldPressure => typeof p === 'object' && p !== null)
+    : [];
+}
+
+function pressureHintForWorld(world: WorldState): string {
+  const visible = getVisiblePressures(peekActivePressures(world));
+  if (visible.length === 0) return '';
+  let highest = visible[0];
+  for (let i = 1; i < visible.length; i++) {
+    if (visible[i].urgency > highest.urgency) highest = visible[i];
+  }
+  return formatPressureForDialogue(highest);
+}
+
 function evaluateCondition(
   condition: import('@ai-rpg-engine/content-schema').ConditionSpec,
   world: WorldState,
@@ -385,77 +425,18 @@ function evaluateCondition(
     return world.globals[condition.params.key as string] !== undefined;
   }
 
-  // V3-DLG-1: social-state READ conditions. Dialogue content can now gate
-  // choices/nodes on the player's leverage, a faction's reputation, and an
-  // NPC's derived relationship — the same social layer player-leverage.ts and
-  // npc-agency.ts already drive trade/pressure/companion decisions from.
-  // Handled explicitly, BEFORE the generic unknown-condition fallback below
-  // (V3-DLG-3) — that fallback's silent-true behavior for genuinely
-  // unhandled types is untouched (existing content may rely on it).
-  if (condition.type === 'leverage-at-least') {
-    const player = world.entities[world.playerId];
-    const currency = condition.params.currency as LeverageCurrency;
-    const amount = condition.params.amount as number;
-    const state = getLeverageState(player?.custom ?? {});
-    // A currency string outside the known 6 reads as `undefined` here (not a
-    // key of LeverageState) — `undefined >= amount` is always false, the same
-    // NaN/undefined-guard reasoning player-leverage.ts's own balanceOf uses.
-    return state[currency] >= amount;
-  }
-
-  if (condition.type === 'reputation-at-least') {
-    const factionId = condition.params.factionId as string;
-    const amount = condition.params.amount as number;
-    return factionReputationFor(world, factionId) >= amount;
-  }
-
-  if (condition.type === 'npc-relationship-at-least') {
-    const npcId = condition.params.npcId as string;
-    const axis = condition.params.axis as keyof NpcRelationship;
-    const amount = condition.params.amount as number;
-    const rel = deriveNpcRelationship(world, npcId, world.playerId);
-    // Same undefined-is-false safety as leverage-at-least above: an axis
-    // string outside trust/fear/greed/loyalty reads as `undefined`, and
-    // `undefined >= amount` is always false.
-    return rel[axis] >= amount;
-  }
-
-  // 'obligation-exists' (optional npcId/direction params). Obligations ARE
-  // persisted as of v3.0 — the comment that used to sit here claimed
-  // otherwise and was stale/wrong: world-tick.ts's setPersistedNpcState
-  // writes world.modules['npc-agency'].obligationLedgers every round a named
-  // NPC exists, and npc-agency.ts's getPersistedNpcObligations does the
-  // non-attaching read of it back out — the exact non-mutating pattern
-  // deriveNpcRelationship above already uses for the rest of the social
-  // layer. This condition just reads it.
-  if (condition.type === 'faction-access') {
-    // F-7d2c4c59: the closed condition-eval operand, evaluated here so a
-    // dialogue node can require the same stored access mark a zone gate reads.
+  // Social-state READ conditions live in the closed condition-eval table
+  // (F-d7bab077). Dialogue routes through that one evaluator so a Guild-hall
+  // exit and a dialogue choice cannot disagree about favor>=20. Unknown
+  // kinds still fall through to the silent-true default below (V3-DLG-3).
+  if (
+    condition.type === 'leverage-at-least' ||
+    condition.type === 'reputation-at-least' ||
+    condition.type === 'npc-relationship-at-least' ||
+    condition.type === 'obligation-exists' ||
+    condition.type === 'faction-access'
+  ) {
     return evaluateCompiledCondition(condition, world, world.playerId).ok;
-  }
-
-  if (condition.type === 'obligation-exists') {
-    const npcId = condition.params.npcId as string;
-    const direction = condition.params.direction as ObligationDirection;
-    const ledgers = getPersistedNpcObligations(world);
-    // No explicit npcId -> fall back to the dialogue's current speaker, read
-    // off the SAME world.modules['dialogue-core'] namespace speakHandler/
-    // chooseHandler populate (mirrors how npc-relationship-at-least above
-    // resolves its subject NPC, just with a default instead of a required
-    // param). Still no resolvable subject (e.g. evaluated with no active
-    // dialogue speaker) -> match across every persisted ledger rather than
-    // forcing a false.
-    const dState = world.modules['dialogue-core'] as DialogueState | undefined;
-    const subjectNpcId = npcId ?? dState?.speakerId;
-    const subjectLedgers = subjectNpcId
-      ? [ledgers.get(subjectNpcId)].filter((l): l is NpcObligationLedger => l !== undefined)
-      : Array.from(ledgers.values());
-    // No direction filter -> any obligation counts; same undefined-is-false-
-    // for-the-negative-case reasoning as the sibling conditions above, just
-    // inverted here into "no filter means no restriction."
-    return subjectLedgers.some((ledger) =>
-      ledger.obligations.some((o) => !direction || o.direction === direction),
-    );
   }
 
   // Unknown condition kind: warn-and-degrade default of true (V3-DLG-3,

@@ -6,6 +6,7 @@ import type { WorldState } from '@ai-rpg-engine/core';
 import { genId } from '@ai-rpg-engine/core';
 import { buildPlayerDescriptor } from './social-consequence.js';
 import type { CharacterProfile } from '@ai-rpg-engine/character-profile';
+import { getDisplayTitle } from './player-titles.js';
 
 // --- Types ---
 
@@ -107,12 +108,15 @@ export function deriveRumorValence(tags: string[]): RumorValence {
 /** Build a subject descriptor from a profile. */
 function descriptorFromProfile(profile: CharacterProfile): string {
   const injuryNames = profile.injuries.map((i) => i.name);
+  const custom = profile.custom ?? {};
+  const display = getDisplayTitle(custom);
+  const buildTime = typeof custom.title === 'string' ? custom.title : undefined;
   return buildPlayerDescriptor(
     profile.build.name,
     profile.build.archetypeId,
     profile.progression.level,
     injuryNames,
-    profile.custom.title as string | undefined,
+    display ?? buildTime,
   );
 }
 
@@ -312,11 +316,12 @@ export function spawnIntentionalRumor(
   tick: number,
   confidence: number = 0.8,
   state?: WorldState,
+  subjectDescriptor?: string,
 ): PlayerRumor {
   return {
     id: rumorId(state, ['player-leverage', claim, originFactionId, tick]),
     claim,
-    subjectDescriptor: 'the outsider',
+    subjectDescriptor: subjectDescriptor || 'the outsider',
     sourceEvent: 'player-leverage',
     originFactionId,
     originDistrictId,

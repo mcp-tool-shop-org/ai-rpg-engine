@@ -34,6 +34,7 @@ import type { DistrictMetrics } from './district-core.js';
 import { getDistrictForZone } from './district-core.js';
 import type { RumorValence, PlayerRumorState, PlayerRumor } from './player-rumor.js';
 import { spawnIntentionalRumor, getPlayerRumorState, setPlayerRumorState, applyRumorManipulation } from './player-rumor.js';
+import { getDisplayTitle } from './player-titles.js';
 import type { PressureKind } from './pressure-system.js';
 import { makePressure, type WorldPressure } from './pressure-system.js';
 import { getWorldTickState, getActivePressures, HEAT_KEY, applyDistrictMetricEffect } from './world-tick.js';
@@ -1807,6 +1808,7 @@ function seedHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
       currentTick,
       confidence,
       world,
+      getDisplayTitle(actor.custom ?? {}),
     );
     const ns = getPlayerRumorState(world);
     setPlayerRumorState(world, { rumors: [...ns.rumors, rumor] });
@@ -1883,6 +1885,7 @@ function applyLeverageEffectsAndSpawnRumor(
     currentTick,
     confidence,
     world,
+    actor ? getDisplayTitle(actor.custom ?? {}) : undefined,
   );
   const ns = getPlayerRumorState(world);
   setPlayerRumorState(world, { rumors: [...ns.rumors, rumor] });
