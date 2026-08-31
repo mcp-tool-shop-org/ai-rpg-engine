@@ -47,6 +47,69 @@ export type PackInfo = {
   statusDefinitions: StatusDefinition[];
 };
 
+export type PackCatalogEntry = { id: string; name: string; tagline: string };
+
+/** Installed starters as `{id, name, tagline}` — the packs / --list-packs dump. */
+export function packCatalogEntries(packs: readonly PackInfo[] = allPacks): PackCatalogEntry[] {
+  return packs.map((p) => ({
+    id: p.meta.id,
+    name: p.meta.name,
+    tagline: p.meta.tagline ?? '',
+  }));
+}
+
+/** `id\\tname\\t- tagline` lines, one per installed pack. */
+export function formatPackCatalog(packs: readonly PackInfo[] = allPacks): string {
+  return packCatalogEntries(packs)
+    .map((e) => `${e.id}\t${e.name}\t- ${e.tagline}`)
+    .join('\n');
+}
+
+export interface PacksCommandDeps {
+  log: (msg: string) => void;
+  error: (msg: string) => void;
+}
+
+/**
+ * `ai-rpg-engine packs [--json]` — catalog dump, then return. Never prompts.
+ * Unknown extra tokens refuse (same voice as other verbs).
+ */
+export function runPacksCommand(
+  args: string[],
+  deps: PacksCommandDeps = { log: (m) => console.log(m), error: (m) => console.error(m) },
+): number {
+  const { log, error } = deps;
+  const positional = args.filter((a) => !a.startsWith('-'));
+  const flags = args.filter((a) => a.startsWith('-'));
+  if (positional.length > 0) {
+    error(`Unknown command: packs ${positional[0]}`);
+    error('  Hint: ai-rpg-engine packs [--json] lists installed starter ids and exits.');
+    return 1;
+  }
+  const allowed = new Set(['--json', '--help', '-h', '--ascii', '--plain']);
+  const unknown = flags.filter((f) => !allowed.has(f) && !f.startsWith('--json='));
+  if (unknown.length > 0) {
+    error(`"${unknown[0]}" is not a recognized packs flag.`);
+    error('  Hint: packs accepts --json (array of {id,name,tagline}) and nothing else.');
+    return 1;
+  }
+  if (flags.includes('--help') || flags.includes('-h')) {
+    log('Usage: ai-rpg-engine packs [--json]');
+    log('');
+    log('List installed starter ids (id, name, tagline) and exit. No readline.');
+    log('  --json  print an array of {id, name, tagline}');
+    return 0;
+  }
+  const entries = packCatalogEntries();
+  const json = flags.includes('--json') || flags.some((f) => f.startsWith('--json='));
+  if (json) {
+    log(JSON.stringify(entries));
+  } else {
+    log(formatPackCatalog());
+  }
+  return 0;
+}
+
 export const allPacks: PackInfo[] = [
   {
     meta: fantasy.packMeta,

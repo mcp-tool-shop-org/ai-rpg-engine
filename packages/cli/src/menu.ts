@@ -118,6 +118,7 @@ export type ExtraAction = {
     | 'ability'
     | 'advance'
     | 'trade'
+    | 'wait'
     | 'journal'
     | 'director'
     | 'debug'
@@ -1132,6 +1133,18 @@ export function buildOpportunityActions(world: WorldState): ExtraAction[] {
 
 /** The journal entry's label. Sentinel verb: routed by `group === 'journal'`
  *  in the extras dispatch, never meant to reach the engine as an action. */
+export const WAIT_MENU_LABEL = 'Wait — let the world tick';
+export const WAIT_MENU_VERB = 'wait';
+
+/**
+ * Always-visible Wait extra (F-10b5c460). Sentinel verb is never submitted;
+ * handlePlayerInput returns kind 'wait' so runSession runs runHostileRound
+ * without a player action. computeExtras already drops extras during dialogue.
+ */
+export function buildWaitActions(): ExtraAction[] {
+  return [{ verb: WAIT_MENU_VERB, label: WAIT_MENU_LABEL, group: 'wait' }];
+}
+
 export const JOURNAL_MENU_LABEL = 'Journal — quests and undertakings';
 export const JOURNAL_MENU_VERB = 'journal';
 
@@ -1329,7 +1342,7 @@ export function renderInspectorReport(
 /** All appended entries — abilities, then unlocks, then trade (buy, sell),
  *  then crafting (salvage, craft, repair, modify), then leverage, then
  *  recruit, then opportunities, then the always-on player surfaces in
- *  reading order (the Journal, then the Director's Ledger), then the
+ *  reading order (Wait, then the Journal, then the Director's Ledger), then the
  *  env-gated debug entry last (the operator surface stays at the bottom).
  *  Stable order, pure over state.
  *
@@ -1456,6 +1469,7 @@ export function buildExtraActions(
     ...leverageActions,
     ...recruitActions,
     ...opportunityActions,
+    ...buildWaitActions(),
     ...buildJournalActions(),
     ...buildDirectorActions(),
     ...buildDebugActions(),

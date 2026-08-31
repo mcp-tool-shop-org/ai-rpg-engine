@@ -28,6 +28,8 @@ import {
   formatFirstRunLegend,
   mintSeed,
   createNewSession,
+  maybeOfferResume,
+  listResumeSlots,
   listCheckpoints,
   resolveCheckpointSelector,
   formatCheckpointList,
@@ -913,6 +915,27 @@ describe('resume-from-save (F1c)', () => {
     expect(summary!.tick).toBe(engine.tick);
   });
 
+  it('maybeOfferResume offers a named slot when save.json is absent (F-16ff4dd1)', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const pack = allPacks.find((p) => p.meta.id === 'chapel-threshold')!;
+    const engine = makeProgressedGame();
+    expect(saveGameGuarded(engine, vi.fn(), 'chapel-night')).toBe(true);
+    expect(fs.existsSync(path.join('.ai-rpg-engine', 'save.json'))).toBe(false);
+    expect(fs.existsSync(path.join('.ai-rpg-engine', 'chapel-night.json'))).toBe(true);
+    const slots = listResumeSlots('chapel-threshold');
+    expect(slots).toHaveLength(1);
+    expect(slots[0].file).toBe('chapel-night.json');
+    expect(slots[0].gameId).toBe('chapel-threshold');
+    drainInputQueue();
+    queueInputLine('1');
+    const session = await maybeOfferResume(pack);
+    expect(session).not.toBeNull();
+    expect(session!.engine.world.locationId).toBe('chapel-nave');
+    expect(session!.engine.world.entities['player'].resources.hp).toBe(13);
+    drainInputQueue();
+  });
+
   it('restoreSessionFromSave restores state AND the session is live (actions + NPC turns work)', () => {
     const original = makeProgressedGame();
     expect(saveGameGuarded(original, vi.fn())).toBe(true);
@@ -1019,30 +1042,30 @@ describe('resume-from-save (F1c)', () => {
 describe('run seeds (F-SEED-combat-rolls-seed-blind)', () => {
   describe('parseRunArgs', () => {
     it('no args → no path, no seed (bundled interactive flow unchanged)', () => {
-      expect(parseRunArgs([])).toEqual({ ok: true, path: null, seed: null, packId: null, defaultHero: false });
+      expect(parseRunArgs([])).toEqual({ ok: true, path: null, seed: null, packId: null, defaultHero: false, randomHero: false, listPacks: false });
     });
 
     it('a bare path still parses as the pack path (F1e regression)', () => {
-      expect(parseRunArgs(['./my-pack'])).toEqual({ ok: true, path: './my-pack', seed: null, packId: null, defaultHero: false });
+      expect(parseRunArgs(['./my-pack'])).toEqual({ ok: true, path: './my-pack', seed: null, packId: null, defaultHero: false, randomHero: false, listPacks: false });
     });
 
     it('--seed <n> parses; the VALUE is never mistaken for the pack path', () => {
-      expect(parseRunArgs(['--seed', '42'])).toEqual({ ok: true, path: null, seed: 42, packId: null, defaultHero: false });
+      expect(parseRunArgs(['--seed', '42'])).toEqual({ ok: true, path: null, seed: 42, packId: null, defaultHero: false, randomHero: false, listPacks: false });
     });
 
     it('--seed=<n> form parses', () => {
-      expect(parseRunArgs(['--seed=482913'])).toEqual({ ok: true, path: null, seed: 482913, packId: null, defaultHero: false });
+      expect(parseRunArgs(['--seed=482913'])).toEqual({ ok: true, path: null, seed: 482913, packId: null, defaultHero: false, randomHero: false, listPacks: false });
     });
 
     it('path and seed combine in either order', () => {
-      expect(parseRunArgs(['./pack', '--seed', '7'])).toEqual({ ok: true, path: './pack', seed: 7, packId: null, defaultHero: false });
-      expect(parseRunArgs(['--seed', '7', './pack'])).toEqual({ ok: true, path: './pack', seed: 7, packId: null, defaultHero: false });
+      expect(parseRunArgs(['./pack', '--seed', '7'])).toEqual({ ok: true, path: './pack', seed: 7, packId: null, defaultHero: false, randomHero: false, listPacks: false });
+      expect(parseRunArgs(['--seed', '7', './pack'])).toEqual({ ok: true, path: './pack', seed: 7, packId: null, defaultHero: false, randomHero: false, listPacks: false });
     });
 
     it('0 and the int32 max are accepted; leading zeros are tolerated', () => {
-      expect(parseRunArgs(['--seed', '0'])).toEqual({ ok: true, path: null, seed: 0, packId: null, defaultHero: false });
-      expect(parseRunArgs(['--seed', '2147483647'])).toEqual({ ok: true, path: null, seed: 2147483647, packId: null, defaultHero: false });
-      expect(parseRunArgs(['--seed', '007'])).toEqual({ ok: true, path: null, seed: 7, packId: null, defaultHero: false });
+      expect(parseRunArgs(['--seed', '0'])).toEqual({ ok: true, path: null, seed: 0, packId: null, defaultHero: false, randomHero: false, listPacks: false });
+      expect(parseRunArgs(['--seed', '2147483647'])).toEqual({ ok: true, path: null, seed: 2147483647, packId: null, defaultHero: false, randomHero: false, listPacks: false });
+      expect(parseRunArgs(['--seed', '007'])).toEqual({ ok: true, path: null, seed: 7, packId: null, defaultHero: false, randomHero: false, listPacks: false });
     });
 
     it.each([
@@ -1094,6 +1117,8 @@ describe('run seeds (F-SEED-combat-rolls-seed-blind)', () => {
         seed: 1,
         packId: 'chapel-threshold',
         defaultHero: true,
+        randomHero: false,
+        listPacks: false,
       });
     });
 
@@ -1109,7 +1134,38 @@ describe('run seeds (F-SEED-combat-rolls-seed-blind)', () => {
 
     it('--ascii is accepted so it cannot become a pack path (F-99681db1)', () => {
       const parsed = parseRunArgs(['--ascii', '--seed', '1']);
-      expect(parsed).toEqual({ ok: true, path: null, seed: 1, packId: null, defaultHero: false });
+      expect(parsed).toEqual({ ok: true, path: null, seed: 1, packId: null, defaultHero: false, randomHero: false, listPacks: false });
+    });
+
+    it('--random-hero parses; combining with --default-hero is INVALID_FLAG (F-b10dcd48)', () => {
+      expect(parseRunArgs(['--pack', 'chapel-threshold', '--random-hero', '--seed', '1'])).toEqual({
+        ok: true,
+        path: null,
+        seed: 1,
+        packId: 'chapel-threshold',
+        defaultHero: false,
+        randomHero: true,
+        listPacks: false,
+      });
+      const combined = parseRunArgs(['--random-hero', '--default-hero']);
+      expect(combined.ok).toBe(false);
+      if (!combined.ok) {
+        expect(combined.code).toBe('INVALID_FLAG');
+        expect(combined.message).toContain('--random-hero');
+        expect(combined.message).toContain('--default-hero');
+      }
+    });
+
+    it('--list-packs parses as a catalog dump, not a pack path (F-1a09e498)', () => {
+      expect(parseRunArgs(['--list-packs'])).toEqual({
+        ok: true,
+        path: null,
+        seed: null,
+        packId: null,
+        defaultHero: false,
+        randomHero: false,
+        listPacks: true,
+      });
     });
   });
 
@@ -1225,6 +1281,24 @@ describe('run seeds (F-SEED-combat-rolls-seed-blind)', () => {
     });
   });
 
+  describe('createNewSession --random-hero (F-b10dcd48)', () => {
+    it('installs suggestBuild(catalog, SeededRNG(seed)) — no promptText, same seed same build', async () => {
+      const pack = allPacks.find((p) => p.meta.id === 'chapel-threshold')!;
+      expect(pack.buildCatalog).toBeDefined();
+      const catalogIds = pack.buildCatalog!.archetypes.map((a) => a.id);
+      const a = await createNewSession(pack, 1, { randomHero: true });
+      const b = await createNewSession(pack, 1, { randomHero: true });
+      const playerA = a.engine.world.entities[a.engine.world.playerId]!;
+      const playerB = b.engine.world.entities[b.engine.world.playerId]!;
+      expect(typeof playerA.custom?.archetypeId).toBe('string');
+      expect(catalogIds).toContain(playerA.custom?.archetypeId);
+      expect(playerA.custom?.archetypeId).toBe(playerB.custom?.archetypeId);
+      expect(playerA.custom?.backgroundId).toBe(playerB.custom?.backgroundId);
+      expect(playerA.stats).toEqual(playerB.stats);
+      expect(playerA.name).not.toBe('Wanderer');
+    });
+  });
+
   describe('fresh-run parity under a fixed seed', () => {
     it('same seed + same actions → byte-identical serialize()', () => {
       const run = () => {
@@ -1285,6 +1359,7 @@ describe('formatGameHelp (CS-C-005)', () => {
     expect(help).toContain('save');
     expect(help).toContain('load');
     expect(help).toContain('checkpoints');
+    expect(help).toContain('wait');
     expect(help).toContain('quit');
     expect(help).toContain('help');
     expect(help).toContain('number');
@@ -1654,7 +1729,7 @@ describe('handlePlayerInput — out-of-range menu numbers cost nothing (P8-PS-00
 
   // F-7d5f3da9: mixed tokens that are not whole-digit menu/extras indexes must
   // never fire a numbered action and never fall through as a free-text verb.
-  // runSession only calls runHostileRound on kind 'action'.
+  // runSession calls runHostileRound on kind 'action' and kind 'wait'.
   it("'1a' does not fire action 1 — mixed tokens are unknown, not a prefix-parsed menu hit", () => {
     const engine = makeEngine();
     const log = vi.fn();
@@ -2303,6 +2378,59 @@ describe('named slots and in-session load (F-b606e4e8)', () => {
     expect(slots.some((s) => s.kind === 'slot' && s.file === 'alpha.json')).toBe(true);
     expect(slots.some((s) => s.kind === 'checkpoint')).toBe(true);
     expect(resolveLoadTarget('alpha')).toBe(path.join('.ai-rpg-engine', 'alpha.json'));
+    expect(slots.find((s) => s.kind === 'save')?.gameId).toBe('test-game');
+  });
+});
+
+describe('Wait extra — world ticks without a player verb (F-10b5c460)', () => {
+  it('typed wait and the wait extra return kind wait; runHostileRound grows the log without action.declared', () => {
+    const pack = allPacks.find((p) => p.meta.id === 'chapel-threshold')!;
+    const engine = createFantasyGame(1);
+    const extras = computeExtras(engine, pack);
+    expect(extras.some((e) => e.group === 'wait')).toBe(true);
+    const playerId = engine.world.playerId;
+    const declaredBefore = engine.world.eventLog.filter(
+      (e) => e.type === 'action.declared' && e.actorId === playerId,
+    ).length;
+    const before = engine.world.eventLog.length;
+    expect(handlePlayerInput(engine, 'wait', { extras, pack, log: vi.fn() })).toEqual({ kind: 'wait' });
+    expect(
+      engine.world.eventLog.filter((e) => e.type === 'action.declared' && e.actorId === playerId),
+    ).toHaveLength(declaredBefore);
+    runHostileRound(engine, pack, { log: () => {} });
+    expect(engine.world.eventLog.length).toBeGreaterThan(before);
+    expect(
+      engine.world.eventLog.filter((e) => e.type === 'action.declared' && e.actorId === playerId),
+    ).toHaveLength(declaredBefore);
+  });
+
+  it('the wait extra is absent during activeDialogue (same extras-suppression as journal)', () => {
+    const pack = allPacks.find((p) => p.meta.id === 'chapel-threshold')!;
+    const engine = createFantasyGame(1);
+    engine.world.modules['dialogue-core'] = { activeDialogue: 'sister-maren' };
+    expect(computeExtras(engine, pack).some((e) => e.group === 'wait')).toBe(false);
+    const result = handlePlayerInput(engine, 'wait', { extras: [], pack, log: vi.fn() });
+    expect(result.kind).not.toBe('wait');
+  });
+});
+
+describe('packs catalog dump (F-1a09e498)', () => {
+  it('formatPackCatalog lists every allPacks meta.id including chapel-threshold', async () => {
+    const { formatPackCatalog, runPacksCommand, packCatalogEntries } = await import('./packs.js');
+    const text = formatPackCatalog();
+    expect(text).toContain('chapel-threshold');
+    for (const pack of allPacks) {
+      expect(text).toContain(pack.meta.id);
+    }
+    const lines: string[] = [];
+    const code = runPacksCommand([], { log: (m) => lines.push(m), error: (m) => lines.push(m) });
+    expect(code).toBe(0);
+    expect(lines.join('\n')).toContain('chapel-threshold');
+    const jsonLines: string[] = [];
+    expect(runPacksCommand(['--json'], { log: (m) => jsonLines.push(m), error: () => {} })).toBe(0);
+    const parsed = JSON.parse(jsonLines.join('\n')) as { id: string }[];
+    expect(parsed.map((e) => e.id).sort()).toEqual(packCatalogEntries().map((e) => e.id).sort());
+    expect(runPacksCommand(['extra'], { log: () => {}, error: () => {} })).toBe(1);
   });
 });
 

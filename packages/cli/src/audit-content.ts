@@ -478,8 +478,34 @@ function printAuditContentHelp(log: (msg: string) => void): void {
   log('printed, never block the exit code). 1 on a usage/load error (missing');
   log('file, bad JSON, missing entities, or no resolvable player).');
   log('');
+  log('Options:');
+  log('  --json  print the six audit sections as one JSON object (no director-voice prose)');
+  log('');
   log('Example:');
   log('  ai-rpg-engine audit-content ./content/encounters.audit.json');
+}
+
+function wantsJsonFlag(args: string[]): boolean {
+  return args.includes('--json') || args.some((a) => a.startsWith('--json='));
+}
+
+/** Six audit sections as data — inspect-save --json's sibling. */
+export function buildContentAuditData(loaded: AuditContentLoaded): Record<string, unknown> {
+  const { entities, player, encounters, bossDefinitions, districts, statMapping, world } = loaded;
+  return {
+    summary: summarizeCombatContent(encounters, entities, player, bossDefinitions, statMapping),
+    projectAudit: auditProjectCombat(encounters, entities, world, bossDefinitions, player, statMapping),
+    regions: districts.map((district) =>
+      summarizeRegionCombat(district.id, encounters, entities, world, player, bossDefinitions, statMapping),
+    ),
+    encounterAnalysis: encounters.map((encounter) =>
+      analyzeEncounter(encounter, entities, player, statMapping),
+    ),
+    encounterDetail: encounters.map((encounter) =>
+      buildEncounterDetail(encounter, entities, player, { world, bossDefs: bossDefinitions, statMapping }),
+    ),
+    bosses: bossDefinitions.length > 0 ? getEncounterBosses(encounters, bossDefinitions, entities) : [],
+  };
 }
 
 /**
@@ -490,6 +516,7 @@ function printAuditContentHelp(log: (msg: string) => void): void {
  */
 export function runAuditContent(args: string[], deps: AuditContentDeps = defaultDeps): number {
   const { log, error } = deps;
+  const json = wantsJsonFlag(args);
 
   if (args.includes('--help') || args.includes('-h')) {
     printAuditContentHelp(log);
@@ -498,6 +525,13 @@ export function runAuditContent(args: string[], deps: AuditContentDeps = default
 
   const file = args.find((a) => !a.startsWith('-'));
   if (!file) {
+    if (json) {
+      log(JSON.stringify({
+        ok: false,
+        errors: [{ path: 'args', message: '[AUDIT_CONTENT_FILE_MISSING] Missing <file.json>.' }],
+      }));
+      return 1;
+    }
     error('✗ [AUDIT_CONTENT_FILE_MISSING] Missing <file.json>.');
     error('  Hint: provide a path to a content-audit JSON file, e.g. ai-rpg-engine audit-content ./content/encounters.audit.json');
     printAuditContentHelp(log);
@@ -509,10 +543,18 @@ export function runAuditContent(args: string[], deps: AuditContentDeps = default
     loaded = loadAuditContentFile(file);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
+    if (json) {
+      log(JSON.stringify({ ok: false, errors: [{ path: 'file', message: reason }] }));
+      return 1;
+    }
     error(`✗ Content-audit file invalid — load threw: ${reason}`);
     return 1;
   }
   if (!loaded.ok) {
+    if (json) {
+      log(JSON.stringify({ ok: false, errors: loaded.errors }));
+      return 1;
+    }
     error(`✗ Content-audit file invalid — ${loaded.errors.length} error${loaded.errors.length === 1 ? '' : 's'} in ${file}:`);
     for (const e of loaded.errors) error(`  ✗ ${e.path}: ${e.message}`);
     return 1;
@@ -521,6 +563,27 @@ export function runAuditContent(args: string[], deps: AuditContentDeps = default
   // F-b8479808: build the report BEFORE the ✓ line so a formatter throw
   // (encounters:[{}] walking .participants, etc.) never prints success then
   // a raw stack.
+  if (json) {
+    let data: Record<string, unknown>;
+    try {
+      data = buildContentAuditData(loaded);
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      log(JSON.stringify({ ok: false, errors: [{ path: 'report', message: reason }] }));
+      return 1;
+    }
+    log(JSON.stringify({
+      ok: true,
+      file,
+      entities: Object.keys(loaded.entities).length,
+      encounters: loaded.encounters.length,
+      bossDefinitions: loaded.bossDefinitions.length,
+      districts: loaded.districts.length,
+      ...data,
+    }));
+    return 0;
+  }
+
   let report: string;
   try {
     report = buildContentAuditReport(loaded);

@@ -161,6 +161,21 @@ describe('runValidate', () => {
     expect(out.text()).not.toMatch(/✓ Content valid/);
   });
 
+  it('--json of a pack with an unknown key is parseable JSON with ok:false and a path in errors (F-e393db3c)', () => {
+    const file = writePack('unknown-key.json', {
+      entities: [{ id: 'player', type: 'player', name: 'Wanderer' }],
+      zones: [{ id: 'cave', name: 'Cave', neighbors: [] }],
+      totallyUnknownKey: true,
+    });
+    const out = capture();
+    const code = runValidate([file, '--json'], { log: out.log, error: out.log });
+    expect(code).toBe(1);
+    const parsed = JSON.parse(out.text()) as { ok: boolean; errors: { path: string; message: string }[] };
+    expect(parsed.ok).toBe(false);
+    expect(parsed.errors.some((e) => typeof e.path === 'string' && e.path.length > 0)).toBe(true);
+    expect(out.text()).not.toMatch(/[─┌┐└┘│╔╗╚╝]/);
+  });
+
   it('empty --manifest= is VALIDATE_MANIFEST_MISSING', () => {
     const file = writePack('needs-manifest.json', {
       zones: [{ id: 'z', name: 'Z', neighbors: [] }],

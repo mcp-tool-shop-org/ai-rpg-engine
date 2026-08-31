@@ -45,6 +45,8 @@ export interface InspectDeps {
   error: (msg: string) => void;
   /** Pack catalog used to resolve the saved gameId. Defaults to bundled starters. */
   packs?: readonly LoadedPack[];
+  /** F-e393db3c: print one JSON object instead of the human report. */
+  json?: boolean;
 }
 
 const defaultDeps: InspectDeps = {
@@ -296,6 +298,52 @@ export function renderSaveReport(state: WorldState, opts: SaveReportOptions = {}
   return lines.join('\n');
 }
 
+/** Machine-readable save-summary fields (inspect-save --json). */
+export function buildSaveSummary(
+  state: WorldState,
+  opts: SaveReportOptions = {},
+): Record<string, unknown> {
+  const meta = state.meta;
+  const player = state.entities[state.playerId];
+  const actionCount =
+    opts.actionLog === undefined || opts.actionLog === null
+      ? 0
+      : Array.isArray(opts.actionLog)
+        ? opts.actionLog.length
+        : null;
+  return {
+    ok: true,
+    gameId: meta.gameId,
+    packName: opts.packName ?? null,
+    saveVersion: meta.saveVersion,
+    seed: meta.seed,
+    tick: meta.tick,
+    savedAt: formatSavedAt(opts.savedAt),
+    player: player
+      ? {
+          name: player.name,
+          hp: formatHp(player),
+          zone: state.zones[player.zoneId ?? '']?.name ?? player.zoneId ?? state.locationId,
+          level: derivePlayerLevel(state),
+        }
+      : null,
+    entities: Object.keys(state.entities).length,
+    zones: Object.keys(state.zones).length,
+    activePressures: readActivePressures(state),
+    liveEncounters: readLiveEncounters(state),
+    loadout: readLoadoutLine(state),
+    districtEconomies: readDistrictEconomyCount(state),
+    partySize: readPartySize(state),
+    eventsLogged: state.eventLog.length,
+    actionsLogged: actionCount,
+    globals: state.globals,
+  };
+}
+
+function emitInspectJson(deps: InspectDeps, payload: unknown): void {
+  deps.log(JSON.stringify(payload));
+}
+
 // --- The command ---------------------------------------------------------------
 
 /**
@@ -320,8 +368,18 @@ export function renderSaveReport(state: WorldState, opts: SaveReportOptions = {}
  */
 export function runInspectSave(savePath?: string, deps: InspectDeps = defaultDeps): number {
   const file = savePath ?? DEFAULT_SAVE_FILE;
+  const json = deps.json === true;
 
   if (!fs.existsSync(file)) {
+    if (json) {
+      emitInspectJson(deps, {
+        ok: false,
+        code: 'SAVE_MISSING',
+        message: `No save file found at ${path.resolve(file)}.`,
+        hint: 'play and use "save" in a running session first, or pass a path: ai-rpg-engine inspect-save <path>.',
+      });
+      return 1;
+    }
     deps.error(`  No save file found at ${path.resolve(file)}.`);
     deps.error(
       '  Hint: play and use "save" in a running session first, or pass a path: ai-rpg-engine inspect-save <path>.',
@@ -340,6 +398,15 @@ export function runInspectSave(savePath?: string, deps: InspectDeps = defaultDep
     raw = fs.readFileSync(file, 'utf-8');
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
+    if (json) {
+      emitInspectJson(deps, {
+        ok: false,
+        code: 'SAVE_UNREADABLE',
+        message: reason,
+        hint: 'the path must be a readable save FILE. Check that it is not a directory and that you have permission to read it.',
+      });
+      return 1;
+    }
     deps.error(`  Cannot load save [SAVE_UNREADABLE]: ${reason}`);
     deps.error(
       '  Hint: the path must be a readable save FILE. Check that it is not a directory and that you have permission to read it.',
@@ -382,6 +449,10 @@ export function runInspectSave(savePath?: string, deps: InspectDeps = defaultDep
     }
   } catch (e) {
     if (e instanceof SaveLoadError) {
+      if (json) {
+        emitInspectJson(deps, { ok: false, code: e.code, message: e.message, hint: e.hint });
+        return 1;
+      }
       deps.error(`  Cannot load save [${e.code}]: ${e.message}`);
       deps.error(`  Hint: ${e.hint}`);
       return 1;
@@ -391,13 +462,17 @@ export function runInspectSave(savePath?: string, deps: InspectDeps = defaultDep
 
   const envelopeSavedAt = parsed ? (envelope as { savedAt?: unknown } | null)?.savedAt : undefined;
   const metaSavedAt = (store.state.meta as unknown as { savedAt?: unknown }).savedAt;
+  const reportOpts: SaveReportOptions = {
+    packName: pack?.meta.name ?? null,
+    actionLog: parsed ? (envelope as { actionLog?: unknown } | null)?.actionLog : undefined,
+    savedAt: envelopeSavedAt ?? metaSavedAt,
+  };
 
-  deps.log(
-    renderSaveReport(store.state, {
-      packName: pack?.meta.name ?? null,
-      actionLog: parsed ? (envelope as { actionLog?: unknown } | null)?.actionLog : undefined,
-      savedAt: envelopeSavedAt ?? metaSavedAt,
-    }),
-  );
+  if (json) {
+    emitInspectJson(deps, buildSaveSummary(store.state, reportOpts));
+    return 0;
+  }
+
+  deps.log(renderSaveReport(store.state, reportOpts));
   return 0;
 }

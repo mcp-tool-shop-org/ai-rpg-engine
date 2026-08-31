@@ -309,6 +309,22 @@ describe('runInspectSave — the load authorities render the verdict', () => {
     expect(report).not.toContain('undefined');
   });
 
+  it('--json prints save-summary fields with no box-drawing (F-e393db3c)', () => {
+    const pack = allPacks[0];
+    const engine = pack.createGame(7);
+    writeSave(engine.serialize());
+    const { deps, out, err } = makeDeps();
+    deps.json = true;
+    const code = runInspectSave(undefined, deps);
+    expect(code).toBe(0);
+    expect(err).toHaveLength(0);
+    const parsed = JSON.parse(out.join('\n')) as { ok: boolean; gameId: string; seed: number };
+    expect(parsed.ok).toBe(true);
+    expect(parsed.gameId).toBe(pack.meta.id);
+    expect(parsed.seed).toBe(7);
+    expect(out.join('\n')).not.toMatch(/[─┌┐└┘│╔╗╚╝]/);
+  });
+
   it('inspects an explicit path instead of the default save', () => {
     const other = path.join(tmpDir, 'elsewhere', 'backup.json');
     fs.mkdirSync(path.dirname(other), { recursive: true });

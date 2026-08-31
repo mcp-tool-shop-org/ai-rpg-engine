@@ -49,6 +49,7 @@ import {
   buildDebugActions,
   buildDirectorActions,
   buildJournalActions,
+  buildWaitActions,
   renderInspectorReport,
   renderJournal,
   derivePlayerLevel,
@@ -58,6 +59,8 @@ import {
   DIRECTOR_MENU_VERB,
   JOURNAL_MENU_LABEL,
   JOURNAL_MENU_VERB,
+  WAIT_MENU_LABEL,
+  WAIT_MENU_VERB,
   type ExtraAction,
 } from './menu.js';
 import { getAbilityCatalog } from './turns.js';
@@ -476,9 +479,10 @@ describe('debug inspector entry (F-ENG006)', () => {
     // Only the always-on player surfaces remain (Journal + Director's
     // Ledger) — no debug entry.
     const extras = buildExtraActions(engine, [combatMasteryTree]);
-    expect(extras).toHaveLength(2);
-    expect(extras[0].group).toBe('journal');
-    expect(extras[1].group).toBe('director');
+    expect(extras).toHaveLength(3);
+    expect(extras[0].group).toBe('wait');
+    expect(extras[1].group).toBe('journal');
+    expect(extras[2].group).toBe('director');
     expect(extras.some((e) => e.group === 'debug')).toBe(false);
     expect(buildDebugActions({})).toEqual([]);
     expect(buildDebugActions({ AI_RPG_DEBUG: '0' })).toEqual([]);
@@ -488,17 +492,19 @@ describe('debug inspector entry (F-ENG006)', () => {
     vi.stubEnv('AI_RPG_DEBUG', '1');
     const engine = makeIdleGame();
     const extras = buildExtraActions(engine, [combatMasteryTree]);
-    expect(extras).toHaveLength(3); // journal + director (always) + debug (env-gated)
-    expect(extras[0].group).toBe('journal');
-    expect(extras[1].group).toBe('director');
-    expect(extras[2].group).toBe('debug');
-    expect(extras[2].label).toBe(DEBUG_MENU_LABEL);
+    expect(extras).toHaveLength(4); // wait + journal + director (always) + debug (env-gated)
+    expect(extras[0].group).toBe('wait');
+    expect(extras[1].group).toBe('journal');
+    expect(extras[2].group).toBe('director');
+    expect(extras[3].group).toBe('debug');
+    expect(extras[3].label).toBe(DEBUG_MENU_LABEL);
 
     const base = buildActionList(engine.world).length;
     const screen = renderFullScreen(engine.world, [], { color: false, extraActions: extras });
-    expect(screen).toMatch(new RegExp(`\\[\\s*${base + 1}\\] ${JOURNAL_MENU_LABEL}`));
-    expect(screen).toMatch(new RegExp(`\\[\\s*${base + 2}\\] ${DIRECTOR_MENU_LABEL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
-    expect(screen).toMatch(new RegExp(`\\[\\s*${base + 3}\\] ${DEBUG_MENU_LABEL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    expect(screen).toMatch(new RegExp(`\\[\\s*${base + 1}\\] ${WAIT_MENU_LABEL}`));
+    expect(screen).toMatch(new RegExp(`\\[\\s*${base + 2}\\] ${JOURNAL_MENU_LABEL}`));
+    expect(screen).toMatch(new RegExp(`\\[\\s*${base + 3}\\] ${DIRECTOR_MENU_LABEL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    expect(screen).toMatch(new RegExp(`\\[\\s*${base + 4}\\] ${DEBUG_MENU_LABEL.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
   });
 
   it('the debug entry appends AFTER ability and unlock entries', () => {
@@ -605,10 +611,11 @@ describe("director's ledger entry (F-ENG005)", () => {
   it('selecting its number resolves to the director group (the routing key — the sentinel verb never reaches the engine)', () => {
     const engine = makeIdleGame();
     const extras = buildExtraActions(engine, [combatMasteryTree]);
-    // The Journal (player-personal) reads first; the ledger sits second —
-    // parseExtraSelection resolves the same continuation numbers the frame
-    // renders (renderer.test.ts pins the rendering half of this contract).
-    const selected = parseExtraSelection('8', 6, extras);
+    // Wait (no-verb round) sits first among always-on extras; journal then
+    // ledger. parseExtraSelection resolves the same continuation numbers the
+    // frame renders (renderer.test.ts pins the rendering half of this contract).
+    const directorIdx = extras.findIndex((e) => e.group === 'director');
+    const selected = parseExtraSelection(String(6 + directorIdx + 1), 6, extras);
     expect(selected).not.toBeNull();
     expect(selected?.group).toBe('director');
     expect(selected?.verb).toBe(DIRECTOR_MENU_VERB);
@@ -632,13 +639,32 @@ describe("director's ledger entry (F-ENG005)", () => {
     expect(directorIdx).toBe(debugIdx - 1);
     expect(journalIdx).toBe(directorIdx - 1); // journal, then ledger, then debug
     expect(
-      extras.slice(0, journalIdx).every((e) => e.group === 'ability' || e.group === 'advance'),
+      extras.slice(0, journalIdx).every(
+        (e) => e.group === 'ability' || e.group === 'advance' || e.group === 'wait',
+      ),
     ).toBe(true);
   });
 });
 
 // F-ENG005-quest-loop-min — the Journal entry: the player's quest book,
 // always reachable from the numbered menu, costing no turn.
+describe('wait extra (F-10b5c460)', () => {
+  it('the entry is ALWAYS present, sentinel verb never meant for the engine', () => {
+    const engine = createGame(42);
+    const extras = buildExtraActions(engine, [combatMasteryTree]);
+    const wait = extras.filter((e) => e.group === 'wait');
+    expect(wait).toHaveLength(1);
+    expect(wait[0].label).toBe(WAIT_MENU_LABEL);
+    expect(wait[0].verb).toBe(WAIT_MENU_VERB);
+    expect(buildWaitActions()).toEqual([
+      { verb: WAIT_MENU_VERB, label: WAIT_MENU_LABEL, group: 'wait' },
+    ]);
+    const journalIdx = extras.findIndex((e) => e.group === 'journal');
+    const waitIdx = extras.findIndex((e) => e.group === 'wait');
+    expect(waitIdx).toBe(journalIdx - 1);
+  });
+});
+
 describe('journal entry (F-ENG005-quest-loop-min)', () => {
   it('the entry is ALWAYS present, its label and sentinel verb pinned', () => {
     const engine = createGame(42);
@@ -657,7 +683,8 @@ describe('journal entry (F-ENG005-quest-loop-min)', () => {
   it('selecting its number resolves to the journal group (the routing key for bin.ts)', () => {
     const engine = makeIdleGame();
     const extras = buildExtraActions(engine, [combatMasteryTree]);
-    const selected = parseExtraSelection('7', 6, extras);
+    const journalIdx = extras.findIndex((e) => e.group === 'journal');
+    const selected = parseExtraSelection(String(6 + journalIdx + 1), 6, extras);
     expect(selected?.group).toBe('journal');
     expect(selected?.verb).toBe(JOURNAL_MENU_VERB);
   });
@@ -1845,12 +1872,13 @@ describe('buildSellActions grouping (F-13255438) — collapse duplicate carried 
 });
 
 describe('buildExtraActions wiring order (v3.0 wave-2) — buy, sell, salvage, craft, repair, modify, leverage, opportunity, then journal/director/debug', () => {
-  it('a fully idle player (no coin/inventory/materials/leverage/opportunities) still only ever sees journal + director', () => {
+  it('a fully idle player (no coin/inventory/materials/leverage/opportunities) still only ever sees wait + journal + director', () => {
     const engine = makeIdleGame();
     const extras = buildExtraActions(engine, [combatMasteryTree]);
-    expect(extras).toHaveLength(2);
-    expect(extras[0].group).toBe('journal');
-    expect(extras[1].group).toBe('director');
+    expect(extras).toHaveLength(3);
+    expect(extras[0].group).toBe('wait');
+    expect(extras[1].group).toBe('journal');
+    expect(extras[2].group).toBe('director');
   });
 
   it('every new group appears in the documented order when all seven are simultaneously live (repair/modify now included, V3-MENU-4)', () => {
@@ -1883,7 +1911,8 @@ describe('buildExtraActions wiring order (v3.0 wave-2) — buy, sell, salvage, c
     expect(firstIndexOf('crafting')).toBeGreaterThan(firstIndexOf('trade')); // salvage/craft/repair/modify after trade
     expect(firstIndexOf('leverage')).toBeGreaterThan(firstIndexOf('crafting'));
     expect(firstIndexOf('opportunities')).toBeGreaterThan(firstIndexOf('leverage'));
-    expect(firstIndexOf('journal')).toBeGreaterThan(firstIndexOf('opportunities'));
+    expect(firstIndexOf('wait')).toBeGreaterThan(firstIndexOf('opportunities'));
+    expect(firstIndexOf('journal')).toBeGreaterThan(firstIndexOf('wait'));
     expect(firstIndexOf('director')).toBeGreaterThan(firstIndexOf('journal'));
     // Within 'trade', buy entries (verb 'buy') come before the sell entry (verb 'sell').
     const tradeVerbs = extras.filter((e) => e.group === 'trade').map((e) => e.verb);

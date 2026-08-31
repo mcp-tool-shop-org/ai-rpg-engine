@@ -20,10 +20,10 @@ import {
   clipToWidth,
   glyphsFor,
 } from '@ai-rpg-engine/terminal-ui';
-import { resolveEntity } from '@ai-rpg-engine/character-creation';
+import { resolveEntity, suggestBuild } from '@ai-rpg-engine/character-creation';
 import { ensureStartingLoadouts } from '@ai-rpg-engine/equipment';
-import { SaveLoadError, type Engine, type EntityState, type RulesetDefinition } from '@ai-rpg-engine/core';
-import { allPacks } from './packs.js';
+import { SaveLoadError, SeededRNG, type Engine, type EntityState, type RulesetDefinition } from '@ai-rpg-engine/core';
+import { allPacks, formatPackCatalog, runPacksCommand } from './packs.js';
 import { promptMenu, promptLine, closeReadline } from './prompts.js';
 import { buildCharacter } from './character-builder.js';
 import { runCreateStarter } from './create-starter.js';
@@ -68,6 +68,7 @@ function printHelp() {
   console.log('  run [path]     Start a game (default). With no path: choose a bundled starter.');
   console.log('                 With a path: load a scaffolded/built game module at that path.');
   console.log('                 If a save exists for the selected game, offers Continue / New game.');
+  console.log('  packs          List installed starter ids (id, name, tagline). --json for an array.');
   console.log('  validate       Validate a content pack JSON file (errors + advisories)');
   console.log('  scaffold       Write a minimal valid content stub (ability/zone/quest/status/dialogue)');
   console.log('  profile        Validate a profile/profile-set JSON, or scaffold a starter profile');
@@ -82,8 +83,10 @@ function printHelp() {
   console.log('  inspect-save   Validate a save through the same checks Continue uses, then');
   console.log('                 summarize it (world, player, globals, recent events).');
   console.log('                 With a path: inspect that save file instead of the default.');
+  console.log('                 --json prints the save-summary fields as one JSON object.');
   console.log('  audit-content  Dev tool: load a combat-content JSON file and print a');
   console.log('                 content-audit report (encounter/boss/region/project balance).');
+  console.log('                 --json prints the six audit sections as data.');
   console.log('  version        Print version');
   console.log('  help           Show this help');
   console.log('');
@@ -92,7 +95,12 @@ function printHelp() {
   console.log('                 --seed=<n> is accepted too. Omitted, each new session mints and prints its own.');
   console.log('  --pack <id>    With run: start that bundled starter (exact meta.id match).');
   console.log('                 Unknown ids are refused (same voice as a bad --seed).');
+  console.log('  --list-packs   With run: print installed starter ids and exit (no readline).');
   console.log('  --default-hero With run: skip character creation; keep the pack\'s authored player.');
+  console.log('  --random-hero  With run: skip the wizard; install suggestBuild(catalog, SeededRNG(seed)).');
+  console.log('                 Cannot combine with --default-hero.');
+  console.log('  --json         With validate, inspect-save, audit-content, or packs: machine JSON.');
+  console.log('                 Not accepted on interactive run.');
   console.log('  --ascii, --plain  7-bit glyphs (also ASCII_ONLY=1 or TERM=dumb). Color stays on NO_COLOR.');
   console.log('  --version, -v  Print version');
   console.log('  --help, -h     Show this help');
@@ -126,11 +134,19 @@ export function formatSeedLine(seed: number, packPath?: string): string {
 }
 
 export type ParsedRunArgs =
-  | { ok: true; path: string | null; seed: number | null; packId: string | null; defaultHero: boolean }
+  | {
+      ok: true;
+      path: string | null;
+      seed: number | null;
+      packId: string | null;
+      defaultHero: boolean;
+      randomHero: boolean;
+      listPacks: boolean;
+    }
   | { ok: false; message: string; hint: string; code: 'INVALID_SEED' | 'INVALID_FLAG' | 'INVALID_PACK' };
 
 const RUN_FLAG_HINT =
-  `run accepts --seed <n> or --seed=<n> (0-${MAX_SEED}), --pack <id>, --default-hero, and --ascii. Unknown flags are refused so a typo cannot be mistaken for a pack path.`;
+  `run accepts --seed <n> or --seed=<n> (0-${MAX_SEED}), --pack <id>, --list-packs, --default-hero, --random-hero, and --ascii. Unknown flags are refused so a typo cannot be mistaken for a pack path.`;
 
 /**
  * Parse `run` arguments: an optional pack path (first non-flag token, as
@@ -147,6 +163,8 @@ export function parseRunArgs(runArgs: string[]): ParsedRunArgs {
   let pathArg: string | null = null;
   let packId: string | null = null;
   let defaultHero = false;
+  let randomHero = false;
+  let listPacks = false;
   for (let i = 0; i < runArgs.length; i++) {
     const arg = runArgs[i];
     if (arg === '--seed' || arg.startsWith('--seed=')) {
@@ -181,6 +199,10 @@ export function parseRunArgs(runArgs: string[]): ParsedRunArgs {
       packId = raw;
     } else if (arg === '--default-hero') {
       defaultHero = true;
+    } else if (arg === '--random-hero') {
+      randomHero = true;
+    } else if (arg === '--list-packs') {
+      listPacks = true;
     } else if (arg === '--ascii' || arg === '--plain') {
       // Glyph gate — applied from env in main(); accepted here so it is not
       // mistaken for a pack path (F-99681db1).
@@ -198,6 +220,14 @@ export function parseRunArgs(runArgs: string[]): ParsedRunArgs {
       pathArg = arg;
     }
   }
+  if (defaultHero && randomHero) {
+    return {
+      ok: false,
+      code: 'INVALID_FLAG',
+      message: '--random-hero cannot be combined with --default-hero.',
+      hint: "Use --default-hero to keep the pack's authored player, or --random-hero to generate a seeded legal build — not both.",
+    };
+  }
   if (pathArg !== null && packId !== null) {
     return {
       ok: false,
@@ -206,7 +236,7 @@ export function parseRunArgs(runArgs: string[]): ParsedRunArgs {
       hint: 'Use --pack chapel-threshold for a bundled starter, or `run <path>` for a scaffolded module.',
     };
   }
-  return { ok: true, path: pathArg, seed, packId, defaultHero };
+  return { ok: true, path: pathArg, seed, packId, defaultHero, randomHero, listPacks };
 }
 
 function applyAsciiFlag(args: string[]): void {
@@ -242,6 +272,12 @@ async function main() {
   switch (command) {
     case 'run':
       return runGame(args.slice(1));
+    case 'packs': {
+      const code = runPacksCommand(args.slice(1));
+      closeReadline();
+      if (code !== 0) process.exit(code);
+      return;
+    }
     case 'validate': {
       // runValidate returns the exit code (0 valid / 1 errors-or-usage) rather than
       // exiting itself, so it stays unit-testable. The bin turns it into the process code.
@@ -294,8 +330,14 @@ async function main() {
       // run → Continue path uses (WorldStore.deserialize via inspect.ts) and
       // returns the exit code (0 valid / 1 structured failure) rather than
       // exiting itself — the runValidate/runProfile contract.
-      const savePath = args.slice(1).find((a) => !a.startsWith('-'));
-      const code = runInspectSave(savePath);
+      const rest = args.slice(1);
+      const json = rest.includes('--json') || rest.some((a) => a.startsWith('--json='));
+      const savePath = rest.find((a) => !a.startsWith('-'));
+      const code = runInspectSave(savePath, {
+        log: (m) => console.log(m),
+        error: (m) => console.error(m),
+        json,
+      });
       closeReadline();
       if (code !== 0) process.exit(code);
       return;
@@ -385,40 +427,71 @@ export function readSaveSummary(): { gameId: string; tick: number } | null {
 }
 
 /**
- * F1c: when a save exists for the selected context, offer Continue / New game.
- * Returns the restored session, or null to proceed with a fresh game.
+ * Boot Continue candidates: named slots + save.json for the selected pack
+ * (or every readable slot when no pack is selected yet). Rotating checkpoints
+ * stay on replay/--checkpoint — including them here would turn a single
+ * save.json into a multi-slot menu because every default save also rotates one.
  */
-async function maybeOfferResume(external: LoadedPack | null): Promise<Session | null> {
-  const summary = readSaveSummary();
-  if (!summary) return null;
+export function listResumeSlots(packId: string | null, saveDir: string = SAVE_DIR): LoadableSlot[] {
+  return listLoadableSlots(saveDir).filter((s) => {
+    if (s.kind === 'checkpoint') return false;
+    if (!s.gameId) return false;
+    return packId ? s.gameId === packId : true;
+  });
+}
 
-  const pack = external
-    ? external.meta.id === summary.gameId
-      ? external
-      : null
-    : (allPacks.find((p) => p.meta.id === summary.gameId) ?? null);
-  if (!pack) return null;
+function packForResumeSlot(slot: LoadableSlot, external: LoadedPack | null): LoadedPack | null {
+  if (external && slot.gameId === external.meta.id) return external;
+  if (slot.gameId) return allPacks.find((p) => p.meta.id === slot.gameId) ?? null;
+  return null;
+}
 
-  console.log(formatFrameBanner(`A saved game exists — ${pack.meta.name} (turn ${summary.tick})`));
-  const choice = await promptMenu([
-    { label: 'Continue', detail: `Resume ${pack.meta.name} from ${path.resolve(SAVE_FILE)}` },
-    { label: 'New game', detail: 'Start fresh (the old save remains until you save again)' },
-  ]);
-  if (choice !== 0) return null;
+/**
+ * F1c / F-16ff4dd1: when loadable slots exist for the selected pack (or the
+ * Continue context), offer Continue / New game. Named slots count — not only
+ * save.json. One slot keeps the two-item menu; several lists those slots plus
+ * New game. Returns the restored session, or null to proceed with a fresh game.
+ */
+export async function maybeOfferResume(external: LoadedPack | null): Promise<Session | null> {
+  const slots = listResumeSlots(external?.meta.id ?? null);
+  const restorable = slots.filter((s) => packForResumeSlot(s, external) !== null);
+  if (restorable.length === 0) return null;
 
-  try {
-    const session = restoreSessionFromSave(pack);
-    console.log(`  Loaded save. ${session.engine.world.eventLog.length} events in log — welcome back.`);
-    return session;
-  } catch (e) {
-    if (e instanceof SaveLoadError) {
-      console.error(`  Cannot load save [${e.code}]: ${e.message}`);
-      console.error(`  Hint: ${e.hint}`);
+  const loadSlot = (slot: LoadableSlot): Session | null => {
+    const pack = packForResumeSlot(slot, external);
+    if (!pack) return null;
+    const session = loadSessionFromFile(pack, slot.path);
+    if (!session) {
       console.log('  Starting a new game instead.');
       return null;
     }
-    throw e;
+    return session;
+  };
+
+  if (restorable.length === 1) {
+    const slot = restorable[0];
+    const pack = packForResumeSlot(slot, external)!;
+    console.log(formatFrameBanner(`A saved game exists — ${pack.meta.name} (turn ${slot.tick ?? 0})`));
+    const choice = await promptMenu([
+      { label: 'Continue', detail: `Resume ${pack.meta.name} from ${path.resolve(slot.path)}` },
+      { label: 'New game', detail: 'Start fresh (the old save remains until you save again)' },
+    ]);
+    if (choice !== 0) return null;
+    return loadSlot(slot);
   }
+
+  const heading = external?.meta.name ?? 'saved games';
+  console.log(formatFrameBanner(`Saved games exist — ${heading}`));
+  const items = [
+    ...restorable.map((s) => ({
+      label: s.label,
+      detail: path.resolve(s.path),
+    })),
+    { label: 'New game', detail: 'Start fresh (the old saves remain until you save again)' },
+  ];
+  const choice = await promptMenu(items);
+  if (choice === restorable.length) return null;
+  return loadSlot(restorable[choice]);
 }
 
 /**
@@ -456,7 +529,7 @@ export function installCreatedPlayer(engine: Engine, playerEntity: EntityState):
 export async function createNewSession(
   pack: LoadedPack,
   seed: number = mintSeed(),
-  opts: { defaultHero?: boolean } = {},
+  opts: { defaultHero?: boolean; randomHero?: boolean } = {},
 ): Promise<Session> {
   const engine = pack.createGame(seed);
 
@@ -464,12 +537,21 @@ export async function createNewSession(
   // packs may omit them (the starter template does) — the pack's authored
   // default player is used as-is. `--default-hero` (F-6d2cfdf8) skips the
   // wizard even when a catalog exists, keeping the pack's authored player.
+  // `--random-hero` (F-b10dcd48) installs suggestBuild(catalog, SeededRNG(seed))
+  // with no promptMenu/promptText — complementary to --default-hero, not a
+  // replacement: combining the two is refused at parseRunArgs.
   if (!opts.defaultHero && pack.buildCatalog && pack.ruleset) {
-    console.log(formatFrameBanner(`CHARACTER CREATION — ${pack.meta.name}`));
+    if (opts.randomHero) {
+      const build = suggestBuild(pack.buildCatalog, new SeededRNG(seed));
+      const playerEntity = resolveEntity(build, pack.buildCatalog, pack.ruleset);
+      installCreatedPlayer(engine, playerEntity);
+    } else {
+      console.log(formatFrameBanner(`CHARACTER CREATION — ${pack.meta.name}`));
 
-    const build = await buildCharacter(pack.buildCatalog, pack.ruleset);
-    const playerEntity = resolveEntity(build, pack.buildCatalog, pack.ruleset);
-    installCreatedPlayer(engine, playerEntity);
+      const build = await buildCharacter(pack.buildCatalog, pack.ruleset);
+      const playerEntity = resolveEntity(build, pack.buildCatalog, pack.ruleset);
+      installCreatedPlayer(engine, playerEntity);
+    }
   }
 
   // F-5164895e: first snapshot after chargen wears starting kits (Gravewalker
@@ -713,7 +795,7 @@ async function runSession(engine: Engine, pack: LoadedPack): Promise<SessionOutc
       continue;
     }
 
-    if (result.kind === 'action') {
+    if (result.kind === 'action' || result.kind === 'wait') {
       dirty = true;
       runHostileRound(liveEngine, pack);
     }
@@ -721,7 +803,8 @@ async function runSession(engine: Engine, pack: LoadedPack): Promise<SessionOutc
     // 'rejected' narrates too: the engine's structured refusal is the round's
     // one event, and the player deserves to hear it immediately rather than
     // finding it in the next frame's log panel (P8-PS-002).
-    if (result.kind === 'action' || result.kind === 'rejected') {
+    // 'wait' narrates the world's half (NPC / tick) with no player verb.
+    if (result.kind === 'action' || result.kind === 'rejected' || result.kind === 'wait') {
       narrateRound(presenter, liveEngine, logLenBefore, console.log);
     }
   }
@@ -743,7 +826,7 @@ async function runSession(engine: Engine, pack: LoadedPack): Promise<SessionOutc
 async function playSessions(
   initial: Session | null,
   external: LoadedPack | null,
-  opts: { seedOverride?: number | null; packPath?: string | null; defaultHero?: boolean } = {},
+  opts: { seedOverride?: number | null; packPath?: string | null; defaultHero?: boolean; randomHero?: boolean } = {},
 ): Promise<void> {
   let pending: Session | null = initial;
   while (true) {
@@ -754,6 +837,7 @@ async function playSessions(
       const pack = external ?? (await selectPack());
       session = await createNewSession(pack, opts.seedOverride ?? undefined, {
         defaultHero: opts.defaultHero,
+        randomHero: opts.randomHero,
       });
       fresh = true;
     }
@@ -782,6 +866,14 @@ async function runGame(runArgs: string[] = []) {
     return; // unreachable; keeps control flow explicit for tests that stub exit
   }
 
+  // F-1a09e498: catalog dump, then exit — never promptMenu / promptLine.
+  if (parsed.listPacks) {
+    console.log(formatPackCatalog());
+    closeReadline();
+    process.exit(0);
+    return;
+  }
+
   // F1e: `run <path>` loads a scaffolded/built game module instead of the
   // bundled starters. Structured load errors exit with the contract spelled out.
   // F-6d2cfdf8: `--pack <id>` selects a bundled starter without promptMenu.
@@ -805,14 +897,15 @@ async function runGame(runArgs: string[] = []) {
     }
   }
 
-  // `--default-hero` is an explicit fresh-game request (CI first-run) — skip
-  // the Continue prompt so the command never touches promptMenu/promptText.
-  const resumed = parsed.defaultHero ? null : await maybeOfferResume(external);
+  // `--default-hero` / `--random-hero` are explicit fresh-game requests —
+  // skip the Continue prompt so the command never touches promptMenu/promptText.
+  const resumed = parsed.defaultHero || parsed.randomHero ? null : await maybeOfferResume(external);
   const seedLinePath = parsed.packId ? `--pack ${parsed.packId}` : pathArg;
   await playSessions(resumed, external, {
     seedOverride: parsed.seed,
     packPath: seedLinePath,
     defaultHero: parsed.defaultHero,
+    randomHero: parsed.randomHero,
   });
 
   console.log('\n  Farewell, wanderer.\n');
@@ -992,17 +1085,22 @@ export type LoadableSlot = {
   label: string;
   tick: number | null;
   kind: 'save' | 'slot' | 'checkpoint';
+  gameId: string | null;
 };
 
-function readTickFromSaveFile(filePath: string): number | null {
+function readSaveFileMeta(filePath: string): { tick: number | null; gameId: string | null } {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as {
-      world?: { state?: { meta?: { tick?: unknown } } };
+      world?: { state?: { meta?: { tick?: unknown; gameId?: unknown } } };
     };
     const t = parsed.world?.state?.meta?.tick;
-    return typeof t === 'number' ? t : null;
+    const g = parsed.world?.state?.meta?.gameId;
+    return {
+      tick: typeof t === 'number' ? t : null,
+      gameId: typeof g === 'string' ? g : null,
+    };
   } catch {
-    return null;
+    return { tick: null, gameId: null };
   }
 }
 
@@ -1021,13 +1119,14 @@ export function listLoadableSlots(saveDir: string = SAVE_DIR): LoadableSlot[] {
 
   const defaultPath = path.join(saveDir, 'save.json');
   if (fs.existsSync(defaultPath)) {
-    const tick = readTickFromSaveFile(defaultPath);
+    const meta = readSaveFileMeta(defaultPath);
     slots.push({
       file: 'save.json',
       path: defaultPath,
-      label: `Current save (save.json)${tick === null ? '' : ` — round ${tick}`}`,
-      tick,
+      label: `Current save (save.json)${meta.tick === null ? '' : ` — round ${meta.tick}`}`,
+      tick: meta.tick,
       kind: 'save',
+      gameId: meta.gameId,
     });
   }
 
@@ -1042,24 +1141,27 @@ export function listLoadableSlots(saveDir: string = SAVE_DIR): LoadableSlot[] {
     .sort();
   for (const f of named) {
     const filePath = path.join(saveDir, f);
-    const tick = readTickFromSaveFile(filePath);
+    const meta = readSaveFileMeta(filePath);
     const slotName = f.replace(/\.json$/i, '');
     slots.push({
       file: f,
       path: filePath,
-      label: `Slot "${slotName}"${tick === null ? '' : ` — round ${tick}`}`,
-      tick,
+      label: `Slot "${slotName}"${meta.tick === null ? '' : ` — round ${meta.tick}`}`,
+      tick: meta.tick,
       kind: 'slot',
+      gameId: meta.gameId,
     });
   }
 
   for (const c of listCheckpoints(saveDir)) {
+    const filePath = path.join(saveDir, c.file);
     slots.push({
       file: c.file,
-      path: path.join(saveDir, c.file),
+      path: filePath,
       label: `${c.file}${c.tick === null ? ' — (round unknown)' : ` — round ${c.tick}`}`,
       tick: c.tick,
       kind: 'checkpoint',
+      gameId: readSaveFileMeta(filePath).gameId,
     });
   }
   return slots;
@@ -1274,6 +1376,7 @@ export function formatGameHelp(engine: Engine, ruleset?: RulesetDefinition): str
     { id: 'save', description: `Save the game (writes ${SAVE_FILE}; save <name> writes a named slot)` },
     { id: 'load', description: 'Load a save or checkpoint (load <name>, or pick from the menu)' },
     { id: 'checkpoints', description: 'List rotating checkpoints, newest first' },
+    { id: 'wait', description: 'Pass without acting — the world still ticks (NPCs, recovery, rumors)' },
     { id: 'quit', description: 'Exit the game (prompts to save if you have unsaved progress)' },
     { id: 'help', description: 'Show this list' },
   ];
@@ -1309,6 +1412,8 @@ export type PlayerInputResult =
    *  P8-PS-002: the menu advertised it, the engine said no; the refusal
    *  narrates but the round is NOT forfeited (no NPC turns, no world tick). */
   | { kind: 'rejected' }
+  /** No player verb: runHostileRound still runs (world tick / NPC turns). */
+  | { kind: 'wait' }
   | { kind: 'unknown' };
 
 /**
@@ -1389,6 +1494,17 @@ export function handlePlayerInput(
   if (firstWord === 'help') {
     log(formatGameHelp(engine, opts.ruleset));
     return { kind: 'help' };
+  }
+  if (firstWord === 'wait') {
+    // Sentinel: never submitted. Absent from the extras menu during dialogue
+    // (computeExtras returns []); typed `wait` is the same no-verb round only
+    // when extras are not dialogue-suppressed.
+    const dStateForWait = engine.world.modules['dialogue-core'] as
+      | { activeDialogue: string | null }
+      | undefined;
+    if (!dStateForWait?.activeDialogue) {
+      return { kind: 'wait' };
+    }
   }
 
   // Dialogue mode — a number selects a dialogue choice.
@@ -1494,6 +1610,11 @@ export function handlePlayerInput(
       if (extra.group === 'journal') {
         log(renderJournal(engine.world));
         return { kind: 'help' };
+      }
+      // Wait: sentinel verb never submitted; the world's half of the round still
+      // runs (F-10b5c460). Not a core wait verb.
+      if (extra.group === 'wait') {
+        return { kind: 'wait' };
       }
       runGuardedAction(
         () =>

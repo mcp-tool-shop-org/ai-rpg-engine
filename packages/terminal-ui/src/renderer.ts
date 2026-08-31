@@ -377,6 +377,29 @@ function hpVitalsLine(player: EntityState, pal: Palette): string {
  * resources wrap onto indented follow-on lines so no Status line exceeds
  * SCREEN_WIDTH and the ASCII bar never splits (F-1d24d0ce).
  */
+function playerStatChips(player: EntityState): string[] {
+  const chips: string[] = [];
+  for (const [stat, value] of Object.entries(player.stats)) {
+    if (stat.startsWith('max')) continue;
+    if (typeof value !== 'number') continue;
+    chips.push(`${humanizeStateId(stat)} ${value}`);
+  }
+  return chips;
+}
+
+function playerIdentityParts(player: EntityState): string[] {
+  const custom = player.custom;
+  if (!custom) return [];
+  const parts: string[] = [];
+  const title = custom.title;
+  if (typeof title === 'string' && title.trim() !== '') parts.push(humanizeStateId(title));
+  const archetypeId = custom.archetypeId;
+  if (typeof archetypeId === 'string' && archetypeId.trim() !== '') {
+    parts.push(humanizeStateId(archetypeId));
+  }
+  return parts;
+}
+
 function playerVitals(player: EntityState, pal: Palette): string {
   const rest: string[] = [];
   for (const [resource, value] of Object.entries(player.resources)) {
@@ -432,6 +455,12 @@ function renderSceneInner(world: WorldState, pal: Palette): string {
   const player = world.entities[world.playerId];
   if (player) {
     const hud: string[] = playerVitals(player, pal).split('\n');
+    const statChips = playerStatChips(player);
+    if (statChips.length > 0) hud.push(...wrapJoined(statChips));
+    const identity = playerIdentityParts(player);
+    if (identity.length > 0) {
+      hud.push(...wrapToWidth(`${BODY_INDENT}Identity: ${identity.join(' · ')}`));
+    }
     if (player.statuses.length > 0) {
       hud.push(...wrapToWidth(
         `${BODY_INDENT}Status: ${player.statuses.map(s => humanizeStateId(s.statusId)).join(', ')}`,
