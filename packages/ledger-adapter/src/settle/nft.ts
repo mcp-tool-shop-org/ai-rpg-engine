@@ -649,7 +649,7 @@ async function settleOneItem(
       return; // don't throw the whole batch — next item still gets a chance
     }
 
-    let nftId = mintRes.nftId ?? (await recoverNftId(transport, deps.issuerAddress, uri));
+    const nftId = mintRes.nftId ?? (await recoverNftId(transport, deps.issuerAddress, uri));
     if (!nftId) {
       // tesSUCCESS without a parsed nftId: fail CLOSED. Persist an unindexed
       // pending ref so a later checkpoint recovers via account_nfts and NEVER

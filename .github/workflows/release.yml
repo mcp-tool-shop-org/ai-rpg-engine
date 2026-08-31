@@ -206,7 +206,7 @@ jobs:
           build-args: |
             GIT_SHA=${{ github.sha }}
             VCS_REF=${{ github.sha }}
-            SOURCE_DATE_EPOCH=${{ github.event.head_commit.timestamp || github.run_started_at }}
+            SOURCE_DATE_EPOCH=0
 
       - name: Smoke — CLI --help
         run: docker run --rm ai-rpg-engine:ci-smoke --help
@@ -253,7 +253,7 @@ jobs:
           build-args: |
             GIT_SHA=${{ github.sha }}
             VCS_REF=${{ github.sha }}
-            SOURCE_DATE_EPOCH=${{ github.event.head_commit.timestamp || github.run_started_at }}
+            SOURCE_DATE_EPOCH=0
 
       # Live path only: drop the locally loaded tags and re-pull the GHCR
       # tag the public installs, then --help. Skip on dry-run.

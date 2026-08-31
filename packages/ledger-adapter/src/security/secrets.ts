@@ -167,7 +167,7 @@ export type SidecarBindings = {
  */
 export function bindSidecar(gameDir: string, opts?: BindSidecarOpts): SidecarBindings {
   const path = sidecarPath(gameDir);
-  let sidecar: SecretsSidecar = existsSync(path) ? loadSidecar(path) : createSidecar();
+  const sidecar: SecretsSidecar = existsSync(path) ? loadSidecar(path) : createSidecar();
   const persistIssuer = opts?.issuerMode === 'persistent';
 
   function readIssuerSeed(): string | undefined {

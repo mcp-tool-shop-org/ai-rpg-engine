@@ -378,7 +378,9 @@ function dualLoopback(fanout: boolean): {
   };
 
   const pair = () => {
+    // eslint-disable-next-line prefer-const -- assigned once; closes over construction
     let client!: SidecarClient;
+    // eslint-disable-next-line prefer-const -- assigned once; closes over construction
     let server!: SidecarServer;
     server = new SidecarServer(
       { engine, engineVersion: '3.8.0-test', onWorldCommitted: () => notifyPeers(server) },
