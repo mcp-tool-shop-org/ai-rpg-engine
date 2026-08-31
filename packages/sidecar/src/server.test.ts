@@ -997,3 +997,118 @@ describe('F-9b3f6d21 — packIntake surfaces gate dropped/advisories on initiali
   });
 });
 
+describe('F-9bb888dc — LOAD invalidates packIntake (composes F-7d41ae63)', () => {
+  // packId/playerId/locationId read live off `this.engine.world` at every
+  // initialize (server.ts:328-336); packIntake alone was constructor-captured
+  // and never re-derived, so a LOAD that swaps the world left it describing a
+  // pack that may no longer be running. rebaseAfterLoad() already resets
+  // emitted/lastState/snapshotSeq for every peer sharing the gate on LOAD —
+  // packIntake now rides along with that same per-peer reset.
+  function bootPairWithPackIntake(): {
+    engine: ReturnType<typeof createTestEngine>;
+    packIntake: PackIntakeSummary;
+    a: SidecarServer;
+    sentA: RpcMessage[];
+    b: SidecarServer;
+    sentB: RpcMessage[];
+  } {
+    const engine = createTestEngine({
+      modules: [],
+      playerId: 'hero',
+      startZone: 'room',
+      entities: [
+        {
+          id: 'hero',
+          blueprintId: 'hero',
+          type: 'player',
+          name: 'Hero',
+          tags: ['player'],
+          stats: {},
+          resources: { hp: 10 },
+          statuses: [],
+          zoneId: 'room',
+        },
+      ],
+      zones: [{ id: 'room', roomId: 'room', name: 'Room', tags: [], neighbors: [] }],
+    });
+    const packIntake: PackIntakeSummary = {
+      dropped: [
+        { path: 'entities[0](guard).aiProfile', reason: 'no-runtime-field', detail: 'no runtime field for aiProfile' },
+      ],
+      advisories: [{ path: 'items.torch', message: 'torch has no description' }],
+    };
+    const sentA: RpcMessage[] = [];
+    const sentB: RpcMessage[] = [];
+    // Mirrors socket.ts's per-connection `new SidecarServer({ ...options, ... }, send)`:
+    // every session sharing this engine is constructed from the same captured
+    // packIntake option, same as every connection off one startSocketServer call.
+    const a = new SidecarServer({ engine, engineVersion: '3.8.0-test', packIntake }, (m) => sentA.push(m));
+    const b = new SidecarServer({ engine, engineVersion: '3.8.0-test', packIntake }, (m) => sentB.push(m));
+    return { engine, packIntake, a, sentA, b, sentB };
+  }
+
+  it('a peer still mid-connect (attached, not yet initialized) loses packIntake once LOAD lands', () => {
+    const { engine, a, sentA, b, sentB } = bootPairWithPackIntake();
+    a.handle({ jsonrpc: '2.0', id: 1, method: METHODS.INITIALIZE, params: {} });
+    const before = sentA[0]?.result as { packIntake?: PackIntakeSummary } | undefined;
+    expect(before?.packIntake).toBeDefined();
+
+    // B is attached to the same gate (constructed) but has not called
+    // initialize yet — exactly the case rebaseAfterLoad's fix targets.
+    const serialized = engine.serialize();
+    a.handle({ jsonrpc: '2.0', id: 2, method: METHODS.LOAD, params: { serialized } });
+    expect(sentA.find((m) => m.id === 2)?.error).toBeUndefined();
+
+    b.handle({ jsonrpc: '2.0', id: 1, method: METHODS.INITIALIZE, params: {} });
+    const after = sentB[0]?.result as { packIntake?: PackIntakeSummary } | undefined;
+    expect(after?.packIntake).toBeUndefined();
+  });
+
+  it("the loading session's own packIntake is cleared too, not only its peers'", () => {
+    const { engine, a, sentA } = bootPairWithPackIntake();
+    a.handle({ jsonrpc: '2.0', id: 1, method: METHODS.INITIALIZE, params: {} });
+    expect((sentA[0]?.result as { packIntake?: PackIntakeSummary })?.packIntake).toBeDefined();
+
+    const serialized = engine.serialize();
+    a.handle({ jsonrpc: '2.0', id: 2, method: METHODS.LOAD, params: { serialized } });
+
+    // Same session cannot call initialize twice (ALREADY_INITIALIZED), so the
+    // internal field is the only thing left to pin here; rebaseAfterLoad runs
+    // over every peer INCLUDING the LOAD-issuing session itself (871-873:
+    // `for (const peer of this.gate.servers)`, and `a` is in that set).
+    expect((a as unknown as { packIntake?: PackIntakeSummary }).packIntake).toBeUndefined();
+  });
+
+  it('byte-compat pin: a session booted with no packIntake option still omits it after a peer LOADs', () => {
+    const engine = createTestEngine({
+      modules: [],
+      playerId: 'hero',
+      startZone: 'room',
+      entities: [
+        {
+          id: 'hero',
+          blueprintId: 'hero',
+          type: 'player',
+          name: 'Hero',
+          tags: ['player'],
+          stats: {},
+          resources: { hp: 10 },
+          statuses: [],
+          zoneId: 'room',
+        },
+      ],
+      zones: [{ id: 'room', roomId: 'room', name: 'Room', tags: [], neighbors: [] }],
+    });
+    const sentA: RpcMessage[] = [];
+    const sentB: RpcMessage[] = [];
+    const a = new SidecarServer({ engine, engineVersion: '3.8.0-test' }, (m) => sentA.push(m));
+    const b = new SidecarServer({ engine, engineVersion: '3.8.0-test' }, (m) => sentB.push(m));
+    a.handle({ jsonrpc: '2.0', id: 1, method: METHODS.INITIALIZE, params: {} });
+    const serialized = engine.serialize();
+    a.handle({ jsonrpc: '2.0', id: 2, method: METHODS.LOAD, params: { serialized } });
+    b.handle({ jsonrpc: '2.0', id: 1, method: METHODS.INITIALIZE, params: {} });
+    const result = sentB[0]?.result as { packIntake?: PackIntakeSummary } | undefined;
+    expect(result?.packIntake).toBeUndefined();
+  });
+});
+
