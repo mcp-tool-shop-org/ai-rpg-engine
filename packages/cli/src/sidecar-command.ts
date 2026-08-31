@@ -15,9 +15,10 @@ import * as fs from 'node:fs';
 import { startStdioServer, startSocketServer } from '@ai-rpg-engine/sidecar';
 import { applyContentPack, loadContentFromFile, type GateContext } from '@ai-rpg-engine/content-schema';
 import { createStandardChannels, modifyDistrictMetric } from '@ai-rpg-engine/modules';
-import { allPacks, type PackInfo } from './packs.js';
+import { allPacks } from './packs.js';
 import { runHostileRound } from './bin.js';
 import { ENGINE_VERSION } from './engine-version.js';
+import { loadExternalPack, PackLoadError, type LoadedPack } from './external-pack.js';
 
 /** One value-flag: space form (`--flag value`) or equals form (`--flag=value`). */
 type FlagRead = {
@@ -48,15 +49,22 @@ export interface SidecarDeps {
 
 const defaultDeps: SidecarDeps = { error: (m) => process.stderr.write(`${m}\n`) };
 
+/** True when the positional is a filesystem path, not a bundled pack id. */
+function looksLikePath(token: string): boolean {
+  return /[\\/]/.test(token) || token.startsWith('.') || /^[A-Za-z]:/.test(token);
+}
+
 function printSidecarHelp(error: (msg: string) => void): void {
   error(
-    'Usage: ai-rpg-engine sidecar <pack-id> [--seed <n>] [--listen <port>] [--host <addr>]'
+    'Usage: ai-rpg-engine sidecar <pack-id|path> [--seed <n>] [--listen <port>] [--host <addr>]'
     + ' [--content <pack.json>] [--start <zone-id>] [--manifest <manifest.json>]',
   );
   error('');
   error('Runs the simulation as a JSON-RPC server. One authoritative sim, N rendering');
   error('clients: the client submits intents, the sim decides, and events arrive as');
   error('tick-stamped notifications carrying a per-tick state hash.');
+  error('The positional is a bundled starter id OR a filesystem path to a scaffolded');
+  error('module (same contract as `run [path]` / `replay --pack <path|id>`).');
   error('');
   error('TRANSPORTS');
   error('  (default)        LAUNCH — stdio. The host spawns this process and speaks over');
@@ -106,13 +114,16 @@ function printSidecarHelp(error: (msg: string) => void): void {
   error('starts holding in one file and not its neighbour.');
   error('');
   error(`Packs: ${allPacks.map((p) => p.meta.id).join(', ')}`);
+  error('A path to a create-starter / scaffolded module is also accepted: sidecar <path>.');
 }
 
 /**
  * Start the sidecar. Returns the process exit code, or `null` when the server
- * is running (the caller keeps the process alive on stdin).
+ * is running (the caller keeps the process alive on stdin). Async so a
+ * filesystem path can load through `loadExternalPack` the same way `run [path]`
+ * and `replay --pack` do (F-dda90fe8).
  */
-export function runSidecar(args: string[], deps: SidecarDeps = defaultDeps): number | null {
+export async function runSidecar(args: string[], deps: SidecarDeps = defaultDeps): Promise<number | null> {
   const { error } = deps;
 
   if (args.includes('--help') || args.includes('-h')) {
@@ -143,7 +154,7 @@ export function runSidecar(args: string[], deps: SidecarDeps = defaultDeps): num
   const packId = args.find((a, i) => !a.startsWith('-') && !valueIndices.has(i));
 
   if (!packId) {
-    error('✗ [SIDECAR_PACK_MISSING] Missing <pack-id>.');
+    error('✗ [SIDECAR_PACK_MISSING] Missing <pack-id|path>.');
     printSidecarHelp(error);
     return 1;
   }
@@ -184,11 +195,27 @@ export function runSidecar(args: string[], deps: SidecarDeps = defaultDeps): num
     return 1;
   }
 
-  const pack: PackInfo | undefined = allPacks.find((p) => p.meta.id === packId);
+  // Bundled id first (replay --pack <path|id> contract). A token that is not
+  // an allPacks meta.id is a filesystem path — loadExternalPack, not SIDECAR_PACK_UNKNOWN.
+  let pack: LoadedPack | undefined = allPacks.find((p) => p.meta.id === packId);
   if (!pack) {
-    error(`✗ [SIDECAR_PACK_UNKNOWN] No pack "${packId}".`);
-    error(`  Available: ${allPacks.map((p) => p.meta.id).join(', ')}`);
-    return 1;
+    try {
+      pack = await loadExternalPack(packId);
+    } catch (err) {
+      if (err instanceof PackLoadError) {
+        error(`✗ [SIDECAR_PACK_UNKNOWN] No pack "${packId}".`);
+        if (looksLikePath(packId)) {
+          error(`  Hint: sidecar <path> loads a scaffolded module the same way run [path] / replay --pack do.`);
+          error(`  ${err.message}`);
+          error(`  Hint: ${err.hint}`);
+        } else {
+          error(`  Available: ${allPacks.map((p) => p.meta.id).join(', ')}`);
+          error('  Hint: pass a bundled id, or sidecar <path> for a scaffolded module.');
+        }
+        return 1;
+      }
+      throw err;
+    }
   }
 
   if (content.present && isMissingValue(content)) {

@@ -38,11 +38,15 @@ const defaultDeps: ProfileCliDeps = {
   error: (m) => console.error(m),
 };
 
+function wantsJsonFlag(args: string[]): boolean {
+  return args.includes('--json') || args.some((a) => a.startsWith('--json='));
+}
+
 function printProfileHelp(log: (msg: string) => void): void {
   log('Usage: ai-rpg-engine profile <subcommand>');
   log('');
   log('Subcommands:');
-  log('  profile validate <file.json>                     Validate a profile or profile-set JSON');
+  log('  profile validate <file.json> [--json]            Validate a profile or profile-set JSON');
   log('  profile scaffold <name> [--force] [--out <file>] Write a starter profile template');
   log('');
   log('validate accepts a single profile object, an array of profiles, or');
@@ -50,12 +54,17 @@ function printProfileHelp(log: (msg: string) => void): void {
   log('resource caps) block with exit code 1. Per-profile build warnings and');
   log('cross-profile advisories are printed separately and never affect the exit code.');
   log('');
+  log('Options (validate):');
+  log('  --json  print one JSON object {ok, errors, warnings, advisories}');
+  log('          (--json and --json= are both accepted; not used by scaffold)');
+  log('');
   log('scaffold writes <name>.profile.json (override with --out <file> or --out=<file>); the stub');
   log('passes "ai-rpg-engine profile validate" out of the box.');
   log('');
   log('Examples:');
   log('  ai-rpg-engine profile scaffold storm-mystic');
   log('  ai-rpg-engine profile validate storm-mystic.profile.json');
+  log('  ai-rpg-engine profile validate storm-mystic.profile.json --json');
 }
 
 /**
@@ -145,12 +154,38 @@ function checkProfileShape(value: unknown, label: string): string[] {
   return problems;
 }
 
+type ProfileReportEntry = { path: string; message: string };
+
+function emitProfileJson(
+  log: (msg: string) => void,
+  payload: { ok: boolean; errors: ProfileReportEntry[]; warnings: ProfileReportEntry[]; advisories: ProfileReportEntry[] },
+): void {
+  log(JSON.stringify(payload));
+}
+
+/** Split `Profile[id].field: message` into a Wave-29 {path, message} entry. */
+function shapeEntry(problem: string): ProfileReportEntry {
+  const idx = problem.indexOf(': ');
+  if (idx === -1) return { path: 'profile', message: problem };
+  return { path: problem.slice(0, idx), message: problem.slice(idx + 2) };
+}
+
 function runProfileValidate(args: string[], deps: ProfileCliDeps): number {
   const { log, error } = deps;
+  const json = wantsJsonFlag(args);
 
   // First non-flag token is the file path (same convention as runValidate).
   const file = args.find((a) => !a.startsWith('-'));
   if (!file) {
+    if (json) {
+      emitProfileJson(log, {
+        ok: false,
+        errors: [{ path: 'args', message: '[PROFILE_FILE_MISSING] Missing <file.json>.' }],
+        warnings: [],
+        advisories: [],
+      });
+      return 1;
+    }
     error('✗ [PROFILE_FILE_MISSING] Missing <file.json>.');
     error('  Hint: provide a path to a profile or profile-set JSON, e.g. ai-rpg-engine profile validate ./mystic.profile.json');
     printProfileHelp(log);
@@ -161,6 +196,15 @@ function runProfileValidate(args: string[], deps: ProfileCliDeps): number {
   try {
     raw = fs.readFileSync(file, 'utf-8');
   } catch (err) {
+    if (json) {
+      emitProfileJson(log, {
+        ok: false,
+        errors: [{ path: file, message: `[PROFILE_READ_FAILED] Cannot read "${file}": ${(err as Error).message}` }],
+        warnings: [],
+        advisories: [],
+      });
+      return 1;
+    }
     error(`✗ [PROFILE_READ_FAILED] Cannot read "${file}": ${(err as Error).message}`);
     error('  Hint: check that the path exists and is readable.');
     return 1;
@@ -170,6 +214,15 @@ function runProfileValidate(args: string[], deps: ProfileCliDeps): number {
   try {
     data = JSON.parse(raw);
   } catch (err) {
+    if (json) {
+      emitProfileJson(log, {
+        ok: false,
+        errors: [{ path: file, message: `[PROFILE_JSON_INVALID] "${file}" is not valid JSON: ${(err as Error).message}` }],
+        warnings: [],
+        advisories: [],
+      });
+      return 1;
+    }
     error(`✗ [PROFILE_JSON_INVALID] "${file}" is not valid JSON: ${(err as Error).message}`);
     error('  Hint: fix the JSON syntax — a linter or editor can pinpoint the offending character.');
     return 1;
@@ -184,12 +237,33 @@ function runProfileValidate(args: string[], deps: ProfileCliDeps): number {
   } else if (isObj(data)) {
     candidates = [data];
   } else {
+    if (json) {
+      emitProfileJson(log, {
+        ok: false,
+        errors: [{
+          path: file,
+          message: `must contain a profile object, an array of profiles, or { "profiles": [...] } (got ${data === null ? 'null' : typeof data})`,
+        }],
+        warnings: [],
+        advisories: [],
+      });
+      return 1;
+    }
     error(`✗ [PROFILE_SHAPE_INVALID] "${file}" must contain a profile object, an array of profiles, or { "profiles": [...] } (got ${data === null ? 'null' : typeof data}).`);
     error('  Hint: start from a valid stub with: ai-rpg-engine profile scaffold <name>');
     return 1;
   }
 
   if (candidates.length === 0) {
+    if (json) {
+      emitProfileJson(log, {
+        ok: false,
+        errors: [{ path: file, message: 'contains no profiles' }],
+        warnings: [],
+        advisories: [],
+      });
+      return 1;
+    }
     error(`✗ [PROFILE_SHAPE_INVALID] "${file}" contains no profiles.`);
     error('  Hint: add at least one profile object, or start from: ai-rpg-engine profile scaffold <name>');
     return 1;
@@ -205,6 +279,15 @@ function runProfileValidate(args: string[], deps: ProfileCliDeps): number {
     shapeProblems.push(...checkProfileShape(candidate, `Profile[${id}]`));
   });
   if (shapeProblems.length > 0) {
+    if (json) {
+      emitProfileJson(log, {
+        ok: false,
+        errors: shapeProblems.map(shapeEntry),
+        warnings: [],
+        advisories: [],
+      });
+      return 1;
+    }
     error(`✗ [PROFILE_SHAPE_INVALID] "${file}" is not a valid profile file — ${shapeProblems.length} problem${shapeProblems.length === 1 ? '' : 's'}:`);
     for (const p of shapeProblems) {
       error(`  ✗ ${p}`);
@@ -219,15 +302,29 @@ function runProfileValidate(args: string[], deps: ProfileCliDeps): number {
   const profiles = candidates as Profile[];
 
   // Per-profile packaging warnings (warn-and-degrade — never affect the exit code).
+  const warningEntries: ProfileReportEntry[] = [];
   const warnings: string[] = [];
   for (const profile of profiles) {
     for (const w of buildProfile(profile).warnings) {
       warnings.push(`[${profile.id}] ${w}`);
+      warningEntries.push({ path: profile.id, message: w });
     }
   }
 
   // Cross-profile validation — the pass/fail bit.
   const result = validateProfileSet(profiles);
+  const errorEntries: ProfileReportEntry[] = result.errors.map((e) => ({ path: e.path, message: e.message }));
+  const advisoryEntries: ProfileReportEntry[] = result.advisories.map((a) => ({ path: a.path, message: a.message }));
+
+  if (json) {
+    emitProfileJson(log, {
+      ok: result.errors.length === 0,
+      errors: errorEntries,
+      warnings: warningEntries,
+      advisories: advisoryEntries,
+    });
+    return result.errors.length === 0 ? 0 : 1;
+  }
 
   // --- Errors (block; nonzero exit) ---
   if (result.errors.length > 0) {

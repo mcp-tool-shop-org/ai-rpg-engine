@@ -197,6 +197,34 @@ describe('runProfile — validate subcommand', () => {
     expect(code).not.toBe(0);
     expect((out.text() + errOut.text()).toLowerCase()).toMatch(/usage|file|provide/);
   });
+
+  it('--json of a shape-invalid profile is parseable JSON, ok:false, with a path in errors (F-f7e9f47d)', () => {
+    const file = writeFile('pack.json', { zones: [{ id: 'z', name: 'Z', neighbors: [] }] });
+    const out = capture();
+    const code = runProfile(['validate', file, '--json'], { log: out.log, error: out.log });
+    expect(code).toBe(1);
+    const parsed = JSON.parse(out.text()) as {
+      ok: boolean;
+      errors: { path: string; message: string }[];
+      warnings: unknown[];
+      advisories: unknown[];
+    };
+    expect(parsed.ok).toBe(false);
+    expect(parsed.errors.some((e) => typeof e.path === 'string' && e.path.length > 0)).toBe(true);
+    expect(out.text()).not.toMatch(/[─┌┐└┘│╔╗╚╝]/);
+    expect(out.text()).not.toMatch(/✗|⚠|✓/);
+  });
+
+  it('--json= of a valid profile is parseable JSON with ok:true', () => {
+    const file = writeFile('fighter.json', cleanProfile('fighter'));
+    const out = capture();
+    const code = runProfile(['validate', file, '--json='], { log: out.log, error: out.log });
+    expect(code).toBe(0);
+    const parsed = JSON.parse(out.text()) as { ok: boolean; errors: unknown[]; warnings: unknown[]; advisories: unknown[] };
+    expect(parsed.ok).toBe(true);
+    expect(parsed.errors).toEqual([]);
+    expect(out.text()).not.toMatch(/✓/);
+  });
 });
 
 describe('runProfile — subcommand routing', () => {
@@ -207,6 +235,7 @@ describe('runProfile — subcommand routing', () => {
     const text = out.text();
     expect(text).toContain('profile validate <file.json>');
     expect(text).toContain('profile scaffold <name>');
+    expect(text).toContain('--json');
   });
 
   it('exits nonzero with usage when the subcommand is missing', () => {

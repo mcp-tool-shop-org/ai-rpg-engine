@@ -13,8 +13,8 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-/** The five content kinds the CLI advertises in its metadata + help. */
-export const SCAFFOLD_KINDS = ['ability', 'zone', 'quest', 'status', 'dialogue'] as const;
+/** The eight content kinds the CLI advertises in its metadata + help. */
+export const SCAFFOLD_KINDS = ['ability', 'zone', 'quest', 'status', 'dialogue', 'entity', 'item', 'hazard'] as const;
 export type ScaffoldKind = (typeof SCAFFOLD_KINDS)[number];
 
 export interface ScaffoldOptions {
@@ -185,6 +185,39 @@ export function buildStub(kind: ScaffoldKind, name: string): Record<string, unkn
       };
     }
 
+    case 'entity':
+      // EntityBlueprint requires id/type/name. npc is the author-facing default;
+      // no inventory/status refs so the cross-ref pass stays clean.
+      return {
+        entities: [
+          { id: name, type: 'npc', name: display, tags: ['entity'] },
+        ],
+      };
+
+    case 'item':
+      // ItemDefinition requires a non-empty string id. name is optional but
+      // shown so the author sees the display field.
+      return {
+        items: [
+          { id: name, name: display },
+        ],
+      };
+
+    case 'hazard':
+      // HazardDefinition requires id/trigger and an effects array of objects.
+      // One empty-shape damage effect shows the author the record without
+      // introducing zone.hazardRefs that would need a matching zone.
+      return {
+        hazardDefinitions: [
+          {
+            id: name,
+            name: display,
+            trigger: 'on-enter',
+            effects: [{ kind: 'damage', amount: 0 }],
+          },
+        ],
+      };
+
     default: {
       // Exhaustiveness guard — unreachable if SCAFFOLD_KINDS and the switch stay in sync.
       const never: never = kind;
@@ -239,6 +272,9 @@ function printScaffoldHelp(): void {
   console.log('  ai-rpg-engine scaffold zone harbor-district --out ./content/harbor.json');
   console.log('  ai-rpg-engine scaffold zone harbor-district --out=./content/harbor.json');
   console.log('  ai-rpg-engine scaffold status on-fire --force');
+  console.log('  ai-rpg-engine scaffold entity dock-warden');
+  console.log('  ai-rpg-engine scaffold item worn-blade');
+  console.log('  ai-rpg-engine scaffold hazard loose-cobbles');
 }
 
 /**

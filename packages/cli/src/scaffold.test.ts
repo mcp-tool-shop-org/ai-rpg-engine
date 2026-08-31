@@ -22,15 +22,15 @@ describe('scaffoldContent', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('exposes the five advertised kinds', () => {
+  it('exposes the eight advertised kinds', () => {
     expect([...SCAFFOLD_KINDS].sort()).toEqual(
-      ['ability', 'dialogue', 'quest', 'status', 'zone'].sort(),
+      ['ability', 'dialogue', 'entity', 'hazard', 'item', 'quest', 'status', 'zone'].sort(),
     );
   });
 
   // The core contract: every kind's stub must pass validate (round-trips through
   // loadContentFromFile with ok:true and zero errors).
-  for (const kind of ['ability', 'zone', 'quest', 'status', 'dialogue'] as const) {
+  for (const kind of ['ability', 'zone', 'quest', 'status', 'dialogue', 'entity', 'item', 'hazard'] as const) {
     it(`writes a ${kind} stub that passes validate`, () => {
       const outFile = path.join(tmpDir, `${kind}-stub.json`);
       const written = scaffoldContent({ kind, name: `my-${kind}`, outFile });
@@ -161,6 +161,17 @@ describe('runScaffold (CLI entry)', () => {
     runScaffold(['--help']);
     const combined = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(combined).toMatch(/scaffold/i);
-    expect(combined).toMatch(/ability|zone|quest|status|dialogue/);
+    expect(combined).toMatch(/ability|zone|quest|status|dialogue|entity|item|hazard/);
+    expect(combined).toContain('entity');
+    expect(combined).toContain('item');
+    expect(combined).toContain('hazard');
+  });
+
+  it('unknown kind lists all eight kinds', () => {
+    expect(() => runScaffold(['monster', 'grumpkin'])).toThrow(/__exit__/);
+    const combined = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+    expect(combined).toMatch(/entity/);
+    expect(combined).toMatch(/item/);
+    expect(combined).toMatch(/hazard/);
   });
 });

@@ -70,7 +70,7 @@ function printHelp() {
   console.log('                 If a save exists for the selected game, offers Continue / New game.');
   console.log('  packs          List installed starter ids (id, name, tagline). --json for an array.');
   console.log('  validate       Validate a content pack JSON file (errors + advisories)');
-  console.log('  scaffold       Write a minimal valid content stub (ability/zone/quest/status/dialogue)');
+  console.log('  scaffold       Write a minimal valid content stub (ability/zone/quest/status/dialogue/entity/item/hazard)');
   console.log('  profile        Validate a profile/profile-set JSON, or scaffold a starter profile');
   console.log('  create-starter Scaffold a new starter from template');
   console.log('  replay         Restore the save and RESUME PLAY. (--replay is accepted but');
@@ -99,8 +99,8 @@ function printHelp() {
   console.log('  --default-hero With run: skip character creation; keep the pack\'s authored player.');
   console.log('  --random-hero  With run: skip the wizard; install suggestBuild(catalog, SeededRNG(seed)).');
   console.log('                 Cannot combine with --default-hero.');
-  console.log('  --json         With validate, inspect-save, audit-content, or packs: machine JSON.');
-  console.log('                 Not accepted on interactive run.');
+  console.log('  --json         With validate, inspect-save, audit-content, packs, or profile validate: machine JSON.');
+  console.log('                 Not accepted on interactive run or profile scaffold.');
   console.log('  --ascii, --plain  7-bit glyphs (also ASCII_ONLY=1 or TERM=dumb). Color stays on NO_COLOR.');
   console.log('  --version, -v  Print version');
   console.log('  --help, -h     Show this help');
@@ -289,7 +289,8 @@ async function main() {
     case 'sidecar': {
       // The sim as a JSON-RPC server over stdio. Returns null while the server
       // runs -- the process stays alive on stdin, which is the point.
-      const code = runSidecar(args.slice(1));
+      // Await: a positional path loads through loadExternalPack (F-dda90fe8).
+      const code = await runSidecar(args.slice(1));
       if (code === null) return;
       closeReadline();
       if (code !== 0) process.exit(code);
