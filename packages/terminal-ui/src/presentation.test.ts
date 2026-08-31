@@ -173,14 +173,14 @@ describe('TurnPresenter: victory/defeat stings (F-0671a25f)', () => {
   });
 });
 
-// Composition half of media's F-901767f5: TurnPresenter does not yet wire a
-// real resolveZoneMood (soundpack-core's districtToneToSoundMood bridge does
-// not exist in this worktree — media lands it this wave; the coordinator
-// wires the real resolver at the stitch). Without one injected, buildNarrationPlan
-// falls through to the documented scene.enter fallback for every zone-entry
-// turn — still a real improvement over today's always-undefined/always-[].
-describe('TurnPresenter: zone-entry music (F-901767f5, fallback path only — resolver wiring awaits sibling merge)', () => {
-  it('a zone-entry turn now populates musicCue/ambientLayers via the scene.enter fallback', () => {
+// Composition half of media's F-901767f5. TurnPresenter wires the REAL
+// tone-aware resolver at the wave-2 stitch: soundpack-core's
+// districtToneToSoundMood bridge + a CORE_SOUND_PACK-loaded SoundRegistry,
+// roll pinned to 0 (deterministic first id-sorted match). A zone entry with
+// no tone (or an unmapped tone) still falls through per-field to the
+// documented scene.enter targets.
+describe('TurnPresenter: zone-entry music (F-901767f5, tone-aware resolver wired at the stitch)', () => {
+  it('a tone-less zone-entry turn populates musicCue/ambientLayers via the scene.enter fallback', () => {
     const world = makeWorld();
     const result = new TurnPresenter().present(world, [enterZone()], { color: false });
     expect(result.plan.musicCue).toEqual({ action: 'play', trackId: 'music_calm', fadeMs: 1000 });
@@ -188,6 +188,35 @@ describe('TurnPresenter: zone-entry music (F-901767f5, fallback path only — re
       { layerId: 'ambient_white_noise', action: 'start', volume: 0.3, fadeMs: 1000 },
     ]);
     expect(validateNarrationPlan(result.plan)).toEqual([]);
+  });
+
+  it('a grim-toned zone entry resolves the dread stem and drone bed through the real bridge', () => {
+    const world = makeWorld();
+    const grimZone = ev(
+      'world.zone.entered',
+      { zoneId: 'gallows-row', zoneName: 'Gallows Row', tone: 'grim' },
+      { channels: ['objective'], priority: 'normal', soundCues: ['scene.enter'] },
+    );
+    const result = new TurnPresenter().present(world, [grimZone], { color: false });
+    expect(result.plan.musicCue).toEqual({ action: 'play', trackId: 'music_dread', fadeMs: 1000 });
+    expect(result.plan.ambientLayers).toEqual([
+      { layerId: 'ambient_drone', action: 'start', volume: 0.3, fadeMs: 1000 },
+    ]);
+    expect(validateNarrationPlan(result.plan)).toEqual([]);
+  });
+
+  it('an unmapped tone falls through to the scene.enter targets, never an error', () => {
+    const world = makeWorld();
+    const oddZone = ev(
+      'world.zone.entered',
+      { zoneId: 'somewhere', zoneName: 'Somewhere', tone: 'not-a-tone' },
+      { channels: ['objective'], priority: 'normal', soundCues: ['scene.enter'] },
+    );
+    const result = new TurnPresenter().present(world, [oddZone], { color: false });
+    expect(result.plan.musicCue).toEqual({ action: 'play', trackId: 'music_calm', fadeMs: 1000 });
+    expect(result.plan.ambientLayers).toEqual([
+      { layerId: 'ambient_white_noise', action: 'start', volume: 0.3, fadeMs: 1000 },
+    ]);
   });
 
   it('a non-zone-entry turn is unaffected: musicCue undefined, ambientLayers []', () => {

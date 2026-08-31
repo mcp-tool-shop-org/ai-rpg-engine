@@ -38,7 +38,13 @@ import {
   type AudioCommand,
   type ScheduleWarning,
 } from '@ai-rpg-engine/audio-director';
-import { CORE_SOUND_PACK, resolveSoundCue } from '@ai-rpg-engine/soundpack-core';
+import {
+  CORE_SOUND_PACK,
+  resolveSoundCue,
+  resolveMusicSting,
+  districtToneToSoundMood,
+  SoundRegistry,
+} from '@ai-rpg-engine/soundpack-core';
 import { formatEventLine, type RenderOptions } from './renderer.js';
 import { detectColorEnabled, makePalette } from './styles.js';
 
@@ -56,24 +62,12 @@ export const PRESENTATION_TICK_MS = 1000;
 export const QUIET_TURN_TEXT = 'All is quiet.';
 
 /**
- * F-0671a25f / F-b5150ad5: mirrors soundpack-core's COMBAT_STING_MAP
- * (cue-map.ts) — 'combat.victory' -> music_victory_sting, 'combat.defeat' ->
- * music_defeat_sting. cue-map.ts's own `resolveMusicSting` is the canonical
- * resolver for this table, but it is NOT exported from
- * @ai-rpg-engine/soundpack-core's public index.ts (confirmed by grep across
- * the package; only its OWN test file reaches it via a relative import).
- * packages/soundpack-core sits outside this domain's glob, so the one-line
- * export fix cannot land here — flagged for the coordinator to add at the
- * stitch. Duplicated as a literal in the meantime, matching cue-map.ts's own
- * precedent of mirroring small stable tables across a package boundary
- * (its SfxTiming type) rather than reaching around a missing export. Swap
- * for `resolveMusicSting` from '@ai-rpg-engine/soundpack-core' once it is
- * exported.
+ * F-0671a25f / F-b5150ad5 (wave-2 stitch): sting cues resolve through
+ * soundpack-core's own `resolveMusicSting` — the canonical COMBAT_STING_MAP
+ * resolver, exported from the package's public index.ts at the stitch. This
+ * file briefly carried a literal mirror of the two-row table while the
+ * export was missing; the mirror is gone.
  */
-const STING_TRACK_IDS: Readonly<Record<string, string>> = {
-  'combat.victory': 'music_victory_sting',
-  'combat.defeat': 'music_defeat_sting',
-};
 
 /** Everything the presentation stack produces for one turn. */
 export type PresentedTurn = {
@@ -186,13 +180,42 @@ export class TurnPresenter {
   private readonly director: AudioDirector;
   private readonly resolveCue: SoundCueResolver;
   private readonly voiceProfile?: VoiceProfile;
+  private readonly zoneRegistry: SoundRegistry;
 
   constructor(opts?: TurnPresenterOptions) {
     this.director =
       opts?.director ?? new AudioDirector({ cooldownMs: corePackCooldowns() });
     this.resolveCue = opts?.resolveSoundCue ?? resolveSoundCue;
     this.voiceProfile = opts?.voiceProfile;
+    // F-901767f5 (wave-2 stitch): the tone-aware zone-mood resolver's
+    // registry — CORE_SOUND_PACK is first-party, so load warnings are
+    // structurally empty (the pack's ids are boot-invariant-checked in
+    // soundpack-core itself).
+    this.zoneRegistry = new SoundRegistry();
+    this.zoneRegistry.load(CORE_SOUND_PACK);
   }
+
+  /**
+   * F-901767f5 (wave-2 stitch): compose soundpack-core's district-tone
+   * bridge with the mood-aware registry query — the ZoneMoodResolver
+   * buildNarrationPlan's zone-entry music path consumes. Roll is pinned to 0
+   * (first id-sorted match) so the same tone always resolves the same
+   * stem/bed — deterministic and replayable per the engine's determinism
+   * contract; per-session variety is a future lever, not this wiring's job.
+   * Per-field partial results are returned as-is: buildNarrationPlan falls
+   * back per-field to its documented scene.enter targets.
+   */
+  private resolveZoneMood = (tone: string): { trackId?: string; layerId?: string } | undefined => {
+    const moods = districtToneToSoundMood(tone);
+    if (!moods) return undefined;
+    const stem = this.zoneRegistry.pickMusicStem({ mood: [...moods] }, 0);
+    const bed = this.zoneRegistry.pickAmbientBed({ mood: [...moods] }, 0);
+    if (!stem && !bed) return undefined;
+    return {
+      ...(stem ? { trackId: stem.id } : {}),
+      ...(bed ? { layerId: bed.id } : {}),
+    };
+  };
 
   /**
    * Present one turn: build the NarrationPlan from the turn's events, style
@@ -213,6 +236,7 @@ export class TurnPresenter {
       events: [...events],
       resolveSoundCue: this.resolveCue,
       playerId: world.playerId,
+      resolveZoneMood: this.resolveZoneMood,
       ...(this.voiceProfile ? { voiceProfile: this.voiceProfile } : {}),
     });
 
@@ -225,8 +249,8 @@ export class TurnPresenter {
     // scheduleSting's own contract ("layers over whatever stem is already
     // playing").
     const stingCue = deriveStingCue(events, world.playerId);
-    const stingTrackId = stingCue ? STING_TRACK_IDS[stingCue] : undefined;
-    if (stingTrackId) audioCommands.push(this.director.scheduleSting(stingTrackId));
+    const sting = stingCue ? resolveMusicSting(stingCue) : undefined;
+    if (sting) audioCommands.push(this.director.scheduleSting(sting.trackId));
 
     return {
       plan,

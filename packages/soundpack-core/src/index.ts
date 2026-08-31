@@ -35,6 +35,7 @@ export {
   NAMESPACE_MUSIC_MAP,
   resolveMusicStem,
   sceneMusicTargetIds,
+  resolveMusicSting,
   districtToneToSoundMood,
   districtToneMoodValues,
   type ResolvedSfxCue,

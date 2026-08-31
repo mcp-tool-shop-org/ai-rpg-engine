@@ -12,7 +12,7 @@
 // a verb, which v3.6 learned by shipping a probe that could never have seen it.
 
 import * as fs from 'node:fs';
-import { startStdioServer, startSocketServer } from '@ai-rpg-engine/sidecar';
+import { startStdioServer, startSocketServer, type PackIntakeSummary } from '@ai-rpg-engine/sidecar';
 import { applyContentPack, loadContentFromFile, type GateContext } from '@ai-rpg-engine/content-schema';
 import { createStandardChannels, modifyDistrictMetric } from '@ai-rpg-engine/modules';
 import { allPacks } from './packs.js';
@@ -58,19 +58,11 @@ const defaultDeps: SidecarDeps = { error: (m) => process.stderr.write(`${m}\n`) 
  * dropped" in its own UI instead of a stderr stream it may not even be
  * attached to.
  *
- * Mirrors @ai-rpg-engine/sidecar's own `PackIntakeSummary` (protocol.ts),
- * which lands THIS WAVE — not yet present in this worktree at the time of
- * this edit (confirmed by grep: no such export exists in sidecar's src).
- * packages/sidecar sits outside this domain's glob, so this is declared
- * LOCALLY rather than imported; swap for
- * `import type { PackIntakeSummary } from '@ai-rpg-engine/sidecar'` once the
- * sibling type lands (the coordinator reconciles the two shapes — declared
- * identical here, field for field — at the stitch).
+ * The shape is @ai-rpg-engine/sidecar's own `PackIntakeSummary`
+ * (protocol.ts), imported above — this file briefly carried a field-for-field
+ * local mirror while the sibling type landed in the same wave; the mirror was
+ * swapped for the real import at the wave-2 stitch.
  */
-type PackIntakeSummary = {
-  dropped: Array<{ path: string; reason: string; detail: string }>;
-  advisories: Array<{ path: string; message: string }>;
-};
 
 /** True when the positional is a filesystem path, not a bundled pack id. */
 function looksLikePath(token: string): boolean {
