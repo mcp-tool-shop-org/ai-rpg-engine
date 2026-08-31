@@ -201,6 +201,52 @@ describe('traversal-core: inspectHandler district drill-down (F-5ef2c8f5)', () =
   });
 });
 
+describe('traversal-core: moveHandler district-mood walk-in (F-99de2f57)', () => {
+  const moodZones: ZoneState[] = [
+    { id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbors: ['zone-b'] },
+    { id: 'zone-b', roomId: 'test', name: 'Zone B', tags: [], neighbors: ['zone-a'] },
+  ];
+  // zone-b -> district-1. Default district metrics (district-core's own
+  // DEFAULT_METRICS) already derive a deterministic, non-empty descriptor —
+  // 'calm and watchful', the SAME canonical example
+  // formatDistrictMoodForNarrator's own doc comment cites — so no metric
+  // forcing is needed to pin this.
+  const districts = [{ id: 'district-1', name: 'Market', zoneIds: ['zone-b'], tags: [] }];
+
+  function makeMoodEngine(startZone: string) {
+    return createTestEngine({
+      modules: [traversalCore, createEnvironmentCore(), createDistrictCore({ districts })],
+      entities: [makePlayer(startZone)],
+      zones: moodZones,
+      playerId: 'player',
+      startZone,
+    });
+  }
+
+  it('moving into a zone that resolves to a district attaches moodHint', () => {
+    const engine = makeMoodEngine('zone-a');
+
+    const events = engine.submitAction('move', { targetIds: ['zone-b'] });
+    const entered = events.find((e) => e.type === 'world.zone.entered');
+
+    expect(entered).toBeDefined();
+    expect(entered!.payload.moodHint).toBe('Market: calm and watchful');
+  });
+
+  it('moving into an unmapped zone stays byte-identical to today\'s four-key payload (no moodHint key at all)', () => {
+    const engine = makeMoodEngine('zone-b');
+
+    const events = engine.submitAction('move', { targetIds: ['zone-a'] });
+    const entered = events.find((e) => e.type === 'world.zone.entered');
+
+    expect(entered).toBeDefined();
+    expect(Object.keys(entered!.payload).sort()).toEqual(
+      ['zoneId', 'zoneName', 'previousZoneId', 'tags'].sort(),
+    );
+    expect(entered!.payload).not.toHaveProperty('moodHint');
+  });
+});
+
 describe('traversal-core: faction-access gate (F-7d2c4c59)', () => {
   const gatedZones: ZoneState[] = [
     { id: 'zone-a', roomId: 'test', name: 'Street', tags: [], neighbors: ['guild-hall'] },
