@@ -223,10 +223,21 @@ describe('handleSlashCommand — /execute per-step progress (F-4be7a3c2)', () =>
   });
 });
 
-// Wave-4 stitch (F-03875ef5): /tune-step and /tune-execute never got the
-// "Content staged for ..." surfacing that /step and /execute have (above).
-// Mirrors the build case's UI contract onto the tuning path.
-describe('handleSlashCommand — /tune-step and /tune-execute surface staged writes (F-03875ef5)', () => {
+// F-591fae03 (tuning parity, inverting the wave-4 F-03875ef5 pin above):
+// /tune-step and /tune-execute now surface the BATCH consent surface
+// ("N file(s) staged -- write all?") instead of the old singular
+// "Content staged for X" line — tuning steps accumulate into
+// activeTuning.stagedWrites rather than the old shared pendingWrite slot,
+// and executeTuningStep's completion promotion surfaces the batch once the
+// plan has nothing left to run (there is no emit-pack-equivalent tail to
+// gate on, so "plan complete with content still staged" is the trigger).
+// A single-step /tune-step plan is simultaneously its own last step, so it
+// exercises the SAME completion-promotion path as a full /tune-execute
+// batch — intentional: rather than reinventing a per-step singular message
+// for a value that no longer lives in a per-step slot, both commands share
+// one consent surface, firing only once there is something to actually
+// confirm.
+describe('handleSlashCommand — /tune-step and /tune-execute surface staged writes (F-591fae03)', () => {
   function tuningStep(id: number, description: string): TuningStep {
     return {
       id, description,
@@ -255,8 +266,9 @@ describe('handleSlashCommand — /tune-step and /tune-execute surface staged wri
 
     expect(result).toBe('handled');
     const logged = logSpy.mock.calls.flat().join('\n');
-    expect(logged).toContain('Content staged for');
-    expect(logged).toContain('say "yes" to review and write it');
+    expect(logged).toContain('file(s) staged -- write all?');
+    expect(logged).toContain('shell-tuned-room.yaml');
+    expect(logged).toContain('Say "yes" to write all');
   });
 
   it('/tune-execute tells the user a write is staged after the batch completes', async () => {
@@ -278,8 +290,9 @@ describe('handleSlashCommand — /tune-step and /tune-execute surface staged wri
 
     expect(result).toBe('handled');
     const logged = logSpy.mock.calls.flat().join('\n');
-    expect(logged).toContain('Content staged for');
-    expect(logged).toContain('say "yes" to review and write it');
+    expect(logged).toContain('file(s) staged -- write all?');
+    expect(logged).toContain('shell-tuned-room.yaml');
+    expect(logged).toContain('Say "yes" to write all');
   });
 });
 

@@ -489,16 +489,18 @@ describe('executeAllBuildSteps — per-step progress callback (F-4be7a3c2)', () 
   });
 });
 
-// --- Build steps stage pendingWrite (wave-2 stitch, F-35cc73ce composed surface) ---
-// executeBuildStep read ok/summary/output/sessionEvents from each step tool and
-// dropped pendingWrite, so every /build step's staged write — scaffold YAML and
-// the emit-pack tail's assembled pack alike — was silently discarded, and the
-// emit-pack summary's "say yes to save" instruction was a dead affordance on
-// the /step //execute path. The engine now stages each step's pendingWrite
-// (last one wins), and the normal confirmation flow takes it from there.
+// --- Build steps stage into activeBuild.stagedWrites (F-591fae03) ---
+// executeBuildStep used to stage each step's pendingWrite onto ONE shared
+// engine-level slot (wave-2 stitch, F-35cc73ce) — last-writer-wins across
+// ALL steps, not just same-path collisions. Since the emit-pack tail step
+// always ran last and its own stage always won the race, a confirmed guided
+// /build wrote only content/pack.json built from stale disk content, while
+// every scaffold the batch itself generated was lost with no error. Steps
+// now accumulate into activeBuild.stagedWrites (keyed by suggestedPath) and
+// the batch is exposed via engine.pendingWriteBatch for one combined confirm.
 
-describe('build steps stage pendingWrite on the engine', () => {
-  it('executeBuildStep stages the step tool pendingWrite instead of dropping it', async () => {
+describe('build steps stage into activeBuild.stagedWrites (F-591fae03)', () => {
+  it('executeBuildStep stages the step tool pendingWrite into stagedWrites, not the shared slot', async () => {
     const yaml = 'id: staged-room\ntype: room\nname: Staged Room';
     const engine = createChatEngine({
       client: mockClient(yaml),
@@ -507,8 +509,14 @@ describe('build steps stage pendingWrite on the engine', () => {
     });
     engine.activeBuild = createBuildState(buildPlanOf([scaffoldStep(1, 'staged room')]));
     await engine.executeBuildStep();
-    expect(engine.pendingWrite).not.toBeNull();
-    expect(engine.pendingWrite!.content).toContain('staged-room');
+    // The old singular slot is untouched — it stays reserved for the plain
+    // (non-guided) chat scaffold flow.
+    expect(engine.pendingWrite).toBeNull();
+    const entries = Object.values(engine.activeBuild!.stagedWrites);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].content).toContain('staged-room');
+    expect(entries[0].suggestedPath).toBe('staged-room.yaml');
+    expect(entries[0].sourceStepId).toBe(1);
   });
 
   it('after a batch the staged write is live and confirmable through the normal yes flow', async () => {
@@ -516,36 +524,36 @@ describe('build steps stage pendingWrite on the engine', () => {
     try {
       const yaml = 'id: staged-room\ntype: room\nname: Staged Room';
       const engine = createChatEngine({ client: mockClient(yaml), projectRoot: dir, rawMode: true });
+      // No emit-pack tail here — a single scaffold step becomes the LAST
+      // (and therefore build-completing) step, so the completion promotion
+      // in executeBuildStep surfaces it as a batch of one. The multi-step
+      // + emit-pack roundtrip is covered separately below (item 10).
       engine.activeBuild = createBuildState(buildPlanOf([scaffoldStep(1, 'one')]));
       await engine.executeAllBuildSteps();
-      expect(engine.pendingWrite).not.toBeNull();
-      const suggested = engine.pendingWrite!.suggestedPath;
+      expect(engine.pendingWriteBatch).not.toBeNull();
+      expect(engine.pendingWriteBatch).toHaveLength(1);
+      const suggested = engine.pendingWriteBatch![0].suggestedPath;
       // First "yes" previews (staged writes show a preview before landing),
       // second "yes" writes under the sandbox.
       await engine.process('yes');
-      expect(engine.pendingWrite).not.toBeNull();
-      expect(engine.pendingWrite!.previewShown).toBe(true);
+      expect(engine.pendingWriteBatch).not.toBeNull();
       const response = await engine.process('yes');
       expect(response).toContain('Written');
       await access(join(dir, suggested));
-      expect(engine.pendingWrite).toBeNull();
+      expect(engine.pendingWriteBatch).toBeNull();
+      expect(engine.activeBuild!.stagedWrites).toEqual({});
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 });
 
-// --- Tuning steps stage pendingWrite (wave-4 stitch, F-03875ef5 —
-// executeBuildStep's sibling). executeTuningStep read ok/summary from each
-// step tool and dropped pendingWrite exactly as executeBuildStep used to,
-// on the same engine, right next to the code that WAS repaired in wave 2.
-// tuneApplyTool (and every other mutating tuning tool) stages via
-// pendingWrite and tells the user "say yes to apply" in its own summary, so
-// a guided-tuning patch was either unappliable or could misdirect a write
-// onto stale content staged from an earlier interaction. ---
+// --- Tuning steps stage into activeTuning.stagedWrites (F-591fae03 tuning
+// parity — executeBuildStep's sibling, wave-4's F-03875ef5 fixed the same
+// drop-on-the-floor bug this wave fixes the shared-slot collision for). ---
 
-describe('tuning steps stage pendingWrite on the engine (wave-4 stitch, F-03875ef5)', () => {
-  it('executeTuningStep stages the step tool pendingWrite instead of dropping it', async () => {
+describe('tuning steps stage into activeTuning.stagedWrites (F-591fae03)', () => {
+  it('executeTuningStep stages the step tool pendingWrite into stagedWrites, not the shared slot', async () => {
     const yaml = 'id: tuned-room\ntype: room\nname: Tuned Room';
     const engine = createChatEngine({
       client: mockClient(yaml),
@@ -558,8 +566,11 @@ describe('tuning steps stage pendingWrite on the engine (wave-4 stitch, F-03875e
       warnings: [],
     } satisfies TuningPlan);
     await engine.executeTuningStep();
-    expect(engine.pendingWrite).not.toBeNull();
-    expect(engine.pendingWrite!.content).toContain('tuned-room');
+    expect(engine.pendingWrite).toBeNull();
+    const entries = Object.values(engine.activeTuning!.stagedWrites);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].content).toContain('tuned-room');
+    expect(entries[0].sourceStepId).toBe(1);
   });
 
   it('after a tuning batch the staged write is live and confirmable through the normal yes flow', async () => {
@@ -573,30 +584,34 @@ describe('tuning steps stage pendingWrite on the engine (wave-4 stitch, F-03875e
         warnings: [],
       } satisfies TuningPlan);
       await engine.executeAllTuningSteps();
-      expect(engine.pendingWrite).not.toBeNull();
-      const suggested = engine.pendingWrite!.suggestedPath;
+      expect(engine.pendingWriteBatch).not.toBeNull();
+      expect(engine.pendingWriteBatch).toHaveLength(1);
+      const suggested = engine.pendingWriteBatch![0].suggestedPath;
       // Same shared confirmation gate build steps go through: first "yes"
       // previews (staged writes show a preview before landing), second
       // "yes" writes under the sandbox.
       await engine.process('yes');
-      expect(engine.pendingWrite).not.toBeNull();
-      expect(engine.pendingWrite!.previewShown).toBe(true);
+      expect(engine.pendingWriteBatch).not.toBeNull();
       const response = await engine.process('yes');
       expect(response).toContain('Written');
       await access(join(dir, suggested));
-      expect(engine.pendingWrite).toBeNull();
+      expect(engine.pendingWriteBatch).toBeNull();
+      expect(engine.activeTuning!.stagedWrites).toEqual({});
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
-  // Addendum pin (b): pendingWrite is ONE slot shared across build/tuning/
-  // regular chat. After a build step stages X and a tuning step then stages
-  // Y, the slot must hold Y — last one wins — never a stale mix of the two.
-  // Both fixtures are valid RoomDefinitions (zones present) so neither step
-  // triggers scaffoldTool's single-repair generate() call, keeping the
-  // scripted per-call responses below deterministic.
-  it('a tuning step staged after a build step supersedes the build step\'s pendingWrite (last one wins)', async () => {
+  // Addendum pin (b) INVERTED: pendingWrite used to be ONE slot shared
+  // across build/tuning/regular chat, so a tuning step staged after a build
+  // step clobbered the build step's content outright (last one wins — a
+  // real data-loss bug, not just a display quirk). BuildState and
+  // TuningState now each own an independent stagedWrites pool, so staging
+  // into one never touches the other. Both fixtures are valid
+  // RoomDefinitions (zones present) so neither step triggers scaffoldTool's
+  // single-repair generate() call, keeping the scripted per-call responses
+  // below deterministic.
+  it('a tuning step staged after a build step does not clobber the build step\'s staged content (independent pools)', async () => {
     const responses = [
       'id: build-room\nname: Build Room\nzones:\n  - id: nave\n    name: Nave',
       'id: tune-room\nname: Tune Room\nzones:\n  - id: nave\n    name: Nave',
@@ -614,8 +629,9 @@ describe('tuning steps stage pendingWrite on the engine (wave-4 stitch, F-03875e
 
     engine.activeBuild = createBuildState(buildPlanOf([scaffoldStep(1, 'build one')]));
     await engine.executeBuildStep();
-    expect(engine.pendingWrite).not.toBeNull();
-    expect(engine.pendingWrite!.content).toContain('build-room');
+    const buildEntries = Object.values(engine.activeBuild!.stagedWrites);
+    expect(buildEntries).toHaveLength(1);
+    expect(buildEntries[0].content).toContain('build-room');
 
     engine.activeTuning = createTuningState({
       goal: 'test tuning',
@@ -624,9 +640,14 @@ describe('tuning steps stage pendingWrite on the engine (wave-4 stitch, F-03875e
     } satisfies TuningPlan);
     await engine.executeTuningStep();
 
-    expect(engine.pendingWrite).not.toBeNull();
-    expect(engine.pendingWrite!.content).toContain('tune-room');
-    expect(engine.pendingWrite!.content).not.toContain('build-room');
+    const tuneEntries = Object.values(engine.activeTuning!.stagedWrites);
+    expect(tuneEntries).toHaveLength(1);
+    expect(tuneEntries[0].content).toContain('tune-room');
+
+    // The build pool is untouched by the tuning step that ran after it.
+    const buildEntriesAfter = Object.values(engine.activeBuild!.stagedWrites);
+    expect(buildEntriesAfter).toHaveLength(1);
+    expect(buildEntriesAfter[0].content).toContain('build-room');
   });
 });
 

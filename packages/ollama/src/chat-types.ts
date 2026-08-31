@@ -141,6 +141,24 @@ export type ChatToolResult = {
   };
 };
 
+// --- Staged writes (batched, engine-level — F-591fae03) ---
+
+/**
+ * One step's staged write, held in a BuildState/TuningState's `stagedWrites`
+ * pool keyed by `suggestedPath` until the whole batch is flushed together.
+ * Replaces the old model where every step's `pendingWrite` overwrote a single
+ * shared engine slot (last-writer-wins across the ENTIRE batch, not just
+ * same-path collisions) — the root cause of a guided /build losing every
+ * scaffolded file except whichever step happened to run last.
+ */
+export type StagedWriteEntry = {
+  content: string;
+  suggestedPath: string;
+  label: string;
+  /** The plan step id that produced this entry (for collision diagnostics). */
+  sourceStepId: number;
+};
+
 // --- Chat memory (bounded conversational state) ---
 
 export type ChatMemory = {

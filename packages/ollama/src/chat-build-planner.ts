@@ -4,7 +4,7 @@
 // Everything is previewable, confirmable, and traceable.
 
 import { emptyArtifacts, type DesignSession, type SessionArtifacts } from './session.js';
-import type { ChatIntent } from './chat-types.js';
+import type { ChatIntent, StagedWriteEntry } from './chat-types.js';
 
 // --- Types ---
 
@@ -56,6 +56,13 @@ export type BuildState = {
   status: 'planned' | 'executing' | 'completed' | 'failed';
   /** Accumulated YAML/content outputs from scaffold steps, for critique injection. */
   generatedContent: string[];
+  /**
+   * F-591fae03: per-step staged writes, keyed by suggestedPath, accumulated
+   * across the whole batch instead of overwriting one shared engine slot.
+   * The emit-pack tail step's own execution is gated on this being empty —
+   * see executeBuildStep's flush gate in chat-engine.ts.
+   */
+  stagedWrites: Record<string, StagedWriteEntry>;
 };
 
 // --- Build templates (internal) ---
@@ -593,6 +600,7 @@ export function createBuildState(plan: BuildPlan): BuildState {
     startedAt: new Date().toISOString(),
     status: 'planned',
     generatedContent: [],
+    stagedWrites: {},
   };
 }
 

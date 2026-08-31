@@ -5,7 +5,7 @@
 // Nothing is auto-applied without explicit confirmation.
 
 import type { DesignSession, SessionArtifacts } from './session.js';
-import type { ChatIntent } from './chat-types.js';
+import type { ChatIntent, StagedWriteEntry } from './chat-types.js';
 
 // ============================================================
 // Types
@@ -221,6 +221,14 @@ export type TuningState = {
   startedAt: string;
   completedAt?: string;
   status: 'planned' | 'executing' | 'completed' | 'failed';
+  /**
+   * F-591fae03 (tuning parity): per-step staged writes, keyed by
+   * suggestedPath, accumulated across the batch instead of overwriting one
+   * shared engine slot — byte-identical shape to BuildState.stagedWrites.
+   * Tuning has no emit-pack-equivalent tail step, so nothing gates on this
+   * being empty; it exists purely so build/tuning pools stay independent.
+   */
+  stagedWrites: Record<string, StagedWriteEntry>;
 };
 
 // ============================================================
@@ -1575,6 +1583,7 @@ export function createTuningState(plan: TuningPlan): TuningState {
     plan,
     startedAt: new Date().toISOString(),
     status: 'planned',
+    stagedWrites: {},
   };
 }
 

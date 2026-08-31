@@ -482,10 +482,15 @@ export async function handleSlashCommand(
       const result = await engine.executeBuildStep();
       console.log('');
       console.log(result);
-      // Wave-2 stitch: the step's staged write is live on the engine now —
-      // say so at the moment it is true, or the tool summaries' "save this"
-      // instructions point at nothing.
-      if (engine.pendingWrite) {
+      // F-591fae03: staged writes now accumulate in activeBuild.stagedWrites
+      // and surface as one combined batch consent (engine.pendingWriteBatch)
+      // — either at the flush gate right before emit-pack, or once the build
+      // completes with content still staged — and that consent text is
+      // already part of `result` above (executeBuildStep returns it
+      // directly), so nothing further prints here when a batch is pending.
+      // The legacy single-file nudge stays for the plain (non-guided) chat
+      // scaffold flow, which still uses the singular pendingWrite slot.
+      if (engine.pendingWrite && !engine.pendingWriteBatch) {
         console.log(`Content staged for ${engine.pendingWrite.suggestedPath} — say "yes" to review and write it, or "no" to discard.`);
       }
       console.log('');
@@ -506,11 +511,9 @@ export async function handleSlashCommand(
       });
       console.log('');
       console.log(result);
-      // Wave-2 stitch: after a batch, the LAST step's staged write (the
-      // emit-pack tail in the fixed templates) survives on the engine.
-      // Surface it once, where it is true — intermediate steps' stages were
-      // superseded as the batch ran.
-      if (engine.pendingWrite) {
+      // F-591fae03: see /step's identical note above — the batch consent
+      // text (if any) is already part of `result`.
+      if (engine.pendingWrite && !engine.pendingWriteBatch) {
         console.log('');
         console.log(`Content staged for ${engine.pendingWrite.suggestedPath} — say "yes" to review and write it, or "no" to discard.`);
       }
@@ -753,11 +756,16 @@ export async function handleSlashCommand(
       const result = await engine.executeTuningStep();
       console.log('');
       console.log(result);
-      // Wave-4 stitch (F-03875ef5): mirrors /step's surfacing above — the
-      // step's staged write is live on the engine now, so say so at the
-      // moment it is true, or tuneApplyTool's "say yes to apply" instruction
-      // in its own summary points at nothing.
-      if (engine.pendingWrite) {
+      // F-591fae03 tuning parity: staged writes accumulate in
+      // activeTuning.stagedWrites; tuning has no emit-pack-equivalent tail
+      // to gate on, so the batch consent only surfaces once the plan
+      // completes with content still staged (executeTuningStep's completion
+      // promotion) — and by then it is already part of `result` above. A
+      // single /tune-step on a multi-step plan intentionally stays quiet for
+      // intermediate steps, same as /step: no "singular" per-step line was
+      // reinvented here, since there is no longer a per-step pendingWrite to
+      // read one from.
+      if (engine.pendingWrite && !engine.pendingWriteBatch) {
         console.log(`Content staged for ${engine.pendingWrite.suggestedPath} — say "yes" to review and write it, or "no" to discard.`);
       }
       console.log('');
@@ -776,10 +784,9 @@ export async function handleSlashCommand(
       });
       console.log('');
       console.log(result);
-      // Wave-4 stitch (F-03875ef5): mirrors /execute's surfacing above —
-      // after a batch, the LAST tuning step's staged write survives on the
-      // engine. Surface it once, where it is true.
-      if (engine.pendingWrite) {
+      // F-591fae03: see /tune-step's identical note above — the batch
+      // consent text (if any) is already part of `result`.
+      if (engine.pendingWrite && !engine.pendingWriteBatch) {
         console.log('');
         console.log(`Content staged for ${engine.pendingWrite.suggestedPath} — say "yes" to review and write it, or "no" to discard.`);
       }

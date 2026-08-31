@@ -8,7 +8,7 @@
 import type { OllamaTextClient, GenerateOptions } from './client.js';
 import type {
   ChatMessage, ChatConfig, ChatMemory, ChatToolResult,
-  PlannedAction, DEFAULT_CHAT_CONFIG,
+  PlannedAction, DEFAULT_CHAT_CONFIG, StagedWriteEntry,
 } from './chat-types.js';
 import type { DesignSession } from './session.js';
 import {
@@ -160,6 +160,15 @@ export type ChatEngine = {
   memory: ChatMemory;
   /** Last generated content available for write. */
   pendingWrite: { content: string; suggestedPath: string; label: string; previewShown?: boolean } | null;
+  /**
+   * Batched staged writes awaiting one combined consent (F-591fae03).
+   * Populated by executeBuildStep's flush gate (right before the emit-pack
+   * tail step would run) and kept in sync by executeBuildStep/executeTuningStep
+   * whenever their BuildState/TuningState's `stagedWrites` pool is non-empty.
+   * Never mixed with the singular `pendingWrite`, which stays reserved for the
+   * plain (non-guided) chat scaffold flow.
+   */
+  pendingWriteBatch: StagedWriteEntry[] | null;
   /** Last context snapshot from RAG + shaping. Available after first process() call. */
   lastContextSnapshot: ContextSnapshot | null;
   /** Last loadout routing plan. Available when loadoutEnabled and after first process() call. */
@@ -247,6 +256,8 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
   const replayProducer = injectedProducer ?? createDefaultReplayProducer({ projectRoot });
   const memory = createChatMemory(maxMemory, null);
   let pendingWrite: { content: string; suggestedPath: string; label: string; previewShown?: boolean } | null = null;
+  let pendingWriteBatch: StagedWriteEntry[] | null = null;
+  let pendingWriteBatchPreviewShown = false;
   let lastContextSnapshot: ContextSnapshot | null = null;
   let lastLoadoutPlan: LoadoutRoutePlan | null = null;
   const loadoutHistory: LoadoutHistoryEntry[] = [];
@@ -255,6 +266,23 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
   let lastAnalysis: BalanceAnalysis | null = null;
   let lastExperiment: ExperimentSummary | null = null;
   let baselineExperiment: ExperimentSummary | null = null;
+
+  /**
+   * Recompute `pendingWriteBatch` from a BuildState/TuningState's current
+   * `stagedWrites` pool (F-591fae03). Called both at the flush gate (the
+   * batch becomes confirmable for the first time) and once a build/tuning
+   * plan completes with content still staged (a step's own staged write —
+   * most notably emit-pack's own result once the gate has let it run for
+   * real — would otherwise have no further step left to gate on, stranding
+   * it with no way to confirm). Resets the preview flag: a freshly
+   * (re)computed batch always needs its own preview pass.
+   */
+  function refreshPendingWriteBatch(stagedWrites: Record<string, StagedWriteEntry>): StagedWriteEntry[] | null {
+    const entries = Object.values(stagedWrites);
+    pendingWriteBatch = entries.length > 0 ? entries : null;
+    pendingWriteBatchPreviewShown = false;
+    return pendingWriteBatch;
+  }
 
   async function process(userMessage: string, processOptions?: ChatProcessOptions): Promise<string> {
     const now = new Date().toISOString();
@@ -272,12 +300,24 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       memory.sessionName = session.name;
     }
 
-    // Check for confirmation of pending write
-    if (pendingWrite && isConfirmation(userMessage)) {
-      return await handleConfirmWrite(session, now);
+    // Check for confirmation of pending write. A batch (F-591fae03) takes
+    // priority over the singular slot when both happen to be set — the batch
+    // is the more deliberate, structured flow (an active build/tuning plan),
+    // while the singular pendingWrite is the plain-chat scaffold fallback.
+    if ((pendingWrite || pendingWriteBatch) && isConfirmation(userMessage)) {
+      return pendingWriteBatch
+        ? await handleConfirmBatchWrite(session, now)
+        : await handleConfirmWrite(session, now);
     }
-    if (pendingWrite && isRejection(userMessage)) {
+    if ((pendingWrite || pendingWriteBatch) && isRejection(userMessage)) {
+      // Decline discards ALL staged content — no per-file pick in v1 (ruled).
+      // The emit-pack step (if gated) stays 'pending', visibly incomplete in
+      // /status, so nothing is silently lost or silently assumed-done.
       pendingWrite = null;
+      pendingWriteBatch = null;
+      pendingWriteBatchPreviewShown = false;
+      if (activeBuild) activeBuild.stagedWrites = {};
+      if (activeTuning) activeTuning.stagedWrites = {};
       const msg = 'Write cancelled.';
       addMessage(memory, { role: 'assistant', content: msg, timestamp: new Date().toISOString() });
       return msg;
@@ -567,6 +607,79 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     return response;
   }
 
+  /**
+   * Sibling to handleConfirmWrite for a batch of staged writes (F-591fae03).
+   * Same two-phase shape: first "yes" previews every file (generatePreview,
+   * UNCHANGED, looped); second "yes" applies every file (applyConfirmed,
+   * UNCHANGED, looped) and records one content_applied session event PER
+   * file — undoLastWrite's existing newest-first restore (apply-preview.ts
+   * undoLastApply, UNCHANGED) already unwinds the batch one file at a time
+   * with zero changes needed there.
+   */
+  async function handleConfirmBatchWrite(session: DesignSession | null, _now: string): Promise<string> {
+    if (!pendingWriteBatch || pendingWriteBatch.length === 0) return 'Nothing to write.';
+    const entries = pendingWriteBatch;
+
+    const { applyConfirmed, generatePreview } = await import('./apply-preview.js');
+
+    if (!pendingWriteBatchPreviewShown) {
+      const previews: string[] = [];
+      for (const entry of entries) {
+        const preview = await generatePreview({
+          content: entry.content, targetPath: entry.suggestedPath, label: entry.label, projectRoot,
+        });
+        previews.push(preview.preview);
+      }
+      pendingWriteBatchPreviewShown = true;
+      const response = `${previews.join('\n\n')}\n\nSay "yes" to write all, or "no" to discard all.`;
+      addMessage(memory, { role: 'assistant', content: response, timestamp: new Date().toISOString() });
+      return response;
+    }
+
+    // Apply every staged file. On ANY failure, keep the whole batch staged
+    // (never partially clear it) so a retry replays cleanly — mirrors
+    // handleConfirmWrite's single-file contract: never record content_applied
+    // for a write that never landed, never drop what's staged on failure.
+    const lines: string[] = [];
+    let allOk = true;
+    for (const entry of entries) {
+      const result = await applyConfirmed({
+        content: entry.content, targetPath: entry.suggestedPath, label: entry.label, projectRoot,
+      });
+      if (!result.ok) {
+        allOk = false;
+        lines.push(result.error);
+        continue;
+      }
+      lines.push(`Written: ${result.path} (${result.bytes} bytes)`);
+      if (session) {
+        const detail = result.backupPath
+          ? `${result.path} (backup: ${result.backupPath})`
+          : result.path;
+        recordEvent(session, 'content_applied', detail);
+      }
+    }
+
+    if (!allOk) {
+      const response = lines.join('\n');
+      addMessage(memory, { role: 'assistant', content: response, timestamp: new Date().toISOString() });
+      return response;
+    }
+
+    if (session) {
+      await saveSession(projectRoot, session);
+    }
+
+    pendingWriteBatch = null;
+    pendingWriteBatchPreviewShown = false;
+    if (activeBuild) activeBuild.stagedWrites = {};
+    if (activeTuning) activeTuning.stagedWrites = {};
+
+    const response = lines.join('\n');
+    addMessage(memory, { role: 'assistant', content: response, timestamp: new Date().toISOString() });
+    return response;
+  }
+
   async function undoLastWrite(): Promise<string> {
     const session = await tryLoadSession(projectRoot);
     const { undoLastApply } = await import('./apply-preview.js');
@@ -644,6 +757,19 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       return `Step ${step.id} failed: no tool for ${step.intent}`;
     }
 
+    // F-591fae03 flush gate: emit-pack's own assembleContentPack() reads
+    // ONLY the project's on-disk YAML/JSON — never this batch's in-memory
+    // staged content. Block emit-pack's own execution until every staged
+    // file from this batch has actually landed on disk (via a confirmed
+    // handleConfirmBatchWrite), or the pack it assembles would silently omit
+    // everything the batch itself just generated (the original bug). The
+    // step stays 'pending' — untouched — so nextPendingStep keeps returning
+    // it on every subsequent /step until stagedWrites is empty again.
+    if (step.command === 'emit-pack' && Object.keys(activeBuild.stagedWrites).length > 0) {
+      const batch = refreshPendingWriteBatch(activeBuild.stagedWrites)!;
+      return formatBatchConsent(batch);
+    }
+
     // Prepare params — inject accumulated content for critique steps
     const params = { ...step.params };
     if (step.usePriorContent && activeBuild.generatedContent.length > 0) {
@@ -661,16 +787,27 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       engineState: { lastAnalysis, lastExperiment, baselineExperiment, activeBuild, activeTuning },
     });
 
-    // Wave-2 stitch (F-35cc73ce composed surface): stage the step's
-    // pendingWrite on the engine instead of dropping it. Every mutating tool
-    // in the registry stages via pendingWrite ("never writes without
-    // consent"), so dropping it here meant no /step //execute content —
-    // scaffold YAML or the emit-pack tail's assembled pack — could ever be
-    // saved, while the tool summaries still said "say yes to save". Each
-    // step overwrites the previous stage (last one wins), and the normal
-    // confirmation flow (preview → yes) takes it from there.
+    // F-591fae03: accumulate this step's staged write into the batch pool
+    // instead of the old single shared engine slot (last-writer-wins across
+    // ALL steps, not just same-path collisions — the root cause). Collision
+    // (two steps stage the same suggestedPath): the later step's entry
+    // replaces the map entry for that key; name both step ids in a warning
+    // so a model reusing an id across two scaffold steps is diagnosable
+    // instead of silently losing content.
     if (toolResult.pendingWrite) {
-      pendingWrite = toolResult.pendingWrite;
+      const key = toolResult.pendingWrite.suggestedPath;
+      const prior = activeBuild.stagedWrites[key];
+      if (prior) {
+        activeBuild.plan.warnings.push(
+          `Step ${step.id} restaged ${key}, replacing step ${prior.sourceStepId}'s staged content -- check both steps generated distinct ids.`,
+        );
+      }
+      activeBuild.stagedWrites[key] = {
+        content: toolResult.pendingWrite.content,
+        suggestedPath: key,
+        label: toolResult.pendingWrite.label,
+        sourceStepId: step.id,
+      };
     }
 
     if (toolResult.ok) {
@@ -693,16 +830,27 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     }
 
     // Check if build is now complete
+    let consentSuffix = '';
     if (isBuildComplete(activeBuild)) {
       finalizeBuild(activeBuild);
       if (session) {
         recordEvent(session, 'build_plan_completed', `Build: ${activeBuild.plan.goal}`);
         await saveSession(projectRoot, session);
       }
+      // Closes a gap the flush gate alone doesn't cover: once emit-pack
+      // itself finally runs for real (the gate above now open), ITS OWN
+      // result accumulates into stagedWrites the same as any step's — but
+      // with no further step left to gate on, nothing would otherwise ever
+      // surface it for confirmation. Surfacing it here, the moment there's
+      // truly nothing left to run, means no staged content is ever stranded.
+      if (Object.keys(activeBuild.stagedWrites).length > 0) {
+        const batch = refreshPendingWriteBatch(activeBuild.stagedWrites)!;
+        consentSuffix = '\n\n' + formatBatchConsent(batch);
+      }
     }
 
     const icon = toolResult.ok ? '●' : '✗';
-    return `${icon} Step ${step.id}: ${step.description}\n${toolResult.summary}`;
+    return `${icon} Step ${step.id}: ${step.description}\n${toolResult.summary}${consentSuffix}`;
   }
 
   async function executeAllBuildSteps(onStep?: BatchStepCallback): Promise<string> {
@@ -724,8 +872,19 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       if (!step) break;
       const result = await executeBuildStep();
       results.push(result);
-      executed++;
 
+      // F-591fae03 REQUIRED companion fix: the flush gate blocks emit-pack's
+      // own execution without marking the step executed/failed — it stays
+      // 'pending' so nextPendingStep keeps returning the SAME step. Without
+      // this break, the while-loop would re-call executeBuildStep() on that
+      // gated step forever (an infinite loop the gate itself would otherwise
+      // introduce). `step` is the same object executeBuildStep mutates in
+      // place, so its status reflects what just happened.
+      if (step.status === 'pending') {
+        break;
+      }
+
+      executed++;
       const ok = !result.startsWith('✗');
       onStep?.({
         index: executed, total,
@@ -802,17 +961,30 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       engineState: { lastAnalysis, lastExperiment, baselineExperiment, activeBuild, activeTuning },
     });
 
-    // Wave-4 stitch (F-03875ef5, executeBuildStep's sibling — see the
-    // identical stage above): tuneApplyTool and every other mutating tuning
-    // tool stage via pendingWrite and tell the user "say yes to apply" in
-    // their own summary, so dropping it here left every guided-tuning patch
-    // either unappliable (a "yes" fell through to intent classification) or,
-    // worse, confirmed whatever unrelated content an earlier interaction had
-    // staged on this same shared slot. Each step overwrites the previous
-    // stage (last one wins), and the normal confirmation flow takes it from
-    // there — same contract as executeBuildStep.
+    // F-591fae03 tuning parity (executeBuildStep's sibling — see the
+    // identical accumulate above): accumulate into activeTuning.stagedWrites
+    // instead of the old single shared engine slot. tuneApplyTool and every
+    // other mutating tuning tool stage via pendingWrite and tell the user
+    // "say yes to apply" in their own summary, so dropping it here left every
+    // guided-tuning patch either unappliable, or — worse, under the OLD
+    // shared-slot contract — confirmed whatever unrelated content an earlier
+    // interaction had staged on that same shared slot. No flush gate needed:
+    // tuning has no emit-pack-equivalent tail step that reads staged content
+    // back off disk.
     if (toolResult.pendingWrite) {
-      pendingWrite = toolResult.pendingWrite;
+      const key = toolResult.pendingWrite.suggestedPath;
+      const prior = activeTuning.stagedWrites[key];
+      if (prior) {
+        activeTuning.plan.warnings.push(
+          `Step ${step.id} restaged ${key}, replacing step ${prior.sourceStepId}'s staged content -- check both steps generated distinct ids.`,
+        );
+      }
+      activeTuning.stagedWrites[key] = {
+        content: toolResult.pendingWrite.content,
+        suggestedPath: key,
+        label: toolResult.pendingWrite.label,
+        sourceStepId: step.id,
+      };
     }
 
     if (toolResult.ok) {
@@ -834,16 +1006,25 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       }
     }
 
+    let consentSuffix = '';
     if (isTuningComplete(activeTuning)) {
       finalizeTuning(activeTuning);
       if (session) {
         recordEvent(session, 'tune_plan_completed', `Tuning: ${activeTuning.plan.goal}`);
         await saveSession(projectRoot, session);
       }
+      // Mirrors executeBuildStep's identical completion promotion: once
+      // there's truly nothing left to run, surface whatever's still staged
+      // so /tune-execute's final summary shows the batch consent surface
+      // instead of the old single-file "Content staged for X" line.
+      if (Object.keys(activeTuning.stagedWrites).length > 0) {
+        const batch = refreshPendingWriteBatch(activeTuning.stagedWrites)!;
+        consentSuffix = '\n\n' + formatBatchConsent(batch);
+      }
     }
 
     const icon = toolResult.ok ? '●' : '✗';
-    return `${icon} Step ${step.id}: ${step.description}\n${toolResult.summary}`;
+    return `${icon} Step ${step.id}: ${step.description}\n${toolResult.summary}${consentSuffix}`;
   }
 
   async function executeAllTuningSteps(onStep?: BatchStepCallback): Promise<string> {
@@ -900,6 +1081,8 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     memory,
     get pendingWrite() { return pendingWrite; },
     set pendingWrite(v) { pendingWrite = v; },
+    get pendingWriteBatch() { return pendingWriteBatch; },
+    set pendingWriteBatch(v) { pendingWriteBatch = v; },
     get lastContextSnapshot() { return lastContextSnapshot; },
     get lastLoadoutPlan() { return lastLoadoutPlan; },
     loadoutHistory,
@@ -948,6 +1131,21 @@ export function capturePlanFromOutput<T>(
       notice: `Note: I generated a ${kind} but couldn't read it back (the model's output wasn't valid JSON), so no plan is active. Try rephrasing the request or running it again.`,
     };
   }
+}
+
+/**
+ * Format the batched-write consent prompt (F-591fae03). Exact wording is
+ * Director-specified: a `${N} file(s) staged -- write all?` header, one
+ * indented bullet per entry mirroring formatBuildStatus's existing bullet
+ * style, then the yes/no instruction line.
+ */
+function formatBatchConsent(entries: StagedWriteEntry[]): string {
+  const lines = [`${entries.length} file(s) staged -- write all?`];
+  for (const entry of entries) {
+    lines.push(`  - ${entry.suggestedPath} (${entry.content.length} bytes)`);
+  }
+  lines.push('Say "yes" to write all, or "no" to discard all.');
+  return lines.join('\n');
 }
 
 function isConfirmation(msg: string): boolean {
