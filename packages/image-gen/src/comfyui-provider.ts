@@ -102,6 +102,15 @@ function deriveDefaultSeed(
     }
     maskSig = `${mask.length}:${h}`;
   }
+  const control = opts.controlImage;
+  let controlSig = '';
+  if (control && control.length > 0) {
+    let h = control.length;
+    for (let i = 0; i < control.length; i += Math.max(1, Math.floor(control.length / 32))) {
+      h = (h * 33 + control[i]) >>> 0;
+    }
+    controlSig = `${control.length}:${h}`;
+  }
   const key = [
     prompt,
     opts.negativePrompt ?? '',
@@ -112,6 +121,9 @@ function deriveDefaultSeed(
     opts.denoise ?? '',
     initSig,
     maskSig,
+    opts.controlnet ?? '',
+    opts.ipadapter ?? '',
+    controlSig,
   ].join(' ');
   let hash = 0x811c9dc5; // FNV offset basis
   for (let i = 0; i < key.length; i++) {
@@ -121,9 +133,29 @@ function deriveDefaultSeed(
   return hash >>> 0;
 }
 
+function controlMode(
+  opts: GenerationOptions & ComfyUIProviderOptions,
+): 'ipadapter' | 'controlnet' | null {
+  const ip = opts.ipadapter;
+  const ipOn = ip === true || (typeof ip === 'number' && Number.isFinite(ip) && ip !== 0);
+  if (ipOn || opts.controlnet === 'ipadapter') return 'ipadapter';
+  if (opts.controlnet === 'openpose' || opts.controlnet === 'canny' || opts.controlnet === 'depth') {
+    return 'controlnet';
+  }
+  return null;
+}
+
+function ipAdapterWeight(opts: GenerationOptions): number {
+  const ip = opts.ipadapter;
+  if (typeof ip === 'number' && Number.isFinite(ip)) return Math.min(1, Math.max(0, ip));
+  return 1;
+}
+
 /**
  * Build a txt2img (EmptyLatentImage), img2img (LoadImage + VAEEncode), or
  * inpaint (LoadImageMask + VAEEncodeForInpaint) workflow (F-f4a0a8ec).
+ * When `controlImage` + `controlnet`/`ipadapter` are set, inserts
+ * ControlNetLoader+ControlNetApply or IPAdapterApply (F-94ff23c8).
  */
 function buildWorkflow(
   prompt: string,
@@ -131,6 +163,7 @@ function buildWorkflow(
   seed: number,
   initImageName?: string,
   maskImageName?: string,
+  controlImageName?: string,
 ): Record<string, unknown> {
   const width = opts.width ?? 512;
   const height = opts.height ?? 512;
@@ -185,7 +218,7 @@ function buildWorkflow(
           },
         };
 
-  return {
+  const workflow: Record<string, unknown> = {
     '1': {
       class_type: 'CheckpointLoaderSimple',
       inputs: { ckpt_name: checkpoint },
@@ -223,6 +256,57 @@ function buildWorkflow(
       inputs: { images: ['6', 0], filename_prefix: 'ai-rpg-engine' },
     },
   };
+
+  const mode = controlImageName ? controlMode(opts) : null;
+  if (mode === 'controlnet' && controlImageName && opts.controlnet && opts.controlnet !== 'ipadapter') {
+    workflow['10'] = {
+      class_type: 'LoadImage',
+      inputs: { image: controlImageName },
+    };
+    workflow['11'] = {
+      class_type: 'ControlNetLoader',
+      inputs: { control_net_name: `control_${opts.controlnet}.safetensors` },
+    };
+    workflow['12'] = {
+      class_type: 'ControlNetApply',
+      inputs: {
+        conditioning: ['2', 0],
+        control_net: ['11', 0],
+        image: ['10', 0],
+        strength: 1.0,
+      },
+    };
+    const ks = workflow['5'] as { inputs: Record<string, unknown> };
+    ks.inputs.positive = ['12', 0];
+  } else if (mode === 'ipadapter' && controlImageName) {
+    workflow['10'] = {
+      class_type: 'LoadImage',
+      inputs: { image: controlImageName },
+    };
+    workflow['13'] = {
+      class_type: 'IPAdapterModelLoader',
+      inputs: { ipadapter_file: 'ip-adapter.safetensors' },
+    };
+    workflow['14'] = {
+      class_type: 'CLIPVisionLoader',
+      inputs: { clip_name: 'CLIP-ViT-H-14.safetensors' },
+    };
+    workflow['15'] = {
+      class_type: 'IPAdapterApply',
+      inputs: {
+        ipadapter: ['13', 0],
+        clip_vision: ['14', 0],
+        image: ['10', 0],
+        model: ['1', 0],
+        weight: ipAdapterWeight(opts),
+        noise: 0,
+      },
+    };
+    const ks = workflow['5'] as { inputs: Record<string, unknown> };
+    ks.inputs.model = ['15', 0];
+  }
+
+  return workflow;
 }
 
 function fail(
@@ -435,7 +519,20 @@ export class ComfyUIProvider implements ImageProvider {
       if (typeof uploaded !== 'string') return uploaded;
       maskImageName = uploaded;
     }
-    const workflow = buildWorkflow(prompt, mergedOpts, seed, initImageName, maskImageName);
+    let controlImageName: string | undefined;
+    if (opts?.controlImage && opts.controlImage.length > 0 && controlMode(mergedOpts)) {
+      const uploaded = await this.uploadImage(opts.controlImage, timeout, 'control.png');
+      if (typeof uploaded !== 'string') return uploaded;
+      controlImageName = uploaded;
+    }
+    const workflow = buildWorkflow(
+      prompt,
+      mergedOpts,
+      seed,
+      initImageName,
+      maskImageName,
+      controlImageName,
+    );
     const start = Date.now();
 
     // 1. Queue the prompt — bounded + non-JSON-safe (A1).

@@ -19,6 +19,8 @@ import {
   reserveQuota,
   applyPinFlags,
   tagsRequestPin,
+  isEvictingPolicy,
+  stampAccessed,
 } from './quota.js';
 
 /**
@@ -46,7 +48,8 @@ function isAssetMetadataShape(v: unknown): v is AssetMetadata {
     (m.height === undefined || typeof m.height === 'number') &&
     (m.source === undefined || typeof m.source === 'string') &&
     (m.pinned === undefined || typeof m.pinned === 'boolean') &&
-    (m.keep === undefined || typeof m.keep === 'boolean')
+    (m.keep === undefined || typeof m.keep === 'boolean') &&
+    (m.accessedAt === undefined || typeof m.accessedAt === 'string')
   );
 }
 
@@ -85,7 +88,7 @@ export class FileAssetStore implements AssetStore {
     if (existing) {
       // Rewrite when the blob is missing OR no longer matches its hash
       // (crash/split, deleted .bin, swapped file). Tag union still runs.
-      const intact = await this.get(hash, { verify: true });
+      const intact = await this.get(hash, { verify: true, touch: false });
       if (!intact) {
         const dir = this.shardDir(hash);
         await fs.mkdir(dir, { recursive: true });
@@ -100,6 +103,7 @@ export class FileAssetStore implements AssetStore {
 
     await this.enforceQuota(data.length);
 
+    const now = new Date().toISOString();
     const metadata: AssetMetadata = {
       hash,
       kind: input.kind,
@@ -110,7 +114,8 @@ export class FileAssetStore implements AssetStore {
       // Copy tags on put so the sidecar snapshot is not aliased to the
       // caller's array across the mkdir/write awaits (F-b2b8a190).
       tags: input.tags ? [...input.tags] : [],
-      createdAt: new Date().toISOString(),
+      createdAt: now,
+      accessedAt: now,
       source: input.source,
     };
     const stored = tagsRequestPin(metadata.tags) ? applyPinFlags(metadata, true) : metadata;
@@ -132,6 +137,7 @@ export class FileAssetStore implements AssetStore {
       // still match their content address before serving them. Opt-in so hot
       // paths keep skipping the extra hash.
       if (opts?.verify && hashBytes(bytes) !== hash) return null;
+      if (opts?.touch !== false) await this.stampNow(hash);
       return bytes;
     } catch {
       return null;
@@ -268,7 +274,7 @@ export class FileAssetStore implements AssetStore {
 
   async evictUntil(quota: StoreQuota, keepHashes?: readonly string[]): Promise<number> {
     const all = await this.list();
-    const ordered = sortOldestFirst(all, keepHashes);
+    const ordered = sortOldestFirst(all, keepHashes, quota.policy);
     let count = all.length;
     let bytes = all.reduce((s, m) => s + m.sizeBytes, 0);
     let n = 0;
@@ -302,11 +308,35 @@ export class FileAssetStore implements AssetStore {
     return true;
   }
 
+  async touch(hash: string): Promise<boolean>;
+  async touch(hashes: readonly string[]): Promise<number>;
+  async touch(hash: string | readonly string[]): Promise<boolean | number> {
+    if (typeof hash === 'string') return this.stampNow(hash);
+    let n = 0;
+    for (const h of hash) {
+      if (await this.stampNow(h)) n++;
+    }
+    return n;
+  }
+
+  private async stampNow(hash: string): Promise<boolean> {
+    if (!isValidHash(hash)) return false;
+    const existing = await this.readSidecar(hash);
+    if (!existing || !(await this.has(hash))) return false;
+    const merged = stampAccessed(existing, new Date().toISOString());
+    try {
+      await fs.writeFile(this.metaPath(hash), JSON.stringify(merged, null, 2));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** New-blob puts only — hash-hits never consume quota (CAS identity). */
   private async enforceQuota(incomingBytes: number): Promise<void> {
     const quota = this.quota;
     if (!quota) return;
-    if (quota.policy === 'evict-oldest') {
+    if (isEvictingPolicy(quota.policy)) {
       await this.evictUntil(reserveQuota(quota, incomingBytes));
     }
     const count = await this.count();

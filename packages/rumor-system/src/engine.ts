@@ -9,7 +9,9 @@ import type {
   RumorSubjectKey,
   CorroborateOptions,
   ContradictOptions,
+  RumorStance,
 } from './types.js';
+import { VALID_STANCES } from './types.js';
 import { DEFAULT_MUTATIONS } from './mutations.js';
 import { validateRumor } from './validate.js';
 
@@ -50,12 +52,30 @@ export type SerializeOptions = {
   includeDead?: boolean;
 };
 
+/** Persisted per-entity stance (F-959f6ee9). `'unknown'` is omitted. */
+export type StanceRecord = {
+  entityId: string;
+  rumorId: string;
+  stance: Exclude<RumorStance, 'unknown'>;
+  tick: number;
+};
+
+/** Snapshot returned by {@link RumorEngine.serialize}. */
+export type EngineSnapshot = {
+  rumors: Rumor[];
+  stances: StanceRecord[];
+};
+
+type StanceEntry = { stance: Exclude<RumorStance, 'unknown'>; tick: number };
+
 function cloneRumor(r: Rumor): Rumor {
   return structuredClone(r);
 }
 
 export class RumorEngine {
   private rumors: Map<string, Rumor> = new Map();
+  /** entityId → rumorId → stance. Not a field on Rumor so two hearers can disagree. */
+  private stances: Map<string, Map<string, StanceEntry>> = new Map();
   private mutations: MutationRule[];
   private maxHops: number;
   private confidenceDecayPerHop: number;
@@ -218,14 +238,15 @@ export class RumorEngine {
    * (F-97a47e88).
    */
   pruneDead(): number {
-    let n = 0;
+    const dropped: string[] = [];
     for (const [id, rumor] of this.rumors) {
       if (rumor.status === 'dead') {
         this.rumors.delete(id);
-        n++;
+        dropped.push(id);
       }
     }
-    return n;
+    this.dropStancesFor(dropped);
+    return dropped.length;
   }
 
   /** Drop oldest dead rumors until the live Map is within maxDeadRumors. */
@@ -235,7 +256,23 @@ export class RumorEngine {
       .sort((a, b) => a.lastSpreadTick - b.lastSpreadTick || a.originTick - b.originTick || a.id.localeCompare(b.id));
     const overflow = dead.length - this.maxDeadRumors;
     if (overflow <= 0) return;
-    for (let i = 0; i < overflow; i++) this.rumors.delete(dead[i].id);
+    const dropped: string[] = [];
+    for (let i = 0; i < overflow; i++) {
+      dropped.push(dead[i].id);
+      this.rumors.delete(dead[i].id);
+    }
+    this.dropStancesFor(dropped);
+  }
+
+  private dropStancesFor(ids: Iterable<string>): void {
+    const gone = ids instanceof Set ? ids : new Set(ids);
+    if (gone.size === 0) return;
+    for (const [entityId, byRumor] of this.stances) {
+      for (const rumorId of [...byRumor.keys()]) {
+        if (gone.has(rumorId)) byRumor.delete(rumorId);
+      }
+      if (byRumor.size === 0) this.stances.delete(entityId);
+    }
   }
 
   /** Query rumors with filters. All filters are ANDed. */
@@ -262,6 +299,9 @@ export class RumorEngine {
     }
     if (q.hearerId !== undefined) {
       results = results.filter((r) => r.spreadPath.includes(q.hearerId!));
+    }
+    if (q.believerId !== undefined) {
+      results = results.filter((r) => this.stanceOf(q.believerId!, r.id) === 'believe');
     }
 
     return results.sort((a, b) => b.confidence - a.confidence).map(cloneRumor);
@@ -372,6 +412,58 @@ export class RumorEngine {
       .map(cloneRumor);
   }
 
+  /**
+   * Record whether `entityId` believes / doubts a rumor (F-959f6ee9).
+   * Not a field on {@link Rumor} — two hearers can disagree. `'unknown'`
+   * clears the entry. `heardBy` is still heard, not believed.
+   */
+  setStance(
+    entityId: string,
+    target: string | RumorSubjectKey,
+    stance: RumorStance,
+    currentTick: number,
+  ): RumorStance {
+    if (!Number.isFinite(currentTick)) {
+      throw new Error('setStance() currentTick must be a finite number');
+    }
+    if (!(VALID_STANCES as readonly string[]).includes(stance)) {
+      throw new Error(`setStance() stance must be believe|doubt|unknown (got ${String(stance)})`);
+    }
+    const rumorId = this.resolveStanceTarget(target);
+    if (!rumorId) return 'unknown';
+    if (stance === 'unknown') {
+      const byRumor = this.stances.get(entityId);
+      byRumor?.delete(rumorId);
+      if (byRumor && byRumor.size === 0) this.stances.delete(entityId);
+      return 'unknown';
+    }
+    let byRumor = this.stances.get(entityId);
+    if (!byRumor) {
+      byRumor = new Map();
+      this.stances.set(entityId, byRumor);
+    }
+    byRumor.set(rumorId, { stance, tick: currentTick });
+    return stance;
+  }
+
+  /**
+   * Stance of `entityId` toward a rumor id or `{subject, key}`.
+   * Missing entries are `'unknown'`.
+   */
+  stanceOf(entityId: string, target?: string | RumorSubjectKey): RumorStance {
+    if (target === undefined) return 'unknown';
+    const rumorId = typeof target === 'string' ? target : this.resolveStanceTarget(target);
+    if (!rumorId) return 'unknown';
+    return this.stances.get(entityId)?.get(rumorId)?.stance ?? 'unknown';
+  }
+
+  private resolveStanceTarget(target: string | RumorSubjectKey): string | undefined {
+    if (typeof target === 'string') {
+      return this.rumors.has(target) ? target : undefined;
+    }
+    return this.resolveTarget(target)?.id;
+  }
+
   /** Count of non-dead rumors */
   activeCount(): number {
     let count = 0;
@@ -382,16 +474,30 @@ export class RumorEngine {
   }
 
   /**
-   * Serializable snapshot. Cloned so mutating the returned array (or nested
-   * `spreadPath` / `factionUptake`) cannot write the live Map (F-072c671e).
-   * Dead rumors are omitted unless `{ includeDead: true }` — they are a
-   * lifecycle end, not retained history (F-97a47e88).
+   * Serializable snapshot `{ rumors, stances }`. Cloned so mutating the
+   * returned arrays cannot write the live Map (F-072c671e). Dead rumors are
+   * omitted unless `{ includeDead: true }` — they are a lifecycle end, not
+   * retained history (F-97a47e88). Stances ride along (F-959f6ee9).
    */
-  serialize(opts?: SerializeOptions): Rumor[] {
+  serialize(opts?: SerializeOptions): EngineSnapshot {
     const values = opts?.includeDead
       ? Array.from(this.rumors.values())
       : Array.from(this.rumors.values()).filter((r) => r.status !== 'dead');
-    return structuredClone(values);
+    const rumorIds = new Set(values.map((r) => r.id));
+    const stances: StanceRecord[] = [];
+    for (const [entityId, byRumor] of this.stances) {
+      for (const [rumorId, rec] of byRumor) {
+        if (!rumorIds.has(rumorId)) continue;
+        stances.push({ entityId, rumorId, stance: rec.stance, tick: rec.tick });
+      }
+    }
+    stances.sort(
+      (a, b) => a.entityId.localeCompare(b.entityId) || a.rumorId.localeCompare(b.rumorId),
+    );
+    return {
+      rumors: structuredClone(values),
+      stances: structuredClone(stances),
+    };
   }
 
   /**
@@ -410,13 +516,11 @@ export class RumorEngine {
    * entries load normally. Non-array input is the one case that throws —
    * there is nothing to restore and iterating would crash anyway.
    */
-  static deserializeSafe(rumors: Rumor[], config?: RumorEngineConfig): DeserializeResult {
-    if (!Array.isArray(rumors)) {
-      throw new Error(
-        '[rumor-system] deserialize() requires an array of rumors; received ' +
-          describeType(rumors) + '. Pass the array produced by serialize().',
-      );
-    }
+  static deserializeSafe(
+    input: Rumor[] | EngineSnapshot,
+    config?: RumorEngineConfig,
+  ): DeserializeResult {
+    const { rumors, stances } = unwrapSnapshot(input);
 
     const engine = new RumorEngine(config);
     const warnings: DeserializeWarning[] = [];
@@ -455,6 +559,7 @@ export class RumorEngine {
 
     engine.nextRumorId = maxNum + 1;
     engine.capDead();
+    restoreStances(engine, stances, warnings);
     return { engine, restored, warnings };
   }
 
@@ -463,8 +568,8 @@ export class RumorEngine {
    * {@link RumorEngine.deserializeSafe} to also receive the structured
    * per-entry warnings for your save/load UX.
    */
-  static deserialize(rumors: Rumor[], config?: RumorEngineConfig): RumorEngine {
-    return RumorEngine.deserializeSafe(rumors, config).engine;
+  static deserialize(input: Rumor[] | EngineSnapshot, config?: RumorEngineConfig): RumorEngine {
+    return RumorEngine.deserializeSafe(input, config).engine;
   }
 }
 
@@ -473,6 +578,53 @@ function describeType(value: unknown): string {
   if (value === null) return 'null';
   if (Array.isArray(value)) return 'an array';
   return typeof value;
+}
+
+function unwrapSnapshot(input: unknown): { rumors: Rumor[]; stances: StanceRecord[] } {
+  if (Array.isArray(input)) return { rumors: input, stances: [] };
+  if (input !== null && typeof input === 'object' && Array.isArray((input as EngineSnapshot).rumors)) {
+    const stances = Array.isArray((input as EngineSnapshot).stances)
+      ? (input as EngineSnapshot).stances
+      : [];
+    return { rumors: (input as EngineSnapshot).rumors, stances };
+  }
+  throw new Error(
+    '[rumor-system] deserialize() requires an array of rumors; received ' +
+      describeType(input) + '. Pass the array produced by serialize().',
+  );
+}
+
+function restoreStances(
+  engine: RumorEngine,
+  stances: StanceRecord[],
+  warnings: DeserializeWarning[],
+): void {
+  for (let i = 0; i < stances.length; i++) {
+    const entry = stances[i];
+    if (!isStanceRecordShape(entry)) {
+      warnings.push({
+        field: `stances[${i}]`,
+        message: `skipped malformed stance at stances[${i}]`,
+      });
+      continue;
+    }
+    if (!engine.get(entry.rumorId)) continue;
+    engine.setStance(entry.entityId, entry.rumorId, entry.stance, entry.tick);
+  }
+}
+
+function isStanceRecordShape(v: unknown): v is StanceRecord {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false;
+  const m = v as Record<string, unknown>;
+  return (
+    typeof m.entityId === 'string' &&
+    m.entityId.length > 0 &&
+    typeof m.rumorId === 'string' &&
+    m.rumorId.length > 0 &&
+    (m.stance === 'believe' || m.stance === 'doubt') &&
+    typeof m.tick === 'number' &&
+    Number.isFinite(m.tick)
+  );
 }
 
 function invertClaimValue(value: unknown): unknown {

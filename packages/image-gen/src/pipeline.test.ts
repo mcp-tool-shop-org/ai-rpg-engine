@@ -1154,6 +1154,23 @@ describe('ensurePortraitVariant (F-9daede34)', () => {
     });
     expect(a.hash).not.toBe(b.hash);
   });
+
+  it('threads controlImage into the variant identity so two controls do not collide (F-94ff23c8)', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new PlaceholderProvider();
+    const base = await generatePortrait(testRequest, provider, store);
+    const poseA = new Uint8Array([1, 2, 3, 4]);
+    const poseB = new Uint8Array([9, 8, 7, 6]);
+    const a = await ensurePortraitVariant(base.hash, testRequest, provider, store, {
+      variant: 'aged',
+      generation: { controlImage: poseA, controlnet: 'openpose' },
+    });
+    const b = await ensurePortraitVariant(base.hash, testRequest, provider, store, {
+      variant: 'aged',
+      generation: { controlImage: poseB, controlnet: 'openpose' },
+    });
+    expect(a.hash).not.toBe(b.hash);
+  });
 });
 
 describe('ensureBackgroundVariant / ensureIconVariant (F-fabbd6d2)', () => {

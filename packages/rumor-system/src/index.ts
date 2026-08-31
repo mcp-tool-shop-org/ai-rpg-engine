@@ -2,6 +2,7 @@
 
 export type {
   RumorStatus,
+  RumorStance,
   Rumor,
   MutationType,
   MutationContext,
@@ -16,6 +17,7 @@ export type {
 export {
   VALID_STATUSES,
   VALID_MUTATION_TYPES,
+  VALID_STANCES,
 } from './types.js';
 
 export {
@@ -28,7 +30,13 @@ export {
 } from './mutations.js';
 
 export { RumorEngine } from './engine.js';
-export type { DeserializeWarning, DeserializeResult, SerializeOptions } from './engine.js';
+export type {
+  DeserializeWarning,
+  DeserializeResult,
+  SerializeOptions,
+  EngineSnapshot,
+  StanceRecord,
+} from './engine.js';
 
 export type { ValidationError } from './validate.js';
 export { validateRumor, isValidRumor } from './validate.js';

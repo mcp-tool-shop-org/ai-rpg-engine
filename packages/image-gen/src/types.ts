@@ -84,7 +84,25 @@ export type GenerationOptions = {
    * PlaceholderProvider clips the variant overlay to the mask bounding box.
    */
   mask?: Uint8Array;
+  /**
+   * Control / identity-lock image (F-94ff23c8). ComfyUI feeds this to
+   * ControlNetApply or IPAdapterApply; PlaceholderProvider no-ops it.
+   */
+  controlImage?: Uint8Array;
+  /**
+   * Which ControlNet / IP-Adapter graph to insert when `controlImage` is set.
+   * Omitted keeps the existing txt2img / img2img / inpaint graphs.
+   */
+  controlnet?: ControlNetType;
+  /**
+   * IP-Adapter weight (`0`–`1`) or enable flag. When truthy (or `controlnet`
+   * is `'ipadapter'`), ComfyUI inserts IPAdapterApply. PlaceholderProvider no-ops.
+   */
+  ipadapter?: number | boolean;
 };
+
+/** ControlNet preprocessor / IP-Adapter selector (F-94ff23c8). */
+export type ControlNetType = 'openpose' | 'canny' | 'depth' | 'ipadapter';
 
 /** Result from an image provider. */
 export type GenerationResult = {

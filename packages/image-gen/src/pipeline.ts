@@ -172,16 +172,38 @@ function resolveGenerationBase(
   if (denoise !== null) resolved.denoise = denoise;
   if (generation?.initImage) resolved.initImage = generation.initImage;
   if (generation?.mask && generation.mask.length > 0) resolved.mask = generation.mask;
+  if (generation?.controlImage && generation.controlImage.length > 0) {
+    resolved.controlImage = generation.controlImage;
+  }
+  if (generation?.controlnet) resolved.controlnet = generation.controlnet;
+  if (generation?.ipadapter !== undefined) resolved.ipadapter = generation.ipadapter;
   return resolved;
+}
+
+/** Compact byte-buffer identity so two masks / control images cannot collide. */
+function bytesSignature(bytes: Uint8Array | undefined): string | null {
+  if (!bytes || bytes.length === 0) return null;
+  let h = bytes.length;
+  const step = Math.max(1, Math.floor(bytes.length / 32));
+  for (let i = 0; i < bytes.length; i += step) h = (h * 33 + bytes[i]) >>> 0;
+  return `${bytes.length}:${h}`;
 }
 
 /** Compact mask identity so two inpaint masks cannot share a cached variant. */
 function maskSignature(mask: Uint8Array | undefined): string | null {
-  if (!mask || mask.length === 0) return null;
-  let h = mask.length;
-  const step = Math.max(1, Math.floor(mask.length / 32));
-  for (let i = 0; i < mask.length; i += step) h = (h * 33 + mask[i]) >>> 0;
-  return `${mask.length}:${h}`;
+  return bytesSignature(mask);
+}
+
+/** ControlNet / IP-Adapter identity, threaded like {@link maskSignature} (F-94ff23c8). */
+function controlSignature(generation: GenerationOptions | undefined): string | null {
+  if (!generation) return null;
+  const ip = generation.ipadapter;
+  const ipOn = ip === true || (typeof ip === 'number' && Number.isFinite(ip) && ip !== 0);
+  const kind = generation.controlnet ?? (ipOn ? 'ipadapter' : undefined);
+  const img = bytesSignature(generation.controlImage);
+  const ipPart = ip === undefined ? null : String(ip);
+  if (!kind && !img && ipPart === null) return null;
+  return `${kind ?? ''}:${img ?? ''}:${ipPart ?? ''}`;
 }
 
 function resolveGeneration(
@@ -441,6 +463,7 @@ export function portraitVariantIdentityTag(
     portraitIdentityTag(request, generation),
     g.denoise ?? null,
     maskSignature(g.mask),
+    controlSignature(g),
   ])}`;
 }
 
@@ -461,6 +484,7 @@ export function sceneIdentityVariantTag(
     sceneIdentityTag(request, generation),
     g.denoise ?? null,
     maskSignature(g.mask),
+    controlSignature(g),
   ])}`;
 }
 
@@ -481,6 +505,7 @@ export function iconIdentityVariantTag(
     iconIdentityTag(request, generation),
     g.denoise ?? null,
     maskSignature(g.mask),
+    controlSignature(g),
   ])}`;
 }
 

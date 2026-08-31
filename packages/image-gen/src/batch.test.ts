@@ -8,8 +8,12 @@ import {
   ensureBackgrounds,
   generateIcons,
   ensureIcons,
+  ensurePortraitVariants,
+  ensureBackgroundVariants,
+  ensureIconVariants,
   isSceneBatchFailure,
   isIconBatchFailure,
+  isBatchFailure,
 } from './batch.js';
 import { PlaceholderProvider } from './placeholder-provider.js';
 import type {
@@ -243,5 +247,79 @@ describe('generateBackgrounds / generateIcons (F-3a495263)', () => {
     if (!isIconBatchFailure(ic1.results[0]) && !isIconBatchFailure(ic2.results[0])) {
       expect(ic2.results[0].hash).toBe(ic1.results[0].hash);
     }
+  });
+});
+
+describe('ensurePortraitVariants / scene / icon (F-1777850b)', () => {
+  it('isolates ImageGenError per variant job so a later slot still succeeds', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new NamedProvider('comfyui', new Set(['Nyx']));
+    const placeholder = new PlaceholderProvider();
+    const aldrich = await generatePortraits([req('Aldric')], placeholder, store);
+    const nyx = await generatePortraits([req('Nyx')], placeholder, store);
+    const bram = await generatePortraits([req('Bram')], placeholder, store);
+    const aldrichItem = aldrich.results[0];
+    const nyxItem = nyx.results[0];
+    const bramItem = bram.results[0];
+    if (isPortraitBatchFailure(aldrichItem) || isPortraitBatchFailure(nyxItem) || isPortraitBatchFailure(bramItem)) {
+      throw new Error('placeholder generate failed');
+    }
+
+    const out = await ensurePortraitVariants(
+      [
+        { baseHash: aldrichItem.hash, request: req('Aldric'), variant: 'injured' },
+        { baseHash: nyxItem.hash, request: req('Nyx'), variant: 'injured' },
+        { baseHash: bramItem.hash, request: req('Bram'), variant: 'aged' },
+      ],
+      provider,
+      store,
+    );
+    expect(out.results).toHaveLength(3);
+    expect(isBatchFailure(out.results[0])).toBe(false);
+    expect(isBatchFailure(out.results[1])).toBe(true);
+    expect(isBatchFailure(out.results[2])).toBe(false);
+    if (isBatchFailure(out.results[1])) {
+      expect(out.results[1].request.variant).toBe('injured');
+      expect(out.results[1].request.request.characterName).toBe('Nyx');
+    }
+  });
+
+  it('ensureBackgroundVariants / ensureIconVariants isolate failures and reuse identity', async () => {
+    const store = new MemoryAssetStore();
+    const placeholder = new PlaceholderProvider();
+    const bg = await generateBackgrounds([scene('chapel', 'Ashen Chapel')], placeholder, store);
+    const ic = await generateIcons([icon('chalice', 'Ashen Chalice')], placeholder, store);
+    const bgItem = bg.results[0];
+    const icItem = ic.results[0];
+    if (isSceneBatchFailure(bgItem) || isIconBatchFailure(icItem)) {
+      throw new Error('placeholder generate failed');
+    }
+    const failBg = new NamedProvider('comfyui', new Set(['Nyx Chapel']));
+    const bgOut = await ensureBackgroundVariants(
+      [
+        { baseHash: bgItem.hash, request: scene('chapel', 'Ashen Chapel'), variant: 'night' },
+        { baseHash: bgItem.hash, request: scene('nyx', 'Nyx Chapel'), variant: 'burning' },
+      ],
+      failBg,
+      store,
+    );
+    expect(isBatchFailure(bgOut.results[0])).toBe(false);
+    expect(isBatchFailure(bgOut.results[1])).toBe(true);
+
+    const farm = new NamedProvider('farm');
+    const icOut1 = await ensureIconVariants(
+      [{ baseHash: icItem.hash, request: icon('chalice', 'Ashen Chalice'), variant: 'cracked' }],
+      farm,
+      store,
+    );
+    const calls = farm.calls.length;
+    const icOut2 = await ensureIconVariants(
+      [{ baseHash: icItem.hash, request: icon('chalice', 'Ashen Chalice'), variant: 'cracked' }],
+      farm,
+      store,
+    );
+    expect(isBatchFailure(icOut1.results[0])).toBe(false);
+    expect(isBatchFailure(icOut2.results[0])).toBe(false);
+    expect(farm.calls.length).toBe(calls);
   });
 });
