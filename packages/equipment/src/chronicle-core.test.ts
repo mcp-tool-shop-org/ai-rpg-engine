@@ -211,8 +211,12 @@ describe('chronicle-core — the opt-in gate', () => {
 
     it('records nothing for a barehanded kill', () => {
         const engine = makeEngine({ chronicle: true });
+        // F-5164895e: getEntityLoadout auto-wears starting kits, so a player
+        // still carrying catalog weapons is no longer barehanded at the kill
+        // snapshot. Empty the pack to keep this the no-weapon case.
+        engine.world.entities['player'].inventory = [];
         addFoe(engine, 'foe-1', 'Bone Collector');
-        defeat(engine, 'foe-1', 'Bone Collector', 1); // player has equipped nothing
+        defeat(engine, 'foe-1', 'Bone Collector', 1);
 
         expect(engine.world.modules[ITEM_CHRONICLE_STATE_KEY]).toBeUndefined();
     });

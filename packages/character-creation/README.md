@@ -78,6 +78,20 @@ const disciplines = getAvailableDisciplines(buildCatalog, 'penitent-knight', ['m
 const remaining = getStatBudgetRemaining(build, buildCatalog); // points left to allocate
 ```
 
+### Suggest a Legal Build
+
+Headless hosts (GUI, forge, scripted first-run) can roll a catalog-legal hero from a caller-supplied RNG — never `Math.random`. Complementary to the CLI `--default-hero` (pack-authored Wanderer): this is the generated one.
+
+```typescript
+import { suggestBuild, validateBuild } from '@ai-rpg-engine/character-creation';
+import { SeededRNG } from '@ai-rpg-engine/core';
+
+const rng = new SeededRNG(1);
+const rolled = suggestBuild(buildCatalog, rng);
+// validateBuild(rolled, buildCatalog, fantasyMinimalRuleset).ok === true
+// a second SeededRNG(1) call is deep-equal
+```
+
 ### Serialize for Save Files
 
 ```typescript

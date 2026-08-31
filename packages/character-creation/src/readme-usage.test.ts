@@ -46,6 +46,7 @@ describe('character-creation README Usage names real starter-fantasy exports', (
   it('named Usage identifiers exist on the named barrels', () => {
     expect(typeof characterCreation.validateBuild).toBe('function');
     expect(typeof characterCreation.resolveEntity).toBe('function');
+    expect(typeof characterCreation.suggestBuild).toBe('function');
     expect(fantasy).toHaveProperty('buildCatalog');
     expect(fantasy).toHaveProperty('fantasyMinimalRuleset');
     expect(fantasy).not.toHaveProperty('content');

@@ -70,6 +70,19 @@ guardMemory.consolidate(currentTick);
 const memories = guardMemory.recall({ aboutEntity: 'player', minSalience: 0.5 });
 ```
 
+### Live play (createCampaignMemoryCore)
+
+Opt-in EngineModule: subscribe to combat/kill/gift/rescue/betrayal, `journal.record` with zone occupants as witnesses, `bank.remember` + `applyRelationshipEffect` per witness/target, persist via `registerNamespace` so `Engine.serialize` round-trips it. Does not call `consolidate` (decay-clock overwrite is a separate defect).
+
+```typescript
+import { createCampaignMemoryCore, getCampaignJournal, getNpcMemory } from '@ai-rpg-engine/campaign-memory';
+
+createCampaignMemoryCore();
+// After a kill in a zone with a second NPC:
+// getCampaignJournal(world).query({ category: 'kill' })[0].witnesses includes that NPC
+// getNpcMemory(world, npcId).getRelationship('player') is non-default
+```
+
 ### Relationship Axes
 
 | Axis | Range | Meaning |

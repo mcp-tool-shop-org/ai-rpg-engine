@@ -169,8 +169,99 @@ export function getEquipmentState(world: WorldState): EquipmentModuleState {
   return fresh;
 }
 
+/**
+ * Runtime for starting-kit auto-wear (F-5164895e). Bound to the WorldState
+ * identity at namespace init / verb handle so getEntityLoadout — the first
+ * snapshot after createNewSession — can run the equip path without a catalog
+ * argument. WeakMap so it never serializes.
+ */
+type AutoWearRuntime = {
+  catalog: ItemCatalog;
+  statuses: EquipmentStatusOps;
+  worn: Set<string>;
+};
+
+const AUTO_WEAR = new WeakMap<object, AutoWearRuntime>();
+
+function bindAutoWear(world: WorldState, catalog: ItemCatalog, statuses: EquipmentStatusOps): AutoWearRuntime {
+  const existing = AUTO_WEAR.get(world);
+  if (existing) return existing;
+  const runtime: AutoWearRuntime = { catalog, statuses, worn: new Set() };
+  AUTO_WEAR.set(world, runtime);
+  return runtime;
+}
+
+/**
+ * Wear catalog items sitting in an entity's inventory whose matching slots
+ * are empty. Stable item-id order. requiredTags gate + swap semantics come
+ * from equipItem; equipped-<itemId> status is applied through the injected
+ * ops. Failures (tag miss, throwing apply) skip that item.
+ */
+function wearIfSlotEmpty(
+  world: WorldState,
+  actor: EntityState,
+  item: ItemDefinition,
+  catalog: ItemCatalog,
+  statuses: EquipmentStatusOps,
+): boolean {
+  if ((actor.resources.hp ?? 0) <= 0) return false;
+  if (!(actor.inventory ?? []).includes(item.id)) return false;
+  const state = getEquipmentState(world);
+  const staged = stageLoadout(state, actor);
+  if (staged.equipped[item.slot] !== null) return false;
+  const result = equipItem(staged, item.id, catalog, actor.tags);
+  if (result.errors.length > 0) return false;
+  const tick = world.meta.tick;
+  try {
+    const applied = statuses.apply(
+      actor,
+      equipStatusId(item.id),
+      tick,
+      { stacking: 'replace', sourceId: actor.id, data: { itemId: item.id, slot: item.slot } },
+      world,
+    );
+    applied.payload.description = `Equipped: ${item.name}.${statSummary(item)}`;
+    applied.payload.itemId = item.id;
+    applied.payload.slot = item.slot;
+  } catch {
+    return false;
+  }
+  applyResourceCarry(actor, item, 1);
+  commitLoadout(world, state, actor, result.loadout);
+  return true;
+}
+
+function autoWearEntity(world: WorldState, actor: EntityState, catalog: ItemCatalog, statuses: EquipmentStatusOps): void {
+  const ids = [...new Set(actor.inventory ?? [])].filter((id) => findItem(catalog, id)).sort();
+  for (const itemId of ids) {
+    const item = findItem(catalog, itemId);
+    if (!item) continue;
+    wearIfSlotEmpty(world, actor, item, catalog, statuses);
+  }
+}
+
+/**
+ * First-snapshot auto-wear (F-5164895e): for each entity whose inventory
+ * holds catalog items and whose matching slots are empty, run the equip
+ * path in stable item-id order. Idempotent per entity.
+ */
+export function ensureStartingLoadouts(world: WorldState): void {
+  const runtime = AUTO_WEAR.get(world);
+  if (!runtime) return;
+  for (const id of Object.keys(world.entities).sort()) {
+    if (runtime.worn.has(id)) continue;
+    const entity = world.entities[id];
+    runtime.worn.add(id);
+    if (!entity) continue;
+    autoWearEntity(world, entity, runtime.catalog, runtime.statuses);
+  }
+}
+
 /** An entity's current loadout, or undefined when it has never equipped. */
 export function getEntityLoadout(world: WorldState, entityId: string): Loadout | undefined {
+  // First snapshot after chargen: wear starting kits so a Gravewalker's
+  // chapel-lantern is in the tool slot, not the pack (F-5164895e).
+  ensureStartingLoadouts(world);
   return (world.modules[EQUIPMENT_STATE_KEY] as EquipmentModuleState | undefined)?.loadouts?.[entityId];
 }
 
@@ -710,16 +801,19 @@ export function createEquipmentCore(config: EquipmentCoreConfig): EngineModule {
         return config.catalog;
       };
 
-      ctx.actions.registerVerb('equip', (action, world) =>
-        equipHandler(action, world, readCatalog, config.statuses),
-      );
-      ctx.actions.registerVerb('unequip', (action, world) =>
-        unequipHandler(action, world, readCatalog, config.statuses),
-      );
+      ctx.actions.registerVerb('equip', (action, world) => {
+        bindAutoWear(world, readCatalog(), config.statuses);
+        return equipHandler(action, world, readCatalog, config.statuses);
+      });
+      ctx.actions.registerVerb('unequip', (action, world) => {
+        bindAutoWear(world, readCatalog(), config.statuses);
+        return unequipHandler(action, world, readCatalog, config.statuses);
+      });
 
-      ctx.persistence.registerNamespace(EQUIPMENT_STATE_KEY, {
-        loadouts: {},
-      } satisfies EquipmentModuleState);
+      ctx.persistence.registerNamespace(EQUIPMENT_STATE_KEY, (world) => {
+        bindAutoWear(world as WorldState, config.catalog, config.statuses);
+        return { loadouts: {} } satisfies EquipmentModuleState;
+      });
     },
   };
 }

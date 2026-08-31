@@ -10,6 +10,10 @@ export type {
   CrossDisciplineTitle,
   ClassEntanglement,
   CharacterBuild,
+  PortraitOps,
+  ResolveEntityOptions,
+  SuggestBuildOptions,
+  BuildRng,
   BuildCatalog,
   BuildValidationResult,
 } from './types.js';
@@ -26,6 +30,7 @@ export {
   getAvailableDisciplines,
   getStatBudgetRemaining,
   inspectStatBudgetRemaining,
+  suggestBuild,
 } from './options.js';
 export type { StatBudgetRemainingResult } from './options.js';
 export { resolveTitle, resolveEntanglements } from './titles.js';

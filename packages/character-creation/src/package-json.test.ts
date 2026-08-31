@@ -11,6 +11,22 @@ const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 const EXPECTED_DESCRIPTION =
   'Headless character creation system \u2014 archetypes, backgrounds, traits, multiclassing, and build validation for AI RPG Engine';
 
+describe('character-creation has no image-gen dependency (F-963fcb3a)', () => {
+  it('package.json and src graph never import @ai-rpg-engine/image-gen', () => {
+    const pkg = JSON.parse(readFileSync(join(pkgRoot, 'package.json'), 'utf8')) as {
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+    };
+    expect(pkg.dependencies?.['@ai-rpg-engine/image-gen']).toBeUndefined();
+    expect(pkg.devDependencies?.['@ai-rpg-engine/image-gen']).toBeUndefined();
+    const src = readFileSync(join(pkgRoot, 'src', 'resolve.ts'), 'utf8')
+      + readFileSync(join(pkgRoot, 'src', 'index.ts'), 'utf8')
+      + readFileSync(join(pkgRoot, 'src', 'types.ts'), 'utf8');
+    expect(src).not.toMatch(/@ai-rpg-engine\/image-gen/);
+    expect(src).not.toMatch(/ensurePortrait|generatePortrait/);
+  });
+});
+
 describe('character-creation package.json description (F-c6c02a60)', () => {
   it('uses a real UTF-8 em dash and the pinned listing string', () => {
     const raw = readFileSync(join(pkgRoot, 'package.json'));

@@ -1,7 +1,7 @@
 // Build resolution — converts a validated CharacterBuild into an EntityState
 
 import type { EntityState, RulesetDefinition } from '@ai-rpg-engine/core';
-import type { CharacterBuild, BuildCatalog } from './types.js';
+import type { CharacterBuild, BuildCatalog, ResolveEntityOptions } from './types.js';
 import { validateBuild } from './validate.js';
 
 // --- Structured resolution error (F-6c1a8f3d) ---
@@ -37,15 +37,26 @@ export class BuildResolutionError extends Error {
   }
 }
 
+function stampPortrait(build: CharacterBuild, opts?: ResolveEntityOptions): string | undefined {
+  if (build.portraitRef) return build.portraitRef;
+  const ensured = opts?.portraits?.ensure(build);
+  return typeof ensured === 'string' && ensured.length > 0 ? ensured : undefined;
+}
+
 /**
  * Resolve a character build into a playable EntityState.
  * Throws a structured BuildResolutionError (code BUILD_INVALID) if the build
  * fails validation against the catalog + ruleset.
+ *
+ * `opts.portraits` is an optional inject (F-963fcb3a): when provided and the
+ * build has no portraitRef, a sync `ensure(build)` string is stamped onto
+ * `entity.custom.portraitRef`. Omitted inject → behaviour stays as today.
  */
 export function resolveEntity(
   build: CharacterBuild,
   catalog: BuildCatalog,
   ruleset: RulesetDefinition,
+  opts?: ResolveEntityOptions,
 ): EntityState {
   const result = validateBuild(build, catalog, ruleset);
 
@@ -82,7 +93,8 @@ export function resolveEntity(
     backgroundId: build.backgroundId,
   };
   if (build.disciplineId) custom.disciplineId = build.disciplineId;
-  if (build.portraitRef) custom.portraitRef = build.portraitRef;
+  const portraitRef = stampPortrait(build, opts);
+  if (portraitRef) custom.portraitRef = portraitRef;
   if (result.resolvedTitle) custom.title = result.resolvedTitle;
 
   return {

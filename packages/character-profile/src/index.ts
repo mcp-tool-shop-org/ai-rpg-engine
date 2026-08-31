@@ -45,3 +45,24 @@ export {
 } from './milestones.js';
 
 export { serializeProfile, deserializeProfile, validateSerializedProfile } from './serialize.js';
+
+// Runtime consumer loop (F-1b1c077f): grantXp / addInjury / reputation
+// EngineModule over this package's CharacterProfile model. Status machinery
+// is injected by the pack (see ProfileStatusOps) so this package keeps zero
+// runtime dependency on @ai-rpg-engine/modules.
+export {
+  createProfileCore,
+  getProfileState,
+  getEntityProfile,
+  buildInjuryStatusDefinition,
+  injuryStatusId,
+  PROFILE_STATE_KEY,
+  DEFAULT_XP_PER_KILL,
+  DEFAULT_XP_PER_BOSS,
+} from './profile-core.js';
+export type {
+  ProfileCoreConfig,
+  ProfileModuleState,
+  ProfileStatusOps,
+  ProfileStatusDefinition,
+} from './profile-core.js';

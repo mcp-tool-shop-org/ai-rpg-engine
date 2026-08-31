@@ -91,6 +91,22 @@ describe('createProfile', () => {
     expect(a.id).toBeTruthy();
   });
 
+  it('stamps portraitRef from a stub PortraitOps inject (F-963fcb3a)', () => {
+    const build = { ...testBuild, portraitRef: undefined };
+    const profile = createProfile(build, testStats, testResources, testTags, 'fantasy', undefined, {
+      ensure: () => 'hash-profile-001',
+    });
+    expect(profile.portraitRef).toBe('hash-profile-001');
+    expect(profile.build.portraitRef).toBe('hash-profile-001');
+    expect(build.portraitRef).toBeUndefined();
+  });
+
+  it('leaves portraitRef absent without an inject (F-963fcb3a)', () => {
+    const build = { name: 'Beric', archetypeId: 'x', backgroundId: 'y', traitIds: [] };
+    const profile = createProfile(build, testStats, testResources, testTags, 'fantasy');
+    expect(profile.portraitRef).toBeUndefined();
+  });
+
   it('honors a caller-supplied id', () => {
     const profile = createProfile(testBuild, testStats, testResources, testTags, 'fantasy', 'pc-aldric');
     expect(profile.id).toBe('pc-aldric');
