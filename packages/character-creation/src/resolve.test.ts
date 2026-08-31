@@ -43,6 +43,27 @@ describe('resolveEntity', () => {
     expect(entity.inventory).toContain('signet-ring');
   });
 
+  it('stamps custom.portraitRef from a stub PortraitOps inject (F-963fcb3a)', () => {
+    const build = { ...validBuild };
+    const entity = resolveEntity(build, testCatalog, testRuleset, {
+      portraits: { ensure: () => 'hash-stub-001' },
+    });
+    expect(entity.custom?.portraitRef).toBe('hash-stub-001');
+    expect(build.portraitRef).toBeUndefined();
+  });
+
+  it('leaves portraitRef absent when no inject is provided (F-963fcb3a)', () => {
+    const entity = resolveEntity(validBuild, testCatalog, testRuleset);
+    expect(entity.custom?.portraitRef).toBeUndefined();
+  });
+
+  it('does not overwrite an already-set portraitRef', () => {
+    const entity = resolveEntity(validBuildWithDiscipline, testCatalog, testRuleset, {
+      portraits: { ensure: () => 'should-not-win' },
+    });
+    expect(entity.custom?.portraitRef).toBe('portrait-morrigan-001');
+  });
+
   it('stores build metadata in custom field', () => {
     const entity = resolveEntity(validBuildWithDiscipline, testCatalog, testRuleset);
     expect(entity.custom?.archetypeId).toBe('mage');

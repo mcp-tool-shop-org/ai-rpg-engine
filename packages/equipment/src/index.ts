@@ -69,6 +69,7 @@ export {
   buildEquipmentStatusDefinitions,
   getEquipmentState,
   getEntityLoadout,
+  ensureStartingLoadouts,
   equipStatusId,
   EQUIPMENT_CATALOG_FORMULA,
   EQUIPMENT_STATE_KEY,

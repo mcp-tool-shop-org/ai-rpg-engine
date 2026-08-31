@@ -47,6 +47,20 @@ export type {
   FinaleOutline,
 } from './finale.js';
 
+// Live write side (F-6594b19b): opt-in EngineModule that journals kills /
+// gifts / rescues / betrayals with zone witnesses and persists NPC banks
+// via registerNamespace. Does not call consolidate (F-c1949ae0).
+export {
+  createCampaignMemoryCore,
+  getCampaignJournal,
+  getNpcMemory,
+  CAMPAIGN_MEMORY_STATE_KEY,
+} from './memory-core.js';
+export type {
+  CampaignMemoryCoreConfig,
+  CampaignMemoryModuleState,
+} from './memory-core.js';
+
 export type { ValidationError } from './validate.js';
 export {
   describeNumeric,

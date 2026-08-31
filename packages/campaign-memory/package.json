@@ -38,6 +38,9 @@
   "bugs": {
     "url": "https://github.com/mcp-tool-shop-org/ai-rpg-engine/issues"
   },
+  "devDependencies": {
+    "@ai-rpg-engine/core": "*"
+  },
   "engines": {
     "node": ">=20"
   }

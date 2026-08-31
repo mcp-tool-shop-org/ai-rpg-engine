@@ -37,6 +37,23 @@ const profile = createProfile(
   ['martial', 'oath-broken'],            // resolved tags
   'chapel-threshold',                    // pack ID
 );
+
+// Optional portrait inject (F-963fcb3a) — same seam as resolveEntity.
+// createProfile(build, stats, resources, tags, packId, id, { ensure: (b) => hash })
+```
+
+### Live play (createProfileCore)
+
+Opt-in EngineModule: inject status ops, persist CharacterProfile under `character-profile`, grant XP on `combat.entity.defeated`, and turn injury penalties into `injured-<id>` statuses in the same GAS band as `equipped-<itemId>`.
+
+```typescript
+import { createProfileCore } from '@ai-rpg-engine/character-profile';
+import { registerStatusDefinitions, applyStatus, removeStatus } from '@ai-rpg-engine/modules';
+
+createProfileCore({
+  statuses: { registerDefinitions: registerStatusDefinitions, apply: applyStatus, remove: removeStatus },
+  packId: 'chapel-threshold',
+});
 ```
 
 ### XP and Leveling

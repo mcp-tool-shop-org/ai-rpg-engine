@@ -1,6 +1,6 @@
 // Profile creation and core operations
 
-import type { CharacterBuild } from '@ai-rpg-engine/character-creation';
+import type { CharacterBuild, PortraitOps } from '@ai-rpg-engine/character-creation';
 import { createEmptyLoadout } from '@ai-rpg-engine/equipment';
 import type { CharacterProfile, Injury } from './types.js';
 import { PROFILE_VERSION } from './types.js';
@@ -36,6 +36,8 @@ function deriveProfileId(build: CharacterBuild, packId: string): string {
  * Create a fresh profile from a character build and resolved stats/resources/tags.
  * `id` is optional — when omitted, a deterministic id is derived from the build so
  * the same inputs always yield the same id (CP-05).
+ * `portraits` is an optional inject (F-963fcb3a): a sync `ensure(build)` string
+ * is stamped onto portraitRef when the build has none. Omitted → today.
  */
 export function createProfile(
   build: CharacterBuild,
@@ -44,15 +46,21 @@ export function createProfile(
   tags: string[],
   packId: string,
   id?: string,
+  portraits?: PortraitOps,
 ): CharacterProfile {
   const now = new Date().toISOString();
+  const isolated = structuredClone(build);
+  if (!isolated.portraitRef && portraits) {
+    const ensured = portraits.ensure(isolated);
+    if (typeof ensured === 'string' && ensured.length > 0) isolated.portraitRef = ensured;
+  }
   return {
     id: id ?? deriveProfileId(build, packId),
     version: PROFILE_VERSION,
     // F-68f549c2: isolate the nested build (traitIds, statAllocations,
     // disciplineId) the same way stats/resources/tags are copied. Assigning
     // `build` by identity let a caller push onto traitIds and persist it.
-    build: structuredClone(build),
+    build: isolated,
     stats: { ...stats },
     resources: { ...resources },
     tags: [...tags],
@@ -62,13 +70,13 @@ export function createProfile(
       xp: 0,
       level: 1,
       archetypeRank: 1,
-      disciplineRank: build.disciplineId ? 1 : 0,
+      disciplineRank: isolated.disciplineId ? 1 : 0,
       traitEvolutions: [],
     },
     injuries: [],
     milestones: [],
     reputation: [],
-    portraitRef: build.portraitRef,
+    portraitRef: isolated.portraitRef,
     packId,
     createdAt: now,
     updatedAt: now,

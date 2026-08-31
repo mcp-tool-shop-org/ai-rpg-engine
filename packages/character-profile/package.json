@@ -22,6 +22,10 @@
     "@ai-rpg-engine/character-creation": "^3.8.0",
     "@ai-rpg-engine/equipment": "^3.8.0"
   },
+  "devDependencies": {
+    "@ai-rpg-engine/core": "*",
+    "@ai-rpg-engine/modules": "*"
+  },
   "license": "MIT",
   "author": "mcp-tool-shop",
   "homepage": "https://mcp-tool-shop-org.github.io/ai-rpg-engine/",

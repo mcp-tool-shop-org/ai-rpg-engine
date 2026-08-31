@@ -33,6 +33,7 @@ import {
   buildEquipmentStatusDefinitions,
   getEquipmentState,
   getEntityLoadout,
+  ensureStartingLoadouts,
   equipStatusId,
   EQUIPMENT_CATALOG_FORMULA,
   EQUIPMENT_STATE_KEY,
@@ -80,6 +81,13 @@ const catalog: ItemCatalog = {
       slot: 'armor',
       rarity: 'common',
       resourceModifiers: { hp: 5 },
+    },
+    {
+      id: 'chapel-lantern',
+      name: 'Chapel Lantern',
+      description: 'A flickering lantern blessed by a forgotten saint.',
+      slot: 'tool',
+      rarity: 'common',
     },
   ],
 };
@@ -167,6 +175,7 @@ describe('registration and catalog-formula transport', () => {
       'gladius',
       'champion-helm',
       'penitent-mail',
+      'chapel-lantern',
     ]);
   });
 
@@ -185,6 +194,7 @@ describe('registration and catalog-formula transport', () => {
       'equipped-gladius',
       'equipped-champion-helm',
       'equipped-penitent-mail',
+      'equipped-chapel-lantern',
     ]);
   });
 });
@@ -753,5 +763,65 @@ describe('save/load preserves loadout + status (and re-registers code-side piece
     };
     const round = JSON.parse(JSON.stringify(engine.world.modules[EQUIPMENT_STATE_KEY])) as EquipmentModuleState;
     expect(round.loadouts['player']?.equipped.weapon).toBe('trident-and-net');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F-5164895e — starting-kit auto-wear on first snapshot
+// ---------------------------------------------------------------------------
+
+describe('F-5164895e: starting kits auto-wear on first loadout snapshot', () => {
+  it('Gravewalker chapel-lantern lands in the tool slot, not the pack', () => {
+    const engine = makeEngine((p) => {
+      p.inventory = ['chapel-lantern'];
+    });
+    const player = engine.world.entities['player'];
+    expect(player.inventory).toEqual(['chapel-lantern']);
+
+    const loadout = getEntityLoadout(engine.world, 'player');
+    expect(loadout?.equipped.tool).toBe('chapel-lantern');
+    expect(player.inventory).not.toContain('chapel-lantern');
+    expect(hasStatus(player, equipStatusId('chapel-lantern'))).toBe(true);
+  });
+
+  it('wears catalog items into empty slots in stable item-id order', () => {
+    const engine = makeEngine((p) => {
+      p.inventory = ['trident-and-net', 'penitent-mail', 'chapel-lantern'];
+    });
+    const loadout = getEntityLoadout(engine.world, 'player');
+    expect(loadout?.equipped.weapon).toBe('trident-and-net');
+    expect(loadout?.equipped.armor).toBe('penitent-mail');
+    expect(loadout?.equipped.tool).toBe('chapel-lantern');
+    expect(engine.world.entities['player'].inventory).toEqual([]);
+  });
+
+  it('skips a requiredTags miss and leaves the item in inventory', () => {
+    const engine = makeEngine((p) => {
+      p.inventory = ['champion-helm'];
+    });
+    const loadout = getEntityLoadout(engine.world, 'player');
+    expect(loadout?.equipped.armor ?? null).toBeNull();
+    expect(engine.world.entities['player'].inventory).toEqual(['champion-helm']);
+  });
+
+  it('does not displace an already-occupied slot', () => {
+    const engine = makeEngine((p) => {
+      p.inventory = ['trident-and-net'];
+    });
+    engine.submitAction('equip', { parameters: { itemId: 'trident-and-net' } });
+    engine.store.recordEvent(giveItem(engine.world.entities['player'], 'gladius', engine.world.meta.tick));
+    const loadout = getEntityLoadout(engine.world, 'player');
+    expect(loadout?.equipped.weapon).toBe('trident-and-net');
+    expect(engine.world.entities['player'].inventory).toContain('gladius');
+  });
+
+  it('ensureStartingLoadouts is idempotent', () => {
+    const engine = makeEngine((p) => {
+      p.inventory = ['chapel-lantern'];
+    });
+    ensureStartingLoadouts(engine.store.state);
+    ensureStartingLoadouts(engine.store.state);
+    expect(getEntityLoadout(engine.world, 'player')?.equipped.tool).toBe('chapel-lantern');
+    expect(engine.world.entities['player'].inventory).toEqual([]);
   });
 });
