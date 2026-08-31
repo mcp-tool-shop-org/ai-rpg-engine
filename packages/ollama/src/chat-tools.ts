@@ -367,6 +367,17 @@ const scaffoldTool: ChatTool = {
     idMatch = yaml.match(/^id:\s*(\S+)/m);
     const artifactId = idMatch?.[1] ?? kind;
     const artifactKind = artifactBucketForKind(kind);
+    // F-164ac208 (wave-4): namespace by artifact kind, mirroring emit-pack's
+    // own content/<kind>/ convention (chat-tools.ts's emitPackTool below
+    // writes to 'content/pack.json'; walkFiles recurses so this stays
+    // discoverable the same as a bare root-level file was). Before this fix
+    // every scaffold kind landed as a bare `${artifactId}.yaml` at the
+    // project root — a confirmed guided-build run routinely scattered 4-6
+    // loose, kind-less files next to package.json/tsconfig.json, and widened
+    // the flush gate's same-suggestedPath collision surface to cross-kind
+    // collisions (a faction and a room sharing a generated id) that this
+    // namespacing makes structurally impossible.
+    const suggestedPath = `content/${artifactKind}/${artifactId}.yaml`;
 
     // Surface validation instead of discarding it (v2.6 Stage C F-b8d1a6e3):
     // the commands validate every draft, and the CLI prints the warnings, but
@@ -391,7 +402,7 @@ const scaffoldTool: ChatTool = {
       sessionEvents: [{ kind: 'artifact_created', detail: `${artifactKind}/${artifactId}` }],
       pendingWrite: {
         content: yaml,
-        suggestedPath: `${artifactId}.yaml`,
+        suggestedPath,
         label: `${kind}: ${artifactId}`,
       },
     };

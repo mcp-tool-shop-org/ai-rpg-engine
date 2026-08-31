@@ -515,7 +515,10 @@ describe('build steps stage into activeBuild.stagedWrites (F-591fae03)', () => {
     const entries = Object.values(engine.activeBuild!.stagedWrites);
     expect(entries).toHaveLength(1);
     expect(entries[0].content).toContain('staged-room');
-    expect(entries[0].suggestedPath).toBe('staged-room.yaml');
+    // F-164ac208 (wave-4): scaffold output is namespaced by artifact kind
+    // (mirrors emit-pack's own content/<kind>/ convention) instead of
+    // landing bare at the project root.
+    expect(entries[0].suggestedPath).toBe('content/rooms/staged-room.yaml');
     expect(entries[0].sourceStepId).toBe(1);
   });
 
@@ -723,8 +726,10 @@ describe('multi-step build + emit-pack roundtrip (F-591fae03 item 10, composes w
       await engine.process('yes');
       const response = await engine.process('yes');
       expect(response).toContain('Written');
-      await access(join(dir, 'faction_a.yaml'));
-      await access(join(dir, 'faction_b.yaml'));
+      // F-164ac208 (wave-4): faction scaffolds land under content/factions/,
+      // not bare at the project root.
+      await access(join(dir, 'content', 'factions', 'faction_a.yaml'));
+      await access(join(dir, 'content', 'factions', 'faction_b.yaml'));
       expect(engine.activeBuild!.stagedWrites).toEqual({});
 
       // The gate is now open (nothing staged) — the next step call finally
