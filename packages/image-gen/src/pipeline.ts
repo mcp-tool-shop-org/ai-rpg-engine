@@ -680,12 +680,19 @@ export async function ensurePortraitVariant(
     store,
     async () => {
       const generation: GenerationOptions = { ...opts.generation };
-      if (!generation.initImage) {
+      const needsControlImage =
+        (generation.controlnet || generation.ipadapter) && !generation.controlImage;
+      if (!generation.initImage || needsControlImage) {
         const base = await store.get(baseHash, { verify: true });
         if (!base) {
           throw new Error(`[image-gen] ensurePortraitVariant: no asset at hash ${baseHash}`);
         }
-        generation.initImage = base;
+        if (!generation.initImage) generation.initImage = base;
+        // F-848ff475: a caller-supplied controlImage (e.g. a tighter face
+        // crop) always wins — this only fills the gap when controlnet/
+        // ipadapter is requested but no identity-lock image was given, so
+        // the ControlNet/IPAdapter graph isn't silently skipped.
+        if (needsControlImage) generation.controlImage = base;
       }
       if (generation.denoise === undefined) generation.denoise = 0.55;
       const genOpts = resolveGeneration(request, generation);
@@ -726,12 +733,16 @@ export async function ensureBackgroundVariant(
     store,
     async () => {
       const generation: GenerationOptions = { ...opts.generation };
-      if (!generation.initImage) {
+      const needsControlImage =
+        (generation.controlnet || generation.ipadapter) && !generation.controlImage;
+      if (!generation.initImage || needsControlImage) {
         const base = await store.get(baseHash, { verify: true });
         if (!base) {
           throw new Error(`[image-gen] ensureBackgroundVariant: no asset at hash ${baseHash}`);
         }
-        generation.initImage = base;
+        if (!generation.initImage) generation.initImage = base;
+        // F-848ff475: caller-supplied controlImage always wins.
+        if (needsControlImage) generation.controlImage = base;
       }
       if (generation.denoise === undefined) generation.denoise = 0.55;
       const genOpts = resolveGenerationBase(generation, {
@@ -773,12 +784,16 @@ export async function ensureIconVariant(
     store,
     async () => {
       const generation: GenerationOptions = { ...opts.generation };
-      if (!generation.initImage) {
+      const needsControlImage =
+        (generation.controlnet || generation.ipadapter) && !generation.controlImage;
+      if (!generation.initImage || needsControlImage) {
         const base = await store.get(baseHash, { verify: true });
         if (!base) {
           throw new Error(`[image-gen] ensureIconVariant: no asset at hash ${baseHash}`);
         }
-        generation.initImage = base;
+        if (!generation.initImage) generation.initImage = base;
+        // F-848ff475: caller-supplied controlImage always wins.
+        if (needsControlImage) generation.controlImage = base;
       }
       if (generation.denoise === undefined) generation.denoise = 0.55;
       const genOpts = resolveGenerationBase(generation, {

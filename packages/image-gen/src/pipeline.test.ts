@@ -1213,3 +1213,108 @@ describe('ensureBackgroundVariant / ensureIconVariant (F-fabbd6d2)', () => {
     ).rejects.toThrow(/no asset at hash/);
   });
 });
+
+describe('variant controlImage auto-load (F-848ff475)', () => {
+  it('ensurePortraitVariant loads the base asset as controlImage when controlnet is set', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new PlaceholderProvider();
+    const spy = vi.spyOn(provider, 'generate');
+    const base = await generatePortrait(testRequest, provider, store);
+    const baseBytes = await store.get(base.hash);
+    spy.mockClear();
+
+    await ensurePortraitVariant(base.hash, testRequest, provider, store, {
+      variant: 'scarred',
+      generation: { controlnet: 'openpose' },
+    });
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    const opts = spy.mock.calls[0][1] as GenerationOptions;
+    expect(opts.controlImage).toEqual(baseBytes);
+    // initImage auto-load is untouched by this fix.
+    expect(opts.initImage).toEqual(baseBytes);
+  });
+
+  it('ensurePortraitVariant loads controlImage when only ipadapter is set (no controlnet)', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new PlaceholderProvider();
+    const spy = vi.spyOn(provider, 'generate');
+    const base = await generatePortrait(testRequest, provider, store);
+    const baseBytes = await store.get(base.hash);
+    spy.mockClear();
+
+    await ensurePortraitVariant(base.hash, testRequest, provider, store, {
+      variant: 'scarred',
+      generation: { ipadapter: 0.8 },
+    });
+
+    const opts = spy.mock.calls[0][1] as GenerationOptions;
+    expect(opts.controlImage).toEqual(baseBytes);
+  });
+
+  it('ensurePortraitVariant: a caller-supplied controlImage wins over the auto-loaded base', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new PlaceholderProvider();
+    const spy = vi.spyOn(provider, 'generate');
+    const base = await generatePortrait(testRequest, provider, store);
+    spy.mockClear();
+    const customControl = new Uint8Array([1, 2, 3, 4, 5]);
+
+    await ensurePortraitVariant(base.hash, testRequest, provider, store, {
+      variant: 'scarred',
+      generation: { controlnet: 'openpose', controlImage: customControl },
+    });
+
+    const opts = spy.mock.calls[0][1] as GenerationOptions;
+    expect(opts.controlImage).toEqual(customControl);
+  });
+
+  it('ensurePortraitVariant does not auto-load controlImage when neither controlnet nor ipadapter is set', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new PlaceholderProvider();
+    const spy = vi.spyOn(provider, 'generate');
+    const base = await generatePortrait(testRequest, provider, store);
+    spy.mockClear();
+
+    await ensurePortraitVariant(base.hash, testRequest, provider, store, {
+      variant: 'scarred',
+    });
+
+    const opts = spy.mock.calls[0][1] as GenerationOptions;
+    expect(opts.controlImage).toBeUndefined();
+  });
+
+  it('ensureBackgroundVariant loads the base asset as controlImage when controlnet is set', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new PlaceholderProvider();
+    const spy = vi.spyOn(provider, 'generate');
+    const base = await generateBackground(chapel, provider, store);
+    const baseBytes = await store.get(base.hash);
+    spy.mockClear();
+
+    await ensureBackgroundVariant(base.hash, chapel, provider, store, {
+      variant: 'night',
+      generation: { controlnet: 'depth' },
+    });
+
+    const opts = spy.mock.calls[0][1] as GenerationOptions;
+    expect(opts.controlImage).toEqual(baseBytes);
+  });
+
+  it('ensureIconVariant loads the base asset as controlImage when controlnet is set', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new PlaceholderProvider();
+    const spy = vi.spyOn(provider, 'generate');
+    const base = await generateIcon(relic, provider, store);
+    const baseBytes = await store.get(base.hash);
+    spy.mockClear();
+
+    await ensureIconVariant(base.hash, relic, provider, store, {
+      variant: 'cracked',
+      generation: { controlnet: 'canny' },
+    });
+
+    const opts = spy.mock.calls[0][1] as GenerationOptions;
+    expect(opts.controlImage).toEqual(baseBytes);
+  });
+});
