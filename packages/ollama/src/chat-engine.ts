@@ -802,6 +802,19 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       engineState: { lastAnalysis, lastExperiment, baselineExperiment, activeBuild, activeTuning },
     });
 
+    // Wave-4 stitch (F-03875ef5, executeBuildStep's sibling — see the
+    // identical stage above): tuneApplyTool and every other mutating tuning
+    // tool stage via pendingWrite and tell the user "say yes to apply" in
+    // their own summary, so dropping it here left every guided-tuning patch
+    // either unappliable (a "yes" fell through to intent classification) or,
+    // worse, confirmed whatever unrelated content an earlier interaction had
+    // staged on this same shared slot. Each step overwrites the previous
+    // stage (last one wins), and the normal confirmation flow takes it from
+    // there — same contract as executeBuildStep.
+    if (toolResult.pendingWrite) {
+      pendingWrite = toolResult.pendingWrite;
+    }
+
     if (toolResult.ok) {
       markTuningStepExecuted(activeTuning, step.id, toolResult.summary);
       if (session) {

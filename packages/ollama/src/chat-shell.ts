@@ -753,6 +753,13 @@ export async function handleSlashCommand(
       const result = await engine.executeTuningStep();
       console.log('');
       console.log(result);
+      // Wave-4 stitch (F-03875ef5): mirrors /step's surfacing above — the
+      // step's staged write is live on the engine now, so say so at the
+      // moment it is true, or tuneApplyTool's "say yes to apply" instruction
+      // in its own summary points at nothing.
+      if (engine.pendingWrite) {
+        console.log(`Content staged for ${engine.pendingWrite.suggestedPath} — say "yes" to review and write it, or "no" to discard.`);
+      }
       console.log('');
       return 'handled';
     }
@@ -769,6 +776,13 @@ export async function handleSlashCommand(
       });
       console.log('');
       console.log(result);
+      // Wave-4 stitch (F-03875ef5): mirrors /execute's surfacing above —
+      // after a batch, the LAST tuning step's staged write survives on the
+      // engine. Surface it once, where it is true.
+      if (engine.pendingWrite) {
+        console.log('');
+        console.log(`Content staged for ${engine.pendingWrite.suggestedPath} — say "yes" to review and write it, or "no" to discard.`);
+      }
       console.log('');
       return 'handled';
     }

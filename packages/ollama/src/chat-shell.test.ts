@@ -17,6 +17,7 @@ import { MAX_EXPERIMENT_RUNS } from './chat-experiments.js';
 import { createChatEngine } from './chat-engine.js';
 import { createTranscript, addToTranscript, defaultTranscriptPath } from './chat-transcript.js';
 import { createBuildState, type BuildPlan, type BuildStep } from './chat-build-planner.js';
+import { createTuningState, type TuningPlan, type TuningStep } from './chat-balance-analyzer.js';
 import type { OllamaTextClient, PromptInput, PromptResult } from './client.js';
 
 function mockClient(response = 'ok'): OllamaTextClient {
@@ -219,6 +220,66 @@ describe('handleSlashCommand — /execute per-step progress (F-4be7a3c2)', () =>
     const logged = logSpy.mock.calls.flat().join('\n');
     expect(logged).toContain('[1/2]');
     expect(logged).toContain('[2/2]');
+  });
+});
+
+// Wave-4 stitch (F-03875ef5): /tune-step and /tune-execute never got the
+// "Content staged for ..." surfacing that /step and /execute have (above).
+// Mirrors the build case's UI contract onto the tuning path.
+describe('handleSlashCommand — /tune-step and /tune-execute surface staged writes (F-03875ef5)', () => {
+  function tuningStep(id: number, description: string): TuningStep {
+    return {
+      id, description,
+      command: 'create-room', intent: 'scaffold',
+      params: { kind: 'room', theme: `tune-${id}` },
+      dependencies: [], expectedEffect: 'none', status: 'pending',
+    };
+  }
+
+  it('/tune-step tells the user a write is staged and confirmable', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const yaml = 'id: shell-tuned-room\ntype: room\nname: Shell Tuned Room';
+    const engine = createChatEngine({
+      client: mockClient(yaml),
+      projectRoot: '/tmp/nonexistent-' + Date.now(),
+    });
+    engine.activeTuning = createTuningState({
+      goal: 'shell tune test',
+      steps: [tuningStep(1, 'first')],
+      warnings: [],
+    } satisfies TuningPlan);
+
+    const result = await handleSlashCommand(
+      '/tune-step', engine, createTranscript(null), '/fake/project-root', false,
+    );
+
+    expect(result).toBe('handled');
+    const logged = logSpy.mock.calls.flat().join('\n');
+    expect(logged).toContain('Content staged for');
+    expect(logged).toContain('say "yes" to review and write it');
+  });
+
+  it('/tune-execute tells the user a write is staged after the batch completes', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const yaml = 'id: shell-tuned-room\ntype: room\nname: Shell Tuned Room';
+    const engine = createChatEngine({
+      client: mockClient(yaml),
+      projectRoot: '/tmp/nonexistent-' + Date.now(),
+    });
+    engine.activeTuning = createTuningState({
+      goal: 'shell tune batch test',
+      steps: [tuningStep(1, 'first'), tuningStep(2, 'second')],
+      warnings: [],
+    } satisfies TuningPlan);
+
+    const result = await handleSlashCommand(
+      '/tune-execute', engine, createTranscript(null), '/fake/project-root', false,
+    );
+
+    expect(result).toBe('handled');
+    const logged = logSpy.mock.calls.flat().join('\n');
+    expect(logged).toContain('Content staged for');
+    expect(logged).toContain('say "yes" to review and write it');
   });
 });
 
