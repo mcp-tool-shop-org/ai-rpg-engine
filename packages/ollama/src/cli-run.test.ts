@@ -543,24 +543,38 @@ describe('runCli — scaffold-and-critique emits content/pack.json (F-35cc73ce)'
     }) as unknown as typeof fetch;
   }
 
-  it('writes content/pack.json under the CLI project root after the pipeline completes', async () => {
-    // The scaffold step's own YAML lives only in-memory during this single
-    // macro call (the CLI's --write for step 1's output happens AFTER
-    // scaffoldAndCritique returns) — emit-pack assembles whatever is
-    // ALREADY on disk under projectRoot, the same contract the /build
-    // guided-chat emit-pack step follows. Pre-seed a file to stand in for
-    // content already authored/imported in the project.
+  it('writes content/pack.json containing BOTH pre-existing and just-scaffolded content when --write is given', async () => {
+    // RECONCILED at the wave-2 stitch: this test used to pin the old
+    // contract — assembly before the scaffold's --write landed (a pack one
+    // artifact behind) and a pack.json written even when the caller asked
+    // for nothing to be persisted. The macro now lands the scaffolded YAML
+    // BEFORE the emit-pack step assembles, and only persists when --write
+    // states the intent. Pre-seed a file to stand in for content already
+    // authored/imported in the project.
     await fs.writeFile(path.join(tmpDir, 'guard.yaml'), 'id: chapel_guard\ntype: npc\nname: Chapel Guard\n');
+    mockOllamaSequence(
+      'id: chapel\nname: Ruined Chapel\nzones:\n  - id: nave\n    name: Nave',
+      'Solid room. No structural issues.',
+    );
+    await runCli(['scaffold-and-critique', '--kind', 'room', '--theme', 'ruined chapel', '--write', 'chapel.yaml']);
+    expect(process.exitCode).not.toBe(1);
+    const written = JSON.parse(await fs.readFile(path.join(tmpDir, 'content', 'pack.json'), 'utf-8'));
+    expect(written.entities).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'chapel_guard' })]),
+    );
+    // The off-by-one proof: the artifact scaffolded IN THIS RUN is in the pack.
+    expect(JSON.stringify(written)).toContain('nave');
+    await fs.readFile(path.join(tmpDir, 'chapel.yaml'), 'utf-8');
+  });
+
+  it('writes nothing without --write (consent pin)', async () => {
     mockOllamaSequence(
       'id: chapel\nname: Ruined Chapel\nzones:\n  - id: nave\n    name: Nave',
       'Solid room. No structural issues.',
     );
     await runCli(['scaffold-and-critique', '--kind', 'room', '--theme', 'ruined chapel']);
     expect(process.exitCode).not.toBe(1);
-    const written = JSON.parse(await fs.readFile(path.join(tmpDir, 'content', 'pack.json'), 'utf-8'));
-    expect(written.entities).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: 'chapel_guard' })]),
-    );
+    await expect(fs.readFile(path.join(tmpDir, 'content', 'pack.json'), 'utf-8')).rejects.toThrow();
   });
 });
 
