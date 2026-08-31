@@ -888,6 +888,86 @@ describe('multi-step build + emit-pack roundtrip (F-591fae03 item 10, composes w
   });
 });
 
+// --- emit-pack surfaces its own consent immediately when it is not the
+// plan's LAST step (F-5f18d2a4, wave-4). generateBuildPlan's issue/replay
+// injection schedules real steps AFTER the template's own EMIT_PACK_STEP —
+// the completion-promotion gate only fired on isBuildComplete, an
+// assumption that emit-pack is always last. When violated, emit-pack's own
+// staged pack.json sat unconfirmed and invisible through however many more
+// steps the injected work took, then got silently bundled into a LATER,
+// unrelated batch — declining THAT batch (meaning to reject only the newer
+// injected content) would also lose the already-assembled, already-valid
+// pack.json. ---
+
+describe('emit-pack surfaces its own consent immediately when not the last step (F-5f18d2a4)', () => {
+  function factionScaffoldStep(id: number, description: string): BuildStep {
+    return {
+      id, description, command: 'create-faction', intent: 'scaffold',
+      params: { kind: 'faction', theme: `theme-${id}` }, dependencies: [],
+      artifactOutputs: ['factions'], usePriorContent: false, status: 'pending',
+    };
+  }
+  function emitPackStep(id: number, dependencies: number[]): BuildStep {
+    return {
+      id, description: 'emit-pack — assemble content/pack.json', command: 'emit-pack', intent: 'emit_pack',
+      params: {}, dependencies, artifactOutputs: [], usePriorContent: false, status: 'pending',
+    };
+  }
+  function trailingStep(id: number, dependencies: number[]): BuildStep {
+    // Simulates an issue/replay-injected step scheduled AFTER emit-pack,
+    // exactly as injectIssueSteps wires it in chat-build-planner.ts
+    // (dependency on the already-placed emit-pack step's id).
+    return {
+      id, description: 'create-faction — issue-driven', command: 'create-faction', intent: 'scaffold',
+      params: { kind: 'faction', theme: 'issue-driven' }, dependencies,
+      artifactOutputs: ['factions'], usePriorContent: false, status: 'pending',
+    };
+  }
+
+  it('surfaces pack.json for confirmation as soon as emit-pack runs, even though a later step still depends on it', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'chat-emit-not-last-'));
+    try {
+      const engine = createChatEngine({
+        client: mockClient('id: faction_a\nname: Faction A\nmembers:\n  - captain_a'),
+        projectRoot: dir,
+        rawMode: true,
+      });
+
+      engine.activeBuild = createBuildState(buildPlanOf([
+        factionScaffoldStep(1, 'first faction'),
+        emitPackStep(2, [1]),
+        trailingStep(3, [2]),
+      ]));
+
+      // Step 1: stage the faction.
+      await engine.executeBuildStep();
+      // Step 2 (emit-pack): flush gate fires (stagedWrites non-empty).
+      const gateResult = await engine.executeBuildStep();
+      expect(gateResult).toContain('file(s) staged -- write all?');
+
+      // Confirm the faction batch (preview, then apply).
+      await engine.process('yes');
+      await engine.process('yes');
+      expect(engine.activeBuild!.stagedWrites).toEqual({});
+
+      // The gate is now open -- emit-pack finally runs for real. Step 3
+      // still depends on it and is still pending, so the build is NOT
+      // complete (isBuildComplete is false) -- but emit-pack's own staged
+      // pack.json must STILL surface for confirmation immediately, not
+      // silently wait for step 3 (which could be arbitrarily many more
+      // full model-generation steps away).
+      const emitResult = await engine.executeBuildStep();
+      expect(emitResult).toContain('file(s) staged -- write all?');
+      expect(engine.activeBuild!.plan.steps[2].status).toBe('pending'); // step 3 untouched
+      expect(engine.pendingWriteBatch).not.toBeNull();
+      const packEntry = engine.pendingWriteBatch!.find(e => e.suggestedPath === 'content/pack.json');
+      expect(packEntry).toBeDefined();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('executeAllTuningSteps — per-step progress + early abort (F-4be7a3c2)', () => {
   it('fires onStep per tuning step', async () => {
     const yaml = 'id: tuned-room\ntype: room\nname: Tuned Room';

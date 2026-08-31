@@ -912,6 +912,28 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
           consentSuffix = `\n\n${Object.keys(activeBuild.stagedWrites).length} file(s) staged for this build, but a tuning batch is awaiting confirmation first -- say "yes" or "no" to resolve it, then /step again.`;
         }
       }
+    } else if (step.command === 'emit-pack' && toolResult.ok && Object.keys(activeBuild.stagedWrites).length > 0) {
+      // F-5f18d2a4: emit-pack is not guaranteed to be the plan's LAST step —
+      // generateBuildPlan's issue/replay injection schedules real steps
+      // AFTER the template's own EMIT_PACK_STEP, so isBuildComplete can stay
+      // false for however many more steps that injected work takes. Without
+      // this branch, emit-pack's own staged pack.json sat unconfirmed and
+      // invisible the whole time, then got silently bundled into a LATER,
+      // unrelated batch — declining THAT batch (meaning to reject only the
+      // newer injected content) would also lose the already-assembled,
+      // already-valid pack.json. Surface it the moment emit-pack itself
+      // runs, regardless of whether anything else is still pending; a
+      // narrower fix than resorting EMIT_PACK_STEP to genuinely last, which
+      // would also require re-wiring injectIssueSteps/injectReplaySteps'
+      // dependency computation (today wired to depend ON emit-pack) to
+      // avoid a dependency cycle — out of proportion to the consent-timing
+      // defect actually being fixed here.
+      const batch = refreshPendingWriteBatch(activeBuild.stagedWrites, 'build');
+      if (batch) {
+        consentSuffix = '\n\n' + formatBatchConsent(batch, { flow: 'build', goal: activeBuild.plan.goal });
+      } else {
+        consentSuffix = `\n\n${Object.keys(activeBuild.stagedWrites).length} file(s) staged for this build, but a tuning batch is awaiting confirmation first -- say "yes" or "no" to resolve it, then /step again.`;
+      }
     }
 
     const icon = toolResult.ok ? '●' : '✗';
