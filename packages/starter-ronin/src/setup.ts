@@ -294,15 +294,6 @@ export function createGame(seed?: number): Engine {
     }
   });
 
-  // Audio cue on combat defeat
-  engine.store.events.on('combat.entity.defeated', () => {
-    engine.store.emitEvent('audio.cue.requested', {
-      cueId: 'combat.victory',
-      channel: 'stinger',
-      priority: 'high',
-    });
-  });
-
   // Combat resource gains/drains/spends handled by roninCombatProfile
 
   // --- Defeat Fallout: bonus honor on boss kill ---

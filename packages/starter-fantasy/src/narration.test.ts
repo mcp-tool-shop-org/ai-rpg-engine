@@ -73,7 +73,7 @@ describe('starter-fantasy: a combat turn builds a real, valid NarrationPlan', ()
     expect(plays.map((c) => c.resourceId)).toContain('alert_warning');
   });
 
-  it('every sfx a full fight schedules resolves in a core-pack SoundRegistry', () => {
+  it("a non-final kill fires no victory cue; the final kill's victory cue arrives via combat.encounter.cleared exactly once", () => {
     const engine = createGame(42);
     const world = engine.store.state;
     world.entities['player'].zoneId = 'crypt-chamber';
@@ -83,10 +83,25 @@ describe('starter-fantasy: a combat turn builds a real, valid NarrationPlan', ()
     registry.load(CORE_SOUND_PACK);
     const presenter = new TurnPresenter();
 
-    // Fight to the death (bounded): present EVERY turn and check the whole
-    // command stream stays inside the canonical vocabulary.
-    for (let i = 0; i < 30; i++) {
-      const events = turn(engine, 'attack', { targetIds: ['ash-ghoul'] });
+    // crypt-chamber holds TWO hostiles (ash-ghoul 12hp, crypt-warden 45hp
+    // boss). Killing ash-ghoul alone does NOT clear the encounter — the
+    // warden still stands — so that defeat must carry no victory cue; only
+    // the warden's defeat (the real final kill) empties the zone and should
+    // carry the victory sting, exactly once, via combat.encounter.cleared's
+    // own presentation.soundCues. This replaces a prior version of this test
+    // that pinned the opposite (buggy) contract: F-6dc0efb7 deleted the 9
+    // legacy per-starter audio.cue.requested('combat.victory') listeners,
+    // which fired unconditionally on ANY defeat — any hostile, any
+    // non-final kill — and this test's old assertion pinned that as
+    // "expected".
+    let ashGhoulDefeated = false;
+    let cryptWardenDefeated = false;
+    let victoryCueTurns = 0;
+
+    for (let i = 0; i < 150 && !cryptWardenDefeated; i++) {
+      const events = turn(engine, 'attack', {
+        targetIds: [ashGhoulDefeated ? 'crypt-warden' : 'ash-ghoul'],
+      });
       const result = presenter.present(world, events);
       expect(validateNarrationPlan(result.plan)).toEqual([]);
       for (const cmd of result.audioCommands) {
@@ -94,15 +109,37 @@ describe('starter-fantasy: a combat turn builds a real, valid NarrationPlan', ()
           expect(registry.get(cmd.resourceId), `unresolvable sfx "${cmd.resourceId}"`).toBeDefined();
         }
       }
-      if (events.some((e) => e.type === 'combat.entity.defeated')) {
-        // Defeat turn: plan goes critical; the win stinger (combat.victory →
-        // ui_success) is scheduled alongside the defeat hit.
+
+      const sfxIds = result.plan.sfx.map((s) => s.effectId);
+      if (sfxIds.includes('ui_success')) victoryCueTurns++;
+
+      const defeatEvent = events.find((e) => e.type === 'combat.entity.defeated');
+      const defeatedId = defeatEvent?.payload.entityId as string | undefined;
+      const cleared = events.some((e) => e.type === 'combat.encounter.cleared');
+
+      if (defeatedId === 'ash-ghoul') {
+        ashGhoulDefeated = true;
+        // Non-final kill: crypt-warden still stands. The per-defeat cue
+        // (combat.defeat -> alert_critical) still fires on every defeat —
+        // only the victory cue must not.
         expect(result.plan.urgency).toBe('critical');
-        expect(result.plan.sfx.map((s) => s.effectId)).toContain('ui_success');
-        return;
+        expect(sfxIds).toContain('alert_critical');
+        expect(sfxIds).not.toContain('ui_success');
+        expect(cleared).toBe(false);
+      }
+      if (defeatedId === 'crypt-warden') {
+        cryptWardenDefeated = true;
+        // Final kill: the zone clears — combat.encounter.cleared fires and
+        // supplies the victory cue itself.
+        expect(result.plan.urgency).toBe('critical');
+        expect(cleared).toBe(true);
+        expect(sfxIds).toContain('ui_success');
       }
     }
-    expect.unreachable('ash-ghoul survived 30 swings at seed 42');
+
+    expect(ashGhoulDefeated, 'ash-ghoul survived the bounded fight at seed 42').toBe(true);
+    expect(cryptWardenDefeated, 'crypt-warden survived the bounded fight at seed 42').toBe(true);
+    expect(victoryCueTurns, 'the victory cue must arrive on exactly one turn — the clearing kill').toBe(1);
   });
 });
 
