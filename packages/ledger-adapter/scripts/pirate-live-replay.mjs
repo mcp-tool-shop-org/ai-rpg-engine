@@ -38,9 +38,14 @@ import {
   createInitialState,
   DEFAULT_LEDGER_CONFIG,
   snapshotFromWorld,
+  formatReconcileReport,
+  stampLedgerReceipt,
+  LEDGER_ADAPTER_VERSION,
+  txExplorerUrl,
 } from '../dist/index.js';
 
-const EXPLORER = (h) => `https://testnet.xrpl.org/transactions/${h}`;
+const NETWORK = 'testnet';
+const explorer = (h) => txExplorerUrl(NETWORK, h) ?? h;
 const RUN_SEED = Date.now();
 const RUN_ID = `run-pirate-live-${RUN_SEED}`;
 const GAME_ID = 'black-flag-requiem'; // starter-pirate's real manifest.id
@@ -132,7 +137,7 @@ async function main() {
       state.merchantAddress,
     ]);
     receipt.ledgerBalances = ledgerBalances;
-    receipt.txLog = (settleResult.txids ?? []).map((h) => ({ hash: h, explorer: EXPLORER(h) }));
+    receipt.txLog = (settleResult.txids ?? []).map((h) => ({ hash: h, explorer: explorer(h) }));
     // Capture the first txid of each TransactionType across the run — same
     // xrpl-knowledge v_proven proof-pack shape live-replay.mjs's own Phase 4
     // capture uses (Payment / EscrowCreate / EscrowFinish / TrustSet /
@@ -162,17 +167,24 @@ async function main() {
       tokenMap: state.tokenMap, // the adapter's OWN minted codes — the wave-2 fix
     });
     receipt.reconcile = report;
-    for (const r of report.resources) {
-      console.log(`  ${r.resource.padEnd(8)} ${r.code.padEnd(5)} minted=${r.minted} Σ=${r.sumDeltas} engine=${r.engineSettled} ledger=${r.ledger} balance=${r.balanceOk ? 'OK' : 'FAIL'} conserv=${r.conservationOk ? 'OK' : 'FAIL'}`);
-    }
-    console.log(`  memoOk=${report.memoOk} (local=${report.memoLocalOk} onchain=${report.onchainMemoOk})  passed=${report.passed}`);
-    for (const note of report.notes) console.log(`    - ${note}`);
+    const formatted = formatReconcileReport(report, NETWORK);
+    console.log(formatted.message);
+    if (formatted.explorerUrls?.length) console.log('  explorers:', formatted.explorerUrls.join('  '));
     stage('6-reconcile', report.passed, report.passed ? 'PASS — on-ledger balances + memos confirm the real played session' : 'FAIL');
 
     receipt.passed = report.passed;
   } finally {
     await transport.disconnect();
-    writeFileSync(new URL('./pirate-live-replay-receipt.json', import.meta.url), JSON.stringify(receipt, null, 2));
+    writeFileSync(new URL('./pirate-live-replay-receipt.json', import.meta.url), JSON.stringify({
+      ...receipt,
+      ...stampLedgerReceipt({
+        version: LEDGER_ADAPTER_VERSION,
+        network: receipt.network,
+        enable: receipt.enableResult,
+        settlement: receipt.settleResult,
+        reconcile: receipt.reconcile,
+      }),
+    }, null, 2));
   }
 
   const pass = receipt.stages.every((s) => s.ok) && receipt.passed;

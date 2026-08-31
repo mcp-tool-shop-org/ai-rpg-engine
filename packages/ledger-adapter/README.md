@@ -195,7 +195,7 @@ it — proven on the real `starter-gladiator` game (see below).
 
 1. **Offline** (default) — no chain; the engine core as it ships today.
 2. **Ledger** — coin/items backed by real testnet balances; settle at checkpoints.
-3. **Diary** — play offline, then anchor the run's state hash on-ledger for a receipt.
+3. **Diary** — play offline, then anchor the run's state hash on-ledger for a receipt. `settleCheckpoint` writes `|HASH:<hex>` (a firewall-pure digest of `{ seed, tick, snapshot }`) onto the self-anchor; unique gear is witnessed, not minted.
 
 ## Safety rails
 
@@ -211,7 +211,10 @@ fake it. `reconcile()` is the pure function (host-supplied inputs, no network).
 `reconcileAgainstLedger` / `reconcileFromWorld` fetch `account_lines` /
 `account_tx` / `account_nfts` and call it. Opening mint is persisted on
 `state.mintedInitial` at first enable so conservation still checks after
-save/reload without a host stash.
+save/reload without a host stash. `formatReconcileReport(report, network)` is
+the player-facing printout (balances, conservation, memoOk, nftChecks, testnet/
+devnet explorers — omitted on dry-run, never mainnet). Live scripts stamp
+receipts with `stampLedgerReceipt({ version: LEDGER_ADAPTER_VERSION, … })`.
 
 ## Proven live
 

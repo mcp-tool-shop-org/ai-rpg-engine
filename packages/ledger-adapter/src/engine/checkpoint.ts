@@ -12,6 +12,7 @@
 // Same type-only `@ai-rpg-engine/core` import as snapshot.ts — see that
 // file's header for the firewall rationale.
 
+import { createHash } from 'node:crypto';
 import type { ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
 import type { ItemCatalog, ItemChronicleEntry } from '@ai-rpg-engine/equipment';
 import type {
@@ -25,6 +26,7 @@ import type {
   SettlementResult,
   SettlementVerb,
   SettleOptions,
+  TradeableSnapshot,
 } from '../contracts.js';
 import { snapshotFromWorld } from './snapshot.js';
 import { equipmentSnapshotFromWorld } from './equipment-snapshot.js';
@@ -70,8 +72,55 @@ export function settleCheckpoint(
   // When the host omits SettleOptions, infer verb + primitive from the live
   // world's recent eventLog / district tags so buy/sell/consign/default are
   // reachable on the documented seam. Explicit fields still win.
+  const snapshot = snapshotFromWorld(world, playerId);
   const resolved = mergeSettleOptions(inferSettleOptionsFromWorld(world, playerId), options);
-  return adapter.settle(state, snapshotFromWorld(world, playerId), checkpoint, location, resolved);
+  // Diary writes a firewall-pure witness hash of { seed, tick, snapshot }.
+  // Ledger may omit — only attach a default when the host did not pass one
+  // and this run is witnessed-not-custodied.
+  if (!resolved.stateHash && state.mode === 'diary') {
+    resolved.stateHash = witnessStateHash(world, snapshot);
+  }
+  return adapter.settle(state, snapshot, checkpoint, location, resolved);
+}
+
+const DIARY_NFT_MESSAGE = 'Diary mode — unique gear is witnessed, not minted';
+
+function transportNetworkName(transport: NFTTransport): string | undefined {
+  if (
+    transport &&
+    typeof transport === 'object' &&
+    'networkName' in transport &&
+    typeof (transport as { networkName?: unknown }).networkName === 'string'
+  ) {
+    return (transport as { networkName: string }).networkName;
+  }
+  return undefined;
+}
+
+function diaryNftNoOp(transport: NFTTransport): NFTSettlementResult {
+  return {
+    success: true,
+    network: transportNetworkName(transport),
+    message: DIARY_NFT_MESSAGE,
+    minted: [],
+    modified: [],
+    skipped: [],
+    pending: [],
+    released: [],
+    items: [],
+    txids: [],
+  };
+}
+
+/**
+ * Firewall-pure hex digest of `{ seed: world.meta.seed, tick: world.meta.tick, snapshot }`.
+ * Type-only `WorldState` — never `Engine.serialize` / runtime core.
+ */
+export function witnessStateHash(world: Pick<WorldState, 'meta'>, snapshot: TradeableSnapshot): string {
+  const items: Record<string, number> = {};
+  for (const key of Object.keys(snapshot.items).sort()) items[key] = snapshot.items[key];
+  const body = JSON.stringify({ seed: world.meta.seed, tick: world.meta.tick, snapshot: { coin: snapshot.coin, items } });
+  return createHash('sha256').update(body).digest('hex');
 }
 
 /**
@@ -79,6 +128,9 @@ export function settleCheckpoint(
  * live world and settle it, hydrating issuer/player seeds from the adapter
  * seed cache (`adapter.getSeed`) so the host does not pass faucet seeds per
  * call. Coordinator checkpoint only — never inside the tick.
+ *
+ * Diary (and any run with no issuer) returns a successful NFT no-op — unique
+ * gear is witnessed, not minted. Ledger-mode missing-seed stays a sidecar failure.
  */
 export async function settleEquipmentFromWorld(
   world: WorldState,
@@ -89,6 +141,11 @@ export async function settleEquipmentFromWorld(
   catalog: ItemCatalog,
   chronicle?: Record<string, ItemChronicleEntry[]>,
 ): Promise<NFTSettlementResult> {
+  // Diary (and any run with no issuer) witnesses unique gear; it does not mint.
+  // Ledger-mode missing-seed below stays a real sidecar failure.
+  if (state.mode === 'diary' || !state.issuerAddress) {
+    return diaryNftNoOp(transport);
+  }
   const snapshot = equipmentSnapshotFromWorld(world, playerId, catalog, chronicle);
   const issuerSeed = adapter.getSeed(state.issuerAddress);
   const playerSeed = adapter.getSeed(state.playerAddress);
@@ -97,13 +154,9 @@ export async function settleEquipmentFromWorld(
       !issuerSeed ? state.issuerAddress || 'issuer' : '',
       !playerSeed ? state.playerAddress || 'player' : '',
     ].filter(Boolean);
-    const network =
-      'networkName' in transport && typeof (transport as { networkName?: unknown }).networkName === 'string'
-        ? (transport as { networkName: string }).networkName
-        : undefined;
     return {
       success: false,
-      network,
+      network: transportNetworkName(transport),
       message:
         `Could not settle unique gear: missing seed(s) for ${missing.join(', ')} — ` +
         `re-authenticate via the secrets sidecar.`,
@@ -200,6 +253,7 @@ function mergeSettleOptions(inferred: SettleOptions, explicit?: SettleOptions): 
   return {
     verb: explicit?.verb ?? inferred.verb,
     primitive: explicit?.primitive ?? inferred.primitive,
+    stateHash: explicit?.stateHash ?? inferred.stateHash,
   };
 }
 

@@ -149,6 +149,9 @@ function assertSettlementRecord(value: unknown, path: string): asserts value is 
   if (value.lastError !== undefined && typeof value.lastError !== 'string') {
     throw new Error(`deserializeState: "${path}.lastError" must be a string`);
   }
+  if (value.stateHash !== undefined && typeof value.stateHash !== 'string') {
+    throw new Error(`deserializeState: "${path}.stateHash" must be a string`);
+  }
   if (value.receipts !== undefined) {
     if (!isPlainObject(value.receipts)) {
       throw new Error(`deserializeState: "${path}.receipts" must be an object`);

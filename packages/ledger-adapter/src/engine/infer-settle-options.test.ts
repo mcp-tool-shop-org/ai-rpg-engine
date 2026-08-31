@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
-import { inferSettleOptionsFromWorld, settleCheckpoint } from './checkpoint.js';
+import { inferSettleOptionsFromWorld, settleCheckpoint, settleEquipmentFromWorld } from './checkpoint.js';
 import { createLedgerAdapter } from '../settle/adapter.js';
 import { createInitialState } from '../state/index.js';
 import { DryRunTransport } from '../transport/dry-run.js';
@@ -200,5 +200,25 @@ describe('inferSettleOptionsFromWorld', () => {
     );
     expect(overridden.record?.verb).toBe('sell');
     expect(overridden.record?.memo).toContain('VERB:sell');
+    expect(overridden.record?.memo).not.toContain('|HASH:');
+  });
+
+  it('ledger-mode missing-seed stays a real sidecar failure', async () => {
+    const transport = new DryRunTransport();
+    const config: LedgerAdapterConfig = {
+      mode: 'ledger',
+      issuerMode: 'per-run',
+      settlement: 'token-escrow',
+      network: 'testnet',
+    };
+    const adapter = createLedgerAdapter(transport, config, { gameId: 'g', runId: 'r1' });
+    const state = createInitialState(config);
+    state.mode = 'ledger';
+    state.issuerAddress = 'rIssuerWithNoSeedXXXXXXXXXXXXXXX';
+    state.playerAddress = 'rPlayerWithNoSeedXXXXXXXXXXXXXXX';
+    const nft = await settleEquipmentFromWorld(world(), 'player', adapter, state, transport, { items: [] });
+    expect(nft.success).toBe(false);
+    expect(nft.message).toContain('missing seed');
+    expect(nft.minted).toEqual([]);
   });
 });

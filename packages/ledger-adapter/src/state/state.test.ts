@@ -175,6 +175,20 @@ describe('NFT unique-gear layer (state.nfts)', () => {
     expect(restored.nfts).toEqual(state.nfts);
   });
 
+  test('round-trips optional stateHash on a settlement record', () => {
+    const state = populatedState();
+    state.settlements[0].stateHash = 'd'.repeat(64);
+    const restored = deserializeState(serializeState(state));
+    expect(restored.settlements[0].stateHash).toBe('d'.repeat(64));
+  });
+
+  test('back-compat: a serialized settlement that omits stateHash still deserializes', () => {
+    const state = populatedState();
+    expect(state.settlements[0].stateHash).toBeUndefined();
+    const restored = deserializeState(serializeState(state));
+    expect(restored.settlements[0].stateHash).toBeUndefined();
+  });
+
   test('round-trips mintedInitial (opening mint, distinct from lastSettled)', () => {
     const state = createInitialState(CONFIG);
     state.mintedInitial = { coin: 100, potion: 2 };

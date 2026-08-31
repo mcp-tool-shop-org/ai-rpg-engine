@@ -36,9 +36,14 @@ import {
   createInitialState,
   buildItemNFTUri,
   DEFAULT_LEDGER_CONFIG,
+  formatReconcileReport,
+  stampLedgerReceipt,
+  LEDGER_ADAPTER_VERSION,
+  txExplorerUrl,
 } from '../dist/index.js';
 
-const EXPLORER = (h) => `https://testnet.xrpl.org/transactions/${h}`;
+const NETWORK = 'testnet';
+const explorer = (h) => txExplorerUrl(NETWORK, h) ?? h;
 const SEED = 71;
 const PLAYER_ID = 'factor';
 const GAME_ID = 'salt-road-ledger';
@@ -74,7 +79,7 @@ async function main() {
   };
   const capture = (res, label) => {
     for (const h of res?.txids ?? []) {
-      receipt.txLog.push({ hash: h, explorer: EXPLORER(h), label });
+      receipt.txLog.push({ hash: h, explorer: explorer(h), label });
       if (!receipt.proofTxids[label]) receipt.proofTxids[label] = h;
     }
     return res;
@@ -160,10 +165,9 @@ async function main() {
       onchainMemos,
     });
     receipt.fungibleReconcile = ftReport;
-    console.log(`  memoOk=${ftReport.memoOk} onchainMemoOk=${ftReport.onchainMemoOk} passed=${ftReport.passed}`);
-    for (const r of ftReport.resources) {
-      console.log(`   ${r.resource.padEnd(14)} ledger=${r.ledger} engine=${r.engineSettled} balOk=${r.balanceOk} consOk=${r.conservationOk}`);
-    }
+    const ftFormatted = formatReconcileReport(ftReport, NETWORK);
+    console.log(ftFormatted.message);
+    if (ftFormatted.explorerUrls?.length) console.log('  explorers:', ftFormatted.explorerUrls.join('  '));
     // The FULL memo is verified post-P1.5 (deltas AND verb), not just the prefix.
     stage('6-fungible-reconcile', ftReport.passed, ftReport.passed ? 'conservation + on-chain memo verified, verb included' : `notes: ${ftReport.notes.join(' | ')}`);
 
@@ -241,6 +245,8 @@ async function main() {
       ledgerNfts: buildLedgerNfts(ownedNfts, nftPlayer.address),
     });
     receipt.nftReconcile = nftReport;
+    const nftFormatted = formatReconcileReport(nftReport, NETWORK);
+    console.log(nftFormatted.message);
     const check = nftReport.nftChecks?.find((c) => c.gameItemId === SEAL);
     const expectedUri = buildItemNFTUri(GAME_ID, SEAL, grownSeal.relicVersion, grownSeal.relicTier);
     console.log(`  on-ledger uri="${ownedNfts.find((n) => n.nftId === nftIdBefore)?.uri}"`);
@@ -492,7 +498,14 @@ async function main() {
     receipt.passed = receipt.stages.every((s) => s.ok);
   } finally {
     await transport.disconnect();
-    writeFileSync(new URL('./merchant-live-replay-receipt.json', import.meta.url), JSON.stringify(receipt, null, 2));
+    writeFileSync(new URL('./merchant-live-replay-receipt.json', import.meta.url), JSON.stringify({
+      ...receipt,
+      ...stampLedgerReceipt({
+        version: LEDGER_ADAPTER_VERSION,
+        network: receipt.network,
+        reconcile: [receipt.fungibleReconcile, receipt.nftReconcile].filter(Boolean),
+      }),
+    }, null, 2));
   }
 
   const pass = receipt.stages.every((s) => s.ok) && receipt.passed;
@@ -500,7 +513,7 @@ async function main() {
   if (receipt.txLog.length) {
     console.log('Proof receipts:');
     for (const [label, hash] of Object.entries(receipt.proofTxids)) {
-      console.log(`  ${label.padEnd(12)} ${EXPLORER(hash)}`);
+      console.log(`  ${label.padEnd(12)} ${explorer(hash)}`);
     }
   }
   console.log('Receipt: packages/ledger-adapter/scripts/merchant-live-replay-receipt.json');
