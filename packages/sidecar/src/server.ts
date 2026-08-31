@@ -54,10 +54,9 @@ export type SidecarServerOptions = {
   engineVersion: string;
   serverName?: string;
   /**
-   * Advance the world one round. Supplied by the host because the round loop
-   * lives above the engine (`runWorldTick` is a per-round function the CLI
-   * drives, not a verb — a correction the v3.6 cycle earned the hard way).
-   * Omit and `advance` reports the capability unavailable rather than pretending.
+   * Advance the world one round. Omitted: `engine.advanceRound(1)` (Wave 27
+   * living-world half of a turn). Hosts that wrap extra NPC/companion work
+   * around the round still pass their own callback.
    */
   advanceRound?: (engine: Engine) => void;
   /**
@@ -146,7 +145,7 @@ export class SidecarServer {
   private readonly engine: Engine;
   private readonly engineVersion: string;
   private readonly serverName: string;
-  private readonly advanceRound?: (engine: Engine) => void;
+  private readonly advanceRound: (engine: Engine) => void;
   private readonly onWorldCommitted?: () => void;
   /** Events already pushed, keyed by id — the basis of idempotent re-emission. */
   private readonly emitted = new Set<string>();
@@ -176,7 +175,7 @@ export class SidecarServer {
     this.engine = options.engine;
     this.engineVersion = options.engineVersion;
     this.serverName = options.serverName ?? '@ai-rpg-engine/sidecar';
-    this.advanceRound = options.advanceRound;
+    this.advanceRound = options.advanceRound ?? ((engine) => engine.advanceRound(1));
     this.onWorldCommitted = options.onWorldCommitted;
     this.lastState = structuredClone(this.engine.world) as WorldState;
     for (const e of this.engine.world.eventLog ?? []) this.emitted.add(e.id);
@@ -375,17 +374,6 @@ export class SidecarServer {
         if (this.refuseWrites(id, hasId, METHODS.ADVANCE)) return;
         if (Object.hasOwn(params, 'rounds') && !isSafeInteger(params.rounds)) {
           if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"rounds" must be a safe integer when present.');
-          return;
-        }
-        if (!this.advanceRound) {
-          if (hasId) {
-            this.fail(
-              id,
-              ERROR_CODES.CAPABILITY_UNAVAILABLE,
-              'this server was started without a round driver, so "advance" cannot run. ' +
-                'The round loop lives above the engine; the host must supply it.',
-            );
-          }
           return;
         }
         const rounds = typeof params.rounds === 'number' ? params.rounds : 1;
