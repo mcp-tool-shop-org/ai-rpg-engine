@@ -222,6 +222,46 @@ describe('F-34f5622c: live engine events journal beyond kill/gift/rescue/betraya
   });
 });
 
+describe('F-0df0c914: zone-enter and node-unlock journal discovery/action', () => {
+  it('a player zone-enter in a populated zone journals a non-kill discovery row with a witness', () => {
+    const engine = makeEngine();
+    engine.store.addZone({ id: 'chapel', roomId: 'chapel', name: 'Chapel', tags: [], neighbors: [] });
+    engine.store.addEntity(npc('priest', 'Priest', { zoneId: 'chapel' }));
+    engine.store.recordEvent({
+      id: '',
+      tick: 3,
+      type: 'world.zone.entered',
+      actorId: 'player',
+      payload: { zoneId: 'chapel', zoneName: 'Chapel' },
+    });
+
+    const journal = getCampaignJournal(engine.world);
+    expect(journal.query({ category: 'kill' })).toHaveLength(0);
+    const row = journal.query({ category: 'discovery' })[0];
+    expect(row).toBeDefined();
+    expect(row!.actorId).toBe('player');
+    expect(row!.zoneId).toBe('chapel');
+    expect(row!.witnesses).toContain('priest');
+    expect(row!.witnesses).not.toContain('player');
+    expect(row!.description).toContain('Chapel');
+  });
+
+  it('progression.node.unlocked journals an action row', () => {
+    const engine = makeEngine();
+    engine.store.recordEvent({
+      id: '',
+      tick: 5,
+      type: 'progression.node.unlocked',
+      actorId: 'player',
+      payload: { treeId: 'combat-mastery', nodeId: 'toughened' },
+    });
+    const row = getCampaignJournal(engine.world).query({ category: 'action' })[0];
+    expect(row).toBeDefined();
+    expect(row!.actorId).toBe('player');
+    expect(row!.description).toContain('toughened');
+  });
+});
+
 describe('F-d1973aae: NPC attitude copies onto EntityState.relations', () => {
   it('a witnessed kill leaves the witness entity relations non-default without getNpcMemory', () => {
     const engine = makeEngine();

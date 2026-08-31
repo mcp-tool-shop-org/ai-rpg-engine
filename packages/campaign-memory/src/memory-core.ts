@@ -42,6 +42,8 @@ export type CampaignMemoryCoreConfig = {
  * kill (killer's deed) and death (victim's fate for buildFinaleOutline).
  * item.acquired with a fromEntityId is a give (inventory-core), which must
  * move gift-trust; a bare pickup is item-acquired.
+ * world.zone.entered → discovery and progression.node.unlocked → action so
+ * first-visits and tree unlocks reach the live journal (F-0df0c914).
  *
  * F-c1949ae0 (consolidate) is still not called from this file.
  */
@@ -65,6 +67,8 @@ const EVENT_CATEGORY: Record<string, RecordCategory | readonly RecordCategory[]>
   'opportunity.abandoned': 'opportunity-abandoned',
   'opportunity.expired': 'opportunity-failed',
   'opportunity.failed': 'opportunity-failed',
+  'world.zone.entered': 'discovery',
+  'progression.node.unlocked': 'action',
 };
 
 function categoriesFor(event: ResolvedEvent): RecordCategory[] {
@@ -171,6 +175,8 @@ function describeEvent(category: RecordCategory, actorName: string, targetName: 
   if (category === 'companion-departed') return `${targetName ?? actorName} left the party`;
   if (category === 'item-acquired') return `${actorName} acquired an item`;
   if (category === 'item-lost') return `${actorName} lost an item`;
+  if (category === 'discovery') return `${actorName} entered ${targetName ?? 'a new place'}`;
+  if (category === 'action') return `${actorName} unlocked ${targetName ?? 'an advancement'}`;
   return `${actorName} — ${category}`;
 }
 
@@ -225,6 +231,16 @@ function resolveActorTarget(
     return {
       actorId: event.actorId ?? stringPayload(payload, 'actorId'),
       targetId: npcId ?? stringPayload(payload, 'targetId'),
+    };
+  }
+
+  // Zone-enter / node-unlock: the mover/unlocker is the actor. Live
+  // world.zone.entered sometimes stamps entityId as the player — that is
+  // not a journal target (F-0df0c914).
+  if (category === 'discovery' || category === 'action') {
+    return {
+      actorId: event.actorId ?? stringPayload(payload, 'actorId') ?? entityId,
+      targetId: stringPayload(payload, 'targetId') ?? npcId,
     };
   }
 
@@ -305,11 +321,15 @@ function recordLiveEvent(
   const journal = loadJournal(state);
   const actorName = (stringPayload(payload, 'defeatedByName') ?? actor?.name ?? actorId);
   const targetName =
-    (category === 'kill' || category === 'death' ? stringPayload(payload, 'entityName') : undefined) ??
-    stringPayload(payload, 'npcName') ??
-    stringPayload(payload, 'toName') ??
-    target?.name ??
-    targetId;
+    category === 'discovery'
+      ? (stringPayload(payload, 'zoneName') ?? stringPayload(payload, 'zoneId') ?? target?.name)
+      : category === 'action'
+        ? (stringPayload(payload, 'nodeId') ?? stringPayload(payload, 'treeId') ?? target?.name)
+        : (category === 'kill' || category === 'death' ? stringPayload(payload, 'entityName') : undefined) ??
+          stringPayload(payload, 'npcName') ??
+          stringPayload(payload, 'toName') ??
+          target?.name ??
+          targetId;
 
   const record = journal.record({
     tick: event.tick,
@@ -351,8 +371,8 @@ function recordLiveEvent(
 /**
  * Live campaign-memory EngineModule. Opt-in: a pack adds this to its module
  * list to journal kills/gifts/rescues/betrayals plus live item/companion/
- * opportunity/death events with zone witnesses and to move the four-axis
- * relationship model during play.
+ * opportunity/death/discovery/unlock events with zone witnesses and to move
+ * the four-axis relationship model during play.
  *
  * Does NOT call consolidate (F-c1949ae0 — decay-clock overwrite — left to a
  * later health amend).

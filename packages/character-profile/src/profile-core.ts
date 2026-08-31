@@ -19,12 +19,21 @@
 // - rest.completed / ability.heal.applied / combat.injury.healed → healInjury
 //   + statuses.remove(injured-<id>) so a Broken Arm does not last the campaign
 // - profile.reputation is copied onto actor.relations after every write
+// - reputation.adjusted (and a fold of world.globals['reputation_*'] on
+//   combat.entity.defeated / action.resolved) calls adjustReputation so
+//   live dialogue + defeat-fallout move the sheet (F-31e2e33f)
 // - profile.loadout / itemChronicle are copied from equipment-core and
 //   item-chronicle on each write (getEntityLoadout stays a pure read)
+// - actor.stats / resources / tags + world.meta.tick (totalTurns) copy onto
+//   the profile on each write and ensure (F-6379b7cf)
+// - Injury.grantedTags union onto actor.tags while active and strip on heal
+//   (F-b0b7f592)
 //
 // Distinct from still-open F-482da85d (deserialize element-shape of
 // injuries/loadout) — this file does not touch serialize.ts.
 // Distinct from closed F-1b1c077f — the injury apply path is unchanged.
+// Distinct from still-open F-e6aa4d28 — equipment grantedTags are a
+// different channel.
 
 import type {
   EngineModule,
@@ -36,7 +45,7 @@ import type {
 import type { CharacterBuild, PortraitOps } from '@ai-rpg-engine/character-creation';
 import { getAllItems, getEntityLoadout, getItemChronicle } from '@ai-rpg-engine/equipment';
 import type { CharacterProfile, Injury } from './types.js';
-import { createProfile } from './profile.js';
+import { createProfile, incrementTurns } from './profile.js';
 import { grantXp, advanceArchetypeRank, advanceDisciplineRank } from './progression.js';
 import { addInjury, computeInjuryPenalties, getActiveInjuries, healInjury } from './injuries.js';
 import { adjustReputation, recordMilestone } from './milestones.js';
@@ -110,6 +119,11 @@ export type ProfileStatusOps = {
 
 export type ProfileModuleState = {
   profiles: Record<string, CharacterProfile>;
+  /**
+   * Last folded `world.globals['reputation_<factionId>']` values so a later
+   * defeat-fallout / action.resolved pass applies only the delta (F-31e2e33f).
+   */
+  reputationLedger?: Record<string, number>;
 };
 
 function isPlainProfilesMap(value: unknown): value is Record<string, CharacterProfile> {
@@ -156,16 +170,38 @@ function syncGearOntoProfile(world: WorldState, entityId: string, profile: Chara
   return changed ? { ...next, itemChronicle } : profile;
 }
 
+/**
+ * Overlay live EntityState stats/resources/tags and world.meta.tick onto a
+ * profile (F-6379b7cf). Gear copy stays a pure read of getEntityLoadout.
+ */
+function syncLiveOntoProfile(world: WorldState, entityId: string, profile: CharacterProfile): CharacterProfile {
+  let next = syncGearOntoProfile(world, entityId, profile);
+  const actor = world.entities[entityId];
+  if (actor) {
+    next = {
+      ...next,
+      stats: { ...actor.stats },
+      resources: { ...actor.resources },
+      tags: [...actor.tags],
+    };
+  }
+  const tick = world.meta?.tick;
+  if (typeof tick === 'number' && Number.isFinite(tick) && tick > next.totalTurns) {
+    next = { ...next, totalTurns: tick };
+  }
+  return next;
+}
+
 /** An entity's current profile, or undefined when it has never been tracked. */
 export function getEntityProfile(world: WorldState, entityId: string): CharacterProfile | undefined {
   const stored = (world.modules[PROFILE_STATE_KEY] as ProfileModuleState | undefined)?.profiles?.[entityId];
   if (!stored) return undefined;
-  return syncGearOntoProfile(world, entityId, stored);
+  return syncLiveOntoProfile(world, entityId, stored);
 }
 
 function commitProfile(world: WorldState, entityId: string, profile: CharacterProfile): void {
   const state = getProfileState(world);
-  state.profiles[entityId] = syncGearOntoProfile(world, entityId, profile);
+  state.profiles[entityId] = syncLiveOntoProfile(world, entityId, profile);
   world.modules[PROFILE_STATE_KEY] = state;
 }
 
@@ -214,6 +250,30 @@ function applyInjuryStatus(
   }
 }
 
+/** Union injury.grantedTags onto actor.tags while the injury is active (F-b0b7f592). */
+function unionGrantedTags(actor: EntityState, tags: string[]): void {
+  const have = new Set(actor.tags);
+  for (const tag of tags) {
+    if (typeof tag !== 'string' || tag.length === 0 || have.has(tag)) continue;
+    actor.tags.push(tag);
+    have.add(tag);
+  }
+}
+
+/**
+ * Strip tags no remaining active injury still grants. Chargen / other-channel
+ * tags that were never in `released` stay (F-b0b7f592). Equipment grantedTags
+ * are a different channel (F-e6aa4d28).
+ */
+function stripReleasedInjuryTags(actor: EntityState, profile: CharacterProfile, released: string[]): void {
+  const still = new Set(computeInjuryPenalties(profile).grantedTags);
+  const drop = new Set(
+    released.filter((tag) => typeof tag === 'string' && tag.length > 0 && !still.has(tag)),
+  );
+  if (drop.size === 0) return;
+  actor.tags = actor.tags.filter((tag) => !drop.has(tag));
+}
+
 // ---------------------------------------------------------------------------
 // Reputation → EntityState.relations
 // ---------------------------------------------------------------------------
@@ -235,6 +295,67 @@ function seedReputationFromEntity(profile: CharacterProfile, actor: EntityState)
     next = adjustReputation(next, factionId, value);
   }
   return next;
+}
+
+function reputationLedger(world: WorldState): Record<string, number> {
+  const state = getProfileState(world);
+  if (!state.reputationLedger || typeof state.reputationLedger !== 'object' || Array.isArray(state.reputationLedger)) {
+    state.reputationLedger = {};
+  }
+  return state.reputationLedger;
+}
+
+/**
+ * Apply a live reputation.adjusted delta and pin the ledger to the current
+ * global so a later fold does not double-count (F-31e2e33f). copyReputation
+ * is unchanged (F-1b1c077f).
+ */
+function applyReputationDelta(
+  world: WorldState,
+  profile: CharacterProfile,
+  factionId: string,
+  delta: number,
+): CharacterProfile {
+  const next =
+    typeof delta === 'number' && Number.isFinite(delta) && delta !== 0
+      ? adjustReputation(profile, factionId, delta)
+      : profile;
+  const ledger = reputationLedger(world);
+  const live = world.globals[`reputation_${factionId}`];
+  ledger[factionId] =
+    typeof live === 'number' && Number.isFinite(live)
+      ? live
+      : (ledger[factionId] ?? 0) + (typeof delta === 'number' && Number.isFinite(delta) ? delta : 0);
+  return next;
+}
+
+/**
+ * Fold world.globals['reputation_*'] deltas that live play wrote without
+ * emitting reputation.adjusted (defeat-fallout). Ledger makes this idempotent
+ * across combat.entity.defeated then action.resolved (F-31e2e33f).
+ */
+function foldReputationGlobals(world: WorldState, profile: CharacterProfile): CharacterProfile {
+  const ledger = reputationLedger(world);
+  let next = profile;
+  for (const [key, value] of Object.entries(world.globals)) {
+    if (!key.startsWith('reputation_')) continue;
+    const factionId = key.slice('reputation_'.length);
+    if (!factionId) continue;
+    if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+    const last = ledger[factionId] ?? 0;
+    const delta = value - last;
+    ledger[factionId] = value;
+    if (delta !== 0) {
+      next = adjustReputation(next, factionId, delta);
+    }
+  }
+  return next;
+}
+
+function playerActor(world: WorldState, fallbackId?: string): EntityState | undefined {
+  if (world.playerId && world.entities[world.playerId]) return world.entities[world.playerId];
+  if (fallbackId && world.entities[fallbackId]) return world.entities[fallbackId];
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -426,6 +547,13 @@ export function createProfileCore(config: ProfileCoreConfig): EngineModule {
         });
         profile = stampTick(profile, tick);
 
+        // Defeat-fallout writes reputation_<faction> on this same event
+        // without emitting reputation.adjusted. Fold whatever has moved
+        // (and action.resolved will catch a later-running fallout listener).
+        if (killer.id === world.playerId || killer.type === 'player') {
+          profile = foldReputationGlobals(world, profile);
+        }
+
         commitProfile(world, killer.id, profile);
         copyReputation(profile, killer);
       });
@@ -454,6 +582,7 @@ export function createProfileCore(config: ProfileCoreConfig): EngineModule {
             // Injected apply is fallible; keep the profile write even if the
             // status op throws so a later snapshot still has the injury.
           }
+          unionGrantedTags(actor, added.grantedTags ?? []);
         }
 
         commitProfile(world, actor.id, profile);
@@ -489,11 +618,16 @@ export function createProfileCore(config: ProfileCoreConfig): EngineModule {
 
         let profile = stored;
         let healedAny = false;
+        const released: string[] = [];
         for (const injuryId of requested) {
+          const current = profile.injuries.find((injury) => injury.id === injuryId);
           const result = healInjury(profile, injuryId, `tick:${tick}`);
           if (!result.found) continue;
           profile = result.profile;
           healedAny = true;
+          if (current && !current.healed) {
+            released.push(...(current.grantedTags ?? []));
+          }
           try {
             config.statuses.remove(actor, injuryStatusId(injuryId), tick);
           } catch {
@@ -502,6 +636,7 @@ export function createProfileCore(config: ProfileCoreConfig): EngineModule {
         }
         if (!healedAny) return;
 
+        stripReleasedInjuryTags(actor, profile, released);
         profile = stampTick(profile, tick);
         commitProfile(world, actor.id, profile);
         copyReputation(profile, actor);
@@ -510,6 +645,56 @@ export function createProfileCore(config: ProfileCoreConfig): EngineModule {
       ctx.events.on('rest.completed', onHeal);
       ctx.events.on('ability.heal.applied', onHeal);
       ctx.events.on('combat.injury.healed', onHeal);
+
+      // F-31e2e33f: dialogue-core emits reputation.adjusted after writing
+      // world.globals['reputation_<id>']. adjustReputation then copyReputation
+      // so the identity sheet and HUD relations stay live.
+      ctx.events.on('reputation.adjusted', (event, world) => {
+        const factionId = event.payload?.factionId;
+        if (typeof factionId !== 'string' || factionId.length === 0) return;
+        const actor = playerActor(world, event.actorId);
+        if (!actor) return;
+        const tick = event.tick;
+        let profile = ensureProfile(world, actor, config, tick);
+        const delta = event.payload?.delta;
+        profile = applyReputationDelta(
+          world,
+          profile,
+          factionId,
+          typeof delta === 'number' ? delta : 0,
+        );
+        profile = stampTick(profile, tick);
+        commitProfile(world, actor.id, profile);
+        copyReputation(profile, actor);
+      });
+
+      // F-6379b7cf: copy live stats/resources/tags and incrementTurns after
+      // the actor's action. Also fold reputation globals so a pack that only
+      // has defeat-fallout (no reputation.adjusted) still updates the sheet.
+      ctx.events.on('action.resolved', (event, world) => {
+        const actorId =
+          event.actorId ??
+          (typeof event.payload?.actorId === 'string' ? event.payload.actorId : undefined);
+        if (!actorId) return;
+        const actor = world.entities[actorId];
+        if (!actor) return;
+        const tracked =
+          actorId === world.playerId ||
+          actor.type === 'player' ||
+          Boolean(getProfileState(world).profiles[actorId]) ||
+          Boolean(config.profiles?.[actorId]);
+        if (!tracked) return;
+
+        const tick = event.tick;
+        let profile = ensureProfile(world, actor, config, tick);
+        profile = incrementTurns(profile, 1);
+        if (actorId === world.playerId || actor.type === 'player') {
+          profile = foldReputationGlobals(world, profile);
+        }
+        profile = stampTick(profile, tick);
+        commitProfile(world, actor.id, profile);
+        copyReputation(profile, actor);
+      });
     },
   };
 }
