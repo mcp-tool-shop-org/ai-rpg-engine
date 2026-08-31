@@ -24,6 +24,7 @@ import {
   createAbilityCore,
   registerStatusDefinitions,
 } from '@ai-rpg-engine/modules';
+import type { RulesetDefinition } from '@ai-rpg-engine/core';
 import type { ReplayProducer } from './chat-experiments.js';
 
 const DEFAULT_TICK_LIMIT = 30;
@@ -47,6 +48,7 @@ export type EngineConstructor = new (options: {
   };
   seed?: number;
   modules?: unknown[];
+  ruleset?: RulesetDefinition;
 }) => EngineLike;
 
 export type DefaultReplayProducerOptions = {
@@ -65,6 +67,22 @@ let cachedExtract: ((pack: unknown) => { progressionTrees?: unknown[] }) | null 
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/**
+ * Duck-types a RulesetDefinition (types.ts:571-582 — id/name/version/stats/
+ * resources/verbs/... required) closely enough to trust threading it into
+ * EngineOptions.ruleset. Mirrors emit-pack.ts's classifyDocument standalone-
+ * ruleset check (F-8ec253bf: id/name/stats/resources/verbs) rather than
+ * inventing a stricter gate — that check is this codebase's existing
+ * convention for "is this really a RulesetDefinition object."
+ */
+function isWellShapedRulesetDefinition(v: Record<string, unknown>): boolean {
+  return typeof v.id === 'string'
+    && typeof v.name === 'string'
+    && Array.isArray(v.stats)
+    && Array.isArray(v.resources)
+    && Array.isArray(v.verbs);
 }
 
 function loadEngineSync(): EngineConstructor | null {
@@ -308,6 +326,18 @@ function runEngineReplay(
       : isRecord(pack.ruleset) && typeof pack.ruleset.id === 'string'
         ? pack.ruleset.id
         : 'test';
+  // Coordinator work order (wave 4, completes the wave-2 F-b85931bb
+  // recommendation): the manifest binding above only carries the ruleset's
+  // string id. engine.ts:27's EngineOptions.ruleset?: RulesetDefinition is
+  // the slot the documented contract means by "bind it at Engine
+  // construction" — it never received the authored definition. Thread the
+  // full object through too when the pack carries a well-shaped one (not a
+  // bare string, not malformed) — same shape gate classifyDocument's own
+  // standalone-ruleset detection uses (emit-pack.ts, F-8ec253bf).
+  const rulesetDefinition: RulesetDefinition | undefined =
+    isRecord(pack) && isRecord(pack.ruleset) && isWellShapedRulesetDefinition(pack.ruleset)
+      ? (pack.ruleset as unknown as RulesetDefinition)
+      : undefined;
   const engine = new Engine({
     manifest: {
       id: 'experiment-run',
@@ -320,6 +350,7 @@ function runEngineReplay(
     },
     seed,
     ...(modules.length > 0 ? { modules } : {}),
+    ...(rulesetDefinition ? { ruleset: rulesetDefinition } : {}),
   });
   if (overrides) {
     for (const [key, value] of Object.entries(overrides)) {

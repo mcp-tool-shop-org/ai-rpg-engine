@@ -182,6 +182,15 @@ describe('assembleContentPack', () => {
     expect(ids.itemPlacements).toEqual(['rusty_key@chapel_guard']);
   });
 
+  // F-d905ad26 (wave-4, carry-half): idsFromPack had no factions bucket —
+  // mirrors the ruleProfiles bucket added for F-0bf295ac above.
+  it('idsFromPack extracts a factions bucket', () => {
+    const ids = idsFromPack({
+      factions: { chapel_order: { id: 'chapel_order', name: 'Chapel Order', reputation: 10, disposition: 'friendly' } },
+    });
+    expect(ids.factions).toEqual(['chapel_order']);
+  });
+
   it('keeps encounterAnchors, progressionTrees, and meta when walking pack JSON', async () => {
     await writeFile(join(root, 'content.json'), JSON.stringify({
       schemaVersion: '1',
@@ -346,6 +355,42 @@ describe('assembleContentPack', () => {
     expect(result.pack.itemPlacements).toEqual(
       expect.arrayContaining([expect.objectContaining({ itemId: 'rusty_key', entityId: 'chapel_guard' })]),
     );
+  });
+
+  // F-d905ad26 (wave-4, carry-half): mergePackJson had no factions
+  // counterpart to the ruleProfiles object-merge above, so a pack.json that
+  // already carried a populated factions registry (F-d54f4d67 — the map
+  // EntityBlueprint.faction pointers resolve against) had it silently
+  // dropped every time emit-pack re-walked and re-assembled the project.
+  it('merges factions when re-walking pack JSON', async () => {
+    await writeFile(join(root, 'content.json'), JSON.stringify({
+      schemaVersion: '1',
+      entities: [{ id: 'chapel_guard', type: 'npc', name: 'Chapel Guard' }],
+      factions: { chapel_order: { id: 'chapel_order', name: 'Chapel Order', reputation: 10, disposition: 'friendly' } },
+    }));
+    const result = await assembleContentPack(root);
+    expect(result.pack.factions?.chapel_order).toEqual({
+      id: 'chapel_order', name: 'Chapel Order', reputation: 10, disposition: 'friendly',
+    });
+  });
+
+  // Object-merge, not overwrite (mirrors ruleProfiles' contract): re-walking
+  // a SECOND pack JSON carrying its own factions must layer onto the first
+  // pack's factions, never replace the map wholesale.
+  it('object-merges factions across two pack JSON files instead of overwriting', async () => {
+    await writeFile(join(root, 'a.json'), JSON.stringify({
+      schemaVersion: '1',
+      entities: [{ id: 'chapel_guard', type: 'npc', name: 'Chapel Guard' }],
+      factions: { chapel_order: { id: 'chapel_order', name: 'Chapel Order', reputation: 10, disposition: 'friendly' } },
+    }));
+    await writeFile(join(root, 'b.json'), JSON.stringify({
+      schemaVersion: '1',
+      entities: [{ id: 'ash_ghoul', type: 'enemy', name: 'Ash Ghoul' }],
+      factions: { undead_horde: { id: 'undead_horde', name: 'Undead Horde', reputation: -20, disposition: 'hostile' } },
+    }));
+    const result = await assembleContentPack(root);
+    expect(result.pack.factions?.chapel_order).toBeDefined();
+    expect(result.pack.factions?.undead_horde).toBeDefined();
   });
 
   it('dedups itemPlacements on the compound itemId+entityId key when re-walking pack JSON', async () => {

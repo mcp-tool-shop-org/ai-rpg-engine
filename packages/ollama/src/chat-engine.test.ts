@@ -535,6 +535,101 @@ describe('build steps stage pendingWrite on the engine', () => {
   });
 });
 
+// --- Tuning steps stage pendingWrite (wave-4 stitch, F-03875ef5 —
+// executeBuildStep's sibling). executeTuningStep read ok/summary from each
+// step tool and dropped pendingWrite exactly as executeBuildStep used to,
+// on the same engine, right next to the code that WAS repaired in wave 2.
+// tuneApplyTool (and every other mutating tuning tool) stages via
+// pendingWrite and tells the user "say yes to apply" in its own summary, so
+// a guided-tuning patch was either unappliable or could misdirect a write
+// onto stale content staged from an earlier interaction. ---
+
+describe('tuning steps stage pendingWrite on the engine (wave-4 stitch, F-03875ef5)', () => {
+  it('executeTuningStep stages the step tool pendingWrite instead of dropping it', async () => {
+    const yaml = 'id: tuned-room\ntype: room\nname: Tuned Room';
+    const engine = createChatEngine({
+      client: mockClient(yaml),
+      projectRoot: '/tmp/nonexistent-' + Date.now(),
+      rawMode: true,
+    });
+    engine.activeTuning = createTuningState({
+      goal: 'test tuning',
+      steps: [tuningStepOf(1, 'tune one')],
+      warnings: [],
+    } satisfies TuningPlan);
+    await engine.executeTuningStep();
+    expect(engine.pendingWrite).not.toBeNull();
+    expect(engine.pendingWrite!.content).toContain('tuned-room');
+  });
+
+  it('after a tuning batch the staged write is live and confirmable through the normal yes flow', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'chat-tune-stage-'));
+    try {
+      const yaml = 'id: tuned-room\ntype: room\nname: Tuned Room';
+      const engine = createChatEngine({ client: mockClient(yaml), projectRoot: dir, rawMode: true });
+      engine.activeTuning = createTuningState({
+        goal: 'test tuning',
+        steps: [tuningStepOf(1, 'one')],
+        warnings: [],
+      } satisfies TuningPlan);
+      await engine.executeAllTuningSteps();
+      expect(engine.pendingWrite).not.toBeNull();
+      const suggested = engine.pendingWrite!.suggestedPath;
+      // Same shared confirmation gate build steps go through: first "yes"
+      // previews (staged writes show a preview before landing), second
+      // "yes" writes under the sandbox.
+      await engine.process('yes');
+      expect(engine.pendingWrite).not.toBeNull();
+      expect(engine.pendingWrite!.previewShown).toBe(true);
+      const response = await engine.process('yes');
+      expect(response).toContain('Written');
+      await access(join(dir, suggested));
+      expect(engine.pendingWrite).toBeNull();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Addendum pin (b): pendingWrite is ONE slot shared across build/tuning/
+  // regular chat. After a build step stages X and a tuning step then stages
+  // Y, the slot must hold Y — last one wins — never a stale mix of the two.
+  // Both fixtures are valid RoomDefinitions (zones present) so neither step
+  // triggers scaffoldTool's single-repair generate() call, keeping the
+  // scripted per-call responses below deterministic.
+  it('a tuning step staged after a build step supersedes the build step\'s pendingWrite (last one wins)', async () => {
+    const responses = [
+      'id: build-room\nname: Build Room\nzones:\n  - id: nave\n    name: Nave',
+      'id: tune-room\nname: Tune Room\nzones:\n  - id: nave\n    name: Nave',
+    ];
+    let call = 0;
+    const engine = createChatEngine({
+      client: {
+        async generate(_input: PromptInput): Promise<PromptResult> {
+          return { ok: true, text: responses[Math.min(call++, responses.length - 1)] };
+        },
+      },
+      projectRoot: '/tmp/nonexistent-' + Date.now(),
+      rawMode: true,
+    });
+
+    engine.activeBuild = createBuildState(buildPlanOf([scaffoldStep(1, 'build one')]));
+    await engine.executeBuildStep();
+    expect(engine.pendingWrite).not.toBeNull();
+    expect(engine.pendingWrite!.content).toContain('build-room');
+
+    engine.activeTuning = createTuningState({
+      goal: 'test tuning',
+      steps: [tuningStepOf(1, 'tune one')],
+      warnings: [],
+    } satisfies TuningPlan);
+    await engine.executeTuningStep();
+
+    expect(engine.pendingWrite).not.toBeNull();
+    expect(engine.pendingWrite!.content).toContain('tune-room');
+    expect(engine.pendingWrite!.content).not.toContain('build-room');
+  });
+});
+
 describe('executeAllTuningSteps — per-step progress + early abort (F-4be7a3c2)', () => {
   it('fires onStep per tuning step', async () => {
     const yaml = 'id: tuned-room\ntype: room\nname: Tuned Room';
