@@ -286,4 +286,83 @@ describe('createDefaultReplayProducer (F-fc88ce5e)', () => {
     producer(1, undefined, 1);
     expect(seenRuleset).toBe('test');
   });
+
+  // Coordinator work order (wave 4): completes the wave-2 F-b85931bb
+  // recommendation. The tests above prove the manifest binds pack.ruleset's
+  // string id, but engine.ts:27's EngineOptions.ruleset?: RulesetDefinition
+  // is the slot the documented contract means by "bind it at Engine
+  // construction" ("Bind it at Engine construction" — content-schema's
+  // SessionContent.ruleset doc comment) and it never received the authored
+  // definition. The manifest id binding stays exactly as it is; the full
+  // object is ALSO threaded through EngineOptions.ruleset when pack.ruleset
+  // is well-shaped (id/name/stats/resources/verbs present — the same shape
+  // classifyDocument's own standalone-ruleset detection uses, F-8ec253bf).
+  it('also passes the full RulesetDefinition as EngineOptions.ruleset when pack.ruleset is well-shaped', () => {
+    const root = mkdtempSync(join(tmpdir(), 'replay-ruleset-opt-obj-'));
+    mkdirSync(join(root, 'content'));
+    const rulesetDef = {
+      id: 'fantasy-minimal',
+      name: 'Fantasy Minimal',
+      version: '0.1.0',
+      stats: [], resources: [], verbs: [], formulas: [],
+      defaultModules: [], progressionModels: [],
+    };
+    writeFileSync(join(root, 'content', 'pack.json'), JSON.stringify({ ruleset: rulesetDef }));
+    let seenRulesetOption: unknown = 'unset';
+    const FakeEngine = function FakeEngine(this: {
+      store: { state: { globals: Record<string, string | number | boolean> } };
+      advanceRound: () => unknown[];
+      queryEvents: () => [];
+    }, options: { manifest: { ruleset: string }; ruleset?: unknown }) {
+      seenRulesetOption = options.ruleset;
+      this.store = { state: { globals: {} } };
+      this.advanceRound = () => [];
+      this.queryEvents = () => [];
+    } as unknown as EngineConstructor;
+
+    const producer = createDefaultReplayProducer({ Engine: FakeEngine, projectRoot: root });
+    producer(1, undefined, 1);
+    expect(seenRulesetOption).toEqual(rulesetDef);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('does not pass EngineOptions.ruleset when pack.ruleset is a bare string id', () => {
+    const root = mkdtempSync(join(tmpdir(), 'replay-ruleset-opt-str-'));
+    mkdirSync(join(root, 'content'));
+    writeFileSync(join(root, 'content', 'pack.json'), JSON.stringify({ ruleset: 'fantasy-minimal' }));
+    let seenRulesetOption: unknown = 'unset';
+    const FakeEngine = function FakeEngine(this: {
+      store: { state: { globals: Record<string, string | number | boolean> } };
+      advanceRound: () => unknown[];
+      queryEvents: () => [];
+    }, options: { manifest: { ruleset: string }; ruleset?: unknown }) {
+      seenRulesetOption = options.ruleset;
+      this.store = { state: { globals: {} } };
+      this.advanceRound = () => [];
+      this.queryEvents = () => [];
+    } as unknown as EngineConstructor;
+
+    const producer = createDefaultReplayProducer({ Engine: FakeEngine, projectRoot: root });
+    producer(1, undefined, 1);
+    expect(seenRulesetOption).toBeUndefined();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('does not pass EngineOptions.ruleset when the pack has none', () => {
+    let seenRulesetOption: unknown = 'unset';
+    const FakeEngine = function FakeEngine(this: {
+      store: { state: { globals: Record<string, string | number | boolean> } };
+      advanceRound: () => unknown[];
+      queryEvents: () => [];
+    }, options: { manifest: { ruleset: string }; ruleset?: unknown }) {
+      seenRulesetOption = options.ruleset;
+      this.store = { state: { globals: {} } };
+      this.advanceRound = () => [];
+      this.queryEvents = () => [];
+    } as unknown as EngineConstructor;
+
+    const producer = createDefaultReplayProducer({ Engine: FakeEngine });
+    producer(1, undefined, 1);
+    expect(seenRulesetOption).toBeUndefined();
+  });
 });
