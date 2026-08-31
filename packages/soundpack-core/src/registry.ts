@@ -160,12 +160,15 @@ export class SoundRegistry {
 
 /** Copy tags/mood/variants so the Map is not aliased to caller handles (F-74ba230b). */
 function cloneEntry(entry: SoundEntry): SoundEntry {
-  return {
+  const cloned: SoundEntry = {
     ...entry,
     tags: Array.isArray(entry.tags) ? [...entry.tags] : [],
     mood: Array.isArray(entry.mood) ? [...entry.mood] : [],
     variants: Array.isArray(entry.variants) ? [...entry.variants] : [],
   };
+  if (entry.hashes) cloned.hashes = { ...entry.hashes };
+  else delete cloned.hashes;
+  return cloned;
 }
 
 /** Human-readable type description for error messages. */

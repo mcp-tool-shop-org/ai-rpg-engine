@@ -38,6 +38,11 @@ export type ComfyUIProviderOptions = {
   /** Maximum accepted image response size in bytes. Default: 64 MiB. */
   maxImageBytes?: number;
   /**
+   * EmptyLatentImage `batch_size`. Default 1. Raise only when a provider
+   * consumer opts into latent batching; generatePortrait still stores one image.
+   */
+  latentBatchSize?: number;
+  /**
    * Called once per tolerated non-OK history poll (a transient 5xx / proxy
    * hiccup mid-generation), before the loop continues. Default: a one-line
    * stderr breadcrumb — without it a flaky daemon leaves NO signal across the
@@ -109,6 +114,11 @@ function buildWorkflow(
   const sampler = opts.sampler ?? 'euler';
   const scheduler = opts.scheduler ?? 'normal';
   const negative = opts.negativePrompt ?? '';
+  const rawBatch = opts.latentBatchSize;
+  const batchSize =
+    typeof rawBatch === 'number' && Number.isFinite(rawBatch) && rawBatch >= 1
+      ? Math.floor(rawBatch)
+      : 1;
 
   return {
     '1': {
@@ -125,7 +135,7 @@ function buildWorkflow(
     },
     '4': {
       class_type: 'EmptyLatentImage',
-      inputs: { width, height, batch_size: 1 },
+      inputs: { width, height, batch_size: batchSize },
     },
     '5': {
       class_type: 'KSampler',

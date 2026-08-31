@@ -258,6 +258,9 @@ export class RumorEngine {
     if (q.afterTick !== undefined) {
       results = results.filter((r) => r.originTick > q.afterTick!);
     }
+    if (q.hearerId !== undefined) {
+      results = results.filter((r) => r.spreadPath.includes(q.hearerId!));
+    }
 
     return results.sort((a, b) => b.confidence - a.confidence).map(cloneRumor);
   }
@@ -272,6 +275,17 @@ export class RumorEngine {
   aboutSubject(subject: string): Rumor[] {
     return Array.from(this.rumors.values())
       .filter((r) => r.subject === subject && r.status !== 'dead')
+      .sort((a, b) => b.confidence - a.confidence)
+      .map(cloneRumor);
+  }
+
+  /**
+   * Rumors this entity has heard (`spreadPath` includes `entityId`), excluding
+   * dead, sorted by confidence. Same clone-on-read contract as {@link query}.
+   */
+  heardBy(entityId: string): Rumor[] {
+    return Array.from(this.rumors.values())
+      .filter((r) => r.status !== 'dead' && r.spreadPath.includes(entityId))
       .sort((a, b) => b.confidence - a.confidence)
       .map(cloneRumor);
   }

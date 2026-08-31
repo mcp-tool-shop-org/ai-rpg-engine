@@ -103,6 +103,8 @@ export type RumorQuery = {
   minConfidence?: number;
   factionId?: string;
   afterTick?: number;
+  /** Entity id that appears on `spreadPath` (who has heard the rumor). */
+  hearerId?: string;
 };
 
 export const VALID_STATUSES: readonly RumorStatus[] = [

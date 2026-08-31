@@ -208,6 +208,40 @@ export function cueMapIsCoveredBy(entryIds: readonly string[]): boolean {
   return cueMapTargetIds().every((id) => have.has(id));
 }
 
+/** Coverage report of cue-map targets (plus optional extendCueMap effectIds) vs a pack. */
+export type CueMapCoverage = {
+  covered: string[];
+  missing: string[];
+  extra: string[];
+};
+
+/**
+ * Which cue-map targets a pack implements. `extraTargets` are additional
+ * required ids (typically `extendCueMap` override `effectId`s) so an author
+ * can see that `holy_smite_01` is referenced but absent from entries.
+ */
+export function cueMapCoverage(
+  entryIds: readonly string[],
+  extraTargets: readonly string[] = [],
+): CueMapCoverage {
+  const have = new Set(entryIds);
+  const required = new Set([...cueMapTargetIds(), ...extraTargets]);
+  const covered: string[] = [];
+  const missing: string[] = [];
+  for (const id of required) {
+    if (have.has(id)) covered.push(id);
+    else missing.push(id);
+  }
+  const extra: string[] = [];
+  for (const id of have) {
+    if (!required.has(id)) extra.push(id);
+  }
+  covered.sort();
+  missing.sort();
+  extra.sort();
+  return { covered, missing, extra };
+}
+
 // Startup invariant, not just a test: the built-in map must only point at
 // entries CORE_SOUND_PACK defines. A typo'd target id here would otherwise
 // ship a cue that resolves to an unplayable sound.

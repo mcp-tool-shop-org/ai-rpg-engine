@@ -111,6 +111,20 @@ describe('validateManifest', () => {
     expect(validateManifest(wrap([e]))).toEqual([]);
   });
 
+  it('rejects a non-object hashes field when present', () => {
+    const errs = validateManifest(wrap([{ ...validEntry(), hashes: 'abc' }]));
+    expect(errs.some((e) => e.field === 'entries[0].hashes')).toBe(true);
+  });
+
+  it('rejects non-string hash values', () => {
+    const errs = validateManifest(wrap([{ ...validEntry(), hashes: { 'a.wav': 1 } }]));
+    expect(errs.some((e) => e.field === 'entries[0].hashes.a.wav')).toBe(true);
+  });
+
+  it('allows a string-valued hashes map', () => {
+    expect(validateManifest(wrap([{ ...validEntry(), hashes: { 'a.wav': 'abc' } }]))).toEqual([]);
+  });
+
   it('still catches duplicate ids alongside shape errors', () => {
     const errs = validateManifest(wrap([validEntry(), validEntry()]));
     expect(errs.some((e) => e.message.includes('duplicate id'))).toBe(true);

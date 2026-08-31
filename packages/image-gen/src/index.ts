@@ -22,3 +22,15 @@ export type {
   ResolveProviderOptions,
   ResolveProviderFallbackInfo,
 } from './pipeline.js';
+export {
+  generatePortraits,
+  ensurePortraits,
+  isPortraitBatchFailure,
+} from './batch.js';
+export type {
+  PortraitBatchOptions,
+  PortraitBatchProgress,
+  PortraitBatchFailure,
+  PortraitBatchItem,
+  PortraitBatchResult,
+} from './batch.js';

@@ -9,6 +9,7 @@ import type {
   CooldownEntry,
   DuckingRule,
   ScheduleWarning,
+  SoundLookup,
 } from './types.js';
 import { DEFAULT_DOMAIN_PRIORITIES, DEFAULT_DUCKING_RULES } from './types.js';
 import { scheduleAll } from './scheduler.js';
@@ -30,6 +31,8 @@ export class AudioDirector {
   private cooldownOverrides: Record<string, number>;
   private onWarn?: (warning: ScheduleWarning) => void;
   private lastWarnings: ScheduleWarning[] = [];
+  private soundRegistry?: SoundLookup;
+  private variantRoll: number;
 
   constructor(config?: AudioDirectorConfig) {
     this.defaultCooldownMs = config?.defaultCooldownMs ?? 2000;
@@ -37,6 +40,9 @@ export class AudioDirector {
     this.duckingRules = config?.duckingRules ?? [...DEFAULT_DUCKING_RULES];
     this.domainPriorities = config?.domainPriorities ?? { ...DEFAULT_DOMAIN_PRIORITIES };
     this.onWarn = config?.onWarn;
+    this.soundRegistry = config?.soundRegistry;
+    const roll = config?.variantRoll;
+    this.variantRoll = typeof roll === 'number' && Number.isFinite(roll) ? roll : 0;
   }
 
   /** Resolve the cooldown for a resource: per-resource override, else the default. */
@@ -87,9 +93,12 @@ export class AudioDirector {
     }
 
     const raw = scheduleAll(plan, this.domainPriorities);
+    const resolved = this.soundRegistry
+      ? raw.map((cmd) => this.resolveCommand(cmd))
+      : raw;
 
     // Filter out cooled-down resources
-    const filtered = raw.filter((cmd) => {
+    const filtered = resolved.filter((cmd) => {
       if (cmd.action !== 'play') return true;
       return !this.isOnCooldown(cmd.resourceId, now);
     });
@@ -162,6 +171,33 @@ export class AudioDirector {
    */
   getLastWarnings(): ScheduleWarning[] {
     return [...this.lastWarnings];
+  }
+
+  /**
+   * Rewrite a play command's resourceId from a logical effectId to an ingested
+   * audio hash (or variant filename) when a file-source entry exists.
+   */
+  private resolveCommand(cmd: AudioCommand): AudioCommand {
+    const registry = this.soundRegistry;
+    if (!registry) return cmd;
+    if (cmd.action !== 'play') return cmd;
+    if (cmd.domain !== 'sfx' && cmd.domain !== 'ambient') return cmd;
+    const entry = registry.get(cmd.resourceId);
+    if (!entry || entry.source !== 'file') return cmd;
+    const variant = registry.pickVariant(cmd.resourceId, this.variantRoll);
+    const hash = variant && entry.hashes ? entry.hashes[variant] : undefined;
+    const resourceId = hash ?? variant ?? cmd.resourceId;
+    if (resourceId === cmd.resourceId) return cmd;
+    return {
+      ...cmd,
+      resourceId,
+      params: {
+        ...cmd.params,
+        effectId: cmd.resourceId,
+        ...(variant ? { variant } : {}),
+        ...(hash ? { hash } : {}),
+      },
+    };
   }
 
   /** Build ducking commands based on active triggers. */

@@ -576,6 +576,51 @@ type PollErrorInfoShape = { status: number; attempt: number; url: string };
 // its first several KB as BINARY, so `git diff`/`blame`/review tools lost
 // line-level visibility here — which plausibly let the typo survive Stage A's
 // own edits to nearby lines. This guard rejects any NUL byte in the source.
+describe('ComfyUIProvider latent batch_size (F-48a47f12)', () => {
+  it('sends EmptyLatentImage batch_size 1 by default', async () => {
+    const png = tinyPng(8, 8);
+    let workflow: { '4'?: { inputs?: { batch_size?: number } } } | undefined;
+    const mock = await startMock(
+      comfyFlow(
+        (_req, res) => {
+          res.writeHead(200, { 'Content-Type': 'image/png' });
+          res.end(png);
+        },
+        (w) => {
+          workflow = w as { '4'?: { inputs?: { batch_size?: number } } };
+        },
+      ),
+    );
+    const result = await makeProvider(mock.url).generate('a knight');
+    expect(result.ok).toBe(true);
+    expect(workflow?.['4']?.inputs?.batch_size).toBe(1);
+  });
+
+  it('opts into latent batching only when latentBatchSize is set', async () => {
+    const png = tinyPng(8, 8);
+    let workflow: { '4'?: { inputs?: { batch_size?: number } } } | undefined;
+    const mock = await startMock(
+      comfyFlow(
+        (_req, res) => {
+          res.writeHead(200, { 'Content-Type': 'image/png' });
+          res.end(png);
+        },
+        (w) => {
+          workflow = w as { '4'?: { inputs?: { batch_size?: number } } };
+        },
+      ),
+    );
+    const result = await new ComfyUIProvider({
+      baseUrl: mock.url,
+      pollIntervalMs: 10,
+      timeoutMs: 500,
+      latentBatchSize: 4,
+    }).generate('a knight');
+    expect(result.ok).toBe(true);
+    expect(workflow?.['4']?.inputs?.batch_size).toBe(4);
+  });
+});
+
 describe('comfyui-provider.ts source hygiene (F-a1c8b2b1)', () => {
   it('contains no NUL byte (keeps git treating the file as text)', () => {
     const src = readFileSync(new URL('./comfyui-provider.ts', import.meta.url));
