@@ -25,6 +25,12 @@ export type AssetMetadata = {
   tags: string[];
   /** ISO 8601 creation timestamp. */
   createdAt: string;
+  /**
+   * ISO 8601 last-access timestamp (F-caad5a4d). Stamped by {@link AssetStore.get}
+   * and {@link AssetStore.touch}. Quota policy `'evict-lru'` sorts on this so a
+   * last-shown unpinned portrait survives later batch junk. Pin still forever.
+   */
+  accessedAt?: string;
   /** Origin: generation prompt, URL, file path, or 'manual'. */
   source?: string;
   /**
@@ -70,6 +76,11 @@ export type AssetGetOptions = {
    * Default: false — skip the extra hash on hot paths.
    */
   verify?: boolean;
+  /**
+   * Stamp `accessedAt` on a successful read (F-caad5a4d). Default: true.
+   * Hash-hit put paths pass false so a CAS identity check is not a "show".
+   */
+  touch?: boolean;
 };
 
 /**
@@ -77,7 +88,7 @@ export type AssetGetOptions = {
  * `maxBytes` / `maxCount` omitted means that axis is unbounded.
  * CAS hash identity is unchanged — a hash-hit put never consumes quota.
  */
-export type QuotaPolicy = 'reject' | 'evict-oldest';
+export type QuotaPolicy = 'reject' | 'evict-oldest' | 'evict-lru';
 
 export type StoreQuota = {
   maxBytes?: number;
@@ -119,10 +130,12 @@ export interface AssetStore {
   /** Sum of stored `sizeBytes` (blob lengths). */
   totalBytes(): Promise<number>;
   /**
-   * Delete oldest assets (by `createdAt`, then hash) until the store is within
-   * `quota.maxBytes` / `quota.maxCount`. Returns how many assets were removed.
-   * File backends delete blob + sidecar; memory backends drop both maps.
-   * Pinned / keep assets and `keepHashes` are never deleted (F-0b108b56).
+   * Delete oldest assets until the store is within `quota.maxBytes` /
+   * `quota.maxCount`. `'evict-oldest'` orders by `createdAt` then hash;
+   * `'evict-lru'` orders by `accessedAt` then `createdAt` then hash (F-caad5a4d).
+   * Returns how many assets were removed. File backends delete blob + sidecar;
+   * memory backends drop both maps. Pinned / keep assets and `keepHashes` are
+   * never deleted (F-0b108b56).
    */
   evictUntil(quota: StoreQuota, keepHashes?: readonly string[]): Promise<number>;
   /**
@@ -132,4 +145,11 @@ export interface AssetStore {
   pin(hash: string): Promise<boolean>;
   /** Clear the pin/keep flags (and the `pinned`/`keep` tags). */
   unpin(hash: string): Promise<boolean>;
+  /**
+   * Stamp `accessedAt` so `'evict-lru'` can keep last-shown portraits (F-caad5a4d).
+   * Returns false when the hash is missing or malformed.
+   */
+  touch(hash: string): Promise<boolean>;
+  /** Stamp many hashes; returns how many were updated. */
+  touch(hashes: readonly string[]): Promise<number>;
 }

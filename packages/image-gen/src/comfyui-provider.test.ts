@@ -186,6 +186,75 @@ describe('ComfyUIProvider img2img (F-9daede34)', () => {
     expect(workflow!['5']?.inputs?.latent_image).toEqual(['8', 0]);
     expect(workflow!['4']?.class_type).not.toBe('EmptyLatentImage');
   });
+
+  it('controlImage + controlnet inserts ControlNetLoader + ControlNetApply (F-94ff23c8)', async () => {
+    const png = tinyPng(8, 8);
+    let workflow: Record<string, { class_type?: string; inputs?: Record<string, unknown> }> | undefined;
+    const mock = await startMock((req, res) => {
+      if (req.method === 'POST' && req.url === '/upload/image') {
+        req.resume();
+        req.on('end', () => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ name: 'control.png', subfolder: '', type: 'input' }));
+        });
+        return;
+      }
+      comfyFlow(
+        (_req, viewRes) => {
+          viewRes.writeHead(200, { 'Content-Type': 'image/png' });
+          viewRes.end(png);
+        },
+        (w) => { workflow = w as typeof workflow; },
+      )(req, res);
+    });
+
+    const result = await makeProvider(mock.url).generate('aged knight', {
+      controlImage: new Uint8Array([1, 2, 3, 4]),
+      controlnet: 'openpose',
+    });
+    expect(result.ok).toBe(true);
+    expect(workflow!['4']?.class_type).toBe('EmptyLatentImage');
+    expect(workflow!['10']?.class_type).toBe('LoadImage');
+    expect(workflow!['11']?.class_type).toBe('ControlNetLoader');
+    expect(workflow!['12']?.class_type).toBe('ControlNetApply');
+    expect(workflow!['12']?.inputs?.conditioning).toEqual(['2', 0]);
+    expect(workflow!['5']?.inputs?.positive).toEqual(['12', 0]);
+    expect(workflow!['5']?.inputs?.model).toEqual(['1', 0]);
+  });
+
+  it('controlImage + ipadapter inserts IPAdapterApply (F-94ff23c8)', async () => {
+    const png = tinyPng(8, 8);
+    let workflow: Record<string, { class_type?: string; inputs?: Record<string, unknown> }> | undefined;
+    const mock = await startMock((req, res) => {
+      if (req.method === 'POST' && req.url === '/upload/image') {
+        req.resume();
+        req.on('end', () => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ name: 'control.png', subfolder: '', type: 'input' }));
+        });
+        return;
+      }
+      comfyFlow(
+        (_req, viewRes) => {
+          viewRes.writeHead(200, { 'Content-Type': 'image/png' });
+          viewRes.end(png);
+        },
+        (w) => { workflow = w as typeof workflow; },
+      )(req, res);
+    });
+
+    const result = await makeProvider(mock.url).generate('disguise knight', {
+      controlImage: new Uint8Array([1, 2, 3, 4]),
+      controlnet: 'ipadapter',
+      ipadapter: 0.8,
+    });
+    expect(result.ok).toBe(true);
+    expect(workflow!['15']?.class_type).toBe('IPAdapterApply');
+    expect(workflow!['15']?.inputs?.weight).toBe(0.8);
+    expect(workflow!['5']?.inputs?.model).toEqual(['15', 0]);
+    expect(workflow!['5']?.inputs?.positive).toEqual(['2', 0]);
+    expect(workflow!['12']?.class_type).toBeUndefined();
+  });
 });
 
 describe('ComfyUIProvider.generate — A1: typed failure envelope', () => {

@@ -427,3 +427,23 @@ describe('FileAssetStore quota (F-158910cc)', () => {
     expect(await store.has(junk.hash)).toBe(false);
   });
 });
+
+describe('FileAssetStore accessedAt / evict-lru (F-caad5a4d)', () => {
+  it('get() stamps accessedAt in the sidecar; evict-lru keeps the last-shown blob', async () => {
+    const limited = new FileAssetStore(tmpDir, { maxCount: 2, policy: 'evict-lru' });
+    const portrait = await limited.put(new Uint8Array([1]), testInput);
+    const junk = await limited.put(new Uint8Array([2]), { ...testInput, kind: 'icon' });
+    await new Promise((r) => setTimeout(r, 8));
+    expect(await limited.get(portrait.hash)).toEqual(new Uint8Array([1]));
+    const sidecar = JSON.parse(
+      await fs.readFile(path.join(tmpDir, portrait.hash.slice(0, 2), `${portrait.hash}.json`), 'utf-8'),
+    ) as { accessedAt?: string };
+    expect(typeof sidecar.accessedAt).toBe('string');
+    await new Promise((r) => setTimeout(r, 8));
+    const later = await limited.put(new Uint8Array([3]), { ...testInput, kind: 'icon' });
+    expect(await limited.has(portrait.hash)).toBe(true);
+    expect(await limited.has(junk.hash)).toBe(false);
+    expect(await limited.has(later.hash)).toBe(true);
+    expect(await limited.touch(portrait.hash)).toBe(true);
+  });
+});

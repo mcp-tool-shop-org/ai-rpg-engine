@@ -323,3 +323,49 @@ describe('MemoryAssetStore pin / keepHashes (F-0b108b56)', () => {
     expect(await store.count()).toBe(1);
   });
 });
+
+describe('MemoryAssetStore accessedAt / evict-lru (F-caad5a4d)', () => {
+  it('put stamps accessedAt; get() and touch() update it', async () => {
+    const store = new MemoryAssetStore();
+    const first = await store.put(new Uint8Array([1]), testInput);
+    expect(first.accessedAt).toBe(first.createdAt);
+    await new Promise((r) => setTimeout(r, 8));
+    expect(await store.get(first.hash)).toEqual(new Uint8Array([1]));
+    const afterGet = await store.getMeta(first.hash);
+    expect(afterGet?.accessedAt).toBeDefined();
+    expect(afterGet!.accessedAt! >= first.createdAt).toBe(true);
+    await new Promise((r) => setTimeout(r, 8));
+    expect(await store.touch(first.hash)).toBe(true);
+    const afterTouch = await store.getMeta(first.hash);
+    expect(afterTouch!.accessedAt! >= afterGet!.accessedAt!).toBe(true);
+    expect(await store.touch(['0'.repeat(64), first.hash])).toBe(1);
+  });
+
+  it('evict-lru drops unshown junk before a last-shown unpinned portrait', async () => {
+    const store = new MemoryAssetStore({ maxCount: 2, policy: 'evict-lru' });
+    const portrait = await store.put(new Uint8Array([1]), testInput);
+    const junk = await store.put(new Uint8Array([2]), { ...testInput, kind: 'icon' });
+    await new Promise((r) => setTimeout(r, 8));
+    await store.get(portrait.hash);
+    await new Promise((r) => setTimeout(r, 8));
+    const later = await store.put(new Uint8Array([3]), { ...testInput, kind: 'icon' });
+    expect(await store.has(portrait.hash)).toBe(true);
+    expect(await store.has(junk.hash)).toBe(false);
+    expect(await store.has(later.hash)).toBe(true);
+  });
+
+  it('pin still skips eviction under evict-lru; hash-hit put never consumes quota', async () => {
+    const store = new MemoryAssetStore({ maxCount: 1, policy: 'evict-lru' });
+    const portrait = await store.put(new Uint8Array([1]), testInput);
+    expect(await store.pin(portrait.hash)).toBe(true);
+    await expect(store.put(new Uint8Array([2]), testInput)).rejects.toBeInstanceOf(OverQuotaError);
+    expect(await store.has(portrait.hash)).toBe(true);
+
+    const rejectStore = new MemoryAssetStore({ maxCount: 1, policy: 'reject' });
+    const first = await rejectStore.put(testData, testInput);
+    const again = await rejectStore.put(testData, { ...testInput, tags: ['extra'] });
+    expect(again.hash).toBe(first.hash);
+    expect(again.tags).toContain('extra');
+    expect(await rejectStore.count()).toBe(1);
+  });
+});

@@ -10,6 +10,8 @@ import {
   reserveQuota,
   applyPinFlags,
   tagsRequestPin,
+  isEvictingPolicy,
+  stampAccessed,
 } from './quota.js';
 
 export class MemoryAssetStore implements AssetStore {
@@ -35,6 +37,7 @@ export class MemoryAssetStore implements AssetStore {
 
     await this.enforceQuota(data.length);
 
+    const now = new Date().toISOString();
     const metadata: AssetMetadata = {
       hash,
       kind: input.kind,
@@ -46,7 +49,8 @@ export class MemoryAssetStore implements AssetStore {
       // (F-b2b8a190). File stringify/re-parse already isolates; Memory must
       // copy explicitly.
       tags: input.tags ? [...input.tags] : [],
-      createdAt: new Date().toISOString(),
+      createdAt: now,
+      accessedAt: now,
       source: input.source,
     };
     const stored = tagsRequestPin(metadata.tags) ? applyPinFlags(metadata, true) : metadata;
@@ -63,6 +67,7 @@ export class MemoryAssetStore implements AssetStore {
     // in-memory bytes are keyed by their own digest, so this only fires if
     // something reached in and mutated the map.
     if (opts?.verify && hashBytes(bytes) !== hash) return null;
+    if (opts?.touch !== false) this.stampNow(hash);
     return new Uint8Array(bytes);
   }
 
@@ -100,7 +105,7 @@ export class MemoryAssetStore implements AssetStore {
 
   async evictUntil(quota: StoreQuota, keepHashes?: readonly string[]): Promise<number> {
     const all = [...this.meta.values()];
-    const ordered = sortOldestFirst(all, keepHashes);
+    const ordered = sortOldestFirst(all, keepHashes, quota.policy);
     let count = all.length;
     let bytes = all.reduce((s, m) => s + m.sizeBytes, 0);
     let n = 0;
@@ -132,11 +137,29 @@ export class MemoryAssetStore implements AssetStore {
     return true;
   }
 
+  async touch(hash: string): Promise<boolean>;
+  async touch(hashes: readonly string[]): Promise<number>;
+  async touch(hash: string | readonly string[]): Promise<boolean | number> {
+    if (typeof hash === 'string') return this.stampNow(hash);
+    let n = 0;
+    for (const h of hash) {
+      if (this.stampNow(h)) n++;
+    }
+    return n;
+  }
+
+  private stampNow(hash: string): boolean {
+    const stored = this.meta.get(hash);
+    if (!stored || !this.data.has(hash)) return false;
+    this.meta.set(hash, stampAccessed(stored, new Date().toISOString()));
+    return true;
+  }
+
   /** New-blob puts only — hash-hits never consume quota (CAS identity). */
   private async enforceQuota(incomingBytes: number): Promise<void> {
     const quota = this.quota;
     if (!quota) return;
-    if (quota.policy === 'evict-oldest') {
+    if (isEvictingPolicy(quota.policy)) {
       await this.evictUntil(reserveQuota(quota, incomingBytes));
     }
     const count = await this.count();

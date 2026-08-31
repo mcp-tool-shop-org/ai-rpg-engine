@@ -227,7 +227,7 @@ describe('RumorEngine', () => {
     engine.recordFactionUptake(r1.id, 'guards');
 
     const serialized = engine.serialize();
-    expect(serialized).toHaveLength(2);
+    expect(serialized.rumors).toHaveLength(2);
 
     const restored = RumorEngine.deserialize(serialized);
     expect(restored.get(r1.id)?.factionUptake).toEqual(['guards']);
@@ -273,7 +273,7 @@ describe('RumorEngine', () => {
     const r1 = createRumor(engine); // rum_1
     const serialized = engine.serialize();
     // Rewrite the id high to simulate a save with a large counter.
-    serialized[0].id = 'rum_9';
+    serialized.rumors[0].id = 'rum_9';
 
     const restored = RumorEngine.deserialize(serialized);
     const next = restored.create({
@@ -394,7 +394,7 @@ describe('mutations', () => {
 describe('deserialize validation boundary (F-1f8c5a94)', () => {
   /** Serialize an engine's rumors into detached copies safe to corrupt. */
   function serializedCopy(engine: RumorEngine): Rumor[] {
-    return engine.serialize().map((r) => ({ ...r }));
+    return engine.serialize().rumors.map((r) => ({ ...r }));
   }
 
   test('skips a rumor missing lastSpreadTick instead of freezing it forever', () => {
@@ -538,7 +538,7 @@ describe('validateRumor tick-field hardening (F-1f8c5a94)', () => {
       engine.spread(rumor.id, defaultCtx({ receiverId: `npc_${hop}`, hopCount: hop, environmentInstability: 1 }));
     }
     engine.tick(50);
-    for (const r of engine.serialize({ includeDead: true })) {
+    for (const r of engine.serialize({ includeDead: true }).rumors) {
       expect(validateRumor(r)).toEqual([]);
     }
   });
@@ -639,13 +639,13 @@ describe('serialize/deserialize detach rumor objects (F-072c671e)', () => {
     engine.recordFactionUptake(rumor.id, 'guards');
 
     const snapshot = engine.serialize();
-    expect(snapshot).toHaveLength(1);
-    expect(snapshot[0]).not.toBe(engine.get(rumor.id));
+    expect(snapshot.rumors).toHaveLength(1);
+    expect(snapshot.rumors[0]).not.toBe(engine.get(rumor.id));
 
-    snapshot[0].status = 'dead';
-    snapshot[0].claim = 'forged claim';
-    snapshot[0].spreadPath.push('spy');
-    snapshot[0].factionUptake.push('spies');
+    snapshot.rumors[0].status = 'dead';
+    snapshot.rumors[0].claim = 'forged claim';
+    snapshot.rumors[0].spreadPath.push('spy');
+    snapshot.rumors[0].factionUptake.push('spies');
 
     const live = engine.get(rumor.id)!;
     expect(live.status).toBe('spreading');
@@ -685,15 +685,15 @@ describe('serialize/deserialize detach rumor objects (F-072c671e)', () => {
     const snapshot = engine.serialize();
 
     const restored = RumorEngine.deserialize(snapshot);
-    snapshot[0].status = 'dead';
-    snapshot[0].spreadPath.push('spy');
-    snapshot[0].factionUptake.push('spies');
+    snapshot.rumors[0].status = 'dead';
+    snapshot.rumors[0].spreadPath.push('spy');
+    snapshot.rumors[0].factionUptake.push('spies');
 
     const live = restored.get(rumor.id)!;
     expect(live.status).toBe('spreading');
     expect(live.spreadPath).toEqual(['guard_1']);
     expect(live.factionUptake).toEqual([]);
-    expect(live).not.toBe(snapshot[0]);
+    expect(live).not.toBe(snapshot.rumors[0]);
   });
 });
 
@@ -779,14 +779,14 @@ describe('dead rumors are omitted from serialize and can be pruned (F-97a47e88)'
     engine.tick(10);
     expect(engine.activeCount()).toBe(0);
     expect(engine.get(rumor.id)?.status).toBe('dead');
-    expect(engine.serialize().every((r) => r.status !== 'dead')).toBe(true);
-    expect(engine.serialize()).toHaveLength(0);
-    expect(engine.serialize({ includeDead: true })).toHaveLength(1);
-    expect(engine.serialize({ includeDead: true })[0].status).toBe('dead');
+    expect(engine.serialize().rumors.every((r) => r.status !== 'dead')).toBe(true);
+    expect(engine.serialize().rumors).toHaveLength(0);
+    expect(engine.serialize({ includeDead: true }).rumors).toHaveLength(1);
+    expect(engine.serialize({ includeDead: true }).rumors[0].status).toBe('dead');
 
     expect(engine.pruneDead()).toBe(1);
     expect(engine.get(rumor.id)).toBeUndefined();
-    expect(engine.serialize({ includeDead: true })).toHaveLength(0);
+    expect(engine.serialize({ includeDead: true }).rumors).toHaveLength(0);
     expect(engine.pruneDead()).toBe(0);
   });
 
@@ -798,7 +798,7 @@ describe('dead rumors are omitted from serialize and can be pruned (F-97a47e88)'
     }
     engine.tick(10);
     expect(engine.activeCount()).toBe(0);
-    const kept = engine.serialize({ includeDead: true });
+    const kept = engine.serialize({ includeDead: true }).rumors;
     expect(kept).toHaveLength(3);
     expect(kept.every((r) => r.status === 'dead')).toBe(true);
     // Oldest ids (rum_1..) drop first; the last three survive the cap.
@@ -873,5 +873,71 @@ describe('corroborate / contradict (F-d81fd1b9)', () => {
     expect(dead?.status).toBe('dead');
     expect(dead?.spreadPath).toContain('herald');
     expect(engine.heardBy('herald')).toHaveLength(0);
+  });
+});
+
+describe('rumor stance (F-959f6ee9)', () => {
+  test('two hearers can disagree; heardBy stays heard not believed', () => {
+    const engine = new RumorEngine({ mutations: [] });
+    const rumor = createRumor(engine);
+    engine.spread(rumor.id, defaultCtx({ receiverId: 'player', currentTick: 5 }));
+    engine.spread(rumor.id, defaultCtx({ receiverId: 'priest', currentTick: 6 }));
+
+    expect(engine.setStance('player', rumor.id, 'believe', 7)).toBe('believe');
+    expect(engine.setStance('priest', { subject: 'player', key: 'killed' }, 'doubt', 8)).toBe('doubt');
+    expect(engine.stanceOf('player', rumor.id)).toBe('believe');
+    expect(engine.stanceOf('priest', rumor.id)).toBe('doubt');
+    expect(engine.stanceOf('bystander', rumor.id)).toBe('unknown');
+
+    expect(engine.heardBy('player').map((r) => r.id)).toEqual([rumor.id]);
+    expect(engine.query({ hearerId: 'priest' })).toHaveLength(1);
+    expect(engine.query({ believerId: 'player' }).map((r) => r.id)).toEqual([rumor.id]);
+    expect(engine.query({ believerId: 'priest' })).toHaveLength(0);
+  });
+
+  test('unknown clears the stance; serialize/deserialize restores the map', () => {
+    const engine = new RumorEngine();
+    const rumor = createRumor(engine);
+    engine.setStance('player', rumor.id, 'believe', 3);
+    engine.setStance('player', rumor.id, 'unknown', 4);
+    expect(engine.stanceOf('player', rumor.id)).toBe('unknown');
+
+    engine.setStance('player', rumor.id, 'believe', 5);
+    engine.setStance('guard_1', rumor.id, 'doubt', 6);
+    const snap = engine.serialize();
+    expect(snap.stances).toEqual([
+      { entityId: 'guard_1', rumorId: rumor.id, stance: 'doubt', tick: 6 },
+      { entityId: 'player', rumorId: rumor.id, stance: 'believe', tick: 5 },
+    ]);
+
+    const restored = RumorEngine.deserialize(snap);
+    expect(restored.stanceOf('player', rumor.id)).toBe('believe');
+    expect(restored.stanceOf('guard_1', rumor.id)).toBe('doubt');
+    expect(restored.query({ believerId: 'player' })).toHaveLength(1);
+  });
+
+  test('legacy rumor-array deserialize still loads with empty stances', () => {
+    const engine = new RumorEngine();
+    const rumor = createRumor(engine);
+    const restored = RumorEngine.deserialize(engine.serialize().rumors);
+    expect(restored.get(rumor.id)?.claim).toBe(rumor.claim);
+    expect(restored.stanceOf('player', rumor.id)).toBe('unknown');
+  });
+
+  test('setStance throws on non-finite currentTick; missing rumor is unknown', () => {
+    const engine = new RumorEngine();
+    expect(() => engine.setStance('player', 'rum_missing', 'believe', 1)).not.toThrow();
+    expect(engine.stanceOf('player', 'rum_missing')).toBe('unknown');
+    const rumor = createRumor(engine);
+    expect(() => engine.setStance('player', rumor.id, 'believe', NaN)).toThrow(/currentTick/);
+  });
+
+  test('create() still mints siblings and does not copy stance', () => {
+    const engine = new RumorEngine();
+    const first = createRumor(engine);
+    engine.setStance('player', first.id, 'believe', 1);
+    const second = createRumor(engine, { sourceId: 'guard_2' });
+    expect(engine.aboutSubject('player')).toHaveLength(2);
+    expect(engine.stanceOf('player', second.id)).toBe('unknown');
   });
 });

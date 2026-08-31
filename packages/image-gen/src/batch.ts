@@ -8,10 +8,19 @@ import {
   ensureBackground,
   generateIcon,
   ensureIcon,
+  ensurePortraitVariant,
+  ensureBackgroundVariant,
+  ensureIconVariant,
   ImageGenError,
   type PipelineOptions,
 } from './pipeline.js';
-import type { ImageProvider, PortraitRequest, SceneRequest, IconRequest } from './types.js';
+import type {
+  ImageProvider,
+  PortraitRequest,
+  SceneRequest,
+  IconRequest,
+  GenerationOptions,
+} from './types.js';
 
 export type BatchOptions = PipelineOptions & {
   /**
@@ -60,6 +69,25 @@ export type IconBatchOptions = BatchOptions;
 export type IconBatchFailure = BatchFailure<IconRequest>;
 export type IconBatchItem = BatchItem<IconRequest>;
 export type IconBatchResult = BatchResult<IconRequest>;
+
+/**
+ * One variant job for {@link ensurePortraitVariants} / scene / icon (F-1777850b).
+ * `generation` is per-job so injured vs aged can use different denoise/control.
+ */
+export type VariantJob<TRequest> = {
+  baseHash: string;
+  request: TRequest;
+  variant: string;
+  generation?: GenerationOptions;
+};
+
+export type PortraitVariantJob = VariantJob<PortraitRequest>;
+export type SceneVariantJob = VariantJob<SceneRequest>;
+export type IconVariantJob = VariantJob<IconRequest>;
+
+export type PortraitVariantBatchResult = BatchResult<PortraitVariantJob>;
+export type SceneVariantBatchResult = BatchResult<SceneVariantJob>;
+export type IconVariantBatchResult = BatchResult<IconVariantJob>;
 
 export function isBatchFailure<TRequest>(item: BatchItem<TRequest>): item is BatchFailure<TRequest> {
   return (item as BatchFailure<TRequest>).ok === false;
@@ -216,4 +244,76 @@ export async function ensureIcons(
   opts?: IconBatchOptions,
 ): Promise<IconBatchResult> {
   return runBatch(requests, provider, store, opts, ensureIcon, 'icons');
+}
+
+function portraitVariantOneShot(
+  job: PortraitVariantJob,
+  provider: ImageProvider,
+  store: AssetStore,
+  opts?: PipelineOptions,
+): Promise<AssetMetadata> {
+  return ensurePortraitVariant(job.baseHash, job.request, provider, store, {
+    variant: job.variant,
+    generation: job.generation ?? opts?.generation,
+    extraTags: opts?.extraTags,
+  });
+}
+
+function backgroundVariantOneShot(
+  job: SceneVariantJob,
+  provider: ImageProvider,
+  store: AssetStore,
+  opts?: PipelineOptions,
+): Promise<AssetMetadata> {
+  return ensureBackgroundVariant(job.baseHash, job.request, provider, store, {
+    variant: job.variant,
+    generation: job.generation ?? opts?.generation,
+    extraTags: opts?.extraTags,
+  });
+}
+
+function iconVariantOneShot(
+  job: IconVariantJob,
+  provider: ImageProvider,
+  store: AssetStore,
+  opts?: PipelineOptions,
+): Promise<AssetMetadata> {
+  return ensureIconVariant(job.baseHash, job.request, provider, store, {
+    variant: job.variant,
+    generation: job.generation ?? opts?.generation,
+    extraTags: opts?.extraTags,
+  });
+}
+
+/**
+ * Roster variant fan-out — one ImageGenError must not abort the rest (F-1777850b).
+ * Reuses the same batch pool as ensurePortraits; EmptyLatentImage `batch_size` stays 1.
+ */
+export async function ensurePortraitVariants(
+  jobs: readonly PortraitVariantJob[],
+  provider: ImageProvider,
+  store: AssetStore,
+  opts?: PortraitBatchOptions,
+): Promise<PortraitVariantBatchResult> {
+  return runBatch(jobs, provider, store, opts, portraitVariantOneShot, 'portrait variants');
+}
+
+/** Zone atlas variant fan-out (F-1777850b). */
+export async function ensureBackgroundVariants(
+  jobs: readonly SceneVariantJob[],
+  provider: ImageProvider,
+  store: AssetStore,
+  opts?: SceneBatchOptions,
+): Promise<SceneVariantBatchResult> {
+  return runBatch(jobs, provider, store, opts, backgroundVariantOneShot, 'background variants');
+}
+
+/** Inventory-sheet variant fan-out (F-1777850b). */
+export async function ensureIconVariants(
+  jobs: readonly IconVariantJob[],
+  provider: ImageProvider,
+  store: AssetStore,
+  opts?: IconBatchOptions,
+): Promise<IconVariantBatchResult> {
+  return runBatch(jobs, provider, store, opts, iconVariantOneShot, 'icon variants');
 }

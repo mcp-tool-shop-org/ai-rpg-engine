@@ -157,4 +157,27 @@ describe('formatRumorBoard (F-823e0edf)', () => {
     expect(cursed?.denialLine).toBe('Player is cursed');
     expect(cursed?.status).toBe('dead');
   });
+
+  test('attaches believed/doubted stance for an entity (F-959f6ee9)', () => {
+    const high = rumor({ id: 'rum_high', confidence: 0.9 });
+    const other = rumor({
+      id: 'rum_other',
+      subject: 'merchant',
+      key: 'missing',
+      claim: 'merchant_1 fled town',
+      confidence: 0.5,
+    });
+    const board = formatRumorBoard([high, other], {
+      entityId: 'player',
+      stances: { rum_high: 'believe', rum_other: 'doubt' },
+    });
+    const killed = board.find((line) => line.key === 'killed_merchant');
+    const missing = board.find((line) => line.key === 'missing');
+    expect(killed?.stance).toBe('believe');
+    expect(killed?.believed).toBe(true);
+    expect(killed?.doubted).toBe(false);
+    expect(missing?.stance).toBe('doubt');
+    expect(missing?.believed).toBe(false);
+    expect(missing?.doubted).toBe(true);
+  });
 });

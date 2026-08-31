@@ -2,6 +2,12 @@
 
 export type RumorStatus = 'spreading' | 'established' | 'fading' | 'dead';
 
+/**
+ * Per-entity belief in a rumor (F-959f6ee9). Stored on the engine, not on
+ * {@link Rumor}, so two hearers can disagree. `heardBy` stays heard, not believed.
+ */
+export type RumorStance = 'believe' | 'doubt' | 'unknown';
+
 /** Enhanced rumor with full lifecycle tracking */
 export type Rumor = {
   id: string;
@@ -136,6 +142,8 @@ export type RumorQuery = {
   afterTick?: number;
   /** Entity id that appears on `spreadPath` (who has heard the rumor). */
   hearerId?: string;
+  /** Entity whose {@link RumorStance} is `'believe'` for this rumor (F-959f6ee9). */
+  believerId?: string;
 };
 
 export const VALID_STATUSES: readonly RumorStatus[] = [
@@ -144,4 +152,8 @@ export const VALID_STATUSES: readonly RumorStatus[] = [
 
 export const VALID_MUTATION_TYPES: readonly MutationType[] = [
   'exaggerate', 'minimize', 'invert', 'attribute-shift', 'embellish',
+] as const;
+
+export const VALID_STANCES: readonly RumorStance[] = [
+  'believe', 'doubt', 'unknown',
 ] as const;

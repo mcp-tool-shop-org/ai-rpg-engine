@@ -1,6 +1,6 @@
 // Player-facing rumor presentation. The sim record stays the raw Rumor.
 
-import type { Rumor, RumorStatus } from './types.js';
+import type { Rumor, RumorStatus, RumorStance } from './types.js';
 
 export type FormatRumorOptions = {
   /** Map an entity id in the claim (subject, source, numbered tokens) to a spoken name. */
@@ -134,6 +134,12 @@ export function formatRumorForPlayer(rumor: Rumor, opts?: FormatRumorOptions): P
 export type FormatRumorBoardOptions = FormatRumorOptions & {
   /** Include dead rumors as denied board lines. Default: live statuses only. */
   includeDead?: boolean;
+  /** Entity whose believed/doubted stance is attached to each line (F-959f6ee9). */
+  entityId?: string;
+  /** `(rumorId) => stance`. Hosts pass `id => engine.stanceOf(entityId, id)`. */
+  stanceOf?: (rumorId: string) => RumorStance | undefined;
+  /** Per-rumor-id stance map for `entityId` (from serialize().stances). */
+  stances?: Readonly<Record<string, RumorStance>>;
 };
 
 export type RumorBoardLine = PlayerRumorView & {
@@ -145,7 +151,19 @@ export type RumorBoardLine = PlayerRumorView & {
   denied: boolean;
   /** Player-facing denial when {@link RumorBoardLine.denied} — else omitted. */
   denialLine?: string;
+  /** Entity stance when `entityId` / `stanceOf` / `stances` is provided. */
+  stance?: RumorStance;
+  /** True when the entity believes the winning row (F-959f6ee9). */
+  believed: boolean;
+  /** True when the entity doubts the winning row (F-959f6ee9). */
+  doubted: boolean;
 };
+
+function resolveBoardStance(rumorId: string, opts?: FormatRumorBoardOptions): RumorStance {
+  if (opts?.stanceOf) return opts.stanceOf(rumorId) ?? 'unknown';
+  if (opts?.stances) return opts.stances[rumorId] ?? 'unknown';
+  return 'unknown';
+}
 
 function isDenied(rumor: Rumor): boolean {
   if (rumor.status === 'dead') return true;
@@ -191,13 +209,19 @@ export function formatRumorBoard(
     }
     const view = formatRumorForPlayer(top, opts);
     const denied = isDenied(top);
+    const stance = resolveBoardStance(top.id, opts);
+    const hasStanceInput =
+      opts?.entityId !== undefined || opts?.stanceOf !== undefined || opts?.stances !== undefined;
     const line: RumorBoardLine = {
       ...view,
       subject: top.subject,
       key: top.key,
       witnessCount: witnesses.size,
       denied,
+      believed: stance === 'believe',
+      doubted: stance === 'doubt',
     };
+    if (hasStanceInput) line.stance = stance;
     if (denied) line.denialLine = view.spoken;
     lines.push(line);
   }

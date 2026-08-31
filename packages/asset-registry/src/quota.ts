@@ -1,6 +1,6 @@
 // Store quota helpers — shared by MemoryAssetStore and FileAssetStore (F-158910cc)
 
-import type { AssetMetadata, StoreQuota } from './types.js';
+import type { AssetMetadata, QuotaPolicy, StoreQuota } from './types.js';
 
 /**
  * Typed failure when a put would exceed StoreQuota under policy `'reject'`,
@@ -21,7 +21,7 @@ export class OverQuotaError extends Error {
         `count=${info.count}, sizeBytes=${info.sizeBytes}. ` +
         (info.quota.policy === 'reject'
           ? 'policy=reject — delete assets or raise the quota.'
-          : 'policy=evict-oldest could not free enough room for this put.'),
+          : `policy=${info.quota.policy} could not free enough room for this put.`),
     );
     this.name = 'OverQuotaError';
     this.sizeBytes = info.sizeBytes;
@@ -55,18 +55,33 @@ export function isProtectedAsset(
   return false;
 }
 
+/** Recency key for LRU: last show, else createdAt (legacy sidecars). */
+function recencyKey(meta: AssetMetadata): string {
+  return meta.accessedAt ?? meta.createdAt;
+}
+
 /**
  * Oldest-first so evictUntil is deterministic across backends.
  * Pinned/keep assets and `keepHashes` are omitted so eviction cannot drop them.
+ * `'evict-lru'` orders by `accessedAt` then `createdAt` then hash (F-caad5a4d);
+ * every other policy keeps createdAt FIFO.
  */
 export function sortOldestFirst(
   metas: readonly AssetMetadata[],
   keepHashes?: readonly string[],
+  policy?: QuotaPolicy,
 ): AssetMetadata[] {
   const keep = keepHashes && keepHashes.length > 0 ? new Set(keepHashes) : undefined;
+  const lru = policy === 'evict-lru';
   return metas
     .filter((m) => !isProtectedAsset(m, keep))
-    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.hash.localeCompare(b.hash));
+    .sort((a, b) => {
+      if (lru) {
+        const recency = recencyKey(a).localeCompare(recencyKey(b));
+        if (recency !== 0) return recency;
+      }
+      return a.createdAt.localeCompare(b.createdAt) || a.hash.localeCompare(b.hash);
+    });
 }
 
 /** Apply or clear pin/keep flags and the matching tags (F-0b108b56). */
@@ -96,8 +111,18 @@ export function tagsRequestPin(tags: readonly string[] | undefined): boolean {
  */
 export function reserveQuota(quota: StoreQuota, incomingBytes: number): StoreQuota {
   return {
-    policy: 'evict-oldest',
+    policy: quota.policy,
     maxBytes: quota.maxBytes !== undefined ? Math.max(0, quota.maxBytes - incomingBytes) : undefined,
     maxCount: quota.maxCount !== undefined ? Math.max(0, quota.maxCount - 1) : undefined,
   };
+}
+
+/** True when a put should shrink the store before writing. */
+export function isEvictingPolicy(policy: QuotaPolicy): boolean {
+  return policy === 'evict-oldest' || policy === 'evict-lru';
+}
+
+/** Stamp last-access time (F-caad5a4d). */
+export function stampAccessed(meta: AssetMetadata, at: string): AssetMetadata {
+  return { ...meta, accessedAt: at };
 }
