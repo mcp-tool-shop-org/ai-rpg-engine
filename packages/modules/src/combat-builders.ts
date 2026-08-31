@@ -111,7 +111,19 @@ export type CombatStackConfig = {
   /** Engagement config (backlineTags, protectorTags, chokepointTag). */
   engagement?: Omit<EngagementConfig, 'playerId'>;
 
-  /** Combat resource profile. Omit for worlds without combat resources (e.g. Fantasy). */
+  /**
+   * Combat resource profile. Omit for worlds without combat resources (e.g.
+   * Fantasy). Controls ONLY the additional configurable resource system
+   * (createCombatResources/withCombatResources + intent/tactics awareness of
+   * it) — combat-core.ts's own baseline stamina mechanic (attack/guard/
+   * disengage, and combat-tactics.ts's brace/reposition) is a separate,
+   * unconditional gate this config never reaches. That gate honors the same
+   * "no combat resources" intent on its own terms
+   * (WO-resourceProfile-doc-vs-behavior): it costs stamina only when an
+   * entity actually authors a `stamina` value, so a pack that also never
+   * authors `stamina` gets no stamina gate anywhere, exactly as the doc
+   * above promises.
+   */
   resourceProfile?: CombatResourceProfile;
 
   /** Built-in pack bias tags to include (e.g. ['undead', 'feral']). Filters BUILTIN_PACK_BIASES. */

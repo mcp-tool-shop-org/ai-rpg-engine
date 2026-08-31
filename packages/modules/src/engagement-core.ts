@@ -18,7 +18,6 @@ import { applyStatus, removeStatus, hasStatus } from './status-core.js';
 import { COMBAT_STATES, DEFAULT_STAT_MAPPING, defaultInterceptChance } from './combat-core.js';
 import type { CombatFormulas } from './combat-core.js';
 import { affiliationOf } from './targeting.js';
-import { getEncounterSpawnState } from './encounter-spawn.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -278,8 +277,25 @@ export function createEngagementCore(config: EngagementConfig = {}): EngineModul
             // is scoped to `defeated.zoneId` and may be a different zone
             // when the triggering defeat happened elsewhere.
             const survivorIds = getEntitiesInZone(world, clearedZoneId).map(e => e.id);
-            const encounterState = getEncounterSpawnState(world);
-            const encounterId = encounterState.liveByZone[clearedZoneId]?.encounterId;
+            // F-4a203504: encounterRef comes from the DEFEATED ENTITY's own
+            // stamped encounterId (encounter-spawn.ts's trySpawn stamps
+            // `custom.encounterId` on every procedurally-spawned participant
+            // at spawn time), never from encounter-spawn's zone-keyed
+            // `liveByZone` side table. `liveByZone` is cleaned up lazily —
+            // only on that zone's NEXT world.zone.entered scan — and a
+            // disengage-driven zoneId change (combat-core.ts's
+            // disengageHandler) never fires that event, so `liveByZone` can
+            // hold a stale, unrelated record for a zone the player only just
+            // re-entered by fleeing into it (two-encounters-one-session).
+            // Guarded on `defeated.zoneId === clearedZoneId` too: the
+            // survivorIds comment above already notes the triggering defeat
+            // can happen in a different zone than the one just cleared, and
+            // that defeated entity's own encounterId (if it even has one)
+            // would name ITS zone's encounter, not this one.
+            const encounterId = defeated.zoneId === clearedZoneId
+              && typeof defeated.custom?.encounterId === 'string'
+              ? defeated.custom.encounterId
+              : undefined;
             ctx.events.emit({
               id: genId(world, 'evt'),
               tick,

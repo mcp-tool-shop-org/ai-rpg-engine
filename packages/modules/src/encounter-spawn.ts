@@ -592,6 +592,15 @@ function trySpawn(
     clone.id = genId(world, 'enc');
     clone.zoneId = zoneId;
     clone.statuses = [];
+    // F-4a203504: stamp the spawning encounter's own id onto each
+    // participant so engagement-core can attribute combat.encounter.cleared
+    // to the ENCOUNTER THAT JUST ENDED (the defeated entity's own stamp)
+    // instead of this module's zone-keyed `liveByZone` ledger, which can go
+    // stale for a zone the player re-enters by disengage (never emits
+    // world.zone.entered, so liveByZone's lazy cleanup never runs there).
+    // Spread-merges over any authored `custom` fields (companion-core.ts's
+    // stamping convention), never overwrites them.
+    clone.custom = { ...clone.custom, encounterId: pick.id };
     engine.store.addEntity(clone);
     entityIds.push(clone.id);
     entityNames.push(clone.name);

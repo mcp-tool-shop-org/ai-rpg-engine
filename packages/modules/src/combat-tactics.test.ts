@@ -256,6 +256,82 @@ describe('reposition action', () => {
 });
 
 // ---------------------------------------------------------------------------
+// WORK ORDER: same stamina-gate reachability gap as combat-core.ts's attack/
+// guard/disengage (WO-resourceProfile-doc-vs-behavior) — brace and reposition
+// carry the identical hardcoded `actor.resources.stamina ?? 0` pattern,
+// unconditionally enforced regardless of buildCombatStack's resourceProfile
+// config. A pack that omits resourceProfile AND never authors `stamina` (the
+// doc's own "worlds without combat resources" case) got brace/reposition
+// rejected 'not enough stamina' forever too.
+// ---------------------------------------------------------------------------
+
+describe('brace/reposition: stamina cost only enforced when the entity actually authors a stamina resource (WO-resourceProfile-doc-vs-behavior)', () => {
+  const makeNoStaminaPlayer = (zoneId: string, overrides?: Partial<EntityState>): EntityState => ({
+    id: 'player',
+    blueprintId: 'player',
+    type: 'player',
+    name: 'Hero',
+    tags: ['player'],
+    stats: { vigor: 5, instinct: 5, will: 3 },
+    resources: { hp: 20, maxHp: 20 }, // no `stamina` key at all
+    statuses: [],
+    zoneId,
+    ...overrides,
+  });
+
+  it('brace succeeds against an entity with no authored stamina resource (previously rejected "not enough stamina" unconditionally)', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCombatTactics()],
+      entities: [makeNoStaminaPlayer('a')],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    const events = engine.submitAction('brace');
+
+    expect(events.some(e => e.type === 'action.rejected' && e.payload.reason === 'not enough stamina')).toBe(false);
+    expect(events.some(e => e.type === 'combat.brace.start')).toBe(true);
+    expect(events.some(e => e.type === 'resource.changed' && e.payload.resource === 'stamina')).toBe(false);
+  });
+
+  it('brace with an authored stamina: 0 is UNCHANGED -- still rejected', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCombatTactics()],
+      entities: [makeNoStaminaPlayer('a', { resources: { hp: 20, maxHp: 20, stamina: 0 } })],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: [] }],
+    });
+
+    const events = engine.submitAction('brace');
+
+    expect(events.some(e => e.type === 'action.rejected' && e.payload.reason === 'not enough stamina')).toBe(true);
+  });
+
+  it('reposition succeeds against an entity with no authored stamina resource', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCombatTactics()],
+      entities: [makeNoStaminaPlayer('a'), makeEntity('orc-1', 'Orc', 'a', { resources: { hp: 20, maxHp: 20 } })],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: ['b'] }],
+    });
+
+    const events = engine.submitAction('reposition', { targetIds: ['orc-1'] });
+
+    expect(events.some(e => e.type === 'action.rejected' && e.payload.reason === 'not enough stamina')).toBe(false);
+    expect(events.some(e => e.type === 'resource.changed' && e.payload.resource === 'stamina')).toBe(false);
+  });
+
+  it('reposition with an authored stamina: 0 is UNCHANGED -- still rejected', () => {
+    const engine = createTestEngine({
+      modules: [statusCore, createCombatCore(), createCombatTactics()],
+      entities: [makeNoStaminaPlayer('a', { resources: { hp: 20, maxHp: 20, stamina: 0 } })],
+      zones: [{ id: 'a', roomId: 'test', name: 'A', tags: [], neighbors: ['b'] }],
+    });
+
+    const events = engine.submitAction('reposition');
+
+    expect(events.some(e => e.type === 'action.rejected' && e.payload.reason === 'not enough stamina')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // MC-02: round flags are tick-scoped (no dead tick.start dependency)
 // ---------------------------------------------------------------------------
 

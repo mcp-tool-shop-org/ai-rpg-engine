@@ -378,10 +378,29 @@ function factionReputationFor(world: WorldState, factionId: string): number {
 /**
  * Faction-band one-liner for a speaker. Empty when the speaker has no
  * faction or the band is the middle (authored node.text stays untouched).
+ *
+ * WO-dialogueBias-reachability: `getEntityFaction` (faction-cognition.ts)
+ * reads a SEPARATE membership registry populated only when a pack
+ * explicitly registers `createFactionCognition({ factions: [{ factionId,
+ * entityIds }] })` at setup — a second, easy-to-forget authoring surface
+ * distinct from the entity-level `faction` tag (EntityState.faction) every
+ * other faction consumer reads directly (targeting.ts's affiliationOf,
+ * combat-intent.ts, companion-core.ts). None of the 12 shipped starters
+ * register that module in production (verified: zero production
+ * createFactionCognition call sites across every starter package's src
+ * directory, only a starter-cyberpunk TEST file references it), so
+ * getEntityFaction returned
+ * undefined for every speaker in every shipped pack and this function was
+ * unreachable dead code end to end — a faction-tagged, reputable speaker
+ * never got a dialogueBias line no matter how friendly or hostile the
+ * faction stood. Falling back to the entity's own authored `faction` field
+ * closes that gap with the same plain-faction-standing signal every sibling
+ * consumer already trusts, without requiring the redundant
+ * factionCognition registration step.
  */
 function dialogueBiasForSpeaker(world: WorldState, speakerId: string | null | undefined): string {
   if (!speakerId) return '';
-  const factionId = getEntityFaction(world, speakerId);
+  const factionId = getEntityFaction(world, speakerId) ?? world.entities[speakerId]?.faction;
   if (!factionId) return '';
   const player = world.entities[world.playerId];
   const stored = getStoredFactionAccess(player?.custom, factionId);

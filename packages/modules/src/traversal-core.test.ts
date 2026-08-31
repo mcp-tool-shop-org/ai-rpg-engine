@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createTestEngine } from '@ai-rpg-engine/core';
 import type { EntityState, ZoneState } from '@ai-rpg-engine/core';
-import { traversalCore } from './traversal-core.js';
+import { traversalCore, emitZoneEnteredForPlacement } from './traversal-core.js';
 import { createEnvironmentCore } from './environment-core.js';
 import { createDistrictCore } from './district-core.js';
 import { createEconomyCore } from './economy-core.js';
@@ -269,6 +269,84 @@ describe('traversal-core: moveHandler district-mood walk-in (F-99de2f57)', () =>
 
     expect(entered).toBeDefined();
     expect(entered!.payload).not.toHaveProperty('tone');
+  });
+});
+
+describe('traversal-core: emitZoneEnteredForPlacement — session-start zone entry (F-96e9a5f4)', () => {
+  // Same fixture shape as the F-99de2f57 block above, reused so the
+  // moodHint/tone assertions below are directly comparable to a walked-in
+  // arrival's own pinned values ('Market: calm and watchful' / 'calm').
+  const placementZones: ZoneState[] = [
+    { id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbors: ['zone-b'] },
+    { id: 'zone-b', roomId: 'test', name: 'Zone B', tags: [], neighbors: ['zone-a'] },
+  ];
+  const placementDistricts = [{ id: 'district-1', name: 'Market', zoneIds: ['zone-b'], tags: [] }];
+
+  function makePlacementEngine(startZone: string) {
+    return createTestEngine({
+      modules: [traversalCore, createEnvironmentCore(), createDistrictCore({ districts: placementDistricts })],
+      entities: [makePlayer(startZone)],
+      zones: placementZones,
+      playerId: 'player',
+      startZone,
+    });
+  }
+
+  it('RED-PROOF control: Engine.setPlayerLocation alone (the CLI --start boot path\'s primitive, packages/core) places the player but emits nothing -- the exact silent gap F-96e9a5f4 describes', () => {
+    const engine = makePlacementEngine('zone-a');
+
+    engine.store.setPlayerLocation('zone-b');
+
+    expect(engine.world.entities.player.zoneId).toBe('zone-b');
+    expect(engine.world.locationId).toBe('zone-b');
+    expect(engine.world.eventLog.some((e) => e.type === 'world.zone.entered')).toBe(false);
+  });
+
+  it('emits world.zone.entered for the placed zone, actorId the player, WITHOUT previousZoneId (a session start has no "from" zone)', () => {
+    const engine = makePlacementEngine('zone-a');
+    engine.store.setPlayerLocation('zone-b');
+
+    const entered = emitZoneEnteredForPlacement(engine, 'zone-b');
+
+    expect(entered).toBeDefined();
+    expect(entered!.type).toBe('world.zone.entered');
+    expect(entered!.actorId).toBe('player');
+    expect(entered!.payload.zoneId).toBe('zone-b');
+    expect(entered!.payload.zoneName).toBe('Zone B');
+    expect(entered!.payload.tags).toEqual([]);
+    expect(entered!.payload).not.toHaveProperty('previousZoneId');
+    // Actually recorded to the eventLog, not just constructed.
+    expect(engine.world.eventLog.some((e) => e.type === 'world.zone.entered')).toBe(true);
+  });
+
+  it('attaches moodHint/tone exactly like a walked-in arrival, computed from the same computeDistrictMood call', () => {
+    const engine = makePlacementEngine('zone-b');
+    engine.store.setPlayerLocation('zone-b');
+
+    const entered = emitZoneEnteredForPlacement(engine, 'zone-b');
+
+    expect(entered!.payload.moodHint).toBe('Market: calm and watchful');
+    expect(entered!.payload.tone).toBe('calm');
+  });
+
+  it('an unmapped zone omits moodHint/tone exactly like moveHandler (truthy-gated, byte-identical shape otherwise)', () => {
+    const engine = makePlacementEngine('zone-a');
+
+    const entered = emitZoneEnteredForPlacement(engine, 'zone-a');
+
+    expect(entered!.payload).not.toHaveProperty('moodHint');
+    expect(entered!.payload).not.toHaveProperty('tone');
+    expect(Object.keys(entered!.payload).sort()).toEqual(['tags', 'zoneId', 'zoneName'].sort());
+  });
+
+  it('returns undefined and records nothing for a zone that does not exist (fail-closed, mirrors moveHandler\'s own zone-existence check)', () => {
+    const engine = makePlacementEngine('zone-a');
+    const before = engine.world.eventLog.length;
+
+    const entered = emitZoneEnteredForPlacement(engine, 'no-such-zone');
+
+    expect(entered).toBeUndefined();
+    expect(engine.world.eventLog.length).toBe(before);
   });
 });
 
