@@ -222,21 +222,25 @@ function braceHandler(
     return [makeEvent(action, 'action.rejected', { reason: 'actor is defeated' })];
   }
 
-  const staminaCost = 1;
-  const currentStamina = actor.resources.stamina ?? 0;
-  if (currentStamina < staminaCost) {
-    return [makeEvent(action, 'action.rejected', { reason: 'not enough stamina' })];
+  // Stamina cost — see combat-core.ts's attackHandler comment
+  // (WO-resourceProfile-doc-vs-behavior): only enforced when this entity
+  // actually authors a `stamina` resource. An authored `stamina: 0` is
+  // UNCHANGED — only the ABSENCE of the key changes behavior.
+  if (actor.resources.stamina !== undefined) {
+    const staminaCost = 1;
+    const currentStamina = actor.resources.stamina;
+    if (currentStamina < staminaCost) {
+      return [makeEvent(action, 'action.rejected', { reason: 'not enough stamina' })];
+    }
+    actor.resources.stamina = currentStamina - staminaCost;
+    events.push(makeEvent(action, 'resource.changed', {
+      entityId: actor.id,
+      resource: 'stamina',
+      previous: currentStamina,
+      current: actor.resources.stamina,
+      delta: -staminaCost,
+    }));
   }
-
-  // Deduct stamina
-  actor.resources.stamina = currentStamina - staminaCost;
-  events.push(makeEvent(action, 'resource.changed', {
-    entityId: actor.id,
-    resource: 'stamina',
-    previous: currentStamina,
-    current: actor.resources.stamina,
-    delta: -staminaCost,
-  }));
 
   // Clear existing guarded (will be re-applied)
   if (hasStatus(actor, COMBAT_STATES.GUARDED)) {
@@ -308,21 +312,25 @@ function repositionHandler(
     return [makeEvent(action, 'action.rejected', { reason: 'actor is defeated' })];
   }
 
-  const staminaCost = 1;
-  const currentStamina = actor.resources.stamina ?? 0;
-  if (currentStamina < staminaCost) {
-    return [makeEvent(action, 'action.rejected', { reason: 'not enough stamina' })];
+  // Stamina cost — see combat-core.ts's attackHandler comment
+  // (WO-resourceProfile-doc-vs-behavior): only enforced when this entity
+  // actually authors a `stamina` resource. An authored `stamina: 0` is
+  // UNCHANGED — only the ABSENCE of the key changes behavior.
+  if (actor.resources.stamina !== undefined) {
+    const staminaCost = 1;
+    const currentStamina = actor.resources.stamina;
+    if (currentStamina < staminaCost) {
+      return [makeEvent(action, 'action.rejected', { reason: 'not enough stamina' })];
+    }
+    actor.resources.stamina = currentStamina - staminaCost;
+    events.push(makeEvent(action, 'resource.changed', {
+      entityId: actor.id,
+      resource: 'stamina',
+      previous: currentStamina,
+      current: actor.resources.stamina,
+      delta: -staminaCost,
+    }));
   }
-
-  // Deduct stamina
-  actor.resources.stamina = currentStamina - staminaCost;
-  events.push(makeEvent(action, 'resource.changed', {
-    entityId: actor.id,
-    resource: 'stamina',
-    previous: currentStamina,
-    current: actor.resources.stamina,
-    delta: -staminaCost,
-  }));
 
   // Repositioning clears own guarded (you're moving, not defending)
   if (hasStatus(actor, COMBAT_STATES.GUARDED)) {

@@ -393,3 +393,118 @@ describe('companion-on-companion interception (F-e2d3aa7c)', () => {
     expect(engine.world.entities.foe.resources.hp).toBe(foeHpBefore - 3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// WORK ORDER: buildCombatStack's CombatStackConfig.resourceProfile doc says
+// "Omit for worlds without combat resources (e.g. Fantasy)". But omitting it
+// never touched this file's own hardcoded stamina-cost gates — buildCombatStack
+// only controls whether withCombatResources/createCombatResources wire in an
+// ADDITIONAL configurable resource system; attack/guard/disengage's stamina
+// cost here is unconditional and independent of that config entirely. Before
+// this fix, `attacker.resources.stamina ?? 0` defaulted a genuinely-UNAUTHORED
+// stamina resource to 0, so a pack that took the doc at its word (omitted
+// resourceProfile AND never authored `stamina` on its entities) got every
+// attack/guard/disengage rejected 'not enough stamina' forever. All 12
+// shipped starters author `stamina` on every entity regardless of whether
+// they pass resourceProfile (verified by source grep), so this was latent,
+// not yet load-bearing for any shipped pack — but it contradicts the doc's
+// own promise for the exact case (Fantasy-style, no combat resources) it
+// names as its example.
+// ---------------------------------------------------------------------------
+
+describe('combat-core: stamina cost only enforced when the entity actually authors a stamina resource (WO-resourceProfile-doc-vs-behavior)', () => {
+  const makeNoStaminaEntity = (id: string, zoneId: string, overrides?: Partial<EntityState>): EntityState => ({
+    id,
+    blueprintId: id,
+    type: 'enemy',
+    name: id,
+    tags: ['enemy'],
+    stats: { vigor: 5, instinct: 5, will: 3 },
+    resources: { hp: 20 }, // no `stamina` key at all -- the doc's own "worlds without combat resources" case
+    statuses: [],
+    zoneId,
+    ...overrides,
+  });
+
+  it('attack succeeds against a pack with no authored stamina resource (previously rejected "not enough stamina" unconditionally)', () => {
+    const engine = createTestEngine({
+      modules: [createCombatCore()],
+      entities: [
+        makeNoStaminaEntity('player', 'zone-a', { type: 'player', tags: ['player'] }),
+        makeNoStaminaEntity('foe', 'zone-a'),
+      ],
+      playerId: 'player',
+      zones: [{ id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbors: [] }],
+    });
+
+    const events = engine.submitAction('attack', { targetIds: ['foe'] });
+
+    expect(events.some(e => e.type === 'action.rejected' && e.payload.reason === 'not enough stamina')).toBe(false);
+    // No resource.changed for a resource this pack never authored.
+    expect(events.some(e => e.type === 'resource.changed' && e.payload.resource === 'stamina')).toBe(false);
+  });
+
+  it('guard succeeds against a pack with no authored stamina resource', () => {
+    const engine = createTestEngine({
+      modules: [createCombatCore()],
+      entities: [makeNoStaminaEntity('player', 'zone-a', { type: 'player', tags: ['player'] })],
+      playerId: 'player',
+      zones: [{ id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbors: [] }],
+    });
+
+    const events = engine.submitAction('guard', {});
+
+    expect(events.some(e => e.type === 'action.rejected' && e.payload.reason === 'not enough stamina')).toBe(false);
+    expect(events.some(e => e.type === 'combat.guard.start')).toBe(true);
+  });
+
+  it('disengage succeeds against a pack with no authored stamina resource (given an exit zone)', () => {
+    const engine = createTestEngine({
+      modules: [createCombatCore()],
+      entities: [makeNoStaminaEntity('player', 'zone-a', { type: 'player', tags: ['player'] })],
+      playerId: 'player',
+      zones: [
+        { id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbors: ['zone-b'] },
+        { id: 'zone-b', roomId: 'test', name: 'Zone B', tags: [], neighbors: ['zone-a'] },
+      ],
+    });
+
+    const events = engine.submitAction('disengage', {});
+
+    expect(events.some(e => e.type === 'action.rejected' && e.payload.reason === 'not enough stamina')).toBe(false);
+  });
+
+  it('an authored stamina: 0 is UNCHANGED -- still rejected (only the ABSENCE of the key changes behavior)', () => {
+    const engine = createTestEngine({
+      modules: [createCombatCore()],
+      entities: [
+        makeNoStaminaEntity('player', 'zone-a', { type: 'player', tags: ['player'], resources: { hp: 20, stamina: 0 } }),
+        makeNoStaminaEntity('foe', 'zone-a'),
+      ],
+      playerId: 'player',
+      zones: [{ id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbors: [] }],
+    });
+
+    const events = engine.submitAction('attack', { targetIds: ['foe'] });
+
+    expect(events.some(e => e.type === 'action.rejected' && e.payload.reason === 'not enough stamina')).toBe(true);
+  });
+
+  it('an authored stamina resource still deducts exactly as before (byte-identical for the 12 shipped starters)', () => {
+    const engine = createTestEngine({
+      modules: [createCombatCore()],
+      entities: [
+        makeNoStaminaEntity('player', 'zone-a', { type: 'player', tags: ['player'], resources: { hp: 20, stamina: 5 } }),
+        makeNoStaminaEntity('foe', 'zone-a'),
+      ],
+      playerId: 'player',
+      zones: [{ id: 'zone-a', roomId: 'test', name: 'Zone A', tags: [], neighbors: [] }],
+    });
+
+    const events = engine.submitAction('attack', { targetIds: ['foe'] });
+    const changed = events.find(e => e.type === 'resource.changed' && e.payload.resource === 'stamina');
+
+    expect(changed).toBeDefined();
+    expect(changed!.payload.current).toBe(4);
+  });
+});

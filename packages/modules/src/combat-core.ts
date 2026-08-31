@@ -117,20 +117,31 @@ function attackHandler(
     return [makeEvent(action, 'action.rejected', { reason: 'target is already defeated' })];
   }
 
-  // Stamina cost
-  const staminaCost = 1;
-  const currentStamina = attacker.resources.stamina ?? 0;
-  if (currentStamina < staminaCost) {
-    return [makeEvent(action, 'action.rejected', { reason: 'not enough stamina' })];
+  // Stamina cost — only enforced when this entity actually authors a
+  // `stamina` resource. WO-resourceProfile-doc-vs-behavior:
+  // CombatStackConfig.resourceProfile's own doc says "Omit for worlds
+  // without combat resources (e.g. Fantasy)", but this gate previously ran
+  // unconditionally regardless of that config (buildCombatStack doesn't even
+  // reach this file's verb handlers) — `attacker.resources.stamina ?? 0`
+  // defaulted a genuinely-UNAUTHORED resource to 0, so a pack that took the
+  // doc at its word (never authored `stamina` on its entities) got every
+  // attack rejected 'not enough stamina' forever. An authored `stamina: 0` is
+  // UNCHANGED — only the ABSENCE of the key changes behavior.
+  if (attacker.resources.stamina !== undefined) {
+    const staminaCost = 1;
+    const currentStamina = attacker.resources.stamina;
+    if (currentStamina < staminaCost) {
+      return [makeEvent(action, 'action.rejected', { reason: 'not enough stamina' })];
+    }
+    attacker.resources.stamina = currentStamina - staminaCost;
+    events.push(makeEvent(action, 'resource.changed', {
+      entityId: attacker.id,
+      resource: 'stamina',
+      previous: currentStamina,
+      current: attacker.resources.stamina,
+      delta: -staminaCost,
+    }));
   }
-  attacker.resources.stamina = currentStamina - staminaCost;
-  events.push(makeEvent(action, 'resource.changed', {
-    entityId: attacker.id,
-    resource: 'stamina',
-    previous: currentStamina,
-    current: attacker.resources.stamina,
-    delta: -staminaCost,
-  }));
 
   // Attacking clears own guarded status
   if (hasStatus(attacker, COMBAT_STATES.GUARDED)) {
@@ -501,9 +512,10 @@ function guardHandler(
     return [makeEvent(action, 'action.rejected', { reason: 'actor is defeated' })];
   }
 
-  const staminaCost = 1;
-  const currentStamina = actor.resources.stamina ?? 0;
-  if (currentStamina < staminaCost) {
+  // Stamina cost — see attackHandler's comment (WO-resourceProfile-doc-vs-behavior):
+  // only enforced when this entity actually authors a `stamina` resource.
+  // Checked (and rejects) BEFORE any mutation below, same position as before.
+  if (actor.resources.stamina !== undefined && actor.resources.stamina < 1) {
     return [makeEvent(action, 'action.rejected', { reason: 'not enough stamina' })];
   }
 
@@ -513,15 +525,19 @@ function guardHandler(
     if (removeEvt) events.push(removeEvt);
   }
 
-  // Deduct stamina
-  actor.resources.stamina = currentStamina - staminaCost;
-  events.push(makeEvent(action, 'resource.changed', {
-    entityId: actor.id,
-    resource: 'stamina',
-    previous: currentStamina,
-    current: actor.resources.stamina,
-    delta: -staminaCost,
-  }));
+  // Deduct stamina (no-op when this entity authors no stamina resource)
+  if (actor.resources.stamina !== undefined) {
+    const staminaCost = 1;
+    const currentStamina = actor.resources.stamina;
+    actor.resources.stamina = currentStamina - staminaCost;
+    events.push(makeEvent(action, 'resource.changed', {
+      entityId: actor.id,
+      resource: 'stamina',
+      previous: currentStamina,
+      current: actor.resources.stamina,
+      delta: -staminaCost,
+    }));
+  }
 
   // Apply guarded status (expires after 2 ticks as safety net)
   events.push(applyStatus(actor, COMBAT_STATES.GUARDED, world.meta.tick, {
@@ -583,9 +599,10 @@ function disengageHandler(
     return [makeEvent(action, 'action.rejected', { reason: 'no exit from current zone' })];
   }
 
-  const staminaCost = 1;
-  const currentStamina = actor.resources.stamina ?? 0;
-  if (currentStamina < staminaCost) {
+  // Stamina cost — see attackHandler's comment (WO-resourceProfile-doc-vs-behavior):
+  // only enforced when this entity actually authors a `stamina` resource.
+  // Checked (and rejects) BEFORE any mutation below, same position as before.
+  if (actor.resources.stamina !== undefined && actor.resources.stamina < 1) {
     return [makeEvent(action, 'action.rejected', { reason: 'not enough stamina' })];
   }
 
@@ -595,15 +612,19 @@ function disengageHandler(
     if (removeEvt) events.push(removeEvt);
   }
 
-  // Deduct stamina
-  actor.resources.stamina = currentStamina - staminaCost;
-  events.push(makeEvent(action, 'resource.changed', {
-    entityId: actor.id,
-    resource: 'stamina',
-    previous: currentStamina,
-    current: actor.resources.stamina,
-    delta: -staminaCost,
-  }));
+  // Deduct stamina (no-op when this entity authors no stamina resource)
+  if (actor.resources.stamina !== undefined) {
+    const staminaCost = 1;
+    const currentStamina = actor.resources.stamina;
+    actor.resources.stamina = currentStamina - staminaCost;
+    events.push(makeEvent(action, 'resource.changed', {
+      entityId: actor.id,
+      resource: 'stamina',
+      previous: currentStamina,
+      current: actor.resources.stamina,
+      delta: -staminaCost,
+    }));
+  }
 
   // Roll disengage chance
   const mapping = formulas?.statMapping ?? DEFAULT_STAT_MAPPING;
