@@ -246,11 +246,11 @@ describe('REACTION_TRIGGER_STATUS (F-6be920bd audit)', () => {
     }
   });
 
-  it('matches the audited totals: 10 reachable, 0 wired-unreachable, 6 dark', () => {
+  it('matches the audited totals: 16 reachable, 0 wired-unreachable, 0 dark', () => {
     const values = Object.values(REACTION_TRIGGER_STATUS);
-    expect(values.filter((v) => v.reachability === 'reachable')).toHaveLength(10);
+    expect(values.filter((v) => v.reachability === 'reachable')).toHaveLength(16);
     expect(values.filter((v) => v.reachability === 'wired-unreachable')).toHaveLength(0);
-    expect(values.filter((v) => v.reachability === 'dark')).toHaveLength(6);
+    expect(values.filter((v) => v.reachability === 'dark')).toHaveLength(0);
   });
 
   it('the wave-2 sources (leverage-social/leverage-rumor, district-grim/district-prosperous) are reachable, alongside the earlier combat/pressure sources', () => {
@@ -275,13 +275,13 @@ describe('REACTION_TRIGGER_STATUS (F-6be920bd audit)', () => {
     expect(REACTION_TRIGGER_STATUS['pressure-resolved-well'].note).toMatch(/resolve-pressure/);
   });
 
-  it('the 6 explicitly-deferred-to-v3.0 triggers (betrayal-witnessed, obligation-betrayed, item-*-recognized) are all dark, not force-wired', () => {
-    const dark: readonly string[] = [
+  it('F-29f4a5ff / F-b7196370: betrayal-witnessed, obligation-betrayed, and item-*-recognized are reachable', () => {
+    const flipped: readonly string[] = [
       'betrayal-witnessed', 'obligation-betrayed',
       'item-faction-recognized', 'item-stolen-recognized', 'item-cursed-recognized', 'item-trophy-recognized',
     ];
-    for (const trigger of dark) {
-      expect(REACTION_TRIGGER_STATUS[trigger as keyof typeof REACTION_TRIGGER_STATUS].reachability).toBe('dark');
+    for (const trigger of flipped) {
+      expect(REACTION_TRIGGER_STATUS[trigger as keyof typeof REACTION_TRIGGER_STATUS].reachability).toBe('reachable');
     }
   });
 });

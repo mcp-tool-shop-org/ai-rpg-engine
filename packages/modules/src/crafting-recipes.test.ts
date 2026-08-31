@@ -17,7 +17,7 @@ import { getMaterialInventory } from './crafting-core.js';
 import { createDistrictEconomy, createEconomyCore, getSupplyLevel, getDistrictEconomy, setDistrictEconomy, applyEconomyShift, type EconomyCoreState } from './economy-core.js';
 import { HEAT_KEY } from './world-tick.js';
 import { createEnvironmentCore } from './environment-core.js';
-import { createDistrictCore } from './district-core.js';
+import { createDistrictCore, getDistrictState } from './district-core.js';
 import type { ItemDefinition } from '@ai-rpg-engine/equipment';
 import type { CraftingContext } from './crafting-recipes.js';
 
@@ -497,6 +497,20 @@ describe('crafting-core module (F-6631dd57) — the salvage/craft/repair/modify 
       const crafted = withGenre.submitAction('craft', { parameters: { recipeId: 'craft-potion' } });
       expect(crafted.some((e) => e.type === 'item.crafted')).toBe(true);
       expect(withGenre.world.entities.player.inventory).toContain('craft-potion');
+    });
+
+    it('F-88872722: a prosperous+safe district consumes strictly less than the authored recipe inputs', () => {
+      const engine = makeCraftingEngine([], { 'materials.components': 4 });
+      const district = getDistrictState(engine.world, 'district-1')!;
+      district.commerce = 80;
+      district.stability = 8;
+      district.alertPressure = 0;
+
+      const events = engine.submitAction('craft', { parameters: { recipeId: 'craft-toolkit' } });
+      const crafted = events.find((e) => e.type === 'item.crafted');
+      expect(crafted).toBeDefined();
+      const consumed = crafted!.payload.materialsConsumed as { category: string; quantity: number }[];
+      expect(consumed[0].quantity).toBeLessThan(4);
     });
   });
 

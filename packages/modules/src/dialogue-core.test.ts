@@ -816,3 +816,50 @@ describe('dialogue-core: SEED-0 identity — global-equals/global-set/set-global
     ]);
   });
 });
+
+describe('dialogue-core: faction-access condition (F-7d2c4c59)', () => {
+  const accessDialogue: DialogueDefinition = {
+    id: 'access-vocab',
+    speakers: ['merchant'],
+    entryNodeId: 'entry',
+    nodes: {
+      entry: {
+        id: 'entry',
+        speaker: 'merchant',
+        text: 'State your business.',
+        choices: [
+          {
+            id: 'privileged-node', text: '[privileged] Enter the back room.', nextNodeId: 'back',
+            condition: { type: 'faction-access', params: { factionId: 'guild', minLevel: 'privileged' } },
+          },
+          {
+            id: 'normal-node', text: '[normal] Speak as a member.', nextNodeId: 'shop',
+            condition: { type: 'faction-access', params: { factionId: 'guild', minLevel: 'normal' } },
+          },
+        ],
+      },
+      back: { id: 'back', speaker: 'merchant', text: 'The inner office.' },
+      shop: { id: 'shop', speaker: 'merchant', text: 'Very well.' },
+    },
+  };
+
+  it('opens a restricted node after negotiate-access writes the stored mark', () => {
+    const locked = buildEngine([accessDialogue]);
+    const hidden = locked.submitAction('speak', { targetIds: ['merchant'] });
+    expect(enteredChoiceIds(hidden)).not.toContain('normal-node');
+
+    const opened = buildEngine([accessDialogue]);
+    opened.store.state.entities['player'].custom = { 'access.guild': 'normal' };
+    const shown = opened.submitAction('speak', { targetIds: ['merchant'] });
+    expect(enteredChoiceIds(shown)).toContain('normal-node');
+    expect(enteredChoiceIds(shown)).not.toContain('privileged-node');
+  });
+
+  it('denied is fail-closed against a privileged node', () => {
+    const engine = buildEngine([accessDialogue]);
+    engine.store.state.entities['player'].custom = { 'access.guild': 'denied' };
+    const events = engine.submitAction('speak', { targetIds: ['merchant'] });
+    expect(enteredChoiceIds(events)).not.toContain('privileged-node');
+    expect(enteredChoiceIds(events)).not.toContain('normal-node');
+  });
+});

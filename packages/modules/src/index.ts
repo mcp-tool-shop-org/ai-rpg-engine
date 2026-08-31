@@ -237,6 +237,7 @@ export {
   getReputationConsequence,
   getFactionAccess,
   evolveTitle,
+  DEFAULT_TITLE_EVOLUTIONS,
   buildPlayerDescriptor,
 } from './social-consequence.js';
 export type {
@@ -328,6 +329,8 @@ export {
   pushActivePressure,
   applyDistrictMetricEffect,
   resolvePressureByPlayer,
+  resolvePressureByFaction,
+  FACTION_PRESSURE_CLOSERS,
   urgencyBand,
   HEAT_KEY,
   HEAT_WAKE_THRESHOLD,
@@ -347,6 +350,7 @@ export type {
   WorldTickResult,
   UrgencyBand,
   PlayerPressureResolution,
+  FactionPressureResolution,
 } from './world-tick.js';
 export {
   createEncounterSpawn,
@@ -525,6 +529,8 @@ export {
   evaluateItemRecognition,
   shouldRecognize,
   recognitionProbability,
+  applyZoneItemRecognition,
+  equippedItemsFor,
 } from './item-recognition.js';
 export type {
   ItemRecognitionType,
@@ -1151,4 +1157,4 @@ export {
   fantasyProfile,
 } from './profile-templates.js';
 
-export { composeLeverageModifiers, composeTradeModifiers } from './leverage-modifiers.js';
+export { composeLeverageModifiers, composeTradeModifiers, composeCraftModifiers } from './leverage-modifiers.js';

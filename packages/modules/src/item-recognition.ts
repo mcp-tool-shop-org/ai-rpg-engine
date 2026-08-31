@@ -1,7 +1,31 @@
 // Item recognition — NPCs react to equipped items with provenance
 // Pure functions for evaluating whether NPCs notice and react to player equipment.
+// F-29f4a5ff: applyZoneItemRecognition is the production caller — traversal-core
+// fires it on world.zone.entered so a stolen seal in a faction hall actually
+// shifts stance, seeds a rumor, and moves companion morale.
 
+import type { ActionIntent, EntityState, ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
 import type { ItemDefinition, ItemProvenanceFlag, ItemChronicleEntry } from '@ai-rpg-engine/equipment';
+import { makeEvent } from './make-event.js';
+import { getDistrictForZone, getDistrictDefinition } from './district-core.js';
+import { getEntityFaction } from './faction-cognition.js';
+import {
+  spawnNpcOriginatedRumor,
+  getPlayerRumorState,
+  setPlayerRumorState,
+} from './player-rumor.js';
+import { relationshipBaseKey, RELATIONSHIP_AXIS_RANGE } from './npc-agency.js';
+import {
+  getPartyState,
+  setPartyState,
+  getCompanion,
+  adjustCompanionMorale,
+  removeCompanion,
+  removeCompanionTags,
+  refreshCompanionAbilityStatus,
+  syncCompanionCustomFields,
+} from './companion-core.js';
+import { evaluateCompanionReactions, type ReactionTrigger } from './companion-reactions.js';
 
 // --- Types ---
 
@@ -264,4 +288,235 @@ function evaluateFlagRecognition(
     default:
       return undefined;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Production wire (F-29f4a5ff)
+// ---------------------------------------------------------------------------
+
+type ItemRecognitionNamespace = {
+  catalog?: ItemDefinition[];
+  chronicle?: Record<string, ItemChronicleEntry[]>;
+};
+
+type EquipmentLoadout = {
+  equipped?: Record<string, string | null>;
+  inventory?: string[];
+};
+
+function recognitionTrigger(type: ItemRecognitionType): ReactionTrigger | undefined {
+  switch (type) {
+    case 'faction-item': return 'item-faction-recognized';
+    case 'stolen-item': return 'item-stolen-recognized';
+    case 'cursed-item': return 'item-cursed-recognized';
+    case 'trophy-item': return 'item-trophy-recognized';
+    default: return undefined;
+  }
+}
+
+function recognitionCatalog(world: WorldState): ItemDefinition[] {
+  const ns = world.modules['item-recognition'] as ItemRecognitionNamespace | undefined;
+  return Array.isArray(ns?.catalog) ? ns.catalog : [];
+}
+
+function recognitionChronicle(world: WorldState): Record<string, ItemChronicleEntry[]> {
+  const ns = world.modules['item-recognition'] as ItemRecognitionNamespace | undefined;
+  return ns?.chronicle && typeof ns.chronicle === 'object' ? ns.chronicle : {};
+}
+
+/** Equipped item definitions for one actor. Loadout ids win over inventory. */
+export function equippedItemsFor(world: WorldState, actor: EntityState): ItemDefinition[] {
+  const catalog = recognitionCatalog(world);
+  if (catalog.length === 0) return [];
+  const byId = new Map(catalog.map((item) => [item.id, item]));
+  const loadout = (world.modules['equipment-core'] as { loadouts?: Record<string, EquipmentLoadout> } | undefined)
+    ?.loadouts?.[actor.id];
+  const equippedIds = loadout?.equipped
+    ? Object.values(loadout.equipped).filter((id): id is string => typeof id === 'string')
+    : (actor.inventory ?? []);
+  const seen = new Set<string>();
+  const items: ItemDefinition[] = [];
+  for (const id of equippedIds) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const item = byId.get(id);
+    if (item) items.push(item);
+  }
+  return items;
+}
+
+function npcsInZone(world: WorldState, zoneId: string, actorId: string): EntityState[] {
+  return Object.values(world.entities).filter((entity) => {
+    if (entity.id === actorId) return false;
+    if (entity.zoneId !== zoneId) return false;
+    return entity.type === 'npc' || entity.tags.includes('npc');
+  });
+}
+
+function applyStanceDelta(npc: EntityState, delta: number): void {
+  const key = relationshipBaseKey('trust');
+  const range = RELATIONSHIP_AXIS_RANGE.trust;
+  const current = Number(npc.relations?.[key] ?? 0);
+  npc.relations = {
+    ...(npc.relations ?? {}),
+    [key]: Math.min(range.max, Math.max(range.min, current + delta)),
+  };
+}
+
+function dispatchItemRecognitionReactions(
+  world: WorldState,
+  trigger: ReactionTrigger,
+  currentTick: number,
+  action: ActionIntent,
+): ResolvedEvent[] {
+  let party = getPartyState(world);
+  if (party.companions.length === 0) return [];
+
+  const events: ResolvedEvent[] = [];
+  let changed = false;
+  const reactions = evaluateCompanionReactions(party.companions, trigger, { tick: currentTick });
+  for (const reaction of reactions) {
+    const companion = getCompanion(party, reaction.npcId);
+    if (!companion) continue;
+
+    party = adjustCompanionMorale(party, reaction.npcId, reaction.moraleDelta);
+    changed = true;
+    const newMorale = getCompanion(party, reaction.npcId)?.morale ?? 0;
+    const entityForSync = world.entities[reaction.npcId];
+    if (entityForSync) syncCompanionCustomFields(entityForSync, companion.role, newMorale);
+
+    events.push(makeEvent(action, 'companion.reaction', {
+      npcId: reaction.npcId,
+      trigger: reaction.trigger,
+      moraleDelta: reaction.moraleDelta,
+      morale: newMorale,
+      narratorHint: reaction.narratorHint,
+    }, {
+      targetIds: [reaction.npcId],
+      presentation: { channels: ['narrator'], priority: 'low' },
+    }));
+
+    if (reaction.departure) {
+      const removal = removeCompanion(party, reaction.npcId);
+      party = removal.party;
+      const entity = world.entities[reaction.npcId];
+      if (entity) removeCompanionTags(entity, companion.role);
+      events.push(makeEvent(action, 'companion.departed', {
+        npcId: reaction.npcId,
+        npcName: entity?.name ?? reaction.npcId,
+        role: companion.role,
+        reason: reaction.departureReason ?? 'left the party',
+      }, {
+        targetIds: [reaction.npcId],
+        presentation: { channels: ['objective', 'narrator'], priority: 'high' },
+      }));
+    }
+  }
+
+  if (!changed) return events;
+  setPartyState(world, party);
+
+  const player = world.entities[world.playerId];
+  if (player) {
+    const statusEvent = refreshCompanionAbilityStatus(world, party, player, currentTick);
+    if (statusEvent) events.push(statusEvent);
+  }
+  return events;
+}
+
+/**
+ * Production caller for evaluateItemRecognition (F-29f4a5ff).
+ *
+ * On zone entry, resolve the actor's equipped items against the zone's
+ * controlling-faction NPCs, emit `item.recognized`, apply stanceDelta onto
+ * `player-trust`, seed rumorClaim through spawnNpcOriginatedRumor, and
+ * dispatch the matching item-*-recognized companion trigger. No new
+ * chronicle store — evaluateItemRecognition already accepts itemChronicle.
+ */
+export function applyZoneItemRecognition(
+  action: ActionIntent,
+  world: WorldState,
+  zoneId: string,
+): ResolvedEvent[] {
+  const actorId = action.actorId || world.playerId;
+  const actor = world.entities[actorId];
+  if (!actor) return [];
+
+  const equipped = equippedItemsFor(world, actor);
+  if (equipped.length === 0) return [];
+
+  const districtId = getDistrictForZone(world, zoneId);
+  const controllingFaction = districtId
+    ? getDistrictDefinition(world, districtId)?.controllingFaction
+    : undefined;
+  const witnesses = npcsInZone(world, zoneId, actorId);
+  const factionWitnesses = controllingFaction
+    ? witnesses.filter((npc) => (getEntityFaction(world, npc.id) ?? controllingFaction) === controllingFaction)
+    : witnesses.filter((npc) => Boolean(getEntityFaction(world, npc.id)));
+  const observers = factionWitnesses.length > 0 ? factionWitnesses : witnesses;
+  if (observers.length === 0) return [];
+
+  const npcFactionId = controllingFaction
+    ?? getEntityFaction(world, observers[0].id);
+  if (!npcFactionId) return [];
+
+  const tick = action.issuedAtTick;
+  const worldSeed = typeof world.meta?.seed === 'number' ? world.meta.seed : 0;
+  const results = evaluateItemRecognition(
+    equipped,
+    npcFactionId,
+    recognitionChronicle(world),
+    tick,
+    worldSeed,
+  );
+  if (results.length === 0) return [];
+
+  const events: ResolvedEvent[] = [];
+  let rumors = getPlayerRumorState(world).rumors;
+  let rumorsChanged = false;
+  const dispatched = new Set<ReactionTrigger>();
+
+  for (const result of results) {
+    events.push(makeEvent(action, 'item.recognized', {
+      itemId: result.itemId,
+      itemName: result.itemName,
+      recognitionType: result.recognitionType,
+      stanceDelta: result.stanceDelta,
+      narratorHint: result.narratorHint,
+      ...(result.rumorClaim ? { rumorClaim: result.rumorClaim } : {}),
+      factionId: npcFactionId,
+      zoneId,
+    }, {
+      presentation: { channels: ['narrator'], priority: 'normal' },
+    }));
+
+    for (const npc of observers) {
+      applyStanceDelta(npc, result.stanceDelta);
+    }
+
+    if (result.rumorClaim) {
+      const origin = observers[0];
+      rumors = [...rumors, spawnNpcOriginatedRumor(
+        result.rumorClaim,
+        result.stanceDelta < 0 ? 'fearsome' : 'mysterious',
+        'npc-gossip',
+        origin.id,
+        npcFactionId,
+        districtId,
+        tick,
+        0.75,
+        world,
+      )];
+      rumorsChanged = true;
+    }
+
+    const trigger = recognitionTrigger(result.recognitionType);
+    if (trigger && !dispatched.has(trigger)) {
+      dispatched.add(trigger);
+      events.push(...dispatchItemRecognitionReactions(world, trigger, tick, action));
+    }
+  }
+
+  if (rumorsChanged) setPlayerRumorState(world, { rumors });
+  return events;
 }

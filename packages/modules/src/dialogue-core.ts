@@ -17,6 +17,7 @@ import type { DialogueDefinition, DialogueNode, EffectDefinition } from '@ai-rpg
 // faction-cognition.ts, pressure-system.ts, player-rumor.ts), so this is a
 // one-directional edge, not a cycle.
 import { getLeverageState, applyLeverageDeltas } from './player-leverage.js';
+import { evaluateCondition as evaluateCompiledCondition } from './condition-eval.js';
 import type { LeverageCurrency } from './player-leverage.js';
 import { deriveNpcRelationship, getPersistedNpcObligations } from './npc-agency.js';
 import type { NpcRelationship, NpcObligationLedger, ObligationDirection } from './npc-agency.js';
@@ -409,6 +410,12 @@ function evaluateCondition(
   // non-attaching read of it back out — the exact non-mutating pattern
   // deriveNpcRelationship above already uses for the rest of the social
   // layer. This condition just reads it.
+  if (condition.type === 'faction-access') {
+    // F-7d2c4c59: the closed condition-eval operand, evaluated here so a
+    // dialogue node can require the same stored access mark a zone gate reads.
+    return evaluateCompiledCondition(condition, world, world.playerId).ok;
+  }
+
   if (condition.type === 'obligation-exists') {
     const npcId = condition.params.npcId as string;
     const direction = condition.params.direction as ObligationDirection;

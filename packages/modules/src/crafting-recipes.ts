@@ -23,6 +23,7 @@ import {
 } from './economy-core.js';
 import { getDistrictForZone, getDistrictState, getDistrictDefinition } from './district-core.js';
 import { computeDistrictMood } from './district-mood.js';
+import { composeCraftModifiers } from './leverage-modifiers.js';
 import { HEAT_KEY } from './world-tick.js';
 import { makeEvent } from './make-event.js';
 import {
@@ -160,6 +161,15 @@ const UNIVERSAL_RECIPES: CraftingRecipe[] = [
     outputSlot: 'tool',
     outputRarity: 'common',
     description: 'Simple medical supplies',
+  },
+  {
+    id: 'craft-toolkit',
+    name: 'Craft Toolkit',
+    category: 'craft',
+    inputs: [{ category: 'components', quantity: 4 }],
+    outputSlot: 'tool',
+    outputRarity: 'common',
+    description: 'A workshop kit — enough stock that district efficiency is visible',
   },
   {
     id: 'craft-torch',
@@ -1007,8 +1017,9 @@ function resolveFactionAccess(world: WorldState, district: ResolvedDistrict): st
   return reputation > 0 ? district.controllingFaction : undefined;
 }
 
-function buildCraftingContext(world: WorldState, district: ResolvedDistrict): CraftingContext {
+function buildCraftingContext(world: WorldState, district: ResolvedDistrict, actor: EntityState): CraftingContext {
   const factionAccess = resolveFactionAccess(world, district);
+  const craftingEfficiency = composeCraftModifiers(world, actor);
   return {
     districtEconomy: district.economy,
     districtId: district.districtId,
@@ -1018,6 +1029,7 @@ function buildCraftingContext(world: WorldState, district: ResolvedDistrict): Cr
     ...(factionAccess ? { factionAccess } : {}),
     playerHeat: numGlobal(world, HEAT_KEY),
     isBlackMarket: isBlackMarketCondition(district.economy),
+    ...(craftingEfficiency ? { craftingEfficiency } : {}),
   };
 }
 
@@ -1172,7 +1184,7 @@ function craftHandler(action: ActionIntent, world: WorldState, genre: string): R
   if (!district) return craftingReject(action, 'nowhere to craft here');
 
   const materials = getMaterialInventory(actor.custom ?? {});
-  const context = buildCraftingContext(world, district);
+  const context = buildCraftingContext(world, district, actor);
 
   const afford = canCraft(recipe, materials, context);
   if (!afford.affordable || !afford.meetsRequirements) {
@@ -1228,7 +1240,7 @@ function repairHandler(action: ActionIntent, world: WorldState, genre: string): 
   if (!district) return craftingReject(action, 'nowhere to repair here');
 
   const materials = getMaterialInventory(actor.custom ?? {});
-  const context = buildCraftingContext(world, district);
+  const context = buildCraftingContext(world, district, actor);
 
   const afford = canCraft(recipe, materials, context);
   if (!afford.affordable || !afford.meetsRequirements) {
@@ -1277,7 +1289,7 @@ function modifyHandler(action: ActionIntent, world: WorldState, genre: string): 
   if (!district) return craftingReject(action, 'nowhere to work here');
 
   const materials = getMaterialInventory(actor.custom ?? {});
-  const context = buildCraftingContext(world, district);
+  const context = buildCraftingContext(world, district, actor);
 
   const afford = canCraft(recipe, materials, context);
   if (!afford.affordable || !afford.meetsRequirements) {

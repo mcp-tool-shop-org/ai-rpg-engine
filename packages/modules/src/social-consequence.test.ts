@@ -12,6 +12,7 @@ import {
   deriveStance,
   getReputationConsequence,
   evolveTitle,
+  DEFAULT_TITLE_EVOLUTIONS,
   buildPlayerDescriptor,
 } from './social-consequence.js';
 
@@ -109,6 +110,18 @@ describe('evolveTitle', () => {
 
   it('returns the current title when nothing qualifies', () => {
     expect(evolveTitle('Wanderer', ['unrelated'], evolutions)).toBe('Wanderer');
+  });
+});
+
+describe('DEFAULT_TITLE_EVOLUTIONS (F-025fd000)', () => {
+  it('maps the six live pressure tags plus faction-operative', () => {
+    expect(evolveTitle(undefined, ['bounty-survivor'], DEFAULT_TITLE_EVOLUTIONS)).toBe('the Bounty-Breaker');
+    expect(evolveTitle('Wanderer', ['trade-broker'], DEFAULT_TITLE_EVOLUTIONS)).toBe('Wanderer of the Docks');
+    expect(evolveTitle(undefined, ['faith-tested'], DEFAULT_TITLE_EVOLUTIONS)).toBe('the Faith-Tested');
+    expect(evolveTitle(undefined, ['iron-captain'], DEFAULT_TITLE_EVOLUTIONS)).toBe('the Iron Captain');
+    expect(evolveTitle(undefined, ['steadfast'], DEFAULT_TITLE_EVOLUTIONS)).toBe('the Steadfast');
+    expect(evolveTitle(undefined, ['ghost'], DEFAULT_TITLE_EVOLUTIONS)).toBe('the Ghost');
+    expect(evolveTitle(undefined, ['faction-operative'], DEFAULT_TITLE_EVOLUTIONS)).toBe('the Operative');
   });
 });
 

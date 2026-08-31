@@ -1,10 +1,19 @@
 import { describe, it, expect } from 'vitest';
+import { createTestEngine } from '@ai-rpg-engine/core';
 import {
   evaluateItemRecognition,
   recognitionProbability,
   shouldRecognize,
 } from './item-recognition.js';
 import type { ItemDefinition, ItemChronicleEntry } from '@ai-rpg-engine/equipment';
+import { traversalCore } from './traversal-core.js';
+import { createCompanionCore, getPartyState } from './companion-core.js';
+import { createEnvironmentCore } from './environment-core.js';
+import { createDistrictCore } from './district-core.js';
+import { createFactionCognition } from './faction-cognition.js';
+import { createCognitionCore } from './cognition-core.js';
+import { statusCore } from './status-core.js';
+import { getPlayerRumorState } from './player-rumor.js';
 
 const baseItem: ItemDefinition = {
   id: 'test-sword',
@@ -255,5 +264,66 @@ describe('evaluateItemRecognition — world-seed threading (F-SEED-combat-rolls-
     const [r] = evaluateItemRecognition([stolenItem], 'guild', {}, 1, -5);
     expect(typeof r.narratorHint).toBe('string');
     expect(r.narratorHint.length).toBeGreaterThan(0);
+  });
+});
+
+describe('applyZoneItemRecognition on world.zone.entered (F-29f4a5ff)', () => {
+  const stolenSeal: ItemDefinition = {
+    id: 'stolen-seal',
+    name: 'Stolen Seal',
+    description: 'The iron-wardens hall seal, taken.',
+    slot: 'accessory',
+    rarity: 'rare',
+    provenance: { factionId: 'iron-wardens', flags: ['stolen'] },
+  };
+
+  it('walking into a faction hall wearing their stolen seal shifts stance, seeds a rumor, and moves companion morale', () => {
+    const engine = createTestEngine({
+      modules: [
+        statusCore,
+        createCognitionCore(),
+        traversalCore,
+        createCompanionCore(),
+        createEnvironmentCore(),
+        createDistrictCore({
+          districts: [{ id: 'wardens-hall', name: 'Hall', zoneIds: ['hall'], tags: [], controllingFaction: 'iron-wardens' }],
+        }),
+        createFactionCognition({
+          factions: [{ factionId: 'iron-wardens', entityIds: ['guard'] }],
+        }),
+      ],
+      entities: [
+        {
+          id: 'player', blueprintId: 'player', type: 'player', name: 'Hero',
+          tags: ['player'], stats: {}, resources: { hp: 20 }, statuses: [],
+          zoneId: 'yard', inventory: ['stolen-seal'],
+        },
+        {
+          id: 'guard', blueprintId: 'guard', type: 'npc', name: 'Guard',
+          tags: ['npc'], stats: {}, resources: { hp: 10 }, statuses: [], zoneId: 'hall',
+        },
+        {
+          id: 'mira', blueprintId: 'mira', type: 'npc', name: 'Mira',
+          tags: ['npc', 'recruitable', 'diplomat'], stats: {}, resources: { hp: 10 }, statuses: [], zoneId: 'yard',
+        },
+      ],
+      zones: [
+        { id: 'yard', roomId: 'test', name: 'Yard', tags: [], neighbors: ['hall'] },
+        { id: 'hall', roomId: 'test', name: 'Hall', tags: [], neighbors: ['yard'] },
+      ],
+    });
+    engine.world.modules['item-recognition'] = { catalog: [stolenSeal], chronicle: {} };
+    engine.submitAction('recruit', { targetIds: ['mira'] });
+    const before = getPartyState(engine.world).companions.find((c) => c.npcId === 'mira')!.morale;
+
+    const events = engine.submitAction('move', { targetIds: ['hall'] });
+    expect(events.some((e) => e.type === 'item.recognized')).toBe(true);
+    const recognized = events.find((e) => e.type === 'item.recognized');
+    expect(recognized?.payload.recognitionType).toBe('faction-item');
+    expect(engine.world.entities.guard.relations?.['player-trust']).toBe(-10);
+    expect(getPlayerRumorState(engine.world).rumors.length).toBeGreaterThan(0);
+    const after = getPartyState(engine.world).companions.find((c) => c.npcId === 'mira')!.morale;
+    expect(after).toBe(before + 2);
+    expect(events.some((e) => e.type === 'companion.reaction' && e.payload.trigger === 'item-faction-recognized')).toBe(true);
   });
 });

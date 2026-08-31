@@ -231,6 +231,35 @@ function deriveGoals(
     }
   }
 
+  // F-35aa8ed0: close a live pressure of this faction's own. Separate ids so
+  // existing spawn-oriented ranking stays byte-identical when none is live.
+  if (factionPressures.some((p) => p.kind === 'investigation-opened')) {
+    goals.push({
+      id: `${factionId}-close-investigation`,
+      label: 'Close the investigation',
+      priority: 0.72,
+      verb: 'investigate',
+      targetDistrictId: controlledDistricts[0],
+    });
+  }
+  if (factionPressures.some((p) => p.kind === 'bounty-issued')) {
+    goals.push({
+      id: `${factionId}-hunt-bounty`,
+      label: 'Hunt the bounty',
+      priority: 0.74,
+      verb: 'patrol',
+      targetDistrictId: controlledDistricts[0],
+    });
+  }
+  if (factionPressures.some((p) => p.kind === 'trade-war')) {
+    goals.push({
+      id: `${factionId}-end-trade-war`,
+      label: 'End the trade war',
+      priority: 0.68,
+      verb: 'bribe',
+    });
+  }
+
   // 4. Controlled district on alert → patrol or fortify
   for (const districtId of controlledDistricts) {
     if (isDistrictOnAlert(world, districtId)) {

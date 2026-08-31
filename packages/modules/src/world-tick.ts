@@ -156,6 +156,7 @@ import {
   makePressure,
   type WorldPressure,
   type PressureInputs,
+  type PressureKind,
 } from './pressure-system.js';
 import { computeFallout, type PressureFallout } from './pressure-resolution.js';
 import { grantTitleToEntity } from './player-titles.js';
@@ -170,6 +171,7 @@ import {
   getPersistedFactionMemberCounts,
   setPersistedFactionState,
   type FactionActionResult,
+  type FactionActionVerb,
   type FactionProfile,
 } from './faction-agency.js';
 import { runEncounterSpawnStep, type SpawnedEncounterReport } from './encounter-spawn.js';
@@ -862,6 +864,30 @@ function collectCombatReactionTriggers(world: WorldState, start: number, end: nu
 }
 
 /**
+ * Scan this tick's npc-agency delta for betrayal-witnessed (event log) and
+ * a NEW kind:'betrayed' obligation (ledger timestamps) (F-b7196370).
+ */
+function collectBetrayalReactionTriggers(
+  world: WorldState,
+  start: number,
+  end: number,
+  currentTick: number,
+): ReactionTrigger[] {
+  const triggers: ReactionTrigger[] = [];
+  const log = world.eventLog;
+  for (let i = start; i < end && i < log.length; i++) {
+    if (log[i].type === 'npc.betrayal.witnessed') triggers.push('betrayal-witnessed');
+  }
+  for (const ledger of getPersistedNpcObligations(world).values()) {
+    if (ledger.obligations.some((o) => o.kind === 'betrayed' && o.createdAtTick === currentTick)) {
+      triggers.push('obligation-betrayed');
+      break;
+    }
+  }
+  return triggers;
+}
+
+/**
  * Apply every trigger this round produced to the live party: role-based
  * morale deltas (adjustCompanionMorale), and on `reaction.departure`,
  * removeCompanion PLUS the symmetric tag strip (removeCompanionTags) so a
@@ -1371,6 +1397,68 @@ export function resolvePressureByPlayer(
   return { pressure, fallout, chains, companionEvents };
 }
 
+export type FactionPressureResolution = {
+  pressure: WorldPressure;
+  fallout: PressureFallout;
+  chains: WorldPressure[];
+};
+
+/**
+ * Verbs that close a live pressure of the acting faction's own (F-35aa8ed0).
+ * investigate wraps investigation-opened; bribe/open-trade (the truce-shaped
+ * verbs) wrap trade-war; patrol is the hunt that wraps bounty-issued.
+ */
+export const FACTION_PRESSURE_CLOSERS: Partial<Record<FactionActionVerb, PressureKind>> = {
+  investigate: 'investigation-opened',
+  bribe: 'trade-war',
+  'open-trade': 'trade-war',
+  patrol: 'bounty-issued',
+};
+
+/**
+ * Resolve a live pressure as `resolved-by-faction` (F-35aa8ed0).
+ *
+ * Mirrors resolvePressureByPlayer: splice from the live list, computeFallout
+ * with resolutionType 'resolved-by-faction', applyFallout, ledger, chains.
+ * Does not dispatch pressure-resolved-well (that is the player verb).
+ */
+export function resolvePressureByFaction(
+  world: WorldState,
+  pressureId: string,
+  factionId: string,
+  currentTick: number,
+  genre: string,
+): FactionPressureResolution | undefined {
+  const state = getWorldTickState(world);
+  const working = runningPressures.get(world);
+  const list = working ?? state.pressures;
+  const idx = list.findIndex((p) => p.id === pressureId);
+  if (idx < 0) return undefined;
+  const [pressure] = list.splice(idx, 1);
+  if (!pressure) return undefined;
+  if (working && state.pressures !== working) {
+    const persistedIdx = state.pressures.findIndex((p) => p.id === pressureId);
+    if (persistedIdx >= 0) state.pressures.splice(persistedIdx, 1);
+  }
+
+  const fallout = computeFallout(pressure, 'resolved-by-faction', genre, {
+    resolvedBy: factionId,
+    currentTick,
+    playerDistrictId: getPlayerDistrictId(world),
+    resolutionVisibility: pressure.visibility,
+  });
+  const chains = applyFallout(world, state, fallout, currentTick);
+  for (const chain of chains) {
+    pushActivePressure(world, chain);
+  }
+  const ledger = (state.resolvedPressures ??= []);
+  ledger.push(fallout);
+  if (ledger.length > RESOLVED_PRESSURES_KEPT) {
+    ledger.splice(0, ledger.length - RESOLVED_PRESSURES_KEPT);
+  }
+  return { pressure, fallout, chains };
+}
+
 function resolvePressureHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
   const pressureId =
     (typeof action.parameters?.pressureId === 'string' && action.parameters.pressureId) ||
@@ -1707,6 +1795,20 @@ function runNpcAgencyStep(
 
     lastActionsByNpc.set(result.action.npcId, result);
 
+    if (result.action.verb === 'betray') {
+      engine.store.emitEvent('npc.betrayal.witnessed', {
+        npcId: result.action.npcId,
+        npcName,
+        targetEntityId: result.action.targetEntityId,
+        description: result.action.description,
+      }, {
+        actorId: result.action.npcId,
+        ...(result.action.targetEntityId ? { targetIds: [result.action.targetEntityId] } : {}),
+        visibility: 'public',
+        presentation: { channels: ['narrator'], priority: 'high' },
+      });
+    }
+
     engine.store.emitEvent('npc.action.resolved', {
       npcId: result.action.npcId,
       npcName,
@@ -1765,6 +1867,7 @@ function runFactionAgencyStep(
   world: WorldState,
   active: WorldPressure[],
   currentTick: number,
+  genre: string,
 ): void {
   const factionIds = Object.keys(world.factions ?? {}).sort();
   if (factionIds.length === 0) return; // SEED-0 identity — read and write nothing
@@ -1865,6 +1968,48 @@ function runFactionAgencyStep(
           break;
         default:
           break;
+      }
+    }
+
+    // F-35aa8ed0: when this faction's action targets a live pressure of its
+    // own, close it as resolved-by-faction so a living board can end a
+    // revenge-attempt / bounty / trade-war, not only spawn one.
+    const closeKind = FACTION_PRESSURE_CLOSERS[result.action.verb];
+    if (closeKind) {
+      const live = active.find(
+        (p) => p.kind === closeKind && p.sourceFactionId === result.action.factionId,
+      );
+      if (live) {
+        const closed = resolvePressureByFaction(
+          world,
+          live.id,
+          result.action.factionId,
+          currentTick,
+          genre,
+        );
+        if (closed) {
+          const gone = active.findIndex((p) => p.id === live.id);
+          if (gone >= 0) active.splice(gone, 1);
+          engine.store.emitEvent('pressure.resolved', {
+            ...pressurePayload(closed.pressure),
+            summary: closed.fallout.summary,
+            resolutionType: closed.fallout.resolution.resolutionType,
+            effects: closed.fallout.effects,
+            resolvedBy: result.action.factionId,
+            ...(closed.fallout.warnings ? { warnings: closed.fallout.warnings } : {}),
+          }, {
+            visibility: 'public',
+            presentation: { channels: ['narrator'], priority: 'high' },
+          });
+          for (const chain of closed.chains) {
+            emitPressureEvent(
+              engine,
+              'pressure.spawned',
+              { ...pressurePayload(chain), triggeredBy: chain.triggeredBy, chainedFrom: chain.chainedFrom },
+              { hidden: false, priority: 'high' },
+            );
+          }
+        }
       }
     }
 
@@ -2377,14 +2522,30 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   // pressure effect is pushed into `active` in time for step 5b's own
   // buildPressureInputs call to see it. Gated entirely on "at least one
   // named NPC exists" — see runNpcAgencyStep's SEED-0 identity contract.
+  const npcLogStart = world.eventLog.length;
   runNpcAgencyStep(engine, world, active, currentTick, playerDistrictId, genre);
+  // F-b7196370: collect AFTER the ledger write / witnessed-betrayal emit so
+  // a same-tick betray moves morale. A dedicated window (npcLogStart → now)
+  // keeps next tick from re-firing these events via the combat cursor.
+  const betrayalTriggers = collectBetrayalReactionTriggers(
+    world,
+    npcLogStart,
+    world.eventLog.length,
+    currentTick,
+  );
+  if (betrayalTriggers.length > 0) {
+    const latestBreakpoints = new Map(
+      getPersistedNpcProfiles(world).map((p) => [p.npcId, p.breakpoint]),
+    );
+    applyCompanionReactions(engine, world, betrayalTriggers, currentTick, latestBreakpoints);
+  }
 
   // 5a1. Faction agency tick (F-b57cee05) — npc-agency's faction sibling.
   // Gated on "at least one faction exists" — see runFactionAgencyStep's
   // SEED-0 identity contract. Runs after 5a so an NPC-triggered pressure
   // is visible to faction goals, and before 5a2/5b so faction-spawned
   // pressures land in `active` in time for buildPressureInputs.
-  runFactionAgencyStep(engine, world, active, currentTick);
+  runFactionAgencyStep(engine, world, active, currentTick, genre);
 
   // 5a2. Leverage income (v3.0 wave 2, "leverage-income") — see file header
   // + runLeverageIncomeStep's own docstring for the full SEED-0 contract.
