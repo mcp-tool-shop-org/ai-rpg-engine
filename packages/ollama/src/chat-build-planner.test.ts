@@ -631,6 +631,22 @@ describe('formatBuildStatus', () => {
     const output = formatBuildStatus(state);
     expect(output).toContain('Completed:');
   });
+
+  // F-9b4e71c6 (wave-4): a same-suggestedPath collision warning was pushed
+  // to plan.warnings at push-time (chat-engine.ts), but formatBuildStatus
+  // (the /status renderer) never read plan.warnings at all -- so the ONLY
+  // safety net for silent same-batch data loss was invisible under the
+  // normal /build -> /step... -> yes/no flow, which never revisits /status
+  // to catch a warning appended AFTER the plan was first shown.
+  it('surfaces a plan.warnings entry appended after the plan was created', () => {
+    const state = createBuildState(makePlan());
+    state.plan.warnings.push(
+      "Step 2 restaged content/rooms/x.yaml, replacing step 1's staged content -- check both steps generated distinct ids.",
+    );
+    const output = formatBuildStatus(state);
+    expect(output).toContain('Warnings:');
+    expect(output).toContain('restaged content/rooms/x.yaml');
+  });
 });
 
 // ========================================
@@ -688,6 +704,18 @@ describe('buildDiagnostics', () => {
     const state = createBuildState(makePlan());
     const diag = buildDiagnostics(state, null);
     expect(diag.length).toBeGreaterThan(0);
+  });
+
+  // F-9b4e71c6 (wave-4): mirrors formatBuildStatus's identical gap --
+  // buildDiagnostics (the /diagnostics renderer) never referenced
+  // plan.warnings either.
+  it('surfaces a plan.warnings entry appended after the plan was created', () => {
+    const state = createBuildState(makePlan());
+    state.plan.warnings.push(
+      "Step 2 restaged content/rooms/x.yaml, replacing step 1's staged content -- check both steps generated distinct ids.",
+    );
+    const diag = buildDiagnostics(state, makeSession());
+    expect(diag.some(d => d.includes('restaged content/rooms/x.yaml'))).toBe(true);
   });
 });
 

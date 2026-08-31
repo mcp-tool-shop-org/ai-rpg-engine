@@ -968,6 +968,69 @@ describe('emit-pack surfaces its own consent immediately when not the last step 
   });
 });
 
+// --- Same-suggestedPath collision warning echoed inline at push-time
+// (F-9b4e71c6, wave-4). Before this fix, the ONLY defense against two steps
+// staging the SAME path (silently overwriting one step's content) was a
+// warning pushed to plan.warnings, but nothing in the step's own returned
+// text pointed at it — under the normal /build -> /step... -> yes/no flow,
+// a user would never see it (formatBuildStatus/buildDiagnostics didn't
+// surface plan.warnings either; see chat-build-planner.test.ts /
+// chat-balance-analyzer.test.ts for that half of the fix). ---
+
+describe('same-suggestedPath collision warning echoed inline (F-9b4e71c6)', () => {
+  function roomStep(id: number, description: string): BuildStep {
+    return {
+      id, description, command: 'create-room', intent: 'scaffold',
+      params: { kind: 'room', theme: description }, dependencies: [],
+      artifactOutputs: ['rooms'], usePriorContent: false, status: 'pending',
+    };
+  }
+  function tuneRoomStep(id: number, description: string): TuningStep {
+    return {
+      id, description, command: 'create-room', intent: 'scaffold',
+      params: { kind: 'room', theme: description }, dependencies: [], expectedEffect: 'none', status: 'pending',
+    };
+  }
+  const collidingRoomYaml = 'id: same-room\nname: Same Room\nzones:\n  - id: nave\n    name: Nave';
+
+  it('executeBuildStep echoes the restaging-collision warning in the SECOND step\'s own result', async () => {
+    const engine = createChatEngine({
+      client: mockClient(collidingRoomYaml),
+      projectRoot: '/tmp/nonexistent-' + Date.now(),
+      rawMode: true,
+    });
+    engine.activeBuild = createBuildState(buildPlanOf([roomStep(1, 'first'), roomStep(2, 'second')]));
+    const firstResult = await engine.executeBuildStep();
+    expect(firstResult).not.toContain('restaged');
+
+    const secondResult = await engine.executeBuildStep();
+    expect(secondResult).toContain('restaged');
+    expect(secondResult).toContain('content/rooms/same-room.yaml');
+    expect(secondResult).toContain("step 1's staged content");
+    // The engine-level warnings list still gets the entry too (unchanged
+    // plumbing — formatBuildStatus/buildDiagnostics surface it from there).
+    expect(engine.activeBuild!.plan.warnings.some(w => w.includes('restaged'))).toBe(true);
+  });
+
+  it('executeTuningStep echoes the restaging-collision warning in the SECOND step\'s own result', async () => {
+    const engine = createChatEngine({
+      client: mockClient(collidingRoomYaml),
+      projectRoot: '/tmp/nonexistent-' + Date.now(),
+      rawMode: true,
+    });
+    engine.activeTuning = createTuningState({
+      goal: 'test tuning', steps: [tuneRoomStep(1, 'first'), tuneRoomStep(2, 'second')], warnings: [],
+    } satisfies TuningPlan);
+    const firstResult = await engine.executeTuningStep();
+    expect(firstResult).not.toContain('restaged');
+
+    const secondResult = await engine.executeTuningStep();
+    expect(secondResult).toContain('restaged');
+    expect(secondResult).toContain('content/rooms/same-room.yaml');
+    expect(engine.activeTuning!.plan.warnings.some(w => w.includes('restaged'))).toBe(true);
+  });
+});
+
 describe('executeAllTuningSteps — per-step progress + early abort (F-4be7a3c2)', () => {
   it('fires onStep per tuning step', async () => {
     const yaml = 'id: tuned-room\ntype: room\nname: Tuned Room';

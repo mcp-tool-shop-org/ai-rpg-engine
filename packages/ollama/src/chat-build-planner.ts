@@ -676,6 +676,20 @@ export function buildDiagnostics(
   const skipped = state.plan.steps.filter(s => s.status === 'skipped').length;
   diagnostics.push(`Steps: ${executed} executed, ${failed} failed, ${skipped} skipped`);
 
+  // F-9b4e71c6: mirrors formatBuildStatus's identical fix -- buildDiagnostics
+  // (the /diagnostics renderer) never referenced plan.warnings either, so a
+  // same-suggestedPath restaging collision (the one safety net for silent
+  // same-batch data loss) was invisible here too.
+  if (state.plan.warnings.length > 0) {
+    diagnostics.push(`${state.plan.warnings.length} plan warning(s):`);
+    for (const w of state.plan.warnings.slice(0, 5)) {
+      diagnostics.push(`  ⚠ ${w}`);
+    }
+    if (state.plan.warnings.length > 5) {
+      diagnostics.push(`  ... and ${state.plan.warnings.length - 5} more`);
+    }
+  }
+
   // Check for issues opened during build
   if (session) {
     const openIssues = session.issues.filter(i => i.status === 'open');
@@ -802,6 +816,20 @@ export function formatBuildStatus(state: BuildState): string {
   const total = state.plan.steps.length;
   lines.push('');
   lines.push(`Progress: ${executed}/${total} steps`);
+
+  // F-9b4e71c6: plan.warnings (most notably a same-suggestedPath restaging
+  // collision, pushed at push-time by executeBuildStep) used to be read
+  // only by formatBuildPlan/formatBuildPreview -- both shown before any
+  // step has run, i.e. before any collision could possibly have happened.
+  // /status is where a user actually looks mid-build; surface anything
+  // appended since the plan was first created.
+  if (state.plan.warnings.length > 0) {
+    lines.push('');
+    lines.push('Warnings:');
+    for (const w of state.plan.warnings) {
+      lines.push(`  ⚠ ${w}`);
+    }
+  }
 
   return lines.join('\n');
 }

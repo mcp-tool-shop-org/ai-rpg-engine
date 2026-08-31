@@ -851,13 +851,19 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     // replaces the map entry for that key; name both step ids in a warning
     // so a model reusing an id across two scaffold steps is diagnosable
     // instead of silently losing content.
+    // F-9b4e71c6: echo a restaging collision inline in THIS step's own
+    // result text the moment it happens, in addition to the plan.warnings
+    // entry (still pushed, still read by formatBuildStatus/buildDiagnostics)
+    // — the old warnings-only signal was invisible under the normal
+    // /build -> /step... -> yes/no flow, since nothing in the step's own
+    // output pointed a user back to /preview to notice it.
+    let collisionNote = '';
     if (toolResult.pendingWrite) {
       const key = toolResult.pendingWrite.suggestedPath;
       const prior = activeBuild.stagedWrites[key];
       if (prior) {
-        activeBuild.plan.warnings.push(
-          `Step ${step.id} restaged ${key}, replacing step ${prior.sourceStepId}'s staged content -- check both steps generated distinct ids.`,
-        );
+        collisionNote = `Step ${step.id} restaged ${key}, replacing step ${prior.sourceStepId}'s staged content -- check both steps generated distinct ids.`;
+        activeBuild.plan.warnings.push(collisionNote);
       }
       activeBuild.stagedWrites[key] = {
         content: toolResult.pendingWrite.content,
@@ -937,7 +943,8 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     }
 
     const icon = toolResult.ok ? '●' : '✗';
-    return `${icon} Step ${step.id}: ${step.description}\n${toolResult.summary}${consentSuffix}`;
+    const collisionSuffix = collisionNote ? `\n⚠ ${collisionNote}` : '';
+    return `${icon} Step ${step.id}: ${step.description}\n${toolResult.summary}${collisionSuffix}${consentSuffix}`;
   }
 
   async function executeAllBuildSteps(onStep?: BatchStepCallback): Promise<string> {
@@ -1068,13 +1075,16 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     // interaction had staged on that same shared slot. No flush gate needed:
     // tuning has no emit-pack-equivalent tail step that reads staged content
     // back off disk.
+    // F-9b4e71c6 (tuning parity — see executeBuildStep's identical comment):
+    // echo a restaging collision inline in THIS step's own result text, not
+    // just plan.warnings (still pushed, still read by formatTuningStatus).
+    let collisionNote = '';
     if (toolResult.pendingWrite) {
       const key = toolResult.pendingWrite.suggestedPath;
       const prior = activeTuning.stagedWrites[key];
       if (prior) {
-        activeTuning.plan.warnings.push(
-          `Step ${step.id} restaged ${key}, replacing step ${prior.sourceStepId}'s staged content -- check both steps generated distinct ids.`,
-        );
+        collisionNote = `Step ${step.id} restaged ${key}, replacing step ${prior.sourceStepId}'s staged content -- check both steps generated distinct ids.`;
+        activeTuning.plan.warnings.push(collisionNote);
       }
       activeTuning.stagedWrites[key] = {
         content: toolResult.pendingWrite.content,
@@ -1129,7 +1139,8 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     }
 
     const icon = toolResult.ok ? '●' : '✗';
-    return `${icon} Step ${step.id}: ${step.description}\n${toolResult.summary}${consentSuffix}`;
+    const collisionSuffix = collisionNote ? `\n⚠ ${collisionNote}` : '';
+    return `${icon} Step ${step.id}: ${step.description}\n${toolResult.summary}${collisionSuffix}${consentSuffix}`;
   }
 
   async function executeAllTuningSteps(onStep?: BatchStepCallback): Promise<string> {
