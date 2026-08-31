@@ -469,6 +469,8 @@ export {
   recommendMoves,
   scoreAction,
   deriveSituation,
+  getPersistedMoveRecommendation,
+  setPersistedMoveRecommendation,
 } from './move-advisor.js';
 export type {
   MoveCategory,

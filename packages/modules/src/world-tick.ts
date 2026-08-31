@@ -115,6 +115,11 @@
 //      rounds with no new heat, heat decays by HEAT_DECAY_PER_QUIET_TICK per
 //      round (the street's memory fades — but not between two swings of the
 //      same fight)
+//   7. move advisor (F-7a056689): compose AdvisorInputs from the already-
+//      persisted ledgers (buildStrategicMap for the two view arrays) and
+//      persist recommendMoves' MoveRecommendation on world.modules['move-advisor'].
+//      SEED-0: a world with no leverage keys, no active pressures, and no
+//      factions writes nothing.
 //
 // Determinism: no randomness anywhere — every branch reads world state, and
 // faction/district enumeration is sorted, so same world in ⇒ same events out.
@@ -239,6 +244,8 @@ import {
   type LeverageCurrency,
 } from './player-leverage.js';
 import { getCurrency } from './progression-core.js';
+import { buildStrategicMap } from './strategic-map.js';
+import { recommendMoves, setPersistedMoveRecommendation } from './move-advisor.js';
 import { getCognition, setBelief, addMemory } from './cognition-core.js';
 import {
   spawnNpcOriginatedRumor,
@@ -2286,6 +2293,57 @@ function runLeverageIncomeStep(
 // ---------------------------------------------------------------------------
 
 /**
+ * Compose AdvisorInputs from already-persisted ledgers and persist
+ * recommendMoves' result. The production caller for buildStrategicMap +
+ * recommendMoves (F-7a056689). CLI endgame.ts still mirrors the district
+ * loop rather than calling this — that surface is out of domain.
+ */
+function runMoveAdvisorStep(
+  world: WorldState,
+  state: WorldTickState,
+  currentTick: number,
+  heat: number,
+  active: WorldPressure[],
+): void {
+  const player = world.entities[world.playerId];
+  const custom = (player?.custom ?? {}) as Record<string, string | number | boolean>;
+  const hasLeverage = Object.keys(custom).some((k) => k.startsWith('leverage.'));
+  const hasFactions = Object.keys(world.factions ?? {}).length > 0;
+  if (!hasLeverage && active.length === 0 && !hasFactions) return;
+
+  const inputs = buildPressureInputs(world, state, '', currentTick, active);
+  const opportunities = getPersistedOpportunities(world);
+  const map = buildStrategicMap(
+    world,
+    inputs.playerRumors,
+    active,
+    inputs.reputation,
+    getPersistedFactionLastActions(world),
+    inputs.districtEconomies,
+    opportunities,
+  );
+
+  const cooldowns: Record<string, number> = {};
+  for (const [key, value] of Object.entries(custom)) {
+    if (!key.startsWith('cooldown.') || typeof value !== 'number') continue;
+    cooldowns[key.slice('cooldown.'.length)] = value;
+  }
+
+  const rec = recommendMoves({
+    leverageState: getLeverageState(custom),
+    activePressures: active,
+    factionViews: map.factions,
+    districtViews: map.districts,
+    playerReputation: inputs.reputation,
+    currentTick,
+    cooldowns,
+    playerHeat: heat,
+    activeOpportunities: opportunities,
+  });
+  setPersistedMoveRecommendation(world, rec);
+}
+
+/**
  * Run one world tick: the accrued heat/safety/reputation/alert ledger drives
  * the pressure lifecycle, and every player-visible transition lands in the
  * eventLog with a presentation block so the round's narration counts it.
@@ -2743,6 +2801,11 @@ function tickWorld(engine: Engine, genre: string): WorldTickResult {
   state.lastHeat = finalHeat;
 
   state.pressures = active;
+  // 7. Move advisor — after the round's ledgers are persisted so
+  // getActivePressures / buildStrategicMap read THIS tick. SEED-0: a world
+  // with no leverage keys, no active pressures, and no factions writes
+  // nothing (F-7a056689).
+  runMoveAdvisorStep(world, state, currentTick, finalHeat, active);
   return {
     ok: true,
     heat: finalHeat,

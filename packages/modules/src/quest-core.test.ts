@@ -25,6 +25,8 @@ import {
   questProgressRequired,
 } from './quest-core.js';
 import { createProgressionCore, getCurrency } from './progression-core.js';
+import { createObligation, setPersistedNpcState } from './npc-agency.js';
+import type { NpcObligationLedger } from './npc-agency.js';
 
 const GAME_ID = 'quest-core-test';
 
@@ -532,6 +534,32 @@ describe('quest-level failConditions (F-71c542ed)', () => {
     // Stop track: further progress events do not advance a failed quest.
     kill(engine, 'wolf-1');
     expect(questProgressCount(engine.world.quests['doomed-hunt'], 'cull')).toBe(0);
+  });
+});
+
+describe('quest-level failConditions social operands (F-d7bab077)', () => {
+  const owedHunt: QuestDefinition = {
+    ...huntQuest,
+    id: 'owed-hunt',
+    name: 'The Owed Hunt',
+    failConditions: [{ type: 'obligation-exists', params: { npcId: 'villager', direction: 'player-owes-npc' } }],
+  };
+
+  it('obligation-exists failCondition + planted player-owes-npc fails the quest', () => {
+    const engine = makeEngine([owedHunt]);
+    enterZone(engine, 'wilds');
+    expect(engine.world.quests['owed-hunt'].status).toBe('active');
+
+    const ledger: NpcObligationLedger = {
+      obligations: [createObligation('debt', 'player-owes-npc', 'villager', 'hero', 3, 'test', 0, null)],
+    };
+    setPersistedNpcState(engine.world, [], [], new Map([['villager', ledger]]));
+    engine.store.emitEvent('world.flag.changed', { key: 'debt-called' });
+
+    expect(engine.world.quests['owed-hunt'].status).toBe('failed');
+    const failed = eventsOfType(engine, 'quest.failed');
+    expect(failed).toHaveLength(1);
+    expect(failed[0].payload.questId).toBe('owed-hunt');
   });
 });
 

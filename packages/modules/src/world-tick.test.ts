@@ -80,7 +80,8 @@ import { setPlayerRumorState, type PlayerRumor } from './player-rumor.js';
 import { MORALE_FLOOR_FALLBACK } from './companion-reactions.js';
 import { getLeverageState } from './player-leverage.js';
 import { createProgressionCore, addCurrency } from './progression-core.js';
-import { hasTitle, getDisplayTitle } from './player-titles.js';
+import { hasTitle, getDisplayTitle, formatTitlesForDirector } from './player-titles.js';
+import { getPersistedMoveRecommendation } from './move-advisor.js';
 import {
   getPersistedFactionProfiles,
   getPersistedFactionLastActions,
@@ -2154,6 +2155,12 @@ describe('world-tick — resolve-pressure (F-04dece4f)', () => {
     expect(getActivePressures(engine.world).some((p) => p.id === pressure.id)).toBe(false);
     expect(getResolvedPressures(engine.world)[0]?.resolution.resolutionType).toBe('resolved-by-player');
     expect(getDisplayTitle(engine.world.entities.player.custom ?? {})).toBe('the Bounty-Breaker');
+    const director = formatTitlesForDirector(engine.world.entities.player.custom ?? {});
+    expect(director).toContain('the Bounty-Breaker');
+    const firstTitleLine = director!.split('\n').map((l) => l.trim())
+      .find((l) => l.includes('Bounty-Breaker') || l.includes('bounty-survivor'));
+    expect(firstTitleLine).toBe('the Bounty-Breaker');
+    expect(engine.world.entities.player.custom?.title).toBeUndefined();
   });
 
   it('F-bdd030b2: resolve-pressure on a live bounty, then one runWorldTick, writes leverage.favor +10 and leverage.legitimacy +5', () => {
@@ -2193,6 +2200,46 @@ describe('world-tick — resolve-pressure (F-04dece4f)', () => {
     );
     expect(after.favor).toBe(10);
     expect(after.legitimacy).toBe(5);
+  });
+});
+
+describe('world-tick — move advisor (F-7a056689)', () => {
+  it('SEED-0: a world with no leverage/pressures/factions writes nothing', () => {
+    const engine = makeBareEngine();
+    runWorldTick(engine, { genre: 'fantasy' });
+    expect(engine.world.modules['move-advisor']).toBeUndefined();
+    expect(getPersistedMoveRecommendation(engine.world)).toBeUndefined();
+  });
+
+  it('hostile bounty-issued + affordable bribe → top3 contains social.bribe and situationTag is not safe', () => {
+    const engine = createTestEngine({
+      modules: [createWorldTick()],
+      entities: [makePlayer({ custom: { 'leverage.favor': 50 } })],
+      zones,
+    });
+    engine.store.state.factions['watch'] = {
+      id: 'watch', name: 'The Watch', reputation: -60, disposition: 'hostile',
+    };
+    const pressure = makePressure({
+      kind: 'bounty-issued',
+      sourceFactionId: 'watch',
+      description: 'watch has placed a bounty on the player',
+      triggeredBy: 'test',
+      urgency: 0.8,
+      visibility: 'known',
+      turnsRemaining: 8,
+      potentialOutcomes: [],
+      tags: ['hostile'],
+      currentTick: 0,
+    });
+    getWorldTickState(engine.store.state).pressures = [pressure];
+
+    runWorldTick(engine, { genre: 'fantasy' });
+
+    const rec = getPersistedMoveRecommendation(engine.world);
+    expect(rec).toBeDefined();
+    expect(rec!.top3.some((m) => m.category === 'social' && m.subAction === 'bribe')).toBe(true);
+    expect(rec!.situationTag).not.toBe('safe');
   });
 });
 

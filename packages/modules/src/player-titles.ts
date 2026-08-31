@@ -115,13 +115,15 @@ export function grantTitleToEntity(
   void getDisplayTitle(entity.custom, evolutions);
 }
 
-/** Director view — one line per earned title, oldest first. */
+/** Director view — evolved display title first, raw tag + tick as secondary. */
 export function formatTitlesForDirector(
   custom: Record<string, string | number | boolean>,
 ): string | null {
   const titles = getEarnedTitles(custom);
   if (titles.length === 0) return null;
+  const display = getDisplayTitle(custom);
   const lines = [`  Earned titles (${titles.length}):`];
+  if (display) lines.push(`    ${display}`);
   for (const title of titles) {
     lines.push(`    ${title.tag} — since tick ${title.earnedAtTick}`);
   }

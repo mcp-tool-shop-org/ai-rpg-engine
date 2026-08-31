@@ -246,3 +246,36 @@ describe('traversal-core: faction-access gate (F-7d2c4c59)', () => {
     expect(engine.world.entities.player.zoneId).toBe('zone-a');
   });
 });
+
+describe('traversal-core: leverage-at-least gate (F-d7bab077)', () => {
+  const favorZones: ZoneState[] = [
+    { id: 'zone-a', roomId: 'test', name: 'Street', tags: [], neighbors: ['guild-hall'] },
+    {
+      id: 'guild-hall', roomId: 'test', name: 'Guild Hall', tags: [], neighbors: ['zone-a'],
+      entryGate: {
+        conditions: [{ type: 'leverage-at-least', params: { currency: 'favor', amount: 20 } }],
+        mode: 'hard',
+        reason: 'The guild door stays shut.',
+      },
+    },
+  ];
+
+  it('favor>=20 then walk a previously locked exit', () => {
+    const engine = createTestEngine({
+      modules: [traversalCore],
+      entities: [makePlayer('zone-a')],
+      zones: favorZones,
+      playerId: 'player',
+      startZone: 'zone-a',
+    });
+
+    const refused = engine.submitAction('move', { targetIds: ['guild-hall'] });
+    expect(refused.some((e) => e.type === 'world.zone.gate.refused')).toBe(true);
+    expect(engine.world.entities.player.zoneId).toBe('zone-a');
+
+    engine.world.entities.player.custom = { 'leverage.favor': 20 };
+    const entered = engine.submitAction('move', { targetIds: ['guild-hall'] });
+    expect(entered.some((e) => e.type === 'world.zone.entered')).toBe(true);
+    expect(engine.world.entities.player.zoneId).toBe('guild-hall');
+  });
+});

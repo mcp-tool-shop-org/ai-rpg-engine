@@ -2,6 +2,7 @@
 // Pure scoring functions. No state mutation. No LLM calls.
 // Evaluates leverage sub-actions against world state and returns ranked recommendations.
 
+import type { WorldState } from '@ai-rpg-engine/core';
 import type { LeverageState, LeverageCurrency } from './player-leverage.js';
 import {
   canAfford,
@@ -17,6 +18,8 @@ import {
 } from './player-leverage.js';
 import type { WorldPressure } from './pressure-system.js';
 import type { FactionStrategicView, DistrictStrategicView } from './strategic-map.js';
+
+const ADVISOR_KEY = 'move-advisor';
 
 // --- Types ---
 
@@ -503,4 +506,22 @@ export function recommendMoves(inputs: AdvisorInputs): MoveRecommendation {
   }
 
   return { top3, situationTag };
+}
+
+/**
+ * Non-attaching read of the last persist MoveRecommendation. Undefined when
+ * the namespace is absent (SEED-0: a world with no leverage/pressures/factions
+ * never writes it) or malformed.
+ */
+export function getPersistedMoveRecommendation(world: WorldState): MoveRecommendation | undefined {
+  const ns = world.modules[ADVISOR_KEY];
+  if (!ns || typeof ns !== 'object' || Array.isArray(ns)) return undefined;
+  const rec = ns as MoveRecommendation;
+  if (!Array.isArray(rec.top3) || typeof rec.situationTag !== 'string') return undefined;
+  return rec;
+}
+
+/** Persist recommendMoves' result. The world-tick production caller is the writer. */
+export function setPersistedMoveRecommendation(world: WorldState, rec: MoveRecommendation): void {
+  world.modules[ADVISOR_KEY] = rec;
 }
