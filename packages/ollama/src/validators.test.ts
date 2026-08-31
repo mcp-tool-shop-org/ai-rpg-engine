@@ -23,6 +23,9 @@ import {
   validateGeneratedPlacement,
   validateGeneratedEncounterAnchor,
   validateGeneratedProgressionTree,
+  validateGeneratedRuleset,
+  validateGeneratedRuleProfile,
+  validateGeneratedItemPlacement,
 } from './validators.js';
 
 describe('parseYamlish', () => {
@@ -591,6 +594,62 @@ describe('validateGenerated chargen / entityAi / placement', () => {
     const result = validateGeneratedProgressionTree('x', {
       id: 'combat_mastery', name: 'Combat Mastery', currency: 'xp',
     });
+    expect(result.valid).toBe(false);
+  });
+
+  // F-8ec253bf: create-ruleset had no validator wrapper at all (zero
+  // create-ruleset/createRuleset matches anywhere in the package).
+  it('accepts a minimal valid ruleset', () => {
+    const ruleset = {
+      id: 'fantasy-minimal',
+      name: 'Fantasy Minimal',
+      version: '0.1.0',
+      stats: [{ id: 'vigor', name: 'Vigor', default: 5 }],
+      resources: [{ id: 'hp', name: 'HP', default: 20 }],
+      verbs: [{ id: 'move', name: 'Move' }],
+      formulas: [],
+      defaultModules: [],
+      progressionModels: [],
+    };
+    const result = validateGeneratedRuleset('x', ruleset);
+    expect(result.valid).toBe(true);
+  });
+
+  it('rejects a ruleset missing verbs', () => {
+    const result = validateGeneratedRuleset('x', {
+      id: 'fantasy-minimal', name: 'Fantasy Minimal', version: '0.1.0',
+      stats: [], resources: [], formulas: [], defaultModules: [], progressionModels: [],
+    });
+    expect(result.valid).toBe(false);
+  });
+
+  // F-0bf295ac: create-rule-profile had no validator wrapper (the fix design
+  // assumed content-schema had none dedicated; validateRuleProfile already
+  // exists there — F-0987c369 — so this wraps it rather than duplicating it).
+  it('accepts a valid rule profile statMapping', () => {
+    const yaml = 'id: veteran_soldier\nstatMapping:\n  attack: strength\n  precision: dexterity\n  resolve: willpower';
+    const result = validateGeneratedRuleProfile(yaml, parseYamlish(yaml));
+    expect(result.valid).toBe(true);
+  });
+
+  it('rejects a rule profile missing statMapping.resolve', () => {
+    const result = validateGeneratedRuleProfile('x', {
+      id: 'veteran_soldier',
+      statMapping: { attack: 'strength', precision: 'dexterity' },
+    });
+    expect(result.valid).toBe(false);
+  });
+
+  // F-bd8034ea: create-item-placement had no validator wrapper
+  // (validateItemPlacementRecord already exists in content-schema).
+  it('accepts a valid item placement', () => {
+    const yaml = 'itemId: rusty_key\nentityId: chapel_guard';
+    const result = validateGeneratedItemPlacement(yaml, parseYamlish(yaml));
+    expect(result.valid).toBe(true);
+  });
+
+  it('rejects an item placement missing itemId', () => {
+    const result = validateGeneratedItemPlacement('x', { entityId: 'chapel_guard' });
     expect(result.valid).toBe(false);
   });
 });

@@ -13,6 +13,9 @@ import {
   validateEntityPlacementRecord,
   validateEncounterAnchorRecord,
   validateProgressionTreeDefinition,
+  validateRulesetDefinition,
+  validateRuleProfile,
+  validateItemPlacementRecord,
 } from '@ai-rpg-engine/content-schema';
 import type { ValidationResult, ValidationError } from '@ai-rpg-engine/content-schema';
 
@@ -611,5 +614,31 @@ export function validateGeneratedEncounterAnchor(raw: string, parsed: unknown): 
 export function validateGeneratedProgressionTree(raw: string, parsed: unknown): GeneratedContentResult {
   const obj = isRecord(parsed) ? parsed : {};
   const validation = validateProgressionTreeDefinition(obj);
+  return { valid: validation.ok, content: parsed, validation, raw };
+}
+
+/** Validate a parsed ruleset (content-schema RulesetDefinition / validateRulesetDefinition). */
+export function validateGeneratedRuleset(raw: string, parsed: unknown): GeneratedContentResult {
+  const obj = isRecord(parsed) ? parsed : {};
+  const validation = validateRulesetDefinition(obj);
+  return { valid: validation.ok, content: parsed, validation, raw };
+}
+
+/**
+ * Validate a parsed rule profile (content-schema RuleProfile / validateRuleProfile —
+ * statMapping.attack/precision/resolve). The top-level `id` field (the
+ * ContentPack.ruleProfiles registry key) is not part of RuleProfile's own
+ * shape and is intentionally not checked here.
+ */
+export function validateGeneratedRuleProfile(raw: string, parsed: unknown): GeneratedContentResult {
+  const obj = isRecord(parsed) ? parsed : {};
+  const validation = validateRuleProfile(obj);
+  return { valid: validation.ok, content: parsed, validation, raw };
+}
+
+/** Validate a parsed item placement (content-schema ItemPlacementRecord / validateItemPlacementRecord). */
+export function validateGeneratedItemPlacement(raw: string, parsed: unknown): GeneratedContentResult {
+  const obj = isRecord(parsed) ? parsed : {};
+  const validation = validateItemPlacementRecord(obj);
   return { valid: validation.ok, content: parsed, validation, raw };
 }
