@@ -2,12 +2,20 @@
 // 2 rooms, 5 zones, 3 NPCs, 3 enemies, 7 items, 1 dialogue, 1 status
 
 import type { EntityState, ZoneState, GameManifest, ActionIntent, WorldState, ResolvedEvent } from '@ai-rpg-engine/core';
-import type { DialogueDefinition, QuestDefinition } from '@ai-rpg-engine/content-schema';
+import type {
+  ContentPack,
+  DialogueDefinition,
+  EntityAiState,
+  EntityBlueprint,
+  QuestDefinition,
+  ZoneDefinition,
+} from '@ai-rpg-engine/content-schema';
 import type { PackMetadata } from '@ai-rpg-engine/pack-registry';
 import type { BuildCatalog } from '@ai-rpg-engine/character-creation';
 import type { ItemCatalog } from '@ai-rpg-engine/equipment';
 import type { EncounterDefinition, BossDefinition, CurrencyReward, EncounterSpawnContent } from '@ai-rpg-engine/modules';
 import type { AbilityDefinition, StatusDefinition } from '@ai-rpg-engine/content-schema';
+import { fantasyMinimalRuleset } from './ruleset.js';
 
 export const manifest: GameManifest = {
   id: 'chapel-threshold',
@@ -991,3 +999,81 @@ export const itemCatalog: ItemCatalog = {
     },
   ],
 };
+
+// --- ContentPack (F-83947d13) ----------------------------------------------
+// Authored world as data: EntityBlueprint[] / ZoneDefinition[] / placements,
+// plus catalogs the authoring pipeline can loadContent. createGame applies
+// this pack then overlays runtime-only fields (relations, custom, resistances).
+
+const LIVE_ENTITIES: EntityState[] = [
+  player, pilgrim, brotherAldric, sisterMaren, ashGhoul, cryptWarden, cryptStalker,
+];
+
+function toBlueprint(e: EntityState): EntityBlueprint {
+  const equipment = e.equipment
+    ? Object.fromEntries(
+      Object.entries(e.equipment).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+    )
+    : undefined;
+  const bp: EntityBlueprint = {
+    id: e.id,
+    type: e.type,
+    name: e.name,
+    tags: [...e.tags],
+    baseStats: { ...e.stats },
+    baseResources: { ...e.resources },
+  };
+  if (e.inventory) bp.inventory = [...e.inventory];
+  if (equipment && Object.keys(equipment).length > 0) bp.equipment = equipment;
+  if (e.ai?.profileId) bp.aiProfile = e.ai.profileId;
+  return bp;
+}
+
+function toZoneDef(z: ZoneState): ZoneDefinition {
+  const def: ZoneDefinition = {
+    id: z.id,
+    name: z.name,
+    tags: [...z.tags],
+    neighbors: [...z.neighbors],
+  };
+  if (z.light !== undefined) def.light = z.light;
+  if (z.noise !== undefined) def.noise = z.noise;
+  if (z.hazards) def.hazards = [...z.hazards];
+  if (z.interactables) def.interactables = [...z.interactables];
+  return def;
+}
+
+export const entityAi: Record<string, EntityAiState> = Object.fromEntries(
+  LIVE_ENTITIES.filter((e) => e.ai).map((e) => [
+    e.id,
+    {
+      profileId: e.ai!.profileId,
+      goals: [...e.ai!.goals],
+      fears: [...e.ai!.fears],
+      alertLevel: e.ai!.alertLevel,
+      knowledge: { ...e.ai!.knowledge },
+    },
+  ]),
+);
+
+export const pack: ContentPack = {
+  entities: LIVE_ENTITIES.map(toBlueprint),
+  zones: zones.map(toZoneDef),
+  placements: LIVE_ENTITIES
+    .filter((e) => typeof e.zoneId === 'string')
+    .map((e) => ({ entityId: e.id, zoneId: e.zoneId as string })),
+  dialogues: [pilgrimDialogue, brotherAldricDialogue],
+  quests: fantasyQuests,
+  districts,
+  buildCatalog: buildCatalog as ContentPack['buildCatalog'],
+  progressionTrees: [combatMasteryTree],
+  statuses: fantasyStatusDefinitions,
+  abilities: fantasyAbilities,
+  items: itemCatalog.items as ContentPack['items'],
+  entityAi,
+  ruleset: fantasyMinimalRuleset,
+};
+
+export function toContentPack(): ContentPack {
+  return pack;
+}

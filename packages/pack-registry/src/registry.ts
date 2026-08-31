@@ -86,6 +86,9 @@ export function getPackSummaries(): PackSummary[] {
     genreLabels: e.meta.genres.map((g) => PACK_GENRE_LABELS[g] ?? g),
     difficulty: e.meta.difficulty,
     tones: e.meta.tones,
+    ...(e.needsRuntimeHost === true || typeof e.createGame !== 'function'
+      ? { needsRuntimeHost: true as const }
+      : {}),
   }));
 }
 

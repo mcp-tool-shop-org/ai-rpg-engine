@@ -1,0 +1,169 @@
+{
+  "entities": [
+    {
+      "id": "player",
+      "type": "player",
+      "name": "Wanderer",
+      "tags": ["player"],
+      "baseStats": { "vigor": 5, "instinct": 4, "will": 3 },
+      "baseResources": { "hp": 20, "maxHp": 20, "stamina": 8, "coin": 20 },
+      "inventory": []
+    },
+    {
+      "id": "pilgrim",
+      "type": "npc",
+      "name": "Suspicious Pilgrim",
+      "tags": ["npc", "named"],
+      "baseStats": { "vigor": 2, "instinct": 3, "will": 6 },
+      "baseResources": { "hp": 8 }
+    },
+    {
+      "id": "brother-aldric",
+      "type": "npc",
+      "name": "Brother Aldric",
+      "tags": ["npc", "recruitable", "healer", "named"],
+      "baseStats": { "vigor": 3, "instinct": 3, "will": 7 },
+      "baseResources": { "hp": 12, "maxHp": 12, "stamina": 3, "maxStamina": 3 }
+    },
+    {
+      "id": "sister-maren",
+      "type": "npc",
+      "name": "Sister Maren",
+      "tags": ["npc", "recruitable", "diplomat"],
+      "baseStats": { "vigor": 2, "instinct": 5, "will": 5 },
+      "baseResources": { "hp": 10, "maxHp": 10, "stamina": 2, "maxStamina": 2 }
+    },
+    {
+      "id": "ash-ghoul",
+      "type": "enemy",
+      "name": "Ash Ghoul",
+      "tags": ["enemy", "undead", "role:brute"],
+      "baseStats": { "vigor": 4, "instinct": 3, "will": 1 },
+      "baseResources": { "hp": 12, "stamina": 4 },
+      "aiProfile": "aggressive"
+    },
+    {
+      "id": "crypt-warden",
+      "type": "enemy",
+      "name": "Crypt Warden",
+      "tags": ["enemy", "undead", "role:boss"],
+      "baseStats": { "vigor": 7, "instinct": 4, "will": 5 },
+      "baseResources": { "hp": 45, "maxHp": 45, "stamina": 12, "maxStamina": 12 },
+      "aiProfile": "territorial"
+    },
+    {
+      "id": "crypt-stalker",
+      "type": "enemy",
+      "name": "Crypt Stalker",
+      "tags": ["enemy", "undead", "role:skirmisher"],
+      "baseStats": { "vigor": 3, "instinct": 5, "will": 2 },
+      "baseResources": { "hp": 8, "stamina": 6 },
+      "aiProfile": "cautious"
+    }
+  ],
+  "zones": [
+    {
+      "id": "chapel-entrance",
+      "name": "Ruined Chapel Entrance",
+      "tags": ["interior", "sacred", "dim"],
+      "neighbors": ["chapel-nave", "chapel-alcove"],
+      "light": 3,
+      "interactables": ["cracked altar", "faded mural"]
+    },
+    {
+      "id": "chapel-nave",
+      "name": "Chapel Nave",
+      "tags": ["interior", "sacred"],
+      "neighbors": ["chapel-entrance", "vestry-door"],
+      "light": 4,
+      "interactables": ["broken pews", "dust-covered lectern"]
+    },
+    {
+      "id": "chapel-alcove",
+      "name": "Shadowed Alcove",
+      "tags": ["interior", "dark", "hidden"],
+      "neighbors": ["chapel-entrance"],
+      "light": 1,
+      "interactables": ["loose stone"]
+    },
+    {
+      "id": "vestry-door",
+      "name": "Vestry Passage",
+      "tags": ["interior", "transition", "chokepoint"],
+      "neighbors": ["chapel-nave", "crypt-chamber"],
+      "light": 2,
+      "hazards": ["unstable floor"]
+    },
+    {
+      "id": "crypt-chamber",
+      "name": "Crypt Antechamber",
+      "tags": ["interior", "cursed", "dark"],
+      "neighbors": ["vestry-door"],
+      "light": 1,
+      "interactables": ["bone altar", "relic alcove"]
+    }
+  ],
+  "placements": [
+    { "entityId": "player", "zoneId": "chapel-entrance" },
+    { "entityId": "pilgrim", "zoneId": "chapel-entrance" },
+    { "entityId": "brother-aldric", "zoneId": "chapel-nave" },
+    { "entityId": "sister-maren", "zoneId": "chapel-entrance" },
+    { "entityId": "ash-ghoul", "zoneId": "crypt-chamber" },
+    { "entityId": "crypt-warden", "zoneId": "crypt-chamber" },
+    { "entityId": "crypt-stalker", "zoneId": "vestry-door" }
+  ],
+  "districts": [
+    {
+      "id": "chapel-grounds",
+      "name": "Chapel Grounds",
+      "zoneIds": ["chapel-entrance", "chapel-nave", "chapel-alcove"],
+      "tags": ["sacred", "aboveground"]
+    },
+    {
+      "id": "crypt-depths",
+      "name": "Crypt Depths",
+      "zoneIds": ["vestry-door", "crypt-chamber"],
+      "tags": ["cursed", "underground"],
+      "controllingFaction": "chapel-undead"
+    }
+  ],
+  "items": [
+    {
+      "id": "rusted-mace",
+      "name": "Rusted Mace",
+      "description": "A pitted mace found near a collapsed grave.",
+      "slot": "weapon",
+      "rarity": "common"
+    },
+    {
+      "id": "healing-draught",
+      "name": "Healing Draught",
+      "description": "A vial of blessed water, gifted by the pilgrim — said to knit wounds shut when drunk.",
+      "slot": "tool",
+      "rarity": "common"
+    }
+  ],
+  "entityAi": {
+    "ash-ghoul": {
+      "profileId": "aggressive",
+      "goals": ["guard-crypt"],
+      "fears": ["fire", "sacred"],
+      "alertLevel": 0,
+      "knowledge": {}
+    },
+    "crypt-warden": {
+      "profileId": "territorial",
+      "goals": ["protect-crypt", "destroy-intruders"],
+      "fears": ["sacred"],
+      "alertLevel": 0,
+      "knowledge": {}
+    },
+    "crypt-stalker": {
+      "profileId": "cautious",
+      "goals": ["ambush-intruders"],
+      "fears": ["sacred", "light"],
+      "alertLevel": 0,
+      "knowledge": {}
+    }
+  }
+}

@@ -328,8 +328,10 @@ describe('C1/P1 — applyContentPack routes content into a booted world', () => 
     // Declared, validated, real content — and still unrouted at this rung.
     expect(paths).toContain('pack.quests');
     expect(paths).toContain('pack.verbs');
-    // Dropped fields never flip `ok`: this pack is valid, just not fully routed.
-    expect(r.ok).toBe(true);
+    // Unresolved aiProfile is a structured error (F-035ac806) — an unresolved
+    // brain stands still forever. Other dropped fields still do not flip ok.
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('aiProfile') && e.message.includes('unresolved'))).toBe(true);
   });
 
   it('CLOSED BY C3/P1: the placement hole is a channel now, not an advisory', () => {
@@ -541,7 +543,7 @@ describe('C1/P1 — session-scoped keys are not pretended to be routable', () =>
     // a softening of the rule. The session-scoped pair is untouched, which is
     // the part that would signal a re-merge.
     expect([...MODULE_INTAKE_KEYS]).toEqual(['districts', 'encounterAnchors', 'hazardDefinitions']);
-    expect([...SESSION_SCOPED_KEYS]).toEqual(['buildCatalog', 'archetypes', 'backgrounds', 'progressionTrees']);
+    expect([...SESSION_SCOPED_KEYS]).toEqual(['buildCatalog', 'archetypes', 'backgrounds', 'progressionTrees', 'ruleset']);
   });
 
   it('every ALLOWED_PACK_KEYS key is either applied or named', () => {
@@ -615,4 +617,118 @@ describe('C1/P1 — session-scoped keys are not pretended to be routable', () =>
     expect(session.advisories).toEqual([]);
     expect(session.buildCatalog).toBeUndefined();
   });
+
+  it('F-53fd73dc: extractSessionContent surfaces pack.ruleset', () => {
+    const session = extractSessionContent({
+      ruleset: { id: 'r', name: 'R', version: '1', stats: [], resources: [], verbs: [], formulas: [], defaultModules: [], progressionModels: [] },
+    } as unknown as ContentPack);
+    expect(session.ruleset).toBeDefined();
+    expect((session.ruleset as { id: string }).id).toBe('r');
+  });
 });
+
+describe('F-035ac806 — aiProfile resolves through profiles / entityAi', () => {
+  it('writes EntityState.ai when options.profiles names the authored profile', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(
+      engine,
+      {
+        entities: [{ id: 'grunt', type: 'npc', name: 'Grunt', tags: ['enemy'], aiProfile: 'aggressive' }],
+      },
+      { profiles: [{ id: 'aggressive' }] },
+    );
+    expect(r.ok).toBe(true);
+    expect(r.dropped.find((d) => d.path.includes('aiProfile'))).toBeUndefined();
+    expect(engine.world.entities['grunt'].ai?.profileId).toBe('aggressive');
+    expect(r.applied.entityAi).toBe(1);
+  });
+
+  it('writes EntityState.ai from ContentPack.entityAi (goals/fears survive)', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      entities: [{ id: 'grunt', type: 'npc', name: 'Grunt', aiProfile: 'aggressive' }],
+      entityAi: {
+        grunt: { profileId: 'aggressive', goals: ['guard-zone'], fears: ['fire'], alertLevel: 2, knowledge: { seen: true } },
+      },
+    });
+    expect(r.ok).toBe(true);
+    expect(engine.world.entities['grunt'].ai).toEqual({
+      profileId: 'aggressive',
+      goals: ['guard-zone'],
+      fears: ['fire'],
+      alertLevel: 2,
+      knowledge: { seen: true },
+    });
+  });
+
+  it('unresolved aiProfile is a structured error, not a silent stand-still', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(
+      engine,
+      { entities: [{ id: 'grunt', type: 'npc', name: 'Grunt', aiProfile: 'ghost-brain' }] },
+      { profiles: [{ id: 'aggressive' }] },
+    );
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('ghost-brain'))).toBe(true);
+    expect(engine.world.entities['grunt'].ai).toBeUndefined();
+  });
+});
+
+describe('F-4ed3d82e — pack.items apply onto entity inventory/equipment', () => {
+  it('copies inventory/equipment ids that resolve against pack.items and does not ANDON pack.items', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      entities: [{
+        id: 'hero',
+        type: 'player',
+        name: 'Hero',
+        inventory: ['worn-blade', 'torch'],
+        equipment: { hand: 'worn-blade' },
+      }],
+      items: [
+        { id: 'worn-blade', name: 'Worn Blade' },
+        { id: 'torch', name: 'Torch' },
+      ],
+    });
+    expect(r.ok).toBe(true);
+    expect(r.dropped.find((d) => d.path === 'pack.items')).toBeUndefined();
+    expect(r.applied.items).toBe(2);
+    expect(engine.world.entities['hero'].inventory).toEqual(['worn-blade', 'torch']);
+    expect(engine.world.entities['hero'].equipment).toEqual({ hand: 'worn-blade' });
+    expect(engine.store.state.modules['content-pack-items']).toBeDefined();
+  });
+
+  it('itemPlacements give a catalog item onto an existing entity', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      entities: [{ id: 'hero', type: 'player', name: 'Hero', inventory: [] }],
+      items: [{ id: 'healing-draught', name: 'Healing Draught' }],
+      itemPlacements: [{ itemId: 'healing-draught', entityId: 'hero' }],
+    });
+    expect(r.ok).toBe(true);
+    expect(r.applied.itemPlacements).toBe(1);
+    expect(engine.world.entities['hero'].inventory).toEqual(['healing-draught']);
+  });
+
+  it('ANDON remains on a hypothetical zone.items field', () => {
+    const dropped: DroppedField[] = [];
+    zoneDefinitionToState(
+      { id: 'z', name: 'Z', items: ['crate'] } as unknown as Parameters<typeof zoneDefinitionToState>[0],
+      dropped,
+    );
+    const entry = dropped.find((d) => d.path.endsWith('.items'));
+    expect(entry?.reason).toBe('evaluated-not-mapped');
+    expect(entry?.detail).toContain('ANDON');
+  });
+
+  it('an inventory id missing from pack.items is a structured error', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      entities: [{ id: 'hero', type: 'player', name: 'Hero', inventory: ['ghost-item'] }],
+      items: [{ id: 'worn-blade' }],
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('ghost-item'))).toBe(true);
+  });
+});
+

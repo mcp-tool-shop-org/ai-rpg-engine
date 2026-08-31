@@ -25,6 +25,9 @@ describe('toJsonSchema (F-fad5db9d)', () => {
       'HazardSpec',
       'ItemDefinition',
       'ProgressionTreeDefinition',
+      'ItemPlacementRecord',
+      'EntityAiState',
+      'RulesetDefinition',
     ]) {
       expect(defs[key], `missing $defs.${key}`).toBeDefined();
     }
@@ -37,6 +40,9 @@ describe('toJsonSchema (F-fad5db9d)', () => {
       'hazardDefinitions',
       'districts',
       'items',
+      'itemPlacements',
+      'entityAi',
+      'ruleset',
     ]) {
       expect(props[key], `missing properties.${key}`).toBeDefined();
     }

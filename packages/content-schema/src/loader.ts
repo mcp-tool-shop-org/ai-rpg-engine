@@ -15,6 +15,10 @@ import {
   validateDistrictDefinition,
   validateHazardDefinition,
   validateItemRecord,
+  validateItemPlacementRecord,
+  validateRulesetDefinition,
+  validateAbilityPack,
+  validateStatusPackAgainstRuleset,
   formatErrors,
 } from './validate.js';
 import { validateRefs, validateGameContent } from './refs.js';
@@ -75,6 +79,7 @@ const REFS_ITERATED_KEYS = [
   'hazardDefinitions',
   'items',
   'districts',
+  'itemPlacements',
 ] as const;
 
 /**
@@ -103,6 +108,20 @@ function validatePackShape(pack: unknown): ValidationError[] {
         message: `must be an array if provided (got ${describe(v)})`,
       });
     }
+  }
+  const entityAi = (pack as Record<string, unknown>).entityAi;
+  if (entityAi !== undefined && !isPlainObject(entityAi)) {
+    errors.push({
+      path: 'pack.entityAi',
+      message: `must be an object keyed by entity id if provided (got ${describe(entityAi)})`,
+    });
+  }
+  const ruleset = (pack as Record<string, unknown>).ruleset;
+  if (ruleset !== undefined && !isPlainObject(ruleset)) {
+    errors.push({
+      path: 'pack.ruleset',
+      message: `must be a RulesetDefinition object if provided (got ${describe(ruleset)})`,
+    });
   }
   return errors;
 }
@@ -251,6 +270,39 @@ export function loadContent(pack: ContentPack): LoadResult {
     const item = (pack.items ?? [])[i];
     const label = `items[${i}](${isPlainObject(item) ? (item.id ?? '?') : '?'})`;
     allErrors.push(...validateItemRecord(item, label).errors);
+  }
+  for (let i = 0; i < (pack.itemPlacements ?? []).length; i++) {
+    const rec = (pack.itemPlacements ?? [])[i];
+    const label = `itemPlacements[${i}](${isPlainObject(rec) ? (rec.itemId ?? '?') : '?'})`;
+    allErrors.push(...validateItemPlacementRecord(rec, label).errors);
+  }
+  if (isPlainObject(pack.entityAi)) {
+    for (const [id, ai] of Object.entries(pack.entityAi)) {
+      const label = `entityAi.${id}`;
+      if (!isPlainObject(ai)) {
+        allErrors.push({ path: label, message: 'must be an object ({ profileId, goals?, fears?, ... })' });
+      } else if (typeof ai.profileId !== 'string' || ai.profileId.length === 0) {
+        allErrors.push({ path: `${label}.profileId`, message: 'required non-empty string' });
+      }
+    }
+  }
+
+  // F-53fd73dc: optional pack-authored ruleset. When present, bind abilities
+  // and statuses to it so a JSON pack can prove costs name real resources
+  // without a host-invented TypeScript pairing.
+  if (pack.ruleset !== undefined) {
+    const rulesetResult = validateRulesetDefinition(pack.ruleset, 'pack.ruleset');
+    allErrors.push(...rulesetResult.errors);
+    if (rulesetResult.ok) {
+      if (pack.abilities !== undefined) {
+        const ab = validateAbilityPack(pack.abilities, pack.ruleset, 'pack.abilities');
+        allErrors.push(...ab.errors);
+      }
+      if (pack.statuses !== undefined) {
+        const st = validateStatusPackAgainstRuleset(pack.statuses, pack.ruleset, 'pack.statuses');
+        allErrors.push(...st.errors);
+      }
+    }
   }
 
   // F-9c5db864: pack-level uniqueness for abilities/statuses lives on this

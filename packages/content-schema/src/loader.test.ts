@@ -297,4 +297,38 @@ describe('loadContent', () => {
     expect(r.ok).toBe(false);
     expect(r.errors.some((e) => e.message.includes('duplicate hazard id "fire"'))).toBe(true);
   });
+
+  it('F-53fd73dc: pack.ruleset is validated and binds ability costs to declared resources', () => {
+    const r = loadContent({
+      ruleset: {
+        id: 'test',
+        name: 'Test',
+        version: '1.0.0',
+        stats: [{ id: 'might', name: 'Might', default: 1 }],
+        resources: [{ id: 'mana', name: 'Mana', default: 5 }],
+        verbs: [{ id: 'cast', name: 'Cast' }],
+        formulas: [],
+        defaultModules: [],
+        progressionModels: [],
+      },
+      abilities: [{
+        id: 'bolt',
+        name: 'Bolt',
+        verb: 'cast',
+        tags: [],
+        target: { type: 'single' },
+        costs: [{ resourceId: 'ghost-mana', amount: 1 }],
+        effects: [{ type: 'damage', params: { amount: 1 } }],
+      }],
+    } as ContentPack);
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('ghost-mana') || e.path.includes('resource'))).toBe(true);
+  });
+
+  it('F-53fd73dc: overlay packs without a ruleset still load (key is optional)', () => {
+    const r = loadContent({
+      entities: [{ id: 'p', type: 'player', name: 'P' }],
+    });
+    expect(r.ok).toBe(true);
+  });
 });

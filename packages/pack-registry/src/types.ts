@@ -187,7 +187,39 @@ export type PackEntry = {
    * Status definitions for status-tag gates. Optional.
    */
   statusDefinitions?: PackStatusDefinition[];
-  createGame: (seed?: number) => Engine;
+  /**
+   * Structural ContentPack lifted from `mod.pack` / `toContentPack()`, or
+   * loaded from a JSON specifier via loadContentFromFile. Optional: a
+   * playable TypeScript factory may omit it.
+   */
+  content?: PackContent;
+  /**
+   * Playable factory. Required for a playable entry; omitted on a
+   * catalog-only JSON pack that still lists in getPackSummaries with
+   * {@link PackEntry.needsRuntimeHost}.
+   */
+  createGame?: (seed?: number) => Engine;
+  /**
+   * True when this entry has content but no createGame — a JSON ContentPack
+   * that can loadContent still cannot boot until a host supplies a factory
+   * (DiscoverInstalledPacksOptions.createGame, or Engine+applyContentPack).
+   */
+  needsRuntimeHost?: boolean;
+};
+
+/**
+ * Structural ContentPack. Declared locally so pack-registry does not have to
+ * import @ai-rpg-engine/content-schema at the type layer; a real ContentPack
+ * is assignable as-is.
+ */
+export type PackContent = {
+  entities?: unknown[];
+  zones?: unknown[];
+  placements?: unknown[];
+  items?: unknown[];
+  dialogues?: unknown[];
+  quests?: unknown[];
+  [key: string]: unknown;
 };
 
 /** Specifiers `discoverInstalledPacks` will `import()`. */
@@ -200,6 +232,12 @@ export type DiscoverFrom = {
 
 export type DiscoverInstalledPacksOptions = {
   from: DiscoverFrom;
+  /**
+   * Host factory used when a specifier is a JSON ContentPack rather than a
+   * JS module. Receives the loaded pack and optional seed; wrap Engine +
+   * applyContentPack here. Absent ⇒ the JSON entry lists as needsRuntimeHost.
+   */
+  createGame?: (pack: PackContent, seed?: number) => Engine;
 };
 
 // --- Pack Summary (for display) ---
@@ -219,6 +257,11 @@ export type PackSummary = {
   difficulty: PackDifficulty;
   /** Tone chips for the listing */
   tones: PackTone[];
+  /**
+   * Present (true) when the entry has no createGame — a JSON / data pack
+   * that still lists but needs a runtime host to play.
+   */
+  needsRuntimeHost?: boolean;
 };
 
 // --- Filter ---

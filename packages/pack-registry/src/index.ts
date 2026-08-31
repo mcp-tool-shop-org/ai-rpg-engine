@@ -11,6 +11,7 @@ export type {
   PackProgressionTree,
   PackStatusDefinition,
   PackEntry,
+  PackContent,
   PackSummary,
   PackFilter,
   DiscoverFrom,

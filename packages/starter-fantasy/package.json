@@ -13,7 +13,8 @@
   },
   "files": [
     "dist",
-    "content"
+    "content",
+    "src/content.json"
   ],
   "scripts": {
     "build": "tsc",

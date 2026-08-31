@@ -28,6 +28,8 @@ describe('registerFromModule / packEntryFromModule', () => {
     expect(Array.isArray(entry!.itemCatalog?.items) && entry!.itemCatalog!.items!.length >= 1).toBe(true);
     expect(Array.isArray(entry!.progressionTrees) && entry!.progressionTrees!.length >= 1).toBe(true);
     expect(Array.isArray(entry!.statusDefinitions) && entry!.statusDefinitions!.length >= 1).toBe(true);
+    expect(entry!.content).toBeDefined();
+    expect(Array.isArray(entry!.content?.entities) && entry!.content!.entities!.length >= 1).toBe(true);
   });
 
   it('registers the lifted entry; a second call is idempotent', () => {
@@ -98,5 +100,27 @@ describe('discoverInstalledPacks', () => {
     expect(Array.isArray(entry.progressionTrees) && entry.progressionTrees!.length >= 1).toBe(true);
     expect(Array.isArray(entry.statusDefinitions)).toBe(true);
     expect(Array.isArray(entry.districts) && entry.districts!.length >= 1).toBe(true);
+  });
+
+  it('F-91a5ec29: lifts mod.pack / toContentPack() onto PackEntry.content', () => {
+    const entry = packEntryFromModule(starterTemplate);
+    expect(entry).not.toBeNull();
+    expect(entry!.content).toBeDefined();
+    expect(Array.isArray(entry!.content!.entities) && entry!.content!.entities!.length >= 1).toBe(true);
+    expect(Array.isArray(entry!.content!.zones) && entry!.content!.zones!.length >= 1).toBe(true);
+  });
+
+  it('F-91a5ec29: JSON specifiers load via loadContentFromFile as catalog-only entries', async () => {
+    const jsonUrl = new URL('../../../templates/starter/src/content.json', import.meta.url);
+    const packs = await discoverInstalledPacks({
+      from: { moduleUrls: [jsonUrl.href] },
+    });
+    expect(packs).toHaveLength(1);
+    expect(packs[0].content).toBeDefined();
+    expect(Array.isArray(packs[0].content!.entities)).toBe(true);
+    expect(packs[0].needsRuntimeHost).toBe(true);
+    expect(typeof packs[0].createGame).not.toBe('function');
+    const [summary] = getPackSummaries();
+    expect(summary.needsRuntimeHost).toBe(true);
   });
 });

@@ -29,14 +29,20 @@
 // module's state shape lives with that module; the stable wire mechanism lives
 // here.
 
-import type { Engine, EntityState, ZoneState } from '@ai-rpg-engine/core';
-import type { ContentPack, EntityPlacementRecord } from './refs.js';
+import type { AIState, Engine, EntityState, ZoneState } from '@ai-rpg-engine/core';
+import type {
+  ContentPack,
+  EntityAiState,
+  EntityPlacementRecord,
+  ItemPlacementRecord,
+} from './refs.js';
 import type { EntityBlueprint, ZoneDefinition } from './schemas.js';
 import type { ValidationError } from './validate.js';
 import {
   validateEntityBlueprint,
   validateZoneDefinition,
   validateEntityPlacementRecord,
+  validateItemPlacementRecord,
 } from './validate.js';
 import { runLoadGate, type GateContext, type GateResult } from './gate.js';
 
@@ -102,6 +108,22 @@ export type IntakeChannel = {
   apply(engine: Engine, data: unknown): ChannelReport;
 };
 
+/**
+ * Named combat brain. Structural subset of modules' IntentProfile — content-schema
+ * sits below @ai-rpg-engine/modules, so only `id` is required here. A real
+ * IntentProfile is assignable. Closures stay with the cognition module; this
+ * seam only needs the name to write EntityState.ai.profileId.
+ */
+export type IntentProfileRef = {
+  id: string;
+};
+
+/** How applyContentPack turns an authored aiProfile name into EntityState.ai. */
+export type AiProfileLookup = {
+  profiles?: IntentProfileRef[] | Record<string, EntityAiState>;
+  entityAi?: Record<string, EntityAiState>;
+};
+
 export type ApplyContentPackOptions = {
   /**
    * Handlers for module-owned pack keys (`districts`, `buildCatalog`,
@@ -126,6 +148,12 @@ export type ApplyContentPackOptions = {
    * boundary did not exist before this cycle.
    */
   gate?: GateContext;
+  /**
+   * Named intent profiles (IntentProfile[] or id→AIState). When an entity's
+   * `aiProfile` matches, {@link EntityState.ai} is written instead of dropped.
+   * Unresolved names are a structured error — an unresolved brain stands still.
+   */
+  profiles?: IntentProfileRef[] | Record<string, EntityAiState>;
 };
 
 export type ApplyContentPackResult = {
@@ -214,6 +242,20 @@ export function zoneDefinitionToState(def: ZoneDefinition, dropped?: DroppedFiel
       detail: `carried verbatim, but ${ZONE_HAZARD_NOTE}`,
     });
   }
+  // ANDON: zone-container vocabulary does not exist. EntityState.inventory is
+  // the only place an item id lives. Authors use entity.inventory or
+  // ContentPack.itemPlacements; a hypothetical zone.items field is refused here.
+  const zoneItems = (def as unknown as Record<string, unknown>).items;
+  if (zoneItems !== undefined) {
+    dropped?.push({
+      path: `${p}.items`,
+      reason: 'evaluated-not-mapped',
+      detail:
+        'ANDON: the runtime has no zone-container vocabulary. There is no `zone.items`. ' +
+        'Place items on EntityState.inventory (entity.inventory / entity.equipment that resolve ' +
+        'against pack.items) or ContentPack.itemPlacements: { itemId, entityId }[].',
+    });
+  }
 
   // Every array is COPIED, not referenced. `addZone` structuredClones on the way
   // in, so aliasing here would be invisible through the store — which is exactly
@@ -267,6 +309,55 @@ export function zoneDefinitionToState(def: ZoneDefinition, dropped?: DroppedFiel
   return state;
 }
 
+function cloneAiState(ai: EntityAiState): AIState {
+  return {
+    profileId: ai.profileId,
+    goals: [...(ai.goals ?? [])],
+    fears: [...(ai.fears ?? [])],
+    alertLevel: typeof ai.alertLevel === 'number' ? ai.alertLevel : 0,
+    knowledge: { ...((ai.knowledge ?? {}) as AIState['knowledge']) },
+  };
+}
+
+function aiFromProfileList(profileId: string, profiles: IntentProfileRef[]): AIState | undefined {
+  const hit = profiles.find((p) => p && typeof p.id === 'string' && p.id === profileId);
+  return hit ? cloneAiState({ profileId: hit.id }) : undefined;
+}
+
+function aiFromProfileMap(
+  profileId: string,
+  profiles: Record<string, EntityAiState>,
+): AIState | undefined {
+  const hit = profiles[profileId];
+  if (!isRecord(hit) || typeof hit.profileId !== 'string') return undefined;
+  return cloneAiState(hit as EntityAiState);
+}
+
+/**
+ * Resolve an authored `aiProfile` / `entityAi` overlay into runtime AIState.
+ * Returns `undefined` when the entity has no AI to apply.
+ */
+export function resolveEntityAi(
+  bp: EntityBlueprint,
+  lookup: AiProfileLookup | undefined,
+): { ok: true; ai: AIState } | { ok: false; profileId: string } | undefined {
+  const fromEntity = lookup?.entityAi?.[bp.id];
+  if (fromEntity && isRecord(fromEntity) && typeof fromEntity.profileId === 'string') {
+    return { ok: true, ai: cloneAiState(fromEntity) };
+  }
+  if (bp.aiProfile === undefined) return undefined;
+  const profiles = lookup?.profiles;
+  if (Array.isArray(profiles)) {
+    const ai = aiFromProfileList(bp.aiProfile, profiles);
+    return ai ? { ok: true, ai } : { ok: false, profileId: bp.aiProfile };
+  }
+  if (profiles && isRecord(profiles)) {
+    const ai = aiFromProfileMap(bp.aiProfile, profiles as Record<string, EntityAiState>);
+    return ai ? { ok: true, ai } : { ok: false, profileId: bp.aiProfile };
+  }
+  return { ok: false, profileId: bp.aiProfile };
+}
+
 /**
  * `EntityBlueprint` → `EntityState`.
  *
@@ -274,8 +365,18 @@ export function zoneDefinitionToState(def: ZoneDefinition, dropped?: DroppedFiel
  * instancing vocabulary exists. Note what CANNOT be carried: the blueprint has
  * no `zoneId`, so an exported pack knows every NPC and where none of them stand
  * (REPORT §2). That is reported per entity, not assumed known.
+ *
+ * `aiProfile` is resolved against {@link AiProfileLookup} (options.profiles and/or
+ * ContentPack.entityAi). A hit writes EntityState.ai; an unresolved name is
+ * dropped AND reported as a structured error when `errors` is supplied.
  */
-export function entityBlueprintToState(bp: EntityBlueprint, dropped?: DroppedField[], path = ''): EntityState {
+export function entityBlueprintToState(
+  bp: EntityBlueprint,
+  dropped?: DroppedField[],
+  path = '',
+  lookup?: AiProfileLookup,
+  errors?: ValidationError[],
+): EntityState {
   const p = path || `entities(${bp.id})`;
 
   if (bp.startingStatuses !== undefined && bp.startingStatuses.length > 0) {
@@ -285,15 +386,6 @@ export function entityBlueprintToState(bp: EntityBlueprint, dropped?: DroppedFie
       detail:
         'An AppliedStatus needs an instance id and an appliedAtTick minted against a status registry ' +
         'status-core owns. Applying statuses at intake is C3.',
-    });
-  }
-  if (bp.aiProfile !== undefined) {
-    dropped?.push({
-      path: `${p}.aiProfile`,
-      reason: 'needs-module-vocabulary',
-      detail:
-        'AIState requires goals/fears/alertLevel/knowledge, and intent profiles are pack-supplied ' +
-        '`evaluate` closures (REPORT §4). A profile NAME cannot be resolved without the pack that defines it.',
     });
   }
   if (bp.scripts !== undefined && bp.scripts.length > 0) {
@@ -316,6 +408,26 @@ export function entityBlueprintToState(bp: EntityBlueprint, dropped?: DroppedFie
   };
   if (bp.inventory !== undefined) state.inventory = [...bp.inventory];
   if (bp.equipment !== undefined) state.equipment = { ...bp.equipment };
+
+  const ai = resolveEntityAi(bp, lookup);
+  if (ai?.ok === true) {
+    state.ai = ai.ai;
+  } else if (ai?.ok === false) {
+    dropped?.push({
+      path: `${p}.aiProfile`,
+      reason: 'needs-module-vocabulary',
+      detail:
+        `unresolved aiProfile "${ai.profileId}" — pass ApplyContentPackOptions.profiles ` +
+        '(IntentProfile[] or id→AIState) and/or ContentPack.entityAi so this name becomes EntityState.ai. ' +
+        'An unresolved brain never selects an intent.',
+    });
+    errors?.push({
+      path: `${p}.aiProfile`,
+      message:
+        `unresolved aiProfile "${ai.profileId}" — provide ApplyContentPackOptions.profiles or ` +
+        'ContentPack.entityAi so this entity gets EntityState.ai (an unresolved name stands still forever)',
+    });
+  }
   return state;
 }
 
@@ -327,7 +439,7 @@ export function entityBlueprintToState(bp: EntityBlueprint, dropped?: DroppedFie
  * `placements` joins them at C3/P1: it writes `EntityState.zoneId`, a core field,
  * so it needs no module vocabulary and stays on this side of the layering.
  */
-export const CORE_INTAKE_KEYS = ['zones', 'entities', 'placements'] as const;
+export const CORE_INTAKE_KEYS = ['zones', 'entities', 'placements', 'items', 'itemPlacements', 'entityAi'] as const;
 
 /**
  * Pack keys that need a module's own vocabulary and can still be routed into an
@@ -369,7 +481,7 @@ export const MODULE_INTAKE_KEYS = ['districts', 'encounterAnchors', 'hazardDefin
  * time rather than by a world reader. See {@link MODULE_INTAKE_KEYS} for the
  * measurement behind the split.
  */
-export const SESSION_SCOPED_KEYS = ['buildCatalog', 'archetypes', 'backgrounds', 'progressionTrees'] as const;
+export const SESSION_SCOPED_KEYS = ['buildCatalog', 'archetypes', 'backgrounds', 'progressionTrees', 'ruleset'] as const;
 
 /**
  * Pack keys the engine KNOWS about and deliberately does not carry, each with the
@@ -381,10 +493,11 @@ export const SESSION_SCOPED_KEYS = ['buildCatalog', 'archetypes', 'backgrounds',
  * ordinary forge export is fatal.
  */
 export const EVALUATED_NOT_MAPPED_KEYS: Record<string, string> = {
-  items:
-    'ANDON: the runtime has no zone-container vocabulary. There is no `zone.items`, and '
-    + '`EntityState.inventory` is the only place an item id lives — carrying this needs a new '
-    + 'world-state shape, not a mapping. Place items via pack code for now.',
+  // `items` used to live here (ANDON: no zone-container vocabulary). The catalog
+  // now applies: entity.inventory / entity.equipment ids that resolve against
+  // pack.items land on EntityState, and ContentPack.itemPlacements is the
+  // authored giveItem. The ANDON remains on a hypothetical `zone.items` field
+  // (see zoneDefinitionToState).
   factionPresences:
     'EVALUATED, do not map: of factionId/districtIds/influence/alertLevel/patrolRoutes, only '
     + 'districtIds has an engine counterpart and it already arrives as '
@@ -475,11 +588,17 @@ export function applyContentPack(
   }
 
   // --- entities (core-only) ---
+  const itemCatalogIds = itemIdsFromPack(pack);
+  const aiLookup: AiProfileLookup = {
+    profiles: options.profiles,
+    entityAi: isRecord(pack.entityAi) ? pack.entityAi : undefined,
+  };
   const entities = pack.entities ?? [];
   if (!Array.isArray(entities)) {
     errors.push({ path: 'pack.entities', message: 'must be an array if provided.' });
   } else {
     let count = 0;
+    let aiApplied = 0;
     for (let i = 0; i < entities.length; i++) {
       const bp = entities[i];
       const label = `entities[${i}](${idOf(bp)})`;
@@ -490,11 +609,15 @@ export function applyContentPack(
           continue;
         }
       }
-      engine.store.addEntity(entityBlueprintToState(bp as EntityBlueprint, dropped, label));
+      const state = entityBlueprintToState(bp as EntityBlueprint, dropped, label, aiLookup, errors);
+      retainResolvedItems(state, bp as EntityBlueprint, itemCatalogIds, errors, label);
+      engine.store.addEntity(state);
+      if (state.ai) aiApplied++;
       count++;
     }
     if (entities.length > 0) {
       applied.entities = count;
+      if (aiApplied > 0) applied.entityAi = aiApplied;
       // ⚠ C3/P1 CLOSED THE ADVISORY THAT LIVED HERE. C1 emitted, on every single
       // ingestion: "EntityBlueprint has no `zoneId`, so converted entities are
       // placed nowhere." That was true and there was nothing better to do about
@@ -596,6 +719,58 @@ export function applyContentPack(
           'Add a `placements` entry per entity that should be somewhere.',
       });
     }
+  }
+
+  // --- items (core catalog + entity inventory already copied) ---
+  // pack.items is no longer evaluated-not-mapped: inventory/equipment ids that
+  // resolve against it already sit on EntityState (entityBlueprintToState +
+  // retainResolvedItems). Count the catalog so a forge export that only
+  // declares items[] is applied, not advised.
+  if (Array.isArray(pack.items) && pack.items.length > 0) {
+    applied.items = itemCatalogIds.size;
+    registerItemCatalog(engine, pack.items);
+  }
+
+  // --- itemPlacements (authored giveItem) ---
+  const itemPlacements = pack.itemPlacements ?? [];
+  if (!Array.isArray(itemPlacements)) {
+    errors.push({ path: 'pack.itemPlacements', message: 'must be an array if provided.' });
+  } else {
+    let count = 0;
+    for (let i = 0; i < itemPlacements.length; i++) {
+      const rec = itemPlacements[i];
+      const label = `itemPlacements[${i}](${isRecord(rec) ? String(rec.itemId ?? '?') : '?'})`;
+      if (!options.prevalidated) {
+        const r = validateItemPlacementRecord(rec, label);
+        if (r.errors.length > 0) {
+          errors.push(...r.errors);
+          continue;
+        }
+      }
+      const { itemId, entityId } = rec as ItemPlacementRecord;
+      if (itemCatalogIds.size > 0 && !itemCatalogIds.has(itemId)) {
+        errors.push({
+          path: `${label}.itemId`,
+          message: `item "${itemId}" is not in pack.items — itemPlacements resolve against this pack's item catalog`,
+        });
+        continue;
+      }
+      const holder = engine.store.state.entities[entityId];
+      if (!holder) {
+        errors.push({
+          path: `${label}.entityId`,
+          message:
+            `no entity "${entityId}" in the booted world — itemPlacements give an item to an existing EntityState`,
+        });
+        continue;
+      }
+      const inv = holder.inventory ?? [];
+      if (!inv.includes(itemId)) {
+        holder.inventory = [...inv, itemId];
+      }
+      count++;
+    }
+    if (itemPlacements.length > 0) applied.itemPlacements = count;
   }
 
   // --- module-owned channels (injected) ---
@@ -702,8 +877,11 @@ export function applyContentPack(
           : key === 'buildCatalog'
             ? 'the build catalog is consumed by character creation before a session runs, not by any world reader. ' +
               'Read it with extractSessionContent() and hand it to the character builder.'
-            : 'chargen archetypes/backgrounds belong with the build catalog — consumed by character creation before a session runs, not by any world reader. ' +
-              'Read them with extractSessionContent() and hand them to the character builder.',
+            : key === 'ruleset'
+              ? 'the pack ruleset is bound at Engine construction (and by loadContent against abilities/statuses). ' +
+                'A post-boot write cannot swap the host ruleset. Read it with extractSessionContent() / PackEntry.ruleset.'
+              : 'chargen archetypes/backgrounds belong with the build catalog — consumed by character creation before a session runs, not by any world reader. ' +
+                'Read them with extractSessionContent() and hand them to the character builder.',
     });
   }
 
@@ -759,6 +937,11 @@ export type SessionContent = {
   archetypes?: unknown[];
   /** Chargen kits — same session as buildCatalog. Present only if the pack carried the key. */
   backgrounds?: unknown[];
+  /**
+   * Pack-authored RulesetDefinition. Present only if the pack carried the key.
+   * Bind it at Engine construction; loadContent already validated it.
+   */
+  ruleset?: unknown;
   /** Keys found but unusable, with the reason — never silently omitted. */
   advisories: ValidationError[];
 };
@@ -812,6 +995,17 @@ export function extractSessionContent(pack: ContentPack): SessionContent {
     }
   }
 
+  if (raw.ruleset !== undefined) {
+    if (raw.ruleset === null || typeof raw.ruleset !== 'object' || Array.isArray(raw.ruleset)) {
+      advisories.push({
+        path: 'pack.ruleset',
+        message: 'must be a RulesetDefinition object — skipped.',
+      });
+    } else {
+      out.ruleset = raw.ruleset;
+    }
+  }
+
   return out;
 }
 
@@ -836,4 +1030,62 @@ function idOf(v: unknown): string {
     if (typeof id === 'string') return id;
   }
   return '?';
+}
+
+function itemIdsFromPack(pack: ContentPack): Set<string> {
+  const ids = new Set<string>();
+  if (!Array.isArray(pack.items)) return ids;
+  for (const item of pack.items) {
+    if (isRecord(item) && typeof item.id === 'string') ids.add(item.id);
+  }
+  return ids;
+}
+
+/**
+ * Keep inventory/equipment ids that resolve against pack.items. When the pack
+ * has no catalog, ids stay as copied (they may be granted by pack code).
+ * Unresolved names against a present catalog are structured errors.
+ */
+function retainResolvedItems(
+  state: EntityState,
+  bp: EntityBlueprint,
+  catalog: Set<string>,
+  errors: ValidationError[],
+  label: string,
+): void {
+  if (catalog.size === 0) return;
+  if (Array.isArray(bp.inventory)) {
+    const kept: string[] = [];
+    for (const id of bp.inventory) {
+      if (catalog.has(id)) kept.push(id);
+      else {
+        errors.push({
+          path: `${label}.inventory`,
+          message: `item "${id}" is not in pack.items — inventory ids must resolve against the pack catalog`,
+        });
+      }
+    }
+    state.inventory = kept;
+  }
+  if (bp.equipment !== undefined && isRecord(bp.equipment)) {
+    const kept: Record<string, string | null> = {};
+    for (const [slot, item] of Object.entries(bp.equipment)) {
+      if (typeof item !== 'string') continue;
+      if (catalog.has(item)) kept[slot] = item;
+      else {
+        errors.push({
+          path: `${label}.equipment.${slot}`,
+          message: `item "${item}" is not in pack.items — equipment ids must resolve against the pack catalog`,
+        });
+      }
+    }
+    state.equipment = kept;
+  }
+}
+
+/** Stash the catalog on world.modules so later hosts can read it without a parallel type. */
+function registerItemCatalog(engine: Engine, items: NonNullable<ContentPack['items']>): void {
+  const modules = engine.store.state.modules;
+  if (!isRecord(modules)) return;
+  modules['content-pack-items'] = items.map((item) => ({ ...item }));
 }
