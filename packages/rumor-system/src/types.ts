@@ -92,6 +92,15 @@ export type RumorEngineConfig = {
   /** Ticks of inactivity before status becomes 'dead' (default: 30) */
   deathThreshold?: number;
   /**
+   * Ticks since a stance was last set (via {@link RumorEngine.setStance})
+   * before it decays back to `'unknown'` on a subsequent
+   * {@link RumorEngine.tick} call (F-16e227f2). Omitted/undefined: stances
+   * never decay — matches this package's existing "omitted = disabled"
+   * convention (see `fadingThreshold`/`deathThreshold` above). Decay only
+   * ever clears an entry to `'unknown'`; it never flips `believe`<->`doubt`.
+   */
+  stanceFadeTicks?: number;
+  /**
    * Max dead rumors retained in the live Map (default: 64). Oldest dead
    * (by lastSpreadTick, then originTick) drop first so a missing pruneDead()
    * cannot unbounded-grow a campaign (F-97a47e88).

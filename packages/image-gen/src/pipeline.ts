@@ -177,6 +177,7 @@ function resolveGenerationBase(
   }
   if (generation?.controlnet) resolved.controlnet = generation.controlnet;
   if (generation?.ipadapter !== undefined) resolved.ipadapter = generation.ipadapter;
+  if (generation?.loras && generation.loras.length > 0) resolved.loras = generation.loras;
   return resolved;
 }
 
@@ -204,6 +205,18 @@ function controlSignature(generation: GenerationOptions | undefined): string | n
   const ipPart = ip === undefined ? null : String(ip);
   if (!kind && !img && ipPart === null) return null;
   return `${kind ?? ''}:${img ?? ''}:${ipPart ?? ''}`;
+}
+
+/**
+ * LoRA stack identity, threaded like {@link controlSignature} (F-fcf4f488).
+ * Order-sensitive (JSON array, not a sorted set) — matches the chained
+ * LoraLoader graph in comfyui-provider.ts, where entry order changes which
+ * node reads which node's output.
+ */
+function loraSignature(generation: GenerationOptions | undefined): string | null {
+  const loras = generation?.loras;
+  if (!loras || loras.length === 0) return null;
+  return JSON.stringify(loras.map((l) => [l.name, l.weight ?? null]));
 }
 
 function resolveGeneration(
@@ -464,6 +477,7 @@ export function portraitVariantIdentityTag(
     g.denoise ?? null,
     maskSignature(g.mask),
     controlSignature(g),
+    loraSignature(g),
   ])}`;
 }
 
@@ -485,6 +499,7 @@ export function sceneIdentityVariantTag(
     g.denoise ?? null,
     maskSignature(g.mask),
     controlSignature(g),
+    loraSignature(g),
   ])}`;
 }
 
@@ -506,6 +521,7 @@ export function iconIdentityVariantTag(
     g.denoise ?? null,
     maskSignature(g.mask),
     controlSignature(g),
+    loraSignature(g),
   ])}`;
 }
 
@@ -680,12 +696,19 @@ export async function ensurePortraitVariant(
     store,
     async () => {
       const generation: GenerationOptions = { ...opts.generation };
-      if (!generation.initImage) {
+      const needsControlImage =
+        (generation.controlnet || generation.ipadapter) && !generation.controlImage;
+      if (!generation.initImage || needsControlImage) {
         const base = await store.get(baseHash, { verify: true });
         if (!base) {
           throw new Error(`[image-gen] ensurePortraitVariant: no asset at hash ${baseHash}`);
         }
-        generation.initImage = base;
+        if (!generation.initImage) generation.initImage = base;
+        // F-848ff475: a caller-supplied controlImage (e.g. a tighter face
+        // crop) always wins — this only fills the gap when controlnet/
+        // ipadapter is requested but no identity-lock image was given, so
+        // the ControlNet/IPAdapter graph isn't silently skipped.
+        if (needsControlImage) generation.controlImage = base;
       }
       if (generation.denoise === undefined) generation.denoise = 0.55;
       const genOpts = resolveGeneration(request, generation);
@@ -726,12 +749,16 @@ export async function ensureBackgroundVariant(
     store,
     async () => {
       const generation: GenerationOptions = { ...opts.generation };
-      if (!generation.initImage) {
+      const needsControlImage =
+        (generation.controlnet || generation.ipadapter) && !generation.controlImage;
+      if (!generation.initImage || needsControlImage) {
         const base = await store.get(baseHash, { verify: true });
         if (!base) {
           throw new Error(`[image-gen] ensureBackgroundVariant: no asset at hash ${baseHash}`);
         }
-        generation.initImage = base;
+        if (!generation.initImage) generation.initImage = base;
+        // F-848ff475: caller-supplied controlImage always wins.
+        if (needsControlImage) generation.controlImage = base;
       }
       if (generation.denoise === undefined) generation.denoise = 0.55;
       const genOpts = resolveGenerationBase(generation, {
@@ -773,12 +800,16 @@ export async function ensureIconVariant(
     store,
     async () => {
       const generation: GenerationOptions = { ...opts.generation };
-      if (!generation.initImage) {
+      const needsControlImage =
+        (generation.controlnet || generation.ipadapter) && !generation.controlImage;
+      if (!generation.initImage || needsControlImage) {
         const base = await store.get(baseHash, { verify: true });
         if (!base) {
           throw new Error(`[image-gen] ensureIconVariant: no asset at hash ${baseHash}`);
         }
-        generation.initImage = base;
+        if (!generation.initImage) generation.initImage = base;
+        // F-848ff475: caller-supplied controlImage always wins.
+        if (needsControlImage) generation.controlImage = base;
       }
       if (generation.denoise === undefined) generation.denoise = 0.55;
       const genOpts = resolveGenerationBase(generation, {

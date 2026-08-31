@@ -206,5 +206,33 @@ export const CORE_SOUND_PACK: SoundPackManifest = {
       source: 'voice-soundboard',
       voiceSoundboardEffect: 'theme_triumph',
     },
+    // Music stings — one-shot overlays layered over the zone stem, never a
+    // stem replacement (F-fa44e956). Play via AudioDirector.scheduleSting,
+    // not scheduleMusic/musicCue — that path folds into the single-slot
+    // activeMusicId bookkeeping these are deliberately kept out of.
+    {
+      id: 'music_victory_sting',
+      tags: ['sting', 'victory'],
+      domain: 'music',
+      intensity: 'high',
+      mood: ['triumph', 'positive'],
+      durationClass: 'oneshot',
+      cooldownMs: 3000,
+      variants: [],
+      source: 'voice-soundboard',
+      voiceSoundboardEffect: 'sting_victory',
+    },
+    {
+      id: 'music_defeat_sting',
+      tags: ['sting', 'defeat'],
+      domain: 'music',
+      intensity: 'high',
+      mood: ['dread', 'negative'],
+      durationClass: 'oneshot',
+      cooldownMs: 3000,
+      variants: [],
+      source: 'voice-soundboard',
+      voiceSoundboardEffect: 'sting_defeat',
+    },
   ],
 };

@@ -129,6 +129,35 @@ describe('SoundRegistry', () => {
       expect(registry.pickAmbientBed({ mood: ['dread'] }, 0)?.id).toBe('ambient_drone');
     });
 
+    it('pickMusicSting indexes id-sorted music oneshots — the inverse filter of pickMusicStem (F-fa44e956)', () => {
+      const registry = new SoundRegistry();
+      registry.load(CORE_SOUND_PACK);
+      const first = registry.pickMusicSting({}, 0);
+      const last = registry.pickMusicSting({}, 1);
+      // id-sorted: 'music_defeat_sting' < 'music_victory_sting'.
+      expect(first?.id).toBe('music_defeat_sting');
+      expect(last?.id).toBe('music_victory_sting');
+      expect(first?.durationClass).toBe('oneshot');
+      expect(registry.pickMusicSting({ mood: ['nope'] }, 0)).toBeUndefined();
+      // Loop stems never satisfy a sting query, and vice versa — the two
+      // pickers partition CORE_SOUND_PACK's music domain by durationClass.
+      expect(registry.pickMusicSting({ mood: ['calm'] }, 0)).toBeUndefined();
+    });
+
+    it('pickMusicStem and pickMusicSting partition the music domain — no id sees both', () => {
+      const registry = new SoundRegistry();
+      registry.load(CORE_SOUND_PACK);
+      const stems = new Set<string>();
+      const stings = new Set<string>();
+      for (const roll of [0, 0.25, 0.5, 0.75, 1]) {
+        const stem = registry.pickMusicStem({}, roll);
+        const sting = registry.pickMusicSting({}, roll);
+        if (stem) stems.add(stem.id);
+        if (sting) stings.add(sting.id);
+      }
+      for (const id of stems) expect(stings.has(id)).toBe(false);
+    });
+
     it('diffAmbientLayers emits start/stop against getActiveLayers-shaped maps', () => {
       const active = new Map([
         ['ambient_rain', { domain: 'ambient' as const, resourceId: 'ambient_rain' }],

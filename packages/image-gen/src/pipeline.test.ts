@@ -1213,3 +1213,180 @@ describe('ensureBackgroundVariant / ensureIconVariant (F-fabbd6d2)', () => {
     ).rejects.toThrow(/no asset at hash/);
   });
 });
+
+describe('variant controlImage auto-load (F-848ff475)', () => {
+  it('ensurePortraitVariant loads the base asset as controlImage when controlnet is set', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new PlaceholderProvider();
+    const spy = vi.spyOn(provider, 'generate');
+    const base = await generatePortrait(testRequest, provider, store);
+    const baseBytes = await store.get(base.hash);
+    spy.mockClear();
+
+    await ensurePortraitVariant(base.hash, testRequest, provider, store, {
+      variant: 'scarred',
+      generation: { controlnet: 'openpose' },
+    });
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    const opts = spy.mock.calls[0][1] as GenerationOptions;
+    expect(opts.controlImage).toEqual(baseBytes);
+    // initImage auto-load is untouched by this fix.
+    expect(opts.initImage).toEqual(baseBytes);
+  });
+
+  it('ensurePortraitVariant loads controlImage when only ipadapter is set (no controlnet)', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new PlaceholderProvider();
+    const spy = vi.spyOn(provider, 'generate');
+    const base = await generatePortrait(testRequest, provider, store);
+    const baseBytes = await store.get(base.hash);
+    spy.mockClear();
+
+    await ensurePortraitVariant(base.hash, testRequest, provider, store, {
+      variant: 'scarred',
+      generation: { ipadapter: 0.8 },
+    });
+
+    const opts = spy.mock.calls[0][1] as GenerationOptions;
+    expect(opts.controlImage).toEqual(baseBytes);
+  });
+
+  it('ensurePortraitVariant: a caller-supplied controlImage wins over the auto-loaded base', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new PlaceholderProvider();
+    const spy = vi.spyOn(provider, 'generate');
+    const base = await generatePortrait(testRequest, provider, store);
+    spy.mockClear();
+    const customControl = new Uint8Array([1, 2, 3, 4, 5]);
+
+    await ensurePortraitVariant(base.hash, testRequest, provider, store, {
+      variant: 'scarred',
+      generation: { controlnet: 'openpose', controlImage: customControl },
+    });
+
+    const opts = spy.mock.calls[0][1] as GenerationOptions;
+    expect(opts.controlImage).toEqual(customControl);
+  });
+
+  it('ensurePortraitVariant does not auto-load controlImage when neither controlnet nor ipadapter is set', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new PlaceholderProvider();
+    const spy = vi.spyOn(provider, 'generate');
+    const base = await generatePortrait(testRequest, provider, store);
+    spy.mockClear();
+
+    await ensurePortraitVariant(base.hash, testRequest, provider, store, {
+      variant: 'scarred',
+    });
+
+    const opts = spy.mock.calls[0][1] as GenerationOptions;
+    expect(opts.controlImage).toBeUndefined();
+  });
+
+  it('ensureBackgroundVariant loads the base asset as controlImage when controlnet is set', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new PlaceholderProvider();
+    const spy = vi.spyOn(provider, 'generate');
+    const base = await generateBackground(chapel, provider, store);
+    const baseBytes = await store.get(base.hash);
+    spy.mockClear();
+
+    await ensureBackgroundVariant(base.hash, chapel, provider, store, {
+      variant: 'night',
+      generation: { controlnet: 'depth' },
+    });
+
+    const opts = spy.mock.calls[0][1] as GenerationOptions;
+    expect(opts.controlImage).toEqual(baseBytes);
+  });
+
+  it('ensureIconVariant loads the base asset as controlImage when controlnet is set', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new PlaceholderProvider();
+    const spy = vi.spyOn(provider, 'generate');
+    const base = await generateIcon(relic, provider, store);
+    const baseBytes = await store.get(base.hash);
+    spy.mockClear();
+
+    await ensureIconVariant(base.hash, relic, provider, store, {
+      variant: 'cracked',
+      generation: { controlnet: 'canny' },
+    });
+
+    const opts = spy.mock.calls[0][1] as GenerationOptions;
+    expect(opts.controlImage).toEqual(baseBytes);
+  });
+});
+
+describe('loras threading (F-fcf4f488)', () => {
+  it('ensurePortraitVariant passes loras through to the provider unchanged', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new PlaceholderProvider();
+    const spy = vi.spyOn(provider, 'generate');
+    const base = await generatePortrait(testRequest, provider, store);
+    spy.mockClear();
+    const loras = [{ name: 'knight_face_v2', weight: 0.75 }];
+
+    await ensurePortraitVariant(base.hash, testRequest, provider, store, {
+      variant: 'scarred',
+      generation: { loras },
+    });
+
+    const opts = spy.mock.calls[0][1] as GenerationOptions;
+    expect(opts.loras).toEqual(loras);
+  });
+
+  it('two variant requests differing only by lora set do not collide on identity', () => {
+    const a = portraitVariantIdentityTag('base', 'aged', testRequest, {
+      loras: [{ name: 'knight_face_v2', weight: 0.75 }],
+    });
+    const b = portraitVariantIdentityTag('base', 'aged', testRequest, {
+      loras: [{ name: 'battle_scars', weight: 0.75 }],
+    });
+    const none = portraitVariantIdentityTag('base', 'aged', testRequest, {});
+    expect(a).not.toBe(b);
+    expect(a).not.toBe(none);
+    expect(b).not.toBe(none);
+  });
+
+  it('lora order is significant (chained LoraLoader graph, not a set)', () => {
+    const a = portraitVariantIdentityTag('base', 'aged', testRequest, {
+      loras: [
+        { name: 'knight_face_v2', weight: 0.75 },
+        { name: 'battle_scars', weight: 0.4 },
+      ],
+    });
+    const b = portraitVariantIdentityTag('base', 'aged', testRequest, {
+      loras: [
+        { name: 'battle_scars', weight: 0.4 },
+        { name: 'knight_face_v2', weight: 0.75 },
+      ],
+    });
+    expect(a).not.toBe(b);
+  });
+
+  it('sceneIdentityVariantTag and iconIdentityVariantTag also key on the lora set', () => {
+    const sceneA = sceneIdentityVariantTag('base', 'night', chapel, {
+      loras: [{ name: 'weathering_v1' }],
+    });
+    const sceneB = sceneIdentityVariantTag('base', 'night', chapel, {});
+    expect(sceneA).not.toBe(sceneB);
+
+    const iconA = iconIdentityVariantTag('base', 'cracked', relic, {
+      loras: [{ name: 'weathering_v1' }],
+    });
+    const iconB = iconIdentityVariantTag('base', 'cracked', relic, {});
+    expect(iconA).not.toBe(iconB);
+  });
+
+  it('an identical lora set produces the same identity tag (cache hit, not a forced miss)', () => {
+    const a = portraitVariantIdentityTag('base', 'aged', testRequest, {
+      loras: [{ name: 'knight_face_v2', weight: 0.75 }],
+    });
+    const b = portraitVariantIdentityTag('base', 'aged', testRequest, {
+      loras: [{ name: 'knight_face_v2', weight: 0.75 }],
+    });
+    expect(a).toBe(b);
+  });
+});
