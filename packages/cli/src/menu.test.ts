@@ -46,6 +46,7 @@ import {
   buildExtraActions,
   parseExtraSelection,
   buildHudWorld,
+  buildPartyStatusLine,
   buildDebugActions,
   buildDirectorActions,
   buildJournalActions,
@@ -463,6 +464,34 @@ describe('buildHudWorld (F1d) — XP/level in the HUD', () => {
     engine.submitAction('unlock', { parameters: { treeId: 'combat-mastery', nodeId: 'toughened' } });
     expect(derivePlayerLevel(engine.world)).toBe(2);
     expect(buildHudWorld(engine.world, [combatMasteryTree]).entities['player'].resources.level).toBe(2);
+  });
+});
+
+// F-dc8a82be / F-b30e754a: formatPartyStatusLine (modules' companion-core) was
+// finished, tested, and publicly exported, but nothing ever called it — the
+// always-on Status HUD stayed silent about a party the player was traveling
+// with. buildPartyStatusLine follows the exact CLI-composes-the-frame
+// pattern buildHudWorld (above) already established: the producer call
+// lives here, where @ai-rpg-engine/modules is a real dependency, so
+// terminal-ui never needs one.
+describe('buildPartyStatusLine (F-dc8a82be) — party line composed for the HUD', () => {
+  it('an active party returns the formatted line with real entity names resolved', () => {
+    const engine = createGame(42); // chapel-entrance: Sister Maren is here, tagged 'recruitable'
+    const recruited = engine.submitAction('recruit', { targetIds: ['sister-maren'] });
+    expect(recruited.some((e) => e.type === 'companion.recruited')).toBe(true);
+
+    const line = buildPartyStatusLine(engine.world);
+    expect(line).toBeDefined();
+    expect(line).toContain('Party:');
+    expect(line).toContain('Sister Maren');
+    // Same two-space indent every other HUD line uses — matches
+    // formatPartyStatusLine's own documented output shape.
+    expect(line!.startsWith('  Party:')).toBe(true);
+  });
+
+  it('no active party (never recruited) returns undefined — no empty "Party:" label ever composed', () => {
+    const engine = makeIdleGame();
+    expect(buildPartyStatusLine(engine.world)).toBeUndefined();
   });
 });
 

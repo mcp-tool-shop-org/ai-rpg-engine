@@ -103,6 +103,7 @@ import {
   getPartyState,
   getCompanion,
   isCompanionRecruitable,
+  formatPartyStatusLine,
 } from '@ai-rpg-engine/modules';
 import { frameRule, wrapToWidth, clipToWidth, SCREEN_WIDTH } from '@ai-rpg-engine/terminal-ui';
 import { getAbilityCatalog } from './turns.js';
@@ -1550,4 +1551,25 @@ export function buildHudWorld(
       },
     },
   };
+}
+
+/**
+ * F-dc8a82be / F-b30e754a: composes the party status line for the Status
+ * HUD, the same CLI-composes-the-frame pattern buildHudWorld (above) already
+ * established — terminal-ui never gains a runtime dependency on
+ * @ai-rpg-engine/modules; the producer call lives here instead, reusing the
+ * exact names-record pattern dialogue-core.ts's partyPresenceHint already
+ * established for the sibling formatter (formatPartyPresence).
+ * formatPartyStatusLine itself returns undefined for an empty/inactive
+ * party — forwarded straight through, so the renderer's `if (partyLine)`
+ * gate skips the line entirely rather than rendering an empty label.
+ */
+export function buildPartyStatusLine(world: WorldState): string | undefined {
+  const party = getPartyState(world);
+  const names: Record<string, string> = {};
+  for (const c of party.companions) {
+    const name = world.entities[c.npcId]?.name;
+    if (name) names[c.npcId] = name;
+  }
+  return formatPartyStatusLine(party, names, world);
 }
