@@ -1,6 +1,9 @@
 // Tests — chat tool registry: tool lookup and execution with mock client
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { OllamaTextClient, PromptInput, PromptResult } from './client.js';
 import type { ChatToolParams } from './chat-types.js';
 import type { DesignSession } from './session.js';
@@ -148,9 +151,9 @@ describe('findToolForIntent', () => {
 });
 
 describe('getAllTools', () => {
-  it('returns all 34 registered tools', () => {
+  it('returns all 35 registered tools', () => {
     const tools = getAllTools();
-    expect(tools.length).toBe(34);
+    expect(tools.length).toBe(35);
   });
 
   it('returns a copy (not the internal array)', () => {
@@ -170,11 +173,11 @@ describe('getAllTools', () => {
     }
   });
 
-  it('only apply-content and tune-apply declare mutates=true', () => {
+  it('only apply-content, emit-pack, and tune-apply declare mutates=true', () => {
     const mutating = getAllTools().filter(t => t.mutates);
-    expect(mutating.length).toBe(2);
+    expect(mutating.length).toBe(3);
     const names = mutating.map(t => t.name).sort();
-    expect(names).toEqual(['apply-content', 'tune-apply']);
+    expect(names).toEqual(['apply-content', 'emit-pack', 'tune-apply']);
   });
 });
 
@@ -410,6 +413,123 @@ describe('scaffold tool', () => {
     expect(result.ok).toBe(true);
     expect(result.summary).not.toMatch(/validation issue/i);
     expect(result.summary).not.toContain('explain-validation-error');
+  });
+
+  // F-8ec253bf: CHARGEN_STEPS' new head step dispatches kind:'ruleset'
+  // through intent:'scaffold' (findToolForIntent -> scaffoldTool) — without
+  // this case the step would always fail with "Unknown kind".
+  it('generates a ruleset', async () => {
+    const yaml = [
+      'id: fantasy-minimal',
+      'name: Fantasy Minimal',
+      'version: 0.1.0',
+      'stats:',
+      '  - id: vigor',
+      '    name: Vigor',
+      '    default: 5',
+      'resources:',
+      '  - id: hp',
+      '    name: HP',
+      '    default: 20',
+      'verbs:',
+      '  - id: move',
+      '    name: Move',
+      'formulas: []',
+      'defaultModules: []',
+      'progressionModels: []',
+    ].join('\n');
+    const tool = findToolForIntent('scaffold')!;
+    const result = await tool.execute(makeParams({
+      client: mockClient(yaml),
+      params: { kind: 'ruleset', theme: 'gritty fantasy' },
+    }));
+    expect(result.ok).toBe(true);
+    expect(result.output).toContain('fantasy-minimal');
+  });
+
+  // F-0bf295ac
+  it('generates a rule profile and maps the ruleProfiles bucket', async () => {
+    const yaml = 'id: veteran_soldier\nstatMapping:\n  attack: strength\n  precision: dexterity\n  resolve: willpower';
+    const tool = findToolForIntent('scaffold')!;
+    const result = await tool.execute(makeParams({
+      client: mockClient(yaml),
+      params: { kind: 'rule-profile', theme: 'veteran soldier' },
+    }));
+    expect(result.ok).toBe(true);
+    expect(result.output).toContain('veteran_soldier');
+    expect(result.sessionEvents?.[0]?.detail).toContain('ruleProfiles/');
+  });
+
+  it('honors a caller-supplied --id for a rule profile', async () => {
+    const yaml = 'statMapping:\n  attack: strength\n  precision: dexterity\n  resolve: willpower';
+    const tool = findToolForIntent('scaffold')!;
+    const result = await tool.execute(makeParams({
+      client: mockClient(yaml),
+      params: { kind: 'rule-profile', theme: 'veteran soldier', id: 'veteran_soldier' },
+    }));
+    expect(result.ok).toBe(true);
+    expect(result.output).toContain('id: veteran_soldier');
+  });
+
+  // F-bd8034ea
+  it('generates an item placement', async () => {
+    const tool = findToolForIntent('scaffold')!;
+    const result = await tool.execute(makeParams({
+      client: failingClient(),
+      params: { kind: 'item-placement', theme: 'chapel key', item: 'rusty_key', entityId: 'chapel_guard' },
+    }));
+    expect(result.ok).toBe(true);
+    expect(result.output).toBe('itemId: rusty_key\nentityId: chapel_guard\n');
+  });
+});
+
+// F-35cc73ce: the guided /build path never called assembleContentPack/
+// emit-pack — the default ReplayProducer loads only from content/pack.json,
+// so a host who only ran /build ticked an empty world. emitPackTool is the
+// new tail step's tool (intent 'emit_pack').
+describe('emit-pack tool', () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'chat-emit-pack-'));
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it('is registered under the emit_pack intent', () => {
+    const tool = findToolForIntent('emit_pack');
+    expect(tool).toBeDefined();
+    expect(tool!.name).toBe('emit-pack');
+  });
+
+  it('assembles the project pack and stages it as a pendingWrite to content/pack.json', async () => {
+    await writeFile(join(root, 'guard.yaml'), 'id: chapel_guard\ntype: npc\nname: Chapel Guard\n');
+    const tool = findToolForIntent('emit_pack')!;
+    const result = await tool.execute(makeParams({ projectRoot: root }));
+    expect(result.ok).toBe(true);
+    expect(result.pendingWrite).toBeDefined();
+    expect(result.pendingWrite!.suggestedPath).toBe('content/pack.json');
+    const written = JSON.parse(result.pendingWrite!.content);
+    expect(written.entities).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'chapel_guard' })]),
+    );
+    expect(result.sessionEvents?.[0]?.kind).toBe('pack_emitted');
+    // Nothing is written until the pendingWrite is confirmed.
+    await expect(readFile(join(root, 'content', 'pack.json'), 'utf-8')).rejects.toThrow();
+  });
+
+  it('refuses to stage a pendingWrite when the assembled pack fails loadContent, surfacing the errors', async () => {
+    // A placement with no matching entity/zone anywhere in the pack is a
+    // dangling-reference ERROR (validateRefs, refs.ts) — a deterministic,
+    // guaranteed loadContent failure independent of the yaml-ish parser.
+    await writeFile(join(root, 'ghost.yaml'), 'entityId: ghost\nzoneId: nowhere\n');
+    const tool = findToolForIntent('emit_pack')!;
+    const result = await tool.execute(makeParams({ projectRoot: root }));
+    expect(result.ok).toBe(false);
+    expect(result.summary).toContain('ghost');
+    expect(result.pendingWrite).toBeUndefined();
   });
 });
 

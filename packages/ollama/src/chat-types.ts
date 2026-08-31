@@ -31,6 +31,7 @@ export type ChatIntent =
   | 'explain_why'       // "Why did the guards never escalate?"
   | 'session_info'      // "What's in my session?" / "Show me open issues."
   | 'apply_content'     // "Write this to disk."
+  | 'emit_pack'         // Guided /build tail step: assemble + write content/pack.json.
   | 'help'              // "What can you do?"
   | 'context_info'      // "What context are you using?" / "/context"
   | 'show_plan'         // "What's the plan?" / "Make a plan"
