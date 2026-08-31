@@ -267,4 +267,34 @@ describe('loadContent', () => {
     expect(r.ok).toBe(false);
     expect(r.errors.some((e) => e.path.includes('cooldown') && e.message.includes('finite'))).toBe(true);
   });
+
+  it('F-b6a8aa78: a hazard with non-array effects fails loadContent', () => {
+    const r = loadContent({
+      hazardDefinitions: [{ trigger: 'whenever', effects: 'nope' }] as any,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('hazardDefinitions') && e.path.includes('effects'))).toBe(true);
+  });
+
+  it('F-b6a8aa78: items:[{id:1}] fails loadContent', () => {
+    const r = loadContent({ items: [{ id: 1 }] as any });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('items') && e.path.includes('id'))).toBe(true);
+  });
+
+  it('F-b6a8aa78: a null item element is a structured error, not ok:true', () => {
+    let r!: ReturnType<typeof loadContent>;
+    expect(() => {
+      r = loadContent({ items: [null] as any });
+    }).not.toThrow();
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('items'))).toBe(true);
+  });
+
+  it('F-b6a8aa78: duplicate hazard ids fail loadContent', () => {
+    const h = { id: 'fire', trigger: 'on-enter', effects: [] };
+    const r = loadContent({ hazardDefinitions: [h, { ...h }] });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message.includes('duplicate hazard id "fire"'))).toBe(true);
+  });
 });

@@ -17,7 +17,8 @@ import {
     aggressiveProfile,
 } from '@ai-rpg-engine/modules';
 import type { IntentProfile } from '@ai-rpg-engine/modules';
-import { manifest, player, enemy, zones } from './content.js';
+import { applyContentPack } from '@ai-rpg-engine/content-schema';
+import { manifest, pack, entityAi } from './content.js';
 import { myRuleset } from './ruleset.js';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -48,7 +49,7 @@ function createTensionPressure(): EngineModule {
 
 // ═══════════════════════════════════════════════════════════════════
 // INTENT PROFILES — required for enemies to act
-// Every entity in content.ts that declares an `ai.profileId` must find a
+// Every entity in content.ts that declares an `aiProfile` must find a
 // matching profile in this list: cognition builds its profile map from
 // `cognition.profiles`, and with an empty map no enemy ever selects an
 // intent — they stand still forever. Built-ins from @ai-rpg-engine/modules:
@@ -94,7 +95,7 @@ export function createGame(seed?: number): Engine {
         // recovery — safe zone recovery:
         recovery: { safeZoneTags: ['safe'] },
         // cognition — wires the intent profiles above into the enemy AI.
-        // Every ai.profileId declared in content.ts must resolve here.
+        // Every entityAi profileId (content.ts aiProfile) must resolve here.
         cognition: { profiles: myIntentProfiles },
     });
 
@@ -148,15 +149,19 @@ export function createGame(seed?: number): Engine {
         ],
     });
 
-    // Register zones
-    for (const zone of zones) {
-        engine.store.addZone(zone);
+    // Author data → runtime. applyContentPack converts EntityBlueprint /
+    // ZoneDefinition / placements into store state (roomId derived from zone
+    // id). Runtime-only AI is overlaid after intake — a profile NAME cannot
+    // become AIState without the pack that defines it.
+    const applied = applyContentPack(engine, pack);
+    if (!applied.ok) {
+        const detail = applied.errors.map((e) => `${e.path}: ${e.message}`).join('\n');
+        throw new Error(`applyContentPack failed:\n${detail}`);
     }
-
-    // Register entities — the store detaches (structuredClone) at ingestion,
-    // so module-level constants are safe to pass directly.
-    engine.store.addEntity(player);
-    engine.store.addEntity(enemy);
+    for (const [id, ai] of Object.entries(entityAi)) {
+        const entity = engine.store.state.entities[id];
+        if (entity && ai) entity.ai = structuredClone(ai);
+    }
 
     // Set player context
     engine.store.state.playerId = 'player';

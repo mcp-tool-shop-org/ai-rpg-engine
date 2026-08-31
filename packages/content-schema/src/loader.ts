@@ -13,6 +13,8 @@ import {
   validateAbilityDefinition,
   validateStatusDefinition,
   validateDistrictDefinition,
+  validateHazardDefinition,
+  validateItemRecord,
   formatErrors,
 } from './validate.js';
 import { validateRefs, validateGameContent } from './refs.js';
@@ -237,6 +239,19 @@ export function loadContent(pack: ContentPack): LoadResult {
     const label = `districts[${i}](${isPlainObject(d) ? (d.id ?? '?') : '?'})`;
     allErrors.push(...validateDistrictDefinition(d, label).errors);
   }
+  // F-b6a8aa78: hazardDefinitions / items were unwalked collections — a
+  // record with trigger:'whenever' + effects:'nope', or items:[{id:1}],
+  // was loadContent ok:true then no-op'd or threw in the interpreter.
+  for (let i = 0; i < (pack.hazardDefinitions ?? []).length; i++) {
+    const h = (pack.hazardDefinitions ?? [])[i];
+    const label = `hazardDefinitions[${i}](${isPlainObject(h) ? (h.id ?? '?') : '?'})`;
+    allErrors.push(...validateHazardDefinition(h, label).errors);
+  }
+  for (let i = 0; i < (pack.items ?? []).length; i++) {
+    const item = (pack.items ?? [])[i];
+    const label = `items[${i}](${isPlainObject(item) ? (item.id ?? '?') : '?'})`;
+    allErrors.push(...validateItemRecord(item, label).errors);
+  }
 
   // F-9c5db864: pack-level uniqueness for abilities/statuses lives on this
   // load path (validateAbilityPack / validateStatusDefinitionPack are catalog
@@ -244,6 +259,8 @@ export function loadContent(pack: ContentPack): LoadResult {
   // cannot loadContent-green).
   allErrors.push(...collectDuplicateIds(pack.abilities ?? [], 'abilities', 'ability'));
   allErrors.push(...collectDuplicateIds(pack.statuses ?? [], 'statuses', 'status'));
+  allErrors.push(...collectDuplicateIds(pack.hazardDefinitions ?? [], 'hazardDefinitions', 'hazard'));
+  allErrors.push(...collectDuplicateIds(pack.items ?? [], 'items', 'item'));
 
   // Cross-reference validation. validateRefs reads .id off elements, so only run it once
   // per-element structural validation has confirmed shapes (errors above already flag bad

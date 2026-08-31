@@ -35,7 +35,7 @@ npm install @ai-rpg-engine/content-schema
 ## Utilisation
 
 ```typescript
-import { loadContent, validateGameContent } from '@ai-rpg-engine/content-schema';
+import { loadContent, validateGameContent, toJsonSchema } from '@ai-rpg-engine/content-schema';
 
 const result = loadContent(myContentData);
 if (!result.ok) {
@@ -46,6 +46,8 @@ const refs = validateGameContent(myContentData);
 if (!refs.ok) {
   console.error(refs.errors);
 }
+
+const schema = toJsonSchema();
 ```
 
 ## Documentation

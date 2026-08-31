@@ -1,12 +1,21 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect } from 'vitest';
-import { validateRulesetDefinition, validateGameContent, validateAbilityPack } from '@ai-rpg-engine/content-schema';
-import type { ContentPack, AbilityDefinition, DialogueDefinition } from '@ai-rpg-engine/content-schema';
+import { validateRulesetDefinition, validateGameContent, validateAbilityPack, loadContent, loadContentFromFile } from '@ai-rpg-engine/content-schema';
+import type { AbilityDefinition, DialogueDefinition } from '@ai-rpg-engine/content-schema';
 import { selectIntent } from '@ai-rpg-engine/modules';
 import type { CognitionState } from '@ai-rpg-engine/modules';
 import { myRuleset } from './ruleset.js';
 import { createGame, myIntentProfiles } from './setup.js';
+import {
+    pack,
+    toContentPack,
+    buildCatalog,
+    itemCatalog,
+    districts,
+    progressionTree,
+    statusDefinitions,
+} from './content.js';
 
 describe('starter template', () => {
     it('ruleset validates against schema', () => {
@@ -73,18 +82,30 @@ describe('starter template — cross-reference integrity', () => {
     // Register your AbilityDefinitions here as you write them.
     const myAbilities: AbilityDefinition[] = [];
 
-    function builtContentPack(): ContentPack {
-        const engine = createGame(1);
+    function authoredPack() {
         return {
-            zones: Object.values(engine.store.state.zones) as unknown as ContentPack['zones'],
-            entities: Object.values(engine.store.state.entities) as unknown as ContentPack['entities'],
-            dialogues: myDialogues,
-            abilities: myAbilities,
+            ...toContentPack(),
+            dialogues: [...(toContentPack().dialogues ?? []), ...myDialogues],
+            abilities: [...(toContentPack().abilities ?? []), ...myAbilities],
         };
     }
 
+    it('F-407729dc: authored pack is loadContent-valid (not a cast of live store state)', () => {
+        const r = loadContent(pack);
+        expect(r.ok).toBe(true);
+        expect(r.errors).toEqual([]);
+        expect(loadContent(toContentPack()).ok).toBe(true);
+    });
+
+    it('F-407729dc: src/content.json is a loadable fixture', () => {
+        const file = fileURLToPath(new URL('./content.json', import.meta.url));
+        const r = loadContentFromFile(file);
+        expect(r.ok).toBe(true);
+        expect(r.errors).toEqual([]);
+    });
+
     it('zones, entities, dialogues, and abilities have no dangling references or duplicate ids', () => {
-        const result = validateGameContent(builtContentPack());
+        const result = validateGameContent(authoredPack());
         expect(result.errors).toEqual([]);
         expect(result.ok).toBe(true);
     });
@@ -92,7 +113,7 @@ describe('starter template — cross-reference integrity', () => {
     it('has no one-way zone passages (neighbor symmetry advisory)', () => {
         // A zone listing a neighbor that doesn't list it back is legal but
         // almost always a mistake — the player can walk in and never back out.
-        const result = validateGameContent(builtContentPack());
+        const result = validateGameContent(authoredPack());
         expect(result.advisories).toEqual([]);
     });
 
@@ -233,6 +254,24 @@ describe('starter template — standalone scaffold', () => {
         const index = read('./index.ts');
         expect(index).toContain('@ai-rpg-engine/starter-template');
         expect(index).not.toContain('starter-YOURNAME');
+    });
+
+    it('F-2abeea73: barrel exports session catalogs under stable names', () => {
+        expect(buildCatalog.archetypes.length).toBeGreaterThanOrEqual(1);
+        expect(buildCatalog.backgrounds.length).toBeGreaterThanOrEqual(1);
+        expect(itemCatalog.items.length).toBeGreaterThanOrEqual(1);
+        expect(districts.length).toBeGreaterThanOrEqual(1);
+        expect(progressionTree.nodes.length).toBeGreaterThanOrEqual(1);
+        expect(Array.isArray(statusDefinitions)).toBe(true);
+        const index = read('./index.ts');
+        for (const name of ['buildCatalog', 'itemCatalog', 'districts', 'progressionTree', 'statusDefinitions', 'pack', 'toContentPack']) {
+            expect(index, `index.ts must re-export ${name}`).toContain(name);
+        }
+        const pkg = JSON.parse(read('../package.json')) as { dependencies?: Record<string, string> };
+        const deps = pkg.dependencies ?? {};
+        expect(deps['@ai-rpg-engine/pack-registry']).toBeTruthy();
+        expect(deps['@ai-rpg-engine/character-creation']).toBeTruthy();
+        expect(deps['@ai-rpg-engine/equipment']).toBeTruthy();
     });
 });
 

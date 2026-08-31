@@ -569,6 +569,59 @@ export function validateEncounterAnchorRecord(v: unknown, path = 'EncounterAncho
 }
 
 /**
+ * Typed hazard record (F-b6a8aa78). Shape mirrors ContentPack.hazardDefinitions
+ * — reqStr id/trigger, effects as an array of objects, finite optionals.
+ * Cross-ref of zone.hazardRefs → hazard id is validateRefs' job.
+ */
+export function validateHazardDefinition(v: unknown, path = 'HazardDefinition'): ValidationResult {
+  if (!isObj(v)) return fail([{ path, message: 'must be an object' }]);
+  const c = checker(path);
+  reqStr(c, v, 'id');
+  reqStr(c, v, 'trigger');
+  optStr(c, v, 'name');
+  optNum(c, v, 'moveCostDelta');
+  optStr(c, v, 'passable');
+  if (v.blocksVision !== undefined && typeof v.blocksVision !== 'boolean') {
+    c.errors.push({ path: `${path}.blocksVision`, message: 'must be a boolean if provided' });
+  }
+  optStrArr(c, v, 'weatherConditions');
+  optStrArr(c, v, 'immuneTags');
+  optStrArr(c, v, 'tags');
+  if (!Array.isArray(v.effects)) {
+    c.errors.push({ path: `${path}.effects`, message: 'required array of objects' });
+  } else {
+    for (let i = 0; i < (v.effects as unknown[]).length; i++) {
+      if (!isObj((v.effects as unknown[])[i])) {
+        c.errors.push({ path: `${path}.effects[${i}]`, message: 'must be an object' });
+      }
+    }
+  }
+  return { ok: c.errors.length === 0, errors: c.errors };
+}
+
+/**
+ * Minimal item record (F-b6a8aa78). Non-empty string id; refuse non-objects.
+ * Full slot/rarity/loadout shape lives on `@ai-rpg-engine/equipment`
+ * ItemDefinition, which is assignable to ContentPack.items. Cross-ref of
+ * inventory/reward ids is validateGameContent's job.
+ */
+export function validateItemRecord(v: unknown, path = 'ItemDefinition'): ValidationResult {
+  if (!isObj(v)) return fail([{ path, message: 'must be an object' }]);
+  const c = checker(path);
+  reqStr(c, v, 'id');
+  optStr(c, v, 'name');
+  optStr(c, v, 'description');
+  optStr(c, v, 'slot');
+  optStr(c, v, 'rarity');
+  optRecord(c, v, 'statModifiers', 'number');
+  optRecord(c, v, 'resourceModifiers', 'number');
+  optStrArr(c, v, 'grantedTags');
+  optStrArr(c, v, 'grantedVerbs');
+  optStrArr(c, v, 'requiredTags');
+  return { ok: c.errors.length === 0, errors: c.errors };
+}
+
+/**
  * Structural district record (F-6fbd6e71). Shape mirrors ContentPack.districts
  * — id/name/zoneIds/tags required; controllingFaction and baseMetrics optional.
  * Zone-id resolution against pack.zones is validateRefs' job.

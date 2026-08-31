@@ -28,10 +28,15 @@ The pack registry is a runtime catalog of starter packs. Register packs, browse 
 ### Register and Discover Packs
 
 ```typescript
-import { registerPack, getAllPacks, filterPacks, getPackSummaries } from '@ai-rpg-engine/pack-registry';
+import { discoverInstalledPacks, registerPack, getAllPacks, filterPacks, getPackSummaries } from '@ai-rpg-engine/pack-registry';
 import { createGame, packMeta, manifest, fantasyMinimalRuleset } from '@ai-rpg-engine/starter-fantasy';
 
-// Register a pack
+// Discover installed packs (any package that exports packMeta + createGame)
+const packs = await discoverInstalledPacks({
+  from: { nodeResolution: ['@ai-rpg-engine/starter-fantasy'] },
+});
+
+// Or register a pack by hand
 registerPack({
   meta: packMeta,
   manifest,
@@ -99,7 +104,7 @@ import type {
   PackDifficulty,   // 'beginner' | 'intermediate' | 'advanced'
   PackTone,         // 'dark' | 'gritty' | 'heroic' | 'noir' | ...
   PackMetadata,     // Full pack metadata
-  PackEntry,        // Registry entry (meta + manifest + ruleset + createGame)
+  PackEntry,        // Registry entry (meta + manifest + ruleset + catalogs + createGame)
   PackSummary,      // Compact display format
   PackFilter,       // Filter criteria
   RubricResult,     // Quality rubric output

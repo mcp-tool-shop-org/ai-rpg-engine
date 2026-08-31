@@ -28,8 +28,13 @@ El registro de paquetes es un catálogo en tiempo de ejecución de paquetes inic
 ### Registro y Descubrimiento de Paquetes
 
 ```typescript
-import { registerPack, getAllPacks, filterPacks, getPackSummaries } from '@ai-rpg-engine/pack-registry';
+import { discoverInstalledPacks, registerPack, getAllPacks, filterPacks, getPackSummaries } from '@ai-rpg-engine/pack-registry';
 import { createGame, packMeta, manifest, fantasyMinimalRuleset } from '@ai-rpg-engine/starter-fantasy';
+
+// Discover installed packs (any package that exports packMeta + createGame)
+const packs = await discoverInstalledPacks({
+  from: { nodeResolution: ['@ai-rpg-engine/starter-fantasy'] },
+});
 
 // Register a pack
 registerPack({
@@ -99,7 +104,7 @@ import type {
   PackDifficulty,   // 'beginner' | 'intermediate' | 'advanced'
   PackTone,         // 'dark' | 'gritty' | 'heroic' | 'noir' | ...
   PackMetadata,     // Full pack metadata
-  PackEntry,        // Registry entry (meta + manifest + ruleset + createGame)
+  PackEntry,        // Registry entry (meta + manifest + ruleset + catalogs + createGame)
   PackSummary,      // Compact display format
   PackFilter,       // Filter criteria
   RubricResult,     // Quality rubric output

@@ -31,11 +31,12 @@ npm install @ai-rpg-engine/content-schema
 - **Content pack loader** — validate and load JSON/TypeScript content packs
 - **Ability schemas** — ability definitions, status definitions, and pack validation with balance advisories
 - **Schema validators** — runtime validation with structured error messages
+- **JSON Schema** — Draft 2020-12 artifact at `schema/content-pack.schema.json` (`toJsonSchema()`)
 
 ## Usage
 
 ```typescript
-import { loadContent, validateGameContent } from '@ai-rpg-engine/content-schema';
+import { loadContent, validateGameContent, toJsonSchema } from '@ai-rpg-engine/content-schema';
 
 const result = loadContent(myContentData);
 if (!result.ok) {
@@ -46,7 +47,24 @@ const refs = validateGameContent(myContentData);
 if (!refs.ok) {
   console.error(refs.errors);
 }
+
+const schema = toJsonSchema();
 ```
+
+## JSON Schema
+
+The live ContentPack contract for JSON authors is
+[`schema/content-pack.schema.json`](./schema/content-pack.schema.json)
+(JSON Schema Draft 2020-12). `$ref` it from World Forge, editors, and linters:
+
+```json
+{ "$schema": "https://ai-rpg-engine.dev/schemas/content-pack.schema.json" }
+```
+
+`loadContent` / `validate.ts` remain the fail-closed runtime gate. Handbook
+appendix B is not the source of truth — this artifact is (EntityBlueprint uses
+`type` not `kind`; DialogueDefinition uses `entryNodeId` not `startNode`;
+StatusDefinition.duration is a DurationSpec object, not a number).
 
 ## Documentation
 

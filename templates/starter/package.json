@@ -20,7 +20,10 @@
   "dependencies": {
     "@ai-rpg-engine/core": "^3.0.0",
     "@ai-rpg-engine/content-schema": "^3.0.0",
-    "@ai-rpg-engine/modules": "^3.0.0"
+    "@ai-rpg-engine/modules": "^3.0.0",
+    "@ai-rpg-engine/pack-registry": "^3.0.0",
+    "@ai-rpg-engine/character-creation": "^3.0.0",
+    "@ai-rpg-engine/equipment": "^3.0.0"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

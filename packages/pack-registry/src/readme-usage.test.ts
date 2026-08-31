@@ -53,6 +53,8 @@ describe('pack-registry README Usage names real starter-fantasy exports', () => 
     expect(typeof packRegistry.filterPacks).toBe('function');
     expect(typeof packRegistry.validatePackRubric).toBe('function');
     expect(typeof packRegistry.getAllPacks).toBe('function');
+    expect(typeof packRegistry.discoverInstalledPacks).toBe('function');
+    expect(typeof packRegistry.registerFromModule).toBe('function');
     expect(fantasy).toHaveProperty('manifest');
     expect(fantasy).toHaveProperty('fantasyMinimalRuleset');
     expect(typeof fantasy.createGame).toBe('function');
@@ -87,6 +89,7 @@ describe('F-94cfb964: every typescript fence is live, not only the first', () =>
       expect(fences[0], `${file} fence 0`).toContain('getPackSummaries');
       expect(fences[0], `${file} fence 0`).toContain('filterPacks');
       expect(fences[0], `${file} fence 0`).toContain('fantasyMinimalRuleset');
+      expect(fences[0], `${file} fence 0`).toContain('discoverInstalledPacks');
 
       expect(fences[1], `${file} fence 1`).toContain('validatePackRubric');
       expect(fences[1], `${file} fence 1`).toContain('getAllPacks');
