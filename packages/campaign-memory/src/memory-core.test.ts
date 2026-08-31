@@ -12,6 +12,7 @@ import {
   createCampaignMemoryCore,
   getCampaignJournal,
   getNpcMemory,
+  formatNpcAttitudes,
   CAMPAIGN_MEMORY_STATE_KEY,
 } from './memory-core.js';
 
@@ -93,7 +94,7 @@ describe('F-6594b19b: a witnessed kill journals and moves relationship axes', ()
     });
 
     const journal = getCampaignJournal(engine.world);
-    expect(journal.size()).toBe(1);
+    expect(journal.size()).toBe(2); // kill + death (F-34f5622c)
     const row = journal.query({ category: 'kill' })[0];
     expect(row).toBeDefined();
     expect(row!.actorId).toBe('player');
@@ -131,7 +132,7 @@ describe('F-6594b19b: a witnessed kill journals and moves relationship axes', ()
     const restored = Engine.deserialize(saved, {
       modules: [createCampaignMemoryCore()],
     });
-    expect(getCampaignJournal(restored.world).size()).toBe(1);
+    expect(getCampaignJournal(restored.world).size()).toBe(2);
     expect(getNpcMemory(restored.world, 'guard')?.getRelationship('player').fear).toBeGreaterThan(0);
   });
 
@@ -149,5 +150,101 @@ describe('F-6594b19b: a witnessed kill journals and moves relationship axes', ()
     expect(row!.witnesses).toContain('merchant');
     const guard = getNpcMemory(engine.world, 'guard');
     expect(guard?.getRelationship('player').trust).toBeGreaterThan(0);
+  });
+});
+
+describe('F-34f5622c: live engine events journal beyond kill/gift/rescue/betrayal', () => {
+  it('a give (item.acquired with fromEntityId) journals a gift row and moves trust', () => {
+    const engine = makeEngine();
+    engine.store.recordEvent({
+      id: '',
+      tick: 6,
+      type: 'item.acquired',
+      actorId: 'guard',
+      payload: {
+        itemId: 'chapel-lantern',
+        entityId: 'guard',
+        fromEntityId: 'player',
+      },
+    });
+
+    const journal = getCampaignJournal(engine.world);
+    expect(journal.query({ category: 'kill' })).toHaveLength(0);
+    const row = journal.query({ category: 'gift' })[0];
+    expect(row).toBeDefined();
+    expect(row!.actorId).toBe('player');
+    expect(row!.targetId).toBe('guard');
+    expect(row!.witnesses).toContain('merchant');
+
+    const guard = getNpcMemory(engine.world, 'guard');
+    expect(guard?.getRelationship('player').trust).toBeGreaterThan(0);
+  });
+
+  it('combat.entity.defeated journals a death row for the victim', () => {
+    const engine = makeEngine();
+    engine.store.recordEvent({
+      id: '',
+      tick: 4,
+      type: 'combat.entity.defeated',
+      payload: {
+        entityId: 'merchant',
+        entityName: 'Merchant',
+        defeatedBy: 'player',
+        defeatedByName: 'Aldric',
+        defeatZoneId: 'market',
+        wasInterceptor: false,
+      },
+    });
+    const death = getCampaignJournal(engine.world).query({ category: 'death' })[0];
+    expect(death).toBeDefined();
+    expect(death!.targetId).toBe('merchant');
+    expect(death!.actorId).toBe('player');
+  });
+
+  it('companion.recruited / companion.departed journal companion-* rows', () => {
+    const engine = makeEngine();
+    engine.store.recordEvent({
+      id: '',
+      tick: 10,
+      type: 'companion.recruited',
+      actorId: 'player',
+      payload: { npcId: 'guard', npcName: 'Guard', role: 'tank' },
+    });
+    engine.store.recordEvent({
+      id: '',
+      tick: 12,
+      type: 'companion.departed',
+      actorId: 'player',
+      payload: { npcId: 'guard', npcName: 'Guard', reason: 'left the party' },
+    });
+    expect(getCampaignJournal(engine.world).query({ category: 'companion-joined' })[0]?.targetId).toBe('guard');
+    expect(getCampaignJournal(engine.world).query({ category: 'companion-departed' })[0]?.targetId).toBe('guard');
+  });
+});
+
+describe('F-d1973aae: NPC attitude copies onto EntityState.relations', () => {
+  it('a witnessed kill leaves the witness entity relations non-default without getNpcMemory', () => {
+    const engine = makeEngine();
+    engine.store.recordEvent({
+      id: '',
+      tick: 4,
+      type: 'combat.entity.defeated',
+      payload: {
+        entityId: 'merchant',
+        entityName: 'Merchant',
+        defeatedBy: 'player',
+        defeatedByName: 'Aldric',
+        defeatZoneId: 'market',
+        wasInterceptor: false,
+      },
+    });
+
+    const guard = engine.world.entities['guard'];
+    expect(guard.relations).toBeDefined();
+    expect(guard.relations!.player).not.toBe(0);
+    expect(guard.custom?.['rel.player.fear']).toBeGreaterThan(0);
+
+    const lines = formatNpcAttitudes(engine.world);
+    expect(lines.some((line) => line.includes('Guard') && line.includes('Aldric'))).toBe(true);
   });
 });

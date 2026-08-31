@@ -11,14 +11,20 @@
 // INJECTED (this package cannot depend on @ai-rpg-engine/modules), persisted
 // under a registered namespace so Engine.serialize round-trips it.
 //
-// - combat.entity.defeated → grantXp on the killer's profile
+// - combat.entity.defeated → grantXp on the killer's profile; on leveledUp,
+//   advanceArchetypeRank (and advanceDisciplineRank when a discipline is set)
 // - combat.aftermath.injury / combat.defeat.survived → addInjury whose
 //   computeInjuryPenalties become one `injured-<id>` status (same GAS band
 //   as equipped-<itemId>)
+// - rest.completed / ability.heal.applied / combat.injury.healed → healInjury
+//   + statuses.remove(injured-<id>) so a Broken Arm does not last the campaign
 // - profile.reputation is copied onto actor.relations after every write
+// - profile.loadout / itemChronicle are copied from equipment-core and
+//   item-chronicle on each write (getEntityLoadout stays a pure read)
 //
 // Distinct from still-open F-482da85d (deserialize element-shape of
 // injuries/loadout) — this file does not touch serialize.ts.
+// Distinct from closed F-1b1c077f — the injury apply path is unchanged.
 
 import type {
   EngineModule,
@@ -28,10 +34,11 @@ import type {
   WorldState,
 } from '@ai-rpg-engine/core';
 import type { CharacterBuild, PortraitOps } from '@ai-rpg-engine/character-creation';
+import { getAllItems, getEntityLoadout, getItemChronicle } from '@ai-rpg-engine/equipment';
 import type { CharacterProfile, Injury } from './types.js';
 import { createProfile } from './profile.js';
-import { grantXp } from './progression.js';
-import { addInjury, computeInjuryPenalties, getActiveInjuries } from './injuries.js';
+import { grantXp, advanceArchetypeRank, advanceDisciplineRank } from './progression.js';
+import { addInjury, computeInjuryPenalties, getActiveInjuries, healInjury } from './injuries.js';
 import { adjustReputation, recordMilestone } from './milestones.js';
 
 // ---------------------------------------------------------------------------
@@ -122,14 +129,43 @@ export function getProfileState(world: WorldState): ProfileModuleState {
   return fresh;
 }
 
+/**
+ * Overlay live equipment-core loadout and item-chronicle history onto a
+ * profile. getEntityLoadout is a pure read (F-5164895e / F-c95f4820) — this
+ * copies, it does not auto-wear.
+ */
+function syncGearOntoProfile(world: WorldState, entityId: string, profile: CharacterProfile): CharacterProfile {
+  const loadout = getEntityLoadout(world, entityId);
+  let next = profile;
+  let changed = false;
+  if (loadout) {
+    next = { ...next, loadout: structuredClone(loadout) };
+    changed = true;
+  }
+  const chronicle = getItemChronicle(world);
+  const itemIds = getAllItems(loadout ?? next.loadout);
+  if (itemIds.length === 0) return changed ? next : profile;
+  const itemChronicle = { ...next.itemChronicle };
+  for (const itemId of itemIds) {
+    const entries = chronicle[itemId];
+    if (entries && entries.length > 0) {
+      itemChronicle[itemId] = entries;
+      changed = true;
+    }
+  }
+  return changed ? { ...next, itemChronicle } : profile;
+}
+
 /** An entity's current profile, or undefined when it has never been tracked. */
 export function getEntityProfile(world: WorldState, entityId: string): CharacterProfile | undefined {
-  return (world.modules[PROFILE_STATE_KEY] as ProfileModuleState | undefined)?.profiles?.[entityId];
+  const stored = (world.modules[PROFILE_STATE_KEY] as ProfileModuleState | undefined)?.profiles?.[entityId];
+  if (!stored) return undefined;
+  return syncGearOntoProfile(world, entityId, stored);
 }
 
 function commitProfile(world: WorldState, entityId: string, profile: CharacterProfile): void {
   const state = getProfileState(world);
-  state.profiles[entityId] = profile;
+  state.profiles[entityId] = syncGearOntoProfile(world, entityId, profile);
   world.modules[PROFILE_STATE_KEY] = state;
 }
 
@@ -234,10 +270,11 @@ function ensureProfile(
       const seeded = stampTick(seedReputationFromEntity(existing, entity), tick);
       commitProfile(world, entity.id, seeded);
       copyReputation(seeded, entity);
-      return seeded;
+      return getEntityProfile(world, entity.id) ?? seeded;
     }
     copyReputation(existing, entity);
-    return existing;
+    commitProfile(world, entity.id, existing);
+    return getEntityProfile(world, entity.id) ?? existing;
   }
 
   const seeded = config.profiles?.[entity.id];
@@ -370,6 +407,15 @@ export function createProfileCore(config: ProfileCoreConfig): EngineModule {
         const granted = grantXp(profile, amount);
         profile = stampTick(granted.profile, tick);
 
+        // F-8e83bda3: a level-up spends rank, not just a counter. grantXp
+        // itself is unchanged (F-1b1c077f).
+        if (granted.leveledUp) {
+          profile = advanceArchetypeRank(profile).profile;
+          if (profile.build.disciplineId) {
+            profile = advanceDisciplineRank(profile).profile;
+          }
+        }
+
         const defeatedName =
           (event.payload.entityName as string | undefined) ?? defeated?.name ?? 'a foe';
         profile = recordMilestone(profile, {
@@ -418,6 +464,52 @@ export function createProfileCore(config: ProfileCoreConfig): EngineModule {
 
       ctx.events.on('combat.aftermath.injury', onSurvived);
       ctx.events.on('combat.defeat.survived', onSurvived);
+
+      // F-10a6f10c: injuries used to stay permanent. Rest / healer / an
+      // explicit combat.injury.healed event run healInjury and strip the
+      // injured-<id> status. The apply path above is untouched (F-1b1c077f).
+      const onHeal = (event: ResolvedEvent, world: WorldState) => {
+        const payload = event.payload ?? {};
+        const entityId = [payload.targetId, payload.entityId, event.actorId].find(
+          (value): value is string => typeof value === 'string' && value.length > 0,
+        );
+        if (!entityId) return;
+        const actor = world.entities[entityId];
+        if (!actor) return;
+
+        const stored = getProfileState(world).profiles[entityId];
+        if (!stored) return;
+
+        const tick = event.tick;
+        const requested =
+          typeof payload.injuryId === 'string' && payload.injuryId.length > 0
+            ? [payload.injuryId]
+            : getActiveInjuries(stored).map((injury) => injury.id);
+        if (requested.length === 0) return;
+
+        let profile = stored;
+        let healedAny = false;
+        for (const injuryId of requested) {
+          const result = healInjury(profile, injuryId, `tick:${tick}`);
+          if (!result.found) continue;
+          profile = result.profile;
+          healedAny = true;
+          try {
+            config.statuses.remove(actor, injuryStatusId(injuryId), tick);
+          } catch {
+            // Keep the profile heal even if the injected remove throws.
+          }
+        }
+        if (!healedAny) return;
+
+        profile = stampTick(profile, tick);
+        commitProfile(world, actor.id, profile);
+        copyReputation(profile, actor);
+      };
+
+      ctx.events.on('rest.completed', onHeal);
+      ctx.events.on('ability.heal.applied', onHeal);
+      ctx.events.on('combat.injury.healed', onHeal);
     },
   };
 }

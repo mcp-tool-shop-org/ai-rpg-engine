@@ -15,7 +15,17 @@ import {
   effectiveStat,
   createCombatCore,
 } from '@ai-rpg-engine/modules';
+import {
+  createEquipmentCore,
+  createItemChronicleCore,
+  ensureStartingLoadouts,
+  getEntityLoadout,
+} from '@ai-rpg-engine/equipment';
+import type { ItemCatalog } from '@ai-rpg-engine/equipment';
 import { createProfile } from './profile.js';
+import { serializeProfile } from './serialize.js';
+import { getActiveInjuries } from './injuries.js';
+import { XP_THRESHOLDS } from './types.js';
 import {
   createProfileCore,
   getEntityProfile,
@@ -221,5 +231,187 @@ describe('F-1b1c077f: reputation copies onto actor.relations', () => {
     const profile = getEntityProfile(engine.world, 'player')!;
     expect(profile.reputation.some((r) => r.factionId === 'chapel' && r.value === 5)).toBe(true);
     expect(engine.world.entities['player'].relations?.chapel).toBe(5);
+  });
+});
+
+describe('F-10a6f10c: healInjury + statuses.remove on rest/heal', () => {
+  it('after addInjury, rest.completed clears active injuries and the vigor penalty', () => {
+    const engine = makeEngine();
+    const player = engine.world.entities['player'];
+    engine.store.recordEvent({
+      id: '',
+      tick: 1,
+      type: 'combat.defeat.survived',
+      payload: {
+        entityId: 'player',
+        entityName: 'Aldric',
+        severity: 'critical',
+        injuryName: 'Broken Arm',
+        statPenalties: { vigor: -2 },
+      },
+    });
+    expect(effectiveStat(player, 'vigor', engine.world, 0)).toBe(4);
+    const injuryId = getEntityProfile(engine.world, 'player')!.injuries[0]!.id;
+    expect(player.statuses.some((s) => s.statusId === injuryStatusId(injuryId))).toBe(true);
+
+    engine.store.recordEvent({
+      id: '',
+      tick: 2,
+      type: 'rest.completed',
+      actorId: 'player',
+      payload: { healed: 5 },
+    });
+
+    const profile = getEntityProfile(engine.world, 'player')!;
+    expect(getActiveInjuries(profile)).toHaveLength(0);
+    expect(profile.injuries[0]!.healed).toBe(true);
+    expect(profile.injuries[0]!.healedAt).toBe('tick:2');
+    expect(player.statuses.some((s) => s.statusId === injuryStatusId(injuryId))).toBe(false);
+    expect(effectiveStat(player, 'vigor', engine.world, 0)).toBe(6);
+  });
+});
+
+describe('F-8e83bda3: leveledUp advances archetype (and discipline) rank', () => {
+  it('crossing XP_THRESHOLDS[1] sets progression.archetypeRank to 2', () => {
+    const engine = makeEngine();
+    const killsNeeded = Math.ceil(XP_THRESHOLDS[1]! / DEFAULT_XP_PER_KILL);
+    for (let i = 0; i < killsNeeded; i++) {
+      const foeId = `foe-${i}`;
+      engine.store.addEntity({
+        id: foeId,
+        blueprintId: 'foe',
+        type: 'npc',
+        name: `Foe ${i}`,
+        tags: ['enemy'],
+        stats: { vigor: 1 },
+        resources: { hp: 1, maxHp: 1 },
+        statuses: [],
+        zoneId: 'cell',
+      });
+      defeat(engine, foeId, `Foe ${i}`, i + 1);
+    }
+    const profile = getEntityProfile(engine.world, 'player')!;
+    expect(profile.progression.xp).toBeGreaterThanOrEqual(XP_THRESHOLDS[1]!);
+    expect(profile.progression.level).toBeGreaterThanOrEqual(2);
+    expect(profile.progression.archetypeRank).toBe(2);
+  });
+
+  it('also advances disciplineRank when a discipline is set', () => {
+    const disciplined = createProfile(
+      { ...testBuild, disciplineId: 'occultist' },
+      { vigor: 6, instinct: 4, will: 3 },
+      { hp: 25, maxHp: 25 },
+      ['player'],
+      'fantasy',
+      'player',
+    );
+    const engine = new Engine({
+      manifest,
+      seed: 7,
+      modules: [
+        statusCore,
+        createCombatCore(),
+        createProfileCore({ statuses: statusOps, packId: 'fantasy', profiles: { player: disciplined } }),
+      ],
+    });
+    const zone: ZoneState = { id: 'cell', roomId: 'cell', name: 'Cell', tags: [], neighbors: [] };
+    engine.store.addZone(zone);
+    engine.store.addEntity(makePlayer());
+    engine.store.state.playerId = 'player';
+    engine.store.state.locationId = 'cell';
+
+    const killsNeeded = Math.ceil(XP_THRESHOLDS[1]! / DEFAULT_XP_PER_KILL);
+    for (let i = 0; i < killsNeeded; i++) {
+      const foeId = `foe-${i}`;
+      engine.store.addEntity({
+        id: foeId,
+        blueprintId: 'foe',
+        type: 'npc',
+        name: `Foe ${i}`,
+        tags: ['enemy'],
+        stats: { vigor: 1 },
+        resources: { hp: 1, maxHp: 1 },
+        statuses: [],
+        zoneId: 'cell',
+      });
+      defeat(engine, foeId, `Foe ${i}`, i + 1);
+    }
+    const profile = getEntityProfile(engine.world, 'player')!;
+    expect(profile.progression.archetypeRank).toBe(2);
+    expect(profile.progression.disciplineRank).toBe(2);
+  });
+});
+
+describe('F-c95f4820: profile copies loadout + item chronicle on write', () => {
+  it('after ensureStartingLoadouts + a kill credited to the weapon, serializeProfile has the slot and used-in-kill', () => {
+    const catalog: ItemCatalog = {
+      items: [
+        {
+          id: 'chapel-lantern',
+          name: 'Chapel Lantern',
+          description: 'A flickering lantern.',
+          slot: 'tool',
+          rarity: 'common',
+        },
+        {
+          id: 'ash-blade',
+          name: 'Ash Blade',
+          description: 'A charred short sword.',
+          slot: 'weapon',
+          rarity: 'common',
+          statModifiers: { vigor: 1 },
+        },
+      ],
+    };
+    const profile = createProfile(
+      testBuild,
+      { vigor: 6, instinct: 4, will: 3 },
+      { hp: 25, maxHp: 25 },
+      ['player'],
+      'fantasy',
+      'player',
+    );
+    const engine = new Engine({
+      manifest: {
+        ...manifest,
+        modules: ['status-core', 'equipment-core', 'item-chronicle-core', 'character-profile-core'],
+      },
+      seed: 7,
+      modules: [
+        statusCore,
+        createEquipmentCore({ catalog, statuses: statusOps }),
+        createItemChronicleCore({ catalog }),
+        createProfileCore({ statuses: statusOps, packId: 'fantasy', profiles: { player: profile } }),
+      ],
+    });
+    const zone: ZoneState = { id: 'cell', roomId: 'cell', name: 'Cell', tags: [], neighbors: [] };
+    engine.store.addZone(zone);
+    const player = makePlayer();
+    player.inventory = ['ash-blade', 'chapel-lantern'];
+    engine.store.addEntity(player);
+    engine.store.addEntity({
+      id: 'foe',
+      blueprintId: 'foe',
+      type: 'npc',
+      name: 'Ash Ghoul',
+      tags: ['enemy'],
+      stats: { vigor: 1 },
+      resources: { hp: 20, maxHp: 20 },
+      statuses: [],
+      zoneId: 'cell',
+    });
+    engine.store.state.playerId = 'player';
+    engine.store.state.locationId = 'cell';
+
+    ensureStartingLoadouts(engine.world);
+    expect(getEntityLoadout(engine.world, 'player')?.equipped.weapon).toBe('ash-blade');
+
+    defeat(engine, 'foe', 'Ash Ghoul', 1);
+
+    const live = getEntityProfile(engine.world, 'player')!;
+    expect(live.loadout.equipped.weapon).toBe('ash-blade');
+    const json = serializeProfile(live);
+    expect(json).toContain('ash-blade');
+    expect(json).toContain('used-in-kill');
   });
 });
