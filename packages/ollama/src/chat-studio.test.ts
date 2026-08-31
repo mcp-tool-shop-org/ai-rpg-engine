@@ -1246,9 +1246,9 @@ describe('tool registry: studio tools', () => {
     expect(tool!.name).toBe('studio-experiments');
   });
 
-  it('total tool count is 34 (29 + 5 studio)', () => {
+  it('total tool count is 35 (30 + 5 studio)', () => {
     const all = getAllTools();
-    expect(all.length).toBe(34);
+    expect(all.length).toBe(35);
   });
 
   it('studio tools are read-only (mutates: false)', () => {

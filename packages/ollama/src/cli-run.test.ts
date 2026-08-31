@@ -521,6 +521,9 @@ describe('runCli — help banner chat --write + session listing (F-ef949bc5)', (
     expect(help).toContain('create-placement');
     expect(help).toContain('create-encounter-anchor');
     expect(help).toContain('create-progression-tree');
+    expect(help).toContain('create-ruleset');
+    expect(help).toContain('create-rule-profile');
+    expect(help).toContain('create-item-placement');
     expect(help).toContain('emit-pack');
     expect(help).toContain('session import');
     expect(help).toContain('models');
@@ -558,5 +561,63 @@ describe('runCli — scaffold-and-critique emits content/pack.json (F-35cc73ce)'
     expect(written.entities).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: 'chapel_guard' })]),
     );
+  });
+});
+
+// F-8ec253bf / F-0bf295ac / F-bd8034ea: create-ruleset, create-rule-profile,
+// and create-item-placement had no CLI wiring at all.
+describe('runCli — create-ruleset / create-rule-profile / create-item-placement', () => {
+  it('create-ruleset generates and prints a ruleset', async () => {
+    mockOllama([
+      'id: fantasy-minimal',
+      'name: Fantasy Minimal',
+      'version: 0.1.0',
+      'stats:',
+      '  - id: vigor',
+      '    name: Vigor',
+      '    default: 5',
+      'resources:',
+      '  - id: hp',
+      '    name: HP',
+      '    default: 20',
+      'verbs:',
+      '  - id: move',
+      '    name: Move',
+      'formulas:',
+      '  - id: hit-chance',
+      '    name: Hit Chance',
+      '    inputs:',
+      '      - attacker.vigor',
+      '    output: number',
+      'defaultModules:',
+      '  - combat-core',
+      'progressionModels:',
+      '  - linear',
+    ].join('\n'));
+    await runCli(['create-ruleset', '--theme', 'gritty fantasy']);
+    expect(process.exitCode).not.toBe(1);
+    expect(stdoutText()).toContain('fantasy-minimal');
+  });
+
+  it('create-rule-profile --id overlays the registry key and records the session artifact', async () => {
+    await runCli(['session', 'start', 'chapel']);
+    mockOllama('statMapping:\n  attack: strength\n  precision: dexterity\n  resolve: willpower');
+    await runCli(['create-rule-profile', '--theme', 'veteran soldier', '--id', 'veteran_soldier']);
+    expect(process.exitCode).not.toBe(1);
+    expect(stdoutText()).toContain('id: veteran_soldier');
+    const session = JSON.parse(await fs.readFile(sessionFile(), 'utf-8'));
+    expect(session.artifacts.ruleProfiles).toContain('veteran_soldier');
+  });
+
+  it('create-item-placement short-circuits (no generate call) when --item and --entity-id are known, and records the compound-key session artifact', async () => {
+    await runCli(['session', 'start', 'chapel']);
+    logSpy.mockClear();
+    // No mockOllama — a fetch here would fail/hang, proving generate() is
+    // never called on the short-circuit path (mirrors create-placement).
+    await runCli(['create-item-placement', '--item', 'rusty_key', '--entity-id', 'chapel_guard']);
+    expect(process.exitCode).not.toBe(1);
+    expect(stdoutText()).toBe('itemId: rusty_key\nentityId: chapel_guard\n');
+    const session = JSON.parse(await fs.readFile(sessionFile(), 'utf-8'));
+    expect(session.artifacts.itemPlacements).toContain('rusty_key@chapel_guard');
   });
 });

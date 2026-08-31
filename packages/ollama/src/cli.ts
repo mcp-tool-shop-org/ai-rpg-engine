@@ -28,6 +28,9 @@ import { createEntityAi } from './commands/create-entity-ai.js';
 import { createPlacement, placementYaml, placementRecordId } from './commands/create-placement.js';
 import { createEncounterAnchor } from './commands/create-encounter-anchor.js';
 import { createProgressionTree } from './commands/create-progression-tree.js';
+import { createRuleset } from './commands/create-ruleset.js';
+import { createRuleProfile } from './commands/create-rule-profile.js';
+import { createItemPlacement, itemPlacementRecordId } from './commands/create-item-placement.js';
 import { assembleContentPack, defaultPackWritePath, formatEmitPackReport, packJson } from './commands/emit-pack.js';
 import { importSessionArtifacts } from './session-import.js';
 import { explainDistrictState } from './commands/explain-district-state.js';
@@ -97,6 +100,7 @@ type CliFlags = {
   enemies?: string[];
   id?: string;
   name?: string;
+  item?: string;
 };
 
 function parseFlags(args: string[]): { command: string; flags: CliFlags } {
@@ -174,6 +178,7 @@ function parseFlags(args: string[]): { command: string; flags: CliFlags } {
       case '--enemies': flags.enemies = next?.split(','); i++; break;
       case '--id': flags.id = next; i++; break;
       case '--name': flags.name = next; i++; break;
+      case '--item': flags.item = next; i++; break;
     }
   }
 
@@ -356,6 +361,9 @@ export function formatCliHelp(version: string): string {
     helpRow('create-placement', 'Generate an entity placement'),
     helpRow('create-encounter-anchor', 'Generate a spawn-SET encounter anchor'),
     helpRow('create-progression-tree', 'Generate a chargen progression tree'),
+    helpRow('create-ruleset', 'Generate a ruleset (stats/resources/verbs)'),
+    helpRow('create-rule-profile', 'Generate a per-archetype combat stat mapping'),
+    helpRow('create-item-placement', 'Generate an item-to-entity placement'),
     helpRow('emit-pack', 'Assemble ContentPack JSON from YAML'),
     '',
     'Iterate:',
@@ -416,16 +424,17 @@ export function formatCliHelp(version: string): string {
     flagRow('--zones <ids>', 'Comma-separated existing zone IDs'),
     flagRow('--constraints <c>', 'Comma-separated constraints'),
     flagRow('--difficulty <level>', 'Encounter difficulty hint'),
-    flagRow('--kind <type>', 'Scaffold kind: room, faction, district, quest, pack, dialogue, entity, ability, status, item, hazard, archetype, background, build-catalog, entity-ai, placement, encounter-anchor, progression-tree'),
+    flagRow('--kind <type>', 'Scaffold kind: room, faction, district, quest, pack, dialogue, entity, ability, status, item, hazard, archetype, background, build-catalog, entity-ai, placement, encounter-anchor, progression-tree, ruleset, rule-profile, item-placement'),
     flagRow('--repair', 'Attempt to fix invalid generated content'),
     flagRow('--validate', 'Refuse to emit/write create-* content that fails schema validation'),
     flagRow('--write <path>', 'Write generated output to file instead of stdout (sandboxed)'),
     flagRow('--place-in <zone>', 'create-entity: also emit a placement into this zone'),
-    flagRow('--entity-id <id>', 'create-entity-ai / create-placement: bind to this entity'),
+    flagRow('--entity-id <id>', 'create-entity-ai / create-placement / create-item-placement: bind to this entity'),
     flagRow('--zone <id>', 'create-encounter-anchor: zoneId to roll the spawn SET in'),
     flagRow('--enemies <ids>', 'create-encounter-anchor: comma-separated enemy entity ids'),
-    flagRow('--id <id>', 'emit-pack: pack.meta.id overlay'),
+    flagRow('--id <id>', 'emit-pack: pack.meta.id overlay; create-rule-profile: ruleProfiles registry key'),
     flagRow('--name <name>', 'emit-pack: pack.meta.name overlay'),
+    flagRow('--item <id>', 'create-item-placement: itemId to place onto --entity-id'),
     '',
     'Flags (iterate / diagnose / simulate / guide):',
     flagRow('--goal <text>', 'Improvement/expansion goal'),
@@ -1025,8 +1034,13 @@ async function runCliInner(args: string[]): Promise<void> {
     case 'create-entity-ai':
     case 'create-placement':
     case 'create-encounter-anchor':
-    case 'create-progression-tree': {
-      const theme = flags.theme ?? (command === 'create-placement' && flags.entityId && flags.placeIn ? 'placement' : undefined);
+    case 'create-progression-tree':
+    case 'create-ruleset':
+    case 'create-rule-profile':
+    case 'create-item-placement': {
+      const theme = flags.theme
+        ?? (command === 'create-placement' && flags.entityId && flags.placeIn ? 'placement' : undefined)
+        ?? (command === 'create-item-placement' && flags.item && flags.entityId ? 'item placement' : undefined);
       if (!theme) {
         console.error('--theme is required');
         process.exit(1);
@@ -1044,6 +1058,9 @@ async function runCliInner(args: string[]): Promise<void> {
         : kind === 'entity-ai' ? createEntityAi
         : kind === 'encounter-anchor' ? createEncounterAnchor
         : kind === 'progression-tree' ? createProgressionTree
+        : kind === 'ruleset' ? createRuleset
+        : kind === 'rule-profile' ? createRuleProfile
+        : kind === 'item-placement' ? createItemPlacement
         : createPlacement;
       const result = await run(client, {
         theme,
@@ -1054,6 +1071,8 @@ async function runCliInner(args: string[]): Promise<void> {
         entityId: flags.entityId,
         zoneId: flags.placeIn ?? flags.zone,
         enemies: flags.enemies,
+        id: flags.id,
+        itemId: flags.item,
       } as never);
       if (!result.ok) {
         console.error(result.error);
@@ -1066,12 +1085,15 @@ async function runCliInner(args: string[]): Promise<void> {
       if (session) {
         const entityIdMatch = result.yaml.match(/^entityId:\s*(\S+)/m);
         const zoneIdMatch = result.yaml.match(/^zoneId:\s*(\S+)/m);
+        const itemIdMatch = result.yaml.match(/^itemId:\s*(\S+)/m);
         const idMatch = result.yaml.match(/^id:\s*(\S+)/m)
           ?? entityIdMatch
           ?? result.yaml.match(/^packId:\s*(\S+)/m)
           ?? result.yaml.match(/^profileId:\s*(\S+)/m);
         if (kind === 'placement' && entityIdMatch && zoneIdMatch) {
           addArtifact(session, 'placements', placementRecordId(entityIdMatch[1], zoneIdMatch[1]));
+        } else if (kind === 'item-placement' && itemIdMatch && entityIdMatch) {
+          addArtifact(session, 'itemPlacements', itemPlacementRecordId(itemIdMatch[1], entityIdMatch[1]));
         } else if (idMatch) {
           addArtifact(session, artifactBucketForKind(kind), idMatch[1]);
         }
