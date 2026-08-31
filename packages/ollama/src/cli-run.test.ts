@@ -521,8 +521,103 @@ describe('runCli — help banner chat --write + session listing (F-ef949bc5)', (
     expect(help).toContain('create-placement');
     expect(help).toContain('create-encounter-anchor');
     expect(help).toContain('create-progression-tree');
+    expect(help).toContain('create-ruleset');
+    expect(help).toContain('create-rule-profile');
+    expect(help).toContain('create-item-placement');
     expect(help).toContain('emit-pack');
     expect(help).toContain('session import');
     expect(help).toContain('models');
+  });
+});
+
+// F-35cc73ce: scaffoldAndCritique ran scaffold -> critique -> suggest-next
+// with no assembleContentPack/emit-pack call — `ai scaffold-and-critique`
+// generated content but never produced a loadable content/pack.json.
+describe('runCli — scaffold-and-critique emits content/pack.json (F-35cc73ce)', () => {
+  function mockOllamaSequence(...texts: string[]): void {
+    let calls = 0;
+    globalThis.fetch = vi.fn(async () => {
+      const text = texts[calls] ?? texts[texts.length - 1];
+      calls += 1;
+      return streamedOllamaResponse({ ok: true, status: 200, payload: { response: text } });
+    }) as unknown as typeof fetch;
+  }
+
+  it('writes content/pack.json under the CLI project root after the pipeline completes', async () => {
+    // The scaffold step's own YAML lives only in-memory during this single
+    // macro call (the CLI's --write for step 1's output happens AFTER
+    // scaffoldAndCritique returns) — emit-pack assembles whatever is
+    // ALREADY on disk under projectRoot, the same contract the /build
+    // guided-chat emit-pack step follows. Pre-seed a file to stand in for
+    // content already authored/imported in the project.
+    await fs.writeFile(path.join(tmpDir, 'guard.yaml'), 'id: chapel_guard\ntype: npc\nname: Chapel Guard\n');
+    mockOllamaSequence(
+      'id: chapel\nname: Ruined Chapel\nzones:\n  - id: nave\n    name: Nave',
+      'Solid room. No structural issues.',
+    );
+    await runCli(['scaffold-and-critique', '--kind', 'room', '--theme', 'ruined chapel']);
+    expect(process.exitCode).not.toBe(1);
+    const written = JSON.parse(await fs.readFile(path.join(tmpDir, 'content', 'pack.json'), 'utf-8'));
+    expect(written.entities).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'chapel_guard' })]),
+    );
+  });
+});
+
+// F-8ec253bf / F-0bf295ac / F-bd8034ea: create-ruleset, create-rule-profile,
+// and create-item-placement had no CLI wiring at all.
+describe('runCli — create-ruleset / create-rule-profile / create-item-placement', () => {
+  it('create-ruleset generates and prints a ruleset', async () => {
+    mockOllama([
+      'id: fantasy-minimal',
+      'name: Fantasy Minimal',
+      'version: 0.1.0',
+      'stats:',
+      '  - id: vigor',
+      '    name: Vigor',
+      '    default: 5',
+      'resources:',
+      '  - id: hp',
+      '    name: HP',
+      '    default: 20',
+      'verbs:',
+      '  - id: move',
+      '    name: Move',
+      'formulas:',
+      '  - id: hit-chance',
+      '    name: Hit Chance',
+      '    inputs:',
+      '      - attacker.vigor',
+      '    output: number',
+      'defaultModules:',
+      '  - combat-core',
+      'progressionModels:',
+      '  - linear',
+    ].join('\n'));
+    await runCli(['create-ruleset', '--theme', 'gritty fantasy']);
+    expect(process.exitCode).not.toBe(1);
+    expect(stdoutText()).toContain('fantasy-minimal');
+  });
+
+  it('create-rule-profile --id overlays the registry key and records the session artifact', async () => {
+    await runCli(['session', 'start', 'chapel']);
+    mockOllama('statMapping:\n  attack: strength\n  precision: dexterity\n  resolve: willpower');
+    await runCli(['create-rule-profile', '--theme', 'veteran soldier', '--id', 'veteran_soldier']);
+    expect(process.exitCode).not.toBe(1);
+    expect(stdoutText()).toContain('id: veteran_soldier');
+    const session = JSON.parse(await fs.readFile(sessionFile(), 'utf-8'));
+    expect(session.artifacts.ruleProfiles).toContain('veteran_soldier');
+  });
+
+  it('create-item-placement short-circuits (no generate call) when --item and --entity-id are known, and records the compound-key session artifact', async () => {
+    await runCli(['session', 'start', 'chapel']);
+    logSpy.mockClear();
+    // No mockOllama — a fetch here would fail/hang, proving generate() is
+    // never called on the short-circuit path (mirrors create-placement).
+    await runCli(['create-item-placement', '--item', 'rusty_key', '--entity-id', 'chapel_guard']);
+    expect(process.exitCode).not.toBe(1);
+    expect(stdoutText()).toBe('itemId: rusty_key\nentityId: chapel_guard\n');
+    const session = JSON.parse(await fs.readFile(sessionFile(), 'utf-8'));
+    expect(session.artifacts.itemPlacements).toContain('rusty_key@chapel_guard');
   });
 });

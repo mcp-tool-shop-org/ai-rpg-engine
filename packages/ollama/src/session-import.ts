@@ -71,6 +71,8 @@ function idsFromDoc(doc: ClassifiedDoc): Partial<SessionArtifacts> {
     case 'background': return { backgrounds: id ? [id] : [] };
     case 'catalog': return { catalogs: id ? [id] : [] };
     case 'placement': return { placements: id ? [id] : [] };
+    case 'item-placement': return { itemPlacements: id ? [id] : [] };
+    case 'rule-profile': return { ruleProfiles: id ? [id] : [] };
     case 'entityAi': return { entityAi: id ? [id] : [] };
     case 'entityAi-map': return { entityAi: Object.keys(doc.value) };
     case 'encounter-anchor': return { anchors: id ? [id] : [] };

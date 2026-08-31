@@ -67,4 +67,26 @@ describe('importSessionArtifacts', () => {
     expect(result.session.artifacts.entities).toContain('chapel_guard');
     expect(result.session.artifacts.rooms).toContain('chapel');
   });
+
+  // F-0bf295ac / F-bd8034ea family-of-call-sites probe: idsFromDoc is the
+  // same doc.kind -> SessionArtifacts-bucket switch shape as emit-pack's
+  // idsFromPack, with the same silent-default-drop fallback — a standalone
+  // rule-profile/item-placement yaml glob-imported here must not vanish.
+  it('imports a standalone rule-profile yaml via the glob fallback', async () => {
+    await writeFile(join(root, 'profile.yaml'), [
+      'id: veteran_soldier',
+      'statMapping:',
+      '  attack: strength',
+      '  precision: dexterity',
+      '  resolve: willpower',
+    ].join('\n'));
+    const result = await importSessionArtifacts(root, null);
+    expect(result.session.artifacts.ruleProfiles).toContain('veteran_soldier');
+  });
+
+  it('imports a standalone item-placement yaml via the glob fallback', async () => {
+    await writeFile(join(root, 'ip.yaml'), 'itemId: rusty_key\nentityId: chapel_guard\n');
+    const result = await importSessionArtifacts(root, null);
+    expect(result.session.artifacts.itemPlacements).toContain('rusty_key@chapel_guard');
+  });
 });

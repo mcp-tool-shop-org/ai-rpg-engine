@@ -122,6 +122,8 @@ export function buildMacroResult(progress: MacroProgress): MacroResult {
 
 // --- Macro: scaffold-and-critique ---
 
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { createRoom } from './commands/create-room.js';
 import { createFaction } from './commands/create-faction.js';
 import { createDistrict } from './commands/create-district.js';
@@ -129,6 +131,7 @@ import { createLocationPack } from './commands/create-location-pack.js';
 import { createEncounterPack } from './commands/create-encounter-pack.js';
 import { critiqueContent } from './commands/critique-content.js';
 import { suggestNext } from './commands/suggest-next.js';
+import { assembleContentPack, defaultPackWritePath, formatEmitPackReport, packJson } from './commands/emit-pack.js';
 
 export type ScaffoldKind = 'room' | 'faction' | 'district' | 'location-pack' | 'encounter-pack';
 
@@ -140,6 +143,18 @@ export type ScaffoldAndCritiqueInput = {
   districtId?: string;
   factions?: string[];
   difficulty?: string;
+  /**
+   * Project root for the emit-pack step (F-35cc73ce). Optional: when
+   * omitted, the emit-pack step is skipped rather than defaulting to
+   * process.cwd() — this macro never touches the filesystem without an
+   * explicit, caller-supplied root. The CLI's `scaffold-and-critique`
+   * command always has one and passes it.
+   */
+  projectRoot?: string;
+  /** Active session identity used to fill pack.meta (mirrors emit-pack CLI). */
+  session?: { name: string; themes?: string[] };
+  packId?: string;
+  packName?: string;
 };
 
 export async function scaffoldAndCritique(
@@ -151,6 +166,7 @@ export async function scaffoldAndCritique(
     `Generate ${input.kind}`,
     'Critique generated content',
     'Suggest next actions',
+    'Emit content pack',
   ]);
   startMacro(progress, onProgress);
 
@@ -201,6 +217,37 @@ export async function scaffoldAndCritique(
     }
   } else {
     skipStep(progress, 'No session context — skipped.', onProgress);
+  }
+
+  // Step 4: Emit content pack (F-35cc73ce) — without this, `ai
+  // scaffold-and-critique` generated content but never assembled
+  // content/pack.json, so the default ReplayProducer (which loads only
+  // from that conventional path) found nothing.
+  if (input.projectRoot) {
+    const assembled = await assembleContentPack(input.projectRoot, {
+      session: input.session,
+      packId: input.packId,
+      packName: input.packName,
+    });
+    if (assembled.load.ok) {
+      const writePath = defaultPackWritePath(input.projectRoot);
+      await mkdir(dirname(writePath), { recursive: true });
+      await writeFile(writePath, packJson(assembled.pack), 'utf-8');
+      advanceStep(progress, formatEmitPackReport(assembled), onProgress);
+    } else {
+      // Mirror the CLI's own fail-closed guard (cli.ts emit-pack handler):
+      // skip the write and surface the errors instead of persisting an
+      // invalid pack to the conventional path. This is a skip, not a macro
+      // failure — the scaffold/critique/suggest-next steps already succeeded.
+      const errorSummary = assembled.load.errors.map((e) => `  ${e.path}: ${e.message}`).join('\n');
+      skipStep(
+        progress,
+        `emit-pack: skipped write (${assembled.load.errors.length} validation error(s)):\n${errorSummary}`,
+        onProgress,
+      );
+    }
+  } else {
+    skipStep(progress, 'No projectRoot — skipped.', onProgress);
   }
 
   return buildMacroResult(progress);

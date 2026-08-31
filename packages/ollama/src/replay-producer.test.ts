@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDefaultReplayProducer, loadProjectPack, type EngineConstructor } from './replay-producer.js';
 import { runExperiment } from './chat-experiments.js';
+import { getStatusDefinition, clearStatusRegistry } from '@ai-rpg-engine/modules';
 
 describe('createDefaultReplayProducer (F-fc88ce5e)', () => {
   it('runs an injected Engine and returns parseable replay JSON', () => {
@@ -157,5 +158,132 @@ describe('createDefaultReplayProducer (F-fc88ce5e)', () => {
     const ids = (seen ?? []).map((m) => m.id);
     expect(ids).toContain('progression-core');
     rmSync(root, { recursive: true, force: true });
+  });
+
+  // F-b85931bb: createAbilityCore/registerStatusDefinitions were never wired
+  // from the loaded pack, and manifest.ruleset was hardcoded to 'test' even
+  // when the pack carried its own ruleset id.
+  it('registers ability-core from pack.abilities', () => {
+    const root = mkdtempSync(join(tmpdir(), 'replay-abilities-'));
+    mkdirSync(join(root, 'content'));
+    writeFileSync(join(root, 'content', 'pack.json'), JSON.stringify({
+      abilities: [{ id: 'fireball', verb: 'use-ability', target: { type: 'single' } }],
+    }));
+    let seen: Array<{ id?: string }> | undefined;
+    const FakeEngine = function FakeEngine(this: {
+      store: { state: { globals: Record<string, string | number | boolean> } };
+      advanceRound: () => unknown[];
+      queryEvents: () => [];
+    }, options: { modules?: Array<{ id?: string }> }) {
+      seen = options.modules;
+      this.store = { state: { globals: {} } };
+      this.advanceRound = () => [];
+      this.queryEvents = () => [];
+    } as unknown as EngineConstructor;
+
+    const producer = createDefaultReplayProducer({ Engine: FakeEngine, projectRoot: root });
+    producer(1, undefined, 1);
+    const ids = (seen ?? []).map((m) => m.id);
+    expect(ids).toContain('ability-core');
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('registers status definitions from pack.statuses into the shared registry', () => {
+    clearStatusRegistry();
+    const root = mkdtempSync(join(tmpdir(), 'replay-statuses-'));
+    mkdirSync(join(root, 'content'));
+    writeFileSync(join(root, 'content', 'pack.json'), JSON.stringify({
+      statuses: [{ id: 'poisoned', stacking: 'refresh', tags: ['poison'] }],
+    }));
+    const FakeEngine = function FakeEngine(this: {
+      store: { state: { globals: Record<string, string | number | boolean> } };
+      advanceRound: () => unknown[];
+      queryEvents: () => [];
+    }) {
+      this.store = { state: { globals: {} } };
+      this.advanceRound = () => [];
+      this.queryEvents = () => [];
+    } as unknown as EngineConstructor;
+
+    const producer = createDefaultReplayProducer({ Engine: FakeEngine, projectRoot: root });
+    producer(1, undefined, 1);
+    expect(getStatusDefinition('poisoned')).toBeDefined();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('binds pack.ruleset.id into the engine manifest instead of the hardcoded "test" (realistic: pack.ruleset is a full RulesetDefinition object)', () => {
+    // intake.ts:1005-1018's SessionContent.ruleset doc comment: "Pack-authored
+    // RulesetDefinition" — this is what assembleContentPack/create-ruleset
+    // actually produce, NOT a bare string. The manifest's ruleset field is a
+    // string, so it binds pack.ruleset.id.
+    const root = mkdtempSync(join(tmpdir(), 'replay-ruleset-obj-'));
+    mkdirSync(join(root, 'content'));
+    writeFileSync(join(root, 'content', 'pack.json'), JSON.stringify({
+      ruleset: {
+        id: 'fantasy-minimal',
+        name: 'Fantasy Minimal',
+        version: '0.1.0',
+        stats: [], resources: [], verbs: [], formulas: [],
+        defaultModules: [], progressionModels: [],
+      },
+    }));
+    let seenRuleset: string | undefined;
+    const FakeEngine = function FakeEngine(this: {
+      store: { state: { globals: Record<string, string | number | boolean> } };
+      advanceRound: () => unknown[];
+      queryEvents: () => [];
+    }, options: { manifest: { ruleset: string } }) {
+      seenRuleset = options.manifest.ruleset;
+      this.store = { state: { globals: {} } };
+      this.advanceRound = () => [];
+      this.queryEvents = () => [];
+    } as unknown as EngineConstructor;
+
+    const producer = createDefaultReplayProducer({ Engine: FakeEngine, projectRoot: root });
+    producer(1, undefined, 1);
+    expect(seenRuleset).toBe('fantasy-minimal');
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('also accepts a bare ruleset id string defensively', () => {
+    const root = mkdtempSync(join(tmpdir(), 'replay-ruleset-str-'));
+    mkdirSync(join(root, 'content'));
+    writeFileSync(join(root, 'content', 'pack.json'), JSON.stringify({
+      ruleset: 'fantasy-minimal',
+    }));
+    let seenRuleset: string | undefined;
+    const FakeEngine = function FakeEngine(this: {
+      store: { state: { globals: Record<string, string | number | boolean> } };
+      advanceRound: () => unknown[];
+      queryEvents: () => [];
+    }, options: { manifest: { ruleset: string } }) {
+      seenRuleset = options.manifest.ruleset;
+      this.store = { state: { globals: {} } };
+      this.advanceRound = () => [];
+      this.queryEvents = () => [];
+    } as unknown as EngineConstructor;
+
+    const producer = createDefaultReplayProducer({ Engine: FakeEngine, projectRoot: root });
+    producer(1, undefined, 1);
+    expect(seenRuleset).toBe('fantasy-minimal');
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('falls back to the "test" ruleset when the pack has none', () => {
+    let seenRuleset: string | undefined;
+    const FakeEngine = function FakeEngine(this: {
+      store: { state: { globals: Record<string, string | number | boolean> } };
+      advanceRound: () => unknown[];
+      queryEvents: () => [];
+    }, options: { manifest: { ruleset: string } }) {
+      seenRuleset = options.manifest.ruleset;
+      this.store = { state: { globals: {} } };
+      this.advanceRound = () => [];
+      this.queryEvents = () => [];
+    } as unknown as EngineConstructor;
+
+    const producer = createDefaultReplayProducer({ Engine: FakeEngine });
+    producer(1, undefined, 1);
+    expect(seenRuleset).toBe('test');
   });
 });

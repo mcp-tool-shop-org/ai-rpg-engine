@@ -26,7 +26,7 @@ export const REQUIRED_ARTIFACT_KINDS = [
 export const OPTIONAL_ARTIFACT_KINDS = [
   'entities', 'dialogues', 'abilities', 'statuses', 'items', 'hazards',
   'archetypes', 'backgrounds', 'catalogs', 'placements', 'entityAi',
-  'anchors', 'trees',
+  'anchors', 'trees', 'ruleProfiles', 'itemPlacements',
 ] as const;
 
 export const ARTIFACT_KINDS = [
@@ -62,6 +62,10 @@ export type SessionArtifacts = {
   anchors?: string[];
   /** ProgressionTreeDefinition ids. Load-tolerant: older session JSON omits this. */
   trees?: string[];
+  /** ContentPack.ruleProfiles registry keys. Load-tolerant: older session JSON omits this. */
+  ruleProfiles?: string[];
+  /** ItemPlacementRecord ids (`itemId@entityId`). Load-tolerant: older session JSON omits this. */
+  itemPlacements?: string[];
 };
 
 const ARTIFACT_LABELS: Record<ArtifactKind, string> = {
@@ -83,6 +87,8 @@ const ARTIFACT_LABELS: Record<ArtifactKind, string> = {
   entityAi: 'entityAi',
   anchors: 'anchors',
   trees: 'trees',
+  ruleProfiles: 'ruleProfiles',
+  itemPlacements: 'itemPlacements',
 };
 
 export function countArtifacts(artifacts: SessionArtifacts): number {
@@ -109,6 +115,8 @@ export function emptyArtifacts(): SessionArtifacts {
     entityAi: [],
     anchors: [],
     trees: [],
+    ruleProfiles: [],
+    itemPlacements: [],
   };
 }
 
@@ -797,6 +805,14 @@ export function artifactBucketForKind(kind: string): keyof SessionArtifacts {
     case 'progression-tree':
     case 'tree':
     case 'trees': return 'trees';
+    case 'rule-profile':
+    case 'rule-profiles':
+    case 'ruleProfile':
+    case 'ruleProfiles': return 'ruleProfiles';
+    case 'item-placement':
+    case 'item-placements':
+    case 'itemPlacement':
+    case 'itemPlacements': return 'itemPlacements';
     default: return 'packs';
   }
 }

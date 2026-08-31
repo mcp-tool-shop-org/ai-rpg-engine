@@ -30,6 +30,10 @@ import { createEntityAi } from './commands/create-entity-ai.js';
 import { createPlacement } from './commands/create-placement.js';
 import { createEncounterAnchor } from './commands/create-encounter-anchor.js';
 import { createProgressionTree } from './commands/create-progression-tree.js';
+import { createRuleset } from './commands/create-ruleset.js';
+import { createRuleProfile } from './commands/create-rule-profile.js';
+import { createItemPlacement } from './commands/create-item-placement.js';
+import { assembleContentPack, formatEmitPackReport, packJson } from './commands/emit-pack.js';
 import { formatSessionStatus, renderSessionContext, artifactBucketForKind } from './session.js';
 import { generatePreview } from './apply-preview.js';
 import { planFromSession, formatPlan } from './chat-planner.js';
@@ -146,12 +150,12 @@ const SCAFFOLD_KINDS = [
   'room', 'faction', 'district', 'quest', 'location-pack', 'encounter-pack',
   'dialogue', 'entity', 'ability', 'status', 'item', 'hazard',
   'archetype', 'background', 'build-catalog', 'entity-ai', 'placement',
-  'encounter-anchor', 'progression-tree',
+  'encounter-anchor', 'progression-tree', 'ruleset', 'rule-profile', 'item-placement',
 ] as const;
 
 const scaffoldTool: ChatTool = {
   name: 'scaffold',
-  description: 'Generate new content (room, faction, district, quest, pack, dialogue, entity, ability, status, item, hazard, archetype, background, catalog, entity-ai, placement, encounter-anchor, progression-tree)',
+  description: 'Generate new content (room, faction, district, quest, pack, dialogue, entity, ability, status, item, hazard, archetype, background, catalog, entity-ai, placement, encounter-anchor, progression-tree, ruleset, rule-profile, item-placement)',
   intents: ['scaffold'],
   mutates: false,
   async execute(p: ChatToolParams): Promise<ChatToolResult> {
@@ -324,6 +328,33 @@ const scaffoldTool: ChatTool = {
       case 'progression-tree':
       case 'tree': {
         const r = await createProgressionTree(p.client, { theme, sessionContext, repair });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        validation = r.validation;
+        break;
+      }
+      case 'ruleset': {
+        const r = await createRuleset(p.client, { theme, sessionContext, repair });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        validation = r.validation;
+        break;
+      }
+      case 'rule-profile': {
+        const r = await createRuleProfile(p.client, { theme, sessionContext, repair, id: p.params.id });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        validation = r.validation;
+        break;
+      }
+      case 'item-placement': {
+        const r = await createItemPlacement(p.client, {
+          theme,
+          sessionContext,
+          repair,
+          itemId: p.params.item ?? p.params.itemId,
+          entityId: p.params.entityId,
+        });
         if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
         yaml = r.yaml;
         validation = r.validation;
@@ -630,6 +661,48 @@ const applyContentTool: ChatTool = {
         label: p.params.label ?? targetPath,
         previewShown: true,
       },
+    };
+  },
+};
+
+// --- Tool: emit-pack ---
+//
+// F-35cc73ce: the guided /build path never assembled/wrote content/pack.json
+// — the default ReplayProducer loads only from that conventional path, so a
+// host who only ran /build ticked an empty world. Like every other
+// content-writing tool in this registry (scaffoldTool, applyContentTool,
+// tuneApplyTool — the only two other `mutates: true` tools, both
+// pendingWrite-based, zero exceptions), this stages the assembled pack as a
+// pendingWrite rather than writing synchronously: "never writes without
+// consent" (this file's own header contract) applies to emit-pack the same
+// as everything else, even though the standalone `ai emit-pack --write` CLI
+// command itself writes unconditionally with no confirmation step.
+
+const emitPackTool: ChatTool = {
+  name: 'emit-pack',
+  description: 'Assemble content/pack.json from the project\'s authored YAML/JSON (requires confirmation)',
+  intents: ['emit_pack'],
+  mutates: true,
+  async execute(p: ChatToolParams): Promise<ChatToolResult> {
+    const a = action('emit-pack', 'Assemble ContentPack JSON from project files', true);
+    const assembled = await assembleContentPack(p.projectRoot, {
+      session: p.session ? { name: p.session.name, themes: p.session.themes } : undefined,
+    });
+    if (!assembled.load.ok) {
+      const errors = assembled.load.errors.slice(0, 5).map((e) => `  - ${e.path}: ${e.message}`);
+      const more = assembled.load.errors.length > 5 ? `\n  - ...and ${assembled.load.errors.length - 5} more` : '';
+      const summary = `emit-pack: refusing to stage a write — ${assembled.load.errors.length} validation error(s):\n${errors.join('\n')}${more}`;
+      return { ok: false, summary, actions: [failed(a, assembled.load.summary)] };
+    }
+    const content = packJson(assembled.pack);
+    const suggestedPath = 'content/pack.json';
+    return {
+      ok: true,
+      summary: `${formatEmitPackReport(assembled)}\n\nYou can save this with: "write this to ${suggestedPath}"`,
+      output: content,
+      actions: [executed(a, `Assembled ${assembled.filesRead.length} file(s)`)],
+      sessionEvents: [{ kind: 'pack_emitted', detail: `emit-pack: valid (${assembled.filesRead.length} files)` }],
+      pendingWrite: { content, suggestedPath, label: 'content/pack.json' },
     };
   },
 };
@@ -1341,6 +1414,7 @@ const ALL_TOOLS: ChatTool[] = [
   explainWhyTool,
   explainStateTool,
   applyContentTool,
+  emitPackTool,
   helpTool,
   contextInfoTool,
   smartPlanTool,

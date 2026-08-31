@@ -25,6 +25,10 @@ import { createEntityAi } from './commands/create-entity-ai.js';
 import { createPlacement, placementYaml } from './commands/create-placement.js';
 import { createEncounterAnchor } from './commands/create-encounter-anchor.js';
 import { createProgressionTree } from './commands/create-progression-tree.js';
+import { createRuleset } from './commands/create-ruleset.js';
+import { createRuleProfile } from './commands/create-rule-profile.js';
+import { createItemPlacement, itemPlacementRecordId } from './commands/create-item-placement.js';
+import { suggestNextPrompt } from './prompts/suggest-next.js';
 import { explainDistrictState } from './commands/explain-district-state.js';
 import { explainFactionAlert } from './commands/explain-faction-alert.js';
 import { improveContent } from './commands/improve-content.js';
@@ -1069,6 +1073,14 @@ describe('explainWhy', () => {
   });
 });
 
+// F-35cc73ce: the Scaffold command block never listed emit-pack, so the
+// AI's own next-action recommendations never named the step either.
+describe('suggestNextPrompt', () => {
+  it('lists emit-pack in the Scaffold command block', () => {
+    expect(suggestNextPrompt.system).toContain('emit-pack');
+  });
+});
+
 describe('suggestNext', () => {
   const suggestResponse = [
     'Session has good district coverage but lacks quests and simulation testing.',
@@ -1637,5 +1649,126 @@ describe('createEncounterAnchor / createProgressionTree', () => {
       expect(result.yaml).toContain('combat_mastery');
     }
     expect(callCount).toBe(2);
+  });
+});
+
+// F-8ec253bf: no create-ruleset command existed anywhere under packages/ollama/src.
+describe('createRuleset', () => {
+  it('returns yaml and validation for a valid ruleset', async () => {
+    const yaml = [
+      'id: fantasy-minimal',
+      'name: Fantasy Minimal',
+      'version: 0.1.0',
+      'stats:',
+      '  - id: vigor',
+      '    name: Vigor',
+      '    default: 5',
+      'resources:',
+      '  - id: hp',
+      '    name: HP',
+      '    default: 20',
+      'verbs:',
+      '  - id: move',
+      '    name: Move',
+      'formulas:',
+      '  - id: hit-chance',
+      '    name: Hit Chance',
+      '    inputs:',
+      '      - attacker.vigor',
+      '    output: number',
+      'defaultModules:',
+      '  - combat-core',
+      'progressionModels:',
+      '  - linear',
+    ].join('\n');
+    // parseYamlish is a block-style-only subset parser (no flow style), so
+    // `formulas: []` would parse as the STRING "[]", not an array — every
+    // required array field needs at least one real dash-item here.
+    const result = await createRuleset(mockClient(yaml), { theme: 'gritty fantasy' });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.yaml).toContain('fantasy-minimal');
+      expect(result.validation.valid).toBe(true);
+    }
+  });
+
+  it('rejects a ruleset missing required arrays', async () => {
+    const result = await createRuleset(mockClient('id: bare\nname: Bare\nversion: 0.1.0'), { theme: 'bare' });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.validation.valid).toBe(false);
+  });
+});
+
+// F-0bf295ac: no create-rule-profile command existed; PackRuleProfile
+// (content-schema refs.ts:206-208) had no authoring path from packages/ollama.
+describe('createRuleProfile', () => {
+  it('returns yaml and validation for a valid statMapping', async () => {
+    const yaml = 'id: veteran_soldier\nstatMapping:\n  attack: strength\n  precision: dexterity\n  resolve: willpower';
+    const result = await createRuleProfile(mockClient(yaml), { theme: 'veteran soldier' });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.yaml).toContain('veteran_soldier');
+      expect(result.validation.valid).toBe(true);
+    }
+  });
+
+  it('overlays --id deterministically over whatever id the model returned', async () => {
+    const yaml = 'id: wrong_id\nstatMapping:\n  attack: strength\n  precision: dexterity\n  resolve: willpower';
+    const result = await createRuleProfile(mockClient(yaml), { theme: 'veteran soldier', id: 'veteran_soldier' });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.yaml).toContain('id: veteran_soldier');
+      expect(result.yaml).not.toContain('wrong_id');
+      expect(result.validation.valid).toBe(true);
+    }
+  });
+
+  it('inserts --id when the model omits an id line entirely', async () => {
+    const yaml = 'statMapping:\n  attack: strength\n  precision: dexterity\n  resolve: willpower';
+    const result = await createRuleProfile(mockClient(yaml), { theme: 'veteran soldier', id: 'veteran_soldier' });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.yaml).toContain('id: veteran_soldier');
+  });
+
+  it('rejects a rule profile missing statMapping fields', async () => {
+    const result = await createRuleProfile(mockClient('id: broken\nstatMapping:\n  attack: strength'), { theme: 'x' });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.validation.valid).toBe(false);
+  });
+});
+
+// F-bd8034ea: no create-item-placement/createItemPlacement existed, distinct
+// from create-item.ts (full item definitions) and create-placement.ts (entity<->zone).
+describe('createItemPlacement', () => {
+  it('short-circuits when itemId and entityId are known', async () => {
+    const result = await createItemPlacement(failingClient('should not be called'), {
+      itemId: 'rusty_key',
+      entityId: 'chapel_guard',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.yaml).toBe('itemId: rusty_key\nentityId: chapel_guard\n');
+      expect(result.validation.valid).toBe(true);
+    }
+  });
+
+  it('itemPlacementRecordId formats the compound key', () => {
+    expect(itemPlacementRecordId('rusty_key', 'chapel_guard')).toBe('rusty_key@chapel_guard');
+  });
+
+  it('falls back to generation when only one of itemId/entityId is known', async () => {
+    const yaml = 'itemId: rusty_key\nentityId: chapel_guard';
+    const result = await createItemPlacement(mockClient(yaml), { theme: 'chapel key', itemId: 'rusty_key' });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.yaml).toContain('rusty_key');
+      expect(result.validation.valid).toBe(true);
+    }
+  });
+
+  it('rejects an item placement missing entityId', async () => {
+    const result = await createItemPlacement(mockClient('itemId: rusty_key'), { theme: 'x', itemId: 'rusty_key' });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.validation.valid).toBe(false);
   });
 });

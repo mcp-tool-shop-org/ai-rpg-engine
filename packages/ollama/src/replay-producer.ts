@@ -21,6 +21,8 @@ import {
   createProgressionCore,
   createWorldTick,
   createStandardChannels,
+  createAbilityCore,
+  registerStatusDefinitions,
 } from '@ai-rpg-engine/modules';
 import type { ReplayProducer } from './chat-experiments.js';
 
@@ -96,6 +98,21 @@ function loadPlayableModules(pack: unknown | null): unknown[] {
   const loaded: unknown[] = [];
   tryPush(loaded, () => traversalCore);
   tryPush(loaded, () => statusCore);
+  // Status definitions must land in the shared registry before ability-core
+  // (or anything else) can resolve status tags by id — registration is a
+  // side effect on a process-global registry, not a module factory, so it is
+  // guarded with its own try/catch rather than routed through tryPush.
+  if (isRecord(pack) && Array.isArray(pack.statuses)) {
+    try {
+      registerStatusDefinitions(pack.statuses as never);
+    } catch {
+      // A malformed status definition must not drop the rest of the playable stack.
+    }
+  }
+  const abilities = isRecord(pack) && Array.isArray(pack.abilities) ? pack.abilities : undefined;
+  if (abilities) {
+    tryPush(loaded, () => createAbilityCore({ abilities: abilities as never }));
+  }
   tryPush(loaded, () => combatCore);
   tryPush(loaded, () => inventoryCore);
   tryPush(loaded, () => createCognitionCore());
@@ -277,13 +294,27 @@ function runEngineReplay(
 ): string {
   const pack = loadProjectPack(options.projectRoot, options.contentPath);
   const modules = loadPlayableModules(pack);
+  // Bind the pack's own ruleset id when it has one (content-schema's
+  // SessionContent.ruleset doc comment: "Bind it at Engine construction").
+  // pack.ruleset is a full RulesetDefinition object ({id, name, stats, ...}
+  // — intake.ts:1005-1018, refs.ts ContentPack.ruleset), not a bare string,
+  // so the manifest's string ruleset field binds pack.ruleset.id. A bare
+  // string is also accepted defensively. Overlay-only packs omit ruleset
+  // and keep the 'test' fallback.
+  const ruleset = !isRecord(pack) || pack.ruleset === undefined
+    ? 'test'
+    : typeof pack.ruleset === 'string'
+      ? pack.ruleset
+      : isRecord(pack.ruleset) && typeof pack.ruleset.id === 'string'
+        ? pack.ruleset.id
+        : 'test';
   const engine = new Engine({
     manifest: {
       id: 'experiment-run',
       title: 'Experiment',
       version: '0.0.0',
       engineVersion: '0.1.0',
-      ruleset: 'test',
+      ruleset,
       modules: [],
       contentPacks: [],
     },
