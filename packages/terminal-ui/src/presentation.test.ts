@@ -57,6 +57,12 @@ const defeat = () =>
   ev('combat.entity.defeated', { entityId: 'ghoul', entityName: 'Ash Ghoul', defeatedBy: 'hero' },
     { channels: ['objective', 'narrator'], priority: 'critical', soundCues: ['combat.defeat'] });
 
+// F-32948b79: the authoritative "the fight is over" signal — triumph/flash
+// are re-keyed off this event, not off "any non-player defeat" (see
+// presentation's builder.test.ts for the full re-key coverage).
+const cleared = () =>
+  ev('combat.encounter.cleared', {}, { channels: ['objective', 'narrator'], priority: 'high' });
+
 const enterZone = () =>
   ev('world.zone.entered', { zoneId: 'crypt', zoneName: 'Crypt Chamber' },
     { channels: ['objective'], priority: 'normal', soundCues: ['scene.enter'] });
@@ -67,7 +73,10 @@ const stinger = () =>
 describe('TurnPresenter: combat turn', () => {
   it('builds a validated critical plan and schedules canonical-audio commands', () => {
     const world = makeWorld();
-    const result = new TurnPresenter().present(world, [hit(), defeat()], { color: false });
+    // F-32948b79: triumph now requires combat.encounter.cleared, not just a
+    // defeat — cleared() makes this the "the fight actually ended" case the
+    // test's own title (and downstream sfx/urgency assertions) intends.
+    const result = new TurnPresenter().present(world, [hit(), defeat(), cleared()], { color: false });
 
     expect(validateNarrationPlan(result.plan)).toEqual([]);
     expect(result.plan.tone).toBe('triumph');
@@ -106,6 +115,86 @@ describe('TurnPresenter: combat turn', () => {
     expect(result.plan.tone).toBe('sorrow');
     expect(result.plan.uiEffects).toEqual([{ type: 'fade-out', durationMs: 600 }]);
     expect(validateNarrationPlan(result.plan)).toEqual([]);
+  });
+});
+
+// F-0671a25f / F-b5150ad5: TurnPresenter was the repo's only per-turn
+// AudioCommand composition point and never called AudioDirector.scheduleSting
+// — the documented sting hook (music-layer fanfare/stinger, distinct from
+// the sfx pipeline's blips) could never actually reach a player or embedder.
+// present() now derives a sting cue (deriveStingCue, presentation) and, when
+// one resolves (soundpack-core's resolveMusicSting), appends ONE 'sting'
+// AudioCommand — layered over whatever schedule() already produced, never
+// replacing it (append, not prepend — ordering stays deterministic).
+describe('TurnPresenter: victory/defeat stings (F-0671a25f)', () => {
+  it('a cleared encounter appends a combat.victory sting AFTER the regular schedule() output', () => {
+    const world = makeWorld();
+    const result = new TurnPresenter().present(world, [hit(), defeat(), cleared()], { color: false });
+    const stings = result.audioCommands.filter((c) => c.action === 'sting');
+    expect(stings).toHaveLength(1);
+    expect(stings[0].resourceId).toBe('music_victory_sting');
+    expect(stings[0].domain).toBe('music');
+    // Append, not prepend: the sting is the LAST command in the array.
+    expect(result.audioCommands[result.audioCommands.length - 1].action).toBe('sting');
+  });
+
+  it('the player falling appends a combat.defeat sting — shippable today without combat.encounter.cleared existing at all', () => {
+    const world = makeWorld();
+    const fall = ev('combat.entity.defeated',
+      { entityId: 'hero', entityName: 'Hero', defeatedBy: 'ghoul' },
+      { priority: 'critical', soundCues: ['combat.defeat'] });
+    const result = new TurnPresenter().present(world, [fall], { color: false });
+    const stings = result.audioCommands.filter((c) => c.action === 'sting');
+    expect(stings).toHaveLength(1);
+    expect(stings[0].resourceId).toBe('music_defeat_sting');
+  });
+
+  it('a mutual kill (non-player defeat + clearance, THEN the player also falls) stings defeat, never victory', () => {
+    const world = makeWorld();
+    const fall = ev('combat.entity.defeated',
+      { entityId: 'hero', entityName: 'Hero', defeatedBy: 'ghoul' },
+      { priority: 'critical', soundCues: ['combat.defeat'] });
+    const result = new TurnPresenter().present(world, [defeat(), cleared(), fall], { color: false });
+    const stings = result.audioCommands.filter((c) => c.action === 'sting');
+    expect(stings).toHaveLength(1);
+    expect(stings[0].resourceId).toBe('music_defeat_sting');
+  });
+
+  it('a calm turn schedules no sting — audioCommands unchanged from before this fix (regression guard against the two pipelines double-firing)', () => {
+    const world = makeWorld();
+    const result = new TurnPresenter().present(world, [enterZone()], { color: false });
+    expect(result.audioCommands.some((c) => c.action === 'sting')).toBe(false);
+  });
+
+  it('a bare non-player defeat with NO clearance schedules no sting (mirrors deriveStingCue returning undefined)', () => {
+    const world = makeWorld();
+    const result = new TurnPresenter().present(world, [hit(), defeat()], { color: false });
+    expect(result.audioCommands.some((c) => c.action === 'sting')).toBe(false);
+  });
+});
+
+// Composition half of media's F-901767f5: TurnPresenter does not yet wire a
+// real resolveZoneMood (soundpack-core's districtToneToSoundMood bridge does
+// not exist in this worktree — media lands it this wave; the coordinator
+// wires the real resolver at the stitch). Without one injected, buildNarrationPlan
+// falls through to the documented scene.enter fallback for every zone-entry
+// turn — still a real improvement over today's always-undefined/always-[].
+describe('TurnPresenter: zone-entry music (F-901767f5, fallback path only — resolver wiring awaits sibling merge)', () => {
+  it('a zone-entry turn now populates musicCue/ambientLayers via the scene.enter fallback', () => {
+    const world = makeWorld();
+    const result = new TurnPresenter().present(world, [enterZone()], { color: false });
+    expect(result.plan.musicCue).toEqual({ action: 'play', trackId: 'music_calm', fadeMs: 1000 });
+    expect(result.plan.ambientLayers).toEqual([
+      { layerId: 'ambient_white_noise', action: 'start', volume: 0.3, fadeMs: 1000 },
+    ]);
+    expect(validateNarrationPlan(result.plan)).toEqual([]);
+  });
+
+  it('a non-zone-entry turn is unaffected: musicCue undefined, ambientLayers []', () => {
+    const world = makeWorld();
+    const result = new TurnPresenter().present(world, [hit()], { color: false });
+    expect(result.plan.musicCue).toBeUndefined();
+    expect(result.plan.ambientLayers).toEqual([]);
   });
 });
 

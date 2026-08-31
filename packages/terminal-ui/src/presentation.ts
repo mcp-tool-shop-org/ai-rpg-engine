@@ -28,6 +28,7 @@
 import type { ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
 import {
   buildNarrationPlan,
+  deriveStingCue,
   type NarrationPlan,
   type SoundCueResolver,
   type VoiceProfile,
@@ -53,6 +54,26 @@ export const PRESENTATION_TICK_MS = 1000;
 
 /** Narration fallback for a turn with no renderable events. */
 export const QUIET_TURN_TEXT = 'All is quiet.';
+
+/**
+ * F-0671a25f / F-b5150ad5: mirrors soundpack-core's COMBAT_STING_MAP
+ * (cue-map.ts) — 'combat.victory' -> music_victory_sting, 'combat.defeat' ->
+ * music_defeat_sting. cue-map.ts's own `resolveMusicSting` is the canonical
+ * resolver for this table, but it is NOT exported from
+ * @ai-rpg-engine/soundpack-core's public index.ts (confirmed by grep across
+ * the package; only its OWN test file reaches it via a relative import).
+ * packages/soundpack-core sits outside this domain's glob, so the one-line
+ * export fix cannot land here — flagged for the coordinator to add at the
+ * stitch. Duplicated as a literal in the meantime, matching cue-map.ts's own
+ * precedent of mirroring small stable tables across a package boundary
+ * (its SfxTiming type) rather than reaching around a missing export. Swap
+ * for `resolveMusicSting` from '@ai-rpg-engine/soundpack-core' once it is
+ * exported.
+ */
+const STING_TRACK_IDS: Readonly<Record<string, string>> = {
+  'combat.victory': 'music_victory_sting',
+  'combat.defeat': 'music_defeat_sting',
+};
 
 /** Everything the presentation stack produces for one turn. */
 export type PresentedTurn = {
@@ -197,6 +218,15 @@ export class TurnPresenter {
 
     const now = opts?.now ?? world.meta.tick * PRESENTATION_TICK_MS;
     const audioCommands = this.director.schedule(plan, now);
+
+    // F-0671a25f / F-b5150ad5: the sting hook, finally wired. Deliberately
+    // APPENDED (never prepended) so ordering stays deterministic — the
+    // regular schedule() output lands first, the sting last, matching
+    // scheduleSting's own contract ("layers over whatever stem is already
+    // playing").
+    const stingCue = deriveStingCue(events, world.playerId);
+    const stingTrackId = stingCue ? STING_TRACK_IDS[stingCue] : undefined;
+    if (stingTrackId) audioCommands.push(this.director.scheduleSting(stingTrackId));
 
     return {
       plan,
