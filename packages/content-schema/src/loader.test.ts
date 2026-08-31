@@ -331,4 +331,21 @@ describe('loadContent', () => {
     });
     expect(r.ok).toBe(true);
   });
+
+  it('F-0987c369: overlay packs without ruleProfiles still load (key is optional)', () => {
+    const r = loadContent({
+      entities: [{ id: 'p', type: 'player', name: 'P', ruleProfileId: 'healer' }],
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it('F-0987c369: pack.ruleProfiles entries are shape-checked', () => {
+    const r = loadContent({
+      ruleProfiles: {
+        healer: { statMapping: { attack: 'will' } },
+      },
+    } as ContentPack);
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('precision') || e.path.includes('statMapping'))).toBe(true);
+  });
 });

@@ -12,6 +12,9 @@
 // only checked what it carried.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Engine, type GameManifest, type ZoneState, type EntityState } from '@ai-rpg-engine/core';
 import {
   applyContentPack,
@@ -24,6 +27,7 @@ import {
   EVALUATED_NOT_MAPPED_KEYS,
   UNROUTED_DECLARED_KEYS,
   ALLOWED_PACK_KEYS,
+  SIM_AFFECTING_KEYS,
   type ContentPack,
   type DroppedField,
   type IntakeChannel,
@@ -472,12 +476,14 @@ describe('C1/P1 — applyContentPack routes content into a booted world', () => 
 // --- Channels -------------------------------------------------------------
 
 describe('C1/P1 — module-owned channels', () => {
-  it('an unhandled module key is REPORTED, not silently skipped', () => {
+  it('F-5b62643f: a pack with districts and no channels still advisories (do not auto-inject)', () => {
     const engine = bootEngine();
     const r = applyContentPack(engine, { districts: [{ id: 'd', name: 'D', zoneIds: [], tags: [] }] });
     const note = r.advisories.find((a) => a.path === 'pack.districts');
     expect(note?.message).toContain('no intake channel supplied');
+    expect(note?.message).toContain('createStandardChannels()');
     expect(r.applied.districts).toBeUndefined();
+    expect(r.ok).toBe(true);
   });
 
   it('a supplied channel receives its slice and its count is reported', () => {
@@ -702,6 +708,59 @@ describe('C1/P1 — session-scoped keys are not pretended to be routable', () =>
     ]);
   });
 
+  it('F-5b62643f: extractSessionContent surfaces districts/encounterAnchors/hazardDefinitions', () => {
+    const session = extractSessionContent({
+      districts: [{ id: 'chapel-grounds' }],
+      encounterAnchors: [{ id: 'crypt-ambush' }],
+      hazardDefinitions: [{ id: 'unstable-floor' }],
+    } as unknown as ContentPack);
+    expect(session.districts).toEqual([{ id: 'chapel-grounds' }]);
+    expect(session.encounterAnchors).toEqual([{ id: 'crypt-ambush' }]);
+    expect(session.hazardDefinitions).toEqual([{ id: 'unstable-floor' }]);
+    expect(session.advisories).toEqual([]);
+  });
+
+  it('F-5b62643f: malformed MODULE_INTAKE slices are advisory-skipped', () => {
+    const session = extractSessionContent({
+      districts: 'nope',
+      encounterAnchors: {},
+      hazardDefinitions: 1,
+    } as unknown as ContentPack);
+    expect(session.districts).toBeUndefined();
+    expect(session.encounterAnchors).toBeUndefined();
+    expect(session.hazardDefinitions).toBeUndefined();
+    expect(session.advisories.map((a) => a.path).sort()).toEqual([
+      'pack.districts',
+      'pack.encounterAnchors',
+      'pack.hazardDefinitions',
+    ]);
+  });
+
+  it('F-5b62643f: extractSessionContent(pack).districts is defined for chapel-threshold content.json', () => {
+    const chapelPath = join(
+      dirname(fileURLToPath(import.meta.url)),
+      '..', '..', 'starter-fantasy', 'src', 'content.json',
+    );
+    const pack = JSON.parse(readFileSync(chapelPath, 'utf8')) as ContentPack;
+    const session = extractSessionContent(pack);
+    expect(session.districts).toBeDefined();
+    expect(Array.isArray(session.districts)).toBe(true);
+    expect((session.districts as { id: string }[]).some((d) => d.id === 'chapel-grounds')).toBe(true);
+    expect(session.advisories).toEqual([]);
+  });
+
+  it('F-5b62643f: JSON boot recipe documents channels + session.districts without importing modules', () => {
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'intake.ts'), 'utf8');
+    expect(src).toContain('districts: session.districts');
+    expect(src).toContain('channels: createStandardChannels()');
+    expect(src).toContain("from '@ai-rpg-engine/modules'");
+    expect(src).not.toMatch(/^import .* from '@ai-rpg-engine\/modules'/m);
+    expect([...SIM_AFFECTING_KEYS]).toContain('districts');
+    expect([...SIM_AFFECTING_KEYS]).toContain('encounterAnchors');
+    expect([...SIM_AFFECTING_KEYS]).toContain('hazardDefinitions');
+    expect([...SIM_AFFECTING_KEYS]).not.toContain('ruleProfiles');
+  });
+
   it('F-82b17cb3: applyContentPack stays UNROUTED for dialogues/quests/abilities/statuses', () => {
     const engine = bootEngine();
     const r = applyContentPack(engine, {
@@ -836,6 +895,71 @@ describe('F-4ed3d82e — pack.items apply onto entity inventory/equipment', () =
     });
     expect(r.ok).toBe(false);
     expect(r.errors.some((e) => e.message.includes('ghost-item'))).toBe(true);
+  });
+});
+
+describe('F-0987c369 — pack.ruleProfiles clones onto WorldState.ruleProfiles', () => {
+  it('writes a cloned map onto engine.store.state.ruleProfiles when present', () => {
+    const engine = bootEngine();
+    const pack: ContentPack = {
+      entities: [{ id: 'aldric', type: 'npc', name: 'Aldric', ruleProfileId: 'healer' }],
+      ruleProfiles: {
+        healer: { statMapping: { attack: 'will', precision: 'instinct', resolve: 'will' } },
+      },
+    };
+    const r = applyContentPack(engine, pack);
+    expect(r.ok).toBe(true);
+    expect(r.applied.ruleProfiles).toBe(1);
+    expect(engine.store.state.ruleProfiles).toEqual({
+      healer: { statMapping: { attack: 'will', precision: 'instinct', resolve: 'will' } },
+    });
+    expect(engine.world.entities['aldric'].ruleProfileId).toBe('healer');
+    engine.store.state.ruleProfiles!.healer.statMapping.attack = 'vigor';
+    expect(pack.ruleProfiles!.healer.statMapping.attack).toBe('will');
+  });
+
+  it('a missing ruleProfileId lands in dropped[] only — does not flip ok', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      entities: [{ id: 'aldric', type: 'npc', name: 'Aldric', ruleProfileId: 'ghost-healer' }],
+      ruleProfiles: {
+        healer: { statMapping: { attack: 'will', precision: 'instinct', resolve: 'will' } },
+      },
+    });
+    expect(r.ok).toBe(true);
+    expect(r.errors).toEqual([]);
+    expect(engine.world.entities['aldric'].ruleProfileId).toBe('ghost-healer');
+    expect(r.dropped.some((d) => d.path.includes('ruleProfileId') && d.detail.includes('ghost-healer'))).toBe(true);
+  });
+
+  it('overlay packs that omit the key keep copy-the-string', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      entities: [{ id: 'aldric', type: 'npc', name: 'Aldric', ruleProfileId: 'healer' }],
+    });
+    expect(r.ok).toBe(true);
+    expect(r.applied.ruleProfiles).toBeUndefined();
+    expect(engine.store.state.ruleProfiles).toBeUndefined();
+    expect(engine.world.entities['aldric'].ruleProfileId).toBe('healer');
+    expect(r.dropped.find((d) => d.path.includes('ruleProfileId'))).toBeUndefined();
+  });
+
+  it('malformed ruleProfiles stay dropped[] — overlay intake still loads', () => {
+    const engine = bootEngine();
+    const r = applyContentPack(engine, {
+      entities: [{ id: 'aldric', type: 'npc', name: 'Aldric', ruleProfileId: 'healer' }],
+      ruleProfiles: 'nope' as unknown as ContentPack['ruleProfiles'],
+    });
+    expect(r.ok).toBe(true);
+    expect(engine.world.entities['aldric'].ruleProfileId).toBe('healer');
+    expect(r.dropped.some((d) => d.path === 'pack.ruleProfiles')).toBe(true);
+    expect(engine.store.state.ruleProfiles).toBeUndefined();
+  });
+
+  it('ruleProfiles is allowlisted and is NOT sim-affecting', () => {
+    expect([...ALLOWED_PACK_KEYS]).toContain('ruleProfiles');
+    expect([...CORE_INTAKE_KEYS]).toContain('ruleProfiles');
+    expect([...SIM_AFFECTING_KEYS]).not.toContain('ruleProfiles');
   });
 });
 

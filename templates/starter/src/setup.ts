@@ -150,10 +150,13 @@ export function createGame(seed?: number): Engine {
     });
 
     // Author data → runtime. JSON hosts: extractSessionContent(pack) →
-    // construct modules → applyContentPack({ profiles }). This factory still
-    // wires named catalogs at construction; apply copies EntityBlueprint
-    // relations/custom/resistances/faction/ruleProfileId and resolves aiProfile
-    // against cognition profiles + pack.entityAi.
+    // construct modules (buildWorldStack({ districts: session.districts })) →
+    // applyContentPack({ profiles, channels: createStandardChannels() }).
+    // Import createStandardChannels from @ai-rpg-engine/modules — do not
+    // auto-inject. This factory still wires named catalogs at construction;
+    // apply copies EntityBlueprint relations/custom/resistances/faction/
+    // ruleProfileId and resolves aiProfile against cognition profiles +
+    // pack.entityAi.
     const applied = applyContentPack(engine, pack, { profiles: myIntentProfiles });
     if (!applied.ok) {
         const detail = applied.errors.map((e) => `${e.path}: ${e.message}`).join('\n');

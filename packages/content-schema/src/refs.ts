@@ -188,6 +188,23 @@ export type ContentPack = {
    * Not sim-affecting.
    */
   manifest?: GameManifest;
+  /**
+   * Optional RuleProfile registry keyed by {@link EntityBlueprint.ruleProfileId}.
+   * Overlay packs omit this — apply then keeps copy-the-string on the id.
+   * When present, applyContentPack clones it onto WorldState.ruleProfiles.
+   * statMapping only (formulaOverrides reserved — closures cannot round-trip).
+   * Not sim-affecting.
+   */
+  ruleProfiles?: Record<string, PackRuleProfile>;
+};
+
+/**
+ * Per-archetype combat mapping a JSON pack can author. Structural copy of
+ * core's RuleProfile — content-schema sits beside core so the real type is
+ * assignable. formulaOverrides is reserved (closures cannot round-trip).
+ */
+export type PackRuleProfile = {
+  statMapping: { attack: string; precision: string; resolve: string };
 };
 
 /**

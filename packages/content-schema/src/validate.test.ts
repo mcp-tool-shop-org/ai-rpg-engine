@@ -16,6 +16,7 @@ import {
   validateDistrictDefinition,
   validateHazardDefinition,
   validateItemRecord,
+  validateRuleProfile,
   formatErrors,
 } from './validate.js';
 import { fantasyQuests } from '../../starter-fantasy/src/content.js';
@@ -366,6 +367,29 @@ describe('validateDistrictDefinition', () => {
     const r = validateDistrictDefinition({ id: 'd', name: 'D', tags: [] });
     expect(r.ok).toBe(false);
     expect(r.errors.some((e) => e.path.includes('zoneIds'))).toBe(true);
+  });
+});
+
+describe('validateRuleProfile (F-0987c369)', () => {
+  it('accepts statMapping with attack/precision/resolve', () => {
+    const r = validateRuleProfile({
+      statMapping: { attack: 'will', precision: 'instinct', resolve: 'will' },
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects a missing statMapping', () => {
+    const r = validateRuleProfile({});
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('statMapping'))).toBe(true);
+  });
+
+  it('rejects a blank attack name', () => {
+    const r = validateRuleProfile({
+      statMapping: { attack: '', precision: 'instinct', resolve: 'will' },
+    });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('attack'))).toBe(true);
   });
 });
 

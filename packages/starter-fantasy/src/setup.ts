@@ -197,10 +197,13 @@ export function createGame(seed?: number): Engine {
     ],
   });
 
-  // JSON hosts: extractSessionContent(pack) → construct modules → applyContentPack({ profiles }).
-  // This factory still wires named catalogs at construction; apply copies
-  // EntityBlueprint.relations/custom/resistances/faction/ruleProfileId (F-cf3fc257)
-  // and resolves aiProfile from pack.entityAi / options.profiles.
+  // JSON hosts: extractSessionContent(pack) → construct modules
+  // (buildWorldStack({ districts: session.districts })) →
+  // applyContentPack({ profiles, channels: createStandardChannels() }).
+  // createStandardChannels is imported from @ai-rpg-engine/modules, not
+  // content-schema. This factory still wires named catalogs at construction;
+  // apply copies EntityBlueprint.relations/custom/resistances/faction/ruleProfileId
+  // (F-cf3fc257) and resolves aiProfile from pack.entityAi / options.profiles.
   const applied = applyContentPack(engine, pack, { profiles: fantasyIntentProfiles });
   if (!applied.ok) {
     const detail = applied.errors.map((e) => `${e.path}: ${e.message}`).join('\n');

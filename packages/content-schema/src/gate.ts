@@ -62,6 +62,10 @@ export const ALLOWED_PACK_KEYS = [
   'itemPlacements',
   'entityAi',
   'ruleset',
+  // F-0987c369: optional RuleProfile registry (statMapping only). Overlay
+  // packs omit this. Not sim-affecting — do not add to SIM_AFFECTING_KEYS
+  // (world-forge hasher pin, same as entityAi / meta / manifest).
+  'ruleProfiles',
   // F-b2d31aad: optional listing identity. Overlay packs omit both.
   // Not sim-affecting — do not add to SIM_AFFECTING_KEYS (world-forge hasher pin).
   'meta',

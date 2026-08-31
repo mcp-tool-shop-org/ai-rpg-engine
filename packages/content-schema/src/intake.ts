@@ -35,6 +35,7 @@ import type {
   EntityAiState,
   EntityPlacementRecord,
   ItemPlacementRecord,
+  PackRuleProfile,
 } from './refs.js';
 import type { EntityBlueprint, ZoneDefinition } from './schemas.js';
 import type { ValidationError } from './validate.js';
@@ -461,7 +462,7 @@ export function entityBlueprintToState(
  * `placements` joins them at C3/P1: it writes `EntityState.zoneId`, a core field,
  * so it needs no module vocabulary and stays on this side of the layering.
  */
-export const CORE_INTAKE_KEYS = ['zones', 'entities', 'placements', 'items', 'itemPlacements', 'entityAi'] as const;
+export const CORE_INTAKE_KEYS = ['zones', 'entities', 'placements', 'items', 'itemPlacements', 'entityAi', 'ruleProfiles'] as const;
 
 /**
  * Pack keys that need a module's own vocabulary and can still be routed into an
@@ -795,6 +796,33 @@ export function applyContentPack(
     if (itemPlacements.length > 0) applied.itemPlacements = count;
   }
 
+  // --- ruleProfiles (core WorldState, F-0987c369) ---
+  // Overlay packs that omit the key keep copy-the-string (entityBlueprintToState
+  // already wrote EntityState.ruleProfileId). When the map is present, clone it
+  // onto the store. A missing id is dropped[] only — never flips ok.
+  if (pack.ruleProfiles !== undefined) {
+    const cloned = cloneRuleProfiles(pack.ruleProfiles, dropped);
+    if (cloned !== undefined) {
+      engine.store.state.ruleProfiles = cloned;
+      applied.ruleProfiles = Object.keys(cloned).length;
+      if (Array.isArray(entities)) {
+        for (let i = 0; i < entities.length; i++) {
+          const bp = entities[i];
+          if (!isRecord(bp) || typeof bp.ruleProfileId !== 'string') continue;
+          if (cloned[bp.ruleProfileId] === undefined) {
+            dropped.push({
+              path: `entities[${i}](${idOf(bp)}).ruleProfileId`,
+              reason: 'needs-module-vocabulary',
+              detail:
+                `unresolved ruleProfileId "${bp.ruleProfileId}" — pack.ruleProfiles has no entry for this id. ` +
+                'The pointer is copied; the registry is not. Dropped, not refused (does not flip applyContentPack.ok).',
+            });
+          }
+        }
+      }
+    }
+  }
+
   // --- module-owned channels (injected) ---
   // First-wins on duplicate keys, with an advisory — last-wins silently
   // dropped the first handler (F-f7358f53).
@@ -936,14 +964,20 @@ export function applyContentPack(
  * `applyContentPack` writes into a booted world. These two are read at
  * construction time and handed to the things that close over them:
  *
- * JSON-pack boot recipe (F-82b17cb3): extractSessionContent → construct
- * modules from the bag → applyContentPack({ profiles }). applyContentPack
- * stays UNROUTED for dialogues/quests/abilities/statuses (those modules
- * freeze their registries at construction). items also live here so a host
- * can hand them to createEquipmentCore; apply still resolves entity
- * inventory/equipment against pack.items.
+ * JSON-pack boot recipe (F-82b17cb3 / F-5b62643f): extractSessionContent →
+ * construct modules from the bag → applyContentPack({ profiles, channels }).
+ * applyContentPack stays UNROUTED for dialogues/quests/abilities/statuses
+ * (those modules freeze their registries at construction). items also live
+ * here so a host can hand them to createEquipmentCore; apply still resolves
+ * entity inventory/equipment against pack.items. districts / encounterAnchors
+ * / hazardDefinitions are construction-time slices AND module-intake keys —
+ * pass session.districts into buildWorldStack, and inject
+ * createStandardChannels() so apply still routes via channels (do not
+ * auto-inject; do not import @ai-rpg-engine/modules into this package).
  *
  * ```ts
+ * import { buildWorldStack, createStandardChannels } from '@ai-rpg-engine/modules';
+ *
  * const session = extractSessionContent(pack);
  * registerStatusDefinitions(session.statuses ?? []);
  * const engine = new Engine({
@@ -953,10 +987,13 @@ export function applyContentPack(
  *     createAbilityCore({ abilities: session.abilities ?? [] }),
  *     createProgressionCore({ trees: session.progressionTrees ?? [] }),
  *     createEquipmentCore({ catalog: { items: session.items ?? [] } }),
- *     ...buildWorldStack({ quests: session.quests ?? [] }).modules,
+ *     ...buildWorldStack({
+ *       quests: session.quests ?? [],
+ *       districts: session.districts ?? [],
+ *     }).modules,
  *   ],
  * });
- * applyContentPack(engine, pack, { profiles });
+ * applyContentPack(engine, pack, { profiles, channels: createStandardChannels() });
  * ```
  *
  * Deliberately untyped beyond `unknown[]`/`unknown`: `BuildCatalog` lives in
@@ -989,6 +1026,23 @@ export type SessionContent = {
   statuses?: unknown[];
   /** Item catalog for createEquipmentCore({ catalog: { items } }). Present only if the pack carried the key. */
   items?: unknown[];
+  /**
+   * District topology for buildWorldStack({ districts }). Present only if the
+   * pack carried the key. applyContentPack still routes this via an injected
+   * channel — extract here so a JSON host can construct district-core without
+   * importing the pack's named `districts` export.
+   */
+  districts?: unknown[];
+  /**
+   * Per-zone spawn sets. Present only if the pack carried the key. Construction
+   * bag for hosts that seed encounter-spawn; apply still needs a channel.
+   */
+  encounterAnchors?: unknown[];
+  /**
+   * Typed hazard records. Present only if the pack carried the key. Construction
+   * bag for hosts that seed the interpreter; apply still needs a channel.
+   */
+  hazardDefinitions?: unknown[];
   /** Keys found but unusable, with the reason — never silently omitted. */
   advisories: ValidationError[];
 };
@@ -1058,13 +1112,26 @@ export function extractSessionContent(pack: ContentPack): SessionContent {
   liftSessionArray(raw, 'abilities', 'must be an array of AbilityDefinition — skipped.', out, advisories);
   liftSessionArray(raw, 'statuses', 'must be an array of StatusDefinition — skipped.', out, advisories);
   liftSessionArray(raw, 'items', 'must be an array of ItemDefinition — skipped.', out, advisories);
+  liftSessionArray(raw, 'districts', 'must be an array of DistrictDefinition — skipped.', out, advisories);
+  liftSessionArray(raw, 'encounterAnchors', 'must be an array of EncounterAnchorRecord — skipped.', out, advisories);
+  liftSessionArray(raw, 'hazardDefinitions', 'must be an array of HazardSpec — skipped.', out, advisories);
 
   return out;
 }
 
+type SessionArrayKey =
+  | 'dialogues'
+  | 'quests'
+  | 'abilities'
+  | 'statuses'
+  | 'items'
+  | 'districts'
+  | 'encounterAnchors'
+  | 'hazardDefinitions';
+
 function liftSessionArray(
   raw: Record<string, unknown>,
-  key: 'dialogues' | 'quests' | 'abilities' | 'statuses' | 'items',
+  key: SessionArrayKey,
   message: string,
   out: SessionContent,
   advisories: ValidationError[],
@@ -1107,6 +1174,54 @@ function itemIdsFromPack(pack: ContentPack): Set<string> {
     if (isRecord(item) && typeof item.id === 'string') ids.add(item.id);
   }
   return ids;
+}
+
+/**
+ * Clone pack.ruleProfiles onto a WorldState-shaped map. Malformed entries
+ * land in dropped[] — never throw, never flip applyContentPack.ok. Only
+ * statMapping is copied (formulaOverrides reserved).
+ */
+function cloneRuleProfiles(
+  raw: unknown,
+  dropped: DroppedField[],
+): Record<string, PackRuleProfile> | undefined {
+  if (!isRecord(raw)) {
+    dropped.push({
+      path: 'pack.ruleProfiles',
+      reason: 'needs-module-vocabulary',
+      detail:
+        'must be a Record of { statMapping: { attack, precision, resolve } } — skipped. ' +
+        'Dropped, not refused (does not flip applyContentPack.ok).',
+    });
+    return undefined;
+  }
+  const out: Record<string, PackRuleProfile> = {};
+  for (const [id, rec] of Object.entries(raw)) {
+    const mapping = isRecord(rec) ? rec.statMapping : undefined;
+    if (
+      !isRecord(mapping) ||
+      typeof mapping.attack !== 'string' || mapping.attack.length === 0 ||
+      typeof mapping.precision !== 'string' || mapping.precision.length === 0 ||
+      typeof mapping.resolve !== 'string' || mapping.resolve.length === 0
+    ) {
+      dropped.push({
+        path: `pack.ruleProfiles.${id}`,
+        reason: 'needs-module-vocabulary',
+        detail:
+          `unresolved ruleProfile "${id}" — expected { statMapping: { attack, precision, resolve } }. ` +
+          'Dropped, not refused (does not flip applyContentPack.ok).',
+      });
+      continue;
+    }
+    out[id] = {
+      statMapping: {
+        attack: mapping.attack,
+        precision: mapping.precision,
+        resolve: mapping.resolve,
+      },
+    };
+  }
+  return out;
 }
 
 /**
