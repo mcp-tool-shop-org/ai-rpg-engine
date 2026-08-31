@@ -45,7 +45,7 @@ function makeSession(overrides: Partial<DesignSession> = {}): DesignSession {
     updatedAt: '2025-01-01',
     themes: ['dark fantasy'],
     constraints: [],
-    artifacts: { districts: [], factions: [], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
+    artifacts: { districts: [], factions: [], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [], items: [], hazards: [] },
     issues: [],
     acceptedSuggestions: [],
     history: [],

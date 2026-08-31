@@ -131,14 +131,18 @@ describe('handleSlashCommand — /experiment-run + /experiment-sweep NaN guards 
 
   it('/experiment-run with a valid count still works', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const engine = makeEngine();
     const result = await handleSlashCommand(
       '/experiment-run 5 my-label',
-      makeEngine(), createTranscript(null), '/fake/project-root', false,
+      engine, createTranscript(null), '/fake/project-root', false,
     );
     expect(result).toBe('handled');
     const logged = logSpy.mock.calls.flat().join('\n');
     expect(logged).toContain('Experiment plan: 5 runs as "my-label"');
     expect(logged).not.toContain('Usage: /experiment-run');
+    expect(logged).not.toContain('Use the experiment runner API');
+    expect(engine.lastExperiment).not.toBeNull();
+    expect(engine.lastExperiment?.completedRuns).toBe(5);
   });
 
   it('/experiment-sweep with non-numeric range args shows usage, never NaN', async () => {
@@ -638,5 +642,29 @@ describe('handleSlashCommand — /transcript pretty-print (F-8819f045)', () => {
     } finally {
       await rm(projectRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe('handleSlashCommand — /undo and /models', () => {
+  it('/undo reports nothing to restore when no content_applied event exists', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const engine = makeEngine();
+    engine.pendingWrite = { content: 'x', suggestedPath: 'x.yaml', label: 'x' };
+    const result = await handleSlashCommand(
+      '/undo', engine, createTranscript(null), '/fake/project-root', false,
+    );
+    expect(result).toBe('handled');
+    expect(logSpy.mock.calls.flat().join('\n')).toMatch(/nothing to undo|backup not found|Error:/i);
+    expect(engine.pendingWrite).not.toBeNull();
+  });
+
+  it('/models prints the configured model even when listModels is missing', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const result = await handleSlashCommand(
+      '/models', makeEngine(), createTranscript(null), '/fake/project-root', false,
+    );
+    expect(result).toBe('handled');
+    const logged = logSpy.mock.calls.flat().join('\n');
+    expect(logged).toContain('Configured model:');
   });
 });

@@ -16,6 +16,8 @@ import { createDialogue } from './commands/create-dialogue.js';
 import { createEntity } from './commands/create-entity.js';
 import { createAbility } from './commands/create-ability.js';
 import { createStatus } from './commands/create-status.js';
+import { createItem } from './commands/create-item.js';
+import { createHazard } from './commands/create-hazard.js';
 import { explainDistrictState } from './commands/explain-district-state.js';
 import { explainFactionAlert } from './commands/explain-faction-alert.js';
 import { improveContent } from './commands/improve-content.js';
@@ -1322,7 +1324,7 @@ describe('createFaction (repair)', () => {
   });
 });
 
-describe('createDialogue / createEntity / createAbility / createStatus', () => {
+describe('createDialogue / createEntity / createAbility / createStatus / createItem / createHazard', () => {
   it('createDialogue returns yaml and validation', async () => {
     const yaml = [
       'id: pilgrim_talk',
@@ -1380,6 +1382,39 @@ describe('createDialogue / createEntity / createAbility / createStatus', () => {
     const result = await createStatus(mockClient(yaml), { theme: 'on fire' });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.yaml).toContain('burning');
+  });
+
+  it('createItem returns yaml and validation', async () => {
+    const yaml = [
+      'id: worn_blade',
+      'name: Worn Blade',
+      'description: A simple blade.',
+      'slot: weapon',
+      'rarity: common',
+    ].join('\n');
+    const result = await createItem(mockClient(yaml), { theme: 'rusted sword' });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.yaml).toContain('worn_blade');
+      expect(result.validation.valid).toBe(true);
+    }
+  });
+
+  it('createHazard returns yaml and validation', async () => {
+    const yaml = [
+      'id: chapel_fire',
+      'name: Chapel Fire',
+      'trigger: on-enter',
+      'effects:',
+      '  - kind: damage',
+      '    amount: 2',
+    ].join('\n');
+    const result = await createHazard(mockClient(yaml), { theme: 'altar flames' });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.yaml).toContain('chapel_fire');
+      expect(result.validation.valid).toBe(true);
+    }
   });
 
   it('createEntity runs a repair pass when requested', async () => {

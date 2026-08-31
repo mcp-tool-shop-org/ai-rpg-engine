@@ -14,6 +14,8 @@ import {
   validateGeneratedDialogue,
   validateGeneratedAbility,
   validateGeneratedStatus,
+  validateGeneratedItem,
+  validateGeneratedHazard,
 } from './validators.js';
 
 describe('parseYamlish', () => {
@@ -383,5 +385,41 @@ describe('validateGenerated entity/dialogue/ability/status', () => {
     ].join('\n');
     const result = validateGeneratedStatus(yaml, parseYamlish(yaml));
     expect(result.valid).toBe(true);
+  });
+
+  it('accepts a valid item', () => {
+    const yaml = [
+      'id: worn_blade',
+      'name: Worn Blade',
+      'description: A simple blade.',
+      'slot: weapon',
+      'rarity: common',
+    ].join('\n');
+    const result = validateGeneratedItem(yaml, parseYamlish(yaml));
+    expect(result.valid).toBe(true);
+  });
+
+  it('rejects an item without id', () => {
+    const yaml = 'name: Nameless\nslot: weapon';
+    const result = validateGeneratedItem(yaml, parseYamlish(yaml));
+    expect(result.valid).toBe(false);
+  });
+
+  it('accepts a valid hazard', () => {
+    const yaml = [
+      'id: chapel_fire',
+      'trigger: on-enter',
+      'effects:',
+      '  - kind: damage',
+      '    amount: 2',
+    ].join('\n');
+    const result = validateGeneratedHazard(yaml, parseYamlish(yaml));
+    expect(result.valid).toBe(true);
+  });
+
+  it('rejects a hazard without effects', () => {
+    const yaml = 'id: smoke\ntrigger: on-enter';
+    const result = validateGeneratedHazard(yaml, parseYamlish(yaml));
+    expect(result.valid).toBe(false);
   });
 });

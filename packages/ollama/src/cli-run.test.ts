@@ -510,6 +510,10 @@ describe('runCli — help banner chat --write + session listing (F-ef949bc5)', (
     expect(createFlagsAt).toBeGreaterThan(0);
     expect(help.slice(chatFlagsAt)).toContain('.ai-transcripts/<session>-<date>.jsonl');
     expect(help.slice(applyFlagsAt)).toContain('Confirm apply-preview');
+    expect(help.slice(applyFlagsAt)).toContain('--undo');
     expect(help.slice(createFlagsAt, chatFlagsAt)).toContain('Write generated output to file');
+    expect(help).toContain('create-item');
+    expect(help).toContain('create-hazard');
+    expect(help).toContain('models');
   });
 });

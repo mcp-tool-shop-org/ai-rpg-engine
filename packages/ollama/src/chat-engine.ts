@@ -5,7 +5,7 @@
 // v1.1: integrates RAG retrieval, memory shaping, personality profiles, webfetch.
 // v1.2: adds context snapshots, planner integration, recommendation awareness.
 
-import type { OllamaTextClient } from './client.js';
+import type { OllamaTextClient, GenerateOptions } from './client.js';
 import type {
   ChatMessage, ChatConfig, ChatMemory, ChatToolResult,
   PlannedAction, DEFAULT_CHAT_CONFIG,
@@ -47,7 +47,8 @@ import {
   type TuningState, type TuningPlan, type BalanceAnalysis,
 } from './chat-balance-analyzer.js';
 import { generateOperationalPlan } from './chat-tuning-engine.js';
-import type { ExperimentSummary } from './chat-experiments.js';
+import type { ExperimentSummary, ReplayProducer } from './chat-experiments.js';
+import { createDefaultReplayProducer } from './replay-producer.js';
 
 // --- Chat memory ---
 
@@ -86,6 +87,7 @@ export async function presentResult(
   userMessage: string,
   recentContext: string,
   systemPrompt: string,
+  generateOptions?: GenerateOptions,
 ): Promise<string> {
   // For simple responses, skip the LLM presentation layer
   if (!toolResult.output && toolResult.summary.length < 500) {
@@ -110,7 +112,7 @@ export async function presentResult(
     'If there are actions to take, list them clearly.',
   ].join('\n');
 
-  const result = await client.generate({ system: systemPrompt, prompt });
+  const result = await client.generate({ system: systemPrompt, prompt }, generateOptions);
   if (!result.ok) {
     // Fallback to raw summary
     return toolResult.summary;
@@ -154,6 +156,7 @@ export type BatchStepProgress = {
 export type BatchStepCallback = (progress: BatchStepProgress) => void;
 
 export type ChatEngine = {
+  client: OllamaTextClient;
   memory: ChatMemory;
   /** Last generated content available for write. */
   pendingWrite: { content: string; suggestedPath: string; label: string; previewShown?: boolean } | null;
@@ -173,8 +176,12 @@ export type ChatEngine = {
   lastExperiment: ExperimentSummary | null;
   /** Baseline experiment for comparison (v1.8.0). */
   baselineExperiment: ExperimentSummary | null;
+  /** Replay producer used by /experiment-run (injectable; default ships in-package). */
+  replayProducer: ReplayProducer;
   /** Process a user message and return the assistant response. */
-  process: (message: string) => Promise<string>;
+  process: (message: string, options?: ChatProcessOptions) => Promise<string>;
+  /** Restore the last content_applied backup. Failed undo leaves pendingWrite. */
+  undoLastWrite: () => Promise<string>;
   /** Execute the next pending build step. Returns formatted result. */
   executeBuildStep: () => Promise<string>;
   /**
@@ -192,6 +199,11 @@ export type ChatEngine = {
   executeAllTuningSteps: (onStep?: BatchStepCallback) => Promise<string>;
 };
 
+export type ChatProcessOptions = {
+  signal?: AbortSignal;
+  onToken?: (token: string) => void;
+};
+
 export type ChatEngineOptions = {
   client: OllamaTextClient;
   projectRoot: string;
@@ -206,14 +218,33 @@ export type ChatEngineOptions = {
   loadoutEnabled?: boolean;
   /** Override the personality profile. */
   profile?: PersonalityProfile;
+  /** Called with each streamed token from presentResult / generate. */
+  onToken?: (token: string) => void;
+  /** Inject a ReplayProducer; default runs the in-package Engine producer. */
+  replayProducer?: ReplayProducer;
 };
+
+function bindClientSignal(client: OllamaTextClient, signal?: AbortSignal): OllamaTextClient {
+  if (!signal) return client;
+  return {
+    generate: (input, opts) => client.generate(input, { ...opts, signal: opts?.signal ?? signal }),
+    generateStream: client.generateStream
+      ? (input) => client.generateStream!({ ...input, signal: input.signal ?? signal })
+      : undefined,
+    listModels: client.listModels?.bind(client),
+    version: client.version?.bind(client),
+  };
+}
 
 export function createChatEngine(options: ChatEngineOptions): ChatEngine {
   const {
     client, projectRoot, maxMemory = 50, rawMode = false,
     ragEnabled = true, webfetchEnabled = false, loadoutEnabled = false,
     profile = WORLDBUILDER_PROFILE,
+    onToken: defaultOnToken,
+    replayProducer: injectedProducer,
   } = options;
+  const replayProducer = injectedProducer ?? createDefaultReplayProducer({ projectRoot });
   const memory = createChatMemory(maxMemory, null);
   let pendingWrite: { content: string; suggestedPath: string; label: string; previewShown?: boolean } | null = null;
   let lastContextSnapshot: ContextSnapshot | null = null;
@@ -225,8 +256,11 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
   let lastExperiment: ExperimentSummary | null = null;
   let baselineExperiment: ExperimentSummary | null = null;
 
-  async function process(userMessage: string): Promise<string> {
+  async function process(userMessage: string, processOptions?: ChatProcessOptions): Promise<string> {
     const now = new Date().toISOString();
+    const signal = processOptions?.signal;
+    const onToken = processOptions?.onToken ?? defaultOnToken;
+    const boundClient = bindClientSignal(client, signal);
 
     // Record user message
     addMessage(memory, { role: 'user', content: userMessage, timestamp: now });
@@ -258,7 +292,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     }
 
     // Classify intent
-    const classification = await classifyIntent(client, userMessage);
+    const classification = await classifyIntent(boundClient, userMessage);
 
     // Select personality profile for this intent (moved earlier for routing)
     const intentProfile = rawMode ? profile : getProfileForIntent(classification.intent);
@@ -376,12 +410,13 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
 
     // Execute tool
     const toolResult = await tool.execute({
-      client,
+      client: boundClient,
       session,
       sessionContext: enrichedSessionCtx,
       projectRoot,
       params,
       userMessage,
+      replayProducer,
       engineState: { lastAnalysis, lastExperiment, baselineExperiment, activeBuild, activeTuning },
     });
 
@@ -464,7 +499,8 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
       response = parts.join('\n');
     } else {
       response = await presentResult(
-        client, toolResult, userMessage, getRecentContext(memory), systemPrompt,
+        boundClient, toolResult, userMessage, getRecentContext(memory), systemPrompt,
+        { signal, onToken },
       );
     }
 
@@ -527,6 +563,26 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
 
     pendingWrite = null;
     const response = `Written: ${result.path} (${result.bytes} bytes)`;
+    addMessage(memory, { role: 'assistant', content: response, timestamp: new Date().toISOString() });
+    return response;
+  }
+
+  async function undoLastWrite(): Promise<string> {
+    const session = await tryLoadSession(projectRoot);
+    const { undoLastApply } = await import('./apply-preview.js');
+    const history = session?.history ?? [];
+    const result = await undoLastApply({ history, projectRoot });
+    if (!result.ok) {
+      // Keep pendingWrite uncleared on a failed undo (F-cf6b6f85).
+      const response = result.error;
+      addMessage(memory, { role: 'assistant', content: response, timestamp: new Date().toISOString() });
+      return response;
+    }
+    if (session) {
+      recordEvent(session, 'content_applied', `undo restored ${result.path}`);
+      await saveSession(projectRoot, session);
+    }
+    const response = `Restored: ${result.path} (${result.bytes} bytes)`;
     addMessage(memory, { role: 'assistant', content: response, timestamp: new Date().toISOString() });
     return response;
   }
@@ -601,6 +657,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     const toolResult = await tool.execute({
       client, session, sessionContext: sessionCtx,
       projectRoot, params, userMessage: step.description,
+      replayProducer,
       engineState: { lastAnalysis, lastExperiment, baselineExperiment, activeBuild, activeTuning },
     });
 
@@ -729,6 +786,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     const toolResult = await tool.execute({
       client, session, sessionContext: sessionCtx,
       projectRoot, params: step.params, userMessage: step.description,
+      replayProducer,
       engineState: { lastAnalysis, lastExperiment, baselineExperiment, activeBuild, activeTuning },
     });
 
@@ -813,6 +871,7 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
   }
 
   return {
+    client,
     memory,
     get pendingWrite() { return pendingWrite; },
     set pendingWrite(v) { pendingWrite = v; },
@@ -829,7 +888,9 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     set lastExperiment(v) { lastExperiment = v; },
     get baselineExperiment() { return baselineExperiment; },
     set baselineExperiment(v) { baselineExperiment = v; },
+    replayProducer,
     process,
+    undoLastWrite,
     executeBuildStep,
     executeAllBuildSteps,
     executeTuningStep,

@@ -4,7 +4,7 @@
 // captive portal HTML, truncated body, wrong baseUrl).
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { createClient, MAX_GENERATE_BODY_BYTES } from './client.js';
+import { createClient, MAX_GENERATE_BODY_BYTES, formatModelsReport } from './client.js';
 import type { OllamaTextClient } from './client.js';
 import { resolveConfig, MAX_OLLAMA_TIMEOUT_MS, MAX_OLLAMA_ATTEMPTS } from './config.js';
 
@@ -508,14 +508,14 @@ describe('createClient.generate — streamed body byte cap (F-b67b6830)', () => 
     expect(Number.isFinite(resolveConfig({ timeoutMs: Number.MAX_SAFE_INTEGER }).timeoutMs)).toBe(true);
   });
 
-  it('refuses a missing Content-Length without reading the body', async () => {
+  it('caps a missing Content-Length stream by byte budget without calling json()/text()', async () => {
     let pulled = 0;
     let textCalled = 0;
     let jsonCalled = 0;
     globalThis.fetch = vi.fn(async () => ({
       ok: true,
       status: 200,
-      headers: new Headers({ 'content-type': 'application/json' }),
+      headers: new Headers({ 'content-type': 'application/x-ndjson' }),
       body: new ReadableStream({
         pull(controller) {
           pulled++;
@@ -535,8 +535,9 @@ describe('createClient.generate — streamed body byte cap (F-b67b6830)', () => 
     const client = createClient(resolveConfig({ retryDelayMs: 0, maxAttempts: 1 }));
     const result = await client.generate({ system: 's', prompt: 'p' });
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toMatch(/content-length/i);
-    expect(pulled).toBe(0);
+    if (!result.ok) expect(result.error).toMatch(/byte cap|too large|non-JSON/i);
+    expect(pulled).toBeGreaterThan(0);
+    expect(pulled).toBeLessThan((MAX_GENERATE_BODY_BYTES / 1024) + 8);
     expect(textCalled).toBe(0);
     expect(jsonCalled).toBe(0);
   });
@@ -570,5 +571,98 @@ describe('createClient.generate — streamed body byte cap (F-b67b6830)', () => 
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error).toMatch(/exceeded|byte cap|content-length/i);
     expect(enqueued).toBeLessThan(16_384);
+  });
+});
+
+describe('createClient.generateStream — NDJSON tokens and abort (F-5b193212)', () => {
+  it('yields NDJSON response chunks and generate() concatenates them', async () => {
+    const ndjson = [
+      JSON.stringify({ response: 'Hel', done: false }),
+      JSON.stringify({ response: 'lo', done: false }),
+      JSON.stringify({ response: '', done: true }),
+    ].join('\n');
+    globalThis.fetch = vi.fn(async () =>
+      makeResponse({ ok: true, status: 200, bodyText: ndjson }),
+    ) as unknown as typeof fetch;
+
+    const client = createClient(resolveConfig());
+    const tokens: string[] = [];
+    const chunks: string[] = [];
+    const stream = client.generateStream!({ system: 's', prompt: 'p', onToken: (t) => tokens.push(t) });
+    for await (const chunk of stream) {
+      if (chunk.response) chunks.push(chunk.response);
+    }
+    expect(chunks.join('')).toBe('Hello');
+    expect(tokens.join('')).toBe('Hello');
+
+    const result = await client.generate({ system: 's', prompt: 'p' });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.text).toBe('Hello');
+
+    const body = JSON.parse((globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1].body as string);
+    expect(body.stream).toBe(true);
+  });
+
+  it('aborts an in-flight generate via caller AbortSignal without retrying', async () => {
+    const controller = new AbortController();
+    globalThis.fetch = vi.fn(async (_url, init) => {
+      const signal = (init as RequestInit).signal;
+      return await new Promise<Response>((_resolve, reject) => {
+        signal?.addEventListener('abort', () => {
+          const err = new DOMException('The operation was aborted.', 'AbortError');
+          reject(err);
+        });
+        controller.abort();
+      });
+    }) as unknown as typeof fetch;
+
+    const client = createClient(resolveConfig({ retryDelayMs: 0, maxAttempts: 3 }));
+    const result = await client.generate({ system: 's', prompt: 'p' }, { signal: controller.signal });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toMatch(/aborted/i);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('createClient.listModels / version (F-65c2b778)', () => {
+  it('lists installed model names from /api/tags', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      makeResponse({
+        ok: true,
+        status: 200,
+        payload: { models: [{ name: 'llama3:latest', size: 1 }, { name: 'qwen2.5-coder:latest' }] },
+      }),
+    ) as unknown as typeof fetch;
+
+    const client = createClient(resolveConfig({ model: 'qwen2.5-coder' }));
+    const result = await client.listModels!();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.models.map((m) => m.name)).toEqual(['llama3:latest', 'qwen2.5-coder:latest']);
+    }
+    expect((globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatch(/\/api\/tags$/);
+  });
+
+  it('reads /api/version', async () => {
+    globalThis.fetch = vi.fn(async () =>
+      makeResponse({ ok: true, status: 200, payload: { version: '0.9.0' } }),
+    ) as unknown as typeof fetch;
+
+    const client = createClient(resolveConfig());
+    const result = await client.version!();
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.version).toBe('0.9.0');
+    expect((globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0]).toMatch(/\/api\/version$/);
+  });
+
+  it('formatModelsReport names the pull command when the configured model is missing', () => {
+    const report = formatModelsReport({
+      configuredModel: 'qwen2.5-coder',
+      version: '0.9.0',
+      models: [{ name: 'llama3:latest' }],
+    });
+    expect(report).toContain('Configured model: qwen2.5-coder');
+    expect(report).toContain('llama3:latest');
+    expect(report).toContain('ollama pull qwen2.5-coder');
   });
 });

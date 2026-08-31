@@ -278,6 +278,8 @@ describe('scaffold tool', () => {
     expect(result.summary).toContain('Unknown kind');
     expect(result.summary).toContain('dialogue');
     expect(result.summary).toContain('entity');
+    expect(result.summary).toContain('item');
+    expect(result.summary).toContain('hazard');
   });
 
   it('generates a dialogue and maps the artifact bucket', async () => {
@@ -300,6 +302,34 @@ describe('scaffold tool', () => {
     expect(result.ok).toBe(true);
     expect(result.pendingWrite).toBeDefined();
     expect(result.sessionEvents?.[0]?.detail).toContain('dialogues/');
+  });
+
+  it('generates an item and maps the items bucket', async () => {
+    const yaml = 'id: worn_blade\nname: Worn Blade\nslot: weapon\nrarity: common';
+    const tool = findToolForIntent('scaffold')!;
+    const result = await tool.execute(makeParams({
+      client: mockClient(yaml),
+      params: { kind: 'item', theme: 'rusted sword' },
+    }));
+    expect(result.ok).toBe(true);
+    expect(result.sessionEvents?.[0]?.detail).toContain('items/');
+  });
+
+  it('generates a hazard and maps the hazards bucket', async () => {
+    const yaml = [
+      'id: chapel_fire',
+      'trigger: on-enter',
+      'effects:',
+      '  - kind: damage',
+      '    amount: 2',
+    ].join('\n');
+    const tool = findToolForIntent('scaffold')!;
+    const result = await tool.execute(makeParams({
+      client: mockClient(yaml),
+      params: { kind: 'hazard', theme: 'altar flames' },
+    }));
+    expect(result.ok).toBe(true);
+    expect(result.sessionEvents?.[0]?.detail).toContain('hazards/');
   });
 
   it('passes repair:true so an invalid first draft triggers a second generate', async () => {
@@ -536,5 +566,22 @@ describe('explain-why tool', () => {
     }));
     expect(result.ok).toBe(true);
     expect(result.summary).toContain('Guards');
+  });
+});
+
+describe('experiment-run tool (F-fc88ce5e)', () => {
+  it('executes runExperiment with the injected producer and returns a summary', async () => {
+    const tool = findToolForIntent('experiment_run')!;
+    const producer = (seed: number) => JSON.stringify([{ tick: 0, alertPressure: seed * 0.01 }]);
+    const result = await tool.execute(makeParams({
+      params: { runs: '3', label: 'batch' },
+      replayProducer: producer,
+    }));
+    expect(result.ok).toBe(true);
+    expect(result.summary).not.toContain('Use the experiment runner API');
+    expect(result.output).toBeDefined();
+    const parsed = JSON.parse(result.output!) as { spec?: { runs: number }; completedRuns?: number };
+    expect(parsed.spec?.runs).toBe(3);
+    expect(parsed.completedRuns).toBe(3);
   });
 });

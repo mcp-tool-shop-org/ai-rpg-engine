@@ -108,6 +108,8 @@ export type ChatToolParams = {
   params: Record<string, string>;
   /** Raw user message for context. */
   userMessage: string;
+  /** Injected replay producer for experiment-run (default ships in-package). */
+  replayProducer?: import('./chat-experiments.js').ReplayProducer;
   /** Engine state snapshot for studio tools. */
   engineState?: {
     lastAnalysis?: import('./chat-balance-analyzer.js').BalanceAnalysis | null;

@@ -12,7 +12,7 @@ function makeSession(overrides: Partial<DesignSession> = {}): DesignSession {
     createdAt: '2025-01-01',
     themes: ['steampunk'],
     constraints: [],
-    artifacts: { districts: ['clocktower'], factions: ['geargrinders'], quests: [], rooms: ['workshop'], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
+    artifacts: { districts: ['clocktower'], factions: ['geargrinders'], quests: [], rooms: ['workshop'], packs: [], entities: [], dialogues: [], abilities: [], statuses: [], items: [], hazards: [] },
     issues: [],
     acceptedSuggestions: [],
     history: [],
@@ -100,7 +100,7 @@ describe('generateRecommendations — medium-severity issues', () => {
 describe('generateRecommendations — missing content', () => {
   it('recommends scaffolding missing districts', () => {
     const session = makeSession({
-      artifacts: { districts: [], factions: [], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
+      artifacts: { districts: [], factions: [], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [], items: [], hazards: [] },
     });
     const result = generateRecommendations(session);
     const districtRec = result.recommendations.find(r => r.code === 'REC-SCAFFOLD-DISTRICT');
@@ -110,7 +110,7 @@ describe('generateRecommendations — missing content', () => {
 
   it('recommends factions when districts exist but factions missing', () => {
     const session = makeSession({
-      artifacts: { districts: ['d1'], factions: [], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
+      artifacts: { districts: ['d1'], factions: [], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [], items: [], hazards: [] },
     });
     const result = generateRecommendations(session);
     const factionRec = result.recommendations.find(r => r.code === 'REC-SCAFFOLD-FACTION');
@@ -120,7 +120,7 @@ describe('generateRecommendations — missing content', () => {
 
   it('recommends rooms when districts exist but rooms missing', () => {
     const session = makeSession({
-      artifacts: { districts: ['d1'], factions: ['f1'], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
+      artifacts: { districts: ['d1'], factions: ['f1'], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [], items: [], hazards: [] },
     });
     const result = generateRecommendations(session);
     const roomRec = result.recommendations.find(r => r.code === 'REC-SCAFFOLD-ROOM');
@@ -129,7 +129,7 @@ describe('generateRecommendations — missing content', () => {
 
   it('recommends quests when factions exist but quests missing', () => {
     const session = makeSession({
-      artifacts: { districts: ['d1'], factions: ['f1'], quests: [], rooms: ['r1'], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
+      artifacts: { districts: ['d1'], factions: ['f1'], quests: [], rooms: ['r1'], packs: [], entities: [], dialogues: [], abilities: [], statuses: [], items: [], hazards: [] },
     });
     const result = generateRecommendations(session);
     const questRec = result.recommendations.find(r => r.code === 'REC-SCAFFOLD-QUEST');
@@ -138,7 +138,7 @@ describe('generateRecommendations — missing content', () => {
 
   it('does not recommend factions when no districts exist', () => {
     const session = makeSession({
-      artifacts: { districts: [], factions: [], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
+      artifacts: { districts: [], factions: [], quests: [], rooms: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [], items: [], hazards: [] },
     });
     const result = generateRecommendations(session);
     const factionRec = result.recommendations.find(r => r.code === 'REC-SCAFFOLD-FACTION');
@@ -170,7 +170,7 @@ describe('generateRecommendations — quality checks', () => {
 
   it('recommends replay analysis when enough artifacts and no replays', () => {
     const session = makeSession({
-      artifacts: { districts: ['d1'], factions: ['f1'], quests: ['q1'], rooms: ['r1'], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
+      artifacts: { districts: ['d1'], factions: ['f1'], quests: ['q1'], rooms: ['r1'], packs: [], entities: [], dialogues: [], abilities: [], statuses: [], items: [], hazards: [] },
     });
     const result = generateRecommendations(session);
     const replayRec = result.recommendations.find(r => r.code === 'REC-ANALYZE-REPLAY');
@@ -187,7 +187,7 @@ describe('generateRecommendations — sorting', () => {
         { severity: 'high', code: 'A', target: 't1', summary: 'High', status: 'open' },
         { severity: 'medium', code: 'B', target: 't2', summary: 'Med', status: 'open' },
       ],
-      artifacts: { districts: [], factions: [], quests: [], rooms: ['r1'], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
+      artifacts: { districts: [], factions: [], quests: [], rooms: ['r1'], packs: [], entities: [], dialogues: [], abilities: [], statuses: [], items: [], hazards: [] },
     });
     const result = generateRecommendations(session);
     // Critical should come before high which comes before medium

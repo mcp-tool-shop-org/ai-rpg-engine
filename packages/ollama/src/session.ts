@@ -20,7 +20,7 @@ export const REQUIRED_ARTIFACT_KINDS = [
 
 /** Optional buckets filled with [] when an older file omits them. */
 export const OPTIONAL_ARTIFACT_KINDS = [
-  'entities', 'dialogues', 'abilities', 'statuses',
+  'entities', 'dialogues', 'abilities', 'statuses', 'items', 'hazards',
 ] as const;
 
 export const ARTIFACT_KINDS = [
@@ -40,6 +40,8 @@ export type SessionArtifacts = {
   dialogues: string[];
   abilities: string[];
   statuses: string[];
+  items: string[];
+  hazards: string[];
 };
 
 const ARTIFACT_LABELS: Record<ArtifactKind, string> = {
@@ -52,6 +54,8 @@ const ARTIFACT_LABELS: Record<ArtifactKind, string> = {
   dialogues: 'dialogues',
   abilities: 'abilities',
   statuses: 'statuses',
+  items: 'items',
+  hazards: 'hazards',
 };
 
 export function countArtifacts(artifacts: SessionArtifacts): number {
@@ -69,6 +73,8 @@ export function emptyArtifacts(): SessionArtifacts {
     dialogues: [],
     abilities: [],
     statuses: [],
+    items: [],
+    hazards: [],
   };
 }
 
@@ -731,6 +737,10 @@ export function artifactBucketForKind(kind: string): keyof SessionArtifacts {
     case 'abilities': return 'abilities';
     case 'status':
     case 'statuses': return 'statuses';
+    case 'item':
+    case 'items': return 'items';
+    case 'hazard':
+    case 'hazards': return 'hazards';
     default: return 'packs';
   }
 }

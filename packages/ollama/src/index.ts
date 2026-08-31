@@ -13,10 +13,12 @@ export {
 export type { OllamaConfig } from './config.js';
 
 // Client
-export { createClient } from './client.js';
+export { createClient, formatModelsReport, combineAbortSignals, MAX_GENERATE_BODY_BYTES } from './client.js';
 export type {
   OllamaTextClient, PromptInput, PromptResult,
   OllamaRetryInfo, OllamaClientOptions,
+  GenerateOptions, GenerateStreamInput, GenerateStreamChunk,
+  OllamaModelInfo, ListModelsResult, VersionResult,
 } from './client.js';
 
 // Commands
@@ -61,6 +63,12 @@ export type { CreateAbilityInput, GeneratedAbilityResult } from './commands/crea
 
 export { createStatus } from './commands/create-status.js';
 export type { CreateStatusInput, GeneratedStatusResult } from './commands/create-status.js';
+
+export { createItem } from './commands/create-item.js';
+export type { CreateItemInput, GeneratedItemResult } from './commands/create-item.js';
+
+export { createHazard } from './commands/create-hazard.js';
+export type { CreateHazardInput, GeneratedHazardResult } from './commands/create-hazard.js';
 
 export { generateWithRepair } from './generate-with-repair.js';
 export type { GeneratedTextResult as GeneratedRepairResult, GenerateWithRepairInput } from './generate-with-repair.js';
@@ -126,6 +134,8 @@ export {
   validateGeneratedDialogue,
   validateGeneratedAbility,
   validateGeneratedStatus,
+  validateGeneratedItem,
+  validateGeneratedHazard,
   validateFactionDefinition,
   validateDistrictDefinition,
   validateLocationPackDefinition,
@@ -204,7 +214,7 @@ export type {
 } from './macros.js';
 
 // Apply preview
-export { generatePreview, applyConfirmed, formatUnifiedDiff, restoreFromBackup } from './apply-preview.js';
+export { generatePreview, applyConfirmed, formatUnifiedDiff, restoreFromBackup, parseContentAppliedDetail, undoLastApply } from './apply-preview.js';
 export type { ApplyPreviewInput, ApplyPreviewResult, ApplyWriteResult } from './apply-preview.js';
 
 // Chat
@@ -218,7 +228,7 @@ export { classifyIntent, classifyByKeywords, classifyByLLM } from './chat-router
 export { findToolForIntent, getAllTools } from './chat-tools.js';
 export { createChatEngine, createChatMemory, addMessage, getRecentContext, capturePlanFromOutput } from './chat-engine.js';
 export type {
-  ChatEngine, ChatEngineOptions, LoadoutHistoryEntry,
+  ChatEngine, ChatEngineOptions, ChatProcessOptions, LoadoutHistoryEntry,
   BatchStepProgress, BatchStepCallback,
 } from './chat-engine.js';
 export { createTranscript, addToTranscript, saveTranscript, loadTranscript, defaultTranscriptPath } from './chat-transcript.js';
@@ -337,6 +347,8 @@ export type {
   ExperimentPlanStep, ExperimentPlan,
   ReplayProducer,
 } from './chat-experiments.js';
+export { createDefaultReplayProducer, preloadDefaultReplayProducer } from './replay-producer.js';
+export type { DefaultReplayProducerOptions, EngineConstructor, EngineLike } from './replay-producer.js';
 
 // CLI entry
 export { runCli } from './cli.js';

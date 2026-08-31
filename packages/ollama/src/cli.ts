@@ -4,7 +4,7 @@ import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { resolveConfig } from './config.js';
 import type { OllamaConfig } from './config.js';
-import { createClient } from './client.js';
+import { createClient, formatModelsReport } from './client.js';
 import { explainValidationError } from './commands/explain-validation-error.js';
 import { summarizeBeliefTrace } from './commands/summarize-belief-trace.js';
 import { createRoom } from './commands/create-room.js';
@@ -19,6 +19,8 @@ import { createDialogue } from './commands/create-dialogue.js';
 import { createEntity } from './commands/create-entity.js';
 import { createAbility } from './commands/create-ability.js';
 import { createStatus } from './commands/create-status.js';
+import { createItem } from './commands/create-item.js';
+import { createHazard } from './commands/create-hazard.js';
 import { explainDistrictState } from './commands/explain-district-state.js';
 import { explainFactionAlert } from './commands/explain-faction-alert.js';
 import { improveContent } from './commands/improve-content.js';
@@ -36,7 +38,7 @@ import {
   scaffoldAndCritique, compareAndFix, planAndGenerate,
   type MacroProgress, type ScaffoldKind,
 } from './macros.js';
-import { generatePreview, applyConfirmed, withinRoot, resolveUnderRoot } from './apply-preview.js';
+import { generatePreview, applyConfirmed, undoLastApply, withinRoot, resolveUnderRoot } from './apply-preview.js';
 import {
   loadSession, saveSession, createSession,
   addThemes, addConstraints, addArtifact, addCritiqueIssues,
@@ -73,6 +75,7 @@ type CliFlags = {
   tickRange?: string;
   repair?: boolean;
   confirm?: boolean;
+  undo?: boolean;
   validate?: boolean;
   autoExecute?: number;
   kind?: string;
@@ -126,6 +129,7 @@ function parseFlags(args: string[]): { command: string; flags: CliFlags } {
       case '--tick-range': flags.tickRange = next; i++; break;
       case '--repair': flags.repair = true; break;
       case '--confirm': flags.confirm = true; break;
+      case '--undo': flags.undo = true; break;
       case '--validate': flags.validate = true; break;
       case '--auto-execute': {
         // v2.6 audit F-a19d7360 — a non-numeric value (e.g. "abc") used to
@@ -321,6 +325,8 @@ export function formatCliHelp(version: string): string {
     helpRow('create-entity', 'Generate an entity blueprint'),
     helpRow('create-ability', 'Generate an ability definition'),
     helpRow('create-status', 'Generate a status definition'),
+    helpRow('create-item', 'Generate an item definition'),
+    helpRow('create-hazard', 'Generate a hazard definition'),
     '',
     'Iterate:',
     helpRow('improve-content', 'Revise content toward a goal (pipe YAML)'),
@@ -354,9 +360,11 @@ export function formatCliHelp(version: string): string {
     'Apply:',
     helpRow('apply-preview', 'Preview a file write (pipe content, --write <path>)'),
     helpRow('', 'Add --confirm to actually write'),
+    helpRow('', 'Add --undo --write <path> to restore .bak'),
     '',
     'Chat:',
     helpRow('chat [--write]', 'Interactive conversational design assistant'),
+    helpRow('models', 'List installed Ollama models'),
     helpRow('', '--write enables transcript save (JSONL)'),
     helpRow('', 'Default: .ai-transcripts/<session>-<date>.jsonl'),
     helpRow('', '--write <path> saves to that path (sandboxed to the project root)'),
@@ -378,7 +386,7 @@ export function formatCliHelp(version: string): string {
     flagRow('--zones <ids>', 'Comma-separated existing zone IDs'),
     flagRow('--constraints <c>', 'Comma-separated constraints'),
     flagRow('--difficulty <level>', 'Encounter difficulty hint'),
-    flagRow('--kind <type>', 'Scaffold kind: room, faction, district, quest, pack, dialogue, entity, ability, status'),
+    flagRow('--kind <type>', 'Scaffold kind: room, faction, district, quest, pack, dialogue, entity, ability, status, item, hazard'),
     flagRow('--repair', 'Attempt to fix invalid generated content'),
     flagRow('--validate', 'Refuse to emit/write create-* content that fails schema validation'),
     flagRow('--write <path>', 'Write generated output to file instead of stdout (sandboxed)'),
@@ -402,6 +410,7 @@ export function formatCliHelp(version: string): string {
     'Flags (apply-preview):',
     flagRow('--write <path>', 'Target path for the preview/write (sandboxed to the project root)'),
     flagRow('--confirm', 'Confirm apply-preview (actually write the file)'),
+    flagRow('--undo', 'Restore target from sibling .bak (or last content_applied backup)'),
     flagRow('--content-type <t>', 'Content type hint (room, district, quest, etc.)'),
     '',
     'Flags (chat):',
@@ -595,7 +604,7 @@ async function runCliInner(args: string[]): Promise<void> {
   if (session) {
     const n = session.artifacts;
     const counts = ARTIFACT_KINDS
-      .map((kind) => n[kind].length && `${n[kind].length} ${kind}`)
+      .map((kind) => n[kind]?.length && `${n[kind].length} ${kind}`)
       .filter(Boolean);
     const openIssues = session.issues.filter(i => i.status === 'open').length;
     const parts = [session.name, ...counts];
@@ -927,7 +936,9 @@ async function runCliInner(args: string[]): Promise<void> {
     case 'create-dialogue':
     case 'create-entity':
     case 'create-ability':
-    case 'create-status': {
+    case 'create-status':
+    case 'create-item':
+    case 'create-hazard': {
       const theme = flags.theme;
       if (!theme) {
         console.error('--theme is required');
@@ -937,7 +948,9 @@ async function runCliInner(args: string[]): Promise<void> {
       const run = kind === 'dialogue' ? createDialogue
         : kind === 'entity' ? createEntity
         : kind === 'ability' ? createAbility
-        : createStatus;
+        : kind === 'status' ? createStatus
+        : kind === 'item' ? createItem
+        : createHazard;
       const result = await run(client, {
         theme,
         rulesetId: flags.ruleset,
@@ -1515,17 +1528,38 @@ async function runCliInner(args: string[]): Promise<void> {
     }
 
     case 'apply-preview': {
+      const targetPath = flags.write;
+      if (!targetPath) {
+        console.error('--write <path> is required for apply-preview');
+        process.exit(1);
+      }
+
+      if (flags.undo) {
+        const result = await undoLastApply({
+          history: session?.history ?? [],
+          projectRoot,
+          targetPath,
+        });
+        if (!result.ok) {
+          throw new CliError(
+            'UNDO_FAILED',
+            result.error,
+            `Restore from a sibling .bak with --undo --write <path>, or from the last content_applied backup.`,
+          );
+        }
+        console.log(`Restored: ${result.path} (${result.bytes} bytes)`);
+        if (session) {
+          recordEvent(session, 'content_applied', `undo restored ${result.path}`);
+          await saveSession(projectRoot, session);
+        }
+        break;
+      }
+
       let input: string;
       if (flags.stdin || !process.stdin.isTTY) {
         input = await readStdin();
       } else {
         console.error('Pipe content via stdin, or use --stdin');
-        process.exit(1);
-      }
-
-      const targetPath = flags.write;
-      if (!targetPath) {
-        console.error('--write <path> is required for apply-preview');
         process.exit(1);
       }
 
@@ -1547,6 +1581,22 @@ async function runCliInner(args: string[]): Promise<void> {
         const preview = await generatePreview({ content: input, targetPath, label: flags.contentType, projectRoot });
         console.log(preview.preview);
       }
+      break;
+    }
+
+    case 'models': {
+      const [models, version] = await Promise.all([
+        client.listModels ? client.listModels() : Promise.resolve({ ok: false as const, error: 'listModels is not available' }),
+        client.version ? client.version() : Promise.resolve({ ok: false as const, error: 'version is not available' }),
+      ]);
+      const report = formatModelsReport({
+        configuredModel: config.model,
+        models: models.ok ? models.models : undefined,
+        version: version.ok ? version.version : undefined,
+        error: models.ok ? undefined : models.error,
+      });
+      await emit(report, flags.write);
+      if (!models.ok) process.exit(1);
       break;
     }
 

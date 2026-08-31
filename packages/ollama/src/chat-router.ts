@@ -48,12 +48,12 @@ const INTENT_PATTERNS: IntentPattern[] = [
   {
     intent: 'scaffold',
     patterns: [
-      /\b(create|generate|make|build|scaffold)\s+(a |an |the )?(room|faction|district|quest|location.?pack|encounter.?pack)\b/i,
+      /\b(create|generate|make|build|scaffold)\s+(a |an |the )?(room|faction|district|quest|location.?pack|encounter.?pack|dialogue|entity|ability|status|item|hazard)\b/i,
     ],
     extractParams: (msg) => {
-      const kindMatch = msg.match(/\b(room|faction|district|quest|location.?pack|encounter.?pack)\b/i);
+      const kindMatch = msg.match(/\b(room|faction|district|quest|location.?pack|encounter.?pack|dialogue|entity|ability|status|item|hazard)\b/i);
       const themeMatch = msg.match(/(?:about|for|themed?|called|named)\s+"?([^"]+)"?$/i)
-        ?? msg.match(/(?:create|generate|make|build)\s+(?:a |an |the )?(?:room|faction|district|quest|location.?pack|encounter.?pack)\s+(.+)/i);
+        ?? msg.match(/(?:create|generate|make|build)\s+(?:a |an |the )?(?:room|faction|district|quest|location.?pack|encounter.?pack|dialogue|entity|ability|status|item|hazard)\s+(.+)/i);
       return {
         ...(kindMatch ? { kind: kindMatch[1].toLowerCase().replace(/\s+/g, '-') } : {}),
         ...(themeMatch ? { theme: themeMatch[1].trim() } : {}),

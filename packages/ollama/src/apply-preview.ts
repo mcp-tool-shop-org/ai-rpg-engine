@@ -254,3 +254,33 @@ export async function restoreFromBackup(input: {
   }
   return applyConfirmed({ content: body, targetPath: resolved, projectRoot: input.projectRoot });
 }
+
+/**
+ * Parse a `content_applied` history detail of the form
+ * `path` or `path (backup: path.bak)`.
+ */
+export function parseContentAppliedDetail(detail: string): { targetPath: string; backupPath?: string } {
+  const match = detail.match(/^(.*?)(?: \(backup: (.+)\))?$/);
+  const targetPath = (match?.[1] ?? detail).trim();
+  const backupPath = match?.[2]?.trim();
+  return backupPath ? { targetPath, backupPath } : { targetPath };
+}
+
+/** Restore the last `content_applied` target from its backup (or target.bak). */
+export async function undoLastApply(input: {
+  history: ReadonlyArray<{ kind: string; detail: string }>;
+  projectRoot?: string;
+  targetPath?: string;
+}): Promise<ApplyWriteResult> {
+  const last = [...input.history].reverse().find((event) => event.kind === 'content_applied');
+  const parsed = last ? parseContentAppliedDetail(last.detail) : undefined;
+  const targetPath = input.targetPath ?? parsed?.targetPath;
+  if (!targetPath) {
+    return { ok: false, error: 'Error: nothing to undo (no content_applied event and no --write path)' };
+  }
+  return restoreFromBackup({
+    targetPath,
+    backupPath: parsed?.backupPath,
+    projectRoot: input.projectRoot,
+  });
+}

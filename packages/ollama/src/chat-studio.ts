@@ -780,6 +780,8 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       { cmd: '/transcript', aliases: [], description: 'Show the conversation with You/Assistant labels' },
       { cmd: '/save', aliases: [], description: 'Save transcript now (JSONL)' },
       { cmd: '/pending', aliases: [], description: 'Show pending write' },
+      { cmd: '/undo', aliases: [], description: 'Restore last applied write from backup' },
+      { cmd: '/models', aliases: [], description: 'List installed Ollama models' },
       { cmd: '/quit', aliases: ['/exit', '/q'], description: 'Exit chat' },
     ],
   },

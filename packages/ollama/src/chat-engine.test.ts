@@ -567,3 +567,35 @@ describe('engine memory tracking', () => {
     expect(engine.memory.messages.length).toBeLessThanOrEqual(4);
   });
 });
+
+describe('engine.process — stream options and undo (F-5b193212 / F-cf6b6f85)', () => {
+  it('accepts AbortSignal and onToken without throwing', async () => {
+    const tokens: string[] = [];
+    const engine = createChatEngine({
+      client: mockClient('ok'),
+      projectRoot: '/tmp/test',
+      rawMode: true,
+    });
+    const controller = new AbortController();
+    const response = await engine.process('show me the session', {
+      signal: controller.signal,
+      onToken: (t) => tokens.push(t),
+    });
+    expect(response).toContain('No active session');
+    expect(engine.client).toBeDefined();
+    expect(typeof engine.replayProducer).toBe('function');
+  });
+
+  it('undoLastWrite leaves pendingWrite set when restore fails', async () => {
+    const engine = createChatEngine({
+      client: mockClient('ok'),
+      projectRoot: '/tmp/test-undo-' + Date.now(),
+      rawMode: true,
+    });
+    engine.pendingWrite = { content: 'draft', suggestedPath: 'chapel.yaml', label: 'chapel' };
+    const msg = await engine.undoLastWrite();
+    expect(msg).toMatch(/nothing to undo|backup not found|Error:/i);
+    expect(engine.pendingWrite).not.toBeNull();
+    expect(engine.pendingWrite!.content).toBe('draft');
+  });
+});

@@ -46,6 +46,8 @@ function makeSession(overrides: Partial<DesignSession> = {}): DesignSession {
       dialogues: [],
       abilities: [],
       statuses: [],
+      items: [],
+      hazards: [],
     },
     issues: [],
     acceptedSuggestions: [],
@@ -215,7 +217,7 @@ describe('buildStudioSnapshot', () => {
 
   it('suggests creating content when empty', () => {
     const session = makeSession({
-      artifacts: { rooms: [], factions: [], districts: [], quests: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [] },
+      artifacts: { rooms: [], factions: [], districts: [], quests: [], packs: [], entities: [], dialogues: [], abilities: [], statuses: [], items: [], hazards: [] },
     });
     const snap = buildStudioSnapshot(session);
     expect(snap.suggestedActions.some(a => a.includes('/build'))).toBe(true);
@@ -703,6 +705,12 @@ describe('COMMAND_GROUPS', () => {
 
   it('includes Experiment group', () => {
     expect(COMMAND_GROUPS.some(g => g.name === 'Experiment')).toBe(true);
+  });
+
+  it('General group includes /undo and /models', () => {
+    const general = COMMAND_GROUPS.find(g => g.name === 'General');
+    expect(general?.commands.some(c => c.cmd === '/undo')).toBe(true);
+    expect(general?.commands.some(c => c.cmd === '/models')).toBe(true);
   });
 
   it('every command has cmd and description', () => {
