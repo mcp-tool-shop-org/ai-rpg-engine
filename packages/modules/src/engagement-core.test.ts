@@ -952,3 +952,246 @@ describe('F-fc282589: hand-rolled event ids', () => {
     expect(ambushes[0].id).not.toBe(ambushes[1].id);
   });
 });
+
+// ---------------------------------------------------------------------------
+// F-32948b79 (carried:F-defb93a6): combat.encounter.cleared
+//
+// Extends the existing 'combat.entity.defeated' handler (no second listener)
+// to emit one authoritative victory signal when the PLAYER's zone has no
+// living hostiles left. Hostiles-cleared predicate reuses hasEnemiesInZone/
+// affiliationOf, scoped to the player's zone specifically (unifies
+// combat-recovery.ts's "player's zone" scoping with engagement-core's own
+// affiliationOf predicate). Gated on the player being alive AT CHECK TIME
+// (Director ruling: a mutual/simultaneous kill reads as defeat, never
+// victory) and de-duped via a bounded same-tick eventLog backscan (the
+// F-fc282589-documented same-tick double-fire hazard applies here too: an
+// AoE that clears 2+ hostiles in one action must only fire this once).
+// ---------------------------------------------------------------------------
+
+describe('combat.encounter.cleared (F-32948b79, carried:F-defb93a6)', () => {
+  function collectCleared(engine: ReturnType<typeof createTestEngine>): ResolvedEvent[] {
+    const collected: ResolvedEvent[] = [];
+    engine.store.events.on('combat.encounter.cleared', (e: ResolvedEvent) => {
+      collected.push(e);
+    });
+    return collected;
+  }
+
+  // --- (a) last hostile defeated, player alive -> fires once ---
+
+  it('(a) last hostile defeated, player alive -> fires once with the designed payload shape', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeEnemy('bandit', 'zone-a'),
+    ]);
+    const cleared = collectCleared(engine);
+
+    engine.world.entities.bandit.resources.hp = 0;
+    const defeatEvent = engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'bandit', entityName: 'bandit', defeatedBy: 'player', defeatZoneId: 'zone-a',
+    });
+
+    expect(cleared.length).toBe(1);
+    const evt = cleared[0];
+    expect(evt.type).toBe('combat.encounter.cleared');
+    expect(evt.actorId).toBe('player');
+    expect(evt.targetIds).toEqual(['player']);
+    expect(evt.tags).toEqual(['combat', 'encounter', 'cleared']);
+    expect(evt.presentation?.channels).toEqual(['objective', 'narrator']);
+    expect(evt.presentation?.priority).toBe('critical');
+    expect(evt.presentation?.soundCues).toContain('combat.victory');
+    expect(evt.payload.zoneId).toBe('zone-a');
+    expect(evt.payload.outcome).toBe('victory');
+    expect(evt.payload.finalDefeatEventId).toBe(defeatEvent.id);
+    expect(evt.payload.participants).toEqual({
+      survivors: ['player'],
+      finalOpponent: { id: 'bandit', name: 'bandit' },
+    });
+    // No live procedural encounter registered for this zone -> omitted.
+    expect(evt.payload).not.toHaveProperty('encounterRef');
+  });
+
+  // --- (b) non-last hostile defeated, others remain -> does not fire ---
+
+  it('(b) non-last hostile defeated, others remain -> does not fire', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeEnemy('bandit-1', 'zone-a'),
+      makeEnemy('bandit-2', 'zone-a', { resources: { hp: 10, stamina: 5 } }),
+    ]);
+    const cleared = collectCleared(engine);
+
+    engine.world.entities['bandit-1'].resources.hp = 0;
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'bandit-1', entityName: 'bandit-1', defeatedBy: 'player',
+    });
+
+    expect(cleared.length).toBe(0);
+  });
+
+  // --- (c) companion defeated, hostiles remain -> does not fire ---
+
+  it('(c) companion defeated, hostiles remain -> does not fire (regression pin for the tone mapping-table row)', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeAlly('knight', 'zone-a', { tags: ['ally'], resources: { hp: 1, stamina: 5 } }),
+      makeEnemy('bandit', 'zone-a', { resources: { hp: 50, stamina: 5 } }),
+    ]);
+    const cleared = collectCleared(engine);
+
+    engine.world.entities.knight.resources.hp = 0;
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'knight', entityName: 'knight', defeatedBy: 'bandit',
+    });
+
+    expect(cleared.length).toBe(0);
+  });
+
+  // --- (d) player defeated -> does not fire, alone or simultaneous ---
+
+  it('(d1) player defeated alone (a hostile survives) -> does not fire', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeEnemy('bandit', 'zone-a', { resources: { hp: 50, stamina: 5 } }),
+    ]);
+    const cleared = collectCleared(engine);
+
+    engine.world.entities.player.resources.hp = 0;
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'player', entityName: 'Hero', defeatedBy: 'bandit',
+    });
+
+    expect(cleared.length).toBe(0);
+  });
+
+  it('(d2) mutual kill: player and the last hostile fall in the same action -> does not fire (Director ruling: DEFEAT wins)', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeEnemy('bandit', 'zone-a'),
+    ]);
+    const cleared = collectCleared(engine);
+
+    // Both hp mutations land before either combat.entity.defeated is
+    // recorded, matching the AoE/same-tick pattern used elsewhere in this
+    // file (ability-effects.ts's handleDamage mutates all targets first).
+    engine.world.entities.player.resources.hp = 0;
+    engine.world.entities.bandit.resources.hp = 0;
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'bandit', entityName: 'bandit', defeatedBy: 'player',
+    });
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'player', entityName: 'Hero', defeatedBy: 'bandit',
+    });
+
+    expect(cleared.length).toBe(0);
+  });
+
+  // --- (e) THE HIGH-VALUE REGRESSION PIN: simultaneous multi-kill fires once ---
+
+  it('(e) 2+ simultaneous final kills clear the zone -> fires EXACTLY ONCE (F-fc282589-precedented same-tick hazard)', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeEnemy('bandit-1', 'zone-a'),
+      makeEnemy('bandit-2', 'zone-a'),
+    ]);
+    const cleared = collectCleared(engine);
+
+    // An AoE hits both remaining hostiles in one action: hp is mutated for
+    // BOTH before either combat.entity.defeated is recorded, so each defeat
+    // taken alone would observe zero remaining player-zone hostiles.
+    engine.world.entities['bandit-1'].resources.hp = 0;
+    engine.world.entities['bandit-2'].resources.hp = 0;
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'bandit-1', entityName: 'bandit-1', defeatedBy: 'player',
+    });
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'bandit-2', entityName: 'bandit-2', defeatedBy: 'player',
+    });
+
+    expect(cleared.length).toBe(1);
+    expect(cleared[0].payload.zoneId).toBe('zone-a');
+  });
+
+  // --- (f) hazard/status-sourced final kill (no live defeatedBy) still fires ---
+
+  it('(f) a hazard/status-sourced final kill (no live defeatedBy, defeatZoneId only) still fires the cleared event', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeEnemy('bandit', 'zone-a'),
+    ]);
+    const cleared = collectCleared(engine);
+
+    engine.world.entities.bandit.resources.hp = 0;
+    // Shaped like a hazard/DoT-caused defeat post-prerequisite-fix:
+    // defeatedBy/defeatedByName are absent (no live source), but
+    // defeatZoneId IS stamped (status-effects.ts's defeatBySource, fixed
+    // this wave to stamp it unconditionally).
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'bandit', entityName: 'bandit', cause: 'status', defeatZoneId: 'zone-a',
+    });
+
+    expect(cleared.length).toBe(1);
+    expect(cleared[0].payload.zoneId).toBe('zone-a');
+  });
+
+  // --- encounterRef enrichment (optional; procedural zone-table spawns only) ---
+
+  it('encounterRef is attached when the zone has a live procedural encounter', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeEnemy('bandit', 'zone-a'),
+    ]);
+    engine.world.modules['encounter-spawn'] = {
+      cursor: 0,
+      liveByZone: { 'zone-a': { encounterId: 'street-patrol', entityIds: ['bandit'] } },
+    };
+    const cleared = collectCleared(engine);
+
+    engine.world.entities.bandit.resources.hp = 0;
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'bandit', entityName: 'bandit', defeatedBy: 'player',
+    });
+
+    expect(cleared[0].payload.encounterRef).toBe('street-patrol');
+  });
+
+  it('encounterRef is omitted when the zone has no live procedural encounter', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeEnemy('bandit', 'zone-a'),
+    ]);
+    const cleared = collectCleared(engine);
+
+    engine.world.entities.bandit.resources.hp = 0;
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'bandit', entityName: 'bandit', defeatedBy: 'player',
+    });
+
+    expect(cleared[0].payload).not.toHaveProperty('encounterRef');
+  });
+
+  // --- (g) no-regression: combat.entity.defeated shape/count untouched ---
+
+  it('(g) combat.entity.defeated itself is untouched: shape and count stay byte-identical alongside the new event', () => {
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeEnemy('bandit', 'zone-a'),
+    ]);
+    const defeated: ResolvedEvent[] = [];
+    engine.store.events.on('combat.entity.defeated', (e: ResolvedEvent) => {
+      defeated.push(e);
+    });
+
+    engine.world.entities.bandit.resources.hp = 0;
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'bandit', entityName: 'bandit', defeatedBy: 'player', defeatZoneId: 'zone-a',
+    });
+
+    // Exactly the one combat.entity.defeated this test itself emitted — the
+    // new encounter-cleared logic must never emit a SECOND defeated event.
+    expect(defeated.length).toBe(1);
+    expect(defeated[0].payload).toEqual({
+      entityId: 'bandit', entityName: 'bandit', defeatedBy: 'player', defeatZoneId: 'zone-a',
+    });
+  });
+});

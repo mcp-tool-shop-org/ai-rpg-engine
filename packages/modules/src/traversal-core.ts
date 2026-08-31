@@ -123,12 +123,23 @@ function moveHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
   // crafting-recipes) — walking INTO a district was the one silent path. An
   // unmapped zone (no district) stays byte-identical to today's four-key
   // payload.
+  //
+  // F-32948b79 tone-on-event: ALSO attach the raw `tone` value (the 6-value
+  // DistrictMood['tone'] enum) beside moodHint, computed from the SAME
+  // computeDistrictMood call rather than a second one. Consumers: media's
+  // tone->mood bridge and cli-surface's zone-entry music wiring (their own
+  // work, not this file's). Truthy-gated like moodHint/situationHint — an
+  // unmapped zone stays byte-identical (no tone key at all).
   const moodDistrictId = getDistrictForZone(world, targetZoneId);
   const moodDistrictState = moodDistrictId ? getDistrictState(world, moodDistrictId) : undefined;
   const moodDistrictDef = moodDistrictId ? getDistrictDefinition(world, moodDistrictId) : undefined;
-  const moodHint = moodDistrictState && moodDistrictDef
-    ? formatDistrictMoodForNarrator(computeDistrictMood(moodDistrictState, moodDistrictDef.tags), moodDistrictDef.name)
+  const districtMood = moodDistrictState && moodDistrictDef
+    ? computeDistrictMood(moodDistrictState, moodDistrictDef.tags)
     : undefined;
+  const moodHint = districtMood && moodDistrictDef
+    ? formatDistrictMoodForNarrator(districtMood, moodDistrictDef.name)
+    : undefined;
+  const tone = districtMood?.tone;
 
   const entered = makeEvent(action, 'world.zone.entered', {
     zoneId: targetZoneId,
@@ -136,6 +147,7 @@ function moveHandler(action: ActionIntent, world: WorldState): ResolvedEvent[] {
     previousZoneId: currentZone.id,
     tags: targetZone.tags,
     ...(moodHint ? { moodHint } : {}),
+    ...(tone ? { tone } : {}),
   }, {
     presentation: {
       channels: ['objective'],

@@ -846,6 +846,32 @@ describe('MOD-C-BH-01: periodic events carry description + presentation + render
     expect(defeat!.actorId).not.toBe('e1');
   });
 
+  it('a non-entity DoT source still stamps defeatZoneId even though defeatedBy stays omitted (F-32948b79 prerequisite fix)', () => {
+    // Before the fix, defeatBySource returned {} whenever sourceId did not
+    // resolve to a live entity — dropping defeatZoneId TOGETHER WITH
+    // defeatedBy/defeatedByName, even though zone is always knowable from the
+    // victim regardless of whether the attacker is identifiable. Every other
+    // combat.entity.defeated emission site (combat-core.ts, ability-effects.ts,
+    // hazard-interpreter.ts) stamps defeatZoneId unconditionally; this pins
+    // defeatBySource's periodic-DoT caller doing the same, so a hazard/DoT
+    // kill with no live source is no longer invisible to zone-scoped
+    // consumers (including combat.encounter.cleared's own zone check).
+    const e = makeEntity({ resources: { hp: 2, maxHp: 20 }, zoneId: 'zone-7' });
+    const world = makeWorld([e], 0);
+    applyStatus(e, 'burning', 0, {
+      duration: 4,
+      sourceId: 'swamp-gas',
+      data: { periodicKind: 'damage', periodTicks: 1, amount: 5 },
+    }, world);
+
+    const events = processPeriodicStatuses(world, 0);
+    const defeat = events.find(ev => ev.type === 'combat.entity.defeated');
+    expect(defeat).toBeDefined();
+    expect(defeat!.payload.defeatedBy).toBeUndefined();
+    expect(defeat!.payload.defeatedByName).toBeUndefined();
+    expect(defeat!.payload.defeatZoneId).toBe('zone-7');
+  });
+
   it('a non-lethal DoT tick emits combat.damage.applied with the walker as targetId (F-b000f36d)', () => {
     const e = makeEntity({ resources: { hp: 20, maxHp: 20 } });
     const world = makeWorld([e], 0);
