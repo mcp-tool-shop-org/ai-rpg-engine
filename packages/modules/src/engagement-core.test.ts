@@ -1134,17 +1134,18 @@ describe('combat.encounter.cleared (F-32948b79, carried:F-defb93a6)', () => {
     expect(cleared[0].payload.zoneId).toBe('zone-a');
   });
 
-  // --- encounterRef enrichment (optional; procedural zone-table spawns only) ---
+  // --- encounterRef enrichment (F-4a203504: sourced from the just-defeated
+  // entity's OWN stamped custom.encounterId — encounter-spawn.ts's trySpawn
+  // stamps this on every procedurally-spawned participant at spawn time —
+  // never from encounter-spawn's zone-keyed liveByZone side table, which can
+  // go stale once a disengage moves the player's zoneId without ever firing
+  // world.zone.entered (the event liveByZone's own lazy cleanup depends on).
 
-  it('encounterRef is attached when the zone has a live procedural encounter', () => {
+  it('encounterRef is attached when the defeated entity carries its own stamped encounterId', () => {
     const engine = buildEngine([
       makePlayer('zone-a'),
-      makeEnemy('bandit', 'zone-a'),
+      makeEnemy('bandit', 'zone-a', { custom: { encounterId: 'street-patrol' } }),
     ]);
-    engine.world.modules['encounter-spawn'] = {
-      cursor: 0,
-      liveByZone: { 'zone-a': { encounterId: 'street-patrol', entityIds: ['bandit'] } },
-    };
     const cleared = collectCleared(engine);
 
     engine.world.entities.bandit.resources.hp = 0;
@@ -1155,7 +1156,7 @@ describe('combat.encounter.cleared (F-32948b79, carried:F-defb93a6)', () => {
     expect(cleared[0].payload.encounterRef).toBe('street-patrol');
   });
 
-  it('encounterRef is omitted when the zone has no live procedural encounter', () => {
+  it('encounterRef is omitted when the defeated entity carries no stamped encounterId', () => {
     const engine = buildEngine([
       makePlayer('zone-a'),
       makeEnemy('bandit', 'zone-a'),
@@ -1167,6 +1168,57 @@ describe('combat.encounter.cleared (F-32948b79, carried:F-defb93a6)', () => {
       entityId: 'bandit', entityName: 'bandit', defeatedBy: 'player',
     });
 
+    expect(cleared[0].payload).not.toHaveProperty('encounterRef');
+  });
+
+  it('F-4a203504: two encounters, one session — a STALE liveByZone record from an earlier, already-resolved encounter in this zone must not be reported for the encounter that just concluded', () => {
+    // Reproduces the finding's exact scenario: liveByZone still names an
+    // EARLIER encounter that fully cleared in this same zone. Its cleanup is
+    // lazy — only runs on the zone's NEXT world.zone.entered scan
+    // (encounter-spawn.ts's zoneHasLiveEncounter) — and a disengage-driven
+    // zoneId change never fires that event (combat-core.ts's
+    // disengageHandler), so the stale record can outlive the encounter it
+    // names by an entire second encounter's worth of play. The entity
+    // defeated THIS time carries its OWN, DIFFERENT stamped encounterId.
+    const engine = buildEngine([
+      makePlayer('zone-b'),
+      makeEnemy('wolf', 'zone-b', { custom: { encounterId: 'encounter-b2' } }),
+    ]);
+    engine.world.modules['encounter-spawn'] = {
+      cursor: 0,
+      liveByZone: { 'zone-b': { encounterId: 'encounter-b1-STALE', entityIds: ['long-gone'] } },
+    };
+    const cleared = collectCleared(engine);
+
+    engine.world.entities.wolf.resources.hp = 0;
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'wolf', entityName: 'wolf', defeatedBy: 'player',
+    });
+
+    expect(cleared.length).toBe(1);
+    expect(cleared[0].payload.encounterRef).toBe('encounter-b2');
+    expect(cleared[0].payload.encounterRef).not.toBe('encounter-b1-STALE');
+  });
+
+  it('F-4a203504: a defeat in a DIFFERENT zone than the one just cleared must not donate its encounterId to the cleared zone', () => {
+    // Regression pin for this handler's own survivorIds comment a few lines
+    // above ("may be a different zone when the triggering defeat happened
+    // elsewhere") — the same divergence applies to encounterRef derivation,
+    // not just survivor scoping. zone-a (the player's zone) already has no
+    // hostiles; the entity that gets defeated is in zone-b and carries a
+    // zone-b encounterId that must never leak onto a zone-a clear.
+    const engine = buildEngine([
+      makePlayer('zone-a'),
+      makeAlly('scout', 'zone-b', { custom: { encounterId: 'zone-b-encounter' } }),
+    ]);
+    const cleared = collectCleared(engine);
+
+    engine.world.entities.scout.resources.hp = 0;
+    engine.store.emitEvent('combat.entity.defeated', {
+      entityId: 'scout', entityName: 'scout', defeatedBy: 'bandit', defeatZoneId: 'zone-b',
+    });
+
+    expect(cleared.length).toBe(1);
     expect(cleared[0].payload).not.toHaveProperty('encounterRef');
   });
 

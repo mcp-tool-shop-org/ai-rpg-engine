@@ -335,6 +335,19 @@ describe('encounter-spawn — entry-driven, one live encounter per zone', () => 
     expect(raiderTemplate.id).toBe('raider');
     expect(raiderTemplate.zoneId).toBe('nowhere');
   });
+
+  it('F-4a203504: spawned entities are stamped with their own encounterId (custom.encounterId), so engagement-core can attribute combat.encounter.cleared without a zone-keyed lookup', () => {
+    const engine = makeEngine();
+    const [report] = walkUntilSpawn(engine);
+
+    for (const id of report.entityIds) {
+      const entity = engine.world.entities[id];
+      expect(entity.custom?.encounterId).toBe(report.encounterId);
+    }
+    expect(report.encounterId).toBe('road-ambush');
+    // The stamp is added at spawn time, not pre-authored on the template.
+    expect(raiderTemplate.custom).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
