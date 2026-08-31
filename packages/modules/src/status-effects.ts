@@ -689,18 +689,25 @@ function applyReaction(
  * source is a live entity — a hazard-id source must stay omitted so the
  * player-fallen path (keys entityId) still fires and the player-kill
  * fallout branch does not treat a swamp as the player.
+ *
+ * defeatZoneId is stamped unconditionally, INDEPENDENT of whether sourceId
+ * resolves to a live entity (F-32948b79 prerequisite fix). Zone is always
+ * knowable from the victim regardless of whether the attacker is
+ * identifiable — every other combat.entity.defeated emission site
+ * (combat-core.ts, ability-effects.ts, hazard-interpreter.ts) already stamps
+ * it this way. Before this fix, a status/hazard-DoT-caused defeat with no
+ * live source (e.g. a hazard-applied DoT whose sourceId is a hazard id, not
+ * an entity id) silently dropped defeatZoneId along with defeatedBy, making
+ * it invisible to any zone-scoped consumer.
  */
 function defeatBySource(
   world: WorldState,
   sourceId: string | undefined,
   victim: EntityState,
 ): Record<string, unknown> {
-  if (!sourceId) return {};
-  const source = world.entities[sourceId];
-  if (!source) return {};
+  const source = sourceId ? world.entities[sourceId] : undefined;
   return {
-    defeatedBy: source.id,
-    defeatedByName: source.name,
+    ...(source ? { defeatedBy: source.id, defeatedByName: source.name } : {}),
     defeatZoneId: victim.zoneId ?? '',
   };
 }
