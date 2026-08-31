@@ -10,6 +10,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { glyphsFor } from '@ai-rpg-engine/terminal-ui';
 
 /** One completed session, as recorded in runs.jsonl. */
 export type RunRecord = {
@@ -144,14 +145,15 @@ export function formatRecentRuns(
   packNames: Map<string, string> = new Map(),
 ): string {
   if (records.length === 0) return '';
+  const g = glyphsFor();
   const lines: string[] = ['  Recent runs:'];
   for (const r of records) {
-    const mark = r.outcome === 'victory' ? '✓ Victory' : '✗ Defeat';
+    const mark = r.outcome === 'victory' ? g.victory : g.defeat;
     const name = packNames.get(r.packId) ?? r.packId;
     const rounds = `${r.rounds} round${r.rounds === 1 ? '' : 's'}`;
     const kills = `${r.kills} kill${r.kills === 1 ? '' : 's'}`;
     const day = r.ts.slice(0, 10);
-    lines.push(`    ${mark} — ${name} · ${rounds}, ${kills} · ${day}`);
+    lines.push(`    ${mark} ${g.emDash} ${name} ${g.midDot} ${rounds}, ${kills} ${g.midDot} ${day}`);
   }
   return lines.join('\n');
 }

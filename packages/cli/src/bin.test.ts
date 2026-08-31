@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } fr
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Engine, SaveLoadError, type EngineModule, type EntityState, type RulesetDefinition } from '@ai-rpg-engine/core';
 import { createGame as createFantasyGame } from '@ai-rpg-engine/starter-fantasy';
 import { createDialogueCore } from '@ai-rpg-engine/modules';
@@ -33,11 +34,17 @@ import {
   parseCheckpointArg,
   writeCheckpoint,
   findIgnoredReplayArg,
+  parseReplayArgs,
+  confirmUnsavedQuit,
+  sanitizeSlotName,
+  listLoadableSlots,
+  resolveLoadTarget,
   CHECKPOINT_KEEP,
   type CheckpointInfo,
 } from './bin.js';
+import { queueInputLine, drainInputQueue } from './prompts.js';
+import { loadExternalPack, type LoadedPack } from './external-pack.js';
 import { allPacks } from './packs.js';
-import type { LoadedPack } from './external-pack.js';
 import { runNpcTurns } from './turns.js';
 import { buildExtraActions } from './menu.js';
 import { renderSessionEnd } from './endgame.js';
@@ -213,9 +220,9 @@ describe('replayGame --replay (P8-WL-001/P8-PS-004: restore-then-continue, never
     expect(saveGameGuarded(engine, vi.fn())).toBe(true);
   }
 
-  it('--replay restores the SAVED world (created character + off-log state), never the pack default', () => {
+  it('--replay restores the SAVED world (created character + off-log state), never the pack default', async () => {
     writeDivergentSave();
-    const session = replayGame(['--replay']);
+    const session = await replayGame(['--replay']);
     expect(session).toBeDefined();
     // The save's truth, byte-restored: the retired resim branch reconstructed
     // the pack's authored default player here (different name, full hp).
@@ -225,9 +232,9 @@ describe('replayGame --replay (P8-WL-001/P8-PS-004: restore-then-continue, never
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
-  it('--replay prints the structured notice (code + hint, non-fatal) and no resim lines', () => {
+  it('--replay prints the structured notice (code + hint, non-fatal) and no resim lines', async () => {
     writeDivergentSave();
-    replayGame(['--replay']);
+    await replayGame(['--replay']);
     const text = loggedText();
     expect(text).toContain('[REPLAY_RESIM_UNSUPPORTED]');
     expect(text).toContain('re-simulation is not supported with world-state modules');
@@ -237,14 +244,14 @@ describe('replayGame --replay (P8-WL-001/P8-PS-004: restore-then-continue, never
     expect(text).not.toContain('Replay complete');
   });
 
-  it('replay WITHOUT the flag stays exactly as before: same restore, no notice', () => {
+  it('replay WITHOUT the flag stays exactly as before: same restore, no notice', async () => {
     writeDivergentSave();
-    const session = replayGame([]);
+    const session = await replayGame([]);
     expect(session!.engine.world.entities['player'].name).toBe('Auditor');
     expect(loggedText()).not.toContain('[REPLAY_RESIM_UNSUPPORTED]');
   });
 
-  it('a corrupt (non-array) actionLog no longer crashes --replay: the restore authority tolerates it', () => {
+  it('a corrupt (non-array) actionLog no longer crashes --replay: the restore authority tolerates it', async () => {
     // The old resim branch iterated the log, so it needed its own shape
     // rejection (F-7650e39d). Restore ignores non-array logs by documented
     // design — the session starts with a clean post-resume history.
@@ -254,21 +261,21 @@ describe('replayGame --replay (P8-WL-001/P8-PS-004: restore-then-continue, never
     data.actionLog = 42;
     fs.writeFileSync(savePath, JSON.stringify(data), 'utf-8');
 
-    const session = replayGame(['--replay']);
+    const session = await replayGame(['--replay']);
     expect(session).toBeDefined();
     expect(session!.engine.getActionLog()).toEqual([]);
     expect(session!.engine.world.entities['player'].resources.hp).toBe(13);
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
-  it('--replay on a MALFORMED world still fails through the shared authority frame, exit 1', () => {
+  it('--replay on a MALFORMED world still fails through the shared authority frame, exit 1', async () => {
     fs.mkdirSync(path.join(tmpDir, '.ai-rpg-engine'), { recursive: true });
     fs.writeFileSync(
       path.join(tmpDir, '.ai-rpg-engine', 'save.json'),
       JSON.stringify({ world: { state: { meta: { gameId: 'chapel-threshold', seed: 1 } } } }),
       'utf-8',
     );
-    expect(() => replayGame(['--replay'])).toThrow(ProcessExitSignal);
+    await expect(replayGame(['--replay'])).rejects.toThrow(ProcessExitSignal);
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
 });
@@ -293,26 +300,24 @@ describe('handlePlayerInput — first-word meta command routing (CS-C-001)', () 
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('"save game" actually saves — the file exists on disk and nothing was submitted to the engine', () => {
+  it('"save game" actually saves — named slot game.json, nothing submitted to the engine', () => {
     const engine = makeEngine();
     const log = vi.fn();
 
     const result = handlePlayerInput(engine, 'save game', { log });
 
     expect(result).toEqual({ kind: 'save', ok: true });
-    const savePath = path.join(tmpDir, '.ai-rpg-engine', 'save.json');
+    // F-b606e4e8: a single extra token is a named slot. First-word routing
+    // still intercepts before the engine (CS-C-001).
+    const savePath = path.join(tmpDir, '.ai-rpg-engine', 'game.json');
     expect(fs.existsSync(savePath)).toBe(true);
-    // A real save, not an empty touch: it round-trips as the engine's state.
     const data = JSON.parse(fs.readFileSync(savePath, 'utf-8'));
     expect(data.world.state.meta.gameId).toBe('test-game');
-    // The input never reached the engine as an action — no declared/rejected
-    // pair, which is exactly what the old false-save produced.
     expect(eventTypes(engine)).not.toContain('action.declared');
     expect(eventTypes(engine)).not.toContain('action.rejected');
-    // The player is told where the save went (CS-C-009).
     const logged = log.mock.calls.map((c) => String(c[0])).join('\n');
     expect(logged).toContain('Game saved to');
-    expect(logged).toContain(path.resolve(path.join('.ai-rpg-engine', 'save.json')));
+    expect(logged).toContain(path.resolve(path.join('.ai-rpg-engine', 'game.json')));
   });
 
   it('"quit now" routes to quit instead of being submitted as a bogus verb', () => {
@@ -950,12 +955,12 @@ describe('resume-from-save (F1c)', () => {
     expect(reloaded.actionLog.length).toBe(actionsBefore + 1);
   });
 
-  it('replayGame (default load) returns the live session for the prompt loop', () => {
+  it('replayGame (default load) returns the live session for the prompt loop', async () => {
     const original = makeProgressedGame();
     saveGameGuarded(original, vi.fn());
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    const session = replayGame([]);
+    const session = await replayGame([]);
     expect(session).toBeDefined();
     expect(session!.pack.meta.id).toBe('chapel-threshold');
     expect(session!.engine.world.locationId).toBe('chapel-nave');
@@ -965,12 +970,12 @@ describe('resume-from-save (F1c)', () => {
     expect(result.kind).toBe('action');
   });
 
-  it('replayGame --replay also returns a playable session (restore path — resim retired, P8-WL-001)', () => {
+  it('replayGame --replay also returns a playable session (restore path — resim retired, P8-WL-001)', async () => {
     const original = makeProgressedGame();
     saveGameGuarded(original, vi.fn());
     vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    const session = replayGame(['--replay']);
+    const session = await replayGame(['--replay']);
     expect(session).toBeDefined();
     // Restored, not re-simulated: the OFF-LOG hp mutation survives too.
     expect(session!.engine.world.locationId).toBe('chapel-nave');
@@ -989,7 +994,7 @@ describe('resume-from-save (F1c)', () => {
     expect(restored.world.meta.seed).toBe(42);
   });
 
-  it('a NON-default saved seed (777) round-trips too — not the createGame fallback leaking through', () => {
+  it('a NON-default saved seed (777) round-trips too — not the createGame fallback leaking through', async () => {
     const original = createFantasyGame(777);
     original.submitAction('move', { targetIds: ['chapel-nave'] });
     saveGameGuarded(original, vi.fn());
@@ -1001,7 +1006,7 @@ describe('resume-from-save (F1c)', () => {
     // And replayGame under --replay (the restore path since P8-WL-001) keeps
     // the SAVED seed as well.
     vi.spyOn(console, 'log').mockImplementation(() => {});
-    const session = replayGame(['--replay']);
+    const session = await replayGame(['--replay']);
     expect(session!.engine.world.meta.seed).toBe(777);
   });
 });
@@ -1014,30 +1019,30 @@ describe('resume-from-save (F1c)', () => {
 describe('run seeds (F-SEED-combat-rolls-seed-blind)', () => {
   describe('parseRunArgs', () => {
     it('no args → no path, no seed (bundled interactive flow unchanged)', () => {
-      expect(parseRunArgs([])).toEqual({ ok: true, path: null, seed: null });
+      expect(parseRunArgs([])).toEqual({ ok: true, path: null, seed: null, packId: null, defaultHero: false });
     });
 
     it('a bare path still parses as the pack path (F1e regression)', () => {
-      expect(parseRunArgs(['./my-pack'])).toEqual({ ok: true, path: './my-pack', seed: null });
+      expect(parseRunArgs(['./my-pack'])).toEqual({ ok: true, path: './my-pack', seed: null, packId: null, defaultHero: false });
     });
 
     it('--seed <n> parses; the VALUE is never mistaken for the pack path', () => {
-      expect(parseRunArgs(['--seed', '42'])).toEqual({ ok: true, path: null, seed: 42 });
+      expect(parseRunArgs(['--seed', '42'])).toEqual({ ok: true, path: null, seed: 42, packId: null, defaultHero: false });
     });
 
     it('--seed=<n> form parses', () => {
-      expect(parseRunArgs(['--seed=482913'])).toEqual({ ok: true, path: null, seed: 482913 });
+      expect(parseRunArgs(['--seed=482913'])).toEqual({ ok: true, path: null, seed: 482913, packId: null, defaultHero: false });
     });
 
     it('path and seed combine in either order', () => {
-      expect(parseRunArgs(['./pack', '--seed', '7'])).toEqual({ ok: true, path: './pack', seed: 7 });
-      expect(parseRunArgs(['--seed', '7', './pack'])).toEqual({ ok: true, path: './pack', seed: 7 });
+      expect(parseRunArgs(['./pack', '--seed', '7'])).toEqual({ ok: true, path: './pack', seed: 7, packId: null, defaultHero: false });
+      expect(parseRunArgs(['--seed', '7', './pack'])).toEqual({ ok: true, path: './pack', seed: 7, packId: null, defaultHero: false });
     });
 
     it('0 and the int32 max are accepted; leading zeros are tolerated', () => {
-      expect(parseRunArgs(['--seed', '0'])).toEqual({ ok: true, path: null, seed: 0 });
-      expect(parseRunArgs(['--seed', '2147483647'])).toEqual({ ok: true, path: null, seed: 2147483647 });
-      expect(parseRunArgs(['--seed', '007'])).toEqual({ ok: true, path: null, seed: 7 });
+      expect(parseRunArgs(['--seed', '0'])).toEqual({ ok: true, path: null, seed: 0, packId: null, defaultHero: false });
+      expect(parseRunArgs(['--seed', '2147483647'])).toEqual({ ok: true, path: null, seed: 2147483647, packId: null, defaultHero: false });
+      expect(parseRunArgs(['--seed', '007'])).toEqual({ ok: true, path: null, seed: 7, packId: null, defaultHero: false });
     });
 
     it.each([
@@ -1079,6 +1084,32 @@ describe('run seeds (F-SEED-combat-rolls-seed-blind)', () => {
         expect(parsed.code).toBe('INVALID_FLAG');
         expect(parsed.message).toContain('--json');
       }
+    });
+
+    it('--pack chapel-threshold + --default-hero + --seed 1 parses (F-6d2cfdf8)', () => {
+      const parsed = parseRunArgs(['--pack', 'chapel-threshold', '--default-hero', '--seed', '1']);
+      expect(parsed).toEqual({
+        ok: true,
+        path: null,
+        seed: 1,
+        packId: 'chapel-threshold',
+        defaultHero: true,
+      });
+    });
+
+    it('--pack unknown-id is INVALID_PACK (same voice as INVALID_SEED)', () => {
+      const parsed = parseRunArgs(['--pack', 'no-such-starter']);
+      expect(parsed.ok).toBe(false);
+      if (!parsed.ok) {
+        expect(parsed.code).toBe('INVALID_PACK');
+        expect(parsed.message).toContain('no-such-starter');
+        expect(parsed.hint).toContain('chapel-threshold');
+      }
+    });
+
+    it('--ascii is accepted so it cannot become a pack path (F-99681db1)', () => {
+      const parsed = parseRunArgs(['--ascii', '--seed', '1']);
+      expect(parsed).toEqual({ ok: true, path: null, seed: 1, packId: null, defaultHero: false });
     });
   });
 
@@ -1184,6 +1215,16 @@ describe('run seeds (F-SEED-combat-rolls-seed-blind)', () => {
     });
   });
 
+  describe('createNewSession --default-hero (F-6d2cfdf8)', () => {
+    it('skips chargen and keeps the pack authored player (Wanderer) — never promptMenu', async () => {
+      const pack = allPacks.find((p) => p.meta.id === 'chapel-threshold')!;
+      expect(pack.buildCatalog).toBeDefined();
+      const session = await createNewSession(pack, 1, { defaultHero: true });
+      expect(session.engine.world.entities[session.engine.world.playerId]?.name).toBe('Wanderer');
+      expect(session.engine.world.meta.seed).toBe(1);
+    });
+  });
+
   describe('fresh-run parity under a fixed seed', () => {
     it('same seed + same actions → byte-identical serialize()', () => {
       const run = () => {
@@ -1242,6 +1283,8 @@ describe('formatGameHelp (CS-C-005)', () => {
   it('appends the session meta commands so help remains the one complete list', () => {
     const help = formatGameHelp(makeEngine(), packRuleset);
     expect(help).toContain('save');
+    expect(help).toContain('load');
+    expect(help).toContain('checkpoints');
     expect(help).toContain('quit');
     expect(help).toContain('help');
     expect(help).toContain('number');
@@ -2011,50 +2054,50 @@ describe('replayGame --checkpoint / --list-checkpoints (F-b369c8c5)', () => {
     saveGameGuarded(engine, vi.fn()); // checkpoint-003 == save.json — crypt-chamber, hp 5, tick 3
   }
 
-  it('--checkpoint 1 (newest) restores the SAME state as bare replay / save.json', () => {
+  it('--checkpoint 1 (newest) restores the SAME state as bare replay / save.json', async () => {
     writeThreeCheckpoints();
-    const session = replayGame(['--checkpoint', '1']);
+    const session = await replayGame(['--checkpoint', '1']);
     expect(session!.engine.world.locationId).toBe('crypt-chamber');
     expect(session!.engine.world.entities['player'].resources.hp).toBe(5);
   });
 
-  it("--checkpoint 2 restores the MIDDLE checkpoint, not save.json's latest state", () => {
+  it("--checkpoint 2 restores the MIDDLE checkpoint, not save.json's latest state", async () => {
     writeThreeCheckpoints();
-    const session = replayGame(['--checkpoint', '2']);
+    const session = await replayGame(['--checkpoint', '2']);
     expect(session!.engine.world.locationId).toBe('vestry-door');
     expect(session!.engine.world.entities['player'].resources.hp).toBe(15);
   });
 
-  it('--checkpoint 3 (oldest of the three) restores the FIRST save byte-for-byte', () => {
+  it('--checkpoint 3 (oldest of the three) restores the FIRST save byte-for-byte', async () => {
     writeThreeCheckpoints();
-    const session = replayGame(['--checkpoint', '3']);
+    const session = await replayGame(['--checkpoint', '3']);
     expect(session!.engine.world.locationId).toBe('chapel-nave');
     expect(session!.engine.world.entities['player'].resources.hp).toBe(20);
   });
 
-  it('--checkpoint accepts an exact filename as well as an index', () => {
+  it('--checkpoint accepts an exact filename as well as an index', async () => {
     writeThreeCheckpoints();
-    const session = replayGame(['--checkpoint', 'checkpoint-002.json']);
+    const session = await replayGame(['--checkpoint', 'checkpoint-002.json']);
     expect(session!.engine.world.locationId).toBe('vestry-door');
     expect(session!.engine.world.entities['player'].resources.hp).toBe(15);
   });
 
-  it('bare replay (no --checkpoint) is UNCHANGED — reads save.json, the latest state', () => {
+  it('bare replay (no --checkpoint) is UNCHANGED — reads save.json, the latest state', async () => {
     writeThreeCheckpoints();
-    const session = replayGame([]);
+    const session = await replayGame([]);
     expect(session!.engine.world.locationId).toBe('crypt-chamber');
     expect(session!.engine.world.entities['player'].resources.hp).toBe(5);
   });
 
-  it('an out-of-range --checkpoint fails structured, exit 1, never a raw throw', () => {
+  it('an out-of-range --checkpoint fails structured, exit 1, never a raw throw', async () => {
     writeThreeCheckpoints();
-    expect(() => replayGame(['--checkpoint', '99'])).toThrow(ProcessExitSignal);
+    await expect(replayGame(['--checkpoint', '99'])).rejects.toThrow(ProcessExitSignal);
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
-  it('--list-checkpoints prints the numbered list and returns undefined — no restore, no exit', () => {
+  it('--list-checkpoints prints the numbered list and returns undefined — no restore, no exit', async () => {
     writeThreeCheckpoints();
-    const session = replayGame(['--list-checkpoints']);
+    const session = await replayGame(['--list-checkpoints']);
     expect(session).toBeUndefined();
     expect(exitSpy).not.toHaveBeenCalled();
     const text = loggedText();
@@ -2064,8 +2107,8 @@ describe('replayGame --checkpoint / --list-checkpoints (F-b369c8c5)', () => {
     expect(text).toContain('round 1');
   });
 
-  it('--list-checkpoints on a fresh save dir says so instead of printing an empty list', () => {
-    const session = replayGame(['--list-checkpoints']);
+  it('--list-checkpoints on a fresh save dir says so instead of printing an empty list', async () => {
+    const session = await replayGame(['--list-checkpoints']);
     expect(session).toBeUndefined();
     expect(loggedText()).toContain('No checkpoints yet');
   });
@@ -2082,6 +2125,8 @@ describe('replayGame — ignored-arg honesty (F-fedb2573)', () => {
     expect(findIgnoredReplayArg(['--checkpoint', '2'])).toBeNull();
     expect(findIgnoredReplayArg(['--checkpoint=2'])).toBeNull();
     expect(findIgnoredReplayArg(['--replay', '--checkpoint', '2'])).toBeNull();
+    expect(findIgnoredReplayArg(['--pack', 'chapel-threshold'])).toBeNull();
+    expect(findIgnoredReplayArg(['./save.json'])).toBeNull();
   });
 
   it('findIgnoredReplayArg: names the first token replay does not act on', () => {
@@ -2112,20 +2157,225 @@ describe('replayGame — ignored-arg honesty (F-fedb2573)', () => {
       return logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     }
 
-    it('replay --seed 999 fires the structured notice, naming --seed', () => {
+    it('replay --seed 999 REFUSES unknown flags (F-fef49820) instead of ignoring them', async () => {
       const engine = createFantasyGame(42);
       saveGameGuarded(engine, vi.fn());
-      replayGame(['--seed', '999']);
-      const text = loggedText();
-      expect(text).toContain('[REPLAY_ARG_IGNORED]');
-      expect(text).toContain('--seed');
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+        throw new ProcessExitSignal(code);
+      }) as never);
+      const errSpy = console.error as unknown as { mock: { calls: unknown[][] } };
+      await expect(replayGame(['--seed', '999'])).rejects.toThrow(ProcessExitSignal);
+      expect(exitSpy).toHaveBeenCalledWith(1);
+      const err = errSpy.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(err).toContain('INVALID_FLAG');
+      expect(err).toContain('--seed');
     });
 
-    it('bare replay never fires the notice', () => {
+    it('bare replay never fires a refuse/ignore notice', async () => {
       const engine = createFantasyGame(42);
       saveGameGuarded(engine, vi.fn());
-      replayGame([]);
+      await replayGame([]);
       expect(loggedText()).not.toContain('[REPLAY_ARG_IGNORED]');
+      expect(loggedText()).not.toContain('INVALID_FLAG');
     });
+  });
+});
+
+const MINI_PACK_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../test-fixtures/mini-pack');
+
+describe('confirmUnsavedQuit (F-1d23173a)', () => {
+  let tmpDir: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-quit-test-'));
+    originalCwd = process.cwd();
+    process.chdir(tmpDir);
+    drainInputQueue();
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    drainInputQueue();
+    process.chdir(originalCwd);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it('a clean session quits without prompting or writing save.json', async () => {
+    const engine = makeEngine();
+    const prompt = vi.fn();
+    const decision = await confirmUnsavedQuit(engine, false, { promptMenu: prompt });
+    expect(decision).toBe('quit');
+    expect(prompt).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(tmpDir, '.ai-rpg-engine', 'save.json'))).toBe(false);
+  });
+
+  it('Save writes save.json before quit — a session that acted, never saved, still has a save', async () => {
+    const engine = makeEngine();
+    handlePlayerInput(engine, '1', { log: vi.fn() });
+    queueInputLine('1');
+    const decision = await confirmUnsavedQuit(engine, true);
+    expect(decision).toBe('quit');
+    expect(fs.existsSync(path.join(tmpDir, '.ai-rpg-engine', 'save.json'))).toBe(true);
+  });
+
+  it('Discard leaves without writing save.json', async () => {
+    const engine = makeEngine();
+    queueInputLine('2');
+    const decision = await confirmUnsavedQuit(engine, true);
+    expect(decision).toBe('quit');
+    expect(fs.existsSync(path.join(tmpDir, '.ai-rpg-engine', 'save.json'))).toBe(false);
+  });
+
+  it('Cancel returns stay so the session continues', async () => {
+    const engine = makeEngine();
+    queueInputLine('3');
+    const decision = await confirmUnsavedQuit(engine, true);
+    expect(decision).toBe('stay');
+  });
+});
+
+describe('named slots and in-session load (F-b606e4e8)', () => {
+  let tmpDir: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-slot-test-'));
+    originalCwd = process.cwd();
+    process.chdir(tmpDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('save <name> writes a named slot alongside save.json, not a second serialize format', () => {
+    const engine = makeEngine();
+    expect(saveGameGuarded(engine, vi.fn())).toBe(true);
+    expect(handlePlayerInput(engine, 'save night-watch', { log: vi.fn() })).toEqual({ kind: 'save', ok: true });
+    const dir = path.join(tmpDir, '.ai-rpg-engine');
+    expect(fs.existsSync(path.join(dir, 'save.json'))).toBe(true);
+    expect(fs.existsSync(path.join(dir, 'night-watch.json'))).toBe(true);
+    const a = fs.readFileSync(path.join(dir, 'save.json'), 'utf-8');
+    const b = fs.readFileSync(path.join(dir, 'night-watch.json'), 'utf-8');
+    expect(JSON.parse(b).world.state.meta.gameId).toBe(JSON.parse(a).world.state.meta.gameId);
+  });
+
+  it('sanitizeSlotName rejects path traversal', () => {
+    expect(sanitizeSlotName('../etc/passwd')).toBeNull();
+    expect(sanitizeSlotName('ok-slot')).toBe('ok-slot');
+    expect(sanitizeSlotName('save.json')).toBe('save');
+  });
+
+  it('load <name> restores through restoreSessionFromSave without process.exit', () => {
+    const pack = {
+      meta: { id: 'test-game', name: 'Test Game' },
+      createGame: () => makeEngine(),
+    } as LoadedPack;
+    const engine = makeEngine();
+    engine.store.state.entities['hero'].resources.hp = 4;
+    expect(saveGameGuarded(engine, vi.fn(), 'night-watch')).toBe(true);
+    const fresh = makeEngine();
+    expect(fresh.world.entities['hero'].resources.hp).toBe(10);
+    const result = handlePlayerInput(fresh, 'load night-watch', { log: vi.fn(), pack });
+    expect(result.kind).toBe('load');
+    if (result.kind === 'load') {
+      expect(result.session.engine.world.entities['hero'].resources.hp).toBe(4);
+    }
+  });
+
+  it('bare load with a pack returns load-menu; checkpoints is a no-turn help', () => {
+    const pack = { meta: { id: 'test-game', name: 'Test Game' }, createGame: () => makeEngine() } as LoadedPack;
+    const engine = makeEngine();
+    saveGameGuarded(engine, vi.fn());
+    expect(handlePlayerInput(engine, 'load', { log: vi.fn(), pack })).toEqual({ kind: 'load-menu' });
+    expect(handlePlayerInput(engine, 'checkpoints', { log: vi.fn() })).toEqual({ kind: 'help' });
+  });
+
+  it('listLoadableSlots includes save.json, named slots, and checkpoints', () => {
+    const engine = makeEngine();
+    saveGameGuarded(engine, vi.fn());
+    saveGameGuarded(engine, vi.fn(), 'alpha');
+    const slots = listLoadableSlots();
+    expect(slots.some((s) => s.kind === 'save')).toBe(true);
+    expect(slots.some((s) => s.kind === 'slot' && s.file === 'alpha.json')).toBe(true);
+    expect(slots.some((s) => s.kind === 'checkpoint')).toBe(true);
+    expect(resolveLoadTarget('alpha')).toBe(path.join('.ai-rpg-engine', 'alpha.json'));
+  });
+});
+
+describe('replay --pack + positional save path (F-fef49820)', () => {
+  let tmpDir: string;
+  let originalCwd: string;
+  let exitSpy: MockInstance<typeof process.exit>;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-rpg-replay-pack-test-'));
+    originalCwd = process.cwd();
+    process.chdir(tmpDir);
+    exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new ProcessExitSignal(code);
+    }) as never);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+    vi.restoreAllMocks();
+  });
+
+  it('parseReplayArgs accepts --pack and a positional save path; refuses unknown flags', () => {
+    expect(parseReplayArgs(['--pack', './mod', 'slot.json'])).toEqual({
+      ok: true,
+      savePath: 'slot.json',
+      pack: './mod',
+      checkpoint: null,
+      listCheckpoints: false,
+      replayFlag: false,
+    });
+    const refused = parseReplayArgs(['--seed', '1']);
+    expect(refused.ok).toBe(false);
+    if (!refused.ok) {
+      expect(refused.code).toBe('INVALID_FLAG');
+      expect(refused.token).toBe('--seed');
+    }
+  });
+
+  it('a create-starter (mini-quest) save restores when --pack points at that module', async () => {
+    const pack = await loadExternalPack(MINI_PACK_DIR);
+    const engine = pack.createGame(1);
+    engine.store.state.entities['player'].resources.hp = 7;
+    expect(saveGameGuarded(engine, vi.fn())).toBe(true);
+    const session = await replayGame(['--pack', MINI_PACK_DIR]);
+    expect(session).toBeDefined();
+    expect(session!.pack.meta.id).toBe('mini-quest');
+    expect(session!.engine.world.entities['player'].resources.hp).toBe(7);
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  it('a positional save path restores that file instead of the default save.json', async () => {
+    const pack = await loadExternalPack(MINI_PACK_DIR);
+    const engine = pack.createGame(1);
+    engine.store.state.entities['player'].resources.hp = 3;
+    const custom = path.join(tmpDir, 'custom-save.json');
+    fs.writeFileSync(custom, engine.serialize(), 'utf-8');
+    const session = await replayGame([custom, '--pack', MINI_PACK_DIR]);
+    expect(session!.engine.world.entities['player'].resources.hp).toBe(3);
+  });
+
+  it('missing pack for a foreign gameId hints replay --pack <path>, not only bundled ids', async () => {
+    fs.mkdirSync(path.join(tmpDir, '.ai-rpg-engine'), { recursive: true });
+    const engine = await loadExternalPack(MINI_PACK_DIR).then((p) => p.createGame(1));
+    fs.writeFileSync(path.join(tmpDir, '.ai-rpg-engine', 'save.json'), engine.serialize(), 'utf-8');
+    await expect(replayGame([])).rejects.toThrow(ProcessExitSignal);
+    const err = (console.error as unknown as { mock: { calls: unknown[][] } }).mock.calls
+      .map((c) => String(c[0]))
+      .join('\n');
+    expect(err).toContain('replay --pack');
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 });

@@ -46,3 +46,13 @@ export {
   stripAnsi,
   type Palette,
 } from './styles.js';
+
+export {
+  detectAsciiOnly,
+  glyphsFor,
+  withGlyphs,
+  applyGlyphPunctuation,
+  UNICODE_GLYPHS,
+  ASCII_GLYPHS,
+  type GlyphSet,
+} from './glyphs.js';

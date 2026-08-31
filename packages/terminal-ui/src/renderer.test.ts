@@ -28,6 +28,7 @@ import {
   humanizeStateId,
 } from './renderer.js';
 import { detectColorEnabled, makePalette, stripAnsi } from './styles.js';
+import { detectAsciiOnly, glyphsFor, ASCII_GLYPHS, UNICODE_GLYPHS } from './glyphs.js';
 
 function makeWorld() {
   const zones: ZoneState[] = [
@@ -1569,6 +1570,56 @@ describe('wrapToWidth / clipToWidth / frameRule (F-9916b83c, F-fe70f1bf)', () =>
   it('frameRule is exactly SCREEN_WIDTH of the play-screen rule character', () => {
     expect(frameRule()).toBe('─'.repeat(SCREEN_WIDTH));
     expect(frameRule()).toHaveLength(SCREEN_WIDTH);
+  });
+});
+
+describe('ASCII glyph layer (F-99681db1)', () => {
+  const prevAscii = process.env.ASCII_ONLY;
+  const prevTerm = process.env.TERM;
+
+  afterEach(() => {
+    if (prevAscii === undefined) delete process.env.ASCII_ONLY;
+    else process.env.ASCII_ONLY = prevAscii;
+    if (prevTerm === undefined) delete process.env.TERM;
+    else process.env.TERM = prevTerm;
+  });
+
+  it('detectAsciiOnly: ASCII_ONLY=1 and TERM=dumb; NO_COLOR does not flip glyphs', () => {
+    expect(detectAsciiOnly({ ASCII_ONLY: '1' })).toBe(true);
+    expect(detectAsciiOnly({ ASCII_ONLY: '0' })).toBe(false);
+    expect(detectAsciiOnly({ TERM: 'dumb' })).toBe(true);
+    expect(detectAsciiOnly({ NO_COLOR: '1' })).toBe(false);
+    expect(detectAsciiOnly({ VITEST: 'true', TERM: 'dumb' })).toBe(false);
+    expect(detectAsciiOnly({ VITEST: 'true', ASCII_ONLY: '1' })).toBe(true);
+  });
+
+  it('ASCII_ONLY=1: stripAnsi(renderFullScreen) has no codepoint > 127, hyphen rule is SCREEN_WIDTH', () => {
+    process.env.ASCII_ONLY = '1';
+    delete process.env.TERM;
+    expect(frameRule()).toBe('-'.repeat(SCREEN_WIDTH));
+    expect(frameRule()).toHaveLength(SCREEN_WIDTH);
+    const world = makeWorld();
+    world.entities['wolf'].statuses = [{ id: 's', statusId: 'off-balance', appliedAtTick: 0 }];
+    (world as { eventLog: ResolvedEvent[] }).eventLog = [
+      { id: 'e1', tick: 1, type: 'world.entity.inspected', payload: { name: 'Wolf', resources: { hp: 0 } } },
+      { id: 'e2', tick: 1, type: 'resource.changed', payload: { resource: 'hp', previous: 8, current: 5 } },
+    ];
+    const text = stripAnsi(renderFullScreen(world, [], { color: false, ascii: true }));
+    for (const ch of text) {
+      expect(ch.codePointAt(0)!).toBeLessThanOrEqual(127);
+    }
+    const rules = text.split('\n').filter((l) => /^-+$/.test(l));
+    expect(rules.length).toBeGreaterThan(0);
+    expect(rules[0]).toHaveLength(SCREEN_WIDTH);
+  });
+
+  it('default glyphs stay unicode; ASCII_ONLY swaps ticks and the rule char', () => {
+    delete process.env.ASCII_ONLY;
+    expect(glyphsFor({ ascii: false })).toEqual(UNICODE_GLYPHS);
+    expect(glyphsFor({ ascii: true }).rule).toBe(ASCII_GLYPHS.rule);
+    expect(glyphsFor({ ascii: true }).ellipsis).toBe('...');
+    expect(clipToWidth('x'.repeat(80), 10, { ascii: true })).toBe('xxxxxxx...');
+    expect(clipToWidth('x'.repeat(80), 10, { ascii: true })).toHaveLength(10);
   });
 });
 

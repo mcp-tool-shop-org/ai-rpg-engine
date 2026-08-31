@@ -18,6 +18,7 @@ import {
   SCREEN_WIDTH,
   frameRule,
   clipToWidth,
+  glyphsFor,
 } from '@ai-rpg-engine/terminal-ui';
 import { resolveEntity } from '@ai-rpg-engine/character-creation';
 import { SaveLoadError, type Engine, type EntityState, type RulesetDefinition } from '@ai-rpg-engine/core';
@@ -74,6 +75,9 @@ function printHelp() {
   console.log('                 re-simulation is not supported: the save is restored instead.)');
   console.log('                 --list-checkpoints lists saved checkpoints, newest first.');
   console.log('                 --checkpoint <n|file>  restore that checkpoint instead of save.json.');
+  console.log('                 --pack <path|id>  pack for a save whose gameId is not bundled');
+  console.log('                 (create-starter / run <path> saves). A positional save path is');
+  console.log('                 accepted the same way inspect-save takes one.');
   console.log('  inspect-save   Validate a save through the same checks Continue uses, then');
   console.log('                 summarize it (world, player, globals, recent events).');
   console.log('                 With a path: inspect that save file instead of the default.');
@@ -85,6 +89,10 @@ function printHelp() {
   console.log('Flags:');
   console.log('  --seed <n>     With run: fix the world seed (replay a specific run exactly).');
   console.log('                 --seed=<n> is accepted too. Omitted, each new session mints and prints its own.');
+  console.log('  --pack <id>    With run: start that bundled starter (exact meta.id match).');
+  console.log('                 Unknown ids are refused (same voice as a bad --seed).');
+  console.log('  --default-hero With run: skip character creation; keep the pack\'s authored player.');
+  console.log('  --ascii, --plain  7-bit glyphs (also ASCII_ONLY=1 or TERM=dumb). Color stays on NO_COLOR.');
   console.log('  --version, -v  Print version');
   console.log('  --help, -h     Show this help');
 }
@@ -117,21 +125,27 @@ export function formatSeedLine(seed: number, packPath?: string): string {
 }
 
 export type ParsedRunArgs =
-  | { ok: true; path: string | null; seed: number | null }
-  | { ok: false; message: string; hint: string; code: 'INVALID_SEED' | 'INVALID_FLAG' };
+  | { ok: true; path: string | null; seed: number | null; packId: string | null; defaultHero: boolean }
+  | { ok: false; message: string; hint: string; code: 'INVALID_SEED' | 'INVALID_FLAG' | 'INVALID_PACK' };
+
+const RUN_FLAG_HINT =
+  `run accepts --seed <n> or --seed=<n> (0-${MAX_SEED}), --pack <id>, --default-hero, and --ascii. Unknown flags are refused so a typo cannot be mistaken for a pack path.`;
 
 /**
  * Parse `run` arguments: an optional pack path (first non-flag token, as
- * before) plus `--seed <n>` / `--seed=<n>`. The seed VALUE is consumed so it
- * can never be mistaken for the pack path. Validation is strict — decimal
- * digits only, 0..MAX_SEED — with a structured rejection (message + hint)
- * instead of a silent NaN world. Unknown `--*` tokens are refused (named)
- * rather than dropped, so a typo like `--seee 482913` cannot become a pack
- * path. Exported for unit testing.
+ * before) plus `--seed <n>` / `--seed=<n>`, `--pack <id>` (exact match
+ * against bundled starter meta.id), and `--default-hero` (skip chargen).
+ * The seed VALUE is consumed so it can never be mistaken for the pack path.
+ * Validation is strict — decimal digits only, 0..MAX_SEED — with a structured
+ * rejection (message + hint) instead of a silent NaN world. Unknown `--*`
+ * tokens are refused (named) rather than dropped, so a typo like
+ * `--seee 482913` cannot become a pack path. Exported for unit testing.
  */
 export function parseRunArgs(runArgs: string[]): ParsedRunArgs {
   let seed: number | null = null;
   let pathArg: string | null = null;
+  let packId: string | null = null;
+  let defaultHero = false;
   for (let i = 0; i < runArgs.length; i++) {
     const arg = runArgs[i];
     if (arg === '--seed' || arg.startsWith('--seed=')) {
@@ -145,6 +159,30 @@ export function parseRunArgs(runArgs: string[]): ParsedRunArgs {
         };
       }
       seed = Number(raw);
+    } else if (arg === '--pack' || arg.startsWith('--pack=')) {
+      const raw = arg === '--pack' ? runArgs[++i] : arg.slice('--pack='.length);
+      if (raw === undefined || raw === '' || raw.startsWith('-')) {
+        return {
+          ok: false,
+          code: 'INVALID_PACK',
+          message: `--pack must be a bundled starter id, got ${raw === undefined || raw === '' ? '(missing)' : `"${raw}"`}.`,
+          hint: `Installed packs: ${allPacks.map((p) => p.meta.id).join(', ')}. e.g. --pack chapel-threshold.`,
+        };
+      }
+      if (!allPacks.some((p) => p.meta.id === raw)) {
+        return {
+          ok: false,
+          code: 'INVALID_PACK',
+          message: `--pack "${raw}" is not an installed starter.`,
+          hint: `Installed packs: ${allPacks.map((p) => p.meta.id).join(', ')}. Pass an exact id, e.g. --pack chapel-threshold.`,
+        };
+      }
+      packId = raw;
+    } else if (arg === '--default-hero') {
+      defaultHero = true;
+    } else if (arg === '--ascii' || arg === '--plain') {
+      // Glyph gate — applied from env in main(); accepted here so it is not
+      // mistaken for a pack path (F-99681db1).
     } else if (arg.startsWith('-')) {
       // Consume a following non-flag value so `--seee 482913` cannot land in
       // the pack-path slot (F-d464da79). Hard-refuse: naming then starting a
@@ -153,17 +191,32 @@ export function parseRunArgs(runArgs: string[]): ParsedRunArgs {
         ok: false,
         code: 'INVALID_FLAG',
         message: `"${arg}" is not a recognized run flag.`,
-        hint: `run accepts --seed <n> or --seed=<n> (0-${MAX_SEED}). Unknown flags are refused so a typo cannot be mistaken for a pack path.`,
+        hint: RUN_FLAG_HINT,
       };
     } else if (pathArg === null) {
       pathArg = arg;
     }
   }
-  return { ok: true, path: pathArg, seed };
+  if (pathArg !== null && packId !== null) {
+    return {
+      ok: false,
+      code: 'INVALID_FLAG',
+      message: 'run accepts either --pack <id> or a module path, not both.',
+      hint: 'Use --pack chapel-threshold for a bundled starter, or `run <path>` for a scaffolded module.',
+    };
+  }
+  return { ok: true, path: pathArg, seed, packId, defaultHero };
+}
+
+function applyAsciiFlag(args: string[]): void {
+  if (args.includes('--ascii') || args.includes('--plain')) {
+    process.env.ASCII_ONLY = '1';
+  }
 }
 
 async function main() {
   const args = process.argv.slice(2);
+  applyAsciiFlag(args);
   const command = args[0] ?? 'run';
 
   if (args.includes('--version') || args.includes('-v') || command === 'version') {
@@ -226,9 +279,9 @@ async function main() {
       // the live session; the shared prompt loop takes over instead of the
       // old print-summary-and-exit dead end. (--replay re-simulation retired
       // in v2.7 — see replayGame; resim parity is v2.8 work.)
-      const restored = replayGame(args.slice(1));
+      const restored = await replayGame(args.slice(1));
       if (restored) {
-        await playSessions(restored, null);
+        await playSessions(restored, restored.pack);
         console.log('\n  Farewell, wanderer.\n');
       }
       closeReadline();
@@ -399,13 +452,18 @@ export function installCreatedPlayer(engine: Engine, playerEntity: EntityState):
  * Exported for unit testing (the wizard inside is readline-driven; packs
  * without a buildCatalog skip it, which is what tests use).
  */
-export async function createNewSession(pack: LoadedPack, seed: number = mintSeed()): Promise<Session> {
+export async function createNewSession(
+  pack: LoadedPack,
+  seed: number = mintSeed(),
+  opts: { defaultHero?: boolean } = {},
+): Promise<Session> {
   const engine = pack.createGame(seed);
 
   // Character creation needs the pack's build catalog + ruleset. External
   // packs may omit them (the starter template does) — the pack's authored
-  // default player is used as-is.
-  if (pack.buildCatalog && pack.ruleset) {
+  // default player is used as-is. `--default-hero` (F-6d2cfdf8) skips the
+  // wizard even when a catalog exists, keeping the pack's authored player.
+  if (!opts.defaultHero && pack.buildCatalog && pack.ruleset) {
     console.log(formatFrameBanner(`CHARACTER CREATION — ${pack.meta.name}`));
 
     const build = await buildCharacter(pack.buildCatalog, pack.ruleset);
@@ -578,19 +636,21 @@ export function runHostileRound(
 async function runSession(engine: Engine, pack: LoadedPack): Promise<SessionOutcome> {
   // FU-2: ONE presenter per session — its AudioDirector carries sfx cooldown
   // state across rounds; per-round construction would reset every cooldown.
-  const presenter = new TurnPresenter();
+  let presenter = new TurnPresenter();
+  let liveEngine = engine;
+  let dirty = false;
   while (true) {
-    const end = evaluateSessionEnd(engine);
+    const end = evaluateSessionEnd(liveEngine);
     if (end) {
       // The end frame keeps the scene/HUD/log panels but no action menu —
       // the session is over; the finale prompt below owns the numbers.
-      renderFrame(engine, pack, { menu: false });
-      console.log(renderSessionEnd(end, engine.world, pack.progressionTrees ?? []));
+      renderFrame(liveEngine, pack, { menu: false });
+      console.log(renderSessionEnd(end, liveEngine.world, pack.progressionTrees ?? []));
 
       // Record the COMPLETED run (victory or defeat — a mid-session quit
       // never reaches this branch). Guarded append: a history write failure
       // prints one structured line and the finale flow continues.
-      const stats = computeSessionStats(engine.world, pack.progressionTrees ?? []);
+      const stats = computeSessionStats(liveEngine.world, pack.progressionTrees ?? []);
       appendRunRecord(
         {
           ts: new Date().toISOString(),
@@ -611,7 +671,7 @@ async function runSession(engine: Engine, pack: LoadedPack): Promise<SessionOutc
       return choice === 0 ? 'new-game' : 'quit';
     }
 
-    renderFrame(engine, pack);
+    renderFrame(liveEngine, pack);
     const input = await promptLine('  > ');
 
     // All routing lives in handlePlayerInput (exported + unit-tested); the
@@ -623,20 +683,41 @@ async function runSession(engine: Engine, pack: LoadedPack): Promise<SessionOutc
     // renderFrame uses — instead of built unconditionally. A value never
     // rendered on screen (dialogue suppresses the whole extras layer) can
     // therefore never be parsed as a selection.
-    const extras = computeExtras(engine, pack);
-    const logLenBefore = engine.world.eventLog.length;
-    const result = handlePlayerInput(engine, input, { ruleset: pack.ruleset, extras });
-    if (result.kind === 'quit') return 'quit';
+    const extras = computeExtras(liveEngine, pack);
+    const logLenBefore = liveEngine.world.eventLog.length;
+    const result = handlePlayerInput(liveEngine, input, { ruleset: pack.ruleset, extras, pack });
+    if (result.kind === 'quit') {
+      const decision = await confirmUnsavedQuit(liveEngine, dirty);
+      if (decision === 'stay') continue;
+      return 'quit';
+    }
+    if (result.kind === 'save' && result.ok) dirty = false;
+    if (result.kind === 'load-menu') {
+      const loaded = await promptAndLoadSave(pack);
+      if (loaded) {
+        liveEngine = loaded.engine;
+        dirty = false;
+        presenter = new TurnPresenter();
+      }
+      continue;
+    }
+    if (result.kind === 'load') {
+      liveEngine = result.session.engine;
+      dirty = false;
+      presenter = new TurnPresenter();
+      continue;
+    }
 
     if (result.kind === 'action') {
-      runHostileRound(engine, pack);
+      dirty = true;
+      runHostileRound(liveEngine, pack);
     }
 
     // 'rejected' narrates too: the engine's structured refusal is the round's
     // one event, and the player deserves to hear it immediately rather than
     // finding it in the next frame's log panel (P8-PS-002).
     if (result.kind === 'action' || result.kind === 'rejected') {
-      narrateRound(presenter, engine, logLenBefore, console.log);
+      narrateRound(presenter, liveEngine, logLenBefore, console.log);
     }
   }
 }
@@ -657,7 +738,7 @@ async function runSession(engine: Engine, pack: LoadedPack): Promise<SessionOutc
 async function playSessions(
   initial: Session | null,
   external: LoadedPack | null,
-  opts: { seedOverride?: number | null; packPath?: string | null } = {},
+  opts: { seedOverride?: number | null; packPath?: string | null; defaultHero?: boolean } = {},
 ): Promise<void> {
   let pending: Session | null = initial;
   while (true) {
@@ -666,7 +747,9 @@ async function playSessions(
     let fresh = false;
     if (!session) {
       const pack = external ?? (await selectPack());
-      session = await createNewSession(pack, opts.seedOverride ?? undefined);
+      session = await createNewSession(pack, opts.seedOverride ?? undefined, {
+        defaultHero: opts.defaultHero,
+      });
       fresh = true;
     }
     printSessionBanner(session.pack, { external: external !== null });
@@ -686,7 +769,8 @@ async function runGame(runArgs: string[] = []) {
   // invalid value is a structured rejection, not a silently-ignored token.
   const parsed = parseRunArgs(runArgs);
   if (!parsed.ok) {
-    console.error(`  ✗ [${parsed.code}] ${parsed.message}`);
+    const mark = glyphsFor().errorMark;
+    console.error(`  ${mark} [${parsed.code}] ${parsed.message}`);
     console.error(`  Hint: ${parsed.hint}`);
     closeReadline();
     process.exit(1);
@@ -695,15 +779,19 @@ async function runGame(runArgs: string[] = []) {
 
   // F1e: `run <path>` loads a scaffolded/built game module instead of the
   // bundled starters. Structured load errors exit with the contract spelled out.
+  // F-6d2cfdf8: `--pack <id>` selects a bundled starter without promptMenu.
   const pathArg = parsed.path;
   let external: LoadedPack | null = null;
-  if (pathArg) {
+  if (parsed.packId) {
+    external = allPacks.find((p) => p.meta.id === parsed.packId) ?? null;
+  } else if (pathArg) {
     try {
       external = await loadExternalPack(pathArg);
       console.log(`  Loaded pack "${external.meta.name}" (${external.meta.id}) from ${path.resolve(pathArg)}`);
     } catch (err) {
       if (err instanceof PackLoadError) {
-        console.error(`  ✗ [${err.code}] ${err.message}`);
+        const mark = glyphsFor().errorMark;
+        console.error(`  ${mark} [${err.code}] ${err.message}`);
         console.error(`  Hint: ${err.hint}`);
         closeReadline();
         process.exit(1);
@@ -712,8 +800,15 @@ async function runGame(runArgs: string[] = []) {
     }
   }
 
-  const resumed = await maybeOfferResume(external);
-  await playSessions(resumed, external, { seedOverride: parsed.seed, packPath: pathArg });
+  // `--default-hero` is an explicit fresh-game request (CI first-run) — skip
+  // the Continue prompt so the command never touches promptMenu/promptText.
+  const resumed = parsed.defaultHero ? null : await maybeOfferResume(external);
+  const seedLinePath = parsed.packId ? `--pack ${parsed.packId}` : pathArg;
+  await playSessions(resumed, external, {
+    seedOverride: parsed.seed,
+    packPath: seedLinePath,
+    defaultHero: parsed.defaultHero,
+  });
 
   console.log('\n  Farewell, wanderer.\n');
   closeReadline();
@@ -865,6 +960,218 @@ export function resolveCheckpointSelector(selector: string, saveDir: string = SA
   return byName ? path.join(saveDir, byName.file) : null;
 }
 
+/** Named-slot token: alphanumerics plus `.` `_` `-`, no path separators. */
+const SLOT_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/**
+ * Validate a `save <name>` / `load <name>` token. Rejects path traversal and
+ * reserved chatter. `save` / `save.json` map to the default latest-pointer.
+ * Returns the file's basename without `.json`, or null when invalid.
+ */
+export function sanitizeSlotName(raw: string): string | null {
+  const name = raw.trim().replace(/\.json$/i, '');
+  if (!SLOT_NAME_RE.test(name)) return null;
+  if (name === '.' || name === '..') return null;
+  return name;
+}
+
+/** cwd-relative path of a named slot or the default save.json. */
+export function slotFilePath(name: string, saveDir: string = SAVE_DIR): string {
+  if (name === 'save') return path.join(saveDir, 'save.json');
+  return path.join(saveDir, `${name}.json`);
+}
+
+export type LoadableSlot = {
+  file: string;
+  path: string;
+  label: string;
+  tick: number | null;
+  kind: 'save' | 'slot' | 'checkpoint';
+};
+
+function readTickFromSaveFile(filePath: string): number | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as {
+      world?: { state?: { meta?: { tick?: unknown } } };
+    };
+    const t = parsed.world?.state?.meta?.tick;
+    return typeof t === 'number' ? t : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Default save.json + named slots + rotating checkpoints, for the in-session
+ * load menu (F-b606e4e8). Checkpoints stay newest-first; named slots are
+ * alphabetical. Never throws.
+ */
+export function listLoadableSlots(saveDir: string = SAVE_DIR): LoadableSlot[] {
+  const slots: LoadableSlot[] = [];
+  try {
+    if (!fs.existsSync(saveDir)) return [];
+  } catch {
+    return [];
+  }
+
+  const defaultPath = path.join(saveDir, 'save.json');
+  if (fs.existsSync(defaultPath)) {
+    const tick = readTickFromSaveFile(defaultPath);
+    slots.push({
+      file: 'save.json',
+      path: defaultPath,
+      label: `Current save (save.json)${tick === null ? '' : ` — round ${tick}`}`,
+      tick,
+      kind: 'save',
+    });
+  }
+
+  let files: string[] = [];
+  try {
+    files = fs.readdirSync(saveDir);
+  } catch {
+    files = [];
+  }
+  const named = files
+    .filter((f) => f.endsWith('.json') && f !== 'save.json' && !CHECKPOINT_FILE_RE.test(f))
+    .sort();
+  for (const f of named) {
+    const filePath = path.join(saveDir, f);
+    const tick = readTickFromSaveFile(filePath);
+    const slotName = f.replace(/\.json$/i, '');
+    slots.push({
+      file: f,
+      path: filePath,
+      label: `Slot "${slotName}"${tick === null ? '' : ` — round ${tick}`}`,
+      tick,
+      kind: 'slot',
+    });
+  }
+
+  for (const c of listCheckpoints(saveDir)) {
+    slots.push({
+      file: c.file,
+      path: path.join(saveDir, c.file),
+      label: `${c.file}${c.tick === null ? ' — (round unknown)' : ` — round ${c.tick}`}`,
+      tick: c.tick,
+      kind: 'checkpoint',
+    });
+  }
+  return slots;
+}
+
+/**
+ * Resolve `load <token>` to a file under saveDir: checkpoint index/filename,
+ * named slot, or save.json. null when nothing matches.
+ */
+export function resolveLoadTarget(token: string, saveDir: string = SAVE_DIR): string | null {
+  const trimmed = token.trim();
+  if (!trimmed) return null;
+  const checkpoint = resolveCheckpointSelector(trimmed, saveDir);
+  if (checkpoint) return checkpoint;
+  const slot = sanitizeSlotName(trimmed);
+  if (!slot) return null;
+  const dest = slotFilePath(slot, saveDir);
+  return fs.existsSync(dest) ? dest : null;
+}
+
+/**
+ * Restore a save file through restoreSessionFromSave without process.exit.
+ * Returns null and logs a structured line on failure (in-session load).
+ */
+export function loadSessionFromFile(
+  pack: LoadedPack,
+  filePath: string,
+  log: (msg: string) => void = console.log,
+): Session | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    log(`  [LOAD_FAILED] Could not read ${path.resolve(filePath)}: ${reason}`);
+    log('  Hint: pick a save from "load" or "checkpoints". Your session is still live.');
+    return null;
+  }
+  const savedGameId = (data as { world?: { state?: { meta?: { gameId?: unknown } } } })?.world?.state
+    ?.meta?.gameId;
+  if (typeof savedGameId === 'string' && savedGameId !== pack.meta.id) {
+    log(
+      `  [LOAD_PACK_MISMATCH] Save gameId "${savedGameId}" does not match this session's pack "${pack.meta.id}".`,
+    );
+    log('  Hint: quit and restore with: ai-rpg-engine replay --pack <path|id> <save>.');
+    return null;
+  }
+  try {
+    const session = restoreSessionFromSave(pack, data);
+    log(`  Loaded ${path.resolve(filePath)}. ${session.engine.world.eventLog.length} events in log.`);
+    return session;
+  } catch (e) {
+    if (e instanceof SaveLoadError) {
+      log(`  Cannot load save [${e.code}]: ${e.message}`);
+      log(`  Hint: ${e.hint}`);
+      return null;
+    }
+    throw e;
+  }
+}
+
+/**
+ * F-1d23173a: on quit, if the session took an action since the last successful
+ * save, offer Save / Discard / Cancel. Autosave-on-Save writes save.json
+ * before the loop exits; Cancel returns the player to the prompt. Exported
+ * for unit testing (promptMenu is injectable via queueInputLine).
+ */
+export async function confirmUnsavedQuit(
+  engine: Engine,
+  dirty: boolean,
+  deps: {
+    promptMenu?: typeof promptMenu;
+    save?: typeof saveGameGuarded;
+    log?: (msg: string) => void;
+  } = {},
+): Promise<'quit' | 'stay'> {
+  if (!dirty) return 'quit';
+  const prompt = deps.promptMenu ?? promptMenu;
+  const save = deps.save ?? saveGameGuarded;
+  const log = deps.log ?? console.log;
+  log('  Unsaved progress — this session has not been written since your last action.');
+  const idx = await prompt([
+    { label: 'Save', detail: `Write ${SAVE_FILE} and leave` },
+    { label: 'Discard', detail: 'Leave without saving this session' },
+    { label: 'Cancel', detail: 'Return to the game' },
+  ]);
+  if (idx === 2) return 'stay';
+  if (idx === 0) {
+    if (!save(engine, log)) return 'stay';
+  }
+  return 'quit';
+}
+
+/**
+ * In-session load menu: print slots and let the player pick one. Empty dir
+ * prints a one-line fallback and returns null (session stays live).
+ */
+export async function promptAndLoadSave(
+  pack: LoadedPack,
+  deps: {
+    promptMenu?: typeof promptMenu;
+    log?: (msg: string) => void;
+    saveDir?: string;
+  } = {},
+): Promise<Session | null> {
+  const log = deps.log ?? console.log;
+  const saveDir = deps.saveDir ?? SAVE_DIR;
+  const slots = listLoadableSlots(saveDir);
+  if (slots.length === 0) {
+    log('  No saves yet — type save (or save <name>) first.');
+    return null;
+  }
+  const prompt = deps.promptMenu ?? promptMenu;
+  const idx = await prompt(slots.map((s) => ({ label: s.label, detail: s.file })));
+  return loadSessionFromFile(pack, slots[idx].path, log);
+}
+
 /** The `replay --list-checkpoints` block — 1-based, newest first (matching
  *  --checkpoint's index selector). '' when there are none; the caller prints
  *  a one-line fallback instead (formatRecentRuns' empty-string contract). */
@@ -909,22 +1216,36 @@ export function parseCheckpointArg(args: string[]): string | null {
 export function saveGameGuarded(
   engine: Engine,
   log: (msg: string) => void = console.log,
+  slotName?: string,
 ): boolean {
-  const resolvedPath = path.resolve(SAVE_FILE);
+  let dest = SAVE_FILE;
+  if (slotName !== undefined) {
+    const slot = sanitizeSlotName(slotName);
+    if (!slot) {
+      log(`  [SAVE_SLOT_INVALID] "${slotName}" is not a valid slot name.`);
+      log('  Hint: use letters, digits, ".", "_" or "-" (no path separators). Example: save chapel-night.');
+      return false;
+    }
+    dest = slotFilePath(slot);
+  }
+  const resolvedPath = path.resolve(dest);
   let serialized: string;
   try {
     if (!fs.existsSync(SAVE_DIR)) {
       fs.mkdirSync(SAVE_DIR, { recursive: true });
     }
     serialized = engine.serialize();
-    fs.writeFileSync(SAVE_FILE, serialized, 'utf-8');
+    fs.writeFileSync(dest, serialized, 'utf-8');
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     log(`  [SAVE_WRITE_FAILED] Could not write ${resolvedPath}: ${reason}`);
     log('  Hint: run from a directory you can write to. Your session is still live — you can keep playing or try "save" again.');
     return false;
   }
-  writeCheckpoint(serialized, SAVE_DIR, log);
+  // Named slots sit alongside save.json; the rotator stays on the default pointer.
+  if (slotName === undefined || sanitizeSlotName(slotName) === 'save') {
+    writeCheckpoint(serialized, SAVE_DIR, log);
+  }
   log(`  Game saved to ${resolvedPath}`);
   return true;
 }
@@ -945,8 +1266,10 @@ export function formatGameHelp(engine: Engine, ruleset?: RulesetDefinition): str
       : engine.getAvailableActions().map((id) => ({ id, description: '' }));
 
   const meta = [
-    { id: 'save', description: `Save the game (writes ${SAVE_FILE})` },
-    { id: 'quit', description: 'Exit the game (progress is NOT saved automatically)' },
+    { id: 'save', description: `Save the game (writes ${SAVE_FILE}; save <name> writes a named slot)` },
+    { id: 'load', description: 'Load a save or checkpoint (load <name>, or pick from the menu)' },
+    { id: 'checkpoints', description: 'List rotating checkpoints, newest first' },
+    { id: 'quit', description: 'Exit the game (prompts to save if you have unsaved progress)' },
     { id: 'help', description: 'Show this list' },
   ];
 
@@ -974,6 +1297,8 @@ export type PlayerInputResult =
   | { kind: 'quit' }
   | { kind: 'save'; ok: boolean }
   | { kind: 'help' }
+  | { kind: 'load'; session: Session }
+  | { kind: 'load-menu' }
   | { kind: 'action'; via: 'dialogue-choice' | 'menu' | 'extra' | 'text' }
   /** A MENU-selected submission the engine refused (action.rejected) —
    *  P8-PS-002: the menu advertised it, the engine said no; the refusal
@@ -1001,7 +1326,12 @@ export type PlayerInputResult =
 export function handlePlayerInput(
   engine: Engine,
   rawInput: string,
-  opts: { ruleset?: RulesetDefinition; log?: (msg: string) => void; extras?: ExtraAction[] } = {},
+  opts: {
+    ruleset?: RulesetDefinition;
+    log?: (msg: string) => void;
+    extras?: ExtraAction[];
+    pack?: LoadedPack;
+  } = {},
 ): PlayerInputResult {
   const log = opts.log ?? console.log;
   const trimmed = rawInput.trim();
@@ -1011,11 +1341,45 @@ export function handlePlayerInput(
   // reach the meta handlers instead of dying in the engine's rejection
   // pipeline with zero on-screen feedback.
   const firstWord = trimmed.split(/\s+/)[0].toLowerCase();
+  const restTokens = trimmed.split(/\s+/).slice(1);
   if (firstWord === 'quit' || firstWord === 'exit') {
     return { kind: 'quit' };
   }
   if (firstWord === 'save') {
-    return { kind: 'save', ok: saveGameGuarded(engine, log) };
+    // A single extra token is a named slot (F-b606e4e8). Extra chatter
+    // (`save now please`) still writes the default pointer.
+    const slot = restTokens.length === 1 ? restTokens[0] : undefined;
+    return { kind: 'save', ok: saveGameGuarded(engine, log, slot) };
+  }
+  if (firstWord === 'checkpoints') {
+    const formatted = formatCheckpointList(listCheckpoints(SAVE_DIR));
+    log(formatted === '' ? '  No checkpoints yet — save at least once to create one.' : formatted);
+    return { kind: 'help' };
+  }
+  if (firstWord === 'load') {
+    if (restTokens.length === 0) {
+      if (!opts.pack) {
+        const formatted = formatCheckpointList(listCheckpoints(SAVE_DIR));
+        log(formatted === '' ? '  No checkpoints yet — save at least once to create one.' : formatted);
+        log('  Type load <name> inside a session to restore, or replay --pack <path> from the shell.');
+        return { kind: 'help' };
+      }
+      return { kind: 'load-menu' };
+    }
+    if (!opts.pack) {
+      log('  Cannot load: this command needs a live pack (use it from inside a session).');
+      log('  Hint: restore from the shell with: ai-rpg-engine replay --pack <path|id> <save>.');
+      return { kind: 'unknown' };
+    }
+    const target = resolveLoadTarget(restTokens[0]);
+    if (!target) {
+      log(`  No save matches "${restTokens[0]}".`);
+      log('  Hint: type load (no arguments) for the menu, or checkpoints to list rotating saves.');
+      return { kind: 'unknown' };
+    }
+    const session = loadSessionFromFile(opts.pack, target, log);
+    if (!session) return { kind: 'unknown' };
+    return { kind: 'load', session };
   }
   if (firstWord === 'help') {
     log(formatGameHelp(engine, opts.ruleset));
@@ -1175,26 +1539,104 @@ export function handlePlayerInput(
   return { kind: 'unknown' };
 }
 
-/** Flags replayGame actually understands — anything else in its argv is
- *  named by findIgnoredReplayArg instead of vanishing silently (F-fedb2573). */
-const KNOWN_REPLAY_FLAGS = new Set(['--replay', '--list-checkpoints', '--checkpoint']);
+export type ParsedReplayArgs =
+  | {
+      ok: true;
+      savePath: string | null;
+      pack: string | null;
+      checkpoint: string | null;
+      listCheckpoints: boolean;
+      replayFlag: boolean;
+    }
+  | { ok: false; message: string; hint: string; code: 'INVALID_FLAG' | 'INVALID_PACK'; token: string };
+
+const REPLAY_FLAG_HINT =
+  'replay accepts --pack <path|id>, a positional save path, --checkpoint <n|file>, --list-checkpoints, --replay, and --ascii.';
+
+/**
+ * Parse replay argv. Unknown tokens are REFUSED (F-fef49820), not ignored.
+ * `--pack` takes a bundled id or a module path; a non-flag token is the save
+ * path (parity with inspect-save). Exported for unit testing.
+ */
+export function parseReplayArgs(args: string[]): ParsedReplayArgs {
+  let savePath: string | null = null;
+  let pack: string | null = null;
+  let checkpoint: string | null = null;
+  let list = false;
+  let replayFlag = false;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--replay') {
+      replayFlag = true;
+      continue;
+    }
+    if (arg === '--list-checkpoints') {
+      list = true;
+      continue;
+    }
+    if (arg === '--ascii' || arg === '--plain') {
+      continue;
+    }
+    if (arg === '--checkpoint' || arg.startsWith('--checkpoint=')) {
+      const raw = arg === '--checkpoint' ? args[++i] : arg.slice('--checkpoint='.length);
+      if (raw === undefined || raw === '' || raw.startsWith('-')) {
+        return {
+          ok: false,
+          code: 'INVALID_FLAG',
+          token: '--checkpoint',
+          message: `--checkpoint requires a 1-based index or filename, got ${raw === undefined || raw === '' ? '(missing)' : `"${raw}"`}.`,
+          hint: 'Run "ai-rpg-engine replay --list-checkpoints" to see what is available.',
+        };
+      }
+      checkpoint = raw;
+      continue;
+    }
+    if (arg === '--pack' || arg.startsWith('--pack=')) {
+      const raw = arg === '--pack' ? args[++i] : arg.slice('--pack='.length);
+      if (raw === undefined || raw === '' || raw.startsWith('-')) {
+        return {
+          ok: false,
+          code: 'INVALID_PACK',
+          token: '--pack',
+          message: `--pack requires a bundled starter id or a module path, got ${raw === undefined || raw === '' ? '(missing)' : `"${raw}"`}.`,
+          hint: 'Example: replay --pack chapel-threshold, or replay --pack ./my-starter path/to/save.json.',
+        };
+      }
+      pack = raw;
+      continue;
+    }
+    if (arg.startsWith('-')) {
+      return {
+        ok: false,
+        code: 'INVALID_FLAG',
+        token: arg,
+        message: `"${arg}" is not a recognized replay flag.`,
+        hint: REPLAY_FLAG_HINT,
+      };
+    }
+    if (savePath === null) {
+      savePath = arg;
+      continue;
+    }
+    return {
+      ok: false,
+      code: 'INVALID_FLAG',
+      token: arg,
+      message: `Unexpected argument "${arg}".`,
+      hint: REPLAY_FLAG_HINT,
+    };
+  }
+  return { ok: true, savePath, pack, checkpoint, listCheckpoints: list, replayFlag };
+}
 
 /**
  * The first token in replay's argv that this function does not act on — null
- * when every token is recognized (a known flag, a --checkpoint value, or no
- * args at all). Exported for unit testing.
+ * when every token is recognized. Kept as a thin wrapper over parseReplayArgs
+ * (F-fedb2573 named ignored args; F-fef49820 now refuses them).
  */
 export function findIgnoredReplayArg(args: string[]): string | null {
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
-    if (KNOWN_REPLAY_FLAGS.has(arg)) {
-      if (arg === '--checkpoint') i++; // its value token is consumed too
-      continue;
-    }
-    if (arg.startsWith('--checkpoint=')) continue;
-    return arg;
-  }
-  return null;
+  const parsed = parseReplayArgs(args);
+  return parsed.ok ? null : parsed.token;
 }
 
 /**
@@ -1232,34 +1674,31 @@ export function findIgnoredReplayArg(args: string[]): string | null {
  * point it at a temp cwd and stub process.exit rather than shelling out).
  * Tests exercising only the restore semantics ignore the returned session.
  */
-export function replayGame(args: string[] = []): Session | undefined {
-  // F-fedb2573: replay used to silently drop every arg but --replay. Name
-  // the first one it does not act on instead of vanishing with zero
-  // feedback — same structured voice as REPLAY_RESIM_UNSUPPORTED below.
-  // Non-fatal: an unrecognized flag is called out, then replay proceeds.
-  const ignoredArg = findIgnoredReplayArg(args);
-  if (ignoredArg !== null) {
-    console.log(
-      `  [REPLAY_ARG_IGNORED] "${ignoredArg}" is not a recognized replay flag — it will be ignored.`,
-    );
-    console.log('  Hint: replay accepts --replay, --checkpoint <n|file>, and --list-checkpoints.');
+export async function replayGame(args: string[] = []): Promise<Session | undefined> {
+  const parsed = parseReplayArgs(args);
+  if (!parsed.ok) {
+    const mark = glyphsFor().errorMark;
+    console.error(`  ${mark} [${parsed.code}] ${parsed.message}`);
+    console.error(`  Hint: ${parsed.hint}`);
+    process.exit(1);
+    return; // unreachable; keeps control flow explicit for tests that stub exit
   }
 
   // F-b369c8c5: --list-checkpoints is informational only — it never restores.
-  if (args.includes('--list-checkpoints')) {
+  if (parsed.listCheckpoints) {
     const formatted = formatCheckpointList(listCheckpoints(SAVE_DIR));
     console.log(formatted === '' ? '  No checkpoints yet — save at least once to create one.' : formatted);
     return undefined;
   }
 
   // F-b369c8c5: --checkpoint <index|file> swaps which file gets read below;
-  // restoreSessionFromSave (the load authority) never changes.
-  let saveFile = SAVE_FILE;
-  const checkpointArg = parseCheckpointArg(args);
-  if (checkpointArg !== null) {
-    const resolved = resolveCheckpointSelector(checkpointArg, SAVE_DIR);
+  // restoreSessionFromSave (the load authority) never changes. A positional
+  // save path (parity with inspect-save) is the other selector.
+  let saveFile = parsed.savePath ?? SAVE_FILE;
+  if (parsed.checkpoint !== null) {
+    const resolved = resolveCheckpointSelector(parsed.checkpoint, SAVE_DIR);
     if (!resolved) {
-      console.error(`  No checkpoint matches "${checkpointArg}".`);
+      console.error(`  No checkpoint matches "${parsed.checkpoint}".`);
       console.error('  Hint: run "ai-rpg-engine replay --list-checkpoints" to see what is available.');
       process.exit(1);
       return; // unreachable; keeps control flow explicit for tests that stub exit
@@ -1283,16 +1722,38 @@ export function replayGame(args: string[] = []): Session | undefined {
   // CLI-002: select the pack whose manifest id matches the SAVED gameId rather
   // than blindly using allPacks[0] (fantasy). Loading a cyberpunk save through
   // the fantasy pack produced nonsense.
+  // F-fef49820: `--pack <path|id>` is the same Continue-path resolution
+  // `run <path>` already has — a create-starter save is restorable when the
+  // operator points at that module.
   const savedGameId: string | undefined = data.world?.state?.meta?.gameId;
-  const pack = allPacks.find((p) => p.meta.id === savedGameId);
+  let pack: LoadedPack | undefined = allPacks.find((p) => p.meta.id === savedGameId);
+  if (parsed.pack) {
+    const bundled = allPacks.find((p) => p.meta.id === parsed.pack);
+    if (bundled) {
+      pack = bundled;
+    } else {
+      try {
+        pack = await loadExternalPack(parsed.pack);
+      } catch (err) {
+        if (err instanceof PackLoadError) {
+          const mark = glyphsFor().errorMark;
+          console.error(`  ${mark} [${err.code}] ${err.message}`);
+          console.error(`  Hint: ${err.hint}`);
+          process.exit(1);
+          return;
+        }
+        throw err;
+      }
+    }
+  }
   if (!pack) {
     console.error(`  Cannot load save: no installed pack matches gameId "${savedGameId ?? '(missing)'}".`);
-    console.error(`  Installed packs: ${allPacks.map((p) => p.meta.id).join(', ')}`);
-    console.error('  Hint: this save was made by a pack that is not part of this build.');
+    console.error('  Hint: restore this save with: ai-rpg-engine replay --pack <path> [save.json]');
     process.exit(1);
+    return;
   }
 
-  if (args.includes('--replay')) {
+  if (parsed.replayFlag) {
     // The structured notice (the SAVE_WRITE_FAILED voice: [CODE] line + Hint,
     // non-fatal, stdout): the flag is honored as a restore, never silently.
     console.log(
