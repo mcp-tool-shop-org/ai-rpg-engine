@@ -37,7 +37,7 @@ import type {
   NFTokenRef,
   NFTTransport,
 } from '../contracts.js';
-import { buildItemNFTUri, ledgerNetworkLabel } from '../contracts.js';
+import { buildItemNFTUri, ledgerNetworkLabel, nftExplorerUrl } from '../contracts.js';
 
 /**
  * The NFTokenTaxon (collection id) every unique-gear NFT this package mints
@@ -98,13 +98,6 @@ function transportNetworkName(transport: NFTTransport): string {
     return (transport as { networkName: string }).networkName;
   }
   return 'dry-run';
-}
-
-function nftExplorerUrl(network: string, nftId: string): string | undefined {
-  if (!nftId) return undefined;
-  if (network === 'testnet') return `https://testnet.xrpl.org/nft/${nftId}`;
-  if (network === 'devnet') return `https://devnet.xrpl.org/nft/${nftId}`;
-  return undefined;
 }
 
 function joinNames(names: string[]): string {

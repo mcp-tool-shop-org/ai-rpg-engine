@@ -292,6 +292,13 @@ export type LedgerAdapterState = {
   tokenMap: Record<string, string>;
   /** resource-key → last-settled balance — the baseline delta is measured against. */
   lastSettled: Record<string, number>;
+  /**
+   * Opening mint per resource-key, snapshotted once at first enable checkpoint.
+   * `lastSettled` advances on every settle; conservation (`minted + Σdeltas ===
+   * lastSettled`) needs this stash after save/reload. OPTIONAL for back-compat:
+   * a pre-field save has none; `deserializeState` defaults it to `{}`.
+   */
+  mintedInitial?: Record<string, number>;
   settlements: SettlementRecord[];
   pending: SettlementRecord[];
   /** Degraded signal: the last settle attempt failed (testnet unreachable). */
@@ -343,6 +350,8 @@ export type EnableResult = {
   playerAddress?: string;
   /** `transport.networkName` — 'dry-run' | 'testnet' | 'devnet'. */
   network?: string;
+  /** Testnet/devnet account explorer for `playerAddress`. Omitted on dry-run; never mainnet. */
+  playerExplorerUrl?: string;
 };
 export type SettlementResult = {
   success: boolean;
@@ -351,7 +360,40 @@ export type SettlementResult = {
   record?: SettlementRecord;
   /** `transport.networkName` — 'dry-run' | 'testnet' | 'devnet'. */
   network?: string;
+  /** Testnet/devnet transaction explorer URLs for `txids`, in order. Omitted on dry-run; never mainnet. */
+  explorerUrls?: string[];
 };
+
+/** Testnet / devnet explorer origins — never mainnet. */
+const EXPLORER_ORIGINS: Record<string, string> = {
+  testnet: 'https://testnet.xrpl.org',
+  devnet: 'https://devnet.xrpl.org',
+};
+
+function explorerOrigin(network: string): string | undefined {
+  return EXPLORER_ORIGINS[network];
+}
+
+/** Transaction explorer URL for a submitted hash. Undefined on dry-run / unknown / empty. */
+export function txExplorerUrl(network: string, hash: string): string | undefined {
+  if (!hash) return undefined;
+  const origin = explorerOrigin(network);
+  return origin ? `${origin}/transactions/${hash}` : undefined;
+}
+
+/** Account explorer URL. Undefined on dry-run / unknown / empty. */
+export function accountExplorerUrl(network: string, address: string): string | undefined {
+  if (!address) return undefined;
+  const origin = explorerOrigin(network);
+  return origin ? `${origin}/accounts/${address}` : undefined;
+}
+
+/** NFT explorer URL. Undefined on dry-run / unknown / empty. Shared with the unique-gear layer. */
+export function nftExplorerUrl(network: string, nftId: string): string | undefined {
+  if (!nftId) return undefined;
+  const origin = explorerOrigin(network);
+  return origin ? `${origin}/nft/${nftId}` : undefined;
+}
 
 // ── Reconciliation (the EXTERNAL_VERIFIER — ported from ledger_proof.py) ─────
 

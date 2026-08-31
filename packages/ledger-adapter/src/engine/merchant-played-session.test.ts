@@ -166,6 +166,23 @@ describe('the fungible layer on real merchant content', () => {
     expect(result.record?.deltas['bale-of-flax']).toBe(-1);
   });
 
+  it('settleCheckpoint without SettleOptions infers VERB:consign from the eventLog', async () => {
+    const engine = createGame(SEED);
+    openTheBooks(engine);
+    const { state, adapter } = await harness();
+    await enableFromWorld(engine.world, PLAYER_ID, adapter, state);
+
+    engine.submitAction('move', { targetIds: ['long-quay'] });
+    engine.submitAction('move', { targetIds: ['crooked-stair'] });
+    engine.submitAction('consign', { parameters: { itemId: 'bale-of-flax' }, targetIds: ['broker-inaya'] });
+    expect(getOpenObligations(engine.world)[0]).toBeDefined();
+
+    const result = await settleCheckpoint(engine.world, PLAYER_ID, adapter, state, 1, 'The Crooked Stair');
+    expect(result.success).toBe(true);
+    expect(result.record?.verb).toBe('consign');
+    expect(result.record?.memo).toContain('VERB:consign');
+  });
+
   it('honouring the obligation settles as a distinct verb again, and pays', async () => {
     const engine = createGame(SEED);
     openTheBooks(engine);

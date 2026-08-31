@@ -12,20 +12,28 @@
 // Same type-only `@ai-rpg-engine/core` import as snapshot.ts — see that
 // file's header for the firewall rationale.
 
-import type { WorldState } from '@ai-rpg-engine/core';
+import type { ResolvedEvent, WorldState } from '@ai-rpg-engine/core';
 import type { ItemCatalog, ItemChronicleEntry } from '@ai-rpg-engine/equipment';
 import type {
   EnableResult,
   LedgerAdapter,
   LedgerAdapterState,
+  LedgerTransport,
   NFTTransport,
-  SettleOptions,
+  ReconcileReport,
+  SettlementPrimitive,
   SettlementResult,
+  SettlementVerb,
+  SettleOptions,
 } from '../contracts.js';
 import { snapshotFromWorld } from './snapshot.js';
 import { equipmentSnapshotFromWorld } from './equipment-snapshot.js';
 import { settleEquipmentNFTs } from '../settle/nft.js';
 import type { NFTSettlementResult } from '../settle/nft.js';
+import {
+  reconcileAgainstLedger,
+  type ReconcileAgainstLedgerOpts,
+} from '../settle/reconcile-ledger.js';
 
 /**
  * Enable the ledger adapter using the CURRENT live snapshot of `playerId`'s
@@ -59,14 +67,11 @@ export function settleCheckpoint(
   location: string,
   options?: SettleOptions,
 ): Promise<SettlementResult> {
-  // `options` MUST be forwarded. P1.5 widened `LedgerAdapter.settle` with the
-  // verb + per-settlement primitive but left this wrapper at the old arity, so
-  // every caller reaching the adapter through the engine seam — which is the
-  // documented way to drive it — silently got `verb: 'settle'` and the
-  // construction-time primitive no matter what it asked for. Both new axes were
-  // reachable only by bypassing the seam. Caught by the merchant showcase, whose
-  // whole point is a `consign` that reads as a consign on-chain.
-  return adapter.settle(state, snapshotFromWorld(world, playerId), checkpoint, location, options);
+  // When the host omits SettleOptions, infer verb + primitive from the live
+  // world's recent eventLog / district tags so buy/sell/consign/default are
+  // reachable on the documented seam. Explicit fields still win.
+  const resolved = mergeSettleOptions(inferSettleOptionsFromWorld(world, playerId), options);
+  return adapter.settle(state, snapshotFromWorld(world, playerId), checkpoint, location, resolved);
 }
 
 /**
@@ -117,6 +122,104 @@ export async function settleEquipmentFromWorld(
     playerAddress: state.playerAddress,
     issuerSeed,
     playerSeed,
+  });
+}
+
+const SETTLEMENT_VERBS: readonly SettlementVerb[] = ['buy', 'sell', 'settle', 'consign', 'default'];
+const PAYMENT_TAGS = new Set(['unbonded', 'contested', 'black-market', 'unlawful']);
+const ESCROW_TAGS = new Set(['lawful', 'bonded']);
+
+function isSettlementVerb(value: unknown): value is SettlementVerb {
+  return typeof value === 'string' && (SETTLEMENT_VERBS as readonly string[]).includes(value);
+}
+
+function eventActorId(event: ResolvedEvent): string | undefined {
+  if (typeof event.actorId === 'string' && event.actorId) return event.actorId;
+  const payloadActor = event.payload?.actorId;
+  return typeof payloadActor === 'string' ? payloadActor : undefined;
+}
+
+function verbFromEvent(event: ResolvedEvent): SettlementVerb | undefined {
+  if (event.type === 'action.rejected') return undefined;
+  if (event.type === 'action.declared' || event.type === 'action.resolved') {
+    const verb = event.payload?.verb;
+    return isSettlementVerb(verb) ? verb : undefined;
+  }
+  if (event.type === 'merchant.contract.consigned' || event.type.endsWith('.consigned')) return 'consign';
+  if (event.type === 'merchant.contract.defaulted' || event.type.endsWith('.defaulted')) return 'default';
+  if (event.type === 'merchant.contract.honoured' || event.type.endsWith('.honoured')) return 'settle';
+  return isSettlementVerb(event.type) ? event.type : undefined;
+}
+
+function districtTagsForZone(world: WorldState, zoneId: string): string[] {
+  const core = world.modules['district-core'];
+  if (!core || typeof core !== 'object') return [];
+  const rec = core as {
+    zoneToDistrict?: Record<string, string>;
+    definitions?: Record<string, { tags?: string[] }>;
+  };
+  const districtId = rec.zoneToDistrict?.[zoneId];
+  const tags = districtId ? rec.definitions?.[districtId]?.tags : undefined;
+  return Array.isArray(tags) ? tags.filter((t): t is string => typeof t === 'string') : [];
+}
+
+function primitiveFromLocation(world: WorldState, playerId: string): SettlementPrimitive | undefined {
+  const entity = world.entities[playerId];
+  if (!entity?.zoneId) return undefined;
+  const zone = world.zones[entity.zoneId];
+  const tags = [...(zone?.tags ?? []), ...districtTagsForZone(world, entity.zoneId)];
+  if (tags.some((t) => PAYMENT_TAGS.has(t))) return 'payment';
+  if (tags.some((t) => ESCROW_TAGS.has(t))) return 'token-escrow';
+  return undefined;
+}
+
+/**
+ * Read recent `eventLog` entries (buy/sell/consign/default, plus honour → settle)
+ * and the player's current district/zone tags (unbonded/contested → payment,
+ * lawful/bonded → token-escrow). Coordinator-only — never inside the tick.
+ */
+export function inferSettleOptionsFromWorld(world: WorldState, playerId: string): SettleOptions {
+  const inferred: SettleOptions = {};
+  const log = world.eventLog ?? [];
+  for (let i = log.length - 1; i >= 0; i--) {
+    const event = log[i];
+    const actor = eventActorId(event);
+    if (actor && actor !== playerId) continue;
+    const verb = verbFromEvent(event);
+    if (verb) {
+      inferred.verb = verb;
+      break;
+    }
+  }
+  const primitive = primitiveFromLocation(world, playerId);
+  if (primitive) inferred.primitive = primitive;
+  return inferred;
+}
+
+function mergeSettleOptions(inferred: SettleOptions, explicit?: SettleOptions): SettleOptions {
+  return {
+    verb: explicit?.verb ?? inferred.verb,
+    primitive: explicit?.primitive ?? inferred.primitive,
+  };
+}
+
+/**
+ * World-seam wrapper around {@link reconcileAgainstLedger}. Reads `world` only
+ * for default seed/gameId; never mutates it. Coordinator checkpoint — never
+ * inside the tick.
+ */
+export function reconcileFromWorld(
+  world: WorldState,
+  playerId: string,
+  transport: LedgerTransport,
+  state: LedgerAdapterState,
+  opts: ReconcileAgainstLedgerOpts,
+): Promise<ReconcileReport> {
+  void playerId;
+  return reconcileAgainstLedger(transport, state, {
+    ...opts,
+    seed: opts.seed ?? world.meta.seed,
+    gameId: opts.gameId ?? world.meta.gameId,
   });
 }
 

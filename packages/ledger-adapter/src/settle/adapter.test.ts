@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type {
   IssuedAmount,
   LedgerAdapterConfig,
@@ -12,8 +15,10 @@ import type {
 } from '../contracts.js';
 import { createLedgerAdapter } from './adapter.js';
 import { reconcile } from './reconcile.js';
-import { serializeState, deserializeState } from '../state/index.js';
+import { createInitialState, serializeState, deserializeState } from '../state/index.js';
 import { DEFAULT_LEDGER_CONFIG } from '../index.js';
+import { bindSidecar } from '../security/secrets.js';
+import { accountExplorerUrl, nftExplorerUrl, txExplorerUrl } from '../contracts.js';
 
 // ── A MINIMAL in-memory fake LedgerTransport ────────────────────────────
 // Deliberately NOT importing the real transport domain (out of bounds for
@@ -56,7 +61,7 @@ type FakeTransport = LedgerTransport & {
   calls: string[];
 };
 
-function createFakeTransport(): FakeTransport {
+function createFakeTransport(networkName = 'fake-dry-run'): FakeTransport {
   let walletCounter = 0;
   let txCounter = 0;
   let failRemaining = 0;
@@ -105,7 +110,7 @@ function createFakeTransport(): FakeTransport {
   }
 
   return {
-    networkName: 'fake-dry-run',
+    networkName,
     balances,
     calls,
     failNext(times: number) {
@@ -1369,5 +1374,115 @@ describe('network-named copy and public getSeed', () => {
     expect(adapter.getSeed(state.playerAddress)).toBeTruthy();
     expect(adapter.getSeed(state.issuerAddress)).toBeTruthy();
     expect(adapter.getSeed('rNobody')).toBeUndefined();
+  });
+});
+
+describe('mintedInitial — opening mint persisted on state', () => {
+  let transport: FakeTransport;
+
+  beforeEach(() => {
+    transport = createFakeTransport();
+  });
+
+  it('enable checkpoints mintedInitial once; settle advances lastSettled only', async () => {
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'g', runId: 'r1' });
+    const state = freshState();
+    await adapter.enable(state, { coin: 100, items: { potion: 2 } });
+    expect(state.mintedInitial).toEqual({ coin: 100, potion: 2 });
+    expect(state.lastSettled).toEqual({ coin: 100, potion: 2 });
+
+    const settled = await adapter.settle(state, { coin: 70, items: { potion: 2 } }, 1, 'town');
+    expect(settled.success).toBe(true);
+    expect(state.lastSettled.coin).toBe(70);
+    expect(state.mintedInitial).toEqual({ coin: 100, potion: 2 });
+
+    const restored = deserializeState(serializeState(state));
+    expect(restored.mintedInitial).toEqual({ coin: 100, potion: 2 });
+    expect(restored.lastSettled.coin).toBe(70);
+  });
+});
+
+describe('explorer URLs on EnableResult / SettlementResult', () => {
+  it('stamps testnet explorer URLs and interpolates the receipt URL', async () => {
+    const transport = createFakeTransport('testnet');
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'g', runId: 'r1' });
+    const state = freshState();
+    const enabled = await adapter.enable(state, { coin: 100, items: {} });
+    expect(enabled.playerExplorerUrl).toBe(accountExplorerUrl('testnet', state.playerAddress));
+    expect(enabled.playerExplorerUrl).toMatch(/^https:\/\/testnet\.xrpl\.org\/accounts\//);
+
+    const settled = await adapter.settle(state, { coin: 90, items: {} }, 1, 'Cedar Wake');
+    expect(settled.success).toBe(true);
+    expect(settled.explorerUrls?.[0]).toBe(txExplorerUrl('testnet', settled.txids![0]));
+    expect(settled.message).toContain(`Receipt: ${settled.explorerUrls![0]}`);
+    expect(settled.explorerUrls![0]).toMatch(/^https:\/\/testnet\.xrpl\.org\//);
+  });
+
+  it('omits explorer URLs on dry-run and never invents a mainnet explorer', async () => {
+    const transport = createFakeTransport();
+    const adapter = createLedgerAdapter(transport, CONFIG, { gameId: 'g', runId: 'r1' });
+    const state = freshState();
+    const enabled = await adapter.enable(state, { coin: 100, items: {} });
+    expect(enabled.playerExplorerUrl).toBeUndefined();
+    const settled = await adapter.settle(state, { coin: 90, items: {} }, 1, 'Cedar Wake');
+    expect(settled.explorerUrls).toBeUndefined();
+    expect(settled.message).toMatch(/^Settled on Dry-run\. Receipt: HASH/);
+    expect(txExplorerUrl('mainnet', 'ABCD')).toBeUndefined();
+    expect(accountExplorerUrl('mainnet', 'rPlayer')).toBeUndefined();
+    expect(nftExplorerUrl('mainnet', 'NFT1')).toBeUndefined();
+    expect(nftExplorerUrl('testnet', 'NFT1')).toBe('https://testnet.xrpl.org/nft/NFT1');
+    expect(nftExplorerUrl('devnet', 'NFT1')).toBe('https://devnet.xrpl.org/nft/NFT1');
+    expect(nftExplorerUrl('dry-run', 'NFT1')).toBeUndefined();
+  });
+});
+
+describe('bindSidecar persistent issuer — two createInitialState runs share one issuer', () => {
+  let dir: string | undefined;
+
+  afterEach(() => {
+    if (dir) {
+      rmSync(dir, { recursive: true, force: true });
+      dir = undefined;
+    }
+  });
+
+  it('run 2 with only bindSidecar reuses run 1 issuer; per-run does not', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'ledger-adapter-issuer-alias-'));
+    const transport = createFakeTransport();
+    const snapshot: TradeableSnapshot = { coin: 40, items: {} };
+
+    const runOne = createLedgerAdapter(transport, PERSISTENT_CONFIG, {
+      gameId: 'g',
+      runId: 'r1',
+      ...bindSidecar(dir, { issuerMode: 'persistent' }),
+    });
+    const stateOne = createInitialState(PERSISTENT_CONFIG);
+    await runOne.enable(stateOne, snapshot);
+    expect(stateOne.issuerAddress).toBeTruthy();
+
+    const runTwo = createLedgerAdapter(transport, PERSISTENT_CONFIG, {
+      gameId: 'g',
+      runId: 'r2',
+      ...bindSidecar(dir, { issuerMode: 'persistent' }),
+    });
+    const stateTwo = createInitialState(PERSISTENT_CONFIG);
+    await runTwo.enable(stateTwo, snapshot);
+    expect(stateTwo.issuerAddress).toBe(stateOne.issuerAddress);
+    expect(stateTwo.tokenMap).toEqual(stateOne.tokenMap);
+
+    const perDir = mkdtempSync(join(dir, 'per-run-'));
+    const perOne = createInitialState(CONFIG);
+    const perTwo = createInitialState(CONFIG);
+    await createLedgerAdapter(transport, CONFIG, {
+      gameId: 'g',
+      runId: 'p1',
+      ...bindSidecar(perDir),
+    }).enable(perOne, snapshot);
+    await createLedgerAdapter(transport, CONFIG, {
+      gameId: 'g',
+      runId: 'p2',
+      ...bindSidecar(perDir),
+    }).enable(perTwo, snapshot);
+    expect(perTwo.issuerAddress).not.toBe(perOne.issuerAddress);
   });
 });

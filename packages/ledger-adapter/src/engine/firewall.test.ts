@@ -27,11 +27,11 @@ import {
   BUY_MARKUP_MULTIPLIER,
 } from '@ai-rpg-engine/modules';
 import type { LedgerAdapterConfig } from '../contracts.js';
-import { createLedgerAdapter, reconcile } from '../settle/index.js';
+import { createLedgerAdapter, reconcile, reconcileAgainstLedger } from '../settle/index.js';
 import { createInitialState } from '../state/index.js';
 import { DryRunTransport } from '../transport/index.js';
 import { snapshotFromWorld } from './snapshot.js';
-import { enableFromWorld, settleCheckpoint } from './checkpoint.js';
+import { enableFromWorld, reconcileFromWorld, settleCheckpoint } from './checkpoint.js';
 
 // ── Shared world fixture (mirrors trade-core.test.ts's makeSellEngine /
 // makeBuyEngine exactly: a single neutral district with NO controllingFaction,
@@ -232,5 +232,17 @@ describe('integration — settleCheckpoint settles the net trade delta, reconcil
     expect(report.resources.every((r) => r.balanceOk && r.conservationOk)).toBe(true);
     expect(report.memoOk).toBe(true);
     expect(report.pendingCount).toBe(0);
+
+    expect(state.mintedInitial).toEqual(mintedInitial);
+    const fromLedger = await reconcileAgainstLedger(transport, state, {
+      runId: 'integration-run',
+      seed: 0,
+    });
+    expect(fromLedger.passed).toBe(true);
+    const fromWorld = await reconcileFromWorld(engine.world, 'player', transport, state, {
+      runId: 'integration-run',
+      seed: 0,
+    });
+    expect(fromWorld.passed).toBe(true);
   });
 });
