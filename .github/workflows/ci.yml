@@ -12,6 +12,8 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'tsconfig.json'
+      - 'tsconfig.tests.json'
+      - 'Dockerfile'
       - 'vitest.config.ts'
       - 'eslint.config.js'
       - 'docs/examples/**'
@@ -26,6 +28,8 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'tsconfig.json'
+      - 'tsconfig.tests.json'
+      - 'Dockerfile'
       - 'vitest.config.ts'
       - 'eslint.config.js'
       - 'docs/examples/**'
@@ -41,7 +45,7 @@ concurrency:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       matrix:
         # Node 20 reached EOL 2026-04-30. Matrix is current LTS (24) plus the
@@ -110,6 +114,13 @@ jobs:
       - name: Packaging gate (LICENSE/README in every publishable tarball)
         if: matrix.node-version == 22
         run: node scripts/check-packaging.mjs
+      # Packed-tarball consumer proof (SHIP_GATE §F): pack every non-private
+      # workspace, install outside the monorepo, typecheck + run an Engine
+      # consumer, start the packed CLI --help. Node-22 only — the check is
+      # node-version independent, same as packaging/viability.
+      - name: Isolated-consumer proof (packed tarball)
+        if: matrix.node-version == 22
+        run: node scripts/verify-isolated-consumer.mjs
 
       - if: matrix.node-version != 22
         run: npm run test
@@ -125,3 +136,35 @@ jobs:
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           fail_ci_if_error: false
+
+  # Dedicated job (not a fifth workflow file — the org already carries 4 vs
+  # the 2-file guideline in docs-integrity.yml). Proves the CLI image boots
+  # before a Dockerfile-only PR can merge. load:true / push:false: never
+  # publishes. Smoke fail fails the job.
+  docker-smoke:
+    name: Docker smoke (CLI image)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Build CLI image (load, no push)
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          load: true
+          push: false
+          tags: ai-rpg-engine:ci-smoke
+
+      - name: Smoke — CLI --help
+        run: docker run --rm ai-rpg-engine:ci-smoke --help
+
+      # Write verb against /tmp (USER node cannot write WORKDIR /app).
+      # --out is the real flag; a cwd-write would EACCES.
+      - name: Smoke — create-starter writes under /tmp
+        run: docker run --rm ai-rpg-engine:ci-smoke create-starter ci-smoke --out /tmp/ci-smoke

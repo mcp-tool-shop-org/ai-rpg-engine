@@ -6,13 +6,14 @@
 //   PG-3  coverage ratchet declared in vitest.config.ts
 //   PG-5  packaging gate (LICENSE/README + advertised main/types/bin/exports)
 //   PG-6  docs-integrity I18N-01 (translated code spans stay in the source script)
+//   CI    isolated-consumer / docker-smoke / release bar / job-scoped creds / pages PR compile
 //
 // The scripts under test run as child processes (black boxes), exactly as CI
 // invokes them — so these tests exercise the real entry points, not internals.
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -245,3 +246,90 @@ describe('PG-6: docs-integrity I18N-01 code-span script gate', () => {
     }
   }, 120_000);
 });
+
+// ---------------------------------------------------------------------------
+// Workflow wiring — ship gates that exist as scripts must actually run in CI
+// and on the credentialed publish path. A missing step is the same class of
+// theater as a gate that never fires: the script is local-only ritual.
+// ---------------------------------------------------------------------------
+describe('workflow wiring: ship gates run in CI and release', () => {
+  const ci = readFileSync(join(repoRoot, '.github/workflows/ci.yml'), 'utf8');
+  const release = readFileSync(join(repoRoot, '.github/workflows/release.yml'), 'utf8');
+  const pages = readFileSync(join(repoRoot, '.github/workflows/pages.yml'), 'utf8');
+
+  it('ci.yml path filters include Dockerfile and tsconfig.tests.json', () => {
+    expect(ci).toContain("'Dockerfile'");
+    expect(ci).toContain("'tsconfig.tests.json'");
+  });
+
+  it('ci.yml node-22 leg runs the isolated-consumer proof', () => {
+    expect(ci).toContain('node scripts/verify-isolated-consumer.mjs');
+    expect(ci).toMatch(
+      /Isolated-consumer proof[\s\S]{0,200}if: matrix\.node-version == 22/,
+    );
+  });
+
+  it('ci.yml docker-smoke job loads the image and docker-runs --help (no push)', () => {
+    expect(ci).toMatch(/docker-smoke:/);
+    expect(ci).toContain('docker/setup-buildx-action@');
+    expect(ci).toMatch(/load:\s*true/);
+    expect(ci).toMatch(/push:\s*false/);
+    expect(ci).toContain('docker run --rm ai-rpg-engine:ci-smoke --help');
+  });
+
+  it('release.yml npm job runs the node-22-class gates before any publish', () => {
+    const npmJob = release.slice(
+      release.indexOf('name: Publish npm packages'),
+      release.indexOf('name: Build & push CLI image'),
+    );
+    expect(npmJob).toContain('npm run lint');
+    expect(npmJob).toContain('npm run typecheck:tests');
+    expect(npmJob).toContain('node scripts/verify-mixed-game-viability.mjs');
+    expect(npmJob).toContain('node scripts/check-packaging.mjs');
+    expect(npmJob).toContain('node scripts/verify-isolated-consumer.mjs');
+    const consumerAt = npmJob.indexOf('node scripts/verify-isolated-consumer.mjs');
+    const publishAt = npmJob.indexOf('npm publish');
+    expect(consumerAt).toBeGreaterThan(-1);
+    expect(publishAt).toBeGreaterThan(consumerAt);
+  });
+
+  it('release.yml pins npm to an exact 11.x version, not @latest', () => {
+    expect(release).not.toMatch(/npm install -g npm@latest/);
+    expect(release).toMatch(/npm install -g npm@11\.\d+\.\d+ --ignore-scripts/);
+  });
+
+  it('release.yml docker needs npm, smokes before push, and does not share npm OIDC', () => {
+    const dockerJob = release.slice(release.indexOf('name: Build & push CLI image'));
+    expect(dockerJob).toMatch(/needs:\s*\[npm\]/);
+    expect(dockerJob).toContain('docker run --rm ai-rpg-engine:ci-smoke --help');
+    expect(dockerJob).toMatch(/load:\s*true/);
+    expect(dockerJob).toMatch(/push:\s*false/);
+    expect(dockerJob).toContain('docker push');
+    const smokeAt = dockerJob.indexOf('Smoke — CLI --help');
+    const pushAt = dockerJob.lastIndexOf('docker push');
+    expect(smokeAt).toBeGreaterThan(-1);
+    expect(pushAt).toBeGreaterThan(smokeAt);
+    expect(dockerJob).not.toMatch(/id-token:\s*write/);
+    expect(dockerJob).toMatch(/packages:\s*write/);
+  });
+
+  it('release.yml keeps id-token write on the npm job only', () => {
+    const header = release.slice(0, release.indexOf('jobs:'));
+    expect(header).not.toMatch(/id-token:\s*write/);
+    expect(header).not.toMatch(/packages:\s*write/);
+    const npmJob = release.slice(
+      release.indexOf('name: Publish npm packages'),
+      release.indexOf('name: Build & push CLI image'),
+    );
+    expect(npmJob).toMatch(/id-token:\s*write/);
+    expect(npmJob).not.toMatch(/packages:\s*write/);
+  });
+
+  it('pages.yml compiles the Astro handbook on pull_request; deploy stays main-only', () => {
+    expect(pages).toMatch(/pull_request:\s*\n\s*paths:/);
+    expect(pages).toContain("'site/**'");
+    expect(pages).toContain('npm run build');
+    expect(pages).toMatch(/if:\s*github\.ref == 'refs\/heads\/main'/);
+  });
+});
+
