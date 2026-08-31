@@ -76,10 +76,41 @@ type BuildTemplate = {
   steps: TemplateStep[];
 };
 
+const CHARGEN_STEPS: TemplateStep[] = [
+  {
+    command: 'create-archetype',
+    intent: 'scaffold',
+    descriptionSuffix: 'player class / archetype',
+    artifactKind: 'archetypes',
+    paramBuilder: (goal) => ({ kind: 'archetype', theme: `player class for ${goal}` }),
+    dependsOnPrevious: false,
+    usePriorContent: false,
+  },
+  {
+    command: 'create-background',
+    intent: 'scaffold',
+    descriptionSuffix: 'player origin / background',
+    artifactKind: 'backgrounds',
+    paramBuilder: (goal) => ({ kind: 'background', theme: `player origin for ${goal}` }),
+    dependsOnPrevious: false,
+    usePriorContent: false,
+  },
+  {
+    command: 'create-build-catalog',
+    intent: 'scaffold',
+    descriptionSuffix: 'chargen catalog',
+    artifactKind: 'catalogs',
+    paramBuilder: (goal) => ({ kind: 'build-catalog', theme: `character catalog for ${goal}` }),
+    dependsOnPrevious: true,
+    usePriorContent: false,
+  },
+];
+
 const DISTRICT_TEMPLATE: BuildTemplate = {
   name: 'district',
   keywords: ['district', 'area', 'zone', 'neighborhood', 'quarter', 'ward', 'market'],
   steps: [
+    ...CHARGEN_STEPS,
     {
       command: 'create-district',
       intent: 'scaffold',
@@ -148,6 +179,7 @@ const SCENARIO_TEMPLATE: BuildTemplate = {
   name: 'scenario',
   keywords: ['scenario', 'quest', 'adventure', 'heist', 'mission', 'chapel', 'dungeon', 'encounter'],
   steps: [
+    ...CHARGEN_STEPS,
     {
       command: 'create-district',
       intent: 'scaffold',
@@ -216,6 +248,7 @@ const FACTION_TEMPLATE: BuildTemplate = {
   name: 'faction network',
   keywords: ['faction', 'guild', 'group', 'network', 'organization', 'order', 'syndicate'],
   steps: [
+    ...CHARGEN_STEPS,
     {
       command: 'create-faction',
       intent: 'scaffold',
@@ -463,7 +496,7 @@ export function generateBuildPlan(
 
   for (const tmplStep of template.steps) {
     // Smart skip: if session already has matching artifacts
-    if (tmplStep.artifactKind && hasMatchingArtifact(existing[tmplStep.artifactKind], goal)) {
+    if (tmplStep.artifactKind && hasMatchingArtifact(existing[tmplStep.artifactKind] ?? [], goal)) {
       warnings.push(`Skipped ${tmplStep.descriptionSuffix}: session already has matching ${tmplStep.artifactKind}`);
       continue;
     }

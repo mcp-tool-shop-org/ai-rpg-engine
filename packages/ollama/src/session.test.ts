@@ -61,6 +61,11 @@ describe('session', () => {
       expect(s.artifacts.statuses).toEqual([]);
       expect(s.artifacts.items).toEqual([]);
       expect(s.artifacts.hazards).toEqual([]);
+      expect(s.artifacts.archetypes).toEqual([]);
+      expect(s.artifacts.backgrounds).toEqual([]);
+      expect(s.artifacts.catalogs).toEqual([]);
+      expect(s.artifacts.placements).toEqual([]);
+      expect(s.artifacts.entityAi).toEqual([]);
       expect(s.issues).toEqual([]);
       expect(s.acceptedSuggestions).toEqual([]);
       expect(s.history).toHaveLength(1);
@@ -186,6 +191,11 @@ describe('session', () => {
       expect(loaded!.artifacts.items).toEqual([]);
       expect(loaded!.artifacts.hazards).toEqual([]);
       expect(loaded!.artifacts.rooms).toEqual([]);
+      expect(loaded!.artifacts.archetypes).toEqual([]);
+      expect(loaded!.artifacts.backgrounds).toEqual([]);
+      expect(loaded!.artifacts.catalogs).toEqual([]);
+      expect(loaded!.artifacts.placements).toEqual([]);
+      expect(loaded!.artifacts.entityAi).toEqual([]);
     });
 
     it('keeps items/hazards when present and drops unknown extra keys', async () => {
@@ -574,6 +584,11 @@ describe('session', () => {
       expect(artifactBucketForKind('hazard')).toBe('hazards');
       expect(artifactBucketForKind('room')).toBe('rooms');
       expect(artifactBucketForKind('location-pack')).toBe('packs');
+      expect(artifactBucketForKind('archetype')).toBe('archetypes');
+      expect(artifactBucketForKind('background')).toBe('backgrounds');
+      expect(artifactBucketForKind('build-catalog')).toBe('catalogs');
+      expect(artifactBucketForKind('placement')).toBe('placements');
+      expect(artifactBucketForKind('entity-ai')).toBe('entityAi');
     });
   });
 });

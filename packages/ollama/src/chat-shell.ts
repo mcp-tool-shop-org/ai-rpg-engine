@@ -38,7 +38,13 @@ import {
 import { createDefaultReplayProducer } from './replay-producer.js';
 import {
   tryLoadSession, listSessions, formatSessionList, switchSession, exportSession,
+  loadSession, saveSession,
 } from './session.js';
+import { importSessionArtifacts } from './session-import.js';
+import { assembleContentPack, defaultPackWritePath, formatEmitPackReport, packJson } from './commands/emit-pack.js';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import { withinRoot, resolveUnderRoot } from './apply-preview.js';
 import {
   resolveAlias, formatGroupedHelp,
   buildStudioSnapshot, formatStudioDashboard,
@@ -1031,7 +1037,55 @@ export async function handleSlashCommand(
         }
         return 'handled';
       }
-      console.log('Usage: /session [list|switch <name>|export]');
+      if (sub === 'import') {
+        const pathArg = parts.slice(2).join(' ').trim() || undefined;
+        try {
+          const current = await loadSession(projectRoot);
+          const imported = await importSessionArtifacts(projectRoot, current, pathArg);
+          await saveSession(projectRoot, imported.session);
+          console.log(`Imported ${imported.added} artifact id(s) from ${imported.source}.`);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.log(message);
+        }
+        return 'handled';
+      }
+      console.log('Usage: /session [list|switch <name>|export|import [path]]');
+      return 'handled';
+    }
+
+    case 'emit-pack': {
+      try {
+        const assembled = await assembleContentPack(projectRoot);
+        const writeArg = parts[1];
+        const writePath = writeArg && !writeArg.startsWith('-')
+          ? writeArg
+          : defaultPackWritePath(projectRoot);
+        if (!assembled.load.ok) {
+          console.log(formatEmitPackReport(assembled));
+          console.log('Refused to write: loadContent failed. Inspect the draft above and fix YAML.');
+          console.log(packJson(assembled.pack));
+          return 'handled';
+        }
+        const resolved = resolveUnderRoot(writePath, projectRoot);
+        if (!withinRoot(resolved, projectRoot)) {
+          console.log(`Error: --write target escapes the project root (${resolved})`);
+          return 'handled';
+        }
+        await mkdir(dirname(resolved), { recursive: true });
+        await writeFile(resolved, packJson(assembled.pack), 'utf-8');
+        console.log(`Wrote ${resolved}`);
+        console.log(formatEmitPackReport(assembled));
+        const session = await tryLoadSession(projectRoot);
+        if (session) {
+          const { recordEvent } = await import('./session.js');
+          recordEvent(session, 'pack_emitted', `chat /emit-pack → ${writePath}`);
+          await saveSession(projectRoot, session);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.log(message);
+      }
       return 'handled';
     }
 

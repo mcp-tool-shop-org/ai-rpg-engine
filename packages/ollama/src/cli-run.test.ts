@@ -514,6 +514,13 @@ describe('runCli — help banner chat --write + session listing (F-ef949bc5)', (
     expect(help.slice(createFlagsAt, chatFlagsAt)).toContain('Write generated output to file');
     expect(help).toContain('create-item');
     expect(help).toContain('create-hazard');
+    expect(help).toContain('create-archetype');
+    expect(help).toContain('create-background');
+    expect(help).toContain('create-build-catalog');
+    expect(help).toContain('create-entity-ai');
+    expect(help).toContain('create-placement');
+    expect(help).toContain('emit-pack');
+    expect(help).toContain('session import');
     expect(help).toContain('models');
   });
 });

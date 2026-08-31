@@ -18,9 +18,14 @@ export const REQUIRED_ARTIFACT_KINDS = [
   'districts', 'factions', 'quests', 'rooms', 'packs',
 ] as const;
 
-/** Optional buckets filled with [] when an older file omits them. */
+/**
+ * Optional buckets filled with [] when an older file omits them.
+ * Extra chargen / placement / NPC-AI buckets stay optional on the type
+ * (Wave 27 typecheck pin: older test literals and session JSON still typecheck).
+ */
 export const OPTIONAL_ARTIFACT_KINDS = [
   'entities', 'dialogues', 'abilities', 'statuses', 'items', 'hazards',
+  'archetypes', 'backgrounds', 'catalogs', 'placements', 'entityAi',
 ] as const;
 
 export const ARTIFACT_KINDS = [
@@ -42,6 +47,16 @@ export type SessionArtifacts = {
   statuses: string[];
   items: string[];
   hazards: string[];
+  /** Chargen class ids. Optional so pre-Wave-31 session JSON / literals typecheck. */
+  archetypes?: string[];
+  /** Chargen origin ids. */
+  backgrounds?: string[];
+  /** Build-catalog ids. */
+  catalogs?: string[];
+  /** Placement records (`entityId@zoneId`). */
+  placements?: string[];
+  /** Entity AI overlay ids (entity ids with a brain). */
+  entityAi?: string[];
 };
 
 const ARTIFACT_LABELS: Record<ArtifactKind, string> = {
@@ -56,6 +71,11 @@ const ARTIFACT_LABELS: Record<ArtifactKind, string> = {
   statuses: 'statuses',
   items: 'items',
   hazards: 'hazards',
+  archetypes: 'archetypes',
+  backgrounds: 'backgrounds',
+  catalogs: 'catalogs',
+  placements: 'placements',
+  entityAi: 'entityAi',
 };
 
 export function countArtifacts(artifacts: SessionArtifacts): number {
@@ -75,6 +95,11 @@ export function emptyArtifacts(): SessionArtifacts {
     statuses: [],
     items: [],
     hazards: [],
+    archetypes: [],
+    backgrounds: [],
+    catalogs: [],
+    placements: [],
+    entityAi: [],
   };
 }
 
@@ -136,7 +161,9 @@ export type SessionEventKind =
   | 'experiment_compared'
   | 'experiment_findings_added'
   | 'studio_dashboard_viewed'
-  | 'onboarding_started';
+  | 'onboarding_started'
+  | 'session_imported'
+  | 'pack_emitted';
 
 export type SessionEvent = {
   timestamp: string;
@@ -621,7 +648,7 @@ export function renderSessionContext(session: DesignSession): string {
 
   const artifacts = normalizeArtifacts(session.artifacts);
   for (const kind of ARTIFACT_KINDS) {
-    const line = formatArtifactLine(kind, artifacts[kind], 'Known ');
+    const line = formatArtifactLine(kind, artifacts[kind] ?? [], 'Known ');
     if (line) lines.push(line);
   }
 
@@ -671,7 +698,7 @@ export function formatSessionStatus(session: DesignSession): string {
   lines.push('Artifacts:');
   const artifacts = normalizeArtifacts(session.artifacts);
   for (const kind of ARTIFACT_KINDS) {
-    const ids = artifacts[kind];
+    const ids = artifacts[kind] ?? [];
     const label = kind.charAt(0).toUpperCase() + kind.slice(1);
     lines.push(`  ${label}: ${ids.length > 0 ? ids.join(', ') : '(none)'}`);
   }
@@ -741,6 +768,20 @@ export function artifactBucketForKind(kind: string): keyof SessionArtifacts {
     case 'items': return 'items';
     case 'hazard':
     case 'hazards': return 'hazards';
+    case 'archetype':
+    case 'archetypes':
+    case 'class': return 'archetypes';
+    case 'background':
+    case 'backgrounds':
+    case 'origin': return 'backgrounds';
+    case 'build-catalog':
+    case 'catalog':
+    case 'catalogs': return 'catalogs';
+    case 'placement':
+    case 'placements': return 'placements';
+    case 'entity-ai':
+    case 'entityAi':
+    case 'npc-ai': return 'entityAi';
     default: return 'packs';
   }
 }

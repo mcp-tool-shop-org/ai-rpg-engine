@@ -70,6 +70,27 @@ export type { CreateItemInput, GeneratedItemResult } from './commands/create-ite
 export { createHazard } from './commands/create-hazard.js';
 export type { CreateHazardInput, GeneratedHazardResult } from './commands/create-hazard.js';
 
+export { createArchetype } from './commands/create-archetype.js';
+export type { CreateArchetypeInput, GeneratedArchetypeResult } from './commands/create-archetype.js';
+
+export { createBackground } from './commands/create-background.js';
+export type { CreateBackgroundInput, GeneratedBackgroundResult } from './commands/create-background.js';
+
+export { createBuildCatalog } from './commands/create-build-catalog.js';
+export type { CreateBuildCatalogInput, GeneratedBuildCatalogResult } from './commands/create-build-catalog.js';
+
+export { createEntityAi } from './commands/create-entity-ai.js';
+export type { CreateEntityAiInput, GeneratedEntityAiResult } from './commands/create-entity-ai.js';
+
+export { createPlacement, placementYaml, placementRecordId } from './commands/create-placement.js';
+export type { CreatePlacementInput, GeneratedPlacementResult } from './commands/create-placement.js';
+
+export { assembleContentPack, classifyDocument, idsFromPack, packJson } from './commands/emit-pack.js';
+export type { EmitPackResult, ClassifiedDoc } from './commands/emit-pack.js';
+
+export { importSessionArtifacts, collectImportIds, extractIdsFromContentTs } from './session-import.js';
+export type { ImportSessionResult } from './session-import.js';
+
 export { generateWithRepair } from './generate-with-repair.js';
 export type { GeneratedTextResult as GeneratedRepairResult, GenerateWithRepairInput } from './generate-with-repair.js';
 
@@ -136,10 +157,19 @@ export {
   validateGeneratedStatus,
   validateGeneratedItem,
   validateGeneratedHazard,
+  validateGeneratedArchetype,
+  validateGeneratedBackground,
+  validateGeneratedBuildCatalog,
+  validateGeneratedEntityAi,
+  validateGeneratedPlacement,
   validateFactionDefinition,
   validateDistrictDefinition,
   validateLocationPackDefinition,
   validateEncounterPackDefinition,
+  validateArchetypeDefinition,
+  validateBackgroundDefinition,
+  validateBuildCatalogDefinition,
+  validateEntityAiOverlay,
 } from './validators.js';
 export type { GeneratedContentResult } from './validators.js';
 
@@ -347,7 +377,7 @@ export type {
   ExperimentPlanStep, ExperimentPlan,
   ReplayProducer,
 } from './chat-experiments.js';
-export { createDefaultReplayProducer, preloadDefaultReplayProducer } from './replay-producer.js';
+export { createDefaultReplayProducer, preloadDefaultReplayProducer, loadProjectPack } from './replay-producer.js';
 export type { DefaultReplayProducerOptions, EngineConstructor, EngineLike } from './replay-producer.js';
 
 // CLI entry

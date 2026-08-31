@@ -21,6 +21,13 @@ import { createAbility } from './commands/create-ability.js';
 import { createStatus } from './commands/create-status.js';
 import { createItem } from './commands/create-item.js';
 import { createHazard } from './commands/create-hazard.js';
+import { createArchetype } from './commands/create-archetype.js';
+import { createBackground } from './commands/create-background.js';
+import { createBuildCatalog } from './commands/create-build-catalog.js';
+import { createEntityAi } from './commands/create-entity-ai.js';
+import { createPlacement, placementYaml, placementRecordId } from './commands/create-placement.js';
+import { assembleContentPack, defaultPackWritePath, formatEmitPackReport, packJson } from './commands/emit-pack.js';
+import { importSessionArtifacts } from './session-import.js';
 import { explainDistrictState } from './commands/explain-district-state.js';
 import { explainFactionAlert } from './commands/explain-faction-alert.js';
 import { improveContent } from './commands/improve-content.js';
@@ -82,6 +89,8 @@ type CliFlags = {
   stdin?: boolean;
   write?: string;
   session?: string;
+  placeIn?: string;
+  entityId?: string;
 };
 
 function parseFlags(args: string[]): { command: string; flags: CliFlags } {
@@ -153,6 +162,8 @@ function parseFlags(args: string[]): { command: string; flags: CliFlags } {
       }
       case '--kind': flags.kind = next; i++; break;
       case '--stdin': flags.stdin = true; break;
+      case '--place-in': flags.placeIn = next; i++; break;
+      case '--entity-id': flags.entityId = next; i++; break;
     }
   }
 
@@ -280,6 +291,7 @@ const SESSION_COMMANDS: ReadonlyArray<{ signature: string; description: string }
   { signature: 'session list', description: 'List named design sessions' },
   { signature: 'session switch <name>', description: 'Switch to a named session' },
   { signature: 'session export [path]', description: 'Export the active session' },
+  { signature: 'session import [path]', description: 'Import pack JSON / YAML ids' },
   { signature: 'session end', description: 'Archive and end the session' },
   { signature: 'session add-theme <text>', description: 'Add a theme to the active session' },
   { signature: 'session add-constraint <t>', description: 'Add a constraint to the active session' },
@@ -327,6 +339,12 @@ export function formatCliHelp(version: string): string {
     helpRow('create-status', 'Generate a status definition'),
     helpRow('create-item', 'Generate an item definition'),
     helpRow('create-hazard', 'Generate a hazard definition'),
+    helpRow('create-archetype', 'Generate a chargen class'),
+    helpRow('create-background', 'Generate a chargen origin'),
+    helpRow('create-build-catalog', 'Generate a chargen catalog'),
+    helpRow('create-entity-ai', 'Generate an NPC AI overlay'),
+    helpRow('create-placement', 'Generate an entity placement'),
+    helpRow('emit-pack', 'Assemble ContentPack JSON from YAML'),
     '',
     'Iterate:',
     helpRow('improve-content', 'Revise content toward a goal (pipe YAML)'),
@@ -386,10 +404,12 @@ export function formatCliHelp(version: string): string {
     flagRow('--zones <ids>', 'Comma-separated existing zone IDs'),
     flagRow('--constraints <c>', 'Comma-separated constraints'),
     flagRow('--difficulty <level>', 'Encounter difficulty hint'),
-    flagRow('--kind <type>', 'Scaffold kind: room, faction, district, quest, pack, dialogue, entity, ability, status, item, hazard'),
+    flagRow('--kind <type>', 'Scaffold kind: room, faction, district, quest, pack, dialogue, entity, ability, status, item, hazard, archetype, background, build-catalog, entity-ai, placement'),
     flagRow('--repair', 'Attempt to fix invalid generated content'),
     flagRow('--validate', 'Refuse to emit/write create-* content that fails schema validation'),
     flagRow('--write <path>', 'Write generated output to file instead of stdout (sandboxed)'),
+    flagRow('--place-in <zone>', 'create-entity: also emit a placement into this zone'),
+    flagRow('--entity-id <id>', 'create-entity-ai / create-placement: bind to this entity'),
     '',
     'Flags (iterate / diagnose / simulate / guide):',
     flagRow('--goal <text>', 'Improvement/expansion goal'),
@@ -520,6 +540,14 @@ async function runCliInner(args: string[]): Promise<void> {
         }
         return;
       }
+      case 'import': {
+        const pathArg = (args[2] && !args[2].startsWith('-')) ? args[2] : undefined;
+        const current = await loadSession(projectRoot);
+        const imported = await importSessionArtifacts(projectRoot, current, pathArg);
+        await saveSession(projectRoot, imported.session);
+        console.log(`Imported ${imported.added} artifact id(s) from ${imported.source}.`);
+        return;
+      }
       case 'status': {
         const session = await loadSession(projectRoot);
         if (!session) {
@@ -592,6 +620,37 @@ async function runCliInner(args: string[]): Promise<void> {
         console.log(formatSessionCommandList('Session commands:'));
         return;
     }
+  }
+
+  if (command === 'emit-pack') {
+    const assembled = await assembleContentPack(projectRoot);
+    const json = packJson(assembled.pack);
+    const writePath = flags.write === undefined
+      ? undefined
+      : (flags.write.length > 0 ? flags.write : defaultPackWritePath(projectRoot));
+    if (writePath && !assembled.load.ok) {
+      throw new CliError(
+        'INVALID_CONTENT',
+        `emit-pack refused --write: loadContent failed (${assembled.load.errors.length} error(s)):\n`
+          + assembled.load.errors.map((e) => `  ${e.path}: ${e.message}`).join('\n'),
+        'Nothing was written. Fix the YAML, or run without --write to inspect the draft JSON.',
+      );
+    }
+    await emit(json, writePath, projectRoot);
+    console.error(formatEmitPackReport(assembled));
+    const session = await loadSession(projectRoot);
+    if (session) {
+      recordEvent(session, 'pack_emitted', `emit-pack: ${assembled.load.ok ? 'valid' : 'invalid'} (${assembled.filesRead.length} files)`);
+      await saveSession(projectRoot, session);
+    }
+    if (flags.validate && !assembled.load.ok) {
+      throw new CliError(
+        'INVALID_CONTENT',
+        assembled.load.summary,
+        'Re-run without --validate to inspect the draft.',
+      );
+    }
+    return;
   }
 
   const config = buildConfig(flags);
@@ -938,8 +997,13 @@ async function runCliInner(args: string[]): Promise<void> {
     case 'create-ability':
     case 'create-status':
     case 'create-item':
-    case 'create-hazard': {
-      const theme = flags.theme;
+    case 'create-hazard':
+    case 'create-archetype':
+    case 'create-background':
+    case 'create-build-catalog':
+    case 'create-entity-ai':
+    case 'create-placement': {
+      const theme = flags.theme ?? (command === 'create-placement' && flags.entityId && flags.placeIn ? 'placement' : undefined);
       if (!theme) {
         console.error('--theme is required');
         process.exit(1);
@@ -950,14 +1014,21 @@ async function runCliInner(args: string[]): Promise<void> {
         : kind === 'ability' ? createAbility
         : kind === 'status' ? createStatus
         : kind === 'item' ? createItem
-        : createHazard;
+        : kind === 'hazard' ? createHazard
+        : kind === 'archetype' ? createArchetype
+        : kind === 'background' ? createBackground
+        : kind === 'build-catalog' ? createBuildCatalog
+        : kind === 'entity-ai' ? createEntityAi
+        : createPlacement;
       const result = await run(client, {
         theme,
         rulesetId: flags.ruleset,
         constraints: flags.constraints,
         repair: flags.repair,
         sessionContext: sessionCtx,
-      });
+        entityId: flags.entityId,
+        zoneId: flags.placeIn,
+      } as never);
       if (!result.ok) {
         console.error(result.error);
         process.exit(1);
@@ -967,9 +1038,33 @@ async function runCliInner(args: string[]): Promise<void> {
       await emit(result.yaml, flags.write);
       printValidationWarnings(result.validation);
       if (session) {
-        const idMatch = result.yaml.match(/^id:\s*(\S+)/m);
-        if (idMatch) addArtifact(session, artifactBucketForKind(kind), idMatch[1]);
+        const entityIdMatch = result.yaml.match(/^entityId:\s*(\S+)/m);
+        const zoneIdMatch = result.yaml.match(/^zoneId:\s*(\S+)/m);
+        const idMatch = result.yaml.match(/^id:\s*(\S+)/m)
+          ?? entityIdMatch
+          ?? result.yaml.match(/^packId:\s*(\S+)/m)
+          ?? result.yaml.match(/^profileId:\s*(\S+)/m);
+        if (kind === 'placement' && entityIdMatch && zoneIdMatch) {
+          addArtifact(session, 'placements', placementRecordId(entityIdMatch[1], zoneIdMatch[1]));
+        } else if (idMatch) {
+          addArtifact(session, artifactBucketForKind(kind), idMatch[1]);
+        }
+        if (kind === 'entity' && flags.placeIn && idMatch) {
+          const recId = placementRecordId(idMatch[1], flags.placeIn);
+          addArtifact(session, 'placements', recId);
+          if (flags.write) {
+            const placePath = flags.write.replace(/(\.ya?ml)?$/i, '.placement.yaml');
+            await emit(placementYaml(idMatch[1], flags.placeIn), placePath);
+          } else {
+            console.error(`Placement: entityId=${idMatch[1]} zoneId=${flags.placeIn}`);
+          }
+        }
         await saveSession(projectRoot, session);
+      } else if (kind === 'entity' && flags.placeIn) {
+        const idMatch = result.yaml.match(/^id:\s*(\S+)/m);
+        if (idMatch) {
+          console.error(`Placement: entityId=${idMatch[1]} zoneId=${flags.placeIn}`);
+        }
       }
       break;
     }
