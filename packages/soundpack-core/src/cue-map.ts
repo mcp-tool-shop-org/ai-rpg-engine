@@ -392,6 +392,72 @@ export function cueMapCoverage(
   return { covered, missing, extra };
 }
 
+/**
+ * Bridge from a district's computed mood `tone` (DistrictMood's 6-value
+ * enum in `@ai-rpg-engine/modules`' district-mood.ts: `calm | tense |
+ * volatile | oppressive | grim | prosperous`) to the sound-mood vocabulary
+ * CORE_SOUND_PACK entries already carry via `SoundEntry.mood` (F-f8412999).
+ * Keyed with a null prototype like every other table in this file, so an
+ * inherited `Object.prototype` key (`toString`, `constructor`, …) can never
+ * masquerade as a matched tone (same defensive shape as F-d7c3c40a).
+ *
+ * Not exported: `districtToneToSoundMood` and {@link districtToneMoodValues}
+ * are the public surface; the table itself stays module-private.
+ */
+const DISTRICT_TONE_MOOD_MAP: Readonly<Record<string, readonly string[]>> = Object.freeze(
+  Object.assign(Object.create(null), {
+    calm: Object.freeze(['calm']),
+    tense: Object.freeze(['tension']),
+    volatile: Object.freeze(['tension']),
+    oppressive: Object.freeze(['dread']),
+    grim: Object.freeze(['dread', 'negative']),
+    prosperous: Object.freeze(['positive']),
+  }),
+);
+
+/**
+ * Translate a district's computed `tone` into the sound-mood vocabulary for
+ * `SoundQuery.mood` — pass the result to `SoundRegistry.pickMusicStem` /
+ * `pickAmbientBed` (F-f8412999). Returns `undefined` for an unrecognized
+ * tone: an explicit non-match, not a guess, so a caller knows to fall
+ * through to today's fixed `resolveMusicStem('scene.enter')` /
+ * `resolveAmbientBed('scene.enter')` result rather than querying with an
+ * empty or wrong mood array. Returns a fresh copy each call — like
+ * {@link resolveSoundCue}, mutating a result cannot poison the bridge table.
+ *
+ * `tone: string`, not a `DistrictMood['tone']` import from
+ * @ai-rpg-engine/modules — soundpack-core stays dependency-free, the same
+ * posture @ai-rpg-engine/presentation's builder.ts documents for itself. A
+ * drift between the two vocabularies surfaces as a type error at the
+ * composition site instead.
+ *
+ * Composing this with a registry query and an actual fallback is the
+ * composition layer's job (not soundpack-core) — this pure helper only
+ * answers "what mood does this tone mean", nothing about what to do when it
+ * doesn't match.
+ */
+export function districtToneToSoundMood(tone: string): string[] | undefined {
+  if (Object.hasOwn(DISTRICT_TONE_MOOD_MAP, tone)) {
+    return [...DISTRICT_TONE_MOOD_MAP[tone]];
+  }
+  return undefined;
+}
+
+/**
+ * Every sound-mood string {@link districtToneToSoundMood} can emit, deduped
+ * and sorted — for the boot-time coverage invariant below and for coverage
+ * tests. Mirrors {@link sceneBedTargetIds} / {@link sceneMusicTargetIds} /
+ * {@link combatStingTargetIds}'s "everything this table can point at" shape,
+ * except these values are `SoundEntry.mood` strings, not soundpack entry ids.
+ */
+export function districtToneMoodValues(): string[] {
+  const moods = new Set<string>();
+  for (const arr of Object.values(DISTRICT_TONE_MOOD_MAP)) {
+    for (const m of arr) moods.add(m);
+  }
+  return [...moods].sort();
+}
+
 // Startup invariant, not just a test: the built-in map must only point at
 // entries CORE_SOUND_PACK defines. A typo'd target id here would otherwise
 // ship a cue that resolves to an unplayable sound.
@@ -419,6 +485,26 @@ if (!combatStingTargetIds().every((id) => coreIds.has(id))) {
   throw new Error(
     '[soundpack-core] combat sting map points at a sound id missing from CORE_SOUND_PACK. ' +
       'Fix COMBAT_STING_MAP in cue-map.ts.',
+  );
+}
+// F-f8412999: every mood string the district-tone bridge can emit must
+// exist on at least one CORE_SOUND_PACK entry's mood array — catches a
+// typo'd bridge value (e.g. 'postive') the same way the checks above catch
+// a typo'd target id. Checked against the WHOLE pack (any domain), not
+// per-channel (music-only vs. ambient-only): a per-channel version would
+// throw TODAY on 'positive', which appears on music entries (music_triumph,
+// ui_success) but on no ambient entry — a known content-authoring gap (no
+// ambient bed is tagged positive/triumph yet; see F-f8412999's
+// evidence_base and cue-map.test.ts's "documents the known gap" test), not
+// a mapping typo. Scoping the gate to "the pack defines this mood
+// somewhere" keeps it honest — an incomplete pack is a content gap, not a
+// bug — while still firing on what it exists to catch: a bridge value that
+// matches NO entry anywhere (a real typo) still throws.
+const allMoods = new Set(CORE_SOUND_PACK.entries.flatMap((e) => e.mood));
+if (!districtToneMoodValues().every((m) => allMoods.has(m))) {
+  throw new Error(
+    '[soundpack-core] district-tone sound-mood bridge emits a mood string ' +
+      'absent from every CORE_SOUND_PACK entry. Fix DISTRICT_TONE_MOOD_MAP in cue-map.ts.',
   );
 }
 /* v8 ignore stop */

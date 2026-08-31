@@ -35,6 +35,8 @@ export {
   NAMESPACE_MUSIC_MAP,
   resolveMusicStem,
   sceneMusicTargetIds,
+  districtToneToSoundMood,
+  districtToneMoodValues,
   type ResolvedSfxCue,
   type SfxCueTiming,
   type CueMatchTier,
