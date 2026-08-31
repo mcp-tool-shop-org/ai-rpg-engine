@@ -152,11 +152,24 @@ jobs:
             echo "::endgroup::"
           done
 
+      # Live path only: prove the advertised `npm i -g @ai-rpg-engine/cli`
+      # installs from registry.npmjs.org (not the packed-from-disk proof).
+      # Isolated-consumer.mjs stays the tarball-on-disk gate; do not fold this in.
+      - name: Registry round-trip — npm install CLI from registry
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+        run: |
+          set -euo pipefail
+          ver=$(node -p "require('./packages/cli/package.json').version")
+          prefix=$(mktemp -d)
+          echo "installing @ai-rpg-engine/cli@$ver from https://registry.npmjs.org into $prefix"
+          npm install -g --prefix "$prefix" --registry=https://registry.npmjs.org "@ai-rpg-engine/cli@$ver"
+          PATH="$prefix/bin:$PATH" ai-rpg-engine --help
+
   docker:
     name: Build & push CLI image (GHCR)
     needs: [npm]
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     permissions:
       contents: read
       packages: write # GHCR docker push. npm OIDC stays on the npm job.
@@ -177,25 +190,39 @@ jobs:
             type=raw,value=latest,enable=${{ github.event_name == 'release' && github.event.release.prerelease == false }}
             type=raw,value=edge,enable=${{ github.event_name == 'workflow_dispatch' }}
 
-      # Always load locally so smoke can docker-run before any push. Dry-run
-      # dispatch builds without pushing. Live publish pushes the already-loaded
-      # tags only after --help (and create-starter) exit 0.
+      # Native-arch load so smoke can docker-run before any push. Dry-run
+      # dispatch builds without pushing. Live publish is a second
+      # build-push-action (multi-arch, sbom + provenance) after --help,
+      # create-starter, and trivy exit 0. This job must not hold npm OIDC
+      # (Trusted Publishing binds the workflow file, not the job name).
       - name: Build CLI image (load, no push)
         uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
         with:
           context: .
           load: true
           push: false
-          tags: |
-            ai-rpg-engine:ci-smoke
-            ${{ steps.meta.outputs.tags }}
+          tags: ai-rpg-engine:ci-smoke
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            VCS_REF=${{ github.sha }}
+            SOURCE_DATE_EPOCH=${{ github.event.head_commit.timestamp || github.run_started_at }}
 
       - name: Smoke — CLI --help
         run: docker run --rm ai-rpg-engine:ci-smoke --help
 
       - name: Smoke — create-starter writes under /tmp
         run: docker run --rm ai-rpg-engine:ci-smoke create-starter ci-smoke --out /tmp/ci-smoke
+
+      # Image CVE gate before GHCR latest can move. ignore-unfixed stays off;
+      # the FROM digest pin is the known snapshot, not a silent ignore.
+      - name: Scan CLI image (HIGH,CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ai-rpg-engine:ci-smoke
+          severity: HIGH,CRITICAL
+          vuln-type: os,library
+          exit-code: '1'
 
       - name: Log in to GHCR
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
@@ -205,11 +232,44 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push
+      - name: Set up QEMU
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+        with:
+          platforms: arm64
+
+      - name: Push multi-arch image (SBOM + provenance)
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          load: false
+          push: true
+          sbom: true
+          provenance: mode=max
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            VCS_REF=${{ github.sha }}
+            SOURCE_DATE_EPOCH=${{ github.event.head_commit.timestamp || github.run_started_at }}
+
+      # Live path only: drop the locally loaded tags and re-pull the GHCR
+      # tag the public installs, then --help. Skip on dry-run.
+      - name: Registry round-trip — GHCR pull + --help
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+        env:
+          META_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           set -euo pipefail
-          echo "${{ steps.meta.outputs.tags }}" | while IFS= read -r tag; do
+          docker rmi ai-rpg-engine:ci-smoke || true
+          while IFS= read -r tag; do
             [ -n "$tag" ] || continue
-            docker push "$tag"
-          done
+            docker rmi "$tag" || true
+          done <<< "$META_TAGS"
+          primary=$(printf '%s\n' "$META_TAGS" | awk 'NF { print; exit }')
+          [ -n "$primary" ] || { echo "::error::no GHCR tag from metadata-action"; exit 1; }
+          docker pull "$primary"
+          digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$primary")
+          docker run --rm "$digest" --help

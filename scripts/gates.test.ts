@@ -275,6 +275,20 @@ describe('workflow wiring: ship gates run in CI and release', () => {
     expect(ci).toMatch(/load:\s*true/);
     expect(ci).toMatch(/push:\s*false/);
     expect(ci).toContain('docker run --rm ai-rpg-engine:ci-smoke --help');
+    expect(ci).toContain('GIT_SHA=${{ github.sha }}');
+  });
+
+  it('ci.yml docker-smoke SHA-pins trivy HIGH,CRITICAL on the loaded image', () => {
+    const smoke = ci.slice(ci.indexOf('docker-smoke:'));
+    expect(smoke).toMatch(/aquasecurity\/trivy-action@[0-9a-f]{40}/);
+    expect(smoke).toContain('image-ref: ai-rpg-engine:ci-smoke');
+    expect(smoke).toMatch(/severity:\s*HIGH,CRITICAL/);
+    expect(smoke).toMatch(/vuln-type:\s*os,library/);
+    expect(smoke).toMatch(/exit-code:\s*'1'/);
+    const helpAt = smoke.indexOf('docker run --rm ai-rpg-engine:ci-smoke --help');
+    const trivyAt = smoke.indexOf('aquasecurity/trivy-action@');
+    expect(helpAt).toBeGreaterThan(-1);
+    expect(trivyAt).toBeGreaterThan(helpAt);
   });
 
   it('release.yml npm job runs the node-22-class gates before any publish', () => {
@@ -298,19 +312,77 @@ describe('workflow wiring: ship gates run in CI and release', () => {
     expect(release).toMatch(/npm install -g npm@11\.\d+\.\d+ --ignore-scripts/);
   });
 
-  it('release.yml docker needs npm, smokes before push, and does not share npm OIDC', () => {
+  it('release.yml docker needs npm, smokes before attested push, and does not share npm OIDC', () => {
     const dockerJob = release.slice(release.indexOf('name: Build & push CLI image'));
     expect(dockerJob).toMatch(/needs:\s*\[npm\]/);
     expect(dockerJob).toContain('docker run --rm ai-rpg-engine:ci-smoke --help');
     expect(dockerJob).toMatch(/load:\s*true/);
     expect(dockerJob).toMatch(/push:\s*false/);
-    expect(dockerJob).toContain('docker push');
+    expect(dockerJob).toMatch(/push:\s*true/);
+    expect(dockerJob).toMatch(/sbom:\s*true/);
+    expect(dockerJob).toMatch(/provenance:\s*mode=max/);
     const smokeAt = dockerJob.indexOf('Smoke — CLI --help');
-    const pushAt = dockerJob.lastIndexOf('docker push');
+    const sbomAt = dockerJob.indexOf('sbom:');
     expect(smokeAt).toBeGreaterThan(-1);
-    expect(pushAt).toBeGreaterThan(smokeAt);
+    expect(sbomAt).toBeGreaterThan(smokeAt);
     expect(dockerJob).not.toMatch(/id-token:\s*write/);
     expect(dockerJob).toMatch(/packages:\s*write/);
+  });
+
+  it('release.yml live push is multi-arch with SHA-pinned qemu and no load', () => {
+    const dockerJob = release.slice(release.indexOf('name: Build & push CLI image'));
+    expect(dockerJob).toMatch(/docker\/setup-qemu-action@[0-9a-f]{40}/);
+    expect(dockerJob).toContain('linux/amd64,linux/arm64');
+    expect(dockerJob).toMatch(/load:\s*false/);
+    expect(dockerJob).toContain("github.event_name == 'release' && github.event.release.prerelease == false");
+  });
+
+  it('release.yml scans ci-smoke with SHA-pinned trivy after smoke and before push', () => {
+    const dockerJob = release.slice(release.indexOf('name: Build & push CLI image'));
+    expect(dockerJob).toMatch(/aquasecurity\/trivy-action@[0-9a-f]{40}/);
+    expect(dockerJob).toMatch(/severity:\s*HIGH,CRITICAL/);
+    expect(dockerJob).toMatch(/vuln-type:\s*os,library/);
+    expect(dockerJob).toMatch(/exit-code:\s*'1'/);
+    const smokeAt = dockerJob.indexOf('Smoke — CLI --help');
+    const trivyAt = dockerJob.indexOf('aquasecurity/trivy-action@');
+    const sbomAt = dockerJob.indexOf('sbom:');
+    expect(trivyAt).toBeGreaterThan(smokeAt);
+    expect(sbomAt).toBeGreaterThan(trivyAt);
+  });
+
+  it('release.yml live path round-trips npm registry and GHCR after publish/push', () => {
+    const npmJob = release.slice(
+      release.indexOf('name: Publish npm packages'),
+      release.indexOf('name: Build & push CLI image'),
+    );
+    expect(npmJob).toContain('npm install -g --prefix');
+    expect(npmJob).toContain('@ai-rpg-engine/cli@');
+    expect(npmJob).toContain('ai-rpg-engine --help');
+    const consumerAt = npmJob.indexOf('node scripts/verify-isolated-consumer.mjs');
+    const publishAt = npmJob.indexOf('npm publish -w');
+    const installAt = npmJob.indexOf('npm install -g --prefix');
+    expect(consumerAt).toBeGreaterThan(-1);
+    expect(publishAt).toBeGreaterThan(consumerAt);
+    expect(installAt).toBeGreaterThan(publishAt);
+    const dockerJob = release.slice(release.indexOf('name: Build & push CLI image'));
+    expect(dockerJob).toContain('docker pull');
+    expect(dockerJob).toContain('docker rmi');
+    expect(dockerJob).toContain('docker run --rm');
+  });
+
+  it('Dockerfile pins node:24-bookworm-slim by digest and writes OCI source/revision/created labels', () => {
+    const dockerfile = readFileSync(join(repoRoot, 'Dockerfile'), 'utf8');
+    expect(dockerfile).toMatch(/FROM node:24-bookworm-slim@sha256:[a-f0-9]{64} AS build/);
+    expect(dockerfile).toMatch(/FROM node:24-bookworm-slim@sha256:[a-f0-9]{64} AS runtime/);
+    expect(dockerfile).toContain('ARG GIT_SHA');
+    expect(dockerfile).toContain('ARG VCS_REF');
+    expect(dockerfile).toContain('ARG SOURCE_DATE_EPOCH');
+    expect(dockerfile).toContain(
+      'org.opencontainers.image.source="https://github.com/mcp-tool-shop-org/ai-rpg-engine"',
+    );
+    expect(dockerfile).toContain('org.opencontainers.image.revision');
+    expect(dockerfile).toContain('org.opencontainers.image.created');
+    expect(dockerfile).not.toMatch(/FROM node:24-bookworm-slim(?!@sha256:)/);
   });
 
   it('release.yml keeps id-token write on the npm job only', () => {
