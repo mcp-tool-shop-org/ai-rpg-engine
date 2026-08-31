@@ -94,6 +94,60 @@ function comfyFlow(view: MockHandler, onWorkflow?: (workflow: Record<string, nev
   };
 }
 
+describe('ComfyUIProvider img2img (F-9daede34)', () => {
+  it('txt2img still uses EmptyLatentImage at denoise 1.0', async () => {
+    const png = tinyPng(8, 8);
+    let workflow: Record<string, { class_type?: string; inputs?: Record<string, unknown> }> | undefined;
+    const mock = await startMock(
+      comfyFlow(
+        (_req, res) => {
+          res.writeHead(200, { 'Content-Type': 'image/png' });
+          res.end(png);
+        },
+        (w) => { workflow = w as typeof workflow; },
+      ),
+    );
+    const result = await makeProvider(mock.url).generate('a knight');
+    expect(result.ok).toBe(true);
+    expect(workflow!['4']?.class_type).toBe('EmptyLatentImage');
+    expect(workflow!['5']?.inputs?.denoise).toBe(1);
+    expect(workflow!['5']?.inputs?.latent_image).toEqual(['4', 0]);
+  });
+
+  it('initImage uploads and switches to LoadImage + VAEEncode', async () => {
+    const png = tinyPng(8, 8);
+    let workflow: Record<string, { class_type?: string; inputs?: Record<string, unknown> }> | undefined;
+    const mock = await startMock((req, res) => {
+      if (req.method === 'POST' && req.url === '/upload/image') {
+        req.resume();
+        req.on('end', () => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ name: 'init.png', subfolder: '', type: 'input' }));
+        });
+        return;
+      }
+      comfyFlow(
+        (_req, viewRes) => {
+          viewRes.writeHead(200, { 'Content-Type': 'image/png' });
+          viewRes.end(png);
+        },
+        (w) => { workflow = w as typeof workflow; },
+      )(req, res);
+    });
+
+    const result = await makeProvider(mock.url).generate('scarred knight', {
+      initImage: new Uint8Array([1, 2, 3, 4]),
+      denoise: 0.45,
+    });
+    expect(result.ok).toBe(true);
+    expect(workflow!['4']?.class_type).toBe('LoadImage');
+    expect(workflow!['4']?.inputs?.image).toBe('init.png');
+    expect(workflow!['8']?.class_type).toBe('VAEEncode');
+    expect(workflow!['5']?.inputs?.denoise).toBe(0.45);
+    expect(workflow!['5']?.inputs?.latent_image).toEqual(['8', 0]);
+  });
+});
+
 describe('ComfyUIProvider.generate — A1: typed failure envelope', () => {
   it('A1-happy: full queue→poll→view flow resolves ok:true with the image bytes', async () => {
     const png = tinyPng(8, 8);

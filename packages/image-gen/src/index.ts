@@ -2,6 +2,8 @@
 
 export type {
   PortraitRequest,
+  SceneRequest,
+  IconRequest,
   GenerationOptions,
   GenerationResult,
   GenerationFailure,
@@ -11,14 +13,37 @@ export type {
   StylePreset,
 } from './types.js';
 
-export { buildPortraitPrompt, buildNegativePrompt, buildPromptPair } from './prompt-builder.js';
-export { STYLE_PRESETS, getStylePreset } from './styles.js';
+export {
+  buildPortraitPrompt,
+  buildNegativePrompt,
+  buildPromptPair,
+  buildScenePrompt,
+  buildIconPrompt,
+  buildSceneNegativePrompt,
+  buildIconNegativePrompt,
+} from './prompt-builder.js';
+export { STYLE_PRESETS, getStylePreset, getSceneStylePreset, getIconStylePreset } from './styles.js';
 export { PlaceholderProvider } from './placeholder-provider.js';
 export { ComfyUIProvider } from './comfyui-provider.js';
 export type { ComfyUIProviderOptions } from './comfyui-provider.js';
-export { generatePortrait, ensurePortrait, resolveProvider, ImageGenError } from './pipeline.js';
+export {
+  generatePortrait,
+  ensurePortrait,
+  generateBackground,
+  ensureBackground,
+  generateIcon,
+  ensureIcon,
+  ensurePortraitVariant,
+  portraitIdentityTag,
+  sceneIdentityTag,
+  iconIdentityTag,
+  portraitVariantIdentityTag,
+  resolveProvider,
+  ImageGenError,
+} from './pipeline.js';
 export type {
   PipelineOptions,
+  VariantPipelineOptions,
   ResolveProviderOptions,
   ResolveProviderFallbackInfo,
 } from './pipeline.js';

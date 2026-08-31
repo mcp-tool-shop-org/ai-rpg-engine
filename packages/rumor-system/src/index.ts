@@ -8,6 +8,9 @@ export type {
   MutationRule,
   RumorEngineConfig,
   RumorQuery,
+  RumorSubjectKey,
+  CorroborateOptions,
+  ContradictOptions,
 } from './types.js';
 
 export {

@@ -8,10 +8,11 @@
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import type { AssetMetadata, AssetInput, AssetFilter, AssetGetOptions, AssetStore } from './types.js';
+import type { AssetMetadata, AssetInput, AssetFilter, AssetGetOptions, AssetStore, StoreQuota } from './types.js';
 import { VALID_ASSET_KINDS } from './types.js';
 import { hashBytes, isValidHash } from './hash.js';
 import { matchesFilter, unionTags, cloneMetadata } from './filter.js';
+import { OverQuotaError, wouldExceedQuota, sortOldestFirst, reserveQuota } from './quota.js';
 
 /**
  * Runtime shape check for a parsed metadata sidecar (F-4d8f612a). The sidecar
@@ -41,7 +42,10 @@ function isAssetMetadataShape(v: unknown): v is AssetMetadata {
 }
 
 export class FileAssetStore implements AssetStore {
-  constructor(private readonly root: string) {}
+  constructor(
+    private readonly root: string,
+    private readonly quota?: StoreQuota,
+  ) {}
 
   // Security (v2.5 audit A5): every public method that accepts a hash MUST
   // reject anything that is not a SHA-256 hex digest BEFORE it reaches
@@ -84,6 +88,8 @@ export class FileAssetStore implements AssetStore {
       await fs.writeFile(this.metaPath(hash), JSON.stringify(merged, null, 2));
       return cloneMetadata(merged);
     }
+
+    await this.enforceQuota(data.length);
 
     const metadata: AssetMetadata = {
       hash,
@@ -243,5 +249,47 @@ export class FileAssetStore implements AssetStore {
   async count(): Promise<number> {
     const all = await this.list();
     return all.length;
+  }
+
+  async totalBytes(): Promise<number> {
+    const all = await this.list();
+    return all.reduce((s, m) => s + m.sizeBytes, 0);
+  }
+
+  async evictUntil(quota: StoreQuota): Promise<number> {
+    const ordered = sortOldestFirst(await this.list());
+    let count = ordered.length;
+    let bytes = ordered.reduce((s, m) => s + m.sizeBytes, 0);
+    let n = 0;
+    for (const meta of ordered) {
+      const overCount = quota.maxCount !== undefined && count > quota.maxCount;
+      const overBytes = quota.maxBytes !== undefined && bytes > quota.maxBytes;
+      if (!overCount && !overBytes) break;
+      const deleted = await this.delete(meta.hash);
+      if (deleted) {
+        count--;
+        bytes -= meta.sizeBytes;
+        n++;
+      }
+    }
+    return n;
+  }
+
+  /** New-blob puts only — hash-hits never consume quota (CAS identity). */
+  private async enforceQuota(incomingBytes: number): Promise<void> {
+    const quota = this.quota;
+    if (!quota) return;
+    if (quota.policy === 'evict-oldest') {
+      await this.evictUntil(reserveQuota(quota, incomingBytes));
+    }
+    const count = await this.count();
+    const bytes = await this.totalBytes();
+    if (wouldExceedQuota(count, bytes, quota, 1, incomingBytes)) {
+      throw new OverQuotaError({
+        sizeBytes: bytes + incomingBytes,
+        count: count + 1,
+        quota,
+      });
+    }
   }
 }

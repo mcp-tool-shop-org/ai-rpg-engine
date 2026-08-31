@@ -4,8 +4,21 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { MemoryAssetStore, FileAssetStore } from '@ai-rpg-engine/asset-registry';
 import { PlaceholderProvider } from './placeholder-provider.js';
-import { generatePortrait, ensurePortrait, resolveProvider, ImageGenError, portraitIdentityTag } from './pipeline.js';
-import type { PortraitRequest, ImageProvider, GenerationOutcome, GenerationOptions } from './types.js';
+import {
+  generatePortrait,
+  ensurePortrait,
+  generateBackground,
+  ensureBackground,
+  generateIcon,
+  ensureIcon,
+  ensurePortraitVariant,
+  resolveProvider,
+  ImageGenError,
+  portraitIdentityTag,
+  sceneIdentityTag,
+  iconIdentityTag,
+} from './pipeline.js';
+import type { PortraitRequest, SceneRequest, IconRequest, ImageProvider, GenerationOutcome, GenerationOptions } from './types.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -1034,5 +1047,88 @@ describe('ensurePortrait regenerates when the stored blob is missing (F-88cc4bdd
     } finally {
       await fs.rm(tmp, { recursive: true, force: true });
     }
+  });
+});
+
+const chapel: SceneRequest = {
+  zoneId: 'chapel',
+  locationName: 'Ashen Chapel',
+  description: 'cracked stone nave, candlelight, rain on stained glass',
+  genre: 'fantasy',
+  tags: ['interior'],
+};
+
+const relic: IconRequest = {
+  itemId: 'relic_chalice',
+  name: 'Ashen Chalice',
+  description: 'tarnished silver cup',
+  genre: 'fantasy',
+  tags: ['relic'],
+};
+
+describe('generateBackground / generateIcon (F-401a1110)', () => {
+  it('stores kind background with a zone: identity tag', async () => {
+    const store = new MemoryAssetStore();
+    const meta = await generateBackground(chapel, new PlaceholderProvider(), store);
+    expect(meta.kind).toBe('background');
+    expect(meta.tags).toContain('background');
+    expect(meta.tags).toContain(sceneIdentityTag(chapel));
+    expect(meta.tags.some((t) => t.startsWith('zone:'))).toBe(true);
+    expect(meta.width).toBe(768);
+    expect(meta.height).toBe(512);
+  });
+
+  it('stores kind icon with an item: identity tag', async () => {
+    const store = new MemoryAssetStore();
+    const meta = await generateIcon(relic, new PlaceholderProvider(), store);
+    expect(meta.kind).toBe('icon');
+    expect(meta.tags).toContain('icon');
+    expect(meta.tags).toContain(iconIdentityTag(relic));
+    expect(meta.tags.some((t) => t.startsWith('item:'))).toBe(true);
+    expect(meta.width).toBe(256);
+    expect(meta.height).toBe(256);
+  });
+
+  it('ensureBackground / ensureIcon reuse a matching identity', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new PlaceholderProvider();
+    const bg1 = await ensureBackground(chapel, provider, store);
+    const bg2 = await ensureBackground(chapel, provider, store);
+    expect(bg2.hash).toBe(bg1.hash);
+    const ic1 = await ensureIcon(relic, provider, store);
+    const ic2 = await ensureIcon(relic, provider, store);
+    expect(ic2.hash).toBe(ic1.hash);
+    expect(await store.list({ kind: 'background' })).toHaveLength(1);
+    expect(await store.list({ kind: 'icon' })).toHaveLength(1);
+  });
+});
+
+describe('ensurePortraitVariant (F-9daede34)', () => {
+  it('img2img-keys a variant slot and overlays a mark on the placeholder SVG', async () => {
+    const store = new MemoryAssetStore();
+    const provider = new PlaceholderProvider();
+    const base = await generatePortrait(testRequest, provider, store);
+    const variant = await ensurePortraitVariant(base.hash, testRequest, provider, store, {
+      variant: 'scarred',
+    });
+    expect(variant.kind).toBe('portrait');
+    expect(variant.hash).not.toBe(base.hash);
+    expect(variant.tags.some((t) => t.startsWith('variant:'))).toBe(true);
+    const svg = new TextDecoder().decode((await store.get(variant.hash))!);
+    expect(svg).toContain('data-variant="1"');
+
+    const again = await ensurePortraitVariant(base.hash, testRequest, provider, store, {
+      variant: 'scarred',
+    });
+    expect(again.hash).toBe(variant.hash);
+  });
+
+  it('throws when the base hash is missing', async () => {
+    const store = new MemoryAssetStore();
+    await expect(
+      ensurePortraitVariant('0'.repeat(64), testRequest, new PlaceholderProvider(), store, {
+        variant: 'aged',
+      }),
+    ).rejects.toThrow(/no asset at hash/);
   });
 });

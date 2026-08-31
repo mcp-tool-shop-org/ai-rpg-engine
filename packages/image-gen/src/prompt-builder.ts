@@ -1,7 +1,7 @@
 // Convert character metadata into image generation prompts
 
-import type { PortraitRequest } from './types.js';
-import { getStylePreset } from './styles.js';
+import type { PortraitRequest, SceneRequest, IconRequest } from './types.js';
+import { getStylePreset, getSceneStylePreset, getIconStylePreset } from './styles.js';
 
 /**
  * Strip Stable-Diffusion-style prompt-control syntax before untrusted-ish
@@ -84,4 +84,32 @@ export function buildPromptPair(request: PortraitRequest): {
     prompt: buildPortraitPrompt(request),
     negativePrompt: buildNegativePrompt(request),
   };
+}
+
+export function resolvedSceneStyle(request: SceneRequest): string {
+  return sanitize(request.style ?? getSceneStylePreset(request.genre).style);
+}
+
+export function resolvedIconStyle(request: IconRequest): string {
+  return sanitize(request.style ?? getIconStylePreset(request.genre).style);
+}
+
+export function buildScenePrompt(request: SceneRequest): string {
+  const place = sanitize(request.locationName ?? request.zoneId);
+  const desc = sanitize(request.description);
+  return [`Scene of ${place}`, desc, resolvedSceneStyle(request)].filter(Boolean).join(', ');
+}
+
+export function buildIconPrompt(request: IconRequest): string {
+  const name = sanitize(request.name);
+  const desc = request.description ? sanitize(request.description) : '';
+  return [`Icon of ${name}`, desc, resolvedIconStyle(request)].filter(Boolean).join(', ');
+}
+
+export function buildSceneNegativePrompt(request: SceneRequest): string {
+  return getSceneStylePreset(request.genre).negativePrompt;
+}
+
+export function buildIconNegativePrompt(request: IconRequest): string {
+  return getIconStylePreset(request.genre).negativePrompt;
 }

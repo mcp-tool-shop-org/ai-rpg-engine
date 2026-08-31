@@ -13,6 +13,8 @@ import {
   NAMESPACE_CUE_MAP,
   FALLBACK_CUE,
   KNOWN_EVENT_SOUND_CUES,
+  resolveAmbientBed,
+  sceneBedTargetIds,
 } from './cue-map.js';
 import { CORE_SOUND_PACK } from './core-pack.js';
 
@@ -248,5 +250,35 @@ describe('cue-map: prototype keys fall through to fallback (F-d7c3c40a)', () => 
       expect(resolved.timing).toBe(FALLBACK_CUE.timing);
       expect(resolved.intensity).toBe(FALLBACK_CUE.intensity);
     }
+  });
+});
+
+describe('cue-map: optional scene bed hints (F-57203b5e)', () => {
+  it('does not change existing SFX exact/namespace rows', () => {
+    expect(resolveSoundCue('scene.enter')).toEqual({
+      effectId: 'ui_whoosh',
+      timing: 'immediate',
+      intensity: 0.3,
+      via: 'exact',
+    });
+    expect(EXACT_CUE_MAP['scene.enter'].effectId).toBe('ui_whoosh');
+    expect(NAMESPACE_CUE_MAP.scene.effectId).toBe('ui_attention');
+  });
+
+  it('resolves scene.enter to an ambient bed without touching the SFX id', () => {
+    expect(resolveAmbientBed('scene.enter')).toEqual({
+      layerId: 'ambient_white_noise',
+      via: 'exact',
+    });
+    expect(resolveAmbientBed('scene.unlisted-moment')).toEqual({
+      layerId: 'ambient_white_noise',
+      via: 'namespace',
+    });
+    expect(resolveAmbientBed('combat.hit')).toBeUndefined();
+  });
+
+  it('bed targets exist in CORE_SOUND_PACK', () => {
+    const have = new Set(CORE_SOUND_PACK.entries.map((e) => e.id));
+    expect(sceneBedTargetIds().every((id) => have.has(id))).toBe(true);
   });
 });

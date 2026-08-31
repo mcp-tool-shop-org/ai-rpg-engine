@@ -147,6 +147,21 @@ export class SoundRegistry {
     return entry.variants[idx];
   }
 
+  /**
+   * Pick an ambient bed from a query using a deterministic roll (F-57203b5e).
+   * Forces `domain: 'ambient'` and keeps loop duration classes, then indexes
+   * the id-sorted matches the same way {@link pickVariant} indexes variants.
+   */
+  pickAmbientBed(query: SoundQuery, roll: number): SoundEntry | undefined {
+    const matches = this.query({ ...query, domain: 'ambient' })
+      .filter((e) => e.durationClass === 'long-loop' || e.durationClass === 'short-loop')
+      .sort((a, b) => a.id.localeCompare(b.id));
+    if (matches.length === 0) return undefined;
+    const clamped = Math.min(Math.max(roll, 0), 1);
+    const idx = Math.min(Math.floor(clamped * matches.length), matches.length - 1);
+    return matches[idx];
+  }
+
   /** Get all loaded entry IDs. */
   getIds(): string[] {
     return [...this.entries.keys()];
@@ -156,6 +171,45 @@ export class SoundRegistry {
   get size(): number {
     return this.entries.size;
   }
+}
+
+/** A start/stop pair for bringing active ambient layers in line with a desired set. */
+export type AmbientLayerDiff = {
+  start: string[];
+  stop: string[];
+};
+
+type AmbientLayerRef = { domain?: string; resourceId: string };
+
+/**
+ * Diff desired ambient ids against currently active layers (F-57203b5e).
+ * Accepts `AudioDirector.getActiveLayers()` (a Map), an iterable of ids, or
+ * `{resourceId, domain}` records. Non-ambient map entries are ignored.
+ */
+export function diffAmbientLayers(
+  desiredIds: readonly string[],
+  activeLayers: Iterable<string> | Map<string, AmbientLayerRef> | readonly AmbientLayerRef[],
+): AmbientLayerDiff {
+  const active = new Set<string>();
+  if (activeLayers instanceof Map) {
+    for (const [key, val] of activeLayers) {
+      if (val?.domain && val.domain !== 'ambient') continue;
+      active.add(val?.resourceId ?? key);
+    }
+  } else {
+    for (const item of activeLayers) {
+      if (typeof item === 'string') {
+        active.add(item);
+      } else if (item && typeof item === 'object' && typeof item.resourceId === 'string') {
+        if (item.domain && item.domain !== 'ambient') continue;
+        active.add(item.resourceId);
+      }
+    }
+  }
+  const desired = new Set(desiredIds);
+  const start = [...desired].filter((id) => !active.has(id)).sort();
+  const stop = [...active].filter((id) => !desired.has(id)).sort();
+  return { start, stop };
 }
 
 /** Copy tags/mood/variants so the Map is not aliased to caller handles (F-74ba230b). */

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SoundRegistry } from './registry.js';
+import { SoundRegistry, diffAmbientLayers } from './registry.js';
 import { CORE_SOUND_PACK } from './core-pack.js';
 
 describe('SoundRegistry', () => {
@@ -100,6 +100,35 @@ describe('SoundRegistry', () => {
       expect(registry.pickVariant('nonexistent', 0)).toBeUndefined();
       // ambient_drone has no variants in the core pack.
       expect(registry.pickVariant('ambient_drone', 0)).toBeUndefined();
+    });
+  });
+
+  describe('pickAmbientBed + diffAmbientLayers (F-57203b5e)', () => {
+    it('pickAmbientBed indexes id-sorted ambient loops like pickVariant', () => {
+      const registry = new SoundRegistry();
+      registry.load(CORE_SOUND_PACK);
+      const first = registry.pickAmbientBed({}, 0);
+      const last = registry.pickAmbientBed({}, 1);
+      expect(first?.id).toBe('ambient_drone');
+      expect(last?.id).toBe('ambient_white_noise');
+      expect(registry.pickAmbientBed({ mood: ['dread'] }, 0)?.id).toBe('ambient_drone');
+      expect(registry.pickAmbientBed({ tags: ['weather'] }, 0)?.id).toBe('ambient_rain');
+      expect(registry.pickAmbientBed({ mood: ['nope'] }, 0)).toBeUndefined();
+    });
+
+    it('diffAmbientLayers emits start/stop against getActiveLayers-shaped maps', () => {
+      const active = new Map([
+        ['ambient_rain', { domain: 'ambient' as const, resourceId: 'ambient_rain' }],
+        ['theme_a', { domain: 'music' as const, resourceId: 'theme_a' }],
+      ]);
+      expect(diffAmbientLayers(['ambient_drone', 'ambient_rain'], active)).toEqual({
+        start: ['ambient_drone'],
+        stop: [],
+      });
+      expect(diffAmbientLayers(['ambient_drone'], ['ambient_rain', 'ambient_white_noise'])).toEqual({
+        start: ['ambient_drone'],
+        stop: ['ambient_rain', 'ambient_white_noise'],
+      });
     });
   });
 

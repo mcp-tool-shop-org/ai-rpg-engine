@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { buildPortraitPrompt, buildNegativePrompt, buildPromptPair } from './prompt-builder.js';
+import {
+  buildPortraitPrompt,
+  buildNegativePrompt,
+  buildPromptPair,
+  buildScenePrompt,
+  buildIconPrompt,
+} from './prompt-builder.js';
 import type { PortraitRequest } from './types.js';
 
 const baseRequest: PortraitRequest = {
@@ -149,5 +155,31 @@ describe('buildPromptPair', () => {
     const { prompt, negativePrompt } = buildPromptPair(baseRequest);
     expect(prompt).toContain('Aldric');
     expect(negativePrompt).toContain('blurry');
+  });
+});
+
+describe('buildScenePrompt / buildIconPrompt (F-401a1110)', () => {
+  it('builds a scene prompt with zone identity and environment style', () => {
+    const prompt = buildScenePrompt({
+      zoneId: 'chapel',
+      locationName: 'Ashen Chapel',
+      description: 'cracked stone nave',
+      genre: 'fantasy',
+    });
+    expect(prompt).toContain('Scene of Ashen Chapel');
+    expect(prompt).toContain('cracked stone nave');
+    expect(prompt).toContain('environment');
+  });
+
+  it('builds an icon prompt with the item name', () => {
+    const prompt = buildIconPrompt({
+      itemId: 'relic_chalice',
+      name: 'Ashen Chalice',
+      description: 'tarnished silver cup',
+      genre: 'fantasy',
+    });
+    expect(prompt).toContain('Icon of Ashen Chalice');
+    expect(prompt).toContain('tarnished silver cup');
+    expect(prompt).toContain('icon');
   });
 });

@@ -25,6 +25,8 @@ import { scheduleAll } from './scheduler.js';
 export class AudioDirector {
   private cooldowns = new Map<string, CooldownEntry>();
   private activeLayers = new Map<string, { domain: AudioDomain; resourceId: string }>();
+  /** Current music stem resourceId (resolved hash or logical trackId). */
+  private activeMusicId: string | null = null;
   private duckingRules: DuckingRule[];
   private domainPriorities: Record<AudioDomain, number>;
   private defaultCooldownMs: number;
@@ -131,7 +133,39 @@ export class AudioDirector {
       }
     }
 
-    const all = [...filtered, ...ducking];
+    // Music stem: a new play/crossfade stops the previous track with the
+    // incoming fadeMs, then plays the new one (F-c53caff0). Cooldown clock
+    // is not touched (OPEN F-a360ad62).
+    const crossfadeStops: AudioCommand[] = [];
+    for (const cmd of filtered) {
+      if (cmd.domain !== 'music') continue;
+      if (cmd.action === 'stop') {
+        this.activeLayers.delete(cmd.resourceId);
+        if (this.activeMusicId === cmd.resourceId) this.activeMusicId = null;
+        continue;
+      }
+      if (cmd.action === 'play' || cmd.action === 'crossfade') {
+        if (this.activeMusicId && this.activeMusicId !== cmd.resourceId) {
+          this.activeLayers.delete(this.activeMusicId);
+          const fadeMs = typeof cmd.params.fadeMs === 'number' ? cmd.params.fadeMs : 0;
+          crossfadeStops.push({
+            domain: 'music',
+            action: 'stop',
+            resourceId: this.activeMusicId,
+            priority: cmd.priority,
+            timing: cmd.timing,
+            params: { fadeMs, reason: 'crossfade' },
+          });
+        }
+        this.activeMusicId = cmd.resourceId;
+        this.activeLayers.set(cmd.resourceId, {
+          domain: 'music',
+          resourceId: cmd.resourceId,
+        });
+      }
+    }
+
+    const all = [...crossfadeStops, ...filtered, ...ducking];
     all.sort((a, b) => a.timing - b.timing || b.priority - a.priority);
     return all;
   }
@@ -159,6 +193,11 @@ export class AudioDirector {
     return new Map(this.activeLayers);
   }
 
+  /** Current music stem resourceId, or null when nothing is playing. */
+  getActiveMusic(): string | null {
+    return this.activeMusicId;
+  }
+
   /** Clear all cooldowns (e.g. on scene change). */
   clearCooldowns(): void {
     this.cooldowns.clear();
@@ -180,8 +219,13 @@ export class AudioDirector {
   private resolveCommand(cmd: AudioCommand): AudioCommand {
     const registry = this.soundRegistry;
     if (!registry) return cmd;
-    if (cmd.action !== 'play') return cmd;
-    if (cmd.domain !== 'sfx' && cmd.domain !== 'ambient') return cmd;
+    if (cmd.action !== 'play' && cmd.action !== 'crossfade' && cmd.action !== 'start') return cmd;
+    if (
+      cmd.domain !== 'sfx' &&
+      cmd.domain !== 'ambient' &&
+      cmd.domain !== 'music' &&
+      cmd.domain !== 'voice'
+    ) return cmd;
     const entry = registry.get(cmd.resourceId);
     if (!entry || entry.source !== 'file') return cmd;
     const variant = registry.pickVariant(cmd.resourceId, this.variantRoll);

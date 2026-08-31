@@ -22,6 +22,31 @@ export type PortraitRequest = {
   style?: string;
 };
 
+/** Zone / location scene for {@link generateBackground}. */
+export type SceneRequest = {
+  /** Zone identity written into the `zone:` tag. */
+  zoneId: string;
+  /** Human-readable place name for the prompt. Defaults to zoneId. */
+  locationName?: string;
+  /** What the scene looks like (interior, weather, time of day). */
+  description: string;
+  genre: string;
+  style?: string;
+  tags?: string[];
+};
+
+/** Item / ability icon for {@link generateIcon}. */
+export type IconRequest = {
+  /** Item identity written into the `item:` tag. */
+  itemId: string;
+  /** Display name shown in the icon prompt. */
+  name: string;
+  description?: string;
+  genre: string;
+  style?: string;
+  tags?: string[];
+};
+
 /** Options for image generation. */
 export type GenerationOptions = {
   /** Image width in pixels. Default: 512. */
@@ -42,6 +67,17 @@ export type GenerationOptions = {
    * cached portrait.
    */
   model?: string;
+  /**
+   * Source image for img2img (F-9daede34). When set, ComfyUI uses LoadImage +
+   * VAEEncode instead of EmptyLatentImage; PlaceholderProvider overlays a
+   * mark on an existing SVG.
+   */
+  initImage?: Uint8Array;
+  /**
+   * Denoise strength in [0, 1]. Default 1.0 for txt2img; when `initImage` is
+   * set, providers default to a lower img2img value (~0.7).
+   */
+  denoise?: number;
 };
 
 /** Result from an image provider. */
@@ -105,7 +141,8 @@ export interface ImageProvider {
    */
   readonly model?: string;
   /**
-   * Generate an image from a text prompt.
+   * Generate an image from a text prompt (txt2img), or from initImage+denoise
+   * (img2img).
    *
    * Contract: resolves to a discriminated union and MUST NOT throw or hang on
    * provider failure (offline daemon, timeout, malformed response) — report
