@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { AudioDirector } from './director.js';
+import type { SoundLookup } from './types.js';
 import type { NarrationPlan } from '@ai-rpg-engine/presentation';
 
 const makePlan = (overrides: Partial<NarrationPlan> = {}): NarrationPlan => ({
@@ -209,7 +210,7 @@ describe('AudioDirector', () => {
       const director = new AudioDirector({
         variantRoll: 0,
         soundRegistry: {
-          get(id) {
+          get(id: string): ReturnType<SoundLookup['get']> {
             if (id === 'theme_file') {
               return { source: 'file', variants: ['theme.ogg'], hashes: { 'theme.ogg': musicHash } };
             }
