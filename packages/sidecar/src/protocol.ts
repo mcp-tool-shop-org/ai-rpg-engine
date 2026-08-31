@@ -217,6 +217,16 @@ export type PackIntakeNote = { path: string; message: string };
  * content-schema) dropped or advised while this world was built. Carried on
  * `SidecarServerOptions` and stamped onto `initialize`'s result only when
  * there is something to report (F-9b3f6d21).
+ *
+ * Boot-time provenance, not a live property of the world: it describes the
+ * pack that was loaded when the wrapping SidecarServer was constructed, and
+ * is NOT re-derived the way `packId`/`playerId`/`locationId` are (those read
+ * `world.meta`/`world.playerId`/`world.locationId` live on every initialize).
+ * The server invalidates its own copy the first time any session sharing the
+ * Engine issues a LOAD (`rebaseAfterLoad`, server.ts) precisely because LOAD
+ * can swap in a save built from a different pack, or none — a client must
+ * never read a `packIntake` it received before a LOAD as describing the
+ * world after it (F-9bb888dc, composes F-7d41ae63).
  */
 export type PackIntakeSummary = {
   dropped: PackIntakeDrop[];
@@ -236,7 +246,11 @@ export type InitializeResult = {
   playerId?: string;
   /** Current player location (zone) id. Additive; stamped in lockstep with playerId. */
   locationId?: string;
-  /** Additive (F-9b3f6d21). Present only when there is something to report. */
+  /**
+   * Additive (F-9b3f6d21). Present only when there is something to report.
+   * Boot-time snapshot, invalidated by the first LOAD any session issues —
+   * see `PackIntakeSummary` above (F-9bb888dc).
+   */
   packIntake?: PackIntakeSummary;
 };
 

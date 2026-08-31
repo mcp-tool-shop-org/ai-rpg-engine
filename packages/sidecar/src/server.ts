@@ -72,6 +72,14 @@ export type SidecarServerOptions = {
    * sidecar-command.ts — content-schema types never enter this package.
    * Stamped onto `initialize`'s result only when there is something to
    * report (F-9b3f6d21).
+   *
+   * Boot-time-captured, not re-derived from the live world: this option is
+   * read once into constructor state and is invalidated (cleared) the first
+   * time ANY session sharing the underlying Engine issues a LOAD, since LOAD
+   * can replace the world with a save built from a different pack entirely
+   * (F-9bb888dc). A host that wants fresh intake after a LOAD must pass a new
+   * `packIntake` to a newly constructed SidecarServer, the same way a fresh
+   * socket connection already does.
    */
   packIntake?: PackIntakeSummary;
 };
@@ -156,8 +164,17 @@ export class SidecarServer {
   private readonly serverName: string;
   private readonly advanceRound: (engine: Engine) => void;
   private readonly onWorldCommitted?: () => void;
-  /** What the content-pack gate reported, if the host passed one. Additive on initialize. */
-  private readonly packIntake?: PackIntakeSummary;
+  /**
+   * What the content-pack gate reported, if the host passed one. Additive on
+   * initialize. Boot-time-captured, NOT re-derived from the live world —
+   * unlike packId/playerId/locationId (below), which read `this.engine.world`
+   * live at every initialize call. Invalidated (set undefined) by the first
+   * LOAD any session sharing this Engine issues, in `rebaseAfterLoad()`: a
+   * LOAD can swap in a save built from an unrelated content pack, and this
+   * field must stop describing a pack that may no longer be running. Not
+   * `readonly` for exactly that reason (F-9bb888dc, composes F-7d41ae63).
+   */
+  private packIntake?: PackIntakeSummary;
   /** Events already pushed, keyed by id — the basis of idempotent re-emission. */
   private readonly emitted = new Set<string>();
   private lastState: WorldState;
@@ -875,6 +892,15 @@ export class SidecarServer {
   /**
    * After LOAD: rebuild emitted, lastState, bump snapshotSeq, and push a
    * snapshot-shaped baseline so every live mirror rebases (including omitEventLog).
+   * Also drops this session's packIntake (F-9bb888dc, composes F-7d41ae63):
+   * unlike packId/playerId/locationId, which are read live off
+   * `this.engine.world` at every initialize, packIntake is boot-time-captured
+   * constructor state describing the pack that produced the PRE-load world.
+   * A LOAD can swap in a save from an unrelated (or absent) content pack, so
+   * that summary must not survive to describe a world it never described.
+   * This runs for every peer sharing the gate (rebaseAllSessions), including
+   * one that has not yet called initialize — closing the hole for a session
+   * still mid-connect at LOAD time, not only for the LOAD-issuing session.
    */
   rebaseAfterLoad(): void {
     this.emitted.clear();
@@ -882,6 +908,7 @@ export class SidecarServer {
     const projected = projectState(this.engine.world, this.snapshotView);
     this.lastState = structuredClone(projected) as WorldState;
     this.snapshotSeq += 1;
+    this.packIntake = undefined;
     if (this.closed || this.gate.closed || !this.hasSnapshotted) return;
     const result: SubmitActionResult = {
       tick: this.engine.store.tick,
