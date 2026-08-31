@@ -33,6 +33,15 @@ export type BuildStep = {
   result?: string;
   /** Error message if failed. */
   error?: string;
+  /**
+   * This step's own generated content (F-13d7b9e2), the same value pushed
+   * onto BuildState.generatedContent when the step executed. Lets
+   * resetDiscardedSteps subtract precisely a reset step's contribution from
+   * generatedContent instead of the whole flat array, so a step reset by a
+   * decline and later re-executed never double-counts against critique
+   * injection or the diagnostics char count.
+   */
+  outputContent?: string;
 };
 
 export type BuildPlan = {
@@ -631,6 +640,7 @@ export function markStepExecuted(
   step.status = 'executed';
   step.result = summary;
   if (output) {
+    step.outputContent = output;
     state.generatedContent.push(output);
   }
   state.status = 'executing';
@@ -650,6 +660,53 @@ export function markStepFailed(state: BuildState, stepId: number, error: string)
       s.error = `Skipped: dependency step ${failedId} failed`;
     }
   }
+}
+
+/**
+ * On a declined batch (F-13d7b9e2), reset every EXECUTED step whose id
+ * appears in `stepIds` (the sourceStepId of every entry the decline just
+ * discarded) back to 'pending' — clearing its result/error/outputContent —
+ * so the next /step genuinely regenerates it instead of leaving the step
+ * marked 'executed' with a summary describing content that was never
+ * written.
+ *
+ * The emit-pack step is deliberately excluded even when its own id is in
+ * `stepIds` (its own staged pack.json was among the discarded entries,
+ * reachable once the completion-promotion path stages it): forcing it back
+ * to 'pending' would require re-running it, which only makes sense once the
+ * content it assembles has ACTUALLY changed on disk — that happens
+ * naturally once its dependency steps are reset and re-executed here, at
+ * which point isBuildComplete goes false again and the flush gate/
+ * completion-promotion machinery re-engages on its own. In the common
+ * flush-gate-before-emit-pack case this is moot: emit-pack never executed
+ * yet, so its status is already 'pending' and untouched by this loop
+ * either way.
+ *
+ * This is also what closes the stale-disk emit-pack path: once its
+ * dependency step(s) are reset to 'pending', emit-pack's own dependency
+ * check in nextPendingStep stops resolving, so a decline followed by /step
+ * can never again let emit-pack silently run against whatever happens to
+ * already be on disk.
+ *
+ * Recomputes `generatedContent` from what remains (via each step's own
+ * `outputContent`, set by markStepExecuted) so a reset step's stale output
+ * can never double up with its regenerated replacement in critique
+ * injection or the diagnostics char count.
+ */
+export function resetDiscardedSteps(state: BuildState, stepIds: Iterable<number>): void {
+  const idSet = new Set(stepIds);
+  for (const step of state.plan.steps) {
+    if (!idSet.has(step.id)) continue;
+    if (step.command === 'emit-pack') continue;
+    if (step.status !== 'executed') continue;
+    step.status = 'pending';
+    step.result = undefined;
+    step.error = undefined;
+    step.outputContent = undefined;
+  }
+  state.generatedContent = state.plan.steps
+    .filter((s): s is BuildStep & { outputContent: string } => s.outputContent !== undefined)
+    .map((s) => s.outputContent);
 }
 
 export function isBuildComplete(state: BuildState): boolean {

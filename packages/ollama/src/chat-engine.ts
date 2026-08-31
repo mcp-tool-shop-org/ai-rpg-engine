@@ -37,7 +37,7 @@ import {
   generateBuildPlan, createBuildState, nextPendingStep,
   markStepExecuted, markStepFailed, isBuildComplete, finalizeBuild,
   formatBuildPlan, formatBuildPreview, formatBuildStatus,
-  buildDiagnostics, formatBuildDiagnostics,
+  buildDiagnostics, formatBuildDiagnostics, resetDiscardedSteps,
   type BuildState, type BuildPlan,
 } from './chat-build-planner.js';
 import {
@@ -336,15 +336,26 @@ export function createChatEngine(options: ChatEngineOptions): ChatEngine {
     }
     if ((pendingWrite || pendingWriteBatch) && isRejection(userMessage)) {
       // Decline discards ALL staged content — no per-file pick in v1 (ruled).
-      // The emit-pack step (if gated) stays 'pending', visibly incomplete in
-      // /status, so nothing is silently lost or silently assumed-done.
       pendingWrite = null;
       // F-71e4a9c3: clear ONLY the pool that actually produced the batch
       // being declined — the other flow's stagedWrites (if any) was never
       // part of this consent and must survive untouched, not get destroyed
       // by an unconditional dual-clear.
       if (pendingWriteBatch) {
-        if (pendingWriteBatchOwner === 'build' && activeBuild) activeBuild.stagedWrites = {};
+        if (pendingWriteBatchOwner === 'build' && activeBuild) {
+          // F-13d7b9e2: every step whose staged content is being discarded
+          // here returns to 'pending' (recomputing generatedContent to
+          // match) so the next /step genuinely regenerates it — instead of
+          // leaving those steps 'executed' with a now-discarded summary
+          // while emit-pack's dependency stays satisfied, letting it
+          // silently run against stale/pre-batch disk and report a phantom
+          // "completed" build. The emit-pack step itself stays 'pending' as
+          // it always did (untouched in the common flush-gate-before-
+          // emit-pack case) — visibly incomplete in /status, nothing
+          // silently lost or silently assumed-done.
+          resetDiscardedSteps(activeBuild, Object.values(activeBuild.stagedWrites).map((e) => e.sourceStepId));
+          activeBuild.stagedWrites = {};
+        }
         if (pendingWriteBatchOwner === 'tuning' && activeTuning) activeTuning.stagedWrites = {};
       }
       pendingWriteBatch = null;

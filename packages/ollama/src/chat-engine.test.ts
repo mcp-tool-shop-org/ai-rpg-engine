@@ -1201,3 +1201,123 @@ describe('engine confirm-write then undo (F-2d9f6b18)', () => {
     }
   });
 });
+
+// --- Decline resets discarded steps to 'pending' so /step genuinely
+// regenerates them, closing the stale-disk emit-pack path (F-13d7b9e2,
+// wave-4). Before this fix, the reject handler cleared stagedWrites but left
+// every scaffold step 'executed' with its now-discarded summary. The next
+// /step then found emit-pack the only 'pending' step (its dependency, the
+// last scaffold step, already read 'executed') with stagedWrites now empty
+// (decline just cleared it) -- so the flush gate's guard condition was
+// false and emit-pack ran FOR REAL via assembleContentPack() against
+// whatever happened to already be on disk (near-empty, since the declined
+// content was never written), then reported a fully successful "completed"
+// build with a nonzero "Generated: N artifact(s)" line even though the user
+// explicitly discarded everything and none of it reached disk. ---
+
+describe('decline resets discarded steps to pending (F-13d7b9e2)', () => {
+  function factionScaffoldStep(id: number, description: string): BuildStep {
+    return {
+      id, description, command: 'create-faction', intent: 'scaffold',
+      params: { kind: 'faction', theme: `theme-${id}` }, dependencies: [],
+      artifactOutputs: ['factions'], usePriorContent: false, status: 'pending',
+    };
+  }
+  function emitPackStep(id: number, dependencies: number[]): BuildStep {
+    return {
+      id, description: 'emit-pack — assemble content/pack.json', command: 'emit-pack', intent: 'emit_pack',
+      params: {}, dependencies, artifactOutputs: [], usePriorContent: false, status: 'pending',
+    };
+  }
+
+  it('decline -> /step does NOT let emit-pack silently assemble from pre-batch disk', async () => {
+    const responses = [
+      'id: faction_a\nname: Faction A\nmembers:\n  - captain_a',
+      'id: faction_b\nname: Faction B\nmembers:\n  - captain_b',
+      // Third response: what step 1 regenerates to after decline+re-run.
+      'id: faction_a\nname: Faction A (redo)\nmembers:\n  - captain_a',
+    ];
+    let call = 0;
+    const dir = await mkdtemp(join(tmpdir(), 'chat-decline-reset-'));
+    try {
+      const engine = createChatEngine({
+        client: {
+          async generate(_input: PromptInput): Promise<PromptResult> {
+            return { ok: true, text: responses[Math.min(call++, responses.length - 1)] };
+          },
+        },
+        projectRoot: dir,
+        rawMode: true,
+      });
+
+      engine.activeBuild = createBuildState(buildPlanOf([
+        factionScaffoldStep(1, 'first faction'),
+        factionScaffoldStep(2, 'second faction'),
+        emitPackStep(3, [2]),
+      ]));
+
+      // Both scaffold steps run; the flush gate blocks emit-pack.
+      const batchResult = await engine.executeAllBuildSteps();
+      expect(batchResult).toContain('file(s) staged -- write all?');
+      expect(engine.activeBuild!.plan.steps[2].status).toBe('pending');
+      expect(engine.activeBuild!.generatedContent).toHaveLength(2);
+
+      // Decline the whole batch.
+      const declined = await engine.process('no');
+      expect(declined).toMatch(/cancelled/i);
+
+      // Both scaffold steps are reset to 'pending' -- not left 'executed'
+      // with a now-discarded summary.
+      expect(engine.activeBuild!.plan.steps[0].status).toBe('pending');
+      expect(engine.activeBuild!.plan.steps[1].status).toBe('pending');
+      expect(engine.activeBuild!.stagedWrites).toEqual({});
+      // Their discarded output no longer inflates generatedContent (would
+      // otherwise double up with the regenerated copy below).
+      expect(engine.activeBuild!.generatedContent).toHaveLength(0);
+
+      // Nothing was ever written to disk -- the decline truly discarded
+      // everything, nothing "silently assembled" in the background.
+      await expect(access(join(dir, 'content', 'pack.json'))).rejects.toThrow();
+      await expect(access(join(dir, 'content', 'factions', 'faction_a.yaml'))).rejects.toThrow();
+
+      // The FIRST /step after decline must regenerate step 1 -- NOT run
+      // emit-pack. Before the fix, emit-pack was the only 'pending' step
+      // left (its dependency already 'executed') and ran for real here.
+      const afterDecline = await engine.executeBuildStep();
+      expect(afterDecline).not.toContain('emit-pack');
+      expect(engine.activeBuild!.plan.steps[0].status).toBe('executed');
+      expect(engine.activeBuild!.plan.steps[0].result).toContain('faction_a');
+      // emit-pack is STILL untouched -- its dependency (step 2) isn't
+      // resolved again yet.
+      expect(engine.activeBuild!.plan.steps[2].status).toBe('pending');
+      await expect(access(join(dir, 'content', 'pack.json'))).rejects.toThrow();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('emit-pack step itself is excluded from the reset (stays pending, never force-rerun)', async () => {
+    // Sanity check on resetDiscardedSteps' own scoping: the emit-pack step
+    // never executed in the flush-gate-decline scenario (it stays 'pending'
+    // throughout), so nothing about the reset should touch its status.
+    const dir = await mkdtemp(join(tmpdir(), 'chat-decline-reset-emitpack-'));
+    try {
+      const engine = createChatEngine({
+        client: mockClient('id: faction_a\nname: Faction A\nmembers:\n  - captain_a'),
+        projectRoot: dir,
+        rawMode: true,
+      });
+      engine.activeBuild = createBuildState(buildPlanOf([
+        factionScaffoldStep(1, 'first faction'),
+        emitPackStep(2, [1]),
+      ]));
+      await engine.executeAllBuildSteps();
+      expect(engine.activeBuild!.plan.steps[1].status).toBe('pending');
+
+      await engine.process('no');
+      expect(engine.activeBuild!.plan.steps[1].status).toBe('pending');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
