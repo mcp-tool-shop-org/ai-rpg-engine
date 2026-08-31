@@ -265,13 +265,14 @@ function buildWorkflow(
 
   // F-fcf4f488: optional LoRA stack, chained between the checkpoint and
   // KSampler's model input (node ids 20+ so they never collide with the
-  // ControlNet/IPAdapter block's 10-15 below). Additive only — does not
-  // touch the ControlNet/IPAdapter branch, which may itself re-target
-  // '5'.inputs.model when ipadapter is active; that combination is out of
-  // scope for this fix.
+  // ControlNet/IPAdapter block's 10-15 below). `modelSrc`/`clipSrc` are
+  // declared outside the `if` (defaulting to the raw checkpoint, '1') so the
+  // ipadapter branch below can read the chain's tail — see F-bdc5a692: it
+  // used to hardcode IPAdapterApply's `model` input to ['1', 0], silently
+  // discarding this chain whenever both were requested together.
+  let modelSrc: [string, number] = ['1', 0];
+  let clipSrc: [string, number] = ['1', 1];
   if (opts.loras && opts.loras.length > 0) {
-    let modelSrc: [string, number] = ['1', 0];
-    let clipSrc: [string, number] = ['1', 1];
     opts.loras.forEach((lora, i) => {
       const nodeId = String(20 + i);
       workflow[nodeId] = {
@@ -331,7 +332,14 @@ function buildWorkflow(
         ipadapter: ['13', 0],
         clip_vision: ['14', 0],
         image: ['10', 0],
-        model: ['1', 0],
+        // F-bdc5a692: read the LoRA chain's tail (falls back to the raw
+        // checkpoint '1' when no loras were requested) instead of the
+        // hardcoded ['1', 0] this used to carry — that hardcode silently
+        // discarded the LoRA stack whenever loras + ipadapter were combined,
+        // since this node's output goes on to replace KSampler's model
+        // input below, and the LoraLoader chain (built above, before this
+        // branch runs) became a dead end with zero effect on the sample.
+        model: modelSrc,
         weight: ipAdapterWeight(opts),
         noise: 0,
       },
