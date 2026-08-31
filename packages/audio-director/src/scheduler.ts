@@ -3,6 +3,22 @@
 import type { NarrationPlan, SfxCue, AmbientCue, MusicCue, SpeakerCue } from '@ai-rpg-engine/presentation';
 import type { AudioCommand, AudioDomain } from './types.js';
 
+/**
+ * Shared ordering contract for AudioCommand arrays: ascending by `timing`,
+ * then descending by `priority` (a higher-priority command at the same
+ * timing sorts first). {@link scheduleAll} (below) and
+ * {@link AudioDirector.schedule} (director.ts) both sort their combined
+ * output by this exact rule — historically duplicated inline in both places.
+ * Exported so any caller merging commands in from a second source (e.g.
+ * {@link AudioDirector.scheduleStingInto} appending a sting after the fact)
+ * can preserve the identical contract instead of re-deriving the comparator
+ * by hand, which is how F-b4f0d758 / F-6d29e174 happened: TurnPresenter's
+ * bare `audioCommands.push(sting)` had no access to this rule at all.
+ */
+export function compareAudioCommands(a: AudioCommand, b: AudioCommand): number {
+  return a.timing - b.timing || b.priority - a.priority;
+}
+
 /** Estimate speech duration in ms from text length. */
 function estimateSpeechDurationMs(text: string, speed: number): number {
   const safeSpeed = Math.max(0.1, speed);
@@ -118,7 +134,7 @@ export function scheduleAll(
   }
 
   // Sort by timing, then priority (higher first)
-  commands.sort((a, b) => a.timing - b.timing || b.priority - a.priority);
+  commands.sort(compareAudioCommands);
 
   return commands;
 }

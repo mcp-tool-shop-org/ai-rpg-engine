@@ -12,7 +12,7 @@ import type {
   SoundLookup,
 } from './types.js';
 import { DEFAULT_DOMAIN_PRIORITIES, DEFAULT_DUCKING_RULES } from './types.js';
-import { scheduleAll } from './scheduler.js';
+import { scheduleAll, compareAudioCommands } from './scheduler.js';
 
 /**
  * Deterministic audio cue scheduling engine.
@@ -166,7 +166,7 @@ export class AudioDirector {
     }
 
     const all = [...crossfadeStops, ...filtered, ...ducking];
-    all.sort((a, b) => a.timing - b.timing || b.priority - a.priority);
+    all.sort(compareAudioCommands);
     return all;
   }
 
@@ -234,6 +234,49 @@ export class AudioDirector {
     };
     const resolved = this.resolveCommand(raw);
     return { ...resolved, action: 'sting' };
+  }
+
+  /**
+   * Insert a music sting into an already-scheduled AudioCommand array,
+   * preserving {@link schedule}'s timing/priority ordering contract
+   * (F-b4f0d758 / F-6d29e174).
+   *
+   * A bare `commands.push(director.scheduleSting(id))` — the only production
+   * call site was doing exactly this (packages/terminal-ui/src/
+   * presentation.ts's `TurnPresenter.present()`) — appends the sting AFTER
+   * an array `schedule()` already sorted by `(timing, priority)`. Since a
+   * sting always carries `timing: 0` (see {@link scheduleSting}, above), a
+   * bare push silently puts it LAST whenever every other command in the
+   * turn has a strictly later timing (any 'with-text' or 'after-text' sfx,
+   * e.g. the real `combat.victory` cue, which soundpack-core's
+   * EXACT_CUE_MAP marks 'after-text' — several seconds out for a typical
+   * turn) — breaking the "ordered AudioCommands" contract every consumer of
+   * `schedule()`'s return value relies on.
+   *
+   * This method is the correct merge seam: build the sting via
+   * {@link scheduleSting}, push it into `commands`, then re-sort with the
+   * SAME comparator ({@link compareAudioCommands}) `schedule()` itself uses.
+   * `commands` is mutated in place AND returned, so a caller holding
+   * `const audioCommands = director.schedule(...)` can swap a bare
+   * `audioCommands.push(director.scheduleSting(id))` for
+   * `director.scheduleStingInto(audioCommands, id)` as a single-line,
+   * ordering-safe replacement — the array reference the caller already
+   * holds stays valid without needing to consume a return value.
+   *
+   * @param commands   The AudioCommand array to insert into — typically the
+   *                    return value of {@link schedule}. Mutated in place.
+   * @param resourceId Forwarded to {@link scheduleSting}.
+   * @param opts       Forwarded to {@link scheduleSting}.
+   */
+  scheduleStingInto(
+    commands: AudioCommand[],
+    resourceId: string,
+    opts?: { priority?: number; fadeMs?: number },
+  ): AudioCommand[] {
+    const sting = this.scheduleSting(resourceId, opts);
+    commands.push(sting);
+    commands.sort(compareAudioCommands);
+    return commands;
   }
 
   /** Clear all cooldowns (e.g. on scene change). */
