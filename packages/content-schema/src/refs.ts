@@ -9,6 +9,8 @@ import type {
   AbilityDefinition,
   StatusDefinition,
   ConditionSpec,
+  HazardSpec,
+  ItemDefinition,
 } from './schemas.js';
 
 export type ContentPack = {
@@ -139,24 +141,19 @@ export type ContentPack = {
    * structurally (the `districts` pattern) because the interpreter lives in
    * @ai-rpg-engine/modules, above this package.
    */
-  hazardDefinitions?: Array<{
-    id: string;
-    name?: string;
-    effects: unknown[];
-    trigger: string;
-    moveCostDelta?: number;
-    passable?: string;
-    blocksVision?: boolean;
-    weatherConditions?: string[];
-    immuneTags?: string[];
-    tags?: string[];
-  }>;
+  hazardDefinitions?: HazardSpec[];
   /**
    * Optional item catalog entries. Derived into the item registry by
    * {@link validateGameContent} so a JSON pack that names items in inventory,
    * chargen kits, or quest rewards is not green on a dangling id.
+   *
+   * Promoted from `{ id: string }` to {@link ItemDefinition} (structural
+   * subset of `@ai-rpg-engine/equipment`'s ItemDefinition — that package is
+   * the canonical runtime item schema; a real equipment ItemDefinition is
+   * assignable here). `id` remains the only required field so a JSON pack
+   * that only names ids still loads.
    */
-  items?: { id: string }[];
+  items?: ItemDefinition[];
 };
 
 /**

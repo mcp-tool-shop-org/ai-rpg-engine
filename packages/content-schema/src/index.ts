@@ -8,3 +8,4 @@ export * from './build-catalog.js';
 export * from './intake.js';
 export * from './gate.js';
 export * from './semver-range.js';
+export * from './json-schema.js';

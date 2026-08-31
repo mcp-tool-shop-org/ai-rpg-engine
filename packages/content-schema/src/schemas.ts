@@ -359,3 +359,50 @@ export type SoundCueDefinition = {
   condition?: ConditionSpec;
   tags?: string[];
 };
+
+// --- Typed hazard (wire / JSON) ---
+
+/**
+ * Data-side hazard record on a ContentPack (C3/P3). Structural shape of the
+ * interpreter's HazardSpec; content-schema sits below modules so the closed
+ * trigger/effect unions are not imported here. Runtime vocabulary lives in
+ * @ai-rpg-engine/modules `hazard-interpreter`.
+ */
+export type HazardSpec = {
+  id: string;
+  name?: string;
+  effects: unknown[];
+  trigger: string;
+  moveCostDelta?: number;
+  passable?: string;
+  blocksVision?: boolean;
+  weatherConditions?: string[];
+  immuneTags?: string[];
+  tags?: string[];
+};
+
+/** Alias matching ContentPack.hazardDefinitions commentary. */
+export type HazardDefinition = HazardSpec;
+
+// --- Item catalog entry ---
+
+/**
+ * Item catalog entry on a ContentPack. Structural subset of
+ * `@ai-rpg-engine/equipment`'s ItemDefinition — content-schema sits below
+ * equipment, so the pack field is typed here. A real equipment ItemDefinition
+ * is assignable as-is. Runtime slot/rarity/loadout semantics live in that
+ * package; this record is the authoring/load shape (`id` required).
+ */
+export type ItemDefinition = {
+  id: string;
+  name?: string;
+  description?: string;
+  slot?: string;
+  rarity?: string;
+  statModifiers?: Record<string, number>;
+  resourceModifiers?: Record<string, number>;
+  grantedTags?: string[];
+  grantedVerbs?: string[];
+  requiredTags?: string[];
+  provenance?: Record<string, unknown>;
+};

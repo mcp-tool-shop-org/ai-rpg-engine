@@ -1,0 +1,367 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-rpg-engine.dev/schemas/content-pack.schema.json",
+  "title": "ContentPack",
+  "description": "Authoring contract for an AI RPG Engine content pack. Runtime validation via loadContent is the fail-closed gate; this schema is the editor / $ref surface.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "description": "Pack format version stamped by the exporter."
+    },
+    "entities": {
+      "type": "array",
+      "description": "EntityBlueprint records (id, type, name, baseStats). Not EntityState — no roomId, no runtime stats/resources.",
+      "items": { "$ref": "#/$defs/EntityBlueprint" }
+    },
+    "zones": {
+      "type": "array",
+      "description": "ZoneDefinition records (id, name, neighbors, hazardRefs, entryGate). Not ZoneState — no roomId.",
+      "items": { "$ref": "#/$defs/ZoneDefinition" }
+    },
+    "dialogues": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/DialogueDefinition" }
+    },
+    "quests": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/QuestDefinition" }
+    },
+    "abilities": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/AbilityDefinition" }
+    },
+    "statuses": {
+      "type": "array",
+      "description": "StatusDefinition records. duration is a DurationSpec object (type/value), not a number.",
+      "items": { "$ref": "#/$defs/StatusDefinition" }
+    },
+    "verbs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": { "id": { "type": "string", "minLength": 1 } },
+        "additionalProperties": true
+      }
+    },
+    "archetypes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "startingInventory": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": true
+      }
+    },
+    "backgrounds": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "startingInventory": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": true
+      }
+    },
+    "itemUseEffects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["itemId"],
+        "properties": { "itemId": { "type": "string", "minLength": 1 } },
+        "additionalProperties": true
+      }
+    },
+    "districts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/DistrictDefinition" }
+    },
+    "buildCatalog": {
+      "type": "object",
+      "description": "Session-scoped chargen catalog. Consumed before a world exists.",
+      "additionalProperties": true
+    },
+    "progressionTrees": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/ProgressionTreeDefinition" }
+    },
+    "placements": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/EntityPlacementRecord" }
+    },
+    "encounterAnchors": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/EncounterAnchorRecord" }
+    },
+    "hazardDefinitions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/HazardSpec" }
+    },
+    "items": {
+      "type": "array",
+      "description": "Item catalog. Structural subset of @ai-rpg-engine/equipment ItemDefinition; id is required. That package is the canonical runtime item schema.",
+      "items": { "$ref": "#/$defs/ItemDefinition" }
+    },
+    "factionPresences": {
+      "description": "Evaluated, not mapped by intake. Allowed so a forge export is not refused."
+    },
+    "pressureHotspots": {
+      "description": "Evaluated, not mapped by intake. Allowed so a forge export is not refused."
+    }
+  },
+  "$defs": {
+    "EntityBlueprint": {
+      "type": "object",
+      "required": ["id", "type", "name"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "description": "Unique identifier" },
+        "type": { "type": "string", "minLength": 1, "description": "Entity type (player, npc, enemy, …). Not `kind`." },
+        "name": { "type": "string", "minLength": 1 },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "baseStats": { "type": "object", "additionalProperties": { "type": "number" } },
+        "baseResources": { "type": "object", "additionalProperties": { "type": "number" } },
+        "startingStatuses": { "type": "array", "items": { "type": "string" } },
+        "inventory": { "type": "array", "items": { "type": "string" } },
+        "equipment": { "type": "object", "additionalProperties": { "type": "string" } },
+        "aiProfile": { "type": "string" },
+        "scripts": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "ZoneDefinition": {
+      "type": "object",
+      "required": ["id", "name"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "description": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["text"],
+            "properties": { "text": { "type": "string", "minLength": 1 } },
+            "additionalProperties": true
+          }
+        },
+        "neighbors": { "type": "array", "items": { "type": "string" } },
+        "light": { "type": "number" },
+        "noise": { "type": "number" },
+        "hazards": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Legacy free-text hazard strings. Inert without pack code. Typed hazards use hazardRefs."
+        },
+        "interactables": { "type": "array", "items": { "type": "string" } },
+        "entities": { "type": "array", "items": { "type": "string" } },
+        "hazardRefs": { "type": "array", "items": { "type": "string" } },
+        "exits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["targetZoneId"],
+            "properties": {
+              "targetZoneId": { "type": "string", "minLength": 1 },
+              "label": { "type": "string" }
+            },
+            "additionalProperties": true
+          }
+        },
+        "entryGate": {
+          "type": "object",
+          "required": ["conditions", "mode"],
+          "properties": {
+            "conditions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/ConditionSpec" } },
+            "mode": { "type": "string", "enum": ["hard", "soft"] },
+            "reason": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "scene": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "biome": { "type": "string" },
+            "timeOfDay": { "type": "string" },
+            "dressingDensity": { "type": "string", "enum": ["sparse", "normal", "dense"] },
+            "variantTags": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "ConditionSpec": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "params": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "DialogueDefinition": {
+      "type": "object",
+      "required": ["id", "speakers", "nodes", "entryNodeId"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "speakers": { "type": "array", "items": { "type": "string" } },
+        "entryNodeId": { "type": "string", "minLength": 1, "description": "Entry point node id. Not startNode." },
+        "nodes": { "type": "object", "additionalProperties": { "type": "object" } }
+      }
+    },
+    "QuestDefinition": {
+      "type": "object",
+      "required": ["id", "name", "stages"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "stages": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "name"],
+            "additionalProperties": true,
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "name": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "AbilityDefinition": {
+      "type": "object",
+      "required": ["id", "name", "verb", "tags", "target", "effects"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "verb": { "type": "string", "minLength": 1 },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "target": {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": true,
+          "properties": { "type": { "type": "string" } }
+        },
+        "effects": { "type": "array", "items": { "type": "object" } },
+        "cooldown": { "type": "number" }
+      }
+    },
+    "StatusDefinition": {
+      "type": "object",
+      "required": ["id", "name", "tags", "stacking"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "stacking": { "type": "string", "enum": ["replace", "stack", "refresh"] },
+        "maxStacks": { "type": "number" },
+        "duration": {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": true,
+          "description": "DurationSpec — not a bare number.",
+          "properties": {
+            "type": { "type": "string", "enum": ["ticks", "permanent", "conditional"] },
+            "value": { "type": "number" }
+          }
+        }
+      }
+    },
+    "DistrictDefinition": {
+      "type": "object",
+      "required": ["id", "name", "zoneIds", "tags"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "zoneIds": { "type": "array", "items": { "type": "string" } },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "controllingFaction": { "type": "string" },
+        "baseMetrics": { "type": "object", "additionalProperties": { "type": "number" } }
+      }
+    },
+    "EntityPlacementRecord": {
+      "type": "object",
+      "required": ["entityId", "zoneId"],
+      "additionalProperties": true,
+      "properties": {
+        "entityId": { "type": "string", "minLength": 1 },
+        "zoneId": { "type": "string", "minLength": 1 },
+        "spawnCondition": { "$ref": "#/$defs/ConditionSpec" }
+      }
+    },
+    "EncounterAnchorRecord": {
+      "type": "object",
+      "required": ["id", "zoneId", "encounterType", "enemyIds", "probability", "cooldownTurns", "tags"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "zoneId": { "type": "string", "minLength": 1 },
+        "encounterType": { "type": "string", "enum": ["ambush", "patrol", "horde", "duel"] },
+        "enemyIds": { "type": "array", "items": { "type": "string" } },
+        "probability": { "type": "number" },
+        "cooldownTurns": { "type": "number" },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "HazardSpec": {
+      "type": "object",
+      "required": ["id", "trigger", "effects"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "trigger": { "type": "string", "minLength": 1 },
+        "effects": { "type": "array", "items": { "type": "object" } },
+        "moveCostDelta": { "type": "number" },
+        "passable": { "type": "string" },
+        "blocksVision": { "type": "boolean" },
+        "weatherConditions": { "type": "array", "items": { "type": "string" } },
+        "immuneTags": { "type": "array", "items": { "type": "string" } },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "ItemDefinition": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": true,
+      "description": "Pack item record. Canonical runtime schema is @ai-rpg-engine/equipment ItemDefinition.",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "slot": { "type": "string" },
+        "rarity": { "type": "string" },
+        "statModifiers": { "type": "object", "additionalProperties": { "type": "number" } },
+        "resourceModifiers": { "type": "object", "additionalProperties": { "type": "number" } },
+        "grantedTags": { "type": "array", "items": { "type": "string" } },
+        "grantedVerbs": { "type": "array", "items": { "type": "string" } },
+        "requiredTags": { "type": "array", "items": { "type": "string" } },
+        "provenance": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "ProgressionTreeDefinition": {
+      "type": "object",
+      "required": ["id", "name", "currency", "nodes"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "currency": { "type": "string", "minLength": 1 },
+        "nodes": { "type": "array", "items": { "type": "object" } }
+      }
+    }
+  }
+}

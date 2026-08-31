@@ -25,7 +25,7 @@ npx vitest run     # run the pack's tests
 | File | What to edit |
 |------|--------------|
 | `package.json` | name and description |
-| `src/content.ts` | `packMeta` (tagline, genres, difficulty, tones, tags, description, version) plus entities and zones — keep each enemy's `ai.profileId` paired with a profile in setup. `getPackSummaries()` / the CLI pack selector list a pack only after those catalog fields exist. |
+| `src/content.ts` | `packMeta`, the `ContentPack` (`entities` / `zones` / `placements`), plus session catalogs (`buildCatalog`, `itemCatalog`, `districts`, `progressionTree`, `statusDefinitions`). Keep each enemy's `aiProfile` paired with a profile in setup. `src/content.json` is the same world for `validate` / sidecar `--content`. |
 | `src/ruleset.ts` | your stats, resources, verbs |
 | `src/setup.ts` | wire your modules alongside `buildCombatStack`; the intent profiles list lives here |
 | `src/starter.test.ts` | grows with your content — register dialogues/abilities in the integrity lists |

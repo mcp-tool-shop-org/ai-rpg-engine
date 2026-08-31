@@ -1,0 +1,102 @@
+{
+  "entities": [
+    {
+      "id": "player",
+      "type": "player",
+      "name": "Hero",
+      "tags": ["player"],
+      "baseStats": { "power": 5, "speed": 4, "grit": 3 },
+      "baseResources": { "hp": 25, "stamina": 10, "tension": 0 }
+    },
+    {
+      "id": "grunt",
+      "type": "npc",
+      "name": "Grunt",
+      "tags": ["enemy", "hostile"],
+      "baseStats": { "power": 3, "speed": 3, "grit": 2 },
+      "baseResources": { "hp": 12 },
+      "aiProfile": "aggressive"
+    }
+  ],
+  "zones": [
+    {
+      "id": "start",
+      "name": "Starting Area",
+      "tags": ["safe"],
+      "neighbors": ["danger-zone"]
+    },
+    {
+      "id": "danger-zone",
+      "name": "The Danger Zone",
+      "tags": ["hostile"],
+      "neighbors": ["start"]
+    }
+  ],
+  "placements": [
+    { "entityId": "player", "zoneId": "start" },
+    { "entityId": "grunt", "zoneId": "danger-zone" }
+  ],
+  "districts": [
+    {
+      "id": "my-game-grounds",
+      "name": "My Game Grounds",
+      "zoneIds": ["start", "danger-zone"],
+      "tags": ["starter"],
+      "controllingFaction": "my-game"
+    }
+  ],
+  "items": [
+    {
+      "id": "worn-blade",
+      "name": "Worn Blade",
+      "description": "A simple blade for My Game.",
+      "slot": "weapon",
+      "rarity": "common"
+    }
+  ],
+  "buildCatalog": {
+    "packId": "my-game",
+    "statBudget": 3,
+    "maxTraits": 2,
+    "requiredFlaws": 0,
+    "archetypes": [
+      {
+        "id": "wanderer",
+        "name": "Wanderer",
+        "description": "A wanderer in My Game.",
+        "statPriorities": { "power": 5, "speed": 4, "grit": 3 },
+        "startingTags": ["starter"],
+        "progressionTreeId": "my-game-mastery"
+      }
+    ],
+    "backgrounds": [
+      {
+        "id": "local",
+        "name": "Local",
+        "description": "Grew up around My Game.",
+        "statModifiers": {},
+        "startingTags": []
+      }
+    ],
+    "traits": [],
+    "disciplines": [],
+    "crossTitles": [],
+    "entanglements": []
+  },
+  "statuses": [],
+  "progressionTrees": [
+    {
+      "id": "my-game-mastery",
+      "name": "My Game Mastery",
+      "currency": "xp",
+      "nodes": [
+        {
+          "id": "hardened",
+          "name": "Hardened",
+          "cost": 10,
+          "effects": [{ "type": "resource-boost", "params": { "resource": "hp", "amount": 5 } }]
+        }
+      ]
+    }
+  ]
+}

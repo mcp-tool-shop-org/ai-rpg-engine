@@ -14,6 +14,8 @@ import {
   validateSoundCueDefinition,
   validateEncounterAnchorRecord,
   validateDistrictDefinition,
+  validateHazardDefinition,
+  validateItemRecord,
   formatErrors,
 } from './validate.js';
 import { fantasyQuests } from '../../starter-fantasy/src/content.js';
@@ -181,6 +183,54 @@ describe('validateZoneDefinition', () => {
       scene: { biome: 'harbour-stone', timeOfDay: 'dusk', dressingDensity: 'sparse', variantTags: ['wet'] },
     });
     expect(r.ok).toBe(true);
+  });
+});
+
+describe('validateHazardDefinition (F-b6a8aa78)', () => {
+  it('accepts a minimal typed hazard', () => {
+    const r = validateHazardDefinition({
+      id: 'fire',
+      trigger: 'on-enter',
+      effects: [{ kind: 'damage', amount: 2 }],
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects a non-object', () => {
+    const r = validateHazardDefinition('whenever');
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.message === 'must be an object')).toBe(true);
+  });
+
+  it('rejects missing id/trigger and a non-array effects', () => {
+    const r = validateHazardDefinition({ trigger: 'whenever', effects: 'nope' });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('id'))).toBe(true);
+    expect(r.errors.some((e) => e.path.includes('effects'))).toBe(true);
+  });
+
+  it('rejects a non-object effects element', () => {
+    const r = validateHazardDefinition({ id: 'x', trigger: 'on-enter', effects: ['nope'] });
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e) => e.path.includes('effects[0]'))).toBe(true);
+  });
+});
+
+describe('validateItemRecord (F-b6a8aa78)', () => {
+  it('accepts { id } and a fuller equipment-shaped record', () => {
+    expect(validateItemRecord({ id: 'rope' }).ok).toBe(true);
+    expect(validateItemRecord({
+      id: 'worn-blade',
+      name: 'Worn Blade',
+      description: 'A simple blade.',
+      slot: 'weapon',
+      rarity: 'common',
+    }).ok).toBe(true);
+  });
+
+  it('refuses a non-object and a non-string id', () => {
+    expect(validateItemRecord(null).ok).toBe(false);
+    expect(validateItemRecord({ id: 1 }).ok).toBe(false);
   });
 });
 

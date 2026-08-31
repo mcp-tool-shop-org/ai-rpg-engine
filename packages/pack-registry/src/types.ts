@@ -115,6 +115,47 @@ export type PackDistrictInfo = {
   controllingFaction?: string;
 };
 
+/**
+ * Structural subset of character-creation's BuildCatalog. Declared locally so
+ * pack-registry does not depend on @ai-rpg-engine/character-creation; a real
+ * BuildCatalog is directly assignable to this shape.
+ */
+export type PackBuildCatalog = {
+  packId?: string;
+  archetypes?: unknown[];
+  backgrounds?: unknown[];
+  traits?: unknown[];
+  [key: string]: unknown;
+};
+
+/**
+ * Structural subset of equipment's ItemCatalog. Same layering pattern as
+ * {@link PackDistrictInfo}.
+ */
+export type PackItemCatalog = {
+  items?: Array<{ id: string; [key: string]: unknown }>;
+};
+
+/**
+ * Structural subset of content-schema's ProgressionTreeDefinition.
+ */
+export type PackProgressionTree = {
+  id?: string;
+  name?: string;
+  currency?: string;
+  nodes?: unknown[];
+};
+
+/**
+ * Structural subset of content-schema's StatusDefinition.
+ */
+export type PackStatusDefinition = {
+  id: string;
+  name?: string;
+  tags?: string[];
+  [key: string]: unknown;
+};
+
 // --- Pack Entry (registry-internal) ---
 
 export type PackEntry = {
@@ -127,7 +168,38 @@ export type PackEntry = {
    * a pack with no faction-controlled district fails that dimension.
    */
   districts?: PackDistrictInfo[];
+  /**
+   * Chargen catalog (archetypes / backgrounds / traits). Optional so a
+   * pack that only implements the historical PackEntry still registers;
+   * hosts that drive character creation read it from the same entry.
+   */
+  buildCatalog?: PackBuildCatalog;
+  /**
+   * Equipment catalog. Optional; item audits and loadout UIs read it
+   * from the registered entry instead of a parallel PackInfo type.
+   */
+  itemCatalog?: PackItemCatalog;
+  /**
+   * Progression trees for the Advance menu. Optional.
+   */
+  progressionTrees?: PackProgressionTree[];
+  /**
+   * Status definitions for status-tag gates. Optional.
+   */
+  statusDefinitions?: PackStatusDefinition[];
   createGame: (seed?: number) => Engine;
+};
+
+/** Specifiers `discoverInstalledPacks` will `import()`. */
+export type DiscoverFrom = {
+  /** File URLs or path specifiers passed to dynamic `import()`. */
+  moduleUrls?: string[];
+  /** Package names resolved through Node (e.g. `@ai-rpg-engine/starter-fantasy`). */
+  nodeResolution?: string[];
+};
+
+export type DiscoverInstalledPacksOptions = {
+  from: DiscoverFrom;
 };
 
 // --- Pack Summary (for display) ---

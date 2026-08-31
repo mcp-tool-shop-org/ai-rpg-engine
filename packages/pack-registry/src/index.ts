@@ -6,9 +6,15 @@ export type {
   PackTone,
   PackMetadata,
   PackDistrictInfo,
+  PackBuildCatalog,
+  PackItemCatalog,
+  PackProgressionTree,
+  PackStatusDefinition,
   PackEntry,
   PackSummary,
   PackFilter,
+  DiscoverFrom,
+  DiscoverInstalledPacksOptions,
   RubricDimension,
   RubricCheck,
   RubricResult,
@@ -34,3 +40,9 @@ export {
 } from './registry.js';
 
 export { validatePackRubric } from './rubric.js';
+
+export {
+  packEntryFromModule,
+  registerFromModule,
+  discoverInstalledPacks,
+} from './discover.js';
