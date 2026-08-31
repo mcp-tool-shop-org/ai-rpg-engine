@@ -82,6 +82,8 @@ export class RumorEngine {
   private fadingThreshold: number;
   private deathThreshold: number;
   private maxDeadRumors: number;
+  /** Undefined: stances never decay (F-16e227f2). */
+  private stanceFadeTicks: number | undefined;
   /**
    * Per-instance ID counter. Rumor IDs depend only on (this engine's history),
    * never on cross-instance order — see CP-02. Two engines number independently.
@@ -98,6 +100,9 @@ export class RumorEngine {
     this.fadingThreshold = config?.fadingThreshold ?? DEFAULT_CONFIG.fadingThreshold;
     this.deathThreshold = config?.deathThreshold ?? DEFAULT_CONFIG.deathThreshold;
     this.maxDeadRumors = Math.max(0, config?.maxDeadRumors ?? DEFAULT_CONFIG.maxDeadRumors);
+    // No DEFAULT_CONFIG entry: omitted stays undefined so stances never
+    // decay unless a caller opts in (F-16e227f2).
+    this.stanceFadeTicks = config?.stanceFadeTicks;
     this.mutations = config?.mutations ?? DEFAULT_MUTATIONS;
   }
 
@@ -229,7 +234,27 @@ export class RumorEngine {
         rumor.status = 'fading';
       }
     }
+    this.decayStances(currentTick);
     this.capDead();
+  }
+
+  /**
+   * Clear stance entries whose age (relative to `currentTick`) has reached
+   * {@link stanceFadeTicks}. No-ops when `stanceFadeTicks` is unset
+   * (F-16e227f2). Mirrors {@link setStance}'s own unknown-clears-entry
+   * behavior — an entry is deleted outright, never rewritten in place, and
+   * never inverted between `believe`/`doubt`.
+   */
+  private decayStances(currentTick: number): void {
+    if (this.stanceFadeTicks === undefined) return;
+    for (const [entityId, byRumor] of this.stances) {
+      for (const [rumorId, entry] of [...byRumor]) {
+        if (currentTick - entry.tick >= this.stanceFadeTicks) {
+          byRumor.delete(rumorId);
+        }
+      }
+      if (byRumor.size === 0) this.stances.delete(entityId);
+    }
   }
 
   /**

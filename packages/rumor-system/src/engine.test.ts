@@ -941,3 +941,85 @@ describe('rumor stance (F-959f6ee9)', () => {
     expect(engine.stanceOf('player', second.id)).toBe('unknown');
   });
 });
+
+describe('rumor stance decay (F-16e227f2)', () => {
+  test('omitted stanceFadeTicks never decays a stance, even far past any threshold', () => {
+    const engine = new RumorEngine({ deathThreshold: 1000 });
+    const rumor = createRumor(engine);
+    engine.setStance('player', rumor.id, 'believe', 1);
+
+    engine.tick(10_000);
+
+    expect(engine.stanceOf('player', rumor.id)).toBe('believe');
+  });
+
+  test('tick() clears a stance to unknown once currentTick - entry.tick >= stanceFadeTicks', () => {
+    const engine = new RumorEngine({ stanceFadeTicks: 5, deathThreshold: 1000 });
+    const rumor = createRumor(engine);
+    engine.setStance('player', rumor.id, 'believe', 1);
+
+    engine.tick(5); // 5 - 1 = 4: short of the threshold, stance survives
+    expect(engine.stanceOf('player', rumor.id)).toBe('believe');
+
+    engine.tick(6); // 6 - 1 = 5: meets the threshold, stance decays
+    expect(engine.stanceOf('player', rumor.id)).toBe('unknown');
+  });
+
+  test('decay never flips believe into doubt (or vice versa) — only ever clears to unknown', () => {
+    const engine = new RumorEngine({ stanceFadeTicks: 3, deathThreshold: 1000 });
+    const rumor = createRumor(engine);
+    engine.setStance('player', rumor.id, 'doubt', 0);
+
+    engine.tick(3);
+
+    expect(engine.stanceOf('player', rumor.id)).toBe('unknown');
+  });
+
+  test('stance decay does not touch heardBy — stays heard, not believed', () => {
+    const engine = new RumorEngine({ stanceFadeTicks: 2, deathThreshold: 1000, mutations: [] });
+    const rumor = createRumor(engine, { originTick: 0 });
+    engine.spread(rumor.id, defaultCtx({ receiverId: 'player', currentTick: 1 }));
+    engine.setStance('player', rumor.id, 'believe', 1);
+
+    engine.tick(5);
+
+    expect(engine.stanceOf('player', rumor.id)).toBe('unknown');
+    expect(engine.heardBy('player').map((r) => r.id)).toEqual([rumor.id]);
+  });
+
+  test('two hearers with different stance-set ticks decay independently', () => {
+    const engine = new RumorEngine({ stanceFadeTicks: 4, deathThreshold: 1000 });
+    const rumor = createRumor(engine);
+    engine.setStance('player', rumor.id, 'believe', 1);
+    engine.setStance('priest', rumor.id, 'doubt', 4);
+
+    engine.tick(5); // player: 5-1=4 (decays); priest: 5-4=1 (survives)
+
+    expect(engine.stanceOf('player', rumor.id)).toBe('unknown');
+    expect(engine.stanceOf('priest', rumor.id)).toBe('doubt');
+  });
+
+  test('re-setting a stance after a tick refreshes its fade clock', () => {
+    const engine = new RumorEngine({ stanceFadeTicks: 5, deathThreshold: 1000 });
+    const rumor = createRumor(engine);
+    engine.setStance('player', rumor.id, 'believe', 1);
+    engine.tick(4); // 4-1=3: not yet decayed
+    engine.setStance('player', rumor.id, 'believe', 4); // refresh the clock
+
+    engine.tick(8); // 8-4=4: still short of the threshold
+    expect(engine.stanceOf('player', rumor.id)).toBe('believe');
+
+    engine.tick(9); // 9-4=5: meets the threshold
+    expect(engine.stanceOf('player', rumor.id)).toBe('unknown');
+  });
+
+  test('RumorEngineConfig accepts stanceFadeTicks (typed field, not a stringly-typed cast)', () => {
+    // Fails to typecheck (and construct meaningfully) until the field exists
+    // on RumorEngineConfig — pins the config surface itself, not just tick().
+    const engine = new RumorEngine({ stanceFadeTicks: 1 });
+    const rumor = createRumor(engine);
+    engine.setStance('player', rumor.id, 'believe', 0);
+    engine.tick(1);
+    expect(engine.stanceOf('player', rumor.id)).toBe('unknown');
+  });
+});
