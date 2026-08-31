@@ -20,6 +20,7 @@ import {
   assertNoSeedsInState,
   loadSidecar,
   saveSidecar,
+  bindSidecar,
 } from './secrets.js';
 import type { LedgerAdapterState } from '../contracts.js';
 
@@ -208,5 +209,16 @@ describe('sidecar file IO — round trip through a real temp file', () => {
     dir = mkdtempSync(join(tmpdir(), 'ledger-adapter-secrets-test-'));
     const path = sidecarPath(dir);
     expect(() => loadSidecar(path)).toThrow();
+  });
+
+  it('bindSidecar persists on put and reloads via getSeed from a fresh bind', () => {
+    dir = mkdtempSync(join(tmpdir(), 'ledger-adapter-secrets-test-'));
+    const first = bindSidecar(dir);
+    first.putSeed('rAddrA', FAKE_FAMILY_SEED);
+    expect(first.getSeed('rAddrA')).toBe(FAKE_FAMILY_SEED);
+
+    const second = bindSidecar(dir);
+    expect(second.getSeed('rAddrA')).toBe(FAKE_FAMILY_SEED);
+    expect(second.getSeed('rNever')).toBeUndefined();
   });
 });

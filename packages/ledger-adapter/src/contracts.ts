@@ -316,12 +316,41 @@ export type SecretsSidecar = { seeds: Record<string, string> };
 
 // ── Adapter operation results ───────────────────────────────────────────────
 
-export type EnableResult = { success: boolean; message: string; playerAddress?: string };
+/**
+ * Operator-facing network badge. Derived from `LedgerTransport.networkName`
+ * (`dry-run` | `testnet` | `devnet`) — never mainnet. Used in EnableResult /
+ * SettlementResult copy so a faucet session is distinguishable from a local
+ * fake. `fake-dry-run` is the in-test FakeTransport alias of dry-run.
+ */
+export function ledgerNetworkLabel(networkName: string): string {
+  if (networkName === 'testnet') return 'XRPL Testnet';
+  if (networkName === 'devnet') return 'XRPL Devnet';
+  if (networkName === 'dry-run' || networkName === 'fake-dry-run') return 'Dry-run';
+  return networkName;
+}
+
+/** Longer qualifier for enable-success copy (faucet / no real value). */
+export function ledgerNetworkQualifier(networkName: string): string {
+  if (networkName === 'testnet') return 'XRPL Testnet — faucet wallets, no real value';
+  if (networkName === 'devnet') return 'XRPL Devnet — faucet wallets, no real value';
+  if (networkName === 'dry-run' || networkName === 'fake-dry-run') return 'Dry-run — no real value';
+  return `${ledgerNetworkLabel(networkName)} — this is not mainnet value`;
+}
+
+export type EnableResult = {
+  success: boolean;
+  message: string;
+  playerAddress?: string;
+  /** `transport.networkName` — 'dry-run' | 'testnet' | 'devnet'. */
+  network?: string;
+};
 export type SettlementResult = {
   success: boolean;
   message: string;
   txids?: string[];
   record?: SettlementRecord;
+  /** `transport.networkName` — 'dry-run' | 'testnet' | 'devnet'. */
+  network?: string;
 };
 
 // ── Reconciliation (the EXTERNAL_VERIFIER — ported from ledger_proof.py) ─────
@@ -456,6 +485,16 @@ export type SettleOptions = {
  */
 export interface LedgerAdapter {
   readonly config: LedgerAdapterConfig;
+  /** Stamped into settlement memos / NFT URIs — same value passed to createLedgerAdapter. */
+  readonly gameId: string;
+  /** Stamped into settlement memos — same value passed to createLedgerAdapter. */
+  readonly runId: string;
+  /**
+   * Inbound seed lookup (in-memory cache, then the injected sidecar `getSeed`).
+   * Public so checkpoint NFT wrappers and resumeAdapter can hydrate issuer/player
+   * seeds without the host re-plumbing secrets per call. NEVER serializes.
+   */
+  getSeed(address: string): string | undefined;
   /** Create/reuse wallets, set issuer flags + trust lines, mint the starting snapshot. */
   enable(state: LedgerAdapterState, snapshot: TradeableSnapshot): Promise<EnableResult>;
   /**
@@ -741,6 +780,15 @@ export type NFTokenRef = {
    * no offer has been submitted yet.
    */
   offerIndex?: string;
+  /**
+   * Directed player→issuer sell-offer ledger index while unique gear that
+   * left the loadout is being transferred back (then burned). Same empty-string
+   * hatch as `offerIndex`: tesSUCCESS without a parsed index recovers via
+   * nft_sell_offers, never a second offer.
+   */
+  releaseOfferIndex?: string;
+  /** Display name from the last EquipmentSnapshot — used when the item later leaves the loadout. */
+  name?: string;
   /** 'pending' = mint submitted but not yet confirmed owned on-ledger (retry-safe);
    *  'minted' = confirmed. A retry sees the existing ref and never re-mints. */
   status: 'minted' | 'pending';

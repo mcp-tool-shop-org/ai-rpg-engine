@@ -32,8 +32,10 @@ import type { ItemCatalog } from '@ai-rpg-engine/equipment';
 import type { LedgerAdapterConfig, LedgerAdapterState } from '../contracts.js';
 import { buildItemNFTUri } from '../contracts.js';
 import { equipmentSnapshotFromWorld } from './equipment-snapshot.js';
+import { enableFromWorld, settleAllFromWorld } from './checkpoint.js';
 import { settleEquipmentNFTs } from '../settle/nft.js';
 import { reconcile } from '../settle/reconcile.js';
+import { createLedgerAdapter } from '../settle/adapter.js';
 import { createInitialState } from '../state/index.js';
 import { DryRunTransport } from '../transport/index.js';
 
@@ -172,6 +174,38 @@ describe('THE FIREWALL — real gladiator played session: the NFT unique-gear la
     // THE FIREWALL — LOAD-BEARING. If this assertion ever fails, STOP and
     // report to the coordinator — do NOT weaken or delete it.
     expect(engineA.serialize()).toBe(engineB.serialize());
+  });
+});
+
+describe('documented seam wrappers mint unique gear without settleEquipmentNFTs', () => {
+  it('enableFromWorld + settleAllFromWorld leaves state.nfts[trident-and-net].status minted', async () => {
+    const engine = createGame(SEED);
+    const playerId = engine.world.playerId;
+    engine.submitAction('equip');
+    expect(getEntityLoadout(engine.world, playerId)?.equipped.weapon).toBe(TRIDENT);
+
+    const catalog = resolveCatalog(engine);
+    const transport = new DryRunTransport();
+    await transport.connect();
+    const adapter = createLedgerAdapter(transport, LEDGER_CONFIG, {
+      gameId: GAME_ID,
+      runId: 'gladiator-seam',
+    });
+    const state = createInitialState(LEDGER_CONFIG);
+
+    const enabled = await enableFromWorld(engine.world, playerId, adapter, state);
+    expect(enabled.success).toBe(true);
+    expect(enabled.network).toBe('dry-run');
+
+    const { nft } = await settleAllFromWorld(engine.world, playerId, adapter, state, 1, 'arena-gate', {
+      transport,
+      catalog,
+    });
+
+    expect(state.nfts?.[TRIDENT]?.status).toBe('minted');
+    expect(nft.minted).toContain(TRIDENT);
+    expect(nft.message).toMatch(/now yours on Dry-run/i);
+    expect(nft.items.find((i) => i.itemId === TRIDENT)?.nftId).toBe(state.nfts?.[TRIDENT]?.nftId);
   });
 });
 

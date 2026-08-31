@@ -210,6 +210,12 @@ function assertNFTokenRef(value: unknown, path: string): asserts value is NFToke
   if (value.offerIndex !== undefined && typeof value.offerIndex !== 'string') {
     throw new Error(`deserializeState: "${path}.offerIndex" must be a string`);
   }
+  if (value.releaseOfferIndex !== undefined && typeof value.releaseOfferIndex !== 'string') {
+    throw new Error(`deserializeState: "${path}.releaseOfferIndex" must be a string`);
+  }
+  if (value.name !== undefined && typeof value.name !== 'string') {
+    throw new Error(`deserializeState: "${path}.name" must be a string`);
+  }
 }
 
 /** Validates `LedgerAdapterState.nfts` — a `Record<string, NFTokenRef>` keyed

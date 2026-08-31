@@ -6,10 +6,10 @@
 // sibling of createLedgerAdapter's enable/settle for the fungible layer. See
 // nft.ts's header for its determinism + idempotency discipline.
 
-export { createLedgerAdapter } from './adapter.js';
-export type { LedgerAdapterDeps } from './adapter.js';
+export { createLedgerAdapter, resumeAdapter } from './adapter.js';
+export type { LedgerAdapterDeps, ResumeNftOpts } from './adapter.js';
 
 export { reconcile, deriveCurrencyCode } from './reconcile.js';
 
 export { settleEquipmentNFTs, buildLedgerNfts, ARPG_NFT_TAXON } from './nft.js';
-export type { NFTSettlementResult } from './nft.js';
+export type { NFTSettlementResult, NFTItemSettlement } from './nft.js';
