@@ -107,4 +107,19 @@ describe('createTestEngine', () => {
     expect(engine.world.globals.difficulty).toBe('hard');
     expect(engine.world.globals.level).toBe(5);
   });
+
+  it('sets factions from options', () => {
+    const engine = createTestEngine({
+      modules: [],
+      entities: [
+        { id: 'player', blueprintId: 'player', type: 'player', name: 'Hero', tags: [], stats: {}, resources: {}, statuses: [] },
+      ],
+      factions: {
+        'thieves-guild': { id: 'thieves-guild', name: 'Thieves Guild', reputation: 10, disposition: 'neutral' },
+      },
+    });
+
+    expect(engine.world.factions['thieves-guild']?.reputation).toBe(10);
+    expect(engine.world.factions['thieves-guild']?.disposition).toBe('neutral');
+  });
 });
