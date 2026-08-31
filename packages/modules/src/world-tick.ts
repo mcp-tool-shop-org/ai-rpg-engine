@@ -245,7 +245,7 @@ import {
   type LeverageCurrency,
 } from './player-leverage.js';
 import { getCurrency } from './progression-core.js';
-import { buildStrategicMap } from './strategic-map.js';
+import { buildStrategicMap, formatStrategicMapForPlayer } from './strategic-map.js';
 import { recommendMoves, setPersistedMoveRecommendation } from './move-advisor.js';
 import { getCognition, setBelief, addMemory } from './cognition-core.js';
 import {
@@ -2349,7 +2349,15 @@ function runMoveAdvisorStep(
     playerHeat: heat,
     activeOpportunities: opportunities,
   });
-  setPersistedMoveRecommendation(world, rec);
+
+  // F-7d890283: attach the player-facing strategic-map line over the SAME
+  // `map` just built above — the unread half of F-7a056689's production
+  // wiring. Empty (no hot district, no hostile/high-alert faction) omits the
+  // field, matching formatStrategicMapForPlayer's own contract. traversal-
+  // core.ts's inspectHandler reads this same persisted value (never
+  // recomputes it) to surface it beside economyReport on world.zone.inspected.
+  const situationHint = formatStrategicMapForPlayer(map);
+  setPersistedMoveRecommendation(world, { ...rec, ...(situationHint ? { situationHint } : {}) });
 }
 
 /**
