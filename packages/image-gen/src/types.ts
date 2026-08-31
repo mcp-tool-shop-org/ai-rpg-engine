@@ -99,6 +99,16 @@ export type GenerationOptions = {
    * is `'ipadapter'`), ComfyUI inserts IPAdapterApply. PlaceholderProvider no-ops.
    */
   ipadapter?: number | boolean;
+  /**
+   * LoRA stack (F-fcf4f488). ComfyUI chains a LoraLoader per entry between
+   * CheckpointLoaderSimple and KSampler's model input — order is significant
+   * (a chained graph, not a set). This is the only sanctioned way to apply a
+   * character/style LoRA: `sanitize()` deliberately strips `<lora:...>`-style
+   * syntax from prompt-text fields, so a LoRA can never be smuggled through
+   * the prompt itself. `weight` omitted defaults to `1`. PlaceholderProvider
+   * no-ops it, consistent with `controlImage`/`controlnet`/`ipadapter`.
+   */
+  loras?: Array<{ name: string; weight?: number }>;
 };
 
 /** ControlNet preprocessor / IP-Adapter selector (F-94ff23c8). */

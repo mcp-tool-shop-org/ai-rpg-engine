@@ -255,6 +255,122 @@ describe('ComfyUIProvider img2img (F-9daede34)', () => {
     expect(workflow!['5']?.inputs?.positive).toEqual(['2', 0]);
     expect(workflow!['12']?.class_type).toBeUndefined();
   });
+
+  it('loras inserts a LoraLoader wired from the checkpoint to KSampler.model (F-fcf4f488)', async () => {
+    const png = tinyPng(8, 8);
+    let workflow: Record<string, { class_type?: string; inputs?: Record<string, unknown> }> | undefined;
+    const mock = await startMock(
+      comfyFlow(
+        (_req, res) => {
+          res.writeHead(200, { 'Content-Type': 'image/png' });
+          res.end(png);
+        },
+        (w) => { workflow = w as typeof workflow; },
+      ),
+    );
+
+    const result = await makeProvider(mock.url).generate('a knight', {
+      loras: [{ name: 'knight_face_v2', weight: 0.75 }],
+    });
+    expect(result.ok).toBe(true);
+    expect(workflow!['20']?.class_type).toBe('LoraLoader');
+    expect(workflow!['20']?.inputs?.model).toEqual(['1', 0]);
+    expect(workflow!['20']?.inputs?.clip).toEqual(['1', 1]);
+    expect(workflow!['20']?.inputs?.lora_name).toBe('knight_face_v2');
+    expect(workflow!['20']?.inputs?.strength_model).toBe(0.75);
+    expect(workflow!['20']?.inputs?.strength_clip).toBe(0.75);
+    expect(workflow!['5']?.inputs?.model).toEqual(['20', 0]);
+  });
+
+  it('loras with an omitted weight default to strength 1', async () => {
+    const png = tinyPng(8, 8);
+    let workflow: Record<string, { class_type?: string; inputs?: Record<string, unknown> }> | undefined;
+    const mock = await startMock(
+      comfyFlow(
+        (_req, res) => {
+          res.writeHead(200, { 'Content-Type': 'image/png' });
+          res.end(png);
+        },
+        (w) => { workflow = w as typeof workflow; },
+      ),
+    );
+
+    const result = await makeProvider(mock.url).generate('a knight', {
+      loras: [{ name: 'knight_face_v2' }],
+    });
+    expect(result.ok).toBe(true);
+    expect(workflow!['20']?.inputs?.strength_model).toBe(1);
+    expect(workflow!['20']?.inputs?.strength_clip).toBe(1);
+  });
+
+  it('multiple loras chain sequentially, ending at KSampler.model', async () => {
+    const png = tinyPng(8, 8);
+    let workflow: Record<string, { class_type?: string; inputs?: Record<string, unknown> }> | undefined;
+    const mock = await startMock(
+      comfyFlow(
+        (_req, res) => {
+          res.writeHead(200, { 'Content-Type': 'image/png' });
+          res.end(png);
+        },
+        (w) => { workflow = w as typeof workflow; },
+      ),
+    );
+
+    const result = await makeProvider(mock.url).generate('a knight', {
+      loras: [
+        { name: 'knight_face_v2', weight: 0.75 },
+        { name: 'battle_scars', weight: 0.4 },
+      ],
+    });
+    expect(result.ok).toBe(true);
+    expect(workflow!['20']?.class_type).toBe('LoraLoader');
+    expect(workflow!['20']?.inputs?.model).toEqual(['1', 0]);
+    expect(workflow!['20']?.inputs?.lora_name).toBe('knight_face_v2');
+    expect(workflow!['21']?.class_type).toBe('LoraLoader');
+    expect(workflow!['21']?.inputs?.model).toEqual(['20', 0]);
+    expect(workflow!['21']?.inputs?.clip).toEqual(['20', 1]);
+    expect(workflow!['21']?.inputs?.lora_name).toBe('battle_scars');
+    expect(workflow!['5']?.inputs?.model).toEqual(['21', 0]);
+  });
+
+  it('omitted loras leaves the workflow exactly as before (no LoraLoader node, model input untouched)', async () => {
+    const png = tinyPng(8, 8);
+    let workflow: Record<string, { class_type?: string; inputs?: Record<string, unknown> }> | undefined;
+    const mock = await startMock(
+      comfyFlow(
+        (_req, res) => {
+          res.writeHead(200, { 'Content-Type': 'image/png' });
+          res.end(png);
+        },
+        (w) => { workflow = w as typeof workflow; },
+      ),
+    );
+
+    const result = await makeProvider(mock.url).generate('a knight');
+    expect(result.ok).toBe(true);
+    expect(workflow!['20']).toBeUndefined();
+    expect(workflow!['5']?.inputs?.model).toEqual(['1', 0]);
+  });
+
+  it('two otherwise-identical requests differing only by lora set derive different seeds (F-fcf4f488)', async () => {
+    const png = tinyPng(8, 8);
+    const mock = await startMock(comfyFlow((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'image/png' });
+      res.end(png);
+    }));
+
+    const a = await makeProvider(mock.url).generate('a knight', {
+      loras: [{ name: 'knight_face_v2', weight: 0.75 }],
+    });
+    const b = await makeProvider(mock.url).generate('a knight', {
+      loras: [{ name: 'battle_scars', weight: 0.75 }],
+    });
+    const noLora = await makeProvider(mock.url).generate('a knight');
+    expect(a.ok && b.ok && noLora.ok).toBe(true);
+    if (!a.ok || !b.ok || !noLora.ok) return;
+    expect(a.seed).not.toBe(b.seed);
+    expect(a.seed).not.toBe(noLora.seed);
+  });
 });
 
 describe('ComfyUIProvider.generate — A1: typed failure envelope', () => {

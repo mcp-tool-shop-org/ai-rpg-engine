@@ -111,6 +111,11 @@ function deriveDefaultSeed(
     }
     controlSig = `${control.length}:${h}`;
   }
+  // F-fcf4f488: order-sensitive (a chained LoraLoader graph, not a set) —
+  // mirrors the buildWorkflow chain order below.
+  const loraSig = opts.loras && opts.loras.length > 0
+    ? opts.loras.map((l) => `${l.name}:${l.weight ?? ''}`).join(',')
+    : '';
   const key = [
     prompt,
     opts.negativePrompt ?? '',
@@ -124,6 +129,7 @@ function deriveDefaultSeed(
     opts.controlnet ?? '',
     opts.ipadapter ?? '',
     controlSig,
+    loraSig,
   ].join(' ');
   let hash = 0x811c9dc5; // FNV offset basis
   for (let i = 0; i < key.length; i++) {
@@ -256,6 +262,34 @@ function buildWorkflow(
       inputs: { images: ['6', 0], filename_prefix: 'ai-rpg-engine' },
     },
   };
+
+  // F-fcf4f488: optional LoRA stack, chained between the checkpoint and
+  // KSampler's model input (node ids 20+ so they never collide with the
+  // ControlNet/IPAdapter block's 10-15 below). Additive only — does not
+  // touch the ControlNet/IPAdapter branch, which may itself re-target
+  // '5'.inputs.model when ipadapter is active; that combination is out of
+  // scope for this fix.
+  if (opts.loras && opts.loras.length > 0) {
+    let modelSrc: [string, number] = ['1', 0];
+    let clipSrc: [string, number] = ['1', 1];
+    opts.loras.forEach((lora, i) => {
+      const nodeId = String(20 + i);
+      workflow[nodeId] = {
+        class_type: 'LoraLoader',
+        inputs: {
+          model: modelSrc,
+          clip: clipSrc,
+          lora_name: lora.name,
+          strength_model: lora.weight ?? 1,
+          strength_clip: lora.weight ?? 1,
+        },
+      };
+      modelSrc = [nodeId, 0];
+      clipSrc = [nodeId, 1];
+    });
+    const ks = workflow['5'] as { inputs: Record<string, unknown> };
+    ks.inputs.model = modelSrc;
+  }
 
   const mode = controlImageName ? controlMode(opts) : null;
   if (mode === 'controlnet' && controlImageName && opts.controlnet && opts.controlnet !== 'ipadapter') {
