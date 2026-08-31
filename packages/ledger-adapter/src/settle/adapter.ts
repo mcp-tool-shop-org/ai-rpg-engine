@@ -34,9 +34,11 @@ import type {
 import {
   ASF_ALLOW_TRUSTLINE_LOCKING,
   ASF_DEFAULT_RIPPLE,
+  accountExplorerUrl,
   buildSettlementMemo,
   ledgerNetworkLabel,
   ledgerNetworkQualifier,
+  txExplorerUrl,
 } from '../contracts.js';
 import { assignTokenCode } from '../state/index.js';
 import { settleEquipmentNFTs } from './nft.js';
@@ -156,6 +158,37 @@ function errorMessage(err: unknown): string {
 
 function networkOf(transport: LedgerTransport): string {
   return transport.networkName;
+}
+
+/** Stamp the opening mint once per key. `lastSettled` advances on settle; this does not. */
+function checkpointOpeningMint(state: LedgerAdapterState, key: string, amount: number): void {
+  state.lastSettled[key] = amount;
+  if (!state.mintedInitial) state.mintedInitial = {};
+  if (!Object.prototype.hasOwnProperty.call(state.mintedInitial, key)) {
+    state.mintedInitial[key] = amount;
+  }
+}
+
+function stampPlayerExplorer(result: EnableResult, network: string, address?: string): EnableResult {
+  if (!address) return result;
+  const url = accountExplorerUrl(network, address);
+  if (url) result.playerExplorerUrl = url;
+  return result;
+}
+
+function stampTxExplorers(result: SettlementResult, network: string, txids?: string[]): SettlementResult {
+  if (!txids || txids.length === 0) return result;
+  const urls = txids
+    .map((hash) => txExplorerUrl(network, hash))
+    .filter((url): url is string => url !== undefined);
+  if (urls.length > 0) result.explorerUrls = urls;
+  return result;
+}
+
+function receiptLabel(network: string, txids: string[]): string {
+  const first = txids[0];
+  if (!first) return 'none';
+  return txExplorerUrl(network, first) ?? first;
 }
 
 export function createLedgerAdapter(
@@ -704,12 +737,16 @@ export function createLedgerAdapter(
         };
       }
       state.enabled = true;
-      return {
-        success: true,
-        network: networkOf(transport),
-        message: `Ledger adapter re-enabled — existing setup is already online. ${ledgerNetworkQualifier(networkOf(transport))}.`,
-        playerAddress: state.playerAddress,
-      };
+      return stampPlayerExplorer(
+        {
+          success: true,
+          network: networkOf(transport),
+          message: `Ledger adapter re-enabled — existing setup is already online. ${ledgerNetworkQualifier(networkOf(transport))}.`,
+          playerAddress: state.playerAddress,
+        },
+        networkOf(transport),
+        state.playerAddress,
+      );
     }
 
     const resuming = Boolean(
@@ -732,19 +769,23 @@ export function createLedgerAdapter(
         // that nothing is moved to make them true.
         if (Object.keys(state.lastSettled).length === 0) {
           const amounts = amountsOf(snapshot);
-          const settled: Record<string, number> = {};
-          for (const key of resourceKeysOf(snapshot)) settled[key] = amounts[key] ?? 0;
-          state.lastSettled = settled;
+          for (const key of resourceKeysOf(snapshot)) {
+            checkpointOpeningMint(state, key, amounts[key] ?? 0);
+          }
         }
         state.enabled = true;
-        return {
-          success: true,
-          network: networkOf(transport),
-          message: resuming
-            ? `Diary resumed — this run is witnessed, not custodied. ${ledgerNetworkQualifier(networkOf(transport))}.`
-            : `Diary opened — checkpoints will be anchored on-ledger, no trust lines needed. ${ledgerNetworkQualifier(networkOf(transport))}.`,
-          playerAddress: diarist.address,
-        };
+        return stampPlayerExplorer(
+          {
+            success: true,
+            network: networkOf(transport),
+            message: resuming
+              ? `Diary resumed — this run is witnessed, not custodied. ${ledgerNetworkQualifier(networkOf(transport))}.`
+              : `Diary opened — checkpoints will be anchored on-ledger, no trust lines needed. ${ledgerNetworkQualifier(networkOf(transport))}.`,
+            playerAddress: diarist.address,
+          },
+          networkOf(transport),
+          diarist.address,
+        );
       }
 
       // Wallets: reuse-by-address or fund fresh, one at a time, persisting
@@ -813,7 +854,7 @@ export function createLedgerAdapter(
         const code = currencyCodeFor(state, key);
         const onLedger = await readIssuedBalance(player.address, code);
         if (onLedger !== null && onLedger === amount) {
-          state.lastSettled[key] = amount;
+          checkpointOpeningMint(state, key, amount);
           continue;
         }
         if (amount > 0) {
@@ -824,19 +865,23 @@ export function createLedgerAdapter(
           });
           if (!mintRes.ok) throw new Error(`mint payment(${key}) failed: ${mintRes.error ?? mintRes.code}`);
         }
-        state.lastSettled[key] = amount;
+        checkpointOpeningMint(state, key, amount);
       }
 
       state.enabled = true;
 
-      return {
-        success: true,
-        network: networkOf(transport),
-        message: resuming
-          ? `Ledger adapter setup resumed — pack is now receipted. ${ledgerNetworkQualifier(networkOf(transport))}.`
-          : `Ledger adapter enabled — pack is now receipted. ${ledgerNetworkQualifier(networkOf(transport))}.`,
-        playerAddress: player.address,
-      };
+      return stampPlayerExplorer(
+        {
+          success: true,
+          network: networkOf(transport),
+          message: resuming
+            ? `Ledger adapter setup resumed — pack is now receipted. ${ledgerNetworkQualifier(networkOf(transport))}.`
+            : `Ledger adapter enabled — pack is now receipted. ${ledgerNetworkQualifier(networkOf(transport))}.`,
+          playerAddress: player.address,
+        },
+        networkOf(transport),
+        player.address,
+      );
     } catch (err) {
       return {
         success: false,
@@ -946,13 +991,18 @@ export function createLedgerAdapter(
       state.settlements.push(record);
       state.lastSettleFailed = false;
 
-      return {
-        success: true,
-        network: networkOf(transport),
-        message: `Settled on ${ledgerNetworkLabel(networkOf(transport))}. Receipt: ${txids[0] ?? 'none'}`,
+      const network = networkOf(transport);
+      return stampTxExplorers(
+        {
+          success: true,
+          network,
+          message: `Settled on ${ledgerNetworkLabel(network)}. Receipt: ${receiptLabel(network, txids)}`,
+          txids,
+          record,
+        },
+        network,
         txids,
-        record,
-      };
+      );
     } catch (err) {
       const record: SettlementRecord = {
         checkpoint,

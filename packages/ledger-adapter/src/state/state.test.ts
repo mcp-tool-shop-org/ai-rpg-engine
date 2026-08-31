@@ -77,6 +77,7 @@ describe('createInitialState', () => {
       trustLinesReady: false,
       tokenMap: {},
       lastSettled: {},
+      mintedInitial: {},
       settlements: [],
       pending: [],
       lastSettleFailed: false,
@@ -172,6 +173,24 @@ describe('NFT unique-gear layer (state.nfts)', () => {
     const restored = deserializeState(serializeState(state));
     expect(restored).toEqual(state);
     expect(restored.nfts).toEqual(state.nfts);
+  });
+
+  test('round-trips mintedInitial (opening mint, distinct from lastSettled)', () => {
+    const state = createInitialState(CONFIG);
+    state.mintedInitial = { coin: 100, potion: 2 };
+    state.lastSettled = { coin: 70, potion: 2 };
+    const restored = deserializeState(serializeState(state));
+    expect(restored.mintedInitial).toEqual({ coin: 100, potion: 2 });
+    expect(restored.lastSettled).toEqual({ coin: 70, potion: 2 });
+  });
+
+  test('back-compat: a serialized state that omits "mintedInitial" defaults to {}', () => {
+    const state = populatedState();
+    const obj = JSON.parse(serializeState(state)) as Record<string, unknown>;
+    delete obj.mintedInitial;
+    const restored = deserializeState(JSON.stringify(obj));
+    expect(restored.mintedInitial).toEqual({});
+    expect(restored.lastSettled).toEqual(state.lastSettled);
   });
 
   test('back-compat: a serialized state that omits "nfts" entirely still deserializes, defaulting to {}', () => {

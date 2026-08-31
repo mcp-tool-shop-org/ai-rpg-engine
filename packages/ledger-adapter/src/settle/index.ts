@@ -10,6 +10,8 @@ export { createLedgerAdapter, resumeAdapter } from './adapter.js';
 export type { LedgerAdapterDeps, ResumeNftOpts } from './adapter.js';
 
 export { reconcile, deriveCurrencyCode } from './reconcile.js';
+export { reconcileAgainstLedger } from './reconcile-ledger.js';
+export type { ReconcileAgainstLedgerOpts } from './reconcile-ledger.js';
 
 export { settleEquipmentNFTs, buildLedgerNfts, ARPG_NFT_TAXON } from './nft.js';
 export type { NFTSettlementResult, NFTItemSettlement } from './nft.js';

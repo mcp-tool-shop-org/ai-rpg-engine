@@ -38,6 +38,7 @@ import {
   enableFromWorld,
   settleCheckpoint,
   settleAllFromWorld,
+  reconcileFromWorld,
   bindSidecar,
   resumeAdapter,
   DEFAULT_LEDGER_CONFIG,
@@ -50,7 +51,8 @@ await transport.connect();
 
 // Bind the gitignored sidecar so save/reload can sign without re-plumbing seeds.
 // Default putSeed is a no-op; without getSeed a restarted process cannot settle.
-const sidecar = bindSidecar(gameDir); // <gameDir>/.secrets/ledger-secrets.json
+// Pass issuerMode so a persistent game aliases the issuer seed for run 2.
+const sidecar = bindSidecar(gameDir, { issuerMode: config.issuerMode }); // <gameDir>/.secrets/ledger-secrets.json
 const adapter = createLedgerAdapter(transport, config, {
   gameId: 'my-game',
   runId: 'run-1',
@@ -63,6 +65,8 @@ await enableFromWorld(world, playerId, adapter, state);
 // ...the player trades via the engine's own buy/sell verbs...
 
 // At the next checkpoint (town / market / save): settle the net delta on testnet.
+// Verb/primitive are inferred from recent eventLog (buy/sell/consign/default)
+// and district tags when options are omitted; pass SettleOptions to override.
 await settleCheckpoint(world, playerId, adapter, state, 1, 'Market Row');
 
 // Same checkpoint, including unique-gear NFTs (mint / resume pending / relic growth).
@@ -70,12 +74,21 @@ await settleAllFromWorld(world, playerId, adapter, state, 1, 'Market Row', {
   transport,
   catalog, // the pack's ItemCatalog
 });
+
+// Fetch account_lines / account_tx / account_nfts and run the external verifier.
+await reconcileFromWorld(world, playerId, transport, state, {
+  runId: 'run-1',
+  seed: world.meta.seed,
+});
 ```
 
 `EnableResult` / `SettlementResult` / `NFTSettlementResult` stamp `network` from
 the transport (`testnet` | `devnet` | `dry-run`) and name it in the message
-(`Settled on XRPL Testnet. Receipt: …`). After `connect()`, the live transport
-asks `server_info` and refuses unless `network_id` is testnet (1) or devnet (2).
+(`Settled on XRPL Testnet. Receipt: https://testnet.xrpl.org/transactions/…`).
+Testnet/devnet also stamp `SettlementResult.explorerUrls` and
+`EnableResult.playerExplorerUrl` (omitted on dry-run; never mainnet). After
+`connect()`, the live transport asks `server_info` and refuses unless
+`network_id` is testnet (1) or devnet (2).
 
 ### Save / reload
 
@@ -87,7 +100,7 @@ const restored = deserializeState(save.ledger);
 const adapter  = createLedgerAdapter(transport, config, {
   gameId: 'my-game',
   runId: 'run-1',
-  ...bindSidecar(gameDir),
+  ...bindSidecar(gameDir, { issuerMode: config.issuerMode }),
 });
 await resumeAdapter(adapter, restored, snapshot, {
   transport,
@@ -97,6 +110,12 @@ await resumeAdapter(adapter, restored, snapshot, {
 
 `adapter.getSeed(address)` is public — checkpoint NFT wrappers hydrate issuer
 and player seeds from this cache instead of taking faucet seeds per call.
+
+For `issuerMode: 'persistent'`, `bindSidecar(gameDir, { issuerMode: 'persistent' })`
+stores the issuer seed under an `issuer` alias on first put and returns
+`persistentIssuerSeed`. Two `createInitialState` runs that share only that bind
+reuse one issuer — no host Map. Per-run (the default) does not write the alias
+and ignores a leftover seed, so throwaway custody stays throwaway.
 
 For dry-run tests, swap `TestnetTransport` for `DryRunTransport` — no network, no
 `xrpl` dependency.
@@ -188,9 +207,11 @@ unanchored fallback.
 ## Reconciliation = an external verifier
 
 The ledger is a different system family than the engine, so the engine cannot
-fake it. `reconcile()` confirms on-ledger balances match the engine's settled
-economy, that `minted + Σdeltas == settled` (conservation) holds per token, and
-that every on-chain memo matches — a genuine external verifier of the economy.
+fake it. `reconcile()` is the pure function (host-supplied inputs, no network).
+`reconcileAgainstLedger` / `reconcileFromWorld` fetch `account_lines` /
+`account_tx` / `account_nfts` and call it. Opening mint is persisted on
+`state.mintedInitial` at first enable so conservation still checks after
+save/reload without a host stash.
 
 ## Proven live
 

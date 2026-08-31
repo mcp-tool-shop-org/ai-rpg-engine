@@ -25,5 +25,6 @@ export {
   loadSidecar,
   saveSidecar,
   bindSidecar,
+  PERSISTENT_ISSUER_ALIAS,
 } from './secrets.js';
-export type { SidecarBindings } from './secrets.js';
+export type { SidecarBindings, BindSidecarOpts } from './secrets.js';

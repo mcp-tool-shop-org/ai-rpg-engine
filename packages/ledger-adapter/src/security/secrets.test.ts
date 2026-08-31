@@ -221,4 +221,26 @@ describe('sidecar file IO — round trip through a real temp file', () => {
     expect(second.getSeed('rAddrA')).toBe(FAKE_FAMILY_SEED);
     expect(second.getSeed('rNever')).toBeUndefined();
   });
+
+  it('persistent bind aliases the first put as issuer and reloads persistentIssuerSeed', () => {
+    dir = mkdtempSync(join(tmpdir(), 'ledger-adapter-secrets-test-'));
+    const first = bindSidecar(dir, { issuerMode: 'persistent' });
+    first.putSeed('rIssuerExampleAddress1111111111', FAKE_FAMILY_SEED);
+    first.putSeed('rPlayerExampleAddress2222222222', FAKE_ED25519_SEED);
+    expect(first.getSeed('issuer')).toBe(FAKE_FAMILY_SEED);
+    expect(first.persistentIssuerSeed).toBe(FAKE_FAMILY_SEED);
+    expect(first.getSeed('rPlayerExampleAddress2222222222')).toBe(FAKE_ED25519_SEED);
+
+    const second = bindSidecar(dir, { issuerMode: 'persistent' });
+    expect(second.persistentIssuerSeed).toBe(FAKE_FAMILY_SEED);
+    expect(second.getSeed('rIssuerExampleAddress1111111111')).toBe(FAKE_FAMILY_SEED);
+  });
+
+  it('per-run bind does not write the issuer alias', () => {
+    dir = mkdtempSync(join(tmpdir(), 'ledger-adapter-secrets-test-'));
+    const first = bindSidecar(dir);
+    first.putSeed('rIssuerExampleAddress1111111111', FAKE_FAMILY_SEED);
+    expect(first.persistentIssuerSeed).toBeUndefined();
+    expect(first.getSeed('issuer')).toBeUndefined();
+  });
 });

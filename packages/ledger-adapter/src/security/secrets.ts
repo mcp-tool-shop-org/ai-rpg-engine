@@ -15,7 +15,7 @@
 
 import { dirname, join } from 'node:path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import type { LedgerAdapterState, SecretsSidecar } from '../contracts.js';
+import type { IssuerMode, LedgerAdapterState, SecretsSidecar } from '../contracts.js';
 
 // ── Sidecar CRUD (pure — no file IO) ────────────────────────────────────────
 
@@ -132,29 +132,62 @@ export function saveSidecar(path: string, sidecar: SecretsSidecar): void {
   writeFileSync(path, serializeSidecar(sidecar), 'utf-8');
 }
 
+/** Well-known sidecar key for a persistent issuer seed (not an XRPL address). */
+export const PERSISTENT_ISSUER_ALIAS = 'issuer';
+
+/** Optional bind flags. `issuerMode: 'persistent'` aliases the first issuer put. */
+export type BindSidecarOpts = {
+  issuerMode?: IssuerMode;
+};
+
 /** `putSeed` / `getSeed` callbacks for createLedgerAdapter wired to a sidecar file. */
 export type SidecarBindings = {
   putSeed: (address: string, seed: string) => void;
   getSeed: (address: string) => string | undefined;
+  /**
+   * Durable issuer seed for `issuerMode: 'persistent'`. Set after the first
+   * issuer `putSeed` on a persistent bind (stored under {@link PERSISTENT_ISSUER_ALIAS})
+   * and reloaded on the next `bindSidecar`. Spread into `createLedgerAdapter`.
+   * Ignored by a per-run adapter — default custody does not change.
+   */
+  persistentIssuerSeed?: string;
 };
 
 /**
  * Load (or create) `<gameDir>/.secrets/ledger-secrets.json` and return the
- * `{ putSeed, getSeed }` pair `createLedgerAdapter` accepts. Every `putSeed`
- * persists immediately so a restarted process that calls `bindSidecar` again
- * can hydrate `seedCache` without the host re-plumbing secrets.
+ * `{ putSeed, getSeed, persistentIssuerSeed }` pair `createLedgerAdapter`
+ * accepts. Every `putSeed` persists immediately so a restarted process that
+ * calls `bindSidecar` again can hydrate `seedCache` without the host
+ * re-plumbing secrets.
+ *
+ * When `opts.issuerMode === 'persistent'`, the first put of a real wallet is
+ * also stored under the `issuer` alias so a FRESH `createInitialState` run
+ * (empty `issuerAddress`) can reconstruct the durable issuer via
+ * `persistentIssuerSeed`. Per-run binds do not write that alias.
  */
-export function bindSidecar(gameDir: string): SidecarBindings {
+export function bindSidecar(gameDir: string, opts?: BindSidecarOpts): SidecarBindings {
   const path = sidecarPath(gameDir);
   let sidecar: SecretsSidecar = existsSync(path) ? loadSidecar(path) : createSidecar();
+  const persistIssuer = opts?.issuerMode === 'persistent';
+
+  function readIssuerSeed(): string | undefined {
+    return getSeed(sidecar, PERSISTENT_ISSUER_ALIAS);
+  }
+
   return {
     // Arrow functions so the names resolve to the module-level CRUD helpers,
     // not to these properties (a method shorthand is a named function expression
     // and would recurse into itself).
     putSeed: (address: string, seed: string): void => {
       putSeed(sidecar, address, seed);
+      if (persistIssuer && address !== PERSISTENT_ISSUER_ALIAS && readIssuerSeed() === undefined) {
+        putSeed(sidecar, PERSISTENT_ISSUER_ALIAS, seed);
+      }
       saveSidecar(path, sidecar);
     },
     getSeed: (address: string): string | undefined => getSeed(sidecar, address),
+    get persistentIssuerSeed(): string | undefined {
+      return readIssuerSeed();
+    },
   };
 }

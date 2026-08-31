@@ -34,9 +34,11 @@ import type {
  *
  * `nfts: {}` starts the NFT unique-gear layer (contracts.ts's optional
  * `LedgerAdapterState.nfts`) empty, ALONGSIDE the fungible fields above —
- * never conflated with `tokenMap`/`lastSettled`. A fresh object literal every
- * call, exactly like `tokenMap`/`lastSettled`/etc. above (no shared mutable
- * reference across two `createInitialState` calls).
+ * never conflated with `tokenMap`/`lastSettled`. `mintedInitial: {}` is the
+ * opening-mint stash conservation needs after save/reload (distinct from
+ * `lastSettled`). A fresh object literal every call, exactly like
+ * `tokenMap`/`lastSettled`/etc. above (no shared mutable reference across two
+ * `createInitialState` calls).
  */
 export function createInitialState(config: LedgerAdapterConfig): LedgerAdapterState {
   return {
@@ -49,6 +51,7 @@ export function createInitialState(config: LedgerAdapterConfig): LedgerAdapterSt
     trustLinesReady: false,
     tokenMap: {},
     lastSettled: {},
+    mintedInitial: {},
     settlements: [],
     pending: [],
     lastSettleFailed: false,
@@ -268,6 +271,11 @@ function assertLedgerAdapterState(value: unknown): asserts value is LedgerAdapte
   if (!isRecordOfNumbers(value.lastSettled)) {
     throw new Error('deserializeState: "lastSettled" must be a Record<string, number>');
   }
+  // `mintedInitial` is OPTIONAL (pre-field saves omit it) — defaulted to `{}`
+  // after this assertion, same back-compat pattern as `nfts`.
+  if (value.mintedInitial !== undefined && !isRecordOfNumbers(value.mintedInitial)) {
+    throw new Error('deserializeState: "mintedInitial" must be a Record<string, number>');
+  }
   assertSettlementRecordArray(value.settlements, 'settlements');
   assertSettlementRecordArray(value.pending, 'pending');
   if (typeof value.lastSettleFailed !== 'boolean') {
@@ -303,6 +311,9 @@ export function deserializeState(json: string): LedgerAdapterState {
   assertLedgerAdapterState(parsed);
   if (parsed.nfts === undefined) {
     parsed.nfts = {};
+  }
+  if (parsed.mintedInitial === undefined) {
+    parsed.mintedInitial = {};
   }
   return parsed;
 }
