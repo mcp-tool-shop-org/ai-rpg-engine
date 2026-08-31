@@ -245,6 +245,31 @@ describe('traversal-core: moveHandler district-mood walk-in (F-99de2f57)', () =>
     );
     expect(entered!.payload).not.toHaveProperty('moodHint');
   });
+
+  // --- F-32948b79 tone-on-event: the raw 6-value tone enum, beside moodHint ---
+
+  it('moving into a zone that resolves to a district attaches the raw tone value beside moodHint', () => {
+    const engine = makeMoodEngine('zone-a');
+
+    const events = engine.submitAction('move', { targetIds: ['zone-b'] });
+    const entered = events.find((e) => e.type === 'world.zone.entered');
+
+    expect(entered).toBeDefined();
+    // Default district metrics (safety 75, prosperity 50, spirit 60) derive
+    // deriveTone's 'calm' branch — the same fixture the moodHint test above
+    // pins to descriptor 'calm and watchful'.
+    expect(entered!.payload.tone).toBe('calm');
+  });
+
+  it('moving into an unmapped zone omits tone exactly like moodHint (truthy-gated sibling)', () => {
+    const engine = makeMoodEngine('zone-b');
+
+    const events = engine.submitAction('move', { targetIds: ['zone-a'] });
+    const entered = events.find((e) => e.type === 'world.zone.entered');
+
+    expect(entered).toBeDefined();
+    expect(entered!.payload).not.toHaveProperty('tone');
+  });
 });
 
 describe('traversal-core: faction-access gate (F-7d2c4c59)', () => {
