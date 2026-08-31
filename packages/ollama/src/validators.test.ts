@@ -16,6 +16,11 @@ import {
   validateGeneratedStatus,
   validateGeneratedItem,
   validateGeneratedHazard,
+  validateGeneratedArchetype,
+  validateGeneratedBackground,
+  validateGeneratedBuildCatalog,
+  validateGeneratedEntityAi,
+  validateGeneratedPlacement,
 } from './validators.js';
 
 describe('parseYamlish', () => {
@@ -420,6 +425,115 @@ describe('validateGenerated entity/dialogue/ability/status', () => {
   it('rejects a hazard without effects', () => {
     const yaml = 'id: smoke\ntrigger: on-enter';
     const result = validateGeneratedHazard(yaml, parseYamlish(yaml));
+    expect(result.valid).toBe(false);
+  });
+});
+
+describe('validateGenerated chargen / entityAi / placement', () => {
+  it('accepts a valid archetype', () => {
+    const yaml = [
+      'id: warden',
+      'name: Warden',
+      'description: Holds the gate.',
+      'progressionTreeId: warden_tree',
+      'startingTags:',
+      '  - martial',
+      'statPriorities:',
+      '  might: 2',
+      '  wit: 1',
+    ].join('\n');
+    const result = validateGeneratedArchetype(yaml, parseYamlish(yaml));
+    expect(result.valid).toBe(true);
+  });
+
+  it('rejects an archetype missing statPriorities', () => {
+    const result = validateGeneratedArchetype('x', {
+      id: 'warden', name: 'Warden', description: 'x', progressionTreeId: 't', startingTags: ['a'],
+    });
+    expect(result.valid).toBe(false);
+  });
+
+  it('accepts a valid background', () => {
+    const yaml = [
+      'id: pilgrim',
+      'name: Pilgrim',
+      'description: Walked the salt road.',
+      'startingTags:',
+      '  - traveler',
+      'statModifiers:',
+      '  wit: 1',
+    ].join('\n');
+    const result = validateGeneratedBackground(yaml, parseYamlish(yaml));
+    expect(result.valid).toBe(true);
+  });
+
+  it('accepts a satisfiable build catalog', () => {
+    const yaml = [
+      'packId: chapel',
+      'statBudget: 6',
+      'maxTraits: 3',
+      'requiredFlaws: 0',
+      'traits:',
+      '  - id: brave',
+      '    category: perk',
+      'archetypes:',
+      '  - id: warden',
+      '    name: Warden',
+      '    description: Holds the gate.',
+      '    progressionTreeId: warden_tree',
+      '    startingTags:',
+      '      - martial',
+      '    statPriorities:',
+      '      might: 2',
+      'backgrounds:',
+      '  - id: pilgrim',
+      '    name: Pilgrim',
+      '    description: Walked.',
+      '    startingTags:',
+      '      - traveler',
+      '    statModifiers:',
+      '      wit: 1',
+    ].join('\n');
+    const result = validateGeneratedBuildCatalog(yaml, parseYamlish(yaml));
+    expect(result.valid).toBe(true);
+  });
+
+  it('rejects an unsatisfiable catalog', () => {
+    const result = validateGeneratedBuildCatalog('x', {
+      requiredFlaws: 2,
+      maxTraits: 1,
+      traits: [{ id: 'reckless', category: 'flaw' }],
+    });
+    expect(result.valid).toBe(false);
+  });
+
+  it('accepts an entity AI overlay', () => {
+    const yaml = [
+      'entityId: chapel_guard',
+      'profileId: sentinel',
+      'goals:',
+      '  - hold_the_gate',
+      'fears:',
+      '  - fire',
+      'alertLevel: 0.4',
+    ].join('\n');
+    const result = validateGeneratedEntityAi(yaml, parseYamlish(yaml));
+    expect(result.valid).toBe(true);
+  });
+
+  it('rejects entity AI without profileId', () => {
+    const result = validateGeneratedEntityAi('x', { entityId: 'g', goals: ['x'] });
+    expect(result.valid).toBe(false);
+  });
+
+  it('accepts a placement record', () => {
+    const yaml = 'entityId: chapel_guard\nzoneId: nave';
+    const result = validateGeneratedPlacement(yaml, parseYamlish(yaml));
+    expect(result.valid).toBe(true);
+  });
+
+  it('rejects a placement missing zoneId', () => {
+    const result = validateGeneratedPlacement('x', { entityId: 'chapel_guard' });
     expect(result.valid).toBe(false);
   });
 });

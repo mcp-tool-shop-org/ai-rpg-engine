@@ -23,6 +23,11 @@ import { createAbility } from './commands/create-ability.js';
 import { createStatus } from './commands/create-status.js';
 import { createItem } from './commands/create-item.js';
 import { createHazard } from './commands/create-hazard.js';
+import { createArchetype } from './commands/create-archetype.js';
+import { createBackground } from './commands/create-background.js';
+import { createBuildCatalog } from './commands/create-build-catalog.js';
+import { createEntityAi } from './commands/create-entity-ai.js';
+import { createPlacement } from './commands/create-placement.js';
 import { formatSessionStatus, renderSessionContext, artifactBucketForKind } from './session.js';
 import { generatePreview } from './apply-preview.js';
 import { planFromSession, formatPlan } from './chat-planner.js';
@@ -138,11 +143,12 @@ const sessionInfoTool: ChatTool = {
 const SCAFFOLD_KINDS = [
   'room', 'faction', 'district', 'quest', 'location-pack', 'encounter-pack',
   'dialogue', 'entity', 'ability', 'status', 'item', 'hazard',
+  'archetype', 'background', 'build-catalog', 'entity-ai', 'placement',
 ] as const;
 
 const scaffoldTool: ChatTool = {
   name: 'scaffold',
-  description: 'Generate new content (room, faction, district, quest, pack, dialogue, entity, ability, status, item, hazard)',
+  description: 'Generate new content (room, faction, district, quest, pack, dialogue, entity, ability, status, item, hazard, archetype, background, catalog, entity-ai, placement)',
   intents: ['scaffold'],
   mutates: false,
   async execute(p: ChatToolParams): Promise<ChatToolResult> {
@@ -245,6 +251,51 @@ const scaffoldTool: ChatTool = {
       }
       case 'hazard': {
         const r = await createHazard(p.client, { theme, sessionContext, repair });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        validation = r.validation;
+        break;
+      }
+      case 'archetype':
+      case 'class': {
+        const r = await createArchetype(p.client, { theme, sessionContext, repair });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        validation = r.validation;
+        break;
+      }
+      case 'background':
+      case 'origin': {
+        const r = await createBackground(p.client, { theme, sessionContext, repair });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        validation = r.validation;
+        break;
+      }
+      case 'build-catalog':
+      case 'catalog': {
+        const r = await createBuildCatalog(p.client, { theme, sessionContext, repair });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        validation = r.validation;
+        break;
+      }
+      case 'entity-ai':
+      case 'npc-ai': {
+        const r = await createEntityAi(p.client, { theme, sessionContext, repair, entityId: p.params.entityId });
+        if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
+        yaml = r.yaml;
+        validation = r.validation;
+        break;
+      }
+      case 'placement': {
+        const r = await createPlacement(p.client, {
+          theme,
+          sessionContext,
+          repair,
+          entityId: p.params.entityId,
+          zoneId: p.params.placeIn ?? p.params.zoneId,
+        });
         if (!r.ok) return { ok: false, summary: r.error, actions: [failed(a, r.error)] };
         yaml = r.yaml;
         validation = r.validation;

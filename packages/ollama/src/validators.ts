@@ -9,6 +9,8 @@ import {
   validateStatusDefinition,
   validateItemRecord,
   validateHazardDefinition,
+  validateBuildCatalog,
+  validateEntityPlacementRecord,
 } from '@ai-rpg-engine/content-schema';
 import type { ValidationResult, ValidationError } from '@ai-rpg-engine/content-schema';
 
@@ -439,5 +441,161 @@ export function validateGeneratedItem(raw: string, parsed: unknown): GeneratedCo
 export function validateGeneratedHazard(raw: string, parsed: unknown): GeneratedContentResult {
   const obj = (typeof parsed === 'object' && parsed !== null) ? parsed : {};
   const validation = validateHazardDefinition(obj);
+  return { valid: validation.ok, content: parsed, validation, raw };
+}
+
+function checkNumberRecord(
+  errors: ValidationError[],
+  obj: Record<string, unknown>,
+  key: string,
+  path: string,
+  opts: { required?: boolean } = {},
+): void {
+  const v = obj[key];
+  if (v === undefined) {
+    if (opts.required) errors.push({ path: `${path}.${key}`, message: 'required object mapping names to numbers' });
+    return;
+  }
+  if (!isRecord(v)) {
+    errors.push({ path: `${path}.${key}`, message: 'must be an object mapping names to numbers' });
+    return;
+  }
+  for (const [name, value] of Object.entries(v)) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      errors.push({ path: `${path}.${key}.${name}`, message: 'must be a finite number' });
+    }
+  }
+}
+
+/**
+ * Structural ArchetypeDefinition check (character-creation runtime shape).
+ * content-schema does not ship a dedicated validator; keep this in-package.
+ */
+export function validateArchetypeDefinition(v: unknown, path = 'ArchetypeDefinition'): ValidationResult {
+  if (!isRecord(v)) return { ok: false, errors: [{ path, message: 'must be an object' }] };
+  const errors: ValidationError[] = [];
+  requireString(errors, v, 'id', path);
+  requireString(errors, v, 'name', path);
+  requireString(errors, v, 'description', path);
+  requireString(errors, v, 'progressionTreeId', path);
+  checkStringArray(errors, v, 'startingTags', path, { required: true });
+  checkStringArray(errors, v, 'startingInventory', path);
+  checkStringArray(errors, v, 'grantedVerbs', path);
+  checkNumberRecord(errors, v, 'statPriorities', path, { required: true });
+  checkNumberRecord(errors, v, 'resourceOverrides', path);
+  return { ok: errors.length === 0, errors };
+}
+
+/**
+ * Structural BackgroundDefinition check (character-creation runtime shape).
+ */
+export function validateBackgroundDefinition(v: unknown, path = 'BackgroundDefinition'): ValidationResult {
+  if (!isRecord(v)) return { ok: false, errors: [{ path, message: 'must be an object' }] };
+  const errors: ValidationError[] = [];
+  requireString(errors, v, 'id', path);
+  requireString(errors, v, 'name', path);
+  requireString(errors, v, 'description', path);
+  checkStringArray(errors, v, 'startingTags', path, { required: true });
+  checkStringArray(errors, v, 'startingInventory', path);
+  checkNumberRecord(errors, v, 'statModifiers', path, { required: true });
+  checkNumberRecord(errors, v, 'factionModifiers', path);
+  return { ok: errors.length === 0, errors };
+}
+
+/**
+ * BuildCatalog: content-schema validateBuildCatalog plus structural
+ * archetypes/backgrounds arrays when present.
+ */
+export function validateBuildCatalogDefinition(v: unknown, path = 'BuildCatalog'): ValidationResult {
+  const catalog = validateBuildCatalog(v, path);
+  const errors: ValidationError[] = [...catalog.errors];
+  if (!isRecord(v)) return { ok: false, errors };
+  const packId = v['packId'];
+  if (packId !== undefined && (typeof packId !== 'string' || packId.length === 0)) {
+    errors.push({ path: `${path}.packId`, message: 'must be a non-empty string if provided' });
+  }
+  const archetypes = v['archetypes'];
+  if (archetypes !== undefined) {
+    if (!Array.isArray(archetypes)) {
+      errors.push({ path: `${path}.archetypes`, message: 'must be an array of ArchetypeDefinition if provided' });
+    } else {
+      archetypes.forEach((a, i) => {
+        errors.push(...validateArchetypeDefinition(a, `${path}.archetypes[${i}]`).errors);
+      });
+    }
+  }
+  const backgrounds = v['backgrounds'];
+  if (backgrounds !== undefined) {
+    if (!Array.isArray(backgrounds)) {
+      errors.push({ path: `${path}.backgrounds`, message: 'must be an array of BackgroundDefinition if provided' });
+    } else {
+      backgrounds.forEach((b, i) => {
+        errors.push(...validateBackgroundDefinition(b, `${path}.backgrounds[${i}]`).errors);
+      });
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+/**
+ * EntityAiState overlay. Accepts either a single record
+ * `{entityId, profileId, goals?, fears?, alertLevel?}` or a map keyed by entity id.
+ */
+export function validateEntityAiOverlay(v: unknown, path = 'EntityAiState'): ValidationResult {
+  if (!isRecord(v)) return { ok: false, errors: [{ path, message: 'must be an object' }] };
+
+  const looksLikeMap = Object.values(v).every((entry) => isRecord(entry))
+    && !('profileId' in v)
+    && !('entityId' in v);
+  if (looksLikeMap && Object.keys(v).length > 0) {
+    const errors: ValidationError[] = [];
+    for (const [id, ai] of Object.entries(v)) {
+      errors.push(...validateEntityAiState(ai, `${path}.${id}`).errors);
+    }
+    return { ok: errors.length === 0, errors };
+  }
+  return validateEntityAiState(v, path);
+}
+
+export function validateEntityAiState(v: unknown, path = 'EntityAiState'): ValidationResult {
+  if (!isRecord(v)) return { ok: false, errors: [{ path, message: 'must be an object' }] };
+  const errors: ValidationError[] = [];
+  requireString(errors, v, 'profileId', path);
+  const entityId = v['entityId'] ?? v['id'];
+  if (entityId !== undefined && (typeof entityId !== 'string' || entityId.length === 0)) {
+    errors.push({ path: `${path}.entityId`, message: 'must be a non-empty string if provided' });
+  }
+  checkStringArray(errors, v, 'goals', path);
+  checkStringArray(errors, v, 'fears', path);
+  const alert = v['alertLevel'];
+  if (alert !== undefined && (typeof alert !== 'number' || !Number.isFinite(alert) || alert < 0 || alert > 1)) {
+    errors.push({ path: `${path}.alertLevel`, message: 'must be a number between 0 and 1' });
+  }
+  return { ok: errors.length === 0, errors };
+}
+
+export function validateGeneratedArchetype(raw: string, parsed: unknown): GeneratedContentResult {
+  const validation = validateArchetypeDefinition(parsed);
+  return { valid: validation.ok, content: parsed, validation, raw };
+}
+
+export function validateGeneratedBackground(raw: string, parsed: unknown): GeneratedContentResult {
+  const validation = validateBackgroundDefinition(parsed);
+  return { valid: validation.ok, content: parsed, validation, raw };
+}
+
+export function validateGeneratedBuildCatalog(raw: string, parsed: unknown): GeneratedContentResult {
+  const validation = validateBuildCatalogDefinition(parsed);
+  return { valid: validation.ok, content: parsed, validation, raw };
+}
+
+export function validateGeneratedEntityAi(raw: string, parsed: unknown): GeneratedContentResult {
+  const validation = validateEntityAiOverlay(parsed);
+  return { valid: validation.ok, content: parsed, validation, raw };
+}
+
+export function validateGeneratedPlacement(raw: string, parsed: unknown): GeneratedContentResult {
+  const obj = isRecord(parsed) ? parsed : {};
+  const validation = validateEntityPlacementRecord(obj);
   return { valid: validation.ok, content: parsed, validation, raw };
 }

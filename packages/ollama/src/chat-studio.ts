@@ -704,7 +704,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
     commands: [
       { cmd: '/studio', aliases: ['/dash'], description: 'Show studio dashboard' },
       { cmd: '/history', aliases: [], description: 'Browse session history' },
-      { cmd: '/session', aliases: [], description: 'List or switch named sessions' },
+      { cmd: '/session', aliases: [], description: 'List, switch, export, or import named sessions' },
       { cmd: '/issues', aliases: [], description: 'Browse open issues' },
       { cmd: '/findings', aliases: ['/fx'], description: 'Browse balance + experiment findings' },
       { cmd: '/experiments', aliases: ['/exp'], description: 'Browse experiment results' },
@@ -722,6 +722,7 @@ export const COMMAND_GROUPS: CommandGroup[] = [
       { cmd: '/execute', aliases: [], description: 'Execute all remaining build steps' },
       { cmd: '/status', aliases: [], description: 'Show build status' },
       { cmd: '/diagnostics', aliases: [], description: 'Show post-build diagnostics' },
+      { cmd: '/emit-pack', aliases: [], description: 'Assemble ContentPack JSON from project YAML' },
     ],
   },
   {

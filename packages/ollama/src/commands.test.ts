@@ -18,6 +18,11 @@ import { createAbility } from './commands/create-ability.js';
 import { createStatus } from './commands/create-status.js';
 import { createItem } from './commands/create-item.js';
 import { createHazard } from './commands/create-hazard.js';
+import { createArchetype } from './commands/create-archetype.js';
+import { createBackground } from './commands/create-background.js';
+import { createBuildCatalog } from './commands/create-build-catalog.js';
+import { createEntityAi } from './commands/create-entity-ai.js';
+import { createPlacement, placementYaml } from './commands/create-placement.js';
 import { explainDistrictState } from './commands/explain-district-state.js';
 import { explainFactionAlert } from './commands/explain-faction-alert.js';
 import { improveContent } from './commands/improve-content.js';
@@ -1433,5 +1438,77 @@ describe('createDialogue / createEntity / createAbility / createStatus / createI
       expect(result.yaml).toContain('chapel_guard');
     }
     expect(callCount).toBe(2);
+  });
+});
+
+describe('createArchetype / createBackground / createBuildCatalog / createEntityAi / createPlacement', () => {
+  it('createArchetype returns yaml and validation', async () => {
+    const yaml = [
+      'id: warden',
+      'name: Warden',
+      'description: Holds the gate.',
+      'progressionTreeId: warden_tree',
+      'startingTags:',
+      '  - martial',
+      'statPriorities:',
+      '  might: 2',
+    ].join('\n');
+    const result = await createArchetype(mockClient(yaml), { theme: 'chapel warden' });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.yaml).toContain('warden');
+  });
+
+  it('createBackground returns yaml and validation', async () => {
+    const yaml = [
+      'id: pilgrim',
+      'name: Pilgrim',
+      'description: Walked the salt road.',
+      'startingTags:',
+      '  - traveler',
+      'statModifiers:',
+      '  wit: 1',
+    ].join('\n');
+    const result = await createBackground(mockClient(yaml), { theme: 'salt pilgrim' });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.yaml).toContain('pilgrim');
+  });
+
+  it('createBuildCatalog returns yaml and validation', async () => {
+    const yaml = [
+      'packId: chapel',
+      'maxTraits: 3',
+      'requiredFlaws: 0',
+      'traits:',
+      '  - id: brave',
+      '    category: perk',
+    ].join('\n');
+    const result = await createBuildCatalog(mockClient(yaml), { theme: 'chapel chargen' });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.yaml).toContain('chapel');
+  });
+
+  it('createEntityAi returns yaml and validation', async () => {
+    const yaml = [
+      'entityId: chapel_guard',
+      'profileId: sentinel',
+      'goals:',
+      '  - hold_the_gate',
+      'alertLevel: 0.4',
+    ].join('\n');
+    const result = await createEntityAi(mockClient(yaml), { theme: 'chapel sentinel', entityId: 'chapel_guard' });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.yaml).toContain('sentinel');
+  });
+
+  it('createPlacement short-circuits when entityId and zoneId are known', async () => {
+    const result = await createPlacement(failingClient('should not be called'), {
+      entityId: 'chapel_guard',
+      zoneId: 'nave',
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.yaml).toBe(placementYaml('chapel_guard', 'nave'));
+      expect(result.validation.valid).toBe(true);
+    }
   });
 });
