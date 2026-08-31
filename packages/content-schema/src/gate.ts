@@ -62,6 +62,10 @@ export const ALLOWED_PACK_KEYS = [
   'itemPlacements',
   'entityAi',
   'ruleset',
+  // F-b2d31aad: optional listing identity. Overlay packs omit both.
+  // Not sim-affecting — do not add to SIM_AFFECTING_KEYS (world-forge hasher pin).
+  'meta',
+  'manifest',
   // ── C4: KNOWN, EVALUATED, DELIBERATELY NOT CARRIED ────────────────────────
   //
   // ⚠ These three are here because the gate could not tell "a key nobody has ever

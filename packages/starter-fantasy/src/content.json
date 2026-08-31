@@ -1,4 +1,26 @@
 {
+  "meta": {
+    "id": "chapel-threshold",
+    "name": "The Chapel Threshold",
+    "tagline": "A ruined chapel conceals horrors beneath its crumbling stones.",
+    "genres": ["fantasy"],
+    "difficulty": "beginner",
+    "tones": ["dark", "atmospheric"],
+    "tags": ["undead", "dungeon", "sacred", "combat"],
+    "engineVersion": ">=3.8.0 <4.0.0",
+    "version": "3.8.0",
+    "description": "Explore a ruined chapel and descend into its cursed crypt. Face an ash ghoul, speak with a suspicious pilgrim, and survive the threshold.",
+    "narratorTone": "dark fantasy, concise, atmospheric, foreboding"
+  },
+  "manifest": {
+    "id": "chapel-threshold",
+    "title": "The Chapel Threshold",
+    "version": "3.8.0",
+    "engineVersion": ">=3.8.0 <4.0.0",
+    "ruleset": "fantasy-minimal",
+    "modules": ["traversal-core", "status-core", "combat-core", "inventory-core", "dialogue-core"],
+    "contentPacks": ["chapel-threshold"]
+  },
   "entities": [
     {
       "id": "player",
@@ -23,7 +45,13 @@
       "name": "Brother Aldric",
       "tags": ["npc", "recruitable", "healer", "named"],
       "baseStats": { "vigor": 3, "instinct": 3, "will": 7 },
-      "baseResources": { "hp": 12, "maxHp": 12, "stamina": 3, "maxStamina": 3 }
+      "baseResources": { "hp": 12, "maxHp": 12, "stamina": 3, "maxStamina": 3 },
+      "relations": { "player-trust": 15 },
+      "custom": {
+        "companionRole": "healer",
+        "companionAbilities": "medical-support,witness-calming",
+        "personalGoal": "Redeem the fallen brothers of the chapel"
+      }
     },
     {
       "id": "sister-maren",
@@ -31,7 +59,12 @@
       "name": "Sister Maren",
       "tags": ["npc", "recruitable", "diplomat"],
       "baseStats": { "vigor": 2, "instinct": 5, "will": 5 },
-      "baseResources": { "hp": 10, "maxHp": 10, "stamina": 2, "maxStamina": 2 }
+      "baseResources": { "hp": 10, "maxHp": 10, "stamina": 2, "maxStamina": 2 },
+      "custom": {
+        "companionRole": "diplomat",
+        "companionAbilities": "faction-route,scholarly-insight",
+        "personalGoal": "Recover the chapel archives from the crypt"
+      }
     },
     {
       "id": "ash-ghoul",
@@ -49,7 +82,8 @@
       "tags": ["enemy", "undead", "role:boss"],
       "baseStats": { "vigor": 7, "instinct": 4, "will": 5 },
       "baseResources": { "hp": 45, "maxHp": 45, "stamina": 12, "maxStamina": 12 },
-      "aiProfile": "territorial"
+      "aiProfile": "territorial",
+      "resistances": { "holy": "immune" }
     },
     {
       "id": "crypt-stalker",
@@ -58,7 +92,8 @@
       "tags": ["enemy", "undead", "role:skirmisher"],
       "baseStats": { "vigor": 3, "instinct": 5, "will": 2 },
       "baseResources": { "hp": 8, "stamina": 6 },
-      "aiProfile": "cautious"
+      "aiProfile": "cautious",
+      "resistances": { "holy": "vulnerable" }
     }
   ],
   "zones": [
@@ -112,6 +147,177 @@
     { "entityId": "crypt-warden", "zoneId": "crypt-chamber" },
     { "entityId": "crypt-stalker", "zoneId": "vestry-door" }
   ],
+  "dialogues": [
+    {
+      "id": "pilgrim-talk",
+      "speakers": ["pilgrim"],
+      "entryNodeId": "greeting",
+      "nodes": {
+        "greeting": {
+          "id": "greeting",
+          "speaker": "Suspicious Pilgrim",
+          "text": "You should not be here. The chapel is... changed. Something stirs below.",
+          "choices": [
+            { "id": "ask-what", "text": "What stirs below?", "nextNodeId": "warn-crypt" },
+            { "id": "ask-relic", "text": "I seek the relic.", "nextNodeId": "relic-info" },
+            { "id": "leave", "text": "I can handle myself.", "nextNodeId": "dismiss" }
+          ]
+        },
+        "warn-crypt": {
+          "id": "warn-crypt",
+          "speaker": "Suspicious Pilgrim",
+          "text": "An ash ghoul. Once a brother of this order. Now it guards the crypt with hollow fury. Take this, you may need it.",
+          "choices": [
+            {
+              "id": "accept",
+              "text": "I accept your gift.",
+              "nextNodeId": "end-gift",
+              "effects": [{ "type": "set-global", "target": "actor", "params": { "key": "pilgrim-warned", "value": true } }]
+            }
+          ]
+        },
+        "relic-info": {
+          "id": "relic-info",
+          "speaker": "Suspicious Pilgrim",
+          "text": "The Ember Sigil rests in the crypt alcove, beyond the vestry. But the ghoul will not let you pass without a fight.",
+          "choices": [
+            {
+              "id": "thanks",
+              "text": "Thank you for the warning.",
+              "nextNodeId": "end-info",
+              "effects": [{ "type": "set-global", "target": "actor", "params": { "key": "pilgrim-warned", "value": true } }]
+            }
+          ]
+        },
+        "dismiss": {
+          "id": "dismiss",
+          "speaker": "Suspicious Pilgrim",
+          "text": "Confidence is not armor. Remember that."
+        },
+        "end-gift": {
+          "id": "end-gift",
+          "speaker": "Suspicious Pilgrim",
+          "text": "A healing draught. May it serve you well. Go with caution."
+        },
+        "end-info": {
+          "id": "end-info",
+          "speaker": "Suspicious Pilgrim",
+          "text": "Be careful, wanderer. The dead here do not rest easily."
+        }
+      }
+    },
+    {
+      "id": "brother-aldric-talk",
+      "speakers": ["brother-aldric"],
+      "entryNodeId": "greeting",
+      "nodes": {
+        "greeting": {
+          "id": "greeting",
+          "speaker": "Brother Aldric",
+          "text": "The nave is quiet, save for what scratches below. I confess I am glad of the company, wanderer.",
+          "choices": [
+            { "id": "ask-order", "text": "Tell me of your order.", "nextNodeId": "order-info" },
+            {
+              "id": "call-in-favor",
+              "text": "You have been watching me since I set foot in this nave. Whatever you owe me, speak it now.",
+              "nextNodeId": "favor-called",
+              "condition": { "type": "obligation-exists", "params": { "npcId": "brother-aldric", "direction": "npc-owes-player" } },
+              "effects": [{ "type": "leverage-adjust", "params": { "currency": "favor", "delta": 10 } }]
+            },
+            { "id": "leave-greeting", "text": "I will not keep you.", "nextNodeId": "farewell" }
+          ]
+        },
+        "order-info": {
+          "id": "order-info",
+          "speaker": "Brother Aldric",
+          "text": "We swore to guard what sleeps in the crypt. Most of my brothers do not walk as men any longer — I mean to be the exception, if grace allows it."
+        },
+        "favor-called": {
+          "id": "favor-called",
+          "speaker": "Brother Aldric",
+          "text": "Then hear it plainly: I have watched you stand where better-armed men fled, and it has shaken something loose in me — a willingness to leave this order to its ash and walk out with someone worth following. That is not a small debt to carry. Here — my word, freely given, and it is yours to spend when you need it most."
+        },
+        "farewell": {
+          "id": "farewell",
+          "speaker": "Brother Aldric",
+          "text": "Go on, then. The dead below keep poor company, and worse manners."
+        }
+      }
+    }
+  ],
+  "quests": [
+    {
+      "id": "ashes-below",
+      "name": "Ashes Below",
+      "triggers": [
+        {
+          "event": "world.zone.entered",
+          "condition": { "type": "payload-equals", "params": { "key": "zoneId", "value": "chapel-nave" } },
+          "effect": { "type": "offer", "params": {} }
+        }
+      ],
+      "stages": [
+        {
+          "id": "cross-to-the-vestry",
+          "name": "Cross to the Vestry",
+          "description": "Something scratches beyond the nave — find the vestry passage",
+          "objectives": ["Reach the Vestry Passage"],
+          "triggers": [
+            {
+              "event": "world.zone.entered",
+              "condition": { "type": "payload-equals", "params": { "key": "zoneId", "value": "vestry-door" } },
+              "effect": { "type": "advance", "params": {} }
+            }
+          ],
+          "nextStage": "lay-the-dead-to-rest"
+        },
+        {
+          "id": "lay-the-dead-to-rest",
+          "name": "Lay the Dead to Rest",
+          "description": "Put two of the risen brothers back in the ground",
+          "objectives": ["Destroy two of the risen dead"],
+          "triggers": [
+            {
+              "event": "combat.entity.defeated",
+              "condition": { "type": "payload-entity-has-tag", "params": { "tag": "undead" } },
+              "effect": { "type": "progress", "params": { "count": 2 } }
+            }
+          ]
+        }
+      ],
+      "rewards": [{ "type": "xp", "params": { "amount": 20 } }]
+    },
+    {
+      "id": "the-wardens-rest",
+      "name": "The Warden's Rest",
+      "triggers": [
+        {
+          "event": "world.zone.entered",
+          "condition": { "type": "payload-equals", "params": { "key": "zoneId", "value": "crypt-chamber" } },
+          "effect": { "type": "offer", "params": {} }
+        }
+      ],
+      "stages": [
+        {
+          "id": "face-the-warden",
+          "name": "Face the Warden",
+          "description": "The Crypt Warden stands between you and the Ember Sigil",
+          "objectives": ["Destroy the Crypt Warden"],
+          "triggers": [
+            {
+              "event": "combat.entity.defeated",
+              "condition": { "type": "payload-equals", "params": { "key": "entityId", "value": "crypt-warden" } },
+              "effect": { "type": "advance", "params": {} }
+            }
+          ]
+        }
+      ],
+      "rewards": [
+        { "type": "xp", "params": { "amount": 30 } },
+        { "type": "item", "params": { "itemId": "healing-draught" } }
+      ]
+    }
+  ],
   "districts": [
     {
       "id": "chapel-grounds",
@@ -127,13 +333,307 @@
       "controllingFaction": "chapel-undead"
     }
   ],
+  "buildCatalog": {
+    "packId": "chapel-threshold",
+    "statBudget": 3,
+    "maxTraits": 3,
+    "requiredFlaws": 1,
+    "archetypes": [
+      {
+        "id": "penitent-knight",
+        "name": "Penitent Knight",
+        "description": "A warrior burdened by an oath",
+        "statPriorities": { "vigor": 6, "instinct": 4, "will": 2 },
+        "startingTags": ["divine", "martial", "penitent"],
+        "progressionTreeId": "combat-mastery"
+      },
+      {
+        "id": "gravewalker",
+        "name": "Gravewalker",
+        "description": "Stalker of the dead, sharp and quiet",
+        "statPriorities": { "vigor": 3, "instinct": 5, "will": 4 },
+        "startingTags": ["divine", "shadow", "gravewalker"],
+        "startingInventory": ["chapel-lantern"],
+        "progressionTreeId": "combat-mastery"
+      },
+      {
+        "id": "chapel-seer",
+        "name": "Chapel Seer",
+        "description": "Vessel of divine whispers",
+        "statPriorities": { "vigor": 2, "instinct": 4, "will": 6 },
+        "resourceOverrides": { "stamina": 10 },
+        "startingTags": ["divine", "seer"],
+        "progressionTreeId": "combat-mastery"
+      }
+    ],
+    "backgrounds": [
+      {
+        "id": "oath-breaker",
+        "name": "Oath-Breaker",
+        "description": "Once swore a holy vow, then shattered it",
+        "statModifiers": { "vigor": 1, "will": -1 },
+        "startingTags": ["oath-broken"]
+      },
+      {
+        "id": "temple-orphan",
+        "name": "Temple Orphan",
+        "description": "Raised by chapel priests, steeped in ritual",
+        "statModifiers": { "will": 1, "vigor": -1 },
+        "startingTags": ["chapel-raised"]
+      },
+      {
+        "id": "gravedigger",
+        "name": "Gravedigger",
+        "description": "Buried the dead for years — knows what comes back",
+        "statModifiers": { "instinct": 1 },
+        "startingTags": ["corpse-familiar"]
+      }
+    ],
+    "traits": [
+      {
+        "id": "iron-frame",
+        "name": "Iron Frame",
+        "description": "Unusually resilient body",
+        "category": "perk",
+        "effects": [{ "type": "resource-modifier", "resource": "hp", "amount": 3 }]
+      },
+      {
+        "id": "second-sight",
+        "name": "Second Sight",
+        "description": "Sees what others cannot",
+        "category": "perk",
+        "effects": [
+          { "type": "stat-modifier", "stat": "instinct", "amount": 1 },
+          { "type": "grant-tag", "tag": "spirit-sensitive" }
+        ]
+      },
+      {
+        "id": "glass-faith",
+        "name": "Glass Faith",
+        "description": "Faith cracks under pressure",
+        "category": "flaw",
+        "effects": [{ "type": "resource-modifier", "resource": "stamina", "amount": -2 }]
+      },
+      {
+        "id": "cursed-blood",
+        "name": "Cursed Blood",
+        "description": "Dark lineage seeps through",
+        "category": "flaw",
+        "effects": [
+          { "type": "stat-modifier", "stat": "will", "amount": -1 },
+          { "type": "grant-tag", "tag": "curse-touched" }
+        ],
+        "incompatibleWith": ["second-sight"]
+      }
+    ],
+    "disciplines": [
+      {
+        "id": "occultist",
+        "name": "Occultist",
+        "description": "Dabbles in forbidden knowledge beyond the chapel walls",
+        "grantedVerb": "commune",
+        "passive": { "type": "stat-modifier", "stat": "will", "amount": 1 },
+        "drawback": { "type": "resource-modifier", "resource": "stamina", "amount": -2 }
+      },
+      {
+        "id": "smuggler",
+        "name": "Smuggler",
+        "description": "Moves relics through back channels",
+        "grantedVerb": "scavenge",
+        "passive": { "type": "stat-modifier", "stat": "instinct", "amount": 1 },
+        "drawback": { "type": "faction-modifier", "faction": "chapel-undead", "amount": -10 }
+      }
+    ],
+    "crossTitles": [
+      { "archetypeId": "penitent-knight", "disciplineId": "occultist", "title": "Grave Warden", "tags": ["grave-warden"] },
+      { "archetypeId": "penitent-knight", "disciplineId": "smuggler", "title": "Chapel Smuggler", "tags": ["chapel-smuggler"] },
+      { "archetypeId": "gravewalker", "disciplineId": "occultist", "title": "Ink-Seer", "tags": ["ink-seer"] },
+      { "archetypeId": "gravewalker", "disciplineId": "smuggler", "title": "Bone Fence", "tags": ["bone-fence"] },
+      { "archetypeId": "chapel-seer", "disciplineId": "occultist", "title": "Doomcaller", "tags": ["doomcaller"] },
+      { "archetypeId": "chapel-seer", "disciplineId": "smuggler", "title": "Relic Runner", "tags": ["relic-runner"] }
+    ],
+    "entanglements": [
+      {
+        "id": "divine-smuggler",
+        "archetypeId": "chapel-seer",
+        "disciplineId": "smuggler",
+        "description": "Divine seers who smuggle relics lose the trust of the chapel spirits",
+        "effects": [{ "type": "grant-tag", "tag": "distrusted" }]
+      }
+    ]
+  },
+  "progressionTrees": [
+    {
+      "id": "combat-mastery",
+      "name": "Combat Mastery",
+      "currency": "xp",
+      "nodes": [
+        {
+          "id": "toughened",
+          "name": "Toughened",
+          "cost": 10,
+          "effects": [{ "type": "resource-boost", "params": { "resource": "hp", "amount": 5 } }]
+        },
+        {
+          "id": "keen-eye",
+          "name": "Keen Eye",
+          "cost": 15,
+          "effects": [{ "type": "stat-boost", "params": { "stat": "instinct", "amount": 1 } }]
+        },
+        {
+          "id": "battle-fury",
+          "name": "Battle Fury",
+          "cost": 25,
+          "requires": ["toughened"],
+          "effects": [
+            { "type": "stat-boost", "params": { "stat": "vigor", "amount": 2 } },
+            { "type": "grant-tag", "params": { "tag": "battle-fury" } }
+          ]
+        }
+      ]
+    }
+  ],
+  "statuses": [
+    {
+      "id": "holy-fire",
+      "name": "Holy Fire",
+      "tags": ["holy", "debuff"],
+      "stacking": "replace",
+      "duration": { "type": "ticks", "value": 2 },
+      "ui": { "icon": "🔥", "color": "#f1c40f", "description": "Seared by sacred flame" }
+    }
+  ],
+  "abilities": [
+    {
+      "id": "holy-smite",
+      "name": "Holy Smite",
+      "verb": "use-ability",
+      "tags": ["divine", "combat", "damage"],
+      "costs": [{ "resourceId": "stamina", "amount": 3 }],
+      "target": { "type": "single" },
+      "checks": [{ "stat": "will", "difficulty": 8, "onFail": "half-damage" }],
+      "effects": [
+        { "type": "damage", "target": "target", "params": { "amount": 6, "damageType": "holy" } },
+        { "type": "apply-status", "target": "target", "params": { "statusId": "holy-fire", "duration": 2, "stacking": "replace" } }
+      ],
+      "cooldown": 3,
+      "requirements": [{ "type": "has-tag", "params": { "tag": "divine" } }],
+      "ui": {
+        "text": "Channel divine wrath through your will, searing the unholy.",
+        "hitText": "Sacred fire engulfs the target.",
+        "missText": "The divine light flickers — faith wavers.",
+        "soundCue": "ability.holy-smite"
+      }
+    },
+    {
+      "id": "purify",
+      "name": "Purify",
+      "verb": "use-ability",
+      "tags": ["divine", "support", "cleanse"],
+      "costs": [{ "resourceId": "stamina", "amount": 2 }],
+      "target": { "type": "self" },
+      "checks": [{ "stat": "will", "difficulty": 6, "onFail": "abort" }],
+      "effects": [
+        { "type": "remove-status-by-tag", "target": "actor", "params": { "tags": "debuff,holy" } }
+      ],
+      "cooldown": 3,
+      "requirements": [{ "type": "has-tag", "params": { "tag": "divine" } }],
+      "ui": {
+        "text": "Call upon divine grace to cleanse impurities.",
+        "hitText": "A warm light washes away the affliction.",
+        "missText": "Your faith falters — the corruption remains.",
+        "soundCue": "ability.purify"
+      }
+    },
+    {
+      "id": "divine-light",
+      "name": "Divine Light",
+      "verb": "use-ability",
+      "tags": ["divine", "support", "heal"],
+      "costs": [{ "resourceId": "stamina", "amount": 2 }],
+      "target": { "type": "self" },
+      "checks": [{ "stat": "will", "difficulty": 5, "onFail": "abort" }],
+      "effects": [
+        { "type": "heal", "target": "actor", "params": { "amount": 4 } },
+        { "type": "stat-modify", "target": "actor", "params": { "stat": "will", "amount": 1 } }
+      ],
+      "cooldown": 3,
+      "requirements": [{ "type": "has-tag", "params": { "tag": "divine" } }],
+      "ui": {
+        "text": "Channel sacred light to mend wounds and strengthen resolve.",
+        "hitText": "Golden warmth fills you — wounds close, faith deepens.",
+        "missText": "The light flickers and fades. The connection is too weak.",
+        "soundCue": "ability.divine-light"
+      }
+    }
+  ],
   "items": [
     {
       "id": "rusted-mace",
       "name": "Rusted Mace",
       "description": "A pitted mace found near a collapsed grave.",
       "slot": "weapon",
-      "rarity": "common"
+      "rarity": "common",
+      "statModifiers": { "vigor": 1 },
+      "grantedTags": ["armed"],
+      "grantedVerbs": ["strike"]
+    },
+    {
+      "id": "chapel-lantern",
+      "name": "Chapel Lantern",
+      "description": "A flickering lantern blessed by a forgotten saint.",
+      "slot": "tool",
+      "rarity": "common",
+      "grantedTags": ["light-bearer"],
+      "grantedVerbs": ["illuminate"],
+      "provenance": { "origin": "Chapel reliquary", "flags": ["blessed", "heirloom"], "lore": "Lit by a saint whose name has been forgotten" }
+    },
+    {
+      "id": "penitent-mail",
+      "name": "Penitent Mail",
+      "description": "Chain links inscribed with prayers of atonement.",
+      "slot": "armor",
+      "rarity": "common",
+      "resourceModifiers": { "hp": 5 }
+    },
+    {
+      "id": "bone-talisman",
+      "name": "Bone Talisman",
+      "description": "A charm carved from the rib of a restless dead.",
+      "slot": "trinket",
+      "rarity": "uncommon",
+      "grantedTags": ["ward-undead"],
+      "statModifiers": { "will": 1 },
+      "provenance": { "flags": ["cursed", "trophy"], "lore": "Carved from the rib of something that refused to stay buried" }
+    },
+    {
+      "id": "gravedigger-spade",
+      "name": "Gravedigger's Spade",
+      "description": "A sturdy spade — tool and weapon in equal measure.",
+      "slot": "weapon",
+      "rarity": "common",
+      "statModifiers": { "vigor": 1 },
+      "grantedVerbs": ["dig"],
+      "provenance": { "origin": "Chapel groundskeeper", "lore": "A well-worn spade used to tend the chapel grounds" }
+    },
+    {
+      "id": "sigil-ring",
+      "name": "Sigil Ring",
+      "description": "A ring bearing the chapel's lost seal.",
+      "slot": "accessory",
+      "rarity": "uncommon",
+      "grantedTags": ["chapel-authority"],
+      "provenance": { "origin": "Chapel inner sanctum", "factionId": "chapel-order", "flags": ["heirloom"], "lore": "The lost seal of the Chapel Order" }
+    },
+    {
+      "id": "veil-shroud",
+      "name": "Veil Shroud",
+      "description": "A threadbare funeral shroud that dulls the senses of the dead.",
+      "slot": "armor",
+      "rarity": "rare",
+      "resourceModifiers": { "hp": 3 },
+      "grantedTags": ["veil-touched"],
+      "statModifiers": { "instinct": 1 }
     },
     {
       "id": "healing-draught",
@@ -164,6 +664,113 @@
       "fears": ["sacred", "light"],
       "alertLevel": 0,
       "knowledge": {}
+    }
+  },
+  "ruleset": {
+    "id": "fantasy-minimal",
+    "name": "Fantasy Minimal",
+    "version": "0.1.0",
+    "stats": [
+      { "id": "vigor", "name": "Vigor", "min": 1, "max": 20, "default": 5 },
+      { "id": "instinct", "name": "Instinct", "min": 1, "max": 20, "default": 5 },
+      { "id": "will", "name": "Will", "min": 1, "max": 20, "default": 5 }
+    ],
+    "resources": [
+      { "id": "hp", "name": "HP", "min": 0, "max": 100, "default": 20 },
+      { "id": "stamina", "name": "Stamina", "min": 0, "max": 50, "default": 10, "regenRate": 1 },
+      { "id": "coin", "name": "Coin", "min": 0, "max": 500, "default": 0 }
+    ],
+    "verbs": [
+      { "id": "move", "name": "Move", "description": "Travel to an adjacent zone" },
+      { "id": "inspect", "name": "Inspect", "description": "Examine your surroundings or a target" },
+      { "id": "attack", "name": "Attack", "tags": ["combat"], "description": "Strike a target in melee" },
+      { "id": "guard", "name": "Guard", "tags": ["combat", "defensive"], "description": "Take a defensive stance, reducing damage taken" },
+      { "id": "brace", "name": "Brace", "tags": ["combat", "defensive"], "description": "Plant your footing to steady yourself and recover balance" },
+      { "id": "reposition", "name": "Reposition", "tags": ["combat", "movement"], "description": "Shift position to outflank a target or escape a bad spot" },
+      { "id": "disengage", "name": "Disengage", "tags": ["combat", "movement"], "description": "Attempt to break from combat and withdraw" },
+      { "id": "use", "name": "Use", "description": "Use an item from your inventory" },
+      { "id": "give", "name": "Give", "description": "Give an item to someone standing with you" },
+      { "id": "equip", "name": "Equip", "tags": ["equipment"], "description": "Ready gear from your inventory (bare \"equip\" readies your only piece)" },
+      { "id": "unequip", "name": "Unequip", "tags": ["equipment"], "description": "Stow an equipped item back into your inventory" },
+      { "id": "speak", "name": "Speak", "tags": ["dialogue"], "description": "Initiate dialogue with an NPC" },
+      { "id": "choose", "name": "Choose", "tags": ["dialogue"], "description": "Select a dialogue option" },
+      { "id": "use-ability", "name": "Use Ability", "tags": ["ability"], "description": "Activate a special ability or power" },
+      { "id": "recruit", "name": "Recruit", "tags": ["party"], "description": "Ask a willing NPC in your zone to join your party" },
+      { "id": "bribe", "name": "Bribe", "tags": ["social", "leverage"], "description": "Spend favor to ease tension with the faction controlling your district" },
+      { "id": "intimidate", "name": "Intimidate", "tags": ["social", "leverage"], "description": "Spend heat to threaten the controlling faction into compliance" },
+      { "id": "petition", "name": "Petition", "tags": ["social", "leverage"], "description": "Spend legitimacy to formally petition the controlling faction" },
+      { "id": "call-in-favor", "name": "Call in a Favor", "tags": ["social", "leverage"], "description": "Spend debt and favor to restore access or standing with a faction" },
+      { "id": "recruit-ally", "name": "Recruit an Ally", "tags": ["social", "leverage"], "description": "Spend favor and influence to win a new ally within a faction" },
+      { "id": "disguise", "name": "Disguise", "tags": ["social", "leverage"], "description": "Spend influence to shed heat and lower alert" },
+      { "id": "stake-claim", "name": "Stake a Claim", "tags": ["social", "leverage"], "description": "Spend influence and legitimacy to assert dominance where you stand" },
+      { "id": "seed", "name": "Seed a Rumor", "tags": ["social", "rumor"], "description": "Spend influence to start a rumor about yourself" },
+      { "id": "deny", "name": "Deny", "tags": ["social", "rumor"], "description": "Spend legitimacy to deny an existing rumor by id" },
+      { "id": "frame", "name": "Frame", "tags": ["social", "rumor"], "description": "Spend blackmail and heat to frame a target with fabricated evidence" },
+      { "id": "claim-false-credit", "name": "Claim False Credit", "tags": ["social", "rumor"], "description": "Spend influence to claim credit for a deed that was not yours" },
+      { "id": "bury-scandal", "name": "Bury a Scandal", "tags": ["social", "rumor"], "description": "Spend favor and influence to accelerate an existing rumor's decay" },
+      { "id": "leak-truth", "name": "Leak the Truth", "tags": ["social", "rumor"], "description": "Spend blackmail to leak an uncomfortable truth" },
+      { "id": "spread-counter-rumor", "name": "Spread a Counter-Rumor", "tags": ["social", "rumor"], "description": "Spend influence to spread a counter-rumor" },
+      { "id": "request-meeting", "name": "Request a Meeting", "tags": ["social", "diplomacy"], "description": "Spend favor to request a meeting with the controlling faction" },
+      { "id": "improve-standing", "name": "Improve Standing", "tags": ["social", "diplomacy"], "description": "Spend favor to improve standing with the controlling faction" },
+      { "id": "cash-milestone", "name": "Cash in a Milestone", "tags": ["social", "diplomacy"], "description": "Spend accrued legitimacy to convert a milestone into reputation with a faction" },
+      { "id": "negotiate-access", "name": "Negotiate Access", "tags": ["social", "diplomacy"], "description": "Spend favor and legitimacy to negotiate access with a faction" },
+      { "id": "trade-secret", "name": "Trade a Secret", "tags": ["social", "diplomacy"], "description": "Spend blackmail to trade a secret with a faction" },
+      { "id": "temporary-alliance", "name": "Propose a Temporary Alliance", "tags": ["social", "diplomacy"], "description": "Spend favor and influence to propose a temporary alliance" },
+      { "id": "broker-truce", "name": "Broker a Truce", "tags": ["social", "diplomacy"], "description": "Spend influence and legitimacy to broker a truce with a faction" },
+      { "id": "sabotage", "name": "Sabotage", "tags": ["social", "sabotage"], "description": "Spend blackmail to sabotage something in your district" },
+      { "id": "plant-evidence", "name": "Plant Evidence", "tags": ["social", "sabotage"], "description": "Spend blackmail to plant false evidence against a target" },
+      { "id": "blackmail-target", "name": "Blackmail a Target", "tags": ["social", "sabotage"], "description": "Spend blackmail to force a target into compliance" },
+      { "id": "incite-riot", "name": "Incite a Riot", "tags": ["social", "sabotage"], "description": "Spend blackmail and influence to incite a riot in your district" }
+    ],
+    "formulas": [
+      {
+        "id": "hit-chance",
+        "name": "Hit Chance",
+        "description": "Base: 50 + attacker.instinct*5 - target.instinct*3, clamped 5-95",
+        "inputs": ["attacker.instinct", "target.instinct"],
+        "output": "number (0-100)"
+      },
+      {
+        "id": "damage",
+        "name": "Damage",
+        "description": "Base: attacker.vigor, minimum 1",
+        "inputs": ["attacker.vigor"],
+        "output": "number"
+      },
+      {
+        "id": "guard-reduction",
+        "name": "Guard Reduction",
+        "description": "Fraction of damage absorbed when guarded (default 0.5)",
+        "inputs": ["defender.vigor"],
+        "output": "number (0-1)"
+      },
+      {
+        "id": "disengage-chance",
+        "name": "Disengage Chance",
+        "description": "Success chance: 40 + instinct*5 + will*2, clamped 15-90",
+        "inputs": ["actor.instinct", "actor.will"],
+        "output": "number (0-100)"
+      },
+      {
+        "id": "consecrate-chance",
+        "name": "Consecrate Chance",
+        "description": "Base: 40 + actor.will*5, clamped 10-95",
+        "inputs": ["actor.will"],
+        "output": "number (0-100)"
+      }
+    ],
+    "defaultModules": [
+      "traversal-core",
+      "status-core",
+      "combat-core",
+      "inventory-core",
+      "dialogue-core"
+    ],
+    "progressionModels": [],
+    "contentConventions": {
+      "entityTypes": ["player", "npc", "enemy", "item"],
+      "statusTags": ["buff", "debuff", "curse", "blessing", "holy"],
+      "combatTags": ["melee", "ranged", "magic"]
     }
   }
 }

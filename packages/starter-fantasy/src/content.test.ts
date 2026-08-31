@@ -80,6 +80,13 @@ describe('fantasy content — cross-reference integrity (F-4806a2c9)', () => {
     expect(r.errors).toEqual([]);
   });
 
+  it('F-82b17cb3: src/content.json equals toContentPack() (full pack, not a subset)', () => {
+    const file = fileURLToPath(new URL('./content.json', import.meta.url));
+    const fromFile = loadContentFromFile(file);
+    expect(fromFile.ok).toBe(true);
+    expect(JSON.parse(JSON.stringify(fromFile.pack))).toEqual(JSON.parse(JSON.stringify(toContentPack())));
+  });
+
   it('zones, dialogue speakers, and ids have no dangling references or duplicate ids', () => {
     const result = validateGameContent(pack);
     expect(result.errors).toEqual([]);

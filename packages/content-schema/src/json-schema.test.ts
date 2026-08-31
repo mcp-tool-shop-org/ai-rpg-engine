@@ -28,6 +28,8 @@ describe('toJsonSchema (F-fad5db9d)', () => {
       'ItemPlacementRecord',
       'EntityAiState',
       'RulesetDefinition',
+      'PackMetadata',
+      'GameManifest',
     ]) {
       expect(defs[key], `missing $defs.${key}`).toBeDefined();
     }
@@ -43,6 +45,8 @@ describe('toJsonSchema (F-fad5db9d)', () => {
       'itemPlacements',
       'entityAi',
       'ruleset',
+      'meta',
+      'manifest',
     ]) {
       expect(props[key], `missing properties.${key}`).toBeDefined();
     }
@@ -60,6 +64,11 @@ describe('toJsonSchema (F-fad5db9d)', () => {
     const defs = schema.$defs as Record<string, { required?: string[]; properties?: Record<string, { type?: string }> }>;
     expect(defs.EntityBlueprint.required).toContain('type');
     expect(defs.EntityBlueprint.properties).not.toHaveProperty('kind');
+    expect(defs.EntityBlueprint.properties).toHaveProperty('relations');
+    expect(defs.EntityBlueprint.properties).toHaveProperty('custom');
+    expect(defs.EntityBlueprint.properties).toHaveProperty('resistances');
+    expect(defs.EntityBlueprint.properties).toHaveProperty('faction');
+    expect(defs.EntityBlueprint.properties).toHaveProperty('ruleProfileId');
     expect(defs.DialogueDefinition.required).toContain('entryNodeId');
     expect(defs.DialogueDefinition.properties).not.toHaveProperty('startNode');
     expect(defs.StatusDefinition.properties?.duration?.type).toBe('object');

@@ -168,6 +168,33 @@ function attachCatalogs(entry: PackEntry, mod: Record<string, unknown>): void {
 }
 
 /**
+ * Fill PackEntry catalog fields from a ContentPack when the module export
+ * (or JSON path) did not already set them. Named TS exports remain the
+ * override — call this AFTER attachCatalogs.
+ *
+ * Mapping: districts, buildCatalog, progressionTrees, statuses→statusDefinitions,
+ * items→itemCatalog:{items}.
+ */
+function attachCatalogsFromContent(entry: PackEntry, content: PackContent): void {
+  if (entry.districts === undefined && Array.isArray(content.districts)) {
+    entry.districts = content.districts as PackEntry['districts'];
+  }
+  if (entry.buildCatalog === undefined && isObj(content.buildCatalog)) {
+    entry.buildCatalog = content.buildCatalog as PackBuildCatalog;
+  }
+  if (entry.itemCatalog === undefined && Array.isArray(content.items)) {
+    entry.itemCatalog = { items: content.items as NonNullable<PackItemCatalog['items']> };
+  }
+  if (entry.progressionTrees === undefined && Array.isArray(content.progressionTrees)) {
+    const trees = content.progressionTrees.filter(isProgressionTree);
+    if (trees.length > 0) entry.progressionTrees = trees;
+  }
+  if (entry.statusDefinitions === undefined && Array.isArray(content.statuses)) {
+    entry.statusDefinitions = content.statuses as PackStatusDefinition[];
+  }
+}
+
+/**
  * Lift a pack module (the public barrel: packMeta + createGame + catalogs,
  * and/or pack / toContentPack()) into a {@link PackEntry}. Does not register.
  * Returns null when the module advertises neither a playable factory nor a
@@ -202,6 +229,7 @@ export function packEntryFromModule(mod: unknown): PackEntry | null {
   }
   if (content) entry.content = content;
   attachCatalogs(entry, mod);
+  if (content) attachCatalogsFromContent(entry, content);
   return entry;
 }
 
@@ -277,6 +305,37 @@ function metaFromJsonSpec(pack: PackContent, spec: string): PackMetadata {
   };
 }
 
+/**
+ * Prefer authored ContentPack.meta / ContentPack.manifest over the filename
+ * stub. Overlay packs that omit both keep the stub.
+ */
+function metaFromJsonPack(pack: PackContent, spec: string): PackMetadata {
+  const stub = metaFromJsonSpec(pack, spec);
+  const authored = pack.meta;
+  if (isObj(authored) && typeof authored.id === 'string' && authored.id.length > 0 && typeof authored.name === 'string') {
+    return {
+      ...stub,
+      ...(authored as Partial<PackMetadata>),
+      id: authored.id,
+      name: authored.name,
+      genres: Array.isArray(authored.genres) ? (authored.genres as PackMetadata['genres']) : stub.genres,
+      tones: Array.isArray(authored.tones) ? (authored.tones as PackMetadata['tones']) : stub.tones,
+      tags: Array.isArray(authored.tags) ? (authored.tags as string[]) : stub.tags,
+    };
+  }
+  if (isManifest(pack.manifest)) {
+    const m = pack.manifest;
+    return {
+      ...stub,
+      id: m.id,
+      name: m.title,
+      version: m.version,
+      engineVersion: m.engineVersion,
+    };
+  }
+  return stub;
+}
+
 async function packEntryFromJsonFile(
   spec: string,
   options: DiscoverInstalledPacksOptions,
@@ -290,11 +349,11 @@ async function packEntryFromJsonFile(
     );
   }
   const content = loaded.pack as PackContent;
-  const meta = metaFromJsonSpec(content, spec);
+  const meta = metaFromJsonPack(content, spec);
   const ruleset = isRuleset(content.ruleset) ? content.ruleset : stubRuleset(meta);
   const entry: PackEntry = {
     meta,
-    manifest: stubManifest(meta, ruleset),
+    manifest: isManifest(content.manifest) ? content.manifest : stubManifest(meta, ruleset),
     ruleset,
     content,
   };
@@ -304,6 +363,7 @@ async function packEntryFromJsonFile(
   } else {
     entry.needsRuntimeHost = true;
   }
+  attachCatalogsFromContent(entry, content);
   return entry;
 }
 

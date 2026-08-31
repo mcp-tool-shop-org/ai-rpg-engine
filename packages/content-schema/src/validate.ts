@@ -130,6 +130,42 @@ function reqStrArr(c: Checker, obj: Record<string, unknown>, field: string): voi
   }
 }
 
+function optScalarRecord(c: Checker, obj: Record<string, unknown>, field: string): void {
+  const v = obj[field];
+  if (v === undefined) return;
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) {
+    c.errors.push({ path: `${c.path}.${field}`, message: `must be an object if provided` });
+    return;
+  }
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    const t = typeof val;
+    if (t !== 'string' && t !== 'number' && t !== 'boolean') {
+      c.errors.push({ path: `${c.path}.${field}.${k}`, message: `must be a string, number, or boolean` });
+    } else if (t === 'number' && !Number.isFinite(val as number)) {
+      c.errors.push({
+        path: `${c.path}.${field}.${k}`,
+        message: finiteNumMessage(`${field}.${k}`, val, false),
+      });
+    }
+  }
+}
+
+function optResistanceRecord(c: Checker, obj: Record<string, unknown>, field: string): void {
+  const v = obj[field];
+  if (v === undefined) return;
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) {
+    c.errors.push({ path: `${c.path}.${field}`, message: `must be an object if provided` });
+    return;
+  }
+  // Unknown level names are dropped at intake (entityBlueprintToState), not
+  // refused here — a typo'd resistance must not skip the whole entity.
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    if (typeof val !== 'string') {
+      c.errors.push({ path: `${c.path}.${field}.${k}`, message: `must be a string if provided` });
+    }
+  }
+}
+
 function optRecord(c: Checker, obj: Record<string, unknown>, field: string, valType: 'string' | 'number'): void {
   const v = obj[field];
   if (v === undefined) return;
@@ -320,6 +356,11 @@ export function validateEntityBlueprint(v: unknown, path = 'EntityBlueprint'): V
   optRecord(c, v, 'equipment', 'string');
   optStr(c, v, 'aiProfile');
   optStrArr(c, v, 'scripts');
+  optScalarRecord(c, v, 'relations');
+  optScalarRecord(c, v, 'custom');
+  optResistanceRecord(c, v, 'resistances');
+  optStr(c, v, 'faction');
+  optStr(c, v, 'ruleProfileId');
   return { ok: c.errors.length === 0, errors: c.errors };
 }
 

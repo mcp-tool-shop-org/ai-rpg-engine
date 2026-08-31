@@ -1002,8 +1002,9 @@ export const itemCatalog: ItemCatalog = {
 
 // --- ContentPack (F-83947d13) ----------------------------------------------
 // Authored world as data: EntityBlueprint[] / ZoneDefinition[] / placements,
-// plus catalogs the authoring pipeline can loadContent. createGame applies
-// this pack then overlays runtime-only fields (relations, custom, resistances).
+// plus catalogs the authoring pipeline can loadContent. EntityBlueprint now
+// carries relations/custom/resistances/faction/ruleProfileId (F-cf3fc257);
+// applyContentPack copies them — no overlay loop.
 
 const LIVE_ENTITIES: EntityState[] = [
   player, pilgrim, brotherAldric, sisterMaren, ashGhoul, cryptWarden, cryptStalker,
@@ -1026,6 +1027,11 @@ function toBlueprint(e: EntityState): EntityBlueprint {
   if (e.inventory) bp.inventory = [...e.inventory];
   if (equipment && Object.keys(equipment).length > 0) bp.equipment = equipment;
   if (e.ai?.profileId) bp.aiProfile = e.ai.profileId;
+  if (e.relations) bp.relations = { ...e.relations };
+  if (e.custom) bp.custom = { ...e.custom };
+  if (e.resistances) bp.resistances = { ...e.resistances };
+  if (e.faction) bp.faction = e.faction;
+  if (e.ruleProfileId) bp.ruleProfileId = e.ruleProfileId;
   return bp;
 }
 
@@ -1057,6 +1063,8 @@ export const entityAi: Record<string, EntityAiState> = Object.fromEntries(
 );
 
 export const pack: ContentPack = {
+  meta: packMeta,
+  manifest,
   entities: LIVE_ENTITIES.map(toBlueprint),
   zones: zones.map(toZoneDef),
   placements: LIVE_ENTITIES

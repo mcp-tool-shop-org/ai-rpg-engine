@@ -123,6 +123,14 @@
       "description": "Optional RulesetDefinition the rest of the pack is written against. Overlay-only packs omit this.",
       "$ref": "#/$defs/RulesetDefinition"
     },
+    "meta": {
+      "description": "Optional listing identity (PackMetadata-shaped). Overlay packs omit this; packEntryFromJsonFile prefers it over the filename stub. Not sim-affecting.",
+      "$ref": "#/$defs/PackMetadata"
+    },
+    "manifest": {
+      "description": "Optional GameManifest. Overlay packs omit this; packEntryFromJsonFile prefers it over a filename stub. Not sim-affecting.",
+      "$ref": "#/$defs/GameManifest"
+    },
     "factionPresences": {
       "description": "Evaluated, not mapped by intake. Allowed so a forge export is not refused."
     },
@@ -146,7 +154,24 @@
         "inventory": { "type": "array", "items": { "type": "string" } },
         "equipment": { "type": "object", "additionalProperties": { "type": "string" } },
         "aiProfile": { "type": "string" },
-        "scripts": { "type": "array", "items": { "type": "string" } }
+        "scripts": { "type": "array", "items": { "type": "string" } },
+        "relations": {
+          "type": "object",
+          "additionalProperties": { "type": ["string", "number", "boolean"] },
+          "description": "Structural copy of EntityState.relations."
+        },
+        "custom": {
+          "type": "object",
+          "additionalProperties": { "type": ["string", "number", "boolean"] },
+          "description": "Structural copy of EntityState.custom."
+        },
+        "resistances": {
+          "type": "object",
+          "additionalProperties": { "type": "string", "enum": ["immune", "resistant", "vulnerable"] },
+          "description": "Structural copy of EntityState.resistances."
+        },
+        "faction": { "type": "string", "description": "Structural copy of EntityState.faction." },
+        "ruleProfileId": { "type": "string", "description": "Structural copy of EntityState.ruleProfileId." }
       }
     },
     "ZoneDefinition": {
@@ -414,6 +439,44 @@
         "defaultModules": { "type": "array", "items": { "type": "string" } },
         "progressionModels": { "type": "array", "items": { "type": "string" } },
         "contentConventions": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "PackMetadata": {
+      "type": "object",
+      "required": ["id", "name"],
+      "additionalProperties": true,
+      "description": "Listing identity. Overlay packs omit this. packEntryFromJsonFile prefers authored meta over the filename stub.",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "tagline": { "type": "string" },
+        "genres": { "type": "array", "items": { "type": "string" } },
+        "difficulty": { "type": "string" },
+        "tones": { "type": "array", "items": { "type": "string" } },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "engineVersion": { "type": "string" },
+        "version": { "type": "string" },
+        "description": { "type": "string" },
+        "narratorTone": { "type": "string" }
+      }
+    },
+    "GameManifest": {
+      "type": "object",
+      "required": ["id", "title", "version", "engineVersion", "ruleset", "modules"],
+      "additionalProperties": true,
+      "description": "Optional GameManifest. Overlay packs omit this.",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "engineVersion": { "type": "string", "minLength": 1 },
+        "ruleset": { "type": "string", "minLength": 1 },
+        "modules": { "type": "array", "items": { "type": "string" } },
+        "contentPacks": { "type": "array", "items": { "type": "string" } },
+        "contentHash": { "type": "string" },
+        "theme": { "type": "string" },
+        "audioProfile": { "type": "string" },
+        "settings": { "type": "object", "additionalProperties": true }
       }
     }
   }

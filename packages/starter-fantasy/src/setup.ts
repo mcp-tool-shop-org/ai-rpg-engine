@@ -28,13 +28,6 @@ import type { PresentationRule, IntentProfile } from '@ai-rpg-engine/modules';
 import { applyContentPack } from '@ai-rpg-engine/content-schema';
 import {
   manifest,
-  player,
-  pilgrim,
-  brotherAldric,
-  sisterMaren,
-  ashGhoul,
-  cryptWarden,
-  cryptStalker,
   cryptWardenBoss,
   districts,
   pilgrimDialogue,
@@ -204,23 +197,14 @@ export function createGame(seed?: number): Engine {
     ],
   });
 
+  // JSON hosts: extractSessionContent(pack) → construct modules → applyContentPack({ profiles }).
+  // This factory still wires named catalogs at construction; apply copies
+  // EntityBlueprint.relations/custom/resistances/faction/ruleProfileId (F-cf3fc257)
+  // and resolves aiProfile from pack.entityAi / options.profiles.
   const applied = applyContentPack(engine, pack, { profiles: fantasyIntentProfiles });
   if (!applied.ok) {
     const detail = applied.errors.map((e) => `${e.path}: ${e.message}`).join('\n');
     throw new Error(`applyContentPack failed:\n${detail}`);
-  }
-
-  // Runtime overlays intake cannot yet carry (relations, custom, resistances).
-  // AI is applied from pack.entityAi / options.profiles (F-035ac806); copy
-  // the full authored AIState so goals/fears stay byte-identical to the
-  // previous EntityState constants.
-  for (const src of [player, pilgrim, brotherAldric, sisterMaren, ashGhoul, cryptStalker, cryptWarden]) {
-    const entity = engine.store.state.entities[src.id];
-    if (!entity) continue;
-    if (src.relations) entity.relations = structuredClone(src.relations);
-    if (src.custom) entity.custom = structuredClone(src.custom);
-    if (src.resistances) entity.resistances = structuredClone(src.resistances);
-    if (src.ai) entity.ai = structuredClone(src.ai);
   }
 
   engine.store.state.playerId = 'player';

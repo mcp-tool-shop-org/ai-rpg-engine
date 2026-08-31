@@ -123,6 +123,20 @@ function validatePackShape(pack: unknown): ValidationError[] {
       message: `must be a RulesetDefinition object if provided (got ${describe(ruleset)})`,
     });
   }
+  const meta = (pack as Record<string, unknown>).meta;
+  if (meta !== undefined && !isPlainObject(meta)) {
+    errors.push({
+      path: 'pack.meta',
+      message: `must be an object if provided (got ${describe(meta)})`,
+    });
+  }
+  const manifest = (pack as Record<string, unknown>).manifest;
+  if (manifest !== undefined && !isPlainObject(manifest)) {
+    errors.push({
+      path: 'pack.manifest',
+      message: `must be a GameManifest object if provided (got ${describe(manifest)})`,
+    });
+  }
   return errors;
 }
 
