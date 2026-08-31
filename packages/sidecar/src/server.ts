@@ -13,18 +13,29 @@
 // Events, by contrast, only ever GAIN fields, and a client that ignores one it
 // does not know loses nothing.
 
-import { WorldStore, type Engine, type ResolvedEvent, type WorldState } from '@ai-rpg-engine/core';
+import {
+  Engine,
+  SaveLoadError,
+  WorldStore,
+  type ActionIntent,
+  type ResolvedEvent,
+  type WorldState,
+} from '@ai-rpg-engine/core';
 import {
   ALL_METHODS,
   ERROR_CODES,
   METHODS,
   METHOD_PARAMS,
   NOTIFICATIONS,
+  type AvailableActionWire,
   type ClientCapabilities,
   type InitializeResult,
+  type ListActionsResult,
+  type LoadResult,
   type MethodName,
   type PreviewResult,
   type ReplayResult,
+  type SaveResult,
   type ServerCapabilities,
   type SessionRole,
   type SnapshotResult,
@@ -71,9 +82,18 @@ type ActionOptions = Partial<{
  * not close each other. Session-local `closed` was F-009da546; the remaining
  * hole (F-aca8c299) is a sibling session whose instance flag stayed false.
  */
+type QueuedWrite = {
+  sessionOrder: number;
+  seq: number;
+  run: () => void;
+};
+
 type SimGate = {
   closed: boolean;
   servers: Set<SidecarServer>;
+  nextSessionOrder: number;
+  writePending: QueuedWrite[];
+  writeScheduled: boolean;
 };
 
 const simGates = new WeakMap<Engine, SimGate>();
@@ -81,7 +101,7 @@ const simGates = new WeakMap<Engine, SimGate>();
 function attachSession(engine: Engine, server: SidecarServer): SimGate {
   let gate = simGates.get(engine);
   if (!gate) {
-    gate = { closed: false, servers: new Set() };
+    gate = { closed: false, servers: new Set(), nextSessionOrder: 1, writePending: [], writeScheduled: false };
     simGates.set(engine, gate);
   }
   gate.servers.add(server);
@@ -143,8 +163,10 @@ export class SidecarServer {
   private hasSnapshotted = false;
   /** Projection SNAPSHOT and later diffs share, so omitted keys stay omitted. */
   private snapshotView: SnapshotView = {};
-  /** Observer sessions cannot SUBMIT_ACTION / ADVANCE / SHUTDOWN. */
+  /** Observer sessions cannot SUBMIT_ACTION / ADVANCE / SHUTDOWN / SAVE / LOAD. */
   private sessionWrites = true;
+  /** Stable order among sessions sharing this Engine (1-based, connect order). */
+  readonly sessionOrder: number;
   private readonly gate: SimGate;
 
   constructor(
@@ -159,6 +181,7 @@ export class SidecarServer {
     this.lastState = structuredClone(this.engine.world) as WorldState;
     for (const e of this.engine.world.eventLog ?? []) this.emitted.add(e.id);
     this.gate = attachSession(this.engine, this);
+    this.sessionOrder = this.gate.nextSessionOrder++;
     if (this.gate.closed) this.closed = true;
   }
 
@@ -176,6 +199,8 @@ export class SidecarServer {
     if (this.clientCapabilities.writes !== undefined || this.clientCapabilities.role !== undefined) {
       caps.writes = this.sessionWrites;
     }
+    if (this.clientCapabilities.listActions) caps.listActions = true;
+    if (this.clientCapabilities.presentation) caps.presentation = true;
     return caps;
   }
 
@@ -282,12 +307,19 @@ export class SidecarServer {
         this.clientVersion = handshake.clientVersion;
         this.clientCapabilities = handshake.capabilities;
         this.sessionWrites = handshake.capabilities.writes !== false;
+        const world = this.engine.world;
         const result: InitializeResult = {
           serverName: this.serverName,
           engineVersion: this.engineVersion,
           capabilities: this.capabilities,
           tick: this.engine.store.tick,
         };
+        if (typeof world.meta?.gameId === 'string' && world.meta.gameId.length > 0) {
+          result.packId = world.meta.gameId;
+        }
+        if (typeof world.playerId === 'string' && world.playerId.length > 0) {
+          result.playerId = world.playerId;
+        }
         if (hasId) this.reply(id, result);
         return;
       }
@@ -328,7 +360,10 @@ export class SidecarServer {
           if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, parsed.message);
           return;
         }
-        const events = this.engine.submitAction(parsed.verb, parsed.options);
+        const events =
+          parsed.actorId && typeof this.engine.submitActionAs === 'function'
+            ? this.engine.submitActionAs(parsed.actorId, parsed.verb, parsed.options)
+            : this.engine.submitAction(parsed.verb, parsed.options);
         const result = this.commit(events);
         if (hasId) this.reply(id, result satisfies SubmitActionResult);
         this.pushTick(result);
@@ -385,16 +420,112 @@ export class SidecarServer {
           if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"toTick" must be a safe integer when present.');
           return;
         }
+        if (Object.hasOwn(params, 'limit') && !isSafeInteger(params.limit)) {
+          if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"limit" must be a safe integer when present.');
+          return;
+        }
+        if (Object.hasOwn(params, 'typePrefix') && typeof params.typePrefix !== 'string') {
+          if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"typePrefix" must be a string when present.');
+          return;
+        }
+        if (Object.hasOwn(params, 'type') && typeof params.type !== 'string') {
+          if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"type" must be a string when present.');
+          return;
+        }
+        if (Object.hasOwn(params, 'actorId') && typeof params.actorId !== 'string') {
+          if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"actorId" must be a string when present.');
+          return;
+        }
         const fromTick = typeof params.fromTick === 'number' ? params.fromTick : 0;
         const toTick = typeof params.toTick === 'number' ? params.toTick : this.engine.store.tick;
         if (fromTick > toTick) {
           if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"fromTick" and "toTick" must be integers, from <= to.');
           return;
         }
-        const events = (this.engine.world.eventLog ?? [])
-          .filter((e) => e.tick >= fromTick && e.tick <= toTick)
-          .map(toWireEvent);
-        const result: ReplayResult = { fromTick, toTick, events };
+        if (typeof params.limit === 'number' && params.limit < 0) {
+          if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"limit" must be a non-negative integer when present.');
+          return;
+        }
+        const queried = this.queryLog({
+          fromTick,
+          toTick,
+          ...(typeof params.type === 'string' ? { type: params.type } : {}),
+          ...(typeof params.typePrefix === 'string' ? { typePrefix: params.typePrefix } : {}),
+          ...(typeof params.actorId === 'string' ? { actorId: params.actorId } : {}),
+          ...(typeof params.limit === 'number' ? { limit: params.limit } : {}),
+        });
+        const result: ReplayResult = { fromTick, toTick, events: this.presentWire(queried) };
+        if (hasId) this.reply(id, result);
+        return;
+      }
+
+      case METHODS.LIST_ACTIONS: {
+        if (Object.hasOwn(params, 'actorId') && (typeof params.actorId !== 'string' || params.actorId.length === 0)) {
+          if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"actorId" must be a non-empty string when present.');
+          return;
+        }
+        const actorId =
+          typeof params.actorId === 'string' && params.actorId.length > 0
+            ? params.actorId
+            : (this.engine.world.playerId ?? '');
+        const listed =
+          typeof this.engine.getAvailableActionsFor === 'function'
+            ? this.engine.getAvailableActionsFor(actorId)
+            : [];
+        const actions: AvailableActionWire[] = listed.map((entry) => {
+          const row: AvailableActionWire = { verb: entry.verb, available: entry.available };
+          if (entry.reason !== undefined) row.reason = entry.reason;
+          if (entry.expansions && entry.expansions.length > 0) {
+            row.expansions = entry.expansions.map((exp) => ({
+              ...(exp.targetIds ? { targetIds: [...exp.targetIds] } : {}),
+              ...(exp.toolId !== undefined ? { toolId: exp.toolId } : {}),
+              ...(exp.parameters ? { parameters: { ...exp.parameters } } : {}),
+              ...(exp.label !== undefined ? { label: exp.label } : {}),
+            }));
+          }
+          return row;
+        });
+        const result: ListActionsResult = { actorId, actions };
+        if (hasId) this.reply(id, result);
+        return;
+      }
+
+      case METHODS.SAVE: {
+        if (this.refuseWrites(id, hasId, METHODS.SAVE)) return;
+        const result: SaveResult = {
+          serialized: this.engine.serialize(),
+          tick: this.engine.store.tick,
+        };
+        if (hasId) this.reply(id, result);
+        return;
+      }
+
+      case METHODS.LOAD: {
+        if (this.refuseWrites(id, hasId, METHODS.LOAD)) return;
+        if (typeof params.serialized !== 'string' || params.serialized.length === 0) {
+          if (hasId) this.fail(id, ERROR_CODES.INVALID_PARAMS, '"serialized" must be a non-empty string.');
+          return;
+        }
+        try {
+          this.restoreFromSerialized(params.serialized);
+        } catch (err) {
+          if (hasId) {
+            const message =
+              err instanceof SaveLoadError || err instanceof Error ? err.message : String(err);
+            this.fail(id, ERROR_CODES.INVALID_PARAMS, `load refused: ${message}`);
+          }
+          return;
+        }
+        this.rebaseAllSessions();
+        const projected = projectState(this.engine.world, this.snapshotView);
+        const result: LoadResult = {
+          tick: this.engine.store.tick,
+          hash: stateHash(projected as WorldState),
+          snapshotSeq: this.snapshotSeq,
+        };
+        if (this.clientCapabilities.canonicalHashes) {
+          result.canonicalHash = canonicalStateHash(projected);
+        }
         if (hasId) this.reply(id, result);
         return;
       }
@@ -500,7 +631,7 @@ export class SidecarServer {
   }
 
   private parseActionParams(params: Record<string, unknown>):
-    | { ok: true; verb: string; options: ActionOptions }
+    | { ok: true; verb: string; options: ActionOptions; actorId?: string }
     | { ok: false; message: string } {
     const verb = params.verb;
     if (typeof verb !== 'string' || verb.length === 0) {
@@ -511,6 +642,9 @@ export class SidecarServer {
     }
     if (Object.hasOwn(params, 'toolId') && typeof params.toolId !== 'string') {
       return { ok: false, message: '"toolId" must be a string when present.' };
+    }
+    if (Object.hasOwn(params, 'actorId') && (typeof params.actorId !== 'string' || params.actorId.length === 0)) {
+      return { ok: false, message: '"actorId" must be a non-empty string when present.' };
     }
     if (Object.hasOwn(params, 'parameters')) {
       if (!isPlainObject(params.parameters)) {
@@ -529,6 +663,7 @@ export class SidecarServer {
     return {
       ok: true,
       verb,
+      ...(typeof params.actorId === 'string' ? { actorId: params.actorId } : {}),
       options: {
         ...(isStringArray(params.targetIds) ? { targetIds: params.targetIds } : {}),
         ...(typeof params.toolId === 'string' ? { toolId: params.toolId } : {}),
@@ -556,7 +691,7 @@ export class SidecarServer {
       if (!isPlainObject(params.capabilities)) {
         return { ok: false, message: '"capabilities" must be an object when present.' };
       }
-      for (const key of ['notifications', 'hashes', 'canonicalHashes', 'writes'] as const) {
+      for (const key of ['notifications', 'hashes', 'canonicalHashes', 'writes', 'listActions', 'presentation'] as const) {
         if (Object.hasOwn(params.capabilities, key) && typeof params.capabilities[key] !== 'boolean') {
           return { ok: false, message: `"capabilities.${key}" must be a boolean when present.` };
         }
@@ -591,6 +726,12 @@ export class SidecarServer {
           : {}),
         ...(writes !== undefined ? { writes } : {}),
         ...(role === 'writer' || role === 'observer' ? { role } : {}),
+        ...(typeof params.capabilities.listActions === 'boolean'
+          ? { listActions: params.capabilities.listActions }
+          : {}),
+        ...(typeof params.capabilities.presentation === 'boolean'
+          ? { presentation: params.capabilities.presentation }
+          : {}),
       };
     }
     return {
@@ -634,11 +775,11 @@ export class SidecarServer {
   /** Fold newly emitted events into a tick result, deduplicated by event id. */
   private commit(direct: readonly ResolvedEvent[]): SubmitActionResult {
     const log = (this.engine.world.eventLog ?? []) as ResolvedEvent[];
-    const fresh: WireEvent[] = [];
+    const freshRaw: ResolvedEvent[] = [];
     for (const e of log) {
       if (this.emitted.has(e.id)) continue;
       this.emitted.add(e.id);
-      fresh.push(toWireEvent(e));
+      freshRaw.push(e);
     }
     // `direct` is what submitAction returned. Anything it produced is already in
     // the log, so it is only used as a tie-break when a pack emits outside the
@@ -646,7 +787,7 @@ export class SidecarServer {
     for (const e of direct) {
       if (this.emitted.has(e.id)) continue;
       this.emitted.add(e.id);
-      fresh.push(toWireEvent(e));
+      freshRaw.push(e);
     }
 
     const projected = projectState(this.engine.world, this.snapshotView);
@@ -656,7 +797,7 @@ export class SidecarServer {
     const result: SubmitActionResult = {
       tick: this.engine.store.tick,
       hash: stateHash(projected),
-      events: fresh,
+      events: this.presentWire(freshRaw),
       delta,
       snapshotSeq: this.snapshotSeq,
     };
@@ -664,6 +805,114 @@ export class SidecarServer {
       result.canonicalHash = canonicalStateHash(projected);
     }
     return result;
+  }
+
+  private queryLog(query: {
+    fromTick: number;
+    toTick: number;
+    type?: string;
+    typePrefix?: string;
+    actorId?: string;
+    limit?: number;
+  }): ResolvedEvent[] {
+    if (typeof this.engine.queryEvents === 'function') {
+      return this.engine.queryEvents(query);
+    }
+    const log = (this.engine.world.eventLog ?? []) as ResolvedEvent[];
+    const out: ResolvedEvent[] = [];
+    for (const event of log) {
+      if (event.tick < query.fromTick || event.tick > query.toTick) continue;
+      if (query.type !== undefined && event.type !== query.type) continue;
+      if (query.typePrefix !== undefined && !event.type.startsWith(query.typePrefix)) continue;
+      if (query.actorId !== undefined && event.actorId !== query.actorId) continue;
+      out.push(event);
+      if (query.limit !== undefined && out.length >= query.limit) break;
+    }
+    return out;
+  }
+
+  /**
+   * Raw WireEvent by default (exact-match ticks). Presentation sessions get
+   * `engine.presentAll` output; `visibility: 'hidden'` is dropped.
+   */
+  private presentWire(events: readonly ResolvedEvent[]): WireEvent[] {
+    if (!this.clientCapabilities.presentation) {
+      return events.map(toWireEvent);
+    }
+    const visible = events.filter((e) => e.visibility !== 'hidden');
+    if (typeof this.engine.presentAll === 'function') {
+      return this.engine.presentAll(visible).map(toWireEvent);
+    }
+    return visible.map(toWireEvent);
+  }
+
+  private restoreFromSerialized(serialized: string): void {
+    const modules =
+      typeof this.engine.moduleManager?.getModules === 'function'
+        ? [...this.engine.moduleManager.getModules()]
+        : [];
+    const loaded = Engine.deserialize(serialized, {
+      modules,
+      ruleset: this.engine.ruleset,
+    });
+    const restored = loaded.store;
+    (restored as { events: (typeof restored)['events'] }).events = this.engine.store.events;
+    (this.engine as { store: typeof restored }).store = restored;
+    this.engine.moduleManager.rebindStore(restored);
+    (this.engine as { actionLog: ActionIntent[] }).actionLog = [...loaded.getActionLog()];
+  }
+
+  private rebaseAllSessions(): void {
+    for (const peer of this.gate.servers) peer.rebaseAfterLoad();
+  }
+
+  /**
+   * After LOAD: rebuild emitted, lastState, bump snapshotSeq, and push a
+   * snapshot-shaped baseline so every live mirror rebases (including omitEventLog).
+   */
+  rebaseAfterLoad(): void {
+    this.emitted.clear();
+    for (const e of this.engine.world.eventLog ?? []) this.emitted.add(e.id);
+    const projected = projectState(this.engine.world, this.snapshotView);
+    this.lastState = structuredClone(projected) as WorldState;
+    this.snapshotSeq += 1;
+    if (this.closed || this.gate.closed || !this.hasSnapshotted) return;
+    const result: SubmitActionResult = {
+      tick: this.engine.store.tick,
+      hash: stateHash(projected as WorldState),
+      events: [],
+      delta: snapshotDelta(projected),
+      snapshotSeq: this.snapshotSeq,
+    };
+    if (this.clientCapabilities.canonicalHashes) {
+      result.canonicalHash = canonicalStateHash(projected);
+    }
+    this.pushTick(result);
+  }
+
+  /**
+   * Socket transport: when two writers share this Engine, batch write methods
+   * onto setImmediate and run them in sessionOrder-then-seq, not TCP arrival.
+   * In-process `handle()` stays synchronous so existing dualLoopback tests pin
+   * call order. One writer (plus any observers) still runs immediately.
+   */
+  queueWrite(requestId: unknown, run: () => void): void {
+    const writers = [...this.gate.servers].filter((s) => s.sessionRole === 'writer' && !s.isClosed).length;
+    if (writers <= 1) {
+      run();
+      return;
+    }
+    const seq = typeof requestId === 'number' ? requestId : Number.MAX_SAFE_INTEGER;
+    this.gate.writePending.push({ sessionOrder: this.sessionOrder, seq, run });
+    if (this.gate.writeScheduled) return;
+    this.gate.writeScheduled = true;
+    setImmediate(() => {
+      this.gate.writeScheduled = false;
+      const batch = this.gate.writePending.splice(0).sort(
+        (a, b) => a.sessionOrder - b.sessionOrder || a.seq - b.seq,
+      );
+      for (const item of batch) item.run();
+    });
   }
 
   /** Mark every session sharing this Engine closed, then tear the sim down. */

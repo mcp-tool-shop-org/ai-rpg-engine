@@ -18,6 +18,11 @@ import {
   NOTIFICATIONS,
   type ClientCapabilities,
   type InitializeResult,
+  type ListActionsResult,
+  type LoadResult,
+  type ReplayParams,
+  type ReplayResult,
+  type SaveResult,
   type SnapshotParams,
   type SnapshotResult,
   type SubmitActionResult,
@@ -309,5 +314,36 @@ export class SidecarClient {
 
   get isClosed(): boolean {
     return this.closed;
+  }
+
+  listActions(actorId?: string): Promise<ListActionsResult> {
+    return this.request<ListActionsResult>(
+      METHODS.LIST_ACTIONS,
+      actorId !== undefined ? { actorId } : {},
+    );
+  }
+
+  save(): Promise<SaveResult> {
+    return this.request<SaveResult>(METHODS.SAVE, {});
+  }
+
+  load(serialized: string): Promise<LoadResult> {
+    return this.request<LoadResult>(METHODS.LOAD, { serialized });
+  }
+
+  replay(params: ReplayParams = {}): Promise<ReplayResult> {
+    return this.request<ReplayResult>(METHODS.REPLAY, params as Record<string, unknown>);
+  }
+
+  preview(verb: string, extra: Record<string, unknown> = {}): Promise<unknown> {
+    return this.request(METHODS.PREVIEW, { ...extra, verb });
+  }
+
+  advance(rounds = 1): Promise<unknown> {
+    return this.request(METHODS.ADVANCE, { rounds });
+  }
+
+  shutdown(): Promise<unknown> {
+    return this.request(METHODS.SHUTDOWN, {});
   }
 }

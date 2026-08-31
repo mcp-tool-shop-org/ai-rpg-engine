@@ -43,6 +43,12 @@ export const METHODS = {
   PREVIEW: 'preview',
   /** Re-emit a closed tick window. Idempotent by (tick, event id). */
   REPLAY: 'replay',
+  /** Legal-action catalog for a HUD. Observers may call it. */
+  LIST_ACTIONS: 'listActions',
+  /** Engine.serialize checkpoint (rngState + actionLog). Not a SNAPSHOT delta. */
+  SAVE: 'save',
+  /** Engine.deserialize, then rebase every live session. Writers only. */
+  LOAD: 'load',
   /** Orderly stop. */
   SHUTDOWN: 'shutdown',
 } as const;
@@ -62,12 +68,24 @@ export const ALL_METHODS: readonly MethodName[] = Object.values(METHODS);
 export const METHOD_PARAMS: Record<MethodName, readonly string[]> = {
   [METHODS.INITIALIZE]: ['clientName', 'clientVersion', 'capabilities'],
   [METHODS.SNAPSHOT]: ['omitEventLog', 'collections'],
-  [METHODS.SUBMIT_ACTION]: ['verb', 'targetIds', 'toolId', 'parameters'],
+  [METHODS.SUBMIT_ACTION]: ['verb', 'targetIds', 'toolId', 'parameters', 'actorId'],
   [METHODS.ADVANCE]: ['rounds'],
   [METHODS.PREVIEW]: ['verb', 'targetIds', 'toolId', 'parameters'],
-  [METHODS.REPLAY]: ['fromTick', 'toTick'],
+  [METHODS.REPLAY]: ['fromTick', 'toTick', 'typePrefix', 'actorId', 'limit', 'type'],
+  [METHODS.LIST_ACTIONS]: ['actorId'],
+  [METHODS.SAVE]: [],
+  [METHODS.LOAD]: ['serialized'],
   [METHODS.SHUTDOWN]: [],
 };
+
+/** Mutation methods that contend for one Engine when two writers are live. */
+export const WRITE_METHODS: readonly MethodName[] = [
+  METHODS.SUBMIT_ACTION,
+  METHODS.ADVANCE,
+  METHODS.SAVE,
+  METHODS.LOAD,
+  METHODS.SHUTDOWN,
+];
 
 /** Optional SNAPSHOT window. Same serializer, possibly projected baseline. */
 export type SnapshotParams = {
@@ -135,6 +153,13 @@ export type ServerCapabilities = {
    * session is an observer: snapshot/replay/preview/ticks only.
    */
   writes?: boolean;
+  /** Echoed when the client requested `listActions`. Catalog is always served. */
+  listActions?: boolean;
+  /**
+   * Echoed when the client requested `presentation`. Tick/replay events are
+   * `engine.presentAll` output (channel + filtered); hidden events are dropped.
+   */
+  presentation?: boolean;
 };
 
 export type ClientCapabilities = {
@@ -154,6 +179,13 @@ export type ClientCapabilities = {
   writes?: boolean;
   /** Explicit session role; `observer` forces `writes: false`. */
   role?: SessionRole;
+  /** Request `capabilities.listActions` on the handshake. */
+  listActions?: boolean;
+  /**
+   * Request presented ticks (FOW / channel routing). Default raw WireEvent so
+   * existing exact-match ticks stay stable.
+   */
+  presentation?: boolean;
 };
 
 export type InitializeResult = {
@@ -163,6 +195,10 @@ export type InitializeResult = {
   capabilities: ServerCapabilities;
   /** The tick the world is at right now. */
   tick: number;
+  /** Pack / game id from world.meta.gameId. Additive. */
+  packId?: string;
+  /** Current player entity id. Additive. */
+  playerId?: string;
 };
 
 // --- Errors ---------------------------------------------------------------
@@ -269,6 +305,10 @@ export type WireEvent = {
   visibility?: string;
   presentation?: Record<string, unknown>;
   causedBy?: string;
+  /** Present only on presentation-negotiated sessions (`engine.presentAll`). */
+  _channel?: string;
+  /** Present only on presentation-negotiated sessions. */
+  _filtered?: boolean;
 };
 
 /** One state change. `remove` carries no value; `set` carries the new one. */
@@ -304,8 +344,49 @@ export type PreviewResult = {
   events: WireEvent[];
 };
 
+export type ReplayParams = {
+  fromTick?: number;
+  toTick?: number;
+  type?: string;
+  typePrefix?: string;
+  actorId?: string;
+  limit?: number;
+};
+
 export type ReplayResult = {
   fromTick: number;
   toTick: number;
   events: WireEvent[];
+};
+
+export type AvailableActionExpansionWire = {
+  targetIds?: string[];
+  toolId?: string;
+  parameters?: Record<string, string | number | boolean>;
+  label?: string;
+};
+
+export type AvailableActionWire = {
+  verb: string;
+  available: boolean;
+  reason?: string;
+  expansions?: AvailableActionExpansionWire[];
+};
+
+export type ListActionsResult = {
+  actorId: string;
+  actions: AvailableActionWire[];
+};
+
+export type SaveResult = {
+  /** `Engine.serialize()` — rngState + actionLog. Not a SNAPSHOT delta. */
+  serialized: string;
+  tick: number;
+};
+
+export type LoadResult = {
+  tick: number;
+  hash: string;
+  canonicalHash?: string;
+  snapshotSeq: number;
 };

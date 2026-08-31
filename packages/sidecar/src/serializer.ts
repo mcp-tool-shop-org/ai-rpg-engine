@@ -280,7 +280,7 @@ export function canonicalStateHash(state: WorldState | unknown): string {
 }
 
 /** A `ResolvedEvent` on the wire: quantized, key-ordered, undefined-free. */
-export function toWireEvent(event: ResolvedEvent): WireEvent {
+export function toWireEvent(event: ResolvedEvent & { _channel?: string; _filtered?: boolean }): WireEvent {
   const wire: WireEvent = {
     id: event.id,
     tick: event.tick,
@@ -295,5 +295,7 @@ export function toWireEvent(event: ResolvedEvent): WireEvent {
     wire.presentation = quantize(event.presentation) as Record<string, unknown>;
   }
   if (event.causedBy !== undefined) wire.causedBy = event.causedBy;
+  if (event._channel !== undefined) wire._channel = event._channel;
+  if (event._filtered !== undefined) wire._filtered = event._filtered;
   return wire;
 }
